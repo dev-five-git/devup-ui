@@ -2877,7 +2877,7 @@ mod tests {
         );
 
         let mut sheet = StyleSheet::default();
-        let output = extract("index.tsx", "import {Box,globalCss,keyframes,Flex} from '@devup-ui/core';<Flex/>;keyframes({from:{opacity:0},to:{opacity:1}});<Box w={1} h={variable} />;globalCss`div{color:red}`;globalCss({div:{display:flex},imports:['https://test.com/a.css'],fontFaces:[{fontFamily:'Roboto',src:'url(/fonts/Roboto-Regular.ttf)'}]})", ExtractOption { package: "@devup-ui/core".to_string(), css_dir: "@devup-ui/core".to_string(), single_css: true, import_main_css: false, import_aliases: std::collections::HashMap::new() }).unwrap();
+        let output = extract("index.tsx", "import {Box,globalCss,keyframes,Flex} from '@devup-ui/core';<Flex/>;keyframes({from:{opacity:0},to:{opacity:1}});<Box w={1} h={variable} />;globalCss`div{color:red}`;globalCss({div:{display:'flex'},imports:['https://test.com/a.css'],fontFaces:[{fontFamily:'Roboto',src:'url(/fonts/Roboto-Regular.ttf)'}]})", ExtractOption { package: "@devup-ui/core".to_string(), css_dir: "@devup-ui/core".to_string(), single_css: true, import_main_css: false, import_aliases: std::collections::HashMap::new() }).unwrap();
         sheet.update_styles(&output.styles, "index.tsx", true);
         assert_debug_snapshot!(sheet.create_css(None, true).split("*/").nth(1).unwrap());
     }
@@ -3458,7 +3458,7 @@ mod tests {
             ),
             // Layered and unlayered declarations keep apart, dynamic ones included.
             (
-                "<div className={css({ color: 'red', width: w, '@layer': { base: { color: 'red', width: v } } })} />",
+                "const A = styled.div({ color: 'red', width: w, '@layer': { base: { color: 'red', width: v } } })",
                 ".c0{color:red}.c1{width:var(--c)}@layer base{.c2{color:red}.c3{width:var(--f)}}",
             ),
         ] {
@@ -3570,7 +3570,7 @@ mod tests {
                     )),
                 ],
             );
-            let css = pipeline_css(theme, &format!("const size = 'small';\n{source}"));
+            let css = pipeline_css(theme, &format!("let size = 'small';\n{source}"));
             // Drop the theme's own `.typo-*` layer; only the conditional atoms matter here.
             let start = css.find("@layer t{").unwrap();
             let mut depth = 0;

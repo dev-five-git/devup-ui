@@ -91,8 +91,8 @@ export const button = style([base, interactive, { background: 'blue', color: 'wh
 export const danger = style([button, { background: 'red', color: 'white' }])
 export const ghost = style([base, { background: 'transparent', color: 'blue' }])";
 
-const CSS_TEMPLATE_INPUT: &str = r"import { css } from '@devup-ui/react'
-const cls = css`
+const CSS_TEMPLATE_INPUT: &str = r"import { styled } from '@devup-ui/react'
+const Cls = styled.div`
   color: red;
   background-color: blue;
   padding: 4px;
@@ -108,8 +108,8 @@ const cls = css`
 // `found_placeholders` scan, reverse-position decorate-sort, per-placeholder
 // `${expr}` rebuild) that the single-interpolation `CSS_TEMPLATE_INPUT` only
 // shallowly covers.
-const CSS_MULTI_TEMPLATE_INPUT: &str = r"import { css } from '@devup-ui/react'
-const cls = css`
+const CSS_MULTI_TEMPLATE_INPUT: &str = r"import { styled } from '@devup-ui/react'
+const Cls = styled.div`
   margin: ${topGap}px ${sideGap}px ${bottomGap}px ${sideGap}px;
   padding: ${padY}px ${padX}px;
   color: ${textColor};

@@ -1,0 +1,101 @@
+---
+source: libs/extractor/src/lib.rs
+expression: "ToBTreeSet::from(extract(\"test.tsx\",\nr\"import { css, globalCss, keyframes, styled } from '@devup-ui/react';\nconst C = 'red';\nconst O = 0.5;\nconst SEL = '.x';\nconst SNIPPET = 'display: flex;';\nconst mixin = css`display: grid;`;\nglobalCss`body { color: ${C}; padding: ${4}px; }`;\nglobalCss`a { color: ${(p) => p.theme.colors.link}; }`;\nexport const k = keyframes`from { opacity: ${O} } to { opacity: 1 }`;\nexport const c = css`${SNIPPET} color: ${C};`;\nexport const d = css`${mixin}; margin: 0;`;\nexport const A = styled.div`${mixin} color: red; ${(p) => p.active && mixin}`;\nexport const B = styled.div`${SEL} & { color: ${C}; }`;\",\nExtractOption::default(),).unwrap())"
+---
+ToBTreeSet {
+    styles: {
+        Static(
+            ExtractStaticStyle {
+                property: "color",
+                value: "red",
+                level: 0,
+                selector: None,
+                style_order: None,
+                layer: None,
+            },
+        ),
+        Static(
+            ExtractStaticStyle {
+                property: "color",
+                value: "red",
+                level: 0,
+                selector: Some(
+                    Selector(
+                        ".x &",
+                    ),
+                ),
+                style_order: None,
+                layer: None,
+            },
+        ),
+        Static(
+            ExtractStaticStyle {
+                property: "display",
+                value: "flex",
+                level: 0,
+                selector: None,
+                style_order: None,
+                layer: None,
+            },
+        ),
+        Static(
+            ExtractStaticStyle {
+                property: "display",
+                value: "grid",
+                level: 0,
+                selector: None,
+                style_order: None,
+                layer: None,
+            },
+        ),
+        Static(
+            ExtractStaticStyle {
+                property: "margin",
+                value: "0",
+                level: 0,
+                selector: None,
+                style_order: None,
+                layer: None,
+            },
+        ),
+        Css(
+            ExtractCss {
+                css: "a{color:var(--colors-link)}",
+                file: "test.tsx",
+            },
+        ),
+        Css(
+            ExtractCss {
+                css: "body{color:red;padding:4px}",
+                file: "test.tsx",
+            },
+        ),
+        Keyframes(
+            ExtractKeyframes {
+                keyframes: {
+                    "from": [
+                        ExtractStaticStyle {
+                            property: "opacity",
+                            value: ".5",
+                            level: 0,
+                            selector: None,
+                            style_order: None,
+                            layer: None,
+                        },
+                    ],
+                    "to": [
+                        ExtractStaticStyle {
+                            property: "opacity",
+                            value: "1",
+                            level: 0,
+                            selector: None,
+                            style_order: None,
+                            layer: None,
+                        },
+                    ],
+                },
+            },
+        ),
+    },
+    code: "import \"@devup-ui/react/devup-ui-0.css\";\nconst C = \"red\";\nconst O = .5;\nconst SEL = \".x\";\nconst SNIPPET = \"display: flex;\";\nconst mixin = \"a-a\";\n;\n;\nexport const k = \"a-b\";\nexport const c = \"a-c a-d\";\nexport const d = `a-e ${mixin}`;\nexport const A = ({ style, className, ...rest }) => <div {...rest} className={[`a-d ${mixin} ${((p) => p.active && mixin)(rest) || \"\"}`, className].filter(Boolean).join(\" \")} style={style} />;\nexport const B = ({ style, className, ...rest }) => <div {...rest} className={[\"a-f\", className].filter(Boolean).join(\" \")} style={style} />;\n",
+}

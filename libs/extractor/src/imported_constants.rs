@@ -16,6 +16,7 @@ use oxc_parser::Parser;
 use oxc_semantic::{Scoping, SemanticBuilder};
 use oxc_span::{SPAN, SourceType};
 use oxc_syntax::number::NumberBase;
+use oxc_syntax::operator::BinaryOperator;
 use oxc_syntax::symbol::SymbolId;
 use rustc_hash::{FxHashMap, FxHashSet};
 
@@ -33,41 +34,28 @@ enum Imported {
     Namespace,
 }
 
-/// Inline the primitive constants `program` imports and reads in styles,
-/// returning the files read
-pub(crate) fn inline_imported_constants<'a>(
+/// Inline the primitive constants `program` reads in styles, its own
+/// module-level `const`s and those it imports, returning the files read
+pub(crate) fn inline_constants<'a>(
     ast_builder: &AstBuilder<'a>,
     program: &mut Program<'a>,
     filename: &str,
     package: &str,
-    resolver: &ModuleResolver,
+    resolver: Option<&ModuleResolver>,
 ) -> BTreeSet<String> {
-    let mut imports: FxHashMap<&str, (&str, Imported)> = FxHashMap::default();
+    let is_style_package =
+        |source: &str| source.starts_with(package) || source == crate::STYLEX_PACKAGE;
     let mut style_roots = FxHashSet::default();
     for statement in &program.body {
-        let Statement::ImportDeclaration(import) = statement else {
-            continue;
-        };
-        let source = import.source.value.as_str();
-        for specifier in import.specifiers.iter().flatten() {
-            let local = specifier.local().name.as_str();
-            if source.starts_with(package) {
-                style_roots.insert(local);
-                continue;
+        if let Statement::ImportDeclaration(import) = statement
+            && is_style_package(&import.source.value)
+        {
+            for specifier in import.specifiers.iter().flatten() {
+                style_roots.insert(specifier.local().name.as_str());
             }
-            let imported = match specifier {
-                ImportDeclarationSpecifier::ImportSpecifier(specifier) => {
-                    Imported::Named(specifier.imported.name().to_string())
-                }
-                ImportDeclarationSpecifier::ImportDefaultSpecifier(_) => {
-                    Imported::Named("default".to_string())
-                }
-                ImportDeclarationSpecifier::ImportNamespaceSpecifier(_) => Imported::Namespace,
-            };
-            imports.insert(local, (source, imported));
         }
     }
-    if imports.is_empty() || style_roots.is_empty() {
+    if style_roots.is_empty() {
         return BTreeSet::new();
     }
     let mut read = StyleReads {
@@ -76,57 +64,78 @@ pub(crate) fn inline_imported_constants<'a>(
         depth: 0,
     };
     read.visit_program(program);
+    if read.names.is_empty() {
+        return BTreeSet::new();
+    }
     let mut modules = Modules {
         resolver,
         exports: FxHashMap::default(),
         loading: Vec::new(),
     };
-    let mut constants: FxHashMap<String, Constant> = FxHashMap::default();
-    for name in read.names {
-        let Some((source, imported)) = imports.get(name.as_str()) else {
-            continue;
-        };
-        let Some(exports) = modules.exports(source, filename) else {
-            continue;
-        };
-        let constant = match imported {
-            Imported::Named(export) => exports.get(export).cloned(),
-            Imported::Namespace => Some(Constant::Object(exports)),
-        };
-        if let Some(constant) = constant {
-            constants.insert(name, constant);
-        }
-    }
-    let dependencies = modules.exports.into_keys().collect();
-    if constants.is_empty() {
-        return dependencies;
-    }
     let scoping = SemanticBuilder::new()
         .build(program)
         .semantic
         .into_scoping();
     let mut symbols: FxHashMap<SymbolId, Constant> = FxHashMap::default();
-    for statement in &program.body {
-        if let Statement::ImportDeclaration(import) = statement {
-            for specifier in import.specifiers.iter().flatten() {
-                let local = specifier.local();
-                if let (Some(symbol), Some(constant)) =
-                    (local.symbol_id.get(), constants.get(local.name.as_str()))
+    {
+        let mut scope = ModuleScope::new(filename);
+        let mut bindings: FxHashMap<&str, Vec<SymbolId>> = FxHashMap::default();
+        for statement in &program.body {
+            let declaration = match statement {
+                Statement::ImportDeclaration(import) => {
+                    if !is_style_package(&import.source.value) {
+                        scope.import(import);
+                        for specifier in import.specifiers.iter().flatten() {
+                            let local = specifier.local();
+                            bindings
+                                .entry(local.name.as_str())
+                                .or_default()
+                                .extend(local.symbol_id.get());
+                        }
+                    }
+                    continue;
+                }
+                Statement::VariableDeclaration(declaration) => declaration,
+                Statement::ExportDeclaration(export) => {
+                    let oxc_ast::ast::Declaration::VariableDeclaration(declaration) =
+                        &export.declaration
+                    else {
+                        continue;
+                    };
+                    declaration
+                }
+                _ => continue,
+            };
+            scope.declare(declaration);
+            for declarator in &declaration.declarations {
+                if let oxc_ast::ast::BindingPattern::BindingIdentifier(identifier) = &declarator.id
                 {
-                    symbols.insert(symbol, constant.clone());
+                    bindings
+                        .entry(identifier.name.as_str())
+                        .or_default()
+                        .extend(identifier.symbol_id.get());
+                }
+            }
+        }
+        for name in &read.names {
+            if let Some(constant) = scope.lookup(&mut modules, name) {
+                for symbol in bindings.get(name.as_str()).into_iter().flatten() {
+                    symbols.insert(*symbol, constant.clone());
                 }
             }
         }
     }
-    Inline {
-        ast_builder,
-        scoping: &scoping,
-        symbols: &symbols,
+    let dependencies = modules.exports.into_keys().collect();
+    if !symbols.is_empty() {
+        Inline {
+            ast_builder,
+            scoping: &scoping,
+            symbols: &symbols,
+        }
+        .visit_program(program);
     }
-    .visit_program(program);
     dependencies
 }
-
 /// Names read inside the props of the package's components and the arguments
 /// of its functions
 struct StyleReads<'s> {
@@ -216,7 +225,7 @@ impl<'a> Visit<'a> for StyleReads<'_> {
 
 /// The constant exports of the modules read, by path
 struct Modules<'r> {
-    resolver: &'r ModuleResolver,
+    resolver: Option<&'r ModuleResolver>,
     exports: FxHashMap<String, Rc<FxHashMap<String, Constant>>>,
     loading: Vec<String>,
 }
@@ -227,7 +236,7 @@ impl Modules<'_> {
         specifier: &str,
         importer: &str,
     ) -> Option<Rc<FxHashMap<String, Constant>>> {
-        let module = (self.resolver)(specifier, importer)?;
+        let module = (self.resolver?)(specifier, importer)?;
         if let Some(exports) = self.exports.get(&module.path) {
             return Some(exports.clone());
         }
@@ -245,53 +254,35 @@ impl Modules<'_> {
         let allocator = Allocator::default();
         let source_type = SourceType::from_path(path).unwrap_or_else(|_| SourceType::ts());
         let program = Parser::new(&allocator, code, source_type).parse().program;
-        let mut scope = ModuleScope {
-            path,
-            locals: FxHashMap::default(),
-            imports: FxHashMap::default(),
-        };
+        let mut scope = ModuleScope::new(path);
         let mut exports = FxHashMap::default();
+        let mut exported: Vec<(String, String)> = Vec::new();
         let mut commonjs = CommonJs::new(&program);
         for statement in &program.body {
             match statement {
-                Statement::ImportDeclaration(import) => {
-                    for specifier in import.specifiers.iter().flatten() {
-                        let imported = match specifier {
-                            ImportDeclarationSpecifier::ImportSpecifier(specifier) => {
-                                Imported::Named(specifier.imported.name().to_string())
-                            }
-                            ImportDeclarationSpecifier::ImportDefaultSpecifier(_) => {
-                                Imported::Named("default".to_string())
-                            }
-                            ImportDeclarationSpecifier::ImportNamespaceSpecifier(_) => {
-                                Imported::Namespace
-                            }
-                        };
-                        scope.imports.insert(
-                            specifier.local().name.to_string(),
-                            (import.source.value.to_string(), imported),
-                        );
-                    }
-                }
+                Statement::ImportDeclaration(import) => scope.import(import),
                 Statement::VariableDeclaration(declaration) => {
                     scope.require(declaration);
-                    scope.declare(self, declaration, None);
+                    scope.declare(declaration);
                 }
                 Statement::ExpressionStatement(statement) => {
-                    commonjs.assign(&scope, self, &statement.expression);
+                    commonjs.assign(&mut scope, self, &statement.expression);
                 }
                 Statement::ExportDeclaration(export) => {
                     if let oxc_ast::ast::Declaration::VariableDeclaration(declaration) =
                         &export.declaration
                     {
-                        scope.declare(self, declaration, Some(&mut exports));
+                        for name in scope.declare(declaration) {
+                            exported.push((name.clone(), name));
+                        }
                     }
                 }
                 Statement::ExportNamedDeclaration(export) => {
                     for specifier in &export.specifiers {
-                        if let Some(constant) = scope.lookup(self, &specifier.local.name()) {
-                            exports.insert(specifier.exported.name().to_string(), constant);
-                        }
+                        exported.push((
+                            specifier.exported.name().to_string(),
+                            specifier.local.name().to_string(),
+                        ));
                     }
                 }
                 Statement::ExportFromDeclaration(export) => {
@@ -334,11 +325,15 @@ impl Modules<'_> {
                 _ => {}
             }
         }
+        for (exported, local) in exported {
+            if let Some(constant) = scope.lookup(self, &local) {
+                exports.insert(exported, constant);
+            }
+        }
         commonjs.finish(&mut exports);
         exports
     }
 }
-
 /// The exports of a `CommonJS` module. A property counts only when the module
 /// assigns it once, as anything assigned again may change after it is read.
 #[derive(Default)]
@@ -361,7 +356,7 @@ impl CommonJs {
 
     fn assign(
         &mut self,
-        scope: &ModuleScope<'_>,
+        scope: &mut ModuleScope<'_, '_>,
         modules: &mut Modules<'_>,
         expression: &Expression<'_>,
     ) {
@@ -482,14 +477,42 @@ fn is_define_es_module(call: &oxc_ast::ast::CallExpression<'_>) -> bool {
         && matches!(call.arguments.get(1), Some(Argument::StringLiteral(key)) if key.value == "__esModule")
 }
 
-/// The top-level constants and imports of a module being read
-struct ModuleScope<'p> {
+/// The top-level constants and imports of a module, each constant evaluated
+/// when first read
+struct ModuleScope<'p, 'a> {
     path: &'p str,
     locals: FxHashMap<String, Constant>,
+    declarations: FxHashMap<String, &'p Expression<'a>>,
     imports: FxHashMap<String, (String, Imported)>,
 }
 
-impl ModuleScope<'_> {
+impl<'p, 'a> ModuleScope<'p, 'a> {
+    fn new(path: &'p str) -> Self {
+        Self {
+            path,
+            locals: FxHashMap::default(),
+            declarations: FxHashMap::default(),
+            imports: FxHashMap::default(),
+        }
+    }
+
+    fn import(&mut self, import: &oxc_ast::ast::ImportDeclaration<'_>) {
+        for specifier in import.specifiers.iter().flatten() {
+            let imported = match specifier {
+                ImportDeclarationSpecifier::ImportSpecifier(specifier) => {
+                    Imported::Named(specifier.imported.name().to_string())
+                }
+                ImportDeclarationSpecifier::ImportDefaultSpecifier(_) => {
+                    Imported::Named("default".to_string())
+                }
+                ImportDeclarationSpecifier::ImportNamespaceSpecifier(_) => Imported::Namespace,
+            };
+            self.imports.insert(
+                specifier.local().name.to_string(),
+                (import.source.value.to_string(), imported),
+            );
+        }
+    }
     /// `const x = require('m')` and `const { a, b: c } = require('m')`
     fn require(&mut self, declaration: &oxc_ast::ast::VariableDeclaration<'_>) {
         for declarator in &declaration.declarations {
@@ -527,31 +550,33 @@ impl ModuleScope<'_> {
         }
     }
 
-    fn declare(
-        &mut self,
-        modules: &mut Modules<'_>,
-        declaration: &oxc_ast::ast::VariableDeclaration<'_>,
-        mut exports: Option<&mut FxHashMap<String, Constant>>,
-    ) {
+    /// Record the `const`s of `declaration`, returning the names it binds
+    fn declare(&mut self, declaration: &'p oxc_ast::ast::VariableDeclaration<'a>) -> Vec<String> {
+        let mut names = Vec::new();
         if declaration.kind != VariableDeclarationKind::Const {
-            return;
+            return names;
         }
         for declarator in &declaration.declarations {
             if let Some(name) = declarator.id.get_identifier_name()
                 && let Some(init) = &declarator.init
-                && let Some(constant) = self.evaluate(modules, init)
             {
-                if let Some(exports) = exports.as_deref_mut() {
-                    exports.insert(name.to_string(), constant.clone());
-                }
-                self.locals.insert(name.to_string(), constant);
+                self.declarations.insert(name.to_string(), init);
+                names.push(name.to_string());
             }
         }
+        names
     }
 
-    fn lookup(&self, modules: &mut Modules<'_>, name: &str) -> Option<Constant> {
+    fn lookup(&mut self, modules: &mut Modules<'_>, name: &str) -> Option<Constant> {
         if let Some(constant) = self.locals.get(name) {
             return Some(constant.clone());
+        }
+        // Taken out while it is evaluated, so a constant reading itself stops
+        if let Some(init) = self.declarations.remove(name)
+            && let Some(constant) = self.evaluate(modules, init)
+        {
+            self.locals.insert(name.to_string(), constant.clone());
+            return Some(constant);
         }
         let (source, imported) = self.imports.get(name)?;
         let exports = modules.exports(source, self.path)?;
@@ -561,7 +586,11 @@ impl ModuleScope<'_> {
         }
     }
 
-    fn evaluate(&self, modules: &mut Modules<'_>, expression: &Expression<'_>) -> Option<Constant> {
+    fn evaluate(
+        &mut self,
+        modules: &mut Modules<'_>,
+        expression: &Expression<'_>,
+    ) -> Option<Constant> {
         match expression {
             Expression::StringLiteral(literal) => Some(Constant::String(literal.value.to_string())),
             Expression::NumericLiteral(literal) => Some(Constant::Number(literal.value)),
@@ -573,9 +602,18 @@ impl ModuleScope<'_> {
                     _ => None,
                 }
             }
-            Expression::TemplateLiteral(template) => template
-                .single_quasi()
-                .map(|quasi| Constant::String(quasi.to_string())),
+            Expression::TemplateLiteral(template) => {
+                let mut values = Vec::with_capacity(template.expressions.len());
+                for expression in &template.expressions {
+                    values.push(self.evaluate(modules, expression)?);
+                }
+                fold_template(template, &values)
+            }
+            Expression::BinaryExpression(binary) => {
+                let left = self.evaluate(modules, &binary.left)?;
+                let right = self.evaluate(modules, &binary.right)?;
+                fold_binary(binary.operator, &left, &right)
+            }
             Expression::ObjectExpression(object) => {
                 let mut properties = FxHashMap::default();
                 for property in &object.properties {
@@ -604,6 +642,44 @@ impl ModuleScope<'_> {
     }
 }
 
+/// `value` as JavaScript turns it into a string
+fn js_string(value: &Constant) -> Option<String> {
+    match value {
+        Constant::String(text) => Some(text.clone()),
+        Constant::Number(number) => Some(crate::utils::js_number_string(*number)),
+        Constant::Object(_) => None,
+    }
+}
+
+fn fold_template(
+    template: &oxc_ast::ast::TemplateLiteral<'_>,
+    values: &[Constant],
+) -> Option<Constant> {
+    let mut text = String::new();
+    for (index, quasi) in template.quasis.iter().enumerate() {
+        text.push_str(quasi.value.cooked.as_deref()?);
+        if let Some(value) = values.get(index) {
+            text.push_str(&js_string(value)?);
+        }
+    }
+    Some(Constant::String(text))
+}
+
+fn fold_binary(operator: BinaryOperator, left: &Constant, right: &Constant) -> Option<Constant> {
+    let number = match (operator, left, right) {
+        (BinaryOperator::Addition, Constant::Number(a), Constant::Number(b)) => a + b,
+        (BinaryOperator::Subtraction, Constant::Number(a), Constant::Number(b)) => a - b,
+        (BinaryOperator::Multiplication, Constant::Number(a), Constant::Number(b)) => a * b,
+        (BinaryOperator::Division, Constant::Number(a), Constant::Number(b)) => a / b,
+        (BinaryOperator::Remainder, Constant::Number(a), Constant::Number(b)) => a % b,
+        (BinaryOperator::Addition, Constant::String(_), _)
+        | (BinaryOperator::Addition, _, Constant::String(_)) => {
+            return Some(Constant::String(js_string(left)? + &js_string(right)?));
+        }
+        _ => return None,
+    };
+    number.is_finite().then_some(Constant::Number(number))
+}
 /// Replaces reads of the imported constants that are primitives
 struct Inline<'s, 'a> {
     ast_builder: &'s AstBuilder<'a>,
@@ -624,14 +700,48 @@ impl<'a> Inline<'_, 'a> {
                 _ => None,
             },
             Expression::ComputedMemberExpression(member) => {
-                let key = crate::utils::get_string_by_literal_expression(&member.expression)?;
+                let key = js_string(&self.operand(&member.expression)?)?;
                 match self.constant(&member.object)? {
-                    Constant::Object(object) => object.get(key.as_ref()).cloned(),
+                    Constant::Object(object) => object.get(&key).cloned(),
                     _ => None,
                 }
             }
+            // Folded only when they read a constant, leaving other code as written
+            Expression::TemplateLiteral(template)
+                if template
+                    .expressions
+                    .iter()
+                    .any(|e| self.constant(e).is_some()) =>
+            {
+                let values: Option<Vec<Constant>> = template
+                    .expressions
+                    .iter()
+                    .map(|expression| self.operand(expression))
+                    .collect();
+                fold_template(template, &values?)
+            }
+            Expression::BinaryExpression(binary)
+                if self.constant(&binary.left).is_some()
+                    || self.constant(&binary.right).is_some() =>
+            {
+                fold_binary(
+                    binary.operator,
+                    &self.operand(&binary.left)?,
+                    &self.operand(&binary.right)?,
+                )
+            }
+            Expression::ParenthesizedExpression(inner) => self.constant(&inner.expression),
             _ => None,
         }
+    }
+
+    /// A constant read or a literal
+    fn operand(&self, expression: &Expression<'a>) -> Option<Constant> {
+        self.constant(expression).or_else(|| match expression {
+            Expression::StringLiteral(literal) => Some(Constant::String(literal.value.to_string())),
+            Expression::NumericLiteral(literal) => Some(Constant::Number(literal.value)),
+            _ => None,
+        })
     }
 
     fn literal(&self, constant: &Constant) -> Option<Expression<'a>> {

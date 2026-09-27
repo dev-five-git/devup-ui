@@ -1,0 +1,207 @@
+---
+source: libs/extractor/src/lib.rs
+expression: "ToBTreeSet::from(extract(\"test.tsx\",\nr\"import { Box, css, keyframes, globalCss } from '@devup-ui/react';\nconst SIZE = 4;\nconst UNIT = `${SIZE}px`;\nconst DOUBLE = SIZE * 2;\nconst HALF = SIZE / 2 - 1;\nconst LABEL = 'a' + SIZE;\nconst TINY = 0.0000001;\nconst HUGE = 1e21;\nconst ZERO = -0;\nconst PX = 'px';\nconst SELF = SELF;\nlet mutable = 1;\nexport const a = <Box p={DOUBLE} m={UNIT} w={SIZE + 1} h={HALF} content={LABEL} top={`${TINY}px`} left={`${HUGE}px`} right={ZERO + PX} bottom={mutable} zIndex={SELF} />;\nexport const b = css({ padding: `${SIZE * 2}px`, margin: SIZE - 1, width: SIZE * SIZE, height: (SIZE) });\nexport const k = keyframes({ from: { opacity: SIZE / 8 } });\nglobalCss({ body: { padding: UNIT } });\nexport const c = <Box p={SIZE / 0} m={PX - 1} w={`${PX}${other}`} h={SIZE % 3} />;\",\nExtractOption::default(),).unwrap())"
+---
+ToBTreeSet {
+    styles: {
+        Static(
+            ExtractStaticStyle {
+                property: "content",
+                value: "a4",
+                level: 0,
+                selector: None,
+                style_order: None,
+                layer: None,
+            },
+        ),
+        Static(
+            ExtractStaticStyle {
+                property: "height",
+                value: "16px",
+                level: 0,
+                selector: None,
+                style_order: None,
+                layer: None,
+            },
+        ),
+        Static(
+            ExtractStaticStyle {
+                property: "height",
+                value: "4px",
+                level: 0,
+                selector: None,
+                style_order: None,
+                layer: None,
+            },
+        ),
+        Static(
+            ExtractStaticStyle {
+                property: "left",
+                value: "1e+21px",
+                level: 0,
+                selector: None,
+                style_order: None,
+                layer: None,
+            },
+        ),
+        Static(
+            ExtractStaticStyle {
+                property: "margin",
+                value: "12px",
+                level: 0,
+                selector: None,
+                style_order: None,
+                layer: None,
+            },
+        ),
+        Static(
+            ExtractStaticStyle {
+                property: "margin",
+                value: "4px",
+                level: 0,
+                selector: None,
+                style_order: None,
+                layer: None,
+            },
+        ),
+        Static(
+            ExtractStaticStyle {
+                property: "padding",
+                value: "32px",
+                level: 0,
+                selector: None,
+                style_order: None,
+                layer: None,
+            },
+        ),
+        Static(
+            ExtractStaticStyle {
+                property: "padding",
+                value: "4px",
+                level: 0,
+                selector: Some(
+                    Global(
+                        "body",
+                        "test.tsx",
+                    ),
+                ),
+                style_order: Some(
+                    0,
+                ),
+                layer: None,
+            },
+        ),
+        Static(
+            ExtractStaticStyle {
+                property: "padding",
+                value: "8px",
+                level: 0,
+                selector: None,
+                style_order: None,
+                layer: None,
+            },
+        ),
+        Static(
+            ExtractStaticStyle {
+                property: "right",
+                value: "0",
+                level: 0,
+                selector: None,
+                style_order: None,
+                layer: None,
+            },
+        ),
+        Static(
+            ExtractStaticStyle {
+                property: "top",
+                value: "1e-7px",
+                level: 0,
+                selector: None,
+                style_order: None,
+                layer: None,
+            },
+        ),
+        Static(
+            ExtractStaticStyle {
+                property: "width",
+                value: "20px",
+                level: 0,
+                selector: None,
+                style_order: None,
+                layer: None,
+            },
+        ),
+        Static(
+            ExtractStaticStyle {
+                property: "width",
+                value: "64px",
+                level: 0,
+                selector: None,
+                style_order: None,
+                layer: None,
+            },
+        ),
+        Dynamic(
+            ExtractDynamicStyle {
+                property: "bottom",
+                level: 0,
+                identifier: "mutable",
+                selector: None,
+                style_order: None,
+            },
+        ),
+        Dynamic(
+            ExtractDynamicStyle {
+                property: "margin",
+                level: 0,
+                identifier: "`px`-1",
+                selector: None,
+                style_order: None,
+            },
+        ),
+        Dynamic(
+            ExtractDynamicStyle {
+                property: "padding",
+                level: 0,
+                identifier: "4/0",
+                selector: None,
+                style_order: None,
+            },
+        ),
+        Dynamic(
+            ExtractDynamicStyle {
+                property: "width",
+                level: 0,
+                identifier: "`${`px`}${other}`",
+                selector: None,
+                style_order: None,
+            },
+        ),
+        Dynamic(
+            ExtractDynamicStyle {
+                property: "z-index",
+                level: 0,
+                identifier: "SELF",
+                selector: None,
+                style_order: None,
+            },
+        ),
+        Keyframes(
+            ExtractKeyframes {
+                keyframes: {
+                    "from": [
+                        ExtractStaticStyle {
+                            property: "opacity",
+                            value: ".5",
+                            level: 0,
+                            selector: None,
+                            style_order: None,
+                            layer: None,
+                        },
+                    ],
+                },
+            },
+        ),
+    },
+    code: "import \"@devup-ui/react/devup-ui-0.css\";\nconst SIZE = 4;\nconst UNIT = \"4px\";\nconst DOUBLE = 8;\nconst HALF = 1;\nconst LABEL = \"a4\";\nconst TINY = 1e-7;\nconst HUGE = 1e21;\nconst ZERO = -0;\nconst PX = \"px\";\nconst SELF = SELF;\nlet mutable = 1;\nexport const a = <div className=\"a-a a-b a-c a-d a-e a-f a-g a-h a-i a-j\" style={{\n\t\"--a\": mutable,\n\t\"--b\": SELF\n}} />;\nexport const b = \"a-k a-l a-m a-n\";\nexport const k = \"a-o\";\n;\nexport const c = <div className=\"a-p a-q a-r a-d\" style={{\n\t\"--c\": 4/0,\n\t\"--d\": `px`-1,\n\t\"--e\": `${`px`}${other}`\n}} />;\n",
+}
