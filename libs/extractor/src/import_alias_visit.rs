@@ -81,23 +81,45 @@ impl LibraryNumbers<'_> {
                     if let ObjectPropertyKind::ObjectProperty(property) = property
                         && let Some(key) = get_str_by_property_key(&property.key)
                     {
-                        if matches!(property.value, Expression::ObjectExpression(_)) {
-                            if key != "vars" {
-                                self.pixelify(&property.value);
-                            }
-                        } else if let Some(number) = js_number_literal(&property.value)
-                            && number != 0.0
-                            && !keeps_bare_number(&key)
-                        {
-                            let span = property.value.span();
-                            self.replacements.push((
-                                span.start as usize,
-                                span.end as usize,
-                                format!("\"{number}px\""),
-                            ));
-                        }
+                        self.pixelify_value(&key, &property.value);
                     }
                 }
+            }
+            Expression::ConditionalExpression(conditional) => {
+                self.pixelify(&conditional.consequent);
+                self.pixelify(&conditional.alternate);
+            }
+            Expression::LogicalExpression(logical) => self.pixelify(&logical.right),
+            Expression::ParenthesizedExpression(inner) => self.pixelify(&inner.expression),
+            _ => {}
+        }
+    }
+
+    fn pixelify_value(&mut self, key: &str, value: &Expression) {
+        if let Some(number) = js_number_literal(value) {
+            if number != 0.0 && !keeps_bare_number(key) {
+                let span = value.span();
+                self.replacements.push((
+                    span.start as usize,
+                    span.end as usize,
+                    format!("\"{number}px\""),
+                ));
+            }
+            return;
+        }
+        match value {
+            Expression::ObjectExpression(_) => {
+                if key != "vars" {
+                    self.pixelify(value);
+                }
+            }
+            Expression::ConditionalExpression(conditional) => {
+                self.pixelify_value(key, &conditional.consequent);
+                self.pixelify_value(key, &conditional.alternate);
+            }
+            Expression::LogicalExpression(logical) => self.pixelify_value(key, &logical.right),
+            Expression::ParenthesizedExpression(inner) => {
+                self.pixelify_value(key, &inner.expression);
             }
             _ => {}
         }
@@ -697,6 +719,7 @@ foo.bar.baz({ top: 1 })
 make()()({ top: 1 })
 ;(() => 1)()
 styled.div({ top: 1, p: 2 })
+styled.div(cond && { top: 1 }, (flag ? { left: 2 } : { right: 3 }), { bottom: cond ? 4 : (5), left: (cond ? 7 : 8), vars: flag && { x: 6 } })
 export const A = () => <><div styles={{ top: 1 }} /><Global {...props} styles={{ top: 1 }} key={1} /></>";
         let mut aliases = combined_aliases();
         aliases.insert("@emotion/react".to_string(), ImportAlias::NamedToNamed);
@@ -708,6 +731,7 @@ foo.bar.baz({ top: 1 })
 make()()({ top: 1 })
 ;(() => 1)()
 styled.div({ top: "1px", p: 2 })
+styled.div(cond && { top: "1px" }, (flag ? { left: "2px" } : { right: "3px" }), { bottom: cond ? "4px" : "5px", left: (cond ? "7px" : "8px"), vars: flag && { x: 6 } })
 export const A = () => <><div styles={{ top: 1 }} /><Global {...props} styles={{ top: "1px" }} key={1} /></>"#
         );
     }
