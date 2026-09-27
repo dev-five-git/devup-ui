@@ -1694,6 +1694,14 @@ export const notObject = ["theme-0-9", {}]"#
         assert_eq!(generate("const x = 1"), "");
         reset_file_map();
         assert!(execute_vanilla_extract("throw new Error('x')", PACKAGE, "test.css.ts").is_err());
+        assert!(
+            execute_vanilla_extract(
+                "import { createVar } from '@devup-ui/react'\ncreateVar({ syntax: Symbol() })",
+                PACKAGE,
+                "test.css.ts"
+            )
+            .is_err()
+        );
     }
 
     #[test]

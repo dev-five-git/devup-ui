@@ -38,6 +38,24 @@ export const text = style({ fontFamily: body, content: icons })",
 }
 
 #[test]
+fn an_unreadable_var_declaration_leaves_the_stylesheet_alone() {
+    let code = "import { createVar } from '@devup-ui/react'\nexport const v = createVar({ syntax: Symbol() })";
+    let output = extract(
+        "broken.css.ts",
+        code,
+        ExtractOption {
+            package: "@devup-ui/react".to_string(),
+            css_dir: "@devup-ui/react".to_string(),
+            single_css: true,
+            import_main_css: false,
+            import_aliases: HashMap::new(),
+        },
+    )
+    .unwrap();
+    assert!(output.styles.is_empty());
+}
+
+#[test]
 fn vars_themes_and_layers_extract_through_the_library() {
     let output = extract_stylesheet(
         r"const plain = createVar()
