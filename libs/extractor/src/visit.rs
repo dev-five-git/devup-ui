@@ -15,7 +15,7 @@ use crate::extractor::{
     extract_global_style_from_expression::extract_global_style_from_expression,
     extract_style_from_expression::{LiteralHandling, extract_style_from_expression},
     extract_style_from_jsx::extract_style_from_jsx,
-    extract_style_from_styled::extract_style_from_styled,
+    extract_style_from_styled::{extract_style_from_styled, take_styled_modifiers},
 };
 use crate::gen_class_name::{gen_class_names, merge_expression_for_class_name};
 use crate::prop_modify_utils::{convert_class_name, modify_prop_object, modify_props};
@@ -83,7 +83,7 @@ pub struct DevupVisitor<'a> {
     split_filename: Option<String>,
     pub css_files: Vec<String>,
     pub styles: FxHashSet<ExtractStyleValue>,
-    styled_import: Option<String>,
+    styled_imports: FxHashSet<String>,
     /// Tracked `StyleX` default/namespace import name (e.g., `stylex` from `import stylex from '...'`)
     stylex_import: Option<String>,
     /// Tracked `StyleX` named imports (e.g., `create` from `import { create } from '...'`)
@@ -144,7 +144,7 @@ impl<'a> DevupVisitor<'a> {
             jsx_object: None,
             util_imports: FxHashMap::default(),
             split_filename,
-            styled_import: None,
+            styled_imports: FxHashSet::default(),
             stylex_import: None,
             stylex_named_imports: FxHashMap::default(),
             global_style_components: FxHashSet::default(),
@@ -682,37 +682,46 @@ impl<'a> VisitMut<'a> for DevupVisitor<'a> {
             Expression::TaggedTemplateExpression(tag) => Some(&mut tag.tag),
             _ => None,
         };
-        if let Some(styled_name) = &self.styled_import
-            && let Some(factory) = factory
+        let styled_imports = &self.styled_imports;
+        let attrs = factory.map_or_else(Vec::new, |factory| {
+            take_styled_modifiers(&self.ast, factory, |name| styled_imports.contains(name))
+        });
+        let factory = match it {
+            Expression::CallExpression(call) => Some(&mut call.callee),
+            Expression::TaggedTemplateExpression(tag) => Some(&mut tag.tag),
+            _ => None,
+        };
+        if let Some(factory) = factory
             && let Expression::CallExpression(call) = unwrap_syntax_only_mut(factory)
             && call.arguments.len() == 2
             && call.arguments[1].as_expression().is_some_and(|options| {
                 matches!(unwrap_syntax_only(options), Expression::ObjectExpression(_))
             })
-            && matches!(&call.callee, Expression::Identifier(ident) if ident.name == styled_name.as_str())
+            && matches!(&call.callee, Expression::Identifier(ident) if self.styled_imports.contains(ident.name.as_str()))
         {
             call.arguments.truncate(1);
         }
         walk_expression(self, it);
 
         // Handle styled function calls
-        if let Some(styled_name) = &self.styled_import {
+        if !self.styled_imports.is_empty() {
             let (tag_or_call, argument_count) = match it {
                 Expression::TaggedTemplateExpression(tag) => (Some(&tag.tag), 0),
                 Expression::CallExpression(call) => (Some(&call.callee), call.arguments.len()),
                 _ => (None, 0),
             };
+            let is_styled_name = |name: &str| self.styled_imports.contains(name);
 
             let is_styled = if let Some(tag_or_call) = tag_or_call.map(unwrap_syntax_only) {
                 if let Expression::StaticMemberExpression(member) = tag_or_call {
                     if let Expression::Identifier(ident) = &member.object {
-                        ident.name.as_str() == styled_name.as_str()
+                        is_styled_name(ident.name.as_str())
                     } else {
                         false
                     }
                 } else if let Expression::CallExpression(call) = tag_or_call {
                     if let Expression::Identifier(ident) = &call.callee {
-                        ident.name.as_str() == styled_name.as_str()
+                        is_styled_name(ident.name.as_str())
                     } else {
                         false
                     }
@@ -720,7 +729,7 @@ impl<'a> VisitMut<'a> for DevupVisitor<'a> {
                     // styled("div", { ... }) puts the tag in the arguments, so the callee is
                     // the bare identifier. One argument is the curried creator `styled("div")`,
                     // which only becomes a component once its result is called.
-                    ident.name.as_str() == styled_name.as_str() && argument_count == 2
+                    is_styled_name(ident.name.as_str()) && argument_count == 2
                 } else {
                     false
                 }
@@ -734,6 +743,7 @@ impl<'a> VisitMut<'a> for DevupVisitor<'a> {
                     it,
                     self.split_filename.as_deref(),
                     &self.imports,
+                    &attrs,
                 );
                 self.styles.extend(
                     result
@@ -1650,7 +1660,7 @@ impl<'a> VisitMut<'a> for DevupVisitor<'a> {
                                 .insert(import.local.to_string(), Rc::new(kind));
                             specifiers.remove(i);
                         } else if imported_str == "styled" {
-                            self.styled_import = Some(import.local.to_string());
+                            self.styled_imports.insert(import.local.to_string());
                             specifiers.remove(i);
                         } else if imported_str == "Global" {
                             self.global_style_components
