@@ -753,7 +753,8 @@ fn font_face(collector: &StyleCollector, args: &[JsValue], context: &mut Context
     let family = collector
         .borrow_mut()
         .identifier(js_str(args.get_or_undefined(1)), "font");
-    declare_font_faces(collector, &family, args.get_or_undefined(0), context);
+    let member = format!("\"fontFamily\":{}", json_string(&family));
+    declare_font_faces(collector, &member, args.get_or_undefined(0), context);
     js_string!(family).into()
 }
 
@@ -763,25 +764,23 @@ fn global_font_face(
     context: &mut Context,
 ) -> JsResult<JsValue> {
     let family = to_text(args.get_or_undefined(0), context)?;
-    declare_font_faces(collector, &family, args.get_or_undefined(1), context);
+    let member = format!("\"fontFamily\":{}", json_string(&family));
+    declare_font_faces(collector, &member, args.get_or_undefined(1), context);
     Ok(JsValue::undefined())
 }
 
-// `test_font_faces` pins the output; tarpaulin's Linux report maps this loop's
-// exit onto a line it never counts, whichever way the loop is written
-#[cfg(not(tarpaulin_include))]
+/// Declare `rule`, or each rule of a list, with the `fontFamily` member `family`
 fn declare_font_faces(
     collector: &StyleCollector,
     family: &str,
-    rules: &JsValue,
+    rule: &JsValue,
     context: &mut Context,
 ) {
-    let family = format!("\"fontFamily\":{}", json_string(family));
-    let rules = match array_items(rules, context).ok().flatten() {
-        Some(items) => items,
-        None => Vec::from([rules.clone()]),
-    };
-    for rule in &rules {
+    if let Some(rules) = array_items(rule, context).ok().flatten() {
+        for rule in &rules {
+            declare_font_faces(collector, family, rule, context);
+        }
+    } else {
         let json = js_value_to_json(rule, context);
         let inner = inner_json(&json);
         let face = if inner.is_empty() {
