@@ -102,6 +102,34 @@ describe('DevupUIRsbuildPlugin', () => {
     expect(DevupUI).toBeInstanceOf(Function)
   })
 
+  it('resolves imports to extraction names and depends on the modules read', async () => {
+    const setModuleResolverSpy = spyOn(
+      wasm,
+      'setModuleResolver',
+    ).mockReturnValue(undefined)
+    const plugin = DevupUI()
+    const transform = mock()
+    await plugin.setup(createSetupContext({ transform }))
+    const resolveModule = setModuleResolverSpy.mock.calls.at(-1)?.[0] as (
+      specifier: string,
+      importer: string,
+    ) => { path: string } | undefined
+    expect(resolveModule('./plugin.test', import.meta.path)?.path).toBe(
+      import.meta.path,
+    )
+    codeExtractSpy.mockReturnValue(
+      createCodeExtractResult({ dependencies: ['/src/tokens.ts'] }),
+    )
+    const addDependency = mock()
+    await transform.mock.calls[1][1]({
+      code: "import { Box } from '@devup-ui/react'",
+      resourcePath: 'src/App.tsx',
+      addDependency,
+    })
+    expect(addDependency).toHaveBeenCalledWith('/src/tokens.ts')
+    setModuleResolverSpy.mockRestore()
+  })
+
   it('should return a plugin object with correct name', async () => {
     const plugin = DevupUI()
     expect(plugin).toBeDefined()
