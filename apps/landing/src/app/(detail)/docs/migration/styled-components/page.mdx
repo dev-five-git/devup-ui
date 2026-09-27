@@ -28,7 +28,9 @@ const F = styled('div', { bg: 'red' })
 
 Object styles follow the libraries: several style arguments, or an array of them, merge into one rule set where a later declaration replaces an earlier one and nested rules merge; Emotion's options argument (`styled('div', { shouldForwardProp })(...)`) is accepted, and every prop is forwarded. Numbers mean pixels as they do in Emotion and styled-components — `padding: 8` is `8px`, unitless properties such as `lineHeight` stay as written — while Devup UI shorthands such as `p` keep the spacing scale.
 
-A style argument can be conditional — `cond && { ... }` or `cond ? { ... } : { ... }`, in `styled` as in `css`. Each property it sets becomes a per-property ternary over what came before (`color: cond ? 'blue' : 'red'`), so the result does not depend on the order atomic classes land in the stylesheet; a conditional class joins as `cond ? cls : ''`.
+A style argument can be conditional — `cond && { ... }`, `cond ? { ... } : { ... }`, `value || { ... }` or `value ?? { ... }`, in `styled` as in `css`. Each property it sets becomes a per-property ternary over what came before (`color: cond ? 'blue' : 'red'`), so the result does not depend on the order atomic classes land in the stylesheet; a conditional class joins as `cond ? cls : ''`, and the left side of `||` / `??` joins only when it is a string, as the libraries skip other values. Classes passed beside rule objects compose in `styled` as in `css`.
+
+A style argument that cannot be known at build time — a function call, a spread, a computed key — is a build error naming it, rather than a silently missing style.
 
 `.attrs()` and `.withConfig()` chain onto any factory. Attrs are merged over the props in order, as styled-components does — an object is spread, a function is called with the props; `.withConfig()` only tunes runtime behavior, so it is dropped:
 

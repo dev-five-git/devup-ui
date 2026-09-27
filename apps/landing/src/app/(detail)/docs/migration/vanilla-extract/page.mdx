@@ -22,7 +22,7 @@ export const box = style({ background: vars.colors.bg })
 
 Numbers keep vanilla-extract's meaning, here and in ordinary modules: `padding: 8` is `8px`, and unitless properties such as `lineHeight` or `zIndex` stay as written.
 
-A stylesheet can import other stylesheets and ordinary modules, resolved like the bundler resolves them (relative paths and `tsconfig` `paths`). An imported stylesheet is extracted the way the bundler extracts it, so the class names and custom properties it exports are the ones its own CSS uses, and the importer keeps importing it so that CSS is loaded:
+A stylesheet can import other stylesheets and ordinary modules — ES modules or CommonJS — resolved like the bundler resolves them (relative paths, `tsconfig` `paths` and packages). An imported stylesheet is extracted the way the bundler extracts it, so the class names and custom properties it exports are the ones its own CSS uses, and the importer keeps importing it so that CSS is loaded:
 
 ```ts
 // button.css.ts
@@ -34,7 +34,7 @@ import { PRIMARY } from './tokens'
 export const button = style([base, { color: PRIMARY, margin: vars.space }])
 ```
 
-A change to an imported file rebuilds the stylesheets importing it. Packages are not loaded, and an import cycle between stylesheets makes the stylesheet fall back to plain extraction.
+A change to an imported file rebuilds the stylesheets importing it. Import cycles behave as in ES modules: they work as long as neither side reads the other before it has been evaluated, and reading too early is a build error naming the binding and the module.
 
 ## Ordinary modules
 

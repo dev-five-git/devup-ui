@@ -258,12 +258,12 @@ globalCss({ _motionReduce: { "*, *::before, *::after": { transition: "none" } } 
 // Conditional -> preserved
 <Box bg={isActive ? "blue" : "gray"} />  // className={isActive ? "a" : "b"}
 
-// Imported const -> static (resolved like the bundler: relative paths, tsconfig paths)
+// Imported const -> static (resolved like the bundler: relative paths, tsconfig paths, packages; ESM or CommonJS)
 import { PRIMARY } from "./tokens"  // export const PRIMARY = "red"
 <Box bg={PRIMARY} />  // className="a"; a `let`, call or package import stays a variable
 ```
 
-A `.css.ts` file may import other stylesheets and modules; an imported stylesheet exports the same names its own CSS uses. styled-components `.attrs()` (objects and functions) and `.withConfig()` compile, and `css(base, cond && { ... })` / `styled.div(base, cond ? a : b)` merge per property.
+A `.css.ts` file may import other stylesheets and modules (import cycles behave as in ES modules); an imported stylesheet exports the same names its own CSS uses. styled-components `.attrs()` (objects and functions) and `.withConfig()` compile, and `css(base, cond && { ... })` / `styled.div(base, cond ? a : b)` / `value || { ... }` / `value ?? { ... }` merge per property. A style argument that cannot be known at build time is a build error.
 
 ### Responsive + Pseudo Combined
 
