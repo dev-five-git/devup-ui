@@ -18093,6 +18093,9 @@ export class Scale {}",
             "/src/tokens.ts",
             r"import { base } from './base';
 import * as spaced from './base';
+import baseDefault from './base';
+export const FROM_DEFAULT = baseDefault;
+console.log(FROM_DEFAULT);
 export const PRIMARY = 'red';
 export const SIZE = 4;
 export const NEG = -2;
@@ -18158,7 +18161,9 @@ export const e = (PRIMARY) => <Box color={PRIMARY} />;
 export const f = { PRIMARY, unused, SIZE: tokens.SIZE };
 export const g = <div color={PRIMARY} />;
 export const h = <Devup.Inner.Box color={SIZE} />;
-export const i = Devup['css']({ color: SIZE });",
+export const i = Devup['css']({ color: SIZE });
+export const j = css({ zIndex: PRIMARY.length, order: PRIMARY['length'] });
+export const k = styled('div')({ color: SIZE });",
             ExtractOption {
                 package: "@devup-ui/react".to_string(),
                 css_dir: "@devup-ui/react".to_string(),
@@ -18181,6 +18186,15 @@ export const i = Devup['css']({ color: SIZE });",
             ]
         );
         assert_debug_snapshot!(ToBTreeSet::from(output));
+        let without_imports = extract_with_modules(
+            "/src/Plain.tsx",
+            "import { Box } from '@devup-ui/react';\nexport const a = <Box color='red' />;",
+            ExtractOption::default(),
+            false,
+            &memory_resolver(CONSTANT_MODULES),
+        )
+        .unwrap();
+        assert!(without_imports.dependencies.is_empty());
     }
 
     #[test]
