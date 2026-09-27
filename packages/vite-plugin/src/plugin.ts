@@ -6,6 +6,7 @@ import {
   buildCanonicalMap,
   computeFileReach,
   createCompatTypes,
+  createModuleResolver,
   createNodeModulesExcludeRegex,
   createThemeInterfaceArgs,
   type CustomShorthands,
@@ -29,6 +30,7 @@ import {
   registerTheme,
   setAtomHoist,
   setDebug,
+  setModuleResolver,
   setPrefix,
 } from '@devup-ui/wasm'
 import type {
@@ -294,6 +296,13 @@ export function DevupUI({
     async configResolved(config) {
       isServe = config?.command === 'serve'
       const projectRoot = config?.root ?? process.cwd()
+      // Vite ids are POSIX absolute paths
+      setModuleResolver(
+        createModuleResolver({
+          cwd: projectRoot,
+          toId: (path) => path.replaceAll('\\', '/'),
+        }),
+      )
       const sourceDirs = resolveSourceDirs(projectRoot)
       try {
         seedFileMap(sourceDirs)
@@ -531,6 +540,7 @@ export function DevupUI({
         map,
         cssFile,
         updatedBaseStyle,
+        dependencies = [],
         // import main css in code
       } = codeExtract(
         fileName,
@@ -542,6 +552,7 @@ export function DevupUI({
         false,
         importAliases,
       )
+      for (const dependency of dependencies) this.addWatchFile(dependency)
       const promises: Promise<void>[] = []
 
       if (updatedBaseStyle) {
