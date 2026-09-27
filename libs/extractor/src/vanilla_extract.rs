@@ -753,8 +753,8 @@ fn font_face(collector: &StyleCollector, args: &[JsValue], context: &mut Context
     let family = collector
         .borrow_mut()
         .identifier(js_str(args.get_or_undefined(1)), "font");
-    let member = format!("\"fontFamily\":{}", json_string(&family));
-    declare_font_faces(collector, &member, args.get_or_undefined(0), context);
+    let faces = font_face_rules(&family, args.get_or_undefined(0), context);
+    collector.borrow_mut().styles.font_faces.extend(faces);
     js_string!(family).into()
 }
 
@@ -764,32 +764,28 @@ fn global_font_face(
     context: &mut Context,
 ) -> JsResult<JsValue> {
     let family = to_text(args.get_or_undefined(0), context)?;
-    let member = format!("\"fontFamily\":{}", json_string(&family));
-    declare_font_faces(collector, &member, args.get_or_undefined(1), context);
+    let faces = font_face_rules(&family, args.get_or_undefined(1), context);
+    collector.borrow_mut().styles.font_faces.extend(faces);
     Ok(JsValue::undefined())
 }
 
-/// Declare `rule`, or each rule of a list, with the `fontFamily` member `family`
-fn declare_font_faces(
-    collector: &StyleCollector,
-    family: &str,
-    rule: &JsValue,
-    context: &mut Context,
-) {
-    if let Some(rules) = array_items(rule, context).ok().flatten() {
-        for rule in &rules {
-            declare_font_faces(collector, family, rule, context);
-        }
-    } else {
-        let json = js_value_to_json(rule, context);
-        let inner = inner_json(&json);
-        let face = if inner.is_empty() {
-            format!("{{{family}}}")
-        } else {
-            format!("{{{inner},{family}}}")
-        };
-        collector.borrow_mut().styles.font_faces.push(face);
-    }
+/// `@font-face` rule objects for `rule`, or each rule of a list, naming `family`
+fn font_face_rules(family: &str, rule: &JsValue, context: &mut Context) -> Vec<String> {
+    let rules = array_items(rule, context)
+        .ok()
+        .flatten()
+        .unwrap_or_else(|| Vec::from([rule.clone()]));
+    let family = json_string(family);
+    rules
+        .iter()
+        .map(|rule| {
+            let json = js_value_to_json(rule, context);
+            match inner_json(&json) {
+                "" => format!("{{\"fontFamily\":{family}}}"),
+                inner => format!("{{{inner},\"fontFamily\":{family}}}"),
+            }
+        })
+        .collect()
 }
 
 /// `createVar(debugId?)` / `createVar(declaration, debugId?)`: a `var()` of a
