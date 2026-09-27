@@ -606,6 +606,7 @@ export function startCoordinator(options: CoordinatorOptions): {
             map: result.map,
             cssFile: result.cssFile,
             updatedBaseStyle: result.updatedBaseStyle,
+            dependencies: result.dependencies,
           }),
         )
         reportProfile('coordinator.extract', {
