@@ -13,7 +13,7 @@ use css::{
     style_selector::StyleSelector,
 };
 use oxc_allocator::Allocator;
-use oxc_span::SPAN;
+use oxc_span::{GetSpan, SPAN};
 
 use crate::utils::expression_to_code;
 use oxc_ast::ast::BindingPattern;
@@ -175,8 +175,12 @@ fn interpolation_place(before: &str, after: &[TemplateElement<'_>]) -> Place {
 }
 
 /// The CSS text of a template whose interpolations must all be known at build
-/// time, as `api` has no element to set a runtime value on
-pub(crate) fn template_css_text(css: &TemplateLiteral<'_>, api: &str) -> Result<String, String> {
+/// time, as `api` has no element to set a runtime value on; the error is at
+/// the offset of the first that is not
+pub(crate) fn template_css_text(
+    css: &TemplateLiteral<'_>,
+    api: &str,
+) -> Result<String, (u32, String)> {
     let mut text = String::new();
     for (index, quasi) in css.quasis.iter().enumerate() {
         text.push_str(&quasi.value.raw);
@@ -184,7 +188,12 @@ pub(crate) fn template_css_text(css: &TemplateLiteral<'_>, api: &str) -> Result<
             let value = get_string_by_literal_expression(expression)
                 .map(Cow::into_owned)
                 .or_else(|| theme_var_reference(expression))
-                .ok_or_else(|| runtime_value_error(api, &readable_code(expression)))?;
+                .ok_or_else(|| {
+                    (
+                        expression.span().start,
+                        runtime_value_error(api, &readable_code(expression)),
+                    )
+                })?;
             text.push_str(&value);
         }
     }

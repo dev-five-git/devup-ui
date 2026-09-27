@@ -2,6 +2,7 @@
 //! module declares with `const` becomes a static class instead of a CSS
 //! variable set at runtime.
 
+use std::cell::Cell;
 use std::collections::BTreeSet;
 use std::rc::Rc;
 
@@ -20,13 +21,27 @@ use oxc_syntax::operator::BinaryOperator;
 use oxc_syntax::symbol::SymbolId;
 use rustc_hash::{FxHashMap, FxHashSet};
 
-use crate::{ModuleResolver, utils::get_str_by_property_key};
+use crate::stylex::StylexFunction;
+use crate::{ExtractOption, ModuleResolver, utils::get_str_by_property_key};
 
 #[derive(Clone, Debug)]
 enum Constant {
     String(String),
     Number(f64),
     Object(Rc<FxHashMap<String, Constant>>),
+    /// `StyleX` custom properties by key, which read as their `var()`
+    Vars(Rc<FxHashMap<String, String>>),
+    /// The class a `StyleX` theme applies
+    Theme(String),
+}
+
+/// What inlining found: the files read, and the `StyleX` values imported from
+/// other modules, by the name the program binds them to
+#[derive(Default)]
+pub(crate) struct Inlined {
+    pub dependencies: BTreeSet<String>,
+    pub stylex_vars: FxHashMap<String, FxHashMap<String, String>>,
+    pub stylex_themes: FxHashMap<String, String>,
 }
 
 enum Imported {
@@ -40,11 +55,11 @@ pub(crate) fn inline_constants<'a>(
     ast_builder: &AstBuilder<'a>,
     program: &mut Program<'a>,
     filename: &str,
-    package: &str,
+    option: &ExtractOption,
     resolver: Option<&ModuleResolver>,
-) -> BTreeSet<String> {
+) -> Inlined {
     let is_style_package =
-        |source: &str| source.starts_with(package) || source == crate::STYLEX_PACKAGE;
+        |source: &str| source.starts_with(&option.package) || source == crate::STYLEX_PACKAGE;
     let mut style_roots = FxHashSet::default();
     for statement in &program.body {
         if let Statement::ImportDeclaration(import) = statement
@@ -56,7 +71,7 @@ pub(crate) fn inline_constants<'a>(
         }
     }
     if style_roots.is_empty() {
-        return BTreeSet::new();
+        return Inlined::default();
     }
     let mut read = StyleReads {
         style_roots: &style_roots,
@@ -65,21 +80,19 @@ pub(crate) fn inline_constants<'a>(
     };
     read.visit_program(program);
     if read.names.is_empty() {
-        return BTreeSet::new();
+        return Inlined::default();
     }
     let mut modules = Modules {
         resolver,
+        option,
         exports: FxHashMap::default(),
         loading: Vec::new(),
     };
-    let scoping = SemanticBuilder::new()
-        .build(program)
-        .semantic
-        .into_scoping();
     let mut symbols: FxHashMap<SymbolId, Constant> = FxHashMap::default();
-    {
+    let mut inlined = Inlined::default();
+    let scoping = {
         let mut scope = ModuleScope::new(filename);
-        let mut bindings: FxHashMap<&str, Vec<SymbolId>> = FxHashMap::default();
+        let mut bindings: FxHashMap<&str, Vec<&Cell<Option<SymbolId>>>> = FxHashMap::default();
         for statement in &program.body {
             let declaration = match statement {
                 Statement::ImportDeclaration(import) => {
@@ -90,7 +103,7 @@ pub(crate) fn inline_constants<'a>(
                             bindings
                                 .entry(local.name.as_str())
                                 .or_default()
-                                .extend(local.symbol_id.get());
+                                .push(&local.symbol_id);
                         }
                     }
                     continue;
@@ -113,19 +126,40 @@ pub(crate) fn inline_constants<'a>(
                     bindings
                         .entry(identifier.name.as_str())
                         .or_default()
-                        .extend(identifier.symbol_id.get());
+                        .push(&identifier.symbol_id);
                 }
             }
         }
+        // Scoping is only worth building when a style reads a name that may
+        // hold a constant
+        if !read.names.iter().any(|name| scope.binds(name)) {
+            return Inlined::default();
+        }
+        let scoping = SemanticBuilder::new()
+            .build(program)
+            .semantic
+            .into_scoping();
         for name in &read.names {
             if let Some(constant) = scope.lookup(&mut modules, name) {
+                match &constant {
+                    Constant::Vars(vars) => {
+                        inlined
+                            .stylex_vars
+                            .insert(name.clone(), vars.as_ref().clone());
+                    }
+                    Constant::Theme(class) => {
+                        inlined.stylex_themes.insert(name.clone(), class.clone());
+                    }
+                    _ => {}
+                }
                 for symbol in bindings.get(name.as_str()).into_iter().flatten() {
-                    symbols.insert(*symbol, constant.clone());
+                    symbols.extend(symbol.get().map(|symbol| (symbol, constant.clone())));
                 }
             }
         }
-    }
-    let dependencies = modules.exports.into_keys().collect();
+        scoping
+    };
+    inlined.dependencies = modules.exports.into_keys().collect();
     if !symbols.is_empty() {
         Inline {
             ast_builder,
@@ -134,7 +168,7 @@ pub(crate) fn inline_constants<'a>(
         }
         .visit_program(program);
     }
-    dependencies
+    inlined
 }
 /// Names read inside the props of the package's components and the arguments
 /// of its functions
@@ -226,6 +260,7 @@ impl<'a> Visit<'a> for StyleReads<'_> {
 /// The constant exports of the modules read, by path
 struct Modules<'r> {
     resolver: Option<&'r ModuleResolver>,
+    option: &'r ExtractOption,
     exports: FxHashMap<String, Rc<FxHashMap<String, Constant>>>,
     loading: Vec<String>,
 }
@@ -496,6 +531,10 @@ impl<'p, 'a> ModuleScope<'p, 'a> {
         }
     }
 
+    fn binds(&self, name: &str) -> bool {
+        self.declarations.contains_key(name) || self.imports.contains_key(name)
+    }
+
     fn import(&mut self, import: &oxc_ast::ast::ImportDeclaration<'_>) {
         for specifier in import.specifiers.iter().flatten() {
             let imported = match specifier {
@@ -586,6 +625,100 @@ impl<'p, 'a> ModuleScope<'p, 'a> {
         }
     }
 
+    fn stylex_function(&self, callee: &Expression<'_>) -> Option<StylexFunction> {
+        let (name, member) = match callee {
+            Expression::Identifier(identifier) => (identifier.name.as_str(), None),
+            Expression::StaticMemberExpression(member) => match &member.object {
+                Expression::Identifier(object) => {
+                    (object.name.as_str(), Some(member.property.name.as_str()))
+                }
+                _ => return None,
+            },
+            _ => return None,
+        };
+        let export = match (self.imports.get(name)?, member) {
+            ((source, _), _) if source != crate::STYLEX_PACKAGE => return None,
+            ((_, Imported::Named(export)), None) => export.as_str(),
+            ((_, Imported::Namespace), Some(export)) => export,
+            ((_, Imported::Named(export)), Some(member)) if export == "default" => member,
+            _ => return None,
+        };
+        StylexFunction::from_export_name(export)
+    }
+
+    /// A value `StyleX` gives when this module's own extraction reads it, with
+    /// the names that extraction generates
+    fn evaluate_stylex(
+        &mut self,
+        modules: &mut Modules<'_>,
+        call: &oxc_ast::ast::CallExpression<'_>,
+    ) -> Option<Constant> {
+        let function = self.stylex_function(&call.callee)?;
+        let split_filename = crate::css_bucket(self.path, modules.option);
+        match (function, call.arguments.as_slice()) {
+            (
+                function @ (StylexFunction::DefineVars | StylexFunction::CreateThemeContract),
+                [Argument::ObjectExpression(object)],
+            ) => {
+                let mut vars = FxHashMap::default();
+                for property in &object.properties {
+                    if let ObjectPropertyKind::ObjectProperty(property) = property
+                        && let Some(key) = crate::utils::get_string_by_property_key(&property.key)
+                        && (function == StylexFunction::CreateThemeContract
+                            || self.literal_text(modules, &property.value).is_some())
+                    {
+                        let variable = crate::stylex::define_vars_variable(
+                            self.path,
+                            &key,
+                            split_filename.as_deref(),
+                        );
+                        vars.insert(key, variable);
+                    }
+                }
+                Some(Constant::Vars(Rc::new(vars)))
+            }
+            (StylexFunction::DefineConsts, [Argument::ObjectExpression(object)]) => {
+                let mut values = FxHashMap::default();
+                for property in &object.properties {
+                    if let ObjectPropertyKind::ObjectProperty(property) = property
+                        && let Some(key) = crate::utils::get_string_by_property_key(&property.key)
+                        && let Some(value) = self.literal_text(modules, &property.value)
+                    {
+                        values.insert(key, Constant::String(value));
+                    }
+                }
+                Some(Constant::Object(Rc::new(values)))
+            }
+            (
+                StylexFunction::CreateTheme,
+                [
+                    Argument::Identifier(contract),
+                    Argument::ObjectExpression(_),
+                ],
+            ) => matches!(self.lookup(modules, &contract.name)?, Constant::Vars(_)).then(|| {
+                Constant::Theme(crate::stylex::create_theme_class(
+                    self.path,
+                    &contract.name,
+                    split_filename.as_deref(),
+                ))
+            }),
+            _ => None,
+        }
+    }
+
+    /// `value` as the text the module's own extraction reads it as, when that
+    /// extraction knows it
+    fn literal_text(
+        &mut self,
+        modules: &mut Modules<'_>,
+        value: &Expression<'_>,
+    ) -> Option<String> {
+        match crate::utils::get_string_by_literal_expression(value) {
+            Some(text) => Some(text.into_owned()),
+            None => js_string(&self.evaluate(modules, value)?),
+        }
+    }
+
     fn evaluate(
         &mut self,
         modules: &mut Modules<'_>,
@@ -628,12 +761,11 @@ impl<'p, 'a> ModuleScope<'p, 'a> {
                 Some(Constant::Object(Rc::new(properties)))
             }
             Expression::Identifier(identifier) => self.lookup(modules, &identifier.name),
-            Expression::StaticMemberExpression(member) => {
-                match self.evaluate(modules, &member.object)? {
-                    Constant::Object(object) => object.get(member.property.name.as_str()).cloned(),
-                    _ => None,
-                }
-            }
+            Expression::StaticMemberExpression(member) => member_of(
+                &self.evaluate(modules, &member.object)?,
+                member.property.name.as_str(),
+            ),
+            Expression::CallExpression(call) => self.evaluate_stylex(modules, call),
             Expression::TSAsExpression(inner) => self.evaluate(modules, &inner.expression),
             Expression::TSSatisfiesExpression(inner) => self.evaluate(modules, &inner.expression),
             Expression::ParenthesizedExpression(inner) => self.evaluate(modules, &inner.expression),
@@ -647,7 +779,17 @@ fn js_string(value: &Constant) -> Option<String> {
     match value {
         Constant::String(text) => Some(text.clone()),
         Constant::Number(number) => Some(crate::utils::js_number_string(*number)),
-        Constant::Object(_) => None,
+        _ => None,
+    }
+}
+
+fn member_of(object: &Constant, key: &str) -> Option<Constant> {
+    match object {
+        Constant::Object(object) => object.get(key).cloned(),
+        Constant::Vars(vars) => vars
+            .get(key)
+            .map(|variable| Constant::String(format!("var({variable})"))),
+        _ => None,
     }
 }
 
@@ -695,16 +837,13 @@ impl<'a> Inline<'_, 'a> {
                 let symbol = self.scoping.get_reference(reference).symbol_id()?;
                 self.symbols.get(&symbol).cloned()
             }
-            Expression::StaticMemberExpression(member) => match self.constant(&member.object)? {
-                Constant::Object(object) => object.get(member.property.name.as_str()).cloned(),
-                _ => None,
-            },
+            Expression::StaticMemberExpression(member) => member_of(
+                &self.constant(&member.object)?,
+                member.property.name.as_str(),
+            ),
             Expression::ComputedMemberExpression(member) => {
                 let key = js_string(&self.operand(&member.expression)?)?;
-                match self.constant(&member.object)? {
-                    Constant::Object(object) => object.get(&key).cloned(),
-                    _ => None,
-                }
+                member_of(&self.constant(&member.object)?, &key)
             }
             // Folded only when they read a constant, leaving other code as written
             Expression::TemplateLiteral(template)
@@ -759,7 +898,7 @@ impl<'a> Inline<'_, 'a> {
                 NumberBase::Decimal,
                 self.ast_builder,
             )),
-            Constant::Object(_) => None,
+            _ => None,
         }
     }
 }

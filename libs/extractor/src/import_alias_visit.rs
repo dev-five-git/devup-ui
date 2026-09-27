@@ -219,6 +219,19 @@ fn devup_equivalent(source: &str, imported: &str) -> Option<DevupTarget<'static>
     }
 }
 
+#[cfg(test)]
+pub fn transform_import_aliases<'a>(
+    code: &'a str,
+    filename: &str,
+    package: &str,
+    import_aliases: &HashMap<String, ImportAlias>,
+) -> Cow<'a, str> {
+    transform_import_aliases_with_edits(code, filename, package, import_aliases).0
+}
+
+/// A replacement of `code[start..end]` by text of `length` bytes
+pub type Edit = (usize, usize, usize);
+
 /// Transform source code by rewriting aliased imports to the target package
 ///
 /// # Arguments
@@ -228,16 +241,18 @@ fn devup_equivalent(source: &str, imported: &str) -> Option<DevupTarget<'static>
 /// * `import_aliases` - Map of source package → alias configuration
 ///
 /// # Returns
-/// The transformed source code, or the original code if no transformations were needed
-pub fn transform_import_aliases<'a>(
+/// The transformed source code, or the original code if no transformations were
+/// needed, and the replacements made in order, so a position in the result maps
+/// back to the source
+pub fn transform_import_aliases_with_edits<'a>(
     code: &'a str,
     filename: &str,
     package: &str,
     import_aliases: &HashMap<String, ImportAlias>,
-) -> Cow<'a, str> {
+) -> (Cow<'a, str>, Vec<Edit>) {
     // Quick check: if no aliases match, return original code
     if import_aliases.is_empty() || !import_aliases.keys().any(|alias| code.contains(alias)) {
-        return Cow::Borrowed(code);
+        return (Cow::Borrowed(code), Vec::new());
     }
 
     let allocator = Allocator::default();
@@ -313,15 +328,38 @@ pub fn transform_import_aliases<'a>(
 
     // Apply transformations in reverse order to preserve positions
     if transformations.is_empty() {
-        return Cow::Borrowed(code);
+        return (Cow::Borrowed(code), Vec::new());
     }
 
+    let edits = transformations
+        .iter()
+        .map(|(start, end, replacement)| (*start, *end, replacement.len()))
+        .collect();
     let mut result = code.to_string();
     for (start, end, replacement) in transformations.into_iter().rev() {
         result.replace_range(start..end, &replacement);
     }
 
-    Cow::Owned(result)
+    (Cow::Owned(result), edits)
+}
+
+/// The source offset of `offset` in code `edits` made; an offset inside a
+/// replacement maps to where the replaced text began
+#[must_use]
+pub fn source_offset(edits: &[Edit], offset: usize) -> usize {
+    let (mut added, mut removed) = (0, 0);
+    for &(start, end, length) in edits {
+        let replaced_at = start + added - removed;
+        if offset < replaced_at {
+            break;
+        }
+        if offset < replaced_at + length {
+            return start;
+        }
+        added += length;
+        removed += end - start;
+    }
+    offset + removed - added
 }
 
 /// Pick the name a specifier should import from the target package, or `None` to leave it
@@ -546,6 +584,26 @@ mod tests {
             ImportAlias::NamedToNamed,
         );
         aliases
+    }
+
+    #[test]
+    fn test_source_offset() {
+        // `ab` at 2 became 5 bytes and `cdef` at 10 became 1 byte
+        let edits = [(2, 4, 5), (10, 14, 1)];
+        for (offset, source) in [
+            (0, 0),
+            (1, 1),
+            (2, 2),
+            (6, 2),
+            (7, 4),
+            (12, 9),
+            (13, 10),
+            (14, 14),
+            (20, 20),
+        ] {
+            assert_eq!(source_offset(&edits, offset), source, "{offset}");
+        }
+        assert_eq!(source_offset(&[], 7), 7);
     }
 
     fn styled_components_alias() -> HashMap<String, ImportAlias> {
