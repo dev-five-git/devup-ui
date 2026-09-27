@@ -150,7 +150,7 @@ All standard CSS properties from `csstype` are also accepted directly (e.g., `di
 
 Unitless CSS properties keep the number as written: `lineHeight`, `zIndex`, `opacity`, `fontWeight`, `flexGrow`, `order`, `aspectRatio`, `columnCount`, `strokeWidth`, `zoom`, and the rest of the unitless list vanilla-extract uses.
 
-Styles from other libraries keep that library's number meaning instead of the scale: in `.css.ts` files, in vanilla-extract `style()`, `globalStyle()` and `keyframes()` calls inside ordinary modules, and in `stylex.create()`, `fontSize: 16` is `16px`.
+Styles from other libraries keep that library's number meaning instead of the scale: in `.css.ts` files, in vanilla-extract `style()`, `globalStyle()` and `keyframes()` calls inside ordinary modules, in Emotion and styled-components object styles, and in `stylex.create()`, `fontSize: 16` is `16px`. Devup UI shorthands (`p`, `bg`, ...) keep the scale everywhere.
 
 ### Responsive Arrays (5 breakpoints)
 

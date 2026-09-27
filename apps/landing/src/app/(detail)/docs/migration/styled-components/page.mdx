@@ -26,6 +26,8 @@ const E = styled(Component)({ bg: 'red' })
 const F = styled('div', { bg: 'red' })
 ```
 
+Object styles follow the libraries: several style arguments, or an array of them, merge into one rule set where a later declaration replaces an earlier one and nested rules merge; Emotion's options argument (`styled('div', { shouldForwardProp })(...)`) is accepted, and every prop is forwarded. Numbers mean pixels as they do in Emotion and styled-components — `padding: 8` is `8px`, unitless properties such as `lineHeight` stay as written — while Devup UI shorthands such as `p` keep the spacing scale.
+
 Namespace imports work too. `@emotion/styled` and `styled-components` export a single callable, so the namespace binding _is_ that value and it is bound straight to the Devup UI export:
 
 ```tsx
@@ -94,3 +96,4 @@ Emotion's `<Global styles={...} />` behaves the same way: the `styles` prop is e
 | `ServerStyleSheet`, `StyleSheetManager`  | inert — Devup UI already emits a real stylesheet, so there is nothing to collect |
 | `isStyledComponent`                      | always `false`                                                                   |
 | `ClassNames`, `CacheProvider`            | no equivalent; stays on its own package with a build warning                     |
+| `.attrs()`, `.withConfig()`              | not supported yet                                                                |

@@ -9,7 +9,7 @@ export const metadata = {
 
 ## Stylesheet files
 
-Inside `.css.ts` / `.css.js` — the only place vanilla-extract allows its APIs — Devup UI evaluates the module and replaces every call with its generated output. The whole surface works there: `style`, `globalStyle`, `keyframes`, `styleVariants`, `fontFace`, `createVar`, `fallbackVar`, `createTheme`, `createThemeContract`, `layer`, `createContainer`.
+Inside `.css.ts` / `.css.js` — the only place vanilla-extract allows its APIs — Devup UI evaluates the module and replaces every call with its generated output. The whole surface works there: `style`, `globalStyle`, `keyframes`, `styleVariants`, `fontFace`, `globalFontFace`, `createVar`, `fallbackVar`, `createTheme`, `createGlobalTheme`, `createThemeContract`, `createGlobalThemeContract`, `assignVars`, `layer`, `globalLayer`, `createContainer`. Generated names — custom properties, containers, layers, theme classes, font families — are unique to each stylesheet, and layers keep the order they are declared in.
 
 ```ts
 // theme.css.ts
@@ -22,9 +22,11 @@ export const box = style({ background: vars.colors.bg })
 
 Numbers keep vanilla-extract's meaning, here and in ordinary modules: `padding: 8` is `8px`, and unitless properties such as `lineHeight` or `zIndex` stay as written.
 
+Each stylesheet is evaluated on its own, so importing values from another `.css.ts` file is not supported yet.
+
 ## Ordinary modules
 
-`style` and `globalStyle` also resolve in `.ts` / `.tsx`, mapped onto their Devup UI counterparts:
+`style`, `globalStyle` and `keyframes` also resolve in `.ts` / `.tsx`, mapped onto their Devup UI counterparts, and `style([base, { ... }])` keeps composing `base`:
 
 ```tsx
 import { globalStyle, style } from '@vanilla-extract/css'
