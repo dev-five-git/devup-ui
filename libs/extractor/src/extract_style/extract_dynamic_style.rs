@@ -23,6 +23,8 @@ pub struct ExtractDynamicStyle {
 
     /// Whether the value had `!important` that was stripped from the identifier
     important: bool,
+
+    pub(crate) layer: Option<String>,
 }
 
 impl Debug for ExtractDynamicStyle {
@@ -35,6 +37,9 @@ impl Debug for ExtractDynamicStyle {
             .field("style_order", &self.style_order);
         if self.important {
             s.field("important", &self.important);
+        }
+        if let Some(layer) = &self.layer {
+            s.field("layer", layer);
         }
         s.finish()
     }
@@ -98,6 +103,7 @@ impl ExtractDynamicStyle {
             selector: selector.map(optimize_selector),
             style_order: None,
             important,
+            layer: None,
         }
     }
 
@@ -124,11 +130,15 @@ impl ExtractDynamicStyle {
     pub const fn important(&self) -> bool {
         self.important
     }
+
+    pub fn layer(&self) -> Option<&str> {
+        self.layer.as_deref()
+    }
 }
 
 impl ExtractStyleProperty for ExtractDynamicStyle {
     fn extract(&self, filename: Option<&str>) -> StyleProperty {
-        let selector = self.selector.as_ref().map(StyleSelector::as_class_str);
+        let selector = super::class_selector(self.selector.as_ref(), self.layer());
         StyleProperty::Variable {
             class_name: sheet_to_classname(
                 self.property.as_str(),

@@ -143,6 +143,7 @@ ToBTreeSet {
                 identifier: "w",
                 selector: None,
                 style_order: None,
+                layer: "base",
             },
         ),
     },

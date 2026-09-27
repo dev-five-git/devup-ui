@@ -850,14 +850,16 @@ pub fn extract_style_from_expression<'a>(
 /// Put every static declaration of `props` in `layer`, nesting the layer one
 /// already sits in
 pub(crate) fn place_in_layer(props: &mut [ExtractStyleProp<'_>], layer: &str) {
+    let nest = |inner: &mut Option<String>| {
+        *inner = Some(match inner.take() {
+            Some(inner) => format!("{layer}.{inner}"),
+            None => layer.to_string(),
+        });
+    };
     for prop in props {
         match prop {
-            ExtractStyleProp::Static(ExtractStyleValue::Static(style)) => {
-                style.layer = Some(match style.layer.take() {
-                    Some(inner) => format!("{layer}.{inner}"),
-                    None => layer.to_string(),
-                });
-            }
+            ExtractStyleProp::Static(ExtractStyleValue::Static(style)) => nest(&mut style.layer),
+            ExtractStyleProp::Static(ExtractStyleValue::Dynamic(style)) => nest(&mut style.layer),
             ExtractStyleProp::StaticArray(props) => place_in_layer(props, layer),
             ExtractStyleProp::Conditional {
                 consequent,
@@ -878,7 +880,7 @@ pub(crate) fn place_in_layer(props: &mut [ExtractStyleProp<'_>], layer: &str) {
                     place_in_layer(std::slice::from_mut(prop.as_mut()), layer);
                 }
             }
-            // Dynamic values and dynamic `typography` carry no static declaration
+            // A `typography` preset is shared by every use, so it stays out of layers
             ExtractStyleProp::Static(_) | ExtractStyleProp::Expression { .. } => {}
         }
     }
