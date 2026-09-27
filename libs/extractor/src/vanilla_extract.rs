@@ -802,6 +802,7 @@ fn create_var(styles: &StyleCollector, args: &[JsValue], ctx: &mut Context) -> J
     }
 }
 
+#[inline(never)]
 fn declared_var(
     styles: &StyleCollector,
     declaration: &JsObject,
@@ -809,10 +810,13 @@ fn declared_var(
     ctx: &mut Context,
 ) -> JsResult<JsValue> {
     let name = new_var(styles, debug_id);
-    property_rule(&name, declaration, ctx).map(|rule| {
-        styles.borrow_mut().styles.property_rules.push(rule);
-        var_reference(&name)
-    })
+    match property_rule(&name, declaration, ctx) {
+        Ok(rule) => {
+            styles.borrow_mut().styles.property_rules.push(rule);
+            Ok(var_reference(&name))
+        }
+        Err(error) => Err(error),
+    }
 }
 
 fn new_var(styles: &StyleCollector, debug_id: &JsValue) -> String {
