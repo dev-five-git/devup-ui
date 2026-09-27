@@ -1480,7 +1480,7 @@ mod tests {
                     ),
                     (
                         "/c",
-                        "import { b } from './b'\nimport * as all from './b'\nexport const c = () => b + all.b.length\nexport const lazy = 'red'\nexport { b as again }"
+                        "import bDefault, { b } from './b'\nimport * as all from './b'\nexport const c = () => b + all.b.length\nexport const lazyDefault = () => bDefault\nexport const lazy = 'red'\nexport { b as again }"
                     ),
                     ("/a.css.ts", ""),
                     (
