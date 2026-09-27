@@ -771,18 +771,20 @@ fn declare_font_faces(
     rules: &JsValue,
     context: &mut Context,
 ) -> JsResult<()> {
+    let family = format!("\"fontFamily\":{}", json_string(family));
     let rules = array_items(rules, context)?.unwrap_or_else(|| vec![rules.clone()]);
-    let family = json_string(family);
-    for rule in &rules {
-        let json = js_value_to_json(rule, context);
-        let inner = inner_json(&json);
-        let face = if inner.is_empty() {
-            format!("{{\"fontFamily\":{family}}}")
-        } else {
-            format!("{{{inner},\"fontFamily\":{family}}}")
-        };
-        collector.borrow_mut().styles.font_faces.push(face);
-    }
+    let faces: Vec<String> = rules
+        .iter()
+        .map(|rule| {
+            let json = js_value_to_json(rule, context);
+            let members: Vec<&str> = [inner_json(&json), family.as_str()]
+                .into_iter()
+                .filter(|member| !member.is_empty())
+                .collect();
+            format!("{{{}}}", members.join(","))
+        })
+        .collect();
+    collector.borrow_mut().styles.font_faces.extend(faces);
     Ok(())
 }
 
