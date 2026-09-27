@@ -18244,6 +18244,15 @@ export const k = styled('div')({ color: SIZE });",
         )
         .unwrap();
         assert!(without_imports.dependencies.is_empty());
+        let without_constants = extract_with_modules(
+            "/src/Handler.tsx",
+            "import { Box } from '@devup-ui/react';\nimport { handler } from './handler';\nexport const a = <Box onClick={handler} color='red' />;",
+            ExtractOption::default(),
+            false,
+            &memory_resolver(CONSTANT_MODULES),
+        )
+        .unwrap();
+        assert_eq!(without_constants.dependencies, ["/src/handler.ts"]);
     }
 
     #[test]
