@@ -6,11 +6,19 @@ import {
   writeFileSync,
 } from 'node:fs'
 import { tmpdir } from 'node:os'
-import { join } from 'node:path'
+import { join, relative } from 'node:path'
 
 import * as wasm from '@devup-ui/wasm'
 import * as webpackPlugin from '@devup-ui/webpack-plugin'
-import { afterAll, afterEach, beforeAll, describe, expect, it } from 'bun:test'
+import {
+  afterAll,
+  afterEach,
+  beforeAll,
+  describe,
+  expect,
+  it,
+  mock,
+} from 'bun:test'
 
 import {
   loadWasm,
@@ -19,6 +27,7 @@ import {
   requireWasm,
   setWasmForTesting,
   setWebpackPluginForTesting,
+  withModuleResolver,
 } from '../wasm'
 
 const originalCwd = process.cwd()
@@ -39,6 +48,21 @@ afterAll(() => {
 })
 
 describe('WASM selection', () => {
+  it('resolves imports to cwd-relative ids on engines that load modules', () => {
+    const setModuleResolver = mock()
+    const engine = { setModuleResolver } as unknown as typeof wasm
+    expect(withModuleResolver(engine)).toBe(engine)
+    const resolveModule = setModuleResolver.mock.calls[0]![0] as (
+      specifier: string,
+      importer: string,
+    ) => { path: string } | undefined
+    expect(resolveModule('./wasm.test', import.meta.path)?.path).toBe(
+      relative(process.cwd(), import.meta.path).replaceAll('\\', '/'),
+    )
+    const older = {} as typeof wasm
+    expect(withModuleResolver(older)).toBe(older)
+  })
+
   it('uses an injected namespace in tests', () => {
     setWasmForTesting(wasm)
     expect(loadWasm(true)).toBe(wasm)

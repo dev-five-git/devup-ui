@@ -1,7 +1,7 @@
 import * as fs from 'node:fs'
 import * as fsPromises from 'node:fs/promises'
 import * as http from 'node:http'
-import { join } from 'node:path'
+import { join, resolve } from 'node:path'
 
 import * as wasm from '@devup-ui/wasm'
 import {
@@ -132,6 +132,7 @@ describe('devupUILoader', () => {
       map: undefined,
       cssFile: undefined,
       updatedBaseStyle: false,
+      dependencies: ['src/tokens.ts'],
       [Symbol.dispose]: mock(),
     })
 
@@ -149,6 +150,7 @@ describe('devupUILoader', () => {
     expect(importClassMapSpy).toHaveBeenCalledWith(defaultClassMap)
     expect(importSheetSpy).toHaveBeenCalledWith(defaultSheet)
     expect(registerThemeSpy).toHaveBeenCalledWith(theme)
+    expect(t.addDependency).toHaveBeenCalledWith(resolve('src/tokens.ts'))
   })
 
   // Test WATCH mode init (lines 55-67) + CSS writing (lines 94-111)
@@ -475,6 +477,7 @@ describe('devupUILoader', () => {
         map: '{"version":3}',
         cssFile: 'devup-ui-1.css',
         updatedBaseStyle: true,
+        dependencies: ['src/tokens.ts', 1],
       })
 
       const requestSpy = spyOn(http, 'request').mockImplementation(
@@ -531,6 +534,9 @@ describe('devupUILoader', () => {
           '{"version":3}',
         )
       })
+
+      expect(t.addDependency).toHaveBeenCalledWith(resolve('src/tokens.ts'))
+      expect(t.addDependency).not.toHaveBeenCalledWith(resolve('1'))
 
       // Verify HTTP request was made
       expect(requestSpy).toHaveBeenCalledTimes(1)
