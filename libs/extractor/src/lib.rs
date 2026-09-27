@@ -6,6 +6,8 @@ mod extractor;
 mod gen_class_name;
 mod gen_style;
 mod import_alias_visit;
+#[cfg(feature = "vanilla-extract")]
+mod module_loader;
 mod prop_modify_utils;
 mod stylex;
 mod tailwind;
@@ -191,8 +193,22 @@ pub struct ExtractOutput {
 
     pub map: Option<String>,
     pub css_file: Option<String>,
+
+    /// Files read through the module resolver, for the bundler to watch
+    pub dependencies: Vec<String>,
 }
 
+/// A module the bundler resolved an import to
+pub struct ResolvedModule {
+    pub path: String,
+    pub code: String,
+}
+
+/// Resolves `(specifier, importer)` the way the bundler does; `None` when it
+/// cannot
+pub type ModuleResolver = dyn Fn(&str, &str) -> Option<ResolvedModule>;
+
+#[derive(Clone)]
 pub struct ExtractOption {
     pub package: String,
     pub css_dir: String,
@@ -219,7 +235,7 @@ pub fn extract(
     code: &str,
     option: ExtractOption,
 ) -> Result<ExtractOutput, Box<dyn Error>> {
-    extract_with_source_map(filename, code, option, true)
+    extract_with_source_map(filename, code, option, true, None)
 }
 
 pub fn extract_without_source_map(
@@ -227,7 +243,18 @@ pub fn extract_without_source_map(
     code: &str,
     option: ExtractOption,
 ) -> Result<ExtractOutput, Box<dyn Error>> {
-    extract_with_source_map(filename, code, option, false)
+    extract_with_source_map(filename, code, option, false, None)
+}
+
+/// [`extract`] that reads the modules a file imports through `resolver`
+pub fn extract_with_modules(
+    filename: &str,
+    code: &str,
+    option: ExtractOption,
+    source_map: bool,
+    resolver: &ModuleResolver,
+) -> Result<ExtractOutput, Box<dyn Error>> {
+    extract_with_source_map(filename, code, option, source_map, Some(resolver))
 }
 
 fn extract_with_source_map(
@@ -235,6 +262,9 @@ fn extract_with_source_map(
     code: &str,
     option: ExtractOption,
     source_map: bool,
+    #[cfg_attr(not(feature = "vanilla-extract"), allow(unused_variables))] resolver: Option<
+        &ModuleResolver,
+    >,
 ) -> Result<ExtractOutput, Box<dyn Error>> {
     // Step 1: Transform import aliases
     // e.g., `import styled from '@emotion/styled'` → `import { styled } from '@devup-ui/react'`
@@ -257,18 +287,21 @@ fn extract_with_source_map(
             code: code.to_string(),
             map: None,
             css_file: None,
+            dependencies: Vec::new(),
         });
     }
 
+    #[cfg_attr(not(feature = "vanilla-extract"), allow(unused_mut))]
+    let mut dependencies = std::collections::BTreeSet::new();
     // Step 3: Handle vanilla-extract style files (.css.ts, .css.js)
     // `processed_code` is Some only when vanilla-extract generation succeeded;
     // otherwise the untouched `transformed_code` is parsed directly (no copy).
     #[cfg(feature = "vanilla-extract")]
     let processed_code: Option<String> = if utils::is_vanilla_extract_file(filename) {
         // Use transformed code (with imports already pointing to @devup-ui/react)
-        match vanilla_extract::execute_vanilla_extract(&transformed_code, &option.package, filename)
-        {
-            Ok(collected) => {
+        match vanilla_extract::execute_stylesheet(&transformed_code, filename, &option, resolver) {
+            Ok((collected, imports)) => {
+                dependencies = imports.dependencies;
                 // Keyframes names are generated, so extract the referenced ones
                 // first and substitute their names into the styles using them.
                 let referenced = vanilla_extract::referenced_keyframes(&collected);
@@ -286,11 +319,23 @@ fn extract_with_source_map(
                         &referenced,
                     )?
                 };
-                Some(vanilla_extract::collected_styles_to_code_with_keyframes(
+                let code = vanilla_extract::collected_styles_to_code_with_keyframes(
                     &collected,
                     &option.package,
                     &keyframes_names,
-                ))
+                );
+                Some(if code.is_empty() {
+                    code
+                } else {
+                    imports
+                        .kept_imports
+                        .iter()
+                        .map(|specifier| {
+                            format!("import {};\n", vanilla_extract::json_string(specifier))
+                        })
+                        .chain([code])
+                        .collect()
+                })
             }
             // Fall back to treating as regular file if execution fails
             Err(_) => None,
@@ -301,12 +346,14 @@ fn extract_with_source_map(
     #[cfg(not(feature = "vanilla-extract"))]
     let processed_code: Option<String> = None;
     // For vanilla-extract files, if no styles were collected, return early
+    let dependencies: Vec<String> = dependencies.into_iter().collect();
     if processed_code.as_deref() == Some("") {
         return Ok(ExtractOutput {
             styles: FxHashSet::default(),
             code: code.to_string(),
             map: None,
             css_file: None,
+            dependencies,
         });
     }
 
@@ -356,6 +403,7 @@ fn extract_with_source_map(
         code: result.code,
         map: result.map.map(|m| m.to_json_string()),
         css_file: Some(css_file),
+        dependencies,
     })
 }
 
@@ -17980,6 +18028,99 @@ export const d = style([cond && base]);",
             )
             .unwrap()
         ));
+    }
+
+    fn memory_resolver(
+        files: &'static [(&'static str, &'static str)],
+    ) -> impl Fn(&str, &str) -> Option<ResolvedModule> {
+        move |specifier, importer| {
+            let directory = importer
+                .rsplit_once('/')
+                .map_or("", |(directory, _)| directory);
+            let path = format!("{directory}/{}", specifier.trim_start_matches("./"));
+            files
+                .iter()
+                .find(|(file, _)| {
+                    [".ts", ".css.ts", ""]
+                        .iter()
+                        .any(|extension| format!("{path}{extension}") == *file)
+                })
+                .map(|(file, code)| ResolvedModule {
+                    path: (*file).to_string(),
+                    code: (*code).to_string(),
+                })
+        }
+    }
+
+    const STYLESHEET_MODULES: &[(&str, &str)] = &[
+        (
+            "/src/theme.css.ts",
+            r"import { createTheme, style } from '@vanilla-extract/css';
+export const [themeClass, vars] = createTheme({ color: { brand: 'red' }, space: '4px' });
+export const base = style({ padding: vars.space });",
+        ),
+        (
+            "/src/tokens.ts",
+            r"import { extra } from './more';
+export const brand: string = 'blue';
+export default 8;
+const hidden = 1;
+export { hidden as shown };
+export * from './more';
+export * as more from './more';
+export { extra as renamed } from './more';
+export function double(n: number) { return n * 2 + extra - extra; }
+export class Scale {}",
+        ),
+        ("/src/more.ts", "export const extra = 3;"),
+        (
+            "/src/named.ts",
+            "export default function named() { return 1 }\nexport const other = 1",
+        ),
+        ("/src/anonymous.ts", "export default class { }"),
+    ];
+
+    #[test]
+    #[serial]
+    fn test_stylesheet_imports_modules() {
+        reset_class_map();
+        reset_file_map();
+        let output = extract_with_modules(
+            "/src/button.css.ts",
+            r"import { style } from '@vanilla-extract/css';
+import { vars, base } from './theme.css';
+import size, { brand, shown, extra, more, renamed, double, Scale } from './tokens';
+import * as tokens from './tokens';
+import named from './named';
+import Anonymous from './anonymous';
+import './global.css';
+export const button = style([base, { color: vars.color.brand, background: brand, margin: double(size), padding: shown + extra + more.extra + renamed + tokens.default + named(), zIndex: typeof Scale === typeof Anonymous ? 1 : 0 }]);
+export const hover = style({ selectors: { [`${base}:hover &`]: { color: 'red' } } });",
+            ExtractOption {
+                package: "@devup-ui/react".to_string(),
+                css_dir: "@devup-ui/react".to_string(),
+                single_css: true,
+                import_main_css: false,
+                import_aliases: HashMap::from([(
+                    "@vanilla-extract/css".to_string(),
+                    ImportAlias::NamedToNamed,
+                )]),
+            },
+            false,
+            &memory_resolver(STYLESHEET_MODULES),
+        )
+        .unwrap();
+        assert_eq!(
+            output.dependencies,
+            [
+                "/src/anonymous.ts",
+                "/src/more.ts",
+                "/src/named.ts",
+                "/src/theme.css.ts",
+                "/src/tokens.ts"
+            ]
+        );
+        assert_debug_snapshot!(ToBTreeSet::from(output));
     }
 
     #[test]

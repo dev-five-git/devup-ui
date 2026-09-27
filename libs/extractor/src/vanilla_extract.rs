@@ -3,6 +3,7 @@
 //! This module uses `boa_engine` to execute vanilla-extract style files
 //! and extract style definitions for processing by the existing extract logic.
 
+use crate::module_loader::{Evaluating, ModuleLoader, PACKAGE_BINDING, module_script};
 use crate::utils::keeps_bare_number;
 use boa_engine::{
     Context, JsArgs, JsObject, JsResult, JsString, JsValue, NativeFunction, Source, js_string,
@@ -19,6 +20,7 @@ use oxc_transformer::{TransformOptions, Transformer};
 use rustc_hash::{FxHashMap, FxHashSet};
 use smallvec::SmallVec;
 use std::cell::RefCell;
+use std::collections::BTreeSet;
 use std::path::Path;
 use std::rc::Rc;
 
@@ -154,7 +156,7 @@ fn var_name(reference: &str) -> &str {
         .unwrap_or(reference)
 }
 
-fn json_string(text: &str) -> String {
+pub(crate) fn json_string(text: &str) -> String {
     serde_json::Value::String(text.to_string()).to_string()
 }
 
@@ -207,12 +209,39 @@ fn style_to_json(value: &JsValue, context: &mut Context) -> String {
     stringify(value, replacer.into(), context).unwrap_or_else(|| "{}".to_string())
 }
 
-/// Execute vanilla-extract style file and collect styles
-pub fn execute_vanilla_extract(
+/// What a stylesheet read besides its own source
+pub struct StylesheetImports {
+    /// Every file read
+    pub dependencies: BTreeSet<String>,
+    /// Imports its output keeps: side-effect imports and the stylesheets it
+    /// imports, which emit their own styles
+    pub kept_imports: Vec<String>,
+}
+
+#[cfg(test)]
+fn execute_vanilla_extract(
     code: &str,
     package: &str,
     filename: &str,
 ) -> Result<CollectedStyles, String> {
+    let option = crate::ExtractOption {
+        package: package.to_string(),
+        ..crate::ExtractOption::default()
+    };
+    execute_stylesheet(code, filename, &option, None).map(|(collected, _)| collected)
+}
+
+/// Execute vanilla-extract style file and collect styles, loading what it
+/// imports through `resolver`
+pub fn execute_stylesheet(
+    code: &str,
+    filename: &str,
+    option: &crate::ExtractOption,
+    resolver: Option<&crate::ModuleResolver>,
+) -> Result<(CollectedStyles, StylesheetImports), String> {
+    let _evaluating = Evaluating::enter(filename);
+    let mut loader = ModuleLoader::new(resolver, option);
+    let script = module_script(&strip_typescript(code), filename, &mut loader, true)?;
     let file_num = get_file_num_by_filename(filename);
     let collector: StyleCollector = Rc::new(RefCell::new(Collector {
         file_num,
@@ -223,7 +252,7 @@ pub fn execute_vanilla_extract(
 
     context
         .eval(Source::from_bytes(
-            preprocess_typescript(code, package).as_bytes(),
+            format!("{}{}", loader.prelude(), script.body).as_bytes(),
         ))
         .map_err(|e| format!("JS execution error: {e}"))?;
 
@@ -234,7 +263,13 @@ pub fn execute_vanilla_extract(
         &mut context,
         file_num,
     );
-    Ok(collected)
+    Ok((
+        collected,
+        StylesheetImports {
+            dependencies: loader.dependencies,
+            kept_imports: loader.kept_imports,
+        },
+    ))
 }
 
 /// A name a top-level variable declaration of the stylesheet binds
@@ -482,84 +517,20 @@ fn replace_placeholders(
     })
 }
 
-/// Convert TypeScript to JavaScript using Oxc Transformer and replace imports
-fn preprocess_typescript(code: &str, package: &str) -> String {
+/// Convert TypeScript to JavaScript using Oxc Transformer
+pub(crate) fn strip_typescript(code: &str) -> String {
     let allocator = Allocator::default();
-    let source_type = SourceType::ts();
-
-    // Parse TypeScript
-    let ret = Parser::new(&allocator, code, source_type).parse();
-    let mut program = ret.program;
-
-    // Build semantic info to get scoping
-    let semantic_ret = SemanticBuilder::new().build(&program);
-    let scoping = semantic_ret.semantic.into_scoping();
-
-    // Transform: strip TypeScript types
+    let mut program = Parser::new(&allocator, code, SourceType::ts())
+        .parse()
+        .program;
+    let scoping = SemanticBuilder::new()
+        .build(&program)
+        .semantic
+        .into_scoping();
     let options = TransformOptions::default();
     let path = Path::new("input.css.ts");
     let _ = Transformer::new(&allocator, path, &options).build_with_scoping(scoping, &mut program);
-
-    // Generate JavaScript
-    let js_code = Codegen::new().build(&program).code;
-
-    // Bind imports of the package to the mock object instead, e.g.
-    // `import { style } from '@devup-ui/react'` -> `const { style } = __vanilla_extract__;`
-    // Import aliases (like @vanilla-extract/css) are already transformed by import_alias_visit
-    let import_patterns = [format!("from \"{package}\""), format!("from '{package}'")];
-    let mut transformed = String::with_capacity(js_code.len());
-    for (idx, line) in js_code.lines().enumerate() {
-        if idx > 0 {
-            transformed.push('\n');
-        }
-        if import_patterns
-            .iter()
-            .any(|pattern| line.contains(pattern.as_str()))
-            && let Some(binding) = mock_binding(line)
-        {
-            transformed.push_str("const ");
-            transformed.push_str(&binding);
-            transformed.push_str(" = __vanilla_extract__;");
-        } else {
-            transformed.push_str(strip_export_keyword(line));
-        }
-    }
-    transformed
-}
-
-/// What an import of the package binds: `{ a, b: c }` for named imports, the
-/// namespace for `import * as ns`
-fn mock_binding(line: &str) -> Option<String> {
-    if let (Some(start), Some(end)) = (line.find('{'), line.find('}')) {
-        let names: Vec<String> = line[start + 1..end]
-            .split(',')
-            .map(str::trim)
-            .filter(|name| !name.is_empty())
-            .map(|name| name.replacen(" as ", ": ", 1))
-            .collect();
-        return Some(format!("{{ {} }}", names.join(", ")));
-    }
-    line.strip_prefix("import * as ")
-        .and_then(|rest| rest.split_whitespace().next())
-        .map(ToString::to_string)
-}
-
-fn strip_export_keyword(line: &str) -> &str {
-    // The transformer marks a module whose imports it all removed with `export {};`
-    if line == "export {};" {
-        return "";
-    }
-    line.strip_prefix("export ").map_or(line, |rest| {
-        if rest.starts_with("const ")
-            || rest.starts_with("let ")
-            || rest.starts_with("var ")
-            || rest.starts_with("function ")
-        {
-            rest
-        } else {
-            line
-        }
-    })
+    Codegen::new().build(&program).code
 }
 
 type Api = fn(&StyleCollector, &[JsValue], &mut Context) -> JsResult<JsValue>;
@@ -634,7 +605,7 @@ fn register_vanilla_extract_apis(
     }
     let mock = builder.build();
     context
-        .register_global_property(js_string!("__vanilla_extract__"), mock, Attribute::all())
+        .register_global_property(js_string!(PACKAGE_BINDING), mock, Attribute::all())
         .map_err(|e| format!("Failed to register __vanilla_extract__: {e}"))
 }
 
@@ -1422,6 +1393,72 @@ mod tests {
 
     const PACKAGE: &str = "@devup-ui/react";
 
+    fn import_error(code: &str, files: &'static [(&'static str, &'static str)]) -> String {
+        reset_file_map();
+        let resolver = |specifier: &str, _: &str| {
+            files
+                .iter()
+                .find(|(path, _)| {
+                    path.trim_end_matches(".ts")
+                        == specifier.trim_start_matches('.').trim_end_matches(".ts")
+                })
+                .map(|(path, code)| crate::ResolvedModule {
+                    path: (*path).to_string(),
+                    code: (*code).to_string(),
+                })
+        };
+        execute_stylesheet(
+            code,
+            "/a.css.ts",
+            &crate::ExtractOption::default(),
+            Some(&resolver),
+        )
+        .err()
+        .unwrap_or_default()
+    }
+
+    #[test]
+    #[serial]
+    fn test_stylesheet_import_errors() {
+        assert_eq!(
+            execute_stylesheet(
+                "import { b } from './b'\nexport const x = b",
+                "/a.css.ts",
+                &crate::ExtractOption::default(),
+                None
+            )
+            .err(),
+            Some("Cannot load './b' without a module resolver".to_string())
+        );
+        assert_eq!(
+            import_error("import { b } from './missing'\nexport const x = b", &[]),
+            "Cannot resolve './missing' from '/a.css.ts'"
+        );
+        assert_eq!(
+            import_error(
+                "import { b } from './b'\nexport const x = b",
+                &[
+                    ("/b", "import { c } from './c'\nexport const b = c"),
+                    ("/c", "import { b } from './b'\nexport const c = b"),
+                ]
+            ),
+            "Circular import of '/b'"
+        );
+        assert_eq!(
+            import_error(
+                "import { d } from './d.css'\nexport const x = d",
+                &[
+                    ("/a.css.ts", ""),
+                    (
+                        "/d.css.ts",
+                        "import { style } from '@devup-ui/react'\nimport { a } from './a.css.ts'\nexport const d = style({ color: a })"
+                    ),
+                ]
+            ),
+            "Circular import of '/a.css.ts'"
+        );
+    }
+
     fn generate_with(code: &str, keyframes_names: &[(&str, &str)]) -> String {
         reset_file_map();
         let collected = execute_vanilla_extract(
@@ -1714,37 +1751,6 @@ export const notObject = ["theme-0-9", {}]"#
         assert_eq!(collector.identifier(Some("-y".into()), "x"), "_-y-3-1");
         assert_eq!(collector.identifier(Some(String::new()), "x"), "x-3-2");
         assert_eq!(collector.identifier(None, "_z"), "_z-3-3");
-    }
-
-    #[test]
-    fn test_preprocess_typescript_binds_imports() {
-        assert_eq!(
-            preprocess_typescript(
-                "import { style as s, globalStyle } from '@devup-ui/react'
-import * as ve from '@devup-ui/react'
-import '@devup-ui/react'
-import { other } from 'other'
-interface Props { color: string }
-export const a: number = s(globalStyle, ve, other)
-export function f() {}
-export default a",
-                PACKAGE
-            ),
-            "const { style: s, globalStyle } = __vanilla_extract__;
-const ve = __vanilla_extract__;
-import \"@devup-ui/react\";
-import { other } from \"other\";
-const a = s(globalStyle, ve, other);
-function f() {}
-export default a;"
-        );
-        assert_eq!(
-            preprocess_typescript(
-                "import { style } from '@devup-ui/react'\nconst a = 1",
-                PACKAGE
-            ),
-            "const a = 1;\n"
-        );
     }
 
     #[test]
