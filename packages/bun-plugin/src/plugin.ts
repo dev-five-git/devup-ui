@@ -4,6 +4,7 @@ import { dirname, join, relative, resolve } from 'node:path'
 
 import {
   createCompatTypes,
+  createModuleResolver,
   createThemeInterfaceArgs,
   type CustomShorthands,
   loadDevupConfig,
@@ -17,6 +18,7 @@ import {
   registerShorthands,
   registerTheme,
   setDebug,
+  setModuleResolver,
 } from '@devup-ui/wasm'
 import { plugin } from 'bun'
 
@@ -58,6 +60,7 @@ async function writeDataFiles() {
 
 async function initialize({ shorthands }: DevupUIBunPluginOptions = {}) {
   registerShorthands(shorthands ?? {})
+  setModuleResolver(createModuleResolver())
   if (!existsSync(distDir)) await mkdir(distDir, { recursive: true })
   await writeFile(join(distDir, '.gitignore'), '*', 'utf-8')
   await writeFile(
