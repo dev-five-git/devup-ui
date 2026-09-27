@@ -794,40 +794,25 @@ fn font_face_rules(family: &str, rule: &JsValue, context: &mut Context) -> Vec<S
 
 /// `createVar(debugId?)` / `createVar(declaration, debugId?)`: a `var()` of a
 /// generated custom property, registered with `@property` when declared
-fn create_var(styles: &StyleCollector, args: &[JsValue], ctx: &mut Context) -> JsResult<JsValue> {
-    let first = args.get_or_undefined(0);
-    match first.as_object() {
-        Some(declaration) => declared_var(styles, &declaration, args.get_or_undefined(1), ctx),
-        None => Ok(var_reference(&new_var(styles, first))),
-    }
-}
-
-#[inline(never)]
-fn declared_var(
-    styles: &StyleCollector,
-    declaration: &JsObject,
-    debug_id: &JsValue,
-    ctx: &mut Context,
+fn create_var(
+    collector: &StyleCollector,
+    args: &[JsValue],
+    context: &mut Context,
 ) -> JsResult<JsValue> {
-    let name = new_var(styles, debug_id);
-    match property_rule(&name, declaration, ctx) {
-        Ok(rule) => {
-            styles.borrow_mut().styles.property_rules.push(rule);
-            Ok(var_reference(&name))
-        }
-        Err(error) => Err(error),
-    }
-}
-
-fn new_var(styles: &StyleCollector, debug_id: &JsValue) -> String {
-    format!(
+    let first = args.get_or_undefined(0);
+    let (declaration, debug_id) = match first.as_object() {
+        Some(declaration) => (Some(declaration), args.get_or_undefined(1)),
+        None => (None, first),
+    };
+    let name = format!(
         "--{}",
-        styles.borrow_mut().identifier(js_str(debug_id), "var")
-    )
-}
-
-fn var_reference(name: &str) -> JsValue {
-    js_string!(format!("var({name})")).into()
+        collector.borrow_mut().identifier(js_str(debug_id), "var")
+    );
+    if let Some(declaration) = declaration {
+        let rule = property_rule(&name, &declaration, context)?;
+        collector.borrow_mut().styles.property_rules.push(rule);
+    }
+    Ok(js_string!(format!("var({name})")).into())
 }
 
 fn property_rule(name: &str, declaration: &JsObject, context: &mut Context) -> JsResult<String> {
@@ -1169,7 +1154,7 @@ impl CollectedStyles {
         &self,
         source: &str,
         keyframes_names: &FxHashMap<String, String>,
-        selector: impl Fn(&str) -> bool,
+        selector: fn(&str) -> bool,
     ) -> String {
         replace_placeholders(source, |token, rest| {
             Some(match self.references.get(token)? {
