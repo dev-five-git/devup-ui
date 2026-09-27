@@ -3626,7 +3626,7 @@ mod tests {
         let output = extract(
             "test.tsx",
             r#"import {Box} from '@devup-ui/core'
-const color = "red";
+let color = "red";
 <Box bg={`${color} !important`} />
 "#,
             ExtractOption {
