@@ -674,6 +674,20 @@ pub fn has_devup_ui_wasm(filename: &str, code: &str, package: &str) -> bool {
     has_devup_ui(filename, code, package)
 }
 
+/// Whether `code` has a style value only running the module computes, which
+/// the full engine extracts and the lite one reports
+#[wasm_bindgen(js_name = "hasBuildTimeValues")]
+#[cfg(not(tarpaulin_include))]
+#[must_use]
+pub fn has_build_time_values_wasm(
+    filename: &str,
+    code: &str,
+    package: &str,
+    alias_sources: Vec<String>,
+) -> bool {
+    extractor::has_build_time_values(filename, code, package, &alias_sources)
+}
+
 #[cfg(test)]
 #[allow(clippy::expect_used, clippy::unwrap_used)]
 mod tests {

@@ -17,6 +17,7 @@ import {
 
 import * as coordinatorModule from '../coordinator'
 import {
+  computesStyleValues,
   DevupUI,
   reloadTurboSetupModuleForTesting,
   resetTurboSetupCacheForTesting,
@@ -198,6 +199,56 @@ describe('DevupUINextPlugin', () => {
         'node_modules/design-system/theme.css.ts',
       ]),
     ).toBe('full')
+    expect(
+      selectWasmVariant(
+        { files: ['src/page.tsx', 'src/color.tsx'] } as StaticImportGraph,
+        undefined,
+        (filename) => filename === 'src/color.tsx',
+      ),
+    ).toBe('full')
+    expect(
+      selectWasmVariant(
+        { files: ['src/page.tsx'] } as StaticImportGraph,
+        undefined,
+        () => false,
+      ),
+    ).toBe('lite')
+  })
+
+  it('checks a source for computed style values only when it calls a style API', () => {
+    const hasBuildTimeValues = mock(() => true)
+    setWasmForTesting({ ...wasm, hasBuildTimeValues } as typeof wasm)
+    readFileSyncSpy.mockImplementation(((path: string) => {
+      if (path.endsWith('missing.tsx')) throw new Error('ENOENT')
+      return path.endsWith('plain.tsx')
+        ? 'export const a = 1'
+        : "css({ color: darken(0.1, 'red') })"
+    }) as never)
+    expect(computesStyleValues('src/missing.tsx', '@devup-ui/react', [])).toBe(
+      false,
+    )
+    expect(computesStyleValues('src/plain.tsx', '@devup-ui/react', [])).toBe(
+      false,
+    )
+    expect(hasBuildTimeValues).not.toHaveBeenCalled()
+    expect(
+      computesStyleValues('src/color.tsx', '@devup-ui/react', [
+        '@emotion/react',
+      ]),
+    ).toBe(true)
+    expect(hasBuildTimeValues).toHaveBeenCalledWith(
+      'src/color.tsx',
+      "css({ color: darken(0.1, 'red') })",
+      '@devup-ui/react',
+      ['@emotion/react'],
+    )
+    const { hasBuildTimeValues: _, ...older } = wasm as typeof wasm & {
+      hasBuildTimeValues?: unknown
+    }
+    setWasmForTesting(older as typeof wasm)
+    expect(computesStyleValues('src/color.tsx', '@devup-ui/react', [])).toBe(
+      false,
+    )
   })
 
   describe('webpack', () => {

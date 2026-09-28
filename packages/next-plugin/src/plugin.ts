@@ -114,14 +114,45 @@ export function resetTurboSetupCacheForTesting(): void {
   productionTurboSetupOwner = `${performance.timeOrigin}-${Math.random()}`
 }
 
+/**
+ * The lite engine lacks the evaluator that `.css.ts` modules and style values
+ * computed when a module runs (`css({ color: darken(0.1, c) })`) need.
+ */
 export function selectWasmVariant(
   graph: StaticImportGraph | undefined,
   candidateFiles: string[] = graph?.files ?? [],
+  computesValues: (filename: string) => boolean = () => false,
 ): 'lite' | 'full' {
   return graph &&
-    !candidateFiles.some((filename) => /\.css\.(?:ts|js)$/.test(filename))
+    !candidateFiles.some(
+      (filename) =>
+        /\.css\.(?:ts|js)$/.test(filename) || computesValues(filename),
+    )
     ? 'lite'
     : 'full'
+}
+
+const STYLE_CALL =
+  /\b(?:css|globalCss|keyframes|createGlobalStyle|create|defineVars|defineConsts|createTheme|positionTry|viewTransitionClass)\s*[(`]/
+
+/** @internal Whether a source file has a style value only running it computes. */
+export function computesStyleValues(
+  filename: string,
+  libPackage: string,
+  aliasSources: string[],
+): boolean {
+  let source: string
+  try {
+    source = readFileSync(resolve(process.cwd(), filename), 'utf-8')
+  } catch {
+    return false
+  }
+  if (!STYLE_CALL.test(source)) return false
+  const lite = loadWasm(true)
+  return (
+    'hasBuildTimeValues' in lite &&
+    lite.hasBuildTimeValues(filename, source, libPackage, aliasSources)
+  )
 }
 
 /**
@@ -245,7 +276,12 @@ export function DevupUI(
         })
       : []
     const candidateCollectMs = elapsedMs(candidateCollectStartedAt)
-    const wasmVariant = selectWasmVariant(staticGraph, wasmCandidateFiles)
+    const aliasSources = Object.keys(importAliases)
+    const wasmVariant = selectWasmVariant(
+      staticGraph,
+      wasmCandidateFiles,
+      (filename) => computesStyleValues(filename, libPackage, aliasSources),
+    )
     const wasm = loadWasm(wasmVariant === 'lite')
     const {
       codeExtract,
