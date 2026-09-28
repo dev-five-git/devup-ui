@@ -24,7 +24,7 @@ use crate::gen_class_name::{gen_class_names, merge_expression_for_class_name};
 use crate::prop_modify_utils::{convert_class_name, modify_prop_object, modify_props};
 use crate::stylex::{
     StylexDynamicInfo, StylexFunction, StylexNamespaceValue, create_theme_class,
-    css_variable_block, define_vars_variable,
+    css_variable_block, css_variable_rules, define_vars_variable, variable_values,
 };
 use crate::util_type::UtilType;
 use crate::{ExtractStyleProp, ExtractStyleValue};
@@ -54,8 +54,8 @@ use strum::IntoEnumIterator;
 use crate::utils::{
     ParsedStyleOrder, StyleArguments, expression_to_style_order, get_str_by_property_key,
     get_string_by_literal_expression, get_string_by_property_key, jsx_expression_to_style_order,
-    runtime_value, runtime_value_error, style_arguments, uncomposable_error, unplaced_error,
-    unwrap_syntax_only, unwrap_syntax_only_mut,
+    readable_code, runtime_value, runtime_value_error, style_arguments, uncomposable_error,
+    unplaced_error, unwrap_syntax_only, unwrap_syntax_only_mut,
 };
 use oxc_ast::builder::AstBuilder;
 use oxc_span::{GetSpan, SPAN};
@@ -917,7 +917,7 @@ impl<'a> VisitMut<'a> for DevupVisitor<'a> {
             && let Some(Expression::ObjectExpression(obj)) = arg.as_expression()
         {
             let mut contract = FxHashMap::default();
-            let mut assignments = vec![];
+            let mut variables = vec![];
             let mut properties = oxc_allocator::Vec::new_in(&self.ast);
             for prop in &obj.properties {
                 let ObjectPropertyKind::ObjectProperty(prop) = prop else {
@@ -926,21 +926,28 @@ impl<'a> VisitMut<'a> for DevupVisitor<'a> {
                 let Some(key) = get_string_by_property_key(&prop.key) else {
                     continue;
                 };
-                let value = get_string_by_literal_expression(&prop.value);
-                if publishes_values && value.is_none() {
-                    continue;
-                }
+                let values = if publishes_values {
+                    let Some(values) = variable_values(&prop.value) else {
+                        self.errors.push((
+                            prop.value.span().start,
+                            runtime_value_error("stylex.defineVars", &readable_code(&prop.value)),
+                        ));
+                        continue;
+                    };
+                    values
+                } else {
+                    vec![]
+                };
                 let variable =
                     define_vars_variable(&self.filename, &key, self.split_filename.as_deref());
-                if let Some(value) = value {
-                    assignments.push((variable.clone(), value.into_owned()));
-                }
+                variables.push((variable.clone(), values));
                 properties.push(self.string_property(&key, &format!("var({variable})")));
                 contract.insert(key, variable);
             }
-            if publishes_values && !assignments.is_empty() {
+            let css = css_variable_rules(":root", &variables);
+            if !css.is_empty() {
                 self.styles.insert(ExtractStyleValue::Css(ExtractCss {
-                    css: css_variable_block(":root", &assignments),
+                    css,
                     file: self.filename.clone(),
                 }));
             }
@@ -956,26 +963,33 @@ impl<'a> VisitMut<'a> for DevupVisitor<'a> {
             && let Some(contract) = self.stylex_var_names.get(contract_ident.name.as_str())
             && let Some(Expression::ObjectExpression(obj)) = values_arg.as_expression()
         {
-            let assignments: Vec<(String, String)> = obj
-                .properties
-                .iter()
-                .filter_map(|prop| {
-                    let ObjectPropertyKind::ObjectProperty(prop) = prop else {
-                        return None;
-                    };
-                    let key = get_string_by_property_key(&prop.key)?;
-                    let value = get_string_by_literal_expression(&prop.value)?;
-                    Some((contract.get(&key)?.clone(), value.into_owned()))
-                })
-                .collect();
+            let mut variables = vec![];
+            for prop in &obj.properties {
+                let ObjectPropertyKind::ObjectProperty(prop) = prop else {
+                    continue;
+                };
+                let Some(variable) =
+                    get_string_by_property_key(&prop.key).and_then(|key| contract.get(&key))
+                else {
+                    continue;
+                };
+                match variable_values(&prop.value) {
+                    Some(values) => variables.push((variable.clone(), values)),
+                    None => self.errors.push((
+                        prop.value.span().start,
+                        runtime_value_error("stylex.createTheme", &readable_code(&prop.value)),
+                    )),
+                }
+            }
             let class_name = create_theme_class(
                 &self.filename,
                 &contract_ident.name,
                 self.split_filename.as_deref(),
             );
-            if !assignments.is_empty() {
+            let css = css_variable_rules(&format!(".{class_name}"), &variables);
+            if !css.is_empty() {
                 self.styles.insert(ExtractStyleValue::Css(ExtractCss {
-                    css: css_variable_block(&format!(".{class_name}"), &assignments),
+                    css,
                     file: self.filename.clone(),
                 }));
             }

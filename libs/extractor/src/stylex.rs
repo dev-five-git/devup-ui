@@ -1,7 +1,8 @@
 use std::borrow::Cow;
 
+use css::at_rule::{normalize_query, split_at_rule_key};
 use css::keyframes_to_keyframes_name;
-use css::style_selector::{AtRuleKind, StyleSelector};
+use css::style_selector::{AtRuleKind, StyleSelector, write_at_rule};
 use oxc_ast::ast::{Expression, ObjectPropertyKind};
 
 use crate::utils::{
@@ -57,6 +58,94 @@ pub fn define_vars_variable(filename: &str, key: &str, split_filename: Option<&s
 #[must_use]
 pub fn create_theme_class(filename: &str, contract: &str, split_filename: Option<&str>) -> String {
     keyframes_to_keyframes_name(&format!("sxt-{filename}-{contract}"), split_filename)
+}
+
+/// At-rules a `StyleX` condition sets a value under, outermost first
+pub type Conditions = Vec<(AtRuleKind, String)>;
+
+/// The values a `StyleX` variable takes: a literal, or a condition object of a
+/// `default` and at-rule keys (`@media`, `@supports`, `@container`), either
+/// possibly wrapped in `types.*()`. `None` when a value is not static.
+pub fn variable_values(value: &Expression<'_>) -> Option<Vec<(Conditions, String)>> {
+    let mut values = Vec::new();
+    collect_variable_values(value, &mut Vec::new(), &mut values)?;
+    Some(values)
+}
+
+fn collect_variable_values(
+    value: &Expression<'_>,
+    conditions: &mut Conditions,
+    values: &mut Vec<(Conditions, String)>,
+) -> Option<()> {
+    let value = unwrap_types_call(value);
+    if let Some(text) = get_string_by_literal_expression(value) {
+        values.push((conditions.clone(), text.into_owned()));
+        return Some(());
+    }
+    if matches!(value, Expression::NullLiteral(_)) {
+        return Some(());
+    }
+    let Expression::ObjectExpression(object) = value else {
+        return None;
+    };
+    for property in &object.properties {
+        let ObjectPropertyKind::ObjectProperty(property) = property else {
+            return None;
+        };
+        let key = get_string_by_property_key(&property.key)?;
+        if key == "default" {
+            collect_variable_values(&property.value, conditions, values)?;
+            continue;
+        }
+        let (kind, query) = split_at_rule_key(&key)?;
+        conditions.push((kind, normalize_query(query)));
+        collect_variable_values(&property.value, conditions, values)?;
+        conditions.pop();
+    }
+    Some(())
+}
+
+#[must_use]
+pub fn unwrap_types_call<'b, 'a>(value: &'b Expression<'a>) -> &'b Expression<'a> {
+    match value {
+        Expression::CallExpression(call) if is_types_call(&call.callee) => call
+            .arguments
+            .first()
+            .and_then(oxc_ast::ast::Argument::as_expression)
+            .unwrap_or(value),
+        _ => value,
+    }
+}
+
+/// CSS setting `variables` on `selector`: one block for each set of
+/// conditions, fewer conditions first so a more specific one wins, and in the
+/// order first written among sets as deep
+#[must_use]
+pub fn css_variable_rules(
+    selector: &str,
+    variables: &[(String, Vec<(Conditions, String)>)],
+) -> String {
+    let mut groups: Vec<(&Conditions, Vec<(String, String)>)> = Vec::new();
+    for (variable, values) in variables {
+        for (conditions, value) in values {
+            let assignment = (variable.clone(), value.clone());
+            match groups.iter_mut().find(|(group, _)| *group == conditions) {
+                Some((_, assignments)) => assignments.push(assignment),
+                None => groups.push((conditions, vec![assignment])),
+            }
+        }
+    }
+    groups.sort_by_key(|(conditions, _)| conditions.len());
+    let mut css = String::new();
+    for (conditions, assignments) in groups {
+        for (kind, query) in conditions {
+            let _ = write_at_rule(&mut css, *kind, query);
+            css.push('{');
+        }
+        css.push_str(&css_variable_block(selector, &assignments));
+        css.push_str(&"}".repeat(conditions.len()));
+    }
+    css
 }
 
 #[must_use]

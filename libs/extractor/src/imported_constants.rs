@@ -663,9 +663,9 @@ impl<'p, 'a> ModuleScope<'p, 'a> {
                 let mut vars = FxHashMap::default();
                 for property in &object.properties {
                     if let ObjectPropertyKind::ObjectProperty(property) = property
-                        && let Some(key) = crate::utils::get_string_by_property_key(&property.key)
+                        && let Some(key) = self.property_key(modules, &property.key)
                         && (function == StylexFunction::CreateThemeContract
-                            || self.literal_text(modules, &property.value).is_some())
+                            || self.variable_value(modules, &property.value))
                     {
                         let variable = crate::stylex::define_vars_variable(
                             self.path,
@@ -681,7 +681,7 @@ impl<'p, 'a> ModuleScope<'p, 'a> {
                 let mut values = FxHashMap::default();
                 for property in &object.properties {
                     if let ObjectPropertyKind::ObjectProperty(property) = property
-                        && let Some(key) = crate::utils::get_string_by_property_key(&property.key)
+                        && let Some(key) = self.property_key(modules, &property.key)
                         && let Some(value) = self.literal_text(modules, &property.value)
                     {
                         values.insert(key, Constant::String(value));
@@ -704,6 +704,46 @@ impl<'p, 'a> ModuleScope<'p, 'a> {
             }),
             _ => None,
         }
+    }
+
+    fn property_key(
+        &mut self,
+        modules: &mut Modules<'_>,
+        key: &oxc_ast::ast::PropertyKey<'_>,
+    ) -> Option<String> {
+        match crate::utils::get_string_by_property_key(key) {
+            Some(key) => Some(key),
+            None => self.literal_text(modules, key.as_expression()?),
+        }
+    }
+
+    /// Whether the module's own extraction reads `value` as the value of a
+    /// `StyleX` variable, as [`crate::stylex::variable_values`] reads it once
+    /// constants are inlined
+    fn variable_value(&mut self, modules: &mut Modules<'_>, value: &Expression<'_>) -> bool {
+        let value = crate::stylex::unwrap_types_call(value);
+        if matches!(value, Expression::NullLiteral(_))
+            || self.literal_text(modules, value).is_some()
+        {
+            return true;
+        }
+        let Expression::ObjectExpression(object) = value else {
+            return false;
+        };
+        for property in &object.properties {
+            let ObjectPropertyKind::ObjectProperty(property) = property else {
+                return false;
+            };
+            let Some(key) = self.property_key(modules, &property.key) else {
+                return false;
+            };
+            if (key != "default" && css::at_rule::split_at_rule_key(&key).is_none())
+                || !self.variable_value(modules, &property.value)
+            {
+                return false;
+            }
+        }
+        true
     }
 
     /// `value` as the text the module's own extraction reads it as, when that

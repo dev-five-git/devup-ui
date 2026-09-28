@@ -1,0 +1,41 @@
+---
+source: libs/extractor/src/lib.rs
+expression: "ToBTreeSet::from(extract_tsx(r\"import * as stylex from '@stylexjs/stylex';\nconst DARK = '@media (prefers-color-scheme: dark)';\nconst colors = stylex.defineVars({\n  layered: { '@supports (display: grid)': { [DARK]: 'navy' }, [DARK]: 'teal', default: 'white' },\n  text: { default: 'black', [DARK]: 'white' },\n  accent: stylex.types.color({\n    default: 'blue',\n    [DARK]: 'lightblue',\n    '@supports (color: oklch(0 0 0))': { default: 'oklch(0.6 0.2 250)', [DARK]: 'oklch(0.8 0.1 250)' },\n  }),\n  onlyDark: { default: null, [DARK]: 'gray' },\n  size: '4px',\n});\nconst dracula = stylex.createTheme(colors, { text: { [DARK]: 'pink', default: 'purple' }, accent: 'red' });\nconst styles = stylex.create({ box: { color: colors.text, borderColor: colors.accent } });\nexport const A = () => <div {...stylex.props(dracula, styles.box)} />;\"))"
+---
+ToBTreeSet {
+    styles: {
+        Static(
+            ExtractStaticStyle {
+                property: "border-color",
+                value: "var(--c)",
+                level: 0,
+                selector: None,
+                style_order: None,
+                layer: None,
+            },
+        ),
+        Static(
+            ExtractStaticStyle {
+                property: "color",
+                value: "var(--b)",
+                level: 0,
+                selector: None,
+                style_order: None,
+                layer: None,
+            },
+        ),
+        Css(
+            ExtractCss {
+                css: ".f{--b:purple;--c:red;}@media(prefers-color-scheme:dark){.f{--b:pink;}}",
+                file: "test.tsx",
+            },
+        ),
+        Css(
+            ExtractCss {
+                css: ":root{--a:white;--b:black;--c:blue;--e:4px;}@media(prefers-color-scheme:dark){:root{--a:teal;--b:white;--c:lightblue;--d:gray;}}@supports(color:oklch(0 0 0)){:root{--c:oklch(0.6 0.2 250);}}@supports(display:grid){@media(prefers-color-scheme:dark){:root{--a:navy;}}}@supports(color:oklch(0 0 0)){@media(prefers-color-scheme:dark){:root{--c:oklch(0.8 0.1 250);}}}",
+                file: "test.tsx",
+            },
+        ),
+    },
+    code: "import \"@devup-ui/react/devup-ui.css\";\nimport * as stylex from \"@stylexjs/stylex\";\nconst DARK = \"@media (prefers-color-scheme: dark)\";\nconst colors = {\n\t\"layered\": \"var(--a)\",\n\t\"text\": \"var(--b)\",\n\t\"accent\": \"var(--c)\",\n\t\"onlyDark\": \"var(--d)\",\n\t\"size\": \"var(--e)\"\n};\nconst dracula = \"f\";\nconst styles = { \"box\": \"g h\" };\nexport const A = () => <div {...{ className: \"f g h\" }} />;\n",
+}

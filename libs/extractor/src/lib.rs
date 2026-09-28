@@ -18123,7 +18123,7 @@ const el = <div {...props(dark, styles.box)} />;"
     fn test_stylex_theme_apis_ignore_unresolvable_input() {
         assert_debug_snapshot!(ToBTreeSet::from(extract_tsx(
             r"import stylex from '@stylexjs/stylex';
-const empty = stylex.defineVars({ dynamic: someValue });
+const empty = stylex.defineVars({});
 const unknownContract = stylex.createTheme(notAContract, { primary: 'navy' });
 const noOverlap = stylex.createTheme(empty, { missing: 'navy' });
 const notAnObject = stylex.defineVars(someVariable);
@@ -18390,8 +18390,10 @@ import { defineConsts, create } from '@stylexjs/stylex';
 import sx from '@stylexjs/stylex';
 import other from './brand';
 import { BRAND } from './brand';
-export const colors = stylex.defineVars({ primary: 'blue', brand: BRAND, dynamic: getColor(), [computedKey]: 'x' });
-export const consts = defineConsts({ gap: '8px', size: 4, dynamic: getSize() });
+const DARK = '@media (prefers-color-scheme: dark)';
+const GAP = 'gap';
+export const colors = stylex.defineVars({ primary: 'blue', brand: BRAND, [computedKey]: 'x', mode: { default: 'light', [DARK]: 'dark' }, typed: stylex.types.color({ default: 'red', '@supports (color: red)': null }) });
+export const consts = defineConsts({ [GAP]: '8px', size: 4, dynamic: getSize() });
 export const contract = sx.createThemeContract({ accent: null });
 export const dark = stylex.createTheme(colors, { primary: 'navy' });
 export const notStylex = other.defineVars({ a: 'b' });
@@ -18409,12 +18411,71 @@ export const notContract = stylex.createTheme(consts, { primary: 'navy' });",
             "export const BRAND = 'green';\nexport default {};",
         ),
         (
+            "/src/loose.stylex.ts",
+            r"import * as stylex from '@stylexjs/stylex';
+export const loose = stylex.defineVars({ fine: 'ok', call: getColor(), pseudo: { default: 'a', ':hover': 'b' }, spread: { ...base }, unknownKey: { [unknown]: 'x' } });",
+        ),
+        (
             "/src/themes.ts",
             r"import * as stylex from '@stylexjs/stylex';
 import { colors } from './vars.stylex';
 export const light = stylex.createTheme(colors, { primary: 'white' });",
         ),
     ];
+
+    #[test]
+    #[serial]
+    fn test_stylex_conditional_variables() {
+        assert_debug_snapshot!(ToBTreeSet::from(extract_tsx(
+            r"import * as stylex from '@stylexjs/stylex';
+const DARK = '@media (prefers-color-scheme: dark)';
+const colors = stylex.defineVars({
+  layered: { '@supports (display: grid)': { [DARK]: 'navy' }, [DARK]: 'teal', default: 'white' },
+  text: { default: 'black', [DARK]: 'white' },
+  accent: stylex.types.color({
+    default: 'blue',
+    [DARK]: 'lightblue',
+    '@supports (color: oklch(0 0 0))': { default: 'oklch(0.6 0.2 250)', [DARK]: 'oklch(0.8 0.1 250)' },
+  }),
+  onlyDark: { default: null, [DARK]: 'gray' },
+  size: '4px',
+});
+const dracula = stylex.createTheme(colors, { text: { [DARK]: 'pink', default: 'purple' }, accent: 'red' });
+const styles = stylex.create({ box: { color: colors.text, borderColor: colors.accent } });
+export const A = () => <div {...stylex.props(dracula, styles.box)} />;"
+        )));
+    }
+
+    #[test]
+    #[serial]
+    fn test_stylex_variable_values_known_only_at_runtime() {
+        for (code, error) in [
+            (
+                "const colors = stylex.defineVars({ text: someValue });",
+                "`stylex.defineVars()` cannot use `someValue`",
+            ),
+            (
+                "const colors = stylex.defineVars({ text: { default: 'a', ':hover': 'b' } });",
+                "`stylex.defineVars()` cannot use `{",
+            ),
+            (
+                "const colors = stylex.defineVars({ text: 'a' });\nconst theme = stylex.createTheme(colors, { text: getText() });",
+                "`stylex.createTheme()` cannot use `getText()`",
+            ),
+        ] {
+            reset_class_map();
+            reset_file_map();
+            let message = extract(
+                "test.tsx",
+                &format!("import * as stylex from '@stylexjs/stylex';\n{code}"),
+                ExtractOption::default(),
+            )
+            .err()
+            .map(|error| error.to_string())
+            .unwrap_or_default();
+            assert!(message.contains(error), "{message}");
+        }
+    }
 
     #[test]
     #[serial]
@@ -18441,8 +18502,9 @@ export const light = stylex.createTheme(colors, { primary: 'white' });",
                 "/src/App.tsx",
                 r"import * as stylex from '@stylexjs/stylex';
 import { colors, consts, contract, dark } from './vars.stylex';
+import { loose } from './loose.stylex';
 import { light } from './themes';
-const s = stylex.create({ base: { color: colors.primary, backgroundColor: colors.brand, marginTop: consts.gap, zIndex: consts.size, borderColor: contract.accent } });
+const s = stylex.create({ base: { color: colors.primary, backgroundColor: colors.brand, marginTop: consts.gap, zIndex: consts.size, borderColor: contract.accent, outlineColor: colors.mode, caretColor: colors.typed, accentColor: loose.fine } });
 const custom = stylex.createTheme(colors, { primary: 'purple' });
 export const A = () => <div {...stylex.props(dark, light, custom, s.base)} />;",
                 option.clone(),
@@ -18456,7 +18518,7 @@ export const A = () => <div {...stylex.props(dark, light, custom, s.base)} />;",
                 let (_, rest) = code.split_once(marker).unwrap();
                 rest.split(end).next().unwrap().to_string()
             };
-            for key in ["primary", "brand"] {
+            for key in ["primary", "brand", "mode", "typed"] {
                 let reference = format!(
                     "var({})",
                     text_after(&vars.code, &format!("\"{key}\": \"var("), ')')
@@ -18477,9 +18539,19 @@ export const A = () => <div {...stylex.props(dark, light, custom, s.base)} />;",
             assert!(styles.contains("value: \"8px\""), "{styles}");
             assert!(styles.contains("--"), "{styles}");
             assert!(!app.code.contains("createTheme"), "{}", app.code);
+            let vars_css = format!("{:?}", vars.styles);
+            assert!(
+                vars_css.contains("@media(prefers-color-scheme:dark){:root{--"),
+                "{vars_css}"
+            );
             assert_eq!(
                 app.dependencies,
-                vec!["/src/brand.ts", "/src/themes.ts", "/src/vars.stylex.ts"]
+                vec![
+                    "/src/brand.ts",
+                    "/src/loose.stylex.ts",
+                    "/src/themes.ts",
+                    "/src/vars.stylex.ts"
+                ]
             );
         }
     }
