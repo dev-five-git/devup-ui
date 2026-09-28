@@ -75,6 +75,9 @@ pub(crate) struct ModuleLoader<'r> {
     /// What the stylesheet imports for its side effects, and the stylesheets it
     /// imports, which emit their own styles: its output keeps importing them
     pub kept_imports: Vec<String>,
+    /// Stand in for what cannot be loaded, and let a module that throws only
+    /// lose its own bindings
+    lenient: bool,
 }
 
 impl<'r> ModuleLoader<'r> {
@@ -89,7 +92,29 @@ impl<'r> ModuleLoader<'r> {
             next_module: 0,
             dependencies: BTreeSet::new(),
             kept_imports: Vec::new(),
+            lenient: false,
         }
+    }
+
+    pub(crate) const fn lenient(mut self) -> Self {
+        self.lenient = true;
+        self
+    }
+
+    /// The name of the exports object of `specifier`: in lenient mode the
+    /// style packages, and modules that cannot be loaded, are the stand-in
+    /// `PACKAGE_BINDING` holds
+    fn module(&mut self, specifier: &str, importer: &str, direct: bool) -> Result<String, String> {
+        if !self.lenient {
+            return self.load(specifier, importer, direct);
+        }
+        if specifier == crate::STYLEX_PACKAGE || self.option.import_aliases.contains_key(specifier)
+        {
+            return Ok(PACKAGE_BINDING.to_string());
+        }
+        Ok(self
+            .load(specifier, importer, direct)
+            .unwrap_or_else(|_| PACKAGE_BINDING.to_string()))
     }
 
     fn keep_import(&mut self, specifier: &str) {
@@ -183,12 +208,17 @@ impl<'r> ModuleLoader<'r> {
                 format!("{exported:?}: {{ get() {{ return {local}; }}, enumerable: true }}")
             })
             .collect();
+        let (open, close) = if self.lenient {
+            ("try {\n", "} catch {}\n")
+        } else {
+            ("", "")
+        };
         if module_script.commonjs {
             // Its exports are what `module.exports` holds once it ran; the
             // default follows bundler interop (`__esModule` marks a compiled
             // ES module)
             self.definitions.push(format!(
-                "(function () {{\n{name}$.start();\nconst module = {{ exports: {{}} }};\nconst exports = module.exports;\n{}\nconst e = module.exports;\nObject.defineProperty({name}, \"__exports__\", {{ value: e }});\nif (e !== null && (typeof e === \"object\" || typeof e === \"function\")) for (const key of Object.keys(e)) if (key !== \"default\") Object.defineProperty({name}, key, {{ get: () => e[key], enumerable: true }});\nObject.defineProperty({name}, \"default\", {{ value: e !== null && typeof e === \"object\" && e.__esModule ? e.default : e, enumerable: true }});\n}})();\n",
+                "{open}(function () {{\n{name}$.start();\nconst module = {{ exports: {{}} }};\nconst exports = module.exports;\n{}\nconst e = module.exports;\nObject.defineProperty({name}, \"__exports__\", {{ value: e }});\nif (e !== null && (typeof e === \"object\" || typeof e === \"function\")) for (const key of Object.keys(e)) if (key !== \"default\") Object.defineProperty({name}, key, {{ get: () => e[key], enumerable: true }});\nObject.defineProperty({name}, \"default\", {{ value: e !== null && typeof e === \"object\" && e.__esModule ? e.default : e, enumerable: true }});\n}})();\n{close}",
                 module_script.body,
             ));
             return Ok(());
@@ -201,7 +231,7 @@ impl<'r> ModuleLoader<'r> {
             );
         }
         self.definitions.push(format!(
-            "(function () {{\n{name}$.start();\nObject.defineProperties({name}, {{ {} }});\n{spreads}{}\n}})();\n",
+            "{open}(function () {{\n{name}$.start();\nObject.defineProperties({name}, {{ {} }});\n{spreads}{}\n}})();\n{close}",
             getters.join(", "),
             module_script.body,
         ));
@@ -237,8 +267,9 @@ pub(crate) fn module_script(
         .semantic;
     let package = loader.option.package.clone();
 
-    // Imports of a module still evaluating are read where they are used, as ES
-    // modules read an import cycle
+    // Imports of a module still evaluating, or in lenient mode of one that may
+    // have thrown, are read where they are used, as ES modules read an import
+    // cycle
     let mut modules: FxHashMap<u32, String> = FxHashMap::default();
     let mut lazy: FxHashMap<SymbolId, String> = FxHashMap::default();
     let mut lazy_names: FxHashMap<String, String> = FxHashMap::default();
@@ -257,9 +288,9 @@ pub(crate) fn module_script(
         let module = if source == package {
             PACKAGE_BINDING.to_string()
         } else {
-            loader.load(source, filename, entry)?
+            loader.module(source, filename, entry)?
         };
-        if loader.pending.contains(&module) {
+        if loader.lenient || loader.pending.contains(&module) {
             let lazy_module = &module;
             for specifier in specifiers {
                 let binding = match specifier {
@@ -316,7 +347,7 @@ pub(crate) fn module_script(
             if let AstKind::CallExpression(call) = semantic.nodes().parent_kind(node)
                 && let [Argument::StringLiteral(specifier)] = call.arguments.as_slice()
             {
-                let module = loader.load(specifier.value.as_str(), filename, entry)?;
+                let module = loader.module(specifier.value.as_str(), filename, entry)?;
                 replacements.push((
                     call.span.start,
                     call.span.end,
@@ -349,7 +380,7 @@ pub(crate) fn module_script(
                 let Some(module) = modules.get(&import.span.start) else {
                     continue;
                 };
-                if loader.pending.contains(module) {
+                if loader.lenient || loader.pending.contains(module) {
                     continue;
                 }
                 let mut named = Vec::new();
@@ -387,7 +418,7 @@ pub(crate) fn module_script(
                 }
             }
             Statement::ExportFromDeclaration(export) => {
-                let module = loader.load(export.source.value.as_str(), filename, entry)?;
+                let module = loader.module(export.source.value.as_str(), filename, entry)?;
                 for specifier in &export.specifiers {
                     exports.push((
                         export_name(&specifier.exported),
@@ -415,7 +446,7 @@ pub(crate) fn module_script(
                 exports.push(("default".to_string(), local));
             }
             Statement::ExportAllDeclaration(export) => {
-                let module = loader.load(export.source.value.as_str(), filename, entry)?;
+                let module = loader.module(export.source.value.as_str(), filename, entry)?;
                 match &export.exported {
                     Some(exported) => exports.push((export_name(exported), module)),
                     None => spreads.push(module),

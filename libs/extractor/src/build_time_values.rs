@@ -7,8 +7,8 @@ use std::collections::BTreeSet;
 
 use oxc_allocator::Allocator;
 use oxc_ast::ast::{
-    Declaration, ExportDefaultDeclarationKind, Expression, ImportDeclarationSpecifier,
-    ObjectPropertyKind, Program, Statement, VariableDeclarationKind,
+    ArrayExpressionElement, Declaration, ExportDefaultDeclarationKind, Expression,
+    ImportDeclarationSpecifier, ObjectPropertyKind, Program, Statement, VariableDeclarationKind,
 };
 use oxc_ast_visit::{Visit, walk};
 use oxc_parser::Parser;
@@ -19,17 +19,8 @@ use oxc_syntax::symbol::SymbolId;
 use rustc_hash::{FxHashMap, FxHashSet};
 
 use crate::stylex::StylexFunction;
-use crate::utils::get_string_by_literal_expression;
-
-/// What an expression of the source computes, by the span of that expression
-#[cfg(feature = "vanilla-extract")]
-type Values = FxHashMap<(u32, u32), Value>;
-
-#[cfg(feature = "vanilla-extract")]
-enum Value {
-    String(String),
-    Number(f64),
-}
+use crate::utils::{get_string_by_literal_expression, unwrap_syntax_only};
+use crate::{ExtractOption, ModuleResolver};
 
 /// An expression whose reads the module can run on its own
 #[cfg_attr(not(feature = "vanilla-extract"), allow(dead_code))]
@@ -37,28 +28,43 @@ struct Found {
     span: Span,
     /// The top-level statements it reads, directly or through each other
     statements: BTreeSet<usize>,
-    /// Whether it calls code, which only running the module can compute
-    computes: bool,
+    /// The key of the shorthand property it is written as, which the value
+    /// written in its place needs
+    shorthand: Option<String>,
 }
 
 const UTILS: [&str; 4] = ["css", "globalCss", "keyframes", "createGlobalStyle"];
 
-/// Whether `code` has a style value that only running the module computes
+/// Whether `code` has a style value that only running the module computes:
+/// one that the constants it reads do not give once inlined
 #[must_use]
 pub fn has_build_time_values(
     filename: &str,
     code: &str,
-    package: &str,
-    alias_sources: &[String],
+    option: &ExtractOption,
+    resolver: Option<&ModuleResolver>,
 ) -> bool {
+    let (code, _) = crate::import_alias_visit::transform_import_aliases_with_edits(
+        code,
+        filename,
+        &option.package,
+        &option.import_aliases,
+    );
     let allocator = Allocator::default();
-    let Some(program) = parse(&allocator, filename, code) else {
+    let Some(mut program) = parse(&allocator, filename, &code) else {
         return false;
     };
-    let is_style = |source: &str| {
-        source.starts_with(package) || alias_sources.iter().any(|alias| alias == source)
-    };
-    find(&program, &is_style).iter().any(|found| found.computes)
+    crate::imported_constants::inline_constants(
+        &oxc_ast::builder::AstBuilder::new(&allocator),
+        &mut program,
+        filename,
+        option,
+        resolver,
+    );
+    !find(&program, &|source| {
+        source.starts_with(option.package.as_str())
+    })
+    .is_empty()
 }
 
 fn parse<'a>(allocator: &'a Allocator, filename: &str, code: &'a str) -> Option<Program<'a>> {
@@ -176,26 +182,10 @@ impl<'s, 'a> Finder<'s, 'a> {
                 }
                 return;
             }
-            Statement::VariableDeclaration(declaration) => {
-                for declarator in &declaration.declarations {
-                    for identifier in declarator.id.get_binding_identifiers() {
-                        declare(
-                            identifier.symbol_id.get(),
-                            declaration.kind == VariableDeclarationKind::Const,
-                        );
-                    }
-                }
-                return;
-            }
-            Statement::FunctionDeclaration(function) => {
-                declare(function.id.as_ref().and_then(|id| id.symbol_id.get()), true);
-                return;
-            }
-            Statement::ClassDeclaration(class) => {
-                declare(class.id.as_ref().and_then(|id| id.symbol_id.get()), true);
-                return;
-            }
-            _ => return,
+            node => match node.as_declaration() {
+                Some(declaration) => declaration,
+                None => return,
+            },
         };
         match declaration {
             Declaration::VariableDeclaration(declaration) => {
@@ -213,6 +203,9 @@ impl<'s, 'a> Finder<'s, 'a> {
             }
             Declaration::ClassDeclaration(class) => {
                 declare(class.id.as_ref().and_then(|id| id.symbol_id.get()), true);
+            }
+            Declaration::TSEnumDeclaration(declaration) => {
+                declare(declaration.id.symbol_id.get(), !declaration.declare);
             }
             _ => {}
         }
@@ -244,21 +237,42 @@ impl<'s, 'a> Finder<'s, 'a> {
         }
     }
 
-    /// The values `expression` holds: itself, or those of the object or array
-    /// it writes
-    fn values(&mut self, expression: &Expression<'a>) {
-        match crate::utils::unwrap_syntax_only(expression) {
+    /// The values `expression` holds: itself, or those of the object, array or
+    /// condition it writes
+    fn values(&mut self, expression: &Expression<'a>, shorthand: Option<&str>) {
+        match unwrap_syntax_only(expression) {
             Expression::ObjectExpression(object) => {
                 for property in &object.properties {
-                    if let ObjectPropertyKind::ObjectProperty(property) = property {
-                        self.values(&property.value);
+                    match property {
+                        ObjectPropertyKind::ObjectProperty(property) => {
+                            if property.computed
+                                && let Some(key) = property.key.as_expression()
+                            {
+                                self.values(key, None);
+                            }
+                            let key = property.key.static_name();
+                            self.values(
+                                &property.value,
+                                key.as_deref().filter(|_| property.shorthand),
+                            );
+                        }
+                        ObjectPropertyKind::SpreadProperty(spread) => {
+                            self.values(&spread.argument, None);
+                        }
                     }
                 }
             }
             Expression::ArrayExpression(array) => {
                 for element in &array.elements {
-                    if let Some(element) = element.as_expression() {
-                        self.values(element);
+                    match element {
+                        ArrayExpressionElement::SpreadElement(spread) => {
+                            self.values(&spread.argument, None);
+                        }
+                        element => {
+                            if let Some(element) = element.as_expression() {
+                                self.values(element, None);
+                            }
+                        }
                     }
                 }
             }
@@ -267,21 +281,43 @@ impl<'s, 'a> Finder<'s, 'a> {
             | Expression::ArrowFunctionExpression(_)
             | Expression::FunctionExpression(_) => {}
             inner if get_string_by_literal_expression(inner).is_some() => {}
-            _ => {
-                let span = expression.span();
-                let mut reads = Reads::new(self.scoping);
-                reads.visit_expression(expression);
-                if !reads.opaque
-                    && let Some(statements) = self.closure(span, &reads.references)
-                {
-                    self.found.push(Found {
-                        span,
-                        statements,
-                        computes: reads.computes,
-                    });
+            inner => {
+                if self.candidate(expression, shorthand) {
+                    return;
+                }
+                // A condition only known at runtime still chooses between
+                // values the module computes
+                match inner {
+                    Expression::ConditionalExpression(conditional) => {
+                        self.values(&conditional.consequent, None);
+                        self.values(&conditional.alternate, None);
+                    }
+                    Expression::LogicalExpression(logical) => {
+                        self.values(&logical.left, None);
+                        self.values(&logical.right, None);
+                    }
+                    _ => {}
                 }
             }
         }
+    }
+
+    fn candidate(&mut self, expression: &Expression<'a>, shorthand: Option<&str>) -> bool {
+        let span = expression.span();
+        let mut reads = Reads::new(self.scoping);
+        reads.visit_expression(expression);
+        if reads.opaque {
+            return false;
+        }
+        let Some(statements) = self.closure(span, &reads.references) else {
+            return false;
+        };
+        self.found.push(Found {
+            span,
+            statements,
+            shorthand: shorthand.map(str::to_string),
+        });
+        true
     }
 
     /// The top-level statements code at `span` reads, `None` when it reads a
@@ -331,8 +367,15 @@ impl<'a> Visit<'a> for Finder<'_, 'a> {
     fn visit_call_expression(&mut self, call: &oxc_ast::ast::CallExpression<'a>) {
         if self.is_api(&call.callee) {
             for argument in &call.arguments {
-                if let Some(argument) = argument.as_expression() {
-                    self.values(argument);
+                match argument {
+                    oxc_ast::ast::Argument::SpreadElement(spread) => {
+                        self.values(&spread.argument, None);
+                    }
+                    argument => {
+                        if let Some(argument) = argument.as_expression() {
+                            self.values(argument, None);
+                        }
+                    }
                 }
             }
         }
@@ -345,20 +388,20 @@ impl<'a> Visit<'a> for Finder<'_, 'a> {
     ) {
         if self.is_api(&tagged.tag) {
             for expression in &tagged.quasi.expressions {
-                self.values(expression);
+                self.values(expression, None);
             }
         }
         walk::walk_tagged_template_expression(self, tagged);
     }
 }
 
-/// The bindings code reads, and whether it calls code
+/// The bindings code reads
 struct Reads<'s> {
     scoping: &'s Scoping,
     references: Vec<ReferenceId>,
-    /// Reads what only the code around it knows: `this`, `super`, `import.meta`
+    /// Reads what only the code around it knows (`this`, `super`,
+    /// `import.meta`), or what differs on every build (`Date`, `Math.random`)
     opaque: bool,
-    computes: bool,
 }
 
 impl<'s> Reads<'s> {
@@ -367,26 +410,36 @@ impl<'s> Reads<'s> {
             scoping,
             references: Vec::new(),
             opaque: false,
-            computes: false,
         }
     }
 
-    /// `Math.x(...)`, which extraction folds without running the module
-    fn is_math(&self, callee: &Expression<'_>) -> bool {
-        matches!(callee, Expression::StaticMemberExpression(member)
-            if matches!(&member.object, Expression::Identifier(object)
-                if object.name == "Math"
-                    && object
-                        .reference_id
-                        .get()
-                        .and_then(|reference| self.scoping.get_reference(reference).symbol_id())
-                        .is_none()))
+    fn is_global(&self, expression: &Expression<'_>, name: &str) -> bool {
+        matches!(expression, Expression::Identifier(identifier)
+            if identifier.name == name
+                && identifier
+                    .reference_id
+                    .get()
+                    .and_then(|reference| self.scoping.get_reference(reference).symbol_id())
+                    .is_none())
     }
 }
 
 impl<'a> Visit<'a> for Reads<'_> {
     fn visit_identifier_reference(&mut self, identifier: &oxc_ast::ast::IdentifierReference<'a>) {
-        self.references.extend(identifier.reference_id.get());
+        let reference = identifier.reference_id.get();
+        self.opaque |= identifier.name == "Date"
+            && reference
+                .and_then(|reference| self.scoping.get_reference(reference).symbol_id())
+                .is_none();
+        self.references.extend(reference);
+    }
+
+    fn visit_static_member_expression(
+        &mut self,
+        member: &oxc_ast::ast::StaticMemberExpression<'a>,
+    ) {
+        self.opaque |= member.property.name == "random" && self.is_global(&member.object, "Math");
+        walk::walk_static_member_expression(self, member);
     }
 
     fn visit_this_expression(&mut self, _: &oxc_ast::ast::ThisExpression) {
@@ -407,52 +460,30 @@ impl<'a> Visit<'a> for Reads<'_> {
 
     // Types are erased before the code runs, so what they name is not read
     fn visit_ts_type(&mut self, _: &oxc_ast::ast::TSType<'a>) {}
-
-    fn visit_call_expression(&mut self, call: &oxc_ast::ast::CallExpression<'a>) {
-        self.computes |= !self.is_math(&call.callee);
-        walk::walk_call_expression(self, call);
-    }
-
-    fn visit_new_expression(&mut self, new: &oxc_ast::ast::NewExpression<'a>) {
-        self.computes = true;
-        walk::walk_new_expression(self, new);
-    }
-
-    fn visit_tagged_template_expression(
-        &mut self,
-        tagged: &oxc_ast::ast::TaggedTemplateExpression<'a>,
-    ) {
-        self.computes = true;
-        walk::walk_tagged_template_expression(self, tagged);
-    }
 }
 
 /// `code` with what its style values compute written in their place, the
 /// replacements made, and the files read; `None` when running the code it
-/// reads computes none of them as a string or a finite number
+/// reads computes none of them as a string, a finite number, or a plain
+/// object or array of those
 #[cfg(feature = "vanilla-extract")]
 pub(crate) fn evaluate(
     code: &str,
     filename: &str,
-    option: &crate::ExtractOption,
-    resolver: Option<&crate::ModuleResolver>,
+    option: &ExtractOption,
+    resolver: Option<&ModuleResolver>,
 ) -> Option<(
     String,
     Vec<crate::import_alias_visit::Edit>,
     BTreeSet<String>,
 )> {
-    let (values, dependencies) = compute(code, filename, option, resolver)?;
-    let mut spans: Vec<_> = values.into_iter().collect();
-    spans.sort_unstable_by_key(|((start, _), _)| *start);
+    let (mut values, dependencies) = compute(code, filename, option, resolver)?;
+    values.sort_unstable_by_key(|(span, _)| span.start);
     let mut result = String::with_capacity(code.len());
-    let mut edits = Vec::with_capacity(spans.len());
+    let mut edits = Vec::with_capacity(values.len());
     let mut copied = 0;
-    for ((start, end), value) in spans {
-        let (start, end) = (start as usize, end as usize);
-        let literal = match value {
-            Value::String(text) => serde_json::Value::String(text).to_string(),
-            Value::Number(number) => crate::utils::js_number_string(number),
-        };
+    for (span, literal) in values {
+        let (start, end) = (span.start as usize, span.end as usize);
         result.push_str(&code[copied..start]);
         result.push_str(&literal);
         edits.push((start, end, literal.len()));
@@ -462,13 +493,34 @@ pub(crate) fn evaluate(
     Some((result, edits, dependencies))
 }
 
+/// A value's source text by the span of the code computing it
+#[cfg(feature = "vanilla-extract")]
+type Replacement = (Span, String);
+
+/// Run before the values: nothing that differs between builds, a stand-in for
+/// the style packages, and the source text of a value the build can read
+#[cfg(feature = "vanilla-extract")]
+const PRELUDE: &str = r#"delete globalThis.Date;
+Math.random = undefined;
+globalThis.__vanilla_extract__ = (() => { const style = new Proxy(function () {}, { get: (_, key) => key === Symbol.toPrimitive ? undefined : style, apply: () => style }); return style; })();
+const __failed__ = (() => { const fail = () => { throw new ReferenceError("its value threw"); }; return new Proxy(function () {}, { get: fail, apply: fail, construct: fail, getPrototypeOf: fail }); })();
+const __try__ = (compute) => { try { return compute(); } catch { return __failed__; } };
+const __literal__ = (value) => {
+  const plain = (item) => item === undefined || item === null || typeof item === "string" || typeof item === "boolean" || (typeof item === "number" && Number.isFinite(item))
+    || (Array.isArray(item) && item.every(plain))
+    || (typeof item === "object" && Object.getPrototypeOf(item) === Object.prototype && Object.getOwnPropertySymbols(item).length === 0 && !Object.prototype.hasOwnProperty.call(item, "__proto__") && Object.values(item).every(plain));
+  if (typeof value === "number") return Number.isFinite(value) ? String(value) : undefined;
+  return value !== undefined && plain(value) ? JSON.stringify(value) : undefined;
+};
+"#;
+
 #[cfg(feature = "vanilla-extract")]
 fn compute(
     code: &str,
     filename: &str,
-    option: &crate::ExtractOption,
-    resolver: Option<&crate::ModuleResolver>,
-) -> Option<(Values, BTreeSet<String>)> {
+    option: &ExtractOption,
+    resolver: Option<&ModuleResolver>,
+) -> Option<(Vec<Replacement>, BTreeSet<String>)> {
     use std::fmt::Write;
 
     use boa_engine::{Context, JsObject, Source};
@@ -480,10 +532,7 @@ fn compute(
     let is_style = |source: &str| {
         source.starts_with(option.package.as_str()) || option.import_aliases.contains_key(source)
     };
-    let found: Vec<Found> = find(&program, &is_style)
-        .into_iter()
-        .filter(|found| found.computes)
-        .collect();
+    let found = find(&program, &is_style);
     if found.is_empty() {
         return None;
     }
@@ -493,7 +542,33 @@ fn compute(
         .collect();
     let mut module = String::new();
     for index in statements {
-        let span = match &program.body[index] {
+        let statement = &program.body[index];
+        let declaration = match statement {
+            Statement::VariableDeclaration(declaration) => Some(declaration),
+            Statement::ExportDeclaration(export) => match &export.declaration {
+                Declaration::VariableDeclaration(declaration) => Some(declaration),
+                _ => None,
+            },
+            _ => None,
+        };
+        if let Some(declaration) = declaration {
+            // A binding whose value throws is one reading it throws for,
+            // leaving the others
+            for declarator in &declaration.declarations {
+                let Some(init) = &declarator.init else {
+                    continue;
+                };
+                let _ = writeln!(
+                    module,
+                    "{} {}__try__(() => ({}));",
+                    declaration.kind.as_str(),
+                    &code[declarator.span.start as usize..init.span().start as usize],
+                    &code[init.span().start as usize..init.span().end as usize],
+                );
+            }
+            continue;
+        }
+        let span = match statement {
             Statement::ExportDeclaration(export) => export.declaration.span(),
             Statement::ExportDefaultDeclaration(export) => export.declaration.span(),
             statement => statement.span(),
@@ -505,7 +580,7 @@ fn compute(
     for (index, found) in found.iter().enumerate() {
         let _ = writeln!(
             module,
-            "const __value_{index}__ = (() => {{ try {{ return ({}); }} catch {{ return undefined; }} }})();",
+            "const __value_{index}__ = (() => {{ try {{ return __literal__(({})); }} catch {{ return undefined; }} }})();",
             &code[found.span.start as usize..found.span.end as usize]
         );
     }
@@ -515,7 +590,7 @@ fn compute(
     let _ = writeln!(module, "[{}];", names.join(", "));
 
     let _evaluating = Evaluating::enter(filename);
-    let mut loader = ModuleLoader::new(resolver, option);
+    let mut loader = ModuleLoader::new(resolver, option).lenient();
     let script = module_script(
         &crate::vanilla_extract::strip_typescript(&module, filename),
         filename,
@@ -527,29 +602,29 @@ fn compute(
     context
         .runtime_limits_mut()
         .set_loop_iteration_limit(10_000_000);
-    // The CSS must be the same on every build
     let values = context
         .eval(Source::from_bytes(
-            format!(
-                "delete globalThis.Date;\nMath.random = undefined;\n{}{}",
-                loader.prelude(),
-                script.body
-            )
-            .as_bytes(),
+            format!("{PRELUDE}{}{}", loader.prelude(), script.body).as_bytes(),
         ))
         .ok()?;
     let values = values.as_object().filter(JsObject::is_array)?;
-    let mut computed = Values::default();
-    for (index, found) in found.iter().enumerate() {
-        let value = values.get(index, &mut context).ok()?;
-        let value = if let Some(text) = value.as_string() {
-            Value::String(text.to_std_string_escaped())
-        } else if let Some(number) = value.as_number().filter(|number| number.is_finite()) {
-            Value::Number(number)
-        } else {
+    let mut computed = Vec::new();
+    for (index, found) in found.into_iter().enumerate() {
+        let Some(literal) = values
+            .get(index, &mut context)
+            .ok()?
+            .as_string()
+            .map(|literal| literal.to_std_string_escaped())
+        else {
             continue;
         };
-        computed.insert((found.span.start, found.span.end), value);
+        computed.push((
+            found.span,
+            match found.shorthand {
+                Some(key) => format!("{key}: {literal}"),
+                None => literal,
+            },
+        ));
     }
     (!computed.is_empty()).then_some((computed, loader.dependencies))
 }

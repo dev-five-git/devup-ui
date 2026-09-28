@@ -11,7 +11,7 @@ use crate::{
         GlobalExtractResult,
         extract_style_from_expression::{
             LiteralHandling, at_rule_record_kind, extract_style_from_expression, place_in_layer,
-            yield_typography,
+            unreadable, unreadable_key, yield_typography,
         },
     },
     utils::{
@@ -261,6 +261,8 @@ fn collect_global_styles<'a>(
                             yield_typography(&mut extracted);
                             styles.extend(extracted);
                         }
+                    } else {
+                        styles.push(unreadable_key(&o.key, false));
                     }
                 }
                 ObjectPropertyKind::SpreadProperty(o) => {
@@ -274,5 +276,7 @@ fn collect_global_styles<'a>(
                 }
             }
         }
+    } else {
+        styles.extend(unreadable(expression).styles);
     }
 }

@@ -12,9 +12,9 @@ use crate::{
     gen_class_name::{gen_class_names, merge_expression_for_class_name},
     gen_style::gen_styles,
     utils::{
-        StyleArguments, merge_object_expressions, style_arguments, uncomposable_error,
-        unplaced_error, unwrap_syntax_only, unwrap_syntax_only_mut, wrap_array_filter,
-        wrap_direct_call,
+        STYLE_OBJECT, StyleArguments, build_time_error, merge_object_expressions, reads_directly,
+        style_arguments, uncomposable_error, unplaced_error, unreadable_styles, unwrap_syntax_only,
+        unwrap_syntax_only_mut, wrap_array_filter, wrap_direct_call,
     },
 };
 use oxc_allocator::{CloneIn, FromIn, GetAllocator};
@@ -123,10 +123,16 @@ pub fn extract_style_from_styled<'a>(
                     oxc_allocator::Vec::from_array_in([Argument::from(rules)], ast_builder);
                 composed_classes = classes;
             }
-            None if call.arguments.len() > 1
-                || matches!(call.arguments.first(), Some(Argument::ArrayExpression(_))) =>
-            {
+            None if !reads_directly(&call.arguments) => {
                 errors.push((call.span.start, uncomposable_error(&call.arguments)));
+                call.arguments = oxc_allocator::Vec::from_array_in(
+                    [Argument::from(Expression::new_object_expression(
+                        SPAN,
+                        oxc_allocator::Vec::new_in(ast_builder),
+                        ast_builder,
+                    ))],
+                    ast_builder,
+                );
             }
             None => {}
         }
@@ -241,6 +247,13 @@ pub fn extract_style_from_styled<'a>(
             0,
             &None,
             LiteralHandling::ExpandResponsiveThemeToken,
+        );
+        let mut unreadable = Vec::new();
+        unreadable_styles(&styles, true, &mut unreadable);
+        errors.extend(
+            unreadable
+                .into_iter()
+                .map(|(offset, code)| (offset, build_time_error("styled", &code, STYLE_OBJECT))),
         );
         if let Some(default_class_name) = default_class_name {
             styles.extend(default_class_name.into_iter().map(ExtractStyleProp::Static));

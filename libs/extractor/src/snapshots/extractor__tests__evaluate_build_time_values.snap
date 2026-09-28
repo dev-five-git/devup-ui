@@ -6,6 +6,26 @@ ToBTreeSet {
     styles: {
         Static(
             ExtractStaticStyle {
+                property: "background",
+                value: "darker(.2)",
+                level: 0,
+                selector: None,
+                style_order: None,
+                layer: None,
+            },
+        ),
+        Static(
+            ExtractStaticStyle {
+                property: "border-color",
+                value: "darker(.5)",
+                level: 0,
+                selector: None,
+                style_order: None,
+                layer: None,
+            },
+        ),
+        Static(
+            ExtractStaticStyle {
                 property: "color",
                 value: "darker(.1)",
                 level: 0,
@@ -18,6 +38,50 @@ ToBTreeSet {
             ExtractStaticStyle {
                 property: "color",
                 value: "darker(.2)",
+                level: 0,
+                selector: None,
+                style_order: None,
+                layer: None,
+            },
+        ),
+        Static(
+            ExtractStaticStyle {
+                property: "color",
+                value: "darker(.2)",
+                level: 0,
+                selector: Some(
+                    Selector(
+                        "&:hover",
+                    ),
+                ),
+                style_order: None,
+                layer: None,
+            },
+        ),
+        Static(
+            ExtractStaticStyle {
+                property: "color",
+                value: "darker(.3)",
+                level: 0,
+                selector: None,
+                style_order: None,
+                layer: None,
+            },
+        ),
+        Static(
+            ExtractStaticStyle {
+                property: "color",
+                value: "darker(.5)",
+                level: 0,
+                selector: None,
+                style_order: None,
+                layer: None,
+            },
+        ),
+        Static(
+            ExtractStaticStyle {
+                property: "color",
+                value: "darker(.5)",
                 level: 0,
                 selector: Some(
                     Global(
@@ -33,8 +97,8 @@ ToBTreeSet {
         ),
         Static(
             ExtractStaticStyle {
-                property: "color",
-                value: "darker(.3)",
+                property: "fill",
+                value: "darker(.5)",
                 level: 0,
                 selector: None,
                 style_order: None,
@@ -63,6 +127,54 @@ ToBTreeSet {
         ),
         Static(
             ExtractStaticStyle {
+                property: "margin",
+                value: "4px",
+                level: 0,
+                selector: Some(
+                    At {
+                        kind: Media,
+                        query: "(min-width:600px)",
+                        selector: None,
+                        outer: [],
+                        file: None,
+                    },
+                ),
+                style_order: None,
+                layer: None,
+            },
+        ),
+        Static(
+            ExtractStaticStyle {
+                property: "outline-color",
+                value: "teal",
+                level: 0,
+                selector: None,
+                style_order: None,
+                layer: None,
+            },
+        ),
+        Static(
+            ExtractStaticStyle {
+                property: "padding",
+                value: "2px",
+                level: 0,
+                selector: None,
+                style_order: None,
+                layer: None,
+            },
+        ),
+        Static(
+            ExtractStaticStyle {
+                property: "padding",
+                value: "8px",
+                level: 0,
+                selector: None,
+                style_order: None,
+                layer: None,
+            },
+        ),
+        Static(
+            ExtractStaticStyle {
                 property: "top",
                 value: "-8px",
                 level: 0,
@@ -75,6 +187,16 @@ ToBTreeSet {
             ExtractStaticStyle {
                 property: "width",
                 value: "32px",
+                level: 0,
+                selector: None,
+                style_order: None,
+                layer: None,
+            },
+        ),
+        Static(
+            ExtractStaticStyle {
+                property: "z-index",
+                value: "4",
                 level: 0,
                 selector: None,
                 style_order: None,
@@ -107,5 +229,5 @@ ToBTreeSet {
             },
         ),
     },
-    code: "import \"@devup-ui/react/devup-ui-0.css\";\nimport * as stylex from \"@stylexjs/stylex\";\nimport { darken, PRIMARY } from \"./color\";\nexport const SIZE = 4;\nexport default function twice(n: number) {\n\treturn n * 2;\n}\nclass Scale {\n\tconstructor(public n: number) {}\n\tpx() {\n\t\treturn `${this.n}px`;\n\t}\n}\nexport const a = \"a-f a-g a-h a-i a-j\";\nexport const b = \"a-k\";\n;\nconst styles = { \"base\": \"a-l\" };\nexport const c = <div {...{ className: \"a-l\" }} className={`a-a ${{ className: \"a-l\" }?.className || \"\"}`} style={{\n\t...{ \"--a\": darken(.4,`#369`) },\n\t...{ className: \"a-l\" }?.style\n}} />;\n",
+    code: "import \"@devup-ui/react/devup-ui-0.css\";\nimport * as stylex from \"@stylexjs/stylex\";\nimport { darken, PRIMARY, DARK, hover } from \"./color\";\nimport { card, TOKEN } from \"./styles\";\nimport { BEFORE } from \"./fails\";\nexport const SIZE = 4;\nexport default function twice(n: number) {\n\treturn n * 2;\n}\nclass Scale {\n\tconstructor(public n: number) {}\n\tpx() {\n\t\treturn `${this.n}px`;\n\t}\n}\nenum Level {\n\tLow = 1,\n\tHigh = twice(2)\n}\nconst LIGHT = darken(.2, \"#336699\");\nconst color = darken(.3, \"#336699\");\nconst make = (size: number) => ({\n\tp: size,\n\t_hover: { color: LIGHT }\n});\nexport const a = \"a-m a-n a-o a-p a-q\";\nexport const b = \"a-r\";\n;\nconst styles = { \"base\": \"a-s\" };\nexport const c = <div {...{ className: \"a-s\" }} className={`a-a ${{ className: \"a-s\" }?.className || \"\"}`} style={{\n\t...{ \"--a\": darken(.4,`#369`) },\n\t...{ className: \"a-s\" }?.style\n}} />;\nexport const d = \"a-t a-u a-v a-w a-x a-y a-i\";\nexport const e = (dark: boolean) => `a-aa ${dark ? \"a-z\" : \"a-s\"} ${dark ? \"a-_\" : \"\"}`;\nexport const f = `a-ab ${card}`;\n",
 }

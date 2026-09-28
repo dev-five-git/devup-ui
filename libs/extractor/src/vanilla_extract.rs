@@ -528,6 +528,7 @@ pub(crate) fn strip_typescript(code: &str, filename: &str) -> String {
     let source_type = SourceType::from_path(filename).unwrap_or_else(|_| SourceType::ts());
     let mut program = Parser::new(&allocator, code, source_type).parse().program;
     let scoping = SemanticBuilder::new()
+        .with_enum_eval(true)
         .build(&program)
         .semantic
         .into_scoping();

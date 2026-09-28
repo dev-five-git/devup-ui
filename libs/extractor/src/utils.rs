@@ -528,16 +528,14 @@ pub(super) struct StyleArguments<'a> {
     pub rules: Expression<'a>,
 }
 
-/// `None` for a single non-array argument, which needs no composing, or when a
-/// part is neither a rule object nor a class (`null`/`undefined`/`false` parts
-/// are skipped).
+/// `None` for a single argument read as it is written, or when a part is
+/// neither a rule object nor a class (`null`/`undefined`/`false` parts are
+/// skipped).
 pub(super) fn style_arguments<'a>(
     ast_builder: &AstBuilder<'a>,
     arguments: &[Argument<'a>],
 ) -> Option<StyleArguments<'a>> {
-    if let [argument] = arguments
-        && !matches!(argument, Argument::ArrayExpression(_))
-    {
+    if reads_directly(arguments) {
         return None;
     }
     let mut parts = Vec::new();
@@ -573,6 +571,31 @@ pub(super) fn style_arguments<'a>(
         classes,
         rules: Expression::new_object_expression(SPAN, merged, ast_builder),
     })
+}
+
+/// A single style argument that needs no composing: a rule object, CSS text,
+/// or a condition choosing between rule objects
+pub(super) fn reads_directly(arguments: &[Argument<'_>]) -> bool {
+    let [argument] = arguments else {
+        return false;
+    };
+    let expression = match argument {
+        Argument::SpreadElement(spread) => Some(&spread.argument),
+        argument => argument.as_expression(),
+    };
+    match expression.map(unwrap_syntax_only) {
+        Some(
+            Expression::ObjectExpression(_)
+            | Expression::TemplateLiteral(_)
+            | Expression::StringLiteral(_),
+        ) => true,
+        Some(Expression::ConditionalExpression(conditional)) => {
+            [&conditional.consequent, &conditional.alternate]
+                .into_iter()
+                .all(|side| matches!(branch(side), Some(Branch::Rules(_) | Branch::Empty)))
+        }
+        _ => false,
+    }
 }
 
 enum StylePart<'b, 'a> {
@@ -637,27 +660,82 @@ fn string_class<'a>(ast_builder: &AstBuilder<'a>, value: &Expression<'a>) -> Exp
 
 /// The first value in `props` that is only known at runtime
 pub(super) fn runtime_value(props: &[crate::ExtractStyleProp<'_>]) -> Option<String> {
-    props
-        .iter()
-        .flat_map(crate::ExtractStyleProp::extract)
-        .find_map(|value| match value {
-            crate::ExtractStyleValue::Dynamic(style) => Some(style.identifier().to_string()),
-            _ => None,
+    let mut unreadable = Vec::new();
+    unreadable_styles(props, true, &mut unreadable);
+    unreadable
+        .into_iter()
+        .next()
+        .map(|(_, code)| code)
+        .or_else(|| {
+            props
+                .iter()
+                .flat_map(crate::ExtractStyleProp::extract)
+                .find_map(|value| match value {
+                    crate::ExtractStyleValue::Dynamic(style) => {
+                        Some(style.identifier().to_string())
+                    }
+                    _ => None,
+                })
         })
 }
+
+/// Where `props` holds styles the build cannot read, with their code; with
+/// `keys`, computed keys among an element's props too
+pub(super) fn unreadable_styles(
+    props: &[crate::ExtractStyleProp<'_>],
+    keys: bool,
+    found: &mut Vec<(u32, String)>,
+) {
+    use crate::ExtractStyleProp;
+    for prop in props {
+        match prop {
+            ExtractStyleProp::Unreadable { offset, code, prop } => {
+                if keys || !prop {
+                    found.push((*offset, code.clone()));
+                }
+            }
+            ExtractStyleProp::StaticArray(props) => unreadable_styles(props, keys, found),
+            ExtractStyleProp::Conditional {
+                consequent,
+                alternate,
+                ..
+            } => {
+                for branch in [consequent, alternate].into_iter().flatten() {
+                    unreadable_styles(std::slice::from_ref(branch.as_ref()), keys, found);
+                }
+            }
+            ExtractStyleProp::Enum { map, .. } => {
+                for props in map.values() {
+                    unreadable_styles(props, keys, found);
+                }
+            }
+            ExtractStyleProp::MemberExpression { map, .. } => {
+                for prop in map.values() {
+                    unreadable_styles(std::slice::from_ref(prop.as_ref()), keys, found);
+                }
+            }
+            ExtractStyleProp::Static(_) | ExtractStyleProp::Expression { .. } => {}
+        }
+    }
+}
+
+pub(super) const STYLE_OBJECT: &str = "its styles must be an object literal or a constant object";
 
 pub(super) fn build_time_error(api: &str, code: &str, requirement: &str) -> String {
     format!("`{api}()` cannot use `{code}` at build time: {requirement}")
 }
 
+pub(super) const RUNTIME_VALUE: &str =
+    "its values must be literals, theme tokens or imported constants";
+
 /// `api` has no element to set a runtime value on, so its values must be
 /// known at build time
 pub(super) fn runtime_value_error(api: &str, value: &str) -> String {
-    build_time_error(
-        api,
-        value,
-        "its values must be literals, theme tokens or imported constants",
-    )
+    build_time_error(api, value, RUNTIME_VALUE)
+}
+
+pub(super) fn element_error(component: &str, code: &str, requirement: &str) -> String {
+    format!("`<{component}>` cannot use `{code}` at build time: {requirement}")
 }
 
 pub(super) fn spread_error(api: &str, spread: &oxc_ast::ast::SpreadElement<'_>) -> (u32, String) {
@@ -1131,7 +1209,20 @@ mod tests {
             )
         };
         assert_eq!(compose("f({ a: 1 })"), None);
-        assert_eq!(compose("f(x)"), None);
+        assert_eq!(compose("f(`a: 1;`)"), None);
+        assert_eq!(compose("f(...{ a: 1 })"), None);
+        assert_eq!(compose("f(cond ? { a: 1 } : null)"), None);
+        assert_eq!(
+            compose("f(x)"),
+            Some((vec!["x;".to_string()], "({});".to_string()))
+        );
+        assert_eq!(
+            compose("f(cond ? x : { a: 1 })"),
+            Some((
+                vec!["cond?x:``;".to_string()],
+                "({a:cond?undefined:1});".to_string()
+            ))
+        );
         assert_eq!(compose("f(...x)"), None);
         assert_eq!(
             compose("f([{ a: 1 }, [cond && x]])"),

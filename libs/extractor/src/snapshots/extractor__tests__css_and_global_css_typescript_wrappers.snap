@@ -43,7 +43,18 @@ ToBTreeSet {
         ),
         Keyframes(
             ExtractKeyframes {
-                keyframes: {},
+                keyframes: {
+                    "from": [
+                        ExtractStaticStyle {
+                            property: "opacity",
+                            value: "0",
+                            level: 0,
+                            selector: None,
+                            style_order: None,
+                            layer: None,
+                        },
+                    ],
+                },
             },
         ),
     },
