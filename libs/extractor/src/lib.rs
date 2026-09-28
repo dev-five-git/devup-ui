@@ -18614,6 +18614,18 @@ export const m = css({ right: proto.a, bottom: getter.a, zIndex: partial.m, orde
                 "export const a = (styles, k) => <Box _hover={styles.all[k]} />;",
                 "`<Box>` cannot use `styles.all[k]`",
             ),
+            (
+                "export const a = (c, x) => <Box styleOrder={c ? 1 : 2} _hover={x} />;",
+                "`<Box>` cannot use `x`",
+            ),
+            (
+                "export const a = (rest) => <Box {...{ ...rest, p: 1 }} />;",
+                "`<Box>` cannot use `rest`",
+            ),
+            (
+                "declare const X: number;\nexport const a = css({ w: String(X) });",
+                "`css()` cannot use `String(X)`",
+            ),
         ] {
             reset_class_map();
             reset_file_map();
@@ -18665,6 +18677,39 @@ export const j = css(...{ bg: 'red' });",
             .to_string(),
             "test.tsx:2:41: `<Global>` cannot use `x` at build time: its values must be literals, theme tokens or imported constants"
         );
+    }
+
+    #[test]
+    #[serial]
+    fn test_computed_values_through_functions_and_style_packages() {
+        reset_class_map();
+        reset_file_map();
+        let modules: &[(&str, &str)] = &[(
+            "/src/sx.ts",
+            "import * as stylex from '@stylexjs/stylex';\nexport const S = stylex.create({ x: { color: 'red' } });\nexport const W = String(3) + 'px';",
+        )];
+        let output = extract_with_modules(
+            "/src/App.tsx",
+            r"import { Box, css } from '@devup-ui/react';
+import { W } from './sx';
+const space = [0, 4, 8];
+const NONE = null;
+const IDX = space[1];
+const LABEL = `x${NONE}`;
+const bad = [...'ab'];
+export function triple(n: number) { return n * 3; }
+export const a = css({ w: W, h: triple(2), m: IDX, content: LABEL, p: bad });
+export function b() { return <this.Box p={IDX} />; }",
+            ExtractOption::default(),
+            false,
+            &memory_resolver(modules),
+        )
+        .unwrap();
+        assert_eq!(output.dependencies, ["/src/sx.ts"]);
+        let styles = format!("{:?}", ToBTreeSet::from(output).styles);
+        for value in ["3px", "24px", "16px", "xnull"] {
+            assert!(styles.contains(value), "{value}\n{styles}");
+        }
     }
 
     #[test]
@@ -18812,6 +18857,10 @@ export const f = css(card, { p: TOKEN });",
             (
                 "import { css } from '@devup-ui/react';\nconst x = css({ w: this.f(), h: String(Date.now()) });",
                 false,
+            ),
+            (
+                "import { css } from '@devup-ui/react';\nconst f = () => 1;\ncss({ w: [...[f()], 2] });",
+                true,
             ),
             ("import { css } from '@devup-ui/react';\ncss({", false),
         ] {
