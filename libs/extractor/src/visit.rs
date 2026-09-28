@@ -41,33 +41,67 @@ use oxc_ast::ast::{
     Argument, BinaryOperator, BindingPattern, CallExpression, ChainElement,
     ComputedMemberExpression, Expression, ExpressionStatement, FormalParameter,
     FormalParameterKind, FormalParameters, IdentifierName, ImportDeclaration, ImportOrExportKind,
-    JSXAttributeItem, JSXAttributeValue, JSXChild, JSXClosingFragment, JSXElement, JSXElementName,
-    JSXExpressionContainer, JSXOpeningFragment, ObjectProperty, ObjectPropertyKind, Program,
-    PropertyKey, PropertyKind, Statement, StaticMemberExpression, Str, StringLiteral,
-    UnaryOperator, VariableDeclarator,
+    JSXAttributeItem, JSXAttributeValue, JSXChild, JSXElement, JSXElementName,
+    JSXExpressionContainer, ObjectProperty, ObjectPropertyKind, Program, PropertyKey, PropertyKind,
+    Statement, StaticMemberExpression, Str, StringLiteral, UnaryOperator, VariableDeclarator,
 };
 use oxc_ast_visit::VisitMut;
 use oxc_ast_visit::walk_mut::{
     walk_call_expression, walk_expression, walk_expression_statement, walk_import_declaration,
-    walk_jsx_element, walk_program, walk_variable_declarator, walk_variable_declarators,
+    walk_jsx_attribute_value, walk_jsx_child, walk_jsx_element, walk_program,
+    walk_variable_declarator, walk_variable_declarators,
 };
 use oxc_syntax::number::NumberBase;
 use strum::IntoEnumIterator;
 
 use crate::utils::{
-    ParsedStyleOrder, RUNTIME_VALUE, STYLE_OBJECT, StyleArguments, build_time_error,
-    composes_binding, element_error, expression_to_style_order, fixed_value,
-    get_str_by_property_key, get_string_by_literal_expression, get_string_by_property_key,
+    ParsedStyleOrder, RUNTIME_VALUE, STYLE_OBJECT, StyleArguments, Suspends, build_time_error,
+    call_with_values, composes_binding, element_error, expression_to_style_order, fixed_value,
+    get_str_by_property_key, get_string_by_literal_expression, get_string_by_property_key, is_pure,
     jsx_expression_to_style_order, key_error, readable_argument, readable_code, reads_directly,
-    reads_unknown, runtime_classes, runtime_value, runtime_value_error, spread_error,
-    style_arguments, uncomposable_error, unplaced_error, unreadable_styles, unwrap_syntax_only,
-    unwrap_syntax_only_mut,
+    reads_spreads_once, reads_unknown, runtime_classes, runtime_value, runtime_value_error,
+    spread_error, stays_attribute, style_arguments, uncomposable_error, unplaced_error,
+    unreadable_styles, unwrap_syntax_only, unwrap_syntax_only_mut,
 };
 use oxc_ast::builder::AstBuilder;
 use oxc_span::{GetSpan, SPAN};
 use rustc_hash::{FxHashMap, FxHashSet};
 use std::borrow::Cow;
 use std::rc::Rc;
+
+fn property_stays(property: &ObjectProperty<'_>) -> bool {
+    property
+        .key
+        .static_name()
+        .is_some_and(|name| stays_attribute(&name))
+}
+
+/// The value of a JSX attribute that stays an attribute of the element built
+fn attribute_value<'b, 'a>(
+    attribute: &'b oxc_ast::ast::JSXAttribute<'a>,
+) -> Option<&'b Expression<'a>> {
+    match (&attribute.name, &attribute.value) {
+        (Identifier(name), Some(JSXAttributeValue::ExpressionContainer(container)))
+            if stays_attribute(&name.name) =>
+        {
+            container.expression.as_expression()
+        }
+        _ => None,
+    }
+}
+
+fn attribute_value_mut<'b, 'a>(
+    attribute: &'b mut oxc_ast::ast::JSXAttribute<'a>,
+) -> Option<&'b mut Expression<'a>> {
+    match (&attribute.name, &mut attribute.value) {
+        (Identifier(name), Some(JSXAttributeValue::ExpressionContainer(container)))
+            if stays_attribute(&name.name) =>
+        {
+            container.expression.as_expression_mut()
+        }
+        _ => None,
+    }
+}
 
 fn style_property_into_string(style_property: StyleProperty) -> String {
     match style_property {
@@ -134,10 +168,12 @@ pub struct DevupVisitor<'a> {
     /// Maps variable names to their keyframe animation names.
     /// e.g., "fadeIn" → "a-a"
     stylex_keyframe_names: FxHashMap<String, String>,
-    /// Pending `JSXFragment` children from dynamic `as` prop resolution.
-    /// Set in `visit_jsx_element`, consumed in `visit_expression` to replace
-    /// `Expression::JSXElement` with `Expression::JSXFragment`.
-    pending_fragment_children: Option<oxc_allocator::Vec<'a, JSXChild<'a>>>,
+    /// What the element just visited becomes when it is not an element any
+    /// more (a dynamic `as`, a spread evaluated once): set in
+    /// `visit_jsx_element`, written where the element stands by the visit of
+    /// the expression, child or attribute value holding it
+    pending_replacement: Option<Expression<'a>>,
+    spreads_read_once: usize,
     unknown_bindings: crate::imported_constants::Unknown,
     /// Whether `css()` or `styled()` joined as a class, or an element took
     /// through a spread, a binding that may hold rules only running the module
@@ -181,7 +217,8 @@ impl<'a> DevupVisitor<'a> {
             stylex_namespaces: FxHashMap::default(),
             stylex_pending_keyframe_name: None,
             stylex_keyframe_names: FxHashMap::default(),
-            pending_fragment_children: None,
+            pending_replacement: None,
+            spreads_read_once: 0,
             unknown_bindings: crate::imported_constants::Unknown::default(),
             composes_unknown: false,
         }
@@ -189,6 +226,69 @@ impl<'a> DevupVisitor<'a> {
 
     pub fn unknown_bindings(&mut self, unknown: &crate::imported_constants::Unknown) {
         self.unknown_bindings.clone_from(unknown);
+    }
+
+    /// Put the spreads of `props` that may change when read again, and the
+    /// props written before them, in names read in their place, returning the
+    /// names and what they read: the element reads a spread's `className` and
+    /// `style` beside the spread
+    fn read_spreads_once(&mut self, props: &mut Expression<'a>) -> Vec<(String, Expression<'a>)> {
+        let mut read_once = Vec::new();
+        let Expression::ObjectExpression(object) = props else {
+            return read_once;
+        };
+        let suspends = |value: &Expression<'a>| {
+            let mut suspends = Suspends::default();
+            oxc_ast_visit::Visit::visit_expression(&mut suspends, value);
+            suspends.found
+        };
+        let moves = |property: &ObjectPropertyKind<'a>| match property {
+            ObjectPropertyKind::SpreadProperty(spread) => !is_pure(&spread.argument),
+            ObjectPropertyKind::ObjectProperty(property) => {
+                property_stays(property) && suspends(&property.value)
+            }
+        };
+        let stuck = object.properties.iter().any(|property| {
+            matches!(property, ObjectPropertyKind::ObjectProperty(property)
+                if (property.computed || !property_stays(property)) && suspends(&property.value))
+        });
+        let Some(last) = object.properties.iter().rposition(moves) else {
+            return read_once;
+        };
+        if stuck
+            || !object.properties.iter().any(|property| {
+                matches!(property, ObjectPropertyKind::SpreadProperty(spread)
+                    if !is_pure(&spread.argument))
+            })
+        {
+            return read_once;
+        }
+        for property in object.properties.iter_mut().take(last + 1) {
+            let value = match property {
+                ObjectPropertyKind::SpreadProperty(spread) => &mut spread.argument,
+                ObjectPropertyKind::ObjectProperty(property)
+                    if !property.computed && property_stays(property) =>
+                {
+                    &mut property.value
+                }
+                ObjectPropertyKind::ObjectProperty(_) => continue,
+            };
+            if !is_pure(value) {
+                read_once.push(self.read_once(value));
+            }
+        }
+        read_once
+    }
+
+    fn read_once(&mut self, value: &mut Expression<'a>) -> (String, Expression<'a>) {
+        let name = format!("__devupSpread{}", self.spreads_read_once);
+        self.spreads_read_once += 1;
+        let read = Expression::new_identifier(
+            SPAN,
+            Str::from_in(name.as_str(), self.ast.allocator()),
+            &self.ast,
+        );
+        (name, std::mem::replace(value, read))
     }
 }
 
@@ -1524,15 +1624,32 @@ impl<'a> VisitMut<'a> for DevupVisitor<'a> {
             }
         }
 
-        // Replace JSXElement with JSXFragment when dynamic `as` prop produced an empty name
-        if let Some(children) = self.pending_fragment_children.take() {
-            *it = Expression::new_jsx_fragment(
+        if let Expression::JSXElement(_) = it
+            && let Some(replacement) = self.pending_replacement.take()
+        {
+            *it = replacement;
+        }
+    }
+
+    fn visit_jsx_child(&mut self, it: &mut JSXChild<'a>) {
+        walk_jsx_child(self, it);
+        if let JSXChild::Element(_) = it
+            && let Some(replacement) = self.pending_replacement.take()
+        {
+            *it = JSXChild::ExpressionContainer(JSXExpressionContainer::boxed(
                 SPAN,
-                JSXOpeningFragment::new(SPAN, &self.ast),
-                children,
-                JSXClosingFragment::new(SPAN, &self.ast),
+                replacement.into(),
                 &self.ast,
-            );
+            ));
+        }
+    }
+
+    fn visit_jsx_attribute_value(&mut self, it: &mut JSXAttributeValue<'a>) {
+        walk_jsx_attribute_value(self, it);
+        if let JSXAttributeValue::Element(_) = it
+            && let Some(replacement) = self.pending_replacement.take()
+        {
+            *it = JSXAttributeValue::new_expression_container(SPAN, replacement.into(), &self.ast);
         }
     }
     fn visit_call_expression(&mut self, it: &mut CallExpression<'a>) {
@@ -1636,6 +1753,8 @@ impl<'a> VisitMut<'a> for DevupVisitor<'a> {
                     other => other,
                 };
 
+                let read_once = self.read_spreads_once(it.arguments[1].to_expression_mut());
+
                 if let ParsedStyleOrder::Conditional {
                     condition,
                     consequent,
@@ -1712,10 +1831,22 @@ impl<'a> VisitMut<'a> for DevupVisitor<'a> {
                 }
 
                 it.arguments[0] = Argument::from(tag);
+                if !read_once.is_empty() {
+                    let call = Expression::CallExpression(oxc_allocator::Box::new_in(
+                        it.clone_in(self.ast.allocator()),
+                        &self.ast,
+                    ));
+                    if let Expression::CallExpression(reading_once) =
+                        call_with_values(&self.ast, read_once, call)
+                    {
+                        *it = reading_once.unbox();
+                    }
+                }
             }
         }
         walk_call_expression(self, it);
     }
+
     fn visit_variable_declarator(&mut self, it: &mut VariableDeclarator<'a>) {
         if let Some(Expression::CallExpression(call)) = &it.init
             && call.arguments.len() == 1
@@ -1969,6 +2100,9 @@ impl<'a> VisitMut<'a> for DevupVisitor<'a> {
             name => self.imports.get(name.to_string().as_str()),
         };
         if let Some(kind) = kind {
+            // A spread whose value may change when read again is read once, as
+            // its `className` and `style` are read beside it
+            let reads_once = reads_spreads_once(elem);
             let attrs = &mut elem.opening_element.attributes;
             let mut tag_name = Expression::new_string_literal(
                 SPAN,
@@ -2070,8 +2204,11 @@ impl<'a> VisitMut<'a> for DevupVisitor<'a> {
                     let runtime = styles
                         .iter()
                         .all(|style| matches!(style, ExtractStyleProp::Unreadable { .. }));
-                    self.composes_unknown |=
-                        runtime && reads_unknown(&spread.argument, &self.unknown_bindings);
+                    self.composes_unknown |= runtime
+                        && (matches!(
+                            unwrap_syntax_only(&spread.argument),
+                            Expression::CallExpression(_)
+                        ) || reads_unknown(&spread.argument, &self.unknown_bindings));
                     if runtime
                         || matches!(unwrap_syntax_only(&spread.argument),
                             Expression::ObjectExpression(object) if !object.properties.is_empty())
@@ -2093,6 +2230,81 @@ impl<'a> VisitMut<'a> for DevupVisitor<'a> {
 
             let mut unreadable = Vec::new();
             unreadable_styles(&props_styles, false, &mut unreadable);
+
+            let mut read_once = Vec::new();
+            if reads_once {
+                // What comes before the last value moved out moves out too, so
+                // everything is evaluated in the order it is written
+                let last_attribute = attrs.iter().rposition(|attribute| match attribute {
+                    JSXAttributeItem::SpreadAttribute(spread) => !is_pure(&spread.argument),
+                    JSXAttributeItem::Attribute(attribute) => attribute_value(attribute)
+                        .is_some_and(|value| {
+                            let mut suspends = Suspends::default();
+                            oxc_ast_visit::Visit::visit_expression(&mut suspends, value);
+                            suspends.found
+                        }),
+                });
+                let last_child = elem.children.iter().rposition(|child| {
+                    let mut suspends = Suspends::default();
+                    oxc_ast_visit::Visit::visit_jsx_child(&mut suspends, child);
+                    suspends.found
+                });
+                let attributes_moved = if last_child.is_some() {
+                    attrs.len()
+                } else {
+                    last_attribute.map_or(0, |last| last + 1)
+                };
+                for attribute in attrs.iter_mut().take(attributes_moved) {
+                    let value = match attribute {
+                        JSXAttributeItem::SpreadAttribute(spread) => Some(&mut spread.argument),
+                        JSXAttributeItem::Attribute(attribute) => attribute_value_mut(attribute),
+                    };
+                    if let Some(value) = value.filter(|value| !is_pure(value)) {
+                        read_once.push(self.read_once(value));
+                    }
+                }
+                for child in elem
+                    .children
+                    .iter_mut()
+                    .take(last_child.map_or(0, |last| last + 1))
+                {
+                    match child {
+                        JSXChild::ExpressionContainer(container) => {
+                            if let Some(value) = container.expression.as_expression_mut()
+                                && !is_pure(value)
+                            {
+                                read_once.push(self.read_once(value));
+                            }
+                        }
+                        JSXChild::Spread(spread) => {
+                            if !is_pure(&spread.expression) {
+                                read_once.push(self.read_once(&mut spread.expression));
+                            }
+                        }
+                        JSXChild::Element(_) | JSXChild::Fragment(_) => {
+                            let placeholder = JSXChild::Text(oxc_allocator::Box::new_in(
+                                oxc_ast::ast::JSXText::new(SPAN, "", None, &self.ast),
+                                &self.ast,
+                            ));
+                            let mut value = match std::mem::replace(child, placeholder) {
+                                JSXChild::Element(element) => Expression::JSXElement(element),
+                                JSXChild::Fragment(fragment) => Expression::JSXFragment(fragment),
+                                other => {
+                                    *child = other;
+                                    continue;
+                                }
+                            };
+                            read_once.push(self.read_once(&mut value));
+                            *child = JSXChild::ExpressionContainer(JSXExpressionContainer::boxed(
+                                SPAN,
+                                value.into(),
+                                &self.ast,
+                            ));
+                        }
+                        JSXChild::Text(_) => {}
+                    }
+                }
+            }
 
             if let ParsedStyleOrder::Conditional {
                 condition,
@@ -2178,15 +2390,7 @@ impl<'a> VisitMut<'a> for DevupVisitor<'a> {
                     AsVisitor::new(self.ast.allocator(), elem.clone_in(self.ast.allocator()));
                 let mut el = ExpressionStatement::new(SPAN, tag_name, &self.ast);
                 v.visit_expression_statement(&mut el);
-                let mut children = oxc_allocator::Vec::new_in(&self.ast);
-                children.push(JSXChild::ExpressionContainer(
-                    JSXExpressionContainer::boxed(
-                        SPAN,
-                        el.expression.clone_in(self.ast.allocator()).into(),
-                        &self.ast,
-                    ),
-                ));
-                self.pending_fragment_children = Some(children);
+                self.pending_replacement = Some(el.expression);
                 None
             } {
                 let ident = JSXElementName::new_identifier(
@@ -2199,6 +2403,16 @@ impl<'a> VisitMut<'a> for DevupVisitor<'a> {
                 if let Some(el) = &mut elem.closing_element {
                     el.name = ident;
                 }
+            }
+
+            if !read_once.is_empty() {
+                let element = self.pending_replacement.take().unwrap_or_else(|| {
+                    Expression::JSXElement(oxc_allocator::Box::new_in(
+                        elem.clone_in(self.ast.allocator()),
+                        &self.ast,
+                    ))
+                });
+                self.pending_replacement = Some(call_with_values(&self.ast, read_once, element));
             }
         }
     }

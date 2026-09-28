@@ -472,6 +472,168 @@ pub(super) fn wrap_array_filter<'a>(
     Some(join_call)
 }
 
+/// Whether reading `expression` again gives the same value and changes
+/// nothing: literals, reads and functions, not calls, `new` or assignments
+pub(super) fn is_pure(expression: &Expression<'_>) -> bool {
+    use oxc_ast::ast::{ArrayExpressionElement, PropertyKind};
+    match expression {
+        Expression::BooleanLiteral(_)
+        | Expression::NullLiteral(_)
+        | Expression::NumericLiteral(_)
+        | Expression::BigIntLiteral(_)
+        | Expression::StringLiteral(_)
+        | Expression::RegExpLiteral(_)
+        | Expression::Identifier(_)
+        | Expression::ThisExpression(_)
+        | Expression::ArrowFunctionExpression(_)
+        | Expression::FunctionExpression(_) => true,
+        Expression::TemplateLiteral(template) => template.expressions.iter().all(is_pure),
+        Expression::StaticMemberExpression(member) => is_pure(&member.object),
+        Expression::PrivateFieldExpression(member) => is_pure(&member.object),
+        Expression::ComputedMemberExpression(member) => {
+            is_pure(&member.object) && is_pure(&member.expression)
+        }
+        Expression::UnaryExpression(unary) => {
+            unary.operator != UnaryOperator::Delete && is_pure(&unary.argument)
+        }
+        Expression::BinaryExpression(binary) => is_pure(&binary.left) && is_pure(&binary.right),
+        Expression::LogicalExpression(logical) => is_pure(&logical.left) && is_pure(&logical.right),
+        Expression::ConditionalExpression(conditional) => {
+            is_pure(&conditional.test)
+                && is_pure(&conditional.consequent)
+                && is_pure(&conditional.alternate)
+        }
+        Expression::ArrayExpression(array) => array.elements.iter().all(|element| match element {
+            ArrayExpressionElement::SpreadElement(spread) => is_pure(&spread.argument),
+            ArrayExpressionElement::Elision(_) => true,
+            element => element.as_expression().is_some_and(is_pure),
+        }),
+        Expression::ObjectExpression(object) => {
+            object.properties.iter().all(|property| match property {
+                ObjectPropertyKind::ObjectProperty(property) => {
+                    property.key.as_expression().is_none_or(is_pure)
+                        && (property.kind != PropertyKind::Init || is_pure(&property.value))
+                }
+                ObjectPropertyKind::SpreadProperty(spread) => is_pure(&spread.argument),
+            })
+        }
+        Expression::ParenthesizedExpression(inner) => is_pure(&inner.expression),
+        Expression::TSAsExpression(inner) => is_pure(&inner.expression),
+        Expression::TSSatisfiesExpression(inner) => is_pure(&inner.expression),
+        Expression::TSNonNullExpression(inner) => is_pure(&inner.expression),
+        Expression::TSTypeAssertion(inner) => is_pure(&inner.expression),
+        _ => false,
+    }
+}
+
+/// Finds whether code waits (`await`) or yields outside the functions it
+/// holds, which no function wrapped around it could do in its place
+#[derive(Default)]
+pub(super) struct Suspends {
+    pub found: bool,
+}
+
+impl<'a> oxc_ast_visit::Visit<'a> for Suspends {
+    fn visit_await_expression(&mut self, _: &oxc_ast::ast::AwaitExpression<'a>) {
+        self.found = true;
+    }
+    fn visit_yield_expression(&mut self, _: &oxc_ast::ast::YieldExpression<'a>) {
+        self.found = true;
+    }
+    fn visit_function(&mut self, _: &oxc_ast::ast::Function<'a>, _: oxc_syntax::scope::ScopeFlags) {
+    }
+    fn visit_arrow_function_expression(&mut self, _: &oxc_ast::ast::ArrowFunctionExpression<'a>) {}
+    fn visit_class(&mut self, _: &oxc_ast::ast::Class<'a>) {}
+}
+
+/// Whether an element can read its impure spreads once through a function
+/// wrapped around it: what stays in that function (style props, `className`
+/// and `style`) neither waits nor yields, as the spreads and the other
+/// attributes and children before the last of them move out of it
+pub(super) fn reads_spreads_once(element: &oxc_ast::ast::JSXElement<'_>) -> bool {
+    use oxc_ast::ast::{JSXAttributeItem, JSXAttributeName};
+    use oxc_ast_visit::Visit;
+    let mut impure = false;
+    let mut suspends = Suspends::default();
+    for attribute in &element.opening_element.attributes {
+        match attribute {
+            JSXAttributeItem::SpreadAttribute(spread) => impure |= !is_pure(&spread.argument),
+            JSXAttributeItem::Attribute(attribute) => {
+                if !matches!(&attribute.name, JSXAttributeName::Identifier(name)
+                    if stays_attribute(&name.name))
+                    && let Some(value) = &attribute.value
+                {
+                    suspends.visit_jsx_attribute_value(value);
+                }
+            }
+        }
+    }
+    impure && !suspends.found
+}
+
+/// Whether the prop `name` stays an attribute of the element built, rather
+/// than becoming its classes or style
+pub(super) fn stays_attribute(name: &str) -> bool {
+    css::is_special_property::is_special_property(name) && !matches!(name, "className" | "style")
+}
+
+/// `((name, ...) => body)(value, ...)`: each value is evaluated once, where
+/// `body` reads it as often as it needs
+pub(super) fn call_with_values<'a>(
+    builder: &AstBuilder<'a>,
+    values: Vec<(String, Expression<'a>)>,
+    body: Expression<'a>,
+) -> Expression<'a> {
+    use oxc_ast::ast::{BindingPattern, FormalParameter, FormalParameterKind, FormalParameters};
+    let mut parameters = oxc_allocator::Vec::with_capacity_in(values.len(), builder);
+    let mut arguments = oxc_allocator::Vec::with_capacity_in(values.len(), builder);
+    for (name, value) in values {
+        parameters.push(FormalParameter::new(
+            SPAN,
+            oxc_allocator::Vec::new_in(builder),
+            BindingPattern::new_binding_identifier(
+                SPAN,
+                <oxc_ast::ast::Ident<'a> as oxc_allocator::FromIn<'a, &str>>::from_in(
+                    name.as_str(),
+                    builder.allocator(),
+                ),
+                builder,
+            ),
+            None::<oxc_allocator::Box<oxc_ast::ast::TSTypeAnnotation<'a>>>,
+            None::<oxc_allocator::Box<Expression<'a>>>,
+            false,
+            None,
+            false,
+            false,
+            builder,
+        ));
+        arguments.push(Argument::from(value));
+    }
+    let arrow = Expression::new_arrow_function_expression(
+        SPAN,
+        false,
+        None::<oxc_allocator::Box<oxc_ast::ast::TSTypeParameterDeclaration<'a>>>,
+        FormalParameters::boxed(
+            SPAN,
+            FormalParameterKind::ArrowFormalParameters,
+            parameters,
+            None::<oxc_allocator::Box<oxc_ast::ast::FormalParameterRest<'a>>>,
+            builder,
+        ),
+        None::<oxc_allocator::Box<oxc_ast::ast::TSTypeAnnotation<'a>>>,
+        body.into(),
+        builder,
+    );
+    Expression::new_call_expression(
+        SPAN,
+        Expression::new_parenthesized_expression(SPAN, arrow, builder),
+        None::<oxc_allocator::Box<'_, oxc_ast::ast::TSTypeParameterInstantiation<'_>>>,
+        arguments,
+        false,
+        builder,
+    )
+}
+
 pub(super) fn wrap_direct_call<'a>(
     builder: &AstBuilder<'a>,
     expr: &Expression<'a>,
