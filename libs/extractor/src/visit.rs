@@ -16,7 +16,9 @@ use crate::extractor::extract_style_from_stylex::{
 use crate::extractor::{
     ExtractResult, GlobalExtractResult,
     extract_global_style_from_expression::extract_global_style_from_expression,
-    extract_style_from_expression::{LiteralHandling, extract_style_from_expression},
+    extract_style_from_expression::{
+        LiteralHandling, extract_style_from_expression, flatten_spreads,
+    },
     extract_style_from_jsx::extract_style_from_jsx,
     extract_style_from_styled::{extract_style_from_styled, take_styled_modifiers},
 };
@@ -52,15 +54,17 @@ use oxc_ast_visit::walk_mut::{
 use strum::IntoEnumIterator;
 
 use crate::utils::{
-    ParsedStyleOrder, StyleArguments, build_time_error, expression_to_style_order,
-    get_str_by_property_key, get_string_by_literal_expression, get_string_by_property_key,
-    jsx_expression_to_style_order, key_error, readable_argument, readable_code, runtime_classes,
-    runtime_value, runtime_value_error, spread_error, style_arguments, uncomposable_error,
-    unplaced_error, unwrap_syntax_only, unwrap_syntax_only_mut,
+    ParsedStyleOrder, RUNTIME_VALUE, STYLE_OBJECT, StyleArguments, build_time_error, element_error,
+    expression_to_style_order, get_str_by_property_key, get_string_by_literal_expression,
+    get_string_by_property_key, jsx_expression_to_style_order, key_error, readable_argument,
+    readable_code, reads_directly, runtime_classes, runtime_value, runtime_value_error,
+    spread_error, style_arguments, uncomposable_error, unplaced_error, unreadable_styles,
+    unwrap_syntax_only, unwrap_syntax_only_mut,
 };
 use oxc_ast::builder::AstBuilder;
 use oxc_span::{GetSpan, SPAN};
 use rustc_hash::{FxHashMap, FxHashSet};
+use std::borrow::Cow;
 use std::rc::Rc;
 
 fn style_property_into_string(style_property: StyleProperty) -> String {
@@ -1219,12 +1223,10 @@ impl<'a> VisitMut<'a> for DevupVisitor<'a> {
                         oxc_allocator::Vec::from_array_in([Argument::from(rules)], &self.ast);
                     classes
                 } else {
-                    if is_css
-                        && (call.arguments.len() > 1
-                            || matches!(call.arguments.first(), Some(Argument::ArrayExpression(_))))
-                    {
+                    if is_css && !reads_directly(&call.arguments) {
                         self.errors
                             .push((offset, uncomposable_error(&call.arguments)));
+                        call.arguments.clear();
                     }
                     vec![]
                 };
@@ -1898,10 +1900,15 @@ impl<'a> VisitMut<'a> for DevupVisitor<'a> {
                     && let Some(JSXAttributeValue::ExpressionContainer(container)) = &mut attr.value
                     && let Some(expression) = container.expression.as_expression_mut()
                 {
+                    let offset = expression.span().start;
                     let GlobalExtractResult {
                         styles,
                         style_order,
                     } = extract_global_style_from_expression(&self.ast, expression, &self.filename);
+                    if let Some(value) = runtime_value(&styles) {
+                        self.errors
+                            .push((offset, element_error(name, &value, RUNTIME_VALUE)));
+                    }
                     let style_order = style_order.unwrap_or(0);
                     self.styles.extend(
                         styles
@@ -1986,6 +1993,33 @@ impl<'a> VisitMut<'a> for DevupVisitor<'a> {
                         }
                     }
                 } else if let JSXAttributeItem::SpreadAttribute(spread) = &mut attr {
+                    // A later attribute wins over what the spread gives, and the
+                    // spread over earlier ones, as props are assigned in order
+                    if let Expression::ObjectExpression(object) =
+                        unwrap_syntax_only_mut(&mut spread.argument)
+                    {
+                        flatten_spreads(&self.ast, object);
+                        let mut given = Vec::new();
+                        object.properties.retain(|property| {
+                            let ObjectPropertyKind::ObjectProperty(property) = property else {
+                                return true;
+                            };
+                            let Some(key) = get_str_by_property_key(&property.key) else {
+                                return true;
+                            };
+                            if is_special_property(&key) {
+                                return true;
+                            }
+                            let names: Vec<_> =
+                                disassemble_property(&key).map(Cow::into_owned).collect();
+                            let overridden = names
+                                .iter()
+                                .all(|name| duplicate_set.contains(name.as_str()));
+                            given.extend(names);
+                            !overridden
+                        });
+                        duplicate_set.extend(given.into_iter().map(Cow::Owned));
+                    }
                     // Extract styles from spread attributes (e.g., {...{"@media": {...}}})
                     let ExtractResult { styles, .. } = extract_style_from_expression(
                         &self.ast,
@@ -1995,9 +2029,18 @@ impl<'a> VisitMut<'a> for DevupVisitor<'a> {
                         &None,
                         LiteralHandling::ExpandResponsiveThemeToken,
                     );
-                    if styles.is_empty() {
+                    // A spread the build cannot read passes its props at runtime,
+                    // and an object literal keeps the props that are not styles
+                    let runtime = styles
+                        .iter()
+                        .all(|style| matches!(style, ExtractStyleProp::Unreadable { .. }));
+                    if runtime
+                        || matches!(unwrap_syntax_only(&spread.argument),
+                            Expression::ObjectExpression(object) if !object.properties.is_empty())
+                    {
                         attrs.insert(i, attr);
-                    } else {
+                    }
+                    if !runtime {
                         props_styles.extend(styles.into_iter().rev());
                     }
                 } else {
@@ -2009,6 +2052,9 @@ impl<'a> VisitMut<'a> for DevupVisitor<'a> {
                 .into_iter()
                 .rev()
                 .for_each(|ex| props_styles.push(ExtractStyleProp::Static(ex)));
+
+            let mut unreadable = Vec::new();
+            unreadable_styles(&props_styles, false, &mut unreadable);
 
             if let ParsedStyleOrder::Conditional {
                 condition,
@@ -2076,6 +2122,13 @@ impl<'a> VisitMut<'a> for DevupVisitor<'a> {
                     .into_iter()
                     .rev()
                     .for_each(|style| self.styles.extend(style.into_extract()));
+            }
+
+            for (offset, code) in unreadable {
+                self.errors.push((
+                    offset,
+                    element_error(&elem.opening_element.name.to_string(), &code, STYLE_OBJECT),
+                ));
             }
 
             if let Some(tag) = if let Expression::StringLiteral(str) = tag_name {

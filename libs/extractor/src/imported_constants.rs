@@ -8,8 +8,8 @@ use std::rc::Rc;
 
 use oxc_allocator::{Allocator, FromIn, GetAllocator};
 use oxc_ast::ast::{
-    Argument, Expression, ImportDeclarationSpecifier, JSXAttributeItem, JSXElementName,
-    ObjectPropertyKind, Program, Statement, Str, VariableDeclarationKind,
+    Argument, ArrayExpressionElement, Expression, ImportDeclarationSpecifier, JSXAttributeItem,
+    JSXElementName, ObjectPropertyKind, Program, Statement, Str, VariableDeclarationKind,
 };
 use oxc_ast::builder::AstBuilder;
 use oxc_ast_visit::{Visit, VisitMut, walk, walk_mut};
@@ -22,13 +22,18 @@ use oxc_syntax::symbol::SymbolId;
 use rustc_hash::{FxHashMap, FxHashSet};
 
 use crate::stylex::StylexFunction;
-use crate::{ExtractOption, ModuleResolver, utils::get_str_by_property_key};
+use crate::{ExtractOption, ModuleResolver};
 
 #[derive(Clone, Debug)]
 enum Constant {
     String(String),
     Number(f64),
+    Null,
+    /// The properties known of an object, a module namespace or an enum
     Object(Rc<FxHashMap<String, Constant>>),
+    /// An object literal every property of which is known, in source order
+    Record(Rc<Vec<(String, Constant)>>),
+    Array(Rc<Vec<Constant>>),
     /// `StyleX` custom properties by key, which read as their `var()`
     Vars(Rc<FxHashMap<String, String>>),
     /// The class a `StyleX` theme applies
@@ -61,12 +66,25 @@ pub(crate) fn inline_constants<'a>(
     let is_style_package =
         |source: &str| source.starts_with(&option.package) || source == crate::STYLEX_PACKAGE;
     let mut style_roots = FxHashSet::default();
+    let mut apis = StyleApis::default();
     for statement in &program.body {
         if let Statement::ImportDeclaration(import) = statement
             && is_style_package(&import.source.value)
         {
+            let stylex = import.source.value == crate::STYLEX_PACKAGE;
             for specifier in import.specifiers.iter().flatten() {
-                style_roots.insert(specifier.local().name.as_str());
+                let local = specifier.local().name.as_str();
+                style_roots.insert(local);
+                match specifier {
+                    ImportDeclarationSpecifier::ImportSpecifier(specifier) => {
+                        if takes_style_objects(stylex, &specifier.imported.name()) {
+                            apis.functions.insert(local);
+                        }
+                    }
+                    _ => {
+                        apis.namespaces.insert(local, stylex);
+                    }
+                }
             }
         }
     }
@@ -109,13 +127,25 @@ pub(crate) fn inline_constants<'a>(
                     continue;
                 }
                 Statement::VariableDeclaration(declaration) => declaration,
-                Statement::ExportDeclaration(export) => {
-                    let oxc_ast::ast::Declaration::VariableDeclaration(declaration) =
-                        &export.declaration
-                    else {
+                Statement::ExportDeclaration(export) => match &export.declaration {
+                    oxc_ast::ast::Declaration::VariableDeclaration(declaration) => declaration,
+                    oxc_ast::ast::Declaration::TSEnumDeclaration(declaration) => {
+                        scope.declare_enum(declaration);
+                        bindings
+                            .entry(declaration.id.name.as_str())
+                            .or_default()
+                            .push(&declaration.id.symbol_id);
                         continue;
-                    };
-                    declaration
+                    }
+                    _ => continue,
+                },
+                Statement::TSEnumDeclaration(declaration) => {
+                    scope.declare_enum(declaration);
+                    bindings
+                        .entry(declaration.id.name.as_str())
+                        .or_default()
+                        .push(&declaration.id.symbol_id);
+                    continue;
                 }
                 _ => continue,
             };
@@ -166,10 +196,63 @@ pub(crate) fn inline_constants<'a>(
             ast_builder,
             scoping: &scoping,
             symbols: &symbols,
+            style_roots: &style_roots,
+            apis: &apis,
+            objects: false,
         }
         .visit_program(program);
     }
     inlined
+}
+
+/// The local names of the style APIs that read style objects at build time
+#[derive(Default)]
+struct StyleApis<'s> {
+    functions: FxHashSet<&'s str>,
+    /// Namespace and default imports, `true` for `StyleX`
+    namespaces: FxHashMap<&'s str, bool>,
+}
+
+fn takes_style_objects(stylex: bool, export: &str) -> bool {
+    if stylex {
+        StylexFunction::from_export_name(export)
+            .is_some_and(|function| function.requirement().is_some())
+    } else {
+        matches!(
+            export,
+            "css" | "globalCss" | "keyframes" | "createGlobalStyle" | "styled"
+        )
+    }
+}
+
+impl StyleApis<'_> {
+    /// Whether calling `callee` reads its arguments as style objects:
+    /// `css(...)`, `styled.div(...)`, `styled(Link).attrs(...)`,
+    /// `stylex.create(...)`
+    fn reads(&self, callee: &Expression<'_>) -> bool {
+        let mut expression = callee;
+        let mut member = None;
+        loop {
+            match crate::utils::unwrap_syntax_only(expression) {
+                Expression::Identifier(identifier) => {
+                    let name = identifier.name.as_str();
+                    return self.functions.contains(name)
+                        || self.namespaces.get(name).is_some_and(|stylex| {
+                            member.is_some_and(|member| takes_style_objects(*stylex, member))
+                        });
+                }
+                Expression::StaticMemberExpression(inner) => {
+                    member = Some(inner.property.name.as_str());
+                    expression = &inner.object;
+                }
+                Expression::CallExpression(call) => {
+                    member = None;
+                    expression = &call.callee;
+                }
+                _ => return false,
+            }
+        }
+    }
 }
 /// Names read inside the props of the package's components and the arguments
 /// of its functions
@@ -226,21 +309,7 @@ impl<'a> Visit<'a> for StyleReads<'_> {
     }
 
     fn visit_jsx_opening_element(&mut self, element: &oxc_ast::ast::JSXOpeningElement<'a>) {
-        let style = match &element.name {
-            JSXElementName::IdentifierReference(identifier) => {
-                self.style_roots.contains(identifier.name.as_str())
-            }
-            JSXElementName::MemberExpression(member) => {
-                let mut object = &member.object;
-                while let oxc_ast::ast::JSXMemberExpressionObject::MemberExpression(inner) = object
-                {
-                    object = &inner.object;
-                }
-                matches!(object, oxc_ast::ast::JSXMemberExpressionObject::IdentifierReference(identifier)
-                    if self.style_roots.contains(identifier.name.as_str()))
-            }
-            _ => false,
-        };
+        let style = jsx_root(&element.name).is_some_and(|root| self.style_roots.contains(root));
         self.reading(style, |reads| {
             for attribute in &element.attributes {
                 match attribute {
@@ -255,6 +324,26 @@ impl<'a> Visit<'a> for StyleReads<'_> {
                 }
             }
         });
+    }
+}
+
+/// The name `<Box>` or `<Devup.Box>` starts with
+fn jsx_root<'n>(name: &'n JSXElementName<'_>) -> Option<&'n str> {
+    match name {
+        JSXElementName::IdentifierReference(identifier) => Some(identifier.name.as_str()),
+        JSXElementName::MemberExpression(member) => {
+            let mut object = &member.object;
+            while let oxc_ast::ast::JSXMemberExpressionObject::MemberExpression(inner) = object {
+                object = &inner.object;
+            }
+            match object {
+                oxc_ast::ast::JSXMemberExpressionObject::IdentifierReference(identifier) => {
+                    Some(identifier.name.as_str())
+                }
+                _ => None,
+            }
+        }
+        _ => None,
     }
 }
 
@@ -304,14 +393,20 @@ impl Modules<'_> {
                 Statement::ExpressionStatement(statement) => {
                     commonjs.assign(&mut scope, self, &statement.expression);
                 }
-                Statement::ExportDeclaration(export) => {
-                    if let oxc_ast::ast::Declaration::VariableDeclaration(declaration) =
-                        &export.declaration
-                    {
+                Statement::ExportDeclaration(export) => match &export.declaration {
+                    oxc_ast::ast::Declaration::VariableDeclaration(declaration) => {
                         for name in scope.declare(declaration) {
                             exported.push((name.clone(), name));
                         }
                     }
+                    oxc_ast::ast::Declaration::TSEnumDeclaration(declaration) => {
+                        let name = scope.declare_enum(declaration);
+                        exported.push((name.clone(), name));
+                    }
+                    _ => {}
+                },
+                Statement::TSEnumDeclaration(declaration) => {
+                    scope.declare_enum(declaration);
                 }
                 Statement::ExportNamedDeclaration(export) => {
                     for specifier in &export.specifiers {
@@ -425,7 +520,13 @@ impl CommonJs {
             return;
         };
         if key == "*" {
-            self.whole = Some(value);
+            // What `module.exports` holds becomes the module's exports
+            self.whole = Some(match value {
+                Constant::Record(entries) => {
+                    Constant::Object(Rc::new(entries.iter().cloned().collect()))
+                }
+                value => value,
+            });
         } else {
             self.exports.insert(key, value);
         }
@@ -533,14 +634,47 @@ impl<'p, 'a> ModuleScope<'p, 'a> {
     }
 
     fn binds(&self, name: &str) -> bool {
-        self.declarations.contains_key(name) || self.imports.contains_key(name)
+        self.declarations.contains_key(name)
+            || self.imports.contains_key(name)
+            || self.locals.contains_key(name)
     }
 
     fn is_global_math(&self, expression: &Expression<'_>) -> bool {
         matches!(expression, Expression::Identifier(identifier)
-            if identifier.name == "Math"
-                && !self.binds("Math")
-                && !self.locals.contains_key("Math"))
+            if identifier.name == "Math" && !self.binds("Math"))
+    }
+
+    /// Record the members of an enum whose values are literals, up to the
+    /// first that is computed, returning its name
+    fn declare_enum(&mut self, declaration: &oxc_ast::ast::TSEnumDeclaration<'_>) -> String {
+        let name = declaration.id.name.to_string();
+        if declaration.declare {
+            return name;
+        }
+        let mut members = FxHashMap::default();
+        let mut next = Some(0.0);
+        for member in &declaration.body.members {
+            let value = match &member.initializer {
+                None => next.map(Constant::Number),
+                Some(Expression::StringLiteral(literal)) => {
+                    Some(Constant::String(literal.value.to_string()))
+                }
+                Some(initializer) => {
+                    crate::utils::js_number_literal(initializer).map(Constant::Number)
+                }
+            };
+            let Some(value) = value else {
+                break;
+            };
+            next = match &value {
+                Constant::Number(number) => Some(number + 1.0),
+                _ => None,
+            };
+            members.insert(member.id.static_name().to_string(), value);
+        }
+        self.locals
+            .insert(name.clone(), Constant::Object(Rc::new(members)));
+        name
     }
 
     fn import(&mut self, import: &oxc_ast::ast::ImportDeclaration<'_>) {
@@ -795,18 +929,28 @@ impl<'p, 'a> ModuleScope<'p, 'a> {
                 let right = self.evaluate(modules, &binary.right)?;
                 fold_binary(binary.operator, &left, &right)
             }
-            Expression::ObjectExpression(object) => {
-                let mut properties = FxHashMap::default();
-                for property in &object.properties {
-                    if let ObjectPropertyKind::ObjectProperty(property) = property
-                        && !property.computed
-                        && let Some(key) = get_str_by_property_key(&property.key)
-                        && let Some(value) = self.evaluate(modules, &property.value)
-                    {
-                        properties.insert(key.to_string(), value);
+            Expression::NullLiteral(_) => Some(Constant::Null),
+            Expression::ObjectExpression(object) => Some(self.object(modules, object)),
+            Expression::ArrayExpression(array) => {
+                let mut values = Vec::with_capacity(array.elements.len());
+                for element in &array.elements {
+                    match element {
+                        ArrayExpressionElement::SpreadElement(spread) => {
+                            let Constant::Array(spread) =
+                                self.evaluate(modules, &spread.argument)?
+                            else {
+                                return None;
+                            };
+                            values.extend(spread.iter().cloned());
+                        }
+                        element => values.push(self.evaluate(modules, element.as_expression()?)?),
                     }
                 }
-                Some(Constant::Object(Rc::new(properties)))
+                Some(Constant::Array(Rc::new(values)))
+            }
+            Expression::ComputedMemberExpression(member) => {
+                let key = js_string(&self.evaluate(modules, &member.expression)?)?;
+                member_of(&self.evaluate(modules, &member.object)?, &key)
             }
             Expression::Identifier(identifier) => self.lookup(modules, &identifier.name),
             Expression::StaticMemberExpression(member) if self.is_global_math(&member.object) => {
@@ -834,6 +978,66 @@ impl<'p, 'a> ModuleScope<'p, 'a> {
             _ => None,
         }
     }
+
+    /// Every property of `object` when all are known, the known ones otherwise;
+    /// a key written twice holds its last value at its first place, as in
+    /// JavaScript, and what an unknown spread or key may replace is unknown
+    fn object(
+        &mut self,
+        modules: &mut Modules<'_>,
+        object: &oxc_ast::ast::ObjectExpression<'_>,
+    ) -> Constant {
+        let mut entries: Vec<(String, Constant)> = Vec::with_capacity(object.properties.len());
+        let mut complete = true;
+        for property in &object.properties {
+            let (key, value) = match property {
+                ObjectPropertyKind::ObjectProperty(property)
+                    if property.kind == oxc_ast::ast::PropertyKind::Init =>
+                {
+                    let key = self.property_key(modules, &property.key);
+                    (key, self.evaluate(modules, &property.value))
+                }
+                ObjectPropertyKind::SpreadProperty(spread) => {
+                    if let Some(Constant::Record(spread)) = self.evaluate(modules, &spread.argument)
+                    {
+                        for (key, value) in spread.iter() {
+                            set_entry(&mut entries, key.clone(), value.clone());
+                        }
+                        continue;
+                    }
+                    (None, None)
+                }
+                ObjectPropertyKind::ObjectProperty(property) => {
+                    (self.property_key(modules, &property.key), None)
+                }
+            };
+            match (key, value) {
+                (Some(key), Some(value)) if key != "__proto__" => {
+                    set_entry(&mut entries, key, value);
+                }
+                (Some(key), _) => {
+                    complete = false;
+                    entries.retain(|(existing, _)| *existing != key);
+                }
+                (None, _) => {
+                    complete = false;
+                    entries.clear();
+                }
+            }
+        }
+        if complete {
+            Constant::Record(Rc::new(entries))
+        } else {
+            Constant::Object(Rc::new(entries.into_iter().collect()))
+        }
+    }
+}
+
+fn set_entry(entries: &mut Vec<(String, Constant)>, key: String, value: Constant) {
+    match entries.iter_mut().find(|(existing, _)| *existing == key) {
+        Some(entry) => entry.1 = value,
+        None => entries.push((key, value)),
+    }
 }
 
 /// `value` as JavaScript turns it into a string
@@ -841,6 +1045,7 @@ fn js_string(value: &Constant) -> Option<String> {
     match value {
         Constant::String(text) => Some(text.clone()),
         Constant::Number(number) => Some(crate::utils::js_number_string(*number)),
+        Constant::Null => Some("null".to_string()),
         _ => None,
     }
 }
@@ -848,6 +1053,15 @@ fn js_string(value: &Constant) -> Option<String> {
 fn member_of(object: &Constant, key: &str) -> Option<Constant> {
     match object {
         Constant::Object(object) => object.get(key).cloned(),
+        Constant::Record(entries) => entries
+            .iter()
+            .find(|(name, _)| name == key)
+            .map(|(_, value)| value.clone()),
+        Constant::Array(values) => key
+            .parse::<usize>()
+            .ok()
+            .filter(|index| index.to_string() == key)
+            .and_then(|index| values.get(index).cloned()),
         Constant::Vars(vars) => vars
             .get(key)
             .map(|variable| Constant::String(format!("var({variable})"))),
@@ -958,11 +1172,16 @@ fn fold_binary(operator: BinaryOperator, left: &Constant, right: &Constant) -> O
     };
     number.is_finite().then_some(Constant::Number(number))
 }
-/// Replaces reads of the imported constants that are primitives
+/// Replaces reads of constants: primitives anywhere, objects and arrays where
+/// they are read as styles, as a copy elsewhere would change their identity
 struct Inline<'s, 'a> {
     ast_builder: &'s AstBuilder<'a>,
     scoping: &'s Scoping,
     symbols: &'s FxHashMap<SymbolId, Constant>,
+    style_roots: &'s FxHashSet<&'s str>,
+    apis: &'s StyleApis<'s>,
+    /// Inside what the build reads as styles
+    objects: bool,
 }
 
 impl<'a> Inline<'_, 'a> {
@@ -1054,22 +1273,61 @@ impl<'a> Inline<'_, 'a> {
     }
 
     fn literal(&self, constant: &Constant) -> Option<Expression<'a>> {
+        let builder = self.ast_builder;
         match constant {
             Constant::String(value) => Some(Expression::new_string_literal(
                 SPAN,
-                Str::from_in(value.as_str(), self.ast_builder.allocator()),
+                Str::from_in(value.as_str(), builder.allocator()),
                 None,
-                self.ast_builder,
+                builder,
             )),
             Constant::Number(value) => Some(Expression::new_numeric_literal(
                 SPAN,
                 *value,
                 None,
                 NumberBase::Decimal,
-                self.ast_builder,
+                builder,
             )),
+            Constant::Null => Some(Expression::new_null_literal(SPAN, builder)),
+            Constant::Record(entries) if self.objects => {
+                let mut properties = oxc_allocator::Vec::with_capacity_in(entries.len(), builder);
+                for (key, value) in entries.iter() {
+                    properties.push(ObjectPropertyKind::new_object_property(
+                        SPAN,
+                        oxc_ast::ast::PropertyKind::Init,
+                        oxc_ast::ast::PropertyKey::StringLiteral(
+                            oxc_ast::ast::StringLiteral::boxed(
+                                SPAN,
+                                Str::from_in(key.as_str(), builder.allocator()),
+                                None,
+                                builder,
+                            ),
+                        ),
+                        self.literal(value)?,
+                        false,
+                        false,
+                        false,
+                        builder,
+                    ));
+                }
+                Some(Expression::new_object_expression(SPAN, properties, builder))
+            }
+            Constant::Array(values) if self.objects => {
+                let mut elements = oxc_allocator::Vec::with_capacity_in(values.len(), builder);
+                for value in values.iter() {
+                    elements.push(self.literal(value)?.into());
+                }
+                Some(Expression::new_array_expression(SPAN, elements, builder))
+            }
             _ => None,
         }
+    }
+
+    fn reading_objects<T>(&mut self, objects: bool, visit: impl FnOnce(&mut Self) -> T) -> T {
+        let outer = std::mem::replace(&mut self.objects, objects);
+        let result = visit(self);
+        self.objects = outer;
+        result
     }
 }
 
@@ -1083,6 +1341,38 @@ impl<'a> VisitMut<'a> for Inline<'_, 'a> {
             return;
         }
         walk_mut::walk_expression(self, expression);
+    }
+
+    fn visit_member_expression(&mut self, member: &mut oxc_ast::ast::MemberExpression<'a>) {
+        self.reading_objects(false, |inline| {
+            walk_mut::walk_member_expression(inline, member);
+        });
+    }
+
+    fn visit_call_expression(&mut self, call: &mut oxc_ast::ast::CallExpression<'a>) {
+        self.visit_expression(&mut call.callee);
+        let objects = self.apis.reads(&call.callee);
+        self.reading_objects(objects, |inline| {
+            for argument in &mut call.arguments {
+                inline.visit_argument(argument);
+            }
+        });
+    }
+
+    fn visit_jsx_opening_element(&mut self, element: &mut oxc_ast::ast::JSXOpeningElement<'a>) {
+        let styled = jsx_root(&element.name).is_some_and(|root| self.style_roots.contains(root));
+        for attribute in &mut element.attributes {
+            let objects = styled
+                && match attribute {
+                    JSXAttributeItem::Attribute(attribute) => {
+                        matches!(&attribute.name, oxc_ast::ast::JSXAttributeName::Identifier(name)
+                        if !css::is_special_property::is_special_property(&name.name)
+                            && !matches!(name.name.as_str(), "as" | "props" | "styleVars"))
+                    }
+                    JSXAttributeItem::SpreadAttribute(_) => true,
+                };
+            self.reading_objects(objects, |inline| inline.visit_jsx_attribute_item(attribute));
+        }
     }
 
     fn visit_object_property(&mut self, property: &mut oxc_ast::ast::ObjectProperty<'a>) {
