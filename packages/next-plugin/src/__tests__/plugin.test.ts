@@ -224,29 +224,29 @@ describe('DevupUINextPlugin', () => {
         ? 'export const a = 1'
         : "css({ color: darken(0.1, 'red') })"
     }) as never)
-    expect(computesStyleValues('src/missing.tsx', '@devup-ui/react', [])).toBe(
+    expect(computesStyleValues('src/missing.tsx', '@devup-ui/react', {})).toBe(
       false,
     )
-    expect(computesStyleValues('src/plain.tsx', '@devup-ui/react', [])).toBe(
+    expect(computesStyleValues('src/plain.tsx', '@devup-ui/react', {})).toBe(
       false,
     )
     expect(hasBuildTimeValues).not.toHaveBeenCalled()
     expect(
-      computesStyleValues('src/color.tsx', '@devup-ui/react', [
-        '@emotion/react',
-      ]),
+      computesStyleValues('src/color.tsx', '@devup-ui/react', {
+        '@emotion/react': null,
+      }),
     ).toBe(true)
     expect(hasBuildTimeValues).toHaveBeenCalledWith(
       'src/color.tsx',
       "css({ color: darken(0.1, 'red') })",
       '@devup-ui/react',
-      ['@emotion/react'],
+      { '@emotion/react': null },
     )
     const { hasBuildTimeValues: _, ...older } = wasm as typeof wasm & {
       hasBuildTimeValues?: unknown
     }
     setWasmForTesting(older as typeof wasm)
-    expect(computesStyleValues('src/color.tsx', '@devup-ui/react', [])).toBe(
+    expect(computesStyleValues('src/color.tsx', '@devup-ui/react', {})).toBe(
       false,
     )
   })
