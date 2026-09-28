@@ -41,6 +41,12 @@ interface ViteConfig {
   define?: Record<string, string>
 }
 
+interface HotUpdateEnvironment {
+  config: { consumer: 'client' | 'server' }
+  moduleGraph: { invalidateModule: (...args: unknown[]) => void }
+  hot: { send: (...args: unknown[]) => void }
+}
+
 interface ViteTestPlugin {
   name: string
   sharedDuringBuild: true
@@ -55,6 +61,10 @@ interface ViteTestPlugin {
     root?: string
   }) => Promise<void>
   watchChange: (id: string) => Promise<void>
+  hotUpdate: (
+    this: { environment: HotUpdateEnvironment },
+    options: { file: string; modules: object[]; timestamp: number },
+  ) => Promise<unknown[] | undefined>
   handleHotUpdate: (context: {
     file: string
     server: {
@@ -208,6 +218,7 @@ describe('devupUIVitePlugin', () => {
       load: expect.any(Function),
       watchChange: expect.any(Function),
       handleHotUpdate: expect.any(Function),
+      hotUpdate: expect.any(Function),
       enforce: 'pre',
       transform: expect.any(Function),
       apply: expect.any(Function),
@@ -905,6 +916,110 @@ describe('devupUIVitePlugin', () => {
     expect(send).not.toHaveBeenCalled()
   })
 
+  function createHotUpdateEnvironment(consumer: 'client' | 'server') {
+    return {
+      config: { consumer },
+      moduleGraph: { invalidateModule: mock() },
+      hot: { send: mock() },
+    }
+  }
+
+  it('should invalidate and reload the client on a devup.json change', async () => {
+    writeFileSpy.mockResolvedValueOnce(undefined)
+    getThemeInterfaceSpy.mockReturnValue('interface code')
+    existsSyncSpy.mockReturnValue(true)
+    readFileSpy.mockResolvedValueOnce(JSON.stringify({ theme: 'theme' }))
+    const environment = createHotUpdateEnvironment('client')
+    const module = {}
+    const plugin = createPlugin({})
+
+    const result = await plugin.hotUpdate.call(
+      { environment },
+      { file: 'devup.json', modules: [module], timestamp: 1 },
+    )
+
+    expect(writeFileSpy).toHaveBeenCalledWith(
+      join('df', 'theme.d.ts'),
+      'interface code',
+      'utf-8',
+    )
+    expect(environment.moduleGraph.invalidateModule).toHaveBeenCalledWith(
+      module,
+      expect.any(Set),
+      1,
+      true,
+    )
+    expect(environment.hot.send).toHaveBeenCalledWith({ type: 'full-reload' })
+    expect(result).toEqual([])
+  })
+
+  it.each([
+    ['an unrelated file', 'other.json'],
+    // The client refreshes sheet contents through Vite's regular css HMR.
+    ['a devup sheet', join(resolve('df', 'devup-ui'), 'devup-ui-3.css')],
+  ])('should leave client hot updates of %s to vite', async (_name, file) => {
+    existsSyncSpy.mockReturnValue(true)
+    const environment = createHotUpdateEnvironment('client')
+    const plugin = createPlugin({})
+
+    const result = await plugin.hotUpdate.call(
+      { environment },
+      { file, modules: [{}], timestamp: 1 },
+    )
+
+    expect(result).toBeUndefined()
+    expect(writeFileSpy).not.toHaveBeenCalledWith(
+      join('df', 'theme.d.ts'),
+      expect.any(String),
+      'utf-8',
+    )
+    expect(environment.moduleGraph.invalidateModule).not.toHaveBeenCalled()
+    expect(environment.hot.send).not.toHaveBeenCalled()
+  })
+
+  // A module runner cannot apply CSS: Vite would restart the render with a
+  // full reload, and the modules transformed again would write again.
+  it.each(['devup-ui.css', 'devup-ui-3.css'])(
+    'should keep %s updates out of server environments',
+    async (fileName) => {
+      const environment = createHotUpdateEnvironment('server')
+      const plugin = createPlugin({})
+
+      const result = await plugin.hotUpdate.call(
+        { environment },
+        {
+          file: join(resolve('df', 'devup-ui'), fileName),
+          modules: [{}],
+          timestamp: 1,
+        },
+      )
+
+      expect(result).toEqual([])
+      expect(environment.hot.send).not.toHaveBeenCalled()
+    },
+  )
+
+  it.each([
+    ['a source module', join(resolve('src'), 'App.tsx')],
+    [
+      'an app sheet named like a devup sheet',
+      resolve('public', 'devup-ui.css'),
+    ],
+    ['devup.json', 'devup.json'],
+  ])('should leave server hot updates of %s to vite', async (_name, file) => {
+    existsSyncSpy.mockReturnValue(true)
+    const environment = createHotUpdateEnvironment('server')
+    const plugin = createPlugin({})
+
+    const result = await plugin.hotUpdate.call(
+      { environment },
+      { file, modules: [{}], timestamp: 1 },
+    )
+
+    expect(result).toBeUndefined()
+    expect(environment.hot.send).not.toHaveBeenCalled()
+  })
+
   it('should print error when watch change error', async () => {
     writeFileSpy.mockResolvedValueOnce(undefined)
     getThemeInterfaceSpy.mockReturnValue('interface code')
@@ -976,9 +1091,7 @@ describe('devupUIVitePlugin', () => {
       )
       expect(writeFileSpy).toHaveBeenCalledWith(
         join(resolve('df', 'devup-ui'), 'devup-ui.css'),
-        expect.stringMatching(
-          /\/\* node_modules[/\\]@devup-ui[/\\]hello[/\\]index\.tsx \d+ \*\//,
-        ),
+        'css code',
         'utf-8',
       )
       expect(
@@ -1135,6 +1248,51 @@ describe('devupUIVitePlugin', () => {
     const plugin = createPlugin({})
     await plugin.transform('code', 'foo.tsx')
     expect(writeFileSpy).not.toHaveBeenCalled()
+  })
+
+  // Every write wakes the dev server's watcher, so a transform that leaves a
+  // sheet unchanged must not touch it: the reload the write causes would
+  // transform the module again, which would write again.
+  it('writes a sheet only when its css changes', async () => {
+    const plugin = createPlugin({})
+    const sheet = join(resolve('df', 'devup-ui'), 'devup-ui-3.css')
+    const transformWith = (css: string | undefined) => {
+      codeExtractSpy.mockReturnValue(
+        createCodeExtractResult({ css, cssFile: 'devup-ui-3.css' }),
+      )
+      return plugin.transform('code', 'foo.tsx')
+    }
+
+    await transformWith('.a{color:red}')
+    await transformWith('.a{color:red}')
+    // `css` is unset when the transform added no styles
+    await transformWith(undefined)
+    expect(writeFileSpy.mock.calls).toEqual([[sheet, '.a{color:red}', 'utf-8']])
+
+    await transformWith('.a{color:red}.b{color:blue}')
+    expect(writeFileSpy.mock.calls).toEqual([
+      [sheet, '.a{color:red}', 'utf-8'],
+      [sheet, '.a{color:red}.b{color:blue}', 'utf-8'],
+    ])
+  })
+
+  it('writes the base sheet only when it changes', async () => {
+    const plugin = createPlugin({})
+    const baseSheet = join(resolve('df', 'devup-ui'), 'devup-ui.css')
+    codeExtractSpy.mockReturnValue(
+      createCodeExtractResult({ cssFile: '', updatedBaseStyle: true }),
+    )
+
+    getCssSpy.mockReturnValue('*{margin:0}')
+    await plugin.transform('code', 'layout.tsx')
+    await plugin.transform('code', 'layout.tsx')
+    getCssSpy.mockReturnValue('*{margin:0}body{font-family:Pretendard}')
+    await plugin.transform('code', 'layout.tsx')
+
+    expect(writeFileSpy.mock.calls).toEqual([
+      [baseSheet, '*{margin:0}', 'utf-8'],
+      [baseSheet, '*{margin:0}body{font-family:Pretendard}', 'utf-8'],
+    ])
   })
 
   it('should not generate bundle when css file is not found', async () => {
