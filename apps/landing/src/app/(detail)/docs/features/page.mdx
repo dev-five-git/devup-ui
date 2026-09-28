@@ -233,13 +233,15 @@ const example = <Box {...cardStyles} />
 
 `css()`, `globalCss()` and `keyframes()` have no element to set a CSS variable on, so their values must be known at build time — literals, theme tokens or constants. Constants may be objects, arrays and TypeScript enums, declared in the file or imported: `css(baseStyles)`, `{ ...baseStyles, color: 'red' }`, `_hover: hoverStyles`, `space[2]`, `Size.M`, and `<Box {...baseStyles} _hover={hoverStyles} />` all read as if written in place, a later property replacing an earlier one as in JavaScript. `Math` calls over them (`Math.max(SIZE, 20)`, `Math.round(x)`, `Math.PI`) fold like arithmetic. A value the module computes when it runs — `darken(0.1, PRIMARY)`, `const DARK = darken(0.2, PRIMARY)` in a tokens file, a helper returning a style object — is computed at build time by running the code it reads, and its result becomes a static class; `Date` and `Math.random` are unavailable there, so the CSS is the same on every build, and a module that throws only loses the values it had not yet computed. Next.js picks the engine that can run this code automatically; with the lite engine (`@devup-ui/wasm/lite`) such a value is a build error that names the full engine.
 
+A binding that `css()` or `styled()` composes reads the same way: with `const base = makeStyles()`, `css(base)` and `styled.div(base)` apply the rules the module computes, while a class held in a binding (`const base = css({ ... })`, a class imported from a stylesheet) still composes as a class. Source maps point at the code as written, not at the values computed in its place.
+
 A value known only at runtime — a prop, a state, a parameter — is a build error naming it, as is styles the build cannot read where an object is expected: a spread of an unknown object, a selector such as `_hover` given something other than an object, a computed key. For a runtime value, use a style prop (`<Box as={Component} w={width} />`); a JSX spread of an unknown object (`<Box {...props} />`) still passes its props at runtime.
 
 Build errors point at the code they are about, and a file with several problems reports them all at once, in source order:
 
 ```
-src/App.tsx:6:18: `css()` cannot use `width` at build time: its values must be literals, theme tokens or imported constants
-src/App.tsx:9:27: `globalCss()` cannot use `color` at build time: its values must be literals, theme tokens or imported constants
+src/App.tsx:6:18: `css()` cannot use `width` at build time: its values must be literals, theme tokens or constants, or be computed from them
+src/App.tsx:9:27: `globalCss()` cannot use `color` at build time: its values must be literals, theme tokens or constants, or be computed from them
 ```
 
 ## globalCss() API
