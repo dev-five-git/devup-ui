@@ -22,28 +22,71 @@ function findVariable(scope: Scope | null, name: string) {
   return undefined
 }
 
-/** Whether the build knows `node`'s value: a literal, or what an imported or module-level `const` binds */
+/** Built-ins the build runs, which give the same result on every build */
+const BUILT_INS = new Set([
+  'Array',
+  'Boolean',
+  'JSON',
+  'Math',
+  'Number',
+  'Object',
+  'String',
+  'parseFloat',
+  'parseInt',
+])
+
+function isBuiltIn(node: TSESTree.Node, scope: Scope): boolean {
+  return (
+    node.type === AST_NODE_TYPES.Identifier &&
+    BUILT_INS.has(node.name) &&
+    !findVariable(scope, node.name)?.defs.length
+  )
+}
+
+function isMathRandom(node: TSESTree.MemberExpression, scope: Scope) {
+  return (
+    isBuiltIn(node.object, scope) &&
+    node.object.type === AST_NODE_TYPES.Identifier &&
+    node.object.name === 'Math' &&
+    node.property.type === AST_NODE_TYPES.Identifier &&
+    node.property.name === 'random'
+  )
+}
+
+/** Whether the build knows `node`'s value: a literal, a constant, or what calls of module functions, imports and built-ins compute from them */
 function isStaticValue(
   node: TSESTree.Node,
   scope: Scope,
   seen: Set<string>,
 ): boolean {
+  const all = (nodes: (TSESTree.Node | null)[]) =>
+    nodes.every(
+      (item) =>
+        item !== null &&
+        item.type !== AST_NODE_TYPES.SpreadElement &&
+        isStaticValue(item, scope, seen),
+    )
   switch (node.type) {
     case AST_NODE_TYPES.Literal:
       return true
     case AST_NODE_TYPES.TemplateLiteral:
-      return node.expressions.every((e) => isStaticValue(e, scope, seen))
+      return all(node.expressions)
     case AST_NODE_TYPES.BinaryExpression:
       return (
         node.left.type !== AST_NODE_TYPES.PrivateIdentifier &&
-        isStaticValue(node.left, scope, seen) &&
-        isStaticValue(node.right, scope, seen)
+        all([node.left, node.right])
       )
+    case AST_NODE_TYPES.LogicalExpression:
+      return all([node.left, node.right])
+    case AST_NODE_TYPES.ConditionalExpression:
+      return all([node.test, node.consequent, node.alternate])
     case AST_NODE_TYPES.UnaryExpression:
       return node.operator === '-' && isStaticValue(node.argument, scope, seen)
     case AST_NODE_TYPES.TSAsExpression:
     case AST_NODE_TYPES.TSSatisfiesExpression:
       return isStaticValue(node.expression, scope, seen)
+    case AST_NODE_TYPES.ArrayExpression:
+      return all(node.elements)
     case AST_NODE_TYPES.ObjectExpression:
       return node.properties.every(
         (property) =>
@@ -52,12 +95,50 @@ function isStaticValue(
           isStaticValue(property.value, scope, seen),
       )
     case AST_NODE_TYPES.MemberExpression:
-      return !node.computed && isStaticValue(node.object, scope, seen)
+      return (
+        (node.computed
+          ? isStaticValue(node.property, scope, seen)
+          : !isMathRandom(node, scope)) &&
+        (isBuiltIn(node.object, scope) ||
+          isStaticValue(node.object, scope, seen))
+      )
+    case AST_NODE_TYPES.CallExpression:
+      return isStaticCallee(node.callee, scope, seen) && all(node.arguments)
     case AST_NODE_TYPES.Identifier:
-      return isStaticBinding(node.name, scope, seen)
+      return (
+        ['undefined', 'NaN', 'Infinity'].includes(node.name) ||
+        isStaticBinding(node.name, scope, seen)
+      )
     default:
       return false
   }
+}
+
+/** Whether the build can run `callee`: a built-in, or a function the module declares or imports */
+function isStaticCallee(
+  callee: TSESTree.Node,
+  scope: Scope,
+  seen: Set<string>,
+): boolean {
+  if (callee.type === AST_NODE_TYPES.MemberExpression) {
+    return (
+      !callee.computed &&
+      !isMathRandom(callee, scope) &&
+      (isBuiltIn(callee.object, scope) ||
+        isStaticValue(callee.object, scope, seen))
+    )
+  }
+  if (callee.type !== AST_NODE_TYPES.Identifier) return false
+  if (isBuiltIn(callee, scope)) return true
+  const variable = findVariable(scope, callee.name)
+  const definition = variable?.defs[0]
+  if (!variable || !definition) return false
+  return (
+    ['module', 'global'].includes(variable.scope.type) &&
+    (definition.type === 'ImportBinding' ||
+      definition.type === 'FunctionName' ||
+      (definition.type === 'Variable' && definition.parent.kind === 'const'))
+  )
 }
 
 function isStaticBinding(
@@ -88,11 +169,13 @@ export const cssUtilsLiteralOnly = createRule({
   meta: {
     schema: [],
     messages: {
-      cssUtilsLiteralOnly: 'CSS utils should only be used with literal values.',
+      cssUtilsLiteralOnly:
+        'CSS utils should only be used with values known at build time: literals, constants, or what module functions, imports and built-ins compute from them.',
     },
     type: 'problem',
     docs: {
-      description: 'CSS utils should only be used with literal values.',
+      description:
+        'CSS utils should only be used with values known at build time.',
     },
   },
   create(context) {
@@ -123,7 +206,10 @@ export const cssUtilsLiteralOnly = createRule({
         const an = context.sourceCode
           .getAncestors(node)
           .slice(context.sourceCode.getAncestors(devupContext).length)
+        const scope = context.sourceCode.getScope(node)
 
+        let callee: TSESTree.Node | null = null
+        let member: TSESTree.MemberExpression | null = null
         for (const ancestor of an) {
           switch (ancestor.type) {
             case AST_NODE_TYPES.Property:
@@ -134,19 +220,21 @@ export const cssUtilsLiteralOnly = createRule({
               break
             case AST_NODE_TYPES.MemberExpression:
               if ([...an, node].indexOf(ancestor.property) !== -1) return
+              member = ancestor
               break
             case AST_NODE_TYPES.CallExpression:
-              if ([...an, node].indexOf(ancestor.callee) !== -1) return
+              if ([...an, node].indexOf(ancestor.callee) !== -1)
+                callee = ancestor.callee
               break
           }
         }
 
         if (
-          isStaticBinding(
-            node.name,
-            context.sourceCode.getScope(node),
-            new Set(),
-          )
+          callee
+            ? isStaticCallee(callee, scope, new Set())
+            : member
+              ? isStaticValue(member, scope, new Set())
+              : isStaticBinding(node.name, scope, new Set())
         )
           return
 

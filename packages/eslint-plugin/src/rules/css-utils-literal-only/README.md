@@ -1,10 +1,19 @@
 # css-utils-literal-only
 
-Enforce that CSS utility functions only use literal values in devup-ui.
+Enforce that CSS utility functions only use values known at build time in devup-ui.
 
 ## Rule Details
 
-This rule ensures that CSS utility functions (`css`, `globalCss`, `keyframes`) from devup-ui only receive literal values as property values. Using variables or expressions in CSS utilities can lead to runtime issues and prevents proper static analysis and optimization.
+This rule ensures that CSS utility functions (`css`, `globalCss`, `keyframes`) from devup-ui only receive values the build knows. They have no element to set a CSS variable on, so a value known only at runtime is a build error.
+
+The build knows:
+
+- literals, and constants: imports and module-level `const`s
+- what those compute through calls of imported or module-level functions and of built-ins (`Math` except `Math.random`, `String`, `Number`, ...)
+
+Both engines inline constants and fold `Math`. The full engine (`@devup-ui/wasm`, the default) runs the other calls at build time; with the lite engine (`@devup-ui/wasm/lite`) such a value is a build error that names the full engine.
+
+The rule reports parameters, `let` variables, `Date`, `Math.random` and functions the build cannot run, such as a parameter or a `let` function.
 
 ### Examples
 
@@ -36,6 +45,18 @@ import { keyframes } from '@devup-ui/react'
 function fade(opacity: number) {
   // A parameter is only known at runtime
   return keyframes({ from: { opacity } })
+}
+```
+
+```tsx
+import { css } from '@devup-ui/react'
+
+// `Date` and `Math.random` differ on every build
+css({ w: Date.now(), h: Math.random() })
+
+function tint(pick: (n: number) => string) {
+  // The build cannot run a function it is given at runtime
+  return css({ color: pick(1) })
 }
 ```
 
@@ -80,6 +101,19 @@ css({ p: UNIT, m: SIZE })
 ```
 
 ```tsx
+import { css } from '@devup-ui/react'
+
+import { darken, PRIMARY } from './color'
+
+// The full engine runs these calls at build time
+const HOVER = darken(0.1, PRIMARY)
+function double(n: number) {
+  return n * 2
+}
+css({ color: HOVER, m: double(2), w: Math.max(4, 8), h: String(10) })
+```
+
+```tsx
 import { css } from 'other-package'
 
 // Only applies to devup-ui CSS utilities
@@ -98,13 +132,9 @@ The rule will not trigger for:
 
 - CSS utilities from other packages
 - Literal values (strings, numbers, arrays of literals)
+- Constants, and what module functions, imports and built-ins compute from them
 - Non-CSS utility functions
 
 ## Why This Rule Exists
 
-CSS utilities in devup-ui are designed to work with static, literal values for optimal performance and build-time optimization. Using variables or dynamic expressions can:
-
-- Prevent proper static analysis
-- Cause runtime errors
-- Reduce build-time optimizations
-- Make the code harder to understand and maintain
+CSS utilities in devup-ui compile to static classes at build time, so every value they read must be known then. The rule catches a value the build cannot know before the build does, at the line that reads it.
