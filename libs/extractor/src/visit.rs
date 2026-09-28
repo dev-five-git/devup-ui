@@ -54,12 +54,12 @@ use oxc_ast_visit::walk_mut::{
 use strum::IntoEnumIterator;
 
 use crate::utils::{
-    ParsedStyleOrder, RUNTIME_VALUE, STYLE_OBJECT, StyleArguments, build_time_error, element_error,
-    expression_to_style_order, get_str_by_property_key, get_string_by_literal_expression,
-    get_string_by_property_key, jsx_expression_to_style_order, key_error, readable_argument,
-    readable_code, reads_directly, runtime_classes, runtime_value, runtime_value_error,
-    spread_error, style_arguments, uncomposable_error, unplaced_error, unreadable_styles,
-    unwrap_syntax_only, unwrap_syntax_only_mut,
+    ParsedStyleOrder, RUNTIME_VALUE, STYLE_OBJECT, StyleArguments, build_time_error,
+    composes_binding, element_error, expression_to_style_order, get_str_by_property_key,
+    get_string_by_literal_expression, get_string_by_property_key, jsx_expression_to_style_order,
+    key_error, readable_argument, readable_code, reads_directly, runtime_classes, runtime_value,
+    runtime_value_error, spread_error, style_arguments, uncomposable_error, unplaced_error,
+    unreadable_styles, unwrap_syntax_only, unwrap_syntax_only_mut,
 };
 use oxc_ast::builder::AstBuilder;
 use oxc_span::{GetSpan, SPAN};
@@ -136,6 +136,10 @@ pub struct DevupVisitor<'a> {
     /// Set in `visit_jsx_element`, consumed in `visit_expression` to replace
     /// `Expression::JSXElement` with `Expression::JSXFragment`.
     pending_fragment_children: Option<oxc_allocator::Vec<'a, JSXChild<'a>>>,
+    unknown_bindings: FxHashSet<String>,
+    /// Whether `css()` or `styled()` joined as a class a binding that may hold
+    /// rules only running the module gives
+    pub composes_unknown: bool,
 }
 
 impl<'a> DevupVisitor<'a> {
@@ -175,7 +179,13 @@ impl<'a> DevupVisitor<'a> {
             stylex_pending_keyframe_name: None,
             stylex_keyframe_names: FxHashMap::default(),
             pending_fragment_children: None,
+            unknown_bindings: FxHashSet::default(),
+            composes_unknown: false,
         }
+    }
+
+    pub fn unknown_bindings(&mut self, names: &FxHashSet<String>) {
+        self.unknown_bindings.clone_from(names);
     }
 }
 
@@ -784,6 +794,10 @@ impl<'a> VisitMut<'a> for DevupVisitor<'a> {
             };
 
             if is_styled {
+                if let Expression::CallExpression(call) = &*it {
+                    self.composes_unknown |=
+                        composes_binding(&call.arguments, &self.unknown_bindings);
+                }
                 let (result, new_expr, errors) = extract_style_from_styled(
                     &self.ast,
                     it,
@@ -1215,6 +1229,10 @@ impl<'a> VisitMut<'a> for DevupVisitor<'a> {
             if let Some(util_type) = util_type {
                 let offset = call.span.start;
                 let is_css = matches!(util_type.as_ref(), UtilType::Css);
+                if is_css {
+                    self.composes_unknown |=
+                        composes_binding(&call.arguments, &self.unknown_bindings);
+                }
                 let composed_classes = if is_css
                     && let Some(StyleArguments { classes, rules }) =
                         style_arguments(&self.ast, &call.arguments)

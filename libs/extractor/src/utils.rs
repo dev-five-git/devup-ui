@@ -573,6 +573,47 @@ pub(super) fn style_arguments<'a>(
     })
 }
 
+/// Whether `css()` or `styled()` joins as a class a part of `arguments` that
+/// reads a binding of `bindings`, which may hold rules the module computes
+pub(super) fn composes_binding(
+    arguments: &[Argument<'_>],
+    bindings: &rustc_hash::FxHashSet<String>,
+) -> bool {
+    fn composed(expression: &Expression<'_>, bindings: &rustc_hash::FxHashSet<String>) -> bool {
+        match unwrap_syntax_only(expression) {
+            Expression::ArrayExpression(array) => array.elements.iter().any(|element| {
+                element
+                    .as_expression()
+                    .is_some_and(|element| composed(element, bindings))
+            }),
+            Expression::LogicalExpression(logical) => {
+                (logical.operator != LogicalOperator::And && composed(&logical.left, bindings))
+                    || composed(&logical.right, bindings)
+            }
+            Expression::ConditionalExpression(conditional) => {
+                composed(&conditional.consequent, bindings)
+                    || composed(&conditional.alternate, bindings)
+            }
+            expression => binding_root(expression).is_some_and(|name| bindings.contains(name)),
+        }
+    }
+    !bindings.is_empty()
+        && arguments.iter().any(|argument| {
+            argument
+                .as_expression()
+                .is_some_and(|expression| composed(expression, bindings))
+        })
+}
+
+pub(super) fn binding_root<'e>(expression: &'e Expression<'_>) -> Option<&'e str> {
+    match expression {
+        Expression::Identifier(identifier) => Some(identifier.name.as_str()),
+        Expression::StaticMemberExpression(member) => binding_root(&member.object),
+        Expression::ComputedMemberExpression(member) => binding_root(&member.object),
+        _ => None,
+    }
+}
+
 /// A single style argument that needs no composing: a rule object, CSS text,
 /// or a condition choosing between rule objects
 pub(super) fn reads_directly(arguments: &[Argument<'_>]) -> bool {
@@ -725,13 +766,18 @@ pub(super) fn build_time_error(api: &str, code: &str, requirement: &str) -> Stri
     format!("`{api}()` cannot use `{code}` at build time: {requirement}")
 }
 
-pub(super) const RUNTIME_VALUE: &str =
-    "its values must be literals, theme tokens or imported constants";
+pub(super) const RUNTIME_VALUE: &str = "its values must be literals, theme tokens or constants";
+
+#[cfg(feature = "vanilla-extract")]
+const COMPUTED_VALUE: &str =
+    "its values must be literals, theme tokens or constants, or be computed from them";
+#[cfg(not(feature = "vanilla-extract"))]
+const COMPUTED_VALUE: &str = RUNTIME_VALUE;
 
 /// `api` has no element to set a runtime value on, so its values must be
 /// known at build time
 pub(super) fn runtime_value_error(api: &str, value: &str) -> String {
-    build_time_error(api, value, RUNTIME_VALUE)
+    build_time_error(api, value, COMPUTED_VALUE)
 }
 
 pub(super) fn element_error(component: &str, code: &str, requirement: &str) -> String {

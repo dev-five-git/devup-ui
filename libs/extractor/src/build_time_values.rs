@@ -14,12 +14,13 @@ use oxc_ast_visit::{Visit, walk};
 use oxc_parser::Parser;
 use oxc_semantic::{Scoping, SemanticBuilder};
 use oxc_span::{GetSpan, SourceType, Span};
+use oxc_syntax::operator::LogicalOperator;
 use oxc_syntax::reference::ReferenceId;
 use oxc_syntax::symbol::SymbolId;
 use rustc_hash::{FxHashMap, FxHashSet};
 
 use crate::stylex::StylexFunction;
-use crate::utils::{get_string_by_literal_expression, unwrap_syntax_only};
+use crate::utils::{binding_root, get_string_by_literal_expression, unwrap_syntax_only};
 use crate::{ExtractOption, ModuleResolver};
 
 /// An expression whose reads the module can run on its own
@@ -31,6 +32,9 @@ struct Found {
     /// The key of the shorthand property it is written as, which the value
     /// written in its place needs
     shorthand: Option<String>,
+    /// A part `css()` or `styled()` composes, which a class computed in its
+    /// place would turn into CSS text
+    rules_only: bool,
 }
 
 const UTILS: [&str; 4] = ["css", "globalCss", "keyframes", "createGlobalStyle"];
@@ -54,16 +58,18 @@ pub fn has_build_time_values(
     let Some(mut program) = parse(&allocator, filename, &code) else {
         return false;
     };
-    crate::imported_constants::inline_constants(
+    let inlined = crate::imported_constants::inline_constants(
         &oxc_ast::builder::AstBuilder::new(&allocator),
         &mut program,
         filename,
         option,
         resolver,
     );
-    !find(&program, &|source| {
-        source.starts_with(option.package.as_str())
-    })
+    !find(
+        &program,
+        &|source| source.starts_with(option.package.as_str()),
+        &inlined.unknown,
+    )
     .is_empty()
 }
 
@@ -73,12 +79,16 @@ fn parse<'a>(allocator: &'a Allocator, filename: &str, code: &'a str) -> Option<
     (!parsed.fatal_error).then_some(parsed.program)
 }
 
-fn find(program: &Program<'_>, is_style: &dyn Fn(&str) -> bool) -> Vec<Found> {
+fn find(
+    program: &Program<'_>,
+    is_style: &dyn Fn(&str) -> bool,
+    unknown: &FxHashSet<String>,
+) -> Vec<Found> {
     let scoping = SemanticBuilder::new()
         .build(program)
         .semantic
         .into_scoping();
-    let mut finder = Finder::new(program, &scoping, is_style);
+    let mut finder = Finder::new(program, &scoping, is_style, unknown);
     finder.visit_program(program);
     finder.found
 }
@@ -98,6 +108,11 @@ struct Finder<'s, 'a> {
     apis: FxHashSet<SymbolId>,
     namespaces: FxHashSet<SymbolId>,
     stylex_namespaces: FxHashSet<SymbolId>,
+    /// `css` and `styled` imported by name, which compose their arguments
+    css: FxHashSet<SymbolId>,
+    styled: FxHashSet<SymbolId>,
+    /// Bindings whose value only running the module gives
+    unknown: &'s FxHashSet<String>,
     closures: FxHashMap<usize, Option<BTreeSet<usize>>>,
     found: Vec<Found>,
 }
@@ -111,6 +126,7 @@ impl<'s, 'a> Finder<'s, 'a> {
         program: &'s Program<'a>,
         scoping: &'s Scoping,
         is_style: &dyn Fn(&str) -> bool,
+        unknown: &'s FxHashSet<String>,
     ) -> Self {
         let mut finder = Self {
             scoping,
@@ -119,6 +135,9 @@ impl<'s, 'a> Finder<'s, 'a> {
             apis: FxHashSet::default(),
             namespaces: FxHashSet::default(),
             stylex_namespaces: FxHashSet::default(),
+            css: FxHashSet::default(),
+            styled: FxHashSet::default(),
+            unknown,
             closures: FxHashMap::default(),
             found: Vec::new(),
         };
@@ -164,6 +183,19 @@ impl<'s, 'a> Finder<'s, 'a> {
                             self.stylex_namespaces.insert(symbol);
                         } else if namespace {
                             self.namespaces.insert(symbol);
+                        }
+                        if let ImportDeclarationSpecifier::ImportSpecifier(specifier) = specifier
+                            && !stylex
+                        {
+                            match specifier.imported.name().as_str() {
+                                "css" => {
+                                    self.css.insert(symbol);
+                                }
+                                "styled" => {
+                                    self.styled.insert(symbol);
+                                }
+                                _ => {}
+                            }
                         }
                     }
                 }
@@ -237,6 +269,75 @@ impl<'s, 'a> Finder<'s, 'a> {
         }
     }
 
+    fn is_css(&self, callee: &Expression<'_>) -> bool {
+        if let Expression::StaticMemberExpression(member) = callee {
+            return member.property.name == "css";
+        }
+        self.symbol(callee)
+            .is_some_and(|symbol| self.css.contains(&symbol))
+    }
+
+    /// Whether calling `callee` gives a `styled` component its styles:
+    /// `styled.div(...)`, `styled(Link)(...)`, `styled.div.attrs({})(...)`
+    fn is_styled(&self, callee: &Expression<'_>) -> bool {
+        match unwrap_syntax_only(callee) {
+            Expression::StaticMemberExpression(member) => self.is_styled_function(&member.object),
+            Expression::CallExpression(call) => match unwrap_syntax_only(&call.callee) {
+                Expression::StaticMemberExpression(member)
+                    if matches!(member.property.name.as_str(), "attrs" | "withConfig") =>
+                {
+                    self.is_styled(&member.object)
+                }
+                callee => self.is_styled_function(callee),
+            },
+            _ => false,
+        }
+    }
+
+    fn is_styled_function(&self, expression: &Expression<'_>) -> bool {
+        self.symbol(expression)
+            .is_some_and(|symbol| self.styled.contains(&symbol))
+    }
+
+    /// The parts `css()` and `styled()` compose: rule objects, whose values
+    /// are read when `rules` is set, and classes, which only rules the module
+    /// computes replace
+    fn parts(&mut self, expression: &Expression<'a>, rules: bool) {
+        match unwrap_syntax_only(expression) {
+            Expression::ObjectExpression(_) => {
+                if rules {
+                    self.values(expression, None);
+                }
+            }
+            Expression::ArrayExpression(array) => {
+                for element in &array.elements {
+                    if let Some(element) = element.as_expression() {
+                        self.parts(element, rules);
+                    }
+                }
+            }
+            Expression::ConditionalExpression(conditional) => {
+                self.parts(&conditional.consequent, rules);
+                self.parts(&conditional.alternate, rules);
+            }
+            Expression::LogicalExpression(logical) => {
+                if logical.operator != LogicalOperator::And {
+                    self.parts(&logical.left, rules);
+                }
+                self.parts(&logical.right, rules);
+            }
+            Expression::NullLiteral(_)
+            | Expression::BooleanLiteral(_)
+            | Expression::StringLiteral(_)
+            | Expression::TemplateLiteral(_) => {}
+            inner => {
+                if binding_root(inner).is_none_or(|name| self.unknown.contains(name)) {
+                    self.candidate(expression, None, true);
+                }
+            }
+        }
+    }
+
     /// The values `expression` holds: itself, or those of the object, array or
     /// condition it writes
     fn values(&mut self, expression: &Expression<'a>, shorthand: Option<&str>) {
@@ -282,7 +383,7 @@ impl<'s, 'a> Finder<'s, 'a> {
             | Expression::FunctionExpression(_) => {}
             inner if get_string_by_literal_expression(inner).is_some() => {}
             inner => {
-                if self.candidate(expression, shorthand) {
+                if self.candidate(expression, shorthand, false) {
                     return;
                 }
                 // A condition only known at runtime still chooses between
@@ -302,7 +403,12 @@ impl<'s, 'a> Finder<'s, 'a> {
         }
     }
 
-    fn candidate(&mut self, expression: &Expression<'a>, shorthand: Option<&str>) -> bool {
+    fn candidate(
+        &mut self,
+        expression: &Expression<'a>,
+        shorthand: Option<&str>,
+        rules_only: bool,
+    ) -> bool {
         let span = expression.span();
         let mut reads = Reads::new(self.scoping);
         reads.visit_expression(expression);
@@ -316,6 +422,7 @@ impl<'s, 'a> Finder<'s, 'a> {
             span,
             statements,
             shorthand: shorthand.map(str::to_string),
+            rules_only,
         });
         true
     }
@@ -365,17 +472,18 @@ impl<'s, 'a> Finder<'s, 'a> {
 
 impl<'a> Visit<'a> for Finder<'_, 'a> {
     fn visit_call_expression(&mut self, call: &oxc_ast::ast::CallExpression<'a>) {
-        if self.is_api(&call.callee) {
+        let (api, styled) = (self.is_api(&call.callee), self.is_styled(&call.callee));
+        if api || styled {
+            let composes = styled || self.is_css(&call.callee);
             for argument in &call.arguments {
-                match argument {
-                    oxc_ast::ast::Argument::SpreadElement(spread) => {
-                        self.values(&spread.argument, None);
-                    }
-                    argument => {
-                        if let Some(argument) = argument.as_expression() {
-                            self.values(argument, None);
-                        }
-                    }
+                let argument = match argument {
+                    oxc_ast::ast::Argument::SpreadElement(spread) => &spread.argument,
+                    argument => argument.to_expression(),
+                };
+                if composes {
+                    self.parts(argument, api);
+                } else {
+                    self.values(argument, None);
                 }
             }
         }
@@ -472,12 +580,13 @@ pub(crate) fn evaluate(
     filename: &str,
     option: &ExtractOption,
     resolver: Option<&ModuleResolver>,
+    unknown: &FxHashSet<String>,
 ) -> Option<(
     String,
     Vec<crate::import_alias_visit::Edit>,
     BTreeSet<String>,
 )> {
-    let (mut values, dependencies) = compute(code, filename, option, resolver)?;
+    let (mut values, dependencies) = compute(code, filename, option, resolver, unknown)?;
     values.sort_unstable_by_key(|(span, _)| span.start);
     let mut result = String::with_capacity(code.len());
     let mut edits = Vec::with_capacity(values.len());
@@ -520,6 +629,7 @@ fn compute(
     filename: &str,
     option: &ExtractOption,
     resolver: Option<&ModuleResolver>,
+    unknown: &FxHashSet<String>,
 ) -> Option<(Vec<Replacement>, BTreeSet<String>)> {
     use std::fmt::Write;
 
@@ -532,7 +642,7 @@ fn compute(
     let is_style = |source: &str| {
         source.starts_with(option.package.as_str()) || option.import_aliases.contains_key(source)
     };
-    let found = find(&program, &is_style);
+    let found = find(&program, &is_style, unknown);
     if found.is_empty() {
         return None;
     }
@@ -618,6 +728,9 @@ fn compute(
         else {
             continue;
         };
+        if found.rules_only && !literal.starts_with(['{', '[']) {
+            continue;
+        }
         computed.push((
             found.span,
             match found.shorthand {
