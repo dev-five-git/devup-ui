@@ -220,6 +220,8 @@ describe('DevupUINextPlugin', () => {
     setWasmForTesting({ ...wasm, hasBuildTimeValues } as typeof wasm)
     readFileSyncSpy.mockImplementation(((path: string) => {
       if (path.endsWith('missing.tsx')) throw new Error('ENOENT')
+      if (path.endsWith('styled.tsx'))
+        return 'export const A = styled.div(base)'
       return path.endsWith('plain.tsx')
         ? 'export const a = 1'
         : "css({ color: darken(0.1, 'red') })"
@@ -241,6 +243,9 @@ describe('DevupUINextPlugin', () => {
       "css({ color: darken(0.1, 'red') })",
       '@devup-ui/react',
       { '@emotion/react': null },
+    )
+    expect(computesStyleValues('src/styled.tsx', '@devup-ui/react', {})).toBe(
+      true,
     )
     const { hasBuildTimeValues: _, ...older } = wasm as typeof wasm & {
       hasBuildTimeValues?: unknown
