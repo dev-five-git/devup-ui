@@ -222,6 +222,10 @@ describe('DevupUINextPlugin', () => {
       if (path.endsWith('missing.tsx')) throw new Error('ENOENT')
       if (path.endsWith('styled.tsx'))
         return 'export const A = styled.div(base)'
+      if (path.endsWith('spread.tsx'))
+        return 'export const a = <Box {...card} />'
+      if (path.endsWith('hover.tsx'))
+        return 'export const a = <Box _hover={hover} />'
       return path.endsWith('plain.tsx')
         ? 'export const a = 1'
         : "css({ color: darken(0.1, 'red') })"
@@ -244,9 +248,9 @@ describe('DevupUINextPlugin', () => {
       '@devup-ui/react',
       { '@emotion/react': null },
     )
-    expect(computesStyleValues('src/styled.tsx', '@devup-ui/react', {})).toBe(
-      true,
-    )
+    for (const file of ['src/styled.tsx', 'src/spread.tsx', 'src/hover.tsx']) {
+      expect(computesStyleValues(file, '@devup-ui/react', {})).toBe(true)
+    }
     const { hasBuildTimeValues: _, ...older } = wasm as typeof wasm & {
       hasBuildTimeValues?: unknown
     }
