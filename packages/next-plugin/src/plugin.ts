@@ -133,7 +133,7 @@ export function selectWasmVariant(
 }
 
 const STYLE_CALL =
-  /\b(?:css|globalCss|keyframes|createGlobalStyle|create|defineVars|defineConsts|createTheme|positionTry|viewTransitionClass)\s*[(`]/
+  /\b(?:(?:css|globalCss|keyframes|createGlobalStyle|create|defineVars|defineConsts|createTheme|positionTry|viewTransitionClass)\s*[(`]|styled\s*[.(])/
 
 /** @internal Whether a source file has a style value only running it computes. */
 export function computesStyleValues(
