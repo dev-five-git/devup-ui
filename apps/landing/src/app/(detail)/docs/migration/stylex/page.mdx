@@ -78,6 +78,43 @@ const el = <div {...{ className: 'c d' }} />
 
 `createThemeContract()` produces the same references without publishing a `:root` block, and `defineConsts()` inlines its values into the `create()` calls that read them.
 
+A variable or theme value can depend on at-rules, with an optional `types.*()` wrapper. Each set of conditions becomes one block after the unconditional values, and nested conditions come after the ones they refine, so the more specific value wins:
+
+```tsx
+const DARK = '@media (prefers-color-scheme: dark)'
+
+const colors = stylex.defineVars({
+  text: { default: 'black', [DARK]: 'white' },
+  accent: stylex.types.color({ default: 'blue', [DARK]: 'lightblue' }),
+})
+const dracula = stylex.createTheme(colors, {
+  text: { default: 'purple', [DARK]: 'pink' },
+})
+```
+
+```css
+:root {
+  --a: black;
+  --b: blue;
+}
+@media (prefers-color-scheme: dark) {
+  :root {
+    --a: white;
+    --b: lightblue;
+  }
+}
+.c {
+  --a: purple;
+}
+@media (prefers-color-scheme: dark) {
+  .c {
+    --a: pink;
+  }
+}
+```
+
+Conditions are `default`, `@media`, `@supports` and `@container` keys, and `null` leaves a variable unset under its condition. A value that is not static is a build error naming it; pseudo-class keys count as not static, because a variable is set on `:root` or a theme class, not on the element being styled.
+
 As StyleX requires, variables usually live in a `.stylex.ts` file and are imported where they are used. Imports resolve like the bundler resolves them, and the importing file reads the same custom properties, theme classes and constants that the defining file generates:
 
 ```tsx
