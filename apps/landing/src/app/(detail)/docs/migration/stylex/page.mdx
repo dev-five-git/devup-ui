@@ -131,7 +131,9 @@ const styles = stylex.create({
 })
 ```
 
-A value in `create()` that is only known at runtime, such as a variable or a function call, is a build error naming it. Pass runtime values through a dynamic style (`(color) => ({ color })`), which becomes a CSS variable instead.
+A value in `create()` computed from constants, such as `darken(0.1, PRIMARY)`, is computed at build time. A value only known at runtime, such as a prop or a state, is a build error naming it, as is anything `create()`, `defineVars()`, `defineConsts()`, `createTheme()`, `keyframes()`, `positionTry()` or `viewTransitionClass()` cannot read (a spread, a computed key, a non-object argument). Pass runtime values through a dynamic style (`(color) => ({ color })`), which becomes a CSS variable instead.
+
+`stylex.props()` accepts styles compiled elsewhere — a `style` prop a parent passes, a spread, another module's namespaces — and joins their class names at runtime; namespaces of this file resolve at build time.
 
 ## At-rules
 
