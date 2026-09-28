@@ -90,8 +90,7 @@ pub(crate) fn inline_constants<'a>(
     };
     let mut symbols: FxHashMap<SymbolId, Constant> = FxHashMap::default();
     let mut inlined = Inlined::default();
-    let reads_math;
-    let scoping = {
+    let (scoping, reads_math) = {
         let mut scope = ModuleScope::new(filename);
         let mut bindings: FxHashMap<&str, Vec<&Cell<Option<SymbolId>>>> = FxHashMap::default();
         for statement in &program.body {
@@ -133,7 +132,7 @@ pub(crate) fn inline_constants<'a>(
         }
         // Scoping is only worth building when a style reads a name that may
         // hold a constant
-        reads_math = read.names.contains("Math") && !scope.binds("Math");
+        let reads_math = read.names.contains("Math") && !scope.binds("Math");
         if !reads_math && !read.names.iter().any(|name| scope.binds(name)) {
             return Inlined::default();
         }
@@ -159,7 +158,7 @@ pub(crate) fn inline_constants<'a>(
                 }
             }
         }
-        scoping
+        (scoping, reads_math)
     };
     inlined.dependencies = modules.exports.into_keys().collect();
     if !symbols.is_empty() || reads_math {

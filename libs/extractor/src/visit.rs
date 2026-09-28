@@ -569,7 +569,6 @@ impl<'a> DevupVisitor<'a> {
 
     fn reads_local_namespace(&self, expr: &Expression<'a>) -> bool {
         let object = match expr {
-            Expression::Identifier(_) => expr,
             Expression::StaticMemberExpression(member) => &member.object,
             Expression::ComputedMemberExpression(member) => &member.object,
             Expression::ChainExpression(chain) => match &chain.expression {
@@ -577,7 +576,7 @@ impl<'a> DevupVisitor<'a> {
                 ChainElement::ComputedMemberExpression(member) => &member.object,
                 _ => return false,
             },
-            _ => return false,
+            _ => expr,
         };
         matches!(object, Expression::Identifier(ident)
             if self.stylex_namespaces.contains_key(ident.name.as_str()))
