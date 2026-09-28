@@ -139,7 +139,7 @@ const STYLE_CALL =
 export function computesStyleValues(
   filename: string,
   libPackage: string,
-  aliasSources: string[],
+  importAliases: Record<string, string | null>,
 ): boolean {
   let source: string
   try {
@@ -151,7 +151,7 @@ export function computesStyleValues(
   const lite = loadWasm(true)
   return (
     'hasBuildTimeValues' in lite &&
-    lite.hasBuildTimeValues(filename, source, libPackage, aliasSources)
+    lite.hasBuildTimeValues(filename, source, libPackage, importAliases)
   )
 }
 
@@ -276,11 +276,15 @@ export function DevupUI(
         })
       : []
     const candidateCollectMs = elapsedMs(candidateCollectStartedAt)
-    const aliasSources = Object.keys(importAliases)
     const wasmVariant = selectWasmVariant(
       staticGraph,
       wasmCandidateFiles,
-      (filename) => computesStyleValues(filename, libPackage, aliasSources),
+      (filename) =>
+        computesStyleValues(
+          filename,
+          libPackage,
+          importAliases as unknown as Record<string, string | null>,
+        ),
     )
     const wasm = loadWasm(wasmVariant === 'lite')
     const {
