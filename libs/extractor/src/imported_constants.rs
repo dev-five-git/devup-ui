@@ -58,8 +58,8 @@ pub(crate) struct Inlined {
 #[derive(Default, Clone)]
 pub(crate) struct Unknown {
     names: FxHashSet<String>,
-    /// Objects and namespaces the build knows some members of, with those
-    partial: FxHashMap<String, FxHashSet<String>>,
+    /// Objects and namespaces the build knows some members of
+    partial: FxHashMap<String, Constant>,
 }
 
 impl Unknown {
@@ -67,31 +67,53 @@ impl Unknown {
         self.names.is_empty() && self.partial.is_empty()
     }
 
-    fn holds(&self, name: &str) -> bool {
-        self.names.contains(name) || self.partial.contains_key(name)
-    }
-
-    /// Whether `expression` (`x`, `x.y`, `x[y]` or a call of one) reads what
+    /// Whether `expression` (`x`, `x.y.z`, `x[y]` or a call of one) reads what
     /// only running the module gives
     pub(crate) fn read_by(&self, expression: &Expression<'_>) -> bool {
-        match expression {
-            Expression::Identifier(identifier) => self.holds(&identifier.name),
-            Expression::StaticMemberExpression(member) => match &member.object {
-                Expression::Identifier(object) => {
-                    self.names.contains(object.name.as_str())
-                        || self
-                            .partial
-                            .get(object.name.as_str())
-                            .is_some_and(|known| !known.contains(member.property.name.as_str()))
+        let mut path = Vec::new();
+        let mut expression = expression;
+        loop {
+            match expression {
+                Expression::StaticMemberExpression(member) => {
+                    path.push(member.property.name.as_str());
+                    expression = &member.object;
                 }
-                object => self.read_by(object),
-            },
-            Expression::ComputedMemberExpression(member) => {
-                crate::utils::binding_root(&member.object).is_some_and(|name| self.holds(name))
+                Expression::ComputedMemberExpression(member) => {
+                    return crate::utils::binding_root(&member.object).is_some_and(|name| {
+                        self.names.contains(name) || self.partial.contains_key(name)
+                    });
+                }
+                Expression::CallExpression(call) => return self.read_by(&call.callee),
+                Expression::Identifier(identifier) => {
+                    let name = identifier.name.as_str();
+                    if self.names.contains(name) {
+                        return true;
+                    }
+                    let Some(mut value) = self.partial.get(name) else {
+                        return false;
+                    };
+                    for key in path.iter().rev() {
+                        match member_value(value, key) {
+                            Some(member) => value = member,
+                            None => break,
+                        }
+                    }
+                    return matches!(value, Constant::Object(_));
+                }
+                _ => return false,
             }
-            Expression::CallExpression(call) => self.read_by(&call.callee),
-            _ => false,
         }
+    }
+}
+
+fn member_value<'c>(value: &'c Constant, key: &str) -> Option<&'c Constant> {
+    match value {
+        Constant::Object(object) => object.get(key),
+        Constant::Record(entries) => entries
+            .iter()
+            .find(|(name, _)| name == key)
+            .map(|(_, value)| value),
+        _ => None,
     }
 }
 
@@ -231,11 +253,8 @@ pub(crate) fn inline_constants<'a>(
                 None if bound => {
                     inlined.unknown.names.insert(name.clone());
                 }
-                Some(Constant::Object(members)) if bound => {
-                    inlined
-                        .unknown
-                        .partial
-                        .insert(name.clone(), members.keys().cloned().collect());
+                Some(object @ Constant::Object(_)) if bound => {
+                    inlined.unknown.partial.insert(name.clone(), object.clone());
                 }
                 _ => {}
             }

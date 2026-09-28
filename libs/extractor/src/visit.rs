@@ -2281,19 +2281,19 @@ impl<'a> VisitMut<'a> for DevupVisitor<'a> {
                                 read_once.push(self.read_once(&mut spread.expression));
                             }
                         }
-                        JSXChild::Element(_) | JSXChild::Fragment(_) => {
-                            let placeholder = JSXChild::Text(oxc_allocator::Box::new_in(
-                                oxc_ast::ast::JSXText::new(SPAN, "", None, &self.ast),
+                        JSXChild::Element(element) => {
+                            let mut value =
+                                Expression::JSXElement(element.clone_in(self.ast.allocator()));
+                            read_once.push(self.read_once(&mut value));
+                            *child = JSXChild::ExpressionContainer(JSXExpressionContainer::boxed(
+                                SPAN,
+                                value.into(),
                                 &self.ast,
                             ));
-                            let mut value = match std::mem::replace(child, placeholder) {
-                                JSXChild::Element(element) => Expression::JSXElement(element),
-                                JSXChild::Fragment(fragment) => Expression::JSXFragment(fragment),
-                                other => {
-                                    *child = other;
-                                    continue;
-                                }
-                            };
+                        }
+                        JSXChild::Fragment(fragment) => {
+                            let mut value =
+                                Expression::JSXFragment(fragment.clone_in(self.ast.allocator()));
                             read_once.push(self.read_once(&mut value));
                             *child = JSXChild::ExpressionContainer(JSXExpressionContainer::boxed(
                                 SPAN,
