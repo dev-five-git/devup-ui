@@ -339,7 +339,7 @@ const spin = keyframes({ from: { transform: "rotate(0)" }, to: { transform: "rot
 
 ### Dynamic Values with Custom Components
 
-`css()`, `globalCss()`, `keyframes()` and `stylex.create()` only accept values known at build time - literals, theme tokens, imported constants and module-level `const`s (templates and arithmetic over them fold). A runtime value is a **build error**. For dynamic values on custom components, use `<Box as={Component}>`:
+`css()`, `globalCss()`, `keyframes()` and `stylex.create()` only accept values known at build time - literals, theme tokens, imported constants and module-level `const`s (templates, arithmetic and `Math.*` calls over them fold). A value the module computes from those (`darken(0.1, PRIMARY)`, a helper call) is computed at build time by the full engine (`@devup-ui/wasm`, chosen automatically by Next.js; `Date` and `Math.random` are unavailable). A value known only at runtime (a prop, state, a parameter) is a **build error**. For dynamic values on custom components, use `<Box as={Component}>`:
 
 ```tsx
 // WRONG - css() cannot handle dynamic values
