@@ -1,0 +1,169 @@
+---
+source: libs/extractor/src/lib.rs
+expression: "ToBTreeSet::from(extract(\"test.tsx\",\nr\"import { css, globalCss, keyframes } from '@devup-ui/react';\nconst DARK = true;\nexport const a = css({ color: DARK ? 'red' : x, bg: false || 'blue', m: null ?? 2, p: 0 && x, w: 'a' && 3, h: undefined ?? 4, opacity: 0 ? 1 : 0.5 });\nexport const g = globalCss({ body: { color: DARK ? 'red' : 'blue' } });\nexport const h = () => globalCss({ body: { m: 0 } });\nexport const i = [globalCss({ html: { p: 0 } })];\nexport const j = (on) => on && globalCss`body { color: red; }`;\nglobalCss({ div: { m: 1 } });\nexport const k = keyframes({ from: { opacity: DARK ? 0 : 1 } });\",\nExtractOption::default(),).unwrap())"
+---
+ToBTreeSet {
+    styles: {
+        Static(
+            ExtractStaticStyle {
+                property: "background",
+                value: "blue",
+                level: 0,
+                selector: None,
+                style_order: None,
+                layer: None,
+            },
+        ),
+        Static(
+            ExtractStaticStyle {
+                property: "color",
+                value: "red",
+                level: 0,
+                selector: None,
+                style_order: None,
+                layer: None,
+            },
+        ),
+        Static(
+            ExtractStaticStyle {
+                property: "color",
+                value: "red",
+                level: 0,
+                selector: Some(
+                    Global(
+                        "body",
+                        "test.tsx",
+                    ),
+                ),
+                style_order: Some(
+                    0,
+                ),
+                layer: None,
+            },
+        ),
+        Static(
+            ExtractStaticStyle {
+                property: "height",
+                value: "16px",
+                level: 0,
+                selector: None,
+                style_order: None,
+                layer: None,
+            },
+        ),
+        Static(
+            ExtractStaticStyle {
+                property: "margin",
+                value: "0",
+                level: 0,
+                selector: Some(
+                    Global(
+                        "body",
+                        "test.tsx",
+                    ),
+                ),
+                style_order: Some(
+                    0,
+                ),
+                layer: None,
+            },
+        ),
+        Static(
+            ExtractStaticStyle {
+                property: "margin",
+                value: "4px",
+                level: 0,
+                selector: Some(
+                    Global(
+                        "div",
+                        "test.tsx",
+                    ),
+                ),
+                style_order: Some(
+                    0,
+                ),
+                layer: None,
+            },
+        ),
+        Static(
+            ExtractStaticStyle {
+                property: "margin",
+                value: "8px",
+                level: 0,
+                selector: None,
+                style_order: None,
+                layer: None,
+            },
+        ),
+        Static(
+            ExtractStaticStyle {
+                property: "opacity",
+                value: ".5",
+                level: 0,
+                selector: None,
+                style_order: None,
+                layer: None,
+            },
+        ),
+        Static(
+            ExtractStaticStyle {
+                property: "padding",
+                value: "0",
+                level: 0,
+                selector: None,
+                style_order: None,
+                layer: None,
+            },
+        ),
+        Static(
+            ExtractStaticStyle {
+                property: "padding",
+                value: "0",
+                level: 0,
+                selector: Some(
+                    Global(
+                        "html",
+                        "test.tsx",
+                    ),
+                ),
+                style_order: Some(
+                    0,
+                ),
+                layer: None,
+            },
+        ),
+        Static(
+            ExtractStaticStyle {
+                property: "width",
+                value: "12px",
+                level: 0,
+                selector: None,
+                style_order: None,
+                layer: None,
+            },
+        ),
+        Css(
+            ExtractCss {
+                css: "body{color:red}",
+                file: "test.tsx",
+            },
+        ),
+        Keyframes(
+            ExtractKeyframes {
+                keyframes: {
+                    "from": [
+                        ExtractStaticStyle {
+                            property: "opacity",
+                            value: "0",
+                            level: 0,
+                            selector: None,
+                            style_order: None,
+                            layer: None,
+                        },
+                    ],
+                },
+            },
+        ),
+    },
+    code: "import \"@devup-ui/react/devup-ui-0.css\";\nconst DARK = true;\nexport const a = \"a-a a-c a-d a-e a-f a-g a-h\";\nexport const g = void 0;\nexport const h = () => void 0;\nexport const i = [void 0];\nexport const j = (on) => on && void 0;\n;\nexport const k = \"a-j\";\n",
+}

@@ -1,7 +1,6 @@
 use std::fmt::{Debug, Formatter};
 
 use css::{
-    optimize_value::optimize_value,
     sheet_to_classname, sheet_to_variable_name,
     style_selector::{StyleSelector, optimize_selector},
 };
@@ -84,6 +83,24 @@ fn strip_important(identifier: String) -> (String, bool) {
     (identifier, false)
 }
 
+/// `identifier`, the code the element runs, without the statement's semicolon;
+/// only a literal holding the whole CSS value loses the `;` ending it. The code
+/// is not optimized as CSS, as that would rewrite the literals it passes on
+fn runtime_code(identifier: &str) -> String {
+    let code = identifier.trim();
+    let code = code.strip_suffix(';').unwrap_or(code);
+    for quote in ['`', '"', '\''] {
+        if let Some(value) = code
+            .strip_prefix(quote)
+            .and_then(|code| code.strip_suffix(quote))
+            .filter(|value| value.ends_with(';'))
+        {
+            return format!("{quote}{}{quote}", value.trim_end_matches(';'));
+        }
+    }
+    code.to_string()
+}
+
 impl ExtractDynamicStyle {
     /// create a new `ExtractDynamicStyle`
     pub fn new(
@@ -94,8 +111,7 @@ impl ExtractDynamicStyle {
     ) -> Self {
         // `optimize_value` returns `Cow`; `strip_important` takes ownership (and
         // the struct stores the `String`), so materialize the owned form here.
-        let optimized = optimize_value(identifier).into_owned();
-        let (identifier, important) = strip_important(optimized);
+        let (identifier, important) = strip_important(runtime_code(identifier));
         Self {
             property: property.to_string(),
             level,

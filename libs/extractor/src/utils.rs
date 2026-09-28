@@ -541,12 +541,14 @@ pub(super) fn style_arguments<'a>(
     let mut parts = Vec::new();
     let mut classes = Vec::new();
     for argument in arguments {
-        collect_style_parts(
-            ast_builder,
-            argument.as_expression()?,
-            &mut parts,
-            &mut classes,
-        )?;
+        let expression = match argument {
+            Argument::SpreadElement(spread) => match unwrap_syntax_only(&spread.argument) {
+                array @ Expression::ArrayExpression(_) => array,
+                _ => return None,
+            },
+            argument => argument.to_expression(),
+        };
+        collect_style_parts(ast_builder, expression, &mut parts, &mut classes)?;
     }
     let mut merged = oxc_allocator::Vec::new_in(ast_builder);
     for part in parts {
@@ -577,32 +579,38 @@ pub(super) fn style_arguments<'a>(
 /// reads a binding of `bindings`, which may hold rules the module computes
 pub(super) fn composes_binding(
     arguments: &[Argument<'_>],
-    bindings: &rustc_hash::FxHashSet<String>,
+    unknown: &crate::imported_constants::Unknown,
 ) -> bool {
-    fn composed(expression: &Expression<'_>, bindings: &rustc_hash::FxHashSet<String>) -> bool {
-        match unwrap_syntax_only(expression) {
-            Expression::ArrayExpression(array) => array.elements.iter().any(|element| {
-                element
-                    .as_expression()
-                    .is_some_and(|element| composed(element, bindings))
-            }),
-            Expression::LogicalExpression(logical) => {
-                (logical.operator != LogicalOperator::And && composed(&logical.left, bindings))
-                    || composed(&logical.right, bindings)
-            }
-            Expression::ConditionalExpression(conditional) => {
-                composed(&conditional.consequent, bindings)
-                    || composed(&conditional.alternate, bindings)
-            }
-            expression => binding_root(expression).is_some_and(|name| bindings.contains(name)),
-        }
-    }
-    !bindings.is_empty()
+    !unknown.is_empty()
         && arguments.iter().any(|argument| {
             argument
                 .as_expression()
-                .is_some_and(|expression| composed(expression, bindings))
+                .is_some_and(|expression| reads_unknown(expression, unknown))
         })
+}
+
+/// Whether a part `css()` or `styled()` joins, or an object a JSX spread
+/// gives, reads what `unknown` holds
+pub(super) fn reads_unknown(
+    expression: &Expression<'_>,
+    unknown: &crate::imported_constants::Unknown,
+) -> bool {
+    match unwrap_syntax_only(expression) {
+        Expression::ArrayExpression(array) => array.elements.iter().any(|element| {
+            element
+                .as_expression()
+                .is_some_and(|element| reads_unknown(element, unknown))
+        }),
+        Expression::LogicalExpression(logical) => {
+            (logical.operator != LogicalOperator::And && reads_unknown(&logical.left, unknown))
+                || reads_unknown(&logical.right, unknown)
+        }
+        Expression::ConditionalExpression(conditional) => {
+            reads_unknown(&conditional.consequent, unknown)
+                || reads_unknown(&conditional.alternate, unknown)
+        }
+        expression => unknown.read_by(expression),
+    }
 }
 
 pub(super) fn binding_root<'e>(expression: &'e Expression<'_>) -> Option<&'e str> {
@@ -720,6 +728,25 @@ pub(super) fn runtime_value(props: &[crate::ExtractStyleProp<'_>]) -> Option<Str
         })
 }
 
+/// The first value in `props` only known at runtime, a runtime condition
+/// choosing between values included: what styles with no class to switch
+/// between, global styles and keyframes, cannot hold
+pub(super) fn fixed_value(props: &[crate::ExtractStyleProp<'_>]) -> Option<String> {
+    fn condition(prop: &crate::ExtractStyleProp<'_>) -> Option<String> {
+        use crate::ExtractStyleProp;
+        match prop {
+            ExtractStyleProp::Conditional { condition, .. }
+            | ExtractStyleProp::Enum { condition, .. } => Some(readable_code(condition)),
+            ExtractStyleProp::MemberExpression { expression, .. } => {
+                Some(readable_code(expression))
+            }
+            ExtractStyleProp::StaticArray(props) => props.iter().find_map(condition),
+            _ => None,
+        }
+    }
+    runtime_value(props).or_else(|| props.iter().find_map(condition))
+}
+
 /// Where `props` holds styles the build cannot read, with their code; with
 /// `keys`, computed keys among an element's props too
 pub(super) fn unreadable_styles(
@@ -760,6 +787,10 @@ pub(super) fn unreadable_styles(
     }
 }
 
+#[cfg(feature = "vanilla-extract")]
+pub(super) const STYLE_OBJECT: &str =
+    "its styles must be an object literal or a constant object, or be computed from constants";
+#[cfg(not(feature = "vanilla-extract"))]
 pub(super) const STYLE_OBJECT: &str = "its styles must be an object literal or a constant object";
 
 pub(super) fn build_time_error(api: &str, code: &str, requirement: &str) -> String {
@@ -864,14 +895,7 @@ pub(super) fn unplaced_error(expression: &Expression<'_>) -> String {
 }
 
 pub(super) fn uncomposable_error(arguments: &[Argument<'_>]) -> String {
-    let arguments: Vec<String> = arguments
-        .iter()
-        .map(|argument| {
-            argument
-                .as_expression()
-                .map_or_else(|| "...".to_string(), readable_code)
-        })
-        .collect();
+    let arguments: Vec<String> = arguments.iter().map(readable_argument).collect();
     format!(
         "Cannot compose `{}` at build time: each style must be a rule object, a class, or a condition choosing between them",
         arguments.join(", ")

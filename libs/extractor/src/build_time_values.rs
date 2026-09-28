@@ -82,7 +82,7 @@ fn parse<'a>(allocator: &'a Allocator, filename: &str, code: &'a str) -> Option<
 fn find(
     program: &Program<'_>,
     is_style: &dyn Fn(&str) -> bool,
-    unknown: &FxHashSet<String>,
+    unknown: &crate::imported_constants::Unknown,
 ) -> Vec<Found> {
     let scoping = SemanticBuilder::new()
         .build(program)
@@ -111,8 +111,10 @@ struct Finder<'s, 'a> {
     /// `css` and `styled` imported by name, which compose their arguments
     css: FxHashSet<SymbolId>,
     styled: FxHashSet<SymbolId>,
+    /// What the style packages other than `StyleX` are imported as by name
+    components: FxHashSet<SymbolId>,
     /// Bindings whose value only running the module gives
-    unknown: &'s FxHashSet<String>,
+    unknown: &'s crate::imported_constants::Unknown,
     closures: FxHashMap<usize, Option<BTreeSet<usize>>>,
     found: Vec<Found>,
 }
@@ -126,7 +128,7 @@ impl<'s, 'a> Finder<'s, 'a> {
         program: &'s Program<'a>,
         scoping: &'s Scoping,
         is_style: &dyn Fn(&str) -> bool,
-        unknown: &'s FxHashSet<String>,
+        unknown: &'s crate::imported_constants::Unknown,
     ) -> Self {
         let mut finder = Self {
             scoping,
@@ -137,6 +139,7 @@ impl<'s, 'a> Finder<'s, 'a> {
             stylex_namespaces: FxHashSet::default(),
             css: FxHashSet::default(),
             styled: FxHashSet::default(),
+            components: FxHashSet::default(),
             unknown,
             closures: FxHashMap::default(),
             found: Vec::new(),
@@ -187,6 +190,7 @@ impl<'s, 'a> Finder<'s, 'a> {
                         if let ImportDeclarationSpecifier::ImportSpecifier(specifier) = specifier
                             && !stylex
                         {
+                            self.components.insert(symbol);
                             match specifier.imported.name().as_str() {
                                 "css" => {
                                     self.css.insert(symbol);
@@ -294,6 +298,38 @@ impl<'s, 'a> Finder<'s, 'a> {
         }
     }
 
+    /// Whether `name` is a component of the style packages: `<Box>`, `<Devup.Box>`
+    fn is_component(&self, name: &oxc_ast::ast::JSXElementName<'_>) -> bool {
+        let mut object = match name {
+            oxc_ast::ast::JSXElementName::IdentifierReference(identifier) => {
+                return self
+                    .symbol_of(identifier)
+                    .is_some_and(|symbol| self.components.contains(&symbol));
+            }
+            oxc_ast::ast::JSXElementName::MemberExpression(member) => &member.object,
+            _ => return false,
+        };
+        loop {
+            match object {
+                oxc_ast::ast::JSXMemberExpressionObject::MemberExpression(member) => {
+                    object = &member.object;
+                }
+                oxc_ast::ast::JSXMemberExpressionObject::IdentifierReference(identifier) => {
+                    return self
+                        .symbol_of(identifier)
+                        .is_some_and(|symbol| self.namespaces.contains(&symbol));
+                }
+                oxc_ast::ast::JSXMemberExpressionObject::ThisExpression(_) => return false,
+            }
+        }
+    }
+
+    fn symbol_of(&self, identifier: &oxc_ast::ast::IdentifierReference<'_>) -> Option<SymbolId> {
+        self.scoping
+            .get_reference(identifier.reference_id.get()?)
+            .symbol_id()
+    }
+
     fn is_styled_function(&self, expression: &Expression<'_>) -> bool {
         self.symbol(expression)
             .is_some_and(|symbol| self.styled.contains(&symbol))
@@ -304,9 +340,33 @@ impl<'s, 'a> Finder<'s, 'a> {
     /// computes replace
     fn parts(&mut self, expression: &Expression<'a>, rules: bool) {
         match unwrap_syntax_only(expression) {
-            Expression::ObjectExpression(_) => {
+            Expression::ObjectExpression(object) => {
                 if rules {
                     self.values(expression, None);
+                    return;
+                }
+                // Values an element holds at runtime stay; what gives it styles
+                // is computed: spreads, selectors and computed keys
+                for property in &object.properties {
+                    match property {
+                        ObjectPropertyKind::SpreadProperty(spread) => {
+                            self.parts(&spread.argument, false);
+                        }
+                        ObjectPropertyKind::ObjectProperty(property) => {
+                            if property.computed
+                                && let Some(key) = property.key.as_expression()
+                            {
+                                self.values(key, None);
+                            }
+                            if property
+                                .key
+                                .static_name()
+                                .is_some_and(|key| key.starts_with('_'))
+                            {
+                                self.parts(&property.value, false);
+                            }
+                        }
+                    }
                 }
             }
             Expression::ArrayExpression(array) => {
@@ -326,12 +386,17 @@ impl<'s, 'a> Finder<'s, 'a> {
                 }
                 self.parts(&logical.right, rules);
             }
+            // CSS text, whose values are read as `values` reads them
+            Expression::TemplateLiteral(_) => {
+                if rules {
+                    self.values(expression, None);
+                }
+            }
             Expression::NullLiteral(_)
             | Expression::BooleanLiteral(_)
-            | Expression::StringLiteral(_)
-            | Expression::TemplateLiteral(_) => {}
+            | Expression::StringLiteral(_) => {}
             inner => {
-                if binding_root(inner).is_none_or(|name| self.unknown.contains(name)) {
+                if binding_root(inner).is_none() || self.unknown.read_by(inner) {
                     self.candidate(expression, None, true);
                 }
             }
@@ -490,6 +555,30 @@ impl<'a> Visit<'a> for Finder<'_, 'a> {
         walk::walk_call_expression(self, call);
     }
 
+    fn visit_jsx_opening_element(&mut self, element: &oxc_ast::ast::JSXOpeningElement<'a>) {
+        if self.is_component(&element.name) {
+            for attribute in &element.attributes {
+                match attribute {
+                    oxc_ast::ast::JSXAttributeItem::SpreadAttribute(spread) => {
+                        self.parts(&spread.argument, false);
+                    }
+                    oxc_ast::ast::JSXAttributeItem::Attribute(attribute) => {
+                        if let oxc_ast::ast::JSXAttributeName::Identifier(name) = &attribute.name
+                            && name.name.starts_with('_')
+                            && let Some(oxc_ast::ast::JSXAttributeValue::ExpressionContainer(
+                                container,
+                            )) = &attribute.value
+                            && let Some(value) = container.expression.as_expression()
+                        {
+                            self.parts(value, false);
+                        }
+                    }
+                }
+            }
+        }
+        walk::walk_jsx_opening_element(self, element);
+    }
+
     fn visit_tagged_template_expression(
         &mut self,
         tagged: &oxc_ast::ast::TaggedTemplateExpression<'a>,
@@ -580,7 +669,7 @@ pub(crate) fn evaluate(
     filename: &str,
     option: &ExtractOption,
     resolver: Option<&ModuleResolver>,
-    unknown: &FxHashSet<String>,
+    unknown: &crate::imported_constants::Unknown,
 ) -> Option<(
     String,
     Vec<crate::import_alias_visit::Edit>,
@@ -629,7 +718,7 @@ fn compute(
     filename: &str,
     option: &ExtractOption,
     resolver: Option<&ModuleResolver>,
-    unknown: &FxHashSet<String>,
+    unknown: &crate::imported_constants::Unknown,
 ) -> Option<(Vec<Replacement>, BTreeSet<String>)> {
     use std::fmt::Write;
 
@@ -711,7 +800,7 @@ fn compute(
     let mut context = Context::default();
     context
         .runtime_limits_mut()
-        .set_loop_iteration_limit(10_000_000);
+        .set_loop_iteration_limit(crate::module_loader::LOOP_ITERATION_LIMIT);
     let values = context
         .eval(Source::from_bytes(
             format!("{PRELUDE}{}{}", loader.prelude(), script.body).as_bytes(),
