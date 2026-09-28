@@ -111,6 +111,9 @@ function double(n: number) {
   return n * 2
 }
 css({ color: HOVER, m: double(2), w: Math.max(4, 8), h: String(10) })
+
+// A callback written in the value runs with it
+css({ gap: [1, 2].map((n) => n * 4)[1] })
 ```
 
 ```tsx

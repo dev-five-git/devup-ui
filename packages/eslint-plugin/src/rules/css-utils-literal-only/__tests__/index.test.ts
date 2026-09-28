@@ -74,6 +74,10 @@ describe.each(['css' /* 'globalCss', 'keyframes'*/])(
           code: `import { ${code} } from "@devup-ui/react";\nimport { darken, PRIMARY } from "./color";\nimport * as tokens from "./tokens";\nfunction tone(n) { return n * 2 }\nconst toneOf = (n) => n;\nconst S = 4;\nconst DARK = darken(0.1, PRIMARY);\nconst HALF = Math.round(S / 2);\nconst PICK = [1, 2][1];\nconst SIDE = S > 2 ? 'left' : 'right';\nconst EITHER = S || 1;\nconst TEXT = String(S);\nconst LIMIT = -Infinity;\n${code}({color: DARK, w: HALF, h: PICK, float: SIDE, m: EITHER, content: TEXT, zIndex: LIMIT, p: Math.max(S, 2), top: Math.PI, left: tone(S), right: toneOf(S), bottom: tokens.scale(S), order: undefined})`,
           filename: 'src/app/page.tsx',
         },
+        {
+          code: `import { ${code} } from "@devup-ui/react";\n${code}({w: [1, 2].map((n) => n * 4)[1]})`,
+          filename: 'src/app/page.tsx',
+        },
       ],
       invalid: [
         {
@@ -163,6 +167,11 @@ describe.each(['css' /* 'globalCss', 'keyframes'*/])(
         })),
         {
           code: `import { ${code} } from "@devup-ui/react";\nfunction f(g) { return ${code}({w: g(1)}) }`,
+          filename: 'src/app/layout.tsx',
+          errors: [{ messageId: 'cssUtilsLiteralOnly' }],
+        },
+        {
+          code: `import { ${code} } from "@devup-ui/react";\nfunction f(k) { return ${code}({w: [1, 2].map((n) => n * k)[1]}) }`,
           filename: 'src/app/layout.tsx',
           errors: [{ messageId: 'cssUtilsLiteralOnly' }],
         },
