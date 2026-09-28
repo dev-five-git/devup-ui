@@ -18916,10 +18916,62 @@ export const d = <Box {...{ ...card, p: 1 }} />;
 export const e = styled.div({ ...make(6), _hover: hover, [KEY]: 'red' });
 export const f = css(...parts);
 export const g = css(`color: ${darken(0.1, PRIMARY)};`);
-export const h = <div {...card} />;",
+export const h = <div {...card} />;
+function local() { return { p: 7 }; }
+export const i = <Box {...local()} />;
+export const j = (register) => <Box {...register('email')} />;",
             ExtractOption::default(),
             false,
             &memory_resolver(modules),
+        )
+        .unwrap();
+        assert_debug_snapshot!(ToBTreeSet::from(output));
+    }
+
+    #[test]
+    #[serial]
+    fn test_spreads_are_read_once() {
+        reset_class_map();
+        reset_file_map();
+        let output = extract(
+            "test.tsx",
+            r"import { Box } from '@devup-ui/react';
+import { jsx as _jsx } from 'react/jsx-runtime';
+export const a = (register, rest, C) => (
+  <Box {...register('email')} {...rest} p={1}>
+    <Box as={C} {...useFocusRing()} />
+  </Box>
+);
+export const b = async (load) => <Box {...(await load())} m={2} />;
+export const c = (props) => <Box {...{ onClick: props.onClick, title: 'x' }} {...props.rest} p={3} />;
+export const d = (f) => _jsx(Box, { ...f(), bg: 'red' });
+export const e = async (f, g) => _jsx(Box, { ...f(), title: await g() });
+export const g = async (f, g, h) => <Box id={h()} {...f()} title={await g()} onClick={h} />;
+export const h = async (f, g) => <Box {...f()}>{await g()}</Box>;
+export const i = async (f, g) => _jsx(Box, { className: await g(), ...f() });",
+            ExtractOption::default(),
+        )
+        .unwrap();
+        assert_debug_snapshot!(ToBTreeSet::from(output));
+    }
+
+    #[test]
+    #[serial]
+    fn test_dynamic_as_where_the_element_stands() {
+        reset_class_map();
+        reset_file_map();
+        let output = extract(
+            "test.tsx",
+            r"import { Box } from '@devup-ui/react';
+export const a = (on, C, items) => (
+  <section title={<Box as={C} m={1} />}>
+    <Box as={on ? 'a' : 'b'} p={1} />
+    {items.map((item) => <Box key={item} as={C} p={2} />)}
+    <span>{on}</span>
+  </section>
+);
+export const after = 42;",
+            ExtractOption::default(),
         )
         .unwrap();
         assert_debug_snapshot!(ToBTreeSet::from(output));

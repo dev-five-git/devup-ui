@@ -81,6 +81,16 @@ ToBTreeSet {
         Static(
             ExtractStaticStyle {
                 property: "padding",
+                value: "28px",
+                level: 0,
+                selector: None,
+                style_order: None,
+                layer: None,
+            },
+        ),
+        Static(
+            ExtractStaticStyle {
+                property: "padding",
                 value: "4px",
                 level: 0,
                 selector: None,
@@ -89,5 +99,5 @@ ToBTreeSet {
             },
         ),
     },
-    code: "import \"@devup-ui/react/devup-ui-0.css\";\nimport * as Devup from \"@devup-ui/react\";\nimport { make, KEY, darken, PRIMARY } from \"./tokens\";\nconst card = make(2);\nconst hover = make(3);\nconst parts = [make(4), { p: 1 }];\nexport const a = <div onClick={() => 1} className=\"a-c\" />;\nexport const b = <div className=\"a-d\" />;\nexport const c = <div className=\"a-e\" />;\nexport const d = <div className=\"a-a a-c\" />;\nexport const e = ({ style, className, ...rest }) => <div {...rest} className={[\"a-f a-e a-g\", className].filter(Boolean).join(\" \")} style={style} />;\nexport const f = \"a-h a-a\";\nexport const g = \"a-i\";\nexport const h = <div {...card} />;\n",
+    code: "import \"@devup-ui/react/devup-ui-0.css\";\nimport * as Devup from \"@devup-ui/react\";\nimport { make, KEY, darken, PRIMARY } from \"./tokens\";\nconst card = make(2);\nconst hover = make(3);\nconst parts = [make(4), { p: 1 }];\nexport const a = <div onClick={() => 1} className=\"a-c\" />;\nexport const b = <div className=\"a-d\" />;\nexport const c = <div className=\"a-e\" />;\nexport const d = <div className=\"a-a a-c\" />;\nexport const e = ({ style, className, ...rest }) => <div {...rest} className={[\"a-f a-e a-g\", className].filter(Boolean).join(\" \")} style={style} />;\nexport const f = \"a-h a-a\";\nexport const g = \"a-i\";\nexport const h = <div {...card} />;\nfunction local() {\n\treturn { p: 7 };\n}\nexport const i = <div className=\"a-j\" />;\nexport const j = (register) => ((__devupSpread0) => <div {...__devupSpread0} className={__devupSpread0?.className || \"\"} style={__devupSpread0?.style} />)(register(\"email\"));\n",
 }

@@ -1,0 +1,49 @@
+---
+source: libs/extractor/src/lib.rs
+expression: "ToBTreeSet::from(output)"
+---
+ToBTreeSet {
+    styles: {
+        Static(
+            ExtractStaticStyle {
+                property: "background",
+                value: "red",
+                level: 0,
+                selector: None,
+                style_order: None,
+                layer: None,
+            },
+        ),
+        Static(
+            ExtractStaticStyle {
+                property: "margin",
+                value: "8px",
+                level: 0,
+                selector: None,
+                style_order: None,
+                layer: None,
+            },
+        ),
+        Static(
+            ExtractStaticStyle {
+                property: "padding",
+                value: "12px",
+                level: 0,
+                selector: None,
+                style_order: None,
+                layer: None,
+            },
+        ),
+        Static(
+            ExtractStaticStyle {
+                property: "padding",
+                value: "4px",
+                level: 0,
+                selector: None,
+                style_order: None,
+                layer: None,
+            },
+        ),
+    },
+    code: "import \"@devup-ui/react/devup-ui-0.css\";\nimport { jsx as _jsx } from \"react/jsx-runtime\";\nexport const a = (register, rest, C) => ((__devupSpread1) => <div {...__devupSpread1} {...rest} className={`a-a ${rest?.className || \"\"} ${__devupSpread1?.className || \"\"}`} style={{\n\t...rest?.style,\n\t...__devupSpread1?.style\n}}>\n    {((__devupSpread0) => <C {...__devupSpread0} className={__devupSpread0?.className || \"\"} style={__devupSpread0?.style} />)(useFocusRing())}\n  </div>)(register(\"email\"));\nexport const b = async (load) => ((__devupSpread2) => <div {...__devupSpread2} className={`a-b ${__devupSpread2?.className || \"\"}`} style={__devupSpread2?.style} />)(await load());\nexport const c = (props) => <div {...{\n\tonClick: props.onClick,\n\ttitle: \"x\"\n}} {...props.rest} className={`a-c ${props.rest?.className || \"\"}`} style={props.rest?.style} />;\nexport const d = (f) => ((__devupSpread3) => _jsx(\"div\", {\n\t...__devupSpread3,\n\tclassName: `a-d ${__devupSpread3?.className || \"\"}`,\n\tstyle: __devupSpread3?.style\n}))(f());\nexport const e = async (f, g) => ((__devupSpread4, __devupSpread5) => _jsx(\"div\", {\n\t...__devupSpread4,\n\ttitle: __devupSpread5,\n\tclassName: __devupSpread4?.className || \"\",\n\tstyle: __devupSpread4?.style\n}))(f(), await g());\nexport const g = async (f, g, h) => ((__devupSpread6, __devupSpread7, __devupSpread8) => <div id={__devupSpread6} {...__devupSpread7} title={__devupSpread8} onClick={h} className={__devupSpread7?.className || \"\"} style={__devupSpread7?.style} />)(h(), f(), await g());\nexport const h = async (f, g) => ((__devupSpread9, __devupSpread10) => <div {...__devupSpread9} className={__devupSpread9?.className || \"\"} style={__devupSpread9?.style}>{__devupSpread10}</div>)(f(), await g());\nexport const i = async (f, g) => _jsx(\"div\", {\n\t...f(),\n\tclassName: await g() || \"\",\n\tstyle: f()?.style\n});\n",
+}
