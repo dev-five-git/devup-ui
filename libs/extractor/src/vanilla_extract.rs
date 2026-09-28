@@ -248,6 +248,21 @@ pub fn execute_stylesheet(
         true,
     )?;
     let file_num = get_file_num_by_filename(filename);
+    let run = format!("{}{}", loader.prelude(), script.body);
+    let imports = StylesheetImports {
+        dependencies: loader.dependencies,
+        kept_imports: loader.kept_imports,
+    };
+    let imported = crate::module_loader::evaluating_import();
+    if imported
+        && let Some(collected) = IMPORTED_RUNS.with_borrow(|runs| {
+            runs.get(filename)
+                .filter(|(num, source, text, _)| *num == file_num && source == code && *text == run)
+                .map(|(.., collected)| collected.clone())
+        })
+    {
+        return Ok((collected, imports));
+    }
     let collector: StyleCollector = Rc::new(RefCell::new(Collector {
         file_num,
         ..Collector::default()
@@ -256,9 +271,7 @@ pub fn execute_stylesheet(
     register_vanilla_extract_apis(&mut context, &collector)?;
 
     context
-        .eval(Source::from_bytes(
-            format!("{}{}", loader.prelude(), script.body).as_bytes(),
-        ))
+        .eval(Source::from_bytes(run.as_bytes()))
         .map_err(|e| format!("JS execution error: {e}"))?;
 
     let mut collected = std::mem::take(&mut collector.borrow_mut().styles);
@@ -268,13 +281,25 @@ pub fn execute_stylesheet(
         &mut context,
         file_num,
     );
-    Ok((
-        collected,
-        StylesheetImports {
-            dependencies: loader.dependencies,
-            kept_imports: loader.kept_imports,
-        },
-    ))
+    if imported {
+        IMPORTED_RUNS.with_borrow_mut(|runs| {
+            runs.insert(
+                filename.to_string(),
+                (file_num, code.to_string(), run, collected.clone()),
+            );
+        });
+    }
+    Ok((collected, imports))
+}
+
+thread_local! {
+    /// What running each stylesheet other evaluations import last collected,
+    /// with its file number, source and the script run: every module importing
+    /// it reuses one run of the same script
+    static IMPORTED_RUNS: RefCell<FxHashMap<String, (usize, String, String, CollectedStyles)>> =
+        RefCell::default();
+    /// The TypeScript each file last had stripped, with its source
+    static STRIPPED: RefCell<FxHashMap<String, (String, String)>> = RefCell::default();
 }
 
 /// A name a top-level variable declaration of the stylesheet binds
@@ -523,7 +548,25 @@ fn replace_placeholders(
 }
 
 /// Convert TypeScript to JavaScript using Oxc Transformer
+/// `code` without its TypeScript, stripped once for as long as the file holds
+/// it: the modules evaluations import are stripped once, not per evaluation
 pub(crate) fn strip_typescript(code: &str, filename: &str) -> String {
+    if let Some(stripped) = STRIPPED.with_borrow(|stripped| {
+        stripped
+            .get(filename)
+            .filter(|(source, _)| source == code)
+            .map(|(_, stripped)| stripped.clone())
+    }) {
+        return stripped;
+    }
+    let stripped = strip(code, filename);
+    STRIPPED.with_borrow_mut(|entries| {
+        entries.insert(filename.to_string(), (code.to_string(), stripped.clone()));
+    });
+    stripped
+}
+
+fn strip(code: &str, filename: &str) -> String {
     let allocator = Allocator::default();
     let source_type = SourceType::from_path(filename).unwrap_or_else(|_| SourceType::ts());
     let mut program = Parser::new(&allocator, code, source_type).parse().program;
@@ -1397,6 +1440,19 @@ mod tests {
     use serial_test::serial;
 
     const PACKAGE: &str = "@devup-ui/react";
+
+    #[test]
+    fn test_strip_typescript_once_per_source() {
+        let stripped = strip_typescript("export const a: number = 1;", "strip-cache.ts");
+        assert_eq!(
+            strip_typescript("export const a: number = 1;", "strip-cache.ts"),
+            stripped
+        );
+        assert!(
+            strip_typescript("export const b: string = 'b';", "strip-cache.ts")
+                .contains("const b = \"b\"")
+        );
+    }
 
     fn import_error(code: &str, files: &'static [(&'static str, &'static str)]) -> String {
         reset_file_map();

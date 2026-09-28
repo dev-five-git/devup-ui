@@ -52,6 +52,11 @@ pub(crate) fn loading_for_stylesheet() -> bool {
     EVALUATING.with_borrow(|stack| !stack.is_empty())
 }
 
+/// Whether the stylesheet evaluated now is one another evaluation imports
+pub(crate) fn evaluating_import() -> bool {
+    EVALUATING.with_borrow(|stack| stack.len() > 1)
+}
+
 fn is_evaluating(filename: &str) -> bool {
     EVALUATING.with_borrow(|stack| stack.iter().any(|entry| entry == filename))
 }
@@ -108,7 +113,9 @@ impl<'r> ModuleLoader<'r> {
         if !self.lenient {
             return self.load(specifier, importer, direct);
         }
-        if specifier == crate::STYLEX_PACKAGE || self.option.import_aliases.contains_key(specifier)
+        if specifier == crate::STYLEX_PACKAGE
+            || specifier.starts_with(self.option.package.as_str())
+            || self.option.import_aliases.contains_key(specifier)
         {
             return Ok(PACKAGE_BINDING.to_string());
         }
@@ -329,7 +336,7 @@ pub(crate) fn module_script(
             replacements.push((span.start, span.end, replacement));
         }
     }
-    // CommonJS: equire of a literal path loads the module like an import
+    // CommonJS: `require` of a literal path loads the module like an import
     let commonjs = !program.body.iter().any(Statement::is_module_declaration)
         && semantic
             .scoping()

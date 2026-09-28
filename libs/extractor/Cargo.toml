@@ -25,6 +25,7 @@ oxc_ast_visit = "0.151.0"
 oxc_codegen = "0.151.0"
 oxc_transformer = "0.151.0"
 oxc_semantic = "0.151.0"
+oxc_sourcemap = "8"
 css = { path = "../css" }
 phf = "0.14"
 strum = "0.28.0"

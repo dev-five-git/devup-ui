@@ -1,0 +1,59 @@
+---
+source: libs/extractor/src/lib.rs
+expression: "ToBTreeSet::from(output)"
+---
+ToBTreeSet {
+    styles: {
+        Static(
+            ExtractStaticStyle {
+                property: "margin",
+                value: "12px",
+                level: 0,
+                selector: None,
+                style_order: None,
+                layer: None,
+            },
+        ),
+        Static(
+            ExtractStaticStyle {
+                property: "margin",
+                value: "16px",
+                level: 0,
+                selector: None,
+                style_order: None,
+                layer: None,
+            },
+        ),
+        Static(
+            ExtractStaticStyle {
+                property: "margin",
+                value: "24px",
+                level: 0,
+                selector: None,
+                style_order: None,
+                layer: None,
+            },
+        ),
+        Static(
+            ExtractStaticStyle {
+                property: "margin",
+                value: "8px",
+                level: 0,
+                selector: None,
+                style_order: None,
+                layer: None,
+            },
+        ),
+        Static(
+            ExtractStaticStyle {
+                property: "padding",
+                value: "20px",
+                level: 0,
+                selector: None,
+                style_order: None,
+                layer: None,
+            },
+        ),
+    },
+    code: "import \"@devup-ui/react/devup-ui-0.css\";\nimport * as Devup from \"@devup-ui/react\";\nimport * as tokens from \"./styles\";\nimport { card, computed, name, make } from \"./styles\";\nconst local = make(2);\nconst shared = {\n\trules: make(4),\n\tfixed: { p: 5 }\n};\nexport const a = \"a-b\";\nexport const b = `a-c ${card}`;\nexport const c = `x ${name} ${`y`}`;\nexport const d = ({ style, className, ...rest }) => <div {...rest} className={[\"a-b\", className].filter(Boolean).join(\" \")} style={style} />;\nexport const e = ({ style, className, ...rest }) => <span {...rest} className={[\"a-c\", className].filter(Boolean).join(\" \")} style={style} />;\nexport const f = (__devupProps) => (({ style, className, ...rest }) => <p {...rest} className={[\"a-d\", className].filter(Boolean).join(\" \")} style={style} />)({\n\t...__devupProps,\n\t...{ role: \"note\" }\n});\nexport const g = (on) => `a-b a-a ${on ? \"\" : card} ${on ? typeof on === \"string\" ? on : \"\" : \"\"}`;\nexport const h = \"a-c\";\nexport const i = \"a-b\";\nexport const j = (key) => `a-e ${shared[key]}`;\n",
+}

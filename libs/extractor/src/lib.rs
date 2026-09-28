@@ -11,6 +11,7 @@ mod imported_constants;
 #[cfg(feature = "vanilla-extract")]
 mod module_loader;
 mod prop_modify_utils;
+mod source_map;
 mod stylex;
 mod tailwind;
 mod util_type;
@@ -285,12 +286,12 @@ fn extract_with_source_map(
     extract_source(filename, code, None, option, source_map, resolver)
 }
 
-/// `evaluated` is the source `code` was computed from, with the replacements
-/// that wrote the values its styles compute
+/// `evaluated` is the source `code` was computed from, with the layers of
+/// edits, last made first, that map `code` back to it
 fn extract_source(
     filename: &str,
     code: &str,
-    evaluated: Option<(&str, &[import_alias_visit::Edit])>,
+    evaluated: Option<(&str, &[&[import_alias_visit::Edit]])>,
     option: ExtractOption,
     source_map: bool,
     resolver: Option<&ModuleResolver>,
@@ -442,6 +443,7 @@ fn extract_source(
         if global { None } else { Some(bucket) },
     );
     visitor.import_stylex(inlined.stylex_vars, inlined.stylex_themes);
+    visitor.unknown_bindings(&inlined.unknown);
     visitor.visit_program(&mut program);
     #[cfg(feature = "vanilla-extract")]
     if let Some(error) = evaluation_error
@@ -449,36 +451,41 @@ fn extract_source(
     {
         return Err(error.into());
     }
-    if !visitor.errors.is_empty() {
-        // Only the full engine can run the code a value computes
-        #[cfg(feature = "vanilla-extract")]
-        if evaluated.is_none()
-            && !utils::is_vanilla_extract_file(filename)
-            && let Some((computed, edits, read)) =
-                build_time_values::evaluate(code, filename, &option, resolver)
-        {
-            let mut output = extract_source(
-                filename,
-                &computed,
-                Some((code, &edits)),
-                option,
-                source_map,
-                resolver,
-            )?;
-            let mut files: std::collections::BTreeSet<String> =
-                output.dependencies.into_iter().collect();
-            files.extend(read);
-            output.dependencies = files.into_iter().collect();
-            return Ok(output);
-        }
-        let (source, value_edits) = evaluated.unwrap_or((code, &[]));
-        #[allow(unused_mut)]
-        let mut message = located_errors(
+    // Only the full engine can run the code a value computes, or tell rules
+    // the module computes from a class it composes
+    #[cfg(feature = "vanilla-extract")]
+    if (!visitor.errors.is_empty() || visitor.composes_unknown)
+        && evaluated.is_none()
+        && !utils::is_vanilla_extract_file(filename)
+        && let Some((computed, value_edits, read)) = build_time_values::evaluate(
+            &transformed_code,
             filename,
-            source,
-            &[&alias_edits, value_edits],
-            visitor.errors,
-        );
+            &option,
+            resolver,
+            &inlined.unknown,
+        )
+    {
+        let mut output = extract_source(
+            filename,
+            &computed,
+            Some((code, &[value_edits.as_slice(), alias_edits.as_slice()])),
+            option,
+            source_map,
+            resolver,
+        )?;
+        let mut files: std::collections::BTreeSet<String> =
+            output.dependencies.into_iter().collect();
+        files.extend(read);
+        output.dependencies = files.into_iter().collect();
+        return Ok(output);
+    }
+    let (source, earlier_edits) = evaluated.unwrap_or((code, &[]));
+    let edits: Vec<&[import_alias_visit::Edit]> = std::iter::once(alias_edits.as_slice())
+        .chain(earlier_edits.iter().copied())
+        .collect();
+    if !visitor.errors.is_empty() {
+        #[allow(unused_mut)]
+        let mut message = located_errors(filename, source, &edits, visitor.errors);
         #[cfg(not(feature = "vanilla-extract"))]
         if has_build_time_values(filename, code, &option, resolver) {
             message.push_str(
@@ -496,11 +503,20 @@ fn extract_source(
         CodegenOptions::default()
     };
     let result = Codegen::new().with_options(codegen_options).build(&program);
+    // A stylesheet's output is generated, so its map stays on that code
+    let map = result.map.map(|map| {
+        if processed_code.is_some() || edits.iter().all(|edits| edits.is_empty()) {
+            map
+        } else {
+            source_map::remap(map, code_to_parse, source, &edits)
+        }
+        .to_json_string()
+    });
 
     Ok(ExtractOutput {
         styles: visitor.styles,
         code: result.code,
-        map: result.map.map(|m| m.to_json_string()),
+        map,
         css_file: Some(css_file),
         dependencies: dependencies.into_iter().collect(),
     })
@@ -7950,7 +7966,7 @@ globalCss()
             )
             .unwrap_err()
             .to_string(),
-            "test.tsx:2:1: `globalCss()` cannot use `1` at build time: its values must be literals, theme tokens or imported constants"
+            "test.tsx:2:1: `globalCss()` cannot use `1` at build time: its values must be literals, theme tokens or constants, or be computed from them"
         );
     }
 
@@ -9120,7 +9136,7 @@ keyframes({
             );
             assert!(
                 message.ends_with(
-                    "at build time: its values must be literals, theme tokens or imported constants"
+                    "at build time: its values must be literals, theme tokens or constants, or be computed from them"
                 ),
                 "{message}"
             );
@@ -9218,10 +9234,10 @@ export const B = styled.div`${SEL} & { color: ${C}; }`;",
         assert_eq!(
             message.lines().collect::<Vec<_>>(),
             [
-                "src/App.tsx:6:56: `css()` cannot use `x` at build time: its values must be literals, theme tokens or imported constants",
-                "src/App.tsx:7:27: `globalCss()` cannot use `y` at build time: its values must be literals, theme tokens or imported constants",
-                "src/App.tsx:8:18: `keyframes()` cannot use `z` at build time: its values must be literals, theme tokens or imported constants",
-                "src/App.tsx:9:18: `css()` cannot use `x` at build time: its values must be literals, theme tokens or imported constants",
+                "src/App.tsx:6:56: `css()` cannot use `x` at build time: its values must be literals, theme tokens or constants, or be computed from them",
+                "src/App.tsx:7:27: `globalCss()` cannot use `y` at build time: its values must be literals, theme tokens or constants, or be computed from them",
+                "src/App.tsx:8:18: `keyframes()` cannot use `z` at build time: its values must be literals, theme tokens or constants, or be computed from them",
+                "src/App.tsx:9:18: `css()` cannot use `x` at build time: its values must be literals, theme tokens or constants, or be computed from them",
             ]
         );
     }
@@ -16355,7 +16371,7 @@ const result = stylex.props(styles.bar(myH, myW));",
             assert_eq!(
                 message,
                 format!(
-                    "test.tsx:2:47: `stylex.create()` cannot use `{shown}` at build time: its values must be literals, theme tokens or imported constants"
+                    "test.tsx:2:47: `stylex.create()` cannot use `{shown}` at build time: its values must be literals, theme tokens or constants, or be computed from them"
                 )
             );
         }
@@ -18675,7 +18691,7 @@ export const j = css(...{ bg: 'red' });",
             )
             .unwrap_err()
             .to_string(),
-            "test.tsx:2:41: `<Global>` cannot use `x` at build time: its values must be literals, theme tokens or imported constants"
+            "test.tsx:2:41: `<Global>` cannot use `x` at build time: its values must be literals, theme tokens or constants"
         );
     }
 
@@ -18709,6 +18725,124 @@ export function b() { return <this.Box p={IDX} />; }",
         let styles = format!("{:?}", ToBTreeSet::from(output).styles);
         for value in ["3px", "24px", "16px", "xnull"] {
             assert!(styles.contains(value), "{value}\n{styles}");
+        }
+    }
+
+    #[test]
+    #[serial]
+    fn test_compose_rules_the_module_computes() {
+        reset_class_map();
+        reset_file_map();
+        let modules: &[(&str, &str)] = &[(
+            "/src/styles.ts",
+            "import { css, styled } from '@devup-ui/react';\nexport const card = css({ p: 1 });\nexport const Card = styled.div({ p: 2 });\nexport const Linked = styled('a')({ p: 3 });\nexport const tagged = css`color: red;`;\nexport const make = (n: number) => ({ m: n });\nexport const computed = make(3);\nexport const once = (() => ({ m: 6 }))();\nexport const name = String('named');",
+        )];
+        let output = extract_with_modules(
+            "/src/App.tsx",
+            r"import { css, styled } from '@devup-ui/react';
+import * as Devup from '@devup-ui/react';
+import * as tokens from './styles';
+import { card, computed, name, make } from './styles';
+const local = make(2);
+const shared = { rules: make(4), fixed: { p: 5 } };
+export const a = css(local);
+export const b = css(card, computed);
+export const c = css(name, null, true, 'x', `y`);
+export const d = styled.div(local);
+export const e = styled('span')(computed);
+export const f = styled.p.attrs({ role: 'note' })(shared.rules);
+export const g = (on) => css(on ? local : card, on || computed, on && local, [local, shared.fixed]);
+export const h = css(tokens.computed);
+export const i = Devup.css(local);
+export const j = (key) => css(shared[key], tokens.once);",
+            ExtractOption::default(),
+            false,
+            &memory_resolver(modules),
+        )
+        .unwrap();
+        assert_eq!(output.dependencies, ["/src/styles.ts"]);
+        assert_debug_snapshot!(ToBTreeSet::from(output));
+    }
+
+    #[test]
+    #[serial]
+    fn test_source_map_points_at_the_code_as_written() {
+        reset_class_map();
+        reset_file_map();
+        let code = "import { css } from '@emotion/react';\nconst PRIMARY = 'red';\nconst darken = (amount, color) => color;\nexport const a = css({\n  color: darken(\n    0.1,\n    PRIMARY,\n  ),\n});\nexport const after = 1;\n";
+        let output = extract(
+            "src/App.tsx",
+            code,
+            ExtractOption {
+                import_aliases: HashMap::from([(
+                    "@emotion/react".to_string(),
+                    ImportAlias::NamedToNamed,
+                )]),
+                ..ExtractOption::default()
+            },
+        )
+        .unwrap();
+        let map =
+            oxc_sourcemap::SourceMap::from_json_string(output.map.as_deref().unwrap()).unwrap();
+        assert_eq!(map.get_source_content(0), Some(code));
+        let (line, generated) = output
+            .code
+            .lines()
+            .enumerate()
+            .find(|(_, line)| line.contains("after"))
+            .unwrap();
+        let column = generated.find("after").unwrap();
+        let token = map
+            .get_tokens()
+            .find(|token| {
+                token.get_dst_line() as usize == line && token.get_dst_col() as usize == column
+            })
+            .unwrap();
+        let written = code.lines().nth(token.get_src_line() as usize).unwrap();
+        assert!(
+            written[token.get_src_col() as usize..].starts_with("after"),
+            "{written}"
+        );
+    }
+
+    #[test]
+    #[serial]
+    fn test_imported_stylesheet_runs_once_per_script() {
+        reset_class_map();
+        reset_file_map();
+        let option = ExtractOption {
+            import_aliases: HashMap::from([(
+                "@vanilla-extract/css".to_string(),
+                ImportAlias::NamedToNamed,
+            )]),
+            ..ExtractOption::default()
+        };
+        let red = memory_resolver(&[(
+            "/src/theme.css.ts",
+            "import { style } from '@vanilla-extract/css';\nexport const brand = ['re', 'd'].join('');\nexport const base = style({ color: brand });",
+        )]);
+        let blue = memory_resolver(&[(
+            "/src/theme.css.ts",
+            "import { style } from '@vanilla-extract/css';\nexport const brand = ['blu', 'e'].join('');\nexport const base = style({ color: brand });",
+        )]);
+        let colors = |name: &str, resolver: &ModuleResolver| {
+            let output = extract_with_modules(
+                &format!("/src/{name}.css.ts"),
+                &format!("import {{ style }} from '@vanilla-extract/css';\nimport {{ brand }} from './theme.css';\nexport const {name} = style({{ color: brand }});"),
+                option.clone(),
+                false,
+                resolver,
+            )
+            .unwrap();
+            format!("{:?}", ToBTreeSet::from(output).styles)
+        };
+        for (name, resolver, color) in [
+            ("first", &red as &ModuleResolver, "\"red\""),
+            ("again", &red, "\"red\""),
+            ("changed", &blue, "\"blue\""),
+        ] {
+            let styles = colors(name, resolver);
+            assert!(styles.contains(color), "{name}: {styles}");
         }
     }
 
@@ -18861,6 +18995,14 @@ export const f = css(card, { p: TOKEN });",
             (
                 "import { css } from '@devup-ui/react';\nconst f = () => 1;\ncss({ w: [...[f()], 2] });",
                 true,
+            ),
+            (
+                "import { css } from '@devup-ui/react';\nconst make = (n) => ({ m: n });\nconst local = make(2);\ncss(local);",
+                true,
+            ),
+            (
+                "import { css } from '@devup-ui/react';\nconst card = css({ p: 1 });\ncss(card, { m: 1 });",
+                false,
             ),
             ("import { css } from '@devup-ui/react';\ncss({", false),
         ] {

@@ -38,6 +38,9 @@ enum Constant {
     Vars(Rc<FxHashMap<String, String>>),
     /// The class a `StyleX` theme applies
     Theme(String),
+    /// What another style API gives: a class, a component or a keyframes
+    /// name, never rules
+    Style,
 }
 
 /// What inlining found: the files read, and the `StyleX` values imported from
@@ -47,6 +50,9 @@ pub(crate) struct Inlined {
     pub dependencies: BTreeSet<String>,
     pub stylex_vars: FxHashMap<String, FxHashMap<String, String>>,
     pub stylex_themes: FxHashMap<String, String>,
+    /// Module-level bindings styles read whose value only running the module
+    /// gives
+    pub unknown: FxHashSet<String>,
 }
 
 enum Imported {
@@ -123,6 +129,14 @@ pub(crate) fn inline_constants<'a>(
                                 .or_default()
                                 .push(&local.symbol_id);
                         }
+                    } else if import.source.value != crate::STYLEX_PACKAGE {
+                        scope.style_imports.extend(
+                            import
+                                .specifiers
+                                .iter()
+                                .flatten()
+                                .map(|specifier| specifier.local().name.to_string()),
+                        );
                     }
                     continue;
                 }
@@ -171,21 +185,27 @@ pub(crate) fn inline_constants<'a>(
             .semantic
             .into_scoping();
         for name in &read.names {
-            if let Some(constant) = scope.lookup(&mut modules, name) {
-                match &constant {
-                    Constant::Vars(vars) => {
-                        inlined
-                            .stylex_vars
-                            .insert(name.clone(), vars.as_ref().clone());
-                    }
-                    Constant::Theme(class) => {
-                        inlined.stylex_themes.insert(name.clone(), class.clone());
-                    }
-                    _ => {}
+            let bound = scope.binds(name);
+            let constant = scope.lookup(&mut modules, name);
+            if bound && matches!(constant, None | Some(Constant::Object(_))) {
+                inlined.unknown.insert(name.clone());
+            }
+            let Some(constant) = constant else {
+                continue;
+            };
+            match &constant {
+                Constant::Vars(vars) => {
+                    inlined
+                        .stylex_vars
+                        .insert(name.clone(), vars.as_ref().clone());
                 }
-                for symbol in bindings.get(name.as_str()).into_iter().flatten() {
-                    symbols.extend(symbol.get().map(|symbol| (symbol, constant.clone())));
+                Constant::Theme(class) => {
+                    inlined.stylex_themes.insert(name.clone(), class.clone());
                 }
+                _ => {}
+            }
+            for symbol in bindings.get(name.as_str()).into_iter().flatten() {
+                symbols.extend(symbol.get().map(|symbol| (symbol, constant.clone())));
             }
         }
         (scoping, reads_math)
@@ -621,6 +641,7 @@ struct ModuleScope<'p, 'a> {
     locals: FxHashMap<String, Constant>,
     declarations: FxHashMap<String, &'p Expression<'a>>,
     imports: FxHashMap<String, (String, Imported)>,
+    style_imports: FxHashSet<String>,
 }
 
 impl<'p, 'a> ModuleScope<'p, 'a> {
@@ -630,7 +651,26 @@ impl<'p, 'a> ModuleScope<'p, 'a> {
             locals: FxHashMap::default(),
             declarations: FxHashMap::default(),
             imports: FxHashMap::default(),
+            style_imports: FxHashSet::default(),
         }
+    }
+
+    fn is_style_api(&self, modules: &Modules<'_>, callee: &Expression<'_>) -> bool {
+        let mut expression = callee;
+        let name = loop {
+            match expression {
+                Expression::Identifier(identifier) => break identifier.name.as_str(),
+                Expression::StaticMemberExpression(member) => expression = &member.object,
+                Expression::CallExpression(call) => expression = &call.callee,
+                _ => return false,
+            }
+        };
+        self.style_imports.contains(name)
+            || self.imports.get(name).is_some_and(|(source, _)| {
+                source != crate::STYLEX_PACKAGE
+                    && (source.starts_with(modules.option.package.as_str())
+                        || modules.option.import_aliases.contains_key(source))
+            })
     }
 
     fn binds(&self, name: &str) -> bool {
@@ -970,8 +1010,14 @@ impl<'p, 'a> ModuleScope<'p, 'a> {
                     }
                     fold_math(callee.property.name.as_str(), &arguments)
                 }
+                callee if self.is_style_api(modules, callee) => Some(Constant::Style),
                 _ => self.evaluate_stylex(modules, call),
             },
+            Expression::TaggedTemplateExpression(tagged)
+                if self.is_style_api(modules, &tagged.tag) =>
+            {
+                Some(Constant::Style)
+            }
             Expression::TSAsExpression(inner) => self.evaluate(modules, &inner.expression),
             Expression::TSSatisfiesExpression(inner) => self.evaluate(modules, &inner.expression),
             Expression::ParenthesizedExpression(inner) => self.evaluate(modules, &inner.expression),
