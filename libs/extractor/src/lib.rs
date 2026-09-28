@@ -1,4 +1,5 @@
 mod as_visit;
+mod build_time_values;
 mod component;
 mod css_utils;
 pub mod extract_style;
@@ -17,6 +18,7 @@ mod utils;
 #[cfg(feature = "vanilla-extract")]
 mod vanilla_extract;
 mod visit;
+pub use crate::build_time_values::has_build_time_values;
 use crate::extract_style::extract_style_value::ExtractStyleValue;
 use crate::visit::DevupVisitor;
 use css::file_map::{canonical, get_file_num_by_filename, is_global};
@@ -265,6 +267,19 @@ fn extract_with_source_map(
     source_map: bool,
     resolver: Option<&ModuleResolver>,
 ) -> Result<ExtractOutput, Box<dyn Error>> {
+    extract_source(filename, code, None, option, source_map, resolver)
+}
+
+/// `evaluated` is the source `code` was computed from, with the replacements
+/// that wrote the values its styles compute
+fn extract_source(
+    filename: &str,
+    code: &str,
+    evaluated: Option<(&str, &[import_alias_visit::Edit])>,
+    option: ExtractOption,
+    source_map: bool,
+    resolver: Option<&ModuleResolver>,
+) -> Result<ExtractOutput, Box<dyn Error>> {
     // Step 1: Transform import aliases
     // e.g., `import styled from '@emotion/styled'` → `import { styled } from '@devup-ui/react'`
     // e.g., `import { style } from '@vanilla-extract/css'` → `import { style } from '@devup-ui/react'`
@@ -420,7 +435,47 @@ fn extract_with_source_map(
         return Err(error.into());
     }
     if !visitor.errors.is_empty() {
-        return Err(located_errors(filename, code, &alias_edits, visitor.errors).into());
+        // Only the full engine can run the code a value computes
+        #[cfg(feature = "vanilla-extract")]
+        if evaluated.is_none()
+            && !utils::is_vanilla_extract_file(filename)
+            && let Some((computed, edits, read)) =
+                build_time_values::evaluate(code, filename, &option, resolver)
+        {
+            let mut output = extract_source(
+                filename,
+                &computed,
+                Some((code, &edits)),
+                option,
+                source_map,
+                resolver,
+            )?;
+            let mut files: std::collections::BTreeSet<String> =
+                output.dependencies.into_iter().collect();
+            files.extend(read);
+            output.dependencies = files.into_iter().collect();
+            return Ok(output);
+        }
+        let (source, value_edits) = evaluated.unwrap_or((code, &[]));
+        #[allow(unused_mut)]
+        let mut message = located_errors(
+            filename,
+            source,
+            &[&alias_edits, value_edits],
+            visitor.errors,
+        );
+        #[cfg(not(feature = "vanilla-extract"))]
+        if has_build_time_values(
+            filename,
+            code,
+            &option.package,
+            &option.import_aliases.keys().cloned().collect::<Vec<_>>(),
+        ) {
+            message.push_str(
+                "\nThe full engine (`@devup-ui/wasm`) runs the code these values compute at build time",
+            );
+        }
+        return Err(message.into());
     }
     let codegen_options = if source_map {
         CodegenOptions {
@@ -476,11 +531,12 @@ fn imports_uncompiled(program: &oxc_ast::ast::Program<'_>, package: &str) -> boo
 }
 
 /// `errors` in source order, one per line, each led by `filename:line:column`
-/// of the code it is about; `edits` map the offsets back to `source`
+/// of the code it is about; each layer of `edits`, last made first, maps the
+/// offsets back to `source`
 fn located_errors(
     filename: &str,
     source: &str,
-    edits: &[import_alias_visit::Edit],
+    edits: &[&[import_alias_visit::Edit]],
     mut errors: Vec<(u32, String)>,
 ) -> String {
     errors.sort_unstable();
@@ -488,9 +544,10 @@ fn located_errors(
     errors
         .into_iter()
         .map(|(offset, message)| {
-            let before = source
-                .get(..import_alias_visit::source_offset(edits, offset as usize))
-                .unwrap_or(source);
+            let offset = edits.iter().fold(offset as usize, |offset, edits| {
+                import_alias_visit::source_offset(edits, offset)
+            });
+            let before = source.get(..offset).unwrap_or(source);
             let line_start = before.rfind('\n').map_or(0, |index| index + 1);
             format!(
                 "{filename}:{}:{}: {message}",
@@ -16267,61 +16324,6 @@ const result = stylex.props(styles.bar(myH, myW));",
 
     #[test]
     #[serial]
-    fn test_stylex_error_computed_key() {
-        reset_class_map();
-        reset_file_map();
-        assert_debug_snapshot!(ToBTreeSet::from(
-            extract(
-                "test.tsx",
-                r"import stylex from '@stylexjs/stylex';
-let key = 'color';
-const styles = stylex.create({
-  base: {
-    [key]: 'red',
-  },
-});",
-                ExtractOption {
-                    package: "@devup-ui/react".to_string(),
-                    css_dir: "@devup-ui/react".to_string(),
-                    single_css: true,
-                    import_main_css: false,
-                    import_aliases: HashMap::new()
-                },
-            )
-            .unwrap()
-        ));
-    }
-
-    #[test]
-    #[serial]
-    fn test_stylex_error_spread_in_namespace() {
-        reset_class_map();
-        reset_file_map();
-        assert_debug_snapshot!(ToBTreeSet::from(
-            extract(
-                "test.tsx",
-                r"import stylex from '@stylexjs/stylex';
-const shared = { color: 'red' };
-const styles = stylex.create({
-  base: {
-    ...shared,
-    fontSize: '16px',
-  },
-});",
-                ExtractOption {
-                    package: "@devup-ui/react".to_string(),
-                    css_dir: "@devup-ui/react".to_string(),
-                    single_css: true,
-                    import_main_css: false,
-                    import_aliases: HashMap::new()
-                },
-            )
-            .unwrap()
-        ));
-    }
-
-    #[test]
-    #[serial]
     fn test_stylex_error_non_static_value() {
         for (value, shown) in [
             ("someVariable", "someVariable"),
@@ -16361,32 +16363,6 @@ const styles = stylex.create({
 const styles = stylex.create({
   base: {
     margin: '10px',
-    color: 'red',
-  },
-});",
-                ExtractOption {
-                    package: "@devup-ui/react".to_string(),
-                    css_dir: "@devup-ui/react".to_string(),
-                    single_css: true,
-                    import_main_css: false,
-                    import_aliases: HashMap::new()
-                },
-            )
-            .unwrap()
-        ));
-    }
-
-    #[test]
-    #[serial]
-    fn test_stylex_error_destructuring_create() {
-        reset_class_map();
-        reset_file_map();
-        assert_debug_snapshot!(ToBTreeSet::from(
-            extract(
-                "test.tsx",
-                r"import stylex from '@stylexjs/stylex';
-const { base } = stylex.create({
-  base: {
     color: 'red',
   },
 });",
@@ -16695,118 +16671,6 @@ const styles = stylex.create({ base: { fontSize: stylex.types.length(16) } });",
 
     #[test]
     #[serial]
-    fn test_stylex_types_unresolvable() {
-        reset_class_map();
-        reset_file_map();
-        assert_debug_snapshot!(ToBTreeSet::from(
-            extract(
-                "test.tsx",
-                r"import stylex from '@stylexjs/stylex';
-const styles = stylex.create({ base: { fontSize: stylex.types.length(someVar) } });",
-                ExtractOption {
-                    package: "@devup-ui/react".to_string(),
-                    css_dir: "@devup-ui/react".to_string(),
-                    single_css: true,
-                    import_main_css: false,
-                    import_aliases: HashMap::new()
-                },
-            )
-            .unwrap()
-        ));
-    }
-
-    #[test]
-    #[serial]
-    fn test_stylex_pseudo_non_object_value() {
-        reset_class_map();
-        reset_file_map();
-        assert_debug_snapshot!(ToBTreeSet::from(
-            extract(
-                "test.tsx",
-                r"import stylex from '@stylexjs/stylex';
-const styles = stylex.create({ base: { ':hover': 'invalid' } });",
-                ExtractOption {
-                    package: "@devup-ui/react".to_string(),
-                    css_dir: "@devup-ui/react".to_string(),
-                    single_css: true,
-                    import_main_css: false,
-                    import_aliases: HashMap::new()
-                },
-            )
-            .unwrap()
-        ));
-    }
-
-    #[test]
-    #[serial]
-    fn test_stylex_non_object_namespace_value() {
-        reset_class_map();
-        reset_file_map();
-        assert_debug_snapshot!(ToBTreeSet::from(
-            extract(
-                "test.tsx",
-                r"import stylex from '@stylexjs/stylex';
-const styles = stylex.create({ base: 'not-an-object', active: { color: 'blue' } });",
-                ExtractOption {
-                    package: "@devup-ui/react".to_string(),
-                    css_dir: "@devup-ui/react".to_string(),
-                    single_css: true,
-                    import_main_css: false,
-                    import_aliases: HashMap::new()
-                },
-            )
-            .unwrap()
-        ));
-    }
-
-    #[test]
-    #[serial]
-    fn test_stylex_spread_at_namespace_level() {
-        reset_class_map();
-        reset_file_map();
-        assert_debug_snapshot!(ToBTreeSet::from(
-            extract(
-                "test.tsx",
-                r"import stylex from '@stylexjs/stylex';
-const other = {};
-const styles = stylex.create({ ...other, base: { color: 'red' } });",
-                ExtractOption {
-                    package: "@devup-ui/react".to_string(),
-                    css_dir: "@devup-ui/react".to_string(),
-                    single_css: true,
-                    import_main_css: false,
-                    import_aliases: HashMap::new()
-                },
-            )
-            .unwrap()
-        ));
-    }
-
-    #[test]
-    #[serial]
-    fn test_stylex_computed_namespace_key() {
-        reset_class_map();
-        reset_file_map();
-        assert_debug_snapshot!(ToBTreeSet::from(
-            extract(
-                "test.tsx",
-                r"import stylex from '@stylexjs/stylex';
-let key = 'base';
-const styles = stylex.create({ [key]: { color: 'red' } });",
-                ExtractOption {
-                    package: "@devup-ui/react".to_string(),
-                    css_dir: "@devup-ui/react".to_string(),
-                    single_css: true,
-                    import_main_css: false,
-                    import_aliases: HashMap::new()
-                },
-            )
-            .unwrap()
-        ));
-    }
-
-    #[test]
-    #[serial]
     fn test_stylex_dynamic_empty_params() {
         reset_class_map();
         reset_file_map();
@@ -16815,28 +16679,6 @@ const styles = stylex.create({ [key]: { color: 'red' } });",
                 "test.tsx",
                 r"import stylex from '@stylexjs/stylex';
 const styles = stylex.create({ base: () => ({ color: 'red' }) });",
-                ExtractOption {
-                    package: "@devup-ui/react".to_string(),
-                    css_dir: "@devup-ui/react".to_string(),
-                    single_css: true,
-                    import_main_css: false,
-                    import_aliases: HashMap::new()
-                },
-            )
-            .unwrap()
-        ));
-    }
-
-    #[test]
-    #[serial]
-    fn test_stylex_dynamic_block_body() {
-        reset_class_map();
-        reset_file_map();
-        assert_debug_snapshot!(ToBTreeSet::from(
-            extract(
-                "test.tsx",
-                r"import stylex from '@stylexjs/stylex';
-const styles = stylex.create({ base: (x) => { return { color: x }; } });",
                 ExtractOption {
                     package: "@devup-ui/react".to_string(),
                     css_dir: "@devup-ui/react".to_string(),
@@ -17069,122 +16911,9 @@ const styles = create({ base: { color: 'red' } });",
     // Coverage tests: extract_style_from_stylex.rs
     // ==========================================
 
-    /// Line 24: Non-object argument to `stylex.create()`
-    #[test]
-    #[serial]
-    fn test_stylex_create_non_object_arg() {
-        reset_class_map();
-        reset_file_map();
-        assert_debug_snapshot!(ToBTreeSet::from(
-            extract(
-                "test.tsx",
-                r#"import stylex from '@stylexjs/stylex';
-const styles = stylex.create("not-object");"#,
-                ExtractOption {
-                    package: "@devup-ui/react".to_string(),
-                    css_dir: "@devup-ui/react".to_string(),
-                    single_css: true,
-                    import_main_css: false,
-                    import_aliases: HashMap::new()
-                },
-            )
-            .unwrap()
-        ));
-    }
-
-    /// Lines 100, 103: Non-ObjectProperty / no string key inside pseudo inner properties
-    #[test]
-    #[serial]
-    fn test_stylex_pseudo_inner_spread_and_computed() {
-        reset_class_map();
-        reset_file_map();
-        assert_debug_snapshot!(ToBTreeSet::from(
-            extract(
-                "test.tsx",
-                r"import stylex from '@stylexjs/stylex';
-const other = { fontSize: '14px' };
-const styles = stylex.create({ base: { ':hover': { ...other, [Symbol()]: 'val', color: 'red' } } });",
-                ExtractOption { package: "@devup-ui/react".to_string(), css_dir: "@devup-ui/react".to_string(), single_css: true, import_main_css: false, import_aliases: HashMap::new() },
-            )
-            .unwrap()
-        ));
-    }
-
-    /// Lines 232, 236: Non-ObjectProperty / no key in dynamic body (spread and computed)
-    #[test]
-    #[serial]
-    fn test_stylex_dynamic_body_spread_and_computed() {
-        reset_class_map();
-        reset_file_map();
-        assert_debug_snapshot!(ToBTreeSet::from(
-            extract(
-                "test.tsx",
-                r"import stylex from '@stylexjs/stylex';
-const other = { fontSize: '14px' };
-const styles = stylex.create({ base: (x) => ({ ...other, [Symbol()]: x, color: 'red' }) });",
-                ExtractOption {
-                    package: "@devup-ui/react".to_string(),
-                    css_dir: "@devup-ui/react".to_string(),
-                    single_css: true,
-                    import_main_css: false,
-                    import_aliases: HashMap::new()
-                },
-            )
-            .unwrap()
-        ));
-    }
-
-    /// Line 269: Unresolvable value in dynamic namespace (not a param, not string, not number)
-    #[test]
-    #[serial]
-    fn test_stylex_dynamic_unresolvable_value() {
-        reset_class_map();
-        reset_file_map();
-        assert_debug_snapshot!(ToBTreeSet::from(
-            extract(
-                "test.tsx",
-                r"import stylex from '@stylexjs/stylex';
-const someVar = getSomething();
-const styles = stylex.create({ base: (x) => ({ color: x, fontSize: someVar }) });",
-                ExtractOption {
-                    package: "@devup-ui/react".to_string(),
-                    css_dir: "@devup-ui/react".to_string(),
-                    single_css: true,
-                    import_main_css: false,
-                    import_aliases: HashMap::new()
-                },
-            )
-            .unwrap()
-        ));
-    }
-
     // ==========================================
     // Coverage tests: stylex.rs
     // ==========================================
-
-    /// Line 48: false from `is_include_call_static` — spread with non-include call
-    #[test]
-    #[serial]
-    fn test_stylex_spread_non_include_call() {
-        reset_class_map();
-        reset_file_map();
-        assert_debug_snapshot!(ToBTreeSet::from(
-            extract(
-                "test.tsx",
-                r"import stylex from '@stylexjs/stylex';
-function notInclude() { return {}; }
-const styles = stylex.create({ base: { ...notInclude(), color: 'red' } });",
-                ExtractOption {
-                    package: "@devup-ui/react".to_string(),
-                    css_dir: "@devup-ui/react".to_string(),
-                    single_css: true,
-                    import_main_css: false,
-                    import_aliases: HashMap::new()
-                },
-            )
-            .unwrap()
-        ));
-    }
 
     /// Lines 66-67: Named import `types.X()`
     #[test]
@@ -17197,102 +16926,6 @@ const styles = stylex.create({ base: { ...notInclude(), color: 'red' } });",
                 "test.tsx",
                 r"import { create, types } from '@stylexjs/stylex';
 const styles = create({ base: { width: types.length('100px') } });",
-                ExtractOption {
-                    package: "@devup-ui/react".to_string(),
-                    css_dir: "@devup-ui/react".to_string(),
-                    single_css: true,
-                    import_main_css: false,
-                    import_aliases: HashMap::new()
-                },
-            )
-            .unwrap()
-        ));
-    }
-
-    /// Line 70: false from `is_types_call` — call expression value that's not types or firstThatWorks
-    /// Line 183: types with unresolvable inside condition object
-    #[test]
-    #[serial]
-    fn test_stylex_types_unresolvable_in_condition() {
-        reset_class_map();
-        reset_file_map();
-        assert_debug_snapshot!(ToBTreeSet::from(
-            extract(
-                "test.tsx",
-                r"import stylex from '@stylexjs/stylex';
-const someVar = getSomething();
-const styles = stylex.create({ base: { fontSize: { default: stylex.types.length(someVar) } } });",
-                ExtractOption {
-                    package: "@devup-ui/react".to_string(),
-                    css_dir: "@devup-ui/react".to_string(),
-                    single_css: true,
-                    import_main_css: false,
-                    import_aliases: HashMap::new()
-                },
-            )
-            .unwrap()
-        ));
-    }
-
-    /// Line 188: Non-object/non-string/non-number/non-null/non-call value in decompose (array expression)
-    #[test]
-    #[serial]
-    fn test_stylex_array_in_condition_object() {
-        reset_class_map();
-        reset_file_map();
-        assert_debug_snapshot!(ToBTreeSet::from(
-            extract(
-                "test.tsx",
-                r"import stylex from '@stylexjs/stylex';
-const styles = stylex.create({ base: { opacity: { default: [1, 2] } } });",
-                ExtractOption {
-                    package: "@devup-ui/react".to_string(),
-                    css_dir: "@devup-ui/react".to_string(),
-                    single_css: true,
-                    import_main_css: false,
-                    import_aliases: HashMap::new()
-                },
-            )
-            .unwrap()
-        ));
-    }
-
-    /// Line 195: Non-ObjectProperty inside condition object (spread)
-    #[test]
-    #[serial]
-    fn test_stylex_spread_in_condition_object() {
-        reset_class_map();
-        reset_file_map();
-        assert_debug_snapshot!(ToBTreeSet::from(
-            extract(
-                "test.tsx",
-                r"import stylex from '@stylexjs/stylex';
-const spreadObj = { ':hover': 'blue' };
-const styles = stylex.create({ base: { color: { ...spreadObj, default: 'red' } } });",
-                ExtractOption {
-                    package: "@devup-ui/react".to_string(),
-                    css_dir: "@devup-ui/react".to_string(),
-                    single_css: true,
-                    import_main_css: false,
-                    import_aliases: HashMap::new()
-                },
-            )
-            .unwrap()
-        ));
-    }
-
-    /// Line 198: No string key in condition object (computed key)
-    #[test]
-    #[serial]
-    fn test_stylex_computed_key_in_condition_object() {
-        reset_class_map();
-        reset_file_map();
-        assert_debug_snapshot!(ToBTreeSet::from(
-            extract(
-                "test.tsx",
-                r"import stylex from '@stylexjs/stylex';
-let key = ':hover';
-const styles = stylex.create({ base: { color: { [key]: 'blue', default: 'red' } } });",
                 ExtractOption {
                     package: "@devup-ui/react".to_string(),
                     css_dir: "@devup-ui/react".to_string(),
@@ -17393,54 +17026,6 @@ const el = <div {...stylex.props(isActive && unknownRef)} />;",
                 r"import stylex from '@stylexjs/stylex';
 const base = stylex.create({ empty: {} });
 const composed = stylex.create({ test: { ...stylex.include(base.empty), color: 'red' } });",
-                ExtractOption {
-                    package: "@devup-ui/react".to_string(),
-                    css_dir: "@devup-ui/react".to_string(),
-                    single_css: true,
-                    import_main_css: false,
-                    import_aliases: HashMap::new()
-                },
-            )
-            .unwrap()
-        ));
-    }
-
-    /// Dynamic namespace with bare expression body (not object): (x) => x
-    /// Covers: `extract_style_from_stylex.rs` `ObjectExpression` else branch
-    #[test]
-    #[serial]
-    fn test_stylex_dynamic_bare_expression_body() {
-        reset_class_map();
-        reset_file_map();
-        assert_debug_snapshot!(ToBTreeSet::from(
-            extract(
-                "test.tsx",
-                r"import stylex from '@stylexjs/stylex';
-const styles = stylex.create({ base: (x) => x });",
-                ExtractOption {
-                    package: "@devup-ui/react".to_string(),
-                    css_dir: "@devup-ui/react".to_string(),
-                    single_css: true,
-                    import_main_css: false,
-                    import_aliases: HashMap::new()
-                },
-            )
-            .unwrap()
-        ));
-    }
-
-    /// Dynamic namespace with parenthesized non-object body: (x) => (x)
-    /// Covers: `extract_style_from_stylex.rs` `ParenthesizedExpression` unwrap + `ObjectExpression` else
-    #[test]
-    #[serial]
-    fn test_stylex_dynamic_paren_non_object_body() {
-        reset_class_map();
-        reset_file_map();
-        assert_debug_snapshot!(ToBTreeSet::from(
-            extract(
-                "test.tsx",
-                r"import stylex from '@stylexjs/stylex';
-const styles = stylex.create({ base: (x) => (x) });",
                 ExtractOption {
                     package: "@devup-ui/react".to_string(),
                     css_dir: "@devup-ui/react".to_string(),
@@ -18120,20 +17705,6 @@ const el = <div {...props(dark, styles.box)} />;"
 
     #[test]
     #[serial]
-    fn test_stylex_theme_apis_ignore_unresolvable_input() {
-        assert_debug_snapshot!(ToBTreeSet::from(extract_tsx(
-            r"import stylex from '@stylexjs/stylex';
-const empty = stylex.defineVars({});
-const unknownContract = stylex.createTheme(notAContract, { primary: 'navy' });
-const noOverlap = stylex.createTheme(empty, { missing: 'navy' });
-const notAnObject = stylex.defineVars(someVariable);
-const spreadVars = stylex.defineVars({ ...other, kept: 'red' });
-const spreadTheme = stylex.createTheme(empty, { ...other });"
-        )));
-    }
-
-    #[test]
-    #[serial]
     fn test_stylex_theme_contract_and_constants() {
         assert_debug_snapshot!(ToBTreeSet::from(extract_tsx(
             r"import stylex from '@stylexjs/stylex';
@@ -18152,8 +17723,7 @@ const el = <div {...stylex.props(dark, styles.box)} />;"
         assert_debug_snapshot!(ToBTreeSet::from(extract_tsx(
             r"import stylex from '@stylexjs/stylex';
 const fallback = stylex.positionTry({ top: '0', insetBlockEnd: 'auto' });
-const transition = stylex.viewTransitionClass({ animationDuration: '300ms' });
-const empty = stylex.positionTry(notAnObject);"
+const transition = stylex.viewTransitionClass({ animationDuration: '300ms' });"
         )));
     }
 
@@ -18392,8 +17962,8 @@ import other from './brand';
 import { BRAND } from './brand';
 const DARK = '@media (prefers-color-scheme: dark)';
 const GAP = 'gap';
-export const colors = stylex.defineVars({ primary: 'blue', brand: BRAND, [computedKey]: 'x', mode: { default: 'light', [DARK]: 'dark' }, typed: stylex.types.color({ default: 'red', '@supports (color: red)': null }) });
-export const consts = defineConsts({ [GAP]: '8px', size: 4, dynamic: getSize() });
+export const colors = stylex.defineVars({ primary: 'blue', brand: BRAND, mode: { default: 'light', [DARK]: 'dark' }, typed: stylex.types.color({ default: 'red', '@supports (color: red)': null }) });
+export const consts = defineConsts({ [GAP]: '8px', size: 4 });
 export const contract = sx.createThemeContract({ accent: null });
 export const dark = stylex.createTheme(colors, { primary: 'navy' });
 export const notStylex = other.defineVars({ a: 'b' });
@@ -18402,9 +17972,7 @@ export const called = stylex({ a: 'b' });
 export const nested = stylex.types.defineVars({ a: 'b' });
 export const memberOfNamed = create.defineVars({ a: 'b' });
 export const indirect = (0, stylex.defineVars)({ a: 'b' });
-export const styles = stylex.create({ base: { color: 'red' } });
-export const unknownTheme = stylex.createTheme(unknown, { primary: 'navy' });
-export const notContract = stylex.createTheme(consts, { primary: 'navy' });",
+export const styles = stylex.create({ base: { color: 'red' } });",
         ),
         (
             "/src/brand.ts",
@@ -18413,7 +17981,11 @@ export const notContract = stylex.createTheme(consts, { primary: 'navy' });",
         (
             "/src/loose.stylex.ts",
             r"import * as stylex from '@stylexjs/stylex';
-export const loose = stylex.defineVars({ fine: 'ok', call: getColor(), pseudo: { default: 'a', ':hover': 'b' }, spread: { ...base }, unknownKey: { [unknown]: 'x' } });",
+import { consts } from './vars.stylex';
+export const loose = stylex.defineVars({ fine: 'ok', call: getColor(), pseudo: { default: 'a', ':hover': 'b' }, spread: { ...base }, unknownKey: { [unknown]: 'x' }, [computedKey]: 'x' });
+export const unknownTheme = stylex.createTheme(unknown, { primary: 'navy' });
+export const notContract = stylex.createTheme(consts, { primary: 'navy' });
+export const looseConsts = stylex.defineConsts({ fine: '1px', dynamic: getSize() });",
         ),
         (
             "/src/themes.ts",
@@ -18422,6 +17994,167 @@ import { colors } from './vars.stylex';
 export const light = stylex.createTheme(colors, { primary: 'white' });",
         ),
     ];
+
+    #[test]
+    #[serial]
+    fn test_stylex_code_that_cannot_compile() {
+        for (code, errors) in [
+            (
+                "let key = 'base';\nconst styles = stylex.create({ [key]: { color: 'red' } });",
+                &["`stylex.create()` cannot use `[key]` at build time: its keys must be known"][..],
+            ),
+            (
+                "const styles = stylex.create(\"not-object\");",
+                &[
+                    "`stylex.create()` cannot use `\"not-object\"` at build time: it takes one object literal",
+                ],
+            ),
+            (
+                "const styles = stylex.create(...args);",
+                &[
+                    "`stylex.create()` cannot use `...args` at build time: it takes one object literal",
+                ],
+            ),
+            (
+                "const styles = stylex.create({ base: { opacity: { default: [1, 2] } } });",
+                &["`stylex.create()` cannot use `[1, 2]` at build time"],
+            ),
+            (
+                "let key = ':hover';\nconst styles = stylex.create({ base: { color: { [key]: 'blue', default: 'red' } } });",
+                &["`stylex.create()` cannot use `[key]` at build time"],
+            ),
+            (
+                "const styles = stylex.create({ base: { color: { default: 'red', hover: 'blue' } } });",
+                &[
+                    "`stylex.create()` cannot use `hover` at build time: a condition is `default`, a pseudo-class",
+                ],
+            ),
+            (
+                "const styles = stylex.create({ a: (x) => x, b: (x) => { return { color: x }; }, c: ({ x }) => ({ color: x }) });",
+                &[
+                    "`stylex.create()` cannot use `(x) => x` at build time: a dynamic style is",
+                    "`stylex.create()` cannot use `(x) => { return { color: x }; }` at build time",
+                    "`stylex.create()` cannot use `({ x }) => ({ color: x })` at build time",
+                ],
+            ),
+            (
+                "const styles = stylex.create({ base: (x) => ({ ...other, [Symbol()]: x, fontSize: someVar }) });",
+                &[
+                    "`stylex.create()` cannot use `...other` at build time: write every entry out",
+                    "`stylex.create()` cannot use `[Symbol()]` at build time",
+                    "`stylex.create()` cannot use `someVar` at build time: a dynamic style's value",
+                ],
+            ),
+            (
+                "const { base } = stylex.create({ base: { color: 'red' } });",
+                &["test.tsx:2:7: `stylex.create()` cannot be destructured at build time"],
+            ),
+            (
+                "const styles = stylex.create({ ...other, base: { ...shared, ...notInclude(), color: { ...spreadObj, default: 'red' } } });",
+                &[
+                    "`stylex.create()` cannot use `...other`",
+                    "`stylex.create()` cannot use `...shared`",
+                    "`stylex.create()` cannot use `...notInclude()`",
+                    "`stylex.create()` cannot use `...spreadObj`",
+                ],
+            ),
+            (
+                "const styles = stylex.create({ base: 'not-an-object', hover: { ':hover': 'invalid' }, inner: { ':hover': { ...other, [Symbol()]: 'val' } } });",
+                &[
+                    "`stylex.create()` cannot use `\"not-an-object\"` at build time: a namespace is",
+                    "`stylex.create()` cannot use `\"invalid\"` at build time: a pseudo-class or pseudo-element key takes an object of styles",
+                    "`stylex.create()` cannot use `...other`",
+                ],
+            ),
+            (
+                "const styles = stylex.create({ base: { fontSize: stylex.types.length(someVar), width: { default: stylex.types.length() }, position: stylex.firstThatWorks('sticky', someVar, ...rest) } });",
+                &[
+                    "`stylex.create()` cannot use `stylex.types.length(someVar)` at build time",
+                    "`stylex.create()` cannot use `stylex.types.length()` at build time",
+                    "`stylex.firstThatWorks()` cannot use `someVar` at build time",
+                    "`stylex.firstThatWorks()` cannot use `...rest` at build time",
+                ],
+            ),
+            (
+                "const styles = stylex.create({ base: { ...stylex.include(getStyles()) }, other: { ...stylex.include(elsewhere.base) } });",
+                &[
+                    "`stylex.include()` cannot use `stylex.include(getStyles())` at build time: it takes a namespace such as `styles.base`",
+                    "`stylex.include()` cannot use `elsewhere.base` at build time: it takes a namespace `stylex.create()` defines earlier in this file",
+                ],
+            ),
+            (
+                "const consts = stylex.defineConsts({ ...other, [computed]: '1px', dynamic: someVar });",
+                &[
+                    "`stylex.defineConsts()` cannot use `...other`",
+                    "`stylex.defineConsts()` cannot use `[computed]`",
+                    "`stylex.defineConsts()` cannot use `someVar`",
+                ],
+            ),
+            (
+                "const vars = stylex.defineVars({ ...other, [computed]: 'red' });\nconst contract = stylex.createThemeContract({ ...other });",
+                &[
+                    "`stylex.defineVars()` cannot use `...other`",
+                    "`stylex.defineVars()` cannot use `[computed]`",
+                    "`stylex.createThemeContract()` cannot use `...other`",
+                ],
+            ),
+            (
+                "const vars = stylex.defineVars(someVariable);\nconst theme = stylex.createTheme(notAContract, { primary: 'navy' });",
+                &[
+                    "`stylex.defineVars()` cannot use `someVariable` at build time: it takes one object literal",
+                    "`stylex.createTheme()` cannot use `notAContract, { primary: \"navy\" }` at build time: it takes a `defineVars()` group",
+                ],
+            ),
+            (
+                "const vars = stylex.defineVars({ primary: 'blue' });\nconst theme = stylex.createTheme(vars, { ...other, [computed]: 'red', missing: 'navy' });",
+                &[
+                    "`stylex.createTheme()` cannot use `...other`",
+                    "`stylex.createTheme()` cannot use `[computed]`",
+                    "`stylex.createTheme()` cannot use `missing` at build time: `vars` has no such variable",
+                ],
+            ),
+            (
+                "const fallback = stylex.positionTry(notAnObject);\nconst entries = stylex.positionTry({ ...spread, [computed]: '0', top: someVar });\nconst transition = stylex.viewTransitionClass({ animationDuration: later });\nconst fade = stylex.keyframes(frames);",
+                &[
+                    "`stylex.positionTry()` cannot use `notAnObject` at build time: it takes one object literal",
+                    "`stylex.positionTry()` cannot use `...spread`",
+                    "`stylex.positionTry()` cannot use `[computed]`",
+                    "`stylex.positionTry()` cannot use `someVar`",
+                    "`stylex.viewTransitionClass()` cannot use `later`",
+                    "`stylex.keyframes()` cannot use `frames` at build time: it takes one object literal",
+                ],
+            ),
+        ] {
+            reset_class_map();
+            reset_file_map();
+            let message = extract(
+                "test.tsx",
+                &format!("import stylex from '@stylexjs/stylex';\n{code}"),
+                ExtractOption::default(),
+            )
+            .err()
+            .map(|error| error.to_string())
+            .unwrap_or_default();
+            for error in errors {
+                assert!(message.contains(error), "{error}\nmissing from\n{message}");
+            }
+        }
+    }
+
+    #[test]
+    #[serial]
+    fn test_stylex_props_join_styles_compiled_elsewhere() {
+        assert_debug_snapshot!(ToBTreeSet::from(extract_tsx(
+            r"import * as stylex from '@stylexjs/stylex';
+const fade = stylex.keyframes({ from: { opacity: 0 }, to: { opacity: 1 } });
+const colors = stylex.defineVars({ text: 'black' });
+const styles = stylex.create({
+  base: { animationName: { default: fade, ':hover': 'none' }, color: { default: colors.text, ':hover': 'red' } },
+  bar: (h) => ({ height: h }),
+});
+export const A = ({ style, rest }) => <div {...stylex.props(styles.base, style, ...rest, undefined, null, styles, styles.missing, styles?.bar, styles[key]?.x)} />;"
+        )));
+    }
 
     #[test]
     #[serial]
@@ -18704,6 +18437,249 @@ export const k = styled('div')({ color: SIZE });",
         )
         .unwrap();
         assert_eq!(without_constants.dependencies, ["/src/handler.ts"]);
+    }
+
+    #[test]
+    #[serial]
+    fn test_evaluate_build_time_values() {
+        reset_class_map();
+        reset_file_map();
+        let modules: &[(&str, &str)] = &[
+            (
+                "/src/color.ts",
+                "export const PRIMARY = '#336699';\nexport function darken(amount: number, color: string): string { return color === PRIMARY ? `darker(${amount})` : color; }",
+            ),
+            (
+                "/src/throws.ts",
+                "export const boom = () => { throw new Error('x'); };",
+            ),
+        ];
+        let resolver = memory_resolver(modules);
+        let output = extract_with_modules(
+            "/src/App.tsx",
+            r"import { Box, css, keyframes, globalCss } from '@devup-ui/react';
+import * as stylex from '@stylexjs/stylex';
+import { darken, PRIMARY } from './color';
+const SIZE = 4;
+const twice = (n: number) => n * 2;
+class Scale { constructor(public n: number) {} px() { return `${this.n}px`; } }
+export const a = css({ color: darken(0.1, PRIMARY), width: twice(SIZE), margin: new Scale(3).px(), height: [1, 2].map(twice)[1], top: -twice(1) });
+export const b = keyframes({ from: { opacity: twice(0.25) } });
+globalCss({ body: { color: darken(0.2, PRIMARY) } });
+const styles = stylex.create({ base: { color: darken(0.3, PRIMARY) } });
+export const c = <Box color={darken(0.4, PRIMARY)} {...stylex.props(styles.base)} />;",
+            ExtractOption::default(),
+            false,
+            &resolver,
+        )
+        .unwrap();
+        assert_eq!(output.dependencies, ["/src/color.ts"]);
+        assert_debug_snapshot!(ToBTreeSet::from(output));
+
+        for (code, error) in [
+            (
+                "import { boom } from './throws';\nexport const a = css({ color: boom() });",
+                "/src/App.tsx:3:18: `css()` cannot use `boom()`",
+            ),
+            (
+                "export const a = css({ color: String(Date.now()) });",
+                "/src/App.tsx:2:18: `css()` cannot use `String(Date.now())`",
+            ),
+            (
+                "export const a = css({ width: Math.random() + 'px' });",
+                "`css()` cannot use `Math.random()",
+            ),
+            (
+                "let changing = 1;\nexport const a = css({ width: String(changing) });",
+                "`css()` cannot use `String(changing)`",
+            ),
+            (
+                "export const a = (n) => css({ width: String(n) });",
+                "`css()` cannot use `String(n)`",
+            ),
+            (
+                "export const a = css({ width: String(unknownGlobal), color: ({}).toString() });",
+                "`css()` cannot use `String(unknownGlobal)`",
+            ),
+            (
+                "import { missing } from './nowhere';\nexport const a = css({ width: missing() });",
+                "`css()` cannot use `missing()`",
+            ),
+        ] {
+            reset_class_map();
+            reset_file_map();
+            let message = extract_with_modules(
+                "/src/App.tsx",
+                &format!("import {{ css }} from '@devup-ui/react';\n{code}"),
+                ExtractOption::default(),
+                false,
+                &resolver,
+            )
+            .err()
+            .map(|error| error.to_string())
+            .unwrap_or_default();
+            assert!(message.contains(error), "{code}\n{message}");
+        }
+        assert!(has_build_time_values(
+            "a.tsx",
+            "import { css } from '@devup-ui/react';\nimport { darken } from 'polished';\ncss({ color: darken(0.1, 'red') });",
+            "@devup-ui/react",
+            &[],
+        ));
+        assert!(has_build_time_values(
+            "a.tsx",
+            "import { css } from '@emotion/react';\nconst f = () => 1;\nexport const a = css`width: ${f()}px;`;",
+            "@devup-ui/react",
+            &["@emotion/react".to_string()],
+        ));
+        for code in [
+            "import { css } from '@devup-ui/react';\ncss({ width: Math.max(1, 2), color: 'red' });",
+            "import { Box } from '@devup-ui/react';\nconst f = () => 1;\n<Box w={f()} />;",
+            "import { css } from 'other';\nconst f = () => 1;\ncss({ w: f() });",
+            "import { css } from '@devup-ui/react';\nconst x = css({ w: this.f() });",
+            "import { css } from '@devup-ui/react';\ncss({",
+        ] {
+            assert!(
+                !has_build_time_values("a.tsx", code, "@devup-ui/react", &[]),
+                "{code}"
+            );
+        }
+    }
+
+    #[test]
+    #[serial]
+    fn test_build_time_value_candidates() {
+        assert!(has_build_time_values(
+            "a.tsx",
+            r"import type { T } from './types';
+import { type U, helper } from './helper';
+import Default from './default';
+import * as ns from './ns';
+import * as Devup from '@devup-ui/react';
+import { css as devupCss, Box } from '@devup-ui/react';
+import * as sx from '@stylexjs/stylex';
+import { create, props } from '@stylexjs/stylex';
+export const A = 1;
+export function f(n: T): U { return n; }
+export class K { static v() { return 1; } }
+export interface I { a: number }
+export default function g() { return 2; }
+let mutable = 1;
+function local() { return new.target ? 1 : 2; }
+class Local extends K { m() { return super.toString(); } }
+console.log(A);
+const cyclic1 = () => cyclic2();
+const cyclic2 = () => cyclic1();
+function wrap() { const inner = 1; return devupCss({ w: String(inner) }); }
+devupCss({ a: f(A), b: [helper(), , null, true, () => 1, 'x'], ...rest, c: Default(), d: ns.x(), e: mutable.toString(), f: this.x(), g: import.meta.url, h: Local.name.at(0), i: K.v(), j: g(), k: cyclic1(), l: new Local(), m: tag`x`, n: ((x) => x)(1), o: Math.max(1, 2), p: local(), q: (1 as number).toFixed(), r: (() => { const z = 1; return String(z); })() });
+Devup.css({ a: f(1) });
+sx.create({ a: { color: f(1) } });
+sx.props(f(1));
+create({ a: { color: f(1) } });
+props(f(1));
+Devup['css']({ a: f(1) });
+devupCss`width: ${f(1)}px;`;
+export default class {}",
+            "@devup-ui/react",
+            &[],
+        ));
+        assert!(has_build_time_values(
+            "a.tsx",
+            "import { css } from '@devup-ui/react';\nexport default class Theme { static size() { return 1; } }\ncss({ w: Theme.size() });",
+            "@devup-ui/react",
+            &[],
+        ));
+        assert!(!has_build_time_values(
+            "a.unknown",
+            "css({ w: f() })",
+            "@devup-ui/react",
+            &[],
+        ));
+
+        reset_class_map();
+        reset_file_map();
+        let modules: &[(&str, &str)] = &[(
+            "/src/throws.ts",
+            "export const boom = () => { throw new Error('x'); };",
+        )];
+        let resolver = memory_resolver(modules);
+        for (code, error) in [
+            (
+                "const X = (() => { throw new Error('x'); })();\nexport const a = css({ width: String(X) });",
+                "`css()` cannot use `String(X)`",
+            ),
+            (
+                "import { boom } from './throws';\nexport const a = css({ width: String(1), color: boom() });",
+                "/src/App.tsx:3:18: `css()` cannot use `boom()`",
+            ),
+        ] {
+            let message = extract_with_modules(
+                "/src/App.tsx",
+                &format!("import {{ css }} from '@devup-ui/react';\n{code}"),
+                ExtractOption::default(),
+                false,
+                &resolver,
+            )
+            .err()
+            .map(|error| error.to_string())
+            .unwrap_or_default();
+            assert!(message.contains(error), "{code}\n{message}");
+        }
+    }
+
+    #[test]
+    #[serial]
+    fn test_fold_math_at_build_time() {
+        reset_class_map();
+        reset_file_map();
+        assert_debug_snapshot!(ToBTreeSet::from(extract_tsx(
+            r"import { Box, css } from '@devup-ui/react';
+const W = 10;
+const GAP = Math.round(2.5) * 4;
+const HALF = Math.round(-2.5);
+export const a = css({ width: Math.max(W, 20), height: Math.min(W, -W, 3), gap: GAP, top: HALF, left: Math.floor(W / 3), right: Math.ceil(1.2), bottom: Math.trunc(-1.7), opacity: Math.abs(-0.5), zIndex: Math.sign(-3), order: Math.sign(0), flexGrow: Math.pow(2, 3), lineHeight: Math.sqrt(4), rotate: `${Math.PI}rad`, scale: Math.round(1.4) });
+export const b = <Box p={Math.max(1, W)} m={Math.E > 2 ? 1 : 2} />;"
+        )));
+        for code in [
+            "css({ width: Math.random() })",
+            "css({ width: Math.max() })",
+            "css({ width: Math.sqrt(-1) })",
+            "css({ width: Math.pow(2, 0.5) })",
+            "css({ width: Math.pow(2, 99) })",
+            "css({ width: Math.max('1', 2) })",
+            "css({ width: Math.NOPE })",
+            "css({ width: Math.max(...list) })",
+        ] {
+            reset_class_map();
+            reset_file_map();
+            let message = extract(
+                "test.tsx",
+                &format!("import {{ css }} from '@devup-ui/react';\nexport const a = {code};"),
+                ExtractOption::default(),
+            )
+            .err()
+            .map(|error| error.to_string())
+            .unwrap_or_default();
+            assert!(message.contains("cannot use"), "{code}: {message}");
+        }
+        for code in [
+            "const Math = { max: () => 1 };\nexport const a = css({ width: Math.max(1, 2) });",
+            "const Math = { PI: 3 };\nexport const a = css({ width: Math.PI, height: Math.max(1, 2) });",
+            "import Math from './math';\nexport const a = css({ width: Math.max(1, 2) });",
+            "export const a = (Math) => css({ width: Math.max(1, 2) });",
+        ] {
+            reset_class_map();
+            reset_file_map();
+            let message = extract(
+                "test.tsx",
+                &format!("import {{ css }} from '@devup-ui/react';\n{code}"),
+                ExtractOption::default(),
+            )
+            .err()
+            .map(|error| error.to_string())
+            .unwrap_or_default();
+            assert!(message.contains("Math."), "{code}: {message}");
+        }
     }
 
     #[test]
@@ -19081,18 +19057,6 @@ const e = <Box bg='red' props={extraProps} />;"
         assert_debug_snapshot!(ToBTreeSet::from(extract_tsx(
             r"import { styled } from '@devup-ui/react';
 const S = styled['div']`color: red;`;"
-        )));
-    }
-
-    #[test]
-    #[serial]
-    fn test_stylex_variable_declarations_skip_unreadable_entries() {
-        assert_debug_snapshot!(ToBTreeSet::from(extract_tsx(
-            r"import stylex from '@stylexjs/stylex';
-const consts = stylex.defineConsts({ ...other, gap: '8px', dynamic: someVar });
-const vars = stylex.defineVars({ [computed]: 'red', primary: 'blue' });
-const tryBlock = stylex.positionTry({ ...spread, top: '0' });
-const styles = stylex.create({ box: { marginTop: consts.gap, color: vars.primary } });"
         )));
     }
 

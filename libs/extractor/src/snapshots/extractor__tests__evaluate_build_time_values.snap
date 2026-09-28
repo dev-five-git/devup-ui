@@ -1,0 +1,111 @@
+---
+source: libs/extractor/src/lib.rs
+expression: "ToBTreeSet::from(output)"
+---
+ToBTreeSet {
+    styles: {
+        Static(
+            ExtractStaticStyle {
+                property: "color",
+                value: "darker(.1)",
+                level: 0,
+                selector: None,
+                style_order: None,
+                layer: None,
+            },
+        ),
+        Static(
+            ExtractStaticStyle {
+                property: "color",
+                value: "darker(.2)",
+                level: 0,
+                selector: Some(
+                    Global(
+                        "body",
+                        "/src/App.tsx",
+                    ),
+                ),
+                style_order: Some(
+                    0,
+                ),
+                layer: None,
+            },
+        ),
+        Static(
+            ExtractStaticStyle {
+                property: "color",
+                value: "darker(.3)",
+                level: 0,
+                selector: None,
+                style_order: None,
+                layer: None,
+            },
+        ),
+        Static(
+            ExtractStaticStyle {
+                property: "height",
+                value: "16px",
+                level: 0,
+                selector: None,
+                style_order: None,
+                layer: None,
+            },
+        ),
+        Static(
+            ExtractStaticStyle {
+                property: "margin",
+                value: "3px",
+                level: 0,
+                selector: None,
+                style_order: None,
+                layer: None,
+            },
+        ),
+        Static(
+            ExtractStaticStyle {
+                property: "top",
+                value: "-8px",
+                level: 0,
+                selector: None,
+                style_order: None,
+                layer: None,
+            },
+        ),
+        Static(
+            ExtractStaticStyle {
+                property: "width",
+                value: "32px",
+                level: 0,
+                selector: None,
+                style_order: None,
+                layer: None,
+            },
+        ),
+        Dynamic(
+            ExtractDynamicStyle {
+                property: "color",
+                level: 0,
+                identifier: "darken(.4,`#369`)",
+                selector: None,
+                style_order: None,
+            },
+        ),
+        Keyframes(
+            ExtractKeyframes {
+                keyframes: {
+                    "from": [
+                        ExtractStaticStyle {
+                            property: "opacity",
+                            value: ".5",
+                            level: 0,
+                            selector: None,
+                            style_order: None,
+                            layer: None,
+                        },
+                    ],
+                },
+            },
+        ),
+    },
+    code: "import \"@devup-ui/react/devup-ui-0.css\";\nimport * as stylex from \"@stylexjs/stylex\";\nimport { darken, PRIMARY } from \"./color\";\nconst SIZE = 4;\nconst twice = (n: number) => n * 2;\nclass Scale {\n\tconstructor(public n: number) {}\n\tpx() {\n\t\treturn `${this.n}px`;\n\t}\n}\nexport const a = \"a-f a-g a-h a-i a-j\";\nexport const b = \"a-k\";\n;\nconst styles = { \"base\": \"a-l\" };\nexport const c = <div {...{ className: \"a-l\" }} className={`a-a ${{ className: \"a-l\" }?.className || \"\"}`} style={{\n\t...{ \"--a\": darken(.4,`#369`) },\n\t...{ className: \"a-l\" }?.style\n}} />;\n",
+}

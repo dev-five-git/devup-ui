@@ -40,9 +40,9 @@ use oxc_ast::ast::{
     ComputedMemberExpression, Expression, ExpressionStatement, FormalParameter,
     FormalParameterKind, FormalParameters, IdentifierName, ImportDeclaration, ImportOrExportKind,
     JSXAttributeItem, JSXAttributeValue, JSXChild, JSXClosingFragment, JSXElement, JSXElementName,
-    JSXExpressionContainer, JSXOpeningFragment, ObjectPropertyKind, Program, PropertyKey,
-    PropertyKind, Statement, StaticMemberExpression, Str, StringLiteral, UnaryOperator,
-    VariableDeclarator,
+    JSXExpressionContainer, JSXOpeningFragment, ObjectProperty, ObjectPropertyKind, Program,
+    PropertyKey, PropertyKind, Statement, StaticMemberExpression, Str, StringLiteral,
+    UnaryOperator, VariableDeclarator,
 };
 use oxc_ast_visit::VisitMut;
 use oxc_ast_visit::walk_mut::{
@@ -52,9 +52,10 @@ use oxc_ast_visit::walk_mut::{
 use strum::IntoEnumIterator;
 
 use crate::utils::{
-    ParsedStyleOrder, StyleArguments, expression_to_style_order, get_str_by_property_key,
-    get_string_by_literal_expression, get_string_by_property_key, jsx_expression_to_style_order,
-    readable_code, runtime_value, runtime_value_error, style_arguments, uncomposable_error,
+    ParsedStyleOrder, StyleArguments, build_time_error, expression_to_style_order,
+    get_str_by_property_key, get_string_by_literal_expression, get_string_by_property_key,
+    jsx_expression_to_style_order, key_error, readable_argument, readable_code, runtime_classes,
+    runtime_value, runtime_value_error, spread_error, style_arguments, uncomposable_error,
     unplaced_error, unwrap_syntax_only, unwrap_syntax_only_mut,
 };
 use oxc_ast::builder::AstBuilder;
@@ -175,28 +176,6 @@ impl<'a> DevupVisitor<'a> {
 }
 
 impl<'a> DevupVisitor<'a> {
-    /// Check if a callee expression is a `stylex.create(...)` or named `create(...)` call.
-    fn is_stylex_create_call(&self, callee: &Expression) -> bool {
-        // Check namespace/default call: stylex.create(...)
-        if let Expression::StaticMemberExpression(member) = callee
-            && let Expression::Identifier(ident) = &member.object
-            && self.stylex_imports.contains(ident.name.as_str())
-            && member.property.name.as_str() == "create"
-        {
-            return true;
-        }
-        // Check named import call: create(...)
-        if let Expression::Identifier(ident) = callee
-            && matches!(
-                self.stylex_named_imports.get(ident.name.as_str()),
-                Some(StylexFunction::Create)
-            )
-        {
-            return true;
-        }
-        false
-    }
-
     /// Resolve a `stylex.props(...)` / `stylex.attrs(...)` callee to the class attribute
     /// it produces. `props()` targets React (`className`), `attrs()` targets raw HTML
     /// (`class`); everything else about the two calls is identical.
@@ -240,6 +219,27 @@ impl<'a> DevupVisitor<'a> {
         self.stylex_theme_classes.extend(themes);
     }
 
+    /// The key of an entry of a `StyleX` object, or `None` after reporting a
+    /// spread or a key known only at runtime
+    fn stylex_key<'p>(
+        &mut self,
+        api: &str,
+        prop: &'p ObjectPropertyKind<'a>,
+    ) -> Option<(String, &'p ObjectProperty<'a>)> {
+        let prop = match prop {
+            ObjectPropertyKind::ObjectProperty(prop) => prop,
+            ObjectPropertyKind::SpreadProperty(spread) => {
+                self.errors.push(spread_error(api, spread));
+                return None;
+            }
+        };
+        let Some(key) = get_string_by_property_key(&prop.key) else {
+            self.errors.push(key_error(api, &prop.key));
+            return None;
+        };
+        Some((key, prop))
+    }
+
     fn string_property(&self, key: &str, value: &str) -> ObjectPropertyKind<'a> {
         ObjectPropertyKind::new_object_property(
             SPAN,
@@ -263,40 +263,25 @@ impl<'a> DevupVisitor<'a> {
         )
     }
 
-    /// Check if a callee resolves to the given `StyleX` API, through either the
-    /// namespace form (`stylex.defineVars`) or a named import.
-    fn is_stylex_call(&self, callee: &Expression, function: &StylexFunction) -> bool {
-        if let Expression::StaticMemberExpression(member) = callee
-            && let Expression::Identifier(ident) = &member.object
-            && self.stylex_imports.contains(ident.name.as_str())
-        {
-            return StylexFunction::from_export_name(member.property.name.as_str())
-                .is_some_and(|found| &found == function);
+    /// The `StyleX` API a callee names, through either the namespace form
+    /// (`stylex.defineVars`) or a named import.
+    fn stylex_function(&self, callee: &Expression) -> Option<StylexFunction> {
+        match callee {
+            Expression::StaticMemberExpression(member)
+                if matches!(&member.object, Expression::Identifier(ident)
+                    if self.stylex_imports.contains(ident.name.as_str())) =>
+            {
+                StylexFunction::from_export_name(member.property.name.as_str())
+            }
+            Expression::Identifier(ident) => {
+                self.stylex_named_imports.get(ident.name.as_str()).cloned()
+            }
+            _ => None,
         }
-        if let Expression::Identifier(ident) = callee {
-            return self.stylex_named_imports.get(ident.name.as_str()) == Some(function);
-        }
-        false
     }
 
-    /// Check if a callee is `stylex.keyframes()` or named `keyframes()` call.
-    fn is_stylex_keyframes_call(&self, callee: &Expression) -> bool {
-        if let Expression::StaticMemberExpression(member) = callee
-            && let Expression::Identifier(ident) = &member.object
-            && self.stylex_imports.contains(ident.name.as_str())
-            && member.property.name.as_str() == "keyframes"
-        {
-            return true;
-        }
-        if let Expression::Identifier(ident) = callee
-            && matches!(
-                self.stylex_named_imports.get(ident.name.as_str()),
-                Some(StylexFunction::Keyframes)
-            )
-        {
-            return true;
-        }
-        false
+    fn is_stylex_call(&self, callee: &Expression, function: &StylexFunction) -> bool {
+        self.stylex_function(callee).as_ref() == Some(function)
     }
 
     /// Resolve `stylex.props()` arguments to className expressions and style properties.
@@ -310,8 +295,12 @@ impl<'a> DevupVisitor<'a> {
         let mut style_props: Vec<ObjectPropertyKind<'a>> = vec![];
 
         for arg in arguments {
-            // `...spread` carries no statically resolvable namespace reference.
+            // `...spread` carries no statically resolvable namespace reference,
+            // so its values join at runtime
             let Some(expr) = arg.as_expression() else {
+                if let Argument::SpreadElement(spread) = arg {
+                    class_exprs.push(runtime_classes(&self.ast, &spread.argument));
+                }
                 continue;
             };
             // Check for dynamic namespace call first: styles.bar(h)
@@ -545,6 +534,56 @@ impl<'a> DevupVisitor<'a> {
 
     /// Resolve a single `stylex.props()` argument to a className expression.
     fn resolve_stylex_arg(&self, expr: &Expression<'a>) -> Option<Expression<'a>> {
+        let unwrapped = unwrap_syntax_only(expr);
+        let compiled = match unwrapped {
+            // styles.base → StaticMemberExpression
+            Expression::StaticMemberExpression(member) => self.resolve_stylex_static_member(member),
+            // colorStyles[color] / styles['base'] → ComputedMemberExpression
+            Expression::ComputedMemberExpression(member) => {
+                self.resolve_stylex_computed_member(member)
+            }
+            // darkTheme → Identifier bound to a stylex.createTheme() class
+            Expression::Identifier(ident) if ident.name != "undefined" => self
+                .stylex_theme_classes
+                .get(ident.name.as_str())
+                .and_then(|class_name| self.stylex_class_literal(class_name)),
+            Expression::ChainExpression(chain) => match &chain.expression {
+                ChainElement::StaticMemberExpression(member) => {
+                    self.resolve_stylex_static_member(member)
+                }
+                ChainElement::ComputedMemberExpression(member) => {
+                    self.resolve_stylex_computed_member(member)
+                }
+                _ => None,
+            },
+            _ => return self.resolve_stylex_composed_arg(expr),
+        };
+        // This file's namespaces are fully known: what did not resolve adds no
+        // class. Styles compiled elsewhere (a prop, another module's `create()`)
+        // hold class names, which join at runtime
+        if compiled.is_some() || self.reads_local_namespace(unwrapped) {
+            return compiled;
+        }
+        Some(runtime_classes(&self.ast, expr))
+    }
+
+    fn reads_local_namespace(&self, expr: &Expression<'a>) -> bool {
+        let object = match expr {
+            Expression::Identifier(_) => expr,
+            Expression::StaticMemberExpression(member) => &member.object,
+            Expression::ComputedMemberExpression(member) => &member.object,
+            Expression::ChainExpression(chain) => match &chain.expression {
+                ChainElement::StaticMemberExpression(member) => &member.object,
+                ChainElement::ComputedMemberExpression(member) => &member.object,
+                _ => return false,
+            },
+            _ => return false,
+        };
+        matches!(object, Expression::Identifier(ident)
+            if self.stylex_namespaces.contains_key(ident.name.as_str()))
+    }
+
+    fn resolve_stylex_composed_arg(&self, expr: &Expression<'a>) -> Option<Expression<'a>> {
         match unwrap_syntax_only(expr) {
             // stylex.props([a, b]) → StyleXArray, nestable to any depth
             Expression::ArrayExpression(array) => merge_expression_for_class_name(
@@ -555,27 +594,6 @@ impl<'a> DevupVisitor<'a> {
                     .filter_map(|element| element.as_expression())
                     .filter_map(|element| self.resolve_stylex_arg(element)),
             ),
-            // styles.base → StaticMemberExpression
-            Expression::StaticMemberExpression(member) => self.resolve_stylex_static_member(member),
-            // colorStyles[color] / styles['base'] → ComputedMemberExpression
-            Expression::ComputedMemberExpression(member) => {
-                self.resolve_stylex_computed_member(member)
-            }
-            // darkTheme → Identifier bound to a stylex.createTheme() class
-            Expression::Identifier(ident) => self
-                .stylex_theme_classes
-                .get(ident.name.as_str())
-                .and_then(|class_name| self.stylex_class_literal(class_name)),
-            // styles?.base / styles?.[color] → ChainExpression
-            Expression::ChainExpression(chain) => match &chain.expression {
-                ChainElement::StaticMemberExpression(member) => {
-                    self.resolve_stylex_static_member(member)
-                }
-                ChainElement::ComputedMemberExpression(member) => {
-                    self.resolve_stylex_computed_member(member)
-                }
-                _ => None,
-            },
             // isActive && styles.active → LogicalExpression(And)
             Expression::LogicalExpression(logical)
                 if logical.operator == oxc_ast::ast::LogicalOperator::And =>
@@ -636,10 +654,11 @@ impl<'a> DevupVisitor<'a> {
             }
             // false, null, undefined, 0, "" → falsy, skip
             Expression::BooleanLiteral(b) if !b.value => None,
+            Expression::NullLiteral(_) => None,
+            Expression::Identifier(ident) if ident.name == "undefined" => None,
             Expression::NumericLiteral(n) if n.value == 0.0 => None,
             Expression::StringLiteral(s) if s.value.is_empty() => None,
-            // Anything else we can't resolve → skip
-            _ => None,
+            _ => Some(runtime_classes(&self.ast, expr)),
         }
     }
 }
@@ -782,9 +801,8 @@ impl<'a> VisitMut<'a> for DevupVisitor<'a> {
 
         // Handle StyleX: stylex.create({...}) calls
         if let Expression::CallExpression(call) = it
-            && self.is_stylex_create_call(&call.callee)
-            && let [arg] = call.arguments.as_mut_slice()
-            && let Some(arg) = arg.as_expression_mut()
+            && self.is_stylex_call(&call.callee, &StylexFunction::Create)
+            && let [Argument::ObjectExpression(arg)] = call.arguments.as_slice()
         {
             let namespaces = extract_stylex_namespace_styles(
                 arg,
@@ -812,19 +830,30 @@ impl<'a> VisitMut<'a> for DevupVisitor<'a> {
 
                 // Resolve include() references — prepend included classNames
                 for inc_ref in &include_refs {
-                    if let Some(ns) = self.stylex_namespaces.get(&inc_ref.var_name)
-                        && let Some(ns_value) = ns.get(&inc_ref.member_name)
-                    {
-                        let included_class = match ns_value {
-                            StylexNamespaceValue::Static(s) => s.clone(),
-                            StylexNamespaceValue::Dynamic(info) => info.class_name.clone(),
-                        };
-                        if !included_class.is_empty() {
-                            if class_name_str.is_empty() {
-                                class_name_str = included_class;
-                            } else {
-                                class_name_str = format!("{included_class} {class_name_str}");
-                            }
+                    let Some(ns_value) = self
+                        .stylex_namespaces
+                        .get(&inc_ref.var_name)
+                        .and_then(|ns| ns.get(&inc_ref.member_name))
+                    else {
+                        self.errors.push((
+                            inc_ref.offset,
+                            build_time_error(
+                                "stylex.include",
+                                &format!("{}.{}", inc_ref.var_name, inc_ref.member_name),
+                                "it takes a namespace `stylex.create()` defines earlier in this file",
+                            ),
+                        ));
+                        continue;
+                    };
+                    let included_class = match ns_value {
+                        StylexNamespaceValue::Static(s) => s.clone(),
+                        StylexNamespaceValue::Dynamic(info) => info.class_name.clone(),
+                    };
+                    if !included_class.is_empty() {
+                        if class_name_str.is_empty() {
+                            class_name_str = included_class;
+                        } else {
+                            class_name_str = format!("{included_class} {class_name_str}");
                         }
                     }
                 }
@@ -884,13 +913,14 @@ impl<'a> VisitMut<'a> for DevupVisitor<'a> {
             let mut contract = FxHashMap::default();
             let mut properties = oxc_allocator::Vec::new_in(&self.ast);
             for prop in &obj.properties {
-                let ObjectPropertyKind::ObjectProperty(prop) = prop else {
+                let Some((key, prop)) = self.stylex_key("stylex.defineConsts", prop) else {
                     continue;
                 };
-                let (Some(key), Some(value)) = (
-                    get_string_by_property_key(&prop.key),
-                    get_string_by_literal_expression(&prop.value),
-                ) else {
+                let Some(value) = get_string_by_literal_expression(&prop.value) else {
+                    self.errors.push((
+                        prop.value.span().start,
+                        runtime_value_error("stylex.defineConsts", &readable_code(&prop.value)),
+                    ));
                     continue;
                 };
                 properties.push(self.string_property(&key, &value));
@@ -920,10 +950,12 @@ impl<'a> VisitMut<'a> for DevupVisitor<'a> {
             let mut variables = vec![];
             let mut properties = oxc_allocator::Vec::new_in(&self.ast);
             for prop in &obj.properties {
-                let ObjectPropertyKind::ObjectProperty(prop) = prop else {
-                    continue;
+                let api = if publishes_values {
+                    "stylex.defineVars"
+                } else {
+                    "stylex.createThemeContract"
                 };
-                let Some(key) = get_string_by_property_key(&prop.key) else {
+                let Some((key, prop)) = self.stylex_key(api, prop) else {
                     continue;
                 };
                 let values = if publishes_values {
@@ -965,12 +997,26 @@ impl<'a> VisitMut<'a> for DevupVisitor<'a> {
         {
             let mut variables = vec![];
             for prop in &obj.properties {
-                let ObjectPropertyKind::ObjectProperty(prop) = prop else {
+                let prop = match prop {
+                    ObjectPropertyKind::ObjectProperty(prop) => prop,
+                    ObjectPropertyKind::SpreadProperty(spread) => {
+                        self.errors.push(spread_error("stylex.createTheme", spread));
+                        continue;
+                    }
+                };
+                let Some(key) = get_string_by_property_key(&prop.key) else {
+                    self.errors.push(key_error("stylex.createTheme", &prop.key));
                     continue;
                 };
-                let Some(variable) =
-                    get_string_by_property_key(&prop.key).and_then(|key| contract.get(&key))
-                else {
+                let Some(variable) = contract.get(&key) else {
+                    self.errors.push((
+                        prop.key.span().start,
+                        build_time_error(
+                            "stylex.createTheme",
+                            &key,
+                            &format!("`{}` has no such variable", contract_ident.name),
+                        ),
+                    ));
                     continue;
                 };
                 match variable_values(&prop.value) {
@@ -1015,8 +1061,7 @@ impl<'a> VisitMut<'a> for DevupVisitor<'a> {
                 self.is_stylex_call(&call.callee, &function)
                     .then_some(position_try)
             })
-            && let [arg] = call.arguments.as_mut_slice()
-            && let Some(arg) = arg.as_expression_mut()
+            && let [Argument::ObjectExpression(arg)] = call.arguments.as_slice()
         {
             let generated = keyframes_to_keyframes_name(
                 &format!("sxp-{}-{}", self.filename, u8::from(is_position_try)),
@@ -1027,7 +1072,12 @@ impl<'a> VisitMut<'a> for DevupVisitor<'a> {
             } else {
                 generated
             };
-            let declarations = extract_stylex_declarations(arg);
+            let api = if is_position_try {
+                "stylex.positionTry"
+            } else {
+                "stylex.viewTransitionClass"
+            };
+            let declarations = extract_stylex_declarations(api, arg, &mut self.errors);
             if !declarations.is_empty() {
                 let css = if is_position_try {
                     css_variable_block(&format!("@position-try {name}"), &declarations)
@@ -1049,9 +1099,9 @@ impl<'a> VisitMut<'a> for DevupVisitor<'a> {
 
         // Handle StyleX: stylex.keyframes({...}) calls
         if let Expression::CallExpression(call) = it
-            && self.is_stylex_keyframes_call(&call.callee)
+            && self.is_stylex_call(&call.callee, &StylexFunction::Keyframes)
             && let [arg] = call.arguments.as_mut_slice()
-            && let Some(arg) = arg.as_expression_mut()
+            && let Some(arg @ Expression::ObjectExpression(_)) = arg.as_expression_mut()
         {
             let KeyframesExtractResult {
                 keyframes,
@@ -1125,14 +1175,20 @@ impl<'a> VisitMut<'a> for DevupVisitor<'a> {
         }
 
         // Reached only when none of the blocks above replaced the call, so a surviving
-        // create/keyframes call is one whose argument could not be read statically.
+        // compile-time call is one whose arguments could not be read statically.
         if let Expression::CallExpression(call) = it
-            && (self.is_stylex_create_call(&call.callee)
-                || self.is_stylex_keyframes_call(&call.callee))
+            && let Some(function) = self.stylex_function(&call.callee)
+            && let Some(requirement) = function.requirement()
         {
-            eprintln!(
-                "[stylex] ERROR: stylex.create()/keyframes() require exactly one object literal argument. Spread arguments cannot be resolved at build time."
-            );
+            let arguments: Vec<String> = call.arguments.iter().map(readable_argument).collect();
+            self.errors.push((
+                call.span.start,
+                build_time_error(
+                    &format!("stylex.{}", function.export_name()),
+                    &arguments.join(", "),
+                    requirement,
+                ),
+            ));
         }
 
         if let Expression::CallExpression(call) = it {
@@ -1669,9 +1725,10 @@ impl<'a> VisitMut<'a> for DevupVisitor<'a> {
 
         // Phase 4c: Check for destructuring of stylex.create()
         if self.stylex_pending_create.is_some() && it.id.get_binding_identifier().is_none() {
-            eprintln!(
-                "[stylex] ERROR: Destructuring stylex.create() is not supported. Assign the result to a single variable (e.g., `const styles = stylex.create({{...}})`)."
-            );
+            self.errors.push((
+                it.span.start,
+                "`stylex.create()` cannot be destructured at build time: assign it to one variable, as `const styles = stylex.create({ ... })`".to_string(),
+            ));
             self.stylex_pending_create.take();
         }
 
