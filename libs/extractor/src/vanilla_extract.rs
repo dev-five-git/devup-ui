@@ -268,6 +268,9 @@ pub fn execute_stylesheet(
         ..Collector::default()
     }));
     let mut context = Context::default();
+    context
+        .runtime_limits_mut()
+        .set_loop_iteration_limit(crate::module_loader::LOOP_ITERATION_LIMIT);
     register_vanilla_extract_apis(&mut context, &collector)?;
 
     context

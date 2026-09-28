@@ -68,6 +68,21 @@ pub(crate) fn unreadable<'a>(expression: &Expression<'a>) -> ExtractResult<'a> {
     }
 }
 
+/// Whether `expression` is truthy, when it is a literal: a condition the
+/// build knows picks its branch there, as once constants are inlined
+fn literal_truthiness(expression: &Expression<'_>) -> Option<bool> {
+    match unwrap_syntax_only(expression) {
+        Expression::BooleanLiteral(literal) => Some(literal.value),
+        Expression::NullLiteral(_) => Some(false),
+        Expression::NumericLiteral(literal) => {
+            Some(literal.value != 0.0 && !literal.value.is_nan())
+        }
+        Expression::StringLiteral(literal) => Some(!literal.value.is_empty()),
+        Expression::Identifier(identifier) if identifier.name == "undefined" => Some(false),
+        _ => None,
+    }
+}
+
 /// Merge the object literals spread into `object` in place, a later property
 /// replacing an earlier one of the same key as in the object JavaScript builds
 pub(crate) fn flatten_spreads<'a>(ast_builder: &AstBuilder<'a>, object: &mut ObjectExpression<'a>) {
@@ -713,6 +728,48 @@ pub fn extract_style_from_expression<'a>(
                     }
                 }
             }
+            Expression::LogicalExpression(logical)
+                if literal_truthiness(&logical.left).is_some() =>
+            {
+                let nullish = matches!(
+                    unwrap_syntax_only(&logical.left),
+                    Expression::NullLiteral(_)
+                ) || matches!(unwrap_syntax_only(&logical.left), Expression::Identifier(identifier) if identifier.name == "undefined");
+                let takes_right = match logical.operator {
+                    LogicalOperator::And => literal_truthiness(&logical.left) == Some(true),
+                    LogicalOperator::Or => literal_truthiness(&logical.left) == Some(false),
+                    LogicalOperator::Coalesce => nullish,
+                };
+                extract_style_from_expression(
+                    ast_builder,
+                    name,
+                    if takes_right {
+                        &mut logical.right
+                    } else {
+                        &mut logical.left
+                    },
+                    level,
+                    selector,
+                    literal_handling,
+                )
+            }
+            Expression::ConditionalExpression(conditional)
+                if literal_truthiness(&conditional.test).is_some() =>
+            {
+                let consequent = literal_truthiness(&conditional.test) == Some(true);
+                extract_style_from_expression(
+                    ast_builder,
+                    name,
+                    if consequent {
+                        &mut conditional.consequent
+                    } else {
+                        &mut conditional.alternate
+                    },
+                    level,
+                    selector,
+                    literal_handling,
+                )
+            }
             Expression::LogicalExpression(logical) => {
                 let res = Some(Box::new(ExtractStyleProp::StaticArray(
                     extract_style_from_expression(
@@ -938,8 +995,53 @@ pub fn extract_style_from_expression<'a>(
                     ..ExtractResult::default()
                 }
             }
-            _ if name.is_none() => unreadable(expression),
-            _ => ExtractResult::default(),
+            _ => match name {
+                None => unreadable(expression),
+                Some(_)
+                    if matches!(
+                        expression,
+                        Expression::NullLiteral(_) | Expression::BooleanLiteral(_)
+                    ) =>
+                {
+                    ExtractResult::default()
+                }
+                Some(_)
+                    if matches!(
+                        expression,
+                        Expression::FunctionExpression(_) | Expression::ClassExpression(_)
+                    ) =>
+                {
+                    unreadable(expression)
+                }
+                // A sequence keeps its parentheses, as its code is written into
+                // the element's style object, where a comma ends the property
+                Some(name) if matches!(expression, Expression::SequenceExpression(_)) => {
+                    let code = expression_to_code(expression);
+                    ExtractResult {
+                        styles: vec![ExtractStyleProp::Static(ExtractStyleValue::Dynamic(
+                            ExtractDynamicStyle::new(
+                                name,
+                                level,
+                                &format!("({})", code.trim_end().trim_end_matches(';')),
+                                selector.clone(),
+                            ),
+                        ))],
+                        ..ExtractResult::default()
+                    }
+                }
+                // Any other value is only known at runtime: `await`, `new`, an
+                // assignment, a tagged template
+                Some(name) => ExtractResult {
+                    styles: vec![dynamic_style(
+                        ast_builder,
+                        name,
+                        expression,
+                        level,
+                        selector,
+                    )],
+                    ..ExtractResult::default()
+                },
+            },
         }
     }
 }

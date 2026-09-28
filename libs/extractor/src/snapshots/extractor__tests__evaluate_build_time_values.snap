@@ -207,7 +207,7 @@ ToBTreeSet {
             ExtractDynamicStyle {
                 property: "color",
                 level: 0,
-                identifier: "darken(.4,`#369`)",
+                identifier: "darken(.4,`#336699`)",
                 selector: None,
                 style_order: None,
             },
@@ -229,5 +229,5 @@ ToBTreeSet {
             },
         ),
     },
-    code: "import \"@devup-ui/react/devup-ui-0.css\";\nimport * as stylex from \"@stylexjs/stylex\";\nimport { darken, PRIMARY, DARK, hover } from \"./color\";\nimport { card, TOKEN } from \"./styles\";\nimport { BEFORE } from \"./fails\";\nexport const SIZE = 4;\nexport default function twice(n: number) {\n\treturn n * 2;\n}\nclass Scale {\n\tconstructor(public n: number) {}\n\tpx() {\n\t\treturn `${this.n}px`;\n\t}\n}\nenum Level {\n\tLow = 1,\n\tHigh = twice(2)\n}\nconst LIGHT = darken(.2, \"#336699\");\nconst color = darken(.3, \"#336699\");\nconst make = (size: number) => ({\n\tp: size,\n\t_hover: { color: LIGHT }\n});\nexport const a = \"a-m a-n a-o a-p a-q\";\nexport const b = \"a-r\";\n;\nconst styles = { \"base\": \"a-s\" };\nexport const c = <div {...{ className: \"a-s\" }} className={`a-a ${{ className: \"a-s\" }?.className || \"\"}`} style={{\n\t...{ \"--a\": darken(.4,`#369`) },\n\t...{ className: \"a-s\" }?.style\n}} />;\nexport const d = \"a-t a-u a-v a-w a-x a-y a-i\";\nexport const e = (dark: boolean) => `a-aa ${dark ? \"a-z\" : \"a-s\"} ${dark ? \"a-_\" : \"\"}`;\nexport const f = `a-ab ${card}`;\n",
+    code: "import \"@devup-ui/react/devup-ui-0.css\";\nimport * as stylex from \"@stylexjs/stylex\";\nimport { darken, PRIMARY, DARK, hover } from \"./color\";\nimport { card, TOKEN } from \"./styles\";\nimport { BEFORE } from \"./fails\";\nexport const SIZE = 4;\nexport default function twice(n: number) {\n\treturn n * 2;\n}\nclass Scale {\n\tconstructor(public n: number) {}\n\tpx() {\n\t\treturn `${this.n}px`;\n\t}\n}\nenum Level {\n\tLow = 1,\n\tHigh = twice(2)\n}\nconst LIGHT = darken(.2, \"#336699\");\nconst color = darken(.3, \"#336699\");\nconst make = (size: number) => ({\n\tp: size,\n\t_hover: { color: LIGHT }\n});\nexport const a = \"a-m a-n a-o a-p a-q\";\nexport const b = \"a-r\";\n;\nconst styles = { \"base\": \"a-s\" };\nexport const c = <div {...{ className: \"a-s\" }} className={`a-a ${{ className: \"a-s\" }?.className || \"\"}`} style={{\n\t...{ \"--a\": darken(.4,`#336699`) },\n\t...{ className: \"a-s\" }?.style\n}} />;\nexport const d = \"a-t a-u a-v a-w a-x a-y a-i\";\nexport const e = (dark: boolean) => `a-aa ${dark ? \"a-z\" : \"a-s\"} ${dark ? \"a-_\" : \"\"}`;\nexport const f = `a-ab ${card}`;\n",
 }

@@ -19,6 +19,10 @@ use crate::{ExtractOption, ModuleResolver, utils::is_vanilla_extract_file};
 /// The object the package's API is bound to while a stylesheet runs
 pub(crate) const PACKAGE_BINDING: &str = "__vanilla_extract__";
 
+/// Loop iterations an evaluation may run before it fails instead of hanging
+/// the build
+pub(crate) const LOOP_ITERATION_LIMIT: u64 = 10_000_000;
+
 /// The end of the error a module read before its evaluation throws
 pub(crate) const IMPORT_CYCLE: &str = "before its initialization: it is part of an import cycle";
 

@@ -1,0 +1,93 @@
+---
+source: libs/extractor/src/lib.rs
+expression: "ToBTreeSet::from(output)"
+---
+ToBTreeSet {
+    styles: {
+        Static(
+            ExtractStaticStyle {
+                property: "color",
+                value: "#123",
+                level: 0,
+                selector: None,
+                style_order: None,
+                layer: None,
+            },
+        ),
+        Static(
+            ExtractStaticStyle {
+                property: "color",
+                value: "red",
+                level: 0,
+                selector: None,
+                style_order: None,
+                layer: None,
+            },
+        ),
+        Static(
+            ExtractStaticStyle {
+                property: "margin",
+                value: "12px",
+                level: 0,
+                selector: Some(
+                    Selector(
+                        "&:hover",
+                    ),
+                ),
+                style_order: None,
+                layer: None,
+            },
+        ),
+        Static(
+            ExtractStaticStyle {
+                property: "margin",
+                value: "16px",
+                level: 0,
+                selector: None,
+                style_order: None,
+                layer: None,
+            },
+        ),
+        Static(
+            ExtractStaticStyle {
+                property: "margin",
+                value: "20px",
+                level: 0,
+                selector: None,
+                style_order: None,
+                layer: None,
+            },
+        ),
+        Static(
+            ExtractStaticStyle {
+                property: "margin",
+                value: "24px",
+                level: 0,
+                selector: None,
+                style_order: None,
+                layer: None,
+            },
+        ),
+        Static(
+            ExtractStaticStyle {
+                property: "margin",
+                value: "8px",
+                level: 0,
+                selector: None,
+                style_order: None,
+                layer: None,
+            },
+        ),
+        Static(
+            ExtractStaticStyle {
+                property: "padding",
+                value: "4px",
+                level: 0,
+                selector: None,
+                style_order: None,
+                layer: None,
+            },
+        ),
+    },
+    code: "import \"@devup-ui/react/devup-ui-0.css\";\nimport * as Devup from \"@devup-ui/react\";\nimport { make, KEY, darken, PRIMARY } from \"./tokens\";\nconst card = make(2);\nconst hover = make(3);\nconst parts = [make(4), { p: 1 }];\nexport const a = <div onClick={() => 1} className=\"a-c\" />;\nexport const b = <div className=\"a-d\" />;\nexport const c = <div className=\"a-e\" />;\nexport const d = <div className=\"a-a a-c\" />;\nexport const e = ({ style, className, ...rest }) => <div {...rest} className={[\"a-f a-e a-g\", className].filter(Boolean).join(\" \")} style={style} />;\nexport const f = \"a-h a-a\";\nexport const g = \"a-i\";\nexport const h = <div {...card} />;\n",
+}

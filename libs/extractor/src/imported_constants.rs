@@ -50,9 +50,49 @@ pub(crate) struct Inlined {
     pub dependencies: BTreeSet<String>,
     pub stylex_vars: FxHashMap<String, FxHashMap<String, String>>,
     pub stylex_themes: FxHashMap<String, String>,
-    /// Module-level bindings styles read whose value only running the module
-    /// gives
-    pub unknown: FxHashSet<String>,
+    pub unknown: Unknown,
+}
+
+/// Module-level bindings styles read whose value only running the module
+/// gives, whole or in part
+#[derive(Default, Clone)]
+pub(crate) struct Unknown {
+    names: FxHashSet<String>,
+    /// Objects and namespaces the build knows some members of, with those
+    partial: FxHashMap<String, FxHashSet<String>>,
+}
+
+impl Unknown {
+    pub(crate) fn is_empty(&self) -> bool {
+        self.names.is_empty() && self.partial.is_empty()
+    }
+
+    fn holds(&self, name: &str) -> bool {
+        self.names.contains(name) || self.partial.contains_key(name)
+    }
+
+    /// Whether `expression` (`x`, `x.y`, `x[y]` or a call of one) reads what
+    /// only running the module gives
+    pub(crate) fn read_by(&self, expression: &Expression<'_>) -> bool {
+        match expression {
+            Expression::Identifier(identifier) => self.holds(&identifier.name),
+            Expression::StaticMemberExpression(member) => match &member.object {
+                Expression::Identifier(object) => {
+                    self.names.contains(object.name.as_str())
+                        || self
+                            .partial
+                            .get(object.name.as_str())
+                            .is_some_and(|known| !known.contains(member.property.name.as_str()))
+                }
+                object => self.read_by(object),
+            },
+            Expression::ComputedMemberExpression(member) => {
+                crate::utils::binding_root(&member.object).is_some_and(|name| self.holds(name))
+            }
+            Expression::CallExpression(call) => self.read_by(&call.callee),
+            _ => false,
+        }
+    }
 }
 
 enum Imported {
@@ -187,8 +227,17 @@ pub(crate) fn inline_constants<'a>(
         for name in &read.names {
             let bound = scope.binds(name);
             let constant = scope.lookup(&mut modules, name);
-            if bound && matches!(constant, None | Some(Constant::Object(_))) {
-                inlined.unknown.insert(name.clone());
+            match &constant {
+                None if bound => {
+                    inlined.unknown.names.insert(name.clone());
+                }
+                Some(Constant::Object(members)) if bound => {
+                    inlined
+                        .unknown
+                        .partial
+                        .insert(name.clone(), members.keys().cloned().collect());
+                }
+                _ => {}
             }
             let Some(constant) = constant else {
                 continue;

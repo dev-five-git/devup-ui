@@ -7,7 +7,10 @@ use crate::{
             LiteralHandling, extract_style_from_expression, unreadable,
         },
     },
-    utils::{get_string_by_property_key, readable_code, runtime_value, unwrap_syntax_only_mut},
+    utils::{
+        fixed_value, get_string_by_property_key, readable_code, runtime_value,
+        unwrap_syntax_only_mut,
+    },
 };
 use oxc_ast::{
     ast::{Expression, ObjectPropertyKind},
@@ -54,7 +57,7 @@ pub fn extract_keyframes_from_expression<'a>(
             &None,
             LiteralHandling::ExpandResponsiveThemeToken,
         );
-        runtime = runtime.or_else(|| runtime_value(&styles));
+        runtime = runtime.or_else(|| fixed_value(&styles));
 
         let mut styles = styles
             .into_iter()

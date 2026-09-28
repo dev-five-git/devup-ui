@@ -48,18 +48,20 @@ use oxc_ast::ast::{
 };
 use oxc_ast_visit::VisitMut;
 use oxc_ast_visit::walk_mut::{
-    walk_call_expression, walk_expression, walk_import_declaration, walk_jsx_element, walk_program,
-    walk_variable_declarator, walk_variable_declarators,
+    walk_call_expression, walk_expression, walk_expression_statement, walk_import_declaration,
+    walk_jsx_element, walk_program, walk_variable_declarator, walk_variable_declarators,
 };
+use oxc_syntax::number::NumberBase;
 use strum::IntoEnumIterator;
 
 use crate::utils::{
     ParsedStyleOrder, RUNTIME_VALUE, STYLE_OBJECT, StyleArguments, build_time_error,
-    composes_binding, element_error, expression_to_style_order, get_str_by_property_key,
-    get_string_by_literal_expression, get_string_by_property_key, jsx_expression_to_style_order,
-    key_error, readable_argument, readable_code, reads_directly, runtime_classes, runtime_value,
-    runtime_value_error, spread_error, style_arguments, uncomposable_error, unplaced_error,
-    unreadable_styles, unwrap_syntax_only, unwrap_syntax_only_mut,
+    composes_binding, element_error, expression_to_style_order, fixed_value,
+    get_str_by_property_key, get_string_by_literal_expression, get_string_by_property_key,
+    jsx_expression_to_style_order, key_error, readable_argument, readable_code, reads_directly,
+    reads_unknown, runtime_classes, runtime_value, runtime_value_error, spread_error,
+    style_arguments, uncomposable_error, unplaced_error, unreadable_styles, unwrap_syntax_only,
+    unwrap_syntax_only_mut,
 };
 use oxc_ast::builder::AstBuilder;
 use oxc_span::{GetSpan, SPAN};
@@ -136,9 +138,10 @@ pub struct DevupVisitor<'a> {
     /// Set in `visit_jsx_element`, consumed in `visit_expression` to replace
     /// `Expression::JSXElement` with `Expression::JSXFragment`.
     pending_fragment_children: Option<oxc_allocator::Vec<'a, JSXChild<'a>>>,
-    unknown_bindings: FxHashSet<String>,
-    /// Whether `css()` or `styled()` joined as a class a binding that may hold
-    /// rules only running the module gives
+    unknown_bindings: crate::imported_constants::Unknown,
+    /// Whether `css()` or `styled()` joined as a class, or an element took
+    /// through a spread, a binding that may hold rules only running the module
+    /// gives
     pub composes_unknown: bool,
 }
 
@@ -179,13 +182,13 @@ impl<'a> DevupVisitor<'a> {
             stylex_pending_keyframe_name: None,
             stylex_keyframe_names: FxHashMap::default(),
             pending_fragment_children: None,
-            unknown_bindings: FxHashSet::default(),
+            unknown_bindings: crate::imported_constants::Unknown::default(),
             composes_unknown: false,
         }
     }
 
-    pub fn unknown_bindings(&mut self, names: &FxHashSet<String>) {
-        self.unknown_bindings.clone_from(names);
+    pub fn unknown_bindings(&mut self, unknown: &crate::imported_constants::Unknown) {
+        self.unknown_bindings.clone_from(unknown);
     }
 }
 
@@ -468,7 +471,12 @@ impl<'a> DevupVisitor<'a> {
                 &self.ast,
             )
         } else {
-            Expression::new_identifier(SPAN, "", &self.ast)
+            Expression::new_unary_expression(
+                SPAN,
+                UnaryOperator::Void,
+                Expression::new_numeric_literal(SPAN, 0.0, None, NumberBase::Decimal, &self.ast),
+                &self.ast,
+            )
         }
     }
 
@@ -677,6 +685,16 @@ impl<'a> DevupVisitor<'a> {
 }
 
 impl<'a> VisitMut<'a> for DevupVisitor<'a> {
+    fn visit_expression_statement(&mut self, it: &mut ExpressionStatement<'a>) {
+        walk_expression_statement(self, it);
+        // `globalCss()` gives nothing, which a statement need not write out
+        if matches!(&it.expression, Expression::UnaryExpression(unary)
+            if unary.span == SPAN && unary.operator == UnaryOperator::Void)
+        {
+            it.expression = Expression::new_identifier(SPAN, "", &self.ast);
+        }
+    }
+
     fn visit_variable_declarators(
         &mut self,
         it: &mut oxc_allocator::Vec<'a, VariableDeclarator<'a>>,
@@ -1334,7 +1352,7 @@ impl<'a> VisitMut<'a> for DevupVisitor<'a> {
                             },
                             &self.filename,
                         );
-                        if let Some(value) = runtime_value(&styles) {
+                        if let Some(value) = fixed_value(&styles) {
                             self.errors
                                 .push((offset, runtime_value_error("globalCss", &value)));
                         }
@@ -1390,7 +1408,7 @@ impl<'a> VisitMut<'a> for DevupVisitor<'a> {
                         &mut folded,
                         &self.filename,
                     );
-                    if let Some(value) = runtime_value(&styles) {
+                    if let Some(value) = fixed_value(&styles) {
                         self.errors
                             .push((offset, runtime_value_error("globalCss", &value)));
                     }
@@ -1923,7 +1941,7 @@ impl<'a> VisitMut<'a> for DevupVisitor<'a> {
                         styles,
                         style_order,
                     } = extract_global_style_from_expression(&self.ast, expression, &self.filename);
-                    if let Some(value) = runtime_value(&styles) {
+                    if let Some(value) = fixed_value(&styles) {
                         self.errors
                             .push((offset, element_error(name, &value, RUNTIME_VALUE)));
                     }
@@ -2052,6 +2070,8 @@ impl<'a> VisitMut<'a> for DevupVisitor<'a> {
                     let runtime = styles
                         .iter()
                         .all(|style| matches!(style, ExtractStyleProp::Unreadable { .. }));
+                    self.composes_unknown |=
+                        runtime && reads_unknown(&spread.argument, &self.unknown_bindings);
                     if runtime
                         || matches!(unwrap_syntax_only(&spread.argument),
                             Expression::ObjectExpression(object) if !object.properties.is_empty())
