@@ -207,6 +207,14 @@ export const cssUtilsLiteralOnly = createRule({
           .getAncestors(node)
           .slice(context.sourceCode.getAncestors(devupContext).length)
         const scope = context.sourceCode.getScope(node)
+        // A binding the value declares itself, such as a callback's parameter
+        const declared = findVariable(scope, node.name)?.defs[0]?.name.range
+        if (
+          declared &&
+          declared[0] >= devupContext.range[0] &&
+          declared[1] <= devupContext.range[1]
+        )
+          return
 
         let callee: TSESTree.Node | null = null
         let member: TSESTree.MemberExpression | null = null
