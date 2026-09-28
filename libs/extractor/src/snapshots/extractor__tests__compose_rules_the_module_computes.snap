@@ -47,7 +47,7 @@ ToBTreeSet {
         Static(
             ExtractStaticStyle {
                 property: "margin",
-                value: "48px",
+                value: "44px",
                 level: 0,
                 selector: None,
                 style_order: None,

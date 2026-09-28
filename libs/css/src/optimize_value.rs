@@ -546,6 +546,9 @@ mod tests {
     #[case("rgb(2147483648,0,0)", "rgb(2147483648,0,0)")]
     // f32 parse failure for alpha (".") → falls back to original
     #[case("rgba(255,0,0,.)", "rgba(255,0,0,.)")]
+    // whitespace other than a space between values
+    #[case("10px\t20px", "10px 20px")]
+    #[case("1px\n2px", "1px 2px")]
     fn test_optimize_value(#[case] input: &str, #[case] expected: &str) {
         assert_eq!(optimize_value(input), expected);
     }

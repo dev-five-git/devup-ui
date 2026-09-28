@@ -18765,7 +18765,7 @@ export const j = (key) => css(shared[key], tokens.once);
 export const k = css(tokens.nested.x, tokens.nested.known, tokens.indexed);
 export const l = css(emotionClass, { m: 1 });
 export const n = <Devup.Layout.Box {...local} />;
-export const o = css(tokens.deep.inner.x, tokens.make(12), tokens.nested.known.length);",
+export const o = css(tokens.make(12), tokens.deep.inner.x, tokens.nested.known.length);",
             ExtractOption {
                 import_aliases: HashMap::from([(
                     "@emotion/react".to_string(),
