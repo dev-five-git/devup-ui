@@ -1,0 +1,179 @@
+---
+source: libs/extractor/src/lib.rs
+expression: "ToBTreeSet::from(extract_tsx(r\"import { Box, css } from '@devup-ui/react';\nconst W = 10;\nconst GAP = Math.round(2.5) * 4;\nconst HALF = Math.round(-2.5);\nexport const a = css({ width: Math.max(W, 20), height: Math.min(W, -W, 3), gap: GAP, top: HALF, left: Math.floor(W / 3), right: Math.ceil(1.2), bottom: Math.trunc(-1.7), opacity: Math.abs(-0.5), zIndex: Math.sign(-3), order: Math.sign(0), flexGrow: Math.pow(2, 3), lineHeight: Math.sqrt(4), rotate: `${Math.PI}rad`, scale: Math.round(1.4) });\nexport const b = <Box p={Math.max(1, W)} m={Math.E > 2 ? 1 : 2} />;\"))"
+---
+ToBTreeSet {
+    styles: {
+        Static(
+            ExtractStaticStyle {
+                property: "bottom",
+                value: "-4px",
+                level: 0,
+                selector: None,
+                style_order: None,
+                layer: None,
+            },
+        ),
+        Static(
+            ExtractStaticStyle {
+                property: "flex-grow",
+                value: "8",
+                level: 0,
+                selector: None,
+                style_order: None,
+                layer: None,
+            },
+        ),
+        Static(
+            ExtractStaticStyle {
+                property: "gap",
+                value: "48px",
+                level: 0,
+                selector: None,
+                style_order: None,
+                layer: None,
+            },
+        ),
+        Static(
+            ExtractStaticStyle {
+                property: "height",
+                value: "-40px",
+                level: 0,
+                selector: None,
+                style_order: None,
+                layer: None,
+            },
+        ),
+        Static(
+            ExtractStaticStyle {
+                property: "left",
+                value: "12px",
+                level: 0,
+                selector: None,
+                style_order: None,
+                layer: None,
+            },
+        ),
+        Static(
+            ExtractStaticStyle {
+                property: "line-height",
+                value: "2",
+                level: 0,
+                selector: None,
+                style_order: None,
+                layer: None,
+            },
+        ),
+        Static(
+            ExtractStaticStyle {
+                property: "margin",
+                value: "4px",
+                level: 0,
+                selector: None,
+                style_order: None,
+                layer: None,
+            },
+        ),
+        Static(
+            ExtractStaticStyle {
+                property: "margin",
+                value: "8px",
+                level: 0,
+                selector: None,
+                style_order: None,
+                layer: None,
+            },
+        ),
+        Static(
+            ExtractStaticStyle {
+                property: "opacity",
+                value: ".5",
+                level: 0,
+                selector: None,
+                style_order: None,
+                layer: None,
+            },
+        ),
+        Static(
+            ExtractStaticStyle {
+                property: "order",
+                value: "0",
+                level: 0,
+                selector: None,
+                style_order: None,
+                layer: None,
+            },
+        ),
+        Static(
+            ExtractStaticStyle {
+                property: "padding",
+                value: "40px",
+                level: 0,
+                selector: None,
+                style_order: None,
+                layer: None,
+            },
+        ),
+        Static(
+            ExtractStaticStyle {
+                property: "right",
+                value: "8px",
+                level: 0,
+                selector: None,
+                style_order: None,
+                layer: None,
+            },
+        ),
+        Static(
+            ExtractStaticStyle {
+                property: "rotate",
+                value: "3.141592653589793rad",
+                level: 0,
+                selector: None,
+                style_order: None,
+                layer: None,
+            },
+        ),
+        Static(
+            ExtractStaticStyle {
+                property: "scale",
+                value: "1",
+                level: 0,
+                selector: None,
+                style_order: None,
+                layer: None,
+            },
+        ),
+        Static(
+            ExtractStaticStyle {
+                property: "top",
+                value: "-8px",
+                level: 0,
+                selector: None,
+                style_order: None,
+                layer: None,
+            },
+        ),
+        Static(
+            ExtractStaticStyle {
+                property: "width",
+                value: "80px",
+                level: 0,
+                selector: None,
+                style_order: None,
+                layer: None,
+            },
+        ),
+        Static(
+            ExtractStaticStyle {
+                property: "z-index",
+                value: "-1",
+                level: 0,
+                selector: None,
+                style_order: None,
+                layer: None,
+            },
+        ),
+    },
+    code: "import \"@devup-ui/react/devup-ui.css\";\nconst W = 10;\nconst GAP = 12;\nconst HALF = -2;\nexport const a = \"a b c d e f g h i j k l m n\";\nexport const b = <div className={`o ${2.718281828459045 > 2 ? \"p\" : \"q\"}`} />;\n",
+}

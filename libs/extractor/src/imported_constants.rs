@@ -90,6 +90,7 @@ pub(crate) fn inline_constants<'a>(
     };
     let mut symbols: FxHashMap<SymbolId, Constant> = FxHashMap::default();
     let mut inlined = Inlined::default();
+    let reads_math;
     let scoping = {
         let mut scope = ModuleScope::new(filename);
         let mut bindings: FxHashMap<&str, Vec<&Cell<Option<SymbolId>>>> = FxHashMap::default();
@@ -132,7 +133,8 @@ pub(crate) fn inline_constants<'a>(
         }
         // Scoping is only worth building when a style reads a name that may
         // hold a constant
-        if !read.names.iter().any(|name| scope.binds(name)) {
+        reads_math = read.names.contains("Math") && !scope.binds("Math");
+        if !reads_math && !read.names.iter().any(|name| scope.binds(name)) {
             return Inlined::default();
         }
         let scoping = SemanticBuilder::new()
@@ -160,7 +162,7 @@ pub(crate) fn inline_constants<'a>(
         scoping
     };
     inlined.dependencies = modules.exports.into_keys().collect();
-    if !symbols.is_empty() {
+    if !symbols.is_empty() || reads_math {
         Inline {
             ast_builder,
             scoping: &scoping,
@@ -535,6 +537,13 @@ impl<'p, 'a> ModuleScope<'p, 'a> {
         self.declarations.contains_key(name) || self.imports.contains_key(name)
     }
 
+    fn is_global_math(&self, expression: &Expression<'_>) -> bool {
+        matches!(expression, Expression::Identifier(identifier)
+            if identifier.name == "Math"
+                && !self.binds("Math")
+                && !self.locals.contains_key("Math"))
+    }
+
     fn import(&mut self, import: &oxc_ast::ast::ImportDeclaration<'_>) {
         for specifier in import.specifiers.iter().flatten() {
             let imported = match specifier {
@@ -801,11 +810,25 @@ impl<'p, 'a> ModuleScope<'p, 'a> {
                 Some(Constant::Object(Rc::new(properties)))
             }
             Expression::Identifier(identifier) => self.lookup(modules, &identifier.name),
+            Expression::StaticMemberExpression(member) if self.is_global_math(&member.object) => {
+                math_constant(member.property.name.as_str())
+            }
             Expression::StaticMemberExpression(member) => member_of(
                 &self.evaluate(modules, &member.object)?,
                 member.property.name.as_str(),
             ),
-            Expression::CallExpression(call) => self.evaluate_stylex(modules, call),
+            Expression::CallExpression(call) => match &call.callee {
+                Expression::StaticMemberExpression(callee)
+                    if self.is_global_math(&callee.object) =>
+                {
+                    let mut arguments = Vec::with_capacity(call.arguments.len());
+                    for argument in &call.arguments {
+                        arguments.push(self.evaluate(modules, argument.as_expression()?)?);
+                    }
+                    fold_math(callee.property.name.as_str(), &arguments)
+                }
+                _ => self.evaluate_stylex(modules, call),
+            },
             Expression::TSAsExpression(inner) => self.evaluate(modules, &inner.expression),
             Expression::TSSatisfiesExpression(inner) => self.evaluate(modules, &inner.expression),
             Expression::ParenthesizedExpression(inner) => self.evaluate(modules, &inner.expression),
@@ -847,6 +870,80 @@ fn fold_template(
     Some(Constant::String(text))
 }
 
+fn math_constant(name: &str) -> Option<Constant> {
+    use std::f64::consts;
+    let value = match name {
+        "PI" => consts::PI,
+        "E" => consts::E,
+        "LN2" => consts::LN_2,
+        "LN10" => consts::LN_10,
+        "LOG2E" => consts::LOG2_E,
+        "LOG10E" => consts::LOG10_E,
+        "SQRT2" => consts::SQRT_2,
+        "SQRT1_2" => consts::FRAC_1_SQRT_2,
+        _ => return None,
+    };
+    Some(Constant::Number(value))
+}
+
+/// `Math.{name}(...arguments)`, folded only where every engine computes the
+/// same result, so the CSS never depends on the platform that builds it
+fn fold_math(name: &str, arguments: &[Constant]) -> Option<Constant> {
+    let mut numbers = Vec::with_capacity(arguments.len());
+    for argument in arguments {
+        let Constant::Number(number) = argument else {
+            return None;
+        };
+        numbers.push(*number);
+    }
+    let first = numbers.first().copied();
+    let value = match name {
+        "abs" => first?.abs(),
+        "ceil" => first?.ceil(),
+        "floor" => first?.floor(),
+        "trunc" => first?.trunc(),
+        "sqrt" => first?.sqrt(),
+        "sign" => {
+            let x = first?;
+            if x > 0.0 {
+                1.0
+            } else if x < 0.0 {
+                -1.0
+            } else {
+                x
+            }
+        }
+        // JavaScript rounds a half up, toward +Infinity, where Rust rounds it
+        // away from zero; `x - floor(x)` is exact for every double
+        "round" => {
+            let x = first?;
+            let floor = x.floor();
+            if x - floor >= 0.5 { floor + 1.0 } else { floor }
+        }
+        "max" => numbers.iter().copied().fold(f64::NEG_INFINITY, f64::max),
+        "min" => numbers.iter().copied().fold(f64::INFINITY, f64::min),
+        "pow" => exact_power(first?, *numbers.get(1)?)?,
+        _ => return None,
+    };
+    value.is_finite().then_some(Constant::Number(value))
+}
+
+/// An integer raised to a whole power, when the result is an exact integer
+fn exact_power(base: f64, exponent: f64) -> Option<f64> {
+    const EXACT: f64 = 9_007_199_254_740_992.0;
+    if base.fract() != 0.0 || exponent.fract() != 0.0 || !(0.0..=64.0).contains(&exponent) {
+        return None;
+    }
+    let mut result = 1.0_f64;
+    for _ in 0..exponent as u8 {
+        result *= base;
+        if result.abs() > EXACT {
+            return None;
+        }
+    }
+    Some(result)
+}
+
 fn fold_binary(operator: BinaryOperator, left: &Constant, right: &Constant) -> Option<Constant> {
     let number = match (operator, left, right) {
         (BinaryOperator::Addition, Constant::Number(a), Constant::Number(b)) => a + b,
@@ -877,10 +974,27 @@ impl<'a> Inline<'_, 'a> {
                 let symbol = self.scoping.get_reference(reference).symbol_id()?;
                 self.symbols.get(&symbol).cloned()
             }
+            Expression::StaticMemberExpression(member) if self.is_global_math(&member.object) => {
+                math_constant(member.property.name.as_str())
+            }
             Expression::StaticMemberExpression(member) => member_of(
                 &self.constant(&member.object)?,
                 member.property.name.as_str(),
             ),
+            Expression::CallExpression(call) => {
+                let Expression::StaticMemberExpression(callee) = &call.callee else {
+                    return None;
+                };
+                if !self.is_global_math(&callee.object) {
+                    return None;
+                }
+                let arguments: Option<Vec<Constant>> = call
+                    .arguments
+                    .iter()
+                    .map(|argument| self.operand(argument.as_expression()?))
+                    .collect();
+                fold_math(callee.property.name.as_str(), &arguments?)
+            }
             Expression::ComputedMemberExpression(member) => {
                 let key = js_string(&self.operand(&member.expression)?)?;
                 member_of(&self.constant(&member.object)?, &key)
@@ -909,6 +1023,14 @@ impl<'a> Inline<'_, 'a> {
                     &self.operand(&binary.right)?,
                 )
             }
+            Expression::UnaryExpression(unary)
+                if unary.operator == oxc_syntax::operator::UnaryOperator::UnaryNegation =>
+            {
+                match self.constant(&unary.argument)? {
+                    Constant::Number(number) => Some(Constant::Number(-number)),
+                    _ => None,
+                }
+            }
             Expression::ParenthesizedExpression(inner) => self.constant(&inner.expression),
             _ => None,
         }
@@ -918,9 +1040,18 @@ impl<'a> Inline<'_, 'a> {
     fn operand(&self, expression: &Expression<'a>) -> Option<Constant> {
         self.constant(expression).or_else(|| match expression {
             Expression::StringLiteral(literal) => Some(Constant::String(literal.value.to_string())),
-            Expression::NumericLiteral(literal) => Some(Constant::Number(literal.value)),
-            _ => None,
+            _ => crate::utils::js_number_literal(expression).map(Constant::Number),
         })
+    }
+
+    fn is_global_math(&self, expression: &Expression<'a>) -> bool {
+        matches!(expression, Expression::Identifier(identifier)
+            if identifier.name == "Math"
+                && identifier
+                    .reference_id
+                    .get()
+                    .and_then(|reference| self.scoping.get_reference(reference).symbol_id())
+                    .is_none())
     }
 
     fn literal(&self, constant: &Constant) -> Option<Expression<'a>> {

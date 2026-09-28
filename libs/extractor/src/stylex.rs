@@ -3,10 +3,13 @@ use std::borrow::Cow;
 use css::at_rule::{normalize_query, split_at_rule_key};
 use css::keyframes_to_keyframes_name;
 use css::style_selector::{AtRuleKind, StyleSelector, write_at_rule};
-use oxc_ast::ast::{Expression, ObjectPropertyKind};
+use oxc_ast::ast::{Argument, Expression, ObjectPropertyKind};
+use oxc_span::GetSpan;
 
 use crate::utils::{
-    get_string_by_literal_expression, get_string_by_property_key, js_number_literal,
+    build_time_error, get_string_by_literal_expression, get_string_by_property_key,
+    js_number_literal, key_error, readable_argument, readable_code, runtime_value_error,
+    spread_error,
 };
 
 /// Which `StyleX` function a named import refers to
@@ -39,6 +42,34 @@ impl StylexFunction {
             "positionTry" => Some(StylexFunction::PositionTry),
             "viewTransitionClass" => Some(StylexFunction::ViewTransitionClass),
             _ => None,
+        }
+    }
+
+    #[must_use]
+    pub const fn export_name(&self) -> &'static str {
+        match self {
+            Self::Create => "create",
+            Self::Props => "props",
+            Self::Attrs => "attrs",
+            Self::Keyframes => "keyframes",
+            Self::DefineVars => "defineVars",
+            Self::CreateTheme => "createTheme",
+            Self::CreateThemeContract => "createThemeContract",
+            Self::DefineConsts => "defineConsts",
+            Self::PositionTry => "positionTry",
+            Self::ViewTransitionClass => "viewTransitionClass",
+        }
+    }
+
+    /// What a call must be to compile away, for the functions that do
+    #[must_use]
+    pub const fn requirement(&self) -> Option<&'static str> {
+        match self {
+            Self::Props | Self::Attrs => None,
+            Self::CreateTheme => Some(
+                "it takes a `defineVars()` group, of this file or imported, and an object literal",
+            ),
+            _ => Some("it takes one object literal"),
         }
     }
 }
@@ -201,6 +232,7 @@ pub fn is_include_call_static(callee: &Expression) -> bool {
 pub struct StylexIncludeRef {
     pub var_name: String,
     pub member_name: String,
+    pub offset: u32,
 }
 
 /// Check if a call expression is `stylex.types.X()` or `types.X()` (type wrapper).
@@ -511,14 +543,18 @@ pub enum StylexNamespaceValue {
 ///
 /// This recursively walks the value tree and returns flat tuples of (`value_or_none`, selector).
 /// `None` value means null/no CSS emitted (but tracked for atomic override).
+///
+/// `leaf` reads a value known at build time (a literal, a keyframes name, a
+/// variable); anything else is reported in `errors`.
 pub fn decompose_value_conditions(
     css_property: &str,
     value: &Expression,
     parent_selectors: &[SelectorPart],
+    leaf: &dyn Fn(&str, &Expression) -> Option<String>,
+    errors: &mut Vec<(u32, String)>,
 ) -> Vec<DecomposedStyle> {
-    // String or number literal → leaf
-    if let Some(s) = stylex_value(css_property, value) {
-        return decomposed_leaf(css_property, Some(s.into_owned()), parent_selectors)
+    if let Some(s) = leaf(css_property, value) {
+        return decomposed_leaf(css_property, Some(s), parent_selectors)
             .into_iter()
             .collect();
     }
@@ -536,14 +572,15 @@ pub fn decompose_value_conditions(
     {
         let mut results = vec![];
         for arg in call.arguments.iter().rev() {
-            if let Some(arg_expr) = arg.as_expression()
-                && let Some(s) = stylex_value(css_property, arg_expr)
+            match arg
+                .as_expression()
+                .and_then(|arg_expr| leaf(css_property, arg_expr))
             {
-                results.extend(decomposed_leaf(
-                    css_property,
-                    Some(s.into_owned()),
-                    parent_selectors,
-                ));
+                Some(s) => results.extend(decomposed_leaf(css_property, Some(s), parent_selectors)),
+                None => errors.push((
+                    arg.span().start,
+                    runtime_value_error("stylex.firstThatWorks", &readable_argument(arg)),
+                )),
             }
         }
         return results;
@@ -552,54 +589,67 @@ pub fn decompose_value_conditions(
     // CallExpression: types.*() → extract inner value, pass through selectors
     if let Expression::CallExpression(call) = value
         && is_types_call(&call.callee)
-        && let Some(inner) = call.arguments.first().and_then(|arg| arg.as_expression())
+        && let Some(s) = call
+            .arguments
+            .first()
+            .and_then(Argument::as_expression)
+            .and_then(|inner| leaf(css_property, inner))
     {
-        if let Some(s) = stylex_value(css_property, inner) {
-            return decomposed_leaf(css_property, Some(s.into_owned()), parent_selectors)
-                .into_iter()
-                .collect();
-        }
-        return vec![];
+        return decomposed_leaf(css_property, Some(s), parent_selectors)
+            .into_iter()
+            .collect();
     }
 
     // ObjectExpression → recurse into condition keys
     let Expression::ObjectExpression(obj) = value else {
+        errors.push((
+            value.span().start,
+            runtime_value_error("stylex.create", &readable_code(value)),
+        ));
         return vec![];
     };
 
     let mut results = vec![];
 
     for prop in &obj.properties {
-        let ObjectPropertyKind::ObjectProperty(prop) = prop else {
-            continue;
+        let prop = match prop {
+            ObjectPropertyKind::ObjectProperty(prop) => prop,
+            ObjectPropertyKind::SpreadProperty(spread) => {
+                errors.push(spread_error("stylex.create", spread));
+                continue;
+            }
         };
         let Some(key) = get_string_by_property_key(&prop.key) else {
+            errors.push(key_error("stylex.create", &prop.key));
             continue;
         };
 
-        if key == "default" {
-            results.extend(decompose_value_conditions(
-                css_property,
-                &prop.value,
-                parent_selectors,
-            ));
-        } else if key.starts_with("::") || key.starts_with(':') {
-            let mut new_selectors = parent_selectors.to_vec();
-            new_selectors.push(SelectorPart::Pseudo(key));
-            results.extend(decompose_value_conditions(
-                css_property,
-                &prop.value,
-                &new_selectors,
-            ));
+        let condition = if key == "default" {
+            None
+        } else if key.starts_with(':') {
+            Some(SelectorPart::Pseudo(key))
         } else if let Some((kind, query)) = parse_at_rule_key(&key) {
-            let mut new_selectors = parent_selectors.to_vec();
-            new_selectors.push(SelectorPart::AtRule { kind, query });
-            results.extend(decompose_value_conditions(
-                css_property,
-                &prop.value,
-                &new_selectors,
+            Some(SelectorPart::AtRule { kind, query })
+        } else {
+            errors.push((
+                prop.key.span().start,
+                build_time_error(
+                    "stylex.create",
+                    &key,
+                    "a condition is `default`, a pseudo-class, a pseudo-element or an `@media`, `@supports` or `@container` rule",
+                ),
             ));
-        }
+            continue;
+        };
+        let mut selectors = parent_selectors.to_vec();
+        selectors.extend(condition);
+        results.extend(decompose_value_conditions(
+            css_property,
+            &prop.value,
+            &selectors,
+            leaf,
+            errors,
+        ));
     }
 
     results
@@ -682,7 +732,10 @@ mod tests {
         };
 
         let value = statement.expression.without_parentheses();
-        let styles: Vec<_> = decompose_value_conditions("color", value, &[])
+        let leaf = |property: &str, value: &Expression| {
+            stylex_value(property, value).map(std::borrow::Cow::into_owned)
+        };
+        let styles: Vec<_> = decompose_value_conditions("color", value, &[], &leaf, &mut vec![])
             .into_iter()
             .map(|style| (style.value, style.selector.map(|s| s.to_string())))
             .collect();

@@ -129,18 +129,19 @@ pub(super) fn expression_to_code(expression: &Expression) -> String {
     generate_code(expression, minify_codegen_options())
 }
 
-/// `expression` as it would be written, for messages
+/// `expression` as it would be written, on one line, for messages
 pub(super) fn readable_code(expression: &Expression) -> String {
     let code = generate_code(expression, CodegenOptions::default());
     let code = code.trim_end().trim_end_matches(';');
-    match expression {
-        Expression::ObjectExpression(_) => code
+    // The parentheses keep a statement from reading as a block or a directive
+    let code = match expression {
+        Expression::ObjectExpression(_) | Expression::StringLiteral(_) => code
             .strip_prefix('(')
             .and_then(|code| code.strip_suffix(')'))
             .unwrap_or(code),
         _ => code,
-    }
-    .to_string()
+    };
+    code.lines().map(str::trim).collect::<Vec<_>>().join(" ")
 }
 
 fn generate_code(expression: &Expression, options: CodegenOptions) -> String {
@@ -645,11 +646,89 @@ pub(super) fn runtime_value(props: &[crate::ExtractStyleProp<'_>]) -> Option<Str
         })
 }
 
+pub(super) fn build_time_error(api: &str, code: &str, requirement: &str) -> String {
+    format!("`{api}()` cannot use `{code}` at build time: {requirement}")
+}
+
 /// `api` has no element to set a runtime value on, so its values must be
 /// known at build time
 pub(super) fn runtime_value_error(api: &str, value: &str) -> String {
-    format!(
-        "`{api}()` cannot use `{value}` at build time: its values must be literals, theme tokens or imported constants"
+    build_time_error(
+        api,
+        value,
+        "its values must be literals, theme tokens or imported constants",
+    )
+}
+
+pub(super) fn spread_error(api: &str, spread: &oxc_ast::ast::SpreadElement<'_>) -> (u32, String) {
+    (
+        spread.span.start,
+        build_time_error(
+            api,
+            &format!("...{}", readable_code(&spread.argument)),
+            "write every entry out, as its keys must be known",
+        ),
+    )
+}
+
+pub(super) fn key_error(api: &str, key: &PropertyKey<'_>) -> (u32, String) {
+    let code = key.as_expression().map_or_else(String::new, readable_code);
+    (
+        oxc_span::GetSpan::span(key).start,
+        build_time_error(api, &format!("[{code}]"), "its keys must be known"),
+    )
+}
+
+pub(super) fn readable_argument(argument: &Argument<'_>) -> String {
+    if let Argument::SpreadElement(spread) = argument {
+        return format!("...{}", readable_code(&spread.argument));
+    }
+    argument
+        .as_expression()
+        .map_or_else(String::new, readable_code)
+}
+
+/// `value` as class names at runtime: a class string, a falsy value, or an
+/// array of them nested to any depth
+pub(super) fn runtime_classes<'a>(
+    builder: &AstBuilder<'a>,
+    value: &Expression<'a>,
+) -> Expression<'a> {
+    let method = |object: Expression<'a>, name: &'static str, argument: Expression<'a>| {
+        let mut arguments = oxc_allocator::Vec::with_capacity_in(1, builder);
+        arguments.push(Argument::from(argument));
+        Expression::new_call_expression(
+            SPAN,
+            Expression::StaticMemberExpression(StaticMemberExpression::boxed(
+                SPAN,
+                object,
+                IdentifierName::new(SPAN, name, builder),
+                false,
+                builder,
+            )),
+            None::<oxc_allocator::Box<'_, oxc_ast::ast::TSTypeParameterInstantiation<'_>>>,
+            arguments,
+            false,
+            builder,
+        )
+    };
+    let mut elements = oxc_allocator::Vec::with_capacity_in(1, builder);
+    elements.push(value.clone_in(builder.allocator()).into());
+    let array = Expression::new_array_expression(SPAN, elements, builder);
+    let flat = method(
+        array,
+        "flat",
+        Expression::new_identifier(SPAN, "Infinity", builder),
+    );
+    let filtered = method(
+        flat,
+        "filter",
+        Expression::new_identifier(SPAN, "Boolean", builder),
+    );
+    method(
+        filtered,
+        "join",
+        Expression::new_string_literal(SPAN, " ", None, builder),
     )
 }
 
