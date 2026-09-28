@@ -18459,6 +18459,10 @@ export const A = () => <div {...stylex.props(dracula, styles.box)} />;"
                 "`stylex.defineVars()` cannot use `{",
             ),
             (
+                "const colors = stylex.defineVars({ text: { default: 'a', ...rest } });",
+                "`stylex.defineVars()` cannot use `{",
+            ),
+            (
                 "const colors = stylex.defineVars({ text: 'a' });\nconst theme = stylex.createTheme(colors, { text: getText() });",
                 "`stylex.createTheme()` cannot use `getText()`",
             ),
