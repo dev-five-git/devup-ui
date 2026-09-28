@@ -18020,6 +18020,10 @@ export const light = stylex.createTheme(colors, { primary: 'white' });",
                 &["`stylex.create()` cannot use `[1, 2]` at build time"],
             ),
             (
+                "let prop = 'color';\nconst styles = stylex.create({ base: { [prop]: 'red' } });",
+                &["`stylex.create()` cannot use `[prop]` at build time"],
+            ),
+            (
                 "let key = ':hover';\nconst styles = stylex.create({ base: { color: { [key]: 'blue', default: 'red' } } });",
                 &["`stylex.create()` cannot use `[key]` at build time"],
             ),
@@ -18099,6 +18103,14 @@ export const light = stylex.createTheme(colors, { primary: 'white' });",
                 ],
             ),
             (
+                "const c = stylex.createThemeContract(x);\nconst d = stylex.defineConsts(x);\nconst v = stylex.viewTransitionClass(x);",
+                &[
+                    "`stylex.createThemeContract()` cannot use `x`",
+                    "`stylex.defineConsts()` cannot use `x`",
+                    "`stylex.viewTransitionClass()` cannot use `x`",
+                ],
+            ),
+            (
                 "const vars = stylex.defineVars(someVariable);\nconst theme = stylex.createTheme(notAContract, { primary: 'navy' });",
                 &[
                     "`stylex.defineVars()` cannot use `someVariable` at build time: it takes one object literal",
@@ -18151,8 +18163,9 @@ const colors = stylex.defineVars({ text: 'black' });
 const styles = stylex.create({
   base: { animationName: { default: fade, ':hover': 'none' }, color: { default: colors.text, ':hover': 'red' } },
   bar: (h) => ({ height: h }),
+  none: null,
 });
-export const A = ({ style, rest }) => <div {...stylex.props(styles.base, style, ...rest, undefined, null, styles, styles.missing, styles?.bar, styles[key]?.x)} />;"
+export const A = ({ style, rest }) => <div {...stylex.props(styles.base, style, ...rest, undefined, null, styles, styles.missing, styles?.bar, styles[key]?.x, styles?.['missing'], on && styles.missing, on ? styles.base : styles.missing, on ? styles.missing : styles.base, on ? styles.missing : styles.none)} />;"
         )));
     }
 
@@ -18460,8 +18473,8 @@ export const k = styled('div')({ color: SIZE });",
             r"import { Box, css, keyframes, globalCss } from '@devup-ui/react';
 import * as stylex from '@stylexjs/stylex';
 import { darken, PRIMARY } from './color';
-const SIZE = 4;
-const twice = (n: number) => n * 2;
+export const SIZE = 4;
+export default function twice(n: number) { return n * 2; }
 class Scale { constructor(public n: number) {} px() { return `${this.n}px`; } }
 export const a = css({ color: darken(0.1, PRIMARY), width: twice(SIZE), margin: new Scale(3).px(), height: [1, 2].map(twice)[1], top: -twice(1) });
 export const b = keyframes({ from: { opacity: twice(0.25) } });
@@ -18590,6 +18603,12 @@ export default class {}",
             &[],
         ));
         assert!(!has_build_time_values(
+            "a.tsx",
+            "import { css } from '@devup-ui/react';\nexport default 1;\ncss({ w: 1 });",
+            "@devup-ui/react",
+            &[],
+        ));
+        assert!(!has_build_time_values(
             "a.unknown",
             "css({ w: f() })",
             "@devup-ui/react",
@@ -18637,7 +18656,7 @@ export default class {}",
 const W = 10;
 const GAP = Math.round(2.5) * 4;
 const HALF = Math.round(-2.5);
-export const a = css({ width: Math.max(W, 20), height: Math.min(W, -W, 3), gap: GAP, top: HALF, left: Math.floor(W / 3), right: Math.ceil(1.2), bottom: Math.trunc(-1.7), opacity: Math.abs(-0.5), zIndex: Math.sign(-3), order: Math.sign(0), flexGrow: Math.pow(2, 3), lineHeight: Math.sqrt(4), rotate: `${Math.PI}rad`, scale: Math.round(1.4) });
+export const a = css({ width: Math.max(W, 20), height: Math.min(W, -W, 3), gap: GAP, top: HALF, left: Math.floor(W / 3), right: Math.ceil(1.2), bottom: Math.trunc(-1.7), opacity: Math.abs(-0.5), zIndex: Math.sign(-3), order: Math.sign(0), flexGrow: Math.pow(2, 3), lineHeight: Math.sqrt(4), rotate: `${Math.PI}rad`, scale: Math.round(1.4), flexShrink: Math.sign(3) });
 export const b = <Box p={Math.max(1, W)} m={Math.E > 2 ? 1 : 2} />;"
         )));
         for code in [
@@ -18649,6 +18668,7 @@ export const b = <Box p={Math.max(1, W)} m={Math.E > 2 ? 1 : 2} />;"
             "css({ width: Math.max('1', 2) })",
             "css({ width: Math.NOPE })",
             "css({ width: Math.max(...list) })",
+            "css({ width: Math.pow(10, 17) })",
         ] {
             reset_class_map();
             reset_file_map();
@@ -18662,6 +18682,16 @@ export const b = <Box p={Math.max(1, W)} m={Math.E > 2 ? 1 : 2} />;"
             .unwrap_or_default();
             assert!(message.contains("cannot use"), "{code}: {message}");
         }
+        reset_class_map();
+        reset_file_map();
+        assert!(
+            extract(
+                "test.tsx",
+                "import { css } from '@devup-ui/react';\nexport const a = css({ width: -`${Math.PI}` });",
+                ExtractOption::default(),
+            )
+            .is_ok()
+        );
         for code in [
             "const Math = { max: () => 1 };\nexport const a = css({ width: Math.max(1, 2) });",
             "const Math = { PI: 3 };\nexport const a = css({ width: Math.PI, height: Math.max(1, 2) });",

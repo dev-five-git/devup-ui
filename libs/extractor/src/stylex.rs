@@ -27,38 +27,34 @@ pub enum StylexFunction {
     ViewTransitionClass,
 }
 
+const STYLEX_EXPORTS: [(&str, StylexFunction); 10] = [
+    ("create", StylexFunction::Create),
+    ("props", StylexFunction::Props),
+    ("attrs", StylexFunction::Attrs),
+    ("keyframes", StylexFunction::Keyframes),
+    ("defineVars", StylexFunction::DefineVars),
+    ("createTheme", StylexFunction::CreateTheme),
+    ("createThemeContract", StylexFunction::CreateThemeContract),
+    ("defineConsts", StylexFunction::DefineConsts),
+    ("positionTry", StylexFunction::PositionTry),
+    ("viewTransitionClass", StylexFunction::ViewTransitionClass),
+];
+
 impl StylexFunction {
     #[must_use]
     pub fn from_export_name(value: &str) -> Option<Self> {
-        match value {
-            "create" => Some(StylexFunction::Create),
-            "props" => Some(StylexFunction::Props),
-            "attrs" => Some(StylexFunction::Attrs),
-            "keyframes" => Some(StylexFunction::Keyframes),
-            "defineVars" => Some(StylexFunction::DefineVars),
-            "createTheme" => Some(StylexFunction::CreateTheme),
-            "createThemeContract" => Some(StylexFunction::CreateThemeContract),
-            "defineConsts" => Some(StylexFunction::DefineConsts),
-            "positionTry" => Some(StylexFunction::PositionTry),
-            "viewTransitionClass" => Some(StylexFunction::ViewTransitionClass),
-            _ => None,
-        }
+        STYLEX_EXPORTS
+            .iter()
+            .find(|(name, _)| *name == value)
+            .map(|(_, function)| function.clone())
     }
 
     #[must_use]
-    pub const fn export_name(&self) -> &'static str {
-        match self {
-            Self::Create => "create",
-            Self::Props => "props",
-            Self::Attrs => "attrs",
-            Self::Keyframes => "keyframes",
-            Self::DefineVars => "defineVars",
-            Self::CreateTheme => "createTheme",
-            Self::CreateThemeContract => "createThemeContract",
-            Self::DefineConsts => "defineConsts",
-            Self::PositionTry => "positionTry",
-            Self::ViewTransitionClass => "viewTransitionClass",
-        }
+    pub fn export_name(&self) -> &'static str {
+        STYLEX_EXPORTS
+            .iter()
+            .find(|(_, function)| function == self)
+            .map_or("", |(name, _)| name)
     }
 
     /// What a call must be to compile away, for the functions that do
