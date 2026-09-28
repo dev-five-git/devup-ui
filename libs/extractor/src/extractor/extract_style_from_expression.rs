@@ -997,12 +997,7 @@ pub fn extract_style_from_expression<'a>(
             }
             _ => match name {
                 None => unreadable(expression),
-                Some(_)
-                    if matches!(
-                        expression,
-                        Expression::NullLiteral(_) | Expression::BooleanLiteral(_)
-                    ) =>
-                {
+                Some(_) if matches!(expression, Expression::NullLiteral(_)) => {
                     ExtractResult::default()
                 }
                 Some(_)

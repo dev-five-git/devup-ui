@@ -18733,16 +18733,23 @@ export function b() { return <this.Box p={IDX} />; }",
     fn test_compose_rules_the_module_computes() {
         reset_class_map();
         reset_file_map();
-        let modules: &[(&str, &str)] = &[(
-            "/src/styles.ts",
-            "import { css, styled } from '@devup-ui/react';\nexport const card = css({ p: 1 });\nexport const Card = styled.div({ p: 2 });\nexport const Linked = styled('a')({ p: 3 });\nexport const tagged = css`color: red;`;\nexport const make = (n: number) => ({ m: n });\nexport const computed = make(3);\nexport const once = (() => ({ m: 6 }))();\nexport const name = String('named');",
-        )];
+        let modules: &[(&str, &str)] = &[
+            (
+                "/src/styles.ts",
+                "import { css, styled } from '@devup-ui/react';\nexport const card = css({ p: 1 });\nexport const Card = styled.div({ p: 2 });\nexport const Linked = styled('a')({ p: 3 });\nexport const tagged = css`color: red;`;\nexport const make = (n: number) => ({ m: n });\nexport const computed = make(3);\nexport const once = (() => ({ m: 6 }))();\nexport const name = String('named');\nexport const nested = { x: make(9), known: 'k' };\nexport const indexed = [make][0](10);\nexport const deep = { inner: { x: make(11) } };",
+            ),
+            (
+                "/src/emotion.ts",
+                "import { css } from '@emotion/react';\nexport const emotionClass = css({ p: 1 });",
+            ),
+        ];
         let output = extract_with_modules(
             "/src/App.tsx",
             r"import { css, styled } from '@devup-ui/react';
 import * as Devup from '@devup-ui/react';
 import * as tokens from './styles';
 import { card, computed, name, make } from './styles';
+import { emotionClass } from './emotion';
 const local = make(2);
 const shared = { rules: make(4), fixed: { p: 5 } };
 export const a = css(local);
@@ -18754,13 +18761,23 @@ export const f = styled.p.attrs({ role: 'note' })(shared.rules);
 export const g = (on) => css(on ? local : card, on || computed, on && local, [local, shared.fixed]);
 export const h = css(tokens.computed);
 export const i = Devup.css(local);
-export const j = (key) => css(shared[key], tokens.once);",
-            ExtractOption::default(),
+export const j = (key) => css(shared[key], tokens.once);
+export const k = css(tokens.nested.x, tokens.nested.known, tokens.indexed);
+export const l = css(emotionClass, { m: 1 });
+export const n = <Devup.Layout.Box {...local} />;
+export const o = css(tokens.deep.inner.x, tokens.make(12), tokens.nested.known.length);",
+            ExtractOption {
+                import_aliases: HashMap::from([(
+                    "@emotion/react".to_string(),
+                    ImportAlias::NamedToNamed,
+                )]),
+                ..ExtractOption::default()
+            },
             false,
             &memory_resolver(modules),
         )
         .unwrap();
-        assert_eq!(output.dependencies, ["/src/styles.ts"]);
+        assert_eq!(output.dependencies, ["/src/emotion.ts", "/src/styles.ts"]);
         assert_debug_snapshot!(ToBTreeSet::from(output));
     }
 
@@ -18829,6 +18846,14 @@ export const j = (key) => css(shared[key], tokens.once);",
                 "export const a = (on) => <Global styles={{ body: { color: on && 'red' } }} />;",
                 "`<Global>` cannot use `on`",
             ),
+            (
+                "export const a = (side) => globalCss({ body: { positioning: side } });",
+                "`globalCss()` cannot use `side`",
+            ),
+            (
+                "export const a = (on) => globalCss({ body: { color: 'red', bg: on ? 'a' : 'b' } });",
+                "`globalCss()` cannot use `on`",
+            ),
         ] {
             reset_class_map();
             reset_file_map();
@@ -18872,7 +18897,7 @@ export const k = keyframes({ from: { opacity: DARK ? 0 : 1 } });",
         assert_debug_snapshot!(ToBTreeSet::from(
             extract(
                 "test.tsx",
-                "import { Box } from '@devup-ui/react';\nclass A { #w = 1; render() { return <Box w={this.#w} />; } }\nexport const a = async (f, X, tag) => <Box w={await f()} h={(f(), 2)} bg={new X()} color={tag`x`} zIndex={10n} m={f.n++} p={(f.v = 3)} />;",
+                "import { Box } from '@devup-ui/react';\nclass A { #w = 1; render(f) { return <Box w={this.#w} {...this.#w} {...f()} />; } }\nexport const a = async (f, X, tag) => <Box w={await f()} h={(f(), 2)} bg={new X()} color={tag`x`} zIndex={10n} m={f.n++} p={(f.v = 3)} opacity={null} flex={false} />;",
                 ExtractOption::default(),
             )
             .unwrap()
@@ -18949,6 +18974,38 @@ export const e = async (f, g) => _jsx(Box, { ...f(), title: await g() });
 export const g = async (f, g, h) => <Box id={h()} {...f()} title={await g()} onClick={h} />;
 export const h = async (f, g) => <Box {...f()}>{await g()}</Box>;
 export const i = async (f, g) => _jsx(Box, { className: await g(), ...f() });",
+            ExtractOption::default(),
+        )
+        .unwrap();
+        assert_debug_snapshot!(ToBTreeSet::from(output));
+    }
+
+    #[test]
+    #[serial]
+    fn test_read_once_in_every_place() {
+        reset_class_map();
+        reset_file_map();
+        let output = extract(
+            "test.tsx",
+            r"import { Box } from '@devup-ui/react';
+import { jsx as _jsx } from 'react/jsx-runtime';
+export const a = async (f, g, list, C) => (
+  <Box {...f()} data-x={list} aria-label='x' disabled xlink:href={g} onClick={async () => await g()} title=<Box as={C} />>
+    text
+    <>{g}</>
+    {...list()}
+    <span>{g}</span>
+    {await g()}
+    after
+  </Box>
+);
+export const b = function* (f, g) { yield <Box {...f()} title={yield g} />; };
+export const c = (props) => _jsx(Box, props);
+export const d = async (f, g) => _jsx(Box, { ...f(), [g()]: await g() });
+export const e = async (rest, g) => _jsx(Box, { id: await g(), ...rest });
+export const h = (f, g, k) => _jsx(Box, { className: 'z', onClick: g(), [k]: 2, ...f(), [k]: 1, title: 'x' });
+export const i = (rest) => _jsx(Box, { ...rest, className: 'a' });
+export const j = (rest) => <Box {...{ ...rest }} />;",
             ExtractOption::default(),
         )
         .unwrap();

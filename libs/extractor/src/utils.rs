@@ -1416,6 +1416,77 @@ mod tests {
     }
 
     #[test]
+    fn test_is_pure_and_suspends() {
+        use oxc_ast_visit::Visit;
+        let allocator = Allocator::default();
+        for (source, pure) in [
+            ("true", true),
+            ("null", true),
+            ("1", true),
+            ("1n", true),
+            ("'a'", true),
+            ("/a/", true),
+            ("a", true),
+            ("this", true),
+            ("() => f()", true),
+            ("function () { f(); }", true),
+            ("`a${b}`", true),
+            ("`a${f()}`", false),
+            ("a.b", true),
+            ("a[b]", true),
+            ("a[f()]", false),
+            ("-a", true),
+            ("delete a.b", false),
+            ("a + b", true),
+            ("a || f()", false),
+            ("a ? b : c", true),
+            ("[a, , ...b]", true),
+            ("[f()]", false),
+            ("({ a, [b]: c, get d() { return f(); }, ...e })", true),
+            ("({ [f()]: 1 })", false),
+            ("({ ...f() })", false),
+            ("(a)", true),
+            ("a as T", true),
+            ("a satisfies T", true),
+            ("a!", true),
+            ("<T>a", true),
+            ("f()", false),
+            ("new A()", false),
+            ("a = 1", false),
+            ("a++", false),
+            ("tag`a`", false),
+        ] {
+            let expression = Parser::new(&allocator, source, SourceType::ts())
+                .parse_expression()
+                .unwrap();
+            assert_eq!(is_pure(&expression), pure, "{source}");
+        }
+        for (source, found) in [
+            (
+                "[await a, async function () { await b; }, class { m() {} }]",
+                true,
+            ),
+            (
+                "[async function () { await b; }, class { m() { f(); } }]",
+                false,
+            ),
+            ("yield 1", true),
+            ("async () => await a", false),
+        ] {
+            let code = format!("async function* wrapper() {{ return ({source}); }}");
+            let program = Parser::new(&allocator, &code, SourceType::ts())
+                .parse()
+                .program;
+            let Statement::FunctionDeclaration(function) = &program.body[0] else {
+                panic!("{source}");
+            };
+            let mut suspends = Suspends::default();
+            suspends.visit_statements(&function.body.as_ref().unwrap().statements);
+            assert_eq!(suspends.found, found, "{source}");
+        }
+    }
+
+    #[test]
     #[allow(clippy::literal_string_with_formatting_args)]
     fn test_style_arguments() {
         let allocator = Allocator::default();

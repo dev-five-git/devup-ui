@@ -84,21 +84,19 @@ fn strip_important(identifier: String) -> (String, bool) {
 }
 
 /// `identifier`, the code the element runs, without the statement's semicolon;
-/// only a literal holding the whole CSS value loses the `;` ending it. The code
-/// is not optimized as CSS, as that would rewrite the literals it passes on
+/// only a template holding the whole CSS value loses the `;` ending it. The
+/// code is not optimized as CSS, as that would rewrite the literals it passes on
 fn runtime_code(identifier: &str) -> String {
     let code = identifier.trim();
     let code = code.strip_suffix(';').unwrap_or(code);
-    for quote in ['`', '"', '\''] {
-        if let Some(value) = code
-            .strip_prefix(quote)
-            .and_then(|code| code.strip_suffix(quote))
-            .filter(|value| value.ends_with(';'))
-        {
-            return format!("{quote}{}{quote}", value.trim_end_matches(';'));
-        }
+    match code
+        .strip_prefix('`')
+        .and_then(|code| code.strip_suffix('`'))
+        .filter(|value| value.ends_with(';'))
+    {
+        Some(value) => format!("`{}`", value.trim_end_matches(';')),
+        None => code.to_string(),
     }
-    code.to_string()
 }
 
 impl ExtractDynamicStyle {
