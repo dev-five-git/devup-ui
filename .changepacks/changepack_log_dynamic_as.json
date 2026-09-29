@@ -1,0 +1,8 @@
+{
+  "changes": {
+    "bindings/devup-ui-wasm/package.json": "Patch",
+    "packages/eslint-plugin/package.json": "Patch"
+  },
+  "note": "A dynamic as renders what it gives: undefined, null and false give the default element, a component or a member such as motion.div renders as named, a condition between names becomes an element for each, and any other value (a lowercase variable, a template, a call, a lookup) is read at runtime, once, with the default element when it is empty, where member expressions rendered nothing, templates took their first part and lookups built every element. Build-time values read Math only through members with a known key, and toString only called at once without a radix. css-utils-literal-only checks every argument and the CSS text of css, globalCss, keyframes and createGlobalStyle, tagged templates included, and the StyleX functions devup-ui compiles, and reports aliases of Math and toString read other than called",
+  "date": "2026-09-30T00:00:00.000Z"
+}
