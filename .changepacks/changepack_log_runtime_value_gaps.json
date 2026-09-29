@@ -1,0 +1,8 @@
+{
+  "changes": {
+    "bindings/devup-ui-wasm/package.json": "Patch",
+    "packages/eslint-plugin/package.json": "Patch"
+  },
+  "note": "Close the gaps left in reading changed objects and the build environment: an object a namespace import or another object holds that code changes is a build error where taken whole instead of silently composed as a class; CommonJS modules, changes to elements in for...of loops and forEach/map callbacks, and methods using this count as changes; export default, module.exports, Object.freeze, Array.from, Object.keys and element props (except ref) only read what they are given, so token objects stay static classes; notes tell a change apart from handing an object on. Values computed at build time never read Intl or locale methods (toLocaleString, toLocaleUpperCase, localeCompare), directly or through a variable or an import, and a value reading a statement that threw or a module the build cannot load is not computed instead of taking a branch on a stand-in. A module checking the environment at its top still gives its other exports, a top-level console call no longer stops a module or a .css.ts stylesheet, and a computed value only reads the modules its code reads. content, font-size-adjust and math-depth keep their numbers instead of scaling them to px. css-utils-literal-only reports a constant or an import the file changes",
+  "date": "2026-09-29T00:00:00.000Z"
+}
