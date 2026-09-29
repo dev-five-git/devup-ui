@@ -2,8 +2,12 @@ use phf::phf_set;
 
 /// Properties whose numbers are unitless in CSS, so they are kept as written
 /// instead of being scaled to `px`. Includes every property vanilla-extract
-/// leaves unitless, so numbers from `.css.ts` files keep their meaning.
+/// leaves unitless, so numbers from `.css.ts` files keep their meaning, and
+/// `content`, which never takes a length.
 pub(crate) static MAINTAIN_VALUE_PROPERTIES: phf::Set<&str> = phf_set! {
+    "content",
+    "font-size-adjust",
+    "math-depth",
     "opacity",
     "flex",
     "z-index",

@@ -272,6 +272,10 @@ pub fn execute_stylesheet(
         .runtime_limits_mut()
         .set_loop_iteration_limit(crate::module_loader::LOOP_ITERATION_LIMIT);
     register_vanilla_extract_apis(&mut context, &collector)?;
+    // A script of its own, so the stylesheet's lines keep their numbers
+    context
+        .eval(Source::from_bytes(crate::module_loader::CONSOLE))
+        .map_err(|e| format!("JS execution error: {e}"))?;
 
     context
         .eval(Source::from_bytes(run.as_bytes()))

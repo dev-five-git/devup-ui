@@ -1,0 +1,14 @@
+---
+source: libs/extractor/src/mutations.rs
+expression: "describe(\"const a = {};\nconst Object = { assign() {} };\nconst String = (x) => x;\nconst exports = {};\nObject.assign(a, {});\nString(a);\n(f.g)(a);\n(0, h)(a);\n(0, css)(a);\nexports.x = a;\nfunction inner() { const kept = { a }; }\")"
+---
+[
+    "a escapes [] into None: a }; }",
+    "a escapes [] into None: a);",
+    "a escapes [] into None: a);",
+    "a escapes [] into None: a);",
+    "a escapes [] into None: a);",
+    "a escapes [] into None: a, {});",
+    "a escapes [] into None: a;",
+    "exports changes 1: exports.x = a;",
+]

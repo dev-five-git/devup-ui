@@ -437,7 +437,7 @@ fn extract_source(
     );
     visitor.import_stylex(inlined.stylex_vars, inlined.stylex_themes);
     visitor.unknown_bindings(&inlined.unknown);
-    visitor.changed_bindings(inlined.changed.keys().cloned().collect());
+    visitor.changed_bindings(inlined.changed.clone());
     visitor.visit_program(&mut program);
     if let Some(error) = evaluation_error
         && imports_uncompiled(&program, &option.package)
@@ -581,34 +581,29 @@ fn changed_notes(
     filename: &str,
     source: &str,
     edits: &[&[import_alias_visit::Edit]],
-    changed: &FxHashMap<String, imported_constants::ChangedAt>,
+    changed: &imported_constants::Changed,
 ) -> String {
-    let mut names: Vec<_> = changed
-        .iter()
-        .filter(|(name, _)| {
-            message.match_indices(name.as_str()).any(|(index, _)| {
-                let is_part = |c: char| c.is_alphanumeric() || c == '_' || c == '$';
-                !message[..index].ends_with(is_part)
-                    && !message[index + name.len()..].starts_with(is_part)
-            })
-        })
-        .collect();
-    names.sort_unstable_by_key(|(name, _)| name.as_str());
     let mut notes = String::new();
-    for (name, at) in names {
-        let location = match at {
-            imported_constants::ChangedAt::Here(offset) => {
+    for change in changed.named_in(message) {
+        let location = match &change.site {
+            imported_constants::ChangeSite::Here(offset) => {
                 let offset = edits.iter().fold(*offset as usize, |offset, edits| {
                     import_alias_visit::source_offset(edits, offset)
                 });
                 locate(filename, source, offset)
             }
-            imported_constants::ChangedAt::Module(location) => location.to_string(),
+            imported_constants::ChangeSite::In(location) => location.clone(),
+        };
+        let what = if change.handed {
+            "is handed here to code that may change it"
+        } else {
+            "is changed here"
         };
         let _ = std::fmt::Write::write_fmt(
             &mut notes,
             format_args!(
-                "\n{location}: `{name}` is changed here, so the build cannot read it as a constant"
+                "\n{location}: `{}` {what}, so the build cannot read it as a constant",
+                change.name
             ),
         );
     }
@@ -18487,6 +18482,89 @@ register(grid.length);",
             })
             .collect();
         assert_debug_snapshot!(outputs);
+    }
+
+    const RUNTIME_MODULES: &[(&str, &str)] = &[
+        (
+            "/src/tokens.ts",
+            "export const colors = { primary: 'red' };\nexport default { colors };",
+        ),
+        (
+            "/src/frozen.ts",
+            "export const heading = { fontSize: 24 };\nexport const typography = Object.freeze({ heading });",
+        ),
+        (
+            "/src/changed.ts",
+            "export const base = { p: 4 };\nexport const colors = { primary: 'red' };\nexport const helper = () => 1;\nexport function dark() { base.p = 8; }",
+        ),
+        (
+            "/src/cjs.js",
+            "const colors = { primary: 'red' };\ncolors.primary = 'blue';\nmodule.exports = { colors };",
+        ),
+        (
+            "/src/cjs-plain.js",
+            "const colors = { primary: 'red' };\nconst spacing = { m: 2 };\nmodule.exports = { colors };\nexports.spacing = spacing;",
+        ),
+        (
+            "/src/env.ts",
+            "import { base } from './changed';\nconsole.log(base);\nexport const isBrowser = typeof window !== 'undefined';\nexport const mode = isBrowser ? 'dark' : 'light';\nexport const label = (1).toLocaleString();\nexport const format = (n) => n.toLocaleString();\nexport const double = (n) => n * 2;\nexport function triple(n) { return n * 3; }\nexport class Scale { static of(n) { return n * 4; } }",
+        ),
+    ];
+
+    #[test]
+    #[serial]
+    fn test_values_known_only_at_runtime() {
+        let cases = [
+            "import { colors } from './tokens';\nexport const a = <Box color={colors.primary} />;",
+            "import { heading } from './frozen';\nexport const a = <Box {...heading} />;",
+            "const theme = { text: { color: 'red' } };\nexport const App = () => <ThemeProvider theme={theme}><Box {...theme.text} /></ThemeProvider>;",
+            "const handle = { current: null, p: 1 };\nexport const App = () => <div ref={handle}><Box p={handle.p} /></div>;",
+            "import * as tokens from './changed';\nexport const a = css(tokens.base);\nexport const b = <Box {...tokens.base} />;\nexport const c = <Box color={tokens.colors.primary} />;\nexport const d = css(tokens[key]);\nexport const e = css(make() || tokens.base);\ntokens.helper();\ntokens.colors = null;",
+            "import * as tokens from './changed';\ntokens.colors.primary = 'blue';\nexport const a = <Box color={tokens.colors.primary} />;",
+            "import * as tokens from './changed';\nregister(tokens);\nexport const a = <Box m={tokens.helper} color={tokens.colors.primary} />;",
+            "import { base } from './changed';\nimport * as tokens from './changed';\nconst theme = { base };\nexport const a = css(theme.base, tokens.base, base);\nexport const b = <Box {...theme} />;\nexport const c = css(theme.missing);",
+            "import { double, triple, Scale, mode } from './env';\nexport const a = css({ w: double(2), h: triple(2), m: Scale.of(1) });\nexport const b = css({ color: mode });",
+            "import { label, format } from './env';\nexport const a = css({ content: label });\nexport const b = css({ content: format(1) });",
+            "const label = () => (1234.5).toLocaleString();\nconst LABEL = 'i'.toLocaleUpperCase();\nconst pick = () => LABEL;\nexport const a = css({ content: label() });\nexport const b = css({ content: pick() });\nexport const c = css({ w: window.innerWidth });\nexport const d = css({ content: new Intl.NumberFormat().format(1) });",
+            "import { colors } from './cjs';\nimport cjs, { colors as plain, spacing } from './cjs-plain';\nexport const a = <Box color={colors.primary} bg={plain.primary} m={spacing.m} />;",
+            "const list = [{ p: 1 }];\nfor (const item of list) item.p = 2;\nexport const a = <Box p={list[0].p} />;",
+            "const list = [{ p: 1 }];\nlist.forEach((item) => { item.p = 2; });\nexport const a = <Box p={list[0].p} />;",
+            "const store = { items: [1], add(x) { this.items.push(x); } };\nstore.add(2);\nexport const a = <Box p={store.items[0]} />;",
+            "const theme = { spacing: (n) => n * 4, colors: { primary: 'red' }, label: 'x' };\nconst gap = theme.spacing(2);\ntheme.label.custom();\nexport const a = <Box color={theme.colors.primary} />;",
+            "const sizes = [1, 2];\nconst copy = Array.from(sizes);\nexport const a = <Box p={sizes[0]} />;",
+            "const isBrowser = typeof window !== 'undefined';\nconst pick = () => (!isBrowser ? 'white' : 'black');\nexport const a = css({ color: pick() });",
+            "const parsed = JSON.parse('{bad');\nconst pick = () => (parsed ? 'a' : 'b');\nexport const a = css({ content: pick() });",
+            "import { isMobile } from 'unknown-package';\nconst pick = () => (isMobile ? 'a' : 'b');\nexport const a = css({ content: pick() });",
+            "export const a = css({ content: '1234.5', fontSizeAdjust: 0.5, mathDepth: 2 });",
+        ];
+        let outputs: Vec<String> = cases
+            .iter()
+            .map(|case| {
+                reset_class_map();
+                reset_file_map();
+                match extract_with_modules(
+                    "/src/App.tsx",
+                    &format!("import {{ Box, css, styled }} from '@devup-ui/react';\n{case}"),
+                    ExtractOption::default(),
+                    false,
+                    &memory_resolver(RUNTIME_MODULES),
+                ) {
+                    Ok(output) => format!("{:?}", ToBTreeSet::from(output)),
+                    Err(error) => format!("Error: {error}"),
+                }
+            })
+            .collect();
+        assert_debug_snapshot!(outputs);
+
+        reset_class_map();
+        reset_file_map();
+        let stylesheet = extract(
+            "/src/log.css.ts",
+            "import { style } from '@devup-ui/react';\nconsole.warn('loaded');\nexport const box = style({ color: 'red' });",
+            ExtractOption::default(),
+        )
+        .unwrap();
+        assert_eq!(stylesheet.styles.len(), 1);
     }
 
     #[test]

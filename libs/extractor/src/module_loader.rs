@@ -19,6 +19,13 @@ use crate::{ExtractOption, ModuleResolver, utils::is_vanilla_extract_file};
 /// The object the package's API is bound to while a stylesheet runs
 pub(crate) const PACKAGE_BINDING: &str = "__vanilla_extract__";
 
+/// What a module the build cannot load is bound to while values are computed
+const UNLOADED_BINDING: &str = "__unloaded__";
+
+/// A console whose calls do nothing, as what a module logs while it runs
+/// changes no value
+pub(crate) const CONSOLE: &str = "if (typeof console === \"undefined\") globalThis.console = new Proxy({}, { get: () => () => undefined });\n";
+
 /// Loop iterations an evaluation may run before it fails instead of hanging
 /// the build
 pub(crate) const LOOP_ITERATION_LIMIT: u64 = 10_000_000;
@@ -111,8 +118,9 @@ impl<'r> ModuleLoader<'r> {
     }
 
     /// The name of the exports object of `specifier`: in lenient mode the
-    /// style packages, and modules that cannot be loaded, are the stand-in
-    /// `PACKAGE_BINDING` holds
+    /// style packages are the stand-in `PACKAGE_BINDING` holds, and a module
+    /// that cannot be loaded one that throws when read, so no value is
+    /// computed from it
     fn module(&mut self, specifier: &str, importer: &str, direct: bool) -> Result<String, String> {
         if !self.lenient {
             return self.load(specifier, importer, direct);
@@ -125,7 +133,7 @@ impl<'r> ModuleLoader<'r> {
         }
         Ok(self
             .load(specifier, importer, direct)
-            .unwrap_or_else(|_| PACKAGE_BINDING.to_string()))
+            .unwrap_or_else(|_| UNLOADED_BINDING.to_string()))
     }
 
     fn keep_import(&mut self, specifier: &str) {
@@ -385,7 +393,12 @@ pub(crate) fn module_script(
     let mut body = String::with_capacity(script.len());
     let mut exports = Vec::new();
     let mut spreads = Vec::new();
-    for statement in &program.body {
+    let order = if loader.lenient {
+        environment_last(&program, semantic.scoping())
+    } else {
+        (0..program.body.len()).collect()
+    };
+    for statement in order.into_iter().map(|index| &program.body[index]) {
         match statement {
             Statement::ImportDeclaration(import) => {
                 let Some(module) = modules.get(&import.span.start) else {
@@ -476,6 +489,141 @@ pub(crate) fn module_script(
         commonjs,
     })
 }
+/// The order to run the top-level statements of `program` in: those reading
+/// what only the running page or process knows as they run, and those
+/// reading their bindings as they run, last. Reading such a value throws, so
+/// running them last leaves every other binding initialized, while theirs
+/// stay uninitialized and throw for whatever reads them
+fn environment_last(
+    program: &oxc_ast::ast::Program<'_>,
+    scoping: &oxc_semantic::Scoping,
+) -> Vec<usize> {
+    let reads: Vec<EagerReads> = program
+        .body
+        .iter()
+        .map(|statement| {
+            let mut reads = EagerReads {
+                scoping,
+                symbols: FxHashSet::default(),
+                environment: false,
+                depth: 0,
+            };
+            oxc_ast_visit::Visit::visit_statement(&mut reads, statement);
+            reads
+        })
+        .collect();
+    let declared: Vec<FxHashSet<SymbolId>> = program
+        .body
+        .iter()
+        .map(|statement| {
+            let mut declared = FxHashSet::default();
+            let declaration = match statement {
+                Statement::ExportDeclaration(export) => Some(&export.declaration),
+                statement => statement.as_declaration(),
+            };
+            match declaration {
+                Some(Declaration::VariableDeclaration(declaration)) => {
+                    for declarator in &declaration.declarations {
+                        declared.extend(
+                            declarator
+                                .id
+                                .get_binding_identifiers()
+                                .iter()
+                                .filter_map(|identifier| identifier.symbol_id.get()),
+                        );
+                    }
+                }
+                Some(declaration) => {
+                    declared.extend(declaration.id().and_then(|id| id.symbol_id.get()));
+                }
+                None => {}
+            }
+            declared
+        })
+        .collect();
+    let mut last: Vec<bool> = reads.iter().map(|reads| reads.environment).collect();
+    loop {
+        let moved: FxHashSet<SymbolId> = declared
+            .iter()
+            .zip(&last)
+            .filter(|(_, last)| **last)
+            .flat_map(|(declared, _)| declared.iter().copied())
+            .collect();
+        let mut changed = false;
+        for (index, reads) in reads.iter().enumerate() {
+            if !last[index] && !reads.symbols.is_disjoint(&moved) {
+                last[index] = true;
+                changed = true;
+            }
+        }
+        if !changed {
+            break;
+        }
+    }
+    let (early, late): (Vec<usize>, Vec<usize>) =
+        (0..program.body.len()).partition(|index| !last[*index]);
+    early.into_iter().chain(late).collect()
+}
+
+/// The top-level bindings a statement reads as it runs, outside the functions
+/// it declares, and whether it reads what only the running page or process
+/// knows then
+struct EagerReads<'s> {
+    scoping: &'s oxc_semantic::Scoping,
+    symbols: FxHashSet<SymbolId>,
+    environment: bool,
+    depth: usize,
+}
+
+impl<'a> oxc_ast_visit::Visit<'a> for EagerReads<'_> {
+    fn visit_identifier_reference(&mut self, identifier: &oxc_ast::ast::IdentifierReference<'a>) {
+        if self.depth > 0 {
+            return;
+        }
+        match identifier
+            .reference_id
+            .get()
+            .and_then(|reference| self.scoping.get_reference(reference).symbol_id())
+        {
+            Some(symbol) => {
+                self.symbols.insert(symbol);
+            }
+            None => {
+                self.environment |=
+                    crate::build_time_values::ENVIRONMENT.contains(&identifier.name.as_str());
+            }
+        }
+    }
+
+    fn visit_static_member_expression(
+        &mut self,
+        member: &oxc_ast::ast::StaticMemberExpression<'a>,
+    ) {
+        self.environment |= self.depth == 0
+            && crate::build_time_values::LOCALE_METHODS.contains(&member.property.name.as_str());
+        oxc_ast_visit::walk::walk_static_member_expression(self, member);
+    }
+
+    fn visit_function(
+        &mut self,
+        function: &oxc_ast::ast::Function<'a>,
+        flags: oxc_syntax::scope::ScopeFlags,
+    ) {
+        self.depth += 1;
+        oxc_ast_visit::walk::walk_function(self, function, flags);
+        self.depth -= 1;
+    }
+
+    fn visit_arrow_function_expression(
+        &mut self,
+        arrow: &oxc_ast::ast::ArrowFunctionExpression<'a>,
+    ) {
+        self.depth += 1;
+        oxc_ast_visit::walk::walk_arrow_function_expression(self, arrow);
+        self.depth -= 1;
+    }
+}
+
 fn export_name(name: &ModuleExportName<'_>) -> String {
     name.name().to_string()
 }

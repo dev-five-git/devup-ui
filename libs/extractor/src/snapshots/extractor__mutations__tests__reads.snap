@@ -1,0 +1,10 @@
+---
+source: libs/extractor/src/mutations.rs
+expression: "describe(\"const a = { x: 1, arrow: () => 1, plain() { return 1; }, nested() { return function () { return this; }; }, self() { return this; } };\nString(a.x); parseInt(a.x); structuredClone(a); Object.keys(a); Object.freeze(a); Object.hasOwn(a, 'x'); Object.getOwnPropertyNames(a); JSON.stringify(a); Math.max(a.x); console.log(a); Array.isArray(a);\ncss(a); css({ ...a, color: f(a) }); Devup.css(a); css.x`${a}`; css(1)(a); css({ w: a.self() });\n<Box {...a} p={f(a)} />; <Devup.Box>{a}</Devup.Box>; <Other value={a} />; <Other {...a} />; <Other>{a}</Other>;\nconst text = `${a.x}`; const sum = a.x + 1; const key = { [a.x]: 1 }; const b = { a: 1 }.a;\nif (x ? 1 : 2) {} (a ? 1 : 2); (a, 1); a; typeof a; void a;\na.x.toString(); a.join(','); [1][a.x]; o[a]; for (const k in a) {}\na.arrow(); a.plain(); a.nested(); a.self(); a[k](); a.missing();\nlet unset; const { y = a } = {};\nexport { a as b };\")"
+---
+[
+    "a calls []: a.missing();",
+    "a calls []: a.self(); a[k](); a.missing();",
+    "a calls []: a[k](); a.missing();",
+    "a escapes [] into None: a } = {};",
+]
