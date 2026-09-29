@@ -11,10 +11,6 @@ categories = ["development-tools", "wasm", "web-programming"]
 [lints]
 workspace = true
 
-[features]
-default = ["vanilla-extract"]
-vanilla-extract = ["dep:boa_engine"]
-
 [dependencies]
 oxc_parser = "0.151.0"
 oxc_syntax = "0.151.0"
@@ -31,7 +27,7 @@ phf = "0.14"
 strum = "0.28.0"
 strum_macros = "0.28.0"
 serde_json = "1.0"
-boa_engine = { version = "0.22", optional = true }
+boa_engine = "0.22"
 rustc-hash = "2"
 smallvec = "1"
 

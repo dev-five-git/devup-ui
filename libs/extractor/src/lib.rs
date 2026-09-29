@@ -8,7 +8,6 @@ mod gen_class_name;
 mod gen_style;
 mod import_alias_visit;
 mod imported_constants;
-#[cfg(feature = "vanilla-extract")]
 mod module_loader;
 mod prop_modify_utils;
 mod source_map;
@@ -16,10 +15,8 @@ mod stylex;
 mod tailwind;
 mod util_type;
 mod utils;
-#[cfg(feature = "vanilla-extract")]
 mod vanilla_extract;
 mod visit;
-pub use crate::build_time_values::has_build_time_values;
 use crate::extract_style::extract_style_value::ExtractStyleValue;
 use crate::visit::DevupVisitor;
 use css::file_map::{canonical, get_file_num_by_filename, is_global};
@@ -29,7 +26,6 @@ use oxc_ast_visit::VisitMut;
 use oxc_codegen::{Codegen, CodegenOptions};
 use oxc_parser::{Parser, ParserReturn};
 use oxc_span::SourceType;
-#[cfg(feature = "vanilla-extract")]
 use rustc_hash::FxHashMap;
 use rustc_hash::FxHashSet;
 use std::collections::{BTreeMap, HashMap};
@@ -322,12 +318,10 @@ fn extract_source(
     }
 
     let mut dependencies = std::collections::BTreeSet::new();
-    #[cfg(feature = "vanilla-extract")]
     let mut evaluation_error = None;
     // Step 3: Handle vanilla-extract style files (.css.ts, .css.js)
     // `processed_code` is Some only when vanilla-extract generation succeeded;
     // otherwise the untouched `transformed_code` is parsed directly (no copy).
-    #[cfg(feature = "vanilla-extract")]
     let processed_code: Option<String> = if utils::is_vanilla_extract_file(filename) {
         // Use transformed code (with imports already pointing to @devup-ui/react)
         match vanilla_extract::execute_stylesheet(&transformed_code, filename, &option, resolver) {
@@ -387,8 +381,6 @@ fn extract_source(
     } else {
         None
     };
-    #[cfg(not(feature = "vanilla-extract"))]
-    let processed_code: Option<String> = None;
     // For vanilla-extract files, if no styles were collected, return early
     if processed_code.as_deref() == Some("") {
         return Ok(ExtractOutput {
@@ -445,15 +437,13 @@ fn extract_source(
     visitor.import_stylex(inlined.stylex_vars, inlined.stylex_themes);
     visitor.unknown_bindings(&inlined.unknown);
     visitor.visit_program(&mut program);
-    #[cfg(feature = "vanilla-extract")]
     if let Some(error) = evaluation_error
         && imports_uncompiled(&program, &option.package)
     {
         return Err(error.into());
     }
-    // Only the full engine can run the code a value computes, or tell rules
-    // the module computes from a class it composes
-    #[cfg(feature = "vanilla-extract")]
+    // Run the code a value computes, or tell rules the module computes from a
+    // class it composes
     if (!visitor.errors.is_empty() || visitor.composes_unknown)
         && evaluated.is_none()
         && !utils::is_vanilla_extract_file(filename)
@@ -484,15 +474,7 @@ fn extract_source(
         .chain(earlier_edits.iter().copied())
         .collect();
     if !visitor.errors.is_empty() {
-        #[allow(unused_mut)]
-        let mut message = located_errors(filename, source, &edits, visitor.errors);
-        #[cfg(not(feature = "vanilla-extract"))]
-        if has_build_time_values(filename, code, &option, resolver) {
-            message.push_str(
-                "\nThe full engine (`@devup-ui/wasm`) runs the code these values compute at build time",
-            );
-        }
-        return Err(message.into());
+        return Err(located_errors(filename, source, &edits, visitor.errors).into());
     }
     let codegen_options = if source_map {
         CodegenOptions {
@@ -542,7 +524,6 @@ fn main_css_path(css_dir: &str) -> String {
 /// shared across routes ship once.
 /// Whether `program` still imports a value from `package` that extraction did
 /// not compile away
-#[cfg(feature = "vanilla-extract")]
 fn imports_uncompiled(program: &oxc_ast::ast::Program<'_>, package: &str) -> bool {
     program.body.iter().any(|statement| {
         matches!(statement, oxc_ast::ast::Statement::ImportDeclaration(import)
@@ -608,7 +589,6 @@ fn resolve_css_target(filename: &str, option: &ExtractOption) -> (String, bool, 
 
 /// Extract class names from generated code for specific style names
 /// Used for two-pass vanilla-extract processing to resolve selector references
-#[cfg(feature = "vanilla-extract")]
 fn extract_class_map_from_code(
     filename: &str,
     partial_code: &str,
@@ -714,6 +694,7 @@ mod tests {
     use std::collections::BTreeSet;
 
     use super::*;
+    use crate::build_time_values::has_build_time_values;
     use css::class_map::reset_class_map;
     use css::file_map::reset_file_map;
     use insta::assert_debug_snapshot;
@@ -19418,7 +19399,7 @@ export const b = <Box p={Math.max(1, W)} m={Math.E > 2 ? 1 : 2} />;"
             .unwrap_or_default();
             assert!(message.contains("cannot use"), "{code}: {message}");
         }
-        // Folded only when exact; the full engine computes the rest
+        // Folded only when exact; running the module computes the rest
         reset_class_map();
         reset_file_map();
         let computed = extract(

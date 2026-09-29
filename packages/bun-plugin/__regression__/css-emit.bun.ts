@@ -69,7 +69,7 @@ await import(cssPath)
   },
 )
 
-it('emits vanilla-extract styles through the full WASM engine', () => {
+it('emits vanilla-extract styles through the WASM engine', () => {
   const cwd = mkdtempSync(join(tmpdir(), 'devup-css-emit-'))
   try {
     writeFileSync(join(cwd, 'bunfig.toml'), '')
