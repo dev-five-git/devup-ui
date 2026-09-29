@@ -3,6 +3,6 @@
     "bindings/devup-ui-wasm/package.json": "Patch",
     "packages/next-plugin/package.json": "Patch"
   },
-  "note": "Numbers in vanilla-extract and StyleX styles keep their library's meaning instead of Devup UI's spacing scale: vanilla-extract styles add `px` in `.css.ts` files and in `style()`, `globalStyle()` and `keyframes()` calls inside ordinary modules, StyleX adds `px`/`ms` to static values and to numbers passed to dynamic styles, and unitless properties such as `columnCount`, `strokeWidth`, `orphans` or `zoom` keep a bare number everywhere. The Next.js plugin now runs every `.css.ts` module on the full engine instead of a separate static fast path, so development and production builds produce the same output",
+  "note": "Numbers in vanilla-extract and StyleX styles keep their library's meaning instead of Devup UI's spacing scale: vanilla-extract styles add `px` in `.css.ts` files and in `style()`, `globalStyle()` and `keyframes()` calls inside ordinary modules, StyleX adds `px`/`ms` to static values and to numbers passed to dynamic styles, and unitless properties such as `columnCount`, `strokeWidth`, `orphans` or `zoom` keep a bare number everywhere. The Next.js plugin now evaluates every `.css.ts` module instead of taking a separate static fast path, so development and production builds produce the same output",
   "date": "2026-09-27T00:00:00.000Z"
 }
