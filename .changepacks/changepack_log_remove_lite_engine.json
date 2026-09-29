@@ -1,0 +1,8 @@
+{
+  "changes": {
+    "bindings/devup-ui-wasm/package.json": "Patch",
+    "packages/next-plugin/package.json": "Patch"
+  },
+  "note": "Remove the lite engine: `@devup-ui/wasm` ships one build that evaluates stylesheets and computed style values, the `@devup-ui/wasm/lite` export is gone, and the Next.js plugin always loads `@devup-ui/wasm` instead of choosing an engine from the project's files",
+  "date": "2026-09-29T00:00:00.000Z"
+}
