@@ -18449,7 +18449,7 @@ register(grid.length);",
         let cases = [
             "const base = { p: 4 };\nbase.p = 8;\nexport const a = css(base);",
             "const base = { p: 4 };\nObject.assign(base, { p: 8 });\nexport const a = <Box p={base.p} />;\nexport const b = css({ p: base.p });",
-            "const base = { p: 4 };\nregister(base);\nexport const a = <Box {...base} />;\nexport const b = styled.div(base);\nexport const c = css(x ? base : null);\nexport const d = css(x ? null : [y && base]);",
+            "const base = { p: 4 };\nregister(base);\nexport const a = <Box {...base} />;\nexport const b = styled.div(base);\nexport const c = css(x ? base : null);\nexport const d = css(x ? null : [y && base]);\nexport const e = css(...[base]);",
             "const base = { p: 4 };\nbase.p = 8;\nconst baseline = x;\nexport const a = <Box w={base.p} />;\nexport const b = css({ p: baseline });",
             "const colors = { primary: 'red' };\nconst hover = darken(colors.primary);\nexport const a = <Box color={colors.primary} />;",
             "const colors = { primary: 'red' };\nexport const theme = { colors };\nexport const a = <Box color={colors.primary} />;",

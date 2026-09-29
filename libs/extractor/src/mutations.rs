@@ -166,13 +166,18 @@ impl Context<'_, '_> {
                     .then_some(Use::Changes(at))
             }
             AstKind::CallExpression(call) => {
-                let first = call.arguments.first().map(GetSpan::span) == Some(span);
-                match self.global_function(&call.callee) {
-                    Some(("Object", "assign" | "defineProperty" | "defineProperties" | "setPrototypeOf"))
-                        if first =>
-                    {
-                        changes(&path).or(Some(Use::Changes(at)))
-                    }
+                let function = self.global_function(&call.callee);
+                let changes_first = matches!(
+                    function,
+                    Some((
+                        "Object",
+                        "assign" | "defineProperty" | "defineProperties" | "setPrototypeOf"
+                    ))
+                );
+                if changes_first && call.arguments.first().map(GetSpan::span) == Some(span) {
+                    return Some(Use::Changes(at));
+                }
+                match function {
                     Some(("Object", "assign")) => {
                         path.push(None);
                         self.escapes(parent, at, path)
