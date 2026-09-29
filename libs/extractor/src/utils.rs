@@ -733,20 +733,6 @@ pub(super) fn style_arguments<'a>(
     })
 }
 
-/// Whether `css()` or `styled()` joins as a class a part of `arguments` that
-/// reads a binding of `bindings`, which may hold rules the module computes
-pub(super) fn composes_binding(
-    arguments: &[Argument<'_>],
-    unknown: &crate::imported_constants::Unknown,
-) -> bool {
-    !unknown.is_empty()
-        && arguments.iter().any(|argument| {
-            argument
-                .as_expression()
-                .is_some_and(|expression| reads_unknown(expression, unknown))
-        })
-}
-
 /// Whether a part `css()` or `styled()` joins, or an object a JSX spread
 /// gives, reads what `unknown` holds
 pub(super) fn reads_unknown(

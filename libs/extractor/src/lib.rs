@@ -475,6 +475,7 @@ fn extract_source(
     let edits: Vec<&[import_alias_visit::Edit]> = std::iter::once(alias_edits.as_slice())
         .chain(earlier_edits.iter().copied())
         .collect();
+    visitor.errors.append(&mut visitor.unknown_parts);
     if !visitor.errors.is_empty() {
         let mut message = located_errors(filename, source, &edits, visitor.errors);
         message += &changed_notes(&message, filename, source, &edits, &inlined.changed);
@@ -18668,6 +18669,7 @@ const merged = { ...base, m: 1 };
 const partial = { ...unknown, m: 1 };
 const proto = { __proto__: null, a: 1 };
 const getter = { get a() { return 1; } };
+export const withGetter = <Box bottom={getter.a} />;
 const NONE = null;
 const MEDIA = '@media (min-width: 1px)';
 const keyed = { [MEDIA]: { color: 'green' } };
@@ -18690,7 +18692,7 @@ export const j = styled.div.attrs({ role: 'button' })(base);
 export const k = stylex.create({ x: sx });
 globalCss({ body: base });
 export const l = keyframes({ from: hover });
-export const m = css({ right: proto.a, bottom: getter.a, zIndex: partial.m, order: Level.Computed, flexGrow: Level.Last });",
+export const m = css({ right: proto.a, zIndex: partial.m, order: Level.Computed, flexGrow: Level.Last });",
             ExtractOption::default(),
             false,
             &memory_resolver(modules),
@@ -18890,7 +18892,8 @@ const IDX = space[1];
 const LABEL = `x${NONE}`;
 const bad = [...'ab'];
 export function triple(n: number) { return n * 3; }
-export const a = css({ w: W, h: triple(2), m: IDX, content: LABEL, p: bad });
+export const a = css({ h: triple(2), m: IDX, content: LABEL, p: bad });
+export const w = <Box w={W} />;
 export function b() { return <this.Box p={IDX} />; }",
             ExtractOption::default(),
             false,
@@ -18899,9 +18902,10 @@ export function b() { return <this.Box p={IDX} />; }",
         .unwrap();
         assert_eq!(output.dependencies, ["/src/sx.ts"]);
         let styles = format!("{:?}", ToBTreeSet::from(output).styles);
-        for value in ["3px", "24px", "16px", "xnull"] {
+        for value in ["24px", "16px", "xnull", "identifier: \"W\""] {
             assert!(styles.contains(value), "{value}\n{styles}");
         }
+        assert!(!styles.contains("3px"), "{styles}");
     }
 
     #[test]
@@ -18912,7 +18916,7 @@ export function b() { return <this.Box p={IDX} />; }",
         let modules: &[(&str, &str)] = &[
             (
                 "/src/styles.ts",
-                "import { css, styled } from '@devup-ui/react';\nexport const card = css({ p: 1 });\nexport const Card = styled.div({ p: 2 });\nexport const Linked = styled('a')({ p: 3 });\nexport const tagged = css`color: red;`;\nexport const make = (n: number) => ({ m: n });\nexport const computed = make(3);\nexport const once = (() => ({ m: 6 }))();\nexport const name = String('named');\nexport const nested = { x: make(9), known: 'k' };\nexport const indexed = [make][0](10);\nexport const deep = { inner: { x: make(11) } };",
+                "import { css, styled } from '@devup-ui/react';\nexport const card = css({ p: 1 });\nexport const Card = styled.div({ p: 2 });\nexport const Linked = styled('a')({ p: 3 });\nexport const tagged = css`color: red;`;\nexport const make = (n: number) => ({ m: n });\nexport const computed = make(3);\nexport const rules = { m: 7 };\nexport const nested = { x: make(9), known: 'k' };",
             ),
             (
                 "/src/emotion.ts",
@@ -18924,9 +18928,12 @@ export function b() { return <this.Box p={IDX} />; }",
             r"import { css, styled } from '@devup-ui/react';
 import * as Devup from '@devup-ui/react';
 import * as tokens from './styles';
-import { card, computed, name, make } from './styles';
+import { card, rules } from './styles';
 import { emotionClass } from './emotion';
+const make = (n: number) => ({ m: n });
 const local = make(2);
+const computed = make(3);
+const name = String('named');
 const shared = { rules: make(4), fixed: { p: 5 } };
 export const a = css(local);
 export const b = css(card, computed);
@@ -18935,13 +18942,11 @@ export const d = styled.div(local);
 export const e = styled('span')(computed);
 export const f = styled.p.attrs({ role: 'note' })(shared.rules);
 export const g = (on) => css(on ? local : card, on || computed, on && local, [local, shared.fixed]);
-export const h = css(tokens.computed);
+export const h = css(rules, tokens.rules);
 export const i = Devup.css(local);
-export const j = (key) => css(shared[key], tokens.once);
-export const k = css(tokens.nested.x, tokens.nested.known, tokens.indexed);
+export const k = css(tokens.nested.known, tokens.card);
 export const l = css(emotionClass, { m: 1 });
-export const n = <Devup.Layout.Box {...local} />;
-export const o = css(tokens.make(12), tokens.deep.inner.x, tokens.nested.known.length);",
+export const n = <Devup.Layout.Box {...local} />;",
             ExtractOption {
                 import_aliases: HashMap::from([(
                     "@emotion/react".to_string(),
@@ -18955,6 +18960,31 @@ export const o = css(tokens.make(12), tokens.deep.inner.x, tokens.nested.known.l
         .unwrap();
         assert_eq!(output.dependencies, ["/src/emotion.ts", "/src/styles.ts"]);
         assert_debug_snapshot!(ToBTreeSet::from(output));
+
+        for (code, part) in [
+            ("css(tokens.computed)", "tokens.computed"),
+            ("css(tokens.nested.x, { m: 1 })", "tokens.nested.x"),
+            ("css(tokens.make(12))", "tokens.make(12)"),
+            ("styled.div(computed)", "computed"),
+            ("(key) => css(shared[key])", "shared[key]"),
+        ] {
+            reset_class_map();
+            reset_file_map();
+            let message = extract_with_modules(
+                "/src/App.tsx",
+                &format!("import {{ css, styled }} from '@devup-ui/react';\nimport * as tokens from './styles';\nimport {{ computed }} from './styles';\nconst shared = {{ rules: tokens.make(4) }};\nexport const a = {code};"),
+                ExtractOption::default(),
+                false,
+                &memory_resolver(modules),
+            )
+            .err()
+            .map(|error| error.to_string())
+            .unwrap_or_default();
+            assert!(
+                message.contains(&format!("cannot use `{part}`")),
+                "{code}\n{message}"
+            );
+        }
     }
 
     #[test]
@@ -19106,7 +19136,10 @@ export const k = keyframes({ from: { opacity: DARK ? 0 : 1 } });",
             "/src/App.tsx",
             r"import { Box, css, styled } from '@devup-ui/react';
 import * as Devup from '@devup-ui/react';
-import { make, KEY, darken, PRIMARY } from './tokens';
+import { PRIMARY } from './tokens';
+const make = (n: number) => ({ m: n });
+const KEY = ['co', 'lor'].join('');
+function darken(amount: number, color: string) { return color === PRIMARY ? '#112233' : color; }
 const card = make(2);
 const hover = make(3);
 const parts = [make(4), { p: 1 }];
@@ -19127,6 +19160,20 @@ export const j = (register) => <Box {...register('email')} />;",
         )
         .unwrap();
         assert_debug_snapshot!(ToBTreeSet::from(output));
+
+        reset_class_map();
+        reset_file_map();
+        let imported = extract_with_modules(
+            "/src/App.tsx",
+            r"import { Box } from '@devup-ui/react';
+import { make } from './tokens';
+export const a = <Box {...make(5)} />;",
+            ExtractOption::default(),
+            false,
+            &memory_resolver(modules),
+        )
+        .unwrap();
+        assert!(imported.code.contains(")(make(5))"), "{}", imported.code);
     }
 
     #[test]
@@ -19283,7 +19330,7 @@ export const after = 42;",
         let modules: &[(&str, &str)] = &[
             (
                 "/src/color.ts",
-                "export const PRIMARY = '#336699';\nexport function darken(amount: number, color: string): string { return color === PRIMARY ? `darker(${amount})` : color; }\nexport const DARK = darken(0.5, PRIMARY);\nexport const hover = { color: darken(0.6, PRIMARY) };",
+                "export const PRIMARY = '#336699';\nexport const SPACE = [4, 8];\nexport function darken(amount: number, color: string): string { return color === PRIMARY ? `darker(${amount})` : color; }\nexport const DARK = darken(0.5, PRIMARY);\nexport const hover = { color: darken(0.6, PRIMARY) };",
             ),
             (
                 "/src/throws.ts",
@@ -19310,24 +19357,25 @@ export const after = 42;",
             "/src/App.tsx",
             r"import { Box, css, keyframes, globalCss } from '@devup-ui/react';
 import * as stylex from '@stylexjs/stylex';
-import { darken, PRIMARY, DARK, hover } from './color';
-import { card, TOKEN } from './styles';
+import { PRIMARY, SPACE } from './color';
+import { card } from './styles';
 import { BEFORE } from './fails';
 export const SIZE = 4;
 export default function twice(n: number) { return n * 2; }
-class Scale { constructor(public n: number) {} px() { return `${this.n}px`; } }
 enum Level { Low = 1, High = twice(2) }
+function darken(amount: number, color: string): string { return color === PRIMARY ? `darker(${amount})` : color; }
 const LIGHT = darken(0.2, PRIMARY);
 const color = darken(0.3, PRIMARY);
 const make = (size: number) => ({ p: size, _hover: { color: LIGHT } });
-export const a = css({ color: darken(0.1, PRIMARY), width: twice(SIZE), margin: new Scale(3).px(), height: [1, 2].map(twice)[1], top: -twice(1) });
+const label = (text: string) => text.toUpperCase().padStart(4, '-');
+export const a = css({ color: darken(0.1, PRIMARY), width: twice(SIZE), height: [1, 2].map(twice)[1], top: -twice(1), margin: SPACE[1] * 2, content: JSON.stringify(label('a')) });
 export const b = keyframes({ from: { opacity: twice(0.25) } });
-globalCss({ body: { color: DARK } });
+globalCss({ body: { color: LIGHT } });
 const styles = stylex.create({ base: { color: LIGHT } });
 export const c = <Box color={darken(0.4, PRIMARY)} {...stylex.props(styles.base)} />;
-export const d = css({ color, borderColor: DARK, _hover: hover, ...make(2), [`@media (min-width: ${twice(300)}px)`]: { m: 1 }, zIndex: Level.High, outlineColor: BEFORE });
-export const e = (dark: boolean) => css({ color: dark ? DARK : LIGHT, bg: dark && LIGHT, fill: [LIGHT, ...[DARK]][1] });
-export const f = css(card, { p: TOKEN });",
+export const d = css({ color, ...make(2), [`@media (min-width: ${twice(300)}px)`]: { m: 1 }, zIndex: Level.High, outlineColor: BEFORE });
+export const e = (dark: boolean) => css({ color: dark ? LIGHT : PRIMARY, bg: dark && LIGHT, fill: [LIGHT, ...[PRIMARY]][1] });
+export const f = css(card, { p: String(SIZE) + 'px' });",
             option,
             false,
             &resolver,
@@ -19369,19 +19417,95 @@ export const f = css(card, { p: TOKEN });",
                 "`css()` cannot use `missing()`",
             ),
             (
-                "import { AFTER } from './fails';\nexport const a = css({ color: AFTER, ...(() => ({ get p() { return 1; } }))() });",
+                "import { AFTER } from './fails';\nexport const a = css({ color: AFTER });",
                 "`css()` cannot use `AFTER`",
+            ),
+            (
+                "export const a = css({ ...(() => ({ get p() { return 1; } }))() });",
+                "`css()` cannot use `(() =>",
             ),
             (
                 "export const a = css({ ...(() => ({ p: undefined }))(), m: Object.create({ x: 1 }) });",
                 "`css()` cannot use `Object.create(",
+            ),
+            (
+                "import { darken } from 'polished';\nexport const a = css({ color: darken(0.1, 'red') });",
+                "`css()` cannot use `darken(.1,`red`)`",
+            ),
+            (
+                "import { darken } from './color';\nexport const a = css({ color: darken(0.1, 'red') });",
+                "`css()` cannot use `darken(.1,`red`)`",
+            ),
+            (
+                "import { DARK, hover } from './color';\nexport const a = css({ color: DARK });\nexport const b = css({ _hover: hover });",
+                "`css()` cannot use `DARK`",
+            ),
+            (
+                "class S { px() { return '1px'; } }\nexport const a = css({ width: new S().px() });",
+                "`css()` cannot use `new S().px()`",
+            ),
+            (
+                "const plain = (text) => text.replace(/-/g, '');\nexport const a = css({ content: plain('a-b') });",
+                "`css()` cannot use `plain(`a-b`)`",
+            ),
+            (
+                "const LABEL = 'i'.toLocaleUpperCase();\nconst pick = () => LABEL;\nexport const a = css({ content: pick() });",
+                "`css()` cannot use `pick()`",
+            ),
+            (
+                "const fold = (text) => text.normalize('NFD');\nexport const a = css({ content: fold('a') });",
+                "`css()` cannot use `fold(`a`)`",
+            ),
+            (
+                "const W = typeof IntersectionObserver === 'undefined' ? 10 : 20;\nexport const a = css({ width: W });",
+                "`css()` cannot use `W`",
+            ),
+            (
+                "const safe = () => { try { return 1; } catch { return 2; } };\nexport const a = css({ width: safe() });",
+                "`css()` cannot use `safe()`",
+            ),
+            (
+                "const root = () => 2 ** 0.5;\nexport const a = css({ width: root() });",
+                "`css()` cannot use `root()`",
+            ),
+            (
+                "const wave = () => Math.sin(1);\nexport const a = css({ opacity: wave() });",
+                "`css()` cannot use `wave()`",
+            ),
+            (
+                "const hex = () => (255).toString(16);\nexport const a = css({ color: '#' + hex() });",
+                "`css()` cannot use `",
+            ),
+            (
+                "const node = () => <div />;\nexport const a = css({ content: node() });",
+                "`css()` cannot use `node()`",
+            ),
+            (
+                "const later = async () => 1;\nexport const a = css({ width: later() });",
+                "`css()` cannot use `later()`",
+            ),
+            (
+                "const box = { n: 1 };\nconst bump = () => { box.n = 2; return box.n; };\nexport const a = css({ width: bump() });",
+                "`css()` cannot use `bump()`",
+            ),
+            (
+                "const pick = { a: () => 1 };\nconst key = 'a';\nexport const a = css({ width: pick[key]() });",
+                "`css()` cannot use `pick[`a`]()`",
+            ),
+            (
+                "const read = { get a() { return 1; } };\nexport const a = css({ width: read.a });",
+                "`css()` cannot use `read.a`",
+            ),
+            (
+                "import { make } from './shapes';\nconst local = make(2);\nexport const a = css(local);\nexport const b = styled.div(local);",
+                "`css()` cannot use `local`",
             ),
         ] {
             reset_class_map();
             reset_file_map();
             let message = extract_with_modules(
                 "/src/App.tsx",
-                &format!("import {{ css }} from '@devup-ui/react';\n{code}"),
+                &format!("import {{ css, styled }} from '@devup-ui/react';\n{code}"),
                 ExtractOption::default(),
                 false,
                 &resolver,
@@ -19391,14 +19515,29 @@ export const f = css(card, { p: TOKEN });",
             .unwrap_or_default();
             assert!(message.contains(error), "{code}\n{message}");
         }
+        reset_class_map();
+        reset_file_map();
+        let switched = extract_with_modules(
+            "/src/App.tsx",
+            "import { css } from '@devup-ui/react';\nconst hasIO = typeof IntersectionObserver !== 'undefined';\nexport const a = css({ content: hasIO ? 'a' : 'b' });",
+            ExtractOption::default(),
+            false,
+            &resolver,
+        )
+        .unwrap();
+        assert!(switched.code.contains("hasIO ?"), "{}", switched.code);
         let option = ExtractOption::default();
         for (code, computes) in [
             (
                 "import { css } from '@devup-ui/react';\nimport { darken } from 'polished';\ncss({ color: darken(0.1, 'red') });",
-                true,
+                false,
             ),
             (
                 "import { css } from '@devup-ui/react';\nimport { DARK } from './color';\ncss({ color: DARK });",
+                false,
+            ),
+            (
+                "import { css } from '@devup-ui/react';\nimport { PRIMARY, SPACE } from './color';\nconst f = (n) => `${PRIMARY}${n}`;\ncss({ color: f(SPACE[0]) });",
                 true,
             ),
             (
@@ -19439,7 +19578,7 @@ export const f = css(card, { p: TOKEN });",
             ),
             (
                 "import { css } from '@devup-ui/react';\nimport * as styles from './styles';\ncss(styles.TOKEN);",
-                true,
+                false,
             ),
             (
                 "import { Box } from '@devup-ui/react';\nconst make = (n) => ({ m: n });\nconst card = make(2);\n<Box {...card} />;",
@@ -19447,6 +19586,10 @@ export const f = css(card, { p: TOKEN });",
             ),
             (
                 "import { css } from '@devup-ui/react';\nimport { darken } from './color';\ncss(`color: ${darken(0.1, 'red')};`);",
+                false,
+            ),
+            (
+                "import { css } from '@devup-ui/react';\nconst darken = (amount, color) => color;\ncss(`color: ${darken(0.1, 'red')};`);",
                 true,
             ),
             ("import { css } from '@devup-ui/react';\ncss({", false),
@@ -19469,6 +19612,120 @@ export const f = css(card, { p: TOKEN });",
             },
             None,
         ));
+    }
+
+    #[test]
+    #[serial]
+    fn test_strict_build_time_reads() {
+        let option = ExtractOption::default();
+        for (code, computes) in [
+            (
+                "import * as Devup from '@devup-ui/react';\nconst make = (n) => ({ m: n });\nconst local = make(2);\nDevup.css(local);",
+                true,
+            ),
+            (
+                "import { styled } from '@devup-ui/react';\nconst make = (n) => ({ m: n });\nstyled.div({ p: 1, _hover: make(2) });",
+                true,
+            ),
+            (
+                "import { css } from '@devup-ui/react';\nconst fresh = () => ({ n: 1 });\nconst f = () => { const o = { a: { n: 1 } }; o.a.n++; o['a'].n = 2; fresh().n = 3; return o.a.n; };\ncss({ w: f() });",
+                true,
+            ),
+            (
+                "import { css } from '@devup-ui/react';\nconst box = { n: 1 };\nconst bump = () => { box.n++; return 1; };\ncss({ w: bump() });",
+                false,
+            ),
+            (
+                "import { css } from '@devup-ui/react';\nconst { normalize } = 'a';\nconst f = () => normalize;\ncss({ w: f() });",
+                false,
+            ),
+            (
+                "import { css } from '@devup-ui/react';\nconst o = { m() { return super.toString(); } };\nconst f = () => o.m();\ncss({ w: f() });",
+                false,
+            ),
+            (
+                "import { css } from '@devup-ui/react';\nconst f = () => class {};\ncss({ w: f() });",
+                false,
+            ),
+            (
+                "import { css } from '@devup-ui/react';\nfunction* g() { yield 1; }\nconst f = () => g();\ncss({ w: f() });",
+                false,
+            ),
+            (
+                "import { css } from '@devup-ui/react';\nconst f = () => import('./x');\ncss({ w: f() });",
+                false,
+            ),
+            (
+                "import { css } from '@devup-ui/react';\nconst f = () => <></>;\ncss({ w: f() });",
+                false,
+            ),
+        ] {
+            assert_eq!(
+                has_build_time_values("/src/a.tsx", code, &option, None),
+                computes,
+                "{code}"
+            );
+        }
+
+        let modules: &[(&str, &str)] = &[
+            (
+                "/src/t.ts",
+                "export const T = { a: null, b: true, c: undefined, d: { e: 3 } };",
+            ),
+            ("/src/cjs.js", "exports.SIZE = 5;"),
+        ];
+        let resolver = memory_resolver(modules);
+        reset_class_map();
+        reset_file_map();
+        let output = extract_with_modules(
+            "/src/App.tsx",
+            r"import { Box, css, styled } from '@devup-ui/react';
+import { T } from './t';
+import { SIZE } from './cjs';
+const ON = true;
+const U = undefined;
+const N = null;
+const OBJ = { a: 1 };
+const p = 4;
+const f = () => (T.a === null && T.b && T.c === undefined ? T.d.e : 0);
+const g = () => SIZE;
+export const a = css({ w: f(), h: g(), m: g() });
+export const b = css({ content: `${ON}-${U}`, top: U ? 1 : 2, left: N ? 1 : 2, right: OBJ ? 1 : 2, opacity: ON, p });
+export const c = styled('a')({ p: 1 });
+export const d = <Box transitionDuration={300} animationDelay={0.5} counterReset={2} />;",
+            ExtractOption::default(),
+            false,
+            &resolver,
+        )
+        .unwrap();
+        let styles = format!("{:?}", output.styles);
+        for value in [
+            "\"12px\"",
+            "\"20px\"",
+            "\"true-undefined\"",
+            "\"8px\"",
+            "\"4px\"",
+            "\"300ms\"",
+            "\".5ms\"",
+        ] {
+            assert!(styles.contains(value), "{value}\n{styles}");
+        }
+        assert!(
+            styles.contains("property: \"counter-reset\", value: \"2\""),
+            "{styles}"
+        );
+
+        reset_class_map();
+        reset_file_map();
+        let message = extract(
+            "test.tsx",
+            "import { css } from '@devup-ui/react';\nconst pick = () => 1;\nexport const a = css(pick());",
+            ExtractOption::default(),
+        )
+        .err()
+        .map(|error| error.to_string())
+        .unwrap_or_default();
+        assert!(message.contains("cannot use `pick()`"), "{message}");
     }
 
     #[test]
@@ -19512,7 +19769,7 @@ export default class {}",
             &option,
             None,
         ));
-        assert!(has_build_time_values(
+        assert!(!has_build_time_values(
             "a.tsx",
             "import { css } from '@devup-ui/react';\nexport default class Theme { static size() { return 1; } }\ncss({ w: Theme.size() });",
             &option,
@@ -19581,6 +19838,9 @@ export const b = <Box p={Math.max(1, W)} m={Math.E > 2 ? 1 : 2} />;"
             "css({ width: Math.sqrt(-1) })",
             "css({ width: Math.NOPE })",
             "css({ width: Math.max(...list) })",
+            "css({ width: Math.pow(2, 0.5) })",
+            "css({ width: Math.pow(2, 99) })",
+            "css({ width: Math.pow(10, 17) })",
         ] {
             reset_class_map();
             reset_file_map();
@@ -19594,24 +19854,17 @@ export const b = <Box p={Math.max(1, W)} m={Math.E > 2 ? 1 : 2} />;"
             .unwrap_or_default();
             assert!(message.contains("cannot use"), "{code}: {message}");
         }
-        // Folded only when exact; running the module computes the rest
+        // An exact function over what folding cannot read runs at build time
         reset_class_map();
         reset_file_map();
         let computed = extract(
             "test.tsx",
-            "import { css } from '@devup-ui/react';\nexport const a = css({ width: Math.pow(2, 0.5), height: Math.pow(2, 99), top: Math.max('1', 2), left: Math.pow(10, 17) });",
+            "import { css } from '@devup-ui/react';\nexport const a = css({ top: Math.max('1', 2) });",
             ExtractOption::default(),
         )
         .unwrap();
         let styles = format!("{:?}", computed.styles);
-        for value in [
-            "5.656854249492381px",
-            "2535301200456459000000000000000px",
-            "8px",
-            "400000000000000000px",
-        ] {
-            assert!(styles.contains(value), "{value}: {styles}");
-        }
+        assert!(styles.contains("8px"), "{styles}");
         reset_class_map();
         reset_file_map();
         assert!(

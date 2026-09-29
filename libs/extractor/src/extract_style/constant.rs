@@ -2,10 +2,13 @@ use phf::phf_set;
 
 /// Properties whose numbers are unitless in CSS, so they are kept as written
 /// instead of being scaled to `px`. Includes every property vanilla-extract
-/// leaves unitless, so numbers from `.css.ts` files keep their meaning, and
-/// `content`, which never takes a length.
+/// leaves unitless, so numbers from `.css.ts` files keep their meaning,
+/// `content`, which never takes a length, and the counters.
 pub(crate) static MAINTAIN_VALUE_PROPERTIES: phf::Set<&str> = phf_set! {
     "content",
+    "counter-increment",
+    "counter-reset",
+    "counter-set",
     "font-size-adjust",
     "math-depth",
     "opacity",
@@ -57,4 +60,12 @@ pub(crate) static MAINTAIN_VALUE_PROPERTIES: phf::Set<&str> = phf_set! {
     "stroke-miterlimit",
     "stroke-opacity",
     "stroke-width"
+};
+
+/// Properties taking a time, whose numbers are milliseconds
+pub(crate) static TIME_PROPERTIES: phf::Set<&str> = phf_set! {
+    "transition-duration",
+    "transition-delay",
+    "animation-duration",
+    "animation-delay",
 };

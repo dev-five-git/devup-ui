@@ -29,6 +29,11 @@ enum Constant {
     String(String),
     Number(f64),
     Null,
+    Bool(bool),
+    Undefined,
+    /// A function an object literal holds: styles only call it, which only
+    /// running the module does
+    Function,
     /// The properties known of an object, a module namespace or an enum
     Object(Rc<FxHashMap<String, Constant>>),
     /// An object literal every property of which is known, in source order
@@ -49,6 +54,44 @@ impl Constant {
     /// Whether code can change what it holds
     const fn is_mutable(&self) -> bool {
         matches!(self, Self::Object(_) | Self::Record(_) | Self::Array(_))
+    }
+
+    /// Whether this value or one it holds is a function
+    fn has_function(&self) -> bool {
+        match self {
+            Self::Function => true,
+            Self::Object(object) => object.values().any(Self::has_function),
+            Self::Record(entries) => entries.iter().any(|(_, value)| value.has_function()),
+            Self::Array(values) => values.iter().any(Self::has_function),
+            _ => false,
+        }
+    }
+
+    /// This value as JavaScript source, when every part of it is known
+    fn js_literal(&self) -> Option<String> {
+        match self {
+            Self::String(text) => serde_json::to_string(text).ok(),
+            Self::Number(number) => Some(crate::utils::js_number_string(*number)),
+            Self::Null => Some("null".to_string()),
+            Self::Bool(value) => Some(value.to_string()),
+            Self::Undefined => Some("undefined".to_string()),
+            Self::Record(entries) => {
+                let mut properties = Vec::with_capacity(entries.len());
+                for (key, value) in entries.iter() {
+                    properties.push(format!(
+                        "{}: {}",
+                        serde_json::to_string(key).ok()?,
+                        value.js_literal()?
+                    ));
+                }
+                Some(format!("({{ {} }})", properties.join(", ")))
+            }
+            Self::Array(values) => {
+                let values: Option<Vec<String>> = values.iter().map(Self::js_literal).collect();
+                Some(format!("[{}]", values?.join(", ")))
+            }
+            _ => None,
+        }
     }
 
     /// Where code changes this value or one it holds
@@ -237,7 +280,7 @@ impl Unknown {
                             None => break,
                         }
                     }
-                    return matches!(value, Constant::Object(_));
+                    return matches!(value, Constant::Object(_)) || value.has_function();
                 }
                 _ => return false,
             }
@@ -408,7 +451,10 @@ pub(crate) fn inline_constants<'a>(
                 None if bound => {
                     inlined.unknown.names.insert(name.clone());
                 }
-                Some(object @ Constant::Object(_)) if bound => {
+                Some(object)
+                    if bound
+                        && (matches!(object, Constant::Object(_)) || object.has_function()) =>
+                {
                     inlined.unknown.partial.insert(name.clone(), object.clone());
                 }
                 _ => {}
@@ -442,6 +488,7 @@ pub(crate) fn inline_constants<'a>(
             style_roots: &style_roots,
             apis: &apis,
             objects: false,
+            styles: false,
         }
         .visit_program(program);
     }
@@ -493,6 +540,21 @@ impl<'p, 'a, 'r> ChangeCheck<'p, 'a, 'r> {
                 loading: Vec::new(),
             }),
         }
+    }
+
+    /// The value of `name` as JavaScript source, when the build knows all of
+    /// it and no code changes it
+    pub(crate) fn known(&self, name: &str) -> Option<String> {
+        let mut modules = self.modules.borrow_mut();
+        self.scope
+            .borrow_mut()
+            .lookup(&mut modules, name)?
+            .js_literal()
+    }
+
+    /// The modules read for the values of imports
+    pub(crate) fn dependencies(&self) -> BTreeSet<String> {
+        self.modules.borrow().exports.keys().cloned().collect()
     }
 
     pub(crate) fn is_changed(&self, name: &str) -> bool {
@@ -562,16 +624,20 @@ struct StyleReads<'s> {
     depth: usize,
 }
 
+/// Whether `expression` is a style API: a root the package gives, or a member
+/// or call of one
+fn is_style_root(style_roots: &FxHashSet<&str>, expression: &Expression<'_>) -> bool {
+    match expression {
+        Expression::Identifier(identifier) => style_roots.contains(identifier.name.as_str()),
+        Expression::StaticMemberExpression(member) => is_style_root(style_roots, &member.object),
+        Expression::CallExpression(call) => is_style_root(style_roots, &call.callee),
+        _ => false,
+    }
+}
+
 impl StyleReads<'_> {
     fn is_style_root(&self, expression: &Expression<'_>) -> bool {
-        match expression {
-            Expression::Identifier(identifier) => {
-                self.style_roots.contains(identifier.name.as_str())
-            }
-            Expression::StaticMemberExpression(member) => self.is_style_root(&member.object),
-            Expression::CallExpression(call) => self.is_style_root(&call.callee),
-            _ => false,
-        }
+        is_style_root(self.style_roots, expression)
     }
 
     fn reading<T>(&mut self, style: bool, walk: impl FnOnce(&mut Self) -> T) -> T {
@@ -1353,6 +1419,12 @@ impl<'p, 'a> ModuleScope<'p, 'a> {
                 fold_binary(binary.operator, &left, &right)
             }
             Expression::NullLiteral(_) => Some(Constant::Null),
+            Expression::BooleanLiteral(literal) => Some(Constant::Bool(literal.value)),
+            Expression::Identifier(identifier)
+                if identifier.name == "undefined" && !self.binds("undefined") =>
+            {
+                Some(Constant::Undefined)
+            }
             Expression::ObjectExpression(object) => Some(self.object(modules, object)),
             Expression::ArrayExpression(array) => {
                 let mut values = Vec::with_capacity(array.elements.len());
@@ -1424,7 +1496,17 @@ impl<'p, 'a> ModuleScope<'p, 'a> {
                     if property.kind == oxc_ast::ast::PropertyKind::Init =>
                 {
                     let key = self.property_key(modules, &property.key);
-                    (key, self.evaluate(modules, &property.value))
+                    let value = if property.method
+                        || matches!(
+                            crate::utils::unwrap_syntax_only(&property.value),
+                            Expression::ArrowFunctionExpression(_)
+                                | Expression::FunctionExpression(_)
+                        ) {
+                        Some(Constant::Function)
+                    } else {
+                        self.evaluate(modules, &property.value)
+                    };
+                    (key, value)
                 }
                 ObjectPropertyKind::SpreadProperty(spread) => {
                     if let Some(Constant::Record(spread)) = self.evaluate(modules, &spread.argument)
@@ -1475,6 +1557,8 @@ fn js_string(value: &Constant) -> Option<String> {
         Constant::String(text) => Some(text.clone()),
         Constant::Number(number) => Some(crate::utils::js_number_string(*number)),
         Constant::Null => Some("null".to_string()),
+        Constant::Bool(value) => Some(value.to_string()),
+        Constant::Undefined => Some("undefined".to_string()),
         _ => None,
     }
 }
@@ -1601,16 +1685,20 @@ fn fold_binary(operator: BinaryOperator, left: &Constant, right: &Constant) -> O
     };
     number.is_finite().then_some(Constant::Number(number))
 }
-/// Replaces reads of constants: primitives anywhere, objects and arrays where
-/// they are read as styles, as a copy elsewhere would change their identity
+/// Replaces reads of constants where styles read them: primitives in the
+/// arguments of style APIs and in style props, objects and arrays where they
+/// are read as style objects, as a copy elsewhere would change their identity.
+/// Other code keeps reading the binding itself
 struct Inline<'s, 'a> {
     ast_builder: &'s AstBuilder<'a>,
     scoping: &'s Scoping,
     symbols: &'s FxHashMap<SymbolId, Constant>,
     style_roots: &'s FxHashSet<&'s str>,
     apis: &'s StyleApis<'s>,
-    /// Inside what the build reads as styles
+    /// Inside what the build reads as style objects
     objects: bool,
+    /// Inside the arguments of a style API or a style prop
+    styles: bool,
 }
 
 impl<'a> Inline<'_, 'a> {
@@ -1687,8 +1775,55 @@ impl<'a> Inline<'_, 'a> {
     fn operand(&self, expression: &Expression<'a>) -> Option<Constant> {
         self.constant(expression).or_else(|| match expression {
             Expression::StringLiteral(literal) => Some(Constant::String(literal.value.to_string())),
+            Expression::BooleanLiteral(literal) => Some(Constant::Bool(literal.value)),
+            Expression::NullLiteral(_) => Some(Constant::Null),
             _ => crate::utils::js_number_literal(expression).map(Constant::Number),
         })
+    }
+
+    /// Whether a condition reading `expression` holds, when it is a constant
+    /// read or a literal
+    fn holds(&self, expression: &Expression<'a>) -> Option<bool> {
+        Some(match self.operand(expression)? {
+            Constant::String(text) => !text.is_empty(),
+            Constant::Number(number) => number != 0.0 && !number.is_nan(),
+            Constant::Null | Constant::Undefined => false,
+            Constant::Bool(value) => value,
+            _ => true,
+        })
+    }
+
+    /// The side of a condition or of `&&`, `||` or `??` a constant or literal
+    /// chooses, taken out of `expression`
+    fn chosen(&self, expression: &mut Expression<'a>) -> Option<Expression<'a>> {
+        use oxc_allocator::TakeIn;
+
+        let allocator = self.ast_builder;
+        match expression {
+            Expression::ConditionalExpression(conditional) => {
+                Some(if self.holds(&conditional.test)? {
+                    conditional.consequent.take_in(allocator)
+                } else {
+                    conditional.alternate.take_in(allocator)
+                })
+            }
+            Expression::LogicalExpression(logical) => {
+                let left = self.operand(&logical.left)?;
+                let keep_left = match logical.operator {
+                    oxc_syntax::operator::LogicalOperator::And => !self.holds(&logical.left)?,
+                    oxc_syntax::operator::LogicalOperator::Or => self.holds(&logical.left)?,
+                    oxc_syntax::operator::LogicalOperator::Coalesce => {
+                        !matches!(left, Constant::Null | Constant::Undefined)
+                    }
+                };
+                Some(if keep_left {
+                    logical.left.take_in(allocator)
+                } else {
+                    logical.right.take_in(allocator)
+                })
+            }
+            _ => None,
+        }
     }
 
     fn is_global_math(&self, expression: &Expression<'a>) -> bool {
@@ -1718,6 +1853,7 @@ impl<'a> Inline<'_, 'a> {
                 builder,
             )),
             Constant::Null => Some(Expression::new_null_literal(SPAN, builder)),
+            Constant::Bool(value) => Some(Expression::new_boolean_literal(SPAN, *value, builder)),
             Constant::Record(entries) if self.objects => {
                 let mut properties = oxc_allocator::Vec::with_capacity_in(entries.len(), builder);
                 for (key, value) in entries.iter() {
@@ -1758,18 +1894,44 @@ impl<'a> Inline<'_, 'a> {
         self.objects = outer;
         result
     }
+
+    fn reading_styles<T>(&mut self, styles: bool, visit: impl FnOnce(&mut Self) -> T) -> T {
+        let outer = self.styles;
+        self.styles |= styles;
+        let result = visit(self);
+        self.styles = outer;
+        result
+    }
 }
 
 impl<'a> VisitMut<'a> for Inline<'_, 'a> {
     fn visit_expression(&mut self, expression: &mut Expression<'a>) {
-        if let Some(literal) = self
-            .constant(expression)
-            .and_then(|constant| self.literal(&constant))
-        {
-            *expression = literal;
-            return;
+        if self.styles {
+            if let Some(literal) = self
+                .constant(expression)
+                .and_then(|constant| self.literal(&constant))
+            {
+                *expression = literal;
+                return;
+            }
+            if let Some(chosen) = self.chosen(expression) {
+                *expression = chosen;
+                self.visit_expression(expression);
+                return;
+            }
         }
         walk_mut::walk_expression(self, expression);
+    }
+
+    fn visit_tagged_template_expression(
+        &mut self,
+        tagged: &mut oxc_ast::ast::TaggedTemplateExpression<'a>,
+    ) {
+        self.visit_expression(&mut tagged.tag);
+        let styles = is_style_root(self.style_roots, &tagged.tag);
+        self.reading_styles(styles, |inline| {
+            inline.visit_template_literal(&mut tagged.quasi);
+        });
     }
 
     fn visit_member_expression(&mut self, member: &mut oxc_ast::ast::MemberExpression<'a>) {
@@ -1781,10 +1943,13 @@ impl<'a> VisitMut<'a> for Inline<'_, 'a> {
     fn visit_call_expression(&mut self, call: &mut oxc_ast::ast::CallExpression<'a>) {
         self.visit_expression(&mut call.callee);
         let objects = self.apis.reads(&call.callee);
-        self.reading_objects(objects, |inline| {
-            for argument in &mut call.arguments {
-                inline.visit_argument(argument);
-            }
+        let styles = is_style_root(self.style_roots, &call.callee);
+        self.reading_styles(styles, |inline| {
+            inline.reading_objects(objects, |inline| {
+                for argument in &mut call.arguments {
+                    inline.visit_argument(argument);
+                }
+            });
         });
     }
 
@@ -1800,7 +1965,10 @@ impl<'a> VisitMut<'a> for Inline<'_, 'a> {
                     }
                     JSXAttributeItem::SpreadAttribute(_) => true,
                 };
-            self.reading_objects(objects, |inline| inline.visit_jsx_attribute_item(attribute));
+            self.reading_styles(objects, |inline| {
+                inline
+                    .reading_objects(objects, |inline| inline.visit_jsx_attribute_item(attribute));
+            });
         }
     }
 
