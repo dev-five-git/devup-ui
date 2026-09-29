@@ -116,8 +116,9 @@ const EXACT_MATH: [&str; 20] = [
 ];
 
 /// Members giving what the locale, the Unicode data of the engine or chance
-/// make them
-const UNCERTAIN_MEMBERS: [&str; 8] = [
+/// make them, and `toString`, which engines only approximate with a radix:
+/// it runs only called at once without one
+const UNCERTAIN_MEMBERS: [&str; 9] = [
     "toLocaleString",
     "toLocaleDateString",
     "toLocaleTimeString",
@@ -126,6 +127,7 @@ const UNCERTAIN_MEMBERS: [&str; 8] = [
     "localeCompare",
     "normalize",
     "random",
+    "toString",
 ];
 
 fn parse<'a>(allocator: &'a Allocator, filename: &str, code: &'a str) -> Option<Program<'a>> {
@@ -732,7 +734,8 @@ impl<'a> Visit<'a> for Reads<'_> {
         if let Some(reference) = identifier.reference_id.get() {
             let reference_data = self.scoping.get_reference(reference);
             self.impure |= reference_data.symbol_id().map_or_else(
-                || !GLOBALS.contains(&identifier.name.as_str()),
+                // `Math` runs only through the members `member` checks
+                || !GLOBALS.contains(&identifier.name.as_str()) || identifier.name == "Math",
                 |symbol| {
                     reference_data.is_write()
                         && self.scoping.symbol_scope_id(symbol) == self.scoping.root_scope_id()
@@ -747,7 +750,9 @@ impl<'a> Visit<'a> for Reads<'_> {
         member: &oxc_ast::ast::StaticMemberExpression<'a>,
     ) {
         self.member(&member.object, member.property.name.as_str());
-        walk::walk_static_member_expression(self, member);
+        if !self.is_global(&member.object, "Math") {
+            walk::walk_static_member_expression(self, member);
+        }
     }
 
     fn visit_computed_member_expression(
@@ -756,22 +761,27 @@ impl<'a> Visit<'a> for Reads<'_> {
     ) {
         if let Some(key) = get_string_by_literal_expression(&member.expression) {
             self.member(&member.object, &key);
+            if self.is_global(&member.object, "Math") {
+                return;
+            }
         }
         walk::walk_computed_member_expression(self, member);
     }
 
     fn visit_call_expression(&mut self, call: &oxc_ast::ast::CallExpression<'a>) {
-        // A method chosen at runtime may be any, and `toString` with a radix
-        // is only approximated
-        self.impure |= match unwrap_syntax_only(&call.callee) {
+        match unwrap_syntax_only(&call.callee) {
+            // A method chosen at runtime may be any
             Expression::ComputedMemberExpression(member) => {
-                get_string_by_literal_expression(&member.expression).is_none()
+                self.impure |= get_string_by_literal_expression(&member.expression).is_none();
             }
-            Expression::StaticMemberExpression(member) => {
-                member.property.name == "toString" && !call.arguments.is_empty()
+            // Exact only without a radix
+            Expression::StaticMemberExpression(member) if member.property.name == "toString" => {
+                self.impure |= !call.arguments.is_empty();
+                self.visit_expression(&member.object);
+                return;
             }
-            _ => false,
-        };
+            _ => {}
+        }
         walk::walk_call_expression(self, call);
     }
 

@@ -25,5 +25,5 @@ ToBTreeSet {
             },
         ),
     },
-    code: "import \"@devup-ui/core/devup-ui.css\";\n[<div className=\"a b\" />, <section className=\"a b\" />][b];\n",
+    code: "import \"@devup-ui/core/devup-ui.css\";\n((DevupAs0) => <DevupAs0 className=\"a b\" />)([\"div\", \"section\"][b] || \"div\");\n",
 }

@@ -1,4 +1,4 @@
-use crate::as_visit::AsVisitor;
+use crate::as_visit::As;
 use crate::component::ExportVariableKind;
 use crate::css_utils::{
     TemplateStyles, css_to_style_template, keyframes_to_keyframes_style, optimize_css_block,
@@ -174,6 +174,9 @@ pub struct DevupVisitor<'a> {
     /// the expression, child or attribute value holding it
     pending_replacement: Option<Expression<'a>>,
     spreads_read_once: usize,
+    /// Elements whose type only the runtime gives, which each bind it to a
+    /// name of their own
+    runtime_types: usize,
     unknown_bindings: crate::imported_constants::Unknown,
     /// Whether `css()` or `styled()` joined as a class, or an element took
     /// through a spread, a binding that may hold rules only running the module
@@ -291,6 +294,7 @@ impl<'a> DevupVisitor<'a> {
             stylex_keyframe_names: FxHashMap::default(),
             pending_replacement: None,
             spreads_read_once: 0,
+            runtime_types: 0,
             unknown_bindings: crate::imported_constants::Unknown::default(),
             composes_unknown: false,
             unknown_parts: Vec::new(),
@@ -2178,9 +2182,10 @@ impl<'a> VisitMut<'a> for DevupVisitor<'a> {
             // its `className` and `style` are read beside it
             let reads_once = reads_spreads_once(elem);
             let attrs = &mut elem.opening_element.attributes;
+            let default_tag = kind.to_tag();
             let mut tag_name = Expression::new_string_literal(
                 SPAN,
-                Str::from_in(kind.to_tag(), self.ast.allocator()),
+                Str::from_in(default_tag, self.ast.allocator()),
                 None,
                 &self.ast,
             );
@@ -2465,38 +2470,37 @@ impl<'a> VisitMut<'a> for DevupVisitor<'a> {
                 ));
             }
 
-            if let Some(tag) = if let Expression::StringLiteral(str) = tag_name {
-                Some(str.value.as_str())
-            } else if let Expression::TemplateLiteral(literal) = tag_name {
-                Some(literal.quasis[0].value.raw.as_str())
-            } else {
-                let mut v =
-                    AsVisitor::new(self.ast.allocator(), elem.clone_in(self.ast.allocator()));
-                let mut el = ExpressionStatement::new(SPAN, tag_name, &self.ast);
-                v.visit_expression_statement(&mut el);
-                self.pending_replacement = Some(el.expression);
-                None
-            } {
-                let ident = JSXElementName::new_identifier(
-                    SPAN,
-                    Str::from_in(tag, self.ast.allocator()),
-                    &self.ast,
-                );
-
-                elem.opening_element.name = ident.clone_in(self.ast.allocator());
-                if let Some(el) = &mut elem.closing_element {
-                    el.name = ident;
+            // A type only the runtime gives is read once, before what the
+            // element reads once
+            let mut values = Vec::with_capacity(read_once.len() + 1);
+            match crate::as_visit::resolve(&self.ast, elem, tag_name, default_tag) {
+                As::Name(name) => crate::as_visit::rename(&self.ast, elem, name),
+                As::Choice(choice) => self.pending_replacement = Some(choice),
+                As::Runtime(value) => {
+                    let name = format!("DevupAs{}", self.runtime_types);
+                    self.runtime_types += 1;
+                    crate::as_visit::rename(
+                        &self.ast,
+                        elem,
+                        JSXElementName::new_identifier(
+                            SPAN,
+                            Str::from_in(name.as_str(), self.ast.allocator()),
+                            &self.ast,
+                        ),
+                    );
+                    values.push((name, value));
                 }
             }
+            values.extend(read_once);
 
-            if !read_once.is_empty() {
+            if !values.is_empty() {
                 let element = self.pending_replacement.take().unwrap_or_else(|| {
                     Expression::JSXElement(oxc_allocator::Box::new_in(
                         elem.clone_in(self.ast.allocator()),
                         &self.ast,
                     ))
                 });
-                self.pending_replacement = Some(call_with_values(&self.ast, read_once, element));
+                self.pending_replacement = Some(call_with_values(&self.ast, values, element));
             }
         }
     }

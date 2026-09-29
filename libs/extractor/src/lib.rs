@@ -19213,7 +19213,7 @@ export const i = async (f, g) => _jsx(Box, { className: await g(), ...f() });",
             r"import { Box } from '@devup-ui/react';
 import { jsx as _jsx } from 'react/jsx-runtime';
 export const a = async (f, g, list, C) => (
-  <Box {...f()} data-x={list} aria-label='x' disabled xlink:href={g} onClick={async () => await g()} title=<Box as={C} />>
+  <Box {...f()} data-x={list} aria-label='x' disabled xlink:href={g} onClick={async () => await g()} title=<Box as={C || 'b'} />>
     text
     <>{g}</>
     {...list()}
@@ -19255,6 +19255,56 @@ export const after = 42;",
         )
         .unwrap();
         assert_debug_snapshot!(ToBTreeSet::from(output));
+    }
+
+    #[test]
+    #[serial]
+    fn test_dynamic_as_elements() {
+        let outputs: Vec<(&str, String)> = [
+            "<Box as={b ? 'section' : undefined} />",
+            "<Box as={b ? false : ''} />",
+            "<Box as={motion.div} p={1} />",
+            "<Box as={(Motion as any).Form.Field}>x</Box>",
+            "<Box as={_Local} />",
+            "<Box as={a ? (b ? 'h1' : Link) : null} />",
+            "<List>{items.map((i) => <Box key={i.id} as={i.href ? 'a' : Link} p={1} />)}</List>",
+            "<Box as={isLink && 'a'} />",
+            "<Box as={props.as ?? 'div'} />",
+            "<Box as={tag} />",
+            "<Box as={`h${level}`} />",
+            "<Box as={getTag()} />",
+            "<Box as={Components[key]} />",
+            "<Box as={getThing().div} />",
+            "<Box as={b ? tag : 'div'} />",
+            "<Box as={true} />",
+            "<Box as={{ a: 'a', b: 'button' }[kind]} onClick={track()} p={1}>{render()}</Box>",
+            "<Box as={['div', 'a'][i]} {...register('x')} p={1} />",
+            "<Text as={b ? 'h1' : undefined} />",
+            "<Box as={x}><Box as={y} p={1} /></Box>",
+        ]
+        .into_iter()
+        .map(|code| {
+            reset_class_map();
+            reset_file_map();
+            let output = extract(
+                "test.tsx",
+                &format!("import {{ Box, Text }} from '@devup-ui/react';\n{code}"),
+                ExtractOption {
+                    import_main_css: false,
+                    ..ExtractOption::default()
+                },
+            )
+            .unwrap();
+            let code_out = output
+                .code
+                .lines()
+                .filter(|line| !line.starts_with("import "))
+                .collect::<Vec<_>>()
+                .join("\n");
+            (code, code_out)
+        })
+        .collect();
+        assert_debug_snapshot!(outputs);
     }
 
     #[test]
@@ -19657,6 +19707,34 @@ export const f = css(card, { p: String(SIZE) + 'px' });",
             ),
             (
                 "import { css } from '@devup-ui/react';\nconst f = () => <></>;\ncss({ w: f() });",
+                false,
+            ),
+            (
+                "import { css } from '@devup-ui/react';\nconst f = () => Math['max'](1, 2) + (255).toString().length;\ncss({ w: f() });",
+                true,
+            ),
+            (
+                "import { css } from '@devup-ui/react';\nconst { sin } = Math;\nconst f = () => sin(1);\ncss({ w: f() });",
+                false,
+            ),
+            (
+                "import { css } from '@devup-ui/react';\nconst f = () => { const M = Math; return M.sin(1); };\ncss({ w: f() });",
+                false,
+            ),
+            (
+                "import { css } from '@devup-ui/react';\nconst key = 'sin';\nconst f = () => Math[key](1);\ncss({ w: f() });",
+                false,
+            ),
+            (
+                "import { css } from '@devup-ui/react';\nconst f = () => { const t = (255).toString; return t.call(255, 16); };\ncss({ w: f() });",
+                false,
+            ),
+            (
+                "import { css } from '@devup-ui/react';\nconst f = () => { const { toString } = 255; return toString.call(255, 16); };\ncss({ w: f() });",
+                false,
+            ),
+            (
+                "import { css } from '@devup-ui/react';\nconst f = (n) => n.toString(16);\ncss({ w: f(255) });",
                 false,
             ),
         ] {
