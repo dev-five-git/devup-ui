@@ -43,6 +43,92 @@ function isBuiltIn(node: TSESTree.Node, scope: Scope): boolean {
   )
 }
 
+const CHANGING_METHODS = new Set([
+  'push',
+  'pop',
+  'shift',
+  'unshift',
+  'splice',
+  'sort',
+  'reverse',
+  'fill',
+  'copyWithin',
+  'set',
+  'delete',
+  'clear',
+  'add',
+])
+
+const CHANGING_FUNCTIONS = new Set([
+  'assign',
+  'defineProperty',
+  'defineProperties',
+  'setPrototypeOf',
+])
+
+/** Whether the file changes what `variable` holds, which the build then does not read as a constant */
+function isChanged(variable: TSESLint.Scope.Variable): boolean {
+  return variable.references.some((reference) => {
+    let node: TSESTree.Node = reference.identifier
+    let depth = 0
+    while (node.parent) {
+      const parent: TSESTree.Node = node.parent
+      if (
+        parent.type === AST_NODE_TYPES.MemberExpression &&
+        parent.object === node
+      )
+        depth++
+      else if (
+        parent.type !== AST_NODE_TYPES.TSAsExpression &&
+        parent.type !== AST_NODE_TYPES.TSNonNullExpression &&
+        parent.type !== AST_NODE_TYPES.ChainExpression
+      )
+        break
+      node = parent
+    }
+    const parent = node.parent
+    switch (parent?.type) {
+      case AST_NODE_TYPES.CallExpression:
+        return parent.callee === node
+          ? node.type === AST_NODE_TYPES.MemberExpression &&
+              node.property.type === AST_NODE_TYPES.Identifier &&
+              CHANGING_METHODS.has(node.property.name)
+          : parent.arguments[0] === node &&
+              parent.callee.type === AST_NODE_TYPES.MemberExpression &&
+              parent.callee.object.type === AST_NODE_TYPES.Identifier &&
+              parent.callee.object.name === 'Object' &&
+              parent.callee.property.type === AST_NODE_TYPES.Identifier &&
+              CHANGING_FUNCTIONS.has(parent.callee.property.name)
+      case AST_NODE_TYPES.AssignmentExpression:
+      case AST_NODE_TYPES.AssignmentPattern:
+        return depth > 0 && parent.left === node
+      case AST_NODE_TYPES.UnaryExpression:
+        return depth > 0 && parent.operator === 'delete'
+      case AST_NODE_TYPES.UpdateExpression:
+      case AST_NODE_TYPES.ArrayPattern:
+      case AST_NODE_TYPES.RestElement:
+      case AST_NODE_TYPES.ForInStatement:
+      case AST_NODE_TYPES.ForOfStatement:
+        return (
+          depth > 0 &&
+          !(
+            (parent.type === AST_NODE_TYPES.ForInStatement ||
+              parent.type === AST_NODE_TYPES.ForOfStatement) &&
+            parent.right === node
+          )
+        )
+      case AST_NODE_TYPES.Property:
+        return (
+          depth > 0 &&
+          parent.value === node &&
+          parent.parent.type === AST_NODE_TYPES.ObjectPattern
+        )
+      default:
+        return false
+    }
+  })
+}
+
 function isMathRandom(node: TSESTree.MemberExpression, scope: Scope) {
   return (
     isBuiltIn(node.object, scope) &&
@@ -149,7 +235,7 @@ function isStaticBinding(
   if (seen.has(name)) return false
   const variable = findVariable(scope, name)
   const definition = variable?.defs[0]
-  if (!variable || !definition) return false
+  if (!variable || !definition || isChanged(variable)) return false
   if (definition.type === 'ImportBinding') return true
   if (
     definition.type !== 'Variable' ||
