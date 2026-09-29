@@ -68,6 +68,7 @@ pub(crate) fn has_build_time_values(
         &program,
         &|source| source.starts_with(option.package.as_str()),
         &inlined.unknown,
+        &FxHashSet::default(),
     )
     .is_empty()
 }
@@ -82,12 +83,18 @@ fn find(
     program: &Program<'_>,
     is_style: &dyn Fn(&str) -> bool,
     unknown: &crate::imported_constants::Unknown,
+    changed: &FxHashSet<String>,
 ) -> Vec<Found> {
     let scoping = SemanticBuilder::new()
         .build(program)
         .semantic
         .into_scoping();
     let mut finder = Finder::new(program, &scoping, is_style, unknown);
+    for (symbol, binding) in &mut finder.bindings {
+        if changed.contains(scoping.symbol_name(*symbol)) {
+            binding.usable = false;
+        }
+    }
     finder.visit_program(program);
     finder.found
 }
@@ -692,10 +699,14 @@ pub(crate) fn evaluate(
 /// A value's source text by the span of the code computing it
 type Replacement = (Span, String);
 
-/// Run before the values: nothing that differs between builds, a stand-in for
-/// the style packages, and the source text of a value the build can read
+/// Run before the values: nothing that differs between builds or only the
+/// running page or process knows (reading it throws, so no value depends on
+/// the build's environment), a stand-in for the style packages, and the
+/// source text of a value the build can read
 const PRELUDE: &str = r#"delete globalThis.Date;
 Math.random = undefined;
+for (const name of ["window", "self", "document", "navigator", "location", "history", "localStorage", "sessionStorage", "matchMedia", "screen", "innerWidth", "innerHeight", "devicePixelRatio", "process", "global", "Deno", "Bun"]) Object.defineProperty(globalThis, name, { get() { throw new ReferenceError(`${name} is only known at runtime`); }, configurable: true });
+Object.setPrototypeOf(globalThis, new Proxy(Object.getPrototypeOf(globalThis), { get(target, key, receiver) { if (typeof key === "string" && !(key in target)) throw new ReferenceError(`${key} is only known at runtime`); return Reflect.get(target, key, receiver); } }));
 globalThis.__vanilla_extract__ = (() => { const style = new Proxy(function () {}, { get: (_, key) => key === Symbol.toPrimitive ? undefined : style, apply: () => style }); return style; })();
 const __failed__ = (() => { const fail = () => { throw new ReferenceError("its value threw"); }; return new Proxy(function () {}, { get: fail, apply: fail, construct: fail, getPrototypeOf: fail }); })();
 const __try__ = (compute) => { try { return compute(); } catch { return __failed__; } };
@@ -726,7 +737,8 @@ fn compute(
     let is_style = |source: &str| {
         source.starts_with(option.package.as_str()) || option.import_aliases.contains_key(source)
     };
-    let found = find(&program, &is_style, unknown);
+    let changed = crate::imported_constants::changed_bindings(&program, filename, option, resolver);
+    let found = find(&program, &is_style, unknown, &changed);
     if found.is_empty() {
         return None;
     }

@@ -9,6 +9,7 @@ mod gen_style;
 mod import_alias_visit;
 mod imported_constants;
 mod module_loader;
+mod mutations;
 mod prop_modify_utils;
 mod source_map;
 mod stylex;
@@ -436,6 +437,7 @@ fn extract_source(
     );
     visitor.import_stylex(inlined.stylex_vars, inlined.stylex_themes);
     visitor.unknown_bindings(&inlined.unknown);
+    visitor.changed_bindings(inlined.changed.keys().cloned().collect());
     visitor.visit_program(&mut program);
     if let Some(error) = evaluation_error
         && imports_uncompiled(&program, &option.package)
@@ -474,7 +476,9 @@ fn extract_source(
         .chain(earlier_edits.iter().copied())
         .collect();
     if !visitor.errors.is_empty() {
-        return Err(located_errors(filename, source, &edits, visitor.errors).into());
+        let mut message = located_errors(filename, source, &edits, visitor.errors);
+        message += &changed_notes(&message, filename, source, &edits, &inlined.changed);
+        return Err(message.into());
     }
     let codegen_options = if source_map {
         CodegenOptions {
@@ -554,16 +558,61 @@ fn located_errors(
             let offset = edits.iter().fold(offset as usize, |offset, edits| {
                 import_alias_visit::source_offset(edits, offset)
             });
-            let before = source.get(..offset).unwrap_or(source);
-            let line_start = before.rfind('\n').map_or(0, |index| index + 1);
-            format!(
-                "{filename}:{}:{}: {message}",
-                before.matches('\n').count() + 1,
-                before[line_start..].chars().count() + 1
-            )
+            format!("{}: {message}", locate(filename, source, offset))
         })
         .collect::<Vec<_>>()
         .join("\n")
+}
+
+/// `filename:line:column` of `offset` in `source`
+fn locate(filename: &str, source: &str, offset: usize) -> String {
+    let before = source.get(..offset).unwrap_or(source);
+    let line_start = before.rfind('\n').map_or(0, |index| index + 1);
+    format!(
+        "{filename}:{}:{}",
+        before.matches('\n').count() + 1,
+        before[line_start..].chars().count() + 1
+    )
+}
+
+/// A line for each binding `message` names that code changes, telling where
+fn changed_notes(
+    message: &str,
+    filename: &str,
+    source: &str,
+    edits: &[&[import_alias_visit::Edit]],
+    changed: &FxHashMap<String, imported_constants::ChangedAt>,
+) -> String {
+    let mut names: Vec<_> = changed
+        .iter()
+        .filter(|(name, _)| {
+            message.match_indices(name.as_str()).any(|(index, _)| {
+                let is_part = |c: char| c.is_alphanumeric() || c == '_' || c == '$';
+                !message[..index].ends_with(is_part)
+                    && !message[index + name.len()..].starts_with(is_part)
+            })
+        })
+        .collect();
+    names.sort_unstable_by_key(|(name, _)| name.as_str());
+    let mut notes = String::new();
+    for (name, at) in names {
+        let location = match at {
+            imported_constants::ChangedAt::Here(offset) => {
+                let offset = edits.iter().fold(*offset as usize, |offset, edits| {
+                    import_alias_visit::source_offset(edits, offset)
+                });
+                locate(filename, source, offset)
+            }
+            imported_constants::ChangedAt::Module(location) => location.to_string(),
+        };
+        let _ = std::fmt::Write::write_fmt(
+            &mut notes,
+            format_args!(
+                "\n{location}: `{name}` is changed here, so the build cannot read it as a constant"
+            ),
+        );
+    }
+    notes
 }
 
 /// The file name generated names of `filename` are scoped by, `None` when its
@@ -18371,6 +18420,74 @@ export const looped = x;",
             "exports.__esModule = true;\nexports.named = 'teal';",
         ),
     ];
+
+    const CHANGED_MODULES: &[(&str, &str)] = &[
+        (
+            "/src/tokens.ts",
+            r"import { css } from '@devup-ui/react';
+export const base = { p: 4 };
+export const fixed = { p: 2 };
+export const colors = { primary: 'red' };
+export const grid = [1, 2];
+const local = { m: 1 };
+export { local as renamed };
+export default base;
+export const styles = css(fixed);
+export function dark() { base.p = 8; }
+export const hover = darken(colors.primary);
+register(grid.length);",
+        ),
+        (
+            "/src/reexport.ts",
+            "export { base, fixed } from './tokens';",
+        ),
+    ];
+
+    #[test]
+    #[serial]
+    fn test_changed_constants() {
+        let cases = [
+            "const base = { p: 4 };\nbase.p = 8;\nexport const a = css(base);",
+            "const base = { p: 4 };\nObject.assign(base, { p: 8 });\nexport const a = <Box p={base.p} />;\nexport const b = css({ p: base.p });",
+            "const base = { p: 4 };\nregister(base);\nexport const a = <Box {...base} />;\nexport const b = styled.div(base);\nexport const c = css(x ? base : null);\nexport const d = css(x ? null : [y && base]);",
+            "const base = { p: 4 };\nbase.p = 8;\nconst baseline = x;\nexport const a = <Box w={base.p} />;\nexport const b = css({ p: baseline });",
+            "const colors = { primary: 'red' };\nconst hover = darken(colors.primary);\nexport const a = <Box color={colors.primary} />;",
+            "const colors = { primary: 'red' };\nexport const theme = { colors };\nexport const a = <Box color={colors.primary} />;",
+            "const colors = { primary: 'red' };\nexport const theme = { colors };\ntheme.colors.primary = 'blue';\nexport const a = <Box color={colors.primary} />;",
+            "const loop1 = { x: loop2 };\nconst loop2 = { y: loop1 };\nexport const a = <Box w={loop1.x.z} />;",
+            "const list = [{ p: 1 }];\nwatch(...list);\nexport const a = <Box p={list[0].p} />;",
+            "const flat = [1, 2];\nwatch(...flat);\nexport const a = <Box p={flat[0]} />;",
+            "const partial = { ...unknown, p: 1 };\nwatch(partial.q);\nexport const a = <Box p={partial.p} />;",
+            "const record = { p: 1 };\nwatch(record.q);\nexport const a = <Box p={record.p} />;",
+            "const spread = { ...unknown, p: 1 };\nwatch({ ...spread });\nexport const a = <Box p={spread.p} />;",
+            "export enum E { A = 1 }\nenum F { B = 2 }\nexport function g() {}\nvar v = 1;\nconst make = () => ({ p: 1 });\nconst made = make();\nwatch(made);\nconst f = () => made.p;\nexport const a = css({ p: f() });",
+            "const make = () => ({ p: 1 });\nconst made = make();\nmade.p = 2;\nconst f = () => made.p;\nexport const a = css({ p: f() });",
+            "const pick = () => (typeof window === 'undefined' ? 'white' : 'black');\nexport const a = css({ color: pick() });",
+            "const brand = () => globalThis.BRAND ?? 'red';\nexport const a = css({ color: brand() });",
+            "const node = () => process.env.NODE_ENV;\nexport const a = css({ content: node() });",
+            "import { base } from './tokens';\nconst f = () => base.p;\nexport const a = css({ p: f() });",
+            "import base, { fixed, colors, grid, renamed } from './tokens';\nimport * as tokens from './tokens';\nexport const a = <Box p={fixed.p} color={colors.primary} m={grid[0]} w={base.p} h={renamed.m} bg={tokens.fixed.p} />;",
+            "import { base as again } from './reexport';\nexport const a = css(again);",
+        ];
+        let outputs: Vec<String> = cases
+            .iter()
+            .map(|case| {
+                reset_class_map();
+                reset_file_map();
+                match extract_with_modules(
+                    "/src/App.tsx",
+                    &format!("import {{ Box, css, styled }} from '@devup-ui/react';\n{case}"),
+                    ExtractOption::default(),
+                    false,
+                    &memory_resolver(CHANGED_MODULES),
+                ) {
+                    Ok(output) => output.code,
+                    Err(error) => format!("Error: {error}"),
+                }
+            })
+            .collect();
+        assert_debug_snapshot!(outputs);
+    }
 
     #[test]
     #[serial]

@@ -179,9 +179,54 @@ pub struct DevupVisitor<'a> {
     /// through a spread, a binding that may hold rules only running the module
     /// gives
     pub composes_unknown: bool,
+    /// Objects and arrays code changes, which styles cannot take whole
+    changed_bindings: FxHashSet<String>,
+}
+
+/// Whether `expression`, or a value it chooses, reads a binding of `names`
+fn reads_binding(expression: &Expression<'_>, names: &FxHashSet<String>) -> bool {
+    match unwrap_syntax_only(expression) {
+        Expression::ArrayExpression(array) => array.elements.iter().any(|element| {
+            element
+                .as_expression()
+                .is_some_and(|element| reads_binding(element, names))
+        }),
+        Expression::LogicalExpression(logical) => {
+            reads_binding(&logical.left, names) || reads_binding(&logical.right, names)
+        }
+        Expression::ConditionalExpression(conditional) => {
+            reads_binding(&conditional.consequent, names)
+                || reads_binding(&conditional.alternate, names)
+        }
+        expression => {
+            crate::utils::binding_root(expression).is_some_and(|name| names.contains(name))
+        }
+    }
 }
 
 impl<'a> DevupVisitor<'a> {
+    pub fn changed_bindings(&mut self, names: FxHashSet<String>) {
+        self.changed_bindings = names;
+    }
+
+    /// Report the arguments of `api` that give styles code changes
+    fn changed_arguments(&mut self, api: &str, arguments: &[Argument<'a>]) {
+        if self.changed_bindings.is_empty() {
+            return;
+        }
+        for argument in arguments {
+            let expression = match argument {
+                Argument::SpreadElement(spread) => &spread.argument,
+                argument => argument.to_expression(),
+            };
+            if reads_binding(expression, &self.changed_bindings) {
+                self.errors.push((
+                    argument.span().start,
+                    build_time_error(api, &readable_argument(argument), STYLE_OBJECT),
+                ));
+            }
+        }
+    }
     pub fn new(
         allocator: &'a Allocator,
         filename: &str,
@@ -221,6 +266,7 @@ impl<'a> DevupVisitor<'a> {
             spreads_read_once: 0,
             unknown_bindings: crate::imported_constants::Unknown::default(),
             composes_unknown: false,
+            changed_bindings: FxHashSet::default(),
         }
     }
 
@@ -915,6 +961,7 @@ impl<'a> VisitMut<'a> for DevupVisitor<'a> {
                 if let Expression::CallExpression(call) = &*it {
                     self.composes_unknown |=
                         composes_binding(&call.arguments, &self.unknown_bindings);
+                    self.changed_arguments("styled", &call.arguments);
                 }
                 let (result, new_expr, errors) = extract_style_from_styled(
                     &self.ast,
@@ -1344,12 +1391,13 @@ impl<'a> VisitMut<'a> for DevupVisitor<'a> {
                 None
             };
 
-            if let Some(util_type) = util_type {
+            if let Some(util_type) = util_type.cloned() {
                 let offset = call.span.start;
                 let is_css = matches!(util_type.as_ref(), UtilType::Css);
                 if is_css {
                     self.composes_unknown |=
                         composes_binding(&call.arguments, &self.unknown_bindings);
+                    self.changed_arguments("css", &call.arguments);
                 }
                 let composed_classes = if is_css
                     && let Some(StyleArguments { classes, rules }) =
@@ -2209,6 +2257,16 @@ impl<'a> VisitMut<'a> for DevupVisitor<'a> {
                             unwrap_syntax_only(&spread.argument),
                             Expression::CallExpression(_)
                         ) || reads_unknown(&spread.argument, &self.unknown_bindings));
+                    if runtime && reads_binding(&spread.argument, &self.changed_bindings) {
+                        self.errors.push((
+                            spread.span.start,
+                            element_error(
+                                &kind.to_string(),
+                                &readable_code(&spread.argument),
+                                STYLE_OBJECT,
+                            ),
+                        ));
+                    }
                     if runtime
                         || matches!(unwrap_syntax_only(&spread.argument),
                             Expression::ObjectExpression(object) if !object.properties.is_empty())
