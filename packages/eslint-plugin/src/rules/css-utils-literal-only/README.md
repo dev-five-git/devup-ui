@@ -11,7 +11,7 @@ The build knows:
 - literals, and constants: imports and module-level `const`s
 - what those compute through calls of imported or module-level functions and of built-ins (`Math` except `Math.random`, `String`, `Number`, ...)
 
-Both engines inline constants and fold `Math`. The full engine (`@devup-ui/wasm`, the default) runs the other calls at build time; with the lite engine (`@devup-ui/wasm/lite`) such a value is a build error that names the full engine.
+The build inlines constants, folds `Math` and runs the other calls at build time.
 
 The rule reports parameters, `let` variables, `Date`, `Math.random` and functions the build cannot run, such as a parameter or a `let` function.
 
@@ -105,7 +105,7 @@ import { css } from '@devup-ui/react'
 
 import { darken, PRIMARY } from './color'
 
-// The full engine runs these calls at build time
+// The build runs these calls
 const HOVER = darken(0.1, PRIMARY)
 function double(n: number) {
   return n * 2
