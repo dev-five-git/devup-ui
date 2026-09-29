@@ -20,7 +20,7 @@ export const light = createTheme(vars, { colors: { bg: 'white' } })
 export const box = style({ background: vars.colors.bg })
 ```
 
-Numbers keep vanilla-extract's meaning, here and in ordinary modules: `padding: 8` is `8px`, and unitless properties such as `lineHeight` or `zIndex` stay as written.
+Numbers keep vanilla-extract's meaning, here and in ordinary modules: `padding: 8` is `8px`, unitless properties such as `lineHeight` or `zIndex` stay as written, and times such as `transitionDuration: 300` are `300ms`.
 
 A stylesheet can import other stylesheets and ordinary modules — ES modules or CommonJS — resolved like the bundler resolves them (relative paths, `tsconfig` `paths` and packages). An imported stylesheet is extracted the way the bundler extracts it, so the class names and custom properties it exports are the ones its own CSS uses, and the importer keeps importing it so that CSS is loaded:
 
