@@ -19732,7 +19732,7 @@ export const d = <Box transitionDuration={300} animationDelay={0.5} counterReset
         reset_file_map();
         let partial = extract_with_modules(
             "/src/App.tsx",
-            "import { css } from '@devup-ui/react';\nimport * as tokens from './tokens';\nexport const a = css({ w: tokens.nested.known.length });",
+            "import { css } from '@devup-ui/react';\nimport * as tokens from './tokens';\nexport const a = css(tokens.nested.known.length);",
             ExtractOption::default(),
             false,
             &memory_resolver(&[(
@@ -19740,7 +19740,12 @@ export const d = <Box transitionDuration={300} animationDelay={0.5} counterReset
                 "export const make = (n) => ({ m: n });\nexport const nested = { x: make(1), known: 'k' };",
             )]),
         );
-        assert!(partial.is_err(), "{partial:?}");
+        assert!(
+            partial
+                .as_ref()
+                .is_ok_and(|output| output.styles.is_empty()),
+            "{partial:?}"
+        );
 
         reset_class_map();
         reset_file_map();
