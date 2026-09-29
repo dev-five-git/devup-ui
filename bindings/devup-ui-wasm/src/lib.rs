@@ -674,34 +674,6 @@ pub fn has_devup_ui_wasm(filename: &str, code: &str, package: &str) -> bool {
     has_devup_ui(filename, code, package)
 }
 
-/// Whether `code` has a style value only running the module computes, which
-/// the full engine extracts and the lite one reports
-#[wasm_bindgen(js_name = "hasBuildTimeValues")]
-#[cfg(not(tarpaulin_include))]
-pub fn has_build_time_values_wasm(
-    filename: &str,
-    code: &str,
-    package: &str,
-    import_aliases: JsValue,
-) -> Result<bool, JsValue> {
-    let option = ExtractOption {
-        package: package.to_string(),
-        import_aliases: import_aliases_from_js(import_aliases)?,
-        ..ExtractOption::default()
-    };
-    let resolver = MODULE_RESOLVER.with_borrow(Clone::clone).map(|resolver| {
-        move |specifier: &str, importer: &str| call_module_resolver(&resolver, specifier, importer)
-    });
-    Ok(extractor::has_build_time_values(
-        filename,
-        code,
-        &option,
-        resolver
-            .as_ref()
-            .map(|resolver| resolver as &ModuleResolver),
-    ))
-}
-
 #[cfg(test)]
 #[allow(clippy::expect_used, clippy::unwrap_used)]
 mod tests {

@@ -19,10 +19,6 @@ use oxc_span::{SPAN, SourceType};
 use oxc_syntax::operator::{BinaryOperator, LogicalOperator, UnaryOperator};
 
 /// Check if a filename is a vanilla-extract style file.
-///
-/// This lives here rather than in `vanilla_extract` because that module is behind
-/// the `vanilla-extract` feature (it pulls in the Boa evaluator), while import
-/// rewriting needs the check in every build — including the lite WASM variant.
 pub(super) fn is_vanilla_extract_file(filename: &str) -> bool {
     filename.ends_with(".css.ts") || filename.ends_with(".css.js")
 }
@@ -949,11 +945,8 @@ pub(super) fn unreadable_styles(
     }
 }
 
-#[cfg(feature = "vanilla-extract")]
 pub(super) const STYLE_OBJECT: &str =
     "its styles must be an object literal or a constant object, or be computed from constants";
-#[cfg(not(feature = "vanilla-extract"))]
-pub(super) const STYLE_OBJECT: &str = "its styles must be an object literal or a constant object";
 
 pub(super) fn build_time_error(api: &str, code: &str, requirement: &str) -> String {
     format!("`{api}()` cannot use `{code}` at build time: {requirement}")
@@ -961,11 +954,8 @@ pub(super) fn build_time_error(api: &str, code: &str, requirement: &str) -> Stri
 
 pub(super) const RUNTIME_VALUE: &str = "its values must be literals, theme tokens or constants";
 
-#[cfg(feature = "vanilla-extract")]
 const COMPUTED_VALUE: &str =
     "its values must be literals, theme tokens or constants, or be computed from them";
-#[cfg(not(feature = "vanilla-extract"))]
-const COMPUTED_VALUE: &str = RUNTIME_VALUE;
 
 /// `api` has no element to set a runtime value on, so its values must be
 /// known at build time

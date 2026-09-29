@@ -1,7 +1,7 @@
 //! Values the styles of a file compute when the module runs, such as
 //! `css({ color: darken(0.1, PRIMARY) })`: the APIs taking them have no element
-//! to set a runtime value on, so the full engine runs the code they read and
-//! writes what it gives in their place.
+//! to set a runtime value on, so the build runs the code they read and writes
+//! what it gives in their place.
 
 use std::collections::BTreeSet;
 
@@ -24,7 +24,6 @@ use crate::utils::{binding_root, get_string_by_literal_expression, unwrap_syntax
 use crate::{ExtractOption, ModuleResolver};
 
 /// An expression whose reads the module can run on its own
-#[cfg_attr(not(feature = "vanilla-extract"), allow(dead_code))]
 struct Found {
     span: Span,
     /// The top-level statements it reads, directly or through each other
@@ -41,8 +40,8 @@ const UTILS: [&str; 4] = ["css", "globalCss", "keyframes", "createGlobalStyle"];
 
 /// Whether `code` has a style value that only running the module computes:
 /// one that the constants it reads do not give once inlined
-#[must_use]
-pub fn has_build_time_values(
+#[cfg(test)]
+pub(crate) fn has_build_time_values(
     filename: &str,
     code: &str,
     option: &ExtractOption,
@@ -663,7 +662,6 @@ impl<'a> Visit<'a> for Reads<'_> {
 /// replacements made, and the files read; `None` when running the code it
 /// reads computes none of them as a string, a finite number, or a plain
 /// object or array of those
-#[cfg(feature = "vanilla-extract")]
 pub(crate) fn evaluate(
     code: &str,
     filename: &str,
@@ -692,12 +690,10 @@ pub(crate) fn evaluate(
 }
 
 /// A value's source text by the span of the code computing it
-#[cfg(feature = "vanilla-extract")]
 type Replacement = (Span, String);
 
 /// Run before the values: nothing that differs between builds, a stand-in for
 /// the style packages, and the source text of a value the build can read
-#[cfg(feature = "vanilla-extract")]
 const PRELUDE: &str = r#"delete globalThis.Date;
 Math.random = undefined;
 globalThis.__vanilla_extract__ = (() => { const style = new Proxy(function () {}, { get: (_, key) => key === Symbol.toPrimitive ? undefined : style, apply: () => style }); return style; })();
@@ -712,7 +708,6 @@ const __literal__ = (value) => {
 };
 "#;
 
-#[cfg(feature = "vanilla-extract")]
 fn compute(
     code: &str,
     filename: &str,
