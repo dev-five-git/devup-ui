@@ -97,3 +97,17 @@ function App() {
   background: red;
 }
 ```
+
+`as` also takes a component (`as={Link}`, `as={motion.div}`) or a condition between names (`as={href ? 'a' : 'button'}`), which becomes an element for each name. `undefined`, `null` and `false` give the default element — `div` for `Box`. Any other value, such as a prop or `` `h${level}` ``, is read at runtime, once, and gives the default element when it is empty:
+
+```tsx
+function Card({ as }) {
+  return <Box as={as} bg="red" />
+}
+```
+
+```tsx
+function Card({ as }) {
+  return ((DevupAs0) => <DevupAs0 className="a" />)(as || 'div')
+}
+```
