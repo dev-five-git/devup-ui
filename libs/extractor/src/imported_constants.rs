@@ -41,6 +41,45 @@ enum Constant {
     /// What another style API gives: a class, a component or a keyframes
     /// name, never rules
     Style,
+    /// An object or array code changes, at this `file:line:column`
+    Changed(Rc<str>),
+}
+
+impl Constant {
+    /// Whether code can change what it holds
+    const fn is_mutable(&self) -> bool {
+        matches!(self, Self::Object(_) | Self::Record(_) | Self::Array(_))
+    }
+
+    /// Whether what `path` leads to (`None` for any key) holds nothing code can
+    /// change
+    fn reaches_only_primitives(&self, path: &[Option<String>]) -> bool {
+        match path.split_first() {
+            None => !self.is_mutable(),
+            Some((Some(key), rest)) => match member_of(self, key) {
+                Some(member) => member.reaches_only_primitives(rest),
+                // A key the build knows is missing reads `undefined`
+                None => !matches!(self, Self::Object(_)),
+            },
+            Some((None, rest)) => match self {
+                Self::Record(entries) => entries
+                    .iter()
+                    .all(|(_, value)| value.reaches_only_primitives(rest)),
+                Self::Array(values) => values
+                    .iter()
+                    .all(|value| value.reaches_only_primitives(rest)),
+                value => !value.is_mutable(),
+            },
+        }
+    }
+}
+
+/// Where code changes a binding: in the file extracted, at an offset, or in
+/// the module declaring it
+#[derive(Clone)]
+pub(crate) enum ChangedAt {
+    Here(u32),
+    Module(Rc<str>),
 }
 
 /// What inlining found: the files read, and the `StyleX` values imported from
@@ -51,6 +90,8 @@ pub(crate) struct Inlined {
     pub stylex_vars: FxHashMap<String, FxHashMap<String, String>>,
     pub stylex_themes: FxHashMap<String, String>,
     pub unknown: Unknown,
+    /// Objects and arrays styles read that code changes
+    pub changed: FxHashMap<String, ChangedAt>,
 }
 
 /// Module-level bindings styles read whose value only running the module
@@ -246,9 +287,24 @@ pub(crate) fn inline_constants<'a>(
             .build(program)
             .semantic
             .into_scoping();
+        let mut uses = None;
         for name in &read.names {
             let bound = scope.binds(name);
             let constant = scope.lookup(&mut modules, name);
+            let changed = match &constant {
+                Some(Constant::Changed(at)) => Some(ChangedAt::Module(at.clone())),
+                Some(constant) if bound && constant.is_mutable() => {
+                    let uses = uses.get_or_insert_with(|| {
+                        crate::mutations::uses(program, &|root| style_roots.contains(root))
+                    });
+                    scope.change(&mut modules, uses, name, &mut Vec::new())
+                }
+                _ => None,
+            };
+            if let Some(changed) = changed {
+                inlined.changed.insert(name.clone(), changed);
+                continue;
+            }
             match &constant {
                 None if bound => {
                     inlined.unknown.names.insert(name.clone());
@@ -291,6 +347,64 @@ pub(crate) fn inline_constants<'a>(
         .visit_program(program);
     }
     inlined
+}
+
+/// The top-level bindings of `program` holding an object or array code
+/// changes, which running the module must not read as declared
+pub(crate) fn changed_bindings(
+    program: &Program<'_>,
+    filename: &str,
+    option: &ExtractOption,
+    resolver: Option<&ModuleResolver>,
+) -> FxHashSet<String> {
+    let mut scope = ModuleScope::new(filename);
+    for statement in &program.body {
+        match statement {
+            Statement::ImportDeclaration(import) => scope.import(import),
+            Statement::VariableDeclaration(declaration) => {
+                scope.declare(declaration);
+            }
+            Statement::ExportDeclaration(export) => match &export.declaration {
+                oxc_ast::ast::Declaration::VariableDeclaration(declaration) => {
+                    scope.declare(declaration);
+                }
+                oxc_ast::ast::Declaration::TSEnumDeclaration(declaration) => {
+                    scope.declare_enum(declaration);
+                }
+                _ => {}
+            },
+            Statement::TSEnumDeclaration(declaration) => {
+                scope.declare_enum(declaration);
+            }
+            _ => {}
+        }
+    }
+    let uses = crate::mutations::uses(program, &|name| scope.is_style_import(option, name));
+    let mut modules = Modules {
+        resolver,
+        option,
+        exports: FxHashMap::default(),
+        loading: Vec::new(),
+    };
+    let mut changed = FxHashSet::default();
+    for (name, (source, imported)) in &scope.imports {
+        if let Imported::Named(export) = imported
+            && let Some(exports) = modules.exports(source, scope.path)
+            && matches!(exports.get(export), Some(Constant::Changed(_)))
+        {
+            changed.insert(name.clone());
+        }
+    }
+    for name in uses.keys() {
+        if scope.binds(name)
+            && scope
+                .change(&mut modules, &uses, name, &mut Vec::new())
+                .is_some()
+        {
+            changed.insert(name.clone());
+        }
+    }
+    changed
 }
 
 /// The local names of the style APIs that read style objects at build time
@@ -416,7 +530,7 @@ impl<'a> Visit<'a> for StyleReads<'_> {
 }
 
 /// The name `<Box>` or `<Devup.Box>` starts with
-fn jsx_root<'n>(name: &'n JSXElementName<'_>) -> Option<&'n str> {
+pub(crate) fn jsx_root<'n>(name: &'n JSXElementName<'_>) -> Option<&'n str> {
     match name {
         JSXElementName::IdentifierReference(identifier) => Some(identifier.name.as_str()),
         JSXElementName::MemberExpression(member) => {
@@ -538,18 +652,37 @@ impl Modules<'_> {
                     if let Some(expression) = export.declaration.as_expression()
                         && let Some(constant) = scope.evaluate(self, expression)
                     {
+                        if let Expression::Identifier(identifier) = expression {
+                            exported.push(("default".to_string(), identifier.name.to_string()));
+                        }
                         exports.insert("default".to_string(), constant);
                     }
                 }
                 _ => {}
             }
         }
-        for (exported, local) in exported {
-            if let Some(constant) = scope.lookup(self, &local) {
-                exports.insert(exported, constant);
+        for (exported, local) in &exported {
+            if let Some(constant) = scope.lookup(self, local) {
+                exports.insert(exported.clone(), constant);
             }
         }
         commonjs.finish(&mut exports);
+        if exports.values().any(Constant::is_mutable) {
+            let option = self.option;
+            let uses =
+                crate::mutations::uses(&program, &|name| scope.is_style_import(option, name));
+            for (exported, local) in &exported {
+                if exports.get(exported).is_some_and(Constant::is_mutable)
+                    && let Some(ChangedAt::Here(at)) =
+                        scope.change(self, &uses, local, &mut Vec::new())
+                {
+                    exports.insert(
+                        exported.clone(),
+                        Constant::Changed(crate::locate(path, code, at as usize).into()),
+                    );
+                }
+            }
+        }
         exports
     }
 }
@@ -739,6 +872,44 @@ impl<'p, 'a> ModuleScope<'p, 'a> {
                     && (source.starts_with(modules.option.package.as_str())
                         || modules.option.import_aliases.contains_key(source))
             })
+    }
+
+    fn is_style_import(&self, option: &ExtractOption, name: &str) -> bool {
+        self.style_imports.contains(name)
+            || self.imports.get(name).is_some_and(|(source, _)| {
+                source == crate::STYLEX_PACKAGE
+                    || source.starts_with(option.package.as_str())
+                    || option.import_aliases.contains_key(source)
+            })
+    }
+
+    /// Where code changes the object or array `name` holds, directly or
+    /// through the `const` it is put in; handing on a value the build does
+    /// not know, such as a function, does not count
+    fn change(
+        &mut self,
+        modules: &mut Modules<'_>,
+        uses: &FxHashMap<String, Vec<crate::mutations::Use>>,
+        name: &str,
+        visiting: &mut Vec<String>,
+    ) -> Option<ChangedAt> {
+        let found = uses.get(name)?;
+        if visiting.iter().any(|seen| seen == name) {
+            return None;
+        }
+        let value = self.lookup(modules, name);
+        visiting.push(name.to_string());
+        let changed = found.iter().find_map(|found| match found {
+            crate::mutations::Use::Changes(at) => Some(ChangedAt::Here(*at)),
+            crate::mutations::Use::Escapes { at, path, into } => value
+                .as_ref()
+                .filter(|value| !value.reaches_only_primitives(path))
+                .and_then(|_| match into {
+                    Some(into) => self.change(modules, uses, into, visiting),
+                    None => Some(ChangedAt::Here(*at)),
+                }),
+        });
+        visiting.pop().and(changed)
     }
 
     fn binds(&self, name: &str) -> bool {
