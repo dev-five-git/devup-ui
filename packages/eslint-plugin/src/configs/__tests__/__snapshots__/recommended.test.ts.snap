@@ -15,7 +15,7 @@ exports[`recommended export recommended config 1`] = `
                 "url": "https://github.com/dev-five-git/devup-ui/tree/main/packages/eslint-plugin/src/rules/css-utils-literal-only",
               },
               "messages": {
-                "cssUtilsLiteralOnly": "CSS utils should only be used with values known at build time: literals, constants, or what module functions, imports and built-ins compute from them.",
+                "cssUtilsLiteralOnly": "CSS utils should only be used with values known at build time: literals, constants, or what exact built-ins and the functions of this file compute from them.",
               },
               "schema": [],
               "type": "problem",

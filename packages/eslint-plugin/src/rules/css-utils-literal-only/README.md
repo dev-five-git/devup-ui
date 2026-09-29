@@ -9,11 +9,11 @@ This rule ensures that CSS utility functions (`css`, `globalCss`, `keyframes`) f
 The build knows:
 
 - literals, and constants: imports and module-level `const`s
-- what those compute through calls of imported or module-level functions and of built-ins (`Math` except `Math.random`, `String`, `Number`, ...)
+- what those compute through exact built-ins (`String`, `Number`, `JSON`, string and array methods, `Math.max`, `Math.round`, ... — not `Math.random`, `Math.sin` or `Math.pow`) and through functions this file declares that only compute
 
-The build inlines constants, folds `Math` and runs the other calls at build time.
+The build inlines constants, folds `Math` and runs the file's own functions at build time. It never runs another module's code, so calling an imported function is reported.
 
-The rule reports parameters, `let` variables, `Date`, `Math.random` and functions the build cannot run, such as a parameter or a `let` function. It also reports a constant or an import the file changes — a member assignment, `delete`, `++`, a changing method such as `push` or `sort`, or `Object.assign` — as the build no longer reads it as written.
+The rule reports parameters, `let` variables, globals such as `Date` or `window`, `Math.random` and approximate `Math` functions, `**`, locale methods (`toLocaleString`, `localeCompare`, `normalize`), and functions the build does not run: imported ones, and those using `this`, `new`, classes, regular expressions, `try`, getters, `async` code, generators, JSX or a method chosen at runtime, or writing a module-level binding. It also reports a constant or an import the file changes — a member assignment, `delete`, `++`, a changing method such as `push` or `sort`, `Object.assign`, changing its elements in a `for...of` loop or a `forEach`/`map` callback, calling a method of it that uses `this`, or handing it to a function the rule does not know — as the build no longer reads it as written. Code in another module can change an object too, which a lint rule on one file cannot see: keep objects styles read unchanged.
 
 ### Examples
 
@@ -58,6 +58,15 @@ function tint(pick: (n: number) => string) {
   // The build cannot run a function it is given at runtime
   return css({ color: pick(1) })
 }
+```
+
+```tsx
+import { css } from '@devup-ui/react'
+
+import { darken, PRIMARY } from './color'
+
+// Another module's code never runs at build time
+css({ color: darken(0.1, PRIMARY) })
 ```
 
 ```tsx
@@ -113,10 +122,10 @@ css({ p: UNIT, m: SIZE })
 ```tsx
 import { css } from '@devup-ui/react'
 
-import { darken, PRIMARY } from './color'
+import { PRIMARY } from './color'
 
-// The build runs these calls
-const HOVER = darken(0.1, PRIMARY)
+// The build runs the functions of this file and exact built-ins
+const HOVER = `${PRIMARY}cc`
 function double(n: number) {
   return n * 2
 }
@@ -145,7 +154,7 @@ The rule will not trigger for:
 
 - CSS utilities from other packages
 - Literal values (strings, numbers, arrays of literals)
-- Constants, and what module functions, imports and built-ins compute from them
+- Constants, and what exact built-ins and the file's own functions compute from them
 - Non-CSS utility functions
 
 ## Why This Rule Exists
