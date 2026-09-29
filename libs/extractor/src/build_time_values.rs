@@ -729,18 +729,17 @@ impl<'s> Reads<'s> {
 
 impl<'a> Visit<'a> for Reads<'_> {
     fn visit_identifier_reference(&mut self, identifier: &oxc_ast::ast::IdentifierReference<'a>) {
-        let Some(reference) = identifier.reference_id.get() else {
-            return;
-        };
-        let reference_data = self.scoping.get_reference(reference);
-        match reference_data.symbol_id() {
-            None => self.impure |= !GLOBALS.contains(&identifier.name.as_str()),
-            Some(symbol) => {
-                self.impure |= reference_data.is_write()
-                    && self.scoping.symbol_scope_id(symbol) == self.scoping.root_scope_id();
-            }
+        if let Some(reference) = identifier.reference_id.get() {
+            let reference_data = self.scoping.get_reference(reference);
+            self.impure |= reference_data.symbol_id().map_or_else(
+                || !GLOBALS.contains(&identifier.name.as_str()),
+                |symbol| {
+                    reference_data.is_write()
+                        && self.scoping.symbol_scope_id(symbol) == self.scoping.root_scope_id()
+                },
+            );
+            self.references.push(reference);
         }
-        self.references.push(reference);
     }
 
     fn visit_static_member_expression(
