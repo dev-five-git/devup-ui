@@ -19732,13 +19732,10 @@ export const d = <Box transitionDuration={300} animationDelay={0.5} counterReset
         reset_file_map();
         let partial = extract_with_modules(
             "/src/App.tsx",
-            "import { css } from '@devup-ui/react';\nimport * as tokens from './tokens';\nexport const a = css(tokens.nested.known.length);",
+            "import { css } from '@devup-ui/react';\nimport * as tokens from './tokens';\nexport const a = css(tokens.list.length);",
             ExtractOption::default(),
             false,
-            &memory_resolver(&[(
-                "/src/tokens.ts",
-                "export const make = (n) => ({ m: n });\nexport const nested = { x: make(1), known: 'k' };",
-            )]),
+            &memory_resolver(&[("/src/tokens.ts", "export const list = [1, 2];")]),
         );
         assert!(
             partial
