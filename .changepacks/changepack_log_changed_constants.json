@@ -1,0 +1,7 @@
+{
+  "changes": {
+    "bindings/devup-ui-wasm/package.json": "Patch"
+  },
+  "note": "An object, array or enum constant that code the build sees changes (a member assignment, delete, ++, push, sort, Object.assign, or handing it to a function the build does not know) is no longer read as its declared value: elements read its members at runtime, css(), styled() and element spreads taking it whole are build errors naming where it is changed, and values computed at build time do not read it. Values computed at build time cannot read window, document, navigator, location, process or globalThis properties the build does not define, so the CSS never holds the build environment's answer",
+  "date": "2026-09-29T00:00:00.000Z"
+}
