@@ -17,11 +17,9 @@ import {
 
 import * as coordinatorModule from '../coordinator'
 import {
-  computesStyleValues,
   DevupUI,
   reloadTurboSetupModuleForTesting,
   resetTurboSetupCacheForTesting,
-  selectWasmVariant,
 } from '../plugin'
 import { setWasmForTesting, setWebpackPluginForTesting } from '../wasm'
 
@@ -183,83 +181,6 @@ afterEach(() => {
 })
 
 describe('DevupUINextPlugin', () => {
-  it('selects the lite engine only when the graph has no vanilla-extract file', () => {
-    expect(selectWasmVariant(undefined)).toBe('full')
-    expect(
-      selectWasmVariant({ files: ['src/page.tsx'] } as StaticImportGraph),
-    ).toBe('lite')
-    expect(
-      selectWasmVariant({ files: ['src/theme.css.ts'] } as StaticImportGraph),
-    ).toBe('full')
-    expect(
-      selectWasmVariant({ files: ['src/theme.css.js'] } as StaticImportGraph),
-    ).toBe('full')
-    expect(
-      selectWasmVariant({ files: ['src/page.tsx'] } as StaticImportGraph, [
-        'node_modules/design-system/theme.css.ts',
-      ]),
-    ).toBe('full')
-    expect(
-      selectWasmVariant(
-        { files: ['src/page.tsx', 'src/color.tsx'] } as StaticImportGraph,
-        undefined,
-        (filename) => filename === 'src/color.tsx',
-      ),
-    ).toBe('full')
-    expect(
-      selectWasmVariant(
-        { files: ['src/page.tsx'] } as StaticImportGraph,
-        undefined,
-        () => false,
-      ),
-    ).toBe('lite')
-  })
-
-  it('checks a source for computed style values only when it calls a style API', () => {
-    const hasBuildTimeValues = mock(() => true)
-    setWasmForTesting({ ...wasm, hasBuildTimeValues } as typeof wasm)
-    readFileSyncSpy.mockImplementation(((path: string) => {
-      if (path.endsWith('missing.tsx')) throw new Error('ENOENT')
-      if (path.endsWith('styled.tsx'))
-        return 'export const A = styled.div(base)'
-      if (path.endsWith('spread.tsx'))
-        return 'export const a = <Box {...card} />'
-      if (path.endsWith('hover.tsx'))
-        return 'export const a = <Box _hover={hover} />'
-      return path.endsWith('plain.tsx')
-        ? 'export const a = 1'
-        : "css({ color: darken(0.1, 'red') })"
-    }) as never)
-    expect(computesStyleValues('src/missing.tsx', '@devup-ui/react', {})).toBe(
-      false,
-    )
-    expect(computesStyleValues('src/plain.tsx', '@devup-ui/react', {})).toBe(
-      false,
-    )
-    expect(hasBuildTimeValues).not.toHaveBeenCalled()
-    expect(
-      computesStyleValues('src/color.tsx', '@devup-ui/react', {
-        '@emotion/react': null,
-      }),
-    ).toBe(true)
-    expect(hasBuildTimeValues).toHaveBeenCalledWith(
-      'src/color.tsx',
-      "css({ color: darken(0.1, 'red') })",
-      '@devup-ui/react',
-      { '@emotion/react': null },
-    )
-    for (const file of ['src/styled.tsx', 'src/spread.tsx', 'src/hover.tsx']) {
-      expect(computesStyleValues(file, '@devup-ui/react', {})).toBe(true)
-    }
-    const { hasBuildTimeValues: _, ...older } = wasm as typeof wasm & {
-      hasBuildTimeValues?: unknown
-    }
-    setWasmForTesting(older as typeof wasm)
-    expect(computesStyleValues('src/color.tsx', '@devup-ui/react', {})).toBe(
-      false,
-    )
-  })
-
   describe('webpack', () => {
     it('should apply webpack plugin', async () => {
       const ret = DevupUI({})
@@ -730,7 +651,7 @@ describe('DevupUINextPlugin', () => {
         sourceMap: false,
       })
     })
-    it('extracts vanilla-extract modules as written with the full engine', () => {
+    it('extracts vanilla-extract modules as written', () => {
       setNodeEnv('production')
       process.env.TURBOPACK = '1'
       const filename = resolve('src/styles.css.ts')
