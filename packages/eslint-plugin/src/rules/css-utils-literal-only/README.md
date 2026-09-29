@@ -13,7 +13,7 @@ The build knows:
 
 The build inlines constants, folds `Math` and runs the other calls at build time.
 
-The rule reports parameters, `let` variables, `Date`, `Math.random` and functions the build cannot run, such as a parameter or a `let` function.
+The rule reports parameters, `let` variables, `Date`, `Math.random` and functions the build cannot run, such as a parameter or a `let` function. It also reports a constant or an import the file changes — a member assignment, `delete`, `++`, a changing method such as `push` or `sort`, or `Object.assign` — as the build no longer reads it as written.
 
 ### Examples
 
@@ -58,6 +58,16 @@ function tint(pick: (n: number) => string) {
   // The build cannot run a function it is given at runtime
   return css({ color: pick(1) })
 }
+```
+
+```tsx
+import { css } from '@devup-ui/react'
+
+const sizes = { gap: 4 }
+
+// Changed after it is declared, so it is not a constant
+sizes.gap = 8
+css({ gap: sizes.gap })
 ```
 
 #### ✅ Correct
