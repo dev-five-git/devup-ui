@@ -56,7 +56,7 @@ use strum::IntoEnumIterator;
 
 use crate::utils::{
     ParsedStyleOrder, RUNTIME_VALUE, STYLE_OBJECT, StyleArguments, Suspends, build_time_error,
-    call_with_values, composes_binding, element_error, expression_to_style_order, fixed_value,
+    call_with_values, element_error, expression_to_style_order, fixed_value,
     get_str_by_property_key, get_string_by_literal_expression, get_string_by_property_key, is_pure,
     jsx_expression_to_style_order, key_error, readable_argument, readable_code, reads_directly,
     reads_spreads_once, reads_unknown, runtime_classes, runtime_value, runtime_value_error,
@@ -179,6 +179,10 @@ pub struct DevupVisitor<'a> {
     /// through a spread, a binding that may hold rules only running the module
     /// gives
     pub composes_unknown: bool,
+    /// Parts `css()` or `styled()` join that read such a binding: the build
+    /// cannot tell rules from a class in them, so each is a build error unless
+    /// the build computes it
+    pub unknown_parts: Vec<(u32, String)>,
     /// Objects and arrays code changes, which styles cannot take whole
     changed_bindings: crate::imported_constants::Changed,
 }
@@ -209,6 +213,27 @@ fn reads_binding(
 impl<'a> DevupVisitor<'a> {
     pub fn changed_bindings(&mut self, changed: crate::imported_constants::Changed) {
         self.changed_bindings = changed;
+    }
+
+    /// Record the arguments of `api` that read a binding only running the
+    /// module gives
+    fn unknown_arguments(&mut self, api: &str, arguments: &[Argument<'a>]) {
+        if self.unknown_bindings.is_empty() {
+            return;
+        }
+        for argument in arguments {
+            let expression = match argument {
+                Argument::SpreadElement(spread) => &spread.argument,
+                argument => argument.to_expression(),
+            };
+            if reads_unknown(expression, &self.unknown_bindings) {
+                self.composes_unknown = true;
+                self.unknown_parts.push((
+                    argument.span().start,
+                    build_time_error(api, &readable_argument(argument), STYLE_OBJECT),
+                ));
+            }
+        }
     }
 
     /// Report the arguments of `api` that give styles code changes
@@ -268,6 +293,7 @@ impl<'a> DevupVisitor<'a> {
             spreads_read_once: 0,
             unknown_bindings: crate::imported_constants::Unknown::default(),
             composes_unknown: false,
+            unknown_parts: Vec::new(),
             changed_bindings: crate::imported_constants::Changed::default(),
         }
     }
@@ -961,8 +987,7 @@ impl<'a> VisitMut<'a> for DevupVisitor<'a> {
 
             if is_styled {
                 if let Expression::CallExpression(call) = &*it {
-                    self.composes_unknown |=
-                        composes_binding(&call.arguments, &self.unknown_bindings);
+                    self.unknown_arguments("styled", &call.arguments);
                     self.changed_arguments("styled", &call.arguments);
                 }
                 let (result, new_expr, errors) = extract_style_from_styled(
@@ -1397,8 +1422,7 @@ impl<'a> VisitMut<'a> for DevupVisitor<'a> {
                 let offset = call.span.start;
                 let is_css = matches!(util_type.as_ref(), UtilType::Css);
                 if is_css {
-                    self.composes_unknown |=
-                        composes_binding(&call.arguments, &self.unknown_bindings);
+                    self.unknown_arguments("css", &call.arguments);
                     self.changed_arguments("css", &call.arguments);
                 }
                 let composed_classes = if is_css

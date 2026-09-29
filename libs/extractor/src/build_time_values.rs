@@ -1,9 +1,11 @@
-//! Values the styles of a file compute when the module runs, such as
-//! `css({ color: darken(0.1, PRIMARY) })`: the APIs taking them have no element
-//! to set a runtime value on, so the build runs the code they read and writes
-//! what it gives in their place.
+//! Values the styles of a file compute from constants with code the file
+//! declares, such as `css({ w: double(SIZE) })`: the APIs taking them have no
+//! element to set a runtime value on, so the build runs that code and writes
+//! what it gives in their place. Only code whose every step gives the same
+//! value on every page and every build runs; anything else is left to the
+//! runtime.
 
-use std::collections::BTreeSet;
+use std::collections::{BTreeMap, BTreeSet};
 
 use oxc_allocator::Allocator;
 use oxc_ast::ast::{
@@ -23,11 +25,19 @@ use crate::stylex::StylexFunction;
 use crate::utils::{binding_root, get_string_by_literal_expression, unwrap_syntax_only};
 use crate::{ExtractOption, ModuleResolver};
 
-/// An expression whose reads the module can run on its own
-struct Found {
-    span: Span,
+/// What code reads outside itself
+#[derive(Clone, Default)]
+struct Closure {
     /// The top-level statements it reads, directly or through each other
     statements: BTreeSet<usize>,
+    /// The imports it reads, by local name, each as the value the build knows
+    imports: BTreeMap<String, String>,
+}
+
+/// An expression whose reads the build can run
+struct Found {
+    span: Span,
+    closure: Closure,
     /// The key of the shorthand property it is written as, which the value
     /// written in its place needs
     shorthand: Option<String>,
@@ -64,46 +74,58 @@ pub(crate) fn has_build_time_values(
         option,
         resolver,
     );
+    let changes = crate::imported_constants::ChangeCheck::new(&program, filename, option, resolver);
     !find(
         &program,
         &|source| source.starts_with(option.package.as_str()),
         &inlined.unknown,
-        &|_| false,
+        &|name| changes.is_changed(name),
+        &|name| changes.known(name),
     )
     .is_empty()
 }
 
-/// Globals only the running page or process knows
-pub(crate) const ENVIRONMENT: [&str; 19] = [
-    "window",
-    "self",
-    "document",
-    "navigator",
-    "location",
-    "history",
-    "localStorage",
-    "sessionStorage",
-    "matchMedia",
-    "screen",
-    "innerWidth",
-    "innerHeight",
-    "devicePixelRatio",
-    "process",
-    "global",
-    "globalThis",
-    "Deno",
-    "Bun",
-    "Intl",
+/// The globals the build runs: plain data and the functions over it that every
+/// engine computes alike
+const GLOBALS: [&str; 18] = [
+    "undefined",
+    "NaN",
+    "Infinity",
+    "Math",
+    "String",
+    "Number",
+    "Boolean",
+    "Array",
+    "Object",
+    "JSON",
+    "parseInt",
+    "parseFloat",
+    "isNaN",
+    "isFinite",
+    "encodeURIComponent",
+    "decodeURIComponent",
+    "encodeURI",
+    "decodeURI",
 ];
 
-/// Methods giving what the locale of the running page or process makes them
-pub(crate) const LOCALE_METHODS: [&str; 6] = [
+/// The members of `Math` every engine gives exactly; the others are
+/// approximations that may differ in their last digits
+const EXACT_MATH: [&str; 20] = [
+    "abs", "ceil", "floor", "round", "trunc", "sign", "max", "min", "sqrt", "fround", "imul",
+    "clz32", "PI", "E", "LN2", "LN10", "LOG2E", "LOG10E", "SQRT2", "SQRT1_2",
+];
+
+/// Members giving what the locale, the Unicode data of the engine or chance
+/// make them
+const UNCERTAIN_MEMBERS: [&str; 8] = [
     "toLocaleString",
     "toLocaleDateString",
     "toLocaleTimeString",
     "toLocaleUpperCase",
     "toLocaleLowerCase",
     "localeCompare",
+    "normalize",
+    "random",
 ];
 
 fn parse<'a>(allocator: &'a Allocator, filename: &str, code: &'a str) -> Option<Program<'a>> {
@@ -117,12 +139,13 @@ fn find(
     is_style: &dyn Fn(&str) -> bool,
     unknown: &crate::imported_constants::Unknown,
     is_changed: &dyn Fn(&str) -> bool,
+    known: &dyn Fn(&str) -> Option<String>,
 ) -> Vec<Found> {
     let scoping = SemanticBuilder::new()
         .build(program)
         .semantic
         .into_scoping();
-    let mut finder = Finder::new(program, &scoping, is_style, unknown, is_changed);
+    let mut finder = Finder::new(program, &scoping, is_style, unknown, is_changed, known);
     finder.visit_program(program);
     finder.found
 }
@@ -152,7 +175,10 @@ struct Finder<'s, 'a> {
     /// Whether a binding holds an object or array code changes, which the
     /// module would compute from as declared
     is_changed: &'s dyn Fn(&str) -> bool,
-    closures: FxHashMap<usize, Option<BTreeSet<usize>>>,
+    /// The value of an import as JavaScript source, when the build knows all
+    /// of it; the module it comes from never runs
+    known: &'s dyn Fn(&str) -> Option<String>,
+    closures: FxHashMap<usize, Option<Closure>>,
     found: Vec<Found>,
 }
 
@@ -167,6 +193,7 @@ impl<'s, 'a> Finder<'s, 'a> {
         is_style: &dyn Fn(&str) -> bool,
         unknown: &'s crate::imported_constants::Unknown,
         is_changed: &'s dyn Fn(&str) -> bool,
+        known: &'s dyn Fn(&str) -> Option<String>,
     ) -> Self {
         let mut finder = Self {
             scoping,
@@ -180,6 +207,7 @@ impl<'s, 'a> Finder<'s, 'a> {
             components: FxHashSet::default(),
             unknown,
             is_changed,
+            known,
             closures: FxHashMap::default(),
             found: Vec::new(),
         };
@@ -251,7 +279,7 @@ impl<'s, 'a> Finder<'s, 'a> {
                         declare(function.id.as_ref().and_then(|id| id.symbol_id.get()), true);
                     }
                     ExportDefaultDeclarationKind::ClassDeclaration(class) => {
-                        declare(class.id.as_ref().and_then(|id| id.symbol_id.get()), true);
+                        declare(class.id.as_ref().and_then(|id| id.symbol_id.get()), false);
                     }
                     _ => {}
                 }
@@ -277,7 +305,7 @@ impl<'s, 'a> Finder<'s, 'a> {
                 declare(function.id.as_ref().and_then(|id| id.symbol_id.get()), true);
             }
             Declaration::ClassDeclaration(class) => {
-                declare(class.id.as_ref().and_then(|id| id.symbol_id.get()), true);
+                declare(class.id.as_ref().and_then(|id| id.symbol_id.get()), false);
             }
             Declaration::TSEnumDeclaration(declaration) => {
                 declare(declaration.id.symbol_id.get(), !declaration.declare);
@@ -516,25 +544,27 @@ impl<'s, 'a> Finder<'s, 'a> {
         let span = expression.span();
         let mut reads = Reads::new(self.scoping);
         reads.visit_expression(expression);
-        if reads.opaque || reads.environment {
+        if reads.impure {
             return false;
         }
-        let Some(statements) = self.closure(span, &reads.references) else {
+        let Some(closure) = self.closure(span, &reads.references) else {
             return false;
         };
         self.found.push(Found {
             span,
-            statements,
+            closure,
             shorthand: shorthand.map(str::to_string),
             rules_only,
         });
         true
     }
 
-    /// The top-level statements code at `span` reads, `None` when it reads a
-    /// binding the module cannot run on its own
-    fn closure(&mut self, span: Span, references: &[ReferenceId]) -> Option<BTreeSet<usize>> {
-        let mut statements = BTreeSet::new();
+    /// What code at `span` reads outside itself, `None` when it reads a
+    /// binding the build does not run: one declared other than as a `const`,
+    /// a function or an enum, code it does not run, an object code changes,
+    /// or an import whose value it does not know whole
+    fn closure(&mut self, span: Span, references: &[ReferenceId]) -> Option<Closure> {
+        let mut closure = Closure::default();
         for reference in references {
             let Some(symbol) = self.scoping.get_reference(*reference).symbol_id() else {
                 continue;
@@ -542,36 +572,41 @@ impl<'s, 'a> Finder<'s, 'a> {
             if span.contains_inclusive(self.scoping.symbol_span(symbol)) {
                 continue;
             }
+            let name = self.scoping.symbol_name(symbol);
             let statement = match self.bindings.get(&symbol) {
                 Some(Binding {
                     statement,
                     usable: true,
-                }) if !(self.is_changed)(self.scoping.symbol_name(symbol)) => *statement,
+                }) if !(self.is_changed)(name) => *statement,
                 _ => return None,
             };
-            statements.insert(statement);
-            statements.extend(self.statement_closure(statement)?);
+            if matches!(self.statements[statement], Statement::ImportDeclaration(_)) {
+                closure
+                    .imports
+                    .insert(name.to_string(), (self.known)(name)?);
+                continue;
+            }
+            closure.statements.insert(statement);
+            let inner = self.statement_closure(statement)?;
+            closure.statements.extend(inner.statements);
+            closure.imports.extend(inner.imports);
         }
-        Some(statements)
+        Some(closure)
     }
 
-    fn statement_closure(&mut self, index: usize) -> Option<BTreeSet<usize>> {
+    fn statement_closure(&mut self, index: usize) -> Option<Closure> {
         if let Some(closure) = self.closures.get(&index) {
             return closure.clone();
         }
         // Read while it is computed, so statements reading each other stop
-        self.closures.insert(index, Some(BTreeSet::new()));
+        self.closures.insert(index, Some(Closure::default()));
         let statement = &self.statements[index];
-        let closure = if matches!(statement, Statement::ImportDeclaration(_)) {
-            Some(BTreeSet::new())
+        let mut reads = Reads::new(self.scoping);
+        reads.visit_statement(statement);
+        let closure = if reads.impure {
+            None
         } else {
-            let mut reads = Reads::new(self.scoping);
-            reads.visit_statement(statement);
-            if reads.environment {
-                None
-            } else {
-                self.closure(statement.span(), &reads.references)
-            }
+            self.closure(statement.span(), &reads.references)
         };
         self.closures.insert(index, closure.clone());
         closure
@@ -635,15 +670,17 @@ impl<'a> Visit<'a> for Finder<'_, 'a> {
     }
 }
 
-/// The bindings code reads
+/// The bindings code reads, and whether the build runs it
 struct Reads<'s> {
     scoping: &'s Scoping,
     references: Vec<ReferenceId>,
-    /// Reads what only the code around it knows (`this`, `super`,
-    /// `import.meta`), or what differs on every build (`Date`, `Math.random`)
-    opaque: bool,
-    /// Reads what only the running page or process knows, or its locale
-    environment: bool,
+    /// Does what the build does not run: reads what only the code around it,
+    /// the page or the process knows (`this`, globals such as `window` or
+    /// `Date`), chance, the locale or results engines only approximate; uses
+    /// more than plain data and functions (`new`, classes, regular
+    /// expressions, `try`, getters, async code, JSX); or writes a binding
+    /// outside itself
+    impure: bool,
 }
 
 impl<'s> Reads<'s> {
@@ -651,56 +688,203 @@ impl<'s> Reads<'s> {
         Self {
             scoping,
             references: Vec::new(),
-            opaque: false,
-            environment: false,
+            impure: false,
         }
+    }
+
+    fn symbol(&self, identifier: &oxc_ast::ast::IdentifierReference<'_>) -> Option<SymbolId> {
+        self.scoping
+            .get_reference(identifier.reference_id.get()?)
+            .symbol_id()
     }
 
     fn is_global(&self, expression: &Expression<'_>, name: &str) -> bool {
         matches!(expression, Expression::Identifier(identifier)
-            if identifier.name == name
-                && identifier
-                    .reference_id
-                    .get()
-                    .and_then(|reference| self.scoping.get_reference(reference).symbol_id())
-                    .is_none())
+            if identifier.name == name && self.symbol(identifier).is_none())
+    }
+
+    fn member(&mut self, object: &Expression<'_>, name: &str) {
+        self.impure |= UNCERTAIN_MEMBERS.contains(&name)
+            || (self.is_global(object, "Math") && !EXACT_MATH.contains(&name));
+    }
+
+    /// Whether `expression`, the object of a member written, is a top-level
+    /// binding or a member of one
+    fn is_outside(&self, expression: &Expression<'_>) -> bool {
+        let mut expression = expression;
+        loop {
+            match unwrap_syntax_only(expression) {
+                Expression::StaticMemberExpression(member) => expression = &member.object,
+                Expression::ComputedMemberExpression(member) => expression = &member.object,
+                Expression::Identifier(identifier) => {
+                    return self.symbol(identifier).is_some_and(|symbol| {
+                        self.scoping.symbol_scope_id(symbol) == self.scoping.root_scope_id()
+                    });
+                }
+                _ => return false,
+            }
+        }
     }
 }
 
 impl<'a> Visit<'a> for Reads<'_> {
     fn visit_identifier_reference(&mut self, identifier: &oxc_ast::ast::IdentifierReference<'a>) {
-        let reference = identifier.reference_id.get();
-        let global = reference
-            .and_then(|reference| self.scoping.get_reference(reference).symbol_id())
-            .is_none();
-        self.opaque |= global && identifier.name == "Date";
-        self.environment |= global && ENVIRONMENT.contains(&identifier.name.as_str());
-        self.references.extend(reference);
+        let Some(reference) = identifier.reference_id.get() else {
+            return;
+        };
+        let reference_data = self.scoping.get_reference(reference);
+        match reference_data.symbol_id() {
+            None => self.impure |= !GLOBALS.contains(&identifier.name.as_str()),
+            Some(symbol) => {
+                self.impure |= reference_data.is_write()
+                    && self.scoping.symbol_scope_id(symbol) == self.scoping.root_scope_id();
+            }
+        }
+        self.references.push(reference);
     }
 
     fn visit_static_member_expression(
         &mut self,
         member: &oxc_ast::ast::StaticMemberExpression<'a>,
     ) {
-        self.opaque |= member.property.name == "random" && self.is_global(&member.object, "Math");
-        self.environment |= LOCALE_METHODS.contains(&member.property.name.as_str());
+        self.member(&member.object, member.property.name.as_str());
         walk::walk_static_member_expression(self, member);
     }
 
+    fn visit_computed_member_expression(
+        &mut self,
+        member: &oxc_ast::ast::ComputedMemberExpression<'a>,
+    ) {
+        if let Some(key) = get_string_by_literal_expression(&member.expression) {
+            self.member(&member.object, &key);
+        }
+        walk::walk_computed_member_expression(self, member);
+    }
+
+    fn visit_call_expression(&mut self, call: &oxc_ast::ast::CallExpression<'a>) {
+        // A method chosen at runtime may be any, and `toString` with a radix
+        // is only approximated
+        self.impure |= match unwrap_syntax_only(&call.callee) {
+            Expression::ComputedMemberExpression(member) => {
+                get_string_by_literal_expression(&member.expression).is_none()
+            }
+            Expression::StaticMemberExpression(member) => {
+                member.property.name == "toString" && !call.arguments.is_empty()
+            }
+            _ => false,
+        };
+        walk::walk_call_expression(self, call);
+    }
+
+    fn visit_assignment_expression(&mut self, assignment: &oxc_ast::ast::AssignmentExpression<'a>) {
+        self.impure |= assignment.operator == oxc_syntax::operator::AssignmentOperator::Exponential
+            || assignment
+                .left
+                .as_simple_assignment_target()
+                .and_then(|target| target.as_member_expression())
+                .is_some_and(|member| self.is_outside(member.object()));
+        walk::walk_assignment_expression(self, assignment);
+    }
+
+    fn visit_update_expression(&mut self, update: &oxc_ast::ast::UpdateExpression<'a>) {
+        self.impure |= update
+            .argument
+            .as_member_expression()
+            .is_some_and(|member| self.is_outside(member.object()));
+        walk::walk_update_expression(self, update);
+    }
+
+    fn visit_unary_expression(&mut self, unary: &oxc_ast::ast::UnaryExpression<'a>) {
+        self.impure |= unary.operator == oxc_syntax::operator::UnaryOperator::Delete
+            && self.is_outside(&unary.argument);
+        walk::walk_unary_expression(self, unary);
+    }
+
+    fn visit_binary_expression(&mut self, binary: &oxc_ast::ast::BinaryExpression<'a>) {
+        self.impure |= binary.operator == oxc_syntax::operator::BinaryOperator::Exponential;
+        walk::walk_binary_expression(self, binary);
+    }
+
+    fn visit_object_property(&mut self, property: &oxc_ast::ast::ObjectProperty<'a>) {
+        self.impure |= property.kind != oxc_ast::ast::PropertyKind::Init;
+        walk::walk_object_property(self, property);
+    }
+
+    fn visit_binding_property(&mut self, property: &oxc_ast::ast::BindingProperty<'a>) {
+        self.impure |= property
+            .key
+            .static_name()
+            .is_some_and(|key| UNCERTAIN_MEMBERS.contains(&key.as_ref()));
+        walk::walk_binding_property(self, property);
+    }
+
+    fn visit_function(
+        &mut self,
+        function: &oxc_ast::ast::Function<'a>,
+        flags: oxc_syntax::scope::ScopeFlags,
+    ) {
+        self.impure |= function.r#async || function.generator;
+        walk::walk_function(self, function, flags);
+    }
+
+    fn visit_arrow_function_expression(
+        &mut self,
+        arrow: &oxc_ast::ast::ArrowFunctionExpression<'a>,
+    ) {
+        self.impure |= arrow.r#async;
+        walk::walk_arrow_function_expression(self, arrow);
+    }
+
     fn visit_this_expression(&mut self, _: &oxc_ast::ast::ThisExpression) {
-        self.opaque = true;
+        self.impure = true;
     }
 
     fn visit_super(&mut self, _: &oxc_ast::ast::Super) {
-        self.opaque = true;
+        self.impure = true;
     }
 
     fn visit_import_meta(&mut self, _: &oxc_ast::ast::ImportMeta) {
-        self.opaque = true;
+        self.impure = true;
     }
 
     fn visit_new_target(&mut self, _: &oxc_ast::ast::NewTarget) {
-        self.opaque = true;
+        self.impure = true;
+    }
+
+    fn visit_new_expression(&mut self, _: &oxc_ast::ast::NewExpression<'a>) {
+        self.impure = true;
+    }
+
+    fn visit_class(&mut self, _: &oxc_ast::ast::Class<'a>) {
+        self.impure = true;
+    }
+
+    fn visit_reg_exp_literal(&mut self, _: &oxc_ast::ast::RegExpLiteral<'a>) {
+        self.impure = true;
+    }
+
+    fn visit_try_statement(&mut self, _: &oxc_ast::ast::TryStatement<'a>) {
+        self.impure = true;
+    }
+
+    fn visit_await_expression(&mut self, _: &oxc_ast::ast::AwaitExpression<'a>) {
+        self.impure = true;
+    }
+
+    fn visit_yield_expression(&mut self, _: &oxc_ast::ast::YieldExpression<'a>) {
+        self.impure = true;
+    }
+
+    fn visit_import_expression(&mut self, _: &oxc_ast::ast::ImportExpression<'a>) {
+        self.impure = true;
+    }
+
+    fn visit_jsx_element(&mut self, _: &oxc_ast::ast::JSXElement<'a>) {
+        self.impure = true;
+    }
+
+    fn visit_jsx_fragment(&mut self, _: &oxc_ast::ast::JSXFragment<'a>) {
+        self.impure = true;
     }
 
     // Types are erased before the code runs, so what they name is not read
@@ -741,19 +925,16 @@ pub(crate) fn evaluate(
 /// A value's source text by the span of the code computing it
 type Replacement = (Span, String);
 
-/// Run before the values: nothing that differs between builds or only the
-/// running page or process knows, its locale included (reading it throws, so
-/// no value depends on the build's environment), a stand-in for the style
-/// packages, one throwing for a module the build cannot load, and the source
-/// text of a value the build can read. A statement that throws is recorded,
-/// and a value reading it is not computed
+/// Run before the values: the code checked to read nothing that differs
+/// between builds or pages, nothing does even if the check missed it
+/// (reading `Date`, `Math.random`, the environment or the locale throws), and
+/// the source text of a value the build can read. A statement that throws is
+/// recorded, and a value reading it is not computed
 const PRELUDE: &str = r#"delete globalThis.Date;
 Math.random = undefined;
 for (const name of ["window", "self", "document", "navigator", "location", "history", "localStorage", "sessionStorage", "matchMedia", "screen", "innerWidth", "innerHeight", "devicePixelRatio", "process", "global", "Deno", "Bun", "Intl"]) Object.defineProperty(globalThis, name, { get() { throw new ReferenceError(`${name} is only known at runtime`); }, configurable: true });
-for (const [prototype, names] of [[Object.prototype, ["toLocaleString"]], [Number.prototype, ["toLocaleString"]], [BigInt.prototype, ["toLocaleString"]], [Array.prototype, ["toLocaleString"]], [String.prototype, ["localeCompare", "toLocaleUpperCase", "toLocaleLowerCase"]]]) for (const name of names) Object.defineProperty(prototype, name, { value() { throw new ReferenceError(`${name} depends on the locale`); }, configurable: true, writable: true });
+for (const [prototype, names] of [[Object.prototype, ["toLocaleString"]], [Number.prototype, ["toLocaleString"]], [BigInt.prototype, ["toLocaleString"]], [Array.prototype, ["toLocaleString"]], [String.prototype, ["localeCompare", "toLocaleUpperCase", "toLocaleLowerCase", "normalize"]]]) for (const name of names) Object.defineProperty(prototype, name, { value() { throw new ReferenceError(`${name} depends on the locale`); }, configurable: true, writable: true });
 Object.setPrototypeOf(globalThis, new Proxy(Object.getPrototypeOf(globalThis), { get(target, key, receiver) { if (typeof key === "string" && !(key in target)) throw new ReferenceError(`${key} is only known at runtime`); return Reflect.get(target, key, receiver); } }));
-globalThis.__vanilla_extract__ = (() => { const style = new Proxy(function () {}, { get: (_, key) => key === Symbol.toPrimitive ? undefined : style, apply: () => style }); return style; })();
-globalThis.__unloaded__ = new Proxy({}, { get(_, key) { throw new ReferenceError(`${String(key)} comes from a module the build cannot load`); } });
 const __failed__ = (() => { const fail = () => { throw new ReferenceError("its value threw"); }; return new Proxy(function () {}, { get: fail, apply: fail, construct: fail, getPrototypeOf: fail }); })();
 const __failed_statements__ = new Set();
 const __try__ = (compute, statement) => { try { return compute(); } catch { __failed_statements__.add(statement); return __failed__; } };
@@ -777,25 +958,37 @@ fn compute(
 
     use boa_engine::{Context, JsObject, Source};
 
-    use crate::module_loader::{Evaluating, ModuleLoader, module_script};
-
     let allocator = Allocator::default();
     let program = parse(&allocator, filename, code)?;
     let is_style = |source: &str| {
         source.starts_with(option.package.as_str()) || option.import_aliases.contains_key(source)
     };
     let changes = crate::imported_constants::ChangeCheck::new(&program, filename, option, resolver);
-    let found = find(&program, &is_style, unknown, &|name| {
-        changes.is_changed(name)
-    });
+    let found = find(
+        &program,
+        &is_style,
+        unknown,
+        &|name| changes.is_changed(name),
+        &|name| changes.known(name),
+    );
     if found.is_empty() {
         return None;
     }
     let statements: BTreeSet<usize> = found
         .iter()
-        .flat_map(|found| found.statements.iter().copied())
+        .flat_map(|found| found.closure.statements.iter().copied())
         .collect();
+    let imports: BTreeMap<&str, &str> = found
+        .iter()
+        .flat_map(|found| &found.closure.imports)
+        .map(|(name, value)| (name.as_str(), value.as_str()))
+        .collect();
+    // The modules imports come from never run: their values are written as
+    // the build knows them
     let mut module = String::new();
+    for (name, value) in imports {
+        let _ = writeln!(module, "const {name} = {value};");
+    }
     for index in statements {
         let statement = &program.body[index];
         let declaration = match statement {
@@ -833,7 +1026,12 @@ fn compute(
     }
     // Each runs apart, so one that throws leaves the others
     for (index, found) in found.iter().enumerate() {
-        let statements: Vec<String> = found.statements.iter().map(ToString::to_string).collect();
+        let statements: Vec<String> = found
+            .closure
+            .statements
+            .iter()
+            .map(ToString::to_string)
+            .collect();
         let _ = writeln!(
             module,
             "const __value_{index}__ = (() => {{ if ([{}].some((statement) => __failed_statements__.has(statement))) return undefined; try {{ return __literal__(({})); }} catch {{ return undefined; }} }})();",
@@ -846,29 +1044,13 @@ fn compute(
         .collect();
     let _ = writeln!(module, "[{}];", names.join(", "));
 
-    let _evaluating = Evaluating::enter(filename);
-    let mut loader = ModuleLoader::new(resolver, option).lenient();
-    let script = module_script(
-        &crate::vanilla_extract::strip_typescript(&module, filename),
-        filename,
-        &mut loader,
-        false,
-    )
-    .ok()?;
+    let script = crate::vanilla_extract::strip_typescript(&module, filename);
     let mut context = Context::default();
     context
         .runtime_limits_mut()
         .set_loop_iteration_limit(crate::module_loader::LOOP_ITERATION_LIMIT);
     let values = context
-        .eval(Source::from_bytes(
-            format!(
-                "{}{PRELUDE}{}{}",
-                crate::module_loader::CONSOLE,
-                loader.prelude(),
-                script.body
-            )
-            .as_bytes(),
-        ))
+        .eval(Source::from_bytes(format!("{PRELUDE}{script}").as_bytes()))
         .ok()?;
     let values = values.as_object().filter(JsObject::is_array)?;
     let mut computed = Vec::new();
@@ -881,7 +1063,8 @@ fn compute(
         else {
             continue;
         };
-        if found.rules_only && !literal.starts_with(['{', '[']) {
+        // A part joined gives rules, or a class as a string
+        if found.rules_only && !literal.starts_with(['{', '[', '"']) {
             continue;
         }
         computed.push((
@@ -892,5 +1075,5 @@ fn compute(
             },
         ));
     }
-    (!computed.is_empty()).then_some((computed, loader.dependencies))
+    (!computed.is_empty()).then_some((computed, changes.dependencies()))
 }
