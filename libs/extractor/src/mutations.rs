@@ -3,25 +3,33 @@
 //! them as the constants they are declared as.
 
 use oxc_ast::AstKind;
-use oxc_ast::ast::{Expression, JSXElementName, Program, VariableDeclarationKind};
+use oxc_ast::ast::{
+    Expression, JSXAttributeName, JSXElementName, ObjectPropertyKind, Program,
+    VariableDeclarationKind,
+};
+use oxc_ast_visit::{Visit, walk};
 use oxc_semantic::{AstNodes, SemanticBuilder};
 use oxc_span::GetSpan;
 use oxc_syntax::node::NodeId;
 use oxc_syntax::operator::UnaryOperator;
+use oxc_syntax::scope::ScopeFlags;
 use rustc_hash::FxHashMap;
 
 /// How code uses a top-level binding
 #[derive(Debug)]
 pub(crate) enum Use {
-    /// Changes what it holds, at this offset
-    Changes(u32),
+    /// Changes what it holds `depth` members deep, at this offset
+    Changes { at: u32, depth: usize },
     /// Hands the value at `path` (`None` for any key) to code that may change
-    /// it, or puts it in the top-level `const` named `into`
+    /// it, or puts it in the top-level `const` named `into`; an empty `into`
+    /// is what the module exports
     Escapes {
         at: u32,
         path: Vec<Option<String>>,
         into: Option<String>,
     },
+    /// Calls a method on the value at `path` that may change it through `this`
+    Calls { at: u32, path: Vec<Option<String>> },
 }
 
 const MUTATING_METHODS: [&str; 13] = [
@@ -40,8 +48,50 @@ const MUTATING_METHODS: [&str; 13] = [
     "add",
 ];
 
+/// Methods handing the elements of what they are called on to a callback or
+/// to the array they return
+const ELEMENT_METHODS: [&str; 23] = [
+    "forEach",
+    "map",
+    "filter",
+    "find",
+    "findIndex",
+    "findLast",
+    "findLastIndex",
+    "some",
+    "every",
+    "reduce",
+    "reduceRight",
+    "flatMap",
+    "flat",
+    "concat",
+    "slice",
+    "toReversed",
+    "toSorted",
+    "toSpliced",
+    "with",
+    "values",
+    "entries",
+    "at",
+    "get",
+];
+
+/// Methods that only read what they are called on
+const READING_METHODS: [&str; 10] = [
+    "join",
+    "includes",
+    "indexOf",
+    "lastIndexOf",
+    "keys",
+    "has",
+    "toString",
+    "valueOf",
+    "hasOwnProperty",
+    "propertyIsEnumerable",
+];
+
 /// Global functions that only read their arguments
-const READING_FUNCTIONS: [&str; 7] = [
+const READING_FUNCTIONS: [&str; 8] = [
     "String",
     "Number",
     "Boolean",
@@ -49,6 +99,7 @@ const READING_FUNCTIONS: [&str; 7] = [
     "parseFloat",
     "isNaN",
     "isFinite",
+    "structuredClone",
 ];
 
 /// The uses of each top-level binding of `program` that may change what it
@@ -65,13 +116,18 @@ pub(crate) fn uses(
     let scoping = semantic.scoping();
     let nodes = semantic.nodes();
     let is_global = |name: &str| scoping.get_root_binding(name.into()).is_none();
-    let context = Context {
-        nodes,
-        style,
-        is_global: &is_global,
-    };
     let mut uses: FxHashMap<String, Vec<Use>> = FxHashMap::default();
     for (name, symbol) in scoping.get_bindings(scoping.root_scope_id()) {
+        let init = match nodes.kind(scoping.symbol_declaration(*symbol)) {
+            AstKind::VariableDeclarator(declarator) => declarator.init.as_ref(),
+            _ => None,
+        };
+        let context = Context {
+            nodes,
+            style,
+            is_global: &is_global,
+            init,
+        };
         let found: Vec<Use> = scoping
             .get_resolved_reference_ids(*symbol)
             .iter()
@@ -90,6 +146,8 @@ struct Context<'s, 'a> {
     nodes: &'s AstNodes<'a>,
     style: &'s dyn Fn(&str) -> bool,
     is_global: &'s dyn Fn(&str) -> bool,
+    /// What the binding is declared as, when a `const` or `let` gives it
+    init: Option<&'s Expression<'a>>,
 }
 
 impl Context<'_, '_> {
@@ -143,7 +201,12 @@ impl Context<'_, '_> {
         mut path: Vec<Option<String>>,
     ) -> Option<Use> {
         // Writing the binding itself is an error for a `const` or an import
-        let changes = |path: &[Option<String>]| (!path.is_empty()).then_some(Use::Changes(at));
+        let changes = |path: &[Option<String>]| {
+            (!path.is_empty()).then_some(Use::Changes {
+                at,
+                depth: path.len(),
+            })
+        };
         match kind {
             AstKind::AssignmentExpression(assignment) if assignment.left.span() == span => {
                 changes(&path)
@@ -153,6 +216,11 @@ impl Context<'_, '_> {
             }
             AstKind::ForInStatement(statement) if statement.left.span() == span => changes(&path),
             AstKind::ForOfStatement(statement) if statement.left.span() == span => changes(&path),
+            // Each element is handed to the loop's binding, or to what is spread
+            AstKind::ForOfStatement(_) | AstKind::SpreadElement(_) => {
+                path.push(None);
+                self.escapes(parent, at, path)
+            }
             AstKind::UpdateExpression(_)
             | AstKind::ArrayAssignmentTarget(_)
             | AstKind::ObjectAssignmentTarget(_)
@@ -162,31 +230,35 @@ impl Context<'_, '_> {
                 changes(&path)
             }
             AstKind::CallExpression(call) if call.callee.span() == span => {
-                matches!(path.last(), Some(Some(method)) if MUTATING_METHODS.contains(&method.as_str()))
-                    .then_some(Use::Changes(at))
+                self.method_call(parent, at, path)
             }
             AstKind::CallExpression(call) => {
                 let function = self.global_function(&call.callee);
-                let changes_first = matches!(
+                if matches!(
                     function,
                     Some((
                         "Object",
                         "assign" | "defineProperty" | "defineProperties" | "setPrototypeOf"
                     ))
-                );
-                if changes_first && call.arguments.first().map(GetSpan::span) == Some(span) {
-                    return Some(Use::Changes(at));
+                ) && call.arguments.first().map(GetSpan::span) == Some(span)
+                {
+                    return Some(Use::Changes {
+                        at,
+                        depth: path.len() + 1,
+                    });
                 }
                 match function {
-                    Some(("Object", "assign")) => {
+                    Some(
+                        ("Object", "assign" | "values" | "entries") | ("Array", "from" | "of"),
+                    ) => {
                         path.push(None);
                         self.escapes(parent, at, path)
                     }
                     Some(
                         (
                             "Object",
-                            "keys" | "values" | "entries" | "freeze" | "isFrozen"
-                            | "getOwnPropertyNames" | "hasOwn",
+                            "keys" | "freeze" | "seal" | "preventExtensions" | "isFrozen"
+                            | "isSealed" | "getOwnPropertyNames" | "hasOwn",
                         )
                         | ("JSON" | "Math" | "console" | "", _)
                         | ("Array", "isArray"),
@@ -194,11 +266,15 @@ impl Context<'_, '_> {
                     _ => self.escapes(parent, at, path),
                 }
             }
-            AstKind::SpreadElement(_) | AstKind::JSXSpreadAttribute(_) => {
-                path.push(None);
-                self.escapes(parent, at, path)
-            }
             AstKind::ObjectProperty(property) if property.value.span() != span => None,
+            // React components must not change their props, so an element
+            // only reads them, except the `ref` React assigns
+            AstKind::JSXExpressionContainer(_) => {
+                matches!(self.nodes.parent_kind(parent), AstKind::JSXAttribute(attribute)
+                    if matches!(&attribute.name, JSXAttributeName::Identifier(name) if name.name == "ref"))
+                .then(|| self.escapes(parent, at, path))
+                .flatten()
+            }
             AstKind::ObjectProperty(_)
             | AstKind::ArrayExpression(_)
             | AstKind::VariableDeclarator(_)
@@ -209,7 +285,7 @@ impl Context<'_, '_> {
             | AstKind::NewExpression(_)
             | AstKind::ReturnStatement(_)
             | AstKind::YieldExpression(_)
-            | AstKind::JSXExpressionContainer(_)
+            | AstKind::ExportDefaultDeclaration(_)
             | AstKind::TaggedTemplateExpression(_)
             // The body of `() => value` gives its value
             | AstKind::ArrowFunctionExpression(_) => self.escapes(parent, at, path),
@@ -222,6 +298,67 @@ impl Context<'_, '_> {
                 self.escapes(parent, at, path)
             }
             _ => None,
+        }
+    }
+
+    /// `path` read as a method called on what comes before its last key
+    fn method_call(&self, call: NodeId, at: u32, mut path: Vec<Option<String>>) -> Option<Use> {
+        // Calling the binding itself hands it nothing
+        let method = path.pop()?;
+        if let Some(method) = method.as_deref() {
+            if MUTATING_METHODS.contains(&method) {
+                return Some(Use::Changes {
+                    at,
+                    depth: path.len() + 1,
+                });
+            }
+            if ELEMENT_METHODS.contains(&method) {
+                path.push(None);
+                return self.escapes(call, at, path);
+            }
+            if READING_METHODS.contains(&method) || !self.uses_this(&path, method) {
+                return None;
+            }
+        }
+        (!self.in_style(call)).then_some(Use::Calls { at, path })
+    }
+
+    /// Whether the method `method` of what `path` leads to in the binding's
+    /// declaration may read `this`: an arrow function cannot, and a function
+    /// written there can only when its body does
+    fn uses_this(&self, path: &[Option<String>], method: &str) -> bool {
+        let mut value = self.init;
+        for key in path.iter().map(Option::as_deref).chain([Some(method)]) {
+            let (Some(key), Some(Expression::ObjectExpression(object))) =
+                (key, value.map(crate::utils::unwrap_syntax_only))
+            else {
+                return true;
+            };
+            let mut found = None;
+            for property in &object.properties {
+                match property {
+                    ObjectPropertyKind::ObjectProperty(property) => {
+                        if property.key.static_name().as_deref() == Some(key) {
+                            found = Some(&property.value);
+                        } else if property.computed {
+                            found = None;
+                        }
+                    }
+                    ObjectPropertyKind::SpreadProperty(_) => found = None,
+                }
+            }
+            value = found;
+        }
+        match value.map(crate::utils::unwrap_syntax_only) {
+            Some(Expression::ArrowFunctionExpression(_)) => false,
+            Some(Expression::FunctionExpression(function)) => {
+                let mut this = ReadsThis::default();
+                if let Some(body) = &function.body {
+                    this.visit_function_body(body);
+                }
+                this.found
+            }
+            _ => true,
         }
     }
 
@@ -245,51 +382,99 @@ impl Context<'_, '_> {
         }
     }
 
+    /// Whether code at `node` is read by a style API, which never runs it
+    fn in_style(&self, node: NodeId) -> bool {
+        std::iter::once(node)
+            .chain(self.nodes.ancestor_ids(node))
+            .any(|id| match self.nodes.kind(id) {
+                AstKind::CallExpression(call) => self.is_style(&call.callee),
+                AstKind::TaggedTemplateExpression(tagged) => self.is_style(&tagged.tag),
+                AstKind::JSXOpeningElement(element) => self.is_style_element(&element.name),
+                _ => false,
+            })
+    }
+
     /// A value handed on at `node`: read where the style APIs read it, kept
-    /// in a top-level `const` it is put in, or out of the build's sight
+    /// in a top-level `const` or in what the module exports, or out of the
+    /// build's sight
     fn escapes(&self, node: NodeId, at: u32, path: Vec<Option<String>>) -> Option<Use> {
-        let ids = || std::iter::once(node).chain(self.nodes.ancestor_ids(node));
-        let read = ids().any(|id| match self.nodes.kind(id) {
-            AstKind::CallExpression(call) => self.is_style(&call.callee),
-            AstKind::TaggedTemplateExpression(tagged) => self.is_style(&tagged.tag),
-            AstKind::JSXOpeningElement(element) => self.is_style_element(&element.name),
-            AstKind::JSXElement(element) => self.is_style_element(&element.opening_element.name),
-            _ => false,
-        });
-        if read {
+        if self.in_style(node) {
             return None;
         }
-        // Through the literals it is written in, up to the declaration
-        let declarator = ids().find(|id| {
-            !matches!(
-                self.nodes.kind(*id),
+        // Through the literals it is written in, and the calls giving back
+        // what they are given, up to what holds it
+        let holder = std::iter::once(node)
+            .chain(self.nodes.ancestor_ids(node))
+            .find(|id| match self.nodes.kind(*id) {
                 AstKind::ObjectProperty(_)
-                    | AstKind::ObjectExpression(_)
-                    | AstKind::ArrayExpression(_)
-                    | AstKind::SpreadElement(_)
-                    | AstKind::ParenthesizedExpression(_)
-                    | AstKind::TSAsExpression(_)
-                    | AstKind::TSSatisfiesExpression(_)
+                | AstKind::ObjectExpression(_)
+                | AstKind::ArrayExpression(_)
+                | AstKind::SpreadElement(_)
+                | AstKind::ParenthesizedExpression(_)
+                | AstKind::TSAsExpression(_)
+                | AstKind::TSSatisfiesExpression(_) => false,
+                AstKind::CallExpression(call) => !matches!(
+                    self.global_function(&call.callee),
+                    Some(("Object", "freeze" | "seal" | "preventExtensions"))
+                ),
+                _ => true,
+            });
+        let into = holder.and_then(|id| self.holder(id));
+        Some(Use::Escapes { at, path, into })
+    }
+
+    /// The top-level `const` `id` declares, or an empty name for what the
+    /// module exports at `id`
+    fn holder(&self, id: NodeId) -> Option<String> {
+        let top_level = |id: NodeId| {
+            matches!(
+                self.nodes.ancestor_kinds(id).nth(1),
+                Some(AstKind::Program(_) | AstKind::ExportDeclaration(_))
             )
-        });
-        let into = declarator.and_then(|id| match self.nodes.kind(id) {
+        };
+        match self.nodes.kind(id) {
             AstKind::VariableDeclarator(declarator)
                 if matches!(self.nodes.parent_kind(id),
                     AstKind::VariableDeclaration(declaration)
                         if declaration.kind == VariableDeclarationKind::Const)
-                    && matches!(
-                        self.nodes.ancestor_kinds(id).nth(1),
-                        Some(AstKind::Program(_) | AstKind::ExportDeclaration(_))
-                    ) =>
+                    && top_level(id) =>
             {
                 declarator
                     .id
                     .get_identifier_name()
                     .map(|name| name.to_string())
             }
+            AstKind::ExportDefaultDeclaration(_) => Some(String::new()),
+            AstKind::AssignmentExpression(assignment)
+                if top_level(id)
+                    && assignment
+                        .left
+                        .as_simple_assignment_target()
+                        .and_then(|target| target.as_member_expression())
+                        .is_some_and(|member| self.is_commonjs_export(member)) =>
+            {
+                Some(String::new())
+            }
             _ => None,
-        });
-        Some(Use::Escapes { at, path, into })
+        }
+    }
+
+    /// `module.exports`, `module.exports.x` or `exports.x`
+    fn is_commonjs_export(&self, member: &oxc_ast::ast::MemberExpression<'_>) -> bool {
+        let is_global = |expression: &Expression<'_>, name: &str| {
+            matches!(expression, Expression::Identifier(identifier)
+                if identifier.name == name && (self.is_global)(name))
+        };
+        match member.object() {
+            Expression::StaticMemberExpression(inner) => {
+                inner.property.name == "exports" && is_global(&inner.object, "module")
+            }
+            object => {
+                is_global(object, "exports")
+                    || (is_global(object, "module")
+                        && member.static_property_name() == Some("exports"))
+            }
+        }
     }
 
     fn is_style(&self, callee: &Expression<'_>) -> bool {
@@ -309,6 +494,25 @@ impl Context<'_, '_> {
     }
 }
 
+/// Whether a function body reads `this`, outside the functions it declares
+#[derive(Default)]
+struct ReadsThis {
+    found: bool,
+    depth: usize,
+}
+
+impl<'a> Visit<'a> for ReadsThis {
+    fn visit_this_expression(&mut self, _: &oxc_ast::ast::ThisExpression) {
+        self.found |= self.depth == 0;
+    }
+
+    fn visit_function(&mut self, function: &oxc_ast::ast::Function<'a>, flags: ScopeFlags) {
+        self.depth += 1;
+        walk::walk_function(self, function, flags);
+        self.depth -= 1;
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use oxc_allocator::Allocator;
@@ -322,24 +526,25 @@ mod tests {
         let program = Parser::new(&allocator, code, SourceType::tsx())
             .parse()
             .program;
+        let line = |at: u32| {
+            code[at as usize..]
+                .lines()
+                .next()
+                .unwrap_or_default()
+                .to_string()
+        };
         let mut found: Vec<String> =
             uses(&program, &|name| matches!(name, "css" | "Box" | "Devup"))
                 .into_iter()
                 .flat_map(|(name, uses)| {
-                    uses.into_iter().map(move |found| {
-                        let describe = |at: u32| {
-                            code[at as usize..]
-                                .lines()
-                                .next()
-                                .unwrap_or_default()
-                                .to_string()
-                        };
-                        match found {
-                            Use::Changes(at) => format!("{name} changes: {}", describe(at)),
-                            Use::Escapes { at, path, into } => {
-                                format!("{name} escapes {path:?} into {into:?}: {}", describe(at))
-                            }
+                    uses.into_iter().map(move |found| match found {
+                        Use::Changes { at, depth } => {
+                            format!("{name} changes {depth}: {}", line(at))
                         }
+                        Use::Escapes { at, path, into } => {
+                            format!("{name} escapes {path:?} into {into:?}: {}", line(at))
+                        }
+                        Use::Calls { at, path } => format!("{name} calls {path:?}: {}", line(at)),
                     })
                 })
                 .collect();
@@ -349,9 +554,8 @@ mod tests {
 
     #[test]
     fn changes() {
-        assert_eq!(
-            describe(
-                "import { a } from './a';
+        insta::assert_debug_snapshot!(describe(
+            "import { a } from './a';
 a.x = 1;
 a['y'] += 1;
 a[k]++;
@@ -369,126 +573,99 @@ Object.defineProperty(a, 'x', {});
 (a as any).x = 1;
 (a!).x = 1;
 a?.x.sort();
-a = 1;"
-            ),
-            [
-                "a changes: a as any).x = 1;",
-                "a changes: a!).x = 1;",
-                "a changes: a, 'x', {});",
-                "a changes: a, {});",
-                "a changes: a.list.push(1);",
-                "a changes: a.rest } = {});",
-                "a changes: a.x = 1;",
-                "a changes: a.x = 1] = [];",
-                "a changes: a.x in {});",
-                "a changes: a.x of []);",
-                "a changes: a.x } = {});",
-                "a changes: a.x;",
-                "a changes: a.x] = [1];",
-                "a changes: a?.x.sort();",
-                "a changes: a['y'] += 1;",
-                "a changes: a[k]++;",
-            ]
-        );
+a = 1;
+a();"
+        ));
     }
 
     #[test]
     fn escapes() {
-        assert_eq!(
-            describe(
-                "const a = { x: {} };
+        insta::assert_debug_snapshot!(describe(
+            "const a = { x: {} };
 f(a.x);
 new F(a);
 Object.defineProperty(o, 'k', a);
 Object.assign({}, a);
+Object.values(a); Object.entries(a); Array.from(a); Array.of(a);
 g(...a.list);
 const copy = { ...a };
 export const whole = { a, list: [a.x] };
+const frozen = Object.freeze({ a });
 const nested = f({ a });
 let later = a;
 later = a;
 [later = a] = [];
 function get() { return a; }
 function* all() { yield a; }
+function p(q = a) {}
 const arrow = () => a.x;
 const block = () => { a; };
 const tagged = tag`${a}`;
-<Other value={a} />;
-<Other {...a} />;
-<Other>{a}</Other>;
+for (const item of a) {}
+a.forEach(f); a.map(f);
+export default { a };
+module.exports = { a };
+exports.b = a;
+module.exports.c = a;
+other.exports = a;
+<div ref={a} />;
 x ? a : a;
 x && a;
 (x, a);
 await a;"
-            ),
-            [
-                "a escapes [None] into None: a);",
-                "a escapes [None] into None: a} />;",
-                "a escapes [None] into Some(\"copy\"): a };",
-                "a escapes [Some(\"list\"), None] into None: a.list);",
-                "a escapes [Some(\"x\")] into None: a.x);",
-                "a escapes [Some(\"x\")] into None: a.x;",
-                "a escapes [Some(\"x\")] into Some(\"whole\"): a.x] };",
-                "a escapes [] into None: a });",
-                "a escapes [] into None: a);",
-                "a escapes [] into None: a);",
-                "a escapes [] into None: a;",
-                "a escapes [] into None: a;",
-                "a escapes [] into None: a; }",
-                "a escapes [] into None: a; }",
-                "a escapes [] into None: a] = [];",
-                "a escapes [] into None: a} />;",
-                "a escapes [] into None: a}</Other>;",
-                "a escapes [] into None: a}`;",
-                "a escapes [] into Some(\"whole\"): a, list: [a.x] };",
-            ]
-        );
+        ));
     }
 
     #[test]
     fn reads() {
-        assert_eq!(
-            describe(
-                "const a = { x: 1 };
-String(a.x); parseInt(a.x); Object.keys(a); Object.hasOwn(a, 'x'); Object.getOwnPropertyNames(a); JSON.stringify(a); Math.max(a.x); console.log(a); Array.isArray(a);
-css(a); css({ ...a, color: f(a) }); Devup.css(a); css.x`${a}`;
-<Box {...a} p={f(a)} />; <Devup.Box>{a}</Devup.Box>;
+        insta::assert_debug_snapshot!(describe(
+            "const a = { x: 1, arrow: () => 1, plain() { return 1; }, nested() { return function () { return this; }; }, self() { return this; } };
+String(a.x); parseInt(a.x); structuredClone(a); Object.keys(a); Object.freeze(a); Object.hasOwn(a, 'x'); Object.getOwnPropertyNames(a); JSON.stringify(a); Math.max(a.x); console.log(a); Array.isArray(a);
+css(a); css({ ...a, color: f(a) }); Devup.css(a); css.x`${a}`; css(1)(a); css({ w: a.self() });
+<Box {...a} p={f(a)} />; <Devup.Box>{a}</Devup.Box>; <Other value={a} />; <Other {...a} />; <Other>{a}</Other>;
 const text = `${a.x}`; const sum = a.x + 1; const key = { [a.x]: 1 }; const b = { a: 1 }.a;
-if (x ? 1 : 2) {} (a ? 1 : 2); (a, 1); a;
-const other = a.x.toString(); [1][a.x]; typeof a; void a;
-a.method(); o[a];
-let unset; const { y = a } = {}; function p(q = a.x) {}
-export default a; export { a as b };"
-            ),
-            [
-                "a escapes [Some(\"x\")] into None: a.x) {}",
-                "a escapes [] into None: a } = {}; function p(q = a.x) {}",
-            ]
-        );
+if (x ? 1 : 2) {} (a ? 1 : 2); (a, 1); a; typeof a; void a;
+a.x.toString(); a.join(','); [1][a.x]; o[a]; for (const k in a) {}
+a.arrow(); a.plain(); a.nested(); a.self(); a[k](); a.missing();
+let unset; const { y = a } = {};
+export { a as b };"
+        ));
+    }
+
+    #[test]
+    fn this_through_the_declaration() {
+        insta::assert_debug_snapshot!(describe(
+            "const spread = { ...base, m() {} };
+spread.m();
+const computed = { [k]: 1, m() {} };
+computed.m();
+const path = { inner: { m() { return this; } } };
+path.inner.m();
+const indirect = { m: helper };
+indirect.m();
+const later = { m() {}, [k]: () => 1 };
+later.m();
+const deep = { x: 1 };
+deep.x.y.m();
+const plain = f();
+plain.m();"
+        ));
     }
 
     #[test]
     fn globals_shadowed() {
-        assert_eq!(
-            describe(
-                "const a = {};
+        insta::assert_debug_snapshot!(describe(
+            "const a = {};
 const Object = { assign() {} };
 const String = (x) => x;
+const exports = {};
 Object.assign(a, {});
 String(a);
 (f.g)(a);
 (0, h)(a);
 (0, css)(a);
+exports.x = a;
 function inner() { const kept = { a }; }"
-            ),
-            [
-                "a escapes [] into None: a }; }",
-                "a escapes [] into None: a);",
-                "a escapes [] into None: a);",
-                "a escapes [] into None: a);",
-                "a escapes [] into None: a);",
-                "a escapes [] into None: a, {});",
-            ]
-        );
+        ));
     }
 }

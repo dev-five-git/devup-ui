@@ -1,0 +1,11 @@
+---
+source: libs/extractor/src/mutations.rs
+expression: "describe(\"const spread = { ...base, m() {} };\nspread.m();\nconst computed = { [k]: 1, m() {} };\ncomputed.m();\nconst path = { inner: { m() { return this; } } };\npath.inner.m();\nconst indirect = { m: helper };\nindirect.m();\nconst later = { m() {}, [k]: () => 1 };\nlater.m();\nconst deep = { x: 1 };\ndeep.x.y.m();\nconst plain = f();\nplain.m();\")"
+---
+[
+    "deep calls [Some(\"x\"), Some(\"y\")]: deep.x.y.m();",
+    "indirect calls []: indirect.m();",
+    "later calls []: later.m();",
+    "path calls [Some(\"inner\")]: path.inner.m();",
+    "plain calls []: plain.m();",
+]

@@ -1,0 +1,23 @@
+---
+source: libs/extractor/src/mutations.rs
+expression: "describe(\"import { a } from './a';\na.x = 1;\na['y'] += 1;\na[k]++;\ndelete a.x;\n[a.x] = [1];\n({ x: a.x } = {});\n({ ...a.rest } = {});\n[a.x = 1] = [];\nfor (a.x in {});\nfor (a.x of []);\na.list.push(1);\na.list.map(String);\nObject.assign(a, {});\nObject.defineProperty(a, 'x', {});\n(a as any).x = 1;\n(a!).x = 1;\na?.x.sort();\na = 1;\na();\")"
+---
+[
+    "a changes 1: a as any).x = 1;",
+    "a changes 1: a!).x = 1;",
+    "a changes 1: a, 'x', {});",
+    "a changes 1: a, {});",
+    "a changes 1: a.rest } = {});",
+    "a changes 1: a.x = 1;",
+    "a changes 1: a.x = 1] = [];",
+    "a changes 1: a.x in {});",
+    "a changes 1: a.x of []);",
+    "a changes 1: a.x } = {});",
+    "a changes 1: a.x;",
+    "a changes 1: a.x] = [1];",
+    "a changes 1: a['y'] += 1;",
+    "a changes 1: a[k]++;",
+    "a changes 2: a.list.push(1);",
+    "a changes 2: a?.x.sort();",
+    "a escapes [Some(\"list\"), None] into None: a.list.map(String);",
+]

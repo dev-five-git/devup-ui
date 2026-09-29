@@ -180,33 +180,35 @@ pub struct DevupVisitor<'a> {
     /// gives
     pub composes_unknown: bool,
     /// Objects and arrays code changes, which styles cannot take whole
-    changed_bindings: FxHashSet<String>,
+    changed_bindings: crate::imported_constants::Changed,
 }
 
-/// Whether `expression`, or a value it chooses, reads a binding of `names`
-fn reads_binding(expression: &Expression<'_>, names: &FxHashSet<String>) -> bool {
+/// Whether `expression`, or a value it chooses, reads an object or array code
+/// changes
+fn reads_binding(
+    expression: &Expression<'_>,
+    changed: &crate::imported_constants::Changed,
+) -> bool {
     match unwrap_syntax_only(expression) {
         Expression::ArrayExpression(array) => array.elements.iter().any(|element| {
             element
                 .as_expression()
-                .is_some_and(|element| reads_binding(element, names))
+                .is_some_and(|element| reads_binding(element, changed))
         }),
         Expression::LogicalExpression(logical) => {
-            reads_binding(&logical.left, names) || reads_binding(&logical.right, names)
+            reads_binding(&logical.left, changed) || reads_binding(&logical.right, changed)
         }
         Expression::ConditionalExpression(conditional) => {
-            reads_binding(&conditional.consequent, names)
-                || reads_binding(&conditional.alternate, names)
+            reads_binding(&conditional.consequent, changed)
+                || reads_binding(&conditional.alternate, changed)
         }
-        expression => {
-            crate::utils::binding_root(expression).is_some_and(|name| names.contains(name))
-        }
+        expression => changed.read_by(expression),
     }
 }
 
 impl<'a> DevupVisitor<'a> {
-    pub fn changed_bindings(&mut self, names: FxHashSet<String>) {
-        self.changed_bindings = names;
+    pub fn changed_bindings(&mut self, changed: crate::imported_constants::Changed) {
+        self.changed_bindings = changed;
     }
 
     /// Report the arguments of `api` that give styles code changes
@@ -266,7 +268,7 @@ impl<'a> DevupVisitor<'a> {
             spreads_read_once: 0,
             unknown_bindings: crate::imported_constants::Unknown::default(),
             composes_unknown: false,
-            changed_bindings: FxHashSet::default(),
+            changed_bindings: crate::imported_constants::Changed::default(),
         }
     }
 
