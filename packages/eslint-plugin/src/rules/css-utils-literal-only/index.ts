@@ -71,7 +71,7 @@ const EXACT_MATH = new Set([
   'SQRT1_2',
 ])
 
-/** Members giving what the locale, the Unicode data of the engine or chance make them */
+/** Members giving what the locale, the Unicode data of the engine or chance make them, and `toString`, which engines only approximate with a radix: it runs only called at once without one */
 const UNCERTAIN_MEMBERS = new Set([
   'toLocaleString',
   'toLocaleDateString',
@@ -81,7 +81,71 @@ const UNCERTAIN_MEMBERS = new Set([
   'localeCompare',
   'normalize',
   'random',
+  'toString',
 ])
+
+/** The style APIs whose values the build reads: `css()`, which composes other parts as classes, and those taking rules only */
+type Api = 'css' | 'rules'
+
+const DEVUP_APIS = new Map<string, Api>([
+  ['css', 'css'],
+  ['globalCss', 'rules'],
+  ['keyframes', 'rules'],
+  ['createGlobalStyle', 'rules'],
+])
+
+const STYLEX_APIS = new Set([
+  'create',
+  'keyframes',
+  'defineVars',
+  'defineConsts',
+  'createTheme',
+  'createThemeContract',
+  'positionTry',
+  'viewTransitionClass',
+])
+
+/** Whether `member` is a `toString` called at once without a radix */
+function callsToString(member: TSESTree.MemberExpression) {
+  return (
+    memberKey(member) === 'toString' &&
+    member.parent.type === AST_NODE_TYPES.CallExpression &&
+    member.parent.callee === member &&
+    member.parent.arguments.length === 0
+  )
+}
+
+/** The identifier a chain of members starts from */
+function rootOf(node: TSESTree.Node): TSESTree.Node {
+  return node.type === AST_NODE_TYPES.MemberExpression
+    ? rootOf(node.object)
+    : node
+}
+
+/** Whether the end of `path`, which leads down from an argument of a style API, is in a value the build reads: in a rule object or CSS text, rather than a part `css()` composes as a class or what chooses between parts */
+function inValue(api: Api, path: TSESTree.Node[]): boolean {
+  const [node, next] = path
+  switch (node.type) {
+    case AST_NODE_TYPES.ObjectExpression:
+    case AST_NODE_TYPES.TemplateLiteral:
+      return true
+    case AST_NODE_TYPES.ConditionalExpression:
+      return next !== node.test && inValue(api, path.slice(1))
+    case AST_NODE_TYPES.LogicalExpression:
+      return (
+        !(node.operator === '&&' && next === node.left) &&
+        inValue(api, path.slice(1))
+      )
+    case AST_NODE_TYPES.ArrayExpression:
+    case AST_NODE_TYPES.SpreadElement:
+    case AST_NODE_TYPES.TSAsExpression:
+    case AST_NODE_TYPES.TSSatisfiesExpression:
+    case AST_NODE_TYPES.TSNonNullExpression:
+      return inValue(api, path.slice(1))
+    default:
+      return api === 'rules'
+  }
+}
 
 const MUTATING_METHODS = new Set([
   'push',
@@ -335,6 +399,7 @@ class Changes {
   constructor(
     private readonly importStorage: ImportStorage,
     private readonly scopeOf: (node: TSESTree.Node) => Scope,
+    private readonly stylex: (name: string) => boolean,
   ) {}
 
   /** Whether the file changes what `variable` holds, or hands it to code that may, which the build then does not read as a constant */
@@ -471,6 +536,11 @@ class Changes {
   private inStyle(node: TSESTree.Node) {
     for (let current: TSESTree.Node | undefined = node; current;) {
       if (this.importStorage.checkContextType(current)) return true
+      if (current.type === AST_NODE_TYPES.CallExpression) {
+        const root = rootOf(current.callee)
+        if (root.type === AST_NODE_TYPES.Identifier && this.stylex(root.name))
+          return true
+      }
       current = current.parent
     }
     return false
@@ -552,6 +622,8 @@ class Values {
   constructor(
     private readonly changes: Changes,
     private readonly scopeOf: (node: TSESTree.Node) => Scope,
+    /** Whether a name binds a StyleX import, whose functions give what the build reads where they are called */
+    private readonly stylex: (name: string) => boolean,
   ) {}
 
   /** Whether reading member `name` of `object` gives the same on every engine and page */
@@ -609,14 +681,17 @@ class Values {
               ? this.isPure(property.value)
               : this.isStaticValue(property.value, scope, seen)),
         )
-      case AST_NODE_TYPES.MemberExpression:
+      case AST_NODE_TYPES.MemberExpression: {
+        const key = memberKey(node)
+        if (isGlobal(node.object, 'Math', scope))
+          return key !== null && this.exactMember(node.object, key, scope)
         return (
-          (node.computed
+          (key === null
             ? this.isStaticValue(node.property, scope, seen)
-            : this.exactMember(node.object, memberKey(node), scope)) &&
-          (isGlobal(node.object, 'Math', scope) ||
-            this.isStaticValue(node.object, scope, seen))
+            : this.exactMember(node.object, key, scope)) &&
+          this.isStaticValue(node.object, scope, seen)
         )
+      }
       case AST_NODE_TYPES.CallExpression:
         return this.isStaticCallee(node, scope, seen) && all(node.arguments)
       case AST_NODE_TYPES.Identifier:
@@ -636,12 +711,16 @@ class Values {
     seen: Set<string>,
   ): boolean {
     const callee = call.callee
+    const root = rootOf(callee)
+    if (root.type === AST_NODE_TYPES.Identifier && this.stylex(root.name))
+      return true
     if (callee.type === AST_NODE_TYPES.MemberExpression) {
       const key = memberKey(callee)
       if (
-        (callee.computed && callee.property.type !== AST_NODE_TYPES.Literal) ||
-        (key === 'toString' && call.arguments.length > 0) ||
-        !this.exactMember(callee.object, key, scope)
+        key === null ||
+        (key === 'toString'
+          ? call.arguments.length > 0
+          : !this.exactMember(callee.object, key, scope))
       )
         return false
       if (callsImport(callee, scope)) return false
@@ -777,6 +856,7 @@ class Values {
           break
         case AST_NODE_TYPES.MemberExpression:
           if (
+            !callsToString(node) &&
             !this.exactMember(node.object, memberKey(node), this.scopeOf(node))
           )
             pure = false
@@ -817,7 +897,13 @@ class Values {
     const scope = this.scopeOf(identifier)
     const variable = findVariable(scope, identifier.name)
     const definition = variable?.defs[0]
-    if (!variable || !definition) return GLOBALS.has(identifier.name)
+    if (!variable || !definition)
+      // `Math` runs only through the members `exactMember` checks
+      return identifier.name === 'Math'
+        ? parent.type === AST_NODE_TYPES.MemberExpression &&
+            parent.object === identifier &&
+            memberKey(parent) !== null
+        : GLOBALS.has(identifier.name)
     if (!['module', 'global'].includes(variable.scope.type)) return true
     if (this.changes.isChanged(variable)) return false
     switch (definition.type) {
@@ -859,41 +945,91 @@ export const cssUtilsLiteralOnly = createRule({
   },
   create(context) {
     const importStorage = new ImportStorage()
+    const stylexNamespaces = new Set<string>()
+    const stylexNames = new Map<string, string>()
     const scopeOf = (node: TSESTree.Node) => context.sourceCode.getScope(node)
-    const changes = new Changes(importStorage, scopeOf)
-    const values = new Values(changes, scopeOf)
-    let devupContext: TSESTree.CallExpression | null = null
+    const isStylex = (name: string) =>
+      stylexNamespaces.has(name) || stylexNames.has(name)
+    const changes = new Changes(importStorage, scopeOf, isStylex)
+    const values = new Values(changes, scopeOf, isStylex)
+    /** The style API reading the code visited, and what it takes */
+    let api: {
+      node: TSESTree.CallExpression | TSESTree.TaggedTemplateExpression
+      takes: Api
+    } | null = null
+    const apiOf = (callee: TSESTree.Node): Api | undefined => {
+      if (callee.type === AST_NODE_TYPES.Identifier) {
+        const devup = importStorage.importedName(callee.name)
+        if (devup !== undefined) return DEVUP_APIS.get(devup)
+        return STYLEX_APIS.has(stylexNames.get(callee.name) ?? '')
+          ? 'rules'
+          : undefined
+      }
+      if (
+        callee.type !== AST_NODE_TYPES.MemberExpression ||
+        callee.object.type !== AST_NODE_TYPES.Identifier
+      )
+        return undefined
+      const name = memberKey(callee) ?? ''
+      if (importStorage.isImportObject(callee.object.name))
+        return DEVUP_APIS.get(name)
+      return stylexNamespaces.has(callee.object.name) && STYLEX_APIS.has(name)
+        ? 'rules'
+        : undefined
+    }
+    const enter = (
+      node: TSESTree.CallExpression | TSESTree.TaggedTemplateExpression,
+      callee: TSESTree.Node,
+    ) => {
+      const takes = api ? undefined : apiOf(callee)
+      if (takes) api = { node, takes }
+    }
+    const exit = (node: TSESTree.Node) => {
+      if (api?.node === node) api = null
+    }
     return {
       ImportDeclaration(node) {
         importStorage.addImportByDeclaration(node)
+        if (node.source.value !== '@stylexjs/stylex') return
+        for (const specifier of node.specifiers) {
+          if (specifier.type === AST_NODE_TYPES.ImportSpecifier)
+            stylexNames.set(
+              specifier.local.name,
+              specifier.imported.type === AST_NODE_TYPES.Identifier
+                ? specifier.imported.name
+                : specifier.imported.value,
+            )
+          else stylexNamespaces.add(specifier.local.name)
+        }
       },
       CallExpression(node) {
-        if (
-          importStorage.checkContextType(node) === 'UTIL' &&
-          node.arguments.length === 1 &&
-          node.arguments[0].type === AST_NODE_TYPES.ObjectExpression
-        ) {
-          devupContext = node
-        }
+        enter(node, node.callee)
       },
-      'CallExpression:exit'(node) {
-        if (devupContext === node) {
-          devupContext = null
-        }
+      'CallExpression:exit': exit,
+      TaggedTemplateExpression(node) {
+        enter(node, node.tag)
       },
+      'TaggedTemplateExpression:exit': exit,
       Identifier(node) {
-        if (!devupContext || node.name === 'undefined') return
+        if (!api || node.name === 'undefined') return
 
         const an = context.sourceCode
           .getAncestors(node)
-          .slice(context.sourceCode.getAncestors(devupContext).length)
+          .slice(context.sourceCode.getAncestors(api.node).length)
+        const path = [...an.slice(1), node]
+        if (
+          api.node.type === AST_NODE_TYPES.TaggedTemplateExpression
+            ? path[0] !== api.node.quasi
+            : path[0] === api.node.callee || !inValue(api.takes, path)
+        )
+          return
         const scope = scopeOf(node)
         // A binding the value declares itself, such as a callback's parameter
         const declared = findVariable(scope, node.name)?.defs[0]?.name.range
         if (
           declared &&
-          declared[0] >= devupContext.range[0] &&
-          declared[1] <= devupContext.range[1]
+          declared[0] >= api.node.range[0] &&
+          declared[1] <= api.node.range[1]
         )
           return
 
@@ -912,10 +1048,7 @@ export const cssUtilsLiteralOnly = createRule({
               member = ancestor
               break
             case AST_NODE_TYPES.CallExpression:
-              if ([...an, node].indexOf(ancestor.callee) !== -1) {
-                if (ancestor === devupContext) return
-                call = ancestor
-              }
+              if ([...an, node].indexOf(ancestor.callee) !== -1) call = ancestor
               break
           }
         }

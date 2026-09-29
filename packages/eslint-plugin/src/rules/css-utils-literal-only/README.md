@@ -4,16 +4,21 @@ Enforce that CSS utility functions only use values known at build time in devup-
 
 ## Rule Details
 
-This rule ensures that CSS utility functions (`css`, `globalCss`, `keyframes`) from devup-ui only receive values the build knows. They have no element to set a CSS variable on, so a value known only at runtime is a build error.
+This rule ensures that CSS utility functions (`css`, `globalCss`, `keyframes`, `createGlobalStyle`) from devup-ui, and the StyleX functions devup-ui compiles (`create`, `keyframes`, `defineVars`, `defineConsts`, `createTheme`, `createThemeContract`, `positionTry`, `viewTransitionClass`), only receive values the build knows. They have no element to set a CSS variable on, so a value known only at runtime is a build error.
+
+It checks the values of every rule object they take, in any argument, and the interpolations of CSS text, written as a template argument or a tagged template (`` css`color: ${color};` ``). A part `css()` composes as a class (`css(base, { m: 1 })`), and a condition choosing between parts, are read at runtime and not checked. `styled()` sets a CSS variable on the element it renders, so its values are not checked either.
 
 The build knows:
 
 - literals, and constants: imports and module-level `const`s
 - what those compute through exact built-ins (`String`, `Number`, `JSON`, string and array methods, `Math.max`, `Math.round`, ... — not `Math.random`, `Math.sin` or `Math.pow`) and through functions this file declares that only compute
+- what StyleX functions give: `defineVars()` variables, `keyframes()` names, `firstThatWorks()`
 
 The build inlines constants, folds `Math` and runs the file's own functions at build time. It never runs another module's code, so calling an imported function is reported.
 
-The rule reports parameters, `let` variables, globals such as `Date` or `window`, `Math.random` and approximate `Math` functions, `**`, locale methods (`toLocaleString`, `localeCompare`, `normalize`), and functions the build does not run: imported ones, and those using `this`, `new`, classes, regular expressions, `try`, getters, `async` code, generators, JSX or a method chosen at runtime, or writing a module-level binding. It also reports a constant or an import the file changes — a member assignment, `delete`, `++`, a changing method such as `push` or `sort`, `Object.assign`, changing its elements in a `for...of` loop or a `forEach`/`map` callback, calling a method of it that uses `this`, or handing it to a function the rule does not know — as the build no longer reads it as written. Code in another module can change an object too, which a lint rule on one file cannot see: keep objects styles read unchanged.
+The rule reports parameters, `let` variables, globals such as `Date` or `window`, `Math.random` and approximate `Math` functions (also through an alias such as `const { sin } = Math`), `**`, `toString` other than called at once without a radix, locale methods (`toLocaleString`, `localeCompare`, `normalize`), and functions the build does not run: imported ones, and those using `this`, `new`, classes, regular expressions, `try`, getters, `async` code, generators, JSX or a method chosen at runtime, or writing a module-level binding. It also reports a constant or an import the file changes — a member assignment, `delete`, `++`, a changing method such as `push` or `sort`, `Object.assign`, changing its elements in a `for...of` loop or a `forEach`/`map` callback, calling a method of it that uses `this`, or handing it to a function the rule does not know — as the build no longer reads it as written.
+
+A lint rule sees one file, so two cases are left to the build: code in another module changing an imported object, and an import whose module computes its value (`export const DARK = darken(PRIMARY)`), which the build does not run. Keep objects styles read unchanged, and export the values styles read as literals.
 
 ### Examples
 
