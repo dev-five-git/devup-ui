@@ -125,7 +125,7 @@ const devupUICssLoader: RawLoaderDefinitionFunction<DevupUICssLoaderOptions> =
       importFileMap,
       importSheet,
       registerTheme,
-    } = loadWasm(false)
+    } = loadWasm()
     if (!init) {
       init = true
       if (watch) {

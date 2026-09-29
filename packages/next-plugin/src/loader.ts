@@ -204,7 +204,7 @@ const devupUILoader: RawLoaderDefinitionFunction<DevupUILoaderOptions> =
       importFileMap,
       importSheet,
       registerTheme,
-    } = loadWasm(false)
+    } = loadWasm()
     const promises: Promise<void>[] = []
     if (!init) {
       init = true
