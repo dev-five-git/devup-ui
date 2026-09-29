@@ -7,7 +7,7 @@ ToBTreeSet {
         Static(
             ExtractStaticStyle {
                 property: "animation",
-                value: "myFont",
+                value: "a",
                 level: 0,
                 selector: None,
                 style_order: None,
@@ -17,7 +17,7 @@ ToBTreeSet {
         Static(
             ExtractStaticStyle {
                 property: "font-family",
-                value: "__font_0__",
+                value: "__devup_font_0_0",
                 level: 0,
                 selector: Some(
                     Global(
@@ -84,5 +84,5 @@ ToBTreeSet {
             },
         ),
     },
-    code: "import \"@devup-ui/react/devup-ui.css\";\nexport const animated = \"a\";\n;\n;\nexport const myFont = \"b\";\nexport const fadeIn = \"__devup_font_0_0\";\n",
+    code: "import \"@devup-ui/react/devup-ui.css\";\nexport const animated = \"b\";\n;\n;\nexport const fadeIn = \"a\";\nexport const myFont = \"__devup_font_0_0\";\n",
 }

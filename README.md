@@ -186,7 +186,7 @@ const example = (
 ```tsx
 // Type-safe theme tokens
 const textExample = <Text color="$primary" />
-const boxExample = <Box typography="$heading" />
+const boxExample = <Box typography="heading" />
 ```
 
 **Custom shorthands:**

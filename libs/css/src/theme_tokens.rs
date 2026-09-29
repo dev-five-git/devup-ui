@@ -5,6 +5,7 @@ use std::sync::{LazyLock, RwLock};
 struct ThemeTokenRegistry {
     length: BTreeMap<String, Vec<u8>>,
     shadow: BTreeMap<String, Vec<u8>>,
+    typography: Vec<String>,
 }
 
 static TOKEN_REGISTRY: LazyLock<RwLock<ThemeTokenRegistry>> =
@@ -18,6 +19,21 @@ pub fn set_theme_token_levels(
         registry.length = length;
         registry.shadow = shadow;
     }
+}
+
+pub fn set_typography_keys(keys: Vec<String>) {
+    if let Ok(mut registry) = TOKEN_REGISTRY.write() {
+        registry.typography = keys;
+    }
+}
+
+/// Typography names defined by the registered theme, so a dynamic
+/// `typography` value under a selector can resolve to one class per name.
+pub fn get_typography_keys() -> Vec<String> {
+    TOKEN_REGISTRY
+        .read()
+        .map(|registry| registry.typography.clone())
+        .unwrap_or_default()
 }
 
 /// Look up a `$token` in the length and shadow registries.
@@ -92,6 +108,14 @@ mod tests {
         assert!(!is_responsive_theme_token("$single"));
         assert!(!is_responsive_theme_token("$unknown"));
         assert!(!is_responsive_theme_token("noprefix"));
+    }
+
+    #[test]
+    fn test_typography_keys() {
+        set_typography_keys(vec!["body".to_string(), "title".to_string()]);
+        assert_eq!(get_typography_keys(), vec!["body", "title"]);
+        set_typography_keys(vec![]);
+        assert!(get_typography_keys().is_empty());
     }
 
     #[test]

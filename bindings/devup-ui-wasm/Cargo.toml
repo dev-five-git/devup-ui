@@ -15,7 +15,11 @@ crate-type = ["cdylib"]
 
 [features]
 default = ["vanilla-extract"]
-vanilla-extract = ["extractor/vanilla-extract", "sheet/vanilla-extract"]
+vanilla-extract = [
+    "extractor/vanilla-extract",
+    "sheet/vanilla-extract",
+    "dep:boa_engine",
+]
 
 [dependencies]
 wasm-bindgen = "0.2.128"
@@ -39,6 +43,10 @@ serde-wasm-bindgen = "0.6.5"
 # `getrandom_backend="wasm_js"` cfg requires on wasm32 targets.
 # Keep this major version in sync with boa_engine's transitive getrandom.
 getrandom = { version = "0.4", features = ["wasm_js"] }
+# Not used directly. The extractor evaluates `.css.ts` modules with Boa, whose
+# `Context::default()` reads the clock. Without the `js` feature that clock is
+# `std::time::Instant`, which panics on wasm32-unknown-unknown.
+boa_engine = { version = "0.22", optional = true, features = ["js"] }
 
 [dev-dependencies]
 wasm-bindgen-test = "0.3.78"

@@ -165,20 +165,16 @@ pub fn decompose_value_conditions(
 ) -> Vec<DecomposedStyle> {
     // String literal → leaf
     if let Some(s) = get_string_by_literal_expression(value) {
-        return vec![DecomposedStyle {
-            property: css_property.to_string(),
-            value: Some(s.into_owned()),
-            selector: compose_selectors(parent_selectors),
-        }];
+        return decomposed_leaf(css_property, Some(s.into_owned()), parent_selectors)
+            .into_iter()
+            .collect();
     }
 
     // NullLiteral → tracked but no CSS
     if matches!(value, Expression::NullLiteral(_)) {
-        return vec![DecomposedStyle {
-            property: css_property.to_string(),
-            value: None,
-            selector: compose_selectors(parent_selectors),
-        }];
+        return decomposed_leaf(css_property, None, parent_selectors)
+            .into_iter()
+            .collect();
     }
 
     // CallExpression: firstThatWorks() → multiple fallback values with current selectors
@@ -190,11 +186,11 @@ pub fn decompose_value_conditions(
             if let Some(arg_expr) = arg.as_expression()
                 && let Some(s) = get_string_by_literal_expression(arg_expr)
             {
-                results.push(DecomposedStyle {
-                    property: css_property.to_string(),
-                    value: Some(s.into_owned()),
-                    selector: compose_selectors(parent_selectors),
-                });
+                results.extend(decomposed_leaf(
+                    css_property,
+                    Some(s.into_owned()),
+                    parent_selectors,
+                ));
             }
         }
         return results;
@@ -206,11 +202,9 @@ pub fn decompose_value_conditions(
         && let Some(inner) = call.arguments.first().and_then(|arg| arg.as_expression())
     {
         if let Some(s) = get_string_by_literal_expression(inner) {
-            return vec![DecomposedStyle {
-                property: css_property.to_string(),
-                value: Some(s.into_owned()),
-                selector: compose_selectors(parent_selectors),
-            }];
+            return decomposed_leaf(css_property, Some(s.into_owned()), parent_selectors)
+                .into_iter()
+                .collect();
         }
         return vec![];
     }
@@ -258,14 +252,15 @@ pub fn decompose_value_conditions(
     results
 }
 
-/// Compose a list of selector parts into a single `StyleSelector`.
-fn compose_selectors(parts: &[SelectorPart]) -> Option<StyleSelector> {
-    if parts.is_empty() {
-        return None;
-    }
-
+/// A leaf style under `parent_selectors`, or `None` when those conditions can
+/// never match together (e.g. `@media print` inside `@media screen`).
+fn decomposed_leaf(
+    css_property: &str,
+    value: Option<String>,
+    parent_selectors: &[SelectorPart],
+) -> Option<DecomposedStyle> {
     let mut pseudo_str: Option<String> = None;
-    for p in parts {
+    for p in parent_selectors {
         if let SelectorPart::Pseudo(s) = p {
             pseudo_str
                 .get_or_insert_with(|| String::from("&"))
@@ -273,21 +268,23 @@ fn compose_selectors(parts: &[SelectorPart]) -> Option<StyleSelector> {
         }
     }
 
-    // Last at-rule wins; read it with a reverse scan (no intermediate Vec).
-    let last_at_rule = parts.iter().rev().find_map(|p| match p {
-        SelectorPart::AtRule { kind, query } => Some((*kind, query.as_str())),
-        SelectorPart::Pseudo(_) => None,
-    });
-
-    if let Some((kind, query)) = last_at_rule {
-        Some(StyleSelector::At {
-            kind,
-            query: query.to_string(),
-            selector: pseudo_str,
-        })
-    } else {
-        pseudo_str.map(StyleSelector::Selector)
+    // Every enclosing at-rule applies, outermost first.
+    let mut selector = pseudo_str.map(StyleSelector::Selector);
+    for p in parent_selectors {
+        if let SelectorPart::AtRule { kind, query } = p {
+            selector = Some(StyleSelector::nest_at_rule(
+                selector.as_ref(),
+                *kind,
+                query,
+            )?);
+        }
     }
+
+    Some(DecomposedStyle {
+        property: css_property.to_string(),
+        value,
+        selector,
+    })
 }
 
 /// Parse an at-rule key like `"@media (max-width: 600px)"` into kind + query.
@@ -318,5 +315,33 @@ mod tests {
         assert_eq!(normalize_stylex_property("fontSize"), "font-size");
         assert_eq!(normalize_stylex_property("color"), "color");
         assert_eq!(normalize_stylex_property("zIndex"), "z-index");
+    }
+
+    #[test]
+    fn test_decompose_folds_every_at_rule() {
+        let allocator = oxc_allocator::Allocator::default();
+        let source = "({ default: 'red', '@media print': { ':hover': { '@media (prefers-reduced-motion: reduce)': 'blue', '@media screen': 'green' } } })";
+        let program = oxc_parser::Parser::new(&allocator, source, oxc_span::SourceType::ts())
+            .parse()
+            .program;
+        let oxc_ast::ast::Statement::ExpressionStatement(statement) = &program.body[0] else {
+            panic!("expected expression statement");
+        };
+
+        let value = statement.expression.without_parentheses();
+        let styles: Vec<_> = decompose_value_conditions("color", value, &[])
+            .into_iter()
+            .map(|style| (style.value, style.selector.map(|s| s.to_string())))
+            .collect();
+        assert_eq!(
+            styles,
+            vec![
+                (Some("red".to_string()), None),
+                (
+                    Some("blue".to_string()),
+                    Some("@media print and (prefers-reduced-motion:reduce) &:hover".to_string())
+                ),
+            ]
+        );
     }
 }

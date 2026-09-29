@@ -2,12 +2,15 @@ pub mod theme;
 
 use crate::theme::Theme;
 use css::{
+    at_rule::{MediaCombination, combine_media_queries, query_order},
     atom_hoist::{atom_hoist_threshold, is_atom_hoist},
     file_map::canonical,
     file_routes::route_count_for_files,
     get_custom_shorthand_names, sheet_to_classname,
-    style_selector::{AtRuleKind, StyleSelector, get_selector_order, global_selector_order},
-    theme_tokens::set_theme_token_levels,
+    style_selector::{
+        AtRule, AtRuleKind, StyleSelector, get_selector_order, global_selector_order, write_at_rule,
+    },
+    theme_tokens::{set_theme_token_levels, set_typography_keys},
     utils::compile_regex,
     write_merge_selector,
 };
@@ -31,42 +34,49 @@ macro_rules! push_fmt {
     }};
 }
 
-/// Shared 5-field comparator for the decorate-sort-undecorate keyed tuples in
-/// `create_style_with_layers`. Both the `global_keyed` (`bool` first field) and
-/// `keyed` (`u8` first field) buckets share the shape
-/// `(K, order: u8, selector_str: &str, prop: &StyleSheetProperty)` and sort by the
-/// exact same chain: precomputed order key first (`bool`/`u8` both compare via
-/// `Ord`), then selector string, then property, then value. Extracted so the two
-/// call sites cannot drift; produces byte-identical ordering to the former inline
-/// closures.
-fn keyed_prop_cmp<K: Ord>(
-    a: &(K, u8, &str, &StyleSheetProperty),
-    b: &(K, u8, &str, &StyleSheetProperty),
-) -> std::cmp::Ordering {
-    a.0.cmp(&b.0)
-        .then_with(|| a.1.cmp(&b.1))
-        .then_with(|| a.2.cmp(b.2))
-        .then_with(|| a.3.property.cmp(&b.3.property))
-        .then_with(|| a.3.value.cmp(&b.3.value))
+/// Plain rules first, then pseudo selectors in `SELECTOR_ORDER`.
+fn selector_group(selector: Option<&str>) -> (u8, u8) {
+    selector.map_or((0, 0), |selector| (1, get_selector_order(selector)))
 }
 
-fn global_prop_key(prop: &StyleSheetProperty) -> (bool, u8, &str, &StyleSheetProperty) {
-    match &prop.selector {
-        Some(StyleSelector::Global(selector, _)) => {
-            if let Some(i) = selector.find(':') {
-                (
-                    true,
-                    global_selector_order(&selector[i..]),
-                    selector.as_str(),
-                    prop,
-                )
-            } else {
-                (false, 0u8, selector.as_str(), prop)
-            }
+/// Typography preset declarations come first so a declaration written directly
+/// on the same selector wins, and each preset stays contiguous so its rules merge.
+fn prop_cmp(a: &StyleSheetProperty, b: &StyleSheetProperty) -> std::cmp::Ordering {
+    b.typography.cmp(&a.typography).then_with(|| {
+        if a.typography {
+            a.class_name
+                .cmp(&b.class_name)
+                .then_with(|| a.property.cmp(&b.property))
+                .then_with(|| a.value.cmp(&b.value))
+        } else {
+            a.property
+                .cmp(&b.property)
+                .then_with(|| a.value.cmp(&b.value))
+                .then_with(|| a.class_name.cmp(&b.class_name))
         }
-        _ => (false, 0u8, "", prop),
-    }
+    })
 }
+
+/// (selector group, level, selector)
+type RuleOrder<'a> = ((u8, u8), u8, &'a str);
+/// (enclosing at-rules outermost first, selector group, level, selector)
+type AtRuleOrder<'a> = (Vec<(u8, (u8, i64), &'a str)>, (u8, u8), u8, &'a str);
+
+/// The blocks a rule sits in: its breakpoint level and at-rule chain.
+#[derive(Clone, Copy, PartialEq, Eq)]
+struct Wrapper<'a> {
+    level: u8,
+    at_rule: Option<(&'a [AtRule], AtRuleKind, &'a str)>,
+}
+
+/// Global selectors without a pseudo part first, then by `SELECTOR_ORDER`.
+fn global_selector_group(selector: &str) -> (bool, u8) {
+    selector.find(':').map_or((false, 0), |i| {
+        (true, global_selector_order(&selector[i..]))
+    })
+}
+
+type GlobalProp<'a> = (u8, &'a str, &'a StyleSheetProperty);
 
 #[derive(Debug, Hash, Eq, PartialEq, Deserialize, Serialize, Clone)]
 #[serde(rename_all = "camelCase")]
@@ -82,6 +92,9 @@ pub struct StyleSheetProperty {
     /// CSS layer name (from vanilla-extract `layer()`)
     #[serde(rename = "l", skip_serializing_if = "Option::is_none")]
     pub layer: Option<String>,
+    /// Declaration expanded from a conditional `typography` preset
+    #[serde(rename = "t", default, skip_serializing_if = "std::ops::Not::not")]
+    pub typography: bool,
 }
 
 #[derive(Debug, Hash, Eq, PartialEq, Deserialize, Serialize)]
@@ -117,13 +130,14 @@ impl Ord for StyleSheetProperty {
 }
 
 impl StyleSheetProperty {
-    fn write_extract(&self, css: &mut String) {
-        write_merge_selector(css, &self.class_name, self.selector.as_ref());
-        css.push('{');
+    fn same_rule(&self, other: &Self) -> bool {
+        self.class_name == other.class_name && self.selector == other.selector
+    }
+
+    fn write_declaration(&self, css: &mut String) {
         css.push_str(&self.property);
         css.push(':');
         css.push_str(&convert_theme_variable_value(&self.value));
-        css.push('}');
     }
 }
 
@@ -292,8 +306,36 @@ impl StyleSheet {
         filename: Option<&str>,
         layer: Option<&str>,
     ) -> bool {
+        self.insert_property(
+            level,
+            style_order,
+            filename,
+            StyleSheetProperty {
+                class_name: class_name.to_string(),
+                property: property.to_string(),
+                value: value.to_string(),
+                selector: selector.cloned(),
+                layer: layer.map(ToString::to_string),
+                typography: false,
+            },
+        )
+    }
+
+    fn insert_property(
+        &mut self,
+        level: u8,
+        style_order: Option<u8>,
+        filename: Option<&str>,
+        prop: StyleSheetProperty,
+    ) -> bool {
         // register global css file for cache
-        if let Some(StyleSelector::Global(_, file)) = selector {
+        if let Some(
+            StyleSelector::Global(_, file)
+            | StyleSelector::At {
+                file: Some(file), ..
+            },
+        ) = &prop.selector
+        {
             // Probe with the borrowed `&str` first so the owned `String` is only
             // allocated on first registration, not on repeat (HMR/multi-property) calls.
             // Matches the borrow-probe-first pattern in add_import/add_font_face/add_css.
@@ -314,13 +356,7 @@ impl StyleSheet {
             .or_default()
             .entry(level)
             .or_default()
-            .insert(StyleSheetProperty {
-                class_name: class_name.to_string(),
-                property: property.to_string(),
-                value: value.to_string(),
-                selector: selector.cloned(),
-                layer: layer.map(ToString::to_string),
-            })
+            .insert(prop)
     }
 
     pub fn add_import(&mut self, file: &str, import: &str) {
@@ -414,12 +450,11 @@ impl StyleSheet {
         let bucket_empty = if let Some(prop_map) = self.properties.get_mut(&property_key) {
             for map in prop_map.values_mut() {
                 for props in map.values_mut() {
-                    props.retain(|prop| {
-                        if let Some(StyleSelector::Global(_, f)) = prop.selector.as_ref() {
-                            f != file
-                        } else {
-                            true
-                        }
+                    props.retain(|prop| match prop.selector.as_ref() {
+                        Some(
+                            StyleSelector::Global(_, f) | StyleSelector::At { file: Some(f), .. },
+                        ) => f != file,
+                        _ => true,
                     });
                 }
                 // remove empty map
@@ -443,6 +478,7 @@ impl StyleSheet {
             theme.get_length_token_levels(),
             theme.get_shadow_token_levels(),
         );
+        set_typography_keys(theme.typography.keys().cloned().collect());
         self.theme = theme;
     }
 
@@ -466,6 +502,34 @@ impl StyleSheet {
         let bucket_scope = if single_css { None } else { Some(filename) };
         for style in styles {
             match style {
+                // A conditional `typography` preset: its class is the atom, and the
+                // preset's declarations are emitted under the atom's selector.
+                ExtractStyleValue::Static(st) if st.property() == "typography" => {
+                    let (StyleProperty::ClassName(class_name)
+                    | StyleProperty::Variable { class_name, .. }) = st.extract(name_scope);
+                    for (level, property, value) in
+                        self.theme.typography_declarations(st.value(), st.level())
+                    {
+                        if self.insert_property(
+                            level,
+                            st.style_order(),
+                            bucket_scope,
+                            StyleSheetProperty {
+                                class_name: class_name.clone(),
+                                property: property.to_string(),
+                                value,
+                                selector: st.selector().cloned(),
+                                layer: st.layer().map(ToString::to_string),
+                                typography: true,
+                            },
+                        ) {
+                            collected = true;
+                            if st.style_order() == Some(0) {
+                                updated_base_style = true;
+                            }
+                        }
+                    }
+                }
                 ExtractStyleValue::Static(st) => {
                     let is_first_value =
                         st.theme_token_resolution() == ThemeTokenResolution::FirstValue;
@@ -744,245 +808,232 @@ impl StyleSheet {
     fn create_style_with_layers<P: std::borrow::Borrow<StyleSheetProperty>>(
         &self,
         map: &BTreeMap<u8, FxHashSet<P>>,
-        mut layered_styles: Option<&mut LayeredStyles>,
+        layered_styles: Option<&mut LayeredStyles>,
     ) -> String {
         // Estimate ~64 bytes per property for pre-allocation
         let prop_count: usize = map.values().map(FxHashSet::len).sum();
         let mut current_css = String::with_capacity(prop_count * 64);
+        let mut class_rules: Vec<(RuleOrder<'_>, &StyleSheetProperty)> =
+            Vec::with_capacity(prop_count);
+        let mut at_rules: Vec<(AtRuleOrder<'_>, Wrapper<'_>, &StyleSheetProperty)> = Vec::new();
+        let mut global_props: Vec<GlobalProp<'_>> = Vec::new();
         for (level, props) in map {
-            // Single pass bucketing: the two prior `partition` calls always
-            // heap-allocated all four output `Vec`s even when the Global/At
-            // buckets stay empty (the common case). One scan pushing each
-            // `&prop` into one of three pre-declared `Vec`s leaves empty buckets
-            // as non-allocating `Vec::new()` and avoids the second full scan.
-            let mut global_props: Vec<_> = Vec::new();
-            let mut at_rules: Vec<_> = Vec::new();
-            // Plain (non-Global, non-At) selectors dominate: presize this bucket
-            // to `props.len()` to avoid its 1→4→8→… grow-reallocs. `global_props`
-            // / `at_rules` stay `Vec::new()` so empty buckets never allocate.
-            let mut sorted_props: Vec<&StyleSheetProperty> = Vec::with_capacity(props.len());
             for prop in props {
                 let prop: &StyleSheetProperty = prop.borrow();
-                match prop.selector {
-                    Some(StyleSelector::Global(_, _)) => global_props.push(prop),
-                    Some(StyleSelector::At { .. }) => at_rules.push(prop),
-                    _ => sorted_props.push(prop),
-                }
-            }
-            // Decorate-sort-undecorate for the Global bucket, mirroring the
-            // plain-selector `keyed` sort below. `global_props.sort()` compares via
-            // `StyleSheetProperty::cmp` → `StyleSelector::cmp`'s Global arm, which for
-            // EACH comparison re-runs `global_selector_order` (a `SELECTOR_ORDER` table
-            // walk) on BOTH operands — O(n log n) redundant re-scans of the same
-            // selector strings. Compute each prop's Global order key ONCE. The key
-            // `(has_colon, order, selector_str, property, value)` reproduces the Global
-            // arm byte-for-byte: equal selector strings ⇒ `Ordering::Equal` there, so
-            // `StyleSheetProperty::cmp` falls through to (property, value); no-colon
-            // props (`has_colon=false`) sort before colon props and tie on the selector
-            // string; colon props sort by (order, selector string).
-            // The common level has no Global selectors, so `global_props` is empty.
-            // Skip the three vector materializations (keyed `with_capacity`, `extend`,
-            // sorted `collect`) entirely in that case, mirroring the `at_rules.is_empty()`
-            // guard below; only decorate-sort-undecorate when there is actually work.
-            // An empty sort/collect yields an empty vec anyway, so output is byte-identical.
-            let global_props: Vec<&StyleSheetProperty> = if global_props.is_empty() {
-                Vec::new()
-            } else {
-                let mut global_keyed: Vec<(bool, u8, &str, &StyleSheetProperty)> =
-                    Vec::with_capacity(global_props.len());
-                global_keyed.extend(global_props.into_iter().map(global_prop_key));
-                global_keyed.sort_by(keyed_prop_cmp);
-                global_keyed
-                    .into_iter()
-                    .map(|(_, _, _, prop)| prop)
-                    .collect()
-            };
-            // Decorate-sort-undecorate for the plain-selector bucket: sorting via
-            // `StyleSheetProperty::cmp` re-runs `get_selector_order` (a byte scan +
-            // linear `SELECTOR_ORDER` probe) on BOTH operands of every comparison,
-            // i.e. O(n log n) redundant scans of the same `Selector` strings. Here
-            // `sorted_props` holds only `None`/`Selector(_)` variants (Global/At were
-            // filtered out above), so compute each prop's order key ONCE into a keyed
-            // vec and sort that. The key `(is_some, order, selector_str, property,
-            // value)` reproduces `StyleSheetProperty::cmp` byte-for-byte: `None` props
-            // (is_some=0, order=0, selector_str="") sort by (property, value); `Selector`
-            // props (is_some=1) sort by (order, selector_str, property, value) — matching
-            // `StyleSelector::cmp`'s `get_selector_order` then string tie-break.
-            // The common level often has ONLY global/at props, leaving `sorted_props`
-            // empty. Skip the `with_capacity`/`extend`/`sort_by` triple entirely in that
-            // case, mirroring the `global_props`/`at_rules` guards above and below; an
-            // empty build+sort yields an empty vec anyway, so output is byte-identical.
-            let keyed: Vec<(u8, u8, &str, &StyleSheetProperty)> = if sorted_props.is_empty() {
-                Vec::new()
-            } else {
-                let mut keyed: Vec<(u8, u8, &str, &StyleSheetProperty)> =
-                    Vec::with_capacity(sorted_props.len());
-                keyed.extend(sorted_props.into_iter().map(|prop| match &prop.selector {
-                    Some(StyleSelector::Selector(s)) => {
-                        (1u8, get_selector_order(s), s.as_str(), prop)
+                match &prop.selector {
+                    Some(StyleSelector::Global(selector, _)) => {
+                        global_props.push((*level, selector.as_str(), prop));
                     }
-                    _ => (0u8, 0u8, "", prop),
-                }));
-                keyed.sort_by(keyed_prop_cmp);
-                keyed
-            };
-            // The common level has no `@`-rule atoms, so `at_rules` is empty.
-            // Skip the `sort()` no-op and the per-level `BTreeMap` construction
-            // entirely in that case; only regroup when there is actually work.
-            let at_rules: BTreeMap<(AtRuleKind, &String), Vec<_>> = if at_rules.is_empty() {
-                BTreeMap::new()
-            } else {
-                at_rules.sort();
-                let mut map: BTreeMap<(AtRuleKind, &String), Vec<_>> = BTreeMap::new();
-                for prop in at_rules {
-                    if let Some(StyleSelector::At { kind, query, .. }) = &prop.selector {
-                        map.entry((*kind, query)).or_default().push(prop);
+                    Some(StyleSelector::At {
+                        kind,
+                        query,
+                        selector,
+                        outer,
+                        ..
+                    }) => {
+                        let chain = outer
+                            .iter()
+                            .map(|rule| (rule.kind, rule.query.as_str()))
+                            .chain(std::iter::once((*kind, query.as_str())))
+                            .map(|(kind, query)| (kind as u8, query_order(kind, query), query))
+                            .collect();
+                        let selector = selector.as_deref();
+                        at_rules.push((
+                            (
+                                chain,
+                                selector_group(selector),
+                                *level,
+                                selector.unwrap_or(""),
+                            ),
+                            Wrapper {
+                                level: *level,
+                                at_rule: Some((outer.as_slice(), *kind, query.as_str())),
+                            },
+                            prop,
+                        ));
                     }
-                }
-                map
-            };
-
-            let break_point = if *level == 0 {
-                None
-            } else {
-                Some(
-                    self.theme
-                        .breakpoints
-                        .get(*level as usize)
-                        .copied()
-                        .unwrap_or_else(|| self.theme.breakpoints.last().copied().unwrap_or(0)),
-                )
-            };
-
-            if !global_props.is_empty() {
-                // Separate layered and non-layered global props. Only pay the
-                // partition + clone-into-map cost when the caller actually
-                // consumes the layered output (base/global path); callers that
-                // discard layers pass `None` and keep every global prop inline.
-                let non_layered_props = if let Some(layered_styles) = layered_styles.as_deref_mut()
-                {
-                    let (layered_props, non_layered_props): (Vec<_>, Vec<_>) = global_props
-                        .into_iter()
-                        .partition(|prop| prop.layer.is_some());
-
-                    // Collect layered props for later processing
-                    for prop in layered_props {
-                        if let Some(layer) = &prop.layer
-                            && let Some(StyleSelector::Global(selector, _)) = &prop.selector
-                        {
-                            // Borrow-probe existing entry by layer.as_str() before cloning
-                            let bucket = match layered_styles.get_mut(layer.as_str()) {
-                                Some(bucket) => bucket,
-                                None => layered_styles.entry(layer.clone()).or_default(),
-                            };
-                            bucket.push((
-                                selector.clone(),
-                                prop.property.clone(),
-                                prop.value.clone(),
-                            ));
-                        }
-                    }
-                    non_layered_props
-                } else {
-                    global_props
-                };
-
-                // Process non-layered global props as before
-                if !non_layered_props.is_empty() {
-                    let mut selector_map: BTreeMap<_, Vec<_>> = BTreeMap::new();
-                    for prop in non_layered_props {
-                        if let Some(StyleSelector::Global(selector, _)) = &prop.selector {
-                            selector_map
-                                .entry(selector)
-                                .or_insert_with(|| Vec::with_capacity(1))
-                                .push(prop);
-                        }
-                    }
-                    if let Some(break_point) = break_point {
-                        push_fmt!(&mut current_css, "@media(min-width:{break_point}px){{");
-                    }
-                    for (selector, props) in selector_map {
-                        current_css.push_str(selector);
-                        current_css.push('{');
-                        let mut first = true;
-                        for prop in props {
-                            if !first {
-                                current_css.push(';');
-                            }
-                            first = false;
-                            current_css.push_str(&prop.property);
-                            current_css.push(':');
-                            current_css.push_str(&prop.value);
-                        }
-                        current_css.push('}');
-                    }
-                    if break_point.is_some() {
-                        current_css.push('}');
-                    }
-                }
-            }
-
-            if !keyed.is_empty() {
-                if let Some(break_point) = break_point {
-                    push_fmt!(&mut current_css, "@media(min-width:{break_point}px){{");
-                }
-                for (_, _, _, prop) in &keyed {
-                    prop.write_extract(&mut current_css);
-                }
-                if break_point.is_some() {
-                    current_css.push('}');
-                }
-            }
-            for ((kind, query), props) in at_rules {
-                if let Some(break_point) = break_point {
-                    match kind {
-                        AtRuleKind::Media => {
-                            push_fmt!(
-                                &mut current_css,
-                                "@media(min-width:{break_point}px)and {query}{{"
-                            );
-                        }
-                        AtRuleKind::Supports => {
-                            push_fmt!(
-                                &mut current_css,
-                                "@media(min-width:{break_point}px){{@supports{query}{{"
-                            );
-                        }
-                        AtRuleKind::Container => {
-                            push_fmt!(
-                                &mut current_css,
-                                "@media(min-width:{break_point}px){{@container{query}{{"
-                            );
-                        }
-                        AtRuleKind::Layer => {
-                            push_fmt!(
-                                &mut current_css,
-                                "@media(min-width:{break_point}px){{@layer {query}{{"
-                            );
-                        }
-                    }
-                    for prop in props {
-                        prop.write_extract(&mut current_css);
-                    }
-                    match kind {
-                        AtRuleKind::Media => current_css.push('}'),
-                        _ => current_css.push_str("}}"),
-                    }
-                } else {
-                    push_fmt!(&mut current_css, "@{kind}");
-                    if query.starts_with('(') {
-                        push_fmt!(&mut current_css, "{query}{{");
-                    } else {
-                        push_fmt!(&mut current_css, " {query}{{");
-                    }
-                    for prop in props {
-                        prop.write_extract(&mut current_css);
-                    }
-                    current_css.push('}');
+                    Some(StyleSelector::Selector(selector)) => class_rules.push((
+                        (selector_group(Some(selector)), *level, selector.as_str()),
+                        prop,
+                    )),
+                    None => class_rules.push(((selector_group(None), *level, ""), prop)),
                 }
             }
         }
+        if !global_props.is_empty() {
+            self.write_global_props(&mut current_css, global_props, layered_styles);
+        }
+
+        // Selector group (plain, then `SELECTOR_ORDER`) sorts before the breakpoint
+        // level, so `:active` still follows a `:hover` set at a wider breakpoint while
+        // one selector's responsive values keep ascending. At-rules follow every plain
+        // rule so a condition beats the breakpoint values it overrides; among
+        // themselves they order by condition, then selector group, then level.
+        class_rules.sort_by(|a, b| a.0.cmp(&b.0).then_with(|| prop_cmp(a.1, b.1)));
+        at_rules.sort_by(|a, b| a.0.cmp(&b.0).then_with(|| prop_cmp(a.2, b.2)));
+
+        let mut open: Option<(Wrapper<'_>, Option<usize>)> = None;
+        let mut open_rule: Option<&StyleSheetProperty> = None;
+        for (wrapper, prop) in class_rules
+            .iter()
+            .map(|((_, level, _), prop)| {
+                (
+                    Wrapper {
+                        level: *level,
+                        at_rule: None,
+                    },
+                    *prop,
+                )
+            })
+            .chain(at_rules.iter().map(|(_, wrapper, prop)| (*wrapper, *prop)))
+        {
+            if open.as_ref().is_none_or(|(current, _)| *current != wrapper) {
+                if open_rule.take().is_some() {
+                    current_css.push('}');
+                }
+                if let Some((_, Some(depth))) = open {
+                    current_css.extend(std::iter::repeat_n('}', depth));
+                }
+                let depth = self.open_wrapper(&mut current_css, wrapper);
+                open = Some((wrapper, depth));
+            }
+            if let Some((_, Some(_))) = open {
+                if open_rule.is_some_and(|rule| rule.same_rule(prop)) {
+                    current_css.push(';');
+                } else {
+                    if open_rule.is_some() {
+                        current_css.push('}');
+                    }
+                    write_merge_selector(
+                        &mut current_css,
+                        &prop.class_name,
+                        prop.selector.as_ref(),
+                    );
+                    current_css.push('{');
+                    open_rule = Some(prop);
+                }
+                prop.write_declaration(&mut current_css);
+            }
+        }
+        if open_rule.is_some() {
+            current_css.push('}');
+        }
+        if let Some((_, Some(depth))) = open {
+            current_css.extend(std::iter::repeat_n('}', depth));
+        }
         current_css
+    }
+
+    fn break_point(&self, level: u8) -> u16 {
+        self.theme
+            .breakpoints
+            .get(level as usize)
+            .copied()
+            .unwrap_or_else(|| self.theme.breakpoints.last().copied().unwrap_or(0))
+    }
+
+    /// Open the blocks `wrapper` needs and return how many to close, or `None`
+    /// when the breakpoint and the media query can never hold together.
+    fn open_wrapper(&self, css: &mut String, wrapper: Wrapper<'_>) -> Option<usize> {
+        let mut rules: Vec<(AtRuleKind, Cow<'_, str>)> =
+            wrapper
+                .at_rule
+                .map_or_else(Vec::new, |(outer, kind, query)| {
+                    outer
+                        .iter()
+                        .map(|rule| (rule.kind, Cow::Borrowed(rule.query.as_str())))
+                        .chain(std::iter::once((kind, Cow::Borrowed(query))))
+                        .collect()
+                });
+        if wrapper.level > 0 {
+            let bp_query = format!("(min-width:{}px)", self.break_point(wrapper.level));
+            // The breakpoint folds into the outermost `@media` when one query can
+            // express both; otherwise it wraps the whole chain.
+            let combined = match rules.first() {
+                Some((AtRuleKind::Media, query)) => combine_media_queries(&bp_query, query),
+                _ => MediaCombination::Nest,
+            };
+            match combined {
+                MediaCombination::Merged(merged) => rules[0].1 = Cow::Owned(merged),
+                MediaCombination::Never => return None,
+                MediaCombination::Nest => {
+                    rules.insert(0, (AtRuleKind::Media, Cow::Owned(bp_query)));
+                }
+            }
+        }
+        for (kind, query) in &rules {
+            let _ = write_at_rule(css, *kind, query);
+            css.push('{');
+        }
+        Some(rules.len())
+    }
+
+    fn write_global_props(
+        &self,
+        css: &mut String,
+        mut global_props: Vec<GlobalProp<'_>>,
+        mut layered_styles: Option<&mut LayeredStyles>,
+    ) {
+        // Same order as class rules: selector group before breakpoint level, so a
+        // `:hover` set at a wider breakpoint still precedes `:active`.
+        global_props.sort_by(|a, b| {
+            global_selector_group(a.1)
+                .cmp(&global_selector_group(b.1))
+                .then_with(|| a.0.cmp(&b.0))
+                .then_with(|| a.1.cmp(b.1))
+                .then_with(|| a.2.property.cmp(&b.2.property))
+                .then_with(|| a.2.value.cmp(&b.2.value))
+        });
+
+        let mut open_level: Option<u8> = None;
+        let mut open_selector: Option<&str> = None;
+        for (level, selector, prop) in global_props {
+            if let (Some(layered_styles), Some(layer)) =
+                (layered_styles.as_deref_mut(), prop.layer.as_ref())
+            {
+                let bucket = match layered_styles.get_mut(layer.as_str()) {
+                    Some(bucket) => bucket,
+                    None => layered_styles.entry(layer.clone()).or_default(),
+                };
+                bucket.push((
+                    selector.to_string(),
+                    prop.property.clone(),
+                    prop.value.clone(),
+                ));
+                continue;
+            }
+            if open_level != Some(level) {
+                if open_selector.take().is_some() {
+                    css.push('}');
+                }
+                if open_level.is_some_and(|open| open > 0) {
+                    css.push('}');
+                }
+                if level > 0 {
+                    push_fmt!(css, "@media(min-width:{}px){{", self.break_point(level));
+                }
+                open_level = Some(level);
+            }
+            if open_selector == Some(selector) {
+                css.push(';');
+            } else {
+                if open_selector.is_some() {
+                    css.push('}');
+                }
+                css.push_str(selector);
+                css.push('{');
+                open_selector = Some(selector);
+            }
+            css.push_str(&prop.property);
+            css.push(':');
+            css.push_str(&prop.value);
+        }
+        if open_selector.is_some() {
+            css.push('}');
+        }
+        if open_level.is_some_and(|open| open > 0) {
+            css.push('}');
+        }
     }
 
     #[inline]
@@ -1155,30 +1206,22 @@ impl StyleSheet {
 
                 // Generate styles wrapped in @layer blocks
                 for (layer_name, styles) in layered_styles {
-                    // Group by selector
-                    let mut selector_map: BTreeMap<String, Vec<(String, String)>> = BTreeMap::new();
-                    for (selector, property, value) in styles {
-                        selector_map
-                            .entry(selector)
-                            .or_default()
-                            .push((property, value));
-                    }
-
                     push_fmt!(&mut css, "@layer {layer_name}{{");
-                    for (selector, props) in selector_map {
-                        css.push_str(&selector);
-                        css.push('{');
-                        let mut first = true;
-                        for (p, v) in props {
-                            if !first {
-                                css.push(';');
+                    let mut open_selector: Option<&str> = None;
+                    for (selector, p, v) in &styles {
+                        if open_selector == Some(selector.as_str()) {
+                            css.push(';');
+                        } else {
+                            if open_selector.is_some() {
+                                css.push('}');
                             }
-                            first = false;
-                            push_fmt!(&mut css, "{p}:{v}");
+                            css.push_str(selector);
+                            css.push('{');
+                            open_selector = Some(selector);
                         }
-                        css.push('}');
+                        push_fmt!(&mut css, "{p}:{v}");
                     }
-                    css.push('}');
+                    css.push_str("}}");
                 }
             }
             // Atom hoisting: emit shared (hoisted) order!=0 atoms into the global
@@ -1412,6 +1455,8 @@ mod tests {
             kind: AtRuleKind::Media,
             query: "(hover:hover)".to_string(),
             selector: None,
+            outer: vec![],
+            file: None,
         };
         sheet.add_property(
             "atr",
@@ -2198,14 +2243,14 @@ mod tests {
     }
 
     #[test]
-    fn test_speech_selector() {
+    fn test_motion_reduce_selector() {
         let mut sheet = StyleSheet::default();
         sheet.add_property(
             "test",
             "display",
             0,
             "none",
-            Some(&"speech".into()),
+            Some(&"motion-reduce".into()),
             None,
             None,
         );
@@ -2241,6 +2286,8 @@ mod tests {
                 kind: AtRuleKind::Media,
                 query: "(min-width: 1024px)".to_string(),
                 selector: Some("&:hover".to_string()),
+                outer: vec![],
+                file: None,
             }),
             None,
             None,
@@ -2254,6 +2301,8 @@ mod tests {
                 kind: AtRuleKind::Media,
                 query: "(min-width: 1024px)".to_string(),
                 selector: Some("&:hover".to_string()),
+                outer: vec![],
+                file: None,
             }),
             None,
             None,
@@ -2274,6 +2323,8 @@ mod tests {
                 kind: AtRuleKind::Supports,
                 query: "(display: grid)".to_string(),
                 selector: None,
+                outer: vec![],
+                file: None,
             }),
             None,
             None,
@@ -2294,6 +2345,8 @@ mod tests {
                 kind: AtRuleKind::Container,
                 query: "(min-width: 768px)".to_string(),
                 selector: None,
+                outer: vec![],
+                file: None,
             }),
             None,
             None,
@@ -2869,6 +2922,31 @@ mod tests {
     }
 
     #[test]
+    fn test_custom_layer_keeps_selector_order() {
+        let mut sheet = StyleSheet::default();
+        for (selector, value) in [("a:active", "blue"), ("a:hover", "red"), ("a", "black")] {
+            sheet.add_property_with_layer(
+                "a",
+                "color",
+                0,
+                value,
+                Some(&StyleSelector::Global(
+                    selector.to_string(),
+                    "links.css.ts".to_string(),
+                )),
+                Some(0),
+                None,
+                Some("ui"),
+            );
+        }
+        let css = sheet.create_css(None, false);
+        assert!(
+            css.contains("@layer ui{a{color:black}a:hover{color:red}a:active{color:blue}}"),
+            "{css}"
+        );
+    }
+
+    #[test]
     fn test_at_rules_with_breakpoints() {
         let mut sheet = StyleSheet::default();
         // Add @supports with breakpoint (level 1)
@@ -2881,6 +2959,8 @@ mod tests {
                 kind: AtRuleKind::Supports,
                 query: "(display: grid)".to_string(),
                 selector: None,
+                outer: vec![],
+                file: None,
             }),
             Some(0),
             None,
@@ -2904,6 +2984,8 @@ mod tests {
                 kind: AtRuleKind::Container,
                 query: "(min-width: 400px)".to_string(),
                 selector: None,
+                outer: vec![],
+                file: None,
             }),
             Some(0),
             None,
@@ -2945,6 +3027,8 @@ mod tests {
                 kind: AtRuleKind::Layer,
                 query: "components".to_string(),
                 selector: None,
+                outer: vec![],
+                file: None,
             }),
             Some(0),
             None,
@@ -2975,6 +3059,7 @@ mod tests {
             value: value.to_string(),
             selector: None,
             layer: None,
+            typography: false,
         };
         assert_eq!(make("color", "red").cmp(&make("color", "red")), Equal);
         assert!(make("color", "red") < make("color", "white"));
@@ -2991,6 +3076,7 @@ mod tests {
                 value: value.to_string(),
                 selector,
                 layer: None,
+                typography: false,
             };
         let hover = || Some(StyleSelector::Selector("&:hover".to_string()));
 
@@ -3008,29 +3094,11 @@ mod tests {
     }
 
     #[test]
-    fn test_global_prop_key_variants() {
-        let make = |selector: Option<StyleSelector>| StyleSheetProperty {
-            class_name: "a".to_string(),
-            property: "color".to_string(),
-            value: "red".to_string(),
-            selector,
-            layer: None,
-        };
-        let pseudo = make(Some(StyleSelector::Global(
-            "a:hover".to_string(),
-            "test.tsx".to_string(),
-        )));
-        let plain = make(Some(StyleSelector::Global(
-            "body".to_string(),
-            "test.tsx".to_string(),
-        )));
-        let local = make(Some(StyleSelector::Selector("&:hover".to_string())));
-
-        assert!(global_prop_key(&pseudo).0);
-        assert_eq!(global_prop_key(&pseudo).2, "a:hover");
-        assert!(!global_prop_key(&plain).0);
-        assert_eq!(global_prop_key(&plain).2, "body");
-        assert_eq!(global_prop_key(&local).2, "");
+    fn test_global_selector_group() {
+        assert_eq!(global_selector_group("body"), (false, 0));
+        assert_eq!(global_selector_group("a:hover"), (true, 0));
+        assert_eq!(global_selector_group("a:active"), (true, 3));
+        assert_eq!(global_selector_group(":root"), (true, 0));
     }
 
     #[test]
@@ -3194,6 +3262,269 @@ mod tests {
             css_body.contains("background:var(--a) !important"),
             "CSS should contain !important. Got: {css_body}",
         );
+    }
+
+    fn pipeline_css(theme: Theme, source: &str) -> String {
+        css::debug::set_debug(false);
+        css::set_prefix(None);
+        css::atom_hoist::set_atom_hoist(None);
+        reset_class_map();
+        reset_file_map();
+        let mut sheet = StyleSheet::default();
+        sheet.set_theme(theme);
+        let output = extract(
+            "test.tsx",
+            &format!("import {{Box,css,styled,globalCss}} from '@devup-ui/core';\n{source}"),
+            ExtractOption {
+                package: "@devup-ui/core".to_string(),
+                css_dir: "@devup-ui/core".to_string(),
+                single_css: true,
+                import_main_css: false,
+                import_aliases: std::collections::HashMap::new(),
+            },
+        )
+        .unwrap();
+        sheet.update_styles(&output.styles, "test.tsx", true);
+        // Class names come from a process-wide counter; number them by first
+        // appearance so the expected CSS only pins down structure and order.
+        let mut names: Vec<String> = vec![];
+        compile_regex(r"\.([A-Za-z_][\w-]*)")
+            .replace_all(
+                sheet.create_css(None, false).split("*/").nth(1).unwrap(),
+                |caps: &regex_lite::Captures| {
+                    let index = names.iter().position(|n| *n == caps[1]).unwrap_or_else(|| {
+                        names.push(caps[1].to_string());
+                        names.len() - 1
+                    });
+                    format!(".c{index}")
+                },
+            )
+            .into_owned()
+    }
+
+    #[test]
+    #[serial]
+    #[allow(clippy::literal_string_with_formatting_args)]
+    fn test_at_rule_pipeline() {
+        for (source, expected) in [
+            // Conditions (at-rules) win over breakpoint values; pseudo states keep
+            // `SELECTOR_ORDER` across breakpoints.
+            (
+                "<Box bg={['red', null, 'blue']} _hover={{ bg: 'green' }} />",
+                ".c0{background:red}@media(min-width:768px){.c1{background:blue}}.c2:hover{background:green}",
+            ),
+            (
+                "<Box _hover={{ bg: ['red', null, 'blue'] }} _active={{ bg: 'green' }} />",
+                ".c0:hover{background:red}@media(min-width:768px){.c1:hover{background:blue}}.c2:active{background:green}",
+            ),
+            (
+                "<Box transition={['opacity .2s', null, 'all .3s']} _motionReduce={{ transition: 'none' }} />",
+                ".c0{transition:opacity .2s}@media(min-width:768px){.c1{transition:all .3s}}@media(prefers-reduced-motion:reduce){.c2{transition:none}}",
+            ),
+            (
+                "<Box bg={['red', null, 'blue']} _supports={{ '(display: grid)': { bg: 'green' } }} />",
+                ".c0{background:red}@media(min-width:768px){.c1{background:blue}}@supports(display:grid){.c2{background:green}}",
+            ),
+            (
+                "<Box _media={{ '(min-width: 1000px)': { p: 2 }, '(min-width: 500px)': { p: 1 }, '(max-width: 300px)': { p: 3 }, '(max-width: 900px)': { p: 4 } }} />",
+                "@media(min-width:500px){.c0{padding:4px}}@media(min-width:1000px){.c1{padding:8px}}@media(max-width:900px){.c2{padding:16px}}@media(max-width:300px){.c3{padding:12px}}",
+            ),
+            (
+                "<Box _active={{ _motionReduce: { bg: 'a' } }} _hover={{ _motionReduce: { bg: 'b' } }} />",
+                "@media(prefers-reduced-motion:reduce){.c0:hover{background:b}.c1:active{background:a}}",
+            ),
+            // Nesting in either direction keeps both the condition and the selector.
+            (
+                "<Box _hover={{ _print: { bg: 'red' } }} _print={{ _focus: { color: 'red' } }} />",
+                "@media print{.c0:hover{background:red}.c1:focus{color:red}}",
+            ),
+            (
+                "<Box _motionSafe={{ _hover: { transform: 'scale(1.05)' }, _themeDark: { color: 'red' }, _groupHover: { color: 'blue' } }} />",
+                "@media(prefers-reduced-motion:no-preference){.c0:hover{transform:scale(1.05)}:is([role=group],[data-group]):hover .c1{color:blue}:root[data-theme=dark] .c2{color:red}}",
+            ),
+            (
+                "<Box _media={{ '(prefers-reduced-motion: reduce)': { selectors: { '&:hover': { bg: 'red' } }, _before: { content: '\"\"' } } }} />",
+                "@media(prefers-reduced-motion:reduce){.c0:hover{background:red}.c1::before{content:\"\"}}",
+            ),
+            (
+                "<Box _hover={{ _themeDark: { bg: 'red' } }} />",
+                ":root[data-theme=dark] .c0:hover{background:red}",
+            ),
+            // Nested at-rules fold into one query or nest; exclusive ones are dropped.
+            (
+                "<Box _print={{ _motionReduce: { bg: 'red' }, _screen: { bg: 'blue' } }} />",
+                "@media print and (prefers-reduced-motion:reduce){.c0{background:red}}",
+            ),
+            (
+                "<Box _media={{ '(prefers-reduced-motion: reduce)': { _supports: { '(display: grid)': { bg: 'red' } } } }} />",
+                "@media(prefers-reduced-motion:reduce){@supports(display:grid){.c0{background:red}}}",
+            ),
+            // Breakpoints combine with the query: media type first, lists distribute,
+            // `not print` becomes `screen`, anything else nests.
+            (
+                "<Box _print={{ bg: ['red', null, 'blue'] }} />",
+                "@media print{.c0{background:red}}@media print and (min-width:768px){.c1{background:blue}}",
+            ),
+            (
+                "<Box _media={{ '(orientation: portrait), (hover: none)': { bg: [null, null, 'blue'] }, 'not print': { color: [null, null, 'red'] } }} />",
+                "@media screen and (min-width:768px){.c0{color:red}}@media(min-width:768px)and (orientation:portrait),(min-width:768px)and (hover:none){.c1{background:blue}}",
+            ),
+            (
+                "<Box _media={{ 'not print and (color)': { bg: [null, null, 'blue'] }, 'not all': { color: [null, null, 'red'] } }} />",
+                "@media(min-width:768px){@media not print and (color){.c0{background:blue}}}",
+            ),
+            (
+                "<Box _supports={{ 'not (display: grid)': { bg: [null, null, 'blue'] } }} />",
+                "@media(min-width:768px){@supports not (display:grid){.c0{background:blue}}}",
+            ),
+            // Emotion-style object keys and template literals.
+            (
+                "<div className={css({ '@media print': { color: 'blue', '&:hover': { color: 'green' } }, ':focus': { color: 'red' } })} />",
+                ".c0:focus{color:red}@media print{.c1{color:blue}.c2:hover{color:green}}",
+            ),
+            (
+                "<div className={css`transition: all .3s; @media (prefers-reduced-motion: reduce) { transition: none; } &:hover { @media print { color: red; } span { color: blue; } }`} />",
+                ".c0{transition:all .3s}.c1:hover span{color:blue}@media print{.c2:hover{color:red}}@media(prefers-reduced-motion:reduce){.c3{transition:none}}",
+            ),
+            (
+                "<Box className=\"print:motion-reduce:hidden print:screen:flex\" />",
+                "@media print and (prefers-reduced-motion:reduce){.c0{display:none}}",
+            ),
+            (
+                "globalCss({ '@media (prefers-reduced-motion: reduce)': { '*': { transition: 'none' } }, _print: { body: { bg: 'white', _hover: { color: 'red' } } }, _media: { '(min-width: 768px)': { body: { m: 2 } } }, _screen: { _print: { body: { color: 'red' } } } })",
+                "@layer b;@layer b{@media(min-width:768px){body{margin:8px}}@media print{body{background:white}body:hover{color:red}}@media(prefers-reduced-motion:reduce){*{transition:none}}}",
+            ),
+            (
+                "<Box selectors={{ _print: { bg: 'red' }, '@media (hover: none)': { color: 'red' }, '&:hover, &:focus': { m: 1 } }} />",
+                ".c0:hover{margin:4px}.c1:focus{margin:4px}@media print{.c2{background:red}}@media(hover:none){.c3{color:red}}",
+            ),
+            // Global pseudo rules keep `SELECTOR_ORDER` across breakpoints.
+            (
+                "globalCss({ a: { _hover: { color: 'red' }, _active: { color: 'blue' }, _focus: { color: 'green' } } })",
+                "@layer b;@layer b{a:hover{color:red}a:focus{color:green}a:active{color:blue}}",
+            ),
+            (
+                "globalCss({ a: { color: 'black', _hover: { color: [null, null, 'red'] }, _active: { color: 'blue' } } })",
+                "@layer b;@layer b{a{color:black}@media(min-width:768px){a:hover{color:red}}a:active{color:blue}}",
+            ),
+            (
+                "globalCss({ a: { color: ['red', null, 'blue'] } })",
+                "@layer b;@layer b{a{color:red}@media(min-width:768px){a{color:blue}}}",
+            ),
+        ] {
+            assert_eq!(pipeline_css(Theme::default(), source), expected, "{source}");
+        }
+    }
+
+    #[test]
+    #[serial]
+    #[allow(clippy::literal_string_with_formatting_args)]
+    fn test_conditional_typography_pipeline() {
+        for (source, expected) in [
+            (
+                "<Box _hover={{ typography: 'small' }} />",
+                "@layer t;.c2:hover{font-size:12px;line-height:1.2}",
+            ),
+            (
+                "<Box _motionReduce={{ typography: 'title' }} />",
+                "@layer t;@media(prefers-reduced-motion:reduce){.c2{font-family:var(--heading);font-size:20px;font-weight:700}}@media(min-width:768px)and (prefers-reduced-motion:reduce){.c2{font-size:32px}}",
+            ),
+            (
+                "<Box _hover={[null, null, { typography: 'title' }]} />",
+                "@layer t;@media(min-width:768px){.c2:hover{font-family:var(--heading);font-size:32px;font-weight:700}}",
+            ),
+            (
+                "<Box _hover={{ typography: size }} />",
+                "@layer t;.c2:hover{font-size:12px;line-height:1.2}.c3:hover{font-family:var(--heading);font-size:20px;font-weight:700}@media(min-width:768px){.c3:hover{font-size:32px}}",
+            ),
+            (
+                "<Box _hover={{ typography: `${size}` }} />",
+                "@layer t;.c2:hover{font-size:12px;line-height:1.2}.c3:hover{font-family:var(--heading);font-size:20px;font-weight:700}@media(min-width:768px){.c3:hover{font-size:32px}}",
+            ),
+            ("<Box _hover={{ typography: 'missing' }} />", "@layer t;"),
+            // A declaration written next to the preset wins over the preset's.
+            (
+                "<Box _hover={{ typography: 'small', fontSize: '11px' }} />",
+                "@layer t;.c2:hover{font-size:12px;line-height:1.2}.c3:hover{font-size:11px}",
+            ),
+            (
+                "globalCss({ body: { typography: 'small' } })",
+                "@layer b,t;@layer b{body{font-size:12px;line-height:1.2}}",
+            ),
+        ] {
+            let mut theme = Theme::default();
+            theme.add_typography(
+                "small",
+                vec![Some(Typography::new(
+                    None,
+                    Some("12px".to_string()),
+                    None,
+                    Some("1.2".to_string()),
+                    None,
+                ))],
+            );
+            theme.add_typography(
+                "title",
+                vec![
+                    Some(Typography::new(
+                        Some("$heading".to_string()),
+                        Some("20px".to_string()),
+                        Some("700".to_string()),
+                        None,
+                        Some(" ".to_string()),
+                    )),
+                    None,
+                    Some(Typography::new(
+                        None,
+                        Some("32px".to_string()),
+                        None,
+                        None,
+                        None,
+                    )),
+                ],
+            );
+            let css = pipeline_css(theme, &format!("const size = 'small';\n{source}"));
+            // Drop the theme's own `.typo-*` layer; only the conditional atoms matter here.
+            let start = css.find("@layer t{").unwrap();
+            let mut depth = 0;
+            let end = css[start..]
+                .char_indices()
+                .find_map(|(index, c)| {
+                    match c {
+                        '{' => depth += 1,
+                        '}' => depth -= 1,
+                        _ => {}
+                    }
+                    (c == '}' && depth == 0).then_some(start + index + 1)
+                })
+                .unwrap();
+            assert_eq!(format!("{}{}", &css[..start], &css[end..]), expected);
+        }
+    }
+
+    #[test]
+    #[serial]
+    fn test_rm_global_css_drops_global_at_rules() {
+        let mut sheet = StyleSheet::default();
+        let output = extract(
+            "global.tsx",
+            "import {globalCss} from '@devup-ui/core';globalCss({ body: { color: 'red', _motionReduce: { transition: 'none' } } })",
+            ExtractOption {
+                package: "@devup-ui/core".to_string(),
+                css_dir: "@devup-ui/core".to_string(),
+                single_css: true,
+                import_main_css: false,
+                import_aliases: std::collections::HashMap::new(),
+            },
+        )
+        .unwrap();
+        sheet.update_styles(&output.styles, "global.tsx", true);
+        assert!(sheet.create_css(None, false).contains("transition:none"));
+
+        assert!(sheet.rm_global_css("global.tsx", true));
+        let css = sheet.create_css(None, false);
+        assert!(!css.contains("transition:none"), "{css}");
+        assert!(!css.contains("color:red"), "{css}");
     }
 
     #[test]

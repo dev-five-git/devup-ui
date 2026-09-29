@@ -68,3 +68,39 @@ await import(cssPath)
     }
   },
 )
+
+it('emits vanilla-extract styles through the full WASM engine', () => {
+  const cwd = mkdtempSync(join(tmpdir(), 'devup-css-emit-'))
+  try {
+    writeFileSync(join(cwd, 'bunfig.toml'), '')
+    writeFileSync(
+      join(cwd, 'styles.css.ts'),
+      `import { style } from '@devup-ui/react'
+export const box = style({ width: '109px' })
+`,
+    )
+    writeFileSync(
+      join(cwd, 'check.ts'),
+      `import { readFileSync } from 'node:fs'
+import { expect } from 'bun:test'
+
+await import(${JSON.stringify(pluginEntry.replaceAll('\\', '/'))})
+const { box } = await import('./styles.css.ts')
+expect(box).toBeTruthy()
+expect(readFileSync('./df/devup-ui/devup-ui.css', 'utf-8')).toContain('width:109px')
+`,
+    )
+    const result = Bun.spawnSync([process.execPath, 'run', 'check.ts'], {
+      cwd,
+      stdout: 'pipe',
+      stderr: 'pipe',
+      env: { ...process.env, BUN_RUNTIME_TRANSPILER_CACHE_PATH: '0' },
+    })
+    expect(
+      result.exitCode,
+      result.stdout.toString() + result.stderr.toString(),
+    ).toBe(0)
+  } finally {
+    rmSync(cwd, { recursive: true, force: true })
+  }
+})

@@ -2,7 +2,9 @@ use crate::extract_style::ExtractStyleProperty;
 use crate::extract_style::style_property::StyleProperty;
 use crate::gen_class_name::gen_class_names;
 use crate::gen_style::gen_styles;
-use crate::tailwind::{has_tailwind_classes, parse_single_class, parse_tailwind_to_styles};
+use crate::tailwind::{
+    TailwindClass, has_tailwind_classes, parse_single_class, parse_tailwind_to_styles,
+};
 use crate::utils::{get_str_by_property_key, merge_object_expressions};
 use crate::{ExtractStyleProp, ExtractStyleValue};
 use oxc_allocator::{CloneIn, FromIn, GetAllocator};
@@ -432,8 +434,10 @@ fn extract_tailwind_from_class_name<'a>(
             let mut tailwind_styles: Vec<ExtractStyleValue> =
                 Vec::with_capacity(all_classes.bytes().filter(u8::is_ascii_whitespace).count() + 1);
             for class in all_classes.split_whitespace() {
-                if let Some(parsed) = parse_single_class(class) {
-                    let mut static_style = parsed.to_static_style();
+                if let Some(mut static_style) = parse_single_class(class)
+                    .as_ref()
+                    .and_then(TailwindClass::to_static_style)
+                {
                     if let Some(order) = style_order {
                         static_style.style_order = Some(order);
                     }

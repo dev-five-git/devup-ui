@@ -606,6 +606,51 @@ impl Theme {
         default_variant_key(&self.colors).map(str::to_string)
     }
 
+    /// Declarations of typography preset `name` applied from breakpoint `level`
+    /// up: preset entries at or below `level` merge into `level`, wider ones
+    /// keep their own breakpoint. Values resolve like the `.typo-*` classes.
+    #[must_use]
+    pub fn typography_declarations(
+        &self,
+        name: &str,
+        level: u8,
+    ) -> Vec<(u8, &'static str, String)> {
+        let mut declarations: Vec<(u8, &'static str, String)> = vec![];
+        let Some(typography) = self.typography.get(name) else {
+            return declarations;
+        };
+        for (index, entry) in typography.0.iter().enumerate() {
+            let Some(entry) = entry else {
+                continue;
+            };
+            let target = level.max(index as u8);
+            for (property, value) in [
+                ("font-family", &entry.font_family),
+                ("font-size", &entry.font_size),
+                ("font-weight", &entry.font_weight),
+                ("line-height", &entry.line_height),
+                ("letter-spacing", &entry.letter_spacing),
+            ] {
+                let Some(value) = value.as_deref().map(str::trim).filter(|v| !v.is_empty()) else {
+                    continue;
+                };
+                let resolved = value.strip_prefix('$').map_or_else(
+                    || optimize_value(value).into_owned(),
+                    |token| format!("var(--{token})"),
+                );
+                if let Some(existing) = declarations
+                    .iter_mut()
+                    .find(|(l, p, _)| *l == target && *p == property)
+                {
+                    existing.2 = resolved;
+                } else {
+                    declarations.push((target, property, resolved));
+                }
+            }
+        }
+        declarations
+    }
+
     #[must_use]
     pub fn get_length_token_levels(&self) -> BTreeMap<String, Vec<u8>> {
         token_levels(&self.length)

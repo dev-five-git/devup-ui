@@ -179,51 +179,16 @@ impl TailwindVariant {
             TailwindVariant::PeerInvalid => {
                 StyleSelector::Selector(".peer:invalid ~ &".to_string())
             }
-            TailwindVariant::Print => StyleSelector::At {
-                kind: css::style_selector::AtRuleKind::Media,
-                query: "print".to_string(),
-                selector: None,
-            },
-            TailwindVariant::Screen => StyleSelector::At {
-                kind: css::style_selector::AtRuleKind::Media,
-                query: "screen".to_string(),
-                selector: None,
-            },
-            TailwindVariant::Portrait => StyleSelector::At {
-                kind: css::style_selector::AtRuleKind::Media,
-                query: "(orientation: portrait)".to_string(),
-                selector: None,
-            },
-            TailwindVariant::Landscape => StyleSelector::At {
-                kind: css::style_selector::AtRuleKind::Media,
-                query: "(orientation: landscape)".to_string(),
-                selector: None,
-            },
-            TailwindVariant::MotionReduce => StyleSelector::At {
-                kind: css::style_selector::AtRuleKind::Media,
-                query: "(prefers-reduced-motion: reduce)".to_string(),
-                selector: None,
-            },
-            TailwindVariant::MotionSafe => StyleSelector::At {
-                kind: css::style_selector::AtRuleKind::Media,
-                query: "(prefers-reduced-motion: no-preference)".to_string(),
-                selector: None,
-            },
-            TailwindVariant::ContrastMore => StyleSelector::At {
-                kind: css::style_selector::AtRuleKind::Media,
-                query: "(prefers-contrast: more)".to_string(),
-                selector: None,
-            },
-            TailwindVariant::ContrastLess => StyleSelector::At {
-                kind: css::style_selector::AtRuleKind::Media,
-                query: "(prefers-contrast: less)".to_string(),
-                selector: None,
-            },
-            TailwindVariant::ForcedColors => StyleSelector::At {
-                kind: css::style_selector::AtRuleKind::Media,
-                query: "(forced-colors: active)".to_string(),
-                selector: None,
-            },
+            // Media variants share the `_print`/`_motionReduce`/… prop table.
+            TailwindVariant::Print => StyleSelector::from("print"),
+            TailwindVariant::Screen => StyleSelector::from("screen"),
+            TailwindVariant::Portrait => StyleSelector::from("portrait"),
+            TailwindVariant::Landscape => StyleSelector::from("landscape"),
+            TailwindVariant::MotionReduce => StyleSelector::from("motion-reduce"),
+            TailwindVariant::MotionSafe => StyleSelector::from("motion-safe"),
+            TailwindVariant::ContrastMore => StyleSelector::from("contrast-more"),
+            TailwindVariant::ContrastLess => StyleSelector::from("contrast-less"),
+            TailwindVariant::ForcedColors => StyleSelector::from("forced-colors"),
             TailwindVariant::Rtl => StyleSelector::Selector("[dir=rtl] &".to_string()),
             TailwindVariant::Ltr => StyleSelector::Selector("[dir=ltr] &".to_string()),
         }
@@ -331,8 +296,9 @@ fn remove_all_substr(haystack: &mut String, needle: &str) {
 }
 
 impl TailwindClass {
-    /// Convert to `ExtractStaticStyle`
-    pub fn to_static_style(&self) -> ExtractStaticStyle {
+    /// Convert to `ExtractStaticStyle`; `None` when the variants' media
+    /// conditions exclude each other (e.g. `print:screen:`).
+    pub fn to_static_style(&self) -> Option<ExtractStaticStyle> {
         // For transform property, negative is already incorporated into the value
         // (e.g., translateX(-1rem)), so don't add prefix again. Only the negative
         // branch needs an owned String for the `-` prefix; the common non-negative
@@ -350,22 +316,27 @@ impl TailwindClass {
             None
         } else {
             // Combine multiple variants into a single selector
-            Some(self.combine_selectors())
+            Some(self.combine_selectors()?)
         };
 
-        ExtractStaticStyle::new(self.property, value.as_ref(), self.responsive, selector)
+        Some(ExtractStaticStyle::new(
+            self.property,
+            value.as_ref(),
+            self.responsive,
+            selector,
+        ))
     }
 
-    /// Combine multiple variant selectors
-    fn combine_selectors(&self) -> StyleSelector {
+    /// Combine multiple variant selectors; `None` when they can never match together.
+    fn combine_selectors(&self) -> Option<StyleSelector> {
         if self.variants.len() == 1 {
-            return self.variants[0].to_selector();
+            return Some(self.variants[0].to_selector());
         }
 
         // For multiple variants, combine them
         // e.g., dark:hover: becomes :root[data-theme=dark] &:hover
         let mut selector_str = String::new();
-        let mut has_at_rule = None;
+        let mut at_rules = vec![];
 
         for variant in &self.variants {
             let sel = variant.to_selector();
@@ -394,9 +365,7 @@ impl TailwindClass {
                         }
                     }
                 }
-                StyleSelector::At { kind, query, .. } => {
-                    has_at_rule = Some((kind, query));
-                }
+                StyleSelector::At { kind, query, .. } => at_rules.push((kind, query)),
                 // SAFETY: TailwindVariant::to_selector() never produces Global.
                 // This arm exists only for exhaustive matching. If reached, it indicates
                 // a bug where a new TailwindVariant was added that produces Global.
@@ -406,19 +375,18 @@ impl TailwindClass {
             }
         }
 
-        if let Some((kind, query)) = has_at_rule {
-            StyleSelector::At {
+        // Every media variant applies, so fold them all in order (`print:motion-reduce:`
+        // becomes `@media print and (prefers-reduced-motion:reduce)`).
+        let mut selector =
+            (!selector_str.is_empty()).then_some(StyleSelector::Selector(selector_str));
+        for (kind, query) in at_rules {
+            selector = Some(StyleSelector::nest_at_rule(
+                selector.as_ref(),
                 kind,
-                query,
-                selector: if selector_str.is_empty() {
-                    None
-                } else {
-                    Some(selector_str)
-                },
-            }
-        } else {
-            StyleSelector::Selector(selector_str)
+                &query,
+            )?);
         }
+        selector
     }
 }
 
@@ -1292,8 +1260,10 @@ pub fn parse_tailwind_to_styles(class_str: &str) -> Vec<ExtractStyleValue> {
         Vec::with_capacity(class_str.bytes().filter(u8::is_ascii_whitespace).count() + 1);
 
     for class in class_str.split_whitespace() {
-        if let Some(parsed) = parse_single_class(class) {
-            let static_style = parsed.to_static_style();
+        if let Some(static_style) = parse_single_class(class)
+            .as_ref()
+            .and_then(TailwindClass::to_static_style)
+        {
             styles.push(ExtractStyleValue::Static(static_style));
         }
     }
@@ -3715,7 +3685,7 @@ mod tests {
         assert_eq!(parsed.value, "1rem");
         assert!(parsed.negative);
 
-        let static_style = parsed.to_static_style();
+        let static_style = parsed.to_static_style().expect("style");
         assert_eq!(static_style.value(), "-1rem");
     }
 
@@ -3749,7 +3719,7 @@ mod tests {
     #[test]
     fn test_to_static_style() {
         let parsed = parse_single_class("bg-red-500").expect("Should parse");
-        let static_style = parsed.to_static_style();
+        let static_style = parsed.to_static_style().expect("style");
 
         assert_eq!(static_style.property(), "background-color");
         // ExtractStaticStyle::new() uses optimize_value() which uppercases hex colors
@@ -3761,7 +3731,7 @@ mod tests {
     #[test]
     fn test_to_static_style_with_responsive() {
         let parsed = parse_single_class("md:p-4").expect("Should parse");
-        let static_style = parsed.to_static_style();
+        let static_style = parsed.to_static_style().expect("style");
 
         assert_eq!(static_style.property(), "padding");
         assert_eq!(static_style.value(), "1rem");
@@ -3771,7 +3741,7 @@ mod tests {
     #[test]
     fn test_to_static_style_with_variant() {
         let parsed = parse_single_class("hover:bg-blue-500").expect("Should parse");
-        let static_style = parsed.to_static_style();
+        let static_style = parsed.to_static_style().expect("style");
 
         assert_eq!(static_style.property(), "background-color");
         assert!(static_style.selector().is_some());
@@ -4072,14 +4042,15 @@ mod tests {
 
     // Wave 1.4: Media variant selectors (lines 153-162)
     #[rstest]
+    #[case(TailwindVariant::Print, "print")]
     #[case(TailwindVariant::Screen, "screen")]
-    #[case(TailwindVariant::Portrait, "(orientation: portrait)")]
-    #[case(TailwindVariant::Landscape, "(orientation: landscape)")]
-    #[case(TailwindVariant::MotionReduce, "(prefers-reduced-motion: reduce)")]
-    #[case(TailwindVariant::MotionSafe, "(prefers-reduced-motion: no-preference)")]
-    #[case(TailwindVariant::ContrastMore, "(prefers-contrast: more)")]
-    #[case(TailwindVariant::ContrastLess, "(prefers-contrast: less)")]
-    #[case(TailwindVariant::ForcedColors, "(forced-colors: active)")]
+    #[case(TailwindVariant::Portrait, "(orientation:portrait)")]
+    #[case(TailwindVariant::Landscape, "(orientation:landscape)")]
+    #[case(TailwindVariant::MotionReduce, "(prefers-reduced-motion:reduce)")]
+    #[case(TailwindVariant::MotionSafe, "(prefers-reduced-motion:no-preference)")]
+    #[case(TailwindVariant::ContrastMore, "(prefers-contrast:more)")]
+    #[case(TailwindVariant::ContrastLess, "(prefers-contrast:less)")]
+    #[case(TailwindVariant::ForcedColors, "(forced-colors:active)")]
     fn test_variant_to_selector_media_queries(
         #[case] variant: TailwindVariant,
         #[case] expected_query: &str,
@@ -4132,13 +4103,14 @@ mod tests {
         assert_eq!(parsed.variants[0], TailwindVariant::Print);
         assert_eq!(parsed.variants[1], TailwindVariant::Hover);
 
-        let static_style = parsed.to_static_style();
+        let static_style = parsed.to_static_style().expect("style");
         let selector = static_style.selector().expect("Should have selector");
         // Should combine into At rule with nested hover selector
         if let StyleSelector::At {
             kind,
             query,
             selector: nested,
+            ..
         } = selector
         {
             assert_eq!(*kind, css::style_selector::AtRuleKind::Media);
@@ -4147,6 +4119,29 @@ mod tests {
         } else {
             panic!("Expected At selector");
         }
+    }
+
+    #[rstest]
+    #[case(
+        "print:motion-reduce:hidden",
+        Some("@media print and (prefers-reduced-motion:reduce)")
+    )]
+    #[case(
+        "motion-reduce:landscape:hover:hidden",
+        Some("@media(prefers-reduced-motion:reduce)and (orientation:landscape) &:hover")
+    )]
+    #[case("print:screen:hidden", None)]
+    fn test_combine_selectors_folds_every_media_variant(
+        #[case] class: &str,
+        #[case] expected: Option<&str>,
+    ) {
+        let parsed = parse_single_class(class).expect("Should parse");
+        assert_eq!(
+            parsed
+                .to_static_style()
+                .and_then(|style| style.selector().map(ToString::to_string)),
+            expected.map(str::to_string)
+        );
     }
 
     #[test]
@@ -4221,7 +4216,7 @@ mod tests {
                 negative: false,
             };
             let expected = old_combine(variants);
-            match cls.combine_selectors() {
+            match cls.combine_selectors().expect("selector") {
                 StyleSelector::Selector(actual) => {
                     assert_eq!(actual, expected, "variants={variants:?}");
                 }

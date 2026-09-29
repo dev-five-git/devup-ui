@@ -60,10 +60,10 @@ Define typography styles in `devup.json`:
 Use typography with the `typography` prop:
 
 ```tsx
-const h1Example = <Text typography="$h1">Heading 1</Text>
-const h2Example = <Text typography="$h2">Heading 2</Text>
-const bodyExample = <Text typography="$body">Body text</Text>
-const captionExample = <Text typography="$caption">Caption text</Text>
+const h1Example = <Text typography="h1">Heading 1</Text>
+const h2Example = <Text typography="h2">Heading 2</Text>
+const bodyExample = <Text typography="body">Body text</Text>
+const captionExample = <Text typography="caption">Caption text</Text>
 ```
 
 ## Typography Properties
@@ -298,17 +298,17 @@ Here's a recommended typography scale:
 
 ```tsx
 // With Text component
-const titleExample = <Text typography="$h1">Main Title</Text>
-const bodyExample = <Text typography="$body">Paragraph text goes here.</Text>
+const titleExample = <Text typography="h1">Main Title</Text>
+const bodyExample = <Text typography="body">Paragraph text goes here.</Text>
 
 // With Box component
-const boxExample = <Box typography="$caption">Caption in a box</Box>
+const boxExample = <Box typography="caption">Caption in a box</Box>
 ```
 
 ```tsx
 // With styled components
 const Title = styled('h1', {
-  typography: '$h1',
+  typography: 'h1',
   color: '$text',
 })
 ```
@@ -319,7 +319,7 @@ Typography can be combined with other style props:
 
 ```tsx
 const example = (
-  <Text color="$primary" mb={4} textAlign="center" typography="$h1">
+  <Text color="$primary" mb={4} textAlign="center" typography="h1">
     Centered Title
   </Text>
 )
@@ -330,9 +330,9 @@ const example = (
 Typography tokens are fully type-safe:
 
 ```tsx
-// TypeScript autocomplete shows: $h1, $h2, $body, etc.
-const example = <Text typography="$" />
+// TypeScript autocomplete shows: h1, h2, body, etc.
+const example = <Text typography="" />
 
 // Invalid tokens show TypeScript errors
-const invalidExample = <Text typography="$invalid" /> // Error!
+const invalidExample = <Text typography="invalid" /> // Error!
 ```

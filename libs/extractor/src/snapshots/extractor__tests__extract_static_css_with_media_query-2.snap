@@ -16,6 +16,8 @@ ToBTreeSet {
                         selector: Some(
                             "&:active",
                         ),
+                        outer: [],
+                        file: None,
                     },
                 ),
                 style_order: None,
@@ -34,6 +36,8 @@ ToBTreeSet {
                         selector: Some(
                             "&:hover",
                         ),
+                        outer: [],
+                        file: None,
                     },
                 ),
                 style_order: None,

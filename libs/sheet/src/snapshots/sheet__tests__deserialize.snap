@@ -13,6 +13,7 @@ StyleSheet {
                         value: "40px",
                         selector: None,
                         layer: None,
+                        typography: false,
                     },
                 },
             },

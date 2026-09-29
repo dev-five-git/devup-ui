@@ -55,7 +55,7 @@ ToBTreeSet {
                 level: 0,
                 selector: Some(
                     Selector(
-                        "a:hover &",
+                        ".f0_parent:hover &",
                     ),
                 ),
                 style_order: None,
@@ -63,5 +63,5 @@ ToBTreeSet {
             },
         ),
     },
-    code: "import \"@devup-ui/react/devup-ui.css\";\nexport const child = \"b\";\nexport const parent = \"a\";\n;\nexport const vars = { \"colors\": {\n\t\"primary\": \"var(--colors-primary-global_theme_0-0)\",\n\t\"secondary\": \"var(--colors-secondary-global_theme_0-1)\"\n} };\n",
+    code: "import \"@devup-ui/react/devup-ui.css\";\nexport const child = \"a\";\nexport const parent = \"b\" + \" f0_parent\";\n;\nexport const vars = { \"colors\": {\n\t\"primary\": \"var(--colors-primary-global_theme_0-0)\",\n\t\"secondary\": \"var(--colors-secondary-global_theme_0-1)\"\n} };\n",
 }

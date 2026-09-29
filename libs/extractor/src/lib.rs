@@ -269,37 +269,28 @@ fn extract_with_source_map(
         match vanilla_extract::execute_vanilla_extract(&transformed_code, &option.package, filename)
         {
             Ok(collected) => {
-                // Check if any styles are referenced in selectors
-                let referenced = vanilla_extract::find_selector_references(&collected);
-
-                if referenced.is_empty() {
-                    // No selector references, use simple code generation
-                    Some(vanilla_extract::collected_styles_to_code(
-                        &collected,
-                        &option.package,
-                    ))
+                // Keyframes names are generated, so extract the referenced ones
+                // first and substitute their names into the styles using them.
+                let referenced = vanilla_extract::referenced_keyframes(&collected);
+                let keyframes_names = if referenced.is_empty() {
+                    FxHashMap::default()
                 } else {
-                    // Two-pass extraction: first extract referenced styles to get their class names
-                    let partial_code = vanilla_extract::collected_styles_to_code_partial(
-                        &collected,
-                        &option.package,
+                    extract_class_map_from_code(
+                        filename,
+                        &vanilla_extract::keyframes_to_code(
+                            &collected,
+                            &option.package,
+                            &referenced,
+                        ),
+                        &option,
                         &referenced,
-                    );
-
-                    // Build class map by extracting the partial code
-                    let class_map = if partial_code.is_empty() {
-                        FxHashMap::default()
-                    } else {
-                        extract_class_map_from_code(filename, &partial_code, &option, &referenced)?
-                    };
-
-                    // Generate full code with class names substituted into selectors
-                    Some(vanilla_extract::collected_styles_to_code_with_classes(
-                        &collected,
-                        &option.package,
-                        &class_map,
-                    ))
-                }
+                    )?
+                };
+                Some(vanilla_extract::collected_styles_to_code_with_keyframes(
+                    &collected,
+                    &option.package,
+                    &keyframes_names,
+                ))
             }
             // Fall back to treating as regular file if execution fails
             Err(_) => None,
@@ -11077,14 +11068,14 @@ const color = "red";
             .unwrap()
         ));
 
-        // Test _speech media query selector
+        // Test _motionReduce media query shorthand
         reset_class_map();
         reset_file_map();
         assert_debug_snapshot!(ToBTreeSet::from(
             extract(
                 "test.tsx",
                 r#"import {Box} from '@devup-ui/core'
-<Box _speech={{ display: "none" }} />
+<Box _motionReduce={{ display: "none" }} />
 "#,
                 ExtractOption {
                     package: "@devup-ui/core".to_string(),

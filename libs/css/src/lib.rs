@@ -1,3 +1,4 @@
+pub mod at_rule;
 pub mod atom_hoist;
 pub mod class_map;
 mod constant;
@@ -186,6 +187,11 @@ impl ExactSizeIterator for DisassembleProperty {}
 
 #[must_use]
 pub fn disassemble_property(property: &str) -> DisassembleProperty {
+    // Nested selector keys (`&:hover`, `:focus`, `.parent &`) are not properties;
+    // keep them verbatim so class names and case survive.
+    if property.starts_with(':') || property.contains('&') {
+        return DisassembleProperty::Fallback(Some(property.to_string()));
+    }
     if let Some(properties) = HAS_CUSTOM_SHORTHANDS
         .load(Ordering::Relaxed)
         .then(|| {
@@ -292,10 +298,14 @@ pub fn add_selector_params(selector: StyleSelector, params: &str) -> StyleSelect
             kind,
             query,
             selector,
+            outer,
+            file,
         } => StyleSelector::At {
             kind,
             query,
             selector: selector.map(|s| format!("{s}({params})")),
+            outer,
+            file,
         },
     }
 }
@@ -1120,7 +1130,9 @@ mod tests {
                 Some(&StyleSelector::At {
                     kind: AtRuleKind::Media,
                     query: "print".to_string(),
-                    selector: None
+                    selector: None,
+                    outer: vec![],
+                    file: None,
                 })
             ),
             ".cls"
@@ -1132,7 +1144,9 @@ mod tests {
                 Some(&StyleSelector::At {
                     kind: AtRuleKind::Media,
                     query: "print".to_string(),
-                    selector: Some("&:hover".to_string())
+                    selector: Some("&:hover".to_string()),
+                    outer: vec![],
+                    file: None,
                 })
             ),
             ".cls:hover"
@@ -1197,14 +1211,18 @@ mod tests {
                 StyleSelector::At {
                     kind: AtRuleKind::Media,
                     query: "print".to_string(),
-                    selector: Some("&:is".to_string())
+                    selector: Some("&:is".to_string()),
+                    outer: vec![],
+                    file: None,
                 },
                 "test"
             ),
             StyleSelector::At {
                 kind: AtRuleKind::Media,
                 query: "print".to_string(),
-                selector: Some("&:is(test)".to_string())
+                selector: Some("&:is(test)".to_string()),
+                outer: vec![],
+                file: None,
             }
         );
     }
