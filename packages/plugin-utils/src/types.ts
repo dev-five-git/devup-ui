@@ -8,6 +8,7 @@ export interface Typography {
   fontSize?: string
   lineHeight?: number | string
   letterSpacing?: string
+  textTransform?: string
 }
 
 /**
@@ -47,6 +48,13 @@ export type ThemeShadows = Record<
  */
 export interface DevupTheme {
   colors?: ThemeColors
+  /**
+   * Color scheme of each color variant: `dark` renders dark and every other
+   * variant light unless named here
+   */
+  colorScheme?: Record<string, 'light' | 'dark'>
+  /** Minimum widths in px, from the first breakpoint (0) up */
+  breakpoints?: number[]
   typography?: ThemeTypography
   length?: ThemeLength
   shadows?: ThemeShadows

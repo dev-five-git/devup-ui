@@ -24,8 +24,37 @@ pub struct ColorEntry {
 /// - Deep nested: `gray: { light: { 100: "#000" } }` -> `interface_key`: "gray.light.100", `css_key`: "gray-light-100"
 #[derive(Default, Serialize, Debug)]
 pub struct ColorTheme {
-    /// Map from `css_key` to `ColorEntry` for quick lookup
-    entries: HashMap<String, ColorEntry>,
+    /// Map from `css_key` to `ColorEntry`, ordered so the CSS is the same on every run
+    entries: BTreeMap<String, ColorEntry>,
+}
+
+/// Whether `name` can name a theme token: its CSS variable, dots turned into
+/// dashes, is an identifier the `$token` syntax of style values reaches
+fn is_token_name(name: &str) -> bool {
+    let mut bytes = name.bytes();
+    bytes
+        .next()
+        .is_some_and(|b| b.is_ascii_alphanumeric() || b == b'_')
+        && bytes.all(|b| b.is_ascii_alphanumeric() || matches!(b, b'-' | b'_' | b'.'))
+}
+
+fn token_name_error(kind: &str, name: &str) -> String {
+    format!(
+        "{kind} token '{name}' is not a valid token name: start with a letter, a digit or '_', then use letters, digits, '-', '_' and '.'"
+    )
+}
+
+/// The error for two tokens ending up as one CSS variable, names sorted so
+/// the message does not depend on which is read first
+fn token_collision_error(kind: &str, first: &str, second: &str, css_key: &str) -> String {
+    let (first, second) = if first <= second {
+        (first, second)
+    } else {
+        (second, first)
+    };
+    format!(
+        "{kind} tokens '{first}' and '{second}' both become the CSS variable --{css_key}: rename one"
+    )
 }
 
 /// Derive the CSS-variable key from a raw name: dots become dashes.
@@ -45,10 +74,18 @@ fn flatten_color_value(
     interface_prefix: &str,
     css_prefix: &str,
     value: &Value,
-    result: &mut HashMap<String, ColorEntry>,
+    result: &mut BTreeMap<String, ColorEntry>,
 ) -> Result<(), String> {
     match value {
         Value::String(s) => {
+            if let Some(existing) = result.get(css_prefix) {
+                return Err(token_collision_error(
+                    "color",
+                    &existing.interface_key,
+                    interface_prefix,
+                    css_prefix,
+                ));
+            }
             result.insert(
                 css_prefix.to_string(),
                 ColorEntry {
@@ -61,6 +98,9 @@ fn flatten_color_value(
         }
         Value::Object(obj) => {
             for (key, val) in obj {
+                if !is_token_name(key) {
+                    return Err(token_name_error("color", key));
+                }
                 let new_interface_prefix = if interface_prefix.is_empty() {
                     key.clone()
                 } else {
@@ -89,10 +129,13 @@ impl<'de> Deserialize<'de> for ColorTheme {
     {
         use serde::de::Error;
 
-        let raw: HashMap<String, Value> = HashMap::deserialize(deserializer)?;
-        let mut entries = HashMap::new();
+        let raw: BTreeMap<String, Value> = BTreeMap::deserialize(deserializer)?;
+        let mut entries = BTreeMap::new();
 
         for (key, value) in raw {
+            if !is_token_name(&key) {
+                return Err(D::Error::custom(token_name_error("color", &key)));
+            }
             let css_key = css_key_from(&key);
             flatten_color_value(&key, &css_key, &value, &mut entries).map_err(D::Error::custom)?;
         }
@@ -168,6 +211,10 @@ pub struct Typography {
     #[serde(deserialize_with = "deserialize_string_from_number", default)]
     pub line_height: Option<String>,
     pub letter_spacing: Option<String>,
+    #[serde(default)]
+    pub font_style: Option<String>,
+    #[serde(default)]
+    pub text_transform: Option<String>,
 }
 impl Typography {
     #[must_use]
@@ -184,7 +231,22 @@ impl Typography {
             font_weight,
             line_height,
             letter_spacing,
+            font_style: None,
+            text_transform: None,
         }
+    }
+
+    /// The CSS declarations of this preset, in output order
+    fn properties(&self) -> [(&'static str, Option<&str>); 7] {
+        [
+            ("font-family", self.font_family.as_deref()),
+            ("font-size", self.font_size.as_deref()),
+            ("font-style", self.font_style.as_deref()),
+            ("font-weight", self.font_weight.as_deref()),
+            ("line-height", self.line_height.as_deref()),
+            ("letter-spacing", self.letter_spacing.as_deref()),
+            ("text-transform", self.text_transform.as_deref()),
+        ]
     }
 }
 
@@ -286,6 +348,20 @@ impl<'de> Deserialize<'de> for Typographies {
                     .map_err(D::Error::custom)?
                     .unwrap_or_else(|| vec![None]);
 
+                let font_style = obj
+                    .get("fontStyle")
+                    .map(deserialize_typo_prop)
+                    .transpose()
+                    .map_err(D::Error::custom)?
+                    .unwrap_or_else(|| vec![None]);
+
+                let text_transform = obj
+                    .get("textTransform")
+                    .map(deserialize_typo_prop)
+                    .transpose()
+                    .map_err(D::Error::custom)?
+                    .unwrap_or_else(|| vec![None]);
+
                 // Find the maximum length among all properties
                 let max_len = [
                     font_family.len(),
@@ -293,6 +369,8 @@ impl<'de> Deserialize<'de> for Typographies {
                     font_weight.len(),
                     line_height.len(),
                     letter_spacing.len(),
+                    font_style.len(),
+                    text_transform.len(),
                 ]
                 .into_iter()
                 .max()
@@ -301,25 +379,23 @@ impl<'de> Deserialize<'de> for Typographies {
                 // Build typography for each breakpoint level
                 let mut result = Vec::with_capacity(max_len);
                 for i in 0..max_len {
-                    let ff = font_family.get(i).cloned().unwrap_or(None);
-                    let fs = font_size.get(i).cloned().unwrap_or(None);
-                    let fw = font_weight.get(i).cloned().unwrap_or(None);
-                    let lh = line_height.get(i).cloned().unwrap_or(None);
-                    let ls = letter_spacing.get(i).cloned().unwrap_or(None);
-
-                    // If all properties are None for this level, push None
-                    if ff.is_none() && fs.is_none() && fw.is_none() && lh.is_none() && ls.is_none()
-                    {
-                        result.push(None);
-                    } else {
-                        result.push(Some(Typography {
-                            font_family: ff,
-                            font_size: fs,
-                            font_weight: fw,
-                            line_height: lh,
-                            letter_spacing: ls,
-                        }));
-                    }
+                    let typography = Typography {
+                        font_family: font_family.get(i).cloned().flatten(),
+                        font_size: font_size.get(i).cloned().flatten(),
+                        font_weight: font_weight.get(i).cloned().flatten(),
+                        line_height: line_height.get(i).cloned().flatten(),
+                        letter_spacing: letter_spacing.get(i).cloned().flatten(),
+                        font_style: font_style.get(i).cloned().flatten(),
+                        text_transform: text_transform.get(i).cloned().flatten(),
+                    };
+                    // A level setting no property is a gap in the responsive list
+                    result.push(
+                        typography
+                            .properties()
+                            .iter()
+                            .any(|(_, value)| value.is_some())
+                            .then_some(typography),
+                    );
                 }
 
                 Ok(Self(result))
@@ -525,6 +601,7 @@ where
     D: Deserializer<'de>,
 {
     let raw: BTreeMap<String, BTreeMap<String, Value>> = BTreeMap::deserialize(deserializer)?;
+    check_token_names("length", "length", &raw).map_err(serde::de::Error::custom)?;
     let mut result = BTreeMap::new();
     for (variant, tokens) in raw {
         let mut theme = BTreeMap::new();
@@ -537,19 +614,103 @@ where
     Ok(result)
 }
 
+/// The native color scheme a theme variant renders with: form controls,
+/// scrollbars and the branch `light-dark()` picks
+#[derive(Serialize, Deserialize, Debug, Clone, Copy, PartialEq, Eq)]
+#[serde(rename_all = "lowercase")]
+pub enum ColorScheme {
+    Light,
+    Dark,
+}
+
+impl ColorScheme {
+    const fn declaration(self) -> &'static str {
+        match self {
+            Self::Light => "color-scheme:light",
+            Self::Dark => "color-scheme:dark",
+        }
+    }
+}
+
 #[derive(Serialize, Deserialize, Debug)]
 #[serde(rename_all = "camelCase")]
 pub struct Theme {
-    #[serde(default)]
+    #[serde(default, deserialize_with = "deserialize_color_themes")]
     pub colors: BTreeMap<String, ColorTheme>,
+    /// The color scheme of each variant named here; `dark` is dark and any
+    /// other variant light unless listed
+    #[serde(default)]
+    pub color_scheme: BTreeMap<String, ColorScheme>,
     #[serde(default = "default_breakpoints")]
     pub breakpoints: Vec<u16>,
     #[serde(default)]
     pub typography: BTreeMap<String, Typographies>,
     #[serde(default, deserialize_with = "deserialize_length_themes")]
     pub length: BTreeMap<String, LengthTheme>,
-    #[serde(default, alias = "shadow")]
+    #[serde(
+        default,
+        alias = "shadow",
+        deserialize_with = "deserialize_shadow_themes"
+    )]
     pub shadows: BTreeMap<String, ShadowTheme>,
+}
+
+/// Deserialize the color variants, naming the variant a token error is in
+fn deserialize_color_themes<'de, D>(
+    deserializer: D,
+) -> Result<BTreeMap<String, ColorTheme>, D::Error>
+where
+    D: Deserializer<'de>,
+{
+    let raw: BTreeMap<String, Value> = BTreeMap::deserialize(deserializer)?;
+    raw.into_iter()
+        .map(|(variant, value)| {
+            ColorTheme::deserialize(value)
+                .map(|theme| (variant.clone(), theme))
+                .map_err(|error| {
+                    serde::de::Error::custom(format!("theme.colors.{variant}: {error}"))
+                })
+        })
+        .collect()
+}
+
+/// Check the names of the tokens of each variant of `themes`: each must be a
+/// token name, and no two may become the same CSS variable
+fn check_token_names<T>(
+    kind: &str,
+    field: &str,
+    themes: &BTreeMap<String, BTreeMap<String, T>>,
+) -> Result<(), String> {
+    for (variant, tokens) in themes {
+        let mut css_keys = BTreeMap::new();
+        for name in tokens.keys() {
+            if !is_token_name(name) {
+                return Err(format!(
+                    "theme.{field}.{variant}: {}",
+                    token_name_error(kind, name)
+                ));
+            }
+            let css_key = css_key_from(name).into_owned();
+            if let Some(existing) = css_keys.insert(css_key.clone(), name) {
+                return Err(format!(
+                    "theme.{field}.{variant}: {}",
+                    token_collision_error(kind, existing, name, &css_key)
+                ));
+            }
+        }
+    }
+    Ok(())
+}
+
+fn deserialize_shadow_themes<'de, D>(
+    deserializer: D,
+) -> Result<BTreeMap<String, ShadowTheme>, D::Error>
+where
+    D: Deserializer<'de>,
+{
+    let themes: BTreeMap<String, ShadowTheme> = BTreeMap::deserialize(deserializer)?;
+    check_token_names("shadow", "shadow", &themes).map_err(serde::de::Error::custom)?;
+    Ok(themes)
 }
 
 fn default_breakpoints() -> Vec<u16> {
@@ -560,6 +721,7 @@ impl Default for Theme {
     fn default() -> Self {
         Self {
             colors: Default::default(),
+            color_scheme: BTreeMap::new(),
             breakpoints: default_breakpoints(),
             typography: BTreeMap::new(),
             length: BTreeMap::new(),
@@ -606,6 +768,17 @@ impl Theme {
         default_variant_key(&self.colors).map(str::to_string)
     }
 
+    fn color_scheme_of(&self, variant: &str) -> ColorScheme {
+        self.color_scheme
+            .get(variant)
+            .copied()
+            .unwrap_or(if variant == "dark" {
+                ColorScheme::Dark
+            } else {
+                ColorScheme::Light
+            })
+    }
+
     /// Declarations of typography preset `name` applied from breakpoint `level`
     /// up: preset entries at or below `level` merge into `level`, wider ones
     /// keep their own breakpoint. Values resolve like the `.typo-*` classes.
@@ -624,14 +797,8 @@ impl Theme {
                 continue;
             };
             let target = level.max(index as u8);
-            for (property, value) in [
-                ("font-family", &entry.font_family),
-                ("font-size", &entry.font_size),
-                ("font-weight", &entry.font_weight),
-                ("line-height", &entry.line_height),
-                ("letter-spacing", &entry.letter_spacing),
-            ] {
-                let Some(value) = value.as_deref().map(str::trim).filter(|v| !v.is_empty()) else {
+            for (property, value) in entry.properties() {
+                let Some(value) = value.map(str::trim).filter(|v| !v.is_empty()) else {
                     continue;
                 };
                 let resolved = value.strip_prefix('$').map_or_else(
@@ -690,149 +857,68 @@ impl Theme {
         // lower bound (at least one `:root`-ish block per variant); byte-identical.
         let mut theme_declaration = String::with_capacity(self.colors.len().saturating_mul(64));
 
-        let default_theme_key = default_variant_key(&self.colors);
-        if let Some(default_theme_key) = default_theme_key {
+        if let Some(default_key) = default_variant_key(&self.colors)
+            && let Some(default_colors) = self.colors.get(default_key)
+        {
             let single_theme = self.colors.len() <= 1;
-            // For a single (or zero) color variant the `default`-first sort is a no-op, so the
-            // intermediate `Vec` collect + `sort_variants_default_first` only reproduces the
-            // map's own iteration order. Skip the sort call entirely then; iterate the map
-            // straight into the Vec. The multi-variant path still sorts (order matters there).
-            // Byte-identical: a single-element BTreeMap yields the same lone `(name, theme)`.
-            let entries: Vec<(&String, &ColorTheme)> = if single_theme {
-                self.colors.iter().collect()
-            } else {
-                let mut col: Vec<_> = self.colors.iter().collect();
-                sort_variants_default_first(&mut col, default_theme_key);
-                col
-            };
-            // if other theme is exists, should use light-dark function
-            let other_theme_key: Option<&str> = if entries.len() == 2 {
-                entries
-                    .iter()
-                    .find(|(k, _)| **k != default_theme_key)
-                    .map(|(k, _)| k.as_str())
-            } else {
-                None
-            };
-            // The default variant's optimized color values are invariant across variants, yet the
-            // non-default (`theme_key.is_some()`, 3+ theme) branch re-optimizes them once per
-            // variant. Precompute them once so each `optimize_value` runs a single time per color.
-            // Only worth materializing when a second variant re-reads the map: for a single
-            // variant each value is used exactly once, so building the intermediate `HashMap`
-            // (extra hashing + one allocation) buys nothing over the default arm's inline
-            // `Cow::Owned(optimize_value(value))` map-miss fallback. Skip it entirely then.
-            let default_optimized_colors: HashMap<&str, String> = if single_theme {
-                HashMap::new()
-            } else {
-                self.colors
-                    .get(default_theme_key)
-                    .map(|d| {
-                        d.css_entries()
-                            .map(|(k, v)| (k.as_str(), optimize_value(v).into_owned()))
-                            .collect()
-                    })
-                    .unwrap_or_default()
-            };
-            // `single_theme` is loop-invariant across every default-variant color, so decide the
-            // optimized-value source ONCE here instead of re-testing the branch per color inside the
-            // inner loop below. In the `single_theme` case `default_optimized_colors` is empty, so
-            // the probe would always miss and fall through to `optimize_value` anyway — collapse it
-            // to a direct owned optimize. Otherwise borrow the precomputed value, recomputing only on
-            // the rare map miss. Emitted bytes are identical to the old per-color branch.
-            let resolve_default_optimized = |prop: &str, value: &str| -> Cow<str> {
-                // `optimize_value` now returns `Cow` borrowing from its `value`
-                // parameter; the closure's return borrow is tied to the captured
-                // map, so materialize the (rare) locally-optimized result. A
-                // borrowed result costs exactly the one `String` it always did.
-                if single_theme {
-                    Cow::Owned(optimize_value(value).into_owned())
-                } else {
-                    default_optimized_colors.get(prop).map_or_else(
-                        || Cow::Owned(optimize_value(value).into_owned()),
-                        |v| Cow::Borrowed(v.as_str()),
-                    )
+            let mut variants: Vec<_> = self.colors.iter().collect();
+            sort_variants_default_first(&mut variants, default_key);
+            let default_values: BTreeMap<&str, Cow<str>> = default_colors
+                .css_entries()
+                .map(|(key, value)| (key.as_str(), optimize_value(value)))
+                .collect();
+            // `light-dark()` holds one light and one dark value, so it encodes a
+            // light default paired with a single dark variant
+            let dark_partner = match variants.as_slice() {
+                [_, (name, _)]
+                    if self.color_scheme_of(default_key) == ColorScheme::Light
+                        && self.color_scheme_of(name) == ColorScheme::Dark =>
+                {
+                    Some(name.as_str())
                 }
+                _ => None,
             };
-            for (theme_name, theme_properties) in entries {
-                let mut theme_contents = String::new();
-                let theme_key = if *theme_name == default_theme_key {
-                    None
-                } else {
-                    Some(theme_name)
-                };
-                if let Some(theme_key) = theme_key {
-                    theme_declaration.push_str(":root[data-theme=");
-                    theme_declaration.push_str(theme_key);
-                    theme_declaration.push_str("]{");
-                    push_css_declaration(&mut theme_contents, "color-scheme:dark");
-                } else {
-                    theme_declaration.push_str(":root{");
-                    if !single_theme {
-                        push_css_declaration(&mut theme_contents, "color-scheme:light");
-                    }
+            let partner_colors = dark_partner.and_then(|partner| self.colors.get(partner));
+            for (name, colors) in variants {
+                let is_default = name.as_str() == default_key;
+                let mut contents = String::new();
+                if !single_theme {
+                    push_css_declaration(&mut contents, self.color_scheme_of(name).declaration());
                 }
-                // Non-default variants in a two-theme pair only contribute `color-scheme:dark`;
-                // the default variant already emits their colors via `light-dark(...)`. Guard the
-                // whole per-color pass so that partner variant skips the otherwise no-op iterator.
-                if theme_key.is_none() || other_theme_key.is_none() {
-                    for (prop, value) in theme_properties.css_entries() {
-                        if theme_key.is_some() {
-                            // The map may not contain `prop` (a color present in this variant but
-                            // absent from the default), so optimize it here.
-                            let optimized_value = optimize_value(value);
-                            if let Some(default_value) = default_optimized_colors
-                                .get(prop.as_str())
-                                .and_then(|default_optimized| {
-                                    if *default_optimized == optimized_value {
-                                        None
-                                    } else {
-                                        Some(optimized_value)
-                                    }
-                                })
-                            {
-                                push_css_variable(&mut theme_contents, prop, &default_value);
-                            }
-                        } else {
-                            // Default variant. The `single_theme`-invariant source selection is decided
-                            // once by `resolve_default_optimized` (hoisted above the entries loop): for
-                            // the single-variant case it optimizes directly (the map is empty, so the
-                            // probe would always miss); otherwise it borrows the precomputed value keyed
-                            // by `prop`, recomputing only on a rare miss (saves one `optimize_value` call
-                            // and one `String` allocation per default-variant color).
-                            let optimized_value = resolve_default_optimized(prop.as_str(), value);
-                            let optimized_value: &str = &optimized_value;
-                            let other_theme_value = other_theme_key.and_then(|other_theme_key| {
-                                self.colors.get(other_theme_key).and_then(|v| {
-                                    v.get(prop).and_then(|v| {
-                                        let other_theme_value = optimize_value(v.as_str());
-                                        if other_theme_value == optimized_value {
-                                            None
-                                        } else {
-                                            Some(other_theme_value)
-                                        }
-                                    })
-                                })
-                            });
-                            // default theme
-                            if !theme_contents.is_empty() {
-                                theme_contents.push(';');
-                            }
-                            theme_contents.push_str("--");
-                            theme_contents.push_str(prop);
-                            theme_contents.push(':');
-                            if let Some(other_theme_value) = other_theme_value {
-                                theme_contents.push_str("light-dark(");
-                                theme_contents.push_str(optimized_value);
-                                theme_contents.push(',');
-                                theme_contents.push_str(&other_theme_value);
-                                theme_contents.push(')');
-                            } else {
-                                theme_contents.push_str(optimized_value);
-                            }
+                for (key, value) in colors.css_entries() {
+                    let default_value = default_values.get(key.as_str());
+                    let value = optimize_value(value);
+                    if is_default {
+                        let dark = partner_colors
+                            .and_then(|partner| partner.get(key))
+                            .map(|dark| optimize_value(dark))
+                            .filter(|dark| *dark != value);
+                        match dark {
+                            Some(dark) => push_css_variable(
+                                &mut contents,
+                                key,
+                                &format!("light-dark({value},{dark})"),
+                            ),
+                            None => push_css_variable(&mut contents, key, &value),
+                        }
+                    } else {
+                        // The dark partner's shared colors are in the default's `light-dark()`
+                        let shown = match default_value {
+                            None => true,
+                            Some(_) if Some(name.as_str()) == dark_partner => false,
+                            Some(default_value) => *default_value != value,
+                        };
+                        if shown {
+                            push_css_variable(&mut contents, key, &value);
                         }
                     }
                 }
-                theme_declaration.push_str(&theme_contents);
+                push_theme_root(
+                    &mut theme_declaration,
+                    (!is_default).then_some(name.as_str()),
+                );
+                theme_declaration.push('{');
+                theme_declaration.push_str(&contents);
                 theme_declaration.push('}');
             }
         }
@@ -861,36 +947,9 @@ impl Theme {
             for (idx, t) in ty.1.0.iter().enumerate() {
                 if let Some(t) = t {
                     css_content.clear();
-                    push_typography_property(
-                        &mut css_content,
-                        "font-family",
-                        t.font_family.as_deref(),
-                        &resolve_into,
-                    );
-                    push_typography_property(
-                        &mut css_content,
-                        "font-size",
-                        t.font_size.as_deref(),
-                        &resolve_into,
-                    );
-                    push_typography_property(
-                        &mut css_content,
-                        "font-weight",
-                        t.font_weight.as_deref(),
-                        &resolve_into,
-                    );
-                    push_typography_property(
-                        &mut css_content,
-                        "line-height",
-                        t.line_height.as_deref(),
-                        &resolve_into,
-                    );
-                    push_typography_property(
-                        &mut css_content,
-                        "letter-spacing",
-                        t.letter_spacing.as_deref(),
-                        &resolve_into,
-                    );
+                    for (property, value) in t.properties() {
+                        push_typography_property(&mut css_content, property, value, &resolve_into);
+                    }
 
                     if !css_content.is_empty() {
                         let level_css = level_map.entry(idx as u8).or_default();
@@ -970,18 +1029,8 @@ impl Theme {
         };
 
         for (variant_name, token_theme) in &sorted_variants {
-            let is_default = *variant_name == default_key;
-            // Write the `:root` / `:root[data-theme=<name>]` prefix directly into
-            // `css` at each use site instead of allocating one owned `String` per
-            // variant. Emitted bytes are identical to the former `format!`.
-            let write_selector = |css: &mut String| {
-                css.push_str(":root");
-                if !is_default {
-                    css.push_str("[data-theme=");
-                    css.push_str(variant_name);
-                    css.push(']');
-                }
-            };
+            let variant = (*variant_name != default_key).then_some(variant_name.as_str());
+            let write_selector = |css: &mut String| push_theme_root(css, variant);
 
             // Group variables by breakpoint level without allocating one String per variable.
             let mut level_map = BTreeMap::<usize, String>::new();
@@ -992,7 +1041,7 @@ impl Theme {
                 for (idx, val) in values.0.iter().enumerate() {
                     if let Some(v) = val {
                         let optimized = optimize_value(v);
-                        let is_same_as_default = !is_default
+                        let is_same_as_default = variant.is_some()
                             && default_optimized
                                 .get(&(name_str, idx))
                                 .is_some_and(|d| *d == optimized);
@@ -1002,7 +1051,7 @@ impl Theme {
                                 vars.push(';');
                             }
                             vars.push_str("--");
-                            vars.push_str(name_str);
+                            vars.push_str(&css_key_from(name_str));
                             vars.push(':');
                             vars.push_str(&optimized);
                         }
@@ -1050,6 +1099,34 @@ fn push_typography_property(
     css_content.push_str(property);
     css_content.push(':');
     resolve_into(css_content, value);
+}
+
+/// Write the `:root` selector of theme `variant`, of the default theme for
+/// `None`; a name that is not a CSS identifier is quoted
+fn push_theme_root(css: &mut String, variant: Option<&str>) {
+    css.push_str(":root");
+    let Some(variant) = variant else {
+        return;
+    };
+    css.push_str("[data-theme=");
+    let mut chars = variant.chars();
+    let identifier = chars
+        .next()
+        .is_some_and(|c| c.is_ascii_alphabetic() || c == '_')
+        && chars.all(|c| c.is_ascii_alphanumeric() || matches!(c, '-' | '_'));
+    if identifier {
+        css.push_str(variant);
+    } else {
+        css.push('"');
+        for c in variant.chars() {
+            if matches!(c, '"' | '\\') {
+                css.push('\\');
+            }
+            css.push(c);
+        }
+        css.push('"');
+    }
+    css.push(']');
 }
 
 fn push_css_declaration(css_content: &mut String, declaration: &str) {
@@ -2560,6 +2637,118 @@ mod tests {
 
         let css = theme.to_css();
         assert_debug_snapshot!(css);
+    }
+
+    fn theme_css(json: &str) -> String {
+        serde_json::from_str::<Theme>(json).unwrap().to_css()
+    }
+
+    fn theme_error(json: &str) -> String {
+        serde_json::from_str::<Theme>(json).unwrap_err().to_string()
+    }
+
+    #[test]
+    fn test_color_schemes_and_variant_only_tokens() {
+        // `light-dark()` only encodes a light default paired with a dark variant,
+        // and a token one variant alone defines is still defined there
+        assert_eq!(
+            theme_css(
+                r##"{"colors":{"default":{"a":"#111","same":"#222"},"dark":{"a":"#eee","same":"#222","darkOnly":"#123"}}}"##
+            ),
+            ":root{color-scheme:light;--a:light-dark(#111,#EEE);--same:#222}:root[data-theme=dark]{color-scheme:dark;--darkOnly:#123}"
+        );
+        assert_eq!(
+            theme_css(
+                r##"{"colors":{"default":{"a":"#111"},"blue":{"a":"#00f","blueOnly":"#0f0"}}}"##
+            ),
+            ":root{color-scheme:light;--a:#111}:root[data-theme=blue]{color-scheme:light;--a:#00F;--blueOnly:#0F0}"
+        );
+        assert_eq!(
+            theme_css(
+                r##"{"colors":{"default":{"a":"#111"},"midnight":{"a":"#000"}},"colorScheme":{"midnight":"dark"}}"##
+            ),
+            ":root{color-scheme:light;--a:light-dark(#111,#000)}:root[data-theme=midnight]{color-scheme:dark}"
+        );
+        assert_eq!(
+            theme_css(
+                r##"{"colors":{"default":{"a":"#111"},"dark":{"a":"#eee"},"solarized":{"a":"#abc","own":"#fed"}}}"##
+            ),
+            ":root{color-scheme:light;--a:#111}:root[data-theme=dark]{color-scheme:dark;--a:#EEE}:root[data-theme=solarized]{color-scheme:light;--a:#ABC;--own:#FED}"
+        );
+        assert_eq!(
+            theme_css(
+                r##"{"colors":{"default":{"a":"#111"},"high contrast":{"a":"#000"},"q\"b\\":{"a":"#fff"}}}"##
+            ),
+            r#":root{color-scheme:light;--a:#111}:root[data-theme="high contrast"]{color-scheme:light;--a:#000}:root[data-theme="q\"b\\"]{color-scheme:light;--a:#FFF}"#
+        );
+    }
+
+    #[test]
+    fn test_token_names_are_checked() {
+        assert_eq!(
+            theme_error(r##"{"colors":{"default":{"a-b":"#111","a":{"b":"#222"}}}}"##),
+            "theme.colors.default: color tokens 'a-b' and 'a.b' both become the CSS variable --a-b: rename one at line 1 column 54"
+        );
+        for (json, error) in [
+            (
+                r##"{"colors":{"default":{"${bad}":"#111"}}}"##,
+                "theme.colors.default: color token '${bad}' is not a valid token name",
+            ),
+            (
+                r##"{"colors":{"default":{"a":{"b c":"#111"}}}}"##,
+                "theme.colors.default: color token 'b c' is not a valid token name",
+            ),
+            (
+                r#"{"length":{"default":{"-x":"4px"}}}"#,
+                "theme.length.default: length token '-x' is not a valid token name",
+            ),
+            (
+                r#"{"length":{"default":{"a.b":"4px","a-b":"8px"}}}"#,
+                "theme.length.default: length tokens 'a-b' and 'a.b' both become the CSS variable --a-b",
+            ),
+            (
+                r#"{"shadow":{"default":{"a b":"0 1px #000"}}}"#,
+                "theme.shadow.default: shadow token 'a b' is not a valid token name",
+            ),
+        ] {
+            assert!(
+                theme_error(json).starts_with(error),
+                "{json}: {}",
+                theme_error(json)
+            );
+        }
+    }
+
+    #[test]
+    fn test_dotted_length_and_shadow_names_become_dashed_variables() {
+        assert_eq!(
+            theme_css(
+                r#"{"length":{"default":{"gap.sm":"4px"}},"shadow":{"default":{"card.lg":"0 1px #000"}}}"#
+            ),
+            ":root{--gap-sm:4px}:root{--card-lg:0 1px #000}"
+        );
+    }
+
+    #[test]
+    fn test_typography_style_and_transform() {
+        let css = theme_css(
+            r#"{"typography":{"caps":{"fontStyle":["italic",null,"normal"],"textTransform":"uppercase"},"quote":[{"fontStyle":"italic","textTransform":"none"}]}}"#,
+        );
+        assert_eq!(
+            css,
+            ".typo-caps{font-style:italic;text-transform:uppercase}.typo-quote{font-style:italic;text-transform:none}@media(min-width:768px){.typo-caps{font-style:normal}}"
+        );
+        let theme: Theme = serde_json::from_str(
+            r#"{"typography":{"caps":{"fontStyle":"italic","textTransform":"uppercase"}}}"#,
+        )
+        .unwrap();
+        assert_eq!(
+            theme.typography_declarations("caps", 0),
+            vec![
+                (0, "font-style", "italic".to_string()),
+                (0, "text-transform", "uppercase".to_string()),
+            ]
+        );
     }
 
     #[test]
