@@ -160,8 +160,9 @@ fn collect_global_styles<'a>(
                                             }
                                             styles.push(ExtractStyleProp::Static(
                                                 ExtractStyleValue::Import(ExtractImport {
-                                                    url: import_url,
                                                     file: file.to_string(),
+                                                    order: 0,
+                                                    url: import_url,
                                                 }),
                                             ));
                                         }
@@ -170,8 +171,9 @@ fn collect_global_styles<'a>(
                                     {
                                         styles.push(ExtractStyleProp::Static(
                                             ExtractStyleValue::Import(ExtractImport {
-                                                url: url.into_owned(),
                                                 file: file.to_string(),
+                                                order: 0,
+                                                url: url.into_owned(),
                                             }),
                                         ));
                                     }
@@ -181,28 +183,47 @@ fn collect_global_styles<'a>(
                             if let Expression::ArrayExpression(arr) = &o.value {
                                 for p in &arr.elements {
                                     if let ArrayExpressionElement::ObjectExpression(o) = p {
-                                        styles.push(ExtractStyleProp::Static(ExtractStyleValue::FontFace(ExtractFontFace {
-                                            properties: o
-                                                .properties
-                                                .iter()
-                                                .filter_map(|p| {
-                                                        if let ObjectPropertyKind::ObjectProperty(o) = p
-                                                            && let Some(property_name) = get_str_by_property_key(&o.key)
-                                                            && let Some(s) = get_string_by_literal_expression(&o.value)
-                                                        {
-                                                            let it = disassemble_property(&property_name).map(|p| {
-                                                                let v = if check_multi_css_optimize(&p) { optimize_multi_css_value(&s) } else { Cow::Borrowed(&*s) };
-                                                                if p == "src" { (p.into_owned(), wrap_url(&v).into_owned()) } else { (p.into_owned(), v.into_owned()) }
-                                                            });
-                                                            Some(it.collect::<Vec<_>>())
-                                                        } else {
-                                                            None
-                                                        }
-                                                })
-                                                .flatten()
-                                                .collect(),
-                                            file: file.to_string(),
-                                        })));
+                                        let properties = o
+                                            .properties
+                                            .iter()
+                                            .filter_map(|p| {
+                                                if let ObjectPropertyKind::ObjectProperty(o) = p
+                                                    && let Some(property_name) =
+                                                        get_str_by_property_key(&o.key)
+                                                    && let Some(s) =
+                                                        get_string_by_literal_expression(&o.value)
+                                                {
+                                                    let it = disassemble_property(&property_name)
+                                                        .map(|p| {
+                                                            let v = if check_multi_css_optimize(&p)
+                                                            {
+                                                                optimize_multi_css_value(&s)
+                                                            } else {
+                                                                Cow::Borrowed(&*s)
+                                                            };
+                                                            if p == "src" {
+                                                                (
+                                                                    p.into_owned(),
+                                                                    wrap_url(&v).into_owned(),
+                                                                )
+                                                            } else {
+                                                                (p.into_owned(), v.into_owned())
+                                                            }
+                                                        });
+                                                    Some(it.collect::<Vec<_>>())
+                                                } else {
+                                                    None
+                                                }
+                                            })
+                                            .flatten()
+                                            .collect();
+                                        styles.push(ExtractStyleProp::Static(
+                                            ExtractStyleValue::FontFace(ExtractFontFace {
+                                                file: file.to_string(),
+                                                order: 0,
+                                                properties,
+                                            }),
+                                        ));
                                     } else if let ArrayExpressionElement::TemplateLiteral(t) = p {
                                         let css_styles = css_to_style_literal(t, 0, &None)
                                             .into_iter()
@@ -216,6 +237,7 @@ fn collect_global_styles<'a>(
                                             .collect::<Vec<_>>();
                                         styles.push(ExtractStyleProp::Static(
                                             ExtractStyleValue::FontFace(ExtractFontFace {
+                                                order: 0,
                                                 properties: css_styles
                                                     .iter()
                                                     .filter_map(|p| {

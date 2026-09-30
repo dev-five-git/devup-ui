@@ -63,8 +63,9 @@ ToBTreeSet {
         ),
         Css(
             ExtractCss {
-                css: ":root{--b:black;}",
                 file: "test.tsx",
+                order: 1,
+                css: ":root{--b:black;}",
             },
         ),
         Keyframes(

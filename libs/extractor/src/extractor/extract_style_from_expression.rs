@@ -1285,6 +1285,7 @@ fn typography_atom(name: &str, level: u8, selector: &Option<StyleSelector>) -> E
         style_order: None,
         layer: None,
         theme_token_resolution: ThemeTokenResolution::default(),
+        order: 0,
     }
 }
 
