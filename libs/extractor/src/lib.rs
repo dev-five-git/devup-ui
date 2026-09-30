@@ -10856,6 +10856,42 @@ const className = myCss({ bg: "red" })
 
     #[test]
     #[serial]
+    fn test_global_css_layer_blocks_and_import_objects() {
+        reset_class_map();
+        reset_file_map();
+        assert_debug_snapshot!(ToBTreeSet::from(
+            extract(
+                "test.tsx",
+                r"import {globalCss} from '@devup-ui/react'
+globalCss({
+    imports: [{ url: 'a.css', query: 'screen' }, { 'url': 'b.css' }],
+    '@layer utilities': { '.x': { color: 'blue' }, '.y': { color: 'red', _print: { color: 'black' } } },
+    '@layer base': { '@layer reset': { html: { m: 0 } } },
+})",
+                ExtractOption::default(),
+            )
+            .unwrap()
+        ));
+        for key in ["'@layer a, b'", "'@layer a b'"] {
+            reset_class_map();
+            reset_file_map();
+            let message = extract(
+                "test.tsx",
+                &format!("import {{globalCss}} from '@devup-ui/react'\nglobalCss({{ {key}: {{ '.x': {{ color: 'red' }} }} }})"),
+                ExtractOption::default(),
+            )
+            .err()
+            .map(|error| error.to_string())
+            .unwrap_or_default();
+            assert!(
+                message.contains("`globalCss()` cannot use"),
+                "{key}: {message}"
+            );
+        }
+    }
+
+    #[test]
+    #[serial]
     fn test_global_css_with_imports() {
         reset_class_map();
         reset_file_map();
