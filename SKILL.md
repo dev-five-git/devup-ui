@@ -338,7 +338,16 @@ globalCss({ body: { margin: 0 }, "*": { boxSizing: "border-box" } });
 
 const spin = keyframes({ from: { transform: "rotate(0)" }, to: { transform: "rotate(360deg)" } });
 <Box animation={`${spin} 1s linear infinite`} />
+
+// A const holding a keyframes name or a css() class is a build-time value
+const card = css({ p: 4 });
+css({ animationName: spin, selectors: { [`.${card}:hover &`]: { m: 1 } } });
 ```
+
+- Only a `const` declared in the same file works this way; an imported keyframes/class name is not known at build time.
+- `import * as Devup from "@devup-ui/react"` works (`Devup.css`, `Devup.keyframes`, `Devup.styled.div`, `<Devup.Box />`).
+- `styled()` takes any base: tag, Devup component, `motion.div`, `forwardRef(...)`, a variable. `null`/number/boolean/`undefined` bases are build errors.
+- Compiled imports are removed: a top-level alias (`const myCss = css`, `const Row = Flex`) compiles and is removed, but any other runtime read (`export const C = Box`, `[Box]`, `styled('div')` alone, an alias inside a function) is a **build error**.
 
 ### Dynamic Values with Custom Components
 

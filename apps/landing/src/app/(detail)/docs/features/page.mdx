@@ -215,6 +215,8 @@ const Button = styled('button', {
 })
 ```
 
+`styled()` renders any base: a tag (`styled.div`, `styled('div')`), a Devup UI component (`styled(Box)`), a component or a member naming one (`styled(Link)`, `styled(motion.div)`), or any other value (`styled(forwardRef(...))`, `styled(tag)`), which is read once where the component is declared. A base that can never render — `null`, a number, a boolean, `undefined` — and a `styled` the build cannot compile are build errors.
+
 ## css() API
 
 Create reusable style objects.
@@ -277,3 +279,7 @@ const spin = keyframes({
 
 const example = <Box animation={`${spin} 1s linear infinite`} />
 ```
+
+A `const` holding what `keyframes()` or `css()` gives is a value the build knows, so the other style functions read it too: `css({ animationName: spin })`, `` globalCss`body { animation: ${spin} 1s; }` ``, `css({ selectors: { ['.' + card + ':hover &']: { m: 1 } } })`. The package imported whole works the same (`import * as Devup from '@devup-ui/react'` with `Devup.keyframes(...)`, `Devup.styled.div(...)`, `<Devup.Box />`). A name imported from another module is not read this way, as the class another file generates is only known once that file is built: declare the animation in the file using it, or read it from a style prop.
+
+The build removes the imports it compiles, so their bindings exist only where they are called or rendered. A top-level alias (`const myCss = css`, `const Row = Flex`) compiles like the original and is removed; any other read — exporting it, putting it in an array, `styled('div')` without styles, an alias inside a function — is a build error, instead of code that would throw at runtime.

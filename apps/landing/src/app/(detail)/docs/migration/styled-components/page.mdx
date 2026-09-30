@@ -24,7 +24,15 @@ const C = styled.div({ bg: 'red' })
 const D = styled('div')({ bg: 'red' })
 const E = styled(Component)({ bg: 'red' })
 const F = styled('div', { bg: 'red' })
+const G = styled(motion.div)`
+  color: red;
+`
+const H = styled(forwardRef(Field))({ bg: 'red' })
 ```
+
+Any base renders: a tag, a component, a member such as `motion.div`, or any other value, read once where the component is declared. `null`, numbers, booleans and `undefined` never render, so they are build errors, as is a `styled` left uncompiled (`styled('div')` never given styles, `styled.div` exported bare): its import is removed, and that code would throw at runtime.
+
+A `keyframes` or `css` result held in a `const` of the same file is a build-time value, so `` css`animation: ${fadeIn} 1s;` `` and `styled.div({ ['.' + card + ':hover &']: { margin: 0 } })` work. In CSS text a class standing where a declaration would is a mixin, composed with the component's class. One imported from another module is not: its name is only known once that file is built, so declare it where it is used.
 
 Object styles follow the libraries: several style arguments, or an array of them, merge into one rule set where a later declaration replaces an earlier one and nested rules merge; Emotion's options argument (`styled('div', { shouldForwardProp })(...)`) is accepted, and every prop is forwarded. Numbers mean pixels as they do in Emotion and styled-components — `padding: 8` is `8px`, unitless properties such as `lineHeight` stay as written — while Devup UI shorthands such as `p` keep the spacing scale.
 
