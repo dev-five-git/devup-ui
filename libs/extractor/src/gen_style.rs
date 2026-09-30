@@ -333,6 +333,7 @@ mod tests {
     };
     use crate::utils::expression_to_code;
     use oxc_allocator::Allocator;
+    use serial_test::serial;
 
     fn dynamic_style<'a>(property: &str, identifier: &str) -> ExtractStyleProp<'a> {
         ExtractStyleProp::Static(ExtractStyleValue::Dynamic(ExtractDynamicStyle::new(
@@ -341,6 +342,7 @@ mod tests {
     }
 
     #[test]
+    #[serial]
     fn test_gen_styles_for_alternate_only_conditional() {
         let allocator = Allocator::default();
         let builder = AstBuilder::new(&allocator);
@@ -357,6 +359,7 @@ mod tests {
     }
 
     #[test]
+    #[serial]
     fn test_gen_styles_for_dynamic_member_expression() {
         let allocator = Allocator::default();
         let builder = AstBuilder::new(&allocator);
@@ -383,6 +386,7 @@ mod tests {
     }
 
     #[test]
+    #[serial]
     fn test_gen_styles_for_conditional_with_distinct_properties() {
         let allocator = Allocator::default();
         let builder = AstBuilder::new(&allocator);
