@@ -12,6 +12,7 @@ mod module_loader;
 mod mutations;
 mod prop_modify_utils;
 mod source_map;
+mod style_values;
 mod stylex;
 mod tailwind;
 mod util_type;
@@ -6724,26 +6725,29 @@ import {Button} from '@devup/ui'
             .unwrap()
         ));
 
-        // Computed selector key whose `key.name()` is None must be skipped.
-        // Mixed with a valid selector to ensure extraction still proceeds.
+        // A selector only the runtime knows is reported, not dropped
         reset_class_map();
         reset_file_map();
-        assert_debug_snapshot!(ToBTreeSet::from(
-            extract(
-                "test.jsx",
-                r#"import {Box} from '@devup-ui/core'
+        let message = extract(
+            "test.jsx",
+            r#"import {Box} from '@devup-ui/core'
 <Box selectors={{ [dynamic]: { color: 'red' }, "&:focus": { color: 'blue' } }} />
             "#,
-                ExtractOption {
-                    package: "@devup-ui/core".to_string(),
-                    css_dir: "@devup-ui/core".to_string(),
-                    single_css: true,
-                    import_main_css: false,
-                    import_aliases: HashMap::new()
-                }
-            )
-            .unwrap()
-        ));
+            ExtractOption {
+                package: "@devup-ui/core".to_string(),
+                css_dir: "@devup-ui/core".to_string(),
+                single_css: true,
+                import_main_css: false,
+                import_aliases: HashMap::new(),
+            },
+        )
+        .err()
+        .map(|error| error.to_string())
+        .unwrap_or_default();
+        assert!(
+            message.contains("`<Box>` cannot use `[dynamic]`"),
+            "{message}"
+        );
     }
 
     #[test]
@@ -10481,71 +10485,40 @@ keyframes({
     #[test]
     #[serial]
     fn test_wrong_styled_with_variable_like_emotion_props() {
-        reset_class_map();
-        reset_file_map();
-        reset_file_map();
-        assert_debug_snapshot!(ToBTreeSet::from(
-            extract(
+        // Left as written these would call `styled` at runtime, whose import
+        // the build removes
+        for (code, error) in [
+            (
+                "const StyledDiv = styled(null)`\n  background: ${props => props.bg};\n  color: red;\n`",
+                "`styled()` cannot use `styled(null)`",
+            ),
+            (
+                "const StyledDiv = styled(\"div\", \"span\")`\n  background: ${props => props.bg};\n  color: red;\n`",
+                "`styled()` cannot use `styled(\"div\", \"span\")`",
+            ),
+            (
+                "const StyledDiv = styled(\"div\", \"span\").filter(Boolean)",
+                "`styled()` cannot use `styled(\"div\", \"span\")`",
+            ),
+        ] {
+            reset_class_map();
+            reset_file_map();
+            let message = extract(
                 "test.tsx",
-                r"import {styled} from '@devup-ui/core'
-        const StyledDiv = styled(null)`
-          background: ${props => props.bg};
-          color: red;
-        `
-        ",
+                &format!("import {{styled}} from '@devup-ui/core'\n{code}"),
                 ExtractOption {
                     package: "@devup-ui/core".to_string(),
                     css_dir: "@devup-ui/core".to_string(),
                     single_css: false,
                     import_main_css: false,
-                    import_aliases: HashMap::new()
-                }
+                    import_aliases: HashMap::new(),
+                },
             )
-            .unwrap()
-        ));
-
-        reset_class_map();
-        reset_file_map();
-        reset_file_map();
-        assert_debug_snapshot!(ToBTreeSet::from(
-            extract(
-                "test.tsx",
-                r#"import {styled} from '@devup-ui/core'
-        const StyledDiv = styled("div", "span")`
-          background: ${props => props.bg};
-          color: red;
-        `
-        "#,
-                ExtractOption {
-                    package: "@devup-ui/core".to_string(),
-                    css_dir: "@devup-ui/core".to_string(),
-                    single_css: false,
-                    import_main_css: false,
-                    import_aliases: HashMap::new()
-                }
-            )
-            .unwrap()
-        ));
-
-        reset_class_map();
-        reset_file_map();
-        reset_file_map();
-        assert_debug_snapshot!(ToBTreeSet::from(
-            extract(
-                "test.tsx",
-                r#"import {styled} from '@devup-ui/core'
-        const StyledDiv = styled("div", "span").filter(Boolean)
-        "#,
-                ExtractOption {
-                    package: "@devup-ui/core".to_string(),
-                    css_dir: "@devup-ui/core".to_string(),
-                    single_css: false,
-                    import_main_css: false,
-                    import_aliases: HashMap::new()
-                }
-            )
-            .unwrap()
-        ));
+            .err()
+            .map(|error| error.to_string())
+            .unwrap_or_default();
+            assert!(message.contains(error), "{code}\n{message}");
+        }
 
         reset_class_map();
         reset_file_map();
@@ -17888,9 +17861,7 @@ export const B = sc.span({ left: 2 });
 export const C = sc.button.attrs({ type: 'button' }).withConfig({ displayName: 'c' })({ right: 3 });
 export const D = sc(Base).withConfig({ shouldForwardProp: () => true })`color: red;`;
 export const E = (sc.input.attrs((props) => ({ size: props.small ? 5 : 10 })) as any).attrs(extra)({ bottom: 4 });
-export const F = sc.div.attrs({ role: 'note' });
 export const G = other.div.attrs({ role: 'note' })({ margin: 1 });
-export const H = sc.div.attrs(...rest)({ margin: 2 });
 export const I = factory.attrs({ id: 'i' })({ margin: 3 });
 export const J = other(Base).attrs({ id: 'j' })({ margin: 4 });",
                 ExtractOption {
@@ -17898,11 +17869,146 @@ export const J = other(Base).attrs({ id: 'j' })({ margin: 4 });",
                     css_dir: "@devup-ui/react".to_string(),
                     single_css: true,
                     import_main_css: false,
-                    import_aliases: aliases,
+                    import_aliases: aliases.clone(),
                 },
             )
             .unwrap()
         ));
+        // Never called for styles, so they would call `styled` at runtime
+        for code in [
+            "export const F = sc.div.attrs({ role: 'note' });",
+            "export const H = sc.div.attrs(...rest)({ margin: 2 });",
+        ] {
+            reset_class_map();
+            reset_file_map();
+            let message = extract(
+                "test.tsx",
+                &format!("import sc from 'styled-components';\n{code}"),
+                ExtractOption {
+                    import_aliases: aliases.clone(),
+                    ..ExtractOption::default()
+                },
+            )
+            .err()
+            .map(|error| error.to_string())
+            .unwrap_or_default();
+            assert!(
+                message.contains("is read at runtime, where it does not exist"),
+                "{code}\n{message}"
+            );
+        }
+    }
+
+    #[test]
+    #[serial]
+    fn test_selector_keys_computed_from_constants() {
+        reset_class_map();
+        reset_file_map();
+        assert_debug_snapshot!(ToBTreeSet::from(
+            extract(
+                "test.tsx",
+                "import { css } from '@devup-ui/react';\nconst card = css({ p: 1 });\nconst HOVER = ':hover';\nexport const a = css({ selectors: { [`.${card}${HOVER} &`]: { m: 1 } }, [`.${card} &`]: { m: 2 } });",
+                ExtractOption {
+                    import_main_css: false,
+                    ..ExtractOption::default()
+                },
+            )
+            .unwrap()
+        ));
+        for (code, error) in [
+            (
+                "import { css } from '@devup-ui/react';\nlet X = 'x';\nexport const a = css({ selectors: { [X]: { m: 1 } } });",
+                "`css()` cannot use `[X]`",
+            ),
+            (
+                "import { Box } from '@devup-ui/react';\nlet X = 'x';\nexport const a = <Box selectors={{ [X]: { m: 1 } }} />;",
+                "`<Box>` cannot use `[X]`",
+            ),
+        ] {
+            reset_class_map();
+            reset_file_map();
+            let message = extract("test.tsx", code, ExtractOption::default())
+                .err()
+                .map(|error| error.to_string())
+                .unwrap_or_default();
+            assert!(message.contains(error), "{code}\n{message}");
+        }
+    }
+
+    #[test]
+    #[serial]
+    fn test_compiled_bindings_never_dangle() {
+        let outputs: Vec<(&str, String)> = [
+            "import { css, styled, Box } from '@devup-ui/react';\nconst myCss = css;\nconst again = myCss;\nconst S = styled;\nconst B = Box;\nexport const a = again({ color: 'red' });\nexport const s = S.div({ color: 'blue' });\nexport const b = <B p={1} />;",
+            "import { css } from '@devup-ui/react';\nexport function f(css) { return css; }\nexport const a = css({ color: 'red' });",
+            "import { css, Box } from '@devup-ui/react';\ntype T = typeof css;\nexport type P = React.ComponentProps<typeof Box>;\nexport const a = css({ color: 'red' });",
+            "import { css } from '@devup-ui/react';\nconst kept = 1, myCss = css;\nexport const a = myCss({ color: 'red' }) + kept;",
+        ]
+        .into_iter()
+        .map(|code| {
+            reset_class_map();
+            reset_file_map();
+            let output = extract(
+                "test.tsx",
+                code,
+                ExtractOption {
+                    import_main_css: false,
+                    ..ExtractOption::default()
+                },
+            )
+            .unwrap();
+            (
+                code,
+                output
+                    .code
+                    .lines()
+                    .filter(|line| !line.starts_with("import \""))
+                    .collect::<Vec<_>>()
+                    .join("\n"),
+            )
+        })
+        .collect();
+        assert_debug_snapshot!(outputs);
+
+        for (code, name) in [
+            (
+                "import { css } from '@devup-ui/react';\nexport const myCss = css;",
+                "css",
+            ),
+            (
+                "import { Box } from '@devup-ui/react';\nexport const C = Box;\nexport const d = <C p={1} />;",
+                "Box",
+            ),
+            (
+                "import { Box } from '@devup-ui/react';\nexport const list = [Box].map((B) => <B p={1} />);",
+                "Box",
+            ),
+            (
+                "import { css } from '@devup-ui/react';\nexport function f() { const inner = css; return inner({ color: 'red' }); }",
+                "css",
+            ),
+            (
+                "import { css } from '@devup-ui/react';\nconst myCss = css;\nexport const v = myCss;",
+                "myCss",
+            ),
+            (
+                "import { css } from '@devup-ui/react';\nlet myCss = css;\nmyCss = null;",
+                "myCss",
+            ),
+        ] {
+            reset_class_map();
+            reset_file_map();
+            let message = extract("test.tsx", code, ExtractOption::default())
+                .err()
+                .map(|error| error.to_string())
+                .unwrap_or_default();
+            assert!(
+                message.contains(&format!(
+                    "`{name}` is read at runtime, where it does not exist"
+                )),
+                "{code}\n{message}"
+            );
+        }
     }
 
     #[test]
@@ -19309,6 +19415,148 @@ export const after = 42;",
 
     #[test]
     #[serial]
+    fn test_styled_components_of_any_base() {
+        let outputs: Vec<(&str, String)> = [
+            "export const A = styled(motion.div)`color: red;`;",
+            "export const B = styled((Motion as any).Div.Inner)({ color: 'red' });",
+            "export const C = styled(forwardRef((p, r) => <div ref={r} {...p} />)).attrs({ role: 'x' })`color: red;`;",
+            "export const D = (tag) => styled(tag, { color: 'red' });",
+            "export const E = styled(getThing().div)`color: red;`;",
+        ]
+        .into_iter()
+        .map(|code| {
+            reset_class_map();
+            reset_file_map();
+            let output = extract(
+                "test.tsx",
+                &format!("import {{ styled }} from '@devup-ui/react';\n{code}"),
+                ExtractOption {
+                    import_main_css: false,
+                    ..ExtractOption::default()
+                },
+            )
+            .unwrap();
+            (
+                code,
+                output
+                    .code
+                    .lines()
+                    .filter(|line| !line.starts_with("import "))
+                    .collect::<Vec<_>>()
+                    .join("\n"),
+            )
+        })
+            .collect();
+        assert_debug_snapshot!(outputs);
+
+        for (code, error) in [
+            (
+                "styled(...parts)`color: red;`",
+                "`styled()` cannot use `styled(...parts)`",
+            ),
+            (
+                "styled(null)`color: red;`",
+                "`styled()` cannot use `styled(null)`",
+            ),
+            (
+                "styled(1)({ color: 'red' })",
+                "`styled()` cannot use `styled(1)({ color: \"red\" })`",
+            ),
+            (
+                "styled(undefined, { color: 'red' })",
+                "`styled()` cannot use `styled(undefined,",
+            ),
+            (
+                "styled('div', styles)",
+                "`styled()` cannot use `styled(\"div\", styles)`",
+            ),
+        ] {
+            reset_class_map();
+            reset_file_map();
+            let message = extract(
+                "test.tsx",
+                &format!("import {{ styled }} from '@devup-ui/react';\nlet styles = {{}};\nexport const A = {code};"),
+                ExtractOption::default(),
+            )
+            .err()
+            .map(|error| error.to_string())
+            .unwrap_or_default();
+            assert!(message.contains(error), "{code}\n{message}");
+        }
+    }
+
+    #[test]
+    #[serial]
+    fn test_package_imported_whole() {
+        let outputs: Vec<(&str, String)> = [
+            "import * as Devup from '@devup-ui/react';\nexport const k = Devup.keyframes({ from: { opacity: 0 } });\nexport const G = Devup.createGlobalStyle({ body: { m: 0 } });\nexport const c = Devup.css`color: red;`;\nexport const t = Devup.keyframes`from { opacity: 1; }`;\nDevup.globalCss`body { margin: 0; }`;",
+            "import Devup from '@devup-ui/react';\nexport const S = Devup.styled.div({ color: 'red' });\nexport const T = Devup.styled('span', { color: 'blue' });\nexport const U = Devup.styled.p.attrs({ role: 'note' })({ m: 1 });\nexport const g = <Devup.Global styles={{ body: { p: 0 } }} />;",
+            "import * as Devup from '@devup-ui/react';\nimport { styled } from '@devup-ui/react';\nexport const S = styled.div({ p: 1 });\nexport const o = other.styled.div({ p: 1 });\nexport const m = <motion.div />;",
+        ]
+        .into_iter()
+        .map(|code| {
+            reset_class_map();
+            reset_file_map();
+            let output = extract(
+                "test.tsx",
+                code,
+                ExtractOption {
+                    import_main_css: false,
+                    ..ExtractOption::default()
+                },
+            )
+            .unwrap();
+            (code, output.code)
+        })
+        .collect();
+        assert_debug_snapshot!(outputs);
+    }
+
+    #[test]
+    #[serial]
+    fn test_style_results_read_as_values() {
+        reset_class_map();
+        reset_file_map();
+        let output = extract(
+            "test.tsx",
+            r"import { Box, css, keyframes, globalCss, styled } from '@devup-ui/react';
+import { Global } from '@devup-ui/react/compat';
+const fadeIn = keyframes({ from: { opacity: 0 } });
+const slide = keyframes`from { left: 0; }`;
+const card = css({ p: 1 });
+export const a = css({ animationName: fadeIn, animation: `${fadeIn} 1s` });
+export const b = css(card, { m: 1 });
+export const c = css`animation: ${slide} 2s;`;
+export const d = <Box animationName={fadeIn} {...{ animation: `${slide} 3s` }} />;
+export const E = styled.div({ animation: `${fadeIn} 4s` });
+globalCss({ body: { animation: `${slide} 5s` } });
+export const g = <Global styles={{ html: { animationName: fadeIn } }} />;",
+            ExtractOption::default(),
+        )
+        .unwrap();
+        assert_debug_snapshot!(ToBTreeSet::from(output));
+
+        for code in [
+            "const fadeIn = keyframes({ from: { opacity: 0 } });\nexport const f = (fadeIn) => css({ animationName: fadeIn });",
+            "let fadeIn = keyframes({ from: { opacity: 0 } });\nexport const a = css({ animationName: fadeIn });",
+            "const { fadeIn } = { fadeIn: keyframes({ from: { opacity: 0 } }) };\nexport const a = css({ animationName: fadeIn });",
+        ] {
+            reset_class_map();
+            reset_file_map();
+            let message = extract(
+                "test.tsx",
+                &format!("import {{ css, keyframes }} from '@devup-ui/react';\n{code}"),
+                ExtractOption::default(),
+            )
+            .err()
+            .map(|error| error.to_string())
+            .unwrap_or_default();
+            assert!(message.contains("cannot use `fadeIn`"), "{code}\n{message}");
+        }
+    }
+
+    #[test]
+    #[serial]
     fn test_dynamic_values_keep_the_code_as_written() {
         reset_class_map();
         reset_file_map();
@@ -19736,6 +19984,10 @@ export const f = css(card, { p: String(SIZE) + 'px' });",
             (
                 "import { css } from '@devup-ui/react';\nconst f = (n) => n.toString(16);\ncss({ w: f(255) });",
                 false,
+            ),
+            (
+                "import * as Devup from '@devup-ui/react';\nconst make = (n) => ({ m: n });\nDevup.styled.div(make(2));",
+                true,
             ),
         ] {
             assert_eq!(
@@ -20188,10 +20440,30 @@ const G = (styled<object>)('div', { pr: '6px' });"
 const twoArg = styled('div', { bg: 'red' });
 const twoArgComponent = styled(Box, { mt: '1px' });
 const curried = styled('span')({ color: 'blue' });
-const member = styled.p({ pt: '2px' });
-const malformed = styled('div', 'span')`color: red;`;
-const creatorOnly = styled('div');"
+const member = styled.p({ pt: '2px' });"
         )));
+        for (code, error) in [
+            (
+                "const malformed = styled('div', 'span')`color: red;`;",
+                "`styled()` cannot use `styled(\"div\", \"span\")`",
+            ),
+            (
+                "const creatorOnly = styled('div');",
+                "`styled` is read at runtime, where it does not exist",
+            ),
+        ] {
+            reset_class_map();
+            reset_file_map();
+            let message = extract(
+                "test.tsx",
+                &format!("import {{ styled }} from '@devup-ui/react';\n{code}"),
+                ExtractOption::default(),
+            )
+            .err()
+            .map(|error| error.to_string())
+            .unwrap_or_default();
+            assert!(message.contains(error), "{code}\n{message}");
+        }
     }
 
     #[test]
@@ -20374,10 +20646,20 @@ const e = <Box bg='red' props={extraProps} />;"
     #[test]
     #[serial]
     fn test_styled_tag_that_is_neither_member_nor_call() {
-        assert_debug_snapshot!(ToBTreeSet::from(extract_tsx(
-            r"import { styled } from '@devup-ui/react';
-const S = styled['div']`color: red;`;"
-        )));
+        reset_class_map();
+        reset_file_map();
+        let message = extract(
+            "test.tsx",
+            "import { styled } from '@devup-ui/react';\nconst S = styled['div']`color: red;`;",
+            ExtractOption::default(),
+        )
+        .err()
+        .map(|error| error.to_string())
+        .unwrap_or_default();
+        assert!(
+            message.contains("`styled` is read at runtime, where it does not exist"),
+            "{message}"
+        );
     }
 
     #[test]

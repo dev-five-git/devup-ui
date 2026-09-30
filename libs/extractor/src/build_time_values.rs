@@ -400,6 +400,12 @@ impl<'s, 'a> Finder<'s, 'a> {
     }
 
     fn is_styled_function(&self, expression: &Expression<'_>) -> bool {
+        if let Expression::StaticMemberExpression(member) = unwrap_syntax_only(expression) {
+            return member.property.name == "styled"
+                && self
+                    .symbol(&member.object)
+                    .is_some_and(|symbol| self.namespaces.contains(&symbol));
+        }
         self.symbol(expression)
             .is_some_and(|symbol| self.styled.contains(&symbol))
     }

@@ -177,6 +177,11 @@ pub struct DevupVisitor<'a> {
     /// Elements whose type only the runtime gives, which each bind it to a
     /// name of their own
     runtime_types: usize,
+    /// The classes and keyframes names the file binds to a `const`
+    style_values: crate::style_values::StyleValues,
+    /// What the build compiles away: the imports of the package it removes,
+    /// and the bindings aliasing them, which only its calls and elements read
+    compiled_names: FxHashSet<String>,
     unknown_bindings: crate::imported_constants::Unknown,
     /// Whether `css()` or `styled()` joined as a class, or an element took
     /// through a spread, a binding that may hold rules only running the module
@@ -188,6 +193,40 @@ pub struct DevupVisitor<'a> {
     pub unknown_parts: Vec<(u32, String)>,
     /// Objects and arrays code changes, which styles cannot take whole
     changed_bindings: crate::imported_constants::Changed,
+}
+
+/// Whether `declarator` only aliases what the build compiles away
+/// (`const newCss = css`)
+fn is_alias(declarator: &VariableDeclarator<'_>, compiled: &FxHashSet<String>) -> bool {
+    matches!(&declarator.init, Some(Expression::Identifier(init)) if compiled.contains(init.name.as_str()))
+        && declarator
+            .id
+            .get_binding_identifier()
+            .is_some_and(|id| compiled.contains(id.name.as_str()))
+}
+
+/// The reads of `names` a program keeps outside the types it erases; with
+/// `scoping`, only those no binding of the program declares
+struct CompiledReads<'s> {
+    names: &'s FxHashSet<String>,
+    scoping: Option<&'s oxc_semantic::Scoping>,
+    found: Vec<(u32, String)>,
+}
+
+impl<'a> oxc_ast_visit::Visit<'a> for CompiledReads<'_> {
+    fn visit_identifier_reference(&mut self, it: &oxc_ast::ast::IdentifierReference<'a>) {
+        if self.names.contains(it.name.as_str())
+            && self.scoping.is_none_or(|scoping| {
+                it.reference_id
+                    .get()
+                    .is_none_or(|reference| scoping.get_reference(reference).symbol_id().is_none())
+            })
+        {
+            self.found.push((it.span.start, it.name.to_string()));
+        }
+    }
+
+    fn visit_ts_type(&mut self, _: &oxc_ast::ast::TSType<'a>) {}
 }
 
 /// Whether `expression`, or a value it chooses, reads an object or array code
@@ -295,6 +334,8 @@ impl<'a> DevupVisitor<'a> {
             pending_replacement: None,
             spreads_read_once: 0,
             runtime_types: 0,
+            style_values: crate::style_values::StyleValues::default(),
+            compiled_names: FxHashSet::default(),
             unknown_bindings: crate::imported_constants::Unknown::default(),
             composes_unknown: false,
             unknown_parts: Vec::new(),
@@ -304,6 +345,123 @@ impl<'a> DevupVisitor<'a> {
 
     pub fn unknown_bindings(&mut self, unknown: &crate::imported_constants::Unknown) {
         self.unknown_bindings.clone_from(unknown);
+    }
+
+    /// The style function `callee` names: `css`, `Devup.keyframes`, ...
+    fn util_type(&self, callee: &Expression<'a>) -> Option<Rc<UtilType>> {
+        match callee {
+            Expression::Identifier(ident) => self.util_imports.get(ident.name.as_str()),
+            Expression::StaticMemberExpression(member) if !self.util_imports.is_empty() => {
+                let Expression::Identifier(ident) = &member.object else {
+                    return None;
+                };
+                let obj = ident.name.as_str();
+                let prop = member.property.name.as_str();
+                let mut key = String::with_capacity(obj.len() + 1 + prop.len());
+                key.push_str(obj);
+                key.push('.');
+                key.push_str(prop);
+                self.util_imports.get(key.as_str())
+            }
+            _ => None,
+        }
+        .cloned()
+    }
+
+    /// Register what the package imported whole as `local` gives: its
+    /// components, style functions, `styled` and `Global` as members
+    fn import_whole(&mut self, local: &str) {
+        for kind in ExportVariableKind::iter() {
+            self.imports.insert(format!("{local}.{kind}"), kind);
+        }
+        for (name, kind) in [
+            ("css", UtilType::Css),
+            ("globalCss", UtilType::GlobalCss),
+            ("keyframes", UtilType::Keyframes),
+            ("createGlobalStyle", UtilType::GlobalCssComponent),
+        ] {
+            self.util_imports
+                .insert(format!("{local}.{name}"), Rc::new(kind));
+        }
+        self.styled_imports.insert(format!("{local}.styled"));
+        self.global_style_components
+            .insert(format!("{local}.Global"));
+    }
+
+    /// `node` with a `styled` read as a member of the package imported whole
+    /// (`Devup.styled.div`) written as a binding of the same text, which the
+    /// extraction of `styled` reads like the named import
+    fn plain_styled(&self, node: &mut Expression<'a>) {
+        if let Expression::StaticMemberExpression(member) = unwrap_syntax_only(node)
+            && member.property.name == "styled"
+            && let Expression::Identifier(object) = &member.object
+        {
+            let name = format!("{}.styled", object.name);
+            if self.styled_imports.contains(&name) {
+                *node = Expression::new_identifier(
+                    SPAN,
+                    Str::from_in(name.as_str(), self.ast.allocator()),
+                    &self.ast,
+                );
+            }
+            return;
+        }
+        match unwrap_syntax_only_mut(node) {
+            Expression::StaticMemberExpression(member) => self.plain_styled(&mut member.object),
+            Expression::CallExpression(call) => self.plain_styled(&mut call.callee),
+            _ => {}
+        }
+    }
+
+    /// Report where `program` still reads what the build compiled away: its
+    /// import is gone, so that code would throw at runtime
+    fn report_compiled_reads(&mut self, program: &Program<'a>) {
+        let mut reads = CompiledReads {
+            names: &self.compiled_names,
+            scoping: None,
+            found: Vec::new(),
+        };
+        oxc_ast_visit::Visit::visit_program(&mut reads, program);
+        if reads.found.is_empty() {
+            return;
+        }
+        // A binding the code declares may share the name
+        let scoping = oxc_semantic::SemanticBuilder::new()
+            .build(program)
+            .semantic
+            .into_scoping();
+        let mut reads = CompiledReads {
+            names: &self.compiled_names,
+            scoping: Some(&scoping),
+            found: Vec::new(),
+        };
+        oxc_ast_visit::Visit::visit_program(&mut reads, program);
+        for (offset, name) in reads.found {
+            if !self.errors.iter().any(|(at, _)| *at == offset) {
+                self.errors.push((
+                    offset,
+                    format!(
+                        "`{name}` is read at runtime, where it does not exist: the build compiles it only where it is called or rendered"
+                    ),
+                ));
+            }
+        }
+    }
+
+    /// Whether `program` imports a style function whose result it may bind:
+    /// `css()` gives a class, `keyframes()` a name
+    fn binds_style_results(&self, program: &Program<'a>) -> bool {
+        program.body.iter().any(|statement| {
+            matches!(statement, Statement::ImportDeclaration(import)
+            if (import.source.value == self.package
+                || import.source.value == self.compat_package.as_str())
+                && import.specifiers.iter().flatten().any(|specifier| match specifier {
+                    ImportSpecifier(specifier) => {
+                        matches!(specifier.imported.name().as_str(), "css" | "keyframes")
+                    }
+                    _ => true,
+                }))
+        })
     }
 
     /// Put the spreads of `props` that may change when read again, and the
@@ -883,17 +1041,49 @@ impl<'a> VisitMut<'a> for DevupVisitor<'a> {
                 init: Some(Expression::Identifier(ident)),
                 ..
             } = v
-                && let Some(css_import_key) = self.util_imports.get(ident.name.as_str())
                 && let Some(name) = id.get_binding_identifier().map(|id| id.name.to_string())
             {
-                self.util_imports.insert(name, css_import_key.clone());
+                let original = ident.name.as_str();
+                if let Some(util) = self.util_imports.get(original).cloned() {
+                    self.util_imports.insert(name.clone(), util);
+                } else if self.styled_imports.contains(original) {
+                    self.styled_imports.insert(name.clone());
+                } else if let Some(kind) = self.imports.get(original).cloned() {
+                    self.imports.insert(name.clone(), kind);
+                } else {
+                    continue;
+                }
+                self.compiled_names.insert(name);
             }
         }
         walk_variable_declarators(self, it);
     }
 
     fn visit_program(&mut self, it: &mut Program<'a>) {
+        if self.binds_style_results(it) {
+            self.style_values = crate::style_values::StyleValues::new(
+                oxc_semantic::SemanticBuilder::new()
+                    .build(it)
+                    .semantic
+                    .into_scoping(),
+            );
+        }
         walk_program(self, it);
+        if !self.compiled_names.is_empty() {
+            // Aliases only the calls and elements the build compiled read; at
+            // the top level nothing can shadow what they alias
+            let compiled = &self.compiled_names;
+            it.body.retain_mut(|statement| {
+                let Statement::VariableDeclaration(declaration) = statement else {
+                    return true;
+                };
+                declaration
+                    .declarations
+                    .retain(|declarator| !is_alias(declarator, compiled));
+                !declaration.declarations.is_empty()
+            });
+            self.report_compiled_reads(it);
+        }
         if !self.styles.is_empty() {
             for css_file in self.css_files.iter().rev() {
                 it.body.insert(
@@ -927,6 +1117,13 @@ impl<'a> VisitMut<'a> for DevupVisitor<'a> {
         }
     }
     fn visit_expression(&mut self, it: &mut Expression<'a>) {
+        if !self.styled_imports.is_empty() {
+            match it {
+                Expression::CallExpression(call) => self.plain_styled(&mut call.callee),
+                Expression::TaggedTemplateExpression(tag) => self.plain_styled(&mut tag.tag),
+                _ => {}
+            }
+        }
         // Emotion's `styled(tag, options)` is called for a component, so its second
         // argument holds options rather than the rules of Devup UI's two-argument form
         let factory = match it {
@@ -990,6 +1187,7 @@ impl<'a> VisitMut<'a> for DevupVisitor<'a> {
             };
 
             if is_styled {
+                self.style_values.read_in(&self.ast, it);
                 if let Expression::CallExpression(call) = &*it {
                     self.unknown_arguments("styled", &call.arguments);
                     self.changed_arguments("styled", &call.arguments);
@@ -1405,24 +1603,14 @@ impl<'a> VisitMut<'a> for DevupVisitor<'a> {
         }
 
         if let Expression::CallExpression(call) = it {
-            let util_type = if let Expression::Identifier(ident) = &call.callee {
-                self.util_imports.get(ident.name.as_str())
-            } else if let Expression::StaticMemberExpression(member) = &call.callee
-                && let Expression::Identifier(ident) = &member.object
-                && !self.util_imports.is_empty()
-            {
-                let obj = ident.name.as_str();
-                let prop = member.property.name.as_str();
-                let mut key = String::with_capacity(obj.len() + 1 + prop.len());
-                key.push_str(obj);
-                key.push('.');
-                key.push_str(prop);
-                self.util_imports.get(key.as_str())
-            } else {
-                None
-            };
-
-            if let Some(util_type) = util_type.cloned() {
+            if let Some(util_type) = self.util_type(&call.callee) {
+                for argument in &mut call.arguments {
+                    let expression = match argument {
+                        Argument::SpreadElement(spread) => &mut spread.argument,
+                        argument => argument.to_expression_mut(),
+                    };
+                    self.style_values.read_in(&self.ast, expression);
+                }
                 let offset = call.span.start;
                 let is_css = matches!(util_type.as_ref(), UtilType::Css);
                 if is_css {
@@ -1622,9 +1810,9 @@ impl<'a> VisitMut<'a> for DevupVisitor<'a> {
                 }
             }
         } else if let Expression::TaggedTemplateExpression(tag) = it
-            && let Expression::Identifier(ident) = &tag.tag
-            && let Some(css_type) = self.util_imports.get(ident.name.as_str())
+            && let Some(css_type) = self.util_type(&tag.tag)
         {
+            self.style_values.read_in_text(&self.ast, &mut tag.quasi);
             let r = css_type.as_ref();
             let api = match r {
                 UtilType::Css => "css",
@@ -1967,7 +2155,29 @@ impl<'a> VisitMut<'a> for DevupVisitor<'a> {
             }
         }
 
+        let style_result = match &it.init {
+            Some(Expression::CallExpression(call)) => self.util_type(&call.callee),
+            Some(Expression::TaggedTemplateExpression(tag)) => self.util_type(&tag.tag),
+            _ => None,
+        }
+        .filter(|util| matches!(util.as_ref(), UtilType::Css | UtilType::Keyframes))
+        .and_then(|util| Some((util, self.style_values.constant(&it.id)?)));
+
         walk_variable_declarator(self, it);
+
+        if let Some((util, symbol)) = style_result
+            && let Some(Expression::StringLiteral(value)) = &it.init
+        {
+            let value = value.value.to_string();
+            self.style_values.insert(
+                symbol,
+                if matches!(util.as_ref(), UtilType::Css) {
+                    crate::style_values::StyleValue::Class(value)
+                } else {
+                    crate::style_values::StyleValue::Keyframes(value)
+                },
+            );
+        }
 
         // Phase 4c: Check for destructuring of stylex.create()
         if self.stylex_pending_create.is_some() && it.id.get_binding_identifier().is_none() {
@@ -2043,58 +2253,28 @@ impl<'a> VisitMut<'a> for DevupVisitor<'a> {
                 match &specifiers[i] {
                     ImportSpecifier(import) => {
                         let imported_str = import.imported.to_string();
+                        let local = import.local.to_string();
                         if let Ok(kind) = imported_str.parse::<ExportVariableKind>() {
-                            self.imports.insert(import.local.to_string(), kind);
-                            specifiers.remove(i);
+                            self.imports.insert(local.clone(), kind);
                         } else if let Some(kind) = UtilType::from_str_opt(&imported_str) {
-                            self.util_imports
-                                .insert(import.local.to_string(), Rc::new(kind));
-                            specifiers.remove(i);
+                            self.util_imports.insert(local.clone(), Rc::new(kind));
                         } else if imported_str == "styled" {
-                            self.styled_imports.insert(import.local.to_string());
-                            specifiers.remove(i);
-                        } else if imported_str == "Global" {
-                            self.global_style_components
-                                .insert(import.local.to_string());
-                            specifiers.remove(i);
+                            self.styled_imports.insert(local.clone());
+                        } else {
+                            // `Global` stays, rendering nothing, so its binding does too
+                            if imported_str == "Global" {
+                                self.global_style_components.insert(local);
+                            }
+                            continue;
                         }
+                        self.compiled_names.insert(local);
+                        specifiers.remove(i);
                     }
-                    ImportDeclarationSpecifier::ImportDefaultSpecifier(
-                        import_default_specifier,
-                    ) => {
-                        for kind in ExportVariableKind::iter() {
-                            self.imports.insert(
-                                format!("{}.{}", import_default_specifier.local, kind),
-                                kind,
-                            );
-                        }
-                        self.util_imports.insert(
-                            format!("{}.{}", import_default_specifier.local, "css"),
-                            Rc::new(UtilType::Css),
-                        );
-
-                        self.util_imports.insert(
-                            format!("{}.{}", import_default_specifier.local, "globalCss"),
-                            Rc::new(UtilType::GlobalCss),
-                        );
+                    ImportDeclarationSpecifier::ImportDefaultSpecifier(specifier) => {
+                        self.import_whole(&specifier.local.name);
                     }
-                    ImportDeclarationSpecifier::ImportNamespaceSpecifier(
-                        import_namespace_specifier,
-                    ) => {
-                        for kind in ExportVariableKind::iter() {
-                            self.imports.insert(
-                                format!("{}.{}", import_namespace_specifier.local, kind),
-                                kind,
-                            );
-                        }
-                        self.util_imports.insert(
-                            format!("{}.{}", import_namespace_specifier.local, "css"),
-                            Rc::new(UtilType::Css),
-                        );
-                        self.util_imports.insert(
-                            format!("{}.{}", import_namespace_specifier.local, "globalCss"),
-                            Rc::new(UtilType::GlobalCss),
-                        );
+                    ImportDeclarationSpecifier::ImportNamespaceSpecifier(specifier) => {
+                        self.import_whole(&specifier.local.name);
                     }
                 }
             }
@@ -2131,10 +2311,15 @@ impl<'a> VisitMut<'a> for DevupVisitor<'a> {
         // Lift the rules out and strip every attribute, leaving a component that
         // renders nothing — the same shape `createGlobalStyle` collapses to.
         if let Some(name) = match &elem.opening_element.name {
-            JSXElementName::Identifier(id) => Some(id.name.as_str()),
-            JSXElementName::IdentifierReference(id) => Some(id.name.as_str()),
+            JSXElementName::Identifier(id) => Some(Cow::Borrowed(id.name.as_str())),
+            JSXElementName::IdentifierReference(id) => Some(Cow::Borrowed(id.name.as_str())),
+            JSXElementName::MemberExpression(member)
+                if !self.global_style_components.is_empty() =>
+            {
+                Some(Cow::Owned(member.to_string()))
+            }
             _ => None,
-        } && self.global_style_components.contains(name)
+        } && self.global_style_components.contains(name.as_ref())
         {
             for i in (0..elem.opening_element.attributes.len()).rev() {
                 let Attribute(attr) = &mut elem.opening_element.attributes[i] else {
@@ -2146,13 +2331,14 @@ impl<'a> VisitMut<'a> for DevupVisitor<'a> {
                     && let Some(expression) = container.expression.as_expression_mut()
                 {
                     let offset = expression.span().start;
+                    self.style_values.read_in(&self.ast, expression);
                     let GlobalExtractResult {
                         styles,
                         style_order,
                     } = extract_global_style_from_expression(&self.ast, expression, &self.filename);
                     if let Some(value) = fixed_value(&styles) {
                         self.errors
-                            .push((offset, element_error(name, &value, RUNTIME_VALUE)));
+                            .push((offset, element_error(&name, &value, RUNTIME_VALUE)));
                     }
                     let style_order = style_order.unwrap_or(0);
                     self.styles.extend(
@@ -2233,6 +2419,12 @@ impl<'a> VisitMut<'a> for DevupVisitor<'a> {
                                     style_vars = Some(expression.clone_in(self.ast.allocator()));
                                 }
                             } else if let Some(at) = &mut attr.value {
+                                if let JSXAttributeValue::ExpressionContainer(container) = at
+                                    && let Some(expression) =
+                                        container.expression.as_expression_mut()
+                                {
+                                    self.style_values.read_in(&self.ast, expression);
+                                }
                                 let ExtractResult { styles, tag, .. } =
                                     extract_style_from_jsx(&self.ast, &disassembled, at);
                                 props_styles.extend(styles.into_iter().rev());
@@ -2242,6 +2434,7 @@ impl<'a> VisitMut<'a> for DevupVisitor<'a> {
                         }
                     }
                 } else if let JSXAttributeItem::SpreadAttribute(spread) = &mut attr {
+                    self.style_values.read_in(&self.ast, &mut spread.argument);
                     // A later attribute wins over what the spread gives, and the
                     // spread over earlier ones, as props are assigned in order
                     if let Expression::ObjectExpression(object) =

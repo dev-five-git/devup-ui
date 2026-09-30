@@ -1,0 +1,145 @@
+---
+source: libs/extractor/src/lib.rs
+expression: "ToBTreeSet::from(output)"
+---
+ToBTreeSet {
+    styles: {
+        Static(
+            ExtractStaticStyle {
+                property: "animation",
+                value: "a-a 1s",
+                level: 0,
+                selector: None,
+                style_order: None,
+                layer: None,
+            },
+        ),
+        Static(
+            ExtractStaticStyle {
+                property: "animation",
+                value: "a-a 4s",
+                level: 0,
+                selector: None,
+                style_order: None,
+                layer: None,
+            },
+        ),
+        Static(
+            ExtractStaticStyle {
+                property: "animation",
+                value: "a-b 2s",
+                level: 0,
+                selector: None,
+                style_order: None,
+                layer: None,
+            },
+        ),
+        Static(
+            ExtractStaticStyle {
+                property: "animation",
+                value: "a-b 3s",
+                level: 0,
+                selector: None,
+                style_order: None,
+                layer: None,
+            },
+        ),
+        Static(
+            ExtractStaticStyle {
+                property: "animation",
+                value: "a-b 5s",
+                level: 0,
+                selector: Some(
+                    Global(
+                        "body",
+                        "test.tsx",
+                    ),
+                ),
+                style_order: Some(
+                    0,
+                ),
+                layer: None,
+            },
+        ),
+        Static(
+            ExtractStaticStyle {
+                property: "animation-name",
+                value: "a-a",
+                level: 0,
+                selector: None,
+                style_order: None,
+                layer: None,
+            },
+        ),
+        Static(
+            ExtractStaticStyle {
+                property: "animation-name",
+                value: "a-a",
+                level: 0,
+                selector: Some(
+                    Global(
+                        "html",
+                        "test.tsx",
+                    ),
+                ),
+                style_order: Some(
+                    0,
+                ),
+                layer: None,
+            },
+        ),
+        Static(
+            ExtractStaticStyle {
+                property: "margin",
+                value: "4px",
+                level: 0,
+                selector: None,
+                style_order: None,
+                layer: None,
+            },
+        ),
+        Static(
+            ExtractStaticStyle {
+                property: "padding",
+                value: "4px",
+                level: 0,
+                selector: None,
+                style_order: None,
+                layer: None,
+            },
+        ),
+        Keyframes(
+            ExtractKeyframes {
+                keyframes: {
+                    "from": [
+                        ExtractStaticStyle {
+                            property: "left",
+                            value: "0",
+                            level: 0,
+                            selector: None,
+                            style_order: None,
+                            layer: None,
+                        },
+                    ],
+                },
+            },
+        ),
+        Keyframes(
+            ExtractKeyframes {
+                keyframes: {
+                    "from": [
+                        ExtractStaticStyle {
+                            property: "opacity",
+                            value: "0",
+                            level: 0,
+                            selector: None,
+                            style_order: None,
+                            layer: None,
+                        },
+                    ],
+                },
+            },
+        ),
+    },
+    code: "import \"@devup-ui/react/devup-ui-0.css\";\nimport { Global } from \"@devup-ui/react/compat\";\nconst fadeIn = \"a-a\";\nconst slide = \"a-b\";\nconst card = \"a-c\";\nexport const a = \"a-d a-e\";\nexport const b = \"a-c a-f\";\nexport const c = \"a-g\";\nexport const d = <div className=\"a-d a-h\" />;\nexport const E = ({ style, className, ...rest }) => <div {...rest} className={[\"a-i\", className].filter(Boolean).join(\" \")} style={style} />;\n;\nexport const g = <Global />;\n",
+}

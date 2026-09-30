@@ -389,9 +389,11 @@ pub fn extract_style_from_expression<'a>(
         {
             let mut props = vec![];
             for p in &mut obj.properties {
-                if let ObjectPropertyKind::ObjectProperty(o) = p
-                    && let Some(key_name) = o.key.name()
-                {
+                if let ObjectPropertyKind::ObjectProperty(o) = p {
+                    let Some(key_name) = get_string_by_property_key(&o.key) else {
+                        props.push(unreadable_key(&o.key, false));
+                        continue;
+                    };
                     for part in split_selector_list(key_name.trim()) {
                         if let Some(child) = nest_selectors_key(selector.as_ref(), part) {
                             props.extend(
