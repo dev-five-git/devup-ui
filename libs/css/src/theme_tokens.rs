@@ -78,8 +78,10 @@ pub fn is_responsive_theme_token(value: &str) -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use serial_test::serial;
 
     #[test]
+    #[serial]
     fn test_get_responsive_theme_token() {
         let mut length = BTreeMap::new();
         length.insert("containerX".to_string(), vec![0, 2]);
@@ -94,6 +96,7 @@ mod tests {
     }
 
     #[test]
+    #[serial]
     fn test_is_responsive_theme_token() {
         let mut length = BTreeMap::new();
         length.insert("containerX".to_string(), vec![0, 2]);
@@ -111,6 +114,7 @@ mod tests {
     }
 
     #[test]
+    #[serial]
     fn test_typography_keys() {
         set_typography_keys(vec!["body".to_string(), "title".to_string()]);
         assert_eq!(get_typography_keys(), vec!["body", "title"]);

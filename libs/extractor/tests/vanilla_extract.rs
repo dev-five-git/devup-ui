@@ -3,6 +3,7 @@
 use std::collections::HashMap;
 
 use extractor::{ExtractOption, extract};
+use serial_test::serial;
 
 fn extract_stylesheet(code: &str) -> String {
     let output = extract(
@@ -23,6 +24,7 @@ fn extract_stylesheet(code: &str) -> String {
 // The library build other targets link is a separate copy from the unit-test
 // build; these run every vanilla-extract API through it.
 #[test]
+#[serial]
 fn font_faces_extract_through_the_library() {
     let output = extract_stylesheet(
         r"const body = fontFace({ src: 'local(a)' }, 'Body')
@@ -38,6 +40,7 @@ export const text = style({ fontFamily: body, content: icons })",
 }
 
 #[test]
+#[serial]
 fn an_unreadable_var_declaration_is_reported() {
     let code = "import { createVar } from '@devup-ui/react'\nexport const v = createVar({ syntax: Symbol() })";
     let error = extract(
@@ -58,6 +61,7 @@ fn an_unreadable_var_declaration_is_reported() {
 }
 
 #[test]
+#[serial]
 fn vars_themes_and_layers_extract_through_the_library() {
     let output = extract_stylesheet(
         r"const plain = createVar()

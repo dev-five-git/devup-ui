@@ -1388,6 +1388,7 @@ mod tests {
     use serial_test::serial;
 
     #[rstest]
+    #[serial]
     #[case("1px", "1px")]
     #[case("$var", "var(--var)")]
     #[case("$var $var", "var(--var) var(--var)")]
@@ -1405,6 +1406,7 @@ mod tests {
     }
 
     #[test]
+    #[serial]
     fn test_create_css_sort_test() {
         let mut sheet = StyleSheet::default();
         sheet.add_property("test", "background-color", 1, "red", None, None, None);
@@ -1638,6 +1640,7 @@ mod tests {
     // client compilations) registers the SAME @font-face under multiple file
     // keys. The emitted CSS must contain each distinct @font-face only ONCE.
     #[test]
+    #[serial]
     fn font_faces_deduplicated_across_file_keys() {
         let props = BTreeMap::from([
             ("font-family".to_string(), "Roboto".to_string()),
@@ -1658,6 +1661,7 @@ mod tests {
     // extraction (HMR). It must also drop the file's @import rules, otherwise an
     // @import removed from source lingers until restart.
     #[test]
+    #[serial]
     fn rm_global_css_clears_imports() {
         let mut sheet = StyleSheet::default();
         sheet.add_import("a.tsx", "\"https://example.com/stale.css\"");
@@ -1670,6 +1674,7 @@ mod tests {
         );
     }
     #[test]
+    #[serial]
     fn test_create_css_with_selector_sort_test() {
         let mut sheet = StyleSheet::default();
         sheet.add_property(
@@ -1703,6 +1708,7 @@ mod tests {
         assert_debug_snapshot!(sheet.create_css(None, false).split("*/").nth(1).unwrap());
     }
     #[test]
+    #[serial]
     fn test_create_css_with_basic_sort_test() {
         let mut sheet = StyleSheet::default();
         sheet.add_property("test", "background-color", 1, "red", None, Some(0), None);
@@ -1721,6 +1727,7 @@ mod tests {
     }
 
     #[test]
+    #[serial]
     fn test_create_css_with_selector_and_basic_sort_test() {
         let mut sheet = StyleSheet::default();
         sheet.add_property(
@@ -1743,6 +1750,7 @@ mod tests {
     }
 
     #[test]
+    #[serial]
     fn test_import_css() {
         let sheet = StyleSheet::default();
         assert_debug_snapshot!(
@@ -1755,6 +1763,7 @@ mod tests {
     }
 
     #[test]
+    #[serial]
     fn test_create_css() {
         let mut sheet = StyleSheet::default();
         sheet.add_property("test", "margin", 1, "40px", None, None, None);
@@ -1914,6 +1923,7 @@ mod tests {
     }
 
     #[test]
+    #[serial]
     fn test_reset_global_css() {
         let mut sheet = StyleSheet::default();
         sheet.add_css("test.tsx", "div {display:flex;}");
@@ -1930,6 +1940,7 @@ mod tests {
     }
 
     #[test]
+    #[serial]
     fn test_style_order_create_css() {
         let mut sheet = StyleSheet::default();
         sheet.add_property("test", "margin-left", 0, "40px", None, Some(1), None);
@@ -1958,6 +1969,7 @@ mod tests {
     }
 
     #[test]
+    #[serial]
     fn wrong_breakpoint() {
         let mut sheet = StyleSheet::default();
         sheet.add_property("test", "margin-left", 10, "40px", None, None, None);
@@ -1966,6 +1978,7 @@ mod tests {
     }
 
     #[test]
+    #[serial]
     fn test_selector_with_prefix() {
         let mut sheet = StyleSheet::default();
         sheet.add_property(
@@ -2008,6 +2021,7 @@ mod tests {
     }
 
     #[test]
+    #[serial]
     fn test_theme_selector() {
         let mut sheet = StyleSheet::default();
         sheet.add_property(
@@ -2150,6 +2164,7 @@ mod tests {
     }
 
     #[test]
+    #[serial]
     fn test_print_selector() {
         let mut sheet = StyleSheet::default();
         sheet.add_property(
@@ -2253,6 +2268,7 @@ mod tests {
     }
 
     #[test]
+    #[serial]
     fn test_screen_selector() {
         let mut sheet = StyleSheet::default();
         sheet.add_property(
@@ -2269,6 +2285,7 @@ mod tests {
     }
 
     #[test]
+    #[serial]
     fn test_motion_reduce_selector() {
         let mut sheet = StyleSheet::default();
         sheet.add_property(
@@ -2285,6 +2302,7 @@ mod tests {
     }
 
     #[test]
+    #[serial]
     fn test_all_media_selector() {
         let mut sheet = StyleSheet::default();
         sheet.add_property(
@@ -2301,6 +2319,7 @@ mod tests {
     }
 
     #[test]
+    #[serial]
     fn test_selector_with_query() {
         let mut sheet = StyleSheet::default();
         sheet.add_property(
@@ -2338,6 +2357,7 @@ mod tests {
     }
 
     #[test]
+    #[serial]
     fn test_selector_with_supports() {
         let mut sheet = StyleSheet::default();
         sheet.add_property(
@@ -2360,6 +2380,7 @@ mod tests {
     }
 
     #[test]
+    #[serial]
     fn test_selector_with_container() {
         let mut sheet = StyleSheet::default();
         sheet.add_property(
@@ -2382,6 +2403,7 @@ mod tests {
     }
 
     #[test]
+    #[serial]
     fn test_deserialize() {
         {
             let sheet: StyleSheet = serde_json::from_str(
@@ -2456,6 +2478,7 @@ mod tests {
     }
 
     #[test]
+    #[serial]
     fn test_create_css_with_global_selector() {
         let mut sheet = StyleSheet::default();
         sheet.add_property(
@@ -2631,6 +2654,7 @@ mod tests {
     }
 
     #[test]
+    #[serial]
     fn test_create_css_with_imports() {
         {
             let mut sheet = StyleSheet::default();
@@ -2661,6 +2685,7 @@ mod tests {
     }
 
     #[test]
+    #[serial]
     fn test_get_theme_interface() {
         let sheet = StyleSheet::default();
         assert_eq!(
@@ -2803,6 +2828,7 @@ mod tests {
     }
 
     #[test]
+    #[serial]
     fn test_keyframes() {
         let mut sheet = StyleSheet::default();
         let mut keyframes: BTreeMap<String, Vec<(String, String)>> = BTreeMap::new();
@@ -2840,6 +2866,7 @@ mod tests {
     }
 
     #[test]
+    #[serial]
     fn test_font_face() {
         let mut sheet = StyleSheet::default();
         let mut font_face_props = BTreeMap::new();
@@ -2883,6 +2910,7 @@ mod tests {
     }
 
     #[test]
+    #[serial]
     fn test_update_styles_with_typography() {
         use extractor::extract_style::extract_style_value::ExtractStyleValue;
 
@@ -2896,6 +2924,7 @@ mod tests {
     }
 
     #[test]
+    #[serial]
     fn test_global_styles_with_custom_layer() {
         let mut sheet = StyleSheet::default();
         // Add global style with layer
@@ -2948,6 +2977,7 @@ mod tests {
     }
 
     #[test]
+    #[serial]
     fn test_custom_layer_keeps_selector_order() {
         let mut sheet = StyleSheet::default();
         for (selector, value) in [("a:active", "blue"), ("a:hover", "red"), ("a", "black")] {
@@ -2973,6 +3003,7 @@ mod tests {
     }
 
     #[test]
+    #[serial]
     fn test_at_rules_with_breakpoints() {
         let mut sheet = StyleSheet::default();
         // Add @supports with breakpoint (level 1)
@@ -2998,6 +3029,7 @@ mod tests {
     }
 
     #[test]
+    #[serial]
     fn test_container_with_breakpoints() {
         let mut sheet = StyleSheet::default();
         // Add @container with breakpoint (level 1)
@@ -3023,6 +3055,7 @@ mod tests {
     }
 
     #[test]
+    #[serial]
     fn test_theme_layer_in_css() {
         let mut sheet = StyleSheet::default();
         let mut theme = Theme::default();
@@ -3041,6 +3074,7 @@ mod tests {
     }
 
     #[test]
+    #[serial]
     fn test_layer_with_breakpoints() {
         let mut sheet = StyleSheet::default();
         // Add @layer with breakpoint (level 1)
@@ -3066,6 +3100,7 @@ mod tests {
     }
 
     #[test]
+    #[serial]
     fn test_stylesheet_css_struct() {
         let css_entry = StyleSheetCss {
             css: "div{display:flex}".to_string(),
@@ -3077,6 +3112,7 @@ mod tests {
     }
 
     #[test]
+    #[serial]
     fn test_stylesheet_property_ord_no_selectors() {
         // Both sides without selectors: branches on property then value.
         let make = |property: &str, value: &str| StyleSheetProperty {
@@ -3094,6 +3130,7 @@ mod tests {
     }
 
     #[test]
+    #[serial]
     fn test_stylesheet_property_ord_with_selectors() {
         let make =
             |selector: Option<StyleSelector>, property: &str, value: &str| StyleSheetProperty {
@@ -3120,6 +3157,7 @@ mod tests {
     }
 
     #[test]
+    #[serial]
     fn test_global_selector_group() {
         assert_eq!(global_selector_group("body"), (false, 0));
         assert_eq!(global_selector_group("a:hover"), (true, 0));
@@ -3128,6 +3166,7 @@ mod tests {
     }
 
     #[test]
+    #[serial]
     fn test_existing_collection_buckets_are_reused() {
         let mut sheet = StyleSheet::default();
         assert!(sheet.add_property("a", "color", 0, "red", None, None, Some("test.tsx")));
@@ -3151,6 +3190,7 @@ mod tests {
     }
 
     #[test]
+    #[serial]
     fn test_compute_hoisted_atoms_skips_base_style_order() {
         let mut sheet = StyleSheet::default();
         sheet.add_property("base", "color", 0, "red", None, Some(0), Some("test.tsx"));
@@ -3159,6 +3199,7 @@ mod tests {
     }
 
     #[test]
+    #[serial]
     fn test_keyframes_multi_property() {
         let mut sheet = StyleSheet::default();
         let mut keyframes: BTreeMap<String, Vec<(String, String)>> = BTreeMap::new();
@@ -3270,6 +3311,7 @@ mod tests {
     }
 
     #[test]
+    #[serial]
     fn test_important_in_css_via_add_property() {
         // Verify that !important in the value is preserved in the final CSS output
         let mut sheet = StyleSheet::default();

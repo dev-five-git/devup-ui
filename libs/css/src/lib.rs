@@ -1343,6 +1343,7 @@ mod tests {
     }
 
     #[test]
+    #[serial]
     fn test_disassemble_property_size_hint() {
         // Mapped arm: the hint comes straight from the borrowed slice iterator.
         let mapped = disassemble_property("bg");
