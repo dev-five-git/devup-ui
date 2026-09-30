@@ -628,6 +628,14 @@ class Values {
     private readonly givesStyleName: (callee: TSESTree.Node) => boolean,
   ) {}
 
+  /** Whether `init` is a call of `css()` or `keyframes()`, whose result the build writes in place of a `const` holding it in any scope */
+  private holdsStyleName(init: TSESTree.Expression): boolean {
+    return init.type === AST_NODE_TYPES.TaggedTemplateExpression
+      ? this.givesStyleName(init.tag)
+      : init.type === AST_NODE_TYPES.CallExpression &&
+          this.givesStyleName(init.callee)
+  }
+
   /** Whether reading member `name` of `object` gives the same on every engine and page */
   private exactMember(
     object: TSESTree.Node,
@@ -766,9 +774,12 @@ class Values {
     if (
       definition.type !== 'Variable' ||
       definition.parent.kind !== 'const' ||
-      !['module', 'global'].includes(variable.scope.type) ||
       definition.node.id.type !== AST_NODE_TYPES.Identifier ||
-      !definition.node.init
+      !definition.node.init ||
+      !(
+        ['module', 'global'].includes(variable.scope.type) ||
+        this.holdsStyleName(definition.node.init)
+      )
     )
       return false
     seen.add(name)

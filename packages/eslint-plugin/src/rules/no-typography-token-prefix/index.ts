@@ -6,6 +6,7 @@ import {
 
 import { ImportStorage } from '../../utils/import-storage'
 import { propertyKeyName } from '../../utils/property-key-name'
+import { styleValueRoot } from '../../utils/style-position'
 
 const createRule = ESLintUtils.RuleCreator(
   (name) =>
@@ -53,34 +54,16 @@ export const noTypographyTokenPrefix = createRule({
   },
   create(context) {
     const importStorage = new ImportStorage()
-    let devupContext:
-      TSESTree.CallExpression | TSESTree.JSXOpeningElement | null = null
     return {
       ImportDeclaration(node) {
         importStorage.addImportByDeclaration(node)
       },
-      CallExpression(node) {
-        if (!devupContext && importStorage.checkContextType(node) === 'UTIL') {
-          devupContext = node
-        }
-      },
-      'CallExpression:exit'(node) {
-        if (devupContext === node) devupContext = null
-      },
-      JSXOpeningElement(node) {
-        if (importStorage.checkContextType(node) === 'COMPONENT') {
-          devupContext = node
-        }
-      },
-      'JSXOpeningElement:exit'(node) {
-        if (devupContext === node) devupContext = null
-      },
       Literal(node) {
         if (
-          !devupContext ||
           typeof node.value !== 'string' ||
           !node.value.startsWith('$') ||
-          !isTypographyValue(node)
+          !isTypographyValue(node) ||
+          !styleValueRoot(node, importStorage)
         )
           return
         const name = node.value.slice(1)

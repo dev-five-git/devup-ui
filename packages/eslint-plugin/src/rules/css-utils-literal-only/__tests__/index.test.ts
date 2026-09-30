@@ -136,11 +136,35 @@ describe.each(['css' /* 'globalCss', 'keyframes'*/])(
           filename: 'src/app/page.tsx',
         },
         {
+          code: `import { css, keyframes } from "@devup-ui/react";\nexport function C() { const fade = keyframes({ from: { opacity: 0 } }); const spin = keyframes\`from { rotate: 0deg; }\`; return css({ animationName: fade, animation: \`\${spin} 1s\` }); }`,
+          filename: 'src/app/page.tsx',
+        },
+        {
           code: `import * as stylex from "@stylexjs/stylex";\nimport sx, { create, defineVars as vars, props } from "@stylexjs/stylex";\nconst colors = stylex.defineVars({ c: 'red' });\nconst named = vars({ c: 'blue' });\nconst fade = stylex.keyframes({ from: { opacity: 0 } });\nconst styles = stylex.create({ a: { color: colors.c, animationName: fade, width: stylex.firstThatWorks('1px', 'auto') }, b: (w) => ({ width: w }) });\ncreate({ a: { color: named.c } });\nsx.create({ a: { color: 'red' } });\nstylex.createTheme(colors, { c: 'green' });\nstylex.props(styles.a, on);\nprops(on);`,
           filename: 'src/app/page.tsx',
         },
       ],
       invalid: [
+        ...[
+          [
+            `export function C() { let fade = keyframes({ from: { opacity: 0 } }); return css({ animationName: fade }); }`,
+            1,
+          ],
+          [
+            `export function C(v) { const fade = keyframes({ from: { opacity: v } }); return css({ animationName: fade }); }`,
+            2,
+          ],
+          [
+            `export function C() { const fade = other({ from: { opacity: 0 } }); return css({ animationName: fade }); }`,
+            1,
+          ],
+        ].map(([code, count]) => ({
+          code: `import { css, keyframes } from "@devup-ui/react";\n${code}`,
+          filename: 'src/app/page.tsx',
+          errors: Array.from({ length: Number(count) }, () => ({
+            messageId: 'cssUtilsLiteralOnly' as const,
+          })),
+        })),
         ...[
           [`let fade = keyframes({ from: { opacity: 0 } });`, 1],
           [`const fade = keyframes({ from: { opacity: v } });`, 2],

@@ -6,6 +6,7 @@ import {
 
 import { ImportStorage } from '../../utils/import-storage'
 import { propertyKeyName } from '../../utils/property-key-name'
+import { styleValueRoot } from '../../utils/style-position'
 
 const createRule = ESLintUtils.RuleCreator(
   (name) =>
@@ -47,8 +48,6 @@ export const preferMediaShorthand = createRule({
   },
   create(context) {
     const importStorage = new ImportStorage()
-    let devupContext:
-      TSESTree.CallExpression | TSESTree.JSXOpeningElement | null = null
 
     function checkMediaRecord(
       owner: TSESTree.Property | TSESTree.JSXAttribute,
@@ -83,41 +82,20 @@ export const preferMediaShorthand = createRule({
       ImportDeclaration(node) {
         importStorage.addImportByDeclaration(node)
       },
-      CallExpression(node) {
-        if (
-          !devupContext &&
-          importStorage.checkContextType(node) === 'UTIL' &&
-          node.arguments.length === 1 &&
-          node.arguments[0].type === AST_NODE_TYPES.ObjectExpression
-        ) {
-          devupContext = node
-        }
-      },
-      'CallExpression:exit'(node) {
-        if (devupContext === node) devupContext = null
-      },
-      JSXOpeningElement(node) {
-        if (importStorage.checkContextType(node) === 'COMPONENT') {
-          devupContext = node
-        }
-      },
-      'JSXOpeningElement:exit'(node) {
-        if (devupContext === node) devupContext = null
-      },
       JSXAttribute(node) {
         if (
-          devupContext &&
           node.name.type === AST_NODE_TYPES.JSXIdentifier &&
           node.name.name === '_media' &&
-          node.value?.type === AST_NODE_TYPES.JSXExpressionContainer
+          node.value?.type === AST_NODE_TYPES.JSXExpressionContainer &&
+          styleValueRoot(node.value.expression, importStorage)
         ) {
           checkMediaRecord(node, node.value.expression)
         }
       },
       Property(node) {
-        if (!devupContext) return
         const name = propertyKeyName(node)
-        if (name === undefined) return
+        if (name === undefined || !styleValueRoot(node.value, importStorage))
+          return
         if (name === '_media') {
           checkMediaRecord(node, node.value)
           return

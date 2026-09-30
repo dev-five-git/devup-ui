@@ -29,6 +29,13 @@ describe('prefer-media-shorthand rule', () => {
         code: `import { Box } from "other";\n<Box _media={{ print: { p: 1 } }} />`,
       },
       { code: `css({ '@media print': { color: 'red' } })` },
+      {
+        code: `${imports}<Box data-config={{ '@media print': { color: 'red' } }} />`,
+      },
+      { code: `${imports}<Box props={{ _media: { print: { p: 1 } } }} />` },
+      {
+        code: `${imports}<Box data-media={{ _media: { print: { p: 1 } } }} />`,
+      },
     ],
     invalid: [
       {

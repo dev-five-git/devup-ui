@@ -1,0 +1,7 @@
+{
+  "changes": {
+    "packages/eslint-plugin/package.json": "Patch"
+  },
+  "note": "no-duplicate-value, no-useless-responsive, no-useless-tailing-nulls, no-typography-token-prefix and prefer-media-shorthand only report and fix values the build reads as styles: style props of Box, Flex and the other style components and the arguments of css, globalCss and keyframes, through style objects, responsive arrays, conditions and spreads. Arrays and keys in props the component passes through (data-*, aria-*, event handlers, HTML attributes, props, styleVars), in arguments of other functions and under imports/fontFaces/params are left alone, where autofix used to rewrite them; styles of a component nested in another's prop are checked too. css-utils-literal-only reads a css() or keyframes() result held in a const of any scope as static, as the build does",
+  "date": "2026-09-30T00:00:00.000Z"
+}

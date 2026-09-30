@@ -6,6 +6,7 @@ import {
 import type { RuleContext } from '@typescript-eslint/utils/ts-eslint'
 
 import { ImportStorage } from '../../utils/import-storage'
+import { styleValueRoot } from '../../utils/style-position'
 
 const createRule = ESLintUtils.RuleCreator(
   (name) =>
@@ -70,38 +71,13 @@ export const noDuplicateValue = createRule({
   },
   create(context) {
     const importStorage = new ImportStorage()
-    let devupContext:
-      TSESTree.CallExpression | TSESTree.JSXOpeningElement | null = null
     return {
       ImportDeclaration(node) {
         importStorage.addImportByDeclaration(node)
       },
-      CallExpression(node) {
-        if (
-          importStorage.checkContextType(node) === 'UTIL' &&
-          node.arguments.length === 1 &&
-          node.arguments[0].type === AST_NODE_TYPES.ObjectExpression
-        ) {
-          devupContext = node
-        }
-      },
-      'CallExpression:exit'(node) {
-        if (devupContext === node) {
-          devupContext = null
-        }
-      },
-      JSXOpeningElement(node) {
-        if (importStorage.checkContextType(node) === 'COMPONENT') {
-          devupContext = node
-        }
-      },
-      'JSXOpeningElement:exit'(node) {
-        if (devupContext === node) {
-          devupContext = null
-        }
-      },
       ArrayExpression(node) {
-        if (devupContext) checkDuplicateValue(node, context)
+        if (styleValueRoot(node, importStorage))
+          checkDuplicateValue(node, context)
       },
     }
   },
