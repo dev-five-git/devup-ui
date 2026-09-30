@@ -10,25 +10,27 @@ use crate::{
     extractor::{
         GlobalExtractResult,
         extract_style_from_expression::{
-            LiteralHandling, at_rule_record_kind, extract_style_from_expression, place_in_layer,
-            unreadable, unreadable_key, yield_typography,
+            LiteralHandling, at_rule_record_kind, extract_style_from_expression, misplaced,
+            place_in_layer, unreadable, unreadable_key, yield_typography,
         },
     },
     utils::{
-        get_str_by_property_key, get_string_by_literal_expression, get_string_by_property_key,
-        unwrap_syntax_only_mut,
+        SELECTOR_NAME, get_str_by_property_key, get_string_by_literal_expression,
+        get_string_by_property_key, unwrap_syntax_only_mut,
     },
 };
 use css::{
     at_rule::{media_shorthand_query, split_at_rule_key},
     disassemble_property,
     optimize_multi_css_value::{check_multi_css_optimize, optimize_multi_css_value, wrap_url},
-    style_selector::{AtRule, AtRuleKind, StyleSelector},
+    style_selector::{AtRule, AtRuleKind, StyleSelector, is_selector_name},
+    utils::to_kebab_case,
 };
 use oxc_ast::{
     ast::{ArrayExpressionElement, Expression, ObjectPropertyKind},
     builder::AstBuilder,
 };
+use oxc_span::GetSpan;
 
 pub fn extract_global_style_from_expression<'a>(
     ast_builder: &AstBuilder<'a>,
@@ -247,8 +249,19 @@ fn collect_global_styles<'a>(
                             };
 
                             let global = StyleSelector::Global(
-                                if let Some(name) = name.strip_prefix("_") {
-                                    StyleSelector::from(name).to_string().replace('&', "*")
+                                if let Some(pseudo) = name.strip_prefix('_') {
+                                    let pseudo = to_kebab_case(pseudo);
+                                    if !is_selector_name(&pseudo) {
+                                        styles.push(misplaced(
+                                            o.key.span().start,
+                                            name,
+                                            SELECTOR_NAME,
+                                        ));
+                                        continue;
+                                    }
+                                    StyleSelector::from(pseudo.as_ref())
+                                        .to_string()
+                                        .replace('&', "*")
                                 } else {
                                     name
                                 },

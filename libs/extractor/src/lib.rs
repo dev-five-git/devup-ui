@@ -69,11 +69,13 @@ pub enum ExtractStyleProp<'a> {
     },
     /// Styles written where the build cannot read them, reported as an error;
     /// `prop` for a computed key among an element's props, which the element
-    /// takes as it is at runtime
+    /// takes as it is at runtime; `requirement` for code that is readable but
+    /// not what the place takes, telling what it must be instead
     Unreadable {
         offset: u32,
         code: String,
         prop: bool,
+        requirement: Option<&'static str>,
     },
 }
 
@@ -113,10 +115,16 @@ impl<'a> ExtractStyleProp<'a> {
                     expression: expression.clone_in(alloc),
                 }
             }
-            ExtractStyleProp::Unreadable { offset, code, prop } => ExtractStyleProp::Unreadable {
+            ExtractStyleProp::Unreadable {
+                offset,
+                code,
+                prop,
+                requirement,
+            } => ExtractStyleProp::Unreadable {
                 offset: *offset,
                 code: code.clone(),
                 prop: *prop,
+                requirement: *requirement,
             },
         }
     }
@@ -20648,8 +20656,66 @@ const logical = <Box className={on && 'text-red-500'} />;"
     fn test_raw_selector_key_without_parent() {
         assert_debug_snapshot!(ToBTreeSet::from(extract_tsx(
             r"import { Box } from '@devup-ui/react';
-const e = <Box selectors={{ 'div p': { color: 'red' }, 'a > b, i': { color: 'blue' } }} />;"
+const e = <Box selectors={{ 'div p': { color: 'red' }, 'a > b, > i': { color: 'blue' } }} />;"
         )));
+    }
+
+    /// A selector key naming nothing, or a string that is not CSS text where a
+    /// selector takes styles, would give CSS that selects or declares nothing
+    #[test]
+    #[serial]
+    fn test_selectors_that_select_nothing_are_errors() {
+        let mut errors = vec![];
+        for source in [
+            "import { Box } from '@devup-ui/react';\nconst e = <Box _notASelector={{ color: 'red' }} />;",
+            "import { Box } from '@devup-ui/react';\nconst e = <Box selectors={{ definitelyNotASelector: { color: 'red' } }} />;",
+            "import { Box } from '@devup-ui/react';\nconst e = <Box selectors={{ 'div, i': { color: 'red' } }} />;",
+            "import { Box } from '@devup-ui/react';\nconst e = <Box _hover=\"external-class\" />;",
+            "import { Box } from '@devup-ui/react';\nconst e = <Box _hover={[{ color: 'red' }, 'external-class']} />;",
+            "import { css } from '@devup-ui/react';\nconst c = css({ _hover: { ':nope, _nope': { color: 'red' } } });",
+            "import { css } from '@devup-ui/react';\nconst c = css({ _focus: 'red' });",
+            "import { styled } from '@devup-ui/react';\nconst S = styled.div({ selectors: { nope: { color: 'red' } } });",
+            "import { globalCss } from '@devup-ui/react';\nglobalCss({ _nope: { color: 'red' } });",
+        ] {
+            reset_class_map();
+            reset_file_map();
+            errors.push(
+                extract("test.tsx", source, ExtractOption::default())
+                    .err()
+                    .map(|error| error.to_string())
+                    .unwrap_or_default(),
+            );
+        }
+        let name = |location: &str, api: &str, code: &str| {
+            format!(
+                "test.tsx:2:{location}: {api} cannot use `{code}` at build time: {}",
+                utils::SELECTOR_NAME
+            )
+        };
+        let text = |location: &str, api: &str, code: &str| {
+            format!(
+                "test.tsx:2:{location}: {api} cannot use `{code}` at build time: {}",
+                utils::CSS_TEXT
+            )
+        };
+        assert_eq!(
+            errors,
+            [
+                name("31", "`<Box>`", "_notASelector"),
+                name("29", "`<Box>`", "definitelyNotASelector"),
+                format!(
+                    "{}\n{}",
+                    name("29", "`<Box>`", "div"),
+                    name("29", "`<Box>`", "i")
+                ),
+                text("23", "`<Box>`", "\"external-class\""),
+                text("43", "`<Box>`", "\"external-class\""),
+                name("11", "`css()`", "_nope"),
+                text("11", "`css()`", "\"red\""),
+                name("37", "`styled()`", "nope"),
+                name("1", "`globalCss()`", "_nope"),
+            ]
+        );
     }
 
     #[test]

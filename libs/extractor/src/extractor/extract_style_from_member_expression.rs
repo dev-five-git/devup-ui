@@ -242,6 +242,7 @@ fn runtime_member<'a>(
             offset,
             code: readable_code(&member),
             prop: false,
+            requirement: None,
         },
     }
 }
