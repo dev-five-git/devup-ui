@@ -13,6 +13,7 @@ The build knows:
 - literals, and constants: imports and module-level `const`s
 - what those compute through exact built-ins (`String`, `Number`, `JSON`, string and array methods, `Math.max`, `Math.round`, ... — not `Math.random`, `Math.sin` or `Math.pow`) and through functions this file declares that only compute
 - what StyleX functions give: `defineVars()` variables, `keyframes()` names, `firstThatWorks()`
+- the class a devup-ui `css()` and the name a `keyframes()` give, held in a module-level `const` (`const fade = keyframes({ ... }); css({ animationName: fade })`), also through the package imported whole (`Devup.keyframes`)
 
 The build inlines constants, folds `Math` and runs the file's own functions at build time. It never runs another module's code, so calling an imported function is reported.
 

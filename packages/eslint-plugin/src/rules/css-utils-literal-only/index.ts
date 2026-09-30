@@ -624,6 +624,8 @@ class Values {
     private readonly scopeOf: (node: TSESTree.Node) => Scope,
     /** Whether a name binds a StyleX import, whose functions give what the build reads where they are called */
     private readonly stylex: (name: string) => boolean,
+    /** Whether calling `callee` gives the class of `css()` or the name of `keyframes()`, which the build writes in its place */
+    private readonly givesStyleName: (callee: TSESTree.Node) => boolean,
   ) {}
 
   /** Whether reading member `name` of `object` gives the same on every engine and page */
@@ -694,6 +696,8 @@ class Values {
       }
       case AST_NODE_TYPES.CallExpression:
         return this.isStaticCallee(node, scope, seen) && all(node.arguments)
+      case AST_NODE_TYPES.TaggedTemplateExpression:
+        return this.givesStyleName(node.tag) && all(node.quasi.expressions)
       case AST_NODE_TYPES.Identifier:
         return (
           ['undefined', 'NaN', 'Infinity'].includes(node.name) ||
@@ -712,7 +716,10 @@ class Values {
   ): boolean {
     const callee = call.callee
     const root = rootOf(callee)
-    if (root.type === AST_NODE_TYPES.Identifier && this.stylex(root.name))
+    if (
+      (root.type === AST_NODE_TYPES.Identifier && this.stylex(root.name)) ||
+      this.givesStyleName(callee)
+    )
       return true
     if (callee.type === AST_NODE_TYPES.MemberExpression) {
       const key = memberKey(callee)
@@ -951,7 +958,18 @@ export const cssUtilsLiteralOnly = createRule({
     const isStylex = (name: string) =>
       stylexNamespaces.has(name) || stylexNames.has(name)
     const changes = new Changes(importStorage, scopeOf, isStylex)
-    const values = new Values(changes, scopeOf, isStylex)
+    const givesStyleName = (callee: TSESTree.Node) => {
+      const name =
+        callee.type === AST_NODE_TYPES.Identifier
+          ? importStorage.importedName(callee.name)
+          : callee.type === AST_NODE_TYPES.MemberExpression &&
+              callee.object.type === AST_NODE_TYPES.Identifier &&
+              importStorage.isImportObject(callee.object.name)
+            ? memberKey(callee)
+            : undefined
+      return name === 'css' || name === 'keyframes'
+    }
+    const values = new Values(changes, scopeOf, isStylex, givesStyleName)
     /** The style API reading the code visited, and what it takes */
     let api: {
       node: TSESTree.CallExpression | TSESTree.TaggedTemplateExpression

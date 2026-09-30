@@ -132,11 +132,29 @@ describe.each(['css' /* 'globalCss', 'keyframes'*/])(
           filename: 'src/app/page.tsx',
         })),
         {
+          code: `import { css, keyframes as kf, globalCss } from "@devup-ui/react";\nimport * as Devup from "@devup-ui/react";\nconst fade = kf({ from: { opacity: 0 } });\nconst spin = Devup.keyframes\`from { rotate: 0deg; }\`;\nconst base = css({ color: 'red' });\nconst tagged = css\`color: blue;\`;\ncss({ animationName: fade, animation: \`\${spin} 1s\`, selectors: { [\`.\${base} &\`]: { m: 1 } } });\nglobalCss({ body: { animationName: fade } });\nkf({ from: { opacity: 0 }, to: { content: \`"\${tagged}"\` } });`,
+          filename: 'src/app/page.tsx',
+        },
+        {
           code: `import * as stylex from "@stylexjs/stylex";\nimport sx, { create, defineVars as vars, props } from "@stylexjs/stylex";\nconst colors = stylex.defineVars({ c: 'red' });\nconst named = vars({ c: 'blue' });\nconst fade = stylex.keyframes({ from: { opacity: 0 } });\nconst styles = stylex.create({ a: { color: colors.c, animationName: fade, width: stylex.firstThatWorks('1px', 'auto') }, b: (w) => ({ width: w }) });\ncreate({ a: { color: named.c } });\nsx.create({ a: { color: 'red' } });\nstylex.createTheme(colors, { c: 'green' });\nstylex.props(styles.a, on);\nprops(on);`,
           filename: 'src/app/page.tsx',
         },
       ],
       invalid: [
+        ...[
+          [`let fade = keyframes({ from: { opacity: 0 } });`, 1],
+          [`const fade = keyframes({ from: { opacity: v } });`, 2],
+          [`const fade = keyframes\`from { opacity: \${v}; }\`;`, 2],
+          [`const fade = other({ from: { opacity: 0 } });`, 1],
+          [`const fade = Other.keyframes({ from: { opacity: 0 } });`, 1],
+          [`const fade = other\`from { opacity: 0; }\`;`, 1],
+        ].map(([declaration, count]) => ({
+          code: `import { css, keyframes } from "@devup-ui/react";\nimport * as Other from "other";\nlet v = 1;\n${declaration}\ncss({ animationName: fade });`,
+          filename: 'src/app/page.tsx',
+          errors: Array.from({ length: Number(count) }, () => ({
+            messageId: 'cssUtilsLiteralOnly' as const,
+          })),
+        })),
         {
           code: `import { ${code} } from "@devup-ui/react";\n${code}({w: v})`,
           filename: 'src/app/layout.tsx',
