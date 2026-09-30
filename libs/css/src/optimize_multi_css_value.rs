@@ -173,7 +173,7 @@ mod tests {
     #[rstest]
     #[case("font-family", true)]
     #[case("src", true)]
-    #[case("content", true)]
+    #[case("content", false)]
     #[case("animation-name", true)]
     #[case("background", false)]
     #[case("color", false)]

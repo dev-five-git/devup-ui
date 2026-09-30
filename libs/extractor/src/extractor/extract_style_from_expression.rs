@@ -10,9 +10,9 @@ use crate::{
         ExtractResult, extract_style_from_member_expression::extract_style_from_member_expression,
     },
     utils::{
-        expression_to_code, get_number_by_literal_expression, get_str_by_property_key,
-        get_string_by_literal_expression, get_string_by_property_key, is_same_expression,
-        readable_code, unwrap_syntax_only, unwrap_syntax_only_mut,
+        CSS_TEXT, SELECTOR_NAME, expression_to_code, get_number_by_literal_expression,
+        get_str_by_property_key, get_string_by_literal_expression, get_string_by_property_key,
+        is_same_expression, readable_code, unwrap_syntax_only, unwrap_syntax_only_mut,
     },
 };
 use css::{
@@ -20,7 +20,10 @@ use css::{
     at_rule::{media_shorthand_query, split_at_rule_key},
     disassemble_property, get_enum_property_map, get_enum_property_value, is_enum_property,
     is_special_property::is_special_property,
-    style_selector::{AtRuleKind, StyleSelector, optimize_selector},
+    rm_css_comment::rm_css_comment,
+    style_selector::{
+        AtRuleKind, StyleSelector, is_selector_name, optimize_selector, split_selector_list,
+    },
     theme_tokens::{get_responsive_theme_token, get_typography_keys, is_responsive_theme_token},
     utils::to_kebab_case,
 };
@@ -62,6 +65,7 @@ pub(crate) fn unreadable<'a>(expression: &Expression<'a>) -> ExtractResult<'a> {
                 offset: expression.span().start,
                 code: readable_code(expression),
                 prop: false,
+                requirement: None,
             }]
         },
         ..ExtractResult::default()
@@ -146,6 +150,21 @@ pub(crate) fn unreadable_key<'a>(key: &PropertyKey<'_>, prop: bool) -> ExtractSt
             key.as_expression().map_or_else(String::new, readable_code)
         ),
         prop,
+        requirement: None,
+    }
+}
+
+/// `code` at `offset`, readable but not what its place takes
+pub(crate) const fn misplaced<'a>(
+    offset: u32,
+    code: String,
+    requirement: &'static str,
+) -> ExtractStyleProp<'a> {
+    ExtractStyleProp::Unreadable {
+        offset,
+        code,
+        prop: false,
+        requirement: Some(requirement),
     }
 }
 
@@ -345,21 +364,18 @@ pub fn extract_style_from_expression<'a>(
     if let Some(name) = name
         && is_nested_selector_key(name)
     {
+        let offset = expression.span().start;
         let mut styles = vec![];
         for part in split_selector_list(name) {
-            if let Some(nested) = nest_selectors_key(selector.as_ref(), part) {
-                styles.extend(
-                    extract_style_from_expression(
-                        ast_builder,
-                        None,
-                        expression,
-                        level,
-                        &Some(nested),
-                        literal_handling,
-                    )
-                    .styles,
-                );
-            }
+            styles.extend(extract_under_key(
+                ast_builder,
+                part,
+                offset,
+                expression,
+                level,
+                selector,
+                literal_handling,
+            ));
         }
         return ExtractResult {
             styles,
@@ -394,20 +410,17 @@ pub fn extract_style_from_expression<'a>(
                         props.push(unreadable_key(&o.key, false));
                         continue;
                     };
+                    let offset = o.key.span().start;
                     for part in split_selector_list(key_name.trim()) {
-                        if let Some(child) = nest_selectors_key(selector.as_ref(), part) {
-                            props.extend(
-                                extract_style_from_expression(
-                                    ast_builder,
-                                    None,
-                                    &mut o.value,
-                                    level,
-                                    &Some(child),
-                                    literal_handling,
-                                )
-                                .styles,
-                            );
-                        }
+                        props.extend(extract_under_key(
+                            ast_builder,
+                            part,
+                            offset,
+                            &mut o.value,
+                            level,
+                            selector,
+                            literal_handling,
+                        ));
                     }
                 }
             }
@@ -474,23 +487,20 @@ pub fn extract_style_from_expression<'a>(
             };
         }
 
-        let nested = if let Some((kind, query)) = split_at_rule_key(name) {
-            Some(StyleSelector::nest_at_rule(selector.as_ref(), kind, query))
-        } else {
-            name.strip_prefix('_')
-                .map(|child| nest_underscore_name(selector.as_ref(), child))
-        };
-        if let Some(nested) = nested {
-            return nested.map_or_else(ExtractResult::default, |nested| {
-                extract_style_from_expression(
+        if name.starts_with('_') || split_at_rule_key(name).is_some() {
+            let offset = expression.span().start;
+            return ExtractResult {
+                styles: extract_under_key(
                     ast_builder,
-                    None,
+                    name,
+                    offset,
                     expression,
                     level,
-                    &Some(nested),
+                    selector,
                     literal_handling,
-                )
-            });
+                ),
+                ..ExtractResult::default()
+            };
         }
         typo = name == "typography";
     }
@@ -540,11 +550,26 @@ pub fn extract_style_from_expression<'a>(
                 ..ExtractResult::default()
             }
         } else {
+            let styles = css_to_style(&value, level, selector);
             ExtractResult {
-                styles: css_to_style(&value, level, selector)
-                    .into_iter()
-                    .map(|ex| ExtractStyleProp::Static(ExtractStyleValue::Static(ex)))
-                    .collect(),
+                styles: if styles.is_empty()
+                    && !matches!(
+                        unwrap_syntax_only(expression),
+                        Expression::BooleanLiteral(_)
+                    )
+                    && !rm_css_comment(&value).trim().is_empty()
+                {
+                    vec![misplaced(
+                        expression.span().start,
+                        readable_code(expression),
+                        CSS_TEXT,
+                    )]
+                } else {
+                    styles
+                        .into_iter()
+                        .map(|ex| ExtractStyleProp::Static(ExtractStyleValue::Static(ex)))
+                        .collect()
+                },
                 ..ExtractResult::default()
             }
         }
@@ -1221,36 +1246,57 @@ pub(crate) fn at_rule_record_kind(name: &str) -> Option<AtRuleKind> {
     }
 }
 
-fn split_selector_list(key: &str) -> Vec<&str> {
-    let mut parts = vec![];
-    let mut depth = 0usize;
-    let mut start = 0;
-    for (index, c) in key.char_indices() {
-        match c {
-            '(' => depth += 1,
-            ')' => depth = depth.saturating_sub(1),
-            ',' if depth == 0 => {
-                parts.push(key[start..index].trim());
-                start = index + 1;
-            }
-            _ => {}
+enum Nested {
+    Under(StyleSelector),
+    /// Its conditions can never hold together
+    Never,
+    Unknown,
+}
+
+impl From<Option<StyleSelector>> for Nested {
+    fn from(selector: Option<StyleSelector>) -> Self {
+        selector.map_or(Self::Never, Self::Under)
+    }
+}
+
+fn extract_under_key<'a>(
+    ast_builder: &AstBuilder<'a>,
+    key: &str,
+    offset: u32,
+    expression: &mut Expression<'a>,
+    level: u8,
+    selector: &Option<StyleSelector>,
+    literal_handling: LiteralHandling,
+) -> Vec<ExtractStyleProp<'a>> {
+    match nest_selectors_key(selector.as_ref(), key) {
+        Nested::Under(nested) => {
+            extract_style_from_expression(
+                ast_builder,
+                None,
+                expression,
+                level,
+                &Some(nested),
+                literal_handling,
+            )
+            .styles
         }
+        Nested::Never => vec![],
+        Nested::Unknown => vec![misplaced(offset, key.to_string(), SELECTOR_NAME)],
     }
-    if !key.is_empty() {
-        parts.push(key[start..].trim());
-    }
-    parts
 }
 
 /// Resolve a `_name` style key (without the `_`) under `parent`: media
-/// shorthands such as `print` or `motionReduce` wrap it in `@media`, anything
-/// else nests a selector. `None` means the styles can never apply.
-fn nest_underscore_name(parent: Option<&StyleSelector>, name: &str) -> Option<StyleSelector> {
+/// shorthands such as `print` or `motionReduce` wrap it in `@media`, a
+/// pseudo-class or pseudo-element nests a selector.
+fn nest_underscore_name(parent: Option<&StyleSelector>, name: &str) -> Nested {
     let name = to_kebab_case(name);
     if let Some(query) = media_shorthand_query(&name) {
-        return StyleSelector::nest_at_rule(parent, AtRuleKind::Media, query);
+        return StyleSelector::nest_at_rule(parent, AtRuleKind::Media, query).into();
     }
-    Some(StyleSelector::nest_selector(
+    if !is_selector_name(&name) {
+        return Nested::Unknown;
+    }
+    Nested::Under(StyleSelector::nest_selector(
         parent,
         &StyleSelector::from(name.as_ref()).to_string(),
     ))
@@ -1262,18 +1308,31 @@ fn is_nested_selector_key(key: &str) -> bool {
     key.starts_with(':') || key.contains('&')
 }
 
-fn nest_selectors_key(parent: Option<&StyleSelector>, key: &str) -> Option<StyleSelector> {
+/// A key without `&` is relative to the element: a pseudo-class, a
+/// pseudo-element or an attribute applies to the element itself, a name such
+/// as `hover` is a pseudo-class, and any other selector (`.child`, `> p`)
+/// selects descendants
+fn nest_selectors_key(parent: Option<&StyleSelector>, key: &str) -> Nested {
     if let Some((kind, query)) = split_at_rule_key(key) {
-        StyleSelector::nest_at_rule(parent, kind, query)
+        StyleSelector::nest_at_rule(parent, kind, query).into()
     } else if let Some(name) = key.strip_prefix('_') {
         nest_underscore_name(parent, name)
-    } else if key.starts_with(':') {
-        Some(StyleSelector::nest_selector(parent, &format!("&{key}")))
-    } else if parent.is_some() {
-        Some(StyleSelector::nest_selector(parent, key))
+    } else if key.contains('&') {
+        Nested::Under(StyleSelector::nest_selector(parent, key))
+    } else if key.starts_with([':', '[']) {
+        Nested::Under(StyleSelector::nest_selector(parent, &format!("&{key}")))
+    } else if is_name(key) {
+        nest_underscore_name(parent, key)
     } else {
-        Some(StyleSelector::from(key))
+        Nested::Under(StyleSelector::nest_selector(parent, &format!("& {key}")))
     }
+}
+
+fn is_name(key: &str) -> bool {
+    key.strip_prefix('-')
+        .unwrap_or(key)
+        .starts_with(|c: char| c.is_ascii_alphabetic())
+        && key.bytes().all(|b| b.is_ascii_alphanumeric() || b == b'-')
 }
 
 fn typography_atom(name: &str, level: u8, selector: &Option<StyleSelector>) -> ExtractStaticStyle {

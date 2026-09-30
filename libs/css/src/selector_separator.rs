@@ -62,12 +62,17 @@ mod tests {
             "[aria-disabled='true']".into(),
             SelectorSeparator::None
         ));
+
+        assert!(matches!(".child".into(), SelectorSeparator::Space));
+        assert!(matches!("#id".into(), SelectorSeparator::Space));
+        assert!(matches!("*".into(), SelectorSeparator::Space));
     }
 
     #[test]
     fn test_display() {
         assert_eq!(SelectorSeparator::Double.to_string(), "::");
         assert_eq!(SelectorSeparator::Single.to_string(), ":");
+        assert_eq!(SelectorSeparator::Space.to_string(), " ");
         assert_eq!(SelectorSeparator::None.to_string(), "");
     }
 }

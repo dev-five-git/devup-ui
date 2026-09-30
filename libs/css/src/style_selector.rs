@@ -8,7 +8,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::{
     at_rule::{MediaCombination, combine_media_queries, media_shorthand_query, normalize_query},
-    constant::SELECTOR_ORDER,
+    constant::{DOUBLE_SEPARATOR, PSEUDO_CLASSES, SELECTOR_ORDER},
     selector_separator::SelectorSeparator,
     to_kebab_case,
     utils::{collapse_whitespace, to_camel_case},
@@ -88,6 +88,57 @@ fn collapse_owned_selector(s: String) -> String {
     match collapse_whitespace(&s) {
         Cow::Borrowed(_) => s,
         Cow::Owned(collapsed) => collapsed,
+    }
+}
+
+/// Whether `name`, a style key without its `_` in kebab-case, names what a
+/// key can select: a pseudo-class or pseudo-element, its `group-` form, a
+/// `theme-` or a media shorthand
+#[must_use]
+pub fn is_selector_name(name: &str) -> bool {
+    let pseudo = name.strip_prefix("group-").unwrap_or(name);
+    name.starts_with("theme-")
+        || media_shorthand_query(name).is_some()
+        || PSEUDO_CLASSES.contains(pseudo)
+        || DOUBLE_SEPARATOR.contains(pseudo)
+}
+
+/// The selectors of a selector list, leaving the commas inside `:is(a, b)`
+/// and `[title="a,b"]` alone
+#[must_use]
+pub fn split_selector_list(selector: &str) -> Vec<&str> {
+    let mut parts = vec![];
+    let mut depth = 0usize;
+    let mut start = 0;
+    for (index, c) in selector.char_indices() {
+        match c {
+            '(' | '[' => depth += 1,
+            ')' | ']' => depth = depth.saturating_sub(1),
+            ',' if depth == 0 => {
+                parts.push(selector[start..index].trim());
+                start = index + 1;
+            }
+            _ => {}
+        }
+    }
+    if !selector.is_empty() {
+        parts.push(selector[start..].trim());
+    }
+    parts
+}
+
+/// `template` with each selector of `parent` in place of its `&`, a list
+/// parent giving every combination as CSS nesting does
+fn substitute(template: &str, parent: &str) -> String {
+    let parents = split_selector_list(parent);
+    if parents.len() > 1 {
+        parents
+            .iter()
+            .map(|parent| template.replace('&', parent))
+            .collect::<Vec<_>>()
+            .join(",")
+    } else {
+        template.replace('&', parent)
     }
 }
 
@@ -299,9 +350,9 @@ impl StyleSelector {
     pub fn nest_selector(parent: Option<&Self>, template: &str) -> Self {
         match parent {
             None => Self::Selector(template.to_string()),
-            Some(Self::Selector(selector)) => Self::Selector(template.replace('&', selector)),
+            Some(Self::Selector(selector)) => Self::Selector(substitute(template, selector)),
             Some(Self::Global(selector, file)) => {
-                Self::Global(template.replace('&', selector), file.clone())
+                Self::Global(substitute(template, selector), file.clone())
             }
             Some(Self::At {
                 kind,
@@ -315,7 +366,7 @@ impl StyleSelector {
                 selector: Some(
                     selector
                         .as_deref()
-                        .map_or_else(|| template.to_string(), |s| template.replace('&', s)),
+                        .map_or_else(|| template.to_string(), |s| substitute(template, s)),
                 ),
                 outer: outer.clone(),
                 file: file.clone(),
@@ -733,6 +784,34 @@ mod tests {
         );
     }
 
+    #[rstest]
+    #[case("", vec![])]
+    #[case("&:hover", vec!["&:hover"])]
+    #[case(" a > b , i ", vec!["a > b", "i"])]
+    #[case(":is(a, b), [title=\"a,b\"]", vec![":is(a, b)", "[title=\"a,b\"]"])]
+    fn test_split_selector_list(#[case] selector: &str, #[case] expected: Vec<&str>) {
+        assert_eq!(split_selector_list(selector), expected);
+    }
+
+    #[rstest]
+    #[case("hover", true)]
+    #[case("focus-visible", true)]
+    #[case("nth-child", true)]
+    #[case("before", true)]
+    #[case("part", true)]
+    #[case("group-hover", true)]
+    #[case("group-first-letter", true)]
+    #[case("theme-dark", true)]
+    #[case("motion-reduce", true)]
+    #[case("print", true)]
+    #[case("not-a-selector", false)]
+    #[case("div", false)]
+    #[case("group-print", false)]
+    #[case("webkit-autofill", false)]
+    fn test_is_selector_name(#[case] name: &str, #[case] expected: bool) {
+        assert_eq!(is_selector_name(name), expected);
+    }
+
     fn at(kind: AtRuleKind, query: &str, selector: Option<&str>) -> StyleSelector {
         StyleSelector::At {
             kind,
@@ -764,6 +843,16 @@ mod tests {
         Some(at(AtRuleKind::Media, "print", Some("&:focus"))),
         "&:hover",
         at(AtRuleKind::Media, "print", Some("&:focus:hover"))
+    )]
+    #[case(
+        Some(StyleSelector::Selector("& h1,&:is(a, b)".to_string())),
+        "& span,&:hover",
+        StyleSelector::Selector("& h1 span,& h1:hover,&:is(a, b) span,&:is(a, b):hover".to_string())
+    )]
+    #[case(
+        Some(StyleSelector::Global("a, b".to_string(), "a.tsx".to_string())),
+        "& i",
+        StyleSelector::Global("a i,b i".to_string(), "a.tsx".to_string())
     )]
     fn test_nest_selector(
         #[case] parent: Option<StyleSelector>,
