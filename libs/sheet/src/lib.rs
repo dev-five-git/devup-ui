@@ -621,20 +621,34 @@ impl StyleSheet {
                         }
                     };
 
-                    if self.insert_property(
-                        st.level(),
-                        st.style_order(),
-                        bucket_scope,
-                        StyleSheetProperty {
-                            class_name,
-                            property: st.property().to_string(),
-                            value: resolved_value.into_owned(),
-                            selector: st.selector().cloned(),
-                            layer: st.layer().map(ToString::to_string),
-                            typography: false,
-                            order: st.order(),
-                        },
-                    ) {
+                    let added = if st.order() == 0 {
+                        self.add_property_with_layer(
+                            &class_name,
+                            st.property(),
+                            st.level(),
+                            &resolved_value,
+                            st.selector(),
+                            st.style_order(),
+                            bucket_scope,
+                            st.layer(),
+                        )
+                    } else {
+                        self.insert_property(
+                            st.level(),
+                            st.style_order(),
+                            bucket_scope,
+                            StyleSheetProperty {
+                                class_name,
+                                property: st.property().to_string(),
+                                value: resolved_value.into_owned(),
+                                selector: st.selector().cloned(),
+                                layer: st.layer().map(ToString::to_string),
+                                typography: false,
+                                order: st.order(),
+                            },
+                        )
+                    };
+                    if added {
                         collected = true;
                         if st.style_order() == Some(0) {
                             updated_base_style = true;

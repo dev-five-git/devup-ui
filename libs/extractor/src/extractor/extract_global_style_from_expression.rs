@@ -120,11 +120,12 @@ fn collect_global_styles<'a>(
                             collect_global_styles(ast_builder, &mut o.value, file, &nested, styles);
                         } else if name == "imports" {
                             if let Expression::ArrayExpression(arr) = &o.value {
-                                for p in &arr.elements {
-                                    // `...spread` elements carry no statically readable url.
-                                    let Some(element) = p.as_expression() else {
-                                        continue;
-                                    };
+                                // `...spread` elements carry no statically readable url.
+                                for element in arr
+                                    .elements
+                                    .iter()
+                                    .filter_map(ArrayExpressionElement::as_expression)
+                                {
                                     if let Expression::ObjectExpression(obj) = element {
                                         let mut url = None;
                                         let mut query = None;
