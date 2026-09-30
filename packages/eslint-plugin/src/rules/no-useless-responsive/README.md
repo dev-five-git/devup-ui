@@ -73,6 +73,7 @@ The rule will not trigger for:
 - Empty arrays (e.g., `[]`)
 - Arrays used with other libraries
 - Non-array values
+- Arrays the build does not read as styles: in props the component passes through (`data-*`, `aria-*`, event handlers, HTML attributes, `props`, `styleVars`), in arguments of other functions, and under `imports`/`fontFaces`/`params`
 
 ## Auto-fixable
 

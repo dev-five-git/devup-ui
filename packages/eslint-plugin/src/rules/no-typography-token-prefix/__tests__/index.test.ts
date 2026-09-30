@@ -24,6 +24,12 @@ describe('no-typography-token-prefix rule', () => {
       { code: `${imports}css({ typography: 1 })` },
       { code: `import { Box } from "other";\n<Box typography="$heading" />` },
       { code: `const a = { typography: '$heading' }` },
+      { code: `${imports}<Box data-config={{ typography: '$heading' }} />` },
+      { code: `${imports}<Box props={{ typography: '$heading' }} />` },
+      { code: `${imports}css({ w: pick({ typography: '$heading' }) })` },
+      {
+        code: `import { setTheme } from "@devup-ui/react";\nsetTheme({ typography: '$heading' })`,
+      },
     ],
     invalid: [
       {

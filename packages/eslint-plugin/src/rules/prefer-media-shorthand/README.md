@@ -6,6 +6,9 @@ Prefer the media shorthand props over spelling out the same media query.
 
 `_media` entries and `'@media …'` keys whose query is exactly one of the
 shorthands are reported. Whitespace and letter case in the query are ignored.
+Keys the build does not read as styles — in a prop the component passes through
+(`data-*`, `props`, ...) or in an argument of another function — are not
+checked.
 
 | Query                                    | Shorthand        |
 | ---------------------------------------- | ---------------- |

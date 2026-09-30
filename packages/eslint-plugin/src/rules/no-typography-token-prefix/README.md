@@ -10,7 +10,9 @@ preset that does not exist, so no style is applied.
 
 The rule checks string values of `typography` on Devup UI components and
 utilities, including values inside responsive arrays, conditionals, and
-selector objects.
+selector objects. A `typography` key the build does not read as a style — in a
+prop the component passes through (`data-*`, `props`, ...) or in an argument of
+another function — is not checked.
 
 ### Examples
 

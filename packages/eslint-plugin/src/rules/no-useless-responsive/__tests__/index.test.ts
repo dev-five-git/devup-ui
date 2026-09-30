@@ -89,8 +89,29 @@ describe('no-useless-responsive rule', () => {
         code: 'import { globalCss } from "@devup-ui/react";\nglobalCss({ imports: [{"url": "@devup-ui/react/css/global.css"}] })',
         filename: 'src/app/page.tsx',
       },
+      ...[
+        '<Box data-x={[1]} />',
+        '<Box props={{ items: [1] }} />',
+        '<Box w={pick([1])} />',
+        '<ThemeScript x={[1]} />',
+        'css({ w: pick([1]) })',
+        'globalCss({ fontFaces: [{ fontFamily: "a" }] })',
+      ].map((use) => ({
+        code: `import { Box, ThemeScript, css, globalCss } from "@devup-ui/react";\n${use}`,
+        filename: 'src/app/page.tsx',
+      })),
     ],
     invalid: [
+      {
+        code: 'import { Box } from "@devup-ui/react";\n<Box icon={<Box w={[1]} />} m={[2]} />',
+        output:
+          'import { Box } from "@devup-ui/react";\n<Box icon={<Box w={1} />} m={2} />',
+        filename: 'src/app/page.tsx',
+        errors: [
+          { messageId: 'uselessResponsive' },
+          { messageId: 'uselessResponsive' },
+        ],
+      },
       {
         code: 'import { Box } from "@devup-ui/react";\n<Box w={[1]} />',
         output: 'import { Box } from "@devup-ui/react";\n<Box w={1} />',
