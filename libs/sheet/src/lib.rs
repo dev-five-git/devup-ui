@@ -143,7 +143,7 @@ impl StyleSheetProperty {
     }
 }
 
-static VAR_RE: LazyLock<Regex> = LazyLock::new(|| compile_regex(r"\$[\w.]+"));
+static VAR_RE: LazyLock<Regex> = LazyLock::new(|| compile_regex(r"\$\w[\w.-]*"));
 static INTERFACE_KEY_RE: LazyLock<Regex> =
     LazyLock::new(|| compile_regex(r"^[a-zA-Z_$][a-zA-Z0-9_$]*$"));
 
@@ -1398,6 +1398,8 @@ mod tests {
     #[case("$gray.200 $blue.500", "var(--gray-200) var(--blue-500)")]
     #[case("1px solid $border.primary", "1px solid var(--border-primary)")]
     #[case("$-", "$-")]
+    #[case("$text-primary", "var(--text-primary)")]
+    #[case("1px solid $line-color.100", "1px solid var(--line-color-100)")]
     // Test deep nested dot notation
     #[case("$color.brand.primary.100", "var(--color-brand-primary-100)")]
     fn test_convert_theme_variable_value(#[case] input: &str, #[case] expected: &str) {

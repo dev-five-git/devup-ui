@@ -26,6 +26,7 @@ StyleSheet {
     font_faces: {},
     theme: Theme {
         colors: {},
+        color_scheme: {},
         breakpoints: [
             0,
             480,

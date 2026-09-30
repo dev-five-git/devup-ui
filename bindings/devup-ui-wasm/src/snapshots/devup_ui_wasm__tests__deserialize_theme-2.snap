@@ -23,6 +23,7 @@ Theme {
             },
         },
     },
+    color_scheme: {},
     breakpoints: [
         0,
         480,
@@ -51,6 +52,8 @@ Theme {
                         letter_spacing: Some(
                             "0.5em",
                         ),
+                        font_style: None,
+                        text_transform: None,
                     },
                 ),
             ],

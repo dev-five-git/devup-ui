@@ -100,7 +100,23 @@ You can define multiple theme variants beyond `default` and `dark`:
 }
 ```
 
-The first key (e.g., `default`) is the default theme. Other themes can be activated using the theme API.
+The default theme is `default` (or `light`, or else the first variant). Other themes can be activated using the theme API. A variant only lists the colors it changes: the others keep the default's, and a color only one variant defines is defined in that variant.
+
+Each variant also sets the page's native color scheme — form controls, scrollbars and the default text color. `dark` renders dark and every other variant light; name the others in `colorScheme`:
+
+```json
+{
+  "theme": {
+    "colors": {
+      "default": { "primary": "#0070f3" },
+      "midnight": { "primary": "#3291ff" }
+    },
+    "colorScheme": { "midnight": "dark" }
+  }
+}
+```
+
+Token names start with a letter, a digit or `_` and continue with letters, digits, `-`, `_` and `.` (`primary`, `text-primary`, `gray.100`); a dot becomes a dash in the CSS variable, so `gray.100` is `var(--gray-100)`. The build reports a name outside these characters, and two tokens of a variant that become the same variable (`a-b` and `a.b`), instead of emitting CSS the browser would drop.
 
 ## Semantic Color Naming
 
