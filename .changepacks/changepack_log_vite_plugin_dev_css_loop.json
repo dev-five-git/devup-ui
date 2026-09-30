@@ -1,7 +1,0 @@
-{
-  "changes": {
-    "packages/vite-plugin/package.json": "Patch"
-  },
-  "note": "Stop the dev server from reloading in a loop with vinext and other server environments: write a devup-ui CSS file only when its CSS changed, and keep those changes out of the server environments so a render is never reset midway",
-  "date": "2026-09-27T15:43:21.4199154Z"
-}
