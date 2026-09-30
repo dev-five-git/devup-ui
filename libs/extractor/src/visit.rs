@@ -24,6 +24,7 @@ use crate::extractor::{
 };
 use crate::gen_class_name::{gen_class_names, merge_expression_for_class_name};
 use crate::prop_modify_utils::{convert_class_name, modify_prop_object, modify_props};
+use crate::style_collector::StyleCollector;
 use crate::stylex::{
     StylexDynamicInfo, StylexFunction, StylexNamespaceValue, create_theme_class,
     css_variable_block, css_variable_rules, define_vars_variable, variable_values,
@@ -130,7 +131,7 @@ pub struct DevupVisitor<'a> {
     compat_package: String,
     split_filename: Option<String>,
     pub css_files: Vec<String>,
-    pub styles: FxHashSet<ExtractStyleValue>,
+    pub styles: StyleCollector,
     /// Styles the file writes that cannot be extracted at build time, by the
     /// offset of the code each is about
     pub errors: Vec<(u32, String)>,
@@ -311,7 +312,7 @@ impl<'a> DevupVisitor<'a> {
             package: package.to_string(),
             compat_package: format!("{package}/compat"),
             css_files,
-            styles: FxHashSet::default(),
+            styles: StyleCollector::default(),
             errors: Vec::new(),
             import_object: None,
             jsx_object: None,
@@ -1390,8 +1391,9 @@ impl<'a> VisitMut<'a> for DevupVisitor<'a> {
             let css = css_variable_rules(":root", &variables);
             if !css.is_empty() {
                 self.styles.insert(ExtractStyleValue::Css(ExtractCss {
-                    css,
                     file: self.filename.clone(),
+                    order: 0,
+                    css,
                 }));
             }
             self.stylex_pending_vars = Some(contract);
@@ -1446,8 +1448,9 @@ impl<'a> VisitMut<'a> for DevupVisitor<'a> {
             let css = css_variable_rules(&format!(".{class_name}"), &variables);
             if !css.is_empty() {
                 self.styles.insert(ExtractStyleValue::Css(ExtractCss {
-                    css,
                     file: self.filename.clone(),
+                    order: 0,
+                    css,
                 }));
             }
             self.stylex_pending_theme_class = Some(class_name.clone());
@@ -1496,8 +1499,9 @@ impl<'a> VisitMut<'a> for DevupVisitor<'a> {
                     css_variable_block(&format!(".{name}"), &declarations)
                 };
                 self.styles.insert(ExtractStyleValue::Css(ExtractCss {
-                    css,
                     file: self.filename.clone(),
+                    order: 0,
+                    css,
                 }));
             }
             *it = Expression::new_string_literal(
@@ -1881,8 +1885,9 @@ impl<'a> VisitMut<'a> for DevupVisitor<'a> {
                 let optimized_css = optimize_css_block(&build_css_str());
                 if !optimized_css.is_empty() {
                     let css = ExtractStyleValue::Css(ExtractCss {
-                        css: optimized_css,
                         file: self.filename.clone(),
+                        order: 0,
+                        css: optimized_css,
                     });
                     self.styles.insert(css);
                 }

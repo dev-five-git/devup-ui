@@ -78,7 +78,8 @@ fn global_selector_group(selector: &str) -> (bool, u8) {
     })
 }
 
-type GlobalProp<'a> = (u8, &'a str, &'a StyleSheetProperty);
+/// (level, selector, file the rule is written in, property)
+type GlobalProp<'a> = (u8, &'a str, &'a str, &'a StyleSheetProperty);
 
 #[derive(Debug, Hash, Eq, PartialEq, Deserialize, Serialize, Clone)]
 #[serde(rename_all = "camelCase")]
@@ -97,6 +98,13 @@ pub struct StyleSheetProperty {
     /// Declaration expanded from a conditional `typography` preset
     #[serde(rename = "t", default, skip_serializing_if = "std::ops::Not::not")]
     pub typography: bool,
+    /// Where a global declaration is written in its file
+    #[serde(rename = "o", default, skip_serializing_if = "is_zero")]
+    pub order: u32,
+}
+
+const fn is_zero(order: &u32) -> bool {
+    *order == 0
 }
 
 #[derive(Debug, Hash, Eq, PartialEq, Deserialize, Serialize)]
@@ -259,15 +267,18 @@ pub struct StyleSheet {
     #[serde(deserialize_with = "deserialize_btree_map_u8", default)]
     pub properties: BTreeMap<String, PropertyMap>,
     #[serde(default)]
-    pub css: BTreeMap<String, BTreeSet<StyleSheetCss>>,
+    pub css: BTreeMap<String, Vec<StyleSheetCss>>,
     #[serde(default)]
     pub keyframes: KeyframesMap,
     #[serde(default)]
     pub global_css_files: BTreeSet<String>,
     #[serde(default)]
-    pub imports: BTreeMap<String, BTreeSet<String>>,
+    pub imports: BTreeMap<String, Vec<String>>,
     #[serde(default)]
-    pub font_faces: BTreeMap<String, BTreeSet<BTreeMap<String, String>>>,
+    pub font_faces: BTreeMap<String, Vec<BTreeMap<String, String>>>,
+    /// The cascade layers of each file, in the order the file first uses them
+    #[serde(default)]
+    pub layer_orders: BTreeMap<String, Vec<String>>,
     #[serde(skip)]
     pub theme: Theme,
 }
@@ -319,6 +330,7 @@ impl StyleSheet {
                 selector: selector.cloned(),
                 layer: layer.map(ToString::to_string),
                 typography: false,
+                order: 0,
             },
         )
     }
@@ -371,7 +383,9 @@ impl StyleSheet {
             Some(bucket) => bucket,
             None => self.imports.entry(file.to_string()).or_default(),
         };
-        bucket.insert(import.to_string());
+        if !bucket.iter().any(|written| written == import) {
+            bucket.push(import.to_string());
+        }
     }
 
     pub fn add_font_face(&mut self, file: &str, properties: &BTreeMap<String, String>) {
@@ -384,7 +398,9 @@ impl StyleSheet {
             Some(bucket) => bucket,
             None => self.font_faces.entry(file.to_string()).or_default(),
         };
-        bucket.insert(properties.clone());
+        if !bucket.contains(properties) {
+            bucket.push(properties.clone());
+        }
     }
 
     pub fn add_css(&mut self, file: &str, css: &str) -> bool {
@@ -397,9 +413,13 @@ impl StyleSheet {
             Some(bucket) => bucket,
             None => self.css.entry(file.to_string()).or_default(),
         };
-        bucket.insert(StyleSheetCss {
+        if bucket.iter().any(|written| written.css == css) {
+            return false;
+        }
+        bucket.push(StyleSheetCss {
             css: css.to_string(),
-        })
+        });
+        true
     }
 
     pub fn add_keyframes(
@@ -439,6 +459,7 @@ impl StyleSheet {
         // like `css`/`font_faces`; clear them so an @import removed from source
         // does not linger across re-extraction (HMR).
         self.imports.remove(file);
+        self.layer_orders.remove(file);
         // `file` is the RAW source filename (globalCss is per-source-file). Atoms
         // were bucketed by canonical(file) in update_styles, so global-selector
         // atom removal must read from the canonical bucket while still matching
@@ -502,6 +523,9 @@ impl StyleSheet {
             Some(filename)
         };
         let bucket_scope = if single_css { None } else { Some(filename) };
+        let mut rules: Vec<(&str, u32, &str)> = Vec::new();
+        let mut imports: Vec<(&str, u32, &str)> = Vec::new();
+        let mut font_faces: Vec<(&str, u32, &BTreeMap<String, String>)> = Vec::new();
         for style in styles {
             match style {
                 // A conditional `typography` preset: its class is the atom, and the
@@ -548,6 +572,7 @@ impl StyleSheet {
                                     |layer| format!("{layer}.{TYPOGRAPHY_LAYER}"),
                                 )),
                                 typography: true,
+                                order: 0,
                             },
                         ) {
                             collected = true;
@@ -596,15 +621,19 @@ impl StyleSheet {
                         }
                     };
 
-                    if self.add_property_with_layer(
-                        &class_name,
-                        st.property(),
+                    if self.insert_property(
                         st.level(),
-                        &resolved_value,
-                        st.selector(),
                         st.style_order(),
                         bucket_scope,
-                        st.layer(),
+                        StyleSheetProperty {
+                            class_name,
+                            property: st.property().to_string(),
+                            value: resolved_value.into_owned(),
+                            selector: st.selector().cloned(),
+                            layer: st.layer().map(ToString::to_string),
+                            typography: false,
+                            order: st.order(),
+                        },
                     ) {
                         collected = true;
                         if st.style_order() == Some(0) {
@@ -684,22 +713,56 @@ impl StyleSheet {
                         collected = true;
                     }
                 }
-                ExtractStyleValue::Css(cs) => {
-                    if self.add_css(&cs.file, &cs.css) {
-                        // update global css
+                ExtractStyleValue::Css(cs) => rules.push((&cs.file, cs.order, &cs.css)),
+                ExtractStyleValue::Typography(_) => {}
+                ExtractStyleValue::Import(st) => imports.push((&st.file, st.order, &st.url)),
+                ExtractStyleValue::FontFace(font) => {
+                    font_faces.push((&font.file, font.order, &font.properties));
+                }
+                ExtractStyleValue::LayerOrder(order) => {
+                    if self.layer_orders.get(&order.file) != Some(&order.layers) {
+                        self.global_css_files.insert(order.file.clone());
+                        self.layer_orders
+                            .insert(order.file.clone(), order.layers.clone());
                         updated_base_style = true;
                     }
                 }
-                ExtractStyleValue::Typography(_) => {}
-                ExtractStyleValue::Import(st) => {
-                    self.add_import(&st.file, &st.url);
-                }
-                ExtractStyleValue::FontFace(font) => {
-                    self.add_font_face(&font.file, &font.properties);
-                }
             }
         }
-        (collected, updated_base_style)
+        // Each file's global rules, imports and font faces in the order it writes them
+        rules.sort_unstable();
+        imports.sort_unstable();
+        font_faces.sort_unstable();
+        let rules_changed = replace_by_file(
+            &mut self.css,
+            &mut self.global_css_files,
+            rules.into_iter().map(|(file, _, css)| {
+                (
+                    file,
+                    StyleSheetCss {
+                        css: css.to_string(),
+                    },
+                )
+            }),
+        );
+        let imports_changed = replace_by_file(
+            &mut self.imports,
+            &mut self.global_css_files,
+            imports
+                .into_iter()
+                .map(|(file, _, url)| (file, url.to_string())),
+        );
+        let font_faces_changed = replace_by_file(
+            &mut self.font_faces,
+            &mut self.global_css_files,
+            font_faces
+                .into_iter()
+                .map(|(file, _, properties)| (file, properties.clone())),
+        );
+        (
+            collected,
+            updated_base_style || rules_changed || imports_changed || font_faces_changed,
+        )
     }
 
     #[must_use]
@@ -882,8 +945,8 @@ impl StyleSheet {
                     continue;
                 }
                 match &prop.selector {
-                    Some(StyleSelector::Global(selector, _)) => {
-                        global_props.push((*level, selector.as_str(), prop));
+                    Some(StyleSelector::Global(selector, file)) => {
+                        global_props.push((*level, selector.as_str(), file.as_str(), prop));
                     }
                     Some(StyleSelector::At {
                         kind,
@@ -1031,19 +1094,23 @@ impl StyleSheet {
 
     fn write_global_props(&self, css: &mut String, mut global_props: Vec<GlobalProp<'_>>) {
         // Same order as class rules: selector group before breakpoint level, so a
-        // `:hover` set at a wider breakpoint still precedes `:active`.
+        // `:hover` set at a wider breakpoint still precedes `:active`. Within
+        // them each file keeps the order it writes its declarations in, as the
+        // later of two equally specific ones wins.
         global_props.sort_by(|a, b| {
             global_selector_group(a.1)
                 .cmp(&global_selector_group(b.1))
                 .then_with(|| a.0.cmp(&b.0))
+                .then_with(|| a.2.cmp(b.2))
+                .then_with(|| a.3.order.cmp(&b.3.order))
                 .then_with(|| a.1.cmp(b.1))
-                .then_with(|| a.2.property.cmp(&b.2.property))
-                .then_with(|| a.2.value.cmp(&b.2.value))
+                .then_with(|| a.3.property.cmp(&b.3.property))
+                .then_with(|| a.3.value.cmp(&b.3.value))
         });
 
         let mut open_level: Option<u8> = None;
         let mut open_selector: Option<&str> = None;
-        for (level, selector, prop) in global_props {
+        for (level, selector, _, prop) in global_props {
             if open_level != Some(level) {
                 if open_selector.take().is_some() {
                     css.push('}');
@@ -1117,7 +1184,12 @@ impl StyleSheet {
     pub fn create_css(&self, filename: Option<&str>, import_main_css: bool) -> String {
         let mut css = String::with_capacity(4096);
         css.push_str(Self::create_header());
-        for import in self.imports.values().flatten() {
+        // An import written again takes effect where it is written last
+        let imports: Vec<&String> = self.imports.values().flatten().collect();
+        for (index, import) in imports.iter().enumerate() {
+            if imports[index + 1..].contains(import) {
+                continue;
+            }
             if import.starts_with('"') {
                 push_fmt!(&mut css, "@import {import};");
             } else {
@@ -1196,24 +1268,24 @@ impl StyleSheet {
             }
             // One source file extracted under multiple passes (e.g. Next
             // server + client compilations) registers identical @font-face rules
-            // under multiple file keys; emit each distinct rule only once.
-            let mut seen_font_faces: BTreeSet<&BTreeMap<String, String>> = BTreeSet::new();
-            for font_faces in self.font_faces.values() {
-                for font_face in font_faces {
-                    if !seen_font_faces.insert(font_face) {
-                        continue;
-                    }
-                    css.push_str("@font-face{");
-                    let mut first = true;
-                    for (key, value) in font_face {
-                        if !first {
-                            css.push(';');
-                        }
-                        first = false;
-                        push_fmt!(&mut css, "{key}:{value}");
-                    }
-                    css.push('}');
+            // under multiple file keys; emit each distinct rule only once, where it
+            // is written last, as the last of equal rules is the one used.
+            let font_faces: Vec<&BTreeMap<String, String>> =
+                self.font_faces.values().flatten().collect();
+            for (index, font_face) in font_faces.iter().enumerate() {
+                if font_faces[index + 1..].contains(font_face) {
+                    continue;
                 }
+                css.push_str("@font-face{");
+                let mut first = true;
+                for (key, value) in *font_face {
+                    if !first {
+                        css.push(';');
+                    }
+                    first = false;
+                    push_fmt!(&mut css, "{key}:{value}");
+                }
+                css.push('}');
             }
 
             // global css
@@ -1230,23 +1302,25 @@ impl StyleSheet {
                 push_fmt!(&mut css, "@layer b{{{base_css}}}");
             }
 
-            // Generate @layer declarations and wrapped styles for custom layers
-            if !layered_styles.is_empty() {
-                // Add layer declarations
-                css.push_str("@layer ");
-                let mut first = true;
-                for name in layered_styles.keys() {
-                    if !first {
-                        css.push(',');
-                    }
-                    first = false;
-                    css.push_str(name);
+            // Declare the custom layers in the order files first use them, as the
+            // later layer wins, then any others; then their styles
+            let mut layer_names: Vec<&str> = Vec::new();
+            for name in self
+                .layer_orders
+                .values()
+                .flatten()
+                .map(String::as_str)
+                .chain(layered_styles.keys().map(String::as_str))
+            {
+                if !layer_names.contains(&name) {
+                    layer_names.push(name);
                 }
-                css.push(';');
-
-                for (layer_name, layer_css) in layered_styles {
-                    push_fmt!(&mut css, "@layer {layer_name}{{{layer_css}}}");
-                }
+            }
+            if !layer_names.is_empty() {
+                push_fmt!(&mut css, "@layer {};", layer_names.join(","));
+            }
+            for (layer_name, layer_css) in &layered_styles {
+                push_fmt!(&mut css, "@layer {layer_name}{{{layer_css}}}");
             }
             // Atom hoisting: emit shared (hoisted) order!=0 atoms into the global
             // stylesheet, aggregated across every file and deduplicated by atom
@@ -1366,6 +1440,28 @@ impl StyleSheet {
         }
         css
     }
+}
+
+/// Put the entries of each file written in `entries` in place of the ones it
+/// had, and tell whether any changed
+fn replace_by_file<'a, T: PartialEq>(
+    map: &mut BTreeMap<String, Vec<T>>,
+    global_css_files: &mut BTreeSet<String>,
+    entries: impl Iterator<Item = (&'a str, T)>,
+) -> bool {
+    let mut by_file: BTreeMap<&str, Vec<T>> = BTreeMap::new();
+    for (file, entry) in entries {
+        by_file.entry(file).or_default().push(entry);
+    }
+    let mut changed = false;
+    for (file, entries) in by_file {
+        global_css_files.insert(file.to_string());
+        if map.get(file) != Some(&entries) {
+            map.insert(file.to_string(), entries);
+            changed = true;
+        }
+    }
+    changed
 }
 
 #[cfg(test)]
@@ -3122,6 +3218,7 @@ mod tests {
             selector: None,
             layer: None,
             typography: false,
+            order: 0,
         };
         assert_eq!(make("color", "red").cmp(&make("color", "red")), Equal);
         assert!(make("color", "red") < make("color", "white"));
@@ -3140,6 +3237,7 @@ mod tests {
                 selector,
                 layer: None,
                 typography: false,
+                order: 0,
             };
         let hover = || Some(StyleSelector::Selector("&:hover".to_string()));
 
@@ -3496,12 +3594,17 @@ mod tests {
             ),
             (
                 "<div className={css({ color: 'red', '@layer': { base: { color: 'blue', p: [1, null, 2], _hover: { color: 'green' }, '@layer': { inner: { m: 1 } } } } })} />",
-                ".c0{color:red}@layer base{.c1{color:blue}.c2{padding:4px}@media(min-width:768px){.c3{padding:8px}}.c4:hover{color:green}}@layer base.c5{.c6{margin:4px}}",
+                "@layer base,base.c0;.c1{color:red}@layer base{.c2{color:blue}.c3{padding:4px}@media(min-width:768px){.c4{padding:8px}}.c5:hover{color:green}}@layer base.c0{.c6{margin:4px}}",
+            ),
+            // Layers are declared in the order the file first uses them.
+            (
+                "<div className={css({ '@layer': { reset: { color: 'red' }, base: { color: 'blue' }, alpha: { m: 1 } } })} />",
+                "@layer reset,base,alpha;@layer alpha{.c0{margin:4px}}@layer base{.c1{color:blue}}@layer reset{.c2{color:red}}",
             ),
             // Layered and unlayered declarations keep apart, dynamic ones included.
             (
                 "const A = styled.div({ color: 'red', width: w, '@layer': { base: { color: 'red', width: v } } })",
-                ".c0{color:red}.c1{width:var(--c)}@layer base{.c2{color:red}.c3{width:var(--f)}}",
+                "@layer base;.c0{color:red}.c1{width:var(--c)}@layer base{.c2{color:red}.c3{width:var(--f)}}",
             ),
         ] {
             assert_eq!(pipeline_css(Theme::default(), source), expected, "{source}");
@@ -3650,9 +3753,69 @@ mod tests {
         sheet.update_styles(&output.styles, "global.tsx", true);
         let css = sheet.create_css(None, false);
         assert!(
-            css.contains("body{border:1px solid var(--line-100);color:var(--text)}"),
+            css.contains("body{color:var(--text);border:1px solid var(--line-100)}"),
             "{css}"
         );
+    }
+
+    #[test]
+    #[serial]
+    fn test_global_rules_keep_written_order() {
+        for (source, expected) in [
+            (
+                "globalCss({ imports: ['z.css', 'a.css', 'z.css'] })\nglobalCss`body{color:red}`\nglobalCss`body{color:blue}`\nglobalCss`body{color:red}`\nglobalCss({ fontFaces: [{ fontFamily: 'B', src: 'b.woff2' }, { fontFamily: 'A', src: 'a.woff2' }, { fontFamily: 'B', src: 'b.woff2' }] })",
+                "@import \"a.c0\";@import \"z.c0\";@font-face{font-family:A;src:url(a.c1)}@font-face{font-family:B;src:url(b.c1)}body{color:red}body{color:blue}body{color:red}",
+            ),
+            (
+                "globalCss({ body: { color: 'red' } })\nglobalCss({ body: { color: 'blue' } })\nglobalCss({ '.z': { color: 'red' }, '.a': { color: 'blue' } })",
+                "@layer b;@layer b{body{color:red;color:blue}.c0{color:red}.c1{color:blue}}",
+            ),
+            (
+                "globalCss({ '@layer zz': { p: { m: 0 } }, '@layer aa': { p: { m: 1 } } })",
+                "@layer b;@layer zz,aa;@layer aa{p{margin:4px}}@layer zz{p{margin:0}}",
+            ),
+        ] {
+            assert_eq!(pipeline_css(Theme::default(), source), expected, "{source}");
+        }
+    }
+
+    #[test]
+    #[serial]
+    fn test_global_rules_and_layers_update_per_file() {
+        reset_class_map();
+        reset_file_map();
+        let option = ExtractOption {
+            package: "@devup-ui/core".to_string(),
+            css_dir: "@devup-ui/core".to_string(),
+            single_css: true,
+            import_main_css: false,
+            import_aliases: std::collections::HashMap::new(),
+        };
+        let mut sheet = StyleSheet::default();
+        let b = extract(
+            "b.tsx",
+            "import {globalCss} from '@devup-ui/core';globalCss({ '@layer base': { p: { m: 0 } } });globalCss`@import \"b.css\";`;globalCss({ imports: ['b.css'], fontFaces: [{ fontFamily: 'B', src: 'b.woff2' }] })",
+            option.clone(),
+        )
+        .unwrap();
+        let a = extract(
+            "a.tsx",
+            "import {globalCss} from '@devup-ui/core';globalCss({ '@layer reset': { p: { m: 0 } }, '@layer base': { p: { m: 1 } } })",
+            option,
+        )
+        .unwrap();
+        assert!(sheet.update_styles(&b.styles, "b.tsx", true).1);
+        assert!(sheet.update_styles(&a.styles, "a.tsx", true).1);
+        assert!(!sheet.update_styles(&b.styles, "b.tsx", true).1);
+        assert!(!sheet.update_styles(&a.styles, "a.tsx", true).1);
+        assert_eq!(sheet.layer_orders["a.tsx"], ["reset", "base"]);
+        let css = sheet.create_css(None, false);
+        assert!(css.contains("@layer reset,base;"), "{css}");
+
+        assert!(sheet.rm_global_css("a.tsx", true));
+        assert!(!sheet.layer_orders.contains_key("a.tsx"));
+        let css = sheet.create_css(None, false);
+        assert!(css.contains("@layer base;"), "{css}");
     }
 
     #[test]

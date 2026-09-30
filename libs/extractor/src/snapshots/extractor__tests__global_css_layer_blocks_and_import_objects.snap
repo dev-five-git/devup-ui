@@ -89,14 +89,26 @@ ToBTreeSet {
         ),
         Import(
             ExtractImport {
-                url: "\"a.css\" screen",
                 file: "test.tsx",
+                order: 1,
+                url: "\"a.css\" screen",
             },
         ),
         Import(
             ExtractImport {
-                url: "\"b.css\"",
                 file: "test.tsx",
+                order: 2,
+                url: "\"b.css\"",
+            },
+        ),
+        LayerOrder(
+            ExtractLayerOrder {
+                file: "test.tsx",
+                layers: [
+                    "utilities",
+                    "base",
+                    "base.reset",
+                ],
             },
         ),
     },

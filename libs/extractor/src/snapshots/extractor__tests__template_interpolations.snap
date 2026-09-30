@@ -60,14 +60,16 @@ ToBTreeSet {
         ),
         Css(
             ExtractCss {
-                css: "a{color:var(--colors-link)}",
                 file: "test.tsx",
+                order: 1,
+                css: "body{color:red;padding:4px}",
             },
         ),
         Css(
             ExtractCss {
-                css: "body{color:red;padding:4px}",
                 file: "test.tsx",
+                order: 2,
+                css: "a{color:var(--colors-link)}",
             },
         ),
         Keyframes(

@@ -160,8 +160,9 @@ fn collect_global_styles<'a>(
                                             }
                                             styles.push(ExtractStyleProp::Static(
                                                 ExtractStyleValue::Import(ExtractImport {
-                                                    url: import_url,
                                                     file: file.to_string(),
+                                                    order: 0,
+                                                    url: import_url,
                                                 }),
                                             ));
                                         }
@@ -170,8 +171,9 @@ fn collect_global_styles<'a>(
                                     {
                                         styles.push(ExtractStyleProp::Static(
                                             ExtractStyleValue::Import(ExtractImport {
-                                                url: url.into_owned(),
                                                 file: file.to_string(),
+                                                order: 0,
+                                                url: url.into_owned(),
                                             }),
                                         ));
                                     }
@@ -182,6 +184,7 @@ fn collect_global_styles<'a>(
                                 for p in &arr.elements {
                                     if let ArrayExpressionElement::ObjectExpression(o) = p {
                                         styles.push(ExtractStyleProp::Static(ExtractStyleValue::FontFace(ExtractFontFace {
+                                            order: 0,
                                             properties: o
                                                 .properties
                                                 .iter()
@@ -216,6 +219,7 @@ fn collect_global_styles<'a>(
                                             .collect::<Vec<_>>();
                                         styles.push(ExtractStyleProp::Static(
                                             ExtractStyleValue::FontFace(ExtractFontFace {
+                                                order: 0,
                                                 properties: css_styles
                                                     .iter()
                                                     .filter_map(|p| {
