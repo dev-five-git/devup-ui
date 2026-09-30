@@ -1,0 +1,7 @@
+{
+  "changes": {
+    "bindings/devup-ui-wasm/package.json": "Patch"
+  },
+  "note": "globalCss: theme tokens ($text) resolve to var(--text) in global rules instead of being written as invalid $text; imports given as { url, query } objects with unquoted keys are emitted instead of dropped; an '@layer name' key puts the rules it holds in that cascade layer (layers nest as base.reset) instead of flattening them into invalid declarations, and a layer name that is not one identifier is a build error",
+  "date": "2026-09-30T00:00:00.000Z"
+}

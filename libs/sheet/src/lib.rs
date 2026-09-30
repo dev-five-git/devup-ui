@@ -1066,9 +1066,7 @@ impl StyleSheet {
                 css.push('{');
                 open_selector = Some(selector);
             }
-            css.push_str(&prop.property);
-            css.push(':');
-            css.push_str(&prop.value);
+            prop.write_declaration(css);
         }
         if open_selector.is_some() {
             css.push('}');
@@ -3631,6 +3629,30 @@ mod tests {
                 .unwrap();
             assert_eq!(format!("{}{}", &css[..start], &css[end..]), expected);
         }
+    }
+
+    #[test]
+    #[serial]
+    fn test_global_css_reads_theme_tokens() {
+        let mut sheet = StyleSheet::default();
+        let output = extract(
+            "global.tsx",
+            "import {globalCss} from '@devup-ui/core';globalCss({ body: { color: '$text', border: '1px solid $line.100' } })",
+            ExtractOption {
+                package: "@devup-ui/core".to_string(),
+                css_dir: "@devup-ui/core".to_string(),
+                single_css: true,
+                import_main_css: false,
+                import_aliases: std::collections::HashMap::new(),
+            },
+        )
+        .unwrap();
+        sheet.update_styles(&output.styles, "global.tsx", true);
+        let css = sheet.create_css(None, false);
+        assert!(
+            css.contains("body{border:1px solid var(--line-100);color:var(--text)}"),
+            "{css}"
+        );
     }
 
     #[test]

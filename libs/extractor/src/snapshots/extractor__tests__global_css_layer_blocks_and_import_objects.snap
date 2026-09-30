@@ -1,0 +1,104 @@
+---
+source: libs/extractor/src/lib.rs
+expression: "ToBTreeSet::from(extract(\"test.tsx\",\nr\"import {globalCss} from '@devup-ui/react'\nglobalCss({\n    imports: [{ url: 'a.css', query: 'screen' }, { 'url': 'b.css' }],\n    '@layer utilities': { '.x': { color: 'blue' }, '.y': { color: 'red', _print: { color: 'black' } } },\n    '@layer base': { '@layer reset': { html: { m: 0 } } },\n})\",\nExtractOption::default(),).unwrap())"
+---
+ToBTreeSet {
+    styles: {
+        Static(
+            ExtractStaticStyle {
+                property: "color",
+                value: "black",
+                level: 0,
+                selector: Some(
+                    At {
+                        kind: Media,
+                        query: "print",
+                        selector: Some(
+                            ".y",
+                        ),
+                        outer: [],
+                        file: Some(
+                            "test.tsx",
+                        ),
+                    },
+                ),
+                style_order: Some(
+                    0,
+                ),
+                layer: Some(
+                    "utilities",
+                ),
+            },
+        ),
+        Static(
+            ExtractStaticStyle {
+                property: "color",
+                value: "blue",
+                level: 0,
+                selector: Some(
+                    Global(
+                        ".x",
+                        "test.tsx",
+                    ),
+                ),
+                style_order: Some(
+                    0,
+                ),
+                layer: Some(
+                    "utilities",
+                ),
+            },
+        ),
+        Static(
+            ExtractStaticStyle {
+                property: "color",
+                value: "red",
+                level: 0,
+                selector: Some(
+                    Global(
+                        ".y",
+                        "test.tsx",
+                    ),
+                ),
+                style_order: Some(
+                    0,
+                ),
+                layer: Some(
+                    "utilities",
+                ),
+            },
+        ),
+        Static(
+            ExtractStaticStyle {
+                property: "margin",
+                value: "0",
+                level: 0,
+                selector: Some(
+                    Global(
+                        "html",
+                        "test.tsx",
+                    ),
+                ),
+                style_order: Some(
+                    0,
+                ),
+                layer: Some(
+                    "base.reset",
+                ),
+            },
+        ),
+        Import(
+            ExtractImport {
+                url: "\"a.css\" screen",
+                file: "test.tsx",
+            },
+        ),
+        Import(
+            ExtractImport {
+                url: "\"b.css\"",
+                file: "test.tsx",
+            },
+        ),
+    },
+    code: "import \"@devup-ui/react/devup-ui-0.css\";\n;\n",
+}

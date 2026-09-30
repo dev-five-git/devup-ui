@@ -90,6 +90,30 @@ fn collect_global_styles<'a>(
                                     );
                                 }
                             }
+                        } else if let Some(layer) = name
+                            .strip_prefix("@layer")
+                            .filter(|rest| rest.starts_with(char::is_whitespace))
+                            .map(str::trim)
+                        {
+                            if layer.is_empty()
+                                || !layer.chars().all(|c| {
+                                    c.is_ascii_alphanumeric() || matches!(c, '-' | '_' | '.')
+                                })
+                            {
+                                styles.push(unreadable_key(&o.key, false));
+                                continue;
+                            }
+                            // `'@layer name': { selector: rules }` puts the rules it holds in the layer
+                            let mut layered = vec![];
+                            collect_global_styles(
+                                ast_builder,
+                                &mut o.value,
+                                file,
+                                at_rules,
+                                &mut layered,
+                            );
+                            place_in_layer(&mut layered, layer);
+                            styles.extend(layered);
                         } else if let Some(at_rule) = global_at_rule_key(&name) {
                             let mut nested = at_rules.to_vec();
                             nested.push(at_rule);
@@ -106,9 +130,7 @@ fn collect_global_styles<'a>(
                                         let mut query = None;
                                         for p in &obj.properties {
                                             if let ObjectPropertyKind::ObjectProperty(o) = p
-                                                && let Some(ident) = o.key.as_expression()
-                                                && let Some(ident) =
-                                                    get_string_by_literal_expression(ident)
+                                                && let Some(ident) = get_str_by_property_key(&o.key)
                                             {
                                                 if ident == "url" {
                                                     url =

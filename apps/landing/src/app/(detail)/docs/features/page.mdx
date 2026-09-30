@@ -265,6 +265,15 @@ globalCss({
 })
 ```
 
+Theme tokens work as in any style (`body: { color: '$text' }`). `imports` takes URLs or `{ url, query }` objects, emitted as `@import` rules; an `'@layer name'` key puts the rules it holds in that cascade layer, and layers nest (`'@layer base': { '@layer reset': { ... } }` is `base.reset`):
+
+```tsx
+globalCss({
+  imports: ['reset.css', { url: 'print.css', query: 'print' }],
+  '@layer utilities': { '.hidden': { display: 'none' } },
+})
+```
+
 ## keyframes() API
 
 Define CSS animations.
