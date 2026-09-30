@@ -1,0 +1,7 @@
+{
+  "changes": {
+    "bindings/devup-ui-wasm/package.json": "Patch"
+  },
+  "note": "Fix vanilla-extract stylesheets: styles are named after the variable holding them, so style calls nested in objects no longer shift every later name onto the wrong styles and such objects export their classes; createVar, createContainer, layer, fontFace and theme variables get names unique to each stylesheet instead of colliding across files, createVar returns var() so template literals and fallbackVar work, createTheme(tokens, debugId), the three-argument createGlobalTheme and unassigned createGlobalTheme calls produce their variables, createThemeContract exports, styleVariants variants resolve in selectors and compositions and accept a map function, composition keeps transitive bases, '@layer' records, globalLayer, createGlobalThemeContract, assignVars and globalFontFace work, and layers keep their declaration order. Emotion and styled-components object styles read numbers as pixels (Devup UI shorthands keep the spacing scale), compose several style arguments or arrays, and accept Emotion's styled(tag, options) factory; css() composes class names passed with rule objects. A global '@layer' now covers responsive, selector and at-rule declarations, and layered declarations keep their breakpoints. Custom properties keep their value instead of reading a number as the spacing scale. A typography preset no longer overrides a property written beside it at a wider breakpoint, in components and globalCss",
+  "date": "2026-09-27T00:00:00.000Z"
+}

@@ -7,7 +7,7 @@ ToBTreeSet {
         Static(
             ExtractStaticStyle {
                 property: "container-name",
-                value: "__container_0__",
+                value: "container-0-0",
                 level: 0,
                 selector: None,
                 style_order: None,
@@ -32,7 +32,7 @@ ToBTreeSet {
                 selector: Some(
                     At {
                         kind: Container,
-                        query: "__container_0__ (min-width:400px)",
+                        query: "container-0-0 (min-width:400px)",
                         selector: None,
                         outer: [],
                         file: None,
@@ -43,5 +43,5 @@ ToBTreeSet {
             },
         ),
     },
-    code: "import \"@devup-ui/react/devup-ui.css\";\nexport const responsive = \"a\";\nexport const sidebarContainer = \"b c\";\nexport const sidebar = \"__container_0__\";\n",
+    code: "import \"@devup-ui/react/devup-ui.css\";\nexport const responsive = \"a\";\nexport const sidebarContainer = \"b c\";\nexport const sidebar = \"container-0-0\";\n",
 }

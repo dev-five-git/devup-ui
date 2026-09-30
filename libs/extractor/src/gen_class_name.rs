@@ -1,5 +1,6 @@
 use crate::ExtractStyleProp;
 use crate::extract_style::style_property::StyleProperty;
+use crate::extractor::extract_style_from_expression::yield_typography;
 use crate::prop_modify_utils::convert_class_name;
 use crate::utils::is_same_expression;
 use oxc_allocator::{CloneIn, FromIn, GetAllocator};
@@ -16,6 +17,7 @@ pub fn gen_class_names<'a>(
     style_order: Option<u8>,
     filename: Option<&str>,
 ) -> Option<Expression<'a>> {
+    yield_typography(style_props);
     merge_expression_for_class_name(
         ast_builder,
         style_props
@@ -126,6 +128,7 @@ fn gen_class_name<'a>(
         ExtractStyleProp::Expression { expression, .. } => {
             Some(expression.clone_in(ast_builder.allocator()))
         }
+        ExtractStyleProp::Unreadable { .. } => None,
         // direct select
         ExtractStyleProp::MemberExpression { map, expression } => {
             let exp = Expression::ComputedMemberExpression(ComputedMemberExpression::boxed(

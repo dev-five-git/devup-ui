@@ -30,11 +30,11 @@ ToBTreeSet {
             ExtractDynamicStyle {
                 property: "opacity",
                 level: 0,
-                identifier: "arr[idx]",
+                identifier: "[...arr,1][idx]",
                 selector: None,
                 style_order: None,
             },
         ),
     },
-    code: "import \"@devup-ui/core/devup-ui.css\";\n<div className={`a ${{\n\t\"0\": \"b\",\n\t\"1\": \"d\"\n}[idx] || \"\"}`} style={{ \"--c\": arr[idx] }} />;\n",
+    code: "import \"@devup-ui/core/devup-ui.css\";\n<div className={`a ${{\n\t\"0\": \"b\",\n\t\"1\": \"d\"\n}[idx] || \"\"}`} style={{ \"--c\": [...arr,1][idx] }} />;\n",
 }

@@ -1,7 +1,7 @@
 import type { Stats } from 'node:fs'
 import * as fs from 'node:fs'
 import * as fsPromises from 'node:fs/promises'
-import { join, resolve } from 'node:path'
+import { join, relative, resolve } from 'node:path'
 
 import * as pluginUtils from '@devup-ui/plugin-utils'
 import * as wasm from '@devup-ui/wasm'
@@ -524,12 +524,29 @@ describe('devupUIWebpackPlugin', () => {
         resolve(process.cwd(), 'src', 'child.tsx'),
       ])
       readFileSyncSpy.mockReturnValue('source')
+      const setModuleResolverSpy = spyOn(
+        wasm,
+        'setModuleResolver',
+      ).mockReturnValue(undefined)
       const plugin = new DevupUIWebpackPlugin({
         package: '@devup-ui/react',
         singleCss: true,
       })
       plugin.apply(asCompiler(createCompiler()))
       expect(listSourceFilesSpy).toHaveBeenCalled()
+      // The loader's resolver is registered before the first extraction, so
+      // imported constants inline as they do in the loader
+      expect(setModuleResolverSpy.mock.invocationCallOrder[0]).toBeLessThan(
+        codeExtractSpy.mock.invocationCallOrder[0]!,
+      )
+      const resolveModule = setModuleResolverSpy.mock.calls[0]![0] as (
+        specifier: string,
+        importer: string,
+      ) => { path: string } | undefined
+      expect(resolveModule('./plugin.test', import.meta.path)?.path).toBe(
+        relative(process.cwd(), import.meta.path).replaceAll('\\', '/'),
+      )
+      setModuleResolverSpy.mockRestore()
       expect(codeExtractSpy).toHaveBeenCalledTimes(2)
       expect(codeExtractSpy).toHaveBeenCalledWith(
         'src/parent.tsx',

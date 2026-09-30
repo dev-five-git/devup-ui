@@ -50,6 +50,18 @@ export class ImportStorage {
     this.imports[key] = value
   }
 
+  /** The name the package exports for what `local` imports by name */
+  public importedName(local: string): string | undefined {
+    return Object.prototype.hasOwnProperty.call(this.imports, local)
+      ? this.imports[local]
+      : undefined
+  }
+
+  /** Whether `local` is the package imported whole, as a namespace or default */
+  public isImportObject(local: string): boolean {
+    return this.importObject.has(local)
+  }
+
   public checkContextType(node: TSESTree.Node) {
     switch (node.type) {
       case AST_NODE_TYPES.JSXOpeningElement: {

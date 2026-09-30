@@ -1,0 +1,103 @@
+---
+source: libs/extractor/src/lib.rs
+expression: "ToBTreeSet::from(extract(\"test.tsx\",\nr\"import { Box, css, styled, keyframes } from '@devup-ui/react';\nexport const a = (base) => css(base);\nexport const b = (on) => css(on && { color: 'blue' });\nexport const c = css('color: green; margin: 0');\nexport const d = (on, base) => css(on ? base : { color: 'red' });\nexport const e = css({ ...null, ...false, ...undefined, ...(void 0), p: 1 });\nexport const f = (rest, handler, k) => <Box {...rest} {...{ p: 1, onClick: handler, [k]: 1 }} />;\nexport const g = (theme, key) => <Box bg={theme.colors[key]} color={{ a: 'red', ...theme.more }['b']} />;\nexport const h = (Base) => styled.div(Base);\nexport const i = keyframes({ from: { opacity: 0 } } as const);\nexport const j = css(...{ bg: 'red' });\",\nExtractOption::default(),).unwrap())"
+---
+ToBTreeSet {
+    styles: {
+        Static(
+            ExtractStaticStyle {
+                property: "background",
+                value: "red",
+                level: 0,
+                selector: None,
+                style_order: None,
+                layer: None,
+            },
+        ),
+        Static(
+            ExtractStaticStyle {
+                property: "color",
+                value: "blue",
+                level: 0,
+                selector: None,
+                style_order: None,
+                layer: None,
+            },
+        ),
+        Static(
+            ExtractStaticStyle {
+                property: "color",
+                value: "green",
+                level: 0,
+                selector: None,
+                style_order: None,
+                layer: None,
+            },
+        ),
+        Static(
+            ExtractStaticStyle {
+                property: "color",
+                value: "red",
+                level: 0,
+                selector: None,
+                style_order: None,
+                layer: None,
+            },
+        ),
+        Static(
+            ExtractStaticStyle {
+                property: "margin",
+                value: "0",
+                level: 0,
+                selector: None,
+                style_order: None,
+                layer: None,
+            },
+        ),
+        Static(
+            ExtractStaticStyle {
+                property: "padding",
+                value: "4px",
+                level: 0,
+                selector: None,
+                style_order: None,
+                layer: None,
+            },
+        ),
+        Dynamic(
+            ExtractDynamicStyle {
+                property: "background",
+                level: 0,
+                identifier: "theme.colors[key]",
+                selector: None,
+                style_order: None,
+            },
+        ),
+        Dynamic(
+            ExtractDynamicStyle {
+                property: "color",
+                level: 0,
+                identifier: "({a:`red`,...theme.more})[`b`]",
+                selector: None,
+                style_order: None,
+            },
+        ),
+        Keyframes(
+            ExtractKeyframes {
+                keyframes: {
+                    "from": [
+                        ExtractStaticStyle {
+                            property: "opacity",
+                            value: "0",
+                            level: 0,
+                            selector: None,
+                            style_order: None,
+                            layer: None,
+                        },
+                    ],
+                },
+            },
+        ),
+    },
+    code: "import \"@devup-ui/react/devup-ui-0.css\";\nexport const a = (base) => base;\nexport const b = (on) => on ? \"a-a\" : \"\";\nexport const c = \"a-b a-c\";\nexport const d = (on, base) => `${on ? base : \"\"} ${on ? \"\" : \"a-d\"}`;\nexport const e = \"a-e\";\nexport const f = (rest, handler, k) => <div {...rest} {...{\n\tonClick: handler,\n\t[k]: 1\n}} className={`a-e ${{\n\tonClick: handler,\n\t[k]: 1\n}?.className || \"\"} ${rest?.className || \"\"}`} style={{\n\t...{\n\t\tonClick: handler,\n\t\t[k]: 1\n\t}?.style,\n\t...rest?.style\n}} />;\nexport const g = (theme, key) => <div className=\"a-f a-g\" style={{\n\t\"--a\": theme.colors[key],\n\t\"--b\": ({a:`red`,...theme.more})[`b`]\n}} />;\nexport const h = (Base) => ({ style, className, ...rest }) => <div {...rest} className={[Base, className].filter(Boolean).join(\" \")} style={style} />;\nexport const i = \"a-h\";\nexport const j = \"a-i\";\n",
+}

@@ -11,11 +11,11 @@ exports[`recommended export recommended config 1`] = `
             "defaultOptions": [],
             "meta": {
               "docs": {
-                "description": "CSS utils should only be used with literal values.",
+                "description": "CSS utils should only be used with values known at build time.",
                 "url": "https://github.com/dev-five-git/devup-ui/tree/main/packages/eslint-plugin/src/rules/css-utils-literal-only",
               },
               "messages": {
-                "cssUtilsLiteralOnly": "CSS utils should only be used with literal values.",
+                "cssUtilsLiteralOnly": "CSS utils should only be used with values known at build time: literals, constants, or what exact built-ins and the functions of this file compute from them.",
               },
               "schema": [],
               "type": "problem",

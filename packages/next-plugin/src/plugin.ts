@@ -31,7 +31,6 @@ import {
 } from './coordinator'
 import { collectProductionPrewarmFiles } from './prewarm'
 import { elapsedMs, profileStart, reportProfile } from './profile'
-import { transformStaticVanillaExtract } from './static-vanilla'
 import { loadWasm, loadWebpackPlugin } from './wasm'
 
 /** Options accepted by the Next.js integration. */
@@ -49,7 +48,6 @@ interface ProductionTurboSetupCache {
   prewarmedFiles: number
   rules: TurboRules
   token: string
-  wasmVariant: 'lite' | 'full'
 }
 
 const productionTurboSetupTokenEnv = 'DEVUP_UI_TURBO_SETUP_TOKEN'
@@ -113,18 +111,6 @@ export function reloadTurboSetupModuleForTesting(): void {
 export function resetTurboSetupCacheForTesting(): void {
   delete process.env[productionTurboSetupTokenEnv]
   productionTurboSetupOwner = `${performance.timeOrigin}-${Math.random()}`
-}
-
-export function selectWasmVariant(
-  graph: StaticImportGraph | undefined,
-  candidateFiles: string[] = graph?.files ?? [],
-  staticVanillaExtract = false,
-): 'lite' | 'full' {
-  return graph &&
-    (staticVanillaExtract ||
-      !candidateFiles.some((filename) => /\.css\.(?:ts|js)$/.test(filename)))
-    ? 'lite'
-    : 'full'
 }
 
 /**
@@ -206,7 +192,6 @@ export function DevupUI(
         pid: process.pid,
         prewarmedFiles: cachedSetup.prewarmedFiles,
         singleCss,
-        wasmVariant: cachedSetup.wasmVariant,
         watch,
       })
       return config
@@ -221,59 +206,7 @@ export function DevupUI(
       })
     if (!existsSync(gitignoreFile)) writeFileSync(gitignoreFile, '*')
 
-    // Boa is only needed to execute vanilla-extract-style `.css.ts`/`.css.js`
-    // modules. Build the graph before touching WASM so ordinary applications
-    // instantiate the much smaller engine, while vanilla-extract users retain
-    // the full evaluator automatically. If graph discovery fails, fail safe to
-    // the full engine.
-    const graphStartedAt = profileStart()
-    const srcDir = resolve(process.cwd(), 'src')
-    const tsconfigPath = resolve(process.cwd(), 'tsconfig.json')
-    let staticGraph: StaticImportGraph | undefined
-    try {
-      staticGraph = buildStaticImportGraph(srcDir, tsconfigPath)
-    } catch {
-      // The mapping pass below reports the graph failure and keeps its legacy
-      // best-effort behavior.
-    }
-    const candidateCollectStartedAt =
-      graphStartedAt === undefined ? undefined : performance.now()
-    const wasmCandidateFiles = staticGraph
-      ? collectProductionPrewarmFiles({
-          cwd: process.cwd(),
-          graph: staticGraph,
-          expectedBaseFiles: [],
-          libPackage,
-          include,
-        })
-      : []
-    const candidateCollectMs = elapsedMs(candidateCollectStartedAt)
-    const staticVanillaSources = new Map<
-      string,
-      { code: string; source: string }
-    >()
-    const vanillaCandidates = wasmCandidateFiles.filter((filename) =>
-      /\.css\.(?:ts|js)$/.test(filename),
-    )
-    let staticVanillaExtract =
-      !watch && !sourceMap && vanillaCandidates.length > 0
-    for (const filename of vanillaCandidates) {
-      if (!staticVanillaExtract) break
-      const source = readFileSync(resolve(process.cwd(), filename), 'utf-8')
-      const code = transformStaticVanillaExtract(filename, source, libPackage)
-      if (code === undefined) {
-        staticVanillaExtract = false
-        staticVanillaSources.clear()
-        break
-      }
-      staticVanillaSources.set(filename, { code, source })
-    }
-    const wasmVariant = selectWasmVariant(
-      staticGraph,
-      wasmCandidateFiles,
-      staticVanillaExtract,
-    )
-    const wasm = loadWasm(wasmVariant === 'lite')
+    const wasm = loadWasm()
     const {
       codeExtract,
       codeExtractWithoutSourceMap,
@@ -354,11 +287,15 @@ export function DevupUI(
     // deterministic base-css completion signal handed to the coordinator. Stays
     // `[]` (idle fallback) when no routes are detected or the pre-pass fails.
     let expectedBaseFiles: string[] = []
+    let staticGraph: StaticImportGraph | undefined
+    const graphStartedAt = profileStart()
     try {
-      if (!staticGraph) throw new Error('Static import graph unavailable')
+      const srcDir = resolve(process.cwd(), 'src')
+      const tsconfigPath = resolve(process.cwd(), 'tsconfig.json')
       const cwd = process.cwd()
       // One scan+parse of the source tree, shared by all three consumers below.
-      const graph = staticGraph
+      const graph = buildStaticImportGraph(srcDir, tsconfigPath)
+      staticGraph = graph
       // Atom hoisting owns the shared-chunk decision, so collapse runs WITHOUT
       // the file-level @global hoist (DEVUP_HOIST_V) in atom mode.
       const hoistV = atomMode
@@ -411,7 +348,6 @@ export function DevupUI(
         durationMs: elapsedMs(graphStartedAt),
         files: staticGraph.files.length,
         expectedBaseFiles: expectedBaseFiles.length,
-        wasmVariant,
       })
     } catch {
       // Pre-pass is best-effort; on failure canonical() is the identity (no
@@ -438,12 +374,16 @@ export function DevupUI(
       let prewarmReadMs = 0
       let prewarmSourceBytes = 0
       const cwd = process.cwd()
-      // The same complete candidate set selected the WASM variant above. Reuse
-      // it here instead of resolving source/package entries a second time,
-      // while retaining any compiled-file fallback supplied by the graph pass.
-      const prewarmFiles = [
-        ...new Set([...wasmCandidateFiles, ...expectedBaseFiles]),
-      ].sort()
+      const collectStartedAt =
+        prewarmStartedAt === undefined ? undefined : performance.now()
+      const prewarmFiles = collectProductionPrewarmFiles({
+        cwd,
+        graph: staticGraph,
+        expectedBaseFiles,
+        libPackage,
+        include,
+      })
+      const collectDurationMs = elapsedMs(collectStartedAt)
       for (const filename of prewarmFiles) {
         const resourcePath = resolve(cwd, filename)
         const relCssDir = `./${relative(
@@ -452,9 +392,7 @@ export function DevupUI(
         ).replaceAll('\\', '/')}`
         const readStartedAt =
           prewarmStartedAt === undefined ? undefined : performance.now()
-        const preparedVanilla = staticVanillaSources.get(filename)
-        const source =
-          preparedVanilla?.source ?? readFileSync(resourcePath, 'utf-8')
+        const source = readFileSync(resourcePath, 'utf-8')
         if (readStartedAt !== undefined) {
           prewarmReadMs += performance.now() - readStartedAt
           prewarmSourceBytes += Buffer.byteLength(source)
@@ -464,7 +402,7 @@ export function DevupUI(
         const output = takeExtractOutput(
           extract(
             filename,
-            preparedVanilla?.code ?? source,
+            source,
             libPackage,
             relCssDir,
             singleCss,
@@ -482,11 +420,12 @@ export function DevupUI(
           map: output.map,
           source,
           updatedBaseStyle: output.updatedBaseStyle,
+          dependencies: output.dependencies,
         })
         prewarmedFiles.push(filename)
       }
       reportProfile('next.prewarm', {
-        collectMs: candidateCollectMs,
+        collectMs: collectDurationMs,
         durationMs: elapsedMs(prewarmStartedAt),
         extractMs:
           prewarmStartedAt === undefined
@@ -544,7 +483,6 @@ export function DevupUI(
       prewarmedFiles,
       prewarmedOutputs,
       sourceMap,
-      staticVanillaExtract,
     })
 
     // Cleanup on exit
@@ -669,7 +607,6 @@ export function DevupUI(
         key: productionSetupKey,
         prewarmedFiles: prewarmedFiles.length,
         rules,
-        wasmVariant,
       })
     }
     reportProfile('next.setup', {
@@ -678,7 +615,6 @@ export function DevupUI(
       pid: process.pid,
       prewarmedFiles: prewarmedFiles.length,
       singleCss,
-      wasmVariant,
       watch,
     })
     return config

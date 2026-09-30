@@ -6,19 +6,27 @@ import {
   writeFileSync,
 } from 'node:fs'
 import { tmpdir } from 'node:os'
-import { join } from 'node:path'
+import { join, relative } from 'node:path'
 
 import * as wasm from '@devup-ui/wasm'
 import * as webpackPlugin from '@devup-ui/webpack-plugin'
-import { afterAll, afterEach, beforeAll, describe, expect, it } from 'bun:test'
+import {
+  afterAll,
+  afterEach,
+  beforeAll,
+  describe,
+  expect,
+  it,
+  mock,
+} from 'bun:test'
 
 import {
   loadWasm,
   loadWebpackPlugin,
   requireFromPlugin,
-  requireWasm,
   setWasmForTesting,
   setWebpackPluginForTesting,
+  withModuleResolver,
 } from '../wasm'
 
 const originalCwd = process.cwd()
@@ -38,16 +46,31 @@ afterAll(() => {
   for (const root of tempRoots) rmSync(root, { recursive: true, force: true })
 })
 
-describe('WASM selection', () => {
-  it('uses an injected namespace in tests', () => {
-    setWasmForTesting(wasm)
-    expect(loadWasm(true)).toBe(wasm)
-    expect(loadWasm(false)).toBe(wasm)
+describe('WASM loading', () => {
+  it('resolves imports to cwd-relative ids on engines that load modules', () => {
+    const setModuleResolver = mock()
+    const engine = { setModuleResolver } as unknown as typeof wasm
+    expect(withModuleResolver(engine)).toBe(engine)
+    const resolveModule = setModuleResolver.mock.calls[0]![0] as (
+      specifier: string,
+      importer: string,
+    ) => { path: string } | undefined
+    expect(resolveModule('./wasm.test', import.meta.path)?.path).toBe(
+      relative(process.cwd(), import.meta.path).replaceAll('\\', '/'),
+    )
+    const older = {} as typeof wasm
+    expect(withModuleResolver(older)).toBe(older)
   })
 
-  it('loads the full and lite package exports', () => {
-    expect(typeof loadWasm(false).codeExtract).toBe('function')
-    expect(typeof loadWasm(true).codeExtract).toBe('function')
+  it('uses an injected namespace in tests', () => {
+    setWasmForTesting(wasm)
+    expect(loadWasm()).toBe(wasm)
+  })
+
+  it('loads the package once', () => {
+    const loaded = loadWasm()
+    expect(typeof loaded.codeExtract).toBe('function')
+    expect(loadWasm()).toBe(loaded)
   })
 
   it('resolves dependencies from a Bun-style isolated install', () => {
@@ -86,39 +109,6 @@ describe('WASM selection', () => {
     expect(requireFromPlugin<{ isolated: boolean }>('@devup-ui/wasm')).toEqual({
       isolated: true,
     })
-  })
-
-  it.each(['MODULE_NOT_FOUND', 'ERR_PACKAGE_PATH_NOT_EXPORTED'])(
-    'falls back to the full package when the lite export fails with %s',
-    (code) => {
-      const specifiers: string[] = []
-      const loaded = requireWasm(true, (specifier) => {
-        specifiers.push(specifier)
-        if (specifier.endsWith('/lite')) {
-          const message =
-            code === 'ERR_PACKAGE_PATH_NOT_EXPORTED'
-              ? "Package subpath './lite' is not defined by exports in node_modules/@devup-ui/wasm/package.json"
-              : "Cannot find module '@devup-ui/wasm/lite'"
-          throw Object.assign(new Error(message), { code })
-        }
-        return wasm
-      })
-
-      expect(loaded).toBe(wasm)
-      expect(specifiers).toEqual(['@devup-ui/wasm/lite', '@devup-ui/wasm'])
-    },
-  )
-
-  it('does not hide failures while loading an available lite export', () => {
-    const loadError = Object.assign(new Error('invalid WASM binary'), {
-      code: 'MODULE_NOT_FOUND',
-    })
-
-    expect(() =>
-      requireWasm(true, () => {
-        throw loadError
-      }),
-    ).toThrow(loadError)
   })
 
   it('loads or injects the Webpack plugin without a static dependency', () => {

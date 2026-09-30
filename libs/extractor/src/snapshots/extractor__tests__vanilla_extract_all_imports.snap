@@ -6,12 +6,12 @@ ToBTreeSet {
     styles: {
         Static(
             ExtractStaticStyle {
-                property: "--color-primary-style_0-0",
+                property: "--color-primary-0-1",
                 value: "blue",
                 level: 0,
                 selector: Some(
                     Global(
-                        ".f0_theme",
+                        ".theme-0-0",
                         "all-imports.css.ts",
                     ),
                 ),
@@ -75,5 +75,5 @@ ToBTreeSet {
             },
         ),
     },
-    code: "import \"@devup-ui/react/devup-ui.css\";\nexport const box = \"a\";\nexport const [theme, vars] = [\"f0_theme\", { \"color\": { \"primary\": \"var(--color-primary-style_0-0)\" } }];\n;\n;\nexport const fadeIn = \"b\";\n",
+    code: "import \"@devup-ui/react/devup-ui.css\";\nexport const fadeIn = \"a\";\nexport const box = \"b\";\n;\n;\nexport const theme = \"theme-0-0\";\nexport const vars = { \"color\": { \"primary\": \"var(--color-primary-0-1)\" } };\n",
 }

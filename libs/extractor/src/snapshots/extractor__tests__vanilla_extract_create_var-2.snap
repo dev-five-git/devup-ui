@@ -7,7 +7,7 @@ ToBTreeSet {
         Static(
             ExtractStaticStyle {
                 property: "color",
-                value: "var(--var-0,red)",
+                value: "var(--var-0-0,red)",
                 level: 0,
                 selector: None,
                 style_order: None,
@@ -15,5 +15,5 @@ ToBTreeSet {
             },
         ),
     },
-    code: "import \"@devup-ui/react/devup-ui.css\";\nexport const box = \"a\";\nexport const colorVar = \"--var-0\";\n",
+    code: "import \"@devup-ui/react/devup-ui.css\";\nexport const box = \"a\";\nexport const colorVar = \"var(--var-0-0)\";\n",
 }

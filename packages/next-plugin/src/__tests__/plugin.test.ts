@@ -20,7 +20,6 @@ import {
   DevupUI,
   reloadTurboSetupModuleForTesting,
   resetTurboSetupCacheForTesting,
-  selectWasmVariant,
 } from '../plugin'
 import { setWasmForTesting, setWebpackPluginForTesting } from '../wasm'
 
@@ -182,31 +181,6 @@ afterEach(() => {
 })
 
 describe('DevupUINextPlugin', () => {
-  it('selects the lite engine only when the graph has no vanilla-extract file', () => {
-    expect(selectWasmVariant(undefined)).toBe('full')
-    expect(
-      selectWasmVariant({ files: ['src/page.tsx'] } as StaticImportGraph),
-    ).toBe('lite')
-    expect(
-      selectWasmVariant({ files: ['src/theme.css.ts'] } as StaticImportGraph),
-    ).toBe('full')
-    expect(
-      selectWasmVariant({ files: ['src/theme.css.js'] } as StaticImportGraph),
-    ).toBe('full')
-    expect(
-      selectWasmVariant(
-        { files: ['src/theme.css.ts'] } as StaticImportGraph,
-        ['src/theme.css.ts'],
-        true,
-      ),
-    ).toBe('lite')
-    expect(
-      selectWasmVariant({ files: ['src/page.tsx'] } as StaticImportGraph, [
-        'node_modules/design-system/theme.css.ts',
-      ]),
-    ).toBe('full')
-  })
-
   describe('webpack', () => {
     it('should apply webpack plugin', async () => {
       const ret = DevupUI({})
@@ -675,56 +649,14 @@ describe('DevupUINextPlugin', () => {
         prewarmedFiles: expect.any(Array),
         prewarmedOutputs: expect.any(Map),
         sourceMap: false,
-        staticVanillaExtract: false,
       })
     })
-    it('uses the lite extractor for a provably static vanilla style module', () => {
+    it('extracts vanilla-extract modules as written', () => {
       setNodeEnv('production')
       process.env.TURBOPACK = '1'
       const filename = resolve('src/styles.css.ts')
       const source = `import { style } from '@vanilla-extract/css'
 export const box = style({ color: 'red' })`
-      const graphSpy = spyOn(
-        importGraphModule,
-        'buildStaticImportGraph',
-      ).mockReturnValue(createSingleFileGraph(filename))
-      const compiledSpy = spyOn(
-        importGraphModule,
-        'computeCompiledFiles',
-      ).mockReturnValue(['src/styles.css.ts'])
-      readFileSyncSpy.mockImplementation((path: fs.PathOrFileDescriptor) =>
-        String(path).endsWith('styles.css.ts') ? source : '{}',
-      )
-
-      try {
-        DevupUI({})
-
-        expect(codeExtractWithoutSourceMapSpy).toHaveBeenCalledWith(
-          'src/styles.css.ts',
-          `import { css } from '@devup-ui/react'
-export const box = css({ color: 'red' })`,
-          '@devup-ui/react',
-          expect.any(String),
-          false,
-          false,
-          true,
-          expect.anything(),
-        )
-        expect(startCoordinatorSpy).toHaveBeenCalledWith(
-          expect.objectContaining({ staticVanillaExtract: true }),
-        )
-      } finally {
-        graphSpy.mockRestore()
-        compiledSpy.mockRestore()
-      }
-    })
-    it('keeps the full extractor for dynamic vanilla style modules', () => {
-      setNodeEnv('production')
-      process.env.TURBOPACK = '1'
-      const filename = resolve('src/styles.css.ts')
-      const source = `import { style } from '@vanilla-extract/css'
-const color = getColor()
-export const box = style({ color })`
       const graphSpy = spyOn(
         importGraphModule,
         'buildStaticImportGraph',
@@ -749,9 +681,6 @@ export const box = style({ color })`
           false,
           true,
           expect.anything(),
-        )
-        expect(startCoordinatorSpy).toHaveBeenCalledWith(
-          expect.objectContaining({ staticVanillaExtract: false }),
         )
       } finally {
         graphSpy.mockRestore()
@@ -959,7 +888,6 @@ export const box = style({ color })`
         prewarmedFiles: [],
         prewarmedOutputs: expect.any(Map),
         sourceMap: true,
-        staticVanillaExtract: false,
       })
       expect(codeExtractSpy).not.toHaveBeenCalled()
       expect(codeExtractWithoutSourceMapSpy).not.toHaveBeenCalled()
@@ -1002,7 +930,9 @@ export const box = style({ color })`
       codeExtractWithoutSourceMapSpy.mockImplementation(
         (filename: string, contents: string) => {
           events.push(`extract:${filename}`)
-          return createCodeExtractResult(contents)
+          return Object.assign(createCodeExtractResult(contents), {
+            dependencies: [`${filename}.tokens.ts`],
+          })
         },
       )
       startCoordinatorSpy.mockImplementation(() => {
@@ -1049,11 +979,19 @@ export const box = style({ color })`
           new Map([
             [
               'src/app/page.tsx',
-              expect.objectContaining({ code: '{}', source: '{}' }),
+              expect.objectContaining({
+                code: '{}',
+                source: '{}',
+                dependencies: ['src/app/page.tsx.tokens.ts'],
+              }),
             ],
             [
               'src/lazy/panel.tsx',
-              expect.objectContaining({ code: '{}', source: '{}' }),
+              expect.objectContaining({
+                code: '{}',
+                source: '{}',
+                dependencies: ['src/lazy/panel.tsx.tokens.ts'],
+              }),
             ],
           ]),
         )

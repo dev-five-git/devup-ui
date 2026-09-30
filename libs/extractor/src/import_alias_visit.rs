@@ -8,13 +8,177 @@
 //! - `import { style } from '@vanilla-extract/css'` → `import { style } from '@devup-ui/react'`
 
 use crate::ImportAlias;
-use crate::utils::is_vanilla_extract_file;
+use crate::utils::{
+    get_str_by_property_key, is_vanilla_extract_file, js_number_literal, keeps_bare_number,
+};
 use oxc_allocator::Allocator;
-use oxc_ast::ast::{ImportDeclarationSpecifier, ModuleExportName};
+use oxc_ast::ast::{
+    Argument, CallExpression, Expression, ImportDeclarationSpecifier, JSXAttributeItem,
+    JSXAttributeValue, JSXElementName, JSXOpeningElement, ModuleExportName, ObjectPropertyKind,
+    Statement,
+};
+use oxc_ast_visit::{
+    Visit,
+    walk::{walk_call_expression, walk_jsx_opening_element},
+};
 use oxc_parser::Parser;
-use oxc_span::SourceType;
+use oxc_span::{GetSpan, SourceType};
 use std::borrow::Cow;
 use std::collections::HashMap;
+
+/// Where a style function takes its rules
+#[derive(Clone, Copy)]
+enum RulesAt {
+    Argument(usize),
+    EveryArgument,
+}
+
+/// Numbers in rules written against vanilla-extract, Emotion or styled-components
+/// outside a stylesheet. Those calls become Devup UI's, which read a number as its
+/// spacing scale, so it is rewritten to the `px` string the library makes of it.
+#[derive(Default)]
+struct LibraryNumbers<'n> {
+    /// Local name of each style function and where its rules are
+    calls: Vec<(&'n str, RulesAt)>,
+    /// Local names that build styled components
+    styled: Vec<&'n str>,
+    /// Local names of components taking rules in `styles` (Emotion's `Global`)
+    components: Vec<&'n str>,
+    replacements: Vec<(usize, usize, String)>,
+}
+
+impl LibraryNumbers<'_> {
+    /// `styled.div`, `styled(tag)`, `styled(tag, options)` and their
+    /// `.attrs()` / `.withConfig()`: whatever a call of it passes are rules
+    fn is_styled_factory(&self, callee: &Expression) -> bool {
+        match callee {
+            Expression::StaticMemberExpression(member) => {
+                matches!(&member.object, Expression::Identifier(root) if self.styled.contains(&root.name.as_str()))
+            }
+            Expression::CallExpression(call) => match &call.callee {
+                Expression::Identifier(root) => self.styled.contains(&root.name.as_str()),
+                Expression::StaticMemberExpression(member) => {
+                    matches!(member.property.name.as_str(), "attrs" | "withConfig")
+                        && self.is_styled_factory(&member.object)
+                }
+                _ => false,
+            },
+            _ => false,
+        }
+    }
+
+    fn pixelify(&mut self, rules: &Expression) {
+        match rules {
+            Expression::ArrayExpression(array) => {
+                for element in &array.elements {
+                    if let Some(element) = element.as_expression() {
+                        self.pixelify(element);
+                    }
+                }
+            }
+            Expression::ObjectExpression(object) => {
+                for property in &object.properties {
+                    if let ObjectPropertyKind::ObjectProperty(property) = property
+                        && let Some(key) = get_str_by_property_key(&property.key)
+                    {
+                        self.pixelify_value(&key, &property.value);
+                    }
+                }
+            }
+            Expression::ConditionalExpression(conditional) => {
+                self.pixelify(&conditional.consequent);
+                self.pixelify(&conditional.alternate);
+            }
+            Expression::LogicalExpression(logical) => self.pixelify(&logical.right),
+            Expression::ParenthesizedExpression(inner) => self.pixelify(&inner.expression),
+            _ => {}
+        }
+    }
+
+    fn pixelify_value(&mut self, key: &str, value: &Expression) {
+        if let Some(number) = js_number_literal(value) {
+            if number != 0.0 && !keeps_bare_number(key) {
+                let span = value.span();
+                self.replacements.push((
+                    span.start as usize,
+                    span.end as usize,
+                    format!("\"{number}px\""),
+                ));
+            }
+            return;
+        }
+        match value {
+            Expression::ObjectExpression(_) => {
+                if key != "vars" {
+                    self.pixelify(value);
+                }
+            }
+            Expression::ConditionalExpression(conditional) => {
+                self.pixelify_value(key, &conditional.consequent);
+                self.pixelify_value(key, &conditional.alternate);
+            }
+            Expression::LogicalExpression(logical) => self.pixelify_value(key, &logical.right),
+            Expression::ParenthesizedExpression(inner) => {
+                self.pixelify_value(key, &inner.expression);
+            }
+            _ => {}
+        }
+    }
+}
+
+impl<'a> Visit<'a> for LibraryNumbers<'_> {
+    fn visit_call_expression(&mut self, call: &CallExpression<'a>) {
+        let rules_at = match &call.callee {
+            Expression::Identifier(callee) => self
+                .calls
+                .iter()
+                .find(|(name, _)| *name == callee.name.as_str())
+                .map(|(_, rules_at)| *rules_at),
+            callee => self
+                .is_styled_factory(callee)
+                .then_some(RulesAt::EveryArgument),
+        };
+        let rules: Vec<&Expression<'a>> = match rules_at {
+            Some(RulesAt::Argument(index)) => call
+                .arguments
+                .get(index)
+                .and_then(Argument::as_expression)
+                .into_iter()
+                .collect(),
+            Some(RulesAt::EveryArgument) => call
+                .arguments
+                .iter()
+                .filter_map(Argument::as_expression)
+                .collect(),
+            None => vec![],
+        };
+        for rules in rules {
+            self.pixelify(rules);
+        }
+        walk_call_expression(self, call);
+    }
+
+    fn visit_jsx_opening_element(&mut self, element: &JSXOpeningElement<'a>) {
+        if let JSXElementName::IdentifierReference(name) = &element.name
+            && self.components.contains(&name.name.as_str())
+        {
+            for attribute in &element.attributes {
+                if let JSXAttributeItem::Attribute(attribute) = attribute
+                    && attribute
+                        .name
+                        .as_identifier()
+                        .is_some_and(|name| name.name == "styles")
+                    && let Some(JSXAttributeValue::ExpressionContainer(container)) =
+                        &attribute.value
+                    && let Some(rules) = container.expression.as_expression()
+                {
+                    self.pixelify(rules);
+                }
+            }
+        }
+        walk_jsx_opening_element(self, element);
+    }
+}
 
 /// Map an aliased package's export onto the `@devup-ui/react` export that implements the
 /// same behaviour, so the extractor consumes the call and drops the import entirely — no
@@ -55,6 +219,19 @@ fn devup_equivalent(source: &str, imported: &str) -> Option<DevupTarget<'static>
     }
 }
 
+#[cfg(test)]
+pub fn transform_import_aliases<'a>(
+    code: &'a str,
+    filename: &str,
+    package: &str,
+    import_aliases: &HashMap<String, ImportAlias>,
+) -> Cow<'a, str> {
+    transform_import_aliases_with_edits(code, filename, package, import_aliases).0
+}
+
+/// A replacement of `code[start..end]` by text of `length` bytes
+pub type Edit = (usize, usize, usize);
+
 /// Transform source code by rewriting aliased imports to the target package
 ///
 /// # Arguments
@@ -64,16 +241,18 @@ fn devup_equivalent(source: &str, imported: &str) -> Option<DevupTarget<'static>
 /// * `import_aliases` - Map of source package → alias configuration
 ///
 /// # Returns
-/// The transformed source code, or the original code if no transformations were needed
-pub fn transform_import_aliases<'a>(
+/// The transformed source code, or the original code if no transformations were
+/// needed, and the replacements made in order, so a position in the result maps
+/// back to the source
+pub fn transform_import_aliases_with_edits<'a>(
     code: &'a str,
     filename: &str,
     package: &str,
     import_aliases: &HashMap<String, ImportAlias>,
-) -> Cow<'a, str> {
+) -> (Cow<'a, str>, Vec<Edit>) {
     // Quick check: if no aliases match, return original code
     if import_aliases.is_empty() || !import_aliases.keys().any(|alias| code.contains(alias)) {
-        return Cow::Borrowed(code);
+        return (Cow::Borrowed(code), Vec::new());
     }
 
     let allocator = Allocator::default();
@@ -87,9 +266,10 @@ pub fn transform_import_aliases<'a>(
 
     // Collect import transformations
     let mut transformations: Vec<(usize, usize, String)> = Vec::new();
+    let mut numbers = LibraryNumbers::default();
 
     for stmt in &program.body {
-        if let oxc_ast::ast::Statement::ImportDeclaration(import_decl) = stmt {
+        if let Statement::ImportDeclaration(import_decl) = stmt {
             let source_value = import_decl.source.value.as_str();
 
             if let Some(alias) = import_aliases.get(source_value) {
@@ -97,21 +277,89 @@ pub fn transform_import_aliases<'a>(
                 let new_import =
                     generate_transformed_import(import_decl, alias, package, redirect_every_name);
                 transformations.push((span.start as usize, span.end as usize, new_import));
+                if !redirect_every_name {
+                    for specifier in import_decl.specifiers.iter().flatten() {
+                        match specifier {
+                            ImportDeclarationSpecifier::ImportSpecifier(spec) => {
+                                let local = spec.local.name.as_str();
+                                match (source_value, imported_name(&spec.imported).as_ref()) {
+                                    ("@vanilla-extract/css", "style" | "keyframes") => {
+                                        numbers.calls.push((local, RulesAt::Argument(0)));
+                                    }
+                                    ("@vanilla-extract/css", "globalStyle") => {
+                                        numbers.calls.push((local, RulesAt::Argument(1)));
+                                    }
+                                    (
+                                        "@emotion/react" | "styled-components",
+                                        "css" | "keyframes",
+                                    ) => numbers.calls.push((local, RulesAt::EveryArgument)),
+                                    ("@emotion/react", "Global") => numbers.components.push(local),
+                                    _ => {}
+                                }
+                            }
+                            ImportDeclarationSpecifier::ImportDefaultSpecifier(spec)
+                                if matches!(
+                                    source_value,
+                                    "@emotion/styled" | "styled-components"
+                                ) =>
+                            {
+                                numbers.styled.push(spec.local.name.as_str());
+                            }
+                            ImportDeclarationSpecifier::ImportNamespaceSpecifier(spec)
+                                if matches!(
+                                    source_value,
+                                    "@emotion/styled" | "styled-components"
+                                ) =>
+                            {
+                                numbers.styled.push(spec.local.name.as_str());
+                            }
+                            _ => {}
+                        }
+                    }
+                }
             }
         }
+    }
+    if !(numbers.calls.is_empty() && numbers.styled.is_empty() && numbers.components.is_empty()) {
+        numbers.visit_program(&program);
+        transformations.append(&mut numbers.replacements);
+        transformations.sort_unstable_by_key(|(start, ..)| *start);
     }
 
     // Apply transformations in reverse order to preserve positions
     if transformations.is_empty() {
-        return Cow::Borrowed(code);
+        return (Cow::Borrowed(code), Vec::new());
     }
 
+    let edits = transformations
+        .iter()
+        .map(|(start, end, replacement)| (*start, *end, replacement.len()))
+        .collect();
     let mut result = code.to_string();
     for (start, end, replacement) in transformations.into_iter().rev() {
         result.replace_range(start..end, &replacement);
     }
 
-    Cow::Owned(result)
+    (Cow::Owned(result), edits)
+}
+
+/// The source offset of `offset` in code `edits` made; an offset inside a
+/// replacement maps to where the replaced text began
+#[must_use]
+pub fn source_offset(edits: &[Edit], offset: usize) -> usize {
+    let (mut added, mut removed) = (0, 0);
+    for &(start, end, length) in edits {
+        let replaced_at = start + added - removed;
+        if offset < replaced_at {
+            break;
+        }
+        if offset < replaced_at + length {
+            return start;
+        }
+        added += length;
+        removed += end - start;
+    }
+    offset + removed - added
 }
 
 /// Pick the name a specifier should import from the target package, or `None` to leave it
@@ -338,6 +586,26 @@ mod tests {
         aliases
     }
 
+    #[test]
+    fn test_source_offset() {
+        // `ab` at 2 became 5 bytes and `cdef` at 10 became 1 byte
+        let edits = [(2, 4, 5), (10, 14, 1)];
+        for (offset, source) in [
+            (0, 0),
+            (1, 1),
+            (2, 2),
+            (6, 2),
+            (7, 4),
+            (12, 9),
+            (13, 10),
+            (14, 14),
+            (20, 20),
+        ] {
+            assert_eq!(source_offset(&edits, offset), source, "{offset}");
+        }
+        assert_eq!(source_offset(&[], 7), 7);
+    }
+
     fn styled_components_alias() -> HashMap<String, ImportAlias> {
         let mut aliases = HashMap::new();
         aliases.insert(
@@ -499,6 +767,70 @@ export const container = style({ background: 'red' })",
             "@devup-ui/react",
             &vanilla_extract_alias()
         ));
+    }
+
+    #[test]
+    fn test_emotion_numbers_become_px() {
+        let code = r"import styled from '@emotion/styled'
+import { Global, ThemeProvider } from '@emotion/react'
+foo.bar.baz({ top: 1 })
+make()()({ top: 1 })
+;(() => 1)()
+styled.div({ top: 1, p: 2 })
+styled.div(cond && { top: 1 }, (flag ? { left: 2 } : { right: 3 }), { bottom: cond ? 4 : (5), left: (cond ? 7 : 8), vars: flag && { x: 6 } })
+export const A = () => <><div styles={{ top: 1 }} /><Global {...props} styles={{ top: 1 }} key={1} /></>";
+        let mut aliases = combined_aliases();
+        aliases.insert("@emotion/react".to_string(), ImportAlias::NamedToNamed);
+        assert_eq!(
+            transform_import_aliases(code, "test.tsx", "@devup-ui/react", &aliases),
+            r#"import { styled } from '@devup-ui/react';
+import { Global, ThemeProvider } from '@devup-ui/react/compat';
+foo.bar.baz({ top: 1 })
+make()()({ top: 1 })
+;(() => 1)()
+styled.div({ top: "1px", p: 2 })
+styled.div(cond && { top: "1px" }, (flag ? { left: "2px" } : { right: "3px" }), { bottom: cond ? "4px" : "5px", left: (cond ? "7px" : "8px"), vars: flag && { x: 6 } })
+export const A = () => <><div styles={{ top: 1 }} /><Global {...props} styles={{ top: "1px" }} key={1} /></>"#
+        );
+    }
+
+    #[test]
+    fn test_vanilla_extract_numbers_become_px_outside_stylesheets() {
+        let code = r"import { style as s, globalStyle, keyframes, styleVariants } from '@vanilla-extract/css'
+export const a = s({ padding: 8, top: -2, left: (1.5), width: 0, lineHeight: 1.5, vars: { '--x': 4 }, [key]: 5, ...rest, selectors: { '&:hover': { margin: 4 } } })
+export const b = s([a, { right: 3 }], 'debug')
+globalStyle('body', { margin: 2 })
+keyframes({ from: { width: 10, opacity: 0 }, '50%': { width: 20 } })
+styleVariants({ small: { padding: 1 } })
+other({ padding: 8 })
+s()";
+        assert_eq!(
+            transform_import_aliases(
+                code,
+                "test.tsx",
+                "@devup-ui/react",
+                &vanilla_extract_alias()
+            ),
+            r#"import { css as s, globalCss as globalStyle, keyframes } from '@devup-ui/react'; import { styleVariants } from '@vanilla-extract/css';
+export const a = s({ padding: "8px", top: "-2px", left: "1.5px", width: 0, lineHeight: 1.5, vars: { '--x': 4 }, [key]: 5, ...rest, selectors: { '&:hover': { margin: "4px" } } })
+export const b = s([a, { right: "3px" }], 'debug')
+globalStyle('body', { margin: "2px" })
+keyframes({ from: { width: "10px", opacity: 0 }, '50%': { width: "20px" } })
+styleVariants({ small: { padding: 1 } })
+other({ padding: 8 })
+s()"#
+        );
+        let stylesheet =
+            "import { style } from '@vanilla-extract/css'\nexport const a = style({ padding: 8 })";
+        assert!(
+            transform_import_aliases(
+                stylesheet,
+                "a.css.ts",
+                "@devup-ui/react",
+                &vanilla_extract_alias()
+            )
+            .ends_with("style({ padding: 8 })")
+        );
     }
 
     #[test]

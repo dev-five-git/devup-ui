@@ -6,12 +6,12 @@ ToBTreeSet {
     styles: {
         Static(
             ExtractStaticStyle {
-                property: "--color-brand",
+                property: "--color-brand-0-0",
                 value: "white",
                 level: 0,
                 selector: Some(
                     Global(
-                        ".f0_darkTheme",
+                        ".theme-0-2",
                         "theme-two-arg.css.ts",
                     ),
                 ),
@@ -23,12 +23,12 @@ ToBTreeSet {
         ),
         Static(
             ExtractStaticStyle {
-                property: "--color-text",
+                property: "--color-text-0-1",
                 value: "lightgray",
                 level: 0,
                 selector: Some(
                     Global(
-                        ".f0_darkTheme",
+                        ".theme-0-2",
                         "theme-two-arg.css.ts",
                     ),
                 ),
@@ -39,5 +39,5 @@ ToBTreeSet {
             },
         ),
     },
-    code: "import \"@devup-ui/react/devup-ui.css\";\nexport const darkTheme = \"f0_darkTheme\";\n;\n",
+    code: "import \"@devup-ui/react/devup-ui.css\";\n;\nexport const darkTheme = \"theme-0-2\";\n",
 }

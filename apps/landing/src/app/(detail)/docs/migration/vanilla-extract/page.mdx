@@ -9,7 +9,7 @@ export const metadata = {
 
 ## Stylesheet files
 
-Inside `.css.ts` / `.css.js` — the only place vanilla-extract allows its APIs — Devup UI evaluates the module and replaces every call with its generated output. The whole surface works there: `style`, `globalStyle`, `keyframes`, `styleVariants`, `fontFace`, `createVar`, `fallbackVar`, `createTheme`, `createThemeContract`, `layer`, `createContainer`.
+Inside `.css.ts` / `.css.js` — the only place vanilla-extract allows its APIs — Devup UI evaluates the module and replaces every call with its generated output. The whole surface works there: `style`, `globalStyle`, `keyframes`, `styleVariants`, `fontFace`, `globalFontFace`, `createVar`, `fallbackVar`, `createTheme`, `createGlobalTheme`, `createThemeContract`, `createGlobalThemeContract`, `assignVars`, `layer`, `globalLayer`, `createContainer`. Generated names — custom properties, containers, layers, theme classes, font families — are unique to each stylesheet, and layers keep the order they are declared in.
 
 ```ts
 // theme.css.ts
@@ -20,9 +20,27 @@ export const light = createTheme(vars, { colors: { bg: 'white' } })
 export const box = style({ background: vars.colors.bg })
 ```
 
+Numbers keep vanilla-extract's meaning, here and in ordinary modules: `padding: 8` is `8px`, and unitless properties such as `lineHeight` or `zIndex` stay as written. As in vanilla-extract, a number for a time gets `px` too (`transitionDuration: 300` is `300px`, which browsers ignore), so write times with their unit: `transitionDuration: '300ms'`.
+
+A stylesheet can import other stylesheets and ordinary modules — ES modules or CommonJS — resolved like the bundler resolves them (relative paths, `tsconfig` `paths` and packages). An imported stylesheet is extracted the way the bundler extracts it, so the class names and custom properties it exports are the ones its own CSS uses, and the importer keeps importing it so that CSS is loaded:
+
+```ts
+// button.css.ts
+import { style } from '@vanilla-extract/css'
+
+import { base, vars } from './theme.css'
+import { PRIMARY } from './tokens'
+
+export const button = style([base, { color: PRIMARY, margin: vars.space }])
+```
+
+A change to an imported file rebuilds the stylesheets importing it. Import cycles behave as in ES modules: they work as long as neither side reads the other before it has been evaluated, and reading too early is a build error naming the binding and the module.
+
+A stylesheet that throws while it is evaluated — an import that does not resolve, a property read on `undefined` — is a build error carrying that exception, rather than output that still calls `style()` at runtime.
+
 ## Ordinary modules
 
-`style` and `globalStyle` also resolve in `.ts` / `.tsx`, mapped onto their Devup UI counterparts:
+`style`, `globalStyle` and `keyframes` also resolve in `.ts` / `.tsx`, mapped onto their Devup UI counterparts, and `style([base, { ... }])` keeps composing `base`:
 
 ```tsx
 import { globalStyle, style } from '@vanilla-extract/css'

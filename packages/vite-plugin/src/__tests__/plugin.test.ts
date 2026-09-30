@@ -1484,3 +1484,32 @@ describe('devupUIVitePlugin atom hoisting', () => {
     expect(setAtomHoistSpy).toHaveBeenCalledWith(2)
   })
 })
+
+describe('module resolver', () => {
+  it('resolves imports to Vite ids and watches the modules read', async () => {
+    const setModuleResolverSpy = spyOn(
+      wasm,
+      'setModuleResolver',
+    ).mockReturnValue(undefined)
+    codeExtractSpy.mockReturnValue(
+      createCodeExtractResult({ dependencies: ['/p/src/tokens.ts'] }),
+    )
+    const plugin = createPlugin({})
+    await plugin.configResolved({ root: '/p' })
+    const resolveModule = setModuleResolverSpy.mock.calls[0][0] as (
+      specifier: string,
+      importer: string,
+    ) => { path: string } | undefined
+    expect(resolveModule('./plugin.test', import.meta.path)?.path).toBe(
+      import.meta.path.replaceAll('\\', '/'),
+    )
+    const addWatchFile = mock()
+    await plugin.transform.call(
+      { addWatchFile } as never,
+      'code',
+      '/p/src/App.tsx',
+    )
+    expect(addWatchFile).toHaveBeenCalledWith('/p/src/tokens.ts')
+    setModuleResolverSpy.mockRestore()
+  })
+})

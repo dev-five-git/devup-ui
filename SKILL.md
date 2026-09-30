@@ -148,6 +148,10 @@ All standard CSS properties from `csstype` are also accepted directly (e.g., `di
 <Box p="20px" /> // padding: 20px (with unit = exact value)
 ```
 
+Unitless CSS properties keep the number as written: `lineHeight`, `zIndex`, `opacity`, `fontWeight`, `flexGrow`, `order`, `aspectRatio`, `columnCount`, `strokeWidth`, `zoom`, `counterReset`/`counterIncrement`/`counterSet`, and the rest of the unitless list vanilla-extract uses. Times are milliseconds, never scaled: `transitionDuration={300}`, `transitionDelay`, `animationDuration` and `animationDelay` give `300ms`.
+
+Styles from other libraries keep that library's number meaning instead of the scale: in `.css.ts` files, in vanilla-extract `style()`, `globalStyle()` and `keyframes()` calls inside ordinary modules, in Emotion and styled-components object styles, and in `stylex.create()`, `fontSize: 16` is `16px`. Devup UI shorthands (`p`, `bg`, ...) keep the scale everywhere.
+
 ### Responsive Arrays (5 breakpoints)
 
 ```tsx
@@ -253,7 +257,13 @@ globalCss({ _motionReduce: { "*, *::before, *::after": { transition: "none" } } 
 
 // Conditional -> preserved
 <Box bg={isActive ? "blue" : "gray"} />  // className={isActive ? "a" : "b"}
+
+// Imported const -> static (resolved like the bundler: relative paths, tsconfig paths, packages; ESM or CommonJS)
+import { PRIMARY } from "./tokens"  // export const PRIMARY = "red"
+<Box bg={PRIMARY} />  // className="a"; a `let`, call or package import stays a variable
 ```
+
+A `.css.ts` file may import other stylesheets and modules (import cycles behave as in ES modules); an imported stylesheet exports the same names its own CSS uses. styled-components `.attrs()` (objects and functions) and `.withConfig()` compile, and `css(base, cond && { ... })` / `styled.div(base, cond ? a : b)` / `value || { ... }` / `value ?? { ... }` merge per property. A style argument that cannot be known at build time is a build error. StyleX `defineVars` / `defineConsts` / `createTheme` values imported from a `.stylex.ts` file resolve to the names that file generates, and variable/theme values may be condition objects (`{ default, [DARK]: ... }`, `@media` / `@supports` / `@container`). A `.css.ts` file that throws while evaluated is a build error carrying the exception. Build errors are reported all at once as `file:line:column: message`.
 
 ### Responsive + Pseudo Combined
 
@@ -273,7 +283,10 @@ Changes the rendered HTML element or renders a custom component:
 <Box as="section" bg="gray" />         // renders <section>
 <Box as="a" href="/about" />           // renders <a>
 <Box as={MyComponent} bg="red" />      // renders <MyComponent> with extracted styles
+<Box as={motion.div} />                // renders <motion.div>
 <Box as={b ? "div" : "section"} />     // conditional element type
+<Box as={b ? "a" : undefined} />       // undefined/null/false -> default element (<div>)
+<Box as={`h${level}`} />               // any other value is read at runtime, default when empty
 ```
 
 ### `props` (Pass-Through to `as` Component)
@@ -325,11 +338,20 @@ globalCss({ body: { margin: 0 }, "*": { boxSizing: "border-box" } });
 
 const spin = keyframes({ from: { transform: "rotate(0)" }, to: { transform: "rotate(360deg)" } });
 <Box animation={`${spin} 1s linear infinite`} />
+
+// A const holding a keyframes name or a css() class is a build-time value
+const card = css({ p: 4 });
+css({ animationName: spin, selectors: { [`.${card}:hover &`]: { m: 1 } } });
 ```
+
+- Only a `const` declared in the same file works this way; an imported keyframes/class name is not known at build time.
+- `import * as Devup from "@devup-ui/react"` works (`Devup.css`, `Devup.keyframes`, `Devup.styled.div`, `<Devup.Box />`).
+- `styled()` takes any base: tag, Devup component, `motion.div`, `forwardRef(...)`, a variable. `null`/number/boolean/`undefined` bases are build errors.
+- Compiled imports are removed: a top-level alias (`const myCss = css`, `const Row = Flex`) compiles and is removed, but any other runtime read (`export const C = Box`, `[Box]`, `styled('div')` alone, an alias inside a function) is a **build error**.
 
 ### Dynamic Values with Custom Components
 
-`css()` only accepts **static values**. For dynamic values on custom components, use `<Box as={Component}>`:
+`css()`, `globalCss()`, `keyframes()` and `stylex.create()` only accept values known at build time - literals, theme tokens, imported constants and module-level `const`s (templates, arithmetic and `Math.*` calls over them fold). Object, array and enum constants read as if written in place (`css(base)`, `{ ...base, color: 'red' }`, `_hover: hover`, `space[2]`, `Size.M`, `<Box {...base} />`), a later property replacing an earlier one. The build only runs code whose result is certain: `const`s, functions and enums this file declares, computing from literals and constants with exact built-ins (`String`, `Number`, `JSON`, `Object`, `Array`, string/array methods, `Math.abs/ceil/floor/round/trunc/sign/max/min/sqrt/fround/imul/clz32` and `Math` constants) - `const double = (n) => n * 2; css({ w: double(SIZE) })` is static. Imports are only read as the literal, object or array their module declares; code of another module never runs (`darken(0.1, PRIMARY)` with an imported `darken` is not computed). Not run: other globals (`window`, `Date`, `Intl`, ...), `Math.random` and approximate `Math` functions (`sin`, `pow`, ...), `**`, `toString(radix)`, `toLocale*`/`localeCompare`/`normalize`, `this`, `new`, classes, regex, `try`, getters, async/generators, JSX, `obj[key]()`, and functions writing module-level bindings - elements and `styled()` keep such values as CSS variables, while `css()`/`globalCss()`/`keyframes()` report a build error (as do `css()`/`styled()` given a whole style object computed that way). An object, array or enum constant that visible code changes (member assignment, `delete`, `++`, `push`/`sort`, `Object.assign`, changing elements in `for...of`/`forEach`, a method using `this`, passing it to an unknown function) is not a constant: elements read its members at runtime, and `css(obj)`, `styled.div(obj)` or `{...obj}` on an element is a build error naming where it changes. JSX props (except `ref`), `export default`, `module.exports` and `Object.freeze` only read it. Never mutate objects styles read; use theme tokens or props for values that change. A value known only at runtime (a prop, state, a parameter), and styles written where the build cannot read an object (a spread of an unknown object, `_hover={x}`, a computed key), are a **build error**. For dynamic values on custom components, use `<Box as={Component}>`:
 
 ```tsx
 // WRONG - css() cannot handle dynamic values
@@ -563,6 +585,7 @@ One rule explains `Dynamic Values = CSS Variables`, `$token Scope` and
 |------|--------|
 | `<Box color="red" />` | Static class |
 | `<Box color={{ 1: "red", 2: "blue" }[v]} />` | Static class per value - **preferred** |
+| `<Box color={PRIMARY} />` where `PRIMARY` is a module-level or imported `const` string/number | Static class |
 | `<Box color={colors[v]} />` where `colors` is declared elsewhere | CSS variable |
 | `<Box color={props.color} />` | CSS variable (genuinely dynamic - correct) |
 | `const s = { a: css({ ... }) }` then `className={s[v]}` | Neither - see below |

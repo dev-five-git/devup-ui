@@ -1,0 +1,104 @@
+---
+source: libs/extractor/src/lib.rs
+expression: "ToBTreeSet::from(extract(\"layers.css.ts\",\nr\"import { layer, style, globalStyle } from '@vanilla-extract/css'\nconst reset = layer('reset')\nexport const components = layer('components')\nglobalStyle('a', { color: 'blue', '@layer': { [reset]: { color: 'inherit', padding: 0 } } })\nexport const button = style({ color: 'red', '@layer': { [components]: { color: 'green', padding: 4 } } })\n\",\nExtractOption\n{\n    package: \"@devup-ui/react\".to_string(), css_dir:\n    \"@devup-ui/react\".to_string(), single_css: true, import_main_css: false,\n    import_aliases:\n    HashMap::from([(\"@vanilla-extract/css\".to_string(),\n    ImportAlias::NamedToNamed)])\n}).unwrap())"
+---
+ToBTreeSet {
+    styles: {
+        Static(
+            ExtractStaticStyle {
+                property: "color",
+                value: "blue",
+                level: 0,
+                selector: Some(
+                    Global(
+                        "a",
+                        "layers.css.ts",
+                    ),
+                ),
+                style_order: Some(
+                    0,
+                ),
+                layer: None,
+            },
+        ),
+        Static(
+            ExtractStaticStyle {
+                property: "color",
+                value: "green",
+                level: 0,
+                selector: None,
+                style_order: None,
+                layer: Some(
+                    "components-0-1",
+                ),
+            },
+        ),
+        Static(
+            ExtractStaticStyle {
+                property: "color",
+                value: "inherit",
+                level: 0,
+                selector: Some(
+                    Global(
+                        "a",
+                        "layers.css.ts",
+                    ),
+                ),
+                style_order: Some(
+                    0,
+                ),
+                layer: Some(
+                    "reset-0-0",
+                ),
+            },
+        ),
+        Static(
+            ExtractStaticStyle {
+                property: "color",
+                value: "red",
+                level: 0,
+                selector: None,
+                style_order: None,
+                layer: None,
+            },
+        ),
+        Static(
+            ExtractStaticStyle {
+                property: "padding",
+                value: "0",
+                level: 0,
+                selector: Some(
+                    Global(
+                        "a",
+                        "layers.css.ts",
+                    ),
+                ),
+                style_order: Some(
+                    0,
+                ),
+                layer: Some(
+                    "reset-0-0",
+                ),
+            },
+        ),
+        Static(
+            ExtractStaticStyle {
+                property: "padding",
+                value: "4px",
+                level: 0,
+                selector: None,
+                style_order: None,
+                layer: Some(
+                    "components-0-1",
+                ),
+            },
+        ),
+        Css(
+            ExtractCss {
+                css: "@layer reset-0-0,components-0-1;",
+                file: "layers.css.ts",
+            },
+        ),
+    },
+    code: "import \"@devup-ui/react/devup-ui.css\";\n;\nexport const button = \"a b c\";\n;\nexport const components = \"components-0-1\";\n",
+}

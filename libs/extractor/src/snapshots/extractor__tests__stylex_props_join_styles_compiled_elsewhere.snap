@@ -1,0 +1,98 @@
+---
+source: libs/extractor/src/lib.rs
+expression: "ToBTreeSet::from(extract_tsx(r\"import * as stylex from '@stylexjs/stylex';\nconst fade = stylex.keyframes({ from: { opacity: 0 }, to: { opacity: 1 } });\nconst colors = stylex.defineVars({ text: 'black' });\nconst styles = stylex.create({\n  base: { animationName: { default: fade, ':hover': 'none' }, color: { default: colors.text, ':hover': 'red' } },\n  bar: (h) => ({ height: h }),\n  none: null,\n});\nexport const A = ({ style, rest }) => <div {...stylex.props(styles.base, style, ...rest, undefined, null, styles, styles.missing, styles?.bar, styles[key]?.x, styles?.['missing'], on && styles.missing, on ? styles.base : styles.missing, on ? styles.missing : styles.base, on ? styles.missing : styles.none)} />;\"))"
+---
+ToBTreeSet {
+    styles: {
+        Static(
+            ExtractStaticStyle {
+                property: "animation-name",
+                value: "a",
+                level: 0,
+                selector: None,
+                style_order: None,
+                layer: None,
+            },
+        ),
+        Static(
+            ExtractStaticStyle {
+                property: "animation-name",
+                value: "none",
+                level: 0,
+                selector: Some(
+                    Selector(
+                        "&:hover",
+                    ),
+                ),
+                style_order: None,
+                layer: None,
+            },
+        ),
+        Static(
+            ExtractStaticStyle {
+                property: "color",
+                value: "red",
+                level: 0,
+                selector: Some(
+                    Selector(
+                        "&:hover",
+                    ),
+                ),
+                style_order: None,
+                layer: None,
+            },
+        ),
+        Static(
+            ExtractStaticStyle {
+                property: "color",
+                value: "var(--b)",
+                level: 0,
+                selector: None,
+                style_order: None,
+                layer: None,
+            },
+        ),
+        Dynamic(
+            ExtractDynamicStyle {
+                property: "height",
+                level: 0,
+                identifier: "h",
+                selector: None,
+                style_order: None,
+            },
+        ),
+        Css(
+            ExtractCss {
+                css: ":root{--b:black;}",
+                file: "test.tsx",
+            },
+        ),
+        Keyframes(
+            ExtractKeyframes {
+                keyframes: {
+                    "from": [
+                        ExtractStaticStyle {
+                            property: "opacity",
+                            value: "0",
+                            level: 0,
+                            selector: None,
+                            style_order: None,
+                            layer: None,
+                        },
+                    ],
+                    "to": [
+                        ExtractStaticStyle {
+                            property: "opacity",
+                            value: "1",
+                            level: 0,
+                            selector: None,
+                            style_order: None,
+                            layer: None,
+                        },
+                    ],
+                },
+            },
+        ),
+    },
+    code: "import \"@devup-ui/react/devup-ui.css\";\nimport * as stylex from \"@stylexjs/stylex\";\nconst fade = \"a\";\nconst colors = { \"text\": \"var(--b)\" };\nconst styles = {\n\t\"base\": \"d e f g\",\n\t\"bar\": \"h\",\n\t\"none\": \"\"\n};\nexport const A = ({ style, rest }) => <div {...{ className: `d e f g ${[style].flat(Infinity).filter(Boolean).join(\" \")} ${[rest].flat(Infinity).filter(Boolean).join(\" \")} ${[styles[key]?.x].flat(Infinity).filter(Boolean).join(\" \")} ${on ? \"d e f g\" : \"\"} ${!on ? \"d e f g\" : \"\"}` }} />;\n",
+}

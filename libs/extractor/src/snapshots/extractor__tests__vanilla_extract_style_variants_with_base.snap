@@ -7,6 +7,26 @@ ToBTreeSet {
         Static(
             ExtractStaticStyle {
                 property: "border-radius",
+                value: "4px",
+                level: 0,
+                selector: None,
+                style_order: None,
+                layer: None,
+            },
+        ),
+        Static(
+            ExtractStaticStyle {
+                property: "font-size",
+                value: "12px",
+                level: 0,
+                selector: None,
+                style_order: None,
+                layer: None,
+            },
+        ),
+        Static(
+            ExtractStaticStyle {
+                property: "font-size",
                 value: "16px",
                 level: 0,
                 selector: None,
@@ -17,27 +37,7 @@ ToBTreeSet {
         Static(
             ExtractStaticStyle {
                 property: "font-size",
-                value: "48px",
-                level: 0,
-                selector: None,
-                style_order: None,
-                layer: None,
-            },
-        ),
-        Static(
-            ExtractStaticStyle {
-                property: "font-size",
-                value: "64px",
-                level: 0,
-                selector: None,
-                style_order: None,
-                layer: None,
-            },
-        ),
-        Static(
-            ExtractStaticStyle {
-                property: "font-size",
-                value: "80px",
+                value: "20px",
                 level: 0,
                 selector: None,
                 style_order: None,
@@ -47,7 +47,7 @@ ToBTreeSet {
         Static(
             ExtractStaticStyle {
                 property: "padding",
-                value: "32px",
+                value: "8px",
                 level: 0,
                 selector: None,
                 style_order: None,
@@ -55,5 +55,5 @@ ToBTreeSet {
             },
         ),
     },
-    code: "import \"@devup-ui/react/devup-ui.css\";\nconst base = \"a b\";\nexport const sizes = {\n\tlarge: \"a b c\",\n\tmedium: \"a b d\",\n\tsmall: \"a b e\"\n};\n",
+    code: "import \"@devup-ui/react/devup-ui.css\";\nconst _ve1 = \"a b c\";\nconst _ve2 = \"a b d\";\nconst _ve3 = \"a b e\";\nconst base = \"a b\";\nexport const sizes = {\n\t\"small\": _ve1,\n\t\"medium\": _ve2,\n\t\"large\": _ve3\n};\n",
 }

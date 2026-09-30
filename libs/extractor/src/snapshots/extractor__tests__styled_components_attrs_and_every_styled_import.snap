@@ -1,0 +1,59 @@
+---
+source: libs/extractor/src/lib.rs
+expression: "ToBTreeSet::from(extract(\"test.tsx\",\nr\"import emotion from '@emotion/styled';\nimport sc from 'styled-components';\nexport const A = emotion.div({ top: 1 });\nexport const B = sc.span({ left: 2 });\nexport const C = sc.button.attrs({ type: 'button' }).withConfig({ displayName: 'c' })({ right: 3 });\nexport const D = sc(Base).withConfig({ shouldForwardProp: () => true })`color: red;`;\nexport const E = (sc.input.attrs((props) => ({ size: props.small ? 5 : 10 })) as any).attrs(extra)({ bottom: 4 });\nexport const G = other.div.attrs({ role: 'note' })({ margin: 1 });\nexport const I = factory.attrs({ id: 'i' })({ margin: 3 });\nexport const J = other(Base).attrs({ id: 'j' })({ margin: 4 });\",\nExtractOption\n{\n    package: \"@devup-ui/react\".to_string(), css_dir:\n    \"@devup-ui/react\".to_string(), single_css: true, import_main_css: false,\n    import_aliases: aliases.clone(),\n},).unwrap())"
+---
+ToBTreeSet {
+    styles: {
+        Static(
+            ExtractStaticStyle {
+                property: "bottom",
+                value: "16px",
+                level: 0,
+                selector: None,
+                style_order: None,
+                layer: None,
+            },
+        ),
+        Static(
+            ExtractStaticStyle {
+                property: "color",
+                value: "red",
+                level: 0,
+                selector: None,
+                style_order: None,
+                layer: None,
+            },
+        ),
+        Static(
+            ExtractStaticStyle {
+                property: "left",
+                value: "2px",
+                level: 0,
+                selector: None,
+                style_order: None,
+                layer: None,
+            },
+        ),
+        Static(
+            ExtractStaticStyle {
+                property: "right",
+                value: "3px",
+                level: 0,
+                selector: None,
+                style_order: None,
+                layer: None,
+            },
+        ),
+        Static(
+            ExtractStaticStyle {
+                property: "top",
+                value: "1px",
+                level: 0,
+                selector: None,
+                style_order: None,
+                layer: None,
+            },
+        ),
+    },
+    code: "import \"@devup-ui/react/devup-ui.css\";\nexport const A = ({ style, className, ...rest }) => <div {...rest} className={[\"a\", className].filter(Boolean).join(\" \")} style={style} />;\nexport const B = ({ style, className, ...rest }) => <span {...rest} className={[\"b\", className].filter(Boolean).join(\" \")} style={style} />;\nexport const C = (__devupProps) => (({ style, className, ...rest }) => <button {...rest} className={[\"c\", className].filter(Boolean).join(\" \")} style={style} />)({\n\t...__devupProps,\n\t...{ type: \"button\" }\n});\nexport const D = ({ style, className, ...rest }) => <Base {...rest} className={[\"d\", className].filter(Boolean).join(\" \")} style={style} />;\nexport const E = (__devupProps) => (({ style, className, ...rest }) => <input {...rest} className={[\"e\", className].filter(Boolean).join(\" \")} style={style} />)(((__devupProps) => ({\n\t...__devupProps,\n\t...typeof extra === \"function\" ? extra(__devupProps) : extra\n}))(((__devupProps) => ({\n\t...__devupProps,\n\t...((props) => ({ size: props.small ? 5 : 10 }))(__devupProps)\n}))(__devupProps)));\nexport const G = other.div.attrs({ role: \"note\" })({ margin: 1 });\nexport const I = factory.attrs({ id: \"i\" })({ margin: 3 });\nexport const J = other(Base).attrs({ id: \"j\" })({ margin: 4 });\n",
+}

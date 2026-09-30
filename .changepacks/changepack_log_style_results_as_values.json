@@ -1,0 +1,8 @@
+{
+  "changes": {
+    "bindings/devup-ui-wasm/package.json": "Patch",
+    "packages/eslint-plugin/package.json": "Patch"
+  },
+  "note": "A const holding what keyframes() or css() gives is a build-time value, so css(), globalCss(), keyframes(), styled(), Global and style props read it, in rule objects and computed selector keys; in CSS text a class stays a mixin. The package imported whole (import * as Devup) compiles Devup.css, Devup.keyframes, Devup.createGlobalStyle, Devup.styled and Devup.Global. styled() renders any base: a member such as motion.div as named, any other value (forwardRef(...), a variable) read once; null, numbers, booleans and undefined, and a styled left uncompiled, are build errors. A top-level alias of a compiled import (const myCss = css, const Row = Flex) compiles and is removed, and any other runtime read of a removed import is a build error instead of a ReferenceError. A selectors key only the runtime knows is a build error instead of a dropped rule. css-utils-literal-only reads css() and keyframes() results held in a module-level const as static",
+  "date": "2026-09-30T00:00:00.000Z"
+}

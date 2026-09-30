@@ -1,6 +1,16 @@
 use phf::phf_set;
 
-pub(super) static MAINTAIN_VALUE_PROPERTIES: phf::Set<&str> = phf_set! {
+/// Properties whose numbers are unitless in CSS, so they are kept as written
+/// instead of being scaled to `px`. Includes every property vanilla-extract
+/// leaves unitless, so numbers from `.css.ts` files keep their meaning,
+/// `content`, which never takes a length, and the counters.
+pub(crate) static MAINTAIN_VALUE_PROPERTIES: phf::Set<&str> = phf_set! {
+    "content",
+    "counter-increment",
+    "counter-reset",
+    "counter-set",
+    "font-size-adjust",
+    "math-depth",
     "opacity",
     "flex",
     "z-index",
@@ -12,6 +22,7 @@ pub(super) static MAINTAIN_VALUE_PROPERTIES: phf::Set<&str> = phf_set! {
     "flex-grow",
     "flex-shrink",
     "order",
+    "grid-area",
     "grid-column",
     "grid-column-start",
     "grid-column-end",
@@ -21,5 +32,40 @@ pub(super) static MAINTAIN_VALUE_PROPERTIES: phf::Set<&str> = phf_set! {
     "animation-iteration-count",
     "tab-size",
     "moz-tab-size",
-    "-webkit-line-clamp"
+    "-webkit-line-clamp",
+    "webkit-line-clamp",
+    "border-image",
+    "border-image-outset",
+    "border-image-slice",
+    "border-image-width",
+    "box-flex",
+    "box-flex-group",
+    "box-ordinal-group",
+    "column-count",
+    "columns",
+    "initial-letter",
+    "max-lines",
+    "orphans",
+    "widows",
+    "zoom",
+    "fill-opacity",
+    "flood-opacity",
+    "mask-border",
+    "mask-border-outset",
+    "mask-border-slice",
+    "mask-border-width",
+    "shape-image-threshold",
+    "stop-opacity",
+    "stroke-dashoffset",
+    "stroke-miterlimit",
+    "stroke-opacity",
+    "stroke-width"
+};
+
+/// Properties taking a time, whose numbers are milliseconds
+pub(crate) static TIME_PROPERTIES: phf::Set<&str> = phf_set! {
+    "transition-duration",
+    "transition-delay",
+    "animation-duration",
+    "animation-delay",
 };

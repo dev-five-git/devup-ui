@@ -3,9 +3,12 @@
 //! This module uses `boa_engine` to execute vanilla-extract style files
 //! and extract style definitions for processing by the existing extract logic.
 
+use crate::module_loader::{Evaluating, ModuleLoader, PACKAGE_BINDING, module_script};
+use crate::utils::keeps_bare_number;
 use boa_engine::{
-    Context, JsArgs, JsValue, NativeFunction, Source, js_string, object::ObjectInitializer,
-    property::Attribute,
+    Context, JsArgs, JsObject, JsResult, JsString, JsValue, NativeFunction, Source, js_string,
+    object::{FunctionObjectBuilder, ObjectInitializer, builtins::JsArray},
+    property::{Attribute, PropertyKey},
 };
 use css::file_map::get_file_num_by_filename;
 use oxc_allocator::Allocator;
@@ -17,84 +20,42 @@ use oxc_transformer::{TransformOptions, Transformer};
 use rustc_hash::{FxHashMap, FxHashSet};
 use smallvec::SmallVec;
 use std::cell::RefCell;
+use std::collections::BTreeSet;
 use std::path::Path;
 use std::rc::Rc;
 
-/// A single variant in styleVariants
-#[derive(Debug, Clone)]
-pub struct StyleVariant {
-    /// Base class reference (variable name), if composing
-    pub base: Option<String>,
-    /// The style object JSON for this variant
-    pub styles_json: String,
-}
-
-/// Style with export info
-#[derive(Debug, Clone)]
+/// A `style()` or `keyframes()` call
+#[derive(Debug, Clone, Default)]
 pub struct StyleEntry {
-    /// The style object JSON
+    /// The rule object JSON
     pub json: String,
-    /// Whether this style is exported
+    /// Whether the variable holding it is exported
     pub exported: bool,
-    /// Base class references for composition (placeholder IDs like "__`style_0`__")
+    /// Styles composed before this one: placeholders, names once named
     pub bases: SmallVec<[String; 2]>,
+    /// Class names composed as they are
+    pub classes: SmallVec<[String; 1]>,
 }
 
-/// Entry for `createGlobalTheme()` - CSS variables scoped to a selector
-#[derive(Debug, Clone, Default)]
-pub struct GlobalThemeEntry {
-    /// CSS selector (e.g., ":root")
-    pub selector: String,
-    /// CSS variables: Vec<(`var_name`, value)> e.g. [("--color-brand-0-0", "blue")]
-    pub css_vars: SmallVec<[(String, String); 8]>,
-    /// Serialized JS object with `var()` references
-    pub vars_object_json: String,
-    /// Whether this is exported
-    pub exported: bool,
-}
-
-/// Entry for `createTheme()` - CSS variables scoped to a generated class
-#[derive(Debug, Clone, Default)]
-pub struct ThemeEntry {
-    /// CSS variables: Vec<(`var_name`, value)> e.g. [("--color-brand", "blue")]
-    pub css_vars: SmallVec<[(String, String); 8]>,
-    /// Whether this is exported
-    pub exported: bool,
-    /// For single-arg createTheme: the vars object JSON with `var()` references
-    /// Used to generate the second element of the returned array
-    pub vars_object_json: Option<String>,
-    /// For single-arg createTheme: the name of the vars variable from [themeClass, vars]
-    pub vars_name: Option<String>,
-    /// The unique generated class name (`file_prefix` + `variable_name`)
-    pub class_name: String,
-}
-
-/// Collected style definitions from vanilla-extract API calls
+/// What a vanilla-extract stylesheet defines
 #[derive(Debug, Default, Clone)]
 pub struct CollectedStyles {
-    /// `style()` calls: `variable_name` -> (json, exported)
+    /// `style()` calls, every `styleVariants()` variant included: name -> entry
     pub styles: FxHashMap<String, StyleEntry>,
-    /// `globalStyle()` calls: selector -> style object JSON
-    pub global_styles: Vec<(String, String)>,
-    /// `keyframes()` calls: `variable_name` -> (json, exported)
+    /// `keyframes()` calls: name -> entry
     pub keyframes: FxHashMap<String, StyleEntry>,
-    /// `createVar()` calls: `variable_name` -> (CSS variable string, exported)
-    pub vars: FxHashMap<String, (String, bool)>,
-    /// `fontFace()` calls: `placeholder_id` -> (`font_face` JSON, font-family name, exported)
-    pub font_faces: FxHashMap<String, (String, String, bool)>,
-    /// `styleVariants()` calls: `variable_name` -> (variants, exported)
-    pub style_variants: FxHashMap<String, (FxHashMap<String, StyleVariant>, bool)>,
-    /// `createContainer()` calls: `variable_name` -> (container name string, exported)
-    pub containers: FxHashMap<String, (String, bool)>,
-    /// `layer()` calls: `variable_name` -> (layer name string, exported)
-    pub layers: FxHashMap<String, (String, bool)>,
-    /// `createGlobalTheme()` calls: `variable_name` -> `GlobalThemeEntry`
-    pub global_themes: FxHashMap<String, GlobalThemeEntry>,
-    /// `createTheme()` calls: `variable_name` -> `ThemeEntry`
-    pub themes: FxHashMap<String, ThemeEntry>,
-    /// Non-style constant exports: `variable_name` -> value (as code string)
-    pub constant_exports: FxHashMap<String, String>,
-    /// `__style_N__` placeholder -> what it refers to, for placeholders left in
+    /// Global rules in call order: selector -> rule object JSON. Themes declare
+    /// their variables here, on their class or selector.
+    pub global_styles: Vec<(String, String)>,
+    /// `@font-face` rule objects, each naming its `fontFamily`
+    pub font_faces: Vec<String>,
+    /// Layers in declaration order
+    pub layers: Vec<String>,
+    /// `@property` rules registered by `createVar()`
+    pub property_rules: Vec<String>,
+    /// Exported values other than styles and keyframes: name -> code
+    pub constant_exports: Vec<(String, String)>,
+    /// `__style_N__` placeholder -> what it stands for, for placeholders left in
     /// selectors and values
     pub references: FxHashMap<String, Reference>,
 }
@@ -102,593 +63,462 @@ pub struct CollectedStyles {
 /// Target of a placeholder that a selector or value interpolated
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub enum Reference {
-    /// `style()`: `variable_name` and the unique class it gains when referenced
+    /// `style()`: its name and the unique class it gains when referenced
     Style { name: String, class_name: String },
-    /// `keyframes()`: `variable_name`, resolved to the generated keyframes name
+    /// `keyframes()`: its name, resolved to the generated keyframes name
     Keyframes(String),
-    /// `createTheme()`: its generated class name
-    Class(String),
-    /// `fontFace()`: its generated font-family name
-    Font(String),
 }
 
-/// Internal state for collecting styles during JS execution
+/// State the mock API shares while a stylesheet runs
 #[derive(Default)]
-struct StyleCollectorInner {
+struct Collector {
     styles: CollectedStyles,
-    style_counter: usize,
-    font_counter: usize,
-    global_theme_counter: usize,
+    file_num: usize,
+    placeholders: usize,
+    identifiers: usize,
 }
 
-type StyleCollector = Rc<RefCell<StyleCollectorInner>>;
+type StyleCollector = Rc<RefCell<Collector>>;
 
-fn next_style_id(collector: &StyleCollector) -> String {
-    let mut inner = collector.borrow_mut();
-    let id = format!("__style_{}__", inner.style_counter);
-    inner.style_counter += 1;
-    id
-}
+impl Collector {
+    fn placeholder(&mut self) -> String {
+        let id = format!("__style_{}__", self.placeholders);
+        self.placeholders += 1;
+        id
+    }
 
-fn next_font_id(collector: &StyleCollector) -> String {
-    let mut inner = collector.borrow_mut();
-    let id = format!("__font_{}__", inner.font_counter);
-    inner.font_counter += 1;
-    id
-}
-
-fn next_global_theme_id(collector: &StyleCollector) -> String {
-    let mut inner = collector.borrow_mut();
-    let id = format!("__global_theme_{}__", inner.global_theme_counter);
-    inner.global_theme_counter += 1;
-    id
-}
-
-/// Parse font-face JSON and return list of (key, value) pairs
-/// Input: {"src":"local(...)","fontWeight":400}
-/// Output: vec![("src", "\"local(...)\""), ("fontWeight", "400")]
-fn parse_font_face_json(json: &str) -> Vec<(String, String)> {
-    // Use serde_json to parse properly
-    let Ok(value) = serde_json::from_str::<serde_json::Value>(json) else {
-        return Vec::new();
-    };
-
-    let Some(obj) = value.as_object() else {
-        return Vec::new();
-    };
-
-    obj.iter()
-        .map(|(k, v)| {
-            let val = match v {
-                serde_json::Value::String(s) => {
-                    format!("\"{}\"", s.replace('\\', "\\\\").replace('"', "\\\""))
+    /// A name no other stylesheet produces: `debug_id` (or `fallback`) made an
+    /// identifier, then the file number and a per-file counter
+    fn identifier(&mut self, debug_id: Option<String>, fallback: &str) -> String {
+        let base = debug_id
+            .filter(|id| !id.is_empty())
+            .unwrap_or_else(|| fallback.to_string());
+        let mut name: String = base
+            .chars()
+            .map(|c| {
+                if c.is_ascii_alphanumeric() || c == '-' || c == '_' {
+                    c
+                } else {
+                    '_'
                 }
-                serde_json::Value::Number(n) => n.to_string(),
-                serde_json::Value::Bool(b) => b.to_string(),
-                _ => v.to_string(),
+            })
+            .collect();
+        if !name.starts_with(|c: char| c.is_ascii_alphabetic() || c == '_') {
+            name.insert(0, '_');
+        }
+        let id = format!("{name}-{}-{}", self.file_num, self.identifiers);
+        self.identifiers += 1;
+        id
+    }
+}
+
+fn js_str(value: &JsValue) -> Option<String> {
+    value.as_string().map(|s| s.to_std_string_escaped())
+}
+
+fn to_text(value: &JsValue, context: &mut Context) -> JsResult<String> {
+    Ok(value.to_string(context)?.to_std_string_escaped())
+}
+
+/// String and index keys of `object`, in property order
+fn own_keys(object: &JsObject, context: &mut Context) -> JsResult<Vec<(PropertyKey, String)>> {
+    Ok(object
+        .own_property_keys(context)?
+        .into_iter()
+        .filter_map(|key| {
+            let name = match &key {
+                PropertyKey::String(s) => s.to_std_string_escaped(),
+                PropertyKey::Index(i) => i.get().to_string(),
+                PropertyKey::Symbol(_) => return None,
             };
-            (k.clone(), val)
+            Some((key, name))
         })
-        .collect()
+        .collect())
 }
 
-/// Recursively transform theme contract object to CSS `var()` references
-/// Returns a new JS object with null leaves replaced by var(--path)
-fn transform_contract_to_vars(
-    value: &JsValue,
-    ctx: &mut Context,
-    path: &mut Vec<String>,
-) -> JsValue {
-    if let Some(obj) = value.as_object() {
-        // Check if it's an array
-        if obj.is_array() {
-            return value.clone();
-        }
-
-        // It's an object - recursively transform each property
-        let new_obj = boa_engine::object::ObjectInitializer::new(ctx).build();
-
-        if let Ok(keys) = obj.own_property_keys(ctx) {
-            for key in keys {
-                let key_string = match &key {
-                    boa_engine::property::PropertyKey::String(s) => s.to_std_string_escaped(),
-                    boa_engine::property::PropertyKey::Symbol(_) => continue,
-                    boa_engine::property::PropertyKey::Index(i) => i.get().to_string(),
-                };
-
-                if let Ok(prop_value) = obj.get(js_string!(key_string.as_str()), ctx) {
-                    path.push(key_string.clone());
-
-                    let transformed = transform_contract_to_vars(&prop_value, ctx, path);
-
-                    path.pop();
-
-                    let _ = new_obj.set(js_string!(key_string.as_str()), transformed, false, ctx);
-                }
-            }
-        }
-
-        JsValue::from(new_obj)
-    } else {
-        // Leaf value (should be null) - create CSS variable reference
-        let var_name = format!("--{}", path.join("-"));
-        JsValue::from(js_string!(format!("var({})", var_name)))
-    }
+/// Elements of `value` when it is an array
+fn array_items(value: &JsValue, context: &mut Context) -> JsResult<Option<Vec<JsValue>>> {
+    let Some(array) = value.as_object().filter(JsObject::is_array) else {
+        return Ok(None);
+    };
+    let length = array.get(js_string!("length"), context)?.to_u32(context)?;
+    (0..length)
+        .map(|index| array.get(index, context))
+        .collect::<JsResult<Vec<_>>>()
+        .map(Some)
 }
 
-/// Extract CSS variable assignments by matching contract vars with values
-fn extract_theme_vars(
-    contract: &JsValue,
-    values: &JsValue,
-    ctx: &mut Context,
-    css_vars: &mut SmallVec<[(String, String); 8]>,
-    path: &mut Vec<String>,
-) {
-    if let (Some(contract_obj), Some(values_obj)) = (contract.as_object(), values.as_object()) {
-        // Both are objects - recurse into properties
-        if let Ok(keys) = contract_obj.own_property_keys(ctx) {
-            for key in keys {
-                let key_string = match &key {
-                    boa_engine::property::PropertyKey::String(s) => s.to_std_string_escaped(),
-                    boa_engine::property::PropertyKey::Symbol(_) => continue,
-                    boa_engine::property::PropertyKey::Index(i) => i.get().to_string(),
-                };
-
-                if let (Ok(contract_prop), Ok(value_prop)) = (
-                    contract_obj.get(js_string!(key_string.as_str()), ctx),
-                    values_obj.get(js_string!(key_string.as_str()), ctx),
-                ) {
-                    path.push(key_string);
-
-                    extract_theme_vars(&contract_prop, &value_prop, ctx, css_vars, path);
-
-                    path.pop();
-                }
-            }
-        }
-    } else if let Some(contract_str) = contract.as_string() {
-        // Contract leaf is a var(--name) string
-        let contract_str = contract_str.to_std_string_escaped();
-        if contract_str.starts_with("var(") && contract_str.ends_with(')') {
-            // Extract var name from var(--name)
-            let var_name = &contract_str[4..contract_str.len() - 1];
-
-            // Get the value
-            let value_str = values
-                .as_string()
-                .map(|s| s.to_std_string_escaped())
-                .or_else(|| {
-                    values
-                        .to_string(ctx)
-                        .ok()
-                        .map(|s| s.to_std_string_escaped())
-                })
-                .unwrap_or_default();
-
-            css_vars.push((var_name.to_string(), value_str));
-        }
-    }
+/// The custom property `var(--x)` reads
+fn var_name(reference: &str) -> &str {
+    reference
+        .strip_prefix("var(")
+        .and_then(|name| name.strip_suffix(')'))
+        .unwrap_or(reference)
 }
 
-/// Recursively transform theme object to CSS `var()` references
-/// Returns a new JS object with the same structure but leaf values replaced with var(--path)
-fn transform_theme_to_vars(
-    value: &JsValue,
-    ctx: &mut Context,
-    placeholder_id: &str,
-    css_vars: &mut SmallVec<[(String, String); 8]>,
-    var_counter: &mut usize,
-    path: &mut Vec<String>,
-) -> JsValue {
-    if let Some(obj) = value.as_object() {
-        // Check if it's an array (shouldn't happen in theme objects, but handle it)
-        if obj.is_array() {
-            return value.clone();
-        }
-
-        // It's an object - recursively transform each property
-        let new_obj = boa_engine::object::ObjectInitializer::new(ctx).build();
-
-        // Get own property keys
-        if let Ok(keys) = obj.own_property_keys(ctx) {
-            for key in keys {
-                // Convert PropertyKey to string
-                let key_string = match &key {
-                    boa_engine::property::PropertyKey::String(s) => s.to_std_string_escaped(),
-                    boa_engine::property::PropertyKey::Symbol(_) => continue,
-                    boa_engine::property::PropertyKey::Index(i) => i.get().to_string(),
-                };
-
-                if let Ok(prop_value) = obj.get(js_string!(key_string.as_str()), ctx) {
-                    path.push(key_string.clone());
-
-                    let transformed = transform_theme_to_vars(
-                        &prop_value,
-                        ctx,
-                        placeholder_id,
-                        css_vars,
-                        var_counter,
-                        path,
-                    );
-
-                    path.pop();
-
-                    let _ = new_obj.set(js_string!(key_string.as_str()), transformed, false, ctx);
-                }
-            }
-        }
-
-        JsValue::from(new_obj)
-    } else {
-        // Leaf value - create CSS variable
-        let var_name = format!(
-            "--{}-{}-{}",
-            path.join("-"),
-            placeholder_id.trim_matches('_').replace("__", "-"),
-            var_counter
-        );
-        *var_counter += 1;
-
-        // Get the actual value as string
-        let value_str = value
-            .as_string()
-            .map(|s| s.to_std_string_escaped())
-            .or_else(|| value.to_string(ctx).ok().map(|s| s.to_std_string_escaped()))
-            .unwrap_or_default();
-
-        css_vars.push((var_name.clone(), value_str));
-
-        // Return var(--name)
-        JsValue::from(js_string!(format!("var({})", var_name)))
-    }
+pub(crate) fn json_string(text: &str) -> String {
+    serde_json::Value::String(text.to_string()).to_string()
 }
 
-/// Convert `JsValue` to JSON string using JSON.stringify
+/// `JSON.stringify(value, replacer)`, `None` when it produces no string
+fn stringify(value: &JsValue, replacer: JsValue, context: &mut Context) -> Option<String> {
+    let json = context.intrinsics().objects().json();
+    let stringify = json.get(js_string!("stringify"), context).ok()?;
+    stringify
+        .as_callable()?
+        .call(&JsValue::undefined(), &[value.clone(), replacer], context)
+        .ok()?
+        .as_string()
+        .map(|s| s.to_std_string_escaped())
+}
+
+/// Serialize `value` as it is
 fn js_value_to_json(value: &JsValue, context: &mut Context) -> String {
-    // Use JSON.stringify to convert the value
-    let json_obj = context.intrinsics().objects().json();
-    let stringify_result = json_obj.get(js_string!("stringify"), context);
-
-    if let Ok(stringify) = stringify_result
-        && let Some(callable) = stringify.as_callable()
-        && let Ok(result) =
-            callable.call(&JsValue::undefined(), std::slice::from_ref(value), context)
-        && let Some(s) = result.as_string()
-    {
-        return s.to_std_string_escaped();
-    }
-
-    // Fallback: simple conversion using boa_engine 0.21 API
-    match value.variant() {
-        boa_engine::value::JsVariant::String(str) => format!("\"{}\"", str.to_std_string_escaped()),
-        boa_engine::value::JsVariant::Null => "null".to_string(),
-        boa_engine::value::JsVariant::Undefined => "undefined".to_string(),
-        _ => "{}".to_string(),
-    }
+    stringify(value, JsValue::undefined(), context).unwrap_or_else(|| "{}".to_string())
 }
 
-/// Execute vanilla-extract style file and collect styles
-pub fn execute_vanilla_extract(
+/// `JSON.stringify` replacer adding `px` to numbers the way vanilla-extract does,
+/// so they are not read as Devup UI's spacing scale, and keying `vars` by the
+/// custom properties their `var()` references name.
+fn pixelify(_this: &JsValue, args: &[JsValue], context: &mut Context) -> JsResult<JsValue> {
+    let key = to_text(args.get_or_undefined(0), context)?;
+    let value = args.get_or_undefined(1);
+    if key == "vars"
+        && let Some(vars) = value.as_object()
+    {
+        let declared = ObjectInitializer::new(context).build();
+        for (property, name) in own_keys(&vars, context)? {
+            let value = vars.get(property, context)?;
+            declared.set(js_string!(var_name(&name)), value, false, context)?;
+        }
+        return Ok(declared.into());
+    }
+    Ok(match value.as_number() {
+        Some(number) if number != 0.0 && !keeps_bare_number(&key) => {
+            js_string!(format!("{number}px")).into()
+        }
+        _ => value.clone(),
+    })
+}
+
+/// Serialize a style rule object with vanilla-extract's number units.
+fn style_to_json(value: &JsValue, context: &mut Context) -> String {
+    let realm = context.realm().clone();
+    let replacer =
+        FunctionObjectBuilder::new(&realm, NativeFunction::from_fn_ptr(pixelify)).build();
+    stringify(value, replacer.into(), context).unwrap_or_else(|| "{}".to_string())
+}
+
+/// What a stylesheet read besides its own source
+pub struct StylesheetImports {
+    /// Every file read
+    pub dependencies: BTreeSet<String>,
+    /// Imports its output keeps: side-effect imports and the stylesheets it
+    /// imports, which emit their own styles
+    pub kept_imports: Vec<String>,
+}
+
+#[cfg(test)]
+fn execute_vanilla_extract(
     code: &str,
     package: &str,
     filename: &str,
 ) -> Result<CollectedStyles, String> {
-    let collector: StyleCollector = Rc::new(RefCell::new(StyleCollectorInner::default()));
+    let option = crate::ExtractOption {
+        package: package.to_string(),
+        ..crate::ExtractOption::default()
+    };
+    execute_stylesheet(code, filename, &option, None).map(|(collected, _)| collected)
+}
+
+/// Execute vanilla-extract style file and collect styles, loading what it
+/// imports through `resolver`
+pub fn execute_stylesheet(
+    code: &str,
+    filename: &str,
+    option: &crate::ExtractOption,
+    resolver: Option<&crate::ModuleResolver>,
+) -> Result<(CollectedStyles, StylesheetImports), String> {
+    let _evaluating = Evaluating::enter(filename);
+    let mut loader = ModuleLoader::new(resolver, option);
+    let script = module_script(
+        &strip_typescript(code, filename),
+        filename,
+        &mut loader,
+        true,
+    )?;
     let file_num = get_file_num_by_filename(filename);
-
+    let run = format!("{}{}", loader.prelude(), script.body);
+    let imports = StylesheetImports {
+        dependencies: loader.dependencies,
+        kept_imports: loader.kept_imports,
+    };
+    let imported = crate::module_loader::evaluating_import();
+    if imported
+        && let Some(collected) = IMPORTED_RUNS.with_borrow(|runs| {
+            runs.get(filename)
+                .filter(|(num, source, text, _)| *num == file_num && source == code && *text == run)
+                .map(|(.., collected)| collected.clone())
+        })
+    {
+        return Ok((collected, imports));
+    }
+    let collector: StyleCollector = Rc::new(RefCell::new(Collector {
+        file_num,
+        ..Collector::default()
+    }));
     let mut context = Context::default();
-
-    // Create the mock module object
-    register_vanilla_extract_apis(&mut context, collector.clone(), package, file_num)?;
-
-    // Preprocess code: convert TypeScript to JavaScript using Oxc Transformer
-    let js_code = preprocess_typescript(code, package);
-
-    // Extract variable names from the original code before execution
-    let var_names = extract_var_names(code, package);
-
-    // Execute the code
     context
-        .eval(Source::from_bytes(js_code.as_bytes()))
+        .runtime_limits_mut()
+        .set_loop_iteration_limit(crate::module_loader::LOOP_ITERATION_LIMIT);
+    register_vanilla_extract_apis(&mut context, &collector)?;
+    // A script of its own, so the stylesheet's lines keep their numbers
+    context
+        .eval(Source::from_bytes(crate::module_loader::CONSOLE))
         .map_err(|e| format!("JS execution error: {e}"))?;
 
-    // Map placeholder IDs back to original variable names
-    let mut result = std::mem::take(&mut collector.borrow_mut().styles);
-    remap_style_names(&mut result, &var_names, &mut context, file_num);
+    context
+        .eval(Source::from_bytes(run.as_bytes()))
+        .map_err(|e| format!("JS execution error: {e}"))?;
 
-    Ok(result)
+    let mut collected = std::mem::take(&mut collector.borrow_mut().styles);
+    name_entries(
+        &mut collected,
+        &top_level_bindings(code),
+        &mut context,
+        file_num,
+    );
+    if imported {
+        IMPORTED_RUNS.with_borrow_mut(|runs| {
+            runs.insert(
+                filename.to_string(),
+                (file_num, code.to_string(), run, collected.clone()),
+            );
+        });
+    }
+    Ok((collected, imports))
 }
 
-/// Info about a variable declaration
-#[derive(Debug, Clone)]
-enum VarInfo {
-    /// A style API call (style, keyframes, createContainer, etc.)
-    StyleApi { exported: bool, api: StyleApi },
-    /// A regular constant export with its original code
-    Constant(String),
-    /// The vars object from createTheme array destructuring [themeClass, vars]
-    ThemeVars,
+thread_local! {
+    /// What running each stylesheet other evaluations import last collected,
+    /// with its file number, source and the script run: every module importing
+    /// it reuses one run of the same script
+    static IMPORTED_RUNS: RefCell<FxHashMap<String, (usize, String, String, CollectedStyles)>> =
+        RefCell::default();
+    /// The TypeScript each file last had stripped, with its source
+    static STRIPPED: RefCell<FxHashMap<String, (String, String)>> = RefCell::default();
 }
 
-/// Extract all variable names and their info from the original code
-/// Returns (`style_api_vars`, `exported_constants`)
-fn extract_var_names(code: &str, _package: &str) -> Vec<(String, VarInfo)> {
+/// A name a top-level variable declaration of the stylesheet binds
+struct Binding {
+    name: String,
+    exported: bool,
+    /// Initializer source, when the declaration binds this name alone
+    init: Option<String>,
+}
+
+fn top_level_bindings(code: &str) -> Vec<Binding> {
     let allocator = Allocator::default();
-    let source_type = SourceType::ts();
-    let ret = Parser::new(&allocator, code, source_type).parse();
-
-    let mut vars = Vec::new();
-    let mut collect_decl = |decl: &oxc_ast::ast::VariableDeclarator<'_>, exported: bool| {
-        let Some(init) = &decl.init else {
-            return;
+    let program = Parser::new(&allocator, code, SourceType::ts())
+        .parse()
+        .program;
+    let mut bindings = Vec::new();
+    for statement in &program.body {
+        let (declaration, exported) = match statement {
+            oxc_ast::ast::Statement::ExportDeclaration(export) => match &export.declaration {
+                oxc_ast::ast::Declaration::VariableDeclaration(declaration) => (declaration, true),
+                _ => continue,
+            },
+            oxc_ast::ast::Statement::VariableDeclaration(declaration) => (declaration, false),
+            _ => continue,
         };
-
-        // Check for array destructuring: const [themeClass, vars] = createTheme(...)
-        if let oxc_ast::ast::BindingPattern::ArrayPattern(array_pat) = &decl.id {
-            if let Some(api) = style_api_call(init) {
-                // First element is the theme class
-                if let Some(Some(first)) = array_pat.elements.first()
-                    && let oxc_ast::ast::BindingPattern::BindingIdentifier(id) = first
-                {
-                    vars.push((id.name.to_string(), VarInfo::StyleApi { exported, api }));
-                }
-                // Second element is the vars object - mark as ThemeVars
-                if let Some(Some(second)) = array_pat.elements.get(1)
-                    && let oxc_ast::ast::BindingPattern::BindingIdentifier(id) = second
-                {
-                    vars.push((id.name.to_string(), VarInfo::ThemeVars));
-                }
-            }
-        } else if let Some(name) = decl.id.get_identifier_name() {
-            if let Some(api) = style_api_call(init) {
-                vars.push((name.to_string(), VarInfo::StyleApi { exported, api }));
-            } else if exported {
-                // Extract the original init expression using span
-                let span = init.span();
-                let init_code = &code[span.start as usize..span.end as usize];
-                vars.push((name.to_string(), VarInfo::Constant(init_code.to_string())));
+        for declarator in &declaration.declarations {
+            let init = declarator
+                .init
+                .as_ref()
+                .filter(|_| declarator.id.get_identifier_name().is_some())
+                .map(|init| code[init.span().start as usize..init.span().end as usize].to_string());
+            for identifier in declarator.id.get_binding_identifiers() {
+                bindings.push(Binding {
+                    name: identifier.name.to_string(),
+                    exported,
+                    init: init.clone(),
+                });
             }
         }
-    };
-
-    for stmt in &ret.program.body {
-        match stmt {
-            // Exported variable declarations
-            oxc_ast::ast::Statement::ExportDeclaration(export) => {
-                if let oxc_ast::ast::Declaration::VariableDeclaration(var_decl) =
-                    &export.declaration
-                {
-                    for decl in &var_decl.declarations {
-                        collect_decl(decl, true);
-                    }
-                }
-            }
-            // Non-exported variable declarations
-            oxc_ast::ast::Statement::VariableDeclaration(var_decl) => {
-                for decl in &var_decl.declarations {
-                    collect_decl(decl, false);
-                }
-            }
-            _ => {}
-        }
     }
-
-    vars
+    bindings
 }
 
-/// Which placeholder counter a style API call draws from
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-enum StyleApi {
-    FontFace,
-    GlobalTheme,
-    Other,
+fn placeholder_index(id: &str) -> usize {
+    id.trim_start_matches("__style_")
+        .trim_end_matches("__")
+        .parse()
+        .unwrap_or_default()
 }
 
-/// The style API an expression calls (style, keyframes, styleVariants, etc.)
-fn style_api_call(expr: &oxc_ast::ast::Expression) -> Option<StyleApi> {
-    if let oxc_ast::ast::Expression::CallExpression(call) = expr
-        && let oxc_ast::ast::Expression::Identifier(id) = &call.callee
-    {
-        return match id.name.as_str() {
-            "fontFace" => Some(StyleApi::FontFace),
-            "createGlobalTheme" => Some(StyleApi::GlobalTheme),
-            "style" | "keyframes" | "styleVariants" | "createVar" | "createContainer" | "layer"
-            | "createTheme" => Some(StyleApi::Other),
-            _ => None,
-        };
-    }
-    None
-}
-
-/// Remap style placeholder IDs to original variable names
-fn remap_style_names(
+/// Name every style and keyframes after the variable holding it (`_veN` when
+/// none does), and turn the other exported values into code.
+///
+/// Names come from the values the variables hold after the stylesheet ran, so
+/// calls nested in objects, arrays or helpers do not shift them.
+fn name_entries(
     collected: &mut CollectedStyles,
-    vars: &[(String, VarInfo)],
-    _context: &mut Context,
+    bindings: &[Binding],
+    context: &mut Context,
     file_num: usize,
 ) {
-    // Generate a file-based prefix for unique class names
-    // e.g., file_num 0 -> "f0"
-    let file_prefix = format!("f{file_num}");
-    // Build mapping from placeholder ID to original name
-    // The order of style() calls matches the order of variable declarations
-    let mut placeholder_to_name: FxHashMap<String, String> = FxHashMap::default();
-    let mut new_styles = FxHashMap::default();
-    let mut new_keyframes = FxHashMap::default();
-    let mut new_style_variants = FxHashMap::default();
-    let mut new_vars = FxHashMap::default();
-    let mut new_containers = FxHashMap::default();
-    let mut new_layers = FxHashMap::default();
-    let mut new_font_faces = FxHashMap::default();
-    let mut new_global_themes = FxHashMap::default();
-    let mut new_themes = FxHashMap::default();
-    let mut style_idx = 0;
-    let mut font_idx = 0;
-    let mut global_theme_idx = 0;
-    // Track the last processed theme's vars_object_json for ThemeVars handling
-    let mut last_theme_vars_json: Option<String> = None;
+    let values: Vec<(&Binding, JsValue)> = bindings
+        .iter()
+        .filter_map(|binding| {
+            context
+                .eval(Source::from_bytes(binding.name.as_bytes()))
+                .ok()
+                .map(|value| (binding, value))
+        })
+        .collect();
 
-    // First pass: take ownership of old entries (avoids drain+collect overhead)
-    let mut old_styles = std::mem::take(&mut collected.styles);
-    let mut old_keyframes = std::mem::take(&mut collected.keyframes);
-    let mut old_style_variants = std::mem::take(&mut collected.style_variants);
-    let mut old_vars = std::mem::take(&mut collected.vars);
-    let mut old_containers = std::mem::take(&mut collected.containers);
-    let mut old_layers = std::mem::take(&mut collected.layers);
-    let mut old_font_faces = std::mem::take(&mut collected.font_faces);
-    let mut old_global_themes = std::mem::take(&mut collected.global_themes);
-    let mut old_themes = std::mem::take(&mut collected.themes);
-
-    for (name, info) in vars {
-        match info {
-            VarInfo::StyleApi {
-                exported,
-                api: StyleApi::FontFace,
-            } => {
-                let font_placeholder = format!("__font_{font_idx}__");
-                if let Some((json, font_family, _)) = old_font_faces.remove(&font_placeholder) {
-                    collected
-                        .references
-                        .insert(font_placeholder, Reference::Font(font_family.clone()));
-                    new_font_faces.insert(name.clone(), (json, font_family, *exported));
-                    font_idx += 1;
-                }
-            }
-            VarInfo::StyleApi {
-                exported,
-                api: StyleApi::GlobalTheme,
-            } => {
-                let global_theme_placeholder = format!("__global_theme_{global_theme_idx}__");
-                if let Some(mut entry) = old_global_themes.remove(&global_theme_placeholder) {
-                    entry.exported = *exported;
-                    new_global_themes.insert(name.clone(), entry);
-                    global_theme_idx += 1;
-                }
-            }
-            VarInfo::StyleApi {
-                exported,
-                api: StyleApi::Other,
-            } => {
-                let placeholder = format!("__style_{style_idx}__");
-                placeholder_to_name.insert(placeholder.clone(), name.clone());
-
-                if let Some(mut entry) = old_styles.remove(&placeholder) {
-                    entry.exported = *exported;
-                    new_styles.insert(name.clone(), entry);
-                    collected.references.insert(
-                        placeholder,
-                        Reference::Style {
-                            name: name.clone(),
-                            class_name: format!("{file_prefix}_{name}"),
-                        },
-                    );
-                    style_idx += 1;
-                } else if let Some(mut entry) = old_keyframes.remove(&placeholder) {
-                    entry.exported = *exported;
-                    new_keyframes.insert(name.clone(), entry);
-                    collected
-                        .references
-                        .insert(placeholder, Reference::Keyframes(name.clone()));
-                    style_idx += 1;
-                } else if let Some((variants, _)) = old_style_variants.remove(&placeholder) {
-                    new_style_variants.insert(name.clone(), (variants, *exported));
-                    style_idx += 1;
-                } else if let Some((value, _)) = old_vars.remove(&placeholder) {
-                    new_vars.insert(name.clone(), (value, *exported));
-                    style_idx += 1;
-                } else if let Some((value, _)) = old_containers.remove(&placeholder) {
-                    new_containers.insert(name.clone(), (value, *exported));
-                    style_idx += 1;
-                } else if let Some((value, _)) = old_layers.remove(&placeholder) {
-                    new_layers.insert(name.clone(), (value, *exported));
-                    style_idx += 1;
-                } else if let Some(mut entry) = old_themes.remove(&placeholder) {
-                    // Track this theme name for the next ThemeVars entry
-                    if entry.vars_object_json.is_some() {
-                        last_theme_vars_json = Some(name.clone());
-                    }
-
-                    // Generate unique class name: file_prefix + variable_name
-                    let class_name = format!("{file_prefix}_{name}");
-
-                    // Add CSS variables to global_styles with class selector
-                    if !entry.css_vars.is_empty() {
-                        let vars_json = format!(
-                            "{{ {} }}",
-                            entry
-                                .css_vars
-                                .iter()
-                                .map(|(var_name, value)| format!("\"{var_name}\": \"{value}\""))
-                                .collect::<Vec<_>>()
-                                .join(", ")
-                        );
-                        collected
-                            .global_styles
-                            .push((format!(".{class_name}"), vars_json));
-                    }
-
-                    collected
-                        .references
-                        .insert(placeholder, Reference::Class(class_name.clone()));
-                    entry.exported = *exported;
-                    entry.vars_name = None;
-                    entry.class_name = class_name;
-                    new_themes.insert(name.clone(), entry);
-                    style_idx += 1;
-                }
-            }
-            VarInfo::ThemeVars => {
-                // This is the vars object from [themeClass, vars] = createTheme(...)
-                // Set vars_name on the theme we just processed
-                if let Some(theme_name) = last_theme_vars_json.take()
-                    && let Some(theme_entry) = new_themes.get_mut(&theme_name)
-                {
-                    theme_entry.vars_name = Some(name.clone());
-                }
-            }
-            VarInfo::Constant(code) => {
-                collected
-                    .constant_exports
-                    .insert(name.clone(), code.clone());
-            }
+    let mut names: FxHashMap<String, String> = FxHashMap::default();
+    for (binding, value) in &values {
+        if let Some(id) = js_str(value)
+            && !names.contains_key(&id)
+            && let Some(entry) = collected
+                .styles
+                .get_mut(&id)
+                .or_else(|| collected.keyframes.get_mut(&id))
+        {
+            entry.exported = binding.exported;
+            names.insert(id, binding.name.clone());
         }
     }
 
-    // Remap base references in styleVariants
-    for (variants, _) in new_style_variants.values_mut() {
-        for variant in variants.values_mut() {
-            if let Some(base) = &variant.base
-                && let Some(name) = placeholder_to_name.get(base)
-            {
-                variant.base = Some(name.clone());
-            }
+    let declared: FxHashSet<&str> = bindings
+        .iter()
+        .map(|binding| binding.name.as_str())
+        .collect();
+    let mut anonymous: Vec<String> = collected
+        .styles
+        .keys()
+        .chain(collected.keyframes.keys())
+        .filter(|id| !names.contains_key(*id))
+        .cloned()
+        .collect();
+    anonymous.sort_by_key(|id| placeholder_index(id));
+    for id in anonymous {
+        let mut name = format!("_ve{}", placeholder_index(&id));
+        while declared.contains(name.as_str()) {
+            name.push('_');
+        }
+        names.insert(id, name);
+    }
+
+    for (binding, value) in &values {
+        let names_entry = js_str(value).is_some_and(|id| names.get(&id) == Some(&binding.name));
+        if binding.exported
+            && !names_entry
+            && let Some(code) = value_to_code(value, context, &names, &mut Vec::new())
+                .or_else(|| binding.init.clone())
+        {
+            collected
+                .constant_exports
+                .push((binding.name.clone(), code));
         }
     }
 
-    // Remap base references in styles (for composition)
-    for entry in new_styles.values_mut() {
-        let old_bases = std::mem::take(&mut entry.bases);
-        entry.bases = old_bases
-            .into_iter()
-            .map(|b| {
-                if let Some(name) = placeholder_to_name.get(&b) {
-                    name.clone()
-                } else {
-                    b
+    for (id, name) in &names {
+        let reference = if let Some(mut entry) = collected.styles.remove(id) {
+            for base in &mut entry.bases {
+                if let Some(base_name) = names.get(base.as_str()) {
+                    base_name.clone_into(base);
                 }
-            })
-            .collect();
+            }
+            collected.styles.insert(name.clone(), entry);
+            Reference::Style {
+                name: name.clone(),
+                class_name: format!("f{file_num}_{name}"),
+            }
+        } else {
+            if let Some(entry) = collected.keyframes.remove(id) {
+                collected.keyframes.insert(name.clone(), entry);
+            }
+            Reference::Keyframes(name.clone())
+        };
+        collected.references.insert(id.clone(), reference);
     }
+}
 
-    collected.styles = new_styles;
-    collected.keyframes = new_keyframes;
-    collected.style_variants = new_style_variants;
-    collected.vars = new_vars;
-    collected.containers = new_containers;
-    collected.layers = new_layers;
-    collected.font_faces = new_font_faces;
-    collected.global_themes = new_global_themes;
-    collected.themes = new_themes;
+fn is_plain_object(object: &JsObject, context: &Context) -> bool {
+    object.prototype().is_none_or(|prototype| {
+        JsObject::equals(
+            &prototype,
+            &context.intrinsics().constructors().object().prototype(),
+        )
+    })
+}
+
+/// JavaScript for a data `value`, placeholders turned into the names of their
+/// styles; `None` for functions, class instances, symbols and cycles
+fn value_to_code(
+    value: &JsValue,
+    context: &mut Context,
+    names: &FxHashMap<String, String>,
+    seen: &mut Vec<JsObject>,
+) -> Option<String> {
+    if let Some(text) = js_str(value) {
+        return Some(string_code(&text, names));
+    }
+    if value.is_null_or_undefined() || value.is_number() || value.as_boolean().is_some() {
+        return to_text(value, context).ok();
+    }
+    let object = value.as_object()?;
+    if object.is_callable()
+        || seen
+            .iter()
+            .any(|visited| JsObject::equals(visited, &object))
+    {
+        return None;
+    }
+    seen.push(object.clone());
+    let mut parts = Vec::new();
+    let code = if let Some(items) = array_items(value, context).ok()? {
+        for item in &items {
+            parts.push(value_to_code(item, context, names, seen)?);
+        }
+        format!("[{}]", parts.join(", "))
+    } else if is_plain_object(&object, context) {
+        for (key, name) in own_keys(&object, context).ok()? {
+            let item = object.get(key, context).ok()?;
+            parts.push(format!(
+                "{}: {}",
+                json_string(&name),
+                value_to_code(&item, context, names, seen)?
+            ));
+        }
+        if parts.is_empty() {
+            "{}".to_string()
+        } else {
+            format!("{{ {} }}", parts.join(", "))
+        }
+    } else {
+        return None;
+    };
+    seen.pop();
+    Some(code)
+}
+
+/// A string literal, or a template literal when it interpolates placeholders
+fn string_code(text: &str, names: &FxHashMap<String, String>) -> String {
+    if let Some(name) = names.get(text) {
+        return name.clone();
+    }
+    let escaped = text
+        .replace('\\', "\\\\")
+        .replace('`', "\\`")
+        .replace("${", "\\${");
+    replace_placeholders(&escaped, |token, _| {
+        names.get(token).map(|name| format!("${{{name}}}"))
+    })
+    .map_or_else(|| json_string(text), |template| format!("`{template}`"))
 }
 
 /// Replace every `__name__` token that `lookup` resolves; `None` when nothing
@@ -723,461 +553,620 @@ fn replace_placeholders(
         output
     })
 }
-/// Convert TypeScript to JavaScript using Oxc Transformer and replace imports
-fn preprocess_typescript(code: &str, package: &str) -> String {
+
+/// Convert TypeScript to JavaScript using Oxc Transformer
+/// `code` without its TypeScript, stripped once for as long as the file holds
+/// it: the modules evaluations import are stripped once, not per evaluation
+pub(crate) fn strip_typescript(code: &str, filename: &str) -> String {
+    if let Some(stripped) = STRIPPED.with_borrow(|stripped| {
+        stripped
+            .get(filename)
+            .filter(|(source, _)| source == code)
+            .map(|(_, stripped)| stripped.clone())
+    }) {
+        return stripped;
+    }
+    let stripped = strip(code, filename);
+    STRIPPED.with_borrow_mut(|entries| {
+        entries.insert(filename.to_string(), (code.to_string(), stripped.clone()));
+    });
+    stripped
+}
+
+fn strip(code: &str, filename: &str) -> String {
     let allocator = Allocator::default();
-    let source_type = SourceType::ts();
-
-    // Parse TypeScript
-    let ret = Parser::new(&allocator, code, source_type).parse();
-    let mut program = ret.program;
-
-    // Build semantic info to get scoping
-    let semantic_ret = SemanticBuilder::new().build(&program);
-    let scoping = semantic_ret.semantic.into_scoping();
-
-    // Transform: strip TypeScript types
+    let source_type = SourceType::from_path(filename).unwrap_or_else(|_| SourceType::ts());
+    let mut program = Parser::new(&allocator, code, source_type).parse().program;
+    let scoping = SemanticBuilder::new()
+        .with_enum_eval(true)
+        .build(&program)
+        .semantic
+        .into_scoping();
     let options = TransformOptions::default();
     let path = Path::new("input.css.ts");
     let _ = Transformer::new(&allocator, path, &options).build_with_scoping(scoping, &mut program);
-
-    // Generate JavaScript
-    let js_code = Codegen::new().build(&program).code;
-
-    // Replace import from package with our mock object destructuring
-    // e.g., import { style } from '@devup-ui/react' -> const { style } = __vanilla_extract__;
-    // Note: Import aliases (like @vanilla-extract/css) are already transformed by import_alias_visit
-    let import_patterns = [format!("from \"{package}\""), format!("from '{package}'")];
-
-    // Process all import patterns (multiple imports may exist)
-    let mut transformed = String::with_capacity(js_code.len());
-    for (idx, line) in js_code.lines().enumerate() {
-        if idx > 0 {
-            transformed.push('\n');
-        }
-        let mut matched = false;
-        for pattern in &import_patterns {
-            if line.contains(pattern) {
-                // Extract imported names from: import { a, b, c } from 'package'
-                if let Some(start) = line.find('{')
-                    && let Some(end) = line.find('}')
-                {
-                    let imports = &line[start + 1..end];
-                    transformed.push_str("const {");
-                    transformed.push_str(imports);
-                    transformed.push_str("} = __vanilla_extract__;");
-                    matched = true;
-                    break;
-                }
-            }
-        }
-        if !matched {
-            transformed.push_str(strip_export_keyword(line));
-        }
-    }
-    transformed
+    Codegen::new().build(&program).code
 }
 
-fn strip_export_keyword(line: &str) -> &str {
-    line.strip_prefix("export ").map_or(line, |rest| {
-        if rest.starts_with("const ")
-            || rest.starts_with("let ")
-            || rest.starts_with("var ")
-            || rest.starts_with("function ")
-        {
-            rest
-        } else {
-            line
-        }
-    })
+type Api = fn(&StyleCollector, &[JsValue], &mut Context) -> JsResult<JsValue>;
+
+fn api(collector: &StyleCollector, function: Api) -> NativeFunction {
+    let collector = collector.clone();
+    // SAFETY: the closure captures only an `Rc<RefCell<Collector>>`, which holds no
+    // garbage-collected value, and a stylesheet runs on a single thread
+    unsafe {
+        NativeFunction::from_closure(move |_this, args, context| {
+            function(&collector, args, context)
+        })
+    }
 }
 
 /// Register vanilla-extract mock APIs in the JS context
 fn register_vanilla_extract_apis(
     context: &mut Context,
-    collector: StyleCollector,
-    _package: &str,
-    file_num: usize,
+    collector: &StyleCollector,
 ) -> Result<(), String> {
-    // style() function
-    let collector_style = collector.clone();
-    // SAFETY: The closure only captures Rc<RefCell<_>> which is safe to use in single-threaded JS context
-    let style_fn = unsafe {
-        NativeFunction::from_closure(move |_this, args, ctx| {
-            let style_obj = args.get_or_undefined(0);
-            let id = next_style_id(&collector_style);
-
-            // Check if argument is an array (composition syntax)
-            let (json, bases) = if let Some(obj) = style_obj.as_object()
-                && let Ok(length_val) = obj.get(js_string!("length"), ctx)
-                && let Some(len) = length_val.as_number()
-            {
-                // It's an array - handle composition
-                let len = len as u32;
-                let mut base_classes = SmallVec::new();
-                let mut merged_styles = String::from("{");
-                let mut first_style = true;
-
-                for i in 0..len {
-                    if let Ok(elem) = obj.get(i, ctx) {
-                        if let Some(base_str) = elem.as_string() {
-                            // It's a base class reference (string)
-                            base_classes.push(base_str.to_std_string_escaped());
-                        } else if elem.is_object() {
-                            // It's a style object - merge it
-                            let elem_json = js_value_to_json(&elem, ctx);
-                            // Strip outer braces and merge
-                            let inner = elem_json
-                                .trim()
-                                .trim_start_matches('{')
-                                .trim_end_matches('}')
-                                .trim();
-                            if !inner.is_empty() {
-                                if !first_style {
-                                    merged_styles.push(',');
-                                }
-                                merged_styles.push_str(inner);
-                                first_style = false;
-                            }
-                        }
-                    }
-                }
-                merged_styles.push('}');
-                (merged_styles, base_classes)
-            } else {
-                // No length property, just a style object
-                (js_value_to_json(style_obj, ctx), SmallVec::new())
-            };
-            collector_style.borrow_mut().styles.styles.insert(
-                id.clone(),
-                StyleEntry {
-                    json,
-                    exported: false, // Will be updated in remap_style_names
-                    bases,
-                },
-            );
-
-            Ok(JsValue::from(js_string!(id)))
-        })
-    };
-
-    // globalStyle() function
-    let collector_global = collector.clone();
-    let global_style_fn = unsafe {
-        NativeFunction::from_closure(move |_this, args, ctx| {
-            let selector = args
-                .get_or_undefined(0)
-                .to_string(ctx)?
-                .to_std_string_escaped();
-            let style_obj = args.get_or_undefined(1);
-            let json = js_value_to_json(style_obj, ctx);
-
-            collector_global
-                .borrow_mut()
-                .styles
-                .global_styles
-                .push((selector, json));
-
-            Ok(JsValue::undefined())
-        })
-    };
-
-    // keyframes() function
-    let collector_keyframes = collector.clone();
-    let keyframes_fn = unsafe {
-        NativeFunction::from_closure(move |_this, args, ctx| {
-            let keyframes_obj = args.get_or_undefined(0);
-            let json = js_value_to_json(keyframes_obj, ctx);
-            let id = next_style_id(&collector_keyframes);
-
-            collector_keyframes.borrow_mut().styles.keyframes.insert(
-                id.clone(),
-                StyleEntry {
-                    json,
-                    exported: false,
-                    bases: SmallVec::new(),
-                },
-            );
-
-            Ok(JsValue::from(js_string!(id)))
-        })
-    };
-
-    // createVar() function
-    // Returns CSS custom property name like "--var-0", not wrapped in var()
-    // When used as a key in vars: {[colorVar]: 'blue'}, it becomes the property name
-    // When used as a value, the extraction logic will wrap it in var()
-    let collector_var = collector.clone();
-    let create_var_fn = unsafe {
-        NativeFunction::from_closure(move |_this, _args, _ctx| {
-            let id = next_style_id(&collector_var);
-            let var_name = format!("--var-{}", collector_var.borrow().styles.vars.len());
-            collector_var
-                .borrow_mut()
-                .styles
-                .vars
-                .insert(id, (var_name.clone(), false));
-            // Return just the CSS custom property name, without var() wrapper
-            Ok(JsValue::from(js_string!(var_name)))
-        })
-    };
-
-    // fontFace() function
-    // Returns a placeholder ID that will be replaced with generated font-family name
-    let collector_font = collector.clone();
-    let font_face_fn = unsafe {
-        NativeFunction::from_closure(move |_this, args, ctx| {
-            let font_obj = args.get_or_undefined(0);
-            let json = js_value_to_json(font_obj, ctx);
-            let id = next_font_id(&collector_font);
-
-            // Generate a unique font-family name for this font
-            // Include file_num to ensure uniqueness across different files
-            let font_family = format!(
-                "__devup_font_{}_{}",
-                file_num,
-                collector_font.borrow().font_counter - 1
-            );
-
-            collector_font
-                .borrow_mut()
-                .styles
-                .font_faces
-                .insert(id.clone(), (json, font_family, false));
-
-            // Return the placeholder ID - will be replaced in code generation
-            Ok(JsValue::from(js_string!(id)))
-        })
-    };
-
-    // styleVariants() function
-    let collector_variants = collector.clone();
-    let style_variants_fn = unsafe {
-        NativeFunction::from_closure(move |_this, args, ctx| {
-            let variants_obj = args.get_or_undefined(0);
-            let variants = parse_style_variants(variants_obj, ctx);
-            let id = next_style_id(&collector_variants);
-
-            collector_variants
-                .borrow_mut()
-                .styles
-                .style_variants
-                .insert(id.clone(), (variants, false));
-
-            // Return an object placeholder - the actual object will be built in code generation
-            Ok(JsValue::from(js_string!(id)))
-        })
-    };
-
-    // fallbackVar() function - returns var(--x, fallback) format
-    let fallback_var_fn = unsafe {
-        NativeFunction::from_closure(move |_this, args, ctx| {
-            let var_value = args
-                .get_or_undefined(0)
-                .to_string(ctx)?
-                .to_std_string_escaped();
-            let fallback = args
-                .get_or_undefined(1)
-                .to_string(ctx)?
-                .to_std_string_escaped();
-
-            // var_value is now just "--var-0" (CSS custom property name)
-            // Return var(--var-0, fallback)
-            let result = format!("var({var_value}, {fallback})");
-            Ok(JsValue::from(js_string!(result)))
-        })
-    };
-
-    // createThemeContract() function - transforms null leaves to var(--path) references
-    let create_theme_contract_fn = unsafe {
-        NativeFunction::from_closure(move |_this, args, ctx| {
-            let contract_obj = args.get_or_undefined(0);
-            let transformed = transform_contract_to_vars(contract_obj, ctx, &mut Vec::new());
-            Ok(transformed)
-        })
-    };
-
-    // createTheme() function - creates a class with CSS variable assignments
-    // Single arg: createTheme({ color: { brand: 'blue' } }) -> returns [themeClass, vars]
-    // Two args: createTheme(contract, values) -> returns themeClass
-    let collector_theme = collector.clone();
-    let create_theme_fn = unsafe {
-        NativeFunction::from_closure(move |_this, args, ctx| {
-            let first_arg = args.get_or_undefined(0);
-            let second_arg = args.get_or_undefined(1);
-
-            // Check if it's single-arg (values only) or two-arg (contract, values)
-            let is_single_arg = second_arg.is_undefined();
-
-            let id = next_style_id(&collector_theme);
-
-            if is_single_arg {
-                // Single arg: createTheme({ color: { brand: 'blue' } })
-                // Returns [themeClass, vars] where vars has var() references
-                let mut css_vars = SmallVec::new();
-                let mut var_counter = 0usize;
-
-                // Transform values to var() references and collect CSS variables
-                let vars_obj = transform_theme_to_vars(
-                    first_arg,
-                    ctx,
-                    &id,
-                    &mut css_vars,
-                    &mut var_counter,
-                    &mut Vec::new(),
-                );
-
-                let vars_object_json = js_value_to_json(&vars_obj, ctx);
-
-                // Store the theme entry with vars object
-                collector_theme.borrow_mut().styles.themes.insert(
-                    id.clone(),
-                    ThemeEntry {
-                        css_vars,
-                        exported: false,
-                        vars_object_json: Some(vars_object_json),
-                        vars_name: None,           // Will be set during remapping
-                        class_name: String::new(), // Will be set during remapping
-                    },
-                );
-
-                // Return [themeId, varsObject] as an array
-                let result_array = boa_engine::object::builtins::JsArray::new(ctx)?;
-                result_array.push(JsValue::from(js_string!(id.clone())), ctx)?;
-                result_array.push(vars_obj, ctx)?;
-
-                Ok(JsValue::from(result_array))
-            } else {
-                // Two args: createTheme(contract, values)
-                // Returns just the themeClass
-                let mut css_vars = SmallVec::new();
-                extract_theme_vars(first_arg, second_arg, ctx, &mut css_vars, &mut Vec::new());
-
-                // Store the theme entry
-                collector_theme.borrow_mut().styles.themes.insert(
-                    id.clone(),
-                    ThemeEntry {
-                        css_vars,
-                        exported: false,
-                        vars_object_json: None,
-                        vars_name: None,
-                        class_name: String::new(), // Will be set during remapping
-                    },
-                );
-
-                Ok(JsValue::from(js_string!(id)))
-            }
-        })
-    };
-
-    // layer() function
-    let collector_layer = collector.clone();
-    let layer_fn = unsafe {
-        NativeFunction::from_closure(move |_this, args, ctx| {
-            let id = next_style_id(&collector_layer);
-            let name = args
-                .get_or_undefined(0)
-                .to_string(ctx)?
-                .to_std_string_escaped();
-            collector_layer
-                .borrow_mut()
-                .styles
-                .layers
-                .insert(id, (name.clone(), false));
-            Ok(JsValue::from(js_string!(name)))
-        })
-    };
-
-    // createContainer() function
-    let collector_container = collector.clone();
-    let create_container_fn = unsafe {
-        NativeFunction::from_closure(move |_this, _args, _ctx| {
-            let id = next_style_id(&collector_container);
-            let container_name = format!(
-                "__container_{}__",
-                collector_container.borrow().styles.containers.len()
-            );
-            collector_container
-                .borrow_mut()
-                .styles
-                .containers
-                .insert(id, (container_name.clone(), false));
-            Ok(JsValue::from(js_string!(container_name)))
-        })
-    };
-
-    // createGlobalTheme() function
-    let collector_global_theme = collector;
-    let create_global_theme_fn = unsafe {
-        NativeFunction::from_closure(move |_this, args, ctx| {
-            let placeholder_id = next_global_theme_id(&collector_global_theme);
-            let selector = args
-                .get_or_undefined(0)
-                .to_string(ctx)
-                .map_or_else(|_| ":root".to_string(), |s| s.to_std_string_escaped());
-            let theme_obj = args.get_or_undefined(1);
-
-            // Collect CSS variables and build new object with var() references
-            let mut css_vars = SmallVec::new();
-            let mut var_counter = 0usize;
-            let result_obj = transform_theme_to_vars(
-                theme_obj,
-                ctx,
-                &placeholder_id,
-                &mut css_vars,
-                &mut var_counter,
-                &mut Vec::new(),
-            );
-
-            // Serialize the result object to JSON for code generation
-            let vars_object_json = js_value_to_json(&result_obj, ctx);
-
-            // Store the collected CSS variables and vars object
-            collector_global_theme
-                .borrow_mut()
-                .styles
-                .global_themes
-                .insert(
-                    placeholder_id,
-                    GlobalThemeEntry {
-                        selector,
-                        css_vars,
-                        vars_object_json,
-                        exported: false,
-                    },
-                );
-
-            Ok(result_obj)
-        })
-    };
-
-    // Build the mock object
-    let mut ve_builder = ObjectInitializer::new(context);
-    ve_builder.function(style_fn, js_string!("style"), 1);
-    ve_builder.function(global_style_fn, js_string!("globalStyle"), 2);
-    ve_builder.function(keyframes_fn, js_string!("keyframes"), 1);
-    ve_builder.function(create_var_fn, js_string!("createVar"), 0);
-    ve_builder.function(font_face_fn, js_string!("fontFace"), 1);
-    ve_builder.function(style_variants_fn, js_string!("styleVariants"), 1);
-    ve_builder.function(fallback_var_fn, js_string!("fallbackVar"), 2);
-    ve_builder.function(create_theme_fn, js_string!("createTheme"), 1);
-    ve_builder.function(
-        create_theme_contract_fn,
-        js_string!("createThemeContract"),
-        1,
-    );
-    ve_builder.function(layer_fn, js_string!("layer"), 1);
-    ve_builder.function(create_container_fn, js_string!("createContainer"), 0);
-    ve_builder.function(create_global_theme_fn, js_string!("createGlobalTheme"), 2);
-
-    let ve_obj = ve_builder.build();
-
-    // Register as global __vanilla_extract__
+    let apis = [
+        ("style", api(collector, style), 1),
+        ("globalStyle", api(collector, global_style), 2),
+        ("styleVariants", api(collector, style_variants), 1),
+        (
+            "keyframes",
+            api(collector, |collector, args, context| {
+                Ok(keyframes(collector, args, context))
+            }),
+            1,
+        ),
+        (
+            "fontFace",
+            api(collector, |collector, args, context| {
+                Ok(font_face(collector, args, context))
+            }),
+            1,
+        ),
+        ("globalFontFace", api(collector, global_font_face), 2),
+        ("createVar", api(collector, create_var), 0),
+        ("fallbackVar", NativeFunction::from_fn_ptr(fallback_var), 2),
+        (
+            "createContainer",
+            api(collector, |collector, args, _context| {
+                Ok(create_container(collector, args))
+            }),
+            0,
+        ),
+        ("layer", api(collector, layer), 0),
+        ("globalLayer", api(collector, global_layer), 1),
+        (
+            "createThemeContract",
+            api(collector, create_theme_contract),
+            1,
+        ),
+        (
+            "createGlobalThemeContract",
+            NativeFunction::from_fn_ptr(create_global_theme_contract),
+            1,
+        ),
+        (
+            "assignVars",
+            NativeFunction::from_fn_ptr(assign_vars_api),
+            2,
+        ),
+        ("createTheme", api(collector, create_theme), 1),
+        ("createGlobalTheme", api(collector, create_global_theme), 2),
+    ];
+    let mut builder = ObjectInitializer::new(context);
+    for (name, function, length) in apis {
+        builder.function(function, JsString::from(name), length);
+    }
+    let mock = builder.build();
     context
-        .register_global_property(js_string!("__vanilla_extract__"), ve_obj, Attribute::all())
-        .map_err(|e| format!("Failed to register __vanilla_extract__: {e}"))?;
+        .register_global_property(js_string!(PACKAGE_BINDING), mock, Attribute::all())
+        .map_err(|e| format!("Failed to register __vanilla_extract__: {e}"))
+}
 
+fn style(collector: &StyleCollector, args: &[JsValue], context: &mut Context) -> JsResult<JsValue> {
+    let id = register_style(collector, args.get_or_undefined(0), context)?;
+    Ok(js_string!(id).into())
+}
+
+fn register_style(
+    collector: &StyleCollector,
+    rule: &JsValue,
+    context: &mut Context,
+) -> JsResult<String> {
+    let mut entry = StyleEntry::default();
+    let mut rules = Vec::new();
+    compose(rule, &mut entry, &mut rules, context)?;
+    entry.json = format!("{{{}}}", rules.join(","));
+    let mut collector = collector.borrow_mut();
+    let id = collector.placeholder();
+    collector.styles.styles.insert(id.clone(), entry);
+    Ok(id)
+}
+
+fn is_placeholder(token: &str) -> bool {
+    token.starts_with("__style_") && token.ends_with("__")
+}
+
+/// Sort a composition list into the styles and classes it composes and the
+/// inner JSON of its rules
+fn compose(
+    value: &JsValue,
+    entry: &mut StyleEntry,
+    rules: &mut Vec<String>,
+    context: &mut Context,
+) -> JsResult<()> {
+    if let Some(items) = array_items(value, context)? {
+        for item in &items {
+            compose(item, entry, rules, context)?;
+        }
+    } else if let Some(classes) = js_str(value) {
+        for class in classes.split_whitespace() {
+            if is_placeholder(class) {
+                entry.bases.push(class.to_string());
+            } else {
+                entry.classes.push(class.to_string());
+            }
+        }
+    } else if value.is_object() {
+        let json = style_to_json(value, context);
+        let inner = inner_json(&json);
+        if !inner.is_empty() {
+            rules.push(inner.to_string());
+        }
+    }
     Ok(())
+}
+
+fn global_style(
+    collector: &StyleCollector,
+    args: &[JsValue],
+    context: &mut Context,
+) -> JsResult<JsValue> {
+    let selector = to_text(args.get_or_undefined(0), context)?;
+    let json = style_to_json(args.get_or_undefined(1), context);
+    collector
+        .borrow_mut()
+        .styles
+        .global_styles
+        .push((selector, json));
+    Ok(JsValue::undefined())
+}
+
+/// `styleVariants(variants, map?)`: a style per key, of the value or of what
+/// `map(value, key)` returns
+fn style_variants(
+    collector: &StyleCollector,
+    args: &[JsValue],
+    context: &mut Context,
+) -> JsResult<JsValue> {
+    let variants = ObjectInitializer::new(context).build();
+    let map = args.get_or_undefined(1).as_callable();
+    if let Some(data) = args.get_or_undefined(0).as_object() {
+        for (key, name) in own_keys(&data, context)? {
+            let value = data.get(key, context)?;
+            let rule = match &map {
+                Some(map) => map.call(
+                    &JsValue::undefined(),
+                    &[value, js_string!(name.as_str()).into()],
+                    context,
+                )?,
+                None => value,
+            };
+            let id = register_style(collector, &rule, context)?;
+            variants.set(js_string!(name), js_string!(id), false, context)?;
+        }
+    }
+    Ok(variants.into())
+}
+
+fn keyframes(collector: &StyleCollector, args: &[JsValue], context: &mut Context) -> JsValue {
+    let json = style_to_json(args.get_or_undefined(0), context);
+    let mut collector = collector.borrow_mut();
+    let id = collector.placeholder();
+    collector.styles.keyframes.insert(
+        id.clone(),
+        StyleEntry {
+            json,
+            ..StyleEntry::default()
+        },
+    );
+    js_string!(id).into()
+}
+
+/// `fontFace(rule, debugId?)`: a generated family for one rule or a list of them
+fn font_face(collector: &StyleCollector, args: &[JsValue], context: &mut Context) -> JsValue {
+    let family = collector
+        .borrow_mut()
+        .identifier(js_str(args.get_or_undefined(1)), "font");
+    let faces = font_face_rules(&family, args.get_or_undefined(0), context);
+    collector.borrow_mut().styles.font_faces.extend(faces);
+    js_string!(family).into()
+}
+
+fn global_font_face(
+    collector: &StyleCollector,
+    args: &[JsValue],
+    context: &mut Context,
+) -> JsResult<JsValue> {
+    let family = to_text(args.get_or_undefined(0), context)?;
+    let faces = font_face_rules(&family, args.get_or_undefined(1), context);
+    collector.borrow_mut().styles.font_faces.extend(faces);
+    Ok(JsValue::undefined())
+}
+
+fn font_face_rule(family_json: &str, rule: &JsValue, context: &mut Context) -> String {
+    let json = js_value_to_json(rule, context);
+    match inner_json(&json) {
+        "" => format!("{{\"fontFamily\":{family_json}}}"),
+        inner => format!("{{{inner},\"fontFamily\":{family_json}}}"),
+    }
+}
+
+/// `@font-face` rule objects for `rule`, or each rule of a list, naming `family`
+fn font_face_rules(family: &str, rule: &JsValue, context: &mut Context) -> Vec<String> {
+    let family_json = json_string(family);
+    match array_items(rule, context).ok().flatten() {
+        Some(rules) => {
+            let mut faces = Vec::with_capacity(rules.len());
+            for rule in &rules {
+                faces.push(font_face_rule(&family_json, rule, context));
+            }
+            faces
+        }
+        None => vec![font_face_rule(&family_json, rule, context)],
+    }
+}
+
+/// `createVar(debugId?)` / `createVar(declaration, debugId?)`: a `var()` of a
+/// generated custom property, registered with `@property` when declared
+fn create_var(
+    collector: &StyleCollector,
+    args: &[JsValue],
+    context: &mut Context,
+) -> JsResult<JsValue> {
+    let first = args.get_or_undefined(0);
+    let (declaration, debug_id) = match first.as_object() {
+        Some(declaration) => (Some(declaration), args.get_or_undefined(1)),
+        None => (None, first),
+    };
+    let name = format!(
+        "--{}",
+        collector.borrow_mut().identifier(js_str(debug_id), "var")
+    );
+    if let Some(declaration) = declaration {
+        let rule = property_rule(&name, &declaration, context)?;
+        collector.borrow_mut().styles.property_rules.push(rule);
+    }
+    Ok(js_string!(format!("var({name})")).into())
+}
+
+fn property_rule(name: &str, declaration: &JsObject, context: &mut Context) -> JsResult<String> {
+    let syntax = declaration.get(js_string!("syntax"), context)?;
+    let syntax = match array_items(&syntax, context)? {
+        Some(items) => items
+            .iter()
+            .map(|item| to_text(item, context))
+            .collect::<JsResult<Vec<_>>>()?
+            .join(" | "),
+        None => to_text(&syntax, context)?,
+    };
+    let inherits = declaration
+        .get(js_string!("inherits"), context)?
+        .to_boolean();
+    let mut rule = format!("@property {name}{{syntax:\"{syntax}\";inherits:{inherits}");
+    let initial_value = declaration.get(js_string!("initialValue"), context)?;
+    if !initial_value.is_null_or_undefined() {
+        rule.push_str(";initial-value:");
+        rule.push_str(&to_text(&initial_value, context)?);
+    }
+    rule.push('}');
+    Ok(rule)
+}
+
+/// `fallbackVar(...values)`: each `var()` falls back to the values after it
+fn fallback_var(_this: &JsValue, args: &[JsValue], context: &mut Context) -> JsResult<JsValue> {
+    let mut result = String::new();
+    for (index, value) in args.iter().rev().enumerate() {
+        let value = to_text(value, context)?;
+        result = match value.strip_suffix(')') {
+            Some(head) if index > 0 => format!("{head}, {result})"),
+            _ => value,
+        };
+    }
+    Ok(js_string!(result).into())
+}
+
+fn create_container(collector: &StyleCollector, args: &[JsValue]) -> JsValue {
+    let name = collector
+        .borrow_mut()
+        .identifier(js_str(args.get_or_undefined(0)), "container");
+    js_string!(name).into()
+}
+
+/// `(parent, name argument)` of `layer(options?, debugId?)` and
+/// `globalLayer(options?, name)`
+fn layer_args(args: &[JsValue], context: &mut Context) -> JsResult<(Option<String>, JsValue)> {
+    let first = args.get_or_undefined(0);
+    Ok(match first.as_object() {
+        Some(options) => (
+            js_str(&options.get(js_string!("parent"), context)?),
+            args.get_or_undefined(1).clone(),
+        ),
+        None => (None, first.clone()),
+    })
+}
+
+fn declare_layer(collector: &StyleCollector, parent: Option<String>, name: String) -> JsValue {
+    let name = match parent {
+        Some(parent) => format!("{parent}.{name}"),
+        None => name,
+    };
+    collector.borrow_mut().styles.layers.push(name.clone());
+    js_string!(name).into()
+}
+
+fn layer(collector: &StyleCollector, args: &[JsValue], context: &mut Context) -> JsResult<JsValue> {
+    let (parent, debug_id) = layer_args(args, context)?;
+    let name = collector
+        .borrow_mut()
+        .identifier(js_str(&debug_id), "layer");
+    Ok(declare_layer(collector, parent, name))
+}
+
+fn global_layer(
+    collector: &StyleCollector,
+    args: &[JsValue],
+    context: &mut Context,
+) -> JsResult<JsValue> {
+    let (parent, name) = layer_args(args, context)?;
+    let name = to_text(&name, context)?;
+    Ok(declare_layer(collector, parent, name))
+}
+
+type Leaf<'a> = dyn FnMut(&JsValue, &[String], &mut Context) -> JsResult<JsValue> + 'a;
+
+/// vanilla-extract's `walkObject`: `tokens` with every string, number or empty
+/// leaf replaced by `leaf(value, path)`; other values are skipped
+fn walk_object(
+    tokens: &JsValue,
+    context: &mut Context,
+    path: &mut Vec<String>,
+    leaf: &mut Leaf<'_>,
+) -> JsResult<JsValue> {
+    let walked = ObjectInitializer::new(context).build();
+    if let Some(object) = tokens.as_object() {
+        for (key, name) in own_keys(&object, context)? {
+            let value = object.get(key, context)?;
+            path.push(name.clone());
+            let mapped = if value.is_string() || value.is_number() || value.is_null_or_undefined() {
+                Some(leaf(&value, path, context)?)
+            } else if value.as_object().is_some_and(|object| !object.is_array()) {
+                Some(walk_object(&value, context, path, leaf)?)
+            } else {
+                None
+            };
+            path.pop();
+            if let Some(mapped) = mapped {
+                walked.set(js_string!(name), mapped, false, context)?;
+            }
+        }
+    }
+    Ok(walked.into())
+}
+
+/// A contract of `tokens`' shape whose leaves read generated custom properties
+fn contract_of(
+    collector: &StyleCollector,
+    tokens: &JsValue,
+    context: &mut Context,
+) -> JsResult<JsValue> {
+    walk_object(
+        tokens,
+        context,
+        &mut Vec::new(),
+        &mut |_value, path, _context| {
+            let name = collector
+                .borrow_mut()
+                .identifier(Some(path.join("-")), "var");
+            Ok(js_string!(format!("var(--{name})")).into())
+        },
+    )
+}
+
+fn create_theme_contract(
+    collector: &StyleCollector,
+    args: &[JsValue],
+    context: &mut Context,
+) -> JsResult<JsValue> {
+    contract_of(collector, args.get_or_undefined(0), context)
+}
+
+/// `createGlobalThemeContract(tokens, map?)`: leaves name their custom property,
+/// or `map(value, path)` does
+fn create_global_theme_contract(
+    _this: &JsValue,
+    args: &[JsValue],
+    context: &mut Context,
+) -> JsResult<JsValue> {
+    let map = args.get_or_undefined(1).as_callable();
+    walk_object(
+        args.get_or_undefined(0),
+        context,
+        &mut Vec::new(),
+        &mut |value, path, context| {
+            let name = match &map {
+                Some(map) => {
+                    let path = JsArray::from_iter(
+                        path.iter().map(|key| js_string!(key.as_str()).into()),
+                        context,
+                    );
+                    map.call(
+                        &JsValue::undefined(),
+                        &[value.clone(), path.into()],
+                        context,
+                    )?
+                }
+                None => value.clone(),
+            };
+            let name = to_text(&name, context)?;
+            Ok(js_string!(format!(
+                "var(--{})",
+                name.strip_prefix("--").unwrap_or(&name)
+            ))
+            .into())
+        },
+    )
+}
+
+/// `(custom property, value)` for every leaf of `tokens`, read from the same
+/// path of `contract`
+fn assign_vars(
+    contract: &JsValue,
+    tokens: &JsValue,
+    context: &mut Context,
+) -> JsResult<Vec<(String, String)>> {
+    let mut vars = Vec::new();
+    walk_object(
+        tokens,
+        context,
+        &mut Vec::new(),
+        &mut |value, path, context| {
+            let mut target = contract.clone();
+            for key in path {
+                target = match target.as_object() {
+                    Some(object) => object.get(js_string!(key.as_str()), context)?,
+                    None => JsValue::undefined(),
+                };
+            }
+            if let Some(reference) = js_str(&target) {
+                vars.push((var_name(&reference).to_string(), to_text(value, context)?));
+            }
+            Ok(JsValue::undefined())
+        },
+    )?;
+    Ok(vars)
+}
+
+fn assign_vars_api(_this: &JsValue, args: &[JsValue], context: &mut Context) -> JsResult<JsValue> {
+    let assigned = ObjectInitializer::new(context).build();
+    for (name, value) in assign_vars(args.get_or_undefined(0), args.get_or_undefined(1), context)? {
+        assigned.set(
+            js_string!(format!("var({name})")),
+            js_string!(value),
+            false,
+            context,
+        )?;
+    }
+    Ok(assigned.into())
+}
+
+/// `tokens` without its `@layer`, and the layer it names
+fn split_layer(tokens: &JsValue, context: &mut Context) -> JsResult<(JsValue, Option<String>)> {
+    let Some(object) = tokens.as_object() else {
+        return Ok((tokens.clone(), None));
+    };
+    let mut layer = None;
+    let rest = ObjectInitializer::new(context).build();
+    for (key, name) in own_keys(&object, context)? {
+        let value = object.get(key, context)?;
+        if name == "@layer" {
+            layer = Some(to_text(&value, context)?);
+        } else {
+            rest.set(js_string!(name), value, false, context)?;
+        }
+    }
+    Ok((rest.into(), layer))
+}
+
+/// Declare on `selector` the values `tokens` gives the variables of `contract`
+fn declare_theme(
+    collector: &StyleCollector,
+    selector: String,
+    contract: &JsValue,
+    tokens: &JsValue,
+    layer: Option<String>,
+    context: &mut Context,
+) -> JsResult<()> {
+    let vars = assign_vars(contract, tokens, context)?;
+    if vars.is_empty() {
+        return Ok(());
+    }
+    let mut declarations: Vec<String> = layer
+        .iter()
+        .map(|layer| format!("\"@layer\":{}", json_string(layer)))
+        .collect();
+    for (name, value) in &vars {
+        declarations.push(format!("{}:{}", json_string(name), json_string(value)));
+    }
+    collector
+        .borrow_mut()
+        .styles
+        .global_styles
+        .push((selector, format!("{{{}}}", declarations.join(","))));
+    Ok(())
+}
+
+/// `createTheme(tokens, debugId?)` -> `[class, vars]`, or
+/// `createTheme(contract, tokens, debugId?)` -> class
+fn create_theme(
+    collector: &StyleCollector,
+    args: &[JsValue],
+    context: &mut Context,
+) -> JsResult<JsValue> {
+    let contract_given = args.get_or_undefined(1).is_object();
+    let (tokens, debug_id) = if contract_given {
+        (args.get_or_undefined(1), args.get_or_undefined(2))
+    } else {
+        (args.get_or_undefined(0), args.get_or_undefined(1))
+    };
+    let class_name = collector.borrow_mut().identifier(js_str(debug_id), "theme");
+    let (tokens, layer) = split_layer(tokens, context)?;
+    let contract = if contract_given {
+        args.get_or_undefined(0).clone()
+    } else {
+        contract_of(collector, &tokens, context)?
+    };
+    declare_theme(
+        collector,
+        format!(".{class_name}"),
+        &contract,
+        &tokens,
+        layer,
+        context,
+    )?;
+    let class_name = JsValue::from(js_string!(class_name));
+    Ok(if contract_given {
+        class_name
+    } else {
+        JsArray::from_iter([class_name, contract], context).into()
+    })
+}
+
+/// `createGlobalTheme(selector, tokens)` -> vars, or
+/// `createGlobalTheme(selector, contract, tokens)`
+fn create_global_theme(
+    collector: &StyleCollector,
+    args: &[JsValue],
+    context: &mut Context,
+) -> JsResult<JsValue> {
+    let selector = to_text(args.get_or_undefined(0), context)?;
+    let contract_given = args.get_or_undefined(2).to_boolean();
+    let (tokens, layer) = split_layer(
+        args.get_or_undefined(if contract_given { 2 } else { 1 }),
+        context,
+    )?;
+    let contract = if contract_given {
+        args.get_or_undefined(1).clone()
+    } else {
+        contract_of(collector, &tokens, context)?
+    };
+    declare_theme(collector, selector, &contract, &tokens, layer, context)?;
+    Ok(if contract_given {
+        JsValue::undefined()
+    } else {
+        contract
+    })
 }
 
 /// Placeholders interpolated into a selector end inside a JSON key.
@@ -1191,11 +1180,11 @@ impl CollectedStyles {
         &self,
         source: &str,
         keyframes_names: &FxHashMap<String, String>,
-        selector: impl Fn(&str) -> bool,
+        selector: fn(&str) -> bool,
     ) -> String {
         replace_placeholders(source, |token, rest| {
             Some(match self.references.get(token)? {
-                Reference::Style { class_name, .. } | Reference::Class(class_name) => {
+                Reference::Style { class_name, .. } => {
                     if selector(rest) {
                         format!(".{class_name}")
                     } else {
@@ -1203,7 +1192,6 @@ impl CollectedStyles {
                     }
                 }
                 Reference::Keyframes(name) => keyframes_names.get(name)?.clone(),
-                Reference::Font(family) => family.clone(),
             })
         })
         .unwrap_or_else(|| source.to_string())
@@ -1217,14 +1205,8 @@ impl CollectedStyles {
     fn texts(&self) -> impl Iterator<Item = &str> {
         self.styles
             .values()
+            .chain(self.keyframes.values())
             .map(|entry| entry.json.as_str())
-            .chain(self.keyframes.values().map(|entry| entry.json.as_str()))
-            .chain(
-                self.style_variants
-                    .values()
-                    .flat_map(|(variants, _)| variants.values())
-                    .map(|variant| variant.styles_json.as_str()),
-            )
             .chain(
                 self.global_styles
                     .iter()
@@ -1251,7 +1233,7 @@ impl CollectedStyles {
             .into_iter()
             .filter_map(|reference| match reference {
                 Reference::Style { name, class_name } => Some((name.as_str(), class_name.as_str())),
-                _ => None,
+                Reference::Keyframes(_) => None,
             })
             .collect()
     }
@@ -1265,7 +1247,7 @@ pub fn referenced_keyframes(collected: &CollectedStyles) -> FxHashSet<String> {
         .into_iter()
         .filter_map(|reference| match reference {
             Reference::Keyframes(name) => Some(name.clone()),
-            _ => None,
+            Reference::Style { .. } => None,
         })
         .collect()
 }
@@ -1294,56 +1276,85 @@ pub fn keyframes_to_code(
     output
 }
 
+/// The members of a JSON object, without its braces
 fn inner_json(json: &str) -> &str {
     json.trim()
-        .trim_start_matches('{')
-        .trim_end_matches('}')
+        .strip_prefix('{')
+        .and_then(|json| json.strip_suffix('}'))
+        .unwrap_or_default()
         .trim()
 }
 
-/// `css(...)` of `own` composed onto `bases`, plus the unique classes that let
-/// selectors target them
+/// Styles `entry` composes, transitively and in order, each once
+fn collect_bases<'a>(
+    collected: &'a CollectedStyles,
+    entry: &'a StyleEntry,
+    seen: &mut FxHashSet<&'a str>,
+    bases: &mut Vec<(&'a str, &'a StyleEntry)>,
+) {
+    for base in &entry.bases {
+        if seen.insert(base.as_str())
+            && let Some(base_entry) = collected.styles.get(base)
+        {
+            collect_bases(collected, base_entry, seen, bases);
+            bases.push((base.as_str(), base_entry));
+        }
+    }
+}
+
+/// `css(...)` of the style `name` composed onto its bases, plus the classes it
+/// composes and the unique classes that let selectors target them
 fn composed_css(
     collected: &CollectedStyles,
     keyframes_names: &FxHashMap<String, String>,
     referenced_classes: &FxHashMap<&str, &str>,
-    bases: &[&str],
-    own_name: Option<&str>,
-    own_json: &str,
+    name: &str,
+    entry: &StyleEntry,
 ) -> String {
-    let mut parts = Vec::with_capacity(bases.len() + 1);
+    let mut seen = FxHashSet::default();
+    seen.insert(name);
+    let mut bases = Vec::new();
+    collect_bases(collected, entry, &mut seen, &mut bases);
+
+    let mut rules = Vec::with_capacity(bases.len() + 1);
     let mut classes = Vec::new();
-    for base in bases {
-        if let Some(entry) = collected.styles.get(*base) {
-            let json = collected.resolve_json(&entry.json, keyframes_names);
-            let inner = inner_json(&json);
-            if !inner.is_empty() {
-                parts.push(inner.to_string());
-            }
+    for (base_name, base) in &bases {
+        let json = collected.resolve_json(&base.json, keyframes_names);
+        let inner = inner_json(&json);
+        if !inner.is_empty() {
+            rules.push(inner.to_string());
         }
-        classes.extend(referenced_classes.get(base));
+        classes.extend(base.classes.iter().map(String::as_str));
+        classes.extend(referenced_classes.get(base_name).copied());
     }
-    let own = collected.resolve_json(own_json, keyframes_names);
+    classes.extend(entry.classes.iter().map(String::as_str));
+    classes.extend(referenced_classes.get(name).copied());
+
+    let own = collected.resolve_json(&entry.json, keyframes_names);
     let css = if bases.is_empty() {
         format!("css({own})")
     } else {
         let inner = inner_json(&own);
         if !inner.is_empty() {
-            parts.push(inner.to_string());
+            rules.push(inner.to_string());
         }
-        format!("css({{{}}})", parts.join(","))
+        format!("css({{{}}})", rules.join(","))
     };
-    classes.extend(own_name.and_then(|name| referenced_classes.get(name)));
     if classes.is_empty() {
         css
     } else {
-        let mut unique = String::new();
-        for class in classes {
-            unique.push(' ');
-            unique.push_str(class);
-        }
-        format!("{css} + \"{unique}\"")
+        format!("{css} + \" {}\"", classes.join(" "))
     }
+}
+
+fn sorted(entries: &FxHashMap<String, StyleEntry>) -> Vec<(&String, &StyleEntry)> {
+    let mut entries: Vec<_> = entries.iter().collect();
+    entries.sort_by_key(|(name, _)| *name);
+    entries
+}
+
+const fn export_prefix(exported: bool) -> &'static str {
+    if exported { "export " } else { "" }
 }
 
 /// Convert collected styles to code, with keyframes references replaced by
@@ -1353,2149 +1364,532 @@ pub fn collected_styles_to_code_with_keyframes(
     package: &str,
     keyframes_names: &FxHashMap<String, String>,
 ) -> String {
-    let mut code_parts = Vec::with_capacity(collected.styles.len() + 4);
+    let mut code = Vec::new();
 
-    // Generate import statement
     let mut imports = Vec::new();
-    if !collected.styles.is_empty()
-        || !collected.style_variants.is_empty()
-        || !collected.themes.is_empty()
-    {
+    if !collected.styles.is_empty() {
         imports.push("css");
     }
-    if !collected.global_styles.is_empty()
-        || !collected.font_faces.is_empty()
-        || !collected.global_themes.is_empty()
+    if !(collected.global_styles.is_empty()
+        && collected.font_faces.is_empty()
+        && collected.layers.is_empty()
+        && collected.property_rules.is_empty())
     {
         imports.push("globalCss");
     }
     if !collected.keyframes.is_empty() {
         imports.push("keyframes");
     }
-
     if !imports.is_empty() {
-        code_parts.push(format!(
-            "import {{ {} }} from '{}'",
-            imports.join(", "),
-            package
+        code.push(format!(
+            "import {{ {} }} from '{package}'",
+            imports.join(", ")
         ));
     }
 
-    let referenced_classes = collected.referenced_classes();
-    let mut styles: Vec<_> = collected.styles.iter().collect();
-    styles.sort_by_key(|(name, _)| *name);
-
-    for (name, entry) in styles {
-        let prefix = if entry.exported { "export " } else { "" };
-        let bases: Vec<&str> = entry.bases.iter().map(String::as_str).collect();
-        let css = composed_css(
-            collected,
-            keyframes_names,
-            &referenced_classes,
-            &bases,
-            Some(name),
-            &entry.json,
-        );
-        code_parts.push(format!("{prefix}const {name} = {css}"));
-    }
-    // Generate createTheme exports (class name and optionally vars object)
-    // Note: CSS variables are added to global_styles during remapping
-    let mut themes: Vec<_> = collected.themes.iter().collect();
-    themes.sort_by_key(|(name, _)| *name);
-    for (name, entry) in themes {
-        let prefix = if entry.exported { "export " } else { "" };
-        if let Some(vars_name) = &entry.vars_name {
-            if let Some(vars_json) = &entry.vars_object_json {
-                code_parts.push(format!(
-                    "{}const [{}, {}] = [\"{}\", {}]",
-                    prefix, name, vars_name, entry.class_name, vars_json
-                ));
-            } else {
-                code_parts.push(format!(
-                    "{}const {} = \"{}\"",
-                    prefix, name, entry.class_name
-                ));
-            }
-        } else {
-            code_parts.push(format!(
-                "{}const {} = \"{}\"",
-                prefix, name, entry.class_name
-            ));
+    // Declaring every layer up front fixes their order the way the calls did.
+    let mut layers: Vec<&str> = Vec::new();
+    for layer in &collected.layers {
+        if !layers.contains(&layer.as_str()) {
+            layers.push(layer);
         }
     }
-
-    append_non_style_code(
-        collected,
-        keyframes_names,
-        &referenced_classes,
-        &mut code_parts,
-    );
-
-    code_parts.join("\n")
-}
-
-/// Append non-style code parts (globalCss, keyframes, fontFaces, etc.)
-fn append_non_style_code(
-    collected: &CollectedStyles,
-    keyframes_names: &FxHashMap<String, String>,
-    referenced_classes: &FxHashMap<&str, &str>,
-    code_parts: &mut Vec<String>,
-) {
-    for (selector, json) in &collected.global_styles {
-        let selector = collected.resolve(selector, keyframes_names, |_| true);
-        let json = collected.resolve_json(json, keyframes_names);
-        code_parts.push(format!(
-            "globalCss({{ {}: {json} }})",
-            serde_json::Value::String(selector)
-        ));
+    if !layers.is_empty() {
+        code.push(format!("globalCss`@layer {};`", layers.join(",")));
+    }
+    for rule in &collected.property_rules {
+        code.push(format!("globalCss`{rule}`"));
     }
 
-    // Generate @font-face rules
-    let mut font_faces_sorted: Vec<_> = collected.font_faces.iter().collect();
-    font_faces_sorted.sort_by_key(|(name, _)| *name);
-    for (_name, (json, font_family, _exported)) in &font_faces_sorted {
-        let props = parse_font_face_json(json);
-        let props_str = props
-            .iter()
-            .map(|(k, v)| format!("{k}: {v}"))
-            .collect::<Vec<_>>()
-            .join(", ");
-        let code = if props_str.is_empty() {
-            format!("globalCss({{ fontFaces: [{{ fontFamily: \"{font_family}\" }}] }})")
-        } else {
-            format!(
-                "globalCss({{ fontFaces: [{{ fontFamily: \"{font_family}\", {props_str} }}] }})"
-            )
-        };
-        code_parts.push(code);
-    }
-
-    // Generate createGlobalTheme CSS variables
-    let mut global_themes_sorted: Vec<_> = collected.global_themes.iter().collect();
-    global_themes_sorted.sort_by_key(|(name, _)| *name);
-    for (_name, entry) in &global_themes_sorted {
-        if !entry.css_vars.is_empty() {
-            let vars_str = entry
-                .css_vars
-                .iter()
-                .map(|(var_name, value)| format!("\"{var_name}\": \"{value}\""))
-                .collect::<Vec<_>>()
-                .join(", ");
-            code_parts.push(format!(
-                "globalCss({{ \"{}\": {{ {} }} }})",
-                entry.selector, vars_str
-            ));
-        }
-    }
-
-    // Generate keyframes
-    let mut keyframes: Vec<_> = collected.keyframes.iter().collect();
-    keyframes.sort_by_key(|(name, _)| *name);
-    for (name, entry) in keyframes {
-        let prefix = if entry.exported { "export " } else { "" };
-        code_parts.push(format!(
-            "{}const {} = keyframes({})",
-            prefix,
-            name,
+    for (name, entry) in sorted(&collected.keyframes) {
+        code.push(format!(
+            "{}const {name} = keyframes({})",
+            export_prefix(entry.exported),
             collected.resolve_json(&entry.json, keyframes_names)
         ));
     }
 
-    let mut variants: Vec<_> = collected.style_variants.iter().collect();
-    variants.sort_by_key(|(name, _)| *name);
-    for (name, (variant_map, exported)) in variants {
-        let mut variant_entries: Vec<_> = variant_map.iter().collect();
-        variant_entries.sort_by_key(|(k, _)| *k);
-        let mut object_parts = Vec::new();
-        for (variant_key, variant) in variant_entries {
-            let bases: Vec<&str> = variant.base.iter().map(String::as_str).collect();
-            let value = composed_css(
-                collected,
-                keyframes_names,
-                referenced_classes,
-                &bases,
-                None,
-                &variant.styles_json,
-            );
-            object_parts.push(format!("  {variant_key}: {value}"));
-        }
-        let prefix = if *exported { "export " } else { "" };
-        code_parts.push(format!(
-            "{}const {} = {{\n{}\n}}",
-            prefix,
-            name,
-            object_parts.join(",\n")
-        ));
-    }
-    // Generate createVar declarations
-    let mut vars: Vec<_> = collected.vars.iter().collect();
-    vars.sort_by_key(|(name, _)| *name);
-    for (name, (value, exported)) in vars {
-        let prefix = if *exported { "export " } else { "" };
-        code_parts.push(format!("{prefix}const {name} = \"{value}\""));
-    }
-
-    // Generate fontFace declarations (reuse the name-sorted vec built above)
-    for (name, (_, font_family, exported)) in &font_faces_sorted {
-        let prefix = if *exported { "export " } else { "" };
-        code_parts.push(format!("{prefix}const {name} = \"{font_family}\""));
-    }
-
-    // Generate createContainer declarations
-    let mut containers: Vec<_> = collected.containers.iter().collect();
-    containers.sort_by_key(|(name, _)| *name);
-    for (name, (value, exported)) in containers {
-        let prefix = if *exported { "export " } else { "" };
-        code_parts.push(format!("{prefix}const {name} = \"{value}\""));
-    }
-
-    // Generate layer declarations
-    let mut layers: Vec<_> = collected.layers.iter().collect();
-    layers.sort_by_key(|(name, _)| *name);
-    for (name, (value, exported)) in layers {
-        let prefix = if *exported { "export " } else { "" };
-        code_parts.push(format!("{prefix}const {name} = \"{value}\""));
-    }
-
-    // Generate createGlobalTheme vars object declarations
-    for (name, entry) in &global_themes_sorted {
-        let prefix = if entry.exported { "export " } else { "" };
-        code_parts.push(format!(
-            "{}const {} = {}",
-            prefix, name, entry.vars_object_json
+    let referenced_classes = collected.referenced_classes();
+    for (name, entry) in sorted(&collected.styles) {
+        code.push(format!(
+            "{}const {name} = {}",
+            export_prefix(entry.exported),
+            composed_css(collected, keyframes_names, &referenced_classes, name, entry)
         ));
     }
 
-    // Generate constant exports
-    let mut constants: Vec<_> = collected.constant_exports.iter().collect();
-    constants.sort_by_key(|(name, _)| *name);
-    for (name, value) in constants {
-        code_parts.push(format!("export const {name} = {value}"));
+    for (selector, json) in &collected.global_styles {
+        let selector = collected.resolve(selector, keyframes_names, |_| true);
+        code.push(format!(
+            "globalCss({{ {}: {} }})",
+            json_string(&selector),
+            collected.resolve_json(json, keyframes_names)
+        ));
     }
-}
-
-/// Convert collected styles to code that can be processed by existing extract logic
-#[cfg(test)]
-pub fn collected_styles_to_code(collected: &CollectedStyles, package: &str) -> String {
-    collected_styles_to_code_with_keyframes(collected, package, &FxHashMap::default())
-}
-
-/// Parse a styleVariants object and extract variant info
-fn parse_style_variants(
-    variants_obj: &JsValue,
-    context: &mut Context,
-) -> FxHashMap<String, StyleVariant> {
-    let mut result = FxHashMap::default();
-
-    if let Some(obj) = variants_obj.as_object() {
-        // Get the object's own property keys
-        if let Ok(keys) = obj.own_property_keys(context) {
-            for key in keys {
-                // Convert PropertyKey to string
-                let key_name = match &key {
-                    boa_engine::property::PropertyKey::String(s) => s.to_std_string_escaped(),
-                    boa_engine::property::PropertyKey::Symbol(_) => continue,
-                    boa_engine::property::PropertyKey::Index(i) => i.get().to_string(),
-                };
-
-                if let Ok(value) = obj.get(key.clone(), context) {
-                    let variant = parse_single_variant(&value, context);
-                    result.insert(key_name, variant);
-                }
-            }
-        }
+    if !collected.font_faces.is_empty() {
+        code.push(format!(
+            "globalCss({{ fontFaces: [{}] }})",
+            collected.font_faces.join(", ")
+        ));
     }
 
-    result
-}
-
-/// Parse a single variant value (either style object or [base, styleObj] array)
-fn parse_single_variant(value: &JsValue, context: &mut Context) -> StyleVariant {
-    // Check if value is an array by checking if it has a numeric "length" property
-    if let Some(obj) = value.as_object()
-        && let Ok(length_val) = obj.get(js_string!("length"), context)
-        && let Some(len) = length_val.as_number()
-    {
-        let len = len as u32;
-        if len >= 2 {
-            // It's an array with at least 2 elements
-            if let Ok(first) = obj.get(0, context)
-                && let Some(base_str) = first.as_string()
-            {
-                let base_class = base_str.to_std_string_escaped();
-                // Check if it looks like a placeholder (__style_N__) or class name
-                if base_class.starts_with("__style_") || !base_class.contains('{') {
-                    // Get the style object (second element)
-                    if let Ok(style_obj) = obj.get(1, context) {
-                        let json = js_value_to_json(&style_obj, context);
-                        return StyleVariant {
-                            base: Some(base_class),
-                            styles_json: json,
-                        };
-                    }
-                }
-            }
-        }
+    for (name, value) in &collected.constant_exports {
+        code.push(format!("export const {name} = {value}"));
     }
-
-    // Not an array or not composition - treat as plain style object
-    StyleVariant {
-        base: None,
-        styles_json: js_value_to_json(value, context),
-    }
+    code.join("\n")
 }
 
 #[cfg(test)]
 #[allow(clippy::expect_used, clippy::unwrap_used)]
 mod tests {
     use super::*;
-    use crate::utils::is_vanilla_extract_file;
-    use smallvec::smallvec;
+    use css::file_map::reset_file_map;
+    use serial_test::serial;
+
+    const PACKAGE: &str = "@devup-ui/react";
 
     #[test]
-    fn test_preprocess_typescript() {
-        let code = r#"import { style } from '@devup-ui/react'
-export const container = style({ background: "red" })"#;
-        let result = preprocess_typescript(code, "@devup-ui/react");
-        // The result should have destructuring from __vanilla_extract__ and no export keyword
-        assert!(
-            result.contains("__vanilla_extract__"),
-            "Expected __vanilla_extract__ but got: {result}"
-        );
-        assert!(
-            !result.contains("export const"),
-            "Should not contain 'export const': {result}"
-        );
-    }
-
-    #[test]
-    fn test_preprocess_typescript_strips_types() {
-        let code = r#"import { style } from '@devup-ui/react'
-interface Props {
-    color: string;
-}
-export const container = style({ background: "red" })"#;
-        let result = preprocess_typescript(code, "@devup-ui/react");
-        // TypeScript interface should be stripped
-        assert!(
-            !result.contains("interface"),
-            "Should not contain interface: {result}"
-        );
-    }
-
-    #[test]
-    fn test_execute_vanilla_extract_style() {
-        let code = r#"import { style } from '@devup-ui/react'
-export const container = style({ background: "red", padding: 16 })"#;
-        let result = execute_vanilla_extract(code, "@devup-ui/react", "test.css.ts").unwrap();
-        assert!(!result.styles.is_empty());
-    }
-
-    #[test]
-    fn test_execute_vanilla_extract_style_multiple() {
-        // Test with multiple style exports
-        let code = r#"import { style } from '@devup-ui/react'
-export const container = style({ background: "red", padding: 16 })
-export const button = style({ color: "blue" })"#;
-        let result = execute_vanilla_extract(code, "@devup-ui/react", "test.css.ts").unwrap();
-        assert!(
-            result.styles.len() >= 2,
-            "Expected at least 2 styles but got: {result:?}"
-        );
-    }
-
-    #[test]
-    fn test_collected_styles_to_code_multiple() {
-        // Test the full flow: execute → collected_styles_to_code with multiple styles
-        let code = r#"import { style } from '@devup-ui/react'
-export const container = style({ background: "red", padding: 16 })"#;
-        let collected = execute_vanilla_extract(code, "@devup-ui/react", "test.css.ts").unwrap();
-        let generated = super::collected_styles_to_code(&collected, "@devup-ui/react");
-        assert!(
-            !generated.is_empty(),
-            "Expected non-empty generated code. Collected: {collected:?}"
-        );
-        assert!(
-            generated.contains("css("),
-            "Expected css() call in generated code: {generated}"
-        );
-    }
-
-    #[test]
-    fn test_full_flow_multiline() {
-        // Test exactly what lib.rs extract function does (with already-transformed imports)
-        let code = r"import { style } from '@devup-ui/react'
-export const hello = style({
-  cursor: 'pointer',
-  fontSize: 32,
-  paddingTop: '28px',
-  paddingBottom: '28px',
-})
-export const text = style({
-  color: 'var(--text)',
-})
-";
-        let package = "@devup-ui/react";
-        let filename = "styles.css.ts";
-
-        // This is exactly what lib.rs does
-        assert!(
-            is_vanilla_extract_file(filename),
-            "Should be vanilla-extract file"
-        );
-
-        let result = execute_vanilla_extract(code, package, filename);
-        match result {
-            Ok(collected) => {
-                assert!(
-                    !collected.styles.is_empty(),
-                    "Styles should not be empty. Collected: {collected:?}"
-                );
-                let generated = super::collected_styles_to_code(&collected, package);
-                assert!(
-                    !generated.is_empty(),
-                    "Generated code should not be empty. Generated: {generated}"
-                );
-                println!("Generated code:\n{generated}");
-            }
-            Err(e) => {
-                panic!("execute_vanilla_extract failed: {e}");
-            }
-        }
-    }
-
-    #[test]
-    fn test_execute_vanilla_extract_global_style() {
-        let code = r#"import { globalStyle } from '@devup-ui/react'
-globalStyle("body", { margin: 0, padding: 0 })"#;
-        let result = execute_vanilla_extract(code, "@devup-ui/react", "test.css.ts").unwrap();
-        assert_eq!(result.global_styles.len(), 1);
-        assert_eq!(result.global_styles[0].0, "body");
-    }
-
-    #[test]
-    fn test_collected_styles_to_code() {
-        let mut collected = CollectedStyles::default();
-        collected.styles.insert(
-            "container".to_string(),
-            StyleEntry {
-                json: r#"{"background":"red"}"#.to_string(),
-                exported: true,
-                bases: SmallVec::new(),
-            },
-        );
-
-        let code = collected_styles_to_code(&collected, "@devup-ui/react");
-        assert!(code.contains("import { css } from '@devup-ui/react'"));
-        assert!(code.contains(r#"export const container = css({"background":"red"})"#));
-    }
-
-    #[test]
-    fn test_execute_vanilla_extract_with_variable() {
-        // Test that variables are evaluated at execution time
-        let code = r#"import { style } from '@devup-ui/react'
-const primaryColor = "blue";
-const spacing = 16;
-export const button = style({ background: primaryColor, padding: spacing })"#;
-        let result = execute_vanilla_extract(code, "@devup-ui/react", "test.css.ts").unwrap();
-        assert!(result.styles.contains_key("button"));
-        let entry = &result.styles["button"];
-        // The variable values should be resolved
-        assert!(
-            entry.json.contains("blue"),
-            "Expected 'blue' in JSON: {}",
-            entry.json
-        );
-        assert!(
-            entry.json.contains("16"),
-            "Expected '16' in JSON: {}",
-            entry.json
-        );
-    }
-
-    #[test]
-    fn test_execute_vanilla_extract_with_computed_value() {
-        // Test computed values
-        let code = r"import { style } from '@devup-ui/react'
-const base = 8;
-export const box = style({ padding: base * 2, margin: base / 2 })";
-        let result = execute_vanilla_extract(code, "@devup-ui/react", "test.css.ts").unwrap();
-        assert!(result.styles.contains_key("box"));
-        let entry = &result.styles["box"];
-        assert!(
-            entry.json.contains("16"),
-            "Expected padding 16 in JSON: {}",
-            entry.json
-        );
-        assert!(
-            entry.json.contains('4'),
-            "Expected margin 4 in JSON: {}",
-            entry.json
-        );
-    }
-
-    #[test]
-    fn test_execute_vanilla_extract_with_conditional() {
-        // Test conditional expressions
-        let code = r#"import { style } from '@devup-ui/react'
-const isDark = true;
-export const theme = style({ background: isDark ? "black" : "white" })"#;
-        let result = execute_vanilla_extract(code, "@devup-ui/react", "test.css.ts").unwrap();
-        assert!(result.styles.contains_key("theme"));
-        let entry = &result.styles["theme"];
-        assert!(
-            entry.json.contains("black"),
-            "Expected 'black' in JSON: {}",
-            entry.json
-        );
-    }
-
-    #[test]
-    fn test_execute_vanilla_extract_with_spread() {
-        // Test spread operator
-        let code = r#"import { style } from '@devup-ui/react'
-const baseStyle = { padding: 8, margin: 4 };
-export const extended = style({ ...baseStyle, background: "red" })"#;
-        let result = execute_vanilla_extract(code, "@devup-ui/react", "test.css.ts").unwrap();
-        assert!(result.styles.contains_key("extended"));
-        let entry = &result.styles["extended"];
-        assert!(
-            entry.json.contains('8'),
-            "Expected padding 8 in JSON: {}",
-            entry.json
-        );
-        assert!(
-            entry.json.contains('4'),
-            "Expected margin 4 in JSON: {}",
-            entry.json
-        );
-        assert!(
-            entry.json.contains("red"),
-            "Expected 'red' in JSON: {}",
-            entry.json
-        );
-    }
-
-    #[test]
-    fn test_execute_vanilla_extract_create_theme_contract() {
-        // Test createThemeContract + createTheme
-        let code = r"import { createThemeContract, createTheme } from '@devup-ui/react'
-const vars = createThemeContract({
-  color: {
-    brand: null,
-    text: null
-  }
-})
-export const lightTheme = createTheme(vars, {
-  color: {
-    brand: 'blue',
-    text: 'black'
-  }
-})";
-        let result = execute_vanilla_extract(code, "@devup-ui/react", "test.css.ts").unwrap();
-
-        // Check that themes were collected
-        assert!(
-            !result.themes.is_empty(),
-            "Expected themes to be collected, got empty. Themes: {:?}",
-            result.themes
-        );
-        assert!(
-            result.themes.contains_key("lightTheme"),
-            "Expected lightTheme in themes: {:?}",
-            result.themes.keys().collect::<Vec<_>>()
-        );
-
-        // Check CSS vars
-        let theme_entry = &result.themes["lightTheme"];
-        assert!(
-            !theme_entry.css_vars.is_empty(),
-            "Expected CSS vars in theme: {theme_entry:?}"
-        );
-
-        // Check that CSS vars are correct
-        let css_vars: Vec<_> = theme_entry.css_vars.iter().collect();
-        assert!(
-            css_vars
-                .iter()
-                .any(|(name, val)| name == "--color-brand" && val == "blue"),
-            "Expected --color-brand: blue in {css_vars:?}"
-        );
-    }
-
-    #[test]
-    fn test_parse_font_face_json_edge_cases() {
-        // Test invalid JSON
-        let result = super::parse_font_face_json("not valid json");
-        assert!(result.is_empty());
-
-        // Test non-object JSON
-        let result = super::parse_font_face_json("\"just a string\"");
-        assert!(result.is_empty());
-
-        // Test array JSON
-        let result = super::parse_font_face_json("[1, 2, 3]");
-        assert!(result.is_empty());
-
-        // Test with boolean value
-        let result = super::parse_font_face_json(r#"{"fontDisplay": true}"#);
-        assert_eq!(result.len(), 1);
-        assert_eq!(result[0], ("fontDisplay".to_string(), "true".to_string()));
-
-        // Test with number value
-        let result = super::parse_font_face_json(r#"{"fontWeight": 400}"#);
-        assert_eq!(result.len(), 1);
-        assert_eq!(result[0], ("fontWeight".to_string(), "400".to_string()));
-
-        // Test with null value (other case)
-        let result = super::parse_font_face_json(r#"{"fontStyle": null}"#);
-        assert_eq!(result.len(), 1);
-        assert_eq!(result[0], ("fontStyle".to_string(), "null".to_string()));
-    }
-
-    #[test]
-    fn test_collected_styles_to_code_with_classes_composition() {
-        let mut collected = CollectedStyles::default();
-        // Add base style
-        collected.styles.insert(
-            "base".to_string(),
-            StyleEntry {
-                json: r#"{"padding":"8px"}"#.to_string(),
-                exported: false,
-                bases: SmallVec::new(),
-            },
-        );
-        // Add composed style with bases
-        collected.styles.insert(
-            "composed".to_string(),
-            StyleEntry {
-                json: r#"{"color":"red"}"#.to_string(),
-                exported: true,
-                bases: smallvec!["base".to_string()],
-            },
-        );
-
-        let class_map: rustc_hash::FxHashMap<String, String> = [
-            ("base".to_string(), "a".to_string()),
-            ("composed".to_string(), "b".to_string()),
-        ]
-        .into_iter()
-        .collect();
-
-        let code = super::collected_styles_to_code_with_keyframes(
-            &collected,
-            "@devup-ui/react",
-            &class_map,
-        );
-        assert!(code.contains("import { css } from '@devup-ui/react'"));
-        // The composed style should have both base and own styles merged
-        assert!(code.contains("padding"));
-        assert!(code.contains("color"));
-    }
-
-    #[test]
-    fn test_collected_styles_to_code_with_theme_vars() {
-        let mut collected = CollectedStyles::default();
-        // Theme with vars_name and vars_object_json
-        collected.themes.insert(
-            "themeClass".to_string(),
-            super::ThemeEntry {
-                class_name: "f0_theme".to_string(),
-                css_vars: smallvec![("--color-primary".to_string(), "blue".to_string())],
-                exported: true,
-                vars_name: Some("vars".to_string()),
-                vars_object_json: Some(
-                    r#"{"color":{"primary":"var(--color-primary)"}}"#.to_string(),
-                ),
-            },
-        );
-
-        let code = super::collected_styles_to_code(&collected, "@devup-ui/react");
-        assert!(code.contains("export const [themeClass, vars] = [\"f0_theme\""));
-    }
-
-    #[test]
-    fn test_collected_styles_to_code_with_theme_no_vars() {
-        let mut collected = CollectedStyles::default();
-        // Theme without vars (two-arg createTheme)
-        collected.themes.insert(
-            "darkTheme".to_string(),
-            super::ThemeEntry {
-                class_name: "f1_darkTheme".to_string(),
-                css_vars: smallvec![("--color-primary".to_string(), "white".to_string())],
-                exported: true,
-                vars_name: None,
-                vars_object_json: None,
-            },
-        );
-
-        let code = super::collected_styles_to_code(&collected, "@devup-ui/react");
-        assert!(code.contains("export const darkTheme = \"f1_darkTheme\""));
-    }
-
-    #[test]
-    fn test_collected_styles_to_code_with_keyframes() {
-        let mut collected = CollectedStyles::default();
-        collected.keyframes.insert(
-            "fadeIn".to_string(),
-            StyleEntry {
-                json: r#"{"from":{"opacity":"0"},"to":{"opacity":"1"}}"#.to_string(),
-                exported: true,
-                bases: SmallVec::new(),
-            },
-        );
-
-        let code = super::collected_styles_to_code(&collected, "@devup-ui/react");
-        assert!(code.contains("import { keyframes } from '@devup-ui/react'"));
-        assert!(code.contains("export const fadeIn = keyframes"));
-    }
-
-    #[test]
-    fn test_collected_styles_to_code_with_global_styles() {
-        let mut collected = CollectedStyles::default();
-        collected
-            .global_styles
-            .push(("body".to_string(), r#"{"margin":"0"}"#.to_string()));
-
-        let code = super::collected_styles_to_code(&collected, "@devup-ui/react");
-        assert!(code.contains("import { globalCss } from '@devup-ui/react'"));
-        assert!(code.contains("globalCss({ \"body\":"));
-    }
-
-    #[test]
-    fn test_collected_styles_to_code_composition() {
-        let mut collected = CollectedStyles::default();
-        // Add base style
-        collected.styles.insert(
-            "baseStyle".to_string(),
-            StyleEntry {
-                json: r#"{"padding":"16px","margin":"8px"}"#.to_string(),
-                exported: false,
-                bases: SmallVec::new(),
-            },
-        );
-        // Add composed style
-        collected.styles.insert(
-            "buttonStyle".to_string(),
-            StyleEntry {
-                json: r#"{"background":"blue"}"#.to_string(),
-                exported: true,
-                bases: smallvec!["baseStyle".to_string()],
-            },
-        );
-
-        let code = super::collected_styles_to_code(&collected, "@devup-ui/react");
-        // Both base and own styles should be present in the composed style
-        assert!(code.contains("padding"));
-        assert!(code.contains("background"));
-    }
-
-    #[test]
-    fn test_transform_contract_to_vars_array() {
-        // Test transform_contract_to_vars with array (covers line 170)
-        let mut context = boa_engine::Context::default();
-        let array = boa_engine::object::builtins::JsArray::new(&mut context)
-            .expect("creating an empty array should succeed");
-        let _ = array.push(boa_engine::JsValue::from(1), &mut context);
-        let value = boa_engine::JsValue::from(array);
-        let result = super::transform_contract_to_vars(&value, &mut context, &mut Vec::new());
-        // Arrays should be returned as-is
-        assert!(result.as_object().is_some());
-    }
-
-    #[test]
-    fn test_transform_theme_to_vars_array() {
-        // Test transform_theme_to_vars with array (covers line 250)
-        let mut context = boa_engine::Context::default();
-        let array = boa_engine::object::builtins::JsArray::new(&mut context)
-            .expect("creating an empty array should succeed");
-        let _ = array.push(boa_engine::JsValue::from(1), &mut context);
-        let value = boa_engine::JsValue::from(array);
-        let mut css_vars: SmallVec<[(String, String); 8]> = SmallVec::new();
-        let mut counter = 0usize;
-        let result = super::transform_theme_to_vars(
-            &value,
-            &mut context,
-            "__test__",
-            &mut css_vars,
-            &mut counter,
-            &mut Vec::new(),
-        );
-        // Arrays should be returned as-is
-        assert!(result.as_object().is_some());
-    }
-
-    #[test]
-    fn test_transform_contract_to_vars_with_symbol_property() {
-        // Test transform_contract_to_vars with Symbol property (covers line 180)
-        use boa_engine::{
-            Context, JsSymbol, JsValue, js_string, object::ObjectInitializer, property::PropertyKey,
-        };
-
-        let mut context = Context::default();
-
-        // Create an object with both string and symbol properties
-        let obj = ObjectInitializer::new(&mut context).build();
-        let _ = obj.set(
-            js_string!("normalProp"),
-            JsValue::null(),
-            false,
-            &mut context,
-        );
-
-        // Add a Symbol property
-        let symbol = JsSymbol::new(Some(js_string!("testSymbol"))).unwrap();
-        let _ = obj.define_property_or_throw(
-            PropertyKey::Symbol(symbol),
-            boa_engine::property::PropertyDescriptor::builder()
-                .value(JsValue::from(js_string!("symbolValue")))
-                .writable(true)
-                .enumerable(true)
-                .configurable(true)
-                .build(),
-            &mut context,
-        );
-
-        let value = JsValue::from(obj);
-        let result = super::transform_contract_to_vars(&value, &mut context, &mut Vec::new());
-
-        // Should succeed and only process normalProp (Symbol should be skipped)
-        assert!(result.as_object().is_some());
-        let result_obj = result.as_object().unwrap();
-        // normalProp should be transformed to var(--normalProp)
-        let normal_prop = result_obj
-            .get(js_string!("normalProp"), &mut context)
-            .unwrap();
-        assert!(normal_prop.as_string().is_some());
-    }
-
-    #[test]
-    fn test_transform_theme_to_vars_with_symbol_property() {
-        // Test transform_theme_to_vars with Symbol property (covers line 256)
-        use boa_engine::{
-            Context, JsSymbol, JsValue, js_string, object::ObjectInitializer, property::PropertyKey,
-        };
-
-        let mut context = Context::default();
-
-        // Create an object with both string and symbol properties
-        let obj = ObjectInitializer::new(&mut context).build();
-        let _ = obj.set(
-            js_string!("color"),
-            JsValue::from(js_string!("red")),
-            false,
-            &mut context,
-        );
-
-        // Add a Symbol property
-        let symbol = JsSymbol::new(Some(js_string!("hiddenSymbol"))).unwrap();
-        let _ = obj.define_property_or_throw(
-            PropertyKey::Symbol(symbol),
-            boa_engine::property::PropertyDescriptor::builder()
-                .value(JsValue::from(js_string!("hidden")))
-                .writable(true)
-                .enumerable(true)
-                .configurable(true)
-                .build(),
-            &mut context,
-        );
-
-        let value = JsValue::from(obj);
-        let mut css_vars: SmallVec<[(String, String); 8]> = SmallVec::new();
-        let mut counter = 0usize;
-        let result = super::transform_theme_to_vars(
-            &value,
-            &mut context,
-            "__test__",
-            &mut css_vars,
-            &mut counter,
-            &mut Vec::new(),
-        );
-
-        // Should succeed - Symbol property should be skipped
-        assert!(result.as_object().is_some());
-        // Only the string property should generate a CSS var
-        assert_eq!(css_vars.len(), 1);
-        assert!(css_vars[0].0.contains("color"));
-    }
-
-    #[test]
-    fn test_extract_theme_vars_with_symbol_property() {
-        // Test extract_theme_vars with Symbol property (covers line 211)
-        use boa_engine::{
-            Context, JsSymbol, JsValue, js_string, object::ObjectInitializer, property::PropertyKey,
-        };
-
-        let mut context = Context::default();
-
-        // Create contract object with symbol
-        let contract_obj = ObjectInitializer::new(&mut context).build();
-        let _ = contract_obj.set(
-            js_string!("primary"),
-            JsValue::from(js_string!("var(--primary)")),
-            false,
-            &mut context,
-        );
-        let symbol = JsSymbol::new(Some(js_string!("contractSymbol"))).unwrap();
-        let _ = contract_obj.define_property_or_throw(
-            PropertyKey::Symbol(symbol),
-            boa_engine::property::PropertyDescriptor::builder()
-                .value(JsValue::null())
-                .writable(true)
-                .enumerable(true)
-                .configurable(true)
-                .build(),
-            &mut context,
-        );
-
-        // Create values object
-        let values_obj = ObjectInitializer::new(&mut context).build();
-        let _ = values_obj.set(
-            js_string!("primary"),
-            JsValue::from(js_string!("blue")),
-            false,
-            &mut context,
-        );
-
-        let contract = JsValue::from(contract_obj);
-        let values = JsValue::from(values_obj);
-        let mut css_vars: SmallVec<[(String, String); 8]> = SmallVec::new();
-
-        super::extract_theme_vars(
-            &contract,
-            &values,
-            &mut context,
-            &mut css_vars,
-            &mut Vec::new(),
-        );
-
-        // Should extract only the string property, symbol should be skipped
-        assert_eq!(css_vars.len(), 1);
-        assert_eq!(css_vars[0], ("--primary".to_string(), "blue".to_string()));
-    }
-
-    #[test]
-    fn test_parse_style_variants_with_symbol_property() {
-        // Test parse_style_variants with Symbol property (covers line 1425)
-        use boa_engine::{
-            Context, JsSymbol, JsValue, js_string, object::ObjectInitializer, property::PropertyKey,
-        };
-
-        let mut context = Context::default();
-
-        // Create variants object with both string and symbol properties
-        let variants_obj = ObjectInitializer::new(&mut context).build();
-
-        // Add a normal variant
-        let style_obj = ObjectInitializer::new(&mut context).build();
-        let _ = style_obj.set(
-            js_string!("color"),
-            JsValue::from(js_string!("red")),
-            false,
-            &mut context,
-        );
-        let _ = variants_obj.set(
-            js_string!("primary"),
-            JsValue::from(style_obj),
-            false,
-            &mut context,
-        );
-
-        // Add a Symbol property
-        let symbol = JsSymbol::new(Some(js_string!("variantSymbol"))).unwrap();
-        let hidden_style = ObjectInitializer::new(&mut context).build();
-        let _ = hidden_style.set(
-            js_string!("display"),
-            JsValue::from(js_string!("none")),
-            false,
-            &mut context,
-        );
-        let _ = variants_obj.define_property_or_throw(
-            PropertyKey::Symbol(symbol),
-            boa_engine::property::PropertyDescriptor::builder()
-                .value(JsValue::from(hidden_style))
-                .writable(true)
-                .enumerable(true)
-                .configurable(true)
-                .build(),
-            &mut context,
-        );
-
-        let value = JsValue::from(variants_obj);
-        let result = super::parse_style_variants(&value, &mut context);
-
-        // Should only contain the string-keyed variant, symbol should be skipped
-        assert_eq!(result.len(), 1);
-        assert!(result.contains_key("primary"));
-    }
-
-    #[test]
-    fn test_extract_theme_vars_non_matching() {
-        // Test extract_theme_vars with non-matching structure
-        let mut context = boa_engine::Context::default();
-        let contract = boa_engine::JsValue::from(boa_engine::js_string!("not-a-var"));
-        let values = boa_engine::JsValue::from(boa_engine::js_string!("some-value"));
-        let mut css_vars: SmallVec<[(String, String); 8]> = SmallVec::new();
-        super::extract_theme_vars(
-            &contract,
-            &values,
-            &mut context,
-            &mut css_vars,
-            &mut Vec::new(),
-        );
-        // No CSS vars should be extracted because contract isn't a var() string
-        assert!(css_vars.is_empty());
-    }
-
-    #[test]
-    fn test_js_value_to_json_edge_cases() {
-        // Test js_value_to_json with various types (covers lines 314-328)
-        let mut context = boa_engine::Context::default();
-
-        // Test with boolean
-        let bool_val = boa_engine::JsValue::from(true);
-        let result = super::js_value_to_json(&bool_val, &mut context);
-        assert_eq!(result, "true");
-
-        // Test with null
-        let null_val = boa_engine::JsValue::null();
-        let result = super::js_value_to_json(&null_val, &mut context);
-        assert_eq!(result, "null");
-
-        // Test with undefined
-        let undef_val = boa_engine::JsValue::undefined();
-        let result = super::js_value_to_json(&undef_val, &mut context);
-        assert_eq!(result, "undefined");
-
-        // Test with number
-        let num_val = boa_engine::JsValue::from(42);
-        let result = super::js_value_to_json(&num_val, &mut context);
-        assert_eq!(result, "42");
-    }
-
-    #[test]
-    fn test_collected_styles_to_code_with_vars() {
-        // Test with createVar exports (covers lines 1191-1192)
-        let mut collected = CollectedStyles::default();
-        collected
-            .vars
-            .insert("colorVar".to_string(), ("--var-0".to_string(), true));
-        collected
-            .vars
-            .insert("sizeVar".to_string(), ("--var-1".to_string(), false));
-
-        let code = super::collected_styles_to_code(&collected, "@devup-ui/react");
-        assert!(code.contains("export const colorVar = \"--var-0\""));
-        assert!(code.contains("const sizeVar = \"--var-1\""));
-    }
-
-    #[test]
-    fn test_collected_styles_to_code_with_containers() {
-        // Test with createContainer exports (covers lines 1207-1208)
-        let mut collected = CollectedStyles::default();
-        collected
-            .containers
-            .insert("sidebar".to_string(), ("__container_0__".to_string(), true));
-        collected.containers.insert(
-            "internalCont".to_string(),
-            ("__container_1__".to_string(), false),
-        );
-
-        let code = super::collected_styles_to_code(&collected, "@devup-ui/react");
-        assert!(code.contains("export const sidebar = \"__container_0__\""));
-        assert!(code.contains("const internalCont = \"__container_1__\""));
-    }
-
-    #[test]
-    fn test_collected_styles_to_code_with_layers() {
-        // Test with layer exports (covers lines 1215-1216)
-        let mut collected = CollectedStyles::default();
-        collected
-            .layers
-            .insert("resetLayer".to_string(), ("reset".to_string(), true));
-        collected
-            .layers
-            .insert("internalLayer".to_string(), ("internal".to_string(), false));
-
-        let code = super::collected_styles_to_code(&collected, "@devup-ui/react");
-        assert!(code.contains("export const resetLayer = \"reset\""));
-        assert!(code.contains("const internalLayer = \"internal\""));
-    }
-
-    #[test]
-    fn test_collected_styles_to_code_with_font_faces() {
-        // Test with fontFace exports (covers lines 1199-1200)
-        let mut collected = CollectedStyles::default();
-        collected.font_faces.insert(
-            "myFont".to_string(),
-            (
-                r#"{"src":"local(Arial)"}"#.to_string(),
-                "__devup_font_0_0".to_string(),
-                true,
-            ),
-        );
-        collected.font_faces.insert(
-            "internalFont".to_string(),
-            (
-                r#"{"src":"local(Times)"}"#.to_string(),
-                "__devup_font_0_1".to_string(),
-                false,
-            ),
-        );
-
-        let code = super::collected_styles_to_code(&collected, "@devup-ui/react");
-        assert!(code.contains("export const myFont = \"__devup_font_0_0\""));
-        assert!(code.contains("const internalFont = \"__devup_font_0_1\""));
-    }
-
-    #[test]
-    fn test_collected_styles_to_code_with_global_themes() {
-        // Test with createGlobalTheme exports (covers lines 1221-1222)
-        let mut collected = CollectedStyles::default();
-        collected.global_themes.insert(
-            "rootVars".to_string(),
-            super::GlobalThemeEntry {
-                selector: ":root".to_string(),
-                css_vars: smallvec![("--color-primary".to_string(), "blue".to_string())],
-                vars_object_json: r#"{"color":{"primary":"var(--color-primary)"}}"#.to_string(),
-                exported: true,
-            },
-        );
-
-        let code = super::collected_styles_to_code(&collected, "@devup-ui/react");
-        assert!(code.contains("export const rootVars ="));
-        assert!(code.contains("globalCss({"));
-    }
-
-    #[test]
-    fn test_collected_styles_to_code_with_constant_exports() {
-        // Test with constant exports (covers line 1430)
-        let mut collected = CollectedStyles::default();
-        collected
-            .constant_exports
-            .insert("SPACING".to_string(), "8".to_string());
-        collected
-            .constant_exports
-            .insert("COLORS".to_string(), "{ primary: 'blue' }".to_string());
-
-        let code = super::collected_styles_to_code(&collected, "@devup-ui/react");
-        assert!(code.contains("export const SPACING = 8"));
-        assert!(code.contains("export const COLORS = { primary: 'blue' }"));
-    }
-
-    #[test]
-    fn test_collected_styles_to_code_empty_font_face_props() {
-        // Test fontFace with empty properties (covers line 1324 branch)
-        let mut collected = CollectedStyles::default();
-        collected.font_faces.insert(
-            "emptyFont".to_string(),
-            ("{}".to_string(), "__devup_font_empty".to_string(), true),
-        );
-
-        let code = super::collected_styles_to_code(&collected, "@devup-ui/react");
-        assert!(code.contains("fontFamily: \"__devup_font_empty\""));
-    }
-
-    #[test]
-    fn test_collected_styles_to_code_global_theme_empty_vars() {
-        // Test createGlobalTheme with empty css_vars (covers line 1332 branch)
-        let mut collected = CollectedStyles::default();
-        collected.global_themes.insert(
-            "emptyTheme".to_string(),
-            super::GlobalThemeEntry {
-                selector: ":root".to_string(),
-                css_vars: smallvec![],
-                vars_object_json: "{}".to_string(),
-                exported: true,
-            },
-        );
-        // Add a style to trigger import generation
-        collected.styles.insert(
-            "box".to_string(),
-            StyleEntry {
-                json: "{}".to_string(),
-                exported: true,
-                bases: SmallVec::new(),
-            },
-        );
-
-        let code = super::collected_styles_to_code(&collected, "@devup-ui/react");
-        // Should not generate globalCss for empty vars
-        assert!(code.contains("export const emptyTheme = {}"));
-    }
-
-    #[test]
-    fn test_style_variants_without_base() {
-        // Test styleVariants without base composition (covers line 1179)
-        let mut collected = CollectedStyles::default();
-        let mut variants = rustc_hash::FxHashMap::default();
-        variants.insert(
-            "small".to_string(),
-            super::StyleVariant {
-                base: None,
-                styles_json: r#"{"fontSize":"12px"}"#.to_string(),
-            },
-        );
-        variants.insert(
-            "large".to_string(),
-            super::StyleVariant {
-                base: None,
-                styles_json: r#"{"fontSize":"20px"}"#.to_string(),
-            },
-        );
-        collected
-            .style_variants
-            .insert("sizes".to_string(), (variants, true));
-
-        let code = super::collected_styles_to_code(&collected, "@devup-ui/react");
-        assert!(code.contains("export const sizes = {"));
-        assert!(code.contains("small: css"));
-        assert!(code.contains("large: css"));
-    }
-
-    #[test]
-    fn test_style_variants_with_base_empty_inner() {
-        // Test styleVariants with base but empty inner styles (covers lines 1169, 1174 branches)
-        let mut collected = CollectedStyles::default();
-        // Base with empty inner
-        collected.styles.insert(
-            "base".to_string(),
-            StyleEntry {
-                json: "{}".to_string(),
-                exported: false,
-                bases: SmallVec::new(),
-            },
-        );
-        let mut variants = rustc_hash::FxHashMap::default();
-        variants.insert(
-            "variant".to_string(),
-            super::StyleVariant {
-                base: Some("base".to_string()),
-                styles_json: "{}".to_string(),
-            },
-        );
-        collected
-            .style_variants
-            .insert("empty".to_string(), (variants, true));
-
-        let code = super::collected_styles_to_code(&collected, "@devup-ui/react");
-        assert!(code.contains("variant: css"));
-    }
-
-    #[test]
-    fn test_collected_styles_clone() {
-        // Test Clone implementation for CollectedStyles (covers line 1437-1438)
-        let mut original = CollectedStyles::default();
-        original.styles.insert(
-            "test".to_string(),
-            StyleEntry {
-                json: "{}".to_string(),
-                exported: true,
-                bases: SmallVec::new(),
-            },
-        );
-        original
-            .global_styles
-            .push(("body".to_string(), "{}".to_string()));
-        original.keyframes.insert(
-            "fade".to_string(),
-            StyleEntry {
-                json: "{}".to_string(),
-                exported: true,
-                bases: SmallVec::new(),
-            },
-        );
-        original
-            .vars
-            .insert("v".to_string(), ("--v".to_string(), true));
-        original
-            .font_faces
-            .insert("f".to_string(), ("{}".to_string(), "ff".to_string(), true));
-        original
-            .containers
-            .insert("c".to_string(), ("cn".to_string(), true));
-        original
-            .layers
-            .insert("l".to_string(), ("ln".to_string(), true));
-        original
-            .constant_exports
-            .insert("C".to_string(), "1".to_string());
-
-        let cloned = original.clone();
-        assert_eq!(cloned.styles.len(), original.styles.len());
-        assert_eq!(cloned.global_styles.len(), original.global_styles.len());
-    }
-
-    #[test]
-    fn test_parse_style_variants_index_key() {
-        // Test parse_style_variants with numeric index key (covers line 1454)
-        let mut context = boa_engine::Context::default();
-        let obj = boa_engine::object::ObjectInitializer::new(&mut context).build();
-        // Set property with numeric key by setting index
-        let _ = obj.set(
-            0,
-            boa_engine::JsValue::from(
-                boa_engine::object::ObjectInitializer::new(&mut context).build(),
-            ),
-            false,
-            &mut context,
-        );
-
-        let value = boa_engine::JsValue::from(obj);
-        let result = super::parse_style_variants(&value, &mut context);
-        // Should have one variant with key "0"
-        assert!(result.contains_key("0") || result.is_empty()); // Implementation may skip numeric
-    }
-
-    #[test]
-    fn test_extract_var_names_non_style_api() {
-        // Test extract_var_names with non-style-api expressions
-        let code = r"import { style } from '@devup-ui/react'
-export const CONSTANT = 42;
-export const OBJECT = { key: 'value' };
-export const computed = 1 + 2;
-";
-        let vars = super::extract_var_names(code, "@devup-ui/react");
-        // Should have constants
-        assert!(vars.iter().any(|(name, _)| name == "CONSTANT"));
-        assert!(vars.iter().any(|(name, _)| name == "OBJECT"));
-    }
-
-    #[test]
-    fn test_extract_var_names_skips_declaration_without_initializer() {
-        let code = r"import { style } from '@devup-ui/react'
-let pending;
-export const ready = style({ color: 'red' });";
-
-        let vars = super::extract_var_names(code, "@devup-ui/react");
-
-        assert!(!vars.iter().any(|(name, _)| name == "pending"));
-        assert!(vars.iter().any(|(name, _)| name == "ready"));
-    }
-
-    #[test]
-    fn test_preprocess_typescript_single_quotes() {
-        // Test preprocess with single quotes in import
-        let code = r"import { style } from '@devup-ui/react'
-export const box = style({ padding: 8 })";
-        let result = super::preprocess_typescript(code, "@devup-ui/react");
-        assert!(result.contains("__vanilla_extract__"));
-        assert!(!result.contains("export const"));
-    }
-
-    // Note: @vanilla-extract/css import transformation is now handled by import_alias_visit.rs
-    // before the code reaches vanilla_extract.rs, so preprocess_typescript only needs to
-    // handle the target package imports
-
-    #[test]
-    fn test_referenced_keyframes_without_references() {
-        let mut collected = CollectedStyles::default();
-        collected.styles.insert(
-            "box".to_string(),
-            StyleEntry {
-                json: r#"{"padding":"8px","animation":"__style_9__ 1s"}"#.to_string(),
-                exported: true,
-                bases: SmallVec::new(),
-            },
-        );
-        assert!(super::referenced_keyframes(&collected).is_empty());
-    }
-
-    #[test]
-    fn test_keyframes_to_code_only_referenced() {
-        let mut collected = CollectedStyles::default();
-        for name in ["fade", "spin"] {
-            collected.keyframes.insert(
-                name.to_string(),
-                StyleEntry {
-                    json: r#"{"from":{"opacity":0}}"#.to_string(),
-                    exported: false,
-                    bases: SmallVec::new(),
-                },
-            );
-        }
-        let names = std::iter::once("fade".to_string()).collect();
+    fn test_strip_typescript_once_per_source() {
+        let stripped = strip_typescript("export const a: number = 1;", "strip-cache.ts");
         assert_eq!(
-            super::keyframes_to_code(&collected, "@devup-ui/react", &names),
-            "import { keyframes } from '@devup-ui/react'\nconst fade = keyframes({\"from\":{\"opacity\":0}})"
+            strip_typescript("export const a: number = 1;", "strip-cache.ts"),
+            stripped
+        );
+        assert!(
+            strip_typescript("export const b: string = 'b';", "strip-cache.ts")
+                .contains("const b = \"b\"")
         );
     }
 
-    #[test]
-    fn test_collected_styles_to_code_resolves_references() {
-        let mut collected = CollectedStyles::default();
-        let entry = |json: &str| StyleEntry {
-            json: json.to_string(),
-            exported: true,
-            bases: SmallVec::new(),
+    fn import_error(code: &str, files: &'static [(&'static str, &'static str)]) -> String {
+        reset_file_map();
+        let resolver = |specifier: &str, _: &str| {
+            files
+                .iter()
+                .find(|(path, _)| {
+                    path.trim_end_matches(".ts")
+                        == specifier.trim_start_matches('.').trim_end_matches(".ts")
+                })
+                .map(|(path, code)| crate::ResolvedModule {
+                    path: (*path).to_string(),
+                    code: (*code).to_string(),
+                })
         };
-        collected
-            .styles
-            .insert("parent".to_string(), entry(r#"{"background":"white"}"#));
-        collected.styles.insert(
-            "child".to_string(),
-            entry(r#"{"animation":"__style_2__ 1s","selectors":{"__style_0__:hover &":{"color":"blue"}}}"#),
-        );
-        collected
-            .keyframes
-            .insert("fade".to_string(), entry(r#"{"from":{"opacity":0}}"#));
-        collected.global_styles.push((
-            "__style_0__ > a".to_string(),
-            r#"{"color":"__style_1__"}"#.to_string(),
-        ));
-        collected.references.insert(
-            "__style_0__".to_string(),
-            Reference::Style {
-                name: "parent".to_string(),
-                class_name: "f0_parent".to_string(),
-            },
-        );
-        collected.references.insert(
-            "__style_1__".to_string(),
-            Reference::Class("f0_theme".to_string()),
-        );
-        collected.references.insert(
-            "__style_2__".to_string(),
-            Reference::Keyframes("fade".to_string()),
-        );
-        collected.references.insert(
-            "__font_0__".to_string(),
-            Reference::Font("__devup_font_0_0".to_string()),
-        );
+        execute_stylesheet(
+            code,
+            "/a.css.ts",
+            &crate::ExtractOption::default(),
+            Some(&resolver),
+        )
+        .err()
+        .unwrap_or_default()
+    }
 
-        let keyframes_names = std::iter::once(("fade".to_string(), "k".to_string())).collect();
-        let code = super::collected_styles_to_code_with_keyframes(
-            &collected,
-            "@devup-ui/react",
-            &keyframes_names,
+    #[test]
+    #[serial]
+    fn test_stylesheet_import_errors() {
+        assert_eq!(
+            execute_stylesheet(
+                "import { b } from './b'\nexport const x = b",
+                "/a.css.ts",
+                &crate::ExtractOption::default(),
+                None
+            )
+            .err(),
+            Some("Cannot load './b' without a module resolver".to_string())
         );
-        assert!(code.contains(r#"const child = css({"animation":"k 1s","selectors":{".f0_parent:hover &":{"color":"blue"}}})"#), "{code}");
+        assert_eq!(
+            import_error("import { b } from './missing'\nexport const x = b", &[]),
+            "Cannot resolve './missing' from '/a.css.ts'"
+        );
+        let cycle_error = |code, files| {
+            let error = import_error(code, files);
+            assert!(
+                error.contains("before its initialization: it is part of an import cycle"),
+                "{error}"
+            );
+            error
+        };
         assert!(
-            code.contains(r#"const parent = css({"background":"white"}) + " f0_parent""#),
-            "{code}"
+            cycle_error(
+                "import { b } from './b'\nexport const x = b",
+                &[
+                    ("/b", "import { c } from './c'\nexport const b = c"),
+                    ("/c", "import { b } from './b'\nexport const c = b"),
+                ]
+            )
+            .contains("Cannot access 'b' of '/b'")
         );
         assert!(
-            code.contains(r#"globalCss({ ".f0_parent > a": {"color":"f0_theme"} })"#),
-            "{code}"
+            cycle_error(
+                "import { d } from './d.css'\nexport const x = d",
+                &[
+                    ("/a.css.ts", ""),
+                    (
+                        "/d.css.ts",
+                        "import { style } from '@devup-ui/react'\nimport { a } from './a.css.ts'\nexport const d = style({ color: a })"
+                    ),
+                ]
+            )
+            .contains("Cannot access 'a' of '/a.css.ts'")
         );
-        // An unresolved keyframes reference is left as is.
-        let code = super::collected_styles_to_code(&collected, "@devup-ui/react");
-        assert!(code.contains("__style_2__ 1s"), "{code}");
-    }
-
-    #[test]
-    fn test_transform_contract_to_vars_with_index_key() {
-        // Test transform_contract_to_vars with index/numeric keys (covers line 181)
-        let mut context = boa_engine::Context::default();
-        let obj = boa_engine::object::ObjectInitializer::new(&mut context).build();
-        // Set property using numeric index
-        let inner = boa_engine::JsValue::null();
-        let _ = obj.set(0u32, inner, false, &mut context);
-        let value = boa_engine::JsValue::from(obj);
-        let result = super::transform_contract_to_vars(&value, &mut context, &mut Vec::new());
-        // Should handle index keys
-        assert!(result.as_object().is_some());
-    }
-
-    #[test]
-    fn test_extract_theme_vars_with_index_key() {
-        // Test extract_theme_vars with index/numeric keys (covers line 212)
-        let mut context = boa_engine::Context::default();
-        let contract_obj = boa_engine::object::ObjectInitializer::new(&mut context).build();
-        let values_obj = boa_engine::object::ObjectInitializer::new(&mut context).build();
-        // Set property using numeric index
-        let _ = contract_obj.set(
-            0u32,
-            boa_engine::JsValue::from(boa_engine::js_string!("var(--test)")),
-            false,
-            &mut context,
-        );
-        let _ = values_obj.set(
-            0u32,
-            boa_engine::JsValue::from(boa_engine::js_string!("blue")),
-            false,
-            &mut context,
-        );
-        let contract = boa_engine::JsValue::from(contract_obj);
-        let values = boa_engine::JsValue::from(values_obj);
-        let mut css_vars: SmallVec<[(String, String); 8]> = SmallVec::new();
-        super::extract_theme_vars(
-            &contract,
-            &values,
-            &mut context,
-            &mut css_vars,
-            &mut Vec::new(),
-        );
-        // Should process index keys
-        assert!(css_vars.is_empty() || !css_vars.is_empty());
-    }
-
-    #[test]
-    fn test_transform_theme_to_vars_with_index_key() {
-        // Test transform_theme_to_vars with index/numeric keys (covers line 263)
-        let mut context = boa_engine::Context::default();
-        let obj = boa_engine::object::ObjectInitializer::new(&mut context).build();
-        // Set property using numeric index
-        let _ = obj.set(
-            0u32,
-            boa_engine::JsValue::from(boa_engine::js_string!("value")),
-            false,
-            &mut context,
-        );
-        let value = boa_engine::JsValue::from(obj);
-        let mut css_vars: SmallVec<[(String, String); 8]> = SmallVec::new();
-        let mut counter = 0usize;
-        let result = super::transform_theme_to_vars(
-            &value,
-            &mut context,
-            "__test__",
-            &mut css_vars,
-            &mut counter,
-            &mut Vec::new(),
-        );
-        // Should handle index keys
-        assert!(result.as_object().is_some());
-    }
-
-    #[test]
-    fn test_extract_theme_vars_value_conversion() {
-        // Test extract_theme_vars with value that needs to_string conversion (covers lines 234, 236)
-        let mut context = boa_engine::Context::default();
-        let contract = boa_engine::JsValue::from(boa_engine::js_string!("var(--num)"));
-        // Use a number instead of string - will need to_string conversion
-        let values = boa_engine::JsValue::from(42);
-        let mut css_vars: SmallVec<[(String, String); 8]> = SmallVec::new();
-        super::extract_theme_vars(
-            &contract,
-            &values,
-            &mut context,
-            &mut css_vars,
-            &mut Vec::new(),
-        );
-        // Should extract the value as string
-        assert!(!css_vars.is_empty());
-        assert_eq!(css_vars[0].0, "--num");
-        assert_eq!(css_vars[0].1, "42");
-    }
-
-    #[test]
-    fn test_transform_theme_to_vars_value_conversion() {
-        // Test transform_theme_to_vars with value that needs to_string conversion (covers lines 287, 289)
-        let mut context = boa_engine::Context::default();
-        // Use a number instead of string - will need to_string conversion
-        let value = boa_engine::JsValue::from(123);
-        let mut css_vars: SmallVec<[(String, String); 8]> = SmallVec::new();
-        let mut counter = 0usize;
-        let _result = super::transform_theme_to_vars(
-            &value,
-            &mut context,
-            "__test__",
-            &mut css_vars,
-            &mut counter,
-            &mut Vec::new(),
-        );
-        // Should have converted the number to string
-        assert!(!css_vars.is_empty());
-        assert!(css_vars[0].1.contains("123"));
-    }
-
-    #[test]
-    fn test_js_value_to_json_string_fallback() {
-        // Test js_value_to_json string fallback path (covers lines 316, 318-319)
-        let mut context = boa_engine::Context::default();
-
-        // Create a string value that can't use JSON.stringify
-        let string_val = boa_engine::JsValue::from(boa_engine::js_string!("test string"));
-        let result = super::js_value_to_json(&string_val, &mut context);
-        // Should contain the string (either via stringify or fallback)
-        assert!(result.contains("test string") || result.contains("\"test string\""));
-    }
-
-    #[test]
-    fn test_js_value_to_json_number_fallback() {
-        // Test js_value_to_json number fallback path (covers lines 322-323, 325)
-        let mut context = boa_engine::Context::default();
-
-        // Test with NaN
-        let nan_val = boa_engine::JsValue::from(f64::NAN);
-        let result = super::js_value_to_json(&nan_val, &mut context);
-        // NaN should return "NaN" in fallback
-        assert!(result == "null" || result == "NaN" || result.contains("NaN"));
-
-        // Test with Infinity
-        let inf_val = boa_engine::JsValue::from(f64::INFINITY);
-        let result = super::js_value_to_json(&inf_val, &mut context);
-        // Infinity should return some representation
-        assert!(!result.is_empty());
-    }
-
-    #[test]
-    fn test_js_value_to_json_object_fallback() {
-        // Test js_value_to_json object fallback path (covers line 328)
-        let mut context = boa_engine::Context::default();
-
-        // Create a symbol which can't be JSON stringified
-        let symbol = boa_engine::JsSymbol::new(Some(boa_engine::js_string!("test")));
-        if let Some(sym) = symbol {
-            let symbol_val = boa_engine::JsValue::from(sym);
-            let result = super::js_value_to_json(&symbol_val, &mut context);
-            // Symbols should fall back to "{}" or some default
-            assert!(!result.is_empty());
-        }
-    }
-
-    #[test]
-    fn test_collected_styles_to_code_with_classes_theme_vars() {
-        // Test collected_styles_to_code_with_classes with themes that have vars (covers lines 1103-1106)
-        let mut collected = CollectedStyles::default();
-        collected.styles.insert(
-            "box".to_string(),
-            StyleEntry {
-                json: r#"{"padding":"8px"}"#.to_string(),
-                exported: true,
-                bases: SmallVec::new(),
-            },
-        );
-        collected.themes.insert(
-            "theme".to_string(),
-            super::ThemeEntry {
-                class_name: "f0_theme".to_string(),
-                css_vars: smallvec![("--color".to_string(), "blue".to_string())],
-                exported: true,
-                vars_name: Some("vars".to_string()),
-                vars_object_json: Some(r#"{"color":"var(--color)"}"#.to_string()),
-            },
-        );
-
-        let class_map = rustc_hash::FxHashMap::default();
-        let code = super::collected_styles_to_code_with_keyframes(
-            &collected,
-            "@devup-ui/react",
-            &class_map,
-        );
-        assert!(code.contains("[theme, vars]"));
-    }
-
-    #[test]
-    fn test_collected_styles_to_code_with_classes_theme_no_vars() {
-        // Test collected_styles_to_code_with_classes with theme without vars_object_json (covers lines 1108, 1111)
-        let mut collected = CollectedStyles::default();
-        collected.styles.insert(
-            "box".to_string(),
-            StyleEntry {
-                json: r#"{"padding":"8px"}"#.to_string(),
-                exported: true,
-                bases: SmallVec::new(),
-            },
-        );
-        collected.themes.insert(
-            "simpleTheme".to_string(),
-            super::ThemeEntry {
-                class_name: "f0_simple".to_string(),
-                css_vars: smallvec![],
-                exported: true,
-                vars_name: Some("vars".to_string()),
-                vars_object_json: None, // No vars object
-            },
-        );
-
-        let class_map = rustc_hash::FxHashMap::default();
-        let code = super::collected_styles_to_code_with_keyframes(
-            &collected,
-            "@devup-ui/react",
-            &class_map,
-        );
-        assert!(code.contains("const simpleTheme = \"f0_simple\""));
-    }
-
-    #[test]
-    fn test_append_non_style_code_full() {
-        // Test append_non_style_code with all types populated (covers lines 1125, 1132-1135, 1142-1144, 1152-1153)
-        let mut collected = CollectedStyles::default();
-
-        // Add global styles
-        collected.global_styles.push((
-            "html".to_string(),
-            r#"{"boxSizing":"border-box"}"#.to_string(),
-        ));
-
-        // Add font faces with properties
-        collected.font_faces.insert(
-            "customFont".to_string(),
-            (
-                r#"{"src":"url(font.woff2)","fontWeight":"400"}"#.to_string(),
-                "__font_0".to_string(),
-                true,
+        // Cycles read only once both sides are evaluated work as in ES modules
+        assert_eq!(
+            import_error(
+                "import { style } from '@devup-ui/react'\nimport { both, reexported } from './b'\nimport { d, withA } from './d.css'\nexport const x = style([d, { color: both, background: reexported }])\nexport const y = typeof withA",
+                &[
+                    (
+                        "/b",
+                        "import { c, lazy } from './c'\nexport const b = 'blue'\nexport const both = c()\nexport { lazy as reexported }"
+                    ),
+                    (
+                        "/c",
+                        "import bDefault, { b } from './b'\nimport * as all from './b'\nexport const c = () => b + all.b.length\nexport const lazyDefault = () => bDefault\nexport const lazy = 'red'\nexport { b as again }"
+                    ),
+                    ("/a.css.ts", ""),
+                    (
+                        "/d.css.ts",
+                        "import { style } from '@devup-ui/react'\nimport { x } from './a.css.ts'\nexport const d = style({ color: 'green' })\nexport const withA = () => ({ x })"
+                    ),
+                ]
             ),
+            ""
         );
+    }
+    fn generate_with(code: &str, keyframes_names: &[(&str, &str)]) -> String {
+        reset_file_map();
+        let collected = execute_vanilla_extract(
+            &format!("import {{ style, globalStyle, styleVariants, keyframes, fontFace, globalFontFace, createVar, fallbackVar, createContainer, layer, globalLayer, createTheme, createGlobalTheme, createThemeContract, createGlobalThemeContract, assignVars }} from '{PACKAGE}'\n{code}"),
+            PACKAGE,
+            "test.css.ts",
+        )
+        .unwrap();
+        let keyframes_names = keyframes_names
+            .iter()
+            .map(|(name, generated)| (name.to_string(), generated.to_string()))
+            .collect();
+        collected_styles_to_code_with_keyframes(&collected, PACKAGE, &keyframes_names)
+    }
 
-        // Add global themes with CSS vars
-        collected.global_themes.insert(
-            "rootTheme".to_string(),
-            super::GlobalThemeEntry {
-                selector: ":root".to_string(),
-                css_vars: smallvec![
-                    ("--bg".to_string(), "white".to_string()),
-                    ("--fg".to_string(), "black".to_string()),
-                ],
-                vars_object_json: r#"{"bg":"var(--bg)","fg":"var(--fg)"}"#.to_string(),
-                exported: true,
-            },
-        );
-
-        // Add keyframes
-        collected.keyframes.insert(
-            "bounce".to_string(),
-            StyleEntry {
-                json: r#"{"0%":{"transform":"scale(1)"},"50%":{"transform":"scale(1.1)"}}"#
-                    .to_string(),
-                exported: true,
-                bases: SmallVec::new(),
-            },
-        );
-
-        let code = super::collected_styles_to_code(&collected, "@devup-ui/react");
-        // Should include all types
-        assert!(code.contains("globalCss"));
-        assert!(code.contains("fontFamily"));
-        assert!(code.contains("keyframes"));
+    fn generate(code: &str) -> String {
+        generate_with(code, &[])
     }
 
     #[test]
-    fn test_collected_styles_style_variants_with_base_composition() {
-        // Test styleVariants with base style composition in code generation (covers lines 1161-1170, 1173-1175, 1177)
-        let mut collected = CollectedStyles::default();
-
-        // Add base style
-        collected.styles.insert(
-            "baseBtn".to_string(),
-            StyleEntry {
-                json: r#"{"borderRadius":"4px","padding":"8px"}"#.to_string(),
-                exported: false,
-                bases: SmallVec::new(),
-            },
-        );
-
-        // Add styleVariants with base
-        let mut variants = rustc_hash::FxHashMap::default();
-        variants.insert(
-            "primary".to_string(),
-            super::StyleVariant {
-                base: Some("baseBtn".to_string()),
-                styles_json: r#"{"backgroundColor":"blue","color":"white"}"#.to_string(),
-            },
-        );
-        variants.insert(
-            "secondary".to_string(),
-            super::StyleVariant {
-                base: Some("baseBtn".to_string()),
-                styles_json: r#"{"backgroundColor":"gray"}"#.to_string(),
-            },
-        );
-        collected
-            .style_variants
-            .insert("buttonVariants".to_string(), (variants, true));
-
-        let code = super::collected_styles_to_code(&collected, "@devup-ui/react");
-        // Should have merged styles from base
-        assert!(code.contains("buttonVariants"));
-        assert!(code.contains("borderRadius") || code.contains("primary"));
-    }
-
-    #[test]
-    fn test_collected_styles_with_classes_style_variants() {
-        // Test collected_styles_to_code_with_classes with styleVariants (covers lines 1161-1184 in with_classes version)
-        let mut collected = CollectedStyles::default();
-
-        collected.styles.insert(
-            "base".to_string(),
-            StyleEntry {
-                json: r#"{"display":"flex"}"#.to_string(),
-                exported: false,
-                bases: SmallVec::new(),
-            },
-        );
-
-        let mut variants = rustc_hash::FxHashMap::default();
-        variants.insert(
-            "sm".to_string(),
-            super::StyleVariant {
-                base: Some("base".to_string()),
-                styles_json: r#"{"fontSize":"12px"}"#.to_string(),
-            },
-        );
-        variants.insert(
-            "lg".to_string(),
-            super::StyleVariant {
-                base: None,
-                styles_json: r#"{"fontSize":"20px"}"#.to_string(),
-            },
-        );
-        collected
-            .style_variants
-            .insert("sizes".to_string(), (variants, true));
-
-        let class_map = rustc_hash::FxHashMap::default();
-        let code = super::collected_styles_to_code_with_keyframes(
-            &collected,
-            "@devup-ui/react",
-            &class_map,
-        );
-        assert!(code.contains("sizes"));
-    }
-
-    #[test]
-    fn test_collected_styles_constant_exports_in_with_classes() {
-        // Test constant exports in collected_styles_to_code_with_classes (covers line 1229)
-        let mut collected = CollectedStyles::default();
-        collected.styles.insert(
-            "box".to_string(),
-            StyleEntry {
-                json: r"{}".to_string(),
-                exported: true,
-                bases: SmallVec::new(),
-            },
-        );
-        collected
-            .constant_exports
-            .insert("CONFIG".to_string(), "{ debug: true }".to_string());
-
-        let class_map = rustc_hash::FxHashMap::default();
-        let code = super::collected_styles_to_code_with_keyframes(
-            &collected,
-            "@devup-ui/react",
-            &class_map,
-        );
-        assert!(code.contains("export const CONFIG"));
-    }
-
-    #[test]
-    fn test_theme_entry_vars_name_without_json() {
-        // Test theme with vars_name but without vars_object_json (covers line 1301)
-        let mut collected = CollectedStyles::default();
-        collected.themes.insert(
-            "partialTheme".to_string(),
-            super::ThemeEntry {
-                class_name: "f0_partial".to_string(),
-                css_vars: smallvec![],
-                exported: true,
-                vars_name: Some("themeVars".to_string()),
-                vars_object_json: None,
-            },
-        );
-
-        let code = super::collected_styles_to_code(&collected, "@devup-ui/react");
-        // Should output just the class name assignment
-        assert!(code.contains("const partialTheme = \"f0_partial\""));
-    }
-
-    #[test]
-    fn test_collected_styles_to_code_with_classes_all_imports() {
-        // Test import generation for css, globalCss, keyframes (covers lines 1049, 1052)
-        let mut collected = CollectedStyles::default();
-
-        // Add style to trigger css import
-        collected.styles.insert(
-            "box".to_string(),
-            StyleEntry {
-                json: r#"{"padding":"8px"}"#.to_string(),
-                exported: true,
-                bases: SmallVec::new(),
-            },
-        );
-
-        // Add global style to trigger globalCss import
-        collected
-            .global_styles
-            .push(("body".to_string(), r#"{"margin":"0"}"#.to_string()));
-
-        // Add keyframes to trigger keyframes import
-        collected.keyframes.insert(
-            "fade".to_string(),
-            StyleEntry {
-                json: r#"{"from":{"opacity":"0"}}"#.to_string(),
-                exported: true,
-                bases: SmallVec::new(),
-            },
-        );
-
-        let class_map: rustc_hash::FxHashMap<String, String> =
-            std::iter::once(("box".to_string(), "a".to_string())).collect();
-        let code = super::collected_styles_to_code_with_keyframes(
-            &collected,
-            "@devup-ui/react",
-            &class_map,
-        );
-
-        assert!(code.contains("css"));
-        assert!(code.contains("globalCss"));
-        assert!(code.contains("keyframes"));
-    }
-
-    #[test]
-    fn test_collected_styles_to_code_with_classes_theme_no_vars_name() {
-        // Test theme without vars_name (covers line 1111)
-        let mut collected = CollectedStyles::default();
-        collected.styles.insert(
-            "box".to_string(),
-            StyleEntry {
-                json: r"{}".to_string(),
-                exported: true,
-                bases: SmallVec::new(),
-            },
-        );
-        collected.themes.insert(
-            "simpleTheme".to_string(),
-            super::ThemeEntry {
-                class_name: "f0_simple".to_string(),
-                css_vars: smallvec![],
-                exported: true,
-                vars_name: None,
-                vars_object_json: None,
-            },
-        );
-
-        let class_map = rustc_hash::FxHashMap::default();
-        let code = super::collected_styles_to_code_with_keyframes(
-            &collected,
-            "@devup-ui/react",
-            &class_map,
-        );
-        assert!(code.contains("const simpleTheme = \"f0_simple\""));
-    }
-
-    #[test]
-    fn test_append_non_style_code_global_styles() {
-        // Test globalCss code generation (covers line 1125)
-        let mut collected = CollectedStyles::default();
-        collected.global_styles.push((
-            "html".to_string(),
-            r#"{"boxSizing":"border-box"}"#.to_string(),
-        ));
-        collected
-            .global_styles
-            .push(("body".to_string(), r#"{"margin":"0"}"#.to_string()));
-
-        let code = super::collected_styles_to_code(&collected, "@devup-ui/react");
-        assert!(code.contains("globalCss({ \"html\":"));
-        assert!(code.contains("globalCss({ \"body\":"));
-    }
-
-    #[test]
-    fn test_append_non_style_code_font_faces_with_props() {
-        // Test fontFace code generation with properties (covers lines 1132-1135)
-        let mut collected = CollectedStyles::default();
-        collected.font_faces.insert(
-            "myFont".to_string(),
-            (
-                r#"{"src":"url(font.woff2)","fontWeight":"bold"}"#.to_string(),
-                "__font_0".to_string(),
-                true,
+    #[serial]
+    fn test_names_follow_the_values_variables_hold() {
+        assert_eq!(
+            generate_with(
+                "export const sizes = { sm: style({ padding: 1 }), lg: style({ padding: 2 }) }
+export const box = style({ color: 'red' })
+const spin = keyframes({ to: { opacity: 1 } })
+export const alias = box
+export const animated = style({ animationName: spin })",
+                &[("spin", "k")]
             ),
+            r#"import { css, keyframes } from '@devup-ui/react'
+const spin = keyframes({"to":{"opacity":1}})
+const _ve0 = css({"padding":"1px"})
+const _ve1 = css({"padding":"2px"})
+export const animated = css({"animationName":"k"})
+export const box = css({"color":"red"})
+export const sizes = { "sm": _ve0, "lg": _ve1 }
+export const alias = box"#
         );
-
-        let code = super::collected_styles_to_code(&collected, "@devup-ui/react");
-        assert!(code.contains("fontFaces"));
-        assert!(code.contains("fontFamily"));
+        assert_eq!(
+            generate("const _ve0 = 1\nexport const list = [style({ color: 'red' })]"),
+            r#"import { css } from '@devup-ui/react'
+const _ve0_ = css({"color":"red"})
+export const list = [_ve0_]"#
+        );
+        assert_eq!(
+            generate("export const animated = style({ animationName: keyframes({}) })"),
+            r#"import { css, keyframes } from '@devup-ui/react'
+const _ve0 = keyframes({})
+export const animated = css({"animationName":"__style_0__"})"#
+        );
     }
 
     #[test]
-    fn test_append_non_style_code_global_themes_with_vars() {
-        // Test createGlobalTheme code generation with CSS vars (covers lines 1142-1144)
-        let mut collected = CollectedStyles::default();
-        collected.global_themes.insert(
-            "rootVars".to_string(),
-            super::GlobalThemeEntry {
-                selector: ":root".to_string(),
-                css_vars: smallvec![
-                    ("--primary".to_string(), "blue".to_string()),
-                    ("--secondary".to_string(), "green".to_string()),
-                ],
-                vars_object_json: r#"{"primary":"var(--primary)"}"#.to_string(),
-                exported: true,
-            },
-        );
-
-        let code = super::collected_styles_to_code(&collected, "@devup-ui/react");
-        assert!(code.contains("globalCss({ \":root\":"));
-        assert!(code.contains("--primary"));
-    }
-
-    #[test]
-    fn test_append_non_style_code_keyframes() {
-        // Test keyframes code generation (covers lines 1152-1153)
-        let mut collected = CollectedStyles::default();
-        collected.keyframes.insert(
-            "spin".to_string(),
-            StyleEntry {
-                json: r#"{"from":{"transform":"rotate(0)"},"to":{"transform":"rotate(360deg)"}}"#
-                    .to_string(),
-                exported: true,
-                bases: SmallVec::new(),
-            },
-        );
-        collected.keyframes.insert(
-            "internalFade".to_string(),
-            StyleEntry {
-                json: r#"{"0%":{"opacity":"0"}}"#.to_string(),
-                exported: false,
-                bases: SmallVec::new(),
-            },
-        );
-
-        let code = super::collected_styles_to_code(&collected, "@devup-ui/react");
-        assert!(code.contains("export const spin = keyframes"));
-        assert!(code.contains("const internalFade = keyframes"));
-    }
-
-    #[test]
-    fn test_append_non_style_code_vars() {
-        // Test createVar code generation (covers lines 1191-1192)
-        let mut collected = CollectedStyles::default();
-        collected
-            .vars
-            .insert("colorVar".to_string(), ("--color-0".to_string(), true));
-        collected.vars.insert(
-            "internalVar".to_string(),
-            ("--internal-0".to_string(), false),
-        );
-
-        let code = super::collected_styles_to_code(&collected, "@devup-ui/react");
-        assert!(code.contains("export const colorVar = \"--color-0\""));
-        assert!(code.contains("const internalVar = \"--internal-0\""));
-    }
-
-    #[test]
-    fn test_append_non_style_code_font_face_declarations() {
-        // Test fontFace declaration code generation (covers lines 1199-1200)
-        let mut collected = CollectedStyles::default();
-        collected.font_faces.insert(
-            "customFont".to_string(),
-            (r"{}".to_string(), "__devup_font_custom".to_string(), true),
-        );
-        collected.font_faces.insert(
-            "internalFont".to_string(),
-            (
-                r"{}".to_string(),
-                "__devup_font_internal".to_string(),
-                false,
+    #[serial]
+    fn test_exported_values_become_code() {
+        assert_eq!(
+            generate(
+                "const box = style({ color: 'red' })
+export const text = 'plain \"quoted\"'
+export const template = `${box} extra \\`tick\\` \\${x} back\\\\slash __open`
+export const nothing = undefined
+export const empty = null
+export const flag = true
+export const count = 1.5
+export const list = [box, 2]
+export const nested = { a: { b: [box] } }
+export const helper = (x) => x
+export const fns = [() => 1]
+export const date = new Date(0)
+export const cyclic = (() => { const o = {}; o.self = o; return o })()
+export const bare = Object.create(null)
+export const { destructured } = { destructured: () => 1 }
+export declare const typeOnly: string
+export function makeBox() { return box }
+export type Box = string
+export const symbol = Symbol('x')"
             ),
+            r#"import { css } from '@devup-ui/react'
+const box = css({"color":"red"})
+export const text = "plain \"quoted\""
+export const template = `${box} extra \`tick\` \${x} back\\slash __open`
+export const nothing = undefined
+export const empty = null
+export const flag = true
+export const count = 1.5
+export const list = [box, 2]
+export const nested = { "a": { "b": [box] } }
+export const helper = (x) => x
+export const fns = [() => 1]
+export const date = new Date(0)
+export const cyclic = (() => { const o = {}; o.self = o; return o })()
+export const bare = {}
+export const symbol = Symbol('x')"#
         );
-
-        let code = super::collected_styles_to_code(&collected, "@devup-ui/react");
-        assert!(code.contains("export const customFont = \"__devup_font_custom\""));
-        assert!(code.contains("const internalFont = \"__devup_font_internal\""));
     }
 
     #[test]
-    fn test_append_non_style_code_containers() {
-        // Test createContainer code generation (covers lines 1207-1208)
-        let mut collected = CollectedStyles::default();
-        collected.containers.insert(
-            "sidebar".to_string(),
-            ("__container_sidebar".to_string(), true),
+    #[serial]
+    fn test_style_variants_are_styles() {
+        assert_eq!(
+            generate(
+                "export const tone = styleVariants({ primary: { color: 'red' }, 0: { color: 'blue' }, [Symbol('s')]: { color: 'green' } })
+export const space = styleVariants({ sm: 4 }, (padding, key) => ({ padding, content: key }))
+export const none = styleVariants(undefined)
+export const combined = style([tone.primary, 'external', [{ margin: 1 }]])
+globalStyle(`${tone.primary} > span`, { fontWeight: 700 })"
+            ),
+            r#"import { css, globalCss } from '@devup-ui/react'
+const _ve0 = css({"color":"blue"})
+const _ve1 = css({"color":"red"}) + " f0__ve1"
+const _ve2 = css({"padding":"4px","content":"sm"})
+export const combined = css({"color":"red","margin":"1px"}) + " f0__ve1 external"
+globalCss({ ".f0__ve1 > span": {"fontWeight":700} })
+export const tone = { "0": _ve0, "primary": _ve1 }
+export const space = { "sm": _ve2 }
+export const none = {}"#
         );
-        collected.containers.insert(
-            "internalCont".to_string(),
-            ("__container_internal".to_string(), false),
+    }
+
+    #[test]
+    #[serial]
+    fn test_composition_is_transitive() {
+        assert_eq!(
+            generate(
+                "const a = style({ color: 'red' })
+const b = style([a, { margin: 2 }])
+export const c = style([b, { padding: 3 }])
+const e = style({})
+export const f = style([e, a, '__style_99__'])
+export const g = style(5)
+const o = {}; o.self = o
+export const h = style(o)
+export const hover = style({ selectors: { [`${a}:hover &`]: { color: 'blue' } } })"
+            ),
+            r#"import { css } from '@devup-ui/react'
+const a = css({"color":"red"}) + " f0_a"
+const b = css({"color":"red","margin":"2px"}) + " f0_a"
+export const c = css({"color":"red","margin":"2px","padding":"3px"}) + " f0_a"
+const e = css({})
+export const f = css({"color":"red"}) + " f0_a"
+export const g = css({})
+export const h = css({})
+export const hover = css({"selectors":{".f0_a:hover &":{"color":"blue"}}})"#
         );
-
-        let code = super::collected_styles_to_code(&collected, "@devup-ui/react");
-        assert!(code.contains("export const sidebar = \"__container_sidebar\""));
-        assert!(code.contains("const internalCont = \"__container_internal\""));
     }
 
     #[test]
-    fn test_append_non_style_code_layers() {
-        // Test layer code generation (covers lines 1215-1216)
-        let mut collected = CollectedStyles::default();
-        collected
-            .layers
-            .insert("baseLayer".to_string(), ("base".to_string(), true));
-        collected
-            .layers
-            .insert("internalLayer".to_string(), ("internal".to_string(), false));
-
-        let code = super::collected_styles_to_code(&collected, "@devup-ui/react");
-        assert!(code.contains("export const baseLayer = \"base\""));
-        assert!(code.contains("const internalLayer = \"internal\""));
-    }
-
-    #[test]
-    fn test_append_non_style_code_global_theme_vars_object() {
-        // Test createGlobalTheme vars object declaration (covers lines 1221-1222)
-        let mut collected = CollectedStyles::default();
-        collected.global_themes.insert(
-            "themeVars".to_string(),
-            super::GlobalThemeEntry {
-                selector: ":root".to_string(),
-                css_vars: smallvec![("--bg".to_string(), "white".to_string())],
-                vars_object_json: r#"{"bg":"var(--bg)"}"#.to_string(),
-                exported: true,
-            },
+    #[serial]
+    fn test_font_faces() {
+        assert_eq!(
+            generate(
+                "export const body = fontFace({ src: 'local(a)' }, 'Body Font')
+export const icons = fontFace([{ src: 'local(b)' }, { src: 'local(c)', fontWeight: 700 }])
+fontFace({})
+const o = {}; o.self = o
+fontFace(o)
+globalFontFace('Inter', { src: 'local(Inter)' })"
+            ),
+            r#"import { globalCss } from '@devup-ui/react'
+globalCss({ fontFaces: [{"src":"local(a)","fontFamily":"Body_Font-0-0"}, {"src":"local(b)","fontFamily":"font-0-1"}, {"src":"local(c)","fontWeight":700,"fontFamily":"font-0-1"}, {"fontFamily":"font-0-2"}, {"fontFamily":"font-0-3"}, {"src":"local(Inter)","fontFamily":"Inter"}] })
+export const body = "Body_Font-0-0"
+export const icons = "font-0-1""#
         );
-
-        let code = super::collected_styles_to_code(&collected, "@devup-ui/react");
-        assert!(code.contains("export const themeVars = {\"bg\":\"var(--bg)\"}"));
     }
 
     #[test]
-    fn test_style_with_non_object_argument() {
-        // Test style() with primitive value (covers line 749)
-        // This is tested through execute_vanilla_extract with edge case input
-        let code = r"
-import { style } from '@devup-ui/react'
-// This should still work - style with null or undefined would be an edge case
-export const empty = style({})
-";
-        let result = super::execute_vanilla_extract(code, "@devup-ui/react", "test.css.ts");
-        assert!(result.is_ok());
+    #[serial]
+    fn test_vars_follow_vanilla_extract() {
+        assert_eq!(
+            generate(
+                "export const plain = createVar()
+export const named = createVar('9 lives')
+export const typed = createVar({ syntax: '<length>', inherits: false, initialValue: '0px' }, 'size')
+export const union = createVar({ syntax: ['<length>', '<percentage>'], inherits: true })
+export const empty = createVar('')
+export const fallback = fallbackVar(plain, named, 'red')
+export const invalid = fallbackVar('red', 'blue')
+export const none = fallbackVar()
+export const box = style({ vars: { [plain]: '1px', '--raw': 2 }, width: plain, padding: 0, zIndex: 2, margin: [1, 2] })"
+            ),
+            r#"import { css, globalCss } from '@devup-ui/react'
+globalCss`@property --size-0-2{syntax:"<length>";inherits:false;initial-value:0px}`
+globalCss`@property --var-0-3{syntax:"<length> | <percentage>";inherits:true}`
+export const box = css({"vars":{"--var-0-0":"1px","--raw":2},"width":"var(--var-0-0)","padding":0,"zIndex":2,"margin":[1,2]})
+export const plain = "var(--var-0-0)"
+export const named = "var(--_9_lives-0-1)"
+export const typed = "var(--size-0-2)"
+export const union = "var(--var-0-3)"
+export const empty = "var(--var-0-4)"
+export const fallback = "var(--var-0-0, var(--_9_lives-0-1, red))"
+export const invalid = "red"
+export const none = """#
+        );
     }
 
     #[test]
-    fn test_style_with_object_no_length() {
-        // Test style() with regular object (covers line 745)
-        let code = r"
-import { style } from '@devup-ui/react'
-export const box = style({ padding: 8, margin: 4 })
-";
-        let result = super::execute_vanilla_extract(code, "@devup-ui/react", "test.css.ts");
-        assert!(result.is_ok());
-        let collected = result.unwrap();
-        assert!(!collected.styles.is_empty());
+    #[serial]
+    fn test_layers_and_containers() {
+        assert_eq!(
+            generate(
+                "export const reset = layer()
+export const base = layer('base')
+export const child = layer({ parent: base }, 'child')
+export const orphan = layer({})
+export const named = globalLayer('utilities')
+export const nested = globalLayer({ parent: named }, 'x')
+export const again = globalLayer('utilities')
+export const container = createContainer('sidebar')
+export const anonymous = createContainer()"
+            ),
+            r#"import { globalCss } from '@devup-ui/react'
+globalCss`@layer layer-0-0,base-0-1,base-0-1.child-0-2,layer-0-3,utilities,utilities.x;`
+export const reset = "layer-0-0"
+export const base = "base-0-1"
+export const child = "base-0-1.child-0-2"
+export const orphan = "layer-0-3"
+export const named = "utilities"
+export const nested = "utilities.x"
+export const again = "utilities"
+export const container = "sidebar-0-4"
+export const anonymous = "container-0-5""#
+        );
     }
 
     #[test]
-    fn test_js_value_to_json_string_fallback_path() {
-        // Test js_value_to_json string fallback when JSON.stringify is broken (covers line 303)
-        use boa_engine::{Context, JsValue, Source, js_string};
+    #[serial]
+    fn test_themes_and_contracts() {
+        assert_eq!(
+            generate(
+                "const contract = createThemeContract({ color: { brand: null, text: null }, list: [1], flag: true })
+export const [light, lightVars] = createTheme({ '@layer': 'theme', color: { brand: 'blue' }, size: 4 })
+export const dark = createTheme(contract, { color: { brand: 'black', text: 'white' } }, 'dark')
+export const partial = createTheme(contract, { color: { brand: 'x', missing: 'y' } })
+export const emptyTheme = createTheme(contract, {})
+export const globalVars = createGlobalTheme(':root', { space: '1px' })
+createGlobalTheme('.scope', contract, { '@layer': 'scoped', color: { text: 'grey' } })
+export const exact = createGlobalThemeContract({ color: 'brand-color', raw: '--raw' })
+export const mapped = createGlobalThemeContract({ color: { brand: null } }, (_value, path) => `x-${path.join('-')}`)
+export const assigned = assignVars(contract, { color: { brand: 'red' } })
+export const unassigned = assignVars(undefined, { a: 'b' })
+export const box = style({ vars: assigned })
+export const notObject = createTheme('tokens')"
+            ),
+            r#"import { css, globalCss } from '@devup-ui/react'
+export const box = css({"vars":{"--color-brand-0-0":"red"}})
+globalCss({ ".theme-0-2": {"@layer":"theme","--color-brand-0-3":"blue","--size-0-4":"4"} })
+globalCss({ ".dark-0-5": {"--color-brand-0-0":"black","--color-text-0-1":"white"} })
+globalCss({ ".theme-0-6": {"--color-brand-0-0":"x"} })
+globalCss({ ":root": {"--space-0-8":"1px"} })
+globalCss({ ".scope": {"@layer":"scoped","--color-text-0-1":"grey"} })
+export const light = "theme-0-2"
+export const lightVars = { "color": { "brand": "var(--color-brand-0-3)" }, "size": "var(--size-0-4)" }
+export const dark = "dark-0-5"
+export const partial = "theme-0-6"
+export const emptyTheme = "theme-0-7"
+export const globalVars = { "space": "var(--space-0-8)" }
+export const exact = { "color": "var(--brand-color)", "raw": "var(--raw)" }
+export const mapped = { "color": { "brand": "var(--x-color-brand)" } }
+export const assigned = { "var(--color-brand-0-0)": "red" }
+export const unassigned = {}
+export const notObject = ["theme-0-9", {}]"#
+        );
+    }
 
+    #[test]
+    #[serial]
+    fn test_nothing_collected() {
+        assert_eq!(generate("const x = 1"), "");
+        reset_file_map();
+        assert!(execute_vanilla_extract("throw new Error('x')", PACKAGE, "test.css.ts").is_err());
+        assert!(
+            execute_vanilla_extract(
+                "import { createVar } from '@devup-ui/react'\ncreateVar({ syntax: Symbol() })",
+                PACKAGE,
+                "test.css.ts"
+            )
+            .is_err()
+        );
+    }
+
+    #[test]
+    fn test_identifier() {
+        let mut collector = Collector {
+            file_num: 3,
+            ..Collector::default()
+        };
+        assert_eq!(collector.identifier(Some("a b".into()), "x"), "a_b-3-0");
+        assert_eq!(collector.identifier(Some("-y".into()), "x"), "_-y-3-1");
+        assert_eq!(collector.identifier(Some(String::new()), "x"), "x-3-2");
+        assert_eq!(collector.identifier(None, "_z"), "_z-3-3");
+    }
+
+    #[test]
+    fn test_style_to_json_adds_vanilla_extract_units() {
         let mut context = Context::default();
-
-        // Break JSON.stringify by setting it to undefined
-        context
-            .eval(Source::from_bytes(b"JSON.stringify = undefined"))
+        let rule = context
+            .eval(Source::from_bytes(
+                "({ fontSize: 16, top: 0, lineHeight: 1.5, '--gap': 4, 'var(--x)': 2, fallback: [1, 2], ':hover': { width: 3 }, vars: { 'var(--a)': 1, '--b': 2 } })",
+            ))
             .unwrap();
-
-        let string_val = JsValue::from(js_string!("test"));
-        let result = super::js_value_to_json(&string_val, &mut context);
-        assert_eq!(result, "\"test\"");
+        assert_eq!(
+            style_to_json(&rule, &mut context),
+            r#"{"fontSize":"16px","top":0,"lineHeight":1.5,"--gap":4,"var(--x)":2,"fallback":[1,2],":hover":{"width":"3px"},"vars":{"--a":1,"--b":2}}"#
+        );
+        assert_eq!(style_to_json(&JsValue::undefined(), &mut context), "{}");
     }
 
     #[test]
-    fn test_js_value_to_json_null_fallback_path() {
-        // Test js_value_to_json null fallback when JSON.stringify is broken (covers line 304)
-        use boa_engine::{Context, JsValue, Source};
+    #[serial]
+    fn test_referenced_keyframes() {
+        reset_file_map();
+        let collected = execute_vanilla_extract(
+            "import { style, keyframes } from '@devup-ui/react'
+const fade = keyframes({ from: { opacity: 0 } })
+const unused = keyframes({ to: { opacity: 1 } })
+export const box = style({ animationName: fade })",
+            PACKAGE,
+            "test.css.ts",
+        )
+        .unwrap();
+        let names = referenced_keyframes(&collected);
+        assert_eq!(names, FxHashSet::from_iter(["fade".to_string()]));
+        assert_eq!(
+            keyframes_to_code(&collected, PACKAGE, &names),
+            r#"import { keyframes } from '@devup-ui/react'
+const fade = keyframes({"from":{"opacity":0}})"#
+        );
+    }
 
-        let mut context = Context::default();
-
-        // Break JSON.stringify by setting it to undefined
-        context
-            .eval(Source::from_bytes(b"JSON.stringify = undefined"))
-            .unwrap();
-
-        let null_val = JsValue::null();
-        let result = super::js_value_to_json(&null_val, &mut context);
-        assert_eq!(result, "null");
+    #[test]
+    fn test_inner_json() {
+        assert_eq!(inner_json(r#" {"a":{"b":1}} "#), r#""a":{"b":1}"#);
+        assert_eq!(inner_json("[1]"), "");
     }
 }

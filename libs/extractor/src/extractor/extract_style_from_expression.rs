@@ -12,7 +12,7 @@ use crate::{
     utils::{
         expression_to_code, get_number_by_literal_expression, get_str_by_property_key,
         get_string_by_literal_expression, get_string_by_property_key, is_same_expression,
-        unwrap_syntax_only_mut,
+        readable_code, unwrap_syntax_only, unwrap_syntax_only_mut,
     },
 };
 use css::{
@@ -27,12 +27,13 @@ use css::{
 use oxc_allocator::{CloneIn, GetAllocator};
 use oxc_ast::{
     ast::{
-        BinaryOperator, Expression, LogicalOperator, ObjectPropertyKind, Str, TemplateElement,
-        TemplateElementValue, UnaryOperator,
+        BinaryOperator, Expression, LogicalOperator, ObjectExpression, ObjectPropertyKind,
+        PropertyKey, Str, TemplateElement, TemplateElementValue, UnaryOperator,
     },
     builder::AstBuilder,
 };
-use oxc_span::SPAN;
+use oxc_span::{GetSpan, SPAN};
+use std::collections::BTreeMap;
 
 const IGNORED_IDENTIFIERS: [&str; 3] = ["undefined", "NaN", "Infinity"];
 
@@ -40,6 +41,112 @@ const IGNORED_IDENTIFIERS: [&str; 3] = ["undefined", "NaN", "Infinity"];
 pub enum LiteralHandling {
     ExpandResponsiveThemeToken,
     KeepSingleClass,
+}
+
+/// `expression` where styles are expected but the build cannot read them:
+/// nothing for a value that holds no styles (`null`, `false`, `undefined`)
+pub(crate) fn unreadable<'a>(expression: &Expression<'a>) -> ExtractResult<'a> {
+    let holds_nothing = match unwrap_syntax_only(expression) {
+        Expression::NullLiteral(_) | Expression::BooleanLiteral(_) => true,
+        Expression::Identifier(identifier) => {
+            IGNORED_IDENTIFIERS.contains(&identifier.name.as_str())
+        }
+        Expression::UnaryExpression(unary) => unary.operator == UnaryOperator::Void,
+        _ => false,
+    };
+    ExtractResult {
+        styles: if holds_nothing {
+            vec![]
+        } else {
+            vec![ExtractStyleProp::Unreadable {
+                offset: expression.span().start,
+                code: readable_code(expression),
+                prop: false,
+            }]
+        },
+        ..ExtractResult::default()
+    }
+}
+
+/// Whether `expression` is truthy, when it is a literal: a condition the
+/// build knows picks its branch there, as once constants are inlined
+fn literal_truthiness(expression: &Expression<'_>) -> Option<bool> {
+    match unwrap_syntax_only(expression) {
+        Expression::BooleanLiteral(literal) => Some(literal.value),
+        Expression::NullLiteral(_) => Some(false),
+        Expression::NumericLiteral(literal) => {
+            Some(literal.value != 0.0 && !literal.value.is_nan())
+        }
+        Expression::StringLiteral(literal) => Some(!literal.value.is_empty()),
+        Expression::Identifier(identifier) if identifier.name == "undefined" => Some(false),
+        _ => None,
+    }
+}
+
+/// Merge the object literals spread into `object` in place, a later property
+/// replacing an earlier one of the same key as in the object JavaScript builds
+pub(crate) fn flatten_spreads<'a>(ast_builder: &AstBuilder<'a>, object: &mut ObjectExpression<'a>) {
+    if !object.properties.iter().any(|property| {
+        matches!(property, ObjectPropertyKind::SpreadProperty(spread)
+            if matches!(unwrap_syntax_only(&spread.argument), Expression::ObjectExpression(_)))
+    }) {
+        return;
+    }
+    let properties = std::mem::replace(
+        &mut object.properties,
+        oxc_allocator::Vec::new_in(ast_builder),
+    );
+    for property in properties {
+        match property {
+            ObjectPropertyKind::SpreadProperty(mut spread) => {
+                if let Expression::ObjectExpression(inner) =
+                    unwrap_syntax_only_mut(&mut spread.argument)
+                {
+                    flatten_spreads(ast_builder, inner);
+                    let spread_properties = std::mem::replace(
+                        &mut inner.properties,
+                        oxc_allocator::Vec::new_in(ast_builder),
+                    );
+                    for property in spread_properties {
+                        push_replacing(&mut object.properties, property);
+                    }
+                } else {
+                    object
+                        .properties
+                        .push(ObjectPropertyKind::SpreadProperty(spread));
+                }
+            }
+            property @ ObjectPropertyKind::ObjectProperty(_) => {
+                push_replacing(&mut object.properties, property);
+            }
+        }
+    }
+}
+
+fn push_replacing<'a>(
+    properties: &mut oxc_allocator::Vec<'a, ObjectPropertyKind<'a>>,
+    property: ObjectPropertyKind<'a>,
+) {
+    if let ObjectPropertyKind::ObjectProperty(added) = &property
+        && let Some(key) = get_str_by_property_key(&added.key)
+    {
+        properties.retain(|existing| {
+            !matches!(existing, ObjectPropertyKind::ObjectProperty(existing)
+                if get_str_by_property_key(&existing.key).as_deref() == Some(key.as_ref()))
+        });
+    }
+    properties.push(property);
+}
+
+pub(crate) fn unreadable_key<'a>(key: &PropertyKey<'_>, prop: bool) -> ExtractStyleProp<'a> {
+    ExtractStyleProp::Unreadable {
+        offset: key.span().start,
+        code: format!(
+            "[{}]",
+            key.as_expression().map_or_else(String::new, readable_code)
+        ),
+        prop,
+    }
 }
 
 fn create_static_styles<'a>(
@@ -113,11 +220,18 @@ pub fn extract_style_from_expression<'a>(
         let mut props = None;
         return match expression {
             Expression::ObjectExpression(obj) => {
+                flatten_spreads(ast_builder, obj);
                 let mut props_styles: Vec<ExtractStyleProp<'_>> = vec![];
                 let mut tag = None;
                 for idx in (0..obj.properties.len()).rev() {
                     let mut prop = obj.properties.remove(idx);
                     if !match &mut prop {
+                        ObjectPropertyKind::ObjectProperty(prop)
+                            if get_str_by_property_key(&prop.key).is_none() =>
+                        {
+                            props_styles.push(unreadable_key(&prop.key, true));
+                            false
+                        }
                         ObjectPropertyKind::ObjectProperty(prop) => {
                             if let Some(name) = get_str_by_property_key(&prop.key)
                                 && !is_special_property(&name)
@@ -217,7 +331,14 @@ pub fn extract_style_from_expression<'a>(
                     .collect(),
                 ..ExtractResult::default()
             },
-            _ => ExtractResult::default(),
+            Expression::StringLiteral(text) => ExtractResult {
+                styles: css_to_style(&text.value, level, selector)
+                    .into_iter()
+                    .map(|ex| ExtractStyleProp::Static(ExtractStyleValue::Static(ex)))
+                    .collect(),
+                ..ExtractResult::default()
+            },
+            _ => unreadable(expression),
         };
     }
 
@@ -268,9 +389,11 @@ pub fn extract_style_from_expression<'a>(
         {
             let mut props = vec![];
             for p in &mut obj.properties {
-                if let ObjectPropertyKind::ObjectProperty(o) = p
-                    && let Some(key_name) = o.key.name()
-                {
+                if let ObjectPropertyKind::ObjectProperty(o) = p {
+                    let Some(key_name) = get_string_by_property_key(&o.key) else {
+                        props.push(unreadable_key(&o.key, false));
+                        continue;
+                    };
                     for part in split_selector_list(key_name.trim()) {
                         if let Some(child) = nest_selectors_key(selector.as_ref(), part) {
                             props.extend(
@@ -286,6 +409,34 @@ pub fn extract_style_from_expression<'a>(
                             );
                         }
                     }
+                }
+            }
+            return ExtractResult {
+                styles: props,
+                ..ExtractResult::default()
+            };
+        }
+
+        // vanilla-extract's `'@layer': { [layerName]: rules }`
+        if name == "@layer"
+            && let Expression::ObjectExpression(obj) = expression
+        {
+            let mut props = vec![];
+            for p in &mut obj.properties {
+                if let ObjectPropertyKind::ObjectProperty(o) = p
+                    && let Some(layer) = get_string_by_property_key(&o.key)
+                {
+                    let mut styles = extract_style_from_expression(
+                        ast_builder,
+                        None,
+                        &mut o.value,
+                        level,
+                        selector,
+                        literal_handling,
+                    )
+                    .styles;
+                    place_in_layer(&mut styles, &layer);
+                    props.extend(styles);
                 }
             }
             return ExtractResult {
@@ -398,36 +549,12 @@ pub fn extract_style_from_expression<'a>(
             }
         }
     } else {
+        // `name` is `None` only under a selector (`_hover: value`), which takes
+        // styles rather than a value a CSS variable could hold
         match expression {
-            Expression::UnaryExpression(un) => ExtractResult {
-                // `name` is None only when this was reached through the `_xxx`
-                // selector recursion (see line 324). In that case the value
-                // cannot be statically extracted as a dynamic style because
-                // the pseudo-selector has no CSS property slot to bind a
-                // CSS variable to, so we return an empty result and let the
-                // caller drop the attribute (see issue with `_hover={var}`).
-                styles: if un.operator == UnaryOperator::Void {
-                    vec![]
-                } else if let Some(name) = name {
-                    vec![dynamic_style(
-                        ast_builder,
-                        name,
-                        expression,
-                        level,
-                        selector,
-                    )]
-                } else {
-                    vec![]
-                },
-                ..ExtractResult::default()
-            },
-            // Each variant is kept on its own line so per-line coverage
-            // tools (tarpaulin on CI) can attribute the hit to the exact
-            // pattern being exercised. The body is flattened to a single
-            // `Option::map().unwrap_or_default()` chain to avoid an extra
-            // if/else branch region — `name == None` happens only under
-            // `_xxx={...}` pseudo-selector recursion, where no dynamic_style
-            // can be emitted because the selector has no CSS property slot.
+            Expression::UnaryExpression(un) if un.operator == UnaryOperator::Void => {
+                ExtractResult::default()
+            }
             // `styled.div({ color: (p) => p.theme.brand })` — the object spelling of
             // the template interpolation, resolved to the same build-time `var()`.
             Expression::ArrowFunctionExpression(_) => match (name, theme_var_reference(expression))
@@ -442,13 +569,17 @@ pub fn extract_style_from_expression<'a>(
                     ),
                     ..ExtractResult::default()
                 },
-                _ => ExtractResult::default(),
+                _ => unreadable(expression),
             },
-            Expression::BinaryExpression(_)
+            // Each variant is kept on its own line so per-line coverage
+            // tools (tarpaulin on CI) can attribute the hit to the exact
+            // pattern being exercised.
+            Expression::UnaryExpression(_)
+            | Expression::BinaryExpression(_)
             | Expression::StaticMemberExpression(_)
             | Expression::ChainExpression(_)
-            | Expression::CallExpression(_) => name
-                .map(|name| ExtractResult {
+            | Expression::CallExpression(_) => match name {
+                Some(name) => ExtractResult {
                     styles: vec![dynamic_style(
                         ast_builder,
                         name,
@@ -457,78 +588,73 @@ pub fn extract_style_from_expression<'a>(
                         selector,
                     )],
                     ..ExtractResult::default()
-                })
-                .unwrap_or_default(),
+                },
+                None => unreadable(expression),
+            },
             Expression::ComputedMemberExpression(mem) => {
                 extract_style_from_member_expression(ast_builder, name, mem, level, selector)
             }
-            Expression::TemplateLiteral(_) => ExtractResult {
-                // `typo == true` implies `name == Some("typography")` (set at
-                // line 337 inside an `if let Some(name) = name` block), so the
-                // typo branch is safe. The non-typo branch must handle the
-                // `name.is_none()` case (pseudo-selector recursion) by
-                // returning empty styles.
-                styles: if typo
-                    && let Some(style) =
-                        conditional_typography(ast_builder, expression, level, selector)
-                {
-                    vec![style]
-                } else if typo {
-                    vec![ExtractStyleProp::Expression {
-                        expression: Expression::new_template_literal(
-                            SPAN,
-                            oxc_allocator::Vec::from_array_in(
-                                [
-                                    TemplateElement::new(
-                                        SPAN,
-                                        TemplateElementValue {
-                                            raw: Str::from("typo-"),
-                                            cooked: None,
-                                        },
-                                        false,
-                                        ast_builder,
-                                    ),
-                                    TemplateElement::new(
-                                        SPAN,
-                                        TemplateElementValue {
-                                            raw: Str::from(""),
-                                            cooked: None,
-                                        },
-                                        true,
-                                        ast_builder,
-                                    ),
-                                ],
+            Expression::TemplateLiteral(_) => {
+                let Some(name) = name else {
+                    return unreadable(expression);
+                };
+                ExtractResult {
+                    styles: if typo
+                        && let Some(style) =
+                            conditional_typography(ast_builder, expression, level, selector)
+                    {
+                        vec![style]
+                    } else if typo {
+                        vec![ExtractStyleProp::Expression {
+                            expression: Expression::new_template_literal(
+                                SPAN,
+                                oxc_allocator::Vec::from_array_in(
+                                    [
+                                        TemplateElement::new(
+                                            SPAN,
+                                            TemplateElementValue {
+                                                raw: Str::from("typo-"),
+                                                cooked: None,
+                                            },
+                                            false,
+                                            ast_builder,
+                                        ),
+                                        TemplateElement::new(
+                                            SPAN,
+                                            TemplateElementValue {
+                                                raw: Str::from(""),
+                                                cooked: None,
+                                            },
+                                            true,
+                                            ast_builder,
+                                        ),
+                                    ],
+                                    ast_builder,
+                                ),
+                                oxc_allocator::Vec::from_array_in(
+                                    [expression.clone_in(ast_builder.allocator())],
+                                    ast_builder,
+                                ),
                                 ast_builder,
                             ),
-                            oxc_allocator::Vec::from_array_in(
-                                [expression.clone_in(ast_builder.allocator())],
-                                ast_builder,
-                            ),
+                            styles: vec![],
+                        }]
+                    } else {
+                        vec![dynamic_style(
                             ast_builder,
-                        ),
-                        styles: vec![],
-                    }]
-                } else if let Some(name) = name {
-                    vec![dynamic_style(
-                        ast_builder,
-                        name,
-                        expression,
-                        level,
-                        selector,
-                    )]
-                } else {
-                    vec![]
-                },
-                ..ExtractResult::default()
-            },
+                            name,
+                            expression,
+                            level,
+                            selector,
+                        )]
+                    },
+                    ..ExtractResult::default()
+                }
+            }
             Expression::Identifier(identifier) => {
-                // When `name` is `None` we are inside a pseudo-selector
-                // recursion (e.g. `_hover={someIdentifier}`). In that case
-                // the identifier is a black box (it may come from another
-                // module) and we cannot statically extract a style from it,
-                // so we skip extraction gracefully instead of panicking. The
-                // pseudo-selector attribute will be stripped by the visitor
-                // like any other non-extracted style prop.
+                let Some(name) = name else {
+                    return unreadable(expression);
+                };
                 if IGNORED_IDENTIFIERS.contains(&identifier.name.as_str()) {
                     ExtractResult::default()
                 } else if typo
@@ -543,70 +669,108 @@ pub fn extract_style_from_expression<'a>(
                         styles: vec![style],
                         ..ExtractResult::default()
                     }
-                } else if let Some(name) = name {
-                    if typo {
-                        ExtractResult {
-                            styles: vec![ExtractStyleProp::Expression {
-                                expression: Expression::new_conditional_expression(
+                } else if typo {
+                    ExtractResult {
+                        styles: vec![ExtractStyleProp::Expression {
+                            expression: Expression::new_conditional_expression(
+                                SPAN,
+                                Expression::new_identifier(
                                     SPAN,
-                                    Expression::new_identifier(
-                                        SPAN,
-                                        identifier.name.as_str(),
-                                        ast_builder,
-                                    ),
-                                    Expression::new_template_literal(
-                                        SPAN,
-                                        oxc_allocator::Vec::from_array_in(
-                                            [
-                                                TemplateElement::new(
-                                                    SPAN,
-                                                    TemplateElementValue {
-                                                        raw: Str::from("typo-"),
-                                                        cooked: None,
-                                                    },
-                                                    false,
-                                                    ast_builder,
-                                                ),
-                                                TemplateElement::new(
-                                                    SPAN,
-                                                    TemplateElementValue {
-                                                        raw: Str::from(""),
-                                                        cooked: None,
-                                                    },
-                                                    true,
-                                                    ast_builder,
-                                                ),
-                                            ],
-                                            ast_builder,
-                                        ),
-                                        oxc_allocator::Vec::from_array_in(
-                                            [expression.clone_in(ast_builder.allocator())],
-                                            ast_builder,
-                                        ),
-                                        ast_builder,
-                                    ),
-                                    Expression::new_string_literal(SPAN, "", None, ast_builder),
+                                    identifier.name.as_str(),
                                     ast_builder,
                                 ),
-                                styles: vec![],
-                            }],
-                            ..ExtractResult::default()
-                        }
-                    } else {
-                        ExtractResult {
-                            styles: vec![dynamic_style(
+                                Expression::new_template_literal(
+                                    SPAN,
+                                    oxc_allocator::Vec::from_array_in(
+                                        [
+                                            TemplateElement::new(
+                                                SPAN,
+                                                TemplateElementValue {
+                                                    raw: Str::from("typo-"),
+                                                    cooked: None,
+                                                },
+                                                false,
+                                                ast_builder,
+                                            ),
+                                            TemplateElement::new(
+                                                SPAN,
+                                                TemplateElementValue {
+                                                    raw: Str::from(""),
+                                                    cooked: None,
+                                                },
+                                                true,
+                                                ast_builder,
+                                            ),
+                                        ],
+                                        ast_builder,
+                                    ),
+                                    oxc_allocator::Vec::from_array_in(
+                                        [expression.clone_in(ast_builder.allocator())],
+                                        ast_builder,
+                                    ),
+                                    ast_builder,
+                                ),
+                                Expression::new_string_literal(SPAN, "", None, ast_builder),
                                 ast_builder,
-                                name,
-                                expression,
-                                level,
-                                selector,
-                            )],
-                            ..ExtractResult::default()
-                        }
+                            ),
+                            styles: vec![],
+                        }],
+                        ..ExtractResult::default()
                     }
                 } else {
-                    ExtractResult::default()
+                    ExtractResult {
+                        styles: vec![dynamic_style(
+                            ast_builder,
+                            name,
+                            expression,
+                            level,
+                            selector,
+                        )],
+                        ..ExtractResult::default()
+                    }
                 }
+            }
+            Expression::LogicalExpression(logical)
+                if literal_truthiness(&logical.left).is_some() =>
+            {
+                let nullish = matches!(
+                    unwrap_syntax_only(&logical.left),
+                    Expression::NullLiteral(_)
+                ) || matches!(unwrap_syntax_only(&logical.left), Expression::Identifier(identifier) if identifier.name == "undefined");
+                let takes_right = match logical.operator {
+                    LogicalOperator::And => literal_truthiness(&logical.left) == Some(true),
+                    LogicalOperator::Or => literal_truthiness(&logical.left) == Some(false),
+                    LogicalOperator::Coalesce => nullish,
+                };
+                extract_style_from_expression(
+                    ast_builder,
+                    name,
+                    if takes_right {
+                        &mut logical.right
+                    } else {
+                        &mut logical.left
+                    },
+                    level,
+                    selector,
+                    literal_handling,
+                )
+            }
+            Expression::ConditionalExpression(conditional)
+                if literal_truthiness(&conditional.test).is_some() =>
+            {
+                let consequent = literal_truthiness(&conditional.test) == Some(true);
+                extract_style_from_expression(
+                    ast_builder,
+                    name,
+                    if consequent {
+                        &mut conditional.consequent
+                    } else {
+                        &mut conditional.alternate
+                    },
+                    level,
+                    selector,
+                    literal_handling,
+                )
             }
             Expression::LogicalExpression(logical) => {
                 let res = Some(Box::new(ExtractStyleProp::StaticArray(
@@ -743,6 +907,7 @@ pub fn extract_style_from_expression<'a>(
                 }
             }
             Expression::ObjectExpression(obj) => {
+                flatten_spreads(ast_builder, obj);
                 let mut props = vec![];
                 let params = obj.properties.iter().find_map(|p| {
                     if let ObjectPropertyKind::ObjectProperty(o) = p
@@ -788,24 +953,43 @@ pub fn extract_style_from_expression<'a>(
                 });
 
                 for p in &mut obj.properties {
-                    if let ObjectPropertyKind::ObjectProperty(o) = p
-                        && let Some(key_name) = o.key.name()
-                        && key_name != "params"
-                    {
-                        for name in disassemble_property(&key_name) {
-                            let name: &str = &name;
+                    let o = match p {
+                        ObjectPropertyKind::ObjectProperty(o) => o,
+                        ObjectPropertyKind::SpreadProperty(spread) => {
                             props.extend(
                                 extract_style_from_expression(
                                     ast_builder,
-                                    Some(name),
-                                    &mut o.value,
+                                    None,
+                                    &mut spread.argument,
                                     level,
                                     &selector,
                                     literal_handling,
                                 )
                                 .styles,
                             );
+                            continue;
                         }
+                    };
+                    let Some(key_name) = o.key.name() else {
+                        props.push(unreadable_key(&o.key, false));
+                        continue;
+                    };
+                    if key_name == "params" {
+                        continue;
+                    }
+                    for name in disassemble_property(&key_name) {
+                        let name: &str = &name;
+                        props.extend(
+                            extract_style_from_expression(
+                                ast_builder,
+                                Some(name),
+                                &mut o.value,
+                                level,
+                                &selector,
+                                literal_handling,
+                            )
+                            .styles,
+                        );
                     }
                 }
                 ExtractResult {
@@ -813,7 +997,217 @@ pub fn extract_style_from_expression<'a>(
                     ..ExtractResult::default()
                 }
             }
-            _ => ExtractResult::default(),
+            _ => match name {
+                None => unreadable(expression),
+                Some(_) if matches!(expression, Expression::NullLiteral(_)) => {
+                    ExtractResult::default()
+                }
+                Some(_)
+                    if matches!(
+                        expression,
+                        Expression::FunctionExpression(_) | Expression::ClassExpression(_)
+                    ) =>
+                {
+                    unreadable(expression)
+                }
+                // A sequence keeps its parentheses, as its code is written into
+                // the element's style object, where a comma ends the property
+                Some(name) if matches!(expression, Expression::SequenceExpression(_)) => {
+                    let code = expression_to_code(expression);
+                    ExtractResult {
+                        styles: vec![ExtractStyleProp::Static(ExtractStyleValue::Dynamic(
+                            ExtractDynamicStyle::new(
+                                name,
+                                level,
+                                &format!("({})", code.trim_end().trim_end_matches(';')),
+                                selector.clone(),
+                            ),
+                        ))],
+                        ..ExtractResult::default()
+                    }
+                }
+                // Any other value is only known at runtime: `await`, `new`, an
+                // assignment, a tagged template
+                Some(name) => ExtractResult {
+                    styles: vec![dynamic_style(
+                        ast_builder,
+                        name,
+                        expression,
+                        level,
+                        selector,
+                    )],
+                    ..ExtractResult::default()
+                },
+            },
+        }
+    }
+}
+
+/// Put every static declaration of `props` in `layer`, nesting the layer one
+/// already sits in
+pub(crate) fn place_in_layer(props: &mut [ExtractStyleProp<'_>], layer: &str) {
+    let nest = |inner: &mut Option<String>| {
+        *inner = Some(match inner.take() {
+            Some(inner) => format!("{layer}.{inner}"),
+            None => layer.to_string(),
+        });
+    };
+    for prop in props {
+        match prop {
+            ExtractStyleProp::Static(ExtractStyleValue::Static(style)) => nest(&mut style.layer),
+            ExtractStyleProp::Static(ExtractStyleValue::Dynamic(style)) => nest(&mut style.layer),
+            ExtractStyleProp::StaticArray(props) => place_in_layer(props, layer),
+            ExtractStyleProp::Conditional {
+                consequent,
+                alternate,
+                ..
+            } => {
+                for branch in [consequent, alternate].into_iter().flatten() {
+                    place_in_layer(std::slice::from_mut(branch.as_mut()), layer);
+                }
+            }
+            ExtractStyleProp::Enum { map, .. } => {
+                for props in map.values_mut() {
+                    place_in_layer(props, layer);
+                }
+            }
+            ExtractStyleProp::MemberExpression { map, .. } => {
+                for prop in map.values_mut() {
+                    place_in_layer(std::slice::from_mut(prop.as_mut()), layer);
+                }
+            }
+            // A `typography` preset is shared by every use, so it stays out of layers
+            ExtractStyleProp::Static(_)
+            | ExtractStyleProp::Expression { .. }
+            | ExtractStyleProp::Unreadable { .. } => {}
+        }
+    }
+}
+
+const TYPOGRAPHY_PROPERTIES: [&str; 5] = [
+    "font-family",
+    "font-size",
+    "font-weight",
+    "line-height",
+    "letter-spacing",
+];
+
+/// `(selector, typography property)` -> breakpoint its declaration starts at
+type Declared = BTreeMap<(Option<StyleSelector>, &'static str), u8>;
+
+/// Typography properties `props` always declare, per selector
+fn declared_from(props: &[ExtractStyleProp<'_>]) -> Declared {
+    let mut declared = Declared::new();
+    for prop in props {
+        let found = match prop {
+            ExtractStyleProp::Static(value) => {
+                let (property, level, selector) = match value {
+                    ExtractStyleValue::Static(style) => {
+                        (style.property(), style.level(), style.selector())
+                    }
+                    ExtractStyleValue::Dynamic(style) => {
+                        (style.property(), style.level(), style.selector())
+                    }
+                    _ => continue,
+                };
+                let Some(property) = TYPOGRAPHY_PROPERTIES.into_iter().find(|p| *p == property)
+                else {
+                    continue;
+                };
+                Declared::from([((selector.cloned(), property), level)])
+            }
+            ExtractStyleProp::StaticArray(props) => declared_from(props),
+            ExtractStyleProp::Conditional {
+                consequent,
+                alternate,
+                ..
+            } => declared_by_every([consequent, alternate].map(|branch| {
+                branch.as_deref().map_or_else(Declared::new, |branch| {
+                    declared_from(std::slice::from_ref(branch))
+                })
+            })),
+            ExtractStyleProp::Enum { map, .. } => {
+                declared_by_every(map.values().map(|props| declared_from(props)))
+            }
+            ExtractStyleProp::MemberExpression { map, .. } => declared_by_every(
+                map.values()
+                    .map(|prop| declared_from(std::slice::from_ref(prop.as_ref()))),
+            ),
+            ExtractStyleProp::Expression { .. } | ExtractStyleProp::Unreadable { .. } => continue,
+        };
+        for (key, level) in found {
+            declared
+                .entry(key)
+                .and_modify(|from| *from = (*from).min(level))
+                .or_insert(level);
+        }
+    }
+    declared
+}
+
+/// What every alternative declares, from the widest breakpoint one starts at
+fn declared_by_every(alternatives: impl IntoIterator<Item = Declared>) -> Declared {
+    let mut alternatives = alternatives.into_iter();
+    let Some(mut common) = alternatives.next() else {
+        return Declared::new();
+    };
+    for alternative in alternatives {
+        common = common
+            .into_iter()
+            .filter_map(|(key, level)| alternative.get(&key).map(|other| (key, level.max(*other))))
+            .collect();
+    }
+    common
+}
+
+/// A `typography` preset gives way to the declarations written beside it: under
+/// the same selector it skips each of their properties from the breakpoint the
+/// written one starts at, so a wider breakpoint of the preset cannot win.
+pub(crate) fn yield_typography(props: &mut [ExtractStyleProp<'_>]) {
+    let declared = declared_from(props);
+    if !declared.is_empty() {
+        skip_declared(props, &declared);
+    }
+}
+
+fn skip_declared(props: &mut [ExtractStyleProp<'_>], declared: &Declared) {
+    for prop in props {
+        match prop {
+            ExtractStyleProp::Static(ExtractStyleValue::Static(style))
+                if style.property() == "typography" =>
+            {
+                let skipped: Vec<String> = declared
+                    .iter()
+                    .filter(|((selector, _), _)| selector.as_ref() == style.selector())
+                    .map(|((_, property), level)| format!("{property}:{level}"))
+                    .collect();
+                if !skipped.is_empty() {
+                    style.value = format!("{}|{}", style.value, skipped.join(","));
+                }
+            }
+            ExtractStyleProp::StaticArray(props) => skip_declared(props, declared),
+            ExtractStyleProp::Conditional {
+                consequent,
+                alternate,
+                ..
+            } => {
+                for branch in [consequent, alternate].into_iter().flatten() {
+                    skip_declared(std::slice::from_mut(branch.as_mut()), declared);
+                }
+            }
+            ExtractStyleProp::Enum { map, .. } => {
+                for props in map.values_mut() {
+                    skip_declared(props, declared);
+                }
+            }
+            ExtractStyleProp::MemberExpression { map, .. } => {
+                for prop in map.values_mut() {
+                    skip_declared(std::slice::from_mut(prop.as_mut()), declared);
+                }
+            }
+            ExtractStyleProp::Static(_)
+            | ExtractStyleProp::Expression { .. }
+            | ExtractStyleProp::Unreadable { .. } => {}
         }
     }
 }
@@ -976,6 +1370,16 @@ mod tests {
     use oxc_ast::ast::Statement;
     use oxc_parser::Parser;
     use oxc_span::SourceType;
+
+    #[test]
+    fn test_declared_by_every() {
+        assert!(declared_by_every(std::iter::empty()).is_empty());
+        let declared = declared_by_every([
+            Declared::from([((None, "font-size"), 0), ((None, "line-height"), 1)]),
+            Declared::from([((None, "font-size"), 2)]),
+        ]);
+        assert_eq!(declared, Declared::from([((None, "font-size"), 2)]));
+    }
 
     #[test]
     fn test_extract_selector_object_styles() {
