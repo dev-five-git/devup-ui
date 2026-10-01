@@ -71,6 +71,15 @@ use rustc_hash::{FxHashMap, FxHashSet};
 use std::borrow::Cow;
 use std::rc::Rc;
 
+/// `false ?? right` is `false`, which composes nothing
+fn coalesce_keeps_left(logical: &oxc_ast::ast::LogicalExpression<'_>) -> bool {
+    logical.operator == LogicalOperator::Coalesce
+        && matches!(
+            unwrap_syntax_only(&logical.left),
+            Expression::BooleanLiteral(_)
+        )
+}
+
 fn property_stays(property: &ObjectProperty<'_>) -> bool {
     property
         .key
@@ -414,19 +423,8 @@ impl<'a> DevupVisitor<'a> {
                         parts.push(KnownPart::Styles(side));
                         Some(())
                     }
-                    KnownSide::Empty => {
-                        // `false ?? right` is `false`, which composes nothing
-                        let left_stays = logical.operator == LogicalOperator::Coalesce
-                            && matches!(
-                                unwrap_syntax_only(&logical.left),
-                                Expression::BooleanLiteral(_)
-                            );
-                        if left_stays {
-                            Some(())
-                        } else {
-                            self.known_parts(&logical.right, parts)
-                        }
-                    }
+                    KnownSide::Empty if coalesce_keeps_left(logical) => Some(()),
+                    KnownSide::Empty => self.known_parts(&logical.right, parts),
                     KnownSide::Class(left) => {
                         let test = if logical.operator == LogicalOperator::Or {
                             clone(&left)
