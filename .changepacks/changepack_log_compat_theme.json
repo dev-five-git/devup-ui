@@ -1,0 +1,8 @@
+{
+  "changes": {
+    "packages/react/package.json": "Patch",
+    "bindings/devup-ui-wasm/package.json": "Patch"
+  },
+  "note": "The styled-components and Emotion compat ThemeProvider now gives its theme through React context: useTheme, withTheme and the new ThemeConsumer return the real theme object (an object merged over the outer theme, or what a theme function makes of it) instead of an empty Proxy of var() references, withTheme forwards refs, lets a caller's theme win and sets a displayName. Styles keep reading the CSS variables the provider declares. styled-components v6.4 createTheme is available from the compat entry, and ThemeConsumer and createTheme imports are redirected there instead of staying a runtime dependency on styled-components",
+  "date": "2026-10-01T00:00:00.000Z"
+}
