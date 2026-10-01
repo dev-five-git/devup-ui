@@ -14868,6 +14868,8 @@ export const a = {element}"
     #[case("stylex.props(s.red, ...rest)", "rest")]
     #[case("stylex.props(s.red, s.fn(1))", "--")]
     #[case("stylex.props(s.red, s.inc)", "color-0-red--255")]
+    #[case("stylex.props(on && s.reset)", "{ className: \"\" }")]
+    #[case("stylex.props([s.red, rest])", "[rest].flat(Infinity)")]
     #[serial]
     fn test_stylex_props_merge_keys(#[case] call: &str, #[case] expected: &str) {
         let code = readable_code(&format!(
