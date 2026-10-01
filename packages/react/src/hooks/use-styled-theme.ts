@@ -1,15 +1,16 @@
-import type { StyledTheme } from '../utils/theme-vars'
-import { createThemeAccessor } from '../utils/theme-vars'
+'use client'
 
-const themeAccessor = createThemeAccessor()
+import { useContext } from 'react'
+
+import { StyledThemeContext } from '../utils/theme-context'
+import type { StyledTheme } from '../utils/theme-vars'
 
 /**
- * styled-components compatible `useTheme`.
+ * styled-components and Emotion compatible `useTheme`: the theme object the
+ * nearest `ThemeProvider` gives, or an empty object without one.
  *
  * Distinct from devup-ui's own `useTheme`, which reports the active theme name.
- * This one hands back CSS-variable references, matching what `ThemeProvider`
- * declares and what the extractor inlines into styles.
  */
 export function useStyledTheme<T extends StyledTheme = StyledTheme>(): T {
-  return themeAccessor as T
+  return (useContext(StyledThemeContext) ?? {}) as T
 }
