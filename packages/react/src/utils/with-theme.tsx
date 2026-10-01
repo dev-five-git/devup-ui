@@ -1,6 +1,6 @@
 'use client'
 
-import type { ComponentType, ReactNode, Ref } from 'react'
+import type { ComponentType, PropsWithoutRef, ReactNode, Ref } from 'react'
 import { forwardRef, useContext } from 'react'
 
 import { StyledThemeContext } from './theme-context'
@@ -14,15 +14,16 @@ export function withTheme<P extends { theme?: StyledTheme }>(
   Component: ComponentType<P>,
 ) {
   const WithTheme = forwardRef(function WithTheme(
-    props: Omit<P, 'theme'> & { theme?: StyledTheme },
+    props: PropsWithoutRef<Omit<P, 'theme'> & { theme?: StyledTheme }>,
     ref: Ref<unknown>,
   ) {
     const context = useContext(StyledThemeContext)
+    const own = (props as unknown as { theme?: StyledTheme }).theme
     return (
       <Component
-        {...(props as P)}
+        {...(props as unknown as P)}
         ref={ref}
-        theme={props.theme ?? context ?? {}}
+        theme={own ?? context ?? {}}
       />
     )
   })
