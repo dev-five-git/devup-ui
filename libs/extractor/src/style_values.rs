@@ -59,6 +59,17 @@ impl StyleValues {
         self.values.insert(symbol, value);
     }
 
+    /// The binding `expression` reads, when it reads one
+    pub fn symbol(&self, expression: &Expression<'_>) -> Option<SymbolId> {
+        let Expression::Identifier(identifier) = expression else {
+            return None;
+        };
+        self.scoping
+            .as_ref()?
+            .get_reference(identifier.reference_id.get()?)
+            .symbol_id()
+    }
+
     /// The styles behind the `css()` class `expression` reads
     pub fn styles(&self, expression: &Expression<'_>) -> Option<&[ExtractStyleValue]> {
         let Expression::Identifier(identifier) = expression else {

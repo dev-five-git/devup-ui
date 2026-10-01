@@ -14738,21 +14738,85 @@ export const result = {call}
 
     #[test]
     #[serial]
-    fn test_css_composing_reports_runtime_values() {
+    fn test_styled_extension_composes_base() {
         let code = readable_code(
-            "import {css} from '@devup-ui/core'
-const base = css({ color: 'red' })
-export const a = css(base, { color: tone })
-export const b = css(base, { [key]: 'x', styleOrder: 2 })
-export const c = css(base, getStyles())
-export const d = css(base, { positioning: side, styleOrder: 2 })",
+            "import {styled} from '@devup-ui/core'
+const Base = styled.button`color: red; background: white; &:hover { color: red; }`
+const Ext = styled(Base)`color: blue; &:hover { color: blue; }`
+const Obj = styled.div({ color: 'red', p: 2 })
+const ObjExt = styled(Obj)({ color: 'blue' })
+const Twice = styled(ObjExt, { m: 1 })
+const Runtime = styled(make())({ color: 'red' })
+const FromRuntime = styled(Runtime)({ color: 'blue' })
+let Changing = styled.div({ color: 'red' })
+const FromChanging = styled(Changing)({ color: 'blue' })",
         );
-        assert!(!code.contains("test.tsx:6:"), "{code}");
-        assert!(code.contains("`css()` cannot use `tone`"), "{code}");
-        assert!(
-            code.contains("Cannot compose `\"color-0-red--255\", getStyles()`"),
-            "{code}"
+        for expected in [
+            "const Ext = ({ style, className, ...rest }) => <button {...rest} className={[\"color-0-blue-_a__c_hover-255 color-0-blue--255 background-0-white--255\", className]",
+            "const ObjExt = ({ style, className, ...rest }) => <div {...rest} className={[\"color-0-blue--255 padding-0-8px--255\", className]",
+            "const Twice = ({ style, className, ...rest }) => <div {...rest} className={[\"margin-0-4px--255 color-0-blue--255 padding-0-8px--255\", className]",
+            "const FromRuntime = ({ style, className, ...rest }) => <Runtime {...rest}",
+            "const FromChanging = ({ style, className, ...rest }) => <Changing {...rest}",
+        ] {
+            assert!(code.contains(expected), "{expected}\n{code}");
+        }
+    }
+
+    #[test]
+    #[serial]
+    fn test_styled_attrs_merge_in_order() {
+        let code = readable_code(
+            "import {styled} from '@devup-ui/core'
+const Base = styled.input.attrs({ type: 'text', title: 'base' })({ color: 'red' })
+const Ext = styled(Base).attrs({ type: 'password' })({ color: 'blue' })
+const X = styled.div.attrs({ className: 'from-attrs', style: { color: 'green' } })({ color: 'red' })
+const F = styled.div.attrs((p) => ({ id: p.id }))({ color: 'red' })
+const V = styled.div.attrs(extra)({ color: 'red' })",
         );
+        for expected in [
+            "...{\n\t\t...__devupProps,\n\t\t...{\n\t\t\ttype: \"text\",\n\t\t\ttitle: \"base\"\n\t\t}\n\t},\n\t...{ type: \"password\" }",
+            "className: [__devupContext.className, __devupAttrs.className].filter(Boolean).join(\" \") || undefined",
+            "className: [__devupContext.className, __devupProps.className].filter(Boolean).join(\" \") || undefined",
+            "...__devupContext.style,\n\t\t...__devupAttrs.style",
+            "((p) => ({ id: p.id }))(__devupContext)",
+            "typeof extra === \"function\" ? extra(__devupContext) : extra",
+        ] {
+            assert!(code.contains(expected), "{expected}\n{code}");
+        }
+    }
+
+    #[rstest]
+    #[case(
+        "<Box className=\"direct\" style={{ opacity: 1 }} {...{ className: 'spread', style: { opacity: 2 } }} />",
+        "className=\"spread\" style={{ opacity: 2 }}"
+    )]
+    #[case(
+        "<Box {...{ className: 'spread', style: { opacity: 2 } }} className=\"direct\" style={{ opacity: 1 }} />",
+        "className=\"direct\" style={{ opacity: 1 }}"
+    )]
+    #[case(
+        "<Box className=\"direct\" style={{ opacity: 1 }} {...rest} />",
+        "className={(\"className\" in Object(rest) ? rest.className : \"direct\") || \"\"} style={\"style\" in Object(rest) ? rest.style : { opacity: 1 }}"
+    )]
+    #[case(
+        "<Box className=\"direct\" {...{ title: 'x' }} {...{ ...rest, className: 'last' }} />",
+        "className=\"last\""
+    )]
+    #[case(
+        "<Box className=\"direct\" {...{ className: 'first', ...rest }} />",
+        "className={{\n\tclassName: \"first\",\n\t...rest\n}.className || \"\"}"
+    )]
+    #[case(
+        "<Box {...rest} {...more} />",
+        "className={(\"className\" in Object(more) ? more.className : rest?.className) || \"\"}"
+    )]
+    #[serial]
+    fn test_jsx_props_written_later_win(#[case] element: &str, #[case] expected: &str) {
+        let code = readable_code(&format!(
+            "import {{Box}} from '@devup-ui/core'
+export const a = {element}"
+        ));
+        assert!(code.contains(expected), "{expected}\n{code}");
     }
 
     // The styles of a `css()` class another module exports compose as well

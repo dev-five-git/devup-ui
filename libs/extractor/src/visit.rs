@@ -21,7 +21,10 @@ use crate::extractor::{
         LiteralHandling, extract_style_from_expression, flatten_spreads,
     },
     extract_style_from_jsx::extract_style_from_jsx,
-    extract_style_from_styled::{extract_style_from_styled, take_styled_modifiers},
+    extract_style_from_styled::{
+        StyledDefinition, StyledExtraction, extended, extract_style_from_styled,
+        take_styled_modifiers,
+    },
 };
 use crate::gen_class_name::{gen_class_names, merge_expression_for_class_name};
 use crate::prop_modify_utils::{convert_class_name, modify_prop_object, modify_props};
@@ -195,6 +198,12 @@ pub struct DevupVisitor<'a> {
     css_styles: Option<(u32, Vec<ExtractStyleValue>)>,
     /// The styles behind `css()` classes the file imports, by binding
     imported_css: FxHashMap<String, Vec<ExtractStyleValue>>,
+    /// The styled component just built, by where it starts, for the `const`
+    /// it initializes
+    pending_styled: Option<(u32, StyledDefinition<'a>)>,
+    /// The styled components the file binds to a `const`, which a component
+    /// extending one renders in its place
+    styled_definitions: FxHashMap<oxc_syntax::symbol::SymbolId, StyledDefinition<'a>>,
     /// What the build compiles away: the imports of the package it removes,
     /// and the bindings aliasing them, which only its calls and elements read
     compiled_names: FxHashSet<String>,
@@ -616,6 +625,8 @@ impl<'a> DevupVisitor<'a> {
             runtime_types: 0,
             style_values: crate::style_values::StyleValues::default(),
             css_styles: None,
+            pending_styled: None,
+            styled_definitions: FxHashMap::default(),
             imported_css: FxHashMap::default(),
             compiled_names: FxHashSet::default(),
             unknown_bindings: crate::imported_constants::Unknown::default(),
@@ -739,7 +750,10 @@ impl<'a> DevupVisitor<'a> {
                 || import.source.value == self.compat_package.as_str())
                 && import.specifiers.iter().flatten().any(|specifier| match specifier {
                     ImportSpecifier(specifier) => {
-                        matches!(specifier.imported.name().as_str(), "css" | "keyframes")
+                        matches!(
+                            specifier.imported.name().as_str(),
+                            "css" | "keyframes" | "styled"
+                        )
                     }
                     _ => true,
                 }))
@@ -1480,12 +1494,23 @@ impl<'a> VisitMut<'a> for DevupVisitor<'a> {
                     self.unknown_arguments("styled", &call.arguments);
                     self.changed_arguments("styled", &call.arguments);
                 }
-                let (result, new_expr, errors) = extract_style_from_styled(
+                let inherited = extended(it)
+                    .and_then(|base| self.style_values.symbol(base))
+                    .and_then(|symbol| self.styled_definitions.get(&symbol))
+                    .filter(|definition| definition.extendable());
+                let start = it.span().start;
+                let StyledExtraction {
+                    result,
+                    expression,
+                    errors,
+                    definition,
+                } = extract_style_from_styled(
                     &self.ast,
                     it,
                     self.split_filename.as_deref(),
                     &self.imports,
                     &attrs,
+                    inherited,
                 );
                 self.errors.extend(errors);
                 self.styles.extend(
@@ -1494,7 +1519,8 @@ impl<'a> VisitMut<'a> for DevupVisitor<'a> {
                         .into_iter()
                         .flat_map(ExtractStyleProp::into_extract),
                 );
-                *it = new_expr;
+                self.pending_styled = definition.map(|definition| (start, definition));
+                *it = expression;
             }
         }
 
@@ -2477,8 +2503,16 @@ impl<'a> VisitMut<'a> for DevupVisitor<'a> {
         .filter(|util| matches!(util.as_ref(), UtilType::Css | UtilType::Keyframes))
         .and_then(|util| Some((util, self.style_values.constant(&it.id)?)));
         let start = it.init.as_ref().map(|init| init.span().start);
+        let styled_binding = self.style_values.constant(&it.id);
 
         walk_variable_declarator(self, it);
+
+        if let Some((at, definition)) = self.pending_styled.take()
+            && Some(at) == start
+            && let Some(symbol) = styled_binding
+        {
+            self.styled_definitions.insert(symbol, definition);
+        }
 
         if let Some((util, symbol)) = style_result
             && let Some(Expression::StringLiteral(value)) = &it.init
