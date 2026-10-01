@@ -1084,9 +1084,6 @@ impl<'p, 'a> ModuleScope<'p, 'a> {
             &None,
             LiteralHandling::ExpandResponsiveThemeToken,
         );
-        if crate::utils::runtime_value(&styles).is_some() {
-            return None;
-        }
         if let Some(order) = style_order {
             for prop in &mut styles {
                 set_prop_order(prop, order);

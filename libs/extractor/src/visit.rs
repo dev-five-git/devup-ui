@@ -414,16 +414,19 @@ impl<'a> DevupVisitor<'a> {
                         parts.push(KnownPart::Styles(side));
                         Some(())
                     }
-                    KnownSide::Empty
-                        if logical.operator == LogicalOperator::Coalesce
+                    KnownSide::Empty => {
+                        // `false ?? right` is `false`, which composes nothing
+                        let left_stays = logical.operator == LogicalOperator::Coalesce
                             && matches!(
                                 unwrap_syntax_only(&logical.left),
                                 Expression::BooleanLiteral(_)
-                            ) =>
-                    {
-                        Some(())
+                            );
+                        if left_stays {
+                            Some(())
+                        } else {
+                            self.known_parts(&logical.right, parts)
+                        }
                     }
-                    KnownSide::Empty => self.known_parts(&logical.right, parts),
                     KnownSide::Class(left) => {
                         let test = if logical.operator == LogicalOperator::Or {
                             clone(&left)

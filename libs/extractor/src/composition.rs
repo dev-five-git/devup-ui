@@ -193,8 +193,8 @@ impl<'a> Composition<'a> {
         for (_, choice) in &self.entries {
             match choice {
                 Choice::Atom(value) => values.push(value.clone()),
-                Choice::Empty => {}
-                Choice::Conditional { .. } => return None,
+                // A key is empty only under a condition
+                Choice::Empty | Choice::Conditional { .. } => return None,
             }
         }
         Some(values)

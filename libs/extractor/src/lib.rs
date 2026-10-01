@@ -14703,6 +14703,14 @@ const Button = styled.button({ bg: 'red' })
         "css(yellow, { color: ['x', 'y'][idx], styleOrder: 2 })",
         "`color-0-red-_a__c_hover-255 color-0-yellow--255 ${{\n\t\"0\": \"color-0-x--2\",\n\t\"1\": \"color-0-y--2\"\n}[idx] || \"\"}`"
     )]
+    #[case(
+        "css(yellow, { color: 'pink' } || azure)",
+        r#""color-0-red-_a__c_hover-255 color-0-pink--255""#
+    )]
+    #[case(
+        "css(yellow, undefined ?? azure)",
+        r#""color-0-red-_a__c_hover-255 background-0-black--255 color-0-azure--255""#
+    )]
     #[serial]
     fn test_css_composes_known_classes(#[case] call: &str, #[case] expected: &str) {
         let code = readable_code(&format!(
@@ -14731,9 +14739,16 @@ export const result = {call}
             "import {css} from '@devup-ui/core'
 const base = css({ color: 'red' })
 export const a = css(base, { color: tone })
-export const b = css(base, { [key]: 'x', styleOrder: 2 })",
+export const b = css(base, { [key]: 'x', styleOrder: 2 })
+export const c = css(base, getStyles())
+export const d = css(base, { positioning: side, styleOrder: 2 })",
         );
+        assert!(!code.contains("test.tsx:6:"), "{code}");
         assert!(code.contains("`css()` cannot use `tone`"), "{code}");
+        assert!(
+            code.contains("Cannot compose `\"color-0-red--255\", getStyles()`"),
+            "{code}"
+        );
     }
 
     // The styles of a `css()` class another module exports compose as well
@@ -14754,17 +14769,20 @@ export const text = css`color: blue;`;
 export const runtime = css({ color: globalThis.tone });
 export const listed = css([{ color: 'b' }]);
 export const spaced = Devup.css({ color: 'c' });
-export const fade = keyframes({ from: { opacity: 0 } });",
+export const fade = keyframes({ from: { opacity: 0 } });
+export const called = Devup({ color: 'e' });
+export const ordered = css({ color: 'f', m: 2, styleOrder: 2 });",
         )];
         let resolver = memory_resolver(modules);
         css::debug::set_debug(true);
         let output = extract_with_modules(
             "/src/App.tsx",
             "import { css } from '@devup-ui/react';
-import { base, danger, twice, text, runtime, listed, spaced, fade } from './styles';
+import { base, danger, twice, text, runtime, listed, spaced, fade, called, ordered } from './styles';
 export const a = css(base, danger);
 export const b = css(danger, base, { m: 1 });
-export const c = css(twice, text, runtime, listed, spaced, fade);",
+export const c = css(twice, text, runtime, listed, spaced, fade);
+export const d = css(ordered, danger, called);",
             ExtractOption {
                 import_aliases: HashMap::from([(
                     "@emotion/css".to_string(),
@@ -14781,6 +14799,7 @@ export const c = css(twice, text, runtime, listed, spaced, fade);",
             r#"export const a = "color-0-red-_a__c_hover-255-a color-0-crimson--255-a";"#,
             r#"export const b = "color-0-red-_a__c_hover-255-a color-0-teal--255-a margin-0-4px--255-a";"#,
             "export const c = `${twice} ${text} ${runtime} ${listed} ${spaced} ${fade}`;",
+            "export const d = `margin-0-8px--2-a color-0-crimson--255-a ${called}`;",
         ] {
             assert!(
                 output.code.contains(expected),
