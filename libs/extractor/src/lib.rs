@@ -14825,6 +14825,68 @@ export const a = {element}"
         assert!(code.contains(expected), "{expected}\n{code}");
     }
 
+    // StyleX merges namespaces key by key: a later key wins and `null` removes it
+    #[rstest]
+    #[case("stylex.props(s.red, s.blue)", "{ className: \"color-0-blue--255\" }")]
+    #[case("stylex.props(s.blue, s.red)", "{ className: \"color-0-red--255\" }")]
+    #[case("stylex.props(s.red, s.reset)", "{ className: \"\" }")]
+    #[case(
+        "stylex.attrs(s.both, s.blue)",
+        "{ class: \"opacity-0-_d_5--255 color-0-blue--255\" }"
+    )]
+    #[case(
+        "stylex.props([s.red, [s.blue]], false, null, undefined)",
+        "{ className: \"color-0-blue--255\" }"
+    )]
+    #[case(
+        "stylex.props(s.red, on && s.blue)",
+        "{ className: on ? \"color-0-blue--255\" : \"color-0-red--255\" }"
+    )]
+    #[case(
+        "stylex.props(s.red, on && s.reset)",
+        "{ className: on ? \"\" : \"color-0-red--255\" }"
+    )]
+    #[case(
+        "stylex.props(on ? s.red : s.blue)",
+        "{ className: on ? \"color-0-red--255\" : \"color-0-blue--255\" }"
+    )]
+    #[case(
+        "stylex.props(on && s.red, on && s.red)",
+        "{ className: on ? \"color-0-red--255\" : on ? \"color-0-red--255\" : \"\" }"
+    )]
+    #[case(
+        "stylex.props(s['blue'], s.hover)",
+        "{ className: \"color-0-blue--255 color-0-red-_a__c_hover-255\" }"
+    )]
+    #[case("stylex.props(s.red, other.x)", "other.x")]
+    #[case("stylex.props(s.red, s[key])", "s[key]")]
+    #[case(
+        "stylex.props(s.red, s.missing)",
+        "{ className: \"color-0-red--255\" }"
+    )]
+    #[case("stylex.props(s.red, (cond).x)", "[cond.x]")]
+    #[case("stylex.props(s.red, ...rest)", "rest")]
+    #[case("stylex.props(s.red, s.fn(1))", "--")]
+    #[case("stylex.props(s.red, s.inc)", "color-0-red--255")]
+    #[serial]
+    fn test_stylex_props_merge_keys(#[case] call: &str, #[case] expected: &str) {
+        let code = readable_code(&format!(
+            "import stylex from '@stylexjs/stylex'
+const s0 = stylex.create({{ a: {{ margin: '1px' }} }})
+const s = stylex.create({{
+  red: {{ color: 'red' }},
+  blue: {{ color: 'blue' }},
+  reset: {{ color: null }},
+  both: {{ color: 'red', opacity: 0.5 }},
+  hover: {{ ':hover': {{ color: 'red' }} }},
+  fn: (h) => ({{ height: h }}),
+  inc: {{ ...stylex.include(s0.a), color: 'green' }},
+}})
+export const result = {call}"
+        ));
+        assert!(code.contains(expected), "{expected}\n{code}");
+    }
+
     #[test]
     #[serial]
     fn test_css_composing_reports_runtime_values() {
