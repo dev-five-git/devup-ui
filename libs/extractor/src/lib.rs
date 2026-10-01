@@ -12,8 +12,10 @@ mod imported_constants;
 mod module_loader;
 mod mutations;
 mod prop_modify_utils;
+mod prop_valid;
 mod source_map;
 mod style_values;
+mod styled_reads;
 mod stylex;
 mod tailwind;
 mod util_type;
@@ -14753,12 +14755,12 @@ const FromChanging = styled(Changing)({ color: 'blue' })
 const Ordered = styled.div({ color: 'red', styleOrder: 3 })",
         );
         for expected in [
-            "const Ext = ({ style, className, as: DevupAs = \"button\", forwardedAs, ...rest }) => <DevupAs {...rest} as={forwardedAs} className={[\"color-0-blue-_a__c_hover-255 color-0-blue--255 background-0-white--255\", className]",
-            "const ObjExt = ({ style, className, as: DevupAs = \"div\", forwardedAs, ...rest }) => <DevupAs {...rest} as={forwardedAs} className={[\"color-0-blue--255 padding-0-8px--255\", className]",
-            "const Twice = ({ style, className, as: DevupAs = \"div\", forwardedAs, ...rest }) => <DevupAs {...rest} as={forwardedAs} className={[\"margin-0-4px--255 color-0-blue--255 padding-0-8px--255\", className]",
+            "const Ext = ({ style, className, as: DevupAs = \"button\", forwardedAs, ...rest }) => <DevupAs {...(({ \"theme\": __devupOmit0, ...__devupDom }) => __devupDom)(rest)} as={forwardedAs} className={[\"color-0-blue-_a__c_hover-255 color-0-blue--255 background-0-white--255\", className]",
+            "const ObjExt = ({ style, className, as: DevupAs = \"div\", forwardedAs, ...rest }) => <DevupAs {...(({ \"theme\": __devupOmit0, ...__devupDom }) => __devupDom)(rest)} as={forwardedAs} className={[\"color-0-blue--255 padding-0-8px--255\", className]",
+            "const Twice = ({ style, className, as: DevupAs = \"div\", forwardedAs, ...rest }) => <DevupAs {...(({ \"theme\": __devupOmit0, ...__devupDom }) => __devupDom)(rest)} as={forwardedAs} className={[\"margin-0-4px--255 color-0-blue--255 padding-0-8px--255\", className]",
             "const FromRuntime = ({ style, className, as: DevupAs = Runtime, forwardedAs, ...rest }) => <DevupAs {...rest}",
             "const FromChanging = ({ style, className, as: DevupAs = Changing, forwardedAs, ...rest }) => <DevupAs {...rest}",
-            "const Ordered = ({ style, className, as: DevupAs = \"div\", forwardedAs, ...rest }) => <DevupAs {...rest} as={forwardedAs} className={[\"color-0-red--3\", className]",
+            "const Ordered = ({ style, className, as: DevupAs = \"div\", forwardedAs, ...rest }) => <DevupAs {...(({ \"theme\": __devupOmit0, ...__devupDom }) => __devupDom)(rest)} as={forwardedAs} className={[\"color-0-red--3\", className]",
         ] {
             assert!(code.contains(expected), "{expected}\n{code}");
         }
@@ -14781,7 +14783,7 @@ export const Other = other.withComponent('aside')
 export const a = <Section as=\"a\" forwardedAs=\"b\" />",
         );
         for expected in [
-            "export const Aside = (__devupProps) => (({ style, className, as: DevupAs = \"aside\", forwardedAs, ...rest }) => <DevupAs {...rest} as={forwardedAs} className={[\"color-0-red--255\", className]",
+            "export const Aside = (__devupProps) => (({ style, className, as: DevupAs = \"aside\", forwardedAs, ...rest }) => <DevupAs {...(({ \"theme\": __devupOmit0, ...__devupDom }) => __devupDom)(rest)} as={forwardedAs} className={[\"color-0-red--255\", className]",
             "as: DevupAs = Link,",
             "as: DevupAs = motion.div,",
             "export const Again = (__devupProps) => (({ style, className, as: DevupAs = \"nav\",",
@@ -14792,6 +14794,61 @@ export const a = <Section as=\"a\" forwardedAs=\"b\" />",
         ] {
             assert!(code.contains(expected), "{expected}\n{code}");
         }
+    }
+
+    // A styled component keeps the props its styles read, `$` props and `theme`
+    // away from the tag, follows `shouldForwardProp` as the build evaluates it,
+    // and an element using it drops what it neither reads nor passes on
+    #[test]
+    #[serial]
+    fn test_styled_prop_forwarding() {
+        let code = readable_code(
+            "import {styled} from '@devup-ui/core'
+import isPropValid from '@emotion/is-prop-valid'
+const A = styled('h1', { shouldForwardProp: (prop) => prop !== 'tone' })({ color: 'red' })
+const B = styled.div`color: ${(p) => p.$c}; background: ${(p) => p.tone};`
+const C = styled.div.withConfig({ shouldForwardProp: (prop, valid) => valid(prop) && !['x', 'y'].includes(prop) })({ color: 'red' })
+const D = styled('p', { shouldForwardProp: (prop) => isPropValid(prop) || prop.startsWith('data-') })({ color: 'red' })
+const E = styled('p', { shouldForwardProp: () => true })({ color: 'red' })
+const F = styled(Link)`color: ${(p) => p.$c};`
+const G = styled('p', { shouldForwardProp: function (prop) { return prop === 'id' } })({ color: 'red' })
+const H = styled.div`color: ${function (p) { return p.c }};`
+const I = styled.div`color: ${({ tone, ...more }) => tone};`
+const J = styled.div`color: ${(p) => p[key]}; margin: ${([a]) => a}; padding: ${() => 1};`
+export const a = <A tone=\"loud\" invalidThing=\"x\" data-ok=\"yes\" />
+export const b = <B tone=\"x\" $c=\"red\" theme={{}} aria-label=\"ok\" junk=\"j\" {...rest} />
+export const j = <J junk=\"j\" />",
+        );
+        for expected in [
+            "{...(({ \"tone\": __devupOmit0, ...__devupDom }) => __devupDom)(rest)}",
+            "{...(({ \"$c\": __devupOmit0, \"tone\": __devupOmit1, \"theme\": __devupOmit2, ...__devupDom }) => __devupDom)(rest)}",
+            "{...(({ \"x\": __devupOmit0, \"y\": __devupOmit1, \"theme\": __devupOmit2, ...__devupDom }) => __devupDom)(rest)}",
+            "{...(({ \"$c\": __devupOmit0, ...__devupDom }) => __devupDom)(rest)}",
+            "export const a = <A invalidThing=\"x\" data-ok=\"yes\" />",
+            "export const b = <B tone=\"x\" $c=\"red\" aria-label=\"ok\" {...rest} />",
+            "export const j = <J junk=\"j\" />",
+        ] {
+            assert!(code.contains(expected), "{expected}\n{code}");
+        }
+        let error = readable_code(
+            "import {styled} from '@devup-ui/core'
+const A = styled('h1', { shouldForwardProp: (prop) => allowed.has(prop) })({ color: 'red' })
+const B = styled('h1', { shouldForwardProp: (prop) => prop === other })({ color: 'red' })
+const C = styled('h1', { shouldForwardProp: (prop) => prop > 'a' })({ color: 'red' })
+const D = styled('h1', { shouldForwardProp: (prop) => prop ?? 'a' })({ color: 'red' })
+const E = styled('h1', { shouldForwardProp: (prop) => { const x = 1; return x } })({ color: 'red' })
+const F = styled('h1', { shouldForwardProp: check })({ color: 'red' })
+const G = styled('h1', { shouldForwardProp: ({ a }) => a })({ color: 'red' })
+const H = styled('h1', { shouldForwardProp: (prop) => [x].includes(prop) })({ color: 'red' })
+const I = styled('h1', { shouldForwardProp: (prop) => list.includes(prop) })({ color: 'red' })
+const J = styled('h1', { shouldForwardProp: (prop) => prop.endsWith('a') })({ color: 'red' })
+const K = styled('h1', { [k]: 1, ...o, shouldForwardProp: (prop) => valid(prop, 1) })({ color: 'red' })",
+        );
+        assert!(
+            error.contains("`shouldForwardProp` must be a function"),
+            "{error}"
+        );
+        assert!(error.contains("allowed.has(prop)"), "{error}");
     }
 
     #[test]

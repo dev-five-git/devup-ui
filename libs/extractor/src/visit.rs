@@ -22,7 +22,7 @@ use crate::extractor::{
     },
     extract_style_from_jsx::extract_style_from_jsx,
     extract_style_from_styled::{
-        StyledDefinition, StyledExtraction, extended, extract_style_from_styled,
+        StyledDefinition, StyledExtraction, extended, extract_style_from_styled, read_forward,
         take_styled_modifiers, with_component,
     },
 };
@@ -1434,9 +1434,12 @@ impl<'a> VisitMut<'a> for DevupVisitor<'a> {
             _ => None,
         };
         let styled_imports = &self.styled_imports;
-        let attrs = factory.map_or_else(Vec::new, |factory| {
-            take_styled_modifiers(&self.ast, factory, |name| styled_imports.contains(name))
-        });
+        let (attrs, mut configs) = factory.map_or_else(
+            || (Vec::new(), Vec::new()),
+            |factory| {
+                take_styled_modifiers(&self.ast, factory, |name| styled_imports.contains(name))
+            },
+        );
         let factory = match it {
             Expression::CallExpression(call) => Some(&mut call.callee),
             Expression::TaggedTemplateExpression(tag) => Some(&mut tag.tag),
@@ -1449,8 +1452,13 @@ impl<'a> VisitMut<'a> for DevupVisitor<'a> {
                 matches!(unwrap_syntax_only(options), Expression::ObjectExpression(_))
             })
             && matches!(&call.callee, Expression::Identifier(ident) if self.styled_imports.contains(ident.name.as_str()))
+            && let Some(options) = call.arguments.pop()
         {
-            call.arguments.truncate(1);
+            configs.insert(0, options.into_expression());
+        }
+        let (forward, forward_error) = read_forward(&configs.iter().collect::<Vec<_>>());
+        if let Some(error) = forward_error {
+            self.errors.push(error);
         }
         walk_expression(self, it);
 
@@ -1511,6 +1519,7 @@ impl<'a> VisitMut<'a> for DevupVisitor<'a> {
                     &self.imports,
                     &attrs,
                     inherited,
+                    forward,
                 );
                 self.errors.extend(errors);
                 self.styles.extend(
@@ -2685,6 +2694,25 @@ impl<'a> VisitMut<'a> for DevupVisitor<'a> {
     #[allow(clippy::set_contains_or_insert)]
     fn visit_jsx_element(&mut self, elem: &mut JSXElement<'a>) {
         walk_jsx_element(self, elem);
+
+        // A styled component the file defines drops the props it neither reads
+        // nor passes on, as styled-components and Emotion do at runtime
+        if let JSXElementName::IdentifierReference(name) = &elem.opening_element.name
+            && let Some(definition) = self
+                .style_values
+                .reference_symbol(name)
+                .and_then(|symbol| self.styled_definitions.get(&symbol))
+        {
+            elem.opening_element
+                .attributes
+                .retain(|attribute| match attribute {
+                    Attribute(attribute) => match &attribute.name {
+                        Identifier(name) => definition.takes(&name.name),
+                        oxc_ast::ast::JSXAttributeName::NamespacedName(_) => true,
+                    },
+                    JSXAttributeItem::SpreadAttribute(_) => true,
+                });
+        }
 
         // `<Global styles={...} />` is Emotion's spelling of a global stylesheet.
         // Lift the rules out and strip every attribute, leaving a component that

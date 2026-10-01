@@ -70,6 +70,17 @@ impl StyleValues {
             .symbol_id()
     }
 
+    /// The binding the JSX element name `identifier` reads
+    pub fn reference_symbol(
+        &self,
+        identifier: &oxc_ast::ast::IdentifierReference<'_>,
+    ) -> Option<SymbolId> {
+        self.scoping
+            .as_ref()?
+            .get_reference(identifier.reference_id.get()?)
+            .symbol_id()
+    }
+
     /// The styles behind the `css()` class `expression` reads
     pub fn styles(&self, expression: &Expression<'_>) -> Option<&[ExtractStyleValue]> {
         let Expression::Identifier(identifier) = expression else {
