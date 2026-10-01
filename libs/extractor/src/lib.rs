@@ -14749,7 +14749,8 @@ const Twice = styled(ObjExt, { m: 1 })
 const Runtime = styled(make())({ color: 'red' })
 const FromRuntime = styled(Runtime)({ color: 'blue' })
 let Changing = styled.div({ color: 'red' })
-const FromChanging = styled(Changing)({ color: 'blue' })",
+const FromChanging = styled(Changing)({ color: 'blue' })
+const Ordered = styled.div({ color: 'red', styleOrder: 3 })",
         );
         for expected in [
             "const Ext = ({ style, className, ...rest }) => <button {...rest} className={[\"color-0-blue-_a__c_hover-255 color-0-blue--255 background-0-white--255\", className]",
@@ -14757,6 +14758,7 @@ const FromChanging = styled(Changing)({ color: 'blue' })",
             "const Twice = ({ style, className, ...rest }) => <div {...rest} className={[\"margin-0-4px--255 color-0-blue--255 padding-0-8px--255\", className]",
             "const FromRuntime = ({ style, className, ...rest }) => <Runtime {...rest}",
             "const FromChanging = ({ style, className, ...rest }) => <Changing {...rest}",
+            "const Ordered = ({ style, className, ...rest }) => <div {...rest} className={[\"color-0-red--3\", className]",
         ] {
             assert!(code.contains(expected), "{expected}\n{code}");
         }
@@ -14807,6 +14809,10 @@ const V = styled.div.attrs(extra)({ color: 'red' })",
         "className={{\n\tclassName: \"first\",\n\t...rest\n}.className || \"\"}"
     )]
     #[case(
+        "<Box className=<i /> color=\"red\" />",
+        "<div className=\"color-0-red--255\" />"
+    )]
+    #[case(
         "<Box {...rest} {...more} />",
         "className={(\"className\" in Object(more) ? more.className : rest?.className) || \"\"}"
     )]
@@ -14817,6 +14823,25 @@ const V = styled.div.attrs(extra)({ color: 'red' })",
 export const a = {element}"
         ));
         assert!(code.contains(expected), "{expected}\n{code}");
+    }
+
+    #[test]
+    #[serial]
+    fn test_css_composing_reports_runtime_values() {
+        let code = readable_code(
+            "import {css} from '@devup-ui/core'
+const base = css({ color: 'red' })
+export const a = css(base, { color: tone })
+export const b = css(base, { [key]: 'x', styleOrder: 2 })
+export const c = css(base, getStyles())
+export const d = css(base, { positioning: side, styleOrder: 2 })",
+        );
+        assert!(!code.contains("test.tsx:6:"), "{code}");
+        assert!(code.contains("`css()` cannot use `tone`"), "{code}");
+        assert!(
+            code.contains("Cannot compose `\"color-0-red--255\", getStyles()`"),
+            "{code}"
+        );
     }
 
     // The styles of a `css()` class another module exports compose as well
