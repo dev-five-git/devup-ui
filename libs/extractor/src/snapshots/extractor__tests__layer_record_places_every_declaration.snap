@@ -147,5 +147,5 @@ ToBTreeSet {
             },
         ),
     },
-    code: "import \"@devup-ui/react/devup-ui.css\";\nconst A = ({ style, className, ...rest }) => <div {...rest} className={[`i k l m ${cond ? \"a\" : \"b\"} ${{\n\t\"bottom\": \"c\",\n\t\"bottom-left\": \"c d\",\n\t\"bottom-right\": \"c e\",\n\t\"left\": \"d\",\n\t\"right\": \"e\",\n\t\"top\": \"f\",\n\t\"top-left\": \"d f\",\n\t\"top-right\": \"e f\"\n}[pos] || \"\"} ${{\n\t\"a\": \"g\",\n\t\"b\": \"h\"\n}[key] || \"\"} ${typo ? `typo-${typo}` : \"\"}`, className].filter(Boolean).join(\" \")} style={{\n\t...{ \"--j\": w },\n\t...style\n}} />;\n",
+    code: "import \"@devup-ui/react/devup-ui.css\";\nconst A = ({ style, className, as: DevupAs = \"div\", forwardedAs, ...rest }) => <DevupAs {...rest} as={forwardedAs} className={[`i k l m ${cond ? \"a\" : \"b\"} ${{\n\t\"bottom\": \"c\",\n\t\"bottom-left\": \"c d\",\n\t\"bottom-right\": \"c e\",\n\t\"left\": \"d\",\n\t\"right\": \"e\",\n\t\"top\": \"f\",\n\t\"top-left\": \"d f\",\n\t\"top-right\": \"e f\"\n}[pos] || \"\"} ${{\n\t\"a\": \"g\",\n\t\"b\": \"h\"\n}[key] || \"\"} ${typo ? `typo-${typo}` : \"\"}`, className].filter(Boolean).join(\" \")} style={{\n\t...{ \"--j\": w },\n\t...style\n}} />;\n",
 }

@@ -14753,12 +14753,42 @@ const FromChanging = styled(Changing)({ color: 'blue' })
 const Ordered = styled.div({ color: 'red', styleOrder: 3 })",
         );
         for expected in [
-            "const Ext = ({ style, className, ...rest }) => <button {...rest} className={[\"color-0-blue-_a__c_hover-255 color-0-blue--255 background-0-white--255\", className]",
-            "const ObjExt = ({ style, className, ...rest }) => <div {...rest} className={[\"color-0-blue--255 padding-0-8px--255\", className]",
-            "const Twice = ({ style, className, ...rest }) => <div {...rest} className={[\"margin-0-4px--255 color-0-blue--255 padding-0-8px--255\", className]",
-            "const FromRuntime = ({ style, className, ...rest }) => <Runtime {...rest}",
-            "const FromChanging = ({ style, className, ...rest }) => <Changing {...rest}",
-            "const Ordered = ({ style, className, ...rest }) => <div {...rest} className={[\"color-0-red--3\", className]",
+            "const Ext = ({ style, className, as: DevupAs = \"button\", forwardedAs, ...rest }) => <DevupAs {...rest} as={forwardedAs} className={[\"color-0-blue-_a__c_hover-255 color-0-blue--255 background-0-white--255\", className]",
+            "const ObjExt = ({ style, className, as: DevupAs = \"div\", forwardedAs, ...rest }) => <DevupAs {...rest} as={forwardedAs} className={[\"color-0-blue--255 padding-0-8px--255\", className]",
+            "const Twice = ({ style, className, as: DevupAs = \"div\", forwardedAs, ...rest }) => <DevupAs {...rest} as={forwardedAs} className={[\"margin-0-4px--255 color-0-blue--255 padding-0-8px--255\", className]",
+            "const FromRuntime = ({ style, className, as: DevupAs = Runtime, forwardedAs, ...rest }) => <DevupAs {...rest}",
+            "const FromChanging = ({ style, className, as: DevupAs = Changing, forwardedAs, ...rest }) => <DevupAs {...rest}",
+            "const Ordered = ({ style, className, as: DevupAs = \"div\", forwardedAs, ...rest }) => <DevupAs {...rest} as={forwardedAs} className={[\"color-0-red--3\", className]",
+        ] {
+            assert!(code.contains(expected), "{expected}\n{code}");
+        }
+    }
+
+    // `withComponent` renders the same styles as another tag or component, and
+    // `as` changes what a styled component renders while `forwardedAs` passes on
+    #[test]
+    #[serial]
+    fn test_styled_with_component_and_as() {
+        let code = readable_code(
+            "import {styled} from '@devup-ui/core'
+const Section = styled.section.attrs({ role: 'region' })({ color: 'red' })
+export const Aside = Section.withComponent('aside')
+export const Linked = Section.withComponent(Link)
+export const Nested = Section.withComponent(motion.div)
+export const Again = Aside.withComponent('nav')
+export const Kept = Section.withComponent(make())
+export const Other = other.withComponent('aside')
+export const a = <Section as=\"a\" forwardedAs=\"b\" />",
+        );
+        for expected in [
+            "export const Aside = (__devupProps) => (({ style, className, as: DevupAs = \"aside\", forwardedAs, ...rest }) => <DevupAs {...rest} as={forwardedAs} className={[\"color-0-red--255\", className]",
+            "as: DevupAs = Link,",
+            "as: DevupAs = motion.div,",
+            "export const Again = (__devupProps) => (({ style, className, as: DevupAs = \"nav\",",
+            "export const Kept = Section.withComponent(make());",
+            "export const Other = other.withComponent(\"aside\");",
+            "...{ role: \"region\" }",
+            "<Section as=\"a\" forwardedAs=\"b\" />",
         ] {
             assert!(code.contains(expected), "{expected}\n{code}");
         }

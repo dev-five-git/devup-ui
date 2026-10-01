@@ -68,6 +68,49 @@ impl StyledDefinition<'_> {
     }
 }
 
+/// `Component.withComponent(target)`: the styles and attrs of `definition`
+/// rendering `target`, a tag name or a component JSX can name; `None` for any
+/// other target
+pub fn with_component<'a>(
+    ast_builder: &AstBuilder<'a>,
+    definition: &StyledDefinition<'a>,
+    target: &Expression<'a>,
+    split_filename: Option<&str>,
+) -> Option<(Expression<'a>, StyledDefinition<'a>)> {
+    let name = match unwrap_syntax_only(target) {
+        Expression::StringLiteral(literal) => literal.value.to_string(),
+        target => jsx_name(target)?,
+    };
+    let base = Base::named(name);
+    let allocator = ast_builder.allocator();
+    let mut styles: Vec<ExtractStyleProp<'a>> = definition
+        .styles
+        .iter()
+        .map(|style| style.clone_in(allocator))
+        .collect();
+    let classes: Vec<Expression<'a>> = clone_all(ast_builder, &definition.classes).collect();
+    let class_name = merge_expression_for_class_name(
+        ast_builder,
+        clone_all(ast_builder, &classes).chain(gen_class_names(
+            ast_builder,
+            &mut styles,
+            None,
+            split_filename,
+        )),
+    );
+    let component = create_styled_component(
+        ast_builder,
+        &base.name,
+        &class_name,
+        &gen_styles(ast_builder, &styles, None),
+    );
+    let new_definition = base.definition(ast_builder, classes, &styles, &definition.attrs);
+    Some((
+        apply_attrs(ast_builder, component, &definition.attrs),
+        new_definition,
+    ))
+}
+
 /// What extracting a styled component gives
 pub struct StyledExtraction<'a> {
     pub result: ExtractResult<'a>,
@@ -886,6 +929,45 @@ fn named_arrow<'a>(
     )
 }
 
+/// The binding a styled component renders through: what `as` names, or the
+/// tag or component it was defined with
+const RENDERED: &str = "DevupAs";
+
+/// What a styled component renders when `as` names nothing: a tag name as a
+/// string, a component as the binding or member JSX names it by
+fn tag_expression<'a>(ast_builder: &AstBuilder<'a>, tag_name: &str) -> Expression<'a> {
+    if tag_name.starts_with(|c: char| c.is_ascii_lowercase()) && !tag_name.contains('.') {
+        return Expression::new_string_literal(
+            SPAN,
+            Str::from_in(tag_name, ast_builder.allocator()),
+            None,
+            ast_builder,
+        );
+    }
+    let mut parts = tag_name.split('.');
+    let first = parts.next().unwrap_or(tag_name);
+    parts.fold(
+        Expression::new_identifier(
+            SPAN,
+            Str::from_in(first, ast_builder.allocator()),
+            ast_builder,
+        ),
+        |object, property| {
+            Expression::StaticMemberExpression(oxc_ast::ast::StaticMemberExpression::boxed(
+                SPAN,
+                object,
+                oxc_ast::ast::IdentifierName::new(
+                    SPAN,
+                    Str::from_in(property, ast_builder.allocator()),
+                    ast_builder,
+                ),
+                false,
+                ast_builder,
+            ))
+        },
+    )
+}
+
 fn create_styled_component<'a>(
     ast_builder: &AstBuilder<'a>,
     tag_name: &str,
@@ -923,6 +1005,39 @@ fn create_styled_component<'a>(
                                 false,
                                 ast_builder,
                             ),
+                            BindingProperty::new(
+                                SPAN,
+                                PropertyKey::new_static_identifier(SPAN, "as", ast_builder),
+                                BindingPattern::new_assignment_pattern(
+                                    SPAN,
+                                    BindingPattern::new_binding_identifier(
+                                        SPAN,
+                                        RENDERED,
+                                        ast_builder,
+                                    ),
+                                    tag_expression(ast_builder, tag_name),
+                                    ast_builder,
+                                ),
+                                false,
+                                false,
+                                ast_builder,
+                            ),
+                            BindingProperty::new(
+                                SPAN,
+                                PropertyKey::new_static_identifier(
+                                    SPAN,
+                                    "forwardedAs",
+                                    ast_builder,
+                                ),
+                                BindingPattern::new_binding_identifier(
+                                    SPAN,
+                                    "forwardedAs",
+                                    ast_builder,
+                                ),
+                                true,
+                                false,
+                                ast_builder,
+                            ),
                         ],
                         ast_builder,
                     ),
@@ -950,17 +1065,23 @@ fn create_styled_component<'a>(
         SPAN,
         JSXOpeningElement::boxed(
             SPAN,
-            JSXElementName::new_identifier(
-                SPAN,
-                Str::from_in(tag_name, ast_builder.allocator()),
-                ast_builder,
-            ),
+            JSXElementName::new_identifier(SPAN, RENDERED, ast_builder),
             None::<oxc_allocator::Box<oxc_ast::ast::TSTypeParameterInstantiation<'a>>>,
             oxc_allocator::Vec::from_iter_in(
                 vec![
                     JSXAttributeItem::new_spread_attribute(
                         SPAN,
                         Expression::new_identifier(SPAN, "rest", ast_builder),
+                        ast_builder,
+                    ),
+                    JSXAttributeItem::new_attribute(
+                        SPAN,
+                        JSXAttributeName::new_identifier(SPAN, "as", ast_builder),
+                        Some(JSXAttributeValue::new_expression_container(
+                            SPAN,
+                            Expression::new_identifier(SPAN, "forwardedAs", ast_builder).into(),
+                            ast_builder,
+                        )),
                         ast_builder,
                     ),
                     JSXAttributeItem::new_attribute(
