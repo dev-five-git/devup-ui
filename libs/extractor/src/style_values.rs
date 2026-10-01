@@ -62,6 +62,26 @@ impl StyleValues {
         }
     }
 
+    /// `program` with each `name.getName()` on a `keyframes()` binding read as
+    /// the name it gives, as styled-components' keyframes object returns it
+    pub fn read_names<'a>(&self, ast: &AstBuilder<'a>, program: &mut oxc_ast::ast::Program<'a>) {
+        let Some(scoping) = self.scoping.as_ref() else {
+            return;
+        };
+        if self
+            .values
+            .values()
+            .any(|value| matches!(value, StyleValue::Keyframes(_)))
+        {
+            Names {
+                ast,
+                scoping,
+                values: &self.values,
+            }
+            .visit_program(program);
+        }
+    }
+
     fn reads<'s, 'a>(&'s self, ast: &'s AstBuilder<'a>) -> Option<Reads<'s, 'a>> {
         let scoping = self.scoping.as_ref()?;
         (!self.values.is_empty()).then_some(Reads {
@@ -71,6 +91,37 @@ impl StyleValues {
             in_text: false,
             in_rules: false,
         })
+    }
+}
+
+struct Names<'s, 'a> {
+    ast: &'s AstBuilder<'a>,
+    scoping: &'s Scoping,
+    values: &'s FxHashMap<SymbolId, StyleValue>,
+}
+
+impl<'a> VisitMut<'a> for Names<'_, 'a> {
+    fn visit_expression(&mut self, it: &mut Expression<'a>) {
+        if let Expression::CallExpression(call) = it
+            && call.arguments.is_empty()
+            && let Expression::StaticMemberExpression(member) = &call.callee
+            && member.property.name == "getName"
+            && let Expression::Identifier(identifier) = &member.object
+            && let Some(StyleValue::Keyframes(name)) = identifier
+                .reference_id
+                .get()
+                .and_then(|reference| self.scoping.get_reference(reference).symbol_id())
+                .and_then(|symbol| self.values.get(&symbol))
+        {
+            *it = Expression::new_string_literal(
+                SPAN,
+                Str::from_in(name.as_str(), self.ast.allocator()),
+                None,
+                self.ast,
+            );
+            return;
+        }
+        walk_mut::walk_expression(self, it);
     }
 }
 
