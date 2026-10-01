@@ -14815,9 +14815,14 @@ const G = styled('p', { shouldForwardProp: function (prop) { return prop === 'id
 const H = styled.div`color: ${function (p) { return p.c }};`
 const I = styled.div`color: ${({ tone, ...more }) => tone};`
 const J = styled.div`color: ${(p) => p[key]}; margin: ${([a]) => a}; padding: ${() => 1};`
+const K = styled(A, { shouldForwardProp: (prop) => 'id' === prop || prop === 'title' })({ color: 'blue' })
+const L = styled.div.withConfig(config)`color: ${(p) => { return p.level }}; margin: ${({ [k]: v }) => v};`
+const M = styled('p', { shouldForwardProp: (prop) => { return prop === 'id' } })({ color: 'red' })
 export const a = <A tone=\"loud\" invalidThing=\"x\" data-ok=\"yes\" />
 export const b = <B tone=\"x\" $c=\"red\" theme={{}} aria-label=\"ok\" junk=\"j\" {...rest} />
-export const j = <J junk=\"j\" />",
+export const j = <J junk=\"j\" />
+export const f = <F junk=\"j\" xlink:href=\"#a\" />
+export const k = <K title=\"t\" tone=\"x\" />",
         );
         for expected in [
             "{...(({ \"tone\": __devupOmit0, ...__devupDom }) => __devupDom)(rest)}",
@@ -14827,6 +14832,9 @@ export const j = <J junk=\"j\" />",
             "export const a = <A invalidThing=\"x\" data-ok=\"yes\" />",
             "export const b = <B tone=\"x\" $c=\"red\" aria-label=\"ok\" {...rest} />",
             "export const j = <J junk=\"j\" />",
+            "export const f = <F junk=\"j\" xlink:href=\"#a\" />",
+            "export const k = <K title=\"t\" />",
+            "{...(({ \"level\": __devupOmit0, \"theme\": __devupOmit1, ...__devupDom }) => __devupDom)(rest)}",
         ] {
             assert!(code.contains(expected), "{expected}\n{code}");
         }
@@ -14842,7 +14850,10 @@ const G = styled('h1', { shouldForwardProp: ({ a }) => a })({ color: 'red' })
 const H = styled('h1', { shouldForwardProp: (prop) => [x].includes(prop) })({ color: 'red' })
 const I = styled('h1', { shouldForwardProp: (prop) => list.includes(prop) })({ color: 'red' })
 const J = styled('h1', { shouldForwardProp: (prop) => prop.endsWith('a') })({ color: 'red' })
-const K = styled('h1', { [k]: 1, ...o, shouldForwardProp: (prop) => valid(prop, 1) })({ color: 'red' })",
+const K = styled('h1', { [k]: 1, ...o, shouldForwardProp: (prop) => valid(prop, 1) })({ color: 'red' })
+const L = styled('h1', { shouldForwardProp: (prop) => prop === 'a' ?? prop === 'b' })({ color: 'red' })
+const M = styled('h1', { shouldForwardProp: (prop) => x === y })({ color: 'red' })
+const N = styled('h1', { shouldForwardProp: (prop) => { prop === 'a' } })({ color: 'red' })",
         );
         assert!(
             error.contains("`shouldForwardProp` must be a function"),

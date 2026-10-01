@@ -204,7 +204,6 @@ fn single_expression<'b, 'a>(
     body: &'b oxc_ast::ast::FunctionBody<'a>,
 ) -> Option<&'b Expression<'a>> {
     match body.statements.as_slice() {
-        [oxc_ast::ast::Statement::ExpressionStatement(statement)] => Some(&statement.expression),
         [oxc_ast::ast::Statement::ReturnStatement(statement)] => statement.argument.as_ref(),
         _ => None,
     }

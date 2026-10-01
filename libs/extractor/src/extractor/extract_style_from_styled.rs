@@ -558,11 +558,13 @@ pub fn extract_style_from_styled<'a>(
         // Case 2: styled.div({ bg: "red" }), styled("div")({ bg: "red" }),
         // or styled("div", { bg: "red" })
 
-        if let Some(rules) = call.arguments[style_index].as_expression() {
-            reads.read_in(rules);
-        } else if let Argument::SpreadElement(spread) = &call.arguments[style_index] {
-            reads.read_in(&spread.argument);
-        }
+        reads.read_in(
+            if let Argument::SpreadElement(spread) = &call.arguments[style_index] {
+                &spread.argument
+            } else {
+                call.arguments[style_index].to_expression()
+            },
+        );
         // Extract styles from object expression
         let ExtractResult {
             mut styles,
