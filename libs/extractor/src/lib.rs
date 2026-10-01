@@ -1,6 +1,7 @@
 mod as_visit;
 mod build_time_values;
 mod component;
+mod composition;
 mod css_utils;
 pub mod extract_style;
 mod extractor;
@@ -437,6 +438,7 @@ fn extract_source(
         if global { None } else { Some(bucket) },
     );
     visitor.import_stylex(inlined.stylex_vars, inlined.stylex_themes);
+    visitor.import_css(inlined.css_styles);
     visitor.unknown_bindings(&inlined.unknown);
     visitor.changed_bindings(inlined.changed.clone());
     visitor.visit_program(&mut program);
@@ -836,8 +838,8 @@ mod tests {
             alternate: None,
         };
 
-        assert!(empty.extract().is_empty());
-        assert!(empty.into_extract().is_empty());
+        assert_eq!(empty.extract(), vec![]);
+        assert_eq!(empty.into_extract(), vec![]);
     }
 
     #[test]
@@ -13598,7 +13600,7 @@ globalCss({
         );
         assert!(result.is_ok());
         let output = result.unwrap();
-        assert!(!output.code.is_empty());
+        assert_ne!(output.code, "");
     }
 
     #[test]
@@ -14551,6 +14553,264 @@ const Button = styled.button({ bg: 'red' })
             )
             .unwrap()
         ));
+    }
+
+    /// `code` extracted with readable class names
+    fn readable_code(code: &str) -> String {
+        reset_class_map();
+        reset_file_map();
+        css::debug::set_debug(true);
+        let output = extract(
+            "test.tsx",
+            code,
+            ExtractOption {
+                package: "@devup-ui/core".to_string(),
+                css_dir: "@devup-ui/core".to_string(),
+                single_css: true,
+                import_main_css: false,
+                import_aliases: HashMap::new(),
+            },
+        );
+        css::debug::set_debug(false);
+        match output {
+            Ok(output) => output.code,
+            Err(error) => error.to_string(),
+        }
+    }
+
+    // A later part of `css(...)` replaces an earlier part's declaration of the
+    // same property, selector, breakpoint and layer, whatever the stylesheet
+    // order of their classes
+    #[rstest]
+    #[case(
+        "css(yellow, azure)",
+        r#""color-0-red-_a__c_hover-255 background-0-black--255 color-0-azure--255""#
+    )]
+    #[case(
+        "css(azure, yellow)",
+        r#""background-0-black--255 color-0-red-_a__c_hover-255 color-0-yellow--255""#
+    )]
+    #[case(
+        "css({ color: 'green' }, yellow)",
+        r#""color-0-red-_a__c_hover-255 color-0-yellow--255""#
+    )]
+    #[case(
+        "css(yellow, { color: 'green' })",
+        r#""color-0-red-_a__c_hover-255 color-0-green--255""#
+    )]
+    #[case(
+        "css([yellow, azure])",
+        r#""color-0-red-_a__c_hover-255 background-0-black--255 color-0-azure--255""#
+    )]
+    #[case(
+        "css(...[yellow, azure])",
+        r#""color-0-red-_a__c_hover-255 background-0-black--255 color-0-azure--255""#
+    )]
+    #[case(
+        "css(yellow, null, undefined, false, azure)",
+        r#""color-0-red-_a__c_hover-255 background-0-black--255 color-0-azure--255""#
+    )]
+    #[case(
+        "css(yellow, on && azure)",
+        r#"`color-0-red-_a__c_hover-255 ${on ? "background-0-black--255" : ""} ${on ? "color-0-azure--255" : "color-0-yellow--255"}`"#
+    )]
+    #[case(
+        "css(on ? yellow : azure)",
+        r#"`${on ? "color-0-red-_a__c_hover-255" : ""} ${on ? "color-0-yellow--255" : "color-0-azure--255"} ${on ? "" : "background-0-black--255"}`"#
+    )]
+    #[case(
+        "css(yellow, on ? { color: 'pink' } : null)",
+        r#"`color-0-red-_a__c_hover-255 ${on ? "color-0-pink--255" : "color-0-yellow--255"}`"#
+    )]
+    #[case(
+        "css(yellow, { color: on ? 'pink' : 'teal' })",
+        r#"`color-0-red-_a__c_hover-255 ${on ? "color-0-pink--255" : "color-0-teal--255"}`"#
+    )]
+    #[case(
+        "css(yellow, ext, azure)",
+        r"`color-0-red-_a__c_hover-255 background-0-black--255 color-0-azure--255 ${ext}`"
+    )]
+    #[case(
+        "css(yellow, on ? 'plain' : azure)",
+        r#"`${on ? "plain" : ""} ${`color-0-red-_a__c_hover-255 ${on ? "" : "background-0-black--255"} ${on ? "color-0-yellow--255" : "color-0-azure--255"}`}`"#
+    )]
+    #[case(
+        "css(azure, wide)",
+        r#""background-0-black--255 color-0-a1--255 color-1-b1--255""#
+    )]
+    #[case(
+        "css(wide, { color: [null, 'x2'] })",
+        r#""color-0-a1--255 color-1-x2--255""#
+    )]
+    #[case(
+        "css(yellow, ordered)",
+        r#""color-0-red-_a__c_hover-255 color-0-navy--3""#
+    )]
+    #[case("css(heading, body)", r#""typo-body""#)]
+    #[case(
+        "css(chained, { color: 'gold' })",
+        r#""color-0-red-_a__c_hover-255 background-0-black--255 color-0-gold--255""#
+    )]
+    #[case(
+        "css(yellow, { color: { a: 'red', b: 'blue' }[size] })",
+        r"`color-0-red-_a__c_hover-255 color-0-yellow--255 ${{"
+    )]
+    #[case(
+        "css(yellow, on ? { color: { a: 'red' }[size] } : null)",
+        r#"`color-0-red-_a__c_hover-255 color-0-yellow--255 ${on ? { "a": "color-0-red--255" }[size] || "" : ""}`"#
+    )]
+    #[case(
+        "css(yellow, on || azure)",
+        r#"`${on ? typeof on === "string" ? on : "" : ""} ${`color-0-red-_a__c_hover-255 ${on ? "" : "background-0-black--255"} ${on ? "color-0-yellow--255" : "color-0-azure--255"}`}`"#
+    )]
+    #[case(
+        "css(yellow, ext ?? azure)",
+        r#"`${ext != null ? typeof ext === "string" ? ext : "" : ""} ${`color-0-red-_a__c_hover-255 ${ext != null ? "" : "background-0-black--255"} ${ext != null ? "color-0-yellow--255" : "color-0-azure--255"}`}`"#
+    )]
+    #[case(
+        "css(yellow, null ?? azure)",
+        r#""color-0-red-_a__c_hover-255 background-0-black--255 color-0-azure--255""#
+    )]
+    #[case(
+        "css(yellow, false ?? azure)",
+        r#""color-0-red-_a__c_hover-255 color-0-yellow--255""#
+    )]
+    #[case(
+        "css(azure || yellow)",
+        r#""background-0-black--255 color-0-azure--255""#
+    )]
+    #[case(
+        "css(yellow, on || 'plain')",
+        r#"`color-0-red-_a__c_hover-255 color-0-yellow--255 ${on ? typeof on === "string" ? on : "" : "plain"}`"#
+    )]
+    #[case(
+        "css(yellow, { color: on ? 'a' : 'b', m: [1, 2], styleOrder: 2 })",
+        r#"`color-0-red-_a__c_hover-255 margin-0-4px--2 margin-1-8px--2 ${on ? "color-0-a--2" : "color-0-b--2"}`"#
+    )]
+    #[case(
+        "css(yellow, { color: { a: 'x' }[size], styleOrder: 2 })",
+        r#"`color-0-red-_a__c_hover-255 color-0-yellow--255 ${{ "a": "color-0-x--2" }[size] || ""}`"#
+    )]
+    #[case(
+        "css(yellow, on ? { color: other ? 'a' : 'b' } : null)",
+        r#"`color-0-red-_a__c_hover-255 ${on ? other ? "color-0-a--255" : "color-0-b--255" : "color-0-yellow--255"}`"#
+    )]
+    #[case(
+        "css(yellow, fade)",
+        r"`color-0-red-_a__c_hover-255 color-0-yellow--255 ${fade}`"
+    )]
+    #[case(
+        "css(yellow, { color: ['x', 'y'][idx], styleOrder: 2 })",
+        "`color-0-red-_a__c_hover-255 color-0-yellow--255 ${{\n\t\"0\": \"color-0-x--2\",\n\t\"1\": \"color-0-y--2\"\n}[idx] || \"\"}`"
+    )]
+    #[case(
+        "css(yellow, { color: 'pink' } || azure)",
+        r#""color-0-red-_a__c_hover-255 color-0-pink--255""#
+    )]
+    #[case(
+        "css(yellow, undefined ?? azure)",
+        r#""color-0-red-_a__c_hover-255 background-0-black--255 color-0-azure--255""#
+    )]
+    #[case(
+        "css(yellow, false ?? azure)",
+        r#""color-0-red-_a__c_hover-255 color-0-yellow--255""#
+    )]
+    #[serial]
+    fn test_css_composes_known_classes(#[case] call: &str, #[case] expected: &str) {
+        let code = readable_code(&format!(
+            "import {{css, keyframes}} from '@devup-ui/core'
+const yellow = css({{ color: 'yellow', _hover: {{ color: 'red' }} }})
+const azure = css({{ color: 'azure', bg: 'black' }})
+const wide = css({{ color: ['a1', 'b1'] }})
+const ordered = css({{ color: 'navy', styleOrder: 3 }})
+const heading = css({{ typography: 'heading' }})
+const body = css({{ typography: 'body' }})
+const chained = css(yellow, azure)
+const fade = keyframes({{ from: {{ opacity: 0 }} }})
+export const result = {call}
+"
+        ));
+        assert!(
+            code.contains(&format!("export const result = {expected}")),
+            "{code}"
+        );
+    }
+
+    #[test]
+    #[serial]
+    fn test_css_composing_reports_runtime_values() {
+        let code = readable_code(
+            "import {css} from '@devup-ui/core'
+const base = css({ color: 'red' })
+export const a = css(base, { color: tone })
+export const b = css(base, { [key]: 'x', styleOrder: 2 })
+export const c = css(base, getStyles())
+export const d = css(base, { positioning: side, styleOrder: 2 })",
+        );
+        assert!(!code.contains("test.tsx:6:"), "{code}");
+        assert!(code.contains("`css()` cannot use `tone`"), "{code}");
+        assert!(
+            code.contains("Cannot compose `\"color-0-red--255\", getStyles()`"),
+            "{code}"
+        );
+    }
+
+    // The styles of a `css()` class another module exports compose as well
+    #[test]
+    #[serial]
+    fn test_css_composes_imported_classes() {
+        reset_class_map();
+        reset_file_map();
+        let modules: &[(&str, &str)] = &[(
+            "/src/styles.ts",
+            "import { css, keyframes } from '@devup-ui/react';
+import * as Devup from '@devup-ui/react';
+const brand = 'teal';
+export const base = css({ color: brand, _hover: { color: 'red' } });
+export const danger = css({ color: 'crimson' });
+export const twice = css({ color: 'a' }, { m: 1 });
+export const text = css`color: blue;`;
+export const runtime = css({ color: globalThis.tone });
+export const listed = css([{ color: 'b' }]);
+export const spaced = Devup.css({ color: 'c' });
+export const fade = keyframes({ from: { opacity: 0 } });
+export const called = Devup({ color: 'e' });
+export const ordered = css({ color: 'f', m: 2, styleOrder: 2 });",
+        )];
+        let resolver = memory_resolver(modules);
+        css::debug::set_debug(true);
+        let output = extract_with_modules(
+            "/src/App.tsx",
+            "import { css } from '@devup-ui/react';
+import { base, danger, twice, text, runtime, listed, spaced, fade, called, ordered } from './styles';
+export const a = css(base, danger);
+export const b = css(danger, base, { m: 1 });
+export const c = css(twice, text, runtime, listed, spaced, fade);
+export const d = css(ordered, danger, called);",
+            ExtractOption {
+                import_aliases: HashMap::from([(
+                    "@emotion/css".to_string(),
+                    ImportAlias::NamedToNamed,
+                )]),
+                ..ExtractOption::default()
+            },
+            false,
+            &resolver,
+        )
+        .unwrap();
+        css::debug::set_debug(false);
+        for expected in [
+            r#"export const a = "color-0-red-_a__c_hover-255-a color-0-crimson--255-a";"#,
+            r#"export const b = "color-0-red-_a__c_hover-255-a color-0-teal--255-a margin-0-4px--255-a";"#,
+            "export const c = `${twice} ${text} ${runtime} ${listed} ${spaced} ${fade}`;",
+            "export const d = `margin-0-8px--2-a color-0-crimson--255-a ${called}`;",
+        ] {
+            assert!(
+                output.code.contains(expected),
+                "{expected} in {}",
+                output.code
+            );
+        }
     }
 
     #[test]
@@ -18778,7 +19038,7 @@ export const k = styled('div')({ color: SIZE });",
             &memory_resolver(CONSTANT_MODULES),
         )
         .unwrap();
-        assert!(without_imports.dependencies.is_empty());
+        assert_eq!(without_imports.dependencies.len(), 0);
         let without_constants = extract_with_modules(
             "/src/Handler.tsx",
             "import { Box } from '@devup-ui/react';\nimport { handler } from './handler';\nexport const a = <Box onClick={handler} color='red' />;",
