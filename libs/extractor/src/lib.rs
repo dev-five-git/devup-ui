@@ -14711,6 +14711,10 @@ const Button = styled.button({ bg: 'red' })
         "css(yellow, undefined ?? azure)",
         r#""color-0-red-_a__c_hover-255 background-0-black--255 color-0-azure--255""#
     )]
+    #[case(
+        "css(yellow, false ?? azure)",
+        r#""color-0-red-_a__c_hover-255 color-0-yellow--255""#
+    )]
     #[serial]
     fn test_css_composes_known_classes(#[case] call: &str, #[case] expected: &str) {
         let code = readable_code(&format!(
