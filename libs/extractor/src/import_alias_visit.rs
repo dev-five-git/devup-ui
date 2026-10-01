@@ -272,7 +272,9 @@ pub fn transform_import_aliases_with_edits<'a>(
         if let Statement::ImportDeclaration(import_decl) = stmt {
             let source_value = import_decl.source.value.as_str();
 
-            if let Some(alias) = import_aliases.get(source_value) {
+            if let Some(alias) = import_aliases.get(source_value)
+                && !import_decl.import_kind.is_type()
+            {
                 let span = import_decl.span;
                 let new_import =
                     generate_transformed_import(import_decl, alias, package, redirect_every_name);
@@ -475,6 +477,7 @@ fn generate_transformed_import(
     let mut redirected = String::new();
     let mut compat = String::new();
     let mut retained = String::new();
+    let mut types = String::new();
     let mut retained_default = None;
 
     // Handle default specifier first (at most one in valid JS); only its
@@ -510,6 +513,12 @@ fn generate_transformed_import(
         if let ImportDeclarationSpecifier::ImportSpecifier(spec) = specifier {
             let local = spec.local.name.as_str();
             let imported = imported_name(&spec.imported);
+            // Types are erased, so they stay on the package without making it a
+            // runtime dependency
+            if spec.import_kind.is_type() {
+                push_specifier(&mut types, &imported, local);
+                continue;
+            }
             match redirect_target(source, &imported, redirect_every_name) {
                 Some(target) => push_redirect(&mut redirected, &mut compat, target, local),
                 None => push_specifier(&mut retained, &imported, local),
@@ -555,6 +564,16 @@ fn generate_transformed_import(
             result.push_str(" }");
         }
         result.push_str(" from '");
+        result.push_str(source);
+        result.push_str("';");
+    }
+    if !types.is_empty() {
+        if !result.is_empty() {
+            result.push(' ');
+        }
+        result.push_str("import type { ");
+        result.push_str(&types);
+        result.push_str(" } from '");
         result.push_str(source);
         result.push_str("';");
     }
@@ -726,6 +745,25 @@ mod tests {
             "@devup-ui/react",
             &styled_components_alias()
         ));
+    }
+
+    // Types are erased, so a type-only import never becomes a runtime import
+    #[test]
+    fn test_type_only_imports_stay_type_only() {
+        let code = transform_import_aliases(
+            "import styled, { type DefaultTheme, ThemeProvider, type CSSObject as O } from 'styled-components'\nimport type { CSSProperties } from 'styled-components'",
+            "test.tsx",
+            "@devup-ui/react",
+            &styled_components_alias(),
+        );
+        for expected in [
+            "import type { DefaultTheme, CSSObject as O } from 'styled-components';",
+            "import type { CSSProperties } from 'styled-components'",
+            "import { ThemeProvider } from '@devup-ui/react/compat';",
+        ] {
+            assert!(code.contains(expected), "{expected}\n{code}");
+        }
+        assert!(!code.contains("import { DefaultTheme"), "{code}");
     }
 
     #[test]
