@@ -22,8 +22,8 @@ use crate::extractor::{
     },
     extract_style_from_jsx::extract_style_from_jsx,
     extract_style_from_styled::{
-        StyledDefinition, StyledExtraction, extended, extract_style_from_styled, read_forward,
-        take_styled_modifiers, with_component,
+        FORWARD_REF, StyledDefinition, StyledExtraction, extended, extract_style_from_styled,
+        forward_ref, read_forward, take_styled_modifiers, with_component,
     },
 };
 use crate::gen_class_name::{gen_class_names, merge_expression_for_class_name};
@@ -201,6 +201,9 @@ pub struct DevupVisitor<'a> {
     /// The styled component just built, by where it starts, for the `const`
     /// it initializes
     pending_styled: Option<(u32, StyledDefinition<'a>)>,
+    /// Whether a generated styled component forwards refs through React's
+    /// `forwardRef`, which the program then imports
+    forwards_refs: bool,
     /// The styled components the file binds to a `const`, which a component
     /// extending one renders in its place
     styled_definitions: FxHashMap<oxc_syntax::symbol::SymbolId, StyledDefinition<'a>>,
@@ -626,6 +629,7 @@ impl<'a> DevupVisitor<'a> {
             style_values: crate::style_values::StyleValues::default(),
             css_styles: None,
             pending_styled: None,
+            forwards_refs: false,
             styled_definitions: FxHashMap::default(),
             imported_css: FxHashMap::default(),
             compiled_names: FxHashSet::default(),
@@ -1386,6 +1390,18 @@ impl<'a> VisitMut<'a> for DevupVisitor<'a> {
             });
             self.report_compiled_reads(it);
         }
+        if self.forwards_refs {
+            let source = self.ast.allocator().alloc_str(&format!(
+                "import {{ forwardRef as {FORWARD_REF} }} from 'react';"
+            ));
+            let program =
+                oxc_parser::Parser::new(self.ast.allocator(), source, oxc_span::SourceType::mjs())
+                    .parse()
+                    .program;
+            for statement in program.body.into_iter().rev() {
+                it.body.insert(0, statement);
+            }
+        }
         if !self.styles.is_empty() {
             for css_file in self.css_files.iter().rev() {
                 it.body.insert(
@@ -1528,8 +1544,13 @@ impl<'a> VisitMut<'a> for DevupVisitor<'a> {
                         .into_iter()
                         .flat_map(ExtractStyleProp::into_extract),
                 );
+                *it = if definition.is_some() {
+                    self.forwards_refs = true;
+                    forward_ref(&self.ast, expression)
+                } else {
+                    expression
+                };
                 self.pending_styled = definition.map(|definition| (start, definition));
-                *it = expression;
             }
         }
 
@@ -1555,7 +1576,8 @@ impl<'a> VisitMut<'a> for DevupVisitor<'a> {
             )
         {
             let start = call.span.start;
-            *it = component;
+            self.forwards_refs = true;
+            *it = forward_ref(&self.ast, component);
             self.pending_styled = Some((start, definition));
         }
 

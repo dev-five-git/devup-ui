@@ -14755,12 +14755,12 @@ const FromChanging = styled(Changing)({ color: 'blue' })
 const Ordered = styled.div({ color: 'red', styleOrder: 3 })",
         );
         for expected in [
-            "const Ext = ({ style, className, as: DevupAs = \"button\", forwardedAs, ...rest }) => <DevupAs {...(({ \"theme\": __devupOmit0, ...__devupDom }) => __devupDom)(rest)} as={forwardedAs} className={[\"color-0-blue-_a__c_hover-255 color-0-blue--255 background-0-white--255\", className]",
-            "const ObjExt = ({ style, className, as: DevupAs = \"div\", forwardedAs, ...rest }) => <DevupAs {...(({ \"theme\": __devupOmit0, ...__devupDom }) => __devupDom)(rest)} as={forwardedAs} className={[\"color-0-blue--255 padding-0-8px--255\", className]",
-            "const Twice = ({ style, className, as: DevupAs = \"div\", forwardedAs, ...rest }) => <DevupAs {...(({ \"theme\": __devupOmit0, ...__devupDom }) => __devupDom)(rest)} as={forwardedAs} className={[\"margin-0-4px--255 color-0-blue--255 padding-0-8px--255\", className]",
-            "const FromRuntime = ({ style, className, as: DevupAs = Runtime, forwardedAs, ...rest }) => <DevupAs {...rest}",
-            "const FromChanging = ({ style, className, as: DevupAs = Changing, forwardedAs, ...rest }) => <DevupAs {...rest}",
-            "const Ordered = ({ style, className, as: DevupAs = \"div\", forwardedAs, ...rest }) => <DevupAs {...(({ \"theme\": __devupOmit0, ...__devupDom }) => __devupDom)(rest)} as={forwardedAs} className={[\"color-0-red--3\", className]",
+            "const Ext = __devupForwardRef((__devupRefProps, __devupRef) => (({ style, className, as: DevupAs = \"button\", forwardedAs, ...rest }) => <DevupAs {...(({ \"theme\": __devupOmit0, ...__devupDom }) => __devupDom)(rest)} as={forwardedAs} className={[\"color-0-blue-_a__c_hover-255 color-0-blue--255 background-0-white--255\", className]",
+            "const ObjExt = __devupForwardRef((__devupRefProps, __devupRef) => (({ style, className, as: DevupAs = \"div\", forwardedAs, ...rest }) => <DevupAs {...(({ \"theme\": __devupOmit0, ...__devupDom }) => __devupDom)(rest)} as={forwardedAs} className={[\"color-0-blue--255 padding-0-8px--255\", className]",
+            "const Twice = __devupForwardRef((__devupRefProps, __devupRef) => (({ style, className, as: DevupAs = \"div\", forwardedAs, ...rest }) => <DevupAs {...(({ \"theme\": __devupOmit0, ...__devupDom }) => __devupDom)(rest)} as={forwardedAs} className={[\"margin-0-4px--255 color-0-blue--255 padding-0-8px--255\", className]",
+            "const FromRuntime = __devupForwardRef((__devupRefProps, __devupRef) => (({ style, className, as: DevupAs = Runtime, forwardedAs, ...rest }) => <DevupAs {...rest}",
+            "const FromChanging = __devupForwardRef((__devupRefProps, __devupRef) => (({ style, className, as: DevupAs = Changing, forwardedAs, ...rest }) => <DevupAs {...rest}",
+            "const Ordered = __devupForwardRef((__devupRefProps, __devupRef) => (({ style, className, as: DevupAs = \"div\", forwardedAs, ...rest }) => <DevupAs {...(({ \"theme\": __devupOmit0, ...__devupDom }) => __devupDom)(rest)} as={forwardedAs} className={[\"color-0-red--3\", className]",
         ] {
             assert!(code.contains(expected), "{expected}\n{code}");
         }
@@ -14783,10 +14783,10 @@ export const Other = other.withComponent('aside')
 export const a = <Section as=\"a\" forwardedAs=\"b\" />",
         );
         for expected in [
-            "export const Aside = (__devupProps) => (({ style, className, as: DevupAs = \"aside\", forwardedAs, ...rest }) => <DevupAs {...(({ \"theme\": __devupOmit0, ...__devupDom }) => __devupDom)(rest)} as={forwardedAs} className={[\"color-0-red--255\", className]",
+            "export const Aside = __devupForwardRef((__devupRefProps, __devupRef) => ((__devupProps) => (({ style, className, as: DevupAs = \"aside\", forwardedAs, ...rest }) => <DevupAs {...(({ \"theme\": __devupOmit0, ...__devupDom }) => __devupDom)(rest)} as={forwardedAs} className={[\"color-0-red--255\", className]",
             "as: DevupAs = Link,",
             "as: DevupAs = motion.div,",
-            "export const Again = (__devupProps) => (({ style, className, as: DevupAs = \"nav\",",
+            "export const Again = __devupForwardRef((__devupRefProps, __devupRef) => ((__devupProps) => (({ style, className, as: DevupAs = \"nav\",",
             "export const Kept = Section.withComponent(make());",
             "export const Other = other.withComponent(\"aside\");",
             "...{ role: \"region\" }",
