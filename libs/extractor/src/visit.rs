@@ -641,11 +641,11 @@ impl<'a> DevupVisitor<'a> {
     /// `style` attribute
     fn style_text(&self, props: Vec<ObjectPropertyKind<'a>>) -> Expression<'a> {
         let mut text: Option<Expression<'a>> = None;
-        for (index, prop) in props.into_iter().enumerate() {
-            let ObjectPropertyKind::ObjectProperty(prop) = prop else {
-                continue;
-            };
-            let prop = prop.unbox();
+        let props = props.into_iter().filter_map(|prop| match prop {
+            ObjectPropertyKind::ObjectProperty(prop) => Some(prop.unbox()),
+            ObjectPropertyKind::SpreadProperty(_) => None,
+        });
+        for (index, prop) in props.enumerate() {
             let name = get_string_by_property_key(&prop.key).unwrap_or_default();
             let prefix = format!("{}{name}:", if index == 0 { "" } else { ";" });
             let head = Expression::new_string_literal(
