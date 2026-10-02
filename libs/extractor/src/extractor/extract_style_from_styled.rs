@@ -225,6 +225,13 @@ pub fn extract_style_from_styled<'a>(
             let expression = &tag.quasi.expressions[index];
             errors.push((expression.span().start, unplaced_error(expression)));
         }
+        errors.extend(
+            tag.quasi
+                .expressions
+                .iter()
+                .filter(|expression| crate::css_utils::reads_unmapped_theme(expression))
+                .map(|expression| crate::css_utils::unmapped_theme_error("styled", expression)),
+        );
         let mut props_styles: Vec<ExtractStyleProp<'_>> = styles
             .into_iter()
             .map(|ex| ExtractStyleProp::Static(ex.into()))
