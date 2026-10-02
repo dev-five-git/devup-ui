@@ -24,7 +24,7 @@ const children = (
       <SelectOption disabled value="Option 4">
         Option 4
       </SelectOption>
-      <Select id="select" type="radio">
+      <Select id="nested" type="radio">
         <SelectTrigger asChild>
           <SelectOption>
             <Flex alignItems="center" justifyContent="space-between" w="100%">
