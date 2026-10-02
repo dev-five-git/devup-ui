@@ -1,9 +1,10 @@
-import { unlinkSync, writeFile, writeFileSync } from 'node:fs'
+import { writeFile, writeFileSync } from 'node:fs'
 import { createServer, type IncomingMessage, type Server } from 'node:http'
 import { basename, dirname, join, relative } from 'node:path'
 
 import { getFileNumByFilename } from '@devup-ui/plugin-utils'
 
+import { formatPortFile, removeOwnPortFile } from './coordinator-port'
 import { elapsedMs, profileStart, reportProfile } from './profile'
 import { transformStaticVanillaExtract } from './static-vanilla'
 import type { DevupWasm } from './wasm'
@@ -668,7 +669,7 @@ export function startCoordinator(options: CoordinatorOptions): {
   coordinatorServer.listen(0, '127.0.0.1', () => {
     const addr = coordinatorServer.address()
     if (addr && typeof addr !== 'string') {
-      writeFileSync(coordinatorPortFile, String(addr.port), 'utf-8')
+      writeFileSync(coordinatorPortFile, formatPortFile(addr.port), 'utf-8')
     }
   })
 
@@ -682,11 +683,7 @@ export function startCoordinator(options: CoordinatorOptions): {
       coordinatorServer.close()
       if (server === coordinatorServer) {
         server = null
-        try {
-          unlinkSync(coordinatorPortFile)
-        } catch {
-          // ignore if already deleted
-        }
+        removeOwnPortFile(coordinatorPortFile)
       }
     },
   }
