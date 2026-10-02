@@ -1,0 +1,7 @@
+{
+  "changes": {
+    "packages/components/package.json": "Patch"
+  },
+  "note": "RadioGroup is a radiogroup with an optional label, its radios share a name (generated when not given) so arrow keys move between them, and it keeps the typed values of its options: false, 0 and '' stay selectable and onChange receives the option's own value rather than a string. Button-variant radios are visually hidden instead of display:none, so they stay focusable and show a focus ring, and the default radio's focus outline is valid CSS and shown on :focus-visible",
+  "date": "2026-10-01T00:00:00.000Z"
+}
