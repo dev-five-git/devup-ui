@@ -21378,6 +21378,50 @@ export const App = () => <Global {...rest} styles={{ body: { margin: '0px' } }} 
 
     #[test]
     #[serial]
+    fn test_emotion_css_prop_where_the_project_builds_jsx_with_emotion() {
+        let mut option = emotion_option();
+        option.import_aliases.insert(
+            "@emotion/react/jsx-runtime".to_string(),
+            ImportAlias::NamedToNamed,
+        );
+        reset_class_map();
+        reset_file_map();
+        let output = extract(
+            "test.tsx",
+            "const Custom = ({ className }) => <div className={className} />;\nexport const App = () => <Custom css={{ color: 'red', padding: 2 }} />;",
+            option.clone(),
+        )
+        .unwrap();
+        assert_debug_snapshot!(ToBTreeSet::from(output));
+
+        reset_class_map();
+        reset_file_map();
+        let plain = extract(
+            "test.tsx",
+            "export const App = () => <div />;",
+            option.clone(),
+        )
+        .unwrap();
+        assert_eq!(
+            plain.code,
+            "/** @jsxImportSource react */\nexport const App = () => <div />;\n"
+        );
+
+        reset_class_map();
+        reset_file_map();
+        let error = extract(
+            "test.tsx",
+            "import { css } from '@emotion/react';\nexport const App = () => <div css={getStyles()} />;",
+            option,
+        )
+        .err()
+        .map(|error| error.to_string())
+        .unwrap_or_default();
+        assert!(error.starts_with("test.tsx:2:36: "), "{error}");
+    }
+
+    #[test]
+    #[serial]
     fn test_emotion_css_prop_reports_what_it_cannot_compile() {
         let errors: Vec<String> = [
             "export const App = () => { const s = { color: 'red' }; return <div css={[s.a]} />; };",

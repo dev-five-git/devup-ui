@@ -52,6 +52,9 @@
     "./compat/css-prop": {
       "types": "./dist/compat/css-prop.d.ts"
     },
+    "./compat/emotion-jsx-runtime": {
+      "types": "./dist/compat/emotion-jsx-runtime.d.ts"
+    },
     "./compat/stylex": {
       "types": "./dist/compat/stylex.d.ts"
     },

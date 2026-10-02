@@ -79,6 +79,28 @@ describe('mergeImportAliases', () => {
     // null = named exports 1:1 mapping
     expect(result['named-export-lib']).toBeNull()
   })
+
+  it("aliases Emotion's JSX runtime where the project builds JSX with it", () => {
+    expect(mergeImportAliases(undefined, '@emotion/react')).toEqual({
+      '@emotion/react': null,
+      '@emotion/react/jsx-runtime': null,
+      '@emotion/styled': 'styled',
+      'styled-components': 'styled',
+      '@vanilla-extract/css': null,
+    })
+    expect(
+      mergeImportAliases({ '@emotion/react': false }, '@emotion/react'),
+    ).not.toHaveProperty('@emotion/react/jsx-runtime')
+    expect(
+      mergeImportAliases(
+        { '@emotion/react/jsx-runtime': false },
+        '@emotion/react',
+      ),
+    ).not.toHaveProperty('@emotion/react/jsx-runtime')
+    expect(mergeImportAliases(undefined, 'preact')).not.toHaveProperty(
+      '@emotion/react/jsx-runtime',
+    )
+  })
 })
 
 describe('DEFAULT_IMPORT_ALIASES', () => {

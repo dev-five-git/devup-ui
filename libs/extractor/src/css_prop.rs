@@ -23,6 +23,26 @@ use crate::utils::{binding_root, get_string_by_literal_expression, unwrap_syntax
 /// The package whose alias makes elements take the `css` prop
 pub(crate) const EMOTION_REACT: &str = "@emotion/react";
 
+/// Emotion's JSX runtime, whose alias tells that the project builds JSX with
+/// it, as a `jsxImportSource` of `@emotion/react` in tsconfig does
+pub(crate) const EMOTION_JSX_RUNTIME: &str = "@emotion/react/jsx-runtime";
+
+/// The pragma building a file's JSX with React, as its `css` props compile
+pub(crate) const REACT_JSX_PRAGMA: &str = "/** @jsxImportSource react */\n";
+
+/// Whether the project builds JSX with Emotion's runtime, which then builds it
+/// with React's as every `css` prop compiles
+pub(crate) fn builds_jsx_with_emotion(import_aliases: &HashMap<String, ImportAlias>) -> bool {
+    import_aliases.contains_key(EMOTION_REACT) && import_aliases.contains_key(EMOTION_JSX_RUNTIME)
+}
+
+/// Whether `filename` is written in JSX, which the project's JSX settings build
+pub(crate) fn is_jsx_file(filename: &str) -> bool {
+    filename
+        .rsplit_once('.')
+        .is_some_and(|(_, extension)| matches!(extension, "tsx" | "jsx"))
+}
+
 /// Which elements of a file take Emotion's `css` prop
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub enum CssProp {
@@ -604,6 +624,17 @@ mod tests {
             Some("react/jsx-dev-runtime")
         );
         assert_eq!(react_runtime("@emotion/react"), None);
+
+        assert!(is_jsx_file("src/App.tsx"));
+        assert!(is_jsx_file("App.jsx"));
+        assert!(!is_jsx_file("App.ts"));
+        assert!(!is_jsx_file("Makefile"));
+
+        let mut aliases =
+            HashMap::from([(EMOTION_JSX_RUNTIME.to_string(), ImportAlias::NamedToNamed)]);
+        assert!(!builds_jsx_with_emotion(&aliases));
+        aliases.insert(EMOTION_REACT.to_string(), ImportAlias::NamedToNamed);
+        assert!(builds_jsx_with_emotion(&aliases));
 
         let compat = "@devup-ui/react/compat";
         assert!(is_jsx_function("react/jsx-runtime", "jsxs", compat));
