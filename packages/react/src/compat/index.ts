@@ -7,6 +7,9 @@
  * rewritten imports here automatically.
  */
 
+import type { DevupPropsWithTheme } from '../types/props'
+import type { StyledTheme } from '../utils/theme-vars'
+
 export { Global } from '../components/Global'
 export { ThemeProvider } from '../components/ThemeProvider'
 export { useStyledTheme as useTheme } from '../hooks/use-styled-theme'
@@ -18,3 +21,21 @@ export {
 } from '../utils/styled-compat'
 export type { StyledTheme } from '../utils/theme-vars'
 export { withTheme } from '../utils/with-theme'
+/**
+ * Emotion's `jsx`: the build compiles the `css` props it is given, leaving
+ * React's own element.
+ */
+export { createElement as jsx } from 'react'
+
+/** What Emotion's `css` prop composes; the build compiles it to classes. */
+export type CssInterpolation =
+  | DevupPropsWithTheme
+  | string
+  | false
+  | null
+  | undefined
+  | readonly CssInterpolation[]
+
+/** Emotion's `css` prop: styles, or a function of the theme giving them. */
+export type CssProp =
+  CssInterpolation | ((theme: StyledTheme) => CssInterpolation)

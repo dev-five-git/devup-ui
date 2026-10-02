@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'bun:test'
+import { createElement } from 'react'
 
 describe('compat entry', () => {
   it('exports only the absorbed third-party APIs', async () => {
@@ -15,7 +16,15 @@ describe('compat entry', () => {
       isStyledComponent: expect.any(Function),
       ServerStyleSheet: expect.any(Function),
       StyleSheetManager: expect.any(Function),
+
+      jsx: expect.any(Function),
     })
+  })
+
+  it("builds Emotion's jsx elements as React does", async () => {
+    const { jsx } = await import('../index')
+
+    expect(jsx).toBe(createElement)
   })
 
   it('keeps its useTheme distinct from the devup-ui one', async () => {
