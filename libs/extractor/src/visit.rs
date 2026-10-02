@@ -641,9 +641,12 @@ impl<'a> DevupVisitor<'a> {
     /// `style` attribute
     fn style_text(&self, props: Vec<ObjectPropertyKind<'a>>) -> Expression<'a> {
         let mut text: Option<Expression<'a>> = None;
-        let props = props.into_iter().filter_map(|prop| match prop {
-            ObjectPropertyKind::ObjectProperty(prop) => Some(prop.unbox()),
-            ObjectPropertyKind::SpreadProperty(_) => None,
+        let props = props.into_iter().filter_map(|prop| {
+            if let ObjectPropertyKind::ObjectProperty(prop) = prop {
+                Some(prop.unbox())
+            } else {
+                None
+            }
         });
         for (index, prop) in props.enumerate() {
             let name = get_string_by_property_key(&prop.key).unwrap_or_default();
