@@ -10,6 +10,7 @@ export const SelectContext = createContext<{
   value: SelectValue<SelectType>
   setValue: (value: string) => void
   type: SelectType
+  listboxId: string
   ref: React.RefObject<HTMLDivElement | null>
 } | null>(null)
 
