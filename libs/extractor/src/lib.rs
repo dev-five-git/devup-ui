@@ -836,8 +836,8 @@ mod tests {
             alternate: None,
         };
 
-        assert!(empty.extract().is_empty());
-        assert!(empty.into_extract().is_empty());
+        assert_eq!(empty.extract(), vec![]);
+        assert_eq!(empty.into_extract(), vec![]);
     }
 
     #[test]
@@ -13598,7 +13598,7 @@ globalCss({
         );
         assert!(result.is_ok());
         let output = result.unwrap();
-        assert!(!output.code.is_empty());
+        assert_ne!(output.code, "");
     }
 
     #[test]
@@ -18778,7 +18778,7 @@ export const k = styled('div')({ color: SIZE });",
             &memory_resolver(CONSTANT_MODULES),
         )
         .unwrap();
-        assert!(without_imports.dependencies.is_empty());
+        assert_eq!(without_imports.dependencies.len(), 0);
         let without_constants = extract_with_modules(
             "/src/Handler.tsx",
             "import { Box } from '@devup-ui/react';\nimport { handler } from './handler';\nexport const a = <Box onClick={handler} color='red' />;",
@@ -20726,6 +20726,25 @@ const h = <Box color={('navy')} />;"
 const s = create({ a: { color: 'red' } });
 const e = <div {...attrs(s.a)} />;"
         )));
+    }
+
+    // `attrs()` gives the `style` attribute as text, as StyleX does, while
+    // `props()` keeps the object React takes
+    #[test]
+    #[serial]
+    fn test_stylex_attrs_style_is_text() {
+        let code = extract_tsx(
+            r"import * as stylex from '@stylexjs/stylex';
+const s = stylex.create({ box: (w, h) => ({ width: w, height: h }) });
+export const a = stylex.attrs(s.box(w, h));
+export const p = stylex.props(s.box(w, h));",
+        )
+        .code;
+        assert!(
+            code.contains("style: \"--a:\" + ((v) => typeof v === \"number\" ? v + \"px\" : v)(w) + \";--b:\" + ((v) => typeof v === \"number\" ? v + \"px\" : v)(h)"),
+            "{code}"
+        );
+        assert!(code.contains("style: {\n\t\t\"--a\":"), "{code}");
     }
 
     #[test]
