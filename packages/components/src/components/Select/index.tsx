@@ -230,54 +230,59 @@ export function SelectContainer({
   ...props
 }: SelectContainerProps) {
   const { open, setOpen, type, ref } = useSelect()
+  const containerRef = useRef<HTMLDivElement>(null)
+
+  // An effect rather than a callback ref returning cleanup, which React 18 ignores
+  useEffect(() => {
+    const el = containerRef.current
+    if (!open || !ref.current || !el) return
+    const combobox = ref.current
+
+    // 요소가 움직일 때마다(스크롤, 리사이즈 등) 위치를 갱신하도록 이벤트를 등록합니다.
+    const updatePosition = () => {
+      const {
+        height,
+        x: comboboxX,
+        y: comboboxY,
+        top,
+        left,
+      } = combobox.getBoundingClientRect()
+
+      const isOverflowBottom =
+        el.offsetHeight + top + window.scrollY + height + y >
+        document.documentElement.scrollHeight
+
+      const isOverflowRight =
+        el.offsetWidth + left + window.scrollX + x >
+        document.documentElement.scrollWidth
+
+      if (isOverflowBottom)
+        el.style.bottom = `${window.innerHeight - comboboxY + 10}px`
+      else el.style.top = `${comboboxY + height + 10 + y}px`
+
+      if (isOverflowRight)
+        el.style.left = `${Math.max(comboboxX - el.offsetWidth + combobox.offsetWidth, 0) + x}px`
+      else el.style.left = `${comboboxX + x}px`
+    }
+
+    // 최초 위치 설정
+    updatePosition()
+
+    // 스크롤, 리사이즈, DOM 변경 등 요소 위치가 변할 수 있는 이벤트에 리스너 등록
+    window.addEventListener('scroll', updatePosition, true)
+    window.addEventListener('resize', updatePosition)
+
+    // 컴포넌트 언마운트 시 이벤트 해제
+    return () => {
+      window.removeEventListener('scroll', updatePosition, true)
+      window.removeEventListener('resize', updatePosition)
+    }
+  }, [open, ref, x, y])
 
   if (!open) return null
   return (
     <VStack
-      ref={(el) => {
-        if (!ref.current || !el) return
-        const combobox = ref.current
-
-        // 요소가 움직일 때마다(스크롤, 리사이즈 등) 위치를 갱신하도록 이벤트를 등록합니다.
-        const updatePosition = () => {
-          const {
-            height,
-            x: comboboxX,
-            y: comboboxY,
-            top,
-            left,
-          } = combobox.getBoundingClientRect()
-
-          const isOverflowBottom =
-            el.offsetHeight + top + window.scrollY + height + y >
-            document.documentElement.scrollHeight
-
-          const isOverflowRight =
-            el.offsetWidth + left + window.scrollX + x >
-            document.documentElement.scrollWidth
-
-          if (isOverflowBottom)
-            el.style.bottom = `${window.innerHeight - comboboxY + 10}px`
-          else el.style.top = `${comboboxY + height + 10 + y}px`
-
-          if (isOverflowRight)
-            el.style.left = `${Math.max(comboboxX - el.offsetWidth + combobox.offsetWidth, 0) + x}px`
-          else el.style.left = `${comboboxX + x}px`
-        }
-
-        // 최초 위치 설정
-        updatePosition()
-
-        // 스크롤, 리사이즈, DOM 변경 등 요소 위치가 변할 수 있는 이벤트에 리스너 등록
-        window.addEventListener('scroll', updatePosition, true)
-        window.addEventListener('resize', updatePosition)
-
-        // 컴포넌트 언마운트 시 이벤트 해제
-        return () => {
-          window.removeEventListener('scroll', updatePosition, true)
-          window.removeEventListener('resize', updatePosition)
-        }
-      }}
+      ref={containerRef}
       aria-label="Select container"
       bg="var(--inputBg, light-dark(#FFF,#2E2E2E))"
       border="1px solid var(--border, light-dark(#E4E4E4,#434343))"

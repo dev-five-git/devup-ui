@@ -2,7 +2,7 @@
 
 import { css, Flex } from '@devup-ui/react'
 import clsx from 'clsx'
-import { ComponentProps, createContext, use, useState } from 'react'
+import { ComponentProps, createContext, useContext, useState } from 'react'
 
 import { Button } from '../Button'
 import { Input } from '../Input'
@@ -20,7 +20,7 @@ type StepperContextType = {
 const StepperContext = createContext<StepperContextType | null>(null)
 
 export const useStepper = () => {
-  const context = use(StepperContext)
+  const context = useContext(StepperContext)
   if (!context) {
     throw new Error('useStepper must be used within a StepperProvider')
   }
