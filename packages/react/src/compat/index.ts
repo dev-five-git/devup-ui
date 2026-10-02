@@ -12,6 +12,7 @@ export { ThemeProvider } from '../components/ThemeProvider'
 export { useStyledTheme as useTheme } from '../hooks/use-styled-theme'
 export { createGlobalStyle } from '../utils/create-global-style'
 export {
+  CacheProvider,
   isStyledComponent,
   ServerStyleSheet,
   StyleSheetManager,
