@@ -4,6 +4,15 @@ declare module '@emotion/styled' {
   export default styled
 }
 
+declare module '@emotion/css' {
+  export {
+    css,
+    css as cx,
+    globalCss as injectGlobal,
+    keyframes,
+  } from '@devup-ui/react'
+}
+
 declare module '@emotion/react' {
   export { css, keyframes } from '@devup-ui/react'
   export type { StyledTheme as Theme } from '@devup-ui/react/compat'

@@ -1,0 +1,9 @@
+{
+  "changes": {
+    "packages/plugin-utils/package.json": "Patch",
+    "packages/react/package.json": "Patch",
+    "bindings/devup-ui-wasm/package.json": "Patch"
+  },
+  "note": "@emotion/css is aliased by default: css and keyframes compile like Devup UI's own (numbers in px, as Emotion reads them), cx composes classes as css does so a later class's declarations win, and injectGlobal declares global CSS; ambient declarations type these imports. Its runtime-only APIs (cache, flush, hydrate, merge, sheet, getRegisteredStyles) stay on @emotion/css",
+  "date": "2026-10-01T00:00:00.000Z"
+}

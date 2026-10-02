@@ -836,8 +836,8 @@ mod tests {
             alternate: None,
         };
 
-        assert!(empty.extract().is_empty());
-        assert!(empty.into_extract().is_empty());
+        assert_eq!(empty.extract(), vec![]);
+        assert_eq!(empty.into_extract(), vec![]);
     }
 
     #[test]
@@ -13598,7 +13598,7 @@ globalCss({
         );
         assert!(result.is_ok());
         let output = result.unwrap();
-        assert!(!output.code.is_empty());
+        assert_ne!(output.code, "");
     }
 
     #[test]
@@ -18778,7 +18778,7 @@ export const k = styled('div')({ color: SIZE });",
             &memory_resolver(CONSTANT_MODULES),
         )
         .unwrap();
-        assert!(without_imports.dependencies.is_empty());
+        assert_eq!(without_imports.dependencies.len(), 0);
         let without_constants = extract_with_modules(
             "/src/Handler.tsx",
             "import { Box } from '@devup-ui/react';\nimport { handler } from './handler';\nexport const a = <Box onClick={handler} color='red' />;",
@@ -20749,5 +20749,39 @@ export const App = () => <Global {...rest} styles={{ body: { margin: '0px' } }} 
             )
             .unwrap()
         ));
+    }
+
+    // `@emotion/css` compiles like Devup UI's own APIs, its numbers in px
+    #[test]
+    #[serial]
+    fn test_emotion_css_package() {
+        reset_class_map();
+        reset_file_map();
+        let output = extract(
+            "test.tsx",
+            "import { css, cx, keyframes, injectGlobal } from '@emotion/css';
+const red = css({ color: 'red', padding: 8 });
+const blue = css({ color: 'blue' });
+export const a = cx(red, blue);
+export const fade = keyframes({ from: { opacity: 0 } });
+injectGlobal`body { margin: 0; }`;",
+            ExtractOption {
+                package: "@devup-ui/react".to_string(),
+                css_dir: "@devup-ui/react".to_string(),
+                single_css: true,
+                import_main_css: false,
+                import_aliases: HashMap::from([(
+                    "@emotion/css".to_string(),
+                    ImportAlias::NamedToNamed,
+                )]),
+            },
+        )
+        .unwrap();
+        assert!(!output.code.contains("@emotion/css"), "{}", output.code);
+        assert!(!output.code.contains("cx("), "{}", output.code);
+        assert!(!output.code.contains("injectGlobal"), "{}", output.code);
+        let styles = format!("{:?}", output.styles);
+        assert!(styles.contains("\"8px\""), "{styles}");
+        assert!(styles.contains("body{margin:0}"), "{styles}");
     }
 }

@@ -20,6 +20,7 @@ describe('createCompatTypes', () => {
         mergeImportAliases({
           '@emotion/react': false,
           '@emotion/styled': false,
+          '@emotion/css': false,
           '@vanilla-extract/css': false,
         }),
       ),
