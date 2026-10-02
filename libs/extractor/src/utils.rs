@@ -823,7 +823,10 @@ fn branch<'b, 'a>(expression: &'b Expression<'a>) -> Option<Branch<'b, 'a>> {
 
 /// `value` as a class: itself when it is a string, nothing otherwise, as the
 /// libraries skip `true` and other non-class values
-fn string_class<'a>(ast_builder: &AstBuilder<'a>, value: &Expression<'a>) -> Expression<'a> {
+pub(super) fn string_class<'a>(
+    ast_builder: &AstBuilder<'a>,
+    value: &Expression<'a>,
+) -> Expression<'a> {
     if matches!(
         value,
         Expression::StringLiteral(_) | Expression::TemplateLiteral(_)
