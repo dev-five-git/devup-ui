@@ -12,6 +12,7 @@ describe('compat entry', () => {
       useTheme: expect.any(Function),
       withTheme: expect.any(Function),
 
+      CacheProvider: expect.any(Function),
       isStyledComponent: expect.any(Function),
       ServerStyleSheet: expect.any(Function),
       StyleSheetManager: expect.any(Function),

@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'bun:test'
 
 import {
+  CacheProvider,
   isStyledComponent,
   ServerStyleSheet,
   StyleSheetManager,
@@ -20,6 +21,13 @@ describe('StyleSheetManager', () => {
   it('renders its children untouched', () => {
     expect(StyleSheetManager({ children: 'child' })).toBe('child')
     expect(StyleSheetManager({})).toBeUndefined()
+  })
+})
+
+describe('CacheProvider', () => {
+  it('renders its children untouched', () => {
+    expect(CacheProvider({ value: {}, children: 'child' })).toBe('child')
+    expect(CacheProvider({})).toBeUndefined()
   })
 })
 

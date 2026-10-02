@@ -1,0 +1,8 @@
+{
+  "changes": {
+    "packages/react/package.json": "Patch",
+    "bindings/devup-ui-wasm/package.json": "Patch"
+  },
+  "note": "Emotion's CacheProvider is available from the compat entry as a no-op that renders its children, and `import { CacheProvider } from '@emotion/react'` is redirected there instead of keeping @emotion/react as a runtime dependency; the cache it configures holds styles Emotion inserts at runtime, which Devup UI writes at build time",
+  "date": "2026-10-01T00:00:00.000Z"
+}
