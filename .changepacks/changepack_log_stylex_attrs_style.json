@@ -1,0 +1,8 @@
+{
+  "changes": {
+    "packages/react/package.json": "Patch",
+    "bindings/devup-ui-wasm/package.json": "Patch"
+  },
+  "note": "stylex.attrs() gives the dynamic CSS variables it sets as `style` attribute text (`\"--a:\" + value`), as StyleX does for spreading onto non-React targets, instead of a style object; stylex.props() keeps the object React takes. The attrs() return type declares `style` as a string",
+  "date": "2026-10-01T00:00:00.000Z"
+}
