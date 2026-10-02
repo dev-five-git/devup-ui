@@ -1,0 +1,7 @@
+{
+  "changes": {
+    "bindings/devup-ui-wasm/package.json": "Patch"
+  },
+  "note": "While @vanilla-extract/css is aliased, importing @vanilla-extract/recipes or @vanilla-extract/sprinkles is a build error naming the file, line and column: those packages generate CSS Devup UI does not compile, so their rules used to be silently missing from the stylesheet. The error says to write the styles with css(), or to disable the alias and build with the vanilla-extract plugin. Type-only imports are allowed",
+  "date": "2026-10-01T00:00:00.000Z"
+}

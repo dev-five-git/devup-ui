@@ -294,6 +294,12 @@ fn extract_source(
     source_map: bool,
     resolver: Option<&ModuleResolver>,
 ) -> Result<ExtractOutput, Box<dyn Error>> {
+    if evaluated.is_none() && option.import_aliases.contains_key("@vanilla-extract/css") {
+        let errors = import_alias_visit::companion_errors(code, filename);
+        if !errors.is_empty() {
+            return Err(located_errors(filename, code, &[], errors).into());
+        }
+    }
     // Step 1: Transform import aliases
     // e.g., `import styled from '@emotion/styled'` → `import { styled } from '@devup-ui/react'`
     // e.g., `import { style } from '@vanilla-extract/css'` → `import { style } from '@devup-ui/react'`
@@ -836,8 +842,8 @@ mod tests {
             alternate: None,
         };
 
-        assert!(empty.extract().is_empty());
-        assert!(empty.into_extract().is_empty());
+        assert_eq!(empty.extract(), vec![]);
+        assert_eq!(empty.into_extract(), vec![]);
     }
 
     #[test]
@@ -11203,6 +11209,34 @@ let color = "red";
 
     #[test]
     #[serial]
+    fn test_vanilla_extract_companion_import_is_an_error() {
+        let option = |aliased: bool| ExtractOption {
+            package: "@devup-ui/react".to_string(),
+            css_dir: "@devup-ui/react".to_string(),
+            single_css: true,
+            import_main_css: false,
+            import_aliases: if aliased {
+                HashMap::from([(
+                    "@vanilla-extract/css".to_string(),
+                    ImportAlias::NamedToNamed,
+                )])
+            } else {
+                HashMap::new()
+            },
+        };
+        let code = "import { recipe } from '@vanilla-extract/recipes'\nexport const b = recipe({})";
+        let error = extract("a.css.ts", code, option(true))
+            .unwrap_err()
+            .to_string();
+        assert!(
+            error.starts_with("a.css.ts:1:1: `@vanilla-extract/recipes`"),
+            "{error}"
+        );
+        assert!(extract("a.css.ts", code, option(false)).is_ok());
+    }
+
+    #[test]
+    #[serial]
     fn test_keyframes_no_args() {
         reset_class_map();
         reset_file_map();
@@ -13598,7 +13632,7 @@ globalCss({
         );
         assert!(result.is_ok());
         let output = result.unwrap();
-        assert!(!output.code.is_empty());
+        assert_ne!(output.code, "");
     }
 
     #[test]
@@ -18778,7 +18812,7 @@ export const k = styled('div')({ color: SIZE });",
             &memory_resolver(CONSTANT_MODULES),
         )
         .unwrap();
-        assert!(without_imports.dependencies.is_empty());
+        assert_eq!(without_imports.dependencies.len(), 0);
         let without_constants = extract_with_modules(
             "/src/Handler.tsx",
             "import { Box } from '@devup-ui/react';\nimport { handler } from './handler';\nexport const a = <Box onClick={handler} color='red' />;",
