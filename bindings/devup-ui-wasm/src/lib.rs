@@ -1551,7 +1551,7 @@ mod tests {
         );
 
         // Test getters
-        assert!(!output.code().is_empty());
+        assert_ne!(output.code(), "");
         assert_eq!(output.css_file(), Some("devup-ui-0.css".to_string()));
         assert_eq!(output.map(), Some("//# sourceMappingURL=test".to_string()));
         assert!(output.css().is_some());
@@ -1951,7 +1951,7 @@ mod tests {
 
         assert!(result.is_ok());
         let output = result.unwrap();
-        assert!(!output.code().is_empty());
+        assert_ne!(output.code(), "");
         assert!(output.map().is_some());
     }
 
@@ -1975,7 +1975,7 @@ mod tests {
 
         assert!(result.is_ok());
         let output = result.unwrap();
-        assert!(!output.code().is_empty());
+        assert_ne!(output.code(), "");
         assert!(output.map().is_none());
     }
 
@@ -2000,7 +2000,7 @@ mod tests {
 
         assert!(result.is_err());
         if let Err(error) = result {
-            assert!(!error.is_empty());
+            assert_ne!(error, "");
         }
     }
 

@@ -836,8 +836,8 @@ mod tests {
             alternate: None,
         };
 
-        assert!(empty.extract().is_empty());
-        assert!(empty.into_extract().is_empty());
+        assert_eq!(empty.extract(), vec![]);
+        assert_eq!(empty.into_extract(), vec![]);
     }
 
     #[test]
@@ -11203,6 +11203,32 @@ let color = "red";
 
     #[test]
     #[serial]
+    fn test_css_class_as_nested_rule_is_an_error() {
+        reset_class_map();
+        reset_file_map();
+        let error = extract(
+            "test.tsx",
+            "import { css } from '@devup-ui/react'
+const hotpink = css({ color: 'hotpink' })
+export const hover = css({ '&:hover,&:focus': hotpink, color: other })",
+            ExtractOption {
+                package: "@devup-ui/react".to_string(),
+                css_dir: "@devup-ui/react".to_string(),
+                single_css: true,
+                import_main_css: false,
+                import_aliases: HashMap::new(),
+            },
+        )
+        .unwrap_err()
+        .to_string();
+        assert!(
+            error.contains("test.tsx:3:47: `css()` cannot use `hotpink` at build time: a class from `css()` cannot be the value of a nested rule"),
+            "{error}"
+        );
+    }
+
+    #[test]
+    #[serial]
     fn test_keyframes_no_args() {
         reset_class_map();
         reset_file_map();
@@ -13598,7 +13624,7 @@ globalCss({
         );
         assert!(result.is_ok());
         let output = result.unwrap();
-        assert!(!output.code.is_empty());
+        assert_ne!(output.code, "");
     }
 
     #[test]
@@ -18778,7 +18804,7 @@ export const k = styled('div')({ color: SIZE });",
             &memory_resolver(CONSTANT_MODULES),
         )
         .unwrap();
-        assert!(without_imports.dependencies.is_empty());
+        assert_eq!(without_imports.dependencies.len(), 0);
         let without_constants = extract_with_modules(
             "/src/Handler.tsx",
             "import { Box } from '@devup-ui/react';\nimport { handler } from './handler';\nexport const a = <Box onClick={handler} color='red' />;",
