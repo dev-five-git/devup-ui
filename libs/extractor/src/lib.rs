@@ -21355,6 +21355,10 @@ export const App = () => <Global {...rest} styles={{ body: { margin: '0px' } }} 
             ),
             (
                 "test.tsx",
+                "import styled from '@emotion/styled';\nconst Wide = styled.div({ margin: [1, 2] });\nconst Toggle = styled.div({ color: on ? 'red' : 'blue' });\nexport const App = ({ rest, c }) => <><Wide css={{ color: 'red' }} /><Toggle css={{ margin: 3 }} /><Wide {...rest} css={[c && { top: 1 }]} /></>;"
+            ),
+            (
+                "test.tsx",
                 "import { Global } from '@emotion/react';\nexport const App = () => <Global css={{ color: 'red' }} styles={{ body: { margin: 0 } }} />;"
             ),
             (
