@@ -283,6 +283,231 @@ pub fn modify_props<'a>(
     tailwind_styles
 }
 
+/// What `value` of a JSX attribute is as an expression
+fn attribute_expression<'a>(
+    ast_builder: &AstBuilder<'a>,
+    value: &JSXAttributeValue<'a>,
+) -> Option<Expression<'a>> {
+    match value {
+        JSXAttributeValue::ExpressionContainer(container) => container
+            .expression
+            .as_expression()
+            .map(|expression| expression.clone_in_with_semantic_ids(ast_builder.allocator())),
+        JSXAttributeValue::StringLiteral(literal) => Some(Expression::new_string_literal(
+            SPAN,
+            literal.value,
+            None,
+            ast_builder,
+        )),
+        _ => None,
+    }
+}
+
+/// The `className` JSX props end up with, as written or spread
+pub(crate) fn written_class_name<'a>(
+    ast_builder: &AstBuilder<'a>,
+    props: &[JSXAttributeItem<'a>],
+) -> Option<Expression<'a>> {
+    let written: Vec<Written<'a>> = props
+        .iter()
+        .filter_map(|prop| match prop {
+            JSXAttributeItem::Attribute(attr)
+                if matches!(&attr.name, Identifier(ident) if ident.name == "className") =>
+            {
+                attr.value
+                    .as_ref()
+                    .and_then(|value| attribute_expression(ast_builder, value))
+                    .map(Written::Prop)
+            }
+            JSXAttributeItem::SpreadAttribute(spread) => Some(Written::Spread(
+                spread.argument.clone_in(ast_builder.allocator()),
+            )),
+            JSXAttributeItem::Attribute(_) => None,
+        })
+        .collect();
+    last_written(ast_builder, &written, "className")
+}
+
+/// The `className` the props of an object end up with, as written or spread
+pub(crate) fn written_object_class_name<'a>(
+    ast_builder: &AstBuilder<'a>,
+    props: &[ObjectPropertyKind<'a>],
+) -> Option<Expression<'a>> {
+    let written: Vec<Written<'a>> = props
+        .iter()
+        .filter_map(|prop| match prop {
+            ObjectPropertyKind::ObjectProperty(attr)
+                if get_str_by_property_key(&attr.key).as_deref() == Some("className") =>
+            {
+                Some(Written::Prop(
+                    attr.value
+                        .clone_in_with_semantic_ids(ast_builder.allocator()),
+                ))
+            }
+            ObjectPropertyKind::SpreadProperty(spread) => Some(Written::Spread(
+                spread.argument.clone_in(ast_builder.allocator()),
+            )),
+            ObjectPropertyKind::ObjectProperty(_) => None,
+        })
+        .collect();
+    last_written(ast_builder, &written, "className")
+}
+
+/// JSX props giving `class_name` beside the `className` they end up with, and
+/// `style` under the `style` they end up with, for an element outside Devup UI
+pub(crate) fn add_class_and_style<'a>(
+    ast_builder: &AstBuilder<'a>,
+    props: &mut oxc_allocator::Vec<'a, JSXAttributeItem<'a>>,
+    class_name: Option<Expression<'a>>,
+    style: Option<Expression<'a>>,
+) {
+    let mut class_names = Vec::new();
+    let mut style_values = Vec::new();
+    let adds = |key: &str| {
+        (key == "className" && class_name.is_some()) || (key == "style" && style.is_some())
+    };
+    let written = std::mem::replace(props, oxc_allocator::Vec::new_in(ast_builder));
+    for prop in written {
+        match prop {
+            JSXAttributeItem::Attribute(attr)
+                if attr.value.is_some()
+                    && matches!(&attr.name, Identifier(ident) if adds(&ident.name)) =>
+            {
+                let Some(value) = attr
+                    .value
+                    .as_ref()
+                    .and_then(|value| attribute_expression(ast_builder, value))
+                else {
+                    continue;
+                };
+                if matches!(&attr.name, Identifier(ident) if ident.name == "className") {
+                    class_names.push(Written::Prop(value));
+                } else {
+                    style_values.push(Written::Prop(value));
+                }
+            }
+            JSXAttributeItem::SpreadAttribute(spread) => {
+                class_names.push(Written::Spread(
+                    spread.argument.clone_in(ast_builder.allocator()),
+                ));
+                style_values.push(Written::Spread(
+                    spread.argument.clone_in(ast_builder.allocator()),
+                ));
+                props.push(JSXAttributeItem::SpreadAttribute(spread));
+            }
+            prop @ JSXAttributeItem::Attribute(_) => props.push(prop),
+        }
+    }
+    let (class_name, style) =
+        written_with(ast_builder, &class_names, &style_values, class_name, style);
+    if let Some(ex) = class_name {
+        props.push(JSXAttributeItem::new_attribute(
+            SPAN,
+            JSXAttributeName::new_identifier(SPAN, "className", ast_builder),
+            Some(if let Expression::StringLiteral(literal) = ex {
+                JSXAttributeValue::StringLiteral(literal)
+            } else {
+                JSXAttributeValue::new_expression_container(SPAN, ex.into(), ast_builder)
+            }),
+            ast_builder,
+        ));
+    }
+    if let Some(ex) = style {
+        props.push(JSXAttributeItem::new_attribute(
+            SPAN,
+            JSXAttributeName::new_identifier(SPAN, "style", ast_builder),
+            Some(JSXAttributeValue::new_expression_container(
+                SPAN,
+                ex.into(),
+                ast_builder,
+            )),
+            ast_builder,
+        ));
+    }
+}
+
+/// The props of an object giving `class_name` beside the `className` they end
+/// up with, and `style` under the `style` they end up with, for an element
+/// outside Devup UI
+pub(crate) fn add_class_and_style_to_object<'a>(
+    ast_builder: &AstBuilder<'a>,
+    props: &mut oxc_allocator::Vec<'a, ObjectPropertyKind<'a>>,
+    class_name: Option<Expression<'a>>,
+    style: Option<Expression<'a>>,
+) {
+    let mut class_names = Vec::new();
+    let mut style_values = Vec::new();
+    let adds = |key: &str| {
+        (key == "className" && class_name.is_some()) || (key == "style" && style.is_some())
+    };
+    let written = std::mem::replace(props, oxc_allocator::Vec::new_in(ast_builder));
+    for prop in written {
+        match prop {
+            ObjectPropertyKind::ObjectProperty(attr)
+                if get_str_by_property_key(&attr.key).is_some_and(|key| adds(&key)) =>
+            {
+                let value = Written::Prop(attr.value.clone_in(ast_builder.allocator()));
+                if get_str_by_property_key(&attr.key).as_deref() == Some("className") {
+                    class_names.push(value);
+                } else {
+                    style_values.push(value);
+                }
+            }
+            ObjectPropertyKind::SpreadProperty(spread) => {
+                class_names.push(Written::Spread(
+                    spread.argument.clone_in(ast_builder.allocator()),
+                ));
+                style_values.push(Written::Spread(
+                    spread.argument.clone_in(ast_builder.allocator()),
+                ));
+                props.push(ObjectPropertyKind::SpreadProperty(spread));
+            }
+            prop @ ObjectPropertyKind::ObjectProperty(_) => props.push(prop),
+        }
+    }
+    let (class_name, style) =
+        written_with(ast_builder, &class_names, &style_values, class_name, style);
+    for (key, value) in [("className", class_name), ("style", style)] {
+        if let Some(value) = value {
+            props.push(ObjectPropertyKind::new_object_property(
+                SPAN,
+                PropertyKind::Init,
+                PropertyKey::new_static_identifier(SPAN, key, ast_builder),
+                value,
+                false,
+                false,
+                false,
+                ast_builder,
+            ));
+        }
+    }
+}
+
+/// The `className` and `style` the props written end up with, joined to
+/// `class_name` and merged over `style`
+fn written_with<'a>(
+    ast_builder: &AstBuilder<'a>,
+    class_names: &[Written<'a>],
+    style_values: &[Written<'a>],
+    class_name: Option<Expression<'a>>,
+    style: Option<Expression<'a>>,
+) -> (Option<Expression<'a>>, Option<Expression<'a>>) {
+    let class_name = class_name.and_then(|class_name| {
+        let mut expressions = Vec::with_capacity(2);
+        if let Some(written) = last_written(ast_builder, class_names, "className") {
+            expressions.push(convert_class_name(ast_builder, &written));
+        }
+        expressions.push(class_name);
+        merge_string_expressions(ast_builder, &expressions)
+    });
+    let style = style.and_then(|style| {
+        let mut expressions = vec![style];
+        expressions.extend(last_written(ast_builder, style_values, "style"));
+        merge_object_expressions(ast_builder, &expressions)
+    });
+    (class_name, style)
+}
+
 /// Returns (className expression, extracted Tailwind styles)
 pub fn get_class_name_expression<'a>(
     ast_builder: &AstBuilder<'a>,
@@ -628,7 +853,7 @@ fn last_written<'a>(
     for written in written {
         let spread = match written {
             Written::Prop(prop) => {
-                value = Some(prop.clone_in(ast_builder.allocator()));
+                value = Some(prop.clone_in_with_semantic_ids(ast_builder.allocator()));
                 continue;
             }
             Written::Spread(spread) if may_hold(spread, key) => spread,
@@ -644,7 +869,7 @@ fn last_written<'a>(
             ))
         };
         if let Some(written) = written_value(spread, key) {
-            value = Some(written.clone_in(ast_builder.allocator()));
+            value = Some(written.clone_in_with_semantic_ids(ast_builder.allocator()));
             continue;
         }
         value = Some(match value {

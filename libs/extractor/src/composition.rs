@@ -173,6 +173,13 @@ impl<'a> Composition<'a> {
         self.entries.push((key, choice));
     }
 
+    /// A class applying after the composed parts, whose styles `values` the
+    /// build knows: what it sets replaces what they set
+    pub fn cover(&mut self, values: &[ExtractStyleValue]) {
+        let keys: Vec<CascadeKey> = values.iter().map(CascadeKey::of).collect();
+        self.entries.retain(|(key, _)| !keys.contains(key));
+    }
+
     /// The composed styles, for class names and the stylesheet
     #[must_use]
     pub fn into_props(self) -> Vec<ExtractStyleProp<'a>> {
@@ -259,6 +266,41 @@ pub fn set_prop_order(prop: &mut ExtractStyleProp<'_>, order: u8) {
         // Class names the code gives, and styles reported as errors
         ExtractStyleProp::Expression { .. } | ExtractStyleProp::Unreadable { .. } => {}
     }
+}
+
+/// Whether `later` may set what `earlier` sets, so the order of their classes
+/// decides which applies: a style whose key the build cannot tell may
+pub fn overlaps(earlier: &[ExtractStyleProp<'_>], later: &[ExtractStyleProp<'_>]) -> bool {
+    match (keys(earlier), keys(later)) {
+        (Some(earlier), Some(later)) => later.iter().any(|key| earlier.contains(key)),
+        _ => true,
+    }
+}
+
+/// The keys `props` set, `None` when a style chosen at runtime has none;
+/// classes only the runtime gives compose at runtime, so they set none here
+fn keys(props: &[ExtractStyleProp<'_>]) -> Option<Vec<CascadeKey>> {
+    let mut keys = Vec::new();
+    for prop in props {
+        match prop {
+            ExtractStyleProp::Static(value) => keys.push(CascadeKey::of(value)),
+            ExtractStyleProp::StaticArray(props) => keys.extend(self::keys(props)?),
+            ExtractStyleProp::Conditional {
+                consequent,
+                alternate,
+                ..
+            } => {
+                for side in [consequent, alternate].into_iter().flatten() {
+                    keys.extend(self::keys(std::slice::from_ref(side.as_ref()))?);
+                }
+            }
+            ExtractStyleProp::Expression { .. } | ExtractStyleProp::Unreadable { .. } => {}
+            ExtractStyleProp::Enum { .. } | ExtractStyleProp::MemberExpression { .. } => {
+                return None;
+            }
+        }
+    }
+    Some(keys)
 }
 
 /// Whether every style `prop` holds has a key, so a condition around it can be

@@ -55,6 +55,14 @@ impl StyleValues {
             .then_some(symbol)
     }
 
+    /// Whether `symbol` is declared below the top level of the module, where
+    /// the constants styles read are not
+    pub fn is_local(&self, symbol: SymbolId) -> bool {
+        self.scoping
+            .as_ref()
+            .is_some_and(|scoping| scoping.symbol_scope_id(symbol) != scoping.root_scope_id())
+    }
+
     pub fn insert(&mut self, symbol: SymbolId, value: StyleValue) {
         self.values.insert(symbol, value);
     }

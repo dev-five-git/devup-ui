@@ -105,6 +105,36 @@ impl StyledDefinition<'_> {
     }
 }
 
+impl<'a> StyledDefinition<'a> {
+    /// The tag an element using this component can render in its place, with
+    /// the styles the component gives it: a tag, with no attrs, no props read
+    /// and no value only the runtime gives
+    #[must_use]
+    pub fn inline(&self) -> Option<(&str, &[ExtractStyleProp<'a>])> {
+        (renders_tag(&self.name, self.bound.as_ref())
+            && self.attrs.is_empty()
+            && self.reads == Reads::default()
+            && self.classes.is_empty()
+            && self.styles.iter().all(fixed))
+        .then_some((self.name.as_str(), self.styles.as_slice()))
+    }
+
+    /// The styles the component gives what it renders
+    #[must_use]
+    pub fn styles(&self) -> &[ExtractStyleProp<'a>] {
+        &self.styles
+    }
+}
+
+/// Whether `prop` holds only values the build knows
+fn fixed(prop: &ExtractStyleProp<'_>) -> bool {
+    match prop {
+        ExtractStyleProp::Static(value) => !matches!(value, ExtractStyleValue::Dynamic(_)),
+        ExtractStyleProp::StaticArray(props) => props.iter().all(fixed),
+        _ => false,
+    }
+}
+
 /// `Component.withComponent(target)`: the styles and attrs of `definition`
 /// rendering `target`, a tag name or a component JSX can name; `None` for any
 /// other target

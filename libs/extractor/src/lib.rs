@@ -2,6 +2,7 @@ mod as_visit;
 mod build_time_values;
 mod component;
 mod composition;
+mod css_prop;
 mod css_utils;
 pub mod extract_style;
 mod extractor;
@@ -300,26 +301,32 @@ fn extract_source(
     // Step 1: Transform import aliases
     // e.g., `import styled from '@emotion/styled'` → `import { styled } from '@devup-ui/react'`
     // e.g., `import { style } from '@vanilla-extract/css'` → `import { style } from '@devup-ui/react'`
-    let (transformed_code, alias_edits) = import_alias_visit::transform_import_aliases_with_edits(
+    let import_alias_visit::Aliased {
+        code: transformed_code,
+        edits: alias_edits,
+        css_prop,
+    } = import_alias_visit::transform_import_aliases_with_edits(
         code,
         filename,
         &option.package,
         &option.import_aliases,
     );
 
-    // Step 2: Check if code contains the target package (after transformation)
+    // Step 2: Check if code contains the target package (after transformation),
+    // gives an element a `css` prop, or had an import rewritten
     let has_relevant_import = transformed_code.contains(option.package.as_str())
         || transformed_code.contains(STYLEX_PACKAGE);
+    let unchanged = || ExtractOutput {
+        styles: FxHashSet::default(),
+        code: code.to_string(),
+        map: None,
+        css_file: None,
+        dependencies: Vec::new(),
+    };
 
-    if !has_relevant_import {
+    if !has_relevant_import && css_prop == css_prop::CssProp::Off && alias_edits.is_empty() {
         // skip if not using package
-        return Ok(ExtractOutput {
-            styles: FxHashSet::default(),
-            code: code.to_string(),
-            map: None,
-            css_file: None,
-            dependencies: Vec::new(),
-        });
+        return Ok(unchanged());
     }
 
     let mut dependencies = std::collections::BTreeSet::new();
@@ -427,6 +434,7 @@ fn extract_source(
             filename,
             &option,
             resolver,
+            css_prop,
         )
     } else {
         imported_constants::Inlined::default()
@@ -443,7 +451,12 @@ fn extract_source(
     visitor.import_css(inlined.css_styles);
     visitor.unknown_bindings(&inlined.unknown);
     visitor.changed_bindings(inlined.changed.clone());
+    visitor.takes_css_prop(css_prop);
     visitor.visit_program(&mut program);
+    if !has_relevant_import && alias_edits.is_empty() && !visitor.compiled_css_prop {
+        // No element took the `css` prop the text seemed to give
+        return Ok(unchanged());
+    }
     if let Some(error) = evaluation_error
         && imports_uncompiled(&program, &option.package)
     {
@@ -14699,7 +14712,7 @@ const Button = styled.button({ bg: 'red' })
     )]
     #[case(
         "css(yellow, fade)",
-        r"`color-0-red-_a__c_hover-255 color-0-yellow--255 ${fade}`"
+        r#""k-525370705245237976 color-0-red-_a__c_hover-255 color-0-yellow--255""#
     )]
     #[case(
         "css(yellow, { color: ['x', 'y'][idx], styleOrder: 2 })",
@@ -21196,5 +21209,200 @@ export const App = () => <Global {...rest} styles={{ body: { margin: '0px' } }} 
             )
             .unwrap()
         ));
+    }
+
+    fn emotion_option() -> ExtractOption {
+        ExtractOption {
+            package: "@devup-ui/react".to_string(),
+            css_dir: "@devup-ui/react".to_string(),
+            single_css: true,
+            import_main_css: false,
+            import_aliases: HashMap::from([
+                ("@emotion/react".to_string(), ImportAlias::NamedToNamed),
+                (
+                    "@emotion/styled".to_string(),
+                    ImportAlias::DefaultToNamed("styled".to_string()),
+                ),
+            ]),
+        }
+    }
+
+    fn emotion_outputs(files: &[(&str, &str)]) -> Vec<(String, ToBTreeSet)> {
+        files
+            .iter()
+            .map(|(filename, code)| {
+                reset_class_map();
+                reset_file_map();
+                (
+                    (*code).to_string(),
+                    ToBTreeSet::from(extract(filename, code, emotion_option()).unwrap()),
+                )
+            })
+            .collect()
+    }
+
+    #[test]
+    #[serial]
+    fn test_emotion_css_prop_in_every_form() {
+        assert_debug_snapshot!(emotion_outputs(&[
+            (
+                "test.tsx",
+                "export const App = () => <div css={{ color: 'red', padding: 8 }} />;"
+            ),
+            (
+                "test.tsx",
+                "export const App = ({ danger }) => <div css={[{ color: 'green' }, danger && { color: 'red' }]} />;"
+            ),
+            (
+                "test.tsx",
+                "export const App = ({ active }) => <div css={active ? { color: 'red' } : { color: 'blue' }} />;"
+            ),
+            (
+                "test.tsx",
+                "import { css } from '@emotion/react';\nconst style = css`color: red;`;\nexport const App = () => <div css={style} />;"
+            ),
+            (
+                "test.tsx",
+                "/** @jsxImportSource @emotion/react */\nexport const App = () => <div css={{ color: 'red' }} />;"
+            ),
+            (
+                "test.ts",
+                "import { jsx } from '@emotion/react';\nexport const App = () => jsx('div', { css: { color: 'red' } });"
+            ),
+            (
+                "test.ts",
+                "import { jsx as _jsx } from '@emotion/react/jsx-runtime';\nexport const App = () => _jsx('div', { css: { color: 'red' } });"
+            ),
+            (
+                "test.ts",
+                "import { jsxs as _jsxs } from '@emotion/react/jsx-runtime';\nexport const App = () => _jsxs('div', { css: { color: 'red' }, children: ['a', 'b'] });"
+            ),
+            (
+                "test.ts",
+                "import { jsxDEV as _jsxDEV } from '@emotion/react/jsx-dev-runtime';\nexport const App = () => _jsxDEV('div', { css: { padding: 4 } }, void 0, false);"
+            ),
+            (
+                "test.tsx",
+                "/** @jsx jsx */\nimport { jsx } from '@emotion/react';\nexport const App = () => <div css={{ color: 'red' }} />;"
+            ),
+            (
+                "test.tsx",
+                "export const App = () => <div css={(theme) => ({ color: theme.colors.primary, padding: 8 })} />;"
+            ),
+            (
+                "test.tsx",
+                "export const App = () => <div css={({ colors }) => { return { color: colors.text }; }} />;"
+            ),
+            (
+                "test.tsx",
+                "import { css } from '@emotion/react';\nconst override = css({ color: 'blue' });\nexport const App = () => <div css={{ color: 'red', margin: 0 }} className={override + ' external'} />;"
+            ),
+            (
+                "test.tsx",
+                "import { css } from '@emotion/react';\nconst override = css({ color: 'blue' });\nexport const App = () => <div css={{ color: 'red', margin: 0 }} className={`${override} external`} />;"
+            ),
+            (
+                "test.tsx",
+                "import { css } from '@emotion/react';\nconst base = css({ color: 'blue', margin: 0 });\nexport const App = ({ cls }) => <><div css={[base, { color: 'red' }]} /><div css={css`${base}; color: red;`} /><div css={css({ color: 'red' }, cond && { color: 'blue' })} /><div css={[cls, { color: 'red' }]} /></>;"
+            ),
+            (
+                "test.tsx",
+                "export const App = ({ c, w }) => <div css={{ color: c, width: w }} style={{ opacity: 1 }} className=\"x\" />;"
+            ),
+            (
+                "test.tsx",
+                "export const App = ({ c }) => <><div css=\"color: red; padding: 4px\" /><div css={`color: ${c};`} /><div css /><div css={null} /><div css={undefined} /><div css={{}} /><div css={''} /><div css={} /></>;"
+            ),
+            (
+                "test.tsx",
+                "const base = { color: 'red', padding: 4 };\nexport const App = () => <div css={base} />;"
+            ),
+            (
+                "test.tsx",
+                "const SPACE = 4;\nconst base = { padding: 4, lineHeight: 1.5, '&:hover': { margin: 2 } };\nexport const App = () => <div css={[base, { margin: SPACE, width: f({ size: 4 }) }]} />;"
+            ),
+            (
+                "test.tsx",
+                "export const App = ({ cls, s }) => <><div css={cls || { color: 'red' }} /><div css={s ?? { color: 'blue' }} /><div className=<b /> css={{ color: 'red' }} /><div className css={{ margin: 1 }} /></>;"
+            ),
+            (
+                "test.ts",
+                "import { jsx as _jsx } from '@emotion/react/jsx-runtime';\nconst base = { padding: 2 };\nconst SPACE = 3;\nexport const App = ({ c, s }) => [_jsx('div', { id: 1 }), _jsx('div', { style: s, css: [base, { margin: SPACE, color: c }] })];"
+            ),
+        ]));
+    }
+
+    #[test]
+    #[serial]
+    fn test_emotion_css_prop_on_every_element() {
+        assert_debug_snapshot!(emotion_outputs(&[
+            (
+                "test.tsx",
+                "const Custom = ({ className }) => <div className={className} />;\nexport const App = () => <Custom css={{ color: 'red' }} />;"
+            ),
+            ("test.tsx", "export const a = { css: 1 };"),
+            (
+                "test.tsx",
+                "import styled from '@emotion/styled';\nconst Custom = ({ className }) => <div className={className} />;\nexport const App = () => <><Custom css={{ color: 'red', padding: 8 }} className=\"x\" /><a.b css={{ margin: 1 }} /><svg:use css={{ margin: 2 }} /></>;"
+            ),
+            (
+                "test.tsx",
+                "import { Box } from '@devup-ui/react';\nexport const App = () => <><Box color=\"blue\" p={2} css={{ color: 'red', padding: 8 }} /><Custom css={{ color: 'red' }} /></>;"
+            ),
+            (
+                "test.tsx",
+                "import styled from '@emotion/styled';\nconst Button = styled.button({ color: 'blue', margin: 1 });\nexport const App = ({ f, rest, cls }) => <><Button css={{ color: 'red' }} onClick={f} /><Button {...rest} css={{ padding: 2 }} /><Button {...rest} css={[cls, { top: 1 }]} /></>;"
+            ),
+            (
+                "test.tsx",
+                "import { Global } from '@emotion/react';\nexport const App = () => <Global css={{ color: 'red' }} styles={{ body: { margin: 0 } }} />;"
+            ),
+            (
+                "test.tsx",
+                "export const App = ({ rest, cls }) => <><div {...rest} css={{ color: 'red' }} /><div className={cls} {...rest} css={{ color: 'red' }} style={{ opacity: 1 }} /></>;"
+            ),
+            (
+                "test.ts",
+                "import { jsx as _jsx } from 'react/jsx-runtime';\nexport const App = () => [_jsx('div', { css: { color: 'red' } }), _jsx(Custom, { css: { color: 'red' } })];"
+            ),
+            (
+                "test.ts",
+                "import styled from '@emotion/styled';\nimport { Box } from '@devup-ui/react';\nimport { jsx as _jsx } from '@emotion/react/jsx-runtime';\nconst Button = styled.button({ color: 'blue' });\nexport const App = (props) => [_jsx(Custom, { className: 'x', css: { color: 'red' } }), _jsx(Box, { p: 1, css: { padding: 4 } }), _jsx(Button, { css: { color: 'red' } }), _jsx(Button, { ...props, css: { margin: 1 } }), _jsx(Button, { as: 'a', css: { margin: 2 } }), _jsx(Button, { [k]: 1, css: { padding: 3 } }), _jsx('div', props), _jsx('div', { ['css']: { color: 'red' }, id: 'x' })];"
+            ),
+        ]));
+    }
+
+    #[test]
+    #[serial]
+    fn test_emotion_css_prop_reports_what_it_cannot_compile() {
+        let errors: Vec<String> = [
+            "export const App = () => { const s = { color: 'red' }; return <div css={[s.a]} />; };",
+            "export const App = () => <div css={getStyles()} />;",
+            "export const App = () => <div css={(t) => ({ margin: t.spacing(2) })} />;",
+            "export const App = () => <div css={(t) => { const a = 1; return {}; }} />;",
+            "import { css } from '@emotion/react';\nconst base = css({ color: 'red' });\nexport const App = () => <div css={css`&:hover { ${base}; }`} />;",
+            "export const App = ({ base }) => <div css={`${base}; color: red;`} />;",
+            "import styled from '@emotion/styled';\nconst Button = styled.button({ color: 'blue' });\nexport const App = (p) => <Button {...p} css={{ color: 'red' }} />;",
+            "import { jsx as _jsx } from '@emotion/react/jsx-runtime';\nimport styled from '@emotion/styled';\nconst Button = styled.button({ color: 'blue' });\nexport const App = (p) => _jsx(Button, { ...p, css: { color: 'red' } });",
+            "export const App = ({ key }) => <div css={{ [key]: 'red' }} />;",
+            "let s = { color: 'red' };\ns = { color: 'blue' };\nexport const App = () => <div css={s} />;",
+            "export const App = () => <><div css={<a />} /><div css=<b /> /><div css=<></> /></>;",
+            "import { css } from '@emotion/react';\nexport const App = ({ parts }) => <div css={css(...parts)} />;",
+            "export const App = () => { const s = { color: 'red' }; return <div css={s[0]} />; };",
+            "import { s } from './x';\nexport const App = () => <div css={s} />;",
+            "const s = { color: 'red' };\ns.color = 'blue';\nexport const App = () => <div css={[s]} />;",
+            "import styled from '@emotion/styled';\nconst Button = styled.button({ color: 'blue' });\nexport const App = ({ rest, k }) => <Button {...rest} css={{ top: { a: 1, b: 2 }[k] }} />;",
+        ]
+        .iter()
+        .map(|code| {
+            reset_class_map();
+            reset_file_map();
+            extract("test.tsx", code, emotion_option())
+                .err()
+                .map(|error| error.to_string())
+                .unwrap_or_default()
+        })
+        .collect();
+        assert_debug_snapshot!(errors);
     }
 }
