@@ -1,0 +1,13 @@
+---
+source: libs/extractor/src/lib.rs
+expression: outputs
+---
+[
+    "import \"@devup-ui/react/devup-ui.css\";\nexport const App = () => <div className={\"external a b\"} />;\n\n{Static(ExtractStaticStyle { property: \"padding\", value: \"8px\", level: 0, selector: None, style_order: None, layer: None }), Static(ExtractStaticStyle { property: \"color\", value: \"var(--color)\", level: 0, selector: None, style_order: None, layer: None })}",
+    "import \"@devup-ui/react/devup-ui.css\";\nexport const App = ({ on }) => <div className={`b ${on ? \"picked\" : \"\"} ${true ? on : \"\"} ${on ? \"a\" : \"b\"}`} />;\n\n{Static(ExtractStaticStyle { property: \"color\", value: \"red\", level: 0, selector: None, style_order: None, layer: None }), Static(ExtractStaticStyle { property: \"color\", value: \"blue\", level: 0, selector: None, style_order: None, layer: None })}",
+    "import \"@devup-ui/react/devup-ui.css\";\nexport const App = ({ on }) => <a className={on ? \"a\" : \"b\"} />;\n\n{Static(ExtractStaticStyle { property: \"color\", value: \"blue\", level: 0, selector: None, style_order: None, layer: None }), Static(ExtractStaticStyle { property: \"color\", value: \"green\", level: 0, selector: None, style_order: None, layer: None })}",
+    "import \"@devup-ui/react/devup-ui.css\";\nconst mixin = { margin: 4 };\nexport const App = () => <section>{<p className={\"a b\"} />}</section>;\n\n{Static(ExtractStaticStyle { property: \"color\", value: \"red\", level: 0, selector: None, style_order: None, layer: None }), Static(ExtractStaticStyle { property: \"margin\", value: \"4px\", level: 0, selector: None, style_order: None, layer: None })}",
+    "export const App = () => <hr />;\n\n{}",
+    "export const App = (p) => <b onClick={() => p.on()} title={String.raw`t`} id={String(1)} className={`a ${p.className} ${p.on ? p.on ? \"x\" : \"\" : \"y\"} ${p.a ? typeof p.a === \"string\" ? p.a : \"\" : p.b ? \"z\" : \"\"} ${p.c ? \"k\" : \"\"}`} />;\n\n{}",
+    "import \"@devup-ui/react/devup-ui.css\";\nconst tone = \"red\";\nconst gap = 3;\nexport const App = () => <i className={\"a b c\"} />;\n\n{Static(ExtractStaticStyle { property: \"color\", value: \"red\", level: 0, selector: None, style_order: None, layer: None }), Static(ExtractStaticStyle { property: \"padding\", value: \"3px\", level: 0, selector: None, style_order: None, layer: None }), Static(ExtractStaticStyle { property: \"margin\", value: \"2px\", level: 0, selector: None, style_order: None, layer: None })}",
+]

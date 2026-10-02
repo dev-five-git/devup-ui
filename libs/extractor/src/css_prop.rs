@@ -7,9 +7,9 @@ use std::collections::HashMap;
 use oxc_allocator::{CloneIn, FromIn, GetAllocator};
 use oxc_ast::ast::{
     Argument, ArrowFunctionBody, BinaryOperator, BindingPattern, CallExpression, Expression,
-    FormalParameters, FunctionBody, ImportDeclarationSpecifier, JSXAttributeItem, JSXElementName,
-    ObjectPropertyKind, Program, Statement, Str, TemplateElement, TemplateElementValue,
-    TemplateLiteral,
+    FormalParameters, FunctionBody, ImportDeclarationSpecifier, JSXAttributeItem, JSXChild,
+    JSXElement, JSXElementName, ObjectPropertyKind, Program, Statement, Str, TemplateElement,
+    TemplateElementValue, TemplateLiteral,
 };
 use oxc_ast::builder::AstBuilder;
 use oxc_ast_visit::{VisitMut, walk_mut};
@@ -104,6 +104,8 @@ pub(crate) struct CssTakers<'s> {
     pub css_prop: CssProp,
     /// Local names of the functions building elements from a type and props
     jsx: FxHashSet<&'s str>,
+    /// Local names of Emotion's `ClassNames`
+    class_names: FxHashSet<&'s str>,
 }
 
 impl<'s> CssTakers<'s> {
@@ -111,18 +113,43 @@ impl<'s> CssTakers<'s> {
     /// `compat` is the entry absorbing Emotion's own `jsx`
     pub(crate) fn new(program: &Program<'s>, css_prop: CssProp, compat: &str) -> Self {
         let mut jsx = FxHashSet::default();
+        let mut class_names = FxHashSet::default();
         for statement in &program.body {
             if let Statement::ImportDeclaration(import) = statement {
+                let source = import.source.value.as_str();
                 for specifier in import.specifiers.iter().flatten() {
-                    if let ImportDeclarationSpecifier::ImportSpecifier(specifier) = specifier
-                        && is_jsx_function(&import.source.value, &specifier.imported.name(), compat)
-                    {
+                    let ImportDeclarationSpecifier::ImportSpecifier(specifier) = specifier else {
+                        continue;
+                    };
+                    let imported = specifier.imported.name();
+                    if is_jsx_function(source, &imported, compat) {
                         jsx.insert(specifier.local.name.as_str());
+                    } else if imported == "ClassNames"
+                        && (source == compat || source == EMOTION_REACT)
+                    {
+                        class_names.insert(specifier.local.name.as_str());
                     }
                 }
             }
         }
-        Self { css_prop, jsx }
+        Self {
+            css_prop,
+            jsx,
+            class_names,
+        }
+    }
+
+    /// The names a `<ClassNames>` child function `element` gives takes `css`
+    /// and `cx` by; empty for any other element
+    pub(crate) fn class_names_calls(&self, element: &JSXElement<'_>) -> Vec<String> {
+        match &element.opening_element.name {
+            JSXElementName::IdentifierReference(name)
+                if self.class_names.contains(name.name.as_str()) =>
+            {
+                class_names_calls(element)
+            }
+            _ => Vec::new(),
+        }
     }
 
     /// Whether `attribute` of the element `name` is a `css` prop it takes;
@@ -286,6 +313,138 @@ pub(crate) fn returned<'b, 'a>(body: &'b FunctionBody<'a>) -> Option<&'b Express
         [Statement::ReturnStatement(statement)] => statement.argument.as_ref(),
         _ => None,
     }
+}
+
+fn returned_mut<'b, 'a>(body: &'b mut FunctionBody<'a>) -> Option<&'b mut Expression<'a>> {
+    match body.statements.as_mut_slice() {
+        [Statement::ReturnStatement(statement)] => statement.argument.as_mut(),
+        _ => None,
+    }
+}
+
+/// The parameters of `function` and what it gives at once, when it is a
+/// plain function giving one value
+pub(crate) fn render_function<'b, 'a>(
+    function: &'b mut Expression<'a>,
+) -> Option<(&'b FormalParameters<'a>, &'b mut Expression<'a>)> {
+    match function {
+        Expression::ArrowFunctionExpression(arrow) if !arrow.r#async => {
+            let arrow = &mut **arrow;
+            let body = match &mut arrow.body {
+                ArrowFunctionBody::FunctionBody(body) => returned_mut(body)?,
+                body => body.as_expression_mut()?,
+            };
+            Some((&arrow.params, body))
+        }
+        Expression::FunctionExpression(function) if !function.r#async && !function.generator => {
+            let function = &mut **function;
+            Some((
+                &function.params,
+                returned_mut(function.body.as_deref_mut()?)?,
+            ))
+        }
+        _ => None,
+    }
+}
+
+/// The names Emotion's `<ClassNames>` child function takes `css`, `cx` and
+/// the theme by
+#[derive(Default, Clone, Copy)]
+pub(crate) struct ClassNamesParams<'a> {
+    pub css: Option<&'a str>,
+    pub cx: Option<&'a str>,
+    pub theme: Option<&'a str>,
+}
+
+/// What `params` take of `{ css, cx, theme }`; `None` when they take it in a
+/// way the build cannot follow
+pub(crate) fn class_names_params<'a>(
+    params: &FormalParameters<'a>,
+) -> Option<ClassNamesParams<'a>> {
+    let mut names = ClassNamesParams::default();
+    if params.rest.is_some() {
+        return None;
+    }
+    match params.items.as_slice() {
+        [] => {}
+        [param] if param.initializer.is_none() => {
+            let BindingPattern::ObjectPattern(object) = &param.pattern else {
+                return None;
+            };
+            if object.rest.is_some() {
+                return None;
+            }
+            for property in &object.properties {
+                let (BindingPattern::BindingIdentifier(local), Some(key), false) = (
+                    &property.value,
+                    property.key.static_name(),
+                    property.computed,
+                ) else {
+                    return None;
+                };
+                let slot = match key.as_ref() {
+                    "css" => &mut names.css,
+                    "cx" => &mut names.cx,
+                    "theme" => &mut names.theme,
+                    _ => return None,
+                };
+                *slot = Some(local.name.as_str());
+            }
+        }
+        _ => return None,
+    }
+    Some(names)
+}
+
+/// What the child function of the `<ClassNames>` element `element` takes
+pub(crate) fn class_names_child<'a>(element: &JSXElement<'a>) -> Option<ClassNamesParams<'a>> {
+    let mut children = element
+        .children
+        .iter()
+        .filter(|child| !matches!(child, JSXChild::Text(text) if text.value.trim().is_empty()));
+    let (Some(JSXChild::ExpressionContainer(container)), None) = (children.next(), children.next())
+    else {
+        return None;
+    };
+    let params = match container.expression.as_expression()? {
+        Expression::ArrowFunctionExpression(arrow) => &arrow.params,
+        Expression::FunctionExpression(function) => &function.params,
+        _ => return None,
+    };
+    class_names_params(params)
+}
+
+/// The names the child function of the `<ClassNames>` element `element`
+/// takes `css` and `cx` by, which read styles
+pub(crate) fn class_names_calls(element: &JSXElement<'_>) -> Vec<String> {
+    class_names_child(element)
+        .map(|names| {
+            [names.css, names.cx]
+                .into_iter()
+                .flatten()
+                .map(str::to_string)
+                .collect()
+        })
+        .unwrap_or_default()
+}
+
+/// Write the reads of the theme bound to `theme` in `expression`, a CSS value
+/// when `value`, as the CSS variables the `ThemeProvider` sets; `Err` holds
+/// the first read the build cannot write so
+pub(crate) fn read_theme<'a>(
+    ast: &AstBuilder<'a>,
+    expression: &mut Expression<'a>,
+    theme: &'a str,
+    value: bool,
+) -> Result<(), Expression<'a>> {
+    let roots = [(theme, None)];
+    let mut reads = ThemeReads {
+        ast,
+        roots: &roots,
+        unread: None,
+    };
+    reads.visit(expression, value);
+    reads.unread.map_or(Ok(()), Err)
 }
 
 /// The names a function of the theme reads it by, each with the key of the

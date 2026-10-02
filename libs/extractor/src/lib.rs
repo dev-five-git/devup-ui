@@ -21453,4 +21453,75 @@ export const App = () => <Global {...rest} styles={{ body: { margin: '0px' } }} 
         .collect();
         assert_debug_snapshot!(errors);
     }
+
+    #[test]
+    #[serial]
+    fn test_emotion_class_names_in_every_form() {
+        let import = "import { ClassNames } from '@emotion/react';\n";
+        let codes = [
+            "export const App = () => <ClassNames>{({ css, cx, theme }) => <div className={cx(css({ color: theme.color, padding: 8 }), 'external')} />}</ClassNames>;",
+            "export const App = ({ on }) => <ClassNames>{({ css, cx }) => <div className={cx(css({ color: 'red' }), on && css`color: blue;`, { picked: on, [on]: true }, [null, 'b'])} />}</ClassNames>;",
+            "export const App = ({ on }) => <ClassNames>{function ({ css: c }) { return <a className={c('color: red;', on ? { color: 'blue' } : c({ color: 'green' }))} />; }}</ClassNames>;",
+            "const mixin = { margin: 4 };\nexport const App = () => <section><ClassNames>{({ css }) => <p className={css`${mixin}; color: red;`} />}</ClassNames></section>;",
+            "export const App = () => <ClassNames>{() => <hr />}</ClassNames>;",
+            "export const App = (p) => <ClassNames>{({ cx }) => <b onClick={() => p.on()} title={String.raw`t`} id={String(1)} className={cx(p.className, cx('a'), p.on ? { x: p.on } : 'y', p.a || { z: p.b }, p.c ? cx('k') : null, p.d && cx())} />}</ClassNames>;",
+            "const tone = 'red';\nconst gap = 3;\nexport const App = () => <ClassNames>{({ css }) => <i className={css({ color: tone, padding: gap, margin: 2 })} />}</ClassNames>;",
+        ];
+        let outputs: Vec<String> = codes
+            .iter()
+            .map(|code| {
+                reset_class_map();
+                reset_file_map();
+                let output =
+                    extract("test.tsx", &format!("{import}{code}"), emotion_option()).unwrap();
+                format!("{}\n{:?}", output.code, output.styles)
+            })
+            .collect();
+        assert_debug_snapshot!(outputs);
+    }
+
+    #[test]
+    #[serial]
+    fn test_emotion_class_names_reports_what_it_cannot_compile() {
+        let import = "import { ClassNames } from '@emotion/react';\n";
+        let errors: Vec<String> = [
+            "export const App = () => <ClassNames>{render}</ClassNames>;",
+            "export const App = () => <ClassNames>{() => <a />}{() => <b />}</ClassNames>;",
+            "export const App = () => <ClassNames />;",
+            "export const App = () => <ClassNames>{}</ClassNames>;",
+            "export const App = () => <ClassNames>text</ClassNames>;",
+            "export const App = () => <ClassNames key=\"a\">{() => <a />}</ClassNames>;",
+            "export const App = () => <ClassNames>{(content) => <a />}</ClassNames>;",
+            "export const App = () => <ClassNames>{({ css, ...rest }) => <a />}</ClassNames>;",
+            "export const App = () => <ClassNames>{({ css = f }) => <a />}</ClassNames>;",
+            "export const App = () => <ClassNames>{({ other }) => <a />}</ClassNames>;",
+            "export const App = () => <ClassNames>{({ [k]: css }) => <a />}</ClassNames>;",
+            "export const App = () => <ClassNames>{({ css }, more) => <a />}</ClassNames>;",
+            "export const App = () => <ClassNames>{async ({ css }) => <a />}</ClassNames>;",
+            "export const App = () => <ClassNames>{function* ({ css }) { yield <a />; }}</ClassNames>;",
+            "export const App = () => <ClassNames>{({ css }) => { const a = 1; return <a />; }}</ClassNames>;",
+            "export const App = () => <ClassNames>{({ theme }) => <a title={theme.name} />}</ClassNames>;",
+            "export const App = () => <ClassNames>{({ css, theme }) => <a className={css({ margin: theme.space(2) })} />}</ClassNames>;",
+            "export const App = () => <ClassNames>{({ css }) => <a ref={css} />}</ClassNames>;",
+            "export const App = () => <ClassNames>{({ cx }) => <a className={cx(getClass())} />}</ClassNames>;",
+            "export const App = ({ s }) => <ClassNames>{({ cx }) => <a className={cx({ ...s })} />}</ClassNames>;",
+            "export const App = () => <ClassNames>{({ cx }) => <a className={cx({ get a() { return true; } })} />}</ClassNames>;",
+            "export const App = ({ s }) => <ClassNames>{({ css }) => <a className={css(...s)} />}</ClassNames>;",
+            "export const App = ({ v }) => <ClassNames>{({ css }) => <a className={css`&:hover { ${v}; }`} />}</ClassNames>;",
+            "export const App = ({ v }) => <ClassNames>{({ css }) => <a className={css({ color: v })} />}</ClassNames>;",
+            "export const App = ({ on }) => <ClassNames>{({ css, cx }) => <a className={cx(on && cx(css({ color: 'red' }), 'x'))} />}</ClassNames>;",
+            "export const App = ({ on, off }) => <ClassNames>{({ css, cx }) => <a className={cx(on && cx(off ? css({ color: 'red' }) : null))} />}</ClassNames>;",
+        ]
+        .iter()
+        .map(|code| {
+            reset_class_map();
+            reset_file_map();
+            extract("test.tsx", &format!("{import}{code}"), emotion_option())
+                .err()
+                .map(|error| error.to_string())
+                .unwrap_or_default()
+        })
+        .collect();
+        assert_debug_snapshot!(errors);
+    }
 }

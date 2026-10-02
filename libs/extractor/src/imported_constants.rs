@@ -357,6 +357,7 @@ pub(crate) fn inline_constants<'a>(
         css_props: &css_props,
         names: FxHashSet::default(),
         depth: 0,
+        class_names: Vec::new(),
     };
     read.visit_program(program);
     if read.names.is_empty() {
@@ -509,6 +510,7 @@ pub(crate) fn inline_constants<'a>(
             objects: false,
             styles: false,
             px: false,
+            class_names: Vec::new(),
         }
         .visit_program(program);
     }
@@ -643,6 +645,9 @@ struct StyleReads<'s> {
     css_props: &'s CssTakers<'s>,
     names: FxHashSet<String>,
     depth: usize,
+    /// The names the `<ClassNames>` child functions around take `css` and
+    /// `cx` by
+    class_names: Vec<String>,
 }
 
 /// Whether `expression` is a style API: a root the package gives, or a member
@@ -676,9 +681,18 @@ impl<'a> Visit<'a> for StyleReads<'_> {
         }
     }
 
+    fn visit_jsx_element(&mut self, element: &oxc_ast::ast::JSXElement<'a>) {
+        let calls = self.css_props.class_names_calls(element);
+        let taken = calls.len();
+        self.class_names.extend(calls);
+        oxc_ast_visit::walk::walk_jsx_element(self, element);
+        self.class_names.truncate(self.class_names.len() - taken);
+    }
+
     fn visit_call_expression(&mut self, call: &oxc_ast::ast::CallExpression<'a>) {
         self.visit_expression(&call.callee);
-        let style = self.is_style_root(&call.callee);
+        let style =
+            self.is_style_root(&call.callee) || calls_one_of(&self.class_names, &call.callee);
         let css = self
             .css_props
             .property(call, |root| self.style_roots.contains(root));
@@ -703,7 +717,7 @@ impl<'a> Visit<'a> for StyleReads<'_> {
         tagged: &oxc_ast::ast::TaggedTemplateExpression<'a>,
     ) {
         self.visit_expression(&tagged.tag);
-        let style = self.is_style_root(&tagged.tag);
+        let style = self.is_style_root(&tagged.tag) || calls_one_of(&self.class_names, &tagged.tag);
         self.reading(style, |reads| reads.visit_template_literal(&tagged.quasi));
     }
 
@@ -726,6 +740,11 @@ impl<'a> Visit<'a> for StyleReads<'_> {
             });
         }
     }
+}
+
+/// Whether `callee` is one of `names`
+fn calls_one_of(names: &[String], callee: &Expression<'_>) -> bool {
+    matches!(callee, Expression::Identifier(callee) if names.iter().any(|name| name == callee.name.as_str()))
 }
 
 /// The name `<Box>` or `<Devup.Box>` starts with
@@ -1793,6 +1812,9 @@ struct Inline<'s, 'a> {
     styles: bool,
     /// Inside a `css` prop, whose numbers Emotion reads as `px` lengths
     px: bool,
+    /// The names the `<ClassNames>` child functions around take `css` and
+    /// `cx` by
+    class_names: Vec<String>,
 }
 
 impl<'a> Inline<'_, 'a> {
@@ -2070,6 +2092,12 @@ impl<'a> VisitMut<'a> for Inline<'_, 'a> {
         tagged: &mut oxc_ast::ast::TaggedTemplateExpression<'a>,
     ) {
         self.visit_expression(&mut tagged.tag);
+        if calls_one_of(&self.class_names, &tagged.tag) {
+            self.reading_css(true, |inline| {
+                inline.visit_template_literal(&mut tagged.quasi);
+            });
+            return;
+        }
         let styles = is_style_root(self.style_roots, &tagged.tag);
         self.reading_styles(styles, |inline| {
             inline.visit_template_literal(&mut tagged.quasi);
@@ -2082,8 +2110,24 @@ impl<'a> VisitMut<'a> for Inline<'_, 'a> {
         });
     }
 
+    fn visit_jsx_element(&mut self, element: &mut oxc_ast::ast::JSXElement<'a>) {
+        let calls = self.css_props.class_names_calls(element);
+        let taken = calls.len();
+        self.class_names.extend(calls);
+        walk_mut::walk_jsx_element(self, element);
+        self.class_names.truncate(self.class_names.len() - taken);
+    }
+
     fn visit_call_expression(&mut self, call: &mut oxc_ast::ast::CallExpression<'a>) {
         self.visit_expression(&mut call.callee);
+        if calls_one_of(&self.class_names, &call.callee) {
+            self.reading_css(true, |inline| {
+                for argument in &mut call.arguments {
+                    inline.visit_argument(argument);
+                }
+            });
+            return;
+        }
         let objects = self.apis.reads(&call.callee);
         let styles = is_style_root(self.style_roots, &call.callee);
         let css = self

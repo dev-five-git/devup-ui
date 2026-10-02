@@ -390,13 +390,29 @@ impl Context<'_, '_> {
         std::iter::once(node)
             .chain(self.nodes.ancestor_ids(node))
             .any(|id| match self.nodes.kind(id) {
-                AstKind::CallExpression(call) => self.is_style(&call.callee),
-                AstKind::TaggedTemplateExpression(tagged) => self.is_style(&tagged.tag),
+                AstKind::CallExpression(call) => {
+                    self.is_style(&call.callee) || self.is_class_names_call(id, &call.callee)
+                }
+                AstKind::TaggedTemplateExpression(tagged) => {
+                    self.is_style(&tagged.tag) || self.is_class_names_call(id, &tagged.tag)
+                }
                 AstKind::JSXOpeningElement(element) => self.is_style_element(&element.name),
                 AstKind::JSXAttribute(attribute) => self.is_css_attribute(id, attribute),
                 AstKind::ObjectProperty(property) => self.is_css_property(id, property),
                 _ => false,
             })
+    }
+
+    /// Whether `callee`, called at `id`, is the `css` or `cx` a `<ClassNames>`
+    /// child function around takes, whose calls the build compiles
+    fn is_class_names_call(&self, id: NodeId, callee: &Expression<'_>) -> bool {
+        let (Some(css), Expression::Identifier(callee)) = (self.css, callee) else {
+            return false;
+        };
+        self.nodes.ancestor_ids(id).any(|ancestor| {
+            matches!(self.nodes.kind(ancestor), AstKind::JSXElement(element)
+                if css.class_names_calls(element).iter().any(|name| name == callee.name.as_str()))
+        })
     }
 
     /// Whether the attribute `attribute` at `id` is a `css` prop the build

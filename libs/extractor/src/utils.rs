@@ -965,6 +965,16 @@ pub(super) const CSS_PROP_VALUE: &str = "it must be a style object, CSS text, a 
 
 pub(super) const LOCAL_STYLES: &str = "a style object it composes must be written in it, or declared with `const` at the top level of the module, where the build reads it";
 
+pub(super) const CLASS_NAMES_CHILD: &str =
+    "it takes only a child function of `{ css, cx, theme }` giving what it renders at once";
+
+pub(super) const CLASS_NAMES_CALL: &str = "the `css` and `cx` its child function takes can only be called, as the build compiles each call";
+
+pub(super) const CLASS_NAMES_PART: &str = "`css` and `cx` compose only style objects, CSS text, classes, calls of them, or arrays or conditions of these";
+
+pub(super) const CLASS_NAMES_CLASS_MAP: &str =
+    "an object `cx` takes must give each class a condition, as `{ name: condition }`";
+
 /// The `css` prop of the styled component `element` sets what its own styles
 /// set, which the build cannot order there
 pub(super) fn css_prop_override_error(element: &str) -> String {

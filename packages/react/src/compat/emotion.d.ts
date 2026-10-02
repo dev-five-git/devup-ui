@@ -9,7 +9,9 @@ declare module '@emotion/styled' {
 declare module '@emotion/react' {
   export { css, keyframes } from '@devup-ui/react'
   export type { StyledTheme as Theme } from '@devup-ui/react/compat'
+  export type { ClassNamesArg, ClassNamesContent } from '@devup-ui/react/compat'
   export {
+    ClassNames,
     jsx as createElement,
     Global,
     jsx,

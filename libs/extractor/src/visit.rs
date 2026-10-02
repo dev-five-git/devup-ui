@@ -1,7 +1,10 @@
 use crate::as_visit::As;
 use crate::component::ExportVariableKind;
 use crate::composition::{KnownPart, KnownSide, KnownStyles, overlaps, set_prop_order};
-use crate::css_prop::{CssProp, template_parts, theme_rules};
+use crate::css_prop::{
+    ClassNamesParams, CssProp, THEME_READ, class_names_params, read_theme, render_function,
+    template_parts, theme_rules,
+};
 use crate::css_utils::{
     TemplateStyles, css_to_style_template, keyframes_to_keyframes_style, optimize_css_block,
     template_css_text,
@@ -51,10 +54,12 @@ use oxc_ast::ast::{
     ComputedMemberExpression, Expression, ExpressionStatement, FormalParameter,
     FormalParameterKind, FormalParameters, IdentifierName, ImportDeclaration, ImportOrExportKind,
     JSXAttributeItem, JSXAttributeValue, JSXChild, JSXElement, JSXElementName,
-    JSXExpressionContainer, ObjectProperty, ObjectPropertyKind, Program, PropertyKey, PropertyKind,
-    Statement, StaticMemberExpression, Str, StringLiteral, UnaryOperator, VariableDeclarator,
+    JSXExpressionContainer, ObjectExpression, ObjectProperty, ObjectPropertyKind, Program,
+    PropertyKey, PropertyKind, Statement, StaticMemberExpression, Str, StringLiteral,
+    UnaryOperator, VariableDeclarator,
 };
 use oxc_ast_visit::VisitMut;
+use oxc_ast_visit::walk_mut;
 use oxc_ast_visit::walk_mut::{
     walk_call_expression, walk_expression, walk_expression_statement, walk_import_declaration,
     walk_jsx_attribute_value, walk_jsx_child, walk_jsx_element, walk_program,
@@ -65,9 +70,10 @@ use oxc_syntax::operator::LogicalOperator;
 use strum::IntoEnumIterator;
 
 use crate::utils::{
-    CSS_PROP_VALUE, LOCAL_STYLES, ParsedStyleOrder, RUNTIME_VALUE, STYLE_OBJECT, StyleArguments,
-    Suspends, build_time_error, call_with_values, css_prop_error, css_prop_override_error,
-    element_error, expression_to_style_order, fixed_value, get_str_by_property_key,
+    CLASS_NAMES_CALL, CLASS_NAMES_CHILD, CLASS_NAMES_CLASS_MAP, CLASS_NAMES_PART, CSS_PROP_VALUE,
+    LOCAL_STYLES, ParsedStyleOrder, RUNTIME_VALUE, STYLE_OBJECT, StyleArguments, Suspends,
+    build_time_error, call_with_values, css_prop_error, css_prop_override_error, element_error,
+    expression_to_style_order, fixed_value, get_str_by_property_key,
     get_string_by_literal_expression, get_string_by_property_key, is_pure,
     jsx_expression_to_style_order, key_error, readable_argument, readable_code, reads_directly,
     reads_spreads_once, reads_unknown, runtime_classes, runtime_value, runtime_value_error,
@@ -199,6 +205,11 @@ pub struct DevupVisitor<'a> {
     /// Local names bound to the `Global` component, whose `styles` prop declares
     /// global CSS instead of rendering markup.
     global_style_components: FxHashSet<String>,
+    /// Local names bound to Emotion's `ClassNames`, whose element becomes
+    /// what its child function renders
+    class_names_components: FxHashSet<String>,
+    /// What the `<ClassNames>` child functions being compiled take
+    class_names_scope: Vec<ClassNamesParams<'a>>,
 
     /// `defineVars` members flattened to `"vars.key"` -> `"var(--x)"`, so a
     /// `stylex.create()` value referencing one resolves to a static CSS value.
@@ -394,13 +405,26 @@ impl<'a> DevupVisitor<'a> {
         }
         self.unknown_arguments("css", &call.arguments);
         self.changed_arguments("css", &call.arguments);
+        let (result, known) = self.composed_class(call.span.start, parts);
+        if let Some(known) = known {
+            self.css_styles = Some((call.span.start, known));
+        }
+        Some(result)
+    }
 
+    /// The classes `parts`, composed at `offset`, give, with the styles they
+    /// always set when no class the build does not know joins them
+    fn composed_class(
+        &mut self,
+        offset: u32,
+        parts: Vec<KnownPart<'a>>,
+    ) -> (Expression<'a>, Option<Vec<ExtractStyleValue>>) {
         let mut composition = crate::composition::Composition::default();
         let mut classes = Vec::new();
         for part in parts {
             match part {
                 KnownPart::Styles(side) => {
-                    let props = self.part_props(call.span.start, side, None);
+                    let props = self.part_props(offset, side, None);
                     composition.apply(&self.ast, props);
                 }
                 KnownPart::Conditional {
@@ -408,8 +432,8 @@ impl<'a> DevupVisitor<'a> {
                     consequent,
                     alternate,
                 } => {
-                    let consequent = self.part_props(call.span.start, consequent, None);
-                    let alternate = self.part_props(call.span.start, alternate, None);
+                    let consequent = self.part_props(offset, consequent, None);
+                    let alternate = self.part_props(offset, alternate, None);
                     composition.apply_conditional(&self.ast, &test, consequent, alternate);
                 }
                 KnownPart::Class(mut class) => {
@@ -418,7 +442,7 @@ impl<'a> DevupVisitor<'a> {
                 }
             }
         }
-        let known = composition.unconditional();
+        let known = composition.unconditional().filter(|_| classes.is_empty());
         let mut props = composition.into_props();
         // Class names come out in reverse, so they read in composing order
         props.reverse();
@@ -426,14 +450,10 @@ impl<'a> DevupVisitor<'a> {
             gen_class_names(&self.ast, &mut props, None, self.split_filename.as_deref());
         self.styles
             .extend(props.into_iter().flat_map(ExtractStyleProp::into_extract));
-        let composed_class = classes.is_empty();
         let result =
             merge_expression_for_class_name(&self.ast, classes.into_iter().chain(class_name))
                 .unwrap_or_else(|| Expression::new_string_literal(SPAN, "", None, &self.ast));
-        if composed_class && let Some(known) = known {
-            self.css_styles = Some((call.span.start, known));
-        }
-        Some(result)
+        (result, known)
     }
 
     /// Whether `expression`, or a part of it, is a class whose styles the
@@ -512,6 +532,13 @@ impl<'a> DevupVisitor<'a> {
                 &conditional.consequent,
                 Some(&conditional.alternate),
             ),
+            Expression::CallExpression(call) if self.class_names_text(&call.callee).is_some() => {
+                let text = self.class_names_text(&call.callee)?;
+                for argument in &call.arguments {
+                    self.known_parts(argument.as_expression()?, parts, text)?;
+                }
+                return Some(());
+            }
             expression => {
                 match self.known_side(expression, text)? {
                     KnownSide::Styles(side) => parts.push(KnownPart::Styles(side)),
@@ -600,7 +627,37 @@ impl<'a> DevupVisitor<'a> {
             | Expression::ComputedMemberExpression(_)
             | Expression::StringLiteral(_)
             | Expression::TemplateLiteral(_) => Some(KnownSide::Class(code())),
+            Expression::CallExpression(call) if self.class_names_text(&call.callee).is_some() => {
+                self.folded_side(expression, text)
+            }
+            Expression::ArrayExpression(_) if !self.class_names_scope.is_empty() => {
+                self.folded_side(expression, text)
+            }
             _ => None,
+        }
+    }
+
+    /// The parts `expression` composes as one side of a condition: only
+    /// styles, or only classes, which join
+    fn folded_side(&self, expression: &Expression<'a>, text: Text) -> Option<KnownSide<'a>> {
+        let mut parts = Vec::new();
+        self.known_parts(expression, &mut parts, text)?;
+        let mut styles = Vec::new();
+        let mut classes = Vec::new();
+        for part in parts {
+            match part {
+                KnownPart::Styles(side) => styles.extend(side),
+                KnownPart::Class(class) => classes.push(class),
+                KnownPart::Conditional { .. } => return None,
+            }
+        }
+        match (styles.is_empty(), classes.is_empty()) {
+            (true, true) => Some(KnownSide::Empty),
+            (false, true) => Some(KnownSide::Styles(styles)),
+            (true, false) => {
+                merge_expression_for_class_name(&self.ast, classes).map(KnownSide::Class)
+            }
+            (false, false) => None,
         }
     }
 
@@ -680,6 +737,8 @@ impl<'a> DevupVisitor<'a> {
             stylex_imports: FxHashSet::default(),
             stylex_named_imports: FxHashMap::default(),
             global_style_components: FxHashSet::default(),
+            class_names_components: FxHashSet::default(),
+            class_names_scope: Vec::new(),
             stylex_var_refs: FxHashMap::default(),
             stylex_var_names: FxHashMap::default(),
             stylex_theme_classes: FxHashMap::default(),
@@ -1372,6 +1431,290 @@ impl<'a> DevupVisitor<'a> {
             add_class_and_style_to_object(&self.ast, &mut props.properties, class_name, style);
         }
     }
+
+    /// What Emotion's `<ClassNames>` element renders, its classes compiled;
+    /// `None` for any other element
+    fn class_names(&mut self, element: &mut JSXElement<'a>) -> Option<Expression<'a>> {
+        let JSXElementName::IdentifierReference(name) = &element.opening_element.name else {
+            return None;
+        };
+        if !self.class_names_components.contains(name.name.as_str()) {
+            return None;
+        }
+        Some(
+            self.compile_class_names(element)
+                .unwrap_or_else(|(at, code)| {
+                    self.errors
+                        .push((at, element_error("ClassNames", &code, CLASS_NAMES_CHILD)));
+                    Expression::new_null_literal(SPAN, &self.ast)
+                }),
+        )
+    }
+
+    /// `<ClassNames>{({ css, cx, theme }) => rendered}</ClassNames>` as
+    /// `rendered`: its `css` and `cx` calls compile as `css()`, and the theme
+    /// they read becomes the CSS variables the `ThemeProvider` sets. `Err`
+    /// holds where and what the build cannot compile.
+    fn compile_class_names(
+        &mut self,
+        element: &mut JSXElement<'a>,
+    ) -> Result<Expression<'a>, (u32, String)> {
+        if let Some(attribute) = element.opening_element.attributes.first() {
+            return Err((attribute.span().start, "an attribute".to_string()));
+        }
+        let span = element.span;
+        let mut children = element
+            .children
+            .iter_mut()
+            .filter(|child| !matches!(child, JSXChild::Text(text) if text.value.trim().is_empty()));
+        let (Some(JSXChild::ExpressionContainer(container)), None) =
+            (children.next(), children.next())
+        else {
+            return Err((span.start, "children".to_string()));
+        };
+        let Some(function) = container.expression.as_expression_mut() else {
+            return Err((container.span.start, "{}".to_string()));
+        };
+        let function_at = function.span().start;
+        let function_code = readable_code(function);
+        let Some((names, body)) = render_function(function)
+            .and_then(|(params, body)| Some((class_names_params(params)?, body)))
+        else {
+            return Err((function_at, function_code));
+        };
+        let mut rendered = body.take_in(&self.ast);
+        let mut calls = ClassNamesCalls {
+            ast: &self.ast,
+            names,
+            unread: None,
+        };
+        calls.visit_expression(&mut rendered);
+        if let Some((unread, requirement)) = calls.unread {
+            self.errors.push((
+                unread.span().start,
+                element_error("ClassNames", &readable_code(&unread), requirement),
+            ));
+        }
+        self.class_names_scope.push(names);
+        self.visit_expression(&mut rendered);
+        self.class_names_scope.pop();
+        Ok(rendered)
+    }
+
+    /// What a call of the `css` or `cx` a `<ClassNames>` child function
+    /// takes composes: `css` reads text as CSS, `cx` as classes
+    fn class_names_text(&self, callee: &Expression<'a>) -> Option<Text> {
+        let Expression::Identifier(callee) = callee else {
+            return None;
+        };
+        let name = Some(callee.name.as_str());
+        self.class_names_scope.iter().rev().find_map(|names| {
+            if names.css == name {
+                Some(Text::Rules)
+            } else if names.cx == name {
+                Some(Text::Classes)
+            } else {
+                None
+            }
+        })
+    }
+
+    /// Replace `it`, when a call of the `css` or `cx` a `<ClassNames>` child
+    /// function takes, with the classes it composes
+    fn compile_class_names_call(&mut self, it: &mut Expression<'a>) -> bool {
+        let Expression::CallExpression(call) = it else {
+            return false;
+        };
+        if self.class_names_text(&call.callee).is_none() {
+            return false;
+        }
+        let offset = call.span.start;
+        self.unknown_arguments("css", &call.arguments);
+        self.changed_arguments("css", &call.arguments);
+        let mut parts = Vec::new();
+        *it = if self.known_parts(it, &mut parts, Text::Classes).is_some() {
+            self.composed_class(offset, parts).0
+        } else {
+            self.errors.push((
+                offset,
+                element_error("ClassNames", &readable_code(it), CLASS_NAMES_PART),
+            ));
+            Expression::new_string_literal(SPAN, "", None, &self.ast)
+        };
+        true
+    }
+}
+
+/// The calls of the `css` and `cx` a `<ClassNames>` child function takes,
+/// readied to compose: the theme their rules read becomes the CSS variables
+/// the `ThemeProvider` sets, an object `cx` takes the conditions of its
+/// classes, and CSS text `css` tags the parts around its mixins. The first
+/// code the build cannot ready so is kept.
+struct ClassNamesCalls<'r, 'a> {
+    ast: &'r AstBuilder<'a>,
+    names: ClassNamesParams<'a>,
+    unread: Option<(Expression<'a>, &'static str)>,
+}
+
+impl<'a> ClassNamesCalls<'_, 'a> {
+    fn calls(callee: &Expression<'a>, name: Option<&'a str>) -> bool {
+        matches!(callee, Expression::Identifier(callee) if name == Some(callee.name.as_str()))
+    }
+
+    fn read_theme(&mut self, expression: &mut Expression<'a>, value: bool) {
+        if let Some(theme) = self.names.theme
+            && let Err(unread) = read_theme(self.ast, expression, theme, value)
+        {
+            self.unread.get_or_insert((unread, THEME_READ));
+        }
+    }
+
+    /// `part` of what `cx` composes with each object in it written as the
+    /// conditions of the classes it names
+    fn class_maps(&mut self, part: &mut Expression<'a>) {
+        let classes = match unwrap_syntax_only_mut(part) {
+            Expression::ArrayExpression(array) => {
+                for part in &mut array.elements {
+                    if let Some(part) = part.as_expression_mut() {
+                        self.class_maps(part);
+                    }
+                }
+                return;
+            }
+            Expression::ConditionalExpression(conditional) => {
+                self.class_maps(&mut conditional.consequent);
+                self.class_maps(&mut conditional.alternate);
+                return;
+            }
+            Expression::LogicalExpression(logical) => {
+                if logical.operator != LogicalOperator::And {
+                    self.class_maps(&mut logical.left);
+                }
+                self.class_maps(&mut logical.right);
+                return;
+            }
+            Expression::ObjectExpression(object) => self.class_map(object),
+            _ => return,
+        };
+        *part = classes;
+    }
+
+    /// `{ name: condition }` as `[condition && 'name']`
+    fn class_map(&mut self, object: &mut ObjectExpression<'a>) -> Expression<'a> {
+        let mut classes = oxc_allocator::Vec::new_in(self.ast);
+        for property in object.properties.drain(..) {
+            let mut property = match property {
+                ObjectPropertyKind::ObjectProperty(property)
+                    if property.kind == PropertyKind::Init && !property.method =>
+                {
+                    property
+                }
+                ObjectPropertyKind::ObjectProperty(mut property) => {
+                    let value = property.value.take_in(self.ast);
+                    self.unread.get_or_insert((value, CLASS_NAMES_CLASS_MAP));
+                    continue;
+                }
+                ObjectPropertyKind::SpreadProperty(mut spread) => {
+                    let argument = spread.argument.take_in(self.ast);
+                    self.unread.get_or_insert((argument, CLASS_NAMES_CLASS_MAP));
+                    continue;
+                }
+            };
+            let class = if property.computed
+                && let Some(key) = property.key.as_expression_mut()
+            {
+                key.take_in(self.ast)
+            } else {
+                let name = property.key.static_name().unwrap_or_default();
+                Expression::new_string_literal(
+                    SPAN,
+                    Str::from_in(name.as_ref(), self.ast.allocator()),
+                    None,
+                    self.ast,
+                )
+            };
+            let condition = property.value.take_in(self.ast);
+            classes.push(
+                Expression::new_logical_expression(
+                    SPAN,
+                    condition,
+                    LogicalOperator::And,
+                    class,
+                    self.ast,
+                )
+                .into(),
+            );
+        }
+        Expression::new_array_expression(SPAN, classes, self.ast)
+    }
+}
+
+impl<'a> VisitMut<'a> for ClassNamesCalls<'_, 'a> {
+    fn visit_expression(&mut self, it: &mut Expression<'a>) {
+        let Expression::TaggedTemplateExpression(tagged) = it else {
+            walk_mut::walk_expression(self, it);
+            return;
+        };
+        if !Self::calls(&tagged.tag, self.names.css) {
+            walk_mut::walk_expression(self, it);
+            return;
+        }
+        for expression in &mut tagged.quasi.expressions {
+            self.read_theme(expression, true);
+            self.visit_expression(expression);
+        }
+        *it = match template_parts(self.ast, &tagged.quasi, true) {
+            Ok(parts) => Expression::new_call_expression(
+                SPAN,
+                tagged.tag.take_in(self.ast),
+                None::<oxc_allocator::Box<'_, oxc_ast::ast::TSTypeParameterInstantiation<'_>>>,
+                oxc_allocator::Vec::from_iter_in(parts.into_iter().map(Argument::from), self.ast),
+                false,
+                self.ast,
+            ),
+            Err(unplaced) => {
+                self.unread.get_or_insert(unplaced);
+                Expression::new_identifier(SPAN, "undefined", self.ast)
+            }
+        };
+    }
+
+    fn visit_call_expression(&mut self, call: &mut CallExpression<'a>) {
+        let cx = Self::calls(&call.callee, self.names.cx);
+        if !cx && !Self::calls(&call.callee, self.names.css) {
+            walk_call_expression(self, call);
+            return;
+        }
+        for argument in &mut call.arguments {
+            let part = match argument {
+                Argument::SpreadElement(spread) => &mut spread.argument,
+                argument => argument.to_expression_mut(),
+            };
+            if cx {
+                self.class_maps(part);
+            }
+            self.read_theme(part, false);
+            self.visit_expression(part);
+        }
+    }
+
+    /// A read of the theme or of `css` and `cx` the calls do not take
+    fn visit_identifier_reference(&mut self, it: &mut oxc_ast::ast::IdentifierReference<'a>) {
+        let name = Some(it.name.as_str());
+        let requirement = if self.names.theme == name {
+            THEME_READ
+        } else if self.names.css == name || self.names.cx == name {
+            CLASS_NAMES_CALL
+        } else {
+            return;
+        };
+        self.unread.get_or_insert_with(|| {
+            (
+                Expression::new_identifier(it.span, it.name, self.ast),
+                requirement,
+            )
+        });
+    }
 }
 
 impl<'a> DevupVisitor<'a> {
@@ -1981,6 +2324,9 @@ impl<'a> VisitMut<'a> for DevupVisitor<'a> {
         }
     }
     fn visit_expression(&mut self, it: &mut Expression<'a>) {
+        if !self.class_names_scope.is_empty() && self.compile_class_names_call(it) {
+            return;
+        }
         if !self.styled_imports.is_empty() {
             match it {
                 Expression::CallExpression(call) => self.plain_styled(&mut call.callee),
@@ -3260,6 +3606,12 @@ impl<'a> VisitMut<'a> for DevupVisitor<'a> {
                             self.jsx_imports.insert(local, imported_str);
                             continue;
                         }
+                        if compat && imported_str == "ClassNames" {
+                            self.class_names_components.insert(local.clone());
+                            self.compiled_names.insert(local);
+                            specifiers.remove(i);
+                            continue;
+                        }
                         if let Ok(kind) = imported_str.parse::<ExportVariableKind>() {
                             self.imports.insert(local.clone(), kind);
                         } else if let Some(kind) = UtilType::from_str_opt(&imported_str) {
@@ -3311,6 +3663,10 @@ impl<'a> VisitMut<'a> for DevupVisitor<'a> {
     }
     #[allow(clippy::set_contains_or_insert)]
     fn visit_jsx_element(&mut self, elem: &mut JSXElement<'a>) {
+        if let Some(rendered) = self.class_names(elem) {
+            self.pending_replacement = Some(rendered);
+            return;
+        }
         let css = self.take_css_prop(elem);
         walk_jsx_element(self, elem);
 

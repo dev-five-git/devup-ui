@@ -6,6 +6,7 @@ describe('compat entry', () => {
     const compat = await import('../index')
 
     expect({ ...compat }).toEqual({
+      ClassNames: expect.any(Function),
       Global: expect.any(Function),
       ThemeProvider: expect.any(Function),
 
@@ -25,6 +26,14 @@ describe('compat entry', () => {
     const { jsx } = await import('../index')
 
     expect(jsx).toBe(createElement)
+  })
+
+  it('leaves ClassNames for the build to compile', async () => {
+    const { ClassNames } = await import('../index')
+
+    expect(() => ClassNames({ children: () => null })).toThrow(
+      'Cannot run on the runtime',
+    )
   })
 
   it('keeps its useTheme distinct from the devup-ui one', async () => {
