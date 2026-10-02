@@ -21497,6 +21497,8 @@ export const App = () => <Global {...rest} styles={{ body: { margin: '0px' } }} 
             "export const App = () => <ClassNames>{({ other }) => <a />}</ClassNames>;",
             "export const App = () => <ClassNames>{({ [k]: css }) => <a />}</ClassNames>;",
             "export const App = () => <ClassNames>{({ css }, more) => <a />}</ClassNames>;",
+            "export const App = () => <ClassNames>{(...content) => <a />}</ClassNames>;",
+            "export const App = () => <ClassNames>{({ css: { a } }) => <a />}</ClassNames>;",
             "export const App = () => <ClassNames>{async ({ css }) => <a />}</ClassNames>;",
             "export const App = () => <ClassNames>{function* ({ css }) { yield <a />; }}</ClassNames>;",
             "export const App = () => <ClassNames>{({ css }) => { const a = 1; return <a />; }}</ClassNames>;",
