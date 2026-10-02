@@ -1,5 +1,5 @@
 import { describe, expect, it, mock } from 'bun:test'
-import { act, render, userEvent } from 'bun-test-env-dom'
+import { act, fireEvent, render, userEvent } from 'bun-test-env-dom'
 
 import { Toggle } from '../index'
 
@@ -90,5 +90,37 @@ describe('Toggle', () => {
         await userEvent.click(toggleButton)
       }))
     expect(input).toHaveAttribute('value', 'true')
+  })
+
+  it('is a switch toggled by Space and Enter', () => {
+    const onChange = mock()
+    const { getByRole, container } = render(
+      <Toggle aria-label="Dark mode" name="dark" onChange={onChange} />,
+    )
+    const toggle = getByRole('switch')
+    expect(toggle).toHaveAttribute('aria-checked', 'false')
+    expect(toggle).toHaveAttribute('aria-label', 'Dark mode')
+    expect(toggle).toHaveAttribute('tabindex', '0')
+    fireEvent.keyDown(toggle, { key: ' ' })
+    expect(onChange).toHaveBeenLastCalledWith(true)
+    expect(toggle).toHaveAttribute('aria-checked', 'true')
+    fireEvent.keyDown(toggle, { key: 'Enter' })
+    expect(onChange).toHaveBeenLastCalledWith(false)
+    fireEvent.keyDown(toggle, { key: 'a' })
+    expect(onChange).toHaveBeenCalledTimes(2)
+    expect(container.querySelector('input')).toHaveAttribute('name', 'dark')
+  })
+
+  it('ignores keys and leaves the tab order when disabled', () => {
+    const onChange = mock()
+    const { getByRole, container } = render(
+      <Toggle aria-labelledby="l" disabled onChange={onChange} />,
+    )
+    const toggle = getByRole('switch')
+    expect(toggle).toHaveAttribute('tabindex', '-1')
+    expect(toggle).toHaveAttribute('aria-labelledby', 'l')
+    fireEvent.keyDown(toggle, { key: ' ' })
+    expect(onChange).not.toHaveBeenCalled()
+    expect(container.querySelector('input')).toBeDisabled()
   })
 })
