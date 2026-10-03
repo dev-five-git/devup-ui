@@ -73,8 +73,33 @@ describe('style-order-range rule', () => {
         code: '<Box styleOrder={300} />',
         filename: 'src/app/page.tsx',
       },
+      {
+        code: 'import { Box, css } from "@devup-ui/react";\n<Box data-x={{ styleOrder: 0 }} icon={<div styleOrder={0} />} props={{ styleOrder: 300 }} />;\ncss({ _hover: { styleOrder: 0 }, w: [{ styleOrder: 0 }] })',
+        filename: 'src/app/page.tsx',
+      },
+      {
+        code: 'import { css } from "@devup-ui/react";\nconst other = { styleOrder: 0 };\nfoo({ styleOrder: 0 });\ncss({ [`styleOrder`]: 0, "styleOrder": 1 });\ncss({ w: css({ styleOrder: 1 }), styleOrder: 2 })',
+        filename: 'src/app/page.tsx',
+      },
+      {
+        code: 'import { css } from "@devup-ui/react";\nconst { styleOrder = 0 } = css({});\ntoString({ styleOrder: 0 });\nnew Foo({ styleOrder: 0 });',
+        filename: 'src/app/page.tsx',
+      },
     ],
     invalid: [
+      {
+        code: 'import { css } from "@devup-ui/react";\ncss(base, { styleOrder: 300 })',
+        filename: 'src/app/page.tsx',
+        errors: [{ messageId: 'styleOrderRange' }],
+      },
+      {
+        code: 'import { Box, css } from "@devup-ui/react";\ncss({ w: css({ styleOrder: 0 }), styleOrder: 300 })',
+        filename: 'src/app/page.tsx',
+        errors: [
+          { messageId: 'styleOrderRange' },
+          { messageId: 'styleOrderRange' },
+        ],
+      },
       {
         code: 'import { Box } from "@devup-ui/react";\n<Box styleOrder={0} />',
         filename: 'src/app/page.tsx',
