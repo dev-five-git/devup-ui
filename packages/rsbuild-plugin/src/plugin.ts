@@ -15,6 +15,7 @@ import {
   loadDevupConfig,
   mergeImportAliases,
   planAtomHoist,
+  readJsxImportSource,
 } from '@devup-ui/plugin-utils'
 import {
   codeExtract,
@@ -118,7 +119,10 @@ export const DevupUI = ({
   importAliases: userImportAliases,
 }: Partial<DevupUIRsbuildPluginOptions> = {}): RsbuildPlugin => {
   registerShorthands(shorthands ?? {})
-  const importAliases = mergeImportAliases(userImportAliases)
+  const importAliases = mergeImportAliases(
+    userImportAliases,
+    readJsxImportSource(),
+  )
 
   return {
     name: 'devup-ui-rsbuild-plugin',

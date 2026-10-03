@@ -5,22 +5,22 @@ expression: outputs
 [
     (
         "export const A = styled(motion.div)`color: red;`;",
-        "export const A = ({ style, className, ...rest }) => <motion.div {...rest} className={[\"a-a\", className].filter(Boolean).join(\" \")} style={style} />;",
+        "export const A = __devupForwardRef((__devupRefProps, __devupRef) => (({ style, className, as: DevupAs = motion.div, forwardedAs, ...rest }) => <DevupAs {...rest} as={forwardedAs} className={[\"a--a a-a\", className].filter(Boolean).join(\" \")} style={style} />)({\n\t...__devupRefProps,\n\tref: __devupRef\n}));",
     ),
     (
         "export const B = styled((Motion as any).Div.Inner)({ color: 'red' });",
-        "export const B = ({ style, className, ...rest }) => <Motion.Div.Inner {...rest} className={[\"a-a\", className].filter(Boolean).join(\" \")} style={style} />;",
+        "export const B = __devupForwardRef((__devupRefProps, __devupRef) => (({ style, className, as: DevupAs = Motion.Div.Inner, forwardedAs, ...rest }) => <DevupAs {...rest} as={forwardedAs} className={[\"a--a a-a\", className].filter(Boolean).join(\" \")} style={style} />)({\n\t...__devupRefProps,\n\tref: __devupRef\n}));",
     ),
     (
         "export const C = styled(forwardRef((p, r) => <div ref={r} {...p} />)).attrs({ role: 'x' })`color: red;`;",
-        "export const C = ((DevupStyled) => (__devupProps) => (({ style, className, ...rest }) => <DevupStyled {...rest} className={[\"a-a\", className].filter(Boolean).join(\" \")} style={style} />)({\n\t...__devupProps,\n\t...{ role: \"x\" }\n}))(forwardRef((p, r) => <div ref={r} {...p} />));",
+        "export const C = __devupForwardRef((__devupRefProps, __devupRef) => ((DevupStyled) => (__devupProps) => (({ style, className, as: DevupAs = DevupStyled, forwardedAs, ...rest }) => <DevupAs {...rest} as={forwardedAs} className={[\"a--a a-a\", className].filter(Boolean).join(\" \")} style={style} />)({\n\t...__devupProps,\n\t...{ role: \"x\" }\n}))(forwardRef((p, r) => <div ref={r} {...p} />))({\n\t...__devupRefProps,\n\tref: __devupRef\n}));",
     ),
     (
         "export const D = (tag) => styled(tag, { color: 'red' });",
-        "export const D = (tag) => ((DevupStyled) => ({ style, className, ...rest }) => <DevupStyled {...rest} className={[\"a-a\", className].filter(Boolean).join(\" \")} style={style} />)(tag);",
+        "export const D = (tag) => __devupForwardRef((__devupRefProps, __devupRef) => ((DevupStyled) => ({ style, className, as: DevupAs = DevupStyled, forwardedAs, ...rest }) => <DevupAs {...rest} as={forwardedAs} className={[\"a-a\", className].filter(Boolean).join(\" \")} style={style} />)(tag)({\n\t...__devupRefProps,\n\tref: __devupRef\n}));",
     ),
     (
         "export const E = styled(getThing().div)`color: red;`;",
-        "export const E = ((DevupStyled) => ({ style, className, ...rest }) => <DevupStyled {...rest} className={[\"a-a\", className].filter(Boolean).join(\" \")} style={style} />)(getThing().div);",
+        "export const E = __devupForwardRef((__devupRefProps, __devupRef) => ((DevupStyled) => ({ style, className, as: DevupAs = DevupStyled, forwardedAs, ...rest }) => <DevupAs {...rest} as={forwardedAs} className={[\"a--a a-a\", className].filter(Boolean).join(\" \")} style={style} />)(getThing().div)({\n\t...__devupRefProps,\n\tref: __devupRef\n}));",
     ),
 ]
