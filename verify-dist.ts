@@ -79,15 +79,26 @@ async function verifyPackage(pkgDir: string): Promise<string[]> {
   return failures
 }
 
+// Subpaths of a removed export (the `lite` engine) that a stale generated build can leave behind
+const REMOVED_SUBPATHS = ['bindings/devup-ui-wasm/pkg/lite']
+
 const packagesDir = resolve(import.meta.dir, 'packages')
 const dirs = await readdir(packagesDir, { withFileTypes: true })
-const failures = (
-  await Promise.all(
-    dirs
-      .filter((d) => d.isDirectory())
-      .map((d) => verifyPackage(join(packagesDir, d.name))),
-  )
-).flat()
+const failures = [
+  ...REMOVED_SUBPATHS.filter((subpath) =>
+    existsSync(resolve(import.meta.dir, subpath)),
+  ).map(
+    (subpath) =>
+      `${subpath}: removed, but still on disk (rebuild from a clean pkg)`,
+  ),
+  ...(
+    await Promise.all(
+      dirs
+        .filter((d) => d.isDirectory())
+        .map((d) => verifyPackage(join(packagesDir, d.name))),
+    )
+  ).flat(),
+]
 
 if (failures.length > 0) {
   console.error(`verify-dist: ${failures.length} broken entry point(s)`)
