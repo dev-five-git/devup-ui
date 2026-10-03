@@ -3,6 +3,7 @@ import { writeFile } from 'node:fs/promises'
 import { Agent, request } from 'node:http'
 import { basename, dirname, join, relative, resolve } from 'node:path'
 
+import { createStateWriter } from '@devup-ui/plugin-utils'
 import type { RawLoaderDefinitionFunction } from 'webpack'
 
 import {
@@ -12,6 +13,10 @@ import {
   unreachableCoordinatorError,
 } from './coordinator-port'
 import { loadWasm } from './wasm'
+
+const stateWriter = createStateWriter((path, content, encoding) =>
+  encoding ? writeFile(path, content, encoding) : writeFile(path, content),
+)
 
 export interface DevupUILoaderOptions {
   package: string
@@ -282,19 +287,23 @@ const devupUILoader: RawLoaderDefinitionFunction<DevupUILoaderOptions> =
       if (updatedBaseStyle && watch) {
         // update base style
         promises.push(
-          writeFile(join(cssDir, 'devup-ui.css'), getCss(null, false), 'utf-8'),
+          stateWriter.write(
+            join(cssDir, 'devup-ui.css'),
+            getCss(null, false),
+            'utf-8',
+          ),
         )
       }
       if (cssFile && watch) {
         // don't write file when build
         promises.push(
-          writeFile(
+          stateWriter.write(
             join(cssDir, basename(cssFile)),
             `/* ${this.resourcePath} ${Date.now()} */`,
           ),
-          writeFile(sheetFile, exportSheet()),
-          writeFile(classMapFile, exportClassMap()),
-          writeFile(fileMapFile, exportFileMap()),
+          stateWriter.write(sheetFile, exportSheet()),
+          stateWriter.write(classMapFile, exportClassMap()),
+          stateWriter.write(fileMapFile, exportFileMap()),
         )
       }
       Promise.all(promises).then(

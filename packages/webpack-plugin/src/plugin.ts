@@ -4,7 +4,9 @@ import { createRequire } from 'node:module'
 import { dirname, join, relative, resolve } from 'node:path'
 
 import {
+  beginBuild,
   buildCanonicalMap,
+  collectNumberedFiles,
   computeFileReach,
   computeReachableFiles,
   createCompatTypes,
@@ -17,6 +19,7 @@ import {
   loadDevupConfigSync,
   mergeImportAliases,
   planAtomHoist,
+  seedFileNumbers,
   type WasmImportAliases,
 } from '@devup-ui/plugin-utils'
 import {
@@ -31,6 +34,8 @@ import {
   importSheet,
   registerShorthands,
   registerTheme,
+  resetBuildState,
+  seedFileMap,
   setAtomHoist,
   setDebug,
   setModuleResolver,
@@ -195,10 +200,12 @@ export class DevupUIWebpackPlugin {
   }
 
   apply(compiler: Compiler) {
+    // A build starts from its own options, not from what an earlier build in
+    // this process left in the engine
+    const endBuild = beginBuild({ resetBuildState })
+    compiler.hooks.shutdown?.tap('DevupUIWebpackPlugin', endBuild)
     setDebug(this.options.debug)
-    if (this.options.prefix) {
-      setPrefix(this.options.prefix)
-    }
+    setPrefix(this.options.prefix ?? null)
     const existsDevup = existsSync(this.options.devupFile)
     // read devup.json
     if (!existsSync(this.options.distDir))
@@ -225,6 +232,23 @@ export class DevupUIWebpackPlugin {
         importClassMap({})
         importFileMap({})
       }
+    }
+    // Number every file the build can extract in path order, so class
+    // prefixes do not depend on which file a worker reaches first. Numbers
+    // already handed out (a restored map in watch mode) stay.
+    try {
+      const cwd = process.cwd()
+      seedFileNumbers(
+        { seedFileMap },
+        collectNumberedFiles({
+          roots: [resolve(cwd, 'src')],
+          include: this.options.include,
+          cwd,
+          toId: (path) => relative(cwd, path).replaceAll('\\', '/'),
+        }),
+      )
+    } catch {
+      // Best-effort; numbering falls back to arrival order.
     }
     this.writeDataFiles()
 

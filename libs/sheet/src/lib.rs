@@ -502,7 +502,11 @@ impl StyleSheet {
             Some(filename)
         };
         let bucket_scope = if single_css { None } else { Some(filename) };
-        for style in styles {
+        // Names are handed out in the order styles are first seen, so the
+        // set is walked in a fixed order, not the hash order.
+        let mut ordered: Vec<&ExtractStyleValue> = styles.iter().collect();
+        ordered.sort_unstable();
+        for style in ordered {
             match style {
                 // A conditional `typography` preset: its class is the atom, and the
                 // preset's declarations are emitted under the atom's selector.
@@ -2909,6 +2913,44 @@ mod tests {
         assert_debug_snapshot!(sheet.create_css(None, true).split("*/").nth(1).unwrap());
     }
 
+    #[test]
+    #[serial]
+    fn test_class_names_do_not_depend_on_the_order_styles_are_inserted() {
+        use extractor::extract_style::extract_static_style::ExtractStaticStyle;
+        use extractor::extract_style::extract_style_value::ExtractStyleValue;
+
+        let values: Vec<ExtractStyleValue> = (0..40)
+            .map(|index| {
+                ExtractStyleValue::Static(ExtractStaticStyle::new(
+                    ["color", "margin", "padding", "width"][index % 4],
+                    &format!("{index}px"),
+                    0,
+                    None,
+                ))
+            })
+            .collect();
+        let mut outputs = Vec::new();
+        for reverse in [false, true] {
+            css::class_map::reset_class_map();
+            let mut styles = FxHashSet::default();
+            if reverse {
+                values.iter().rev().for_each(|value| {
+                    styles.insert(value.clone());
+                });
+            } else {
+                values.iter().for_each(|value| {
+                    styles.insert(value.clone());
+                });
+            }
+            let mut sheet = StyleSheet::default();
+            sheet.update_styles(&styles, "index.tsx", true);
+            outputs.push((
+                sheet.create_css(None, true),
+                css::class_map::get_class_map(),
+            ));
+        }
+        assert_eq!(outputs[0], outputs[1]);
+    }
     #[test]
     #[serial]
     fn test_update_styles_with_typography() {

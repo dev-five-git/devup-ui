@@ -3,31 +3,34 @@ import { mkdir, writeFile } from 'node:fs/promises'
 import { basename, dirname, join, relative, resolve } from 'node:path'
 
 import {
+  beginBuild,
   buildCanonicalMap,
+  collectNumberedFiles,
   computeFileReach,
   createCompatTypes,
   createModuleResolver,
   createNodeModulesExcludeRegex,
+  createStateWriter,
   createThemeInterfaceArgs,
   type CustomShorthands,
   getFileNumByFilename,
   type ImportAliases,
-  listSourceFiles,
   loadDevupConfig,
   mergeImportAliases,
   planAtomHoist,
+  seedFileNumbers,
 } from '@devup-ui/plugin-utils'
 import {
   codeExtract,
-  exportFileMap,
   getCss,
   getDefaultTheme,
   getThemeInterface,
   importCanonicalMap,
-  importFileMap,
   importFileRoutes,
   registerShorthands,
   registerTheme,
+  resetBuildState,
+  seedFileMap,
   setAtomHoist,
   setDebug,
   setModuleResolver,
@@ -61,45 +64,6 @@ function resolveSourceDirs(root: string): string[] {
   return SOURCE_DIR_CANDIDATES.map((dir) => resolve(root, dir)).filter((dir) =>
     existsSync(dir),
   )
-}
-
-/**
- * Assigns each source file its devup file number up front, ordered by path.
- *
- * The engine otherwise hands numbers out on first sight, and the bundler
- * transforms in parallel, so two identical builds produce different per-file
- * class prefixes and therefore different CSS *and* JS asset hashes. Seeding
- * from a sorted scan makes the numbering a pure function of the file paths.
- * Every source file now holds a slot, where before only the ones that emitted
- * styles consumed a number. Prefix length is a step function of the highest
- * number handed out (1 char up to 26, 2 up to 1025, 3 beyond), so this is free
- * until a project passes 1026 files under the scanned roots, at which point
- * prefixes that used to be 2 chars become 3.
- *
- * Vite reports module ids as absolute POSIX-style paths even on Windows, so the
- * scanned paths are normalized to match the keys `codeExtract` will look up.
- *
- * `importFileMap` REPLACES the engine's map, and a framework plugin resolves the
- * config once per environment, so seeding unconditionally would wipe the numbers
- * already handed to files outside `sourceDirs`: a monorepo sibling, or anything
- * reached through `include`. The style sheet does not reset with the map, so the
- * next such file reuses a live number and its atoms overwrite the previous
- * owner's. Seeding only into an empty map keeps numbering deterministic on the
- * first pass and stable for every later one.
- */
-function seedFileMap(sourceDirs: string[]): void {
-  if (Object.keys(JSON.parse(exportFileMap())).length > 0) return
-  const sorted = [
-    ...new Set(
-      sourceDirs
-        .flatMap((dir) => listSourceFiles(dir))
-        .map((file) => file.replaceAll('\\', '/')),
-    ),
-  ].sort()
-  if (sorted.length === 0) return
-  const fileMap: Record<string, number> = {}
-  for (const [index, file] of sorted.entries()) fileMap[file] = index
-  importFileMap(fileMap)
 }
 
 /**
@@ -269,23 +233,29 @@ export function DevupUI({
   atomHoist,
   importAliases: userImportAliases,
 }: Partial<DevupUIPluginOptions> = {}): PluginOption {
+  // A build starts from its own options: whatever an earlier build in this
+  // process left in the engine (prefix, hoisting, routes, buckets, numbers,
+  // styles) is gone unless another build is still running.
+  const endBuild = beginBuild({ resetBuildState })
   registerShorthands(shorthands ?? {})
   setDebug(debug)
-  if (prefix) {
-    setPrefix(prefix)
-  }
+  setPrefix(prefix ?? null)
   const importAliases = mergeImportAliases(userImportAliases)
   const cssMap = new Map()
   let serverBundleToForward: Record<string, ViteOutputWithMetadata> | undefined
+  const clientCssFiles = new Set<string>()
   let isServe = false
   // The dev server watches cssDir, so every write is an update signal. A
   // module transformed again writes its sheet again, and the reload that
   // signal causes transforms it once more: signal only a changed sheet.
   const writtenCss = new Map<string, string>()
+  const stateWriter = createStateWriter((path, content, encoding) =>
+    encoding ? writeFile(path, content, encoding) : writeFile(path, content),
+  )
   function writeCssFile(fileName: string, css: string): Promise<void> {
     if (writtenCss.get(fileName) === css) return Promise.resolve()
     writtenCss.set(fileName, css)
-    return writeFile(join(cssDir, fileName), css, 'utf-8')
+    return stateWriter.write(join(cssDir, fileName), css, 'utf-8')
   }
   return {
     name: 'devup-ui',
@@ -305,7 +275,18 @@ export function DevupUI({
       )
       const sourceDirs = resolveSourceDirs(projectRoot)
       try {
-        seedFileMap(sourceDirs)
+        // Numbers come from the sorted paths of every file the build can
+        // extract (source and included packages), not from arrival order.
+        // Files numbered before keep their numbers, so a later pass in the
+        // dev server only numbers new files after the existing ones.
+        seedFileNumbers(
+          { seedFileMap },
+          collectNumberedFiles({
+            roots: sourceDirs,
+            include,
+            cwd: projectRoot,
+          }),
+        )
       } catch {
         // Best-effort; on failure numbering falls back to arrival order.
       }
@@ -410,6 +391,9 @@ export function DevupUI({
     },
     apply() {
       return true
+    },
+    closeBundle() {
+      endBuild()
     },
     async watchChange(id) {
       if (resolve(id) === resolve(devupFile) && existsSync(devupFile)) {
@@ -596,22 +580,25 @@ export function DevupUI({
 
       const environment = this.environment
       if (!environment || !writesOutput) return
-      if (environment.config.consumer === 'client' && serverBundleToForward) {
-        // @vitejs/plugin-rsc forwards every CSS file referenced by the RSC
-        // bundle into the client bundle. Files the client already emitted are
-        // registered twice and trigger FILE_NAME_CONFLICT. Keep both bundles'
-        // imports and client metadata intact, but remove overlaps from the RSC
-        // forwarding set before its later generateBundle hook reads it.
-        for (const output of Object.values(serverBundleToForward)) {
-          for (const file of cssFiles) {
-            output.viteMetadata?.importedCss?.delete(file)
-          }
-        }
+      // @vitejs/plugin-rsc forwards every CSS file referenced by the RSC
+      // bundle into the client bundle. Files the client already emitted are
+      // registered twice and trigger FILE_NAME_CONFLICT. Keep both bundles'
+      // imports and client metadata intact, but remove overlaps from the RSC
+      // forwarding set before its later generateBundle hook reads it. Each
+      // environment records what it finished, and whichever finishes second
+      // removes the overlap, so the result does not depend on their order.
+      if (environment.config.consumer === 'client') {
+        for (const file of cssFiles) clientCssFiles.add(file)
       } else if (environment.config.consumer === 'server') {
         serverBundleToForward = bundle as unknown as Record<
           string,
           ViteOutputWithMetadata
         >
+      }
+      for (const output of Object.values(serverBundleToForward ?? {})) {
+        for (const file of clientCssFiles) {
+          output.viteMetadata?.importedCss?.delete(file)
+        }
       }
     },
   }

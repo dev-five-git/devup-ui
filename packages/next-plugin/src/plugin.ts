@@ -11,6 +11,7 @@ import { deserialize, serialize } from 'node:v8'
 import {
   buildCanonicalMap,
   buildStaticImportGraph,
+  collectNumberedFiles,
   computeCompiledFiles,
   computeFileRoutes,
   createCompatTypes,
@@ -20,6 +21,7 @@ import {
   loadDevupConfigSync,
   mergeImportAliases,
   planAtomHoist,
+  seedFileNumbers,
   type StaticImportGraph,
 } from '@devup-ui/plugin-utils'
 import { type NextConfig } from 'next'
@@ -233,9 +235,7 @@ export function DevupUI(
 
     registerShorthands(shorthands ?? {})
 
-    if (prefix) {
-      setPrefix(prefix)
-    }
+    setPrefix(prefix ?? null)
 
     writeFileSync(
       join(distDir, 'compat.d.ts'),
@@ -250,7 +250,24 @@ export function DevupUI(
       importClassMap(JSON.parse(readFileSync(classMapFile, 'utf-8')))
       importFileMap(JSON.parse(readFileSync(fileMapFile, 'utf-8')))
     } catch {
-      // No previous session state (first run) or corrupt files — start fresh
+      // No previous session state (first run) or corrupt files, start fresh
+    }
+    // Number every file the build can extract in path order, so class prefixes
+    // do not depend on the order modules reach a loader. Numbers restored above
+    // stay; files that appear later get the numbers after them.
+    try {
+      const cwd = process.cwd()
+      seedFileNumbers(
+        { seedFileMap: wasm.seedFileMap },
+        collectNumberedFiles({
+          roots: ['src', 'app', 'pages'].map((dir) => resolve(cwd, dir)),
+          include,
+          cwd,
+          toId: (path) => relative(cwd, path).replaceAll('\\', '/'),
+        }),
+      )
+    } catch {
+      // Best-effort; numbering falls back to arrival order.
     }
 
     const devupConfig = loadDevupConfigSync(devupFile)
