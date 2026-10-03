@@ -399,6 +399,7 @@ describe('DevupUINextPlugin', () => {
                     importAliases: {
                       '@emotion/react': null,
                       '@emotion/styled': 'styled',
+                      '@emotion/css': null,
                       '@vanilla-extract/css': null,
                       'styled-components': 'styled',
                     },
@@ -490,6 +491,7 @@ describe('DevupUINextPlugin', () => {
                     importAliases: {
                       '@emotion/react': null,
                       '@emotion/styled': 'styled',
+                      '@emotion/css': null,
                       '@vanilla-extract/css': null,
                       'styled-components': 'styled',
                     },
@@ -588,6 +590,7 @@ describe('DevupUINextPlugin', () => {
                     importAliases: {
                       '@emotion/react': null,
                       '@emotion/styled': 'styled',
+                      '@emotion/css': null,
                       '@vanilla-extract/css': null,
                       'styled-components': 'styled',
                     },
@@ -640,6 +643,7 @@ describe('DevupUINextPlugin', () => {
         importAliases: {
           '@emotion/react': null,
           '@emotion/styled': 'styled',
+          '@emotion/css': null,
           '@vanilla-extract/css': null,
           'styled-components': 'styled',
         },
@@ -879,6 +883,7 @@ export const box = style({ color: 'red' })`
         importAliases: {
           '@emotion/react': null,
           '@emotion/styled': 'styled',
+          '@emotion/css': null,
           '@vanilla-extract/css': null,
           'styled-components': 'styled',
         },

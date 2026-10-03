@@ -204,7 +204,12 @@ fn devup_equivalent(source: &str, imported: &str) -> Option<DevupTarget<'static>
         // `style({...})` and `css({...})` both hand back a class name for a style object,
         // and `globalStyle(selector, rules)` is `globalCss` with the selector split out.
         ("@vanilla-extract/css", "style") | (_, "css") => Some(DevupTarget::Main("css")),
-        ("@vanilla-extract/css", "globalStyle") => Some(DevupTarget::Main("globalCss")),
+        // `cx` and `merge` take class names rather than styles, so they are no `css`
+        ("@emotion/css", "cx") => Some(DevupTarget::Compat("cx")),
+        ("@emotion/css", "merge") => Some(DevupTarget::Compat("merge")),
+        ("@vanilla-extract/css", "globalStyle") | ("@emotion/css", "injectGlobal") => {
+            Some(DevupTarget::Main("globalCss"))
+        }
         (_, "keyframes") => Some(DevupTarget::Main("keyframes")),
         (_, "styled") => Some(DevupTarget::Main("styled")),
         (_, "createGlobalStyle") => Some(DevupTarget::Compat("createGlobalStyle")),
@@ -292,7 +297,10 @@ pub fn transform_import_aliases_with_edits<'a>(
                                     (
                                         "@emotion/react" | "styled-components",
                                         "css" | "keyframes",
-                                    ) => numbers.calls.push((local, RulesAt::EveryArgument)),
+                                    )
+                                    | ("@emotion/css", "css" | "keyframes" | "injectGlobal") => {
+                                        numbers.calls.push((local, RulesAt::EveryArgument));
+                                    }
                                     ("@emotion/react", "Global") => numbers.components.push(local),
                                     _ => {}
                                 }
@@ -726,6 +734,30 @@ mod tests {
             "@devup-ui/react",
             &styled_components_alias()
         ));
+    }
+
+    #[test]
+    fn test_emotion_css_maps_onto_devup_equivalents() {
+        let code = transform_import_aliases(
+            "import { css, cx, keyframes, injectGlobal, merge, flush } from '@emotion/css'",
+            "test.tsx",
+            "@devup-ui/react",
+            &HashMap::from([("@emotion/css".to_string(), ImportAlias::NamedToNamed)]),
+        );
+        assert!(
+            code.contains(
+                "import { css, keyframes, globalCss as injectGlobal } from '@devup-ui/react';"
+            ),
+            "{code}"
+        );
+        assert!(
+            code.contains("import { cx, merge } from '@devup-ui/react/compat';"),
+            "{code}"
+        );
+        assert!(
+            code.contains("import { flush } from '@emotion/css';"),
+            "{code}"
+        );
     }
 
     #[test]

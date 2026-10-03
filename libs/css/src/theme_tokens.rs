@@ -119,7 +119,7 @@ mod tests {
         set_typography_keys(vec!["body".to_string(), "title".to_string()]);
         assert_eq!(get_typography_keys(), vec!["body", "title"]);
         set_typography_keys(vec![]);
-        assert!(get_typography_keys().is_empty());
+        assert_eq!(get_typography_keys(), Vec::<String>::new());
     }
 
     #[test]

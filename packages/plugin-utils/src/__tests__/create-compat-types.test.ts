@@ -20,6 +20,7 @@ describe('createCompatTypes', () => {
         mergeImportAliases({
           '@emotion/react': false,
           '@emotion/styled': false,
+          '@emotion/css': false,
           '@vanilla-extract/css': false,
         }),
       ),
@@ -36,6 +37,7 @@ describe('createCompatTypes', () => {
       createCompatTypes({
         '@emotion/react': null,
         '@emotion/styled': 'styled',
+        '@emotion/css': null,
       }),
     ).toBe(
       [
