@@ -856,7 +856,11 @@ describe('devupUILoader', () => {
       // Retries 20 times × 50ms = 1s max, then calls back with error
       await waitFor(() => {
         expect(asyncCallback).toHaveBeenCalledWith(
-          new Error('Coordinator port file not found'),
+          expect.objectContaining({
+            message: expect.stringContaining(
+              'Coordinator port file not found: nonexistent.port',
+            ),
+          }),
         )
       }, 3000)
 
