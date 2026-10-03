@@ -1,5 +1,6 @@
 mod as_visit;
 mod build_time_values;
+mod class_arguments;
 mod component;
 mod css_utils;
 pub mod extract_style;
@@ -20783,5 +20784,137 @@ injectGlobal`body { margin: 0; }`;",
         let styles = format!("{:?}", output.styles);
         assert!(styles.contains("\"8px\""), "{styles}");
         assert!(styles.contains("body{margin:0}"), "{styles}");
+    }
+
+    fn emotion_class_call(code: &str) -> Result<String, String> {
+        reset_class_map();
+        reset_file_map();
+        extract(
+            "test.tsx",
+            &format!("import {{ css }} from '@devup-ui/react';\nimport {{ cx, merge }} from '@devup-ui/react/compat';\n{code}"),
+            ExtractOption::default(),
+        )
+        .map(|output| output.code)
+        .map_err(|error| error.to_string())
+    }
+
+    #[test]
+    #[serial]
+    fn test_emotion_cx_takes_class_names() {
+        assert_debug_snapshot!(emotion_class_call(
+            r"const red = css({ color: 'red' });
+export const a = cx('external');
+export const b = cx(red, 'external', { picked: true });
+export const c = cx(red, false && 'x');
+export const d = (on, k, cls, props) => cx(cls, { on, [k]: on, 'a b': props.x, off: false, 1: on, [`t`]: on }, [on && 'x', [cls]], on ? { y: 1 } : null, on || cls, cls ?? 'z', 0, 5, null, undefined, `t ${cls} u`, `glued${cls}`, props.make(), (on as boolean) && 'w', false || 'v');
+export const e = cx();
+export const f = cx([, 'a'], ['  b   c  ']);
+export const g = (on) => cx(on ? { a: on } : [on && 'b'], on ? (on ? 'c' : 'd') : 'e');
+export const h = (on) => cx({ [on.key]: on.value });
+export const i = () => cx(red, `${red} x`);
+export const j = cx({ a: null, b: 'x', c: '', d: 0, e: undefined, f: 2, g: false, h: true });"
+        ));
+    }
+
+    #[test]
+    #[serial]
+    fn test_emotion_merge_splits_what_it_can() {
+        assert_debug_snapshot!(emotion_class_call(
+            r"const red = css({ color: 'red' });
+export const a = (cls) => merge(cls);
+export const b = (cls) => merge(`${red}  external ${cls}`);
+export const c = merge('a  b');
+export const d = (on, cls) => merge(on ? 'a b' : cls);
+export const e = (cls) => merge(cls || 'x');
+export const f = (make) => merge(make());
+export const g = (cls) => merge(`glued${cls}`);
+export const h = (cls) => merge(cls.names);
+export const i = merge(red);
+export const j = (cls) => merge({ a: cls });
+export const k = (cls) => merge([cls]);"
+        ));
+    }
+
+    #[test]
+    #[serial]
+    fn test_emotion_cx_and_merge_report_what_they_cannot_compile() {
+        for (code, error) in [
+            (
+                "export const a = (list) => cx(...list);",
+                "test.tsx:3:31: `cx()` cannot use `...list` at build time",
+            ),
+            (
+                "export const a = (list) => cx([...list]);",
+                "`cx()` cannot use `...list` at build time",
+            ),
+            (
+                "export const a = (rest) => cx({ ...rest });",
+                "`cx()` cannot use `...rest` at build time",
+            ),
+            (
+                "export const a = () => cx({ get b() { return true; } });",
+                "`cx()` cannot use `get b()` at build time: a class map entry must be written `name: condition`",
+            ),
+            (
+                "export const a = () => cx({ b() { return true; } });",
+                "`cx()` cannot use `b()` at build time: a class map entry must be written `name: condition`",
+            ),
+            (
+                "export const a = () => cx({ set b(v) {} });",
+                "`cx()` cannot use `set b()` at build time",
+            ),
+            (
+                "export const a = () => cx`a b`;",
+                "`cx()` cannot use `cx`a b`` at build time: call it with class names",
+            ),
+            (
+                "export const a = () => merge`a b`;",
+                "`merge()` cannot use `merge`a b`` at build time: call it with class names",
+            ),
+            (
+                "export const a = () => merge();",
+                "`merge()` cannot use `` at build time: it takes one class string",
+            ),
+            (
+                "export const a = (x, y) => merge(x, y);",
+                "`merge()` cannot use `x, y` at build time: it takes one class string",
+            ),
+            (
+                "export const a = (list) => merge(...list);",
+                "`merge()` cannot use `...list` at build time",
+            ),
+        ] {
+            let message = emotion_class_call(code).err().unwrap_or_default();
+            assert!(message.contains(error), "{code}\n{message}");
+        }
+    }
+
+    #[test]
+    #[serial]
+    fn test_emotion_class_calls_follow_the_package_namespace_and_aliases() {
+        reset_class_map();
+        reset_file_map();
+        let output = extract(
+            "test.tsx",
+            "import * as compat from '@devup-ui/react/compat';
+import { cx as classNames, merge as joined } from '@emotion/css';
+export const a = compat.cx('a', { b: true });
+export const b = compat.merge('c  d');
+export const c = classNames('e');
+export const d = joined('f');
+export const e = classNames({ g: 1 }, { h: 8 });",
+            ExtractOption {
+                package: "@devup-ui/react".to_string(),
+                css_dir: "@devup-ui/react".to_string(),
+                single_css: true,
+                import_main_css: false,
+                import_aliases: HashMap::from([(
+                    "@emotion/css".to_string(),
+                    ImportAlias::NamedToNamed,
+                )]),
+            },
+        )
+        .unwrap();
+        assert_debug_snapshot!(output.code);
     }
 }

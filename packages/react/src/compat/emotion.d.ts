@@ -5,12 +5,9 @@ declare module '@emotion/styled' {
 }
 
 declare module '@emotion/css' {
-  export {
-    css,
-    css as cx,
-    globalCss as injectGlobal,
-    keyframes,
-  } from '@devup-ui/react'
+  export { css, globalCss as injectGlobal, keyframes } from '@devup-ui/react'
+  export type { ClassNamesArg } from '@devup-ui/react/compat'
+  export { cx, merge } from '@devup-ui/react/compat'
 }
 
 declare module '@emotion/react' {

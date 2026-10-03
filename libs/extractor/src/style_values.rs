@@ -50,26 +50,34 @@ impl StyleValues {
 
     /// `expression` reading what the bindings recorded hold
     pub fn read_in<'a>(&self, ast: &AstBuilder<'a>, expression: &mut Expression<'a>) {
-        if let Some(mut reads) = self.reads(ast) {
+        if let Some(mut reads) = self.reads(ast, false) {
+            reads.visit_expression(expression);
+        }
+    }
+
+    /// `expression` as class names, which read a class in a template literal
+    /// too: there it is a string to join, not CSS text
+    pub fn read_in_class_names<'a>(&self, ast: &AstBuilder<'a>, expression: &mut Expression<'a>) {
+        if let Some(mut reads) = self.reads(ast, true) {
             reads.visit_expression(expression);
         }
     }
 
     /// The CSS text `template` reading what the bindings recorded hold
     pub fn read_in_text<'a>(&self, ast: &AstBuilder<'a>, template: &mut TemplateLiteral<'a>) {
-        if let Some(mut reads) = self.reads(ast) {
+        if let Some(mut reads) = self.reads(ast, false) {
             reads.visit_template_literal(template);
         }
     }
 
-    fn reads<'s, 'a>(&'s self, ast: &'s AstBuilder<'a>) -> Option<Reads<'s, 'a>> {
+    fn reads<'s, 'a>(&'s self, ast: &'s AstBuilder<'a>, in_rules: bool) -> Option<Reads<'s, 'a>> {
         let scoping = self.scoping.as_ref()?;
         (!self.values.is_empty()).then_some(Reads {
             ast,
             scoping,
             values: &self.values,
             in_text: false,
-            in_rules: false,
+            in_rules,
         })
     }
 }
