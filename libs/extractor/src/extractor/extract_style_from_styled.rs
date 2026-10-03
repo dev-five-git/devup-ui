@@ -11,6 +11,7 @@ use crate::{
     },
     gen_class_name::{gen_class_names, merge_expression_for_class_name},
     gen_style::gen_styles,
+    styled_reads::{Forward, Reads, withheld},
     utils::{
         STYLE_OBJECT, StyleArguments, build_time_error, call_with_values, merge_object_expressions,
         readable_code, reads_directly, style_arguments, uncomposable_error, unplaced_error,
@@ -46,7 +47,291 @@ struct Base<'a> {
     bound: Option<Expression<'a>>,
 }
 
+/// A styled component the file defines, which a component extending it
+/// renders in its place: what it renders, its classes and styles, and its
+/// attrs, as the extension applies them before its own
+pub struct StyledDefinition<'a> {
+    name: String,
+    bound: Option<Expression<'a>>,
+    classes: Vec<Expression<'a>>,
+    styles: Vec<ExtractStyleProp<'a>>,
+    attrs: Vec<Expression<'a>>,
+    /// The props its styles and attrs read
+    reads: Reads,
+    /// Its `shouldForwardProp`, as the build evaluates it
+    forward: Option<Forward>,
+    /// The class other styles select it by, which a component extending it
+    /// gives too, as it renders this one
+    marker: Option<String>,
+}
+
+/// `marker` as a class among those a component gives
+fn marker_class<'a>(ast_builder: &AstBuilder<'a>, marker: &str) -> Expression<'a> {
+    Expression::new_string_literal(
+        SPAN,
+        Str::from_in(marker, ast_builder.allocator()),
+        None,
+        ast_builder,
+    )
+}
+
+/// How the classes of a styled component are named: the file its atoms are
+/// split into, and the class other styles select it by
+#[derive(Clone, Copy, Default)]
+pub struct Naming<'s> {
+    pub split_filename: Option<&'s str>,
+    pub marker: Option<&'s str>,
+}
+
+/// Whether a styled component renders a tag, which takes only valid
+/// attributes, rather than a component
+fn renders_tag(name: &str, bound: Option<&Expression<'_>>) -> bool {
+    bound.is_none() && name.starts_with(|c: char| c.is_ascii_lowercase()) && !name.contains('.')
+}
+
+/// `own` applying after `inherited`: a prop passes only when both pass it
+fn combine_forward(inherited: Option<&Forward>, own: Option<Forward>) -> Option<Forward> {
+    match (inherited.cloned(), own) {
+        (Some(inherited), Some(own)) => Some(Forward::And(Box::new(inherited), Box::new(own))),
+        (inherited, own) => own.or(inherited),
+    }
+}
+
+impl StyledDefinition<'_> {
+    /// Whether an element using this component keeps passing the prop `name`:
+    /// what its styles read, what it passes on, and what React or the
+    /// component itself takes
+    #[must_use]
+    pub fn takes(&self, name: &str) -> bool {
+        self.reads.whole
+            || self.reads.names.iter().any(|read| read == name)
+            || matches!(
+                name,
+                "className" | "style" | "as" | "forwardedAs" | "key" | "ref" | "children"
+            )
+            || crate::styled_reads::passes(
+                name,
+                renders_tag(&self.name, self.bound.as_ref()),
+                self.forward.as_ref(),
+            )
+    }
+
+    /// Whether an extension can render what this definition renders: a value
+    /// only the runtime gives is read again only when it is a binding
+    #[must_use]
+    pub fn extendable(&self) -> bool {
+        self.bound
+            .as_ref()
+            .is_none_or(|bound| matches!(bound, Expression::Identifier(_)))
+    }
+}
+
+impl<'a> StyledDefinition<'a> {
+    /// The tag an element using this component can render in its place, with
+    /// the styles the component gives it: a tag, with no attrs, no props read
+    /// and no value only the runtime gives
+    #[must_use]
+    pub fn inline(&self) -> Option<(&str, &[ExtractStyleProp<'a>])> {
+        (renders_tag(&self.name, self.bound.as_ref())
+            && self.attrs.is_empty()
+            && self.reads == Reads::default()
+            && self.classes.is_empty()
+            && self.styles.iter().all(fixed))
+        .then_some((self.name.as_str(), self.styles.as_slice()))
+    }
+
+    /// The class other styles select the component by
+    #[must_use]
+    pub fn marker(&self) -> Option<&str> {
+        self.marker.as_deref()
+    }
+
+    /// The styles the component gives what it renders
+    #[must_use]
+    pub fn styles(&self) -> &[ExtractStyleProp<'a>] {
+        &self.styles
+    }
+}
+
+/// Whether `prop` holds only values the build knows
+fn fixed(prop: &ExtractStyleProp<'_>) -> bool {
+    match prop {
+        ExtractStyleProp::Static(value) => !matches!(value, ExtractStyleValue::Dynamic(_)),
+        ExtractStyleProp::StaticArray(props) => props.iter().all(fixed),
+        _ => false,
+    }
+}
+
+/// `Component.withComponent(target)`: the styles and attrs of `definition`
+/// rendering `target`, a tag name or a component JSX can name; `None` for any
+/// other target
+pub fn with_component<'a>(
+    ast_builder: &AstBuilder<'a>,
+    definition: &StyledDefinition<'a>,
+    target: &Expression<'a>,
+    split_filename: Option<&str>,
+) -> Option<(Expression<'a>, StyledDefinition<'a>)> {
+    let name = match unwrap_syntax_only(target) {
+        Expression::StringLiteral(literal) => literal.value.to_string(),
+        target => jsx_name(target)?,
+    };
+    let base = Base::named(name);
+    let allocator = ast_builder.allocator();
+    let mut styles: Vec<ExtractStyleProp<'a>> = definition
+        .styles
+        .iter()
+        .map(|style| style.clone_in(allocator))
+        .collect();
+    let classes: Vec<Expression<'a>> = clone_all(ast_builder, &definition.classes).collect();
+    let class_name = merge_expression_for_class_name(
+        ast_builder,
+        clone_all(ast_builder, &classes).chain(gen_class_names(
+            ast_builder,
+            &mut styles,
+            None,
+            split_filename,
+        )),
+    );
+    let withheld = withheld(
+        &definition.reads,
+        renders_tag(&base.name, None),
+        definition.forward.as_ref(),
+    );
+    let component = create_styled_component(
+        ast_builder,
+        &base.name,
+        &class_name,
+        &gen_styles(ast_builder, &styles, None),
+        &withheld,
+    );
+    let new_definition = base.definition(
+        ast_builder,
+        classes,
+        &styles,
+        &definition.attrs,
+        definition.reads.clone(),
+        definition.forward.clone(),
+    );
+    Some((
+        apply_attrs(ast_builder, component, &definition.attrs),
+        new_definition,
+    ))
+}
+
+/// What extracting a styled component gives
+pub struct StyledExtraction<'a> {
+    pub result: ExtractResult<'a>,
+    pub expression: Expression<'a>,
+    pub errors: Vec<(u32, String)>,
+    pub definition: Option<StyledDefinition<'a>>,
+}
+
+/// The styles a component renders: those it extends or its base component
+/// brings, then its own, a later declaration replacing an earlier one
+fn compose_styles<'a>(
+    ast_builder: &AstBuilder<'a>,
+    inherited: Option<&StyledDefinition<'a>>,
+    defaults: Option<Vec<ExtractStyleValue>>,
+    own: Vec<ExtractStyleProp<'a>>,
+) -> Vec<ExtractStyleProp<'a>> {
+    let mut earlier: Vec<ExtractStyleProp<'a>> = inherited.map_or_else(Vec::new, |inherited| {
+        inherited
+            .styles
+            .iter()
+            .map(|style| style.clone_in(ast_builder.allocator()))
+            .collect()
+    });
+    earlier.extend(defaults.into_iter().flatten().map(ExtractStyleProp::Static));
+    if earlier.is_empty() {
+        return own;
+    }
+    let mut composition = crate::composition::Composition::default();
+    composition.apply(ast_builder, earlier);
+    composition.apply(ast_builder, own);
+    composition.into_props()
+}
+
+/// The classes and attrs a component extending `inherited` starts from
+fn inherited_parts<'a>(
+    ast_builder: &AstBuilder<'a>,
+    inherited: Option<&StyledDefinition<'a>>,
+    attrs: &[Expression<'a>],
+) -> (Vec<Expression<'a>>, Vec<Expression<'a>>) {
+    let allocator = ast_builder.allocator();
+    let (classes, mut all_attrs) = inherited.map_or_else(
+        || (Vec::new(), Vec::new()),
+        |inherited| {
+            (
+                inherited
+                    .marker
+                    .as_deref()
+                    .map(|marker| marker_class(ast_builder, marker))
+                    .into_iter()
+                    .chain(inherited.classes.iter().map(|c| c.clone_in(allocator)))
+                    .collect(),
+                inherited
+                    .attrs
+                    .iter()
+                    .map(|a| a.clone_in(allocator))
+                    .collect(),
+            )
+        },
+    );
+    all_attrs.extend(attrs.iter().map(|attr| attr.clone_in(allocator)));
+    (classes, all_attrs)
+}
+
 impl<'a> Base<'a> {
+    /// What `inherited` renders, in place of the component defining it
+    fn extending(
+        self,
+        ast_builder: &AstBuilder<'a>,
+        inherited: Option<&StyledDefinition<'a>>,
+    ) -> Self {
+        match inherited {
+            Some(inherited) => Self {
+                name: inherited.name.clone(),
+                styles: None,
+                bound: inherited
+                    .bound
+                    .as_ref()
+                    .map(|bound| bound.clone_in(ast_builder.allocator())),
+            },
+            None => self,
+        }
+    }
+
+    /// The definition of the component rendering this base
+    fn definition(
+        &self,
+        ast_builder: &AstBuilder<'a>,
+        classes: Vec<Expression<'a>>,
+        styles: &[ExtractStyleProp<'a>],
+        attrs: &[Expression<'a>],
+        reads: Reads,
+        forward: Option<Forward>,
+    ) -> StyledDefinition<'a> {
+        let allocator = ast_builder.allocator();
+        StyledDefinition {
+            name: self.name.clone(),
+            bound: self.bound.as_ref().map(|bound| bound.clone_in(allocator)),
+            classes,
+            styles: styles
+                .iter()
+                .map(|style| style.clone_in(allocator))
+                .collect(),
+            attrs: attrs.iter().map(|attr| attr.clone_in(allocator)).collect(),
+            reads,
+            forward,
+            marker: None,
+        }
+    }
+
+    /// The props a component rendering this base keeps away from it
+    fn withheld(&self, reads: &Reads, forward: Option<&Forward>) -> Vec<String> {
+        withheld(reads, renders_tag(&self.name, self.bound.as_ref()), forward)
+    }
+
     const fn named(name: String) -> Self {
         Self {
             name,
@@ -63,6 +348,29 @@ impl<'a> Base<'a> {
             None => component,
         }
     }
+}
+
+/// The component `styled(Component)` extends, as written: the argument naming
+/// it in a tagged template `styled(Component)`, `styled(Component)({...})` or
+/// `styled(Component, {...})`
+#[must_use]
+pub fn extended<'b, 'a>(expression: &'b Expression<'a>) -> Option<&'b Expression<'a>> {
+    let factory = match expression {
+        Expression::TaggedTemplateExpression(tag) => &tag.tag,
+        Expression::CallExpression(call)
+            if matches!(
+                unwrap_syntax_only(&call.callee),
+                Expression::CallExpression(_)
+            ) =>
+        {
+            &call.callee
+        }
+        expression => expression,
+    };
+    let Expression::CallExpression(call) = unwrap_syntax_only(factory) else {
+        return None;
+    };
+    unwrap_syntax_only(call.arguments.first()?.as_expression()?).into()
 }
 
 fn extract_base_tag_and_class_name<'a>(
@@ -180,10 +488,21 @@ fn resolve_styled_call_target<'a>(
 pub fn extract_style_from_styled<'a>(
     ast_builder: &AstBuilder<'a>,
     expression: &mut Expression<'a>,
-    split_filename: Option<&str>,
+    naming: Naming<'_>,
     imports: &FxHashMap<String, ExportVariableKind>,
     attrs: &[Expression<'a>],
-) -> (ExtractResult<'a>, Expression<'a>, Vec<(u32, String)>) {
+    inherited: Option<&StyledDefinition<'a>>,
+    forward: Option<Forward>,
+) -> StyledExtraction<'a> {
+    let Naming {
+        split_filename,
+        marker,
+    } = naming;
+    let forward = combine_forward(inherited.and_then(|i| i.forward.as_ref()), forward);
+    let mut reads = inherited.map_or_else(Reads::default, |inherited| inherited.reads.clone());
+    for attr in attrs {
+        reads.read_in(attr);
+    }
     let mut composed_classes = Vec::new();
     let mut errors = Vec::new();
     if let Expression::CallExpression(call) = expression
@@ -209,13 +528,17 @@ pub fn extract_style_from_styled<'a>(
             None => {}
         }
     }
-    let (result, new_expr) = if let Expression::TaggedTemplateExpression(tag) = expression
+    let (result, new_expr, definition) = if let Expression::TaggedTemplateExpression(tag) =
+        expression
         && let Some(mut base) = extract_base_tag_and_class_name(ast_builder, &tag.tag, imports)
     {
         // Case 1: styled.div`css` or styled("div")`css`
         // Check if tag is styled.div or styled(...)
         // Extract CSS from template literal
 
+        for interpolation in &tag.quasi.expressions {
+            reads.read_in(interpolation);
+        }
         let TemplateStyles {
             styles,
             statements,
@@ -225,16 +548,16 @@ pub fn extract_style_from_styled<'a>(
             let expression = &tag.quasi.expressions[index];
             errors.push((expression.span().start, unplaced_error(expression)));
         }
-        let mut props_styles: Vec<ExtractStyleProp<'_>> = styles
+        let own: Vec<ExtractStyleProp<'_>> = styles
             .into_iter()
             .map(|ex| ExtractStyleProp::Static(ex.into()))
             .collect();
+        let defaults = base.styles.take();
+        let base = base.extending(ast_builder, inherited);
+        let mut props_styles = compose_styles(ast_builder, inherited, defaults, own);
+        let (mut classes, attrs) = inherited_parts(ast_builder, inherited, attrs);
 
-        if let Some(default_class_name) = base.styles.take() {
-            props_styles.extend(default_class_name.into_iter().map(ExtractStyleProp::Static));
-        }
-
-        let mixins = statements.into_iter().map(|index| {
+        classes.extend(statements.into_iter().map(|index| {
             let mixin = &tag.quasi.expressions[index];
             if matches!(
                 unwrap_syntax_only(mixin),
@@ -255,12 +578,13 @@ pub fn extract_style_from_styled<'a>(
             } else {
                 mixin.clone_in(ast_builder.allocator())
             }
-        });
+        }));
         let class_name = merge_expression_for_class_name(
             ast_builder,
-            mixins
-                .collect::<Vec<_>>()
+            marker
+                .map(|marker| marker_class(ast_builder, marker))
                 .into_iter()
+                .chain(clone_all(ast_builder, &classes))
                 .chain(gen_class_names(
                     ast_builder,
                     &mut props_styles,
@@ -279,8 +603,13 @@ pub fn extract_style_from_styled<'a>(
             &base.name,
             &class_name,
             &gen_styles(ast_builder, &props_styles, None),
+            &base.withheld(&reads, forward.as_ref()),
         );
-        let styled_component = base.render(ast_builder, apply_attrs(ast_builder, component, attrs));
+        let mut definition =
+            base.definition(ast_builder, classes, &props_styles, &attrs, reads, forward);
+        definition.marker = marker.map(str::to_string);
+        let styled_component =
+            base.render(ast_builder, apply_attrs(ast_builder, component, &attrs));
 
         let result = ExtractResult {
             styles: props_styles,
@@ -290,7 +619,7 @@ pub fn extract_style_from_styled<'a>(
             props: None,
         };
 
-        (Some(result), Some(styled_component))
+        (Some(result), Some(styled_component), Some(definition))
     } else if let Expression::CallExpression(call) = expression
         && let Some((mut base, style_index)) =
             resolve_styled_call_target(ast_builder, call, imports)
@@ -298,6 +627,13 @@ pub fn extract_style_from_styled<'a>(
         // Case 2: styled.div({ bg: "red" }), styled("div")({ bg: "red" }),
         // or styled("div", { bg: "red" })
 
+        reads.read_in(
+            if let Argument::SpreadElement(spread) = &call.arguments[style_index] {
+                &spread.argument
+            } else {
+                call.arguments[style_index].to_expression()
+            },
+        );
         // Extract styles from object expression
         let ExtractResult {
             mut styles,
@@ -324,26 +660,41 @@ pub fn extract_style_from_styled<'a>(
                 .into_iter()
                 .map(|(offset, code)| (offset, build_time_error("styled", &code, STYLE_OBJECT))),
         );
-        if let Some(default_class_name) = base.styles.take() {
-            styles.extend(default_class_name.into_iter().map(ExtractStyleProp::Static));
+        if let Some(order) = style_order {
+            for style in &mut styles {
+                crate::composition::set_prop_order(style, order);
+            }
         }
+        let defaults = base.styles.take();
+        let base = base.extending(ast_builder, inherited);
+        let mut styles = compose_styles(ast_builder, inherited, defaults, styles);
+        let (mut classes, attrs) = inherited_parts(ast_builder, inherited, attrs);
+        classes.extend(composed_classes);
 
         let class_name = merge_expression_for_class_name(
             ast_builder,
-            composed_classes.into_iter().chain(gen_class_names(
-                ast_builder,
-                &mut styles,
-                style_order,
-                split_filename,
-            )),
+            marker
+                .map(|marker| marker_class(ast_builder, marker))
+                .into_iter()
+                .chain(clone_all(ast_builder, &classes))
+                .chain(gen_class_names(
+                    ast_builder,
+                    &mut styles,
+                    None,
+                    split_filename,
+                )),
         );
         let component = create_styled_component(
             ast_builder,
             &base.name,
             &class_name,
             &gen_styles(ast_builder, &styles, None),
+            &base.withheld(&reads, forward.as_ref()),
         );
-        let styled_component = base.render(ast_builder, apply_attrs(ast_builder, component, attrs));
+        let mut definition = base.definition(ast_builder, classes, &styles, &attrs, reads, forward);
+        definition.marker = marker.map(str::to_string);
+        let styled_component =
+            base.render(ast_builder, apply_attrs(ast_builder, component, &attrs));
 
         let result = ExtractResult {
             styles,
@@ -353,7 +704,7 @@ pub fn extract_style_from_styled<'a>(
             props,
         };
 
-        (Some(result), Some(styled_component))
+        (Some(result), Some(styled_component), Some(definition))
     } else {
         // Left as written it would call `styled` at runtime, which only the build runs
         let code = match &*expression {
@@ -364,13 +715,23 @@ pub fn extract_style_from_styled<'a>(
             expression.span().start,
             build_time_error("styled", &code, STYLED_FACTORY),
         ));
-        (None, None)
+        (None, None, None)
     };
-    (
-        result.unwrap_or_else(ExtractResult::default),
-        new_expr.unwrap_or_else(|| expression.clone_in(ast_builder.allocator())),
+    StyledExtraction {
+        result: result.unwrap_or_else(ExtractResult::default),
+        expression: new_expr.unwrap_or_else(|| expression.clone_in(ast_builder.allocator())),
         errors,
-    )
+        definition,
+    }
+}
+
+fn clone_all<'s, 'a>(
+    ast_builder: &'s AstBuilder<'a>,
+    expressions: &'s [Expression<'a>],
+) -> impl Iterator<Item = Expression<'a>> + 's {
+    expressions
+        .iter()
+        .map(|expression| expression.clone_in(ast_builder.allocator()))
 }
 
 /// The name the attrs wrapper binds props to, chosen not to shadow what the
@@ -379,15 +740,16 @@ const ATTRS_PROPS: &str = "__devupProps";
 
 /// Strip styled-components' `.attrs()` / `.withConfig()` off a styled factory
 /// such as `styled.div.attrs(a).withConfig(c)`, returning the attrs in the
-/// order they apply. `withConfig` only tunes runtime behavior, so it is dropped.
+/// order they apply, and the `withConfig` options in the order they apply
 pub fn take_styled_modifiers<'a>(
     ast_builder: &AstBuilder<'a>,
     factory: &mut Expression<'a>,
     is_styled: impl Fn(&str) -> bool,
-) -> Vec<Expression<'a>> {
+) -> (Vec<Expression<'a>>, Vec<Expression<'a>>) {
     let mut attrs = Vec::new();
+    let mut configs = Vec::new();
     if !is_modified_styled(factory, is_styled) {
-        return attrs;
+        return (attrs, configs);
     }
     while let Expression::CallExpression(call) = unwrap_syntax_only_mut(factory)
         && let CallExpression {
@@ -397,17 +759,61 @@ pub fn take_styled_modifiers<'a>(
         && matches!(member.property.name.as_str(), "attrs" | "withConfig")
     {
         let placeholder = || Expression::new_null_literal(SPAN, ast_builder);
-        if member.property.name == "attrs"
-            && let Some(argument) = arguments[0].as_expression_mut()
-        {
-            attrs.push(std::mem::replace(argument, placeholder()));
+        if let Some(argument) = arguments[0].as_expression_mut() {
+            let argument = std::mem::replace(argument, placeholder());
+            if member.property.name == "attrs" {
+                attrs.push(argument);
+            } else {
+                configs.push(argument);
+            }
         }
         let object = std::mem::replace(&mut member.object, placeholder());
         *factory = object;
     }
     attrs.reverse();
-    attrs
+    configs.reverse();
+    (attrs, configs)
 }
+
+/// The `shouldForwardProp` the options objects give, the later applying after
+/// the earlier, with the offset and code of one the build cannot evaluate
+pub fn read_forward(options: &[&Expression<'_>]) -> (Option<Forward>, Option<(u32, String)>) {
+    let mut forward = None;
+    for options in options {
+        let Expression::ObjectExpression(object) = unwrap_syntax_only(options) else {
+            continue;
+        };
+        for property in &object.properties {
+            let ObjectPropertyKind::ObjectProperty(property) = property else {
+                continue;
+            };
+            if property.computed
+                || property.key.static_name().as_deref() != Some("shouldForwardProp")
+            {
+                continue;
+            }
+            match Forward::read(&property.value) {
+                Some(own) => forward = combine_forward(forward.as_ref(), Some(own)),
+                None => {
+                    return (
+                        forward,
+                        Some((
+                            property.value.span().start,
+                            build_time_error(
+                                "styled",
+                                &readable_code(&property.value),
+                                SHOULD_FORWARD_PROP,
+                            ),
+                        )),
+                    );
+                }
+            }
+        }
+    }
+    (forward, None)
+}
+
+const SHOULD_FORWARD_PROP: &str = "`shouldForwardProp` must be a function of the prop name that compares it with strings, `[...].includes(prop)`, `prop.startsWith(...)` or `isPropValid(prop)`, joined by `!`, `&&` and `||`";
 
 fn is_modified_styled(expression: &Expression<'_>, is_styled: impl Fn(&str) -> bool) -> bool {
     let mut expression = unwrap_syntax_only(expression);
@@ -452,42 +858,213 @@ fn apply_attrs<'a>(
     if attrs.is_empty() {
         return component;
     }
-    let props = || Expression::new_identifier(SPAN, ATTRS_PROPS, ast_builder);
-    let mut merged = props();
-    for attr in attrs {
-        let attr = attr.clone_in(ast_builder.allocator());
-        if matches!(unwrap_syntax_only(&attr), Expression::ObjectExpression(_)) {
-            merged = spread_objects(ast_builder, merged, attr);
-            continue;
-        }
-        let called = wrap_direct_call(ast_builder, &attr, &[props()]);
-        let resolved = if matches!(
-            unwrap_syntax_only(&attr),
-            Expression::ArrowFunctionExpression(_) | Expression::FunctionExpression(_)
-        ) {
-            called
-        } else {
-            let is_function = Expression::new_binary_expression(
-                SPAN,
-                Expression::new_unary_expression(
-                    SPAN,
-                    UnaryOperator::Typeof,
-                    attr.clone_in(ast_builder.allocator()),
-                    ast_builder,
-                ),
-                BinaryOperator::StrictEquality,
-                Expression::new_string_literal(SPAN, "function", None, ast_builder),
-                ast_builder,
-            );
-            Expression::new_conditional_expression(SPAN, is_function, called, attr, ast_builder)
-        };
-        let step = props_arrow(ast_builder, spread_objects(ast_builder, props(), resolved));
-        merged = wrap_direct_call(ast_builder, &step, &[merged]);
-    }
+    let merged = if attrs.iter().all(sets_plain_props) {
+        spread_attrs(ast_builder, attrs)
+    } else {
+        merge_attrs(ast_builder, attrs)
+    };
     props_arrow(
         ast_builder,
         wrap_direct_call(ast_builder, &component, &[merged]),
     )
+}
+
+/// The binding each attrs step reads the props merged so far through
+const ATTRS_CONTEXT: &str = "__devupContext";
+/// The binding each attrs step reads what its attrs give through
+const ATTRS_VALUE: &str = "__devupAttrs";
+
+/// Whether `attr` is an object setting props other than `className` and
+/// `style` by name, which spreading over the props merges as attrs do
+fn sets_plain_props(attr: &Expression<'_>) -> bool {
+    let Expression::ObjectExpression(object) = unwrap_syntax_only(attr) else {
+        return false;
+    };
+    object.properties.iter().all(|property| {
+        matches!(property, ObjectPropertyKind::ObjectProperty(property)
+            if !property.computed
+                && property
+                    .key
+                    .static_name()
+                    .is_some_and(|name| name != "className" && name != "style"))
+    })
+}
+
+/// The props with each attrs spread over them in order
+fn spread_attrs<'a>(ast_builder: &AstBuilder<'a>, attrs: &[Expression<'a>]) -> Expression<'a> {
+    let mut merged = identifier(ast_builder, ATTRS_PROPS);
+    for attr in attrs {
+        merged = spread_objects(ast_builder, merged, attr.clone_in(ast_builder.allocator()));
+    }
+    merged
+}
+
+/// The props merged as styled-components merges attrs: each attrs, or what
+/// calling it with the props merged so far gives, joins its `className` to
+/// theirs, merges its `style` over theirs and replaces their other props; the
+/// caller's `className` comes last
+fn merge_attrs<'a>(ast_builder: &AstBuilder<'a>, attrs: &[Expression<'a>]) -> Expression<'a> {
+    let mut merged = with_property(
+        ast_builder,
+        identifier(ast_builder, ATTRS_PROPS),
+        "className",
+        identifier(ast_builder, "undefined"),
+    );
+    for attr in attrs {
+        let resolved = spread_objects(
+            ast_builder,
+            Expression::new_object_expression(
+                SPAN,
+                oxc_allocator::Vec::new_in(ast_builder),
+                ast_builder,
+            ),
+            resolve_attrs(ast_builder, attr.clone_in(ast_builder.allocator())),
+        );
+        let merge = call_with_values(
+            ast_builder,
+            vec![(ATTRS_VALUE.to_string(), resolved)],
+            merge_attrs_value(ast_builder),
+        );
+        let step = named_arrow(ast_builder, ATTRS_CONTEXT, merge);
+        merged = wrap_direct_call(ast_builder, &step, &[merged]);
+    }
+    let caller_class = joined_class(
+        ast_builder,
+        member(ast_builder, ATTRS_CONTEXT, "className"),
+        member(ast_builder, ATTRS_PROPS, "className"),
+    );
+    let last = named_arrow(
+        ast_builder,
+        ATTRS_CONTEXT,
+        with_property(
+            ast_builder,
+            identifier(ast_builder, ATTRS_CONTEXT),
+            "className",
+            caller_class,
+        ),
+    );
+    wrap_direct_call(ast_builder, &last, &[merged])
+}
+
+/// What `attr` gives: itself when it is an object, or what calling it with
+/// the props merged so far gives when it is a function
+fn resolve_attrs<'a>(ast_builder: &AstBuilder<'a>, attr: Expression<'a>) -> Expression<'a> {
+    if matches!(unwrap_syntax_only(&attr), Expression::ObjectExpression(_)) {
+        return attr;
+    }
+    let called = wrap_direct_call(
+        ast_builder,
+        &attr,
+        &[identifier(ast_builder, ATTRS_CONTEXT)],
+    );
+    if matches!(
+        unwrap_syntax_only(&attr),
+        Expression::ArrowFunctionExpression(_) | Expression::FunctionExpression(_)
+    ) {
+        return called;
+    }
+    let is_function = Expression::new_binary_expression(
+        SPAN,
+        Expression::new_unary_expression(
+            SPAN,
+            UnaryOperator::Typeof,
+            attr.clone_in(ast_builder.allocator()),
+            ast_builder,
+        ),
+        BinaryOperator::StrictEquality,
+        Expression::new_string_literal(SPAN, "function", None, ast_builder),
+        ast_builder,
+    );
+    Expression::new_conditional_expression(SPAN, is_function, called, attr, ast_builder)
+}
+
+/// `{ ...context, ...attrs, className, style }` with the classes joined and
+/// the styles merged
+fn merge_attrs_value<'a>(ast_builder: &AstBuilder<'a>) -> Expression<'a> {
+    let merged = spread_objects(
+        ast_builder,
+        identifier(ast_builder, ATTRS_CONTEXT),
+        identifier(ast_builder, ATTRS_VALUE),
+    );
+    let class_name = joined_class(
+        ast_builder,
+        member(ast_builder, ATTRS_CONTEXT, "className"),
+        member(ast_builder, ATTRS_VALUE, "className"),
+    );
+    let style = spread_objects(
+        ast_builder,
+        member(ast_builder, ATTRS_CONTEXT, "style"),
+        member(ast_builder, ATTRS_VALUE, "style"),
+    );
+    let merged = with_property(ast_builder, merged, "className", class_name);
+    with_property(ast_builder, merged, "style", style)
+}
+
+fn identifier<'a>(ast_builder: &AstBuilder<'a>, name: &'static str) -> Expression<'a> {
+    Expression::new_identifier(SPAN, name, ast_builder)
+}
+
+fn member<'a>(
+    ast_builder: &AstBuilder<'a>,
+    object: &'static str,
+    name: &'static str,
+) -> Expression<'a> {
+    Expression::StaticMemberExpression(oxc_ast::ast::StaticMemberExpression::boxed(
+        SPAN,
+        identifier(ast_builder, object),
+        oxc_ast::ast::IdentifierName::new(SPAN, name, ast_builder),
+        false,
+        ast_builder,
+    ))
+}
+
+/// `[first, second].filter(Boolean).join(" ") || undefined`
+fn joined_class<'a>(
+    ast_builder: &AstBuilder<'a>,
+    first: Expression<'a>,
+    second: Expression<'a>,
+) -> Expression<'a> {
+    let joined = wrap_array_filter(ast_builder, &[first, second])
+        .unwrap_or_else(|| identifier(ast_builder, "undefined"));
+    Expression::new_logical_expression(
+        SPAN,
+        joined,
+        LogicalOperator::Or,
+        identifier(ast_builder, "undefined"),
+        ast_builder,
+    )
+}
+
+/// `object` with `name` set to `value`: an object spreading it, then setting
+/// the property
+fn with_property<'a>(
+    ast_builder: &AstBuilder<'a>,
+    object: Expression<'a>,
+    name: &'static str,
+    value: Expression<'a>,
+) -> Expression<'a> {
+    let mut properties = match object {
+        Expression::ObjectExpression(object) => object.unbox().properties,
+        object => oxc_allocator::Vec::from_array_in(
+            [ObjectPropertyKind::new_spread_property(
+                SPAN,
+                object,
+                ast_builder,
+            )],
+            ast_builder,
+        ),
+    };
+    properties.push(ObjectPropertyKind::new_object_property(
+        SPAN,
+        oxc_ast::ast::PropertyKind::Init,
+        PropertyKey::new_static_identifier(SPAN, name, ast_builder),
+        value,
+        false,
+        false,
+        false,
+        ast_builder,
+    ));
+    Expression::new_object_expression(SPAN, properties, ast_builder)
 }
 
 fn spread_objects<'a>(
@@ -510,10 +1087,19 @@ fn spread_objects<'a>(
 }
 
 fn props_arrow<'a>(ast_builder: &AstBuilder<'a>, body: Expression<'a>) -> Expression<'a> {
+    named_arrow(ast_builder, ATTRS_PROPS, body)
+}
+
+/// `(name) => body`
+fn named_arrow<'a>(
+    ast_builder: &AstBuilder<'a>,
+    name: &'static str,
+    body: Expression<'a>,
+) -> Expression<'a> {
     let parameter = FormalParameter::new(
         SPAN,
         oxc_allocator::Vec::new_in(ast_builder),
-        BindingPattern::new_binding_identifier(SPAN, ATTRS_PROPS, ast_builder),
+        BindingPattern::new_binding_identifier(SPAN, name, ast_builder),
         None::<oxc_allocator::Box<oxc_ast::ast::TSTypeAnnotation<'a>>>,
         None::<oxc_allocator::Box<Expression<'a>>>,
         false,
@@ -540,11 +1126,180 @@ fn props_arrow<'a>(ast_builder: &AstBuilder<'a>, body: Expression<'a>) -> Expres
     )
 }
 
+/// The binding the generated styled components forward refs through
+pub const FORWARD_REF: &str = "__devupForwardRef";
+
+/// `__devupForwardRef((p, ref) => component({ ...p, ref }))`: React 18 gives a
+/// function component no `ref` prop, so the component takes it as one and
+/// passes it to what it renders with the rest of its props
+pub fn forward_ref<'a>(ast_builder: &AstBuilder<'a>, component: Expression<'a>) -> Expression<'a> {
+    let parameter = |name: &'static str| {
+        FormalParameter::new(
+            SPAN,
+            oxc_allocator::Vec::new_in(ast_builder),
+            BindingPattern::new_binding_identifier(SPAN, name, ast_builder),
+            None::<oxc_allocator::Box<oxc_ast::ast::TSTypeAnnotation<'a>>>,
+            None::<oxc_allocator::Box<Expression<'a>>>,
+            false,
+            None,
+            false,
+            false,
+            ast_builder,
+        )
+    };
+    let props = with_property(
+        ast_builder,
+        identifier(ast_builder, "__devupRefProps"),
+        "ref",
+        identifier(ast_builder, "__devupRef"),
+    );
+    let body = wrap_direct_call(
+        ast_builder,
+        &Expression::new_parenthesized_expression(SPAN, component, ast_builder),
+        &[props],
+    );
+    let render = Expression::new_arrow_function_expression(
+        SPAN,
+        false,
+        None::<oxc_allocator::Box<oxc_ast::ast::TSTypeParameterDeclaration<'a>>>,
+        FormalParameters::boxed(
+            SPAN,
+            FormalParameterKind::ArrowFormalParameters,
+            oxc_allocator::Vec::from_iter_in(
+                [parameter("__devupRefProps"), parameter("__devupRef")],
+                ast_builder,
+            ),
+            None::<oxc_allocator::Box<oxc_ast::ast::FormalParameterRest<'a>>>,
+            ast_builder,
+        ),
+        None::<oxc_allocator::Box<oxc_ast::ast::TSTypeAnnotation<'a>>>,
+        body.into(),
+        ast_builder,
+    );
+    wrap_direct_call(
+        ast_builder,
+        &identifier(ast_builder, FORWARD_REF),
+        &[render],
+    )
+}
+
+/// `rest` without the props in `withheld`, as `(({ a: _0, ...p }) => p)(rest)`
+fn without_props<'a>(ast_builder: &AstBuilder<'a>, withheld: &[String]) -> Expression<'a> {
+    let rest = Expression::new_identifier(SPAN, "rest", ast_builder);
+    if withheld.is_empty() {
+        return rest;
+    }
+    let properties = withheld.iter().enumerate().map(|(index, name)| {
+        BindingProperty::new(
+            SPAN,
+            PropertyKey::StringLiteral(oxc_ast::ast::StringLiteral::boxed(
+                SPAN,
+                Str::from_in(name.as_str(), ast_builder.allocator()),
+                None,
+                ast_builder,
+            )),
+            BindingPattern::new_binding_identifier(
+                SPAN,
+                Str::from_in(
+                    format!("__devupOmit{index}").as_str(),
+                    ast_builder.allocator(),
+                ),
+                ast_builder,
+            ),
+            false,
+            false,
+            ast_builder,
+        )
+    });
+    let pattern = BindingPattern::new_object_pattern(
+        SPAN,
+        oxc_allocator::Vec::from_iter_in(properties, ast_builder),
+        Some(BindingRestElement::boxed(
+            SPAN,
+            BindingPattern::new_binding_identifier(SPAN, "__devupDom", ast_builder),
+            ast_builder,
+        )),
+        ast_builder,
+    );
+    let parameter = FormalParameter::new(
+        SPAN,
+        oxc_allocator::Vec::new_in(ast_builder),
+        pattern,
+        None::<oxc_allocator::Box<oxc_ast::ast::TSTypeAnnotation<'a>>>,
+        None::<oxc_allocator::Box<Expression<'a>>>,
+        false,
+        None,
+        false,
+        false,
+        ast_builder,
+    );
+    let arrow = Expression::new_arrow_function_expression(
+        SPAN,
+        false,
+        None::<oxc_allocator::Box<oxc_ast::ast::TSTypeParameterDeclaration<'a>>>,
+        FormalParameters::boxed(
+            SPAN,
+            FormalParameterKind::ArrowFormalParameters,
+            oxc_allocator::Vec::from_iter_in([parameter], ast_builder),
+            None::<oxc_allocator::Box<oxc_ast::ast::FormalParameterRest<'a>>>,
+            ast_builder,
+        ),
+        None::<oxc_allocator::Box<oxc_ast::ast::TSTypeAnnotation<'a>>>,
+        Expression::new_identifier(SPAN, "__devupDom", ast_builder).into(),
+        ast_builder,
+    );
+    wrap_direct_call(
+        ast_builder,
+        &Expression::new_parenthesized_expression(SPAN, arrow, ast_builder),
+        &[rest],
+    )
+}
+
+/// The binding a styled component renders through: what `as` names, or the
+/// tag or component it was defined with
+const RENDERED: &str = "DevupAs";
+
+/// What a styled component renders when `as` names nothing: a tag name as a
+/// string, a component as the binding or member JSX names it by
+fn tag_expression<'a>(ast_builder: &AstBuilder<'a>, tag_name: &str) -> Expression<'a> {
+    if tag_name.starts_with(|c: char| c.is_ascii_lowercase()) && !tag_name.contains('.') {
+        return Expression::new_string_literal(
+            SPAN,
+            Str::from_in(tag_name, ast_builder.allocator()),
+            None,
+            ast_builder,
+        );
+    }
+    let mut parts = tag_name.split('.');
+    let first = parts.next().unwrap_or(tag_name);
+    parts.fold(
+        Expression::new_identifier(
+            SPAN,
+            Str::from_in(first, ast_builder.allocator()),
+            ast_builder,
+        ),
+        |object, property| {
+            Expression::StaticMemberExpression(oxc_ast::ast::StaticMemberExpression::boxed(
+                SPAN,
+                object,
+                oxc_ast::ast::IdentifierName::new(
+                    SPAN,
+                    Str::from_in(property, ast_builder.allocator()),
+                    ast_builder,
+                ),
+                false,
+                ast_builder,
+            ))
+        },
+    )
+}
+
 fn create_styled_component<'a>(
     ast_builder: &AstBuilder<'a>,
     tag_name: &str,
     class_name: &Option<Expression<'a>>,
     style_vars: &Option<Expression<'a>>,
+    withheld: &[String],
 ) -> Expression<'a> {
     let params = FormalParameters::boxed(
         SPAN,
@@ -571,6 +1326,39 @@ fn create_styled_component<'a>(
                                 BindingPattern::new_binding_identifier(
                                     SPAN,
                                     "className",
+                                    ast_builder,
+                                ),
+                                true,
+                                false,
+                                ast_builder,
+                            ),
+                            BindingProperty::new(
+                                SPAN,
+                                PropertyKey::new_static_identifier(SPAN, "as", ast_builder),
+                                BindingPattern::new_assignment_pattern(
+                                    SPAN,
+                                    BindingPattern::new_binding_identifier(
+                                        SPAN,
+                                        RENDERED,
+                                        ast_builder,
+                                    ),
+                                    tag_expression(ast_builder, tag_name),
+                                    ast_builder,
+                                ),
+                                false,
+                                false,
+                                ast_builder,
+                            ),
+                            BindingProperty::new(
+                                SPAN,
+                                PropertyKey::new_static_identifier(
+                                    SPAN,
+                                    "forwardedAs",
+                                    ast_builder,
+                                ),
+                                BindingPattern::new_binding_identifier(
+                                    SPAN,
+                                    "forwardedAs",
                                     ast_builder,
                                 ),
                                 true,
@@ -604,17 +1392,23 @@ fn create_styled_component<'a>(
         SPAN,
         JSXOpeningElement::boxed(
             SPAN,
-            JSXElementName::new_identifier(
-                SPAN,
-                Str::from_in(tag_name, ast_builder.allocator()),
-                ast_builder,
-            ),
+            JSXElementName::new_identifier(SPAN, RENDERED, ast_builder),
             None::<oxc_allocator::Box<oxc_ast::ast::TSTypeParameterInstantiation<'a>>>,
             oxc_allocator::Vec::from_iter_in(
                 vec![
                     JSXAttributeItem::new_spread_attribute(
                         SPAN,
-                        Expression::new_identifier(SPAN, "rest", ast_builder),
+                        without_props(ast_builder, withheld),
+                        ast_builder,
+                    ),
+                    JSXAttributeItem::new_attribute(
+                        SPAN,
+                        JSXAttributeName::new_identifier(SPAN, "as", ast_builder),
+                        Some(JSXAttributeValue::new_expression_container(
+                            SPAN,
+                            Expression::new_identifier(SPAN, "forwardedAs", ast_builder).into(),
+                            ast_builder,
+                        )),
                         ast_builder,
                     ),
                     JSXAttributeItem::new_attribute(
