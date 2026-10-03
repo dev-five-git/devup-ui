@@ -10,7 +10,7 @@ use css::{
     style_selector::{
         AtRule, AtRuleKind, StyleSelector, get_selector_order, global_selector_order, write_at_rule,
     },
-    theme_tokens::{set_theme_token_levels, set_typography_keys},
+    theme_tokens::{set_color_tokens, set_theme_token_levels, set_typography_keys},
     utils::compile_regex,
     write_merge_selector,
 };
@@ -481,6 +481,7 @@ impl StyleSheet {
             theme.get_shadow_token_levels(),
         );
         set_typography_keys(theme.typography.keys().cloned().collect());
+        set_color_tokens(theme.get_color_token_names());
         self.theme = theme;
     }
 

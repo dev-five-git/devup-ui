@@ -6,7 +6,7 @@ expression: sort_styles(styles)
     Static(
         ExtractStaticStyle {
             property: "background-color",
-            value: "#3B82F6",
+            value: "oklch(62.3% .214 259.815)",
             level: 0,
             selector: Some(
                 At {
