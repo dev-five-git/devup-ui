@@ -58,7 +58,7 @@ function Stepper({
   }
 
   return (
-    <StepperContext
+    <StepperContext.Provider
       value={{
         value: valueProp ?? value,
         setValue: handleChange,
@@ -68,7 +68,7 @@ function Stepper({
       }}
     >
       {children}
-    </StepperContext>
+    </StepperContext.Provider>
   )
 }
 

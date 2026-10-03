@@ -110,7 +110,7 @@ export function Select({
   }
 
   return (
-    <SelectContext
+    <SelectContext.Provider
       value={{
         open: openProp ?? open,
         setOpen: handleOpenChange,
@@ -163,7 +163,7 @@ export function Select({
           children
         )}
       </Box>
-    </SelectContext>
+    </SelectContext.Provider>
   )
 }
 
