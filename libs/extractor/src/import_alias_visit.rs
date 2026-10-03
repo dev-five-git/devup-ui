@@ -11,22 +11,26 @@ use crate::ImportAlias;
 use crate::css_prop::{
     CssProp, EMOTION_REACT, REACT_JSX_PRAGMA, builds_jsx_with_emotion, class_names_child,
     emotion_pragma, is_emotion, is_jsx_file, is_jsx_function, react_runtime, returned,
+    root_reference,
 };
 use crate::utils::{
     get_str_by_property_key, is_vanilla_extract_file, js_number_literal, keeps_bare_number,
 };
 use oxc_allocator::Allocator;
 use oxc_ast::ast::{
-    Argument, ArrowFunctionBody, CallExpression, Expression, ImportDeclarationSpecifier,
-    JSXAttributeItem, JSXAttributeValue, JSXElement, JSXElementName, JSXOpeningElement,
-    LogicalOperator, ModuleExportName, ObjectPropertyKind, Statement,
+    Argument, ArrowFunctionBody, BindingIdentifier, BindingPattern, CallExpression, Expression,
+    IdentifierReference, ImportDeclarationSpecifier, JSXAttributeItem, JSXAttributeValue, JSXChild,
+    JSXElement, JSXElementName, JSXOpeningElement, LogicalOperator, ModuleExportName,
+    ObjectPropertyKind, Statement,
 };
 use oxc_ast_visit::{
     Visit,
     walk::{walk_call_expression, walk_jsx_element, walk_jsx_opening_element},
 };
 use oxc_parser::Parser;
+use oxc_semantic::{Scoping, SemanticBuilder};
 use oxc_span::{GetSpan, SourceType};
+use oxc_syntax::symbol::SymbolId;
 use std::borrow::Cow;
 use std::collections::HashMap;
 
@@ -41,35 +45,47 @@ enum RulesAt {
 /// outside a stylesheet. Those calls become Devup UI's, which read a number as its
 /// spacing scale, so it is rewritten to the `px` string the library makes of it.
 #[derive(Default)]
-struct LibraryNumbers<'n> {
-    /// Local name of each style function and where its rules are
-    calls: Vec<(&'n str, RulesAt)>,
-    /// Local names that build styled components
-    styled: Vec<&'n str>,
-    /// Local names of components taking rules in `styles` (Emotion's `Global`)
-    components: Vec<&'n str>,
+struct LibraryNumbers {
+    /// Import binding of each style function and where its rules are
+    calls: Vec<(SymbolId, RulesAt)>,
+    /// Import bindings that build styled components
+    styled: Vec<SymbolId>,
+    /// Import bindings taking rules in `styles` (Emotion's `Global`)
+    components: Vec<SymbolId>,
     /// Which elements take the `css` prop, whose rules are Emotion's
     css_prop: CssProp,
-    /// Local names of Devup UI's exports, which take the `css` prop as tags do
-    devup: Vec<&'n str>,
-    /// Local names of the functions building elements from a type and props
-    jsx: Vec<&'n str>,
-    /// Local names of Emotion's `ClassNames`, whose child function takes a
+    /// Import bindings of Devup UI's exports, which take the `css` prop as tags do
+    devup: Vec<SymbolId>,
+    /// Import bindings of the functions building elements from a type and props
+    jsx: Vec<SymbolId>,
+    /// Import bindings of Emotion's `ClassNames`, whose child function takes a
     /// `css` taking rules
-    class_names: Vec<&'n str>,
+    class_names: Vec<SymbolId>,
+    scoping: Scoping,
     replacements: Vec<(usize, usize, String)>,
 }
 
-impl LibraryNumbers<'_> {
+impl LibraryNumbers {
+    fn symbol(&self, reference: &IdentifierReference<'_>) -> Option<SymbolId> {
+        self.scoping
+            .get_reference(reference.reference_id.get()?)
+            .symbol_id()
+    }
+
+    fn contains(&self, symbols: &[SymbolId], reference: &IdentifierReference<'_>) -> bool {
+        self.symbol(reference)
+            .is_some_and(|symbol| symbols.contains(&symbol))
+    }
+
     /// `styled.div`, `styled(tag)`, `styled(tag, options)` and their
     /// `.attrs()` / `.withConfig()`: whatever a call of it passes are rules
     fn is_styled_factory(&self, callee: &Expression) -> bool {
         match callee {
             Expression::StaticMemberExpression(member) => {
-                matches!(&member.object, Expression::Identifier(root) if self.styled.contains(&root.name.as_str()))
+                matches!(&member.object, Expression::Identifier(root) if self.contains(&self.styled, root))
             }
             Expression::CallExpression(call) => match &call.callee {
-                Expression::Identifier(root) => self.styled.contains(&root.name.as_str()),
+                Expression::Identifier(root) => self.contains(&self.styled, root),
                 Expression::StaticMemberExpression(member) => {
                     matches!(member.property.name.as_str(), "attrs" | "withConfig")
                         && self.is_styled_factory(&member.object)
@@ -199,13 +215,11 @@ impl LibraryNumbers<'_> {
     }
 }
 
-impl<'a> Visit<'a> for LibraryNumbers<'a> {
+impl<'a> Visit<'a> for LibraryNumbers {
     fn visit_jsx_element(&mut self, element: &JSXElement<'a>) {
         let css = match &element.opening_element.name {
-            JSXElementName::IdentifierReference(name)
-                if self.class_names.contains(&name.name.as_str()) =>
-            {
-                class_names_child(element).and_then(|names| names.css)
+            JSXElementName::IdentifierReference(name) if self.contains(&self.class_names, name) => {
+                class_names_css_symbol(element)
             }
             _ => None,
         };
@@ -220,11 +234,12 @@ impl<'a> Visit<'a> for LibraryNumbers<'a> {
 
     fn visit_call_expression(&mut self, call: &CallExpression<'a>) {
         let rules_at = match &call.callee {
-            Expression::Identifier(callee) => self
-                .calls
-                .iter()
-                .find(|(name, _)| *name == callee.name.as_str())
-                .map(|(_, rules_at)| *rules_at),
+            Expression::Identifier(callee) => self.symbol(callee).and_then(|symbol| {
+                self.calls
+                    .iter()
+                    .find(|(binding, _)| *binding == symbol)
+                    .map(|(_, rules_at)| *rules_at)
+            }),
             callee => self
                 .is_styled_factory(callee)
                 .then_some(RulesAt::EveryArgument),
@@ -247,12 +262,13 @@ impl<'a> Visit<'a> for LibraryNumbers<'a> {
             self.pixelify(rules);
         }
         if let Expression::Identifier(callee) = &call.callee
-            && self.jsx.contains(&callee.name.as_str())
+            && self.contains(&self.jsx, callee)
             && let [element, Argument::ObjectExpression(props), ..] = call.arguments.as_slice()
             && let Some(element) = element.as_expression()
-            && self
-                .css_prop
-                .takes_type(element, |root| self.devup.contains(&root))
+            && self.css_prop.takes_type(element, |_| {
+                root_reference(crate::utils::unwrap_syntax_only(element))
+                    .is_some_and(|root| self.contains(&self.devup, root))
+            })
         {
             for property in &props.properties {
                 if let ObjectPropertyKind::ObjectProperty(property) = property
@@ -268,18 +284,42 @@ impl<'a> Visit<'a> for LibraryNumbers<'a> {
 
     fn visit_jsx_opening_element(&mut self, element: &JSXOpeningElement<'a>) {
         if let JSXElementName::IdentifierReference(name) = &element.name
-            && self.components.contains(&name.name.as_str())
+            && self.contains(&self.components, name)
         {
             self.pixelify_attribute(element, "styles");
         }
-        if self
-            .css_prop
-            .takes(&element.name, |root| self.devup.contains(&root))
-        {
+        if self.css_prop.takes(&element.name, |_| {
+            crate::imported_constants::jsx_root_identifier(&element.name)
+                .is_some_and(|root| self.contains(&self.devup, root))
+        }) {
             self.pixelify_attribute(element, "css");
         }
         walk_jsx_opening_element(self, element);
     }
+}
+
+/// The binding of the child callback's `css`, not another callback's same name.
+fn class_names_css_symbol(element: &JSXElement<'_>) -> Option<SymbolId> {
+    let container = element.children.iter().find_map(|child| match child {
+        JSXChild::ExpressionContainer(container) => Some(container),
+        _ => None,
+    })?;
+    let params = match container.expression.as_expression()? {
+        Expression::ArrowFunctionExpression(arrow) => &arrow.params,
+        Expression::FunctionExpression(function) => &function.params,
+        _ => return None,
+    };
+    let BindingPattern::ObjectPattern(object) = &params.items.first()?.pattern else {
+        return None;
+    };
+    let css = class_names_child(element)?.css?;
+    object
+        .properties
+        .iter()
+        .find_map(|property| match &property.value {
+            BindingPattern::BindingIdentifier(local) if local.name == css => local.symbol_id.get(),
+            _ => None,
+        })
 }
 
 /// Map an aliased package's export onto the `@devup-ui/react` export that implements the
@@ -397,6 +437,21 @@ pub fn transform_import_aliases_with_edits<'a>(
     let mut uses_emotion = emotion_jsx;
     let mut jsx_pragma = false;
     let compat = format!("{package}/compat");
+    let mut scoping = None;
+    let may_have_numbers = code.bytes().any(|byte| byte.is_ascii_digit());
+    let may_take_css = CssProp::of(import_aliases, code, false) != CssProp::Off;
+    let mut symbol = |local: &BindingIdentifier<'_>| {
+        if !may_have_numbers {
+            return None;
+        }
+        scoping.get_or_insert_with(|| {
+            SemanticBuilder::new()
+                .build(&program)
+                .semantic
+                .into_scoping()
+        });
+        local.symbol_id.get()
+    };
 
     // A pragma building JSX with Emotion builds it with React once the `css`
     // props are compiled
@@ -420,21 +475,33 @@ pub fn transform_import_aliases_with_edits<'a>(
 
     for stmt in &program.body {
         if let Statement::ImportDeclaration(import_decl) = stmt {
+            if import_decl.import_kind.is_type() {
+                continue;
+            }
             let source_value = import_decl.source.value.as_str();
-            uses_emotion |= is_emotion(source_value);
+            uses_emotion |= is_emotion(source_value)
+                && import_decl.specifiers.as_ref().is_none_or(|specifiers| {
+                    specifiers.iter().any(|specifier| {
+                        !matches!(specifier, ImportDeclarationSpecifier::ImportSpecifier(spec) if spec.import_kind.is_type())
+                    })
+                });
             for specifier in import_decl.specifiers.iter().flatten() {
+                if matches!(specifier, ImportDeclarationSpecifier::ImportSpecifier(spec) if spec.import_kind.is_type())
+                {
+                    continue;
+                }
                 match specifier {
                     ImportDeclarationSpecifier::ImportSpecifier(spec)
                         if is_jsx_function(
                             source_value,
                             &imported_name(&spec.imported),
                             &compat,
-                        ) =>
+                        ) && may_take_css =>
                     {
-                        numbers.jsx.push(spec.local.name.as_str());
+                        numbers.jsx.extend(symbol(&spec.local));
                     }
-                    specifier if source_value == package => {
-                        numbers.devup.push(specifier.local().name.as_str());
+                    specifier if source_value == package && may_take_css => {
+                        numbers.devup.extend(symbol(specifier.local()));
                     }
                     _ => {}
                 }
@@ -454,22 +521,37 @@ pub fn transform_import_aliases_with_edits<'a>(
                 if !redirect_every_name {
                     for specifier in import_decl.specifiers.iter().flatten() {
                         match specifier {
-                            ImportDeclarationSpecifier::ImportSpecifier(spec) => {
-                                let local = spec.local.name.as_str();
+                            ImportDeclarationSpecifier::ImportSpecifier(spec)
+                                if !spec.import_kind.is_type() =>
+                            {
                                 match (source_value, imported_name(&spec.imported).as_ref()) {
                                     ("@vanilla-extract/css", "style" | "keyframes") => {
-                                        numbers.calls.push((local, RulesAt::Argument(0)));
+                                        numbers.calls.extend(
+                                            symbol(&spec.local)
+                                                .map(|local| (local, RulesAt::Argument(0))),
+                                        );
                                     }
                                     ("@vanilla-extract/css", "globalStyle") => {
-                                        numbers.calls.push((local, RulesAt::Argument(1)));
+                                        numbers.calls.extend(
+                                            symbol(&spec.local)
+                                                .map(|local| (local, RulesAt::Argument(1))),
+                                        );
                                     }
                                     (
                                         "@emotion/react" | "styled-components",
                                         "css" | "keyframes",
-                                    ) => numbers.calls.push((local, RulesAt::EveryArgument)),
-                                    ("@emotion/react", "Global") => numbers.components.push(local),
+                                    ) => numbers.calls.extend(
+                                        symbol(&spec.local)
+                                            .map(|local| (local, RulesAt::EveryArgument)),
+                                    ),
+                                    ("@emotion/react", "Global") => {
+                                        numbers.components.extend(symbol(&spec.local));
+                                    }
                                     ("@emotion/react", "ClassNames") => {
-                                        numbers.class_names.push(local);
+                                        numbers.class_names.extend(symbol(&spec.local));
+                                    }
+                                    ("@emotion/styled" | "styled-components", "styled") => {
+                                        numbers.styled.extend(symbol(&spec.local));
                                     }
                                     _ => {}
                                 }
@@ -480,7 +562,7 @@ pub fn transform_import_aliases_with_edits<'a>(
                                     "@emotion/styled" | "styled-components"
                                 ) =>
                             {
-                                numbers.styled.push(spec.local.name.as_str());
+                                numbers.styled.extend(symbol(&spec.local));
                             }
                             ImportDeclarationSpecifier::ImportNamespaceSpecifier(spec)
                                 if matches!(
@@ -488,7 +570,7 @@ pub fn transform_import_aliases_with_edits<'a>(
                                     "@emotion/styled" | "styled-components"
                                 ) =>
                             {
-                                numbers.styled.push(spec.local.name.as_str());
+                                numbers.styled.extend(symbol(&spec.local));
                             }
                             _ => {}
                         }
@@ -497,6 +579,7 @@ pub fn transform_import_aliases_with_edits<'a>(
             }
         }
     }
+    numbers.scoping = scoping.unwrap_or_default();
     numbers.css_prop = CssProp::of(import_aliases, code, uses_emotion);
     if !(numbers.calls.is_empty()
         && numbers.styled.is_empty()
@@ -698,6 +781,16 @@ fn generate_transformed_import(
         if let ImportDeclarationSpecifier::ImportSpecifier(spec) = specifier {
             let local = spec.local.name.as_str();
             let imported = imported_name(&spec.imported);
+            if spec.import_kind.is_type() {
+                if !retained.is_empty() {
+                    retained.push_str(", ");
+                }
+                retained.push_str("type ");
+                let mut named = String::new();
+                push_specifier(&mut named, &imported, local);
+                retained.push_str(&named);
+                continue;
+            }
             match redirect_target(source, &imported, redirect_every_name) {
                 Some(target) => push_redirect(&mut redirected, &mut compat, target, local),
                 None => push_specifier(&mut retained, &imported, local),
@@ -748,6 +841,10 @@ fn generate_transformed_import(
     }
     result
 }
+
+#[cfg(test)]
+#[path = "import_alias_scoping_tests.rs"]
+mod scoping_tests;
 
 #[cfg(test)]
 mod tests {
