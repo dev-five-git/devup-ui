@@ -3,74 +3,88 @@
   "rows": {
     "stylex-turbo-devup-ui": {
       "control": "tailwind-turbo",
-      "ratio": 1.3471,
-      "calibration": [1.3509, 1.3471, 1.2939, 1.3096, 1.4427],
-      "timeTolerance": 0.221,
-      "bytes": 31244290,
+      "ratio": 1.349,
+      "calibration": [
+        1.3509, 1.3471, 1.2939, 1.3096, 1.4427, 1.417800722121156
+      ],
+      "timeTolerance": 0.22060785767234994,
+      "bytes": 31227953,
       "cssBytes": 321
     },
     "devup-ui": {
       "control": "tailwind",
-      "ratio": 0.856,
-      "calibration": [0.856, 0.8538, 0.9013, 0.8735, 0.8515],
-      "timeTolerance": 0.1163,
-      "bytes": 67427563,
+      "ratio": 0.8645789338279827,
+      "calibration": [
+        0.856, 0.8538, 0.9013, 0.8735, 0.8515, 0.8731578676559654
+      ],
+      "timeTolerance": 0.1152005862079175,
+      "bytes": 67438054,
       "cssBytes": 562
     },
     "devup-ui-single": {
       "control": "tailwind",
-      "ratio": 0.8704,
-      "calibration": [0.85, 0.8727, 0.9024, 0.8704, 0.859],
-      "timeTolerance": 0.1204,
-      "bytes": 67426959,
+      "ratio": 0.87155,
+      "calibration": [0.85, 0.8727, 0.9024, 0.8704, 0.859, 0.874014974821355],
+      "timeTolerance": 0.12024553955596351,
+      "bytes": 67415063,
       "cssBytes": 790
     },
     "devup-ui-single-turbo": {
       "control": "tailwind-turbo",
-      "ratio": 0.9794,
-      "calibration": [0.9702, 0.9794, 0.9701, 1.003, 0.9981],
+      "ratio": 0.9753609130605841,
+      "calibration": [
+        0.9702, 0.9794, 0.9701, 1.003, 0.9981, 0.9713218261211682
+      ],
       "timeTolerance": 0.1,
-      "bytes": 36535115,
+      "bytes": 36545972,
       "cssBytes": 327
     },
     "devup-ui-turbo": {
       "control": "tailwind-turbo",
-      "ratio": 0.9901,
-      "calibration": [0.9901, 1, 0.9753, 1.0089, 0.9885],
+      "ratio": 0.9893000000000001,
+      "calibration": [0.9901, 1, 0.9753, 1.0089, 0.9885, 0.9761607019540564],
       "timeTolerance": 0.1,
-      "bytes": 36539386,
+      "bytes": 36539932,
       "cssBytes": 358
     },
     "vanilla-extract-devup-ui": {
       "control": "tailwind-turbo",
-      "ratio": 0.9882,
-      "calibration": [0.9929, 0.9882, 0.9428, 0.9867, 1.0439],
-      "timeTolerance": 0.2046,
-      "bytes": 36570432,
+      "ratio": 0.9874499999999999,
+      "calibration": [
+        0.9929, 0.9882, 0.9428, 0.9867, 1.0439, 0.9471234772686924
+      ],
+      "timeTolerance": 0.20476986176515283,
+      "bytes": 36571452,
       "cssBytes": 268
     },
     "tailwind-turbo-devup-ui": {
       "control": "tailwind-turbo",
-      "ratio": 0.9986,
-      "calibration": [0.9986, 1.0059, 0.9532, 0.997, 1.0115],
-      "timeTolerance": 0.1167,
-      "bytes": 36572725,
+      "ratio": 0.9978,
+      "calibration": [
+        0.9986, 1.0059, 0.9532, 0.997, 1.0115, 0.9732950875989826
+      ],
+      "timeTolerance": 0.11685708558829429,
+      "bytes": 36558611,
       "cssBytes": 530
     },
     "vinext-devup-ui": {
       "control": "tailwind",
-      "ratio": 0.1995,
-      "calibration": [0.1962, 0.2066, 0.2104, 0.1995, 0.1868],
-      "timeTolerance": 0.2367,
+      "ratio": 0.19785000000000003,
+      "calibration": [
+        0.1962, 0.2066, 0.2104, 0.1995, 0.1868, 0.1894402619634694
+      ],
+      "timeTolerance": 0.23856456911801877,
       "bytes": 1198750,
       "cssBytes": 29746
     },
     "devup-ui-collapse": {
       "control": "tailwind-turbo",
-      "ratio": 1.0118,
-      "calibration": [1.0384, 1.0118, 0.9519, 1.0015, 1.021],
-      "timeTolerance": 0.1709,
-      "bytes": 31844629,
+      "ratio": 1.00665,
+      "calibration": [
+        1.0384, 1.0118, 0.9519, 1.0015, 1.021, 0.9659282187960732
+      ],
+      "timeTolerance": 0.17185714995281381,
+      "bytes": 31851810,
       "cssBytes": 1286
     }
   }
