@@ -3,6 +3,21 @@ use rstest::rstest;
 
 const IMPORT: &str = "import * as E from '@emotion/css';\n";
 
+#[test]
+#[serial]
+fn ordinary_await_is_preserved_when_namespace_styles_compile() {
+    // Given
+    let code = format!("{IMPORT}export const value = await Promise.resolve(1); export const style = E.css({{padding:8}});");
+
+    // When
+    let output = compile(&code).unwrap();
+
+    // Then
+    assert!(output.code.contains("await Promise.resolve(1)"), "{}", output.code);
+    assert!(!output.code.contains("@emotion/css"), "{}", output.code);
+    assert!(format!("{:?}", output.styles).contains("8px"));
+}
+
 #[rstest]
 #[case("import E = require('@emotion/css');", "export const a=E.css({ padding: 8 });")]
 #[case("const E = require('@emotion/css');", "export const a=E.css({ padding: 8 });")]

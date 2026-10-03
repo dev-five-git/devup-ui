@@ -1,6 +1,34 @@
 use super::*;
 use rstest::rstest;
 
+#[test]
+#[serial]
+fn emotion_restoration_reports_malformed_source_when_normalization_rejects_a_read() {
+    // Given: normalization can reject a namespace read before the main parser runs.
+    let source = "import * as E from '@emotion/css';\nE.__emotion_user(); const broken;";
+
+    // When
+    let error = compile(source).unwrap_err();
+
+    // Then
+    assert!(error.starts_with("namespace.tsx:2:1:"), "{error}");
+    assert!(error.contains("E.__emotion_user"), "{error}");
+    assert!(error.contains("Emotion diagnostic restoration failed:"), "{error}");
+}
+
+#[test]
+#[serial]
+fn emotion_restoration_preserves_generic_runtime_read_errors_when_user_names_match_prefix() {
+    // Given
+    let source = "import {css as __emotion_user} from '@devup-ui/react';\nconsume(__emotion_user);";
+
+    // When
+    let error = compile(source).unwrap_err();
+
+    // Then
+    assert_eq!(error, "namespace.tsx:2:9: `__emotion_user` is read at runtime, where it does not exist: the build compiles it only where it is called or rendered");
+}
+
 #[rstest]
 #[case("E.cx")]
 #[case("(E.cx)")]

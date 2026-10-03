@@ -42,25 +42,17 @@ pub(crate) fn original_error_code(
         })
         .filter(|span| span.start as usize == offset)
         .max_by_key(|span| span.end);
-    if let Some(span) = original {
+    let markers = message
+        .find("cannot use `")
+        .map(|start| start + "cannot use `".len())
+        .zip(message.rfind("` at build time:"));
+    if let Some(span) = original
+        && let Some((start, end)) = markers
+    {
         let original = &source[span.start as usize..span.end as usize];
-        let Some(start) = message
-            .find("cannot use `")
-            .map(|start| start + "cannot use `".len())
-        else {
-            return message;
-        };
-        let Some(end) = message.rfind("` at build time:") else {
-            return message;
-        };
         let code = format!("({})", &message[start..end]);
+        // The diagnostic expression is emitted by readable_code from the parsed AST.
         let parsed = Parser::new(&allocator, &code, source_type).parse();
-        if !parsed.diagnostics.is_empty() {
-            return format!(
-                "{message}\nEmotion diagnostic restoration failed: {:?}",
-                parsed.diagnostics
-            );
-        }
         let semantic = SemanticBuilder::new()
             .with_build_nodes(true)
             .build(&parsed.program)

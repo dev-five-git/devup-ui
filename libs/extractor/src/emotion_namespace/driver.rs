@@ -68,10 +68,13 @@ impl Normalizer<'_, '_> {
         if import.source.value != "@emotion/css" || import.import_kind.is_type() {
             return;
         }
-        for specifier in import.specifiers.iter().flatten() {
-            let Some(symbol) = specifier.local().symbol_id.get() else {
-                continue;
-            };
+        for (specifier, symbol) in import.specifiers.iter().flatten().filter_map(|specifier| {
+            specifier
+                .local()
+                .symbol_id
+                .get()
+                .map(|symbol| (specifier, symbol))
+        }) {
             match specifier {
                 ImportDeclarationSpecifier::ImportNamespaceSpecifier(_) => {
                     self.bindings
