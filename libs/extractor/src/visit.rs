@@ -33,6 +33,7 @@ use crate::extractor::{
 };
 use crate::gen_class_name::{gen_class_names, merge_expression_for_class_name};
 use crate::gen_style::gen_styles;
+use crate::imported_styled::{Exports, ImportedComponent};
 use crate::prop_modify_utils::{
     add_class_and_style, add_class_and_style_to_object, convert_class_name, modify_prop_object,
     modify_props, written_class_name, written_object_class_name,
@@ -52,9 +53,9 @@ use oxc_ast::ast::JSXAttributeItem::Attribute;
 use oxc_ast::ast::JSXAttributeName::Identifier;
 use oxc_ast::ast::{
     Argument, ArrayExpressionElement, BinaryOperator, BindingPattern, CallExpression, ChainElement,
-    ComputedMemberExpression, Expression, ExpressionStatement, FormalParameter,
-    FormalParameterKind, FormalParameters, IdentifierName, ImportDeclaration, ImportOrExportKind,
-    JSXAttributeItem, JSXAttributeValue, JSXChild, JSXElement, JSXElementName,
+    ComputedMemberExpression, ExportDefaultDeclaration, Expression, ExpressionStatement,
+    FormalParameter, FormalParameterKind, FormalParameters, IdentifierName, ImportDeclaration,
+    ImportOrExportKind, JSXAttributeItem, JSXAttributeValue, JSXChild, JSXElement, JSXElementName,
     JSXExpressionContainer, ObjectExpression, ObjectProperty, ObjectPropertyKind, Program,
     PropertyKey, PropertyKind, Statement, StaticMemberExpression, Str, StringLiteral,
     UnaryOperator, VariableDeclarator,
@@ -62,9 +63,9 @@ use oxc_ast::ast::{
 use oxc_ast_visit::VisitMut;
 use oxc_ast_visit::walk_mut;
 use oxc_ast_visit::walk_mut::{
-    walk_call_expression, walk_expression, walk_expression_statement, walk_import_declaration,
-    walk_jsx_attribute_value, walk_jsx_child, walk_jsx_element, walk_program,
-    walk_variable_declarator, walk_variable_declarators,
+    walk_call_expression, walk_export_default_declaration, walk_expression,
+    walk_expression_statement, walk_import_declaration, walk_jsx_attribute_value, walk_jsx_child,
+    walk_jsx_element, walk_program, walk_variable_declarator, walk_variable_declarators,
 };
 use oxc_syntax::number::NumberBase;
 use oxc_syntax::operator::LogicalOperator;
@@ -252,9 +253,20 @@ pub struct DevupVisitor<'a> {
     pending_styled: Option<(u32, StyledDefinition<'a>)>,
     /// The styled bindings other styles select
     selected_components: FxHashSet<oxc_syntax::symbol::SymbolId>,
-    /// The marker class of the selected styled component the declaration
-    /// being visited defines, with where its definition starts
-    pending_marker: Option<(u32, String)>,
+    /// The marker classes of the exported or selected styled component the
+    /// declaration being visited defines, with where its definition starts
+    pending_marker: Option<(u32, Vec<String>)>,
+    /// What the file exports, whose components carry markers other files
+    /// select them by
+    exports: Exports,
+    /// The components only this file selects, which are marked after those it
+    /// exports
+    local_markers: usize,
+    /// The styled components other modules define that the file extends,
+    /// selects or gives a `css` prop, by the binding it imports them as
+    imported_styled: FxHashMap<String, ImportedComponent<'a>>,
+    /// The styled component an anonymous `export default` defines
+    default_definition: Option<StyledDefinition<'a>>,
     /// Whether a generated styled component forwards refs through React's
     /// `forwardRef`, which the program then imports
     forwards_refs: bool,
@@ -763,6 +775,10 @@ impl<'a> DevupVisitor<'a> {
             pending_styled: None,
             selected_components: FxHashSet::default(),
             pending_marker: None,
+            exports: Exports::default(),
+            local_markers: 0,
+            imported_styled: FxHashMap::default(),
+            default_definition: None,
             forwards_refs: false,
             styled_definitions: FxHashMap::default(),
             imported_css: FxHashMap::default(),
@@ -779,6 +795,104 @@ impl<'a> DevupVisitor<'a> {
 
     pub const fn takes_css_prop(&mut self, css_prop: CssProp) {
         self.css_prop = css_prop;
+    }
+
+    /// Hand the visitor the styled components other modules define
+    pub fn import_styled(&mut self, components: FxHashMap<String, ImportedComponent<'a>>) {
+        self.imported_styled = components;
+    }
+
+    /// The styled component `symbol` binds, in this file or another module
+    fn definition(&self, symbol: oxc_syntax::symbol::SymbolId) -> Option<&StyledDefinition<'a>> {
+        self.styled_definitions.get(&symbol).or_else(|| {
+            self.style_values
+                .import_name(symbol)
+                .and_then(|name| self.imported_styled.get(name))
+                .and_then(|component| component.definition.as_ref())
+        })
+    }
+
+    /// The styled component `expression` reads: a binding, or a member of a
+    /// module imported whole
+    fn definition_of(&self, expression: &Expression<'_>) -> Option<&StyledDefinition<'a>> {
+        match expression {
+            Expression::StaticMemberExpression(member) => {
+                let namespace = self
+                    .style_values
+                    .symbol(&member.object)
+                    .and_then(|symbol| self.style_values.import_name(symbol))?;
+                self.imported_styled
+                    .get(&format!("{namespace}.{}", member.property.name))
+                    .and_then(|component| component.definition.as_ref())
+            }
+            expression => self
+                .style_values
+                .symbol(expression)
+                .and_then(|symbol| self.definition(symbol)),
+        }
+    }
+
+    /// The classes other styles select the component bound to `name` by: one
+    /// for each name the file exports it as, and a class of its own when it
+    /// is only selected here
+    fn markers_of(&mut self, name: &str, exported: bool, selected: bool) -> Vec<String> {
+        let mut markers: Vec<String> = if exported {
+            self.exports
+                .of(name)
+                .iter()
+                .map(|exported| self.marker(exported, self.exports.index(exported)))
+                .collect()
+        } else {
+            Vec::new()
+        };
+        if markers.is_empty() && selected {
+            markers.push(self.marker(name, self.exports.count() + self.local_markers));
+            self.local_markers += 1;
+        }
+        markers
+    }
+
+    fn marker(&self, name: &str, index: usize) -> String {
+        css::component_marker(name, index, &self.filename)
+    }
+
+    /// The styled components the file exports, by the names it exports them
+    /// as, in the arena of the file that reads them
+    pub fn components<'b>(
+        &self,
+        allocator: &'b Allocator,
+    ) -> FxHashMap<String, ImportedComponent<'b>> {
+        let mut components = FxHashMap::default();
+        for (binding, names) in self.exports.bindings() {
+            let component = self
+                .style_values
+                .root_symbol(binding)
+                .and_then(|symbol| self.styled_definitions.get(&symbol))
+                .map(|definition| ImportedComponent {
+                    markers: definition.markers().to_vec(),
+                    definition: Some(definition.clone_in(allocator)),
+                })
+                .or_else(|| {
+                    self.imported_styled
+                        .get(binding)
+                        .map(|component| component.clone_in(allocator))
+                });
+            if let Some(component) = component {
+                for name in names {
+                    components.insert(name.clone(), component.clone_in(allocator));
+                }
+            }
+        }
+        if let Some(definition) = &self.default_definition {
+            components.insert(
+                "default".to_string(),
+                ImportedComponent {
+                    markers: definition.markers().to_vec(),
+                    definition: Some(definition.clone_in(allocator)),
+                },
+            );
+        }
+        components
     }
 
     pub fn unknown_bindings(&mut self, unknown: &crate::imported_constants::Unknown) {
@@ -1292,26 +1406,28 @@ impl<'a> DevupVisitor<'a> {
                 .map(|style| style.clone_in(allocator))
                 .collect()
         };
-        let definition = symbol.and_then(|symbol| self.styled_definitions.get(&symbol));
+        let definition = symbol.and_then(|symbol| self.definition(symbol));
         let inline = definition
             .filter(|_| renders)
             .and_then(StyledDefinition::inline)
             .map(|(tag, styles)| (tag.to_string(), clone(styles)));
-        let marker = definition.and_then(StyledDefinition::marker).map(|marker| {
-            ExtractStyleProp::Expression {
+        let markers: Vec<ExtractStyleProp<'a>> = definition
+            .into_iter()
+            .flat_map(StyledDefinition::markers)
+            .map(|marker| ExtractStyleProp::Expression {
                 expression: Expression::new_string_literal(
                     SPAN,
-                    Str::from_in(marker, allocator),
+                    Str::from_in(marker.as_str(), allocator),
                     None,
                     &self.ast,
                 ),
                 styles: vec![],
-            }
-        });
+            })
+            .collect();
         let own = definition.map(|definition| clone(definition.styles()));
         if let Some((tag, styles)) = inline {
             let mut props = self.compose_css_prop(element, css, styles, class_name);
-            props.extend(marker);
+            props.extend(markers);
             return Some((Some(tag), props));
         }
         let offset = css.offset;
@@ -2270,7 +2386,29 @@ impl<'a> VisitMut<'a> for DevupVisitor<'a> {
         walk_variable_declarators(self, it);
     }
 
+    fn visit_export_default_declaration(&mut self, it: &mut ExportDefaultDeclaration<'a>) {
+        let start = it
+            .declaration
+            .as_expression()
+            .filter(|_| self.exports.has_anonymous_default())
+            .map(|expression| expression.span().start);
+        if let Some(start) = start {
+            let marker = self.marker("default", self.exports.index("default"));
+            self.pending_marker = Some((start, vec![marker]));
+        }
+        walk_export_default_declaration(self, it);
+        if start.is_some() {
+            self.pending_marker = None;
+            self.default_definition = self
+                .pending_styled
+                .take()
+                .filter(|(at, _)| Some(*at) == start)
+                .map(|(_, definition)| definition);
+        }
+    }
+
     fn visit_program(&mut self, it: &mut Program<'a>) {
+        self.exports = Exports::scan(it);
         if self.binds_style_results(it) || self.css_prop != CssProp::Off {
             self.style_values = crate::style_values::StyleValues::new(
                 oxc_semantic::SemanticBuilder::new()
@@ -2281,6 +2419,21 @@ impl<'a> VisitMut<'a> for DevupVisitor<'a> {
             self.style_values
                 .import(std::mem::take(&mut self.imported_css));
             self.selected_components = crate::style_values::selected(it, &self.style_values);
+            let imported: Vec<_> = self
+                .selected_components
+                .iter()
+                .filter_map(|symbol| {
+                    let name = self.style_values.import_name(*symbol)?;
+                    let marker = self.imported_styled.get(name)?.markers.first()?;
+                    Some((*symbol, marker.clone()))
+                })
+                .collect();
+            for (symbol, marker) in imported {
+                self.style_values.insert(
+                    symbol,
+                    crate::style_values::StyleValue::Component(format!(".{marker}")),
+                );
+            }
         }
         walk_program(self, it);
         if !self.compiled_names.is_empty() {
@@ -2429,15 +2582,15 @@ impl<'a> VisitMut<'a> for DevupVisitor<'a> {
                     self.unknown_arguments("styled", &call.arguments);
                     self.changed_arguments("styled", &call.arguments);
                 }
-                let inherited = extended(it)
-                    .and_then(|base| self.style_values.symbol(base))
-                    .and_then(|symbol| self.styled_definitions.get(&symbol))
-                    .filter(|definition| definition.extendable());
                 let start = it.span().start;
-                let marker = self
+                let markers = self
                     .pending_marker
                     .take_if(|(at, _)| *at == start)
-                    .map(|(_, marker)| marker);
+                    .map(|(_, markers)| markers)
+                    .unwrap_or_default();
+                let inherited = extended(it)
+                    .and_then(|base| self.definition_of(base))
+                    .filter(|definition| definition.extendable());
                 let StyledExtraction {
                     result,
                     expression,
@@ -2448,7 +2601,7 @@ impl<'a> VisitMut<'a> for DevupVisitor<'a> {
                     it,
                     Naming {
                         split_filename: self.split_filename.as_deref(),
-                        marker: marker.as_deref(),
+                        markers: &markers,
                     },
                     &self.imports,
                     &attrs,
@@ -2482,10 +2635,7 @@ impl<'a> VisitMut<'a> for DevupVisitor<'a> {
             ] = call.arguments.as_slice()
             && let Expression::StaticMemberExpression(member) = &call.callee
             && member.property.name == "withComponent"
-            && let Some(definition) = self
-                .style_values
-                .symbol(&member.object)
-                .and_then(|symbol| self.styled_definitions.get(&symbol))
+            && let Some(definition) = self.definition_of(unwrap_syntax_only(&member.object))
             && let Some((component, definition)) = with_component(
                 &self.ast,
                 definition,
@@ -2495,6 +2645,12 @@ impl<'a> VisitMut<'a> for DevupVisitor<'a> {
         {
             let start = call.span.start;
             self.forwards_refs = true;
+            self.styles.extend(
+                definition
+                    .styles()
+                    .iter()
+                    .flat_map(ExtractStyleProp::extract),
+            );
             *it = forward_ref(&self.ast, component);
             self.pending_styled = Some((start, definition));
         }
@@ -3521,23 +3677,28 @@ impl<'a> VisitMut<'a> for DevupVisitor<'a> {
         }
 
         let marked = styled_binding
-            .filter(|symbol| self.selected_components.contains(symbol))
             .zip(start)
-            .zip(it.id.get_binding_identifier().map(|id| id.name.to_string()));
-        if let Some(((symbol, start), name)) = &marked {
-            let (symbol, start) = (*symbol, *start);
-            let marker = css::component_marker(name, &self.filename);
-            self.style_values.insert(
-                symbol,
-                crate::style_values::StyleValue::Component(format!(".{marker}")),
-            );
-            self.pending_marker = Some((start, marker));
+            .zip(it.id.get_binding_identifier().map(|id| id.name.to_string()))
+            .and_then(|((symbol, start), name)| {
+                let selected = self.selected_components.contains(&symbol);
+                let exported = !self.style_values.is_local(symbol);
+                let markers = self.markers_of(&name, exported, selected);
+                (!markers.is_empty()).then_some((symbol, start, markers, selected))
+            });
+        if let Some((symbol, start, markers, selected)) = &marked {
+            if *selected {
+                self.style_values.insert(
+                    *symbol,
+                    crate::style_values::StyleValue::Component(format!(".{}", markers[0])),
+                );
+            }
+            self.pending_marker = Some((*start, markers.clone()));
         }
 
         walk_variable_declarator(self, it);
 
-        // A binding selected but not to a styled component stays unread
-        if let Some(((symbol, _), _)) = marked
+        // A binding marked but not to a styled component stays unread
+        if let Some((symbol, ..)) = marked
             && self.pending_marker.take().is_some()
         {
             self.style_values.remove(symbol);
@@ -3723,7 +3884,7 @@ impl<'a> VisitMut<'a> for DevupVisitor<'a> {
             && let Some(definition) = self
                 .style_values
                 .reference_symbol(name)
-                .and_then(|symbol| self.styled_definitions.get(&symbol))
+                .and_then(|symbol| self.definition(symbol))
         {
             elem.opening_element
                 .attributes

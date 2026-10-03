@@ -10,6 +10,7 @@ mod gen_class_name;
 mod gen_style;
 mod import_alias_visit;
 mod imported_constants;
+mod imported_styled;
 mod module_loader;
 mod mutations;
 mod prop_modify_utils;
@@ -81,8 +82,8 @@ pub enum ExtractStyleProp<'a> {
     },
 }
 
-impl<'a> ExtractStyleProp<'a> {
-    pub fn clone_in(&self, alloc: &'a Allocator) -> Self {
+impl ExtractStyleProp<'_> {
+    pub fn clone_in<'b>(&self, alloc: &'b Allocator) -> ExtractStyleProp<'b> {
         match self {
             ExtractStyleProp::Static(v) => ExtractStyleProp::Static(v.clone()),
             ExtractStyleProp::StaticArray(arr) => {
@@ -440,6 +441,19 @@ fn extract_source(
         imported_constants::Inlined::default()
     };
     dependencies.extend(inlined.dependencies);
+    let imported = if processed_code.is_none() {
+        imported_styled::read(
+            &oxc_ast::builder::AstBuilder::new(&allocator),
+            &program,
+            filename,
+            &option,
+            resolver,
+            css_prop,
+        )
+    } else {
+        imported_styled::Reading::default()
+    };
+    dependencies.extend(imported.dependencies);
     let mut visitor = DevupVisitor::new(
         &allocator,
         filename,
@@ -452,6 +466,7 @@ fn extract_source(
     visitor.unknown_bindings(&inlined.unknown);
     visitor.changed_bindings(inlined.changed.clone());
     visitor.takes_css_prop(css_prop);
+    visitor.import_styled(imported.components);
     visitor.visit_program(&mut program);
     if !has_relevant_import && alias_edits.is_empty() && !visitor.compiled_css_prop {
         // No element took the `css` prop the text seemed to give

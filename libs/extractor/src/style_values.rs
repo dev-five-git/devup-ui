@@ -58,6 +58,20 @@ impl StyleValues {
             .then_some(symbol)
     }
 
+    /// The name the import `symbol` binds
+    pub fn import_name(&self, symbol: SymbolId) -> Option<&str> {
+        let scoping = self.scoping.as_ref()?;
+        scoping
+            .symbol_flags(symbol)
+            .is_import()
+            .then(|| scoping.symbol_name(symbol))
+    }
+
+    /// The top-level binding `name` names
+    pub fn root_symbol(&self, name: &str) -> Option<SymbolId> {
+        self.scoping.as_ref()?.get_root_binding(name.into())
+    }
+
     /// Whether `symbol` is declared below the top level of the module, where
     /// the constants styles read are not
     pub fn is_local(&self, symbol: SymbolId) -> bool {
@@ -149,20 +163,24 @@ impl StyleValues {
 /// The bindings styles read as selectors: interpolated in CSS text where a
 /// value cannot stand, or as the computed key of a rule object
 pub fn selected(program: &oxc_ast::ast::Program<'_>, values: &StyleValues) -> FxHashSet<SymbolId> {
-    let mut selected = Selected {
-        values,
-        symbols: FxHashSet::default(),
-    };
-    oxc_ast_visit::Visit::visit_program(&mut selected, program);
-    selected.symbols
+    let mut symbols = FxHashSet::default();
+    selectors(program, &mut |expression| {
+        symbols.extend(values.symbol(expression));
+    });
+    symbols
 }
 
-struct Selected<'s> {
-    values: &'s StyleValues,
-    symbols: FxHashSet<SymbolId>,
+/// Visit the expressions styles read as selectors: interpolated in CSS text
+/// where a value cannot stand, or as the computed key of a rule object
+pub fn selectors<'a>(program: &oxc_ast::ast::Program<'a>, found: &mut dyn FnMut(&Expression<'a>)) {
+    oxc_ast_visit::Visit::visit_program(&mut Selected { found }, program);
 }
 
-impl<'a> oxc_ast_visit::Visit<'a> for Selected<'_> {
+struct Selected<'s, 'a> {
+    found: &'s mut dyn FnMut(&Expression<'a>),
+}
+
+impl<'a> oxc_ast_visit::Visit<'a> for Selected<'_, 'a> {
     fn visit_tagged_template_expression(
         &mut self,
         it: &oxc_ast::ast::TaggedTemplateExpression<'a>,
@@ -175,7 +193,7 @@ impl<'a> oxc_ast_visit::Visit<'a> for Selected<'_> {
                 crate::css_utils::interpolation_place(&text, &quasi.quasis[index + 1..]),
                 crate::css_utils::Place::Other
             ) {
-                self.symbols.extend(self.values.symbol(expression));
+                (self.found)(expression);
             }
         }
         oxc_ast_visit::walk::walk_tagged_template_expression(self, it);
@@ -185,7 +203,7 @@ impl<'a> oxc_ast_visit::Visit<'a> for Selected<'_> {
         if it.computed
             && let Some(key) = it.key.as_expression()
         {
-            self.symbols.extend(self.values.symbol(key));
+            (self.found)(key);
         }
         oxc_ast_visit::walk::walk_object_property(self, it);
     }

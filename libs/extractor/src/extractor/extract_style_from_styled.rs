@@ -23,12 +23,13 @@ use oxc_allocator::{CloneIn, FromIn, GetAllocator};
 use oxc_ast::{
     ast::{
         Argument, BindingPattern, BindingProperty, BindingRestElement, CallExpression, Expression,
-        FormalParameter, FormalParameterKind, FormalParameters, JSXAttributeItem, JSXAttributeName,
-        JSXAttributeValue, JSXElementName, JSXOpeningElement, ObjectPropertyKind, PropertyKey, Str,
+        ExpressionStatement, FormalParameter, FormalParameterKind, FormalParameters,
+        JSXAttributeItem, JSXAttributeName, JSXAttributeValue, JSXElementName, JSXOpeningElement,
+        ObjectPropertyKind, Program, PropertyKey, Statement, Str,
     },
     builder::AstBuilder,
 };
-use oxc_span::{GetSpan, SPAN};
+use oxc_span::{GetSpan, SPAN, SourceType};
 use oxc_syntax::operator::{BinaryOperator, LogicalOperator, UnaryOperator};
 
 /// The binding a styled component reads the component it renders through, when
@@ -60,9 +61,9 @@ pub struct StyledDefinition<'a> {
     reads: Reads,
     /// Its `shouldForwardProp`, as the build evaluates it
     forward: Option<Forward>,
-    /// The class other styles select it by, which a component extending it
+    /// The classes other styles select it by, which a component extending it
     /// gives too, as it renders this one
-    marker: Option<String>,
+    markers: Vec<String>,
 }
 
 /// `marker` as a class among those a component gives
@@ -75,12 +76,22 @@ fn marker_class<'a>(ast_builder: &AstBuilder<'a>, marker: &str) -> Expression<'a
     )
 }
 
+/// `markers` as classes among those a component gives
+fn marker_classes<'s, 'a>(
+    ast_builder: &'s AstBuilder<'a>,
+    markers: &'s [String],
+) -> impl Iterator<Item = Expression<'a>> + 's {
+    markers
+        .iter()
+        .map(|marker| marker_class(ast_builder, marker))
+}
+
 /// How the classes of a styled component are named: the file its atoms are
-/// split into, and the class other styles select it by
+/// split into, and the classes other styles select it by
 #[derive(Clone, Copy, Default)]
 pub struct Naming<'s> {
     pub split_filename: Option<&'s str>,
-    pub marker: Option<&'s str>,
+    pub markers: &'s [String],
 }
 
 /// Whether a styled component renders a tag, which takes only valid
@@ -140,10 +151,51 @@ impl<'a> StyledDefinition<'a> {
         .then_some((self.name.as_str(), self.styles.as_slice()))
     }
 
-    /// The class other styles select the component by
+    /// The classes other styles select the component by
     #[must_use]
-    pub fn marker(&self) -> Option<&str> {
-        self.marker.as_deref()
+    pub fn markers(&self) -> &[String] {
+        &self.markers
+    }
+
+    /// This definition in the arena of another file
+    #[must_use]
+    pub fn clone_in<'b>(&self, allocator: &'b oxc_allocator::Allocator) -> StyledDefinition<'b> {
+        StyledDefinition {
+            name: self.name.clone(),
+            bound: self.bound.as_ref().map(|bound| bound.clone_in(allocator)),
+            classes: self
+                .classes
+                .iter()
+                .map(|class| class.clone_in(allocator))
+                .collect(),
+            styles: self
+                .styles
+                .iter()
+                .map(|style| style.clone_in(allocator))
+                .collect(),
+            attrs: self
+                .attrs
+                .iter()
+                .map(|attr| attr.clone_in(allocator))
+                .collect(),
+            reads: self.reads.clone(),
+            forward: self.forward.clone(),
+            markers: self.markers.clone(),
+        }
+    }
+
+    /// Whether another file can render this component in its place: it
+    /// renders a tag, and nothing it holds reads a binding of the file
+    /// defining it
+    #[must_use]
+    pub fn portable(&self) -> bool {
+        renders_tag(&self.name, self.bound.as_ref())
+            && closed(
+                self.classes
+                    .iter()
+                    .chain(&self.attrs)
+                    .chain(self.styles.iter().flat_map(style_expressions)),
+            )
     }
 
     /// The styles the component gives what it renders
@@ -262,11 +314,7 @@ fn inherited_parts<'a>(
         || (Vec::new(), Vec::new()),
         |inherited| {
             (
-                inherited
-                    .marker
-                    .as_deref()
-                    .map(|marker| marker_class(ast_builder, marker))
-                    .into_iter()
+                marker_classes(ast_builder, &inherited.markers)
                     .chain(inherited.classes.iter().map(|c| c.clone_in(allocator)))
                     .collect(),
                 inherited
@@ -323,7 +371,7 @@ impl<'a> Base<'a> {
             attrs: attrs.iter().map(|attr| attr.clone_in(allocator)).collect(),
             reads,
             forward,
-            marker: None,
+            markers: Vec::new(),
         }
     }
 
@@ -496,7 +544,7 @@ pub fn extract_style_from_styled<'a>(
 ) -> StyledExtraction<'a> {
     let Naming {
         split_filename,
-        marker,
+        markers,
     } = naming;
     let forward = combine_forward(inherited.and_then(|i| i.forward.as_ref()), forward);
     let mut reads = inherited.map_or_else(Reads::default, |inherited| inherited.reads.clone());
@@ -581,9 +629,7 @@ pub fn extract_style_from_styled<'a>(
         }));
         let class_name = merge_expression_for_class_name(
             ast_builder,
-            marker
-                .map(|marker| marker_class(ast_builder, marker))
-                .into_iter()
+            marker_classes(ast_builder, markers)
                 .chain(clone_all(ast_builder, &classes))
                 .chain(gen_class_names(
                     ast_builder,
@@ -607,7 +653,7 @@ pub fn extract_style_from_styled<'a>(
         );
         let mut definition =
             base.definition(ast_builder, classes, &props_styles, &attrs, reads, forward);
-        definition.marker = marker.map(str::to_string);
+        definition.markers = markers.to_vec();
         let styled_component =
             base.render(ast_builder, apply_attrs(ast_builder, component, &attrs));
 
@@ -673,9 +719,7 @@ pub fn extract_style_from_styled<'a>(
 
         let class_name = merge_expression_for_class_name(
             ast_builder,
-            marker
-                .map(|marker| marker_class(ast_builder, marker))
-                .into_iter()
+            marker_classes(ast_builder, markers)
                 .chain(clone_all(ast_builder, &classes))
                 .chain(gen_class_names(
                     ast_builder,
@@ -692,7 +736,7 @@ pub fn extract_style_from_styled<'a>(
             &base.withheld(&reads, forward.as_ref()),
         );
         let mut definition = base.definition(ast_builder, classes, &styles, &attrs, reads, forward);
-        definition.marker = marker.map(str::to_string);
+        definition.markers = markers.to_vec();
         let styled_component =
             base.render(ast_builder, apply_attrs(ast_builder, component, &attrs));
 
@@ -723,6 +767,88 @@ pub fn extract_style_from_styled<'a>(
         errors,
         definition,
     }
+}
+
+/// What every module reads the same, besides the props a component takes
+const SHARED_NAMES: &[&str] = &[
+    "rest",
+    "undefined",
+    "NaN",
+    "Infinity",
+    "Math",
+    "Number",
+    "String",
+    "Boolean",
+    "Object",
+    "Array",
+    "JSON",
+    "parseInt",
+    "parseFloat",
+    "isNaN",
+    "isFinite",
+];
+
+/// The expressions a component evaluates for `prop`
+fn style_expressions<'p, 'a>(prop: &'p ExtractStyleProp<'a>) -> Vec<&'p Expression<'a>> {
+    match prop {
+        ExtractStyleProp::Static(_) | ExtractStyleProp::Unreadable { .. } => Vec::new(),
+        ExtractStyleProp::StaticArray(props) => props.iter().flat_map(style_expressions).collect(),
+        ExtractStyleProp::Conditional {
+            condition,
+            consequent,
+            alternate,
+        } => std::iter::once(condition)
+            .chain(consequent.iter().flat_map(|prop| style_expressions(prop)))
+            .chain(alternate.iter().flat_map(|prop| style_expressions(prop)))
+            .collect(),
+        ExtractStyleProp::Enum { condition, map } => std::iter::once(condition)
+            .chain(map.values().flatten().flat_map(style_expressions))
+            .collect(),
+        ExtractStyleProp::Expression { expression, .. } => vec![expression],
+        ExtractStyleProp::MemberExpression { map, expression } => std::iter::once(expression)
+            .chain(map.values().flat_map(|prop| style_expressions(prop)))
+            .collect(),
+    }
+}
+
+/// Whether `expressions` read nothing but the bindings they declare, the
+/// props, and what every module reads the same
+fn closed<'e, 'a: 'e>(expressions: impl Iterator<Item = &'e Expression<'a>>) -> bool {
+    let allocator = oxc_allocator::Allocator::default();
+    let ast_builder = AstBuilder::new(&allocator);
+    let body = oxc_allocator::Vec::from_iter_in(
+        expressions.map(|expression| {
+            Statement::ExpressionStatement(ExpressionStatement::boxed(
+                SPAN,
+                expression.clone_in(&allocator),
+                &ast_builder,
+            ))
+        }),
+        &ast_builder,
+    );
+    let program = Program::new(
+        SPAN,
+        SourceType::tsx(),
+        "",
+        oxc_allocator::Vec::new_in(&ast_builder),
+        None,
+        oxc_allocator::Vec::new_in(&ast_builder),
+        body,
+        &ast_builder,
+    );
+    let scoping = oxc_semantic::SemanticBuilder::new()
+        .build(&program)
+        .semantic
+        .into_scoping();
+    scoping
+        .root_unresolved_references()
+        .iter()
+        .all(|(name, references)| {
+            SHARED_NAMES.contains(&name.as_str())
+                || references
+                    .iter()
+                    .all(|reference| !scoping.get_reference(*reference).is_value())
+        })
 }
 
 fn clone_all<'s, 'a>(
