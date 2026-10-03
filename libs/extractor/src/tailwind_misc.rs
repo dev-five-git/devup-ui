@@ -2,12 +2,17 @@
 //! value on a few properties: text decoration and clamping, border widths and
 //! styles, spacing on logical sides, table and transform keywords
 
+use std::borrow::Cow;
+
+use css::style_selector::AtRuleKind;
+
 use crate::tailwind::{
-    Declaration, ValueType, arbitrary_or_variable, decl, is_positive_integer, spacing_scale,
-    value_type,
+    Declaration, Nested, TRANSFORM, ValueType, arbitrary_or_variable, bracketed, decl,
+    decode_arbitrary_value, is_positive_integer, spacing_scale, split_top_level, value_type,
 };
 use crate::tailwind_children::spacing;
 use crate::tailwind_color::color_value;
+use crate::tailwind_theme::themed;
 
 /// The utilities that are one fixed list of declarations
 fn fixed(name: &str) -> Option<&'static [(&'static str, &'static str)]> {
@@ -51,6 +56,73 @@ fn fixed(name: &str) -> Option<&'static [(&'static str, &'static str)]> {
         "decoration-from-font" => &[("text-decoration-thickness", "from-font")],
         "underline-offset-auto" => &[("text-underline-offset", "auto")],
         "list-image-none" => &[("list-style-image", "none")],
+        "normal-nums" => &[("font-variant-numeric", "normal")],
+        "contain-none" => &[("contain", "none")],
+        "contain-content" => &[("contain", "content")],
+        "contain-strict" => &[("contain", "strict")],
+        "scale-3d" => &[(
+            "scale",
+            "var(--tw-scale-x) var(--tw-scale-y) var(--tw-scale-z)",
+        )],
+        "translate-3d" => &[(
+            "translate",
+            "var(--tw-translate-x) var(--tw-translate-y) var(--tw-translate-z)",
+        )],
+        "transform-cpu" => &[("transform", TRANSFORM)],
+        "transform-gpu" => &[(
+            "transform",
+            "translateZ(0) var(--tw-rotate-x,) var(--tw-rotate-y,) var(--tw-rotate-z,) var(--tw-skew-x,) var(--tw-skew-y,)",
+        )],
+        "mask-none" => &[("mask-image", "none")],
+        "mask-add" => &[("mask-composite", "add")],
+        "mask-subtract" => &[("mask-composite", "subtract")],
+        "mask-intersect" => &[("mask-composite", "intersect")],
+        "mask-exclude" => &[("mask-composite", "exclude")],
+        "mask-alpha" => &[("mask-mode", "alpha")],
+        "mask-luminance" => &[("mask-mode", "luminance")],
+        "mask-match" => &[("mask-mode", "match-source")],
+        "mask-type-alpha" => &[("mask-type", "alpha")],
+        "mask-type-luminance" => &[("mask-type", "luminance")],
+        "mask-auto" => &[("mask-size", "auto")],
+        "mask-cover" => &[("mask-size", "cover")],
+        "mask-contain" => &[("mask-size", "contain")],
+        "mask-top" => &[("mask-position", "top")],
+        "mask-top-left" => &[("mask-position", "left top")],
+        "mask-top-right" => &[("mask-position", "right top")],
+        "mask-bottom" => &[("mask-position", "bottom")],
+        "mask-bottom-left" => &[("mask-position", "left bottom")],
+        "mask-bottom-right" => &[("mask-position", "right bottom")],
+        "mask-left" => &[("mask-position", "left")],
+        "mask-right" => &[("mask-position", "right")],
+        "mask-center" => &[("mask-position", "center")],
+        "mask-repeat" => &[("mask-repeat", "repeat")],
+        "mask-no-repeat" => &[("mask-repeat", "no-repeat")],
+        "mask-repeat-x" => &[("mask-repeat", "repeat-x")],
+        "mask-repeat-y" => &[("mask-repeat", "repeat-y")],
+        "mask-repeat-round" => &[("mask-repeat", "round")],
+        "mask-repeat-space" => &[("mask-repeat", "space")],
+        "mask-clip-border" => &[("mask-clip", "border-box")],
+        "mask-clip-padding" => &[("mask-clip", "padding-box")],
+        "mask-clip-content" => &[("mask-clip", "content-box")],
+        "mask-clip-fill" => &[("mask-clip", "fill-box")],
+        "mask-clip-stroke" => &[("mask-clip", "stroke-box")],
+        "mask-clip-view" => &[("mask-clip", "view-box")],
+        "mask-no-clip" => &[("mask-clip", "no-clip")],
+        "mask-origin-border" => &[("mask-origin", "border-box")],
+        "mask-origin-padding" => &[("mask-origin", "padding-box")],
+        "mask-origin-content" => &[("mask-origin", "content-box")],
+        "mask-origin-fill" => &[("mask-origin", "fill-box")],
+        "mask-origin-stroke" => &[("mask-origin", "stroke-box")],
+        "mask-origin-view" => &[("mask-origin", "view-box")],
+        "perspective-origin-center" => &[("perspective-origin", "center")],
+        "perspective-origin-top" => &[("perspective-origin", "top")],
+        "perspective-origin-top-right" => &[("perspective-origin", "100% 0")],
+        "perspective-origin-right" => &[("perspective-origin", "100%")],
+        "perspective-origin-bottom-right" => &[("perspective-origin", "100% 100%")],
+        "perspective-origin-bottom" => &[("perspective-origin", "bottom")],
+        "perspective-origin-bottom-left" => &[("perspective-origin", "0 100%")],
+        "perspective-origin-left" => &[("perspective-origin", "0")],
+        "perspective-origin-top-left" => &[("perspective-origin", "0 0")],
         "line-clamp-none" => &[
             ("overflow", "visible"),
             ("display", "block"),
@@ -71,12 +143,6 @@ fn fixed(name: &str) -> Option<&'static [(&'static str, &'static str)]> {
             ("outline-style", "double"),
         ],
         "outline-none" => &[("--tw-outline-style", "none"), ("outline-style", "none")],
-        "perspective-none" => &[("perspective", "none")],
-        "perspective-dramatic" => &[("perspective", "100px")],
-        "perspective-near" => &[("perspective", "300px")],
-        "perspective-normal" => &[("perspective", "500px")],
-        "perspective-midrange" => &[("perspective", "800px")],
-        "perspective-distant" => &[("perspective", "1200px")],
         "font-stretch-normal" => &[("font-stretch", "normal")],
         "font-stretch-ultra-condensed" => &[("font-stretch", "ultra-condensed")],
         "font-stretch-extra-condensed" => &[("font-stretch", "extra-condensed")],
@@ -225,10 +291,227 @@ fn negated_pixels(argument: &str) -> Option<String> {
     Some(format!("calc({} * -1)", pixels_or_value(argument)?))
 }
 
+/// What `font-variant-numeric` holds: every figure, spacing and fraction the
+/// numeric utilities set
+const NUMERIC: &str = "var(--tw-ordinal,) var(--tw-slashed-zero,) var(--tw-numeric-figure,) var(--tw-numeric-spacing,) var(--tw-numeric-fraction,)";
+
+/// What `contain` holds when `contain-size` and its like compose
+const CONTAIN: &str = "var(--tw-contain-size,) var(--tw-contain-layout,) var(--tw-contain-paint,) var(--tw-contain-style,)";
+
+/// The composed `font-variant-numeric` and `contain` utilities: the variable
+/// each sets, and its value
+fn composed(name: &str) -> Option<Vec<Declaration>> {
+    let (variable, value, property, shared) = match name {
+        "ordinal" => ("--tw-ordinal", "ordinal", "font-variant-numeric", NUMERIC),
+        "slashed-zero" => (
+            "--tw-slashed-zero",
+            "slashed-zero",
+            "font-variant-numeric",
+            NUMERIC,
+        ),
+        "lining-nums" => (
+            "--tw-numeric-figure",
+            "lining-nums",
+            "font-variant-numeric",
+            NUMERIC,
+        ),
+        "oldstyle-nums" => (
+            "--tw-numeric-figure",
+            "oldstyle-nums",
+            "font-variant-numeric",
+            NUMERIC,
+        ),
+        "proportional-nums" => (
+            "--tw-numeric-spacing",
+            "proportional-nums",
+            "font-variant-numeric",
+            NUMERIC,
+        ),
+        "tabular-nums" => (
+            "--tw-numeric-spacing",
+            "tabular-nums",
+            "font-variant-numeric",
+            NUMERIC,
+        ),
+        "diagonal-fractions" => (
+            "--tw-numeric-fraction",
+            "diagonal-fractions",
+            "font-variant-numeric",
+            NUMERIC,
+        ),
+        "stacked-fractions" => (
+            "--tw-numeric-fraction",
+            "stacked-fractions",
+            "font-variant-numeric",
+            NUMERIC,
+        ),
+        "contain-size" => ("--tw-contain-size", "size", "contain", CONTAIN),
+        "contain-inline-size" => ("--tw-contain-size", "inline-size", "contain", CONTAIN),
+        "contain-layout" => ("--tw-contain-layout", "layout", "contain", CONTAIN),
+        "contain-paint" => ("--tw-contain-paint", "paint", "contain", CONTAIN),
+        "contain-style" => ("--tw-contain-style", "style", "contain", CONTAIN),
+        _ => return None,
+    };
+    Some(vec![decl(variable, value), decl(property, shared)])
+}
+
+/// `rotate-x-45`, `translate-z-4`, `scale-z-50`: the 3D steps of the transform
+/// utilities, set in their own variable and composed with the others
+fn three_d(name: &str, negative: bool) -> Option<Vec<Declaration>> {
+    if let Some(argument) = name.strip_prefix("rotate-") {
+        let (axis, argument) = argument.split_once('-')?;
+        if !matches!(axis, "x" | "y" | "z") {
+            return None;
+        }
+        let value = if is_positive_integer(argument) {
+            format!("{argument}deg")
+        } else {
+            arbitrary_or_variable(argument)?
+        };
+        let value = if negative {
+            format!("calc({value} * -1)")
+        } else {
+            value
+        };
+        return Some(vec![
+            decl(
+                format!("--tw-rotate-{axis}"),
+                format!("rotate{}({value})", axis.to_ascii_uppercase()),
+            ),
+            decl("transform", TRANSFORM),
+        ]);
+    }
+    if let Some(argument) = name.strip_prefix("translate-z-") {
+        return Some(vec![
+            decl("--tw-translate-z", spacing(argument, negative)?),
+            decl(
+                "translate",
+                "var(--tw-translate-x) var(--tw-translate-y) var(--tw-translate-z)",
+            ),
+        ]);
+    }
+    let argument = name.strip_prefix("scale-z-")?;
+    let value = if is_positive_integer(argument) {
+        format!("{argument}%")
+    } else {
+        arbitrary_or_variable(argument)?
+    };
+    let value = if negative {
+        format!("calc({value} * -1)")
+    } else {
+        value
+    };
+    Some(vec![
+        decl("--tw-scale-z", value),
+        decl(
+            "scale",
+            "var(--tw-scale-x) var(--tw-scale-y) var(--tw-scale-z)",
+        ),
+    ])
+}
+
+/// `perspective-near`, `perspective-[300px]` and `perspective-origin-[10%_20%]`
+fn perspective(name: &str) -> Option<Vec<Declaration>> {
+    if let Some(argument) = name.strip_prefix("perspective-origin-") {
+        return Some(vec![decl(
+            "perspective-origin",
+            arbitrary_or_variable(argument)?,
+        )]);
+    }
+    let argument = name.strip_prefix("perspective-")?;
+    if argument == "none" {
+        return Some(vec![decl("perspective", "none")]);
+    }
+    let value = themed("perspective", argument, |key| {
+        Some(match key {
+            "dramatic" => "100px",
+            "near" => "300px",
+            "normal" => "500px",
+            "midrange" => "800px",
+            "distant" => "1200px",
+            _ => return None,
+        })
+    })
+    .map(Cow::into_owned)
+    .or_else(|| arbitrary_or_variable(argument))?;
+    Some(vec![decl("perspective", value)])
+}
+
+/// `mask-[...]`, `mask-size-[...]` and `mask-position-[...]`
+fn mask(name: &str) -> Option<Vec<Declaration>> {
+    if let Some(argument) = name.strip_prefix("mask-size-") {
+        return Some(vec![decl("mask-size", arbitrary_or_variable(argument)?)]);
+    }
+    if let Some(argument) = name.strip_prefix("mask-position-") {
+        return Some(vec![decl(
+            "mask-position",
+            arbitrary_or_variable(argument)?,
+        )]);
+    }
+    let value = arbitrary_or_variable(name.strip_prefix("mask-")?)?;
+    let percentage = value
+        .strip_suffix('%')
+        .is_some_and(|number| number.parse::<f64>().is_ok());
+    let property = if percentage {
+        "mask-position"
+    } else if value_type(None, &value) == Some(ValueType::Length) {
+        "mask-size"
+    } else {
+        "mask-image"
+    };
+    Some(vec![decl(property, value)])
+}
+
+/// The utilities that also have declarations in an at-rule: `outline-hidden`
+pub fn nested_utility(name: &str) -> Option<(Vec<Declaration>, Vec<Nested>)> {
+    (name == "outline-hidden").then(|| {
+        (
+            vec![
+                decl("--tw-outline-style", "none"),
+                decl("outline-style", "none"),
+            ],
+            vec![Nested {
+                kind: AtRuleKind::Media,
+                query: "(forced-colors: active)",
+                declarations: vec![
+                    decl("outline", "2px solid transparent"),
+                    decl("outline-offset", "2px"),
+                ],
+            }],
+        )
+    })
+}
+
+/// `@container`, `@container-normal` and `@container/main`: an element whose
+/// size the container queries of its descendants read
+fn container_utility(name: &str) -> Option<Vec<Declaration>> {
+    let rest = name.strip_prefix("@container")?;
+    let parts = split_top_level(rest, '/');
+    let (kind, container) = match parts.as_slice() {
+        [kind] => (*kind, None),
+        [kind, container] if !container.is_empty() => (*kind, Some(*container)),
+        _ => return None,
+    };
+    let value = match kind {
+        "" => String::from("inline-size"),
+        "-normal" => String::from("normal"),
+        "-size" => String::from("size"),
+        _ => bracketed(kind.strip_prefix('-')?).map(decode_arbitrary_value)?,
+    };
+    let mut declarations = vec![decl("container-type", value)];
+    if let Some(container) = container {
+        declarations.push(decl("container-name", container.to_string()));
+    }
+    Some(declarations)
+}
+
 /// The declarations of the utilities of this module, `None` for any other
 pub fn misc_utility(name: &str, negative: bool) -> Option<Vec<Declaration>> {
     if negative {
         return negated(name);
+    }
+    if let Some(declarations) = container_utility(name) {
+        return Some(declarations);
     }
     if let Some(declarations) = fixed(name) {
         return Some(
@@ -238,13 +521,19 @@ pub fn misc_utility(name: &str, negative: bool) -> Option<Vec<Declaration>> {
                 .collect(),
         );
     }
+    if let Some(declarations) = composed(name)
+        .or_else(|| perspective(name))
+        .or_else(|| mask(name))
+    {
+        return Some(declarations);
+    }
     if let Some(declarations) = border_utility(name)
         .or_else(|| border_spacing(name))
         .or_else(|| outline_width(name))
     {
         return Some(declarations);
     }
-    plain(name)
+    three_d(name, false).or_else(|| plain(name))
 }
 
 /// The properties of a spaced utility such as `scroll-mt-2` and its argument
@@ -256,6 +545,9 @@ fn split_spaced(name: &str) -> Option<(&'static [&'static str], &str)> {
 
 /// The utilities a leading `-` negates
 fn negated(name: &str) -> Option<Vec<Declaration>> {
+    if let Some(declarations) = three_d(name, true) {
+        return Some(declarations);
+    }
     if let Some(argument) = name.strip_prefix("underline-offset-") {
         return Some(vec![decl(
             "text-underline-offset",
@@ -330,6 +622,19 @@ mod tests {
     use rstest::rstest;
 
     use crate::tailwind::declarations_of;
+
+    fn conditions(class: &str) -> Vec<String> {
+        crate::tailwind::parse_class(class)
+            .unwrap()
+            .conditions
+            .iter()
+            .map(|condition| {
+                condition
+                    .as_ref()
+                    .map_or_else(String::new, ToString::to_string)
+            })
+            .collect()
+    }
 
     fn expect(class: &str, expected: &[(&str, &str)]) {
         let expected: Vec<(String, String)> = expected
@@ -576,5 +881,324 @@ mod tests {
     #[case("antialiased-")]
     fn unknown_utilities_stay_as_written(#[case] class: &str) {
         assert_eq!(declarations_of(class), None, "{class}");
+    }
+
+    #[rstest]
+    #[case("@sm:p-4", "@container(width>=24rem)")]
+    #[case("@md:p-4", "@container(width>=28rem)")]
+    #[case("@3xs:p-4", "@container(width>=16rem)")]
+    #[case("@7xl:p-4", "@container(width>=80rem)")]
+    #[case("@max-md:p-4", "@container(width<28rem)")]
+    #[case("@min-lg:p-4", "@container(width>=32rem)")]
+    #[case("@min-[400px]:p-4", "@container(width>=400px)")]
+    #[case("@max-[30rem]:p-4", "@container(width<30rem)")]
+    #[case("@[30rem]:p-4", "@container(width>=30rem)")]
+    #[case("@sm/main:p-4", "@container main (width>=24rem)")]
+    #[case("@max-md/sidebar:p-4", "@container sidebar (width<28rem)")]
+    fn container_queries_style_by_the_width_of_the_container(
+        #[case] class: &str,
+        #[case] condition: &str,
+    ) {
+        assert_eq!(conditions(class), vec![condition]);
+    }
+
+    #[rstest]
+    #[case("@sm/:p-4")]
+    #[case("@huge:p-4")]
+    #[case("@sm/a/b:p-4")]
+    #[case("@:p-4")]
+    #[case("@max-:p-4")]
+    #[case("@[]:p-4")]
+    #[case("@[var(--w)]:p-4")]
+    #[case("@max-[calc(var(--w))]:p-4")]
+    fn unknown_container_queries_stay_as_written(#[case] class: &str) {
+        assert_eq!(crate::tailwind::parse_class(class), None, "{class}");
+    }
+
+    #[test]
+    fn container_queries_nest_with_other_variants() {
+        assert_eq!(
+            conditions("hover:@md:p-4"),
+            vec!["@media(hover:hover) @container(width>=28rem) &:hover"]
+        );
+        assert_eq!(
+            conditions("@md:hover:p-4"),
+            vec!["@container(width>=28rem) @media(hover:hover) &:hover"]
+        );
+    }
+
+    #[rstest]
+    #[case("@container", &[("container-type", "inline-size")])]
+    #[case("@container-normal", &[("container-type", "normal")])]
+    #[case("@container-size", &[("container-type", "size")])]
+    #[case("@container-[inline-size_layout]", &[("container-type", "inline-size layout")])]
+    #[case("@container/main", &[("container-type", "inline-size"), ("container-name", "main")])]
+    #[case("@container-normal/main", &[("container-type", "normal"), ("container-name", "main")])]
+    fn container_utilities_make_the_element_a_container(
+        #[case] class: &str,
+        #[case] expected: &[(&str, &str)],
+    ) {
+        expect(class, expected);
+    }
+
+    #[rstest]
+    #[case("@container-")]
+    #[case("@container-huge")]
+    #[case("@container/")]
+    #[case("@container/a/b")]
+    #[case("@containers")]
+    fn unknown_containers_stay_as_written(#[case] class: &str) {
+        assert_eq!(declarations_of(class), None, "{class}");
+    }
+
+    #[test]
+    fn outline_hidden_has_a_forced_colors_fallback() {
+        let class = crate::tailwind::parse_class("outline-hidden").unwrap();
+        assert_eq!(
+            class.declarations,
+            vec![
+                ("--tw-outline-style".into(), "none".into()),
+                ("outline-style".into(), "none".into()),
+            ]
+        );
+        assert_eq!(class.nested.len(), 1);
+        assert_eq!(
+            class.nested[0].0[0]
+                .as_ref()
+                .map(ToString::to_string)
+                .as_deref(),
+            Some("@media(forced-colors:active)")
+        );
+        assert_eq!(
+            class.nested[0].1,
+            vec![
+                ("outline".into(), "2px solid transparent".into()),
+                ("outline-offset".into(), "2px".into()),
+            ]
+        );
+        let styles: Vec<_> = class
+            .styles()
+            .map(|style| style.property().to_string())
+            .collect();
+        assert_eq!(
+            styles,
+            vec![
+                "--tw-outline-style",
+                "outline-style",
+                "outline",
+                "outline-offset"
+            ]
+        );
+        let important = crate::tailwind::parse_class("outline-hidden!").unwrap();
+        assert_eq!(important.nested[0].1[1].1, "2px !important");
+        let hovered = crate::tailwind::parse_class("hover:outline-hidden").unwrap();
+        assert_eq!(
+            hovered.nested[0].0[0]
+                .as_ref()
+                .map(ToString::to_string)
+                .as_deref(),
+            Some("@media(hover:hover)and (forced-colors:active) &:hover")
+        );
+    }
+
+    #[rstest]
+    #[case("ordinal", "--tw-ordinal", "ordinal")]
+    #[case("slashed-zero", "--tw-slashed-zero", "slashed-zero")]
+    #[case("lining-nums", "--tw-numeric-figure", "lining-nums")]
+    #[case("oldstyle-nums", "--tw-numeric-figure", "oldstyle-nums")]
+    #[case("proportional-nums", "--tw-numeric-spacing", "proportional-nums")]
+    #[case("tabular-nums", "--tw-numeric-spacing", "tabular-nums")]
+    #[case("diagonal-fractions", "--tw-numeric-fraction", "diagonal-fractions")]
+    #[case("stacked-fractions", "--tw-numeric-fraction", "stacked-fractions")]
+    fn numeric_figures_compose_through_their_variables(
+        #[case] class: &str,
+        #[case] variable: &str,
+        #[case] value: &str,
+    ) {
+        expect(
+            class,
+            &[
+                (variable, value),
+                (
+                    "font-variant-numeric",
+                    "var(--tw-ordinal,) var(--tw-slashed-zero,) var(--tw-numeric-figure,) var(--tw-numeric-spacing,) var(--tw-numeric-fraction,)",
+                ),
+            ],
+        );
+        expect("normal-nums", &[("font-variant-numeric", "normal")]);
+    }
+
+    #[rstest]
+    #[case("contain-size", "--tw-contain-size", "size")]
+    #[case("contain-inline-size", "--tw-contain-size", "inline-size")]
+    #[case("contain-layout", "--tw-contain-layout", "layout")]
+    #[case("contain-paint", "--tw-contain-paint", "paint")]
+    #[case("contain-style", "--tw-contain-style", "style")]
+    fn contain_composes_through_its_variables(
+        #[case] class: &str,
+        #[case] variable: &str,
+        #[case] value: &str,
+    ) {
+        expect(
+            class,
+            &[
+                (variable, value),
+                (
+                    "contain",
+                    "var(--tw-contain-size,) var(--tw-contain-layout,) var(--tw-contain-paint,) var(--tw-contain-style,)",
+                ),
+            ],
+        );
+    }
+
+    #[test]
+    fn contain_keywords() {
+        expect("contain-none", &[("contain", "none")]);
+        expect("contain-content", &[("contain", "content")]);
+        expect("contain-strict", &[("contain", "strict")]);
+        expect(
+            "transform-cpu",
+            &[(
+                "transform",
+                "var(--tw-rotate-x,) var(--tw-rotate-y,) var(--tw-rotate-z,) var(--tw-skew-x,) var(--tw-skew-y,)",
+            )],
+        );
+        expect(
+            "transform-gpu",
+            &[(
+                "transform",
+                "translateZ(0) var(--tw-rotate-x,) var(--tw-rotate-y,) var(--tw-rotate-z,) var(--tw-skew-x,) var(--tw-skew-y,)",
+            )],
+        );
+    }
+
+    #[test]
+    fn three_d_transforms_compose_with_the_others() {
+        let transform = "var(--tw-rotate-x,) var(--tw-rotate-y,) var(--tw-rotate-z,) var(--tw-skew-x,) var(--tw-skew-y,)";
+        expect(
+            "rotate-x-45",
+            &[
+                ("--tw-rotate-x", "rotateX(45deg)"),
+                ("transform", transform),
+            ],
+        );
+        expect(
+            "rotate-y-12",
+            &[
+                ("--tw-rotate-y", "rotateY(12deg)"),
+                ("transform", transform),
+            ],
+        );
+        expect(
+            "rotate-z-0",
+            &[("--tw-rotate-z", "rotateZ(0deg)"), ("transform", transform)],
+        );
+        expect(
+            "-rotate-x-45",
+            &[
+                ("--tw-rotate-x", "rotateX(calc(45deg * -1))"),
+                ("transform", transform),
+            ],
+        );
+        expect(
+            "rotate-y-[1.5rad]",
+            &[
+                ("--tw-rotate-y", "rotateY(1.5rad)"),
+                ("transform", transform),
+            ],
+        );
+        let translate = "var(--tw-translate-x) var(--tw-translate-y) var(--tw-translate-z)";
+        expect(
+            "translate-z-4",
+            &[("--tw-translate-z", "1rem"), ("translate", translate)],
+        );
+        expect(
+            "-translate-z-4",
+            &[("--tw-translate-z", "-1rem"), ("translate", translate)],
+        );
+        expect(
+            "translate-z-[3px]",
+            &[("--tw-translate-z", "3px"), ("translate", translate)],
+        );
+        expect("translate-3d", &[("translate", translate)]);
+        let scale = "var(--tw-scale-x) var(--tw-scale-y) var(--tw-scale-z)";
+        expect("scale-z-50", &[("--tw-scale-z", "50%"), ("scale", scale)]);
+        expect(
+            "-scale-z-50",
+            &[("--tw-scale-z", "calc(50% * -1)"), ("scale", scale)],
+        );
+        expect(
+            "scale-z-[1.5]",
+            &[("--tw-scale-z", "1.5"), ("scale", scale)],
+        );
+        expect("scale-3d", &[("scale", scale)]);
+    }
+
+    #[test]
+    fn perspective_and_its_origin() {
+        expect("perspective-dramatic", &[("perspective", "100px")]);
+        expect("perspective-near", &[("perspective", "300px")]);
+        expect("perspective-normal", &[("perspective", "500px")]);
+        expect("perspective-midrange", &[("perspective", "800px")]);
+        expect("perspective-distant", &[("perspective", "1200px")]);
+        expect("perspective-none", &[("perspective", "none")]);
+        expect("perspective-[400px]", &[("perspective", "400px")]);
+        expect("perspective-(--p)", &[("perspective", "var(--p)")]);
+        expect(
+            "perspective-origin-[10%_20%]",
+            &[("perspective-origin", "10% 20%")],
+        );
+        for (name, value) in [
+            ("center", "center"),
+            ("top", "top"),
+            ("top-right", "100% 0"),
+            ("right", "100%"),
+            ("bottom-right", "100% 100%"),
+            ("bottom", "bottom"),
+            ("bottom-left", "0 100%"),
+            ("left", "0"),
+            ("top-left", "0 0"),
+        ] {
+            expect(
+                &format!("perspective-origin-{name}"),
+                &[("perspective-origin", value)],
+            );
+        }
+    }
+
+    #[test]
+    fn masks() {
+        expect("mask-none", &[("mask-image", "none")]);
+        expect("mask-add", &[("mask-composite", "add")]);
+        expect("mask-intersect", &[("mask-composite", "intersect")]);
+        expect("mask-luminance", &[("mask-mode", "luminance")]);
+        expect("mask-match", &[("mask-mode", "match-source")]);
+        expect("mask-type-alpha", &[("mask-type", "alpha")]);
+        expect("mask-cover", &[("mask-size", "cover")]);
+        expect("mask-top-left", &[("mask-position", "left top")]);
+        expect("mask-center", &[("mask-position", "center")]);
+        expect("mask-repeat-round", &[("mask-repeat", "round")]);
+        expect("mask-clip-padding", &[("mask-clip", "padding-box")]);
+        expect("mask-no-clip", &[("mask-clip", "no-clip")]);
+        expect("mask-origin-view", &[("mask-origin", "view-box")]);
+        expect("mask-[url(/m.svg)]", &[("mask-image", "url(/m.svg)")]);
+        expect(
+            "mask-[linear-gradient(black,transparent)]",
+            &[("mask-image", "linear-gradient(black,transparent)")],
+        );
+        expect("mask-[50%]", &[("mask-position", "50%")]);
+        expect("mask-[10px]", &[("mask-size", "10px")]);
+        expect("mask-size-[10px_20px]", &[("mask-size", "10px 20px")]);
+        expect("mask-position-(--p)", &[("mask-position", "var(--p)")]);
+        for class in [
+            "mask-linear-50",
+            "mask-t-from-50%",
+            "mask-radial-from-50%",
+            "mask-conic-from-50",
+            "mask-[]",
+            "mask-size-",
+        ] {
+            assert_eq!(declarations_of(class), None, "{class}");
+        }
     }
 }

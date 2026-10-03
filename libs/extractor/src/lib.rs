@@ -17,6 +17,7 @@ mod stylex;
 mod tailwind;
 mod tailwind_children;
 mod tailwind_color;
+mod tailwind_custom;
 mod tailwind_effects;
 mod tailwind_misc;
 mod tailwind_motion;
@@ -14647,6 +14648,45 @@ const Button = styled.button({ bg: 'red' })
 
     #[rstest]
     #[case(
+        "const button = cva('p-4 card', { variants: { size: { sm: 'text-sm', lg: ['text-lg', 'p-8'], none: null } }, compoundVariants: [{ size: 'sm', class: 'm-2' }, { size: 'lg', className: ['m-4'] }], defaultVariants: { size: 'sm' } });\n<Box className={button({ size })} />",
+        "import \"@devup-ui/core/devup-ui.css\";\nconst button = cva(\"a card\", {\n\tvariants: { size: {\n\t\tsm: \"b c\",\n\t\tlg: [\"d e\", \"f\"],\n\t\tnone: null\n\t} },\n\tcompoundVariants: [{\n\t\tsize: \"sm\",\n\t\tclass: \"g\"\n\t}, {\n\t\tsize: \"lg\",\n\t\tclassName: [\"h\"]\n\t}],\n\tdefaultVariants: { size: \"sm\" }\n});\n<div className={button({ size }) || \"\"} />;\n"
+    )]
+    #[case(
+        "const button = cva();\n<Box className={button()} />",
+        "const button = cva();\n<div className={button() || \"\"} />;\n"
+    )]
+    #[case(
+        "const button = cva(base, { variants: 1, compoundVariants: 2 });\n<Box />",
+        "const button = cva(base, {\n\tvariants: 1,\n\tcompoundVariants: 2\n});\n<div />;\n"
+    )]
+    #[case(
+        "const button = cva(['p-4'], { variants: { size: 1, tone: { a: 'm-2' } }, compoundVariants: [1, { tone: 'a', other: 'm-1' }, { ...x }] });\n<Box />",
+        "import \"@devup-ui/core/devup-ui.css\";\nconst button = cva([\"a\"], {\n\tvariants: {\n\t\tsize: 1,\n\t\ttone: { a: \"b\" }\n\t},\n\tcompoundVariants: [\n\t\t1,\n\t\t{\n\t\t\ttone: \"a\",\n\t\t\tother: \"m-1\"\n\t\t},\n\t\t{ ...x }\n\t]\n});\n<div />;\n"
+    )]
+    #[case(
+        "const button = cva(base, { ...shared, variants: { ...more, tone: { ...options, a: 'm-2' }, size: { sm: 'p-1' }, odd: 1 }, compoundVariants: [...list, { class: 'm-1' }] });\n<Box />",
+        "import \"@devup-ui/core/devup-ui.css\";\nconst button = cva(base, {\n\t...shared,\n\tvariants: {\n\t\t...more,\n\t\ttone: {\n\t\t\t...options,\n\t\t\ta: \"a\"\n\t\t},\n\t\tsize: { sm: \"b\" },\n\t\todd: 1\n\t},\n\tcompoundVariants: [...list, { class: \"c\" }]\n});\n<div />;\n"
+    )]
+    #[serial]
+    fn test_tailwind_cva(#[case] jsx: &str, #[case] expected: &str) {
+        reset_class_map();
+        reset_file_map();
+        let output = extract(
+            "test.tsx",
+            &format!("import {{Box}} from '@devup-ui/core'\n{jsx}\n"),
+            ExtractOption {
+                package: "@devup-ui/core".to_string(),
+                css_dir: "@devup-ui/core".to_string(),
+                single_css: true,
+                import_main_css: false,
+                import_aliases: HashMap::new(),
+            },
+        )
+        .unwrap();
+        assert_eq!(output.code, expected);
+    }
+    #[rstest]
+    #[case(
         "<Box className={clsx('p-4', on && 'm-2', 'keep')} />",
         r#"<div className={clsx("a", on && "b", "keep") || ""} />"#
     )]
@@ -14671,8 +14711,59 @@ const Button = styled.button({ bg: 'red' })
         "<div className={clsx({\n\t[key]: on,\n\t\"a\": on\n}) || \"\"} />"
     )]
     #[case(
-        "<Box className={cn('p-4', 'm-2')} />",
-        r#"-<div className={cn("p-4", "m-2") || ""} />"#
+        "const base = 'p-4 card';\n<Box className={base} />",
+        r#"const base = "p-4 card";
+<div className="a card" />"#
+    )]
+    #[case(
+        "const base = `p-4`;\nconst on = false;\n<Box className={clsx(base, on && 'm-2')} />",
+        r#"const base = `p-4`;
+const on = false;
+<div className={clsx("a", on && "b") || ""} />"#
+    )]
+    #[case(
+        "let base = 'p-4';\n<Box className={base} />",
+        r#"-let base = "p-4";
+<div className={base || ""} />"#
+    )]
+    #[case(
+        "const base = 'p-4'\nconst f = (base) => <Box className={base} />",
+        "-const base = \"p-4\";\nconst f = (base) => <div className={base || \"\"} />"
+    )]
+    #[case(
+        "const base = `p-4 ${x}`;\n<Box className={base} />",
+        r#"-const base = `p-4 ${x}`;
+<div className={base || ""} />"#
+    )]
+    #[case("<Box className={cn('p-4', 'm-2')} />", r#"<div className="a b" />"#)]
+    #[case(
+        "<Box className={cn('p-4 m-2 card', ['p-2'])} />",
+        r#"<div className="a card b" />"#
+    )]
+    #[case(
+        "<Box className={twMerge(`p-4`, 'p-2!', 'hover:p-4', 'hover:p-1')} />",
+        r#"<div className="a b c" />"#
+    )]
+    #[case(
+        "<Box className={cn('p-4', cond && 'p-2')} />",
+        r#"-<div className={cn("p-4", cond && "p-2") || ""} />"#
+    )]
+    #[case(
+        "<Box className={cn('card', 'hidden-x')} />",
+        r#"-<div className={cn("card", "hidden-x") || ""} />"#
+    )]
+    #[case(
+        "<Box className={cn('px-4', 'p-2', 'bg-red-500', 'bg-blue-500')} />",
+        r#"<div className="a b c" />"#
+    )]
+    #[case(
+        "<Box className={cn(...parts)} />",
+        r#"-<div className={cn(...parts) || ""} />"#
+    )]
+    #[case(
+        "const base = 'p-4';\n<Box className={cn(base, 'p-8')} />",
+        r#"const base = "p-4";
+<div className="a" />"#
     )]
     #[case(
         "<Box className={['p-4'].join(',')} />",

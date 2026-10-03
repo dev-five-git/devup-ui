@@ -268,35 +268,119 @@ fn recolored(shadow: &str, variable: &str) -> String {
         .collect::<Vec<_>>()
         .join(", ")
 }
-/// The declarations of a `shadow` utility: a size, `none`, a theme shadow or
-/// a color
+/// The insets of the default theme
+fn inset_shadow_size(name: &str) -> Option<&'static str> {
+    Some(match name {
+        "2xs" => "inset 0 1px rgb(0 0 0 / 0.05)",
+        "xs" => "inset 0 1px 1px rgb(0 0 0 / 0.05)",
+        "sm" => "inset 0 2px 4px rgb(0 0 0 / 0.05)",
+        _ => return None,
+    })
+}
+
+/// The text shadows of the default theme
+fn text_shadow_size(name: &str) -> Option<&'static str> {
+    Some(match name {
+        "2xs" => "0px 1px 0px rgb(0 0 0 / 0.15)",
+        "xs" => "0px 1px 1px rgb(0 0 0 / 0.2)",
+        "sm" => {
+            "0px 1px 0px rgb(0 0 0 / 0.075), 0px 1px 1px rgb(0 0 0 / 0.075), 0px 2px 2px rgb(0 0 0 / 0.075)"
+        }
+        "md" => {
+            "0px 1px 1px rgb(0 0 0 / 0.1), 0px 1px 2px rgb(0 0 0 / 0.1), 0px 2px 4px rgb(0 0 0 / 0.1)"
+        }
+        "lg" => {
+            "0px 1px 2px rgb(0 0 0 / 0.1), 0px 3px 2px rgb(0 0 0 / 0.1), 0px 4px 8px rgb(0 0 0 / 0.1)"
+        }
+        _ => return None,
+    })
+}
+
+/// A kind of shadow utility: how its value and color are stored
+struct ShadowFamily {
+    /// The class root, which is also the theme namespace
+    root: &'static str,
+    color: &'static str,
+    alpha: &'static str,
+    /// The custom property the value is composed in; none when the value is
+    /// the property itself
+    composed: Option<&'static str>,
+    sizes: fn(&str) -> Option<&'static str>,
+}
+
+static SHADOW_FAMILIES: [ShadowFamily; 3] = [
+    ShadowFamily {
+        root: "shadow",
+        color: "--tw-shadow-color",
+        alpha: "--tw-shadow-alpha",
+        composed: Some("--tw-shadow"),
+        sizes: shadow_size,
+    },
+    ShadowFamily {
+        root: "inset-shadow",
+        color: "--tw-inset-shadow-color",
+        alpha: "--tw-inset-shadow-alpha",
+        composed: Some("--tw-inset-shadow"),
+        sizes: inset_shadow_size,
+    },
+    ShadowFamily {
+        root: "text-shadow",
+        color: "--tw-text-shadow-color",
+        alpha: "--tw-text-shadow-alpha",
+        composed: None,
+        sizes: text_shadow_size,
+    },
+];
+
+/// The declarations of a `shadow`, `inset-shadow` or `text-shadow` utility: a
+/// size, `none`, a color, and for `shadow` a theme shadow of `devup.json`
 fn shadow_utility(name: &str) -> Option<Vec<Declaration>> {
-    let argument = if name == "shadow" {
+    SHADOW_FAMILIES
+        .iter()
+        .find_map(|family| family_utility(family, name))
+}
+
+fn family_utility(family: &ShadowFamily, name: &str) -> Option<Vec<Declaration>> {
+    let argument = if name == family.root {
         ""
     } else {
-        name.strip_prefix("shadow-")
+        name.strip_prefix(family.root)?
+            .strip_prefix('-')
             .filter(|argument| !argument.is_empty())?
     };
-    let composed =
-        |shadow: String| vec![decl("--tw-shadow", shadow), decl("box-shadow", BOX_SHADOW)];
-    if let Some(shadow) = themed("shadow", argument, shadow_size) {
-        return Some(composed(recolored(&shadow, "--tw-shadow-color")));
+    let composed = |shadow: String| match family.composed {
+        Some(variable) => vec![decl(variable, shadow), decl("box-shadow", BOX_SHADOW)],
+        None => vec![decl("text-shadow", shadow)],
+    };
+    if argument == "initial" {
+        return Some(vec![decl(family.color, "initial")]);
+    }
+    if let Some(shadow) = themed(family.root, argument, family.sizes) {
+        return Some(composed(recolored(&shadow, family.color)));
     }
     match argument {
-        "none" => return Some(composed(String::from("0 0 #0000"))),
-        "inherit" => return Some(vec![decl("--tw-shadow-color", "inherit")]),
+        "none" => {
+            return Some(composed(String::from(if family.composed.is_some() {
+                "0 0 #0000"
+            } else {
+                "none"
+            })));
+        }
+        "inherit" => return Some(vec![decl(family.color, "inherit")]),
         _ => {}
     }
-    if is_shadow_token(argument) {
+    if family.root == "shadow" && is_shadow_token(argument) {
         return Some(composed(format!("var(--{argument})")));
     }
     let color = shadow_color(argument)?;
     Some(vec![decl(
-        "--tw-shadow-color",
-        format!("color-mix(in oklab, {color} var(--tw-shadow-alpha), transparent)"),
+        family.color,
+        format!(
+            "color-mix(in oklab, {color} var({}), transparent)",
+            family.alpha
+        ),
     )])
 }
-
 /// A color written in an argument
 enum Argument {
     /// The argument is no arbitrary value
@@ -306,7 +390,6 @@ enum Argument {
     /// An arbitrary value that is not, or a modifier that cannot be applied
     Invalid,
 }
-
 /// The color of `shadow-<color>`, a named one or an arbitrary one
 fn shadow_color(argument: &str) -> Option<Cow<'static, str>> {
     match arbitrary_color(argument) {
@@ -1424,5 +1507,90 @@ mod tests {
         ] {
             assert_eq!(declarations_of(class), None, "{class}");
         }
+    }
+
+    #[rstest]
+    #[case(
+        "text-shadow-2xs",
+        "0px 1px 0px var(--tw-text-shadow-color, rgb(0 0 0 / 0.15))"
+    )]
+    #[case(
+        "text-shadow-xs",
+        "0px 1px 1px var(--tw-text-shadow-color, rgb(0 0 0 / 0.2))"
+    )]
+    #[case(
+        "text-shadow-sm",
+        "0px 1px 0px var(--tw-text-shadow-color, rgb(0 0 0 / 0.075)), 0px 1px 1px var(--tw-text-shadow-color, rgb(0 0 0 / 0.075)), 0px 2px 2px var(--tw-text-shadow-color, rgb(0 0 0 / 0.075))"
+    )]
+    #[case(
+        "text-shadow-md",
+        "0px 1px 1px var(--tw-text-shadow-color, rgb(0 0 0 / 0.1)), 0px 1px 2px var(--tw-text-shadow-color, rgb(0 0 0 / 0.1)), 0px 2px 4px var(--tw-text-shadow-color, rgb(0 0 0 / 0.1))"
+    )]
+    #[case(
+        "text-shadow-lg",
+        "0px 1px 2px var(--tw-text-shadow-color, rgb(0 0 0 / 0.1)), 0px 3px 2px var(--tw-text-shadow-color, rgb(0 0 0 / 0.1)), 0px 4px 8px var(--tw-text-shadow-color, rgb(0 0 0 / 0.1))"
+    )]
+    #[case("text-shadow-none", "none")]
+    fn text_shadows_are_the_property_itself(#[case] class: &str, #[case] shadow: &str) {
+        expect(class, &[("text-shadow", shadow)]);
+    }
+
+    #[test]
+    fn text_shadow_colors() {
+        expect(
+            "text-shadow-red-500",
+            &[(
+                "--tw-text-shadow-color",
+                "color-mix(in oklab, oklch(63.7% 0.237 25.331) var(--tw-text-shadow-alpha), transparent)",
+            )],
+        );
+        expect(
+            "text-shadow-inherit",
+            &[("--tw-text-shadow-color", "inherit")],
+        );
+        expect(
+            "text-shadow-initial",
+            &[("--tw-text-shadow-color", "initial")],
+        );
+        assert_eq!(declarations_of("text-shadow"), None);
+        assert_eq!(declarations_of("text-shadow-huge"), None);
+    }
+
+    #[rstest]
+    #[case(
+        "inset-shadow-2xs",
+        "inset 0 1px var(--tw-inset-shadow-color, rgb(0 0 0 / 0.05))"
+    )]
+    #[case(
+        "inset-shadow-xs",
+        "inset 0 1px 1px var(--tw-inset-shadow-color, rgb(0 0 0 / 0.05))"
+    )]
+    #[case(
+        "inset-shadow-sm",
+        "inset 0 2px 4px var(--tw-inset-shadow-color, rgb(0 0 0 / 0.05))"
+    )]
+    #[case("inset-shadow-none", "0 0 #0000")]
+    fn inset_shadows_compose_with_the_other_shadows(#[case] class: &str, #[case] shadow: &str) {
+        expect(
+            class,
+            &[("--tw-inset-shadow", shadow), ("box-shadow", BOX_SHADOW)],
+        );
+    }
+
+    #[test]
+    fn inset_shadow_colors_and_initial() {
+        expect(
+            "inset-shadow-blue-500",
+            &[(
+                "--tw-inset-shadow-color",
+                "color-mix(in oklab, oklch(62.3% 0.214 259.815) var(--tw-inset-shadow-alpha), transparent)",
+            )],
+        );
+        expect(
+            "inset-shadow-initial",
+            &[("--tw-inset-shadow-color", "initial")],
+        );
+        expect("shadow-initial", &[("--tw-shadow-color", "initial")]);
+        assert_eq!(declarations_of("inset-shadow"), None);
     }
 }

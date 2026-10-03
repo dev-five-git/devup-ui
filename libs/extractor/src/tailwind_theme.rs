@@ -38,7 +38,6 @@ static UNSUPPORTED: &[(&str, &str)] = &[
     ("min-w-", "container"),
     ("w-", "container"),
     ("inset-shadow-", "inset-shadow"),
-    ("perspective-", "perspective"),
     ("aspect-", "aspect"),
 ];
 
@@ -350,7 +349,6 @@ mod tests {
             ])
         );
         assert_eq!(crate::tailwind::declarations_of("-content-auto"), None);
-        assert_eq!(crate::tailwind::declarations_of("tab-4"), None);
         set_tailwind_css("");
         assert_eq!(crate::tailwind::declarations_of("content-auto"), None);
     }
@@ -365,5 +363,87 @@ mod tests {
         assert!(crate::tailwind::declarations_of("text-sm").is_some());
         assert!(crate::tailwind::declarations_of("font-thin").is_some());
         set_tailwind_css("");
+    }
+
+    #[test]
+    #[serial]
+    fn theme_calls_in_arbitrary_values_read_the_theme() {
+        set_tailwind_css(
+            "@theme { --color-brand: #0af; --spacing: 0.3rem; --spacing-gutter: 3rem; --radius-pill: 40px; --font-display: Inter; }",
+        );
+        assert_eq!(
+            written("bg-[theme(--color-brand)]"),
+            pairs(&[("background-color", "#0af")])
+        );
+        assert_eq!(
+            written("bg-[theme(--color-red-500)]"),
+            pairs(&[("background-color", "oklch(63.7% 0.237 25.331)")])
+        );
+        assert_eq!(
+            written("w-[theme(--spacing-gutter)]"),
+            pairs(&[("width", "3rem")])
+        );
+        assert_eq!(
+            written("w-[theme(--spacing-4)]"),
+            pairs(&[("width", "1.2rem")])
+        );
+        assert_eq!(
+            written("w-[calc(theme(--spacing)*2)]"),
+            pairs(&[("width", "calc(0.3rem * 2)")])
+        );
+        assert_eq!(
+            written("rounded-[theme(--radius-pill)]"),
+            pairs(&[("border-radius", "40px")])
+        );
+        assert_eq!(
+            written("p-[theme(--spacing)_theme(--spacing-gutter)]"),
+            pairs(&[("padding", "0.3rem 3rem")])
+        );
+        for class in [
+            "bg-[theme(--color-nothing)]",
+            "bg-[theme(colors.red.500)]",
+            "w-[theme(--nothing)]",
+            "w-[theme(--spacing-gutter]",
+            "w-[mytheme(--spacing-gutter)]",
+        ] {
+            assert_eq!(crate::tailwind::declarations_of(class), None, "{class}");
+        }
+        set_tailwind_css("");
+        assert_eq!(
+            written("w-[theme(--spacing)]"),
+            pairs(&[("width", "0.25rem")])
+        );
+    }
+
+    #[test]
+    #[serial]
+    fn container_widths_come_from_the_theme() {
+        set_tailwind_css("@theme { --container-card: 22rem; }");
+        let class = crate::tailwind::parse_class("@card:p-4").unwrap();
+        assert_eq!(
+            class.conditions[0]
+                .as_ref()
+                .map(ToString::to_string)
+                .as_deref(),
+            Some("@container(width>=22rem)")
+        );
+        assert!(crate::tailwind::parse_class("@sm:p-4").is_some());
+        set_tailwind_css("@theme { --container-*: initial; }");
+        assert_eq!(crate::tailwind::parse_class("@sm:p-4"), None);
+        set_tailwind_css("");
+    }
+
+    #[test]
+    fn merge_drops_what_a_later_class_sets_again() {
+        use crate::tailwind::merge_classes;
+        assert_eq!(merge_classes("p-4 m-2 p-2"), "m-2 p-2");
+        assert_eq!(merge_classes("p-4 card p-2"), "card p-2");
+        assert_eq!(merge_classes("px-4 p-2"), "px-4 p-2");
+        assert_eq!(merge_classes("p-2 p-4!"), "p-2 p-4!");
+        assert_eq!(merge_classes("hover:p-2 p-4 hover:p-1"), "p-4 hover:p-1");
+        assert_eq!(merge_classes("md:p-2 p-4"), "md:p-2 p-4");
+        assert_eq!(merge_classes("text-sm text-lg"), "text-lg");
+        assert_eq!(merge_classes("card card"), "card card");
+        assert_eq!(merge_classes("  "), "");
     }
 }

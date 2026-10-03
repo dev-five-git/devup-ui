@@ -10,8 +10,9 @@
 #![allow(clippy::collapsible_if)]
 
 use std::borrow::Cow;
+use std::collections::BTreeSet;
 
-use css::tailwind_definitions::{custom_utility, custom_variant, theme_value, theme_variable};
+use css::tailwind_definitions::{custom_variant, theme_value, theme_variable};
 use css::{
     at_rule::split_at_rule_key,
     style_selector::{AtRuleKind, StyleSelector},
@@ -21,8 +22,9 @@ use phf::{phf_map, phf_set};
 use crate::extract_style::extract_static_style::ExtractStaticStyle;
 use crate::tailwind_children::{CHILDREN, children_utility};
 use crate::tailwind_color::color_value;
+use crate::tailwind_custom::{custom_declarations, functional_declarations};
 use crate::tailwind_effects::effect_utility;
-use crate::tailwind_misc::misc_utility;
+use crate::tailwind_misc::{misc_utility, nested_utility};
 use crate::tailwind_motion::{keyframes_of, motion_utility};
 use crate::tailwind_theme::{reads_unsupported_theme, scaled, themed};
 
@@ -174,6 +176,16 @@ macro_rules! property {
 static PROPERTIES: &[(&str, &str)] = &[
     property!("--tw-translate-x", "*", "0"),
     property!("--tw-translate-y", "*", "0"),
+    property!("--tw-translate-z", "*", "0"),
+    property!("--tw-ordinal"),
+    property!("--tw-slashed-zero"),
+    property!("--tw-numeric-figure"),
+    property!("--tw-numeric-spacing"),
+    property!("--tw-numeric-fraction"),
+    property!("--tw-contain-size"),
+    property!("--tw-contain-layout"),
+    property!("--tw-contain-paint"),
+    property!("--tw-contain-style"),
     property!("--tw-scale-x", "*", "1"),
     property!("--tw-scale-y", "*", "1"),
     property!("--tw-scale-z", "*", "1"),
@@ -225,6 +237,8 @@ static PROPERTIES: &[(&str, &str)] = &[
     property!("--tw-shadow", "*", "0 0 #0000"),
     property!("--tw-shadow-color"),
     property!("--tw-shadow-alpha", "<percentage>", "100%"),
+    property!("--tw-text-shadow-color"),
+    property!("--tw-text-shadow-alpha", "<percentage>", "100%"),
     property!("--tw-drop-shadow-color"),
     property!("--tw-drop-shadow-alpha", "<percentage>", "100%"),
     property!("--tw-drop-shadow-size"),
@@ -300,16 +314,35 @@ pub struct TailwindClass {
     pub conditions: Vec<Option<StyleSelector>>,
     /// The declarations, in the order Tailwind writes them
     pub declarations: Vec<Declaration>,
+    /// Declarations that go in an at-rule of their own inside the rule, with
+    /// the conditions of each
+    pub nested: Vec<(Vec<Option<StyleSelector>>, Vec<Declaration>)>,
 }
 
 impl TailwindClass {
     /// Every declaration under every condition
     pub fn styles(&self) -> impl Iterator<Item = ExtractStaticStyle> + '_ {
-        self.conditions.iter().flat_map(move |condition| {
-            self.declarations.iter().map(move |(property, value)| {
-                ExtractStaticStyle::new(property, value, self.level, condition.clone())
+        let groups = std::iter::once((&self.conditions, &self.declarations)).chain(
+            self.nested
+                .iter()
+                .map(|(conditions, declarations)| (conditions, declarations)),
+        );
+        groups.flat_map(move |(conditions, declarations)| {
+            conditions.iter().flat_map(move |condition| {
+                declarations.iter().map(move |(property, value)| {
+                    ExtractStaticStyle::new(property, value, self.level, condition.clone())
+                })
             })
         })
+    }
+
+    /// Every declaration the class has
+    fn all_declarations(&self) -> impl Iterator<Item = &Declaration> {
+        self.declarations.iter().chain(
+            self.nested
+                .iter()
+                .flat_map(|(_, declarations)| declarations),
+        )
     }
 
     /// The global rules the declarations need: the @property rules of the
@@ -319,15 +352,68 @@ impl TailwindClass {
         let mut rules: Vec<Cow<'static, str>> = PROPERTIES
             .iter()
             .filter(|(name, _)| {
-                self.declarations
-                    .iter()
+                self.all_declarations()
                     .any(|(property, value)| property == name || reads(value, name))
             })
             .map(|&(_, rule)| Cow::Borrowed(rule))
             .collect();
-        rules.extend(keyframes_of(&self.declarations));
+        let all: Vec<Declaration> = self.all_declarations().cloned().collect();
+        rules.extend(keyframes_of(&all));
         rules
     }
+}
+
+/// The widths of the containers of the default theme
+fn container_width(key: &str) -> Option<&'static str> {
+    Some(match key {
+        "3xs" => "16rem",
+        "2xs" => "18rem",
+        "xs" => "20rem",
+        "sm" => "24rem",
+        "md" => "28rem",
+        "lg" => "32rem",
+        "xl" => "36rem",
+        "2xl" => "42rem",
+        "3xl" => "48rem",
+        "4xl" => "56rem",
+        "5xl" => "64rem",
+        "6xl" => "72rem",
+        "7xl" => "80rem",
+        _ => return None,
+    })
+}
+
+/// `@md:`, `@max-md:`, `@min-[400px]:` and `@md/main:`, which style an element
+/// by the width of its container, or of the container named `main`
+fn container_variant(name: &str) -> Option<Variant> {
+    let rest = name.strip_prefix('@')?;
+    let parts = split_top_level(rest, '/');
+    let (query, container) = match parts.as_slice() {
+        [query] => (*query, None),
+        [query, container] if !container.is_empty() => (*query, Some(*container)),
+        _ => return None,
+    };
+    let (comparison, key) = if let Some(key) = query.strip_prefix("max-") {
+        ("<", key)
+    } else {
+        (">=", query.strip_prefix("min-").unwrap_or(query))
+    };
+    let width = if let Some(value) = bracketed(key) {
+        decode_arbitrary_value(value)
+    } else {
+        themed("container", key, container_width)?.into_owned()
+    };
+    if width.is_empty() || width.contains("var(") {
+        return None;
+    }
+    let condition = format!("(width {comparison} {width})");
+    Some(Variant::at_rule(
+        AtRuleKind::Container,
+        container.map_or_else(
+            || condition.clone(),
+            |container| format!("{container} {condition}"),
+        ),
+    ))
 }
 
 /// The variant a prefix such as `hover` or `md` stands for
@@ -340,6 +426,9 @@ fn variant(name: &str) -> Option<Variant> {
                 .map(|(kind, query)| (kind, Cow::Owned(query))),
             ..Variant::default()
         });
+    }
+    if let Some(variant) = container_variant(name) {
+        return Some(variant);
     }
     if let Some(&level) = RESPONSIVE_PREFIX_MAP.get(name) {
         return Some(Variant {
@@ -693,6 +782,55 @@ pub(crate) fn declarations_of(class: &str) -> Option<Vec<(String, String)>> {
     })
 }
 
+/// What a compiled class sets: each property under each condition, and
+/// whether it is important
+fn class_keys(class: &TailwindClass) -> BTreeSet<String> {
+    let groups = std::iter::once((&class.conditions, &class.declarations)).chain(
+        class
+            .nested
+            .iter()
+            .map(|(conditions, declarations)| (conditions, declarations)),
+    );
+    let mut keys = BTreeSet::new();
+    for (conditions, declarations) in groups {
+        for condition in conditions {
+            for (property, value) in declarations {
+                keys.insert(format!(
+                    "{condition:?}|{}|{property}|{}",
+                    class.level,
+                    value.ends_with("!important")
+                ));
+            }
+        }
+    }
+    keys
+}
+
+/// `classes` without the Tailwind classes a later one sets all of again, which
+/// is what tailwind-merge does: the later class wins
+#[must_use]
+pub fn merge_classes(classes: &str) -> String {
+    let tokens: Vec<&str> = classes.split_ascii_whitespace().collect();
+    let keys: Vec<Option<BTreeSet<String>>> = tokens
+        .iter()
+        .map(|token| parse_class(token).map(|class| class_keys(&class)))
+        .collect();
+    tokens
+        .iter()
+        .enumerate()
+        .filter(|(index, _)| {
+            keys[*index].as_ref().is_none_or(|earlier| {
+                !keys[index + 1..]
+                    .iter()
+                    .flatten()
+                    .any(|later| earlier.is_subset(later))
+            })
+        })
+        .map(|(_, token)| *token)
+        .collect::<Vec<_>>()
+        .join(" ")
+}
+
 /// The class compiled, or `None` when it is not a Tailwind class understood in
 /// full, which must then stay in the className as written
 #[must_use]
@@ -702,9 +840,21 @@ pub fn parse_class(class: &str) -> Option<TailwindClass> {
     let Utility {
         mut declarations,
         selector: utility_selector,
+        mut nested,
     } = utility(name)?;
+    if declarations
+        .iter()
+        .chain(nested.iter().flat_map(|nested| nested.declarations.iter()))
+        .any(|(_, value)| value.contains("theme("))
+    {
+        return None;
+    }
     if important {
-        for (_, value) in &mut declarations {
+        for (_, value) in declarations.iter_mut().chain(
+            nested
+                .iter_mut()
+                .flat_map(|nested| nested.declarations.iter_mut()),
+        ) {
             *value = Cow::Owned(format!("{value} !important"));
         }
     }
@@ -746,25 +896,44 @@ pub fn parse_class(class: &str) -> Option<TailwindClass> {
             (Cow::Borrowed("content"), Cow::Borrowed("var(--tw-content)")),
         );
     }
-    let conditions = selectors
+    let conditions_under = |extra: Option<(AtRuleKind, &str)>| {
+        selectors
+            .iter()
+            .map(|selector| {
+                let mut condition =
+                    (selector != "&").then(|| StyleSelector::Selector(selector.clone()));
+                let nested = extra.map(|(kind, query)| (kind, Cow::Borrowed(query)));
+                for (kind, query) in at_rules
+                    .iter()
+                    .map(|(kind, query)| (*kind, query.clone()))
+                    .chain(nested)
+                {
+                    // `None` when the media queries can never all match
+                    condition = Some(StyleSelector::nest_at_rule(
+                        condition.as_ref(),
+                        kind,
+                        &query,
+                    )?);
+                }
+                Some(condition)
+            })
+            .collect::<Option<Vec<_>>>()
+    };
+    let conditions = conditions_under(None)?;
+    let nested = nested
         .into_iter()
-        .map(|selector| {
-            let mut condition = (selector != "&").then_some(StyleSelector::Selector(selector));
-            for (kind, query) in &at_rules {
-                // `None` when the media queries can never all match
-                condition = Some(StyleSelector::nest_at_rule(
-                    condition.as_ref(),
-                    *kind,
-                    query,
-                )?);
-            }
-            Some(condition)
+        .map(|nested| {
+            Some((
+                conditions_under(Some((nested.kind, nested.query)))?,
+                nested.declarations,
+            ))
         })
         .collect::<Option<Vec<_>>>()?;
     Some(TailwindClass {
         level,
         conditions,
         declarations,
+        nested,
     })
 }
 
@@ -806,6 +975,38 @@ struct Utility {
     declarations: Vec<Declaration>,
     /// Where the declarations apply, `&` being the element
     selector: &'static str,
+    /// Declarations in an at-rule inside the rule
+    nested: Vec<Nested>,
+}
+
+/// Declarations that go in an at-rule of their own inside the rule of a utility
+pub(crate) struct Nested {
+    pub kind: AtRuleKind,
+    pub query: &'static str,
+    pub declarations: Vec<Declaration>,
+}
+
+/// The declarations of the utility `token` (`px-4`, `py-2!`) names when it
+/// has no variant and applies to the element itself, which `@apply` writes out
+pub(crate) fn apply_utility(token: &str) -> Option<Vec<Declaration>> {
+    if split_top_level(token, ':').len() > 1 {
+        return None;
+    }
+    let (name, important) = important(token);
+    let Utility {
+        mut declarations,
+        selector,
+        nested,
+    } = utility(name)?;
+    if selector != "&" || !nested.is_empty() {
+        return None;
+    }
+    if important {
+        for (_, value) in &mut declarations {
+            *value = Cow::Owned(format!("{value} !important"));
+        }
+    }
+    Some(declarations)
 }
 
 /// The declarations of a utility and the selector they apply under
@@ -814,11 +1015,20 @@ fn utility(name: &str) -> Option<Utility> {
         return Some(Utility {
             declarations,
             selector: CHILDREN,
+            nested: Vec::new(),
+        });
+    }
+    if let Some((declarations, nested)) = nested_utility(name) {
+        return Some(Utility {
+            declarations,
+            selector: "&",
+            nested,
         });
     }
     Some(Utility {
         declarations: element_utility(name)?,
         selector: "&",
+        nested: Vec::new(),
     })
 }
 
@@ -836,13 +1046,11 @@ fn element_utility(name: &str) -> Option<Vec<Declaration>> {
         };
     }
     if !negative {
-        if let Some(declarations) = custom_utility(name) {
-            return Some(
-                declarations
-                    .into_iter()
-                    .map(|(property, value)| decl(property, value))
-                    .collect(),
-            );
+        if let Some(declarations) = custom_declarations(name) {
+            return Some(declarations);
+        }
+        if let Some(declarations) = functional_declarations(name) {
+            return Some(declarations);
         }
     }
     if reads_unsupported_theme(name) {
@@ -1089,7 +1297,7 @@ const TRANSLATE: &str = "var(--tw-translate-x) var(--tw-translate-y)";
 /// `scale` reading the scale of each axis
 const SCALE: &str = "var(--tw-scale-x) var(--tw-scale-y)";
 /// `transform` composing the rotations and skews no other property takes
-const TRANSFORM: &str = "var(--tw-rotate-x,) var(--tw-rotate-y,) var(--tw-rotate-z,) var(--tw-skew-x,) var(--tw-skew-y,)";
+pub(crate) const TRANSFORM: &str = "var(--tw-rotate-x,) var(--tw-rotate-y,) var(--tw-rotate-z,) var(--tw-skew-x,) var(--tw-skew-y,)";
 
 /// What an arbitrary value is, for the roots that take several kinds
 #[derive(Clone, Copy, PartialEq, Eq)]
@@ -1511,6 +1719,53 @@ fn decode_underscores(value: &str) -> String {
 /// spaces except in `url()` and in the name `var()` reads, and the operators
 /// in math functions get the spaces CSS requires around them
 pub(crate) fn decode_arbitrary_value(value: &str) -> String {
+    resolve_theme_calls(&decode_syntax(value))
+}
+
+/// The value of a theme variable `--name`, as `theme(--name)` reads it
+fn theme_function_value(name: &str) -> Option<String> {
+    let name = name.strip_prefix("--")?;
+    if name == "spacing" {
+        return Some(theme_variable("spacing").unwrap_or_else(|| String::from("0.25rem")));
+    }
+    if let Some(key) = name.strip_prefix("color-") {
+        return color_value(key).map(Cow::into_owned);
+    }
+    if let Some(key) = name.strip_prefix("spacing-") {
+        return spacing_scale(key).map(Cow::into_owned);
+    }
+    theme_variable(name)
+}
+
+/// `value` with each `theme(--name)` it calls replaced by the value of the
+/// theme variable; a call it cannot resolve is left, and the class with it
+/// stays as written
+fn resolve_theme_calls(value: &str) -> String {
+    let mut out = String::with_capacity(value.len());
+    let mut rest = value;
+    while let Some(start) = rest.find("theme(") {
+        let open = start + "theme(".len();
+        let length = closing_paren(&rest[open..]);
+        let named = rest[..start]
+            .chars()
+            .last()
+            .is_some_and(|c| c.is_ascii_alphanumeric() || c == '-' || c == '_');
+        let resolved = (!named && open + length < rest.len())
+            .then(|| theme_function_value(rest[open..open + length].trim()))
+            .flatten();
+        if let Some(resolved) = resolved {
+            out.push_str(&rest[..start]);
+            out.push_str(&resolved);
+            rest = &rest[open + length + 1..];
+        } else {
+            out.push_str(&rest[..open]);
+            rest = &rest[open..];
+        }
+    }
+    out.push_str(rest);
+    out
+}
+fn decode_syntax(value: &str) -> String {
     if !value.contains('(') {
         return decode_underscores(value);
     }
@@ -1705,7 +1960,7 @@ pub(crate) fn split_top_level(value: &str, separator: char) -> Vec<&str> {
 }
 
 /// What `[…]` holds
-fn bracketed(value: &str) -> Option<&str> {
+pub(crate) fn bracketed(value: &str) -> Option<&str> {
     let inner = value.strip_prefix('[')?.strip_suffix(']')?;
     (!inner.is_empty() && is_balanced(inner)).then_some(inner)
 }
@@ -4486,7 +4741,6 @@ mod tests {
     fn test_rotate_unknown_value_returns_none() {
         assert!(parse_single_class("rotate-unknown").is_none());
         // 3D rotation is not compiled
-        assert!(parse_single_class("rotate-x-45").is_none());
     }
 
     #[test]
@@ -4924,7 +5178,6 @@ mod tests {
     #[case("in-focus:p-4")]
     #[case("max-md:p-4")]
     #[case("min-[700px]:p-4")]
-    #[case("@sm:p-4")]
     #[case("@container:p-4")]
     #[case("starting:p-4")]
     #[case("screen:p-4")]
@@ -5014,7 +5267,6 @@ mod tests {
     #[case("translate-x")]
     #[case("scale-1.5")]
     #[case("skew-x")]
-    #[case("rotate-x-45")]
     fn test_preserved_classes(#[case] class: &str) {
         assert_eq!(parse_class(class), None, "{class}");
     }
