@@ -8,6 +8,10 @@ interface ToggleProps {
   onChange?: (value: boolean) => void
   disabled?: boolean
   variant?: 'default' | 'switch'
+  /** The name the value is submitted under in a form */
+  name?: string
+  'aria-label'?: string
+  'aria-labelledby'?: string
   className?: string
   style?: React.CSSProperties
   classNames?: {
@@ -38,6 +42,9 @@ export function Toggle({
   colors,
   classNames,
   styles,
+  name,
+  'aria-label': ariaLabel,
+  'aria-labelledby': ariaLabelledBy,
 }: ToggleProps) {
   const [innerValue, setInnerValue] = useState<boolean>(
     value ?? defaultValue ?? false,
@@ -55,7 +62,14 @@ export function Toggle({
   return (
     <>
       <Box
+        _focusVisible={{
+          outline: '2px solid var(--primary)',
+          outlineOffset: '2px',
+        }}
+        aria-checked={resultValue}
         aria-disabled={disabled}
+        aria-label={ariaLabel}
+        aria-labelledby={ariaLabelledBy}
         bg={
           resultValue
             ? 'var(--primary)'
@@ -69,8 +83,14 @@ export function Toggle({
         h={isDefault ? '28px' : '8px'}
         justifyContent={resultValue && 'flex-end'}
         onClick={() => !disabled && handleToggle(resultValue)}
+        onKeyDown={(event) => {
+          if (disabled || (event.key !== ' ' && event.key !== 'Enter')) return
+          event.preventDefault()
+          handleToggle(resultValue)
+        }}
         p={isDefault && 1}
         position="relative"
+        role="switch"
         selectors={{
           '&[aria-disabled=true]': {
             cursor: 'not-allowed',
@@ -90,6 +110,7 @@ export function Toggle({
           hoverBg: colors?.hoverBg,
           disabledBg: colors?.disabledBg,
         }}
+        tabIndex={disabled ? -1 : 0}
         test-id="toggle-wrapper"
         transition=".25s"
         w={isDefault ? '50px' : '40px'}
@@ -123,7 +144,12 @@ export function Toggle({
           transition=".25s"
         />
       </Box>
-      <Input type="hidden" value={String(resultValue)} />
+      <Input
+        disabled={disabled}
+        name={name}
+        type="hidden"
+        value={String(resultValue)}
+      />
     </>
   )
 }
