@@ -1,20 +1,26 @@
-import { existsSync } from 'node:fs'
+import { existsSync, readFileSync, writeFileSync } from 'node:fs'
 import { mkdir, writeFile } from 'node:fs/promises'
 import { basename, dirname, join, relative, resolve } from 'node:path'
 
 import {
+  beginBuild,
   buildCanonicalMap,
+  collectNumberedFiles,
   computeFileReach,
+  computeReachableFiles,
   createCompatTypes,
   createModuleResolver,
   createNodeModulesExcludeRegex,
+  createStateWriter,
   createThemeInterfaceArgs,
   type CustomShorthands,
+  extractedNeedles,
   getFileNumByFilename,
   type ImportAliases,
   loadDevupConfig,
   mergeImportAliases,
   planAtomHoist,
+  seedFileNumbers,
 } from '@devup-ui/plugin-utils'
 import {
   codeExtract,
@@ -25,12 +31,16 @@ import {
   importFileRoutes,
   registerShorthands,
   registerTheme,
+  resetBuildState,
+  seedFileMap,
   setAtomHoist,
   setDebug,
   setModuleResolver,
   setPrefix,
 } from '@devup-ui/wasm'
-import type { RsbuildPlugin } from '@rsbuild/core'
+import type { RsbuildPlugin, Rspack } from '@rsbuild/core'
+
+const PLUGIN_NAME = 'devup-ui-rsbuild-plugin'
 
 export interface DevupUIRsbuildPluginOptions {
   package: string
@@ -64,8 +74,6 @@ export interface DevupUIRsbuildPluginOptions {
    */
   importAliases?: ImportAliases
 }
-
-let globalCss = ''
 
 async function writeDataFiles(
   options: Omit<
@@ -103,6 +111,16 @@ async function writeDataFiles(
   ])
 }
 
+/**
+ * Write `css` to the stylesheet file at `path` unless it holds it already. The
+ * CSS loaders read the shared base from disk when a file's stylesheet imports
+ * it, so it must hold every style extracted so far.
+ */
+function writeChanged(path: string, css: string) {
+  if (!existsSync(path) || readFileSync(path, 'utf-8') !== css)
+    writeFileSync(path, css, 'utf-8')
+}
+
 export const DevupUI = ({
   include = [],
   package: libPackage = '@devup-ui/react',
@@ -119,14 +137,19 @@ export const DevupUI = ({
 }: Partial<DevupUIRsbuildPluginOptions> = {}): RsbuildPlugin => {
   registerShorthands(shorthands ?? {})
   const importAliases = mergeImportAliases(userImportAliases)
+  const stateWriter = createStateWriter((path, content, encoding) =>
+    encoding ? writeFile(path, content, encoding) : writeFile(path, content),
+  )
 
   return {
-    name: 'devup-ui-rsbuild-plugin',
+    name: PLUGIN_NAME,
     async setup(api) {
+      // A build starts from its own options, not from what an earlier build
+      // in this process left in the engine
+      const endBuild = beginBuild({ resetBuildState })
+      api.onCloseBuild?.(endBuild)
       setDebug(debug)
-      if (prefix) {
-        setPrefix(prefix)
-      }
+      setPrefix(prefix ?? null)
 
       if (!existsSync(distDir)) await mkdir(distDir, { recursive: true })
       await writeFile(join(distDir, '.gitignore'), '*', 'utf-8')
@@ -190,22 +213,137 @@ export const DevupUI = ({
         }
       }
 
+      try {
+        // Number every file the build can extract in path order, so class
+        // prefixes do not depend on the order modules reach the transform
+        seedFileNumbers(
+          { seedFileMap },
+          collectNumberedFiles({
+            roots: [resolve(process.cwd(), 'src')],
+            include,
+            needles: extractedNeedles(libPackage, importAliases),
+            toId: (path) => (atomMode ? path.replaceAll('\\', '/') : path),
+          }),
+        )
+      } catch {
+        // Best-effort; numbering falls back to arrival order.
+      }
+      // Extract the source files under `src` that the entries reach, in path
+      // order, the same way the transform does, so that a stylesheet built on
+      // its first import already holds the styles of every one. Best-effort:
+      // a stylesheet still missing styles is rebuilt by another pass.
+      api.onBeforeBuild(({ environments }) => {
+        try {
+          const root = api.context.rootPath
+          const entries = Object.values(environments).flatMap(({ entry }) =>
+            Object.values(entry).flatMap((value) =>
+              (typeof value === 'object' && !Array.isArray(value)
+                ? [value.import].flat()
+                : [value].flat()
+              ).map((request) => resolve(root, request)),
+            ),
+          )
+          for (const file of computeReachableFiles({
+            srcDir: resolve(root, 'src'),
+            tsconfigPath: resolve(root, 'tsconfig.json'),
+            entries,
+          })) {
+            let extractCssDir = relative(dirname(file), cssDir).replaceAll(
+              '\\',
+              '/',
+            )
+            if (!extractCssDir.startsWith('./'))
+              extractCssDir = `./${extractCssDir}`
+            codeExtract(
+              atomMode ? file.replaceAll('\\', '/') : file,
+              readFileSync(file, 'utf-8'),
+              libPackage,
+              extractCssDir,
+              singleCss,
+              atomMode,
+              !atomMode,
+              importAliases,
+            )
+          }
+        } catch {
+          // The transform reports the error of the file it cannot extract
+        }
+      })
+
+      const servedCss = new Map<string, Map<string, string>>()
+      const stylesheet = (resourcePath: string) =>
+        // A file's stylesheet imports the shared base, except in atom mode,
+        // where the entry code imports the base itself so that hoisted atoms
+        // load once (the injected splitChunks cacheGroup, see
+        // modifyRsbuildConfig, emits the base once)
+        getCss(getFileNumByFilename(basename(resourcePath)), !atomMode)
+
       api.transform(
         {
           test: cssDir,
         },
-        ({ resourcePath }) => {
-          // Non-atom: keep the existing single-string behavior (no regression).
-          if (!atomMode) return globalCss
-          // Atom mode: serve the route-specific chunk and have it @import the
-          // shared base (devup-ui.css) so hoisted atoms load ONCE and are not
-          // inlined per chunk. The base file itself imports nothing.
-          // Route chunk and base are SEPARATE modules (the transformed entry
-          // code imports both via import_main_css); the injected splitChunks
-          // cacheGroup (see modifyRsbuildConfig) emits the base once.
-          return getCss(getFileNumByFilename(basename(resourcePath)), false)
+        ({ resourcePath, environment }) => {
+          const css = stylesheet(resourcePath)
+          servedCss.get(environment.name)?.set(resourcePath, css)
+          return css
         },
       )
+
+      // A stylesheet module is built on its first import, which can come before
+      // the modules whose styles it holds are extracted. When one was, compile
+      // once more: every module is extracted by then. The dev server rebuilds it
+      // through the stylesheet files the transforms write instead.
+      api.modifyRspackConfig((config, { environment }) => {
+        config.plugins ??= []
+        config.plugins.push({
+          apply(compiler: Rspack.Compiler) {
+            let passes = 0
+            compiler.hooks.run.tap(PLUGIN_NAME, () => {
+              passes = 0
+            })
+            compiler.hooks.thisCompilation.tap(PLUGIN_NAME, (compilation) => {
+              const served = new Map<string, string>()
+              servedCss.set(environment.name, served)
+              const basePath = join(cssDir, 'devup-ui.css')
+              const base = stylesheet(basePath)
+              writeChanged(basePath, base)
+              let stale: string[] = []
+              compilation.hooks.finishModules.tap(PLUGIN_NAME, () => {
+                if (compiler.watchMode) return
+                const changed = new Set(
+                  [...served]
+                    .filter(([path, css]) => stylesheet(path) !== css)
+                    .map(([path]) => path),
+                )
+                // A file's stylesheet `@import`s the shared base, which the CSS
+                // loaders read from disk without passing through this plugin
+                if (stylesheet(basePath) !== base) changed.add(basePath)
+                stale = [...changed]
+              })
+              // The next pass writes the build; this one writes none of its files
+              compilation.hooks.processAssets.tap(
+                {
+                  name: PLUGIN_NAME,
+                  stage:
+                    compiler.rspack.Compilation.PROCESS_ASSETS_STAGE_REPORT,
+                },
+                () => {
+                  if (stale.length === 0 || passes > 0) return
+                  for (const name of Object.keys(compilation.assets))
+                    compilation.deleteAsset(name)
+                },
+              )
+              compilation.hooks.needAdditionalPass.tap(PLUGIN_NAME, () => {
+                if (stale.length === 0 || passes > 0) return false
+                passes += 1
+                for (const path of stale)
+                  writeFileSync(path, stylesheet(path), 'utf-8')
+                return true
+              })
+            })
+          },
+        })
+      })
 
       api.modifyRsbuildConfig((config) => {
         const theme = getDefaultTheme()
@@ -283,7 +421,6 @@ export const DevupUI = ({
             : resourcePath
           const {
             code: retCode,
-            css = '',
             map,
             cssFile,
             updatedBaseStyle,
@@ -303,7 +440,7 @@ export const DevupUI = ({
           if (updatedBaseStyle) {
             // update base style
             promises.push(
-              writeFile(
+              stateWriter.write(
                 join(cssDir, 'devup-ui.css'),
                 getCss(null, false),
                 'utf-8',
@@ -312,9 +449,8 @@ export const DevupUI = ({
           }
 
           if (cssFile) {
-            if (globalCss.length < css.length) globalCss = css
             promises.push(
-              writeFile(
+              stateWriter.write(
                 join(cssDir, basename(cssFile)),
                 `/* ${resourcePath} ${Date.now()} */`,
                 'utf-8',

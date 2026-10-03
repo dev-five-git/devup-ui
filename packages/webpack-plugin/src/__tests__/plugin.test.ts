@@ -17,19 +17,29 @@ import {
 import type { Compiler } from 'webpack'
 
 import { DevupUIWebpackPlugin } from '../plugin'
+import { servedCss } from '../served-css'
 
 type CodeExtractResult = ReturnType<typeof wasm.codeExtract>
 interface MockCompiler {
   options: {
     module: { rules: unknown[] }
     plugins: unknown[]
+    entry?: unknown
+    context?: string
   }
-  webpack: { DefinePlugin: ReturnType<typeof mock> }
+  watchMode?: boolean
+  webpack: {
+    DefinePlugin: ReturnType<typeof mock>
+    Compilation: { PROCESS_ASSETS_STAGE_REPORT: number }
+  }
   hooks: {
     watchRun: { tapPromise: ReturnType<typeof mock> }
     beforeRun: { tapPromise: ReturnType<typeof mock> }
     done: { tapPromise: ReturnType<typeof mock> }
     afterCompile: { tap: ReturnType<typeof mock> }
+    run: { tap: ReturnType<typeof mock> }
+    thisCompilation: { tap: ReturnType<typeof mock> }
+    shutdown: { tap: ReturnType<typeof mock> }
   }
 }
 
@@ -136,6 +146,7 @@ function createCompiler(): MockCompiler {
     },
     webpack: {
       DefinePlugin: mock(),
+      Compilation: { PROCESS_ASSETS_STAGE_REPORT: 5000 },
     },
     hooks: {
       watchRun: {
@@ -150,6 +161,15 @@ function createCompiler(): MockCompiler {
       afterCompile: {
         tap: mock(),
       },
+      run: {
+        tap: mock(),
+      },
+      thisCompilation: {
+        tap: mock(),
+      },
+      shutdown: {
+        tap: mock(),
+      },
     },
   }
 }
@@ -157,6 +177,38 @@ function createCompiler(): MockCompiler {
 describe('devupUIWebpackPlugin', () => {
   console.error = mock()
 
+  describe('deterministic file numbering', () => {
+    it('numbers the files the scan finds and ends the build at shutdown', () => {
+      const collectSpy = spyOn(pluginUtils, 'collectNumberedFiles')
+      const seedSpy = spyOn(wasm, 'seedFileMap').mockReturnValue(undefined)
+      const resetSpy = spyOn(wasm, 'resetBuildState').mockReturnValue(undefined)
+      try {
+        collectSpy.mockImplementation((options: any) => {
+          expect(options.toId(resolve('src', 'a.tsx'))).toBe('src/a.tsx')
+          return ['src/a.tsx', 'src/b.tsx']
+        })
+        const compiler = createCompiler()
+        new DevupUIWebpackPlugin({ include: ['@acme/ui'] }).apply(
+          asCompiler(compiler),
+        )
+        expect(seedSpy).toHaveBeenCalledWith(['src/a.tsx', 'src/b.tsx'])
+        expect(collectSpy.mock.calls[0][0]).toMatchObject({
+          roots: [resolve('src')],
+          include: ['@acme/ui'],
+        })
+        compiler.hooks.shutdown.tap.mock.calls[0][1]()
+        compiler.hooks.shutdown.tap.mock.calls[0][1]()
+        collectSpy.mockImplementation(() => {
+          throw new Error('scan boom')
+        })
+        new DevupUIWebpackPlugin({}).apply(asCompiler(createCompiler()))
+      } finally {
+        collectSpy.mockRestore()
+        seedSpy.mockRestore()
+        resetSpy.mockRestore()
+      }
+    })
+  })
   it('should apply default options', () => {
     expect(new DevupUIWebpackPlugin({}).options).toEqual({
       include: [],
@@ -459,7 +511,7 @@ describe('devupUIWebpackPlugin', () => {
     let importCanonicalMapSpy: ReturnType<typeof spyOn>
     let importFileRoutesSpy: ReturnType<typeof spyOn>
     let setAtomHoistSpy: ReturnType<typeof spyOn>
-    let listSourceFilesSpy: ReturnType<typeof spyOn>
+    let computeReachableFilesSpy: ReturnType<typeof spyOn>
 
     beforeEach(() => {
       buildCanonicalMapSpy = spyOn(
@@ -478,9 +530,9 @@ describe('devupUIWebpackPlugin', () => {
       )
       setAtomHoistSpy = spyOn(wasm, 'setAtomHoist').mockReturnValue(undefined)
       // Default: no source files so pre-warm is a no-op unless a test opts in.
-      listSourceFilesSpy = spyOn(
+      computeReachableFilesSpy = spyOn(
         pluginUtils,
-        'listSourceFiles',
+        'computeReachableFiles',
       ).mockReturnValue([])
     })
 
@@ -490,7 +542,7 @@ describe('devupUIWebpackPlugin', () => {
       importCanonicalMapSpy.mockRestore()
       importFileRoutesSpy.mockRestore()
       setAtomHoistSpy.mockRestore()
-      listSourceFilesSpy.mockRestore()
+      computeReachableFilesSpy.mockRestore()
     })
 
     it('runs single-importer collapse even when atomHoist is unset (always-on), without hoisting', () => {
@@ -511,15 +563,15 @@ describe('devupUIWebpackPlugin', () => {
       expect(importFileRoutesSpy).not.toHaveBeenCalled()
     })
 
-    it('pre-warms the extractor over all source files in build mode when collapse is active', () => {
-      // Without pre-warm, webpack builds each shared devup-ui-N.css ONCE at
-      // first import — before later bucket members are extracted — so their
-      // atoms are dropped. Pre-warming the sheet makes getCss(N) complete from
-      // the first css-loader call.
+    it('pre-warms the extractor over the files the entries reach in build mode', () => {
+      // Without pre-warm, webpack builds each shared stylesheet ONCE at first
+      // import — before later files are extracted — so their styles are
+      // dropped. Pre-warming the sheet makes getCss complete from the first
+      // css-loader call.
       buildCanonicalMapSpy.mockReturnValue({
         'src/child.tsx': 'src/parent.tsx',
       })
-      listSourceFilesSpy.mockReturnValue([
+      computeReachableFilesSpy.mockReturnValue([
         resolve(process.cwd(), 'src', 'parent.tsx'),
         resolve(process.cwd(), 'src', 'child.tsx'),
       ])
@@ -532,8 +584,21 @@ describe('devupUIWebpackPlugin', () => {
         package: '@devup-ui/react',
         singleCss: true,
       })
-      plugin.apply(asCompiler(createCompiler()))
-      expect(listSourceFilesSpy).toHaveBeenCalled()
+      const compiler = createCompiler()
+      compiler.options.entry = {
+        main: { import: ['./src/parent', './src/other'] },
+        worker: {},
+      }
+      compiler.options.context = '/project'
+      plugin.apply(asCompiler(compiler))
+      expect(computeReachableFilesSpy).toHaveBeenCalledWith({
+        srcDir: resolve(process.cwd(), 'src'),
+        tsconfigPath: resolve(process.cwd(), 'tsconfig.json'),
+        entries: [
+          resolve('/project', './src/parent'),
+          resolve('/project', './src/other'),
+        ],
+      })
       // The loader's resolver is registered before the first extraction, so
       // imported constants inline as they do in the loader
       expect(setModuleResolverSpy.mock.invocationCallOrder[0]).toBeLessThan(
@@ -570,22 +635,21 @@ describe('devupUIWebpackPlugin', () => {
       )
     })
 
-    it('skips pre-warm when the canonical map is empty (no collapse, no race)', () => {
+    it('pre-warms without collapse, from no entries when they are a function', () => {
       buildCanonicalMapSpy.mockReturnValue({})
-      listSourceFilesSpy.mockReturnValue([
-        resolve(process.cwd(), 'src', 'a.tsx'),
-      ])
-      readFileSyncSpy.mockReturnValue('source')
-      const plugin = new DevupUIWebpackPlugin({})
-      plugin.apply(asCompiler(createCompiler()))
-      expect(codeExtractSpy).not.toHaveBeenCalled()
+      const compiler = createCompiler()
+      compiler.options.entry = () => ({})
+      new DevupUIWebpackPlugin({}).apply(asCompiler(compiler))
+      expect(computeReachableFilesSpy).toHaveBeenCalledWith(
+        expect.objectContaining({ entries: [] }),
+      )
     })
 
     it('skips pre-warm in watch mode (race only affects one-shot builds)', () => {
       buildCanonicalMapSpy.mockReturnValue({
         'src/child.tsx': 'src/parent.tsx',
       })
-      listSourceFilesSpy.mockReturnValue([
+      computeReachableFilesSpy.mockReturnValue([
         resolve(process.cwd(), 'src', 'parent.tsx'),
       ])
       readFileSyncSpy.mockReturnValue('source')
@@ -598,7 +662,7 @@ describe('devupUIWebpackPlugin', () => {
       buildCanonicalMapSpy.mockReturnValue({
         'src/child.tsx': 'src/parent.tsx',
       })
-      listSourceFilesSpy.mockReturnValue([
+      computeReachableFilesSpy.mockReturnValue([
         resolve(process.cwd(), 'src', 'parent.tsx'),
       ])
       readFileSyncSpy.mockReturnValue('source')
@@ -680,6 +744,110 @@ describe('devupUIWebpackPlugin', () => {
       // pre-pass must run before module rules are pushed (single WASM instance)
       expect(rulesLenAtSetAtomHoist).toBe(0)
       expect(compiler.options.module.rules.length).toBeGreaterThan(0)
+    })
+  })
+
+  describe('another pass for stylesheets built too early', () => {
+    function compile(watch = false) {
+      const compiler = createCompiler()
+      const plugin = new DevupUIWebpackPlugin({ watch })
+      plugin.apply(asCompiler(compiler))
+      const taps: Record<string, (...args: unknown[]) => unknown> = {}
+      const tap =
+        (hook: string) => (_: unknown, fn: (...args: unknown[]) => unknown) => {
+          taps[hook] = fn
+        }
+      const compilation = {
+        assets: { 'main.js': {}, 'main.css': {} },
+        deleteAsset: mock(),
+        hooks: {
+          finishModules: { tap: tap('finishModules') },
+          processAssets: { tap: tap('processAssets') },
+          needAdditionalPass: { tap: tap('needAdditionalPass') },
+        },
+      }
+      const run = compiler.hooks.run.tap.mock.calls[0]?.[1] as () => void
+      const start = () => {
+        ;(
+          compiler.hooks.thisCompilation.tap.mock.calls[0]![1] as (
+            compilation: object,
+          ) => void
+        )(compilation)
+      }
+      return { compiler, plugin, compilation, taps, run, start }
+    }
+
+    it('taps nothing in watch mode', () => {
+      const { compiler } = compile(true)
+      expect(compiler.hooks.run.tap).not.toHaveBeenCalled()
+      expect(compiler.hooks.thisCompilation.tap).not.toHaveBeenCalled()
+    })
+
+    it('writes the shared base to disk when it does not hold it yet', () => {
+      getCssSpy.mockReturnValue('base')
+      existsSyncSpy.mockReturnValue(true)
+      readFileSyncSpy.mockReturnValue('base')
+      const { plugin, start } = compile()
+      writeFileSyncSpy.mockClear()
+      start()
+      expect(writeFileSyncSpy).not.toHaveBeenCalled()
+
+      readFileSyncSpy.mockReturnValue('older')
+      start()
+      expect(writeFileSyncSpy).toHaveBeenCalledWith(
+        join(plugin.options.cssDir, 'devup-ui.css'),
+        'base',
+        'utf-8',
+      )
+    })
+
+    it('compiles once more, writing no file, when a stylesheet changed', () => {
+      getCssSpy.mockReturnValue('before')
+      const { compiler, compilation, plugin, taps, run, start } = compile()
+      start()
+      servedCss(compilation).set('/df/devup-ui/devup-ui-1.css', 'before')
+      getCssSpy.mockReturnValue('after')
+      taps.finishModules!()
+      taps.processAssets!()
+      expect(compilation.deleteAsset).toHaveBeenCalledWith('main.js')
+      expect(compilation.deleteAsset).toHaveBeenCalledWith('main.css')
+      writeFileSyncSpy.mockClear()
+      expect(taps.needAdditionalPass!()).toBe(true)
+      expect(writeFileSyncSpy).toHaveBeenCalledWith(
+        '/df/devup-ui/devup-ui-1.css',
+        'after',
+        'utf-8',
+      )
+      expect(writeFileSyncSpy).toHaveBeenCalledWith(
+        join(plugin.options.cssDir, 'devup-ui.css'),
+        'after',
+        'utf-8',
+      )
+
+      // one more pass per run at most
+      compilation.deleteAsset.mockClear()
+      taps.processAssets!()
+      expect(compilation.deleteAsset).not.toHaveBeenCalled()
+      expect(taps.needAdditionalPass!()).toBeUndefined()
+      run()
+      expect(taps.needAdditionalPass!()).toBe(true)
+
+      // a watching compiler rebuilds through the files the loaders write
+      compiler.watchMode = true
+      start()
+      taps.finishModules!()
+      expect(taps.needAdditionalPass!()).toBeUndefined()
+    })
+
+    it('keeps the pass when every stylesheet is current', () => {
+      getCssSpy.mockReturnValue('same')
+      const { compilation, taps, start } = compile()
+      start()
+      servedCss(compilation).set('/df/devup-ui/devup-ui-1.css', 'same')
+      taps.finishModules!()
+      taps.processAssets!()
+      expect(compilation.deleteAsset).not.toHaveBeenCalled()
+      expect(taps.needAdditionalPass!()).toBeUndefined()
     })
   })
 })

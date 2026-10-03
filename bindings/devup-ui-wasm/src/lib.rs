@@ -243,7 +243,14 @@ pub fn export_sheet() -> Result<String, JsValue> {
 
 /// Internal function to export class map as JSON string (testable without `JsValue`)
 pub fn export_class_map_internal() -> Result<String, String> {
-    with_class_map(serde_json::to_string).map_err(|e| e.to_string())
+    with_class_map(|map| {
+        let sorted: BTreeMap<&String, BTreeMap<&String, &usize>> = map
+            .iter()
+            .map(|(file, classes)| (file, classes.iter().collect()))
+            .collect();
+        serde_json::to_string(&sorted)
+    })
+    .map_err(|e| e.to_string())
 }
 
 #[wasm_bindgen(js_name = "importClassMap")]
@@ -261,7 +268,11 @@ pub fn export_class_map() -> Result<String, JsValue> {
 
 /// Internal function to export file map as JSON string (testable without `JsValue`)
 pub fn export_file_map_internal() -> Result<String, String> {
-    with_file_map(serde_json::to_string).map_err(|e| e.to_string())
+    with_file_map(|map| {
+        let sorted: BTreeMap<&String, &usize> = map.iter().collect();
+        serde_json::to_string(&sorted)
+    })
+    .map_err(|e| e.to_string())
 }
 
 #[wasm_bindgen(js_name = "importFileMap")]
@@ -284,7 +295,11 @@ pub fn import_canonical_map_internal(map: HashMap<String, String>) {
 
 /// Internal function to export the canonical map as JSON string (testable without `JsValue`)
 pub fn export_canonical_map_internal() -> Result<String, String> {
-    with_canonical_map(serde_json::to_string).map_err(|e| e.to_string())
+    with_canonical_map(|map| {
+        let sorted: BTreeMap<&String, &String> = map.iter().collect();
+        serde_json::to_string(&sorted)
+    })
+    .map_err(|e| e.to_string())
 }
 
 #[wasm_bindgen(js_name = "importCanonicalMap")]
@@ -300,6 +315,34 @@ pub fn export_canonical_map() -> Result<String, JsValue> {
     export_canonical_map_internal().map_err(js_error)
 }
 
+/// Number every file in `files` now, in path order, keeping numbers files
+/// already hold, so class prefixes depend on the paths and not on the order
+/// workers reach files in.
+#[wasm_bindgen(js_name = "seedFileMap")]
+pub fn seed_file_map(files: Vec<String>) {
+    css::file_map::seed_file_numbers(&files);
+}
+
+/// Forget everything one build left in the engine.
+///
+/// That is names, numbers, styles, buckets, routes, the prefix, atom hoisting
+/// and the module resolver, so the next build starts from its own options
+/// alone. Theme, shorthands and debug mode are set by every build, and stay.
+pub fn reset_build_state_internal() {
+    css::class_map::reset_class_map();
+    css::file_map::reset_file_map();
+    css::file_map::reset_canonical_map();
+    css::file_routes::set_file_routes(HashMap::new());
+    css::atom_hoist::set_atom_hoist(None);
+    css::set_prefix(None);
+    with_style_sheet_mut(|sheet| *sheet = StyleSheet::default());
+    MODULE_RESOLVER.with_borrow_mut(|current| *current = None);
+}
+
+#[wasm_bindgen(js_name = "resetBuildState")]
+pub fn reset_build_state() {
+    reset_build_state_internal();
+}
 /// Set the atom-level hoist threshold.
 ///
 /// When set to `Some(n)`, a style atom whose content is used by `>= n` distinct
@@ -1551,7 +1594,7 @@ mod tests {
         );
 
         // Test getters
-        assert!(!output.code().is_empty());
+        assert_ne!(output.code(), "");
         assert_eq!(output.css_file(), Some("devup-ui-0.css".to_string()));
         assert_eq!(output.map(), Some("//# sourceMappingURL=test".to_string()));
         assert!(output.css().is_some());
@@ -1931,6 +1974,60 @@ mod tests {
 
     #[test]
     #[serial]
+    fn test_exported_maps_are_canonical_json() {
+        css::class_map::reset_class_map();
+        css::file_map::reset_file_map();
+        css::file_map::reset_canonical_map();
+        css::class_map::set_class_map(HashMap::from([
+            (
+                "b.tsx".to_string(),
+                HashMap::from([("z".to_string(), 1), ("a".to_string(), 0)]),
+            ),
+            ("a.tsx".to_string(), HashMap::from([("k".to_string(), 0)])),
+        ]));
+        assert_eq!(
+            export_class_map_internal().unwrap(),
+            r#"{"a.tsx":{"k":0},"b.tsx":{"a":0,"z":1}}"#
+        );
+        seed_file_map(vec!["b.tsx".to_string(), "a.tsx".to_string()]);
+        assert_eq!(
+            export_file_map_internal().unwrap(),
+            r#"{"a.tsx":0,"b.tsx":1}"#
+        );
+        import_canonical_map_internal(HashMap::from([
+            ("y".to_string(), "b".to_string()),
+            ("x".to_string(), "a".to_string()),
+        ]));
+        assert_eq!(
+            export_canonical_map_internal().unwrap(),
+            r#"{"x":"a","y":"b"}"#
+        );
+        reset_build_state();
+        assert_eq!(export_class_map_internal().unwrap(), "{}");
+        assert_eq!(export_file_map_internal().unwrap(), "{}");
+        assert_eq!(export_canonical_map_internal().unwrap(), "{}");
+        assert_eq!(get_prefix(), None);
+    }
+
+    #[test]
+    #[serial]
+    fn test_numbers_do_not_depend_on_the_order_files_are_seen() {
+        let files = ["src/b.tsx", "src/a.tsx", "src/c.tsx"];
+        let mut maps = Vec::new();
+        for order in [[0, 1, 2], [2, 1, 0], [1, 2, 0]] {
+            reset_build_state_internal();
+            seed_file_map(files.iter().map(ToString::to_string).collect());
+            for index in order {
+                let _ = css::file_map::get_file_num_by_filename(files[index]);
+            }
+            maps.push(export_file_map_internal().unwrap());
+        }
+        assert_eq!(maps[0], r#"{"src/a.tsx":0,"src/b.tsx":1,"src/c.tsx":2}"#);
+        assert_eq!(maps[0], maps[1]);
+        assert_eq!(maps[0], maps[2]);
+    }
+    #[test]
+    #[serial]
     fn test_code_extract_internal_success() {
         // Reset global state
         *GLOBAL_STYLE_SHEET.lock().unwrap() = StyleSheet::default();
@@ -1951,7 +2048,7 @@ mod tests {
 
         assert!(result.is_ok());
         let output = result.unwrap();
-        assert!(!output.code().is_empty());
+        assert_ne!(output.code(), "");
         assert!(output.map().is_some());
     }
 
@@ -1975,7 +2072,7 @@ mod tests {
 
         assert!(result.is_ok());
         let output = result.unwrap();
-        assert!(!output.code().is_empty());
+        assert_ne!(output.code(), "");
         assert!(output.map().is_none());
     }
 
@@ -2000,7 +2097,7 @@ mod tests {
 
         assert!(result.is_err());
         if let Err(error) = result {
-            assert!(!error.is_empty());
+            assert_ne!(error, "");
         }
     }
 

@@ -214,6 +214,7 @@ describe('devupUIVitePlugin', () => {
     expect(plugin).toEqual({
       name: 'devup-ui',
       sharedDuringBuild: true,
+      closeBundle: expect.any(Function),
       config: expect.any(Function),
       load: expect.any(Function),
       watchChange: expect.any(Function),
@@ -434,20 +435,17 @@ describe('devupUIVitePlugin', () => {
   })
 
   describe('deterministic file numbering', () => {
-    let listSourceFilesSpy: ReturnType<typeof spyOn>
-    let importFileMapSpy: ReturnType<typeof spyOn>
-    let exportFileMapSpy: ReturnType<typeof spyOn>
+    let collectSpy: ReturnType<typeof spyOn>
+    let seedFileMapSpy: ReturnType<typeof spyOn>
 
     beforeEach(() => {
-      listSourceFilesSpy = spyOn(pluginUtils, 'listSourceFiles')
-      importFileMapSpy = spyOn(wasm, 'importFileMap').mockReturnValue(undefined)
-      exportFileMapSpy = spyOn(wasm, 'exportFileMap').mockReturnValue('{}')
+      collectSpy = spyOn(pluginUtils, 'collectNumberedFiles')
+      seedFileMapSpy = spyOn(wasm, 'seedFileMap').mockReturnValue(undefined)
     })
 
     afterEach(() => {
-      listSourceFilesSpy.mockRestore()
-      importFileMapSpy.mockRestore()
-      exportFileMapSpy.mockRestore()
+      collectSpy.mockRestore()
+      seedFileMapSpy.mockRestore()
     })
 
     function onlyDirs(...dirs: string[]) {
@@ -455,90 +453,58 @@ describe('devupUIVitePlugin', () => {
       existsSyncSpy.mockImplementation((path: string) => wanted.has(path))
     }
 
-    it('numbers files by sorted path, not by transform arrival order', async () => {
-      onlyDirs('src')
-      // returned out of order on purpose: arrival order must not leak through
-      listSourceFilesSpy.mockReturnValue([
-        '/p/src/z.tsx',
-        '/p/src/a.tsx',
-        '/p/src/m.tsx',
-      ])
-
-      await createPlugin({}).configResolved({ root: '/p' })
-
-      expect(importFileMapSpy).toHaveBeenCalledWith({
-        '/p/src/a.tsx': 0,
-        '/p/src/m.tsx': 1,
-        '/p/src/z.tsx': 2,
-      })
-    })
-
-    it('normalizes windows separators to match vite module ids', async () => {
-      onlyDirs('src')
-      listSourceFilesSpy.mockReturnValue(['C:\\p\\src\\a.tsx'])
-
-      await createPlugin({}).configResolved({ root: '/p' })
-
-      expect(importFileMapSpy).toHaveBeenCalledWith({ 'C:/p/src/a.tsx': 0 })
-    })
-
-    // A framework plugin resolves the config once per environment. Re-seeding
-    // drops the numbers already given to files outside src/ and app/, and since
-    // the sheet does not reset with the map, the next such file reuses a live
-    // number and its atoms overwrite the previous owner's.
-    it('leaves an already-populated map alone on a second configResolved', async () => {
-      onlyDirs('src')
-      listSourceFilesSpy.mockReturnValue(['/p/src/a.tsx'])
-      exportFileMapSpy.mockReturnValue(
-        '{"/p/src/a.tsx":0,"/monorepo/packages/ui/X.tsx":1}',
-      )
-
-      await createPlugin({}).configResolved({ root: '/p' })
-
-      expect(importFileMapSpy).not.toHaveBeenCalled()
-    })
-
-    it('scans app/ for App Router projects and dedupes across roots', async () => {
+    it('numbers the files the scan finds, in the order it returns them', async () => {
       onlyDirs('src', 'app')
-      listSourceFilesSpy.mockImplementation((dir: string) =>
-        dir === resolve('/p', 'app')
-          ? ['/p/app/page.tsx', '/p/shared.tsx']
-          : ['/p/src/b.tsx', '/p/shared.tsx'],
-      )
+      collectSpy.mockReturnValue(['/p/app/page.tsx', '/p/src/b.tsx'])
 
-      await createPlugin({}).configResolved({ root: '/p' })
-
-      expect(importFileMapSpy).toHaveBeenCalledWith({
-        '/p/app/page.tsx': 0,
-        '/p/shared.tsx': 1,
-        '/p/src/b.tsx': 2,
+      await createPlugin({ include: ['@acme/ui'] }).configResolved({
+        root: '/p',
       })
+
+      expect(collectSpy).toHaveBeenCalledWith({
+        roots: [resolve('/p', 'src'), resolve('/p', 'app')],
+        include: ['@acme/ui'],
+        cwd: '/p',
+        needles: expect.arrayContaining([
+          '@devup-ui/react',
+          '@stylexjs/stylex',
+        ]),
+      })
+      expect(seedFileMapSpy).toHaveBeenCalledWith([
+        '/p/app/page.tsx',
+        '/p/src/b.tsx',
+      ])
     })
 
-    it.each([
-      ['no conventional source dir exists', () => onlyDirs()],
-      [
-        'the source dir is empty',
-        () => {
-          onlyDirs('src')
-          listSourceFilesSpy.mockReturnValue([])
-        },
-      ],
-    ])('leaves numbering alone when %s', async (_name, setup) => {
-      setup()
+    // A framework plugin resolves the config once per environment. Seeding
+    // keeps the numbers files hold, so a second pass numbers only new files.
+    it('seeds again on a second configResolved', async () => {
+      onlyDirs('src')
+      collectSpy.mockReturnValue(['/p/src/a.tsx'])
+      const plugin = createPlugin({})
+
+      await plugin.configResolved({ root: '/p' })
+      await plugin.configResolved({ root: '/p' })
+
+      expect(seedFileMapSpy).toHaveBeenCalledTimes(2)
+    })
+
+    it('leaves numbering alone when there is nothing to number', async () => {
+      onlyDirs()
+      collectSpy.mockReturnValue([])
       await createPlugin({}).configResolved({ root: '/p' })
-      expect(importFileMapSpy).not.toHaveBeenCalled()
+      expect(seedFileMapSpy).not.toHaveBeenCalled()
     })
 
     it('keeps building when the scan fails', async () => {
       onlyDirs('src')
-      listSourceFilesSpy.mockImplementation(() => {
+      collectSpy.mockImplementation(() => {
         throw new Error('scan boom')
       })
 
       await createPlugin({}).configResolved({ root: '/p' })
 
-      expect(importFileMapSpy).not.toHaveBeenCalled()
+      expect(seedFileMapSpy).not.toHaveBeenCalled()
     })
   })
 
@@ -653,6 +619,21 @@ describe('devupUIVitePlugin', () => {
       )
     })
 
+    it('starts a build from its own options and ends it at closeBundle', async () => {
+      const resetSpy = spyOn(wasm, 'resetBuildState').mockReturnValue(undefined)
+      try {
+        const first = createPlugin({})
+        resetSpy.mockClear()
+        createPlugin({})
+        expect(resetSpy).not.toHaveBeenCalled()
+        first.closeBundle()
+        first.closeBundle()
+        createPlugin({})
+        expect(resetSpy).not.toHaveBeenCalled()
+      } finally {
+        resetSpy.mockRestore()
+      }
+    })
     it('ignores no-write analysis bundles when tracking server css', async () => {
       const plugin = createPlugin({})
       const serverBundle = {

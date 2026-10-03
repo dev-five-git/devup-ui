@@ -784,6 +784,32 @@ export const box = style({ color: 'red' })`
       DevupUI({}, { prefix: 'my-prefix' })
       expect(setPrefixSpy).toHaveBeenCalledWith('my-prefix')
     })
+    it('numbers the files the scan finds, and survives a failing scan', () => {
+      process.env.TURBOPACK = '1'
+      const collectSpy = spyOn(importGraphModule, 'collectNumberedFiles')
+      const seedSpy = spyOn(wasm, 'seedFileMap').mockReturnValue(undefined)
+      try {
+        collectSpy.mockImplementation((options: any) => {
+          expect(options.roots).toEqual(
+            ['src', 'app', 'pages'].map((dir) => resolve(dir)),
+          )
+          expect(options.toId(resolve('src', 'a.tsx'))).toBe('src/a.tsx')
+          return ['src/a.tsx']
+        })
+        DevupUI({}, { include: ['@acme/ui'] })
+        expect(seedSpy).toHaveBeenCalledWith(['src/a.tsx'])
+        expect(collectSpy.mock.calls[0][0]).toMatchObject({
+          include: ['@acme/ui'],
+        })
+        collectSpy.mockImplementation(() => {
+          throw new Error('scan boom')
+        })
+        DevupUI({}, {})
+      } finally {
+        collectSpy.mockRestore()
+        seedSpy.mockRestore()
+      }
+    })
     it('should import previous session state on restart', () => {
       process.env.TURBOPACK = '1'
       existsSyncSpy
