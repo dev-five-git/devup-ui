@@ -1,0 +1,7 @@
+{
+  "changes": {
+    "packages/vite-plugin/package.json": "Patch"
+  },
+  "note": "Vinext/RSC production builds keep the CSS a server page needs. The plugin no longer removes the CSS files the client already emits from the server bundle's importedCss, which @vitejs/plugin-rsc also reads as the server pages' CSS dependencies (so a page that rendered a shared Devup UI component lost its stylesheet unless a client page sharing it was prefetched first). The duplicate emit (FILE_NAME_CONFLICT) is now avoided without touching the dependency metadata. DevupUI() now returns two plugins. No new build errors",
+  "date": "2026-10-03T00:00:00.000Z"
+}
