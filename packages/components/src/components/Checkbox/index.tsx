@@ -33,7 +33,8 @@ export const Checkbox = forwardRef<HTMLInputElement, CheckboxProps>(
     },
     ref,
   ) {
-    const generateId = useId()
+    const generatedId = useId()
+    const generateId = props.id ?? generatedId
     const [innerChecked, setInnerChecked] = useState(defaultChecked)
     const finalChecked = checked ?? innerChecked
 
