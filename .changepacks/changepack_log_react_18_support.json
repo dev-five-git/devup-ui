@@ -1,0 +1,8 @@
+{
+  "changes": {
+    "packages/react/package.json": "Patch",
+    "packages/components/package.json": "Patch"
+  },
+  "note": "@devup-ui/react and @devup-ui/components take React as a peer of ^18 || ^19 instead of `*` and no longer depend on React 19 themselves, so a React 18 app no longer gets a second React. Select and Stepper read their context with useContext instead of React 19's use() and provide it with Context.Provider instead of React 19's <Context value> (which crashes React 18), and Select repositions its container from an effect instead of a callback ref returning cleanup, which React 18 ignores",
+  "date": "2026-10-01T00:00:00.000Z"
+}
