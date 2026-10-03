@@ -44,7 +44,7 @@ export interface DevupComponentProps<
   T extends React.ElementType,
 > extends DevupPropsWithTheme {
   as?: T
-  styleVars?: Record<string, string | undefined>
+  styleVars?: Record<string, string | number | undefined>
 }
 
 export type DevupComponentMergedProps<T extends React.ElementType> = Merge<

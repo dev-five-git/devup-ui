@@ -1,0 +1,24 @@
+{
+  "compilerOptions": {
+    "strict": true,
+    "target": "ESNext",
+    "module": "ESNext",
+    "moduleResolution": "Bundler",
+    "jsx": "react-jsx",
+    "noEmit": true,
+    "skipLibCheck": true,
+    "types": ["bun"],
+    "paths": {
+      "@devup-ui/react": ["../src/index.ts"],
+      "@devup-ui/react/*": ["../src/*"]
+    }
+  },
+  "files": [
+    "../src/compat/css-prop.d.ts",
+    "../src/compat/emotion.d.ts",
+    "../src/compat/styled-components.d.ts",
+    "../src/compat/vanilla-extract.d.ts",
+    "../src/compat/stylex.d.ts"
+  ],
+  "include": ["*.ts", "*.tsx"]
+}

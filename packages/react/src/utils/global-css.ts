@@ -9,6 +9,7 @@ import type {
   MediaShorthand,
   SimpleSelector,
 } from '../types/props/selector'
+import type { StyleTemplateValue } from './css'
 
 type GlobalCssKeys<T extends string> =
   | `*${T}`
@@ -87,7 +88,10 @@ export function globalCss(
   >,
 ): void
 
-export function globalCss(strings?: TemplateStringsArray): void
+export function globalCss(
+  strings?: TemplateStringsArray,
+  ...values: StyleTemplateValue[]
+): void
 
 export function globalCss(): void
 
@@ -99,6 +103,7 @@ export function globalCss(
         string,
         DevupCommonProps & DevupSelectorProps & DevupThemeSelectorProps
       >,
+  ..._values: StyleTemplateValue[]
 ): void {
   throw new Error('Cannot run on the runtime')
 }

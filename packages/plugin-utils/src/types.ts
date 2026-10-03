@@ -57,6 +57,9 @@ export interface DevupTheme {
   breakpoints?: number[]
   typography?: ThemeTypography
   length?: ThemeLength
+  /** Shadow tokens, as the docs and devup.json schema spell them */
+  shadow?: ThemeShadows
+  /** The engine also reads this spelling; prefer shadow */
   shadows?: ThemeShadows
 }
 

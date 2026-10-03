@@ -18,24 +18,54 @@ type Interpolation<P, T extends React.ElementType | React.ComponentType> =
   | null
   | undefined
 
+type StyledProps<P, T extends React.ElementType | React.ComponentType> = P &
+  React.ComponentProps<T>
+
+/** What `.withConfig()` takes: the props to forward, and names the build ignores */
+export interface StyledConfig {
+  shouldForwardProp?: (
+    prop: string,
+    defaultValidatorFn: (prop: string) => boolean,
+  ) => boolean
+  displayName?: string
+  componentId?: string
+}
+
+/** A component the build generates from `styled`, which can render another tag with the same styles */
+export interface StyledComponent<P> {
+  (props: P): React.ReactElement
+  withComponent<U extends React.ElementType | React.ComponentType>(
+    tag: U,
+  ): StyledComponent<React.ComponentProps<U>>
+}
+
+/** What `styled.div`, `styled('div')` and what `.attrs()` and `.withConfig()` give: rules or CSS text come next */
+export interface StyledTemplate<
+  T extends React.ElementType | React.ComponentType,
+  B = unknown,
+> {
+  <P = Record<string, unknown>>(
+    strings: TemplateStringsArray | DevupPropsWithTheme,
+    ...values: Interpolation<P & B, T>[]
+  ): StyledComponent<P & B & StyledProps<unknown, T>>
+  attrs(
+    attrs:
+      | Partial<StyledProps<B, T>>
+      | ((props: InterpolationProps<B, T>) => Partial<StyledProps<B, T>>),
+  ): StyledTemplate<T, B>
+  withConfig(config: StyledConfig): StyledTemplate<T, B>
+}
+
 interface StyledCreator {
   <T extends React.ElementType | React.ComponentType>(
     tag: T,
     styles: DevupPropsWithTheme,
-  ): (props: React.ComponentProps<T>) => React.ReactElement
-  <T extends React.ElementType | React.ComponentType>(
-    tag: T,
-  ): (
-    strings: TemplateStringsArray | DevupPropsWithTheme,
-    ...values: Interpolation<unknown, T>[][]
-  ) => (props: React.ComponentProps<T>) => React.ReactElement
+  ): StyledComponent<React.ComponentProps<T>>
+  <T extends React.ElementType | React.ComponentType>(tag: T): StyledTemplate<T>
 }
 
 type Styled = StyledCreator & {
-  [T in keyof React.JSX.IntrinsicElements]: <P = Record<string, unknown>>(
-    strings: TemplateStringsArray | DevupPropsWithTheme,
-    ...values: Interpolation<P, T>[]
-  ) => (props: P & React.ComponentProps<T>) => React.ReactElement
+  [T in keyof React.JSX.IntrinsicElements]: StyledTemplate<T>
 }
 
 export const styled: Styled = new Proxy(Function.prototype, {
