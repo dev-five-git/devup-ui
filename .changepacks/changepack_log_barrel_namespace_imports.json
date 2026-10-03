@@ -1,0 +1,7 @@
+{
+  "changes": {
+    "bindings/devup-ui-wasm/package.json": "Patch"
+  },
+  "note": "A project module re-exporting Devup UI (export { Box, css } from '@devup-ui/react', export * from '@devup-ui/react', export { styled as s }, export * as Devup, a default export of an import, chains of barrels and the compat entry) now works: a file importing Box or css from it compiles exactly as if it imported from the package, following the barrel through the resolver (relative paths, tsconfig paths, package exports), and hasDevupUI sees such a file. Members read from a namespace or default import of the package (Devup['css'], const { css } = Devup, Devup.css as a value) compile where the build can follow them, `Devup.x` for a name the package compiles being read like the named import. New build errors, located at the use: what a barrel re-exports but the build cannot read (an unresolvable `export *` or module, a namespace of modules re-exporting the package) is an error where its name is used instead of a runtime crash, and a namespace member read by a key the build cannot know (Devup[key]), written, or destructured in a form it cannot follow (a rest, a computed key, a default value, a nested pattern, an exported declaration, or members mixed with ones that stay at runtime) is an error that names the members to read. A namespace passed on whole (Object.keys(Devup), spyOn(Devup, 'css'), export default Devup) is left as it is",
+  "date": "2026-10-01T00:00:00.000Z"
+}

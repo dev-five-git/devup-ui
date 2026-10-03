@@ -1184,6 +1184,26 @@ describe('devupUIVitePlugin', () => {
     )
   })
 
+  it('extracts a file that reaches Devup UI only through a project module', async () => {
+    const source = `import { Box } from './ui'
+export const a = <Box bg="red" />`
+    codeExtractSpy.mockReturnValue(
+      createCodeExtractResult({
+        code: '<div className="a" />',
+        css: '',
+        cssFile: undefined,
+        map: undefined,
+        updatedBaseStyle: false,
+      }),
+    )
+    const plugin = createPlugin({})
+
+    expect(await plugin.transform(source, 'src/App.tsx')).toEqual({
+      code: '<div className="a" />',
+    })
+    expect(codeExtractSpy.mock.calls.at(-1)?.[1]).toBe(source)
+  })
+
   it('sholud add relative path to css file', async () => {
     getCssSpy.mockReturnValue('css code')
     codeExtractSpy.mockReturnValue(

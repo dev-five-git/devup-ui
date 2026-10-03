@@ -1,4 +1,5 @@
 mod as_visit;
+mod barrel;
 mod build_time_values;
 mod component;
 mod composition;
@@ -285,19 +286,45 @@ fn extract_with_source_map(
     source_map: bool,
     resolver: Option<&ModuleResolver>,
 ) -> Result<ExtractOutput, Box<dyn Error>> {
-    extract_source(filename, code, None, option, source_map, resolver)
+    extract_source(filename, code, None, false, option, source_map, resolver)
 }
 
 /// `evaluated` is the source `code` was computed from, with the layers of
-/// edits, last made first, that map `code` back to it
+/// edits, last made first, that map `code` back to it; `values_run` tells that
+/// the values only running code gives are in `code` already
 fn extract_source(
     filename: &str,
     code: &str,
     evaluated: Option<(&str, &[&[import_alias_visit::Edit]])>,
+    values_run: bool,
     option: ExtractOption,
     source_map: bool,
     resolver: Option<&ModuleResolver>,
 ) -> Result<ExtractOutput, Box<dyn Error>> {
+    if evaluated.is_none() {
+        match barrel::rewrite(code, filename, &option.package, resolver) {
+            barrel::Barreled::Unchanged => {}
+            barrel::Barreled::Failed(errors) => {
+                return Err(located_errors(filename, code, &[], errors).into());
+            }
+            barrel::Barreled::Rewritten(barreled) => {
+                let mut output = extract_source(
+                    filename,
+                    &barreled.code,
+                    Some((code, &[barreled.edits.as_slice()])),
+                    false,
+                    option,
+                    source_map,
+                    resolver,
+                )?;
+                let mut files: std::collections::BTreeSet<String> =
+                    output.dependencies.into_iter().collect();
+                files.extend(barreled.dependencies);
+                output.dependencies = files.into_iter().collect();
+                return Ok(output);
+            }
+        }
+    }
     // Step 1: Transform import aliases
     // e.g., `import styled from '@emotion/styled'` → `import { styled } from '@devup-ui/react'`
     // e.g., `import { style } from '@vanilla-extract/css'` → `import { style } from '@devup-ui/react'`
@@ -465,7 +492,7 @@ fn extract_source(
     // Run the code a value computes, or tell rules the module computes from a
     // class it composes
     if (!visitor.errors.is_empty() || visitor.composes_unknown)
-        && evaluated.is_none()
+        && !values_run
         && !utils::is_vanilla_extract_file(filename)
         && let Some((computed, value_edits, read)) = build_time_values::evaluate(
             &transformed_code,
@@ -475,10 +502,17 @@ fn extract_source(
             &inlined.unknown,
         )
     {
+        let (source, earlier_edits) = evaluated.unwrap_or((code, &[]));
+        let layers: Vec<&[import_alias_visit::Edit]> =
+            [value_edits.as_slice(), alias_edits.as_slice()]
+                .into_iter()
+                .chain(earlier_edits.iter().copied())
+                .collect();
         let mut output = extract_source(
             filename,
             &computed,
-            Some((code, &[value_edits.as_slice(), alias_edits.as_slice()])),
+            Some((source, &layers)),
+            true,
             option,
             source_map,
             resolver,
@@ -749,6 +783,23 @@ pub fn has_devup_ui(filename: &str, code: &str, package: &str) -> bool {
     }
 
     false
+}
+
+/// [`has_devup_ui`], also true for a file importing the package through a
+/// project module that re-exports it, or reading members of a namespace import
+#[must_use]
+pub fn has_devup_ui_through(
+    filename: &str,
+    code: &str,
+    package: &str,
+    resolver: &ModuleResolver,
+) -> bool {
+    SourceType::from_path(filename).is_ok()
+        && (has_devup_ui(filename, code, package)
+            || !matches!(
+                barrel::rewrite(code, filename, package, Some(resolver)),
+                barrel::Barreled::Unchanged
+            ))
 }
 
 #[cfg(test)]

@@ -5,7 +5,7 @@ use css::file_map::{
 use extractor::extract_style::extract_style_value::ExtractStyleValue;
 use extractor::{
     ExtractOption, ImportAlias, ModuleResolver, ResolvedModule, extract, extract_with_modules,
-    extract_without_source_map, has_devup_ui,
+    extract_without_source_map, has_devup_ui, has_devup_ui_through,
 };
 use rustc_hash::FxHashSet;
 use sheet::StyleSheet;
@@ -490,6 +490,29 @@ fn call_module_resolver(
     })
 }
 
+/// The resolver set by `setModuleResolver`, if any
+#[cfg(not(tarpaulin_include))]
+fn resolver_from_js() -> Option<Box<ModuleResolver>> {
+    let resolver = MODULE_RESOLVER.with_borrow(Clone::clone)?;
+    Some(Box::new(move |specifier: &str, importer: &str| {
+        call_module_resolver(&resolver, specifier, importer)
+    }))
+}
+
+/// [`has_devup_ui`], also true for a file reaching the package through a
+/// project module when there is a resolver
+fn has_devup_ui_in(
+    filename: &str,
+    code: &str,
+    package: &str,
+    resolver: Option<&ModuleResolver>,
+) -> bool {
+    match resolver {
+        Some(resolver) => has_devup_ui_through(filename, code, package, resolver),
+        None => has_devup_ui(filename, code, package),
+    }
+}
+
 /// Extract with the resolver set by `setModuleResolver`, if any
 #[cfg(not(tarpaulin_include))]
 #[allow(clippy::too_many_arguments)]
@@ -671,7 +694,7 @@ pub fn get_theme_interface(
 #[cfg(not(tarpaulin_include))]
 #[must_use]
 pub fn has_devup_ui_wasm(filename: &str, code: &str, package: &str) -> bool {
-    has_devup_ui(filename, code, package)
+    has_devup_ui_in(filename, code, package, resolver_from_js().as_deref())
 }
 
 #[cfg(test)]
@@ -1604,6 +1627,29 @@ mod tests {
             "test.invalid",
             "import { Box } from '@devup-ui/react';",
             "@devup-ui/react"
+        ));
+    }
+
+    #[test]
+    fn has_devup_ui_follows_a_barrel_only_with_a_resolver() {
+        let resolver = |specifier: &str, _: &str| {
+            (specifier == "./ui").then(|| ResolvedModule {
+                path: "/src/ui.ts".to_string(),
+                code: "export { Box } from '@devup-ui/react'".to_string(),
+            })
+        };
+        let code = "import { Box } from './ui';";
+        assert!(has_devup_ui_in(
+            "/src/app.tsx",
+            code,
+            "@devup-ui/react",
+            Some(&resolver)
+        ));
+        assert!(!has_devup_ui_in(
+            "/src/app.tsx",
+            code,
+            "@devup-ui/react",
+            None
         ));
     }
 
