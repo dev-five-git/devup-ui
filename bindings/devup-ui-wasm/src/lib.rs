@@ -5,7 +5,7 @@ use css::file_map::{
 use extractor::extract_style::extract_style_value::ExtractStyleValue;
 use extractor::{
     ExtractOption, ImportAlias, ModuleResolver, ResolvedModule, extract, extract_with_modules,
-    extract_without_source_map, has_devup_ui, has_devup_ui_through,
+    extract_without_source_map, has_devup_ui_with,
 };
 use rustc_hash::FxHashSet;
 use sheet::StyleSheet;
@@ -499,20 +499,6 @@ fn resolver_from_js() -> Option<Box<ModuleResolver>> {
     }))
 }
 
-/// [`has_devup_ui`], also true for a file reaching the package through a
-/// project module when there is a resolver
-fn has_devup_ui_in(
-    filename: &str,
-    code: &str,
-    package: &str,
-    resolver: Option<&ModuleResolver>,
-) -> bool {
-    match resolver {
-        Some(resolver) => has_devup_ui_through(filename, code, package, resolver),
-        None => has_devup_ui(filename, code, package),
-    }
-}
-
 /// Extract with the resolver set by `setModuleResolver`, if any
 #[cfg(not(tarpaulin_include))]
 #[allow(clippy::too_many_arguments)]
@@ -693,8 +679,20 @@ pub fn get_theme_interface(
 #[wasm_bindgen(js_name = "hasDevupUI")]
 #[cfg(not(tarpaulin_include))]
 #[must_use]
-pub fn has_devup_ui_wasm(filename: &str, code: &str, package: &str) -> bool {
-    has_devup_ui_in(filename, code, package, resolver_from_js().as_deref())
+pub fn has_devup_ui_wasm(
+    filename: &str,
+    code: &str,
+    package: &str,
+    import_aliases: JsValue,
+) -> bool {
+    let aliases = import_aliases_from_js(import_aliases).unwrap_or_default();
+    has_devup_ui_with(
+        filename,
+        code,
+        package,
+        &aliases,
+        resolver_from_js().as_deref(),
+    )
 }
 
 #[cfg(test)]
@@ -1606,53 +1604,40 @@ mod tests {
     }
 
     #[test]
-    #[serial]
-    fn test_has_devup_ui_wasm_function() {
-        // Test positive case
-        assert!(has_devup_ui_wasm(
-            "test.tsx",
-            "import { Box } from '@devup-ui/react';",
-            "@devup-ui/react"
-        ));
-
-        // Test negative case
-        assert!(!has_devup_ui_wasm(
-            "test.tsx",
-            "const x = 1;",
-            "@devup-ui/react"
-        ));
-
-        // Test invalid extension
-        assert!(!has_devup_ui_wasm(
-            "test.invalid",
-            "import { Box } from '@devup-ui/react';",
-            "@devup-ui/react"
-        ));
-    }
-
-    #[test]
-    fn has_devup_ui_follows_a_barrel_only_with_a_resolver() {
+    fn has_devup_ui_covers_what_extraction_changes() {
         let resolver = |specifier: &str, _: &str| {
             (specifier == "./ui").then(|| ResolvedModule {
                 path: "/src/ui.ts".to_string(),
                 code: "export { Box } from '@devup-ui/react'".to_string(),
             })
         };
-        let code = "import { Box } from './ui';";
-        assert!(has_devup_ui_in(
-            "/src/app.tsx",
-            code,
-            "@devup-ui/react",
+        let aliases = HashMap::from([("@emotion/styled".to_string(), ImportAlias::NamedToNamed)]);
+        let check = |filename: &str, code: &str, resolver: Option<&ModuleResolver>| {
+            has_devup_ui_with(filename, code, "@devup-ui/react", &aliases, resolver)
+        };
+        assert!(check(
+            "a.tsx",
+            "import { Box } from '@devup-ui/react';",
+            None
+        ));
+        assert!(!check("a.tsx", "const x = 1;", None));
+        assert!(!check(
+            "a.invalid",
+            "import { Box } from '@devup-ui/react';",
+            None
+        ));
+        assert!(check(
+            "a.tsx",
+            "import { Box } from './ui';",
             Some(&resolver)
         ));
-        assert!(!has_devup_ui_in(
-            "/src/app.tsx",
-            code,
-            "@devup-ui/react",
+        assert!(!check("a.tsx", "import { Box } from './ui';", None));
+        assert!(check(
+            "a.tsx",
+            "import styled from '@emotion/styled';",
             None
         ));
     }
-
     #[test]
     #[serial]
     fn test_output_single_css_mode() {

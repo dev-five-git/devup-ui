@@ -785,23 +785,37 @@ pub fn has_devup_ui(filename: &str, code: &str, package: &str) -> bool {
     false
 }
 
-/// [`has_devup_ui`], also true for a file importing the package through a
-/// project module that re-exports it, or reading members of a namespace import
+/// Whether extraction does something to a file.
+///
+/// It imports the package (also through a project module that re-exports it,
+/// or as a namespace), imports a package `import_aliases` redirects, or gives
+/// an element a `css` prop that the aliases compile.
 #[must_use]
-pub fn has_devup_ui_through(
+pub fn has_devup_ui_with(
     filename: &str,
     code: &str,
     package: &str,
-    resolver: &ModuleResolver,
+    import_aliases: &HashMap<String, ImportAlias>,
+    resolver: Option<&ModuleResolver>,
 ) -> bool {
     SourceType::from_path(filename).is_ok()
         && (has_devup_ui(filename, code, package)
-            || !matches!(
-                barrel::rewrite(code, filename, package, Some(resolver)),
-                barrel::Barreled::Unchanged
-            ))
+            || resolver.is_some_and(|resolver| {
+                !matches!(
+                    barrel::rewrite(code, filename, package, Some(resolver)),
+                    barrel::Barreled::Unchanged
+                )
+            })
+            || {
+                let aliased = import_alias_visit::transform_import_aliases_with_edits(
+                    code,
+                    filename,
+                    package,
+                    import_aliases,
+                );
+                !aliased.edits.is_empty() || aliased.css_prop != css_prop::CssProp::Off
+            })
 }
-
 #[cfg(test)]
 #[allow(clippy::expect_used, clippy::unwrap_used)]
 mod tests {
@@ -18519,24 +18533,8 @@ export const J = other(Base).attrs({ id: 'j' })({ margin: 4 });",
 
         for (code, name) in [
             (
-                "import { css } from '@devup-ui/react';\nexport const myCss = css;",
-                "css",
-            ),
-            (
-                "import { Box } from '@devup-ui/react';\nexport const C = Box;\nexport const d = <C p={1} />;",
-                "Box",
-            ),
-            (
                 "import { Box } from '@devup-ui/react';\nexport const list = [Box].map((B) => <B p={1} />);",
                 "Box",
-            ),
-            (
-                "import { css } from '@devup-ui/react';\nexport function f() { const inner = css; return inner({ color: 'red' }); }",
-                "css",
-            ),
-            (
-                "import { css } from '@devup-ui/react';\nconst myCss = css;\nexport const v = myCss;",
-                "myCss",
             ),
             (
                 "import { css } from '@devup-ui/react';\nlet myCss = css;\nmyCss = null;",

@@ -2,7 +2,11 @@ import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { dirname, join } from 'node:path'
 
-import { createModuleResolver } from '@devup-ui/plugin-utils'
+import {
+  createModuleResolver,
+  mergeImportAliases,
+  readJsxImportSource,
+} from '@devup-ui/plugin-utils'
 import {
   codeExtract,
   hasDevupUI,
@@ -28,6 +32,12 @@ const files: Record<string, string> = {
   'src/package.tsx': `import { Flex } from '@acme/ui'\nexport const a = <Flex gap={2} />\n`,
   'src/namespace.tsx': `import * as UI from './ui'\nconst { css } = UI\nexport const a = <UI.Box bg="red" className={css({ m: 1 })} />\n`,
   'src/unfollowable.tsx': `import { Grid, Missing } from './ui/broken'\nexport const a = <Missing />\n`,
+  'src/pragma.tsx': `/** @jsxImportSource @emotion/react */\nexport const a = <div css={{ color: 'red' }} />\n`,
+  'emotion/tsconfig.json': JSON.stringify({
+    compilerOptions: { jsxImportSource: '@emotion/react' },
+  }),
+  'emotion/runtime.tsx': `export const a = <div css={{ color: 'blue' }} />\n`,
+  'src/styled.tsx': `import styled from '@emotion/styled'\nexport const A = styled.div({ color: 'green' })\n`,
   'src/plain.tsx': `import { helper } from './ui/more'\nexport const a = helper\n`,
 }
 
@@ -40,7 +50,7 @@ function read(name: string) {
   }
 }
 
-function extract(name: string) {
+function extract(name: string, aliases = {}) {
   const { filename, code } = read(name)
   return codeExtract(
     filename,
@@ -50,7 +60,7 @@ function extract(name: string) {
     true,
     false,
     false,
-    {},
+    aliases,
   )
 }
 
@@ -80,7 +90,7 @@ describe('Devup UI re-exported by a project module', () => {
     'is found in %s.tsx by the gate and compiled',
     (name) => {
       const { filename, code } = read(`src/${name}.tsx`)
-      expect(hasDevupUI(filename, code, '@devup-ui/react')).toBe(true)
+      expect(hasDevupUI(filename, code, '@devup-ui/react', {})).toBe(true)
       const output = extract(`src/${name}.tsx`)
       expect(output.code).toContain('<div className=')
       expect(output.code).not.toContain('<Box')
@@ -90,14 +100,42 @@ describe('Devup UI re-exported by a project module', () => {
 
   it('leaves a file that never reaches Devup UI to the gate', () => {
     const { filename, code } = read('src/plain.tsx')
-    expect(hasDevupUI(filename, code, '@devup-ui/react')).toBe(false)
+    expect(hasDevupUI(filename, code, '@devup-ui/react', {})).toBe(false)
   })
 
   it('reports what it cannot follow where it is used', () => {
     const { filename, code } = read('src/unfollowable.tsx')
-    expect(hasDevupUI(filename, code, '@devup-ui/react')).toBe(true)
+    expect(hasDevupUI(filename, code, '@devup-ui/react', {})).toBe(true)
     expect(() => extract('src/unfollowable.tsx')).toThrow(
       /unfollowable\.tsx:2:19: `Missing` cannot use `\.\/ui\/broken` at build time/,
+    )
+  })
+})
+
+describe('files only the Emotion css prop or an aliased import changes', () => {
+  const aliases = mergeImportAliases(undefined, undefined)
+
+  it.each(['pragma', 'styled'])(
+    'is found in %s.tsx by the gate and compiled',
+    (name) => {
+      const { filename, code } = read(`src/${name}.tsx`)
+      expect(hasDevupUI(filename, code, '@devup-ui/react', aliases)).toBe(true)
+      expect(hasDevupUI(filename, code, '@devup-ui/react', {})).toBe(false)
+      expect(extract(`src/${name}.tsx`, aliases).code).not.toContain('css={{')
+    },
+  )
+
+  it('is found when the tsconfig builds JSX with Emotion', () => {
+    const tsconfigAliases = mergeImportAliases(
+      undefined,
+      readJsxImportSource(join(root, 'emotion')),
+    )
+    const { filename, code } = read('emotion/runtime.tsx')
+    expect(hasDevupUI(filename, code, '@devup-ui/react', tsconfigAliases)).toBe(
+      true,
+    )
+    expect(extract('emotion/runtime.tsx', tsconfigAliases).code).not.toContain(
+      'css={{',
     )
   })
 })

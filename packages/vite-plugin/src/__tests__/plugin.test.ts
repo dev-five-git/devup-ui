@@ -1204,6 +1204,26 @@ export const a = <Box bg="red" />`
     expect(codeExtractSpy.mock.calls.at(-1)?.[1]).toBe(source)
   })
 
+  it('extracts a file that only the Emotion css prop compiles (pragma, no Devup UI import)', async () => {
+    const source = `/** @jsxImportSource @emotion/react */
+export const a = <div css={{ color: 'red' }} />`
+    codeExtractSpy.mockReturnValue(
+      createCodeExtractResult({
+        code: '<div className="a" />',
+        css: '',
+        cssFile: undefined,
+        map: undefined,
+        updatedBaseStyle: false,
+      }),
+    )
+    const plugin = createPlugin({})
+
+    expect(await plugin.transform(source, 'src/App.tsx')).toEqual({
+      code: '<div className="a" />',
+    })
+    expect(codeExtractSpy.mock.calls.at(-1)?.[1]).toBe(source)
+  })
+
   it('sholud add relative path to css file', async () => {
     getCssSpy.mockReturnValue('css code')
     codeExtractSpy.mockReturnValue(

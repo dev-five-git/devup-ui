@@ -90,7 +90,7 @@ async function loadSourceFile(filePath: string) {
         : 'js'
   const contents = await Bun.file(filePath).text()
 
-  if (hasDevupUI(filePath, contents, libPackage)) {
+  if (hasDevupUI(filePath, contents, libPackage, importAliases)) {
     const code = codeExtract(
       filePath,
       contents,

@@ -1,3 +1,4 @@
+use std::collections::HashMap;
 use std::fs;
 use std::path::{Component, Path, PathBuf};
 
@@ -7,7 +8,7 @@ use serial_test::serial;
 
 use crate::{
     ExtractOption, ExtractOutput, ModuleResolver, ResolvedModule, extract, extract_with_modules,
-    has_devup_ui_through,
+    has_devup_ui_with,
 };
 
 /// A project of real files on disk, removed when dropped
@@ -771,41 +772,28 @@ fn has_devup_ui_follows_barrels() {
     let resolver = project.resolver();
     let resolver: &ModuleResolver = &resolver;
     let file = project.path("app.tsx");
-    assert!(has_devup_ui_through(
-        &file,
-        "import { Box } from './ui'",
-        "@devup-ui/react",
-        resolver
-    ));
-    assert!(has_devup_ui_through(
+    let gate = |file: &str, code: &str, resolver: &ModuleResolver| {
+        has_devup_ui_with(
+            file,
+            code,
+            "@devup-ui/react",
+            &HashMap::new(),
+            Some(resolver),
+        )
+    };
+    assert!(gate(&file, "import { Box } from './ui'", resolver));
+    assert!(gate(
         &file,
         "import { Box } from '@devup-ui/react'",
-        "@devup-ui/react",
         resolver
     ));
-    assert!(!has_devup_ui_through(
-        &file,
-        "import { x } from './plain'",
-        "@devup-ui/react",
-        resolver
-    ));
-    assert!(!has_devup_ui_through(
-        &file,
-        "const a = 1",
-        "@devup-ui/react",
-        resolver
-    ));
-    assert!(!has_devup_ui_through(
-        "app.invalid",
-        "import { Box } from './ui'",
-        "@devup-ui/react",
-        resolver
-    ));
-    assert!(has_devup_ui_through(
+    assert!(!gate(&file, "import { x } from './plain'", resolver));
+    assert!(!gate(&file, "const a = 1", resolver));
+    assert!(!gate("app.invalid", "import { Box } from './ui'", resolver));
+    assert!(gate(
         &file,
         "import { Foo } from './unresolved'\nimport * as Devup from '@devup-ui/react'\nDevup.css",
-        "@devup-ui/react",
-        resolver,
+        resolver
     ));
 }
 
@@ -871,4 +859,193 @@ fn namespace_styled_in_a_stylesheet_is_compiled_by_the_visitor() {
     .unwrap();
     assert!(!output.code.contains("Devup.styled"), "{}", output.code);
     assert_ne!(output.styles.len(), 0);
+}
+
+#[test]
+fn gate_sees_files_only_extraction_of_aliases_changes() {
+    let aliases = HashMap::from([
+        (
+            "@emotion/react".to_string(),
+            crate::ImportAlias::NamedToNamed,
+        ),
+        (
+            "@emotion/styled".to_string(),
+            crate::ImportAlias::DefaultToNamed("styled".to_string()),
+        ),
+    ]);
+    let gate = |file: &str, code: &str, aliases: &HashMap<String, crate::ImportAlias>| {
+        has_devup_ui_with(file, code, "@devup-ui/react", aliases, None)
+    };
+    assert!(gate(
+        "a.tsx",
+        "import styled from '@emotion/styled'\nexport const A = styled.div({})",
+        &aliases
+    ));
+    assert!(gate(
+        "a.tsx",
+        "/** @jsxImportSource @emotion/react */\nexport const a = <div css={{ color: 'red' }} />",
+        &aliases
+    ));
+    assert!(gate(
+        "a.tsx",
+        "import { css } from '@emotion/react'\nexport const a = <div css={css({})} />",
+        &aliases
+    ));
+    assert!(!gate(
+        "a.tsx",
+        "export const a = <div className=\"x\" />",
+        &aliases
+    ));
+    assert!(!gate(
+        "a.tsx",
+        "import styled from '@emotion/styled'",
+        &HashMap::new()
+    ));
+    let jsx_runtime = HashMap::from([
+        (
+            "@emotion/react".to_string(),
+            crate::ImportAlias::NamedToNamed,
+        ),
+        (
+            "@emotion/react/jsx-runtime".to_string(),
+            crate::ImportAlias::NamedToNamed,
+        ),
+    ]);
+    assert!(gate(
+        "a.tsx",
+        "export const a = <div css={{ color: 'red' }} />",
+        &jsx_runtime
+    ));
+}
+
+#[test]
+#[serial]
+fn barrel_aliases_of_package_exports_are_followed_and_compile_themselves() {
+    let project = Project::new(
+        "alias-barrel",
+        &[
+            (
+                "ui.tsx",
+                "import { Box, css, Text } from '@devup-ui/react'\nimport * as Devup from '@devup-ui/react'\nexport const B = Box\nconst c = css\nexport { c as cc, Text }\nexport const D = Devup\nexport const C = Devup.css\nexport const helper = 1, F = Text\n",
+            ),
+            (
+                "app.tsx",
+                "import { B, cc, Text, D, helper } from './ui'\nexport const a = <B bg=\"red\"><Text color=\"blue\" /></B>\nexport const b = cc({ color: 'green' })\nexport const c = <D.Flex gap={2} />\nexport const d = helper\n",
+            ),
+            (
+                "member.tsx",
+                "import { C } from './ui'\nexport const a = C({ color: 'red' })\n",
+            ),
+        ],
+    );
+    let code = project.code("app.tsx");
+    assert!(code.contains("<div className="), "{code}");
+    assert!(code.contains("helper"), "{code}");
+    assert!(!code.contains("cc("), "{code}");
+    assert!(
+        project.code("member.tsx").contains("\"a"),
+        "{}",
+        project.code("member.tsx")
+    );
+    let barrel = project.code("ui.tsx");
+    assert!(
+        barrel.contains("export { css as C } from \"@devup-ui/react\""),
+        "{barrel}"
+    );
+    assert!(barrel.contains("export { helper };"), "{barrel}");
+}
+
+#[test]
+#[serial]
+fn barrel_module_exports_what_it_aliases_as_re_exports() {
+    let project = Project::new(
+        "alias-barrel-compile",
+        &[(
+            "ui.tsx",
+            "import { Box, css, Text } from '@devup-ui/react'\nimport * as Devup from '@devup-ui/react'\nexport const B = Box\nconst c = css\nexport { c as cc, Text, type Props }\nexport default css\nexport const D = Devup\nexport const kept = 1\nexport type Props = {}\n",
+        )],
+    );
+    let code = project.code("ui.tsx");
+    for exported in [
+        "export { Box as B } from \"@devup-ui/react\"",
+        "export { css as cc } from \"@devup-ui/react\"",
+        "export { Text } from \"@devup-ui/react\"",
+        "export { css as default } from \"@devup-ui/react\"",
+        "export * as D from \"@devup-ui/react\"",
+        "export { type Props }",
+        "export const kept = 1",
+    ] {
+        assert!(code.contains(exported), "{exported}\n{code}");
+    }
+}
+
+#[test]
+#[serial]
+fn namespace_aliases_read_members() {
+    let code = namespace_code(&format!(
+        "{NS}const D = Devup\nexport const a = <D.Box bg=\"red\" />\nexport const b = D.css({{ color: 'blue' }})\nlet L = Devup\nexport const c = L\n"
+    ));
+    assert!(code.contains("<div className="), "{code}");
+    assert!(!code.contains("css("), "{code}");
+    assert!(code.contains("export const c = L"), "{code}");
+}
+
+#[test]
+#[serial]
+fn aliases_in_functions_read_the_package_where_used() {
+    let code = namespace_code(
+        "import { css, Box } from '@devup-ui/react'\nconst top = css\nexport function f() {\n  const inner = css\n  const again = inner\n  const B = Box\n  const chained = top\n  return [inner({ color: 'red' }), again({ color: 'blue' }), chained({ color: 'green' }), <B bg=\"red\" />]\n}\nexport const g = (css) => { const x = css; return x }\n",
+    );
+    assert!(!code.contains("inner"), "{code}");
+    assert!(!code.contains("again"), "{code}");
+    assert!(code.contains("export const g = (css) => {"), "{code}");
+    assert!(code.contains("const x = css"), "{code}");
+}
+
+#[test]
+#[serial]
+fn aliases_of_a_barrels_import_in_functions_compile() {
+    let project = Project::new(
+        "alias-nested",
+        &[
+            ("ui.ts", "export { css } from '@devup-ui/react'\n"),
+            (
+                "app.tsx",
+                "import { css } from './ui'\nexport function f() {\n  const inner = css\n  return inner({ color: 'red' })\n}\n",
+            ),
+        ],
+    );
+    let code = project.code("app.tsx");
+    assert!(!code.contains("inner"), "{code}");
+}
+
+#[test]
+#[serial]
+fn style_constants_read_in_functions_before_their_declaration_compile() {
+    let code = namespace_code(
+        "import { css, keyframes, Box } from '@devup-ui/react'\nexport function f() {\n  return css({ animation: `${k} 1s` })\n}\nexport const g = () => <Box animationName={k} className={c} />\nexport const h = () => later\nconst k = keyframes({ from: { opacity: 0 }, to: { opacity: 1 } })\nconst c = css({ color: 'red' })\nconst later = 1\n",
+    );
+    assert!(!code.contains("keyframes("), "{code}");
+    assert!(!code.contains("${k}"), "{code}");
+}
+
+#[test]
+#[serial]
+fn style_constants_read_before_they_run_are_located_errors() {
+    let error = namespace_error(
+        "import { css, keyframes } from '@devup-ui/react'\nexport const a = css({ animation: `${k} 1s` })\nconst k = keyframes({ from: { opacity: 0 } })\n",
+    );
+    assert!(
+        error.contains("test.tsx:2:") && error.contains("move that declaration above"),
+        "{error}"
+    );
+}
+
+#[test]
+#[serial]
+fn style_constants_computed_from_other_bindings_stay_where_they_are() {
+    let error = namespace_error(
+        "import { css, keyframes } from '@devup-ui/react'\nexport function f() { return css({ animation: `${k} 1s` }) }\nconst frames = { from: { opacity: 0 } }\nconst k = keyframes(frames)\n",
+    );
+    assert!(error.contains("test.tsx:2:"), "{error}");
 }

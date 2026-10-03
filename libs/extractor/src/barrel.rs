@@ -12,13 +12,14 @@ use std::rc::Rc;
 use oxc_allocator::Allocator;
 use oxc_ast::AstKind;
 use oxc_ast::ast::{
-    BindingIdentifier, BindingPattern, ExportDefaultDeclarationKind, Expression,
-    ImportDeclarationSpecifier, Statement,
+    BindingIdentifier, BindingPattern, Declaration, ExportDefaultDeclarationKind, Expression,
+    ImportDeclarationSpecifier, Statement, VariableDeclarationKind,
 };
 use oxc_parser::{Parser, ParserReturn};
 use oxc_semantic::{Semantic, SemanticBuilder};
 use oxc_span::{GetSpan, SourceType};
 use oxc_syntax::node::NodeId;
+use oxc_syntax::symbol::SymbolId;
 use rustc_hash::{FxHashMap, FxHashSet};
 
 use crate::component::ExportVariableKind;
@@ -163,9 +164,20 @@ fn analyze(module: &ResolvedModule, package: &str) -> Exports {
                         .insert(specifier.exported.name().to_string(), link);
                 }
             }
+            Statement::VariableDeclaration(declaration) => {
+                for (name, link) in alias_links(declaration, &imports) {
+                    imports.insert(name, link);
+                }
+            }
             Statement::ExportDeclaration(export) => {
                 for name in declared_names(&export.declaration) {
                     exports.named.insert(name, Link::Own);
+                }
+                if let Declaration::VariableDeclaration(declaration) = &export.declaration {
+                    for (name, link) in alias_links(declaration, &imports) {
+                        exports.named.insert(name.to_string(), link.clone());
+                        imports.insert(name, link);
+                    }
                 }
             }
             Statement::ExportDefaultDeclaration(export) => {
@@ -183,6 +195,46 @@ fn analyze(module: &ResolvedModule, package: &str) -> Exports {
         }
     }
     exports
+}
+
+/// The bindings a `const` declaration makes of what a module imports
+/// (`const B = Box`, `const C = Devup.css`), with where each leads
+fn alias_links<'a>(
+    declaration: &oxc_ast::ast::VariableDeclaration<'a>,
+    imports: &FxHashMap<&str, Link>,
+) -> Vec<(&'a str, Link)> {
+    if declaration.kind != VariableDeclarationKind::Const {
+        return Vec::new();
+    }
+    declaration
+        .declarations
+        .iter()
+        .filter_map(|declarator| {
+            let BindingPattern::BindingIdentifier(id) = &declarator.id else {
+                return None;
+            };
+            let link = match declarator.init.as_ref()? {
+                Expression::Identifier(init) => imports.get(init.name.as_str())?.clone(),
+                Expression::StaticMemberExpression(member) => {
+                    let Expression::Identifier(object) = &member.object else {
+                        return None;
+                    };
+                    match imports.get(object.name.as_str())? {
+                        Link::From {
+                            source,
+                            imported: None,
+                        } => Link::From {
+                            source: source.clone(),
+                            imported: Some(member.property.name.to_string()),
+                        },
+                        _ => return None,
+                    }
+                }
+                _ => return None,
+            };
+            Some((id.name.as_str(), link))
+        })
+        .collect()
 }
 
 /// Follows re-exports through the modules a resolver reads
@@ -346,8 +398,19 @@ pub(crate) struct Rewritten {
 }
 
 /// A namespace or default import whose members are read as values
-struct Namespace<'p, 'a> {
+struct NsDecl<'p, 'a> {
     binding: &'p BindingIdentifier<'a>,
+    /// Where its declaration ends, after which the named imports it needs go
+    after: usize,
+    /// The barrel module it is a namespace of; `None` for the package
+    module: Option<Rc<Exports>>,
+    source: String,
+}
+
+/// A binding of a namespace, known once the program is analysed
+struct Namespace {
+    local: String,
+    symbol: Option<SymbolId>,
     /// Where its declaration ends, after which the named imports it needs go
     after: usize,
     /// The barrel module it is a namespace of; `None` for the package
@@ -390,6 +453,9 @@ impl Generated {
         (name, Some(statement))
     }
 }
+
+mod aliases;
+use aliases::{Reach, declarator_removal, export_edits, is_assigned_from};
 
 fn unreadable(local: &str, code: &str) -> String {
     format!(
@@ -447,9 +513,21 @@ struct Opaque<'p, 'a> {
     reason: String,
 }
 
+/// A named or default import that is Devup UI: the binding, what it imports
+/// from where, and what that is in the package
+struct Bound<'p, 'a> {
+    binding: &'p BindingIdentifier<'a>,
+    /// Where the import declaration ends
+    after: usize,
+    source: String,
+    imported: String,
+    devup: (String, Option<String>),
+}
+
 #[derive(Default)]
 struct Found<'p, 'a> {
-    namespaces: Vec<Namespace<'p, 'a>>,
+    bound: Vec<Bound<'p, 'a>>,
+    namespaces: Vec<NsDecl<'p, 'a>>,
     opaque: Vec<Opaque<'p, 'a>>,
 }
 
@@ -482,7 +560,7 @@ fn redirect_import<'p, 'a>(
             ImportDeclarationSpecifier::ImportNamespaceSpecifier(namespace) => {
                 kept.namespace = Some(namespace.local.name.as_str());
                 if let Some(module) = namespace_of(walker, source, filename) {
-                    found.namespaces.push(Namespace {
+                    found.namespaces.push(NsDecl {
                         binding: &namespace.local,
                         after,
                         module: Some(module),
@@ -495,8 +573,17 @@ fn redirect_import<'p, 'a>(
         match walker.import_origin(source, filename, &imported) {
             Origin::Devup {
                 source: from,
-                imported,
-            } => redirected.push((imported, local.name.as_str(), from)),
+                imported: target,
+            } => {
+                found.bound.push(Bound {
+                    binding: local,
+                    after,
+                    source: source.to_string(),
+                    imported: imported.clone(),
+                    devup: (from.clone(), target.clone()),
+                });
+                redirected.push((target, local.name.as_str(), from));
+            }
             origin => {
                 if let Origin::Unfollowable(reason) = origin {
                     found.opaque.push(Opaque {
@@ -567,7 +654,7 @@ struct Rewriter<'s, 'w, 'r, 'p> {
 
 impl Rewriter<'_, '_, '_, '_> {
     /// Where reading `name` from `namespace` leads
-    fn member_origin(&mut self, namespace: &Namespace<'_, '_>, name: &str) -> Origin {
+    fn member_origin(&mut self, namespace: &Namespace, name: &str) -> Origin {
         match &namespace.module {
             None if !compiled_export(name) => Origin::Other,
             None => Origin::Devup {
@@ -582,9 +669,9 @@ impl Rewriter<'_, '_, '_, '_> {
     }
 
     /// The value references of `binding`, as `(node, is written)`
-    fn references(&self, binding: &BindingIdentifier<'_>) -> Vec<(NodeId, bool)> {
+    fn references(&self, symbol: Option<SymbolId>) -> Vec<(NodeId, bool)> {
         let scoping = self.semantic.scoping();
-        binding.symbol_id.get().map_or_else(Vec::new, |symbol| {
+        symbol.map_or_else(Vec::new, |symbol| {
             scoping
                 .get_resolved_reference_ids(symbol)
                 .iter()
@@ -610,9 +697,9 @@ impl Rewriter<'_, '_, '_, '_> {
         self.errors.push((start, unreadable(local, &code)));
     }
 
-    fn read_namespace(&mut self, namespace: &Namespace<'_, '_>) {
+    fn read_namespace(&mut self, namespace: &Namespace) {
         let mut appended: Vec<String> = Vec::new();
-        for (node, written) in self.references(namespace.binding) {
+        for (node, written) in self.references(namespace.symbol) {
             self.read_reference(namespace, &mut appended, node, written);
         }
         if !appended.is_empty() {
@@ -626,7 +713,7 @@ impl Rewriter<'_, '_, '_, '_> {
 
     fn read_reference(
         &mut self,
-        namespace: &Namespace<'_, '_>,
+        namespace: &Namespace,
         appended: &mut Vec<String>,
         node: NodeId,
         written: bool,
@@ -634,7 +721,7 @@ impl Rewriter<'_, '_, '_, '_> {
         let nodes = self.semantic.nodes();
         let span = nodes.kind(node).span();
         let parent = nodes.parent_kind(node);
-        let local = namespace.binding.name.as_str();
+        let local = namespace.local.as_str();
         let member = match parent {
             AstKind::StaticMemberExpression(member) => {
                 Some((member.span, member.property.name.to_string()))
@@ -657,6 +744,8 @@ impl Rewriter<'_, '_, '_, '_> {
                 self.replace(namespace, appended, member_span, &name, origin);
             }
             (None, AstKind::VariableDeclarator(declarator))
+                if matches!(declarator.id, BindingPattern::BindingIdentifier(_)) => {}
+            (None, AstKind::VariableDeclarator(declarator))
                 if declarator
                     .init
                     .as_ref()
@@ -675,7 +764,7 @@ impl Rewriter<'_, '_, '_, '_> {
     /// package gives it
     fn replace(
         &mut self,
-        namespace: &Namespace<'_, '_>,
+        namespace: &Namespace,
         appended: &mut Vec<String>,
         span: oxc_span::Span,
         name: &str,
@@ -685,7 +774,7 @@ impl Rewriter<'_, '_, '_, '_> {
             Origin::Devup { source, imported } => {
                 let (local, statement) = self.generated.name(
                     self.code,
-                    namespace.binding.name.as_str(),
+                    namespace.local.as_str(),
                     &source,
                     imported.as_deref(),
                 );
@@ -694,7 +783,7 @@ impl Rewriter<'_, '_, '_, '_> {
                     .push((span.start as usize, span.end as usize, local));
             }
             Origin::Unfollowable(reason) => {
-                let code = format!("{}.{name}", namespace.binding.name);
+                let code = format!("{}.{name}", namespace.local);
                 self.errors
                     .push((span.start, unfollowable(&code, &namespace.source, &reason)));
             }
@@ -706,12 +795,12 @@ impl Rewriter<'_, '_, '_, '_> {
     /// bound is read from the package where it is used
     fn destructure(
         &mut self,
-        namespace: &Namespace<'_, '_>,
+        namespace: &Namespace,
         appended: &mut Vec<String>,
         declarator_id: NodeId,
         declarator: &oxc_ast::ast::VariableDeclarator<'_>,
     ) {
-        let local = namespace.binding.name.as_str();
+        let local = namespace.local.as_str();
         let whole = |rewriter: &mut Self| {
             rewriter.whole_error(local, declarator.span.start, declarator.span.end);
         };
@@ -764,18 +853,7 @@ impl Rewriter<'_, '_, '_, '_> {
             }
             _ => return whole(self),
         };
-        let declarators = &declaration.declarations;
-        let index = declarators
-            .iter()
-            .position(|other| other.span == declarator.span)
-            .unwrap_or_default();
-        let (start, end) = if declarators.len() == 1 {
-            (declaration.span.start, declaration.span.end)
-        } else if index + 1 < declarators.len() {
-            (declarator.span.start, declarators[index + 1].span.start)
-        } else {
-            (declarators[index - 1].span.end, declarator.span.end)
-        };
+        let (start, end) = declarator_removal(declaration, declarator.span);
         self.edits
             .push((start as usize, end as usize, String::new()));
         for (name, binding, source, imported) in devup {
@@ -783,7 +861,7 @@ impl Rewriter<'_, '_, '_, '_> {
                 self.generated
                     .name(self.code, local, &source, imported.as_deref());
             appended.extend(statement);
-            for (node, written) in self.references(binding) {
+            for (node, written) in self.references(binding.symbol_id.get()) {
                 self.replace_binding(local, name, &generated, node, written);
             }
         }
@@ -864,9 +942,21 @@ pub(crate) fn rewrite(
                     ImportDeclarationSpecifier::ImportNamespaceSpecifier(namespace) => {
                         &namespace.local
                     }
-                    ImportDeclarationSpecifier::ImportSpecifier(_) => continue,
+                    ImportDeclarationSpecifier::ImportSpecifier(named) => {
+                        if !named.import_kind.is_type() {
+                            let imported = named.imported.name().to_string();
+                            found.bound.push(Bound {
+                                binding: &named.local,
+                                after: import.span.end as usize,
+                                source: import.source.value.to_string(),
+                                devup: (import.source.value.to_string(), Some(imported.clone())),
+                                imported,
+                            });
+                        }
+                        continue;
+                    }
                 };
-                found.namespaces.push(Namespace {
+                found.namespaces.push(NsDecl {
                     binding,
                     after: import.span.end as usize,
                     module: None,
@@ -883,9 +973,32 @@ pub(crate) fn rewrite(
             ));
         }
     }
-    let (mut edits, errors) = if found.namespaces.is_empty() && found.opaque.is_empty() {
-        (edits, Vec::new())
-    } else {
+    let locals: FxHashMap<String, Reach> = found
+        .bound
+        .iter()
+        .filter(|bound| bound.devup.1.as_deref().is_some_and(compiled_export))
+        .map(|bound| {
+            (
+                bound.binding.name.to_string(),
+                (bound.source.clone(), Some(bound.imported.clone())),
+            )
+        })
+        .chain(found.namespaces.iter().map(|declared| {
+            (
+                declared.binding.name.to_string(),
+                (declared.source.clone(), None),
+            )
+        }))
+        .collect();
+    edits.extend(export_edits(&program, code, locals));
+    let wants_semantic = !found.namespaces.is_empty()
+        || !found.opaque.is_empty()
+        || found
+            .bound
+            .iter()
+            .any(|bound| is_assigned_from(code, bound.binding.name.as_str()))
+        || (!found.bound.is_empty() && (code.contains("= keyframes(") || code.contains("= css(")));
+    let (mut edits, errors) = if wants_semantic {
         let semantic = SemanticBuilder::new()
             .with_build_nodes(true)
             .build(&program)
@@ -900,7 +1013,7 @@ pub(crate) fn rewrite(
         };
         for opaque in &found.opaque {
             let local = opaque.binding.name.as_str();
-            for (node, _) in rewriter.references(opaque.binding) {
+            for (node, _) in rewriter.references(opaque.binding.symbol_id.get()) {
                 let span = semantic.nodes().kind(node).span();
                 rewriter.errors.push((
                     span.start,
@@ -908,10 +1021,25 @@ pub(crate) fn rewrite(
                 ));
             }
         }
-        for namespace in &found.namespaces {
+        let mut spaces: Vec<Namespace> = found
+            .namespaces
+            .iter()
+            .map(|declared| Namespace {
+                local: declared.binding.name.to_string(),
+                symbol: declared.binding.symbol_id.get(),
+                after: declared.after,
+                module: declared.module.clone(),
+                source: declared.source.clone(),
+            })
+            .collect();
+        for namespace in &spaces {
             rewriter.read_namespace(namespace);
         }
+        rewriter.follow_aliases(&found.bound, &mut spaces);
+        rewriter.hoist_style_constants(&program, &found.bound);
         (rewriter.edits, rewriter.errors)
+    } else {
+        (edits, Vec::new())
     };
     if !errors.is_empty() {
         return Barreled::Failed(errors);
