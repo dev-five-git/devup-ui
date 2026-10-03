@@ -1,4 +1,4 @@
-import { existsSync, realpathSync } from 'node:fs'
+import { existsSync, readFileSync, realpathSync } from 'node:fs'
 import { join, resolve } from 'node:path'
 
 import { listSourceFiles } from './import-graph'
@@ -9,8 +9,19 @@ export interface CollectNumberedFilesOptions {
   /** Packages whose source the build extracts too (the `include` option) */
   include?: string[]
   cwd?: string
+  /**
+   * Only files whose text contains one of these are numbered, so files the
+   * build never extracts do not take numbers (and lengthen class prefixes)
+   */
+  needles?: string[]
   /** The name the plugin extracts a file under, given its absolute path */
   toId?: (path: string) => string
+}
+
+/** Whether the text of the file contains one of the needles */
+function usesAny(file: string, needles: string[]): boolean {
+  const text = readFileSync(file, 'utf-8')
+  return needles.some((needle) => text.includes(needle))
 }
 
 /** Where an included package lives, found the way the bundler finds it. */
@@ -36,6 +47,7 @@ export function collectNumberedFiles({
   roots,
   include = [],
   cwd = process.cwd(),
+  needles,
   toId = (path) => path.replaceAll('\\', '/'),
 }: CollectNumberedFilesOptions): string[] {
   const directories = [
@@ -45,7 +57,13 @@ export function collectNumberedFiles({
       .filter((dir): dir is string => dir !== undefined),
   ]
   return [
-    ...new Set(directories.flatMap((dir) => listSourceFiles(dir).map(toId))),
+    ...new Set(
+      directories.flatMap((dir) =>
+        listSourceFiles(dir)
+          .filter((file) => !needles || usesAny(file, needles))
+          .map(toId),
+      ),
+    ),
   ].sort()
 }
 
@@ -63,4 +81,12 @@ export function seedFileNumbers(
   files: Parameters<FileNumbering['seedFileMap']>[0],
 ): void {
   if (files.length > 0) engine.seedFileMap(files)
+}
+
+/** What a file mentions when the build extracts it: the package, StyleX, and the packages Devup UI takes the place of */
+export function extractedNeedles(
+  libPackage: string,
+  importAliases: object,
+): string[] {
+  return [libPackage, '@stylexjs/stylex', ...Object.keys(importAliases)]
 }

@@ -14,6 +14,7 @@ import {
   createNodeModulesExcludeRegex,
   createThemeInterfaceArgs,
   type CustomShorthands,
+  extractedNeedles,
   getFileNumByFilename,
   type ImportAliases,
   loadDevupConfigSync,
@@ -233,23 +234,6 @@ export class DevupUIWebpackPlugin {
         importFileMap({})
       }
     }
-    // Number every file the build can extract in path order, so class
-    // prefixes do not depend on which file a worker reaches first. Numbers
-    // already handed out (a restored map in watch mode) stay.
-    try {
-      const cwd = process.cwd()
-      seedFileNumbers(
-        { seedFileMap },
-        collectNumberedFiles({
-          roots: [resolve(cwd, 'src')],
-          include: this.options.include,
-          cwd,
-          toId: (path) => relative(cwd, path).replaceAll('\\', '/'),
-        }),
-      )
-    } catch {
-      // Best-effort; numbering falls back to arrival order.
-    }
     this.writeDataFiles()
 
     // Atom-level hoisting (opt-in via `atomHoist`). Configured BEFORE any loader
@@ -300,6 +284,24 @@ export class DevupUIWebpackPlugin {
       // hoisting stays off.
     }
 
+    // Number every file the build can extract in path order, so class
+    // prefixes do not depend on which file a worker reaches first. Numbers
+    // already handed out (a restored map in watch mode) stay.
+    try {
+      const cwd = process.cwd()
+      seedFileNumbers(
+        { seedFileMap },
+        collectNumberedFiles({
+          roots: [resolve(cwd, 'src')],
+          include: this.options.include,
+          cwd,
+          needles: extractedNeedles(this.options.package, this.importAliases),
+          toId: (path) => relative(cwd, path).replaceAll('\\', '/'),
+        }),
+      )
+    } catch {
+      // Best-effort; numbering falls back to arrival order.
+    }
     // Pre-warm the extractor so the css-loader serves COMPLETE CSS.
     //
     // Webpack builds a stylesheet module ONCE, at its FIRST import: the shared

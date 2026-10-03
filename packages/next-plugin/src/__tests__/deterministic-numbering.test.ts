@@ -58,6 +58,7 @@ describe('class and file numbers do not depend on the order files are seen', () 
       collectNumberedFiles({
         roots: [join(root, 'src')],
         include: ['@acme/ui'],
+        needles: ['@devup-ui/react'],
         cwd: root,
         toId: scheme,
       }),

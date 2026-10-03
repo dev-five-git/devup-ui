@@ -4,7 +4,11 @@ import { dirname, join } from 'node:path'
 
 import { afterEach, beforeEach, describe, expect, it, mock } from 'bun:test'
 
-import { collectNumberedFiles, seedFileNumbers } from '../numbering'
+import {
+  collectNumberedFiles,
+  extractedNeedles,
+  seedFileNumbers,
+} from '../numbering'
 
 describe('collectNumberedFiles', () => {
   let root: string
@@ -48,6 +52,24 @@ describe('collectNumberedFiles', () => {
     expect(files.some((file) => file.includes('skipped'))).toBe(false)
   })
 
+  it('numbers only the files that mention what the build extracts', () => {
+    writeFileSync(join(root, 'src/a.tsx'), "import '@devup-ui/react'")
+    const files = collectNumberedFiles({
+      roots: [join(root, 'src')],
+      cwd: root,
+      needles: extractedNeedles('@devup-ui/react', {
+        '@emotion/styled': 'styled',
+      }),
+      toId: (path) => path.slice(root.length).replaceAll('\\', '/'),
+    })
+    expect(files).toEqual(['/src/a.tsx'])
+    expect(extractedNeedles('p', { a: 1, b: 2 })).toEqual([
+      'p',
+      '@stylexjs/stylex',
+      'a',
+      'b',
+    ])
+  })
   it('does not depend on the order of the roots', () => {
     const first = collectNumberedFiles({
       roots: [join(root, 'src'), join(root, 'node_modules/@acme/ui')],

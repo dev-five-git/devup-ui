@@ -18,6 +18,7 @@ import {
   createNodeModulesExcludeRegex,
   createThemeInterfaceArgs,
   type DevupUIBasePluginOptions,
+  extractedNeedles,
   loadDevupConfigSync,
   mergeImportAliases,
   planAtomHoist,
@@ -252,23 +253,6 @@ export function DevupUI(
     } catch {
       // No previous session state (first run) or corrupt files, start fresh
     }
-    // Number every file the build can extract in path order, so class prefixes
-    // do not depend on the order modules reach a loader. Numbers restored above
-    // stay; files that appear later get the numbers after them.
-    try {
-      const cwd = process.cwd()
-      seedFileNumbers(
-        { seedFileMap: wasm.seedFileMap },
-        collectNumberedFiles({
-          roots: ['src', 'app', 'pages'].map((dir) => resolve(cwd, dir)),
-          include,
-          cwd,
-          toId: (path) => relative(cwd, path).replaceAll('\\', '/'),
-        }),
-      )
-    } catch {
-      // Best-effort; numbering falls back to arrival order.
-    }
 
     const devupConfig = loadDevupConfigSync(devupFile)
 
@@ -379,6 +363,24 @@ export function DevupUI(
       })
     }
 
+    // Number every file the build can extract in path order, so class prefixes
+    // do not depend on the order modules reach a loader. Numbers restored above
+    // stay; files that appear later get the numbers after them.
+    try {
+      const cwd = process.cwd()
+      seedFileNumbers(
+        { seedFileMap: wasm.seedFileMap },
+        collectNumberedFiles({
+          roots: ['src', 'app', 'pages'].map((dir) => resolve(cwd, dir)),
+          include,
+          cwd,
+          needles: extractedNeedles(libPackage, importAliases),
+          toId: (path) => relative(cwd, path).replaceAll('\\', '/'),
+        }),
+      )
+    } catch {
+      // Best-effort; numbering falls back to arrival order.
+    }
     // Turbopack can request a CSS module before it has scheduled every source
     // loader. Waiting for a quiet window is not a compilation-complete signal:
     // a CSS request can itself hold up the next extraction wave. In one-shot

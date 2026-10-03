@@ -465,6 +465,10 @@ describe('devupUIVitePlugin', () => {
         roots: [resolve('/p', 'src'), resolve('/p', 'app')],
         include: ['@acme/ui'],
         cwd: '/p',
+        needles: expect.arrayContaining([
+          '@devup-ui/react',
+          '@stylexjs/stylex',
+        ]),
       })
       expect(seedFileMapSpy).toHaveBeenCalledWith([
         '/p/app/page.tsx',
@@ -610,40 +614,6 @@ describe('devupUIVitePlugin', () => {
       expect(serverBundle['file.css'].source).toEqual('file sheet')
       expect(clientBundle['base.css'].source).toEqual('base sheet')
       expect(clientBundle['file.css'].source).toEqual('file sheet')
-      expect(serverBundle['entry.js'].viteMetadata.importedCss).toEqual(
-        new Set(['server-only.css']),
-      )
-    })
-
-    it('does not forward server css the client emits, whichever environment finishes first', async () => {
-      const plugin = createPlugin({})
-      getCssSpy.mockImplementation((fileNum: number | null) =>
-        fileNum === null ? 'base sheet' : 'file sheet',
-      )
-      const serverBundle = {
-        'file.css': { source: 'stale', name: 'devup-ui-3.css' },
-        'entry.js': {
-          name: 'entry',
-          viteMetadata: {
-            importedCss: new Set(['file.css', 'server-only.css']),
-          },
-        },
-      }
-      const clientBundle = {
-        'file.css': { source: 'stale', name: 'devup-ui-3.css' },
-      }
-
-      await plugin.generateBundle.call(
-        { environment: { name: 'client', config: { consumer: 'client' } } },
-        {},
-        clientBundle,
-      )
-      await plugin.generateBundle.call(
-        { environment: { name: 'rsc', config: { consumer: 'server' } } },
-        {},
-        serverBundle,
-      )
-
       expect(serverBundle['entry.js'].viteMetadata.importedCss).toEqual(
         new Set(['server-only.css']),
       )

@@ -23,6 +23,7 @@ export { deepMerge, loadDevupConfig, loadDevupConfigSync } from './load-config'
 export {
   collectNumberedFiles,
   type CollectNumberedFilesOptions,
+  extractedNeedles,
   type FileNumbering,
   seedFileNumbers,
 } from './numbering'

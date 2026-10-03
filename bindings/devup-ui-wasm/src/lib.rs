@@ -2002,7 +2002,7 @@ mod tests {
             export_canonical_map_internal().unwrap(),
             r#"{"x":"a","y":"b"}"#
         );
-        reset_build_state_internal();
+        reset_build_state();
         assert_eq!(export_class_map_internal().unwrap(), "{}");
         assert_eq!(export_file_map_internal().unwrap(), "{}");
         assert_eq!(export_canonical_map_internal().unwrap(), "{}");

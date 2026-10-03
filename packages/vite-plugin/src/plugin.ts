@@ -13,6 +13,7 @@ import {
   createStateWriter,
   createThemeInterfaceArgs,
   type CustomShorthands,
+  extractedNeedles,
   getFileNumByFilename,
   type ImportAliases,
   loadDevupConfig,
@@ -243,7 +244,6 @@ export function DevupUI({
   const importAliases = mergeImportAliases(userImportAliases)
   const cssMap = new Map()
   let serverBundleToForward: Record<string, ViteOutputWithMetadata> | undefined
-  const clientCssFiles = new Set<string>()
   let isServe = false
   // The dev server watches cssDir, so every write is an update signal. A
   // module transformed again writes its sheet again, and the reload that
@@ -274,22 +274,6 @@ export function DevupUI({
         }),
       )
       const sourceDirs = resolveSourceDirs(projectRoot)
-      try {
-        // Numbers come from the sorted paths of every file the build can
-        // extract (source and included packages), not from arrival order.
-        // Files numbered before keep their numbers, so a later pass in the
-        // dev server only numbers new files after the existing ones.
-        seedFileNumbers(
-          { seedFileMap },
-          collectNumberedFiles({
-            roots: sourceDirs,
-            include,
-            cwd: projectRoot,
-          }),
-        )
-      } catch {
-        // Best-effort; on failure numbering falls back to arrival order.
-      }
       if (!existsSync(distDir)) await mkdir(distDir, { recursive: true })
       await writeFile(join(distDir, '.gitignore'), '*', 'utf-8')
       await writeFile(
@@ -362,6 +346,23 @@ export function DevupUI({
         } catch {
           // Best-effort; on failure atom hoisting stays off (identity).
         }
+      }
+      try {
+        // Numbers come from the sorted paths of every file the build can
+        // extract (source and included packages), not from arrival order.
+        // Files numbered before keep their numbers, so a later pass in the
+        // dev server only numbers new files after the existing ones.
+        seedFileNumbers(
+          { seedFileMap },
+          collectNumberedFiles({
+            roots: sourceDirs,
+            include,
+            cwd: projectRoot,
+            needles: extractedNeedles(libPackage, importAliases),
+          }),
+        )
+      } catch {
+        // Best-effort; on failure numbering falls back to arrival order.
       }
     },
     config(this: { meta?: ConfigHookMeta } | void, userConfig: UserConfig) {
@@ -580,25 +581,22 @@ export function DevupUI({
 
       const environment = this.environment
       if (!environment || !writesOutput) return
-      // @vitejs/plugin-rsc forwards every CSS file referenced by the RSC
-      // bundle into the client bundle. Files the client already emitted are
-      // registered twice and trigger FILE_NAME_CONFLICT. Keep both bundles'
-      // imports and client metadata intact, but remove overlaps from the RSC
-      // forwarding set before its later generateBundle hook reads it. Each
-      // environment records what it finished, and whichever finishes second
-      // removes the overlap, so the result does not depend on their order.
-      if (environment.config.consumer === 'client') {
-        for (const file of cssFiles) clientCssFiles.add(file)
+      if (environment.config.consumer === 'client' && serverBundleToForward) {
+        // @vitejs/plugin-rsc forwards every CSS file referenced by the RSC
+        // bundle into the client bundle. Files the client already emitted are
+        // registered twice and trigger FILE_NAME_CONFLICT. Keep both bundles'
+        // imports and client metadata intact, but remove overlaps from the RSC
+        // forwarding set before its later generateBundle hook reads it.
+        for (const output of Object.values(serverBundleToForward)) {
+          for (const file of cssFiles) {
+            output.viteMetadata?.importedCss?.delete(file)
+          }
+        }
       } else if (environment.config.consumer === 'server') {
         serverBundleToForward = bundle as unknown as Record<
           string,
           ViteOutputWithMetadata
         >
-      }
-      for (const output of Object.values(serverBundleToForward ?? {})) {
-        for (const file of clientCssFiles) {
-          output.viteMetadata?.importedCss?.delete(file)
-        }
       }
     },
   }

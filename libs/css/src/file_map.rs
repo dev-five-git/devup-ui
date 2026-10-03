@@ -95,15 +95,15 @@ pub fn get_file_num_by_filename(filename: &str) -> usize {
 
 /// Give every file in `files` a number now, in path order.
 ///
-/// Numbers files already hold are kept. The numbers files get then depend on the paths alone,
+/// Numbers files already hold are kept, and a file collapsed into a bucket is numbered as the bucket. The numbers files get then depend on the paths alone,
 /// not on which file a worker reaches first; files that appear later (in
 /// development) are numbered after the existing ones.
 pub fn seed_file_numbers(files: &[String]) {
-    let mut sorted: Vec<&String> = files.iter().collect();
+    let mut sorted: Vec<String> = files.iter().map(|file| canonical(file)).collect();
     sorted.sort_unstable();
     sorted.dedup();
     for file in sorted {
-        let _ = get_file_num_by_filename(file);
+        let _ = get_file_num_by_filename(&file);
     }
 }
 #[must_use]
@@ -208,6 +208,26 @@ mod tests {
     use serial_test::serial;
 
     use super::*;
+
+    #[test]
+    #[serial]
+    fn test_seed_file_numbers_numbers_buckets_not_their_members() {
+        reset_file_map();
+        set_canonical_map(std::collections::HashMap::from([(
+            "x.tsx".to_string(),
+            "a.tsx".to_string(),
+        )]));
+        seed_file_numbers(&[
+            "x.tsx".to_string(),
+            "b.tsx".to_string(),
+            "a.tsx".to_string(),
+        ]);
+        assert_eq!(get_file_num_by_filename("a.tsx"), 0);
+        assert_eq!(get_file_num_by_filename("b.tsx"), 1);
+        assert_eq!(get_file_map().len(), 2);
+        reset_canonical_map();
+        reset_file_map();
+    }
 
     #[test]
     #[serial]

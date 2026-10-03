@@ -88,6 +88,7 @@ async function initialize({ shorthands }: DevupUIBunPluginOptions = {}) {
       { seedFileMap },
       collectNumberedFiles({
         roots: [resolve('src')],
+        needles: compiledPackages,
         toId: (path) => path,
       }),
     )

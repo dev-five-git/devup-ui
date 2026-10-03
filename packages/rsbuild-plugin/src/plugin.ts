@@ -14,6 +14,7 @@ import {
   createStateWriter,
   createThemeInterfaceArgs,
   type CustomShorthands,
+  extractedNeedles,
   getFileNumByFilename,
   type ImportAliases,
   loadDevupConfig,
@@ -180,20 +181,6 @@ export const DevupUI = ({
           toId: (path) => (atomMode ? path.replaceAll('\\', '/') : path),
         }),
       )
-      try {
-        // Number every file the build can extract in path order, so class
-        // prefixes do not depend on the order modules reach the transform
-        seedFileNumbers(
-          { seedFileMap },
-          collectNumberedFiles({
-            roots: [resolve(process.cwd(), 'src')],
-            include,
-            toId: (path) => (atomMode ? path.replaceAll('\\', '/') : path),
-          }),
-        )
-      } catch {
-        // Best-effort; numbering falls back to arrival order.
-      }
       if (atomMode) {
         try {
           const root = process.cwd()
@@ -226,6 +213,21 @@ export const DevupUI = ({
         }
       }
 
+      try {
+        // Number every file the build can extract in path order, so class
+        // prefixes do not depend on the order modules reach the transform
+        seedFileNumbers(
+          { seedFileMap },
+          collectNumberedFiles({
+            roots: [resolve(process.cwd(), 'src')],
+            include,
+            needles: extractedNeedles(libPackage, importAliases),
+            toId: (path) => (atomMode ? path.replaceAll('\\', '/') : path),
+          }),
+        )
+      } catch {
+        // Best-effort; numbering falls back to arrival order.
+      }
       // Extract the source files under `src` that the entries reach, in path
       // order, the same way the transform does, so that a stylesheet built on
       // its first import already holds the styles of every one. Best-effort:
