@@ -153,6 +153,8 @@ fn malformed_class_names_children_do_not_register_css_calls() {
     for child in [
         "text",
         "{other}",
+        "{2}",
+        "{'2'}",
         "{({ css }) => css({ top: 2 })}{other}",
         "{() => css({ top: 2 })}",
         "{(rules) => css({ top: 2 })}",
@@ -240,4 +242,12 @@ fn global_styles_rewrite_conditional_rules_without_rewriting_shadowed_styles() {
         ),
         "{output}"
     );
+}
+
+#[test]
+fn class_names_css_binding_is_found_after_whitespace_children() {
+    let code = "import { ClassNames as C } from '@emotion/react';\nconst view = <C>\n  {({ css }) => css({ top: 2 })}\n</C>;";
+    let output = transform_import_aliases(code, "test.tsx", "@devup-ui/react", &aliases());
+    assert!(output.contains("css({ top: \"2px\" })"), "{output}");
+    assert!(!output.contains("css({ top: 2 })"), "{output}");
 }
