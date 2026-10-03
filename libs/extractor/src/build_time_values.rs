@@ -345,7 +345,10 @@ impl<'s, 'a> Finder<'s, 'a> {
 
     fn is_css(&self, callee: &Expression<'_>) -> bool {
         if let Expression::StaticMemberExpression(member) = callee {
-            return member.property.name == "css";
+            return member.property.name == "css"
+                && self
+                    .symbol(&member.object)
+                    .is_some_and(|symbol| self.namespaces.contains(&symbol));
         }
         self.symbol(callee)
             .is_some_and(|symbol| self.css.contains(&symbol))
@@ -1093,3 +1096,6 @@ fn compute(
     }
     (!computed.is_empty()).then_some((computed, changes.dependencies()))
 }
+
+#[cfg(test)]
+mod scope_tests;
