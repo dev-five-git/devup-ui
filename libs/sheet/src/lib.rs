@@ -10,7 +10,7 @@ use css::{
     style_selector::{
         AtRule, AtRuleKind, StyleSelector, get_selector_order, global_selector_order, write_at_rule,
     },
-    theme_tokens::{set_theme_token_levels, set_typography_keys},
+    theme_tokens::{set_color_tokens, set_theme_token_levels, set_typography_keys},
     utils::compile_regex,
     write_merge_selector,
 };
@@ -481,6 +481,7 @@ impl StyleSheet {
             theme.get_shadow_token_levels(),
         );
         set_typography_keys(theme.typography.keys().cloned().collect());
+        set_color_tokens(theme.get_color_token_names());
         self.theme = theme;
     }
 
@@ -3678,6 +3679,61 @@ mod tests {
         let css = sheet.create_css(None, false);
         assert!(!css.contains("transition:none"), "{css}");
         assert!(!css.contains("color:red"), "{css}");
+    }
+
+    #[test]
+    #[serial]
+    fn test_tailwind_classes_css() {
+        reset_class_map();
+        reset_file_map();
+        let mut sheet = StyleSheet::default();
+        for (file, code) in [
+            (
+                "a.tsx",
+                "import {Box} from '@devup-ui/core'\n<Box className=\"translate-x-4 hover:focus:mt-4 card\" />",
+            ),
+            (
+                "b.tsx",
+                "import {Box} from '@devup-ui/core'\n<Box className=\"translate-y-2 before:inline-block text-sm\" />",
+            ),
+        ] {
+            let output = extract(
+                file,
+                code,
+                ExtractOption {
+                    package: "@devup-ui/core".to_string(),
+                    css_dir: "@devup-ui/core".to_string(),
+                    single_css: true,
+                    import_main_css: false,
+                    import_aliases: std::collections::HashMap::new(),
+                },
+            )
+            .unwrap();
+            sheet.update_styles(&output.styles, file, true);
+        }
+        let css = sheet.create_css(None, false);
+        // The registrations are written once however many files use them
+        assert_eq!(
+            css.matches("@property --tw-translate-x{").count(),
+            1,
+            "{css}"
+        );
+        assert!(
+            css.contains("@property --tw-content{syntax:\"*\";inherits:false;initial-value:\"\"}"),
+            "{css}"
+        );
+        for rule in [
+            ".a{--tw-translate-x:1rem}",
+            ".d{--tw-translate-y:.5rem}",
+            ".b{translate:var(--tw-translate-x) var(--tw-translate-y)}",
+            ".g{font-size:.875rem}",
+            ".h{line-height:var(--tw-leading,calc(1.25 / .875))}",
+            ".e::before{content:var(--tw-content)}",
+            ".f::before{display:inline-block}",
+            "@media(hover:hover){.c:hover:focus{margin-top:1rem}}",
+        ] {
+            assert!(css.contains(rule), "{rule} in {css}");
+        }
     }
 
     #[test]

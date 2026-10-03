@@ -6,6 +6,36 @@ ToBTreeSet {
     styles: {
         Static(
             ExtractStaticStyle {
+                property: "--tw-shadow",
+                value: "0 20px 25px -5px var(--tw-shadow-color,rgb(0 0 0 / .1)),0 8px 10px -6px var(--tw-shadow-color,rgb(0 0 0 / .1))",
+                level: 0,
+                selector: Some(
+                    At {
+                        kind: Media,
+                        query: "(hover:hover)",
+                        selector: Some(
+                            "&:hover",
+                        ),
+                        outer: [],
+                        file: None,
+                    },
+                ),
+                style_order: None,
+                layer: None,
+            },
+        ),
+        Static(
+            ExtractStaticStyle {
+                property: "--tw-shadow",
+                value: "0 4px 6px -1px var(--tw-shadow-color,rgb(0 0 0 / .1)),0 2px 4px -2px var(--tw-shadow-color,rgb(0 0 0 / .1))",
+                level: 0,
+                selector: None,
+                style_order: None,
+                layer: None,
+            },
+        ),
+        Static(
+            ExtractStaticStyle {
                 property: "background",
                 value: "blue",
                 level: 1,
@@ -47,13 +77,9 @@ ToBTreeSet {
         Static(
             ExtractStaticStyle {
                 property: "box-shadow",
-                value: "0 20px 25px -5px rgb(0 0 0 / .1),0 8px 10px -6px rgb(0 0 0 / .1)",
+                value: "var(--tw-inset-shadow,0 0 #0000),var(--tw-inset-ring-shadow,0 0 #0000),var(--tw-ring-offset-shadow,0 0 #0000),var(--tw-ring-shadow,0 0 #0000),var(--tw-shadow)",
                 level: 0,
-                selector: Some(
-                    Selector(
-                        "&:hover",
-                    ),
-                ),
+                selector: None,
                 style_order: None,
                 layer: None,
             },
@@ -61,9 +87,19 @@ ToBTreeSet {
         Static(
             ExtractStaticStyle {
                 property: "box-shadow",
-                value: "0 4px 6px -1px rgb(0 0 0 / .1),0 2px 4px -2px rgb(0 0 0 / .1)",
+                value: "var(--tw-inset-shadow,0 0 #0000),var(--tw-inset-ring-shadow,0 0 #0000),var(--tw-ring-offset-shadow,0 0 #0000),var(--tw-ring-shadow,0 0 #0000),var(--tw-shadow)",
                 level: 0,
-                selector: None,
+                selector: Some(
+                    At {
+                        kind: Media,
+                        query: "(hover:hover)",
+                        selector: Some(
+                            "&:hover",
+                        ),
+                        outer: [],
+                        file: None,
+                    },
+                ),
                 style_order: None,
                 layer: None,
             },
@@ -118,6 +154,36 @@ ToBTreeSet {
                 layer: None,
             },
         ),
+        Css(
+            ExtractCss {
+                css: "@property --tw-inset-ring-shadow{syntax:\"*\";inherits:false;initial-value:0 0 #0000}",
+                file: "@devup-ui/tailwind",
+            },
+        ),
+        Css(
+            ExtractCss {
+                css: "@property --tw-inset-shadow{syntax:\"*\";inherits:false;initial-value:0 0 #0000}",
+                file: "@devup-ui/tailwind",
+            },
+        ),
+        Css(
+            ExtractCss {
+                css: "@property --tw-ring-shadow{syntax:\"*\";inherits:false;initial-value:0 0 #0000}",
+                file: "@devup-ui/tailwind",
+            },
+        ),
+        Css(
+            ExtractCss {
+                css: "@property --tw-shadow-color{syntax:\"*\";inherits:false}",
+                file: "@devup-ui/tailwind",
+            },
+        ),
+        Css(
+            ExtractCss {
+                css: "@property --tw-shadow{syntax:\"*\";inherits:false;initial-value:0 0 #0000}",
+                file: "@devup-ui/tailwind",
+            },
+        ),
     },
-    code: "import \"@devup-ui/core/devup-ui.css\";\n<div className=\"a b c d e f g h i j k\" />;\n",
+    code: "import \"@devup-ui/core/devup-ui.css\";\n<div className=\"a b c d e f g h i j k l m\" />;\n",
 }

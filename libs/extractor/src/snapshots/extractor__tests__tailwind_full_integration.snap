@@ -6,6 +6,46 @@ ToBTreeSet {
     styles: {
         Static(
             ExtractStaticStyle {
+                property: "--tw-leading",
+                value: "1.625",
+                level: 0,
+                selector: None,
+                style_order: None,
+                layer: None,
+            },
+        ),
+        Static(
+            ExtractStaticStyle {
+                property: "--tw-shadow",
+                value: "0 20px 25px -5px var(--tw-shadow-color,rgb(0 0 0 / .1)),0 8px 10px -6px var(--tw-shadow-color,rgb(0 0 0 / .1))",
+                level: 0,
+                selector: Some(
+                    At {
+                        kind: Media,
+                        query: "(hover:hover)",
+                        selector: Some(
+                            "&:hover",
+                        ),
+                        outer: [],
+                        file: None,
+                    },
+                ),
+                style_order: None,
+                layer: None,
+            },
+        ),
+        Static(
+            ExtractStaticStyle {
+                property: "--tw-shadow",
+                value: "0 4px 6px -1px var(--tw-shadow-color,rgb(0 0 0 / .1)),0 2px 4px -2px var(--tw-shadow-color,rgb(0 0 0 / .1))",
+                level: 0,
+                selector: None,
+                style_order: None,
+                layer: None,
+            },
+        ),
+        Static(
+            ExtractStaticStyle {
                 property: "align-items",
                 value: "center",
                 level: 0,
@@ -27,30 +67,6 @@ ToBTreeSet {
         Static(
             ExtractStaticStyle {
                 property: "background-color",
-                value: "#1F2937",
-                level: 0,
-                selector: Some(
-                    Selector(
-                        ":root[data-theme=dark] &",
-                    ),
-                ),
-                style_order: None,
-                layer: None,
-            },
-        ),
-        Static(
-            ExtractStaticStyle {
-                property: "background-color",
-                value: "#3B82F6",
-                level: 0,
-                selector: None,
-                style_order: None,
-                layer: None,
-            },
-        ),
-        Static(
-            ExtractStaticStyle {
-                property: "background-color",
                 value: "#FFF",
                 level: 0,
                 selector: None,
@@ -60,8 +76,32 @@ ToBTreeSet {
         ),
         Static(
             ExtractStaticStyle {
+                property: "background-color",
+                value: "oklch(27.8% .033 256.848)",
+                level: 0,
+                selector: Some(
+                    Selector(
+                        ":root[data-theme=dark] &",
+                    ),
+                ),
+                style_order: None,
+                layer: None,
+            },
+        ),
+        Static(
+            ExtractStaticStyle {
+                property: "background-color",
+                value: "oklch(62.3% .214 259.815)",
+                level: 0,
+                selector: None,
+                style_order: None,
+                layer: None,
+            },
+        ),
+        Static(
+            ExtractStaticStyle {
                 property: "border-color",
-                value: "#374151",
+                value: "oklch(37.3% .034 259.733)",
                 level: 0,
                 selector: Some(
                     Selector(
@@ -75,7 +115,7 @@ ToBTreeSet {
         Static(
             ExtractStaticStyle {
                 property: "border-color",
-                value: "#E5E7EB",
+                value: "oklch(92.8% .006 264.531)",
                 level: 0,
                 selector: None,
                 style_order: None,
@@ -105,13 +145,9 @@ ToBTreeSet {
         Static(
             ExtractStaticStyle {
                 property: "box-shadow",
-                value: "0 20px 25px -5px rgb(0 0 0 / .1),0 8px 10px -6px rgb(0 0 0 / .1)",
+                value: "var(--tw-inset-shadow,0 0 #0000),var(--tw-inset-ring-shadow,0 0 #0000),var(--tw-ring-offset-shadow,0 0 #0000),var(--tw-ring-shadow,0 0 #0000),var(--tw-shadow)",
                 level: 0,
-                selector: Some(
-                    Selector(
-                        "&:hover",
-                    ),
-                ),
+                selector: None,
                 style_order: None,
                 layer: None,
             },
@@ -119,66 +155,18 @@ ToBTreeSet {
         Static(
             ExtractStaticStyle {
                 property: "box-shadow",
-                value: "0 4px 6px -1px rgb(0 0 0 / .1),0 2px 4px -2px rgb(0 0 0 / .1)",
-                level: 0,
-                selector: None,
-                style_order: None,
-                layer: None,
-            },
-        ),
-        Static(
-            ExtractStaticStyle {
-                property: "color",
-                value: "#111827",
-                level: 0,
-                selector: None,
-                style_order: None,
-                layer: None,
-            },
-        ),
-        Static(
-            ExtractStaticStyle {
-                property: "color",
-                value: "#374151",
-                level: 0,
-                selector: None,
-                style_order: None,
-                layer: None,
-            },
-        ),
-        Static(
-            ExtractStaticStyle {
-                property: "color",
-                value: "#6B7280",
-                level: 0,
-                selector: None,
-                style_order: None,
-                layer: None,
-            },
-        ),
-        Static(
-            ExtractStaticStyle {
-                property: "color",
-                value: "#9CA3AF",
+                value: "var(--tw-inset-shadow,0 0 #0000),var(--tw-inset-ring-shadow,0 0 #0000),var(--tw-ring-offset-shadow,0 0 #0000),var(--tw-ring-shadow,0 0 #0000),var(--tw-shadow)",
                 level: 0,
                 selector: Some(
-                    Selector(
-                        ":root[data-theme=dark] &",
-                    ),
-                ),
-                style_order: None,
-                layer: None,
-            },
-        ),
-        Static(
-            ExtractStaticStyle {
-                property: "color",
-                value: "#D1D5DB",
-                level: 0,
-                selector: Some(
-                    Selector(
-                        ":root[data-theme=dark] &",
-                    ),
+                    At {
+                        kind: Media,
+                        query: "(hover:hover)",
+                        selector: Some(
+                            "&:hover",
+                        ),
+                        outer: [],
+                        file: None,
+                    },
                 ),
                 style_order: None,
                 layer: None,
@@ -198,6 +186,64 @@ ToBTreeSet {
             ExtractStaticStyle {
                 property: "color",
                 value: "#FFF",
+                level: 0,
+                selector: Some(
+                    Selector(
+                        ":root[data-theme=dark] &",
+                    ),
+                ),
+                style_order: None,
+                layer: None,
+            },
+        ),
+        Static(
+            ExtractStaticStyle {
+                property: "color",
+                value: "oklch(21% .034 264.665)",
+                level: 0,
+                selector: None,
+                style_order: None,
+                layer: None,
+            },
+        ),
+        Static(
+            ExtractStaticStyle {
+                property: "color",
+                value: "oklch(37.3% .034 259.733)",
+                level: 0,
+                selector: None,
+                style_order: None,
+                layer: None,
+            },
+        ),
+        Static(
+            ExtractStaticStyle {
+                property: "color",
+                value: "oklch(55.1% .027 264.364)",
+                level: 0,
+                selector: None,
+                style_order: None,
+                layer: None,
+            },
+        ),
+        Static(
+            ExtractStaticStyle {
+                property: "color",
+                value: "oklch(70.7% .022 261.325)",
+                level: 0,
+                selector: Some(
+                    Selector(
+                        ":root[data-theme=dark] &",
+                    ),
+                ),
+                style_order: None,
+                layer: None,
+            },
+        ),
+        Static(
+            ExtractStaticStyle {
+                property: "color",
+                value: "oklch(87.2% .01 258.338)",
                 level: 0,
                 selector: Some(
                     Selector(
@@ -352,6 +398,36 @@ ToBTreeSet {
         ),
         Static(
             ExtractStaticStyle {
+                property: "line-height",
+                value: "var(--tw-leading,calc(1.25 / .875))",
+                level: 0,
+                selector: None,
+                style_order: None,
+                layer: None,
+            },
+        ),
+        Static(
+            ExtractStaticStyle {
+                property: "line-height",
+                value: "var(--tw-leading,calc(1.75 / 1.125))",
+                level: 0,
+                selector: None,
+                style_order: None,
+                layer: None,
+            },
+        ),
+        Static(
+            ExtractStaticStyle {
+                property: "line-height",
+                value: "var(--tw-leading,calc(1.75 / 1.25))",
+                level: 0,
+                selector: None,
+                style_order: None,
+                layer: None,
+            },
+        ),
+        Static(
+            ExtractStaticStyle {
                 property: "margin-top",
                 value: ".25rem",
                 level: 0,
@@ -392,8 +468,28 @@ ToBTreeSet {
         ),
         Static(
             ExtractStaticStyle {
+                property: "transition-duration",
+                value: "var(--tw-duration,150ms)",
+                level: 0,
+                selector: None,
+                style_order: None,
+                layer: None,
+            },
+        ),
+        Static(
+            ExtractStaticStyle {
                 property: "transition-property",
                 value: "box-shadow",
+                level: 0,
+                selector: None,
+                style_order: None,
+                layer: None,
+            },
+        ),
+        Static(
+            ExtractStaticStyle {
+                property: "transition-timing-function",
+                value: "var(--tw-ease,cubic-bezier(.4,0,.2,1))",
                 level: 0,
                 selector: None,
                 style_order: None,
@@ -410,6 +506,54 @@ ToBTreeSet {
                 layer: None,
             },
         ),
+        Css(
+            ExtractCss {
+                css: "@property --tw-duration{syntax:\"*\";inherits:false}",
+                file: "@devup-ui/tailwind",
+            },
+        ),
+        Css(
+            ExtractCss {
+                css: "@property --tw-ease{syntax:\"*\";inherits:false}",
+                file: "@devup-ui/tailwind",
+            },
+        ),
+        Css(
+            ExtractCss {
+                css: "@property --tw-inset-ring-shadow{syntax:\"*\";inherits:false;initial-value:0 0 #0000}",
+                file: "@devup-ui/tailwind",
+            },
+        ),
+        Css(
+            ExtractCss {
+                css: "@property --tw-inset-shadow{syntax:\"*\";inherits:false;initial-value:0 0 #0000}",
+                file: "@devup-ui/tailwind",
+            },
+        ),
+        Css(
+            ExtractCss {
+                css: "@property --tw-leading{syntax:\"*\";inherits:false}",
+                file: "@devup-ui/tailwind",
+            },
+        ),
+        Css(
+            ExtractCss {
+                css: "@property --tw-ring-shadow{syntax:\"*\";inherits:false;initial-value:0 0 #0000}",
+                file: "@devup-ui/tailwind",
+            },
+        ),
+        Css(
+            ExtractCss {
+                css: "@property --tw-shadow-color{syntax:\"*\";inherits:false}",
+                file: "@devup-ui/tailwind",
+            },
+        ),
+        Css(
+            ExtractCss {
+                css: "@property --tw-shadow{syntax:\"*\";inherits:false;initial-value:0 0 #0000}",
+                file: "@devup-ui/tailwind",
+            },
+        ),
     },
-    code: "import \"@devup-ui/core/devup-ui.css\";\n// Card component with comprehensive Tailwind usage\nexport const Card = () => <div className=\"ae af ag ah ai aj ak\">\n    <div className=\"t u v w x\">\n      <div className=\"d e f g h i j\">\n        <span className=\"a b c\">A</span>\n      </div>\n      <div className=\"s\">\n        <span className=\"k l m n\">Title</span>\n        <span className=\"o p q r\">Subtitle</span>\n      </div>\n    </div>\n    <div className=\"aa ab ac a-d\">\n      <span className=\"y z _\">\n        Content goes here with multiple Tailwind utilities combined.\n      </span>\n    </div>\n  </div>;\n",
+    code: "import \"@devup-ui/core/devup-ui.css\";\n// Card component with comprehensive Tailwind usage\nexport const Card = () => <div className=\"ai aj ak al am an ao ap aq ar as\">\n    <div className=\"w x y z _\">\n      <div className=\"e f g h i j k\">\n        <span className=\"a b c d\">A</span>\n      </div>\n      <div className=\"v\">\n        <span className=\"l m n o p\">Title</span>\n        <span className=\"q r s t u\">Subtitle</span>\n      </div>\n    </div>\n    <div className=\"ae af border-t ag ah\">\n      <span className=\"aa ab ac a-d\">\n        Content goes here with multiple Tailwind utilities combined.\n      </span>\n    </div>\n  </div>;\n",
 }

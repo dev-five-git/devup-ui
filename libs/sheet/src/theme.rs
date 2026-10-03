@@ -2,7 +2,7 @@ use css::optimize_value::optimize_value;
 use serde::{Deserialize, Deserializer, Serialize};
 use serde_json::Value;
 use std::borrow::Cow;
-use std::collections::{BTreeMap, HashMap};
+use std::collections::{BTreeMap, BTreeSet, HashMap};
 use std::fmt::Write as _;
 
 /// `ColorEntry` stores both the original key (for TypeScript interface) and CSS key (for CSS variables)
@@ -818,6 +818,15 @@ impl Theme {
         declarations
     }
 
+    /// The CSS names of the colors every theme defines
+    #[must_use]
+    pub fn get_color_token_names(&self) -> BTreeSet<String> {
+        self.colors
+            .values()
+            .flat_map(|theme| theme.css_entries().map(|(name, _)| name.clone()))
+            .collect()
+    }
+
     #[must_use]
     pub fn get_length_token_levels(&self) -> BTreeMap<String, Vec<u8>> {
         token_levels(&self.length)
@@ -1392,6 +1401,19 @@ mod tests {
         assert!(color_theme.contains_key("primary-100"));
         assert!(color_theme.contains_key("primary-200"));
         assert!(!color_theme.contains_key("primary.100"));
+    }
+
+    #[test]
+    fn test_color_token_names_cover_every_theme() {
+        let theme: Theme = serde_json::from_str(
+            r##"{"colors": {"light": {"primary": "#100"}, "dark": {"primary": "#200", "text.muted": "#300"}}}"##,
+        )
+        .unwrap();
+
+        assert_eq!(
+            theme.get_color_token_names(),
+            BTreeSet::from([String::from("primary"), String::from("text-muted")])
+        );
     }
 
     #[test]
