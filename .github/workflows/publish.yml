@@ -345,7 +345,10 @@ jobs:
           git diff --exit-code
       - name: Check the changepacks of this change
         if: github.event_name == 'pull_request'
-        run: bunx "@changepacks/cli@${CHANGEPACKS_CLI_VERSION}" check --format json
+        run: |
+          # changepacks compares the change against a local main, which a pull request checkout does not have
+          git fetch --no-tags origin main:refs/heads/main
+          bunx "@changepacks/cli@${CHANGEPACKS_CLI_VERSION}" check --format json
       - name: Build Landing
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
