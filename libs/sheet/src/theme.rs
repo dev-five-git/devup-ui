@@ -653,6 +653,10 @@ pub struct Theme {
         deserialize_with = "deserialize_shadow_themes"
     )]
     pub shadows: BTreeMap<String, ShadowTheme>,
+    /// The text of the project's Tailwind CSS file, whose `@theme`, `@utility`
+    /// and `@custom-variant` definitions Tailwind classes use
+    #[serde(default, skip_serializing_if = "String::is_empty")]
+    pub tailwind_css: String,
 }
 
 /// Deserialize the color variants, naming the variant a token error is in
@@ -726,6 +730,7 @@ impl Default for Theme {
             typography: BTreeMap::new(),
             length: BTreeMap::new(),
             shadows: BTreeMap::new(),
+            tailwind_css: String::new(),
         }
     }
 }

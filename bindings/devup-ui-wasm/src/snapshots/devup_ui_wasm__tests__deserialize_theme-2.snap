@@ -61,4 +61,5 @@ Theme {
     },
     length: {},
     shadows: {},
+    tailwind_css: "",
 }

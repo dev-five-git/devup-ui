@@ -11,6 +11,7 @@
 
 use std::borrow::Cow;
 
+use css::tailwind_definitions::{custom_utility, custom_variant, theme_value, theme_variable};
 use css::{
     at_rule::split_at_rule_key,
     style_selector::{AtRuleKind, StyleSelector},
@@ -21,7 +22,9 @@ use crate::extract_style::extract_static_style::ExtractStaticStyle;
 use crate::tailwind_children::{CHILDREN, children_utility};
 use crate::tailwind_color::color_value;
 use crate::tailwind_effects::effect_utility;
+use crate::tailwind_misc::misc_utility;
 use crate::tailwind_motion::{keyframes_of, motion_utility};
+use crate::tailwind_theme::{reads_unsupported_theme, scaled, themed};
 
 /// A declaration: property and value
 pub type Declaration = (Cow<'static, str>, Cow<'static, str>);
@@ -214,6 +217,9 @@ static PROPERTIES: &[(&str, &str)] = &[
     property!("--tw-divide-x-reverse", "*", "0"),
     property!("--tw-divide-y-reverse", "*", "0"),
     property!("--tw-border-style", "*", "solid"),
+    property!("--tw-outline-style", "*", "solid"),
+    property!("--tw-border-spacing-x", "<length>", "0"),
+    property!("--tw-border-spacing-y", "<length>", "0"),
     property!("--tw-duration"),
     property!("--tw-ease"),
     property!("--tw-shadow", "*", "0 0 #0000"),
@@ -226,6 +232,10 @@ static PROPERTIES: &[(&str, &str)] = &[
     property!("--tw-inset-shadow-color"),
     property!("--tw-inset-shadow-alpha", "<percentage>", "100%"),
     property!("--tw-ring-color"),
+    property!("--tw-ring-inset"),
+    property!("--tw-ring-offset-width", "<length>", "0px"),
+    property!("--tw-ring-offset-color", "*", "#fff"),
+    property!("--tw-ring-offset-shadow", "*", "0 0 #0000"),
     property!("--tw-ring-shadow", "*", "0 0 #0000"),
     property!("--tw-inset-ring-color"),
     property!("--tw-inset-ring-shadow", "*", "0 0 #0000"),
@@ -305,15 +315,15 @@ impl TailwindClass {
     /// The global rules the declarations need: the @property rules of the
     /// custom properties they set or read, and the @keyframes they name
     #[must_use]
-    pub fn rules(&self) -> Vec<&'static str> {
-        let mut rules: Vec<&'static str> = PROPERTIES
+    pub fn rules(&self) -> Vec<Cow<'static, str>> {
+        let mut rules: Vec<Cow<'static, str>> = PROPERTIES
             .iter()
             .filter(|(name, _)| {
                 self.declarations
                     .iter()
                     .any(|(property, value)| property == name || reads(value, name))
             })
-            .map(|&(_, rule)| rule)
+            .map(|&(_, rule)| Cow::Borrowed(rule))
             .collect();
         rules.extend(keyframes_of(&self.declarations));
         rules
@@ -322,11 +332,26 @@ impl TailwindClass {
 
 /// The variant a prefix such as `hover` or `md` stands for
 fn variant(name: &str) -> Option<Variant> {
+    if let Some(custom) = custom_variant(name) {
+        return Some(Variant {
+            selectors: custom.selectors.into_iter().map(Cow::Owned).collect(),
+            at_rule: custom
+                .at_rule
+                .map(|(kind, query)| (kind, Cow::Owned(query))),
+            ..Variant::default()
+        });
+    }
     if let Some(&level) = RESPONSIVE_PREFIX_MAP.get(name) {
         return Some(Variant {
             level,
             ..Variant::default()
         });
+    }
+    if let Some(width) = theme_value("breakpoint", name) {
+        return Some(Variant::at_rule(
+            AtRuleKind::Media,
+            format!("(min-width:{width})"),
+        ));
     }
     if let Some(&query) = MEDIA_VARIANTS.get(name) {
         return Some(Variant::at_rule(AtRuleKind::Media, query));
@@ -490,7 +515,7 @@ fn arbitrary_variant(inner: &str) -> Option<Variant> {
 }
 
 /// Spacing scale (Tailwind default: 1 unit = 0.25rem = 4px)
-pub(crate) static SPACING_SCALE: phf::Map<&'static str, &'static str> = phf_map! {
+static DEFAULT_SPACING: phf::Map<&'static str, &'static str> = phf_map! {
     "0" => "0px",
     "px" => "1px",
     "0.5" => "0.125rem",
@@ -593,17 +618,31 @@ static FONT_WEIGHT_SCALE: phf::Map<&'static str, &'static str> = phf_map! {
     "black" => "900",
 };
 
+/// The spacing of a step: the project's @theme spacing, else Tailwind's
+pub(crate) fn spacing_scale(key: &str) -> Option<Cow<'static, str>> {
+    if let Some(value) = theme_value("spacing", key) {
+        return Some(Cow::Owned(value));
+    }
+    if let Some(scaled) = theme_variable("spacing").and_then(|base| scaled(key, &base)) {
+        return Some(Cow::Owned(scaled));
+    }
+    DEFAULT_SPACING
+        .get(key)
+        .map(|&value| Cow::Borrowed(value))
+        .or_else(|| scaled(key, "0.25rem").map(Cow::Owned))
+}
+
 /// Border radius scale
 static BORDER_RADIUS_SCALE: phf::Map<&'static str, &'static str> = phf_map! {
-    "none" => "0px",
-    "sm" => "0.125rem",
+    "xs" => "0.125rem",
+    "sm" => "0.25rem",
     "" => "0.25rem",
     "md" => "0.375rem",
     "lg" => "0.5rem",
     "xl" => "0.75rem",
     "2xl" => "1rem",
     "3xl" => "1.5rem",
-    "full" => "9999px",
+    "4xl" => "2rem",
 };
 
 /// Opacity scale
@@ -640,15 +679,6 @@ static Z_INDEX_SCALE: phf::Map<&'static str, &'static str> = phf_map! {
     "40" => "40",
     "50" => "50",
     "auto" => "auto",
-};
-
-/// Border width scale
-static BORDER_WIDTH_SCALE: phf::Map<&'static str, &'static str> = phf_map! {
-    "0" => "0px",
-    "" => "1px",
-    "2" => "2px",
-    "4" => "4px",
-    "8" => "8px",
 };
 
 /// The declarations `class` compiles to, `None` when it stays as written
@@ -805,7 +835,23 @@ fn element_utility(name: &str) -> Option<Vec<Declaration>> {
             arbitrary_property(name)
         };
     }
+    if !negative {
+        if let Some(declarations) = custom_utility(name) {
+            return Some(
+                declarations
+                    .into_iter()
+                    .map(|(property, value)| decl(property, value))
+                    .collect(),
+            );
+        }
+    }
+    if reads_unsupported_theme(name) {
+        return None;
+    }
     if let Some(declarations) = effect_utility(name, negative) {
+        return Some(declarations);
+    }
+    if let Some(declarations) = misc_utility(name, negative) {
         return Some(declarations);
     }
     if !negative {
@@ -1281,7 +1327,7 @@ fn compound_utility(name: &str, negative: bool) -> Option<Vec<Declaration>> {
         );
     }
     if let Some(size) = name.strip_prefix("size-") {
-        return Some(each(&["width", "height"], sizing_value(size)?));
+        return Some(each(&["width", "height"], &sizing_value(size)?));
     }
     if let Some(declarations) = radius_utility(name) {
         return Some(declarations);
@@ -1302,11 +1348,11 @@ fn compound_utility(name: &str, negative: bool) -> Option<Vec<Declaration>> {
 }
 
 /// A spacing value `size-*` and `translate-*` take
-fn sizing_value(size: &str) -> Option<&'static str> {
+fn sizing_value(size: &str) -> Option<Cow<'static, str>> {
     if matches!(size, "screen" | "svw" | "lvw" | "dvw") {
         return None;
     }
-    SPACING_SCALE.get(size).copied()
+    spacing_scale(size)
 }
 
 /// `rounded`, `rounded-lg`, `rounded-t`, `rounded-t-lg`, …
@@ -1322,8 +1368,14 @@ fn radius_utility(name: &str) -> Option<Vec<Declaration>> {
             _ => ("", rest),
         }
     };
-    let value = BORDER_RADIUS_SCALE.get(size)?;
-    Some(each(RADIUS_SIDES.get(side)?, value))
+    let value = match size {
+        "none" => Cow::Borrowed("0"),
+        "full" => Cow::Borrowed("calc(infinity * 1px)"),
+        _ => themed("radius", size, |size| {
+            BORDER_RADIUS_SCALE.get(size).copied()
+        })?,
+    };
+    Some(each(RADIUS_SIDES.get(side)?, &value))
 }
 
 /// `text-sm`, with the line height of the size unless `text-sm/6` sets one
@@ -1360,7 +1412,7 @@ fn line_height_value(name: &str) -> Option<Cow<'static, str>> {
             .then(|| Cow::Owned(format!("var({variable})")));
     }
     if is_number(name) {
-        return SPACING_SCALE.get(name).map(|&value| Cow::Borrowed(value));
+        return spacing_scale(name);
     }
     None
 }
@@ -2050,38 +2102,38 @@ fn parse_layout_utility(class: &str) -> Option<(&'static str, Cow<'static, str>)
 
             // Top/Right/Bottom/Left/Inset
             if let Some(rest) = class.strip_prefix("top-") {
-                if let Some(&value) = SPACING_SCALE.get(rest) {
-                    return Some(tw("top", Cow::Borrowed(value)));
+                if let Some(value) = spacing_scale(rest) {
+                    return Some(tw("top", value));
                 }
             }
             if let Some(rest) = class.strip_prefix("right-") {
-                if let Some(&value) = SPACING_SCALE.get(rest) {
-                    return Some(tw("right", Cow::Borrowed(value)));
+                if let Some(value) = spacing_scale(rest) {
+                    return Some(tw("right", value));
                 }
             }
             if let Some(rest) = class.strip_prefix("bottom-") {
-                if let Some(&value) = SPACING_SCALE.get(rest) {
-                    return Some(tw("bottom", Cow::Borrowed(value)));
+                if let Some(value) = spacing_scale(rest) {
+                    return Some(tw("bottom", value));
                 }
             }
             if let Some(rest) = class.strip_prefix("left-") {
-                if let Some(&value) = SPACING_SCALE.get(rest) {
-                    return Some(tw("left", Cow::Borrowed(value)));
+                if let Some(value) = spacing_scale(rest) {
+                    return Some(tw("left", value));
                 }
             }
             if let Some(rest) = class.strip_prefix("inset-x-") {
-                if let Some(&value) = SPACING_SCALE.get(rest) {
-                    return Some(tw("inset-inline", Cow::Borrowed(value)));
+                if let Some(value) = spacing_scale(rest) {
+                    return Some(tw("inset-inline", value));
                 }
             }
             if let Some(rest) = class.strip_prefix("inset-y-") {
-                if let Some(&value) = SPACING_SCALE.get(rest) {
-                    return Some(tw("inset-block", Cow::Borrowed(value)));
+                if let Some(value) = spacing_scale(rest) {
+                    return Some(tw("inset-block", value));
                 }
             }
             if let Some(rest) = class.strip_prefix("inset-") {
-                if let Some(&value) = SPACING_SCALE.get(rest) {
-                    return Some(tw("inset", Cow::Borrowed(value)));
+                if let Some(value) = spacing_scale(rest) {
+                    return Some(tw("inset", value));
                 }
             }
 
@@ -2240,8 +2292,8 @@ fn parse_flex_grid_utility(class: &str) -> Option<(&'static str, Cow<'static, st
         _ => {
             // Flex basis with spacing scale
             if let Some(rest) = class.strip_prefix("basis-") {
-                if let Some(&value) = SPACING_SCALE.get(rest) {
-                    return Some(tw("flex-basis", Cow::Borrowed(value)));
+                if let Some(value) = spacing_scale(rest) {
+                    return Some(tw("flex-basis", value));
                 }
             }
 
@@ -2316,18 +2368,18 @@ fn parse_flex_grid_utility(class: &str) -> Option<(&'static str, Cow<'static, st
 
             // Gap
             if let Some(rest) = class.strip_prefix("gap-x-") {
-                if let Some(&value) = SPACING_SCALE.get(rest) {
-                    return Some(tw("column-gap", Cow::Borrowed(value)));
+                if let Some(value) = spacing_scale(rest) {
+                    return Some(tw("column-gap", value));
                 }
             }
             if let Some(rest) = class.strip_prefix("gap-y-") {
-                if let Some(&value) = SPACING_SCALE.get(rest) {
-                    return Some(tw("row-gap", Cow::Borrowed(value)));
+                if let Some(value) = spacing_scale(rest) {
+                    return Some(tw("row-gap", value));
                 }
             }
             if let Some(rest) = class.strip_prefix("gap-") {
-                if let Some(&value) = SPACING_SCALE.get(rest) {
-                    return Some(tw("gap", Cow::Borrowed(value)));
+                if let Some(value) = spacing_scale(rest) {
+                    return Some(tw("gap", value));
                 }
             }
 
@@ -2340,95 +2392,95 @@ fn parse_flex_grid_utility(class: &str) -> Option<(&'static str, Cow<'static, st
 fn parse_spacing_utility(class: &str) -> Option<(&'static str, Cow<'static, str>)> {
     // Padding
     if let Some(rest) = class.strip_prefix("px-") {
-        if let Some(&value) = SPACING_SCALE.get(rest) {
-            return Some(tw("padding-inline", Cow::Borrowed(value)));
+        if let Some(value) = spacing_scale(rest) {
+            return Some(tw("padding-inline", value));
         }
     }
     if let Some(rest) = class.strip_prefix("py-") {
-        if let Some(&value) = SPACING_SCALE.get(rest) {
-            return Some(tw("padding-block", Cow::Borrowed(value)));
+        if let Some(value) = spacing_scale(rest) {
+            return Some(tw("padding-block", value));
         }
     }
     if let Some(rest) = class.strip_prefix("pt-") {
-        if let Some(&value) = SPACING_SCALE.get(rest) {
-            return Some(tw("padding-top", Cow::Borrowed(value)));
+        if let Some(value) = spacing_scale(rest) {
+            return Some(tw("padding-top", value));
         }
     }
     if let Some(rest) = class.strip_prefix("pr-") {
-        if let Some(&value) = SPACING_SCALE.get(rest) {
-            return Some(tw("padding-right", Cow::Borrowed(value)));
+        if let Some(value) = spacing_scale(rest) {
+            return Some(tw("padding-right", value));
         }
     }
     if let Some(rest) = class.strip_prefix("pb-") {
-        if let Some(&value) = SPACING_SCALE.get(rest) {
-            return Some(tw("padding-bottom", Cow::Borrowed(value)));
+        if let Some(value) = spacing_scale(rest) {
+            return Some(tw("padding-bottom", value));
         }
     }
     if let Some(rest) = class.strip_prefix("pl-") {
-        if let Some(&value) = SPACING_SCALE.get(rest) {
-            return Some(tw("padding-left", Cow::Borrowed(value)));
+        if let Some(value) = spacing_scale(rest) {
+            return Some(tw("padding-left", value));
         }
     }
     if let Some(rest) = class.strip_prefix("ps-") {
-        if let Some(&value) = SPACING_SCALE.get(rest) {
-            return Some(tw("padding-inline-start", Cow::Borrowed(value)));
+        if let Some(value) = spacing_scale(rest) {
+            return Some(tw("padding-inline-start", value));
         }
     }
     if let Some(rest) = class.strip_prefix("pe-") {
-        if let Some(&value) = SPACING_SCALE.get(rest) {
-            return Some(tw("padding-inline-end", Cow::Borrowed(value)));
+        if let Some(value) = spacing_scale(rest) {
+            return Some(tw("padding-inline-end", value));
         }
     }
     if let Some(rest) = class.strip_prefix("p-") {
-        if let Some(&value) = SPACING_SCALE.get(rest) {
-            return Some(tw("padding", Cow::Borrowed(value)));
+        if let Some(value) = spacing_scale(rest) {
+            return Some(tw("padding", value));
         }
     }
 
     // Margin
     if let Some(rest) = class.strip_prefix("mx-") {
-        if let Some(&value) = SPACING_SCALE.get(rest) {
-            return Some(tw("margin-inline", Cow::Borrowed(value)));
+        if let Some(value) = spacing_scale(rest) {
+            return Some(tw("margin-inline", value));
         }
     }
     if let Some(rest) = class.strip_prefix("my-") {
-        if let Some(&value) = SPACING_SCALE.get(rest) {
-            return Some(tw("margin-block", Cow::Borrowed(value)));
+        if let Some(value) = spacing_scale(rest) {
+            return Some(tw("margin-block", value));
         }
     }
     if let Some(rest) = class.strip_prefix("mt-") {
-        if let Some(&value) = SPACING_SCALE.get(rest) {
-            return Some(tw("margin-top", Cow::Borrowed(value)));
+        if let Some(value) = spacing_scale(rest) {
+            return Some(tw("margin-top", value));
         }
     }
     if let Some(rest) = class.strip_prefix("mr-") {
-        if let Some(&value) = SPACING_SCALE.get(rest) {
-            return Some(tw("margin-right", Cow::Borrowed(value)));
+        if let Some(value) = spacing_scale(rest) {
+            return Some(tw("margin-right", value));
         }
     }
     if let Some(rest) = class.strip_prefix("mb-") {
-        if let Some(&value) = SPACING_SCALE.get(rest) {
-            return Some(tw("margin-bottom", Cow::Borrowed(value)));
+        if let Some(value) = spacing_scale(rest) {
+            return Some(tw("margin-bottom", value));
         }
     }
     if let Some(rest) = class.strip_prefix("ml-") {
-        if let Some(&value) = SPACING_SCALE.get(rest) {
-            return Some(tw("margin-left", Cow::Borrowed(value)));
+        if let Some(value) = spacing_scale(rest) {
+            return Some(tw("margin-left", value));
         }
     }
     if let Some(rest) = class.strip_prefix("ms-") {
-        if let Some(&value) = SPACING_SCALE.get(rest) {
-            return Some(tw("margin-inline-start", Cow::Borrowed(value)));
+        if let Some(value) = spacing_scale(rest) {
+            return Some(tw("margin-inline-start", value));
         }
     }
     if let Some(rest) = class.strip_prefix("me-") {
-        if let Some(&value) = SPACING_SCALE.get(rest) {
-            return Some(tw("margin-inline-end", Cow::Borrowed(value)));
+        if let Some(value) = spacing_scale(rest) {
+            return Some(tw("margin-inline-end", value));
         }
     }
     if let Some(rest) = class.strip_prefix("m-") {
-        if let Some(&value) = SPACING_SCALE.get(rest) {
-            return Some(tw("margin", Cow::Borrowed(value)));
+        if let Some(value) = spacing_scale(rest) {
+            return Some(tw("margin", value));
         }
     }
 
@@ -2439,8 +2491,8 @@ fn parse_spacing_utility(class: &str) -> Option<(&'static str, Cow<'static, str>
 fn parse_sizing_utility(class: &str) -> Option<(&'static str, Cow<'static, str>)> {
     // Width
     if let Some(rest) = class.strip_prefix("w-") {
-        if let Some(&value) = SPACING_SCALE.get(rest) {
-            return Some(tw("width", Cow::Borrowed(value)));
+        if let Some(value) = spacing_scale(rest) {
+            return Some(tw("width", value));
         }
     }
 
@@ -2452,13 +2504,7 @@ fn parse_sizing_utility(class: &str) -> Option<(&'static str, Cow<'static, str>)
             "min" => Cow::Borrowed("min-content"),
             "max" => Cow::Borrowed("max-content"),
             "fit" => Cow::Borrowed("fit-content"),
-            _ => {
-                if let Some(&v) = SPACING_SCALE.get(rest) {
-                    Cow::Borrowed(v)
-                } else {
-                    return None;
-                }
-            }
+            _ => spacing_scale(rest)?,
         };
         return Some(tw("min-width", value));
     }
@@ -2489,13 +2535,7 @@ fn parse_sizing_utility(class: &str) -> Option<(&'static str, Cow<'static, str>)
             "screen-lg" => Cow::Borrowed("1024px"),
             "screen-xl" => Cow::Borrowed("1280px"),
             "screen-2xl" => Cow::Borrowed("1536px"),
-            _ => {
-                if let Some(&v) = SPACING_SCALE.get(rest) {
-                    Cow::Borrowed(v)
-                } else {
-                    return None;
-                }
-            }
+            _ => spacing_scale(rest)?,
         };
         return Some(tw("max-width", value));
     }
@@ -2507,13 +2547,7 @@ fn parse_sizing_utility(class: &str) -> Option<(&'static str, Cow<'static, str>)
             "svh" => Cow::Borrowed("100svh"),
             "lvh" => Cow::Borrowed("100lvh"),
             "dvh" => Cow::Borrowed("100dvh"),
-            _ => {
-                if let Some(&v) = SPACING_SCALE.get(rest) {
-                    Cow::Borrowed(v)
-                } else {
-                    return None;
-                }
-            }
+            _ => spacing_scale(rest)?,
         };
         return Some(tw("height", value));
     }
@@ -2530,13 +2564,7 @@ fn parse_sizing_utility(class: &str) -> Option<(&'static str, Cow<'static, str>)
             "min" => Cow::Borrowed("min-content"),
             "max" => Cow::Borrowed("max-content"),
             "fit" => Cow::Borrowed("fit-content"),
-            _ => {
-                if let Some(&v) = SPACING_SCALE.get(rest) {
-                    Cow::Borrowed(v)
-                } else {
-                    return None;
-                }
-            }
+            _ => spacing_scale(rest)?,
         };
         return Some(tw("min-height", value));
     }
@@ -2553,13 +2581,7 @@ fn parse_sizing_utility(class: &str) -> Option<(&'static str, Cow<'static, str>)
             "min" => Cow::Borrowed("min-content"),
             "max" => Cow::Borrowed("max-content"),
             "fit" => Cow::Borrowed("fit-content"),
-            _ => {
-                if let Some(&v) = SPACING_SCALE.get(rest) {
-                    Cow::Borrowed(v)
-                } else {
-                    return None;
-                }
-            }
+            _ => spacing_scale(rest)?,
         };
         return Some(tw("max-height", value));
     }
@@ -2813,54 +2835,6 @@ fn parse_border_utility(class: &str) -> Option<(&'static str, Cow<'static, str>)
             return Some(tw("border-color", color));
         }
 
-        // Border width per side
-        if let Some(width) = rest.strip_prefix("t-") {
-            if let Some(&value) = BORDER_WIDTH_SCALE.get(width) {
-                return Some(tw("border-top-width", Cow::Borrowed(value)));
-            }
-        }
-        if let Some(width) = rest.strip_prefix("r-") {
-            if let Some(&value) = BORDER_WIDTH_SCALE.get(width) {
-                return Some(tw("border-right-width", Cow::Borrowed(value)));
-            }
-        }
-        if let Some(width) = rest.strip_prefix("b-") {
-            if let Some(&value) = BORDER_WIDTH_SCALE.get(width) {
-                return Some(tw("border-bottom-width", Cow::Borrowed(value)));
-            }
-        }
-        if let Some(width) = rest.strip_prefix("l-") {
-            if let Some(&value) = BORDER_WIDTH_SCALE.get(width) {
-                return Some(tw("border-left-width", Cow::Borrowed(value)));
-            }
-        }
-        if let Some(width) = rest.strip_prefix("x-") {
-            if let Some(&value) = BORDER_WIDTH_SCALE.get(width) {
-                return Some(tw("border-inline-width", Cow::Borrowed(value)));
-            }
-        }
-        if let Some(width) = rest.strip_prefix("y-") {
-            if let Some(&value) = BORDER_WIDTH_SCALE.get(width) {
-                return Some(tw("border-block-width", Cow::Borrowed(value)));
-            }
-        }
-
-        // Border width
-        if let Some(&value) = BORDER_WIDTH_SCALE.get(rest) {
-            return Some(tw("border-width", Cow::Borrowed(value)));
-        }
-
-        // Border style
-        match rest {
-            "solid" => return Some(tw("border-style", Cow::Borrowed("solid"))),
-            "dashed" => return Some(tw("border-style", Cow::Borrowed("dashed"))),
-            "dotted" => return Some(tw("border-style", Cow::Borrowed("dotted"))),
-            "double" => return Some(tw("border-style", Cow::Borrowed("double"))),
-            "hidden" => return Some(tw("border-style", Cow::Borrowed("hidden"))),
-            "none" => return Some(tw("border-style", Cow::Borrowed("none"))),
-            _ => {}
-        }
-
         // Border collapse (for tables)
         if rest == "collapse" {
             return Some(tw("border-collapse", Cow::Borrowed("collapse")));
@@ -2870,80 +2844,11 @@ fn parse_border_utility(class: &str) -> Option<(&'static str, Cow<'static, str>)
         }
     }
 
-    // Standalone "border" (without suffix) - note: "border-0/2/4/8" variants are handled
-    // via BORDER_WIDTH_SCALE lookup above in the strip_prefix("border-") branch
-    if class == "border" {
-        return Some(tw("border-width", Cow::Borrowed("1px")));
-    }
-
-    // Outline
+    // Outline color
     if let Some(rest) = class.strip_prefix("outline-") {
-        match rest {
-            "none" => {
-                return Some(tw("outline", Cow::Borrowed("2px solid transparent")));
-            }
-            "0" => return Some(tw("outline-width", Cow::Borrowed("0px"))),
-            "1" => return Some(tw("outline-width", Cow::Borrowed("1px"))),
-            "2" => return Some(tw("outline-width", Cow::Borrowed("2px"))),
-            "4" => return Some(tw("outline-width", Cow::Borrowed("4px"))),
-            "8" => return Some(tw("outline-width", Cow::Borrowed("8px"))),
-            "dashed" => return Some(tw("outline-style", Cow::Borrowed("dashed"))),
-            "dotted" => return Some(tw("outline-style", Cow::Borrowed("dotted"))),
-            "double" => return Some(tw("outline-style", Cow::Borrowed("double"))),
-            _ => {
-                if let Some(color) = color_value(rest) {
-                    return Some(tw("outline-color", color));
-                }
-            }
+        if let Some(color) = color_value(rest) {
+            return Some(tw("outline-color", color));
         }
-    }
-    if class == "outline" {
-        return Some(tw("outline-style", Cow::Borrowed("solid")));
-    }
-
-    // Ring
-    if let Some(rest) = class.strip_prefix("ring-") {
-        match rest {
-            "0" => {
-                return Some(tw("--tw-ring-offset-shadow", Cow::Borrowed("0 0 #0000")));
-            }
-            "1" => {
-                return Some(tw(
-                    "box-shadow",
-                    Cow::Borrowed("0 0 0 1px var(--tw-ring-color)"),
-                ));
-            }
-            "2" => {
-                return Some(tw(
-                    "box-shadow",
-                    Cow::Borrowed("0 0 0 2px var(--tw-ring-color)"),
-                ));
-            }
-            "4" => {
-                return Some(tw(
-                    "box-shadow",
-                    Cow::Borrowed("0 0 0 4px var(--tw-ring-color)"),
-                ));
-            }
-            "8" => {
-                return Some(tw(
-                    "box-shadow",
-                    Cow::Borrowed("0 0 0 8px var(--tw-ring-color)"),
-                ));
-            }
-            "inset" => return Some(tw("--tw-ring-inset", Cow::Borrowed("inset"))),
-            _ => {
-                if let Some(color) = color_value(rest) {
-                    return Some(tw("--tw-ring-color", color));
-                }
-            }
-        }
-    }
-    if class == "ring" {
-        return Some(tw(
-            "box-shadow",
-            Cow::Borrowed("0 0 0 3px var(--tw-ring-color)"),
-        ));
     }
 
     None
@@ -3057,18 +2962,6 @@ fn parse_interactivity_utility(class: &str) -> Option<(&'static str, Cow<'static
             "auto" => return Some(tw("scroll-behavior", Cow::Borrowed("auto"))),
             "smooth" => return Some(tw("scroll-behavior", Cow::Borrowed("smooth"))),
             _ => {}
-        }
-    }
-
-    // Scroll margin/padding
-    if let Some(rest) = class.strip_prefix("scroll-m-") {
-        if let Some(&value) = SPACING_SCALE.get(rest) {
-            return Some(tw("scroll-margin", Cow::Borrowed(value)));
-        }
-    }
-    if let Some(rest) = class.strip_prefix("scroll-p-") {
-        if let Some(&value) = SPACING_SCALE.get(rest) {
-            return Some(tw("scroll-padding", Cow::Borrowed(value)));
         }
     }
 
@@ -3416,11 +3309,9 @@ mod tests {
 
     #[rstest]
     #[case("rounded", "border-radius", "0.25rem")]
-    #[case("rounded-none", "border-radius", "0px")]
-    #[case("rounded-full", "border-radius", "9999px")]
+    #[case("rounded-none", "border-radius", "0")]
+    #[case("rounded-full", "border-radius", "calc(infinity * 1px)")]
     #[case("rounded-lg", "border-radius", "0.5rem")]
-    #[case("border", "border-width", "1px")]
-    #[case("border-2", "border-width", "2px")]
     #[case("border-red-500", "border-color", "oklch(63.7% 0.237 25.331)")]
     fn test_parse_border_utilities(
         #[case] class: &str,
@@ -4027,78 +3918,7 @@ mod tests {
         assert_eq!(declarations(class), Some(owned(expected)));
     }
 
-    #[rstest]
-    #[case("border-t-2", "border-top-width", "2px")]
-    #[case("border-r-2", "border-right-width", "2px")]
-    #[case("border-b-2", "border-bottom-width", "2px")]
-    #[case("border-l-2", "border-left-width", "2px")]
-    #[case("border-x-2", "border-inline-width", "2px")]
-    #[case("border-y-2", "border-block-width", "2px")]
-    fn test_parse_border_width_sides(
-        #[case] class: &str,
-        #[case] expected_prop: &str,
-        #[case] expected_value: &str,
-    ) {
-        let parsed = parse_single_class(class).expect("Should parse");
-        assert_eq!(parsed.property, expected_prop);
-        assert_eq!(parsed.value, expected_value);
-    }
-
     // Wave 5.4: Border styles, outline, ring, divide (lines 2211-2313)
-    #[rstest]
-    #[case("border-solid", "border-style", "solid")]
-    #[case("border-dashed", "border-style", "dashed")]
-    #[case("border-dotted", "border-style", "dotted")]
-    #[case("border-double", "border-style", "double")]
-    #[case("border-hidden", "border-style", "hidden")]
-    #[case("border-none", "border-style", "none")]
-    fn test_parse_border_styles(
-        #[case] class: &str,
-        #[case] expected_prop: &str,
-        #[case] expected_value: &str,
-    ) {
-        let parsed = parse_single_class(class).expect("Should parse");
-        assert_eq!(parsed.property, expected_prop);
-        assert_eq!(parsed.value, expected_value);
-    }
-
-    #[rstest]
-    #[case("outline-none", "outline", "2px solid transparent")]
-    #[case("outline", "outline-style", "solid")]
-    #[case("outline-dashed", "outline-style", "dashed")]
-    #[case("outline-dotted", "outline-style", "dotted")]
-    #[case("outline-double", "outline-style", "double")]
-    #[case("outline-0", "outline-width", "0px")]
-    #[case("outline-1", "outline-width", "1px")]
-    #[case("outline-2", "outline-width", "2px")]
-    #[case("outline-4", "outline-width", "4px")]
-    #[case("outline-8", "outline-width", "8px")]
-    fn test_parse_outline_utilities(
-        #[case] class: &str,
-        #[case] expected_prop: &str,
-        #[case] expected_value: &str,
-    ) {
-        let parsed = parse_single_class(class).expect("Should parse");
-        assert_eq!(parsed.property, expected_prop);
-        assert_eq!(parsed.value, expected_value);
-    }
-
-    #[rstest]
-    #[case("ring", "box-shadow", "0 0 0 3px var(--tw-ring-color)")]
-    #[case("ring-0", "--tw-ring-offset-shadow", "0 0 #0000")]
-    #[case("ring-1", "box-shadow", "0 0 0 1px var(--tw-ring-color)")]
-    #[case("ring-2", "box-shadow", "0 0 0 2px var(--tw-ring-color)")]
-    #[case("ring-inset", "--tw-ring-inset", "inset")]
-    fn test_parse_ring_utilities(
-        #[case] class: &str,
-        #[case] expected_prop: &str,
-        #[case] expected_value: &str,
-    ) {
-        let parsed = parse_single_class(class).expect("Should parse");
-        assert_eq!(parsed.property, expected_prop);
-        assert_eq!(parsed.value, expected_value);
-    }
-
     // Wave 5.5: Effects (lines 2328-2350)
     #[rstest]
     #[case("bg-blend-normal", "background-blend-mode", "normal")]
@@ -4569,14 +4389,14 @@ mod tests {
 
     // Wave 6.11: Individual rounded variants (via BORDER_RADIUS_SCALE lookup)
     #[rstest]
-    #[case("rounded-none", "border-radius", "0px")]
-    #[case("rounded-sm", "border-radius", "0.125rem")]
+    #[case("rounded-none", "border-radius", "0")]
+    #[case("rounded-sm", "border-radius", "0.25rem")]
     #[case("rounded-md", "border-radius", "0.375rem")]
     #[case("rounded-lg", "border-radius", "0.5rem")]
     #[case("rounded-xl", "border-radius", "0.75rem")]
     #[case("rounded-2xl", "border-radius", "1rem")]
     #[case("rounded-3xl", "border-radius", "1.5rem")]
-    #[case("rounded-full", "border-radius", "9999px")]
+    #[case("rounded-full", "border-radius", "calc(infinity * 1px)")]
     fn test_parse_individual_rounded_variants(
         #[case] class: &str,
         #[case] expected_prop: &str,
@@ -4601,21 +4421,6 @@ mod tests {
         assert_eq!(parsed.value, expected_value);
     }
 
-    #[rstest]
-    #[case("border-0", "border-width", "0px")]
-    #[case("border-2", "border-width", "2px")]
-    #[case("border-4", "border-width", "4px")]
-    #[case("border-8", "border-width", "8px")]
-    fn test_parse_border_width_standalone(
-        #[case] class: &str,
-        #[case] expected_prop: &str,
-        #[case] expected_value: &str,
-    ) {
-        let parsed = parse_single_class(class).expect("Should parse border width");
-        assert_eq!(parsed.property, expected_prop);
-        assert_eq!(parsed.value, expected_value);
-    }
-
     // Wave 6.13: Outline color (lines 2250-2251)
     #[rstest]
     #[case("outline-black", "outline-color", "#000")]
@@ -4633,19 +4438,6 @@ mod tests {
     }
 
     // Wave 6.14: Ring utilities (lines 2273-2281)
-    #[rstest]
-    #[case("ring-4", "box-shadow", "0 0 0 4px var(--tw-ring-color)")]
-    #[case("ring-8", "box-shadow", "0 0 0 8px var(--tw-ring-color)")]
-    fn test_parse_ring_width_extended(
-        #[case] class: &str,
-        #[case] expected_prop: &str,
-        #[case] expected_value: &str,
-    ) {
-        let parsed = parse_single_class(class).expect("Should parse ring width");
-        assert_eq!(parsed.property, expected_prop);
-        assert_eq!(parsed.value, expected_value);
-    }
-
     #[rstest]
     #[case("ring-black", "--tw-ring-color", "#000")]
     #[case("ring-white", "--tw-ring-color", "#fff")]
@@ -4849,14 +4641,14 @@ mod tests {
     // Wave 7.5: Individual rounded variants via BORDER_RADIUS_SCALE lookup
     #[rstest]
     #[case("rounded", "border-radius", "0.25rem")]
-    #[case("rounded-none", "border-radius", "0px")]
-    #[case("rounded-sm", "border-radius", "0.125rem")]
+    #[case("rounded-none", "border-radius", "0")]
+    #[case("rounded-sm", "border-radius", "0.25rem")]
     #[case("rounded-md", "border-radius", "0.375rem")]
     #[case("rounded-lg", "border-radius", "0.5rem")]
     #[case("rounded-xl", "border-radius", "0.75rem")]
     #[case("rounded-2xl", "border-radius", "1rem")]
     #[case("rounded-3xl", "border-radius", "1.5rem")]
-    #[case("rounded-full", "border-radius", "9999px")]
+    #[case("rounded-full", "border-radius", "calc(infinity * 1px)")]
     fn test_rounded_variants_full_path(
         #[case] class: &str,
         #[case] expected_prop: &str,
@@ -4868,22 +4660,6 @@ mod tests {
     }
 
     // Wave 7.6: border-0/2/4/8 via BORDER_WIDTH_SCALE lookup
-    #[rstest]
-    #[case("border", "border-width", "1px")]
-    #[case("border-0", "border-width", "0px")]
-    #[case("border-2", "border-width", "2px")]
-    #[case("border-4", "border-width", "4px")]
-    #[case("border-8", "border-width", "8px")]
-    fn test_border_width_standalone_full_path(
-        #[case] class: &str,
-        #[case] expected_prop: &str,
-        #[case] expected_value: &str,
-    ) {
-        let parsed = parse_single_class(class).expect("Should parse border");
-        assert_eq!(parsed.property, expected_prop);
-        assert_eq!(parsed.value, expected_value);
-    }
-
     // Wave 7.7: divide- unknown value fallback (line 2313)
     #[rstest]
     #[case("divide-unknown")]
@@ -4953,16 +4729,6 @@ mod tests {
     }
 
     // Wave 8.4: parse_tailwind_to_styles integration for border widths (via BORDER_WIDTH_SCALE)
-    #[test]
-    #[serial]
-    fn test_parse_tailwind_to_styles_border_width_integration() {
-        reset_class_map();
-        reset_file_map();
-
-        let styles = parse_tailwind_to_styles("border border-0 border-2 border-4 border-8");
-        assert_eq!(styles.len(), 5);
-    }
-
     // ==================== Variants (Tailwind v4) ====================
 
     #[rstest]
@@ -5365,19 +5131,13 @@ mod tests {
     #[case("bg-[length:200px_100px]", "background-size", "200px 100px")]
     #[case("bg-[bg-size:cover]", "background-size", "cover")]
     #[case("bg-[position:top]", "background-position", "top")]
-    #[case("border-[3px]", "border-width", "3px")]
-    #[case("border-[2px_4px]", "border-width", "2px 4px")]
     #[case("border-[thin]", "border-width", "thin")]
-    #[case("border-[0]", "border-width", "0")]
     #[case("border-[length:var(--x)]", "border-width", "var(--x)")]
     #[case("border-[line-width:var(--x)]", "border-width", "var(--x)")]
     #[case("border-[#fff]", "border-color", "#fff")]
     #[case("border-[var(--x)]", "border-color", "var(--x)")]
-    #[case("border-t-[3px]", "border-top-width", "3px")]
     #[case("border-t-[red]", "border-top-color", "red")]
-    #[case("border-x-[1px]", "border-inline-width", "1px")]
     #[case("border-s-[red]", "border-inline-start-color", "red")]
-    #[case("outline-[3px]", "outline-width", "3px")]
     #[case("outline-[red]", "outline-color", "red")]
     #[case("stroke-[3px]", "stroke-width", "3px")]
     #[case("stroke-[2]", "stroke-width", "2")]
@@ -5465,6 +5225,21 @@ mod tests {
         assert!(!is_balanced("("));
     }
 
+    #[rstest]
+    #[case("inset-y-4", "inset-block", "1rem")]
+    #[case("inset-x-2", "inset-inline", "0.5rem")]
+    #[case("basis-4", "flex-basis", "1rem")]
+    #[case("basis-13", "flex-basis", "3.25rem")]
+    #[case("top-13", "top", "3.25rem")]
+    fn test_parse_spacing_scale_steps(
+        #[case] class: &str,
+        #[case] expected_prop: &str,
+        #[case] expected_value: &str,
+    ) {
+        let parsed = parse_single_class(class).expect("Should parse");
+        assert_eq!(parsed.property, expected_prop);
+        assert_eq!(parsed.value, expected_value);
+    }
     #[test]
     fn test_styles_and_properties() {
         let class = parse_class("md:hover:p-4").unwrap();

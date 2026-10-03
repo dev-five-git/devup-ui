@@ -2,7 +2,7 @@
 //! all but the last, through the selector Tailwind CSS v4 writes for them
 
 use crate::tailwind::{
-    Declaration, SPACING_SCALE, arbitrary_or_variable, decl, is_positive_integer,
+    Declaration, arbitrary_or_variable, decl, is_positive_integer, spacing_scale,
 };
 use crate::tailwind_color::color_value;
 
@@ -12,8 +12,8 @@ pub const CHILDREN: &str = ":where(& > :not(:last-child))";
 
 /// The value of the spacing `argument`: a step of the scale, or an arbitrary
 /// value, negated by a leading `-`
-fn spacing(argument: &str, negative: bool) -> Option<String> {
-    if let Some(&value) = SPACING_SCALE.get(argument) {
+pub(crate) fn spacing(argument: &str, negative: bool) -> Option<String> {
+    if let Some(value) = spacing_scale(argument) {
         return Some(if negative && value != "0px" {
             format!("-{value}")
         } else {

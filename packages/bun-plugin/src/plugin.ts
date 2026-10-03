@@ -9,6 +9,7 @@ import {
   type CustomShorthands,
   loadDevupConfig,
   mergeImportAliases,
+  withTailwindCss,
 } from '@devup-ui/plugin-utils'
 import {
   codeExtract,
@@ -39,7 +40,7 @@ async function writeDataFiles() {
   let theme = {}
   try {
     const config = await loadDevupConfig(devupFile)
-    theme = config.theme ?? {}
+    theme = withTailwindCss(config.theme ?? {}, config)
   } catch {
     // Error reading devup.json, use empty theme
   }

@@ -4,6 +4,7 @@
 
 use std::borrow::Cow;
 
+use css::tailwind_definitions::{namespace_is_reset, theme_value};
 use css::theme_tokens::is_color_token;
 use phf::phf_map;
 
@@ -357,6 +358,19 @@ fn named_color(name: &str) -> Option<Cow<'static, str>> {
     if is_color_token(name) {
         return Some(Cow::Owned(format!("var(--{name})")));
     }
+    if let Some(value) = theme_value("color", name) {
+        return Some(palette_reference(&value).unwrap_or(Cow::Owned(value)));
+    }
+    let universal = matches!(name, "inherit" | "current" | "transparent");
+    if namespace_is_reset("color") && !universal {
+        return None;
+    }
+    TAILWIND_COLORS.get(name).map(|&color| Cow::Borrowed(color))
+}
+
+/// The palette color a theme color that is ar(--color-<name>) stands for
+fn palette_reference(value: &str) -> Option<Cow<'static, str>> {
+    let name = value.strip_prefix("var(--color-")?.strip_suffix(')')?;
     TAILWIND_COLORS.get(name).map(|&color| Cow::Borrowed(color))
 }
 

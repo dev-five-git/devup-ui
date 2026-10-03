@@ -168,6 +168,12 @@ ToBTreeSet {
         ),
         Css(
             ExtractCss {
+                css: "@property --tw-ring-offset-shadow{syntax:\"*\";inherits:false;initial-value:0 0 #0000}",
+                file: "@devup-ui/tailwind",
+            },
+        ),
+        Css(
+            ExtractCss {
                 css: "@property --tw-ring-shadow{syntax:\"*\";inherits:false;initial-value:0 0 #0000}",
                 file: "@devup-ui/tailwind",
             },

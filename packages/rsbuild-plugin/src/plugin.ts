@@ -15,6 +15,7 @@ import {
   loadDevupConfig,
   mergeImportAliases,
   planAtomHoist,
+  withTailwindCss,
 } from '@devup-ui/plugin-utils'
 import {
   codeExtract,
@@ -77,7 +78,7 @@ async function writeDataFiles(
     const config = await loadDevupConfig(options.devupFile)
     const theme = config.theme ?? {}
 
-    registerTheme(theme)
+    registerTheme(withTailwindCss(theme, config))
     const interfaceCode = getThemeInterface(
       ...createThemeInterfaceArgs(options.package),
     )

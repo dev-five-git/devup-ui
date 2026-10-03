@@ -9,12 +9,14 @@ use crate::{ExtractStyleProp, ExtractStyleValue};
 use oxc_allocator::{CloneIn, FromIn, GetAllocator};
 use oxc_ast::ast::JSXAttributeName::Identifier;
 use oxc_ast::ast::{
-    Expression, IdentifierName, JSXAttributeItem, JSXAttributeName, JSXAttributeValue,
-    LogicalOperator, ObjectPropertyKind, PropertyKey, PropertyKind, StaticMemberExpression, Str,
-    StringLiteral, TemplateElement, TemplateElementValue, TemplateLiteral,
+    Argument, ArrayExpressionElement, CallExpression, Expression, IdentifierName, JSXAttributeItem,
+    JSXAttributeName, JSXAttributeValue, LogicalOperator, ObjectPropertyKind, PropertyKey,
+    PropertyKind, StaticMemberExpression, Str, StringLiteral, TemplateElement,
+    TemplateElementValue, TemplateLiteral,
 };
 use oxc_ast::builder::AstBuilder;
 use oxc_span::SPAN;
+use std::borrow::Cow;
 use std::collections::BTreeSet;
 
 /// Combine two optional className expressions into a conditional expression.
@@ -366,7 +368,7 @@ struct TailwindClassName<'f> {
     filename: Option<&'f str>,
     styles: Vec<ExtractStyleValue>,
     /// The global rules the compiled classes need, @property and @keyframes
-    rules: BTreeSet<&'static str>,
+    rules: BTreeSet<Cow<'static, str>>,
 }
 
 impl TailwindClassName<'_> {
@@ -473,9 +475,89 @@ impl TailwindClassName<'_> {
                     ast_builder,
                 ))
             }
-            // Variables, calls and the like only hold their classes at runtime
+            Expression::CallExpression(call) => self.compile_call(ast_builder, call),
+            Expression::ArrayExpression(array) => {
+                let mut compiled = array.clone_in(ast_builder.allocator());
+                let mut changed = false;
+                for element in &mut compiled.elements {
+                    if let Some(expression) = element
+                        .as_expression()
+                        .and_then(|expression| self.compile_expression(ast_builder, expression))
+                    {
+                        *element = ArrayExpressionElement::from(expression);
+                        changed = true;
+                    }
+                }
+                changed.then_some(Expression::ArrayExpression(compiled))
+            }
+            Expression::ObjectExpression(object) => {
+                let mut compiled = object.clone_in(ast_builder.allocator());
+                let mut changed = false;
+                for property in &mut compiled.properties {
+                    let ObjectPropertyKind::ObjectProperty(property) = property else {
+                        continue;
+                    };
+                    let PropertyKey::StringLiteral(key) = &property.key else {
+                        continue;
+                    };
+                    if property.computed {
+                        continue;
+                    }
+                    if let Some(text) = self.compile_text(&key.value, false, false) {
+                        property.key = PropertyKey::from(Expression::new_string_literal(
+                            SPAN,
+                            Str::from_in(&text, ast_builder.allocator()),
+                            None,
+                            ast_builder,
+                        ));
+                        changed = true;
+                    }
+                }
+                changed.then_some(Expression::ObjectExpression(compiled))
+            }
+            // Variables and the like only hold their classes at runtime
             _ => None,
         }
+    }
+
+    /// `clsx(...)`, `classnames(...)` and `[...].join(" ")`, which join the
+    /// classes they are given as they are, so each class compiles where it is
+    /// written
+    fn compile_call<'a>(
+        &mut self,
+        ast_builder: &AstBuilder<'a>,
+        call: &CallExpression<'a>,
+    ) -> Option<Expression<'a>> {
+        let mut compiled = call.clone_in(ast_builder.allocator());
+        let mut changed = false;
+        match &call.callee {
+            Expression::Identifier(callee)
+                if matches!(callee.name.as_str(), "clsx" | "classnames" | "classNames") =>
+            {
+                for argument in &mut compiled.arguments {
+                    if let Some(expression) = argument
+                        .as_expression()
+                        .and_then(|expression| self.compile_expression(ast_builder, expression))
+                    {
+                        *argument = Argument::from(expression);
+                        changed = true;
+                    }
+                }
+            }
+            Expression::StaticMemberExpression(member)
+                if member.property.name == "join"
+                    && matches!(call.arguments.as_slice(), [Argument::StringLiteral(separator)] if separator.value == " ") =>
+            {
+                let array = self.compile_expression(ast_builder, &member.object)?;
+                let mut callee = member.clone_in(ast_builder.allocator());
+                callee.object = array;
+                compiled.callee = Expression::StaticMemberExpression(callee);
+                changed = true;
+            }
+            _ => {}
+        }
+        changed
+            .then(|| Expression::CallExpression(oxc_allocator::Box::new_in(compiled, ast_builder)))
     }
 
     fn compile_template<'a>(

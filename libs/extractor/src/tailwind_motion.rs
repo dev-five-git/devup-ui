@@ -3,13 +3,26 @@
 //! `duration-*` and `ease-*` set, and `animate-*` brings the `@keyframes` it
 //! names
 
+use std::borrow::Cow;
+
+use css::tailwind_definitions::{theme_keyframes, theme_variable};
+
 use crate::tailwind::{Declaration, arbitrary_or_variable, decl, is_positive_integer};
+use crate::tailwind_theme::themed;
 
 /// The easing a transition has when no `ease-*` sets one
-const TIMING: &str = "var(--tw-ease, cubic-bezier(0.4, 0, 0.2, 1))";
+fn timing() -> String {
+    let default = theme_variable("default-transition-timing-function")
+        .unwrap_or_else(|| String::from("cubic-bezier(0.4, 0, 0.2, 1)"));
+    format!("var(--tw-ease, {default})")
+}
 
 /// The duration a transition has when no `duration-*` sets one
-const DURATION: &str = "var(--tw-duration, 150ms)";
+fn duration() -> String {
+    let default =
+        theme_variable("default-transition-duration").unwrap_or_else(|| String::from("150ms"));
+    format!("var(--tw-duration, {default})")
+}
 
 /// What `transition` makes transition
 const TRANSITION: &str = "color, background-color, border-color, outline-color, text-decoration-color, fill, stroke, --tw-gradient-from, --tw-gradient-via, --tw-gradient-to, opacity, box-shadow, transform, translate, scale, rotate, filter, -webkit-backdrop-filter, backdrop-filter, display, content-visibility, overlay, pointer-events";
@@ -38,7 +51,6 @@ fn animation(name: &str) -> Option<&'static str> {
         "ping" => "ping 1s cubic-bezier(0, 0, 0.2, 1) infinite",
         "pulse" => "pulse 2s cubic-bezier(0.4, 0, 0.6, 1) infinite",
         "bounce" => "bounce 1s infinite",
-        "none" => "none",
         _ => return None,
     })
 }
@@ -47,8 +59,8 @@ fn animation(name: &str) -> Option<&'static str> {
 fn transition(property: &str) -> Vec<Declaration> {
     vec![
         decl("transition-property", property.to_string()),
-        decl("transition-timing-function", TIMING),
-        decl("transition-duration", DURATION),
+        decl("transition-timing-function", timing()),
+        decl("transition-duration", duration()),
     ]
 }
 
@@ -58,7 +70,6 @@ fn easing(name: &str) -> Option<&'static str> {
         "in" => "cubic-bezier(0.4, 0, 1, 1)",
         "out" => "cubic-bezier(0, 0, 0.2, 1)",
         "in-out" => "cubic-bezier(0.4, 0, 0.2, 1)",
-        "linear" => "linear",
         _ => return None,
     })
 }
@@ -100,18 +111,26 @@ pub fn motion_utility(name: &str) -> Option<Vec<Declaration>> {
         if argument == "initial" {
             return Some(vec![decl("--tw-ease", "initial")]);
         }
-        let value = easing(argument)
-            .map(str::to_string)
-            .or_else(|| arbitrary_or_variable(argument))?;
+        let value = if argument == "linear" {
+            Some(String::from("linear"))
+        } else {
+            themed("ease", argument, easing)
+                .map(Cow::into_owned)
+                .or_else(|| arbitrary_or_variable(argument))
+        }?;
         return Some(vec![
             decl("--tw-ease", value.clone()),
             decl("transition-timing-function", value),
         ]);
     }
     let argument = name.strip_prefix("animate-")?;
-    let value = animation(argument)
-        .map(str::to_string)
-        .or_else(|| arbitrary_or_variable(argument))?;
+    let value = if argument == "none" {
+        Some(String::from("none"))
+    } else {
+        themed("animate", argument, animation)
+            .map(Cow::into_owned)
+            .or_else(|| arbitrary_or_variable(argument))
+    }?;
     Some(vec![decl("animation", value)])
 }
 
@@ -120,17 +139,20 @@ fn milliseconds(value: &str) -> Option<String> {
     is_positive_integer(value).then(|| format!("{value}ms"))
 }
 
-/// The `@keyframes` rules the declarations name in an `animation`
-pub fn keyframes_of(declarations: &[Declaration]) -> impl Iterator<Item = &'static str> + '_ {
+/// The `@keyframes` rules the declarations name in an `animation`: the
+/// project's, else those of the default theme
+pub fn keyframes_of(declarations: &[Declaration]) -> impl Iterator<Item = Cow<'static, str>> + '_ {
     declarations
         .iter()
         .filter(|(property, _)| property == "animation")
         .flat_map(|(_, value)| value.split_whitespace())
         .filter_map(|word| {
-            KEYFRAMES
-                .iter()
-                .find(|(name, _)| *name == word)
-                .map(|&(_, rule)| rule)
+            theme_keyframes(word).map(Cow::Owned).or_else(|| {
+                KEYFRAMES
+                    .iter()
+                    .find(|(name, _)| *name == word)
+                    .map(|&(_, rule)| Cow::Borrowed(rule))
+            })
         })
 }
 
@@ -150,36 +172,40 @@ mod tests {
         assert_eq!(declarations_of(class), Some(expected), "{class}");
     }
 
-    fn transition(property: &str) -> Vec<(&str, &str)> {
+    fn transition(property: &str) -> Vec<(String, String)> {
         vec![
-            ("transition-property", property),
-            ("transition-timing-function", TIMING),
-            ("transition-duration", DURATION),
+            ("transition-property".to_string(), property.to_string()),
+            ("transition-timing-function".to_string(), timing()),
+            ("transition-duration".to_string(), duration()),
         ]
+    }
+
+    fn expect_owned(class: &str, expected: Vec<(String, String)>) {
+        assert_eq!(declarations_of(class), Some(expected), "{class}");
     }
 
     #[test]
     fn transitions_read_the_easing_and_duration_utilities_set() {
-        expect("transition", &transition(TRANSITION));
-        expect("transition-all", &transition("all"));
-        expect("transition-colors", &transition(TRANSITION_COLORS));
-        expect("transition-opacity", &transition("opacity"));
-        expect("transition-shadow", &transition("box-shadow"));
-        expect(
+        expect_owned("transition", transition(TRANSITION));
+        expect_owned("transition-all", transition("all"));
+        expect_owned("transition-colors", transition(TRANSITION_COLORS));
+        expect_owned("transition-opacity", transition("opacity"));
+        expect_owned("transition-shadow", transition("box-shadow"));
+        expect_owned(
             "transition-transform",
-            &transition("transform, translate, scale, rotate"),
+            transition("transform, translate, scale, rotate"),
         );
         expect("transition-none", &[("transition-property", "none")]);
-        expect("transition-[height]", &transition("height"));
-        expect("transition-[height,opacity]", &transition("height,opacity"));
-        expect("transition-(--props)", &transition("var(--props)"));
+        expect_owned("transition-[height]", transition("height"));
+        expect_owned("transition-[height,opacity]", transition("height,opacity"));
+        expect_owned("transition-(--props)", transition("var(--props)"));
         expect(
             "transition-discrete",
             &[("transition-behavior", "allow-discrete")],
         );
         expect("transition-normal", &[("transition-behavior", "normal")]);
-        assert_eq!(TIMING, "var(--tw-ease, cubic-bezier(0.4, 0, 0.2, 1))");
-        assert_eq!(DURATION, "var(--tw-duration, 150ms)");
+        assert_eq!(timing(), "var(--tw-ease, cubic-bezier(0.4, 0, 0.2, 1))");
+        assert_eq!(duration(), "var(--tw-duration, 150ms)");
     }
 
     #[test]
