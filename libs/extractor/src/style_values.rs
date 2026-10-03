@@ -2,6 +2,8 @@
 //! `const fadeIn = keyframes({ ... })`: the build gives it a name, so styles
 //! reading the binding read that name
 
+use std::rc::Rc;
+
 use oxc_allocator::{FromIn, GetAllocator};
 use oxc_ast::ast::{BindingPattern, Expression, Str, TemplateLiteral};
 use oxc_ast::builder::AstBuilder;
@@ -29,14 +31,16 @@ pub enum StyleValue {
 
 #[derive(Default)]
 pub struct StyleValues {
-    scoping: Option<Scoping>,
+    scoping: Option<Rc<Scoping>>,
     values: FxHashMap<SymbolId, StyleValue>,
     /// The styles behind `css()` classes the file imports, by binding
     imported: FxHashMap<String, Vec<ExtractStyleValue>>,
 }
 
 impl StyleValues {
-    pub fn new(scoping: Scoping) -> Self {
+    /// The values of the bindings `scoping`, which the other readers of the
+    /// program share, tells
+    pub fn new(scoping: Rc<Scoping>) -> Self {
         Self {
             scoping: Some(scoping),
             values: FxHashMap::default(),

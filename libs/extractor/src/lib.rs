@@ -15,6 +15,7 @@ mod module_loader;
 mod mutations;
 mod prop_modify_utils;
 mod prop_valid;
+mod scope;
 mod source_map;
 mod style_values;
 mod styled_reads;
@@ -479,6 +480,7 @@ fn extract_source(
     visitor.unknown_bindings(&inlined.unknown);
     visitor.changed_bindings(inlined.changed.clone());
     visitor.takes_css_prop(css_prop);
+    visitor.reuse_scoping(inlined.scoping);
     visitor.visit_program(&mut program);
     if !has_relevant_import && alias_edits.is_empty() && !visitor.compiled_css_prop {
         // No element took the `css` prop the text seemed to give

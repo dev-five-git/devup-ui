@@ -7,13 +7,15 @@ use std::collections::HashMap;
 use oxc_allocator::{CloneIn, FromIn, GetAllocator};
 use oxc_ast::ast::{
     Argument, ArrowFunctionBody, BinaryOperator, BindingPattern, CallExpression, Expression,
-    FormalParameters, FunctionBody, ImportDeclarationSpecifier, JSXAttributeItem, JSXChild,
-    JSXElement, JSXElementName, ObjectPropertyKind, Program, Statement, Str, TemplateElement,
-    TemplateElementValue, TemplateLiteral,
+    FormalParameters, FunctionBody, IdentifierReference, ImportDeclarationSpecifier,
+    JSXAttributeItem, JSXChild, JSXElement, JSXElementName, ObjectPropertyKind, Program, Statement,
+    Str, TemplateElement, TemplateElementValue, TemplateLiteral,
 };
 use oxc_ast::builder::AstBuilder;
 use oxc_ast_visit::{VisitMut, walk_mut};
+use oxc_semantic::Scoping;
 use oxc_span::SPAN;
+use oxc_syntax::symbol::SymbolId;
 use rustc_hash::FxHashSet;
 
 use crate::ImportAlias;
@@ -101,17 +103,53 @@ impl CssProp {
 /// What in a program takes the `css` prop: the elements `css_prop` tells, and
 /// the `jsx()` calls building them
 pub(crate) struct CssTakers<'s> {
-    pub css_prop: CssProp,
-    /// Local names of the functions building elements from a type and props
-    jsx: FxHashSet<&'s str>,
-    /// Local names of Emotion's `ClassNames`
-    class_names: FxHashSet<&'s str>,
+    css_prop: CssProp,
+    scoping: &'s Scoping,
+    /// The imported functions building elements from a type and props
+    jsx: FxHashSet<SymbolId>,
+    /// The imported `ClassNames` of Emotion
+    class_names: FxHashSet<SymbolId>,
+}
+
+/// The binding `identifier` reads; `None` for a global
+pub(crate) fn binding_of(
+    scoping: &Scoping,
+    identifier: &IdentifierReference<'_>,
+) -> Option<SymbolId> {
+    scoping
+        .get_reference(identifier.reference_id.get()?)
+        .symbol_id()
+}
+
+/// Whether `identifier` reads a binding of the module's top level or a global,
+/// and not a local of a function or block, which may share the name of one
+pub(crate) fn reads_top_level(scoping: &Scoping, identifier: &IdentifierReference<'_>) -> bool {
+    binding_of(scoping, identifier)
+        .is_none_or(|symbol| scoping.symbol_scope_id(symbol) == scoping.root_scope_id())
+}
+
+/// The identifier `a`, `a.b` and `a[b]` start at
+pub(crate) fn root_reference<'e, 'a>(
+    expression: &'e Expression<'a>,
+) -> Option<&'e IdentifierReference<'a>> {
+    match expression {
+        Expression::Identifier(identifier) => Some(identifier),
+        Expression::StaticMemberExpression(member) => root_reference(&member.object),
+        Expression::ComputedMemberExpression(member) => root_reference(&member.object),
+        _ => None,
+    }
 }
 
 impl<'s> CssTakers<'s> {
-    /// The elements `program` gives a `css` prop, as `css_prop` tells;
-    /// `compat` is the entry absorbing Emotion's own `jsx`
-    pub(crate) fn new(program: &Program<'s>, css_prop: CssProp, compat: &str) -> Self {
+    /// The elements `program` gives a `css` prop, as `css_prop` tells, with
+    /// the bindings `scoping` resolved; `compat` is the entry absorbing
+    /// Emotion's own `jsx`
+    pub(crate) fn new(
+        program: &Program<'_>,
+        scoping: &'s Scoping,
+        css_prop: CssProp,
+        compat: &str,
+    ) -> Self {
         let mut jsx = FxHashSet::default();
         let mut class_names = FxHashSet::default();
         for statement in &program.body {
@@ -123,28 +161,31 @@ impl<'s> CssTakers<'s> {
                     };
                     let imported = specifier.imported.name();
                     if is_jsx_function(source, &imported, compat) {
-                        jsx.insert(specifier.local.name.as_str());
+                        jsx.extend(specifier.local.symbol_id.get());
                     } else if imported == "ClassNames"
                         && (source == compat || source == EMOTION_REACT)
                     {
-                        class_names.insert(specifier.local.name.as_str());
+                        class_names.extend(specifier.local.symbol_id.get());
                     }
                 }
             }
         }
         Self {
             css_prop,
+            scoping,
             jsx,
             class_names,
         }
     }
 
-    /// The names a `<ClassNames>` child function `element` gives takes `css`
-    /// and `cx` by; empty for any other element
-    pub(crate) fn class_names_calls(&self, element: &JSXElement<'_>) -> Vec<String> {
+    /// The `css` and `cx` bindings a `<ClassNames>` child function `element`
+    /// gives takes; empty for any other element, and for a `ClassNames` a
+    /// local of the same name stands for
+    pub(crate) fn class_names_calls(&self, element: &JSXElement<'_>) -> Vec<SymbolId> {
         match &element.opening_element.name {
             JSXElementName::IdentifierReference(name)
-                if self.class_names.contains(name.name.as_str()) =>
+                if binding_of(self.scoping, name)
+                    .is_some_and(|symbol| self.class_names.contains(&symbol)) =>
             {
                 class_names_calls(element)
             }
@@ -152,25 +193,43 @@ impl<'s> CssTakers<'s> {
         }
     }
 
+    /// Whether `callee` calls one of the `taken` bindings of `<ClassNames>`
+    /// child functions
+    pub(crate) fn calls_class_names(&self, taken: &[SymbolId], callee: &Expression<'_>) -> bool {
+        matches!(callee, Expression::Identifier(callee)
+            if binding_of(self.scoping, callee).is_some_and(|symbol| taken.contains(&symbol)))
+    }
+
+    /// Whether the element `name` takes the `css` prop; `devup` tells a
+    /// reference to a Devup UI component
+    pub(crate) fn takes(
+        &self,
+        name: &JSXElementName<'_>,
+        devup: impl Fn(&IdentifierReference<'_>) -> bool,
+    ) -> bool {
+        let root = crate::imported_constants::jsx_root_identifier(name);
+        self.css_prop.takes(name, |_| root.is_some_and(&devup))
+    }
+
     /// Whether `attribute` of the element `name` is a `css` prop it takes;
-    /// `devup` tells a Devup UI component
+    /// `devup` tells a reference to a Devup UI component
     pub(crate) fn attribute(
         &self,
         name: &JSXElementName<'_>,
         attribute: &JSXAttributeItem<'_>,
-        devup: impl Fn(&str) -> bool,
+        devup: impl Fn(&IdentifierReference<'_>) -> bool,
     ) -> bool {
         matches!(attribute, JSXAttributeItem::Attribute(attribute)
             if attribute.name.as_identifier().is_some_and(|attribute| attribute.name == "css"))
-            && self.css_prop.takes(name, devup)
+            && self.takes(name, devup)
     }
 
     /// Where among the props a `jsx()` call gives is the `css` prop the
-    /// element takes
+    /// element takes; `devup` tells a reference to a Devup UI component
     pub(crate) fn property(
         &self,
         call: &CallExpression<'_>,
-        devup: impl Fn(&str) -> bool,
+        devup: impl Fn(&IdentifierReference<'_>) -> bool,
     ) -> Option<usize> {
         let Expression::Identifier(callee) = &call.callee else {
             return None;
@@ -178,8 +237,12 @@ impl<'s> CssTakers<'s> {
         let [element, Argument::ObjectExpression(props), ..] = call.arguments.as_slice() else {
             return None;
         };
-        (self.jsx.contains(callee.name.as_str())
-            && self.css_prop.takes_type(element.as_expression()?, devup))
+        let element = element.as_expression()?;
+        let root = root_reference(unwrap_syntax_only(element));
+        (binding_of(self.scoping, callee).is_some_and(|symbol| self.jsx.contains(&symbol))
+            && self
+                .css_prop
+                .takes_type(element, |_| root.is_some_and(&devup)))
         .then(|| {
             props.properties.iter().rposition(|property| {
                 matches!(property, ObjectPropertyKind::ObjectProperty(property)
@@ -269,12 +332,27 @@ pub(crate) const UNPLACED: &str =
 pub(crate) const NESTED_MIXIN: &str =
     "a mixin must stand outside nested rules, where the parts it composes with can be split";
 
-/// `function`, a function of the theme, as the rules it gives, each read of
-/// the theme written as the CSS variable the `ThemeProvider` sets for it.
-/// `Err` holds the code the build cannot write so, with what it requires.
+/// The binding a read stands for, `None` for a global
+pub(crate) type Resolve<'r> = &'r dyn Fn(&IdentifierReference<'_>) -> Option<SymbolId>;
+
+/// [`theme_rules_of`] for code no semantic analysis has read, whose names bind
+/// nothing
+#[cfg(test)]
 pub(crate) fn theme_rules<'a>(
     ast: &AstBuilder<'a>,
     function: &Expression<'a>,
+) -> Result<Expression<'a>, (Expression<'a>, &'static str)> {
+    theme_rules_of(ast, function, &|_| None)
+}
+
+/// `function`, a function of the theme, as the rules it gives, each read of
+/// the theme written as the CSS variable the `ThemeProvider` sets for it: only
+/// the reads of the binding its parameter declares, as `resolve` tells them.
+/// `Err` holds the code the build cannot write so, with what it requires.
+pub(crate) fn theme_rules_of<'a>(
+    ast: &AstBuilder<'a>,
+    function: &Expression<'a>,
+    resolve: Resolve<'_>,
 ) -> Result<Expression<'a>, (Expression<'a>, &'static str)> {
     let unsupported = || (function.clone_in(ast.allocator()), THEME_FUNCTION);
     let (params, body) = match function {
@@ -298,6 +376,7 @@ pub(crate) fn theme_rules<'a>(
     let mut reads = ThemeReads {
         ast,
         roots: &roots,
+        resolve,
         unread: None,
     };
     reads.visit(&mut rules, false);
@@ -347,13 +426,26 @@ pub(crate) fn render_function<'b, 'a>(
     }
 }
 
-/// The names Emotion's `<ClassNames>` child function takes `css`, `cx` and
-/// the theme by
+/// The names Emotion's `<ClassNames>` child function takes `css` and the
+/// theme by
 #[derive(Default, Clone, Copy)]
 pub(crate) struct ClassNamesParams<'a> {
     pub css: Option<&'a str>,
-    pub cx: Option<&'a str>,
     pub theme: Option<&'a str>,
+}
+
+/// A binding a `<ClassNames>` child function declares for what it takes
+#[derive(Clone, Copy)]
+struct Local<'a> {
+    name: &'a str,
+    symbol: Option<SymbolId>,
+}
+
+#[derive(Default, Clone, Copy)]
+struct ClassNamesLocals<'a> {
+    css: Option<Local<'a>>,
+    cx: Option<Local<'a>>,
+    theme: Option<Local<'a>>,
 }
 
 /// What `params` take of `{ css, cx, theme }`; `None` when they take it in a
@@ -361,7 +453,15 @@ pub(crate) struct ClassNamesParams<'a> {
 pub(crate) fn class_names_params<'a>(
     params: &FormalParameters<'a>,
 ) -> Option<ClassNamesParams<'a>> {
-    let mut names = ClassNamesParams::default();
+    let locals = class_names_locals(params)?;
+    Some(ClassNamesParams {
+        css: locals.css.map(|local| local.name),
+        theme: locals.theme.map(|local| local.name),
+    })
+}
+
+fn class_names_locals<'a>(params: &FormalParameters<'a>) -> Option<ClassNamesLocals<'a>> {
+    let mut names = ClassNamesLocals::default();
     if params.rest.is_some() {
         return None;
     }
@@ -388,7 +488,10 @@ pub(crate) fn class_names_params<'a>(
                     "theme" => &mut names.theme,
                     _ => return None,
                 };
-                *slot = Some(local.name.as_str());
+                *slot = Some(Local {
+                    name: local.name.as_str(),
+                    symbol: local.symbol_id.get(),
+                });
             }
         }
         _ => return None,
@@ -396,8 +499,10 @@ pub(crate) fn class_names_params<'a>(
     Some(names)
 }
 
-/// What the child function of the `<ClassNames>` element `element` takes
-pub(crate) fn class_names_child<'a>(element: &JSXElement<'a>) -> Option<ClassNamesParams<'a>> {
+/// The parameters of the child function of the `<ClassNames>` element `element`
+fn class_names_function_params<'b, 'a>(
+    element: &'b JSXElement<'a>,
+) -> Option<&'b FormalParameters<'a>> {
     let mut children = element
         .children
         .iter()
@@ -406,60 +511,77 @@ pub(crate) fn class_names_child<'a>(element: &JSXElement<'a>) -> Option<ClassNam
     else {
         return None;
     };
-    let params = match container.expression.as_expression()? {
-        Expression::ArrowFunctionExpression(arrow) => &arrow.params,
-        Expression::FunctionExpression(function) => &function.params,
-        _ => return None,
-    };
-    class_names_params(params)
+    match container.expression.as_expression()? {
+        Expression::ArrowFunctionExpression(arrow) => Some(&arrow.params),
+        Expression::FunctionExpression(function) => Some(&function.params),
+        _ => None,
+    }
 }
 
-/// The names the child function of the `<ClassNames>` element `element`
+/// What the child function of the `<ClassNames>` element `element` takes
+pub(crate) fn class_names_child<'a>(element: &JSXElement<'a>) -> Option<ClassNamesParams<'a>> {
+    class_names_function_params(element).and_then(class_names_params)
+}
+
+/// The bindings the child function of the `<ClassNames>` element `element`
 /// takes `css` and `cx` by, which read styles
-pub(crate) fn class_names_calls(element: &JSXElement<'_>) -> Vec<String> {
-    class_names_child(element)
+fn class_names_calls(element: &JSXElement<'_>) -> Vec<SymbolId> {
+    class_names_function_params(element)
+        .and_then(class_names_locals)
         .map(|names| {
             [names.css, names.cx]
                 .into_iter()
                 .flatten()
-                .map(str::to_string)
+                .filter_map(|local| local.symbol)
                 .collect()
         })
         .unwrap_or_default()
 }
 
 /// Write the reads of the theme bound to `theme` in `expression`, a CSS value
-/// when `value`, as the CSS variables the `ThemeProvider` sets; `Err` holds
-/// the first read the build cannot write so
+/// when `value`, as the CSS variables the `ThemeProvider` sets: the reads
+/// `resolve` tells stand for the binding, not those of a local sharing its
+/// name. `Err` holds the first read the build cannot write so.
 pub(crate) fn read_theme<'a>(
     ast: &AstBuilder<'a>,
     expression: &mut Expression<'a>,
-    theme: &'a str,
+    theme: ThemeRoot<'a>,
     value: bool,
+    resolve: Resolve<'_>,
 ) -> Result<(), Expression<'a>> {
-    let roots = [(theme, None)];
+    let roots = [theme];
     let mut reads = ThemeReads {
         ast,
         roots: &roots,
+        resolve,
         unread: None,
     };
     reads.visit(expression, value);
     reads.unread.map_or(Ok(()), Err)
 }
 
-/// The names a function of the theme reads it by, each with the key of the
-/// theme it holds when destructured; `None` for parameters the build cannot
-/// follow
-fn theme_roots<'a>(params: &FormalParameters<'a>) -> Option<Vec<(&'a str, Option<String>)>> {
+/// A binding a function of the theme reads it by, with the key of the theme it
+/// holds when destructured
+pub(crate) struct ThemeRoot<'a> {
+    pub name: &'a str,
+    pub symbol: Option<SymbolId>,
+    pub key: Option<String>,
+}
+
+/// The bindings a function of the theme reads it by; `None` for parameters
+/// the build cannot follow
+fn theme_roots<'a>(params: &FormalParameters<'a>) -> Option<Vec<ThemeRoot<'a>>> {
     if params.rest.is_some() {
         return None;
     }
     match params.items.as_slice() {
         [] => Some(Vec::new()),
         [param] if param.initializer.is_none() => match &param.pattern {
-            BindingPattern::BindingIdentifier(identifier) => {
-                Some(vec![(identifier.name.as_str(), None)])
-            }
+            BindingPattern::BindingIdentifier(identifier) => Some(vec![ThemeRoot {
+                name: identifier.name.as_str(),
+                symbol: identifier.symbol_id.get(),
+                key: None,
+            }]),
             BindingPattern::ObjectPattern(object) if object.rest.is_none() => object
                 .properties
                 .iter()
@@ -468,7 +590,11 @@ fn theme_roots<'a>(params: &FormalParameters<'a>) -> Option<Vec<(&'a str, Option
                         (BindingPattern::BindingIdentifier(local), Some(key))
                             if !property.computed =>
                         {
-                            Some((local.name.as_str(), Some(key.to_string())))
+                            Some(ThemeRoot {
+                                name: local.name.as_str(),
+                                symbol: local.symbol_id.get(),
+                                key: Some(key.to_string()),
+                            })
                         }
                         _ => None,
                     },
@@ -484,7 +610,8 @@ fn theme_roots<'a>(params: &FormalParameters<'a>) -> Option<Vec<(&'a str, Option
 /// keeping the first read that is not one
 struct ThemeReads<'r, 'a> {
     ast: &'r AstBuilder<'a>,
-    roots: &'r [(&'a str, Option<String>)],
+    roots: &'r [ThemeRoot<'a>],
+    resolve: Resolve<'r>,
     unread: Option<Expression<'a>>,
 }
 
@@ -521,11 +648,11 @@ impl<'a> ThemeReads<'_, 'a> {
                 }
                 Expression::ParenthesizedExpression(inner) => cursor = &inner.expression,
                 Expression::Identifier(identifier) => {
-                    let (_, key) = self
-                        .roots
-                        .iter()
-                        .find(|(local, _)| *local == identifier.name.as_str())?;
-                    path.extend(key.clone());
+                    let symbol = (self.resolve)(identifier);
+                    let root = self.roots.iter().find(|root| {
+                        root.name == identifier.name.as_str() && root.symbol == symbol
+                    })?;
+                    path.extend(root.key.clone());
                     path.reverse();
                     return Some(if exact && !path.is_empty() {
                         ThemeRead::Path(path)
@@ -935,3 +1062,6 @@ mod tests {
         assert_eq!(expression_to_code(&code), "selector;");
     }
 }
+
+#[cfg(test)]
+mod scope_tests;
