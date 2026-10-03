@@ -6,8 +6,64 @@ ToBTreeSet {
     styles: {
         Static(
             ExtractStaticStyle {
+                property: "--tw-ring-shadow",
+                value: "var(--tw-ring-inset,) 0 0 0 calc(2px + var(--tw-ring-offset-width)) var(--tw-ring-color,currentcolor)",
+                level: 0,
+                selector: Some(
+                    Selector(
+                        "&:focus",
+                    ),
+                ),
+                style_order: None,
+                layer: None,
+            },
+        ),
+        Static(
+            ExtractStaticStyle {
+                property: "--tw-scale-x",
+                value: "95%",
+                level: 0,
+                selector: Some(
+                    Selector(
+                        "&:active",
+                    ),
+                ),
+                style_order: None,
+                layer: None,
+            },
+        ),
+        Static(
+            ExtractStaticStyle {
+                property: "--tw-scale-y",
+                value: "95%",
+                level: 0,
+                selector: Some(
+                    Selector(
+                        "&:active",
+                    ),
+                ),
+                style_order: None,
+                layer: None,
+            },
+        ),
+        Static(
+            ExtractStaticStyle {
+                property: "--tw-scale-z",
+                value: "95%",
+                level: 0,
+                selector: Some(
+                    Selector(
+                        "&:active",
+                    ),
+                ),
+                style_order: None,
+                layer: None,
+            },
+        ),
+        Static(
+            ExtractStaticStyle {
                 property: "background-color",
-                value: "#111827",
+                value: "oklch(21% .034 264.665)",
                 level: 0,
                 selector: Some(
                     Selector(
@@ -21,12 +77,18 @@ ToBTreeSet {
         Static(
             ExtractStaticStyle {
                 property: "background-color",
-                value: "#1F2937",
+                value: "oklch(27.8% .033 256.848)",
                 level: 0,
                 selector: Some(
-                    Selector(
-                        ":root[data-theme=dark]:hover &",
-                    ),
+                    At {
+                        kind: Media,
+                        query: "(hover:hover)",
+                        selector: Some(
+                            ":root[data-theme=dark] &:hover",
+                        ),
+                        outer: [],
+                        file: None,
+                    },
                 ),
                 style_order: None,
                 layer: None,
@@ -35,12 +97,18 @@ ToBTreeSet {
         Static(
             ExtractStaticStyle {
                 property: "background-color",
-                value: "#3B82F6",
+                value: "oklch(62.3% .214 259.815)",
                 level: 0,
                 selector: Some(
-                    Selector(
-                        "&:hover",
-                    ),
+                    At {
+                        kind: Media,
+                        query: "(hover:hover)",
+                        selector: Some(
+                            "&:hover",
+                        ),
+                        outer: [],
+                        file: None,
+                    },
                 ),
                 style_order: None,
                 layer: None,
@@ -49,7 +117,7 @@ ToBTreeSet {
         Static(
             ExtractStaticStyle {
                 property: "box-shadow",
-                value: "0 0 0 2px var(--tw-ring-color)",
+                value: "var(--tw-inset-shadow,0 0 #0000),var(--tw-inset-ring-shadow,0 0 #0000),var(--tw-ring-offset-shadow,0 0 #0000),var(--tw-ring-shadow,0 0 #0000),var(--tw-shadow)",
                 level: 0,
                 selector: Some(
                     Selector(
@@ -136,8 +204,8 @@ ToBTreeSet {
         ),
         Static(
             ExtractStaticStyle {
-                property: "transform",
-                value: "scale(.95)",
+                property: "scale",
+                value: "var(--tw-scale-x) var(--tw-scale-y)",
                 level: 0,
                 selector: Some(
                     Selector(
@@ -148,6 +216,72 @@ ToBTreeSet {
                 layer: None,
             },
         ),
+        Css(
+            ExtractCss {
+                css: "@property --tw-inset-ring-shadow{syntax:\"*\";inherits:false;initial-value:0 0 #0000}",
+                file: "@devup-ui/tailwind",
+            },
+        ),
+        Css(
+            ExtractCss {
+                css: "@property --tw-inset-shadow{syntax:\"*\";inherits:false;initial-value:0 0 #0000}",
+                file: "@devup-ui/tailwind",
+            },
+        ),
+        Css(
+            ExtractCss {
+                css: "@property --tw-ring-color{syntax:\"*\";inherits:false}",
+                file: "@devup-ui/tailwind",
+            },
+        ),
+        Css(
+            ExtractCss {
+                css: "@property --tw-ring-inset{syntax:\"*\";inherits:false}",
+                file: "@devup-ui/tailwind",
+            },
+        ),
+        Css(
+            ExtractCss {
+                css: "@property --tw-ring-offset-shadow{syntax:\"*\";inherits:false;initial-value:0 0 #0000}",
+                file: "@devup-ui/tailwind",
+            },
+        ),
+        Css(
+            ExtractCss {
+                css: "@property --tw-ring-offset-width{syntax:\"<length>\";inherits:false;initial-value:0px}",
+                file: "@devup-ui/tailwind",
+            },
+        ),
+        Css(
+            ExtractCss {
+                css: "@property --tw-ring-shadow{syntax:\"*\";inherits:false;initial-value:0 0 #0000}",
+                file: "@devup-ui/tailwind",
+            },
+        ),
+        Css(
+            ExtractCss {
+                css: "@property --tw-scale-x{syntax:\"*\";inherits:false;initial-value:1}",
+                file: "@devup-ui/tailwind",
+            },
+        ),
+        Css(
+            ExtractCss {
+                css: "@property --tw-scale-y{syntax:\"*\";inherits:false;initial-value:1}",
+                file: "@devup-ui/tailwind",
+            },
+        ),
+        Css(
+            ExtractCss {
+                css: "@property --tw-scale-z{syntax:\"*\";inherits:false;initial-value:1}",
+                file: "@devup-ui/tailwind",
+            },
+        ),
+        Css(
+            ExtractCss {
+                css: "@property --tw-shadow{syntax:\"*\";inherits:false;initial-value:0 0 #0000}",
+                file: "@devup-ui/tailwind",
+            },
+        ),
     },
-    code: "import \"@devup-ui/core/devup-ui.css\";\n<div className=\"a b c d e f g h i j k l\" />;\n",
+    code: "import \"@devup-ui/core/devup-ui.css\";\n<div className=\"a b c d e f g h i j k l m n o p\" />;\n",
 }

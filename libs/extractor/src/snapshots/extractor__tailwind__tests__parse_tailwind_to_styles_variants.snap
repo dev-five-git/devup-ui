@@ -5,13 +5,33 @@ expression: sort_styles(styles)
 {
     Static(
         ExtractStaticStyle {
-            property: "background-color",
-            value: "#3B82F6",
+            property: "--tw-outline-style",
+            value: "none",
             level: 0,
             selector: Some(
                 Selector(
-                    "&:hover",
+                    "&:focus",
                 ),
+            ),
+            style_order: None,
+            layer: None,
+        },
+    ),
+    Static(
+        ExtractStaticStyle {
+            property: "background-color",
+            value: "oklch(62.3% .214 259.815)",
+            level: 0,
+            selector: Some(
+                At {
+                    kind: Media,
+                    query: "(hover:hover)",
+                    selector: Some(
+                        "&:hover",
+                    ),
+                    outer: [],
+                    file: None,
+                },
             ),
             style_order: None,
             layer: None,
@@ -33,8 +53,8 @@ expression: sort_styles(styles)
     ),
     Static(
         ExtractStaticStyle {
-            property: "outline",
-            value: "2px solid transparent",
+            property: "outline-style",
+            value: "none",
             level: 0,
             selector: Some(
                 Selector(

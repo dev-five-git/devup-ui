@@ -83,6 +83,7 @@ export const EXPECTED_EXPORTED_ROUTES = [
   '/docs/migration/overview',
   '/docs/migration/styled-components',
   '/docs/migration/stylex',
+  '/docs/migration/tailwind',
   '/docs/migration/vanilla-extract',
   '/docs/overview',
   '/docs/quick-start',

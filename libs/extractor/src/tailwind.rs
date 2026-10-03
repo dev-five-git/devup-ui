@@ -1,7 +1,9 @@
-//! Tailwind CSS class parser for devup-ui extraction
+//! Tailwind CSS classes in a `className`, compiled to devup-ui styles
 //!
-//! This module parses Tailwind CSS class strings and converts them to
-//! `ExtractStyleValue` objects for integration with the devup-ui extraction system.
+//! A class compiles only when every part of it is understood: its variants
+//! (`md:`, `hover:`, `data-[state=open]:`, `[&>*]:` …) and its utility, which
+//! becomes the declarations Tailwind CSS v4 writes for it. Any other class is
+//! left as written, for whatever else defines it.
 
 // The nested if-let pattern is intentional for readability in parsing code.
 // Using if-let chains would make the code harder to read and modify.
@@ -9,22 +11,26 @@
 
 use std::borrow::Cow;
 
-use css::style_selector::StyleSelector;
+use css::tailwind_definitions::{custom_utility, custom_variant, theme_value, theme_variable};
+use css::{
+    at_rule::split_at_rule_key,
+    style_selector::{AtRuleKind, StyleSelector},
+};
 use phf::{phf_map, phf_set};
 
-use crate::extract_style::{
-    extract_static_style::ExtractStaticStyle, extract_style_value::ExtractStyleValue,
-};
+use crate::extract_style::extract_static_style::ExtractStaticStyle;
+use crate::tailwind_children::{CHILDREN, children_utility};
+use crate::tailwind_color::color_value;
+use crate::tailwind_effects::effect_utility;
+use crate::tailwind_misc::misc_utility;
+use crate::tailwind_motion::{keyframes_of, motion_utility};
+use crate::tailwind_theme::{reads_unsupported_theme, scaled, themed};
 
-/// Responsive breakpoint levels matching devup-ui convention
-/// 0 = base (no prefix)
-/// 1 = sm (640px)
-/// 2 = md (768px)
-/// 3 = lg (1024px)
-/// 4 = xl (1280px)
-/// 5 = 2xl (1536px)
-///
-/// Map of responsive prefix to level
+/// A declaration: property and value
+pub type Declaration = (Cow<'static, str>, Cow<'static, str>);
+
+/// Breakpoint level of each responsive variant; the breakpoints themselves
+/// come from the devup theme
 static RESPONSIVE_PREFIX_MAP: phf::Map<&'static str, u8> = phf_map! {
     "sm" => 1,
     "md" => 2,
@@ -33,640 +39,483 @@ static RESPONSIVE_PREFIX_MAP: phf::Map<&'static str, u8> = phf_map! {
     "2xl" => 5,
 };
 
-/// Variant prefixes that map to CSS pseudo-classes/selectors
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
-pub enum TailwindVariant {
-    Hover,
-    Focus,
-    FocusVisible,
-    FocusWithin,
-    Active,
-    Visited,
-    Disabled,
-    Enabled,
-    Checked,
-    Indeterminate,
-    Default,
-    Required,
-    Valid,
-    Invalid,
-    InRange,
-    OutOfRange,
-    PlaceholderShown,
-    Autofill,
-    ReadOnly,
-    FirstChild,
-    LastChild,
-    OnlyChild,
-    OddChild,
-    EvenChild,
-    FirstOfType,
-    LastOfType,
-    OnlyOfType,
-    Empty,
-    Target,
-    Open,
-    Dark,
-    Placeholder,
-    Before,
-    After,
-    Selection,
-    Marker,
-    FirstLetter,
-    FirstLine,
-    Backdrop,
-    File,
-    GroupHover,
-    GroupFocus,
-    GroupActive,
-    GroupDisabled,
-    PeerHover,
-    PeerFocus,
-    PeerActive,
-    PeerDisabled,
-    PeerChecked,
-    PeerInvalid,
-    Print,
-    Screen,
-    Portrait,
-    Landscape,
-    MotionReduce,
-    MotionSafe,
-    ContrastMore,
-    ContrastLess,
-    ForcedColors,
-    Rtl,
-    Ltr,
+/// Media query Tailwind guards hover styles with, so that a tap on a touch
+/// screen does not leave them applied
+const HOVER_QUERY: &str = "(hover: hover)";
+
+/// Pseudo-class variants, which `group-*`, `peer-*` and `has-*` also take
+static STATE_VARIANTS: phf::Map<&'static str, &'static str> = phf_map! {
+    "first" => "&:first-child",
+    "last" => "&:last-child",
+    "only" => "&:only-child",
+    "odd" => "&:nth-child(odd)",
+    "even" => "&:nth-child(even)",
+    "first-of-type" => "&:first-of-type",
+    "last-of-type" => "&:last-of-type",
+    "only-of-type" => "&:only-of-type",
+    "visited" => "&:visited",
+    "target" => "&:target",
+    "open" => "&:is([open], :popover-open, :open)",
+    "default" => "&:default",
+    "checked" => "&:checked",
+    "indeterminate" => "&:indeterminate",
+    "placeholder-shown" => "&:placeholder-shown",
+    "autofill" => "&:autofill",
+    "optional" => "&:optional",
+    "required" => "&:required",
+    "valid" => "&:valid",
+    "invalid" => "&:invalid",
+    "user-valid" => "&:user-valid",
+    "user-invalid" => "&:user-invalid",
+    "in-range" => "&:in-range",
+    "out-of-range" => "&:out-of-range",
+    "read-only" => "&:read-only",
+    "empty" => "&:empty",
+    "focus-within" => "&:focus-within",
+    "hover" => "&:hover",
+    "focus" => "&:focus",
+    "focus-visible" => "&:focus-visible",
+    "active" => "&:active",
+    "enabled" => "&:enabled",
+    "disabled" => "&:disabled",
+    "inert" => "&:is([inert], [inert] *)",
+};
+
+/// Pseudo-element variants. A selector list holding a pseudo-element some
+/// browser does not know is dropped whole there, so each gets a rule of its own.
+static PSEUDO_ELEMENT_VARIANTS: phf::Map<&'static str, &'static [&'static str]> = phf_map! {
+    "before" => &["&::before"],
+    "after" => &["&::after"],
+    "placeholder" => &["&::placeholder"],
+    "file" => &["&::file-selector-button"],
+    "backdrop" => &["&::backdrop"],
+    "first-letter" => &["&::first-letter"],
+    "first-line" => &["&::first-line"],
+    "details-content" => &["&::details-content"],
+    "selection" => &["& *::selection", "&::selection"],
+    "marker" => &[
+        "& *::marker",
+        "&::marker",
+        "& *::-webkit-details-marker",
+        "&::-webkit-details-marker",
+    ],
+};
+
+/// Other selector variants
+static SELECTOR_VARIANTS: phf::Map<&'static str, &'static str> = phf_map! {
+    // The devup theme picks the color scheme: `prefers-color-scheme` until a
+    // theme is set on the root
+    "dark" => ":root[data-theme=dark] &",
+    "rtl" => "&:where(:dir(rtl), [dir=\"rtl\"], [dir=\"rtl\"] *)",
+    "ltr" => "&:where(:dir(ltr), [dir=\"ltr\"], [dir=\"ltr\"] *)",
+    "*" => ":is(& > *)",
+    "**" => ":is(& *)",
+};
+
+/// Media query variants
+static MEDIA_VARIANTS: phf::Map<&'static str, &'static str> = phf_map! {
+    "motion-safe" => "(prefers-reduced-motion: no-preference)",
+    "motion-reduce" => "(prefers-reduced-motion: reduce)",
+    "contrast-more" => "(prefers-contrast: more)",
+    "contrast-less" => "(prefers-contrast: less)",
+    "portrait" => "(orientation: portrait)",
+    "landscape" => "(orientation: landscape)",
+    "print" => "print",
+    "forced-colors" => "(forced-colors: active)",
+    "inverted-colors" => "(inverted-colors: inverted)",
+    "noscript" => "(scripting: none)",
+    "pointer-fine" => "(pointer: fine)",
+    "pointer-coarse" => "(pointer: coarse)",
+    "pointer-none" => "(pointer: none)",
+    "any-pointer-fine" => "(any-pointer: fine)",
+    "any-pointer-coarse" => "(any-pointer: coarse)",
+    "any-pointer-none" => "(any-pointer: none)",
+};
+
+/// The boolean ARIA attributes `aria-*` variants check for `true`
+static ARIA_VARIANTS: phf::Set<&'static str> = phf_set! {
+    "busy",
+    "checked",
+    "disabled",
+    "expanded",
+    "hidden",
+    "pressed",
+    "readonly",
+    "required",
+    "selected",
+};
+
+/// `@property` rule of a custom property: with an initial value, or without
+macro_rules! property {
+    ($name:literal, $syntax:literal, $initial:literal) => {
+        (
+            $name,
+            concat!(
+                "@property ",
+                $name,
+                "{syntax:\"",
+                $syntax,
+                "\";inherits:false;initial-value:",
+                $initial,
+                "}"
+            ),
+        )
+    };
+    ($name:literal) => {
+        (
+            $name,
+            concat!("@property ", $name, "{syntax:\"*\";inherits:false}"),
+        )
+    };
 }
 
-impl TailwindVariant {
-    /// Convert variant to `StyleSelector`
-    pub fn to_selector(self) -> StyleSelector {
-        match self {
-            TailwindVariant::Hover => StyleSelector::Selector("&:hover".to_string()),
-            TailwindVariant::Focus => StyleSelector::Selector("&:focus".to_string()),
-            TailwindVariant::FocusVisible => StyleSelector::Selector("&:focus-visible".to_string()),
-            TailwindVariant::FocusWithin => StyleSelector::Selector("&:focus-within".to_string()),
-            TailwindVariant::Active => StyleSelector::Selector("&:active".to_string()),
-            TailwindVariant::Visited => StyleSelector::Selector("&:visited".to_string()),
-            TailwindVariant::Disabled => StyleSelector::Selector("&:disabled".to_string()),
-            TailwindVariant::Enabled => StyleSelector::Selector("&:enabled".to_string()),
-            TailwindVariant::Checked => StyleSelector::Selector("&:checked".to_string()),
-            TailwindVariant::Indeterminate => {
-                StyleSelector::Selector("&:indeterminate".to_string())
-            }
-            TailwindVariant::Default => StyleSelector::Selector("&:default".to_string()),
-            TailwindVariant::Required => StyleSelector::Selector("&:required".to_string()),
-            TailwindVariant::Valid => StyleSelector::Selector("&:valid".to_string()),
-            TailwindVariant::Invalid => StyleSelector::Selector("&:invalid".to_string()),
-            TailwindVariant::InRange => StyleSelector::Selector("&:in-range".to_string()),
-            TailwindVariant::OutOfRange => StyleSelector::Selector("&:out-of-range".to_string()),
-            TailwindVariant::PlaceholderShown => {
-                StyleSelector::Selector("&:placeholder-shown".to_string())
-            }
-            TailwindVariant::Autofill => StyleSelector::Selector("&:autofill".to_string()),
-            TailwindVariant::ReadOnly => StyleSelector::Selector("&:read-only".to_string()),
-            TailwindVariant::FirstChild => StyleSelector::Selector("&:first-child".to_string()),
-            TailwindVariant::LastChild => StyleSelector::Selector("&:last-child".to_string()),
-            TailwindVariant::OnlyChild => StyleSelector::Selector("&:only-child".to_string()),
-            TailwindVariant::OddChild => StyleSelector::Selector("&:nth-child(odd)".to_string()),
-            TailwindVariant::EvenChild => StyleSelector::Selector("&:nth-child(even)".to_string()),
-            TailwindVariant::FirstOfType => StyleSelector::Selector("&:first-of-type".to_string()),
-            TailwindVariant::LastOfType => StyleSelector::Selector("&:last-of-type".to_string()),
-            TailwindVariant::OnlyOfType => StyleSelector::Selector("&:only-of-type".to_string()),
-            TailwindVariant::Empty => StyleSelector::Selector("&:empty".to_string()),
-            TailwindVariant::Target => StyleSelector::Selector("&:target".to_string()),
-            TailwindVariant::Open => StyleSelector::Selector("&[open]".to_string()),
-            TailwindVariant::Dark => {
-                StyleSelector::Selector(":root[data-theme=dark] &".to_string())
-            }
-            TailwindVariant::Placeholder => StyleSelector::Selector("&::placeholder".to_string()),
-            TailwindVariant::Before => StyleSelector::Selector("&::before".to_string()),
-            TailwindVariant::After => StyleSelector::Selector("&::after".to_string()),
-            TailwindVariant::Selection => StyleSelector::Selector("&::selection".to_string()),
-            TailwindVariant::Marker => StyleSelector::Selector("&::marker".to_string()),
-            TailwindVariant::FirstLetter => StyleSelector::Selector("&::first-letter".to_string()),
-            TailwindVariant::FirstLine => StyleSelector::Selector("&::first-line".to_string()),
-            TailwindVariant::Backdrop => StyleSelector::Selector("&::backdrop".to_string()),
-            TailwindVariant::File => StyleSelector::Selector("&::file-selector-button".to_string()),
-            // Group variants emit a single `:is()` selector matching both the
-            // legacy `role="group"` attribute (deprecated, removal planned for v2)
-            // and the new `data-group` attribute. `:is()` adopts the highest-
-            // specificity argument, so specificity equals the prior `*[role=group]`
-            // form. Keep these in sync with `StyleSelector::from("group-*")` in
-            // `libs/css/src/style_selector.rs`.
-            TailwindVariant::GroupHover => {
-                StyleSelector::Selector(":is([role=group],[data-group]):hover &".to_string())
-            }
-            TailwindVariant::GroupFocus => {
-                StyleSelector::Selector(":is([role=group],[data-group]):focus &".to_string())
-            }
-            TailwindVariant::GroupActive => {
-                StyleSelector::Selector(":is([role=group],[data-group]):active &".to_string())
-            }
-            TailwindVariant::GroupDisabled => {
-                StyleSelector::Selector(":is([role=group],[data-group]):disabled &".to_string())
-            }
-            TailwindVariant::PeerHover => StyleSelector::Selector(".peer:hover ~ &".to_string()),
-            TailwindVariant::PeerFocus => StyleSelector::Selector(".peer:focus ~ &".to_string()),
-            TailwindVariant::PeerActive => StyleSelector::Selector(".peer:active ~ &".to_string()),
-            TailwindVariant::PeerDisabled => {
-                StyleSelector::Selector(".peer:disabled ~ &".to_string())
-            }
-            TailwindVariant::PeerChecked => {
-                StyleSelector::Selector(".peer:checked ~ &".to_string())
-            }
-            TailwindVariant::PeerInvalid => {
-                StyleSelector::Selector(".peer:invalid ~ &".to_string())
-            }
-            // Media variants share the `_print`/`_motionReduce`/… prop table.
-            TailwindVariant::Print => StyleSelector::from("print"),
-            TailwindVariant::Screen => StyleSelector::from("screen"),
-            TailwindVariant::Portrait => StyleSelector::from("portrait"),
-            TailwindVariant::Landscape => StyleSelector::from("landscape"),
-            TailwindVariant::MotionReduce => StyleSelector::from("motion-reduce"),
-            TailwindVariant::MotionSafe => StyleSelector::from("motion-safe"),
-            TailwindVariant::ContrastMore => StyleSelector::from("contrast-more"),
-            TailwindVariant::ContrastLess => StyleSelector::from("contrast-less"),
-            TailwindVariant::ForcedColors => StyleSelector::from("forced-colors"),
-            TailwindVariant::Rtl => StyleSelector::Selector("[dir=rtl] &".to_string()),
-            TailwindVariant::Ltr => StyleSelector::Selector("[dir=ltr] &".to_string()),
+/// The custom properties Tailwind registers, so that each element starts from
+/// their initial value instead of inheriting its parent's
+static PROPERTIES: &[(&str, &str)] = &[
+    property!("--tw-translate-x", "*", "0"),
+    property!("--tw-translate-y", "*", "0"),
+    property!("--tw-scale-x", "*", "1"),
+    property!("--tw-scale-y", "*", "1"),
+    property!("--tw-scale-z", "*", "1"),
+    property!("--tw-rotate-x"),
+    property!("--tw-rotate-y"),
+    property!("--tw-rotate-z"),
+    property!("--tw-skew-x"),
+    property!("--tw-skew-y"),
+    property!("--tw-leading"),
+    property!("--tw-content", "*", "\"\""),
+    property!("--tw-scroll-snap-strictness", "*", "proximity"),
+    property!("--tw-blur"),
+    property!("--tw-brightness"),
+    property!("--tw-contrast"),
+    property!("--tw-grayscale"),
+    property!("--tw-hue-rotate"),
+    property!("--tw-invert"),
+    property!("--tw-saturate"),
+    property!("--tw-sepia"),
+    property!("--tw-drop-shadow"),
+    property!("--tw-backdrop-blur"),
+    property!("--tw-backdrop-brightness"),
+    property!("--tw-backdrop-contrast"),
+    property!("--tw-backdrop-grayscale"),
+    property!("--tw-backdrop-hue-rotate"),
+    property!("--tw-backdrop-invert"),
+    property!("--tw-backdrop-opacity"),
+    property!("--tw-backdrop-saturate"),
+    property!("--tw-backdrop-sepia"),
+    property!("--tw-gradient-position"),
+    property!("--tw-gradient-from", "<color>", "#0000"),
+    property!("--tw-gradient-via", "<color>", "#0000"),
+    property!("--tw-gradient-to", "<color>", "#0000"),
+    property!("--tw-gradient-stops"),
+    property!("--tw-gradient-via-stops"),
+    property!("--tw-gradient-from-position", "<length-percentage>", "0%"),
+    property!("--tw-gradient-via-position", "<length-percentage>", "50%"),
+    property!("--tw-gradient-to-position", "<length-percentage>", "100%"),
+    property!("--tw-space-x-reverse", "*", "0"),
+    property!("--tw-space-y-reverse", "*", "0"),
+    property!("--tw-divide-x-reverse", "*", "0"),
+    property!("--tw-divide-y-reverse", "*", "0"),
+    property!("--tw-border-style", "*", "solid"),
+    property!("--tw-outline-style", "*", "solid"),
+    property!("--tw-border-spacing-x", "<length>", "0"),
+    property!("--tw-border-spacing-y", "<length>", "0"),
+    property!("--tw-duration"),
+    property!("--tw-ease"),
+    property!("--tw-shadow", "*", "0 0 #0000"),
+    property!("--tw-shadow-color"),
+    property!("--tw-shadow-alpha", "<percentage>", "100%"),
+    property!("--tw-drop-shadow-color"),
+    property!("--tw-drop-shadow-alpha", "<percentage>", "100%"),
+    property!("--tw-drop-shadow-size"),
+    property!("--tw-inset-shadow", "*", "0 0 #0000"),
+    property!("--tw-inset-shadow-color"),
+    property!("--tw-inset-shadow-alpha", "<percentage>", "100%"),
+    property!("--tw-ring-color"),
+    property!("--tw-ring-inset"),
+    property!("--tw-ring-offset-width", "<length>", "0px"),
+    property!("--tw-ring-offset-color", "*", "#fff"),
+    property!("--tw-ring-offset-shadow", "*", "0 0 #0000"),
+    property!("--tw-ring-shadow", "*", "0 0 #0000"),
+    property!("--tw-inset-ring-color"),
+    property!("--tw-inset-ring-shadow", "*", "0 0 #0000"),
+];
+
+/// Whether `value` reads the custom property `name`, whole and not as the
+/// start of a longer name
+fn reads(value: &str, name: &str) -> bool {
+    value.match_indices(name).any(|(start, _)| {
+        !value[start + name.len()..]
+            .starts_with(|c: char| c.is_ascii_alphanumeric() || c == '-' || c == '_')
+    })
+}
+/// The stylesheet keeps the rules of [`TailwindClass::rules`] under this name, which no source
+/// file has, so that no file's update removes them
+pub const PROPERTY_RULES_FILE: &str = "@devup-ui/tailwind";
+
+/// What one variant adds to the condition a class applies under
+#[derive(Default)]
+struct Variant {
+    /// Breakpoint level
+    level: u8,
+    /// Selectors the element matches, any one of them; `&` is the element
+    selectors: Vec<Cow<'static, str>>,
+    /// At-rule the rule goes in
+    at_rule: Option<(AtRuleKind, Cow<'static, str>)>,
+    /// `::before`/`::after`, which only render with `content`
+    content: bool,
+}
+
+impl Variant {
+    fn selector(selector: impl Into<Cow<'static, str>>) -> Self {
+        Self {
+            selectors: vec![selector.into()],
+            ..Self::default()
         }
     }
 
-    /// Parse variant from string prefix
-    pub fn from_prefix(prefix: &str) -> Option<Self> {
-        match prefix {
-            "hover" => Some(TailwindVariant::Hover),
-            "focus" => Some(TailwindVariant::Focus),
-            "focus-visible" => Some(TailwindVariant::FocusVisible),
-            "focus-within" => Some(TailwindVariant::FocusWithin),
-            "active" => Some(TailwindVariant::Active),
-            "visited" => Some(TailwindVariant::Visited),
-            "disabled" => Some(TailwindVariant::Disabled),
-            "enabled" => Some(TailwindVariant::Enabled),
-            "checked" => Some(TailwindVariant::Checked),
-            "indeterminate" => Some(TailwindVariant::Indeterminate),
-            "default" => Some(TailwindVariant::Default),
-            "required" => Some(TailwindVariant::Required),
-            "valid" => Some(TailwindVariant::Valid),
-            "invalid" => Some(TailwindVariant::Invalid),
-            "in-range" => Some(TailwindVariant::InRange),
-            "out-of-range" => Some(TailwindVariant::OutOfRange),
-            "placeholder-shown" => Some(TailwindVariant::PlaceholderShown),
-            "autofill" => Some(TailwindVariant::Autofill),
-            "read-only" => Some(TailwindVariant::ReadOnly),
-            "first" => Some(TailwindVariant::FirstChild),
-            "last" => Some(TailwindVariant::LastChild),
-            "only" => Some(TailwindVariant::OnlyChild),
-            "odd" => Some(TailwindVariant::OddChild),
-            "even" => Some(TailwindVariant::EvenChild),
-            "first-of-type" => Some(TailwindVariant::FirstOfType),
-            "last-of-type" => Some(TailwindVariant::LastOfType),
-            "only-of-type" => Some(TailwindVariant::OnlyOfType),
-            "empty" => Some(TailwindVariant::Empty),
-            "target" => Some(TailwindVariant::Target),
-            "open" => Some(TailwindVariant::Open),
-            "dark" => Some(TailwindVariant::Dark),
-            "placeholder" => Some(TailwindVariant::Placeholder),
-            "before" => Some(TailwindVariant::Before),
-            "after" => Some(TailwindVariant::After),
-            "selection" => Some(TailwindVariant::Selection),
-            "marker" => Some(TailwindVariant::Marker),
-            "first-letter" => Some(TailwindVariant::FirstLetter),
-            "first-line" => Some(TailwindVariant::FirstLine),
-            "backdrop" => Some(TailwindVariant::Backdrop),
-            "file" => Some(TailwindVariant::File),
-            "group-hover" => Some(TailwindVariant::GroupHover),
-            "group-focus" => Some(TailwindVariant::GroupFocus),
-            "group-active" => Some(TailwindVariant::GroupActive),
-            "group-disabled" => Some(TailwindVariant::GroupDisabled),
-            "peer-hover" => Some(TailwindVariant::PeerHover),
-            "peer-focus" => Some(TailwindVariant::PeerFocus),
-            "peer-active" => Some(TailwindVariant::PeerActive),
-            "peer-disabled" => Some(TailwindVariant::PeerDisabled),
-            "peer-checked" => Some(TailwindVariant::PeerChecked),
-            "peer-invalid" => Some(TailwindVariant::PeerInvalid),
-            "print" => Some(TailwindVariant::Print),
-            "screen" => Some(TailwindVariant::Screen),
-            "portrait" => Some(TailwindVariant::Portrait),
-            "landscape" => Some(TailwindVariant::Landscape),
-            "motion-reduce" => Some(TailwindVariant::MotionReduce),
-            "motion-safe" => Some(TailwindVariant::MotionSafe),
-            "contrast-more" => Some(TailwindVariant::ContrastMore),
-            "contrast-less" => Some(TailwindVariant::ContrastLess),
-            "forced-colors" => Some(TailwindVariant::ForcedColors),
-            "rtl" => Some(TailwindVariant::Rtl),
-            "ltr" => Some(TailwindVariant::Ltr),
-            _ => None,
+    fn at_rule(kind: AtRuleKind, query: impl Into<Cow<'static, str>>) -> Self {
+        Self {
+            at_rule: Some((kind, query.into())),
+            ..Self::default()
+        }
+    }
+
+    /// A state the element is in, hovering only on devices that can hover
+    fn state(selector: Cow<'static, str>, hover: bool) -> Self {
+        Self {
+            selectors: vec![selector],
+            at_rule: hover.then_some((AtRuleKind::Media, Cow::Borrowed(HOVER_QUERY))),
+            ..Self::default()
         }
     }
 }
 
-/// Parsed Tailwind class with all components
+/// A Tailwind class, compiled
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct TailwindClass {
-    /// Responsive level (0=base, 1=sm, 2=md, 3=lg, 4=xl, 5=2xl)
-    pub responsive: u8,
-    /// Variants/modifiers applied
-    pub variants: Vec<TailwindVariant>,
-    /// CSS property name
-    pub property: &'static str,
-    /// CSS value
-    pub value: Cow<'static, str>,
-    /// Whether this is a negative value
-    pub negative: bool,
-}
-
-/// Remove every non-overlapping occurrence of `needle` from `haystack` in place.
-///
-/// Behaves exactly like `*haystack = haystack.replace(needle, "")` (left-to-right,
-/// non-overlapping) but mutates the existing buffer instead of allocating a new
-/// `String`. `needle` must be non-empty.
-fn remove_all_substr(haystack: &mut String, needle: &str) {
-    debug_assert!(!needle.is_empty());
-    let mut search_from = 0;
-    while let Some(rel) = haystack[search_from..].find(needle) {
-        let at = search_from + rel;
-        haystack.replace_range(at..at + needle.len(), "");
-        // Continue scanning from where the removed text was (non-overlapping,
-        // matching `str::replace`'s left-to-right semantics).
-        search_from = at;
-    }
+    /// Breakpoint level
+    pub level: u8,
+    /// The conditions the declarations apply under, one rule each
+    pub conditions: Vec<Option<StyleSelector>>,
+    /// The declarations, in the order Tailwind writes them
+    pub declarations: Vec<Declaration>,
 }
 
 impl TailwindClass {
-    /// Convert to `ExtractStaticStyle`; `None` when the variants' media
-    /// conditions exclude each other (e.g. `print:screen:`).
-    pub fn to_static_style(&self) -> Option<ExtractStaticStyle> {
-        // For transform property, negative is already incorporated into the value
-        // (e.g., translateX(-1rem)), so don't add prefix again. Only the negative
-        // branch needs an owned String for the `-` prefix; the common non-negative
-        // path borrows `self.value` directly, dropping one allocation per class.
-        let value: Cow<str> = if self.negative && self.property != "transform" {
-            let mut v = String::with_capacity(self.value.len() + 1);
-            v.push('-');
-            v.push_str(&self.value);
-            Cow::Owned(v)
-        } else {
-            Cow::Borrowed(self.value.as_ref())
-        };
-
-        let selector = if self.variants.is_empty() {
-            None
-        } else {
-            // Combine multiple variants into a single selector
-            Some(self.combine_selectors()?)
-        };
-
-        Some(ExtractStaticStyle::new(
-            self.property,
-            value.as_ref(),
-            self.responsive,
-            selector,
-        ))
+    /// Every declaration under every condition
+    pub fn styles(&self) -> impl Iterator<Item = ExtractStaticStyle> + '_ {
+        self.conditions.iter().flat_map(move |condition| {
+            self.declarations.iter().map(move |(property, value)| {
+                ExtractStaticStyle::new(property, value, self.level, condition.clone())
+            })
+        })
     }
 
-    /// Combine multiple variant selectors; `None` when they can never match together.
-    fn combine_selectors(&self) -> Option<StyleSelector> {
-        if self.variants.len() == 1 {
-            return Some(self.variants[0].to_selector());
-        }
-
-        // For multiple variants, combine them
-        // e.g., dark:hover: becomes :root[data-theme=dark] &:hover
-        let mut selector_str = String::new();
-        let mut at_rules = vec![];
-
-        for variant in &self.variants {
-            let sel = variant.to_selector();
-            match sel {
-                StyleSelector::Selector(s) => {
-                    if selector_str.is_empty() {
-                        selector_str = s;
-                    } else {
-                        // Combine selectors in place, byte-identical to the previous
-                        // `format!("{}{}", selector_str.replace(" &", ""), s.replace('&', ""))`
-                        // form but without the two throwaway `String`s and the `format!`
-                        // buffer: drop all " &" from the accumulator in place, then append
-                        // `s` with every '&' skipped.
-                        remove_all_substr(&mut selector_str, " &");
-                        for part in s.split('&') {
-                            selector_str.push_str(part);
-                        }
-                        // `remove_all_substr` above stripped every " &" and each
-                        // appended `part` comes from `s.split('&')`, so NO '&' char
-                        // remains in the accumulator here — hence `contains(" &")`
-                        // is provably always false and the only live check is the
-                        // trailing-space one. Output stays byte-identical (locked by
-                        // `test_combine_selectors_byte_identical_to_prior_impl`).
-                        if !selector_str.ends_with(" &") {
-                            selector_str.push_str(" &");
-                        }
-                    }
-                }
-                StyleSelector::At { kind, query, .. } => at_rules.push((kind, query)),
-                // SAFETY: TailwindVariant::to_selector() never produces Global.
-                // This arm exists only for exhaustive matching. If reached, it indicates
-                // a bug where a new TailwindVariant was added that produces Global.
-                StyleSelector::Global(_, _) => {
-                    unreachable!("TailwindVariant should not produce Global selector")
-                }
-            }
-        }
-
-        // Every media variant applies, so fold them all in order (`print:motion-reduce:`
-        // becomes `@media print and (prefers-reduced-motion:reduce)`).
-        let mut selector =
-            (!selector_str.is_empty()).then_some(StyleSelector::Selector(selector_str));
-        for (kind, query) in at_rules {
-            selector = Some(StyleSelector::nest_at_rule(
-                selector.as_ref(),
-                kind,
-                &query,
-            )?);
-        }
-        selector
+    /// The global rules the declarations need: the @property rules of the
+    /// custom properties they set or read, and the @keyframes they name
+    #[must_use]
+    pub fn rules(&self) -> Vec<Cow<'static, str>> {
+        let mut rules: Vec<Cow<'static, str>> = PROPERTIES
+            .iter()
+            .filter(|(name, _)| {
+                self.declarations
+                    .iter()
+                    .any(|(property, value)| property == name || reads(value, name))
+            })
+            .map(|&(_, rule)| Cow::Borrowed(rule))
+            .collect();
+        rules.extend(keyframes_of(&self.declarations));
+        rules
     }
 }
 
-/// Tailwind color values
-static TAILWIND_COLORS: phf::Map<&'static str, &'static str> = phf_map! {
-    // Inherit/Current/Transparent
-    "inherit" => "inherit",
-    "current" => "currentColor",
-    "transparent" => "transparent",
-    // Black and White
-    "black" => "#000",
-    "white" => "#fff",
-    // Slate
-    "slate-50" => "#f8fafc",
-    "slate-100" => "#f1f5f9",
-    "slate-200" => "#e2e8f0",
-    "slate-300" => "#cbd5e1",
-    "slate-400" => "#94a3b8",
-    "slate-500" => "#64748b",
-    "slate-600" => "#475569",
-    "slate-700" => "#334155",
-    "slate-800" => "#1e293b",
-    "slate-900" => "#0f172a",
-    "slate-950" => "#020617",
-    // Gray
-    "gray-50" => "#f9fafb",
-    "gray-100" => "#f3f4f6",
-    "gray-200" => "#e5e7eb",
-    "gray-300" => "#d1d5db",
-    "gray-400" => "#9ca3af",
-    "gray-500" => "#6b7280",
-    "gray-600" => "#4b5563",
-    "gray-700" => "#374151",
-    "gray-800" => "#1f2937",
-    "gray-900" => "#111827",
-    "gray-950" => "#030712",
-    // Zinc
-    "zinc-50" => "#fafafa",
-    "zinc-100" => "#f4f4f5",
-    "zinc-200" => "#e4e4e7",
-    "zinc-300" => "#d4d4d8",
-    "zinc-400" => "#a1a1aa",
-    "zinc-500" => "#71717a",
-    "zinc-600" => "#52525b",
-    "zinc-700" => "#3f3f46",
-    "zinc-800" => "#27272a",
-    "zinc-900" => "#18181b",
-    "zinc-950" => "#09090b",
-    // Neutral
-    "neutral-50" => "#fafafa",
-    "neutral-100" => "#f5f5f5",
-    "neutral-200" => "#e5e5e5",
-    "neutral-300" => "#d4d4d4",
-    "neutral-400" => "#a3a3a3",
-    "neutral-500" => "#737373",
-    "neutral-600" => "#525252",
-    "neutral-700" => "#404040",
-    "neutral-800" => "#262626",
-    "neutral-900" => "#171717",
-    "neutral-950" => "#0a0a0a",
-    // Stone
-    "stone-50" => "#fafaf9",
-    "stone-100" => "#f5f5f4",
-    "stone-200" => "#e7e5e4",
-    "stone-300" => "#d6d3d1",
-    "stone-400" => "#a8a29e",
-    "stone-500" => "#78716c",
-    "stone-600" => "#57534e",
-    "stone-700" => "#44403c",
-    "stone-800" => "#292524",
-    "stone-900" => "#1c1917",
-    "stone-950" => "#0c0a09",
-    // Red
-    "red-50" => "#fef2f2",
-    "red-100" => "#fee2e2",
-    "red-200" => "#fecaca",
-    "red-300" => "#fca5a5",
-    "red-400" => "#f87171",
-    "red-500" => "#ef4444",
-    "red-600" => "#dc2626",
-    "red-700" => "#b91c1c",
-    "red-800" => "#991b1b",
-    "red-900" => "#7f1d1d",
-    "red-950" => "#450a0a",
-    // Orange
-    "orange-50" => "#fff7ed",
-    "orange-100" => "#ffedd5",
-    "orange-200" => "#fed7aa",
-    "orange-300" => "#fdba74",
-    "orange-400" => "#fb923c",
-    "orange-500" => "#f97316",
-    "orange-600" => "#ea580c",
-    "orange-700" => "#c2410c",
-    "orange-800" => "#9a3412",
-    "orange-900" => "#7c2d12",
-    "orange-950" => "#431407",
-    // Amber
-    "amber-50" => "#fffbeb",
-    "amber-100" => "#fef3c7",
-    "amber-200" => "#fde68a",
-    "amber-300" => "#fcd34d",
-    "amber-400" => "#fbbf24",
-    "amber-500" => "#f59e0b",
-    "amber-600" => "#d97706",
-    "amber-700" => "#b45309",
-    "amber-800" => "#92400e",
-    "amber-900" => "#78350f",
-    "amber-950" => "#451a03",
-    // Yellow
-    "yellow-50" => "#fefce8",
-    "yellow-100" => "#fef9c3",
-    "yellow-200" => "#fef08a",
-    "yellow-300" => "#fde047",
-    "yellow-400" => "#facc15",
-    "yellow-500" => "#eab308",
-    "yellow-600" => "#ca8a04",
-    "yellow-700" => "#a16207",
-    "yellow-800" => "#854d0e",
-    "yellow-900" => "#713f12",
-    "yellow-950" => "#422006",
-    // Lime
-    "lime-50" => "#f7fee7",
-    "lime-100" => "#ecfccb",
-    "lime-200" => "#d9f99d",
-    "lime-300" => "#bef264",
-    "lime-400" => "#a3e635",
-    "lime-500" => "#84cc16",
-    "lime-600" => "#65a30d",
-    "lime-700" => "#4d7c0f",
-    "lime-800" => "#3f6212",
-    "lime-900" => "#365314",
-    "lime-950" => "#1a2e05",
-    // Green
-    "green-50" => "#f0fdf4",
-    "green-100" => "#dcfce7",
-    "green-200" => "#bbf7d0",
-    "green-300" => "#86efac",
-    "green-400" => "#4ade80",
-    "green-500" => "#22c55e",
-    "green-600" => "#16a34a",
-    "green-700" => "#15803d",
-    "green-800" => "#166534",
-    "green-900" => "#14532d",
-    "green-950" => "#052e16",
-    // Emerald
-    "emerald-50" => "#ecfdf5",
-    "emerald-100" => "#d1fae5",
-    "emerald-200" => "#a7f3d0",
-    "emerald-300" => "#6ee7b7",
-    "emerald-400" => "#34d399",
-    "emerald-500" => "#10b981",
-    "emerald-600" => "#059669",
-    "emerald-700" => "#047857",
-    "emerald-800" => "#065f46",
-    "emerald-900" => "#064e3b",
-    "emerald-950" => "#022c22",
-    // Teal
-    "teal-50" => "#f0fdfa",
-    "teal-100" => "#ccfbf1",
-    "teal-200" => "#99f6e4",
-    "teal-300" => "#5eead4",
-    "teal-400" => "#2dd4bf",
-    "teal-500" => "#14b8a6",
-    "teal-600" => "#0d9488",
-    "teal-700" => "#0f766e",
-    "teal-800" => "#115e59",
-    "teal-900" => "#134e4a",
-    "teal-950" => "#042f2e",
-    // Cyan
-    "cyan-50" => "#ecfeff",
-    "cyan-100" => "#cffafe",
-    "cyan-200" => "#a5f3fc",
-    "cyan-300" => "#67e8f9",
-    "cyan-400" => "#22d3ee",
-    "cyan-500" => "#06b6d4",
-    "cyan-600" => "#0891b2",
-    "cyan-700" => "#0e7490",
-    "cyan-800" => "#155e75",
-    "cyan-900" => "#164e63",
-    "cyan-950" => "#083344",
-    // Sky
-    "sky-50" => "#f0f9ff",
-    "sky-100" => "#e0f2fe",
-    "sky-200" => "#bae6fd",
-    "sky-300" => "#7dd3fc",
-    "sky-400" => "#38bdf8",
-    "sky-500" => "#0ea5e9",
-    "sky-600" => "#0284c7",
-    "sky-700" => "#0369a1",
-    "sky-800" => "#075985",
-    "sky-900" => "#0c4a6e",
-    "sky-950" => "#082f49",
-    // Blue
-    "blue-50" => "#eff6ff",
-    "blue-100" => "#dbeafe",
-    "blue-200" => "#bfdbfe",
-    "blue-300" => "#93c5fd",
-    "blue-400" => "#60a5fa",
-    "blue-500" => "#3b82f6",
-    "blue-600" => "#2563eb",
-    "blue-700" => "#1d4ed8",
-    "blue-800" => "#1e40af",
-    "blue-900" => "#1e3a8a",
-    "blue-950" => "#172554",
-    // Indigo
-    "indigo-50" => "#eef2ff",
-    "indigo-100" => "#e0e7ff",
-    "indigo-200" => "#c7d2fe",
-    "indigo-300" => "#a5b4fc",
-    "indigo-400" => "#818cf8",
-    "indigo-500" => "#6366f1",
-    "indigo-600" => "#4f46e5",
-    "indigo-700" => "#4338ca",
-    "indigo-800" => "#3730a3",
-    "indigo-900" => "#312e81",
-    "indigo-950" => "#1e1b4b",
-    // Violet
-    "violet-50" => "#f5f3ff",
-    "violet-100" => "#ede9fe",
-    "violet-200" => "#ddd6fe",
-    "violet-300" => "#c4b5fd",
-    "violet-400" => "#a78bfa",
-    "violet-500" => "#8b5cf6",
-    "violet-600" => "#7c3aed",
-    "violet-700" => "#6d28d9",
-    "violet-800" => "#5b21b6",
-    "violet-900" => "#4c1d95",
-    "violet-950" => "#2e1065",
-    // Purple
-    "purple-50" => "#faf5ff",
-    "purple-100" => "#f3e8ff",
-    "purple-200" => "#e9d5ff",
-    "purple-300" => "#d8b4fe",
-    "purple-400" => "#c084fc",
-    "purple-500" => "#a855f7",
-    "purple-600" => "#9333ea",
-    "purple-700" => "#7e22ce",
-    "purple-800" => "#6b21a8",
-    "purple-900" => "#581c87",
-    "purple-950" => "#3b0764",
-    // Fuchsia
-    "fuchsia-50" => "#fdf4ff",
-    "fuchsia-100" => "#fae8ff",
-    "fuchsia-200" => "#f5d0fe",
-    "fuchsia-300" => "#f0abfc",
-    "fuchsia-400" => "#e879f9",
-    "fuchsia-500" => "#d946ef",
-    "fuchsia-600" => "#c026d3",
-    "fuchsia-700" => "#a21caf",
-    "fuchsia-800" => "#86198f",
-    "fuchsia-900" => "#701a75",
-    "fuchsia-950" => "#4a044e",
-    // Pink
-    "pink-50" => "#fdf2f8",
-    "pink-100" => "#fce7f3",
-    "pink-200" => "#fbcfe8",
-    "pink-300" => "#f9a8d4",
-    "pink-400" => "#f472b6",
-    "pink-500" => "#ec4899",
-    "pink-600" => "#db2777",
-    "pink-700" => "#be185d",
-    "pink-800" => "#9d174d",
-    "pink-900" => "#831843",
-    "pink-950" => "#500724",
-    // Rose
-    "rose-50" => "#fff1f2",
-    "rose-100" => "#ffe4e6",
-    "rose-200" => "#fecdd3",
-    "rose-300" => "#fda4af",
-    "rose-400" => "#fb7185",
-    "rose-500" => "#f43f5e",
-    "rose-600" => "#e11d48",
-    "rose-700" => "#be123c",
-    "rose-800" => "#9f1239",
-    "rose-900" => "#881337",
-    "rose-950" => "#4c0519",
-};
+/// The variant a prefix such as `hover` or `md` stands for
+fn variant(name: &str) -> Option<Variant> {
+    if let Some(custom) = custom_variant(name) {
+        return Some(Variant {
+            selectors: custom.selectors.into_iter().map(Cow::Owned).collect(),
+            at_rule: custom
+                .at_rule
+                .map(|(kind, query)| (kind, Cow::Owned(query))),
+            ..Variant::default()
+        });
+    }
+    if let Some(&level) = RESPONSIVE_PREFIX_MAP.get(name) {
+        return Some(Variant {
+            level,
+            ..Variant::default()
+        });
+    }
+    if let Some(width) = theme_value("breakpoint", name) {
+        return Some(Variant::at_rule(
+            AtRuleKind::Media,
+            format!("(min-width:{width})"),
+        ));
+    }
+    if let Some(&query) = MEDIA_VARIANTS.get(name) {
+        return Some(Variant::at_rule(AtRuleKind::Media, query));
+    }
+    if let Some(&selectors) = PSEUDO_ELEMENT_VARIANTS.get(name) {
+        return Some(Variant {
+            selectors: selectors.iter().copied().map(Cow::Borrowed).collect(),
+            content: matches!(name, "before" | "after"),
+            ..Variant::default()
+        });
+    }
+    if let Some(&selector) = SELECTOR_VARIANTS.get(name) {
+        return Some(Variant::selector(selector));
+    }
+    if let Some(selector) = state_selector(name) {
+        return Some(Variant::state(selector, name == "hover"));
+    }
+    if let Some(state) = name.strip_prefix("group-") {
+        return relation_variant(state, "group", " *");
+    }
+    if let Some(state) = name.strip_prefix("peer-") {
+        return relation_variant(state, "peer", " ~ *");
+    }
+    if let Some(condition) = name.strip_prefix("supports-") {
+        return supports_query(bracketed(condition)?)
+            .map(|query| Variant::at_rule(AtRuleKind::Supports, query));
+    }
+    arbitrary_variant(bracketed(name)?)
+}
+
+/// The selector of a state the element is in, which `group-*`, `peer-*` and
+/// `has-*` look for on another element
+fn state_selector(name: &str) -> Option<Cow<'static, str>> {
+    if let Some(&selector) = STATE_VARIANTS.get(name) {
+        return Some(Cow::Borrowed(selector));
+    }
+    if let Some(attribute) = name.strip_prefix("aria-") {
+        if ARIA_VARIANTS.contains(attribute) {
+            return Some(Cow::Owned(format!("&[aria-{attribute}=\"true\"]")));
+        }
+        return attribute_selector("aria-", bracketed(attribute)?);
+    }
+    if let Some(attribute) = name.strip_prefix("data-") {
+        return match bracketed(attribute) {
+            Some(inner) => attribute_selector("data-", inner),
+            None => is_name(attribute).then(|| Cow::Owned(format!("&[data-{attribute}]"))),
+        };
+    }
+    if let Some(position) = name.strip_prefix("nth-") {
+        return nth_selector(position);
+    }
+    if let Some(inner) = name.strip_prefix("has-") {
+        let inner = match bracketed(inner) {
+            Some(selector) if !selector.contains('&') => {
+                format!(":is({})", decode_underscores(selector))
+            }
+            Some(_) => return None,
+            // Hovering a descendant is not guarded like hovering the element
+            None if inner == "hover" || inner.starts_with("has-") => return None,
+            None => state_selector(inner)?.replacen('&', "", 1),
+        };
+        return Some(Cow::Owned(format!("&:has({inner})")));
+    }
+    None
+}
+
+/// `group-*`/`peer-*`: the state of an ancestor marked `group`, or of an earlier
+/// sibling marked `peer`, the marker named in `group-hover/name`
+fn relation_variant(state: &str, marker: &str, relation: &str) -> Option<Variant> {
+    let (state, name) = match state.rsplit_once('/') {
+        Some((state, name)) if is_name(name) => (state, Some(name)),
+        Some(_) => return None,
+        None => (state, None),
+    };
+    let selector = state_selector(state)?;
+    let mut element = format!(":where(.{marker}");
+    if let Some(name) = name {
+        element.push_str("\\/");
+        element.push_str(name);
+    }
+    element.push(')');
+    Some(Variant::state(
+        Cow::Owned(format!(
+            "&:is({}{relation})",
+            selector.replacen('&', &element, 1)
+        )),
+        state == "hover",
+    ))
+}
+
+/// `[name=value]` of an `aria-[…]`/`data-[…]` variant, the value quoted like
+/// Tailwind quotes it
+fn attribute_selector(prefix: &str, inner: &str) -> Option<Cow<'static, str>> {
+    let inner = decode_underscores(inner);
+    let selector = match inner.split_once('=') {
+        Some((name, value)) if is_name(name) && !value.is_empty() => {
+            if is_quoted(value) {
+                format!("&[{prefix}{name}={value}]")
+            } else if value.contains(['"', '\'', '\\', ']']) {
+                return None;
+            } else {
+                format!("&[{prefix}{name}=\"{value}\"]")
+            }
+        }
+        None if is_name(&inner) => format!("&[{prefix}{inner}]"),
+        _ => return None,
+    };
+    Some(Cow::Owned(selector))
+}
+
+/// `nth-3`, `nth-last-3`, `nth-of-type-3`, `nth-last-of-type-3` and `nth-[…]`
+fn nth_selector(position: &str) -> Option<Cow<'static, str>> {
+    let (pseudo, position) = if let Some(position) = position.strip_prefix("last-of-type-") {
+        ("nth-last-of-type", position)
+    } else if let Some(position) = position.strip_prefix("of-type-") {
+        ("nth-of-type", position)
+    } else if let Some(position) = position.strip_prefix("last-") {
+        ("nth-last-child", position)
+    } else {
+        ("nth-child", position)
+    };
+    let position = match bracketed(position) {
+        Some(inner) => decode_underscores(inner),
+        None if position.parse::<u32>().is_ok_and(|n| n > 0) => position.to_string(),
+        None => return None,
+    };
+    Some(Cow::Owned(format!("&:{pseudo}({position})")))
+}
+
+/// The condition of `supports-[…]`: a declaration such as `display:grid`, or a
+/// parenthesized condition
+fn supports_query(inner: &str) -> Option<String> {
+    let condition = decode_underscores(inner);
+    if condition.starts_with('(') {
+        Some(condition)
+    } else if condition.contains(':') {
+        Some(format!("({condition})"))
+    } else {
+        None
+    }
+}
+
+/// A `[…]` variant: selectors with `&` for the element, or an at-rule
+fn arbitrary_variant(inner: &str) -> Option<Variant> {
+    let text = decode_underscores(inner);
+    if text.starts_with('@') {
+        let (kind, query) = split_at_rule_key(&text)?;
+        return Some(Variant::at_rule(kind, query.to_string()));
+    }
+    let selectors: Vec<Cow<'static, str>> = split_top_level(&text, ',')
+        .into_iter()
+        .map(|selector| Cow::Owned(selector.trim().to_string()))
+        .collect();
+    selectors
+        .iter()
+        .all(|selector| selector.contains('&'))
+        .then_some(Variant {
+            selectors,
+            ..Variant::default()
+        })
+}
 
 /// Spacing scale (Tailwind default: 1 unit = 0.25rem = 4px)
-static SPACING_SCALE: phf::Map<&'static str, &'static str> = phf_map! {
+static DEFAULT_SPACING: phf::Map<&'static str, &'static str> = phf_map! {
     "0" => "0px",
     "px" => "1px",
     "0.5" => "0.125rem",
@@ -739,16 +588,16 @@ static SPACING_SCALE: phf::Map<&'static str, &'static str> = phf_map! {
     "fit" => "fit-content",
 };
 
-/// Font size scale
+/// Font size scale: size and the line height relative to it
 static FONT_SIZE_SCALE: phf::Map<&'static str, (&'static str, &'static str)> = phf_map! {
-    "xs" => ("0.75rem", "1rem"),
-    "sm" => ("0.875rem", "1.25rem"),
-    "base" => ("1rem", "1.5rem"),
-    "lg" => ("1.125rem", "1.75rem"),
-    "xl" => ("1.25rem", "1.75rem"),
-    "2xl" => ("1.5rem", "2rem"),
-    "3xl" => ("1.875rem", "2.25rem"),
-    "4xl" => ("2.25rem", "2.5rem"),
+    "xs" => ("0.75rem", "calc(1 / 0.75)"),
+    "sm" => ("0.875rem", "calc(1.25 / 0.875)"),
+    "base" => ("1rem", "calc(1.5 / 1)"),
+    "lg" => ("1.125rem", "calc(1.75 / 1.125)"),
+    "xl" => ("1.25rem", "calc(1.75 / 1.25)"),
+    "2xl" => ("1.5rem", "calc(2 / 1.5)"),
+    "3xl" => ("1.875rem", "calc(2.25 / 1.875)"),
+    "4xl" => ("2.25rem", "calc(2.5 / 2.25)"),
     "5xl" => ("3rem", "1"),
     "6xl" => ("3.75rem", "1"),
     "7xl" => ("4.5rem", "1"),
@@ -769,17 +618,31 @@ static FONT_WEIGHT_SCALE: phf::Map<&'static str, &'static str> = phf_map! {
     "black" => "900",
 };
 
+/// The spacing of a step: the project's @theme spacing, else Tailwind's
+pub(crate) fn spacing_scale(key: &str) -> Option<Cow<'static, str>> {
+    if let Some(value) = theme_value("spacing", key) {
+        return Some(Cow::Owned(value));
+    }
+    if let Some(scaled) = theme_variable("spacing").and_then(|base| scaled(key, &base)) {
+        return Some(Cow::Owned(scaled));
+    }
+    DEFAULT_SPACING
+        .get(key)
+        .map(|&value| Cow::Borrowed(value))
+        .or_else(|| scaled(key, "0.25rem").map(Cow::Owned))
+}
+
 /// Border radius scale
 static BORDER_RADIUS_SCALE: phf::Map<&'static str, &'static str> = phf_map! {
-    "none" => "0px",
-    "sm" => "0.125rem",
+    "xs" => "0.125rem",
+    "sm" => "0.25rem",
     "" => "0.25rem",
     "md" => "0.375rem",
     "lg" => "0.5rem",
     "xl" => "0.75rem",
     "2xl" => "1rem",
     "3xl" => "1.5rem",
-    "full" => "9999px",
+    "4xl" => "2rem",
 };
 
 /// Opacity scale
@@ -818,496 +681,1140 @@ static Z_INDEX_SCALE: phf::Map<&'static str, &'static str> = phf_map! {
     "auto" => "auto",
 };
 
-/// Box shadow scale
-static BOX_SHADOW_SCALE: phf::Map<&'static str, &'static str> = phf_map! {
-    "sm" => "0 1px 2px 0 rgb(0 0 0 / 0.05)",
-    "" => "0 1px 3px 0 rgb(0 0 0 / 0.1), 0 1px 2px -1px rgb(0 0 0 / 0.1)",
-    "md" => "0 4px 6px -1px rgb(0 0 0 / 0.1), 0 2px 4px -2px rgb(0 0 0 / 0.1)",
-    "lg" => "0 10px 15px -3px rgb(0 0 0 / 0.1), 0 4px 6px -4px rgb(0 0 0 / 0.1)",
-    "xl" => "0 20px 25px -5px rgb(0 0 0 / 0.1), 0 8px 10px -6px rgb(0 0 0 / 0.1)",
-    "2xl" => "0 25px 50px -12px rgb(0 0 0 / 0.25)",
-    "inner" => "inset 0 2px 4px 0 rgb(0 0 0 / 0.05)",
-    "none" => "0 0 #0000",
-};
-
-/// Border width scale
-static BORDER_WIDTH_SCALE: phf::Map<&'static str, &'static str> = phf_map! {
-    "0" => "0px",
-    "" => "1px",
-    "2" => "2px",
-    "4" => "4px",
-    "8" => "8px",
-};
-
-/// Transition duration scale
-static DURATION_SCALE: phf::Map<&'static str, &'static str> = phf_map! {
-    "0" => "0s",
-    "75" => "75ms",
-    "100" => "100ms",
-    "150" => "150ms",
-    "200" => "200ms",
-    "300" => "300ms",
-    "500" => "500ms",
-    "700" => "700ms",
-    "1000" => "1000ms",
-};
-
-/// Ease timing functions
-static EASE_SCALE: phf::Map<&'static str, &'static str> = phf_map! {
-    "linear" => "linear",
-    "in" => "cubic-bezier(0.4, 0, 1, 1)",
-    "out" => "cubic-bezier(0, 0, 0.2, 1)",
-    "in-out" => "cubic-bezier(0.4, 0, 0.2, 1)",
-};
-
-/// Check if a string contains Tailwind classes
-pub fn has_tailwind_classes(class_str: &str) -> bool {
-    // Simple heuristic: if it looks like a Tailwind class pattern
-    for part in class_str.split_whitespace() {
-        if is_likely_tailwind_class(part) {
-            return true;
-        }
-    }
-    false
+/// The declarations `class` compiles to, `None` when it stays as written
+#[cfg(test)]
+pub(crate) fn declarations_of(class: &str) -> Option<Vec<(String, String)>> {
+    parse_class(class).map(|class| {
+        class
+            .declarations
+            .into_iter()
+            .map(|(property, value)| (property.into_owned(), value.into_owned()))
+            .collect()
+    })
 }
 
-/// Common Tailwind prefixes
-static TAILWIND_PREFIXES: &[&str] = &[
-    "bg-",
-    "text-",
-    "font-",
-    "p-",
-    "px-",
-    "py-",
-    "pt-",
-    "pr-",
-    "pb-",
-    "pl-",
-    "m-",
-    "mx-",
-    "my-",
-    "mt-",
-    "mr-",
-    "mb-",
-    "ml-",
-    "w-",
-    "h-",
-    "min-w-",
-    "max-w-",
-    "min-h-",
-    "max-h-",
-    "flex",
-    "grid",
-    "block",
-    "inline",
-    "hidden",
-    "absolute",
-    "relative",
-    "fixed",
-    "sticky",
-    "top-",
-    "right-",
-    "bottom-",
-    "left-",
-    "inset-",
-    "z-",
-    "opacity-",
-    "rounded",
-    "border",
-    "shadow",
-    "gap-",
-    "space-",
-    "items-",
-    "justify-",
-    "content-",
-    "self-",
-    "order-",
-    "col-",
-    "row-",
-    "overflow-",
-    "object-",
-    "aspect-",
-    "transition",
-    "duration-",
-    "ease-",
-    "delay-",
-    "animate-",
-    "cursor-",
-    "select-",
-    "resize",
-    "appearance-",
-    "outline",
-    "ring",
-    "fill-",
-    "stroke-",
-    "sr-",
-    "not-sr-",
-    "container",
-    "columns-",
-    "break-",
-    "decoration-",
-    "underline",
-    "overline",
-    "line-through",
-    "no-underline",
-    "uppercase",
-    "lowercase",
-    "capitalize",
-    "normal-case",
-    "truncate",
-    "leading-",
-    "tracking-",
-    "list-",
-    "align-",
-    "whitespace-",
-    "hyphens-",
-    "blur",
-    "brightness-",
-    "contrast-",
-    "grayscale",
-    "invert",
-    "saturate-",
-    "sepia",
-    "drop-shadow",
-    "backdrop-",
-    "scale-",
-    "rotate-",
-    "translate-",
-    "skew-",
-    "origin-",
-    "accent-",
-    "caret-",
-    "scroll-",
-    "snap-",
-    "touch-",
-    "will-change-",
-    "table",
-    "clear-",
-    "float-",
-    "isolate",
-    "isolation-",
-    "mix-blend-",
-    "bg-blend-",
-    "divide-",
-    "place-",
-    "grow",
-    "shrink",
-    "basis-",
-];
+/// The class compiled, or `None` when it is not a Tailwind class understood in
+/// full, which must then stay in the className as written
+#[must_use]
+pub fn parse_class(class: &str) -> Option<TailwindClass> {
+    let mut parts = split_top_level(class, ':');
+    let (name, important) = important(parts.pop()?);
+    let Utility {
+        mut declarations,
+        selector: utility_selector,
+    } = utility(name)?;
+    if important {
+        for (_, value) in &mut declarations {
+            *value = Cow::Owned(format!("{value} !important"));
+        }
+    }
+    let mut level = 0;
+    let mut selectors = vec![String::from("&")];
+    let mut at_rules = Vec::new();
+    let mut content = false;
+    // Variants nest left to right, the first one outermost
+    for name in parts {
+        let variant = variant(name)?;
+        level = level.max(variant.level);
+        if !variant.selectors.is_empty() {
+            selectors = selectors
+                .iter()
+                .flat_map(|outer| {
+                    variant
+                        .selectors
+                        .iter()
+                        .map(move |selector| selector.replace('&', outer))
+                })
+                .collect();
+        }
+        at_rules.extend(variant.at_rule);
+        content |= variant.content;
+    }
+    if utility_selector != "&" {
+        selectors = selectors
+            .iter()
+            .map(|selector| utility_selector.replace('&', selector))
+            .collect();
+    }
+    if content
+        && !declarations
+            .iter()
+            .any(|(property, _)| property == "content")
+    {
+        declarations.insert(
+            0,
+            (Cow::Borrowed("content"), Cow::Borrowed("var(--tw-content)")),
+        );
+    }
+    let conditions = selectors
+        .into_iter()
+        .map(|selector| {
+            let mut condition = (selector != "&").then_some(StyleSelector::Selector(selector));
+            for (kind, query) in &at_rules {
+                // `None` when the media queries can never all match
+                condition = Some(StyleSelector::nest_at_rule(
+                    condition.as_ref(),
+                    *kind,
+                    query,
+                )?);
+            }
+            Some(condition)
+        })
+        .collect::<Option<Vec<_>>>()?;
+    Some(TailwindClass {
+        level,
+        conditions,
+        declarations,
+    })
+}
 
-/// Exact matches for utility classes without values
-static EXACT_TAILWIND_CLASSES: phf::Set<&'static str> = phf_set! {
-        "flex",
-        "inline-flex",
-        "grid",
-        "inline-grid",
-        "block",
-        "inline-block",
-        "inline",
-        "contents",
-        "flow-root",
-        "hidden",
-        "invisible",
-        "visible",
-        "collapse",
-        "absolute",
-        "relative",
-        "fixed",
-        "sticky",
-        "static",
-        "isolate",
-        "isolation-auto",
-        "container",
-        "truncate",
-        "uppercase",
-        "lowercase",
-        "capitalize",
-        "normal-case",
-        "italic",
-        "not-italic",
-        "underline",
-        "overline",
-        "line-through",
-        "no-underline",
-        "antialiased",
-        "subpixel-antialiased",
-        "ordinal",
-        "slashed-zero",
-        "lining-nums",
-        "oldstyle-nums",
-        "proportional-nums",
-        "tabular-nums",
-        "diagonal-fractions",
-        "stacked-fractions",
-        "sr-only",
-        "not-sr-only",
-        "resize",
-        "resize-none",
-        "resize-y",
-        "resize-x",
-        "transition",
-        "transition-none",
-        "transition-all",
-        "transition-colors",
-        "transition-opacity",
-        "transition-shadow",
-        "transition-transform",
-        "animate-none",
-        "animate-spin",
-        "animate-ping",
-        "animate-pulse",
-        "animate-bounce",
-        "grayscale",
-        "grayscale-0",
-        "invert",
-        "invert-0",
-        "sepia",
-        "sepia-0",
-        "backdrop-blur",
-        "backdrop-blur-none",
-        "backdrop-grayscale",
-        "backdrop-grayscale-0",
-        "backdrop-invert",
-        "backdrop-invert-0",
-        "backdrop-sepia",
-        "backdrop-sepia-0",
-        "table",
-        "table-caption",
-        "table-cell",
-        "table-column",
-        "table-column-group",
-        "table-footer-group",
-        "table-header-group",
-        "table-row-group",
-        "table-row",
-        "border-collapse",
-        "border-separate",
-        "grow",
-        "grow-0",
-        "shrink",
-        "shrink-0",
-        "rounded",
-        "rounded-none",
-        "rounded-sm",
-        "rounded-md",
-        "rounded-lg",
-        "rounded-xl",
-        "rounded-2xl",
-        "rounded-3xl",
-        "rounded-full",
-        "border",
-        "border-0",
-        "border-2",
-        "border-4",
-        "border-8",
-        "shadow",
-        "shadow-sm",
-        "shadow-md",
-        "shadow-lg",
-        "shadow-xl",
-        "shadow-2xl",
-        "shadow-inner",
-        "shadow-none",
-        "outline",
-        "outline-none",
-        "outline-dashed",
-        "outline-dotted",
-        "outline-double",
-        "ring",
-        "ring-0",
-        "ring-1",
-        "ring-2",
-        "ring-4",
-        "ring-8",
-        "ring-inset",
-        "blur",
-        "blur-none",
-        "blur-sm",
-        "blur-md",
-        "blur-lg",
-        "blur-xl",
-        "blur-2xl",
-        "blur-3xl",
+/// Properties a leading `-` negates
+static NEGATABLE_PROPERTIES: phf::Set<&'static str> = phf_set! {
+    "margin",
+    "margin-inline",
+    "margin-block",
+    "margin-top",
+    "margin-right",
+    "margin-bottom",
+    "margin-left",
+    "margin-inline-start",
+    "margin-inline-end",
+    "inset",
+    "inset-inline",
+    "inset-block",
+    "top",
+    "right",
+    "bottom",
+    "left",
+    "z-index",
+    "order",
+    "letter-spacing",
+    "scroll-margin",
 };
 
-/// Check if a single class looks like a Tailwind utility
-fn is_likely_tailwind_class(class: &str) -> bool {
-    // Strip any responsive/variant prefixes
-    let class = class
-        .split(':')
-        .next_back()
-        .unwrap_or(class)
-        .trim_start_matches('-');
+/// `name` without the `!` that makes its declarations important, trailing as
+/// v4 writes it or leading as v3 did
+fn important(name: &str) -> (&str, bool) {
+    name.strip_suffix('!')
+        .or_else(|| name.strip_prefix('!'))
+        .map_or((name, false), |name| (name, true))
+}
 
-    if EXACT_TAILWIND_CLASSES.contains(class) {
-        return true;
+/// What a utility declares, and on which element: itself, or the children of
+/// the element it is on
+struct Utility {
+    declarations: Vec<Declaration>,
+    /// Where the declarations apply, `&` being the element
+    selector: &'static str,
+}
+
+/// The declarations of a utility and the selector they apply under
+fn utility(name: &str) -> Option<Utility> {
+    if let Some(declarations) = children_utility(name) {
+        return Some(Utility {
+            declarations,
+            selector: CHILDREN,
+        });
     }
+    Some(Utility {
+        declarations: element_utility(name)?,
+        selector: "&",
+    })
+}
 
-    for prefix in TAILWIND_PREFIXES {
-        if let Some(value_part) = class.strip_prefix(prefix) {
-            // For prefixes that end with '-', validate the value part
-            if prefix.ends_with('-') {
-                if is_valid_tailwind_value(value_part) {
-                    return true;
-                }
+/// The declarations of a utility on the element itself, which a leading `-`
+/// negates
+fn element_utility(name: &str) -> Option<Vec<Declaration>> {
+    let (negative, name) = name
+        .strip_prefix('-')
+        .map_or((false, name), |name| (true, name));
+    if name.starts_with('[') {
+        return if negative {
+            None
+        } else {
+            arbitrary_property(name)
+        };
+    }
+    if !negative {
+        if let Some(declarations) = custom_utility(name) {
+            return Some(
+                declarations
+                    .into_iter()
+                    .map(|(property, value)| decl(property, value))
+                    .collect(),
+            );
+        }
+    }
+    if reads_unsupported_theme(name) {
+        return None;
+    }
+    if let Some(declarations) = effect_utility(name, negative) {
+        return Some(declarations);
+    }
+    if let Some(declarations) = misc_utility(name, negative) {
+        return Some(declarations);
+    }
+    if !negative {
+        if let Some(declarations) = motion_utility(name) {
+            return Some(declarations);
+        }
+    }
+    if let Some((root, value, variable)) = split_arbitrary(name) {
+        return arbitrary_utility(root, value, variable, negative);
+    }
+    if let Some(declarations) = compound_utility(name, negative) {
+        return Some(declarations);
+    }
+    let (property, value) = parse_utility(name)?;
+    let value = if negative {
+        negate(property, &value)?
+    } else {
+        value
+    };
+    Some(vec![(Cow::Borrowed(property), value)])
+}
+
+/// `value` negated, for the properties Tailwind lets a `-` negate
+fn negate(property: &str, value: &str) -> Option<Cow<'static, str>> {
+    (NEGATABLE_PROPERTIES.contains(property)
+        && value.starts_with(|c: char| c.is_ascii_digit() || c == '.'))
+    .then(|| Cow::Owned(format!("-{value}")))
+}
+
+/// `[property:value]`
+fn arbitrary_property(name: &str) -> Option<Vec<Declaration>> {
+    let (property, value) = bracketed(name)?.split_once(':')?;
+    if !is_property_name(property) {
+        return None;
+    }
+    let value = decode_arbitrary_value(value);
+    (!value.trim().is_empty()).then(|| vec![(Cow::Owned(property.to_string()), Cow::Owned(value))])
+}
+
+/// `root-[value]`, or `root-(--variable)` for `var(--variable)`
+fn split_arbitrary(name: &str) -> Option<(&str, &str, bool)> {
+    let (open, variable) = match name.as_bytes().last()? {
+        b']' => ('[', false),
+        b')' => ('(', true),
+        _ => return None,
+    };
+    let start = name.find(open)?;
+    let root = name[..start].strip_suffix('-')?;
+    let value = &name[start + 1..name.len() - 1];
+    (!root.is_empty() && !value.is_empty() && is_balanced(value)).then_some((root, value, variable))
+}
+
+/// Roots a leading `-` negates with an arbitrary value
+static NEGATABLE_ROOTS: phf::Set<&'static str> = phf_set! {
+    "m", "mx", "my", "mt", "mr", "mb", "ml", "ms", "me",
+    "inset", "inset-x", "inset-y", "start", "end", "top", "right", "bottom", "left",
+    "z", "order", "tracking", "indent",
+    "scroll-m", "scroll-mx", "scroll-my", "scroll-mt", "scroll-mr", "scroll-mb", "scroll-ml",
+    "scroll-ms", "scroll-me",
+    "translate", "translate-x", "translate-y", "rotate", "scale", "scale-x", "scale-y",
+    "skew", "skew-x", "skew-y",
+};
+
+/// Data types a `[type:value]`/`(type:--variable)` hint names
+static DATA_TYPES: phf::Set<&'static str> = phf_set! {
+    "color", "length", "percentage", "number", "integer", "url", "image", "position",
+    "bg-size", "line-width", "family-name", "generic-name", "absolute-size", "relative-size",
+    "angle", "vector",
+};
+
+/// The declarations of `root-[value]`/`root-(--variable)`
+fn arbitrary_utility(
+    root: &str,
+    value: &str,
+    variable: bool,
+    negative: bool,
+) -> Option<Vec<Declaration>> {
+    let (hint, value) = match value.split_once(':') {
+        Some((hint, value)) if DATA_TYPES.contains(hint) => (Some(hint), value),
+        // A type Tailwind does not know
+        Some((hint, _))
+            if hint
+                .bytes()
+                .all(|byte| byte.is_ascii_lowercase() || byte == b'-') =>
+        {
+            return None;
+        }
+        _ => (None, value),
+    };
+    let mut value = if variable {
+        if !value.starts_with("--") {
+            return None;
+        }
+        format!("var({value})")
+    } else {
+        decode_arbitrary_value(value)
+    };
+    if value.trim().is_empty() {
+        return None;
+    }
+    if negative {
+        if !NEGATABLE_ROOTS.contains(root) {
+            return None;
+        }
+        value = format!("calc({value} * -1)");
+    }
+    arbitrary_declarations(root, hint, value)
+}
+
+/// Roots whose arbitrary value goes to one property
+static ARBITRARY_PROPERTIES: phf::Map<&'static str, &'static str> = phf_map! {
+    "w" => "width",
+    "h" => "height",
+    "min-w" => "min-width",
+    "max-w" => "max-width",
+    "min-h" => "min-height",
+    "max-h" => "max-height",
+    "p" => "padding",
+    "px" => "padding-inline",
+    "py" => "padding-block",
+    "pt" => "padding-top",
+    "pr" => "padding-right",
+    "pb" => "padding-bottom",
+    "pl" => "padding-left",
+    "ps" => "padding-inline-start",
+    "pe" => "padding-inline-end",
+    "m" => "margin",
+    "mx" => "margin-inline",
+    "my" => "margin-block",
+    "mt" => "margin-top",
+    "mr" => "margin-right",
+    "mb" => "margin-bottom",
+    "ml" => "margin-left",
+    "ms" => "margin-inline-start",
+    "me" => "margin-inline-end",
+    "inset" => "inset",
+    "inset-x" => "inset-inline",
+    "inset-y" => "inset-block",
+    "start" => "inset-inline-start",
+    "end" => "inset-inline-end",
+    "top" => "top",
+    "right" => "right",
+    "bottom" => "bottom",
+    "left" => "left",
+    "gap" => "gap",
+    "gap-x" => "column-gap",
+    "gap-y" => "row-gap",
+    "z" => "z-index",
+    "order" => "order",
+    "opacity" => "opacity",
+    "aspect" => "aspect-ratio",
+    "columns" => "columns",
+    "basis" => "flex-basis",
+    "flex" => "flex",
+    "grid-cols" => "grid-template-columns",
+    "grid-rows" => "grid-template-rows",
+    "col" => "grid-column",
+    "row" => "grid-row",
+    "col-start" => "grid-column-start",
+    "col-end" => "grid-column-end",
+    "row-start" => "grid-row-start",
+    "row-end" => "grid-row-end",
+    "auto-cols" => "grid-auto-columns",
+    "auto-rows" => "grid-auto-rows",
+    "tracking" => "letter-spacing",
+    "indent" => "text-indent",
+    "underline-offset" => "text-underline-offset",
+    "duration" => "transition-duration",
+    "delay" => "transition-delay",
+    "ease" => "transition-timing-function",
+    "origin" => "transform-origin",
+    "rotate" => "rotate",
+    "scale" => "scale",
+    "cursor" => "cursor",
+    "list" => "list-style-type",
+    "will-change" => "will-change",
+    "object" => "object-position",
+    "scroll-m" => "scroll-margin",
+    "scroll-mx" => "scroll-margin-inline",
+    "scroll-my" => "scroll-margin-block",
+    "scroll-mt" => "scroll-margin-top",
+    "scroll-mr" => "scroll-margin-right",
+    "scroll-mb" => "scroll-margin-bottom",
+    "scroll-ml" => "scroll-margin-left",
+    "scroll-ms" => "scroll-margin-inline-start",
+    "scroll-me" => "scroll-margin-inline-end",
+    "scroll-p" => "scroll-padding",
+    "scroll-px" => "scroll-padding-inline",
+    "scroll-py" => "scroll-padding-block",
+    "scroll-pt" => "scroll-padding-top",
+    "scroll-pr" => "scroll-padding-right",
+    "scroll-pb" => "scroll-padding-bottom",
+    "scroll-pl" => "scroll-padding-left",
+    "scroll-ps" => "scroll-padding-inline-start",
+    "scroll-pe" => "scroll-padding-inline-end",
+    "fill" => "fill",
+    "accent" => "accent-color",
+    "caret" => "caret-color",
+};
+
+/// Corners each `rounded-*` side rounds
+static RADIUS_SIDES: phf::Map<&'static str, &'static [&'static str]> = phf_map! {
+    "" => &["border-radius"],
+    "t" => &["border-top-left-radius", "border-top-right-radius"],
+    "r" => &["border-top-right-radius", "border-bottom-right-radius"],
+    "b" => &["border-bottom-right-radius", "border-bottom-left-radius"],
+    "l" => &["border-top-left-radius", "border-bottom-left-radius"],
+    "s" => &["border-start-start-radius", "border-end-start-radius"],
+    "e" => &["border-start-end-radius", "border-end-end-radius"],
+    "tl" => &["border-top-left-radius"],
+    "tr" => &["border-top-right-radius"],
+    "br" => &["border-bottom-right-radius"],
+    "bl" => &["border-bottom-left-radius"],
+    "ss" => &["border-start-start-radius"],
+    "se" => &["border-start-end-radius"],
+    "ee" => &["border-end-end-radius"],
+    "es" => &["border-end-start-radius"],
+};
+
+/// Width and color property of each `border-*` side
+static BORDER_SIDES: phf::Map<&'static str, (&'static str, &'static str)> = phf_map! {
+    "" => ("border-width", "border-color"),
+    "x" => ("border-inline-width", "border-inline-color"),
+    "y" => ("border-block-width", "border-block-color"),
+    "t" => ("border-top-width", "border-top-color"),
+    "r" => ("border-right-width", "border-right-color"),
+    "b" => ("border-bottom-width", "border-bottom-color"),
+    "l" => ("border-left-width", "border-left-color"),
+    "s" => ("border-inline-start-width", "border-inline-start-color"),
+    "e" => ("border-inline-end-width", "border-inline-end-color"),
+};
+
+/// `translate` reading the translation of each axis
+const TRANSLATE: &str = "var(--tw-translate-x) var(--tw-translate-y)";
+/// `scale` reading the scale of each axis
+const SCALE: &str = "var(--tw-scale-x) var(--tw-scale-y)";
+/// `transform` composing the rotations and skews no other property takes
+const TRANSFORM: &str = "var(--tw-rotate-x,) var(--tw-rotate-y,) var(--tw-rotate-z,) var(--tw-skew-x,) var(--tw-skew-y,)";
+
+/// What an arbitrary value is, for the roots that take several kinds
+#[derive(Clone, Copy, PartialEq, Eq)]
+pub(crate) enum ValueType {
+    Length,
+    Number,
+    Image,
+    Color,
+    Position,
+    Size,
+    Family,
+}
+
+/// The type a hint names, or that the value has
+pub(crate) fn value_type(hint: Option<&str>, value: &str) -> Option<ValueType> {
+    Some(match hint {
+        Some("length" | "percentage" | "line-width" | "absolute-size" | "relative-size") => {
+            ValueType::Length
+        }
+        Some("number" | "integer") => ValueType::Number,
+        Some("image" | "url") => ValueType::Image,
+        Some("color") => ValueType::Color,
+        Some("position") => ValueType::Position,
+        Some("bg-size") => ValueType::Size,
+        Some("family-name" | "generic-name") => ValueType::Family,
+        Some(_) => return None,
+        None if is_number(value) => ValueType::Number,
+        None if is_length(value) => ValueType::Length,
+        None if is_image(value) => ValueType::Image,
+        // Tailwind reads anything else, such as `var(--x)`, as a color
+        None => ValueType::Color,
+    })
+}
+
+/// The declarations of an arbitrary value under `root`
+fn arbitrary_declarations(
+    root: &str,
+    hint: Option<&str>,
+    value: String,
+) -> Option<Vec<Declaration>> {
+    if let Some(&property) = ARBITRARY_PROPERTIES.get(root) {
+        return Some(vec![(Cow::Borrowed(property), Cow::Owned(value))]);
+    }
+    if let Some(side) = root.strip_prefix("rounded") {
+        let side = if side.is_empty() {
+            side
+        } else {
+            side.strip_prefix('-')?
+        };
+        return Some(each(RADIUS_SIDES.get(side)?, &value));
+    }
+    match root {
+        "size" => return Some(each(&["width", "height"], &value)),
+        "col-span" | "row-span" => {
+            let property = if root == "col-span" {
+                "grid-column"
             } else {
-                // Prefix without dash (like "flex", "grid") - exact prefix match is enough
-                return true;
+                "grid-row"
+            };
+            return Some(vec![(
+                Cow::Borrowed(property),
+                Cow::Owned(format!("span {value} / span {value}")),
+            )]);
+        }
+        "content" => {
+            return Some(vec![
+                (Cow::Borrowed("--tw-content"), Cow::Owned(value)),
+                (Cow::Borrowed("content"), Cow::Borrowed("var(--tw-content)")),
+            ]);
+        }
+        "leading" => return Some(each(&["--tw-leading", "line-height"], &value)),
+        "translate" | "translate-x" | "translate-y" => {
+            return Some(axes(root, "translate", &value, TRANSLATE));
+        }
+        "scale-x" | "scale-y" => return Some(axes(root, "scale", &value, SCALE)),
+        "skew" | "skew-x" | "skew-y" => return Some(skew(root, &value)),
+        _ => {}
+    }
+    let value_type = value_type(hint, &value)?;
+    let property = if let Some(side) = root.strip_prefix("border") {
+        let side = if side.is_empty() {
+            side
+        } else {
+            side.strip_prefix('-')?
+        };
+        let &(width, color) = BORDER_SIDES.get(side)?;
+        let line_widths = hint.is_none()
+            && value
+                .split_ascii_whitespace()
+                .all(|part| is_length(part) || matches!(part, "thin" | "medium" | "thick"));
+        if line_widths || value_type == ValueType::Length {
+            width
+        } else if value_type == ValueType::Color {
+            color
+        } else {
+            return None;
+        }
+    } else {
+        match (root, value_type) {
+            ("text", ValueType::Length) => "font-size",
+            ("text", ValueType::Color)
+                if hint.is_none() && FONT_SIZE_KEYWORDS.contains(value.as_str()) =>
+            {
+                "font-size"
+            }
+            ("text", ValueType::Color) => "color",
+            ("bg", ValueType::Image) => "background-image",
+            ("bg", ValueType::Color) => "background-color",
+            ("bg", ValueType::Position) => "background-position",
+            // `bg-[length:…]` sizes the background; a bare length is ambiguous
+            ("bg", ValueType::Size | ValueType::Length) if hint.is_some() => "background-size",
+            ("outline", ValueType::Length) => "outline-width",
+            ("outline", ValueType::Color) => "outline-color",
+            ("stroke", ValueType::Length | ValueType::Number) => "stroke-width",
+            ("stroke", ValueType::Color) => "stroke",
+            ("decoration", ValueType::Length) => "text-decoration-thickness",
+            ("decoration", ValueType::Color) => "text-decoration-color",
+            ("font", ValueType::Number) => "font-weight",
+            ("font", ValueType::Color | ValueType::Family) => "font-family",
+            _ => return None,
+        }
+    };
+    Some(vec![(Cow::Borrowed(property), Cow::Owned(value))])
+}
+
+/// `value` for every property in `properties`
+fn each(properties: &[&'static str], value: &str) -> Vec<Declaration> {
+    properties
+        .iter()
+        .map(|&property| (Cow::Borrowed(property), Cow::Owned(value.to_string())))
+        .collect()
+}
+
+/// `value` on the axes `root` names, each in its `--tw-<name>-<axis>`
+/// variable, which `property` reads as `composite`
+fn axes(root: &str, name: &'static str, value: &str, composite: &'static str) -> Vec<Declaration> {
+    let axes: &[&str] = match root.strip_prefix(name) {
+        Some("-x") => &["x"],
+        Some("-y") => &["y"],
+        _ => &["x", "y"],
+    };
+    let mut declarations: Vec<Declaration> = axes
+        .iter()
+        .map(|axis| {
+            (
+                Cow::Owned(format!("--tw-{name}-{axis}")),
+                Cow::Owned(value.to_string()),
+            )
+        })
+        .collect();
+    declarations.push((Cow::Borrowed(name), Cow::Borrowed(composite)));
+    declarations
+}
+
+/// The skew `root` names by `angle`, composed into `transform`
+fn skew(root: &str, angle: &str) -> Vec<Declaration> {
+    let axes: &[(&str, &str)] = match root {
+        "skew-x" => &[("x", "X")],
+        "skew-y" => &[("y", "Y")],
+        _ => &[("x", "X"), ("y", "Y")],
+    };
+    let mut declarations: Vec<Declaration> = axes
+        .iter()
+        .map(|(axis, function)| {
+            (
+                Cow::Owned(format!("--tw-skew-{axis}")),
+                Cow::Owned(format!("skew{function}({angle})")),
+            )
+        })
+        .collect();
+    declarations.push((Cow::Borrowed("transform"), Cow::Borrowed(TRANSFORM)));
+    declarations
+}
+
+/// Line height of each `leading-*` name
+static LEADING_SCALE: phf::Map<&'static str, &'static str> = phf_map! {
+    "none" => "1",
+    "tight" => "1.25",
+    "snug" => "1.375",
+    "normal" => "1.5",
+    "relaxed" => "1.625",
+    "loose" => "2",
+};
+
+/// Font-size keywords `text-[…]` takes for a size
+static FONT_SIZE_KEYWORDS: phf::Set<&'static str> = phf_set! {
+    "xx-small", "x-small", "small", "medium", "large", "x-large", "xx-large", "xxx-large",
+    "larger", "smaller",
+};
+
+/// Utilities Tailwind writes with several declarations, and those a leading
+/// `-` negates in a way of their own
+fn compound_utility(name: &str, negative: bool) -> Option<Vec<Declaration>> {
+    if let Some(declarations) = transform_utility(name, negative) {
+        return Some(declarations);
+    }
+    if negative {
+        return None;
+    }
+    let fixed: &[(&'static str, &'static str)] = match name {
+        "truncate" => &[
+            ("overflow", "hidden"),
+            ("text-overflow", "ellipsis"),
+            ("white-space", "nowrap"),
+        ],
+        "sr-only" => &[
+            ("position", "absolute"),
+            ("width", "1px"),
+            ("height", "1px"),
+            ("padding", "0"),
+            ("margin", "-1px"),
+            ("overflow", "hidden"),
+            ("clip-path", "inset(50%)"),
+            ("white-space", "nowrap"),
+            ("border-width", "0"),
+        ],
+        "not-sr-only" => &[
+            ("position", "static"),
+            ("width", "auto"),
+            ("height", "auto"),
+            ("padding", "0"),
+            ("margin", "0"),
+            ("overflow", "visible"),
+            ("clip-path", "none"),
+            ("white-space", "normal"),
+        ],
+        _ => &[],
+    };
+    if !fixed.is_empty() {
+        return Some(
+            fixed
+                .iter()
+                .map(|&(property, value)| (Cow::Borrowed(property), Cow::Borrowed(value)))
+                .collect(),
+        );
+    }
+    if let Some(size) = name.strip_prefix("size-") {
+        return Some(each(&["width", "height"], &sizing_value(size)?));
+    }
+    if let Some(declarations) = radius_utility(name) {
+        return Some(declarations);
+    }
+    if let Some(size) = name.strip_prefix("text-") {
+        if let Some(declarations) = font_size_utility(size) {
+            return Some(declarations);
+        }
+    }
+    if let Some(leading) = name.strip_prefix("leading-") {
+        let value = line_height_value(leading)?;
+        return Some(vec![
+            (Cow::Borrowed("--tw-leading"), value.clone()),
+            (Cow::Borrowed("line-height"), value),
+        ]);
+    }
+    None
+}
+
+/// A spacing value `size-*` and `translate-*` take
+fn sizing_value(size: &str) -> Option<Cow<'static, str>> {
+    if matches!(size, "screen" | "svw" | "lvw" | "dvw") {
+        return None;
+    }
+    spacing_scale(size)
+}
+
+/// `rounded`, `rounded-lg`, `rounded-t`, `rounded-t-lg`, …
+fn radius_utility(name: &str) -> Option<Vec<Declaration>> {
+    let rest = name.strip_prefix("rounded")?;
+    let (side, size) = if rest.is_empty() {
+        ("", "")
+    } else {
+        let rest = rest.strip_prefix('-')?;
+        match rest.split_once('-') {
+            Some((side, size)) if RADIUS_SIDES.contains_key(side) => (side, size),
+            _ if RADIUS_SIDES.contains_key(rest) => (rest, ""),
+            _ => ("", rest),
+        }
+    };
+    let value = match size {
+        "none" => Cow::Borrowed("0"),
+        "full" => Cow::Borrowed("calc(infinity * 1px)"),
+        _ => themed("radius", size, |size| {
+            BORDER_RADIUS_SCALE.get(size).copied()
+        })?,
+    };
+    Some(each(RADIUS_SIDES.get(side)?, &value))
+}
+
+/// `text-sm`, with the line height of the size unless `text-sm/6` sets one
+fn font_size_utility(name: &str) -> Option<Vec<Declaration>> {
+    let (size, line_height) = match name.split_once('/') {
+        Some((size, line_height)) => (size, Some(line_height_value(line_height)?)),
+        None => (name, None),
+    };
+    let &(font_size, default_line_height) = FONT_SIZE_SCALE.get(size)?;
+    // `leading-*` sets `--tw-leading`, which wins over the size's line height
+    let line_height = line_height
+        .unwrap_or_else(|| Cow::Owned(format!("var(--tw-leading, {default_line_height})")));
+    Some(vec![
+        (Cow::Borrowed("font-size"), Cow::Borrowed(font_size)),
+        (Cow::Borrowed("line-height"), line_height),
+    ])
+}
+
+/// The line height of `leading-*` and of the `/…` after a font size
+fn line_height_value(name: &str) -> Option<Cow<'static, str>> {
+    if let Some(&value) = LEADING_SCALE.get(name) {
+        return Some(Cow::Borrowed(value));
+    }
+    if let Some(inner) = bracketed(name) {
+        let value = decode_arbitrary_value(inner);
+        return (!value.trim().is_empty()).then_some(Cow::Owned(value));
+    }
+    if let Some(variable) = name
+        .strip_prefix('(')
+        .and_then(|name| name.strip_suffix(')'))
+    {
+        return variable
+            .starts_with("--")
+            .then(|| Cow::Owned(format!("var({variable})")));
+    }
+    if is_number(name) {
+        return spacing_scale(name);
+    }
+    None
+}
+
+/// Translate, rotate, scale and skew, which Tailwind writes to properties of
+/// their own so that they compose
+fn transform_utility(name: &str, negative: bool) -> Option<Vec<Declaration>> {
+    let sign = if negative { "-" } else { "" };
+    if let Some(rest) = name.strip_prefix("translate-") {
+        let (root, size) = axis_root("translate", rest);
+        if matches!(size, "auto" | "min" | "max" | "fit") {
+            return None;
+        }
+        let value = format!("{sign}{}", sizing_value(size)?);
+        return Some(axes(root, "translate", &value, TRANSLATE));
+    }
+    if let Some(angle) = name.strip_prefix("rotate-") {
+        return is_number(angle).then(|| {
+            vec![(
+                Cow::Borrowed("rotate"),
+                Cow::Owned(format!("{sign}{angle}deg")),
+            )]
+        });
+    }
+    if let Some(rest) = name.strip_prefix("scale-") {
+        let (root, amount) = axis_root("scale", rest);
+        if !is_integer(amount) {
+            return None;
+        }
+        let value = format!("{sign}{amount}%");
+        if root == "scale" {
+            let mut declarations = each(&["--tw-scale-x", "--tw-scale-y", "--tw-scale-z"], &value);
+            declarations.push((Cow::Borrowed("scale"), Cow::Borrowed(SCALE)));
+            return Some(declarations);
+        }
+        return Some(axes(root, "scale", &value, SCALE));
+    }
+    if let Some(rest) = name.strip_prefix("skew-") {
+        let (root, angle) = axis_root("skew", rest);
+        return is_number(angle).then(|| skew(root, &format!("{sign}{angle}deg")));
+    }
+    None
+}
+
+/// The root `name-x`/`name-y`/`name` that `rest` starts with, and its value
+fn axis_root<'a>(name: &str, rest: &'a str) -> (&'static str, &'a str) {
+    match name {
+        "translate" => {
+            if let Some(value) = rest.strip_prefix("x-") {
+                ("translate-x", value)
+            } else if let Some(value) = rest.strip_prefix("y-") {
+                ("translate-y", value)
+            } else {
+                ("translate", rest)
+            }
+        }
+        "scale" => {
+            if let Some(value) = rest.strip_prefix("x-") {
+                ("scale-x", value)
+            } else if let Some(value) = rest.strip_prefix("y-") {
+                ("scale-y", value)
+            } else {
+                ("scale", rest)
+            }
+        }
+        _ => {
+            if let Some(value) = rest.strip_prefix("x-") {
+                ("skew-x", value)
+            } else if let Some(value) = rest.strip_prefix("y-") {
+                ("skew-y", value)
+            } else {
+                ("skew", rest)
             }
         }
     }
-
-    // Check for arbitrary value syntax
-    if class.contains('[') && class.contains(']') {
-        return true;
-    }
-
-    false
 }
 
-/// Exact-match value keywords for Tailwind utilities
-static TAILWIND_VALUE_KEYWORDS: phf::Set<&'static str> = phf_set! {
-    "auto",
-    "full",
-    "screen",
-    "min",
-    "max",
-    "fit",
-    "px",
-    "none",
-    "inherit",
-    "current",
-    "transparent",
-    "black",
-    "white",
-};
-
-/// Exact-match size suffixes for Tailwind utilities
-static TAILWIND_SIZE_KEYWORDS: phf::Set<&'static str> = phf_set! {
-    "xs", "sm", "md", "lg", "xl", "2xl", "3xl", "4xl", "5xl", "6xl", "7xl",
-};
-
-/// Tailwind color-family names. Loop-invariant lookup set: promoted from a
-/// per-call `[&str; 22]` stack array + linear `strip_prefix` scan to a
-/// module-level `phf::Set` for an O(1) first-segment `contains`.
-static TAILWIND_COLOR_NAMES: phf::Set<&'static str> = phf_set! {
-    "slate", "gray", "zinc", "neutral", "stone", "red", "orange", "amber", "yellow", "lime",
-    "green", "emerald", "teal", "cyan", "sky", "blue", "indigo", "violet", "purple", "fuchsia",
-    "pink", "rose",
-};
-
-/// Check if a value part looks like a valid Tailwind value
-fn is_valid_tailwind_value(value: &str) -> bool {
-    if value.is_empty() {
-        return false;
-    }
-
-    // Ordered cheapest-and-most-common first so the dominant numeric/color
-    // utilities short-circuit before the two phf keyword probes. Every branch
-    // is a side-effect-free predicate returning `true`, so reordering cannot
-    // change the boolean result for any input.
-
-    // Arbitrary value syntax [...]
-    if value.starts_with('[') && value.ends_with(']') {
-        return true;
-    }
-
-    // Numeric values (including decimals like 0.5, 1.5) — the dominant case
-    // (`p-4`→`4`, `z-10`→`10`).
-    // Safe: `value.is_empty()` returns early above, so `value` has at least one char.
-    if value.starts_with(|c: char| c.is_ascii_digit()) {
-        return true;
-    }
-
-    // Color names with shade (e.g., red-500, blue-100). Every Tailwind color
-    // token is `<name>` or `<name>-<shade>`, so an O(1) first-segment lookup
-    // reproduces the old `<name>` / `<name>-…` prefix scan byte-for-byte.
-    let base = value.split('-').next().unwrap_or(value);
-    if TAILWIND_COLOR_NAMES.contains(base) {
-        return true;
-    }
-
-    // Common keywords
-    if TAILWIND_VALUE_KEYWORDS.contains(value) {
-        return true;
-    }
-
-    // Size suffixes (xs, sm, md, lg, xl, 2xl, etc.)
-    if TAILWIND_SIZE_KEYWORDS.contains(value) {
-        return true;
-    }
-
-    // Fraction values (1/2, 1/3, 2/3, etc.)
-    if let Some((numerator, denominator)) = value.split_once('/') {
-        if !denominator.contains('/')
-            && numerator.chars().all(|c| c.is_ascii_digit())
-            && denominator.chars().all(|c| c.is_ascii_digit())
-        {
-            return true;
+/// `_` read as a space and `\_` as `_`, as Tailwind reads arbitrary values
+fn decode_underscores(value: &str) -> String {
+    let mut decoded = String::with_capacity(value.len());
+    let mut chars = value.chars().peekable();
+    while let Some(c) = chars.next() {
+        match c {
+            '\\' if chars.peek() == Some(&'_') => {
+                chars.next();
+                decoded.push('_');
+            }
+            '_' => decoded.push(' '),
+            c => decoded.push(c),
         }
     }
-
-    false
+    decoded
 }
 
-/// Parse a className string into a list of `ExtractStyleValue`
-pub fn parse_tailwind_to_styles(class_str: &str) -> Vec<ExtractStyleValue> {
-    // Upper bound: at most one style per whitespace-separated class, so
-    // presizing removes the grow-realloc chain. Use a cheap single byte scan
-    // (whitespace-byte count + 1) instead of the heavier `split_whitespace`
-    // state machine just to size the buffer.
-    let mut styles =
-        Vec::with_capacity(class_str.bytes().filter(u8::is_ascii_whitespace).count() + 1);
-
-    for class in class_str.split_whitespace() {
-        if let Some(static_style) = parse_single_class(class)
-            .as_ref()
-            .and_then(TailwindClass::to_static_style)
-        {
-            styles.push(ExtractStyleValue::Static(static_style));
+/// An arbitrary value as CSS, the way Tailwind decodes it: underscores are
+/// spaces except in `url()` and in the name `var()` reads, and the operators
+/// in math functions get the spaces CSS requires around them
+pub(crate) fn decode_arbitrary_value(value: &str) -> String {
+    if !value.contains('(') {
+        return decode_underscores(value);
+    }
+    let mut decoded = String::with_capacity(value.len());
+    let mut index = 0;
+    while index < value.len() {
+        index += decode_arguments(&value[index..], &mut decoded);
+        if index < value.len() {
+            // A `)` closing nothing
+            decoded.push(')');
+            index += 1;
         }
     }
-
-    styles
+    add_whitespace_around_math_operators(&decoded)
 }
 
-/// Parse a single Tailwind class string
-pub fn parse_single_class(class: &str) -> Option<TailwindClass> {
-    let mut remaining = class;
-    let mut responsive_level: u8 = 0;
-    let mut variants: Vec<TailwindVariant> = Vec::new();
-
-    // Handle negative prefix at the start
-    let negative = remaining.starts_with('-');
-    if negative {
-        remaining = &remaining[1..];
+/// Decodes `value` into `decoded` up to the `)` closing the function it is in,
+/// returning the bytes read
+fn decode_arguments(value: &str, decoded: &mut String) -> usize {
+    let mut index = 0;
+    while let Some(c) = value[index..].chars().next() {
+        match c {
+            ')' => return index,
+            '(' => {
+                let name = function_name(&value[..index]);
+                decoded.push('(');
+                index += 1;
+                if name == "url" || name.ends_with("_url") {
+                    let end = closing_paren(&value[index..]);
+                    decoded.push_str(&value[index..index + end]);
+                    index += end;
+                } else {
+                    if matches!(name, "var" | "theme")
+                        || name.ends_with("_var")
+                        || name.ends_with("_theme")
+                    {
+                        // The first argument names a custom property
+                        let end = value[index..]
+                            .find([',', ')'])
+                            .unwrap_or(value.len() - index);
+                        let argument = &value[index..index + end];
+                        if !argument.contains('(') {
+                            decoded.push_str(&argument.replace("\\_", "_"));
+                            index += end;
+                        }
+                    }
+                    index += decode_arguments(&value[index..], decoded);
+                }
+                if value[index..].starts_with(')') {
+                    decoded.push(')');
+                    index += 1;
+                }
+            }
+            '\\' if value[index + 1..].starts_with('_') => {
+                decoded.push('_');
+                index += 2;
+            }
+            '_' => {
+                decoded.push(' ');
+                index += 1;
+            }
+            c => {
+                decoded.push(c);
+                index += c.len_utf8();
+            }
+        }
     }
+    index
+}
 
-    // Parse prefixes (responsive and variants)
-    while let Some(colon_pos) = remaining.find(':') {
-        let prefix = &remaining[..colon_pos];
+/// The name of the function whose `(` follows `before`
+fn function_name(before: &str) -> &str {
+    let start = before
+        .rfind(|c: char| !(c.is_ascii_alphanumeric() || c == '-' || c == '_'))
+        .map_or(0, |index| index + 1);
+    &before[start..]
+}
 
-        // Check if it's a responsive prefix
-        if let Some(&level) = RESPONSIVE_PREFIX_MAP.get(prefix) {
-            responsive_level = level;
-        } else if let Some(variant) = TailwindVariant::from_prefix(prefix) {
-            variants.push(variant);
+/// The index of the `)` closing the parentheses `value` is in, or its length
+fn closing_paren(value: &str) -> usize {
+    let mut depth = 0usize;
+    for (index, byte) in value.bytes().enumerate() {
+        match byte {
+            b'(' => depth += 1,
+            b')' if depth == 0 => return index,
+            b')' => depth -= 1,
+            _ => {}
+        }
+    }
+    value.len()
+}
+
+/// Math functions whose operators need spaces around them
+const MATH_FUNCTIONS: [&str; 19] = [
+    "calc", "min", "max", "clamp", "mod", "rem", "sin", "cos", "tan", "asin", "acos", "atan",
+    "atan2", "pow", "sqrt", "hypot", "log", "exp", "round",
+];
+
+/// `calc(100%-2rem)` as `calc(100% - 2rem)`, ported from Tailwind
+fn add_whitespace_around_math_operators(input: &str) -> String {
+    if !MATH_FUNCTIONS
+        .iter()
+        .any(|function| input.contains(function))
+    {
+        return input.to_string();
+    }
+    let chars: Vec<char> = input.chars().collect();
+    let mut result = String::with_capacity(input.len() + 8);
+    // Whether each open parenthesis is in a math function, innermost last
+    let mut formattable: Vec<bool> = Vec::new();
+    let mut value_end = None;
+    let mut last_value_end = None;
+    for (index, &c) in chars.iter().enumerate() {
+        // A number, and then its unit
+        if c.is_ascii_digit() || (value_end.is_some() && (c == '%' || c.is_ascii_alphabetic())) {
+            value_end = Some(index);
         } else {
-            // Unknown prefix, might be an arbitrary variant
-            // For now, skip unknown prefixes
+            last_value_end = value_end;
+            value_end = None;
         }
-
-        remaining = &remaining[colon_pos + 1..];
+        let in_math = formattable.last().copied().unwrap_or(false);
+        match c {
+            '(' => {
+                result.push(c);
+                let start = chars[..index]
+                    .iter()
+                    .rposition(|c| !(c.is_ascii_digit() || c.is_ascii_lowercase()))
+                    .map_or(0, |position| position + 1);
+                let name: String = chars[start..index].iter().collect();
+                formattable
+                    .push(MATH_FUNCTIONS.contains(&name.as_str()) || (in_math && name.is_empty()));
+            }
+            ')' => {
+                result.push(c);
+                formattable.pop();
+            }
+            ',' if in_math => result.push_str(", "),
+            ' ' if in_math && result.ends_with(' ') => {}
+            '+' | '*' | '/' | '-' if in_math => {
+                let mut before = result.trim_end().chars().rev();
+                let previous = before.next();
+                let before_previous = before.next();
+                let next = chars.get(index + 1).copied();
+                if matches!(previous, Some('e' | 'E'))
+                    && before_previous.is_some_and(|c| c.is_ascii_digit())
+                {
+                    // A scientific notation exponent, such as `1e-3`
+                    result.push(c);
+                } else if matches!(previous, Some('+' | '*' | '/' | '-' | '(' | ',')) {
+                    // The sign of an operand
+                    result.push(c);
+                } else if chars[index - 1] == ' ' {
+                    result.push(c);
+                    result.push(' ');
+                } else if previous.is_some_and(|c| c.is_ascii_digit() || c == ')')
+                    || next.is_some_and(|c| {
+                        c.is_ascii_digit() || matches!(c, '(' | '+' | '*' | '/' | '-')
+                    })
+                    || last_value_end.is_some_and(|end| end + 1 == index)
+                {
+                    result.push(' ');
+                    result.push(c);
+                    result.push(' ');
+                } else {
+                    result.push(c);
+                }
+            }
+            c => result.push(c),
+        }
     }
+    result
+}
 
-    // Now parse the utility class
-    parse_utility(remaining, negative).map(|(property, value)| TailwindClass {
-        responsive: responsive_level,
-        variants,
-        property,
-        value,
-        negative,
-    })
+/// `value` split at each top-level `separator`, outside brackets and parentheses
+pub(crate) fn split_top_level(value: &str, separator: char) -> Vec<&str> {
+    let mut parts = Vec::new();
+    let mut depth = 0usize;
+    let mut start = 0;
+    for (index, c) in value.char_indices() {
+        match c {
+            '[' | '(' => depth += 1,
+            ']' | ')' => depth = depth.saturating_sub(1),
+            c if c == separator && depth == 0 => {
+                parts.push(&value[start..index]);
+                start = index + c.len_utf8();
+            }
+            _ => {}
+        }
+    }
+    parts.push(&value[start..]);
+    parts
+}
+
+/// What `[…]` holds
+fn bracketed(value: &str) -> Option<&str> {
+    let inner = value.strip_prefix('[')?.strip_suffix(']')?;
+    (!inner.is_empty() && is_balanced(inner)).then_some(inner)
+}
+
+/// Whether the brackets and parentheses of `value` all close, in order
+fn is_balanced(value: &str) -> bool {
+    let mut open = Vec::new();
+    for c in value.chars() {
+        match c {
+            '[' | '(' => open.push(c),
+            ']' if open.pop() != Some('[') => return false,
+            ')' if open.pop() != Some('(') => return false,
+            _ => {}
+        }
+    }
+    open.is_empty()
+}
+
+/// A name such as `active` in `data-active` or `item` in `group/item`
+fn is_name(value: &str) -> bool {
+    !value.is_empty()
+        && value
+            .bytes()
+            .all(|byte| byte.is_ascii_alphanumeric() || matches!(byte, b'-' | b'_'))
+}
+
+/// A quoted string
+fn is_quoted(value: &str) -> bool {
+    value.len() >= 2
+        && ((value.starts_with('"') && value.ends_with('"'))
+            || (value.starts_with('\'') && value.ends_with('\'')))
+}
+
+/// A CSS property name, custom or not
+fn is_property_name(value: &str) -> bool {
+    match value.strip_prefix("--") {
+        Some(name) => is_name(name),
+        None => {
+            value
+                .trim_start_matches('-')
+                .starts_with(|c: char| c.is_ascii_lowercase())
+                && value
+                    .bytes()
+                    .all(|byte| byte.is_ascii_lowercase() || byte == b'-')
+        }
+    }
+}
+
+/// A plain number such as `600` or `1.5`
+fn is_number(value: &str) -> bool {
+    value.parse::<f64>().is_ok()
+        && value
+            .bytes()
+            .all(|byte| byte.is_ascii_digit() || byte == b'.')
+}
+
+/// A plain integer such as `110`
+fn is_integer(value: &str) -> bool {
+    !value.is_empty() && value.bytes().all(|byte| byte.is_ascii_digit())
+}
+
+/// Units a length takes
+static LENGTH_UNITS: phf::Set<&'static str> = phf_set! {
+    "%", "px", "rem", "em", "ex", "ch", "cap", "ic", "lh", "rlh", "rex", "rch", "rcap",
+    "ric", "vw", "vh", "vi", "vb", "vmin", "vmax", "svw", "svh", "svi", "svb", "svmin", "svmax",
+    "lvw", "lvh", "lvi", "lvb", "lvmin", "lvmax", "dvw", "dvh", "dvi", "dvb", "dvmin", "dvmax",
+    "cqw", "cqh", "cqi", "cqb", "cqmin", "cqmax", "cm", "mm", "q", "in", "pt", "pc",
+};
+
+/// One or more lengths, such as `2rem`, `0`, `calc(…)` or `1px 2px`
+fn is_length(value: &str) -> bool {
+    if MATH_FUNCTIONS.iter().any(|function| {
+        value
+            .strip_prefix(function)
+            .is_some_and(|rest| rest.starts_with('('))
+    }) {
+        return true;
+    }
+    let mut parts = value.split_ascii_whitespace().peekable();
+    parts.peek().is_some()
+        && parts.all(|part| {
+            let number = part.trim_start_matches(['-', '+']);
+            let unit_start = number
+                .find(|c: char| !(c.is_ascii_digit() || c == '.'))
+                .unwrap_or(number.len());
+            part == "0"
+                || (unit_start > 0
+                    && number[..unit_start].parse::<f64>().is_ok()
+                    && LENGTH_UNITS.contains(number[unit_start..].to_ascii_lowercase().as_str()))
+        })
+}
+
+/// An image such as `url(…)` or a gradient
+fn is_image(value: &str) -> bool {
+    [
+        "url(",
+        "image(",
+        "image-set(",
+        "cross-fade(",
+        "element(",
+        "linear-gradient(",
+        "radial-gradient(",
+        "conic-gradient(",
+        "repeating-linear-gradient(",
+        "repeating-radial-gradient(",
+        "repeating-conic-gradient(",
+    ]
+    .iter()
+    .any(|function| value.starts_with(function))
 }
 
 type ParsedUtility = (&'static str, Cow<'static, str>);
@@ -1316,13 +1823,37 @@ fn tw(property: &'static str, value: impl Into<Cow<'static, str>>) -> ParsedUtil
     (property, value.into())
 }
 
-/// Parse a utility class (without prefixes) into property and value
-fn parse_utility(class: &str, is_negative: bool) -> Option<(&'static str, Cow<'static, str>)> {
-    // Handle arbitrary values first
-    if let Some(result) = parse_arbitrary_value(class) {
-        return Some(result);
-    }
+/// A declaration
+pub(crate) fn decl(
+    property: impl Into<Cow<'static, str>>,
+    value: impl Into<Cow<'static, str>>,
+) -> Declaration {
+    (property.into(), value.into())
+}
 
+/// Whether alue is a whole number written without a sign or leading zeros,
+/// which is what v4 takes for the bare values of most utilities
+pub(crate) fn is_positive_integer(value: &str) -> bool {
+    value == "0"
+        || (!value.starts_with('0')
+            && value.len() < 16
+            && value.bytes().all(|byte| byte.is_ascii_digit())
+            && !value.is_empty())
+}
+
+/// [value] as the CSS it stands for, or (--variable) as ar(--variable)
+pub(crate) fn arbitrary_or_variable(argument: &str) -> Option<String> {
+    if let Some(value) = bracketed(argument) {
+        return (!value.is_empty() && is_balanced(value)).then(|| decode_arbitrary_value(value));
+    }
+    let variable = argument
+        .strip_prefix('(')
+        .and_then(|argument| argument.strip_suffix(')'))?;
+    (variable.starts_with("--") && is_balanced(variable)).then(|| format!("var({variable})"))
+}
+
+/// The one declaration of a utility from the tables below
+fn parse_utility(class: &str) -> Option<ParsedUtility> {
     // Layout utilities
     if let Some(result) = parse_layout_utility(class) {
         return Some(result);
@@ -1334,7 +1865,7 @@ fn parse_utility(class: &str, is_negative: bool) -> Option<(&'static str, Cow<'s
     }
 
     // Spacing (padding, margin)
-    if let Some(result) = parse_spacing_utility(class, is_negative) {
+    if let Some(result) = parse_spacing_utility(class) {
         return Some(result);
     }
 
@@ -1363,18 +1894,8 @@ fn parse_utility(class: &str, is_negative: bool) -> Option<(&'static str, Cow<'s
         return Some(result);
     }
 
-    // Filters
-    if let Some(result) = parse_filter_utility(class) {
-        return Some(result);
-    }
-
-    // Transitions & Animation
-    if let Some(result) = parse_transition_utility(class) {
-        return Some(result);
-    }
-
-    // Transforms
-    if let Some(result) = parse_transform_utility(class, is_negative) {
+    // Transform origin
+    if let Some(result) = parse_transform_utility(class) {
         return Some(result);
     }
 
@@ -1384,105 +1905,7 @@ fn parse_utility(class: &str, is_negative: bool) -> Option<(&'static str, Cow<'s
     }
 
     // SVG
-    if let Some(result) = parse_svg_utility(class) {
-        return Some(result);
-    }
-
-    // Accessibility
-    if let Some(result) = parse_accessibility_utility(class) {
-        return Some(result);
-    }
-
-    None
-}
-
-/// Parse arbitrary value syntax: class-[value]
-fn parse_arbitrary_value(class: &str) -> Option<(&'static str, Cow<'static, str>)> {
-    if !class.contains('[') {
-        return None;
-    }
-
-    let bracket_start = class.find('[')?;
-    let bracket_end = class.rfind(']')?;
-
-    if bracket_end <= bracket_start {
-        return None;
-    }
-
-    let prefix = &class[..bracket_start];
-    let value = &class[bracket_start + 1..bracket_end];
-
-    // Replace underscores with spaces in arbitrary values
-    let value = value.replace('_', " ");
-
-    match prefix {
-        "w-" => Some(tw("width", value)),
-        "h-" => Some(tw("height", value)),
-        "min-w-" => Some(tw("min-width", value)),
-        "max-w-" => Some(tw("max-width", value)),
-        "min-h-" => Some(tw("min-height", value)),
-        "max-h-" => Some(tw("max-height", value)),
-        "p-" => Some(tw("padding", value)),
-        "px-" => Some(tw("padding-inline", value)),
-        "py-" => Some(tw("padding-block", value)),
-        "pt-" => Some(tw("padding-top", value)),
-        "pr-" => Some(tw("padding-right", value)),
-        "pb-" => Some(tw("padding-bottom", value)),
-        "pl-" => Some(tw("padding-left", value)),
-        "m-" => Some(tw("margin", value)),
-        "mx-" => Some(tw("margin-inline", value)),
-        "my-" => Some(tw("margin-block", value)),
-        "mt-" => Some(tw("margin-top", value)),
-        "mr-" => Some(tw("margin-right", value)),
-        "mb-" => Some(tw("margin-bottom", value)),
-        "ml-" => Some(tw("margin-left", value)),
-        "top-" => Some(tw("top", value)),
-        "right-" => Some(tw("right", value)),
-        "bottom-" => Some(tw("bottom", value)),
-        "left-" => Some(tw("left", value)),
-        "inset-" => Some(tw("inset", value)),
-        "inset-x-" => Some(tw("inset-inline", value)),
-        "inset-y-" => Some(tw("inset-block", value)),
-        "gap-" => Some(tw("gap", value)),
-        "gap-x-" => Some(tw("column-gap", value)),
-        "gap-y-" => Some(tw("row-gap", value)),
-        "text-" => Some(tw("color", value)),
-        "bg-" => Some(tw("background-color", value)),
-        "border-" => Some(tw("border-color", value)),
-        "rounded-" => Some(tw("border-radius", value)),
-        "opacity-" => Some(tw("opacity", value)),
-        "z-" => Some(tw("z-index", value)),
-        "font-" => Some(tw("font-family", value)),
-        "tracking-" => Some(tw("letter-spacing", value)),
-        "leading-" => Some(tw("line-height", value)),
-        "duration-" => Some(tw("transition-duration", value)),
-        "delay-" => Some(tw("transition-delay", value)),
-        "scale-" => Some(tw("transform", format!("scale({value})"))),
-        "rotate-" => Some(tw("transform", format!("rotate({value})"))),
-        "translate-x-" => Some(tw("transform", format!("translateX({value})"))),
-        "translate-y-" => Some(tw("transform", format!("translateY({value})"))),
-        "skew-x-" => Some(tw("transform", format!("skewX({value})"))),
-        "skew-y-" => Some(tw("transform", format!("skewY({value})"))),
-        "aspect-" => Some(tw("aspect-ratio", value)),
-        "columns-" => Some(tw("columns", value)),
-        "grid-cols-" => Some(tw(
-            "grid-template-columns",
-            format!("repeat({value}, minmax(0, 1fr))"),
-        )),
-        "grid-rows-" => Some(tw(
-            "grid-template-rows",
-            format!("repeat({value}, minmax(0, 1fr))"),
-        )),
-        "col-span-" => Some(tw("grid-column", format!("span {value} / span {value}"))),
-        "row-span-" => Some(tw("grid-row", format!("span {value} / span {value}"))),
-        "basis-" => Some(tw("flex-basis", value)),
-        "blur-" => Some(tw("filter", format!("blur({value})"))),
-        "brightness-" => Some(tw("filter", format!("brightness({value})"))),
-        "contrast-" => Some(tw("filter", format!("contrast({value})"))),
-        "saturate-" => Some(tw("filter", format!("saturate({value})"))),
-        "backdrop-blur-" => Some(tw("backdrop-filter", format!("blur({value})"))),
-        _ => None,
-    }
+    parse_svg_utility(class)
 }
 
 /// Parse layout utilities (display, position, visibility, etc.)
@@ -1599,7 +2022,13 @@ fn parse_layout_utility(class: &str) -> Option<(&'static str, Cow<'static, str>)
                     "auto" => Cow::Borrowed("auto"),
                     "square" => Cow::Borrowed("1 / 1"),
                     "video" => Cow::Borrowed("16 / 9"),
-                    v => Cow::Owned(v.replace('-', " / ")),
+                    v => {
+                        let (width, height) = v.split_once('/')?;
+                        if !is_integer(width) || !is_integer(height) {
+                            return None;
+                        }
+                        Cow::Owned(v.to_string())
+                    }
                 };
                 return Some(tw("aspect-ratio", value));
             }
@@ -1621,7 +2050,8 @@ fn parse_layout_utility(class: &str) -> Option<(&'static str, Cow<'static, str>)
                     "5xl" => Cow::Borrowed("64rem"),
                     "6xl" => Cow::Borrowed("72rem"),
                     "7xl" => Cow::Borrowed("80rem"),
-                    v => Cow::Owned(v.to_string()),
+                    v if is_integer(v) => Cow::Owned(v.to_string()),
+                    _ => return None,
                 };
                 return Some(tw("columns", value));
             }
@@ -1672,38 +2102,38 @@ fn parse_layout_utility(class: &str) -> Option<(&'static str, Cow<'static, str>)
 
             // Top/Right/Bottom/Left/Inset
             if let Some(rest) = class.strip_prefix("top-") {
-                if let Some(&value) = SPACING_SCALE.get(rest) {
-                    return Some(tw("top", Cow::Borrowed(value)));
+                if let Some(value) = spacing_scale(rest) {
+                    return Some(tw("top", value));
                 }
             }
             if let Some(rest) = class.strip_prefix("right-") {
-                if let Some(&value) = SPACING_SCALE.get(rest) {
-                    return Some(tw("right", Cow::Borrowed(value)));
+                if let Some(value) = spacing_scale(rest) {
+                    return Some(tw("right", value));
                 }
             }
             if let Some(rest) = class.strip_prefix("bottom-") {
-                if let Some(&value) = SPACING_SCALE.get(rest) {
-                    return Some(tw("bottom", Cow::Borrowed(value)));
+                if let Some(value) = spacing_scale(rest) {
+                    return Some(tw("bottom", value));
                 }
             }
             if let Some(rest) = class.strip_prefix("left-") {
-                if let Some(&value) = SPACING_SCALE.get(rest) {
-                    return Some(tw("left", Cow::Borrowed(value)));
+                if let Some(value) = spacing_scale(rest) {
+                    return Some(tw("left", value));
                 }
             }
             if let Some(rest) = class.strip_prefix("inset-x-") {
-                if let Some(&value) = SPACING_SCALE.get(rest) {
-                    return Some(tw("inset-inline", Cow::Borrowed(value)));
+                if let Some(value) = spacing_scale(rest) {
+                    return Some(tw("inset-inline", value));
                 }
             }
             if let Some(rest) = class.strip_prefix("inset-y-") {
-                if let Some(&value) = SPACING_SCALE.get(rest) {
-                    return Some(tw("inset-block", Cow::Borrowed(value)));
+                if let Some(value) = spacing_scale(rest) {
+                    return Some(tw("inset-block", value));
                 }
             }
             if let Some(rest) = class.strip_prefix("inset-") {
-                if let Some(&value) = SPACING_SCALE.get(rest) {
-                    return Some(tw("inset", Cow::Borrowed(value)));
+                if let Some(value) = spacing_scale(rest) {
+                    return Some(tw("inset", value));
                 }
             }
 
@@ -1862,14 +2292,16 @@ fn parse_flex_grid_utility(class: &str) -> Option<(&'static str, Cow<'static, st
         _ => {
             // Flex basis with spacing scale
             if let Some(rest) = class.strip_prefix("basis-") {
-                if let Some(&value) = SPACING_SCALE.get(rest) {
-                    return Some(tw("flex-basis", Cow::Borrowed(value)));
+                if let Some(value) = spacing_scale(rest) {
+                    return Some(tw("flex-basis", value));
                 }
             }
 
             // Order with number
             if let Some(rest) = class.strip_prefix("order-") {
-                return Some(tw("order", Cow::Owned(rest.to_string())));
+                if is_integer(rest) {
+                    return Some(tw("order", Cow::Owned(rest.to_string())));
+                }
             }
 
             // Grid cols
@@ -1901,12 +2333,16 @@ fn parse_flex_grid_utility(class: &str) -> Option<(&'static str, Cow<'static, st
 
             // Col start
             if let Some(rest) = class.strip_prefix("col-start-") {
-                return Some(tw("grid-column-start", Cow::Owned(rest.to_string())));
+                if is_integer(rest) {
+                    return Some(tw("grid-column-start", Cow::Owned(rest.to_string())));
+                }
             }
 
             // Col end
             if let Some(rest) = class.strip_prefix("col-end-") {
-                return Some(tw("grid-column-end", Cow::Owned(rest.to_string())));
+                if is_integer(rest) {
+                    return Some(tw("grid-column-end", Cow::Owned(rest.to_string())));
+                }
             }
 
             // Row span
@@ -1918,28 +2354,32 @@ fn parse_flex_grid_utility(class: &str) -> Option<(&'static str, Cow<'static, st
 
             // Row start
             if let Some(rest) = class.strip_prefix("row-start-") {
-                return Some(tw("grid-row-start", Cow::Owned(rest.to_string())));
+                if is_integer(rest) {
+                    return Some(tw("grid-row-start", Cow::Owned(rest.to_string())));
+                }
             }
 
             // Row end
             if let Some(rest) = class.strip_prefix("row-end-") {
-                return Some(tw("grid-row-end", Cow::Owned(rest.to_string())));
+                if is_integer(rest) {
+                    return Some(tw("grid-row-end", Cow::Owned(rest.to_string())));
+                }
             }
 
             // Gap
             if let Some(rest) = class.strip_prefix("gap-x-") {
-                if let Some(&value) = SPACING_SCALE.get(rest) {
-                    return Some(tw("column-gap", Cow::Borrowed(value)));
+                if let Some(value) = spacing_scale(rest) {
+                    return Some(tw("column-gap", value));
                 }
             }
             if let Some(rest) = class.strip_prefix("gap-y-") {
-                if let Some(&value) = SPACING_SCALE.get(rest) {
-                    return Some(tw("row-gap", Cow::Borrowed(value)));
+                if let Some(value) = spacing_scale(rest) {
+                    return Some(tw("row-gap", value));
                 }
             }
             if let Some(rest) = class.strip_prefix("gap-") {
-                if let Some(&value) = SPACING_SCALE.get(rest) {
-                    return Some(tw("gap", Cow::Borrowed(value)));
+                if let Some(value) = spacing_scale(rest) {
+                    return Some(tw("gap", value));
                 }
             }
 
@@ -1949,122 +2389,98 @@ fn parse_flex_grid_utility(class: &str) -> Option<(&'static str, Cow<'static, st
 }
 
 /// Parse spacing utilities (padding, margin, space)
-fn parse_spacing_utility(
-    class: &str,
-    _is_negative: bool,
-) -> Option<(&'static str, Cow<'static, str>)> {
-    // Note: is_negative is handled at a higher level in TailwindClass::to_static_style()
-    // We don't apply the negative sign here to avoid double-negation
-
+fn parse_spacing_utility(class: &str) -> Option<(&'static str, Cow<'static, str>)> {
     // Padding
     if let Some(rest) = class.strip_prefix("px-") {
-        if let Some(&value) = SPACING_SCALE.get(rest) {
-            return Some(tw("padding-inline", Cow::Borrowed(value)));
+        if let Some(value) = spacing_scale(rest) {
+            return Some(tw("padding-inline", value));
         }
     }
     if let Some(rest) = class.strip_prefix("py-") {
-        if let Some(&value) = SPACING_SCALE.get(rest) {
-            return Some(tw("padding-block", Cow::Borrowed(value)));
+        if let Some(value) = spacing_scale(rest) {
+            return Some(tw("padding-block", value));
         }
     }
     if let Some(rest) = class.strip_prefix("pt-") {
-        if let Some(&value) = SPACING_SCALE.get(rest) {
-            return Some(tw("padding-top", Cow::Borrowed(value)));
+        if let Some(value) = spacing_scale(rest) {
+            return Some(tw("padding-top", value));
         }
     }
     if let Some(rest) = class.strip_prefix("pr-") {
-        if let Some(&value) = SPACING_SCALE.get(rest) {
-            return Some(tw("padding-right", Cow::Borrowed(value)));
+        if let Some(value) = spacing_scale(rest) {
+            return Some(tw("padding-right", value));
         }
     }
     if let Some(rest) = class.strip_prefix("pb-") {
-        if let Some(&value) = SPACING_SCALE.get(rest) {
-            return Some(tw("padding-bottom", Cow::Borrowed(value)));
+        if let Some(value) = spacing_scale(rest) {
+            return Some(tw("padding-bottom", value));
         }
     }
     if let Some(rest) = class.strip_prefix("pl-") {
-        if let Some(&value) = SPACING_SCALE.get(rest) {
-            return Some(tw("padding-left", Cow::Borrowed(value)));
+        if let Some(value) = spacing_scale(rest) {
+            return Some(tw("padding-left", value));
         }
     }
     if let Some(rest) = class.strip_prefix("ps-") {
-        if let Some(&value) = SPACING_SCALE.get(rest) {
-            return Some(tw("padding-inline-start", Cow::Borrowed(value)));
+        if let Some(value) = spacing_scale(rest) {
+            return Some(tw("padding-inline-start", value));
         }
     }
     if let Some(rest) = class.strip_prefix("pe-") {
-        if let Some(&value) = SPACING_SCALE.get(rest) {
-            return Some(tw("padding-inline-end", Cow::Borrowed(value)));
+        if let Some(value) = spacing_scale(rest) {
+            return Some(tw("padding-inline-end", value));
         }
     }
     if let Some(rest) = class.strip_prefix("p-") {
-        if let Some(&value) = SPACING_SCALE.get(rest) {
-            return Some(tw("padding", Cow::Borrowed(value)));
+        if let Some(value) = spacing_scale(rest) {
+            return Some(tw("padding", value));
         }
     }
 
     // Margin
     if let Some(rest) = class.strip_prefix("mx-") {
-        if let Some(&value) = SPACING_SCALE.get(rest) {
-            return Some(tw("margin-inline", Cow::Borrowed(value)));
+        if let Some(value) = spacing_scale(rest) {
+            return Some(tw("margin-inline", value));
         }
     }
     if let Some(rest) = class.strip_prefix("my-") {
-        if let Some(&value) = SPACING_SCALE.get(rest) {
-            return Some(tw("margin-block", Cow::Borrowed(value)));
+        if let Some(value) = spacing_scale(rest) {
+            return Some(tw("margin-block", value));
         }
     }
     if let Some(rest) = class.strip_prefix("mt-") {
-        if let Some(&value) = SPACING_SCALE.get(rest) {
-            return Some(tw("margin-top", Cow::Borrowed(value)));
+        if let Some(value) = spacing_scale(rest) {
+            return Some(tw("margin-top", value));
         }
     }
     if let Some(rest) = class.strip_prefix("mr-") {
-        if let Some(&value) = SPACING_SCALE.get(rest) {
-            return Some(tw("margin-right", Cow::Borrowed(value)));
+        if let Some(value) = spacing_scale(rest) {
+            return Some(tw("margin-right", value));
         }
     }
     if let Some(rest) = class.strip_prefix("mb-") {
-        if let Some(&value) = SPACING_SCALE.get(rest) {
-            return Some(tw("margin-bottom", Cow::Borrowed(value)));
+        if let Some(value) = spacing_scale(rest) {
+            return Some(tw("margin-bottom", value));
         }
     }
     if let Some(rest) = class.strip_prefix("ml-") {
-        if let Some(&value) = SPACING_SCALE.get(rest) {
-            return Some(tw("margin-left", Cow::Borrowed(value)));
+        if let Some(value) = spacing_scale(rest) {
+            return Some(tw("margin-left", value));
         }
     }
     if let Some(rest) = class.strip_prefix("ms-") {
-        if let Some(&value) = SPACING_SCALE.get(rest) {
-            return Some(tw("margin-inline-start", Cow::Borrowed(value)));
+        if let Some(value) = spacing_scale(rest) {
+            return Some(tw("margin-inline-start", value));
         }
     }
     if let Some(rest) = class.strip_prefix("me-") {
-        if let Some(&value) = SPACING_SCALE.get(rest) {
-            return Some(tw("margin-inline-end", Cow::Borrowed(value)));
+        if let Some(value) = spacing_scale(rest) {
+            return Some(tw("margin-inline-end", value));
         }
     }
     if let Some(rest) = class.strip_prefix("m-") {
-        if let Some(&value) = SPACING_SCALE.get(rest) {
-            return Some(tw("margin", Cow::Borrowed(value)));
-        }
-    }
-
-    // Space between
-    if let Some(rest) = class.strip_prefix("space-x-") {
-        if rest == "reverse" {
-            return Some(tw("--tw-space-x-reverse", Cow::Borrowed("1")));
-        }
-        if let Some(&value) = SPACING_SCALE.get(rest) {
-            return Some(tw("column-gap", Cow::Borrowed(value)));
-        }
-    }
-    if let Some(rest) = class.strip_prefix("space-y-") {
-        if rest == "reverse" {
-            return Some(tw("--tw-space-y-reverse", Cow::Borrowed("1")));
-        }
-        if let Some(&value) = SPACING_SCALE.get(rest) {
-            return Some(tw("row-gap", Cow::Borrowed(value)));
+        if let Some(value) = spacing_scale(rest) {
+            return Some(tw("margin", value));
         }
     }
 
@@ -2075,8 +2491,8 @@ fn parse_spacing_utility(
 fn parse_sizing_utility(class: &str) -> Option<(&'static str, Cow<'static, str>)> {
     // Width
     if let Some(rest) = class.strip_prefix("w-") {
-        if let Some(&value) = SPACING_SCALE.get(rest) {
-            return Some(tw("width", Cow::Borrowed(value)));
+        if let Some(value) = spacing_scale(rest) {
+            return Some(tw("width", value));
         }
     }
 
@@ -2088,13 +2504,7 @@ fn parse_sizing_utility(class: &str) -> Option<(&'static str, Cow<'static, str>)
             "min" => Cow::Borrowed("min-content"),
             "max" => Cow::Borrowed("max-content"),
             "fit" => Cow::Borrowed("fit-content"),
-            _ => {
-                if let Some(&v) = SPACING_SCALE.get(rest) {
-                    Cow::Borrowed(v)
-                } else {
-                    return None;
-                }
-            }
+            _ => spacing_scale(rest)?,
         };
         return Some(tw("min-width", value));
     }
@@ -2125,13 +2535,7 @@ fn parse_sizing_utility(class: &str) -> Option<(&'static str, Cow<'static, str>)
             "screen-lg" => Cow::Borrowed("1024px"),
             "screen-xl" => Cow::Borrowed("1280px"),
             "screen-2xl" => Cow::Borrowed("1536px"),
-            _ => {
-                if let Some(&v) = SPACING_SCALE.get(rest) {
-                    Cow::Borrowed(v)
-                } else {
-                    return None;
-                }
-            }
+            _ => spacing_scale(rest)?,
         };
         return Some(tw("max-width", value));
     }
@@ -2143,13 +2547,7 @@ fn parse_sizing_utility(class: &str) -> Option<(&'static str, Cow<'static, str>)
             "svh" => Cow::Borrowed("100svh"),
             "lvh" => Cow::Borrowed("100lvh"),
             "dvh" => Cow::Borrowed("100dvh"),
-            _ => {
-                if let Some(&v) = SPACING_SCALE.get(rest) {
-                    Cow::Borrowed(v)
-                } else {
-                    return None;
-                }
-            }
+            _ => spacing_scale(rest)?,
         };
         return Some(tw("height", value));
     }
@@ -2166,13 +2564,7 @@ fn parse_sizing_utility(class: &str) -> Option<(&'static str, Cow<'static, str>)
             "min" => Cow::Borrowed("min-content"),
             "max" => Cow::Borrowed("max-content"),
             "fit" => Cow::Borrowed("fit-content"),
-            _ => {
-                if let Some(&v) = SPACING_SCALE.get(rest) {
-                    Cow::Borrowed(v)
-                } else {
-                    return None;
-                }
-            }
+            _ => spacing_scale(rest)?,
         };
         return Some(tw("min-height", value));
     }
@@ -2189,24 +2581,9 @@ fn parse_sizing_utility(class: &str) -> Option<(&'static str, Cow<'static, str>)
             "min" => Cow::Borrowed("min-content"),
             "max" => Cow::Borrowed("max-content"),
             "fit" => Cow::Borrowed("fit-content"),
-            _ => {
-                if let Some(&v) = SPACING_SCALE.get(rest) {
-                    Cow::Borrowed(v)
-                } else {
-                    return None;
-                }
-            }
+            _ => spacing_scale(rest)?,
         };
         return Some(tw("max-height", value));
-    }
-
-    // Size (width and height)
-    if let Some(rest) = class.strip_prefix("size-") {
-        if let Some(&value) = SPACING_SCALE.get(rest) {
-            // This should set both width and height
-            // For simplicity, we'll use the width shorthand and handle height separately
-            return Some(tw("width", Cow::Borrowed(value)));
-        }
     }
 
     None
@@ -2241,16 +2618,10 @@ fn parse_typography_utility(class: &str) -> Option<(&'static str, Cow<'static, s
         _ => {}
     }
 
-    // Font size
+    // Text color (font sizes are `compound_utility`'s)
     if let Some(rest) = class.strip_prefix("text-") {
-        // First check if it's a color
-        if let Some(&color) = TAILWIND_COLORS.get(rest) {
-            return Some(tw("color", Cow::Borrowed(color)));
-        }
-        // Then check if it's a font size
-        if let Some(&(size, _line_height)) = FONT_SIZE_SCALE.get(rest) {
-            // Return font-size (line-height would need separate handling)
-            return Some(tw("font-size", Cow::Borrowed(size)));
+        if let Some(color) = color_value(rest) {
+            return Some(tw("color", color));
         }
         // Text alignment
         match rest {
@@ -2300,9 +2671,6 @@ fn parse_typography_utility(class: &str) -> Option<(&'static str, Cow<'static, s
 
     // Text overflow
     match class {
-        "truncate" => {
-            return Some(tw("text-overflow", Cow::Borrowed("ellipsis")));
-        }
         "text-ellipsis" => return Some(tw("text-overflow", Cow::Borrowed("ellipsis"))),
         "text-clip" => return Some(tw("text-overflow", Cow::Borrowed("clip"))),
         _ => {}
@@ -2319,7 +2687,11 @@ fn parse_typography_utility(class: &str) -> Option<(&'static str, Cow<'static, s
 
     // Whitespace
     if let Some(rest) = class.strip_prefix("whitespace-") {
-        return Some(tw("white-space", Cow::Owned(rest.to_string())));
+        return matches!(
+            rest,
+            "normal" | "nowrap" | "pre" | "pre-line" | "pre-wrap" | "break-spaces"
+        )
+        .then(|| tw("white-space", Cow::Owned(rest.to_string())));
     }
 
     // Word break
@@ -2333,43 +2705,22 @@ fn parse_typography_utility(class: &str) -> Option<(&'static str, Cow<'static, s
 
     // Hyphens
     if let Some(rest) = class.strip_prefix("hyphens-") {
-        return Some(tw("hyphens", Cow::Owned(rest.to_string())));
+        return matches!(rest, "none" | "manual" | "auto")
+            .then(|| tw("hyphens", Cow::Owned(rest.to_string())));
     }
 
     // Letter spacing
     if let Some(rest) = class.strip_prefix("tracking-") {
         let value = match rest {
-            "tighter" => Cow::Borrowed("-0.05em"),
-            "tight" => Cow::Borrowed("-0.025em"),
-            "normal" => Cow::Borrowed("0em"),
-            "wide" => Cow::Borrowed("0.025em"),
-            "wider" => Cow::Borrowed("0.05em"),
-            "widest" => Cow::Borrowed("0.1em"),
-            _ => Cow::Owned(rest.to_string()),
+            "tighter" => "-0.05em",
+            "tight" => "-0.025em",
+            "normal" => "0em",
+            "wide" => "0.025em",
+            "wider" => "0.05em",
+            "widest" => "0.1em",
+            _ => return None,
         };
-        return Some(tw("letter-spacing", value));
-    }
-
-    // Line height
-    if let Some(rest) = class.strip_prefix("leading-") {
-        let value = match rest {
-            "none" => Cow::Borrowed("1"),
-            "tight" => Cow::Borrowed("1.25"),
-            "snug" => Cow::Borrowed("1.375"),
-            "normal" => Cow::Borrowed("1.5"),
-            "relaxed" => Cow::Borrowed("1.625"),
-            "loose" => Cow::Borrowed("2"),
-            "3" => Cow::Borrowed(".75rem"),
-            "4" => Cow::Borrowed("1rem"),
-            "5" => Cow::Borrowed("1.25rem"),
-            "6" => Cow::Borrowed("1.5rem"),
-            "7" => Cow::Borrowed("1.75rem"),
-            "8" => Cow::Borrowed("2rem"),
-            "9" => Cow::Borrowed("2.25rem"),
-            "10" => Cow::Borrowed("2.5rem"),
-            _ => Cow::Owned(rest.to_string()),
-        };
-        return Some(tw("line-height", value));
+        return Some(tw("letter-spacing", Cow::Borrowed(value)));
     }
 
     // List style type
@@ -2386,7 +2737,11 @@ fn parse_typography_utility(class: &str) -> Option<(&'static str, Cow<'static, s
 
     // Vertical align
     if let Some(rest) = class.strip_prefix("align-") {
-        return Some(tw("vertical-align", Cow::Owned(rest.to_string())));
+        return matches!(
+            rest,
+            "baseline" | "top" | "middle" | "bottom" | "text-top" | "text-bottom" | "sub" | "super"
+        )
+        .then(|| tw("vertical-align", Cow::Owned(rest.to_string())));
     }
 
     // Content
@@ -2404,8 +2759,8 @@ fn parse_background_utility(class: &str) -> Option<(&'static str, Cow<'static, s
     // Background color
     if let Some(rest) = class.strip_prefix("bg-") {
         // Check if it's a color
-        if let Some(&color) = TAILWIND_COLORS.get(rest) {
-            return Some(tw("background-color", Cow::Borrowed(color)));
+        if let Some(color) = color_value(rest) {
+            return Some(tw("background-color", color));
         }
         // Background attachment
         match rest {
@@ -2464,42 +2819,6 @@ fn parse_background_utility(class: &str) -> Option<(&'static str, Cow<'static, s
             "none" => return Some(tw("background-image", Cow::Borrowed("none"))),
             _ => {}
         }
-
-        // Gradient directions
-        if let Some(dir) = rest.strip_prefix("gradient-to-") {
-            let direction = match dir {
-                "t" => Cow::Borrowed("to top"),
-                "tr" => Cow::Borrowed("to top right"),
-                "r" => Cow::Borrowed("to right"),
-                "br" => Cow::Borrowed("to bottom right"),
-                "b" => Cow::Borrowed("to bottom"),
-                "bl" => Cow::Borrowed("to bottom left"),
-                "l" => Cow::Borrowed("to left"),
-                "tl" => Cow::Borrowed("to top left"),
-                _ => return None,
-            };
-            return Some(tw(
-                "background-image",
-                format!("linear-gradient({direction}, var(--tw-gradient-stops))"),
-            ));
-        }
-    }
-
-    // Gradient color stops
-    if let Some(rest) = class.strip_prefix("from-") {
-        if let Some(&color) = TAILWIND_COLORS.get(rest) {
-            return Some(tw("--tw-gradient-from", Cow::Borrowed(color)));
-        }
-    }
-    if let Some(rest) = class.strip_prefix("via-") {
-        if let Some(&color) = TAILWIND_COLORS.get(rest) {
-            return Some(tw("--tw-gradient-via", Cow::Borrowed(color)));
-        }
-    }
-    if let Some(rest) = class.strip_prefix("to-") {
-        if let Some(&color) = TAILWIND_COLORS.get(rest) {
-            return Some(tw("--tw-gradient-to", Cow::Borrowed(color)));
-        }
     }
 
     None
@@ -2507,113 +2826,13 @@ fn parse_background_utility(class: &str) -> Option<(&'static str, Cow<'static, s
 
 /// Parse border utilities
 fn parse_border_utility(class: &str) -> Option<(&'static str, Cow<'static, str>)> {
-    // Border radius
-    if let Some(rest) = class.strip_prefix("rounded-") {
-        // Specific corners
-        if let Some(corner) = rest.strip_prefix("t-") {
-            if let Some(&value) = BORDER_RADIUS_SCALE.get(corner) {
-                return Some(tw("border-top-left-radius", Cow::Borrowed(value)));
-            }
-        }
-        if let Some(corner) = rest.strip_prefix("r-") {
-            if let Some(&value) = BORDER_RADIUS_SCALE.get(corner) {
-                return Some(tw("border-top-right-radius", Cow::Borrowed(value)));
-            }
-        }
-        if let Some(corner) = rest.strip_prefix("b-") {
-            if let Some(&value) = BORDER_RADIUS_SCALE.get(corner) {
-                return Some(tw("border-bottom-right-radius", Cow::Borrowed(value)));
-            }
-        }
-        if let Some(corner) = rest.strip_prefix("l-") {
-            if let Some(&value) = BORDER_RADIUS_SCALE.get(corner) {
-                return Some(tw("border-bottom-left-radius", Cow::Borrowed(value)));
-            }
-        }
-        if let Some(corner) = rest.strip_prefix("tl-") {
-            if let Some(&value) = BORDER_RADIUS_SCALE.get(corner) {
-                return Some(tw("border-top-left-radius", Cow::Borrowed(value)));
-            }
-        }
-        if let Some(corner) = rest.strip_prefix("tr-") {
-            if let Some(&value) = BORDER_RADIUS_SCALE.get(corner) {
-                return Some(tw("border-top-right-radius", Cow::Borrowed(value)));
-            }
-        }
-        if let Some(corner) = rest.strip_prefix("br-") {
-            if let Some(&value) = BORDER_RADIUS_SCALE.get(corner) {
-                return Some(tw("border-bottom-right-radius", Cow::Borrowed(value)));
-            }
-        }
-        if let Some(corner) = rest.strip_prefix("bl-") {
-            if let Some(&value) = BORDER_RADIUS_SCALE.get(corner) {
-                return Some(tw("border-bottom-left-radius", Cow::Borrowed(value)));
-            }
-        }
-        if let Some(&value) = BORDER_RADIUS_SCALE.get(rest) {
-            return Some(tw("border-radius", Cow::Borrowed(value)));
-        }
-    }
-
-    // Standalone "rounded" (without suffix) - note: "rounded-*" variants are handled
-    // via BORDER_RADIUS_SCALE lookup above in the strip_prefix("rounded-") branch
-    if class == "rounded" {
-        return Some(tw("border-radius", Cow::Borrowed("0.25rem")));
-    }
+    // Border radius is compound_utility's
 
     // Border width
     if let Some(rest) = class.strip_prefix("border-") {
         // Border color
-        if let Some(&color) = TAILWIND_COLORS.get(rest) {
-            return Some(tw("border-color", Cow::Borrowed(color)));
-        }
-
-        // Border width per side
-        if let Some(width) = rest.strip_prefix("t-") {
-            if let Some(&value) = BORDER_WIDTH_SCALE.get(width) {
-                return Some(tw("border-top-width", Cow::Borrowed(value)));
-            }
-        }
-        if let Some(width) = rest.strip_prefix("r-") {
-            if let Some(&value) = BORDER_WIDTH_SCALE.get(width) {
-                return Some(tw("border-right-width", Cow::Borrowed(value)));
-            }
-        }
-        if let Some(width) = rest.strip_prefix("b-") {
-            if let Some(&value) = BORDER_WIDTH_SCALE.get(width) {
-                return Some(tw("border-bottom-width", Cow::Borrowed(value)));
-            }
-        }
-        if let Some(width) = rest.strip_prefix("l-") {
-            if let Some(&value) = BORDER_WIDTH_SCALE.get(width) {
-                return Some(tw("border-left-width", Cow::Borrowed(value)));
-            }
-        }
-        if let Some(width) = rest.strip_prefix("x-") {
-            if let Some(&value) = BORDER_WIDTH_SCALE.get(width) {
-                return Some(tw("border-inline-width", Cow::Borrowed(value)));
-            }
-        }
-        if let Some(width) = rest.strip_prefix("y-") {
-            if let Some(&value) = BORDER_WIDTH_SCALE.get(width) {
-                return Some(tw("border-block-width", Cow::Borrowed(value)));
-            }
-        }
-
-        // Border width
-        if let Some(&value) = BORDER_WIDTH_SCALE.get(rest) {
-            return Some(tw("border-width", Cow::Borrowed(value)));
-        }
-
-        // Border style
-        match rest {
-            "solid" => return Some(tw("border-style", Cow::Borrowed("solid"))),
-            "dashed" => return Some(tw("border-style", Cow::Borrowed("dashed"))),
-            "dotted" => return Some(tw("border-style", Cow::Borrowed("dotted"))),
-            "double" => return Some(tw("border-style", Cow::Borrowed("double"))),
-            "hidden" => return Some(tw("border-style", Cow::Borrowed("hidden"))),
-            "none" => return Some(tw("border-style", Cow::Borrowed("none"))),
-            _ => {}
+        if let Some(color) = color_value(rest) {
+            return Some(tw("border-color", color));
         }
 
         // Border collapse (for tables)
@@ -2625,106 +2844,10 @@ fn parse_border_utility(class: &str) -> Option<(&'static str, Cow<'static, str>)
         }
     }
 
-    // Standalone "border" (without suffix) - note: "border-0/2/4/8" variants are handled
-    // via BORDER_WIDTH_SCALE lookup above in the strip_prefix("border-") branch
-    if class == "border" {
-        return Some(tw("border-width", Cow::Borrowed("1px")));
-    }
-
-    // Outline
+    // Outline color
     if let Some(rest) = class.strip_prefix("outline-") {
-        match rest {
-            "none" => {
-                return Some(tw("outline", Cow::Borrowed("2px solid transparent")));
-            }
-            "0" => return Some(tw("outline-width", Cow::Borrowed("0px"))),
-            "1" => return Some(tw("outline-width", Cow::Borrowed("1px"))),
-            "2" => return Some(tw("outline-width", Cow::Borrowed("2px"))),
-            "4" => return Some(tw("outline-width", Cow::Borrowed("4px"))),
-            "8" => return Some(tw("outline-width", Cow::Borrowed("8px"))),
-            "dashed" => return Some(tw("outline-style", Cow::Borrowed("dashed"))),
-            "dotted" => return Some(tw("outline-style", Cow::Borrowed("dotted"))),
-            "double" => return Some(tw("outline-style", Cow::Borrowed("double"))),
-            _ => {
-                if let Some(&color) = TAILWIND_COLORS.get(rest) {
-                    return Some(tw("outline-color", Cow::Borrowed(color)));
-                }
-            }
-        }
-    }
-    if class == "outline" {
-        return Some(tw("outline-style", Cow::Borrowed("solid")));
-    }
-
-    // Ring
-    if let Some(rest) = class.strip_prefix("ring-") {
-        match rest {
-            "0" => {
-                return Some(tw("--tw-ring-offset-shadow", Cow::Borrowed("0 0 #0000")));
-            }
-            "1" => {
-                return Some(tw(
-                    "box-shadow",
-                    Cow::Borrowed("0 0 0 1px var(--tw-ring-color)"),
-                ));
-            }
-            "2" => {
-                return Some(tw(
-                    "box-shadow",
-                    Cow::Borrowed("0 0 0 2px var(--tw-ring-color)"),
-                ));
-            }
-            "4" => {
-                return Some(tw(
-                    "box-shadow",
-                    Cow::Borrowed("0 0 0 4px var(--tw-ring-color)"),
-                ));
-            }
-            "8" => {
-                return Some(tw(
-                    "box-shadow",
-                    Cow::Borrowed("0 0 0 8px var(--tw-ring-color)"),
-                ));
-            }
-            "inset" => return Some(tw("--tw-ring-inset", Cow::Borrowed("inset"))),
-            _ => {
-                if let Some(&color) = TAILWIND_COLORS.get(rest) {
-                    return Some(tw("--tw-ring-color", Cow::Borrowed(color)));
-                }
-            }
-        }
-    }
-    if class == "ring" {
-        return Some(tw(
-            "box-shadow",
-            Cow::Borrowed("0 0 0 3px var(--tw-ring-color)"),
-        ));
-    }
-
-    // Divide
-    if let Some(rest) = class.strip_prefix("divide-") {
-        if let Some(&color) = TAILWIND_COLORS.get(rest) {
-            return Some(tw("--tw-divide-color", Cow::Borrowed(color)));
-        }
-        match rest {
-            "x" => return Some(tw("--tw-divide-x-reverse", Cow::Borrowed("0"))),
-            "x-0" => return Some(tw("border-inline-width", Cow::Borrowed("0px"))),
-            "x-2" => return Some(tw("border-inline-width", Cow::Borrowed("2px"))),
-            "x-4" => return Some(tw("border-inline-width", Cow::Borrowed("4px"))),
-            "x-8" => return Some(tw("border-inline-width", Cow::Borrowed("8px"))),
-            "x-reverse" => return Some(tw("--tw-divide-x-reverse", Cow::Borrowed("1"))),
-            "y" => return Some(tw("--tw-divide-y-reverse", Cow::Borrowed("0"))),
-            "y-0" => return Some(tw("border-block-width", Cow::Borrowed("0px"))),
-            "y-2" => return Some(tw("border-block-width", Cow::Borrowed("2px"))),
-            "y-4" => return Some(tw("border-block-width", Cow::Borrowed("4px"))),
-            "y-8" => return Some(tw("border-block-width", Cow::Borrowed("8px"))),
-            "y-reverse" => return Some(tw("--tw-divide-y-reverse", Cow::Borrowed("1"))),
-            "solid" => return Some(tw("border-style", Cow::Borrowed("solid"))),
-            "dashed" => return Some(tw("border-style", Cow::Borrowed("dashed"))),
-            "dotted" => return Some(tw("border-style", Cow::Borrowed("dotted"))),
-            "double" => return Some(tw("border-style", Cow::Borrowed("double"))),
-            "none" => return Some(tw("border-style", Cow::Borrowed("none"))),
-            _ => {}
+        if let Some(color) = color_value(rest) {
+            return Some(tw("outline-color", color));
         }
     }
 
@@ -2733,23 +2856,6 @@ fn parse_border_utility(class: &str) -> Option<(&'static str, Cow<'static, str>)
 
 /// Parse effects utilities (shadow, opacity, mix-blend, etc.)
 fn parse_effects_utility(class: &str) -> Option<(&'static str, Cow<'static, str>)> {
-    // Box shadow
-    if let Some(rest) = class.strip_prefix("shadow-") {
-        if let Some(&value) = BOX_SHADOW_SCALE.get(rest) {
-            return Some(tw("box-shadow", Cow::Borrowed(value)));
-        }
-        // Shadow color
-        if let Some(&color) = TAILWIND_COLORS.get(rest) {
-            return Some(tw("--tw-shadow-color", Cow::Borrowed(color)));
-        }
-    }
-    if class == "shadow" {
-        return Some(tw(
-            "box-shadow",
-            Cow::Borrowed("0 1px 3px 0 rgb(0 0 0 / 0.1), 0 1px 2px -1px rgb(0 0 0 / 0.1)"),
-        ));
-    }
-
     // Opacity
     if let Some(rest) = class.strip_prefix("opacity-") {
         if let Some(&value) = OPACITY_SCALE.get(rest) {
@@ -2759,400 +2865,30 @@ fn parse_effects_utility(class: &str) -> Option<(&'static str, Cow<'static, str>
 
     // Mix blend mode
     if let Some(rest) = class.strip_prefix("mix-blend-") {
-        return Some(tw("mix-blend-mode", Cow::Owned(rest.to_string())));
+        return (BLEND_MODES.contains(rest) || matches!(rest, "plus-darker" | "plus-lighter"))
+            .then(|| tw("mix-blend-mode", Cow::Owned(rest.to_string())));
     }
 
     // Background blend mode
     if let Some(rest) = class.strip_prefix("bg-blend-") {
-        return Some(tw("background-blend-mode", Cow::Owned(rest.to_string())));
+        return BLEND_MODES
+            .contains(rest)
+            .then(|| tw("background-blend-mode", Cow::Owned(rest.to_string())));
     }
 
     None
 }
 
-/// Parse filter utilities (blur, brightness, contrast, etc.)
-fn parse_filter_utility(class: &str) -> Option<(&'static str, Cow<'static, str>)> {
-    // Blur
-    if let Some(rest) = class.strip_prefix("blur-") {
-        let value = match rest {
-            "none" => Cow::Borrowed("0"),
-            "sm" => Cow::Borrowed("4px"),
-            "md" => Cow::Borrowed("12px"),
-            "lg" => Cow::Borrowed("16px"),
-            "xl" => Cow::Borrowed("24px"),
-            "2xl" => Cow::Borrowed("40px"),
-            "3xl" => Cow::Borrowed("64px"),
-            _ => return None,
-        };
-        return Some(tw("filter", format!("blur({value})")));
-    }
-    if class == "blur" {
-        return Some(tw("filter", Cow::Borrowed("blur(8px)")));
-    }
+/// Blend modes `mix-blend-*` and `bg-blend-*` take
+static BLEND_MODES: phf::Set<&'static str> = phf_set! {
+    "normal", "multiply", "screen", "overlay", "darken", "lighten", "color-dodge", "color-burn",
+    "hard-light", "soft-light", "difference", "exclusion", "hue", "saturation", "color",
+    "luminosity",
+};
 
-    // Brightness
-    if let Some(rest) = class.strip_prefix("brightness-") {
-        let value = match rest {
-            "0" => Cow::Borrowed("0"),
-            "50" => Cow::Borrowed(".5"),
-            "75" => Cow::Borrowed(".75"),
-            "90" => Cow::Borrowed(".9"),
-            "95" => Cow::Borrowed(".95"),
-            "100" => Cow::Borrowed("1"),
-            "105" => Cow::Borrowed("1.05"),
-            "110" => Cow::Borrowed("1.1"),
-            "125" => Cow::Borrowed("1.25"),
-            "150" => Cow::Borrowed("1.5"),
-            "200" => Cow::Borrowed("2"),
-            _ => return None,
-        };
-        return Some(tw("filter", format!("brightness({value})")));
-    }
-
-    // Contrast
-    if let Some(rest) = class.strip_prefix("contrast-") {
-        let value = match rest {
-            "0" => Cow::Borrowed("0"),
-            "50" => Cow::Borrowed(".5"),
-            "75" => Cow::Borrowed(".75"),
-            "100" => Cow::Borrowed("1"),
-            "125" => Cow::Borrowed("1.25"),
-            "150" => Cow::Borrowed("1.5"),
-            "200" => Cow::Borrowed("2"),
-            _ => return None,
-        };
-        return Some(tw("filter", format!("contrast({value})")));
-    }
-
-    // Drop shadow
-    if let Some(rest) = class.strip_prefix("drop-shadow-") {
-        let value = match rest {
-            "sm" => Cow::Borrowed("drop-shadow(0 1px 1px rgb(0 0 0 / 0.05))"),
-            "md" => Cow::Borrowed(
-                "drop-shadow(0 4px 3px rgb(0 0 0 / 0.07)) drop-shadow(0 2px 2px rgb(0 0 0 / 0.06))",
-            ),
-            "lg" => Cow::Borrowed(
-                "drop-shadow(0 10px 8px rgb(0 0 0 / 0.04)) drop-shadow(0 4px 3px rgb(0 0 0 / 0.1))",
-            ),
-            "xl" => Cow::Borrowed(
-                "drop-shadow(0 20px 13px rgb(0 0 0 / 0.03)) drop-shadow(0 8px 5px rgb(0 0 0 / 0.08))",
-            ),
-            "2xl" => Cow::Borrowed("drop-shadow(0 25px 25px rgb(0 0 0 / 0.15))"),
-            "none" => Cow::Borrowed("drop-shadow(0 0 #0000)"),
-            _ => return None,
-        };
-        return Some(tw("filter", value));
-    }
-    if class == "drop-shadow" {
-        return Some(tw(
-            "filter",
-            Cow::Borrowed(
-                "drop-shadow(0 1px 2px rgb(0 0 0 / 0.1)) drop-shadow(0 1px 1px rgb(0 0 0 / 0.06))",
-            ),
-        ));
-    }
-
-    // Grayscale
-    if class == "grayscale" {
-        return Some(tw("filter", Cow::Borrowed("grayscale(100%)")));
-    }
-    if class == "grayscale-0" {
-        return Some(tw("filter", Cow::Borrowed("grayscale(0)")));
-    }
-
-    // Hue rotate
-    if let Some(rest) = class.strip_prefix("hue-rotate-") {
-        let value = match rest {
-            "0" => Cow::Borrowed("0deg"),
-            "15" => Cow::Borrowed("15deg"),
-            "30" => Cow::Borrowed("30deg"),
-            "60" => Cow::Borrowed("60deg"),
-            "90" => Cow::Borrowed("90deg"),
-            "180" => Cow::Borrowed("180deg"),
-            _ => return None,
-        };
-        return Some(tw("filter", format!("hue-rotate({value})")));
-    }
-
-    // Invert
-    if class == "invert" {
-        return Some(tw("filter", Cow::Borrowed("invert(100%)")));
-    }
-    if class == "invert-0" {
-        return Some(tw("filter", Cow::Borrowed("invert(0)")));
-    }
-
-    // Saturate
-    if let Some(rest) = class.strip_prefix("saturate-") {
-        let value = match rest {
-            "0" => Cow::Borrowed("0"),
-            "50" => Cow::Borrowed(".5"),
-            "100" => Cow::Borrowed("1"),
-            "150" => Cow::Borrowed("1.5"),
-            "200" => Cow::Borrowed("2"),
-            _ => return None,
-        };
-        return Some(tw("filter", format!("saturate({value})")));
-    }
-
-    // Sepia
-    if class == "sepia" {
-        return Some(tw("filter", Cow::Borrowed("sepia(100%)")));
-    }
-    if class == "sepia-0" {
-        return Some(tw("filter", Cow::Borrowed("sepia(0)")));
-    }
-
-    // Backdrop filters
-    if let Some(rest) = class.strip_prefix("backdrop-blur-") {
-        let value = match rest {
-            "none" => Cow::Borrowed("0"),
-            "sm" => Cow::Borrowed("4px"),
-            "md" => Cow::Borrowed("12px"),
-            "lg" => Cow::Borrowed("16px"),
-            "xl" => Cow::Borrowed("24px"),
-            "2xl" => Cow::Borrowed("40px"),
-            "3xl" => Cow::Borrowed("64px"),
-            _ => return None,
-        };
-        return Some(tw("backdrop-filter", format!("blur({value})")));
-    }
-    if class == "backdrop-blur" {
-        return Some(tw("backdrop-filter", Cow::Borrowed("blur(8px)")));
-    }
-
-    if let Some(rest) = class.strip_prefix("backdrop-brightness-") {
-        let value = match rest {
-            "0" => Cow::Borrowed("0"),
-            "50" => Cow::Borrowed(".5"),
-            "75" => Cow::Borrowed(".75"),
-            "90" => Cow::Borrowed(".9"),
-            "95" => Cow::Borrowed(".95"),
-            "100" => Cow::Borrowed("1"),
-            "105" => Cow::Borrowed("1.05"),
-            "110" => Cow::Borrowed("1.1"),
-            "125" => Cow::Borrowed("1.25"),
-            "150" => Cow::Borrowed("1.5"),
-            "200" => Cow::Borrowed("2"),
-            _ => return None,
-        };
-        return Some(tw("backdrop-filter", format!("brightness({value})")));
-    }
-
-    if let Some(rest) = class.strip_prefix("backdrop-contrast-") {
-        let value = match rest {
-            "0" => Cow::Borrowed("0"),
-            "50" => Cow::Borrowed(".5"),
-            "75" => Cow::Borrowed(".75"),
-            "100" => Cow::Borrowed("1"),
-            "125" => Cow::Borrowed("1.25"),
-            "150" => Cow::Borrowed("1.5"),
-            "200" => Cow::Borrowed("2"),
-            _ => return None,
-        };
-        return Some(tw("backdrop-filter", format!("contrast({value})")));
-    }
-
-    if class == "backdrop-grayscale" {
-        return Some(tw("backdrop-filter", Cow::Borrowed("grayscale(100%)")));
-    }
-    if class == "backdrop-grayscale-0" {
-        return Some(tw("backdrop-filter", Cow::Borrowed("grayscale(0)")));
-    }
-
-    if class == "backdrop-invert" {
-        return Some(tw("backdrop-filter", Cow::Borrowed("invert(100%)")));
-    }
-    if class == "backdrop-invert-0" {
-        return Some(tw("backdrop-filter", Cow::Borrowed("invert(0)")));
-    }
-
-    if let Some(rest) = class.strip_prefix("backdrop-opacity-") {
-        if let Some(&value) = OPACITY_SCALE.get(rest) {
-            return Some(tw("backdrop-filter", format!("opacity({value})")));
-        }
-    }
-
-    if let Some(rest) = class.strip_prefix("backdrop-saturate-") {
-        let value = match rest {
-            "0" => Cow::Borrowed("0"),
-            "50" => Cow::Borrowed(".5"),
-            "100" => Cow::Borrowed("1"),
-            "150" => Cow::Borrowed("1.5"),
-            "200" => Cow::Borrowed("2"),
-            _ => return None,
-        };
-        return Some(tw("backdrop-filter", format!("saturate({value})")));
-    }
-
-    if class == "backdrop-sepia" {
-        return Some(tw("backdrop-filter", Cow::Borrowed("sepia(100%)")));
-    }
-    if class == "backdrop-sepia-0" {
-        return Some(tw("backdrop-filter", Cow::Borrowed("sepia(0)")));
-    }
-
-    None
-}
-
-/// Parse transition and animation utilities
-fn parse_transition_utility(class: &str) -> Option<(&'static str, Cow<'static, str>)> {
-    // Transition
-    match class {
-        "transition-none" => return Some(tw("transition-property", Cow::Borrowed("none"))),
-        "transition-all" => return Some(tw("transition-property", Cow::Borrowed("all"))),
-        "transition" => {
-            return Some(tw(
-                "transition-property",
-                Cow::Borrowed(
-                    "color, background-color, border-color, text-decoration-color, fill, stroke, opacity, box-shadow, transform, filter, backdrop-filter",
-                ),
-            ));
-        }
-        "transition-colors" => {
-            return Some(tw(
-                "transition-property",
-                Cow::Borrowed(
-                    "color, background-color, border-color, text-decoration-color, fill, stroke",
-                ),
-            ));
-        }
-        "transition-opacity" => return Some(tw("transition-property", Cow::Borrowed("opacity"))),
-        "transition-shadow" => return Some(tw("transition-property", Cow::Borrowed("box-shadow"))),
-        "transition-transform" => {
-            return Some(tw("transition-property", Cow::Borrowed("transform")));
-        }
-        _ => {}
-    }
-
-    // Duration
-    if let Some(rest) = class.strip_prefix("duration-") {
-        if let Some(&value) = DURATION_SCALE.get(rest) {
-            return Some(tw("transition-duration", Cow::Borrowed(value)));
-        }
-    }
-
-    // Ease (timing function)
-    if let Some(rest) = class.strip_prefix("ease-") {
-        if let Some(&value) = EASE_SCALE.get(rest) {
-            return Some(tw("transition-timing-function", Cow::Borrowed(value)));
-        }
-    }
-
-    // Delay
-    if let Some(rest) = class.strip_prefix("delay-") {
-        if let Some(&value) = DURATION_SCALE.get(rest) {
-            return Some(tw("transition-delay", Cow::Borrowed(value)));
-        }
-    }
-
-    // Animation
-    match class {
-        "animate-none" => return Some(tw("animation", Cow::Borrowed("none"))),
-        "animate-spin" => {
-            return Some(tw("animation", Cow::Borrowed("spin 1s linear infinite")));
-        }
-        "animate-ping" => {
-            return Some(tw(
-                "animation",
-                Cow::Borrowed("ping 1s cubic-bezier(0, 0, 0.2, 1) infinite"),
-            ));
-        }
-        "animate-pulse" => {
-            return Some(tw(
-                "animation",
-                Cow::Borrowed("pulse 2s cubic-bezier(0.4, 0, 0.6, 1) infinite"),
-            ));
-        }
-        "animate-bounce" => {
-            return Some(tw("animation", Cow::Borrowed("bounce 1s infinite")));
-        }
-        _ => {}
-    }
-
-    None
-}
-
-/// Parse transform utilities (scale, rotate, translate, skew)
-fn parse_transform_utility(
-    class: &str,
-    is_negative: bool,
-) -> Option<(&'static str, Cow<'static, str>)> {
-    // Scale
-    if let Some(rest) = class.strip_prefix("scale-x-") {
-        let value = parse_scale_value(rest)?;
-        return Some(tw("transform", format!("scaleX({value})")));
-    }
-    if let Some(rest) = class.strip_prefix("scale-y-") {
-        let value = parse_scale_value(rest)?;
-        return Some(tw("transform", format!("scaleY({value})")));
-    }
-    if let Some(rest) = class.strip_prefix("scale-") {
-        let value = parse_scale_value(rest)?;
-        return Some(tw("transform", format!("scale({value})")));
-    }
-
-    // Rotate
-    if let Some(rest) = class.strip_prefix("rotate-") {
-        let value = match rest {
-            "0" => Cow::Borrowed("0deg"),
-            "1" => Cow::Borrowed("1deg"),
-            "2" => Cow::Borrowed("2deg"),
-            "3" => Cow::Borrowed("3deg"),
-            "6" => Cow::Borrowed("6deg"),
-            "12" => Cow::Borrowed("12deg"),
-            "45" => Cow::Borrowed("45deg"),
-            "90" => Cow::Borrowed("90deg"),
-            "180" => Cow::Borrowed("180deg"),
-            _ => return None,
-        };
-        let neg_prefix = if is_negative { "-" } else { "" };
-        return Some(tw("transform", format!("rotate({neg_prefix}{value})")));
-    }
-
-    // Translate
-    if let Some(rest) = class.strip_prefix("translate-x-") {
-        if let Some(&value) = SPACING_SCALE.get(rest) {
-            let neg_prefix = if is_negative { "-" } else { "" };
-            return Some(tw("transform", format!("translateX({neg_prefix}{value})")));
-        }
-    }
-    if let Some(rest) = class.strip_prefix("translate-y-") {
-        if let Some(&value) = SPACING_SCALE.get(rest) {
-            let neg_prefix = if is_negative { "-" } else { "" };
-            return Some(tw("transform", format!("translateY({neg_prefix}{value})")));
-        }
-    }
-
-    // Skew
-    if let Some(rest) = class.strip_prefix("skew-x-") {
-        let value = match rest {
-            "0" => Cow::Borrowed("0deg"),
-            "1" => Cow::Borrowed("1deg"),
-            "2" => Cow::Borrowed("2deg"),
-            "3" => Cow::Borrowed("3deg"),
-            "6" => Cow::Borrowed("6deg"),
-            "12" => Cow::Borrowed("12deg"),
-            _ => return None,
-        };
-        let neg_prefix = if is_negative { "-" } else { "" };
-        return Some(tw("transform", format!("skewX({neg_prefix}{value})")));
-    }
-    if let Some(rest) = class.strip_prefix("skew-y-") {
-        let value = match rest {
-            "0" => Cow::Borrowed("0deg"),
-            "1" => Cow::Borrowed("1deg"),
-            "2" => Cow::Borrowed("2deg"),
-            "3" => Cow::Borrowed("3deg"),
-            "6" => Cow::Borrowed("6deg"),
-            "12" => Cow::Borrowed("12deg"),
-            _ => return None,
-        };
-        let neg_prefix = if is_negative { "-" } else { "" };
-        return Some(tw("transform", format!("skewY({neg_prefix}{value})")));
-    }
-
-    // Transform origin
+/// Parse transform origin utilities (translate, rotate, scale and skew are
+/// `transform_utility`'s)
+fn parse_transform_utility(class: &str) -> Option<(&'static str, Cow<'static, str>)> {
     if let Some(rest) = class.strip_prefix("origin-") {
         let value = match rest {
             "center" => Cow::Borrowed("center"),
@@ -3172,12 +2908,6 @@ fn parse_transform_utility(
     None
 }
 
-/// Parse scale value (50 -> 0.5, 100 -> 1, 150 -> 1.5)
-fn parse_scale_value(s: &str) -> Option<f64> {
-    let n: u32 = s.parse().ok()?;
-    Some(f64::from(n) / 100.0)
-}
-
 /// Parse interactivity utilities (cursor, pointer-events, resize, etc.)
 fn parse_interactivity_utility(class: &str) -> Option<(&'static str, Cow<'static, str>)> {
     // Accent color
@@ -3185,8 +2915,8 @@ fn parse_interactivity_utility(class: &str) -> Option<(&'static str, Cow<'static
         if rest == "auto" {
             return Some(tw("accent-color", Cow::Borrowed("auto")));
         }
-        if let Some(&color) = TAILWIND_COLORS.get(rest) {
-            return Some(tw("accent-color", Cow::Borrowed(color)));
+        if let Some(color) = color_value(rest) {
+            return Some(tw("accent-color", color));
         }
     }
 
@@ -3199,19 +2929,22 @@ fn parse_interactivity_utility(class: &str) -> Option<(&'static str, Cow<'static
 
     // Cursor
     if let Some(rest) = class.strip_prefix("cursor-") {
-        return Some(tw("cursor", Cow::Owned(rest.to_string())));
+        return CURSORS
+            .contains(rest)
+            .then(|| tw("cursor", Cow::Owned(rest.to_string())));
     }
 
     // Caret color
     if let Some(rest) = class.strip_prefix("caret-") {
-        if let Some(&color) = TAILWIND_COLORS.get(rest) {
-            return Some(tw("caret-color", Cow::Borrowed(color)));
+        if let Some(color) = color_value(rest) {
+            return Some(tw("caret-color", color));
         }
     }
 
     // Pointer events
     if let Some(rest) = class.strip_prefix("pointer-events-") {
-        return Some(tw("pointer-events", Cow::Owned(rest.to_string())));
+        return matches!(rest, "none" | "auto")
+            .then(|| tw("pointer-events", Cow::Owned(rest.to_string())));
     }
 
     // Resize
@@ -3229,18 +2962,6 @@ fn parse_interactivity_utility(class: &str) -> Option<(&'static str, Cow<'static
             "auto" => return Some(tw("scroll-behavior", Cow::Borrowed("auto"))),
             "smooth" => return Some(tw("scroll-behavior", Cow::Borrowed("smooth"))),
             _ => {}
-        }
-    }
-
-    // Scroll margin/padding
-    if let Some(rest) = class.strip_prefix("scroll-m-") {
-        if let Some(&value) = SPACING_SCALE.get(rest) {
-            return Some(tw("scroll-margin", Cow::Borrowed(value)));
-        }
-    }
-    if let Some(rest) = class.strip_prefix("scroll-p-") {
-        if let Some(&value) = SPACING_SCALE.get(rest) {
-            return Some(tw("scroll-padding", Cow::Borrowed(value)));
         }
     }
 
@@ -3290,12 +3011,26 @@ fn parse_interactivity_utility(class: &str) -> Option<(&'static str, Cow<'static
 
     // Touch action
     if let Some(rest) = class.strip_prefix("touch-") {
-        return Some(tw("touch-action", Cow::Owned(rest.to_string())));
+        return matches!(
+            rest,
+            "auto"
+                | "none"
+                | "pan-x"
+                | "pan-left"
+                | "pan-right"
+                | "pan-y"
+                | "pan-up"
+                | "pan-down"
+                | "pinch-zoom"
+                | "manipulation"
+        )
+        .then(|| tw("touch-action", Cow::Owned(rest.to_string())));
     }
 
     // User select
     if let Some(rest) = class.strip_prefix("select-") {
-        return Some(tw("user-select", Cow::Owned(rest.to_string())));
+        return matches!(rest, "none" | "text" | "all" | "auto")
+            .then(|| tw("user-select", Cow::Owned(rest.to_string())));
     }
 
     // Will change
@@ -3320,8 +3055,8 @@ fn parse_svg_utility(class: &str) -> Option<(&'static str, Cow<'static, str>)> {
         if rest == "none" {
             return Some(tw("fill", Cow::Borrowed("none")));
         }
-        if let Some(&color) = TAILWIND_COLORS.get(rest) {
-            return Some(tw("fill", Cow::Borrowed(color)));
+        if let Some(color) = color_value(rest) {
+            return Some(tw("fill", color));
         }
     }
 
@@ -3338,31 +3073,28 @@ fn parse_svg_utility(class: &str) -> Option<(&'static str, Cow<'static, str>)> {
             _ => {}
         }
         // Stroke color
-        if let Some(&color) = TAILWIND_COLORS.get(rest) {
-            return Some(tw("stroke", Cow::Borrowed(color)));
+        if let Some(color) = color_value(rest) {
+            return Some(tw("stroke", color));
         }
     }
 
     None
 }
 
-/// Parse accessibility utilities (screen reader only)
-fn parse_accessibility_utility(class: &str) -> Option<(&'static str, Cow<'static, str>)> {
-    match class {
-        "sr-only" => {
-            // This utility requires multiple CSS properties
-            // We'll return the most important one
-            Some(tw("position", Cow::Borrowed("absolute")))
-        }
-        "not-sr-only" => Some(tw("position", Cow::Borrowed("static"))),
-        _ => None,
-    }
-}
+/// Cursors `cursor-*` takes
+static CURSORS: phf::Set<&'static str> = phf_set! {
+    "auto", "default", "pointer", "wait", "text", "move", "help", "not-allowed", "none",
+    "context-menu", "progress", "cell", "crosshair", "vertical-text", "alias", "copy", "no-drop",
+    "grab", "grabbing", "all-scroll", "col-resize", "row-resize", "n-resize", "e-resize",
+    "s-resize", "w-resize", "ne-resize", "nw-resize", "se-resize", "sw-resize", "ew-resize",
+    "ns-resize", "nesw-resize", "nwse-resize", "zoom-in", "zoom-out",
+};
 
 #[cfg(test)]
 #[allow(clippy::expect_used, clippy::unwrap_used)]
 mod tests {
     use super::*;
+    use crate::extract_style::extract_style_value::ExtractStyleValue;
     use css::class_map::reset_class_map;
     use css::file_map::reset_file_map;
     use insta::assert_debug_snapshot;
@@ -3375,36 +3107,76 @@ mod tests {
         styles.into_iter().collect()
     }
 
-    #[test]
-    fn test_has_tailwind_classes_basic() {
-        assert!(has_tailwind_classes("bg-red-500 text-white"));
-        assert!(has_tailwind_classes("p-4 m-2"));
-        assert!(has_tailwind_classes("flex items-center"));
-        assert!(!has_tailwind_classes("my-custom-class"));
-        assert!(!has_tailwind_classes(""));
+    /// The styles of every class in `classes` that compiles
+    fn parse_tailwind_to_styles(classes: &str) -> Vec<ExtractStyleValue> {
+        classes
+            .split_whitespace()
+            .filter_map(parse_class)
+            .flat_map(|class| {
+                class
+                    .styles()
+                    .map(ExtractStyleValue::Static)
+                    .collect::<Vec<_>>()
+            })
+            .collect()
     }
 
-    #[test]
-    fn test_has_tailwind_classes_with_responsive() {
-        assert!(has_tailwind_classes("sm:bg-blue-500"));
-        assert!(has_tailwind_classes("md:flex lg:hidden"));
-        assert!(has_tailwind_classes("hover:bg-red-500"));
+    /// The declarations `class` compiles to, `None` when it stays as written
+    fn declarations(class: &str) -> Option<Vec<(String, String)>> {
+        parse_class(class).map(|class| {
+            class
+                .declarations
+                .into_iter()
+                .map(|(property, value)| (property.into_owned(), value.into_owned()))
+                .collect()
+        })
     }
 
-    #[test]
-    fn test_has_tailwind_classes_with_arbitrary() {
-        assert!(has_tailwind_classes("w-[100px]"));
-        assert!(has_tailwind_classes("text-[#ff0000]"));
-        assert!(has_tailwind_classes("p-[calc(100%-20px)]"));
+    /// What `class` applies under: its level and each condition, written out
+    fn conditions(class: &str) -> Option<(u8, Vec<String>)> {
+        parse_class(class).map(|class| {
+            (
+                class.level,
+                class
+                    .conditions
+                    .iter()
+                    .map(|condition| {
+                        condition
+                            .as_ref()
+                            .map_or_else(String::new, ToString::to_string)
+                    })
+                    .collect(),
+            )
+        })
+    }
+
+    struct Single {
+        property: String,
+        value: String,
+    }
+
+    /// The one declaration of a single-declaration utility
+    fn parse_single_class(class: &str) -> Option<Single> {
+        let mut declarations = declarations(class)?;
+        assert_eq!(declarations.len(), 1, "{class}: {declarations:?}");
+        let (property, value) = declarations.remove(0);
+        Some(Single { property, value })
+    }
+
+    fn owned(declarations: &[(&str, &str)]) -> Vec<(String, String)> {
+        declarations
+            .iter()
+            .map(|(property, value)| ((*property).to_string(), (*value).to_string()))
+            .collect()
     }
 
     #[rstest]
-    #[case("bg-red-500", "background-color", "#ef4444")]
-    #[case("bg-blue-500", "background-color", "#3b82f6")]
+    #[case("bg-red-500", "background-color", "oklch(63.7% 0.237 25.331)")]
+    #[case("bg-blue-500", "background-color", "oklch(62.3% 0.214 259.815)")]
     #[case("bg-black", "background-color", "#000")]
     #[case("bg-white", "background-color", "#fff")]
     #[case("bg-transparent", "background-color", "transparent")]
-    #[case("text-red-500", "color", "#ef4444")]
+    #[case("text-red-500", "color", "oklch(63.7% 0.237 25.331)")]
     #[case("text-white", "color", "#fff")]
     fn test_parse_color_utilities(
         #[case] class: &str,
@@ -3521,8 +3293,6 @@ mod tests {
     )]
     #[case("font-bold", "font-weight", "700")]
     #[case("font-normal", "font-weight", "400")]
-    #[case("text-sm", "font-size", "0.875rem")]
-    #[case("text-xl", "font-size", "1.25rem")]
     #[case("text-center", "text-align", "center")]
     #[case("italic", "font-style", "italic")]
     #[case("underline", "text-decoration-line", "underline")]
@@ -3538,25 +3308,11 @@ mod tests {
     }
 
     #[rstest]
-    #[case(
-        "transition-colors",
-        "color, background-color, border-color, text-decoration-color, fill, stroke"
-    )]
-    #[case("transition-transform", "transform")]
-    fn test_parse_transition_property_utilities(#[case] class: &str, #[case] expected_value: &str) {
-        let parsed = parse_single_class(class).expect("Should parse");
-        assert_eq!(parsed.property, "transition-property");
-        assert_eq!(parsed.value, expected_value);
-    }
-
-    #[rstest]
     #[case("rounded", "border-radius", "0.25rem")]
-    #[case("rounded-none", "border-radius", "0px")]
-    #[case("rounded-full", "border-radius", "9999px")]
+    #[case("rounded-none", "border-radius", "0")]
+    #[case("rounded-full", "border-radius", "calc(infinity * 1px)")]
     #[case("rounded-lg", "border-radius", "0.5rem")]
-    #[case("border", "border-width", "1px")]
-    #[case("border-2", "border-width", "2px")]
-    #[case("border-red-500", "border-color", "#ef4444")]
+    #[case("border-red-500", "border-color", "oklch(63.7% 0.237 25.331)")]
     fn test_parse_border_utilities(
         #[case] class: &str,
         #[case] expected_prop: &str,
@@ -3596,68 +3352,6 @@ mod tests {
     }
 
     #[test]
-    fn test_parse_responsive_prefix() {
-        let parsed = parse_single_class("sm:bg-red-500").expect("Should parse");
-        assert_eq!(parsed.responsive, 1);
-        assert_eq!(parsed.property, "background-color");
-        assert_eq!(parsed.value, "#ef4444");
-
-        let parsed = parse_single_class("md:p-4").expect("Should parse");
-        assert_eq!(parsed.responsive, 2);
-        assert_eq!(parsed.property, "padding");
-        assert_eq!(parsed.value, "1rem");
-
-        let parsed = parse_single_class("lg:flex").expect("Should parse");
-        assert_eq!(parsed.responsive, 3);
-        assert_eq!(parsed.property, "display");
-        assert_eq!(parsed.value, "flex");
-
-        let parsed = parse_single_class("xl:hidden").expect("Should parse");
-        assert_eq!(parsed.responsive, 4);
-        assert_eq!(parsed.property, "display");
-        assert_eq!(parsed.value, "none");
-
-        let parsed = parse_single_class("2xl:w-full").expect("Should parse");
-        assert_eq!(parsed.responsive, 5);
-        assert_eq!(parsed.property, "width");
-        assert_eq!(parsed.value, "100%");
-    }
-
-    #[test]
-    fn test_parse_variant_hover() {
-        let parsed = parse_single_class("hover:bg-blue-500").expect("Should parse");
-        assert_eq!(parsed.variants.len(), 1);
-        assert_eq!(parsed.variants[0], TailwindVariant::Hover);
-        assert_eq!(parsed.property, "background-color");
-        assert_eq!(parsed.value, "#3b82f6");
-    }
-
-    #[test]
-    fn test_parse_variant_focus() {
-        let parsed = parse_single_class("focus:outline-none").expect("Should parse");
-        assert_eq!(parsed.variants.len(), 1);
-        assert_eq!(parsed.variants[0], TailwindVariant::Focus);
-    }
-
-    #[test]
-    fn test_parse_variant_dark() {
-        let parsed = parse_single_class("dark:bg-gray-800").expect("Should parse");
-        assert_eq!(parsed.variants.len(), 1);
-        assert_eq!(parsed.variants[0], TailwindVariant::Dark);
-        assert_eq!(parsed.property, "background-color");
-        assert_eq!(parsed.value, "#1f2937");
-    }
-
-    #[test]
-    fn test_parse_combined_responsive_variant() {
-        let parsed = parse_single_class("sm:hover:bg-red-500").expect("Should parse");
-        assert_eq!(parsed.responsive, 1);
-        assert_eq!(parsed.variants.len(), 1);
-        assert_eq!(parsed.variants[0], TailwindVariant::Hover);
-        assert_eq!(parsed.property, "background-color");
-    }
-
-    #[test]
     fn test_parse_arbitrary_width() {
         let parsed = parse_single_class("w-[100px]").expect("Should parse");
         assert_eq!(parsed.property, "width");
@@ -3675,78 +3369,7 @@ mod tests {
     fn test_parse_arbitrary_calc() {
         let parsed = parse_single_class("w-[calc(100%-20px)]").expect("Should parse");
         assert_eq!(parsed.property, "width");
-        assert_eq!(parsed.value, "calc(100%-20px)");
-    }
-
-    #[test]
-    fn test_parse_negative_margin() {
-        let parsed = parse_single_class("-m-4").expect("Should parse");
-        assert_eq!(parsed.property, "margin");
-        assert_eq!(parsed.value, "1rem");
-        assert!(parsed.negative);
-
-        let static_style = parsed.to_static_style().expect("style");
-        assert_eq!(static_style.value(), "-1rem");
-    }
-
-    #[test]
-    fn test_parse_negative_translate() {
-        let parsed = parse_single_class("-translate-x-4").expect("Should parse");
-        assert_eq!(parsed.property, "transform");
-        assert_eq!(parsed.value, "translateX(-1rem)");
-    }
-
-    #[test]
-    fn test_variant_to_selector() {
-        assert_eq!(
-            TailwindVariant::Hover.to_selector(),
-            StyleSelector::Selector("&:hover".to_string())
-        );
-        assert_eq!(
-            TailwindVariant::Focus.to_selector(),
-            StyleSelector::Selector("&:focus".to_string())
-        );
-        assert_eq!(
-            TailwindVariant::Dark.to_selector(),
-            StyleSelector::Selector(":root[data-theme=dark] &".to_string())
-        );
-        assert_eq!(
-            TailwindVariant::GroupHover.to_selector(),
-            StyleSelector::Selector(":is([role=group],[data-group]):hover &".to_string())
-        );
-    }
-
-    #[test]
-    fn test_to_static_style() {
-        let parsed = parse_single_class("bg-red-500").expect("Should parse");
-        let static_style = parsed.to_static_style().expect("style");
-
-        assert_eq!(static_style.property(), "background-color");
-        // ExtractStaticStyle::new() uses optimize_value() which uppercases hex colors
-        assert_eq!(static_style.value(), "#EF4444");
-        assert_eq!(static_style.level(), 0);
-        assert!(static_style.selector().is_none());
-    }
-
-    #[test]
-    fn test_to_static_style_with_responsive() {
-        let parsed = parse_single_class("md:p-4").expect("Should parse");
-        let static_style = parsed.to_static_style().expect("style");
-
-        assert_eq!(static_style.property(), "padding");
-        assert_eq!(static_style.value(), "1rem");
-        assert_eq!(static_style.level(), 2);
-    }
-
-    #[test]
-    fn test_to_static_style_with_variant() {
-        let parsed = parse_single_class("hover:bg-blue-500").expect("Should parse");
-        let static_style = parsed.to_static_style().expect("style");
-
-        assert_eq!(static_style.property(), "background-color");
-        assert!(static_style.selector().is_some());
-        let selector = static_style.selector().unwrap();
-        assert_eq!(selector.to_string(), "&:hover");
+        assert_eq!(parsed.value, "calc(100% - 20px)");
     }
 
     #[test]
@@ -3814,49 +3437,6 @@ mod tests {
     }
 
     #[test]
-    fn test_parse_transition_utilities() {
-        let parsed = parse_single_class("transition").expect("Should parse");
-        assert_eq!(parsed.property, "transition-property");
-
-        let parsed = parse_single_class("duration-300").expect("Should parse");
-        assert_eq!(parsed.property, "transition-duration");
-        assert_eq!(parsed.value, "300ms");
-
-        let parsed = parse_single_class("ease-in-out").expect("Should parse");
-        assert_eq!(parsed.property, "transition-timing-function");
-    }
-
-    #[test]
-    fn test_parse_transform_utilities() {
-        let parsed = parse_single_class("scale-50").expect("Should parse");
-        assert_eq!(parsed.property, "transform");
-        assert_eq!(parsed.value, "scale(0.5)");
-
-        let parsed = parse_single_class("rotate-45").expect("Should parse");
-        assert_eq!(parsed.property, "transform");
-        assert_eq!(parsed.value, "rotate(45deg)");
-
-        let parsed = parse_single_class("translate-x-4").expect("Should parse");
-        assert_eq!(parsed.property, "transform");
-        assert_eq!(parsed.value, "translateX(1rem)");
-    }
-
-    #[test]
-    fn test_parse_filter_utilities() {
-        let parsed = parse_single_class("blur").expect("Should parse");
-        assert_eq!(parsed.property, "filter");
-        assert_eq!(parsed.value, "blur(8px)");
-
-        let parsed = parse_single_class("blur-lg").expect("Should parse");
-        assert_eq!(parsed.property, "filter");
-        assert_eq!(parsed.value, "blur(16px)");
-
-        let parsed = parse_single_class("grayscale").expect("Should parse");
-        assert_eq!(parsed.property, "filter");
-        assert_eq!(parsed.value, "grayscale(100%)");
-    }
-
-    #[test]
     fn test_parse_interactivity_utilities() {
         let parsed = parse_single_class("cursor-pointer").expect("Should parse");
         assert_eq!(parsed.property, "cursor");
@@ -3875,7 +3455,7 @@ mod tests {
     fn test_parse_svg_utilities() {
         let parsed = parse_single_class("fill-red-500").expect("Should parse");
         assert_eq!(parsed.property, "fill");
-        assert_eq!(parsed.value, "#ef4444");
+        assert_eq!(parsed.value, "oklch(63.7% 0.237 25.331)");
 
         let parsed = parse_single_class("stroke-black").expect("Should parse");
         assert_eq!(parsed.property, "stroke");
@@ -3887,54 +3467,9 @@ mod tests {
     }
 
     #[test]
-    fn test_peer_variants() {
-        let parsed = parse_single_class("peer-hover:bg-blue-500").expect("Should parse");
-        assert_eq!(parsed.variants.len(), 1);
-        assert_eq!(parsed.variants[0], TailwindVariant::PeerHover);
-
-        let selector = parsed.variants[0].to_selector();
-        assert_eq!(selector.to_string(), ".peer:hover ~ &");
-    }
-
-    #[test]
-    fn test_group_variants() {
-        let parsed = parse_single_class("group-hover:bg-blue-500").expect("Should parse");
-        assert_eq!(parsed.variants.len(), 1);
-        assert_eq!(parsed.variants[0], TailwindVariant::GroupHover);
-
-        let selector = parsed.variants[0].to_selector();
-        assert_eq!(
-            selector.to_string(),
-            ":is([role=group],[data-group]):hover &"
-        );
-    }
-
-    #[test]
-    fn test_media_variants() {
-        let parsed = parse_single_class("print:hidden").expect("Should parse");
-        assert_eq!(parsed.variants.len(), 1);
-        assert_eq!(parsed.variants[0], TailwindVariant::Print);
-
-        let selector = parsed.variants[0].to_selector();
-        if let StyleSelector::At { kind, query, .. } = selector {
-            assert_eq!(kind, css::style_selector::AtRuleKind::Media);
-            assert_eq!(query, "print");
-        } else {
-            panic!("Expected At selector");
-        }
-    }
-
-    #[test]
-    fn test_accessibility_utilities() {
-        let parsed = parse_single_class("sr-only").expect("Should parse");
-        assert_eq!(parsed.property, "position");
-        assert_eq!(parsed.value, "absolute");
-    }
-
-    #[test]
     fn test_empty_string() {
         let styles = parse_tailwind_to_styles("");
-        assert!(styles.is_empty());
+        assert_eq!(styles, vec![]);
     }
 
     #[test]
@@ -3943,324 +3478,9 @@ mod tests {
         assert!(result.is_none());
     }
 
-    #[test]
-    fn test_is_likely_tailwind_class_exact_matches() {
-        assert!(is_likely_tailwind_class("flex"));
-        assert!(is_likely_tailwind_class("grid"));
-        assert!(is_likely_tailwind_class("hidden"));
-        assert!(is_likely_tailwind_class("absolute"));
-        assert!(is_likely_tailwind_class("truncate"));
-        assert!(is_likely_tailwind_class("sr-only"));
-    }
-
     // ==================== WAVE 1: TailwindVariant Tests ====================
 
-    // Wave 1.1: Pseudo-class variant selectors (lines 104-131)
-    #[rstest]
-    #[case(TailwindVariant::FocusVisible, "&:focus-visible")]
-    #[case(TailwindVariant::FocusWithin, "&:focus-within")]
-    #[case(TailwindVariant::Visited, "&:visited")]
-    #[case(TailwindVariant::Enabled, "&:enabled")]
-    #[case(TailwindVariant::Checked, "&:checked")]
-    #[case(TailwindVariant::Indeterminate, "&:indeterminate")]
-    #[case(TailwindVariant::Default, "&:default")]
-    #[case(TailwindVariant::Required, "&:required")]
-    #[case(TailwindVariant::Valid, "&:valid")]
-    #[case(TailwindVariant::Invalid, "&:invalid")]
-    #[case(TailwindVariant::InRange, "&:in-range")]
-    #[case(TailwindVariant::OutOfRange, "&:out-of-range")]
-    #[case(TailwindVariant::PlaceholderShown, "&:placeholder-shown")]
-    #[case(TailwindVariant::Autofill, "&:autofill")]
-    #[case(TailwindVariant::ReadOnly, "&:read-only")]
-    #[case(TailwindVariant::FirstChild, "&:first-child")]
-    #[case(TailwindVariant::LastChild, "&:last-child")]
-    #[case(TailwindVariant::OnlyChild, "&:only-child")]
-    #[case(TailwindVariant::OddChild, "&:nth-child(odd)")]
-    #[case(TailwindVariant::EvenChild, "&:nth-child(even)")]
-    #[case(TailwindVariant::FirstOfType, "&:first-of-type")]
-    #[case(TailwindVariant::LastOfType, "&:last-of-type")]
-    #[case(TailwindVariant::OnlyOfType, "&:only-of-type")]
-    #[case(TailwindVariant::Empty, "&:empty")]
-    #[case(TailwindVariant::Target, "&:target")]
-    #[case(TailwindVariant::Open, "&[open]")]
-    fn test_variant_to_selector_pseudo_classes(
-        #[case] variant: TailwindVariant,
-        #[case] expected: &str,
-    ) {
-        assert_eq!(
-            variant.to_selector(),
-            StyleSelector::Selector(expected.to_string())
-        );
-    }
-
-    // Wave 1.2: Pseudo-element variant selectors (lines 133-141)
-    #[rstest]
-    #[case(TailwindVariant::Placeholder, "&::placeholder")]
-    #[case(TailwindVariant::Before, "&::before")]
-    #[case(TailwindVariant::After, "&::after")]
-    #[case(TailwindVariant::Selection, "&::selection")]
-    #[case(TailwindVariant::Marker, "&::marker")]
-    #[case(TailwindVariant::FirstLetter, "&::first-letter")]
-    #[case(TailwindVariant::FirstLine, "&::first-line")]
-    #[case(TailwindVariant::Backdrop, "&::backdrop")]
-    #[case(TailwindVariant::File, "&::file-selector-button")]
-    fn test_variant_to_selector_pseudo_elements(
-        #[case] variant: TailwindVariant,
-        #[case] expected: &str,
-    ) {
-        assert_eq!(
-            variant.to_selector(),
-            StyleSelector::Selector(expected.to_string())
-        );
-    }
-
-    // Wave 1.3: Group/Peer variant selectors (lines 143-151)
-    #[rstest]
-    #[case(TailwindVariant::GroupFocus, ":is([role=group],[data-group]):focus &")]
-    #[case(
-        TailwindVariant::GroupActive,
-        ":is([role=group],[data-group]):active &"
-    )]
-    #[case(
-        TailwindVariant::GroupDisabled,
-        ":is([role=group],[data-group]):disabled &"
-    )]
-    #[case(TailwindVariant::PeerFocus, ".peer:focus ~ &")]
-    #[case(TailwindVariant::PeerActive, ".peer:active ~ &")]
-    #[case(TailwindVariant::PeerDisabled, ".peer:disabled ~ &")]
-    #[case(TailwindVariant::PeerChecked, ".peer:checked ~ &")]
-    #[case(TailwindVariant::PeerInvalid, ".peer:invalid ~ &")]
-    fn test_variant_to_selector_group_peer(
-        #[case] variant: TailwindVariant,
-        #[case] expected: &str,
-    ) {
-        assert_eq!(
-            variant.to_selector(),
-            StyleSelector::Selector(expected.to_string())
-        );
-    }
-
-    // Wave 1.4: Media variant selectors (lines 153-162)
-    #[rstest]
-    #[case(TailwindVariant::Print, "print")]
-    #[case(TailwindVariant::Screen, "screen")]
-    #[case(TailwindVariant::Portrait, "(orientation:portrait)")]
-    #[case(TailwindVariant::Landscape, "(orientation:landscape)")]
-    #[case(TailwindVariant::MotionReduce, "(prefers-reduced-motion:reduce)")]
-    #[case(TailwindVariant::MotionSafe, "(prefers-reduced-motion:no-preference)")]
-    #[case(TailwindVariant::ContrastMore, "(prefers-contrast:more)")]
-    #[case(TailwindVariant::ContrastLess, "(prefers-contrast:less)")]
-    #[case(TailwindVariant::ForcedColors, "(forced-colors:active)")]
-    fn test_variant_to_selector_media_queries(
-        #[case] variant: TailwindVariant,
-        #[case] expected_query: &str,
-    ) {
-        if let StyleSelector::At { kind, query, .. } = variant.to_selector() {
-            assert_eq!(kind, css::style_selector::AtRuleKind::Media);
-            assert_eq!(query, expected_query);
-        } else {
-            panic!("Expected At selector for {variant:?}");
-        }
-    }
-
-    // Wave 1.4 continued: Direction variants (lines 161-162)
-    #[rstest]
-    #[case(TailwindVariant::Rtl, "[dir=rtl] &")]
-    #[case(TailwindVariant::Ltr, "[dir=ltr] &")]
-    fn test_variant_to_selector_direction(
-        #[case] variant: TailwindVariant,
-        #[case] expected: &str,
-    ) {
-        assert_eq!(
-            variant.to_selector(),
-            StyleSelector::Selector(expected.to_string())
-        );
-    }
-
-    // Wave 1.4: from_prefix tests for untested variants (lines 220-230)
-    #[rstest]
-    #[case("screen", TailwindVariant::Screen)]
-    #[case("portrait", TailwindVariant::Portrait)]
-    #[case("landscape", TailwindVariant::Landscape)]
-    #[case("motion-reduce", TailwindVariant::MotionReduce)]
-    #[case("motion-safe", TailwindVariant::MotionSafe)]
-    #[case("contrast-more", TailwindVariant::ContrastMore)]
-    #[case("contrast-less", TailwindVariant::ContrastLess)]
-    #[case("forced-colors", TailwindVariant::ForcedColors)]
-    #[case("rtl", TailwindVariant::Rtl)]
-    #[case("ltr", TailwindVariant::Ltr)]
-    fn test_from_prefix_media_variants(#[case] prefix: &str, #[case] expected: TailwindVariant) {
-        assert_eq!(TailwindVariant::from_prefix(prefix), Some(expected));
-    }
-
     // ==================== WAVE 2: Edge Cases & Arbitrary Values ====================
-
-    // Wave 2.1: combine_selectors with At-rule (lines 292-295)
-    #[test]
-    fn test_combine_selectors_at_rule_with_hover() {
-        let parsed = parse_single_class("print:hover:bg-blue-500").expect("Should parse");
-        assert_eq!(parsed.variants.len(), 2);
-        assert_eq!(parsed.variants[0], TailwindVariant::Print);
-        assert_eq!(parsed.variants[1], TailwindVariant::Hover);
-
-        let static_style = parsed.to_static_style().expect("style");
-        let selector = static_style.selector().expect("Should have selector");
-        // Should combine into At rule with nested hover selector
-        if let StyleSelector::At {
-            kind,
-            query,
-            selector: nested,
-            ..
-        } = selector
-        {
-            assert_eq!(*kind, css::style_selector::AtRuleKind::Media);
-            assert_eq!(query, "print");
-            assert!(nested.is_some());
-        } else {
-            panic!("Expected At selector");
-        }
-    }
-
-    #[rstest]
-    #[case(
-        "print:motion-reduce:hidden",
-        Some("@media print and (prefers-reduced-motion:reduce)")
-    )]
-    #[case(
-        "motion-reduce:landscape:hover:hidden",
-        Some("@media(prefers-reduced-motion:reduce)and (orientation:landscape) &:hover")
-    )]
-    #[case("print:screen:hidden", None)]
-    fn test_combine_selectors_folds_every_media_variant(
-        #[case] class: &str,
-        #[case] expected: Option<&str>,
-    ) {
-        let parsed = parse_single_class(class).expect("Should parse");
-        assert_eq!(
-            parsed
-                .to_static_style()
-                .and_then(|style| style.selector().map(ToString::to_string)),
-            expected.map(str::to_string)
-        );
-    }
-
-    #[test]
-    fn test_remove_all_substr_matches_str_replace() {
-        for (haystack, needle) in [
-            (":root[data-theme=dark] &", " &"),
-            (".peer:hover ~ & &", " &"),
-            (" & & &", " &"),
-            ("no-match-here", " &"),
-            ("", " &"),
-            (" &", " &"),
-            (":is([role=group],[data-group]):hover &", " &"),
-        ] {
-            let mut buf = haystack.to_string();
-            remove_all_substr(&mut buf, needle);
-            assert_eq!(buf, haystack.replace(needle, ""), "haystack={haystack:?}");
-        }
-    }
-
-    #[test]
-    fn test_combine_selectors_byte_identical_to_prior_impl() {
-        // Oracle: the exact previous implementation of the multi-variant join loop.
-        fn old_combine(variants: &[TailwindVariant]) -> String {
-            let mut selector_str = String::new();
-            for variant in variants {
-                if let StyleSelector::Selector(s) = variant.to_selector() {
-                    if selector_str.is_empty() {
-                        selector_str = s;
-                    } else {
-                        selector_str =
-                            format!("{}{}", selector_str.replace(" &", ""), s.replace('&', ""));
-                        if !selector_str.contains(" &") && !selector_str.ends_with(" &") {
-                            selector_str.push_str(" &");
-                        }
-                    }
-                }
-            }
-            selector_str
-        }
-
-        // A representative spread of &-prefixed, &-suffixed and multi-segment selectors
-        // in several orderings — exercises every branch of the in-place rewrite.
-        let combos: &[&[TailwindVariant]] = &[
-            &[TailwindVariant::Dark, TailwindVariant::Hover],
-            &[TailwindVariant::Hover, TailwindVariant::Dark],
-            &[TailwindVariant::GroupHover, TailwindVariant::Focus],
-            &[TailwindVariant::PeerHover, TailwindVariant::Active],
-            &[
-                TailwindVariant::Hover,
-                TailwindVariant::Focus,
-                TailwindVariant::Dark,
-            ],
-            &[
-                TailwindVariant::Dark,
-                TailwindVariant::GroupHover,
-                TailwindVariant::Before,
-            ],
-            &[TailwindVariant::Before, TailwindVariant::After],
-            &[
-                TailwindVariant::PeerHover,
-                TailwindVariant::GroupFocus,
-                TailwindVariant::Hover,
-            ],
-        ];
-
-        for variants in combos {
-            let cls = TailwindClass {
-                responsive: 0,
-                variants: variants.to_vec(),
-                property: "color",
-                value: Cow::Borrowed("red"),
-                negative: false,
-            };
-            let expected = old_combine(variants);
-            match cls.combine_selectors().expect("selector") {
-                StyleSelector::Selector(actual) => {
-                    assert_eq!(actual, expected, "variants={variants:?}");
-                }
-                other => panic!("expected Selector, got {other:?} for {variants:?}"),
-            }
-        }
-    }
-
-    // Wave 2.2: is_valid_tailwind_value edge cases (lines 816, 825, 859, 864-866)
-    #[test]
-    fn test_has_tailwind_classes_arbitrary_syntax() {
-        // Line 816: arbitrary value syntax detection
-        assert!(has_tailwind_classes("w-[100px]"));
-        assert!(has_tailwind_classes("bg-[#ff0000]"));
-        assert!(has_tailwind_classes("p-[calc(100%-20px)]"));
-    }
-
-    #[test]
-    fn test_is_valid_tailwind_value_empty() {
-        // Line 825: empty value should return false
-        assert!(!is_valid_tailwind_value(""));
-    }
-
-    #[test]
-    fn test_is_valid_tailwind_value_size_keywords() {
-        // Line 859: size keywords
-        assert!(is_valid_tailwind_value("xs"));
-        assert!(is_valid_tailwind_value("sm"));
-        assert!(is_valid_tailwind_value("md"));
-        assert!(is_valid_tailwind_value("lg"));
-        assert!(is_valid_tailwind_value("xl"));
-        assert!(is_valid_tailwind_value("2xl"));
-        assert!(is_valid_tailwind_value("3xl"));
-    }
-
-    #[test]
-    fn test_is_valid_tailwind_value_fractions() {
-        // Lines 864-866: fraction values
-        assert!(is_valid_tailwind_value("1/2"));
-        assert!(is_valid_tailwind_value("1/3"));
-        assert!(is_valid_tailwind_value("2/3"));
-        assert!(is_valid_tailwind_value("1/4"));
-        assert!(is_valid_tailwind_value("3/4"));
-    }
 
     // Wave 2.3: parse_arbitrary_value extended tests (lines 1057-1084)
     #[rstest]
@@ -4269,8 +3489,6 @@ mod tests {
     #[case("z-[999]", "z-index", "999")]
     #[case("font-[Arial]", "font-family", "Arial")]
     #[case("tracking-[0.2em]", "letter-spacing", "0.2em")]
-    #[case("leading-[2]", "line-height", "2")]
-    #[case("duration-[500ms]", "transition-duration", "500ms")]
     #[case("delay-[200ms]", "transition-delay", "200ms")]
     #[case("aspect-[16/9]", "aspect-ratio", "16/9")]
     #[case("columns-[3]", "columns", "3")]
@@ -4286,52 +3504,40 @@ mod tests {
     }
 
     #[rstest]
-    #[case("scale-[1.5]", "transform", "scale(1.5)")]
-    #[case("rotate-[30deg]", "transform", "rotate(30deg)")]
-    #[case("translate-x-[50px]", "transform", "translateX(50px)")]
-    #[case("translate-y-[50px]", "transform", "translateY(50px)")]
-    #[case("skew-x-[10deg]", "transform", "skewX(10deg)")]
-    #[case("skew-y-[10deg]", "transform", "skewY(10deg)")]
+    #[case("scale-[1.5]", &[("scale", "1.5")])]
+    #[case("rotate-[30deg]", &[("rotate", "30deg")])]
+    #[case("translate-x-[50px]", &[("--tw-translate-x", "50px"), ("translate", TRANSLATE)])]
+    #[case("translate-y-[50px]", &[("--tw-translate-y", "50px"), ("translate", TRANSLATE)])]
+    #[case(
+        "translate-[50px]",
+        &[("--tw-translate-x", "50px"), ("--tw-translate-y", "50px"), ("translate", TRANSLATE)]
+    )]
+    #[case("scale-x-[2]", &[("--tw-scale-x", "2"), ("scale", SCALE)])]
+    #[case("skew-x-[10deg]", &[("--tw-skew-x", "skewX(10deg)"), ("transform", TRANSFORM)])]
+    #[case("skew-y-[10deg]", &[("--tw-skew-y", "skewY(10deg)"), ("transform", TRANSFORM)])]
+    #[case(
+        "skew-[10deg]",
+        &[
+            ("--tw-skew-x", "skewX(10deg)"),
+            ("--tw-skew-y", "skewY(10deg)"),
+            ("transform", TRANSFORM),
+        ]
+    )]
+    #[case("-translate-x-[13px]", &[("--tw-translate-x", "calc(13px * -1)"), ("translate", TRANSLATE)])]
+    #[case("-skew-y-[6deg]", &[("--tw-skew-y", "skewY(calc(6deg * -1))"), ("transform", TRANSFORM)])]
     fn test_parse_arbitrary_transform_values(
         #[case] class: &str,
-        #[case] expected_prop: &str,
-        #[case] expected_value: &str,
+        #[case] expected: &[(&str, &str)],
     ) {
-        let parsed = parse_single_class(class).expect("Should parse");
-        assert_eq!(parsed.property, expected_prop);
-        assert_eq!(parsed.value, expected_value);
+        assert_eq!(declarations(class), Some(owned(expected)));
     }
 
     #[rstest]
-    #[case(
-        "grid-cols-[200px_1fr]",
-        "grid-template-columns",
-        "repeat(200px 1fr, minmax(0, 1fr))"
-    )]
-    #[case(
-        "grid-rows-[auto_1fr]",
-        "grid-template-rows",
-        "repeat(auto 1fr, minmax(0, 1fr))"
-    )]
+    #[case("grid-cols-[200px_1fr]", "grid-template-columns", "200px 1fr")]
+    #[case("grid-rows-[auto_1fr]", "grid-template-rows", "auto 1fr")]
     #[case("col-span-[2]", "grid-column", "span 2 / span 2")]
     #[case("row-span-[3]", "grid-row", "span 3 / span 3")]
     fn test_parse_arbitrary_grid_values(
-        #[case] class: &str,
-        #[case] expected_prop: &str,
-        #[case] expected_value: &str,
-    ) {
-        let parsed = parse_single_class(class).expect("Should parse");
-        assert_eq!(parsed.property, expected_prop);
-        assert_eq!(parsed.value, expected_value);
-    }
-
-    #[rstest]
-    #[case("blur-[10px]", "filter", "blur(10px)")]
-    #[case("brightness-[1.2]", "filter", "brightness(1.2)")]
-    #[case("contrast-[1.5]", "filter", "contrast(1.5)")]
-    #[case("saturate-[2]", "filter", "saturate(2)")]
-    #[case("backdrop-blur-[5px]", "backdrop-filter", "blur(5px)")]
-    fn test_parse_arbitrary_filter_values(
         #[case] class: &str,
         #[case] expected_prop: &str,
         #[case] expected_value: &str,
@@ -4483,8 +3689,6 @@ mod tests {
     #[case("mr-4", "margin-right", "1rem")]
     #[case("mb-4", "margin-bottom", "1rem")]
     #[case("ml-4", "margin-left", "1rem")]
-    #[case("space-x-4", "column-gap", "1rem")]
-    #[case("space-y-4", "row-gap", "1rem")]
     #[case("space-x-reverse", "--tw-space-x-reverse", "1")]
     #[case("space-y-reverse", "--tw-space-y-reverse", "1")]
     fn test_parse_logical_spacing_utilities(
@@ -4576,29 +3780,32 @@ mod tests {
         assert_eq!(parsed.value, expected_value);
     }
 
+    // `leading-*` also sets `--tw-leading`, which wins over a font size's line height
     #[rstest]
-    #[case("leading-none", "line-height", "1")]
-    #[case("leading-tight", "line-height", "1.25")]
-    #[case("leading-snug", "line-height", "1.375")]
-    #[case("leading-normal", "line-height", "1.5")]
-    #[case("leading-relaxed", "line-height", "1.625")]
-    #[case("leading-loose", "line-height", "2")]
-    #[case("leading-3", "line-height", ".75rem")]
-    #[case("leading-4", "line-height", "1rem")]
-    #[case("leading-5", "line-height", "1.25rem")]
-    #[case("leading-6", "line-height", "1.5rem")]
-    #[case("leading-7", "line-height", "1.75rem")]
-    #[case("leading-8", "line-height", "2rem")]
-    #[case("leading-9", "line-height", "2.25rem")]
-    #[case("leading-10", "line-height", "2.5rem")]
-    fn test_parse_leading_utilities(
-        #[case] class: &str,
-        #[case] expected_prop: &str,
-        #[case] expected_value: &str,
-    ) {
-        let parsed = parse_single_class(class).expect("Should parse");
-        assert_eq!(parsed.property, expected_prop);
-        assert_eq!(parsed.value, expected_value);
+    #[case("leading-none", "1")]
+    #[case("leading-tight", "1.25")]
+    #[case("leading-snug", "1.375")]
+    #[case("leading-normal", "1.5")]
+    #[case("leading-relaxed", "1.625")]
+    #[case("leading-loose", "2")]
+    #[case("leading-3", "0.75rem")]
+    #[case("leading-4", "1rem")]
+    #[case("leading-5", "1.25rem")]
+    #[case("leading-6", "1.5rem")]
+    #[case("leading-7", "1.75rem")]
+    #[case("leading-8", "2rem")]
+    #[case("leading-9", "2.25rem")]
+    #[case("leading-10", "2.5rem")]
+    #[case("leading-[2]", "2")]
+    #[case("leading-(--l)", "var(--l)")]
+    fn test_parse_leading_utilities(#[case] class: &str, #[case] expected_value: &str) {
+        assert_eq!(
+            declarations(class),
+            Some(owned(&[
+                ("--tw-leading", expected_value),
+                ("line-height", expected_value)
+            ]))
+        );
     }
 
     // Wave 4.4: List styles & alignment (lines 1947-1965)
@@ -4688,198 +3895,31 @@ mod tests {
         assert_eq!(parsed.value, expected_value);
     }
 
+    // Sides round both of their corners
     #[rstest]
-    #[case(
-        "bg-gradient-to-t",
-        "background-image",
-        "linear-gradient(to top, var(--tw-gradient-stops))"
-    )]
-    #[case(
-        "bg-gradient-to-tr",
-        "background-image",
-        "linear-gradient(to top right, var(--tw-gradient-stops))"
-    )]
-    #[case(
-        "bg-gradient-to-r",
-        "background-image",
-        "linear-gradient(to right, var(--tw-gradient-stops))"
-    )]
-    #[case(
-        "bg-gradient-to-br",
-        "background-image",
-        "linear-gradient(to bottom right, var(--tw-gradient-stops))"
-    )]
-    #[case(
-        "bg-gradient-to-b",
-        "background-image",
-        "linear-gradient(to bottom, var(--tw-gradient-stops))"
-    )]
-    #[case(
-        "bg-gradient-to-bl",
-        "background-image",
-        "linear-gradient(to bottom left, var(--tw-gradient-stops))"
-    )]
-    #[case(
-        "bg-gradient-to-l",
-        "background-image",
-        "linear-gradient(to left, var(--tw-gradient-stops))"
-    )]
-    #[case(
-        "bg-gradient-to-tl",
-        "background-image",
-        "linear-gradient(to top left, var(--tw-gradient-stops))"
-    )]
-    fn test_parse_background_gradient(
-        #[case] class: &str,
-        #[case] expected_prop: &str,
-        #[case] expected_value: &str,
-    ) {
-        let parsed = parse_single_class(class).expect("Should parse");
-        assert_eq!(parsed.property, expected_prop);
-        assert_eq!(parsed.value, expected_value);
-    }
-
-    // Wave 5.2: Gradient stops (lines 2057-2068)
-    #[rstest]
-    #[case("from-red-500", "--tw-gradient-from", "#ef4444")]
-    #[case("from-blue-500", "--tw-gradient-from", "#3b82f6")]
-    #[case("via-red-500", "--tw-gradient-via", "#ef4444")]
-    #[case("via-blue-500", "--tw-gradient-via", "#3b82f6")]
-    #[case("to-red-500", "--tw-gradient-to", "#ef4444")]
-    #[case("to-blue-500", "--tw-gradient-to", "#3b82f6")]
-    fn test_parse_gradient_stops(
-        #[case] class: &str,
-        #[case] expected_prop: &str,
-        #[case] expected_value: &str,
-    ) {
-        let parsed = parse_single_class(class).expect("Should parse");
-        assert_eq!(parsed.property, expected_prop);
-        assert_eq!(parsed.value, expected_value);
-    }
-
-    // Wave 5.3: Border corners/sides (lines 2081-2189)
-    #[rstest]
-    #[case("rounded-t-lg", "border-top-left-radius", "0.5rem")]
-    #[case("rounded-r-lg", "border-top-right-radius", "0.5rem")]
-    #[case("rounded-b-lg", "border-bottom-right-radius", "0.5rem")]
-    #[case("rounded-l-lg", "border-bottom-left-radius", "0.5rem")]
-    #[case("rounded-tl-lg", "border-top-left-radius", "0.5rem")]
-    #[case("rounded-tr-lg", "border-top-right-radius", "0.5rem")]
-    #[case("rounded-br-lg", "border-bottom-right-radius", "0.5rem")]
-    #[case("rounded-bl-lg", "border-bottom-left-radius", "0.5rem")]
-    fn test_parse_border_radius_corners(
-        #[case] class: &str,
-        #[case] expected_prop: &str,
-        #[case] expected_value: &str,
-    ) {
-        let parsed = parse_single_class(class).expect("Should parse");
-        assert_eq!(parsed.property, expected_prop);
-        assert_eq!(parsed.value, expected_value);
-    }
-
-    #[rstest]
-    #[case("border-t-2", "border-top-width", "2px")]
-    #[case("border-r-2", "border-right-width", "2px")]
-    #[case("border-b-2", "border-bottom-width", "2px")]
-    #[case("border-l-2", "border-left-width", "2px")]
-    #[case("border-x-2", "border-inline-width", "2px")]
-    #[case("border-y-2", "border-block-width", "2px")]
-    fn test_parse_border_width_sides(
-        #[case] class: &str,
-        #[case] expected_prop: &str,
-        #[case] expected_value: &str,
-    ) {
-        let parsed = parse_single_class(class).expect("Should parse");
-        assert_eq!(parsed.property, expected_prop);
-        assert_eq!(parsed.value, expected_value);
+    #[case("rounded-t-lg", &[("border-top-left-radius", "0.5rem"), ("border-top-right-radius", "0.5rem")])]
+    #[case("rounded-r-lg", &[("border-top-right-radius", "0.5rem"), ("border-bottom-right-radius", "0.5rem")])]
+    #[case("rounded-b-lg", &[("border-bottom-right-radius", "0.5rem"), ("border-bottom-left-radius", "0.5rem")])]
+    #[case("rounded-l-lg", &[("border-top-left-radius", "0.5rem"), ("border-bottom-left-radius", "0.5rem")])]
+    #[case("rounded-s-lg", &[("border-start-start-radius", "0.5rem"), ("border-end-start-radius", "0.5rem")])]
+    #[case("rounded-e-lg", &[("border-start-end-radius", "0.5rem"), ("border-end-end-radius", "0.5rem")])]
+    #[case("rounded-t", &[("border-top-left-radius", "0.25rem"), ("border-top-right-radius", "0.25rem")])]
+    #[case("rounded-tl-lg", &[("border-top-left-radius", "0.5rem")])]
+    #[case("rounded-tr-lg", &[("border-top-right-radius", "0.5rem")])]
+    #[case("rounded-br-lg", &[("border-bottom-right-radius", "0.5rem")])]
+    #[case("rounded-bl-lg", &[("border-bottom-left-radius", "0.5rem")])]
+    #[case("rounded-ss-lg", &[("border-start-start-radius", "0.5rem")])]
+    #[case("rounded-se-lg", &[("border-start-end-radius", "0.5rem")])]
+    #[case("rounded-ee-lg", &[("border-end-end-radius", "0.5rem")])]
+    #[case("rounded-es-lg", &[("border-end-start-radius", "0.5rem")])]
+    #[case("rounded-t-[3px]", &[("border-top-left-radius", "3px"), ("border-top-right-radius", "3px")])]
+    #[case("rounded-[3px]", &[("border-radius", "3px")])]
+    fn test_parse_border_radius_corners(#[case] class: &str, #[case] expected: &[(&str, &str)]) {
+        assert_eq!(declarations(class), Some(owned(expected)));
     }
 
     // Wave 5.4: Border styles, outline, ring, divide (lines 2211-2313)
-    #[rstest]
-    #[case("border-solid", "border-style", "solid")]
-    #[case("border-dashed", "border-style", "dashed")]
-    #[case("border-dotted", "border-style", "dotted")]
-    #[case("border-double", "border-style", "double")]
-    #[case("border-hidden", "border-style", "hidden")]
-    #[case("border-none", "border-style", "none")]
-    fn test_parse_border_styles(
-        #[case] class: &str,
-        #[case] expected_prop: &str,
-        #[case] expected_value: &str,
-    ) {
-        let parsed = parse_single_class(class).expect("Should parse");
-        assert_eq!(parsed.property, expected_prop);
-        assert_eq!(parsed.value, expected_value);
-    }
-
-    #[rstest]
-    #[case("outline-none", "outline", "2px solid transparent")]
-    #[case("outline", "outline-style", "solid")]
-    #[case("outline-dashed", "outline-style", "dashed")]
-    #[case("outline-dotted", "outline-style", "dotted")]
-    #[case("outline-double", "outline-style", "double")]
-    #[case("outline-0", "outline-width", "0px")]
-    #[case("outline-1", "outline-width", "1px")]
-    #[case("outline-2", "outline-width", "2px")]
-    #[case("outline-4", "outline-width", "4px")]
-    #[case("outline-8", "outline-width", "8px")]
-    fn test_parse_outline_utilities(
-        #[case] class: &str,
-        #[case] expected_prop: &str,
-        #[case] expected_value: &str,
-    ) {
-        let parsed = parse_single_class(class).expect("Should parse");
-        assert_eq!(parsed.property, expected_prop);
-        assert_eq!(parsed.value, expected_value);
-    }
-
-    #[rstest]
-    #[case("ring", "box-shadow", "0 0 0 3px var(--tw-ring-color)")]
-    #[case("ring-0", "--tw-ring-offset-shadow", "0 0 #0000")]
-    #[case("ring-1", "box-shadow", "0 0 0 1px var(--tw-ring-color)")]
-    #[case("ring-2", "box-shadow", "0 0 0 2px var(--tw-ring-color)")]
-    #[case("ring-inset", "--tw-ring-inset", "inset")]
-    fn test_parse_ring_utilities(
-        #[case] class: &str,
-        #[case] expected_prop: &str,
-        #[case] expected_value: &str,
-    ) {
-        let parsed = parse_single_class(class).expect("Should parse");
-        assert_eq!(parsed.property, expected_prop);
-        assert_eq!(parsed.value, expected_value);
-    }
-
-    #[rstest]
-    #[case("divide-x", "--tw-divide-x-reverse", "0")]
-    #[case("divide-y", "--tw-divide-y-reverse", "0")]
-    #[case("divide-x-2", "border-inline-width", "2px")]
-    #[case("divide-y-2", "border-block-width", "2px")]
-    #[case("divide-x-reverse", "--tw-divide-x-reverse", "1")]
-    #[case("divide-y-reverse", "--tw-divide-y-reverse", "1")]
-    fn test_parse_divide_utilities(
-        #[case] class: &str,
-        #[case] expected_prop: &str,
-        #[case] expected_value: &str,
-    ) {
-        let parsed = parse_single_class(class).expect("Should parse");
-        assert_eq!(parsed.property, expected_prop);
-        assert_eq!(parsed.value, expected_value);
-    }
-
     // Wave 5.5: Effects (lines 2328-2350)
-    #[rstest]
-    #[case("shadow-red-500", "--tw-shadow-color", "#ef4444")]
-    #[case("shadow-blue-500", "--tw-shadow-color", "#3b82f6")]
-    fn test_parse_shadow_color_utilities(
-        #[case] class: &str,
-        #[case] expected_prop: &str,
-        #[case] expected_value: &str,
-    ) {
-        let parsed = parse_single_class(class).expect("Should parse");
-        assert_eq!(parsed.property, expected_prop);
-        assert_eq!(parsed.value, expected_value);
-    }
-
     #[rstest]
     #[case("bg-blend-normal", "background-blend-mode", "normal")]
     #[case("bg-blend-multiply", "background-blend-mode", "multiply")]
@@ -4896,195 +3936,7 @@ mod tests {
     }
 
     // Wave 5.6: Filters & backdrop filters (lines 2365-2555)
-    #[rstest]
-    #[case("blur-none", "filter", "blur(0)")]
-    #[case("blur-sm", "filter", "blur(4px)")]
-    #[case("blur-md", "filter", "blur(12px)")]
-    #[case("blur-xl", "filter", "blur(24px)")]
-    #[case("blur-2xl", "filter", "blur(40px)")]
-    #[case("blur-3xl", "filter", "blur(64px)")]
-    fn test_parse_blur_utilities(
-        #[case] class: &str,
-        #[case] expected_prop: &str,
-        #[case] expected_value: &str,
-    ) {
-        let parsed = parse_single_class(class).expect("Should parse");
-        assert_eq!(parsed.property, expected_prop);
-        assert_eq!(parsed.value, expected_value);
-    }
-
-    #[rstest]
-    #[case("brightness-0", "filter", "brightness(0)")]
-    #[case("brightness-50", "filter", "brightness(.5)")]
-    #[case("brightness-100", "filter", "brightness(1)")]
-    #[case("brightness-150", "filter", "brightness(1.5)")]
-    #[case("brightness-200", "filter", "brightness(2)")]
-    fn test_parse_brightness_utilities(
-        #[case] class: &str,
-        #[case] expected_prop: &str,
-        #[case] expected_value: &str,
-    ) {
-        let parsed = parse_single_class(class).expect("Should parse");
-        assert_eq!(parsed.property, expected_prop);
-        assert_eq!(parsed.value, expected_value);
-    }
-
-    #[rstest]
-    #[case("contrast-0", "filter", "contrast(0)")]
-    #[case("contrast-50", "filter", "contrast(.5)")]
-    #[case("contrast-100", "filter", "contrast(1)")]
-    #[case("contrast-150", "filter", "contrast(1.5)")]
-    #[case("contrast-200", "filter", "contrast(2)")]
-    fn test_parse_contrast_utilities(
-        #[case] class: &str,
-        #[case] expected_prop: &str,
-        #[case] expected_value: &str,
-    ) {
-        let parsed = parse_single_class(class).expect("Should parse");
-        assert_eq!(parsed.property, expected_prop);
-        assert_eq!(parsed.value, expected_value);
-    }
-
-    #[rstest]
-    #[case(
-        "drop-shadow",
-        "filter",
-        "drop-shadow(0 1px 2px rgb(0 0 0 / 0.1)) drop-shadow(0 1px 1px rgb(0 0 0 / 0.06))"
-    )]
-    #[case("drop-shadow-sm", "filter", "drop-shadow(0 1px 1px rgb(0 0 0 / 0.05))")]
-    #[case(
-        "drop-shadow-md",
-        "filter",
-        "drop-shadow(0 4px 3px rgb(0 0 0 / 0.07)) drop-shadow(0 2px 2px rgb(0 0 0 / 0.06))"
-    )]
-    #[case(
-        "drop-shadow-lg",
-        "filter",
-        "drop-shadow(0 10px 8px rgb(0 0 0 / 0.04)) drop-shadow(0 4px 3px rgb(0 0 0 / 0.1))"
-    )]
-    #[case(
-        "drop-shadow-xl",
-        "filter",
-        "drop-shadow(0 20px 13px rgb(0 0 0 / 0.03)) drop-shadow(0 8px 5px rgb(0 0 0 / 0.08))"
-    )]
-    #[case(
-        "drop-shadow-2xl",
-        "filter",
-        "drop-shadow(0 25px 25px rgb(0 0 0 / 0.15))"
-    )]
-    #[case("drop-shadow-none", "filter", "drop-shadow(0 0 #0000)")]
-    fn test_parse_drop_shadow_utilities(
-        #[case] class: &str,
-        #[case] expected_prop: &str,
-        #[case] expected_value: &str,
-    ) {
-        let parsed = parse_single_class(class).expect("Should parse");
-        assert_eq!(parsed.property, expected_prop);
-        assert_eq!(parsed.value, expected_value);
-    }
-
-    #[rstest]
-    #[case("hue-rotate-0", "filter", "hue-rotate(0deg)")]
-    #[case("hue-rotate-15", "filter", "hue-rotate(15deg)")]
-    #[case("hue-rotate-30", "filter", "hue-rotate(30deg)")]
-    #[case("hue-rotate-60", "filter", "hue-rotate(60deg)")]
-    #[case("hue-rotate-90", "filter", "hue-rotate(90deg)")]
-    #[case("hue-rotate-180", "filter", "hue-rotate(180deg)")]
-    fn test_parse_hue_rotate_utilities(
-        #[case] class: &str,
-        #[case] expected_prop: &str,
-        #[case] expected_value: &str,
-    ) {
-        let parsed = parse_single_class(class).expect("Should parse");
-        assert_eq!(parsed.property, expected_prop);
-        assert_eq!(parsed.value, expected_value);
-    }
-
-    #[rstest]
-    #[case("invert-0", "filter", "invert(0)")]
-    #[case("invert", "filter", "invert(100%)")]
-    #[case("saturate-0", "filter", "saturate(0)")]
-    #[case("saturate-50", "filter", "saturate(.5)")]
-    #[case("saturate-100", "filter", "saturate(1)")]
-    #[case("saturate-150", "filter", "saturate(1.5)")]
-    #[case("saturate-200", "filter", "saturate(2)")]
-    #[case("sepia-0", "filter", "sepia(0)")]
-    #[case("sepia", "filter", "sepia(100%)")]
-    fn test_parse_filter_effects_utilities(
-        #[case] class: &str,
-        #[case] expected_prop: &str,
-        #[case] expected_value: &str,
-    ) {
-        let parsed = parse_single_class(class).expect("Should parse");
-        assert_eq!(parsed.property, expected_prop);
-        assert_eq!(parsed.value, expected_value);
-    }
-
-    #[rstest]
-    #[case("backdrop-blur", "backdrop-filter", "blur(8px)")]
-    #[case("backdrop-blur-sm", "backdrop-filter", "blur(4px)")]
-    #[case("backdrop-blur-md", "backdrop-filter", "blur(12px)")]
-    #[case("backdrop-blur-lg", "backdrop-filter", "blur(16px)")]
-    #[case("backdrop-blur-xl", "backdrop-filter", "blur(24px)")]
-    #[case("backdrop-blur-2xl", "backdrop-filter", "blur(40px)")]
-    #[case("backdrop-blur-3xl", "backdrop-filter", "blur(64px)")]
-    #[case("backdrop-blur-none", "backdrop-filter", "blur(0)")]
-    fn test_parse_backdrop_blur_utilities(
-        #[case] class: &str,
-        #[case] expected_prop: &str,
-        #[case] expected_value: &str,
-    ) {
-        let parsed = parse_single_class(class).expect("Should parse");
-        assert_eq!(parsed.property, expected_prop);
-        assert_eq!(parsed.value, expected_value);
-    }
-
-    #[rstest]
-    #[case("backdrop-brightness-0", "backdrop-filter", "brightness(0)")]
-    #[case("backdrop-brightness-100", "backdrop-filter", "brightness(1)")]
-    #[case("backdrop-contrast-0", "backdrop-filter", "contrast(0)")]
-    #[case("backdrop-contrast-100", "backdrop-filter", "contrast(1)")]
-    #[case("backdrop-grayscale-0", "backdrop-filter", "grayscale(0)")]
-    #[case("backdrop-grayscale", "backdrop-filter", "grayscale(100%)")]
-    #[case("backdrop-invert-0", "backdrop-filter", "invert(0)")]
-    #[case("backdrop-invert", "backdrop-filter", "invert(100%)")]
-    #[case("backdrop-opacity-0", "backdrop-filter", "opacity(0)")]
-    #[case("backdrop-opacity-100", "backdrop-filter", "opacity(1)")]
-    #[case("backdrop-saturate-0", "backdrop-filter", "saturate(0)")]
-    #[case("backdrop-saturate-100", "backdrop-filter", "saturate(1)")]
-    #[case("backdrop-sepia-0", "backdrop-filter", "sepia(0)")]
-    #[case("backdrop-sepia", "backdrop-filter", "sepia(100%)")]
-    fn test_parse_backdrop_filter_utilities(
-        #[case] class: &str,
-        #[case] expected_prop: &str,
-        #[case] expected_value: &str,
-    ) {
-        let parsed = parse_single_class(class).expect("Should parse");
-        assert_eq!(parsed.property, expected_prop);
-        assert_eq!(parsed.value, expected_value);
-    }
-
     // Wave 5.7: Transitions & animations (lines 2600-2618)
-    #[rstest]
-    #[case("delay-0", "transition-delay", "0s")]
-    #[case("delay-75", "transition-delay", "75ms")]
-    #[case("delay-100", "transition-delay", "100ms")]
-    #[case("delay-150", "transition-delay", "150ms")]
-    #[case("delay-200", "transition-delay", "200ms")]
-    #[case("delay-300", "transition-delay", "300ms")]
-    #[case("delay-500", "transition-delay", "500ms")]
-    #[case("delay-700", "transition-delay", "700ms")]
-    #[case("delay-1000", "transition-delay", "1000ms")]
-    fn test_parse_delay_utilities(
-        #[case] class: &str,
-        #[case] expected_prop: &str,
-        #[case] expected_value: &str,
-    ) {
-        let parsed = parse_single_class(class).expect("Should parse");
-        assert_eq!(parsed.property, expected_prop);
-        assert_eq!(parsed.value, expected_value);
-    }
-
     #[rstest]
     #[case("animate-none", "animation", "none")]
     #[case("animate-spin", "animation", "spin 1s linear infinite")]
@@ -5109,81 +3961,132 @@ mod tests {
         assert_eq!(parsed.value, expected_value);
     }
 
-    // Wave 5.8: Transforms (lines 2630-2716)
     #[rstest]
-    #[case("scale-x-0", "transform", "scaleX(0)")]
-    #[case("scale-x-50", "transform", "scaleX(0.5)")]
-    #[case("scale-x-100", "transform", "scaleX(1)")]
-    #[case("scale-x-150", "transform", "scaleX(1.5)")]
-    #[case("scale-y-0", "transform", "scaleY(0)")]
-    #[case("scale-y-50", "transform", "scaleY(0.5)")]
-    #[case("scale-y-100", "transform", "scaleY(1)")]
-    #[case("scale-y-150", "transform", "scaleY(1.5)")]
+    #[case("scale-x-0", "--tw-scale-x", "0%")]
+    #[case("scale-x-50", "--tw-scale-x", "50%")]
+    #[case("scale-x-100", "--tw-scale-x", "100%")]
+    #[case("scale-x-150", "--tw-scale-x", "150%")]
+    #[case("scale-y-0", "--tw-scale-y", "0%")]
+    #[case("scale-y-50", "--tw-scale-y", "50%")]
+    #[case("scale-y-100", "--tw-scale-y", "100%")]
+    #[case("scale-y-150", "--tw-scale-y", "150%")]
+    #[case("-scale-x-50", "--tw-scale-x", "-50%")]
     fn test_parse_scale_axis_utilities(
         #[case] class: &str,
         #[case] expected_prop: &str,
         #[case] expected_value: &str,
     ) {
-        let parsed = parse_single_class(class).expect("Should parse");
-        assert_eq!(parsed.property, expected_prop);
-        assert_eq!(parsed.value, expected_value);
+        assert_eq!(
+            declarations(class),
+            Some(owned(&[(expected_prop, expected_value), ("scale", SCALE)]))
+        );
     }
 
     #[rstest]
-    #[case("rotate-0", "transform", "rotate(0deg)")]
-    #[case("rotate-1", "transform", "rotate(1deg)")]
-    #[case("rotate-2", "transform", "rotate(2deg)")]
-    #[case("rotate-3", "transform", "rotate(3deg)")]
-    #[case("rotate-6", "transform", "rotate(6deg)")]
-    #[case("rotate-12", "transform", "rotate(12deg)")]
-    #[case("rotate-90", "transform", "rotate(90deg)")]
-    #[case("rotate-180", "transform", "rotate(180deg)")]
-    fn test_parse_rotate_utilities(
-        #[case] class: &str,
-        #[case] expected_prop: &str,
-        #[case] expected_value: &str,
-    ) {
-        let parsed = parse_single_class(class).expect("Should parse");
-        assert_eq!(parsed.property, expected_prop);
-        assert_eq!(parsed.value, expected_value);
+    #[case("scale-110", "110%")]
+    #[case("-scale-110", "-110%")]
+    fn test_parse_scale_utilities(#[case] class: &str, #[case] expected_value: &str) {
+        assert_eq!(
+            declarations(class),
+            Some(owned(&[
+                ("--tw-scale-x", expected_value),
+                ("--tw-scale-y", expected_value),
+                ("--tw-scale-z", expected_value),
+                ("scale", SCALE),
+            ]))
+        );
     }
 
     #[rstest]
-    #[case("translate-y-4", "transform", "translateY(1rem)")]
-    #[case("translate-y-px", "transform", "translateY(1px)")]
-    #[case("translate-y-full", "transform", "translateY(100%)")]
-    #[case("translate-y-1/2", "transform", "translateY(50%)")]
+    #[case("rotate-0", "0deg")]
+    #[case("rotate-1", "1deg")]
+    #[case("rotate-2", "2deg")]
+    #[case("rotate-3", "3deg")]
+    #[case("rotate-6", "6deg")]
+    #[case("rotate-12", "12deg")]
+    #[case("rotate-90", "90deg")]
+    #[case("rotate-180", "180deg")]
+    #[case("rotate-15", "15deg")]
+    #[case("-rotate-45", "-45deg")]
+    fn test_parse_rotate_utilities(#[case] class: &str, #[case] expected_value: &str) {
+        assert_eq!(
+            declarations(class),
+            Some(owned(&[("rotate", expected_value)]))
+        );
+    }
+
+    #[rstest]
+    #[case("translate-y-4", "--tw-translate-y", "1rem")]
+    #[case("translate-y-px", "--tw-translate-y", "1px")]
+    #[case("translate-y-full", "--tw-translate-y", "100%")]
+    #[case("translate-y-1/2", "--tw-translate-y", "50%")]
+    #[case("translate-x-4", "--tw-translate-x", "1rem")]
+    #[case("-translate-x-4", "--tw-translate-x", "-1rem")]
+    #[case("-translate-x-1/2", "--tw-translate-x", "-50%")]
     fn test_parse_translate_y_utilities(
         #[case] class: &str,
         #[case] expected_prop: &str,
         #[case] expected_value: &str,
     ) {
-        let parsed = parse_single_class(class).expect("Should parse");
-        assert_eq!(parsed.property, expected_prop);
-        assert_eq!(parsed.value, expected_value);
+        assert_eq!(
+            declarations(class),
+            Some(owned(&[
+                (expected_prop, expected_value),
+                ("translate", TRANSLATE)
+            ]))
+        );
+    }
+
+    #[test]
+    fn test_parse_translate_both_axes() {
+        assert_eq!(
+            declarations("translate-2"),
+            Some(owned(&[
+                ("--tw-translate-x", "0.5rem"),
+                ("--tw-translate-y", "0.5rem"),
+                ("translate", TRANSLATE),
+            ]))
+        );
     }
 
     #[rstest]
-    #[case("skew-x-0", "transform", "skewX(0deg)")]
-    #[case("skew-x-1", "transform", "skewX(1deg)")]
-    #[case("skew-x-2", "transform", "skewX(2deg)")]
-    #[case("skew-x-3", "transform", "skewX(3deg)")]
-    #[case("skew-x-6", "transform", "skewX(6deg)")]
-    #[case("skew-x-12", "transform", "skewX(12deg)")]
-    #[case("skew-y-0", "transform", "skewY(0deg)")]
-    #[case("skew-y-1", "transform", "skewY(1deg)")]
-    #[case("skew-y-2", "transform", "skewY(2deg)")]
-    #[case("skew-y-3", "transform", "skewY(3deg)")]
-    #[case("skew-y-6", "transform", "skewY(6deg)")]
-    #[case("skew-y-12", "transform", "skewY(12deg)")]
+    #[case("skew-x-0", "--tw-skew-x", "skewX(0deg)")]
+    #[case("skew-x-1", "--tw-skew-x", "skewX(1deg)")]
+    #[case("skew-x-2", "--tw-skew-x", "skewX(2deg)")]
+    #[case("skew-x-3", "--tw-skew-x", "skewX(3deg)")]
+    #[case("skew-x-6", "--tw-skew-x", "skewX(6deg)")]
+    #[case("skew-x-12", "--tw-skew-x", "skewX(12deg)")]
+    #[case("skew-y-0", "--tw-skew-y", "skewY(0deg)")]
+    #[case("skew-y-1", "--tw-skew-y", "skewY(1deg)")]
+    #[case("skew-y-2", "--tw-skew-y", "skewY(2deg)")]
+    #[case("skew-y-3", "--tw-skew-y", "skewY(3deg)")]
+    #[case("skew-y-6", "--tw-skew-y", "skewY(6deg)")]
+    #[case("skew-y-12", "--tw-skew-y", "skewY(12deg)")]
+    #[case("-skew-y-6", "--tw-skew-y", "skewY(-6deg)")]
     fn test_parse_skew_utilities(
         #[case] class: &str,
         #[case] expected_prop: &str,
         #[case] expected_value: &str,
     ) {
-        let parsed = parse_single_class(class).expect("Should parse");
-        assert_eq!(parsed.property, expected_prop);
-        assert_eq!(parsed.value, expected_value);
+        assert_eq!(
+            declarations(class),
+            Some(owned(&[
+                (expected_prop, expected_value),
+                ("transform", TRANSFORM)
+            ]))
+        );
+    }
+
+    #[test]
+    fn test_parse_skew_both_axes() {
+        assert_eq!(
+            declarations("skew-3"),
+            Some(owned(&[
+                ("--tw-skew-x", "skewX(3deg)"),
+                ("--tw-skew-y", "skewY(3deg)"),
+                ("transform", TRANSFORM),
+            ]))
+        );
     }
 
     #[rstest]
@@ -5209,10 +4112,10 @@ mod tests {
     // Wave 5.9: Interactivity (lines 2732-2842)
     #[rstest]
     #[case("accent-auto", "accent-color", "auto")]
-    #[case("accent-red-500", "accent-color", "#ef4444")]
+    #[case("accent-red-500", "accent-color", "oklch(63.7% 0.237 25.331)")]
     #[case("appearance-none", "appearance", "none")]
     #[case("appearance-auto", "appearance", "auto")]
-    #[case("caret-red-500", "caret-color", "#ef4444")]
+    #[case("caret-red-500", "caret-color", "oklch(63.7% 0.237 25.331)")]
     fn test_parse_interactivity_accent_caret(
         #[case] class: &str,
         #[case] expected_prop: &str,
@@ -5316,46 +4219,11 @@ mod tests {
     // WAVE 6: Coverage Gap Tests - Remaining Uncovered Lines
     // ============================================================================
 
-    // Wave 6.1: TailwindVariant::from_prefix() returning None (line 230)
-    #[test]
-    fn test_tailwind_variant_unknown_prefix_returns_none() {
-        assert_eq!(TailwindVariant::from_prefix("unknown-prefix"), None);
-        assert_eq!(TailwindVariant::from_prefix("nonexistent"), None);
-        assert_eq!(TailwindVariant::from_prefix("foo-bar"), None);
-        assert_eq!(TailwindVariant::from_prefix("xyz"), None);
-        assert_eq!(TailwindVariant::from_prefix(""), None);
-    }
-
-    // Wave 6.2: parse_arbitrary_value edge cases (lines 1015, 1084)
-    #[test]
-    fn test_parse_arbitrary_value_malformed_brackets() {
-        // Test bracket_end <= bracket_start case (line 1015)
-        let result = parse_arbitrary_value("][");
-        assert!(result.is_none());
-
-        let result = parse_arbitrary_value("w-][");
-        assert!(result.is_none());
-    }
-
-    #[test]
-    fn test_parse_arbitrary_value_unknown_prefix() {
-        // Test unknown prefix fallback (line 1084)
-        let result = parse_arbitrary_value("unknown-[value]");
-        assert!(result.is_none());
-
-        let result = parse_arbitrary_value("foo-[bar]");
-        assert!(result.is_none());
-
-        let result = parse_arbitrary_value("xyz-[123px]");
-        assert!(result.is_none());
-    }
-
-    // Wave 6.3: Custom aspect-ratio (line 1202)
     #[rstest]
-    #[case("aspect-4-3", "aspect-ratio", "4 / 3")]
-    #[case("aspect-16-10", "aspect-ratio", "16 / 10")]
-    #[case("aspect-21-9", "aspect-ratio", "21 / 9")]
-    #[case("aspect-3-2", "aspect-ratio", "3 / 2")]
+    #[case("aspect-4/3", "aspect-ratio", "4/3")]
+    #[case("aspect-16/10", "aspect-ratio", "16/10")]
+    #[case("aspect-21/9", "aspect-ratio", "21/9")]
+    #[case("aspect-3/2", "aspect-ratio", "3/2")]
     fn test_parse_custom_aspect_ratio(
         #[case] class: &str,
         #[case] expected_prop: &str,
@@ -5455,16 +4323,16 @@ mod tests {
         assert_eq!(parsed.value, expected_value);
     }
 
-    #[rstest]
-    #[case("truncate", "text-overflow", "ellipsis")]
-    fn test_parse_truncate(
-        #[case] class: &str,
-        #[case] expected_prop: &str,
-        #[case] expected_value: &str,
-    ) {
-        let parsed = parse_single_class(class).expect("Should parse truncate");
-        assert_eq!(parsed.property, expected_prop);
-        assert_eq!(parsed.value, expected_value);
+    #[test]
+    fn test_parse_truncate() {
+        assert_eq!(
+            declarations("truncate"),
+            Some(owned(&[
+                ("overflow", "hidden"),
+                ("text-overflow", "ellipsis"),
+                ("white-space", "nowrap"),
+            ]))
+        );
     }
 
     #[rstest]
@@ -5484,31 +4352,23 @@ mod tests {
         assert_eq!(parsed.value, expected_value);
     }
 
-    // Wave 6.8: Tracking/leading fallbacks (lines 1918, 1940)
+    // Only Tailwind's names compile; any other word is someone else's class
     #[rstest]
-    #[case("tracking-custom", "letter-spacing", "custom")]
-    #[case("tracking-0.5em", "letter-spacing", "0.5em")]
-    fn test_parse_tracking_fallback(
-        #[case] class: &str,
-        #[case] expected_prop: &str,
-        #[case] expected_value: &str,
-    ) {
-        let parsed = parse_single_class(class).expect("Should parse tracking fallback");
-        assert_eq!(parsed.property, expected_prop);
-        assert_eq!(parsed.value, expected_value);
+    #[case("tracking-custom")]
+    #[case("tracking-0.5em")]
+    fn test_parse_tracking_fallback(#[case] class: &str) {
+        assert_eq!(declarations(class), None);
     }
 
-    #[rstest]
-    #[case("leading-custom", "line-height", "custom")]
-    #[case("leading-1.5", "line-height", "1.5")]
-    fn test_parse_leading_fallback(
-        #[case] class: &str,
-        #[case] expected_prop: &str,
-        #[case] expected_value: &str,
-    ) {
-        let parsed = parse_single_class(class).expect("Should parse leading fallback");
-        assert_eq!(parsed.property, expected_prop);
-        assert_eq!(parsed.value, expected_value);
+    #[test]
+    fn test_parse_leading_fallback() {
+        assert_eq!(
+            declarations("leading-1.5"),
+            Some(owned(&[
+                ("--tw-leading", "0.375rem"),
+                ("line-height", "0.375rem")
+            ]))
+        );
     }
 
     // Wave 6.9: List style fallback (line 1953)
@@ -5529,14 +4389,14 @@ mod tests {
 
     // Wave 6.11: Individual rounded variants (via BORDER_RADIUS_SCALE lookup)
     #[rstest]
-    #[case("rounded-none", "border-radius", "0px")]
-    #[case("rounded-sm", "border-radius", "0.125rem")]
+    #[case("rounded-none", "border-radius", "0")]
+    #[case("rounded-sm", "border-radius", "0.25rem")]
     #[case("rounded-md", "border-radius", "0.375rem")]
     #[case("rounded-lg", "border-radius", "0.5rem")]
     #[case("rounded-xl", "border-radius", "0.75rem")]
     #[case("rounded-2xl", "border-radius", "1rem")]
     #[case("rounded-3xl", "border-radius", "1.5rem")]
-    #[case("rounded-full", "border-radius", "9999px")]
+    #[case("rounded-full", "border-radius", "calc(infinity * 1px)")]
     fn test_parse_individual_rounded_variants(
         #[case] class: &str,
         #[case] expected_prop: &str,
@@ -5561,27 +4421,12 @@ mod tests {
         assert_eq!(parsed.value, expected_value);
     }
 
-    #[rstest]
-    #[case("border-0", "border-width", "0px")]
-    #[case("border-2", "border-width", "2px")]
-    #[case("border-4", "border-width", "4px")]
-    #[case("border-8", "border-width", "8px")]
-    fn test_parse_border_width_standalone(
-        #[case] class: &str,
-        #[case] expected_prop: &str,
-        #[case] expected_value: &str,
-    ) {
-        let parsed = parse_single_class(class).expect("Should parse border width");
-        assert_eq!(parsed.property, expected_prop);
-        assert_eq!(parsed.value, expected_value);
-    }
-
     // Wave 6.13: Outline color (lines 2250-2251)
     #[rstest]
     #[case("outline-black", "outline-color", "#000")]
     #[case("outline-white", "outline-color", "#fff")]
-    #[case("outline-red-500", "outline-color", "#ef4444")]
-    #[case("outline-blue-500", "outline-color", "#3b82f6")]
+    #[case("outline-red-500", "outline-color", "oklch(63.7% 0.237 25.331)")]
+    #[case("outline-blue-500", "outline-color", "oklch(62.3% 0.214 259.815)")]
     fn test_parse_outline_color(
         #[case] class: &str,
         #[case] expected_prop: &str,
@@ -5594,23 +4439,10 @@ mod tests {
 
     // Wave 6.14: Ring utilities (lines 2273-2281)
     #[rstest]
-    #[case("ring-4", "box-shadow", "0 0 0 4px var(--tw-ring-color)")]
-    #[case("ring-8", "box-shadow", "0 0 0 8px var(--tw-ring-color)")]
-    fn test_parse_ring_width_extended(
-        #[case] class: &str,
-        #[case] expected_prop: &str,
-        #[case] expected_value: &str,
-    ) {
-        let parsed = parse_single_class(class).expect("Should parse ring width");
-        assert_eq!(parsed.property, expected_prop);
-        assert_eq!(parsed.value, expected_value);
-    }
-
-    #[rstest]
     #[case("ring-black", "--tw-ring-color", "#000")]
     #[case("ring-white", "--tw-ring-color", "#fff")]
-    #[case("ring-red-500", "--tw-ring-color", "#ef4444")]
-    #[case("ring-blue-500", "--tw-ring-color", "#3b82f6")]
+    #[case("ring-red-500", "--tw-ring-color", "oklch(63.7% 0.237 25.331)")]
+    #[case("ring-blue-500", "--tw-ring-color", "oklch(62.3% 0.214 259.815)")]
     fn test_parse_ring_color(
         #[case] class: &str,
         #[case] expected_prop: &str,
@@ -5622,53 +4454,7 @@ mod tests {
     }
 
     // Wave 6.15: Divide utilities (lines 2293-2313)
-    #[rstest]
-    #[case("divide-black", "--tw-divide-color", "#000")]
-    #[case("divide-white", "--tw-divide-color", "#fff")]
-    #[case("divide-red-500", "--tw-divide-color", "#ef4444")]
-    fn test_parse_divide_color(
-        #[case] class: &str,
-        #[case] expected_prop: &str,
-        #[case] expected_value: &str,
-    ) {
-        let parsed = parse_single_class(class).expect("Should parse divide color");
-        assert_eq!(parsed.property, expected_prop);
-        assert_eq!(parsed.value, expected_value);
-    }
-
-    #[rstest]
-    #[case("divide-solid", "border-style", "solid")]
-    #[case("divide-dashed", "border-style", "dashed")]
-    #[case("divide-dotted", "border-style", "dotted")]
-    #[case("divide-double", "border-style", "double")]
-    #[case("divide-none", "border-style", "none")]
-    fn test_parse_divide_style(
-        #[case] class: &str,
-        #[case] expected_prop: &str,
-        #[case] expected_value: &str,
-    ) {
-        let parsed = parse_single_class(class).expect("Should parse divide style");
-        assert_eq!(parsed.property, expected_prop);
-        assert_eq!(parsed.value, expected_value);
-    }
-
     // Wave 6.16: Filter fallbacks (lines 2390, 2405, 2419)
-    #[test]
-    fn test_brightness_unknown_value_returns_none() {
-        let result = parse_single_class("brightness-unknown");
-        assert!(result.is_none());
-        let result = parse_single_class("brightness-999");
-        assert!(result.is_none());
-    }
-
-    #[test]
-    fn test_contrast_unknown_value_returns_none() {
-        let result = parse_single_class("contrast-unknown");
-        assert!(result.is_none());
-        let result = parse_single_class("contrast-999");
-        assert!(result.is_none());
-    }
-
     #[test]
     fn test_drop_shadow_unknown_value_returns_none() {
         let result = parse_single_class("drop-shadow-unknown");
@@ -5678,49 +4464,6 @@ mod tests {
     }
 
     // Wave 6.17: Backdrop filter extended values (lines 2504-2555)
-    #[rstest]
-    #[case("backdrop-brightness-105", "backdrop-filter", "brightness(1.05)")]
-    #[case("backdrop-brightness-110", "backdrop-filter", "brightness(1.1)")]
-    #[case("backdrop-brightness-125", "backdrop-filter", "brightness(1.25)")]
-    #[case("backdrop-brightness-150", "backdrop-filter", "brightness(1.5)")]
-    #[case("backdrop-brightness-200", "backdrop-filter", "brightness(2)")]
-    fn test_parse_backdrop_brightness_extended(
-        #[case] class: &str,
-        #[case] expected_prop: &str,
-        #[case] expected_value: &str,
-    ) {
-        let parsed = parse_single_class(class).expect("Should parse backdrop-brightness");
-        assert_eq!(parsed.property, expected_prop);
-        assert_eq!(parsed.value, expected_value);
-    }
-
-    #[rstest]
-    #[case("backdrop-contrast-125", "backdrop-filter", "contrast(1.25)")]
-    #[case("backdrop-contrast-150", "backdrop-filter", "contrast(1.5)")]
-    #[case("backdrop-contrast-200", "backdrop-filter", "contrast(2)")]
-    fn test_parse_backdrop_contrast_extended(
-        #[case] class: &str,
-        #[case] expected_prop: &str,
-        #[case] expected_value: &str,
-    ) {
-        let parsed = parse_single_class(class).expect("Should parse backdrop-contrast");
-        assert_eq!(parsed.property, expected_prop);
-        assert_eq!(parsed.value, expected_value);
-    }
-
-    #[rstest]
-    #[case("backdrop-saturate-150", "backdrop-filter", "saturate(1.5)")]
-    #[case("backdrop-saturate-200", "backdrop-filter", "saturate(2)")]
-    fn test_parse_backdrop_saturate_extended(
-        #[case] class: &str,
-        #[case] expected_prop: &str,
-        #[case] expected_value: &str,
-    ) {
-        let parsed = parse_single_class(class).expect("Should parse backdrop-saturate");
-        assert_eq!(parsed.property, expected_prop);
-        assert_eq!(parsed.value, expected_value);
-    }
-
     #[test]
     fn test_backdrop_brightness_unknown_returns_none() {
         let result = parse_single_class("backdrop-brightness-unknown");
@@ -5739,29 +4482,23 @@ mod tests {
         assert!(result.is_none());
     }
 
-    // Wave 6.18: Transform fallbacks (lines 2654-2714)
     #[test]
     fn test_rotate_unknown_value_returns_none() {
-        let result = parse_single_class("rotate-unknown");
-        assert!(result.is_none());
-        let result = parse_single_class("rotate-999");
-        assert!(result.is_none());
+        assert!(parse_single_class("rotate-unknown").is_none());
+        // 3D rotation is not compiled
+        assert!(parse_single_class("rotate-x-45").is_none());
     }
 
     #[test]
     fn test_skew_x_unknown_value_returns_none() {
-        let result = parse_single_class("skew-x-unknown");
-        assert!(result.is_none());
-        let result = parse_single_class("skew-x-99");
-        assert!(result.is_none());
+        assert!(parse_single_class("skew-x-unknown").is_none());
+        assert!(parse_single_class("skew-x-1px").is_none());
     }
 
     #[test]
     fn test_skew_y_unknown_value_returns_none() {
-        let result = parse_single_class("skew-y-unknown");
-        assert!(result.is_none());
-        let result = parse_single_class("skew-y-99");
-        assert!(result.is_none());
+        assert!(parse_single_class("skew-y-unknown").is_none());
+        assert!(parse_single_class("skew-y-1px").is_none());
     }
 
     #[test]
@@ -5810,34 +4547,6 @@ mod tests {
     // ============================================================================
     // WAVE 7: Additional Coverage Gap Tests
     // ============================================================================
-
-    // Wave 7.1: is_likely_tailwind_class arbitrary value syntax (line 816)
-    #[rstest]
-    #[case("w-[100px]")]
-    #[case("h-[50vh]")]
-    #[case("bg-[#ff0000]")]
-    #[case("text-[1.5rem]")]
-    #[case("grid-cols-[1fr_2fr]")]
-    #[case("p-[calc(100%-20px)]")]
-    fn test_is_likely_tailwind_class_arbitrary_syntax(#[case] class: &str) {
-        assert!(is_likely_tailwind_class(class));
-    }
-
-    // Wave 7.2: is_valid_tailwind_value fraction values (lines 864-866)
-    #[rstest]
-    #[case("1/2", true)]
-    #[case("2/3", true)]
-    #[case("3/4", true)]
-    #[case("5/6", true)]
-    #[case("11/12", true)]
-    #[case("a/b", false)]
-    #[case("foo/bar", false)]
-    fn test_is_valid_tailwind_value_fractions_extended(
-        #[case] value: &str,
-        #[case] expected: bool,
-    ) {
-        assert_eq!(is_valid_tailwind_value(value), expected);
-    }
 
     // Wave 7.3: min-w/max-w/min-h/max-h/size with SPACING_SCALE values (lines 1682, 1719, 1760, 1783, 1797)
     #[rstest]
@@ -5902,19 +4611,21 @@ mod tests {
     }
 
     #[rstest]
-    #[case("size-4", "width", "1rem")]
-    #[case("size-8", "width", "2rem")]
-    #[case("size-12", "width", "3rem")]
-    #[case("size-px", "width", "1px")]
-    #[case("size-0.5", "width", "0.125rem")]
-    fn test_parse_size_spacing_scale(
-        #[case] class: &str,
-        #[case] expected_prop: &str,
-        #[case] expected_value: &str,
-    ) {
-        let parsed = parse_single_class(class).expect("Should parse size spacing");
-        assert_eq!(parsed.property, expected_prop);
-        assert_eq!(parsed.value, expected_value);
+    #[case("size-4", "1rem")]
+    #[case("size-8", "2rem")]
+    #[case("size-12", "3rem")]
+    #[case("size-px", "1px")]
+    #[case("size-0.5", "0.125rem")]
+    #[case("size-full", "100%")]
+    #[case("size-[3px]", "3px")]
+    fn test_parse_size_spacing_scale(#[case] class: &str, #[case] expected_value: &str) {
+        assert_eq!(
+            declarations(class),
+            Some(owned(&[
+                ("width", expected_value),
+                ("height", expected_value)
+            ]))
+        );
     }
 
     // Wave 7.4: text- prefix fallback when not font-size or text-align (line 1833)
@@ -5930,14 +4641,14 @@ mod tests {
     // Wave 7.5: Individual rounded variants via BORDER_RADIUS_SCALE lookup
     #[rstest]
     #[case("rounded", "border-radius", "0.25rem")]
-    #[case("rounded-none", "border-radius", "0px")]
-    #[case("rounded-sm", "border-radius", "0.125rem")]
+    #[case("rounded-none", "border-radius", "0")]
+    #[case("rounded-sm", "border-radius", "0.25rem")]
     #[case("rounded-md", "border-radius", "0.375rem")]
     #[case("rounded-lg", "border-radius", "0.5rem")]
     #[case("rounded-xl", "border-radius", "0.75rem")]
     #[case("rounded-2xl", "border-radius", "1rem")]
     #[case("rounded-3xl", "border-radius", "1.5rem")]
-    #[case("rounded-full", "border-radius", "9999px")]
+    #[case("rounded-full", "border-radius", "calc(infinity * 1px)")]
     fn test_rounded_variants_full_path(
         #[case] class: &str,
         #[case] expected_prop: &str,
@@ -5949,22 +4660,6 @@ mod tests {
     }
 
     // Wave 7.6: border-0/2/4/8 via BORDER_WIDTH_SCALE lookup
-    #[rstest]
-    #[case("border", "border-width", "1px")]
-    #[case("border-0", "border-width", "0px")]
-    #[case("border-2", "border-width", "2px")]
-    #[case("border-4", "border-width", "4px")]
-    #[case("border-8", "border-width", "8px")]
-    fn test_border_width_standalone_full_path(
-        #[case] class: &str,
-        #[case] expected_prop: &str,
-        #[case] expected_value: &str,
-    ) {
-        let parsed = parse_single_class(class).expect("Should parse border");
-        assert_eq!(parsed.property, expected_prop);
-        assert_eq!(parsed.value, expected_value);
-    }
-
     // Wave 7.7: divide- unknown value fallback (line 2313)
     #[rstest]
     #[case("divide-unknown")]
@@ -5975,22 +4670,6 @@ mod tests {
     }
 
     // Wave 7.8: shadow without suffix (line 2333)
-    #[rstest]
-    #[case(
-        "shadow",
-        "box-shadow",
-        "0 1px 3px 0 rgb(0 0 0 / 0.1), 0 1px 2px -1px rgb(0 0 0 / 0.1)"
-    )]
-    fn test_shadow_without_suffix(
-        #[case] class: &str,
-        #[case] expected_prop: &str,
-        #[case] expected_value: &str,
-    ) {
-        let parsed = parse_single_class(class).expect("Should parse shadow");
-        assert_eq!(parsed.property, expected_prop);
-        assert_eq!(parsed.value, expected_value);
-    }
-
     // Wave 7.9: mix-blend- prefix (line 2345)
     #[rstest]
     #[case("mix-blend-normal", "mix-blend-mode", "normal")]
@@ -6030,65 +4709,11 @@ mod tests {
     }
 
     // Wave 7.11: grayscale-0 (line 2432)
-    #[rstest]
-    #[case("grayscale-0", "filter", "grayscale(0)")]
-    fn test_grayscale_zero(
-        #[case] class: &str,
-        #[case] expected_prop: &str,
-        #[case] expected_value: &str,
-    ) {
-        let parsed = parse_single_class(class).expect("Should parse grayscale");
-        assert_eq!(parsed.property, expected_prop);
-        assert_eq!(parsed.value, expected_value);
-    }
-
     // Wave 7.12: hue-rotate- unknown value (line 2444)
-    #[rstest]
-    #[case("hue-rotate-unknown")]
-    #[case("hue-rotate-999")]
-    #[case("hue-rotate-45")]
-    fn test_hue_rotate_unknown_returns_none(#[case] class: &str) {
-        let result = parse_single_class(class);
-        assert!(result.is_none());
-    }
-
     // Wave 7.13: saturate- unknown value (line 2465)
-    #[rstest]
-    #[case("saturate-unknown")]
-    #[case("saturate-999")]
-    #[case("saturate-75")]
-    fn test_saturate_unknown_returns_none(#[case] class: &str) {
-        let result = parse_single_class(class);
-        assert!(result.is_none());
-    }
-
     // ============================================================================
     // WAVE 8: Coverage Gap Tests for Lines 816, 866, 295
     // ============================================================================
-
-    // Wave 8.1: has_tailwind_classes with arbitrary CSS syntax (line 816)
-    // Classes with [...] that don't match any prefix trigger the arbitrary check
-    // Note: Classes with ':' get split (variant prefix removal), so avoid them
-    #[rstest]
-    #[case("custom-[value]")]
-    #[case("xyz-[test]")]
-    #[case("my-class-[10px]")]
-    #[case("foo-[bar]")]
-    fn test_has_tailwind_classes_arbitrary_css_syntax(#[case] class: &str) {
-        assert!(has_tailwind_classes(class));
-    }
-
-    // Wave 8.2: is_likely_tailwind_class with pure arbitrary syntax (line 816)
-    // These classes have brackets but don't match any standard prefix
-    // The check at line 816 triggers when a class has [...] but doesn't match prefixes
-    #[rstest]
-    #[case("custom-[value]")]
-    #[case("xyz-[100px]")]
-    #[case("my-[test]")]
-    #[case("unknown-[arbitrary]")]
-    fn test_is_likely_tailwind_class_pure_arbitrary_syntax(#[case] class: &str) {
-        assert!(is_likely_tailwind_class(class));
-    }
 
     // Wave 8.3: parse_tailwind_to_styles integration for rounded variants (via BORDER_RADIUS_SCALE)
     #[test]
@@ -6104,26 +4729,543 @@ mod tests {
     }
 
     // Wave 8.4: parse_tailwind_to_styles integration for border widths (via BORDER_WIDTH_SCALE)
-    #[test]
-    #[serial]
-    fn test_parse_tailwind_to_styles_border_width_integration() {
-        reset_class_map();
-        reset_file_map();
+    // ==================== Variants (Tailwind v4) ====================
 
-        let styles = parse_tailwind_to_styles("border border-0 border-2 border-4 border-8");
-        assert_eq!(styles.len(), 5);
+    #[rstest]
+    #[case("first:p-4", "&:first-child")]
+    #[case("last:p-4", "&:last-child")]
+    #[case("only:p-4", "&:only-child")]
+    #[case("odd:p-4", "&:nth-child(odd)")]
+    #[case("even:p-4", "&:nth-child(even)")]
+    #[case("first-of-type:p-4", "&:first-of-type")]
+    #[case("last-of-type:p-4", "&:last-of-type")]
+    #[case("only-of-type:p-4", "&:only-of-type")]
+    #[case("visited:p-4", "&:visited")]
+    #[case("target:p-4", "&:target")]
+    #[case("open:p-4", "&:is([open], :popover-open, :open)")]
+    #[case("default:p-4", "&:default")]
+    #[case("checked:p-4", "&:checked")]
+    #[case("indeterminate:p-4", "&:indeterminate")]
+    #[case("placeholder-shown:p-4", "&:placeholder-shown")]
+    #[case("autofill:p-4", "&:autofill")]
+    #[case("optional:p-4", "&:optional")]
+    #[case("required:p-4", "&:required")]
+    #[case("valid:p-4", "&:valid")]
+    #[case("invalid:p-4", "&:invalid")]
+    #[case("user-valid:p-4", "&:user-valid")]
+    #[case("user-invalid:p-4", "&:user-invalid")]
+    #[case("in-range:p-4", "&:in-range")]
+    #[case("out-of-range:p-4", "&:out-of-range")]
+    #[case("read-only:p-4", "&:read-only")]
+    #[case("empty:p-4", "&:empty")]
+    #[case("focus-within:p-4", "&:focus-within")]
+    #[case("focus:p-4", "&:focus")]
+    #[case("focus-visible:p-4", "&:focus-visible")]
+    #[case("active:p-4", "&:active")]
+    #[case("enabled:p-4", "&:enabled")]
+    #[case("disabled:p-4", "&:disabled")]
+    #[case("inert:p-4", "&:is([inert], [inert] *)")]
+    #[case("placeholder:p-4", "&::placeholder")]
+    #[case("file:p-4", "&::file-selector-button")]
+    #[case("backdrop:p-4", "&::backdrop")]
+    #[case("first-letter:p-4", "&::first-letter")]
+    #[case("first-line:p-4", "&::first-line")]
+    #[case("details-content:p-4", "&::details-content")]
+    #[case("dark:p-4", ":root[data-theme=dark] &")]
+    #[case("rtl:p-4", "&:where(:dir(rtl), [dir=\"rtl\"], [dir=\"rtl\"] *)")]
+    #[case("ltr:p-4", "&:where(:dir(ltr), [dir=\"ltr\"], [dir=\"ltr\"] *)")]
+    #[case("*:p-4", ":is(& > *)")]
+    #[case("**:p-4", ":is(& *)")]
+    #[case("aria-checked:p-4", "&[aria-checked=\"true\"]")]
+    #[case("aria-[sort=ascending]:p-4", "&[aria-sort=\"ascending\"]")]
+    #[case("aria-[a=b_c]:p-4", "&[aria-a=\"b c\"]")]
+    #[case("aria-[label]:p-4", "&[aria-label]")]
+    #[case("data-active:p-4", "&[data-active]")]
+    #[case("data-[state=open]:p-4", "&[data-state=\"open\"]")]
+    #[case("data-[state='open']:p-4", "&[data-state='open']")]
+    #[case("nth-3:p-4", "&:nth-child(3)")]
+    #[case("nth-last-3:p-4", "&:nth-last-child(3)")]
+    #[case("nth-of-type-3:p-4", "&:nth-of-type(3)")]
+    #[case("nth-last-of-type-3:p-4", "&:nth-last-of-type(3)")]
+    #[case("nth-[2n+1_of_.x]:p-4", "&:nth-child(2n+1 of .x)")]
+    #[case("has-[img]:p-4", "&:has(:is(img))")]
+    #[case("has-[.x_y]:p-4", "&:has(:is(.x y))")]
+    #[case("has-checked:p-4", "&:has(:checked)")]
+    #[case("has-aria-checked:p-4", "&:has([aria-checked=\"true\"])")]
+    #[case("group-focus:p-4", "&:is(:where(.group):focus *)")]
+    #[case("group-first:p-4", "&:is(:where(.group):first-child *)")]
+    #[case("group-data-active:p-4", "&:is(:where(.group)[data-active] *)")]
+    #[case("group-has-checked:p-4", "&:is(:where(.group):has(:checked) *)")]
+    #[case("group-focus/item:p-4", "&:is(:where(.group\\/item):focus *)")]
+    #[case("peer-checked:p-4", "&:is(:where(.peer):checked ~ *)")]
+    #[case(
+        "peer-aria-checked:p-4",
+        "&:is(:where(.peer)[aria-checked=\"true\"] ~ *)"
+    )]
+    #[case(
+        "peer-placeholder-shown:p-4",
+        "&:is(:where(.peer):placeholder-shown ~ *)"
+    )]
+    #[case("[&>*]:p-4", "&>*")]
+    #[case("[&_p]:p-4", "& p")]
+    #[case("[.dark_&]:p-4", ".dark &")]
+    #[case("[&:nth-child(3)]:p-4", "&:nth-child(3)")]
+    #[case("hover:focus:p-4", "@media(hover:hover) &:hover:focus")]
+    #[case("*:hover:p-4", "@media(hover:hover) :is(& > *):hover")]
+    #[case("hover:[&>*]:p-4", "@media(hover:hover) &:hover>*")]
+    #[case("[&>*]:hover:p-4", "@media(hover:hover) &>*:hover")]
+    #[case(
+        "group-hover:focus:p-4",
+        "@media(hover:hover) &:is(:where(.group):hover *):focus"
+    )]
+    #[case("dark:hover:p-4", "@media(hover:hover) :root[data-theme=dark] &:hover")]
+    #[case("hover:dark:p-4", "@media(hover:hover) :root[data-theme=dark] &:hover")]
+    #[case("before:hover:p-4", "@media(hover:hover) &::before:hover")]
+    fn test_selector_variants(#[case] class: &str, #[case] expected: &str) {
+        assert_eq!(conditions(class), Some((0, vec![expected.to_string()])));
     }
 
-    // Wave 8.5: is_valid_tailwind_value fraction edge case (line 866)
-    // Edge case where value starts with '/' - empty first part is vacuously all-digits
     #[rstest]
-    #[case("/2", true)]
-    #[case("/12", true)]
-    #[case("/123", true)]
-    fn test_is_valid_tailwind_value_slash_prefix_fraction(
-        #[case] value: &str,
-        #[case] expected: bool,
+    #[case("hover:p-4", 0, &["@media(hover:hover) &:hover"])]
+    #[case("group-hover:p-4", 0, &["@media(hover:hover) &:is(:where(.group):hover *)"])]
+    #[case("group-hover/item:p-4", 0, &["@media(hover:hover) &:is(:where(.group\\/item):hover *)"])]
+    #[case("peer-hover:p-4", 0, &["@media(hover:hover) &:is(:where(.peer):hover ~ *)"])]
+    #[case("motion-safe:p-4", 0, &["@media(prefers-reduced-motion:no-preference)"])]
+    #[case("motion-reduce:p-4", 0, &["@media(prefers-reduced-motion:reduce)"])]
+    #[case("contrast-more:p-4", 0, &["@media(prefers-contrast:more)"])]
+    #[case("contrast-less:p-4", 0, &["@media(prefers-contrast:less)"])]
+    #[case("portrait:p-4", 0, &["@media(orientation:portrait)"])]
+    #[case("landscape:p-4", 0, &["@media(orientation:landscape)"])]
+    #[case("print:p-4", 0, &["@media print"])]
+    #[case("forced-colors:p-4", 0, &["@media(forced-colors:active)"])]
+    #[case("inverted-colors:p-4", 0, &["@media(inverted-colors:inverted)"])]
+    #[case("noscript:p-4", 0, &["@media(scripting:none)"])]
+    #[case("pointer-fine:p-4", 0, &["@media(pointer:fine)"])]
+    #[case("pointer-coarse:p-4", 0, &["@media(pointer:coarse)"])]
+    #[case("pointer-none:p-4", 0, &["@media(pointer:none)"])]
+    #[case("any-pointer-fine:p-4", 0, &["@media(any-pointer:fine)"])]
+    #[case("any-pointer-coarse:p-4", 0, &["@media(any-pointer:coarse)"])]
+    #[case("any-pointer-none:p-4", 0, &["@media(any-pointer:none)"])]
+    #[case("supports-[display:grid]:p-4", 0, &["@supports(display:grid)"])]
+    #[case("supports-[(display:grid)]:p-4", 0, &["@supports(display:grid)"])]
+    #[case("[@media(width>=10px)]:p-4", 0, &["@media(width>=10px)"])]
+    #[case("[@supports(display:grid)]:p-4", 0, &["@supports(display:grid)"])]
+    #[case("sm:p-4", 1, &[""])]
+    #[case("md:p-4", 2, &[""])]
+    #[case("lg:p-4", 3, &[""])]
+    #[case("xl:p-4", 4, &[""])]
+    #[case("2xl:p-4", 5, &[""])]
+    #[case("sm:md:p-4", 2, &[""])]
+    #[case("md:hover:p-4", 2, &["@media(hover:hover) &:hover"])]
+    #[case("hover:md:p-4", 2, &["@media(hover:hover) &:hover"])]
+    #[case("selection:p-4", 0, &["& *::selection", "&::selection"])]
+    #[case(
+        "marker:p-4",
+        0,
+        &["& *::marker", "&::marker", "& *::-webkit-details-marker", "&::-webkit-details-marker"]
+    )]
+    #[case("md:selection:p-4", 2, &["& *::selection", "&::selection"])]
+    #[case("[&_p,&_li]:p-4", 0, &["& p", "& li"])]
+    #[case("[&_p,&_li]:hover:p-4", 0, &["@media(hover:hover) & p:hover", "@media(hover:hover) & li:hover"])]
+    fn test_variant_conditions(#[case] class: &str, #[case] level: u8, #[case] expected: &[&str]) {
+        assert_eq!(
+            conditions(class),
+            Some((level, expected.iter().map(ToString::to_string).collect()))
+        );
+    }
+
+    #[test]
+    fn test_stacked_media_variants() {
+        let (_, conditions) = conditions("print:hover:p-4").unwrap();
+        assert_eq!(conditions.len(), 1);
+        assert!(conditions[0].starts_with("@media print"), "{conditions:?}");
+        assert!(conditions[0].contains("(hover:hover)"), "{conditions:?}");
+        assert!(conditions[0].ends_with("&:hover"), "{conditions:?}");
+    }
+
+    // `::before`/`::after` only render with `content`, which Tailwind adds
+    #[test]
+    fn test_pseudo_element_content() {
+        assert_eq!(
+            declarations("before:block"),
+            Some(owned(&[
+                ("content", "var(--tw-content)"),
+                ("display", "block")
+            ]))
+        );
+        assert_eq!(
+            declarations("after:content-['x']"),
+            Some(owned(&[
+                ("--tw-content", "'x'"),
+                ("content", "var(--tw-content)")
+            ]))
+        );
+        assert_eq!(
+            declarations("placeholder:block"),
+            Some(owned(&[("display", "block")]))
+        );
+    }
+
+    // A class whose variants or utility are not understood in full stays as written
+    #[rstest]
+    #[case("custom")]
+    #[case("prose")]
+    #[case("my-p-4-class")]
+    #[case("analytics-hook")]
+    #[case("container")]
+    #[case("group")]
+    #[case("peer")]
+    #[case("group/item")]
+    #[case("")]
+    #[case(":p-4")]
+    #[case("hover:")]
+    #[case("hover::p-4")]
+    #[case("not-hover:p-4")]
+    #[case("in-focus:p-4")]
+    #[case("max-md:p-4")]
+    #[case("min-[700px]:p-4")]
+    #[case("@sm:p-4")]
+    #[case("@container:p-4")]
+    #[case("starting:p-4")]
+    #[case("screen:p-4")]
+    #[case("unknown:p-4")]
+    #[case("[.x]:p-4")]
+    #[case("[@foo_x]:p-4")]
+    #[case("[&]]:p-4")]
+    #[case("supports-grid:p-4")]
+    #[case("supports-[grid]:p-4")]
+    #[case("group-[.x]:p-4")]
+    #[case("group-unknown:p-4")]
+    #[case("group-hover/a.b:p-4")]
+    #[case("peer-hover/:p-4")]
+    #[case("has-hover:p-4")]
+    #[case("has-has-[x]:p-4")]
+    #[case("has-[&>p]:p-4")]
+    #[case("has-unknown:p-4")]
+    #[case("aria-foo:p-4")]
+    #[case("aria-[a~=b]:p-4")]
+    #[case("data-[]:p-4")]
+    #[case("data-[a=]:p-4")]
+    #[case("data-[a=b\"c]:p-4")]
+    #[case("data-[a_b]:p-4")]
+    #[case("data-a.b:p-4")]
+    #[case("nth-0:p-4")]
+    #[case("nth-x:p-4")]
+    #[case("print:[@media_screen]:p-4")]
+    #[case("text-sm/x")]
+    #[case("text-sm/[_]")]
+    #[case("text-sm/(x)")]
+    #[case("select-wrapper")]
+    #[case("order-summary")]
+    #[case("cursor-foo")]
+    #[case("align-left")]
+    #[case("whitespace-x")]
+    #[case("hyphens-x")]
+    #[case("pointer-events-x")]
+    #[case("touch-x")]
+    #[case("mix-blend-x")]
+    #[case("bg-blend-plus-lighter")]
+    #[case("col-start-x")]
+    #[case("col-end-x")]
+    #[case("row-start-x")]
+    #[case("row-end-x")]
+    #[case("columns-x")]
+    #[case("aspect-x")]
+    #[case("aspect-4-3")]
+    #[case("aspect-a/3")]
+    #[case("leading-custom")]
+    #[case("leading-(x)")]
+    #[case("-p-4")]
+    #[case("-m-auto")]
+    #[case("-order-first")]
+    #[case("-size-4")]
+    #[case("-truncate")]
+    #[case("-[color:red]")]
+    #[case("-p-[4px]")]
+    #[case("--[1px]")]
+    #[case("[Color:red]")]
+    #[case("[--x.y:1]")]
+    #[case("[color:_]")]
+    #[case("[colorred]")]
+    #[case("[color:red")]
+    #[case("w-[]")]
+    #[case("w-]")]
+    #[case("w[1px]")]
+    #[case("foo-[1px]")]
+    #[case("w-(x)")]
+    #[case("w-[_]")]
+    #[case("bg-[size:cover]")]
+    #[case("text-[2]")]
+    #[case("text-[angle:3deg]")]
+    #[case("bg-[10px]")]
+    #[case("border-[3]")]
+    #[case("border-[url(x)]")]
+    #[case("borderx-[3px]")]
+    #[case("border-z-[3px]")]
+    #[case("roundedx-[3px]")]
+    #[case("rounded-z-[3px]")]
+    #[case("rounded-huge")]
+    #[case("roundedx")]
+    #[case("font-[2px]")]
+    #[case("outline-[url(x)]")]
+    #[case("size-screen")]
+    #[case("translate-x-auto")]
+    #[case("translate-x-screen")]
+    #[case("translate-x")]
+    #[case("scale-1.5")]
+    #[case("skew-x")]
+    #[case("rotate-x-45")]
+    fn test_preserved_classes(#[case] class: &str) {
+        assert_eq!(parse_class(class), None, "{class}");
+    }
+
+    // ==================== Utilities with several declarations ====================
+
+    #[rstest]
+    #[case("text-xs", "0.75rem", "var(--tw-leading, calc(1 / 0.75))")]
+    #[case("text-sm", "0.875rem", "var(--tw-leading, calc(1.25 / 0.875))")]
+    #[case("text-base", "1rem", "var(--tw-leading, calc(1.5 / 1))")]
+    #[case("text-xl", "1.25rem", "var(--tw-leading, calc(1.75 / 1.25))")]
+    #[case("text-9xl", "8rem", "var(--tw-leading, 1)")]
+    #[case("text-sm/6", "0.875rem", "1.5rem")]
+    #[case("text-sm/[1.7]", "0.875rem", "1.7")]
+    #[case("text-sm/tight", "0.875rem", "1.25")]
+    #[case("text-sm/(--lh)", "0.875rem", "var(--lh)")]
+    fn test_font_size_utilities(
+        #[case] class: &str,
+        #[case] font_size: &str,
+        #[case] line_height: &str,
     ) {
-        assert_eq!(is_valid_tailwind_value(value), expected);
+        assert_eq!(
+            declarations(class),
+            Some(owned(&[
+                ("font-size", font_size),
+                ("line-height", line_height)
+            ]))
+        );
+    }
+
+    #[test]
+    fn test_screen_reader_utilities() {
+        assert_eq!(
+            declarations("sr-only"),
+            Some(owned(&[
+                ("position", "absolute"),
+                ("width", "1px"),
+                ("height", "1px"),
+                ("padding", "0"),
+                ("margin", "-1px"),
+                ("overflow", "hidden"),
+                ("clip-path", "inset(50%)"),
+                ("white-space", "nowrap"),
+                ("border-width", "0"),
+            ]))
+        );
+        assert_eq!(
+            declarations("not-sr-only"),
+            Some(owned(&[
+                ("position", "static"),
+                ("width", "auto"),
+                ("height", "auto"),
+                ("padding", "0"),
+                ("margin", "0"),
+                ("overflow", "visible"),
+                ("clip-path", "none"),
+                ("white-space", "normal"),
+            ]))
+        );
+    }
+
+    #[rstest]
+    #[case("-m-4", "margin", "-1rem")]
+    #[case("-mt-4", "margin-top", "-1rem")]
+    #[case("-inset-x-4", "inset-inline", "-1rem")]
+    #[case("-top-2", "top", "-0.5rem")]
+    #[case("-z-10", "z-index", "-10")]
+    #[case("-order-1", "order", "-1")]
+    #[case("-tracking-wide", "letter-spacing", "-0.025em")]
+    #[case("-scroll-m-4", "scroll-margin", "-1rem")]
+    #[case("-m-[4px]", "margin", "calc(4px * -1)")]
+    #[case("-top-[3px]", "top", "calc(3px * -1)")]
+    #[case("-z-[3]", "z-index", "calc(3 * -1)")]
+    #[case("-rotate-[30deg]", "rotate", "calc(30deg * -1)")]
+    #[case("mt-[-3px]", "margin-top", "-3px")]
+    fn test_negative_utilities(#[case] class: &str, #[case] property: &str, #[case] value: &str) {
+        assert_eq!(declarations(class), Some(owned(&[(property, value)])));
+    }
+
+    // ==================== Arbitrary values ====================
+
+    #[rstest]
+    #[case("[mask-type:luminance]", "mask-type", "luminance")]
+    #[case("[--my_var:1px_2px]", "--my_var", "1px 2px")]
+    #[case("[margin:calc(1px+2px)]", "margin", "calc(1px + 2px)")]
+    #[case("[-webkit-line-clamp:3]", "-webkit-line-clamp", "3")]
+    #[case("bg-(--my-color)", "background-color", "var(--my-color)")]
+    #[case("bg-(image:--x)", "background-image", "var(--x)")]
+    #[case("text-(length:--my-size)", "font-size", "var(--my-size)")]
+    #[case("text-(--x)", "color", "var(--x)")]
+    #[case("w-(--x,10px)", "width", "var(--x,10px)")]
+    #[case("p-(length:--x)", "padding", "var(--x)")]
+    #[case("text-[2rem]", "font-size", "2rem")]
+    #[case("text-[1.5em]", "font-size", "1.5em")]
+    #[case("text-[large]", "font-size", "large")]
+    #[case("text-[calc(1rem+2px)]", "font-size", "calc(1rem + 2px)")]
+    #[case("text-[length:var(--x)]", "font-size", "var(--x)")]
+    #[case("text-[percentage:50%]", "font-size", "50%")]
+    #[case("text-[absolute-size:large]", "font-size", "large")]
+    #[case("text-[#fff]", "color", "#fff")]
+    #[case("text-[var(--x)]", "color", "var(--x)")]
+    #[case("text-[color:var(--x)]", "color", "var(--x)")]
+    #[case("bg-[url(/a_b.png)]", "background-image", "url(/a_b.png)")]
+    #[case("bg-[url('/a_b.png')]", "background-image", "url('/a_b.png')")]
+    #[case(
+        "bg-[linear-gradient(red,blue)]",
+        "background-image",
+        "linear-gradient(red,blue)"
+    )]
+    #[case("bg-[image:var(--x)]", "background-image", "var(--x)")]
+    #[case("bg-[url:var(--x)]", "background-image", "var(--x)")]
+    #[case("bg-[#123456]", "background-color", "#123456")]
+    #[case("bg-[var(--x)]", "background-color", "var(--x)")]
+    #[case("bg-[length:200px_100px]", "background-size", "200px 100px")]
+    #[case("bg-[bg-size:cover]", "background-size", "cover")]
+    #[case("bg-[position:top]", "background-position", "top")]
+    #[case("border-[thin]", "border-width", "thin")]
+    #[case("border-[length:var(--x)]", "border-width", "var(--x)")]
+    #[case("border-[line-width:var(--x)]", "border-width", "var(--x)")]
+    #[case("border-[#fff]", "border-color", "#fff")]
+    #[case("border-[var(--x)]", "border-color", "var(--x)")]
+    #[case("border-t-[red]", "border-top-color", "red")]
+    #[case("border-s-[red]", "border-inline-start-color", "red")]
+    #[case("outline-[red]", "outline-color", "red")]
+    #[case("stroke-[3px]", "stroke-width", "3px")]
+    #[case("stroke-[2]", "stroke-width", "2")]
+    #[case("stroke-[red]", "stroke", "red")]
+    #[case("decoration-[3px]", "text-decoration-thickness", "3px")]
+    #[case("decoration-[red]", "text-decoration-color", "red")]
+    #[case("font-[600]", "font-weight", "600")]
+    #[case("font-[number:var(--w)]", "font-weight", "var(--w)")]
+    #[case("font-[Inter_Var]", "font-family", "Inter Var")]
+    #[case("font-[family-name:var(--f)]", "font-family", "var(--f)")]
+    #[case("w-[calc(100%_-_2rem)]", "width", "calc(100% - 2rem)")]
+    #[case("m-[var(--x_y)]", "margin", "var(--x_y)")]
+    #[case(
+        "grid-cols-[repeat(2,minmax(0,1fr))]",
+        "grid-template-columns",
+        "repeat(2,minmax(0,1fr))"
+    )]
+    #[case("col-[1/3]", "grid-column", "1/3")]
+    #[case("row-[span_2]", "grid-row", "span 2")]
+    #[case("origin-[33%_75%]", "transform-origin", "33% 75%")]
+    #[case("object-[25%_75%]", "object-position", "25% 75%")]
+    fn test_arbitrary_utilities(#[case] class: &str, #[case] property: &str, #[case] value: &str) {
+        assert_eq!(declarations(class), Some(owned(&[(property, value)])));
+    }
+
+    #[rstest]
+    #[case("content-['a_b']", "'a b'")]
+    #[case("content-['hello\\_world']", "'hello_world'")]
+    #[case("content-[attr(data-a_b)]", "attr(data-a b)")]
+    fn test_arbitrary_content(#[case] class: &str, #[case] value: &str) {
+        assert_eq!(
+            declarations(class),
+            Some(owned(&[
+                ("--tw-content", value),
+                ("content", "var(--tw-content)")
+            ]))
+        );
+    }
+
+    // Values decoded like Tailwind does, checked against Tailwind CSS 4.3.3
+    #[rstest]
+    #[case("calc(100%-2rem)", "calc(100% - 2rem)")]
+    #[case("calc(1rem+2px)", "calc(1rem + 2px)")]
+    #[case("calc(2*3px)", "calc(2 * 3px)")]
+    #[case("calc(10px/2)", "calc(10px / 2)")]
+    #[case("min(10px,2rem)", "min(10px, 2rem)")]
+    #[case("max(10px,calc(1rem-2px))", "max(10px, calc(1rem - 2px))")]
+    #[case("clamp(1rem,2vw+1px,3rem)", "clamp(1rem, 2vw + 1px, 3rem)")]
+    #[case("calc(100%-var(--x))", "calc(100% - var(--x))")]
+    #[case("calc(var(--a)*-1)", "calc(var(--a) * -1)")]
+    #[case("calc(-1*2px)", "calc(-1 * 2px)")]
+    #[case("calc(1e-3px+1px)", "calc(1e-3px + 1px)")]
+    #[case("calc(100%_-_2rem)", "calc(100% - 2rem)")]
+    #[case("calc(1px_+2px)", "calc(1px + 2px)")]
+    #[case("calc((1px+2px)*3)", "calc((1px + 2px) * 3)")]
+    #[case("calc(1px--2px)", "calc(1px - -2px)")]
+    #[case("calc(a-b)", "calc(a-b)")]
+    #[case("var(--a_b,calc(1px+2px))", "var(--a_b,calc(1px + 2px))")]
+    #[case("var(calc(1px+2px))", "var(calc(1px + 2px))")]
+    #[case("theme(spacing_4)", "theme(spacing_4)")]
+    #[case("x_var(--a_b)", "x var(--a_b)")]
+    #[case("x_theme(--a_b)", "x theme(--a_b)")]
+    #[case("x_url(a_b)", "x url(a_b)")]
+    #[case("repeat(2,minmax(0,1fr))", "repeat(2,minmax(0,1fr))")]
+    #[case("url(/a_b.png)", "url(/a_b.png)")]
+    #[case("url(a_b", "url(a_b")]
+    #[case("attr(data-a_b)", "attr(data-a b)")]
+    #[case("a_(b)_c", "a (b) c")]
+    #[case("a)b_c", "a)b c")]
+    #[case("a)b_(c)", "a)b (c)")]
+    #[case("attr(a\\_b)", "attr(a_b)")]
+    #[case("url(a(b)_c)", "url(a(b)_c)")]
+    #[case("'a_b'", "'a b'")]
+    #[case("'hello\\_world'", "'hello_world'")]
+    #[case("한_글", "한 글")]
+    fn test_decode_arbitrary_value(#[case] value: &str, #[case] expected: &str) {
+        assert_eq!(decode_arbitrary_value(value), expected);
+    }
+
+    #[test]
+    fn test_balanced_brackets() {
+        assert!(is_balanced("[a](b)"));
+        assert!(!is_balanced("(]"));
+        assert!(!is_balanced("[)"));
+        assert!(!is_balanced("("));
+    }
+
+    #[rstest]
+    #[case("inset-y-4", "inset-block", "1rem")]
+    #[case("inset-x-2", "inset-inline", "0.5rem")]
+    #[case("basis-4", "flex-basis", "1rem")]
+    #[case("basis-13", "flex-basis", "3.25rem")]
+    #[case("top-13", "top", "3.25rem")]
+    fn test_parse_spacing_scale_steps(
+        #[case] class: &str,
+        #[case] expected_prop: &str,
+        #[case] expected_value: &str,
+    ) {
+        let parsed = parse_single_class(class).expect("Should parse");
+        assert_eq!(parsed.property, expected_prop);
+        assert_eq!(parsed.value, expected_value);
+    }
+    #[test]
+    fn test_styles_and_properties() {
+        let class = parse_class("md:hover:p-4").unwrap();
+        let styles: Vec<ExtractStaticStyle> = class.styles().collect();
+        assert_eq!(styles.len(), 1);
+        assert_eq!(styles[0].property(), "padding");
+        assert_eq!(styles[0].value(), "1rem");
+        assert_eq!(styles[0].level(), 2);
+        assert_eq!(
+            styles[0].selector().map(ToString::to_string).as_deref(),
+            Some("@media(hover:hover) &:hover")
+        );
+        assert_eq!(class.rules(), Vec::<&str>::new());
+
+        let class = parse_class("selection:translate-x-4").unwrap();
+        assert_eq!(class.styles().count(), 4);
+        assert_eq!(
+            class.rules(),
+            vec![
+                "@property --tw-translate-x{syntax:\"*\";inherits:false;initial-value:0}",
+                "@property --tw-translate-y{syntax:\"*\";inherits:false;initial-value:0}",
+            ]
+        );
+        assert_eq!(
+            parse_class("before:block").unwrap().rules(),
+            vec!["@property --tw-content{syntax:\"*\";inherits:false;initial-value:\"\"}"]
+        );
     }
 }

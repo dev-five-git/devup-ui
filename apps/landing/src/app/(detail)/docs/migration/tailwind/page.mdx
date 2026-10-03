@@ -1,0 +1,101 @@
+export const metadata = {
+  title: 'Migration',
+  alternates: {
+    canonical: '/docs/migration/tailwind',
+  },
+}
+
+# Tailwind CSS
+
+Tailwind CSS classes written in the `className` of a Devup UI component (`Box`, `Flex`, `Text` ...) are compiled at build time to Devup UI classes, the same way style props are. Nothing runs in the browser, and no Tailwind build is needed for those classes. The classes follow Tailwind CSS **v4**.
+
+```tsx
+<Box className="flex items-center gap-4 bg-red-500/50 hover:bg-primary md:p-4!" />
+```
+
+## When a class compiles
+
+A class compiles only when the build understands **all** of it: every variant (`md:`, `hover:`, `data-[state=open]:`, `[&>*]:` ...), the utility, its value and its modifiers (`/50`, `!`). Then it becomes the declarations Tailwind CSS v4 writes for it.
+
+Every other class **stays in the `className` exactly as written**, so whatever else defines it keeps working. This covers:
+
+- your own classes (`card`) and plugin classes (`prose`),
+- a class Tailwind CSS v4 does not define (`bg-gradient-to-r`, which v3 had),
+- a class the build cannot reproduce exactly (see [what stays as written](#what-stays-as-written)),
+- a class whose theme value the project's Tailwind CSS defines in a way the build cannot read.
+
+A class is never rewritten into something different from what Tailwind CSS would generate: it compiles to the declarations of v4 or it is left alone. A class with a Tailwind name compiles with the Tailwind meaning, so do not give a class of your own the name of a Tailwind utility.
+
+## Where classes are read
+
+Classes compile in the `className` of Devup UI components, and the build only reads what it can know:
+
+- string literals, template literals, `cond ? 'a' : 'b'`, `a && 'b'`, `a || 'b'` and parentheses,
+- the arguments of `clsx(...)`, `classnames(...)` and `classNames(...)` (strings, arrays, and the keys of objects), and `['a', cond && 'b'].join(' ')`.
+
+Other helpers (`cn`, `twMerge`, `cva`) may merge or drop classes by rules the build does not run, so their strings are not compiled. A class that is only known at runtime (a variable, a prop, a computed string) cannot be compiled either. In every case the `className` keeps working as before, as plain text.
+
+A plain DOM element (`<div className="p-4" />`) or a component that is not a Devup UI component is **not** touched: its `className` is passed through as written, so Tailwind (its own build) can style it. Use `<Box as="div" className="p-4" />` when you want the class compiled.
+
+## Theme values
+
+Colors from Tailwind CSS v4's default palette (`bg-red-500`, in `oklch`) and the values of `devup.json` work together:
+
+- `devup.json` colors are Tailwind colors named by their token: `bg-primary`, `text-text`, `border-primary/50` become `var(--primary)`, `var(--text)` and so on. When a name is both a `devup.json` color and a palette color, the `devup.json` color is used.
+- `devup.json` shadow tokens work as `shadow-<token>` (`shadow-card`).
+- Breakpoints are the ones of Devup UI (`theme.breakpoints` in `devup.json`), not Tailwind's: `sm:`, `md:`, `lg:`, `xl:` and `2xl:` are the first five breakpoints after the base. Change them in `devup.json`.
+- `dark:` follows the Devup UI theme (`prefers-color-scheme` until a theme is set with `data-theme`).
+
+## Tailwind CSS definitions
+
+The CSS file of your project that imports `tailwindcss` can define more, as it does for Tailwind itself:
+
+```css
+@import 'tailwindcss';
+
+@theme {
+  --color-brand: oklch(60% 0.2 250);
+  --spacing-gutter: 3rem;
+  --breakpoint-3xl: 120rem;
+  --animate-wiggle: wiggle 1s ease-in-out infinite;
+  @keyframes wiggle {
+    50% {
+      transform: rotate(3deg);
+    }
+  }
+}
+
+@utility content-auto {
+  content-visibility: auto;
+}
+
+@custom-variant theme-midnight (&:where([data-theme='midnight'] *));
+```
+
+Every plugin reads the file when the build starts. The Vite, webpack and Next.js plugins also read it again when it, or a CSS file it imports with a relative path, changes (the Rsbuild and Bun plugins do not watch it, so restart them after a change). So `bg-brand`, `p-gutter`, `3xl:flex`, `animate-wiggle`, `content-auto` and `theme-midnight:bg-black` compile.
+
+The file is found, in this order: the `tailwind.css` option of `devup.json`, else the first of `src/app/globals.css`, `app/globals.css`, `src/globals.css`, `src/index.css`, `src/styles/globals.css`, `src/styles.css`, `src/style.css`, `src/app.css`, `styles/globals.css`, `app/app.css` that imports `tailwindcss`.
+
+```json
+{
+  "tailwind": { "css": "src/styles/tailwind.css" }
+}
+```
+
+Use `"css": false` to read none.
+
+What is read: `@theme` variables of the color, spacing (`--spacing`, `--spacing-*`), shadow, blur, radius, ease, animate, `default-transition-*` and breakpoint namespaces (and `@keyframes` inside `@theme`), resets such as `--color-*: initial` and `--*: initial`, `@utility` with plain declarations, and `@custom-variant` as a selector list, or a block holding `@slot;` in a selector, `@media` or `@supports`. A `@custom-variant` with the name of a built-in variant (`dark`) replaces it.
+
+What is not read keeps its classes as written: functional `@utility` (`tab-*` with `--value()`), nested rules and `@apply` in `@utility`, `@plugin`, `@config`, values using `theme()`, and a file whose braces do not balance. If the project changes the values of a namespace the build does not read (`--text-*`, `--font-*`, `--leading-*`, `--tracking-*`, `--container-*`, `--perspective-*`, `--aspect-*`), the classes that read it (`text-lg`, `font-bold`, `max-w-sm` ...) also stay as written, instead of compiling to a default the project replaced.
+
+## Classes and style props on one element
+
+Tailwind classes and Devup UI props both become one atomic class per property in the same stylesheet, so they follow the same rules as two props:
+
+- The Tailwind classes of an element compile first, its Devup props after them. For the **same property** (`p-4` and `p={12}`), the prop comes later in the stylesheet and wins, whichever comes first in the JSX.
+- Properties are ordered with shorthands before longhands. `bg="green"` is `background`, while `bg-red-500` is `background-color`, which comes after it, so the Tailwind class wins there. Use one of the two for a property when both would set it.
+- Responsive and `hover:` styles come after the base styles at the same property, as with props.
+
+## What stays as written
+
+Utilities this build does not compile stay in the `className`: container (`container`, `@container` queries), the masks (`mask-*`), `text-shadow-*`, `inset-shadow-*`, composed font-variant-numeric (`tabular-nums`), 3D transform steps (`rotate-x-*`, `translate-z-*`, `scale-z-*`), `contain-*`, `outline-hidden`, and the variants and values that are not listed in Tailwind CSS v4.

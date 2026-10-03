@@ -16,7 +16,9 @@ import {
   loadDevupConfigSync,
   mergeImportAliases,
   planAtomHoist,
+  tailwindCssFiles,
   type WasmImportAliases,
+  withTailwindCss,
 } from '@devup-ui/plugin-utils'
 import {
   codeExtract,
@@ -115,12 +117,16 @@ export class DevupUIWebpackPlugin {
     this.fileMapFile = join(this.options.distDir, 'fileMap.json')
   }
 
+  /** The files the project's Tailwind CSS is read from */
+  tailwindFiles: string[] = []
+
   writeDataFiles() {
     try {
       const config = loadDevupConfigSync(this.options.devupFile)
       const theme = config.theme ?? {}
 
-      registerTheme(theme)
+      registerTheme(withTailwindCss(theme, config))
+      this.tailwindFiles = tailwindCssFiles(config)
       const interfaceCode = getThemeInterface(
         ...createThemeInterfaceArgs(this.options.package),
       )
@@ -285,12 +291,21 @@ export class DevupUIWebpackPlugin {
     }
 
     if (this.options.watch) {
-      let lastModifiedTime: number | null = null
+      let lastModifiedTime: string | null = null
       compiler.hooks.watchRun.tapPromise('DevupUIWebpackPlugin', async () => {
-        if (existsDevup) {
-          const stats = await stat(this.options.devupFile)
-
-          const modifiedTime = stats.mtimeMs
+        const stamps: number[] = []
+        if (existsDevup)
+          stamps.push((await stat(this.options.devupFile)).mtimeMs)
+        for (const file of this.tailwindFiles) {
+          stamps.push(
+            await stat(file).then(
+              (stats) => stats.mtimeMs,
+              () => 0,
+            ),
+          )
+        }
+        if (stamps.length > 0) {
+          const modifiedTime = stamps.join()
           if (lastModifiedTime && lastModifiedTime !== modifiedTime)
             this.writeDataFiles()
 
@@ -298,11 +313,13 @@ export class DevupUIWebpackPlugin {
         }
       })
     }
-    if (existsDevup)
+    if (existsDevup || this.tailwindFiles.length > 0)
       compiler.hooks.afterCompile.tap('DevupUIWebpackPlugin', (compilation) => {
-        compilation.fileDependencies.add(resolve(this.options.devupFile))
+        if (existsDevup)
+          compilation.fileDependencies.add(resolve(this.options.devupFile))
+        for (const file of this.tailwindFiles)
+          compilation.fileDependencies.add(resolve(file))
       })
-
     compiler.options.plugins.push(
       new compiler.webpack.DefinePlugin({
         'process.env.DEVUP_UI_DEFAULT_THEME': JSON.stringify(getDefaultTheme()),
