@@ -6,12 +6,13 @@ use oxc_ast::ast::{
     BindingPattern, Declaration, ExportDefaultDeclarationKind, Expression, Program, Statement,
     StaticMemberExpression, VariableDeclaration, VariableDeclarationKind,
 };
+use oxc_semantic::Semantic;
 use oxc_span::{GetSpan, Span};
 use oxc_syntax::node::NodeId;
 use oxc_syntax::symbol::SymbolId;
 use rustc_hash::FxHashMap;
 
-use super::{Bound, Namespace, Rewriter, compiled_export};
+use super::{Bound, Namespace, Rewriter, compiled_export, export_symbol, reference_symbol};
 
 /// Where a binding leads: the module it is read from, and the name read, `None`
 /// for the module's namespace
@@ -58,19 +59,20 @@ pub(super) fn is_assigned_from(code: &str, name: &str) -> bool {
 /// `export const B = Box`. A module compiled with the import removed would
 /// otherwise export a name nothing declares.
 pub(super) fn export_edits(
-    program: &Program<'_>,
+    semantic: &Semantic<'_>,
     code: &str,
-    mut locals: FxHashMap<String, Reach>,
+    mut locals: FxHashMap<SymbolId, Reach>,
 ) -> Vec<(usize, usize, String)> {
     let mut edits = Vec::new();
+    let program = semantic.nodes().program();
     for statement in &program.body {
         match statement {
             Statement::VariableDeclaration(declaration) => {
-                alias_reaches(declaration, &mut locals);
+                alias_reaches(declaration, &mut locals, semantic);
             }
             Statement::ExportDeclaration(export) => {
                 if let Declaration::VariableDeclaration(declaration) = &export.declaration {
-                    let aliases = alias_reaches(declaration, &mut locals);
+                    let aliases = alias_reaches(declaration, &mut locals, semantic);
                     if !aliases.is_empty() {
                         let mut statements: Vec<String> = Vec::new();
                         let others: Vec<&str> = declaration
@@ -102,7 +104,8 @@ pub(super) fn export_edits(
                 let mut statements = Vec::new();
                 let mut kept = Vec::new();
                 for specifier in &export.specifiers {
-                    let reach = locals.get(specifier.local.name().as_str());
+                    let reach = export_symbol(&specifier.local, semantic)
+                        .and_then(|symbol| locals.get(&symbol));
                     match reach {
                         Some(reach) if !specifier.export_kind.is_type() => {
                             statements.push(reexport(specifier.exported.name().as_str(), reach));
@@ -125,7 +128,8 @@ pub(super) fn export_edits(
             }
             Statement::ExportDefaultDeclaration(export) => {
                 if let ExportDefaultDeclarationKind::Identifier(name) = &export.declaration
-                    && let Some(reach) = locals.get(name.name.as_str())
+                    && let Some(reach) =
+                        reference_symbol(name, semantic).and_then(|symbol| locals.get(&symbol))
                     && reach.1.is_some()
                 {
                     edits.push((
@@ -145,10 +149,12 @@ pub(super) fn export_edits(
 /// the build compiles `member` away
 fn namespace_member_reach(
     member: &StaticMemberExpression<'_>,
-    locals: &FxHashMap<String, Reach>,
+    locals: &FxHashMap<SymbolId, Reach>,
+    semantic: &Semantic<'_>,
 ) -> Option<Reach> {
     if let Expression::Identifier(object) = &member.object
-        && let Some((source, None)) = locals.get(object.name.as_str())
+        && let Some((source, None)) =
+            reference_symbol(object, semantic).and_then(|symbol| locals.get(&symbol))
         && compiled_export(member.property.name.as_str())
     {
         Some((source.clone(), Some(member.property.name.to_string())))
@@ -161,7 +167,8 @@ fn namespace_member_reach(
 /// member of its namespace, `(name, where it leads)`, added to `locals`
 fn alias_reaches<'a>(
     declaration: &VariableDeclaration<'a>,
-    locals: &mut FxHashMap<String, Reach>,
+    locals: &mut FxHashMap<SymbolId, Reach>,
+    semantic: &Semantic<'_>,
 ) -> Vec<(&'a str, Reach)> {
     let mut aliases = Vec::new();
     if declaration.kind != VariableDeclarationKind::Const {
@@ -172,14 +179,16 @@ fn alias_reaches<'a>(
             continue;
         };
         let reach = match &declarator.init {
-            Some(Expression::Identifier(init)) => locals.get(init.name.as_str()).cloned(),
+            Some(Expression::Identifier(init)) => reference_symbol(init, semantic)
+                .and_then(|symbol| locals.get(&symbol))
+                .cloned(),
             Some(Expression::StaticMemberExpression(member)) => {
-                namespace_member_reach(member, locals)
+                namespace_member_reach(member, locals, semantic)
             }
             _ => None,
         };
         if let Some(reach) = reach {
-            locals.insert(id.name.to_string(), reach.clone());
+            locals.extend(id.symbol_id.get().map(|symbol| (symbol, reach.clone())));
             aliases.push((id.name.as_str(), reach));
         }
     }
@@ -233,9 +242,7 @@ impl Rewriter<'_, '_, '_, '_> {
             let (Some(declaration), Some(alias), Some(origin)) = (
                 nodes.kind(declaration_id).as_variable_declaration(),
                 id.symbol_id.get(),
-                init.reference_id
-                    .get()
-                    .and_then(|reference| scoping.get_reference(reference).symbol_id()),
+                reference_symbol(init, self.semantic),
             ) else {
                 continue;
             };
@@ -290,7 +297,6 @@ impl Rewriter<'_, '_, '_, '_> {
     /// it is an error
     pub(super) fn hoist_style_constants(&mut self, program: &Program<'_>, bound: &[Bound<'_, '_>]) {
         let nodes = self.semantic.nodes();
-        let scoping = self.semantic.scoping();
         let apis: FxHashMap<SymbolId, &str> = bound
             .iter()
             .filter_map(|bound| {
@@ -322,11 +328,8 @@ impl Rewriter<'_, '_, '_, '_> {
             let Expression::Identifier(callee) = &call.callee else {
                 continue;
             };
-            let Some(api) = callee
-                .reference_id
-                .get()
-                .and_then(|reference| scoping.get_reference(reference).symbol_id())
-                .and_then(|symbol| apis.get(&symbol))
+            let Some(api) =
+                reference_symbol(callee, self.semantic).and_then(|symbol| apis.get(&symbol))
             else {
                 continue;
             };
@@ -356,10 +359,7 @@ impl Rewriter<'_, '_, '_, '_> {
                 let inside =
                     reference.span.start >= call.span.start && reference.span.end <= call.span.end;
                 !inside
-                    || reference
-                        .reference_id
-                        .get()
-                        .and_then(|reference| scoping.get_reference(reference).symbol_id())
+                    || reference_symbol(reference, self.semantic)
                         .is_none_or(|symbol| imports.contains(&symbol))
             });
             if !literal_only {
