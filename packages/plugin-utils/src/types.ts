@@ -79,6 +79,18 @@ export interface DevupConfig {
    * Theme configuration
    */
   theme?: DevupTheme
+
+  /**
+   * The project's Tailwind CSS, which the build reads the definitions of
+   * `@theme`, `@utility` and `@custom-variant` from
+   */
+  tailwind?: {
+    /**
+     * The CSS file that imports `tailwindcss`. Found among the conventional
+     * files when omitted; `false` reads none
+     */
+    css?: string | false
+  }
 }
 
 /**

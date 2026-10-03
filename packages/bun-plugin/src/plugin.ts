@@ -9,6 +9,8 @@ import {
   type CustomShorthands,
   loadDevupConfig,
   mergeImportAliases,
+  tailwindCssFiles,
+  withTailwindCss,
 } from '@devup-ui/plugin-utils'
 import {
   codeExtract,
@@ -23,6 +25,7 @@ import {
 import { plugin } from 'bun'
 
 import { cssDirName, cssNamespace, resolveCssId } from './css-id'
+import { createTailwindWatcher } from './tailwind-watch'
 
 const libPackage = '@devup-ui/react'
 const devupFile = 'devup.json'
@@ -35,11 +38,13 @@ export interface DevupUIBunPluginOptions {
   shorthands?: CustomShorthands
 }
 
-async function writeDataFiles() {
+async function writeDataFiles(): Promise<string[]> {
   let theme = {}
+  let tailwindFiles: string[] = []
   try {
     const config = await loadDevupConfig(devupFile)
-    theme = config.theme ?? {}
+    theme = withTailwindCss(config.theme ?? {}, config)
+    tailwindFiles = tailwindCssFiles(config)
   } catch {
     // Error reading devup.json, use empty theme
   }
@@ -56,7 +61,10 @@ async function writeDataFiles() {
     await mkdir(cssDir, { recursive: true })
   }
   await writeFile(join(cssDir, 'devup-ui.css'), getCss(null, false), 'utf-8')
+  return tailwindFiles
 }
+
+const watchTailwindCss = createTailwindWatcher(writeDataFiles)
 
 async function initialize({ shorthands }: DevupUIBunPluginOptions = {}) {
   registerShorthands(shorthands ?? {})
@@ -68,7 +76,7 @@ async function initialize({ shorthands }: DevupUIBunPluginOptions = {}) {
     createCompatTypes(importAliases),
     'utf-8',
   )
-  await writeDataFiles()
+  watchTailwindCss(await writeDataFiles())
 }
 
 // Devup UI is a preprocessor: the stylesheet is a build artifact consumed by a

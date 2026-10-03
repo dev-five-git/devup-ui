@@ -307,6 +307,79 @@ describe('devupUIWebpackPlugin', () => {
     expect(importFileMapSpy).toHaveBeenCalledWith({})
   })
 
+  describe('Tailwind CSS definitions', () => {
+    const tailwindFile = resolve('styles/tailwind.css')
+
+    function mockTailwindCss() {
+      existsSyncSpy.mockImplementation(
+        (path: string) => path === 'devup.json' || path === tailwindFile,
+      )
+      loadDevupConfigSyncSpy.mockReturnValue({
+        tailwind: { css: 'styles/tailwind.css' },
+      })
+      readFileSyncSpy.mockImplementation((path: string) =>
+        path === tailwindFile ? '@theme { --color-brand: #0af; }' : '{}',
+      )
+    }
+
+    it('registers the text of the Tailwind CSS and depends on its files', () => {
+      mockTailwindCss()
+      const plugin = new DevupUIWebpackPlugin({})
+      const compiler = createCompiler()
+
+      plugin.apply(asCompiler(compiler))
+
+      expect(registerThemeSpy).toHaveBeenCalledWith({
+        tailwindCss: '@theme { --color-brand: #0af; }',
+      })
+      const add = mock()
+      compiler.hooks.afterCompile.tap.mock.calls[0][1]({
+        fileDependencies: { add },
+      })
+      expect(add).toHaveBeenCalledWith(resolve('devup.json'))
+      expect(add).toHaveBeenCalledWith(tailwindFile)
+    })
+
+    it('reads it again when a file changes', async () => {
+      mockTailwindCss()
+      const plugin = new DevupUIWebpackPlugin({ watch: true })
+      const compiler = createCompiler()
+      statSpy.mockResolvedValueOnce(createStats(1))
+      statSpy.mockResolvedValueOnce(createStats(1))
+      statSpy.mockResolvedValueOnce(createStats(1))
+      statSpy.mockResolvedValueOnce(createStats(2))
+      plugin.apply(asCompiler(compiler))
+      registerThemeSpy.mockClear()
+
+      await compiler.hooks.watchRun.tapPromise.mock.calls[0][1]()
+      await compiler.hooks.watchRun.tapPromise.mock.calls[0][1]()
+
+      expect(registerThemeSpy).toHaveBeenCalledWith({
+        tailwindCss: '@theme { --color-brand: #0af; }',
+      })
+    })
+
+    it('takes a Tailwind CSS that is gone as unchanged', async () => {
+      existsSyncSpy.mockImplementation((path: string) => path === tailwindFile)
+      loadDevupConfigSyncSpy.mockReturnValue({
+        tailwind: { css: 'styles/tailwind.css' },
+      })
+      readFileSyncSpy.mockImplementation((path: string) =>
+        path === tailwindFile ? '@import "tailwindcss";' : '{}',
+      )
+      const plugin = new DevupUIWebpackPlugin({
+        watch: true,
+        devupFile: 'missing.json',
+      })
+      const compiler = createCompiler()
+      statSpy.mockRejectedValue(new Error('gone'))
+      plugin.apply(asCompiler(compiler))
+
+      await compiler.hooks.watchRun.tapPromise.mock.calls[0][1]()
+
+      expect(plugin.tailwindFiles).toEqual([tailwindFile])
+    })
+  })
   it.each(
     createTestMatrix({
       watch: [true, false],
