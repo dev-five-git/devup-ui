@@ -131,6 +131,7 @@ mod tests {
         assert_eq!(scaled("4", "calc(1px)"), None);
         assert_eq!(scaled("4", "var(--x)"), None);
         assert_eq!(scaled("4", "rem"), None);
+        assert_eq!(scaled("4", "1px2"), None);
     }
 
     fn written(class: &str) -> Vec<(String, String)> {
