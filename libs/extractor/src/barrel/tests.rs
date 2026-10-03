@@ -1049,3 +1049,24 @@ fn style_constants_computed_from_other_bindings_stay_where_they_are() {
     );
     assert!(error.contains("test.tsx:2:"), "{error}");
 }
+
+#[test]
+#[serial]
+fn aliases_that_are_not_package_exports_stay_declarations() {
+    let project = Project::new(
+        "alias-other",
+        &[
+            (
+                "ui.tsx",
+                "import { Box } from '@devup-ui/react'\nimport * as Devup from '@devup-ui/react'\nexport const N1 = Devup.css.name\nexport const N2 = Box.displayName\nexport const N3 = Devup.useTheme\nexport const N4 = Math.max\nexport const N5 = other.value\n",
+            ),
+            (
+                "app.tsx",
+                "import { N1, N2, N3, N4, N5 } from './ui'\nexport const a = [N1, N2, N3, N4, N5]\n",
+            ),
+        ],
+    );
+    let code = project.code("app.tsx");
+    assert!(code.contains("N1"), "{code}");
+    assert!(project.error("ui.tsx").contains("ui.tsx:3:"));
+}

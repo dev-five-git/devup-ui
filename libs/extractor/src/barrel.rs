@@ -13,7 +13,7 @@ use oxc_allocator::Allocator;
 use oxc_ast::AstKind;
 use oxc_ast::ast::{
     BindingIdentifier, BindingPattern, Declaration, ExportDefaultDeclarationKind, Expression,
-    ImportDeclarationSpecifier, Statement, VariableDeclarationKind,
+    ImportDeclarationSpecifier, Statement, StaticMemberExpression, VariableDeclarationKind,
 };
 use oxc_parser::{Parser, ParserReturn};
 use oxc_semantic::{Semantic, SemanticBuilder};
@@ -197,6 +197,26 @@ fn analyze(module: &ResolvedModule, package: &str) -> Exports {
     exports
 }
 
+/// Where `Namespace.member` leads, for a namespace a module imports
+fn member_link(
+    member: &StaticMemberExpression<'_>,
+    imports: &FxHashMap<&str, Link>,
+) -> Option<Link> {
+    if let Expression::Identifier(object) = &member.object
+        && let Some(Link::From {
+            source,
+            imported: None,
+        }) = imports.get(object.name.as_str())
+    {
+        Some(Link::From {
+            source: source.clone(),
+            imported: Some(member.property.name.to_string()),
+        })
+    } else {
+        None
+    }
+}
+
 /// The bindings a `const` declaration makes of what a module imports
 /// (`const B = Box`, `const C = Devup.css`), with where each leads
 fn alias_links<'a>(
@@ -215,21 +235,7 @@ fn alias_links<'a>(
             };
             let link = match declarator.init.as_ref()? {
                 Expression::Identifier(init) => imports.get(init.name.as_str())?.clone(),
-                Expression::StaticMemberExpression(member) => {
-                    let Expression::Identifier(object) = &member.object else {
-                        return None;
-                    };
-                    match imports.get(object.name.as_str())? {
-                        Link::From {
-                            source,
-                            imported: None,
-                        } => Link::From {
-                            source: source.clone(),
-                            imported: Some(member.property.name.to_string()),
-                        },
-                        _ => return None,
-                    }
-                }
+                Expression::StaticMemberExpression(member) => member_link(member, imports)?,
                 _ => return None,
             };
             Some((id.name.as_str(), link))

@@ -4,7 +4,7 @@
 use oxc_ast::AstKind;
 use oxc_ast::ast::{
     BindingPattern, Declaration, ExportDefaultDeclarationKind, Expression, Program, Statement,
-    VariableDeclaration, VariableDeclarationKind,
+    StaticMemberExpression, VariableDeclaration, VariableDeclarationKind,
 };
 use oxc_span::{GetSpan, Span};
 use oxc_syntax::node::NodeId;
@@ -141,6 +141,22 @@ pub(super) fn export_edits(
     edits
 }
 
+/// Where `Namespace.member` leads, when `Namespace` is a local of Devup UI and
+/// the build compiles `member` away
+fn namespace_member_reach(
+    member: &StaticMemberExpression<'_>,
+    locals: &FxHashMap<String, Reach>,
+) -> Option<Reach> {
+    if let Expression::Identifier(object) = &member.object
+        && let Some((source, None)) = locals.get(object.name.as_str())
+        && compiled_export(member.property.name.as_str())
+    {
+        Some((source.clone(), Some(member.property.name.to_string())))
+    } else {
+        None
+    }
+}
+
 /// The `const` bindings of `declaration` that alias a local of Devup UI or a
 /// member of its namespace, `(name, where it leads)`, added to `locals`
 fn alias_reaches<'a>(
@@ -157,15 +173,9 @@ fn alias_reaches<'a>(
         };
         let reach = match &declarator.init {
             Some(Expression::Identifier(init)) => locals.get(init.name.as_str()).cloned(),
-            Some(Expression::StaticMemberExpression(member)) => match &member.object {
-                Expression::Identifier(object) => match locals.get(object.name.as_str()) {
-                    Some((source, None)) if compiled_export(member.property.name.as_str()) => {
-                        Some((source.clone(), Some(member.property.name.to_string())))
-                    }
-                    _ => None,
-                },
-                _ => None,
-            },
+            Some(Expression::StaticMemberExpression(member)) => {
+                namespace_member_reach(member, locals)
+            }
             _ => None,
         };
         if let Some(reach) = reach {
@@ -220,10 +230,8 @@ impl Rewriter<'_, '_, '_, '_> {
                 continue;
             };
             let declaration_id = nodes.parent_id(node.id());
-            let AstKind::VariableDeclaration(declaration) = nodes.kind(declaration_id) else {
-                continue;
-            };
-            let (Some(alias), Some(origin)) = (
+            let (Some(declaration), Some(alias), Some(origin)) = (
+                nodes.kind(declaration_id).as_variable_declaration(),
                 id.symbol_id.get(),
                 init.reference_id
                     .get()
@@ -362,19 +370,14 @@ impl Rewriter<'_, '_, '_, '_> {
                 .map(|(_, start)| *start)
                 .min()
                 .unwrap_or_default();
-            let Some(before) = program
+            let before = program
                 .body
                 .iter()
                 .find(|statement| statement.span().end > first)
-            else {
-                continue;
-            };
+                .map_or(declaration.span.start, |statement| statement.span().start);
             let text = &self.code[declaration.span.start as usize..declaration.span.end as usize];
-            self.edits.push((
-                before.span().start as usize,
-                before.span().start as usize,
-                format!("{text}\n"),
-            ));
+            self.edits
+                .push((before as usize, before as usize, format!("{text}\n")));
             self.edits.push((
                 declaration.span.start as usize,
                 declaration.span.end as usize,
