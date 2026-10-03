@@ -36,6 +36,7 @@ export function LeftMenu() {
         Core Concepts
       </MenuItem>
       <MenuItem to="/docs/features">Features</MenuItem>
+      <MenuItem to="/docs/limitations">Supported Syntax & Limitations</MenuItem>
       <MenuItem
         subMenu={[
           {

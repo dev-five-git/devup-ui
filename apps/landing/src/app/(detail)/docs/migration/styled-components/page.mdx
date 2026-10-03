@@ -121,6 +121,13 @@ Emotion's `<Global styles={...} />` behaves the same way: the `styles` prop is e
 | `ThemeProvider`, `useTheme`, `withTheme` | `@devup-ui/react/compat`, CSS-variable backed                                    |
 | `createGlobalStyle`, `Global`            | extracted, render nothing                                                        |
 | `ServerStyleSheet`, `StyleSheetManager`  | inert — Devup UI already emits a real stylesheet, so there is nothing to collect |
+| `CacheProvider`                          | renders its children; the cache it configures has nothing to hold                |
 | `isStyledComponent`                      | always `false`                                                                   |
-| `ClassNames`, `CacheProvider`            | no equivalent; stays on its own package with a build warning                     |
+| `css` prop, `jsx`, JSX runtime pragmas   | compiled to `className` and `style`                                              |
+| `ClassNames`                             | replaced by what its child renders, each `css` / `cx` call compiled to classes   |
+| Component selectors (`${Child}`)         | a marker class on the selected component                                         |
 | `.attrs()`, `.withConfig()`              | attrs merged over props; `withConfig` dropped                                    |
+
+## Limitations
+
+Composition only the runtime sees — a `className` from props, an external class, a `styled()` base the build cannot read — follows CSS specificity and stylesheet order rather than the order you wrote. Styled components and classes defined in another module are not read as build-time values, stylis plugins are not applied, and test utilities and React Native targets are not supported. A component of your own that takes the `css` prop must pass on both `className` and `style`. See [Supported Syntax & Limitations](/docs/limitations) for the full list.
