@@ -70,7 +70,7 @@ export const noDuplicateValue = createRule({
     },
   },
   create(context) {
-    const importStorage = new ImportStorage()
+    const importStorage = new ImportStorage(context)
     return {
       ImportDeclaration(node) {
         importStorage.addImportByDeclaration(node)

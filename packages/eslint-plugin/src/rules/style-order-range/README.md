@@ -43,3 +43,8 @@ The rule checks `styleOrder` where the build reads it: a prop of a Devup UI comp
 ## When Not To Use It
 
 If you don't use `styleOrder` props or want to allow any value range, you can disable this rule.
+
+
+## Where it applies
+
+`styleOrder` is read as a prop of a Devup UI component and as a top-level key of a style object passed to `css`, `globalCss`, `keyframes` or `createGlobalStyle`, through the same import aliases the build compiles by default (`@emotion/react`, `@emotion/styled`, `styled-components`, `@vanilla-extract/css`), and in the rules of `styled` (`styled.div({ styleOrder: 1 })`, `styled('div', { styleOrder: 1 })`). It is not read in `.attrs()` or in vanilla-extract stylesheets (`.css.ts`, `.css.js`).
