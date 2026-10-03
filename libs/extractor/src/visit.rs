@@ -26,8 +26,9 @@ use crate::extractor::{
     },
     extract_style_from_jsx::extract_style_from_jsx,
     extract_style_from_styled::{
-        FORWARD_REF, StyledDefinition, StyledExtraction, extended, extract_style_from_styled,
-        forward_ref, read_forward, take_styled_modifiers, with_component,
+        FORWARD_REF, Naming, StyledDefinition, StyledExtraction, extended,
+        extract_style_from_styled, forward_ref, read_forward, take_styled_modifiers,
+        with_component,
     },
 };
 use crate::gen_class_name::{gen_class_names, merge_expression_for_class_name};
@@ -249,6 +250,11 @@ pub struct DevupVisitor<'a> {
     /// The styled component just built, by where it starts, for the `const`
     /// it initializes
     pending_styled: Option<(u32, StyledDefinition<'a>)>,
+    /// The styled bindings other styles select
+    selected_components: FxHashSet<oxc_syntax::symbol::SymbolId>,
+    /// The marker class of the selected styled component the declaration
+    /// being visited defines, with where its definition starts
+    pending_marker: Option<(u32, String)>,
     /// Whether a generated styled component forwards refs through React's
     /// `forwardRef`, which the program then imports
     forwards_refs: bool,
@@ -755,6 +761,8 @@ impl<'a> DevupVisitor<'a> {
             style_values: crate::style_values::StyleValues::default(),
             css_styles: None,
             pending_styled: None,
+            selected_components: FxHashSet::default(),
+            pending_marker: None,
             forwards_refs: false,
             styled_definitions: FxHashMap::default(),
             imported_css: FxHashMap::default(),
@@ -1289,12 +1297,22 @@ impl<'a> DevupVisitor<'a> {
             .filter(|_| renders)
             .and_then(StyledDefinition::inline)
             .map(|(tag, styles)| (tag.to_string(), clone(styles)));
+        let marker = definition.and_then(StyledDefinition::marker).map(|marker| {
+            ExtractStyleProp::Expression {
+                expression: Expression::new_string_literal(
+                    SPAN,
+                    Str::from_in(marker, allocator),
+                    None,
+                    &self.ast,
+                ),
+                styles: vec![],
+            }
+        });
         let own = definition.map(|definition| clone(definition.styles()));
         if let Some((tag, styles)) = inline {
-            return Some((
-                Some(tag),
-                self.compose_css_prop(element, css, styles, class_name),
-            ));
+            let mut props = self.compose_css_prop(element, css, styles, class_name);
+            props.extend(marker);
+            return Some((Some(tag), props));
         }
         let offset = css.offset;
         let props = self.compose_css_prop(element, css, vec![], class_name);
@@ -2262,6 +2280,7 @@ impl<'a> VisitMut<'a> for DevupVisitor<'a> {
             );
             self.style_values
                 .import(std::mem::take(&mut self.imported_css));
+            self.selected_components = crate::style_values::selected(it, &self.style_values);
         }
         walk_program(self, it);
         if !self.compiled_names.is_empty() {
@@ -2415,6 +2434,10 @@ impl<'a> VisitMut<'a> for DevupVisitor<'a> {
                     .and_then(|symbol| self.styled_definitions.get(&symbol))
                     .filter(|definition| definition.extendable());
                 let start = it.span().start;
+                let marker = self
+                    .pending_marker
+                    .take_if(|(at, _)| *at == start)
+                    .map(|(_, marker)| marker);
                 let StyledExtraction {
                     result,
                     expression,
@@ -2423,7 +2446,10 @@ impl<'a> VisitMut<'a> for DevupVisitor<'a> {
                 } = extract_style_from_styled(
                     &self.ast,
                     it,
-                    self.split_filename.as_deref(),
+                    Naming {
+                        split_filename: self.split_filename.as_deref(),
+                        marker: marker.as_deref(),
+                    },
                     &self.imports,
                     &attrs,
                     inherited,
@@ -3494,7 +3520,28 @@ impl<'a> VisitMut<'a> for DevupVisitor<'a> {
             self.local_styles.insert(symbol);
         }
 
+        let marked = styled_binding
+            .filter(|symbol| self.selected_components.contains(symbol))
+            .zip(start)
+            .zip(it.id.get_binding_identifier().map(|id| id.name.to_string()));
+        if let Some(((symbol, start), name)) = &marked {
+            let (symbol, start) = (*symbol, *start);
+            let marker = css::component_marker(name, &self.filename);
+            self.style_values.insert(
+                symbol,
+                crate::style_values::StyleValue::Component(format!(".{marker}")),
+            );
+            self.pending_marker = Some((start, marker));
+        }
+
         walk_variable_declarator(self, it);
+
+        // A binding selected but not to a styled component stays unread
+        if let Some(((symbol, _), _)) = marked
+            && self.pending_marker.take().is_some()
+        {
+            self.style_values.remove(symbol);
+        }
 
         if let Some((at, definition)) = self.pending_styled.take()
             && Some(at) == start

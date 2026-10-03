@@ -21482,6 +21482,32 @@ export const App = () => <Global {...rest} styles={{ body: { margin: '0px' } }} 
 
     #[test]
     #[serial]
+    fn test_emotion_component_selectors() {
+        let import = "import styled from '@emotion/styled';\n";
+        let codes = [
+            "const Child = styled.div`color: red;`;\nexport const Parent = styled.div`${Child} { color: green; } &:hover ${Child}, ${Child} + a { color: blue; }`;\nexport const App = () => <Child />;",
+            "const Child = styled.div({ color: 'red' });\nexport const Parent = styled.div({ [Child]: { color: 'green' }, [`&:hover ${Child}`]: { color: 'blue' } });",
+            "const Child = styled.div({ color: 'red' });\nconst Wide = styled(Child)({ width: 1 });\nexport const Parent = styled.div`${Child} { color: green; }`;\nexport const App = () => <><Child /><Wide /></>;",
+            "const Child = styled.div`color: red;`;\nexport const Parent = styled.div`${Child} { color: green; }`;\nexport const C = () => <Child css={{ color: 'blue' }} />;",
+            "const notStyled = 'x';\nexport const Parent = styled.div`${notStyled} { color: green; }`;",
+            "export const Parent = styled.div`a, :is(b, c) d { color: green; }`;",
+        ];
+        let outputs: Vec<String> = codes
+            .iter()
+            .map(|code| {
+                reset_class_map();
+                reset_file_map();
+                match extract("test.tsx", &format!("{import}{code}"), emotion_option()) {
+                    Ok(output) => format!("{}\n{:?}", output.code, output.styles),
+                    Err(error) => error.to_string(),
+                }
+            })
+            .collect();
+        assert_debug_snapshot!(outputs);
+    }
+
+    #[test]
+    #[serial]
     fn test_emotion_class_names_reports_what_it_cannot_compile() {
         let import = "import { ClassNames } from '@emotion/react';\n";
         let errors: Vec<String> = [

@@ -60,6 +60,27 @@ pub struct StyledDefinition<'a> {
     reads: Reads,
     /// Its `shouldForwardProp`, as the build evaluates it
     forward: Option<Forward>,
+    /// The class other styles select it by, which a component extending it
+    /// gives too, as it renders this one
+    marker: Option<String>,
+}
+
+/// `marker` as a class among those a component gives
+fn marker_class<'a>(ast_builder: &AstBuilder<'a>, marker: &str) -> Expression<'a> {
+    Expression::new_string_literal(
+        SPAN,
+        Str::from_in(marker, ast_builder.allocator()),
+        None,
+        ast_builder,
+    )
+}
+
+/// How the classes of a styled component are named: the file its atoms are
+/// split into, and the class other styles select it by
+#[derive(Clone, Copy, Default)]
+pub struct Naming<'s> {
+    pub split_filename: Option<&'s str>,
+    pub marker: Option<&'s str>,
 }
 
 /// Whether a styled component renders a tag, which takes only valid
@@ -117,6 +138,12 @@ impl<'a> StyledDefinition<'a> {
             && self.classes.is_empty()
             && self.styles.iter().all(fixed))
         .then_some((self.name.as_str(), self.styles.as_slice()))
+    }
+
+    /// The class other styles select the component by
+    #[must_use]
+    pub fn marker(&self) -> Option<&str> {
+        self.marker.as_deref()
     }
 
     /// The styles the component gives what it renders
@@ -236,9 +263,11 @@ fn inherited_parts<'a>(
         |inherited| {
             (
                 inherited
-                    .classes
-                    .iter()
-                    .map(|c| c.clone_in(allocator))
+                    .marker
+                    .as_deref()
+                    .map(|marker| marker_class(ast_builder, marker))
+                    .into_iter()
+                    .chain(inherited.classes.iter().map(|c| c.clone_in(allocator)))
                     .collect(),
                 inherited
                     .attrs
@@ -294,6 +323,7 @@ impl<'a> Base<'a> {
             attrs: attrs.iter().map(|attr| attr.clone_in(allocator)).collect(),
             reads,
             forward,
+            marker: None,
         }
     }
 
@@ -458,12 +488,16 @@ fn resolve_styled_call_target<'a>(
 pub fn extract_style_from_styled<'a>(
     ast_builder: &AstBuilder<'a>,
     expression: &mut Expression<'a>,
-    split_filename: Option<&str>,
+    naming: Naming<'_>,
     imports: &FxHashMap<String, ExportVariableKind>,
     attrs: &[Expression<'a>],
     inherited: Option<&StyledDefinition<'a>>,
     forward: Option<Forward>,
 ) -> StyledExtraction<'a> {
+    let Naming {
+        split_filename,
+        marker,
+    } = naming;
     let forward = combine_forward(inherited.and_then(|i| i.forward.as_ref()), forward);
     let mut reads = inherited.map_or_else(Reads::default, |inherited| inherited.reads.clone());
     for attr in attrs {
@@ -547,12 +581,16 @@ pub fn extract_style_from_styled<'a>(
         }));
         let class_name = merge_expression_for_class_name(
             ast_builder,
-            clone_all(ast_builder, &classes).chain(gen_class_names(
-                ast_builder,
-                &mut props_styles,
-                None,
-                split_filename,
-            )),
+            marker
+                .map(|marker| marker_class(ast_builder, marker))
+                .into_iter()
+                .chain(clone_all(ast_builder, &classes))
+                .chain(gen_class_names(
+                    ast_builder,
+                    &mut props_styles,
+                    None,
+                    split_filename,
+                )),
         );
         let tag = Some(Expression::new_string_literal(
             SPAN,
@@ -567,8 +605,9 @@ pub fn extract_style_from_styled<'a>(
             &gen_styles(ast_builder, &props_styles, None),
             &base.withheld(&reads, forward.as_ref()),
         );
-        let definition =
+        let mut definition =
             base.definition(ast_builder, classes, &props_styles, &attrs, reads, forward);
+        definition.marker = marker.map(str::to_string);
         let styled_component =
             base.render(ast_builder, apply_attrs(ast_builder, component, &attrs));
 
@@ -634,12 +673,16 @@ pub fn extract_style_from_styled<'a>(
 
         let class_name = merge_expression_for_class_name(
             ast_builder,
-            clone_all(ast_builder, &classes).chain(gen_class_names(
-                ast_builder,
-                &mut styles,
-                None,
-                split_filename,
-            )),
+            marker
+                .map(|marker| marker_class(ast_builder, marker))
+                .into_iter()
+                .chain(clone_all(ast_builder, &classes))
+                .chain(gen_class_names(
+                    ast_builder,
+                    &mut styles,
+                    None,
+                    split_filename,
+                )),
         );
         let component = create_styled_component(
             ast_builder,
@@ -648,7 +691,8 @@ pub fn extract_style_from_styled<'a>(
             &gen_styles(ast_builder, &styles, None),
             &base.withheld(&reads, forward.as_ref()),
         );
-        let definition = base.definition(ast_builder, classes, &styles, &attrs, reads, forward);
+        let mut definition = base.definition(ast_builder, classes, &styles, &attrs, reads, forward);
+        definition.marker = marker.map(str::to_string);
         let styled_component =
             base.render(ast_builder, apply_attrs(ast_builder, component, &attrs));
 
