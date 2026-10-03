@@ -78,7 +78,8 @@ function StepperDecreaseButton({
   disabled: disabledProp,
   ...props
 }: ComponentProps<typeof Button>) {
-  const { value, setValue, min } = useStepper()
+  const stepper = useStepper()
+  const { value, min } = stepper
   const disabled = value <= min
   return (
     <Button
@@ -92,7 +93,7 @@ function StepperDecreaseButton({
       disabled={disabled || disabledProp}
       onClick={(e) => {
         onClick?.(e)
-        if (!e.defaultPrevented) setValue(value - 1)
+        if (!e.defaultPrevented) stepper.setValue(value - 1)
       }}
     >
       <IconMinus
@@ -111,7 +112,8 @@ function StepperIncreaseButton({
   disabled: disabledProp,
   ...props
 }: ComponentProps<typeof Button>) {
-  const { value, setValue, max } = useStepper()
+  const stepper = useStepper()
+  const { value, max } = stepper
   const disabled = value >= max
   return (
     <Button
@@ -128,7 +130,7 @@ function StepperIncreaseButton({
       disabled={disabled || disabledProp}
       onClick={(e) => {
         onClick?.(e)
-        if (!e.defaultPrevented) setValue(value + 1)
+        if (!e.defaultPrevented) stepper.setValue(value + 1)
       }}
     >
       <IconPlus
@@ -179,7 +181,8 @@ function outputProps(props: StepperInputProps) {
 }
 
 function StepperInput({ className, onChange, ...props }: StepperInputProps) {
-  const { value, setValue, type } = useStepper()
+  const stepper = useStepper()
+  const { value, type } = stepper
 
   if (type === 'text')
     return (
@@ -202,7 +205,7 @@ function StepperInput({ className, onChange, ...props }: StepperInputProps) {
       allowClear={false}
       onChange={(e) => {
         onChange?.(e)
-        if (!e.defaultPrevented) setValue(Number(e.target.value))
+        if (!e.defaultPrevented) stepper.setValue(Number(e.target.value))
       }}
       type="number"
       // Fix prefix 0 issue
