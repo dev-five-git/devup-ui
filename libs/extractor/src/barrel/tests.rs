@@ -857,3 +857,18 @@ fn namespace_passed_whole_is_left_to_the_runtime() {
     assert!(code.contains("Object.keys(Devup)"), "{code}");
     assert!(code.contains("export default Devup"), "{code}");
 }
+
+#[test]
+#[serial]
+fn namespace_styled_in_a_stylesheet_is_compiled_by_the_visitor() {
+    reset_class_map();
+    reset_file_map();
+    let output = extract(
+        "test.css.ts",
+        "import * as Devup from '@devup-ui/react'\nexport const A = Devup.styled.div({ color: 'red' })\n",
+        ExtractOption::default(),
+    )
+    .unwrap();
+    assert!(!output.code.contains("Devup.styled"), "{}", output.code);
+    assert_ne!(output.styles.len(), 0);
+}
