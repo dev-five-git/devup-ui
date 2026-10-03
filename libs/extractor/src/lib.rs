@@ -3,6 +3,7 @@ mod build_time_values;
 mod class_arguments;
 mod component;
 mod css_utils;
+mod emotion_namespace;
 pub mod extract_style;
 mod extractor;
 mod gen_class_name;
@@ -295,11 +296,16 @@ fn extract_source(
     source_map: bool,
     resolver: Option<&ModuleResolver>,
 ) -> Result<ExtractOutput, Box<dyn Error>> {
+    let (namespace_code, namespace_edits) =
+        emotion_namespace::normalize(code, filename, &option.import_aliases).map_err(|errors| {
+            let (source, edits) = evaluated.unwrap_or((code, &[]));
+            located_errors(filename, source, edits, errors)
+        })?;
     // Step 1: Transform import aliases
     // e.g., `import styled from '@emotion/styled'` → `import { styled } from '@devup-ui/react'`
     // e.g., `import { style } from '@vanilla-extract/css'` → `import { style } from '@devup-ui/react'`
     let (transformed_code, alias_edits) = import_alias_visit::transform_import_aliases_with_edits(
-        code,
+        &namespace_code,
         filename,
         &option.package,
         &option.import_aliases,
@@ -311,13 +317,28 @@ fn extract_source(
 
     if !has_relevant_import {
         // skip if not using package
-        return Ok(ExtractOutput {
-            styles: FxHashSet::default(),
-            code: code.to_string(),
-            map: None,
-            css_file: None,
-            dependencies: Vec::new(),
-        });
+        if namespace_edits.is_empty() {
+            return Ok(ExtractOutput {
+                styles: FxHashSet::default(),
+                code: namespace_code.into_owned(),
+                map: None,
+                css_file: None,
+                dependencies: Vec::new(),
+            });
+        }
+        let (source, earlier_edits) = evaluated.unwrap_or((code, &[]));
+        let edits: Vec<&[import_alias_visit::Edit]> = std::iter::once(namespace_edits.as_slice())
+            .chain(earlier_edits.iter().copied())
+            .collect();
+        let mut output = emotion_namespace::Rewritten {
+            filename,
+            code: &namespace_code,
+            source,
+            edits: &edits,
+        }
+        .output();
+        output.map = output.map.filter(|_| source_map);
+        return Ok(output);
     }
 
     let mut dependencies = std::collections::BTreeSet::new();
@@ -430,6 +451,9 @@ fn extract_source(
         imported_constants::Inlined::default()
     };
     dependencies.extend(inlined.dependencies);
+    if !namespace_edits.is_empty() {
+        emotion_namespace::units::pixelify(&allocator, &mut program, &namespace_code);
+    }
     let mut visitor = DevupVisitor::new(
         &allocator,
         filename,
@@ -459,10 +483,23 @@ fn extract_source(
             &inlined.unknown,
         )
     {
+        let (computed, number_edits) = if namespace_edits.is_empty() {
+            (std::borrow::Cow::Borrowed(computed.as_str()), Vec::new())
+        } else {
+            import_alias_visit::pixelify_emotion_values(&computed, filename, &namespace_code)
+        };
         let mut output = extract_source(
             filename,
             &computed,
-            Some((code, &[value_edits.as_slice(), alias_edits.as_slice()])),
+            Some((
+                code,
+                &[
+                    number_edits.as_slice(),
+                    value_edits.as_slice(),
+                    alias_edits.as_slice(),
+                    namespace_edits.as_slice(),
+                ],
+            )),
             option,
             source_map,
             resolver,
@@ -474,9 +511,11 @@ fn extract_source(
         return Ok(output);
     }
     let (source, earlier_edits) = evaluated.unwrap_or((code, &[]));
-    let edits: Vec<&[import_alias_visit::Edit]> = std::iter::once(alias_edits.as_slice())
-        .chain(earlier_edits.iter().copied())
-        .collect();
+    let edits: Vec<&[import_alias_visit::Edit]> =
+        [alias_edits.as_slice(), namespace_edits.as_slice()]
+            .into_iter()
+            .chain(earlier_edits.iter().copied())
+            .collect();
     visitor.errors.append(&mut visitor.unknown_parts);
     if !visitor.errors.is_empty() {
         let mut message = located_errors(filename, source, &edits, visitor.errors);
@@ -561,6 +600,12 @@ fn located_errors(
             let offset = edits.iter().fold(offset as usize, |offset, edits| {
                 import_alias_visit::source_offset(edits, offset)
             });
+            let message = emotion_namespace::original_error_code(
+                source,
+                offset,
+                message,
+                SourceType::from_path(filename).unwrap_or_default(),
+            );
             format!("{}: {message}", locate(filename, source, offset))
         })
         .collect::<Vec<_>>()
@@ -738,6 +783,9 @@ pub fn has_devup_ui(filename: &str, code: &str, package: &str) -> bool {
 #[cfg(test)]
 #[allow(clippy::expect_used, clippy::unwrap_used)]
 mod tests {
+    mod emotion_namespace_tests {
+        include!("emotion_namespace_tests.rs");
+    }
     use std::collections::BTreeSet;
 
     use super::*;
