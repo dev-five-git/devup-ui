@@ -80,6 +80,7 @@ export function Select({
   const ref = useRef<HTMLDivElement>(null)
   const generatedId = useId()
   const listboxId = `${props.id ?? generatedId}-listbox`
+  const [triggerId, setTriggerId] = useState(`-trigger`)
   const [open, setOpen] = useState(defaultOpen ?? false)
   const isOpen = openProp ?? open
   const [value, setValue] = useState<SelectValue<typeof type>>(
@@ -124,6 +125,8 @@ export function Select({
         open: isOpen,
         setOpen: handleOpenChange,
         listboxId,
+        triggerId,
+        setTriggerId,
         value: valueProp ?? value,
         setValue: handleValueChange,
         type,
@@ -198,7 +201,15 @@ export const SelectTrigger = forwardRef<HTMLElement, SelectTriggerProps>(
     { className, children, asChild, onClick, onKeyDown, ...props },
     ref,
   ) {
-    const { open, setOpen, listboxId } = useSelect()
+    const { open, setOpen, listboxId, triggerId, setTriggerId } = useSelect()
+    const asChildId = isValidElement<{ id?: string }>(children)
+      ? children.props.id
+      : undefined
+    const id = props.id ?? (asChild ? asChildId : undefined) ?? triggerId
+    // The listbox is named by the trigger, whatever id the caller gave it
+    useEffect(() => {
+      if (id !== triggerId) setTriggerId(id)
+    }, [id, triggerId, setTriggerId])
     const handleClick = () => {
       setOpen(!open)
     }
@@ -222,7 +233,7 @@ export const SelectTrigger = forwardRef<HTMLElement, SelectTriggerProps>(
       }
       return (
         <Comp
-          aria-label="Select toggle"
+          id={id}
           {...props}
           {...childProps}
           ref={mergeRefs(ref, childRef)}
@@ -250,7 +261,6 @@ export const SelectTrigger = forwardRef<HTMLElement, SelectTriggerProps>(
         aria-controls={listboxId}
         aria-expanded={open}
         aria-haspopup="listbox"
-        aria-label="Select toggle"
         className={clsx(
           css({
             borderRadius: '8px',
@@ -258,6 +268,7 @@ export const SelectTrigger = forwardRef<HTMLElement, SelectTriggerProps>(
           }),
           className,
         )}
+        id={id}
         onClick={composeHandlers(
           onClick as TriggerHandler | undefined,
           handleClick,
@@ -287,7 +298,7 @@ export function SelectContainer({
   y = 0,
   ...props
 }: SelectContainerProps) {
-  const { open, setOpen, type, ref, listboxId } = useSelect()
+  const { open, setOpen, type, ref, listboxId, triggerId } = useSelect()
   const containerRef = useRef<HTMLDivElement>(null)
   // An effect rather than a callback ref returning cleanup, which React 18 ignores
   useEffect(() => {
@@ -387,7 +398,7 @@ export function SelectContainer({
   return (
     <VStack
       ref={containerRef}
-      aria-label="Select container"
+      aria-labelledby={props['aria-label'] ? undefined : triggerId}
       aria-multiselectable={type === 'checkbox' || undefined}
       bg="var(--inputBackground, light-dark(#FFF,#2E2E2E))"
       border="1px solid var(--border, light-dark(#E4E4E4,#434343))"
@@ -411,7 +422,6 @@ export function SelectContainer({
       {showConfirmButton && type === 'checkbox' && (
         <Flex justifyContent="end" w="100%">
           <Button
-            aria-label="Select confirm button"
             className={css({
               textAlign: 'end',
               bg: 'var(--primary, light-dark(#674DC7, #8163E1))',
@@ -486,7 +496,6 @@ export function SelectOption({
       }
       alignItems="center"
       aria-disabled={disabled}
-      aria-label="Select option"
       aria-selected={!!isSelected}
       borderRadius="6px"
       color={

@@ -11,6 +11,8 @@ export const SelectContext = createContext<{
   setValue: (value: string) => void
   type: SelectType
   listboxId: string
+  triggerId: string
+  setTriggerId: (id: string) => void
   ref: React.RefObject<HTMLDivElement | null>
 } | null>(null)
 
