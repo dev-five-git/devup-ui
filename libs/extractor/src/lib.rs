@@ -305,6 +305,7 @@ fn extract_source(
         code: transformed_code,
         edits: alias_edits,
         css_prop,
+        px,
     } = import_alias_visit::transform_import_aliases_with_edits(
         code,
         filename,
@@ -435,6 +436,7 @@ fn extract_source(
             &option,
             resolver,
             css_prop,
+            &px,
         )
     } else {
         imported_constants::Inlined::default()
@@ -21551,5 +21553,127 @@ export const App = () => <Global {...rest} styles={{ body: { margin: '0px' } }} 
         })
         .collect();
         assert_debug_snapshot!(errors);
+    }
+
+    fn library_option() -> ExtractOption {
+        let mut option = emotion_option();
+        option.import_aliases.insert(
+            "styled-components".to_string(),
+            ImportAlias::DefaultToNamed("styled".to_string()),
+        );
+        option.import_aliases.insert(
+            "@vanilla-extract/css".to_string(),
+            ImportAlias::NamedToNamed,
+        );
+        option
+    }
+
+    const SIZE_MODULES: &[(&str, &str)] = &[
+        (
+            "/src/sizes.ts",
+            "export const SIZE = 12;\nexport const ZERO = 0;\nexport const LINE = 2;\nexport const RULES = { padding: 5, lineHeight: 2, vars: { gap: 3 } };\nexport const NAME = 'big';",
+        ),
+        ("/src/App.tsx", ""),
+    ];
+
+    fn library_outputs(
+        cases: &[&str],
+        modules: &'static [(&'static str, &'static str)],
+    ) -> Vec<(String, String)> {
+        cases
+            .iter()
+            .map(|code| {
+                reset_class_map();
+                reset_file_map();
+                let output = match extract_with_modules(
+                    "/src/App.tsx",
+                    code,
+                    library_option(),
+                    false,
+                    &memory_resolver(modules),
+                ) {
+                    Ok(output) => format!("{:?}", ToBTreeSet::from(output)),
+                    Err(error) => format!("Error: {error}"),
+                };
+                ((*code).to_string(), output)
+            })
+            .collect()
+    }
+
+    #[test]
+    #[serial]
+    fn test_emotion_rules_read_local_constants_as_pixels() {
+        assert_debug_snapshot!(library_outputs(
+            &[
+                "import { css } from '@emotion/react';\nconst gap = 8;\nconst ZERO = 0;\nconst LINE = 2;\nexport const a = css({ padding: gap, margin: ZERO, lineHeight: LINE, opacity: LINE, p: gap, mx: gap });",
+                "import { css } from '@emotion/react';\nconst gap = 8;\nexport const a = css({ '&:hover': { top: -gap, left: gap * 2 }, width: gap > 4 ? gap : 1, height: gap || 3, minWidth: (gap) });",
+                "import { css } from '@emotion/react';\nconst gap = 8;\nconst rules = { padding: gap, lineHeight: 2, vars: { margin: 3 } };\nconst nested = { '&:hover': rules };\nexport const a = css(rules);\nexport const b = css({ ...rules, margin: 1 });\nexport const c = css({ '&:focus': rules });\nexport const d = css(nested);",
+                "import { css } from '@emotion/react';\nconst gap = 8;\nconst label = 'a';\nexport const a = css({ padding: gap, content: label, margin: label });",
+                "import styled from '@emotion/styled';\nconst gap = 8;\nexport const A = styled.div({ margin: gap, flex: gap, zIndex: gap });\nexport const B = styled('div')({ margin: gap });",
+                "import styled, { css } from 'styled-components';\nconst gap = 8;\nexport const A = styled.div({ margin: gap });\nexport const B = css({ margin: gap });",
+                "import { Global } from '@emotion/react';\nconst gap = 8;\nexport const App = () => <Global styles={{ body: { margin: gap, lineHeight: 2 } }} />;",
+                "import { ClassNames } from '@emotion/react';\nconst gap = 8;\nexport const App = () => <ClassNames>{({ css }) => <a className={css({ margin: gap })} />}</ClassNames>;",
+                "import { style } from '@vanilla-extract/css';\nconst gap = 8;\nexport const a = style({ margin: gap, lineHeight: gap, vars: { x: gap } });",
+                "import { css } from '@emotion/react';\nconst gap = 8;\nexport const App = () => <div css={{ margin: gap }} />;",
+                "import { css } from '@devup-ui/react';\nconst gap = 8;\nexport const a = css({ padding: gap, margin: 8 });",
+                "import { css } from '@emotion/react';\nexport const a = css({ padding: unknown, margin: 8 });",
+            ],
+            SIZE_MODULES
+        ));
+    }
+
+    #[test]
+    #[serial]
+    fn test_emotion_rules_read_imported_constants_as_pixels() {
+        assert_debug_snapshot!(library_outputs(
+            &[
+                "import { css } from '@emotion/react';\nimport { SIZE, ZERO, LINE, RULES, NAME } from './sizes';\nexport const a = css({ padding: SIZE, margin: ZERO, lineHeight: LINE, p: SIZE, content: NAME });\nexport const b = css(RULES);\nexport const c = css({ ...RULES, margin: SIZE });",
+                "import styled from '@emotion/styled';\nimport { SIZE } from './sizes';\nexport const A = styled.div({ margin: SIZE });",
+                "import { Global } from '@emotion/react';\nimport { SIZE } from './sizes';\nexport const App = () => <Global styles={{ body: { margin: SIZE } }} />;",
+                "import { style } from '@vanilla-extract/css';\nimport { SIZE } from './sizes';\nexport const a = style({ margin: SIZE });",
+                "import { css } from '@devup-ui/react';\nimport { SIZE } from './sizes';\nexport const a = css({ padding: SIZE });",
+            ],
+            SIZE_MODULES
+        ));
+    }
+
+    #[test]
+    #[serial]
+    fn test_emotion_css_text_composes_mixins_by_styles() {
+        assert_debug_snapshot!(library_outputs(
+            &[
+                "import { css } from '@emotion/react';\nconst mixin = css`color: red; margin: 1px;`;\nexport const a = css`${mixin}; color: blue;`;",
+                "import { css } from '@emotion/react';\nconst mixin = css({ color: 'red', margin: 1 });\nexport const a = css`color: green; ${mixin}; padding: 2px;`;",
+                "import { css } from '@emotion/react';\nconst mixin = css`color: red;`;\nconst more = css`${mixin}; margin: 2px;`;\nexport const a = css`${more}; color: blue;`;\nexport const b = css(more, { color: 'green' });",
+                "import { css } from '@emotion/react';\nexport const a = ({ mixin }) => css`${mixin}; color: blue;`;",
+                "import { css } from '@emotion/react';\nconst mixin = css`color: red;`;\nexport const a = ({ other }) => css`${mixin}; ${other}; color: blue;`;",
+                "import { css } from '@emotion/react';\nexport const a = css`${css({ color: 'red' })}; color: blue;`;",
+                "import { css } from '@emotion/react';\nexport const a = ({ on }) => css`${on && css({ color: 'red', margin: 1 })}; color: blue;`;",
+                "import { css } from '@emotion/react';\nexport const a = css`${css`color: red;`}; color: blue;`;",
+                "import { css } from '@emotion/react';\nexport const a = ({ on }) => css`${on ? css`color: red;` : css({ margin: 1 })}; color: blue;`;",
+            ],
+            SIZE_MODULES
+        ));
+    }
+
+    #[test]
+    #[serial]
+    fn test_emotion_css_flattens_inline_css_calls() {
+        assert_debug_snapshot!(library_outputs(
+            &[
+                "import { css } from '@emotion/react';\nexport const a = css(css({ color: 'red' }), { color: 'blue' });",
+                "import { css } from '@emotion/react';\nconst base = css({ color: 'green', margin: 4 });\nexport const a = (cond) => css(cond && css({ color: 'red' }), base);",
+                "import { css } from '@emotion/react';\nexport const a = (cond) => css(cond ? css({ color: 'red' }) : null, { color: 'blue' });",
+                "import { css } from '@emotion/react';\nexport const a = (cond) => css(cond || css({ color: 'red' }), { margin: 1 });",
+                "import { css } from '@emotion/react';\nexport const a = css([css({ color: 'red' }), [css({ margin: 1 }), { color: 'blue' }]]);",
+                "import { css } from '@emotion/react';\nexport const a = css(css(css({ color: 'red' }), { margin: 1 }), { color: 'blue' });",
+                "import { css } from '@emotion/react';\nexport const a = (cond) => css(cond && [css({ color: 'red' }), { margin: 1 }], { color: 'blue' });",
+                "import { css } from '@emotion/react';\nexport const a = (rest) => css(css(...rest), { color: 'blue' });",
+                "import { css } from '@emotion/react';\nexport const a = (cond, cls) => css(css({ color: 'red' }), cls, cond && css({ color: 'blue' }));",
+                "import { css } from '@emotion/react';\nexport const a = css(css({ color: 'red' }));",
+                "import { css } from '@devup-ui/react';\nexport const a = css(css({ color: 'red' }), { color: 'blue' });",
+            ],
+            SIZE_MODULES
+        ));
     }
 }

@@ -390,7 +390,11 @@ impl<'a> DevupVisitor<'a> {
     /// `css(...)` composing a class whose styles the build knows: the parts'
     /// styles merge, a later declaration replacing an earlier one. `None` when
     /// no part is such a class, or a part is one composing does not read.
-    fn compose_known_styles(&mut self, call: &CallExpression<'a>) -> Option<Expression<'a>> {
+    fn compose_known_styles(
+        &mut self,
+        call: &CallExpression<'a>,
+        flattened: bool,
+    ) -> Option<Expression<'a>> {
         let arguments: Vec<&Expression<'a>> = call
             .arguments
             .iter()
@@ -399,9 +403,10 @@ impl<'a> DevupVisitor<'a> {
                 argument => argument.to_expression(),
             })
             .collect();
-        if !arguments
-            .iter()
-            .any(|argument| self.reads_known_styles(argument))
+        if !flattened
+            && !arguments
+                .iter()
+                .any(|argument| self.reads_known_styles(argument))
         {
             return None;
         }
@@ -414,6 +419,106 @@ impl<'a> DevupVisitor<'a> {
         let (result, known) = self.composed_class(call.span.start, parts);
         if let Some(known) = known {
             self.css_styles = Some((call.span.start, known));
+        }
+        Some(result)
+    }
+
+    /// Whether `callee` is a call of `css()`
+    fn is_css(&self, callee: &Expression<'a>) -> bool {
+        self.util_type(callee)
+            .is_some_and(|util| matches!(util.as_ref(), UtilType::Css))
+    }
+
+    /// `part` of what `css()` or CSS text composes, with each inline `css()`
+    /// call in it written as the array of what it composes, so that what it
+    /// composes is ordered with the rest rather than compiled to a class of
+    /// its own, and with `templates`, each inline CSS text in it written as an
+    /// array of itself, which keeps the class it compiles to from being read as
+    /// CSS text. Whether a part was written so.
+    fn flatten_css_calls(&self, part: &mut Expression<'a>, templates: bool) -> bool {
+        if templates
+            && matches!(unwrap_syntax_only(part), Expression::TaggedTemplateExpression(tag)
+                if self.is_css(&tag.tag))
+        {
+            let template = part.take_in(&self.ast);
+            *part = Expression::new_array_expression(
+                SPAN,
+                oxc_allocator::Vec::from_array_in([template.into()], &self.ast),
+                &self.ast,
+            );
+            return true;
+        }
+        let array = match unwrap_syntax_only_mut(part) {
+            Expression::ArrayExpression(array) => {
+                return array.elements.iter_mut().fold(false, |flattened, part| {
+                    part.as_expression_mut()
+                        .is_some_and(|part| self.flatten_css_calls(part, templates))
+                        | flattened
+                });
+            }
+            Expression::ConditionalExpression(conditional) => {
+                return self.flatten_css_calls(&mut conditional.consequent, templates)
+                    | self.flatten_css_calls(&mut conditional.alternate, templates);
+            }
+            Expression::LogicalExpression(logical) => {
+                return (logical.operator != LogicalOperator::And
+                    && self.flatten_css_calls(&mut logical.left, templates))
+                    | self.flatten_css_calls(&mut logical.right, templates);
+            }
+            Expression::CallExpression(call)
+                if self.is_css(&call.callee)
+                    && call
+                        .arguments
+                        .iter()
+                        .all(|argument| !matches!(argument, Argument::SpreadElement(_))) =>
+            {
+                let elements = call
+                    .arguments
+                    .drain(..)
+                    .map(|argument| argument.into_expression().into());
+                Expression::new_array_expression(
+                    SPAN,
+                    oxc_allocator::Vec::from_iter_in(elements, &self.ast),
+                    &self.ast,
+                )
+            }
+            _ => return false,
+        };
+        *part = array;
+        self.flatten_css_calls(part, templates);
+        true
+    }
+
+    /// `css` with CSS text composing mixins whose styles the build knows, as
+    /// the parts around them: the styles merge, a later declaration replacing
+    /// an earlier one. `None` when no mixin is such a class, or the text is
+    /// not read as parts.
+    fn compose_template(
+        &mut self,
+        tag: &oxc_ast::ast::TaggedTemplateExpression<'a>,
+        flattened: bool,
+    ) -> Option<Expression<'a>> {
+        let texts = template_parts(&self.ast, &tag.quasi, true).ok()?;
+        let is_mixin = |text: &Expression<'a>| !matches!(text, Expression::TemplateLiteral(_));
+        if !texts
+            .iter()
+            .any(|text| is_mixin(text) && (flattened || self.reads_known_styles(text)))
+        {
+            return None;
+        }
+        let mut parts = Vec::new();
+        for text in &texts {
+            let kind = if is_mixin(text) {
+                Text::Classes
+            } else {
+                Text::Rules
+            };
+            self.known_parts(text, &mut parts, kind)?;
+        }
+        let offset = tag.span.start;
+        let (result, known) = self.composed_class(offset, parts);
+        if let Some(known) = known {
+            self.css_styles = Some((offset, known));
         }
         Some(result)
     }
@@ -636,9 +741,7 @@ impl<'a> DevupVisitor<'a> {
             Expression::CallExpression(call) if self.class_names_text(&call.callee).is_some() => {
                 self.folded_side(expression, text)
             }
-            Expression::ArrayExpression(_) if !self.class_names_scope.is_empty() => {
-                self.folded_side(expression, text)
-            }
+            Expression::ArrayExpression(_) => self.folded_side(expression, text),
             _ => None,
         }
     }
@@ -2387,6 +2490,25 @@ impl<'a> VisitMut<'a> for DevupVisitor<'a> {
         if let Some(error) = forward_error {
             self.errors.push(error);
         }
+        let flattened = match it {
+            Expression::CallExpression(call) if self.is_css(&call.callee) => call
+                .arguments
+                .iter_mut()
+                .fold(false, |flattened, argument| {
+                    argument
+                        .as_expression_mut()
+                        .is_some_and(|part| self.flatten_css_calls(part, false))
+                        | flattened
+                }),
+            Expression::TaggedTemplateExpression(tag) if self.is_css(&tag.tag) => tag
+                .quasi
+                .expressions
+                .iter_mut()
+                .fold(false, |flattened, part| {
+                    self.flatten_css_calls(part, true) | flattened
+                }),
+            _ => false,
+        };
         walk_expression(self, it);
 
         // Handle styled function calls
@@ -2895,7 +3017,7 @@ impl<'a> VisitMut<'a> for DevupVisitor<'a> {
             && self
                 .util_type(&call.callee)
                 .is_some_and(|util| matches!(util.as_ref(), UtilType::Css))
-            && let Some(composed) = self.compose_known_styles(call)
+            && let Some(composed) = self.compose_known_styles(call, flattened)
         {
             *it = composed;
         } else if let Expression::CallExpression(call) = it {
@@ -3134,13 +3256,20 @@ impl<'a> VisitMut<'a> for DevupVisitor<'a> {
                 UtilType::Keyframes => "keyframes",
                 UtilType::GlobalCss | UtilType::GlobalCssComponent => "globalCss",
             };
+            let composed = if matches!(r, UtilType::Css) {
+                self.compose_template(tag, flattened)
+            } else {
+                None
+            };
             let mut build_css_str = || {
                 template_css_text(&tag.quasi, api).unwrap_or_else(|error| {
                     self.errors.push(error);
                     String::new()
                 })
             };
-            *it = if matches!(r, UtilType::Css) {
+            *it = if let Some(composed) = composed {
+                composed
+            } else if matches!(r, UtilType::Css) {
                 let TemplateStyles {
                     styles,
                     statements,
@@ -3159,12 +3288,28 @@ impl<'a> VisitMut<'a> for DevupVisitor<'a> {
                     self.errors
                         .push((expression.span().start, unplaced_error(expression)));
                 }
+                let known = statements.is_empty().then(|| {
+                    let mut known = crate::composition::Composition::default();
+                    known.apply(
+                        &self.ast,
+                        style_props
+                            .iter()
+                            .map(|prop| prop.clone_in(self.ast.allocator()))
+                            .collect(),
+                    );
+                    known.unconditional()
+                });
                 let class_name = gen_class_names(
                     &self.ast,
                     &mut style_props,
                     None,
                     self.split_filename.as_deref(),
                 );
+                if let Some(Some(known)) = known
+                    && matches!(class_name, Some(Expression::StringLiteral(_)))
+                {
+                    self.css_styles = Some((tag.span.start, known));
+                }
 
                 for ex in style_props {
                     // every entry was built as `Static` above

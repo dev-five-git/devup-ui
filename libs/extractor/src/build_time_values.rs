@@ -74,6 +74,7 @@ pub(crate) fn has_build_time_values(
         option,
         resolver,
         aliased.css_prop,
+        &aliased.px,
     );
     let changes = crate::imported_constants::ChangeCheck::new(&program, filename, option, resolver);
     !find(

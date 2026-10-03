@@ -15,7 +15,7 @@ use oxc_ast::builder::AstBuilder;
 use oxc_ast_visit::{Visit, VisitMut, walk, walk_mut};
 use oxc_parser::Parser;
 use oxc_semantic::{Scoping, SemanticBuilder};
-use oxc_span::{SPAN, SourceType};
+use oxc_span::{GetSpan, SPAN, SourceType};
 use oxc_syntax::number::NumberBase;
 use oxc_syntax::operator::BinaryOperator;
 use oxc_syntax::symbol::SymbolId;
@@ -322,6 +322,7 @@ pub(crate) fn inline_constants<'a>(
     option: &ExtractOption,
     resolver: Option<&ModuleResolver>,
     css_prop: CssProp,
+    px: &crate::import_alias_visit::PxMarks,
 ) -> Inlined {
     let is_style_package =
         |source: &str| source.starts_with(&option.package) || source == crate::STYLEX_PACKAGE;
@@ -510,6 +511,7 @@ pub(crate) fn inline_constants<'a>(
             objects: false,
             styles: false,
             px: false,
+            marks: px,
             class_names: Vec::new(),
         }
         .visit_program(program);
@@ -1812,6 +1814,9 @@ struct Inline<'s, 'a> {
     styles: bool,
     /// Inside a `css` prop, whose numbers Emotion reads as `px` lengths
     px: bool,
+    /// Where a constant stands as a value or rules of a library reading
+    /// numbers as `px` lengths
+    marks: &'s crate::import_alias_visit::PxMarks,
     /// The names the `<ClassNames>` child functions around take `css` and
     /// `cx` by
     class_names: Vec<String>,
@@ -1980,16 +1985,12 @@ impl<'a> Inline<'_, 'a> {
     }
 }
 
-/// `property` holding a number as the `px` length Emotion reads it as
-fn px_value<'a>(ast_builder: &AstBuilder<'a>, property: &mut oxc_ast::ast::ObjectProperty<'a>) {
-    if let Some(number) = crate::utils::js_number_literal(&property.value)
+/// `value` as the `px` length Emotion reads it as when it is a number
+fn px_number<'a>(ast_builder: &AstBuilder<'a>, value: &mut Expression<'a>) {
+    if let Some(number) = crate::utils::js_number_literal(value)
         && number != 0.0
-        && property
-            .key
-            .static_name()
-            .is_some_and(|key| !crate::utils::keeps_bare_number(&key))
     {
-        property.value = Expression::new_string_literal(
+        *value = Expression::new_string_literal(
             SPAN,
             Str::from_in(format!("{number}px").as_str(), ast_builder.allocator()),
             None,
@@ -1998,12 +1999,25 @@ fn px_value<'a>(ast_builder: &AstBuilder<'a>, property: &mut oxc_ast::ast::Objec
     }
 }
 
+/// `property` holding a number as the `px` length Emotion reads it as
+fn px_value<'a>(ast_builder: &AstBuilder<'a>, property: &mut oxc_ast::ast::ObjectProperty<'a>) {
+    if property
+        .key
+        .static_name()
+        .is_some_and(|key| !crate::utils::keeps_bare_number(&key))
+    {
+        px_number(ast_builder, &mut property.value);
+    }
+}
+
 /// The rules `rules` with their numbers as the `px` lengths Emotion reads them
 /// as, nested rules included
 fn px_rules<'a>(ast_builder: &AstBuilder<'a>, rules: &mut Expression<'a>) {
     if let Expression::ObjectExpression(object) = rules {
         for property in &mut object.properties {
-            if let ObjectPropertyKind::ObjectProperty(property) = property {
+            if let ObjectPropertyKind::ObjectProperty(property) = property
+                && property.key.static_name().is_none_or(|key| key != "vars")
+            {
                 px_value(ast_builder, property);
                 px_rules(ast_builder, &mut property.value);
             }
@@ -2072,8 +2086,13 @@ impl<'a> VisitMut<'a> for Inline<'_, 'a> {
                 .constant(expression)
                 .and_then(|constant| self.literal(&constant))
             {
+                let span = expression.span();
+                let marked = self.marks.contains(&(span.start, span.end));
                 *expression = literal;
-                if self.px {
+                if marked {
+                    px_number(self.ast_builder, expression);
+                }
+                if self.px || marked {
                     px_rules(self.ast_builder, expression);
                 }
                 return;
