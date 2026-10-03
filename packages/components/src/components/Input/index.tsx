@@ -8,7 +8,9 @@ import {
   Input as DevupInput,
   Text,
 } from '@devup-ui/react'
-import { ComponentProps, forwardRef, useState } from 'react'
+import { ComponentProps, forwardRef, useId, useRef, useState } from 'react'
+
+import { joinIds, mergeRefs } from '../../utils/dom'
 
 interface InputProps extends Omit<ComponentProps<'input'>, 'type'> {
   type?: Exclude<ComponentProps<'input'>['type'], 'file'>
@@ -31,6 +33,10 @@ interface InputProps extends Omit<ComponentProps<'input'>, 'type'> {
     iconBold?: string
     border?: string
     inputBackground?: string
+    inputDisabledBackground?: string
+    inputDisabledText?: string
+    inputPlaceholder?: string
+    primaryBackground?: string
     primaryFocus?: string
     negative20?: string
   }
@@ -53,11 +59,17 @@ export const Input = forwardRef<HTMLInputElement, InputProps>(function Input(
     classNames,
     readOnly,
     onClear,
+    id,
+    'aria-describedby': describedBy,
     ...props
   },
   ref,
 ) {
   const [value, setValue] = useState(defaultValue)
+  const inputRef = useRef<HTMLInputElement>(null)
+  const generatedId = useId()
+  const errorMessageId = `${id ?? generatedId}-error`
+  const showsError = error && !!errorMessage
 
   const handleChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     setValue(e.target.value)
@@ -65,10 +77,16 @@ export const Input = forwardRef<HTMLInputElement, InputProps>(function Input(
   }
 
   const handleClear = () => {
-    setValue('')
-    onChangeProp?.({
-      target: { value: '' },
-    } as React.ChangeEvent<HTMLInputElement>)
+    const input = inputRef.current
+    if (input) {
+      // A real input event, so the change reaches React and the owner as it does when the user types
+      Object.getOwnPropertyDescriptor(
+        HTMLInputElement.prototype,
+        'value',
+      )?.set?.call(input, '')
+      input.dispatchEvent(new Event('input', { bubbles: true }))
+      input.focus()
+    }
     onClear?.()
   }
 
@@ -83,10 +101,26 @@ export const Input = forwardRef<HTMLInputElement, InputProps>(function Input(
       display="inline-block"
       pos="relative"
       selectors={{ '&, & *': { boxSizing: 'border-box' } }}
+      styleVars={{
+        primary: colors?.primary,
+        error: colors?.error,
+        text: colors?.text,
+        base: colors?.base,
+        iconBold: colors?.iconBold,
+        border: colors?.border,
+        inputBackground: colors?.inputBackground,
+        inputDisabledBackground: colors?.inputDisabledBackground,
+        inputDisabledText: colors?.inputDisabledText,
+        inputPlaceholder: colors?.inputPlaceholder,
+        primaryBackground: colors?.primaryBackground,
+        primaryFocus: colors?.primaryFocus,
+        negative20: colors?.negative20,
+      }}
     >
       {icon && (
         <Center
-          aria-label="icon"
+          aria-hidden
+
           boxSize="24px"
           className={classNames?.icon}
           color={
@@ -104,17 +138,17 @@ export const Input = forwardRef<HTMLInputElement, InputProps>(function Input(
         </Center>
       )}
       <DevupInput
-        ref={ref}
+        ref={mergeRefs(ref, inputRef)}
         _disabled={{
           _placeholder: {
             color: 'var(--inputDisabledText, light-dark(#D6D7DE, #373737))',
           },
-          bg: 'var(--inputDisabledBg, light-dark(#F0F0F3, #414244))',
+          bg: 'var(--inputDisabledBackground, light-dark(#F0F0F3, #414244))',
           border: '1px solid var(--border, light-dark(#E4E4E4, #434343))',
           color: 'var(--inputDisabledText, light-dark(#D6D7DE, #373737))',
         }}
         _focus={{
-          bg: 'var(--primaryBg, light-dark(#F4F3FA, #F4F3FA0D))',
+          bg: 'var(--primaryBackground, light-dark(#F4F3FA, #F4F3FA0D))',
           border: '1px solid var(--primary, light-dark(#674DC7, #8163E1))',
           outline: 'none',
         }}
@@ -124,8 +158,9 @@ export const Input = forwardRef<HTMLInputElement, InputProps>(function Input(
         _placeholder={{
           color: 'var(--inputPlaceholder, light-dark(#A9A8AB, #CBCBCB))',
         }}
-        aria-label="input"
-        bg="var(--inputBg, light-dark(#FFFFFF, #2E2E2E))"
+        aria-describedby={joinIds(describedBy, showsError && errorMessageId)}
+        aria-invalid={error || undefined}
+        bg="var(--inputBackground, light-dark(#FFFFFF, #2E2E2E))"
         borderColor={
           error
             ? 'var(--error, light-dark(#D52B2E, #FF5B5E))'
@@ -136,36 +171,27 @@ export const Input = forwardRef<HTMLInputElement, InputProps>(function Input(
         borderWidth="1px"
         className={`${className || ''} ${classNames?.input || ''}`.trim()}
         disabled={disabled}
+        id={id}
         onChange={handleChange}
         pl={icon ? '36px' : '12px'}
         pr={allowClear ? '36px' : '12px'}
         py="12px"
         styleOrder={1}
-        styleVars={{
-          primary: colors?.primary,
-          error: colors?.error,
-          text: colors?.text,
-          base: colors?.base,
-          iconBold: colors?.iconBold,
-          border: colors?.border,
-          inputBackground: colors?.inputBackground,
-          primaryFocus: colors?.primaryFocus,
-          negative20: colors?.negative20,
-        }}
         transition="all 0.1s ease-in-out"
         typography={typography}
         value={innerValue}
         {...props}
       />
       {clearButtonVisible && <ClearButton onClick={handleClear} />}
-      {error && errorMessage && (
+      {showsError && (
         <Text
-          aria-label="error-message"
           bottom="-8px"
           className={classNames?.errorMessage}
           color="var(--error, light-dark(#D52B2E, #FF5B5E))"
+          id={errorMessageId}
           left="0"
           pos="absolute"
+          role="alert"
           styleOrder={1}
           transform="translateY(100%)"
           typography="inputPlaceholder"

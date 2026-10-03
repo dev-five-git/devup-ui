@@ -32,29 +32,25 @@ describe('Textarea', () => {
   it('should render error style when error is true', () => {
     const { container } = render(<Textarea error />)
     expect(container).toMatchSnapshot()
-    expect(container.querySelector('[aria-label="textarea"]')).toHaveClass(
+    expect(container.querySelector('textarea')).toHaveClass(
       'border-color-0-var_lp_--error_cm_light-dark_lp__h_D52B2E_cm__h_FF5B5E_rp__rp_-_a__lb_aria-invalid_eq__dq_true_dq__rb_-1',
     )
   })
 
   it('should render with error message', () => {
     const { container } = render(
-      <Textarea error errorMessage="Error message" />,
+      <Textarea error errorMessage="Error message" id="field" />,
     )
     expect(container).toMatchSnapshot()
-    expect(
-      container.querySelector('[aria-label="error-message"]'),
-    ).toBeInTheDocument()
-    expect(
-      container.querySelector('[aria-label="error-message"]')?.textContent,
-    ).toBe('Error message')
+    expect(container.querySelector('[role="alert"]')).toBeInTheDocument()
+    expect(container.querySelector('[role="alert"]')?.textContent).toBe(
+      'Error message',
+    )
   })
 
   it('should not render error message when error is false', () => {
     const { container } = render(<Textarea errorMessage="Error message" />)
-    expect(
-      container.querySelector('[aria-label="error-message"]'),
-    ).not.toBeInTheDocument()
+    expect(container.querySelector('[role="alert"]')).not.toBeInTheDocument()
   })
 
   it('should render with aria-invalid when error is true', () => {
@@ -85,14 +81,22 @@ describe('Textarea', () => {
           error: 'blue',
           text: 'green',
         }}
+        error
+        errorMessage="wrong"
       />,
     )
-    const textarea = container.querySelector('[aria-label="textarea"]')
-    expect(textarea).toHaveStyle({
+    // On the container, so the message sees them too
+    const root = container.firstElementChild
+    expect(root).toHaveStyle({
       '--primary': 'red',
       '--error': 'blue',
       '--text': 'green',
     })
+    for (const part of [
+      container.querySelector('textarea'),
+      container.querySelector('[role="alert"]'),
+    ])
+      expect(part?.closest('[style*="--error"]')).toBe(root)
   })
 
   it('should have typography when typography is provided', () => {
@@ -128,11 +132,10 @@ describe('Textarea', () => {
         classNames={{ errorMessage: 'error-class' }}
         error
         errorMessage="Error"
+        id="field"
       />,
     )
-    expect(container.querySelector('[aria-label="error-message"]')).toHaveClass(
-      'error-class',
-    )
+    expect(container.querySelector('[role="alert"]')).toHaveClass('error-class')
   })
 
   it('should handle onChange event', async () => {
@@ -146,7 +149,7 @@ describe('Textarea', () => {
 
   it('should render full width by default', () => {
     const { container } = render(<Textarea />)
-    expect(container.querySelector('[aria-label="textarea"]')).toHaveClass(
+    expect(container.querySelector('textarea')).toHaveClass(
       'width-0-100_pc_--1',
     )
   })

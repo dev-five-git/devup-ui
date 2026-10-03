@@ -1,5 +1,6 @@
 import {
   afterAll,
+  afterEach,
   beforeEach,
   describe,
   expect,
@@ -8,13 +9,23 @@ import {
   spyOn,
 } from 'bun:test'
 
-import { initTheme } from '../init-theme'
+import { initTheme as init } from '../init-theme'
+
+const running: (() => void)[] = []
+function initTheme(...args: Parameters<typeof init>) {
+  const stop = init(...args)
+  running.push(stop)
+  return stop
+}
 
 afterAll(() => {
   mock.restore()
 })
 beforeEach(() => {
   localStorage.removeItem('__DF_THEME_SELECTED__')
+})
+afterEach(() => {
+  running.splice(0).forEach((stop) => stop())
 })
 
 describe('initTheme', () => {

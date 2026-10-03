@@ -10,6 +10,7 @@ import {
 import clsx from 'clsx'
 import {
   ComponentProps,
+  forwardRef,
   isValidElement,
   useEffect,
   useId,
@@ -19,6 +20,7 @@ import {
 
 import { SelectContext, useSelect } from '../../contexts/useSelect'
 import { SelectType, SelectValue } from '../../types/select'
+import { elementRef, mergeRefs } from '../../utils/dom'
 import { Button } from '../Button'
 import { IconCheck } from './IconCheck'
 
@@ -178,62 +180,99 @@ export function Select({
 interface SelectTriggerProps extends ComponentProps<typeof Button> {
   asChild?: boolean
 }
-export function SelectTrigger({
-  className,
-  children,
-  asChild,
-  ...props
-}: SelectTriggerProps) {
-  const { open, setOpen, listboxId } = useSelect()
-  const handleClick = () => {
-    setOpen(!open)
-  }
-  const handleKeyDown = (e: React.KeyboardEvent<HTMLElement>) => {
-    if (open || (e.key !== 'ArrowDown' && e.key !== 'ArrowUp')) return
-    e.preventDefault()
-    setOpen(true)
-  }
 
-  if (asChild) {
-    if (!isValidElement<Record<string, unknown>>(children)) {
-      throw new Error('SelectTrigger with asChild requires a single element')
+type TriggerHandler = (e: React.SyntheticEvent<HTMLElement>) => void
+
+/** Runs the handlers in order, stopping once one prevents the event */
+function composeHandlers(...handlers: (TriggerHandler | undefined)[]) {
+  return (e: React.SyntheticEvent<HTMLElement>) => {
+    for (const handler of handlers) {
+      if (e.defaultPrevented) return
+      handler?.(e)
     }
-
-    const Comp = children.type
-    const childProps = {
-      'aria-controls': listboxId,
-      'aria-expanded': open,
-      'aria-haspopup': 'listbox',
-      'aria-label': 'Select toggle',
-      onKeyDown: handleKeyDown,
-      onClick: children.props.onClick ?? handleClick,
-      ...children.props,
-    }
-    return <Comp {...childProps} />
   }
-
-  return (
-    <Button
-      aria-controls={listboxId}
-      aria-expanded={open}
-      aria-haspopup="listbox"
-      aria-label="Select toggle"
-      className={clsx(
-        css({
-          borderRadius: '8px',
-          styleOrder: 2,
-        }),
-        className,
-      )}
-      onClick={handleClick}
-      onKeyDown={handleKeyDown}
-      {...props}
-    >
-      {children}
-    </Button>
-  )
 }
 
+export const SelectTrigger = forwardRef<HTMLElement, SelectTriggerProps>(
+  function SelectTrigger(
+    { className, children, asChild, onClick, onKeyDown, ...props },
+    ref,
+  ) {
+    const { open, setOpen, listboxId } = useSelect()
+    const handleClick = () => {
+      setOpen(!open)
+    }
+    const handleKeyDown = (e: React.KeyboardEvent<HTMLElement>) => {
+      if (open || (e.key !== 'ArrowDown' && e.key !== 'ArrowUp')) return
+      e.preventDefault()
+      setOpen(true)
+    }
+
+    if (asChild) {
+      if (!isValidElement<Record<string, unknown>>(children)) {
+        throw new Error('SelectTrigger with asChild requires a single element')
+      }
+
+      const Comp = children.type
+      const childRef = elementRef(children)
+      const childProps = children.props as {
+        className?: string
+        onClick?: TriggerHandler
+        onKeyDown?: TriggerHandler
+      }
+      return (
+        <Comp
+          aria-label="Select toggle"
+          {...props}
+          {...childProps}
+          ref={mergeRefs(ref, childRef)}
+          aria-controls={listboxId}
+          aria-expanded={open}
+          aria-haspopup="listbox"
+          className={clsx(className, childProps.className) || undefined}
+          onClick={composeHandlers(
+            childProps.onClick,
+            onClick as TriggerHandler | undefined,
+            handleClick,
+          )}
+          onKeyDown={composeHandlers(
+            childProps.onKeyDown,
+            onKeyDown as TriggerHandler | undefined,
+            handleKeyDown as TriggerHandler,
+          )}
+        />
+      )
+    }
+
+    return (
+      <Button
+        ref={ref as React.Ref<HTMLButtonElement>}
+        aria-controls={listboxId}
+        aria-expanded={open}
+        aria-haspopup="listbox"
+        aria-label="Select toggle"
+        className={clsx(
+          css({
+            borderRadius: '8px',
+            styleOrder: 2,
+          }),
+          className,
+        )}
+        onClick={composeHandlers(
+          onClick as TriggerHandler | undefined,
+          handleClick,
+        )}
+        onKeyDown={composeHandlers(
+          onKeyDown as TriggerHandler | undefined,
+          handleKeyDown as TriggerHandler,
+        )}
+        {...props}
+      >
+        {children}
+      </Button>
+    )
+  },
+)
 interface SelectContainerProps extends ComponentProps<'div'> {
   showConfirmButton?: boolean
   confirmButtonText?: string
@@ -266,17 +305,20 @@ export function SelectContainer({
         left,
       } = combobox.getBoundingClientRect()
 
+      // The container is fixed to the viewport, so it collides with the viewport
       const isOverflowBottom =
-        el.offsetHeight + top + window.scrollY + height + y >
-        document.documentElement.scrollHeight
+        top + height + 10 + y + el.offsetHeight > window.innerHeight
 
-      const isOverflowRight =
-        el.offsetWidth + left + window.scrollX + x >
-        document.documentElement.scrollWidth
+      const isOverflowRight = left + x + el.offsetWidth > window.innerWidth
 
-      if (isOverflowBottom)
+      // One inset at a time: the other would keep a position from before
+      if (isOverflowBottom) {
+        el.style.top = ''
         el.style.bottom = `${window.innerHeight - comboboxY + 10}px`
-      else el.style.top = `${comboboxY + height + 10 + y}px`
+      } else {
+        el.style.bottom = ''
+        el.style.top = `${comboboxY + height + 10 + y}px`
+      }
 
       if (isOverflowRight)
         el.style.left = `${Math.max(comboboxX - el.offsetWidth + combobox.offsetWidth, 0) + x}px`
@@ -347,7 +389,7 @@ export function SelectContainer({
       ref={containerRef}
       aria-label="Select container"
       aria-multiselectable={type === 'checkbox' || undefined}
-      bg="var(--inputBg, light-dark(#FFF,#2E2E2E))"
+      bg="var(--inputBackground, light-dark(#FFF,#2E2E2E))"
       border="1px solid var(--border, light-dark(#E4E4E4,#434343))"
       borderRadius="8px"
       bottom="-4px"

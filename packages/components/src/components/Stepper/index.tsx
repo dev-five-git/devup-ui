@@ -50,11 +50,8 @@ function Stepper({
 
   const handleChange = (nextValue: number) => {
     const sanitized = Math.min(Math.max(nextValue, min), max)
-    if (onValueChange) {
-      onValueChange(sanitized)
-      return
-    }
-    setValue(sanitized)
+    if (valueProp === undefined) setValue(sanitized)
+    onValueChange?.(sanitized)
   }
 
   return (
@@ -76,7 +73,11 @@ function StepperContainer(props: ComponentProps<'div'>) {
   return <Flex alignItems="center" gap="8px" styleOrder={1} {...props} />
 }
 
-function StepperDecreaseButton({ ...props }: ComponentProps<typeof Button>) {
+function StepperDecreaseButton({
+  onClick,
+  disabled: disabledProp,
+  ...props
+}: ComponentProps<typeof Button>) {
   const { value, setValue, min } = useStepper()
   const disabled = value <= min
   return (
@@ -87,9 +88,12 @@ function StepperDecreaseButton({ ...props }: ComponentProps<typeof Button>) {
         boxSize: '28px',
         borderRadius: '4px',
       })}
-      disabled={disabled}
-      onClick={() => setValue(value - 1)}
       {...props}
+      disabled={disabled || disabledProp}
+      onClick={(e) => {
+        onClick?.(e)
+        if (!e.defaultPrevented) setValue(value - 1)
+      }}
     >
       <IconMinus
         className={css({
@@ -102,7 +106,11 @@ function StepperDecreaseButton({ ...props }: ComponentProps<typeof Button>) {
   )
 }
 
-function StepperIncreaseButton({ ...props }: ComponentProps<typeof Button>) {
+function StepperIncreaseButton({
+  onClick,
+  disabled: disabledProp,
+  ...props
+}: ComponentProps<typeof Button>) {
   const { value, setValue, max } = useStepper()
   const disabled = value >= max
   return (
@@ -116,9 +124,12 @@ function StepperIncreaseButton({ ...props }: ComponentProps<typeof Button>) {
           '&>div>div': {},
         },
       })}
-      disabled={disabled}
-      onClick={() => setValue(value + 1)}
       {...props}
+      disabled={disabled || disabledProp}
+      onClick={(e) => {
+        onClick?.(e)
+        if (!e.defaultPrevented) setValue(value + 1)
+      }}
     >
       <IconPlus
         className={css({
@@ -133,52 +144,72 @@ function StepperIncreaseButton({ ...props }: ComponentProps<typeof Button>) {
 
 type StepperInputProps = ComponentProps<typeof Input>
 
-function StepperInput({ className, ...props }: StepperInputProps) {
-  const { value, setValue, type } = useStepper()
-  const notEditableClass = css({
-    p: '0',
-    border: 'none',
-    w: 'fit-content',
-    h: 'fit-content',
-    styleOrder: 3,
-  })
-  const isInput = type === 'input'
-  const Comp = isInput ? Input : 'div'
-  const componentProps = isInput ? { ...props, allowClear: false } : props
+const notEditableClass = css({
+  p: '0',
+  border: 'none',
+  w: 'fit-content',
+  h: 'fit-content',
+  styleOrder: 3,
+})
 
-  return (
-    <Comp
-      aria-label="Stepper value"
-      className={clsx(
-        css({
-          styleOrder: 2,
-          w: '60px',
-          textAlign: 'center',
-          borderRadius: '6px',
-          selectors: {
-            '&::-webkit-outer-spin-button, &::-webkit-inner-spin-button': {
-              display: 'none',
-            },
-          },
-        }),
-        !isInput && notEditableClass,
-        className,
-      )}
-      data-value={value}
-      onChange={(e) => {
-        setValue(Number(e.target.value))
-      }}
-      readOnly={!isInput}
-      type="number"
-      // Fix prefix 0 issue
-      value={value.toString()}
-      {...componentProps}
-    >
-      {isInput ? undefined : Number(value).toString()}
-    </Comp>
+const stepperValueClass = css({
+  styleOrder: 2,
+  w: '60px',
+  textAlign: 'center',
+  borderRadius: '6px',
+  selectors: {
+    '&::-webkit-outer-spin-button, &::-webkit-inner-spin-button': {
+      display: 'none',
+    },
+  },
+})
+
+/** The props a read-only value can take: the ones every element has, not those only an input has */
+function outputProps(props: StepperInputProps) {
+  return Object.fromEntries(
+    Object.entries(props).filter(
+      ([name]) =>
+        name.startsWith('data-') ||
+        name.startsWith('aria-') ||
+        ['id', 'style', 'title', 'lang', 'dir', 'hidden', 'role'].includes(
+          name,
+        ),
+    ),
   )
 }
 
+function StepperInput({ className, onChange, ...props }: StepperInputProps) {
+  const { value, setValue, type } = useStepper()
+
+  if (type === 'text')
+    return (
+      <output
+        aria-label="Stepper value"
+        className={clsx(stepperValueClass, notEditableClass, className)}
+        data-value={value}
+        {...outputProps(props)}
+      >
+        {Number(value).toString()}
+      </output>
+    )
+
+  return (
+    <Input
+      aria-label="Stepper value"
+      className={clsx(stepperValueClass, className)}
+      data-value={value}
+      {...props}
+      allowClear={false}
+      onChange={(e) => {
+        onChange?.(e)
+        if (!e.defaultPrevented) setValue(Number(e.target.value))
+      }}
+      type="number"
+      // Fix prefix 0 issue
+      value={value.toString()}
+    />
+  )
+}
 export {
   Stepper,
   StepperContainer,
