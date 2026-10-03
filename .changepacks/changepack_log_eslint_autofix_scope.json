@@ -1,4 +1,4 @@
-﻿{
+{
   "changes": {
     "packages/eslint-plugin/package.json": "Patch",
     "bindings/devup-ui-wasm/package.json": "Patch"
