@@ -9,6 +9,7 @@ import {
   type CustomShorthands,
   loadDevupConfig,
   mergeImportAliases,
+  readJsxImportSource,
 } from '@devup-ui/plugin-utils'
 import {
   codeExtract,
@@ -29,7 +30,7 @@ const devupFile = 'devup.json'
 const distDir = 'df'
 const cssDir = resolve(distDir, cssDirName)
 const singleCss = true
-const importAliases = mergeImportAliases()
+const importAliases = mergeImportAliases(undefined, readJsxImportSource())
 
 export interface DevupUIBunPluginOptions {
   shorthands?: CustomShorthands
@@ -89,7 +90,7 @@ async function loadSourceFile(filePath: string) {
         : 'js'
   const contents = await Bun.file(filePath).text()
 
-  if (hasDevupUI(filePath, contents, libPackage)) {
+  if (hasDevupUI(filePath, contents, libPackage, importAliases)) {
     const code = codeExtract(
       filePath,
       contents,
