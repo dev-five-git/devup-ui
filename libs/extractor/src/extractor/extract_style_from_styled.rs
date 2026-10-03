@@ -13,22 +13,22 @@ use crate::{
     gen_style::gen_styles,
     styled_reads::{Forward, Reads, withheld},
     utils::{
-        STYLE_OBJECT, StyleArguments, build_time_error, call_with_values, merge_object_expressions,
-        readable_code, reads_directly, style_arguments, uncomposable_error, unplaced_error,
-        unreadable_styles, unwrap_syntax_only, unwrap_syntax_only_mut, wrap_array_filter,
-        wrap_direct_call,
+        STYLE_OBJECT, StyleArguments, build_time_error, call_with_values, expression_to_code,
+        merge_object_expressions, readable_code, reads_directly, style_arguments,
+        uncomposable_error, unplaced_error, unreadable_styles, unwrap_syntax_only,
+        unwrap_syntax_only_mut, wrap_array_filter, wrap_direct_call,
     },
 };
 use oxc_allocator::{CloneIn, FromIn, GetAllocator};
 use oxc_ast::{
     ast::{
         Argument, BindingPattern, BindingProperty, BindingRestElement, CallExpression, Expression,
-        ExpressionStatement, FormalParameter, FormalParameterKind, FormalParameters,
-        JSXAttributeItem, JSXAttributeName, JSXAttributeValue, JSXElementName, JSXOpeningElement,
-        ObjectPropertyKind, Program, PropertyKey, Statement, Str,
+        FormalParameter, FormalParameterKind, FormalParameters, JSXAttributeItem, JSXAttributeName,
+        JSXAttributeValue, JSXElementName, JSXOpeningElement, ObjectPropertyKind, PropertyKey, Str,
     },
     builder::AstBuilder,
 };
+use oxc_parser::{Parser, ParserReturn};
 use oxc_span::{GetSpan, SPAN, SourceType};
 use oxc_syntax::operator::{BinaryOperator, LogicalOperator, UnaryOperator};
 
@@ -189,12 +189,24 @@ impl<'a> StyledDefinition<'a> {
     /// defining it
     #[must_use]
     pub fn portable(&self) -> bool {
-        renders_tag(&self.name, self.bound.as_ref())
-            && closed(
-                self.classes
+        renders_tag(&self.name, self.bound.as_ref()) && closed(self.code())
+    }
+
+    /// The code the component evaluates for its classes, attrs and styles
+    fn code(&self) -> impl Iterator<Item = String> + '_ {
+        self.classes
+            .iter()
+            .chain(&self.attrs)
+            .chain(self.styles.iter().flat_map(style_expressions))
+            .map(expression_to_code)
+            .chain(
+                self.styles
                     .iter()
-                    .chain(&self.attrs)
-                    .chain(self.styles.iter().flat_map(style_expressions)),
+                    .flat_map(ExtractStyleProp::extract)
+                    .filter_map(|style| match style {
+                        ExtractStyleValue::Dynamic(style) => Some(style.identifier().to_string()),
+                        _ => None,
+                    }),
             )
     }
 
@@ -811,44 +823,32 @@ fn style_expressions<'p, 'a>(prop: &'p ExtractStyleProp<'a>) -> Vec<&'p Expressi
     }
 }
 
-/// Whether `expressions` read nothing but the bindings they declare, the
-/// props, and what every module reads the same
-fn closed<'e, 'a: 'e>(expressions: impl Iterator<Item = &'e Expression<'a>>) -> bool {
+/// Whether the expressions `code` writes read nothing but the bindings they
+/// declare, the props, and what every module reads the same
+fn closed(code: impl Iterator<Item = String>) -> bool {
+    let source = code
+        .map(|code| ["(", &code, ");\n"].concat())
+        .collect::<String>();
     let allocator = oxc_allocator::Allocator::default();
-    let ast_builder = AstBuilder::new(&allocator);
-    let body = oxc_allocator::Vec::from_iter_in(
-        expressions.map(|expression| {
-            Statement::ExpressionStatement(ExpressionStatement::boxed(
-                SPAN,
-                expression.clone_in(&allocator),
-                &ast_builder,
-            ))
-        }),
-        &ast_builder,
-    );
-    let program = Program::new(
-        SPAN,
-        SourceType::tsx(),
-        "",
-        oxc_allocator::Vec::new_in(&ast_builder),
-        None,
-        oxc_allocator::Vec::new_in(&ast_builder),
-        body,
-        &ast_builder,
-    );
+    let ParserReturn {
+        program,
+        fatal_error,
+        ..
+    } = Parser::new(&allocator, &source, SourceType::tsx()).parse();
     let scoping = oxc_semantic::SemanticBuilder::new()
         .build(&program)
         .semantic
         .into_scoping();
-    scoping
-        .root_unresolved_references()
-        .iter()
-        .all(|(name, references)| {
-            SHARED_NAMES.contains(&name.as_str())
-                || references
-                    .iter()
-                    .all(|reference| !scoping.get_reference(*reference).is_value())
-        })
+    !fatal_error
+        && scoping
+            .root_unresolved_references()
+            .iter()
+            .all(|(name, references)| {
+                SHARED_NAMES.contains(&name.as_str())
+                    || references
+                        .iter()
+                        .all(|reference| !scoping.get_reference(*reference).is_value())
+            })
 }
 
 fn clone_all<'s, 'a>(
@@ -1615,4 +1615,69 @@ fn create_styled_component<'a>(
         body.into(),
         ast_builder,
     )
+}
+
+#[cfg(test)]
+#[allow(clippy::expect_used, clippy::unwrap_used)]
+mod tests {
+    use std::collections::BTreeMap;
+
+    use oxc_allocator::Allocator;
+
+    use super::*;
+
+    #[test]
+    fn style_expressions_find_what_every_kind_of_style_evaluates() {
+        let allocator = Allocator::default();
+        let ast_builder = AstBuilder::new(&allocator);
+        let name = |name: &str| {
+            Expression::new_identifier(SPAN, Str::from_in(name, &allocator), &ast_builder)
+        };
+        let evaluated = |expression| ExtractStyleProp::Expression {
+            styles: vec![],
+            expression,
+        };
+        let props = [
+            ExtractStyleProp::Static(ExtractStyleValue::Typography("t".to_string())),
+            ExtractStyleProp::Unreadable {
+                offset: 0,
+                code: String::new(),
+                prop: false,
+            },
+            ExtractStyleProp::StaticArray(vec![evaluated(name("a"))]),
+            ExtractStyleProp::Conditional {
+                condition: name("b"),
+                consequent: Some(Box::new(evaluated(name("c")))),
+                alternate: Some(Box::new(evaluated(name("d")))),
+            },
+            ExtractStyleProp::Enum {
+                condition: name("e"),
+                map: BTreeMap::from([("x".to_string(), vec![evaluated(name("f"))])]),
+            },
+            ExtractStyleProp::MemberExpression {
+                map: BTreeMap::from([("k".to_string(), Box::new(evaluated(name("h"))))]),
+                expression: name("g"),
+            },
+        ];
+        let code: Vec<String> = props
+            .iter()
+            .flat_map(style_expressions)
+            .map(expression_to_code)
+            .collect();
+        assert_eq!(code, ["a;", "b;", "c;", "d;", "e;", "f;", "g;", "h;"]);
+    }
+
+    #[test]
+    fn code_is_closed_when_it_reads_only_what_it_declares() {
+        let closed_code = |code: &[&str]| closed(code.iter().map(ToString::to_string));
+        assert!(closed_code(&[]));
+        assert!(closed_code(&[
+            "(p) => p.x * Math.PI",
+            "((p) => p.on)(rest)"
+        ]));
+        assert!(closed_code(&["(p: Props) => p.x"]));
+        assert!(!closed_code(&["(p) => scale(p.x)"]));
+        assert!(!closed_code(&["(p) => p.x", "window.mode"]));
+        assert!(!closed_code(&["@#$"]));
+    }
 }

@@ -808,8 +808,20 @@ export default styled.span`margin: 1px;`;
                 "import styled from '@emotion/styled';\nimport Link from 'next/link';\nexport const L = styled(Link)`color: red;`;\nexport const M = styled(L)`margin: 0;`;",
             ),
             (
-                "/src/free.ts",
-                "import styled from '@emotion/styled';\nconst handler = () => 1;\nexport const H = styled.div.attrs({ onClick: handler })`color: red;`;\nexport const C = styled.div({ color: window.dark ? 'red' : 'blue' });\nexport const E = styled.div({ display: window.mode });\nexport const T = styled.div({ color: ['red', 'blue'] });\nexport const U = styled.div({ color: (p: Props) => p.tone });\ntype Props = { tone: string };",
+                "/src/attrs.ts",
+                "import styled from '@emotion/styled';\nconst handler = () => 1;\nexport const H = styled.div.attrs({ onClick: handler })`color: red;`;",
+            ),
+            (
+                "/src/function.ts",
+                "import styled from '@emotion/styled';\nfunction scaled(n) { return n * 2; }\nexport const D = styled.div`margin: ${(p) => scaled(p.x)}px;`;",
+            ),
+            (
+                "/src/global.ts",
+                "import styled from '@emotion/styled';\nexport const E = styled.div({ display: process.env.MODE });",
+            ),
+            (
+                "/src/closed.ts",
+                "import styled from '@emotion/styled';\nexport const G = styled.div`margin: ${(p) => Number(p.x)}px;`;\nexport const T = styled.div({ color: ['red', 'blue'] });\nexport const U = styled.div`color: ${(p: Props) => p.tone};`;\ntype Props = { tone: string };",
             ),
             (
                 "/src/plain.ts",
@@ -840,7 +852,7 @@ export default styled.span`margin: 1px;`;
         ];
         let bodies = [
             "import { L, M } from './link';\nexport const A = styled(L)`color: blue;`;\nexport const B = styled(M)`color: blue;`;",
-            "import { H, C, E, T, U } from './free';\nexport const A = styled(H)`color: blue;`;\nexport const B = styled(C)`color: blue;`;\nexport const D = styled(E)`color: blue;`;\nexport const F = styled(T)`color: blue;`;\nexport const G = styled(U)`color: blue;`;",
+            "import { H } from './attrs';\nimport { D } from './function';\nimport { E } from './global';\nimport { G, T, U } from './closed';\nexport const A = styled(H)`color: blue;`;\nexport const B = styled(D)`color: blue;`;\nexport const C = styled(G)`color: blue;`;\nexport const F = styled(E)`color: blue;`;\nexport const I = styled(T)`color: blue;`;\nexport const J = styled(U)`color: blue;`;",
             "import Anonymous, { Base, fn, a, P } from './plain';\nexport const A = styled(Base)`color: blue;`;\nexport const B = styled(Anonymous)`color: blue;`;\nexport const C = styled(fn)`color: blue;`;\nexport const D = styled(a)`color: blue;`;\nexport const E = styled(P)`color: blue;`;",
             "import { Good, Bad } from './bad';\nexport const A = styled(Good)`color: blue;`;\nexport const B = styled.div`${Good} { color: red; }`;",
             "import { A } from './cycle-a';\nexport const App = styled(A)`color: blue;`;",
