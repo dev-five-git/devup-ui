@@ -284,7 +284,7 @@ pub struct TailwindClass {
 /// non-overlapping) but mutates the existing buffer instead of allocating a new
 /// `String`. `needle` must be non-empty.
 fn remove_all_substr(haystack: &mut String, needle: &str) {
-    debug_assert!(!needle.is_empty());
+    debug_assert_ne!(needle, "");
     let mut search_from = 0;
     while let Some(rel) = haystack[search_from..].find(needle) {
         let at = search_from + rel;
@@ -3934,7 +3934,7 @@ mod tests {
     #[test]
     fn test_empty_string() {
         let styles = parse_tailwind_to_styles("");
-        assert!(styles.is_empty());
+        assert_eq!(styles, vec![]);
     }
 
     #[test]

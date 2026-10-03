@@ -80,6 +80,7 @@ export const EXPECTED_EXPORTED_ROUTES = [
   '/docs/figma-and-theme-integration/devup-figma-plugin',
   '/docs/figma-and-theme-integration/devup-json',
   '/docs/installation',
+  '/docs/limitations',
   '/docs/migration/overview',
   '/docs/migration/styled-components',
   '/docs/migration/stylex',

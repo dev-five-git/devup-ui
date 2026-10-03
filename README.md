@@ -7,7 +7,7 @@
 </h3>
 
 <p align="center">
-    <strong>Zero Config · Zero FOUC · Zero Runtime · Complete CSS-in-JS Syntax Coverage</strong>
+    <strong>Zero Config · Zero FOUC · Zero Runtime · Build-Time CSS-in-JS</strong>
 </p>
 
 ---
@@ -41,7 +41,7 @@ English | [한국어](README_ko.md)
 
 Traditional CSS-in-JS solutions force you to choose between developer experience and performance. Devup UI eliminates this trade-off entirely by processing all styles at build time using a Rust-powered preprocessor.
 
-- **Complete Syntax Coverage**: Every CSS-in-JS pattern you know — variables, conditionals, responsive arrays, pseudo-selectors — all fully supported
+- **Broad Syntax Coverage**: Variables, conditionals, responsive arrays, pseudo-selectors, `styled()`, Emotion's `css` prop and more compile at build time; anything the build cannot know is a located build error, never a silent miss ([supported syntax & limitations](https://devup-ui.com/docs/limitations))
 - **Familiar API**: `styled()` API compatible with styled-components and Emotion patterns
 - **True Zero Runtime**: No JavaScript execution for styling at runtime. Period.
 - **Smallest Bundle Size**: Optimized class names (`a`, `b`, ... `aa`, `ab`) minimize CSS output
@@ -137,7 +137,7 @@ const example = <div className="a" style={{ '--a': colorVariable }} />
 // .a { background-color: var(--a); }
 ```
 
-**Complex expressions and responsive arrays — fully supported:**
+**Complex expressions and responsive arrays:**
 
 ```tsx
 // You write:
