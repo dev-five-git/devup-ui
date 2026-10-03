@@ -138,6 +138,61 @@ jobs:
           path: playwright-report/
           retention-days: 1
 
+  # The packages take React ^18 || ^19 as a peer. This builds a React 18.3 app
+  # with the Vite plugin and the UI kit, then checks refs, context and events
+  # in Chromium, so React-19-only APIs cannot slip back in.
+  react-18:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+
+      - uses: actions-rust-lang/setup-rust-toolchain@v2
+
+      - name: Cache cargo registry + target
+        uses: actions/cache@v6
+        with:
+          path: |
+            ~/.cargo/registry/index/
+            ~/.cargo/registry/cache/
+            ~/.cargo/git/db/
+            target/
+          key: cargo-react-18-${{ runner.os }}-${{ hashFiles('**/Cargo.lock') }}
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: "1.4.0"
+        name: Install bun
+
+      - name: Cache bun dependencies
+        uses: actions/cache@v6
+        with:
+          path: ~/.bun/install/cache
+          key: bun-react-18-${{ runner.os }}-${{ hashFiles('**/bun.lock') }}
+      - uses: jetli/wasm-pack-action@v0.4.0
+        with:
+          version: "latest"
+      - name: Install Node.js
+        uses: actions/setup-node@v7
+        with:
+          node-version: 24
+      - run: bun install
+      - run: bun run build
+      - name: Type-check and build the React 18 app
+        working-directory: apps/react-18
+        run: |
+          bun ../../node_modules/@typescript/native/bin/tsc
+          bun run build
+      - name: Cache Playwright Browsers
+        uses: actions/cache@v6
+        with:
+          path: ~/.cache/ms-playwright
+          key: playwright-react-18-${{ runner.os }}-${{ hashFiles('**/bun.lock') }}
+      - name: Install Playwright Browsers
+        run: bunx playwright install chromium --with-deps
+      - name: Run React 18 E2E Tests
+        working-directory: apps/react-18
+        run: bun run test:e2e
+
   publish:
     runs-on: ubuntu-latest
     permissions:
