@@ -1,0 +1,29 @@
+---
+source: libs/extractor/src/lib.rs
+expression: "ToBTreeSet::from(output)"
+---
+ToBTreeSet {
+    styles: {
+        Static(
+            ExtractStaticStyle {
+                property: "color",
+                value: "red",
+                level: 0,
+                selector: None,
+                style_order: None,
+                layer: None,
+            },
+        ),
+        Static(
+            ExtractStaticStyle {
+                property: "padding",
+                value: "2px",
+                level: 0,
+                selector: None,
+                style_order: None,
+                layer: None,
+            },
+        ),
+    },
+    code: "import \"@devup-ui/react/devup-ui.css\";\n/** @jsxImportSource react */\nconst Custom = ({ className }) => <div className={className} />;\nexport const App = () => <Custom className=\"a b\" />;\n",
+}

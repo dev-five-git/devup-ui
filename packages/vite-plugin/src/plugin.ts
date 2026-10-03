@@ -16,6 +16,7 @@ import {
   loadDevupConfig,
   mergeImportAliases,
   planAtomHoist,
+  readJsxImportSource,
 } from '@devup-ui/plugin-utils'
 import {
   codeExtract,
@@ -274,7 +275,10 @@ export function DevupUI({
   if (prefix) {
     setPrefix(prefix)
   }
-  const importAliases = mergeImportAliases(userImportAliases)
+  const importAliases = mergeImportAliases(
+    userImportAliases,
+    readJsxImportSource(),
+  )
   const cssMap = new Map()
   let serverBundleToForward: Record<string, ViteOutputWithMetadata> | undefined
   let isServe = false
