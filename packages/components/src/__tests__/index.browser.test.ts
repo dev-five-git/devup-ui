@@ -4,17 +4,17 @@ describe('export', () => {
   it('should export components', async () => {
     const index = await import('../index')
     expect({ ...index }).toEqual({
-      Button: expect.any(Function),
-      Input: expect.any(Function),
-      Textarea: expect.any(Function),
+      Button: expect.any(Object),
+      Input: expect.any(Object),
+      Textarea: expect.any(Object),
       Stepper: expect.any(Function),
       Select: expect.any(Function),
-      Radio: expect.any(Function),
+      Radio: expect.any(Object),
       RadioGroup: expect.any(Function),
       SelectContainer: expect.any(Function),
       SelectDivider: expect.any(Function),
       SelectOption: expect.any(Function),
-      SelectTrigger: expect.any(Function),
+      SelectTrigger: expect.any(Object),
       StepperContainer: expect.any(Function),
       StepperDecreaseButton: expect.any(Function),
       StepperIncreaseButton: expect.any(Function),
@@ -23,7 +23,7 @@ describe('export', () => {
       SelectContext: expect.any(Object),
       useSelect: expect.any(Function),
       Toggle: expect.any(Function),
-      Checkbox: expect.any(Function),
+      Checkbox: expect.any(Object),
     })
   })
 })

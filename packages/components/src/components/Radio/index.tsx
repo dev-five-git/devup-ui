@@ -1,4 +1,5 @@
 import { Box, Input, Text } from '@devup-ui/react'
+import { forwardRef } from 'react'
 
 type RadioProps = Omit<React.InputHTMLAttributes<HTMLInputElement>, 'type'> & {
   checked?: boolean
@@ -38,20 +39,23 @@ type RadioProps = Omit<React.InputHTMLAttributes<HTMLInputElement>, 'type'> & {
       }
   )
 
-export function Radio({
-  className,
-  disabled,
-  children,
-  variant = 'default',
-  checked,
-  classNames,
-  styles,
-  style,
-  firstButton,
-  lastButton,
-  colors,
-  ...props
-}: RadioProps) {
+export const Radio = forwardRef<HTMLInputElement, RadioProps>(function Radio(
+  {
+    className,
+    disabled,
+    children,
+    variant = 'default',
+    checked,
+    classNames,
+    styles,
+    style,
+    firstButton,
+    lastButton,
+    colors,
+    ...props
+  },
+  ref,
+) {
   const isButton = variant === 'button'
   return (
     <Box
@@ -69,20 +73,27 @@ export function Radio({
     >
       {isButton ? (
         <Input
+          ref={ref}
           checked={checked}
           className={className}
+          clipPath="inset(50%)"
           data-radio-input
           disabled={disabled}
-          display="none"
+          h="1px"
+          m={0}
           opacity={0}
+          overflow="hidden"
+          pos="absolute"
           styleOrder={1}
           type="radio"
+          w="1px"
           {...props}
         />
       ) : (
         <Input
-          _focus={{
-            outline: '1px sold var(--border, var(--primary))',
+          ref={ref}
+          _focusVisible={{
+            outline: '1px solid var(--border, var(--primary))',
           }}
           appearance="none"
           bg="light-dark(#fff, #2E2E2E)"
@@ -161,6 +172,11 @@ export function Radio({
               borderColor: 'var(--checkedBorder, var(--primary))',
               color: 'var(--checkedColor, var(--primary))',
             },
+            // keyboard focus on the visually hidden radio
+            '[data-radio-input]:focus-visible + &': {
+              outline: '2px solid var(--checkedBorder, var(--primary))',
+              outlineOffset: '-2px',
+            },
             // hover
             '&:hover:not([aria-disabled=true])': {
               bg: `var(--hoverBg, light-dark(color-mix(in srgb, var(--primary) 10%, white 90%), color-mix(in srgb, var(--primary) 10%, black 90%)))`,
@@ -225,4 +241,4 @@ export function Radio({
       )}
     </Box>
   )
-}
+})

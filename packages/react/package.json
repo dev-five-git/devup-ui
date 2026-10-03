@@ -66,7 +66,6 @@
   ],
   "types": "./dist/index.d.ts",
   "dependencies": {
-    "react": "^19.3",
     "csstype-extra": "latest"
   },
   "devDependencies": {
@@ -76,10 +75,11 @@
     "typescript": "^7.0.2",
     "@typescript/typescript6": "^6.0",
     "@types/react": "^19.3",
-    "@types/node": "^26.6"
+    "@types/node": "^26.6",
+    "react": "^19.3"
   },
   "peerDependencies": {
-    "react": "*",
+    "react": "^18 || ^19",
     "csstype-extra": "*"
   }
 }

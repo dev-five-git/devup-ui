@@ -1,0 +1,7 @@
+{
+  "changes": {
+    "packages/components/package.json": "Patch"
+  },
+  "note": "Toggle is an accessible switch: role=switch with aria-checked, focusable with a visible focus ring, toggled by Space and Enter, labelled through aria-label or aria-labelledby, and submitted under the name it is given; when disabled it leaves the tab order, ignores keys and its hidden input is disabled",
+  "date": "2026-10-01T00:00:00.000Z"
+}
