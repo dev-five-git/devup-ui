@@ -25,5 +25,5 @@ ToBTreeSet {
             },
         ),
     },
-    code: "import \"@devup-ui/react/devup-ui.css\";\nconst Member = ({ style, className, ...rest }) => <div {...rest} className={[\"a\", className].filter(Boolean).join(\" \")} style={style} />;\nconst Tagged = ({ style, className, ...rest }) => <span {...rest} className={[\"b\", className].filter(Boolean).join(\" \")} style={style} />;\n",
+    code: "import \"@devup-ui/react/devup-ui.css\";\nimport { forwardRef as __devupForwardRef } from \"react\";\nconst Member = __devupForwardRef((__devupRefProps, __devupRef) => (({ style, className, as: DevupAs = \"div\", forwardedAs, ...rest }) => <DevupAs {...(({ \"theme\": __devupOmit0, ...__devupDom }) => __devupDom)(rest)} as={forwardedAs} className={[\"a\", className].filter(Boolean).join(\" \")} style={style} />)({\n\t...__devupRefProps,\n\tref: __devupRef\n}));\nconst Tagged = __devupForwardRef((__devupRefProps, __devupRef) => (({ style, className, as: DevupAs = \"span\", forwardedAs, ...rest }) => <DevupAs {...(({ \"theme\": __devupOmit0, ...__devupDom }) => __devupDom)(rest)} as={forwardedAs} className={[\"b\", className].filter(Boolean).join(\" \")} style={style} />)({\n\t...__devupRefProps,\n\tref: __devupRef\n}));\n",
 }

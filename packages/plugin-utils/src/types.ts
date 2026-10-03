@@ -117,10 +117,18 @@ export const DEFAULT_IMPORT_ALIASES: ImportAliases = {
  */
 export type WasmImportAliases = Record<string, string | null>
 
+/** Emotion's JSX runtime, aliased when the project builds JSX with it */
+const EMOTION_JSX_RUNTIME = '@emotion/react/jsx-runtime'
+
 /**
  * Merge user import aliases with defaults and convert to WASM format
  *
+ * A project building JSX with Emotion (`jsxImportSource` of `@emotion/react`)
+ * also aliases `@emotion/react/jsx-runtime`: its `css` props then compile in
+ * every file, and its JSX is built with React's runtime.
+ *
  * @param userAliases - User-provided aliases (optional)
+ * @param jsxImportSource - The module the project builds JSX with (optional)
  * @returns WASM-compatible import aliases
  *
  * @example
@@ -131,8 +139,16 @@ export type WasmImportAliases = Record<string, string | null>
  */
 export function mergeImportAliases(
   userAliases?: ImportAliases,
+  jsxImportSource?: string,
 ): WasmImportAliases {
-  const merged = { ...DEFAULT_IMPORT_ALIASES, ...userAliases }
+  const merged: ImportAliases = { ...DEFAULT_IMPORT_ALIASES, ...userAliases }
+  if (
+    jsxImportSource === '@emotion/react' &&
+    merged['@emotion/react'] !== false &&
+    !(EMOTION_JSX_RUNTIME in merged)
+  ) {
+    merged[EMOTION_JSX_RUNTIME] = true
+  }
   return Object.fromEntries(
     Object.entries(merged)
       .filter((entry): entry is [string, string | true] => entry[1] !== false)
@@ -146,6 +162,7 @@ export function mergeImportAliases(
  */
 const COMPAT_TYPE_ENTRIES: Record<string, string> = {
   '@emotion/react': 'emotion',
+  [EMOTION_JSX_RUNTIME]: 'emotion-jsx-runtime',
   '@emotion/styled': 'emotion',
   '@vanilla-extract/css': 'vanilla-extract',
   'styled-components': 'styled-components',

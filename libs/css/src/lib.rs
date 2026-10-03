@@ -429,6 +429,25 @@ pub fn keyframes_to_keyframes_name(keyframes: &str, filename: Option<&str>) -> S
     })
 }
 
+/// The class marking the component `name` defined in `filename`, which other
+/// styles select it by
+#[must_use]
+pub fn component_marker(name: &str, filename: &str) -> String {
+    with_prefix(|prefix| {
+        if is_debug() {
+            format!("{prefix}c-{name}")
+        } else {
+            let class_num = class_num_for_key("", |key| {
+                key.push_str("c-");
+                key.push_str(filename);
+                key.push('-');
+                key.push_str(name);
+            });
+            format!("{prefix}{class_num}")
+        }
+    })
+}
+
 /// ASCII lookup table for selector encoding. `None` means pass through (alphanumeric, `-`, `_`)
 /// or fall through to the Unicode escape path.
 const SELECTOR_ENCODE: [Option<&str>; 128] = {
@@ -751,6 +770,25 @@ mod tests {
             sheet_to_variable_name("background", 1, Some("hover")),
             "--background-1-hover"
         );
+    }
+
+    #[test]
+    #[serial]
+    fn test_component_marker() {
+        set_debug(false);
+        reset_class_map();
+        let child = component_marker("Child", "a.tsx");
+        assert_eq!(child, "a");
+        assert_eq!(component_marker("Child", "a.tsx"), child);
+        assert_eq!(component_marker("Child", "b.tsx"), "b");
+        assert_eq!(component_marker("Other", "a.tsx"), "c");
+        assert_eq!(
+            sheet_to_classname("color", 0, Some("red"), None, None, None),
+            "d"
+        );
+        set_debug(true);
+        assert_eq!(component_marker("Child", "a.tsx"), "c-Child");
+        set_debug(false);
     }
 
     #[test]
