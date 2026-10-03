@@ -80,33 +80,33 @@ npm install @devup-ui/webpack-plugin
 ## Comparison Benchmarks
 
 <!-- benchmark:start -->
-[Latest CI benchmark](https://github.com/dev-five-git/devup-ui/actions/runs/36702867475) (commit `8d6c2f62`, Devup UI 1.0.44) on `ubuntu-24.04` with Next.js 16.3.3. All Next.js builds use the native TypeScript 7 CLI for type checking. The English and Korean tables are generated from the same checked result file, `benchmark-results.json`.
+[Latest CI benchmark](https://github.com/dev-five-git/devup-ui/actions/runs/36702867475) (commit `8d6c2f62`, Devup UI 1.0.44) on `ubuntu-24.04` with Next.js 16.3.3. Every row is the median of 1 cold builds that ran in rotating order, shown with the range of the samples. All Next.js builds use the native TypeScript 7 CLI for type checking. The English and Korean tables are generated from the same checked result file, `benchmark-results.json`.
 
 Build Size is every byte of the build output directory (`.next`, or `dist` for vinext); CSS Size is the emitted `.css` files alone, measured separately.
 
-Webpack values are one cold build:
+Webpack:
 
-| Library                     | Version | Build Time | Build Size        | CSS Size     |
-| --------------------------- | ------- | ---------- | ----------------- | ------------ |
-| tailwindcss                 | 4.3.3   | 16.67s     | 67,332,642 bytes  | 5,852 bytes  |
-| styleX                      | 0.19.0  | 38.08s     | 96,291,287 bytes  | 425 bytes    |
-| vanilla-extract             | 1.21.2  | 16.09s     | 68,565,036 bytes  | 294 bytes    |
-| kuma-ui                     | 1.6.4   | 17.91s     | 75,627,783 bytes  | 340 bytes    |
-| panda-css                   | 1.12.0  | 18.16s     | 71,849,418 bytes  | 15,615 bytes |
-| chakra-ui                   | 3.37.0  | 27.22s     | 207,426,274 bytes | 0 bytes      |
-| mui                         | 9.4.0   | 18.78s     | 101,473,260 bytes | 0 bytes      |
-| **devup-ui (per-file CSS)** | 1.0.44  | **14.27s** | 67,424,897 bytes  | 562 bytes    |
-| **devup-ui (single CSS)**   | 1.0.44  | **14.17s** | 67,426,959 bytes  | 790 bytes    |
+| Library                     | Version | Median Build Time | Range           | Build Size        | CSS Size     |
+| --------------------------- | ------- | ----------------- | --------------- | ----------------- | ------------ |
+| tailwindcss                 | 4.3.3   | 16.67s            | 16.67s - 16.67s | 67,332,642 bytes  | 5,852 bytes  |
+| styleX                      | 0.19.0  | 38.08s            | 38.08s - 38.08s | 96,291,287 bytes  | 425 bytes    |
+| vanilla-extract             | 1.21.2  | 16.09s            | 16.09s - 16.09s | 68,565,036 bytes  | 294 bytes    |
+| kuma-ui                     | 1.6.4   | 17.91s            | 17.91s - 17.91s | 75,627,783 bytes  | 340 bytes    |
+| panda-css                   | 1.12.0  | 18.16s            | 18.16s - 18.16s | 71,849,418 bytes  | 15,615 bytes |
+| chakra-ui                   | 3.37.0  | 27.22s            | 27.22s - 27.22s | 207,426,274 bytes | 0 bytes      |
+| mui                         | 9.4.0   | 18.78s            | 18.78s - 18.78s | 101,473,260 bytes | 0 bytes      |
+| **devup-ui (per-file CSS)** | 1.0.44  | **14.27s**        | 14.27s - 14.27s | 67,424,897 bytes  | 562 bytes    |
+| **devup-ui (single CSS)**   | 1.0.44  | **14.17s**        | 14.17s - 14.17s | 67,426,959 bytes  | 790 bytes    |
 
-Turbopack values are medians of six cold builds in alternating order:
+Turbopack:
 
-| Library                                | Version | Median Build Time | Build Size       | CSS Size    |
-| -------------------------------------- | ------- | ----------------- | ---------------- | ----------- |
-| tailwindcss                            | 4.3.3   | 6.98s             | 38,422,141 bytes | 6,197 bytes |
-| **devup-ui (direct APIs, single CSS)** | 1.0.44  | **6.93s**         | 36,518,952 bytes | 327 bytes   |
-| **devup-ui (static `.css.ts`)**        | 1.0.44  | **6.92s**         | 36,578,506 bytes | 268 bytes   |
+| Library                                | Version | Median Build Time | Range         | Build Size       | CSS Size    |
+| -------------------------------------- | ------- | ----------------- | ------------- | ---------------- | ----------- |
+| tailwindcss                            | 4.3.3   | 7.04s             | 7.04s - 7.04s | 38,422,141 bytes | 6,197 bytes |
+| **devup-ui (direct APIs, single CSS)** | 1.0.44  | **6.83s**         | 6.83s - 6.83s | 36,518,952 bytes | 327 bytes   |
+| **devup-ui (static `.css.ts`)**        | 1.0.44  | **6.99s**         | 6.99s - 6.99s | 36,578,506 bytes | 268 bytes   |
 
-The Turbopack ranges overlap, so the direct-API median is 0.05s (0.7%) ahead of Tailwind on this fixture and the two are effectively at parity. The six cold samples were Tailwind `7.10s, 6.99s, 6.98s, 6.90s, 6.91s, 6.97s`, direct Devup UI `6.98s, 6.83s, 6.95s, 6.91s, 6.90s, 6.94s`, and static `.css.ts` `6.93s, 6.95s, 6.85s, 6.97s, 6.87s, 6.91s`. The fixtures have comparable app shapes, not pixel-identical styling: Tailwind styles the leading paragraph and button more heavily, while Devup UI exercises typed component/style props. Treat these as build-pipeline results rather than a per-rule microbenchmark. Every `.css.ts` module runs on the full Boa evaluator, which adds about 20 ms for the first module and under 1 ms for each further one.
+The Turbopack ranges do not overlap, so the direct-API median is 0.21s (3.0%) ahead of Tailwind on this fixture. The 1 cold samples were Tailwind `7.04s`, direct Devup UI `6.83s`, and static `.css.ts` `6.99s`. The fixtures have comparable app shapes, not pixel-identical styling: Tailwind styles the leading paragraph and button more heavily, while Devup UI exercises typed component/style props. Treat these as build-pipeline results rather than a per-rule microbenchmark. Every `.css.ts` module runs on the full Boa evaluator, which adds about 20 ms for the first module and under 1 ms for each further one. CI compares the Devup UI rows with a checked baseline (see `benchmark-gate.js` for the rule) and fails on a regression beyond the measured noise.
 <!-- benchmark:end -->
 
 ## How it works

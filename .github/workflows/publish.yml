@@ -73,16 +73,12 @@ jobs:
           node-version: ${{ env.NODE_VERSION }}
       - run: bun install
       - run: bun run build
+      # Every row is the median of the same number of cold samples taken in
+      # rotating order (benchmark-manifest.json). The run goes to an artifact and
+      # the Devup UI rows are compared with the checked baseline at the end of the
+      # job, so the profile and the Rust measurement still run when it fails.
       - name: Benchmark
         run: bun run benchmark
-      - name: Upload the measured run
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
-        if: ${{ !cancelled() }}
-        with:
-          name: benchmark-run
-          path: benchmark-run.json
-          if-no-files-found: ignore
-          retention-days: 30
       - name: Profile Devup UI Turbopack
         env:
           DEVUP_UI_PROFILE: "1"
@@ -91,6 +87,18 @@ jobs:
             benchmark/next-devup-ui-single-turbo/df \
             benchmark/next-devup-ui-single-turbo/tsconfig.tsbuildinfo
           bun run --filter next-devup-ui-single-turbo-benchmark build
+      - name: Upload the measured run
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        if: ${{ !cancelled() }}
+        with:
+          name: benchmark-run
+          path: benchmark-run.json
+          if-no-files-found: ignore
+          retention-days: 30
+      - name: Measure the SemanticBuilder passes of the extractor
+        run: cargo bench -p extractor --bench semantic_pass_benchmark -- --quick
+      - name: Compare the Devup UI rows with the baseline
+        run: bun benchmark-check.js
 
   # The landing app is the only real-scale acceptance target in this repo, and
   # `publish` runs it against the deployed vinext/@devup-ui/vite-plugin build.
@@ -297,6 +305,16 @@ jobs:
       - run: bun run build
       - name: Verify built package entry points
         run: bun run verify:dist
+      - name: Check the WASM size budget
+        run: bun verify-wasm-size.js
+      - name: Upload the WASM size
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        if: ${{ !cancelled() }}
+        with:
+          name: wasm-size
+          path: wasm-size.json
+          if-no-files-found: ignore
+          retention-days: 30
       - name: Verify the README benchmark tables
         run: bun render-benchmark-readme.js --check
       - name: Verify publish tarballs

@@ -7,99 +7,155 @@
     "next": "16.3.3",
     "devupUi": "1.0.44"
   },
-  "webpack": [
+  "samples": 1,
+  "rows": [
     {
+      "table": "webpack",
+      "target": "tailwind",
       "label": "tailwindcss",
       "version": "4.3.3",
-      "seconds": 16.67,
+      "samples": [16.67],
+      "median": 16.67,
+      "min": 16.67,
+      "max": 16.67,
       "bytes": 67332642,
       "cssBytes": 5852
     },
     {
+      "table": "webpack",
+      "target": "stylex",
       "label": "styleX",
       "version": "0.19.0",
-      "seconds": 38.08,
+      "samples": [38.08],
+      "median": 38.08,
+      "min": 38.08,
+      "max": 38.08,
       "bytes": 96291287,
       "cssBytes": 425
     },
     {
+      "table": "webpack",
+      "target": "vanilla-extract",
       "label": "vanilla-extract",
       "version": "1.21.2",
-      "seconds": 16.09,
+      "samples": [16.09],
+      "median": 16.09,
+      "min": 16.09,
+      "max": 16.09,
       "bytes": 68565036,
       "cssBytes": 294
     },
     {
+      "table": "webpack",
+      "target": "kuma-ui",
       "label": "kuma-ui",
       "version": "1.6.4",
-      "seconds": 17.91,
+      "samples": [17.91],
+      "median": 17.91,
+      "min": 17.91,
+      "max": 17.91,
       "bytes": 75627783,
       "cssBytes": 340
     },
     {
+      "table": "webpack",
+      "target": "panda-css",
       "label": "panda-css",
       "version": "1.12.0",
-      "seconds": 18.16,
+      "samples": [18.16],
+      "median": 18.16,
+      "min": 18.16,
+      "max": 18.16,
       "bytes": 71849418,
       "cssBytes": 15615
     },
     {
+      "table": "webpack",
+      "target": "chakra-ui",
       "label": "chakra-ui",
       "version": "3.37.0",
-      "seconds": 27.22,
+      "samples": [27.22],
+      "median": 27.22,
+      "min": 27.22,
+      "max": 27.22,
       "bytes": 207426274,
       "cssBytes": 0
     },
     {
+      "table": "webpack",
+      "target": "mui",
       "label": "mui",
       "version": "9.4.0",
-      "seconds": 18.78,
+      "samples": [18.78],
+      "median": 18.78,
+      "min": 18.78,
+      "max": 18.78,
       "bytes": 101473260,
       "cssBytes": 0
     },
     {
+      "table": "webpack",
+      "target": "devup-ui",
       "label": "devup-ui (per-file CSS)",
       "version": "1.0.44",
-      "seconds": 14.27,
+      "devup": true,
+      "samples": [14.27],
+      "median": 14.27,
+      "min": 14.27,
+      "max": 14.27,
       "bytes": 67424897,
-      "cssBytes": 562,
-      "devup": true
+      "cssBytes": 562
     },
     {
+      "table": "webpack",
+      "target": "devup-ui-single",
       "label": "devup-ui (single CSS)",
       "version": "1.0.44",
-      "seconds": 14.17,
+      "devup": true,
+      "samples": [14.17],
+      "median": 14.17,
+      "min": 14.17,
+      "max": 14.17,
       "bytes": 67426959,
-      "cssBytes": 790,
-      "devup": true
-    }
-  ],
-  "turbopack": [
+      "cssBytes": 790
+    },
     {
+      "table": "turbopack",
+      "target": "tailwind-turbo",
       "label": "tailwindcss",
       "version": "4.3.3",
-      "samples": [7.1, 6.99, 6.98, 6.9, 6.91, 6.97],
-      "median": 6.98,
+      "samples": [7.04],
+      "median": 7.04,
+      "min": 7.04,
+      "max": 7.04,
       "bytes": 38422141,
       "cssBytes": 6197
     },
     {
+      "table": "turbopack",
+      "target": "devup-ui-single-turbo",
       "label": "devup-ui (direct APIs, single CSS)",
       "version": "1.0.44",
-      "samples": [6.98, 6.83, 6.95, 6.91, 6.9, 6.94],
-      "median": 6.93,
+      "devup": true,
+      "samples": [6.83],
+      "median": 6.83,
+      "min": 6.83,
+      "max": 6.83,
       "bytes": 36518952,
-      "cssBytes": 327,
-      "devup": true
+      "cssBytes": 327
     },
     {
+      "table": "turbopack",
+      "target": "vanilla-extract-devup-ui",
       "label": "devup-ui (static `.css.ts`)",
       "version": "1.0.44",
-      "samples": [6.93, 6.95, 6.85, 6.97, 6.87, 6.91],
-      "median": 6.92,
+      "devup": true,
+      "samples": [6.99],
+      "median": 6.99,
+      "min": 6.99,
+      "max": 6.99,
       "bytes": 36578506,
-      "cssBytes": 268,
-      "devup": true
+      "cssBytes": 268
     }
   ]
 }

@@ -1,0 +1,28 @@
+{
+  "samples": 3,
+  "targets": [
+    { "name": "tailwind", "group": "webpack" },
+    { "name": "stylex", "group": "webpack" },
+    { "name": "stylex-turbo", "group": "turbopack" },
+    { "name": "stylex-turbo-devup-ui", "group": "turbopack", "gate": true },
+    { "name": "vanilla-extract", "group": "webpack" },
+    { "name": "kuma-ui", "group": "webpack" },
+    { "name": "panda-css", "group": "webpack" },
+    { "name": "chakra-ui", "group": "webpack" },
+    { "name": "mui", "group": "webpack" },
+    { "name": "devup-ui", "group": "webpack", "gate": true },
+    { "name": "devup-ui-single", "group": "webpack", "gate": true },
+    { "name": "tailwind-turbo", "group": "turbopack" },
+    { "name": "devup-ui-single-turbo", "group": "turbopack", "gate": true },
+    { "name": "devup-ui-turbo", "group": "turbopack", "gate": true },
+    { "name": "vanilla-extract-devup-ui", "group": "turbopack", "gate": true },
+    { "name": "tailwind-turbo-devup-ui", "group": "turbopack", "gate": true },
+    { "name": "vinext-devup-ui", "group": "vite", "gate": true },
+    { "name": "devup-ui-collapse", "group": "turbopack", "gate": true }
+  ],
+  "controls": {
+    "webpack": "tailwind",
+    "turbopack": "tailwind-turbo",
+    "vite": "tailwind"
+  }
+}

@@ -1,0 +1,77 @@
+{
+  "samples": 3,
+  "rows": {
+    "stylex-turbo-devup-ui": {
+      "control": "tailwind-turbo",
+      "ratio": 1.3471,
+      "calibration": [1.3509, 1.3471, 1.2939, 1.3096, 1.4427],
+      "timeTolerance": 0.221,
+      "bytes": 31244290,
+      "cssBytes": 321
+    },
+    "devup-ui": {
+      "control": "tailwind",
+      "ratio": 0.856,
+      "calibration": [0.856, 0.8538, 0.9013, 0.8735, 0.8515],
+      "timeTolerance": 0.1163,
+      "bytes": 67427563,
+      "cssBytes": 562
+    },
+    "devup-ui-single": {
+      "control": "tailwind",
+      "ratio": 0.8704,
+      "calibration": [0.85, 0.8727, 0.9024, 0.8704, 0.859],
+      "timeTolerance": 0.1204,
+      "bytes": 67426959,
+      "cssBytes": 790
+    },
+    "devup-ui-single-turbo": {
+      "control": "tailwind-turbo",
+      "ratio": 0.9794,
+      "calibration": [0.9702, 0.9794, 0.9701, 1.003, 0.9981],
+      "timeTolerance": 0.1,
+      "bytes": 36535115,
+      "cssBytes": 327
+    },
+    "devup-ui-turbo": {
+      "control": "tailwind-turbo",
+      "ratio": 0.9901,
+      "calibration": [0.9901, 1, 0.9753, 1.0089, 0.9885],
+      "timeTolerance": 0.1,
+      "bytes": 36539386,
+      "cssBytes": 358
+    },
+    "vanilla-extract-devup-ui": {
+      "control": "tailwind-turbo",
+      "ratio": 0.9882,
+      "calibration": [0.9929, 0.9882, 0.9428, 0.9867, 1.0439],
+      "timeTolerance": 0.2046,
+      "bytes": 36570432,
+      "cssBytes": 268
+    },
+    "tailwind-turbo-devup-ui": {
+      "control": "tailwind-turbo",
+      "ratio": 0.9986,
+      "calibration": [0.9986, 1.0059, 0.9532, 0.997, 1.0115],
+      "timeTolerance": 0.1167,
+      "bytes": 36572725,
+      "cssBytes": 530
+    },
+    "vinext-devup-ui": {
+      "control": "tailwind",
+      "ratio": 0.1995,
+      "calibration": [0.1962, 0.2066, 0.2104, 0.1995, 0.1868],
+      "timeTolerance": 0.2367,
+      "bytes": 1198750,
+      "cssBytes": 29746
+    },
+    "devup-ui-collapse": {
+      "control": "tailwind-turbo",
+      "ratio": 1.0118,
+      "calibration": [1.0384, 1.0118, 0.9519, 1.0015, 1.021],
+      "timeTolerance": 0.1709,
+      "bytes": 31844629,
+      "cssBytes": 1286
+    }
+  }
+}
