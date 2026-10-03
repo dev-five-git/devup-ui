@@ -1,4 +1,7 @@
 /dist/
 /.vinext/
+/.next/
 /df/
 /node_modules/
+next-env.d.ts
+*.tsbuildinfo
