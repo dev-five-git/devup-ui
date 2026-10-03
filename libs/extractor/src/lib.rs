@@ -14744,6 +14744,7 @@ const on = false;
         "<Box className={twMerge(`p-4`, 'p-2!', 'hover:p-4', 'hover:p-1')} />",
         r#"<div className="a b c" />"#
     )]
+    #[case("<Box className={cn(('p-4'), 'p-2')} />", r#"<div className="a" />"#)]
     #[case(
         "<Box className={cn('p-4', cond && 'p-2')} />",
         r#"-<div className={cn("p-4", cond && "p-2") || ""} />"#

@@ -879,6 +879,10 @@ mod tests {
     #[case("-indent")]
     #[case("-table-auto")]
     #[case("antialiased-")]
+    #[case("rotate-w-45")]
+    #[case("rotate-x")]
+    #[case("rotate-w-45")]
+    #[case("rotate-x")]
     fn unknown_utilities_stay_as_written(#[case] class: &str) {
         assert_eq!(declarations_of(class), None, "{class}");
     }
