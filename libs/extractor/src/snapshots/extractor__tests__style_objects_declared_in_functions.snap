@@ -83,4 +83,8 @@ expression: "library_outputs(&borrowed, SIZE_MODULES)"
         "import { css, styled, globalCss, keyframes, Box } from '@devup-ui/react';\nexport function f() { const inner = { color: 'red' }; const cls = 'x'; return css(inner, cls); }",
         "ToBTreeSet { styles: {Static(ExtractStaticStyle { property: \"color\", value: \"red\", level: 0, selector: None, style_order: None, layer: None })}, code: \"import \\\"@devup-ui/react/devup-ui.css\\\";\\nexport function f() {\\n\\tconst inner = { color: \\\"red\\\" };\\n\\tconst cls = \\\"x\\\";\\n\\treturn `a ${cls}`;\\n}\\n\" }",
     ),
+    (
+        "import { css, styled, globalCss, keyframes, Box } from '@devup-ui/react';\nexport function f() { const inner = ({ color: ('red') }); return css(inner); }",
+        "ToBTreeSet { styles: {Static(ExtractStaticStyle { property: \"color\", value: \"red\", level: 0, selector: None, style_order: None, layer: None })}, code: \"import \\\"@devup-ui/react/devup-ui.css\\\";\\nexport function f() {\\n\\tconst inner = { color: \\\"red\\\" };\\n\\treturn \\\"a\\\";\\n}\\n\" }",
+    ),
 ]

@@ -21702,6 +21702,7 @@ export const App = () => <Global {...rest} styles={{ body: { margin: '0px' } }} 
             "export function f() { const inner = { color: 'red' }; return <Box _hover={inner} {...inner} />; }",
             "export function f(c) { const inner = { color: c }; return <Box {...inner} />; }",
             "export function f() { const inner = { color: 'red' }; const cls = 'x'; return css(inner, cls); }",
+            "export function f() { const inner = ({ color: ('red') }); return css(inner); }",
         ]
         .iter()
         .map(|case| format!("{devup}{case}"))
