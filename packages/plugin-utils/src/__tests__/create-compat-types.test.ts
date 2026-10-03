@@ -45,6 +45,20 @@ describe('createCompatTypes', () => {
     )
   })
 
+  it("types Emotion's JSX runtime where the project builds JSX with it", () => {
+    expect(
+      createCompatTypes(mergeImportAliases(undefined, '@emotion/react')),
+    ).toBe(
+      [
+        '/// <reference types="@devup-ui/react/compat/emotion" />',
+        '/// <reference types="@devup-ui/react/compat/emotion-jsx-runtime" />',
+        '/// <reference types="@devup-ui/react/compat/styled-components" />',
+        '/// <reference types="@devup-ui/react/compat/stylex" />',
+        '/// <reference types="@devup-ui/react/compat/vanilla-extract" />',
+      ].join('\n') + '\n',
+    )
+  })
+
   it('still emits stylex when nothing is aliased', () => {
     expect(createCompatTypes({})).toBe(
       '/// <reference types="@devup-ui/react/compat/stylex" />\n',

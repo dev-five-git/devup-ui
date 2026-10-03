@@ -1,0 +1,14 @@
+{
+  "changes": {
+    "bindings/devup-ui-wasm/package.json": "Patch",
+    "packages/plugin-utils/package.json": "Patch",
+    "packages/react/package.json": "Patch",
+    "packages/vite-plugin/package.json": "Patch",
+    "packages/next-plugin/package.json": "Patch",
+    "packages/webpack-plugin/package.json": "Patch",
+    "packages/rsbuild-plugin/package.json": "Patch",
+    "packages/bun-plugin/package.json": "Patch"
+  },
+  "note": "A project whose tsconfig.json (or jsconfig.json) builds JSX with Emotion (compilerOptions.jsxImportSource of @emotion/react, through extends and project references too) now compiles the css prop on every element of every file, and its .tsx and .jsx files are built with React's JSX runtime through a /** @jsxImportSource react */ pragma, which a file's own JSX pragma overrides, so the bundler no longer imports Emotion's runtime. The plugins read the setting into a new @emotion/react/jsx-runtime alias (importAliases can turn it off with false, and it is left out when @emotion/react is not aliased); @devup-ui/react/compat/emotion-jsx-runtime declares Emotion's JSX runtimes as React's so the project type-checks without Emotion installed. plugin-utils exports readJsxImportSource, and mergeImportAliases takes the JSX import source",
+  "date": "2026-10-01T00:00:00.000Z"
+}

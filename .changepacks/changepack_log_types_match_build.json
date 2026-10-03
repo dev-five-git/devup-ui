@@ -1,0 +1,8 @@
+{
+    "changes":  {
+                    "packages/react/package.json":  "Patch",
+                    "packages/plugin-utils/package.json":  "Patch"
+                },
+    "note":  "Types now accept what the build compiles and nothing it rejects. css() takes classes, style objects, arrays and falsy parts, and the css/keyframes/globalCss tags take the static interpolations the build evaluates. styled gets .attrs(), .withConfig() and .withComponent(), and its result renders another tag. styleVars takes numbers; styleOrder is 1 to 254; ResponsiveValue is exported for hand-written custom shorthands. The compat declarations name what Emotion, styled-components and vanilla-extract give (SerializedStyles, Keyframes, RuleSet, an augmentable Theme and DefaultTheme, CSSObject and the other styled-components types) and follow the vanilla-extract APIs the evaluator registers (style arrays, the styleVariants mapper, createGlobalTheme, createGlobalThemeContract; globalKeyframes, composeStyles and generateIdentifier are gone). DevupTheme takes shadow as devup.json documents it. No new build errors.",
+    "date":  "2026-10-01T00:00:00.000Z"
+}
