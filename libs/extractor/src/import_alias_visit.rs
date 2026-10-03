@@ -117,6 +117,20 @@ impl LibraryNumbers<'_> {
             }
             Expression::LogicalExpression(logical) => self.pixelify(&logical.right),
             Expression::ParenthesizedExpression(inner) => self.pixelify(&inner.expression),
+            Expression::ArrowFunctionExpression(arrow) => {
+                let rules = match &arrow.body {
+                    ArrowFunctionBody::FunctionBody(body) => returned(body),
+                    body => body.as_expression(),
+                };
+                if let Some(rules) = rules {
+                    self.pixelify(rules);
+                }
+            }
+            Expression::FunctionExpression(function) => {
+                if let Some(rules) = function.body.as_deref().and_then(returned) {
+                    self.pixelify(rules);
+                }
+            }
             rules => self.marks.push(Self::mark(rules)),
         }
     }

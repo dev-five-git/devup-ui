@@ -963,6 +963,14 @@ pub(super) fn css_prop_error(element: &str, code: &str, requirement: &str) -> St
 
 pub(super) const CSS_PROP_VALUE: &str = "it must be a style object, CSS text, a class `css()` gives, or a function of the theme giving one, or an array or condition of them";
 
+/// A style object declared below the top level that styles read, and code
+/// elsewhere reads too
+pub(super) fn local_style_error(name: &str) -> String {
+    format!(
+        "Cannot read `{name}` as styles at build time: it is also read elsewhere, where code may change it, so use it only as styles, or declare it with `const` at the top level of the module"
+    )
+}
+
 pub(super) const LOCAL_STYLES: &str = "a style object it composes must be written in it, or declared with `const` at the top level of the module, where the build reads it";
 
 pub(super) const CLASS_NAMES_CHILD: &str =
@@ -970,7 +978,7 @@ pub(super) const CLASS_NAMES_CHILD: &str =
 
 pub(super) const CLASS_NAMES_CALL: &str = "the `css` and `cx` its child function takes can only be called, as the build compiles each call";
 
-pub(super) const CLASS_NAMES_PART: &str = "`css` and `cx` compose only style objects, CSS text, classes, calls of them, or arrays or conditions of these";
+pub(super) const CLASS_NAMES_PART: &str = "`css` composes only style objects, CSS text, classes, calls of `css` and `cx`, or arrays or conditions of these, and `cx` also classes a function call gives, which stay as written";
 
 pub(super) const CLASS_NAMES_CLASS_MAP: &str =
     "an object `cx` takes must give each class a condition, as `{ name: condition }`";

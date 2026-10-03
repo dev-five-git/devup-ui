@@ -118,6 +118,33 @@ struct JsxCss<'a> {
     renders: bool,
 }
 
+/// Whether `expression` is a condition choosing an array of styles, which
+/// compose one after another rather than set the breakpoints of a value
+fn composes_array_under_condition(expression: &Expression<'_>) -> bool {
+    match unwrap_syntax_only(expression) {
+        Expression::ArrayExpression(array) => array.elements.iter().any(|element| {
+            element
+                .as_expression()
+                .is_some_and(composes_array_under_condition)
+        }),
+        Expression::ConditionalExpression(conditional) => {
+            [&conditional.consequent, &conditional.alternate]
+                .into_iter()
+                .any(|side| {
+                    matches!(unwrap_syntax_only(side), Expression::ArrayExpression(_))
+                        || composes_array_under_condition(side)
+                })
+        }
+        Expression::LogicalExpression(logical) => {
+            [&logical.left, &logical.right].into_iter().any(|side| {
+                matches!(unwrap_syntax_only(side), Expression::ArrayExpression(_))
+                    || composes_array_under_condition(side)
+            })
+        }
+        _ => false,
+    }
+}
+
 /// `false ?? right` is `false`, which composes nothing
 fn coalesce_keeps_left(logical: &oxc_ast::ast::LogicalExpression<'_>) -> bool {
     logical.operator == LogicalOperator::Coalesce
@@ -283,6 +310,9 @@ pub struct DevupVisitor<'a> {
     /// `css` prop cannot compose as a class, besides the top-level constants
     /// the build reads in its place
     local_styles: FxHashSet<oxc_syntax::symbol::SymbolId>,
+    /// The bindings below the top level of the module holding an object or
+    /// array, which no style reads as the styles it holds
+    local_objects: FxHashSet<oxc_syntax::symbol::SymbolId>,
 }
 
 /// Whether `declarator` only aliases what the build compiles away
@@ -404,9 +434,9 @@ impl<'a> DevupVisitor<'a> {
             })
             .collect();
         if !flattened
-            && !arguments
-                .iter()
-                .any(|argument| self.reads_known_styles(argument))
+            && !arguments.iter().any(|argument| {
+                self.reads_known_styles(argument) || composes_array_under_condition(argument)
+            })
         {
             return None;
         }
@@ -416,11 +446,143 @@ impl<'a> DevupVisitor<'a> {
         }
         self.unknown_arguments("css", &call.arguments);
         self.changed_arguments("css", &call.arguments);
+        self.local_arguments("css", &call.arguments);
         let (result, known) = self.composed_class(call.span.start, parts);
         if let Some(known) = known {
             self.css_styles = Some((call.span.start, known));
         }
         Some(result)
+    }
+
+    /// Whether `expression` builds a styled component: `styled.div(...)`,
+    /// `styled("div")(...)`, `styled("div", {...})` or their CSS text forms
+    fn is_styled_call(&self, expression: &Expression<'a>) -> bool {
+        let (tag_or_call, argument_count) = match expression {
+            Expression::TaggedTemplateExpression(tag) => (Some(&tag.tag), 0),
+            Expression::CallExpression(call) => (Some(&call.callee), call.arguments.len()),
+            _ => (None, 0),
+        };
+        let is_styled_name = |name: &str| self.styled_imports.contains(name);
+
+        let Some(tag_or_call) = tag_or_call.map(unwrap_syntax_only) else {
+            return false;
+        };
+        if let Expression::StaticMemberExpression(member) = tag_or_call {
+            matches!(&member.object, Expression::Identifier(ident) if is_styled_name(ident.name.as_str()))
+        } else if let Expression::CallExpression(call) = tag_or_call {
+            matches!(&call.callee, Expression::Identifier(ident) if is_styled_name(ident.name.as_str()))
+        } else if let Expression::Identifier(ident) = tag_or_call {
+            // styled("div", { ... }) puts the tag in the arguments, so the callee is
+            // the bare identifier. One argument is the curried creator `styled("div")`,
+            // which only becomes a component once its result is called.
+            is_styled_name(ident.name.as_str()) && argument_count == 2
+        } else {
+            false
+        }
+    }
+
+    /// `part` of what a styled component composes, with each array a condition
+    /// chooses written as a condition on each of its parts, which the styles
+    /// of a styled component read one by one. The conditions are read again
+    /// for each part, so they must give the same value each time.
+    fn distribute_conditions(&self, part: &mut Expression<'a>) {
+        let clone = |expression: &Expression<'a>| expression.clone_in(self.ast.allocator());
+        let parts_of = |expression: &Expression<'a>| match unwrap_syntax_only(expression) {
+            Expression::ArrayExpression(array) => array
+                .elements
+                .iter()
+                .map(|element| element.as_expression().map(clone))
+                .collect::<Option<Vec<_>>>(),
+            _ => None,
+        };
+        let is_empty = |expression: &Expression<'a>| {
+            matches!(
+                unwrap_syntax_only(expression),
+                Expression::NullLiteral(_) | Expression::BooleanLiteral(_)
+            )
+        };
+        let null = || Expression::new_null_literal(SPAN, &self.ast);
+        let elements: Vec<Expression<'a>> = match unwrap_syntax_only_mut(part) {
+            Expression::ArrayExpression(array) => {
+                for element in &mut array.elements {
+                    if let Some(element) = element.as_expression_mut() {
+                        self.distribute_conditions(element);
+                    }
+                }
+                return;
+            }
+            Expression::LogicalExpression(logical)
+                if logical.operator == LogicalOperator::And
+                    && is_pure(&logical.left)
+                    && let Some(parts) = parts_of(&logical.right) =>
+            {
+                parts
+                    .into_iter()
+                    .map(|part| {
+                        Expression::new_logical_expression(
+                            SPAN,
+                            clone(&logical.left),
+                            LogicalOperator::And,
+                            part,
+                            &self.ast,
+                        )
+                    })
+                    .collect()
+            }
+            Expression::ConditionalExpression(conditional)
+                if is_pure(&conditional.test)
+                    && let Some(chosen) = parts_of(&conditional.consequent)
+                        .or_else(|| is_empty(&conditional.consequent).then(Vec::new))
+                    && let Some(otherwise) = parts_of(&conditional.alternate)
+                        .or_else(|| is_empty(&conditional.alternate).then(Vec::new)) =>
+            {
+                let choose = |part, chosen: bool| {
+                    let (consequent, alternate) = if chosen {
+                        (part, null())
+                    } else {
+                        (null(), part)
+                    };
+                    Expression::new_conditional_expression(
+                        SPAN,
+                        clone(&conditional.test),
+                        consequent,
+                        alternate,
+                        &self.ast,
+                    )
+                };
+                chosen
+                    .into_iter()
+                    .map(|part| choose(part, true))
+                    .chain(otherwise.into_iter().map(|part| choose(part, false)))
+                    .collect()
+            }
+            _ => return,
+        };
+        *part = Expression::new_array_expression(
+            SPAN,
+            oxc_allocator::Vec::from_iter_in(elements.into_iter().map(Into::into), &self.ast),
+            &self.ast,
+        );
+        self.distribute_conditions(part);
+    }
+
+    /// Report `attrs` chained after the styles of a styled component, which
+    /// neither Emotion nor styled-components take
+    fn chained_attrs(&mut self, expression: &Expression<'a>) {
+        if let Expression::CallExpression(call) = expression
+            && let Expression::StaticMemberExpression(member) = unwrap_syntax_only(&call.callee)
+            && member.property.name == "attrs"
+            && self.is_styled_call(unwrap_syntax_only(&member.object))
+        {
+            self.errors.push((
+                call.span.start,
+                build_time_error(
+                    "styled",
+                    &readable_code(expression),
+                    "chain `.attrs` before the styles, as `styled.div.attrs({ ... })({ ... })`, which neither Emotion nor styled-components take after them",
+                ),
+            ));
+        }
     }
 
     /// Whether `callee` is a call of `css()`
@@ -742,6 +904,13 @@ impl<'a> DevupVisitor<'a> {
                 self.folded_side(expression, text)
             }
             Expression::ArrayExpression(_) => self.folded_side(expression, text),
+            // What a call gives the `cx` of `<ClassNames>` is a class the build
+            // does not know, which stays as written
+            Expression::CallExpression(_)
+                if text == Text::Classes && !self.class_names_scope.is_empty() =>
+            {
+                Some(KnownSide::Class(code()))
+            }
             _ => None,
         }
     }
@@ -877,6 +1046,7 @@ impl<'a> DevupVisitor<'a> {
             css_prop: CssProp::Off,
             compiled_css_prop: false,
             local_styles: FxHashSet::default(),
+            local_objects: FxHashSet::default(),
         }
     }
 
@@ -1231,6 +1401,36 @@ impl<'a> DevupVisitor<'a> {
                 .or_else(|| self.css_part(&logical.right, test)),
             part => test(self, part).then_some(part),
         }
+    }
+
+    /// Whether `part` reads a binding `local_objects` holds
+    fn reads_local_objects(&self, part: &Expression<'a>) -> bool {
+        self.style_values
+            .symbol(part)
+            .is_some_and(|symbol| self.local_objects.contains(&symbol))
+    }
+
+    /// Report the arguments of `api` that read an object or array declared
+    /// below the top level, which the build did not read as styles: it would
+    /// be taken for a class
+    fn local_arguments(&mut self, api: &str, arguments: &[Argument<'a>]) {
+        if self.local_objects.is_empty() {
+            return;
+        }
+        let mut errors = Vec::new();
+        for argument in arguments {
+            let expression = match argument {
+                Argument::SpreadElement(spread) => &spread.argument,
+                argument => argument.to_expression(),
+            };
+            if let Some(part) = self.css_part(expression, &Self::reads_local_objects) {
+                errors.push((
+                    part.span().start,
+                    build_time_error(api, &readable_code(part), LOCAL_STYLES),
+                ));
+            }
+        }
+        self.errors.extend(errors);
     }
 
     /// Whether `part` reads a binding `local_styles` holds
@@ -1652,6 +1852,7 @@ impl<'a> DevupVisitor<'a> {
         let offset = call.span.start;
         self.unknown_arguments("css", &call.arguments);
         self.changed_arguments("css", &call.arguments);
+        self.local_arguments("css", &call.arguments);
         let mut parts = Vec::new();
         *it = if self.known_parts(it, &mut parts, Text::Classes).is_some() {
             self.composed_class(offset, parts).0
@@ -2490,6 +2691,16 @@ impl<'a> VisitMut<'a> for DevupVisitor<'a> {
         if let Some(error) = forward_error {
             self.errors.push(error);
         }
+        self.chained_attrs(it);
+        if self.is_styled_call(it)
+            && let Expression::CallExpression(call) = it
+        {
+            for argument in &mut call.arguments {
+                if let Some(part) = argument.as_expression_mut() {
+                    self.distribute_conditions(part);
+                }
+            }
+        }
         let flattened = match it {
             Expression::CallExpression(call) if self.is_css(&call.callee) => call
                 .arguments
@@ -2512,86 +2723,53 @@ impl<'a> VisitMut<'a> for DevupVisitor<'a> {
         walk_expression(self, it);
 
         // Handle styled function calls
-        if !self.styled_imports.is_empty() {
-            let (tag_or_call, argument_count) = match it {
-                Expression::TaggedTemplateExpression(tag) => (Some(&tag.tag), 0),
-                Expression::CallExpression(call) => (Some(&call.callee), call.arguments.len()),
-                _ => (None, 0),
-            };
-            let is_styled_name = |name: &str| self.styled_imports.contains(name);
-
-            let is_styled = if let Some(tag_or_call) = tag_or_call.map(unwrap_syntax_only) {
-                if let Expression::StaticMemberExpression(member) = tag_or_call {
-                    if let Expression::Identifier(ident) = &member.object {
-                        is_styled_name(ident.name.as_str())
-                    } else {
-                        false
-                    }
-                } else if let Expression::CallExpression(call) = tag_or_call {
-                    if let Expression::Identifier(ident) = &call.callee {
-                        is_styled_name(ident.name.as_str())
-                    } else {
-                        false
-                    }
-                } else if let Expression::Identifier(ident) = tag_or_call {
-                    // styled("div", { ... }) puts the tag in the arguments, so the callee is
-                    // the bare identifier. One argument is the curried creator `styled("div")`,
-                    // which only becomes a component once its result is called.
-                    is_styled_name(ident.name.as_str()) && argument_count == 2
-                } else {
-                    false
-                }
-            } else {
-                false
-            };
-
-            if is_styled {
-                self.style_values.read_in(&self.ast, it);
-                if let Expression::CallExpression(call) = &*it {
-                    self.unknown_arguments("styled", &call.arguments);
-                    self.changed_arguments("styled", &call.arguments);
-                }
-                let inherited = extended(it)
-                    .and_then(|base| self.style_values.symbol(base))
-                    .and_then(|symbol| self.styled_definitions.get(&symbol))
-                    .filter(|definition| definition.extendable());
-                let start = it.span().start;
-                let marker = self
-                    .pending_marker
-                    .take_if(|(at, _)| *at == start)
-                    .map(|(_, marker)| marker);
-                let StyledExtraction {
-                    result,
-                    expression,
-                    errors,
-                    definition,
-                } = extract_style_from_styled(
-                    &self.ast,
-                    it,
-                    Naming {
-                        split_filename: self.split_filename.as_deref(),
-                        marker: marker.as_deref(),
-                    },
-                    &self.imports,
-                    &attrs,
-                    inherited,
-                    forward,
-                );
-                self.errors.extend(errors);
-                self.styles.extend(
-                    result
-                        .styles
-                        .into_iter()
-                        .flat_map(ExtractStyleProp::into_extract),
-                );
-                *it = if definition.is_some() {
-                    self.forwards_refs = true;
-                    forward_ref(&self.ast, expression)
-                } else {
-                    expression
-                };
-                self.pending_styled = definition.map(|definition| (start, definition));
+        if self.is_styled_call(it) {
+            self.style_values.read_in(&self.ast, it);
+            if let Expression::CallExpression(call) = &*it {
+                self.unknown_arguments("styled", &call.arguments);
+                self.changed_arguments("styled", &call.arguments);
+                self.local_arguments("styled", &call.arguments);
             }
+            let inherited = extended(it)
+                .and_then(|base| self.style_values.symbol(base))
+                .and_then(|symbol| self.styled_definitions.get(&symbol))
+                .filter(|definition| definition.extendable());
+            let start = it.span().start;
+            let marker = self
+                .pending_marker
+                .take_if(|(at, _)| *at == start)
+                .map(|(_, marker)| marker);
+            let StyledExtraction {
+                result,
+                expression,
+                errors,
+                definition,
+            } = extract_style_from_styled(
+                &self.ast,
+                it,
+                Naming {
+                    split_filename: self.split_filename.as_deref(),
+                    marker: marker.as_deref(),
+                },
+                &self.imports,
+                &attrs,
+                inherited,
+                forward,
+            );
+            self.errors.extend(errors);
+            self.styles.extend(
+                result
+                    .styles
+                    .into_iter()
+                    .flat_map(ExtractStyleProp::into_extract),
+            );
+            *it = if definition.is_some() {
+                self.forwards_refs = true;
+                forward_ref(&self.ast, expression)
+            } else {
+                expression
+            };
+            self.pending_styled = definition.map(|definition| (start, definition));
         }
 
         // `Component.withComponent(target)` on a styled component the file
@@ -3031,6 +3209,14 @@ impl<'a> VisitMut<'a> for DevupVisitor<'a> {
                 }
                 let offset = call.span.start;
                 let is_css = matches!(util_type.as_ref(), UtilType::Css);
+                self.local_arguments(
+                    match util_type.as_ref() {
+                        UtilType::Css => "css",
+                        UtilType::Keyframes => "keyframes",
+                        UtilType::GlobalCss | UtilType::GlobalCssComponent => "globalCss",
+                    },
+                    &call.arguments,
+                );
                 if is_css {
                     self.unknown_arguments("css", &call.arguments);
                     self.changed_arguments("css", &call.arguments);
@@ -3663,6 +3849,18 @@ impl<'a> VisitMut<'a> for DevupVisitor<'a> {
                 })
         {
             self.local_styles.insert(symbol);
+        }
+
+        if matches!(
+            it.init.as_ref().map(unwrap_syntax_only),
+            Some(Expression::ObjectExpression(_) | Expression::ArrayExpression(_))
+        ) && let Some(symbol) = it
+            .id
+            .get_binding_identifier()
+            .and_then(|id| id.symbol_id.get())
+            .filter(|symbol| self.style_values.is_local(*symbol))
+        {
+            self.local_objects.insert(symbol);
         }
 
         let marked = styled_binding

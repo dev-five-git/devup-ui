@@ -1,0 +1,50 @@
+---
+source: libs/extractor/src/lib.rs
+expression: "library_outputs(&[\"import { css } from '@emotion/react';\\nexport function f() { const inner = { color: 'red', padding: 8 }; return css(inner); }\",\n\"import { css } from '@emotion/react';\\nexport function f(c) { const inner = { color: c }; return css(inner); }\",\n\"import styled from '@emotion/styled';\\nexport function f() { const inner = { color: 'red' }; return styled.div(inner); }\",\n\"import styled from '@emotion/styled';\\nexport function f(c) { const inner = { color: c }; return styled.div(inner); }\",\n\"import styled, { css } from 'styled-components';\\nexport function f() { const inner = { color: 'red' }; return styled.div(inner); }\",\n\"import styled, { css } from 'styled-components';\\nexport function f() { const inner = { color: 'red' }; return css(inner); }\",\n\"import { style } from '@vanilla-extract/css';\\nexport function f() { const inner = { color: 'red' }; return style(inner); }\",\n\"import { style } from '@vanilla-extract/css';\\nexport function f(c) { const inner = { color: c }; return style(inner); }\",\n\"import { Global } from '@emotion/react';\\nexport function f() { const inner = { body: { margin: 8 } }; return <Global styles={inner} />; }\",\n\"import { ClassNames } from '@emotion/react';\\nexport function f() { const inner = { color: 'red' }; return <ClassNames>{({ css }) => <a className={css(inner)} />}</ClassNames>; }\",\n\"import { css } from '@emotion/react';\\nexport function f() { const inner = { color: 'red' }; return <div css={inner} />; }\",],\nSIZE_MODULES)"
+---
+[
+    (
+        "import { css } from '@emotion/react';\nexport function f() { const inner = { color: 'red', padding: 8 }; return css(inner); }",
+        "ToBTreeSet { styles: {Static(ExtractStaticStyle { property: \"color\", value: \"red\", level: 0, selector: None, style_order: None, layer: None }), Static(ExtractStaticStyle { property: \"padding\", value: \"8px\", level: 0, selector: None, style_order: None, layer: None })}, code: \"import \\\"@devup-ui/react/devup-ui.css\\\";\\nexport function f() {\\n\\tconst inner = {\\n\\t\\tcolor: \\\"red\\\",\\n\\t\\tpadding: 8\\n\\t};\\n\\treturn \\\"a b\\\";\\n}\\n\" }",
+    ),
+    (
+        "import { css } from '@emotion/react';\nexport function f(c) { const inner = { color: c }; return css(inner); }",
+        "Error: /src/App.tsx:2:63: `css()` cannot use `inner` at build time: a style object it composes must be written in it, or declared with `const` at the top level of the module, where the build reads it",
+    ),
+    (
+        "import styled from '@emotion/styled';\nexport function f() { const inner = { color: 'red' }; return styled.div(inner); }",
+        "ToBTreeSet { styles: {Static(ExtractStaticStyle { property: \"color\", value: \"red\", level: 0, selector: None, style_order: None, layer: None })}, code: \"import \\\"@devup-ui/react/devup-ui.css\\\";\\nimport { forwardRef as __devupForwardRef } from \\\"react\\\";\\nexport function f() {\\n\\tconst inner = { color: \\\"red\\\" };\\n\\treturn __devupForwardRef((__devupRefProps, __devupRef) => (({ style, className, as: DevupAs = \\\"div\\\", forwardedAs, ...rest }) => <DevupAs {...(({ \\\"theme\\\": __devupOmit0, ...__devupDom }) => __devupDom)(rest)} as={forwardedAs} className={[\\\"a\\\", className].filter(Boolean).join(\\\" \\\")} style={style} />)({\\n\\t\\t...__devupRefProps,\\n\\t\\tref: __devupRef\\n\\t}));\\n}\\n\" }",
+    ),
+    (
+        "import styled from '@emotion/styled';\nexport function f(c) { const inner = { color: c }; return styled.div(inner); }",
+        "Error: /src/App.tsx:2:70: `styled()` cannot use `inner` at build time: a style object it composes must be written in it, or declared with `const` at the top level of the module, where the build reads it",
+    ),
+    (
+        "import styled, { css } from 'styled-components';\nexport function f() { const inner = { color: 'red' }; return styled.div(inner); }",
+        "ToBTreeSet { styles: {Static(ExtractStaticStyle { property: \"color\", value: \"red\", level: 0, selector: None, style_order: None, layer: None })}, code: \"import \\\"@devup-ui/react/devup-ui.css\\\";\\nimport { forwardRef as __devupForwardRef } from \\\"react\\\";\\nexport function f() {\\n\\tconst inner = { color: \\\"red\\\" };\\n\\treturn __devupForwardRef((__devupRefProps, __devupRef) => (({ style, className, as: DevupAs = \\\"div\\\", forwardedAs, ...rest }) => <DevupAs {...(({ \\\"theme\\\": __devupOmit0, ...__devupDom }) => __devupDom)(rest)} as={forwardedAs} className={[\\\"a\\\", className].filter(Boolean).join(\\\" \\\")} style={style} />)({\\n\\t\\t...__devupRefProps,\\n\\t\\tref: __devupRef\\n\\t}));\\n}\\n\" }",
+    ),
+    (
+        "import styled, { css } from 'styled-components';\nexport function f() { const inner = { color: 'red' }; return css(inner); }",
+        "ToBTreeSet { styles: {Static(ExtractStaticStyle { property: \"color\", value: \"red\", level: 0, selector: None, style_order: None, layer: None })}, code: \"import \\\"@devup-ui/react/devup-ui.css\\\";\\nexport function f() {\\n\\tconst inner = { color: \\\"red\\\" };\\n\\treturn \\\"a\\\";\\n}\\n\" }",
+    ),
+    (
+        "import { style } from '@vanilla-extract/css';\nexport function f() { const inner = { color: 'red' }; return style(inner); }",
+        "ToBTreeSet { styles: {Static(ExtractStaticStyle { property: \"color\", value: \"red\", level: 0, selector: None, style_order: None, layer: None })}, code: \"import \\\"@devup-ui/react/devup-ui.css\\\";\\nexport function f() {\\n\\tconst inner = { color: \\\"red\\\" };\\n\\treturn \\\"a\\\";\\n}\\n\" }",
+    ),
+    (
+        "import { style } from '@vanilla-extract/css';\nexport function f(c) { const inner = { color: c }; return style(inner); }",
+        "Error: /src/App.tsx:2:65: `css()` cannot use `inner` at build time: a style object it composes must be written in it, or declared with `const` at the top level of the module, where the build reads it",
+    ),
+    (
+        "import { Global } from '@emotion/react';\nexport function f() { const inner = { body: { margin: 8 } }; return <Global styles={inner} />; }",
+        "ToBTreeSet { styles: {Static(ExtractStaticStyle { property: \"margin\", value: \"8px\", level: 0, selector: Some(Global(\"body\", \"/src/App.tsx\")), style_order: Some(0), layer: None })}, code: \"import \\\"@devup-ui/react/devup-ui.css\\\";\\nimport { Global } from \\\"@devup-ui/react/compat\\\";\\nexport function f() {\\n\\tconst inner = { body: { margin: 8 } };\\n\\treturn <Global />;\\n}\\n\" }",
+    ),
+    (
+        "import { ClassNames } from '@emotion/react';\nexport function f() { const inner = { color: 'red' }; return <ClassNames>{({ css }) => <a className={css(inner)} />}</ClassNames>; }",
+        "ToBTreeSet { styles: {Static(ExtractStaticStyle { property: \"color\", value: \"red\", level: 0, selector: None, style_order: None, layer: None })}, code: \"import \\\"@devup-ui/react/devup-ui.css\\\";\\nexport function f() {\\n\\tconst inner = { color: \\\"red\\\" };\\n\\treturn <a className={\\\"a\\\"} />;\\n}\\n\" }",
+    ),
+    (
+        "import { css } from '@emotion/react';\nexport function f() { const inner = { color: 'red' }; return <div css={inner} />; }",
+        "ToBTreeSet { styles: {Static(ExtractStaticStyle { property: \"color\", value: \"red\", level: 0, selector: None, style_order: None, layer: None })}, code: \"import \\\"@devup-ui/react/devup-ui.css\\\";\\nexport function f() {\\n\\tconst inner = { color: \\\"red\\\" };\\n\\treturn <div className=\\\"a\\\" />;\\n}\\n\" }",
+    ),
+]

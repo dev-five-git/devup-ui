@@ -31,6 +31,180 @@ use oxc_ast::{
 use oxc_span::{GetSpan, SPAN};
 use oxc_syntax::operator::{BinaryOperator, LogicalOperator, UnaryOperator};
 
+const PROPS_FUNCTION: &str = "a style function of the props must give one rule object at once, with every entry written out, as `(props) => ({ color: props.color })`";
+
+/// The rules `style`, an argument of a styled component, gives, with each
+/// value a function of the props written as the value of a CSS variable the
+/// component sets: a function giving rules becomes the rules with each value
+/// read from the props as such a function, so a condition chooses per value.
+/// `Err` holds a function the build cannot read so.
+fn rules_reading_props<'a>(
+    ast_builder: &AstBuilder<'a>,
+    style: &mut Expression<'a>,
+) -> Result<(), Expression<'a>> {
+    use oxc_allocator::TakeIn;
+
+    if matches!(
+        unwrap_syntax_only(style),
+        Expression::ArrowFunctionExpression(_) | Expression::FunctionExpression(_)
+    ) {
+        let code = style.clone_in(ast_builder.allocator());
+        let (params, returned) = crate::css_prop::render_function(style)
+            .ok_or_else(|| code.clone_in(ast_builder.allocator()))?;
+        let params = params.clone_in_with_semantic_ids(ast_builder.allocator());
+        let mut rules = returned.take_in(ast_builder);
+        let Expression::ObjectExpression(object) = unwrap_syntax_only_mut(&mut rules) else {
+            return Err(code);
+        };
+        props_leaves(ast_builder, object, &params).ok_or(code)?;
+        *style = rules;
+    }
+    if let Expression::ObjectExpression(object) = unwrap_syntax_only_mut(style) {
+        call_with_props(ast_builder, object);
+    }
+    Ok(())
+}
+
+/// Whether `value` is a literal, which reads the same given any props
+fn is_written_out(value: &Expression<'_>) -> bool {
+    let value = unwrap_syntax_only(value);
+    crate::utils::get_string_by_literal_expression(value).is_some()
+        || crate::utils::js_number_literal(value).is_some()
+        || matches!(
+            value,
+            Expression::BooleanLiteral(_) | Expression::NullLiteral(_)
+        )
+}
+
+/// The values of `object` that read the props, each as a function taking the
+/// parameters `params` of the function that gave the rules
+fn props_leaves<'a>(
+    ast_builder: &AstBuilder<'a>,
+    object: &mut oxc_ast::ast::ObjectExpression<'a>,
+    params: &FormalParameters<'a>,
+) -> Option<()> {
+    use oxc_allocator::TakeIn;
+
+    for property in &mut object.properties {
+        let ObjectPropertyKind::ObjectProperty(property) = property else {
+            return None;
+        };
+        if property.computed || property.method || property.kind != oxc_ast::ast::PropertyKind::Init
+        {
+            return None;
+        }
+        let key = crate::utils::get_str_by_property_key(&property.key)?;
+        match unwrap_syntax_only_mut(&mut property.value) {
+            Expression::ObjectExpression(inner) => props_leaves(ast_builder, inner, params)?,
+            Expression::ArrowFunctionExpression(_) | Expression::FunctionExpression(_) => {}
+            value if is_written_out(value) => {}
+            _ => {
+                let leaf = property.value.take_in(ast_builder);
+                property.value = props_function(ast_builder, params, leaf, &key);
+            }
+        }
+    }
+    Some(())
+}
+
+/// `(params) => leaf`: a number is a `px` length, as Emotion reads it, unless
+/// the property takes numbers as they are or the function reads the theme
+fn props_function<'a>(
+    ast_builder: &AstBuilder<'a>,
+    params: &FormalParameters<'a>,
+    leaf: Expression<'a>,
+    key: &str,
+) -> Expression<'a> {
+    let function = |body: Expression<'a>| {
+        Expression::new_arrow_function_expression(
+            SPAN,
+            false,
+            None::<oxc_allocator::Box<oxc_ast::ast::TSTypeParameterDeclaration<'a>>>,
+            oxc_allocator::Box::new_in(
+                params.clone_in_with_semantic_ids(ast_builder.allocator()),
+                ast_builder,
+            ),
+            None::<oxc_allocator::Box<oxc_ast::ast::TSTypeAnnotation<'a>>>,
+            body.into(),
+            ast_builder,
+        )
+    };
+    let plain = function(leaf.clone_in_with_semantic_ids(ast_builder.allocator()));
+    if crate::utils::keeps_bare_number(key)
+        || crate::css_utils::theme_var_reference(&plain).is_some()
+    {
+        return plain;
+    }
+    let value = || identifier(ast_builder, "__devupValue");
+    let is_number = Expression::new_binary_expression(
+        SPAN,
+        Expression::new_unary_expression(SPAN, UnaryOperator::Typeof, value(), ast_builder),
+        BinaryOperator::StrictEquality,
+        Expression::new_string_literal(SPAN, "number", None, ast_builder),
+        ast_builder,
+    );
+    let length = Expression::new_binary_expression(
+        SPAN,
+        value(),
+        BinaryOperator::Addition,
+        Expression::new_string_literal(SPAN, "px", None, ast_builder),
+        ast_builder,
+    );
+    let length = Expression::new_conditional_expression(
+        SPAN,
+        Expression::new_logical_expression(
+            SPAN,
+            is_number,
+            LogicalOperator::And,
+            Expression::new_binary_expression(
+                SPAN,
+                value(),
+                BinaryOperator::StrictInequality,
+                Expression::new_numeric_literal(
+                    SPAN,
+                    0.0,
+                    None,
+                    oxc_syntax::number::NumberBase::Decimal,
+                    ast_builder,
+                ),
+                ast_builder,
+            ),
+            ast_builder,
+        ),
+        length,
+        value(),
+        ast_builder,
+    );
+    let length = named_arrow(ast_builder, "__devupValue", length);
+    function(wrap_direct_call(ast_builder, &length, &[leaf]))
+}
+
+/// The values of `object` that are functions of the props written as the
+/// result of calling them with the props the component renders, which the
+/// styles read as the values of CSS variables; a function reading the theme
+/// stays, as the styles read it as a variable of the theme
+fn call_with_props<'a>(
+    ast_builder: &AstBuilder<'a>,
+    object: &mut oxc_ast::ast::ObjectExpression<'a>,
+) {
+    for property in &mut object.properties {
+        let ObjectPropertyKind::ObjectProperty(property) = property else {
+            continue;
+        };
+        match unwrap_syntax_only_mut(&mut property.value) {
+            Expression::ObjectExpression(inner) => call_with_props(ast_builder, inner),
+            function @ (Expression::ArrowFunctionExpression(_)
+            | Expression::FunctionExpression(_))
+                if crate::css_utils::theme_var_reference(function).is_none() =>
+            {
+                *function =
+                    wrap_direct_call(ast_builder, function, &[identifier(ast_builder, "rest")]);
+            }
+            _ => {}
+        }
+    }
+}
+
 /// The binding a styled component reads the component it renders through, when
 /// only the runtime gives that component
 const STYLED_BASE: &str = "DevupStyled";
@@ -508,6 +682,21 @@ pub fn extract_style_from_styled<'a>(
     if let Expression::CallExpression(call) = expression
         && extract_base_tag_and_class_name(ast_builder, &call.callee, imports).is_some()
     {
+        for argument in &mut call.arguments {
+            if let Some(rules) = argument.as_expression_mut()
+                && let Err(code) = rules_reading_props(ast_builder, rules)
+            {
+                errors.push((
+                    code.span().start,
+                    build_time_error("styled", &readable_code(&code), PROPS_FUNCTION),
+                ));
+                *rules = Expression::new_object_expression(
+                    SPAN,
+                    oxc_allocator::Vec::new_in(ast_builder),
+                    ast_builder,
+                );
+            }
+        }
         match style_arguments(ast_builder, &call.arguments) {
             Some(StyleArguments { classes, rules }) => {
                 call.arguments =

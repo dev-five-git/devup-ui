@@ -74,7 +74,16 @@ pub(crate) fn theme_var_reference(expr: &Expression<'_>) -> Option<String> {
     loop {
         match cursor {
             Expression::StaticMemberExpression(member) => {
-                path.push(member.property.name.as_str());
+                path.push(member.property.name.to_string());
+                cursor = &member.object;
+            }
+            Expression::ComputedMemberExpression(member) => {
+                path.push(match &member.expression {
+                    Expression::StringLiteral(key) => key.value.to_string(),
+                    key => {
+                        crate::utils::js_number_literal(key).map(crate::utils::js_number_string)?
+                    }
+                });
                 cursor = &member.object;
             }
             Expression::Identifier(ident) => {

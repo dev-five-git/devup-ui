@@ -165,6 +165,82 @@ pub(crate) struct Inlined {
     pub css_styles: FxHashMap<String, Vec<ExtractStyleValue>>,
     pub unknown: Unknown,
     pub changed: Changed,
+    /// Style objects declared below the top level that styles read, which
+    /// code elsewhere reads too, so the build cannot tell they are unchanged
+    pub errors: Vec<(u32, String)>,
+}
+
+/// A `const` below the top level of the module holding an object or array
+/// literal that is all written out, which styles read as they read top-level
+/// constants when nothing else reads it
+struct LocalConstant {
+    name: String,
+    /// Where its binding is written
+    binding: u32,
+    value: Constant,
+}
+
+/// The `const` declarations holding object or array literals all written out
+#[derive(Default)]
+struct LocalConstants {
+    found: Vec<LocalConstant>,
+}
+
+/// `expression` as the value it writes out, when every part of it is written
+/// out as a literal
+fn written_out(expression: &Expression<'_>) -> Option<Constant> {
+    match expression {
+        Expression::StringLiteral(literal) => Some(Constant::String(literal.value.to_string())),
+        Expression::BooleanLiteral(literal) => Some(Constant::Bool(literal.value)),
+        Expression::NullLiteral(_) => Some(Constant::Null),
+        Expression::ParenthesizedExpression(inner) => written_out(&inner.expression),
+        Expression::ArrayExpression(array) => array
+            .elements
+            .iter()
+            .map(|element| written_out(element.as_expression()?))
+            .collect::<Option<Vec<_>>>()
+            .map(|values| Constant::Array(Rc::new(values))),
+        Expression::ObjectExpression(object) => object
+            .properties
+            .iter()
+            .map(|property| {
+                let ObjectPropertyKind::ObjectProperty(property) = property else {
+                    return None;
+                };
+                if property.computed
+                    || property.method
+                    || property.kind != oxc_ast::ast::PropertyKind::Init
+                {
+                    return None;
+                }
+                let key = crate::utils::get_str_by_property_key(&property.key)?;
+                Some((key.to_string(), written_out(&property.value)?))
+            })
+            .collect::<Option<Vec<_>>>()
+            .map(|entries| Constant::Record(Rc::new(entries))),
+        expression => crate::utils::js_number_literal(expression).map(Constant::Number),
+    }
+}
+
+impl<'a> Visit<'a> for LocalConstants {
+    fn visit_variable_declaration(&mut self, declaration: &oxc_ast::ast::VariableDeclaration<'a>) {
+        if declaration.kind == VariableDeclarationKind::Const {
+            for declarator in &declaration.declarations {
+                if let oxc_ast::ast::BindingPattern::BindingIdentifier(binding) = &declarator.id
+                    && let Some(init) = &declarator.init
+                    && let Some(value) = written_out(init)
+                    && matches!(value, Constant::Record(_) | Constant::Array(_))
+                {
+                    self.found.push(LocalConstant {
+                        name: binding.name.to_string(),
+                        binding: binding.span.start,
+                        value,
+                    });
+                }
+            }
+        }
+        walk::walk_variable_declaration(self, declaration);
+    }
 }
 
 /// Bindings styles read that hold an object or array code changes, whole or
@@ -364,6 +440,11 @@ pub(crate) fn inline_constants<'a>(
     if read.names.is_empty() {
         return Inlined::default();
     }
+    let mut locals = LocalConstants::default();
+    locals.visit_program(program);
+    locals
+        .found
+        .retain(|local| read.names.contains(&local.name));
     let mut modules = Modules {
         resolver,
         option,
@@ -439,7 +520,10 @@ pub(crate) fn inline_constants<'a>(
         // Scoping is only worth building when a style reads a name that may
         // hold a constant
         let reads_math = read.names.contains("Math") && !scope.binds("Math");
-        if !reads_math && !read.names.iter().any(|name| scope.binds(name)) {
+        if !reads_math
+            && locals.found.is_empty()
+            && !read.names.iter().any(|name| scope.binds(name))
+        {
             return Inlined::default();
         }
         let scoping = SemanticBuilder::new()
@@ -500,8 +584,21 @@ pub(crate) fn inline_constants<'a>(
         (scoping, reads_math)
     };
     inlined.dependencies = modules.exports.into_keys().collect();
+    let mut declared = Vec::new();
+    for symbol in scoping.symbol_ids() {
+        if scoping.symbol_scope_id(symbol) != scoping.root_scope_id()
+            && scoping.symbol_flags(symbol).is_const_variable()
+            && let Some(local) = locals
+                .found
+                .iter()
+                .find(|local| local.binding == scoping.symbol_span(symbol).start)
+        {
+            symbols.insert(symbol, local.value.clone());
+            declared.push((symbol, local));
+        }
+    }
     if !symbols.is_empty() || reads_math {
-        Inline {
+        let mut inline = Inline {
             ast_builder,
             scoping: &scoping,
             symbols: &symbols,
@@ -512,9 +609,18 @@ pub(crate) fn inline_constants<'a>(
             styles: false,
             px: false,
             marks: px,
+            replaced: FxHashMap::default(),
             class_names: Vec::new(),
+        };
+        inline.visit_program(program);
+        for (symbol, local) in declared {
+            let read = inline.replaced.get(&symbol).copied().unwrap_or(0);
+            if read > 0 && read < scoping.get_resolved_reference_ids(symbol).len() {
+                inlined
+                    .errors
+                    .push((local.binding, crate::utils::local_style_error(&local.name)));
+            }
         }
-        .visit_program(program);
     }
     inlined
 }
@@ -1817,6 +1923,9 @@ struct Inline<'s, 'a> {
     /// Where a constant stands as a value or rules of a library reading
     /// numbers as `px` lengths
     marks: &'s crate::import_alias_visit::PxMarks,
+    /// How often a style read each binding below the top level, by what it
+    /// held
+    replaced: FxHashMap<SymbolId, usize>,
     /// The names the `<ClassNames>` child functions around take `css` and
     /// `cx` by
     class_names: Vec<String>,
@@ -2088,6 +2197,12 @@ impl<'a> VisitMut<'a> for Inline<'_, 'a> {
             {
                 let span = expression.span();
                 let marked = self.marks.contains(&(span.start, span.end));
+                if let Expression::Identifier(identifier) = &*expression
+                    && let Some(reference) = identifier.reference_id.get()
+                    && let Some(symbol) = self.scoping.get_reference(reference).symbol_id()
+                {
+                    *self.replaced.entry(symbol).or_default() += 1;
+                }
                 *expression = literal;
                 if marked {
                     px_number(self.ast_builder, expression);
