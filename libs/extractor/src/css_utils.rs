@@ -74,7 +74,16 @@ pub(crate) fn theme_var_reference(expr: &Expression<'_>) -> Option<String> {
     loop {
         match cursor {
             Expression::StaticMemberExpression(member) => {
-                path.push(member.property.name.as_str());
+                path.push(member.property.name.to_string());
+                cursor = &member.object;
+            }
+            Expression::ComputedMemberExpression(member) => {
+                path.push(match &member.expression {
+                    Expression::StringLiteral(key) => key.value.to_string(),
+                    key => {
+                        crate::utils::js_number_literal(key).map(crate::utils::js_number_string)?
+                    }
+                });
                 cursor = &member.object;
             }
             Expression::Identifier(ident) => {
@@ -146,14 +155,14 @@ pub struct TemplateStyles {
     pub unplaced: Vec<usize>,
 }
 
-enum Place {
+pub(crate) enum Place {
     Value,
     Statement,
     Other,
 }
 
 /// Where an interpolation stands, from the CSS written before and after it
-fn interpolation_place(before: &str, after: &[TemplateElement<'_>]) -> Place {
+pub(crate) fn interpolation_place(before: &str, after: &[TemplateElement<'_>]) -> Place {
     let head = &before[before.rfind([';', '{', '}']).map_or(0, |index| index + 1)..];
     let rest: String = after.iter().map(|quasi| quasi.value.raw.as_str()).collect();
     let end = rest.find([';', '{', '}']);
@@ -587,19 +596,41 @@ fn nest_prelude(parent: Option<&StyleSelector>, prelude: &str) -> Option<StyleSe
         let (kind, query) = split_at_rule_key(prelude)?;
         return StyleSelector::nest_at_rule(parent, kind, query);
     }
-    let parent_selector = match parent {
-        Some(StyleSelector::Selector(selector) | StyleSelector::Global(selector, _)) => {
-            Some(selector)
+    Some(StyleSelector::nest_selector(parent, &descendants(prelude)))
+}
+
+/// Each selector of the list `selectors` written without `&` as a descendant
+/// of it, as stylis nests one
+pub(crate) fn descendants(selectors: &str) -> String {
+    let mut depth = 0usize;
+    let mut from = 0;
+    let mut parts = Vec::new();
+    for (index, c) in selectors.char_indices() {
+        match c {
+            '(' | '[' => depth += 1,
+            ')' | ']' => depth = depth.saturating_sub(1),
+            ',' if depth == 0 => {
+                parts.push(&selectors[from..index]);
+                from = index + 1;
+            }
+            _ => {}
         }
-        Some(StyleSelector::At { selector, .. }) => selector.as_ref(),
-        None => None,
-    };
-    let template = if prelude.contains('&') || parent_selector.is_none() {
-        Cow::Borrowed(prelude)
-    } else {
-        Cow::Owned(format!("& {prelude}"))
-    };
-    Some(StyleSelector::nest_selector(parent, &template))
+    }
+    parts.push(&selectors[from..]);
+    parts
+        .iter()
+        .map(|part| {
+            let part = part.trim();
+            if part.contains('&') {
+                part.to_string()
+            } else if part.starts_with(':') {
+                format!("&{part}")
+            } else {
+                format!("& {part}")
+            }
+        })
+        .collect::<Vec<_>>()
+        .join(",")
 }
 
 /// Optimize a declaration's value only when its property warrants multi-value
@@ -1171,7 +1202,7 @@ mod tests {
     #[case(
         "`ul { font-family: 'Roboto Hello',       sans-serif; }`",
         vec![
-            ("font-family", "\"Roboto Hello\",sans-serif", Some(StyleSelector::Selector("ul".to_string()))),
+            ("font-family", "\"Roboto Hello\",sans-serif", Some(StyleSelector::Selector("& ul".to_string()))),
         ]
     )]
     #[case(
@@ -1610,14 +1641,23 @@ mod tests {
     #[case(
         "ul { font-family: 'Roboto Hello',       sans-serif; }",
         vec![
-            ("font-family", "\"Roboto Hello\",sans-serif", Some(StyleSelector::Selector("ul".to_string()))),
+            ("font-family", "\"Roboto Hello\",sans-serif", Some(StyleSelector::Selector("& ul".to_string()))),
         ]
     )]
     #[case(
         "div { color: red; ; { background: blue; } }",
         vec![
-            ("color", "red", Some(StyleSelector::Selector("div".to_string()))),
-            ("background", "blue", Some(StyleSelector::Selector("div".to_string()))),
+            ("color", "red", Some(StyleSelector::Selector("& div".to_string()))),
+            ("background", "blue", Some(StyleSelector::Selector("& div".to_string()))),
+        ]
+    )]
+    // A selector written without `&` selects within the element, each one of
+    // a list on its own, and a pseudo-class applies to the element itself
+    #[case(
+        "a, :is(b, c) d { color: red; } :hover { color: blue; }",
+        vec![
+            ("color", "red", Some(StyleSelector::Selector("& a,&:is(b,c) d".to_string()))),
+            ("color", "blue", Some(StyleSelector::Selector("&:hover".to_string()))),
         ]
     )]
     // As in CSS nesting, only the text after the last `;` is the nested rule's
@@ -1626,7 +1666,7 @@ mod tests {
         "color:red;background:blue { width: 1px; }",
         vec![
             ("color", "red", None),
-            ("width", "1px", Some(StyleSelector::Selector("background:blue".to_string()))),
+            ("width", "1px", Some(StyleSelector::Selector("& background:blue".to_string()))),
         ]
     )]
     #[case(
@@ -1634,7 +1674,7 @@ mod tests {
         vec![(
             "width",
             "1px",
-            Some(StyleSelector::Selector("color:red".to_string()))
+            Some(StyleSelector::Selector("& color:red".to_string()))
         )]
     )]
     #[case(

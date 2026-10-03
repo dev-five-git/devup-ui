@@ -1,0 +1,18 @@
+---
+source: libs/extractor/src/lib.rs
+expression: "ToBTreeSet::from(extract(\"test.tsx\",\n\"import { styled } from '@devup-ui/react';\\nconst Plain = styled('span')({ color: (p) => p.color });\",\nExtractOption::default(),).unwrap())"
+---
+ToBTreeSet {
+    styles: {
+        Dynamic(
+            ExtractDynamicStyle {
+                property: "color",
+                level: 0,
+                identifier: "(p=>p.color)(rest)",
+                selector: None,
+                style_order: None,
+            },
+        ),
+    },
+    code: "import \"@devup-ui/react/devup-ui-0.css\";\nimport { forwardRef as __devupForwardRef } from \"react\";\nconst Plain = __devupForwardRef((__devupRefProps, __devupRef) => (({ style, className, as: DevupAs = \"span\", forwardedAs, ...rest }) => <DevupAs {...(({ \"theme\": __devupOmit0, ...__devupDom }) => __devupDom)(rest)} as={forwardedAs} className={[\"a-a\", className].filter(Boolean).join(\" \")} style={{\n\t...{ \"--a\": (p=>p.color)(rest) },\n\t...style\n}} />)({\n\t...__devupRefProps,\n\tref: __devupRef\n}));\n",
+}
