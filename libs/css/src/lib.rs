@@ -208,10 +208,9 @@ pub fn disassemble_property(property: &str) -> DisassembleProperty {
     GLOBAL_STYLE_PROPERTY.get(property).map_or_else(
         || {
             DisassembleProperty::Fallback(Some(
-                // Gate the three vendor-prefix `starts_with` scans behind a
-                // single first-byte check: only `W`/`M`/`m` can begin
-                // `Webkit`/`Moz`/`ms`, so every other property skips all three.
-                if matches!(property.as_bytes().first(), Some(b'W' | b'M' | b'm'))
+                // Gate vendor-prefix scans behind a single first-byte check:
+                // only `W`/`M`/`m`/`O` can begin `Webkit`/`Moz`/`ms`/`O`.
+                if matches!(property.as_bytes().first(), Some(b'W' | b'M' | b'm' | b'O'))
                     && ((property.starts_with("Webkit")
                         && property.len() > 6
                         && property.as_bytes()[6].is_ascii_uppercase())
@@ -220,7 +219,10 @@ pub fn disassemble_property(property: &str) -> DisassembleProperty {
                             && property.as_bytes()[3].is_ascii_uppercase())
                         || (property.starts_with("ms")
                             && property.len() > 2
-                            && property.as_bytes()[2].is_ascii_uppercase()))
+                            && property.as_bytes()[2].is_ascii_uppercase())
+                        || (property.starts_with('O')
+                            && property.len() > 1
+                            && property.as_bytes()[1].is_ascii_uppercase()))
                 {
                     // Build `-<kebab>` directly into ONE buffer instead of allocating
                     // a `to_kebab_case(property)` String and copying it into a second
@@ -228,8 +230,8 @@ pub fn disassemble_property(property: &str) -> DisassembleProperty {
                     // (ASCII-uppercase char → `-` before it when not first, then its
                     // lowercase; other chars copied verbatim) after the leading `-`.
                     // The `i != 0` guard matches `to_kebab_case`, so the vendor
-                    // prefix's uppercase first char (`W`/`M`/`m`→lowercase) gets no
-                    // extra `-`. Output byte-identical, one fewer allocation.
+                    // prefix's first char (`W`/`M`/`m`/`O`→lowercase) gets no
+                    // extra `-`, keeping the conversion in one allocation.
                     let mut s = String::with_capacity(property.len() + 5);
                     s.push('-');
                     for (i, c) in property.chars().enumerate() {
@@ -1396,6 +1398,28 @@ mod tests {
         let class3 =
             sheet_to_classname("background", 0, Some("red"), None, None, Some("other.tsx"));
         assert_ne!(class1, class3);
+    }
+
+    #[rstest]
+    #[case("OAnimationDuration", "-o-animation-duration")]
+    #[case("OTransitionDelay", "-o-transition-delay")]
+    #[case("OTransform", "-o-transform")]
+    #[case("Order", "order")]
+    #[case("ObjectFit", "object-fit")]
+    #[case("O", "o")]
+    #[case("order", "order")]
+    #[case("objectFit", "object-fit")]
+    #[case("WebkitAnimationDuration", "-webkit-animation-duration")]
+    #[case("MozTransitionDelay", "-moz-transition-delay")]
+    #[case("msTransform", "-ms-transform")]
+    #[serial]
+    fn disassemble_property_when_vendor_or_ordinary_name(
+        #[case] property: &str,
+        #[case] expected: &str,
+    ) {
+        let properties = disassemble_property(property).collect::<Vec<_>>();
+
+        assert_eq!(properties, [expected]);
     }
 
     #[test]

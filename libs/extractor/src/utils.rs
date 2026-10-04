@@ -1,6 +1,6 @@
 use std::borrow::Cow;
 
-use crate::extract_style::constant::MAINTAIN_VALUE_PROPERTIES;
+use crate::extract_style::constant::is_maintain_value_property;
 use css::utils::to_kebab_case;
 use oxc_allocator::{Allocator, CloneIn, GetAllocator};
 use oxc_ast::{
@@ -29,7 +29,7 @@ pub(super) fn is_unitless_key(key: &str) -> bool {
     key.starts_with("--")
         || key.starts_with("var(")
         || key.bytes().all(|byte| byte.is_ascii_digit())
-        || MAINTAIN_VALUE_PROPERTIES.contains(to_kebab_case(key).as_ref())
+        || is_maintain_value_property(to_kebab_case(key).as_ref())
 }
 
 /// Whether a number on `key` stays bare in a library whose numbers mean pixels:
@@ -1407,6 +1407,46 @@ mod tests {
         assert!(!keeps_bare_number("padding"));
         assert!(!keeps_bare_number("backgroundColor"));
         assert!(!keeps_bare_number("WebkitTextStrokeWidth"));
+    }
+
+    #[rstest::rstest]
+    #[case("msFlex")]
+    #[case("msFlexOrder")]
+    #[case("msFlexPositive")]
+    #[case("msFlexNegative")]
+    #[case("WebkitBoxFlex")]
+    #[case("WebkitBoxOrdinalGroup")]
+    #[case("msGridColumnSpan")]
+    #[case("msGridRowSpan")]
+    #[case("MozTabSize")]
+    #[case("WebkitLineClamp")]
+    fn numeric_css_08_shared_callers_keep_vendor_numbers(#[case] key: &str) {
+        let kebab = to_kebab_case(key);
+        for spelling in [key, kebab.as_ref(), &format!("-{kebab}")] {
+            assert!(is_unitless_key(spelling), "{spelling}");
+            assert!(keeps_bare_number(spelling), "{spelling}");
+        }
+    }
+
+    #[rstest::rstest]
+    #[case("flex", true, true)]
+    #[case("flexGrow", true, true)]
+    #[case("flexShrink", true, true)]
+    #[case("flexBasis", false, false)]
+    #[case("WebkitFlexBasis", false, false)]
+    #[case("WebkitTextStrokeWidth", false, false)]
+    #[case("unknown-flex", false, false)]
+    #[case("--ms-flex", true, true)]
+    #[case("p", false, true)]
+    #[case("mx", false, true)]
+    #[case("padding", false, false)]
+    fn numeric_css_08_shared_callers_preserve_existing_units(
+        #[case] key: &str,
+        #[case] unitless: bool,
+        #[case] bare: bool,
+    ) {
+        assert_eq!(is_unitless_key(key), unitless);
+        assert_eq!(keeps_bare_number(key), bare);
     }
 
     #[test]
