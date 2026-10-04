@@ -319,6 +319,7 @@ export const DevupUI = ({
             })
             setModuleResolver(resolver)
             const graph = buildStaticImportGraph(roots, tsconfigPath, {
+              includeMdx: true,
               cwd: root,
               include,
               conditions,

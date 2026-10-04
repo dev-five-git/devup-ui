@@ -220,6 +220,83 @@ describe('multi-root source graph', () => {
 })
 
 describe('MDX ESM discovery', () => {
+  it.each(['src', '.'])(
+    'excludes raw MDX roots and direct edges by default under %s',
+    (layout) => {
+      const entry = fixture(
+        'src/main.ts',
+        "import './page.mdx'\nimport('./lazy.mdx')",
+      )
+      const page = fixture(
+        'src/page.mdx',
+        "import '../outside/provider.js'\n\n# Raw markdown",
+      )
+      fixture('src/lazy.mdx', '# Lazy markdown')
+      fixture('outside/provider.js', 'export const value = 1')
+      const graph = buildStaticImportGraph(join(root, layout), undefined, {
+        cwd: root,
+      })
+      expect(graph.files.filter((file) => file.endsWith('.mdx'))).toEqual([])
+      expect(graph.staticImports.get(entry)).toEqual(new Set())
+      expect(graph.dynamicImports.get(entry)).toEqual(new Set())
+      expect(
+        createModuleResolver({ cwd: root })('./page.mdx', entry)?.path,
+      ).toBe(page)
+    },
+  )
+
+  it.each([false, true])(
+    'follows included JS and MDX provider closures only with MDX opt-in %s',
+    (includeMdx) => {
+      const entry = fixture(
+        'src/main.ts',
+        "import 'included'\nimport 'mdx-entry'",
+      )
+      fixture(
+        'node_modules/included/package.json',
+        JSON.stringify({ main: 'index.js' }),
+      )
+      const library = fixture(
+        'node_modules/included/index.js',
+        "import './page.mdx'",
+      )
+      const page = fixture(
+        'node_modules/included/page.mdx',
+        "import './provider.js'\n\n# Page",
+      )
+      const provider = fixture(
+        'node_modules/included/provider.js',
+        'export const value = 1',
+      )
+      fixture(
+        'node_modules/mdx-entry/package.json',
+        JSON.stringify({ main: 'index.mdx' }),
+      )
+      const mdxEntry = fixture(
+        'node_modules/mdx-entry/index.mdx',
+        "import './provider.js'\n\n# Entry",
+      )
+      const secondProvider = fixture(
+        'node_modules/mdx-entry/provider.js',
+        'export const value = 2',
+      )
+      const graph = buildStaticImportGraph(join(root, 'src'), undefined, {
+        cwd: root,
+        include: ['included', 'mdx-entry'],
+        includeMdx,
+      })
+      expect(graph.files).toEqual(
+        (includeMdx
+          ? [entry, library, page, provider, mdxEntry, secondProvider]
+          : [entry, library]
+        ).sort(),
+      )
+      expect(graph.staticImports.get(library)).toEqual(
+        new Set(includeMdx ? [page] : []),
+      )
+    },
+  )
+
   it('discovers real ESM blocks while ignoring markdown, code fences, indented code and comments', () => {
     const entry = fixture(
       'app/page.mdx',
@@ -260,7 +337,10 @@ describe('MDX ESM discovery', () => {
     const lazy = fixture('src/lazy.cjs', 'export const lazy = 1')
     fixture('app/fake.ts', 'fake')
     const srcDir = [join(root, 'app'), join(root, 'src')]
-    const graph = buildStaticImportGraph(srcDir, undefined, { cwd: root })
+    const graph = buildStaticImportGraph(srcDir, undefined, {
+      cwd: root,
+      includeMdx: true,
+    })
     expect(graph.staticImports.get(entry)).toEqual(new Set([value, other]))
     expect(graph.dynamicImports.get(entry)).toEqual(new Set([lazy]))
     expect(computeCompiledFiles({ srcDir, cwd: root, graph })).toEqual([

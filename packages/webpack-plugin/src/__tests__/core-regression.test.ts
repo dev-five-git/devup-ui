@@ -206,3 +206,56 @@ it('does not parse raw MDX during prewarm', async () => {
     extract.mockRestore()
   }
 })
+
+it.each([
+  ['giant Next pitch', `next-app-loader?page=${'segment/'.repeat(5000)}!`],
+  ['virtual scheme', 'virtual:next-entry'],
+  ['virtual ID', '\0next-entry'],
+  ['empty resource', 'loader?pitch=true!?resourceQueryOnly'],
+])('skips virtual or pitch-only entry %s', async (_name, entry) => {
+  const reachable = spyOn(pluginUtils, 'computeReachableFiles')
+  try {
+    compiler = webpack({
+      context: root,
+      mode: 'production',
+      entry,
+      plugins: [new DevupUIWebpackPlugin()],
+    })
+    expect(reachable.mock.calls[0]?.[0].entries).toEqual([])
+  } finally {
+    reachable.mockRestore()
+  }
+})
+
+it.each([
+  './src/main.ts',
+  './src/main.ts?resource=true',
+  'first-loader?value=one!second-loader?value=two!./src/main.ts?resource=true',
+])('prewarms the real resource of entry %s', async (entry) => {
+  await writeFile(
+    join(root, 'src/main.ts'),
+    "import {css} from '@devup-ui/react'; export const style = css({bg:'red'})",
+  )
+  await writeFile(
+    join(root, 'src/unreachable.ts'),
+    "import {css} from '@devup-ui/react'; export const style = css({bg:'blue'})",
+  )
+  compiler = webpack({
+    context: root,
+    mode: 'production',
+    entry,
+    plugins: [new DevupUIWebpackPlugin({ singleCss: true })],
+  })
+  expect(wasm.getCss(null, false)).toContain('red')
+  expect(wasm.getCss(null, false)).not.toContain('blue')
+})
+
+it('propagates invalid real entry resource I/O instead of skipping it', () => {
+  expect(() =>
+    webpack({
+      context: root,
+      entry: 'loader!./src/\0.ts?resource=true',
+      plugins: [new DevupUIWebpackPlugin()],
+    }),
+  ).toThrow()
+})

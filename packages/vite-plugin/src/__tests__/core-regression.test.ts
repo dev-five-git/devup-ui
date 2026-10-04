@@ -11,6 +11,7 @@ import { tmpdir } from 'node:os'
 import { join, resolve } from 'node:path'
 import { pathToFileURL } from 'node:url'
 
+import { ConfigLoadError } from '@devup-ui/plugin-utils'
 import * as wasm from '@devup-ui/wasm'
 import { afterEach, beforeEach, expect, it, spyOn } from 'bun:test'
 import { createServer, type ViteDevServer } from 'vite'
@@ -68,9 +69,10 @@ it('clears declarations when a real theme file becomes empty', async () => {
     root,
     configFile: false,
     optimizeDeps: { noDiscovery: true },
-    server: { middlewareMode: true, hmr: false },
+    server: { middlewareMode: true, hmr: false, watch: null },
     plugins: [plugin],
   })
+  await server.watcher.close()
   expect(await readFile(join(root, 'df/theme.d.ts'), 'utf-8')).toContain(
     'removed',
   )
@@ -93,17 +95,35 @@ it('preserves the prior theme on a malformed watched config', async () => {
     root,
     configFile: false,
     optimizeDeps: { noDiscovery: true },
-    server: { middlewareMode: true, hmr: false },
+    server: { middlewareMode: true, hmr: false, watch: null },
     plugins: [plugin],
   })
+  await server.watcher.close()
   const prior = await readFile(join(root, 'df/theme.d.ts'), 'utf-8')
+  const priorCss = wasm.getCss(null, false)
+  expect(server.watcher.getWatched()).toEqual({})
   await writeFile(join(root, 'devup.json'), '{')
   const diagnostic = spyOn(console, 'error').mockImplementation(() => {})
   try {
+    console.error('[unrelated] config diagnostic from another server')
     await plugin.watchChange(join(root, 'devup.json'))
     expect(await readFile(join(root, 'df/theme.d.ts'), 'utf-8')).toBe(prior)
-    expect(diagnostic.mock.calls[0]?.[0]).toContain(join(root, 'devup.json'))
-    expect(wasm.getCss(null, false)).toContain('--preserved')
+    const targeted = diagnostic.mock.calls.find(
+      ([message]) =>
+        message ===
+        `[devup-ui] theme update failed at ${join(root, 'devup.json')}`,
+    )
+    expect(targeted?.[0]).toBe(
+      `[devup-ui] theme update failed at ${join(root, 'devup.json')}`,
+    )
+    const error = targeted?.[1]
+    expect(error).toBeInstanceOf(ConfigLoadError)
+    if (!(error instanceof ConfigLoadError))
+      throw new TypeError('Expected config load diagnostic')
+    expect(error.file).toBe(join(root, 'devup.json'))
+    expect(error.cause).toBeInstanceOf(SyntaxError)
+    expect(wasm.getCss(null, false)).toBe(priorCss)
+    expect(priorCss).toContain('--preserved')
   } finally {
     diagnostic.mockRestore()
   }
