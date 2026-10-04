@@ -39,7 +39,7 @@ use oxc_allocator::{Allocator, CloneIn};
 use oxc_ast::ast::Expression;
 use oxc_ast_visit::VisitMut;
 use oxc_codegen::{Codegen, CodegenOptions};
-use oxc_parser::{Parser, ParserReturn};
+use oxc_parser::{ParseOptions, Parser, ParserReturn};
 use oxc_span::SourceType;
 use rustc_hash::FxHashMap;
 use rustc_hash::FxHashSet;
@@ -514,14 +514,28 @@ fn extract_source(
         fatal_error, // Parser encountered an error it couldn't recover from
         diagnostics,
         ..
-    } = Parser::new(&allocator, code_to_parse, source_type).parse();
-    if fatal_error {
+    } = Parser::new(&allocator, code_to_parse, source_type)
+        .with_options(ParseOptions {
+            parse_regular_expression: true,
+            ..ParseOptions::default()
+        })
+        .parse();
+    let semantic_diagnostics = if diagnostics.is_empty() {
+        oxc_semantic::SemanticBuilder::new()
+            .with_check_syntax_error(true)
+            .build(&program)
+            .diagnostics
+    } else {
+        Default::default()
+    };
+    if fatal_error || !diagnostics.is_empty() || !semantic_diagnostics.is_empty() {
         let (source, earlier_edits) = evaluated.unwrap_or((code, &[]));
         let edits: Vec<&[import_alias_visit::Edit]> = std::iter::once(alias_edits.as_slice())
             .chain(earlier_edits.iter().copied())
             .collect();
         let errors = diagnostics
             .iter()
+            .chain(semantic_diagnostics.iter())
             .take(1)
             .map(|error| {
                 (
@@ -530,7 +544,8 @@ fn extract_source(
                         .first()
                         .map_or(0, oxc_span::LabeledSpan::offset),
                     format!(
-                        "Cannot parse source: {error}. Fix: correct the syntax at this location"
+                        "Cannot parse source: {}. Fix: correct the syntax at this location",
+                        error.to_string().trim_end_matches('.')
                     ),
                 )
             })
@@ -1602,7 +1617,7 @@ mod tests {
             extract(
                 "test.tsx",
                 r"import {Box} from '@devup-ui/core'
-        <Box padding={1} margin={2} wrong={} wrong2=<></> />
+        <Box padding={1} margin={2} wrong={null} wrong2=<></> />
         ",
                 ExtractOption {
                     package: "@devup-ui/core".to_string(),
@@ -1851,7 +1866,7 @@ mod tests {
             extract(
                 "test.tsx",
                 r"import {Box as C} from '@devup-ui/core'
-        <C padding={1} margin={2} className={} />
+        <C padding={1} margin={2} className={null} />
         ",
                 ExtractOption {
                     package: "@devup-ui/core".to_string(),
@@ -7106,7 +7121,7 @@ export {
             extract(
                 "test.jsx",
                 r#"import {Box, css} from '@devup-ui/core'
-    <Box className={css({color:"white"})} styleOrder={} />
+    <Box className={css({color:"white"})} styleOrder={null} />
             "#,
                 ExtractOption {
                     package: "@devup-ui/core".to_string(),
@@ -7849,7 +7864,7 @@ export { c as Lib };"#,
             extract(
                 "test.jsx",
                 r"import {Box} from '@devup-ui/core'
-    <Box styleVars={} />
+    <Box styleVars={{}} />
             ",
                 ExtractOption {
                     package: "@devup-ui/core".to_string(),
@@ -9609,7 +9624,7 @@ keyframes({
             extract(
                 "test.tsx",
                 r"import {Box} from '@devup-ui/core'
-        <Box padding={1} margin={2} wrong={} wrong2=<></> />
+        <Box padding={1} margin={2} wrong={null} wrong2=<></> />
         ",
                 ExtractOption {
                     package: "@devup-ui/core".to_string(),
@@ -9642,7 +9657,7 @@ keyframes({
             extract(
                 "test1.tsx",
                 r"import {Box} from '@devup-ui/core'
-        <Box padding={1} margin={2} wrong={} wrong2=<></> />
+        <Box padding={1} margin={2} wrong={null} wrong2=<></> />
         ",
                 ExtractOption {
                     package: "@devup-ui/core".to_string(),
@@ -19327,7 +19342,7 @@ import orange from './tokens';
 import * as tokens from './tokens';
 import named from './named';
 import { handler } from './handler';
-import cjs, { COMPILED, FROM_REQUIRE, DESTRUCTURED, MUTATED, DYNAMIC } from './cjs-tokens';
+import cjs, { COMPILED, FROM_REQUIRE, DESTRUCTURED, MUTATED, DYNAMIC as CJS_DYNAMIC } from './cjs-tokens';
 import cjsObject, { OBJ, OVERRIDDEN, LATER } from './cjs-object';
 import twelve from './cjs-value';
 import twice from './cjs-twice';
@@ -19343,7 +19358,7 @@ export const f = { PRIMARY, unused, SIZE: tokens.SIZE };
 export const g = <div color={PRIMARY} />;
 export const h = <Devup.Inner.Box color={SIZE} />;
 export const i = Devup['css']({ color: SIZE });
-export const l = <Box color={COMPILED} bg={FROM_REQUIRE} borderColor={DESTRUCTURED} outlineColor={MUTATED} fill={cjs} stroke={OBJ} caretColor={OVERRIDDEN} accentColor={LATER} stopColor={cjsObject.OBJ} zIndex={twelve} floodColor={twice.A} lightingColor={DYNAMIC} columnRuleColor={marker} textDecorationColor={markerNamed} />;
+export const l = <Box color={COMPILED} bg={FROM_REQUIRE} borderColor={DESTRUCTURED} outlineColor={MUTATED} fill={cjs} stroke={OBJ} caretColor={OVERRIDDEN} accentColor={LATER} stopColor={cjsObject.OBJ} zIndex={twelve} floodColor={twice.A} lightingColor={CJS_DYNAMIC} columnRuleColor={marker} textDecorationColor={markerNamed} />;
 export const j = <Box zIndex={PRIMARY.length} order={PRIMARY['length']} />;
 export const k = styled('div')({ color: SIZE });",
             ExtractOption {
@@ -21465,7 +21480,7 @@ export const App = () => <Global {...rest} styles={{ body: { margin: '0px' } }} 
             ),
             (
                 "test.tsx",
-                "export const App = ({ c }) => <><div css=\"color: red; padding: 4px\" /><div css={`color: ${c};`} /><div css /><div css={null} /><div css={undefined} /><div css={{}} /><div css={''} /><div css={} /></>;"
+                "export const App = ({ c }) => <><div css=\"color: red; padding: 4px\" /><div css={`color: ${c};`} /><div css /><div css={null} /><div css={undefined} /><div css={{}} /><div css={''} /><div css={null} /></>;"
             ),
             (
                 "test.tsx",
