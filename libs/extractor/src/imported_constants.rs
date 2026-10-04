@@ -35,6 +35,8 @@ mod initialization;
 mod lexical;
 #[cfg(test)]
 mod require_tests;
+#[cfg(test)]
+mod safety_tests;
 
 #[derive(Clone, Debug)]
 enum Constant {

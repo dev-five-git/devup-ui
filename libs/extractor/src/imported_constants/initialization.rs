@@ -103,6 +103,31 @@ struct Binding {
     temporal: bool,
 }
 
+impl Binding {
+    /// Class self-bindings initialize after keys and extends, before static values.
+    fn class(class: &Class<'_>, frame: usize) -> Self {
+        let initialized = class.span.end;
+        let class_initializers = class
+            .body
+            .body
+            .iter()
+            .filter_map(|element| match element {
+                ClassElement::PropertyDefinition(property) if property.r#static => {
+                    property.value.as_ref().map(GetSpan::span)
+                }
+                ClassElement::StaticBlock(block) => Some(block.span),
+                _ => None,
+            })
+            .collect();
+        Self {
+            initialized,
+            class_initializers,
+            frame,
+            temporal: true,
+        }
+    }
+}
+
 struct Frame {
     parent: usize,
     deferred: bool,
@@ -163,27 +188,8 @@ impl<'a> Visit<'a> for Collector<'_> {
 
     fn visit_class(&mut self, class: &Class<'a>) {
         if let Some(symbol) = class.id.as_ref().and_then(|id| id.symbol_id.get()) {
-            self.bindings.insert(
-                symbol,
-                Binding {
-                    initialized: class.span.end,
-                    // Class self-bindings initialize after keys/extends, before static values.
-                    class_initializers: class
-                        .body
-                        .body
-                        .iter()
-                        .filter_map(|element| match element {
-                            ClassElement::PropertyDefinition(property) if property.r#static => {
-                                property.value.as_ref().map(GetSpan::span)
-                            }
-                            ClassElement::StaticBlock(block) => Some(block.span),
-                            _ => None,
-                        })
-                        .collect(),
-                    frame: self.frame,
-                    temporal: true,
-                },
-            );
+            self.bindings
+                .insert(symbol, Binding::class(class, self.frame));
         }
         walk::walk_class(self, class);
     }
