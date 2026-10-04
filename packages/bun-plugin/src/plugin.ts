@@ -95,6 +95,7 @@ async function initialize(project: Project, options: DevupUIBunPluginOptions) {
       { seedFileMap },
       collectNumberedFiles({
         roots: resolveSourceDirs(root, options.sourceDirs),
+        includeMdx: true,
         cwd: root,
         include: options.include,
         needles: compiledPackages,
@@ -218,6 +219,7 @@ function DevupUI(options: DevupUIBunPluginOptions = {}) {
                 ),
                 ...collectNumberedFiles({
                   roots: resolveSourceDirs(root, options.sourceDirs),
+                  includeMdx: true,
                   cwd: root,
                   include: ['@devup-ui/components', ...(options.include ?? [])],
                   needles: compiledPackages,

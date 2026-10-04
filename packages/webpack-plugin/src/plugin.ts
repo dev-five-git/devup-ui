@@ -382,6 +382,7 @@ export class DevupUIWebpackPlugin {
         { seedFileMap },
         collectNumberedFiles({
           roots,
+          includeMdx: true,
           include: this.options.include,
           cwd,
           needles: extractedNeedles(this.options.package, this.importAliases),

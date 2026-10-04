@@ -359,6 +359,7 @@ export const DevupUI = ({
                 { seedFileMap },
                 collectNumberedFiles({
                   roots,
+                  includeMdx: true,
                   include,
                   cwd: root,
                   needles: extractedNeedles(libPackage, importAliases),

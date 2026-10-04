@@ -543,6 +543,7 @@ export function DevupUI({
             { seedFileMap },
             collectNumberedFiles({
               roots,
+              includeMdx: true,
               include,
               cwd: projectRoot,
               needles: extractedNeedles(libPackage, importAliases),

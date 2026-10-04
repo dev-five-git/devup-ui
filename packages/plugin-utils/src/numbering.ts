@@ -2,12 +2,15 @@ import { existsSync, readFileSync, realpathSync } from 'node:fs'
 import { join, resolve } from 'node:path'
 
 import { listSourceFiles } from './import-graph'
+import { MDX_FILE_RE } from './shared'
 
 export interface CollectNumberedFilesOptions {
   /** Directories holding the project's own source files */
   roots: string[]
   /** Packages whose source the build extracts too (the `include` option) */
   include?: string[]
+  /** Number MDX only when the caller extracts compiled MDX. Defaults to false. */
+  includeMdx?: boolean
   cwd?: string
   /**
    * Only files whose text contains one of these are numbered, so files the
@@ -46,6 +49,7 @@ function findPackageDir(cwd: string, name: string): string | undefined {
 export function collectNumberedFiles({
   roots,
   include = [],
+  includeMdx = false,
   cwd = process.cwd(),
   needles,
   toId = (path) => path.replaceAll('\\', '/'),
@@ -60,6 +64,7 @@ export function collectNumberedFiles({
     ...new Set(
       directories.flatMap((dir) =>
         listSourceFiles(dir)
+          .filter((file) => includeMdx || !MDX_FILE_RE.test(file))
           .filter((file) => !needles || usesAny(file, needles))
           .map(toId),
       ),
