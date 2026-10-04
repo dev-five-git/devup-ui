@@ -1,5 +1,6 @@
 pub mod at_rule;
 pub mod atom_hoist;
+pub mod atom_name;
 pub mod class_map;
 mod constant;
 pub mod debug;
@@ -396,6 +397,14 @@ fn class_num_for_key(filename_key: &str, build_key: impl FnOnce(&mut String)) ->
 
 #[must_use]
 pub fn keyframes_to_keyframes_name(keyframes: &str, filename: Option<&str>) -> String {
+    if atom_hoist::is_atom_hoist() {
+        // Keyframes remain in their file chunk, even when declarations are hoisted.
+        let scope = filename.map_or_else(
+            || "g".to_string(),
+            |file| format!("l-{}", atom_name::hex(&file_map::canonical(file))),
+        );
+        return with_prefix(|prefix| format!("{prefix}k1-{scope}-{}", atom_name::hex(keyframes)));
+    }
     with_prefix(|prefix| {
         if is_debug() {
             let mut result = String::with_capacity(prefix.len() + 2 + keyframes.len());
@@ -505,6 +514,21 @@ pub fn sheet_to_classname(
     // `$primary`) borrow straight from `value` with zero allocation, and the
     // key/result builders below only ever read `&optimized` as `&str`.
     let optimized = value.map_or(Cow::Borrowed(""), optimize_value);
+    if atom_hoist::is_atom_hoist() {
+        let scope = atom_name::scope(filename);
+        let value = match value {
+            None => "n".to_string(),
+            Some(_) => format!("s-{}", atom_name::hex(&optimized)),
+        };
+        return with_prefix(|prefix| {
+            format!(
+                "{prefix}a1-{scope}-{}-{level}-{value}-{}-{}",
+                atom_name::hex(property.trim()),
+                atom_name::hex(selector.unwrap_or_default()),
+                style_order.unwrap_or(255),
+            )
+        });
+    }
     if is_debug() {
         let selector = selector.unwrap_or_default().trim();
         let encoded = if selector.is_empty() {
@@ -597,6 +621,15 @@ fn write_u8(s: &mut String, v: u8) {
 
 #[must_use]
 pub fn sheet_to_variable_name(property: &str, level: u8, selector: Option<&str>) -> String {
+    if atom_hoist::is_atom_hoist() {
+        return with_prefix(|prefix| {
+            format!(
+                "--{prefix}v1-{}-{level}-{}",
+                atom_name::hex(property.trim()),
+                atom_name::hex(selector.unwrap_or_default())
+            )
+        });
+    }
     if is_debug() {
         let selector = selector.unwrap_or_default().trim();
         let encoded = if selector.is_empty() {

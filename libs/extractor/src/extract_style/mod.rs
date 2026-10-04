@@ -16,6 +16,9 @@ fn class_selector<'a>(
     selector: Option<&'a StyleSelector>,
     layer: Option<&str>,
 ) -> Option<Cow<'a, str>> {
+    if css::atom_hoist::is_atom_hoist() {
+        return Some(Cow::Owned(css::atom_name::selector_key(selector, layer)));
+    }
     let selector = selector.map(StyleSelector::as_class_str);
     match layer {
         Some(layer) => Some(Cow::Owned(format!(
