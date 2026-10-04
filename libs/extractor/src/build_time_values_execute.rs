@@ -26,6 +26,34 @@ const DEFINITIONS_SOURCE: &str = "<devup-build-time-definitions>";
 const VALUE_SOURCE: &str = "<devup-build-time-value>";
 type Computed = (Vec<Replacement>, BTreeSet<String>);
 
+fn initialize_helpers(sandbox: &Sandbox, context: &mut Context) -> Result<(), Failure> {
+    sandbox
+        .run_source(
+            context,
+            Source::from_bytes(HELPERS).with_path(Path::new(HELPERS_SOURCE)),
+        )
+        .map(|_| ())
+}
+
+fn setup_failure(failure: Failure) -> Vec<Located> {
+    let reasons = match failure {
+        Failure::Js(error) => vec![error.to_string()],
+        Failure::Forbidden(violations) => violations
+            .iter()
+            .map(|violation| violation.error().to_string())
+            .collect(),
+    };
+    reasons
+        .into_iter()
+        .map(|reason| {
+            (
+                0,
+                format!("{reason}; report internal evaluation setup failure"),
+            )
+        })
+        .collect()
+}
+
 fn stop(
     failure: Failure,
     scripts: &[Mapped],
@@ -89,12 +117,7 @@ pub(super) fn compute(
     }
     let mut context = Context::default();
     let sandbox = Sandbox::new(&mut context).map_err(|error| vec![(0, error.to_string())])?;
-    if let Err(failure) = sandbox.run_source(
-        &mut context,
-        Source::from_bytes(HELPERS).with_path(Path::new(HELPERS_SOURCE)),
-    ) {
-        return stop(failure, &[], code);
-    }
+    initialize_helpers(&sandbox, &mut context).map_err(setup_failure)?;
     let module = definitions(&program, code, &found);
     let mut scripts = vec![Mapped::new(module, filename, DEFINITIONS_SOURCE)];
     sandbox

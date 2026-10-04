@@ -188,10 +188,8 @@ pub(crate) fn instrument(source: &str, path: &str) -> Instrumented {
     let mut hash = rustc_hash::FxHasher::default();
     source.hash(&mut hash);
     path.hash(&mut hash);
-    let mut helper = format!("__devup_read_site_{:x}__", hash.finish());
-    while source.contains(&helper) {
-        helper.push('_');
-    }
+    let helper =
+        crate::fresh_name::fresh_name(&format!("__devup_read_site_{:x}__", hash.finish()), source);
     let mut reads = Reads {
         scoping: &scoping,
         source,
@@ -258,3 +256,7 @@ impl Instrumented {
             .join("\n")
     }
 }
+
+#[cfg(test)]
+#[path = "evaluation_sandbox_sites_ci_tests.rs"]
+mod ci_tests;

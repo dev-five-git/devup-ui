@@ -70,10 +70,10 @@ impl Operations {
     pub(crate) fn new(source: &str) -> Self {
         let mut hash = rustc_hash::FxHasher::default();
         source.hash(&mut hash);
-        let mut helper = format!("__devup_operation_site_{:x}__", hash.finish());
-        while source.contains(&helper) {
-            helper.push('_');
-        }
+        let helper = crate::fresh_name::fresh_name(
+            &format!("__devup_operation_site_{:x}__", hash.finish()),
+            source,
+        );
         let allocator = oxc_allocator::Allocator::default();
         let parsed = oxc_parser::Parser::new(&allocator, source, SourceType::default()).parse();
         let mut arrays = Arrays {

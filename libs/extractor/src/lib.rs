@@ -12,6 +12,7 @@ mod diagnostics_tests;
 mod evaluation_sandbox;
 pub mod extract_style;
 mod extractor;
+mod fresh_name;
 mod gen_class_name;
 mod gen_style;
 mod import_alias_visit;

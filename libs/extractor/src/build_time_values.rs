@@ -1004,10 +1004,11 @@ fn definitions(program: &Program<'_>, code: &str, found: &[Found]) -> Generated 
         if let Some(declaration) = declaration {
             // A binding whose value throws is one reading it throws for,
             // leaving the others
-            for declarator in &declaration.declarations {
-                let Some(init) = &declarator.init else {
-                    continue;
-                };
+            for (declarator, init) in declaration
+                .declarations
+                .iter()
+                .filter_map(|declarator| declarator.init.as_ref().map(|init| (declarator, init)))
+            {
                 module.text.push_str(declaration.kind.as_str());
                 module.text.push(' ');
                 module.copy(

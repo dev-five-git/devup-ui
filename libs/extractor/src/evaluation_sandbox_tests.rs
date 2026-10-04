@@ -48,6 +48,9 @@ fn reads(script: &str) -> Result<Vec<String>, String> {
     }
 }
 
+#[path = "evaluation_sandbox_tests_ci.rs"]
+mod ci_tests;
+
 #[test]
 fn deterministic_computation_and_console_calls_run() -> Result<(), String> {
     assert_eq!(
