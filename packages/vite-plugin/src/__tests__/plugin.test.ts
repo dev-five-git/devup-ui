@@ -48,10 +48,18 @@ interface HotUpdateEnvironment {
 }
 
 interface ViteTestPlugin {
+  environment?: {
+    name: string
+    config: {
+      consumer: 'client' | 'server'
+      build?: { write?: boolean }
+    }
+  }
   name: string
   sharedDuringBuild: true
   enforce: 'pre'
   apply: () => boolean
+  closeBundle: () => void
   config: (
     this: { meta?: ConfigHookMeta } | void,
     userConfig?: ViteConfig,
@@ -59,7 +67,7 @@ interface ViteTestPlugin {
   configResolved: (config?: {
     command?: 'serve' | 'build'
     root?: string
-    plugins?: object[]
+    plugins?: readonly object[]
   }) => Promise<void>
   watchChange: (id: string) => Promise<void>
   hotUpdate: (
@@ -452,6 +460,8 @@ describe('devupUIVitePlugin', () => {
   })
 
   describe('deterministic file numbering', () => {
+    const collectNumberedFiles = pluginUtils.collectNumberedFiles
+    const seedFileMap = wasm.seedFileMap
     let collectSpy: ReturnType<typeof spyOn>
     let seedFileMapSpy: ReturnType<typeof spyOn>
 
@@ -522,6 +532,108 @@ describe('devupUIVitePlugin', () => {
       await createPlugin({}).configResolved({ root: '/p' })
 
       expect(seedFileMapSpy).not.toHaveBeenCalled()
+    })
+
+    describe('source collection before seeding', () => {
+      let listSourceFilesSpy: ReturnType<typeof spyOn>
+      let readFileSyncSpy: ReturnType<typeof spyOn>
+
+      beforeEach(() => {
+        collectSpy.mockImplementation(collectNumberedFiles)
+        listSourceFilesSpy = spyOn(pluginUtils, 'listSourceFiles')
+        readFileSyncSpy = spyOn(fs, 'readFileSync').mockReturnValue(
+          "import { Box } from '@devup-ui/react'",
+        )
+      })
+
+      afterEach(() => {
+        listSourceFilesSpy.mockRestore()
+        readFileSyncSpy.mockRestore()
+      })
+
+      it('numbers files by sorted path, not by transform arrival order', async () => {
+        onlyDirs('src')
+        listSourceFilesSpy.mockReturnValue([
+          '/p/src/z.tsx',
+          '/p/src/a.tsx',
+          '/p/src/m.tsx',
+        ])
+
+        await createPlugin({}).configResolved({ root: '/p' })
+
+        expect(seedFileMapSpy).toHaveBeenCalledWith([
+          '/p/src/a.tsx',
+          '/p/src/m.tsx',
+          '/p/src/z.tsx',
+        ])
+      })
+
+      it('normalizes windows separators to match vite module ids', async () => {
+        onlyDirs('src')
+        listSourceFilesSpy.mockReturnValue(['C:\\p\\src\\a.tsx'])
+
+        await createPlugin({}).configResolved({ root: '/p' })
+
+        expect(seedFileMapSpy).toHaveBeenCalledWith(['C:/p/src/a.tsx'])
+      })
+
+      it('leaves an already-populated map alone on a second configResolved', async () => {
+        onlyDirs('src')
+        listSourceFilesSpy.mockReturnValue(['/p/src/a.tsx'])
+        const previousMap = wasm.exportFileMap()
+        const existingMap = {
+          '/p/src/a.tsx': 0,
+          '/monorepo/packages/ui/X.tsx': 1,
+        }
+        seedFileMapSpy.mockImplementation(seedFileMap)
+        const plugin = createPlugin({})
+        wasm.importFileMap(existingMap)
+        try {
+          await plugin.configResolved({ root: '/p' })
+          await plugin.configResolved({ root: '/p' })
+
+          expect(seedFileMapSpy).toHaveBeenCalledTimes(2)
+          expect(JSON.parse(wasm.exportFileMap())).toEqual(existingMap)
+        } finally {
+          wasm.importFileMap(JSON.parse(previousMap))
+        }
+      })
+
+      it('scans app/ for App Router projects and dedupes across roots', async () => {
+        onlyDirs('src', 'app')
+        listSourceFilesSpy.mockImplementation((dir: string) =>
+          dir === resolve('/p', 'app')
+            ? ['/p/app/page.tsx', '/p/shared.tsx']
+            : ['/p/src/b.tsx', '/p/shared.tsx'],
+        )
+
+        await createPlugin({}).configResolved({ root: '/p' })
+
+        expect(listSourceFilesSpy).toHaveBeenCalledWith(resolve('/p', 'src'))
+        expect(listSourceFilesSpy).toHaveBeenCalledWith(resolve('/p', 'app'))
+        expect(seedFileMapSpy).toHaveBeenCalledWith([
+          '/p/app/page.tsx',
+          '/p/shared.tsx',
+          '/p/src/b.tsx',
+        ])
+      })
+
+      it.each([
+        ['no conventional source dir exists', () => onlyDirs()],
+        [
+          'the source dir is empty',
+          () => {
+            onlyDirs('src')
+            listSourceFilesSpy.mockReturnValue([])
+          },
+        ],
+      ])('leaves numbering alone when %s', async (_name, setup) => {
+        setup()
+
+        await createPlugin({}).configResolved({ root: '/p' })
+
+        expect(seedFileMapSpy).not.toHaveBeenCalled()
+      })
     })
   })
 
@@ -875,6 +987,146 @@ describe('devupUIVitePlugin', () => {
 
         expect(serverBundle['base.css'].fileName).toBe('base.css')
       })
+
+      it('does not forward server css that the client already emits', async () => {
+        const [plugin, restore] = createPlugins({})
+        const base = asset('base.css', 'devup-ui.css')
+        const file = asset('file.css', 'devup-ui-3.css')
+        const entry = chunk('entry.js', [
+          'base.css',
+          'file.css',
+          'server-only.css',
+        ])
+        const serverBundle: Bundle = {
+          'base.css': base,
+          'file.css': file,
+          'server-only.css': asset('server-only.css', 'server-only.css'),
+          'entry.js': entry,
+        }
+        const clientBase = asset('base.css', 'devup-ui.css')
+        const clientFile = asset('file.css', 'devup-ui-3.css')
+        const clientBundle: Bundle = {
+          'base.css': clientBase,
+          'file.css': clientFile,
+        }
+        await plugin.configResolved(rscConfig({ rsc: serverBundle }))
+
+        await plugin.generateBundle.call(serverEnv, {}, serverBundle)
+        await plugin.generateBundle.call(clientEnv, {}, clientBundle)
+        const forwarded = forwardLikePluginRsc(serverBundle)
+
+        expect(base.source).toEqual('base sheet')
+        expect(file.source).toEqual('file sheet')
+        expect(clientBase.source).toEqual('base sheet')
+        expect(clientFile.source).toEqual('file sheet')
+        expect(entry.viteMetadata?.importedCss).toEqual(
+          new Set(['base.css', 'file.css', 'server-only.css']),
+        )
+        expect(forwarded.emitted).toEqual([
+          'base.css.devup-forwarded',
+          'file.css.devup-forwarded',
+          'server-only.css',
+        ])
+        for (const name of forwarded.emitted) {
+          clientBundle[name] = asset(name, name)
+        }
+        restore.generateBundle.handler({}, clientBundle)
+
+        expect(base.fileName).toBe('base.css')
+        expect(file.fileName).toBe('file.css')
+        expect(clientBundle['base.css']).toBe(clientBase)
+        expect(clientBundle['file.css']).toBe(clientFile)
+        expect(Object.keys(clientBundle).sort()).toEqual([
+          'base.css',
+          'file.css',
+          'server-only.css',
+        ])
+        expect(entry.viteMetadata?.importedCss).toEqual(
+          new Set(['base.css', 'file.css', 'server-only.css']),
+        )
+      })
+
+      it('ignores no-write analysis bundles when tracking server css', async () => {
+        const [plugin, restore] = createPlugins({})
+        const file = asset('file.css', 'devup-ui-3.css')
+        const entry = chunk('entry.js', ['file.css'])
+        const serverBundle: Bundle = {
+          'file.css': file,
+          'entry.js': entry,
+        }
+        await plugin.configResolved(rscConfig({}))
+        await plugin.generateBundle.call(
+          {
+            environment: {
+              name: 'rsc',
+              config: { consumer: 'server', build: { write: false } },
+            },
+          },
+          {},
+          serverBundle,
+        )
+        const clientBundle: Bundle = {
+          'file.css': asset('file.css', 'devup-ui-3.css'),
+        }
+
+        await plugin.generateBundle.call(clientEnv, {}, clientBundle)
+        restore.generateBundle.handler({}, clientBundle)
+
+        expect(entry.viteMetadata?.importedCss).toEqual(new Set(['file.css']))
+        expect(file.fileName).toBe('file.css')
+        expect(file.source).toBe('file sheet')
+        expect(Object.keys(clientBundle)).toEqual(['file.css'])
+      })
+
+      it('keeps server forwarding for a different output file name', async () => {
+        const [plugin, restore] = createPlugins({})
+        const file = asset('devup-ui-3.server.css', 'devup-ui-3.css')
+        const entry = chunk('entry.js', ['devup-ui-3.server.css'])
+        const serverBundle: Bundle = {
+          'devup-ui-3.server.css': file,
+          'entry.js': entry,
+        }
+        const clientBundle: Bundle = {
+          'devup-ui-3.client.css': asset(
+            'devup-ui-3.client.css',
+            'devup-ui-3.css',
+          ),
+        }
+        await plugin.configResolved(rscConfig({ rsc: serverBundle }))
+        await plugin.generateBundle.call(serverEnv, {}, serverBundle)
+
+        await plugin.generateBundle.call(clientEnv, {}, clientBundle)
+        const forwarded = forwardLikePluginRsc(serverBundle)
+        for (const name of forwarded.emitted) clientBundle[name] = file
+        restore.generateBundle.handler({}, clientBundle)
+
+        expect(entry.viteMetadata?.importedCss).toEqual(
+          new Set(['devup-ui-3.server.css']),
+        )
+        expect(forwarded.emitted).toEqual(['devup-ui-3.server.css'])
+        expect(file.fileName).toBe('devup-ui-3.server.css')
+        expect(file.source).toBe('file sheet')
+        expect(Object.keys(clientBundle).sort()).toEqual([
+          'devup-ui-3.client.css',
+          'devup-ui-3.server.css',
+        ])
+      })
+    })
+
+    it('starts a build from its own options and ends it at closeBundle', async () => {
+      const resetSpy = spyOn(wasm, 'resetBuildState').mockReturnValue(undefined)
+      try {
+        const first = createPlugin({})
+        resetSpy.mockClear()
+        createPlugin({})
+        expect(resetSpy).not.toHaveBeenCalled()
+        first.closeBundle()
+        first.closeBundle()
+        createPlugin({})
+        expect(resetSpy).not.toHaveBeenCalled()
+      } finally {
+        resetSpy.mockRestore()
+      }
     })
 
     it('resolves a stable id during build', async () => {
