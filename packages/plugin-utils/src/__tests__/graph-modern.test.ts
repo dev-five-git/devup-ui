@@ -239,9 +239,9 @@ describe('MDX ESM discovery', () => {
       expect(graph.files.filter((file) => file.endsWith('.mdx'))).toEqual([])
       expect(graph.staticImports.get(entry)).toEqual(new Set())
       expect(graph.dynamicImports.get(entry)).toEqual(new Set())
-      expect(
-        createModuleResolver({ cwd: root })('./page.mdx', entry)?.path,
-      ).toBe(page)
+      expect(() =>
+        createModuleResolver({ cwd: root })('./page.mdx', entry),
+      ).toThrow(page)
     },
   )
 

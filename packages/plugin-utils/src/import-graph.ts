@@ -16,6 +16,10 @@ import { remapMdxError } from './mdx-errors'
 import { rewriteModuleAlias } from './module-alias'
 import { preparedDiagnostics } from './prepared-diagnostics'
 import {
+  createPreparedResolver,
+  type ModuleResolver,
+} from './prepared-resolver'
+import {
   createNodeModulesExcludeRegex,
   SOURCE_EXTENSIONS,
   SOURCE_FILE_RE,
@@ -1119,6 +1123,7 @@ export interface ResolvedModule {
 }
 
 export interface CreateModuleResolverOptions {
+  readonly prepareSource?: PrepareSource
   readonly alias?: Readonly<Record<string, string>>
   readonly includeMdx?: MdxSelection
   cwd?: string
@@ -1140,20 +1145,24 @@ export interface CreateModuleResolverOptions {
 export function createModuleResolver({
   toId = (path) => path,
   ...options
-}: CreateModuleResolverOptions = {}): (
-  specifier: string,
-  importer: string,
-) => ResolvedModule | undefined {
+}: CreateModuleResolverOptions = {}): ModuleResolver {
   const resolver = createModulePathResolver({
     ...options,
     includeMdx: options.includeMdx ?? true,
   })
-  return (specifier, importer) => {
-    const path = resolver(specifier, importer)
-    return path
-      ? { path: toId(path), code: readFileSync(path, 'utf-8') }
-      : undefined
-  }
+  const prepared = createPreparedResolver(options)
+  return Object.assign(
+    (specifier: string, importer: string) => {
+      const path = resolver(specifier, importer)
+      if (!path) return undefined
+      const source = prepared.read(
+        path,
+        resolve(options.cwd ?? process.cwd(), importer),
+      )
+      return prepared.resolved(toId(path), path, source)
+    },
+    { remapError: prepared.remapError },
+  )
 }
 
 function createModulePathResolver(

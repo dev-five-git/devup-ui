@@ -38,6 +38,7 @@ export {
   type FileNumbering,
   seedFileNumbers,
 } from './numbering'
+export type { ModuleResolver } from './prepared-resolver'
 export {
   createNodeModulesExcludeRegex,
   createThemeInterfaceArgs,
