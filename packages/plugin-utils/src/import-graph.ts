@@ -267,11 +267,7 @@ function* traverseGraph(
       if (resolution === false) continue
       const resolved = resolution?.path
       if (resolved && excludedDirectory(dirname(resolved))) continue
-      const rewritten = rewriteModuleAlias(
-        importRef.specifier,
-        options.alias ?? {},
-        file,
-      )
+      const rewritten = resolution?.request ?? importRef.specifier
       const local =
         resolved !== undefined &&
         isInsideDir(cwd, resolved) &&
@@ -1055,7 +1051,6 @@ function isImportCallee(node: unknown): boolean {
 // TypeScript import elision (the Next.js/SWC default) removes the whole
 // statement, so no runtime module is ever produced. Counting such an edge as
 // static merges a phantom member into a bucket the bundler never compiles —
-    readonly aliased: boolean
 // the next-plugin coordinator then waits for a file that can never arrive.
 // A mixed clause (`{ type A, b }`) still imports the module for `b` and is
 // kept. A default/namespace clause is always a value import and is kept.
@@ -1090,8 +1085,6 @@ function scanImports(source: string, jsx: boolean): ImportReference[] {
   const staticImportRegex =
     /\bimport\s+(type\s+)?(?:([^'"`]*?)\s+from\s*)?(['"])([^'"]+)\3/gm
   const exportFromRegex =
-  if (found === undefined && options.aliased && manifest.exports !== undefined)
-    throw new ModuleAliasPackageError(importer, specifier)
     /\bexport\s+(type\s+)?(\*[^'"`]*?|\{[^}]*\})\s+from\s*(['"])([^'"]+)\3/gm
   const dynamicImportRegex = /\bimport\s*\(\s*(['"])([^'"]+)\1\s*\)/gm
 
@@ -1228,6 +1221,7 @@ function resolvePackage(
     readonly conditions: readonly string[]
     readonly fileResolver: (path: string) => string | false | undefined
     readonly excludedDirectory: (directory: string) => boolean
+    readonly aliased: boolean
   },
 ): string | false | undefined {
   const parts = specifier.split('/')
@@ -1262,6 +1256,8 @@ function resolvePackage(
     options.conditions,
     options.fileResolver,
   )
+  if (found === undefined && options.aliased && manifest.exports !== undefined)
+    throw new ModuleAliasPackageError(importer, specifier)
   return found ? realpathSync(found) : found
 }
 
