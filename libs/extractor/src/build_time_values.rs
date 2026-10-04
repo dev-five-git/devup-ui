@@ -15,7 +15,7 @@ use oxc_ast::ast::{
 use oxc_ast_visit::{Visit, walk};
 use oxc_parser::Parser;
 use oxc_semantic::{Scoping, SemanticBuilder};
-use oxc_span::{GetSpan, SourceType, Span};
+use oxc_span::{GetSpan, Span};
 use oxc_syntax::operator::LogicalOperator;
 use oxc_syntax::reference::ReferenceId;
 use oxc_syntax::symbol::SymbolId;
@@ -131,7 +131,7 @@ const UNCERTAIN_MEMBERS: [&str; 9] = [
 ];
 
 fn parse<'a>(allocator: &'a Allocator, filename: &str, code: &'a str) -> Option<Program<'a>> {
-    let source_type = SourceType::from_path(filename).ok()?;
+    let source_type = crate::parser_source_type(filename).ok()?;
     let parsed = Parser::new(allocator, code, source_type).parse();
     (!parsed.fatal_error).then_some(parsed.program)
 }

@@ -22,7 +22,7 @@ use oxc_ast_visit::{
     walk::{walk_call_expression, walk_jsx_opening_element},
 };
 use oxc_parser::Parser;
-use oxc_span::{GetSpan, SourceType};
+use oxc_span::GetSpan;
 use std::borrow::Cow;
 use std::collections::HashMap;
 
@@ -256,7 +256,7 @@ pub fn transform_import_aliases_with_edits<'a>(
     }
 
     let allocator = Allocator::default();
-    let source_type = SourceType::from_path(filename).unwrap_or_default();
+    let source_type = crate::parser_source_type(filename).unwrap_or_default();
 
     // Parse the code
     let parser_ret = Parser::new(&allocator, code, source_type).parse();
@@ -566,7 +566,7 @@ mod tests {
     use super::*;
     use insta::assert_snapshot;
     use oxc_ast::builder::AstBuilder;
-    use oxc_span::SPAN;
+    use oxc_span::{SPAN, SourceType};
 
     fn emotion_alias() -> HashMap<String, ImportAlias> {
         let mut aliases = HashMap::new();
