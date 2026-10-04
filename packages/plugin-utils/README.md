@@ -155,7 +155,7 @@ compiler maps; the imported-module end-to-end mapping check runs after #755 and
 ## Resolver aliases
 
 Both `createModuleResolver` and graph options accept an optional readonly
-`alias: Record<string, string>`. Supported aliases are string targets only:
+`alias: ModuleAliases` (`Readonly<Record<string, string | readonly string[]>>`). Targets are strings or ordered string candidate arrays:
 absolute file/directory paths or package requests. They run before tsconfig
 paths, baseUrl and package resolution.
 
@@ -163,14 +163,22 @@ paths, baseUrl and package resolution.
   `name-other`.
 - Declaration order matters: the first **rewriting** match wins. Put a specific
   key before an overlapping broad key.
-- A failed rewritten target never falls through to the original request or a
-  later alias. Ordinary unresolved targets return `undefined`.
+- Each candidate undergoes full native resolution in order; the first resolving
+  candidate wins. A failed matched key never falls through to the original request
+  or a later key. All unresolved candidates (including an empty array) produce an
+  importer-located error naming the key and every rewritten candidate tried.
+  Unaliased unresolved requests still return `undefined`.
 - Finite chains resolve; self-aliases are skipped; cycles produce an
   importer-located failure.
 - Package exports and active conditions are applied after rewriting. Graph
   package eligibility uses the actual target package, not the alias name.
+- Export/active-target failures, configuration/I/O errors and cycles are fatal,
+  not ordinary misses that advance to the next candidate. Excluded candidates
+  are skipped before I/O; an entirely excluded list stays excluded, not external.
 - Project-local aliased providers outside configured source roots can be
   followed; excluded directories and excluded external packages remain excluded.
 
 This subset is tested against installed enhanced-resolve 5.25.1 with real files.
-Alias `false`, array targets and wildcard keys are not supported by this API.
+Alias `false` (ignore) and wildcard keys are unsupported; `false` is rejected by
+the public type. Empty arrays intentionally fail rather than enhanced-resolve's
+empty-array fallthrough behavior.
