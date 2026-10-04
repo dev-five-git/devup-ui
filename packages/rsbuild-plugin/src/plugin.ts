@@ -54,8 +54,10 @@ export interface DevupUIRsbuildPluginOptions {
   prefix?: string
   shorthands?: CustomShorthands
   /**
-   * Atom-level route-aware hoisting threshold (min routes sharing an atom for it
-   * to hoist into the shared devup-ui.css; clamped to >= 2; omit to disable).
+   * Atom-level route-aware hoisting threshold (min predeclared routes reaching a
+   * canonical bucket for its atoms to get shared names in the shared
+   * devup-ui.css; clamped to >= 2; omit to disable). Atoms of other buckets
+   * keep per-file names, even when identical atoms appear in several files.
    * Opt-in: when set, single-importer collapse + atom hoisting are enabled and
    * per-route CSS is served via getCss(fileNum). "Routes" are inferred from the
    * import graph (entry points and dynamic-import targets). For a single-entry
@@ -169,7 +171,9 @@ export const DevupUI = ({
       if (!extractCss) return
 
       // Atom-level hoisting (opt-in via `atomHoist`). Configured BEFORE any
-      // transform so atoms receive global (shared) class names. Composes with
+      // transform: routes are imported, then the threshold is set, and bucket
+      // eligibility freezes at the first extraction. Late reach cannot promote
+      // or rename a bucket until resetBuildState. Composes with
       // single-importer collapse (both keyed by the canonical bucket). rsbuild
       // passes the ABSOLUTE resourcePath to codeExtract, so the graph maps use
       // absolute keys (keyBy: 'absolute') and the extraction filename is

@@ -42,7 +42,10 @@ import { loadWasm, loadWebpackPlugin } from './wasm'
 
 /** Options accepted by the Next.js integration. */
 export type DevupUINextPluginOptions = Partial<DevupUIBasePluginOptions> & {
-  /** Share atoms reached by at least this many routes. */
+  /**
+   * Share atoms of canonical buckets whose predeclared route reach is at least
+   * this many routes (clamped to >= 2). Other buckets keep per-file names.
+   */
   atomHoist?: number
 }
 
@@ -273,15 +276,17 @@ export function DevupUI(
 
     // Pre-pass: single-importer collapse ALWAYS runs (files with exactly one
     // importer merge into that importer's bucket, so their identical atoms share
-    // one class). Atom-level hoisting COMPOSES on top: an atom reached by
-    // >= atomHoist distinct routes is emitted once into the shared devup-ui.css.
+    // one class). Atom-level hoisting COMPOSES on top: a canonical bucket whose
+    // predeclared route reach is >= atomHoist is eligible, and only its atoms
+    // get shared content names and land in the shared devup-ui.css.
     //
     // The two compose because both are keyed by the canonical bucket: the engine
     // keys property buckets by canonical(filename), and the route-reach map below
-    // is folded onto the SAME canonical bucket — so route_count_for_files() looks
-    // atoms up by bucket and the lookup hits. `atomHoist` must be configured
-    // BEFORE any extraction so atoms receive global (shared) class names; the
-    // coordinator shares this WASM instance, so it applies to every /extract.
+    // is folded onto the SAME canonical bucket. Import routes, then set the
+    // threshold, BEFORE any extraction: eligibility freezes there. Private or
+    // unmapped buckets keep per-file names, and reach seen later cannot promote
+    // or rename them until resetBuildState. The coordinator shares this WASM
+    // instance, so it applies to every /extract.
     const atomMode =
       atomHoist !== undefined && Number.isFinite(atomHoist) && atomHoist > 0
     const extract = sourceMap ? codeExtract : codeExtractWithoutSourceMap
