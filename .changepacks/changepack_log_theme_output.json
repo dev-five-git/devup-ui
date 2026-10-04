@@ -1,8 +1,0 @@
-{
-  "changes": {
-    "bindings/devup-ui-wasm/package.json": "Patch",
-    "packages/plugin-utils/package.json": "Patch"
-  },
-  "note": "Theme CSS: a color only one variant defines is defined in that variant; a variant renders dark only when it is named dark or listed as dark in the new theme.colorScheme, others light, and light-dark() only encodes a light default with one dark variant; theme names that are not CSS identifiers are quoted in [data-theme]; typography emits fontStyle and textTransform; color variables come out in a fixed order. $tokens with dashes (text-primary) resolve instead of breaking into var(--text)-primary, and dotted length and shadow names are declared with dashes like their references. registerTheme reports, with the theme path, a token name the $token syntax cannot reach and two tokens of a variant that become the same CSS variable (a-b and a.b)",
-  "date": "2026-09-30T00:00:00.000Z"
-}
