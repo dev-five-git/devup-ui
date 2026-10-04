@@ -8,11 +8,11 @@ ToBTreeSet {
             ExtractDynamicStyle {
                 property: "background",
                 level: 0,
-                identifier: "variable",
+                identifier: "\"bg\" in __devupSpread0 ? __devupSpread0.bg : (__devupValue0)",
                 selector: None,
                 style_order: None,
             },
         ),
     },
-    code: "import \"@devup-ui/core/devup-ui.css\";\nimport { jsx as e } from \"react/jsx-runtime\";\ne(\"div\", {\n\t...props,\n\tclassName: `${(\"className\" in Object(props) ? props.className : \"a\") || \"\"} a`,\n\tstyle: {\n\t\t...{ \"--b\": variable },\n\t\t...\"style\" in Object(props) ? props.style : { color: \"blue\" }\n\t}\n});\n",
+    code: "import \"@devup-ui/core/devup-ui.css\";\nimport { jsx as e } from \"react/jsx-runtime\";\ne(\"div\", ((__devupValue0, __devupSpread0) => ({\n\t...__devupSpread0,\n\tclassName: `${(\"className\" in __devupSpread0 ? __devupSpread0.className : \"a\") || \"\"} a`,\n\tstyle: {\n\t\t...{ \"--b\": \"bg\" in __devupSpread0 ? __devupSpread0.bg : (__devupValue0) },\n\t\t...\"style\" in __devupSpread0 ? __devupSpread0.style : { color: \"blue\" }\n\t}\n}))(variable, {\n\t__proto__: null,\n\t...props\n}));\n",
 }

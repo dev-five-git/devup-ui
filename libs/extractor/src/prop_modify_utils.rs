@@ -559,7 +559,7 @@ fn apply_style_order_to_styles(styles: &mut [ExtractStyleValue], style_order: Op
 
 /// Extract Tailwind CSS styles from a static className string and generate devup-ui class names
 /// Returns (extracted styles for CSS generation, generated class names expression)
-fn extract_tailwind_from_class_name<'a>(
+pub(crate) fn extract_tailwind_from_class_name<'a>(
     ast_builder: &AstBuilder<'a>,
     class_name_prop: &Option<Expression<'a>>,
     style_order: Option<u8>,
@@ -878,11 +878,15 @@ fn last_written<'a>(
                     SPAN,
                     Expression::new_string_literal(SPAN, key, None, ast_builder),
                     oxc_syntax::operator::BinaryOperator::In,
-                    crate::utils::wrap_direct_call(
-                        ast_builder,
-                        &Expression::new_identifier(SPAN, "Object", ast_builder),
-                        &[spread.clone_in(ast_builder.allocator())],
-                    ),
+                    if snapshot_reference(spread) {
+                        spread.clone_in(ast_builder.allocator())
+                    } else {
+                        crate::utils::wrap_direct_call(
+                            ast_builder,
+                            &Expression::new_identifier(SPAN, "Object", ast_builder),
+                            &[spread.clone_in(ast_builder.allocator())],
+                        )
+                    },
                     ast_builder,
                 );
                 Expression::new_conditional_expression(
@@ -897,6 +901,13 @@ fn last_written<'a>(
         });
     }
     value
+}
+
+/// Synthetic hygienic names identify null-prototype data snapshots, not user bindings.
+fn snapshot_reference(expression: &Expression<'_>) -> bool {
+    matches!(expression, Expression::Identifier(identifier)
+        if identifier.span == SPAN && identifier.reference_id.get().is_none()
+            && identifier.name.starts_with("__devupSpread"))
 }
 
 /// Whether the object literal `spread` names `key`, so it always holds it

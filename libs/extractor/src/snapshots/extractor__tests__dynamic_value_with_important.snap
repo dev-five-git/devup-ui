@@ -8,12 +8,12 @@ ToBTreeSet {
             ExtractDynamicStyle {
                 property: "background",
                 level: 0,
-                identifier: "`${color}`",
+                identifier: "`${__devupValue0}`",
                 selector: None,
                 style_order: None,
                 important: true,
             },
         ),
     },
-    code: "import \"@devup-ui/core/devup-ui-0.css\";\nlet color = \"red\";\n<div className=\"a-a\" style={{ \"--a\": `${color}` }} />;\n",
+    code: "import \"@devup-ui/core/devup-ui-0.css\";\nlet color = \"red\";\n((__devupValue0) => <div className=\"a-a\" style={{ \"--a\": `${__devupValue0}` }} />)(`${color}`);\n",
 }

@@ -28,6 +28,22 @@ fn extend_reversed_styles<'a>(
     );
 }
 
+/// Keep one `'--name': value` entry for each variable a breakpoint-wise
+/// override shares between classes
+fn drop_repeated_variables(properties: &mut Vec<ObjectPropertyKind<'_>>) {
+    let mut seen = FxHashSet::default();
+    properties.retain(|property| {
+        if let ObjectPropertyKind::ObjectProperty(property) = property
+            && let Some(name) = property.key.name()
+            && name.starts_with("--")
+            && let Expression::Identifier(value) = &property.value
+        {
+            return seen.insert((name.into_owned(), value.name.to_string()));
+        }
+        true
+    });
+}
+
 pub fn gen_styles<'a>(
     ast_builder: &AstBuilder<'a>,
     style_props: &[ExtractStyleProp<'a>],
@@ -38,6 +54,7 @@ pub fn gen_styles<'a>(
     }
     let mut properties: Vec<_> = Vec::with_capacity(style_props.len());
     extend_reversed_styles(ast_builder, &mut properties, style_props, filename);
+    drop_repeated_variables(&mut properties);
     if properties.is_empty() {
         return None;
     }
@@ -60,7 +77,18 @@ fn push_one_sided_conditional<'a>(
     for p in gen_style(ast_builder, styles, filename) {
         if let ObjectPropertyKind::ObjectProperty(p) = p {
             let value = p.value.clone_in(ast_builder.allocator());
-            let undefined = Expression::new_identifier(SPAN, "undefined", ast_builder);
+            let undefined = Expression::new_unary_expression(
+                SPAN,
+                oxc_ast::ast::UnaryOperator::Void,
+                Expression::new_numeric_literal(
+                    SPAN,
+                    0.0,
+                    None,
+                    oxc_ast::ast::NumberBase::Decimal,
+                    ast_builder,
+                ),
+                ast_builder,
+            );
             let (consequent, alternate) = if value_when_true {
                 (value, undefined)
             } else {
@@ -355,7 +383,7 @@ mod tests {
         let generated = gen_styles(&builder, &styles, None).unwrap();
         let code = expression_to_code(&generated);
 
-        assert!(code.contains("enabled?undefined:fallbackColor"));
+        assert!(code.contains("enabled?void 0:fallbackColor"));
     }
 
     #[test]

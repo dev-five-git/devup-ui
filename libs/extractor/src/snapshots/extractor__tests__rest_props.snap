@@ -16,16 +16,19 @@ ToBTreeSet {
                 layer: None,
             },
         ),
-        Static(
-            ExtractStaticStyle {
+        Dynamic(
+            ExtractDynamicStyle {
                 property: "opacity",
-                value: ".5",
                 level: 0,
+                identifier: "\"opacity\" in __devupSpread0 ? __devupSpread0.opacity : void 0",
                 selector: None,
                 style_order: None,
-                layer: None,
+                overridable: Override {
+                    variable: "--a",
+                    fallback: ".5",
+                },
             },
         ),
     },
-    code: "import \"@devup-ui/core/devup-ui.css\";\n<div {...props} className={`${props?.className || \"\"} a b`} style={props?.style} />;\n",
+    code: "import \"@devup-ui/core/devup-ui.css\";\n((__devupSpread0) => <div {...__devupSpread0} className={`${__devupSpread0?.className || \"\"} b c`} style={{\n\t...{ \"--a\": \"opacity\" in __devupSpread0 ? __devupSpread0.opacity : void 0 },\n\t...__devupSpread0?.style\n}} />)({\n\t__proto__: null,\n\t...props\n});\n",
 }
