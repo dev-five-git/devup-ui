@@ -3,6 +3,6 @@
     "packages/next-plugin/package.json": "Patch",
     "packages/plugin-utils/package.json": "Patch"
   },
-  "note": "Isolate Next.js extraction engines and coordinator sessions, deterministically prewarm reachable sources in development and production, watch inherited theme files and source removals, reuse validated transforms, and persist complete atomic checkpoints. Coordinator ownership mismatches, request deadlines, incomplete production stylesheets, invalid configuration and prewarm failures now produce located diagnostics instead of hanging or silently serving partial CSS.",
+  "note": "Isolate Next.js extraction engines and coordinator sessions, deterministically prewarm reachable sources in development and production, watch inherited theme files and source removals, reuse validated transforms, and persist complete atomic checkpoints. Re-extraction after production CSS is served runs transactionally and is accepted only when rendered base and bucket styles remain unchanged. Coordinator ownership mismatches, request deadlines, incomplete or changed production stylesheets, invalid configuration and prewarm failures now produce located diagnostics instead of hanging or silently serving partial CSS.",
   "date": "2026-10-01T00:00:00.000Z"
 }

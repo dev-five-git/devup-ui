@@ -230,6 +230,7 @@ describe('after the stylesheet was served', () => {
     const stateFile = join(app.root, 'df', 'state.json')
     const { client } = await started(app, {
       wasm: engine,
+      createEngine: () => instrument(app.engine(), extractions).engine,
       stateFile,
       expectedBaseFiles: ['src/a.tsx'],
       prewarmedFiles: ['src/a.tsx'],

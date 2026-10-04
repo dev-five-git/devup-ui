@@ -19,6 +19,7 @@ import {
 import type { CoordinatorOptions, Core } from './coordinator-options'
 import { createPersistence } from './coordinator-persistence'
 import { createProductionPlan } from './coordinator-plan'
+import { extractSealed } from './coordinator-sealed'
 import { elapsedMs, profileStart, reportProfile } from './profile'
 import {
   type AllocatorState,
@@ -164,18 +165,20 @@ export function createCore(options: CoordinatorOptions, project: string): Core {
         cacheHit: true,
       }
     }
-    const output = extractRequest(engine, settings, request)
+    const candidate = sealed
+      ? extractSealed(
+          { live: engine, createEngine, configure, settings },
+          liveSnapshot(),
+          request,
+        )
+      : undefined
+    const output =
+      candidate?.output ?? extractRequest(engine, settings, request)
     // The engine reports whether this file's CSS or the base sheet changed
-    const changed = output.updatedBaseStyle || output.css != null
-    if (sealed && changed) {
-      throw locatedError(
-        request.filename,
-        'change styles after the production stylesheet was served',
-        'its extraction produced CSS the served stylesheet lacks',
-        'include it in expectedBaseFiles (or the prewarm) so its styles exist before CSS is served.',
-      )
-    }
-    ledger.accept(createInput(root, request, output.dependencies ?? []), output)
+    const changed = !sealed && (output.updatedBaseStyle || output.css != null)
+    const input = createInput(root, request, output.dependencies ?? [])
+    if (candidate !== undefined) engine = candidate.engine
+    ledger.accept(input, output)
     plan.note(request.filename, output.cssFile)
     if (changed) revision += 1
     persistence.accept()
@@ -236,11 +239,13 @@ export function createCore(options: CoordinatorOptions, project: string): Core {
         )
       }
       await plan.wait(fileNum)
-      sealed = true
-      return {
-        css: engine.getCss(fileNum, importMainCss),
-        policy: 'production-complete',
-      }
+      return mutate(async () => {
+        sealed = true
+        return {
+          css: engine.getCss(fileNum, importMainCss),
+          policy: 'production-complete',
+        }
+      })
     },
     async startup() {
       if (checkpoint === undefined) {
