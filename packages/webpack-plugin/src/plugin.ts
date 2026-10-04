@@ -239,7 +239,19 @@ export class DevupUIWebpackPlugin {
       typeof entry === 'function'
         ? []
         : Object.values(entry ?? {}).flatMap(({ import: requests = [] }) =>
-            requests.map((request) => resolve(cwd, request)),
+            requests.flatMap((request) => {
+              const resource = request
+                .slice(request.lastIndexOf('!') + 1)
+                .split('?')[0]
+              if (
+                !resource ||
+                resource.startsWith('\0') ||
+                (/^[a-z][a-z\d+.-]*:/i.test(resource) &&
+                  !/^[a-z]:[\\/]/i.test(resource))
+              )
+                return []
+              return [resolve(cwd, resource)]
+            }),
           )
     const roots = [
       ...new Set([...sourceDirs, ...entries.map((file) => dirname(file))]),
@@ -321,6 +333,7 @@ export class DevupUIWebpackPlugin {
       const srcDir = roots
       const tsconfigPath = resolve(cwd, 'tsconfig.json')
       graph = buildStaticImportGraph(roots, tsconfigPath, {
+        includeMdx: true,
         cwd,
         include: this.options.include,
         conditions,
