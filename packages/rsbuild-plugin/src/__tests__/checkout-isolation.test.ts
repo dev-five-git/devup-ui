@@ -29,6 +29,7 @@ const source = `import { Box } from '@devup-ui/react'
 const App = () => <Box bg="red" />`
 
 let codeExtractSpy: ReturnType<typeof spyOn>
+const closeCallbacks: (() => void)[] = []
 
 beforeAll(() => {
   spyOn(fs, 'existsSync').mockReturnValue(true)
@@ -52,6 +53,7 @@ beforeAll(() => {
 })
 
 afterAll(() => {
+  for (const close of closeCallbacks) close()
   mock.restore()
 })
 
@@ -67,6 +69,8 @@ async function extractedCssDirIn(checkout: string) {
     cssDir: join(checkout, 'df', 'devup-ui'),
   })
   await plugin.setup({
+    context: { rootPath: checkout },
+    onCloseBuild: mock((close) => closeCallbacks.push(close)),
     transform,
     modifyRsbuildConfig: mock(),
     modifyRspackConfig: mock(),

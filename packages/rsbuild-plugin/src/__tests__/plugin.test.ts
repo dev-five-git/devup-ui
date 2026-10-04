@@ -20,6 +20,10 @@ import { DevupUI } from '../plugin'
 type CodeExtractResult = ReturnType<typeof wasm.codeExtract>
 type RsbuildPlugin = ReturnType<typeof DevupUI>
 type RsbuildSetupContext = Parameters<RsbuildPlugin['setup']>[0]
+const closeCallbacks: (() => void)[] = []
+afterEach(() => {
+  for (const close of closeCallbacks.splice(0)) close()
+})
 
 function createCodeExtractResult(
   overrides: Partial<CodeExtractResult> = {},
@@ -42,8 +46,16 @@ function createSetupContext(
   return {
     transform: mock(),
     modifyRsbuildConfig: mock(),
-    modifyRspackConfig: mock(),
+    modifyRspackConfig: mock((callback) => {
+      const config: { plugins?: { apply(compiler: unknown): void }[] } = {}
+      callback(config, { environment: { name: 'web' } })
+      config.plugins?.[0]?.apply({
+        options: {},
+        hooks: { run: { tap: mock() }, thisCompilation: { tap: mock() } },
+      })
+    }),
     onBeforeBuild: mock(),
+    onCloseBuild: mock((close) => closeCallbacks.push(close)),
     context: { rootPath: process.cwd() },
     renderChunk: mock(),
     generateBundle: mock(),
@@ -67,8 +79,12 @@ let getThemeInterfaceSpy: ReturnType<typeof spyOn>
 let registerThemeSpy: ReturnType<typeof spyOn>
 let setDebugSpy: ReturnType<typeof spyOn>
 let setPrefixSpy: ReturnType<typeof spyOn>
+let realpathSpy: ReturnType<typeof spyOn>
 
 beforeAll(() => {
+  realpathSpy = spyOn(fs, 'realpathSync').mockImplementation((path) =>
+    resolve(String(path)),
+  )
   existsSyncSpy = spyOn(fs, 'existsSync').mockReturnValue(false)
   writeFileSyncSpy = spyOn(fs, 'writeFileSync').mockReturnValue(undefined)
   mkdirSpy = spyOn(fsPromises, 'mkdir').mockResolvedValue(undefined)
@@ -83,6 +99,7 @@ beforeAll(() => {
 })
 
 afterAll(() => {
+  realpathSpy.mockRestore()
   existsSyncSpy.mockRestore()
   writeFileSyncSpy.mockRestore()
   mkdirSpy.mockRestore()
@@ -154,7 +171,7 @@ describe('DevupUIRsbuildPlugin', () => {
     readFileSpy.mockResolvedValueOnce(JSON.stringify({}))
     getThemeInterfaceSpy.mockReturnValue('interface code')
     existsSyncSpy.mockImplementation((path: string) => {
-      if (path === 'devup.json') return true
+      if (path === resolve('devup.json')) return true
       return false
     })
     const plugin = DevupUI()
@@ -174,7 +191,7 @@ describe('DevupUIRsbuildPlugin', () => {
     readFileSpy.mockResolvedValueOnce(JSON.stringify({}))
     getThemeInterfaceSpy.mockReturnValue('')
     existsSyncSpy.mockImplementation((path: string) => {
-      if (path === 'devup.json') return true
+      if (path === resolve('devup.json')) return true
       return false
     })
     const plugin = DevupUI()
@@ -192,11 +209,9 @@ describe('DevupUIRsbuildPlugin', () => {
   })
 
   it('should error when write data files', async () => {
-    const originalConsoleError = console.error
-    console.error = mock()
     readFileSpy.mockRejectedValueOnce('error')
     existsSyncSpy.mockImplementation((path: string) => {
-      if (path === 'devup.json') return true
+      if (path === resolve('devup.json')) return true
       return false
     })
     const plugin = DevupUI()
@@ -204,14 +219,14 @@ describe('DevupUIRsbuildPlugin', () => {
     expect(plugin.setup).toBeDefined()
     const transform = mock()
     const modifyRsbuildConfig = mock()
-    await plugin.setup(
-      createSetupContext({
-        transform,
-        modifyRsbuildConfig,
-      }),
-    )
-    expect(console.error).toHaveBeenCalledWith('error')
-    console.error = originalConsoleError
+    await expect(
+      plugin.setup(
+        createSetupContext({
+          transform,
+          modifyRsbuildConfig,
+        }),
+      ),
+    ).rejects.toThrow('error')
   })
 
   it('should not register css transform', async () => {
@@ -259,7 +274,7 @@ describe('DevupUIRsbuildPlugin', () => {
     expect(transform).toHaveBeenCalled()
     expect(transform).toHaveBeenCalledWith(
       {
-        test: /\.(tsx|ts|js|mjs|jsx)$/,
+        test: pluginUtils.SOURCE_FILE_RE,
       },
       expect.any(Function),
     )
@@ -291,7 +306,7 @@ describe('DevupUIRsbuildPlugin', () => {
     expect(transform).toHaveBeenCalled()
     expect(transform).toHaveBeenCalledWith(
       {
-        test: /\.(tsx|ts|js|mjs|jsx)$/,
+        test: pluginUtils.SOURCE_FILE_RE,
       },
       expect.any(Function),
     )
@@ -344,7 +359,7 @@ const App = () => <Box></Box>`,
     expect(transform).toHaveBeenCalled()
     expect(transform).toHaveBeenCalledWith(
       {
-        test: /\.(tsx|ts|js|mjs|jsx)$/,
+        test: pluginUtils.SOURCE_FILE_RE,
       },
       expect.any(Function),
     )
@@ -401,8 +416,8 @@ const App = () => <Box></Box>`,
     getThemeInterfaceSpy.mockReturnValue('interface code')
     getDefaultThemeSpy.mockReturnValue(options.getDefaultTheme)
     existsSyncSpy.mockImplementation((path: string) => {
-      if (path === 'devup.json') return options.existsDevupFile
-      if (path === 'df') return options.existsDistDir
+      if (path === resolve('devup.json')) return options.existsDevupFile
+      if (path === resolve('df')) return options.existsDistDir
       if (path === resolve('df', 'devup-ui')) return options.existsCssDir
       if (path === join('df', 'sheet.json')) return options.existsSheetFile
       if (path === join('df', 'classMap.json'))
@@ -413,7 +428,7 @@ const App = () => <Box></Box>`,
     const plugin = DevupUI({ singleCss: options.singleCss })
     await plugin.setup(createSetupContext())
     if (options.existsDevupFile) {
-      expect(readFileSpy).toHaveBeenCalledWith('devup.json', 'utf-8')
+      expect(readFileSpy).toHaveBeenCalledWith(resolve('devup.json'), 'utf-8')
       expect(registerThemeSpy).toHaveBeenCalledWith({})
       expect(getThemeInterfaceSpy).toHaveBeenCalledWith(
         '@devup-ui/react',
@@ -424,7 +439,7 @@ const App = () => <Box></Box>`,
         'DevupTheme',
       )
       expect(writeFileSpy).toHaveBeenCalledWith(
-        join('df', 'theme.d.ts'),
+        resolve('df', 'theme.d.ts'),
         'interface code',
         'utf-8',
       )
@@ -495,6 +510,7 @@ const App = () => <Box></Box>`,
         })
         await DevupUI({
           include: ['@acme/ui'],
+          sourceDirs: ['src'],
           atomHoist: atomMode ? 2 : undefined,
         }).setup(createSetupContext({ onCloseBuild: closeBuild }))
         expect(seedSpy).toHaveBeenCalledWith(['/p/a.tsx'])
@@ -612,14 +628,19 @@ const App = () => <Box></Box>`,
       expect(setAtomHoistSpy).not.toHaveBeenCalled()
     })
 
-    it('swallows pre-pass errors (atom hoisting stays off)', async () => {
+    it('fails requested atom planning when the graph fails', async () => {
       spies()
       buildCanonicalMapSpy.mockImplementation(() => {
         throw new Error('boom')
       })
-      await DevupUI({ atomHoist: 2 }).setup(
-        createSetupContext({ transform: mock(), modifyRsbuildConfig: mock() }),
-      )
+      await expect(
+        DevupUI({ atomHoist: 2 }).setup(
+          createSetupContext({
+            transform: mock(),
+            modifyRsbuildConfig: mock(),
+          }),
+        ),
+      ).rejects.toThrow('boom')
       expect(setAtomHoistSpy).not.toHaveBeenCalled()
     })
 
@@ -711,7 +732,12 @@ const App = () => <Box></Box>`,
       // splitChunks missing/false -> no cacheGroup added, no throw
       const rspackCfg2 = {} as { optimization?: { splitChunks?: unknown } }
       inject(rspackCfg2)
-      expect(rspackCfg2.optimization?.splitChunks).toBeUndefined()
+      expect(rspackCfg2.optimization?.splitChunks).toMatchObject({
+        cacheGroups: { devupUiShared: { type: 'css/mini-extract' } },
+      })
+      expect(() => inject({ optimization: { splitChunks: false } })).toThrow(
+        'splitChunks: false',
+      )
     })
 
     it('composes the cacheGroup with existing tools.rspack (function then array)', async () => {
@@ -783,6 +809,7 @@ const App = () => <Box></Box>`,
           taps[hook] = fn
         }
       const compiler = {
+        options: {},
         watchMode: false,
         rspack: { Compilation: { PROCESS_ASSETS_STAGE_REPORT: 5000 } },
         hooks: {
@@ -823,13 +850,13 @@ const App = () => <Box></Box>`,
           },
         },
       })
-      expect(computeReachableFilesSpy).toHaveBeenCalledWith({
-        srcDir: resolve(process.cwd(), 'src'),
-        tsconfigPath: resolve(process.cwd(), 'tsconfig.json'),
-        entries: ['a', 'b', 'c', 'd'].map((name) =>
-          resolve(process.cwd(), `./src/${name}.tsx`),
-        ),
-      })
+      expect(computeReachableFilesSpy).toHaveBeenCalledWith(
+        expect.objectContaining({
+          srcDir: [],
+          tsconfigPath: resolve(process.cwd(), 'tsconfig.json'),
+          entries: [],
+        }),
+      )
       expect(codeExtractSpy).toHaveBeenCalledWith(
         resolve('src', 'App.tsx'),
         'source',
@@ -847,7 +874,7 @@ const App = () => <Box></Box>`,
       })
       expect(() =>
         onBeforeBuild.mock.calls[0][0]({ environments: {} }),
-      ).not.toThrow()
+      ).toThrow('prewarm failed')
     })
 
     it('extracts under posix names in atom mode', async () => {
