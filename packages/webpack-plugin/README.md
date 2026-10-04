@@ -177,6 +177,25 @@ const box = <Box _hover={{ bg: ['red', 'blue'] }} />
 const box = <Box _hover={[{ bg: 'red' }, { bg: 'blue' }]} />
 ```
 
+## Consuming Component Libraries
+
+A precompiled Devup UI library ships transformed JavaScript and emitted CSS.
+Import its published stylesheet; its compile-time components have already been
+removed, so the consumer does not need to transform that library again.
+
+A library intentionally published without extraction (for example with Vite's
+`DevupUI({ extractCss: false })`, as in `apps/vite-lib`) requires a Devup UI build
+plugin in **every** consuming application and its exact package name in `include`:
+
+```ts
+new DevupUIWebpackPlugin({ include: ['@acme/components'] })
+```
+
+The consumer compiles the library and emits its CSS at build time. Uncompiled
+output is not standalone browser JavaScript: without this consumer setup, the
+component placeholders throw `Cannot run on the runtime`. No styling runtime is
+added by either supported publishing mode.
+
 ## Custom Shorthands
 
 ```ts
