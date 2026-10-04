@@ -31,6 +31,11 @@ use crate::extractor::extract_style_from_expression::{
 use crate::stylex::StylexFunction;
 use crate::{ExtractOption, ExtractStyleValue, ModuleResolver};
 
+mod initialization;
+mod lexical;
+#[cfg(test)]
+mod require_tests;
+
 #[derive(Clone, Debug)]
 enum Constant {
     String(String),
@@ -79,7 +84,11 @@ impl Constant {
     fn js_literal(&self) -> Option<String> {
         match self {
             Self::String(text) => serde_json::to_string(text).ok(),
-            Self::Number(number) => Some(crate::utils::js_number_string(*number)),
+            Self::Number(number) => Some(if number.to_bits() == (-0.0_f64).to_bits() {
+                "-0".to_string()
+            } else {
+                crate::utils::js_number_string(*number)
+            }),
             Self::Null => Some("null".to_string()),
             Self::Bool(value) => Some(value.to_string()),
             Self::Undefined => Some("undefined".to_string()),
@@ -159,6 +168,7 @@ pub(crate) enum ChangeSite {
 /// other modules, by the name the program binds them to
 #[derive(Default)]
 pub(crate) struct Inlined {
+    pub errors: Vec<(u32, String)>,
     pub dependencies: BTreeSet<String>,
     pub stylex_vars: FxHashMap<String, FxHashMap<String, String>>,
     pub stylex_themes: FxHashMap<String, String>,
@@ -425,12 +435,34 @@ fn inline_in<'a>(
         style: &style,
         css_props: &css_props,
         names: FxHashSet::default(),
+        symbols: FxHashSet::default(),
+        references: FxHashSet::default(),
         depth: 0,
         class_names: Vec::new(),
     };
     read.visit_program(program);
-    if read.names.is_empty() {
+    let initialization = initialization::Initialization::new(program, scoping);
+    let declarations = lexical::declarations(ast_builder, program, scoping);
+    loop {
+        let before = read.symbols.len();
+        for (symbol, init) in &declarations {
+            if read.symbols.contains(symbol) {
+                read.reading(true, |read| read.visit_expression(init));
+            }
+        }
+        if read.symbols.len() == before {
+            break;
+        }
+    }
+    if read.names.is_empty() && read.symbols.is_empty() {
         return Inlined::default();
+    }
+    let mut inlined = Inlined {
+        errors: initialization.errors(&read.references, scoping),
+        ..Inlined::default()
+    };
+    if !inlined.errors.is_empty() {
+        return inlined;
     }
     let mut modules = Modules {
         resolver,
@@ -439,7 +471,6 @@ fn inline_in<'a>(
         loading: Vec::new(),
     };
     let mut symbols: FxHashMap<SymbolId, Constant> = FxHashMap::default();
-    let mut inlined = Inlined::default();
     let reads_math = {
         let mut scope = ModuleScope::new(filename, program, None);
         scope.style_names.extend(
@@ -511,7 +542,10 @@ fn inline_in<'a>(
         // Constants are only worth reading when a style reads a name that may
         // hold one
         let reads_math = read.names.contains("Math") && !scope.binds("Math");
-        if !reads_math && !read.names.iter().any(|name| scope.binds(name)) {
+        if !reads_math
+            && read.symbols.is_empty()
+            && !read.names.iter().any(|name| scope.binds(name))
+        {
             return Inlined::default();
         }
         for name in &read.names {
@@ -568,10 +602,54 @@ fn inline_in<'a>(
         reads_math
     };
     inlined.dependencies = modules.exports.into_keys().collect();
+    let mut pending = declarations;
+    pending.retain(|symbol, _| {
+        read.symbols.contains(symbol) && scoping.symbol_scope_id(*symbol) != scoping.root_scope_id()
+    });
+    loop {
+        let inline = Inline {
+            ast_builder,
+            scoping,
+            initialization: &initialization,
+            symbols: &symbols,
+            style: &style,
+            css_props: &css_props,
+            objects: false,
+            styles: false,
+            px: false,
+            class_names: Vec::new(),
+        };
+        let resolved: Vec<_> = pending
+            .iter()
+            .filter_map(|(symbol, init)| {
+                let value = inline.operand(init)?;
+                if matches!(&value, Constant::Number(number) if !number.is_finite()) {
+                    return None;
+                }
+                matches!(
+                    value,
+                    Constant::String(_)
+                        | Constant::Number(_)
+                        | Constant::Null
+                        | Constant::Bool(_)
+                        | Constant::Undefined
+                )
+                .then_some((*symbol, value))
+            })
+            .collect();
+        if resolved.is_empty() {
+            break;
+        }
+        for (symbol, value) in resolved {
+            pending.remove(&symbol);
+            symbols.insert(symbol, value);
+        }
+    }
     if !symbols.is_empty() || reads_math {
         Inline {
             ast_builder,
             scoping,
+            initialization: &initialization,
             symbols: &symbols,
             style: &style,
             css_props: &css_props,
@@ -748,6 +826,8 @@ struct StyleReads<'s> {
     style: &'s StyleSymbols<'s>,
     css_props: &'s CssTakers<'s>,
     names: FxHashSet<String>,
+    symbols: FxHashSet<SymbolId>,
+    references: FxHashSet<oxc_syntax::reference::ReferenceId>,
     depth: usize,
     /// The bindings the `<ClassNames>` child functions around take `css` and
     /// `cx` by
@@ -765,8 +845,13 @@ impl StyleReads<'_> {
 
 impl<'a> Visit<'a> for StyleReads<'_> {
     fn visit_identifier_reference(&mut self, identifier: &IdentifierReference<'a>) {
-        if self.depth > 0 && reads_top_level(self.style.scoping, identifier) {
-            self.names.insert(identifier.name.to_string());
+        if self.depth > 0 {
+            self.references.extend(identifier.reference_id.get());
+            self.symbols
+                .extend(binding_of(self.style.scoping, identifier));
+            if reads_top_level(self.style.scoping, identifier) {
+                self.names.insert(identifier.name.to_string());
+            }
         }
     }
 
@@ -1142,6 +1227,11 @@ struct ModuleScope<'p, 'a> {
     source: Option<&'p str>,
     locals: FxHashMap<String, Constant>,
     declarations: FxHashMap<String, &'p Expression<'a>>,
+    enums: FxHashMap<String, &'p oxc_ast::ast::TSEnumDeclaration<'a>>,
+    enum_members: Option<(
+        &'p oxc_ast::ast::TSEnumDeclaration<'a>,
+        FxHashMap<String, Constant>,
+    )>,
     imports: FxHashMap<String, (String, Imported)>,
     style_imports: FxHashSet<String>,
     /// Style APIs besides the imports, which never run what they are given
@@ -1167,6 +1257,8 @@ impl<'p, 'a> ModuleScope<'p, 'a> {
             source,
             locals: FxHashMap::default(),
             declarations: FxHashMap::default(),
+            enums: FxHashMap::default(),
+            enum_members: None,
             imports: FxHashMap::default(),
             style_imports: FxHashSet::default(),
             style_names: FxHashSet::default(),
@@ -1327,8 +1419,13 @@ impl<'p, 'a> ModuleScope<'p, 'a> {
 
     fn binds(&self, name: &str) -> bool {
         self.declarations.contains_key(name)
+            || self.enums.contains_key(name)
             || self.imports.contains_key(name)
             || self.locals.contains_key(name)
+            || self
+                .semantic_scoping()
+                .get_root_binding(name.into())
+                .is_some()
     }
 
     fn is_global_math(&self, expression: &Expression<'_>) -> bool {
@@ -1336,37 +1433,46 @@ impl<'p, 'a> ModuleScope<'p, 'a> {
             if identifier.name == "Math" && !self.binds("Math"))
     }
 
-    /// Record the members of an enum whose values are literals, up to the
-    /// first that is computed, returning its name
-    fn declare_enum(&mut self, declaration: &oxc_ast::ast::TSEnumDeclaration<'_>) -> String {
+    /// Record an enum for lazy evaluation after module bindings are collected.
+    fn declare_enum(&mut self, declaration: &'p oxc_ast::ast::TSEnumDeclaration<'a>) -> String {
         let name = declaration.id.name.to_string();
-        if declaration.declare {
-            return name;
+        if !declaration.declare {
+            self.enums.insert(name.clone(), declaration);
         }
+        name
+    }
+
+    fn evaluate_enum(
+        &mut self,
+        modules: &mut Modules<'_>,
+        declaration: &'p oxc_ast::ast::TSEnumDeclaration<'a>,
+    ) -> Constant {
+        let name = declaration.id.name.to_string();
         let mut members = FxHashMap::default();
         let mut next = Some(0.0);
+        let outer = self.enum_members.take();
         for member in &declaration.body.members {
+            self.locals
+                .insert(name.clone(), Constant::Object(Rc::new(members.clone())));
+            self.enum_members = Some((declaration, members.clone()));
             let value = match &member.initializer {
                 None => next.map(Constant::Number),
-                Some(Expression::StringLiteral(literal)) => {
-                    Some(Constant::String(literal.value.to_string()))
-                }
-                Some(initializer) => {
-                    crate::utils::js_number_literal(initializer).map(Constant::Number)
-                }
+                Some(initializer) => self.evaluate(modules, initializer),
             };
-            let Some(value) = value else {
+            let Some(value @ (Constant::String(_) | Constant::Number(_))) = value else {
                 break;
             };
+            if matches!(&value, Constant::Number(number) if !number.is_finite()) {
+                break;
+            }
             next = match &value {
                 Constant::Number(number) => Some(number + 1.0),
                 _ => None,
             };
             members.insert(member.id.static_name().to_string(), value);
         }
-        self.locals
-            .insert(name.clone(), Constant::Object(Rc::new(members)));
-        name
+        self.enum_members = outer;
+        Constant::Object(Rc::new(members))
     }
 
     fn import(&mut self, import: &oxc_ast::ast::ImportDeclaration<'_>) {
@@ -1397,7 +1503,13 @@ impl<'p, 'a> ModuleScope<'p, 'a> {
             else {
                 continue;
             };
-            if callee.name != "require" {
+            let scoping = self.semantic_scoping();
+            if callee.name != "require"
+                || callee
+                    .reference_id
+                    .get()
+                    .is_none_or(|reference| scoping.get_reference(reference).symbol_id().is_some())
+            {
                 continue;
             }
             let source = source.value.to_string();
@@ -1456,6 +1568,11 @@ impl<'p, 'a> ModuleScope<'p, 'a> {
         if let Some(constant) = self.locals.get(name) {
             return Some(constant.clone());
         }
+        if let Some(declaration) = self.enums.remove(name) {
+            let value = self.evaluate_enum(modules, declaration);
+            self.locals.insert(name.to_string(), value.clone());
+            return Some(value);
+        }
         // Taken out while it is evaluated, so a constant reading itself stops
         if let Some(init) = self.declarations.remove(name)
             && let Some(constant) = self.evaluate(modules, init)
@@ -1496,16 +1613,20 @@ impl<'p, 'a> ModuleScope<'p, 'a> {
     /// Whether `identifier` reads a binding of the module's top level, where
     /// the imports bind, and not a local of a function or block
     fn reads_top_level_binding(&self, identifier: &IdentifierReference<'_>) -> bool {
-        let scoping = self.shared_scoping.unwrap_or_else(|| {
+        let scoping = self.semantic_scoping();
+        binding_of(scoping, identifier)
+            .is_some_and(|symbol| scoping.symbol_scope_id(symbol) == scoping.root_scope_id())
+    }
+
+    fn semantic_scoping(&self) -> &Scoping {
+        self.shared_scoping.unwrap_or_else(|| {
             self.scoping.get_or_init(|| {
                 SemanticBuilder::new()
                     .build(self.program)
                     .semantic
                     .into_scoping()
             })
-        });
-        binding_of(scoping, identifier)
-            .is_some_and(|symbol| scoping.symbol_scope_id(symbol) == scoping.root_scope_id())
+        })
     }
 
     /// A value `StyleX` gives when this module's own extraction reads it, with
@@ -1652,9 +1773,14 @@ impl<'p, 'a> ModuleScope<'p, 'a> {
             Expression::NullLiteral(_) => Some(Constant::Null),
             Expression::BooleanLiteral(literal) => Some(Constant::Bool(literal.value)),
             Expression::Identifier(identifier)
-                if identifier.name == "undefined" && !self.binds("undefined") =>
+                if matches!(identifier.name.as_str(), "undefined" | "NaN" | "Infinity")
+                    && !self.binds(&identifier.name) =>
             {
-                Some(Constant::Undefined)
+                Some(match identifier.name.as_str() {
+                    "NaN" => Constant::Number(f64::NAN),
+                    "Infinity" => Constant::Number(f64::INFINITY),
+                    _ => Constant::Undefined,
+                })
             }
             Expression::ObjectExpression(object) => Some(self.object(modules, object)),
             Expression::ArrayExpression(array) => {
@@ -1676,9 +1802,24 @@ impl<'p, 'a> ModuleScope<'p, 'a> {
             }
             Expression::ComputedMemberExpression(member) => {
                 let key = js_string(&self.evaluate(modules, &member.expression)?)?;
+                if self.is_global_math(&member.object) {
+                    return math_constant(&key);
+                }
                 member_of(&self.evaluate(modules, &member.object)?, &key)
             }
-            Expression::Identifier(identifier) => self.lookup(modules, &identifier.name),
+            Expression::Identifier(identifier) => {
+                if let Some((declaration, members)) = &self.enum_members
+                    && declaration.span.contains_inclusive(identifier.span)
+                    && declaration
+                        .body
+                        .members
+                        .iter()
+                        .any(|member| member.id.static_name() == identifier.name)
+                {
+                    return members.get(identifier.name.as_str()).cloned();
+                }
+                self.lookup(modules, &identifier.name)
+            }
             Expression::StaticMemberExpression(member) if self.is_global_math(&member.object) => {
                 math_constant(member.property.name.as_str())
             }
@@ -1686,21 +1827,20 @@ impl<'p, 'a> ModuleScope<'p, 'a> {
                 &self.evaluate(modules, &member.object)?,
                 member.property.name.as_str(),
             ),
-            Expression::CallExpression(call) => match &call.callee {
-                Expression::StaticMemberExpression(callee)
-                    if self.is_global_math(&callee.object) =>
+            Expression::CallExpression(call) => {
+                if let Some(name) = math_member(&call.callee, &|object| self.is_global_math(object))
                 {
                     let mut arguments = Vec::with_capacity(call.arguments.len());
                     for argument in &call.arguments {
                         arguments.push(self.evaluate(modules, argument.as_expression()?)?);
                     }
-                    fold_math(callee.property.name.as_str(), &arguments)
+                    return fold_math(&name, &arguments);
                 }
-                callee if self.is_style_api(modules, callee) => {
-                    Some(Constant::Style(self.css_styles(modules, call)))
+                if self.is_style_api(modules, &call.callee) {
+                    return Some(Constant::Style(self.css_styles(modules, call)));
                 }
-                _ => self.evaluate_stylex(modules, call),
-            },
+                self.evaluate_stylex(modules, call)
+            }
             Expression::TaggedTemplateExpression(tagged)
                 if self.is_style_api(modules, &tagged.tag) =>
             {
@@ -1830,61 +1970,50 @@ fn fold_template(
 }
 
 fn math_constant(name: &str) -> Option<Constant> {
-    use std::f64::consts;
-    let value = match name {
-        "PI" => consts::PI,
-        "E" => consts::E,
-        "LN2" => consts::LN_2,
-        "LN10" => consts::LN_10,
-        "LOG2E" => consts::LOG2_E,
-        "LOG10E" => consts::LOG10_E,
-        "SQRT2" => consts::SQRT_2,
-        "SQRT1_2" => consts::FRAC_1_SQRT_2,
-        _ => return None,
-    };
-    Some(Constant::Number(value))
+    crate::build_time_values::exact_math::evaluate(name, None).map(Constant::Number)
+}
+
+fn math_member<'a>(
+    expression: &Expression<'a>,
+    is_math: &dyn Fn(&Expression<'a>) -> bool,
+) -> Option<String> {
+    match expression {
+        Expression::StaticMemberExpression(member) if is_math(&member.object) => {
+            Some(member.property.name.to_string())
+        }
+        Expression::ComputedMemberExpression(member) if is_math(&member.object) => {
+            crate::utils::get_string_by_literal_expression(&member.expression)
+                .map(std::borrow::Cow::into_owned)
+        }
+        _ => None,
+    }
 }
 
 /// `Math.{name}(...arguments)`, folded only where every engine computes the
 /// same result, so the CSS never depends on the platform that builds it
 fn fold_math(name: &str, arguments: &[Constant]) -> Option<Constant> {
-    let mut numbers = Vec::with_capacity(arguments.len());
-    for argument in arguments {
-        let Constant::Number(number) = argument else {
+    use crate::build_time_values::exact_math::{Operand, evaluate};
+    if name == "pow" {
+        let (Some(Constant::Number(base)), Some(Constant::Number(exponent))) =
+            (arguments.first(), arguments.get(1))
+        else {
             return None;
         };
-        numbers.push(*number);
+        return exact_power(*base, *exponent).map(Constant::Number);
     }
-    let first = numbers.first().copied();
-    let value = match name {
-        "abs" => first?.abs(),
-        "ceil" => first?.ceil(),
-        "floor" => first?.floor(),
-        "trunc" => first?.trunc(),
-        "sqrt" => first?.sqrt(),
-        "sign" => {
-            let x = first?;
-            if x > 0.0 {
-                1.0
-            } else if x < 0.0 {
-                -1.0
-            } else {
-                x
-            }
-        }
-        // JavaScript rounds a half up, toward +Infinity, where Rust rounds it
-        // away from zero; `x - floor(x)` is exact for every double
-        "round" => {
-            let x = first?;
-            let floor = x.floor();
-            if x - floor >= 0.5 { floor + 1.0 } else { floor }
-        }
-        "max" => numbers.iter().copied().fold(f64::NEG_INFINITY, f64::max),
-        "min" => numbers.iter().copied().fold(f64::INFINITY, f64::min),
-        "pow" => exact_power(first?, *numbers.get(1)?)?,
-        _ => return None,
-    };
-    value.is_finite().then_some(Constant::Number(value))
+    let mut operands = Vec::with_capacity(arguments.len());
+    for argument in arguments {
+        let operand = match argument {
+            Constant::Number(number) => Operand::Number(*number),
+            Constant::String(text) => Operand::String(text),
+            Constant::Bool(value) => Operand::Bool(*value),
+            Constant::Null => Operand::Null,
+            Constant::Undefined => Operand::Undefined,
+            _ => return None,
+        };
+        operands.push(operand);
+    }
+    evaluate(name, Some(&operands)).map(Constant::Number)
 }
 
 /// An integer raised to a whole power, when the result is an exact integer
@@ -1925,6 +2054,7 @@ fn fold_binary(operator: BinaryOperator, left: &Constant, right: &Constant) -> O
 struct Inline<'s, 'a> {
     ast_builder: &'s AstBuilder<'a>,
     scoping: &'s Scoping,
+    initialization: &'s initialization::Initialization,
     symbols: &'s FxHashMap<SymbolId, Constant>,
     style: &'s StyleSymbols<'s>,
     css_props: &'s CssTakers<'s>,
@@ -1945,6 +2075,9 @@ impl<'a> Inline<'_, 'a> {
             Expression::Identifier(identifier) => {
                 let reference = identifier.reference_id.get()?;
                 let symbol = self.scoping.get_reference(reference).symbol_id()?;
+                if !self.initialization.allows(identifier) {
+                    return None;
+                }
                 self.symbols.get(&symbol).cloned()
             }
             Expression::StaticMemberExpression(member) if self.is_global_math(&member.object) => {
@@ -1955,30 +2088,23 @@ impl<'a> Inline<'_, 'a> {
                 member.property.name.as_str(),
             ),
             Expression::CallExpression(call) => {
-                let Expression::StaticMemberExpression(callee) = &call.callee else {
-                    return None;
-                };
-                if !self.is_global_math(&callee.object) {
-                    return None;
-                }
+                let name = math_member(&call.callee, &|object| self.is_global_math(object))?;
                 let arguments: Option<Vec<Constant>> = call
                     .arguments
                     .iter()
                     .map(|argument| self.operand(argument.as_expression()?))
                     .collect();
-                fold_math(callee.property.name.as_str(), &arguments?)
+                fold_math(&name, &arguments?)
             }
             Expression::ComputedMemberExpression(member) => {
                 let key = js_string(&self.operand(&member.expression)?)?;
+                if self.is_global_math(&member.object) {
+                    return math_constant(&key);
+                }
                 member_of(&self.constant(&member.object)?, &key)
             }
             // Folded only when they read a constant, leaving other code as written
-            Expression::TemplateLiteral(template)
-                if template
-                    .expressions
-                    .iter()
-                    .any(|e| self.constant(e).is_some()) =>
-            {
+            Expression::TemplateLiteral(template) => {
                 let values: Option<Vec<Constant>> = template
                     .expressions
                     .iter()
@@ -1986,16 +2112,11 @@ impl<'a> Inline<'_, 'a> {
                     .collect();
                 fold_template(template, &values?)
             }
-            Expression::BinaryExpression(binary)
-                if self.constant(&binary.left).is_some()
-                    || self.constant(&binary.right).is_some() =>
-            {
-                fold_binary(
-                    binary.operator,
-                    &self.operand(&binary.left)?,
-                    &self.operand(&binary.right)?,
-                )
-            }
+            Expression::BinaryExpression(binary) => fold_binary(
+                binary.operator,
+                &self.operand(&binary.left)?,
+                &self.operand(&binary.right)?,
+            ),
             Expression::UnaryExpression(unary)
                 if unary.operator == oxc_syntax::operator::UnaryOperator::UnaryNegation =>
             {
@@ -2005,6 +2126,8 @@ impl<'a> Inline<'_, 'a> {
                 }
             }
             Expression::ParenthesizedExpression(inner) => self.constant(&inner.expression),
+            Expression::TSAsExpression(inner) => self.operand(&inner.expression),
+            Expression::TSSatisfiesExpression(inner) => self.operand(&inner.expression),
             _ => None,
         }
     }
@@ -2015,6 +2138,16 @@ impl<'a> Inline<'_, 'a> {
             Expression::StringLiteral(literal) => Some(Constant::String(literal.value.to_string())),
             Expression::BooleanLiteral(literal) => Some(Constant::Bool(literal.value)),
             Expression::NullLiteral(_) => Some(Constant::Null),
+            Expression::Identifier(identifier)
+                if binding_of(self.scoping, identifier).is_none() =>
+            {
+                match identifier.name.as_str() {
+                    "undefined" => Some(Constant::Undefined),
+                    "NaN" => Some(Constant::Number(f64::NAN)),
+                    "Infinity" => Some(Constant::Number(f64::INFINITY)),
+                    _ => None,
+                }
+            }
             _ => crate::utils::js_number_literal(expression).map(Constant::Number),
         })
     }
@@ -2146,7 +2279,7 @@ fn constant_literal<'a>(
             None,
             builder,
         )),
-        Constant::Number(value) => Some(Expression::new_numeric_literal(
+        Constant::Number(value) if value.is_finite() => Some(Expression::new_numeric_literal(
             SPAN,
             *value,
             None,
@@ -2323,6 +2456,16 @@ impl<'a> VisitMut<'a> for Inline<'_, 'a> {
 }
 
 #[cfg(test)]
+mod exact_edge_tests;
+#[cfg(test)]
+mod exact_math_tests;
+#[cfg(test)]
+mod exact_tests;
+#[cfg(test)]
+mod numeric_semantics_tests;
+#[cfg(test)]
 mod scope_tests;
 #[cfg(test)]
 mod stylex_scope_tests;
+#[cfg(test)]
+mod tdz_tests;

@@ -467,6 +467,13 @@ fn extract_source(
     } else {
         imported_constants::Inlined::default()
     };
+    if !inlined.errors.is_empty() {
+        let (source, earlier_edits) = evaluated.unwrap_or((code, &[]));
+        let edits: Vec<&[import_alias_visit::Edit]> = std::iter::once(alias_edits.as_slice())
+            .chain(earlier_edits.iter().copied())
+            .collect();
+        return Err(located_errors(filename, source, &edits, inlined.errors).into());
+    }
     dependencies.extend(inlined.dependencies);
     let mut visitor = DevupVisitor::new(
         &allocator,
