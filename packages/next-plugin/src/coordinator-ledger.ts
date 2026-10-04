@@ -45,7 +45,19 @@ export function isGone(input: CoordinatorInput): boolean {
 
 /** The file is still what the checkpoint accepted. */
 export function isCurrent(input: CoordinatorInput): boolean {
-  return input.backing === '' || stampFile(input.resourcePath) === input.backing
+  // Compiled Markdown needs a fresh provider generation, not a raw backing stamp.
+  return (
+    !/\.mdx?$/i.test(input.resourcePath) &&
+    (input.backing === '' || stampFile(input.resourcePath) === input.backing)
+  )
+}
+
+export function orderInputs(
+  inputs: readonly CoordinatorInput[],
+): CoordinatorInput[] {
+  return [...inputs].sort((a, b) =>
+    a.filename < b.filename ? -1 : a.filename > b.filename ? 1 : 0,
+  )
 }
 
 export interface InputLedger {
@@ -100,9 +112,7 @@ export function createInputLedger(maxOutputs: number): InputLedger {
       return output
     },
     list() {
-      return [...inputs.values()].sort((a, b) =>
-        a.filename < b.filename ? -1 : a.filename > b.filename ? 1 : 0,
-      )
+      return orderInputs([...inputs.values()])
     },
     replace(next) {
       inputs = new Map(next.map((input) => [input.filename, input]))

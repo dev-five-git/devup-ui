@@ -5,14 +5,17 @@ import {
   createInstance,
 } from './coordinator-instance'
 import type {
-  CoordinatorHandle,
-  CoordinatorOptions,
+  CoordinatorStartOptions,
+  PreparedCoordinatorHandle,
 } from './coordinator-options'
 
 export { takeExtractOutput } from './coordinator-engine'
 export type {
   CoordinatorHandle,
   CoordinatorOptions,
+  CoordinatorStartOptions,
+  DeferredCoordinatorOptions,
+  PreparedCoordinatorHandle,
   PrewarmedOutput,
 } from './coordinator-options'
 
@@ -26,7 +29,7 @@ interface Entry {
 // never touched. Extraction state lives in each instance.
 const registry = new Map<string, Entry>()
 
-function entryFor(key: string, options: CoordinatorOptions): Entry {
+function entryFor(key: string, options: CoordinatorStartOptions): Entry {
   const existing = registry.get(key)
   if (existing === undefined) {
     const entry = { instance: createInstance(options), refs: 0 }
@@ -51,8 +54,8 @@ function entryFor(key: string, options: CoordinatorOptions): Entry {
  * last handle is released.
  */
 export function startCoordinator(
-  options: CoordinatorOptions,
-): CoordinatorHandle {
+  options: CoordinatorStartOptions,
+): PreparedCoordinatorHandle {
   const key = resolve(
     options.projectRoot ?? process.cwd(),
     options.coordinatorPortFile,
@@ -71,6 +74,7 @@ export function startCoordinator(
   }
   return {
     ready: entry.instance.ready,
+    prepared: entry.instance.prepared,
     close() {
       if (release()) entry.instance.close()
     },

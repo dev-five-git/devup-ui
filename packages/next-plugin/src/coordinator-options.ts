@@ -1,6 +1,7 @@
 import type { ExtractResponse } from './coordinator-engine'
 import type { ExtractRequest } from './coordinator-http'
 import type { CoordinatorIdentity } from './coordinator-port'
+import type { CoordinatorInput } from './state'
 import type { DevupWasm } from './wasm'
 
 export interface CssQuery {
@@ -36,6 +37,52 @@ export interface PrewarmedOutput {
   updatedBaseStyle: boolean
   /** Files the extraction read through the module resolver */
   dependencies?: string[]
+}
+
+export interface PreparedSourceEvidence {
+  readonly compilerFingerprint: string
+  readonly fileFingerprints: Readonly<Record<string, string>>
+  readonly contextFingerprints: Readonly<Record<string, string>>
+  readonly missingDependencies: readonly string[]
+  readonly map?: string
+}
+
+export interface PreparedSource {
+  /** Exact pre-Devup compiled JS/JSX under its real source identity. */
+  readonly input: CoordinatorInput
+  readonly evidence: PreparedSourceEvidence
+}
+
+export interface PreparedSourceGeneration {
+  readonly sources: readonly PreparedSource[]
+  /** Captures this generation's configuration AND prepared-source resolver. */
+  readonly configureWasm: (wasm: DevupWasm) => void
+}
+
+export interface ReplayPreparation {
+  readonly generation: PreparedSourceGeneration
+  readonly signal: AbortSignal
+}
+
+export interface PreparedSources {
+  readonly initial: {
+    /** Ordinary inputs; compiled inputs belong to generation.sources. */
+    readonly ordinaryInputs: readonly CoordinatorInput[]
+    /** options.wasm already holds this complete generation, including empty. */
+    readonly generation: PreparedSourceGeneration
+    /** Includes allocator restoration and fresh prewarm changes. */
+    readonly revision: number
+  }
+  /**
+   * Runs inside the mutation queue before every dev CSS/extract/watch replay.
+   * Return the supplied generation only after proving compiler/dependency
+   * freshness; otherwise return a complete replacement, never stale bytes
+   * stamped after compilation. Failures must reject and block the operation.
+   * The provider owns compilation, dependency evidence and bounded cancellation.
+   */
+  readonly prepareReplay: (
+    request: ReplayPreparation,
+  ) => Promise<PreparedSourceGeneration>
 }
 
 export interface CoordinatorOptions {
@@ -110,13 +157,34 @@ export interface CoordinatorOptions {
   createEngine?: () => DevupWasm
   /** Bound on cached extraction outputs. Defaults to 4096. */
   cacheMaxEntries?: number
+  /** Complete fresh startup plus the compiler-owned development refresh seam. */
+  readonly preparedSources?: PreparedSources
 }
+
+/** Ownership transport whose complete Core options will arrive asynchronously. */
+export interface DeferredCoordinatorOptions {
+  readonly projectRoot: string
+  readonly identity: CoordinatorIdentity
+  readonly coordinatorPortFile: string
+  readonly prepare: (signal: AbortSignal) => Promise<CoordinatorOptions>
+  /** Defaults to 50000ms, reserving the normal 60000ms CSS completion budget. */
+  readonly maxPrepareMs?: number
+}
+
+export type CoordinatorStartOptions =
+  CoordinatorOptions | DeferredCoordinatorOptions
 
 export interface CoordinatorHandle {
   /** Resolves once the endpoint is published (or the coordinator was closed first). */
   readonly ready: Promise<void>
+  /** Complete preparation and Core startup; optional for existing handle mocks. */
+  readonly prepared?: Promise<void>
   /** Release this handle; the last one stops listening. Synchronous, no flushing. */
   close(): void
   /** Stop admitting requests, wait for accepted work and writes, then close. */
   drain(): Promise<void>
+}
+
+export interface PreparedCoordinatorHandle extends CoordinatorHandle {
+  readonly prepared: Promise<void>
 }

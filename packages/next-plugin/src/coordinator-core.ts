@@ -1,45 +1,21 @@
-import { resolve } from 'node:path'
-
-import { loadTheme, readConfigState } from './coordinator-config'
 import {
-  buildEngine,
   type ExtractOutputSnapshot,
   extractRequest,
-  type ExtractSettings,
   locatedError,
   toExtractResponse,
 } from './coordinator-engine'
+import { preparedInput } from './coordinator-generation'
 import { type ExtractRequest, HttpError } from './coordinator-http'
-import {
-  createInput,
-  createInputLedger,
-  isCurrent,
-  isGone,
-} from './coordinator-ledger'
+import { createInput } from './coordinator-ledger'
 import type { CoordinatorOptions, Core } from './coordinator-options'
-import { createPersistence } from './coordinator-persistence'
-import { createProductionPlan } from './coordinator-plan'
+import { createReplay } from './coordinator-replay'
 import { extractSealed } from './coordinator-sealed'
 import { elapsedMs, profileStart, reportProfile } from './profile'
-import {
-  type AllocatorState,
-  captureCoordinatorState,
-  type CoordinatorInput,
-  exportAllocatorState,
-  readCoordinatorState,
-} from './state'
-import { createWasm } from './wasm'
 
 interface Accepted {
   output: ExtractOutputSnapshot
   committed: Promise<void>
   cacheHit: boolean
-}
-
-interface RebuildRequest {
-  survivors: readonly CoordinatorInput[]
-  removed: readonly CoordinatorInput[]
-  allocator?: AllocatorState
 }
 
 /**
@@ -48,37 +24,21 @@ interface RebuildRequest {
  * through one queue, so the engine is never mutated by two requests at once.
  */
 export function createCore(options: CoordinatorOptions, project: string): Core {
-  const root = resolve(options.projectRoot ?? process.cwd())
+  const replay = createReplay(options, project)
+  const {
+    root,
+    settings,
+    createEngine,
+    configure,
+    ledger,
+    plan,
+    persistence,
+    live,
+    snapshot: liveSnapshot,
+    reconcile,
+  } = replay
   const watch = options.watch ?? false
-  const optionsKey = options.optionsKey ?? ''
-  const resolveFile = (file: string | undefined) =>
-    file === undefined ? undefined : resolve(root, file)
-  const stateFile = resolveFile(options.stateFile)
-  const devupFile = resolveFile(options.devupFile)
-  const settings: ExtractSettings = {
-    package: options.package,
-    cssDir: options.cssDir,
-    singleCss: options.singleCss,
-    sourceMap: options.sourceMap ?? true,
-    importAliases: options.importAliases,
-  }
-  const createEngine = options.createEngine ?? (() => createWasm(root))
-  const configure = options.configureWasm ?? (() => undefined)
-  const ledger = createInputLedger(options.cacheMaxEntries ?? 4096)
-  const plan = createProductionPlan(options)
-  const persistence = createPersistence({
-    stateFile,
-    revisionFile: resolveFile(options.revisionFile),
-  })
-  const checkpoint =
-    watch && stateFile !== undefined
-      ? readCoordinatorState(stateFile, optionsKey)
-      : undefined
-
-  let engine = options.wasm
-  let revision = checkpoint?.revision ?? 0
   let sealed = false
-  let config = devupFile === undefined ? undefined : readConfigState(devupFile)
 
   let queue: Promise<unknown> = Promise.resolve()
   function mutate<T>(task: () => Promise<T>): Promise<T> {
@@ -91,72 +51,9 @@ export function createCore(options: CoordinatorOptions, project: string): Core {
     return run
   }
 
-  const liveSnapshot = () =>
-    captureCoordinatorState({
-      wasm: engine,
-      optionsKey,
-      project,
-      revision,
-      inputs: ledger.list(),
-    })
-
-  for (const [filename, { source, ...output }] of options.prewarmedOutputs ??
-    []) {
-    const request = {
-      filename,
-      code: source,
-      resourcePath: resolve(root, filename),
-    }
-    ledger.accept(createInput(root, request, output.dependencies ?? []), output)
-    plan.note(filename, output.cssFile)
-  }
-
-  async function rebuild(request: RebuildRequest): Promise<void> {
-    const fresh = buildEngine({
-      createEngine,
-      live: engine,
-      configure,
-      allocator: request.allocator ?? exportAllocatorState(engine),
-      theme: devupFile === undefined ? undefined : loadTheme(devupFile),
-      settings,
-      inputs: request.survivors,
-    })
-    revision += 1
-    // The fresh engine goes into service only once its state is on disk.
-    await persistence.commit(() =>
-      captureCoordinatorState({
-        wasm: fresh,
-        optionsKey,
-        project,
-        revision,
-        inputs: request.survivors,
-      }),
-    )
-    engine = fresh
-    ledger.replace(request.survivors)
-    for (const input of request.removed) plan.forget(input.filename)
-  }
-
-  /** Rebuild when a source was deleted or the theme changed on disk. */
-  async function reconcile(superseding?: string): Promise<void> {
-    if (!watch) return
-    const next =
-      devupFile === undefined ? undefined : readConfigState(devupFile)
-    const configChanged = next?.signature !== config?.signature
-    const removed = ledger.list().filter(isGone)
-    if (removed.length === 0 && !configChanged) return
-    // A file about to be extracted again is replaced by that extraction.
-    const drop = new Set(removed.map((input) => input.filename))
-    if (superseding !== undefined) drop.add(superseding)
-    await rebuild({
-      survivors: ledger.list().filter((input) => !drop.has(input.filename)),
-      removed,
-    })
-    config = next
-  }
-
   async function accept(request: ExtractRequest): Promise<Accepted> {
     await reconcile(request.filename)
+    const prepared = preparedInput(live.generation, request)
     const cached = ledger.lookup(request.filename, request.code)
     if (cached) {
       return {
@@ -167,20 +64,21 @@ export function createCore(options: CoordinatorOptions, project: string): Core {
     }
     const candidate = sealed
       ? extractSealed(
-          { live: engine, createEngine, configure, settings },
+          { live: live.engine, createEngine, configure, settings },
           liveSnapshot(),
           request,
         )
       : undefined
     const output =
-      candidate?.output ?? extractRequest(engine, settings, request)
+      candidate?.output ?? extractRequest(live.engine, settings, request)
     // The engine reports whether this file's CSS or the base sheet changed
     const changed = !sealed && (output.updatedBaseStyle || output.css != null)
-    const input = createInput(root, request, output.dependencies ?? [])
-    if (candidate !== undefined) engine = candidate.engine
+    const input =
+      prepared ?? createInput(root, request, output.dependencies ?? [])
+    if (candidate !== undefined) live.engine = candidate.engine
     ledger.accept(input, output)
     plan.note(request.filename, output.cssFile)
-    if (changed) revision += 1
+    if (changed) live.revision += 1
     persistence.accept()
     return {
       output,
@@ -190,7 +88,10 @@ export function createCore(options: CoordinatorOptions, project: string): Core {
   }
 
   return {
-    close: () => plan.close(),
+    close() {
+      replay.close()
+      plan.close()
+    },
     async extract(request) {
       const startedAt = profileStart()
       try {
@@ -209,7 +110,7 @@ export function createCore(options: CoordinatorOptions, project: string): Core {
         return toExtractResponse(
           accepted.output,
           settings.singleCss,
-          config?.files ?? [],
+          live.config?.files ?? [],
         )
       } catch (error) {
         plan.fail(
@@ -223,7 +124,7 @@ export function createCore(options: CoordinatorOptions, project: string): Core {
       if (watch) {
         await mutate(() => reconcile())
         return {
-          css: engine.getCss(fileNum, importMainCss),
+          css: live.engine.getCss(fileNum, importMainCss),
           policy: 'dev-current',
         }
       }
@@ -242,24 +143,12 @@ export function createCore(options: CoordinatorOptions, project: string): Core {
       return mutate(async () => {
         sealed = true
         return {
-          css: engine.getCss(fileNum, importMainCss),
+          css: live.engine.getCss(fileNum, importMainCss),
           policy: 'production-complete',
         }
       })
     },
-    async startup() {
-      if (checkpoint === undefined) {
-        await persistence.commit(liveSnapshot)
-        return
-      }
-      await mutate(() =>
-        rebuild({
-          survivors: checkpoint.inputs.filter(isCurrent),
-          removed: [],
-          allocator: checkpoint,
-        }),
-      )
-    },
+    startup: () => mutate(() => replay.startup()),
     reconcile: () => mutate(() => reconcile()),
     async flush() {
       await queue

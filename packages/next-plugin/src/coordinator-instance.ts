@@ -11,7 +11,6 @@ import {
   CoordinatorShutdownError,
   IncompleteCssError,
 } from './coordinator-completion'
-import { createCore } from './coordinator-core'
 import {
   assertOwnership,
   HttpError,
@@ -20,18 +19,22 @@ import {
   readBody,
   sendJson,
 } from './coordinator-http'
-import type { CoordinatorOptions } from './coordinator-options'
+import type { CoordinatorStartOptions } from './coordinator-options'
 import {
   type CoordinatorIdentity,
   formatPortFile,
   publishPortFile,
   removeOwnPortFile,
 } from './coordinator-port'
-import { type SourceWatcher, watchSources } from './coordinator-watch'
+import {
+  createPreparation,
+  reportBackgroundError,
+} from './coordinator-preparation'
 
 export interface CoordinatorInstance {
   readonly identity: CoordinatorIdentity
   readonly ready: Promise<void>
+  readonly prepared: Promise<void>
   /** Stop listening and watching now. Accepted writes may still be running. */
   close(): void
   /** Refuse new requests, wait for accepted work and its writes, then close. */
@@ -40,29 +43,23 @@ export interface CoordinatorInstance {
   flush(): Promise<void>
 }
 
-function reportBackgroundError(error: unknown): void {
-  console.error(
-    '[devup-ui]',
-    error instanceof Error ? error.message : String(error),
-  )
-}
-
 /** One app's coordinator: an HTTP endpoint over its own core and engine. */
 export function createInstance(
-  options: CoordinatorOptions,
+  options: CoordinatorStartOptions,
 ): CoordinatorInstance {
   const root = resolve(options.projectRoot ?? process.cwd())
   const portFile = resolve(root, options.coordinatorPortFile)
   const identity = options.identity ?? { project: root, token: randomUUID() }
   const enforce = options.identity !== undefined
-  const core = createCore(options, identity.project)
+  const preparation = createPreparation(options, identity)
+  const prepared = preparation.wait().then(() => undefined)
+  void prepared.then(undefined, reportBackgroundError)
   const inflight = new Set<Promise<void>>()
   const sockets = new Set<Socket>()
   const reading = new Set<IncomingMessage>()
   let draining = false
   let closed = false
   let port = 0
-  let watcher: SourceWatcher | undefined
 
   async function route(
     req: IncomingMessage,
@@ -73,6 +70,7 @@ export function createInstance(
       res.writeHead(200, { 'Content-Type': 'application/json' })
       res.end(formatPortFile(port, process.pid, identity))
     } else if (req.method === 'GET' && url.pathname === '/css') {
+      const core = await preparation.wait()
       const { css, policy } = await core.css({
         fileNum: parseFileNum(url.searchParams.get('fileNum')),
         importMainCss: url.searchParams.get('importMainCss') === 'true',
@@ -91,7 +89,9 @@ export function createInstance(
       } finally {
         reading.delete(req)
       }
-      sendJson(res, 200, await core.extract(parseExtractRequest(body)))
+      const request = parseExtractRequest(body)
+      const core = await preparation.wait()
+      sendJson(res, 200, await core.extract(request))
     } else {
       res.writeHead(404, { 'Content-Type': 'text/plain' })
       res.end('Not Found')
@@ -156,8 +156,7 @@ export function createInstance(
     closed = true
     draining = true
     closedFirst.resolve(undefined)
-    watcher?.close()
-    core.close()
+    preparation.close()
     server.close()
     server.closeAllConnections()
     for (const socket of sockets) socket.destroy()
@@ -165,7 +164,10 @@ export function createInstance(
   }
 
   const ready = (async () => {
-    await core.startup()
+    if (!('prepare' in options)) {
+      preparation.start()
+      await Promise.race([prepared, closedFirst.promise])
+    }
     if (closed) return
     // A server closed while its socket opens may never report listening
     const listening = await Promise.race([listen(), closedFirst.promise])
@@ -181,38 +183,53 @@ export function createInstance(
       port,
       ...identity,
     })
-    if (options.watch && !draining) {
-      watcher = watchSources({
-        roots: (options.sourceRoots ?? []).map((dir) => resolve(root, dir)),
-        debounceMs: 50,
-        onChange: () => void core.reconcile().catch(reportBackgroundError),
-        onError: reportBackgroundError,
-      })
-    }
+    preparation.start()
   })()
 
   async function flush(): Promise<void> {
-    do {
-      await settle()
-      await core.flush()
-    } while (inflight.size > 0)
+    try {
+      await settlePreparation()
+    } finally {
+      do {
+        await settle()
+        await preparation.flush()
+      } while (inflight.size > 0)
+    }
+  }
+
+  async function settlePreparation(): Promise<void> {
+    try {
+      await prepared
+    } catch (error) {
+      if (!(error instanceof CoordinatorShutdownError)) throw error
+    }
   }
 
   return {
     identity,
     ready,
+    prepared,
     close,
     async drain() {
       draining = true
-      watcher?.close()
-      core.close()
+      preparation.stopWatching()
+      if ('prepare' in options) preparation.close()
       for (const req of reading)
         req.destroy(new CoordinatorShutdownError('/extract'))
       try {
         await ready
-        await flush()
+        if (!('prepare' in options)) {
+          await prepared
+          preparation.close()
+        }
+        await settlePreparation()
       } finally {
-        close()
+        try {
+          await settle()
+          await preparation.flush()
+        } finally {
+          close()
+        }
       }
     },
     flush,
