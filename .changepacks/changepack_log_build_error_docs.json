@@ -1,0 +1,8 @@
+{
+  "changes": {
+    "packages/eslint-plugin/package.json": "Patch",
+    "packages/react/package.json": "Patch"
+  },
+  "note": "The @devup-ui/react README and the css-utils-literal-only rule docs link their mention of build errors to the new Build Errors reference (https://devup-ui.com/docs/build-errors), which lists the build errors grouped by API; the docs sidebar lists the page after Supported Syntax & Limitations, whose Build errors section links to it. Documentation only: no new build errors",
+  "date": "2026-10-01T00:00:00.000Z"
+}
