@@ -1,6 +1,8 @@
 mod as_visit;
 mod barrel;
 mod build_time_values;
+#[cfg(test)]
+mod ci_coverage_tests;
 mod component;
 mod composition;
 mod css_prop;

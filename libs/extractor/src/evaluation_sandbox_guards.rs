@@ -56,7 +56,7 @@ pub(super) const EXACT_GLOBALS: &[&str] = &[
 ];
 use boa_engine::{
     Context, JsArgs, JsError, JsObject, JsResult, JsString, JsValue, NativeFunction, js_string,
-    property::PropertyDescriptor,
+    object::FunctionObjectBuilder, property::PropertyDescriptor,
 };
 
 fn guard_method(context: &mut Context, holder: &JsObject, label: (&str, &str)) -> JsResult<()> {
@@ -114,7 +114,7 @@ fn guard_method(context: &mut Context, holder: &JsObject, label: (&str, &str)) -
 pub(super) fn guard_methods(context: &mut Context) -> JsResult<()> {
     let math = context.intrinsics().objects().math();
     guard_method(context, &math, ("Math", "random"))?;
-    for (owner, methods) in LOCALE_METHODS {
+    for (owner, methods) in GUARDED_METHODS {
         let constructors = context.intrinsics().constructors();
         let holder = match owner {
             "Object" => constructors.object(),
@@ -122,6 +122,7 @@ pub(super) fn guard_methods(context: &mut Context) -> JsResult<()> {
             "BigInt" => constructors.bigint(),
             "Array" => constructors.array(),
             "TypedArray" => constructors.typed_array(),
+            "Function" => constructors.function(),
             _ => constructors.string(),
         }
         .prototype();
@@ -134,63 +135,96 @@ pub(super) fn guard_methods(context: &mut Context) -> JsResult<()> {
 
 fn guard_descriptor(context: &mut Context) -> JsResult<()> {
     let object = context.intrinsics().constructors().object().constructor();
-    let original = object
-        .get(js_string!("getOwnPropertyDescriptor"), context)?
-        .to_object(context)?;
-    let wrapper = function(
-        context,
-        "getOwnPropertyDescriptor",
-        NativeFunction::from_copy_closure_with_captures(
-            |this, args, original: &JsObject, context| {
-                let value = original.call(this, args, context)?;
-                if let Some(descriptor) = value.as_object() {
-                    let getter = descriptor.get(js_string!("get"), context)?;
-                    let name = context.get_data::<Evidence>().and_then(|evidence| {
-                        evidence
-                            .methods
-                            .borrow()
-                            .iter()
-                            .find(|(method, _)| {
-                                getter.as_object().is_some_and(|getter| getter == *method)
-                            })
-                            .map(|(_, name)| name.clone())
-                    });
-                    if let Some(name) = name {
-                        let site = context
-                            .get_data::<Evidence>()
-                            .and_then(|evidence| evidence.site.borrow().clone());
-                        return Err(JsError::from_opaque(record(context, &name, site)));
+    let reflect = context.intrinsics().objects().reflect();
+    for (holder, name, batch) in [
+        (&object, "getOwnPropertyDescriptor", false),
+        (&object, "getOwnPropertyDescriptors", true),
+        (&reflect, "getOwnPropertyDescriptor", false),
+    ] {
+        let original = holder
+            .get(JsString::from(name), context)?
+            .to_object(context)?;
+        let realm = context.realm().clone();
+        let wrapper = FunctionObjectBuilder::new(
+            &realm,
+            NativeFunction::from_copy_closure_with_captures(
+                |this, args, captures: &(JsObject, bool), context| {
+                    let site = context
+                        .get_data::<Evidence>()
+                        .and_then(|evidence| evidence.site.borrow().clone());
+                    let value = captures.0.call(this, args, context)?;
+                    if captures.1 {
+                        let descriptors = value.to_object(context)?;
+                        for key in descriptors.own_property_keys(context)? {
+                            check_descriptor(
+                                &descriptors.get(key, context)?,
+                                site.clone(),
+                                context,
+                            )?;
+                        }
+                    } else {
+                        check_descriptor(&value, site, context)?;
                     }
-                }
-                Ok(value)
-            },
-            original,
-        ),
-    );
-    object.define_property_or_throw(
-        js_string!("getOwnPropertyDescriptor"),
-        PropertyDescriptor::builder()
-            .value(wrapper)
-            .writable(true)
-            .enumerable(false)
-            .configurable(true),
-        context,
-    )?;
+                    Ok(value)
+                },
+                (original, batch),
+            ),
+        )
+        .name(JsString::from(name))
+        .length(if batch { 1 } else { 2 })
+        .build();
+        holder.define_property_or_throw(
+            JsString::from(name),
+            PropertyDescriptor::builder()
+                .value(wrapper)
+                .writable(true)
+                .enumerable(false)
+                .configurable(true),
+            context,
+        )?;
+    }
     Ok(())
+}
+
+fn check_descriptor(
+    value: &JsValue,
+    site: Option<(String, u32)>,
+    context: &mut Context,
+) -> JsResult<()> {
+    let getter = value.as_object().and_then(|descriptor| {
+        descriptor
+            .borrow()
+            .properties()
+            .get(&js_string!("get").into())
+            .and_then(|property| property.value().cloned())
+    });
+    let name = context.get_data::<Evidence>().and_then(|evidence| {
+        evidence.methods.borrow().iter().find_map(|(method, name)| {
+            getter
+                .as_ref()?
+                .as_object()
+                .filter(|getter| getter == method)
+                .map(|_| name.clone())
+        })
+    });
+    match name {
+        Some(name) => Err(JsError::from_opaque(record(context, &name, site))),
+        None => Ok(()),
+    }
 }
 
 /// Globals the engine gives whose values depend on the locale or the clock;
 /// any other global nothing declares is the environment's
 pub(super) const GUARDED_GLOBALS: [&str; 5] = ["Date", "Intl", "performance", "crypto", "Temporal"];
 
-/// Methods giving what the locale or the engine's Unicode data make them, by
-/// the prototype holding them
-pub(super) const LOCALE_METHODS: [(&str, &[&str]); 6] = [
+/// Methods whose results depend on locale, Unicode data, or transformed source.
+pub(super) const GUARDED_METHODS: [(&str, &[&str]); 7] = [
     ("Object", &["toLocaleString"]),
     ("Number", &["toLocaleString"]),
     ("BigInt", &["toLocaleString"]),
     ("Array", &["toLocaleString"]),
     ("TypedArray", &["toLocaleString"]),
+    ("Function", &["toString"]),
     (
         "String",
         &[

@@ -37,6 +37,7 @@ enum Kind {
     Random,
     Environment,
     Locale,
+    Source,
 }
 
 impl Kind {
@@ -46,6 +47,7 @@ impl Kind {
             Self::Random => "the chance it gives differs on every build",
             Self::Environment => "only the page or process running the code knows it",
             Self::Locale => "its result depends on the locale and the engine's Unicode data",
+            Self::Source => "its text changes when the build transforms the function",
         }
     }
 
@@ -55,6 +57,7 @@ impl Kind {
             "Date" | "performance" => Self::Clock,
             "crypto" | "Math" => Self::Random,
             "Intl" | "Temporal" => Self::Locale,
+            "Function" => Self::Source,
             _ if name.contains(".prototype.") => Self::Locale,
             _ => Self::Environment,
         }
@@ -184,6 +187,23 @@ fn guard_globals(context: &mut Context) -> JsResult<()> {
     setup
         .to_object(context)?
         .call(&JsValue::undefined(), &[forbid.into(), config], context)?;
+    for name in GUARDED_GLOBALS {
+        let descriptor = boa_engine::builtins::object::OrdinaryObject::get_own_property_descriptor(
+            &JsValue::undefined(),
+            &[context.global_object().into(), JsString::from(name).into()],
+            context,
+        )?;
+        let getter = descriptor
+            .to_object(context)?
+            .get(js_string!("get"), context)?
+            .to_object(context)?;
+        if let Some(evidence) = context.get_data::<Evidence>() {
+            evidence
+                .methods
+                .borrow_mut()
+                .push((getter, name.to_string()));
+        }
+    }
     Ok(())
 }
 
@@ -206,6 +226,10 @@ fn install_console(context: &mut Context) -> JsResult<()> {
 #[cfg(test)]
 #[path = "evaluation_sandbox_tests.rs"]
 mod tests;
+
+#[cfg(test)]
+#[path = "evaluation_sandbox_reflection_tests.rs"]
+mod reflection_tests;
 
 impl Sandbox {
     /// Installs the instrumented source's native identity/thunk helper.
