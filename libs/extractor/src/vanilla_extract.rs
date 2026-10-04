@@ -617,10 +617,12 @@ fn authored_call(
     let location = to_text(args.get_or_undefined(0), context)?;
     let api = to_text(args.get_or_undefined(1), context)?;
     let previous = collector.borrow_mut().origin.replace((location, api));
-    let result = match args.get_or_undefined(2).as_callable() {
-        Some(thunk) => thunk.call(&JsValue::undefined(), &[], context),
-        None => Ok(JsValue::undefined()),
-    };
+    let result = args
+        .get_or_undefined(2)
+        .as_callable()
+        .map_or(Ok(JsValue::undefined()), |thunk| {
+            thunk.call(&JsValue::undefined(), &[], context)
+        });
     collector.borrow_mut().origin = previous;
     result
 }

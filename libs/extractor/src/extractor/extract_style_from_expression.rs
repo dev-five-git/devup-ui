@@ -274,15 +274,8 @@ pub fn extract_style_from_expression<'a>(
                             if let Some(name) = get_str_by_property_key(&prop.key)
                                 && !is_special_property(&name)
                             {
-                                if let Some(error) =
-                                    crate::dead_properties::authored_declaration_error(
-                                        &name,
-                                        prop.key.span().start,
-                                    )
-                                {
-                                    props_styles.push(error);
-                                    continue;
-                                }
+                                // The upfront authored walk already checks every root key,
+                                // including the literal spreads flattened above.
                                 for disassembled in disassemble_property(&name) {
                                     let disassembled: &str = &disassembled;
                                     if name == "styleOrder" {

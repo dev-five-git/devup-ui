@@ -148,21 +148,21 @@ impl Declarations {
 
 pub(crate) fn evaluated_errors(json: &str, kind: ObjectKind) -> Vec<(String, &'static str)> {
     let allocator = oxc_allocator::Allocator::default();
-    let source = format!("({json})");
-    let parsed = oxc_parser::Parser::new(&allocator, &source, oxc_span::SourceType::mjs()).parse();
-    match parsed.program.body.first() {
-        Some(oxc_ast::ast::Statement::ExpressionStatement(statement)) => {
+    // The evaluator serializes a value, not a program. Parse that expression
+    // directly instead of checking for an impossible non-expression statement.
+    oxc_parser::Parser::new(&allocator, json, oxc_span::SourceType::mjs())
+        .parse_expression()
+        .into_iter()
+        .flat_map(|expression| {
             let mut declarations = Declarations {
                 evaluated: true,
                 ..Declarations::default()
             };
-            declarations.collect(&statement.expression, kind);
+            declarations.collect(&expression, kind);
             declarations
                 .errors
                 .into_iter()
                 .map(|(_, path, requirement)| (path, requirement))
-                .collect()
-        }
-        _ => Vec::new(),
-    }
+        })
+        .collect()
 }

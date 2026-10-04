@@ -24,6 +24,10 @@ mod visit;
 
 mod dead_properties;
 #[cfg(test)]
+mod dead_properties_call_boundary_tests;
+#[cfg(test)]
+mod dead_properties_declaration_boundary_tests;
+#[cfg(test)]
 mod dead_properties_origin_tests;
 #[cfg(test)]
 mod dead_properties_responsive_origin_tests;
