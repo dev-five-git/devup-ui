@@ -7,14 +7,16 @@ import {
   writeFileSync,
 } from 'node:fs'
 import { createRequire } from 'node:module'
+import { dirname, isAbsolute, join, relative, resolve } from 'node:path'
+
+import { ConfigLoadError } from './load-config'
 import {
-  dirname,
-  extname,
-  isAbsolute,
-  join,
-  relative,
-  resolve,
-} from 'node:path'
+  createNodeModulesExcludeRegex,
+  GRAPH_SOURCE_FILE_RE,
+  MDX_FILE_RE,
+  SOURCE_EXTENSIONS,
+} from './shared'
+import { type PathAlias, readPathAliases } from './tsconfig'
 
 /**
  * How map keys (and bucket-root values) are stringified.
@@ -33,7 +35,7 @@ function makeToKey(cwd: string, keyBy: GraphKeyMode): (file: string) => string {
 }
 
 export interface BuildCanonicalMapOptions {
-  srcDir: string
+  srcDir: string | string[]
   tsconfigPath?: string
   cwd: string
   hoistV?: number
@@ -55,12 +57,6 @@ interface OxcParser {
   ) => unknown
 }
 
-interface PathAlias {
-  prefix: string
-  suffix: string
-  targets: string[]
-}
-
 interface ResolveContext {
   aliases: PathAlias[]
   aliasBaseDir: string
@@ -68,12 +64,12 @@ interface ResolveContext {
   srcDir: string
 }
 
-const jsExtensions = ['.ts', '.tsx', '.js', '.jsx', '.mjs']
-const jsFileRegex = /\.(?:tsx?|jsx?|mjs)$/
-const testFileRegex = /\.(?:test|spec)\.[mc]?[jt]sx?$/
+const jsExtensions: readonly string[] = [...SOURCE_EXTENSIONS, '.mdx']
+const jsFileRegex = GRAPH_SOURCE_FILE_RE
+const testFileRegex = /\.(?:test|spec)\.[mc]?[jt]sx?$/i
 const routeFileRegex =
-  /(^|\/)(page|layout|template|default|loading|error|not-found|global-error)\.(tsx|ts|jsx|js)$/
-const leafRouteFileRegex = /(^|\/)page\.(tsx|ts|jsx|js)$/
+  /(^|\/)(page|layout|template|default|loading|error|not-found|global-error)\.(?:[mc]?[jt]s|[jt]sx|mdx)$/
+const leafRouteFileRegex = /(^|\/)page\.(?:[mc]?[jt]s|[jt]sx|mdx)$/
 
 let cachedOxcParser: false | OxcParser | undefined
 
@@ -115,19 +111,25 @@ export interface StaticImportGraph {
  * the result, so the file I/O and parsing cost is paid a single time.
  */
 export function buildStaticImportGraph(
-  srcDir: string,
+  srcDir: string | string[],
   tsconfigPath?: string,
+  options: StaticImportGraphOptions = {},
 ): StaticImportGraph {
-  const resolvedSrcDir = resolve(srcDir)
-  const files = listSourceFiles(resolvedSrcDir)
+  const cwd = resolve(options.cwd ?? process.cwd())
+  const roots = (typeof srcDir === 'string' ? [srcDir] : srcDir).map((dir) =>
+    resolve(cwd, dir),
+  )
+  const files = [
+    ...new Set(roots.flatMap((root) => listSourceFiles(root, options.exclude))),
+  ].sort(compareCodePoints)
   const fileSet = new Set(files)
-  const aliases = readPathAliases(tsconfigPath)
-  const context: ResolveContext = {
-    aliases: aliases.aliases,
-    aliasBaseDir: aliases.baseDir,
-    files: fileSet,
-    srcDir: resolvedSrcDir,
-  }
+  const resolver = createModuleResolver({
+    cwd,
+    tsconfigPath: tsconfigPath ?? join(cwd, 'tsconfig.json'),
+    conditions: options.conditions,
+  })
+  const excluded = createNodeModulesExcludeRegex(options.include ?? [])
+  const includedRoots = new Set<string>()
   const staticImporters = new Map<string, Set<string>>()
   const staticImports = new Map<string, Set<string>>()
   const dynamicImports = new Map<string, Set<string>>()
@@ -141,10 +143,49 @@ export function buildStaticImportGraph(
     externalImports.set(file, new Set())
   }
 
-  for (const file of files) {
+  for (let index = 0; index < files.length; index += 1) {
+    const file = files[index]
     const imports = parseImports(file, readFileSync(file, 'utf-8'))
     for (const importRef of imports) {
-      const target = resolveImport(importRef.specifier, file, context)
+      const resolved = resolver(importRef.specifier, file)?.path
+      if (
+        resolved &&
+        roots.some(
+          (root) =>
+            isInsideDir(root, resolved) &&
+            relative(root, dirname(resolved))
+              .split(/[\\/]/)
+              .some((part) => options.exclude?.includes(part)),
+        )
+      )
+        continue
+      if (
+        resolved &&
+        !importRef.specifier.startsWith('.') &&
+        !isAbsolute(importRef.specifier)
+      ) {
+        const parts = importRef.specifier.split('/')
+        const name = parts
+          .slice(0, importRef.specifier.startsWith('@') ? 2 : 1)
+          .join('/')
+        if (!excluded.test(`node_modules/${name}/`)) {
+          const dir = findPackage(dirname(file), name)
+          if (dir) includedRoots.add(realpathSync(dir))
+        }
+      }
+      const target =
+        resolved &&
+        jsFileRegex.test(resolved) &&
+        (fileSet.has(resolved) ||
+          roots.some(
+            (root) =>
+              isInsideDir(root, resolved) &&
+              !relative(root, resolved).split(/[\\/]/).includes('node_modules'),
+          ) ||
+          (!excluded.test(resolved) &&
+            [...includedRoots].some((root) => isInsideDir(root, resolved))))
+          ? resolved
+          : undefined
       if (!target) {
         if (
           !importRef.specifier.startsWith('.') &&
@@ -154,6 +195,14 @@ export function buildStaticImportGraph(
           externalImports.get(file)?.add(importRef.specifier)
         }
         continue
+      }
+      if (!fileSet.has(target)) {
+        fileSet.add(target)
+        files.push(target)
+        staticImporters.set(target, new Set())
+        staticImports.set(target, new Set())
+        dynamicImports.set(target, new Set())
+        externalImports.set(target, new Set())
       }
       if (importRef.kind === 'dynamic') {
         dynamicTargets.add(target)
@@ -166,7 +215,7 @@ export function buildStaticImportGraph(
   }
 
   return {
-    files,
+    files: files.sort(compareCodePoints),
     fileSet,
     staticImports,
     staticImporters,
@@ -176,13 +225,33 @@ export function buildStaticImportGraph(
   }
 }
 
+export interface StaticImportGraphOptions {
+  readonly cwd?: string
+  readonly include?: readonly string[]
+  readonly conditions?: readonly string[]
+  /** Directory names skipped anywhere below source roots. */
+  readonly exclude?: readonly string[]
+}
+
+function graphRoot(srcDir: string | string[], cwd: string): string {
+  if (typeof srcDir === 'string') return resolve(cwd, srcDir)
+  let root = resolve(cwd, srcDir[0] ?? '.')
+  for (const dir of srcDir) {
+    const absolute = resolve(cwd, dir)
+    while (!isInsideDir(root, absolute) && dirname(root) !== root)
+      root = dirname(root)
+  }
+  return root
+}
+
 export function buildCanonicalMap(
   opts: BuildCanonicalMapOptions,
 ): Record<string, string> {
   const cwd = resolve(opts.cwd)
-  const srcDir = resolve(opts.srcDir)
+  const srcDir = graphRoot(opts.srcDir, cwd)
   const { files, staticImports, staticImporters, dynamicTargets } =
-    opts.graph ?? buildStaticImportGraph(srcDir, opts.tsconfigPath)
+    opts.graph ??
+    buildStaticImportGraph(opts.srcDir, opts.tsconfigPath, { cwd })
 
   const globalFiles = getRouteReachableGlobalFiles(
     files,
@@ -227,7 +296,7 @@ export function buildCanonicalMap(
 }
 
 export interface ComputeFileRoutesOptions {
-  srcDir: string
+  srcDir: string | string[]
   tsconfigPath?: string
   cwd: string
   /** pre-built graph from `buildStaticImportGraph` to skip the file scan. */
@@ -250,9 +319,10 @@ export function computeFileRoutes(
   opts: ComputeFileRoutesOptions,
 ): Record<string, number[]> {
   const cwd = resolve(opts.cwd)
-  const srcDir = resolve(opts.srcDir)
+  const srcDir = graphRoot(opts.srcDir, cwd)
   const { files, staticImports } =
-    opts.graph ?? buildStaticImportGraph(srcDir, opts.tsconfigPath)
+    opts.graph ??
+    buildStaticImportGraph(opts.srcDir, opts.tsconfigPath, { cwd })
 
   const leafRoutes = files
     .filter((file) => leafRouteFileRegex.test(toPosixRelative(srcDir, file)))
@@ -279,7 +349,7 @@ export function computeFileRoutes(
 }
 
 export interface ComputeCompiledFilesOptions {
-  srcDir: string
+  srcDir: string | string[]
   tsconfigPath?: string
   cwd: string
   /** pre-built graph from `buildStaticImportGraph` to skip the file scan. */
@@ -308,9 +378,10 @@ export function computeCompiledFiles(
   opts: ComputeCompiledFilesOptions,
 ): string[] {
   const cwd = resolve(opts.cwd)
-  const srcDir = resolve(opts.srcDir)
+  const srcDir = graphRoot(opts.srcDir, cwd)
   const { files, staticImports, dynamicImports } =
-    opts.graph ?? buildStaticImportGraph(srcDir, opts.tsconfigPath)
+    opts.graph ??
+    buildStaticImportGraph(opts.srcDir, opts.tsconfigPath, { cwd })
 
   const allImports = new Map<string, Set<string>>()
   for (const file of files) {
@@ -337,7 +408,7 @@ export function computeCompiledFiles(
 }
 
 export interface ComputeReachableFilesOptions {
-  srcDir: string
+  srcDir: string | string[]
   tsconfigPath?: string
   /** The bundler's entry modules, as absolute paths with or without extension. */
   entries: string[]
@@ -374,7 +445,7 @@ export function computeReachableFiles(
 }
 
 export interface ComputeFileReachOptions {
-  srcDir: string
+  srcDir: string | string[]
   tsconfigPath?: string
   cwd: string
   /**
@@ -409,9 +480,10 @@ export function computeFileReach(
   opts: ComputeFileReachOptions,
 ): Record<string, number[]> {
   const cwd = resolve(opts.cwd)
-  const srcDir = resolve(opts.srcDir)
+  const srcDir = graphRoot(opts.srcDir, cwd)
   const { files, fileSet, staticImports, staticImporters, dynamicTargets } =
-    opts.graph ?? buildStaticImportGraph(srcDir, opts.tsconfigPath)
+    opts.graph ??
+    buildStaticImportGraph(opts.srcDir, opts.tsconfigPath, { cwd })
 
   let entries: string[]
   if (opts.entries && opts.entries.length > 0) {
@@ -611,7 +683,10 @@ export function compareCodePoints(a: string, b: string): number {
  * pre-warm the extractor over exactly the file set the canonical map was built
  * from. Returns absolute paths.
  */
-export function listSourceFiles(srcDir: string): string[] {
+export function listSourceFiles(
+  srcDir: string,
+  exclude: readonly string[] = [],
+): string[] {
   const files: string[] = []
 
   function visit(dir: string): void {
@@ -622,7 +697,8 @@ export function listSourceFiles(srcDir: string): string[] {
     for (const entry of entries) {
       const entryPath = join(dir, entry.name)
       if (entry.isDirectory()) {
-        if (entry.name === 'node_modules') continue
+        if (entry.name === 'node_modules' || exclude.includes(entry.name))
+          continue
         visit(entryPath)
         continue
       }
@@ -640,9 +716,42 @@ export function listSourceFiles(srcDir: string): string[] {
 }
 
 function parseImports(filename: string, source: string): ImportReference[] {
+  if (MDX_FILE_RE.test(filename)) return scanImports(mdxEsmSource(source))
   const astImports = parseImportsWithOxc(filename, source)
   if (astImports) return astImports
   return scanImports(source)
+}
+
+function mdxEsmSource(source: string): string {
+  const blocks: string[] = []
+  let fence = ''
+  let esm = false
+  let comment = false
+  for (const line of source.split(/\r?\n/)) {
+    if (line.includes('<!--')) comment = true
+    if (comment) {
+      if (line.includes('-->')) comment = false
+      esm = false
+      continue
+    }
+    const marker = /^\s{0,3}(`{3,}|~{3,})/.exec(line)?.[1]
+    if (marker) {
+      if (!fence) fence = marker
+      else if (marker[0] === fence[0] && marker.length >= fence.length)
+        fence = ''
+      esm = false
+      continue
+    }
+    if (fence) continue
+    if (!line.trim()) {
+      esm = false
+      blocks.push('')
+      continue
+    }
+    if (/^(?:import\s+(?!\()|export\s+)/.test(line)) esm = true
+    if (esm) blocks.push(line)
+  }
+  return blocks.join('\n')
 }
 
 function parseImportsWithOxc(
@@ -906,83 +1015,6 @@ function stripComments(source: string): string {
   return result
 }
 
-function readPathAliases(tsconfigPath: string | undefined): {
-  aliases: PathAlias[]
-  baseDir: string
-} {
-  if (!tsconfigPath || !existsSync(tsconfigPath)) {
-    return { aliases: [], baseDir: process.cwd() }
-  }
-
-  const configPath = resolve(tsconfigPath)
-  const configDir = dirname(configPath)
-  try {
-    const config = JSON.parse(
-      stripTrailingCommas(stripComments(readFileSync(configPath, 'utf-8'))),
-    )
-    if (!isRecord(config) || !isRecord(config.compilerOptions)) {
-      return { aliases: [], baseDir: configDir }
-    }
-
-    const baseUrl =
-      typeof config.compilerOptions.baseUrl === 'string'
-        ? config.compilerOptions.baseUrl
-        : '.'
-    const paths = config.compilerOptions.paths
-    if (!isRecord(paths)) {
-      return { aliases: [], baseDir: resolve(configDir, baseUrl) }
-    }
-
-    const aliases: PathAlias[] = []
-    for (const [alias, targetList] of Object.entries(paths)) {
-      if (!Array.isArray(targetList)) continue
-      const starIndex = alias.indexOf('*')
-      aliases.push({
-        prefix: starIndex === -1 ? alias : alias.slice(0, starIndex),
-        suffix: starIndex === -1 ? '' : alias.slice(starIndex + 1),
-        targets: targetList.filter(
-          (target): target is string => typeof target === 'string',
-        ),
-      })
-    }
-
-    aliases.sort((a, b) => b.prefix.length - a.prefix.length)
-    return { aliases, baseDir: resolve(configDir, baseUrl) }
-  } catch {
-    return { aliases: [], baseDir: configDir }
-  }
-}
-
-function stripTrailingCommas(json: string): string {
-  return json.replace(/,\s*([}\]])/g, '$1')
-}
-
-function resolveImport(
-  specifier: string,
-  importer: string,
-  context: ResolveContext,
-): string | undefined {
-  const candidateBases: string[] = []
-
-  if (specifier.startsWith('.')) {
-    candidateBases.push(resolve(dirname(importer), specifier))
-  } else if (specifier.startsWith('/')) {
-    candidateBases.push(resolve(specifier))
-  } else {
-    candidateBases.push(...resolveAliasCandidates(specifier, context))
-  }
-
-  for (const candidateBase of candidateBases) {
-    const resolvedFile = resolveFile(candidateBase)
-    if (!resolvedFile) continue
-    if (!context.files.has(resolvedFile)) continue
-    if (!isInsideDir(context.srcDir, resolvedFile)) continue
-    return resolvedFile
-  }
-
-  return undefined
-}
-
 /** A module an import resolved to, as `setModuleResolver` expects it. */
 export interface ResolvedModule {
   path: string
@@ -992,6 +1024,7 @@ export interface ResolvedModule {
 export interface CreateModuleResolverOptions {
   cwd?: string
   tsconfigPath?: string
+  conditions?: readonly string[]
   /**
    * The name the plugin extracts a file under, given its absolute path. A
    * resolved module is extracted under this name, so it has to be the one the
@@ -1009,61 +1042,56 @@ export function createModuleResolver({
   cwd = process.cwd(),
   tsconfigPath = join(cwd, 'tsconfig.json'),
   toId = (path) => path,
+  conditions = ['import', 'module', 'require', 'node'],
 }: CreateModuleResolverOptions = {}): (
   specifier: string,
   importer: string,
 ) => ResolvedModule | undefined {
-  const { aliases, baseDir } = readPathAliases(tsconfigPath)
+  const { aliases, baseDir, baseUrl } = readPathAliases(tsconfigPath)
   return (specifier, importer) => {
     const from = resolve(cwd, importer)
     const path = specifier.startsWith('.')
-      ? resolveSourceFile(resolve(dirname(from), specifier))
+      ? resolveFile(resolve(dirname(from), specifier))
       : isAbsolute(specifier)
-        ? resolveSourceFile(specifier)
+        ? resolveFile(specifier)
         : (resolveAliasCandidates(specifier, {
             aliases,
             aliasBaseDir: baseDir,
           })
-            .map(resolveSourceFile)
-            .find(Boolean) ?? resolvePackage(specifier, from))
+            .map(resolveFile)
+            .find(Boolean) ??
+          (baseUrl ? resolveFile(resolve(baseUrl, specifier)) : undefined) ??
+          resolvePackage(specifier, from, conditions))
     return path
       ? { path: toId(path), code: readFileSync(path, 'utf-8') }
       : undefined
   }
 }
 
-const sourceExtensions = [...jsExtensions, '.cjs']
-
-/** `resolveFile`, also completing a name like `theme.css` to `theme.css.ts`. */
-function resolveSourceFile(base: string): string | undefined {
-  const candidates = sourceExtensions.includes(extname(base))
-    ? [base]
-    : [
-        ...jsExtensions.map((extension) => `${base}${extension}`),
-        ...jsExtensions.map((extension) => join(base, `index${extension}`)),
-      ]
-  const found = candidates.find(isFile)
-  return found && resolve(found)
-}
-
-/** Conditions of package `exports`, in the order a bundler prefers them */
-const packageConditions = ['import', 'module', 'default', 'require', 'node']
-
 function resolvePackage(
   specifier: string,
   importer: string,
+  conditions: readonly string[],
 ): string | undefined {
   const parts = specifier.split('/')
   const nameLength = specifier.startsWith('@') ? 2 : 1
   const name = parts.slice(0, nameLength).join('/')
   const packageDir = findPackage(dirname(importer), name)
   if (!packageDir) return undefined
+  const manifestFile = join(packageDir, 'package.json')
+  let manifest: unknown
+  try {
+    manifest = JSON.parse(readFileSync(manifestFile, 'utf-8'))
+    if (!isRecord(manifest) || Array.isArray(manifest))
+      throw new TypeError('Expected a package manifest object')
+  } catch (cause) {
+    throw new ConfigLoadError(manifestFile, cause)
+  }
   const found = resolvePackageEntry(
     packageDir,
-    JSON.parse(
-      readFileSync(join(packageDir, 'package.json'), 'utf-8'),
-    ) as Record<string, unknown>,
+    manifest,
     ['.', ...parts.slice(nameLength)].join('/'),
+    conditions,
   )
   return found && realpathSync(found)
 }
@@ -1078,30 +1106,35 @@ function resolvePackageEntry(
   dir: string,
   manifest: Record<string, unknown>,
   subpath: string,
+  conditions: readonly string[],
 ): string | undefined {
   if (manifest.exports !== undefined) {
-    const target = exportsTarget(manifest.exports, subpath)
-    return target === undefined
+    const target = exportsTarget(manifest.exports, subpath, conditions)
+    return typeof target !== 'string'
       ? undefined
-      : resolveSourceFile(join(dir, target))
+      : resolveFile(join(dir, target))
   }
-  if (subpath !== '.') return resolveSourceFile(join(dir, subpath))
+  if (subpath !== '.') return resolveFile(join(dir, subpath))
   const main = [manifest.module, manifest.main].find(
     (entry): entry is string => typeof entry === 'string',
   )
-  return resolveSourceFile(join(dir, main ?? 'index'))
+  return resolveFile(join(dir, main ?? 'index'))
 }
 
-function exportsTarget(exports: unknown, subpath: string): string | undefined {
+function exportsTarget(
+  exports: unknown,
+  subpath: string,
+  conditions: readonly string[],
+): string | null | undefined {
   const subpaths =
     isRecord(exports) && !Array.isArray(exports)
       ? Object.keys(exports).filter((key) => key.startsWith('.'))
       : []
   if (subpaths.length === 0) {
-    return subpath === '.' ? conditionTarget(exports) : undefined
+    return subpath === '.' ? conditionTarget(exports, conditions) : undefined
   }
   const map = exports as Record<string, unknown>
-  if (subpath in map) return conditionTarget(map[subpath])
+  if (subpath in map) return conditionTarget(map[subpath], conditions)
   for (const key of subpaths) {
     const [prefix, suffix = ''] = key.split('*')
     if (
@@ -1114,22 +1147,32 @@ function exportsTarget(exports: unknown, subpath: string): string | undefined {
         prefix.length,
         subpath.length - suffix.length,
       )
-      return conditionTarget(map[key])?.replaceAll('*', matched)
+      return conditionTarget(map[key], conditions)?.replaceAll('*', matched)
     }
   }
   return undefined
 }
 
-function conditionTarget(value: unknown): string | undefined {
+function conditionTarget(
+  value: unknown,
+  conditions: readonly string[],
+): string | null | undefined {
   if (typeof value === 'string') return value
+  if (value === null) return null
   if (Array.isArray(value)) {
-    return value.map(conditionTarget).find(Boolean)
+    for (const entry of value) {
+      const target = conditionTarget(entry, conditions)
+      if (target !== undefined) return target
+    }
+    return undefined
   }
   if (!isRecord(value)) return undefined
-  return packageConditions
-    .filter((condition) => condition in value)
-    .map((condition) => conditionTarget(value[condition]))
-    .find(Boolean)
+  for (const [condition, branch] of Object.entries(value)) {
+    if (condition !== 'default' && !conditions.includes(condition)) continue
+    const target = conditionTarget(branch, conditions)
+    if (target !== undefined) return target
+  }
+  return undefined
 }
 function resolveAliasCandidates(
   specifier: string,
@@ -1139,7 +1182,9 @@ function resolveAliasCandidates(
   for (const alias of context.aliases) {
     if (
       !specifier.startsWith(alias.prefix) ||
-      !specifier.endsWith(alias.suffix)
+      !specifier.endsWith(alias.suffix) ||
+      (alias.exact && specifier !== alias.prefix) ||
+      specifier.length < alias.prefix.length + alias.suffix.length
     ) {
       continue
     }
@@ -1152,16 +1197,13 @@ function resolveAliasCandidates(
         resolve(context.aliasBaseDir, target.replace('*', matched)),
       )
     }
+    break
   }
   return candidates
 }
 
 function resolveFile(candidateBase: string): string | undefined {
-  const ext = extname(candidateBase)
-  if (ext) {
-    if (!jsExtensions.includes(ext)) return undefined
-    return isFile(candidateBase) ? resolve(candidateBase) : undefined
-  }
+  if (isFile(candidateBase)) return resolve(candidateBase)
 
   for (const jsExtension of jsExtensions) {
     const candidate = `${candidateBase}${jsExtension}`
@@ -1178,8 +1220,14 @@ function resolveFile(candidateBase: string): string | undefined {
 function isFile(path: string): boolean {
   try {
     return statSync(path).isFile()
-  } catch {
-    return false
+  } catch (cause) {
+    if (
+      cause instanceof Error &&
+      'code' in cause &&
+      (cause.code === 'ENOENT' || cause.code === 'ENOTDIR')
+    )
+      return false
+    throw cause
   }
 }
 
