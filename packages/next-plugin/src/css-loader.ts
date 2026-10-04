@@ -1,21 +1,27 @@
 import { existsSync, readFileSync } from 'node:fs'
-import { Agent, request } from 'node:http'
+import { resolve } from 'node:path'
 
-import { getFileNumByFilename } from '@devup-ui/plugin-utils'
+import {
+  collectDevupConfigFiles,
+  getFileNumByFilename,
+} from '@devup-ui/plugin-utils'
 import type { RawLoaderDefinitionFunction } from 'webpack'
 
 import {
-  isConnectionError,
-  missingPortFileError,
-  parsePortFile,
-  unreachableCoordinatorError,
-} from './coordinator-port'
+  CoordinatorRequestError,
+  requestCoordinator,
+} from './coordinator-client'
+import type { CoordinatorIdentity } from './coordinator-port'
 import { loadWasm } from './wasm'
 
 export interface DevupUICssLoaderOptions {
-  // turbo
   watch: boolean
   coordinatorPortFile?: string
+  coordinatorIdentity?: CoordinatorIdentity
+  projectRoot?: string
+  revisionFile?: string
+  themeFiles?: string[]
+  requestTimeoutMs?: number
   sheetFile: string
   classMapFile: string
   fileMapFile: string
@@ -27,55 +33,17 @@ export interface DevupUICssLoaderOptions {
 }
 
 let init = false
-let cachedPort: number | null = null
-const keepAliveAgent = new Agent({ keepAlive: true })
-
-function readCoordinatorPort(portFile: string): number {
-  if (cachedPort !== null) return cachedPort
-  cachedPort = parsePortFile(readFileSync(portFile, 'utf-8')).port
-  return cachedPort
-}
-
-function fetchCssFromCoordinator(
-  port: number,
-  fileNum: number | null,
-  importMainCss: boolean,
-  waitForIdle: boolean,
-  callback: (err: Error | null, css?: string) => void,
-): void {
-  const params = new URLSearchParams()
-  if (fileNum != null) params.set('fileNum', String(fileNum))
-  params.set('importMainCss', String(importMainCss))
-  if (waitForIdle) params.set('waitForIdle', 'true')
-  const req = request(
-    {
-      hostname: '127.0.0.1',
-      port,
-      path: `/css?${params.toString()}`,
-      method: 'GET',
-      agent: keepAliveAgent,
-    },
-    (res) => {
-      const chunks: Buffer[] = []
-      res.on('data', (chunk: Buffer) => chunks.push(chunk))
-      res.on('end', () => {
-        if (res.statusCode !== 200) {
-          callback(new Error(`Coordinator CSS error: ${res.statusCode}`))
-          return
-        }
-        callback(null, Buffer.concat(chunks).toString('utf-8'))
-      })
-    },
-  )
-  req.on('error', (err) => callback(err))
-  req.end()
-}
 
 const devupUICssLoader: RawLoaderDefinitionFunction<DevupUICssLoaderOptions> =
   function (source, map, meta) {
     const {
       watch,
       coordinatorPortFile,
+      coordinatorIdentity,
+      projectRoot = process.cwd(),
+      revisionFile,
+      themeFiles,
+      requestTimeoutMs,
       sheetFile,
       classMapFile,
       fileMapFile,
@@ -85,56 +53,40 @@ const devupUICssLoader: RawLoaderDefinitionFunction<DevupUICssLoaderOptions> =
       defaultFileMap,
       defaultSheet,
     } = this.getOptions()
-
-    // Coordinator mode: fetch live CSS from coordinator (disk content is stale)
     if (coordinatorPortFile) {
       const callback = this.async()
-      // Check both resourcePath and resourceQuery for ?fileNum=N
-      // Turbopack may embed query in resourcePath or provide it via resourceQuery
-      const resourceQuery =
-        (this as unknown as { resourceQuery?: string }).resourceQuery ?? ''
-      const pathWithQuery = this.resourcePath + resourceQuery
-      const fileNum = getFileNumByFilename(pathWithQuery)
-      const importMainCss = fileNum !== null
-      const tryFetch = (retries: number) => {
-        if (!existsSync(coordinatorPortFile)) {
-          if (retries > 0) {
-            setTimeout(() => tryFetch(retries - 1), 50)
-            return
-          }
-          callback(missingPortFileError(coordinatorPortFile))
-          return
-        }
-        try {
-          const port = readCoordinatorPort(coordinatorPortFile)
-          fetchCssFromCoordinator(
-            port,
-            fileNum,
-            importMainCss,
-            !watch,
-            (err, css) => {
-              if (err) {
-                if (isConnectionError(err)) {
-                  // The port may belong to a coordinator that has since been
-                  // replaced; forget it so the next call re-reads the file.
-                  cachedPort = null
-                  return callback(
-                    unreachableCoordinatorError(coordinatorPortFile, err),
-                  )
-                }
-                return callback(err)
-              }
-              callback(null, css)
-            },
-          )
-        } catch (error) {
-          callback(error as Error)
-        }
+      const fileNum = getFileNumByFilename(
+        this.resourcePath + (this.resourceQuery ?? ''),
+      )
+      const params = new URLSearchParams({
+        importMainCss: String(fileNum !== null),
+      })
+      if (fileNum !== null) params.set('fileNum', String(fileNum))
+      if (!watch) params.set('waitForIdle', 'true')
+      const operation = {
+        portFile: coordinatorPortFile,
+        identity: coordinatorIdentity,
+        resourcePath: this.resourcePath,
+        path: `/css?${params}`,
+        timeoutMs: requestTimeoutMs,
       }
-      tryFetch(20)
+      try {
+        this.addDependency(coordinatorPortFile)
+        if (revisionFile) this.addDependency(resolve(projectRoot, revisionFile))
+        for (const file of themeFiles ??
+          collectDevupConfigFiles(resolve(projectRoot, themeFile))) {
+          this.addDependency(resolve(projectRoot, file))
+        }
+      } catch (error) {
+        callback(new CoordinatorRequestError(operation, error))
+        return
+      }
+      requestCoordinator(operation).then(
+        (css) => callback(null, css),
+        (error: Error) => callback(error),
+      )
       return
     }
-
     const {
       getCss,
       importClassMap,
@@ -143,28 +95,31 @@ const devupUICssLoader: RawLoaderDefinitionFunction<DevupUICssLoaderOptions> =
       registerTheme,
     } = loadWasm()
     if (!init) {
-      init = true
       if (watch) {
-        // restart loader issue
-        // loader should read files when they exist in watch mode
-        if (existsSync(sheetFile))
-          importSheet(JSON.parse(readFileSync(sheetFile, 'utf-8')))
-        if (existsSync(classMapFile))
-          importClassMap(JSON.parse(readFileSync(classMapFile, 'utf-8')))
-        if (existsSync(fileMapFile))
-          importFileMap(JSON.parse(readFileSync(fileMapFile, 'utf-8')))
-        if (existsSync(themeFile))
-          registerTheme(
-            JSON.parse(readFileSync(themeFile, 'utf-8'))?.['theme'] ?? {},
-          )
+        const sheet = existsSync(sheetFile)
+          ? JSON.parse(readFileSync(sheetFile, 'utf-8'))
+          : undefined
+        const classes = existsSync(classMapFile)
+          ? JSON.parse(readFileSync(classMapFile, 'utf-8'))
+          : undefined
+        const files = existsSync(fileMapFile)
+          ? JSON.parse(readFileSync(fileMapFile, 'utf-8'))
+          : undefined
+        const config = existsSync(themeFile)
+          ? JSON.parse(readFileSync(themeFile, 'utf-8'))
+          : undefined
+        if (sheet !== undefined) importSheet(sheet)
+        if (classes !== undefined) importClassMap(classes)
+        if (files !== undefined) importFileMap(files)
+        if (config !== undefined) registerTheme(config?.theme ?? {})
       } else {
         importFileMap(defaultFileMap)
         importClassMap(defaultClassMap)
         importSheet(defaultSheet)
         registerTheme(theme)
       }
+      init = true
     }
-
     this.callback(
       null,
       !watch ? source : getCss(getFileNumByFilename(this.resourcePath), true),
@@ -174,10 +129,7 @@ const devupUICssLoader: RawLoaderDefinitionFunction<DevupUICssLoaderOptions> =
   }
 export default devupUICssLoader
 
-/** @internal Reset init state for testing purposes only */
 export const resetInit = () => {
   init = false
-  cachedPort = null
 }
-
 export { setWasmForTesting } from './wasm'

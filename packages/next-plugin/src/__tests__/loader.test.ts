@@ -1,6 +1,8 @@
+import { randomUUID } from 'node:crypto'
 import * as fs from 'node:fs'
 import * as fsPromises from 'node:fs/promises'
-import * as http from 'node:http'
+import { createServer } from 'node:http'
+import { tmpdir } from 'node:os'
 import { join, resolve } from 'node:path'
 
 import * as wasm from '@devup-ui/wasm'
@@ -14,1103 +16,284 @@ import {
   spyOn,
 } from 'bun:test'
 
+import { formatPortFile } from '../coordinator-port'
 import type { DevupUILoaderOptions } from '../loader'
-import devupUILoader, { resetInit, setWasmForTesting } from '../loader'
+import loader, { resetInit, setWasmForTesting } from '../loader'
 
-type LoaderThis = ThisParameterType<typeof devupUILoader>
-
-interface TestLoaderContext {
-  getOptions: () => Partial<DevupUILoaderOptions>
-  async: ReturnType<typeof mock>
-  resourcePath: string
-  addDependency?: ReturnType<typeof mock>
+const defaults = {
+  package: 'package',
+  cssDir: 'cssDir',
+  sheetFile: 'sheetFile',
+  classMapFile: 'classMapFile',
+  fileMapFile: 'fileMapFile',
+  themeFile: 'themeFile',
+  watch: false,
+  singleCss: true,
+  defaultSheet: {},
+  defaultClassMap: {},
+  defaultFileMap: {},
+}
+function invoke(
+  options: Partial<DevupUILoaderOptions> = {},
+  resourcePath = resolve('App.tsx'),
+) {
+  const addDependency = mock()
+  const callback = mock()
+  const result = new Promise<{ code?: string; map?: string | null }>(
+    (resolve, reject) => {
+      callback.mockImplementation(
+        (error: Error | null, code?: string, map?: string | null) => {
+          if (error) reject(error)
+          else resolve({ code, map })
+        },
+      )
+      Reflect.apply(
+        loader,
+        {
+          getOptions: () => ({ ...defaults, ...options }),
+          resourcePath,
+          addDependency,
+          async: () => callback,
+        },
+        [Buffer.from('source')],
+      )
+    },
+  )
+  return { result, callback, addDependency }
 }
 
-interface TestClientRequest {
-  on: ReturnType<typeof mock>
-  write: ReturnType<typeof mock>
-  end: ReturnType<typeof mock>
-}
-
-function asLoaderContext(context: TestLoaderContext): LoaderThis {
-  return context as unknown as LoaderThis
-}
-
-function asClientRequest(request: TestClientRequest): http.ClientRequest {
-  return request as unknown as http.ClientRequest
-}
-
-let existsSyncSpy: ReturnType<typeof spyOn>
-let readFileSyncSpy: ReturnType<typeof spyOn>
-let writeFileSpy: ReturnType<typeof spyOn>
-let codeExtractSpy: ReturnType<typeof spyOn>
-let exportClassMapSpy: ReturnType<typeof spyOn>
-let exportFileMapSpy: ReturnType<typeof spyOn>
-let exportSheetSpy: ReturnType<typeof spyOn>
-let getCssSpy: ReturnType<typeof spyOn>
-let importClassMapSpy: ReturnType<typeof spyOn>
-let importFileMapSpy: ReturnType<typeof spyOn>
-let importSheetSpy: ReturnType<typeof spyOn>
-let registerThemeSpy: ReturnType<typeof spyOn>
-let dateNowSpy: ReturnType<typeof spyOn>
-
-beforeEach(() => {
-  resetInit()
-  existsSyncSpy = spyOn(fs, 'existsSync').mockReturnValue(false)
-  readFileSyncSpy = spyOn(fs, 'readFileSync').mockReturnValue('{}')
-  writeFileSpy = spyOn(fsPromises, 'writeFile').mockResolvedValue(undefined)
-  codeExtractSpy = spyOn(wasm, 'codeExtract')
-  exportClassMapSpy = spyOn(wasm, 'exportClassMap')
-  exportFileMapSpy = spyOn(wasm, 'exportFileMap')
-  exportSheetSpy = spyOn(wasm, 'exportSheet')
-  getCssSpy = spyOn(wasm, 'getCss')
-  importClassMapSpy = spyOn(wasm, 'importClassMap').mockImplementation(() => {})
-  importFileMapSpy = spyOn(wasm, 'importFileMap').mockImplementation(() => {})
-  importSheetSpy = spyOn(wasm, 'importSheet').mockImplementation(() => {})
-  registerThemeSpy = spyOn(wasm, 'registerTheme').mockImplementation(() => {})
-  setWasmForTesting(wasm)
-  dateNowSpy = spyOn(Date, 'now').mockReturnValue(0)
-})
-
-afterEach(() => {
-  existsSyncSpy.mockRestore()
-  readFileSyncSpy.mockRestore()
-  writeFileSpy.mockRestore()
-  codeExtractSpy.mockRestore()
-  exportClassMapSpy.mockRestore()
-  exportFileMapSpy.mockRestore()
-  exportSheetSpy.mockRestore()
-  getCssSpy.mockRestore()
-  importClassMapSpy.mockRestore()
-  importFileMapSpy.mockRestore()
-  importSheetSpy.mockRestore()
-  registerThemeSpy.mockRestore()
-  dateNowSpy.mockRestore()
-})
-
-const waitFor = async (fn: () => void, timeout = 1000) => {
-  const start = performance.now()
-  while (performance.now() - start < timeout) {
-    try {
-      fn()
-      return
-    } catch {
-      await new Promise((r) => setTimeout(r, 10))
-    }
-  }
-  fn()
-}
-
-describe('devupUILoader', () => {
-  // Test BUILD mode init (lines 68-73)
-  it('should use default maps in non-watch mode on init', async () => {
-    const asyncCallback = mock()
-    const defaultClassMap = { test: 'classMap' }
-    const defaultFileMap = { test: 'fileMap' }
-    const defaultSheet = { test: 'sheet' }
-    const theme = { colors: { primary: '#000' } }
-    const t = {
-      getOptions: () => ({
-        package: 'package',
-        cssDir: 'cssFile',
-        watch: false,
-        singleCss: true,
-        theme,
-        defaultClassMap,
-        defaultFileMap,
-        defaultSheet,
-      }),
-      async: mock().mockReturnValue(asyncCallback),
-      resourcePath: 'nowatch-init.tsx',
-      addDependency: mock(),
-    }
-
-    codeExtractSpy.mockReturnValue({
-      code: 'code',
-      css: undefined,
-      free: mock(),
-      map: undefined,
+describe('local source extraction', () => {
+  let spies: ReturnType<typeof spyOn>[] = []
+  let extract: ReturnType<typeof spyOn>,
+    exists: ReturnType<typeof spyOn>,
+    read: ReturnType<typeof spyOn>,
+    write: ReturnType<typeof spyOn>
+  beforeEach(() => {
+    resetInit()
+    setWasmForTesting(wasm)
+    exists = spyOn(fs, 'existsSync').mockReturnValue(false)
+    read = spyOn(fs, 'readFileSync').mockReturnValue('{}')
+    write = spyOn(fsPromises, 'writeFile').mockResolvedValue(undefined)
+    extract = spyOn(wasm, 'codeExtract').mockReturnValue({
+      code: 'compiled',
       cssFile: undefined,
+      map: undefined,
       updatedBaseStyle: false,
-      dependencies: ['src/tokens.ts'],
+      dependencies: ['tokens.ts'],
+      free: mock(),
       [Symbol.dispose]: mock(),
     })
-
-    devupUILoader.bind(asLoaderContext(t))(
-      Buffer.from('code'),
-      'nowatch-init.tsx',
-    )
-
-    await waitFor(() => {
-      expect(asyncCallback).toHaveBeenCalledWith(null, 'code', null)
-    })
-
-    // Verify non-watch init was executed (lines 68-73)
-    expect(importFileMapSpy).toHaveBeenCalledWith(defaultFileMap)
-    expect(importClassMapSpy).toHaveBeenCalledWith(defaultClassMap)
-    expect(importSheetSpy).toHaveBeenCalledWith(defaultSheet)
-    expect(registerThemeSpy).toHaveBeenCalledWith(theme)
-    expect(t.addDependency).toHaveBeenCalledWith(resolve('src/tokens.ts'))
+    spies = [exists, read, write, extract]
+    for (const key of [
+      'importSheet',
+      'importClassMap',
+      'importFileMap',
+      'registerTheme',
+    ] as const)
+      spies.push(spyOn(wasm, key).mockImplementation(() => {}))
+    for (const key of [
+      'exportSheet',
+      'exportClassMap',
+      'exportFileMap',
+      'getCss',
+    ] as const)
+      spies.push(spyOn(wasm, key).mockReturnValue('state'))
   })
-
-  // Test WATCH mode init (lines 55-67) + CSS writing (lines 94-111)
-  it('should initialize watch mode and write css files', async () => {
-    existsSyncSpy.mockReturnValue(true)
-    readFileSyncSpy.mockReturnValue(
-      '{"theme": {"colors": {"primary": "#fff"}}}',
+  afterEach(() => {
+    for (const spy of spies) spy.mockRestore()
+  })
+  it('extracts with project-relative ids and dependency paths in build mode', async () => {
+    const projectRoot = resolve('project')
+    const run = invoke({ projectRoot }, join(projectRoot, 'App.tsx'))
+    expect(await run.result).toEqual({ code: 'compiled', map: null })
+    expect(extract.mock.calls[0]?.[0]).toBe('App.tsx')
+    expect(run.addDependency).toHaveBeenCalledWith(
+      join(projectRoot, 'tokens.ts'),
     )
-    exportSheetSpy.mockReturnValue('sheet')
-    exportClassMapSpy.mockReturnValue('classMap')
-    exportFileMapSpy.mockReturnValue('fileMap')
-    getCssSpy.mockReturnValue('base-css')
-
-    const asyncCallback = mock()
-    const t = {
-      getOptions: () => ({
-        package: 'package',
-        cssDir: 'cssDir',
-        sheetFile: 'sheetFile',
-        classMapFile: 'classMapFile',
-        fileMapFile: 'fileMapFile',
-        themeFile: 'themeFile',
-        watch: true,
-        singleCss: true,
-      }),
-      async: mock().mockReturnValue(asyncCallback),
-      resourcePath: 'watch-init.tsx',
-      addDependency: mock(),
-    }
-
-    codeExtractSpy.mockReturnValue({
-      code: 'code',
-      css: 'css',
-      free: mock(),
+    expect(write).not.toHaveBeenCalled()
+  })
+  it('initializes defaults once across local operations', async () => {
+    await invoke().result
+    await invoke().result
+    expect(wasm.importSheet).toHaveBeenCalledTimes(1)
+    expect(wasm.registerTheme).toHaveBeenCalledWith(undefined)
+  })
+  it('writes updated sheet and per-file state in watch mode', async () => {
+    exists.mockReturnValue(true)
+    read.mockReturnValue('{"theme":{"colors":{}}}')
+    extract.mockReturnValue({
+      code: 'compiled',
       map: '{}',
       cssFile: 'devup-ui-1.css',
       updatedBaseStyle: true,
-      [Symbol.dispose]: mock(),
     })
-
-    devupUILoader.bind(asLoaderContext(t))(
-      Buffer.from('code'),
-      'watch-init.tsx',
-    )
-
-    await waitFor(() => {
-      expect(asyncCallback).toHaveBeenCalledWith(null, 'code', '{}')
-    })
-
-    // Verify watch mode init was executed (lines 55-67)
-    expect(existsSyncSpy).toHaveBeenCalledWith('sheetFile')
-    expect(existsSyncSpy).toHaveBeenCalledWith('classMapFile')
-    expect(existsSyncSpy).toHaveBeenCalledWith('fileMapFile')
-    expect(existsSyncSpy).toHaveBeenCalledWith('themeFile')
-    expect(registerThemeSpy).toHaveBeenCalledWith({
-      colors: { primary: '#fff' },
-    })
-
-    // Verify updatedBaseStyle && watch branch (lines 94-99)
-    expect(writeFileSpy).toHaveBeenCalledWith(
+    const run = invoke({ watch: true })
+    expect(await run.result).toEqual({ code: 'compiled', map: '{}' })
+    expect(write).toHaveBeenCalledWith(
       join('cssDir', 'devup-ui.css'),
-      'base-css',
+      'state',
       'utf-8',
     )
-
-    // Verify cssFile && watch branch (lines 100-111)
-    expect(writeFileSpy).toHaveBeenCalledWith(
-      join('cssDir', 'devup-ui-1.css'),
-      '/* watch-init.tsx 0 */',
-    )
-    expect(writeFileSpy).toHaveBeenCalledWith('sheetFile', 'sheet')
-    expect(writeFileSpy).toHaveBeenCalledWith('classMapFile', 'classMap')
-    expect(writeFileSpy).toHaveBeenCalledWith('fileMapFile', 'fileMap')
+    expect(write).toHaveBeenCalledWith('sheetFile', 'state')
+    expect(run.addDependency).toHaveBeenCalledWith('themeFile')
+    expect(wasm.registerTheme).toHaveBeenCalledWith({ colors: {} })
   })
-
-  it('should extract code without css in watch mode', async () => {
-    const asyncCallback = mock()
-    const t = {
-      getOptions: () => ({
-        package: 'package',
-        cssDir: 'cssFile',
-        sheetFile: 'sheetFile',
-        classMapFile: 'classMapFile',
-        fileMapFile: 'fileMapFile',
-        themeFile: 'themeFile',
-        watch: true,
-        singleCss: true,
-      }),
-      async: mock().mockReturnValue(asyncCallback),
-      resourcePath: 'index.tsx',
-      addDependency: mock(),
-    }
-    codeExtractSpy.mockReturnValue({
-      code: 'code',
-      css: undefined,
-      free: mock(),
-      map: undefined,
-      cssFile: undefined,
+  it('registers an empty theme when config has no theme', async () => {
+    exists.mockReturnValue(true)
+    await invoke({ watch: true, cssDir: resolve('.') }).result
+    expect(wasm.registerTheme).toHaveBeenCalledWith({})
+  })
+  it('does not import partial snapshots when a later snapshot cannot parse', async () => {
+    exists.mockReturnValue(true)
+    read.mockImplementation((file: unknown) =>
+      file === 'fileMapFile' ? 'broken' : '{}',
+    )
+    await expect(invoke({ watch: true }).result).rejects.toThrow()
+    expect(wasm.importSheet).not.toHaveBeenCalled()
+    expect(wasm.importClassMap).not.toHaveBeenCalled()
+  })
+  it('extracts with missing snapshot files in watch mode', async () => {
+    expect((await invoke({ watch: true }).result).code).toBe('compiled')
+    expect(wasm.importSheet).not.toHaveBeenCalled()
+  })
+  it.each([new Error('extraction failed'), 'extraction failed'])(
+    'propagates extraction failure',
+    async (error) => {
+      extract.mockImplementation(() => {
+        throw error
+      })
+      await expect(invoke().result).rejects.toThrow('extraction failed')
+    },
+  )
+  it('propagates write failure to the callback exactly once', async () => {
+    extract.mockReturnValue({
+      code: 'compiled',
+      cssFile: 'file.css',
       updatedBaseStyle: false,
-      [Symbol.dispose]: mock(),
     })
-    devupUILoader.bind(asLoaderContext(t))(Buffer.from('code'), 'index.tsx')
-
-    await waitFor(() => {
-      expect(asyncCallback).toHaveBeenCalledWith(null, 'code', null)
-    })
+    write.mockRejectedValue(new Error('write failed'))
+    const run = invoke({ watch: true })
+    await expect(run.result).rejects.toThrow('write failed')
+    expect(run.callback).toHaveBeenCalledTimes(1)
   })
+  it('rejects malformed source maps rather than returning success', async () => {
+    extract.mockReturnValue({ code: 'compiled', map: 'broken' })
+    await expect(invoke().result).rejects.toThrow()
+  })
+})
 
-  it('should extract code without css in build mode', async () => {
-    const asyncCallback = mock()
-    const t = {
-      getOptions: () => ({
-        package: 'package',
-        cssDir: 'cssFile',
-        watch: false,
-        singleCss: true,
-        defaultClassMap: {},
-        defaultFileMap: {},
-        defaultSheet: {},
-      }),
-      async: mock().mockReturnValue(asyncCallback),
-      resourcePath: 'index.tsx',
-      addDependency: mock(),
-    }
-    codeExtractSpy.mockReturnValue({
-      code: 'code',
-      css: undefined,
-      free: mock(),
-      map: undefined,
-      cssFile: undefined,
-      updatedBaseStyle: false,
-      [Symbol.dispose]: mock(),
+describe('coordinator source extraction', () => {
+  let dir: string
+  let server: ReturnType<typeof createServer>
+  let response = '{}'
+  let status = 200
+  let payload = ''
+  beforeEach(async () => {
+    dir = fs.mkdtempSync(join(tmpdir(), 'devup-loader-'))
+    response = '{}'
+    status = 200
+    payload = ''
+    const identity = { project: dir, token: randomUUID() }
+    server = createServer((req, res) => {
+      if (req.url === '/health')
+        res.end(formatPortFile(port, process.pid, identity))
+      else {
+        req.on('data', (chunk: Buffer) => {
+          payload += chunk.toString()
+        })
+        req.on('end', () => {
+          res.writeHead(status)
+          res.end(response)
+        })
+      }
     })
-    devupUILoader.bind(asLoaderContext(t))(Buffer.from('code'), 'index.tsx')
-
-    expect(codeExtractSpy).toHaveBeenCalledWith(
-      'index.tsx',
-      'code',
-      'package',
-      './cssFile',
-      true,
-      false,
-      true,
-      {},
+    await new Promise<void>((resolve) => server.listen(0, '127.0.0.1', resolve))
+    const address = server.address()
+    if (!address || typeof address === 'string')
+      throw new Error('Expected TCP server')
+    const port = address.port
+    fs.writeFileSync(
+      join(dir, 'endpoint'),
+      formatPortFile(port, process.pid, identity),
     )
-    await waitFor(() => {
-      expect(asyncCallback).toHaveBeenCalledWith(null, 'code', null)
-    })
-  })
-
-  it('should handle error in build mode', async () => {
-    const asyncCallback = mock()
-    const t = {
-      getOptions: () => ({
-        package: 'package',
-        cssDir: 'cssFile',
-        watch: false,
-        singleCss: true,
-        defaultClassMap: {},
-        defaultFileMap: {},
-        defaultSheet: {},
-      }),
-      async: mock().mockReturnValue(asyncCallback),
-      resourcePath: 'index.tsx',
-      addDependency: mock(),
-    }
-    codeExtractSpy.mockImplementation(() => {
-      throw new Error('error')
-    })
-    devupUILoader.bind(asLoaderContext(t))(Buffer.from('code'), 'index.tsx')
-
-    await waitFor(() => {
-      expect(asyncCallback).toHaveBeenCalledWith(new Error('error'))
-    })
-  })
-
-  it('should handle error in watch mode', async () => {
-    const asyncCallback = mock()
-    const t = {
-      getOptions: () => ({
-        package: 'package',
-        cssDir: 'cssFile',
-        sheetFile: 'sheetFile',
-        classMapFile: 'classMapFile',
-        fileMapFile: 'fileMapFile',
-        themeFile: 'themeFile',
-        watch: true,
-        singleCss: true,
-      }),
-      async: mock().mockReturnValue(asyncCallback),
-      resourcePath: 'error-test.tsx',
-      addDependency: mock(),
-    }
-
-    codeExtractSpy.mockImplementation(() => {
-      throw new Error('extraction error')
-    })
-
-    devupUILoader.bind(asLoaderContext(t))(
-      Buffer.from('code'),
-      'error-test.tsx',
+    fs.writeFileSync(
+      join(dir, 'themeFile'),
+      JSON.stringify({ extends: ['base.json', 'missing.json'] }),
     )
-
-    await waitFor(() => {
-      expect(asyncCallback).toHaveBeenCalledWith(expect.any(Error))
-    })
+    fs.writeFileSync(join(dir, 'base.json'), '{}')
   })
-
-  it('should propagate css write failures in watch mode', async () => {
-    const asyncCallback = mock()
-    const writeError = new Error('write failed')
-    const t = {
-      getOptions: () => ({
-        package: 'package',
-        cssDir: 'cssDir',
-        sheetFile: 'sheetFile',
-        classMapFile: 'classMapFile',
-        fileMapFile: 'fileMapFile',
-        themeFile: 'themeFile',
-        watch: true,
-        singleCss: true,
-      }),
-      async: mock().mockReturnValue(asyncCallback),
-      resourcePath: 'write-error.tsx',
-      addDependency: mock(),
-    }
-    writeFileSpy.mockRejectedValueOnce(writeError)
-    codeExtractSpy.mockReturnValue({
-      code: 'code',
-      css: 'css',
-      free: mock(),
-      map: '{}',
-      cssFile: 'devup-ui-1.css',
-      updatedBaseStyle: false,
-      [Symbol.dispose]: mock(),
-    })
-
-    devupUILoader.bind(asLoaderContext(t))(
-      Buffer.from('code'),
-      'write-error.tsx',
+  afterEach(async () => {
+    server.closeAllConnections()
+    await new Promise<void>((resolve) => server.close(() => resolve()))
+    fs.rmSync(dir, { recursive: true, force: true })
+  })
+  function run(extra: Partial<DevupUILoaderOptions> = {}) {
+    return invoke(
+      {
+        coordinatorPortFile: join(dir, 'endpoint'),
+        projectRoot: dir,
+        requestTimeoutMs: 100,
+        revisionFile: 'revision',
+        ...extra,
+      },
+      join(dir, 'src', 'App.tsx'),
     )
-
-    await waitFor(() => {
-      expect(asyncCallback).toHaveBeenCalledWith(writeError)
+  }
+  it('returns code/map and watches config inheritance, missing config, revision and imported tokens', async () => {
+    response = JSON.stringify({
+      code: 'compiled',
+      map: '{"version":3}',
+      dependencies: ['tokens.ts', 1],
     })
-    expect(asyncCallback).not.toHaveBeenCalledWith(null, 'code', {})
+    const request = run()
+    expect(await request.result).toEqual({
+      code: 'compiled',
+      map: '{"version":3}',
+    })
+    expect(JSON.parse(payload).filename).toBe('src/App.tsx')
+    for (const file of [
+      'endpoint',
+      'revision',
+      'themeFile',
+      'base.json',
+      'missing.json',
+      'tokens.ts',
+    ])
+      expect(request.addDependency).toHaveBeenCalledWith(join(dir, file))
   })
-
-  it('should use correct relative css path', async () => {
-    const asyncCallback = mock()
-    const t = {
-      getOptions: () => ({
-        package: 'package',
-        cssDir: './foo',
-        watch: false,
-        singleCss: true,
-        defaultClassMap: {},
-        defaultFileMap: {},
-        defaultSheet: {},
-      }),
-      async: mock().mockReturnValue(asyncCallback),
-      resourcePath: './foo/index.tsx',
-      addDependency: mock(),
-    }
-    codeExtractSpy.mockReturnValue({
-      code: 'code',
-      css: 'css',
-      free: mock(),
-      map: undefined,
-      cssFile: 'cssFile',
-      updatedBaseStyle: false,
-      [Symbol.dispose]: mock(),
+  it('uses explicit theme dependency files when supplied', async () => {
+    response = '{"code":"compiled"}'
+    const request = run({
+      themeFiles: ['explicit.json'],
+      revisionFile: undefined,
     })
-    devupUILoader.bind(asLoaderContext(t))(
-      Buffer.from('code'),
-      '/foo/index.tsx',
+    expect(await request.result).toEqual({ code: 'compiled', map: null })
+    expect(request.addDependency).toHaveBeenCalledWith(
+      join(dir, 'explicit.json'),
     )
-    await waitFor(() => {
-      expect(asyncCallback).toHaveBeenCalledWith(null, 'code', null)
-    })
   })
-
-  it('should not write css files in build mode even with cssFile', async () => {
-    const asyncCallback = mock()
-    const t = {
-      getOptions: () => ({
-        package: 'package',
-        cssDir: 'cssFile',
-        watch: false,
-        singleCss: true,
-        defaultClassMap: {},
-        defaultFileMap: {},
-        defaultSheet: {},
-      }),
-      async: mock().mockReturnValue(asyncCallback),
-      resourcePath: 'index.tsx',
-      addDependency: mock(),
-    }
-    codeExtractSpy.mockReturnValue({
-      code: 'code',
-      css: 'css',
-      free: mock(),
-      map: '{}',
-      cssFile: 'cssFile',
-      updatedBaseStyle: true,
-      [Symbol.dispose]: mock(),
-    })
-    devupUILoader.bind(asLoaderContext(t))(Buffer.from('code'), 'index.tsx')
-
-    await waitFor(() => {
-      expect(asyncCallback).toHaveBeenCalledWith(null, 'code', '{}')
-    })
-    // In build mode (watch=false), no CSS files should be written
-    expect(writeFileSpy).not.toHaveBeenCalled()
+  it.each([
+    'null',
+    '{}',
+    '{"code":1}',
+    '{',
+    '{"code":"compiled","map":"broken"}',
+  ])('rejects malformed extraction data %s with location', async (body) => {
+    response = body
+    const request = run()
+    await expect(request.result).rejects.toThrow(
+      `${join(dir, 'src', 'App.tsx')}:1:1:`,
+    )
+    expect(request.callback).toHaveBeenCalledTimes(1)
   })
-
-  describe('coordinator mode', () => {
-    it('should delegate to coordinator via HTTP when coordinatorPortFile exists', async () => {
-      existsSyncSpy.mockReturnValue(true)
-      readFileSyncSpy.mockReturnValue('12345')
-
-      const responseBody = JSON.stringify({
-        code: 'coordinator code',
-        map: '{"version":3}',
-        cssFile: 'devup-ui-1.css',
-        updatedBaseStyle: true,
-        dependencies: ['src/tokens.ts', 1],
-      })
-
-      const requestSpy = spyOn(http, 'request').mockImplementation(
-        (_options: any, callback?: any) => {
-          // Simulate a response
-          const fakeRes = {
-            statusCode: 200,
-            on: mock((event: string, handler: (...args: unknown[]) => void) => {
-              if (event === 'data') {
-                handler(Buffer.from(responseBody))
-              }
-              if (event === 'end') {
-                handler()
-              }
-              return fakeRes
-            }),
-          }
-          if (callback) callback(fakeRes)
-          return asClientRequest({
-            on: mock(() => ({})),
-            write: mock(),
-            end: mock(),
-          })
-        },
-      )
-
-      const asyncCallback = mock()
-      const t = {
-        getOptions: () => ({
-          package: 'package',
-          cssDir: 'cssDir',
-          sheetFile: 'sheetFile',
-          classMapFile: 'classMapFile',
-          fileMapFile: 'fileMapFile',
-          themeFile: 'themeFile',
-          watch: true,
-          singleCss: true,
-          coordinatorPortFile: 'coordinator.port',
-        }),
-        async: mock().mockReturnValue(asyncCallback),
-        resourcePath: join(process.cwd(), 'src', 'App.tsx'),
-        addDependency: mock(),
-      }
-
-      devupUILoader.bind(asLoaderContext(t))(
-        Buffer.from('source code'),
-        'src/App.tsx',
-      )
-
-      await waitFor(() => {
-        expect(asyncCallback).toHaveBeenCalledWith(
-          null,
-          'coordinator code',
-          '{"version":3}',
-        )
-      })
-
-      expect(t.addDependency).toHaveBeenCalledWith(resolve('src/tokens.ts'))
-      expect(t.addDependency).not.toHaveBeenCalledWith(resolve('1'))
-
-      // Verify HTTP request was made
-      expect(requestSpy).toHaveBeenCalledTimes(1)
-      const reqOptions = requestSpy.mock.calls[0]![0] as Record<string, unknown>
-      expect(reqOptions.hostname).toBe('127.0.0.1')
-      expect(reqOptions.port).toBe(12345)
-      expect(reqOptions.path).toBe('/extract')
-      expect(reqOptions.method).toBe('POST')
-
-      // Verify NO WASM functions were called
-      expect(codeExtractSpy).not.toHaveBeenCalled()
-
-      requestSpy.mockRestore()
-    })
-
-    it('should handle coordinator HTTP error', async () => {
-      existsSyncSpy.mockReturnValue(true)
-      readFileSyncSpy.mockReturnValue('12345')
-
-      const requestSpy = spyOn(http, 'request').mockImplementation(
-        (_options: any, _callback?: any) => {
-          const fakeReq = {
-            on: mock((event: string, handler: (...args: unknown[]) => void) => {
-              if (event === 'error') {
-                // Trigger error asynchronously
-                setTimeout(() => handler(new Error('connection refused')), 0)
-              }
-              return fakeReq
-            }),
-            write: mock(),
-            end: mock(),
-          }
-          return asClientRequest(fakeReq)
-        },
-      )
-
-      const asyncCallback = mock()
-      const t = {
-        getOptions: () => ({
-          package: 'package',
-          cssDir: 'cssDir',
-          sheetFile: 'sheetFile',
-          classMapFile: 'classMapFile',
-          fileMapFile: 'fileMapFile',
-          themeFile: 'themeFile',
-          watch: true,
-          singleCss: true,
-          coordinatorPortFile: 'coordinator.port',
-        }),
-        async: mock().mockReturnValue(asyncCallback),
-        resourcePath: join(process.cwd(), 'src', 'App.tsx'),
-        addDependency: mock(),
-      }
-
-      devupUILoader.bind(asLoaderContext(t))(
-        Buffer.from('source code'),
-        'src/App.tsx',
-      )
-
-      await waitFor(() => {
-        expect(asyncCallback).toHaveBeenCalledWith(expect.any(Error))
-      })
-
-      requestSpy.mockRestore()
-    })
-
-    it('should report a coordinator that no longer answers', async () => {
-      existsSyncSpy.mockReturnValue(true)
-      readFileSyncSpy.mockReturnValue('12346')
-
-      const requestSpy = spyOn(http, 'request').mockImplementation(
-        (_options: any, _callback?: any) => {
-          const fakeReq = {
-            on: mock((event: string, handler: (...args: unknown[]) => void) => {
-              if (event === 'error') {
-                setTimeout(
-                  () =>
-                    handler(
-                      Object.assign(new Error('refused'), {
-                        code: 'ECONNREFUSED',
-                      }),
-                    ),
-                  0,
-                )
-              }
-              return fakeReq
-            }),
-            write: mock(),
-            end: mock(),
-          }
-          return asClientRequest(fakeReq)
-        },
-      )
-
-      const asyncCallback = mock()
-      const t = {
-        getOptions: () => ({
-          package: 'package',
-          cssDir: 'cssDir',
-          sheetFile: 'sheetFile',
-          classMapFile: 'classMapFile',
-          fileMapFile: 'fileMapFile',
-          themeFile: 'themeFile',
-          watch: true,
-          singleCss: true,
-          coordinatorPortFile: 'coordinator.port',
-        }),
-        async: mock().mockReturnValue(asyncCallback),
-        resourcePath: join(process.cwd(), 'src', 'App.tsx'),
-        addDependency: mock(),
-      }
-
-      devupUILoader.bind(asLoaderContext(t))(
-        Buffer.from('source code'),
-        'src/App.tsx',
-      )
-
-      await waitFor(() => {
-        expect(asyncCallback).toHaveBeenCalledWith(
-          expect.objectContaining({
-            message: expect.stringContaining('coordinator.port'),
-          }),
-        )
-      })
-
-      requestSpy.mockRestore()
-    })
-    it('should handle coordinator non-200 response', async () => {
-      existsSyncSpy.mockReturnValue(true)
-      readFileSyncSpy.mockReturnValue('12345')
-
-      const responseBody = JSON.stringify({
-        error: 'extraction failed on server',
-      })
-
-      const requestSpy = spyOn(http, 'request').mockImplementation(
-        (_options: any, callback?: any) => {
-          const fakeRes = {
-            statusCode: 500,
-            on: mock((event: string, handler: (...args: unknown[]) => void) => {
-              if (event === 'data') handler(Buffer.from(responseBody))
-              if (event === 'end') handler()
-              return fakeRes
-            }),
-          }
-          if (callback) callback(fakeRes)
-          return asClientRequest({
-            on: mock(() => ({})),
-            write: mock(),
-            end: mock(),
-          })
-        },
-      )
-
-      const asyncCallback = mock()
-      const t = {
-        getOptions: () => ({
-          package: 'package',
-          cssDir: 'cssDir',
-          sheetFile: 'sheetFile',
-          classMapFile: 'classMapFile',
-          fileMapFile: 'fileMapFile',
-          themeFile: 'themeFile',
-          watch: true,
-          singleCss: true,
-          coordinatorPortFile: 'coordinator.port',
-        }),
-        async: mock().mockReturnValue(asyncCallback),
-        resourcePath: join(process.cwd(), 'src', 'App.tsx'),
-        addDependency: mock(),
-      }
-
-      devupUILoader.bind(asLoaderContext(t))(
-        Buffer.from('source code'),
-        'src/App.tsx',
-      )
-
-      await waitFor(() => {
-        expect(asyncCallback).toHaveBeenCalledWith(
-          new Error('extraction failed on server'),
-        )
-      })
-
-      requestSpy.mockRestore()
-    })
-
-    it('should handle non-object coordinator response', async () => {
-      existsSyncSpy.mockReturnValue(true)
-      readFileSyncSpy.mockReturnValue('12345')
-
-      const requestSpy = spyOn(http, 'request').mockImplementation(
-        (_options: any, callback?: any) => {
-          const fakeRes = {
-            statusCode: 200,
-            on: mock((event: string, handler: (...args: unknown[]) => void) => {
-              if (event === 'data') handler(Buffer.from('null'))
-              if (event === 'end') handler()
-              return fakeRes
-            }),
-          }
-          if (callback) callback(fakeRes)
-          return asClientRequest({
-            on: mock(() => ({})),
-            write: mock(),
-            end: mock(),
-          })
-        },
-      )
-
-      const asyncCallback = mock()
-      const t = {
-        getOptions: () => ({
-          package: 'package',
-          cssDir: 'cssDir',
-          sheetFile: 'sheetFile',
-          classMapFile: 'classMapFile',
-          fileMapFile: 'fileMapFile',
-          themeFile: 'themeFile',
-          watch: true,
-          singleCss: true,
-          coordinatorPortFile: 'coordinator.port',
-        }),
-        async: mock().mockReturnValue(asyncCallback),
-        resourcePath: join(process.cwd(), 'src', 'App.tsx'),
-        addDependency: mock(),
-      }
-
-      devupUILoader.bind(asLoaderContext(t))(
-        Buffer.from('source code'),
-        'src/App.tsx',
-      )
-
-      await waitFor(() => {
-        expect(asyncCallback).toHaveBeenCalledWith(
-          new Error('Coordinator response missing code'),
-        )
-      })
-
-      requestSpy.mockRestore()
-    })
-
-    it('should handle coordinator response without code', async () => {
-      existsSyncSpy.mockReturnValue(true)
-      readFileSyncSpy.mockReturnValue('12345')
-
-      const requestSpy = spyOn(http, 'request').mockImplementation(
-        (_options: any, callback?: any) => {
-          const fakeRes = {
-            statusCode: 200,
-            on: mock((event: string, handler: (...args: unknown[]) => void) => {
-              if (event === 'data')
-                handler(Buffer.from(JSON.stringify({ map: '{}' })))
-              if (event === 'end') handler()
-              return fakeRes
-            }),
-          }
-          if (callback) callback(fakeRes)
-          return asClientRequest({
-            on: mock(() => ({})),
-            write: mock(),
-            end: mock(),
-          })
-        },
-      )
-
-      const asyncCallback = mock()
-      const t = {
-        getOptions: () => ({
-          package: 'package',
-          cssDir: 'cssDir',
-          sheetFile: 'sheetFile',
-          classMapFile: 'classMapFile',
-          fileMapFile: 'fileMapFile',
-          themeFile: 'themeFile',
-          watch: true,
-          singleCss: true,
-          coordinatorPortFile: 'coordinator.port',
-        }),
-        async: mock().mockReturnValue(asyncCallback),
-        resourcePath: join(process.cwd(), 'src', 'App.tsx'),
-        addDependency: mock(),
-      }
-
-      devupUILoader.bind(asLoaderContext(t))(
-        Buffer.from('source code'),
-        'src/App.tsx',
-      )
-
-      await waitFor(() => {
-        expect(asyncCallback).toHaveBeenCalledWith(
-          new Error('Coordinator response missing code'),
-        )
-      })
-
-      requestSpy.mockRestore()
-    })
-
-    it('should handle malformed coordinator response', async () => {
-      existsSyncSpy.mockReturnValue(true)
-      readFileSyncSpy.mockReturnValue('12345')
-
-      const requestSpy = spyOn(http, 'request').mockImplementation(
-        (_options: any, callback?: any) => {
-          const fakeRes = {
-            statusCode: 200,
-            on: mock((event: string, handler: (...args: unknown[]) => void) => {
-              if (event === 'data') handler(Buffer.from('not json'))
-              if (event === 'end') handler()
-              return fakeRes
-            }),
-          }
-          if (callback) callback(fakeRes)
-          return asClientRequest({
-            on: mock(() => ({})),
-            write: mock(),
-            end: mock(),
-          })
-        },
-      )
-
-      const asyncCallback = mock()
-      const t = {
-        getOptions: () => ({
-          package: 'package',
-          cssDir: 'cssDir',
-          sheetFile: 'sheetFile',
-          classMapFile: 'classMapFile',
-          fileMapFile: 'fileMapFile',
-          themeFile: 'themeFile',
-          watch: true,
-          singleCss: true,
-          coordinatorPortFile: 'coordinator.port',
-        }),
-        async: mock().mockReturnValue(asyncCallback),
-        resourcePath: join(process.cwd(), 'src', 'App.tsx'),
-        addDependency: mock(),
-      }
-
-      devupUILoader.bind(asLoaderContext(t))(
-        Buffer.from('source code'),
-        'src/App.tsx',
-      )
-
-      await waitFor(() => {
-        expect(asyncCallback).toHaveBeenCalledWith(expect.any(Error))
-      })
-
-      requestSpy.mockRestore()
-    })
-
-    it('should retry and error when coordinatorPortFile never appears', async () => {
-      // existsSync always returns false — port file never appears
-      existsSyncSpy.mockReturnValue(false)
-
-      const asyncCallback = mock()
-      const t = {
-        getOptions: () => ({
-          package: 'package',
-          cssDir: 'cssDir',
-          watch: true,
-          singleCss: true,
-          coordinatorPortFile: 'nonexistent.port',
-          sheetFile: 'sheetFile',
-          classMapFile: 'classMapFile',
-          fileMapFile: 'fileMapFile',
-          themeFile: 'themeFile',
-        }),
-        async: mock().mockReturnValue(asyncCallback),
-        resourcePath: 'fallback.tsx',
-        addDependency: mock(),
-      }
-
-      devupUILoader.bind(asLoaderContext(t))(
-        Buffer.from('code'),
-        'fallback.tsx',
-      )
-
-      // Retries 20 times × 50ms = 1s max, then calls back with error
-      await waitFor(() => {
-        expect(asyncCallback).toHaveBeenCalledWith(
-          expect.objectContaining({
-            message: expect.stringContaining(
-              'Coordinator port file not found: nonexistent.port',
-            ),
-          }),
-        )
-      }, 3000)
-
-      // WASM should NOT be used — coordinator mode does not fall back
-      expect(codeExtractSpy).not.toHaveBeenCalled()
-    })
-
-    it('should retry and succeed when coordinatorPortFile appears after delay', async () => {
-      // First few calls: port file doesn't exist, then it appears
-      let callCount = 0
-      existsSyncSpy.mockImplementation((path: string) => {
-        if (path === 'coordinator.port') {
-          callCount++
-          return callCount > 3 // Appears on 4th check
-        }
-        return false
-      })
-      readFileSyncSpy.mockReturnValue('12345')
-
-      const responseBody = JSON.stringify({
-        code: 'coordinator code',
-        map: undefined,
-        cssFile: undefined,
-        updatedBaseStyle: false,
-      })
-
-      const requestSpy = spyOn(http, 'request').mockImplementation(
-        (_options: any, callback?: any) => {
-          const fakeRes = {
-            statusCode: 200,
-            on: mock((event: string, handler: (...args: unknown[]) => void) => {
-              if (event === 'data') handler(Buffer.from(responseBody))
-              if (event === 'end') handler()
-              return fakeRes
-            }),
-          }
-          if (callback) callback(fakeRes)
-          return asClientRequest({
-            on: mock(() => ({})),
-            write: mock(),
-            end: mock(),
-          })
-        },
-      )
-
-      const asyncCallback = mock()
-      const t = {
-        getOptions: () => ({
-          package: 'package',
-          cssDir: 'cssDir',
-          watch: true,
-          singleCss: true,
-          coordinatorPortFile: 'coordinator.port',
-          sheetFile: 'sheetFile',
-          classMapFile: 'classMapFile',
-          fileMapFile: 'fileMapFile',
-          themeFile: 'themeFile',
-        }),
-        async: mock().mockReturnValue(asyncCallback),
-        resourcePath: join(process.cwd(), 'src', 'App.tsx'),
-        addDependency: mock(),
-      }
-
-      devupUILoader.bind(asLoaderContext(t))(Buffer.from('code'), 'src/App.tsx')
-
-      await waitFor(() => {
-        expect(asyncCallback).toHaveBeenCalledWith(
-          null,
-          'coordinator code',
-          null,
-        )
-      })
-
-      expect(requestSpy).toHaveBeenCalledTimes(1)
-      requestSpy.mockRestore()
-    })
-
-    it('should handle error when reading coordinator port file fails', async () => {
-      existsSyncSpy.mockReturnValue(true)
-      readFileSyncSpy.mockImplementation((path: string) => {
-        if (path === 'coordinator.port') {
-          throw new Error('EACCES: permission denied')
-        }
-        return '{}'
-      })
-
-      const asyncCallback = mock()
-      const t = {
-        getOptions: () => ({
-          package: 'package',
-          cssDir: 'cssDir',
-          sheetFile: 'sheetFile',
-          classMapFile: 'classMapFile',
-          fileMapFile: 'fileMapFile',
-          themeFile: 'themeFile',
-          watch: true,
-          singleCss: true,
-          coordinatorPortFile: 'coordinator.port',
-        }),
-        async: mock().mockReturnValue(asyncCallback),
-        resourcePath: join(process.cwd(), 'src', 'App.tsx'),
-        addDependency: mock(),
-      }
-
-      devupUILoader.bind(asLoaderContext(t))(
-        Buffer.from('source code'),
-        'src/App.tsx',
-      )
-
-      await waitFor(() => {
-        expect(asyncCallback).toHaveBeenCalledWith(
-          new Error('EACCES: permission denied'),
-        )
-      })
-    })
-
-    it('should cache the coordinator port', async () => {
-      existsSyncSpy.mockReturnValue(true)
-      readFileSyncSpy.mockReturnValue('54321')
-
-      const responseBody = JSON.stringify({
-        code: 'code',
-        map: undefined,
-        cssFile: undefined,
-        updatedBaseStyle: false,
-      })
-
-      const requestSpy = spyOn(http, 'request').mockImplementation(
-        (_options: any, callback?: any) => {
-          const fakeRes = {
-            statusCode: 200,
-            on: mock((event: string, handler: (...args: unknown[]) => void) => {
-              if (event === 'data') handler(Buffer.from(responseBody))
-              if (event === 'end') handler()
-              return fakeRes
-            }),
-          }
-          if (callback) callback(fakeRes)
-          return asClientRequest({
-            on: mock(() => ({})),
-            write: mock(),
-            end: mock(),
-          })
-        },
-      )
-
-      const makeContext = () => ({
-        getOptions: () => ({
-          package: 'package',
-          cssDir: 'cssDir',
-          sheetFile: 'sheetFile',
-          classMapFile: 'classMapFile',
-          fileMapFile: 'fileMapFile',
-          themeFile: 'themeFile',
-          watch: true,
-          singleCss: true,
-          coordinatorPortFile: 'coordinator.port',
-        }),
-        async: mock().mockReturnValue(mock()),
-        resourcePath: join(process.cwd(), 'src', 'test.tsx'),
-        addDependency: mock(),
-      })
-
-      // First call reads port from file
-      devupUILoader.bind(asLoaderContext(makeContext()))(
-        Buffer.from('code'),
-        'test.tsx',
-      )
-      await waitFor(() => {
-        expect(requestSpy).toHaveBeenCalledTimes(1)
-      })
-
-      // Second call should use cached port (readFileSync called only once for port)
-      devupUILoader.bind(asLoaderContext(makeContext()))(
-        Buffer.from('code'),
-        'test.tsx',
-      )
-      await waitFor(() => {
-        expect(requestSpy).toHaveBeenCalledTimes(2)
-      })
-
-      // readFileSync should only be called once for the port file
-      // (existsSync is called each time, but readFileSync for port file only once due to caching)
-      const portReads = readFileSyncSpy.mock.calls.filter(
-        (call: unknown[]) => call[0] === 'coordinator.port',
-      )
-      expect(portReads.length).toBe(1)
-
-      requestSpy.mockRestore()
-    })
+  it('propagates server build-time error details', async () => {
+    status = 500
+    response = '{"error":"tokens.ts:3:5: failed"}'
+    await expect(run().result).rejects.toThrow('tokens.ts:3:5: failed')
+  })
+  it('reports invalid config with a located coordinator error before dispatch', async () => {
+    fs.writeFileSync(join(dir, 'themeFile'), 'broken')
+    await expect(run().result).rejects.toThrow(`${join(dir, 'themeFile')}:1:1:`)
+    expect(payload).toBe('')
   })
 })
