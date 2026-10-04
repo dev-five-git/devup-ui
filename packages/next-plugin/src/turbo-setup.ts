@@ -158,9 +158,7 @@ function buildSetup(
       ? { stateFile: session.stateFile, revisionFile: session.revisionFile }
       : {}),
   })
-  retainSession({ session, coordinator })
-
-  return {
+  const setup: SetupResult = {
     defaultTheme: engine.getDefaultTheme(),
     rules: createTurboRules({
       context,
@@ -171,6 +169,12 @@ function buildSetup(
     prewarmedFiles: prewarmed.files.length,
     sessionToken: session.token,
   }
+  retainSession({
+    session,
+    coordinator,
+    setup: { context, engine, result: setup },
+  })
+  return setup
 }
 
 /** Set up Turbopack for one app: its engine, coordinator and loader rules. */

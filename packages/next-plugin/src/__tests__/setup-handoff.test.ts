@@ -4,7 +4,8 @@ import { serialize } from 'node:v8'
 
 import { afterEach, beforeEach, describe, expect, it, spyOn } from 'bun:test'
 
-import { createAppContext } from '../session'
+import type { SessionOwner } from '../lifecycle'
+import { type AppContext, createAppContext } from '../session'
 import {
   consumeSetupHandoff,
   reloadSetupModuleForTesting,
@@ -13,16 +14,25 @@ import {
   storeSetupHandoff,
 } from '../setup-handoff'
 import { installProjectHooks, makeProject } from './project'
+import { makeSetupOwner } from './setup-owner-fixture'
 
 installProjectHooks()
 
 const originalEnv = { ...process.env }
+let sequence = 0
+let owners: SessionOwner[] = []
+let once: ReturnType<typeof spyOn>
 
 beforeEach(() => {
-  process.env.NODE_ENV = 'production'
+  sequence += 1
+  once = spyOn(process, 'once').mockImplementation(() => process)
+  process.env = { ...process.env, NODE_ENV: 'production' }
   resetSetupHandoffsForTesting()
 })
 afterEach(() => {
+  for (const owner of owners) owner.close()
+  owners = []
+  once.mockRestore()
   resetSetupHandoffsForTesting()
   process.env = { ...originalEnv }
 })
@@ -39,15 +49,21 @@ function handoff(key = 'key'): SetupHandoff {
       '*.ts': { loaders: [], condition: { not: { path: /node_modules/ } } },
     },
     prewarmedFiles: 3,
-    sessionToken: 'session-token',
+    sessionToken: `session-token-${sequence}`,
   }
+}
+
+function store(context: AppContext, setup: SetupHandoff): void {
+  owners.push(makeSetupOwner(context, setup))
+  storeSetupHandoff(context, setup)
 }
 
 describe('setup handoff', () => {
   it('hands a setup to one other module instance, once', () => {
     process.chdir(makeProject())
     const context = app()
-    storeSetupHandoff(context, handoff())
+    const original = handoff()
+    store(context, original)
     expect(
       fs.existsSync(join(context.appDir, `handoff-${process.pid}.bin`)),
     ).toBe(true)
@@ -56,6 +72,7 @@ describe('setup handoff', () => {
     const taken = consumeSetupHandoff(context, 'key')
 
     expect(taken).toMatchObject(handoff())
+    expect(taken?.rules).toBe(original.rules)
     expect(taken?.rules['*.ts']).toMatchObject({
       condition: { not: { path: /node_modules/ } },
     })
@@ -68,7 +85,7 @@ describe('setup handoff', () => {
   it('never lets a module instance take its own handoff', () => {
     process.chdir(makeProject())
     const context = app()
-    storeSetupHandoff(context, handoff())
+    store(context, handoff())
 
     expect(consumeSetupHandoff(context, 'key')).toBeUndefined()
     reloadSetupModuleForTesting()
@@ -79,7 +96,7 @@ describe('setup handoff', () => {
     process.chdir(makeProject())
     const context = app()
     const other = app({ singleCss: true })
-    storeSetupHandoff(context, handoff())
+    store(context, handoff())
     reloadSetupModuleForTesting()
 
     expect(consumeSetupHandoff(context, 'another key')).toBeUndefined()
@@ -91,8 +108,8 @@ describe('setup handoff', () => {
     process.chdir(makeProject())
     const first = app()
     const second = app({ prefix: 'two-' })
-    storeSetupHandoff(first, { ...handoff(), sessionToken: 'first' })
-    storeSetupHandoff(second, { ...handoff(), sessionToken: 'second' })
+    store(first, { ...handoff(), sessionToken: 'first' })
+    store(second, { ...handoff(), sessionToken: 'second' })
     reloadSetupModuleForTesting()
 
     expect(consumeSetupHandoff(second, 'key')?.sessionToken).toBe('second')
@@ -102,7 +119,7 @@ describe('setup handoff', () => {
   it('rejects a token that is not the one that was handed over', () => {
     process.chdir(makeProject())
     const context = app()
-    storeSetupHandoff(context, handoff())
+    store(context, handoff())
     reloadSetupModuleForTesting()
     const name = `DEVUP_UI_SETUP_TOKEN_${context.appKey}`
     const token = process.env[name]
@@ -119,7 +136,7 @@ describe('setup handoff', () => {
     const context = app()
     expect(consumeSetupHandoff(context, 'key')).toBeUndefined()
 
-    storeSetupHandoff(context, handoff())
+    store(context, handoff())
     reloadSetupModuleForTesting()
     const file = join(context.appDir, `handoff-${process.pid}.bin`)
     fs.writeFileSync(file, 'not v8 data')
@@ -129,7 +146,7 @@ describe('setup handoff', () => {
   it('takes nothing when the stored value has no handoff shape', () => {
     process.chdir(makeProject())
     const context = app()
-    storeSetupHandoff(context, handoff())
+    store(context, handoff())
     reloadSetupModuleForTesting()
     const file = join(context.appDir, `handoff-${process.pid}.bin`)
     for (const value of [
@@ -146,7 +163,7 @@ describe('setup handoff', () => {
   it('stays one-use when the file cannot be deleted and says so', () => {
     process.chdir(makeProject())
     const context = app()
-    storeSetupHandoff(context, handoff())
+    store(context, handoff())
     reloadSetupModuleForTesting()
     const warn = spyOn(console, 'warn').mockImplementation(() => {})
     const remove = spyOn(fs, 'rmSync').mockImplementation(() => {
@@ -172,7 +189,7 @@ describe('setup handoff', () => {
     process.chdir(root)
     const context = app()
 
-    storeSetupHandoff(context, handoff())
+    store(context, handoff())
     reloadSetupModuleForTesting()
 
     expect(
@@ -184,7 +201,7 @@ describe('setup handoff', () => {
   it('forgets every handoff of the process on reset', () => {
     process.chdir(makeProject())
     const context = app()
-    storeSetupHandoff(context, handoff())
+    store(context, handoff())
 
     resetSetupHandoffsForTesting()
 

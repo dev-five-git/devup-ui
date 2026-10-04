@@ -249,7 +249,7 @@ describe('turbopack setup', () => {
         ],
         condition: {
           not: {
-            path: createNodeModulesExcludeRegex(['@acme/ui'], '.mdx.[tj]sx?$'),
+            path: createNodeModulesExcludeRegex(['@acme/ui']),
           },
         },
       },

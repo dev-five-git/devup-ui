@@ -5,7 +5,8 @@ import { deserialize, serialize } from 'node:v8'
 
 import type { NextConfig } from 'next'
 
-import type { AppContext } from './session'
+import { findSessionOwner } from './lifecycle'
+import type { AppContext, SetupPhase } from './session'
 
 export type TurboRules = NonNullable<
   NonNullable<NextConfig['turbopack']>['rules']
@@ -23,9 +24,14 @@ export interface SetupHandoff {
   readonly sessionToken: string
 }
 
-interface StoredHandoff extends SetupHandoff {
+interface StoredHandoff {
+  readonly key: string
   readonly owner: string
-  readonly token: string
+  readonly nonce: string
+  readonly sessionToken: string
+  readonly root: string
+  readonly phase: SetupPhase
+  readonly appKey: string
 }
 
 const TOKEN_ENV_PREFIX = 'DEVUP_UI_SETUP_TOKEN_'
@@ -39,10 +45,16 @@ function isStored(value: unknown): value is StoredHandoff {
     typeof value.key === 'string' &&
     'owner' in value &&
     typeof value.owner === 'string' &&
-    'token' in value &&
-    typeof value.token === 'string' &&
-    'rules' in value &&
-    typeof value.rules === 'object'
+    'nonce' in value &&
+    typeof value.nonce === 'string' &&
+    'sessionToken' in value &&
+    typeof value.sessionToken === 'string' &&
+    'root' in value &&
+    typeof value.root === 'string' &&
+    'phase' in value &&
+    (value.phase === 'production' || value.phase === 'development') &&
+    'appKey' in value &&
+    typeof value.appKey === 'string'
   )
 }
 
@@ -58,7 +70,8 @@ function readStored(file: string): StoredHandoff | undefined {
   try {
     const stored: unknown = deserialize(readFileSync(file))
     return isStored(stored) ? stored : undefined
-  } catch {
+  } catch (cause) {
+    if (!(cause instanceof Error)) throw cause
     return undefined
   }
 }
@@ -90,13 +103,25 @@ export function consumeSetupHandoff(
     !stored ||
     stored.key !== key ||
     stored.owner === moduleOwner ||
-    stored.token !== token
+    stored.nonce !== token ||
+    stored.root !== context.root ||
+    stored.phase !== context.phase ||
+    stored.appKey !== context.appKey
+  ) {
+    return undefined
+  }
+  const live = findSessionOwner(stored.sessionToken)?.setup
+  if (
+    !live ||
+    live.context.root !== context.root ||
+    live.context.phase !== context.phase ||
+    live.context.appKey !== context.appKey
   ) {
     return undefined
   }
   delete process.env[env]
   removeFile(file)
-  return stored
+  return { key, ...live.result }
 }
 
 /** Leave this setup for the one other evaluation that may reuse it. */
@@ -111,13 +136,18 @@ export function storeSetupHandoff(
     writeFileSync(
       file,
       serialize({
-        ...handoff,
+        key: handoff.key,
         owner: moduleOwner,
-        token,
+        nonce: token,
+        sessionToken: handoff.sessionToken,
+        root: context.root,
+        phase: context.phase,
+        appKey: context.appKey,
       } satisfies StoredHandoff),
     )
     process.env[env] = token
-  } catch {
+  } catch (cause) {
+    if (!(cause instanceof Error)) throw cause
     delete process.env[env]
   }
 }

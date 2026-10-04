@@ -8,11 +8,7 @@ import type { TurboRules } from './setup-handoff'
 /** Longer than the coordinator's own production wait, which fails first. */
 export const REQUEST_TIMEOUT_MS = 120_000
 
-/**
- * Every extension Turbopack compiles as application code. The import graph and
- * the numbering scan list a subset of them until the shared source filter
- * grows the modern ones (fix/plugin-core).
- */
+/** Every ordinary source extension shared with graph discovery and prewarm. */
 export const SOURCE_RULE = '*.{tsx,ts,jsx,js,mjs,mts,cts,cjs}'
 
 /**
@@ -28,12 +24,12 @@ function structuredJson(value: object): ReturnType<typeof JSON.parse> {
   return JSON.parse(JSON.stringify(value))
 }
 
-interface RuleFields {
-  context: AppContext
-  session: AppSession
+export interface RuleFields {
+  readonly context: AppContext
+  readonly session: AppSession
   /** The devup config and everything it extends, absolute */
-  themeFiles: readonly string[]
-  theme: object
+  readonly themeFiles: readonly string[]
+  readonly theme: object
 }
 
 /**
@@ -41,12 +37,12 @@ interface RuleFields {
  * from the captured context, so a rule means the same thing whatever the
  * working directory is when Turbopack runs it.
  */
-export function createTurboRules({
+export function createCoordinatorLoaderOptions({
   context,
   session,
   themeFiles,
   theme,
-}: RuleFields): TurboRules {
+}: RuleFields) {
   const shared = {
     coordinatorPortFile: session.endpointFile,
     coordinatorIdentity: { ...session.identity },
@@ -67,27 +63,33 @@ export function createTurboRules({
     ...(context.watch ? { revisionFile: session.revisionFile } : {}),
   }
   return {
+    shared,
+    source: {
+      ...shared,
+      package: context.libPackage,
+      cssDir: context.cssDir,
+      singleCss: context.singleCss,
+      importAliases: loaderAliases(context),
+    },
+  }
+}
+
+export function createTurboRules(fields: RuleFields): TurboRules {
+  const { context } = fields
+  const { shared, source } = createCoordinatorLoaderOptions(fields)
+  return {
     [`./${relative(context.root, context.cssDir).replaceAll('\\', '/')}/*.css`]:
       [{ loader: '@devup-ui/next-plugin/css-loader', options: shared }],
     [SOURCE_RULE]: {
       loaders: [
         {
           loader: '@devup-ui/next-plugin/loader',
-          options: {
-            ...shared,
-            package: context.libPackage,
-            cssDir: context.cssDir,
-            singleCss: context.singleCss,
-            importAliases: loaderAliases(context),
-          },
+          options: source,
         },
       ],
       condition: {
         not: {
-          path: createNodeModulesExcludeRegex(
-            [...context.include],
-            '.mdx.[tj]sx?$',
-          ),
+          path: createNodeModulesExcludeRegex([...context.include]),
         },
       },
     },
