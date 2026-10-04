@@ -16,9 +16,13 @@ export {
   type CreateModuleResolverOptions,
   listSourceFiles,
   planAtomHoist,
+  type PreparedGraphOptions,
+  type PreparedSource,
+  type PrepareSource,
   type ResolvedModule,
   type StaticImportGraph,
   type StaticImportGraphOptions,
+  type SyncGraphOptions,
 } from './import-graph'
 export {
   ConfigLoadError,
@@ -49,6 +53,7 @@ export {
   SOURCE_EXTENSIONS,
   SOURCE_FILE_RE,
 } from './shared'
+export type { MdxSelection, SourceSelectionOptions } from './source-selection'
 export {
   createStateWriter,
   type StateWriter,

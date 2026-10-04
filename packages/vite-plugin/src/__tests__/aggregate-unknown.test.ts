@@ -1,7 +1,14 @@
-import { mkdtempSync, realpathSync, rmSync, writeFileSync } from 'node:fs'
+import {
+  mkdirSync,
+  mkdtempSync,
+  realpathSync,
+  rmSync,
+  writeFileSync,
+} from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 
+import { buildStaticImportGraph } from '@devup-ui/plugin-utils'
 import { resetBuildState } from '@devup-ui/wasm'
 import { expect, it } from 'bun:test'
 import { build } from 'vite'
@@ -65,6 +72,66 @@ it('builds the same module when the documented nonaggregating application altern
       },
     )
     expect(output.some((item) => item.fileName.endsWith('.css'))).toBe(true)
+  } finally {
+    rmSync(root, { recursive: true, force: true })
+  }
+})
+
+it('rejects a real late plugin-emitted module absent from the static source graph', async () => {
+  resetBuildState()
+  const parent = join(
+    tmpdir(),
+    'opencode',
+    'workers',
+    'w20-plugins-core',
+    'shared-api',
+  )
+  mkdirSync(parent, { recursive: true })
+  const root = realpathSync
+    .native(mkdtempSync(join(parent, 'devup-late-')))
+    .replaceAll('\\', '/')
+  mkdirSync(`${root}/src`)
+  const entry = `${root}/src/entry.js`
+  const late = `${root}/late.js`
+  writeFileSync(
+    entry,
+    "import {css} from '@devup-ui/react'; export const style=css({color:'red'});",
+  )
+  writeFileSync(
+    late,
+    "import {css} from '@devup-ui/react'; export const late=css({color:'blue'});",
+  )
+  const graph = buildStaticImportGraph(`${root}/src`, undefined, { cwd: root })
+  expect(
+    graph.fileSet.has(late.replaceAll('/', '\\')) || graph.fileSet.has(late),
+  ).toBe(false)
+  let emitted = false
+  try {
+    await expect(
+      build({
+        root,
+        configFile: false,
+        logLevel: 'silent',
+        plugins: [
+          DevupUI({ sourceDirs: ['src'] }),
+          {
+            name: 'late-module-after-css-barrier',
+            transform(_code, id) {
+              if (!emitted && /devup-ui.*\.css(?:$|\?)/.test(id)) {
+                emitted = true
+                this.emitFile({ type: 'chunk', id: late, name: 'late' })
+              }
+            },
+          },
+        ],
+        build: {
+          write: false,
+          cssCodeSplit: false,
+          lib: { entry, formats: ['es'] },
+        },
+      }),
+    ).rejects.toThrow(`${late}:1:1: [devup-ui] aggregate CSS asset`)
+    expect(emitted).toBe(true)
   } finally {
     rmSync(root, { recursive: true, force: true })
   }

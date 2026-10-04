@@ -215,13 +215,17 @@ export function DevupUI(options: DevupUIBunPluginOptions = {}) {
         : new RegExp(
             `${
               runtimeSourceFilter([
-                ...listSourceFiles(root, [
-                  'target',
-                  'dist',
-                  basename(project.distDir),
-                  '.git',
-                  'coverage',
-                ]).filter((file) =>
+                ...listSourceFiles(
+                  root,
+                  [
+                    'target',
+                    'dist',
+                    basename(project.distDir),
+                    '.git',
+                    'coverage',
+                  ],
+                  { includeMdx: true },
+                ).filter((file) =>
                   mentionsCompiledPackage(readFileSync(file, 'utf-8')),
                 ),
                 ...collectNumberedFiles({
