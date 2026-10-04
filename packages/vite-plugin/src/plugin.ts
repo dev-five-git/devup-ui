@@ -495,6 +495,7 @@ export function DevupUI({
             const srcDir = roots
             const tsconfigPath = resolve(root, 'tsconfig.json')
             const graph = buildStaticImportGraph(roots, tsconfigPath, {
+              includeMdx: true,
               cwd: root,
               include,
               conditions,

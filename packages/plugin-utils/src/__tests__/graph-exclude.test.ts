@@ -50,6 +50,7 @@ it('skips named directories at every depth without reintroducing imported files'
     writeFileSync(join(root, path), code)
   }
   const graph = buildStaticImportGraph(['src', 'app'], undefined, {
+    includeMdx: true,
     cwd: root,
     exclude: ['generated'],
   })

@@ -121,7 +121,9 @@ export function buildStaticImportGraph(
   )
   const files = [
     ...new Set(roots.flatMap((root) => listSourceFiles(root, options.exclude))),
-  ].sort(compareCodePoints)
+  ]
+    .filter((file) => options.includeMdx || !MDX_FILE_RE.test(file))
+    .sort(compareCodePoints)
   const fileSet = new Set(files)
   const resolver = createModuleResolver({
     cwd,
@@ -176,6 +178,7 @@ export function buildStaticImportGraph(
       const target =
         resolved &&
         jsFileRegex.test(resolved) &&
+        (options.includeMdx || !MDX_FILE_RE.test(resolved)) &&
         (fileSet.has(resolved) ||
           roots.some(
             (root) =>
@@ -226,6 +229,8 @@ export function buildStaticImportGraph(
 }
 
 export interface StaticImportGraphOptions {
+  /** Include MDX only when the caller compiles it before extraction. */
+  readonly includeMdx?: boolean
   readonly cwd?: string
   readonly include?: readonly string[]
   readonly conditions?: readonly string[]
