@@ -2,6 +2,8 @@ mod as_visit;
 mod build_time_values;
 mod component;
 mod composition;
+#[cfg(test)]
+mod css_composition_rest_tests;
 mod css_prop;
 mod css_utils;
 pub mod extract_style;

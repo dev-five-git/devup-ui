@@ -13,7 +13,7 @@ use oxc_ast::ast::{
 use oxc_ast::builder::AstBuilder;
 use oxc_ast_visit::{Visit, VisitMut, walk};
 use oxc_parser::{Parser, ParserReturn};
-use oxc_span::SourceType;
+use oxc_span::{GetSpan, SourceType, Span};
 use rustc_hash::{FxHashMap, FxHashSet};
 
 use crate::css_prop::CssProp;
@@ -218,6 +218,10 @@ impl<'a> Reader<'_, 'a> {
     /// The styled components the module at `path` exports, found by compiling
     /// it as its own extraction does
     fn read(&mut self, path: &str, code: &str) -> Option<Components<'a>> {
+        self.read_source(path, code, false)
+    }
+
+    fn read_source(&mut self, path: &str, code: &str, evaluated: bool) -> Option<Components<'a>> {
         if is_vanilla_extract_file(path) {
             return None;
         }
@@ -264,6 +268,7 @@ impl<'a> Reader<'_, 'a> {
         );
         visitor.import_stylex(inlined.stylex_vars, inlined.stylex_themes);
         visitor.import_css(inlined.css_styles);
+        visitor.errors.extend(inlined.errors);
         visitor.unknown_bindings(&inlined.unknown);
         visitor.changed_bindings(inlined.changed);
         visitor.takes_css_prop(css_prop);
@@ -272,13 +277,129 @@ impl<'a> Reader<'_, 'a> {
         let readable = visitor.errors.is_empty()
             && visitor.unknown_parts.is_empty()
             && !visitor.composes_unknown;
+        let components = visitor.components(self.allocator);
+        let needs_values = components.values().any(|component| {
+            component
+                .definition
+                .as_ref()
+                .is_some_and(|definition| !definition.portable())
+        });
+        if (!readable || needs_values)
+            && !evaluated
+            && let Some((computed, dependencies)) =
+                self.evaluate_values(path, code, &inlined.unknown)
+        {
+            self.dependencies.extend(dependencies);
+            return self.read_source(path, &computed, true);
+        }
         exports.extend(
-            visitor
-                .components(self.allocator)
+            components
                 .into_iter()
                 .map(|(name, component)| (name, component.shared(readable))),
         );
         Some(exports)
+    }
+
+    fn evaluate_values(
+        &self,
+        path: &str,
+        code: &str,
+        unknown: &crate::imported_constants::Unknown,
+    ) -> Option<(String, BTreeSet<String>)> {
+        let Aliased {
+            code: transformed,
+            edits: alias_mapping,
+            ..
+        } = transform_import_aliases_with_edits(
+            code,
+            path,
+            &self.option.package,
+            &self.option.import_aliases,
+        );
+        let allocator = Allocator::default();
+        let parsed =
+            Parser::new(&allocator, &transformed, SourceType::from_path(path).ok()?).parse();
+        if parsed.fatal_error {
+            return None;
+        }
+        let program = parsed.program;
+        let scoping = oxc_semantic::SemanticBuilder::new()
+            .build(&program)
+            .semantic
+            .into_scoping();
+        let mut sites = ValueSites {
+            styled: imported_bindings(&program, &self.option.package)
+                .styled
+                .into_iter()
+                .filter_map(|name| scoping.get_root_binding(name.as_str().into()))
+                .collect(),
+            scoping: &scoping,
+            spans: Vec::new(),
+        };
+        sites.visit_program(&program);
+        let mut index = 0;
+        let helper = loop {
+            let name = format!("__devupImportedValues{index}");
+            if !code.contains(&name) {
+                break name;
+            }
+            index += 1;
+        };
+        let mut insertions = vec![(
+            0,
+            format!(
+                "import {{ css as {helper} }} from '{}';\n",
+                self.option.package
+            ),
+        )];
+        for span in sites.spans {
+            insertions.push((
+                usize::try_from(span.start).ok()?,
+                format!("{helper}({{ __value: ("),
+            ));
+            insertions.push((usize::try_from(span.end).ok()?, ")})".to_string()));
+        }
+        insertions.sort_unstable_by_key(|(offset, _)| *offset);
+        let mut source = String::new();
+        let mut mapping = Vec::new();
+        let mut copied = 0;
+        for (offset, insertion) in insertions {
+            source.push_str(transformed.get(copied..offset)?);
+            source.push_str(&insertion);
+            mapping.push((offset, offset, insertion.len()));
+            copied = offset;
+        }
+        source.push_str(transformed.get(copied..)?);
+        let (computed, replacements, dependencies) = crate::build_time_values::evaluate(
+            &source,
+            path,
+            self.option,
+            Some(self.resolver),
+            unknown,
+        )?;
+        let mut result = String::new();
+        let mut original = 0;
+        let mut before = 0;
+        let mut after = 0_usize;
+        for (start, end, length) in replacements {
+            let replaced_at = after.checked_add(start.checked_sub(before)?)?;
+            // Retry unaliased source so computed Emotion numbers keep px semantics.
+            let original_start = crate::import_alias_visit::source_offset(
+                &alias_mapping,
+                crate::import_alias_visit::source_offset(&mapping, start),
+            );
+            let original_end = crate::import_alias_visit::source_offset(
+                &alias_mapping,
+                crate::import_alias_visit::source_offset(&mapping, end),
+            );
+            result.push_str(code.get(original..original_start)?);
+            result.push_str(computed.get(replaced_at..replaced_at.checked_add(length)?)?);
+            original = original_end;
+            before = end;
+            after = replaced_at.checked_add(length)?;
+        }
+        result.push_str(code.get(original..)?);
+        Some((result, dependencies))
     }
 
     /// What the module re-exports from the modules it exports from
@@ -286,9 +407,13 @@ impl<'a> Reader<'_, 'a> {
         let mut exports = FxHashMap::default();
         for statement in &program.body {
             match statement {
-                Statement::ExportFromDeclaration(export) => {
+                Statement::ExportFromDeclaration(export) if !export.export_kind.is_type() => {
                     if let Some(module) = self.module(&export.source.value, path) {
-                        for specifier in &export.specifiers {
+                        for specifier in export
+                            .specifiers
+                            .iter()
+                            .filter(|specifier| !specifier.export_kind.is_type())
+                        {
                             if let Some(component) = module.get(specifier.local.name().as_str()) {
                                 exports.insert(
                                     specifier.exported.name().to_string(),
@@ -298,7 +423,9 @@ impl<'a> Reader<'_, 'a> {
                         }
                     }
                 }
-                Statement::ExportAllDeclaration(export) if export.exported.is_none() => {
+                Statement::ExportAllDeclaration(export)
+                    if export.exported.is_none() && !export.export_kind.is_type() =>
+                {
                     if let Some(module) = self.module(&export.source.value, path) {
                         for (name, component) in
                             module.iter().filter(|(name, _)| *name != "default")
@@ -325,16 +452,21 @@ impl<'a> Reader<'_, 'a> {
         allocator: &'b Allocator,
     ) -> Components<'b> {
         let imported = imported_bindings(program, &self.option.package);
+        let scoping = oxc_semantic::SemanticBuilder::new()
+            .build(program)
+            .semantic
+            .into_scoping();
+        let compat = format!("{}/compat", self.option.package);
         let mut used = Used {
+            scoping: &scoping,
+            css_takers: crate::css_prop::CssTakers::new(program, css_prop, &compat),
             styled: imported.styled,
             css_prop: css_prop != CssProp::Off,
             names: FxHashSet::default(),
         };
         used.visit_program(program);
         crate::style_values::selectors(program, &mut |expression| {
-            if let Expression::Identifier(identifier) = expression {
-                used.names.insert(identifier.name.to_string());
-            }
+            used.select(expression);
         });
         used.names.extend(
             Exports::scan(program)
@@ -426,51 +558,157 @@ fn imported_bindings(program: &Program<'_>, package: &str) -> Imported {
 fn written_name(expression: &Expression<'_>) -> Option<String> {
     match unwrap_syntax_only(expression) {
         Expression::Identifier(identifier) => Some(identifier.name.to_string()),
-        Expression::StaticMemberExpression(member) => match &member.object {
-            Expression::Identifier(object) => {
-                Some(format!("{}.{}", object.name, member.property.name))
-            }
-            _ => None,
-        },
-        _ => None,
+        expression => {
+            let (object, property) = crate::style_values::component_member(expression)?;
+            let Expression::Identifier(object) = unwrap_syntax_only(object) else {
+                return None;
+            };
+            Some(format!("{}.{property}", object.name))
+        }
     }
 }
 
 /// The bindings a program composes, takes the `css` prop of, or selects
-struct Used {
+struct Used<'s, 'p> {
+    scoping: &'s oxc_semantic::Scoping,
+    css_takers: crate::css_prop::CssTakers<'p>,
     styled: FxHashSet<String>,
     css_prop: bool,
     names: FxHashSet<String>,
 }
 
-impl<'a> Visit<'a> for Used {
+struct ValueSites<'s> {
+    scoping: &'s oxc_semantic::Scoping,
+    styled: FxHashSet<oxc_syntax::symbol::SymbolId>,
+    spans: Vec<Span>,
+}
+
+impl ValueSites<'_> {
+    fn is_styled(&self, expression: &Expression<'_>) -> bool {
+        match unwrap_syntax_only(expression) {
+            Expression::Identifier(reference) => reference
+                .reference_id
+                .get()
+                .and_then(|reference| self.scoping.get_reference(reference).symbol_id())
+                .is_some_and(|symbol| self.styled.contains(&symbol)),
+            Expression::StaticMemberExpression(member) => self.is_styled(&member.object),
+            Expression::CallExpression(call) => self.is_styled(&call.callee),
+            _ => false,
+        }
+    }
+}
+
+impl<'a> Visit<'a> for ValueSites<'_> {
     fn visit_call_expression(&mut self, call: &CallExpression<'a>) {
+        if self.is_styled(&call.callee) {
+            self.spans.extend(
+                call.arguments
+                    .iter()
+                    .filter_map(|argument| argument.as_expression())
+                    .map(GetSpan::span),
+            );
+        }
+        walk::walk_call_expression(self, call);
+    }
+
+    fn visit_tagged_template_expression(
+        &mut self,
+        tag: &oxc_ast::ast::TaggedTemplateExpression<'a>,
+    ) {
+        if self.is_styled(&tag.tag) {
+            self.spans
+                .extend(tag.quasi.expressions.iter().map(GetSpan::span));
+        }
+        walk::walk_tagged_template_expression(self, tag);
+    }
+}
+
+impl Used<'_, '_> {
+    fn record(&mut self, reference: &oxc_ast::ast::IdentifierReference<'_>, name: String) {
+        if let Some(symbol) = reference
+            .reference_id
+            .get()
+            .and_then(|reference| self.scoping.get_reference(reference).symbol_id())
+            && self.scoping.get_root_binding(reference.name) == Some(symbol)
+            && self.scoping.symbol_flags(symbol).is_import()
+        {
+            self.names.insert(name);
+        }
+    }
+
+    fn select(&mut self, expression: &Expression<'_>) {
+        match unwrap_syntax_only(expression) {
+            Expression::TemplateLiteral(template) => {
+                for expression in &template.expressions {
+                    self.select(expression);
+                }
+            }
+            Expression::Identifier(reference) => {
+                if let Some(name) = written_name(expression) {
+                    self.record(reference, name);
+                }
+            }
+            Expression::StaticMemberExpression(_) | Expression::ComputedMemberExpression(_) => {
+                if let Some((object, _)) = crate::style_values::component_member(expression)
+                    && let Expression::Identifier(reference) = unwrap_syntax_only(object)
+                    && let Some(name) = written_name(expression)
+                {
+                    self.record(reference, name);
+                }
+            }
+            _ => {}
+        }
+    }
+}
+
+impl<'a> Visit<'a> for Used<'_, '_> {
+    fn visit_call_expression(&mut self, call: &CallExpression<'a>) {
+        if self.css_takers.property(call, |_| false).is_some()
+            && let Some(element) = call
+                .arguments
+                .first()
+                .and_then(|argument| argument.as_expression())
+        {
+            self.select(element);
+        }
         let name = match unwrap_syntax_only(&call.callee) {
             Expression::Identifier(callee) if self.styled.contains(callee.name.as_str()) => call
                 .arguments
                 .first()
-                .and_then(|first| first.as_expression())
-                .and_then(written_name),
+                .and_then(|first| first.as_expression()),
             Expression::StaticMemberExpression(member)
                 if member.property.name == "withComponent" =>
             {
-                written_name(&member.object)
+                Some(&member.object)
             }
             _ => None,
         };
-        self.names.extend(name);
+        if let Some(expression) = name {
+            self.select(expression);
+        }
         walk::walk_call_expression(self, call);
     }
 
     fn visit_jsx_opening_element(&mut self, element: &JSXOpeningElement<'a>) {
         if self.css_prop
-            && let JSXElementName::IdentifierReference(name) = &element.name
             && element.attributes.iter().any(|attribute| {
                 matches!(attribute, JSXAttributeItem::Attribute(attribute)
                     if matches!(&attribute.name, JSXAttributeName::Identifier(attribute) if attribute.name == "css"))
             })
         {
-            self.names.insert(name.name.to_string());
+            match &element.name {
+                JSXElementName::IdentifierReference(name) => {
+                    self.record(name, name.name.to_string());
+                }
+                JSXElementName::MemberExpression(member) => {
+                    if let oxc_ast::ast::JSXMemberExpressionObject::IdentifierReference(root) =
+                        &member.object
+                    {
+                        self.record(root, format!("{}.{}", root.name, member.property.name));
+                    }
+                }
+                _ => {}
+            }
         }
         walk::walk_jsx_opening_element(self, element);
     }
@@ -482,6 +720,7 @@ mod tests {
     use std::collections::{BTreeSet, HashMap};
 
     use insta::assert_debug_snapshot;
+    use rstest::rstest;
     use serial_test::serial;
 
     use super::*;
@@ -548,6 +787,594 @@ mod tests {
     }
 
     const STYLED: &str = "import styled from '@emotion/styled';\n";
+
+    #[test]
+    #[serial]
+    fn compiled_namespace_css_when_literal_inlines_composed_styles_and_marker() {
+        // Given
+        let base = format!("{STYLED}export const Child = styled.span`padding: 4px; color: red;`;");
+        let app = format!(
+            "{STYLED}import * as UI from './base'; import {{ jsx }} from '@emotion/react/jsx-runtime'; const Anchor = styled.div`${{UI.Child}} {{ margin: 0; }}`; export const P = jsx(UI['Child'], {{ css: {{ color: 'blue' }} }});"
+        );
+        reset();
+        // When
+        let output = extract_in(
+            &[("/src/base.ts", &base), ("/src/app.tsx", &app)],
+            "/src/app.tsx",
+        )
+        .unwrap();
+        // Then
+        assert!(output.code.contains("jsx(\"span\""), "{}", output.code);
+        assert!(!output.code.contains("jsx(UI["), "{}", output.code);
+        assert!(output.code.contains("className:"), "{}", output.code);
+        let styles: BTreeSet<_> = output
+            .styles
+            .iter()
+            .filter_map(|style| match style {
+                crate::ExtractStyleValue::Static(style) => {
+                    Some((style.property.as_str(), style.value.as_str()))
+                }
+                _ => None,
+            })
+            .collect();
+        assert!(
+            styles.contains(&("padding", "4px")) && styles.contains(&("color", "blue")),
+            "{styles:?}"
+        );
+        let selector = output
+            .styles
+            .iter()
+            .find_map(|style| {
+                let text = format!("{style:?}");
+                let (_, rest) = text.split_once("& .")?;
+                rest.split(|c: char| !(c.is_alphanumeric() || c == '-' || c == '_'))
+                    .find(|word| word.contains("--"))
+                    .map(str::to_string)
+            })
+            .unwrap();
+        assert!(output.code.contains(&selector), "{}", output.code);
+    }
+
+    #[rstest]
+    #[case("jsx(UI.Child, { css: { color: 'blue' }, as: target })", true)]
+    #[case("jsx(UI.Child, { css: { color: 'blue' }, ...props })", true)]
+    #[case("(UI) => jsx(UI.Child, { css: { color: 'blue' } })", false)]
+    #[serial]
+    fn compiled_namespace_css_when_opaque_or_shadowed_has_literal_parity(
+        #[case] body: &str,
+        #[case] overlap: bool,
+    ) {
+        // Given
+        let base = format!("{STYLED}export const Child = styled.span`color: red;`;");
+        let app = format!(
+            "import * as UI from './base'; import {{ jsx }} from '@emotion/react/jsx-runtime'; export const P = {body};"
+        );
+        reset();
+        let expected = extract_in(
+            &[("/src/base.ts", &base), ("/src/app.tsx", &app)],
+            "/src/app.tsx",
+        );
+        reset();
+        let computed = app.replace("UI.Child", "UI['Child']");
+        // When
+        let output = extract_in(
+            &[("/src/base.ts", &base), ("/src/app.tsx", &computed)],
+            "/src/app.tsx",
+        );
+        // Then
+        if overlap {
+            let expected = expected.unwrap_err();
+            let error = output.unwrap_err();
+            assert!(expected.starts_with("/src/app.tsx:1:114:"), "{expected}");
+            assert!(error.starts_with("/src/app.tsx:1:117:"), "{error}");
+            assert_eq!(
+                error
+                    .split_once(": ")
+                    .unwrap()
+                    .1
+                    .replace("UI[\"Child\"]", "UI.Child"),
+                expected.split_once(": ").unwrap().1
+            );
+        } else {
+            let output = output.unwrap();
+            assert_eq!(output.styles, expected.unwrap().styles);
+            assert!(output.code.contains("jsx(UI["), "{}", output.code);
+        }
+    }
+
+    #[test]
+    #[serial]
+    fn imported_computation_when_exact_retains_values_and_dependencies() {
+        // Given
+        let base = format!(
+            "{STYLED}import {{ size }} from './values'; const scaled = n => n * 4; export const Rules = styled.div({{ padding: scaled(size), color: 'red' }});"
+        );
+        let app = format!(
+            "{STYLED}import {{ Rules }} from './base'; export const A = styled(Rules)`color: blue;`;"
+        );
+        reset();
+        // When
+        let output = extract_in(
+            &[
+                ("/src/values.ts", "export const size = 2;"),
+                ("/src/base.ts", &base),
+                ("/src/app.tsx", &app),
+            ],
+            "/src/app.tsx",
+        )
+        .unwrap();
+        // Then
+        let mut styles: Vec<(&str, &str)> = output
+            .styles
+            .iter()
+            .map(|style| match style {
+                crate::ExtractStyleValue::Static(style) => {
+                    (style.property.as_str(), style.value.as_str())
+                }
+                other => panic!("expected static style, got {other:?}"),
+            })
+            .collect();
+        styles.sort_unstable();
+        assert_eq!(styles, [("color", "blue"), ("padding", "8px")]);
+        assert!(output.code.contains("DevupAs = \"div\""), "{}", output.code);
+        assert_eq!(output.dependencies, ["/src/base.ts", "/src/values.ts"]);
+    }
+
+    #[test]
+    #[serial]
+    fn imported_attrs_when_sibling_computation_is_exact_remain_portable() {
+        // Given
+        let base = format!(
+            "{STYLED}const scaled = n => n * 4; const size = 2; export const Rules = styled.div({{ padding: scaled(size) }}); export const Attrs = styled.div.attrs({{ id: 'known' }})`margin: 1px;`;"
+        );
+        let app = format!(
+            "{STYLED}import {{ Attrs }} from './base'; export const A = styled(Attrs)`color: blue;`;"
+        );
+        reset();
+        // When
+        let output = extract_in(
+            &[("/src/base.ts", &base), ("/src/app.tsx", &app)],
+            "/src/app.tsx",
+        )
+        .unwrap();
+        // Then
+        assert!(output.code.contains("DevupAs = \"div\""), "{}", output.code);
+        assert!(output.code.contains("id: \"known\""), "{}", output.code);
+        assert_eq!(output.styles.len(), 2);
+        assert_eq!(output.dependencies, ["/src/base.ts"]);
+    }
+
+    #[rstest]
+    #[case("styled.div({ padding: scaled(size), color: 'red' })")]
+    #[case("styled.div`padding: ${scaled(size)}px; color: red;`")]
+    #[case("styled.div(make(size))")]
+    #[serial]
+    fn imported_computation_when_rules_use_different_static_forms_is_exact(#[case] factory: &str) {
+        // Given
+        let base = format!(
+            "{STYLED}const __devupImportedValues0 = 'reserved'; externalEffect(); const scaled = n => n * 4; const make = n => ({{ padding: n * 4, color: 'red' }}); const size = 2; export const Rules = {factory};"
+        );
+        let app = format!(
+            "{STYLED}import {{ Rules }} from './base'; export const A = styled(Rules)`color: blue;`;"
+        );
+        reset();
+        // When
+        let output = extract_in(
+            &[("/src/base.ts", &base), ("/src/app.tsx", &app)],
+            "/src/app.tsx",
+        )
+        .unwrap();
+        // Then
+        let mut styles: Vec<(&str, &str)> = output
+            .styles
+            .iter()
+            .map(|style| match style {
+                crate::ExtractStyleValue::Static(style) => {
+                    (style.property.as_str(), style.value.as_str())
+                }
+                other => panic!("expected static style, got {other:?}"),
+            })
+            .collect();
+        styles.sort_unstable();
+        assert_eq!(styles, [("color", "blue"), ("padding", "8px")]);
+        assert!(output.code.contains("DevupAs = \"div\""), "{}", output.code);
+        assert!(
+            !output.code.contains("__devupImportedValues"),
+            "{}",
+            output.code
+        );
+    }
+
+    #[rstest]
+    #[case("const scaled = n => n * 4; const size = runtimeSize;", "scaled(size)")]
+    #[case("const scaled = n => n * 4; let size = 2; size = 3;", "scaled(size)")]
+    #[case(
+        "const scaled = n => n * 4; const size = Math.random();",
+        "scaled(size)"
+    )]
+    #[case(
+        "const scaled = n => { externalEffect(); return n * 4; }; const size = 2;",
+        "scaled(size)"
+    )]
+    #[case(
+        "const box = { size: 2 }; box.size = 3; const scaled = n => n * 4;",
+        "scaled(box.size)"
+    )]
+    #[serial]
+    fn imported_computation_when_runtime_or_mutating_remains_opaque(
+        #[case] scope: &str,
+        #[case] value: &str,
+    ) {
+        // Given
+        let base =
+            format!("{STYLED}{scope} export const Rules = styled.div({{ padding: {value} }});");
+        let app = format!(
+            "{STYLED}import {{ Rules }} from './base'; export const A = styled(Rules)`color: blue;`;"
+        );
+        reset();
+        // When
+        let output = extract_in(
+            &[("/src/base.ts", &base), ("/src/app.tsx", &app)],
+            "/src/app.tsx",
+        )
+        .unwrap();
+        // Then
+        assert!(output.code.contains("DevupAs = Rules"), "{}", output.code);
+        assert_eq!(output.styles.len(), 1);
+        assert_eq!(output.dependencies, ["/src/base.ts"]);
+    }
+
+    #[rstest]
+    #[case("export const P = styled.div`${UI.Child} { margin: 0; }`;")]
+    #[case("export const P = styled.div({ [UI.Child]: { margin: 0 } });")]
+    #[case("export const P = styled.div({ [`& ${UI.Child}`]: { margin: 0 } });")]
+    #[case("export const P = styled(UI.Child)`color: blue;`;")]
+    #[case("export const P = UI.Child.withComponent('section');")]
+    #[case(
+        "import { jsx } from '@emotion/react/jsx-runtime'; export const P = jsx(UI.Child, { css: { color: 'blue' } });"
+    )]
+    #[serial]
+    fn namespace_computed_when_literal_matches_dot_access(#[case] body: &str) {
+        // Given
+        let base = format!("{STYLED}export const Child = styled.div`padding: 4px;`;");
+        let dot = format!("{STYLED}import * as UI from './base';\n{body}");
+        let computed = dot.replace("UI.Child", "UI['Child']");
+        reset();
+        let expected = extract_in(
+            &[("/src/base.ts", &base), ("/src/app.tsx", &dot)],
+            "/src/app.tsx",
+        )
+        .unwrap();
+        reset();
+        // When
+        let output = extract_in(
+            &[("/src/base.ts", &base), ("/src/app.tsx", &computed)],
+            "/src/app.tsx",
+        )
+        .unwrap();
+        // Then
+        assert_eq!(output.styles, expected.styles);
+        assert_eq!(output.dependencies, expected.dependencies);
+        assert_eq!(output.code, expected.code);
+    }
+
+    #[rstest]
+    #[case("export const P = (UI) => styled.div`${UI['Child']} { margin: 0; }`;")]
+    #[case("export const P = styled.div`${UI[key]} { margin: 0; }`;")]
+    #[case("export const P = styled.div({ [UI[key]]: { margin: 0 } });")]
+    #[serial]
+    fn namespace_computed_when_shadowed_or_unknown_reports_error(#[case] body: &str) {
+        // Given
+        let base = format!("{STYLED}export const Child = styled.div`padding: 4px;`;");
+        let app = format!(
+            "{STYLED}import * as UI from './base'; const Anchor = styled.div`${{UI.Child}} {{ margin: 0; }}`;\n{body}"
+        );
+        reset();
+        // When
+        let error = extract_in(
+            &[("/src/base.ts", &base), ("/src/app.tsx", &app)],
+            "/src/app.tsx",
+        )
+        .unwrap_err();
+        // Then
+        assert!(error.starts_with("/src/app.tsx:3:"), "{error}");
+        assert!(error.contains("UI["), "{error}");
+    }
+
+    #[test]
+    #[serial]
+    fn namespace_selectors_when_imported_match_named_selectors() {
+        let base = format!("{STYLED}export const Child = styled.div`color: red;`;");
+        for body in [
+            "export const P = styled.div`${Child} { margin: 0; }`;",
+            "export const P = styled.div({ [Child]: { margin: 0 } });",
+            "export const P = styled.div({ [`&:hover ${Child}`]: { margin: 0 } });",
+        ] {
+            let named = format!("{STYLED}import {{ Child }} from './base';\n{body}");
+            let namespace = format!(
+                "{STYLED}import * as UI from './base';\n{}",
+                body.replace("Child", "UI.Child")
+            );
+            reset();
+            let named = extract_in(
+                &[("/src/base.ts", &base), ("/src/app.tsx", &named)],
+                "/src/app.tsx",
+            )
+            .unwrap();
+            reset();
+            let namespace = extract_in(
+                &[("/src/base.ts", &base), ("/src/app.tsx", &namespace)],
+                "/src/app.tsx",
+            )
+            .unwrap();
+            assert_eq!(namespace.styles, named.styles, "{body}");
+            assert_eq!(namespace.dependencies, named.dependencies);
+            assert_eq!(namespace.dependencies, ["/src/base.ts"]);
+        }
+    }
+
+    #[test]
+    #[serial]
+    fn namespace_css_props_when_imported_match_named_props() {
+        let base = format!("{STYLED}export const Child = styled.div`color: red; padding: 4px;`;");
+        let header = "/** @jsxImportSource @emotion/react */\n";
+        for body in [
+            "export const C = () => <Child css={{ color: 'blue' }} />;",
+            "export const C = () => <Child css={[{ color: 'green' }, { color: 'blue' }]} />;",
+            "export const C = () => <Child as='a' css={{ color: 'blue' }} />;",
+            "import { jsx } from 'react/jsx-runtime'; export const C = () => jsx(Child, { css: { color: 'blue' } });",
+        ] {
+            let named = format!("{header}import {{ Child }} from './base';\n{body}");
+            let namespace = format!(
+                "{header}import * as UI from './base';\n{}",
+                body.replace("Child", "UI.Child")
+            );
+            reset();
+            let named = extract_in(
+                &[("/src/base.ts", &base), ("/src/app.tsx", &named)],
+                "/src/app.tsx",
+            );
+            reset();
+            let namespace = extract_in(
+                &[("/src/base.ts", &base), ("/src/app.tsx", &namespace)],
+                "/src/app.tsx",
+            );
+            match (named, namespace) {
+                (Ok(named), Ok(namespace)) => {
+                    assert_eq!(namespace.styles, named.styles, "{body}");
+                    let colors: Vec<&str> = namespace
+                        .styles
+                        .iter()
+                        .filter_map(|style| match style {
+                            crate::ExtractStyleValue::Static(style)
+                                if style.property == "color" =>
+                            {
+                                Some(style.value.as_str())
+                            }
+                            _ => None,
+                        })
+                        .collect();
+                    assert_eq!(colors, ["blue"]);
+                    assert_eq!(namespace.dependencies, named.dependencies);
+                    assert_eq!(
+                        namespace.code.replace("import * as UI", "import { Child }"),
+                        named.code
+                    );
+                }
+                (Err(named), Err(namespace)) => {
+                    assert!(namespace.starts_with("/src/app.tsx:"));
+                    let named_location =
+                        named.split_once(": ").unwrap().0.rsplit_once(':').unwrap();
+                    let namespace_location = namespace
+                        .split_once(": ")
+                        .unwrap()
+                        .0
+                        .rsplit_once(':')
+                        .unwrap();
+                    assert_eq!(namespace_location.0, named_location.0);
+                    assert_eq!(
+                        namespace_location.1.parse::<usize>().unwrap(),
+                        named_location.1.parse::<usize>().unwrap() + 3
+                    );
+                    assert_eq!(
+                        namespace
+                            .split_once(": ")
+                            .unwrap()
+                            .1
+                            .replace("UI.Child", "Child"),
+                        named.split_once(": ").unwrap().1
+                    );
+                }
+                (named, namespace) => panic!("{body}: {named:?} != {namespace:?}"),
+            }
+        }
+    }
+
+    #[test]
+    #[serial]
+    fn namespace_reexports_when_selected_preserve_defining_markers() {
+        let base = format!("{STYLED}export const Child = styled.div`color: red;`;");
+        let forward = "export { Child as Renamed } from './base';";
+        let named = format!(
+            "{STYLED}import {{ Renamed }} from './forward'; export const P = styled.div`${{Renamed}} {{ margin: 0; }}`;"
+        );
+        let namespace = format!(
+            "{STYLED}import * as UI from './forward'; export const P = styled.div`${{UI.Renamed}} {{ margin: 0; }}`;"
+        );
+        reset();
+        let named = extract_in(
+            &[
+                ("/src/base.ts", &base),
+                ("/src/forward.ts", forward),
+                ("/src/app.tsx", &named),
+            ],
+            "/src/app.tsx",
+        )
+        .unwrap();
+        reset();
+        let namespace = extract_in(
+            &[
+                ("/src/base.ts", &base),
+                ("/src/forward.ts", forward),
+                ("/src/app.tsx", &namespace),
+            ],
+            "/src/app.tsx",
+        )
+        .unwrap();
+        assert_eq!(namespace.styles, named.styles);
+        assert_eq!(namespace.dependencies, ["/src/base.ts", "/src/forward.ts"]);
+    }
+
+    #[test]
+    #[serial]
+    fn namespace_css_props_when_shadowed_keep_the_runtime_component() {
+        let base = format!("{STYLED}export const Child = styled.div`color: red; padding: 4px;`;");
+        for body in [
+            "export const C = (UI) => <UI.Child css={{ color: 'blue' }} />;",
+            "import { jsx } from 'react/jsx-runtime'; export const C = (UI) => jsx(UI.Child, { css: { color: 'blue' } });",
+        ] {
+            let app = format!(
+                "/** @jsxImportSource @emotion/react */\nimport * as UI from './base';\nexport const A = <UI.Child css={{{{ padding: 8 }}}} />;\n{body}"
+            );
+            reset();
+            let output = extract_in(
+                &[("/src/base.ts", &base), ("/src/app.tsx", &app)],
+                "/src/app.tsx",
+            )
+            .unwrap();
+            assert!(output.code.contains("UI.Child"));
+            assert_eq!(output.styles.len(), 3);
+            assert!(
+                output
+                    .styles
+                    .iter()
+                    .all(|style| !format!("{style:?}").contains("4px"))
+            );
+        }
+    }
+
+    #[test]
+    #[serial]
+    fn namespace_selectors_when_shadowed_are_not_imported_markers() {
+        let base = format!("{STYLED}export const Child = styled.div`color: red;`;");
+        for body in [
+            "export const P = (UI) => styled.div`${UI.Child} { margin: 0; }`;",
+            "export const P = (UI) => styled.div({ [UI.Child]: { margin: 0 } });",
+            "export const P = (UI) => styled.div({ [`& ${UI.Child}`]: { margin: 0 } });",
+        ] {
+            let app = format!(
+                "{STYLED}import * as UI from './base';\nconst Anchor = styled.div`${{UI.Child}} {{ padding: 0; }}`;\n{body}"
+            );
+            reset();
+            let error = extract_in(
+                &[("/src/base.ts", &base), ("/src/app.tsx", &app)],
+                "/src/app.tsx",
+            )
+            .unwrap_err();
+            assert!(error.starts_with("/src/app.tsx:"), "{error}");
+            assert!(error.contains("UI.Child"), "{error}");
+        }
+    }
+
+    #[test]
+    #[serial]
+    fn namespace_css_props_when_no_value_export_exists_do_not_inherit_styles() {
+        let base = format!("{STYLED}export const Child = styled.div`padding: 4px;`;");
+        for import in [
+            "import * as UI from './base';",
+            "import type * as UI from './base';",
+            "import { Child as UI } from './base';",
+            "import { type Child as UI } from './base';",
+        ] {
+            let member = if import == "import * as UI from './base';" {
+                "Missing"
+            } else {
+                "Child"
+            };
+            let app = format!(
+                "/** @jsxImportSource @emotion/react */\n{import}\nexport const C = () => <UI.{member} css={{{{ color: 'blue' }}}} />;"
+            );
+            reset();
+            let output = extract_in(
+                &[("/src/base.ts", &base), ("/src/app.tsx", &app)],
+                "/src/app.tsx",
+            )
+            .unwrap();
+            assert!(output.code.contains(&format!("UI.{member}")));
+            assert_eq!(output.styles.len(), 1);
+        }
+    }
+
+    #[test]
+    #[serial]
+    fn module_definitions_when_inlining_reports_invalid_locals_are_opaque() {
+        let allocator = Allocator::default();
+        let option = option();
+        let resolver = |_: &str, _: &str| None;
+        let mut reader = Reader {
+            option: &option,
+            resolver: &resolver,
+            allocator: &allocator,
+            modules: FxHashMap::default(),
+            reading: Vec::new(),
+            dependencies: BTreeSet::new(),
+        };
+        let code = format!(
+            "{STYLED}import {{ css }} from '@devup-ui/react'; export const Child = styled.div`padding: 4px;`; export function bad() {{ const local = {{ color: 'red' }}; expose(local); return css(local); }}"
+        );
+        reset();
+        let module = reader.read("/src/base.ts", &code).unwrap();
+        assert!(module["Child"].definition.is_none());
+        assert_eq!(module["Child"].markers.len(), 1);
+    }
+
+    #[test]
+    #[serial]
+    fn namespace_type_reexports_when_given_css_do_not_become_value_definitions() {
+        let base = format!("{STYLED}export const Child = styled.div`padding: 4px;`;");
+        let app = "/** @jsxImportSource @emotion/react */\nimport * as UI from './forward'; export const C = () => <UI.Child css={{ color: 'blue' }} />;";
+        for forward in [
+            "export type { Child } from './base';",
+            "export { type Child } from './base';",
+            "export type * from './base';",
+        ] {
+            reset();
+            let output = extract_in(
+                &[
+                    ("/src/base.ts", &base),
+                    ("/src/forward.ts", forward),
+                    ("/src/app.tsx", app),
+                ],
+                "/src/app.tsx",
+            )
+            .unwrap();
+            assert!(output.code.contains("<UI.Child"));
+            assert_eq!(output.styles.len(), 1);
+        }
+    }
+
+    #[test]
+    #[serial]
+    fn namespace_selectors_when_not_value_members_report_the_source_location() {
+        let base = format!("{STYLED}export const Child = styled.div`color: red;`;");
+        for (import, selected) in [
+            ("import * as UI from './base';", "UI.Missing"),
+            ("import type * as UI from './base';", "UI.Child"),
+            ("import { Child as UI } from './base';", "UI.Child"),
+        ] {
+            let app = format!(
+                "{STYLED}{import}\nexport const P = styled.div`${{{selected}}} {{ margin: 0; }}`;"
+            );
+            reset();
+            let error = extract_in(
+                &[("/src/base.ts", &base), ("/src/app.tsx", &app)],
+                "/src/app.tsx",
+            )
+            .unwrap_err();
+            assert!(error.starts_with("/src/app.tsx:3:31:"), "{error}");
+            assert!(error.contains(selected), "{error}");
+        }
+    }
     const BASE_BODY: &str = r"export const Base = styled.div`color: red; padding: 4px;`;
 export const Dyn = styled.button`font-size: ${(p) => (p.big ? '20px' : '10px')};`;
 export const Pick = styled.p.withConfig({ shouldForwardProp: (prop) => prop !== 'tone' })`color: ${(p) => p.tone};`;
@@ -899,3 +1726,6 @@ export default styled.span`margin: 1px;`;
         assert_eq!(exports.index("default"), 0);
     }
 }
+#[cfg(test)]
+#[path = "imported_styled_coverage_tests.rs"]
+mod coverage_tests;

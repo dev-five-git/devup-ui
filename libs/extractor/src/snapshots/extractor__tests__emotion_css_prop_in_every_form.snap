@@ -361,7 +361,7 @@ expression: "emotion_outputs(&[(\"test.tsx\",\n\"export const App = () => <div c
                     ExtractDynamicStyle {
                         property: "color",
                         level: 0,
-                        identifier: "c",
+                        identifier: "(__devupValue=>typeof __devupValue===`number`&&__devupValue!==0?__devupValue+`px`:__devupValue)(c)",
                         selector: None,
                         style_order: None,
                     },
@@ -370,13 +370,13 @@ expression: "emotion_outputs(&[(\"test.tsx\",\n\"export const App = () => <div c
                     ExtractDynamicStyle {
                         property: "width",
                         level: 0,
-                        identifier: "w",
+                        identifier: "(__devupValue=>typeof __devupValue===`number`&&__devupValue!==0?__devupValue+`px`:__devupValue)(w)",
                         selector: None,
                         style_order: None,
                     },
                 ),
             },
-            code: "import \"@devup-ui/react/devup-ui.css\";\nexport const App = ({ c, w }) => <div className=\"x a c\" style={{\n\t...{\n\t\t\"--b\": w,\n\t\t\"--d\": c\n\t},\n\t...{ opacity: 1 }\n}} />;\n",
+            code: "import \"@devup-ui/react/devup-ui.css\";\nexport const App = ({ c, w }) => <div className=\"x a c\" style={{\n\t...{\n\t\t\"--b\": (__devupValue=>typeof __devupValue===`number`&&__devupValue!==0?__devupValue+`px`:__devupValue)(w),\n\t\t\"--d\": (__devupValue=>typeof __devupValue===`number`&&__devupValue!==0?__devupValue+`px`:__devupValue)(c)\n\t},\n\t...{ opacity: 1 }\n}} />;\n",
         },
     ),
     (
@@ -496,13 +496,13 @@ expression: "emotion_outputs(&[(\"test.tsx\",\n\"export const App = () => <div c
                     ExtractDynamicStyle {
                         property: "width",
                         level: 0,
-                        identifier: "f({size:4})",
+                        identifier: "(__devupValue=>typeof __devupValue===`number`&&__devupValue!==0?__devupValue+`px`:__devupValue)(f({size:4}))",
                         selector: None,
                         style_order: None,
                     },
                 ),
             },
-            code: "import \"@devup-ui/react/devup-ui.css\";\nconst SPACE = 4;\nconst base = {\n\tpadding: 4,\n\tlineHeight: 1.5,\n\t\"&:hover\": { margin: 2 }\n};\nexport const App = () => <div className=\"a b c d f\" style={{ \"--e\": f({size:4}) }} />;\n",
+            code: "import \"@devup-ui/react/devup-ui.css\";\nconst SPACE = 4;\nconst base = {\n\tpadding: 4,\n\tlineHeight: 1.5,\n\t\"&:hover\": { margin: 2 }\n};\nexport const App = () => <div className=\"a b c d f\" style={{ \"--e\": (__devupValue=>typeof __devupValue===`number`&&__devupValue!==0?__devupValue+`px`:__devupValue)(f({size:4})) }} />;\n",
         },
     ),
     (
@@ -571,13 +571,13 @@ expression: "emotion_outputs(&[(\"test.tsx\",\n\"export const App = () => <div c
                     ExtractDynamicStyle {
                         property: "color",
                         level: 0,
-                        identifier: "c",
+                        identifier: "(__devupValue=>typeof __devupValue===`number`&&__devupValue!==0?__devupValue+`px`:__devupValue)(c)",
                         selector: None,
                         style_order: None,
                     },
                 ),
             },
-            code: "import \"@devup-ui/react/devup-ui.css\";\nimport { jsx as _jsx } from \"react/jsx-runtime\";\nconst base = { padding: 2 };\nconst SPACE = 3;\nexport const App = ({ c, s }) => [_jsx(\"div\", { id: 1 }), _jsx(\"div\", {\n\tclassName: \"a b d\",\n\tstyle: {\n\t\t...{ \"--c\": c },\n\t\t...s\n\t}\n})];\n",
+            code: "import \"@devup-ui/react/devup-ui.css\";\nimport { jsx as _jsx } from \"react/jsx-runtime\";\nconst base = { padding: 2 };\nconst SPACE = 3;\nexport const App = ({ c, s }) => [_jsx(\"div\", { id: 1 }), _jsx(\"div\", {\n\tclassName: \"a b d\",\n\tstyle: {\n\t\t...{ \"--c\": (__devupValue=>typeof __devupValue===`number`&&__devupValue!==0?__devupValue+`px`:__devupValue)(c) },\n\t\t...s\n\t}\n})];\n",
         },
     ),
 ]

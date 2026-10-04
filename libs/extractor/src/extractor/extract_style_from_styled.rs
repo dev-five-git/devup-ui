@@ -3,7 +3,6 @@ use rustc_hash::FxHashMap;
 use crate::{
     ExtractStyleProp,
     component::ExportVariableKind,
-    css_utils::{TemplateStyles, css_to_style_template},
     extract_style::extract_style_value::ExtractStyleValue,
     extractor::{
         ExtractResult,
@@ -11,12 +10,12 @@ use crate::{
     },
     gen_class_name::{gen_class_names, merge_expression_for_class_name},
     gen_style::gen_styles,
-    styled_reads::{Forward, Reads, withheld},
+    styled_reads::{Forward, Reads, withheld as props_withheld},
     utils::{
         STYLE_OBJECT, StyleArguments, build_time_error, call_with_values, expression_to_code,
         merge_object_expressions, readable_code, reads_directly, style_arguments,
-        uncomposable_error, unplaced_error, unreadable_styles, unwrap_syntax_only,
-        unwrap_syntax_only_mut, wrap_array_filter, wrap_direct_call,
+        uncomposable_error, unreadable_styles, unwrap_syntax_only, unwrap_syntax_only_mut,
+        wrap_array_filter, wrap_direct_call,
     },
 };
 use oxc_allocator::{CloneIn, FromIn, GetAllocator};
@@ -34,6 +33,15 @@ use oxc_syntax::operator::{BinaryOperator, LogicalOperator, UnaryOperator};
 
 const PROPS_FUNCTION: &str = "a style function of the props must give one rule object at once, with every entry written out, as `(props) => ({ color: props.color })`";
 
+#[path = "styled_rule_choices.rs"]
+mod rule_choices;
+
+#[path = "styled_template_composition.rs"]
+mod template_composition;
+
+#[path = "styled_rule_parts.rs"]
+mod rule_parts;
+
 /// The rules `style`, an argument of a styled component, gives, with each
 /// value a function of the props written as the value of a CSS variable the
 /// component sets: a function giving rules becomes the rules with each value
@@ -42,6 +50,7 @@ const PROPS_FUNCTION: &str = "a style function of the props must give one rule o
 fn rules_reading_props<'a>(
     ast_builder: &AstBuilder<'a>,
     style: &mut Expression<'a>,
+    bindings: &StyledBindings<'_>,
 ) -> Result<(), Expression<'a>> {
     use oxc_allocator::TakeIn;
 
@@ -54,16 +63,44 @@ fn rules_reading_props<'a>(
             .ok_or_else(|| code.clone_in(ast_builder.allocator()))?;
         let params = params.clone_in_with_semantic_ids(ast_builder.allocator());
         let mut rules = returned.take_in(ast_builder);
-        let Expression::ObjectExpression(object) = unwrap_syntax_only_mut(&mut rules) else {
-            return Err(code);
-        };
-        props_leaves(ast_builder, object, &params).ok_or(code)?;
+        rules = rule_choices::normalize(ast_builder, &rules, bindings)
+            .map_err(|_| code.clone_in(ast_builder.allocator()))?;
+        props_rules(ast_builder, &mut rules, &params).ok_or(code)?;
         *style = rules;
     }
     if let Expression::ObjectExpression(object) = unwrap_syntax_only_mut(style) {
         call_with_props(ast_builder, object);
     }
     Ok(())
+}
+
+/// Written rule branches lowered independently, so an omitted property keeps
+/// the atom preceding it rather than setting an absent CSS variable.
+fn props_rules<'a>(
+    ast_builder: &AstBuilder<'a>,
+    rules: &mut Expression<'a>,
+    params: &FormalParameters<'a>,
+) -> Option<()> {
+    use oxc_allocator::TakeIn;
+
+    let rules = unwrap_syntax_only_mut(rules);
+    match rules {
+        Expression::ObjectExpression(object) => {
+            props_leaves(ast_builder, object, params)?;
+            call_with_props(ast_builder, object);
+        }
+        Expression::ConditionalExpression(conditional) => {
+            props_rules(ast_builder, &mut conditional.consequent, params)?;
+            props_rules(ast_builder, &mut conditional.alternate, params)?;
+            let test = conditional.test.take_in(ast_builder);
+            let function = props_function(ast_builder, params, test, "opacity");
+            conditional.test =
+                wrap_direct_call(ast_builder, &function, &[identifier(ast_builder, "rest")]);
+        }
+        Expression::NullLiteral(_) => {}
+        _ => return None,
+    }
+    Some(())
 }
 
 /// Whether `value` is a literal, which reads the same given any props
@@ -268,10 +305,39 @@ pub struct Naming<'s> {
     pub markers: &'s [String],
 }
 
+/// The bindings styled factories and their CSS mixins read in this module.
+pub struct StyledBindings<'s> {
+    pub imports: &'s FxHashMap<String, ExportVariableKind>,
+    pub values: &'s crate::style_values::StyleValues,
+    pub inline_css: &'s FxHashMap<u32, Vec<ExtractStyleValue>>,
+}
+
+impl StyledBindings<'_> {
+    fn styles(&self, expression: &Expression<'_>) -> Option<&[ExtractStyleValue]> {
+        self.values
+            .styles(unwrap_syntax_only(expression))
+            .or_else(|| {
+                self.inline_css
+                    .get(&expression.span().start)
+                    .map(Vec::as_slice)
+            })
+    }
+}
+
 /// Whether a styled component renders a tag, which takes only valid
 /// attributes, rather than a component
 fn renders_tag(name: &str, bound: Option<&Expression<'_>>) -> bool {
     bound.is_none() && name.starts_with(|c: char| c.is_ascii_lowercase()) && !name.contains('.')
+}
+
+/// The shared legacy whitelist includes `on`, but a native tag cannot take
+/// that styling flag as a boolean attribute. Explicit forwarding stays intact.
+fn withheld(reads: &Reads, renders_tag: bool, forward: Option<&Forward>) -> Vec<String> {
+    let mut names = props_withheld(reads, renders_tag, forward);
+    if renders_tag && forward.is_none() && reads.names.iter().any(|name| name == "on") {
+        names.push("on".to_string());
+    }
+    names
 }
 
 /// `own` applying after `inherited`: a prop passes only when both pass it
@@ -723,11 +789,12 @@ pub fn extract_style_from_styled<'a>(
     ast_builder: &AstBuilder<'a>,
     expression: &mut Expression<'a>,
     naming: Naming<'_>,
-    imports: &FxHashMap<String, ExportVariableKind>,
+    bindings: StyledBindings<'_>,
     attrs: &[Expression<'a>],
     inherited: Option<&StyledDefinition<'a>>,
     forward: Option<Forward>,
 ) -> StyledExtraction<'a> {
+    let imports = bindings.imports;
     let Naming {
         split_filename,
         markers,
@@ -738,13 +805,21 @@ pub fn extract_style_from_styled<'a>(
         reads.read_in(attr);
     }
     let mut composed_classes = Vec::new();
+    let mut composed_rules = None;
     let mut errors = Vec::new();
+    errors.extend(crate::css_utils::object_layer_errors(expression, "styled"));
     if let Expression::CallExpression(call) = expression
         && extract_base_tag_and_class_name(ast_builder, &call.callee, imports).is_some()
     {
+        for argument in &call.arguments {
+            reads.read_in(match argument {
+                Argument::SpreadElement(spread) => &spread.argument,
+                argument => argument.to_expression(),
+            });
+        }
         for argument in &mut call.arguments {
             if let Some(rules) = argument.as_expression_mut()
-                && let Err(code) = rules_reading_props(ast_builder, rules)
+                && let Err(code) = rules_reading_props(ast_builder, rules, &bindings)
             {
                 errors.push((
                     code.span().start,
@@ -762,6 +837,21 @@ pub fn extract_style_from_styled<'a>(
                 call.arguments =
                     oxc_allocator::Vec::from_array_in([Argument::from(rules)], ast_builder);
                 composed_classes = classes;
+            }
+            None if !reads_directly(&call.arguments)
+                && let Some((rules, classes)) =
+                    rule_parts::compose(ast_builder, &call.arguments) =>
+            {
+                composed_rules = Some(rules);
+                composed_classes = classes;
+                call.arguments = oxc_allocator::Vec::from_array_in(
+                    [Argument::from(Expression::new_object_expression(
+                        SPAN,
+                        oxc_allocator::Vec::new_in(ast_builder),
+                        ast_builder,
+                    ))],
+                    ast_builder,
+                );
             }
             None if !reads_directly(&call.arguments) => {
                 errors.push((call.span.start, uncomposable_error(&call.arguments)));
@@ -781,6 +871,9 @@ pub fn extract_style_from_styled<'a>(
         expression
         && let Some(mut base) = extract_base_tag_and_class_name(ast_builder, &tag.tag, imports)
     {
+        errors.extend(crate::css_utils::template_layer_errors(
+            &tag.quasi, "styled",
+        ));
         // Case 1: styled.div`css` or styled("div")`css`
         // Check if tag is styled.div or styled(...)
         // Extract CSS from template literal
@@ -788,19 +881,12 @@ pub fn extract_style_from_styled<'a>(
         for interpolation in &tag.quasi.expressions {
             reads.read_in(interpolation);
         }
-        let TemplateStyles {
-            styles,
+        let template_composition::TemplateComposition {
+            styles: own,
             statements,
-            unplaced,
-        } = css_to_style_template(&tag.quasi, 0, &None);
-        for index in unplaced {
-            let expression = &tag.quasi.expressions[index];
-            errors.push((expression.span().start, unplaced_error(expression)));
-        }
-        let own: Vec<ExtractStyleProp<'_>> = styles
-            .into_iter()
-            .map(|ex| ExtractStyleProp::Static(ex.into()))
-            .collect();
+            errors: template_errors,
+        } = template_composition::compose(ast_builder, &tag.quasi, &bindings);
+        errors.extend(template_errors);
         let defaults = base.styles.take();
         let base = base.extending(ast_builder, inherited);
         let mut props_styles = compose_styles(ast_builder, inherited, defaults, own);
@@ -888,18 +974,20 @@ pub fn extract_style_from_styled<'a>(
             style_vars,
             props,
             ..
-        } = extract_style_from_expression(
-            ast_builder,
-            None,
-            if let Argument::SpreadElement(spread) = &mut call.arguments[style_index] {
-                &mut spread.argument
-            } else {
-                call.arguments[style_index].to_expression_mut()
-            },
-            0,
-            &None,
-            LiteralHandling::ExpandResponsiveThemeToken,
-        );
+        } = composed_rules.unwrap_or_else(|| {
+            extract_style_from_expression(
+                ast_builder,
+                None,
+                if let Argument::SpreadElement(spread) = &mut call.arguments[style_index] {
+                    &mut spread.argument
+                } else {
+                    call.arguments[style_index].to_expression_mut()
+                },
+                0,
+                &None,
+                LiteralHandling::ExpandResponsiveThemeToken,
+            )
+        });
         let mut unreadable = Vec::new();
         unreadable_styles(&styles, true, &mut unreadable);
         errors.extend(
@@ -1016,7 +1104,7 @@ fn style_expressions<'p, 'a>(prop: &'p ExtractStyleProp<'a>) -> Vec<&'p Expressi
 /// declare, the props, and what every module reads the same
 fn closed(code: impl Iterator<Item = String>) -> bool {
     let source = code
-        .map(|code| ["(", &code, ");\n"].concat())
+        .map(|code| ["(", crate::css_utils::rm_last_semi_colon(&code), ");\n"].concat())
         .collect::<String>();
     let allocator = oxc_allocator::Allocator::default();
     let ParserReturn {
@@ -1807,6 +1895,14 @@ fn create_styled_component<'a>(
 }
 
 #[cfg(test)]
+#[path = "w27_props_rule_choices_tests.rs"]
+mod w27_props_rule_choices_tests;
+
+#[cfg(test)]
+#[path = "w27_styled_known_mixins_tests.rs"]
+mod w27_styled_known_mixins_tests;
+
+#[cfg(test)]
 #[allow(clippy::expect_used, clippy::unwrap_used)]
 mod tests {
     use std::collections::BTreeMap;
@@ -1865,6 +1961,8 @@ mod tests {
             "((p) => p.on)(rest)"
         ]));
         assert!(closed_code(&["(p: Props) => p.x"]));
+        assert!(closed_code(&["({ id: `known` });", "((p) => p.on)(rest);"]));
+        assert!(!closed_code(&["({ onClick: handler });"]));
         assert!(!closed_code(&["(p) => scale(p.x)"]));
         assert!(!closed_code(&["(p) => p.x", "window.mode"]));
         assert!(!closed_code(&["@#$"]));

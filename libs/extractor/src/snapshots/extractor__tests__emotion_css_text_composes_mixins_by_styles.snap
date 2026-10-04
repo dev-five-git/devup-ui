@@ -33,10 +33,10 @@ expression: "library_outputs(&[\"import { css } from '@emotion/react';\\nconst m
     ),
     (
         "import { css } from '@emotion/react';\nexport const a = css`${css`color: red;`}; color: blue;`;",
-        "ToBTreeSet { styles: {Static(ExtractStaticStyle { property: \"color\", value: \"blue\", level: 0, selector: None, style_order: None, layer: None }), Static(ExtractStaticStyle { property: \"color\", value: \"red\", level: 0, selector: None, style_order: None, layer: None })}, code: \"import \\\"@devup-ui/react/devup-ui.css\\\";\\nexport const a = \\\"a b\\\";\\n\" }",
+        "ToBTreeSet { styles: {Static(ExtractStaticStyle { property: \"color\", value: \"blue\", level: 0, selector: None, style_order: None, layer: None }), Static(ExtractStaticStyle { property: \"color\", value: \"red\", level: 0, selector: None, style_order: None, layer: None })}, code: \"import \\\"@devup-ui/react/devup-ui.css\\\";\\nexport const a = \\\"b\\\";\\n\" }",
     ),
     (
         "import { css } from '@emotion/react';\nexport const a = ({ on }) => css`${on ? css`color: red;` : css({ margin: 1 })}; color: blue;`;",
-        "ToBTreeSet { styles: {Static(ExtractStaticStyle { property: \"color\", value: \"blue\", level: 0, selector: None, style_order: None, layer: None }), Static(ExtractStaticStyle { property: \"color\", value: \"red\", level: 0, selector: None, style_order: None, layer: None }), Static(ExtractStaticStyle { property: \"margin\", value: \"1px\", level: 0, selector: None, style_order: None, layer: None })}, code: \"import \\\"@devup-ui/react/devup-ui.css\\\";\\nexport const a = ({ on }) => `${on ? \\\"a\\\" : \\\"\\\"} ${`c ${on ? \\\"\\\" : \\\"b\\\"}`}`;\\n\" }",
+        "ToBTreeSet { styles: {Static(ExtractStaticStyle { property: \"color\", value: \"blue\", level: 0, selector: None, style_order: None, layer: None }), Static(ExtractStaticStyle { property: \"color\", value: \"red\", level: 0, selector: None, style_order: None, layer: None }), Static(ExtractStaticStyle { property: \"margin\", value: \"1px\", level: 0, selector: None, style_order: None, layer: None })}, code: \"import \\\"@devup-ui/react/devup-ui.css\\\";\\nexport const a = ({ on }) => `c ${on ? \\\"\\\" : \\\"b\\\"}`;\\n\" }",
     ),
 ]

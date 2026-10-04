@@ -94,6 +94,10 @@ impl LibraryNumbers<'_> {
                 for element in &array.elements {
                     if let Some(element) = element.as_expression() {
                         self.pixelify(element);
+                    } else if let oxc_ast::ast::ArrayExpressionElement::SpreadElement(spread) =
+                        element
+                    {
+                        self.pixelify(&spread.argument);
                     }
                 }
             }
@@ -147,6 +151,10 @@ impl LibraryNumbers<'_> {
                 for element in &array.elements {
                     if let Some(element) = element.as_expression() {
                         self.pixelify_css(element);
+                    } else if let oxc_ast::ast::ArrayExpressionElement::SpreadElement(spread) =
+                        element
+                    {
+                        self.pixelify_css(&spread.argument);
                     }
                 }
             }
@@ -279,7 +287,10 @@ impl<'a> Visit<'a> for LibraryNumbers<'a> {
             Some(RulesAt::EveryArgument) => call
                 .arguments
                 .iter()
-                .filter_map(Argument::as_expression)
+                .filter_map(|argument| match argument {
+                    Argument::SpreadElement(spread) => Some(&spread.argument),
+                    argument => argument.as_expression(),
+                })
                 .collect(),
             None => vec![],
         };
@@ -817,6 +828,10 @@ fn generate_transformed_import(
     }
     result
 }
+
+#[cfg(test)]
+#[path = "numeric_context_w27_tests.rs"]
+mod numeric_context_w27_tests;
 
 #[cfg(test)]
 mod tests {

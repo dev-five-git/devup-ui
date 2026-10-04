@@ -9,7 +9,7 @@ expression: "library_outputs(&[\"import { css } from '@emotion/react';\\nexport 
     ),
     (
         "import { css } from '@emotion/react';\nexport function f(c) { const inner = { color: c }; return css(inner); }",
-        "Error: /src/App.tsx:2:63: `css()` cannot use `inner` at build time: a style object it composes must be written in it, or declared with `const` at the top level of the module, where the build reads it",
+        "Error: /src/App.tsx:2:59: `css()` cannot use `inner[`color`]` at build time: its values must be literals, theme tokens or constants, or be computed from them",
     ),
     (
         "import styled from '@emotion/styled';\nexport function f() { const inner = { color: 'red' }; return styled.div(inner); }",
@@ -17,7 +17,7 @@ expression: "library_outputs(&[\"import { css } from '@emotion/react';\\nexport 
     ),
     (
         "import styled from '@emotion/styled';\nexport function f(c) { const inner = { color: c }; return styled.div(inner); }",
-        "Error: /src/App.tsx:2:70: `styled()` cannot use `inner` at build time: a style object it composes must be written in it, or declared with `const` at the top level of the module, where the build reads it",
+        "ToBTreeSet { styles: {Dynamic(ExtractDynamicStyle { property: \"color\", level: 0, identifier: \"inner[`color`]\", selector: None, style_order: None })}, code: \"import \\\"@devup-ui/react/devup-ui.css\\\";\\nimport { forwardRef as __devupForwardRef } from \\\"react\\\";\\nexport function f(c) {\\n\\tconst inner = { color: c };\\n\\treturn __devupForwardRef((__devupRefProps, __devupRef) => (({ style, className, as: DevupAs = \\\"div\\\", forwardedAs, ...rest }) => <DevupAs {...(({ \\\"theme\\\": __devupOmit0, ...__devupDom }) => __devupDom)(rest)} as={forwardedAs} className={[\\\"a\\\", className].filter(Boolean).join(\\\" \\\")} style={{\\n\\t\\t...{ \\\"--b\\\": inner[`color`] },\\n\\t\\t...style\\n\\t}} />)({\\n\\t\\t...__devupRefProps,\\n\\t\\tref: __devupRef\\n\\t}));\\n}\\n\" }",
     ),
     (
         "import styled, { css } from 'styled-components';\nexport function f() { const inner = { color: 'red' }; return styled.div(inner); }",
@@ -33,7 +33,7 @@ expression: "library_outputs(&[\"import { css } from '@emotion/react';\\nexport 
     ),
     (
         "import { style } from '@vanilla-extract/css';\nexport function f(c) { const inner = { color: c }; return style(inner); }",
-        "Error: /src/App.tsx:2:65: `css()` cannot use `inner` at build time: a style object it composes must be written in it, or declared with `const` at the top level of the module, where the build reads it",
+        "Error: /src/App.tsx:2:59: `css()` cannot use `inner[`color`]` at build time: its values must be literals, theme tokens or constants, or be computed from them",
     ),
     (
         "import { Global } from '@emotion/react';\nexport function f() { const inner = { body: { margin: 8 } }; return <Global styles={inner} />; }",
