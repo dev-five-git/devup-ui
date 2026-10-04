@@ -76,6 +76,7 @@ describe('local CSS loading', () => {
   })
   afterEach(() => {
     for (const spy of spies) spy.mockRestore()
+    setWasmForTesting(undefined)
   })
   it('returns build source and initializes defaults once', async () => {
     const run = invoke({})

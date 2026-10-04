@@ -76,6 +76,7 @@ describe('local source extraction', () => {
     write = spyOn(fsPromises, 'writeFile').mockResolvedValue(undefined)
     extract = spyOn(wasm, 'codeExtract').mockReturnValue({
       code: 'compiled',
+      css: undefined,
       cssFile: undefined,
       map: undefined,
       updatedBaseStyle: false,
@@ -101,6 +102,7 @@ describe('local source extraction', () => {
   })
   afterEach(() => {
     for (const spy of spies) spy.mockRestore()
+    setWasmForTesting(undefined)
   })
   it('extracts with project-relative ids and dependency paths in build mode', async () => {
     const projectRoot = resolve('project')
