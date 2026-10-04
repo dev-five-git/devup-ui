@@ -415,13 +415,9 @@ describe('DevupUINextPlugin', () => {
               ],
               condition: {
                 not: {
-                  path: new RegExp(
-                    `(node_modules(?!.*(${['@devup-ui', '@devup-editor']
-                      .join('|')
-                      .replaceAll(
-                        '/',
-                        '[\\/\\\\_]',
-                      )})([\\/\\\\.]|$)))|(.mdx.[tj]sx?$)`,
+                  path: importGraphModule.createNodeModulesExcludeRegex(
+                    [],
+                    '.mdx.[tj]sx?$',
                   ),
                 },
               },
@@ -467,13 +463,9 @@ describe('DevupUINextPlugin', () => {
             '*.{tsx,ts,jsx,js,mjs}': {
               condition: {
                 not: {
-                  path: new RegExp(
-                    `(node_modules(?!.*(${['@devup-ui', '@devup-editor']
-                      .join('|')
-                      .replaceAll(
-                        '/',
-                        '[\\/\\\\_]',
-                      )})([\\/\\\\.]|$)))|(.mdx.[tj]sx?$)`,
+                  path: importGraphModule.createNodeModulesExcludeRegex(
+                    [],
+                    '.mdx.[tj]sx?$',
                   ),
                 },
               },
@@ -528,7 +520,15 @@ describe('DevupUINextPlugin', () => {
       readFileSyncSpy.mockReturnValue(JSON.stringify({ theme: 'theme' }))
       mkdirSyncSpy.mockReturnValue('')
       writeFileSyncSpy.mockReturnValue(undefined)
-      const ret = DevupUI({})
+      const realpathSpy = spyOn(fs, 'realpathSync').mockImplementation((path) =>
+        resolve(String(path)),
+      )
+      let ret: ReturnType<typeof DevupUI>
+      try {
+        ret = DevupUI({})
+      } finally {
+        realpathSpy.mockRestore()
+      }
 
       expect(ret).toEqual({
         turbopack: {
@@ -560,13 +560,9 @@ describe('DevupUINextPlugin', () => {
             '*.{tsx,ts,jsx,js,mjs}': {
               condition: {
                 not: {
-                  path: new RegExp(
-                    `(node_modules(?!.*(${['@devup-ui', '@devup-editor']
-                      .join('|')
-                      .replaceAll(
-                        '/',
-                        '[\\/\\\\_]',
-                      )})([\\/\\\\.]|$)))|(.mdx.[tj]sx?$)`,
+                  path: importGraphModule.createNodeModulesExcludeRegex(
+                    [],
+                    '.mdx.[tj]sx?$',
                   ),
                 },
               },
