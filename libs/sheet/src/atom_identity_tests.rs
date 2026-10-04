@@ -4,6 +4,7 @@ use css::style_selector::{AtRule, AtRuleKind};
 use serial_test::serial;
 
 mod first_value;
+mod mixed_placement;
 
 #[test]
 #[serial]
