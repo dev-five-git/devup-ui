@@ -1,7 +1,11 @@
 import { writeFile } from 'node:fs/promises'
 import { basename, dirname, join, relative, resolve } from 'node:path'
 
-import { createModuleResolver, createStateWriter } from '@devup-ui/plugin-utils'
+import {
+  createModuleResolver,
+  createStateWriter,
+  remapMdxError,
+} from '@devup-ui/plugin-utils'
 import {
   codeExtract,
   exportClassMap,
@@ -21,6 +25,8 @@ export interface DevupUILoaderOptions {
   watch: boolean
   singleCss: boolean
   importAliases?: Record<string, string | null>
+  rootDir?: string
+  conditions?: readonly string[]
 }
 
 function toLoaderError(error: unknown): Error {
@@ -37,18 +43,31 @@ function parseSourceMap(sourceMap: string | undefined): string | null {
 const stateWriter = createStateWriter((path, content, encoding) =>
   encoding ? writeFile(path, content, encoding) : writeFile(path, content),
 )
-let moduleResolver: ReturnType<typeof createModuleResolver> | undefined
+const moduleResolvers = new Map<
+  string,
+  ReturnType<typeof createModuleResolver>
+>()
 
 /** Resolve imports to the cwd-relative ids this loader extracts files under */
-function setCwdModuleResolver(): void {
-  moduleResolver ??= createModuleResolver({
-    toId: (path) => relative(process.cwd(), path).replaceAll('\\', '/'),
-  })
+function setCwdModuleResolver(
+  rootDir: string,
+  conditions: readonly string[],
+): void {
+  const key = JSON.stringify([rootDir, conditions])
+  let moduleResolver = moduleResolvers.get(key)
+  if (!moduleResolver) {
+    moduleResolver = createModuleResolver({
+      cwd: rootDir,
+      conditions,
+      toId: (path) => relative(rootDir, path).replaceAll('\\', '/'),
+    })
+    moduleResolvers.set(key, moduleResolver)
+  }
   setModuleResolver(moduleResolver)
 }
 
 const devupUILoader: RawLoaderDefinitionFunction<DevupUILoaderOptions> =
-  function (source) {
+  function (source, inputSourceMap) {
     const {
       watch,
       package: libPackage,
@@ -58,6 +77,8 @@ const devupUILoader: RawLoaderDefinitionFunction<DevupUILoaderOptions> =
       fileMapFile,
       singleCss,
       importAliases = {},
+      rootDir = process.cwd(),
+      conditions = ['import', 'module', 'node'],
     } = this.getOptions()
     const callback = this.async()
     const id = this.resourcePath
@@ -75,10 +96,10 @@ const devupUILoader: RawLoaderDefinitionFunction<DevupUILoaderOptions> =
       // FILE_ROUTES keys (built with forward slashes by plugin-utils). Without
       // this, single-importer collapse and atom hoisting silently no-op on
       // Windows. No-op on POSIX.
-      const relativePath = relative(process.cwd(), id).replaceAll('\\', '/')
+      const relativePath = relative(rootDir, id).replaceAll('\\', '/')
 
       if (!relCssDir.startsWith('./')) relCssDir = `./${relCssDir}`
-      setCwdModuleResolver()
+      setCwdModuleResolver(rootDir, conditions)
       const {
         code,
         css = '',
@@ -97,7 +118,7 @@ const devupUILoader: RawLoaderDefinitionFunction<DevupUILoaderOptions> =
         importAliases,
       )
       for (const dependency of dependencies) {
-        this.addDependency(resolve(dependency))
+        this.addDependency(resolve(rootDir, dependency))
       }
       const sourceMap = parseSourceMap(map)
       const promises: Promise<void>[] = []
@@ -133,7 +154,15 @@ const devupUILoader: RawLoaderDefinitionFunction<DevupUILoaderOptions> =
         (error) => callback(toLoaderError(error)),
       )
     } catch (error) {
-      callback(toLoaderError(error))
+      callback(
+        /\.mdx$/i.test(id)
+          ? remapMdxError(
+              error,
+              relative(rootDir, id).replaceAll('\\', '/'),
+              inputSourceMap,
+            )
+          : toLoaderError(error),
+      )
     }
     return
   }
