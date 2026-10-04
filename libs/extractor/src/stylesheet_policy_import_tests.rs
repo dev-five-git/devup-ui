@@ -111,3 +111,79 @@ fn a_transitive_effect_keeps_literal_imports_on_the_evaluated_path() {
     // Then
     assert_eq!(actual, Plan::Run);
 }
+
+#[rstest::rstest]
+#[case::diamond(false, Plan::Plain)]
+#[case::cycle(true, Plan::Run)]
+fn import_graph_requires_a_completed_proof_before_reusing_a_module(
+    #[case] cycle: bool,
+    #[case] expected: Plan,
+) {
+    // Given
+    let resolver = move |specifier: &str, importer: &str| {
+        let (path, code) = match (specifier, importer) {
+            ("./left", "/src/card.css.ts" | "/src/shared.ts") => (
+                "/src/left.ts",
+                "import { RED } from './shared'; export const LEFT = RED;",
+            ),
+            ("./right", "/src/card.css.ts") => (
+                "/src/right.ts",
+                "import { RED } from './shared'; export const RIGHT = RED;",
+            ),
+            ("./shared", "/src/left.ts" | "/src/right.ts") => (
+                "/src/shared.ts",
+                if cycle {
+                    "import './left'; export const RED = 'red';"
+                } else {
+                    "export const RED = 'red';"
+                },
+            ),
+            _ => return None,
+        };
+        Some(ResolvedModule {
+            path: path.to_string(),
+            code: code.to_string(),
+        })
+    };
+    let source = "import { css } from '@devup-ui/react'; import { LEFT } from './left'; import { RIGHT } from './right'; export const card = css({ color: LEFT, backgroundColor: RIGHT });";
+    // When
+    let actual = plan(
+        source,
+        "/src/card.css.ts",
+        &ExtractOption::default(),
+        Some(&resolver),
+        &|_| false,
+    );
+    // Then
+    assert_eq!(actual, expected);
+}
+
+#[rstest::rstest]
+#[case::unchanged("", Plan::Plain)]
+#[case::changed("tokens.color = 'blue';", Plan::Run)]
+fn imported_data_requires_evaluation_when_the_root_changes_it(
+    #[case] mutation: &str,
+    #[case] expected: Plan,
+) {
+    // Given
+    let resolver = |specifier: &str, importer: &str| {
+        assert_eq!((specifier, importer), ("./tokens", "/src/card.css.ts"));
+        Some(ResolvedModule {
+            path: "/src/tokens.ts".to_string(),
+            code: "export const tokens = { color: 'red' };".to_string(),
+        })
+    };
+    let source = format!(
+        "import {{ css }} from '@devup-ui/react'; import {{ tokens }} from './tokens'; {mutation} export const card = css(tokens);"
+    );
+    // When
+    let actual = plan(
+        &source,
+        "/src/card.css.ts",
+        &ExtractOption::default(),
+        Some(&resolver),
+        &|_| false,
+    );
+    // Then
+    assert_eq!(actual, expected);
+}

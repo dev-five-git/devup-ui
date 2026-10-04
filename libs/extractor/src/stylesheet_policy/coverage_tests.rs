@@ -92,3 +92,35 @@ fn joined_style_values_require_data_in_every_branch(
     // Then
     assert_eq!(actual, expected, "{expression}");
 }
+
+#[rstest]
+#[case("export default class Card {}")]
+#[case("export default class { static color = 'red'; }")]
+fn default_exported_classes_require_evaluation(#[case] declaration: &str) {
+    // Given
+    let code = format!(
+        "import {{ css }} from '@devup-ui/react'; export const rule = css({{ color: 'red' }}); {declaration}"
+    );
+    // When
+    let actual = plan(
+        &code,
+        "class.css.js",
+        &ExtractOption::default(),
+        None,
+        &|_| false,
+    );
+    // Then
+    assert_eq!(actual, Plan::Run);
+}
+
+#[rstest]
+#[case("boundary.css.ts", true)]
+#[case("boundary.css.unsupported", false)]
+fn import_proof_requires_a_supported_source_type(#[case] filename: &str, #[case] expected: bool) {
+    // Given
+    let code = "import { css } from '@devup-ui/react'; export const rule = css({ color: 'red' });";
+    // When
+    let actual = super::imports_plain(code, filename, &ExtractOption::default(), None);
+    // Then
+    assert_eq!(actual, expected);
+}
