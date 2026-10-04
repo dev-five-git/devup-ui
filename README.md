@@ -41,7 +41,7 @@ English | [한국어](README_ko.md)
 
 Traditional CSS-in-JS solutions force you to choose between developer experience and performance. Devup UI eliminates this trade-off entirely by processing all styles at build time using a Rust-powered preprocessor.
 
-- **Broad Syntax Coverage**: Variables, conditionals, responsive arrays, pseudo-selectors, `styled()`, Emotion's `css` prop and more compile at build time; anything the build cannot know is a located build error, never a silent miss ([supported syntax & limitations](https://devup-ui.com/docs/limitations))
+- **Broad Syntax Coverage**: Variables, conditionals, responsive arrays, pseudo-selectors, `styled()`, Emotion's `css` prop and more compile at build time; anything the build cannot know is a [located build error](https://devup-ui.com/docs/build-errors), never a silent miss ([supported syntax & limitations](https://devup-ui.com/docs/limitations))
 - **Familiar API**: `styled()` API compatible with styled-components and Emotion patterns
 - **True Zero Runtime**: No JavaScript execution for styling at runtime. Period.
 - **Smallest Bundle Size**: Optimized class names (`a`, `b`, ... `aa`, `ab`) minimize CSS output
