@@ -32,7 +32,7 @@ use values::Value;
 
 #[path = "stylesheet_policy_dispatch.rs"]
 mod dispatch;
-pub(crate) use dispatch::plan;
+pub(crate) use dispatch::{imports_plain, plan};
 
 /// What the build does with a stylesheet
 #[derive(Debug, PartialEq, Eq)]
@@ -155,7 +155,7 @@ impl Proof<'_> {
     /// build folds. A function, an accessor, a call of anything else or a
     /// global is not.
     fn pure(&self, expression: &Expression<'_>) -> bool {
-        self.value(expression).is_some()
+        self.value(expression).is_some_and(|value| value.data())
     }
 
     /// Binds what `import` gives, when it gives only what the build knows: the
@@ -231,9 +231,17 @@ impl Proof<'_> {
     fn declaration(&mut self, declaration: &Declaration<'_>) -> bool {
         match declaration {
             Declaration::VariableDeclaration(declaration) => self.constants(declaration),
+            Declaration::FunctionDeclaration(function) => self.function(function),
             Declaration::TSTypeAliasDeclaration(_) | Declaration::TSInterfaceDeclaration(_) => true,
             _ => false,
         }
+    }
+
+    fn function(&mut self, function: &oxc_ast::ast::Function<'_>) -> bool {
+        if let Some(symbol) = function.id.as_ref().and_then(|id| id.symbol_id.get()) {
+            self.values.insert(symbol, Value::Function);
+        }
+        true
     }
 
     fn export(&self, specifier: &ExportSpecifier<'_>) -> bool {
@@ -251,6 +259,7 @@ impl Proof<'_> {
             | Statement::TSInterfaceDeclaration(_) => true,
             Statement::ExpressionStatement(statement) => self.creation(&statement.expression),
             Statement::VariableDeclaration(declaration) => self.constants(declaration),
+            Statement::FunctionDeclaration(function) => self.function(function),
             Statement::ExportDeclaration(export) => self.declaration(&export.declaration),
             Statement::ExportNamedDeclaration(export) => {
                 export.export_kind.is_type()
@@ -261,8 +270,10 @@ impl Proof<'_> {
             }
             Statement::ExportDefaultDeclaration(export) => match &export.declaration {
                 ExportDefaultDeclarationKind::TSInterfaceDeclaration(_) => true,
-                ExportDefaultDeclarationKind::FunctionDeclaration(_)
-                | ExportDefaultDeclarationKind::ClassDeclaration(_) => false,
+                ExportDefaultDeclarationKind::FunctionDeclaration(function) => {
+                    self.function(function)
+                }
+                ExportDefaultDeclarationKind::ClassDeclaration(_) => false,
                 declaration => self.pure(declaration.to_expression()),
             },
             _ => false,

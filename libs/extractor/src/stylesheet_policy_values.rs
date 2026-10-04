@@ -13,6 +13,8 @@ pub(super) enum Value {
     Text(String),
     Number(f64),
     Nullish,
+    /// Safe to declare, but neither plain data nor a proof that calling is safe.
+    Function,
     Object(FxHashMap<String, Self>),
     Array(Vec<Self>),
     /// The expression is nonthrowing but its resulting shape is not known.
@@ -20,6 +22,21 @@ pub(super) enum Value {
 }
 
 impl Value {
+    fn join(self, other: Self) -> Option<Self> {
+        if self == other {
+            return Some(self);
+        }
+        (self.data() && other.data()).then_some(Self::Unknown)
+    }
+
+    pub(super) fn data(&self) -> bool {
+        match self {
+            Self::Function => false,
+            Self::Object(object) => object.values().all(Self::data),
+            Self::Array(array) => array.iter().all(Self::data),
+            Self::Scalar | Self::Text(_) | Self::Number(_) | Self::Nullish | Self::Unknown => true,
+        }
+    }
     const fn primitive(&self) -> bool {
         matches!(
             self,
@@ -73,7 +90,7 @@ impl Value {
                         }),
                 )
             }
-            Self::Scalar | Self::Number(_) | Self::Nullish | Self::Unknown => None,
+            Self::Scalar | Self::Number(_) | Self::Nullish | Self::Unknown | Self::Function => None,
         }
     }
 }
@@ -86,6 +103,9 @@ impl Proof<'_> {
             Expression::NullLiteral(_) => Some(Value::Nullish),
             Expression::NumericLiteral(number) => Some(Value::Number(number.value)),
             Expression::StringLiteral(text) => Some(Value::Text(text.value.to_string())),
+            Expression::FunctionExpression(_) | Expression::ArrowFunctionExpression(_) => {
+                Some(Value::Function)
+            }
             Expression::Identifier(identifier) => match self.symbol(identifier) {
                 Some(symbol) => self.values.get(&symbol).cloned(),
                 None => match identifier.name.as_str() {
@@ -137,7 +157,7 @@ impl Proof<'_> {
                                 }),
                             ),
                             Value::Nullish | Value::Scalar | Value::Number(_) => {}
-                            Value::Unknown => return None,
+                            Value::Unknown | Value::Function => return None,
                         },
                         ObjectPropertyKind::ObjectProperty(property) => {
                             if property.method || property.kind != PropertyKind::Init {
@@ -214,12 +234,12 @@ impl Proof<'_> {
                 self.value(&conditional.test)?;
                 let left = self.value(&conditional.consequent)?;
                 let right = self.value(&conditional.alternate)?;
-                Some(if left == right { left } else { Value::Unknown })
+                left.join(right)
             }
             Expression::LogicalExpression(logical) => {
                 let left = self.value(&logical.left)?;
                 let right = self.value(&logical.right)?;
-                Some(if left == right { left } else { Value::Unknown })
+                left.join(right)
             }
             Expression::SequenceExpression(sequence) => {
                 let mut value = Value::Nullish;
@@ -240,19 +260,4 @@ impl Proof<'_> {
             _ => None,
         }
     }
-}
-
-pub(super) fn literal(code: &str) -> Option<Value> {
-    let allocator = oxc_allocator::Allocator::default();
-    let parsed = oxc_parser::Parser::new(&allocator, code, oxc_span::SourceType::default())
-        .parse_expression()
-        .ok()?;
-    let scoping = oxc_semantic::Scoping::default();
-    let proof = Proof {
-        scoping: &scoping,
-        apis: FxHashMap::default(),
-        namespaces: rustc_hash::FxHashSet::default(),
-        values: FxHashMap::default(),
-    };
-    proof.value(&parsed)
 }

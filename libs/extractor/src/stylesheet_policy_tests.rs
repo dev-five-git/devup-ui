@@ -6,6 +6,9 @@ use crate::ExtractOption;
 #[path = "stylesheet_policy_import_tests.rs"]
 mod imports;
 
+#[path = "stylesheet_policy_regression_tests.rs"]
+mod regressions;
+
 const HEAD: &str = "import { css, globalCss, keyframes, styled } from '@devup-ui/react';\n";
 
 fn plan_of(code: &str) -> Plan {
@@ -63,6 +66,9 @@ fn a_stylesheet_of_devup_styles_alone_is_extracted_as_written(#[case] code: &str
     "export const Card = styled('div', { bg: 'white' });\nexport const Link = styled.a.attrs({ href: '#' })({ color: 'red' });\nexport const Big = styled(Card)({ p: 8 });"
 )]
 #[case("const rules = { color: 'red' };\nexport const a = css`color: ${rules.color};`;")]
+#[case("export function f() {}\nexport const a = css({ w: 1 });")]
+#[case("function f() {}\nexport const a = css({ w: 1 });")]
+#[case("export default function () {}")]
 #[case(
     "type Tokens = { a: string };\nconst tokens: Tokens = { a: 'red' } as const;\nexport const a = css({ color: tokens.a as string, w: Math.round(2.5)! });"
 )]
@@ -107,10 +113,7 @@ fn constants_references_and_spreads_the_visitor_reads_stay_plain(#[case] code: &
 #[case("export const [a, b] = [1, 2];")]
 #[case("export const { a } = { a: 1 };")]
 #[case("export const a;")]
-#[case("export function f() {}\nexport const a = css({ w: 1 });")]
-#[case("function f() {}\nexport const a = css({ w: 1 });")]
 #[case("export class A {}")]
-#[case("export default function () {}")]
 #[case("enum Size { Small = 1 }\nexport const a = css({ w: Size.Small });")]
 #[case("export const a = <div />;")]
 #[case("export * from './other';")]
@@ -165,10 +168,6 @@ fn imports_that_run_or_bind_what_is_not_data_make_it_a_stylesheet_to_run(#[case]
 }
 
 #[rstest]
-#[case(
-    "function f(css) { return css({ color: 'red' }); }\nexport const a = css({ color: 'blue' });"
-)]
-#[case("export const f = (css) => css({ color: 'red' });")]
 #[case("{ const css = (rules) => rules; css({ color: 'red' }); }")]
 #[case("const rules = css;\nexport const a = rules({ color: 'red' });")]
 #[case("export const a = ((css) => css({ color: 'red' }))((rules) => rules);")]
@@ -182,6 +181,15 @@ fn imports_that_run_or_bind_what_is_not_data_make_it_a_stylesheet_to_run(#[case]
 #[case("import * as ui from '@devup-ui/react';\nexport const a = ui.css;")]
 fn a_local_named_like_a_style_api_or_math_is_not_one(#[case] code: &str) {
     assert_eq!(plan_with_head(code), Plan::Run, "{code}");
+}
+
+#[rstest]
+#[case(
+    "function f(css) { return css({ color: 'red' }); } export const a = css({ color: 'blue' });"
+)]
+#[case("export const f = (css) => css({ color: 'red' });")]
+fn inert_functions_do_not_call_shadowed_style_apis(#[case] code: &str) {
+    assert_eq!(plan_with_head(code), Plan::Plain, "{code}");
 }
 
 #[test]

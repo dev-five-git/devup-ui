@@ -365,6 +365,56 @@ fn extract_source(
     }
 
     let mut dependencies = std::collections::BTreeSet::new();
+    if utils::is_vanilla_extract_file(filename)
+        && !values_run
+        && stylesheet_policy::imports_plain(&transformed_code, filename, &option, resolver)
+        && let Some((computed, value_edits, read)) = build_time_values::evaluate_located(
+            &transformed_code,
+            filename,
+            &option,
+            resolver,
+            &imported_constants::Unknown::default(),
+        )
+        .map_err(|errors| {
+            let (source, earlier_edits) = evaluated.unwrap_or((code, &[]));
+            errors
+                .into_iter()
+                .map(|(offset, message)| {
+                    let offset = std::iter::once(alias_edits.as_slice())
+                        .chain(earlier_edits.iter().copied())
+                        .fold(offset, |offset, edits| {
+                            import_alias_visit::source_offset(edits, offset)
+                        });
+                    format!(
+                        "{}: {message}. Fix: use a literal or a CSS variable",
+                        locate(filename, source, offset)
+                    )
+                })
+                .collect::<Vec<_>>()
+                .join("\n")
+        })?
+    {
+        let (source, earlier_edits) = evaluated.unwrap_or((code, &[]));
+        let layers: Vec<&[import_alias_visit::Edit]> =
+            [value_edits.as_slice(), alias_edits.as_slice()]
+                .into_iter()
+                .chain(earlier_edits.iter().copied())
+                .collect();
+        let mut output = extract_source(
+            filename,
+            &computed,
+            Some((source, &layers)),
+            true,
+            option,
+            source_map,
+            resolver,
+        )?;
+        let mut files: std::collections::BTreeSet<String> =
+            output.dependencies.into_iter().collect();
+        files.extend(read);
+        output.dependencies = files.into_iter().collect();
+        return Ok(output);
+    }
     // Step 3: Handle vanilla-extract style files (.css.ts, .css.js)
     // `processed_code` is Some only when vanilla-extract generation succeeded;
     // otherwise the untouched `transformed_code` is parsed directly (no copy).

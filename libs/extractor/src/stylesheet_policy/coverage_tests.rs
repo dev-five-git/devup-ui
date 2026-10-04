@@ -30,6 +30,9 @@ use crate::ExtractOption;
 #[case("css({ color: 'red' || 'red' })", Plan::Plain)]
 #[case("css({ color: (1, 'red') })", Plan::Plain)]
 #[case("css({ color: Math.max(...[1, 2]) })", Plan::Run)]
+#[case("css({ w: (() => 1) + 1 })", Plan::Run)]
+#[case("css({ w: (() => 1).prototype })", Plan::Run)]
+#[case("css({ w: { callback: () => 1 } })", Plan::Run)]
 fn dispatch_runs_only_when_plain_data_cannot_prove_nonthrowing_evaluation(
     #[case] expression: &str,
     #[case] expected: Plan,
@@ -41,6 +44,47 @@ fn dispatch_runs_only_when_plain_data_cannot_prove_nonthrowing_evaluation(
     let actual = plan(
         &code,
         "boundary.css.ts",
+        &ExtractOption::default(),
+        None,
+        &|_| false,
+    );
+    // Then
+    assert_eq!(actual, expected, "{expression}");
+}
+
+#[rstest]
+#[case("true ? f : 1", Plan::Run)]
+#[case("true ? 1 : f", Plan::Run)]
+#[case("true && f", Plan::Run)]
+#[case("f || 1", Plan::Run)]
+#[case("null ?? f", Plan::Run)]
+#[case("true ? { nested: [f] } : { nested: [1] }", Plan::Run)]
+#[case("true ? [{ callback: f }] : [1]", Plan::Run)]
+#[case("true && { nested: [f] }", Plan::Run)]
+#[case("[{ callback: f }] || 1", Plan::Run)]
+#[case("true ? f : f", Plan::Run)]
+#[case("f && f", Plan::Run)]
+#[case("true ? { nested: [f] } : { nested: [f] }", Plan::Run)]
+#[case("true ? 1 : 2", Plan::Plain)]
+#[case("true && 1", Plan::Plain)]
+#[case("1 || 2", Plan::Plain)]
+#[case("null ?? 2", Plan::Plain)]
+#[case("true ? { nested: [1] } : { nested: [2] }", Plan::Plain)]
+#[case("true ? [{ width: 1 }] : [2]", Plan::Plain)]
+#[case("true && { nested: [1] }", Plan::Plain)]
+#[case("[{ width: 1 }] || 2", Plan::Plain)]
+fn joined_style_values_require_data_in_every_branch(
+    #[case] expression: &str,
+    #[case] expected: Plan,
+) {
+    // Given
+    let code = format!(
+        "import {{ css }} from '@devup-ui/react'; const f = () => 1; export const rule = css({{ w: {expression} }});"
+    );
+    // When
+    let actual = plan(
+        &code,
+        "join.css.ts",
         &ExtractOption::default(),
         None,
         &|_| false,
