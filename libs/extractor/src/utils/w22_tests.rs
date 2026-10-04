@@ -40,11 +40,11 @@ fn private_member_when_pure_is_recognized_without_executing_a_getter() {
         pure: Vec<bool>,
     }
     impl<'a> oxc_ast_visit::Visit<'a> for Members {
-        fn visit_private_field_expression(
-            &mut self,
-            value: &oxc_ast::ast::PrivateFieldExpression<'a>,
-        ) {
-            self.pure.push(is_pure(&value.object));
+        fn visit_expression(&mut self, value: &Expression<'a>) {
+            if matches!(value, Expression::PrivateFieldExpression(_)) {
+                self.pure.push(is_pure(value));
+            }
+            oxc_ast_visit::walk::walk_expression(self, value);
         }
     }
     let allocator = Allocator::default();
@@ -53,4 +53,30 @@ fn private_member_when_pure_is_recognized_without_executing_a_getter() {
     let mut members = Members { pure: Vec::new() };
     oxc_ast_visit::Visit::visit_program(&mut members, &parsed.program);
     assert_eq!(members.pure, vec![true]);
+}
+
+#[test]
+fn object_style_order_when_it_is_not_a_number_or_empty_is_unsupported() {
+    let allocator = Allocator::default();
+    let parsed = Parser::new(&allocator, "([]);", SourceType::ts()).parse();
+    let Statement::ExpressionStatement(statement) = &parsed.program.body[0] else {
+        panic!("expression required")
+    };
+    assert!(matches!(
+        expression_to_style_order(&statement.expression, &allocator),
+        ParsedStyleOrder::Unsupported
+    ));
+}
+
+#[test]
+fn unary_plus_when_its_literal_is_numeric_preserves_the_number() {
+    let allocator = Allocator::default();
+    let parsed = Parser::new(&allocator, "+3;", SourceType::ts()).parse();
+    let Statement::ExpressionStatement(statement) = &parsed.program.body[0] else {
+        panic!("expression required")
+    };
+    assert_eq!(
+        get_number_by_literal_expression(&statement.expression),
+        Some(3.0)
+    );
 }

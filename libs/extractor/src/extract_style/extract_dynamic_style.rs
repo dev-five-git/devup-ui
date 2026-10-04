@@ -330,4 +330,11 @@ mod tests {
         assert_eq!(style.identifier(), "`${color}`");
         assert!(style.important());
     }
+
+    #[test]
+    fn runtime_template_when_css_ends_in_a_semicolon_keeps_valid_javascript() {
+        let style = ExtractDynamicStyle::new("color", 0, " `${color};`; ", None);
+        assert_eq!(style.identifier(), "`${color}`");
+        assert!(!style.important());
+    }
 }
