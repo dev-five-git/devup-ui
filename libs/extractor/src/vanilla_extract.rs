@@ -76,6 +76,8 @@ struct Collector {
     file_num: usize,
     placeholders: usize,
     identifiers: usize,
+    origin: Option<(String, String)>,
+    declaration_errors: Vec<String>,
 }
 
 type StyleCollector = Rc<RefCell<Collector>>;
@@ -241,8 +243,17 @@ pub fn execute_stylesheet(
 ) -> Result<(CollectedStyles, StylesheetImports), String> {
     let _evaluating = Evaluating::enter(filename);
     let mut loader = ModuleLoader::new(resolver, option);
+    let instrumented = crate::dead_properties::instrument(code, filename, &option.package)
+        .map_err(|error| format!("{}{error}", crate::dead_properties::ERROR_CHANNEL))?;
+    let instrumented = crate::import_alias_visit::transform_import_aliases_with_edits(
+        &instrumented.code,
+        filename,
+        &option.package,
+        &option.import_aliases,
+    )
+    .0;
     let script = module_script(
-        &strip_typescript(code, filename),
+        &strip_typescript(&instrumented, filename),
         filename,
         &mut loader,
         true,
@@ -280,6 +291,14 @@ pub fn execute_stylesheet(
     context
         .eval(Source::from_bytes(run.as_bytes()))
         .map_err(|e| format!("JS execution error: {e}"))?;
+
+    if !collector.borrow().declaration_errors.is_empty() {
+        return Err(format!(
+            "{}{}",
+            crate::dead_properties::ERROR_CHANNEL,
+            collector.borrow().declaration_errors.join("\n")
+        ));
+    }
 
     let mut collected = std::mem::take(&mut collector.borrow_mut().styles);
     name_entries(
@@ -590,6 +609,41 @@ fn strip(code: &str, filename: &str) -> String {
 
 type Api = fn(&StyleCollector, &[JsValue], &mut Context) -> JsResult<JsValue>;
 
+fn authored_call(
+    collector: &StyleCollector,
+    args: &[JsValue],
+    context: &mut Context,
+) -> JsResult<JsValue> {
+    let location = to_text(args.get_or_undefined(0), context)?;
+    let api = to_text(args.get_or_undefined(1), context)?;
+    let previous = collector.borrow_mut().origin.replace((location, api));
+    let result = match args.get_or_undefined(2).as_callable() {
+        Some(thunk) => thunk.call(&JsValue::undefined(), &[], context),
+        None => Ok(JsValue::undefined()),
+    };
+    collector.borrow_mut().origin = previous;
+    result
+}
+
+fn check_declarations(
+    collector: &StyleCollector,
+    json: &str,
+    kind: crate::dead_properties::ObjectKind,
+) {
+    let errors = crate::dead_properties::evaluated_errors(json, kind);
+    let mut collector = collector.borrow_mut();
+    if let Some((location, api)) = collector.origin.clone() {
+        collector
+            .declaration_errors
+            .extend(errors.into_iter().map(|(path, requirement)| {
+                format!(
+                    "{location}: {}",
+                    crate::utils::build_time_error(&api, &path, requirement)
+                )
+            }));
+    }
+}
+
 fn api(collector: &StyleCollector, function: Api) -> NativeFunction {
     let collector = collector.clone();
     // SAFETY: the closure captures only an `Rc<RefCell<Collector>>`, which holds no
@@ -607,6 +661,7 @@ fn register_vanilla_extract_apis(
     collector: &StyleCollector,
 ) -> Result<(), String> {
     let apis = [
+        ("__at", api(collector, authored_call), 3),
         ("style", api(collector, style), 1),
         ("globalStyle", api(collector, global_style), 2),
         ("styleVariants", api(collector, style_variants), 1),
@@ -678,6 +733,11 @@ fn register_style(
     let mut rules = Vec::new();
     compose(rule, &mut entry, &mut rules, context)?;
     entry.json = format!("{{{}}}", rules.join(","));
+    check_declarations(
+        collector,
+        &entry.json,
+        crate::dead_properties::ObjectKind::Styles,
+    );
     let mut collector = collector.borrow_mut();
     let id = collector.placeholder();
     collector.styles.styles.insert(id.clone(), entry);
@@ -725,6 +785,7 @@ fn global_style(
 ) -> JsResult<JsValue> {
     let selector = to_text(args.get_or_undefined(0), context)?;
     let json = style_to_json(args.get_or_undefined(1), context);
+    check_declarations(collector, &json, crate::dead_properties::ObjectKind::Styles);
     collector
         .borrow_mut()
         .styles
@@ -762,6 +823,11 @@ fn style_variants(
 
 fn keyframes(collector: &StyleCollector, args: &[JsValue], context: &mut Context) -> JsValue {
     let json = style_to_json(args.get_or_undefined(0), context);
+    check_declarations(
+        collector,
+        &json,
+        crate::dead_properties::ObjectKind::Records,
+    );
     let mut collector = collector.borrow_mut();
     let id = collector.placeholder();
     collector.styles.keyframes.insert(
@@ -780,6 +846,9 @@ fn font_face(collector: &StyleCollector, args: &[JsValue], context: &mut Context
         .borrow_mut()
         .identifier(js_str(args.get_or_undefined(1)), "font");
     let faces = font_face_rules(&family, args.get_or_undefined(0), context);
+    for face in &faces {
+        check_declarations(collector, face, crate::dead_properties::ObjectKind::Styles);
+    }
     collector.borrow_mut().styles.font_faces.extend(faces);
     js_string!(family).into()
 }
@@ -791,6 +860,9 @@ fn global_font_face(
 ) -> JsResult<JsValue> {
     let family = to_text(args.get_or_undefined(0), context)?;
     let faces = font_face_rules(&family, args.get_or_undefined(1), context);
+    for face in &faces {
+        check_declarations(collector, face, crate::dead_properties::ObjectKind::Styles);
+    }
     collector.borrow_mut().styles.font_faces.extend(faces);
     Ok(JsValue::undefined())
 }

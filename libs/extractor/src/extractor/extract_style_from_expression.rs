@@ -10,9 +10,10 @@ use crate::{
         ExtractResult, extract_style_from_member_expression::extract_style_from_member_expression,
     },
     utils::{
-        CSS_TEXT, SELECTOR_NAME, expression_to_code, get_number_by_literal_expression,
-        get_str_by_property_key, get_string_by_literal_expression, get_string_by_property_key,
-        is_same_expression, readable_code, unwrap_syntax_only, unwrap_syntax_only_mut,
+        CSS_TEXT, RESPONSIVE_ARRAY, SELECTOR_NAME, expression_to_code,
+        get_number_by_literal_expression, get_str_by_property_key,
+        get_string_by_literal_expression, get_string_by_property_key, is_same_expression,
+        readable_code, unwrap_syntax_only, unwrap_syntax_only_mut,
     },
 };
 use css::{
@@ -233,6 +234,24 @@ pub fn extract_style_from_expression<'a>(
     let mut typo = false;
     let expression = unwrap_syntax_only_mut(expression);
 
+    if name.is_none() {
+        let mut styles = crate::dead_properties::expression_errors(expression);
+        styles.extend(
+            crate::dead_properties::authored_errors(
+                expression,
+                crate::dead_properties::ObjectKind::Styles,
+            )
+            .into_iter()
+            .map(|(offset, code, requirement)| misplaced(offset, code, requirement)),
+        );
+        if !styles.is_empty() {
+            return ExtractResult {
+                styles,
+                ..ExtractResult::default()
+            };
+        }
+    }
+
     if name.is_none() && selector.is_none() {
         let mut style_order = None;
         let mut style_vars = None;
@@ -255,6 +274,15 @@ pub fn extract_style_from_expression<'a>(
                             if let Some(name) = get_str_by_property_key(&prop.key)
                                 && !is_special_property(&name)
                             {
+                                if let Some(error) =
+                                    crate::dead_properties::authored_declaration_error(
+                                        &name,
+                                        prop.key.span().start,
+                                    )
+                                {
+                                    props_styles.push(error);
+                                    continue;
+                                }
                                 for disassembled in disassemble_property(&name) {
                                     let disassembled: &str = &disassembled;
                                     if name == "styleOrder" {
@@ -865,6 +893,16 @@ pub fn extract_style_from_expression<'a>(
                 }
             }
             Expression::ArrayExpression(array) => {
+                if literal_handling == LiteralHandling::KeepSingleClass {
+                    return ExtractResult {
+                        styles: vec![misplaced(
+                            array.span.start,
+                            readable_code(expression),
+                            RESPONSIVE_ARRAY,
+                        )],
+                        ..ExtractResult::default()
+                    };
+                }
                 let mut props = vec![];
 
                 for (idx, element) in array.elements.iter_mut().enumerate() {
@@ -1000,6 +1038,13 @@ pub fn extract_style_from_expression<'a>(
                         continue;
                     };
                     if key_name == "params" {
+                        continue;
+                    }
+                    if let Some(error) = crate::dead_properties::authored_declaration_error(
+                        &key_name,
+                        o.key.span().start,
+                    ) {
+                        props.push(error);
                         continue;
                     }
                     for name in disassemble_property(&key_name) {

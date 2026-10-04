@@ -965,6 +965,8 @@ pub(super) fn unused_error(api: &str, (code, requirement): &Unused) -> String {
 
 pub(super) const SELECTOR_NAME: &str = "a selector key names a pseudo-class or pseudo-element, as `_hover` or `hover`, or is a selector, as `&:hover`, `& > p` or `.parent &`";
 
+pub(super) const RESPONSIVE_ARRAY: &str = "responsive arrays must be flat; each entry supplies one breakpoint value or selector style object, not another array";
+
 pub(super) const CSS_TEXT: &str = "a selector takes styles, an object such as `{ color: 'red' }` or CSS text such as `color: red`";
 
 pub(super) fn element_error(component: &str, code: &str, requirement: &str) -> String {
