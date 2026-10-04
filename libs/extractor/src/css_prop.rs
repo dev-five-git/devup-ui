@@ -274,11 +274,9 @@ pub(crate) fn may_take_css_prop(code: &str) -> bool {
 
 /// Whether importing `source` shows a file uses Emotion
 pub(crate) fn is_emotion(source: &str) -> bool {
-    [EMOTION_REACT, "@emotion/styled"].iter().any(|package| {
-        source
-            .strip_prefix(package)
-            .is_some_and(|rest| rest.is_empty() || rest.starts_with('/'))
-    })
+    [EMOTION_REACT, "@emotion/styled"]
+        .iter()
+        .any(|package| crate::package_specifier::is_package(source, package))
 }
 
 /// Where the JSX pragma in the comment text `comment` names `@emotion/react`

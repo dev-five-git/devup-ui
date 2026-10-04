@@ -369,7 +369,7 @@ pub(crate) fn module_script(
         let source = import.source.value.as_str();
         let specifiers = import.specifiers.as_deref().map_or(&[][..], |s| s);
         if specifiers.is_empty() {
-            if entry && !source.starts_with(package.as_str()) {
+            if entry && !crate::package_specifier::is_package(source, &package) {
                 loader.keep_import(source);
             }
             continue;

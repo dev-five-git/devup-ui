@@ -102,7 +102,8 @@ pub(super) fn compute(
         return Ok(None);
     };
     let is_style = |source: &str| {
-        source.starts_with(option.package.as_str()) || option.import_aliases.contains_key(source)
+        crate::package_specifier::is_package(source, &option.package)
+            || option.import_aliases.contains_key(source)
     };
     let changes = crate::imported_constants::ChangeCheck::new(&program, filename, option, resolver);
     let found = find(

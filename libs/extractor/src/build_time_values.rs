@@ -85,7 +85,7 @@ pub(crate) fn has_build_time_values(
     let changes = crate::imported_constants::ChangeCheck::new(&program, filename, option, resolver);
     !find(
         &program,
-        &|source| source.starts_with(option.package.as_str()),
+        &|source| crate::package_specifier::is_package(source, &option.package),
         &inlined.unknown,
         &|name| changes.is_changed(name),
         &|name| changes.known(name),

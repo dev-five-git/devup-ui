@@ -20,6 +20,7 @@ mod imported_constants;
 mod module_loader;
 pub mod module_reference;
 mod mutations;
+mod package_specifier;
 mod prop_modify_utils;
 mod prop_valid;
 mod scope;
