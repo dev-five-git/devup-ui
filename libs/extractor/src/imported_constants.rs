@@ -30,6 +30,10 @@ use crate::extractor::extract_style_from_expression::{
 use crate::stylex::StylexFunction;
 use crate::{ExtractOption, ExtractStyleValue, ModuleResolver};
 
+#[cfg(test)]
+#[path = "local_capture_coverage_tests.rs"]
+mod local_capture_coverage_tests;
+
 #[derive(Clone, Debug)]
 enum Constant {
     String(String),

@@ -2,6 +2,9 @@ use crate::as_visit::As;
 #[cfg(test)]
 #[path = "composition_coverage_tests.rs"]
 mod composition_coverage_tests;
+#[cfg(test)]
+#[path = "composition_runtime_coverage_tests.rs"]
+mod composition_runtime_coverage_tests;
 use crate::component::ExportVariableKind;
 use crate::composition::{KnownPart, KnownSide, KnownStyles, overlaps, set_prop_order};
 use crate::css_prop::{
@@ -453,14 +456,8 @@ impl<'a> DevupVisitor<'a> {
         {
             return None;
         }
-        let arguments: Vec<&Expression<'a>> = call
-            .arguments
-            .iter()
-            .map(|argument| match argument {
-                Argument::SpreadElement(spread) => &spread.argument,
-                argument => argument.to_expression(),
-            })
-            .collect();
+        let arguments: Vec<&Expression<'a>> =
+            call.arguments.iter().map(Argument::to_expression).collect();
         if !flattened
             && !arguments.iter().any(|argument| {
                 self.reads_known_styles(argument) || composes_array_under_condition(argument)

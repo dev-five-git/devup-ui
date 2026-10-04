@@ -4,6 +4,89 @@ use oxc_span::SourceType;
 use rstest::rstest;
 
 #[rstest]
+#[case(
+    "css({'@layer': {...runtime, inherit: {color: 'red'}}})",
+    "inherit",
+    "@layer inherit"
+)]
+#[case(
+    "css({'@layer': {[runtime.name]: {color: 'red'}}})",
+    "runtime.name",
+    "@layer runtime.name"
+)]
+#[case(
+    "css({'@layer': {base: '@layer inherit { color: red; }'}})",
+    "'@layer inherit",
+    "@layer inherit {"
+)]
+#[case(
+    "css({'@layer': {base: `@layer inherit { color: red; }`}})",
+    "@layer inherit",
+    "@layer inherit {"
+)]
+fn dictionary_layers_when_spread_dynamic_or_nested_text_keep_error_context(
+    #[case] source: &str,
+    #[case] location: &str,
+    #[case] code: &str,
+) -> Result<(), Box<dyn std::error::Error>> {
+    // Given
+    let allocator = Allocator::default();
+    let expression = Parser::new(&allocator, source, SourceType::tsx())
+        .parse_expression()
+        .map_err(|error| format!("{error:?}"))?;
+    let offset = u32::try_from(source.find(location).ok_or("missing fixture location")?)?;
+    // When
+    let errors = crate::css_utils::object_layer_errors(&expression, "css");
+    // Then
+    assert_eq!(
+        errors,
+        vec![(
+            offset,
+            format!(
+                "`css()` cannot use `{code}` at build time: {}",
+                super::LAYER_NAME_REQUIREMENT
+            )
+        )]
+    );
+    Ok(())
+}
+
+#[rstest]
+#[case("css({'@layer': {...runtime, base: {color: 'red'}}})")]
+#[case("css({'@layer': {base: '@layer theme { color: red; }'}})")]
+#[case("css({'@layer': {base: `@layer theme { color: red; }`}})")]
+fn dictionary_layers_when_readable_names_are_valid_have_no_policy_errors(
+    #[case] source: &str,
+) -> Result<(), Box<dyn std::error::Error>> {
+    // Given
+    let allocator = Allocator::default();
+    let expression = Parser::new(&allocator, source, SourceType::tsx())
+        .parse_expression()
+        .map_err(|error| format!("{error:?}"))?;
+    // When
+    let errors = crate::css_utils::object_layer_errors(&expression, "css");
+    // Then
+    assert_eq!(errors, vec![]);
+    Ok(())
+}
+
+#[rstest]
+#[case(r"base\/reset", Some(r"base\/reset"))]
+#[case(r"-\31 base", Some(r"-\31 base"))]
+#[case("base/reset", None)]
+#[case("/base", None)]
+#[case("1base", None)]
+fn layer_names_when_slash_is_escaped_or_not_respect_identifier_boundaries(
+    #[case] source: &str,
+    #[case] expected: Option<&str>,
+) {
+    // Given / When
+    let name = crate::css_utils::parse_layer_name(source);
+    // Then
+    assert_eq!(name.as_deref(), expected);
+}
+
+#[rstest]
 #[case("[ , '@layer base, theme;', enabled && '@layer {color:red;}' ]", 2)]
 #[case("enabled && '@layer base, theme;'", 1)]
 #[case("enabled ? '@layer base, theme;' : '@layer {color:red;}'", 2)]

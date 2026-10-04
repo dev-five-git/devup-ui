@@ -4,6 +4,10 @@ use oxc_ast::{
     builder::AstBuilder,
 };
 
+#[cfg(test)]
+#[path = "w27_styled_template_parts_tests.rs"]
+mod coverage_tests;
+
 // Use the CSS parser's lexer so quotes, escapes, comments and functions never
 // turn data braces into enclosing rule contexts.
 mod blocks {

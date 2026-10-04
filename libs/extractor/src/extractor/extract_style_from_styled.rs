@@ -1899,6 +1899,10 @@ fn create_styled_component<'a>(
 mod w27_props_rule_choices_tests;
 
 #[cfg(test)]
+#[path = "w27_styled_linux_coverage.rs"]
+mod w27_styled_linux_coverage;
+
+#[cfg(test)]
 #[path = "w27_styled_known_mixins_tests.rs"]
 mod w27_styled_known_mixins_tests;
 

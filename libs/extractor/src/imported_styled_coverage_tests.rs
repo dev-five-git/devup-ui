@@ -7,6 +7,43 @@ use rstest::rstest;
 use rustc_hash::FxHashMap;
 use std::collections::BTreeSet;
 
+#[rstest]
+#[case("styled.div", true)]
+#[case("styled('div')", true)]
+#[case("styled['div']", false)]
+#[case("flag ? styled : other", false)]
+#[case("42", false)]
+fn imported_value_sites_when_creator_shape_is_unsupported_are_not_styled(
+    #[case] creator: &str,
+    #[case] expected: bool,
+) -> Result<(), Box<dyn std::error::Error>> {
+    // Given: semantic references resolve the actual styled import.
+    let allocator = Allocator::default();
+    let source = format!("import {{styled}} from '@devup-ui/react'; ({creator});");
+    let parsed = Parser::new(&allocator, &source, SourceType::tsx()).parse();
+    assert_eq!(parsed.diagnostics.len(), 0);
+    let scoping = oxc_semantic::SemanticBuilder::new()
+        .build(&parsed.program)
+        .semantic
+        .into_scoping();
+    let symbol = scoping
+        .get_root_binding("styled".into())
+        .ok_or("missing styled import")?;
+    let sites = super::ValueSites {
+        scoping: &scoping,
+        styled: rustc_hash::FxHashSet::from_iter([symbol]),
+        spans: vec![],
+    };
+    let oxc_ast::ast::Statement::ExpressionStatement(statement) = &parsed.program.body[1] else {
+        panic!("expected creator expression");
+    };
+    // When
+    let result = sites.is_styled(&statement.expression);
+    // Then
+    assert_eq!(result, expected);
+    Ok(())
+}
+
 #[test]
 fn imported_evaluation_when_source_is_unparseable_returns_no_computed_module() {
     // Given

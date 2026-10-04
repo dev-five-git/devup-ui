@@ -1,6 +1,48 @@
 use super::*;
 use rstest::rstest;
 
+#[test]
+fn undefined_when_reference_has_no_semantic_identity_is_opaque()
+-> Result<(), Box<dyn std::error::Error>> {
+    // Given: raw parser AST cannot distinguish an unbound name from a shadowed one.
+    let allocator = oxc_allocator::Allocator::default();
+    let ast = AstBuilder::new(&allocator);
+    let expression = oxc_parser::Parser::new(&allocator, "undefined", oxc_span::SourceType::tsx())
+        .parse_expression()
+        .map_err(|error| format!("{error:?}"))?;
+    let values = crate::style_values::StyleValues::default();
+    let imports = rustc_hash::FxHashMap::default();
+    let inline_css = rustc_hash::FxHashMap::default();
+    // When
+    let result = normalize(
+        &ast,
+        &expression,
+        &StyledBindings {
+            imports: &imports,
+            values: &values,
+            inline_css: &inline_css,
+        },
+    );
+    // Then
+    assert!(matches!(result, Err(RuleError::Opaque)));
+    assert_eq!(crate::utils::readable_code(&expression), "undefined");
+    Ok(())
+}
+
+#[test]
+fn undefined_when_semantics_proves_unbound_normalizes_to_empty_rules()
+-> Result<(), Box<dyn std::error::Error>> {
+    // Given
+    let allocator = oxc_allocator::Allocator::default();
+    let ast = AstBuilder::new(&allocator);
+    // When
+    let normalized = normalize_source(&ast, "undefined;")?;
+    // Then
+    assert!(matches!(normalized, Expression::NullLiteral(_)));
+    assert_eq!(crate::utils::readable_code(&normalized), "null");
+    Ok(())
+}
+
 fn normalize_source<'a>(
     ast: &AstBuilder<'a>,
     source: &'a str,

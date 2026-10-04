@@ -10,6 +10,48 @@ use oxc_span::SourceType;
 use rstest::rstest;
 use serial_test::serial;
 
+#[test]
+#[serial]
+fn inline_tag_when_only_runtime_classes_remain_folds_without_losing_order()
+-> Result<(), Box<dyn std::error::Error>> {
+    // Given
+    let allocator = Allocator::default();
+    let first_name = "first";
+    let second_name = "second";
+    let source = format!("css`${{{first_name}}}${{{second_name}}}`");
+    let expression = Parser::new(&allocator, &source, SourceType::tsx())
+        .parse_expression()
+        .map_err(|error| format!("{error:?}"))?;
+    let Expression::TaggedTemplateExpression(tag) = expression else {
+        panic!("expected tagged fixture");
+    };
+    let mut visitor = DevupVisitor::new(&allocator, "inline.tsx", "@devup-ui/react", vec![], None);
+    let compiled = visitor
+        .compose_template(&tag, true)
+        .ok_or("tag was rejected")?;
+    // When
+    let side = visitor.known_side(&compiled, Text::Classes);
+    // Then
+    let Some(super::KnownSide::Class(class)) = side else {
+        panic!("expected folded runtime classes");
+    };
+    assert_eq!(
+        crate::utils::readable_code(&class),
+        format!("`${{{first_name}}} ${{{second_name}}}`")
+    );
+    assert_eq!(visitor.styles, rustc_hash::FxHashSet::default());
+    assert_eq!(visitor.css_styles, None);
+    let parts = visitor
+        .inline_css_parts
+        .get(&tag.span.start)
+        .ok_or("missing inline metadata")?;
+    assert!(
+        matches!(&parts[..], [KnownPart::Class(first), KnownPart::Class(second)]
+        if crate::utils::readable_code(first) == "first" && crate::utils::readable_code(second) == "second")
+    );
+    Ok(())
+}
+
 #[rstest]
 #[case("opaque", false)]
 #[case("external", true)]
