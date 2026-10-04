@@ -1,4 +1,5 @@
 export { beginBuild, type ResettableEngine } from './build-session'
+export { collectDevupConfigFiles } from './config-files'
 export {
   type AtomHoistPlan,
   buildCanonicalMap,
