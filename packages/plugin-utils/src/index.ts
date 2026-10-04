@@ -18,8 +18,15 @@ export {
   planAtomHoist,
   type ResolvedModule,
   type StaticImportGraph,
+  type StaticImportGraphOptions,
 } from './import-graph'
-export { deepMerge, loadDevupConfig, loadDevupConfigSync } from './load-config'
+export {
+  ConfigLoadError,
+  deepMerge,
+  loadDevupConfig,
+  loadDevupConfigSync,
+} from './load-config'
+export { remapMdxError } from './mdx-errors'
 export {
   collectNumberedFiles,
   type CollectNumberedFilesOptions,
@@ -34,6 +41,13 @@ export {
   type DevupThemeInterfaceNames,
   type DevupUIBasePluginOptions,
   getFileNumByFilename,
+  GRAPH_SOURCE_FILE_RE,
+  MDX_FILE_RE,
+  POST_COMPILED_MDX_RE,
+  resolveProjectPaths,
+  resolveSourceDirs,
+  SOURCE_EXTENSIONS,
+  SOURCE_FILE_RE,
 } from './shared'
 export {
   createStateWriter,
