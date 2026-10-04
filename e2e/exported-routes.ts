@@ -63,6 +63,7 @@ export const EXPECTED_EXPORTED_ROUTES = [
   '/docs/api/style-props',
   '/docs/api/text',
   '/docs/api/v-stack',
+  '/docs/build-errors',
   '/docs/core-concepts/nm-base',
   '/docs/core-concepts/no-dependencies',
   '/docs/core-concepts/optimize-css',
