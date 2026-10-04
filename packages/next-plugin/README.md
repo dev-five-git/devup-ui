@@ -205,6 +205,26 @@ custom `distDir`) to `include`.
 <Box insetX={[0, null, 'auto']} _hover={{ insetX: 4 }} />
 ```
 
+## Turbopack: deterministic names and isolated sessions
+
+Before Turbopack can request a stylesheet, the plugin extracts the files the
+app's routes compile, in path order, in development and in production. Class
+names and file numbers therefore follow the paths, not the order Turbopack
+schedules its loaders in. In development, files that appear later are numbered
+after the existing ones, and the names of the last session are kept across
+restarts.
+
+Files nothing compiles are not extracted (they add no CSS and cannot fail the
+build). Set `prewarmAll: true` to extract the whole source tree instead, for
+sources the import graph cannot connect.
+
+Every `DevupUI()` call captures the project root and applies every option
+explicitly, so two apps in one process (or two concurrent `next dev` /
+`next build` runs) never share an engine, theme, endpoint or state. Each
+process owns `<distDir>/.devup/<app key>/sessions/<pid>-<token>/`; the
+development checkpoint `<distDir>/.devup/<app key>/snapshot.json` is replaced
+atomically.
+
 ## Turbopack build profiling
 
 Set `DEVUP_UI_PROFILE=1` for an opt-in, structured timing log during a
