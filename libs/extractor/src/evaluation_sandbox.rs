@@ -1,0 +1,315 @@
+//! The deterministic Boa sandbox every build-time evaluation runs in.
+//!
+//! What the build computes must be the same on every build and page, so what
+//! differs between them (the clock, chance, the page or process running the
+//! code, the locale) cannot be read. The host records each such read before
+//! it throws, so code catching the error cannot hide it: a run that recorded
+//! one fails whatever its code did after, and the engine's call frames of the
+//! read are kept for the error that names where it happened.
+//!
+//! The sandbox is set up by native code and by one small source of its own,
+//! [`INTERNAL_SOURCE`], so no frame of the code that runs is shifted by it.
+
+use std::cell::RefCell;
+use std::path::Path;
+use std::rc::Rc;
+
+use boa_engine::{
+    Context, JsArgs, JsError, JsNativeError, JsObject, JsResult, JsString, JsValue, NativeFunction,
+    Source, js_string,
+    object::{FunctionObjectBuilder, builtins::JsProxy},
+    parser::source::ReadChar,
+    property::Attribute,
+};
+
+/// The path of the source setting the sandbox up: its call frames are the
+/// sandbox's own, not the code's
+pub(crate) const INTERNAL_SOURCE: &str = "<devup-sandbox>";
+
+/// Loop iterations an evaluation may run before it fails instead of hanging
+/// the build
+const LOOP_ITERATION_LIMIT: u64 = 10_000_000;
+
+/// What a read gives that only the build, the page or the engine decides
+#[derive(Clone, Copy)]
+enum Kind {
+    Clock,
+    Random,
+    Environment,
+    Locale,
+}
+
+impl Kind {
+    const fn requirement(self) -> &'static str {
+        match self {
+            Self::Clock => "the time it gives differs on every build",
+            Self::Random => "the chance it gives differs on every build",
+            Self::Environment => "only the page or process running the code knows it",
+            Self::Locale => "its result depends on the locale and the engine's Unicode data",
+        }
+    }
+
+    /// Of what `name` is: a global or `owner.member`, or `Type.prototype.method`
+    fn of(name: &str) -> Self {
+        match name.split('.').next().unwrap_or_default() {
+            "Date" | "performance" => Self::Clock,
+            "crypto" | "Math" => Self::Random,
+            "Intl" | "Temporal" => Self::Locale,
+            _ if name.contains(".prototype.") => Self::Locale,
+            _ => Self::Environment,
+        }
+    }
+}
+
+#[path = "evaluation_sandbox_guards.rs"]
+mod guards;
+use guards::{GUARDED_GLOBALS, SETUP, guard_methods};
+
+#[path = "evaluation_sandbox_sites.rs"]
+mod sites;
+pub(crate) use sites::{Instrumented, instrument};
+
+struct Recorded {
+    name: String,
+    error: JsValue,
+    site: Option<(String, u32)>,
+}
+
+/// What the host holds of the forbidden reads a run made, out of the code's
+/// reach
+#[derive(Clone, Default)]
+struct Evidence {
+    reads: Rc<RefCell<Vec<Recorded>>>,
+    site: Rc<RefCell<Option<(String, u32)>>>,
+    methods: Rc<RefCell<Vec<(JsObject, String)>>>,
+}
+
+/// A forbidden read the code made
+pub(crate) struct Violation {
+    name: String,
+    kind: Kind,
+    error: JsError,
+    site: Option<(String, u32)>,
+}
+
+impl Violation {
+    /// What was read, as the code writes it (`Date`, `String.prototype.normalize`)
+    pub(crate) fn name(&self) -> &str {
+        &self.name
+    }
+
+    /// Why the read cannot be known at build time
+    pub(crate) const fn requirement(&self) -> &'static str {
+        self.kind.requirement()
+    }
+
+    /// The error with an instrumented read frame, or the engine's actual call frames.
+    pub(crate) const fn error(&self) -> &JsError {
+        &self.error
+    }
+
+    /// The original offset of an instrumented read and the source containing it.
+    pub(crate) fn site(&self) -> Option<(&str, usize)> {
+        self.site
+            .as_ref()
+            .map(|(place, offset)| (place.as_str(), *offset as usize))
+    }
+}
+
+/// Why a run failed
+pub(crate) enum Failure {
+    /// The code read what the build cannot know, however it was written:
+    /// every read it made is listed
+    Forbidden(Vec<Violation>),
+    /// The code failed for another reason
+    Js(JsError),
+}
+
+/// The deterministic environment of one [`Context`], and the evidence of the
+/// reads it forbade
+pub(crate) struct Sandbox {
+    evidence: Evidence,
+}
+
+fn record(context: &mut Context, name: &str, site: Option<(String, u32)>) -> JsValue {
+    let frame = site.as_ref().map_or_else(String::new, |(place, _)| {
+        format!("\n    at <read> ({place})")
+    });
+    let error = JsNativeError::reference()
+        .with_message(format!(
+            "`{name}` cannot be read at build time: {}{frame}",
+            Kind::of(name).requirement()
+        ))
+        .into_opaque(context);
+    let error = JsValue::from(error);
+    if let Some(evidence) = context.get_data::<Evidence>() {
+        evidence.reads.borrow_mut().push(Recorded {
+            name: name.to_string(),
+            error: error.clone(),
+            site,
+        });
+    }
+    error
+}
+
+/// The recorder called by the guards written in [`SETUP`].
+fn forbid_native(_: &JsValue, args: &[JsValue], context: &mut Context) -> JsResult<JsValue> {
+    let name = args.get_or_undefined(0).to_string(context)?;
+    let site = context
+        .get_data::<Evidence>()
+        .and_then(|evidence| evidence.site.borrow().clone());
+    Ok(record(context, &name.to_std_string_escaped(), site))
+}
+
+/// A function the realm owns
+fn function(context: &Context, name: &str, native: NativeFunction) -> JsObject {
+    let realm = context.realm().clone();
+    FunctionObjectBuilder::new(&realm, native)
+        .name(JsString::from(name))
+        .build()
+        .into()
+}
+
+fn guard_globals(context: &mut Context) -> JsResult<()> {
+    let setup = context.eval(Source::from_reader(
+        SETUP.as_bytes(),
+        Some(Path::new(INTERNAL_SOURCE)),
+    ))?;
+    let forbid = function(
+        context,
+        "forbid",
+        NativeFunction::from_fn_ptr(forbid_native),
+    );
+    let config = JsValue::from_json(&serde_json::json!({ "names": GUARDED_GLOBALS }), context)?;
+    setup
+        .to_object(context)?
+        .call(&JsValue::undefined(), &[forbid.into(), config], context)?;
+    Ok(())
+}
+
+/// A console whose calls do nothing, as what a module logs changes no value
+fn install_console(context: &mut Context) -> JsResult<()> {
+    let target = JsObject::with_null_proto();
+    let console = JsProxy::builder(target)
+        .get(|_, _, context| {
+            let call = NativeFunction::from_copy_closure(|_, _, _| Ok(JsValue::undefined()));
+            Ok(function(context, "", call).into())
+        })
+        .build(context)?;
+    context.register_global_property(
+        js_string!("console"),
+        console,
+        Attribute::WRITABLE | Attribute::CONFIGURABLE,
+    )
+}
+
+#[cfg(test)]
+#[path = "evaluation_sandbox_tests.rs"]
+mod tests;
+
+impl Sandbox {
+    /// Installs the instrumented source's native identity/thunk helper.
+    pub(crate) fn prepare(&self, context: &mut Context, source: &Instrumented) -> JsResult<()> {
+        // A new script has no read site until its instrumentation establishes one.
+        *self.evidence.site.borrow_mut() = None;
+        context.register_global_builtin_callable(
+            JsString::from(source.helper.as_str()),
+            3,
+            NativeFunction::from_copy_closure_with_captures(
+                |_, args, sites, context| {
+                    let index = args.get_or_undefined(0).to_u32(context)? as usize;
+                    if let Some((place, offset)) = sites.get(index)
+                        && let Some(evidence) = context.get_data::<Evidence>()
+                    {
+                        *evidence.site.borrow_mut() = Some((place.clone(), *offset));
+                    }
+                    let value = args.get_or_undefined(1);
+                    if args.get_or_undefined(2).to_boolean() {
+                        value
+                            .to_object(context)?
+                            .call(&JsValue::undefined(), &[], context)
+                    } else {
+                        Ok(value.clone())
+                    }
+                },
+                source.sites.clone(),
+            ),
+        )
+    }
+
+    /// Makes `context` deterministic: the clock, chance, the environment and
+    /// the locale cannot be read, an unbounded loop fails instead of hanging
+    /// the build, and `console` calls do nothing
+    pub(crate) fn new(context: &mut Context) -> JsResult<Self> {
+        context
+            .runtime_limits_mut()
+            .set_loop_iteration_limit(LOOP_ITERATION_LIMIT);
+        let evidence = Evidence::default();
+        context.insert_data(evidence.clone());
+        install_console(context)?;
+        guard_methods(context)?;
+        guard_globals(context)?;
+        Ok(Self { evidence })
+    }
+
+    /// Runs `source`, failing if it or anything run before it read what the
+    /// build cannot know, whether or not its code caught the error. A source
+    /// with a path names its call frames by it.
+    pub(crate) fn run_source<R: ReadChar>(
+        &self,
+        context: &mut Context,
+        source: Source<'_, R>,
+    ) -> Result<JsValue, Failure> {
+        match context.eval(source) {
+            Ok(value) => self.check(&[]).map(|()| value),
+            Err(error) => {
+                self.check(&[&error])?;
+                Err(Failure::Js(error))
+            }
+        }
+    }
+
+    /// Fails if a forbidden read was recorded. `errors` are the errors the host
+    /// got back from code it ran: one a read threw gives that read its call
+    /// frames when the code did not rethrow it first, so a host that serializes
+    /// the values the code made passes the errors that failed it here.
+    pub(crate) fn check(&self, errors: &[&JsError]) -> Result<(), Failure> {
+        let recorded = self.evidence.reads.borrow();
+        if recorded.is_empty() {
+            return Ok(());
+        }
+        Err(Failure::Forbidden(
+            recorded
+                .iter()
+                .map(|read| Violation {
+                    kind: Kind::of(&read.name),
+                    name: read.name.clone(),
+                    site: read.site.clone(),
+                    error: match &read.site {
+                        Some((place, _)) => JsNativeError::reference()
+                            .with_message(format!(
+                                "`{}` cannot be read at build time: {}\n    at <read> ({place})",
+                                read.name,
+                                Kind::of(&read.name).requirement()
+                            ))
+                            .into(),
+                        None => errors
+                            .iter()
+                            .find(|error| {
+                                error
+                                    .as_opaque()
+                                    .is_some_and(|thrown| thrown.strict_equals(&read.error))
+                            })
+                            .map_or_else(
+                                || JsError::from_opaque(read.error.clone()),
+                                |error| (*error).clone(),
+                            ),
+                    },
+                })
+                .collect(),
+        ))
+    }
+}
+
+#[cfg(test)]
+mod coverage_tests;

@@ -7,6 +7,7 @@ mod css_prop;
 mod css_utils;
 #[cfg(test)]
 mod diagnostics_tests;
+mod evaluation_sandbox;
 pub mod extract_style;
 mod extractor;
 mod gen_class_name;
@@ -22,6 +23,9 @@ mod scope;
 mod source_map;
 mod style_values;
 mod styled_reads;
+mod stylesheet_policy;
+#[cfg(test)]
+mod stylesheet_regression_tests;
 mod stylex;
 mod tailwind;
 mod util_type;
@@ -361,13 +365,28 @@ fn extract_source(
     }
 
     let mut dependencies = std::collections::BTreeSet::new();
-    let mut evaluation_error = None;
     // Step 3: Handle vanilla-extract style files (.css.ts, .css.js)
     // `processed_code` is Some only when vanilla-extract generation succeeded;
     // otherwise the untouched `transformed_code` is parsed directly (no copy).
-    let processed_code: Option<String> = if utils::is_vanilla_extract_file(filename) {
+    let processed_code: Option<String> = if utils::is_vanilla_extract_file(filename)
+        && stylesheet_policy::plan(&transformed_code, filename, &option, resolver, &|_| false)
+            == stylesheet_policy::Plan::Run
+    {
+        let (source, earlier_edits) = evaluated.unwrap_or((code, &[]));
+        let layers: Vec<&[import_alias_visit::Edit]> = std::iter::once(alias_edits.as_slice())
+            .chain(earlier_edits.iter().copied())
+            .collect();
         // Use transformed code (with imports already pointing to @devup-ui/react)
-        match vanilla_extract::execute_stylesheet(&transformed_code, filename, &option, resolver) {
+        match vanilla_extract::execute_located(
+            vanilla_extract::Stylesheet {
+                filename,
+                code: &transformed_code,
+                source,
+                edits: &layers,
+            },
+            &option,
+            resolver,
+        ) {
             Ok((collected, imports)) => {
                 dependencies = imports.dependencies;
                 // Keyframes names are generated, so extract the referenced ones
@@ -405,21 +424,7 @@ fn extract_source(
                         .collect()
                 })
             }
-            // A stylesheet another one imports must give its own values, and an
-            // import cycle read too early fails as it does in ES modules, so both
-            // are reported rather than hidden behind plain extraction
-            Err(error)
-                if module_loader::loading_for_stylesheet()
-                    || error.contains(module_loader::IMPORT_CYCLE) =>
-            {
-                return Err(error.into());
-            }
-            // Plain extraction still compiles Devup UI's own APIs; the error is
-            // reported when calls it cannot compile remain
-            Err(error) => {
-                evaluation_error = Some(error);
-                None
-            }
+            Err(error) => return Err(error.into()),
         }
     } else {
         None
@@ -513,23 +518,36 @@ fn extract_source(
         // No element took the `css` prop the text seemed to give
         return Ok(unchanged());
     }
-    if let Some(error) = evaluation_error
-        && imports_uncompiled(&program, &option.package)
-    {
-        return Err(error.into());
-    }
     // Run the code a value computes, or tell rules the module computes from a
     // class it composes
     if (!visitor.errors.is_empty() || visitor.composes_unknown)
         && !values_run
         && !utils::is_vanilla_extract_file(filename)
-        && let Some((computed, value_edits, read)) = build_time_values::evaluate(
+        && let Some((computed, value_edits, read)) = build_time_values::evaluate_located(
             &transformed_code,
             filename,
             &option,
             resolver,
             &inlined.unknown,
         )
+        .map_err(|errors| {
+            let (source, earlier_edits) = evaluated.unwrap_or((code, &[]));
+            errors
+                .into_iter()
+                .map(|(offset, message)| {
+                    let offset = std::iter::once(alias_edits.as_slice())
+                        .chain(earlier_edits.iter().copied())
+                        .fold(offset, |offset, edits| {
+                            import_alias_visit::source_offset(edits, offset)
+                        });
+                    format!(
+                        "{}: {message}. Fix: use a literal or a CSS variable",
+                        locate(filename, source, offset)
+                    )
+                })
+                .collect::<Vec<_>>()
+                .join("\n")
+        })?
     {
         let (source, earlier_edits) = evaluated.unwrap_or((code, &[]));
         let layers: Vec<&[import_alias_visit::Edit]> =
@@ -608,21 +626,6 @@ fn main_css_path(css_dir: &str) -> String {
 /// kept for parse/sourcemap. Global (shared-chunk) files are emitted like
 /// single-css: into devup-ui.css with prefix-less global naming, so styles
 /// shared across routes ship once.
-/// Whether `program` still imports a value from `package` that extraction did
-/// not compile away
-fn imports_uncompiled(program: &oxc_ast::ast::Program<'_>, package: &str) -> bool {
-    program.body.iter().any(|statement| {
-        matches!(statement, oxc_ast::ast::Statement::ImportDeclaration(import)
-        if import.source.value == package
-            && !import.import_kind.is_type()
-            && import.specifiers.iter().flatten().any(|specifier| matches!(
-                specifier,
-                oxc_ast::ast::ImportDeclarationSpecifier::ImportSpecifier(named)
-                    if !named.import_kind.is_type()
-            )))
-    })
-}
-
 /// `errors` in source order, one per line, each led by `filename:line:column`
 /// of the code it is about; each layer of `edits`, last made first, maps the
 /// offsets back to `source`
@@ -13737,7 +13740,8 @@ globalCss({
         .map(|error| error.to_string())
         .unwrap_or_default();
         assert!(
-            error.starts_with("JS execution error: TypeError"),
+            error.starts_with("broken.css.ts:3:")
+                && error.contains(": JS execution error: TypeError"),
             "{error}"
         );
 
@@ -20820,7 +20824,6 @@ export const b = <Box p={Math.max(1, W)} m={Math.E > 2 ? 1 : 2} />;"
             .is_ok()
         );
         for code in [
-            "const Math = { max: () => 1 };\nexport const a = css({ width: Math.max(1, 2) });",
             "const Math = { PI: 3 };\nexport const a = css({ width: Math.PI, height: Math.max(1, 2) });",
             "import Math from './math';\nexport const a = css({ width: Math.max(1, 2) });",
             "export const a = (Math) => css({ width: Math.max(1, 2) });",
@@ -20837,6 +20840,18 @@ export const b = <Box p={Math.max(1, W)} m={Math.E > 2 ? 1 : 2} />;"
             .unwrap_or_default();
             assert!(message.contains("Math."), "{code}: {message}");
         }
+        reset_class_map();
+        reset_file_map();
+        let computed = extract(
+            "test.tsx",
+            "import { css } from '@devup-ui/react';\nconst Math = { max: () => 1 };\nexport const a = css({ width: Math.max(1, 2) });",
+            ExtractOption::default(),
+        )
+        .unwrap();
+        assert_eq!(
+            static_values(&computed),
+            BTreeSet::from([("width".to_string(), "4px".to_string())])
+        );
     }
 
     #[test]

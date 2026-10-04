@@ -7,14 +7,18 @@ use oxc_sourcemap::{SourceMap, Token};
 
 use crate::import_alias_visit::{Edit, source_offset};
 
+mod trace;
+
+pub(crate) use trace::{Trace, marks};
+
 /// Where the lines of a text start, split as the codegen splits them
-struct Lines<'t> {
+pub(crate) struct Lines<'t> {
     text: &'t str,
     starts: Vec<usize>,
 }
 
 impl<'t> Lines<'t> {
-    fn new(text: &'t str) -> Self {
+    pub(crate) fn new(text: &'t str) -> Self {
         let mut starts = vec![0];
         let mut characters = text.char_indices().peekable();
         while let Some((index, character)) = characters.next() {
@@ -28,13 +32,16 @@ impl<'t> Lines<'t> {
         Self { text, starts }
     }
 
-    /// The byte offset of `column`, in UTF-16 units, on `line`
-    fn offset(&self, line: u32, column: u32) -> usize {
-        let start = self
-            .starts
+    fn line_start(&self, line: u32) -> usize {
+        self.starts
             .get(line as usize)
             .copied()
-            .unwrap_or(self.text.len());
+            .unwrap_or(self.text.len())
+    }
+
+    /// The byte offset of `column`, in UTF-16 units, on `line`
+    pub(crate) fn offset(&self, line: u32, column: u32) -> usize {
+        let start = self.line_start(line);
         let mut units = 0;
         for (index, character) in self.text[start..].char_indices() {
             if units >= column as usize {
@@ -43,6 +50,16 @@ impl<'t> Lines<'t> {
             units += character.len_utf16();
         }
         self.text.len()
+    }
+
+    /// The byte offset of the code point `column` on `line`, the way the
+    /// script engine counts columns
+    pub(crate) fn code_point_offset(&self, line: u32, column: u32) -> usize {
+        let start = self.line_start(line);
+        self.text[start..]
+            .char_indices()
+            .nth(column as usize)
+            .map_or(self.text.len(), |(index, _)| start + index)
     }
 
     /// The line and UTF-16 column of the byte `offset`
