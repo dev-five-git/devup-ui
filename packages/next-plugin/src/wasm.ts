@@ -1,6 +1,7 @@
-import { existsSync, realpathSync } from 'node:fs'
+import { existsSync, readFileSync, realpathSync } from 'node:fs'
 import { createRequire } from 'node:module'
-import { join, relative } from 'node:path'
+import { dirname, join, relative, resolve } from 'node:path'
+import { compileFunction } from 'node:vm'
 
 import { createModuleResolver } from '@devup-ui/plugin-utils'
 
@@ -14,35 +15,67 @@ let webpackPlugin: DevupWebpackPlugin | undefined
 
 /** @internal Resolve dependencies from the plugin's physical install location. */
 export function requireFromPlugin<T>(specifier: string): T {
+  return createPluginRequire(process.cwd())(specifier) as T
+}
+
+function createPluginRequire(projectRoot: string): NodeRequire {
   const installedPackage = join(
-    process.cwd(),
+    projectRoot,
     'node_modules/@devup-ui/next-plugin/package.json',
   )
   const workspacePackage = join(
-    process.cwd(),
+    projectRoot,
     'packages/next-plugin/package.json',
   )
   const requireBase = existsSync(installedPackage)
     ? installedPackage
     : existsSync(workspacePackage)
       ? workspacePackage
-      : join(process.cwd(), 'package.json')
-  return createRequire(realpathSync(requireBase))(specifier) as T
+      : join(projectRoot, 'package.json')
+  return createRequire(realpathSync(requireBase))
 }
 
 /**
- * Resolve the imports of extracted files to the cwd-relative ids every Next
+ * Resolve the imports of extracted files to the root-relative ids every Next
  * extraction path passes, on engines new enough to load modules.
  */
-export function withModuleResolver(wasm: DevupWasm): DevupWasm {
+export function withModuleResolver(
+  wasm: DevupWasm,
+  projectRoot = process.cwd(),
+): DevupWasm {
+  const root = resolve(projectRoot)
   if ('setModuleResolver' in wasm) {
     wasm.setModuleResolver(
       createModuleResolver({
-        toId: (path) => relative(process.cwd(), path).replaceAll('\\', '/'),
+        cwd: root,
+        toId: (path) => relative(root, path).replaceAll('\\', '/'),
       }),
     )
   }
   return wasm
+}
+
+/** Evaluate a fresh bridge and WASM instance for one app, in the caller's realm. */
+export function createWasm(projectRoot = process.cwd()): DevupWasm {
+  if (wasmForTesting) return wasmForTesting
+  const root = resolve(projectRoot)
+  const filename = createPluginRequire(root).resolve('@devup-ui/wasm')
+  // Only the entry is private: its closure owns the bridge heap and Rust state.
+  const namespace: DevupWasm = Object.create(null)
+  const module = { exports: namespace }
+  compileFunction(
+    readFileSync(filename, 'utf8'),
+    ['exports', 'require', 'module', '__filename', '__dirname'],
+    { filename },
+  ).call(
+    namespace,
+    namespace,
+    createRequire(filename),
+    module,
+    filename,
+    dirname(filename),
+  )
+  return withModuleResolver(module.exports, root)
 }
 
 /** Load the extraction engine once for the lifetime of a Next config. */

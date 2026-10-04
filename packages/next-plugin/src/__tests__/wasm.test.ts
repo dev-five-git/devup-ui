@@ -14,6 +14,7 @@ import {
   afterAll,
   afterEach,
   beforeAll,
+  beforeEach,
   describe,
   expect,
   it,
@@ -21,6 +22,7 @@ import {
 } from 'bun:test'
 
 import {
+  createWasm,
   loadWasm,
   loadWebpackPlugin,
   requireFromPlugin,
@@ -34,6 +36,11 @@ let tempRoots: string[] = []
 
 beforeAll(() => {
   tempRoots = []
+})
+
+beforeEach(() => {
+  setWasmForTesting(undefined)
+  setWebpackPluginForTesting(undefined)
 })
 
 afterEach(() => {
@@ -55,8 +62,11 @@ describe('WASM loading', () => {
       specifier: string,
       importer: string,
     ) => { path: string } | undefined
+    const otherRoot = mkdtempSync(join(tmpdir(), 'devup-ui-resolver-cwd-'))
+    tempRoots.push(otherRoot)
+    process.chdir(otherRoot)
     expect(resolveModule('./wasm.test', import.meta.path)?.path).toBe(
-      relative(process.cwd(), import.meta.path).replaceAll('\\', '/'),
+      relative(originalCwd, import.meta.path).replaceAll('\\', '/'),
     )
     const older = {} as typeof wasm
     expect(withModuleResolver(older)).toBe(older)
@@ -65,6 +75,8 @@ describe('WASM loading', () => {
   it('uses an injected namespace in tests', () => {
     setWasmForTesting(wasm)
     expect(loadWasm()).toBe(wasm)
+    expect(createWasm()).toBe(wasm)
+    expect(createWasm('/unused-injected-root')).toBe(wasm)
   })
 
   it('loads the package once', () => {
