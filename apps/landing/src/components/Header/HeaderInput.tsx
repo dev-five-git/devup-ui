@@ -12,17 +12,17 @@ export function HeaderInput(props: React.ComponentProps<'input'>) {
     >
       <Image boxSize="24px" src="/search.svg" />
       <Input
-        _placeholder={{
-          color: '$caption',
-        }}
         bg="transparent"
         border="none"
         color="$text"
         outline="none"
         placeholder="Search documentation..."
-        typography="caption"
         w="100%"
         {...props}
+        _placeholder={{
+          color: '$caption',
+        }}
+        typography="caption"
       />
     </Flex>
   )
