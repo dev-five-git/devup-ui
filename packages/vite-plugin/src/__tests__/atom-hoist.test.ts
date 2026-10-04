@@ -9,7 +9,7 @@ it('emits real hoisted JSX atoms and private CSS in either transform order and f
   // Given: two explicit entries reach a shared styled module.
   const setup = `
 const { DevupUI } = await import(${builtPluginEntry('vite-plugin')});
-const plugin = DevupUI({ atomHoist: 2, cssDir, distDir: join(root, 'df') });
+const [plugin, restorePlugin] = DevupUI({ atomHoist: 2, cssDir, distDir: join(root, 'df') });
 await plugin.configResolved({ root, command: 'build', build: {
   rollupOptions: { input: [join(root, files[1]), join(root, files[2])] },
 } });
@@ -22,6 +22,7 @@ const loadCss = name => plugin.load(join(cssDir, name));
 const finish = async () => {
   const asset = { type: 'asset', name: 'devup-ui.css', source: 'stale', fileName: 'shared.css' };
   await plugin.generateBundle.call({}, {}, { 'shared.css': asset });
+  restorePlugin.generateBundle.handler({}, { 'shared.css': asset });
   assert.equal(asset.source, await loadCss('devup-ui.css'), 'emitted asset must contain the finished shared sheet');
   plugin.closeBundle();
 };
