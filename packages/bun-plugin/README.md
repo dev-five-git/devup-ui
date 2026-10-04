@@ -57,8 +57,38 @@ module in the bundle. Imports of the packages Devup UI takes the place of
 (`@emotion/react`, `@emotion/styled`, `styled-components`,
 `@vanilla-extract/css`) and of `@stylexjs/stylex` are compiled too.
 
-Class names are short in `Bun.build` and readable under the runtime; pass
-`debug` to choose.
+Class names are short by default in both `Bun.build` and the runtime. Pass
+`debug: true` for readable names (including snapshot tests).
+
+The plugin transforms loaded `.ts`, `.tsx`, `.mts`, `.cts`, `.js`, `.jsx`,
+`.mjs`, and `.cjs` modules, including libraries that import Devup UI, its
+compatibility aliases, or StyleX. Unlike the other bundler plugins, Bun does
+not require an `include` list when bundling loaded uncompiled libraries.
+Under the runtime, use `include: ['your-library']` for uncompiled dependencies;
+`@devup-ui/components` is included automatically. Runtime candidates are
+discovered at setup so ordinary token/CommonJS modules retain Bun's native
+watch/loading behavior; restart Bun after adding a new styling module or
+changing `include`. Precompiled libraries must still publish their extracted
+CSS for consumers to import.
+
+Raw `.mdx` files are compiled asynchronously using the project's optional
+`@mdx-js/mdx` installation before extraction. Install that compiler in the
+project when authoring Devup UI/compatibility/StyleX code in MDX. Without a
+compiler, unrelated MDX is left to another plugin; styling MDX fails with a
+located installation diagnostic. Extractor errors use the compiler's source
+map when available, otherwise their locations are labeled `in compiled MDX`.
+
+`root` defaults to `Bun.build`'s root, or the runtime's working directory.
+Relative `devupFile` (default `devup.json`), `distDir` (default `df`) and
+`sourceDirs` resolve against that root. Default numbering roots are the existing
+`src` and `app` directories; use `sourceDirs` for other layouts. Malformed or
+cyclic theme configuration stops initialization with a file-located error.
+Optional file-number seeding failures emit one warning including the cause.
+
+Build-time imported modules remain explicit side-effect imports in Bun's graph
+so runtime watch mode can reload their importers. `Bun.build` takes CSS only
+after extraction completes. Runtime imports synchronously publish changed CSS
+to disk; identical revisions skip writes, without delaying read-after-import.
 
 ## Custom Shorthands
 

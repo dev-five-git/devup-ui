@@ -1,6 +1,6 @@
-import { existsSync, writeFileSync } from 'node:fs'
+import { existsSync, readFileSync, writeFileSync } from 'node:fs'
 import { mkdir, writeFile } from 'node:fs/promises'
-import { dirname, join, relative, resolve } from 'node:path'
+import { basename, dirname, join, relative, resolve } from 'node:path'
 
 import {
   beginBuild,
@@ -9,8 +9,13 @@ import {
   createModuleResolver,
   createThemeInterfaceArgs,
   type CustomShorthands,
+  GRAPH_SOURCE_FILE_RE,
+  listSourceFiles,
   loadDevupConfig,
-  mergeImportAliases,
+  MDX_FILE_RE,
+  remapMdxError,
+  resolveProjectPaths,
+  resolveSourceDirs,
   seedFileNumbers,
 } from '@devup-ui/plugin-utils'
 import {
@@ -27,42 +32,43 @@ import {
 } from '@devup-ui/wasm'
 import { type BunPlugin, plugin, type PluginBuilder } from 'bun'
 
-import { cssDirName, cssNamespace, resolveCssId } from './css-id'
-
-const libPackage = '@devup-ui/react'
-const devupFile = 'devup.json'
-const distDir = 'df'
-const cssDir = resolve(distDir, cssDirName)
-const singleCss = true
-const importAliases = mergeImportAliases()
-// The packages whose imports the extractor compiles: Devup UI, the packages it
-// takes the place of, and StyleX
-const compiledPackages = [
+import { cssNamespace, resolveCssId } from './css-id'
+import { compileMdx } from './mdx'
+import {
+  compiledPackages,
+  importAliases,
+  importsCompiledPackage,
   libPackage,
-  '@stylexjs/stylex',
-  ...Object.keys(importAliases),
-]
+  mentionsCompiledPackage,
+  preserveDependencies,
+  runtimeSourceFilter,
+  sourceLoader,
+} from './source'
+
+const singleCss = true
 
 export interface DevupUIBunPluginOptions {
   shorthands?: CustomShorthands
-  /**
-   * Readable class names. Defaults to `true` under the Bun runtime (tests) and
-   * `false` in `Bun.build`.
-   */
+  /** Resolved against Bun.build's root, or cwd in the runtime. */
+  root?: string
+  devupFile?: string
+  distDir?: string
+  sourceDirs?: string | string[]
+  /** Uncompiled dependencies to transform under the runtime. */
+  include?: string[]
+  /** Readable class names. Defaults to false in both runtime and builds. */
   debug?: boolean
 }
 
-type SourceLoader = 'tsx' | 'ts' | 'jsx' | 'js'
+type Project = ReturnType<typeof resolveProjectPaths> & {
+  readonly root: string
+  readonly debug: boolean
+  readonly resolver: ReturnType<typeof createModuleResolver>
+}
 
-async function writeDataFiles() {
-  let theme = {}
-  try {
-    const config = await loadDevupConfig(devupFile)
-    theme = config.theme ?? {}
-  } catch {
-    // Error reading devup.json, use empty theme
-  }
-  registerTheme(theme)
+async function writeDataFiles({ devupFile, distDir, cssDir }: Project) {
+  const config = await loadDevupConfig(devupFile)
+  registerTheme(config.theme ?? {})
 
   // Generate theme interface after registration (always write, even if empty)
   await writeFile(
@@ -77,23 +83,32 @@ async function writeDataFiles() {
   await writeFile(join(cssDir, 'devup-ui.css'), getCss(null, false), 'utf-8')
 }
 
-async function initialize({ shorthands }: DevupUIBunPluginOptions = {}) {
-  registerShorthands(shorthands ?? {})
+async function initialize(project: Project, options: DevupUIBunPluginOptions) {
+  const { root, distDir } = project
+  registerShorthands(options.shorthands ?? {})
   setPrefix(null)
-  setModuleResolver(createModuleResolver())
+  setModuleResolver(project.resolver)
   // Number every source file in path order, so class prefixes do not depend
   // on the order Bun loads files in
   try {
     seedFileNumbers(
       { seedFileMap },
       collectNumberedFiles({
-        roots: [resolve('src')],
+        roots: resolveSourceDirs(root, options.sourceDirs),
+        cwd: root,
+        include: options.include,
         needles: compiledPackages,
         toId: (path) => path,
       }),
     )
-  } catch {
-    // Best-effort; numbering falls back to arrival order.
+  } catch (cause) {
+    if (!(cause instanceof Error)) throw cause
+    console.warn('[devup-ui] File numbering fallback', {
+      root,
+      phase: 'seed',
+      impact: 'arrival-order file IDs',
+      cause,
+    })
   }
   if (!existsSync(distDir)) await mkdir(distDir, { recursive: true })
   await writeFile(join(distDir, '.gitignore'), '*', 'utf-8')
@@ -102,59 +117,40 @@ async function initialize({ shorthands }: DevupUIBunPluginOptions = {}) {
     createCompatTypes(importAliases),
     'utf-8',
   )
-  await writeDataFiles()
+  await writeDataFiles(project)
 }
 
-const scanners = new Map<SourceLoader, Bun.Transpiler>()
-
-/** Whether `contents` imports a package the extractor compiles */
-function importsCompiledPackage(contents: string, loader: SourceLoader) {
-  let scanner = scanners.get(loader)
-  if (!scanner) {
-    scanner = new Bun.Transpiler({ loader })
-    scanners.set(loader, scanner)
-  }
-  try {
-    return scanner
-      .scanImports(contents)
-      .some(({ path }) =>
-        compiledPackages.some(
-          (name) => path === name || path.startsWith(`${name}/`),
-        ),
-      )
-  } catch {
-    // Bun reports the syntax error when it loads the untouched source
-    return false
-  }
-}
-
-async function loadSourceFile(filePath: string, bundling: boolean) {
-  const loader: SourceLoader = filePath.endsWith('.tsx')
-    ? 'tsx'
-    : filePath.endsWith('.ts')
-      ? 'ts'
-      : filePath.endsWith('.jsx')
-        ? 'jsx'
-        : 'js'
-  const contents = await Bun.file(filePath).text()
+async function loadSourceFile(filePath: string, project: Project) {
+  const original = await Bun.file(filePath).text()
+  const mdx = MDX_FILE_RE.test(filePath)
+    ? await compileMdx(project.root, filePath, original)
+    : undefined
+  if (MDX_FILE_RE.test(filePath) && !mdx) return undefined
+  const loader = mdx ? 'jsx' : sourceLoader(filePath)
+  const contents = mdx?.value ?? original
 
   if (importsCompiledPackage(contents, loader)) {
-    const code = codeExtract(
-      filePath,
-      contents,
-      libPackage,
-      relative(dirname(filePath), cssDir).replaceAll('\\', '/'),
-      singleCss,
-      true,
-      false,
-      importAliases,
-    )
-    // Under the runtime the stylesheet is read from disk. singleCss stores
-    // every extracted style in the base sheet; synchronous writes keep
-    // concurrent source loads from overwriting a newer sheet with an older one.
-    if (!bundling)
-      writeFileSync(join(cssDir, 'devup-ui.css'), getCss(null, false), 'utf-8')
-    return { contents: code.code, loader }
+    setDebug(project.debug)
+    setModuleResolver(project.resolver)
+    try {
+      const code = codeExtract(
+        filePath,
+        contents,
+        libPackage,
+        relative(dirname(filePath), project.cssDir).replaceAll('\\', '/'),
+        singleCss,
+        true,
+        false,
+        importAliases,
+      )
+      return {
+        contents: preserveDependencies(code.code, filePath, code.dependencies),
+        loader,
+      }
+    } catch (cause) {
+      if (mdx) throw remapMdxError(cause, filePath, mdx.map)
+      throw cause
+    }
   }
   return { contents, loader }
 }
@@ -170,19 +166,74 @@ function DevupUI(options: DevupUIBunPluginOptions = {}) {
     async setup(build: PluginBuilder) {
       // `Bun.build` hands its config to plugins; the runtime has none
       const bundling = build.config !== undefined
+      const root = resolve(options.root ?? build.config?.root ?? process.cwd())
+      const targetConditions = {
+        browser: ['browser'],
+        bun: ['bun', 'node'],
+        node: ['node'],
+      } as const
+      const customConditions =
+        typeof build.config?.conditions === 'string'
+          ? [build.config.conditions]
+          : (build.config?.conditions ?? [])
+      const project: Project = {
+        ...resolveProjectPaths(root, options),
+        root,
+        debug: options.debug ?? false,
+        resolver: createModuleResolver({
+          cwd: root,
+          // Extracted ESM imports stay import requests even in the vanilla
+          // CommonJS evaluator. The callback does not expose a request kind.
+          conditions: [
+            ...targetConditions[
+              build.config?.target ?? (bundling ? 'browser' : 'bun')
+            ],
+            'import',
+            ...(bundling ? ['module'] : []),
+            ...customConditions,
+          ],
+        }),
+      }
       // A build starts from its own options, not from what an earlier build in
       // this process left in the engine
       const endBuild = beginBuild({ resetBuildState })
       build.onEnd?.(endBuild)
-      await initialize(options)
-      setDebug(options.debug ?? !bundling)
+      await initialize(project, options)
+      setDebug(project.debug)
+      let writtenCss = getCss(null, false)
+      // Native token modules must keep Bun's filesystem watch/CJS loading path.
+      const sourceFilter = bundling
+        ? GRAPH_SOURCE_FILE_RE
+        : new RegExp(
+            `${
+              runtimeSourceFilter([
+                ...listSourceFiles(root, [
+                  'target',
+                  'dist',
+                  basename(project.distDir),
+                  '.git',
+                  'coverage',
+                ]).filter((file) =>
+                  mentionsCompiledPackage(readFileSync(file, 'utf-8')),
+                ),
+                ...collectNumberedFiles({
+                  roots: resolveSourceDirs(root, options.sourceDirs),
+                  cwd: root,
+                  include: ['@devup-ui/components', ...(options.include ?? [])],
+                  needles: compiledPackages,
+                  toId: (path) => path,
+                }),
+              ]).source
+            }|\\.(?:test|spec)\\.[mc]?[jt]sx?$`,
+          )
 
       // Resolve devup-ui CSS files onto a path-free virtual id, so nothing
       // derived from this checkout's cwd can be baked into Bun's shared,
       // content-keyed transpiler cache. See ./css-id.
       build.onResolve(
         { filter: /devup-ui(-\d+)?\.css$/ },
-        ({ path, importer }) => resolveCssId(path, importer, distDir),
+        ({ path, importer }) =>
+          resolveCssId(path, importer, basename(project.distDir)),
       )
 
       // The bundler takes the stylesheet once every other module is loaded,
@@ -201,9 +252,25 @@ function DevupUI(options: DevupUIBunPluginOptions = {}) {
       // Load source files from packages directory (file namespace)
       build.onLoad(
         {
-          filter: /\.(?:tsx?|jsx|mjs)$|[\\/]@devup-ui[\\/].*\.js$/,
+          filter: sourceFilter,
         },
-        ({ path }) => loadSourceFile(path, bundling),
+        ({ path }) => {
+          return loadSourceFile(path, project).then((result) => {
+            if (!bundling && result) {
+              const css = getCss(null, false)
+              // Read-after-import is synchronous; only identical revisions coalesce.
+              if (css !== writtenCss) {
+                writeFileSync(
+                  join(project.cssDir, 'devup-ui.css'),
+                  css,
+                  'utf-8',
+                )
+                writtenCss = css
+              }
+            }
+            return result
+          })
+        },
       )
     },
   } satisfies BunPlugin
