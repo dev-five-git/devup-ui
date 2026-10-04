@@ -5,6 +5,7 @@ use css::file_map::reset_file_map;
 
 mod binding_edges;
 mod calls;
+mod capture_edges;
 mod capture_preservation;
 mod captures;
 mod create_element;
@@ -62,10 +63,9 @@ fn code(source: &str) -> String {
 
 /// The message of a file that does not compile
 fn error(source: &str) -> String {
-    match compile(source) {
-        Err(message) => message,
-        Ok(compiled) => panic!("the file compiles: {}", compiled.code),
-    }
+    compile(source)
+        .err()
+        .unwrap_or_else(|| panic!("the negative fixture compiles: {source}"))
 }
 
 /// A style that gives way to a spread: its property, breakpoint, the code
