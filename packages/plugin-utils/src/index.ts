@@ -65,6 +65,7 @@ export type {
   DevupConfig,
   DevupTheme,
   ImportAliases,
+  ModuleAliases,
   ThemeColors,
   ThemeTypography,
   Typography,

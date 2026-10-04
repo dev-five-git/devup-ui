@@ -1,3 +1,5 @@
+import type { ModuleAliases } from './types'
+
 export class ModuleAliasError extends Error {
   constructor(importer: string, specifier: string) {
     super(`${importer}:1:1: Module alias cycle cannot resolve ${specifier}`)
@@ -5,29 +7,88 @@ export class ModuleAliasError extends Error {
   }
 }
 
-/** First rewriting match wins; self aliases are not rewriting matches. */
-export function rewriteModuleAlias(
+export class ModuleAliasCandidatesError extends Error {
+  readonly name = 'ModuleAliasCandidatesError'
+  constructor(
+    readonly importer: string,
+    readonly key: string,
+    readonly candidates: readonly string[],
+  ) {
+    super(
+      `${importer}:1:1: Module alias ${key} cannot resolve candidates ${JSON.stringify(candidates)}`,
+    )
+  }
+}
+
+export class ModuleAliasPackageError extends Error {
+  readonly name = 'ModuleAliasPackageError'
+  constructor(
+    readonly importer: string,
+    readonly request: string,
+  ) {
+    super(
+      `${importer}:1:1: Module alias package ${request} has no resolving export under the active conditions`,
+    )
+  }
+}
+
+export interface AliasResolution {
+  readonly path: string
+  readonly request: string
+}
+
+/** Resolve every rewriting candidate completely before selecting its request. */
+export function resolveModuleAlias(
   specifier: string,
-  alias: Readonly<Record<string, string>>,
-  importer: string,
-): string {
-  const visited = new Set<string>()
-  let request = specifier
-  while (!visited.has(request)) {
-    visited.add(request)
-    let rewritten = request
-    for (const [key, target] of Object.entries(alias)) {
+  context: {
+    readonly alias: ModuleAliases
+    readonly importer: string
+    readonly resolveRequest: (
+      request: string,
+      aliased: boolean,
+    ) => string | false | undefined
+  },
+): AliasResolution | false | undefined {
+  let failure:
+    { readonly key: string; readonly candidates: readonly string[] } | undefined
+  function visit(
+    request: string,
+    visited: ReadonlySet<string>,
+    aliased: boolean,
+  ): AliasResolution | false | undefined {
+    if (visited.has(request))
+      throw new ModuleAliasError(context.importer, specifier)
+    const next = new Set(visited).add(request)
+    for (const [key, value] of Object.entries(context.alias)) {
       const exact = key.endsWith('$')
       const name = exact ? key.slice(0, -1) : key
       if (request !== name && (exact || !request.startsWith(`${name}/`)))
         continue
-      if (request === target || request.startsWith(`${target}/`)) continue
-      const candidate = target + request.slice(name.length)
-      rewritten = candidate
-      break
+      const targets = typeof value === 'string' ? [value] : value
+      const candidates = targets
+        .filter(
+          (target) => request !== target && !request.startsWith(`${target}/`),
+        )
+        .map((target) => target + request.slice(name.length))
+      if (targets.length && !candidates.length) continue
+      failure ??= { key, candidates }
+      let missing = !candidates.length
+      for (const candidate of candidates) {
+        const resolved = visit(candidate, next, true)
+        if (resolved) return resolved
+        if (resolved === undefined) missing = true
+      }
+      return missing ? undefined : false
     }
-    if (rewritten === request) return request
-    request = rewritten
+    const path = context.resolveRequest(request, aliased)
+    return typeof path === 'string' ? { path, request } : path
   }
-  throw new ModuleAliasError(importer, specifier)
+  const resolved = visit(specifier, new Set(), false)
+  if (resolved === undefined && failure)
+    throw new ModuleAliasCandidatesError(
+      context.importer,
+      failure.key,
+      failure.candidates,
+    )
+  return resolved
 }

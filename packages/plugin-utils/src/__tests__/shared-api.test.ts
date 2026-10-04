@@ -156,7 +156,9 @@ it('rewrites aliases before tsconfig and never falls through a matched missing t
   expect(resolver('name', entry)?.path).toBe(target)
   file('node_modules/missing/package.json', '{"main":"index.js"}')
   file('node_modules/missing/index.js')
-  expect(resolver('missing', entry)).toBeUndefined()
+  expect(() => resolver('missing', entry)).toThrow(
+    `${entry}:1:1: Module alias missing cannot resolve candidates ${JSON.stringify([join(root, 'absent')])}`,
+  )
 })
 
 it('does not widen local graph roots merely because an empty alias table exists', () => {
