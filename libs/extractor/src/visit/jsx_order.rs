@@ -20,6 +20,38 @@ use oxc_span::SPAN;
 use rustc_hash::{FxHashMap, FxHashSet};
 use std::borrow::Cow;
 
+pub(super) fn spread_attribute<'b, 'a>(
+    attribute: &'b JSXAttributeItem<'a>,
+) -> Option<&'b oxc_ast::ast::JSXSpreadAttribute<'a>> {
+    match attribute {
+        SpreadAttribute(spread) => Some(spread),
+        Attribute(_) => None,
+    }
+}
+
+pub(super) fn prune_shadowed<'a>(
+    object: &mut oxc_ast::ast::ObjectExpression<'a>,
+    written: &mut FxHashSet<Cow<'a, str>>,
+) {
+    let mut given = Vec::new();
+    object.properties.retain(|property| {
+        let oxc_ast::ast::ObjectPropertyKind::ObjectProperty(property) = property else {
+            return true;
+        };
+        let Some(key) = crate::utils::get_str_by_property_key(&property.key) else {
+            return true;
+        };
+        if css::is_special_property::is_special_property(&key) {
+            return true;
+        }
+        let names: Vec<_> = disassemble_property(&key).map(Cow::into_owned).collect();
+        let overridden = names.iter().all(|name| written.contains(name.as_str()));
+        given.extend(names);
+        !overridden
+    });
+    written.extend(given.into_iter().map(Cow::Owned));
+}
+
 /// What an element evaluates once, in the order its attributes are written
 #[derive(Default)]
 pub(super) struct AttributeOrder<'a> {
@@ -151,11 +183,9 @@ impl<'a> DevupVisitor<'a> {
             return order;
         };
         for (item, attribute) in items.iter().zip(attributes.iter_mut()).take(last + 1) {
-            if item.reach == Reach::Constant && !item.snapshot {
-                continue;
-            }
             let mut captured = Vec::new();
             match attribute {
+                SpreadAttribute(_) if item.reach == Reach::Constant && !item.snapshot => continue,
                 SpreadAttribute(spread) if is_unknown_spread(&spread.argument) => {
                     let name = self.names.fresh("__devupSpread");
                     if super::call_order::unsafe_to_extract(&spread.argument) {
@@ -184,6 +214,9 @@ impl<'a> DevupVisitor<'a> {
                     }) else {
                         continue;
                     };
+                    if item.reach == Reach::Constant {
+                        continue;
+                    }
                     if order_value
                         && matches!(
                             self.parsed_order(value),

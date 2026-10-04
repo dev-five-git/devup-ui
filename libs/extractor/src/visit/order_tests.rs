@@ -38,3 +38,26 @@ fn relocation_classification_when_syntax_has_observable_evaluation(
         "{source}"
     );
 }
+
+#[test]
+fn compiled_call_when_its_arguments_are_spread_can_run_iterator_code() {
+    let allocator = Allocator::default();
+    let parsed = Parser::new(
+        &allocator,
+        "import {css} from '@devup-ui/react'; css(...parts);",
+        SourceType::ts(),
+    )
+    .parse();
+    let mut bindings = crate::scope::Bindings::default();
+    let scoping = SemanticBuilder::new()
+        .build(&parsed.program)
+        .semantic
+        .into_scoping();
+    let symbol = scoping.get_root_binding("css".into());
+    bindings.scope(std::rc::Rc::new(scoping));
+    assert!(bindings.export(symbol, "css"));
+    let Statement::ExpressionStatement(statement) = &parsed.program.body[1] else {
+        panic!("call required")
+    };
+    assert!(reach(&bindings, &statement.expression) == Reach::Runs);
+}

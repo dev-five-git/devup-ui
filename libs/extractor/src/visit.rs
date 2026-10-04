@@ -75,16 +75,15 @@ use crate::utils::{
     CLASS_NAMES_CALL, CLASS_NAMES_CHILD, CLASS_NAMES_CLASS_MAP, CLASS_NAMES_PART, CSS_PROP_SPREAD,
     CSS_PROP_VALUE, LOCAL_STYLES, ParsedStyleOrder, RUNTIME_VALUE, STYLE_OBJECT, StyleArguments,
     build_time_error, call_with_values, css_prop_error, css_prop_override_error, element_error,
-    fixed_value, get_str_by_property_key, get_string_by_literal_expression,
-    get_string_by_property_key, key_error, readable_argument, readable_code, reads_directly,
-    reads_unknown, runtime_classes, runtime_value, runtime_value_error, spread_error, string_class,
-    style_arguments, uncomposable_error, unplaced_error, unreadable_styles, unwrap_syntax_only,
+    fixed_value, get_string_by_literal_expression, get_string_by_property_key, key_error,
+    readable_argument, readable_code, reads_directly, reads_unknown, runtime_classes,
+    runtime_value, runtime_value_error, spread_error, string_class, style_arguments,
+    uncomposable_error, unplaced_error, unreadable_styles, unwrap_syntax_only,
     unwrap_syntax_only_mut,
 };
 use oxc_ast::builder::AstBuilder;
 use oxc_span::{GetSpan, SPAN};
 use rustc_hash::{FxHashMap, FxHashSet};
-use std::borrow::Cow;
 use std::rc::Rc;
 
 mod branch_capture;
@@ -100,6 +99,8 @@ mod order;
 #[cfg(test)]
 mod order_tests;
 mod selected_capture;
+#[cfg(test)]
+mod semantics_helpers_tests;
 mod spread_slots;
 mod style_order;
 
@@ -3872,26 +3873,7 @@ impl<'a> VisitMut<'a> for DevupVisitor<'a> {
                         unwrap_syntax_only_mut(&mut spread.argument)
                     {
                         flatten_spreads(&self.ast, object);
-                        let mut given = Vec::new();
-                        object.properties.retain(|property| {
-                            let ObjectPropertyKind::ObjectProperty(property) = property else {
-                                return true;
-                            };
-                            let Some(key) = get_str_by_property_key(&property.key) else {
-                                return true;
-                            };
-                            if is_special_property(&key) {
-                                return true;
-                            }
-                            let names: Vec<_> =
-                                disassemble_property(&key).map(Cow::into_owned).collect();
-                            let overridden = names
-                                .iter()
-                                .all(|name| duplicate_set.contains(name.as_str()));
-                            given.extend(names);
-                            !overridden
-                        });
-                        duplicate_set.extend(given.into_iter().map(Cow::Owned));
+                        jsx_order::prune_shadowed(object, &mut duplicate_set);
                         // What a literal gives before spreads the build cannot
                         // read gives way to them as an attribute does
                         if !unknown_spreads.is_empty() {
@@ -3993,10 +3975,7 @@ impl<'a> VisitMut<'a> for DevupVisitor<'a> {
                     .iter()
                     .rev()
                     .filter_map(|from_end| attrs.iter().rev().nth(*from_end))
-                    .filter_map(|item| match item {
-                        JSXAttributeItem::SpreadAttribute(spread) => Some(spread),
-                        JSXAttributeItem::Attribute(_) => None,
-                    })
+                    .filter_map(jsx_order::spread_attribute)
                     .collect();
                 for style in &overridden {
                     unreadable_styles(&style.styles, false, &mut unreadable);
@@ -4096,24 +4075,6 @@ impl<'a> VisitMut<'a> for DevupVisitor<'a> {
                 Some(As::Name(name)) => crate::as_visit::rename(&self.ast, elem, name),
                 Some(As::Choice(choice)) => self.pending_replacement = Some(choice),
                 Some(As::Runtime(value)) => {
-                    if let Some(as_name) = &order.as_name
-                        && let Some((_, captured)) =
-                            values.iter_mut().find(|(name, _)| name == as_name)
-                    {
-                        let original = captured.take_in(&self.ast);
-                        *captured = Expression::new_logical_expression(
-                            SPAN,
-                            original,
-                            LogicalOperator::Or,
-                            Expression::new_string_literal(
-                                SPAN,
-                                Str::from_in(default_tag, self.ast.allocator()),
-                                None,
-                                &self.ast,
-                            ),
-                            &self.ast,
-                        );
-                    }
                     let name = order.as_name.unwrap_or_else(|| {
                         let name = self.names.fresh("DevupAs");
                         values.insert(0, (name.clone(), value));
