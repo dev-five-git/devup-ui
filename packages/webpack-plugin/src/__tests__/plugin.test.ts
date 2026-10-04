@@ -86,6 +86,8 @@ let mkdirSpy: ReturnType<typeof spyOn>
 let readFileSpy: ReturnType<typeof spyOn>
 let statSpy: ReturnType<typeof spyOn>
 let writeFileSpy: ReturnType<typeof spyOn>
+let graphSpy: ReturnType<typeof spyOn>
+const closeBuilds = new Set<() => void>()
 
 beforeEach(() => {
   codeExtractSpy = spyOn(wasm, 'codeExtract').mockImplementation(
@@ -112,9 +114,19 @@ beforeEach(() => {
   readFileSpy = spyOn(fsPromises, 'readFile').mockResolvedValue('{}')
   statSpy = spyOn(fsPromises, 'stat').mockResolvedValue(createStats(0))
   writeFileSpy = spyOn(fsPromises, 'writeFile').mockResolvedValue(undefined)
+  graphSpy = spyOn(pluginUtils, 'buildStaticImportGraph').mockReturnValue({
+    files: [],
+    fileSet: new Set(),
+    staticImports: new Map(),
+    staticImporters: new Map(),
+    dynamicImports: new Map(),
+    dynamicTargets: new Set(),
+  })
 })
 
 afterEach(() => {
+  for (const closeBuild of closeBuilds) closeBuild()
+  closeBuilds.clear()
   codeExtractSpy.mockRestore()
   getCssSpy.mockRestore()
   getDefaultThemeSpy.mockRestore()
@@ -134,6 +146,7 @@ afterEach(() => {
   readFileSpy.mockRestore()
   statSpy.mockRestore()
   writeFileSpy.mockRestore()
+  graphSpy.mockRestore()
 })
 
 function createCompiler(): MockCompiler {
@@ -168,7 +181,9 @@ function createCompiler(): MockCompiler {
         tap: mock(),
       },
       shutdown: {
-        tap: mock(),
+        tap: mock((_name: string, closeBuild: () => void) => {
+          closeBuilds.add(closeBuild)
+        }),
       },
     },
   }
@@ -193,7 +208,7 @@ describe('devupUIWebpackPlugin', () => {
         )
         expect(seedSpy).toHaveBeenCalledWith(['src/a.tsx', 'src/b.tsx'])
         expect(collectSpy.mock.calls[0][0]).toMatchObject({
-          roots: [resolve('src')],
+          roots: [],
           include: ['@acme/ui'],
         })
         compiler.hooks.shutdown.tap.mock.calls[0][1]()
@@ -213,7 +228,7 @@ describe('devupUIWebpackPlugin', () => {
     expect(new DevupUIWebpackPlugin({}).options).toEqual({
       include: [],
       package: '@devup-ui/react',
-      cssDir: resolve('df', 'devup-ui'),
+      cssDir: join('df', 'devup-ui'),
       devupFile: 'devup.json',
       distDir: 'df',
       watch: false,
@@ -269,25 +284,20 @@ describe('devupUIWebpackPlugin', () => {
         'CustomShadows',
         'DevupTheme',
       )
-      if (_options.getThemeInterface)
-        expect(writeFileSyncSpy).toHaveBeenCalledWith(
-          join(options.distDir, 'theme.d.ts'),
-          _options.getThemeInterface,
-          {
-            encoding: 'utf-8',
-          },
-        )
-      else expect(writeFileSyncSpy).toHaveBeenCalledTimes(options.watch ? 1 : 0)
+      expect(writeFileSyncSpy).toHaveBeenCalledWith(
+        join(options.distDir, 'theme.d.ts'),
+        _options.getThemeInterface,
+        {
+          encoding: 'utf-8',
+        },
+      )
 
       if (options.watch)
         expect(writeFileSyncSpy).toHaveBeenCalledWith(
           join(options.cssDir, 'devup-ui.css'),
           _options.getCss,
         )
-      else
-        expect(writeFileSyncSpy).toHaveBeenCalledTimes(
-          _options.getThemeInterface ? 1 : 0,
-        )
+      else expect(writeFileSyncSpy).toHaveBeenCalledTimes(1)
     })
   })
 
@@ -322,10 +332,10 @@ describe('devupUIWebpackPlugin', () => {
 
     const compiler = createCompiler()
     await plugin.apply(asCompiler(compiler))
-    expect(compiler.options.module.rules.length).toBe(2)
+    expect(compiler.options.module.rules.length).toBe(3)
 
     expect(compiler.options.module.rules[0].exclude).toEqual(
-      options.include.output,
+      pluginUtils.createNodeModulesExcludeRegex(options.include.input),
     )
   })
 
@@ -347,7 +357,8 @@ describe('devupUIWebpackPlugin', () => {
       watch: true,
     })
     const compiler = createCompiler()
-    readFileSyncSpy.mockImplementation(() => {
+    readFileSyncSpy.mockImplementation((file: string) => {
+      if (file.endsWith('tsconfig.json')) return '{}'
       throw new Error('error')
     })
     statSpy.mockReturnValue(createStats(1))
@@ -591,14 +602,16 @@ describe('devupUIWebpackPlugin', () => {
       }
       compiler.options.context = '/project'
       plugin.apply(asCompiler(compiler))
-      expect(computeReachableFilesSpy).toHaveBeenCalledWith({
-        srcDir: resolve(process.cwd(), 'src'),
-        tsconfigPath: resolve(process.cwd(), 'tsconfig.json'),
-        entries: [
-          resolve('/project', './src/parent'),
-          resolve('/project', './src/other'),
-        ],
-      })
+      expect(computeReachableFilesSpy).toHaveBeenCalledWith(
+        expect.objectContaining({
+          srcDir: [],
+          tsconfigPath: resolve('/project', 'tsconfig.json'),
+          entries: [
+            resolve('/project', './src/parent'),
+            resolve('/project', './src/other'),
+          ],
+        }),
+      )
       // The loader's resolver is registered before the first extraction, so
       // imported constants inline as they do in the loader
       expect(setModuleResolverSpy.mock.invocationCallOrder[0]).toBeLessThan(
@@ -609,12 +622,12 @@ describe('devupUIWebpackPlugin', () => {
         importer: string,
       ) => { path: string } | undefined
       expect(resolveModule('./plugin.test', import.meta.path)?.path).toBe(
-        relative(process.cwd(), import.meta.path).replaceAll('\\', '/'),
+        relative('/project', import.meta.path).replaceAll('\\', '/'),
       )
       setModuleResolverSpy.mockRestore()
       expect(codeExtractSpy).toHaveBeenCalledTimes(2)
       expect(codeExtractSpy).toHaveBeenCalledWith(
-        'src/parent.tsx',
+        relative('/project', resolve('src/parent.tsx')).replaceAll('\\', '/'),
         'source',
         '@devup-ui/react',
         expect.any(String),
@@ -624,7 +637,7 @@ describe('devupUIWebpackPlugin', () => {
         expect.anything(),
       )
       expect(codeExtractSpy).toHaveBeenCalledWith(
-        'src/child.tsx',
+        relative('/project', resolve('src/child.tsx')).replaceAll('\\', '/'),
         'source',
         '@devup-ui/react',
         expect.any(String),
@@ -658,7 +671,7 @@ describe('devupUIWebpackPlugin', () => {
       expect(codeExtractSpy).not.toHaveBeenCalled()
     })
 
-    it('swallows pre-warm errors (extraction failure does not break apply)', () => {
+    it('fails with file and cause when pre-warm extraction fails', () => {
       buildCanonicalMapSpy.mockReturnValue({
         'src/child.tsx': 'src/parent.tsx',
       })
@@ -670,8 +683,9 @@ describe('devupUIWebpackPlugin', () => {
         throw new Error('extract boom')
       })
       const plugin = new DevupUIWebpackPlugin({})
-      // apply must still complete without throwing
-      plugin.apply(asCompiler(createCompiler()))
+      expect(() => plugin.apply(asCompiler(createCompiler()))).toThrow(
+        /prewarm failed.*parent.tsx.*extract boom/,
+      )
       expect(codeExtractSpy).toHaveBeenCalled()
     })
 
@@ -719,13 +733,14 @@ describe('devupUIWebpackPlugin', () => {
       expect(importFileRoutesSpy).not.toHaveBeenCalled()
     })
 
-    it('swallows pre-pass errors (atom hoisting stays off)', () => {
+    it('fails with root and cause when graph setup fails', () => {
       buildCanonicalMapSpy.mockImplementation(() => {
         throw new Error('boom')
       })
       const plugin = new DevupUIWebpackPlugin({ atomHoist: 2 })
-      // apply must still complete without throwing
-      plugin.apply(asCompiler(createCompiler()))
+      expect(() => plugin.apply(asCompiler(createCompiler()))).toThrow(
+        /graph setup failed.*boom/,
+      )
       expect(setAtomHoistSpy).not.toHaveBeenCalled()
     })
 
@@ -786,7 +801,9 @@ describe('devupUIWebpackPlugin', () => {
     it('writes the shared base to disk when it does not hold it yet', () => {
       getCssSpy.mockReturnValue('base')
       existsSyncSpy.mockReturnValue(true)
-      readFileSyncSpy.mockReturnValue('base')
+      readFileSyncSpy.mockImplementation((file: string) =>
+        file.endsWith('tsconfig.json') ? '{}' : 'base',
+      )
       const { plugin, start } = compile()
       writeFileSyncSpy.mockClear()
       start()
