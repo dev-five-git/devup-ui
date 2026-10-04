@@ -1,0 +1,7 @@
+{
+  "changes": {
+    "bindings/devup-ui-wasm/package.json": "Patch"
+  },
+  "note": "Report extraction, module-resolution and stylesheet execution failures at their original source locations with the cause and repair. Reject recoverable syntax errors, nondeterministic build-time reads, synthetic descriptor/function-source reflection, and unsafe stylesheet execution fallbacks instead of silently changing CSS. Preserve module resolver and serialization exceptions, prove imported module effects before exact stylesheet computation, and prevent placeholder-name collisions from losing styles.",
+  "date": "2026-10-01T00:00:00.000Z"
+}
