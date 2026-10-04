@@ -307,6 +307,7 @@ describe('devupUIVitePlugin', () => {
       name: 'devup-ui',
       sharedDuringBuild: true,
       closeBundle: expect.any(Function),
+      buildStart: expect.any(Function),
       config: expect.any(Function),
       load: expect.any(Function),
       watchChange: expect.any(Function),
@@ -557,6 +558,7 @@ describe('devupUIVitePlugin', () => {
 
       expect(collectSpy).toHaveBeenCalledWith({
         roots: [resolve('/p', 'src'), resolve('/p', 'app')],
+        includeMdx: true,
         include: ['@acme/ui'],
         cwd: '/p',
         needles: expect.arrayContaining([

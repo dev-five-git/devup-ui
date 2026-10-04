@@ -1,9 +1,18 @@
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
+import * as fs from 'node:fs'
 import { tmpdir } from 'node:os'
 import { dirname, join } from 'node:path'
 
-import { afterEach, beforeEach, describe, expect, it, mock } from 'bun:test'
+import {
+  afterEach,
+  beforeEach,
+  describe,
+  expect,
+  it,
+  mock,
+  spyOn,
+} from 'bun:test'
 
+import { listSourceFiles } from '../import-graph'
 import {
   collectNumberedFiles,
   extractedNeedles,
@@ -14,12 +23,12 @@ describe('collectNumberedFiles', () => {
   let root: string
 
   const write = (path: string) => {
-    mkdirSync(dirname(join(root, path)), { recursive: true })
-    writeFileSync(join(root, path), 'export {}')
+    fs.mkdirSync(dirname(join(root, path)), { recursive: true })
+    fs.writeFileSync(join(root, path), 'export {}')
   }
 
   beforeEach(() => {
-    root = mkdtempSync(join(tmpdir(), 'devup-ui-numbering-'))
+    root = fs.mkdtempSync(join(tmpdir(), 'devup-ui-numbering-'))
     write('src/b.tsx')
     write('src/a.tsx')
     write('src/nested/c.ts')
@@ -29,7 +38,7 @@ describe('collectNumberedFiles', () => {
   })
 
   afterEach(() => {
-    rmSync(root, { recursive: true, force: true })
+    fs.rmSync(root, { recursive: true, force: true })
   })
 
   it('lists the project source and the included packages in path order', () => {
@@ -53,7 +62,7 @@ describe('collectNumberedFiles', () => {
   })
 
   it('numbers only the files that mention what the build extracts', () => {
-    writeFileSync(join(root, 'src/a.tsx'), "import '@devup-ui/react'")
+    fs.writeFileSync(join(root, 'src/a.tsx'), "import '@devup-ui/react'")
     const files = collectNumberedFiles({
       roots: [join(root, 'src')],
       cwd: root,
@@ -80,6 +89,76 @@ describe('collectNumberedFiles', () => {
       cwd: root,
     })
     expect(first).toEqual(second)
+  })
+
+  it.each([undefined, false, true])(
+    'numbers project and included-package MDX only when includeMdx is true (%s)',
+    (includeMdx) => {
+      // Given source and package candidates with matching extraction needles.
+      write('src/docs/page.mdx')
+      write('node_modules/@acme/ui/Guide.mdx')
+      for (const path of [
+        'src/a.tsx',
+        'src/docs/page.mdx',
+        'node_modules/@acme/ui/Button.tsx',
+        'node_modules/@acme/ui/Guide.mdx',
+      ]) {
+        fs.writeFileSync(
+          join(root, path),
+          "import '@devup-ui/react'\n# Raw MDX",
+        )
+      }
+
+      // When numbering uses the plugin's deterministic extraction IDs.
+      const files = collectNumberedFiles({
+        roots: [join(root, 'src'), join(root, 'src/docs')],
+        include: ['@acme/ui'],
+        cwd: root,
+        needles: ['@devup-ui/react'],
+        ...(includeMdx === undefined ? {} : { includeMdx }),
+        toId: (path) => `id:${path.slice(root.length).replaceAll('\\', '/')}`,
+      })
+
+      // Then only explicit MDX extraction admits the raw MDX candidates.
+      expect(files).toEqual(
+        includeMdx
+          ? [
+              'id:/node_modules/@acme/ui/Button.tsx',
+              'id:/node_modules/@acme/ui/Guide.mdx',
+              'id:/src/a.tsx',
+              'id:/src/docs/page.mdx',
+            ]
+          : ['id:/node_modules/@acme/ui/Button.tsx', 'id:/src/a.tsx'],
+      )
+    },
+  )
+
+  it('excludes raw MDX before reading source for extraction needles', () => {
+    // Given uncompiled MDX that remains visible to the standalone scanner.
+    write('src/page.mdx')
+    fs.writeFileSync(
+      join(root, 'src/page.mdx'),
+      "import '@devup-ui/react'\n# <",
+    )
+    expect(listSourceFiles(join(root, 'src'))).toContain(
+      join(root, 'src/page.mdx'),
+    )
+    const read = spyOn(fs, 'readFileSync')
+    try {
+      // When a caller uses the default non-MDX extraction set.
+      const files = collectNumberedFiles({
+        roots: [join(root, 'src')],
+        needles: ['@devup-ui/react'],
+      })
+
+      // Then no MDX source read occurs and no MDX ID is numbered.
+      expect(files).toEqual([])
+      expect(
+        read.mock.calls.some(([path]) => path === join(root, 'src/page.mdx')),
+      ).toBe(false)
+    } finally {
+      read.mockRestore()
+    }
   })
 
   it('names files the way the plugin extracts them', () => {

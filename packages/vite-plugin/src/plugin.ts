@@ -52,6 +52,8 @@ import type {
   UserConfig,
 } from 'vite'
 
+import { createAggregateCssPreparation } from './aggregate-css'
+
 /**
  * CSS entry files emitted by devup-ui: `devup-ui.css`, `devup-ui-3.css`, ...
  *
@@ -308,6 +310,7 @@ export function DevupUI({
     }
   }
   const cssMap = new Map()
+  const aggregateCss = createAggregateCssPreparation()
   let resolvedConfig: ResolvedConfig | undefined
   // Set by the client `generateBundle`, run by the late hook of the sibling
   // plugin once @vitejs/plugin-rsc has forwarded.
@@ -348,6 +351,7 @@ export function DevupUI({
       resolveFallbackPaths()
       const fileName = id.split('?')[0]
       if (excludeModules.test(fileName)) return
+      aggregateCss.observe(this.environment ?? plugin, id)
       const environmentConditions = this.environment?.config.resolve.conditions
       if (environmentConditions) {
         setModuleResolver(
@@ -543,6 +547,7 @@ export function DevupUI({
             { seedFileMap },
             collectNumberedFiles({
               roots,
+              includeMdx: true,
               include,
               cwd: projectRoot,
               needles: extractedNeedles(libPackage, importAliases),
@@ -585,7 +590,11 @@ export function DevupUI({
           noExternal: [...include, /@devup-ui/, /@devup-editor/],
         },
       }
-      if (extractCss) {
+      if (
+        extractCss &&
+        !userConfig?.build?.lib &&
+        userConfig?.build?.cssCodeSplit !== false
+      ) {
         ret.build = createCssChunkBuildOptions(this?.meta, userConfig)
       }
       return ret
@@ -595,6 +604,14 @@ export function DevupUI({
     },
     closeBundle(this: void) {
       endBuild()
+    },
+    buildStart(options) {
+      if (isServe || !extractCss) return
+      aggregateCss.start(
+        this.environment ?? plugin,
+        options.input,
+        this.environment?.config.build ?? resolvedConfig?.build ?? {},
+      )
     },
     async watchChange(this: void, id) {
       resolveFallbackPaths()
@@ -704,10 +721,18 @@ export function DevupUI({
     load(id) {
       const fileName = basename(id).split('?')[0]
       if (DEVUP_CSS_FILE_RE.test(fileName)) {
-        const fileNum = getFileNumByFilename(fileName)
-        const css = getCss(fileNum, false)
-        cssMap.set(fileNum, css)
-        return css
+        const snapshot = () => {
+          const fileNum = getFileNumByFilename(fileName)
+          const css = getCss(fileNum, false)
+          cssMap.set(fileNum, css)
+          return css
+        }
+        const preparation = aggregateCss.prepare(
+          this.environment ?? plugin,
+          this,
+          id,
+        )
+        return preparation ? preparation.then(snapshot) : snapshot()
       }
     },
     enforce: 'pre',
@@ -774,10 +799,26 @@ export function DevupUI({
       return sourceTransform.transform.call(this, code, id)
     },
   } satisfies Plugin
-  const plugins: [typeof plugin, typeof restorePlugin, typeof mdxPlugin] = [
-    plugin,
-    restorePlugin,
-    mdxPlugin,
-  ]
+  const aggregateGuard = {
+    name: 'devup-ui:aggregate-css-guard',
+    sharedDuringBuild: true,
+    apply: 'build',
+    generateBundle: {
+      order: 'post',
+      handler(_options, bundle) {
+        for (const asset of Object.values(bundle)) {
+          if (asset.type === 'asset') {
+            aggregateCss.checkAsset(this.environment ?? plugin, asset)
+          }
+        }
+      },
+    },
+  } satisfies Plugin
+  const plugins: [
+    typeof plugin,
+    typeof restorePlugin,
+    typeof mdxPlugin,
+    typeof aggregateGuard,
+  ] = [plugin, restorePlugin, mdxPlugin, aggregateGuard]
   return plugins
 }
