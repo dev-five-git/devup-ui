@@ -12,6 +12,9 @@ use crate::utils::{
     spread_error,
 };
 
+mod dynamic;
+pub use dynamic::{DynamicNamespace, Scalar, StylexDynamicInfo};
+
 /// Which `StyleX` function a named import refers to
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum StylexFunction {
@@ -501,15 +504,6 @@ pub struct DecomposedStyle {
     /// `None` means null (no CSS emitted, tracked for atomic override).
     pub value: Option<String>,
     pub selector: Option<StyleSelector>,
-}
-
-/// Information about a dynamic `StyleX` namespace (arrow function in `stylex.create()`)
-#[derive(Debug, Clone)]
-pub struct StylexDynamicInfo {
-    /// Combined class name string for all properties (static + dynamic)
-    pub class_name: String,
-    /// (`param_index`, `css_variable_name`, unit for a number) for each dynamic property
-    pub css_vars: Vec<(usize, String, &'static str)>,
 }
 
 /// A `StyleX` namespace entry — either static or dynamic (arrow function)

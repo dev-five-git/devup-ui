@@ -1,0 +1,7 @@
+{
+  "changes": {
+    "bindings/devup-ui-wasm/package.json": "Patch"
+  },
+  "note": "Preserve JavaScript defaults in StyleX dynamic style functions: absent and undefined arguments take defaults, null does not, known calls produce static CSS, and dynamic scalar arguments are evaluated once in source order for props objects and attrs style text. Report located build errors for async and generator functions, rest and destructured parameters, statement bodies, nested or unresolved dynamic calls, and overlapping dynamic-call compositions or JSX style combinations that cannot preserve keyed precedence without a styling runtime.",
+  "date": "2026-10-01T00:00:00.000Z"
+}

@@ -103,6 +103,7 @@ mod selected_capture;
 mod semantics_helpers_tests;
 mod spread_slots;
 mod style_order;
+mod stylex_dynamic;
 
 use spread_slots::{Overridden, is_unknown_spread, take_known_overridden};
 
@@ -1912,6 +1913,11 @@ impl<'a> DevupVisitor<'a> {
     /// `"--a:" + a + ";--b:" + b`: the variables `props` sets, as the text of a
     /// `style` attribute
     fn style_text(&self, props: Vec<ObjectPropertyKind<'a>>) -> Expression<'a> {
+        if let [ObjectPropertyKind::SpreadProperty(spread)] = props.as_slice() {
+            return spread
+                .argument
+                .clone_in_with_semantic_ids(self.ast.allocator());
+        }
         let mut text: Option<Expression<'a>> = None;
         let props = props.into_iter().filter_map(|prop| {
             if let ObjectPropertyKind::ObjectProperty(prop) = prop {
@@ -2106,30 +2112,65 @@ impl<'a> DevupVisitor<'a> {
     /// Returns (`class_exprs`, `style_props`) where `style_props` are CSS variable assignments
     /// from dynamic namespace calls like `styles.bar(h)`.
     fn resolve_stylex_props_args(
-        &self,
+        &mut self,
         arguments: &oxc_allocator::Vec<'a, Argument<'a>>,
+        attrs: bool,
     ) -> (Vec<Expression<'a>>, Vec<ObjectPropertyKind<'a>>) {
         let mut class_exprs: Vec<Expression<'a>> = vec![];
         let mut style_props: Vec<ObjectPropertyKind<'a>> = vec![];
+        let captures = self.has_runtime_stylex_call(arguments);
+
+        if arguments.len() > 1
+            && let Some(call) = arguments.iter().filter_map(Argument::as_expression).find_map(|expr| {
+                match unwrap_syntax_only(expr) {
+                    Expression::CallExpression(call) if self.stylex_dynamic_info(&call.callee).is_some() => Some(call),
+                    _ => None,
+                }
+            })
+            && !arguments.iter().filter_map(Argument::as_expression).all(|expr| {
+                matches!(unwrap_syntax_only(expr), Expression::CallExpression(other) if other.span == call.span)
+                    || self.stylex_keyed(expr).is_some_and(|keys| keys.iter().all(|(key, _)| {
+                        self.stylex_dynamic_info(&call.callee).is_some_and(|info| !info.styles.iter().any(|style| match style {
+                            ExtractStyleValue::Static(style) => style.property == crate::stylex::normalize_stylex_property(key),
+                            ExtractStyleValue::Dynamic(style) => style.property() == crate::stylex::normalize_stylex_property(key),
+                            ExtractStyleValue::Typography(_) | ExtractStyleValue::Css(_) | ExtractStyleValue::Import(_) | ExtractStyleValue::FontFace(_) | ExtractStyleValue::Keyframes(_) => true,
+                        }))
+                    }))
+            })
+        {
+            self.errors.push((call.span.start, build_time_error("stylex.props", &readable_code(&call.callee), "dynamic namespace call combinations cannot be compiled exactly with keyed precedence here; use one direct scalar call, or compose plain static namespaces")));
+            return (class_exprs, style_props);
+        }
 
         for arg in arguments {
             // `...spread` carries no statically resolvable namespace reference,
             // so its values join at runtime
             let Some(expr) = arg.as_expression() else {
                 if let Argument::SpreadElement(spread) = arg {
+                    if captures {
+                        self.errors.push((spread.span.start, build_time_error("stylex.props", "spread alongside dynamic calls", "argument evaluation order cannot be preserved here; pass explicit static namespaces alongside direct scalar calls")));
+                        continue;
+                    }
                     class_exprs.push(runtime_classes(&self.ast, &spread.argument));
                 }
                 continue;
             };
+            if self.reject_nested_stylex_calls(expr) {
+                continue;
+            }
             // Check for dynamic namespace call first: styles.bar(h)
-            if let Expression::CallExpression(call) = expr
-                && let Some((class_expr, props)) = self.resolve_stylex_dynamic_call(call)
+            if let Expression::CallExpression(call) = unwrap_syntax_only(expr)
+                && let Some((class_expr, props)) = self.resolve_stylex_dynamic_call(call, attrs)
             {
                 class_exprs.push(class_expr);
                 style_props.extend(props);
                 continue;
             }
             if let Some(class_expr) = self.resolve_stylex_arg(expr) {
+                if captures && !matches!(class_expr, Expression::StringLiteral(_)) {
+                    self.errors.push((expr.span().start, build_time_error("stylex.props", &readable_code(expr), "mixed runtime composition and dynamic calls cannot preserve argument evaluation order here; pass static namespaces alongside direct scalar calls")));
+                    continue;
+                }
                 class_exprs.push(class_expr);
             }
         }
@@ -2202,56 +2243,6 @@ impl<'a> DevupVisitor<'a> {
             &self.ast,
         )
     }
-    /// Resolve a dynamic namespace call like `styles.bar(h)` to (className, `style_props`).
-    fn resolve_stylex_dynamic_call(
-        &self,
-        call: &CallExpression<'a>,
-    ) -> Option<(Expression<'a>, Vec<ObjectPropertyKind<'a>>)> {
-        if let Expression::StaticMemberExpression(member) = &call.callee
-            && let Some(ns_map) = self.stylex_namespace(&member.object)
-            && let Some(StylexNamespaceValue::Dynamic(info)) =
-                ns_map.get(member.property.name.as_str())
-        {
-            let class_expr = Expression::new_string_literal(
-                SPAN,
-                Str::from_in(&info.class_name, self.ast.allocator()),
-                None,
-                &self.ast,
-            );
-
-            let mut props = Vec::with_capacity(info.css_vars.len());
-            for (param_idx, var_name, unit) in &info.css_vars {
-                if let Some(arg) = call.arguments.get(*param_idx)
-                    && let Some(arg_expr) = arg.as_expression()
-                {
-                    let arg_expr = self.with_number_unit(
-                        arg_expr.clone_in_with_semantic_ids(self.ast.allocator()),
-                        unit,
-                    );
-                    props.push(ObjectPropertyKind::new_object_property(
-                        SPAN,
-                        PropertyKind::Init,
-                        PropertyKey::StringLiteral(StringLiteral::boxed(
-                            SPAN,
-                            Str::from_in(var_name, self.ast.allocator()),
-                            None,
-                            &self.ast,
-                        )),
-                        arg_expr,
-                        false,
-                        false,
-                        false,
-                        &self.ast,
-                    ));
-                }
-            }
-
-            Some((class_expr, props))
-        } else {
-            None
-        }
-    }
-
     /// What a global-CSS call collapses to once its rules are extracted: `createGlobalStyle`
     /// callers render the result (`<GlobalStyle />`), so it must stay a component, while
     /// `globalCss` is a bare statement and leaves nothing behind.
@@ -2523,6 +2514,7 @@ impl<'a> VisitMut<'a> for DevupVisitor<'a> {
             }
         }
         walk_program(self, it);
+        self.reject_remaining_stylex_calls(it);
         for (_, message) in &mut self.errors {
             *message = self.names.restore(message);
         }
@@ -2758,6 +2750,9 @@ impl<'a> VisitMut<'a> for DevupVisitor<'a> {
             let mut properties = oxc_allocator::Vec::new_in(&self.ast);
             let mut key_map: FxHashMap<String, Vec<(String, String)>> = FxHashMap::default();
             for (ns_name, mut styles, css_vars, include_refs, groups) in namespaces {
+                let dynamic_styles = css_vars
+                    .as_ref()
+                    .map(|_| styles.iter().flat_map(ExtractStyleProp::extract).collect());
                 let class_name =
                     gen_class_names(&self.ast, &mut styles, None, self.split_filename.as_deref());
                 if include_refs.is_empty() && css_vars.is_none() {
@@ -2824,7 +2819,8 @@ impl<'a> VisitMut<'a> for DevupVisitor<'a> {
                 let ns_value = if let Some(vars) = css_vars {
                     StylexNamespaceValue::Dynamic(StylexDynamicInfo {
                         class_name: class_name_str.clone(),
-                        css_vars: vars,
+                        namespace: vars,
+                        styles: dynamic_styles.unwrap_or_default(),
                     })
                 } else {
                     StylexNamespaceValue::Static(class_name_str.clone())
@@ -3103,7 +3099,7 @@ impl<'a> VisitMut<'a> for DevupVisitor<'a> {
         {
             let (class_exprs, style_props) = match self.compose_stylex_props(&call.arguments) {
                 Some(class_name) => (vec![class_name], Vec::new()),
-                None => self.resolve_stylex_props_args(&call.arguments),
+                None => self.resolve_stylex_props_args(&call.arguments, class_attribute == "class"),
             };
 
             // Build className expression using existing merge utility
@@ -3969,6 +3965,9 @@ impl<'a> VisitMut<'a> for DevupVisitor<'a> {
             &elem.opening_element.attributes,
             takes_styles,
         );
+        if kind.is_some() || takes_styles {
+            self.reject_stylex_dynamic_jsx_combination(elem, &attributes_kept);
+        }
         let mut order = if kind.is_some() || takes_styles {
             self.order_attributes(elem, &attributes_kept)
         } else {
