@@ -177,6 +177,49 @@ const box = <Box _hover={{ bg: ['red', 'blue'] }} />
 const box = <Box _hover={[{ bg: 'red' }, { bg: 'blue' }]} />
 ```
 
+## Publishing And Consuming Libraries
+
+With the default `extractCss: true`, a library build extracts its styles. Publish
+the transformed JavaScript together with its emitted CSS and expose a stylesheet
+that consumers import. The published code no longer calls compile-time Devup UI
+placeholders.
+
+Use `extractCss: false` only for an intentionally uncompiled library. This is the
+contract demonstrated by `apps/vite-lib`: **every** consumer needs a Devup UI build
+plugin configured with the library's exact package name:
+
+```ts
+export default defineConfig({
+  plugins: [DevupUI({ include: ['@acme/components'] })],
+})
+```
+
+The consuming build transforms the library and emits its CSS. Without that
+configuration, the uncompiled placeholders throw `Cannot run on the runtime`;
+the library must not be treated as standalone browser JavaScript. Both publishing
+modes remain free of a styling runtime.
+
+## Project Roots And Extraction
+
+Relative `devupFile`, `distDir`, and `cssDir` options resolve against Rsbuild's
+`root`, not the shell's working directory. The graph includes existing `src`
+and `app` directories, normalized Rspack entries, and `sourceDirs` (a directory
+or array of directories). Included packages follow the same effective Rspack
+ES-module export conditions as extraction.
+
+Extraction supports `.ts`, `.tsx`, `.mts`, `.cts`, `.js`, `.jsx`, `.mjs`, and
+`.cjs`. Configure an MDX compiler for `.mdx`; Devup UI runs as a post-loader on
+its compiled JavaScript, never on raw Markdown. Rsbuild's transform API does not
+expose the incoming source map, so extraction errors label compiled MDX locations
+with `(in compiled MDX)`.
+
+Malformed or cyclic configuration and graph/prewarm failures stop the build with
+the root and underlying cause. Empty themes overwrite generated declarations.
+Optional file-number seeding failures warn once that IDs may depend on module
+arrival order. `atomHoist` composes its shared CSS cache group with existing
+groups and creates `splitChunks` when absent; `splitChunks: false` is an error
+when atom hoisting is requested.
+
 ## Custom Shorthands
 
 ```ts

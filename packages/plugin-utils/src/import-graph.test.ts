@@ -22,6 +22,7 @@ import {
   planAtomHoist,
   runImportGraphCli,
 } from './import-graph'
+import { ConfigLoadError } from './load-config'
 
 describe('computeReachableFiles', () => {
   let tempRoot: string
@@ -603,18 +604,25 @@ describe('buildCanonicalMap', () => {
     ).toEqual({})
   })
 
-  it('ignores a malformed tsconfig (JSON parse error)', () => {
+  it('reports a located error with cause when tsconfig is malformed', () => {
     writeFixture('tsconfig.json', '{ this is not json')
     writeFixture('src/a.tsx', "import './b'\n")
     writeFixture('src/b.tsx', 'export const b = 1\n')
 
-    expect(
+    let caught: unknown
+    try {
       buildCanonicalMap({
         cwd,
         srcDir,
         tsconfigPath: join(cwd, 'tsconfig.json'),
-      }),
-    ).toEqual({ 'src/b.tsx': 'src/a.tsx' })
+      })
+    } catch (error) {
+      caught = error
+    }
+    expect(caught).toBeInstanceOf(ConfigLoadError)
+    if (!(caught instanceof ConfigLoadError)) throw caught
+    expect(caught.message).toContain(`${join(cwd, 'tsconfig.json')}:1:1:`)
+    expect(caught.cause).toBeInstanceOf(SyntaxError)
   })
 
   it('prefers the longest-prefix alias when multiple tsconfig paths overlap', () => {
@@ -1393,7 +1401,10 @@ describe('createModuleResolver', () => {
     expect(resolveModule(join(root, 'src/tokens'), 'src/App.tsx')?.path).toBe(
       posix('src/tokens.ts'),
     )
-    expect(resolveModule('./style.css', 'src/App.tsx')).toBeUndefined()
+    expect(resolveModule('./style.css', 'src/App.tsx')).toEqual({
+      path: posix('src/style.css'),
+      code: 'body {}',
+    })
     expect(resolveModule('./missing.ts', 'src/App.tsx')).toBeUndefined()
     expect(resolveModule('not-installed', 'src/App.tsx')).toBeUndefined()
   })

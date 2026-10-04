@@ -741,10 +741,10 @@ describe('turbopack prewarm scope', () => {
     }
   })
 
-  it('falls back to the compiled closure when package prewarming fails', () => {
+  it('reports the lost graph guarantees for an unreadable included package in development', () => {
     development()
     const warn = spyOn(console, 'warn').mockImplementation(() => {})
-    project({
+    const root = project({
       'src/app/page.tsx': `import 'design-system'\n${page}`,
       'node_modules/design-system/package.json': '{ not json',
     })
@@ -752,9 +752,13 @@ describe('turbopack prewarm scope', () => {
     try {
       DevupUI({}, { include: ['design-system'] })
 
-      expect(harness.starts[0]!.prewarmedFiles).toEqual(['src/app/page.tsx'])
+      expect(harness.starts[0]!.prewarmedFiles).toEqual([])
+      expect(harness.starts[0]!.expectedBaseFiles).toEqual([])
       expect(String(warn.mock.calls[0]?.[0])).toContain(
-        'Not guaranteed for this session: extracting the packages the app imports before the bundler asks',
+        `${join(root, 'node_modules/design-system/package.json')}:1:1: Cannot load configuration:`,
+      )
+      expect(String(warn.mock.calls[0]?.[0])).toContain(
+        'Not guaranteed for this session: single-importer collapse, atom hoisting and the deterministic completion set',
       )
     } finally {
       warn.mockRestore()

@@ -1,7 +1,12 @@
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
 import * as fsPromises from 'node:fs/promises'
+import { createRequire } from 'node:module'
+import { tmpdir } from 'node:os'
 import * as nodePath from 'node:path'
 import { join } from 'node:path'
+import { pathToFileURL } from 'node:url'
 
+import { createModuleResolver } from '@devup-ui/plugin-utils'
 import * as wasm from '@devup-ui/wasm'
 import {
   afterEach,
@@ -125,6 +130,122 @@ const waitFor = async (fn: () => void, timeout = 1000) => {
 }
 
 describe('devupUILoader', () => {
+  it('keys resolver reuse by the explicit project root and active conditions', async () => {
+    const root = mkdtempSync(
+      join(process.env.DEVUP_PLUGIN_TEST_TMP ?? tmpdir(), 'loader-'),
+    )
+    for (const project of ['first', 'second']) {
+      const library = join(root, project, 'node_modules', 'conditional')
+      mkdirSync(library, { recursive: true })
+      writeFileSync(
+        join(library, 'package.json'),
+        JSON.stringify({
+          exports: { browser: './browser.js', node: './node.js' },
+        }),
+      )
+      writeFileSync(join(library, 'browser.js'), project + '-browser')
+      writeFileSync(join(library, 'node.js'), project + '-node')
+    }
+    const selected: (string | undefined)[] = []
+    const register = spyOn(wasm, 'setModuleResolver').mockImplementation(
+      (resolver: ReturnType<typeof createModuleResolver>) => {
+        selected.push(resolver('conditional', 'src/main.ts')?.code)
+      },
+    )
+    try {
+      for (const [project, condition] of [
+        ['first', 'browser'],
+        ['first', 'node'],
+        ['second', 'node'],
+      ]) {
+        const rootDir = join(root, project)
+        await new Promise<void>((done) => {
+          const context = createLoaderContext(
+            {
+              rootDir,
+              conditions: [condition],
+              cssDir: join(rootDir, 'df/devup-ui'),
+            },
+            () => done(),
+            join(rootDir, 'src/main.ts'),
+          )
+          devupUILoader.bind(context)(Buffer.from('code'))
+        })
+      }
+      expect(selected).toEqual(['first-browser', 'first-node', 'second-node'])
+    } finally {
+      register.mockRestore()
+      rmSync(root, { recursive: true, force: true })
+    }
+  })
+  it('extracts actual compiled MDX while retaining the original resource filename', async () => {
+    const landing = createRequire(
+      nodePath.resolve(
+        import.meta.dir,
+        '../../../../apps/landing/package.json',
+      ),
+    )
+    const mdx = await import(
+      pathToFileURL(
+        createRequire(landing.resolve('@mdx-js/loader')).resolve('@mdx-js/mdx'),
+      ).href
+    )
+    const rootDir = process.cwd()
+    const filename = nodePath.resolve(rootDir, 'src/page.mdx')
+    const compiled = await mdx.compile({
+      value:
+        'import {Box} from \'@devup-ui/react\'\n\n# Heading\n\n<Box bg="red" />',
+      path: filename,
+    })
+    codeExtractSpy.mockRestore()
+    wasm.resetBuildState()
+    const callback = mock()
+    const context = createLoaderContext(
+      {
+        package: '@devup-ui/react',
+        cssDir: nodePath.resolve('df/devup-ui'),
+        rootDir,
+        singleCss: true,
+      },
+      callback,
+      filename,
+    )
+
+    await new Promise<void>((done) => {
+      callback.mockImplementation(() => done())
+      devupUILoader.bind(context)(Buffer.from(String(compiled)))
+    })
+
+    expect(callback.mock.calls[0][0]).toBeNull()
+    expect(callback.mock.calls[0][1]).not.toContain('bg: "red"')
+    expect(callback.mock.calls[0][1]).toContain('devup-ui.css')
+  })
+
+  it.each([
+    undefined,
+    { version: 3, sources: ['authored.mdx'], names: [], mappings: 'AAGE' },
+  ])(
+    'locates MDX errors with the supplied compiler map %j',
+    async (inputMap) => {
+      const callback = mock()
+      const rootDir = nodePath.resolve('/project')
+      const filename = nodePath.join(rootDir, 'page.mdx')
+      codeExtractSpy.mockImplementation(() => {
+        throw new Error('page.mdx:1:1: cannot extract')
+      })
+      const context = createLoaderContext(
+        { rootDir, cssDir: nodePath.join(rootDir, 'df/devup-ui') },
+        callback,
+        filename,
+      )
+
+      devupUILoader.bind(context)(Buffer.from('compiled'), inputMap)
+
+      expect(callback.mock.calls[0][0].message).toContain(
+        inputMap ? 'authored.mdx:4:3' : 'page.mdx:1:1 (in compiled MDX)',
+      )
+    },
+  )
   it('resolves imports to cwd-relative ids and depends on the modules read', async () => {
     const setModuleResolverSpy = spyOn(
       wasm,

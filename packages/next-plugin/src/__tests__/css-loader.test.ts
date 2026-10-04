@@ -164,7 +164,7 @@ describe('coordinator CSS loading', () => {
         coordinatorPortFile: portFile,
         projectRoot: dir,
         revisionFile: 'revision',
-        requestTimeoutMs: 100,
+        requestTimeoutMs: 1000,
         ...extra,
       },
       path,

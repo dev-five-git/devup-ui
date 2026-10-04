@@ -60,7 +60,10 @@ describe('loader namespace cleanup across real coordinator suites', () => {
         })
 
         // Then every original assertion passes, including the factory guard.
-        expect(result.status, result.stdout + result.stderr).toBe(0)
+        if (result.status !== 0) {
+          console.error(result.stdout, result.stderr, result.error)
+        }
+        expect(result.status).toBe(0)
       } finally {
         rmSync(dir, { recursive: true, force: true })
       }

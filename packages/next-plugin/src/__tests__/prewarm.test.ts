@@ -201,6 +201,7 @@ describe('collectPrewarmFiles', () => {
       'node_modules/@acme/shared/index.js',
       'node_modules/@acme/ui/button.mjs',
       'node_modules/@acme/ui/index.mjs',
+      'node_modules/@acme/ui/lazy.mts',
       'node_modules/@acme/ui/legacy.cjs',
       'node_modules/@acme/ui/nested/index.js',
       'node_modules/@devup-ui/reset-css/index.js',
@@ -208,19 +209,15 @@ describe('collectPrewarmFiles', () => {
     ])
   })
 
-  it('names the importer when a package cannot be resolved', () => {
+  it('preserves the manifest location when a package cannot be resolved', () => {
     write('node_modules/@acme/ui/package.json', '{ not json')
-    const importer = join(root, 'src/app/page.tsx')
+    const manifest = join(root, 'node_modules/@acme/ui/package.json')
 
     expect(() =>
       collect(makeGraph({ 'src/app/page.tsx': ['@acme/ui'] }), {
         include: ['@acme/ui'],
       }),
-    ).toThrow(
-      new RegExp(
-        `${importer.replaceAll('\\', '\\\\')}:1:1: devup-ui prewarm cannot use \`@acme/ui\` at build time: .*; needs a resolvable package`,
-      ),
-    )
+    ).toThrow(`${manifest}:1:1: Cannot load configuration:`)
   })
 
   it('normalizes an absolute expected file and tolerates a graph without externals', () => {

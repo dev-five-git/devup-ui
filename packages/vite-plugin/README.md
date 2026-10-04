@@ -177,6 +177,30 @@ const box = <Box _hover={{ bg: ['red', 'blue'] }} />
 const box = <Box _hover={[{ bg: 'red' }, { bg: 'blue' }]} />
 ```
 
+## Publishing Component Libraries
+
+Choose one of these build-time contracts. Neither mode permits Devup UI's
+compile-time component placeholders to run in a consuming application.
+
+1. Precompiled library: keep `extractCss: true` (the default), publish the
+   transformed JavaScript and emitted CSS, and expose a stylesheet that consumers
+   import. Consumers do not need to transform the already compiled library.
+2. Uncompiled library: use `DevupUI({ extractCss: false })` intentionally, as in
+   `apps/vite-lib`. Every consuming application must install a Devup UI build
+   plugin and include the library's exact package name so its modules are
+   transformed during the application's build.
+
+```ts
+// The consuming application's vite.config.ts
+export default defineConfig({
+  plugins: [DevupUI({ include: ['@acme/components'] })],
+})
+```
+
+An uncompiled library is not standalone browser JavaScript. Using it without
+the consumer transformation runs placeholders and throws
+`Cannot run on the runtime`. Do not publish it as precompiled output.
+
 ## Custom Shorthands
 
 Custom shorthands are build-plugin options, not theme tokens. Every target

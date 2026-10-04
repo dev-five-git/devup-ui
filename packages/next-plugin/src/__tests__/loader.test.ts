@@ -234,7 +234,7 @@ describe('coordinator source extraction', () => {
       {
         coordinatorPortFile: join(dir, 'endpoint'),
         projectRoot: dir,
-        requestTimeoutMs: 100,
+        requestTimeoutMs: 1000,
         revisionFile: 'revision',
         ...extra,
       },

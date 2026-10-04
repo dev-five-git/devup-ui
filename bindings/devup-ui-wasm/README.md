@@ -1,85 +1,75 @@
-<div align="center">
+# @devup-ui/wasm
 
-  <h1><code>wasm-pack-template</code></h1>
+Build-time CSS extraction bindings used by the Devup UI bundler plugins.
 
-<strong>A template for kick starting a Rust and WebAssembly project using <a href="https://github.com/rustwasm/wasm-pack">wasm-pack</a>.</strong>
+## Extraction boundaries
 
-  <p>
-    <a href="https://travis-ci.org/rustwasm/wasm-pack-template"><img src="https://img.shields.io/travis/rustwasm/wasm-pack-template.svg?style=flat-square" alt="Build Status" /></a>
-  </p>
+`codeExtract` generates a source map. `codeExtractWithoutSourceMap` skips map
+generation, including when a module resolver is installed; its `map` getter is
+`undefined`. Both functions return transformed source and watched dependencies.
 
-  <h3>
-    <a href="https://rustwasm.github.io/docs/wasm-pack/tutorials/npm-browser-packages/index.html">Tutorial</a>
-    <span> | </span>
-    <a href="https://discordapp.com/channels/442252698964721669/443151097398296587">Chat</a>
-  </h3>
+`setModuleResolver` accepts a synchronous `(specifier, importer)` callback.
+Return `{ path: string, code: string }` for a resolved module. `null` and
+`undefined` mean ordinary unresolved imports. Thrown exceptions, property-getter
+and reflection failures, and missing/non-string fields instead fail extraction:
 
-<sub>Built with 🦀🕸 by <a href="https://rustwasm.github.io/">The Rust and WebAssembly Working Group</a></sub>
-
-</div>
-
-## About
-
-[**📚 Read this template tutorial! 📚**][template-docs]
-
-This template is designed for compiling Rust libraries into WebAssembly and
-publishing the resulting package to NPM.
-
-Be sure to check out [other `wasm-pack` tutorials online][tutorials] for other
-templates and usages of `wasm-pack`.
-
-[tutorials]: https://rustwasm.github.io/docs/wasm-pack/tutorials/index.html
-[template-docs]: https://rustwasm.github.io/docs/wasm-pack/tutorials/npm-browser-packages/index.html
-
-## 🚴 Usage
-
-### 🐑 Use `cargo generate` to Clone this Template
-
-[Learn more about `cargo generate` here.](https://github.com/ashleygwilliams/cargo-generate)
-
-```
-cargo generate --git https://github.com/rustwasm/wasm-pack-template.git --name my-project
-cd my-project
+```text
+/src/App.tsx:1:1: module resolver cannot use `./tokens` at build time: original cause
 ```
 
-### 🛠️ Build with `wasm-pack build`
+The importer includes transitive importers. The resolver contract does not
+provide an import span, so this boundary reports `1:1` rather than guessing a
+position from source text. The first resolver fault takes precedence over the
+extractor's unresolved-module fallback and is checked **before** sheet updates.
+The previous stylesheet contribution therefore survives a failed re-extraction.
+Class/file numbering performed inside extraction is not rolled back.
 
+## Panic diagnostics
+
+WASM initialization installs this binding's own `std::panic::set_hook`, with no
+additional dependency or feature flag. It reports Rust's panic payload and
+`file:line:column` location to `console.error` before the trap. A failing host
+console does not replace the original panic. This is diagnostic reporting, not
+panic recovery: with `panic=abort`, a panic still traps and the instance should
+be discarded. Normal resolver/configuration failures use fallible JS errors.
+
+Owned binding code does not unwrap user input or explicitly panic. Sheet mutex
+poisoning is recovered, and no resolver callback is called while holding a sheet
+lock or a thread-local resolver borrow. Panics originating in downstream crates
+remain outside this binding's recovery contract.
+
+## Verification
+
+From the repository root:
+
+```sh
+cargo test -p devup-ui-wasm boundary_ -- --nocapture
 ```
-wasm-pack build
+
+After rebuilding `pkg` with this package's `bun run build`, run from the
+repository root:
+
+```sh
+node bindings/devup-ui-wasm/boundary-regressions.mjs
 ```
 
-### 🔬 Test in Headless Browsers with `wasm-pack test`
+This standalone runner loads the real generated JS and WASM, outside Bun's
+coverage mocks. It exercises both extraction exports, map skipping with and
+without resolution, unresolved null/undefined, valid resolved dependencies,
+callback exceptions, getters, proxy reflection, malformed fields and hostile
+exception objects. Every fault case verifies the previous sheet is unchanged.
+Native tests cover every branch of the internal fault-precedence helper.
 
+The same JS runner also uses the installed `@mdx-js/mdx` compiler, resolved through
+`@mdx-js/loader` in `apps/landing` (no added dependency). Both default `_jsx`
+output and `jsx: true` output are extracted under real `.mdx` and `.md` filenames.
+It checks CSS, the relevance gate, source-map filename identity and rejection of
+raw Markdown. Compiled MDX is parsed as JSX JavaScript, not TSX. Its source-map
+coordinates refer to compiler output; bundler integrations must compose input
+maps to recover Markdown positions, or identify diagnostics as compiled MDX.
+
+Focused native MDX verification:
+
+```sh
+cargo test -p extractor mdx_ -- --nocapture
 ```
-wasm-pack test --headless --firefox
-```
-
-### 🎁 Publish to NPM with `wasm-pack publish`
-
-```
-wasm-pack publish
-```
-
-## 🔋 Batteries Included
-
-- [`wasm-bindgen`](https://github.com/rustwasm/wasm-bindgen) for communicating
-  between WebAssembly and JavaScript.
-- [`console_error_panic_hook`](https://github.com/rustwasm/console_error_panic_hook)
-  for logging panic messages to the developer console.
-- `LICENSE-APACHE` and `LICENSE-MIT`: most Rust projects are licensed this way, so these are included for you
-
-## License
-
-Licensed under either of
-
-- Apache License, Version 2.0, ([LICENSE-APACHE](LICENSE-APACHE) or http://www.apache.org/licenses/LICENSE-2.0)
-- MIT license ([LICENSE-MIT](LICENSE-MIT) or http://opensource.org/licenses/MIT)
-
-at your option.
-
-### Contribution
-
-Unless you explicitly state otherwise, any contribution intentionally
-submitted for inclusion in the work by you, as defined in the Apache-2.0
-license, shall be dual licensed as above, without any additional terms or
-conditions.
