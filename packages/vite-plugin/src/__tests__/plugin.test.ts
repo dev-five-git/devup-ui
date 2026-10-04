@@ -690,8 +690,16 @@ describe('devupUIVitePlugin', () => {
 
         await createPlugin({}).configResolved({ root: '/p' })
 
-        expect(listSourceFilesSpy).toHaveBeenCalledWith(resolve('/p', 'src'))
-        expect(listSourceFilesSpy).toHaveBeenCalledWith(resolve('/p', 'app'))
+        expect(listSourceFilesSpy).toHaveBeenCalledWith(
+          resolve('/p', 'src'),
+          undefined,
+          { includeMdx: true },
+        )
+        expect(listSourceFilesSpy).toHaveBeenCalledWith(
+          resolve('/p', 'app'),
+          undefined,
+          { includeMdx: true },
+        )
         expect(seedFileMapSpy).toHaveBeenCalledWith([
           '/p/app/page.tsx',
           '/p/shared.tsx',

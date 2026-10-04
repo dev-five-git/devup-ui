@@ -140,9 +140,9 @@ describe('collectNumberedFiles', () => {
       join(root, 'src/page.mdx'),
       "import '@devup-ui/react'\n# <",
     )
-    expect(listSourceFiles(join(root, 'src'))).toContain(
-      join(root, 'src/page.mdx'),
-    )
+    expect(
+      listSourceFiles(join(root, 'src'), [], { includeMdx: true }),
+    ).toContain(join(root, 'src/page.mdx'))
     const read = spyOn(fs, 'readFileSync')
     try {
       // When a caller uses the default non-MDX extraction set.

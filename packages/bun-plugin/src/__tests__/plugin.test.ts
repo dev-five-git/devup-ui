@@ -1,199 +1,201 @@
-import * as fs from 'node:fs'
-import * as fsPromises from 'node:fs/promises'
+import { readFileSync, statSync, utimesSync } from 'node:fs'
 import { join } from 'node:path'
 
-import * as wasm from '@devup-ui/wasm'
-import {
-  afterEach,
-  beforeEach,
-  describe,
-  expect,
-  it,
-  mock,
-  spyOn,
-} from 'bun:test'
+import { getCss, setDebug, setModuleResolver } from '@devup-ui/wasm'
+import { expect, it, spyOn } from 'bun:test'
 
-let getDefaultThemeSpy: ReturnType<typeof spyOn>
-let existsSyncSpy: ReturnType<typeof spyOn>
-let readFileSpy: ReturnType<typeof spyOn>
-let writeFileSpy: ReturnType<typeof spyOn>
-let mkdirSpy: ReturnType<typeof spyOn>
-let registerThemeSpy: ReturnType<typeof spyOn>
-let getThemeInterfaceSpy: ReturnType<typeof spyOn>
-let getCssSpy: ReturnType<typeof spyOn>
-let consoleErrorSpy: ReturnType<typeof spyOn>
-let setDebugSpy: ReturnType<typeof spyOn>
-let hasDevupUISpy: ReturnType<typeof spyOn>
-let codeExtractSpy: ReturnType<typeof spyOn>
+import { cssNamespace } from '../css-id'
+import { fixture, sourceContents } from './callback-fixture.test'
 
-type CodeExtractResult = ReturnType<typeof wasm.codeExtract>
-
-function createCodeExtractResult(): CodeExtractResult {
-  return {
-    code: 'code',
-    css: '',
-    cssFile: null,
-    map: null,
-    updatedBaseStyle: false,
-    free: mock(),
-    [Symbol.dispose]: mock(),
-  } as unknown as CodeExtractResult
-}
-
-beforeEach(() => {
-  getDefaultThemeSpy = spyOn(wasm, 'getDefaultTheme').mockReturnValue('default')
-  existsSyncSpy = spyOn(fs, 'existsSync').mockReturnValue(false)
-  readFileSpy = spyOn(fsPromises, 'readFile').mockResolvedValue('{}')
-  writeFileSpy = spyOn(fsPromises, 'writeFile').mockResolvedValue(undefined)
-  mkdirSpy = spyOn(fsPromises, 'mkdir').mockResolvedValue(undefined)
-  registerThemeSpy = spyOn(wasm, 'registerTheme').mockReturnValue(undefined)
-  getThemeInterfaceSpy = spyOn(wasm, 'getThemeInterface').mockReturnValue('')
-  getCssSpy = spyOn(wasm, 'getCss').mockReturnValue('css')
-  consoleErrorSpy = spyOn(console, 'error').mockImplementation(() => {})
-  setDebugSpy = spyOn(wasm, 'setDebug').mockReturnValue(undefined)
-  hasDevupUISpy = spyOn(wasm, 'hasDevupUI').mockReturnValue(false)
-  codeExtractSpy = spyOn(wasm, 'codeExtract').mockReturnValue(
-    createCodeExtractResult(),
+it('writes theme declarations and CSS when setup creates project directories', async () => {
+  const f = fixture()
+  f.write(
+    'devup.json',
+    '{"theme":{"colors":{"default":{"primary":"#abcdef"}}}}',
   )
+  try {
+    await f.setup({ shorthands: { insetX: ['left', 'right'] } })
+    expect(readFileSync(join(f.root, 'df/theme.d.ts'), 'utf8')).toContain(
+      'primary',
+    )
+    expect(readFileSync(join(f.root, 'df/theme.d.ts'), 'utf8')).toContain(
+      'insetX',
+    )
+    expect(readFileSync(join(f.root, 'df/compat.d.ts'), 'utf8')).toContain(
+      '@devup-ui/react/compat/emotion',
+    )
+    expect(readFileSync(join(f.root, 'df/.gitignore'), 'utf8')).toBe('*')
+    expect(
+      readFileSync(
+        join(f.root, 'df/devup-ui/devup-ui.css'),
+        'utf8',
+      ).toLowerCase(),
+    ).toContain('#abcdef')
+  } finally {
+    await f.cleanup()
+  }
 })
 
-afterEach(() => {
-  getDefaultThemeSpy.mockRestore()
-  existsSyncSpy.mockRestore()
-  readFileSpy.mockRestore()
-  writeFileSpy.mockRestore()
-  mkdirSpy.mockRestore()
-  registerThemeSpy.mockRestore()
-  getThemeInterfaceSpy.mockRestore()
-  getCssSpy.mockRestore()
-  consoleErrorSpy.mockRestore()
-  setDebugSpy.mockRestore()
-  hasDevupUISpy.mockRestore()
-  codeExtractSpy.mockRestore()
+it('overwrites stale declarations when configuration has no theme and directories exist', async () => {
+  const f = fixture()
+  f.write('devup.json', '{}')
+  f.write('df/theme.d.ts', 'stale-theme')
+  f.write('df/devup-ui/devup-ui.css', 'stale-css')
+  try {
+    await f.setup()
+    expect(readFileSync(join(f.root, 'df/theme.d.ts'), 'utf8')).not.toContain(
+      'stale-theme',
+    )
+    expect(
+      readFileSync(join(f.root, 'df/devup-ui/devup-ui.css'), 'utf8'),
+    ).not.toContain('stale-css')
+  } finally {
+    await f.cleanup()
+  }
 })
 
-describe('getDevupDefine', () => {
-  it('should return define object with theme', async () => {
-    getDefaultThemeSpy.mockReturnValue('dark')
-    expect(getDefaultThemeSpy()).toBe('dark')
-  })
-
-  it('should return empty object when no theme', async () => {
-    getDefaultThemeSpy.mockReturnValue(undefined)
-    expect(getDefaultThemeSpy()).toBe(undefined)
-  })
+it('publishes changed CSS synchronously but leaves identical revisions untouched', async () => {
+  const f = fixture()
+  const path = f.write(
+    'src/style.ts',
+    "import { css } from '@devup-ui/react'; export const cls = css({ width: '719px' })",
+  )
+  const tokens = f.write('src/tokens.ts', "export const width = '727px'")
+  const plain = f.write('src/plain.ts', 'export const value = 1')
+  try {
+    await f.setup()
+    const result = await f.load(path)
+    expect(sourceContents(result)).not.toContain('@devup-ui/react')
+    const cssPath = join(f.root, 'df/devup-ui/devup-ui.css')
+    expect(readFileSync(cssPath, 'utf8')).toContain('width:719px')
+    utimesSync(cssPath, 1, 1)
+    const before = statSync(cssPath).mtimeMs
+    await f.load(path)
+    expect(statSync(cssPath).mtimeMs).toBe(before)
+    expect(
+      f.loads
+        .find((h) => !h.constraints.namespace)
+        ?.constraints.filter.test(tokens),
+    ).toBe(false)
+    expect(
+      f.loads
+        .find((h) => !h.constraints.namespace)
+        ?.constraints.filter.test(plain),
+    ).toBe(false)
+    expect(
+      await f.load('devup-ui.css', cssNamespace, () => {
+        throw new Error('Runtime must not defer')
+      }),
+    ).toEqual({ contents: '', loader: 'js' })
+  } finally {
+    await f.cleanup()
+  }
 })
 
-describe('writeDataFiles behavior', () => {
-  it('should register theme from devup.json when it exists', async () => {
-    readFileSpy.mockResolvedValue('{"theme": {"colors": {"primary": "#000"}}}')
-    getThemeInterfaceSpy.mockReturnValue('interface CustomColors {}')
+it('preserves compile-time dependency imports and restores debug/resolver before extraction', async () => {
+  const f = fixture()
+  f.write('src/tokens.ts', "export const width = '733px'")
+  const path = f.write(
+    'src/style.ts',
+    "import { style } from '@vanilla-extract/css'; import { width } from './tokens'; export const cls = style({ width })",
+  )
+  try {
+    await f.setup({ debug: true })
+    setDebug(false)
+    setModuleResolver(() => ({
+      path: join(f.root, 'wrong.ts'),
+      code: "export const width = '999px'",
+    }))
+    const code = sourceContents(await f.load(path))
+    expect(code).toContain('733px')
+    expect(code).toContain('tokens.ts')
+    expect(getCss(null, false)).toContain('width:733px')
+    expect(getCss(null, false)).not.toContain('999px')
+  } finally {
+    await f.cleanup()
+  }
+})
 
-    // Simulate writeDataFiles behavior without exporting private plugin helpers.
-    const content = '{"theme": {"colors": {"primary": "#000"}}}'
-    const parsed = JSON.parse(content)
-    registerThemeSpy(parsed?.['theme'] ?? {})
+it('defers bundled CSS until source callbacks complete and does not publish it to disk', async () => {
+  const f = fixture()
+  const path = f.write(
+    'style.ts',
+    "import { css } from '@devup-ui/react'; export const cls = css({ width: '739px' })",
+  )
+  try {
+    await f.setup({}, { entrypoints: [path], root: f.root, plugins: [] })
+    const initial = readFileSync(
+      join(f.root, 'df/devup-ui/devup-ui.css'),
+      'utf8',
+    )
+    const defer = spyOn(
+      {
+        async run() {
+          await f.load(path)
+        },
+      },
+      'run',
+    )
+    const css = await f.load('devup-ui.css', cssNamespace, defer)
+    expect(defer).toHaveBeenCalledTimes(1)
+    expect(sourceContents(css)).toContain('739px')
+    expect(readFileSync(join(f.root, 'df/devup-ui/devup-ui.css'), 'utf8')).toBe(
+      initial,
+    )
+    const resolve = f.resolves[0]
+    if (!resolve) throw new Error('Expected CSS resolver')
+    expect(
+      await resolve.callback({
+        path: './df/devup-ui/devup-ui.css',
+        importer: path,
+        namespace: 'file',
+        resolveDir: f.root,
+        kind: 'import-statement',
+      }),
+    ).toEqual({ path: 'devup-ui.css', namespace: cssNamespace })
+  } finally {
+    await f.cleanup()
+  }
+})
 
-    expect(registerThemeSpy).toHaveBeenCalledWith({
-      colors: { primary: '#000' },
+it('passes ordinary modules through the bundler source callback', async () => {
+  const f = fixture()
+  const path = f.write('plain.mts', 'export const value = 1')
+  try {
+    await f.setup({}, { entrypoints: [path], plugins: [] })
+    expect(await f.load(path)).toEqual({
+      contents: 'export const value = 1',
+      loader: 'ts',
     })
-  })
-
-  it('should write theme.d.ts when interfaceCode is returned', async () => {
-    getThemeInterfaceSpy.mockReturnValue('interface CustomColors {}')
-
-    const interfaceCode = getThemeInterfaceSpy(
-      '@devup-ui/react',
-      'CustomColors',
-      'DevupThemeTypography',
-      'CustomLength',
-      'CustomShadows',
-      'DevupTheme',
-    )
-
-    if (interfaceCode) {
-      await writeFileSpy(join('df', 'theme.d.ts'), interfaceCode, 'utf-8')
-    }
-
-    expect(writeFileSpy).toHaveBeenCalledWith(
-      join('df', 'theme.d.ts'),
-      'interface CustomColors {}',
-      'utf-8',
-    )
-  })
-
-  it('should register empty theme when devup.json does not exist', async () => {
-    existsSyncSpy.mockReturnValue(false)
-
-    // Simulate the missing config branch.
-    const content = undefined
-    if (!content) {
-      registerThemeSpy({})
-    }
-
-    expect(registerThemeSpy).toHaveBeenCalledWith({})
-  })
-
-  it('should handle error and register empty theme on catch', async () => {
-    existsSyncSpy.mockImplementation((path: string) => path === 'devup.json')
-    readFileSpy.mockRejectedValue(new Error('Read error'))
-
-    try {
-      await readFileSpy('devup.json', 'utf-8')
-    } catch (error) {
-      consoleErrorSpy(error)
-      registerThemeSpy({})
-    }
-
-    expect(consoleErrorSpy).toHaveBeenCalled()
-    expect(registerThemeSpy).toHaveBeenCalledWith({})
-  })
-
-  it('should handle JSON without theme key', async () => {
-    existsSyncSpy.mockImplementation((path: string) => path === 'devup.json')
-
-    const content = '{"otherKey": "value"}'
-    const parsed = JSON.parse(content)
-    registerThemeSpy(parsed?.['theme'] ?? {})
-
-    expect(registerThemeSpy).toHaveBeenCalledWith({})
-  })
-
-  it('should create css directory when it does not exist', async () => {
-    existsSyncSpy.mockReturnValue(false)
-
-    // Simulate the directory creation branch without exposing internals.
-    if (!existsSyncSpy('df/devup-ui')) {
-      await mkdirSpy('df/devup-ui', { recursive: true })
-    }
-
-    expect(mkdirSpy).toHaveBeenCalledWith('df/devup-ui', { recursive: true })
-  })
+  } finally {
+    await f.cleanup()
+  }
 })
 
-describe('plugin preload coverage', () => {
-  // The plugin is preloaded via bunfig.toml, which covers the main execution paths
-  // These tests verify the plugin's behavior through its side effects
-
-  it('should have called setDebug during initialization', () => {
-    // Plugin calls setDebug(true) in setup
-    // This is covered by the preload
-    expect(setDebugSpy).toBeDefined()
-  })
-
-  it('should have registered theme during initialization', () => {
-    // Plugin calls registerTheme during writeDataFiles
-    // This is covered by the preload
-    expect(registerThemeSpy).toBeDefined()
-  })
-
-  it('should resolve devup-ui css path', async () => {
-    // This import triggers the onResolve callback for CSS files
+it.each(['{', '{"extends":["./devup.json"]}'])(
+  'rejects malformed configuration %s instead of silently registering an empty theme',
+  async (config) => {
+    const f = fixture()
+    f.write('devup.json', config)
     try {
-      await import('df/devup-ui/devup-ui.css')
-    } catch {
-      // File may not exist, but the resolver still runs
+      await expect(f.setup()).rejects.toThrow(join(f.root, 'devup.json'))
+    } finally {
+      await f.cleanup()
     }
-    expect(true).toBe(true)
-  })
+  },
+)
+
+it('propagates source read and extraction errors', async () => {
+  const f = fixture()
+  const path = f.write(
+    'bad.ts',
+    "import { css } from '@devup-ui/react'; export const cls = css({ width: unknownWidth })",
+  )
+  try {
+    await f.setup({}, { entrypoints: [path], plugins: [] })
+    await expect(f.load(join(f.root, 'missing.ts'))).rejects.toThrow('ENOENT')
+    await expect(f.load(path)).rejects.toThrow('bad.ts:')
+  } finally {
+    await f.cleanup()
+  }
 })

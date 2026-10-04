@@ -9,13 +9,23 @@ import {
 import { createRequire } from 'node:module'
 import { dirname, isAbsolute, join, relative, resolve } from 'node:path'
 
+import { createDirectoryExclusion } from './directory-exclusion'
+import { maskImportText } from './import-mask'
 import { ConfigLoadError } from './load-config'
+import { remapMdxError } from './mdx-errors'
+import { rewriteModuleAlias } from './module-alias'
+import { preparedDiagnostics } from './prepared-diagnostics'
 import {
   createNodeModulesExcludeRegex,
-  GRAPH_SOURCE_FILE_RE,
-  MDX_FILE_RE,
   SOURCE_EXTENSIONS,
+  SOURCE_FILE_RE,
 } from './shared'
+import {
+  isSelectedSource,
+  type MdxSelection,
+  sourceExtensions,
+  type SourceSelectionOptions,
+} from './source-selection'
 import { type PathAlias, readPathAliases } from './tsconfig'
 
 /**
@@ -64,12 +74,11 @@ interface ResolveContext {
   srcDir: string
 }
 
-const jsExtensions: readonly string[] = [...SOURCE_EXTENSIONS, '.mdx']
-const jsFileRegex = GRAPH_SOURCE_FILE_RE
+const jsExtensions: readonly string[] = SOURCE_EXTENSIONS
 const testFileRegex = /\.(?:test|spec)\.[mc]?[jt]sx?$/i
 const routeFileRegex =
-  /(^|\/)(page|layout|template|default|loading|error|not-found|global-error)\.(?:[mc]?[jt]s|[jt]sx|mdx)$/
-const leafRouteFileRegex = /(^|\/)page\.(?:[mc]?[jt]s|[jt]sx|mdx)$/
+  /(^|\/)(page|layout|template|default|loading|error|not-found|global-error)\.[^./]+$/
+const leafRouteFileRegex = /(^|\/)page\.[^./]+$/
 
 let cachedOxcParser: false | OxcParser | undefined
 
@@ -112,26 +121,113 @@ export interface StaticImportGraph {
  */
 export function buildStaticImportGraph(
   srcDir: string | string[],
+  tsconfigPath: string | undefined,
+  options: PreparedGraphOptions,
+): Promise<StaticImportGraph>
+export function buildStaticImportGraph(
+  srcDir: string | string[],
   tsconfigPath?: string,
-  options: StaticImportGraphOptions = {},
-): StaticImportGraph {
+  options?: SyncGraphOptions,
+): StaticImportGraph
+export function buildStaticImportGraph(
+  srcDir: string | string[],
+  tsconfigPath?: string,
+  options: SyncGraphOptions | PreparedGraphOptions = {},
+): StaticImportGraph | Promise<StaticImportGraph> {
+  if (options.prepareSource)
+    return drivePreparedGraph(srcDir, tsconfigPath, options)
+  const traversal = traverseGraph(srcDir, tsconfigPath, options)
+  let step = traversal.next()
+  while (!step.done) step = traversal.next(undefined)
+  return step.value
+}
+
+export type PreparedSource =
+  string | { readonly code: string; readonly map?: unknown } | undefined
+export type PrepareSource = (
+  filename: string,
+) => PreparedSource | Promise<PreparedSource>
+export interface SyncGraphOptions extends StaticImportGraphOptions {
+  readonly prepareSource?: never
+}
+export interface PreparedGraphOptions extends StaticImportGraphOptions {
+  readonly prepareSource: PrepareSource
+}
+
+class GraphPreparationError extends Error {
+  constructor(filename: string, cause: unknown) {
+    const message = cause instanceof Error ? cause.message : String(cause)
+    const location =
+      cause instanceof Error &&
+      'line' in cause &&
+      typeof cause.line === 'number'
+        ? `${cause.line}:${'column' in cause && typeof cause.column === 'number' ? cause.column : 1}`
+        : '1:1'
+    super(
+      `${filename}:${location}: Graph source preparation failed: ${message}`,
+      { cause },
+    )
+    this.name = 'GraphPreparationError'
+  }
+}
+
+async function drivePreparedGraph(
+  srcDir: string | string[],
+  tsconfigPath: string | undefined,
+  options: PreparedGraphOptions,
+): Promise<StaticImportGraph> {
+  const traversal = traverseGraph(srcDir, tsconfigPath, options)
+  let step = traversal.next()
+  while (!step.done) {
+    const filename = step.value
+    let prepared: PreparedSource
+    try {
+      prepared = await options.prepareSource(filename)
+    } catch (cause) {
+      const located = new GraphPreparationError(filename, cause)
+      const remapped = remapMdxError(located, filename)
+      throw new Error(
+        remapped.message.replaceAll(
+          '(in compiled MDX)',
+          '(in compiled output)',
+        ),
+        { cause },
+      )
+    }
+    step = traversal.next(prepared)
+  }
+  return step.value
+}
+
+function* traverseGraph(
+  srcDir: string | string[],
+  tsconfigPath: string | undefined,
+  options: StaticImportGraphOptions,
+): Generator<string, StaticImportGraph, PreparedSource> {
   const cwd = resolve(options.cwd ?? process.cwd())
   const roots = (typeof srcDir === 'string' ? [srcDir] : srcDir).map((dir) =>
     resolve(cwd, dir),
   )
   const files = [
-    ...new Set(roots.flatMap((root) => listSourceFiles(root, options.exclude))),
-  ]
-    .filter((file) => options.includeMdx || !MDX_FILE_RE.test(file))
-    .sort(compareCodePoints)
+    ...new Set(
+      roots.flatMap((root) => listSourceFiles(root, options.exclude, options)),
+    ),
+  ].sort(compareCodePoints)
   const fileSet = new Set(files)
-  const resolver = createModuleResolver({
-    cwd,
-    tsconfigPath: tsconfigPath ?? join(cwd, 'tsconfig.json'),
-    conditions: options.conditions,
-  })
+  const excludedDirectory = createDirectoryExclusion(options.exclude)
+  const resolver = createModulePathResolver(
+    {
+      cwd,
+      tsconfigPath: tsconfigPath ?? join(cwd, 'tsconfig.json'),
+      conditions: options.conditions,
+      alias: options.alias,
+      includeMdx: options.includeMdx,
+    },
+    excludedDirectory,
+  )
   const excluded = createNodeModulesExcludeRegex(options.include ?? [])
   const includedRoots = new Set<string>()
+  const localAliasRoots = new Set<string>()
   const staticImporters = new Map<string, Set<string>>()
   const staticImports = new Map<string, Set<string>>()
   const dynamicImports = new Map<string, Set<string>>()
@@ -147,44 +243,65 @@ export function buildStaticImportGraph(
 
   for (let index = 0; index < files.length; index += 1) {
     const file = files[index]
-    const imports = parseImports(file, readFileSync(file, 'utf-8'))
+    const prepared = yield file
+    const code = typeof prepared === 'string' ? prepared : prepared?.code
+    const imports =
+      code === undefined
+        ? parseImports(file, readFileSync(file, 'utf-8'))
+        : parsePreparedImports(
+            file,
+            code,
+            typeof prepared === 'object' ? prepared.map : undefined,
+          )
     for (const importRef of imports) {
-      const resolved = resolver(importRef.specifier, file)?.path
-      if (
-        resolved &&
-        roots.some(
-          (root) =>
-            isInsideDir(root, resolved) &&
-            relative(root, dirname(resolved))
-              .split(/[\\/]/)
-              .some((part) => options.exclude?.includes(part)),
-        )
+      const resolved = resolver(importRef.specifier, file)
+      if (resolved === false) continue
+      if (resolved && excludedDirectory(dirname(resolved))) continue
+      const rewritten = rewriteModuleAlias(
+        importRef.specifier,
+        options.alias ?? {},
+        file,
       )
-        continue
+      const local =
+        resolved !== undefined &&
+        isInsideDir(cwd, resolved) &&
+        !relative(cwd, resolved).split(/[\\/]/).includes('node_modules')
+      if (resolved && local && rewritten !== importRef.specifier)
+        localAliasRoots.add(dirname(resolved))
       if (
         resolved &&
         !importRef.specifier.startsWith('.') &&
         !isAbsolute(importRef.specifier)
       ) {
-        const parts = importRef.specifier.split('/')
-        const name = parts
-          .slice(0, importRef.specifier.startsWith('@') ? 2 : 1)
-          .join('/')
+        const request = rewritten
+        const parts = request.split('/')
+        const name = parts.slice(0, request.startsWith('@') ? 2 : 1).join('/')
         if (!excluded.test(`node_modules/${name}/`)) {
           const dir = findPackage(dirname(file), name)
           if (dir) includedRoots.add(realpathSync(dir))
         }
+        if (isAbsolute(request) && !local && !excluded.test(resolved)) {
+          let directory = dirname(resolved)
+          while (
+            dirname(directory) !== directory &&
+            !isFile(join(directory, 'package.json'))
+          )
+            directory = dirname(directory)
+          if (isFile(join(directory, 'package.json')))
+            includedRoots.add(realpathSync(directory))
+        }
       }
       const target =
         resolved &&
-        jsFileRegex.test(resolved) &&
-        (options.includeMdx || !MDX_FILE_RE.test(resolved)) &&
+        isSelectedSource(resolved, options.includeMdx) &&
         (fileSet.has(resolved) ||
           roots.some(
             (root) =>
               isInsideDir(root, resolved) &&
               !relative(root, resolved).split(/[\\/]/).includes('node_modules'),
           ) ||
+          (local &&
+            [...localAliasRoots].some((root) => isInsideDir(root, resolved))) ||
           (!excluded.test(resolved) &&
             [...includedRoots].some((root) => isInsideDir(root, resolved))))
           ? resolved
@@ -230,11 +347,12 @@ export function buildStaticImportGraph(
 
 export interface StaticImportGraphOptions {
   /** Include MDX only when the caller compiles it before extraction. */
-  readonly includeMdx?: boolean
+  readonly includeMdx?: MdxSelection
+  readonly alias?: Readonly<Record<string, string>>
   readonly cwd?: string
   readonly include?: readonly string[]
   readonly conditions?: readonly string[]
-  /** Directory names skipped anywhere below source roots. */
+  /** Bare directory names at any depth, or absolute directories and descendants. */
   readonly exclude?: readonly string[]
 }
 
@@ -691,10 +809,13 @@ export function compareCodePoints(a: string, b: string): number {
 export function listSourceFiles(
   srcDir: string,
   exclude: readonly string[] = [],
+  options: SourceSelectionOptions = {},
 ): string[] {
   const files: string[] = []
+  const excludedDirectory = createDirectoryExclusion(exclude)
 
   function visit(dir: string): void {
+    if (excludedDirectory(resolve(dir))) return
     if (!existsSync(dir)) return
     const entries = readdirSync(dir, { withFileTypes: true }).sort((a, b) =>
       compareCodePoints(a.name, b.name),
@@ -702,13 +823,12 @@ export function listSourceFiles(
     for (const entry of entries) {
       const entryPath = join(dir, entry.name)
       if (entry.isDirectory()) {
-        if (entry.name === 'node_modules' || exclude.includes(entry.name))
-          continue
+        if (entry.name === 'node_modules') continue
         visit(entryPath)
         continue
       }
       if (!entry.isFile()) continue
-      if (!jsFileRegex.test(entry.name)) continue
+      if (!isSelectedSource(entry.name, options.includeMdx)) continue
       if (testFileRegex.test(entry.name)) continue
       files.push(resolve(entryPath))
     }
@@ -721,10 +841,42 @@ export function listSourceFiles(
 }
 
 function parseImports(filename: string, source: string): ImportReference[] {
-  if (MDX_FILE_RE.test(filename)) return scanImports(mdxEsmSource(source))
+  if (!SOURCE_FILE_RE.test(filename))
+    return scanImports(mdxEsmSource(source), false)
   const astImports = parseImportsWithOxc(filename, source)
   if (astImports) return astImports
-  return scanImports(source)
+  return scanImports(source, /\.[jt]sx$/i.test(filename))
+}
+
+function parsePreparedImports(
+  filename: string,
+  source: string,
+  map: unknown,
+): ImportReference[] {
+  const parser = getOxcParser()
+  if (!parser) return scanImports(source, true)
+  try {
+    const ast = parser.parseSync(filename, source, {
+      sourceType: 'module',
+      lang: 'jsx',
+    })
+    if (isRecord(ast) && Array.isArray(ast.errors) && ast.errors.length) {
+      throw new Error(preparedDiagnostics(filename, source, ast.errors))
+    }
+    const imports: ImportReference[] = []
+    collectAstImports(isRecord(ast) ? (ast.program ?? ast) : ast, imports)
+    return imports
+  } catch (cause) {
+    const message = cause instanceof Error ? cause.message : String(cause)
+    const located = message.startsWith(`${filename}:`)
+      ? cause
+      : new GraphPreparationError(filename, cause)
+    const remapped = remapMdxError(located, filename, map)
+    throw new Error(
+      remapped.message.replaceAll('(in compiled MDX)', '(in compiled output)'),
+      { cause },
+    )
+  }
 }
 
 function mdxEsmSource(source: string): string {
@@ -911,9 +1063,9 @@ function isAllInlineTypeSpecifiers(clause: string | undefined): boolean {
   )
 }
 
-function scanImports(source: string): ImportReference[] {
+function scanImports(source: string, jsx: boolean): ImportReference[] {
   const imports: ImportReference[] = []
-  const code = stripComments(source)
+  const code = maskImportText(source, jsx)
   // The leading `(type\s+)?` is CAPTURED (not skipped) so we can drop type-only
   // statements: `import type ... from` / `export type ... from` are erased by
   // the bundler and produce NO runtime module — counting them as static graph
@@ -932,92 +1084,32 @@ function scanImports(source: string): ImportReference[] {
 
   for (const match of code.matchAll(staticImportRegex)) {
     if (match[1] || isAllInlineTypeSpecifiers(match[2])) continue
-    imports.push({ kind: 'static', specifier: match[4] })
+    const offset =
+      (match.index ?? 0) + match[0].lastIndexOf(match[3]) - match[4].length
+    imports.push({
+      kind: 'static',
+      specifier: source.slice(offset, offset + match[4].length),
+    })
   }
   for (const match of code.matchAll(exportFromRegex)) {
     if (match[1] || isAllInlineTypeSpecifiers(match[2])) continue
-    imports.push({ kind: 'static', specifier: match[4] })
+    const offset =
+      (match.index ?? 0) + match[0].lastIndexOf(match[3]) - match[4].length
+    imports.push({
+      kind: 'static',
+      specifier: source.slice(offset, offset + match[4].length),
+    })
   }
   for (const match of code.matchAll(dynamicImportRegex)) {
-    imports.push({ kind: 'dynamic', specifier: match[2] })
+    const offset =
+      (match.index ?? 0) + match[0].lastIndexOf(match[1]) - match[2].length
+    imports.push({
+      kind: 'dynamic',
+      specifier: source.slice(offset, offset + match[2].length),
+    })
   }
 
   return imports
-}
-
-function stripComments(source: string): string {
-  let result = ''
-  let index = 0
-  let quote: false | '"' | "'" | '`' = false
-
-  while (index < source.length) {
-    const char = source[index]
-    const next = source[index + 1]
-
-    if (quote) {
-      // Template-literal CONTENTS are blanked (delimiters and newlines kept):
-      // embedded code snippets (docs sites, codegen templates) would otherwise
-      // look like real import statements to the scanners below and create
-      // phantom graph edges for files the bundler never loads. Contents of
-      // '/" strings are preserved — import specifiers themselves are read from
-      // those literals by the scan regexes.
-      if (quote === '`') {
-        if (char === '\\') {
-          result += '  '
-          index += 2
-          continue
-        }
-        result += char === '`' || char === '\n' ? char : ' '
-        if (char === '`') quote = false
-        index += 1
-        continue
-      }
-      result += char
-      if (char === '\\') {
-        result += next ?? ''
-        index += 2
-        continue
-      }
-      if (char === quote) quote = false
-      index += 1
-      continue
-    }
-
-    if (char === '"' || char === "'" || char === '`') {
-      quote = char
-      result += char
-      index += 1
-      continue
-    }
-
-    if (char === '/' && next === '/') {
-      while (index < source.length && source[index] !== '\n') {
-        result += ' '
-        index += 1
-      }
-      continue
-    }
-
-    if (char === '/' && next === '*') {
-      result += '  '
-      index += 2
-      while (
-        index < source.length &&
-        !(source[index] === '*' && source[index + 1] === '/')
-      ) {
-        result += source[index] === '\n' ? '\n' : ' '
-        index += 1
-      }
-      result += '  '
-      index += 2
-      continue
-    }
-
-    result += char
-    index += 1
-  }
-
-  return result
 }
 
 /** A module an import resolved to, as `setModuleResolver` expects it. */
@@ -1027,6 +1119,8 @@ export interface ResolvedModule {
 }
 
 export interface CreateModuleResolverOptions {
+  readonly alias?: Readonly<Record<string, string>>
+  readonly includeMdx?: MdxSelection
   cwd?: string
   tsconfigPath?: string
   conditions?: readonly string[]
@@ -1044,45 +1138,88 @@ export interface CreateModuleResolverOptions {
  * `module`, `main`), reading each module.
  */
 export function createModuleResolver({
-  cwd = process.cwd(),
-  tsconfigPath = join(cwd, 'tsconfig.json'),
   toId = (path) => path,
-  conditions = ['import', 'module', 'require', 'node'],
+  ...options
 }: CreateModuleResolverOptions = {}): (
   specifier: string,
   importer: string,
 ) => ResolvedModule | undefined {
-  const { aliases, baseDir, baseUrl } = readPathAliases(tsconfigPath)
+  const resolver = createModulePathResolver({
+    ...options,
+    includeMdx: options.includeMdx ?? true,
+  })
   return (specifier, importer) => {
-    const from = resolve(cwd, importer)
-    const path = specifier.startsWith('.')
-      ? resolveFile(resolve(dirname(from), specifier))
-      : isAbsolute(specifier)
-        ? resolveFile(specifier)
-        : (resolveAliasCandidates(specifier, {
-            aliases,
-            aliasBaseDir: baseDir,
-          })
-            .map(resolveFile)
-            .find(Boolean) ??
-          (baseUrl ? resolveFile(resolve(baseUrl, specifier)) : undefined) ??
-          resolvePackage(specifier, from, conditions))
+    const path = resolver(specifier, importer)
     return path
       ? { path: toId(path), code: readFileSync(path, 'utf-8') }
       : undefined
   }
 }
 
+function createModulePathResolver(
+  {
+    cwd = process.cwd(),
+    tsconfigPath = join(cwd, 'tsconfig.json'),
+    conditions = ['import', 'module', 'require', 'node'],
+    alias = {},
+    includeMdx,
+  }: CreateModuleResolverOptions = {},
+  excludedDirectory = createDirectoryExclusion(),
+): (specifier: string, importer: string) => string | false | undefined {
+  const { aliases, baseDir, baseUrl } = readPathAliases(tsconfigPath)
+  const extensions = sourceExtensions(includeMdx)
+  const fileResolver = (path: string) =>
+    excludedDirectory(dirname(path)) || excludedDirectory(path)
+      ? false
+      : resolveFile(path, extensions)
+  return (specifier, importer) => {
+    const from = resolve(cwd, importer)
+    const request = rewriteModuleAlias(specifier, alias, from)
+    const path = request.startsWith('.')
+      ? fileResolver(resolve(dirname(from), request))
+      : isAbsolute(request)
+        ? fileResolver(request)
+        : (resolveAliasCandidates(request, {
+            aliases,
+            aliasBaseDir: baseDir,
+          })
+            .map(fileResolver)
+            .find((candidate) => candidate !== undefined) ??
+          (baseUrl ? fileResolver(resolve(baseUrl, request)) : undefined) ??
+          resolvePackage(request, from, {
+            conditions,
+            fileResolver,
+            excludedDirectory,
+          }))
+    return path
+  }
+}
+
 function resolvePackage(
   specifier: string,
   importer: string,
-  conditions: readonly string[],
-): string | undefined {
+  options: {
+    readonly conditions: readonly string[]
+    readonly fileResolver: (path: string) => string | false | undefined
+    readonly excludedDirectory: (directory: string) => boolean
+  },
+): string | false | undefined {
   const parts = specifier.split('/')
   const nameLength = specifier.startsWith('@') ? 2 : 1
   const name = parts.slice(0, nameLength).join('/')
-  const packageDir = findPackage(dirname(importer), name)
+  const packageDir = findPackage(
+    dirname(importer),
+    name,
+    options.excludedDirectory,
+  )
+  if (packageDir === false) return false
   if (!packageDir) return undefined
+  const target = join(packageDir, ...parts.slice(nameLength))
+  if (
+    options.excludedDirectory(dirname(target)) ||
+    options.excludedDirectory(target)
+  )
+    return false
   const manifestFile = join(packageDir, 'package.json')
   let manifest: unknown
   try {
@@ -1096,34 +1233,43 @@ function resolvePackage(
     packageDir,
     manifest,
     ['.', ...parts.slice(nameLength)].join('/'),
-    conditions,
+    options.conditions,
+    options.fileResolver,
   )
-  return found && realpathSync(found)
+  return found ? realpathSync(found) : found
 }
 
-function findPackage(dir: string, name: string): string | undefined {
+function findPackage(
+  dir: string,
+  name: string,
+  excludedDirectory?: (directory: string) => boolean,
+): string | false | undefined {
   const packageDir = join(dir, 'node_modules', name)
+  if (excludedDirectory?.(packageDir)) return false
   if (isFile(join(packageDir, 'package.json'))) return packageDir
   const parent = dirname(dir)
-  return parent === dir ? undefined : findPackage(parent, name)
+  return parent === dir
+    ? undefined
+    : findPackage(parent, name, excludedDirectory)
 }
 function resolvePackageEntry(
   dir: string,
   manifest: Record<string, unknown>,
   subpath: string,
   conditions: readonly string[],
-): string | undefined {
+  fileResolver: (path: string) => string | false | undefined,
+): string | false | undefined {
   if (manifest.exports !== undefined) {
     const target = exportsTarget(manifest.exports, subpath, conditions)
     return typeof target !== 'string'
       ? undefined
-      : resolveFile(join(dir, target))
+      : fileResolver(join(dir, target))
   }
-  if (subpath !== '.') return resolveFile(join(dir, subpath))
+  if (subpath !== '.') return fileResolver(join(dir, subpath))
   const main = [manifest.module, manifest.main].find(
     (entry): entry is string => typeof entry === 'string',
   )
-  return resolveFile(join(dir, main ?? 'index'))
+  return fileResolver(join(dir, main ?? 'index'))
 }
 
 function exportsTarget(
@@ -1207,14 +1353,17 @@ function resolveAliasCandidates(
   return candidates
 }
 
-function resolveFile(candidateBase: string): string | undefined {
+function resolveFile(
+  candidateBase: string,
+  extensions: readonly string[] = jsExtensions,
+): string | undefined {
   if (isFile(candidateBase)) return resolve(candidateBase)
 
-  for (const jsExtension of jsExtensions) {
+  for (const jsExtension of extensions) {
     const candidate = `${candidateBase}${jsExtension}`
     if (isFile(candidate)) return resolve(candidate)
   }
-  for (const jsExtension of jsExtensions) {
+  for (const jsExtension of extensions) {
     const candidate = join(candidateBase, `index${jsExtension}`)
     if (isFile(candidate)) return resolve(candidate)
   }

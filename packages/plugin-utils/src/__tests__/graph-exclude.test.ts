@@ -62,9 +62,9 @@ it('skips named directories at every depth without reintroducing imported files'
   expect(graph.staticImports.get(join(root, 'src/nested/A.MDX'))).toEqual(
     new Set([join(root, 'src/value.CTS')]),
   )
-  expect(listSourceFiles(join(root, 'src'), ['generated'])).toEqual(
-    graph.files.slice(1),
-  )
+  expect(
+    listSourceFiles(join(root, 'src'), ['generated'], { includeMdx: true }),
+  ).toEqual(graph.files.slice(1))
 })
 
 it.each(['.mts', '.cts', '.mjs', '.cjs', '.tsx', '.jsx'])(

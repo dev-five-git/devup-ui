@@ -201,6 +201,30 @@ An uncompiled library is not standalone browser JavaScript. Using it without
 the consumer transformation runs placeholders and throws
 `Cannot run on the runtime`. Do not publish it as precompiled output.
 
+### Aggregated Library CSS
+
+Library builds and applications using `build.cssCodeSplit: false` prepare the
+actual resolved build inputs and their static/dynamic dependencies before any
+generated stylesheet is loaded. MDX still runs after the configured compiler.
+Unreachable source files contribute no CSS, and complete styles pass through
+Vite's normal CSS processing and optimizer in their original import positions.
+Ordinary split application builds and development behavior are unchanged.
+
+If a public bundler hook cannot expose a complete transformed graph, the build
+fails with the responsible source/stylesheet and a supported alternative instead
+of emitting incomplete CSS. Remaining computed imports must use literal imports
+or `import.meta.glob`; plugins must expose additional inputs before the first
+generated stylesheet loads. A source transform that awaits generated CSS can
+form a circular wait, so unsettled public loads fail after 30 seconds; an
+exceptionally slow healthy transform can also reach that limit.
+
+Some split libraries with plugin-emitted entries produce a standalone generated
+stylesheet that cannot retain optimizer output under the shared-sheet contract.
+These builds fail with the final asset name. Use `build.cssCodeSplit: false` for
+that library, or publish separately imported, precompiled CSS. The real-build
+matrix is qualified with Vite 8.3.1 / Rolldown 1.2.10; no private adapter or
+bundler version pin is required.
+
 ## Custom Shorthands
 
 Custom shorthands are build-plugin options, not theme tokens. Every target

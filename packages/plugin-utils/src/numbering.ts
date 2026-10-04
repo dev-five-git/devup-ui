@@ -2,7 +2,7 @@ import { existsSync, readFileSync, realpathSync } from 'node:fs'
 import { join, resolve } from 'node:path'
 
 import { listSourceFiles } from './import-graph'
-import { MDX_FILE_RE } from './shared'
+import type { MdxSelection } from './source-selection'
 
 export interface CollectNumberedFilesOptions {
   /** Directories holding the project's own source files */
@@ -10,7 +10,8 @@ export interface CollectNumberedFilesOptions {
   /** Packages whose source the build extracts too (the `include` option) */
   include?: string[]
   /** Number MDX only when the caller extracts compiled MDX. Defaults to false. */
-  includeMdx?: boolean
+  includeMdx?: MdxSelection
+  readonly exclude?: readonly string[]
   cwd?: string
   /**
    * Only files whose text contains one of these are numbered, so files the
@@ -50,6 +51,7 @@ export function collectNumberedFiles({
   roots,
   include = [],
   includeMdx = false,
+  exclude,
   cwd = process.cwd(),
   needles,
   toId = (path) => path.replaceAll('\\', '/'),
@@ -63,8 +65,7 @@ export function collectNumberedFiles({
   return [
     ...new Set(
       directories.flatMap((dir) =>
-        listSourceFiles(dir)
-          .filter((file) => includeMdx || !MDX_FILE_RE.test(file))
+        listSourceFiles(dir, exclude, { includeMdx })
           .filter((file) => !needles || usesAny(file, needles))
           .map(toId),
       ),
