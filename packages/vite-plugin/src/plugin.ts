@@ -5,6 +5,7 @@ import { basename, dirname, join, relative, resolve } from 'node:path'
 import {
   beginBuild,
   buildCanonicalMap,
+  buildStaticImportGraph,
   collectNumberedFiles,
   computeFileReach,
   createCompatTypes,
@@ -15,11 +16,17 @@ import {
   type CustomShorthands,
   extractedNeedles,
   getFileNumByFilename,
+  GRAPH_SOURCE_FILE_RE,
   type ImportAliases,
   loadDevupConfig,
+  MDX_FILE_RE,
   mergeImportAliases,
   planAtomHoist,
+  remapMdxError,
+  resolveProjectPaths,
+  resolveSourceDirs,
   seedFileNumbers,
+  SOURCE_FILE_RE,
 } from '@devup-ui/plugin-utils'
 import {
   codeExtract,
@@ -41,7 +48,6 @@ import type {
   EnvironmentModuleNode,
   ModuleNode,
   Plugin,
-  PluginOption,
   ResolvedConfig,
   UserConfig,
 } from 'vite'
@@ -54,20 +60,6 @@ import type {
  * then overwrite with the devup sheet.
  */
 const DEVUP_CSS_FILE_RE = /^devup-ui(-\d+)?\.css$/
-
-const SOURCE_DIR_CANDIDATES = ['src', 'app']
-
-/**
- * Source roots to scan, or an empty list when none of the conventional layouts
- * are present. Scanning the project root instead would sweep in config files
- * and other never-transformed modules, so callers skip the scan entirely rather
- * than guess.
- */
-function resolveSourceDirs(root: string): string[] {
-  return SOURCE_DIR_CANDIDATES.map((dir) => resolve(root, dir)).filter((dir) =>
-    existsSync(dir),
-  )
-}
 
 /**
  * Names each devup CSS module after its own file, so every module is emitted
@@ -239,6 +231,7 @@ export interface DevupUIPluginOptions {
   singleCss: boolean
   prefix?: string
   shorthands?: CustomShorthands
+  sourceDirs?: string | string[]
   /**
    * Atom-level route-aware hoisting threshold (min routes sharing an atom for
    * it to hoist into the shared devup-ui.css; clamped to >= 2; omit to disable).
@@ -258,26 +251,15 @@ export interface DevupUIPluginOptions {
 async function writeDataFiles(
   options: Omit<DevupUIPluginOptions, 'extractCss' | 'debug' | 'include'>,
 ) {
-  try {
-    const config = await loadDevupConfig(options.devupFile)
-    const theme = config.theme ?? {}
+  const config = await loadDevupConfig(options.devupFile)
+  const theme = config.theme ?? {}
 
-    registerTheme(theme)
-    const interfaceCode = getThemeInterface(
-      ...createThemeInterfaceArgs(options.package),
-    )
+  registerTheme(theme)
+  const interfaceCode = getThemeInterface(
+    ...createThemeInterfaceArgs(options.package),
+  )
 
-    if (interfaceCode) {
-      await writeFile(
-        join(options.distDir, 'theme.d.ts'),
-        interfaceCode,
-        'utf-8',
-      )
-    }
-  } catch (error) {
-    console.error(error)
-    registerTheme({})
-  }
+  await writeFile(join(options.distDir, 'theme.d.ts'), interfaceCode, 'utf-8')
   // Sequential: writing into cssDir concurrently with its own mkdir loses the
   // race on a cold start (no `df/`) and fails the build with ENOENT.
   if (!existsSync(options.cssDir)) {
@@ -292,16 +274,17 @@ export function DevupUI({
   package: libPackage = '@devup-ui/react',
   devupFile = 'devup.json',
   distDir = 'df',
-  cssDir = resolve(distDir, 'devup-ui'),
+  cssDir: configuredCssDir,
   extractCss = true,
   debug = false,
   include = [],
   singleCss = false,
   prefix,
   shorthands,
+  sourceDirs: configuredSourceDirs,
   atomHoist,
   importAliases: userImportAliases,
-}: Partial<DevupUIPluginOptions> = {}): PluginOption {
+}: Partial<DevupUIPluginOptions> = {}) {
   // A build starts from its own options: whatever an earlier build in this
   // process left in the engine (prefix, hoisting, routes, buckets, numbers,
   // styles) is gone unless another build is still running.
@@ -310,6 +293,20 @@ export function DevupUI({
   setDebug(debug)
   setPrefix(prefix ?? null)
   const importAliases = mergeImportAliases(userImportAliases)
+  const excludeModules = createNodeModulesExcludeRegex(include)
+  const pathOptions = { devupFile, distDir, cssDir: configuredCssDir }
+  let projectRoot = process.cwd()
+  let cssDir = configuredCssDir ?? join(distDir, 'devup-ui')
+  let pathsResolved = false
+  function resolveFallbackPaths() {
+    if (!pathsResolved) {
+      ;({ devupFile, distDir, cssDir } = resolveProjectPaths(
+        projectRoot,
+        pathOptions,
+      ))
+      pathsResolved = true
+    }
+  }
   const cssMap = new Map()
   let resolvedConfig: ResolvedConfig | undefined
   // Set by the client `generateBundle`, run by the late hook of the sibling
@@ -317,6 +314,22 @@ export function DevupUI({
   let restoreForwardedCss:
     ((outputBundle: ForwardableBundle) => void) | undefined
   let isServe = false
+  let isProduction = false
+  let seedWarningEmitted = false
+  const resolvers = new Map<string, ReturnType<typeof createModuleResolver>>()
+  function moduleResolver(conditions: readonly string[]) {
+    const key = JSON.stringify([projectRoot, conditions])
+    let resolver = resolvers.get(key)
+    if (!resolver) {
+      resolver = createModuleResolver({
+        cwd: projectRoot,
+        conditions,
+        toId: (path) => path.replaceAll('\\', '/'),
+      })
+      resolvers.set(key, resolver)
+    }
+    return resolver
+  }
   // The dev server watches cssDir, so every write is an update signal. A
   // module transformed again writes its sheet again, and the reload that
   // signal causes transforms it once more: signal only a changed sheet.
@@ -329,7 +342,68 @@ export function DevupUI({
     writtenCss.set(fileName, css)
     return stateWriter.write(join(cssDir, fileName), css, 'utf-8')
   }
-  const plugin: Plugin = {
+  const sourceTransform = {
+    async transform(code, id) {
+      if (!extractCss) return
+      resolveFallbackPaths()
+      const fileName = id.split('?')[0]
+      if (excludeModules.test(fileName)) return
+      const environmentConditions = this.environment?.config.resolve.conditions
+      if (environmentConditions) {
+        setModuleResolver(
+          moduleResolver(
+            ['import', ...environmentConditions].map((condition) =>
+              condition === 'development|production'
+                ? isProduction
+                  ? 'production'
+                  : 'development'
+                : condition,
+            ),
+          ),
+        )
+      }
+      let rel = relative(dirname(id), cssDir).replaceAll('\\', '/')
+      if (!rel.startsWith('./')) rel = `./${rel}`
+      const {
+        code: extractedCode,
+        css = '',
+        map,
+        cssFile,
+        updatedBaseStyle,
+        dependencies = [],
+      } = (() => {
+        try {
+          return codeExtract(
+            fileName,
+            code,
+            libPackage,
+            rel,
+            singleCss,
+            true,
+            false,
+            importAliases,
+          )
+        } catch (error) {
+          if (MDX_FILE_RE.test(fileName))
+            throw remapMdxError(error, fileName, this.getCombinedSourcemap())
+          throw error
+        }
+      })()
+      for (const dependency of dependencies) this.addWatchFile(dependency)
+      const promises: Promise<void>[] = []
+      if (updatedBaseStyle)
+        promises.push(writeCssFile('devup-ui.css', getCss(null, false)))
+      if (cssFile) {
+        const fileNum = getFileNumByFilename(cssFile)
+        const prevCss = cssMap.get(fileNum)
+        if (prevCss && prevCss.length < css.length) cssMap.set(fileNum, css)
+        if (css) promises.push(writeCssFile(basename(cssFile), css))
+      }
+      await Promise.all(promises)
+      return { code: extractedCode, map }
+    },
+  } satisfies Pick<Plugin, 'transform'>
+  const plugin = {
     name: 'devup-ui',
     // The WASM sheet and transform state are intentionally shared. Vite
     // otherwise recreates this plugin for every environment build, which makes
@@ -337,105 +411,157 @@ export function DevupUI({
     sharedDuringBuild: true,
     async configResolved(config) {
       resolvedConfig = config
-      isServe = config?.command === 'serve'
-      const projectRoot = config?.root ?? process.cwd()
-      // Vite ids are POSIX absolute paths
-      setModuleResolver(
-        createModuleResolver({
-          cwd: projectRoot,
-          toId: (path) => path.replaceAll('\\', '/'),
-        }),
-      )
-      const sourceDirs = resolveSourceDirs(projectRoot)
-      if (!existsSync(distDir)) await mkdir(distDir, { recursive: true })
-      await writeFile(join(distDir, '.gitignore'), '*', 'utf-8')
-      await writeFile(
-        join(distDir, 'compat.d.ts'),
-        createCompatTypes(importAliases),
-        'utf-8',
-      )
-      await writeDataFiles({
-        package: libPackage,
-        cssDir,
-        devupFile,
-        distDir,
-        singleCss,
-      })
+      try {
+        isServe = config?.command === 'serve'
+        isProduction = config?.isProduction ?? false
+        projectRoot = config?.root ?? process.cwd()
+        ;({ devupFile, distDir, cssDir } = resolveProjectPaths(
+          projectRoot,
+          pathOptions,
+        ))
+        pathsResolved = true
+        const conditions = [
+          'import',
+          ...(config?.build?.ssr
+            ? (config.ssr?.resolve?.conditions ?? [
+                'module',
+                'node',
+                'development|production',
+              ])
+            : (config?.resolve?.conditions ?? [
+                'module',
+                'browser',
+                'development|production',
+              ])),
+        ].map((condition) =>
+          condition === 'development|production'
+            ? config?.isProduction
+              ? 'production'
+              : 'development'
+            : condition,
+        )
+        // Vite ids are POSIX absolute paths
+        setModuleResolver(moduleResolver(conditions))
+        const sourceDirs = resolveSourceDirs(projectRoot, configuredSourceDirs)
+        const input =
+          config?.build?.rolldownOptions?.input ??
+          config?.build?.rollupOptions?.input ??
+          (config?.build?.lib && config.build.lib.entry)
+        const rawEntries =
+          typeof input === 'string'
+            ? [input]
+            : Array.isArray(input)
+              ? input
+              : input && typeof input === 'object'
+                ? Object.values(input)
+                : []
+        const entries = rawEntries
+          .filter((entry): entry is string => typeof entry === 'string')
+          .filter((entry) => GRAPH_SOURCE_FILE_RE.test(entry))
+          .map((entry) => resolve(projectRoot, entry))
+        const roots = [
+          ...new Set([
+            ...sourceDirs,
+            ...entries.map((entry) => dirname(entry)),
+          ]),
+        ]
+        if (!existsSync(distDir)) await mkdir(distDir, { recursive: true })
+        await writeFile(join(distDir, '.gitignore'), '*', 'utf-8')
+        await writeFile(
+          join(distDir, 'compat.d.ts'),
+          createCompatTypes(importAliases),
+          'utf-8',
+        )
+        await writeDataFiles({
+          package: libPackage,
+          cssDir,
+          devupFile,
+          distDir,
+          singleCss,
+        })
 
-      // Atom-level hoisting (opt-in via `atomHoist`). Configured BEFORE any
-      // transform so atoms receive global (shared) class names. Composes with
-      // single-importer collapse: both are keyed by the canonical bucket. Vite
-      // passes the ABSOLUTE module id to codeExtract, so the graph maps use
-      // absolute keys (keyBy: 'absolute') to match the engine's bucket keys.
-      const atomMode =
-        atomHoist !== undefined && Number.isFinite(atomHoist) && atomHoist > 0
-      if (atomMode) {
-        try {
-          const root = projectRoot
-          // App Router projects keep their sources in `app/`, so a hardcoded
-          // `src/` made the whole pre-pass a silent no-op for them.
-          const srcDir = sourceDirs[0] ?? resolve(root, 'src')
-          const tsconfigPath = resolve(root, 'tsconfig.json')
-          // C: prefer the bundler's real JS entries; fall back to the heuristic
-          // (files with no importer) when input is html-only / unavailable.
-          const input = config.build?.rollupOptions?.input
-          const rawEntries =
-            typeof input === 'string'
-              ? [input]
-              : Array.isArray(input)
-                ? input
-                : input && typeof input === 'object'
-                  ? Object.values(input)
-                  : []
-          const entries = rawEntries
-            .filter((e): e is string => typeof e === 'string')
-            .filter((e) => /\.(tsx|ts|jsx|js|mjs)$/i.test(e))
-            .map((e) => resolve(root, e))
+        // Atom-level hoisting (opt-in via `atomHoist`). Configured BEFORE any
+        // transform so atoms receive global (shared) class names. Composes with
+        // single-importer collapse: both are keyed by the canonical bucket. Vite
+        // passes the ABSOLUTE module id to codeExtract, so the graph maps use
+        // absolute keys (keyBy: 'absolute') to match the engine's bucket keys.
+        const atomMode =
+          atomHoist !== undefined && Number.isFinite(atomHoist) && atomHoist > 0
+        if (atomMode) {
+          try {
+            const root = projectRoot
+            // App Router projects keep their sources in `app/`, so a hardcoded
+            // `src/` made the whole pre-pass a silent no-op for them.
+            const srcDir = roots
+            const tsconfigPath = resolve(root, 'tsconfig.json')
+            const graph = buildStaticImportGraph(roots, tsconfigPath, {
+              cwd: root,
+              include,
+              conditions,
+            })
 
-          const canonicalMap = buildCanonicalMap({
-            srcDir,
-            tsconfigPath,
-            cwd: root,
-            keyBy: 'absolute',
-          })
-          importCanonicalMap(canonicalMap)
+            const canonicalMap = buildCanonicalMap({
+              srcDir,
+              tsconfigPath,
+              cwd: root,
+              keyBy: 'absolute',
+              graph,
+            })
+            importCanonicalMap(canonicalMap)
 
-          const fileReach = computeFileReach({
-            srcDir,
-            tsconfigPath,
-            cwd: root,
-            keyBy: 'absolute',
-            entries: entries.length > 0 ? entries : undefined,
-          })
-          const plan = planAtomHoist(canonicalMap, fileReach, atomHoist)
-          if (plan) {
-            importFileRoutes(plan.reachByBucket)
-            setAtomHoist(plan.threshold)
-          } else {
-            console.info(
-              '[devup-ui] atomHoist is set but fewer than 2 routes were detected; atom hoisting is a no-op (single-entry/SPA).',
+            const fileReach = computeFileReach({
+              srcDir,
+              tsconfigPath,
+              cwd: root,
+              keyBy: 'absolute',
+              graph,
+              entries: entries.length > 0 ? entries : undefined,
+            })
+            const plan = planAtomHoist(canonicalMap, fileReach, atomHoist)
+            if (plan) {
+              importFileRoutes(plan.reachByBucket)
+              setAtomHoist(plan.threshold)
+            } else {
+              console.info(
+                '[devup-ui] atomHoist is set but fewer than 2 routes were detected; atom hoisting is a no-op (single-entry/SPA).',
+              )
+            }
+          } catch (cause) {
+            throw new Error(
+              `[devup-ui] atom graph setup failed at ${projectRoot}: ${cause instanceof Error ? cause.message : String(cause)}`,
+              { cause },
             )
           }
-        } catch {
-          // Best-effort; on failure atom hoisting stays off (identity).
         }
-      }
-      try {
-        // Numbers come from the sorted paths of every file the build can
-        // extract (source and included packages), not from arrival order.
-        // Files numbered before keep their numbers, so a later pass in the
-        // dev server only numbers new files after the existing ones.
-        seedFileNumbers(
-          { seedFileMap },
-          collectNumberedFiles({
-            roots: sourceDirs,
-            include,
-            cwd: projectRoot,
-            needles: extractedNeedles(libPackage, importAliases),
-          }),
+        try {
+          // Numbers come from the sorted paths of every file the build can
+          // extract (source and included packages), not from arrival order.
+          // Files numbered before keep their numbers, so a later pass in the
+          // dev server only numbers new files after the existing ones.
+          seedFileNumbers(
+            { seedFileMap },
+            collectNumberedFiles({
+              roots,
+              include,
+              cwd: projectRoot,
+              needles: extractedNeedles(libPackage, importAliases),
+            }),
+          )
+        } catch (cause) {
+          if (!seedWarningEmitted) {
+            seedWarningEmitted = true
+            console.warn(
+              '[devup-ui] deterministic file seeding failed; class IDs now depend on module arrival order',
+              { phase: 'seed', root: projectRoot, cause },
+            )
+          }
+        }
+      } catch (cause) {
+        endBuild()
+        throw new Error(
+          `[devup-ui] setup failed at ${projectRoot}: ${cause instanceof Error ? cause.message : String(cause)}`,
+          { cause },
         )
-      } catch {
-        // Best-effort; on failure numbering falls back to arrival order.
       }
     },
     config(this: { meta?: ConfigHookMeta } | void, userConfig: UserConfig) {
@@ -466,10 +592,11 @@ export function DevupUI({
     apply() {
       return true
     },
-    closeBundle() {
+    closeBundle(this: void) {
       endBuild()
     },
-    async watchChange(id) {
+    async watchChange(this: void, id) {
+      resolveFallbackPaths()
       if (resolve(id) === resolve(devupFile) && existsSync(devupFile)) {
         try {
           await writeDataFiles({
@@ -480,13 +607,14 @@ export function DevupUI({
             singleCss,
           })
         } catch (error) {
-          console.error(error)
+          console.error(`[devup-ui] theme update failed at ${devupFile}`, error)
         }
       }
     },
     // Runs once per environment. Vite 6+ ignores `handleHotUpdate` on a plugin
     // that defines this hook, so the devup.json reload lives here as well.
     async hotUpdate({ file, modules, timestamp }) {
+      resolveFallbackPaths()
       const { environment } = this
       if (environment.config.consumer === 'server') {
         // A module runner cannot apply CSS, so Vite answers a sheet change
@@ -525,6 +653,7 @@ export function DevupUI({
     },
     // Vite 5 fallback: Vite 6+ does not call this hook when `hotUpdate` exists.
     async handleHotUpdate({ file, server, modules, timestamp }) {
+      resolveFallbackPaths()
       if (resolve(file) !== resolve(devupFile) || !existsSync(devupFile)) {
         return
       }
@@ -550,6 +679,7 @@ export function DevupUI({
       return []
     },
     resolveId(id, importer) {
+      resolveFallbackPaths()
       const fileName = basename(id).split('?')[0]
       if (
         DEVUP_CSS_FILE_RE.test(fileName) &&
@@ -580,56 +710,11 @@ export function DevupUI({
       }
     },
     enforce: 'pre',
-    async transform(code, id) {
-      if (!extractCss) return
-
-      const fileName = id.split('?')[0]
-      if (!/\.(tsx|ts|js|mjs|jsx)$/i.test(fileName)) return
-      if (createNodeModulesExcludeRegex(include).test(fileName)) {
-        return
-      }
-
-      let rel = relative(dirname(id), cssDir).replaceAll('\\', '/')
-      if (!rel.startsWith('./')) rel = `./${rel}`
-
-      const {
-        code: extractedCode,
-        css = '',
-        map,
-        cssFile,
-        updatedBaseStyle,
-        dependencies = [],
-        // import main css in code
-      } = codeExtract(
-        fileName,
-        code,
-        libPackage,
-        rel,
-        singleCss,
-        true,
-        false,
-        importAliases,
-      )
-      for (const dependency of dependencies) this.addWatchFile(dependency)
-      const promises: Promise<void>[] = []
-
-      if (updatedBaseStyle) {
-        // update base style
-        promises.push(writeCssFile('devup-ui.css', getCss(null, false)))
-      }
-
-      if (cssFile) {
-        const fileNum = getFileNumByFilename(cssFile)
-        const prevCss = cssMap.get(fileNum)
-        if (prevCss && prevCss.length < css.length) cssMap.set(fileNum, css)
-        // `css` is only set when this transform added styles to the sheet.
-        if (css) promises.push(writeCssFile(basename(cssFile), css))
-      }
-      await Promise.all(promises)
-      return {
-        code: extractedCode,
-        map,
-      }
+    transform: {
+      async handler(code, id) {
+        if (!SOURCE_FILE_RE.test(id.split('?')[0])) return
+        return sourceTransform.transform.call(this, code, id)
+      },
     },
     async generateBundle(_options, bundle) {
       if (!extractCss) return
@@ -666,7 +751,7 @@ export function DevupUI({
         }
       }
     },
-  }
+  } satisfies Plugin
   const restorePlugin: Plugin = {
     name: 'devup-ui:restore-forwarded-css',
     sharedDuringBuild: true,
@@ -679,5 +764,19 @@ export function DevupUI({
       },
     },
   }
-  return [plugin, restorePlugin]
+  const mdxPlugin = {
+    name: 'devup-ui:mdx',
+    enforce: 'post',
+    sharedDuringBuild: true,
+    async transform(code, id) {
+      if (!MDX_FILE_RE.test(id.split('?')[0])) return
+      return sourceTransform.transform.call(this, code, id)
+    },
+  } satisfies Plugin
+  const plugins: [typeof plugin, typeof restorePlugin, typeof mdxPlugin] = [
+    plugin,
+    restorePlugin,
+    mdxPlugin,
+  ]
+  return plugins
 }
