@@ -71,8 +71,8 @@ describe('planSources', () => {
       'pages/about.tsx',
       'src/pages/x.tsx',
     ])
-    expect(plan.expectedBaseFiles).toEqual([])
-    expect(plan.graph?.files).toHaveLength(1)
+    expect(plan.expectedBaseFiles).toEqual(['app/page.tsx', 'pages/about.tsx'])
+    expect(plan.graph?.files).toHaveLength(3)
   })
 
   it('plans atom hoisting when two routes exist', () => {

@@ -129,6 +129,22 @@ describe('createAppContext', () => {
     ).toBe(false)
   })
 
+  it('captures page extensions independently of later config mutation', () => {
+    // Given
+    process.chdir(makeProject())
+    const pageExtensions = ['page.tsx', 'mts']
+    const config = { pageExtensions }
+    const baseline = createAppContext({}, {})
+    // When
+    const context = createAppContext(config, {})
+    pageExtensions.push('tsx')
+    // Then
+    expect(context.pageExtensions).toEqual(['page.tsx', 'mts'])
+    expect(Object.isFrozen(context.pageExtensions)).toBe(true)
+    expect(context.appKey).not.toBe(baseline.appKey)
+    expect(baseline.pageExtensions).toEqual(['jsx', 'js', 'tsx', 'ts'])
+  })
+
   it.each([
     [2, 2],
     [0, undefined],

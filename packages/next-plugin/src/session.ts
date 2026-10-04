@@ -32,6 +32,8 @@ export interface AppOptionsInput {
 /** What `next.config` says about the build, independent of the options. */
 export interface AppConfigInput {
   productionBrowserSourceMaps?: boolean
+  readonly pageExtensions?: readonly string[]
+  readonly distDir?: string
 }
 
 /**
@@ -46,6 +48,7 @@ export interface AppContext {
   readonly watch: boolean
   readonly libPackage: string
   readonly distDir: string
+  readonly nextDistDir: string
   readonly cssDir: string
   readonly devupFile: string
   readonly singleCss: boolean
@@ -57,6 +60,7 @@ export interface AppContext {
   readonly hoistV: number | undefined
   readonly prewarmAll: boolean
   readonly sourceMap: boolean
+  readonly pageExtensions: readonly string[]
   readonly importAliases: Readonly<WasmImportAliases>
   readonly sourceRoots: readonly string[]
   readonly appKey: string
@@ -110,6 +114,7 @@ export function createAppContext(
     watch,
     libPackage: options.package ?? '@devup-ui/react',
     distDir,
+    nextDistDir: resolve(root, config.distDir ?? '.next'),
     cssDir: resolve(root, options.cssDir ?? join(distDir, 'devup-ui')),
     devupFile: resolve(root, options.devupFile ?? 'devup.json'),
     singleCss: options.singleCss ?? false,
@@ -124,6 +129,9 @@ export function createAppContext(
         : undefined,
     prewarmAll: options.prewarmAll ?? false,
     sourceMap: watch || config.productionBrowserSourceMaps === true,
+    pageExtensions: Object.freeze([
+      ...(config.pageExtensions ?? ['jsx', 'js', 'tsx', 'ts']),
+    ]),
     importAliases: Object.freeze(mergeImportAliases(options.importAliases)),
     sourceRoots: Object.freeze(
       SOURCE_DIRECTORIES.map((dir) => resolve(root, dir)),

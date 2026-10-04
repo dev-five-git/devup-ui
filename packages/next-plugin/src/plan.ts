@@ -1,17 +1,18 @@
-import { join, relative } from 'node:path'
+import { join, relative, resolve } from 'node:path'
 
 import {
   buildCanonicalMap,
   buildStaticImportGraph,
   collectNumberedFiles,
-  computeCompiledFiles,
   computeFileRoutes,
+  computeReachableFiles,
   extractedNeedles,
   planAtomHoist,
   type StaticImportGraph,
 } from '@devup-ui/plugin-utils'
 
 import { locatedError } from './build-error'
+import { collectNextEntries } from './entries'
 import { elapsedMs, profileStart, reportProfile } from './profile'
 import type { AppContext } from './session'
 
@@ -77,14 +78,15 @@ export function recoverPlanning<T>({
   }
 }
 
-function planRoutes(context: AppContext): RoutePlan {
+/** Plan a shared graph; prepared compiler inputs can use this same seam later. */
+export function planSourceGraph(
+  context: AppContext,
+  graph: StaticImportGraph,
+): RoutePlan {
   const startedAt = profileStart()
-  const srcDir = join(context.root, 'src')
+  const srcDir = [...context.sourceRoots, context.root]
   const tsconfigPath = join(context.root, 'tsconfig.json')
   const cwd = context.root
-  // Root-level `app/` and `pages/` routes join the graph here once
-  // buildStaticImportGraph accepts a project root (fix/plugin-core).
-  const graph = buildStaticImportGraph(srcDir, tsconfigPath)
   const canonicalMap = buildCanonicalMap({
     srcDir,
     tsconfigPath,
@@ -96,12 +98,18 @@ function planRoutes(context: AppContext): RoutePlan {
   })
   // Includes files only a dynamic import() reaches: the base sheet must wait
   // for them too.
-  const expectedBaseFiles = computeCompiledFiles({
+  const expectedBaseFiles = computeReachableFiles({
     srcDir,
     tsconfigPath,
-    cwd,
+    entries: collectNextEntries({
+      root: cwd,
+      files: graph.files,
+      pageExtensions: context.pageExtensions,
+    }),
     graph,
   })
+    .map((file) => relative(cwd, file).replaceAll('\\', '/'))
+    .sort()
   const hoist =
     context.atomHoist === undefined
       ? null
@@ -131,6 +139,7 @@ function planRoutes(context: AppContext): RoutePlan {
 
 /** Plan the graph, the canonical buckets, atom hoisting and the numbering. */
 export function planSources(context: AppContext): SourcePlan {
+  const exclude = ['.git', context.nextDistDir, context.distDir]
   const routes = recoverPlanning({
     context,
     file: join(context.root, 'src'),
@@ -139,7 +148,19 @@ export function planSources(context: AppContext): SourcePlan {
     needs: 'readable source files and a parseable tsconfig.json',
     lost: 'single-importer collapse, atom hoisting and the deterministic completion set',
     fallback: UNPLANNED,
-    work: () => planRoutes(context),
+    work: () =>
+      planSourceGraph(
+        context,
+        buildStaticImportGraph(
+          [...context.sourceRoots, context.root],
+          join(context.root, 'tsconfig.json'),
+          {
+            cwd: context.root,
+            include: context.include,
+            exclude,
+          },
+        ),
+      ),
   })
   const seedFiles = recoverPlanning({
     context,
@@ -151,12 +172,18 @@ export function planSources(context: AppContext): SourcePlan {
     fallback: [],
     work: () =>
       collectNumberedFiles({
-        roots: [...context.sourceRoots],
+        roots: [...context.sourceRoots, context.root],
         include: [...context.include],
         cwd: context.root,
+        exclude,
         needles: extractedNeedles(context.libPackage, context.importAliases),
         toId: (path) => relative(context.root, path).replaceAll('\\', '/'),
-      }),
+      }).filter(
+        (file) =>
+          !routes.graph ||
+          routes.graph.fileSet.has(resolve(context.root, file)) ||
+          file.split('/').includes('node_modules'),
+      ),
   })
   return { ...routes, seedFiles }
 }
