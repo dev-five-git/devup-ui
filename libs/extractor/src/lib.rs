@@ -5,6 +5,8 @@ mod component;
 mod composition;
 mod css_prop;
 mod css_utils;
+#[cfg(test)]
+mod diagnostics_tests;
 pub mod extract_style;
 mod extractor;
 mod gen_class_name;
@@ -12,6 +14,7 @@ mod gen_style;
 mod import_alias_visit;
 mod imported_constants;
 mod module_loader;
+pub mod module_reference;
 mod mutations;
 mod prop_modify_utils;
 mod prop_valid;
@@ -434,7 +437,11 @@ fn extract_source(
 
     let code_to_parse = processed_code.as_deref().unwrap_or(&transformed_code);
 
-    let source_type = SourceType::from_path(filename)?;
+    let source_type = SourceType::from_path(filename).map_err(|error| {
+        format!(
+            "{filename}:1:1: {error}. Fix: use a supported JavaScript or TypeScript file extension"
+        )
+    })?;
     let (bucket, global, css_file) = resolve_css_target(filename, &option);
     let import_main = option.import_main_css && !global;
     // Presize to the exact final length (1 target + optional main-css entry) and
@@ -450,10 +457,30 @@ fn extract_source(
     let ParserReturn {
         mut program, // AST
         fatal_error, // Parser encountered an error it couldn't recover from
+        diagnostics,
         ..
     } = Parser::new(&allocator, code_to_parse, source_type).parse();
     if fatal_error {
-        return Err("Parser panicked".into());
+        let (source, earlier_edits) = evaluated.unwrap_or((code, &[]));
+        let edits: Vec<&[import_alias_visit::Edit]> = std::iter::once(alias_edits.as_slice())
+            .chain(earlier_edits.iter().copied())
+            .collect();
+        let errors = diagnostics
+            .iter()
+            .take(1)
+            .map(|error| {
+                (
+                    error
+                        .labels
+                        .first()
+                        .map_or(0, oxc_span::LabeledSpan::offset),
+                    format!(
+                        "Cannot parse source: {error}. Fix: correct the syntax at this location"
+                    ),
+                )
+            })
+            .collect();
+        return Err(located_errors(filename, source, &edits, errors).into());
     }
     let inlined = if processed_code.is_none() {
         imported_constants::inline_constants(
@@ -622,12 +649,23 @@ fn located_errors(
 /// `filename:line:column` of `offset` in `source`
 fn locate(filename: &str, source: &str, offset: usize) -> String {
     let before = source.get(..offset).unwrap_or(source);
-    let line_start = before.rfind('\n').map_or(0, |index| index + 1);
-    format!(
-        "{filename}:{}:{}",
-        before.matches('\n').count() + 1,
-        before[line_start..].chars().count() + 1
-    )
+    let (mut line, mut column) = (1, 1);
+    let mut characters = before.chars().peekable();
+    while let Some(character) = characters.next() {
+        match character {
+            '\r' => {
+                characters.next_if_eq(&'\n');
+                line += 1;
+                column = 1;
+            }
+            '\n' | '\u{2028}' | '\u{2029}' => {
+                line += 1;
+                column = 1;
+            }
+            _ => column += 1,
+        }
+    }
+    format!("{filename}:{line}:{column}")
 }
 
 /// A line for each binding `message` names that code changes, telling where
@@ -4863,7 +4901,7 @@ import clsx from 'clsx'
             )
             .unwrap_err()
             .to_string()
-            .starts_with("Unknown file extension")
+            .starts_with("test.wrong:1:1: Unknown file extension")
         );
 
         reset_class_map();
@@ -4882,7 +4920,7 @@ import clsx from 'clsx'
             )
             .unwrap_err()
             .to_string(),
-            "Parser panicked"
+            "test.tsx:1:11: Cannot parse source: Expected `from` but found `string`. Fix: correct the syntax at this location"
         );
     }
 
