@@ -37,8 +37,13 @@ fn style_names_cannot_overwrite_pending_placeholder_entries() -> Result<(), Stri
     )?;
 
     assert_eq!(collected.styles.len(), 2);
-    assert_eq!(collected.styles["__style_1__"].json, "{\"color\":\"red\"}");
-    assert_eq!(collected.styles["second"].json, "{\"color\":\"blue\"}");
+    let code = crate::vanilla_extract::collected_styles_to_code_with_keyframes(
+        &collected,
+        "@devup-ui/react",
+        &Default::default(),
+    );
+    assert!(code.contains("export const __style_1__ = css({\"color\":\"red\"})"));
+    assert!(code.contains("export const second = css({\"color\":\"blue\"})"));
     Ok(())
 }
 

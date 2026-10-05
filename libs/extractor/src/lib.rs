@@ -299,6 +299,12 @@ fn extract_with_source_map(
     resolver: Option<&ModuleResolver>,
 ) -> Result<ExtractOutput, Box<dyn Error>> {
     extract_source(filename, code, None, false, option, source_map, resolver)
+        .map(|result| result.output)
+}
+
+struct ExtractedProducer {
+    output: ExtractOutput,
+    atoms: vanilla_extract::producer_atoms::ProducerAtoms,
 }
 
 /// `evaluated` is the source `code` was computed from, with the layers of
@@ -312,7 +318,7 @@ fn extract_source(
     option: ExtractOption,
     source_map: bool,
     resolver: Option<&ModuleResolver>,
-) -> Result<ExtractOutput, Box<dyn Error>> {
+) -> Result<ExtractedProducer, Box<dyn Error>> {
     if evaluated.is_none() {
         match barrel::rewrite(code, filename, &option.package, resolver) {
             barrel::Barreled::Unchanged => {}
@@ -330,9 +336,9 @@ fn extract_source(
                     resolver,
                 )?;
                 let mut files: std::collections::BTreeSet<String> =
-                    output.dependencies.into_iter().collect();
+                    output.output.dependencies.into_iter().collect();
                 files.extend(barreled.dependencies);
-                output.dependencies = files.into_iter().collect();
+                output.output.dependencies = files.into_iter().collect();
                 return Ok(output);
             }
         }
@@ -355,12 +361,15 @@ fn extract_source(
     // gives an element a `css` prop, or had an import rewritten
     let has_relevant_import = transformed_code.contains(option.package.as_str())
         || transformed_code.contains(STYLEX_PACKAGE);
-    let unchanged = || ExtractOutput {
-        styles: FxHashSet::default(),
-        code: code.to_string(),
-        map: None,
-        css_file: None,
-        dependencies: Vec::new(),
+    let unchanged = || ExtractedProducer {
+        output: ExtractOutput {
+            styles: FxHashSet::default(),
+            code: code.to_string(),
+            map: None,
+            css_file: None,
+            dependencies: Vec::new(),
+        },
+        atoms: Default::default(),
     };
 
     if !has_relevant_import && css_prop == css_prop::CssProp::Off && alias_edits.is_empty() {
@@ -369,6 +378,7 @@ fn extract_source(
     }
 
     let mut dependencies = std::collections::BTreeSet::new();
+    let mut producer_atoms = vanilla_extract::producer_atoms::ProducerAtoms::default();
     if utils::is_vanilla_extract_file(filename)
         && !values_run
         && stylesheet_policy::imports_plain(&transformed_code, filename, &option, resolver)
@@ -414,9 +424,9 @@ fn extract_source(
             resolver,
         )?;
         let mut files: std::collections::BTreeSet<String> =
-            output.dependencies.into_iter().collect();
+            output.output.dependencies.into_iter().collect();
         files.extend(read);
-        output.dependencies = files.into_iter().collect();
+        output.output.dependencies = files.into_iter().collect();
         return Ok(output);
     }
     // Step 3: Handle vanilla-extract style files (.css.ts, .css.js)
@@ -443,6 +453,7 @@ fn extract_source(
         ) {
             Ok((collected, imports)) => {
                 dependencies = imports.dependencies;
+                producer_atoms = imports.atoms;
                 // Keyframes names are generated, so extract the referenced ones
                 // first and substitute their names into the styles using them.
                 let referenced = vanilla_extract::referenced_keyframes(&collected);
@@ -465,9 +476,7 @@ fn extract_source(
                     &option.package,
                     &keyframes_names,
                 );
-                Some(if code.is_empty() {
-                    code
-                } else {
+                Some({
                     imports
                         .kept_imports
                         .iter()
@@ -485,12 +494,15 @@ fn extract_source(
     };
     // For vanilla-extract files, if no styles were collected, return early
     if processed_code.as_deref() == Some("") {
-        return Ok(ExtractOutput {
-            styles: FxHashSet::default(),
-            code: code.to_string(),
-            map: None,
-            css_file: None,
-            dependencies: dependencies.into_iter().collect(),
+        return Ok(ExtractedProducer {
+            output: ExtractOutput {
+                styles: FxHashSet::default(),
+                code: String::new(),
+                map: None,
+                css_file: None,
+                dependencies: dependencies.into_iter().collect(),
+            },
+            atoms: producer_atoms,
         });
     }
 
@@ -578,6 +590,12 @@ fn extract_source(
     );
     visitor.import_stylex(inlined.stylex_vars, inlined.stylex_themes);
     visitor.import_css(inlined.css_styles);
+    visitor.import_producer_atoms(producer_atoms.clone());
+    visitor.style_operand_mode = if processed_code.is_some() {
+        vanilla_extract::StyleOperandMode::Ordered
+    } else {
+        vanilla_extract::StyleOperandMode::Merged
+    };
     visitor.unknown_bindings(&inlined.unknown);
     visitor.changed_bindings(inlined.changed.clone());
     visitor.takes_css_prop(css_prop);
@@ -634,9 +652,9 @@ fn extract_source(
             resolver,
         )?;
         let mut files: std::collections::BTreeSet<String> =
-            output.dependencies.into_iter().collect();
+            output.output.dependencies.into_iter().collect();
         files.extend(read);
-        output.dependencies = files.into_iter().collect();
+        output.output.dependencies = files.into_iter().collect();
         return Ok(output);
     }
     let (source, earlier_edits) = evaluated.unwrap_or((code, &[]));
@@ -668,12 +686,20 @@ fn extract_source(
         .to_json_string()
     });
 
-    Ok(ExtractOutput {
-        styles: visitor.styles,
-        code: result.code,
-        map,
-        css_file: Some(css_file),
-        dependencies: dependencies.into_iter().collect(),
+    let (scope, global, _) = resolve_css_target(filename, &option);
+    producer_atoms.merge(vanilla_extract::producer_atoms::ProducerAtoms::from_styles(
+        &visitor.styles,
+        if global { None } else { Some(scope.as_str()) },
+    ));
+    Ok(ExtractedProducer {
+        output: ExtractOutput {
+            styles: visitor.styles,
+            code: result.code,
+            map,
+            css_file: Some(css_file),
+            dependencies: dependencies.into_iter().collect(),
+        },
+        atoms: producer_atoms,
     })
 }
 

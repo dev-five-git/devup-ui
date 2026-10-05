@@ -219,6 +219,7 @@ pub enum KnownStyles<'a> {
 /// A side of a condition among the parts of `css(...)`
 pub enum KnownSide<'a> {
     Styles(Vec<KnownStyles<'a>>),
+    Mixed(Vec<KnownStyles<'a>>, Expression<'a>),
     /// A class the build does not know the styles of
     Class(Expression<'a>),
     Empty,

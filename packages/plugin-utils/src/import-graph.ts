@@ -931,7 +931,7 @@ function resolveImport(
   }
 
   for (const candidateBase of candidateBases) {
-    const resolvedFile = resolveFile(candidateBase)
+    const resolvedFile = resolveSourceFile(candidateBase)
     if (!resolvedFile) continue
     if (!context.files.has(resolvedFile)) continue
     if (!isInsideDir(context.srcDir, resolvedFile)) continue
@@ -992,7 +992,7 @@ export function createModuleResolver({
 
 const sourceExtensions = [...jsExtensions, '.cjs']
 
-/** `resolveFile`, also completing a name like `theme.css` to `theme.css.ts`. */
+/** Resolve script sources, completing a name like `theme.css` to `theme.css.ts`. */
 function resolveSourceFile(base: string): string | undefined {
   const candidates = sourceExtensions.includes(extname(base))
     ? [base]
@@ -1112,25 +1112,6 @@ function resolveAliasCandidates(
     }
   }
   return candidates
-}
-
-function resolveFile(candidateBase: string): string | undefined {
-  const ext = extname(candidateBase)
-  if (ext) {
-    if (!jsExtensions.includes(ext)) return undefined
-    return isFile(candidateBase) ? resolve(candidateBase) : undefined
-  }
-
-  for (const jsExtension of jsExtensions) {
-    const candidate = `${candidateBase}${jsExtension}`
-    if (isFile(candidate)) return resolve(candidate)
-  }
-  for (const jsExtension of jsExtensions) {
-    const candidate = join(candidateBase, `index${jsExtension}`)
-    if (isFile(candidate)) return resolve(candidate)
-  }
-
-  return undefined
 }
 
 function isFile(path: string): boolean {

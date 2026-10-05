@@ -15,6 +15,10 @@ use rustc_hash::{FxHashMap, FxHashSet};
 
 use crate::ExtractStyleValue;
 
+#[cfg(test)]
+#[path = "style_values/producer_tests.rs"]
+mod producer_tests;
+
 /// The name a style API call gives
 pub enum StyleValue {
     /// A class `css()` gives: in CSS text it is a mixin, composed rather than
@@ -35,6 +39,7 @@ pub struct StyleValues {
     values: FxHashMap<SymbolId, StyleValue>,
     /// The styles behind `css()` classes the file imports, by binding
     imported: FxHashMap<String, Vec<ExtractStyleValue>>,
+    producer_atoms: crate::vanilla_extract::producer_atoms::ProducerAtoms,
 }
 
 impl StyleValues {
@@ -45,11 +50,38 @@ impl StyleValues {
             scoping: Some(scoping),
             values: FxHashMap::default(),
             imported: FxHashMap::default(),
+            producer_atoms: Default::default(),
         }
     }
 
     pub fn import(&mut self, imported: FxHashMap<String, Vec<ExtractStyleValue>>) {
         self.imported = imported;
+    }
+
+    pub(crate) fn import_producer_atoms(
+        &mut self,
+        atoms: crate::vanilla_extract::producer_atoms::ProducerAtoms,
+    ) {
+        self.producer_atoms = atoms;
+    }
+
+    pub(crate) fn literal_parts(&self, literal: &str) -> Option<(Vec<ExtractStyleValue>, String)> {
+        if !self.has_literal_styles(literal) {
+            return None;
+        }
+        let mut values = Vec::new();
+        let mut residual = Vec::new();
+        for token in literal.split_whitespace() {
+            match self.producer_atoms.get(token) {
+                Some(atoms) => values.extend_from_slice(atoms),
+                None => residual.push(token),
+            }
+        }
+        Some((values, residual.join(" ")))
+    }
+
+    pub(crate) fn has_literal_styles(&self, literal: &str) -> bool {
+        self.producer_atoms.contains_literal(literal)
     }
 
     /// The `const` `id` binds, whose value no code changes

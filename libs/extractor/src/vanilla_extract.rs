@@ -22,7 +22,6 @@ use oxc_semantic::SemanticBuilder;
 use oxc_span::{GetSpan, SourceType};
 use oxc_transformer::{TransformOptions, Transformer};
 use rustc_hash::{FxHashMap, FxHashSet};
-use smallvec::SmallVec;
 use std::cell::RefCell;
 use std::collections::BTreeSet;
 use std::path::{Path, PathBuf};
@@ -33,6 +32,9 @@ mod serialization;
 use serialization::value_to_code;
 
 mod contracts;
+mod operands;
+pub(crate) use operands::StyleOperandMode;
+pub(crate) mod producer_atoms;
 mod token_walk;
 mod vars;
 use contracts::{assign_vars, assign_vars_api, create_global_theme_contract};
@@ -46,10 +48,7 @@ pub struct StyleEntry {
     pub json: String,
     /// Whether the variable holding it is exported
     pub exported: bool,
-    /// Styles composed before this one: placeholders, names once named
-    pub bases: SmallVec<[String; 2]>,
-    /// Class names composed as they are
-    pub classes: SmallVec<[String; 1]>,
+    pub(crate) operands: Vec<operands::StyleOperand>,
 }
 
 /// What a vanilla-extract stylesheet defines
@@ -91,6 +90,7 @@ struct Collector {
     file_num: usize,
     placeholders: usize,
     identifiers: usize,
+    imported_atoms: Rc<producer_atoms::ProducerAtoms>,
 }
 
 type StyleCollector = Rc<RefCell<Collector>>;
@@ -236,6 +236,7 @@ pub struct StylesheetImports {
     /// Imports its output keeps: side-effect imports and the stylesheets it
     /// imports, which emit their own styles
     pub kept_imports: Vec<String>,
+    pub(crate) atoms: producer_atoms::ProducerAtoms,
 }
 
 #[cfg(test)]
@@ -302,6 +303,7 @@ pub(crate) fn execute_located(
     let imports = StylesheetImports {
         dependencies: std::mem::take(&mut loader.dependencies),
         kept_imports: std::mem::take(&mut loader.kept_imports),
+        atoms: std::mem::take(&mut loader.imported_atoms),
     };
     let imported = crate::module_loader::evaluating_import();
     if imported
@@ -317,6 +319,7 @@ pub(crate) fn execute_located(
     }
     let collector: StyleCollector = Rc::new(RefCell::new(Collector {
         file_num,
+        imported_atoms: Rc::new(imports.atoms.clone()),
         ..Collector::default()
     }));
     let mut context = Context::default();
@@ -555,8 +558,10 @@ fn name_entries(
     ordered.sort_by_key(|(id, _)| placeholder_index(id));
     for (id, name) in ordered {
         let reference = if let Some(mut entry) = styles.remove(id) {
-            for base in &mut entry.bases {
-                if let Some(base_name) = names.get(base.as_str()) {
+            for operand in &mut entry.operands {
+                if let operands::StyleOperand::Base(base) = operand
+                    && let Some(base_name) = names.get(base.as_str())
+                {
                     base_name.clone_into(base);
                 }
             }
@@ -770,9 +775,8 @@ fn register_style(
     context: &mut Context,
 ) -> JsResult<String> {
     let mut entry = StyleEntry::default();
-    let mut rules = Vec::new();
-    compose(rule, &mut entry, &mut rules, context)?;
-    entry.json = format!("{{{}}}", rules.join(","));
+    let atoms = Rc::clone(&collector.borrow().imported_atoms);
+    operands::compose(rule, &mut entry, &atoms, context)?;
     let mut collector = collector.borrow_mut();
     let id = collector.placeholder();
     collector.styles.styles.insert(id.clone(), entry);
@@ -781,36 +785,6 @@ fn register_style(
 
 fn is_placeholder(token: &str) -> bool {
     token.starts_with("__style_") && token.ends_with("__")
-}
-
-/// Sort a composition list into the styles and classes it composes and the
-/// inner JSON of its rules
-fn compose(
-    value: &JsValue,
-    entry: &mut StyleEntry,
-    rules: &mut Vec<String>,
-    context: &mut Context,
-) -> JsResult<()> {
-    if let Some(items) = array_items(value, context)? {
-        for item in &items {
-            compose(item, entry, rules, context)?;
-        }
-    } else if let Some(classes) = js_str(value) {
-        for class in classes.split_whitespace() {
-            if is_placeholder(class) {
-                entry.bases.push(class.to_string());
-            } else {
-                entry.classes.push(class.to_string());
-            }
-        }
-    } else if value.is_object() {
-        let json = style_to_json(value, context)?;
-        let inner = inner_json(&json);
-        if !inner.is_empty() {
-            rules.push(inner.to_string());
-        }
-    }
-    Ok(())
 }
 
 fn global_style(
@@ -1044,7 +1018,9 @@ fn create_theme_contract(
 /// `tokens` without its `@layer`, and the layer it names
 fn split_layer(tokens: &JsValue, context: &mut Context) -> JsResult<(JsValue, Option<String>)> {
     let Some(object) = tokens.as_object() else {
-        return Ok((tokens.clone(), None));
+        return Err(boa_engine::JsNativeError::typ()
+            .with_message("Theme tokens must be an object. Fix: supply a token object or a contract with matching token values")
+            .into());
     };
     if !object.has_property(js_string!("@layer"), context)? {
         return Ok((tokens.clone(), None));
@@ -1202,8 +1178,13 @@ impl CollectedStyles {
     fn texts(&self) -> impl Iterator<Item = &str> {
         self.styles
             .values()
-            .chain(self.keyframes.values())
-            .map(|entry| entry.json.as_str())
+            .flat_map(|entry| {
+                entry.operands.iter().filter_map(|operand| match operand {
+                    operands::StyleOperand::Rules(json) => Some(json.as_str()),
+                    operands::StyleOperand::Base(_) | operands::StyleOperand::Classes(_) => None,
+                })
+            })
+            .chain(self.keyframes.values().map(|entry| entry.json.as_str()))
             .chain(
                 self.global_styles
                     .iter()
@@ -1282,27 +1263,6 @@ fn inner_json(json: &str) -> &str {
         .trim()
 }
 
-/// Styles `entry` composes, transitively and in order; a style composed again
-/// later is listed again, as its declarations then win. `composing` holds the
-/// styles being expanded, so a style composing itself stops.
-fn collect_bases<'a>(
-    collected: &'a CollectedStyles,
-    entry: &'a StyleEntry,
-    composing: &mut Vec<&'a str>,
-    bases: &mut Vec<(&'a str, &'a StyleEntry)>,
-) {
-    for base in &entry.bases {
-        if !composing.contains(&base.as_str())
-            && let Some(base_entry) = collected.styles.get(base)
-        {
-            composing.push(base);
-            collect_bases(collected, base_entry, composing, bases);
-            composing.pop();
-            bases.push((base.as_str(), base_entry));
-        }
-    }
-}
-
 /// `css(...)` of the style `name` composed onto its bases, plus the classes it
 /// composes and the unique classes that let selectors target them
 fn composed_css(
@@ -1312,45 +1272,7 @@ fn composed_css(
     name: &str,
     entry: &StyleEntry,
 ) -> String {
-    let mut composing = vec![name];
-    let mut bases = Vec::new();
-    collect_bases(collected, entry, &mut composing, &mut bases);
-
-    // One argument per style: `css()` merges them, a later declaration
-    // replacing an earlier one, which one object holding both would not do
-    let mut rules = Vec::with_capacity(bases.len() + 1);
-    let mut all_classes: Vec<&str> = Vec::new();
-    for (base_name, base) in &bases {
-        let json = collected.resolve_json(&base.json, keyframes_names);
-        if !inner_json(&json).is_empty() {
-            rules.push(json);
-        }
-        all_classes.extend(base.classes.iter().map(String::as_str));
-        all_classes.extend(referenced_classes.get(base_name).copied());
-    }
-    all_classes.extend(entry.classes.iter().map(String::as_str));
-    all_classes.extend(referenced_classes.get(name).copied());
-    let mut classes: Vec<&str> = Vec::with_capacity(all_classes.len());
-    for class in all_classes {
-        if !classes.contains(&class) {
-            classes.push(class);
-        }
-    }
-
-    let own = collected.resolve_json(&entry.json, keyframes_names);
-    let css = if bases.is_empty() {
-        format!("css({own})")
-    } else {
-        if !inner_json(&own).is_empty() {
-            rules.push(own);
-        }
-        format!("css({})", rules.join(", "))
-    };
-    if classes.is_empty() {
-        css
-    } else {
-        format!("{css} + \" {}\"", classes.join(" "))
-    }
+    operands::Expansion::new(collected, keyframes_names, referenced_classes).css(name, entry)
 }
 
 fn sorted(entries: &FxHashMap<String, StyleEntry>) -> Vec<(&String, &StyleEntry)> {
@@ -1689,9 +1611,9 @@ globalStyle(`${tone.primary} > span`, { fontWeight: 700 })"
             ),
             r#"import { css, globalCss } from '@devup-ui/react'
 const _ve0 = css({"color":"blue"})
-const _ve1 = css({"color":"red"}) + " f0__ve1"
+const _ve1 = css({"color":"red"}, "f0__ve1")
 const _ve2 = css({"padding":"4px","content":"sm"})
-export const combined = css({"color":"red"}, {"margin":"1px"}) + " f0__ve1 external"
+export const combined = css({"color":"red"}, "f0__ve1", "external", {"margin":"1px"})
 globalCss({ ".f0__ve1 > span": {"fontWeight":700} })
 export const tone = { "0": _ve0, "primary": _ve1 }
 export const space = { "sm": _ve2 }
@@ -1733,11 +1655,11 @@ export const g = style(5)
 export const hover = style({ selectors: { [`${a}:hover &`]: { color: 'blue' } } })"
             ),
             r#"import { css } from '@devup-ui/react'
-const a = css({"color":"red"}) + " f0_a"
-const b = css({"color":"red"}, {"margin":"2px"}) + " f0_a"
-export const c = css({"color":"red"}, {"margin":"2px"}, {"padding":"3px"}) + " f0_a"
+const a = css({"color":"red"}, "f0_a")
+const b = css({"color":"red"}, "f0_a", {"margin":"2px"})
+export const c = css({"color":"red"}, "f0_a", {"margin":"2px"}, {"padding":"3px"})
 const e = css({})
-export const f = css({"color":"red"}) + " f0_a"
+export const f = css({"color":"red"}, "f0_a")
 export const g = css({})
 export const hover = css({"selectors":{".f0_a:hover &":{"color":"blue"}}})"#
         );
@@ -1939,3 +1861,6 @@ mod coverage_tests;
 
 #[cfg(test)]
 mod semantic_tests;
+
+#[cfg(test)]
+mod non_object_tokens_tests;

@@ -1,0 +1,9 @@
+{
+  "changes": {
+    "bindings/devup-ui-wasm/package.json": "Patch",
+    "packages/plugin-utils/package.json": "Patch",
+    "packages/react/package.json": "Patch"
+  },
+  "note": "Compile vanilla-extract theme contracts and imported values with deterministic variable references and later-wins static composition. Align theme.css source resolution between evaluation and the import graph, and map consumer contract leaves and theme overloads to their real values. Report located build errors for unknown static inputs, non-object theme tokens, mismatched theme contracts, invalid non-final fallback variables, and invalid global theme variable names instead of emitting incomplete or malformed CSS.",
+  "date": "2026-10-01T00:00:00.000Z"
+}

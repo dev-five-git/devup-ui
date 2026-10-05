@@ -55,5 +55,5 @@ ToBTreeSet {
             },
         ),
     },
-    code: "import \"@devup-ui/react/devup-ui.css\";\nconst _ve1 = \"a b c\";\nconst _ve2 = \"a b d\";\nconst _ve3 = \"a b e\";\nconst base = \"a b\";\nexport const sizes = {\n\t\"small\": _ve1,\n\t\"medium\": _ve2,\n\t\"large\": _ve3\n};\n",
+    code: "import \"@devup-ui/react/devup-ui.css\";\nconst _ve1 = \"a b c\";\nconst _ve2 = \"a b d\";\nconst _ve3 = \"a b e\";\nconst base = \"b a\";\nexport const sizes = {\n\t\"small\": _ve1,\n\t\"medium\": _ve2,\n\t\"large\": _ve3\n};\n",
 }

@@ -7,6 +7,9 @@ use crate::import_alias_visit::{Edit, transform_import_aliases_with_edits};
 use crate::vanilla_extract::{Stylesheet, execute_located};
 use crate::{ExtractOption, ImportAlias, ResolvedModule};
 
+mod artifact_dimensions;
+mod artifact_identity;
+mod artifacts;
 mod css_paths;
 mod css_reads;
 mod regressions;

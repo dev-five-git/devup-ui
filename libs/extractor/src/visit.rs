@@ -242,6 +242,8 @@ pub struct DevupVisitor<'a> {
     css_styles: Option<(u32, Vec<ExtractStyleValue>)>,
     /// The styles behind `css()` classes the file imports, by binding
     imported_css: FxHashMap<String, Vec<ExtractStyleValue>>,
+    imported_atoms: crate::vanilla_extract::producer_atoms::ProducerAtoms,
+    pub(crate) style_operand_mode: crate::vanilla_extract::StyleOperandMode,
     /// The styled component just built, by where it starts, for the `const`
     /// it initializes
     pending_styled: Option<(u32, StyledDefinition<'a>)>,
@@ -363,9 +365,20 @@ impl<'a> DevupVisitor<'a> {
                 argument => argument.to_expression(),
             })
             .collect();
-        if !arguments
-            .iter()
-            .any(|argument| self.reads_known_styles(argument))
+        let ordered_rules = matches!(
+            self.style_operand_mode,
+            crate::vanilla_extract::StyleOperandMode::Ordered
+        ) && arguments.len() > 1
+            && arguments.iter().any(|argument| {
+                matches!(
+                    unwrap_syntax_only(argument),
+                    Expression::ObjectExpression(_)
+                )
+            });
+        if !(ordered_rules
+            || arguments
+                .iter()
+                .any(|argument| self.reads_known_styles(argument)))
         {
             return None;
         }
@@ -435,10 +448,17 @@ impl<'a> DevupVisitor<'a> {
                     .as_expression()
                     .is_some_and(|element| self.reads_known_styles(element))
             }),
-            Expression::LogicalExpression(logical) => self.reads_known_styles(&logical.right),
+            Expression::LogicalExpression(logical) => {
+                self.reads_known_styles(&logical.right)
+                    || (logical.operator != LogicalOperator::And
+                        && matches!(unwrap_syntax_only(&logical.left), Expression::StringLiteral(literal) if self.style_values.has_literal_styles(literal.value.as_str())))
+            }
             Expression::ConditionalExpression(conditional) => {
                 self.reads_known_styles(&conditional.consequent)
                     || self.reads_known_styles(&conditional.alternate)
+            }
+            Expression::StringLiteral(literal) => {
+                self.style_values.has_literal_styles(literal.value.as_str())
             }
             expression => self.style_values.styles(expression).is_some(),
         }
@@ -472,6 +492,11 @@ impl<'a> DevupVisitor<'a> {
                 return match self.known_side(&logical.left, text)? {
                     KnownSide::Styles(side) => {
                         parts.push(KnownPart::Styles(side));
+                        Some(())
+                    }
+                    KnownSide::Mixed(side, class) => {
+                        parts.push(KnownPart::Styles(side));
+                        parts.push(KnownPart::Class(class));
                         Some(())
                     }
                     KnownSide::Empty if coalesce_keeps_left(logical) => Some(()),
@@ -514,6 +539,10 @@ impl<'a> DevupVisitor<'a> {
             expression => {
                 match self.known_side(expression, text)? {
                     KnownSide::Styles(side) => parts.push(KnownPart::Styles(side)),
+                    KnownSide::Mixed(side, class) => {
+                        parts.push(KnownPart::Styles(side));
+                        parts.push(KnownPart::Class(class));
+                    }
                     KnownSide::Class(class) => parts.push(KnownPart::Class(class)),
                     KnownSide::Empty => {}
                 }
@@ -545,6 +574,10 @@ impl<'a> DevupVisitor<'a> {
         for (index, side) in [consequent, alternate].into_iter().enumerate() {
             match side {
                 KnownSide::Styles(side) => styles[index] = Some(side),
+                KnownSide::Mixed(side, class) => {
+                    styles[index] = Some(side);
+                    classes[index] = Some(class);
+                }
                 KnownSide::Class(class) => classes[index] = Some(class),
                 KnownSide::Empty => {}
             }
@@ -575,6 +608,25 @@ impl<'a> DevupVisitor<'a> {
     /// it reads, so the values the file binds them to are read in it.
     fn known_side(&self, expression: &Expression<'a>, text: Text) -> Option<KnownSide<'a>> {
         let expression = unwrap_syntax_only(expression);
+        if let Expression::StringLiteral(literal) = expression
+            && let Some((values, residual)) =
+                self.style_values.literal_parts(literal.value.as_str())
+        {
+            let styles = vec![KnownStyles::Known(values)];
+            return Some(if residual.is_empty() {
+                KnownSide::Styles(styles)
+            } else {
+                KnownSide::Mixed(
+                    styles,
+                    Expression::new_string_literal(
+                        SPAN,
+                        Str::from_in(residual.as_str(), self.ast.allocator()),
+                        None,
+                        &self.ast,
+                    ),
+                )
+            });
+        }
         if let Some(styles) = self.style_values.styles(expression) {
             return Some(KnownSide::Styles(vec![KnownStyles::Known(styles.to_vec())]));
         }
@@ -727,6 +779,8 @@ impl<'a> DevupVisitor<'a> {
             forwards_refs: false,
             styled_definitions: FxHashMap::default(),
             imported_css: FxHashMap::default(),
+            imported_atoms: Default::default(),
+            style_operand_mode: Default::default(),
             unknown_bindings: crate::imported_constants::Unknown::default(),
             composes_unknown: false,
             unknown_parts: Vec::new(),
@@ -1733,6 +1787,13 @@ impl<'a> DevupVisitor<'a> {
         self.imported_css = styles;
     }
 
+    pub(crate) fn import_producer_atoms(
+        &mut self,
+        atoms: crate::vanilla_extract::producer_atoms::ProducerAtoms,
+    ) {
+        self.imported_atoms = atoms;
+    }
+
     /// `StyleX` variables and themes the program imports from other modules,
     /// by the name it binds them to
     pub fn import_stylex(
@@ -2263,6 +2324,8 @@ impl<'a> VisitMut<'a> for DevupVisitor<'a> {
             self.bindings.scope(Rc::clone(&scoping));
             self.bind_imported_stylex();
             self.style_values = crate::style_values::StyleValues::new(scoping);
+            self.style_values
+                .import_producer_atoms(std::mem::take(&mut self.imported_atoms));
             self.style_values
                 .import(std::mem::take(&mut self.imported_css));
             if self.binds_style_results(it) || self.css_prop != CssProp::Off {

@@ -132,6 +132,7 @@ pub(crate) struct ModuleLoader<'r> {
     /// What the stylesheet imports for its side effects, and the stylesheets it
     /// imports, which emit their own styles: its output keeps importing them
     pub kept_imports: Vec<String>,
+    pub imported_atoms: crate::vanilla_extract::producer_atoms::ProducerAtoms,
 }
 
 impl<'r> ModuleLoader<'r> {
@@ -164,6 +165,7 @@ impl<'r> ModuleLoader<'r> {
             css_bindings: FxHashMap::default(),
             dependencies: BTreeSet::new(),
             kept_imports: Vec::new(),
+            imported_atoms: Default::default(),
         }
     }
 
@@ -291,16 +293,20 @@ impl<'r> ModuleLoader<'r> {
         let unit = if stylesheet {
             // Extracted the way the bundler extracts it, so the names it
             // exports are the ones its own CSS uses
-            let output = crate::extract_with_source_map(
+            let result = crate::extract_source(
                 &module.path,
                 &module.code,
+                None,
+                false,
                 self.option.clone(),
                 true,
                 Some(resolver),
             )
             .map_err(|error| error.to_string())?;
+            let output = result.output;
             let unit = Unit::retained(&module.path, &output, &module.code)?;
             self.dependencies.extend(output.dependencies);
+            self.imported_atoms.merge(result.atoms);
             unit
         } else {
             Unit::written(&module.path, &module.code, &module.code, &[])?

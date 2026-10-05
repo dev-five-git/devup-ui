@@ -87,5 +87,5 @@ ToBTreeSet {
             },
         ),
     },
-    code: "import \"@devup-ui/react/devup-ui.css\";\n;\nexport const fade = \"a\";\nexport const child = \"b\";\nexport const parent = \"c\" + \" f0_parent\";\n;\n;\nexport const colorVar = \"var(--var-0-0)\";\nexport const myContainer = \"container-0-1\";\nexport const myLayer = \"ui-0-2\";\nexport const myFont = \"font-0-3\";\n",
+    code: "import \"@devup-ui/react/devup-ui.css\";\n;\nexport const fade = \"a\";\nexport const child = \"b\";\nexport const parent = \"f0_parent c\";\n;\n;\nexport const colorVar = \"var(--var-0-0)\";\nexport const myContainer = \"container-0-1\";\nexport const myLayer = \"ui-0-2\";\nexport const myFont = \"font-0-3\";\n",
 }
