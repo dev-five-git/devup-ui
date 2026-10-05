@@ -26,6 +26,13 @@ export {
   type DevupUIBasePluginOptions,
   getFileNumByFilename,
 } from './shared'
+export {
+  type CustomShorthandTarget,
+  isCustomShorthandTarget,
+  normalizeShorthands,
+  ShorthandConfigError,
+  type ShorthandErrorLocation,
+} from './shorthands'
 export type {
   CustomShorthands,
   DevupConfig,

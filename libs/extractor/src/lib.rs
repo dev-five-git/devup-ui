@@ -14,6 +14,8 @@ mod module_loader;
 mod mutations;
 mod prop_modify_utils;
 mod prop_valid;
+#[cfg(test)]
+mod shorthand_tests;
 mod source_map;
 mod style_order;
 #[cfg(test)]

@@ -18,7 +18,8 @@
   "version": "1.0.16",
   "scripts": {
     "lint": "eslint",
-    "build": "bun ../../node_modules/@typescript/native/bin/tsc && bun build --target node src/index.ts --production --env=disable --outfile dist/index.cjs --format cjs --packages external && bun build --target node src/index.ts --production --env=disable --outfile dist/index.mjs --format esm --packages external"
+    "test:types": "bun ../../node_modules/@typescript/native/bin/tsc --ignoreConfig --noEmit --strict --skipLibCheck --moduleResolution bundler --module esnext --target esnext --types bun src/__tests__/shorthands.test.ts",
+    "build": "bun run test:types && bun ../../node_modules/@typescript/native/bin/tsc && bun build --target node src/index.ts --production --env=disable --outfile dist/index.cjs --format cjs --packages external && bun build --target node src/index.ts --production --env=disable --outfile dist/index.mjs --format esm --packages external"
   },
   "publishConfig": {
     "access": "public"

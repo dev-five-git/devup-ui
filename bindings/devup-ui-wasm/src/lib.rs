@@ -610,16 +610,17 @@ pub fn register_theme(theme_object: JsValue) -> Result<(), JsValue> {
 }
 
 /// Internal function to register custom style-property shorthands.
-pub fn register_shorthands_internal(shorthands: BTreeMap<String, Vec<String>>) {
-    css::set_custom_shorthands(shorthands);
+pub fn register_shorthands_internal(
+    shorthands: BTreeMap<String, Vec<String>>,
+) -> Result<(), css::shorthand::InvalidShorthandTarget> {
+    css::set_custom_shorthands(shorthands)
 }
 
 #[wasm_bindgen(js_name = "registerShorthands")]
 #[cfg(not(tarpaulin_include))]
 pub fn register_shorthands(shorthands: JsValue) -> Result<(), JsValue> {
     let shorthands = serde_wasm_bindgen::from_value(shorthands).map_err(js_error)?;
-    register_shorthands_internal(shorthands);
-    Ok(())
+    register_shorthands_internal(shorthands).map_err(js_error)
 }
 
 #[wasm_bindgen(js_name = "getDefaultTheme")]
@@ -1401,7 +1402,7 @@ mod tests {
     #[test]
     #[serial]
     fn test_get_theme_interface() {
-        register_shorthands_internal(BTreeMap::new());
+        register_shorthands_internal(BTreeMap::new()).unwrap();
         let sheet = StyleSheet::default();
         assert_eq!(
             sheet.create_interface(
@@ -1423,7 +1424,8 @@ mod tests {
         register_shorthands_internal(BTreeMap::from([(
             "insetX".to_string(),
             vec!["left".to_string(), "right".to_string()],
-        )]));
+        )]))
+        .unwrap();
         assert_eq!(
             get_theme_interface(
                 "package",
@@ -1437,7 +1439,7 @@ mod tests {
         );
 
         // test wrong case
-        register_shorthands_internal(BTreeMap::new());
+        register_shorthands_internal(BTreeMap::new()).unwrap();
         let mut sheet = StyleSheet::default();
         let mut theme = Theme::default();
         let mut color_theme = ColorTheme::default();
@@ -2021,7 +2023,7 @@ mod tests {
         )]);
 
         register_theme_internal(theme);
-        register_shorthands_internal(shorthands);
+        register_shorthands_internal(shorthands).unwrap();
 
         // Verify the theme was registered
         let default_theme = GLOBAL_STYLE_SHEET.lock().unwrap().theme.get_default_theme();
@@ -2030,6 +2032,45 @@ mod tests {
             css::disassemble_property("insetX").collect::<Vec<_>>(),
             ["left", "right"]
         );
-        register_shorthands_internal(BTreeMap::new());
+        register_shorthands_internal(BTreeMap::new()).unwrap();
+    }
+
+    #[test]
+    #[serial]
+    fn test_register_shorthands_internal_rejects_targets_atomically() {
+        register_shorthands_internal(BTreeMap::from([("old".into(), vec!["py".into()])])).unwrap();
+        let error = register_shorthands_internal(BTreeMap::from([
+            ("aValid".into(), vec!["width".into()]),
+            ("bad".into(), vec!["height".into(), "widht".into()]),
+        ]))
+        .unwrap_err();
+        assert_eq!(error.alias, "bad");
+        assert_eq!(error.target, "widht");
+        assert_eq!(error.index, 1);
+        assert_eq!(css::get_custom_shorthand_names(), ["old"]);
+        assert_eq!(
+            css::disassemble_property("old").collect::<Vec<_>>(),
+            ["padding-top", "padding-bottom"]
+        );
+        register_shorthands_internal(BTreeMap::new()).unwrap();
+    }
+
+    #[test]
+    #[serial]
+    fn test_register_shorthands_internal_normalizes_vendor_targets() {
+        register_shorthands_internal(BTreeMap::from([(
+            "maskAlias".into(),
+            vec![
+                "WebkitMaskImage".into(),
+                "-webkit-mask-image".into(),
+                "--Mask".into(),
+            ],
+        )]))
+        .unwrap();
+        assert_eq!(
+            css::disassemble_property("maskAlias").collect::<Vec<_>>(),
+            ["-webkit-mask-image", "-webkit-mask-image", "--Mask"]
+        );
+        register_shorthands_internal(BTreeMap::new()).unwrap();
     }
 }

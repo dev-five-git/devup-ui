@@ -9,8 +9,10 @@ pub mod is_special_property;
 mod num_to_nm_base;
 pub mod optimize_multi_css_value;
 pub mod optimize_value;
+mod property_names;
 pub mod rm_css_comment;
 mod selector_separator;
+pub mod shorthand;
 pub mod style_selector;
 pub mod theme_tokens;
 pub mod utils;
@@ -257,26 +259,18 @@ static CUSTOM_SHORTHANDS: LazyLock<RwLock<BTreeMap<String, Vec<String>>>> =
 static HAS_CUSTOM_SHORTHANDS: AtomicBool = AtomicBool::new(false);
 
 /// Replace the custom shorthand registry used by style extraction.
-pub fn set_custom_shorthands(shorthands: BTreeMap<String, Vec<String>>) {
-    if let Ok(mut registry) = CUSTOM_SHORTHANDS.write() {
-        let shorthands: BTreeMap<String, Vec<String>> = shorthands
-            .into_iter()
-            .map(|(name, properties)| {
-                let properties = properties
-                    .into_iter()
-                    .flat_map(|property| {
-                        GLOBAL_STYLE_PROPERTY.get(property.as_str()).map_or_else(
-                            || vec![to_kebab_case(&property).into_owned()],
-                            |mapped| mapped.iter().map(|value| (*value).to_string()).collect(),
-                        )
-                    })
-                    .collect();
-                (name, properties)
-            })
-            .collect();
-        HAS_CUSTOM_SHORTHANDS.store(!shorthands.is_empty(), Ordering::Relaxed);
-        *registry = shorthands;
-    }
+pub fn set_custom_shorthands(
+    shorthands: BTreeMap<String, Vec<String>>,
+) -> Result<(), shorthand::InvalidShorthandTarget> {
+    let shorthands = shorthand::normalize_shorthands(shorthands)?;
+    let mut registry = CUSTOM_SHORTHANDS.write().unwrap_or_else(|poisoned| {
+        CUSTOM_SHORTHANDS.clear_poison();
+        poisoned.into_inner()
+    });
+    HAS_CUSTOM_SHORTHANDS.store(!shorthands.is_empty(), Ordering::Relaxed);
+    *registry = shorthands;
+    drop(registry);
+    Ok(())
 }
 
 #[must_use]
@@ -1397,7 +1391,7 @@ mod tests {
 
     #[test]
     #[serial]
-    fn test_custom_shorthand() {
+    fn test_custom_shorthand() -> Result<(), shorthand::InvalidShorthandTarget> {
         set_custom_shorthands(BTreeMap::from([(
             "insetX".to_string(),
             vec![
@@ -1405,17 +1399,18 @@ mod tests {
                 "marginRight".to_string(),
                 "py".to_string(),
             ],
-        )]));
+        )]))?;
 
         assert_eq!(
             disassemble_property("insetX").collect::<Vec<_>>(),
             ["left", "margin-right", "padding-top", "padding-bottom"]
         );
 
-        set_custom_shorthands(BTreeMap::new());
+        set_custom_shorthands(BTreeMap::new())?;
         assert_eq!(
             disassemble_property("insetX").collect::<Vec<_>>(),
             ["inset-x"]
         );
+        Ok(())
     }
 }
