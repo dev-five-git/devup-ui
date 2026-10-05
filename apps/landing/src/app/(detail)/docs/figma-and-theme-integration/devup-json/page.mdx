@@ -15,7 +15,9 @@ The `devup.json` file is the central configuration file for Devup UI that allows
 {
   "theme": {
     "colors": {
-      "primary": "#5A44FF"
+      "default": {
+        "primary": "#5A44FF"
+      }
     },
     "typography": {
       "h1": {
@@ -27,6 +29,10 @@ The `devup.json` file is the central configuration file for Devup UI that allows
 ```
 
 ## Colors Configuration
+
+`theme.colors` maps variant names (`default`, `light`, `dark`, or your own names)
+to token maps. A flat `colors.primary` value is not the theme schema; place it
+under a variant such as `colors.default.primary` instead.
 
 ### **Basic Color Setup**
 
@@ -169,12 +175,41 @@ Use arrays to define styles for each breakpoint.
 Access colors using the `$` prefix.
 
 ```tsx
-<Box bg="$primary" borderColor="$border" color="$text">
+<Box bg="$primary" color="$text">
   Content
 </Box>
 ```
 
-- To enable type autocompletion for theme values, add `"df/*.ts"` to the `include` array in your `tsconfig.json` file.
+Use only tokens defined in your selected variant. The basic example defines
+`$primary`; add `text` to that variant before using `$text`.
+
+### Generated Theme Types
+
+The build plugin generates `theme.d.ts` inside its `distDir`. The default
+`distDir` is `df`, so the default declaration path is `df/theme.d.ts`. To enable
+type autocompletion, include the generated declarations in `tsconfig.json`:
+
+```json
+{
+  "include": ["src", "df/*.d.ts"]
+}
+```
+
+`distDir` is a build-plugin option, not a field in `devup.json`. For example, a
+Vite configuration can change the generated directory:
+
+```ts
+import DevupUI from '@devup-ui/vite-plugin'
+import { defineConfig } from 'vite'
+
+export default defineConfig({
+  plugins: [DevupUI({ distDir: 'generated/devup' })],
+})
+```
+
+That configuration writes `generated/devup/theme.d.ts`; include
+`generated/devup/*.d.ts` instead of `df/*.d.ts`. Run the build plugin after
+changing the theme to regenerate the declarations.
 
 ### **Typography Usage**
 
@@ -183,6 +218,5 @@ Apply typography styles using the `typography` prop.
 ```tsx
 <>
   <Text typography="h1">Heading 1</Text>
-  <Text typography="body">Body text</Text>
 </>
 ```
