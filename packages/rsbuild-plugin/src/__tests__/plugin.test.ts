@@ -805,8 +805,10 @@ const App = () => <Box></Box>`,
       })
       const taps: Record<string, (...args: unknown[]) => unknown> = {}
       const tap =
-        (hook: string) => (_: unknown, fn: (...args: unknown[]) => unknown) => {
-          taps[hook] = fn
+        (hook: string) =>
+        (name: unknown, fn: (...args: unknown[]) => unknown) => {
+          taps[name === 'DevupUICompiledSourceGuard' ? `${hook}:guard` : hook] =
+            fn
         }
       const compiler = {
         options: {},

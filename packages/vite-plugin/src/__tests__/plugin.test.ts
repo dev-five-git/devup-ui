@@ -558,7 +558,7 @@ describe('devupUIVitePlugin', () => {
 
       expect(collectSpy).toHaveBeenCalledWith({
         roots: [resolve('/p', 'src'), resolve('/p', 'app')],
-        includeMdx: true,
+        includeMdx: ['.mdx'],
         include: ['@acme/ui'],
         cwd: '/p',
         needles: expect.arrayContaining([
@@ -693,12 +693,12 @@ describe('devupUIVitePlugin', () => {
         expect(listSourceFilesSpy).toHaveBeenCalledWith(
           resolve('/p', 'src'),
           undefined,
-          { includeMdx: true },
+          { includeMdx: ['.mdx'] },
         )
         expect(listSourceFilesSpy).toHaveBeenCalledWith(
           resolve('/p', 'app'),
           undefined,
-          { includeMdx: true },
+          { includeMdx: ['.mdx'] },
         )
         expect(seedFileMapSpy).toHaveBeenCalledWith([
           '/p/app/page.tsx',

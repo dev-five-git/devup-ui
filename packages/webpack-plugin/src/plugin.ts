@@ -1,7 +1,7 @@
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs'
 import { stat, writeFile } from 'node:fs/promises'
 import { createRequire } from 'node:module'
-import { dirname, join, relative, resolve } from 'node:path'
+import { dirname, extname, join, relative, resolve } from 'node:path'
 
 import {
   beginBuild,
@@ -18,8 +18,11 @@ import {
   extractedNeedles,
   getFileNumByFilename,
   type ImportAliases,
+  isSelectedSource,
   loadDevupConfigSync,
+  mdxSourceFilter,
   mergeImportAliases,
+  normalizeMdxExtensions,
   planAtomHoist,
   resolveProjectPaths,
   resolveSourceDirs,
@@ -49,6 +52,7 @@ import {
 } from '@devup-ui/wasm'
 import { type Compiler } from 'webpack'
 
+import { registerCompiledGuard } from './compiled-guard'
 import { servedCss } from './served-css'
 
 export interface DevupUIWebpackPluginOptions {
@@ -63,6 +67,7 @@ export interface DevupUIWebpackPluginOptions {
   prefix?: string
   shorthands?: CustomShorthands
   sourceDirs?: string | string[]
+  mdxExtensions?: readonly string[]
   /**
    * Atom-level route-aware hoisting threshold.
    *
@@ -95,6 +100,7 @@ export class DevupUIWebpackPlugin {
   fileMapFile: string
   private importAliases: WasmImportAliases
   private excludeModules: RegExp
+  private readonly mdxExtensions: readonly string[]
   private seedWarningEmitted = false
   private pathOptions: {
     readonly devupFile: string
@@ -116,7 +122,9 @@ export class DevupUIWebpackPlugin {
     sourceDirs,
     atomHoist,
     importAliases: userImportAliases,
+    mdxExtensions,
   }: Partial<DevupUIWebpackPluginOptions> = {}) {
+    this.mdxExtensions = normalizeMdxExtensions(mdxExtensions)
     registerShorthands(shorthands ?? {})
     this.importAliases = mergeImportAliases(userImportAliases)
     this.excludeModules = createNodeModulesExcludeRegex(include)
@@ -250,7 +258,10 @@ export class DevupUIWebpackPlugin {
                   !/^[a-z]:[\\/]/i.test(resource))
               )
                 return []
-              return [resolve(cwd, resource)]
+              return isSelectedSource(resource, this.mdxExtensions) ||
+                !extname(resource)
+                ? [resolve(cwd, resource)]
+                : []
             }),
           )
     const roots = [
@@ -264,6 +275,7 @@ export class DevupUIWebpackPlugin {
       setModuleResolver(
         createModuleResolver({
           cwd,
+          includeMdx: this.mdxExtensions,
           conditions,
           toId: (path) => relative(cwd, path).replaceAll('\\', '/'),
         }),
@@ -333,7 +345,7 @@ export class DevupUIWebpackPlugin {
       const srcDir = roots
       const tsconfigPath = resolve(cwd, 'tsconfig.json')
       graph = buildStaticImportGraph(roots, tsconfigPath, {
-        includeMdx: true,
+        includeMdx: this.mdxExtensions,
         cwd,
         include: this.options.include,
         conditions,
@@ -382,7 +394,7 @@ export class DevupUIWebpackPlugin {
         { seedFileMap },
         collectNumberedFiles({
           roots,
-          includeMdx: true,
+          includeMdx: this.mdxExtensions,
           include: this.options.include,
           cwd,
           needles: extractedNeedles(this.options.package, this.importAliases),
@@ -529,6 +541,7 @@ export class DevupUIWebpackPlugin {
         importAliases: this.importAliases,
         rootDir: cwd,
         conditions,
+        mdxExtensions: this.mdxExtensions,
       },
     }
     compiler.options.module.rules.push(
@@ -538,7 +551,12 @@ export class DevupUIWebpackPlugin {
         enforce: 'pre',
         use: [sourceLoader],
       },
-      { test: /\.mdx$/i, exclude, enforce: 'post', use: [sourceLoader] },
+      {
+        test: mdxSourceFilter(this.mdxExtensions),
+        exclude,
+        enforce: 'post',
+        use: [sourceLoader],
+      },
       {
         test: this.options.cssDir,
         enforce: 'pre',
@@ -554,5 +572,10 @@ export class DevupUIWebpackPlugin {
         ],
       },
     )
+    registerCompiledGuard(compiler, {
+      package: this.options.package,
+      mdxExtensions: this.mdxExtensions,
+      importAliases: this.importAliases,
+    })
   }
 }

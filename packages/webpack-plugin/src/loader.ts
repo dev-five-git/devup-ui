@@ -4,6 +4,7 @@ import { basename, dirname, join, relative, resolve } from 'node:path'
 import {
   createModuleResolver,
   createStateWriter,
+  isMdxSource,
   remapMdxError,
 } from '@devup-ui/plugin-utils'
 import {
@@ -27,6 +28,7 @@ export interface DevupUILoaderOptions {
   importAliases?: Record<string, string | null>
   rootDir?: string
   conditions?: readonly string[]
+  mdxExtensions?: readonly string[]
 }
 
 function toLoaderError(error: unknown): Error {
@@ -52,12 +54,14 @@ const moduleResolvers = new Map<
 function setCwdModuleResolver(
   rootDir: string,
   conditions: readonly string[],
+  mdxExtensions: readonly string[],
 ): void {
-  const key = JSON.stringify([rootDir, conditions])
+  const key = JSON.stringify([rootDir, conditions, mdxExtensions])
   let moduleResolver = moduleResolvers.get(key)
   if (!moduleResolver) {
     moduleResolver = createModuleResolver({
       cwd: rootDir,
+      includeMdx: mdxExtensions,
       conditions,
       toId: (path) => relative(rootDir, path).replaceAll('\\', '/'),
     })
@@ -79,6 +83,7 @@ const devupUILoader: RawLoaderDefinitionFunction<DevupUILoaderOptions> =
       importAliases = {},
       rootDir = process.cwd(),
       conditions = ['import', 'module', 'node'],
+      mdxExtensions = ['.mdx'],
     } = this.getOptions()
     const callback = this.async()
     const id = this.resourcePath
@@ -99,7 +104,7 @@ const devupUILoader: RawLoaderDefinitionFunction<DevupUILoaderOptions> =
       const relativePath = relative(rootDir, id).replaceAll('\\', '/')
 
       if (!relCssDir.startsWith('./')) relCssDir = `./${relCssDir}`
-      setCwdModuleResolver(rootDir, conditions)
+      setCwdModuleResolver(rootDir, conditions, mdxExtensions)
       const {
         code,
         css = '',
@@ -116,6 +121,9 @@ const devupUILoader: RawLoaderDefinitionFunction<DevupUILoaderOptions> =
         false,
         true,
         importAliases,
+        ...(isMdxSource(id, mdxExtensions)
+          ? (['compiled-mdx'] as const)
+          : ([] as const)),
       )
       for (const dependency of dependencies) {
         this.addDependency(resolve(rootDir, dependency))
@@ -155,7 +163,7 @@ const devupUILoader: RawLoaderDefinitionFunction<DevupUILoaderOptions> =
       )
     } catch (error) {
       callback(
-        /\.mdx$/i.test(id)
+        isMdxSource(id, mdxExtensions)
           ? remapMdxError(
               error,
               relative(rootDir, id).replaceAll('\\', '/'),

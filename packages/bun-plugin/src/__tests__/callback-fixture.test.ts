@@ -38,6 +38,7 @@ export function fixture() {
     callback: OnResolveCallback
   }[] = []
   const ends: OnEndCallback[] = []
+  let success = true
   const builder = {
     onLoad(constraints, callback) {
       loads.push({ constraints, callback })
@@ -79,11 +80,15 @@ export function fixture() {
           constraints.filter.test(path),
       )
       if (!hook) throw new Error(`No load hook for ${namespace}:${path}`)
-      return hook.callback({ path, namespace, loader: 'tsx', defer })
+      try {
+        return await hook.callback({ path, namespace, loader: 'tsx', defer })
+      } catch (error) {
+        success = false
+        throw error
+      }
     },
     async cleanup() {
-      for (const end of ends)
-        await end({ outputs: [], logs: [], success: true })
+      for (const end of ends) await end({ outputs: [], logs: [], success })
       resetBuildState()
       registerShorthands({})
       setPrefix(null)

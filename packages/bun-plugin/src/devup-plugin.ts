@@ -1,6 +1,6 @@
 import { existsSync, readFileSync, writeFileSync } from 'node:fs'
 import { mkdir, writeFile } from 'node:fs/promises'
-import { basename, dirname, join, relative, resolve } from 'node:path'
+import { basename, join, resolve } from 'node:path'
 
 import {
   beginBuild,
@@ -9,17 +9,18 @@ import {
   createModuleResolver,
   createThemeInterfaceArgs,
   type CustomShorthands,
-  GRAPH_SOURCE_FILE_RE,
+  isMdxSource,
   listSourceFiles,
   loadDevupConfig,
-  MDX_FILE_RE,
-  remapMdxError,
+  mdxSourceFilter,
+  normalizeMdxExtensions,
+  type PreparedSource,
   resolveProjectPaths,
   resolveSourceDirs,
   seedFileNumbers,
+  selectedSourceFilter,
 } from '@devup-ui/plugin-utils'
 import {
-  codeExtract,
   getCss,
   getThemeInterface,
   registerShorthands,
@@ -33,19 +34,15 @@ import {
 import { type BunPlugin, type PluginBuilder } from 'bun'
 
 import { cssNamespace, resolveCssId } from './css-id'
-import { compileMdx } from './mdx'
+import { createMdxOwnership } from './mdx-ownership'
 import {
   compiledPackages,
   importAliases,
-  importsCompiledPackage,
   libPackage,
   mentionsCompiledPackage,
-  preserveDependencies,
   runtimeSourceFilter,
-  sourceLoader,
 } from './source'
-
-const singleCss = true
+import { loadSourceFile, type SourceProject } from './source-load'
 
 type PluginHooks = {
   readonly config?: PluginBuilder['config']
@@ -65,13 +62,10 @@ export interface DevupUIBunPluginOptions {
   include?: string[]
   /** Readable class names. Defaults to false in both runtime and builds. */
   debug?: boolean
+  mdxExtensions?: readonly string[]
 }
 
-type Project = ReturnType<typeof resolveProjectPaths> & {
-  readonly root: string
-  readonly debug: boolean
-  readonly resolver: ReturnType<typeof createModuleResolver>
-}
+type Project = ReturnType<typeof resolveProjectPaths> & SourceProject
 
 async function writeDataFiles({ devupFile, distDir, cssDir }: Project) {
   const config = await loadDevupConfig(devupFile)
@@ -102,7 +96,7 @@ async function initialize(project: Project, options: DevupUIBunPluginOptions) {
       { seedFileMap },
       collectNumberedFiles({
         roots: resolveSourceDirs(root, options.sourceDirs),
-        includeMdx: true,
+        includeMdx: project.mdxExtensions,
         cwd: root,
         include: options.include,
         needles: compiledPackages,
@@ -128,41 +122,6 @@ async function initialize(project: Project, options: DevupUIBunPluginOptions) {
   await writeDataFiles(project)
 }
 
-async function loadSourceFile(filePath: string, project: Project) {
-  const original = await Bun.file(filePath).text()
-  const mdx = MDX_FILE_RE.test(filePath)
-    ? await compileMdx(project.root, filePath, original)
-    : undefined
-  if (MDX_FILE_RE.test(filePath) && !mdx) return undefined
-  const loader = mdx ? 'jsx' : sourceLoader(filePath)
-  const contents = mdx?.value ?? original
-
-  if (importsCompiledPackage(contents, loader)) {
-    setDebug(project.debug)
-    setModuleResolver(project.resolver)
-    try {
-      const code = codeExtract(
-        filePath,
-        contents,
-        libPackage,
-        relative(dirname(filePath), project.cssDir).replaceAll('\\', '/'),
-        singleCss,
-        true,
-        false,
-        importAliases,
-      )
-      return {
-        contents: preserveDependencies(code.code, filePath, code.dependencies),
-        loader,
-      }
-    } catch (cause) {
-      if (mdx) throw remapMdxError(cause, filePath, mdx.map)
-      throw cause
-    }
-  }
-  return { contents, loader }
-}
-
 /**
  * The Devup UI plugin, for `Bun.build` (`plugins: [DevupUI()]`) as well as the
  * Bun runtime ({@link register}).
@@ -184,34 +143,54 @@ export function DevupUI(options: DevupUIBunPluginOptions = {}) {
         typeof build.config?.conditions === 'string'
           ? [build.config.conditions]
           : (build.config?.conditions ?? [])
+      const mdxExtensions = normalizeMdxExtensions(options.mdxExtensions)
+      const conditions = [
+        ...targetConditions[
+          build.config?.target ?? (bundling ? 'browser' : 'bun')
+        ],
+        'import',
+        ...(bundling ? ['module'] : []),
+        ...customConditions,
+      ]
+      const prepared = new Map<string, PreparedSource>()
+      const ownership = createMdxOwnership({
+        root,
+        extensions: mdxExtensions,
+        conditions,
+        entries: build.config?.entrypoints ?? [],
+      })
       const project: Project = {
         ...resolveProjectPaths(root, options),
         root,
         debug: options.debug ?? false,
+        mdxExtensions,
+        prepared,
+        ownership,
         resolver: createModuleResolver({
           cwd: root,
           // Extracted ESM imports stay import requests even in the vanilla
           // CommonJS evaluator. The callback does not expose a request kind.
-          conditions: [
-            ...targetConditions[
-              build.config?.target ?? (bundling ? 'browser' : 'bun')
-            ],
-            'import',
-            ...(bundling ? ['module'] : []),
-            ...customConditions,
-          ],
+          conditions,
+          includeMdx: mdxExtensions,
+          prepareSource: (filename) => prepared.get(filename),
         }),
       }
       // A build starts from its own options, not from what an earlier build in
       // this process left in the engine
       const endBuild = beginBuild({ resetBuildState })
-      build.onEnd?.(endBuild)
+      build.onEnd?.((result) => {
+        try {
+          if (result.success) ownership.validate()
+        } finally {
+          endBuild()
+        }
+      })
       await initialize(project, options)
       setDebug(project.debug)
       let writtenCss = getCss(null, false)
       // Native token modules must keep Bun's filesystem watch/CJS loading path.
       const sourceFilter = bundling
-        ? GRAPH_SOURCE_FILE_RE
+        ? selectedSourceFilter(mdxExtensions)
         : new RegExp(
             `${
               runtimeSourceFilter([
@@ -224,20 +203,23 @@ export function DevupUI(options: DevupUIBunPluginOptions = {}) {
                     '.git',
                     'coverage',
                   ],
-                  { includeMdx: true },
-                ).filter((file) =>
-                  mentionsCompiledPackage(readFileSync(file, 'utf-8')),
+                  { includeMdx: mdxExtensions },
+                ).filter(
+                  (file) =>
+                    isMdxSource(file, mdxExtensions) ||
+                    mentionsCompiledPackage(readFileSync(file, 'utf-8')),
                 ),
                 ...collectNumberedFiles({
                   roots: resolveSourceDirs(root, options.sourceDirs),
-                  includeMdx: true,
+                  includeMdx: mdxExtensions,
                   cwd: root,
                   include: ['@devup-ui/components', ...(options.include ?? [])],
                   needles: compiledPackages,
                   toId: (path) => path,
                 }),
               ]).source
-            }|\\.(?:test|spec)\\.[mc]?[jt]sx?$`,
+            }|${mdxSourceFilter(mdxExtensions).source}|\\.(?:test|spec)\\.[mc]?[jt]sx?$`,
+            'i',
           )
 
       // Resolve devup-ui CSS files onto a path-free virtual id, so nothing
@@ -258,6 +240,7 @@ export function DevupUI(options: DevupUIBunPluginOptions = {}) {
         async ({ defer }) => {
           if (!bundling) return { contents: '', loader: 'js' }
           await defer()
+          ownership.validate()
           return { contents: getCss(null, false), loader: 'css' }
         },
       )
@@ -269,6 +252,7 @@ export function DevupUI(options: DevupUIBunPluginOptions = {}) {
         },
         ({ path }) => {
           return loadSourceFile(path, project).then((result) => {
+            if (isMdxSource(path, mdxExtensions)) ownership.loaded(path)
             if (!bundling && result) {
               const css = getCss(null, false)
               // Read-after-import is synchronous; only identical revisions coalesce.

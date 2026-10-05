@@ -16,11 +16,12 @@ import {
   type CustomShorthands,
   extractedNeedles,
   getFileNumByFilename,
-  GRAPH_SOURCE_FILE_RE,
   type ImportAliases,
+  isMdxSource,
+  isSelectedSource,
   loadDevupConfig,
-  MDX_FILE_RE,
   mergeImportAliases,
+  normalizeMdxExtensions,
   planAtomHoist,
   remapMdxError,
   resolveProjectPaths,
@@ -53,6 +54,7 @@ import type {
 } from 'vite'
 
 import { createAggregateCssPreparation } from './aggregate-css'
+import { createCompiledGuard } from './compiled-guard'
 
 /**
  * CSS entry files emitted by devup-ui: `devup-ui.css`, `devup-ui-3.css`, ...
@@ -234,6 +236,7 @@ export interface DevupUIPluginOptions {
   prefix?: string
   shorthands?: CustomShorthands
   sourceDirs?: string | string[]
+  mdxExtensions?: readonly string[]
   /**
    * Atom-level route-aware hoisting threshold (min routes sharing an atom for
    * it to hoist into the shared devup-ui.css; clamped to >= 2; omit to disable).
@@ -286,7 +289,9 @@ export function DevupUI({
   sourceDirs: configuredSourceDirs,
   atomHoist,
   importAliases: userImportAliases,
+  mdxExtensions: configuredMdxExtensions,
 }: Partial<DevupUIPluginOptions> = {}) {
+  const mdxExtensions = normalizeMdxExtensions(configuredMdxExtensions)
   // A build starts from its own options: whatever an earlier build in this
   // process left in the engine (prefix, hoisting, routes, buckets, numbers,
   // styles) is gone unless another build is still running.
@@ -326,6 +331,7 @@ export function DevupUI({
     if (!resolver) {
       resolver = createModuleResolver({
         cwd: projectRoot,
+        includeMdx: mdxExtensions,
         conditions,
         toId: (path) => path.replaceAll('\\', '/'),
       })
@@ -386,9 +392,12 @@ export function DevupUI({
             true,
             false,
             importAliases,
+            ...(isMdxSource(fileName, mdxExtensions)
+              ? (['compiled-mdx'] as const)
+              : ([] as const)),
           )
         } catch (error) {
-          if (MDX_FILE_RE.test(fileName))
+          if (isMdxSource(fileName, mdxExtensions))
             throw remapMdxError(error, fileName, this.getCombinedSourcemap())
           throw error
         }
@@ -461,7 +470,7 @@ export function DevupUI({
                 : []
         const entries = rawEntries
           .filter((entry): entry is string => typeof entry === 'string')
-          .filter((entry) => GRAPH_SOURCE_FILE_RE.test(entry))
+          .filter((entry) => isSelectedSource(entry, mdxExtensions))
           .map((entry) => resolve(projectRoot, entry))
         const roots = [
           ...new Set([
@@ -499,7 +508,7 @@ export function DevupUI({
             const srcDir = roots
             const tsconfigPath = resolve(root, 'tsconfig.json')
             const graph = buildStaticImportGraph(roots, tsconfigPath, {
-              includeMdx: true,
+              includeMdx: mdxExtensions,
               cwd: root,
               include,
               conditions,
@@ -547,7 +556,7 @@ export function DevupUI({
             { seedFileMap },
             collectNumberedFiles({
               roots,
-              includeMdx: true,
+              includeMdx: mdxExtensions,
               include,
               cwd: projectRoot,
               needles: extractedNeedles(libPackage, importAliases),
@@ -795,7 +804,7 @@ export function DevupUI({
     enforce: 'post',
     sharedDuringBuild: true,
     async transform(code, id) {
-      if (!MDX_FILE_RE.test(id.split('?')[0])) return
+      if (!isMdxSource(id, mdxExtensions)) return
       return sourceTransform.transform.call(this, code, id)
     },
   } satisfies Plugin
@@ -814,11 +823,18 @@ export function DevupUI({
       },
     },
   } satisfies Plugin
+  const compiledGuard = createCompiledGuard({
+    package: libPackage,
+    mdxExtensions,
+    importAliases,
+    extractCss,
+  })
   const plugins: [
     typeof plugin,
     typeof restorePlugin,
     typeof mdxPlugin,
     typeof aggregateGuard,
-  ] = [plugin, restorePlugin, mdxPlugin, aggregateGuard]
+    typeof compiledGuard,
+  ] = [plugin, restorePlugin, mdxPlugin, aggregateGuard, compiledGuard]
   return plugins
 }
