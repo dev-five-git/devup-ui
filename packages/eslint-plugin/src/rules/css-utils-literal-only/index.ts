@@ -6,6 +6,7 @@ import {
 } from '@typescript-eslint/utils'
 
 import { ImportStorage } from '../../utils/import-storage'
+import { componentName } from '../../utils/style-position'
 
 const createRule = ESLintUtils.RuleCreator(
   (name) =>
@@ -946,6 +947,93 @@ class Values {
   }
 }
 
+/** The globals that exist in a browser or Node but not where the build evaluates a vanilla-extract stylesheet (`.css.ts`, `.css.js`), which runs as it is and fails at the first read of one */
+const MISSING_IN_STYLESHEETS = new Set([
+  'AbortController',
+  'Blob',
+  'Buffer',
+  'CSS',
+  'Element',
+  'Event',
+  'EventTarget',
+  'FormData',
+  'HTMLElement',
+  'Headers',
+  'Intl',
+  'Request',
+  'Response',
+  'TextDecoder',
+  'TextEncoder',
+  'URL',
+  'WebAssembly',
+  'Worker',
+  'XMLHttpRequest',
+  '__dirname',
+  '__filename',
+  'alert',
+  'atob',
+  'btoa',
+  'clearInterval',
+  'clearTimeout',
+  'crypto',
+  'document',
+  'escape',
+  'exports',
+  'fetch',
+  'getComputedStyle',
+  'global',
+  'history',
+  'innerWidth',
+  'localStorage',
+  'location',
+  'matchMedia',
+  'module',
+  'navigator',
+  'performance',
+  'process',
+  'queueMicrotask',
+  'requestAnimationFrame',
+  'require',
+  'screen',
+  'self',
+  'sessionStorage',
+  'setImmediate',
+  'setInterval',
+  'setTimeout',
+  'structuredClone',
+  'unescape',
+  'window',
+])
+
+/** The rule on a stylesheet the build runs whole: a read of a global that does not exist there fails the build, unless a `typeof` guards it */
+function vanillaGlobals(
+  context: Readonly<
+    TSESLint.RuleContext<'cssUtilsLiteralOnly' | 'missingGlobal', []>
+  >,
+): TSESLint.RuleListener {
+  return {
+    'Program:exit'() {
+      for (const reference of context.sourceCode.scopeManager?.globalScope
+        ?.through ?? []) {
+        const name = reference.identifier.name
+        const parent = reference.identifier.parent
+        if (
+          MISSING_IN_STYLESHEETS.has(name) &&
+          !(
+            parent.type === AST_NODE_TYPES.UnaryExpression &&
+            parent.operator === 'typeof'
+          )
+        )
+          context.report({
+            node: reference.identifier,
+            messageId: 'missingGlobal',
+            data: { name },
+          })
+      }
+    },
+  }
+}
+
 export const cssUtilsLiteralOnly = createRule({
   name: 'css-utils-literal-only',
   defaultOptions: [],
@@ -954,6 +1042,8 @@ export const cssUtilsLiteralOnly = createRule({
     messages: {
       cssUtilsLiteralOnly:
         'CSS utils should only be used with values known at build time: literals, constants, or what exact built-ins and the functions of this file compute from them.',
+      missingGlobal:
+        '`{{name}}` does not exist where the build evaluates a stylesheet (`.css.ts`, `.css.js`).',
     },
     type: 'problem',
     docs: {
@@ -962,7 +1052,7 @@ export const cssUtilsLiteralOnly = createRule({
     },
   },
   create(context) {
-    const importStorage = new ImportStorage()
+    const importStorage = new ImportStorage(context)
     const stylexNamespaces = new Set<string>()
     const stylexNames = new Map<string, string>()
     const scopeOf = (node: TSESTree.Node) => context.sourceCode.getScope(node)
@@ -981,9 +1071,18 @@ export const cssUtilsLiteralOnly = createRule({
       return name === 'css' || name === 'keyframes'
     }
     const values = new Values(changes, scopeOf, isStylex, givesStyleName)
+    /** Whether `attribute` is the `styles` of Emotion's `Global`, which the build reads as rules */
+    const isGlobalStyles = (attribute: TSESTree.JSXAttribute) =>
+      attribute.name.type === AST_NODE_TYPES.JSXIdentifier &&
+      attribute.name.name === 'styles' &&
+      attribute.value?.type === AST_NODE_TYPES.JSXExpressionContainer &&
+      componentName(attribute.parent.name, importStorage) === 'Global'
     /** The style API reading the code visited, and what it takes */
     let api: {
-      node: TSESTree.CallExpression | TSESTree.TaggedTemplateExpression
+      node:
+        | TSESTree.CallExpression
+        | TSESTree.TaggedTemplateExpression
+        | TSESTree.JSXAttribute
       takes: Api
     } | null = null
     const apiOf = (callee: TSESTree.Node): Api | undefined => {
@@ -1016,6 +1115,7 @@ export const cssUtilsLiteralOnly = createRule({
     const exit = (node: TSESTree.Node) => {
       if (api?.node === node) api = null
     }
+    if (importStorage.vanilla) return vanillaGlobals(context)
     return {
       ImportDeclaration(node) {
         importStorage.addImportByDeclaration(node)
@@ -1039,6 +1139,11 @@ export const cssUtilsLiteralOnly = createRule({
         enter(node, node.tag)
       },
       'TaggedTemplateExpression:exit': exit,
+      JSXAttribute(node) {
+        if (api || !isGlobalStyles(node)) return
+        api = { node, takes: 'rules' }
+      },
+      'JSXAttribute:exit': exit,
       Identifier(node) {
         if (!api || node.name === 'undefined') return
 
@@ -1049,7 +1154,9 @@ export const cssUtilsLiteralOnly = createRule({
         if (
           api.node.type === AST_NODE_TYPES.TaggedTemplateExpression
             ? path[0] !== api.node.quasi
-            : path[0] === api.node.callee || !inValue(api.takes, path)
+            : api.node.type === AST_NODE_TYPES.JSXAttribute
+              ? !inValue(api.takes, path)
+              : path[0] === api.node.callee || !inValue(api.takes, path)
         )
           return
         const scope = scopeOf(node)
