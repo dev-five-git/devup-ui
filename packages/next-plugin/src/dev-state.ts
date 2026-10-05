@@ -7,6 +7,7 @@ import type { AppContext, AppSession } from './session'
 import {
   captureCoordinatorState,
   type CoordinatorInput,
+  exportAllocatorState,
   importAllocatorState,
   readCoordinatorState,
   writeCoordinatorStateSync,
@@ -60,6 +61,34 @@ export function resumeEngine({
     warnColdStart(session.stateFile, cause)
     return { engine: createEngine(), revision }
   }
+}
+
+/** Restore names on the serving shell; a partial import restores its trusted maps. */
+export function restoreShellAllocator({
+  context,
+  session,
+  engine,
+  optionsKey = context.appKey,
+}: {
+  readonly context: AppContext
+  readonly session: AppSession
+  readonly engine: DevupWasm
+  readonly optionsKey?: string
+}): number {
+  if (!context.watch) return 0
+  const baseline = exportAllocatorState(engine)
+  let revision = 0
+  try {
+    const checkpoint = readCoordinatorState(session.stateFile, optionsKey)
+    if (checkpoint === undefined) return revision
+    revision = checkpoint.revision
+    importAllocatorState(engine, checkpoint)
+  } catch (cause) {
+    importAllocatorState(engine, baseline)
+    if (!(cause instanceof Error)) throw cause
+    warnColdStart(session.stateFile, cause)
+  }
+  return revision
 }
 
 function toInput(
