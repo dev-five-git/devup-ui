@@ -67,9 +67,9 @@ describe('stylex', () => {
   })
 
   it('include should throw at runtime', () => {
-    expect(() => include({ color: 'red' })).toThrowError(
-      'Cannot run on the runtime',
-    )
+    expect(() =>
+      Reflect.apply(include, undefined, [{ color: 'red' }]),
+    ).toThrowError('Cannot run on the runtime')
   })
 
   it('defineVars should throw at runtime', () => {
@@ -80,7 +80,10 @@ describe('stylex', () => {
 
   it('createTheme should throw at runtime', () => {
     expect(() =>
-      createTheme({ primary: '--x' }, { primary: 'blue' }),
+      Reflect.apply(createTheme, undefined, [
+        { primary: '--x' },
+        { primary: 'blue' },
+      ]),
     ).toThrowError('Cannot run on the runtime')
   })
 })
