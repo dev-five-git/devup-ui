@@ -7,6 +7,9 @@
 mod class_names;
 mod lookup;
 mod required;
+pub(crate) mod stylex_bindings;
+mod stylex_boundary;
+pub(crate) mod stylex_sources;
 mod visits;
 
 use std::rc::Rc;
@@ -18,7 +21,6 @@ use oxc_syntax::symbol::SymbolId;
 use rustc_hash::{FxHashMap, FxHashSet};
 
 use crate::component::ExportVariableKind;
-use crate::stylex::StylexFunction;
 use crate::util_type::UtilType;
 
 pub use class_names::ClassNamesSymbols;
@@ -43,8 +45,7 @@ pub struct Bindings {
     jsx_namespaces: FxHashSet<SymbolId>,
     global_components: FxHashSet<SymbolId>,
     class_names_components: FxHashSet<SymbolId>,
-    stylex_namespaces: FxHashSet<SymbolId>,
-    stylex_imports: FxHashMap<SymbolId, StylexFunction>,
+    stylex: stylex_bindings::StylexBindings,
     /// The bindings of reads whose copies lost their references, by where
     /// they were written
     recovered: FxHashMap<(u32, u32), SymbolId>,
@@ -91,11 +92,10 @@ impl Bindings {
         self.recovered.extend(recovered);
     }
 
-    /// The import binding a module declares under `name`
-    pub fn imported(&self, name: &str) -> Option<SymbolId> {
+    pub(crate) fn module_binding(&self, name: &str) -> Option<SymbolId> {
         self.scoping
             .get_root_binding(name.into())
-            .filter(|symbol| self.scoping.symbol_flags(*symbol).is_import())
+            .filter(|symbol| self.unchanged(*symbol))
     }
 
     /// Declare that `symbol` binds what the package exports as `imported`;
@@ -142,13 +142,19 @@ impl Bindings {
     }
 
     pub fn stylex_namespace(&mut self, symbol: Option<SymbolId>) {
-        self.stylex_namespaces.extend(symbol);
+        self.stylex
+            .insert(symbol, stylex_bindings::StylexBinding::Namespace);
     }
 
-    pub fn stylex_import(&mut self, symbol: Option<SymbolId>, function: StylexFunction) {
-        if let Some(symbol) = symbol {
-            self.stylex_imports.insert(symbol, function);
-        }
+    pub(crate) fn discover_stylex(&mut self, program: &oxc_ast::ast::Program<'_>, package: &str) {
+        self.stylex = stylex_bindings::StylexBindings::collect(program, &self.scoping, package);
+    }
+
+    pub(crate) fn stylex_binding(
+        &self,
+        expression: &Expression<'_>,
+    ) -> Option<stylex_bindings::StylexBinding> {
+        self.stylex.resolve(expression, &|id| self.symbol(id))
     }
 
     /// Declare that the build removes the declaration of `symbol`

@@ -15,9 +15,7 @@ use crate::extract_style::extract_keyframes::ExtractKeyframes;
 use crate::extract_style::style_property::StyleProperty;
 use crate::extractor::KeyframesExtractResult;
 use crate::extractor::extract_keyframes_from_expression::extract_keyframes_from_expression;
-use crate::extractor::extract_style_from_stylex::{
-    extract_stylex_declarations, extract_stylex_namespace_styles,
-};
+use crate::extractor::extract_style_from_stylex::extract_stylex_namespace_styles;
 use crate::extractor::{
     ExtractResult, GlobalExtractResult,
     extract_global_style_from_expression::extract_global_style_from_expression,
@@ -40,13 +38,12 @@ use crate::prop_modify_utils::{
 use crate::scope::{Bindings, ClassNamesSymbols, NAMESPACE_STYLED};
 use crate::stylex::{
     StylexDynamicInfo, StylexFunction, StylexNamespaceValue, create_theme_class,
-    css_variable_block, css_variable_rules, define_vars_variable, variable_values,
+    css_variable_rules, define_vars_variable, variable_values,
 };
 use crate::util_type::UtilType;
 use crate::{ExtractStyleProp, ExtractStyleValue};
 use css::disassemble_property;
 use css::is_special_property::is_special_property;
-use css::keyframes_to_keyframes_name;
 use oxc_allocator::{Allocator, CloneIn, FromIn, GetAllocator, TakeIn};
 use oxc_ast::ast::ImportDeclarationSpecifier::{self, ImportSpecifier};
 use oxc_ast::ast::JSXAttributeItem::Attribute;
@@ -106,6 +103,7 @@ mod style_order;
 mod stylex_conditions;
 mod stylex_dynamic;
 mod stylex_includes;
+mod stylex_transitions;
 
 use spread_slots::{Overridden, is_unknown_spread, take_known_overridden};
 
@@ -217,6 +215,8 @@ pub struct DevupVisitor<'a> {
     /// Maps bindings to their keyframe animation names.
     /// e.g., `fadeIn` → "a-a"
     stylex_keyframe_names: FxHashMap<SymbolId, String>,
+    stylex_transition_names: FxHashMap<SymbolId, String>,
+    stylex_pending_transition: Option<(u32, String)>,
     /// What the element just visited becomes when it is not an element any
     /// more (a dynamic `as`, a spread evaluated once): set in
     /// `visit_jsx_element`, written where the element stands by the visit of
@@ -753,6 +753,8 @@ impl<'a> DevupVisitor<'a> {
             stylex_namespaces: FxHashMap::default(),
             stylex_pending_keyframe_name: None,
             stylex_keyframe_names: FxHashMap::default(),
+            stylex_transition_names: FxHashMap::default(),
+            stylex_pending_transition: None,
             pending_replacement: None,
             names: names::Names::default(),
             scoping: None,
@@ -861,6 +863,7 @@ impl<'a> DevupVisitor<'a> {
                         || import.source.value == "@stylexjs/stylex")
             });
             (imports_api
+                || crate::scope::stylex_sources::has_stylex_source(program, &self.package)
                 || self.css_prop != CssProp::Off
                 || crate::scope::requires(program, &self.package))
             .then(|| {
@@ -1810,7 +1813,7 @@ impl<'a> DevupVisitor<'a> {
     fn bind_imported_stylex(&mut self) {
         let (vars, themes) = std::mem::take(&mut self.imported_stylex);
         for (name, contract) in vars {
-            if let Some(symbol) = self.bindings.imported(&name) {
+            if let Some(symbol) = self.bindings.module_binding(&name) {
                 self.stylex_var_refs.entry(symbol).or_default().extend(
                     contract
                         .iter()
@@ -1820,7 +1823,7 @@ impl<'a> DevupVisitor<'a> {
             }
         }
         for (name, class) in themes {
-            if let Some(symbol) = self.bindings.imported(&name) {
+            if let Some(symbol) = self.bindings.module_binding(&name) {
                 self.stylex_theme_classes.insert(symbol, class);
             }
         }
@@ -1837,7 +1840,10 @@ impl<'a> DevupVisitor<'a> {
             .filter_map(|(name, symbol)| {
                 Some((
                     name.clone(),
-                    self.stylex_keyframe_names.get(symbol)?.clone(),
+                    self.stylex_keyframe_names
+                        .get(symbol)
+                        .or_else(|| self.stylex_transition_names.get(symbol))?
+                        .clone(),
                 ))
             })
             .collect();
@@ -2533,6 +2539,7 @@ impl<'a> VisitMut<'a> for DevupVisitor<'a> {
         if let Some(scoping) = self.scoping_of(it) {
             self.names.reserve(&scoping);
             self.bindings.scope(Rc::clone(&scoping));
+            self.bindings.discover_stylex(it, &self.package);
             self.bind_imported_stylex();
             self.style_values = crate::style_values::StyleValues::new(scoping);
             self.style_values
@@ -2543,6 +2550,8 @@ impl<'a> VisitMut<'a> for DevupVisitor<'a> {
         }
         walk_program(self, it);
         self.reject_remaining_stylex_calls(it);
+        self.errors
+            .extend(self.bindings.finish_stylex(it, &self.package, &self.errors));
         for (_, message) in &mut self.errors {
             *message = self.names.restore(message);
         }
@@ -3028,84 +3037,9 @@ impl<'a> VisitMut<'a> for DevupVisitor<'a> {
             );
         }
 
-        // Handle StyleX: stylex.positionTry({...}) / stylex.viewTransitionClass({...}).
-        // Both name a block of rules and hand the name back: `@position-try` takes a
-        // dashed-ident, a view-transition class takes a plain class name.
-        if let Expression::CallExpression(call) = it
-            && let Some(is_position_try) = [
-                (StylexFunction::PositionTry, true),
-                (StylexFunction::ViewTransitionClass, false),
-            ]
-            .into_iter()
-            .find_map(|(function, position_try)| {
-                self.is_stylex_call(&call.callee, &function)
-                    .then_some(position_try)
-            })
-            && let [Argument::ObjectExpression(arg)] = call.arguments.as_slice()
-        {
-            let generated = keyframes_to_keyframes_name(
-                &format!("sxp-{}-{}", self.filename, u8::from(is_position_try)),
-                self.split_filename.as_deref(),
-            );
-            let name = if is_position_try {
-                format!("--{generated}")
-            } else {
-                generated
-            };
-            let api = if is_position_try {
-                "stylex.positionTry"
-            } else {
-                "stylex.viewTransitionClass"
-            };
-            let declarations = extract_stylex_declarations(api, arg, &mut self.errors, &|callee| {
-                self.bindings.stylex_function(callee)
-            });
-            if !declarations.is_empty() {
-                let css = if is_position_try {
-                    css_variable_block(&format!("@position-try {name}"), &declarations)
-                } else {
-                    css_variable_block(&format!(".{name}"), &declarations)
-                };
-                self.styles.insert(ExtractStyleValue::Css(ExtractCss {
-                    css,
-                    file: self.filename.clone(),
-                }));
-            }
-            *it = Expression::new_string_literal(
-                SPAN,
-                Str::from_in(&name, self.ast.allocator()),
-                None,
-                &self.ast,
-            );
-        }
+        let compiled_transition = self.compile_stylex_transition(it);
 
-        // Handle StyleX: stylex.keyframes({...}) calls
-        if let Expression::CallExpression(call) = it
-            && self.is_stylex_call(&call.callee, &StylexFunction::Keyframes)
-            && let [arg] = call.arguments.as_mut_slice()
-            && let Some(arg @ Expression::ObjectExpression(_)) = arg.as_expression_mut()
-        {
-            let KeyframesExtractResult {
-                keyframes,
-                runtime_value,
-            } = extract_keyframes_from_expression(&self.ast, arg);
-            if let Some(value) = runtime_value {
-                self.errors.push((
-                    call.span.start,
-                    runtime_value_error("stylex.keyframes", &value),
-                ));
-            }
-            let name =
-                style_property_into_string(keyframes.extract(self.split_filename.as_deref()));
-            self.styles.insert(ExtractStyleValue::Keyframes(keyframes));
-            self.stylex_pending_keyframe_name = Some(name.clone());
-            *it = Expression::new_string_literal(
-                SPAN,
-                Str::from_in(&name, self.ast.allocator()),
-                None,
-                &self.ast,
-            );
-        }
+        self.compile_stylex_keyframes(it);
 
         // Handle StyleX: stylex.props(...) / stylex.attrs(...) calls
         if let Expression::CallExpression(call) = it
@@ -3167,6 +3101,7 @@ impl<'a> VisitMut<'a> for DevupVisitor<'a> {
         // Reached only when none of the blocks above replaced the call, so a surviving
         // compile-time call is one whose arguments could not be read statically.
         if let Expression::CallExpression(call) = it
+            && !compiled_transition
             && let Some(function) = self.bindings.stylex_function(&call.callee)
             && let Some(requirement) = function.requirement()
         {
@@ -3723,6 +3658,8 @@ impl<'a> VisitMut<'a> for DevupVisitor<'a> {
     }
 
     fn visit_variable_declarator(&mut self, it: &mut VariableDeclarator<'a>) {
+        let stylex_keyframe_result = matches!(&it.init, Some(Expression::CallExpression(call))
+            if self.is_stylex_call(&call.callee, &StylexFunction::Keyframes));
         let style_result = match &it.init {
             Some(Expression::CallExpression(call)) => self.util_type(&call.callee),
             Some(Expression::TaggedTemplateExpression(tag)) => self.util_type(&tag.tag),
@@ -3821,6 +3758,8 @@ impl<'a> VisitMut<'a> for DevupVisitor<'a> {
             .get_binding_identifier()
             .and_then(|ident| ident.symbol_id.get());
 
+        self.bind_stylex_transition(bound, start);
+
         if let (Some(symbol), Some(Expression::Identifier(from))) = (bound, &it.init) {
             self.bind_stylex_namespace_alias(symbol, from);
         }
@@ -3849,6 +3788,7 @@ impl<'a> VisitMut<'a> for DevupVisitor<'a> {
 
         // Capture stylex.keyframes() variable binding
         if let Some(name) = self.stylex_pending_keyframe_name.take()
+            && stylex_keyframe_result
             && let Some(symbol) = bound
         {
             self.stylex_keyframe_names.insert(symbol, name);
@@ -3942,29 +3882,16 @@ impl<'a> VisitMut<'a> for DevupVisitor<'a> {
                     }
                 }
             }
-        } else if it.source.value == "@stylexjs/stylex" {
-            if let Some(specifiers) = &it.specifiers {
-                for specifier in specifiers {
-                    match specifier {
-                        ImportDeclarationSpecifier::ImportDefaultSpecifier(default_spec) => {
-                            self.bindings
-                                .stylex_namespace(default_spec.local.symbol_id.get());
-                        }
-                        ImportDeclarationSpecifier::ImportNamespaceSpecifier(ns_spec) => {
-                            self.bindings
-                                .stylex_namespace(ns_spec.local.symbol_id.get());
-                        }
-                        ImportSpecifier(named_spec) if !named_spec.import_kind.is_type() => {
-                            let imported = named_spec.imported.to_string();
-                            if let Some(func) = StylexFunction::from_export_name(&imported) {
-                                self.bindings
-                                    .stylex_import(named_spec.local.symbol_id.get(), func);
-                            }
-                        }
-                        ImportSpecifier(_) => {}
-                    }
-                }
-            }
+        } else if matches!(
+            crate::scope::stylex_sources::StylexSource::classify(
+                it.source.value.as_str(),
+                &self.package,
+            ),
+            crate::scope::stylex_sources::StylexSource::Upstream
+                | crate::scope::stylex_sources::StylexSource::Dedicated
+                | crate::scope::stylex_sources::StylexSource::TypesOnly
+        ) {
+            walk_import_declaration(self, it);
         } else {
             if it.source.value == "react" {
                 self.react_import(it);

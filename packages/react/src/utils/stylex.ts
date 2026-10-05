@@ -2,6 +2,65 @@ type StyleValue = string | number | null | undefined
 
 type StyleProperties = Record<string, StyleValue | Record<string, StyleValue>>
 
+export type StylexDeclarations = Readonly<
+  Record<string, string | number | null | undefined | false>
+>
+
+export type ViewTransitionStyles = {
+  readonly group?: StylexDeclarations
+  readonly imagePair?: StylexDeclarations
+  readonly old?: StylexDeclarations
+  readonly new?: StylexDeclarations
+}
+
+export type PositionTryStyles = Readonly<
+  Partial<
+    Record<
+      | 'anchorName'
+      | 'positionAnchor'
+      | 'positionArea'
+      | 'top'
+      | 'right'
+      | 'bottom'
+      | 'left'
+      | 'inset'
+      | 'insetBlock'
+      | 'insetBlockEnd'
+      | 'insetBlockStart'
+      | 'insetInline'
+      | 'insetInlineEnd'
+      | 'insetInlineStart'
+      | 'margin'
+      | 'marginBlock'
+      | 'marginBlockEnd'
+      | 'marginBlockStart'
+      | 'marginInline'
+      | 'marginInlineEnd'
+      | 'marginInlineStart'
+      | 'marginTop'
+      | 'marginBottom'
+      | 'marginLeft'
+      | 'marginRight'
+      | 'width'
+      | 'height'
+      | 'minWidth'
+      | 'minHeight'
+      | 'maxWidth'
+      | 'maxHeight'
+      | 'blockSize'
+      | 'inlineSize'
+      | 'minBlockSize'
+      | 'minInlineSize'
+      | 'maxBlockSize'
+      | 'maxInlineSize'
+      | 'alignSelf'
+      | 'justifySelf'
+      | 'placeSelf',
+      StylexDeclarations[string]
+    >
+  >
+>
+
 interface StyleXTypes {
   angle<T extends string | number>(value: T): T
   color<T extends string>(value: T): T
@@ -74,11 +133,11 @@ export function defineConsts<V extends Record<string, StyleValue>>(
   throw new Error('Cannot run on the runtime')
 }
 
-export function positionTry(_fallback: StyleProperties): string {
+export function positionTry(_fallback: PositionTryStyles): string {
   throw new Error('Cannot run on the runtime')
 }
 
-export function viewTransitionClass(_styles: StyleProperties): string {
+export function viewTransitionClass(_styles: ViewTransitionStyles): string {
   throw new Error('Cannot run on the runtime')
 }
 

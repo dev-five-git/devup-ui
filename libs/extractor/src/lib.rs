@@ -767,7 +767,7 @@ fn extract_class_map_from_code(
 /// Check if the code has an import from the specified package
 #[must_use]
 pub fn has_devup_ui(filename: &str, code: &str, package: &str) -> bool {
-    if !code.contains(package) {
+    if !code.contains(package) && !code.contains(STYLEX_PACKAGE) {
         return false;
     }
 
@@ -787,15 +787,7 @@ pub fn has_devup_ui(filename: &str, code: &str, package: &str) -> bool {
         return false;
     }
 
-    for stmt in &program.body {
-        if let oxc_ast::ast::Statement::ImportDeclaration(decl) = stmt
-            && decl.source.value == package
-        {
-            return true;
-        }
-    }
-
-    false
+    crate::scope::stylex_sources::has_stylex_source(&program, package)
 }
 
 /// Whether extraction does something to a file.
@@ -17574,7 +17566,7 @@ const composed = stylex.create({ fancy: { ...stylex.include(base.dynamic), backg
     fn test_stylex_import_unknown_named() {
         reset_class_map();
         reset_file_map();
-        assert_debug_snapshot!(ToBTreeSet::from(
+        assert_debug_snapshot!(
             extract(
                 "test.tsx",
                 r"import { create, unknownFunction } from '@stylexjs/stylex';
@@ -17587,8 +17579,9 @@ const styles = create({ base: { color: 'red' } });",
                     import_aliases: HashMap::new()
                 },
             )
-            .unwrap()
-        ));
+            .expect_err("unadvertised StyleX value exports must be located errors")
+            .to_string()
+        );
     }
 
     // ==========================================
@@ -18389,7 +18382,7 @@ const el = <div {...stylex.props(dark, styles.box)} />;"
         assert_debug_snapshot!(ToBTreeSet::from(extract_tsx(
             r"import stylex from '@stylexjs/stylex';
 const fallback = stylex.positionTry({ top: '0', insetBlockEnd: 'auto' });
-const transition = stylex.viewTransitionClass({ animationDuration: '300ms' });"
+const transition = stylex.viewTransitionClass({ group: { animationDuration: '300ms' } });"
         )));
     }
 
@@ -18762,10 +18755,10 @@ export const contract = sx.createThemeContract({ accent: null });
 export const dark = stylex.createTheme(colors, { primary: 'navy' });
 export const notStylex = other.defineVars({ a: 'b' });
 export const unknownCallee = missing.defineVars({ a: 'b' });
-export const called = stylex({ a: 'b' });
+export const called = other({ a: 'b' });
 export const nested = stylex.types.defineVars({ a: 'b' });
 export const memberOfNamed = create.defineVars({ a: 'b' });
-export const indirect = (0, stylex.defineVars)({ a: 'b' });
+export const indirect = (0, other.defineVars)({ a: 'b' });
 export const styles = stylex.create({ base: { color: 'red' } });",
         ),
         (
@@ -18920,7 +18913,7 @@ export const light = stylex.createTheme(colors, { primary: 'white' });",
                 ],
             ),
             (
-                "const fallback = stylex.positionTry(notAnObject);\nconst entries = stylex.positionTry({ ...spread, [computed]: '0', top: someVar });\nconst transition = stylex.viewTransitionClass({ animationDuration: later });\nconst fade = stylex.keyframes(frames);",
+                "const fallback = stylex.positionTry(notAnObject);\nconst entries = stylex.positionTry({ ...spread, [computed]: '0', top: someVar });\nconst transition = stylex.viewTransitionClass({ old: { animationDuration: later } });\nconst fade = stylex.keyframes(frames);",
                 &[
                     "`stylex.positionTry()` cannot use `notAnObject` at build time: it takes one object literal",
                     "`stylex.positionTry()` cannot use `...spread`",

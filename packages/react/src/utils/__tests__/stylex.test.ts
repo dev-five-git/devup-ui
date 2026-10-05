@@ -41,7 +41,7 @@ describe('stylex', () => {
     expect(() => positionTry({ top: '0' })).toThrowError(
       'Cannot run on the runtime',
     )
-    expect(() => viewTransitionClass({ opacity: '0' })).toThrowError(
+    expect(() => viewTransitionClass({ old: { opacity: 0 } })).toThrowError(
       'Cannot run on the runtime',
     )
   })

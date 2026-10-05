@@ -17,6 +17,8 @@ mod lowered_reads;
 mod preflight_contexts;
 mod scoping;
 mod stylex;
+mod stylex_entrypoint_controls;
+mod stylex_entrypoints;
 mod theme_reads;
 
 struct Visited {

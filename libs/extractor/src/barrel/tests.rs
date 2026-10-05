@@ -632,10 +632,14 @@ fn default_import_of_the_package_reads_members() {
 #[test]
 #[serial]
 fn stylex_namespace_is_left() {
-    let code = namespace_code(&format!(
+    let error = namespace_error(&format!(
         "{NS}const {{ stylex }} = Devup\nexport const a = stylex\n"
     ));
-    assert!(code.contains("{ stylex } = Devup"), "{code}");
+    assert!(error.contains("test.tsx:2:20:"), "{error}");
+    assert!(
+        error.contains("compile-only stylex namespace cannot escape"),
+        "{error}"
+    );
 }
 
 #[test]

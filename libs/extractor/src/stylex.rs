@@ -14,6 +14,7 @@ use crate::utils::{
 
 pub(crate) mod assignments;
 mod dynamic;
+pub(crate) mod transitions;
 pub(crate) mod validation;
 pub use dynamic::{DynamicNamespace, Scalar, StylexDynamicInfo};
 
@@ -93,11 +94,8 @@ impl StylexFunction {
 /// The custom property `stylex.defineVars()` in `filename` declares for `key`;
 /// a module importing it computes the same name
 #[must_use]
-pub fn define_vars_variable(filename: &str, key: &str, split_filename: Option<&str>) -> String {
-    format!(
-        "--{}",
-        keyframes_to_keyframes_name(&format!("sxv-{filename}-{key}"), split_filename)
-    )
+pub fn define_vars_variable(filename: &str, key: &str, _split_filename: Option<&str>) -> String {
+    transitions::content_name(filename, transitions::IdentityDomain::Variable, key)
 }
 
 /// The class `stylex.createTheme()` in `filename` applies to `contract`, the

@@ -9,6 +9,36 @@ export const metadata = {
 
 `@stylexjs/stylex` needs no alias configuration — the extractor recognises the package directly, through the default import, a namespace import, or named imports.
 
+These are alternative upstream import forms:
+
+```ts
+import * as sx from '@stylexjs/stylex'
+import stylex from '@stylexjs/stylex'
+import { positionTry, viewTransitionClass } from '@stylexjs/stylex'
+
+positionTry({ top: 0 })
+viewTransitionClass({ old: { opacity: 0 } })
+stylex.positionTry({ top: 0 })
+sx.viewTransitionClass({ old: { opacity: 0 } })
+```
+
+You can also use the real Devup UI API through named or namespace imports from `@devup-ui/react/stylex`, the root named `stylex` export, or `devup.stylex` through a root namespace import. These are alternative forms, not imports you need to combine:
+
+```ts
+import * as devup from '@devup-ui/react'
+import { stylex as sx } from '@devup-ui/react'
+import * as stylex from '@devup-ui/react/stylex'
+import { positionTry, viewTransitionClass } from '@devup-ui/react/stylex'
+
+sx.positionTry({ top: 0 })
+devup.stylex.viewTransitionClass({ old: { opacity: 0 } })
+positionTry({ top: 0 })
+viewTransitionClass({ old: { opacity: 0 } })
+stylex.positionTry({ top: 0 })
+```
+
+The dedicated `/stylex` subpath has no default export. The root exports the `stylex` namespace, not individual `positionTry` or `viewTransitionClass` functions. `@devup-ui/react/compat/stylex` is a types-only reference for upstream imports, not a runtime entrypoint. All styling APIs must be compiled by a Devup UI build plugin; their placeholders throw if called at runtime.
+
 ## Styles and props
 
 `create()` becomes a namespace-to-class-name object and `props()` becomes the attributes to spread:
@@ -33,7 +63,7 @@ const el = <div {...{ className: `a ${colors[color] || ''}` }} />
 
 Computed access such as `colors[color]` is resolved against the object the `create()` call was rewritten into, so every generated atom stays reachable. `stylex.attrs()` behaves the same but emits `class` instead of `className`.
 
-Numbers get the unit StyleX gives them: `fontSize: 16` is `16px`, `transitionDuration: 300` is `300ms`, and unitless properties such as `lineHeight` stay as written. A number passed to a dynamic style gets the same unit at runtime.
+Numbers use valid CSS units: `fontSize: 16` is `16px`, `transitionDuration: 300` is `300ms`, and unitless properties such as `lineHeight` stay as written. A number passed to a dynamic `create()` style gets the same unit at runtime through its generated CSS variable, without a styling runtime.
 
 Accepted argument shapes:
 
@@ -47,6 +77,8 @@ stylex.props(styles?.base) // optional chaining
 ```
 
 ## Variables and themes
+
+Generated names in these examples (`--a`, `--b`, `c` and `d`) are illustrative and opaque. Variable references encode the defining file and member; the old counter-based spellings are not promised.
 
 ```tsx
 const colors = stylex.defineVars({ primary: 'blue', secondary: 'grey' })
@@ -131,27 +163,64 @@ const styles = stylex.create({
 })
 ```
 
-A value in `create()` that this file's own functions compute from constants with exact built-ins, such as `double(SIZE)`, is computed at build time; another module's code never runs, and code whose result is not certain (`Date`, `Math.random`, `Math.sin`, locale methods, `new`, `this`...) is not run. A value only known at runtime, such as a prop or a state, is a build error naming it, as is anything `create()`, `defineVars()`, `defineConsts()`, `createTheme()`, `keyframes()`, `positionTry()` or `viewTransitionClass()` cannot read (a spread, a computed key, a non-object argument). Pass runtime values through a dynamic style (`(color) => ({ color })`), which becomes a CSS variable instead.
+A value in `create()` that this file's own functions compute from constants with exact built-ins, such as `double(SIZE)`, is computed at build time; another module's code never runs, and code whose result is not certain (`Date`, `Math.random`, `Math.sin`, locale methods, `new`, `this`...) is not run. A value only known at runtime, such as a prop or state, is a build error naming it. In `create()` styles, pass runtime values through a dynamic style (`(color) => ({ color })`), which becomes a CSS variable instead.
+
+Calls accept input the build can resolve exactly. An unresolved spread or computed key, runtime leaf, non-object argument, unsupported property or slot, or malformed call is a located build error. Statically resolvable spreads and computed keys are not rejected merely for using that syntax. Transition declarations do not accept dynamic style functions.
 
 `stylex.props()` accepts styles compiled elsewhere — a `style` prop a parent passes, a spread, another module's namespaces — and joins their class names at runtime; namespaces of this file resolve at build time.
 
-## At-rules
+## Position fallbacks and view transitions
 
 ```tsx
-const fallback = stylex.positionTry({ top: '0', insetBlockEnd: 'auto' })
-const transition = stylex.viewTransitionClass({ animationDuration: '300ms' })
+import * as stylex from '@devup-ui/react/stylex'
+
+const fallback = stylex.positionTry({ top: 0, width: 100 })
+const transition = stylex.viewTransitionClass({
+  group: { animationDuration: 300 },
+  imagePair: { borderRadius: 16 },
+  old: { opacity: 0 },
+  new: { animationDuration: '300ms', fontWeight: 700 },
+})
+const styles = stylex.create({
+  tooltip: { positionTryFallbacks: fallback },
+  card: { viewTransitionClass: transition },
+})
 ```
 
 ```css
-@position-try --a {
+@position-try --POSITION_ID {
   top: 0;
-  inset-block-end: auto;
+  width: 100px;
 }
-.b {
+::view-transition-group(*.TRANSITION_ID) {
   animation-duration: 300ms;
+}
+::view-transition-image-pair(*.TRANSITION_ID) {
+  border-radius: 16px;
+}
+::view-transition-old(*.TRANSITION_ID) {
+  opacity: 0;
+}
+::view-transition-new(*.TRANSITION_ID) {
+  animation-duration: 300ms;
+  font-weight: 700;
 }
 ```
 
+`POSITION_ID` and `TRANSITION_ID` are symbolic placeholders for opaque deterministic generated names, not literal output or promised short `a`/`b` allocations. Each name encodes the file identity, API domain and canonical content. Names are longer than counter-based atom names; there are no arrival counters or allocation-history dependencies. The same file and canonical content share a name, while different content does not. Position declarations are sorted when forming canonical content, so changing their enumeration order preserves sharing. View transitions preserve slot and declaration enumeration order in their canonical content, so reordering them can change the name. An absent slot and an empty slot are distinct inputs.
+
+`viewTransitionClass()` accepts only the optional `group`, `imagePair`, `old` and `new` slots, each containing a flat declaration object. The output targets the four class-qualified view-transition pseudo-elements, not an ordinary `.TRANSITION_ID` rule. `positionTry()` accepts the supported camelCase position, inset, margin, sizing and self-alignment properties. Numeric lengths become px, numeric durations become ms, and unitless values such as `fontWeight: 700` stay unitless; Devup spacing multipliers do not apply. Devup preserves valid CSS rather than reproducing upstream extra position declarations or incorrect numeric units.
+
+Declaration leaves may be static strings or numbers. Known `null`, `undefined` and `false` leaves omit the declaration; they do not make a slot optional at runtime. A supplied view slot must still be an object, not `null`, `undefined`, `false` or a scalar. Known `true`, arrays, plain objects and functions used as declaration leaves are errors. Nested `default`, `:hover`, media, supports or container condition objects are not transition declaration syntax. Select distinct statically defined fallback or transition strings in a supported enclosing style instead. API, function and namespace values cannot escape uncompiled into JavaScript.
+
 ## Value helpers
 
-`firstThatWorks()` emits its fallbacks in CSS order, `types.*()` unwraps to the inner value, and `include()` merges another namespace's classes. Values may be plain literals, condition objects (`{ default, ':hover', '@media ...' }`), or arrow functions, which become CSS variables bound at the call site.
+Within `create()` styles, `firstThatWorks()` emits its fallbacks in CSS order, `types.*()` unwraps to the inner value, and `include()` merges another namespace's classes. `create()` style values may be plain literals, condition objects (`{ default, ':hover', '@media ...' }`), or arrow functions, which become CSS variables bound at the call site. These forms do not extend the flat declaration contract of `positionTry()` or `viewTransitionClass()`.
+
+For example, ordinary pseudo-class styles use property conditions inside `create()`:
+
+```tsx
+const states = stylex.create({
+  button: { color: { default: 'black', ':hover': 'blue' } },
+})
+```

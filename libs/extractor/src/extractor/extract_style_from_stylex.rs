@@ -7,7 +7,6 @@ use crate::stylex::{
     decompose_value_conditions, is_first_that_works_call, is_include_call_static, is_types_call,
     normalize_stylex_property, stylex_value,
 };
-use css::optimize_value::optimize_value;
 use css::style_selector::StyleSelector;
 use oxc_ast::ast::{
     Argument, Expression, ObjectExpression, ObjectPropertyKind, PropertyKind, SpreadElement,
@@ -29,9 +28,10 @@ pub(crate) fn raw_static_style<'a>(
     value: &str,
     selector: Option<StyleSelector>,
 ) -> ExtractStyleProp<'a> {
+    let value = crate::stylex::transitions::css_value(&property, value).into_owned();
     ExtractStyleProp::Static(ExtractStyleValue::Static(ExtractStaticStyle {
         property,
-        value: optimize_value(value).into_owned(),
+        value,
         level: 0,
         selector,
         style_order: None,
@@ -40,42 +40,13 @@ pub(crate) fn raw_static_style<'a>(
     }))
 }
 
-/// Flatten an object literal of literal-valued properties into kebab-cased CSS
-/// declarations, the shape `positionTry` and `viewTransitionClass` bodies take.
-pub fn extract_stylex_declarations(
-    api: &str,
-    object: &ObjectExpression<'_>,
-    errors: &mut Vec<(u32, String)>,
-    resolver: StylexResolver<'_>,
-) -> Vec<(String, String)> {
-    let mut declarations = vec![];
-    for property in &object.properties {
-        let property = match property {
-            ObjectPropertyKind::ObjectProperty(property) => property,
-            ObjectPropertyKind::SpreadProperty(spread) => {
-                errors.push(spread_error(api, spread));
-                continue;
-            }
-        };
-        let Some(name) = get_str_by_property_key(&property.key) else {
-            errors.push(key_error(api, &property.key));
-            continue;
-        };
-        let name = normalize_stylex_property(name.as_ref());
-        match stylex_value(&name, &property.value) {
-            Some(value) => declarations.push((name, optimize_value(&value).into_owned())),
-            None => errors.push((
-                property.value.span().start,
-                declaration_error(api, &property.value, resolver),
-            )),
-        }
-    }
-    declarations
-}
-
 /// Why `value` is no declaration value: a genuine `StyleX` helper is read only
 /// inside the API that takes it
-fn declaration_error(api: &str, value: &Expression<'_>, resolver: StylexResolver<'_>) -> String {
+pub(crate) fn declaration_error(
+    api: &str,
+    value: &Expression<'_>,
+    resolver: StylexResolver<'_>,
+) -> String {
     let code = readable_code(value);
     match value {
         Expression::CallExpression(call)

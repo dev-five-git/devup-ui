@@ -188,7 +188,7 @@ pub fn requires(program: &oxc_ast::ast::Program<'_>, package: &str) -> bool {
         found: false,
     };
     requires.visit_program(program);
-    requires.found
+    requires.found || super::stylex_sources::has_stylex_require(program, package)
 }
 
 struct Requires<'p> {

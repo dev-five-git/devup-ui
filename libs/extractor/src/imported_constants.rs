@@ -28,6 +28,8 @@ use crate::extractor::ExtractResult;
 use crate::extractor::extract_style_from_expression::{
     LiteralHandling, extract_style_from_expression,
 };
+use crate::scope::stylex_bindings::{StylexBindings, symbol as stylex_symbol};
+use crate::scope::stylex_sources::{StylexSource, has_stylex_source};
 use crate::stylex::StylexFunction;
 use crate::{ExtractOption, ExtractStyleValue, ModuleResolver};
 
@@ -37,6 +39,7 @@ mod lexical;
 mod require_tests;
 #[cfg(test)]
 mod safety_tests;
+mod stylex_entrypoints;
 
 #[derive(Clone, Debug)]
 enum Constant {
@@ -373,7 +376,10 @@ pub(crate) fn inline_constants<'a>(
         matches!(statement, Statement::ImportDeclaration(import)
             if is_style_package(option, &import.source.value))
     });
-    if !imports_style_package && css_prop == CssProp::Off {
+    if !imports_style_package
+        && !has_stylex_source(program, &option.package)
+        && css_prop == CssProp::Off
+    {
         return Inlined::default();
     }
     let scoping = Rc::new(
@@ -396,7 +402,8 @@ pub(crate) fn inline_constants<'a>(
 }
 
 fn is_style_package(option: &ExtractOption, source: &str) -> bool {
-    source.starts_with(&option.package) || source == crate::STYLEX_PACKAGE
+    StylexSource::classify(source, &option.package) != StylexSource::Other
+        || source.strip_prefix(option.package.as_str()) == Some("/compat")
 }
 
 fn inline_in<'a>(
@@ -411,11 +418,13 @@ fn inline_in<'a>(
     let compat = format!("{}/compat", option.package);
     let css_props = CssTakers::new(program, scoping, css_prop, &compat);
     let mut style = StyleSymbols::new(scoping);
+    style.stylex = StylexBindings::collect(program, scoping, &option.package);
     for statement in &program.body {
         if let Statement::ImportDeclaration(import) = statement
             && is_style_package(option, &import.source.value)
         {
-            let stylex = import.source.value == crate::STYLEX_PACKAGE;
+            let stylex = StylexSource::classify(import.source.value.as_str(), &option.package)
+                .is_api_module();
             for specifier in import.specifiers.iter().flatten() {
                 if let Some(local) = specifier.local().symbol_id.get() {
                     style.roots.insert(local);
@@ -475,6 +484,7 @@ fn inline_in<'a>(
     let mut symbols: FxHashMap<SymbolId, Constant> = FxHashMap::default();
     let reads_math = {
         let mut scope = ModuleScope::new(filename, program, None);
+        scope.stylex_package.clone_from(&option.package);
         scope.style_names.extend(
             style
                 .roots
@@ -496,7 +506,9 @@ fn inline_in<'a>(
                                 .or_default()
                                 .push(&local.symbol_id);
                         }
-                    } else if import.source.value != crate::STYLEX_PACKAGE {
+                    } else if !StylexSource::classify(import.source.value.as_str(), &option.package)
+                        .is_api_module()
+                    {
                         scope.style_imports.extend(
                             import
                                 .specifiers
@@ -530,10 +542,10 @@ fn inline_in<'a>(
                 }
                 _ => continue,
             };
+            scope.require(declaration);
             scope.declare(declaration);
             for declarator in &declaration.declarations {
-                if let oxc_ast::ast::BindingPattern::BindingIdentifier(identifier) = &declarator.id
-                {
+                for identifier in declarator.id.get_binding_identifiers() {
                     bindings
                         .entry(identifier.name.as_str())
                         .or_default()
@@ -680,10 +692,12 @@ impl<'p, 'a, 'r> ChangeCheck<'p, 'a, 'r> {
         resolver: Option<&'r ModuleResolver>,
     ) -> Self {
         let mut scope = ModuleScope::new(filename, program, None);
+        scope.stylex_package.clone_from(&option.package);
         for statement in &program.body {
             match statement {
                 Statement::ImportDeclaration(import) => scope.import(import),
                 Statement::VariableDeclaration(declaration) => {
+                    scope.require(declaration);
                     scope.declare(declaration);
                 }
                 Statement::ExportDeclaration(export) => match &export.declaration {
@@ -742,6 +756,7 @@ impl<'p, 'a, 'r> ChangeCheck<'p, 'a, 'r> {
 /// not a style API
 struct StyleSymbols<'s> {
     scoping: &'s Scoping,
+    stylex: StylexBindings,
     /// Everything the packages give
     roots: FxHashSet<SymbolId>,
     /// The style APIs that read style objects at build time
@@ -766,6 +781,7 @@ impl<'s> StyleSymbols<'s> {
     fn new(scoping: &'s Scoping) -> Self {
         Self {
             scoping,
+            stylex: StylexBindings::default(),
             roots: FxHashSet::default(),
             functions: FxHashSet::default(),
             namespaces: FxHashMap::default(),
@@ -774,7 +790,9 @@ impl<'s> StyleSymbols<'s> {
 
     /// Whether `identifier` reads something a style package gives
     fn has(&self, identifier: &IdentifierReference<'_>) -> bool {
-        binding_of(self.scoping, identifier).is_some_and(|symbol| self.roots.contains(&symbol))
+        binding_of(self.scoping, identifier).is_some_and(|symbol| {
+            self.roots.contains(&symbol) || self.stylex.binding(symbol).is_some()
+        })
     }
 
     /// Whether `expression` is a style API: a root the package gives, or a
@@ -797,6 +815,13 @@ impl<'s> StyleSymbols<'s> {
     /// `css(...)`, `styled.div(...)`, `styled(Link).attrs(...)`,
     /// `stylex.create(...)`
     fn reads(&self, callee: &Expression<'_>) -> bool {
+        if self
+            .stylex
+            .function(callee, &|id| stylex_symbol(self.scoping, id))
+            .is_some_and(|function| function.requirement().is_some())
+        {
+            return true;
+        }
         let mut expression = callee;
         let mut member = None;
         loop {
@@ -985,6 +1010,7 @@ impl Modules<'_> {
         let source_type = SourceType::from_path(path).unwrap_or_else(|_| SourceType::ts());
         let program = Parser::new(&allocator, code, source_type).parse().program;
         let mut scope = ModuleScope::new(path, &program, Some(code));
+        scope.stylex_package.clone_from(&self.option.package);
         let mut exports = FxHashMap::default();
         let mut exported: Vec<(String, String)> = Vec::new();
         let mut commonjs = CommonJs::new(&program);
@@ -1222,6 +1248,8 @@ fn is_define_es_module(call: &oxc_ast::ast::CallExpression<'_>) -> bool {
 /// The top-level constants and imports of a module, each constant evaluated
 /// when first read
 struct ModuleScope<'p, 'a> {
+    stylex_package: String,
+    stylex_bindings: OnceCell<StylexBindings>,
     path: &'p str,
     program: &'p Program<'a>,
     /// The code of an imported module, where changes are located as
@@ -1255,6 +1283,8 @@ impl<'p, 'a> ModuleScope<'p, 'a> {
     fn new(path: &'p str, program: &'p Program<'a>, source: Option<&'p str>) -> Self {
         Self {
             path,
+            stylex_package: String::new(),
+            stylex_bindings: OnceCell::new(),
             program,
             source,
             locals: FxHashMap::default(),
@@ -1590,36 +1620,6 @@ impl<'p, 'a> ModuleScope<'p, 'a> {
         }
     }
 
-    /// The `StyleX` API `callee` reads, as the import it reads binds it and
-    /// not as it is spelled: a local named like an import is not the API
-    fn stylex_function(&self, callee: &Expression<'_>) -> Option<StylexFunction> {
-        let (identifier, member) = match callee {
-            Expression::Identifier(identifier) => (identifier, None),
-            Expression::StaticMemberExpression(member) => match &member.object {
-                Expression::Identifier(object) => (object, Some(member.property.name.as_str())),
-                _ => return None,
-            },
-            _ => return None,
-        };
-        let export = match (self.imports.get(identifier.name.as_str())?, member) {
-            ((source, _), _) if source != crate::STYLEX_PACKAGE => return None,
-            ((_, Imported::Named(export)), None) => export.as_str(),
-            ((_, Imported::Namespace), Some(export)) => export,
-            ((_, Imported::Named(export)), Some(member)) if export == "default" => member,
-            _ => return None,
-        };
-        let function = StylexFunction::from_export_name(export)?;
-        self.reads_top_level_binding(identifier).then_some(function)
-    }
-
-    /// Whether `identifier` reads a binding of the module's top level, where
-    /// the imports bind, and not a local of a function or block
-    fn reads_top_level_binding(&self, identifier: &IdentifierReference<'_>) -> bool {
-        let scoping = self.semantic_scoping();
-        binding_of(scoping, identifier)
-            .is_some_and(|symbol| scoping.symbol_scope_id(symbol) == scoping.root_scope_id())
-    }
-
     fn semantic_scoping(&self) -> &Scoping {
         self.shared_scoping.unwrap_or_else(|| {
             self.scoping.get_or_init(|| {
@@ -1641,6 +1641,12 @@ impl<'p, 'a> ModuleScope<'p, 'a> {
         let function = self.stylex_function(&call.callee)?;
         let split_filename = crate::css_bucket(self.path, modules.option);
         match (function, call.arguments.as_slice()) {
+            (
+                function @ (StylexFunction::PositionTry
+                | StylexFunction::ViewTransitionClass
+                | StylexFunction::Keyframes),
+                [argument],
+            ) => self.evaluate_stylex_rule(modules, function, argument.as_expression()?),
             (
                 function @ (StylexFunction::DefineVars | StylexFunction::CreateThemeContract),
                 [Argument::ObjectExpression(object)],
@@ -1837,6 +1843,9 @@ impl<'p, 'a> ModuleScope<'p, 'a> {
                         arguments.push(self.evaluate(modules, argument.as_expression()?)?);
                     }
                     return fold_math(&name, &arguments);
+                }
+                if self.stylex_function(&call.callee).is_some() {
+                    return self.evaluate_stylex(modules, call);
                 }
                 if self.is_style_api(modules, &call.callee) {
                     return Some(Constant::Style(self.css_styles(modules, call)));
@@ -2467,6 +2476,8 @@ mod exact_tests;
 mod numeric_semantics_tests;
 #[cfg(test)]
 mod scope_tests;
+#[cfg(test)]
+mod stylex_entrypoint_tests;
 #[cfg(test)]
 mod stylex_scope_tests;
 #[cfg(test)]

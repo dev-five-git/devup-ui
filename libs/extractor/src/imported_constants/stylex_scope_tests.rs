@@ -140,11 +140,17 @@ export const A = () => <div {...sx.props(styles.b, styles.c)} />;",
         vec![
             ("background-color".to_string(), "blue".to_string()),
             ("background-color".to_string(), "red".to_string()),
-            ("border-color".to_string(), "var(--a-c)".to_string()),
+            (
+                "border-color".to_string(),
+                "var(--sxvar-746573742e747378-746f6e65-)".to_string()
+            ),
             ("color".to_string(), "red".to_string()),
             ("height".to_string(), "1px".to_string()),
             ("height".to_string(), "2px".to_string()),
-            ("width".to_string(), "var(--a-b)".to_string()),
+            (
+                "width".to_string(),
+                "var(--sxvar-746573742e747378-73697a65-)".to_string()
+            ),
         ]
     );
 }
@@ -220,6 +226,9 @@ export const A = () => <div {...sx.props(s.a)} />;",
     .unwrap_or_else(|error| panic!("{error}"));
     assert_eq!(
         declarations(&output),
-        vec![("color".to_string(), "var(--b-a)".to_string())]
+        vec![(
+            "color".to_string(),
+            "var(--sxvar-2f7372632f766172732e7473-746f6e65-)".to_string()
+        )]
     );
 }

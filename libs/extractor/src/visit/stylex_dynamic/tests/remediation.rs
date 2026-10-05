@@ -93,19 +93,22 @@ fn stylex_undefined_when_shadowed_preserves_runtime_class(
     assert_eq!(actual, expected);
 }
 
-#[test]
+#[rstest]
+#[case("stylex.types")]
+#[case("create")]
 #[serial]
-fn stylex_types_when_unrelated_nested_member_is_preserved() {
+fn stylex_types_when_unrelated_nested_member_is_preserved(#[case] object: &str) {
     // Given the existing compatibility control, not a recognized types method.
-    let source =
-        "import stylex from '@stylexjs/stylex';const result=stylex.types.defineVars({a:'b'});";
+    let source = format!(
+        "import stylex, {{ create }} from '@stylexjs/stylex';const result={object}.defineVars({{a:'b'}});"
+    );
     // When final validation walks the object of the unrelated member.
-    let output = extract(source).expect("unrelated nested member");
+    let output = extract(&source).expect("unrelated nested member");
     // Then ordinary nested-member evaluation remains executable.
     assert_eq!(
         execute(
             &output,
-            "const stylex={types:{defineVars:x=>x.a}};",
+            "const stylex={types:{defineVars:x=>x.a}}; const create={defineVars:x=>x.a};",
             "result"
         ),
         "\"b\""

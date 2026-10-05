@@ -190,15 +190,7 @@ impl Bindings {
     /// The `StyleX` API `callee` reads, as a named import or as a member of
     /// the package imported whole
     pub fn stylex_function(&self, callee: &Expression<'_>) -> Option<StylexFunction> {
-        match callee {
-            Expression::Identifier(identifier) => self
-                .symbol(identifier)
-                .and_then(|symbol| self.stylex_imports.get(&symbol))
-                .cloned(),
-            callee => self
-                .member_of(&self.stylex_namespaces, callee)
-                .and_then(StylexFunction::from_export_name),
-        }
+        self.stylex.function(callee, &|id| self.symbol(id))
     }
 
     /// The bindings the names `object` reads all stand for, by name
