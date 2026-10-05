@@ -226,7 +226,14 @@ pub fn transform_import_aliases<'a>(
     package: &str,
     import_aliases: &HashMap<String, ImportAlias>,
 ) -> Cow<'a, str> {
-    transform_import_aliases_with_edits(code, filename, package, import_aliases).0
+    transform_import_aliases_with_edits(
+        code,
+        filename,
+        package,
+        import_aliases,
+        crate::parser_source_type(filename).unwrap_or_default(),
+    )
+    .0
 }
 
 /// A replacement of `code[start..end]` by text of `length` bytes
@@ -249,6 +256,7 @@ pub fn transform_import_aliases_with_edits<'a>(
     filename: &str,
     package: &str,
     import_aliases: &HashMap<String, ImportAlias>,
+    source_type: oxc_span::SourceType,
 ) -> (Cow<'a, str>, Vec<Edit>) {
     // Quick check: if no aliases match, return original code
     if import_aliases.is_empty() || !import_aliases.keys().any(|alias| code.contains(alias)) {
@@ -256,7 +264,6 @@ pub fn transform_import_aliases_with_edits<'a>(
     }
 
     let allocator = Allocator::default();
-    let source_type = crate::parser_source_type(filename).unwrap_or_default();
 
     // Parse the code
     let parser_ret = Parser::new(&allocator, code, source_type).parse();

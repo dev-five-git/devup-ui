@@ -219,11 +219,17 @@ pub struct ExtractOutput {
 pub struct ResolvedModule {
     pub path: String,
     pub code: String,
+    pub source_type: Option<ExtractSourceType>,
 }
+
+mod source_type;
+pub use source_type::{ExtractSourceType, parse_source_type};
+#[cfg(test)]
+mod source_type_tests;
 
 /// Resolves `(specifier, importer)` the way the bundler does; `None` when it
 /// cannot
-pub type ModuleResolver = dyn Fn(&str, &str) -> Option<ResolvedModule>;
+pub type ModuleResolver<'a> = dyn Fn(&str, &str) -> Option<ResolvedModule> + 'a;
 
 #[derive(Clone)]
 pub struct ExtractOption {
@@ -301,7 +307,43 @@ fn extract_with_source_map(
     source_map: bool,
     resolver: Option<&ModuleResolver>,
 ) -> Result<ExtractOutput, Box<dyn Error>> {
-    extract_source(filename, code, None, option, source_map, resolver)
+    extract_with_source_type(filename, code, option, source_map, resolver, None)
+}
+
+/// Extract compiler output under its real filename with an explicit language.
+pub fn extract_with_source_type(
+    filename: &str,
+    code: &str,
+    option: ExtractOption,
+    source_map: bool,
+    resolver: Option<&ModuleResolver>,
+    source_type: Option<ExtractSourceType>,
+) -> Result<ExtractOutput, Box<dyn Error>> {
+    let fault = std::cell::RefCell::new(None);
+    let validated = |specifier: &str, importer: &str| {
+        if fault.borrow().is_some() {
+            return None;
+        }
+        let module = resolver?(specifier, importer)?;
+        if let Err(error) = source_type::validate_module(&module) {
+            *fault.borrow_mut() = Some(error);
+            return None;
+        }
+        Some(module)
+    };
+    let output = extract_source(
+        filename,
+        code,
+        None,
+        option,
+        source_map,
+        resolver.map(|_| &validated as &ModuleResolver),
+        source_type,
+    );
+    match fault.into_inner() {
+        Some(error) => Err(error.into()),
+        None => output,
+    }
 }
 
 /// `evaluated` is the source `code` was computed from, with the layers of
@@ -313,7 +355,9 @@ fn extract_source(
     option: ExtractOption,
     source_map: bool,
     resolver: Option<&ModuleResolver>,
+    source_mode: Option<ExtractSourceType>,
 ) -> Result<ExtractOutput, Box<dyn Error>> {
+    let source_type = source_type::parser_type(filename, source_mode)?;
     // Step 1: Transform import aliases
     // e.g., `import styled from '@emotion/styled'` → `import { styled } from '@devup-ui/react'`
     // e.g., `import { style } from '@vanilla-extract/css'` → `import { style } from '@devup-ui/react'`
@@ -322,18 +366,19 @@ fn extract_source(
         filename,
         &option.package,
         &option.import_aliases,
+        source_type,
     );
 
     // Step 2: Check if code contains the target package (after transformation)
     let has_relevant_import = transformed_code.contains(option.package.as_str())
         || transformed_code.contains(STYLEX_PACKAGE);
-    let compiled_mdx = is_compiled_mdx(filename);
+    let compiled_mdx = source_mode.is_some() || is_compiled_mdx(filename);
 
     if !has_relevant_import {
         // Raw Markdown must not pass through merely because it has no styling import.
         if compiled_mdx {
             let allocator = Allocator::default();
-            let parsed = Parser::new(&allocator, code, parser_source_type(filename)?).parse();
+            let parsed = Parser::new(&allocator, code, source_type).parse();
             if let Some(error) = parsed.diagnostics.errors().next() {
                 let offset = error
                     .labels
@@ -370,7 +415,13 @@ fn extract_source(
     // otherwise the untouched `transformed_code` is parsed directly (no copy).
     let processed_code: Option<String> = if utils::is_vanilla_extract_file(filename) {
         // Use transformed code (with imports already pointing to @devup-ui/react)
-        match vanilla_extract::execute_stylesheet(&transformed_code, filename, &option, resolver) {
+        match vanilla_extract::execute_stylesheet_with_type(
+            &transformed_code,
+            filename,
+            &option,
+            resolver,
+            source_mode,
+        ) {
             Ok((collected, imports)) => {
                 dependencies = imports.dependencies;
                 // Keyframes names are generated, so extract the referenced ones
@@ -388,6 +439,7 @@ fn extract_source(
                         ),
                         &option,
                         &referenced,
+                        source_mode,
                     )?
                 };
                 let code = vanilla_extract::collected_styles_to_code_with_keyframes(
@@ -440,7 +492,6 @@ fn extract_source(
 
     let code_to_parse = processed_code.as_deref().unwrap_or(&transformed_code);
 
-    let source_type = parser_source_type(filename)?;
     let (bucket, global, css_file) = resolve_css_target(filename, &option);
     let import_main = option.import_main_css && !global;
     // Presize to the exact final length (1 target + optional main-css entry) and
@@ -517,6 +568,7 @@ fn extract_source(
             &option,
             resolver,
             &inlined.unknown,
+            source_mode,
         )
     {
         let mut output = extract_source(
@@ -526,6 +578,7 @@ fn extract_source(
             option,
             source_map,
             resolver,
+            source_mode,
         )?;
         let mut files: std::collections::BTreeSet<String> =
             output.dependencies.into_iter().collect();
@@ -701,8 +754,9 @@ fn extract_class_map_from_code(
     partial_code: &str,
     option: &ExtractOption,
     style_names: &FxHashSet<String>,
+    source_mode: Option<ExtractSourceType>,
 ) -> Result<FxHashMap<String, String>, Box<dyn Error>> {
-    let source_type = parser_source_type(filename)?;
+    let source_type = source_type::parser_type(filename, source_mode)?;
     let (bucket, global, css_file) = resolve_css_target(filename, option);
     let css_files = vec![css_file];
     let allocator = Allocator::default();
@@ -941,6 +995,7 @@ mod tests {
             "import {css} from '@devup-ui/react'; export const card = css({bg: 'red'});",
             &ExtractOption::default(),
             &names,
+            None,
         )
         .unwrap();
         assert!(map.contains_key("card"));
@@ -14587,6 +14642,7 @@ export const card = style({
                 import_aliases: HashMap::new(),
             },
             &style_names,
+            None,
         )
         .unwrap();
 
@@ -18328,6 +18384,7 @@ export const d = style([cond && base]);",
                         .any(|extension| format!("{path}{extension}") == *file)
                 })
                 .map(|(file, code)| ResolvedModule {
+                    source_type: None,
                     path: (*file).to_string(),
                     code: (*code).to_string(),
                 })

@@ -15,7 +15,10 @@ use oxc_ast::builder::AstBuilder;
 use oxc_ast_visit::{Visit, VisitMut, walk, walk_mut};
 use oxc_parser::Parser;
 use oxc_semantic::{Scoping, SemanticBuilder};
-use oxc_span::{SPAN, SourceType};
+use oxc_span::SPAN;
+#[cfg(test)]
+#[path = "imported_source_type_tests.rs"]
+mod source_type_tests;
 use oxc_syntax::number::NumberBase;
 use oxc_syntax::operator::BinaryOperator;
 use oxc_syntax::symbol::SymbolId;
@@ -479,7 +482,11 @@ pub(crate) fn inline_constants<'a>(
         }
         (scoping, reads_math)
     };
-    inlined.dependencies = modules.exports.into_keys().collect();
+    inlined.dependencies = modules
+        .exports
+        .into_keys()
+        .map(|(path, _, _)| path)
+        .collect();
     if !symbols.is_empty() || reads_math {
         Inline {
             ast_builder,
@@ -554,7 +561,12 @@ impl<'p, 'a, 'r> ChangeCheck<'p, 'a, 'r> {
 
     /// The modules read for the values of imports
     pub(crate) fn dependencies(&self) -> BTreeSet<String> {
-        self.modules.borrow().exports.keys().cloned().collect()
+        self.modules
+            .borrow()
+            .exports
+            .keys()
+            .map(|(path, _, _)| path.clone())
+            .collect()
     }
 
     pub(crate) fn is_changed(&self, name: &str) -> bool {
@@ -715,9 +727,9 @@ pub(crate) fn jsx_root<'n>(name: &'n JSXElementName<'_>) -> Option<&'n str> {
 
 /// The constant exports of the modules read, by path
 struct Modules<'r> {
-    resolver: Option<&'r ModuleResolver>,
+    resolver: Option<&'r ModuleResolver<'r>>,
     option: &'r ExtractOption,
-    exports: FxHashMap<String, Rc<FxHashMap<String, Constant>>>,
+    exports: FxHashMap<crate::source_type::ModuleCacheKey, Rc<FxHashMap<String, Constant>>>,
     loading: Vec<String>,
 }
 
@@ -728,22 +740,30 @@ impl Modules<'_> {
         importer: &str,
     ) -> Option<Rc<FxHashMap<String, Constant>>> {
         let module = (self.resolver?)(specifier, importer)?;
-        if let Some(exports) = self.exports.get(&module.path) {
+        let key = (module.path.clone(), module.code.clone(), module.source_type);
+        if let Some(exports) = self.exports.get(&key) {
             return Some(exports.clone());
         }
         if self.loading.contains(&module.path) {
             return None;
         }
         self.loading.push(module.path.clone());
-        let exports = Rc::new(self.read(&module.path, &module.code));
+        let exports = Rc::new(self.read(&module.path, &module.code, module.source_type));
         self.loading.pop();
-        self.exports.insert(module.path, exports.clone());
+        self.exports.insert(key, exports.clone());
         Some(exports)
     }
 
-    fn read(&mut self, path: &str, code: &str) -> FxHashMap<String, Constant> {
+    fn read(
+        &mut self,
+        path: &str,
+        code: &str,
+        mode: Option<crate::ExtractSourceType>,
+    ) -> FxHashMap<String, Constant> {
         let allocator = Allocator::default();
-        let source_type = SourceType::from_path(path).unwrap_or_else(|_| SourceType::ts());
+        let Ok(source_type) = crate::source_type::parser_type(path, mode) else {
+            return FxHashMap::default();
+        };
         let program = Parser::new(&allocator, code, source_type).parse().program;
         let mut scope = ModuleScope::new(path, &program, Some(code));
         let mut exports = FxHashMap::default();

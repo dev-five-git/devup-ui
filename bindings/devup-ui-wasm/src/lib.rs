@@ -2,11 +2,10 @@ use css::class_map::{set_class_map, with_class_map};
 use css::file_map::{
     canonical, is_global, set_canonical_map, set_file_map, with_canonical_map, with_file_map,
 };
+#[cfg(test)]
+use extractor::extract;
 use extractor::extract_style::extract_style_value::ExtractStyleValue;
-use extractor::{
-    ExtractOption, ImportAlias, ModuleResolver, ResolvedModule, extract, extract_with_modules,
-    extract_without_source_map, has_devup_ui,
-};
+use extractor::{ExtractOption, ImportAlias, ModuleResolver, ResolvedModule, has_devup_ui};
 use rustc_hash::FxHashSet;
 use sheet::StyleSheet;
 use std::cell::RefCell;
@@ -14,6 +13,8 @@ use std::collections::{BTreeMap, HashMap};
 use std::fmt::Display;
 use std::sync::{LazyLock, Mutex};
 use wasm_bindgen::prelude::*;
+#[cfg(test)]
+mod source_type_tests;
 
 static GLOBAL_STYLE_SHEET: LazyLock<Mutex<StyleSheet>> =
     LazyLock::new(|| Mutex::new(StyleSheet::default()));
@@ -434,6 +435,7 @@ pub fn code_extract_internal(
     import_main_css_in_code: bool,
     import_main_css_in_css: bool,
     import_aliases: HashMap<String, ImportAlias>,
+    source_type: Option<extractor::ExtractSourceType>,
 ) -> Result<Output, String> {
     code_extract_internal_impl(
         filename,
@@ -447,6 +449,7 @@ pub fn code_extract_internal(
         SourceMapMode::Generate,
         None,
         None,
+        source_type,
     )
 }
 
@@ -460,6 +463,7 @@ pub fn code_extract_without_source_map_internal(
     import_main_css_in_code: bool,
     import_main_css_in_css: bool,
     import_aliases: HashMap<String, ImportAlias>,
+    source_type: Option<extractor::ExtractSourceType>,
 ) -> Result<Output, String> {
     code_extract_internal_impl(
         filename,
@@ -473,6 +477,7 @@ pub fn code_extract_without_source_map_internal(
         SourceMapMode::Skip,
         None,
         None,
+        source_type,
     )
 }
 
@@ -488,6 +493,7 @@ pub fn code_extract_with_modules_internal(
     import_main_css_in_code: bool,
     import_main_css_in_css: bool,
     import_aliases: HashMap<String, ImportAlias>,
+    source_type: Option<extractor::ExtractSourceType>,
     resolver: &ModuleResolver,
 ) -> Result<Output, String> {
     code_extract_internal_impl(
@@ -502,6 +508,7 @@ pub fn code_extract_with_modules_internal(
         SourceMapMode::Generate,
         Some(resolver),
         None,
+        source_type,
     )
 }
 
@@ -518,6 +525,7 @@ fn code_extract_internal_impl(
     source_map: SourceMapMode,
     resolver: Option<&ModuleResolver>,
     resolver_fault: Option<&RefCell<Option<String>>>,
+    source_type: Option<extractor::ExtractSourceType>,
 ) -> Result<Output, String> {
     let option = ExtractOption {
         package: package.to_string(),
@@ -526,17 +534,14 @@ fn code_extract_internal_impl(
         import_main_css: import_main_css_in_code,
         import_aliases,
     };
-    let extracted = match (resolver, source_map) {
-        (Some(resolver), mode) => extract_with_modules(
-            filename,
-            code,
-            option,
-            matches!(mode, SourceMapMode::Generate),
-            resolver,
-        ),
-        (None, SourceMapMode::Generate) => extract(filename, code, option),
-        (None, SourceMapMode::Skip) => extract_without_source_map(filename, code, option),
-    };
+    let extracted = extractor::extract_with_source_type(
+        filename,
+        code,
+        option,
+        matches!(source_map, SourceMapMode::Generate),
+        resolver,
+        source_type,
+    );
 
     match checked_extraction(extracted, resolver_fault) {
         Ok(output) => Ok(Output::new(
@@ -589,6 +594,14 @@ fn call_module_resolver(
     Ok(Some(ResolvedModule {
         path: field("path")?,
         code: field("code")?,
+        source_type: source_type_from_js(
+            js_sys::Reflect::get(&module, &"sourceType".into()).map_err(|error| {
+                format!(
+                    "reading resolver field `sourceType`: {}",
+                    resolver_cause(&error)
+                )
+            })?,
+        )?,
     }))
 }
 
@@ -605,7 +618,10 @@ fn code_extract_js(
     import_main_css_in_css: bool,
     import_aliases: JsValue,
     source_map: SourceMapMode,
+    source_type: JsValue,
 ) -> Result<Output, JsValue> {
+    let source_type = source_type_from_js(source_type)
+        .map_err(|error| js_error(format!("{filename}:1:1: {error}")))?;
     let import_aliases = import_aliases_from_js(import_aliases)?;
     let fault = std::rc::Rc::new(RefCell::new(None));
     let resolver_fault = std::rc::Rc::clone(&fault);
@@ -640,8 +656,20 @@ fn code_extract_js(
             .as_ref()
             .map(|resolver| resolver as &ModuleResolver),
         Some(&fault),
+        source_type,
     )
     .map_err(js_error)
+}
+
+#[cfg(not(tarpaulin_include))]
+fn source_type_from_js(value: JsValue) -> Result<Option<extractor::ExtractSourceType>, String> {
+    if value.is_undefined() || value.is_null() {
+        return extractor::parse_source_type(None);
+    }
+    let value = value.as_string().ok_or_else(|| {
+        "source type cannot use a non-string at build time: expected `compiled-mdx`".to_string()
+    })?;
+    extractor::parse_source_type(Some(&value))
 }
 
 #[cfg(not(tarpaulin_include))]
@@ -663,7 +691,7 @@ fn import_aliases_from_js(
 }
 
 #[cfg(not(tarpaulin_include))]
-#[wasm_bindgen(js_name = "codeExtract")]
+#[wasm_bindgen(js_name = "codeExtract", skip_typescript)]
 #[allow(clippy::too_many_arguments)]
 pub fn code_extract(
     filename: &str,
@@ -674,6 +702,7 @@ pub fn code_extract(
     import_main_css_in_code: bool,
     import_main_css_in_css: bool,
     import_aliases: JsValue,
+    source_type: JsValue,
 ) -> Result<Output, JsValue> {
     code_extract_js(
         filename,
@@ -685,11 +714,12 @@ pub fn code_extract(
         import_main_css_in_css,
         import_aliases,
         SourceMapMode::Generate,
+        source_type,
     )
 }
 
 #[cfg(not(tarpaulin_include))]
-#[wasm_bindgen(js_name = "codeExtractWithoutSourceMap")]
+#[wasm_bindgen(js_name = "codeExtractWithoutSourceMap", skip_typescript)]
 #[allow(clippy::too_many_arguments)]
 pub fn code_extract_without_source_map(
     filename: &str,
@@ -700,6 +730,7 @@ pub fn code_extract_without_source_map(
     import_main_css_in_code: bool,
     import_main_css_in_css: bool,
     import_aliases: JsValue,
+    source_type: JsValue,
 ) -> Result<Output, JsValue> {
     code_extract_js(
         filename,
@@ -711,8 +742,15 @@ pub fn code_extract_without_source_map(
         import_main_css_in_css,
         import_aliases,
         SourceMapMode::Skip,
+        source_type,
     )
 }
+
+#[wasm_bindgen(typescript_custom_section)]
+const EXTRACTION_TYPES: &str = r#"
+export function codeExtract(filename: string, code: string, package: string, css_dir: string, single_css: boolean, import_main_css_in_code: boolean, import_main_css_in_css: boolean, import_aliases: Record<string, string | null>, sourceType?: 'compiled-mdx'): Output;
+export function codeExtractWithoutSourceMap(filename: string, code: string, package: string, css_dir: string, single_css: boolean, import_main_css_in_code: boolean, import_main_css_in_css: boolean, import_aliases: Record<string, string | null>, sourceType?: 'compiled-mdx'): Output;
+"#;
 
 /// Internal function to register theme (testable without `JsValue`)
 pub fn register_theme_internal(theme: sheet::theme::Theme) {
@@ -848,6 +886,7 @@ mod tests {
             SourceMapMode::Skip,
             None,
             Some(&fault),
+            None,
         );
         assert_eq!(result.err(), Some("resolver failed".to_string()));
         assert_eq!(export_sheet_internal().unwrap(), before);
@@ -891,6 +930,7 @@ mod tests {
             false,
             false,
             HashMap::new(),
+            None,
         )
         .unwrap();
         code_extract_internal(
@@ -902,6 +942,7 @@ mod tests {
             false,
             false,
             HashMap::new(),
+            None,
         )
         .unwrap();
 
@@ -1036,6 +1077,7 @@ mod tests {
                         false,
                         false,
                         HashMap::new(),
+                        None,
                     )
                     .unwrap();
                 }
@@ -1086,6 +1128,7 @@ mod tests {
                     false,
                     false,
                     HashMap::new(),
+                    None,
                 )
                 .unwrap();
             }
@@ -1188,6 +1231,7 @@ mod tests {
                     false,
                     false,
                     HashMap::new(),
+                    None,
                 )
                 .unwrap();
             }
@@ -1349,6 +1393,7 @@ mod tests {
         }
         let resolver = |specifier: &str, _: &str| {
             (specifier == "./tokens").then(|| ResolvedModule {
+                source_type: None,
                 path: "/src/tokens.ts".to_string(),
                 code: "export const PRIMARY = 'red'".to_string(),
             })
@@ -1363,6 +1408,7 @@ mod tests {
                 false,
                 false,
                 HashMap::new(),
+                None,
                 &resolver,
             )
             .unwrap();
@@ -1874,6 +1920,7 @@ mod tests {
             false,
             false,
             HashMap::new(),
+            None,
         )
         .unwrap();
     }
@@ -2166,6 +2213,7 @@ mod tests {
             false,
             false,
             HashMap::new(),
+            None,
         );
 
         assert!(result.is_ok());
@@ -2190,6 +2238,7 @@ mod tests {
             false,
             false,
             HashMap::new(),
+            None,
         );
 
         assert!(result.is_ok());
@@ -2215,6 +2264,7 @@ mod tests {
             false,
             false,
             HashMap::new(),
+            None,
         );
 
         assert!(result.is_err());

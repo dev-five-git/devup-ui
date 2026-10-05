@@ -33,7 +33,9 @@ it('forwards ordered aliases, native conditions and explicit Markdown selection'
       alias: { value: [join(root, 'missing.ts'), 'values'] },
       conditions: ['prepared'],
       prepareSource: (file) =>
-        file === preparedPath ? 'export const color = "green"' : undefined,
+        file === preparedPath
+          ? { code: 'export const color = "green"', sourceType: 'compiled-mdx' }
+          : undefined,
     },
   })(engine)
   // When real WASM resolves the aliased value using generation settings.

@@ -112,14 +112,19 @@ it('uses compiled exports under original IDs when an ordinary route imports Mark
   expect(f.css(generation)).toContain('color:blue')
 })
 
-it('keeps the current shared JSX-preserving imported-source limitation located without changing native options', async () => {
+it('imports JSX-preserving compiled Markdown under its original identity without changing native options', async () => {
   // Given
   const f = sourceFixture({
     'app/page.tsx': `import { css } from '@devup-ui/react'; import { color } from './value.md'; export const style = css({color})`,
     'app/value.md': `export const color = 'blue'\n\n# Value`,
   })
-  // When / Then
-  await expect(f.manager.prepare(f.signal)).rejects.toThrow('app/page.tsx:1:97')
+  // When
+  const generation = await f.manager.prepare(f.signal)
+  // Then
+  expect(f.compilerOptions.jsx).toBe(true)
+  expect(generation.sources[0]?.input.filename).toBe('app/value.md')
+  expect(generation.sources[0]?.input.source).toMatch(/<[_A-Za-z]/)
+  expect(f.css(generation)).toContain('color:blue')
 })
 
 it('returns native-only ordinary expectations without waiting for future loader bytes', async () => {
