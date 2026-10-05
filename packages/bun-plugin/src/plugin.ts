@@ -9,6 +9,7 @@ import {
   type CustomShorthands,
   loadDevupConfig,
   mergeImportAliases,
+  normalizeShorthands,
   readJsxImportSource,
 } from '@devup-ui/plugin-utils'
 import {
@@ -59,8 +60,8 @@ async function writeDataFiles() {
   await writeFile(join(cssDir, 'devup-ui.css'), getCss(null, false), 'utf-8')
 }
 
-async function initialize({ shorthands }: DevupUIBunPluginOptions = {}) {
-  registerShorthands(shorthands ?? {})
+async function initialize(shorthands: Record<string, readonly string[]>) {
+  registerShorthands(shorthands)
   setModuleResolver(createModuleResolver())
   if (!existsSync(distDir)) await mkdir(distDir, { recursive: true })
   await writeFile(join(distDir, '.gitignore'), '*', 'utf-8')
@@ -118,11 +119,12 @@ async function loadSourceFile(filePath: string) {
 // against the @devup-ui/react runtime stubs (throwing "Cannot run on the
 // runtime").
 function register(options: DevupUIBunPluginOptions = {}) {
+  const shorthands = normalizeShorthands(options.shorthands ?? {})
   return plugin({
     name: 'devup-ui',
 
     async setup(build) {
-      await initialize(options)
+      await initialize(shorthands)
       setDebug(true)
 
       // Resolve devup-ui CSS files onto a path-free virtual id, so nothing

@@ -16,6 +16,42 @@ import {
 
 import { DevupUI } from '../plugin'
 
+describe('shorthand creation boundary', () => {
+  it('registers canonical targets when the plugin is created', () => {
+    const registration = spyOn(wasm, 'registerShorthands').mockReturnValue(
+      undefined,
+    )
+    try {
+      DevupUI({ shorthands: { bgx: ['backgroundColor', 'py', '--Gap'] } })
+      expect(registration.mock.calls).toEqual([
+        [
+          {
+            bgx: ['background-color', 'padding-top', 'padding-bottom', '--Gap'],
+          },
+        ],
+      ])
+    } finally {
+      registration.mockRestore()
+    }
+  })
+
+  it('rejects a typo before registration when runtime options bypass types', () => {
+    const registration = spyOn(wasm, 'registerShorthands').mockReturnValue(
+      undefined,
+    )
+    try {
+      expect(() =>
+        Reflect.apply(DevupUI, undefined, [
+          { shorthands: { bgx: ['backgroundColour'] } },
+        ]),
+      ).toThrow(pluginUtils.ShorthandConfigError)
+      expect(registration).not.toHaveBeenCalled()
+    } finally {
+      registration.mockRestore()
+    }
+  })
+})
+
 type CodeExtractResult = ReturnType<typeof wasm.codeExtract>
 interface ConfigHookMeta {
   viteVersion?: string

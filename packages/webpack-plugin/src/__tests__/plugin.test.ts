@@ -18,6 +18,44 @@ import type { Compiler } from 'webpack'
 
 import { DevupUIWebpackPlugin } from '../plugin'
 
+describe('shorthand creation boundary', () => {
+  it('registers canonical targets when the plugin is constructed', () => {
+    const registration = spyOn(wasm, 'registerShorthands').mockReturnValue(
+      undefined,
+    )
+    try {
+      new DevupUIWebpackPlugin({
+        shorthands: { bgx: ['backgroundColor', 'py', '--Gap'] },
+      })
+      expect(registration.mock.calls).toEqual([
+        [
+          {
+            bgx: ['background-color', 'padding-top', 'padding-bottom', '--Gap'],
+          },
+        ],
+      ])
+    } finally {
+      registration.mockRestore()
+    }
+  })
+
+  it('rejects a typo before registration when runtime options bypass types', () => {
+    const registration = spyOn(wasm, 'registerShorthands').mockReturnValue(
+      undefined,
+    )
+    try {
+      expect(() =>
+        Reflect.construct(DevupUIWebpackPlugin, [
+          { shorthands: { bgx: ['backgroundColour'] } },
+        ]),
+      ).toThrow(pluginUtils.ShorthandConfigError)
+      expect(registration).not.toHaveBeenCalled()
+    } finally {
+      registration.mockRestore()
+    }
+  })
+})
+
 type CodeExtractResult = ReturnType<typeof wasm.codeExtract>
 interface MockCompiler {
   options: {

@@ -187,6 +187,60 @@ afterEach(() => {
 })
 
 describe('DevupUINextPlugin', () => {
+  it.each(['1', 'auto', undefined])(
+    'rejects typos at creation before setup in mode %s',
+    (mode) => {
+      if (mode === undefined) delete process.env.TURBOPACK
+      else process.env.TURBOPACK = mode
+      expect(() =>
+        Reflect.apply(DevupUI, undefined, [
+          {},
+          { shorthands: { bgx: ['backgroundColour'] } },
+        ]),
+      ).toThrow(importGraphModule.ShorthandConfigError)
+      expect(writeFileSyncSpy).not.toHaveBeenCalled()
+      expect(startCoordinatorSpy).not.toHaveBeenCalled()
+      expect(devupUIWebpackPluginSpy).not.toHaveBeenCalled()
+    },
+  )
+
+  it('registers canonical targets when a Turbopack plugin is created', () => {
+    process.env.TURBOPACK = '1'
+    const registration = spyOn(wasm, 'registerShorthands').mockReturnValue(
+      undefined,
+    )
+    try {
+      DevupUI({}, { shorthands: { bgx: ['backgroundColor', 'py', '--Gap'] } })
+      expect(registration.mock.calls).toEqual([
+        [
+          {
+            bgx: ['background-color', 'padding-top', 'padding-bottom', '--Gap'],
+          },
+        ],
+      ])
+    } finally {
+      registration.mockRestore()
+    }
+  })
+
+  it('rejects a typo before reading an available production handoff', () => {
+    process.env.TURBOPACK = '1'
+    setNodeEnv('production')
+    DevupUI({}, { shorthands: { bgx: ['backgroundColor'] } })
+    reloadTurboSetupModuleForTesting()
+    readFileSyncSpy.mockClear()
+    const shorthands = { bgx: ['backgroundColour'] }
+    Object.defineProperty(shorthands, 'toJSON', {
+      value: () => ({ bgx: ['background-color'] }),
+    })
+
+    expect(() =>
+      Reflect.apply(DevupUI, undefined, [{}, { shorthands }]),
+    ).toThrow(importGraphModule.ShorthandConfigError)
+    expect(readFileSyncSpy).not.toHaveBeenCalled()
+    expect(startCoordinatorSpy).toHaveBeenCalledTimes(1)
+  })
+
   describe('webpack', () => {
     it('should apply webpack plugin', async () => {
       const ret = DevupUI({})
@@ -261,6 +315,7 @@ describe('DevupUINextPlugin', () => {
         'computeCompiledFiles',
       ).mockReturnValue(['src/app/page.tsx'])
       const profileSpy = spyOn(console, 'info').mockImplementation(() => {})
+      const normalizeSpy = spyOn(importGraphModule, 'normalizeShorthands')
       const handoffFile = join('df', 'setup.bin')
       let handoff: Parameters<typeof fs.writeFileSync>[1] | undefined
       writeFileSyncSpy.mockImplementation((path, data) => {
@@ -277,11 +332,14 @@ describe('DevupUINextPlugin', () => {
       })
 
       try {
-        const first = DevupUI({}, { singleCss: true })
+        const first = DevupUI(
+          {},
+          { singleCss: true, shorthands: { bgx: ['backgroundColor'] } },
+        )
         reloadTurboSetupModuleForTesting()
         const second = DevupUI(
           { env: { EXISTING: 'value' } },
-          { singleCss: true },
+          { singleCss: true, shorthands: { bgx: ['background-color'] } },
         )
 
         expect(second.turbopack?.rules).toEqual(first.turbopack?.rules)
@@ -292,11 +350,13 @@ describe('DevupUINextPlugin', () => {
         expect(graphSpy).toHaveBeenCalledTimes(1)
         expect(codeExtractWithoutSourceMapSpy).toHaveBeenCalledTimes(1)
         expect(startCoordinatorSpy).toHaveBeenCalledTimes(1)
+        expect(normalizeSpy).toHaveBeenCalledTimes(2)
         expect(unlinkSyncSpy).toHaveBeenCalledWith(handoffFile)
         expect(profileSpy).toHaveBeenCalledWith(
           expect.stringContaining('"cacheHit":true'),
         )
       } finally {
+        normalizeSpy.mockRestore()
         profileSpy.mockRestore()
         compiledSpy.mockRestore()
         graphSpy.mockRestore()

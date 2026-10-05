@@ -15,6 +15,7 @@ import {
   listSourceFiles,
   loadDevupConfig,
   mergeImportAliases,
+  normalizeShorthands,
   planAtomHoist,
   readJsxImportSource,
 } from '@devup-ui/plugin-utils'
@@ -270,7 +271,7 @@ export function DevupUI({
   atomHoist,
   importAliases: userImportAliases,
 }: Partial<DevupUIPluginOptions> = {}): PluginOption {
-  registerShorthands(shorthands ?? {})
+  registerShorthands(normalizeShorthands(shorthands ?? {}))
   setDebug(debug)
   if (prefix) {
     setPrefix(prefix)

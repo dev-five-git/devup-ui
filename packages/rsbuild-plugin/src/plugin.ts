@@ -14,6 +14,7 @@ import {
   type ImportAliases,
   loadDevupConfig,
   mergeImportAliases,
+  normalizeShorthands,
   planAtomHoist,
   readJsxImportSource,
 } from '@devup-ui/plugin-utils'
@@ -118,7 +119,7 @@ export const DevupUI = ({
   atomHoist,
   importAliases: userImportAliases,
 }: Partial<DevupUIRsbuildPluginOptions> = {}): RsbuildPlugin => {
-  registerShorthands(shorthands ?? {})
+  registerShorthands(normalizeShorthands(shorthands ?? {}))
   const importAliases = mergeImportAliases(
     userImportAliases,
     readJsxImportSource(),
