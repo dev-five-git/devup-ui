@@ -109,29 +109,32 @@ it('does not fall back to raw reads or lexical scanning after a prepared parser 
   ).rejects.toThrow(`${entry}:2:3 (in compiled output)`)
 })
 
-it('uses the available AST result for prepared source', async () => {
+it('uses real prepared source rather than contradictory AST edges', async () => {
   const entry = file('src/page.mdx')
   const leaf = file('src/leaf.ts')
+  const phantom = file('src/phantom.ts')
   __setOxcParserForTest({
     parseSync: () => ({
       type: 'ImportDeclaration',
-      source: { value: './leaf' },
+      source: { value: './phantom' },
     }),
   })
   const graph = await buildStaticImportGraph('src', undefined, {
     cwd: root,
     includeMdx: true,
-    prepareSource: () => 'compiled',
+    prepareSource: (filename) =>
+      filename === entry ? "import './leaf'" : undefined,
   })
   expect(graph.staticImports.get(entry)).toEqual(new Set([leaf]))
+  expect(graph.staticImporters.get(phantom)).toEqual(new Set())
 })
 
-it('reads the documented available-parser program getter for prepared source', async () => {
+it('reads diagnostic getters without consulting the available-parser program getter', async () => {
   const entry = file('src/page.mdx')
   const leaf = file('src/leaf.ts')
   const result = Object.create({
     get program() {
-      return { type: 'ImportDeclaration', source: { value: './leaf' } }
+      throw new Error('AST must not decide edges')
     },
     get errors() {
       return []
@@ -141,7 +144,8 @@ it('reads the documented available-parser program getter for prepared source', a
   const graph = await buildStaticImportGraph('src', undefined, {
     cwd: root,
     includeMdx: true,
-    prepareSource: () => '',
+    prepareSource: (filename) =>
+      filename === entry ? "import './leaf'" : undefined,
   })
   expect(graph.staticImports.get(entry)).toEqual(new Set([leaf]))
 })

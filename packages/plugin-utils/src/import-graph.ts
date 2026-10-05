@@ -10,7 +10,7 @@ import { createRequire } from 'node:module'
 import { dirname, isAbsolute, join, relative, resolve } from 'node:path'
 
 import { createDirectoryExclusion } from './directory-exclusion'
-import { maskImportText } from './import-mask'
+import { type ImportReference, scanImports } from './import-scanner'
 import { ConfigLoadError } from './load-config'
 import { remapMdxError } from './mdx-errors'
 import {
@@ -61,11 +61,6 @@ export interface BuildCanonicalMapOptions {
   keyBy?: GraphKeyMode
   /** pre-built graph from `buildStaticImportGraph` to skip the file scan. */
   graph?: StaticImportGraph
-}
-
-interface ImportReference {
-  kind: 'static' | 'dynamic'
-  specifier: string
 }
 
 interface OxcParser {
@@ -848,10 +843,8 @@ export function listSourceFiles(
 
 function parseImports(filename: string, source: string): ImportReference[] {
   if (!SOURCE_FILE_RE.test(filename))
-    return scanImports(mdxEsmSource(source), false)
-  const astImports = parseImportsWithOxc(filename, source)
-  if (astImports) return astImports
-  return scanImports(source, /\.[jt]sx$/i.test(filename))
+    return scanImports(mdxEsmSource(source), false, false)
+  return parseSourceImports(filename, source)
 }
 
 function parsePreparedImports(
@@ -859,30 +852,44 @@ function parsePreparedImports(
   source: string,
   map: unknown,
 ): ImportReference[] {
+  return parseSourceImports(filename, source, { map })
+}
+
+function parseSourceImports(
+  filename: string,
+  source: string,
+  prepared?: { readonly map: unknown },
+): ImportReference[] {
   const parser = getOxcParser()
-  if (!parser) return scanImports(source, true)
   try {
-    const ast = parser.parseSync(filename, source, {
-      sourceType: 'module',
-      lang: 'jsx',
-    })
+    const ast = parser?.parseSync(
+      filename,
+      source,
+      prepared && !/\.[mc]?tsx?$/i.test(filename)
+        ? { sourceType: 'module', lang: 'jsx' }
+        : { sourceType: 'module' },
+    )
     if (isRecord(ast) && Array.isArray(ast.errors) && ast.errors.length) {
       throw new Error(preparedDiagnostics(filename, source, ast.errors))
     }
-    const imports: ImportReference[] = []
-    collectAstImports(isRecord(ast) ? (ast.program ?? ast) : ast, imports)
-    return imports
   } catch (cause) {
     const message = cause instanceof Error ? cause.message : String(cause)
     const located = message.startsWith(`${filename}:`)
       ? cause
       : new GraphPreparationError(filename, cause)
-    const remapped = remapMdxError(located, filename, map)
+    if (!prepared) throw located
+    const remapped = remapMdxError(located, filename, prepared.map)
     throw new Error(
       remapped.message.replaceAll('(in compiled MDX)', '(in compiled output)'),
       { cause },
     )
   }
+  return scanImports(
+    source,
+    /\.[jt]sx$/i.test(filename) ||
+      (prepared !== undefined && !/\.[mc]?ts$/i.test(filename)),
+    /\.[mc]?tsx?$/i.test(filename),
+  )
 }
 
 function mdxEsmSource(source: string): string {
@@ -917,23 +924,6 @@ function mdxEsmSource(source: string): string {
   return blocks.join('\n')
 }
 
-function parseImportsWithOxc(
-  filename: string,
-  source: string,
-): ImportReference[] | undefined {
-  const parser = getOxcParser()
-  if (!parser) return undefined
-
-  try {
-    const ast = parser.parseSync(filename, source, { sourceType: 'module' })
-    const imports: ImportReference[] = []
-    collectAstImports(ast, imports)
-    return imports
-  } catch {
-    return undefined
-  }
-}
-
 function getOxcParser(): OxcParser | undefined {
   if (cachedOxcParser !== undefined) {
     return cachedOxcParser || undefined
@@ -953,169 +943,15 @@ function getOxcParser(): OxcParser | undefined {
 
 /**
  * @internal test-only: force the cached oxc parser. oxc-parser is an optional
- * peer that is absent in this repo, so the AST path is otherwise unreachable
+ * peer that is absent in this repo, so the diagnostic path is otherwise unreachable
  * from tests; module state is shared across test files (no per-file reset), so
  * `mock.module` cannot toggle it deterministically. Pass `undefined` to clear
- * the cache and re-detect (back to the regex fallback).
+ * the cache and re-detect. The scanner remains the sole edge authority.
  */
 export function __setOxcParserForTest(
   parser: OxcParser | false | undefined,
 ): void {
   cachedOxcParser = parser
-}
-
-function collectAstImports(
-  node: unknown,
-  imports: ImportReference[],
-  seen = new WeakSet<object>(),
-): void {
-  if (!isRecord(node)) return
-  if (seen.has(node)) return
-  seen.add(node)
-
-  const type = typeof node.type === 'string' ? node.type : undefined
-  if (
-    type === 'ImportDeclaration' ||
-    type === 'ExportNamedDeclaration' ||
-    type === 'ExportAllDeclaration'
-  ) {
-    // `import type`/`export type ... from` carry importKind/exportKind 'type'.
-    // They are erased at build time (no runtime module), so they must NOT
-    // become static graph edges — see the regex fallback in `scanImports`.
-    // The same applies when every specifier is inline-type
-    // (`import { type A } from` / `export { type A } from`).
-    if (
-      node.importKind !== 'type' &&
-      node.exportKind !== 'type' &&
-      !hasOnlyInlineTypeSpecifiers(node)
-    ) {
-      addAstImport(imports, 'static', node.source)
-    }
-  } else if (type === 'ImportExpression') {
-    addAstImport(imports, 'dynamic', node.source ?? node.argument)
-  } else if (type === 'CallExpression' && isImportCallee(node.callee)) {
-    const firstArgument = Array.isArray(node.arguments)
-      ? node.arguments[0]
-      : undefined
-    addAstImport(imports, 'dynamic', firstArgument)
-  }
-
-  for (const value of Object.values(node)) {
-    if (Array.isArray(value)) {
-      for (const child of value) {
-        collectAstImports(child, imports, seen)
-      }
-      continue
-    }
-    collectAstImports(value, imports, seen)
-  }
-}
-
-// AST counterpart of `isAllInlineTypeSpecifiers`: an import/re-export whose
-// specifiers are ALL inline-type is erased by the bundler (no runtime module),
-// so it must not become a static graph edge. Default/namespace specifiers
-// carry no `type` kind, so their presence keeps the edge.
-function hasOnlyInlineTypeSpecifiers(node: Record<string, unknown>): boolean {
-  const specifiers = node.specifiers
-  if (!Array.isArray(specifiers) || specifiers.length === 0) return false
-  return specifiers.every(
-    (specifier) =>
-      isRecord(specifier) &&
-      (specifier.importKind === 'type' || specifier.exportKind === 'type'),
-  )
-}
-
-function addAstImport(
-  imports: ImportReference[],
-  kind: ImportReference['kind'],
-  node: unknown,
-): void {
-  const specifier = getStringLiteralValue(node)
-  if (specifier) imports.push({ kind, specifier })
-}
-
-function getStringLiteralValue(node: unknown): string | undefined {
-  if (!isRecord(node)) return undefined
-  if (typeof node.value === 'string') return node.value
-  if (typeof node.raw === 'string') return node.raw.slice(1, -1)
-  return undefined
-}
-
-function isImportCallee(node: unknown): boolean {
-  if (!isRecord(node)) return false
-  return node.type === 'Import' || node.name === 'import'
-}
-
-// A brace clause whose specifiers are ALL inline-type (`{ type A, type B }`)
-// is erased by the bundler exactly like a statement-level `import type`:
-// TypeScript import elision (the Next.js/SWC default) removes the whole
-// statement, so no runtime module is ever produced. Counting such an edge as
-// static merges a phantom member into a bucket the bundler never compiles —
-// the next-plugin coordinator then waits for a file that can never arrive.
-// A mixed clause (`{ type A, b }`) still imports the module for `b` and is
-// kept. A default/namespace clause is always a value import and is kept.
-function isAllInlineTypeSpecifiers(clause: string | undefined): boolean {
-  if (!clause) return false
-  const trimmed = clause.trim()
-  if (!trimmed.startsWith('{') || !trimmed.endsWith('}')) return false
-  const specifiers = trimmed
-    .slice(1, -1)
-    .split(',')
-    .map((specifier) => specifier.trim())
-    .filter((specifier) => specifier.length > 0)
-  return (
-    specifiers.length > 0 &&
-    specifiers.every((specifier) => /^type\s/.test(specifier))
-  )
-}
-
-function scanImports(source: string, jsx: boolean): ImportReference[] {
-  const imports: ImportReference[] = []
-  const code = maskImportText(source, jsx)
-  // The leading `(type\s+)?` is CAPTURED (not skipped) so we can drop type-only
-  // statements: `import type ... from` / `export type ... from` are erased by
-  // the bundler and produce NO runtime module — counting them as static graph
-  // edges merges phantom members into a bucket that the bundler never compiles,
-  // which is exactly what forced the coordinator's wall-clock fail-open to fire.
-  // The clause between the keyword and `from` is captured too, so all-inline-
-  // type specifier lists (`import { type A } from` / `export { type A } from`)
-  // — which the bundler also erases — are dropped via
-  // `isAllInlineTypeSpecifiers`. Mixed lists (`import { type A, b } from`)
-  // keep importing the module for `b`, so they are kept.
-  const staticImportRegex =
-    /\bimport\s+(type\s+)?(?:([^'"`]*?)\s+from\s*)?(['"])([^'"]+)\3/gm
-  const exportFromRegex =
-    /\bexport\s+(type\s+)?(\*[^'"`]*?|\{[^}]*\})\s+from\s*(['"])([^'"]+)\3/gm
-  const dynamicImportRegex = /\bimport\s*\(\s*(['"])([^'"]+)\1\s*\)/gm
-
-  for (const match of code.matchAll(staticImportRegex)) {
-    if (match[1] || isAllInlineTypeSpecifiers(match[2])) continue
-    const offset =
-      (match.index ?? 0) + match[0].lastIndexOf(match[3]) - match[4].length
-    imports.push({
-      kind: 'static',
-      specifier: source.slice(offset, offset + match[4].length),
-    })
-  }
-  for (const match of code.matchAll(exportFromRegex)) {
-    if (match[1] || isAllInlineTypeSpecifiers(match[2])) continue
-    const offset =
-      (match.index ?? 0) + match[0].lastIndexOf(match[3]) - match[4].length
-    imports.push({
-      kind: 'static',
-      specifier: source.slice(offset, offset + match[4].length),
-    })
-  }
-  for (const match of code.matchAll(dynamicImportRegex)) {
-    const offset =
-      (match.index ?? 0) + match[0].lastIndexOf(match[1]) - match[2].length
-    imports.push({
-      kind: 'dynamic',
-      specifier: source.slice(offset, offset + match[2].length),
-    })
-  }
-
-  return imports
 }
 
 /** A module an import resolved to, as `setModuleResolver` expects it. */
