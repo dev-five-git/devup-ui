@@ -39,6 +39,7 @@ export {
   type FileNumbering,
   seedFileNumbers,
 } from './numbering'
+export type { ModuleResolver } from './prepared-resolver'
 export {
   createNodeModulesExcludeRegex,
   createThemeInterfaceArgs,
@@ -65,6 +66,7 @@ export type {
   DevupConfig,
   DevupTheme,
   ImportAliases,
+  ModuleAliases,
   ThemeColors,
   ThemeTypography,
   Typography,

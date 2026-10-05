@@ -13,8 +13,16 @@ import { createDirectoryExclusion } from './directory-exclusion'
 import { maskImportText } from './import-mask'
 import { ConfigLoadError } from './load-config'
 import { remapMdxError } from './mdx-errors'
-import { rewriteModuleAlias } from './module-alias'
+import {
+  type AliasResolution,
+  ModuleAliasPackageError,
+  resolveModuleAlias,
+} from './module-alias'
 import { preparedDiagnostics } from './prepared-diagnostics'
+import {
+  createPreparedResolver,
+  type ModuleResolver,
+} from './prepared-resolver'
 import {
   createNodeModulesExcludeRegex,
   SOURCE_EXTENSIONS,
@@ -27,6 +35,7 @@ import {
   type SourceSelectionOptions,
 } from './source-selection'
 import { type PathAlias, readPathAliases } from './tsconfig'
+import type { ModuleAliases } from './types'
 
 /**
  * How map keys (and bucket-root values) are stringified.
@@ -254,14 +263,11 @@ function* traverseGraph(
             typeof prepared === 'object' ? prepared.map : undefined,
           )
     for (const importRef of imports) {
-      const resolved = resolver(importRef.specifier, file)
-      if (resolved === false) continue
+      const resolution = resolver(importRef.specifier, file)
+      if (resolution === false) continue
+      const resolved = resolution?.path
       if (resolved && excludedDirectory(dirname(resolved))) continue
-      const rewritten = rewriteModuleAlias(
-        importRef.specifier,
-        options.alias ?? {},
-        file,
-      )
+      const rewritten = resolution?.request ?? importRef.specifier
       const local =
         resolved !== undefined &&
         isInsideDir(cwd, resolved) &&
@@ -348,7 +354,7 @@ function* traverseGraph(
 export interface StaticImportGraphOptions {
   /** Include MDX only when the caller compiles it before extraction. */
   readonly includeMdx?: MdxSelection
-  readonly alias?: Readonly<Record<string, string>>
+  readonly alias?: ModuleAliases
   readonly cwd?: string
   readonly include?: readonly string[]
   readonly conditions?: readonly string[]
@@ -1119,7 +1125,8 @@ export interface ResolvedModule {
 }
 
 export interface CreateModuleResolverOptions {
-  readonly alias?: Readonly<Record<string, string>>
+  readonly prepareSource?: PrepareSource
+  readonly alias?: ModuleAliases
   readonly includeMdx?: MdxSelection
   cwd?: string
   tsconfigPath?: string
@@ -1140,20 +1147,25 @@ export interface CreateModuleResolverOptions {
 export function createModuleResolver({
   toId = (path) => path,
   ...options
-}: CreateModuleResolverOptions = {}): (
-  specifier: string,
-  importer: string,
-) => ResolvedModule | undefined {
+}: CreateModuleResolverOptions = {}): ModuleResolver {
   const resolver = createModulePathResolver({
     ...options,
     includeMdx: options.includeMdx ?? true,
   })
-  return (specifier, importer) => {
-    const path = resolver(specifier, importer)
-    return path
-      ? { path: toId(path), code: readFileSync(path, 'utf-8') }
-      : undefined
-  }
+  const prepared = createPreparedResolver(options)
+  return Object.assign(
+    (specifier: string, importer: string) => {
+      const resolution = resolver(specifier, importer)
+      if (!resolution) return undefined
+      const { path } = resolution
+      const source = prepared.read(
+        path,
+        resolve(options.cwd ?? process.cwd(), importer),
+      )
+      return prepared.resolved(toId(path), path, source)
+    },
+    { remapError: prepared.remapError },
+  )
 }
 
 function createModulePathResolver(
@@ -1165,7 +1177,10 @@ function createModulePathResolver(
     includeMdx,
   }: CreateModuleResolverOptions = {},
   excludedDirectory = createDirectoryExclusion(),
-): (specifier: string, importer: string) => string | false | undefined {
+): (
+  specifier: string,
+  importer: string,
+) => AliasResolution | false | undefined {
   const { aliases, baseDir, baseUrl } = readPathAliases(tsconfigPath)
   const extensions = sourceExtensions(includeMdx)
   const fileResolver = (path: string) =>
@@ -1174,24 +1189,28 @@ function createModulePathResolver(
       : resolveFile(path, extensions)
   return (specifier, importer) => {
     const from = resolve(cwd, importer)
-    const request = rewriteModuleAlias(specifier, alias, from)
-    const path = request.startsWith('.')
-      ? fileResolver(resolve(dirname(from), request))
-      : isAbsolute(request)
-        ? fileResolver(request)
-        : (resolveAliasCandidates(request, {
-            aliases,
-            aliasBaseDir: baseDir,
-          })
-            .map(fileResolver)
-            .find((candidate) => candidate !== undefined) ??
-          (baseUrl ? fileResolver(resolve(baseUrl, request)) : undefined) ??
-          resolvePackage(request, from, {
-            conditions,
-            fileResolver,
-            excludedDirectory,
-          }))
-    return path
+    return resolveModuleAlias(specifier, {
+      alias,
+      importer: from,
+      resolveRequest: (request, aliased) =>
+        request.startsWith('.')
+          ? fileResolver(resolve(dirname(from), request))
+          : isAbsolute(request)
+            ? fileResolver(request)
+            : (resolveAliasCandidates(request, {
+                aliases,
+                aliasBaseDir: baseDir,
+              })
+                .map(fileResolver)
+                .find((candidate) => candidate !== undefined) ??
+              (baseUrl ? fileResolver(resolve(baseUrl, request)) : undefined) ??
+              resolvePackage(request, from, {
+                conditions,
+                fileResolver,
+                excludedDirectory,
+                aliased,
+              })),
+    })
   }
 }
 
@@ -1202,6 +1221,7 @@ function resolvePackage(
     readonly conditions: readonly string[]
     readonly fileResolver: (path: string) => string | false | undefined
     readonly excludedDirectory: (directory: string) => boolean
+    readonly aliased: boolean
   },
 ): string | false | undefined {
   const parts = specifier.split('/')
@@ -1236,6 +1256,8 @@ function resolvePackage(
     options.conditions,
     options.fileResolver,
   )
+  if (found === undefined && options.aliased && manifest.exports !== undefined)
+    throw new ModuleAliasPackageError(importer, specifier)
   return found ? realpathSync(found) : found
 }
 

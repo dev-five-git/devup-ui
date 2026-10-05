@@ -143,9 +143,11 @@ it('matches missing-target terminal failure even when the original and a later a
   const later = file('later.js')
   const alias = { original: join(root, 'missing'), original$: later }
   expect(installed('original', alias)).toBeUndefined()
-  expect(
+  expect(() =>
     createModuleResolver({ cwd: root, alias })('original', entry),
-  ).toBeUndefined()
+  ).toThrow(
+    `${entry}:1:1: Module alias original cannot resolve candidates ${JSON.stringify([alias.original])}`,
+  )
 })
 
 it('matches finite chains and self-alias skips', () => {

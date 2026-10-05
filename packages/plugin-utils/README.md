@@ -47,7 +47,8 @@ and test/spec files remain absent from directory enumeration.
 
 Opt-in extensions also participate in extensionless graph resolution and route
 recognition. Explicit existing file paths still resolve with
-`createModuleResolver` without opting into their extension. Numbering forwards
+`createModuleResolver` without opting into their extension, but Markdown must be
+prepared before its source can be returned. Numbering forwards
 selection and exclusions to the scanner rather than reading then filtering.
 The public module resolver retains its legacy extensionless `.mdx` probing;
 the graph's path-only resolver probes extra extensions only when selected.
@@ -100,10 +101,61 @@ template-interpolation import discovery are not a new guarantee. The legacy
 optional AST/fallback difference for template-interpolation imports is unchanged.
 Raw opted-in Markdown scans only ESM blocks, not code fences or prose.
 
+## Synchronous prepared module resolver
+
+`createModuleResolver({ prepareSource })` retains its synchronous callable shape
+for `setModuleResolver` and also exposes `resolver.remapError(error)`. The hook
+receives the real absolute filename after native/alias resolution and before
+`toId`; it returns the same string, `{ code, map? }`, or `undefined` values as the
+graph hook. Empty code is valid. Ordinary JS/TS with `undefined` still reads raw
+source. The resolver never awaits: **any thenable is rejected immediately**.
+Async compilers must finish preparation into a caller-owned cache first, then
+pass the same synchronous lookup hook to both graph and resolver.
+
+With or without a hook, `.mdx`, `.md`, and explicit `includeMdx` extensions cannot
+reach WASM without prepared JavaScript. Missing preparation, thenables and hook
+exceptions fail at the actual importer `:1:1` (the callback has no import span),
+name the actual module and preserve the cause. Move imported values into JS/TS
+when Markdown compilation is not available; this API does not add MDX support
+to plugins that do not compile it.
+
+Callers supplying `prepareSource` **must route every error thrown by
+`codeExtract` through `resolver.remapError`**, not just callback errors:
+
+```ts
+const prepareSource = (filename: string) => compiledCache.get(filename)
+const resolver = createModuleResolver({ cwd, toId, prepareSource })
+setModuleResolver(resolver)
+try {
+  return codeExtract(filename, source, /* existing extraction arguments */)
+} catch (error) {
+  throw resolver.remapError(error)
+}
+```
+
+Mappings are resolver-instance-local, keyed by the exact id returned to WASM.
+Each resolved generation replaces its prior code/map; ordinary raw JS/TS removes
+its stale map. Keep the resolver for its build/compiler context, replace cache
+entries when recompiling, and discard it when that context ends. Vite and Bun
+create build-context resolvers; Webpack creates compiler/loader-context resolvers.
+Only Next's prepared-source integration on #752 supplies this hook and wraps
+extraction errors; this utility change adds no wrappers to other plugins.
+
+Every exact prepared-id location in an error is remapped through `remapMdxError`;
+other file locations are untouched. Missing/uncovered mappings explicitly say
+`in compiled output` of the real file. Returned errors retain the original as
+`cause`; passing the returned error to the same resolver again is idempotent.
+The resolver cannot recover imported-file coordinates absent from the extractor
+error: that mapping boundary belongs to #757. With #755 alone, the real imported
+invalid-value case reports the importing TSX source position, which stays
+untouched. Contract tests use synthetic extractor-format diagnostics and real
+compiler maps; the imported-module end-to-end mapping check runs after #755 and
+#757 are both on main, without merging either automatically.
+
 ## Resolver aliases
 
 Both `createModuleResolver` and graph options accept an optional readonly
-`alias: Record<string, string>`. Supported aliases are string targets only:
+`alias: ModuleAliases` (`Readonly<Record<string, string | readonly string[]>>`). Targets are strings or ordered string candidate arrays:
 absolute file/directory paths or package requests. They run before tsconfig
 paths, baseUrl and package resolution.
 
@@ -111,14 +163,22 @@ paths, baseUrl and package resolution.
   `name-other`.
 - Declaration order matters: the first **rewriting** match wins. Put a specific
   key before an overlapping broad key.
-- A failed rewritten target never falls through to the original request or a
-  later alias. Ordinary unresolved targets return `undefined`.
+- Each candidate undergoes full native resolution in order; the first resolving
+  candidate wins. A failed matched key never falls through to the original request
+  or a later key. All unresolved candidates (including an empty array) produce an
+  importer-located error naming the key and every rewritten candidate tried.
+  Unaliased unresolved requests still return `undefined`.
 - Finite chains resolve; self-aliases are skipped; cycles produce an
   importer-located failure.
 - Package exports and active conditions are applied after rewriting. Graph
   package eligibility uses the actual target package, not the alias name.
+- Export/active-target failures, configuration/I/O errors and cycles are fatal,
+  not ordinary misses that advance to the next candidate. Excluded candidates
+  are skipped before I/O; an entirely excluded list stays excluded, not external.
 - Project-local aliased providers outside configured source roots can be
   followed; excluded directories and excluded external packages remain excluded.
 
 This subset is tested against installed enhanced-resolve 5.25.1 with real files.
-Alias `false`, array targets and wildcard keys are not supported by this API.
+Alias `false` (ignore) and wildcard keys are unsupported; `false` is rejected by
+the public type. Empty arrays intentionally fail rather than enhanced-resolve's
+empty-array fallthrough behavior.
