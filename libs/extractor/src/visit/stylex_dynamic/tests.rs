@@ -9,7 +9,14 @@ use serial_test::serial;
 
 use crate::{ExtractOption, ExtractOutput, ExtractStyleValue};
 
+mod assignments;
+mod callers;
+mod edges;
+mod helpers;
+mod includes;
+mod reader;
 mod regressions;
+mod remediation;
 
 fn extract(source: &str) -> Result<ExtractOutput, Box<dyn std::error::Error>> {
     css::class_map::reset_class_map();
@@ -161,6 +168,11 @@ fn stylex_dynamic_defaults_when_a_later_argument_is_absent_still_assign_its_defa
 #[case("(x)=>({color:x+1})", "non-exact body value", "x+1")]
 #[case("function*(x){yield x}", "generator function expression", "function")]
 #[case("function(x){return {color:x}}", "function expression", "function")]
+#[case(
+    "async function(x){return {color:x}}",
+    "async function expression",
+    "async"
+)]
 #[serial]
 fn stylex_dynamic_rejection_when_function_cannot_compile_is_located(
     #[case] form: &str,

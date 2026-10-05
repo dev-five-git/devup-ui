@@ -13,6 +13,17 @@ use crate::stylex::StylexFunction;
 use crate::util_type::UtilType;
 
 impl Bindings {
+    /// Whether resolved value references leave a binding and its members unchanged.
+    pub(crate) fn unchanged(&self, symbol: oxc_syntax::symbol::SymbolId) -> bool {
+        self.scoping
+            .get_resolved_reference_ids(symbol)
+            .iter()
+            .all(|id| {
+                let flags = self.scoping.get_reference(*id).flags();
+                !flags.is_write() && !flags.is_member_write_target()
+            })
+    }
+
     /// The export of the package `expression` reads as a member of the
     /// package imported whole
     fn member<'e>(&self, expression: &'e Expression<'_>) -> Option<&'e str> {

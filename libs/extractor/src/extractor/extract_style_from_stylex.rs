@@ -1,6 +1,7 @@
 use crate::ExtractStyleProp;
 use crate::extract_style::extract_static_style::ExtractStaticStyle;
 use crate::extract_style::extract_style_value::ExtractStyleValue;
+use crate::stylex::assignments::is_final_assignment;
 use crate::stylex::{
     DecomposedStyle, DynamicNamespace, SelectorPart, StylexIncludeRef, StylexResolver,
     decompose_value_conditions, is_first_that_works_call, is_include_call_static, is_types_call,
@@ -250,12 +251,15 @@ fn extract_stylex_namespace<'a>(
     let mut styles = vec![];
     let mut include_refs = vec![];
     let mut groups = vec![];
-    for style_prop in &namespace.properties {
+    for (index, style_prop) in namespace.properties.iter().enumerate() {
         let style_prop = match style_prop {
             ObjectPropertyKind::ObjectProperty(style_prop) => style_prop,
             ObjectPropertyKind::SpreadProperty(spread) => {
                 match include(spread, resolver) {
-                    Some(Ok(include_ref)) => include_refs.push(include_ref),
+                    Some(Ok(mut include_ref)) => {
+                        include_ref.before_group = groups.len();
+                        include_refs.push(include_ref);
+                    }
                     Some(Err(error)) => errors.push(error),
                     None => errors.push(spread_error("stylex.create", spread)),
                 }
@@ -266,6 +270,7 @@ fn extract_stylex_namespace<'a>(
             errors.push(key_error("stylex.create", &style_prop.key));
             continue;
         };
+        let final_assignment = is_final_assignment(&prop_name, &namespace.properties[index + 1..]);
 
         // Phase 2: pseudo-element / pseudo-class top-level keys
         if prop_name.starts_with(':') {
@@ -282,7 +287,8 @@ fn extract_stylex_namespace<'a>(
             };
             let parent_selectors = [SelectorPart::Pseudo(prop_name.to_string())];
             let before = styles.len();
-            for inner_prop in &inner_obj.properties {
+            let mut has_entries = false;
+            for (inner_index, inner_prop) in inner_obj.properties.iter().enumerate() {
                 let inner_prop = match inner_prop {
                     ObjectPropertyKind::ObjectProperty(inner_prop) => inner_prop,
                     ObjectPropertyKind::SpreadProperty(spread) => {
@@ -294,19 +300,24 @@ fn extract_stylex_namespace<'a>(
                     errors.push(key_error("stylex.create", &inner_prop.key));
                     continue;
                 };
-                push_decomposed(
-                    &mut styles,
-                    decompose_value_conditions(
-                        &normalize_stylex_property(inner_name.as_ref()),
-                        &inner_prop.value,
-                        &parent_selectors,
-                        leaf,
-                        errors,
-                        resolver,
-                    ),
+                let decomposed = decompose_value_conditions(
+                    &normalize_stylex_property(inner_name.as_ref()),
+                    &inner_prop.value,
+                    &parent_selectors,
+                    leaf,
+                    errors,
+                    resolver,
                 );
+                if final_assignment
+                    && is_final_assignment(&inner_name, &inner_obj.properties[inner_index + 1..])
+                {
+                    has_entries |= !decomposed.is_empty();
+                    push_decomposed(&mut styles, decomposed);
+                }
             }
-            groups.push((prop_name.to_string(), styles.len() - before));
+            if has_entries {
+                groups.push((prop_name.to_string(), styles.len() - before));
+            }
             continue;
         }
 
@@ -317,18 +328,18 @@ fn extract_stylex_namespace<'a>(
             );
         }
         let before = styles.len();
-        push_decomposed(
-            &mut styles,
-            decompose_value_conditions(
-                &css_property,
-                &style_prop.value,
-                &[],
-                leaf,
-                errors,
-                resolver,
-            ),
+        let decomposed = decompose_value_conditions(
+            &css_property,
+            &style_prop.value,
+            &[],
+            leaf,
+            errors,
+            resolver,
         );
-        groups.push((prop_name.to_string(), styles.len() - before));
+        if final_assignment && !decomposed.is_empty() {
+            push_decomposed(&mut styles, decomposed);
+            groups.push((prop_name.to_string(), styles.len() - before));
+        }
     }
     (styles, include_refs, groups)
 }
@@ -353,6 +364,9 @@ fn include(
     if !is_include_call_static(&call.callee, resolver) {
         return None;
     }
+    if let Err(error) = crate::stylex::validation::validate_helper_call(call, resolver) {
+        return Some(Err(error));
+    }
     if let Some(Expression::StaticMemberExpression(member)) =
         call.arguments.first().and_then(Argument::as_expression)
         && let Expression::Identifier(ident) = &member.object
@@ -360,7 +374,8 @@ fn include(
         return Some(Ok(StylexIncludeRef {
             var_name: ident.name.to_string(),
             member_name: member.property.name.to_string(),
-            offset: spread.span.start,
+            offset: call.span.start,
+            before_group: 0,
         }));
     }
     Some(Err((

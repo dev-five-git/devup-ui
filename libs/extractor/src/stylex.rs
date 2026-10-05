@@ -12,7 +12,9 @@ use crate::utils::{
     spread_error,
 };
 
+pub(crate) mod assignments;
 mod dynamic;
+pub(crate) mod validation;
 pub use dynamic::{DynamicNamespace, Scalar, StylexDynamicInfo};
 
 /// Which `StyleX` function a named import refers to
@@ -110,14 +112,15 @@ pub type Conditions = Vec<(AtRuleKind, String)>;
 
 /// The values a `StyleX` variable takes: a literal, or a condition object of a
 /// `default` and at-rule keys (`@media`, `@supports`, `@container`), either
-/// possibly wrapped in `types.*()`. `None` when a value is not static.
+/// possibly wrapped in `types.*()`. Errors retain the unsupported value's location.
 pub fn variable_values(
     value: &Expression<'_>,
     resolver: StylexResolver<'_>,
-) -> Option<Vec<(Conditions, String)>> {
+    api: &str,
+) -> Result<Vec<(Conditions, String)>, (u32, String)> {
     let mut values = Vec::new();
-    collect_variable_values(value, &mut Vec::new(), &mut values, resolver)?;
-    Some(values)
+    collect_variable_values(value, &mut Vec::new(), &mut values, resolver, api)?;
+    Ok(values)
 }
 
 fn collect_variable_values(
@@ -125,33 +128,57 @@ fn collect_variable_values(
     conditions: &mut Conditions,
     values: &mut Vec<(Conditions, String)>,
     resolver: StylexResolver<'_>,
-) -> Option<()> {
+    api: &str,
+) -> Result<(), (u32, String)> {
+    if let Expression::CallExpression(call) = value {
+        validation::validate_helper_call(call, resolver)?;
+    }
     let value = unwrap_types_call(value, resolver);
     if let Some(text) = get_string_by_literal_expression(value) {
         values.push((conditions.clone(), text.into_owned()));
-        return Some(());
+        return Ok(());
     }
     if matches!(value, Expression::NullLiteral(_)) {
-        return Some(());
+        return Ok(());
     }
     let Expression::ObjectExpression(object) = value else {
-        return None;
+        return Err((
+            value.span().start,
+            runtime_value_error(api, &readable_code(value)),
+        ));
     };
-    for property in &object.properties {
-        let ObjectPropertyKind::ObjectProperty(property) = property else {
-            return None;
+    for (index, property) in object.properties.iter().enumerate() {
+        let property = match property {
+            ObjectPropertyKind::ObjectProperty(property) => property,
+            ObjectPropertyKind::SpreadProperty(_) => {
+                return Err((
+                    value.span().start,
+                    runtime_value_error(api, &readable_code(value)),
+                ));
+            }
         };
-        let key = get_string_by_property_key(&property.key)?;
+        validation::validate_at_rule_condition(&property.key, api)?;
+        let key = get_string_by_property_key(&property.key)
+            .ok_or_else(|| key_error(api, &property.key))?;
+        let before = values.len();
         if key == "default" {
-            collect_variable_values(&property.value, conditions, values, resolver)?;
-            continue;
+            collect_variable_values(&property.value, conditions, values, resolver, api)?;
+        } else {
+            let (kind, query) = split_at_rule_key(&key).ok_or_else(|| {
+                (
+                    value.span().start,
+                    runtime_value_error(api, &readable_code(value)),
+                )
+            })?;
+            conditions.push((kind, normalize_query(query)));
+            collect_variable_values(&property.value, conditions, values, resolver, api)?;
+            conditions.pop();
         }
-        let (kind, query) = split_at_rule_key(&key)?;
-        conditions.push((kind, normalize_query(query)));
-        collect_variable_values(&property.value, conditions, values, resolver)?;
-        conditions.pop();
+        if !assignments::is_final_assignment(&key, &object.properties[index + 1..]) {
+            values.truncate(before);
+        }
     }
-    Some(())
+    Ok(())
 }
 
 #[must_use]
@@ -231,13 +258,38 @@ pub struct StylexIncludeRef {
     pub var_name: String,
     pub member_name: String,
     pub offset: u32,
+    pub before_group: usize,
 }
 
 /// Whether `callee` is a member of the `types` the package gives, as
 /// `stylex.types.color` or `types.color`
 pub fn is_types_call(callee: &Expression, resolver: StylexResolver<'_>) -> bool {
     matches!(callee, Expression::StaticMemberExpression(member)
-        if resolver(&member.object) == Some(StylexFunction::Types))
+        if is_types_method(&member.object, member.property.name.as_str(), resolver))
+}
+
+pub(crate) fn is_types_method(
+    object: &Expression<'_>,
+    name: &str,
+    resolver: StylexResolver<'_>,
+) -> bool {
+    resolver(object) == Some(StylexFunction::Types)
+        && matches!(
+            name,
+            "angle"
+                | "color"
+                | "image"
+                | "integer"
+                | "length"
+                | "lengthPercentage"
+                | "number"
+                | "percentage"
+                | "resolution"
+                | "time"
+                | "transformFunction"
+                | "transformList"
+                | "url"
+        )
 }
 
 /// Convert camelCase CSS property name to kebab-case.
@@ -535,6 +587,16 @@ pub fn decompose_value_conditions(
     errors: &mut Vec<(u32, String)>,
     resolver: StylexResolver<'_>,
 ) -> Vec<DecomposedStyle> {
+    if let Expression::CallExpression(call) = value
+        && let Err(error) = validation::validate_helper_call(call, resolver)
+    {
+        errors.push((
+            value.span().start,
+            runtime_value_error("stylex.create", &readable_code(value)),
+        ));
+        errors.push(error);
+        return vec![];
+    }
     if let Some(s) = leaf(css_property, value) {
         return decomposed_leaf(css_property, Some(s), parent_selectors)
             .into_iter()
@@ -571,15 +633,16 @@ pub fn decompose_value_conditions(
     // CallExpression: types.*() → extract inner value, pass through selectors
     if let Expression::CallExpression(call) = value
         && is_types_call(&call.callee, resolver)
-        && let Some(s) = call
-            .arguments
-            .first()
-            .and_then(Argument::as_expression)
-            .and_then(|inner| leaf(css_property, inner))
+        && let Some(inner) = call.arguments.first().and_then(Argument::as_expression)
     {
-        return decomposed_leaf(css_property, Some(s), parent_selectors)
-            .into_iter()
-            .collect();
+        return decompose_value_conditions(
+            css_property,
+            inner,
+            parent_selectors,
+            leaf,
+            errors,
+            resolver,
+        );
     }
 
     // ObjectExpression → recurse into condition keys
@@ -593,7 +656,7 @@ pub fn decompose_value_conditions(
 
     let mut results = vec![];
 
-    for prop in &obj.properties {
+    for (index, prop) in obj.properties.iter().enumerate() {
         let prop = match prop {
             ObjectPropertyKind::ObjectProperty(prop) => prop,
             ObjectPropertyKind::SpreadProperty(spread) => {
@@ -601,11 +664,16 @@ pub fn decompose_value_conditions(
                 continue;
             }
         };
+        if let Err(error) = validation::validate_at_rule_condition(&prop.key, "stylex.create") {
+            errors.push(error);
+            continue;
+        }
         let Some(key) = get_string_by_property_key(&prop.key) else {
             errors.push(key_error("stylex.create", &prop.key));
             continue;
         };
 
+        let final_assignment = assignments::is_final_assignment(&key, &obj.properties[index + 1..]);
         let condition = if key == "default" {
             None
         } else if key.starts_with(':') {
@@ -625,14 +693,17 @@ pub fn decompose_value_conditions(
         };
         let mut selectors = parent_selectors.to_vec();
         selectors.extend(condition);
-        results.extend(decompose_value_conditions(
+        let decomposed = decompose_value_conditions(
             css_property,
             &prop.value,
             &selectors,
             leaf,
             errors,
             resolver,
-        ));
+        );
+        if final_assignment {
+            results.extend(decomposed);
+        }
     }
 
     results
@@ -675,16 +746,7 @@ fn decomposed_leaf(
 
 /// Parse an at-rule key like `"@media (max-width: 600px)"` into kind + query.
 fn parse_at_rule_key(key: &str) -> Option<(AtRuleKind, String)> {
-    key.strip_prefix("@media")
-        .map(|q| (AtRuleKind::Media, q.trim().to_string()))
-        .or_else(|| {
-            key.strip_prefix("@supports")
-                .map(|q| (AtRuleKind::Supports, q.trim().to_string()))
-        })
-        .or_else(|| {
-            key.strip_prefix("@container")
-                .map(|q| (AtRuleKind::Container, q.trim().to_string()))
-        })
+    split_at_rule_key(key).map(|(kind, query)| (kind, query.to_string()))
 }
 
 #[cfg(test)]

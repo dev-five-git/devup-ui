@@ -2,6 +2,7 @@ use super::{Leaf, raw_static_style};
 use crate::ExtractStyleProp;
 use crate::extract_style::extract_dynamic_style::ExtractDynamicStyle;
 use crate::extract_style::extract_style_value::ExtractStyleValue;
+use crate::stylex::assignments::is_final_assignment;
 use crate::stylex::{DynamicNamespace, Scalar, dynamic_number_suffix, normalize_stylex_property};
 use crate::utils::{
     build_time_error, get_string_by_property_key, key_error, readable_code, spread_error,
@@ -74,7 +75,7 @@ pub(super) fn extract<'a>(
         return None;
     };
     let mut styles = vec![];
-    for prop in &body.properties {
+    for (position, prop) in body.properties.iter().enumerate() {
         let prop = match prop {
             ObjectPropertyKind::ObjectProperty(prop) => prop,
             ObjectPropertyKind::SpreadProperty(spread) => {
@@ -98,6 +99,10 @@ pub(super) fn extract<'a>(
             continue;
         };
         let property = normalize_stylex_property(&name);
+        let final_assignment = is_final_assignment(&name, &body.properties[position + 1..]);
+        if final_assignment {
+            namespace.properties.push(property.clone());
+        }
         let index = match prop.value.without_parentheses() {
             Expression::Identifier(ident) => {
                 names.iter().position(|name| name == ident.name.as_str())
@@ -105,6 +110,9 @@ pub(super) fn extract<'a>(
             _ => None,
         };
         if let Some(index) = index {
+            if !final_assignment {
+                continue;
+            }
             namespace.css_vars.push((
                 index,
                 sheet_to_variable_name(&property, 0, None),
@@ -116,7 +124,9 @@ pub(super) fn extract<'a>(
             )));
         } else if !matches!(prop.value.without_parentheses(), Expression::NullLiteral(_)) {
             if let Some(value) = leaf(&property, &prop.value) {
-                styles.push(raw_static_style(property, &value, None));
+                if final_assignment {
+                    styles.push(raw_static_style(property, &value, None));
+                }
             } else {
                 errors.push((prop.value.span().start, build_time_error("stylex.create", &readable_code(&prop.value), "a dynamic style's value is a non-exact body value; use a parameter or a static scalar value; compute scalar expressions before passing them")));
             }

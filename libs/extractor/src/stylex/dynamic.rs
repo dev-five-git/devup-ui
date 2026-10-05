@@ -37,6 +37,8 @@ impl Scalar {
 #[derive(Debug, Clone, Default)]
 pub struct DynamicNamespace {
     pub defaults: Vec<Option<Scalar>>,
+    /// Every body property participates in precedence, including null assignments.
+    pub properties: Vec<String>,
     /// Parameter index, CSS variable, numeric unit, CSS property.
     pub css_vars: Vec<(usize, String, &'static str, String)>,
 }

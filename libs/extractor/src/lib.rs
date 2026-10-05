@@ -15049,7 +15049,7 @@ export const a = {element}"
     )]
     #[case(
         "stylex.props(on && s.red, on && s.red)",
-        "{ className: on ? \"color-0-red--255\" : on ? \"color-0-red--255\" : \"\" }"
+        "{ className: ((__devupStylexTest0, __devupStylexTest1) => __devupStylexTest1 ? \"color-0-red--255\" : __devupStylexTest0 ? \"color-0-red--255\" : \"\")(on, on) }"
     )]
     #[case(
         "stylex.props(s['blue'], s.hover)",
@@ -15064,8 +15064,11 @@ export const a = {element}"
     #[case("stylex.props(s.red, (cond).x)", "[cond.x]")]
     #[case("stylex.props(s.red, ...rest)", "rest")]
     #[case("stylex.props(s.red, s.fn(1))", "--")]
-    #[case("stylex.props(s.red, s.inc)", "color-0-red--255")]
-    #[case("stylex.props(on && s.reset)", "{ className: \"\" }")]
+    #[case("stylex.props(s.red, s.inc)", "margin-0-1px--255 color-0-green--255")]
+    #[case(
+        "stylex.props(on && s.reset)",
+        "{ className: ((__devupStylexTest0) => \"\")(on) }"
+    )]
     #[case("stylex.props([s.red, rest])", "[rest].flat(Infinity)")]
     #[serial]
     fn test_stylex_props_merge_keys(#[case] call: &str, #[case] expected: &str) {
@@ -16512,7 +16515,7 @@ const el = <div {...stylex.props(styles['missing'], unknownStyles[color], styles
     fn test_stylex_props_computed_key_only_dynamic_namespaces() {
         reset_class_map();
         reset_file_map();
-        assert_debug_snapshot!(ToBTreeSet::from(
+        assert_debug_snapshot!(
             extract(
                 "test.tsx",
                 r"import stylex from '@stylexjs/stylex';
@@ -16526,8 +16529,9 @@ const el = <div {...stylex.props(styles[variant])} />;",
                     import_aliases: HashMap::new()
                 },
             )
-            .unwrap()
-        ));
+            .expect_err("uncalled dynamic namespace must not survive")
+            .to_string()
+        );
     }
 
     #[test]
@@ -17521,7 +17525,7 @@ const el = <div {...stylex.props(styles.base, someFunction())} />;",
     fn test_stylex_props_dynamic_as_non_call() {
         reset_class_map();
         reset_file_map();
-        assert_debug_snapshot!(ToBTreeSet::from(
+        assert_debug_snapshot!(
             extract(
                 "test.tsx",
                 r"import stylex from '@stylexjs/stylex';
@@ -17535,8 +17539,9 @@ const el = <div {...stylex.props(styles.base)} />;",
                     import_aliases: HashMap::new()
                 },
             )
-            .unwrap()
-        ));
+            .expect_err("uncalled dynamic namespace must not survive")
+            .to_string()
+        );
     }
 
     #[test]
@@ -17544,16 +17549,24 @@ const el = <div {...stylex.props(styles.base)} />;",
     fn test_stylex_include_dynamic_target() {
         reset_class_map();
         reset_file_map();
-        assert_debug_snapshot!(ToBTreeSet::from(
-            extract(
+        let error = extract(
                 "test.tsx",
                 r"import stylex from '@stylexjs/stylex';
 const base = stylex.create({ dynamic: (x) => ({ color: x, fontSize: '14px' }) });
 const composed = stylex.create({ fancy: { ...stylex.include(base.dynamic), backgroundColor: 'blue' } });",
                 ExtractOption { package: "@devup-ui/react".to_string(), css_dir: "@devup-ui/react".to_string(), single_css: true, import_main_css: false, import_aliases: HashMap::new() },
             )
-            .unwrap()
-        ));
+            .expect_err("uncalled dynamic include must be rejected")
+            .to_string();
+        assert!(error.contains("test.tsx:3:46:"), "{error}");
+        assert!(
+            error.contains("uncalled dynamic namespace cannot be included exactly"),
+            "{error}"
+        );
+        assert!(
+            error.contains("call the function directly in props/attrs"),
+            "{error}"
+        );
     }
 
     #[test]
@@ -18854,7 +18867,7 @@ export const light = stylex.createTheme(colors, { primary: 'white' });",
             (
                 "const styles = stylex.create({ base: { fontSize: stylex.types.length(someVar), width: { default: stylex.types.length() }, position: stylex.firstThatWorks('sticky', someVar, ...rest) } });",
                 &[
-                    "`stylex.create()` cannot use `stylex.types.length(someVar)` at build time",
+                    "test.tsx:2:70: `stylex.create()` cannot use `someVar` at build time",
                     "`stylex.create()` cannot use `stylex.types.length()` at build time",
                     "`stylex.firstThatWorks()` cannot use `someVar` at build time",
                     "`stylex.firstThatWorks()` cannot use `...rest` at build time",
@@ -18937,7 +18950,7 @@ export const light = stylex.createTheme(colors, { primary: 'white' });",
     #[test]
     #[serial]
     fn test_stylex_props_join_styles_compiled_elsewhere() {
-        assert_debug_snapshot!(ToBTreeSet::from(extract_tsx(
+        assert_debug_snapshot!(extract("test.tsx",
             r"import * as stylex from '@stylexjs/stylex';
 const fade = stylex.keyframes({ from: { opacity: 0 }, to: { opacity: 1 } });
 const colors = stylex.defineVars({ text: 'black' });
@@ -18947,7 +18960,7 @@ const styles = stylex.create({
   none: null,
 });
 export const A = ({ style, rest }) => <div {...stylex.props(styles.base, style, ...rest, undefined, null, styles, styles.missing, styles?.bar, styles[key]?.x, styles?.['missing'], on && styles.missing, on ? styles.base : styles.missing, on ? styles.missing : styles.base, on ? styles.missing : styles.none)} />;"
-        )));
+        , ExtractOption::default()).expect_err("escaping dynamic namespace must not survive").to_string());
     }
 
     #[test]

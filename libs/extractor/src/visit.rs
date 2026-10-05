@@ -103,7 +103,9 @@ mod selected_capture;
 mod semantics_helpers_tests;
 mod spread_slots;
 mod style_order;
+mod stylex_conditions;
 mod stylex_dynamic;
+mod stylex_includes;
 
 use spread_slots::{Overridden, is_unknown_spread, take_known_overridden};
 
@@ -1960,7 +1962,7 @@ impl<'a> DevupVisitor<'a> {
     /// later namespace's key replaces an earlier one's, and `null` removes it,
     /// as `StyleX` merges them. `None` when an argument is anything else.
     fn compose_stylex_props(
-        &self,
+        &mut self,
         arguments: &oxc_allocator::Vec<'a, Argument<'a>>,
     ) -> Option<Expression<'a>> {
         let mut parts = Vec::new();
@@ -1968,6 +1970,7 @@ impl<'a> DevupVisitor<'a> {
             self.stylex_parts(argument.as_expression()?, &mut parts)?;
         }
         let mut entries: Vec<(String, StylexChoice<'a>)> = Vec::new();
+        let mut values = Vec::new();
         for part in parts {
             match part {
                 StylexPart::Keys(keys) => {
@@ -1981,6 +1984,13 @@ impl<'a> DevupVisitor<'a> {
                     consequent,
                     alternate,
                 } => {
+                    let name = self.names.fresh("__devupStylexTest");
+                    values.push((name.clone(), test));
+                    let test = Expression::new_identifier(
+                        SPAN,
+                        Str::from_in(name.as_str(), self.ast.allocator()),
+                        &self.ast,
+                    );
                     let mut keys: Vec<&String> = Vec::new();
                     for (key, _) in consequent.iter().chain(&alternate) {
                         if !keys.contains(&key) {
@@ -2012,15 +2022,14 @@ impl<'a> DevupVisitor<'a> {
                 }
             }
         }
-        Some(
-            merge_expression_for_class_name(
-                &self.ast,
-                entries
-                    .into_iter()
-                    .filter_map(|(_, choice)| self.render_stylex_choice(choice)),
-            )
-            .unwrap_or_else(|| Expression::new_string_literal(SPAN, "", None, &self.ast)),
+        let body = merge_expression_for_class_name(
+            &self.ast,
+            entries
+                .into_iter()
+                .filter_map(|(_, choice)| self.render_stylex_choice(choice)),
         )
+        .unwrap_or_else(|| Expression::new_string_literal(SPAN, "", None, &self.ast));
+        Some(self.capture_stylex_conditions(values, body))
     }
 
     /// The parts of a `stylex.props()` argument, in order
@@ -2035,14 +2044,18 @@ impl<'a> DevupVisitor<'a> {
                 if logical.operator == oxc_ast::ast::LogicalOperator::And =>
             {
                 parts.push(StylexPart::Conditional {
-                    test: logical.left.clone_in(self.ast.allocator()),
+                    test: logical
+                        .left
+                        .clone_in_with_semantic_ids(self.ast.allocator()),
                     consequent: self.stylex_keyed(&logical.right)?,
                     alternate: Vec::new(),
                 });
             }
             Expression::ConditionalExpression(conditional) => {
                 parts.push(StylexPart::Conditional {
-                    test: conditional.test.clone_in(self.ast.allocator()),
+                    test: conditional
+                        .test
+                        .clone_in_with_semantic_ids(self.ast.allocator()),
                     consequent: self.stylex_keyed(&conditional.consequent)?,
                     alternate: self.stylex_keyed(&conditional.alternate)?,
                 });
@@ -2058,7 +2071,11 @@ impl<'a> DevupVisitor<'a> {
         let (object, name) = match unwrap_syntax_only(expr) {
             Expression::BooleanLiteral(literal) if !literal.value => return Some(Vec::new()),
             Expression::NullLiteral(_) => return Some(Vec::new()),
-            Expression::Identifier(ident) if ident.name == "undefined" => return Some(Vec::new()),
+            Expression::Identifier(ident)
+                if ident.name == "undefined" && self.bindings.symbol(ident).is_none() =>
+            {
+                return Some(Vec::new());
+            }
             Expression::StaticMemberExpression(member) => {
                 (&member.object, member.property.name.to_string())
             }
@@ -2071,6 +2088,14 @@ impl<'a> DevupVisitor<'a> {
         let Expression::Identifier(object) = object else {
             return None;
         };
+        if matches!(
+            self.stylex_namespaces
+                .get(&self.bindings.symbol(object)?)?
+                .get(&name),
+            Some(StylexNamespaceValue::Dynamic(_))
+        ) {
+            return None;
+        }
         self.stylex_keys
             .get(&self.bindings.symbol(object)?)?
             .get(&name)
@@ -2130,11 +2155,7 @@ impl<'a> DevupVisitor<'a> {
             && !arguments.iter().filter_map(Argument::as_expression).all(|expr| {
                 matches!(unwrap_syntax_only(expr), Expression::CallExpression(other) if other.span == call.span)
                     || self.stylex_keyed(expr).is_some_and(|keys| keys.iter().all(|(key, _)| {
-                        self.stylex_dynamic_info(&call.callee).is_some_and(|info| !info.styles.iter().any(|style| match style {
-                            ExtractStyleValue::Static(style) => style.property == crate::stylex::normalize_stylex_property(key),
-                            ExtractStyleValue::Dynamic(style) => style.property() == crate::stylex::normalize_stylex_property(key),
-                            ExtractStyleValue::Typography(_) | ExtractStyleValue::Css(_) | ExtractStyleValue::Import(_) | ExtractStyleValue::FontFace(_) | ExtractStyleValue::Keyframes(_) => true,
-                        }))
+                        self.stylex_dynamic_info(&call.callee).is_some_and(|info| !info.namespace.properties.contains(&crate::stylex::normalize_stylex_property(key)))
                     }))
             })
         {
@@ -2167,10 +2188,6 @@ impl<'a> DevupVisitor<'a> {
                 continue;
             }
             if let Some(class_expr) = self.resolve_stylex_arg(expr) {
-                if captures && !matches!(class_expr, Expression::StringLiteral(_)) {
-                    self.errors.push((expr.span().start, build_time_error("stylex.props", &readable_code(expr), "mixed runtime composition and dynamic calls cannot preserve argument evaluation order here; pass static namespaces alongside direct scalar calls")));
-                    continue;
-                }
                 class_exprs.push(class_expr);
             }
         }
@@ -2413,7 +2430,10 @@ impl<'a> DevupVisitor<'a> {
                 if logical.operator == oxc_ast::ast::LogicalOperator::And =>
             {
                 // The right side should be the namespace reference
-                if let Some(class_expr) = self.resolve_stylex_arg(&logical.right) {
+                {
+                    let class_expr = self.resolve_stylex_arg(&logical.right).unwrap_or_else(|| {
+                        Expression::new_string_literal(SPAN, "", None, &self.ast)
+                    });
                     // Build: condition ? " className" : ""
                     let condition = logical
                         .left
@@ -2425,8 +2445,6 @@ impl<'a> DevupVisitor<'a> {
                         Expression::new_string_literal(SPAN, "", None, &self.ast),
                         &self.ast,
                     ))
-                } else {
-                    None
                 }
             }
             // cond ? styles.a : styles.b → ConditionalExpression
@@ -2465,13 +2483,23 @@ impl<'a> DevupVisitor<'a> {
                             &self.ast,
                         ))
                     }
-                    (None, None) => None,
+                    (None, None) => Some(Expression::new_conditional_expression(
+                        SPAN,
+                        cond.test.clone_in_with_semantic_ids(self.ast.allocator()),
+                        Expression::new_string_literal(SPAN, "", None, &self.ast),
+                        Expression::new_string_literal(SPAN, "", None, &self.ast),
+                        &self.ast,
+                    )),
                 }
             }
             // false, null, undefined, 0, "" → falsy, skip
             Expression::BooleanLiteral(b) if !b.value => None,
             Expression::NullLiteral(_) => None,
-            Expression::Identifier(ident) if ident.name == "undefined" => None,
+            Expression::Identifier(ident)
+                if ident.name == "undefined" && self.bindings.symbol(ident).is_none() =>
+            {
+                None
+            }
             Expression::NumericLiteral(n) if n.value == 0.0 => None,
             Expression::StringLiteral(s) if s.value.is_empty() => None,
             _ => Some(runtime_classes(&self.ast, expr)),
@@ -2755,7 +2783,7 @@ impl<'a> VisitMut<'a> for DevupVisitor<'a> {
                     .map(|_| styles.iter().flat_map(ExtractStyleProp::extract).collect());
                 let class_name =
                     gen_class_names(&self.ast, &mut styles, None, self.split_filename.as_deref());
-                if include_refs.is_empty() && css_vars.is_none() {
+                if css_vars.is_none() {
                     let mut offset = 0;
                     let mut keys = Vec::with_capacity(groups.len());
                     for (key, count) in groups {
@@ -2772,49 +2800,29 @@ impl<'a> VisitMut<'a> for DevupVisitor<'a> {
                         };
                         keys.push((key, class));
                     }
+                    let keys = self.merge_stylex_includes(keys, &include_refs, &visible);
                     key_map.insert(ns_name.clone(), keys);
                 }
                 self.styles
                     .extend(styles.into_iter().flat_map(ExtractStyleProp::into_extract));
 
                 // Extract className string for props() resolution
-                let mut class_name_str = class_name.as_ref().map_or(String::new(), |expr| {
-                    if let Expression::StringLiteral(s) = expr {
-                        s.value.to_string()
-                    } else {
-                        String::new()
-                    }
-                });
-
-                // Resolve include() references — prepend included classNames
-                for inc_ref in &include_refs {
-                    let Some(ns_value) = visible
-                        .get(&inc_ref.var_name)
-                        .and_then(|symbol| self.stylex_namespaces.get(symbol))
-                        .and_then(|ns| ns.get(&inc_ref.member_name))
-                    else {
-                        self.errors.push((
-                            inc_ref.offset,
-                            build_time_error(
-                                "stylex.include",
-                                &format!("{}.{}", inc_ref.var_name, inc_ref.member_name),
-                                "it takes a namespace `stylex.create()` defines earlier in this file",
-                            ),
-                        ));
-                        continue;
-                    };
-                    let included_class = match ns_value {
-                        StylexNamespaceValue::Static(s) => s.clone(),
-                        StylexNamespaceValue::Dynamic(info) => info.class_name.clone(),
-                    };
-                    if !included_class.is_empty() {
-                        if class_name_str.is_empty() {
-                            class_name_str = included_class;
+                let class_name_str = if let Some(keys) = key_map.get(&ns_name)
+                    && !include_refs.is_empty()
+                {
+                    keys.iter()
+                        .filter_map(|(_, class)| (!class.is_empty()).then_some(class.as_str()))
+                        .collect::<Vec<_>>()
+                        .join(" ")
+                } else {
+                    class_name.as_ref().map_or(String::new(), |expr| {
+                        if let Expression::StringLiteral(s) = expr {
+                            s.value.to_string()
                         } else {
-                            class_name_str = format!("{included_class} {class_name_str}");
+                            String::new()
                         }
-                    }
-                }
+                    })
+                };
 
                 let ns_value = if let Some(vars) = css_vars {
                     StylexNamespaceValue::Dynamic(StylexDynamicInfo {
@@ -2827,18 +2835,17 @@ impl<'a> VisitMut<'a> for DevupVisitor<'a> {
                 };
                 namespace_map.insert(ns_name.clone(), ns_value);
 
-                // If include refs changed the className, use the combined string
-                let value = if !include_refs.is_empty() && !class_name_str.is_empty() {
+                let value = if include_refs.is_empty() {
+                    class_name.unwrap_or_else(|| {
+                        Expression::new_string_literal(SPAN, "", None, &self.ast)
+                    })
+                } else {
                     Expression::new_string_literal(
                         SPAN,
                         Str::from_in(&class_name_str, self.ast.allocator()),
                         None,
                         &self.ast,
                     )
-                } else {
-                    class_name.unwrap_or_else(|| {
-                        Expression::new_string_literal(SPAN, "", None, &self.ast)
-                    })
                 };
 
                 properties.push(ObjectPropertyKind::new_object_property(
@@ -2919,17 +2926,24 @@ impl<'a> VisitMut<'a> for DevupVisitor<'a> {
                     continue;
                 };
                 let values = if publishes_values {
-                    let Some(values) = variable_values(&prop.value, &|callee| {
-                        self.bindings.stylex_function(callee)
-                    }) else {
-                        self.errors.push((
-                            prop.value.span().start,
-                            runtime_value_error("stylex.defineVars", &readable_code(&prop.value)),
-                        ));
-                        continue;
-                    };
-                    values
+                    match variable_values(
+                        &prop.value,
+                        &|callee| self.bindings.stylex_function(callee),
+                        api,
+                    ) {
+                        Ok(values) => values,
+                        Err(error) => {
+                            self.errors.push(error);
+                            continue;
+                        }
+                    }
                 } else {
+                    if let Err(error) =
+                        crate::stylex::validation::validate_contract_placeholder(&key, &prop.value)
+                    {
+                        self.errors.push(error);
+                        continue;
+                    }
                     vec![]
                 };
                 let variable =
@@ -2984,13 +2998,13 @@ impl<'a> VisitMut<'a> for DevupVisitor<'a> {
                     ));
                     continue;
                 };
-                match variable_values(&prop.value, &|callee| self.bindings.stylex_function(callee))
-                {
-                    Some(values) => variables.push((variable.clone(), values)),
-                    None => self.errors.push((
-                        prop.value.span().start,
-                        runtime_value_error("stylex.createTheme", &readable_code(&prop.value)),
-                    )),
+                match variable_values(
+                    &prop.value,
+                    &|callee| self.bindings.stylex_function(callee),
+                    "stylex.createTheme",
+                ) {
+                    Ok(values) => variables.push((variable.clone(), values)),
+                    Err(error) => self.errors.push(error),
                 }
             }
             let class_name = create_theme_class(
@@ -3807,11 +3821,26 @@ impl<'a> VisitMut<'a> for DevupVisitor<'a> {
             .get_binding_identifier()
             .and_then(|ident| ident.symbol_id.get());
 
+        if let (Some(symbol), Some(Expression::Identifier(from))) = (bound, &it.init) {
+            self.bind_stylex_namespace_alias(symbol, from);
+        }
+
         // After walking, capture stylex.create() variable binding
         let pending_keys = self.stylex_pending_keys.take();
         if let Some(pending) = self.stylex_pending_create.take()
-            && let Some(symbol) = bound
+            && let Some(identifier) = it.id.get_binding_identifier()
+            && let Some(symbol) = identifier.symbol_id.get()
         {
+            if !self.bindings.unchanged(symbol) {
+                self.errors.push((
+                    identifier.span.start,
+                    build_time_error(
+                        "stylex.create",
+                        identifier.name.as_str(),
+                        "a reassigned namespace or written member makes its metadata unknowable; use unchanged namespace bindings and members instead of modifying them",
+                    ),
+                ));
+            }
             self.stylex_namespaces.insert(symbol, pending);
             if let Some(keys) = pending_keys {
                 self.stylex_keys.insert(symbol, keys);

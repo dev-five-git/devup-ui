@@ -6,7 +6,8 @@ use super::{
     readable_code, unwrap_syntax_only,
 };
 use crate::extractor::extract_style_from_stylex::raw_static_style;
-use crate::stylex::{Scalar, stylex_value};
+use crate::stylex::Scalar;
+use crate::utils::js_number_string;
 
 mod checks;
 
@@ -113,7 +114,7 @@ impl<'a> DevupVisitor<'a> {
                 .cloned()
                 .map(ExtractStyleProp::Static)
                 .collect();
-            for (index, _, _, property) in &info.namespace.css_vars {
+            for (index, _, unit, property) in &info.namespace.css_vars {
                 let value = known.get(*index).cloned().unwrap_or(Scalar::Undefined);
                 let value = match value {
                     Scalar::Undefined => info.namespace.defaults[*index]
@@ -121,7 +122,13 @@ impl<'a> DevupVisitor<'a> {
                         .unwrap_or(Scalar::Undefined),
                     value => value,
                 };
-                if let Some(value) = stylex_value(property, &self.scalar_expression(&value)) {
+                let text = match value {
+                    Scalar::Number(number) => Some(format!("{}{}", js_number_string(number), unit)),
+                    Scalar::Text(text) => Some(text),
+                    Scalar::Boolean(value) => Some(value.to_string()),
+                    Scalar::Null | Scalar::Undefined => None,
+                };
+                if let Some(value) = text {
                     styles.push(raw_static_style(property.clone(), &value, None));
                 }
             }
