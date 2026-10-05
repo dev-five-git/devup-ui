@@ -5,10 +5,13 @@ use oxc_span::GetSpan;
 use crate::scope::Bindings;
 use crate::scope::stylex_bindings::{StylexBinding, unbound_reference};
 use crate::scope::stylex_sources::{StylexSource, require_source};
-use crate::utils::{build_time_error, readable_code, unwrap_syntax_only};
+use crate::utils::{readable_code, unwrap_syntax_only};
 
 mod declarations;
+mod diagnostics;
 mod exports;
+mod loaders;
+mod members;
 
 pub(super) struct Check<'s> {
     bindings: &'s Bindings,
@@ -16,6 +19,7 @@ pub(super) struct Check<'s> {
     diagnosed: &'s [(u32, String)],
     errors: Vec<(u32, String)>,
     root_member: bool,
+    form: &'static str,
 }
 
 impl<'s> Check<'s> {
@@ -30,25 +34,13 @@ impl<'s> Check<'s> {
             diagnosed,
             errors: Vec::new(),
             root_member: false,
+            form: "function value escape",
         }
     }
 
     pub(super) fn errors(mut self, program: &Program<'_>) -> Vec<(u32, String)> {
         self.visit_program(program);
         self.errors
-    }
-    fn root_loader(&self, expression: &Expression<'_>) -> bool {
-        matches!(unwrap_syntax_only(expression), Expression::CallExpression(call)
-            if require_source(call).is_some_and(|source| StylexSource::classify(source, self.package) == StylexSource::Root)
-                && matches!(unwrap_syntax_only(&call.callee), Expression::Identifier(loader) if unbound_reference(&self.bindings.scoping, loader)))
-    }
-
-    fn reject(&mut self, at: u32, code: &str, requirement: &str) {
-        if self.diagnosed.iter().any(|(offset, _)| *offset == at) {
-            return;
-        }
-        self.errors
-            .push((at, build_time_error("StyleX API", code, requirement)));
     }
 }
 
@@ -59,6 +51,11 @@ impl<'a> Visit<'a> for Check<'_> {
 
     fn visit_variable_declarator(&mut self, declarator: &VariableDeclarator<'a>) {
         if self.required(declarator) {
+            if let Some(Expression::CallExpression(call)) =
+                declarator.init.as_ref().map(unwrap_syntax_only)
+            {
+                self.visit_arguments(&call.arguments);
+            }
             return;
         }
         if let Some(local) = declarator.id.get_binding_identifier()
@@ -88,10 +85,16 @@ impl<'a> Visit<'a> for Check<'_> {
             return;
         }
         match self.bindings.stylex_binding(expression) {
+            Some(StylexBinding::Function(function)) => {
+                self.reject_function(
+                    &function,
+                    (expression.span().start, &readable_code(expression)),
+                    self.form,
+                );
+            }
             Some(
                 StylexBinding::Namespace
                 | StylexBinding::UpstreamNamespace
-                | StylexBinding::Function(_)
                 | StylexBinding::Invalid,
             ) => {
                 self.reject(expression.span().start, &readable_code(expression), "API calls must be compiled directly; a remaining API/namespace/function escape or dynamic member cannot run at runtime");
@@ -111,30 +114,32 @@ impl<'a> Visit<'a> for Check<'_> {
     }
 
     fn visit_call_expression(&mut self, call: &oxc_ast::ast::CallExpression<'a>) {
-        if let Some(source) = require_source(call)
-            && (StylexSource::classify(source, self.package).is_api_module()
-                || StylexSource::classify(source, self.package) == StylexSource::Root
-                    && !self.root_member)
-            && matches!(unwrap_syntax_only(&call.callee), Expression::Identifier(loader) if unbound_reference(&self.bindings.scoping, loader))
-        {
-            self.reject(call.span.start, &readable_code(&call.callee), "bind the loader result to an unchanged namespace or simple named imports before calling an API");
-        }
+        self.runtime_loader(call);
         walk::walk_call_expression(self, call);
     }
 
     fn visit_ts_type(&mut self, _: &TSType<'a>) {}
 
     fn visit_identifier_reference(&mut self, identifier: &oxc_ast::ast::IdentifierReference<'a>) {
+        if let Some(symbol) = self.bindings.symbol(identifier)
+            && let Some(StylexBinding::Function(function)) = self.bindings.stylex.binding(symbol)
+        {
+            self.reject_function(
+                function,
+                (identifier.span.start, identifier.name.as_str()),
+                self.form,
+            );
+            return;
+        }
         if self.bindings.symbol(identifier).is_some_and(|symbol| {
             match self.bindings.stylex.binding(symbol) {
                 Some(StylexBinding::Root) => !self.root_member,
                 Some(
                     StylexBinding::Namespace
                     | StylexBinding::UpstreamNamespace
-                    | StylexBinding::Function(_)
                     | StylexBinding::Invalid,
                 ) => true,
-                Some(StylexBinding::RootDefault) | None => false,
+                Some(StylexBinding::Function(_) | StylexBinding::RootDefault) | None => false,
             }
         }) {
             self.reject(
@@ -169,59 +174,14 @@ impl<'a> Visit<'a> for Check<'_> {
         &mut self,
         member: &oxc_ast::ast::StaticMemberExpression<'a>,
     ) {
-        if matches!(
-            self.bindings.stylex_binding(&member.object),
-            Some(StylexBinding::Function(_))
-        ) {
-            return;
-        }
-        let loader = self.root_loader(&member.object);
-        if loader && member.property.name == "stylex" {
-            self.reject(member.span.start, "require(...).stylex", "bind the root loader to an unchanged namespace or simple stylex destructuring before using its API");
-            return;
-        }
-        let previous = self.root_member;
-        self.root_member = loader
-            || matches!(
-                self.bindings.stylex_binding(&member.object),
-                Some(StylexBinding::Root)
-            );
-        self.visit_expression(&member.object);
-        self.root_member = previous;
+        self.static_member(member);
     }
 
     fn visit_computed_member_expression(
         &mut self,
         member: &oxc_ast::ast::ComputedMemberExpression<'a>,
     ) {
-        if matches!(
-            self.bindings.stylex_binding(&member.object),
-            Some(StylexBinding::Function(_))
-        ) {
-            self.visit_expression(&member.expression);
-            return;
-        }
-        let loader = self.root_loader(&member.object);
-        if loader
-            && crate::utils::get_string_by_literal_expression(&member.expression)
-                .is_none_or(|name| name.as_ref() == "stylex")
-        {
-            self.reject(
-                member.span.start,
-                "require(...)[...]",
-                "bind the root module before selecting its compile-only stylex API",
-            );
-            return;
-        }
-        let previous = self.root_member;
-        self.root_member = loader
-            || matches!(
-                self.bindings.stylex_binding(&member.object),
-                Some(StylexBinding::Root)
-            );
-        self.visit_expression(&member.object);
-        self.root_member = previous;
-        self.visit_expression(&member.expression);
+        self.computed_member(member);
     }
 
     fn visit_expression_statement(&mut self, statement: &oxc_ast::ast::ExpressionStatement<'a>) {
@@ -232,19 +192,32 @@ impl<'a> Visit<'a> for Check<'_> {
     }
 
     fn visit_jsx_member_expression(&mut self, member: &oxc_ast::ast::JSXMemberExpression<'a>) {
-        let previous = self.root_member;
-        self.root_member = true;
-        if member.property.name == "stylex"
-            && matches!(&member.object, oxc_ast::ast::JSXMemberExpressionObject::IdentifierReference(root)
-                if self.bindings.symbol(root).is_some_and(|symbol| matches!(self.bindings.stylex.binding(symbol), Some(StylexBinding::Root))))
-        {
-            self.reject(
-                member.span.start,
-                "stylex JSX member",
-                "compile-only API namespaces cannot be rendered or escape as values",
-            );
-        }
-        walk::walk_jsx_member_expression(self, member);
-        self.root_member = previous;
+        self.jsx_member(member);
+    }
+
+    fn visit_arguments(&mut self, arguments: &oxc_allocator::Vec<'a, oxc_ast::ast::Argument<'a>>) {
+        let previous = self.form;
+        self.form = "argument passing";
+        walk::walk_arguments(self, arguments);
+        self.form = previous;
+    }
+
+    fn visit_object_property(&mut self, property: &oxc_ast::ast::ObjectProperty<'a>) {
+        let previous = self.form;
+        self.form = "object storage";
+        walk::walk_object_property(self, property);
+        self.form = previous;
+    }
+
+    fn visit_array_expression(&mut self, array: &oxc_ast::ast::ArrayExpression<'a>) {
+        let previous = self.form;
+        self.form = "array storage";
+        walk::walk_array_expression(self, array);
+        self.form = previous;
+    }
+
+    fn visit_import_expression(&mut self, import: &oxc_ast::ast::ImportExpression<'a>) {
+        self.dynamic_loader(import);
+        walk::walk_import_expression(self, import);
     }
 }

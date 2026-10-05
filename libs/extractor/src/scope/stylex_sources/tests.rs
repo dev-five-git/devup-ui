@@ -41,6 +41,21 @@ fn gate_detects_only_public_value_sources_when_no_aliases_exist() {
         ("import * as sx from 'stylex';", false),
         ("import * as sx from '@devup-ui/react-other';", false),
         ("const sx = require('@devup-ui/react/stylex/other');", false),
+        (
+            "export { positionTry } from '@devup-ui/react/stylex';",
+            true,
+        ),
+        (
+            "export { type PositionTryStyles } from '@devup-ui/react/stylex';",
+            false,
+        ),
+        (
+            "export type { PositionTryStyles } from '@devup-ui/react/stylex';",
+            false,
+        ),
+        ("export { other } from 'unrelated';", false),
+        ("import('@devup-ui/react/compat/stylex');", true),
+        ("type T = import('@devup-ui/react/compat/stylex').T;", false),
     ];
     for (code, expected) in cases {
         let allocator = Allocator::default();

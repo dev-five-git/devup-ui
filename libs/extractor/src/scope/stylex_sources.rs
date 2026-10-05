@@ -78,6 +78,16 @@ pub(crate) fn has_stylex_require(program: &Program<'_>, package: &str) -> bool {
             });
             walk::walk_call_expression(self, call);
         }
+
+        fn visit_import_expression(&mut self, import: &oxc_ast::ast::ImportExpression<'a>) {
+            self.found |= crate::utils::get_string_by_literal_expression(&import.source)
+                .is_some_and(|source| {
+                    StylexSource::classify(&source, self.package) == StylexSource::TypesOnly
+                });
+            walk::walk_import_expression(self, import);
+        }
+
+        fn visit_ts_type(&mut self, _: &oxc_ast::ast::TSType<'a>) {}
     }
     let mut requires = Requires {
         package,

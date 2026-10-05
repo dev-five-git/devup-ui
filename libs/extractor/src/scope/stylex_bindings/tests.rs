@@ -5,7 +5,7 @@ use oxc_parser::Parser;
 use oxc_semantic::{Scoping, SemanticBuilder};
 use oxc_span::SourceType;
 
-use super::{StylexBindings, symbol};
+use super::{StylexBinding, StylexBindings, symbol};
 use crate::stylex::StylexFunction;
 
 fn calls(code: &str, package: &str) -> Vec<Option<StylexFunction>> {
@@ -106,4 +106,76 @@ fn missing_reference_metadata_is_not_unbound_loader_proof() {
     loader.reference_id.set(None);
     let proven = super::unbound_reference(&scoping, loader);
     assert!(!proven);
+}
+
+#[test]
+fn unsupported_member_routes_never_resolve_as_direct_functions() {
+    // Given
+    let code = "import * as root from '@custom/ui'; import D from '@custom/ui';
+root['stylex'].positionTry({}); D['stylex'].positionTry({}); D['getTheme']();
+const runtime = root?.getTheme; const api = root?.stylex;
+const computedRuntime = root?.['getTheme']; const computedApi = root?.['stylex'];
+const nonnull = root?.stylex!; const optionalCall = root.stylex?.();
+class Reader { #api; read() { const hidden = root?.#api; return hidden; } }
+runtime(); computedRuntime();";
+    // When
+    let found = calls(code, "@custom/ui");
+    // Then
+    assert_eq!(found, vec![None; 6]);
+}
+
+#[test]
+fn types_only_source_bindings_are_invalid_even_when_collected_independently() {
+    // Given
+    let code = "import * as sx from '@custom/ui/compat/stylex';
+import { positionTry as pt } from '@custom/ui/compat/stylex'; sx.positionTry({}); pt({});";
+    // When
+    let found = calls(code, "@custom/ui");
+    // Then
+    assert_eq!(found, vec![None; 2]);
+}
+
+#[rstest::rstest]
+#[case("const alias = root['stylex'];", true)]
+#[case("const alias = D['stylex'];", true)]
+#[case("const alias = D['getTheme'];", false)]
+#[case("const alias = root?.getTheme;", false)]
+#[case("const alias = root?.stylex;", true)]
+#[case("const alias = root?.['getTheme'];", false)]
+#[case("const alias = root?.['stylex'];", true)]
+#[case("const alias = root?.stylex!;", true)]
+#[case("const alias = root.stylex?.();", true)]
+#[case(
+    "class Reader { #api; read() { const alias = root?.#api; return alias; } }",
+    true
+)]
+fn aliases_record_invalid_boundary_routes_instead_of_advertising_functions(
+    #[case] declaration: &str,
+    #[case] invalid: bool,
+) {
+    // Given
+    let code =
+        format!("import * as root from '@custom/ui'; import D from '@custom/ui'; {declaration}");
+    let allocator = Allocator::default();
+    let parsed = Parser::new(&allocator, &code, SourceType::ts()).parse();
+    assert_eq!(parsed.diagnostics.len(), 0, "{declaration}");
+    let scoping = SemanticBuilder::new()
+        .build(&parsed.program)
+        .semantic
+        .into_scoping();
+    let alias = scoping
+        .symbol_ids()
+        .find(|symbol| scoping.symbol_name(*symbol) == "alias")
+        .unwrap_or_else(|| panic!("fixture alias"));
+    // When
+    let bindings = StylexBindings::collect(&parsed.program, &scoping, "@custom/ui");
+    // Then
+    if invalid {
+        assert!(
+            matches!(bindings.binding(alias), Some(StylexBinding::Invalid)),
+            "{declaration}"
+        );
+    } else {
+        assert!(bindings.binding(alias).is_none(), "{declaration}");
+    }
 }

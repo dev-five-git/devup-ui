@@ -19,10 +19,9 @@ impl Bindings {
         let Some(source) = require_source(call) else {
             return;
         };
-        let Expression::Identifier(callee) = crate::utils::unwrap_syntax_only(&call.callee) else {
-            return;
-        };
-        if !unbound_reference(&self.scoping, callee) {
+        if !matches!(crate::utils::unwrap_syntax_only(&call.callee), Expression::Identifier(callee)
+            if unbound_reference(&self.scoping, callee))
+        {
             return;
         }
         let source_kind = StylexSource::classify(source, package);

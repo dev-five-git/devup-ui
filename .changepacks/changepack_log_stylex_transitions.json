@@ -5,6 +5,6 @@
     "packages/eslint-plugin/package.json": "Patch",
     "apps/landing/package.json": "Patch"
   },
-  "note": "Compile StyleX position fallbacks and four-slot view transitions with deterministic collision-free content identities, including stable variable and keyframe dependencies. Recognize advertised StyleX entrypoints consistently in extraction and linting. Omit static null, undefined and false declarations; report located errors for unsupported slots, position properties, non-scalar values, unknown values and uncompiled API escapes. Publish matching transition types and migration guidance.",
+  "note": "Compile StyleX position fallbacks and four-slot view transitions with deterministic collision-free content identities, including stable variable and keyframe dependencies. Recognize advertised StyleX entrypoints consistently in extraction and linting. Omit static null, undefined and false declarations; report located errors for unsupported slots, position properties, non-scalar values, unknown values and uncompiled API escapes, including indirect call/apply/bind and runtime function-value use. Reject runtime loads of the types-only compat source in every expression position and dynamic imports. Publish matching transition types and migration guidance.",
   "date": "2026-10-01T00:00:00.000Z"
 }
