@@ -215,17 +215,7 @@ pub(super) fn jsx_expression_to_style_order<'a>(
     expr: &JSXAttributeValue<'a>,
     allocator: &'a Allocator,
 ) -> ParsedStyleOrder<'a> {
-    match expr {
-        JSXAttributeValue::ExpressionContainer(ec) => ec
-            .expression
-            .as_expression()
-            .map_or(ParsedStyleOrder::None, |e| {
-                expression_to_style_order(e, allocator)
-            }),
-        _ => jsx_expression_to_number(expr).map_or(ParsedStyleOrder::None, |n| {
-            ParsedStyleOrder::Static(n as u8)
-        }),
-    }
+    crate::style_order::attribute_order(expr, allocator)
 }
 
 /// Parse styleOrder from an Expression (for call expression / object path), supporting conditionals
@@ -233,46 +223,7 @@ pub(super) fn expression_to_style_order<'a>(
     expr: &Expression<'a>,
     allocator: &'a Allocator,
 ) -> ParsedStyleOrder<'a> {
-    // Inspect `expr` ONCE. A numeric-literal probe (`get_number_by_literal_expression`)
-    // never matches a conditional/logical node, so folding it into the default arm is
-    // behavior-identical to the former "static probe first, then re-match" flow while
-    // avoiding the redundant second inspection of `expr`.
-    match expr {
-        // Conditional: `cond ? a : b` → Conditional with both branches probed.
-        Expression::ConditionalExpression(cond) => {
-            let consequent = get_number_by_literal_expression(&cond.consequent).map(|n| n as u8);
-            let alternate = get_number_by_literal_expression(&cond.alternate).map(|n| n as u8);
-            ParsedStyleOrder::Conditional {
-                condition: cond.test.clone_in(allocator),
-                consequent,
-                alternate,
-            }
-        }
-        // Logical &&: `a === 1 && 5` → truthy → right side (number), falsy → None.
-        Expression::LogicalExpression(logical) if logical.operator == LogicalOperator::And => {
-            let consequent = get_number_by_literal_expression(&logical.right).map(|n| n as u8);
-            ParsedStyleOrder::Conditional {
-                condition: logical.left.clone_in(allocator),
-                consequent,
-                alternate: None,
-            }
-        }
-        // Otherwise fall back to static numeric-literal resolution.
-        _ => get_number_by_literal_expression(expr).map_or(ParsedStyleOrder::None, |n| {
-            ParsedStyleOrder::Static(n as u8)
-        }),
-    }
-}
-
-pub(super) fn jsx_expression_to_number(expr: &JSXAttributeValue) -> Option<f64> {
-    match expr {
-        JSXAttributeValue::StringLiteral(sl) => sl.value.parse::<f64>().ok(),
-        JSXAttributeValue::ExpressionContainer(ec) => ec
-            .expression
-            .as_expression()
-            .and_then(get_number_by_literal_expression),
-        _ => None,
-    }
+    crate::style_order::expression_order(expr, allocator)
 }
 
 pub(super) fn get_number_by_literal_expression(expr: &Expression) -> Option<f64> {
@@ -1659,7 +1610,7 @@ mod tests {
         let allocator = Allocator::default();
         let builder = oxc_ast::builder::AstBuilder::new(&allocator);
         assert_eq!(
-            jsx_expression_to_number(
+            jsx_expression_to_style_order(
                 JSXAttribute::new(
                     SPAN,
                     JSXAttributeName::new_identifier(SPAN, "styleOrder", &builder),
@@ -1670,13 +1621,16 @@ mod tests {
                 )
                 .value
                 .as_ref()
-                .unwrap()
-            ),
+                .unwrap(),
+                &allocator,
+            )
+            .as_static()
+            .map(f64::from),
             Some(1.0)
         );
 
         assert_eq!(
-            jsx_expression_to_number(
+            jsx_expression_to_style_order(
                 JSXAttribute::new(
                     SPAN,
                     JSXAttributeName::new_identifier(SPAN, "styleOrder", &builder),
@@ -1705,18 +1659,26 @@ mod tests {
                 )
                 .value
                 .as_ref()
-                .unwrap()
-            ),
+                .unwrap(),
+                &allocator,
+            )
+            .as_static()
+            .map(f64::from),
             None
         );
 
         assert_eq!(
-            jsx_expression_to_number(&JSXAttributeValue::new_expression_container(
-                SPAN,
-                Expression::new_numeric_literal(SPAN, 2.0, None, NumberBase::Decimal, &builder)
-                    .into(),
-                &builder,
-            )),
+            jsx_expression_to_style_order(
+                &JSXAttributeValue::new_expression_container(
+                    SPAN,
+                    Expression::new_numeric_literal(SPAN, 2.0, None, NumberBase::Decimal, &builder)
+                        .into(),
+                    &builder,
+                ),
+                &allocator,
+            )
+            .as_static()
+            .map(f64::from),
             Some(2.0)
         );
     }

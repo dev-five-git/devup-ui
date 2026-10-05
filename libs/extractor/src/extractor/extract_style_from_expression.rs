@@ -10,9 +10,9 @@ use crate::{
         ExtractResult, extract_style_from_member_expression::extract_style_from_member_expression,
     },
     utils::{
-        expression_to_code, get_number_by_literal_expression, get_str_by_property_key,
-        get_string_by_literal_expression, get_string_by_property_key, is_same_expression,
-        readable_code, unwrap_syntax_only, unwrap_syntax_only_mut,
+        expression_to_code, get_str_by_property_key, get_string_by_literal_expression,
+        get_string_by_property_key, is_same_expression, readable_code, unwrap_syntax_only,
+        unwrap_syntax_only_mut,
     },
 };
 use css::{
@@ -239,8 +239,7 @@ pub fn extract_style_from_expression<'a>(
                                 for disassembled in disassemble_property(&name) {
                                     let disassembled: &str = &disassembled;
                                     if name == "styleOrder" {
-                                        style_order = get_number_by_literal_expression(&prop.value)
-                                            .map(|v| v as u8);
+                                        style_order = crate::style_order::static_order(&prop.value);
                                     } else if name == "styleVars" {
                                         style_vars =
                                             Some(prop.value.clone_in(ast_builder.allocator()));

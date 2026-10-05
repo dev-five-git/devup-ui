@@ -15,6 +15,10 @@ mod mutations;
 mod prop_modify_utils;
 mod prop_valid;
 mod source_map;
+mod style_order;
+#[cfg(test)]
+mod style_order_tests;
+mod style_order_validation;
 mod style_values;
 mod styled_reads;
 mod stylex;

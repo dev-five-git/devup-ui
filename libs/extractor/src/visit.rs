@@ -2426,6 +2426,19 @@ impl<'a> VisitMut<'a> for DevupVisitor<'a> {
             if is_styled {
                 self.style_values.read_in(&self.ast, it);
                 if let Expression::CallExpression(call) = &*it {
+                    let first_rule = usize::from(matches!(
+                        unwrap_syntax_only(&call.callee),
+                        Expression::Identifier(_)
+                    ));
+                    for argument in call.arguments.iter().skip(first_rule) {
+                        if let Some(value) = argument.as_expression() {
+                            crate::style_order_validation::validate_rules(
+                                value,
+                                &self.style_values,
+                                &mut self.errors,
+                            );
+                        }
+                    }
                     self.unknown_arguments("styled", &call.arguments);
                     self.changed_arguments("styled", &call.arguments);
                 }
@@ -2803,6 +2816,11 @@ impl<'a> VisitMut<'a> for DevupVisitor<'a> {
             && let [arg] = call.arguments.as_mut_slice()
             && let Some(arg @ Expression::ObjectExpression(_)) = arg.as_expression_mut()
         {
+            crate::style_order_validation::validate_frames(
+                arg,
+                &self.style_values,
+                &mut self.errors,
+            );
             let KeyframesExtractResult {
                 keyframes,
                 runtime_value,
@@ -2891,6 +2909,23 @@ impl<'a> VisitMut<'a> for DevupVisitor<'a> {
             ));
         }
 
+        if let Expression::CallExpression(call) = &*it
+            && self
+                .util_type(&call.callee)
+                .is_some_and(|util| matches!(util.as_ref(), UtilType::Css))
+        {
+            for argument in &call.arguments {
+                let value = match argument {
+                    Argument::SpreadElement(spread) => &spread.argument,
+                    argument => argument.to_expression(),
+                };
+                crate::style_order_validation::validate_rules(
+                    value,
+                    &self.style_values,
+                    &mut self.errors,
+                );
+            }
+        }
         if let Expression::CallExpression(call) = it
             && self
                 .util_type(&call.callee)
@@ -2993,17 +3028,21 @@ impl<'a> VisitMut<'a> for DevupVisitor<'a> {
                             }
                         }
                     } else if matches!(r, UtilType::Keyframes) {
+                        let frames = if let Argument::SpreadElement(spread) = &mut call.arguments[0]
+                        {
+                            &mut spread.argument
+                        } else {
+                            call.arguments[0].to_expression_mut()
+                        };
+                        crate::style_order_validation::validate_frames(
+                            frames,
+                            &self.style_values,
+                            &mut self.errors,
+                        );
                         let KeyframesExtractResult {
                             keyframes,
                             runtime_value,
-                        } = extract_keyframes_from_expression(
-                            &self.ast,
-                            if let Argument::SpreadElement(spread) = &mut call.arguments[0] {
-                                &mut spread.argument
-                            } else {
-                                call.arguments[0].to_expression_mut()
-                            },
-                        );
+                        } = extract_keyframes_from_expression(&self.ast, frames);
                         if let Some(value) = runtime_value {
                             self.errors
                                 .push((offset, runtime_value_error("keyframes", &value)));
@@ -3277,6 +3316,11 @@ impl<'a> VisitMut<'a> for DevupVisitor<'a> {
             {
                 // Pre-scan: detect conditional styleOrder before extract_style_from_expression
                 // consumes the property (which only handles static values)
+                crate::style_order_validation::validate_rules(
+                    it.arguments[1].to_expression(),
+                    &self.style_values,
+                    &mut self.errors,
+                );
                 let parsed_style_order =
                     if let Expression::ObjectExpression(obj) = it.arguments[1].to_expression() {
                         obj.properties.iter().find_map(|prop| {
@@ -3342,7 +3386,7 @@ impl<'a> VisitMut<'a> for DevupVisitor<'a> {
 
                 // Use pre-scanned ParsedStyleOrder, falling back to extract_style_from_expression's
                 // static result for backward compat.
-                // Note: pre-scan and extract_style_from_expression both use get_number_by_literal_expression
+                // Note: pre-scan and extract_style_from_expression both use style_order::static_order
                 // on the same value, so style_order is always None when parsed_style_order is None.
                 let parsed_style_order = match parsed_style_order {
                     ParsedStyleOrder::None => {
@@ -3831,8 +3875,18 @@ impl<'a> VisitMut<'a> for DevupVisitor<'a> {
                         if !duplicate_set.contains(&disassembled) {
                             if property_name == "styleOrder" {
                                 if let Some(value) = attr.value.as_ref() {
+                                    crate::style_order_validation::validate_attribute(
+                                        value,
+                                        &self.style_values,
+                                        &mut self.errors,
+                                    );
                                     parsed_style_order =
                                         jsx_expression_to_style_order(value, self.ast.allocator());
+                                } else {
+                                    self.errors.push((
+                                        attr.span.start,
+                                        crate::style_order::invalid_order("styleOrder"),
+                                    ));
                                 }
                             } else if property_name == "props" {
                                 if let Some(value) = attr.value.as_ref()
@@ -3893,6 +3947,11 @@ impl<'a> VisitMut<'a> for DevupVisitor<'a> {
                         duplicate_set.extend(given.into_iter().map(Cow::Owned));
                     }
                     // Extract styles from spread attributes (e.g., {...{"@media": {...}}})
+                    crate::style_order_validation::validate_rules(
+                        &spread.argument,
+                        &self.style_values,
+                        &mut self.errors,
+                    );
                     let ExtractResult { styles, .. } = extract_style_from_expression(
                         &self.ast,
                         None,
