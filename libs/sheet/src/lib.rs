@@ -1,7 +1,16 @@
+pub mod name_registry;
+#[cfg(test)]
+mod name_registry_tests;
 pub mod theme;
 
 #[cfg(test)]
 mod atom_identity_tests;
+
+#[cfg(test)]
+mod owner_reset_tests;
+
+#[cfg(test)]
+mod sheet_test_code;
 
 use crate::theme::Theme;
 use css::{
@@ -101,6 +110,9 @@ pub struct StyleSheetProperty {
     /// Placement decided before extraction, independent of later configuration.
     #[serde(rename = "h", default, skip_serializing_if = "std::ops::Not::not")]
     pub hoisted: bool,
+    /// Generated variable reset, merged into the owner's plain base rule.
+    #[serde(rename = "r", default, skip_serializing_if = "std::ops::Not::not")]
+    pub owner_reset: bool,
 }
 
 #[derive(Debug, Hash, Eq, PartialEq, Deserialize, Serialize)]
@@ -157,7 +169,6 @@ impl StyleSheetProperty {
     }
 }
 
-static VAR_RE: LazyLock<Regex> = LazyLock::new(|| compile_regex(r"\$\w[\w.-]*"));
 static INTERFACE_KEY_RE: LazyLock<Regex> =
     LazyLock::new(|| compile_regex(r"^[a-zA-Z_$][a-zA-Z0-9_$]*$"));
 
@@ -193,42 +204,7 @@ fn convert_interface_key(key: &str) -> Cow<'_, str> {
 }
 
 fn convert_theme_variable_value(value: &str) -> Cow<'_, str> {
-    if value.contains('$') {
-        // `replace_all` already returns a `Cow`; forward the owned result directly and, on the
-        // borrowed arm (a `$` with no `VAR_RE` match), re-borrow the input instead of allocating
-        // an owned copy. The borrow must be tied to `value`, not the `replace_all` temporary.
-        match VAR_RE.replace_all(value, |caps: &regex_lite::Captures| {
-            let tok = &caps[0][1..];
-            // Build the `var(--<tok>)` expansion in ONE pre-sized buffer for both arms,
-            // instead of a throwaway `tok.replace('.', "-")` String plus a `format!`
-            // (dot case) or a lone `format!` spinning up the fmt machinery (no-dot case).
-            // Output is byte-identical.
-            let mut out = String::with_capacity(6 + tok.len() + 1); // "var(--" + tok + ")"
-            out.push_str("var(--");
-            if tok.contains('.') {
-                // Translate `.`→`-` by copying dot-free runs with `push_str` and a
-                // `-` between them — no per-char UTF-8 decode. The token is an ASCII
-                // identifier, so this is byte-identical to the former `chars()` copy.
-                let mut runs = tok.split('.');
-                if let Some(first) = runs.next() {
-                    out.push_str(first);
-                    for run in runs {
-                        out.push('-');
-                        out.push_str(run);
-                    }
-                }
-            } else {
-                out.push_str(tok);
-            }
-            out.push(')');
-            out
-        }) {
-            Cow::Owned(s) => Cow::Owned(s),
-            Cow::Borrowed(_) => Cow::Borrowed(value),
-        }
-    } else {
-        Cow::Borrowed(value)
-    }
+    css::content_value::emitted(value)
 }
 
 #[derive(Debug, Hash, Eq, PartialEq, Deserialize, Serialize, Ord, PartialOrd)]
@@ -270,6 +246,8 @@ where
 }
 #[derive(Default, Deserialize, Serialize, Debug)]
 pub struct StyleSheet {
+    #[serde(default)]
+    pub names: name_registry::NameRegistry,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub atom_plan: Option<BTreeSet<String>>,
     #[serde(deserialize_with = "deserialize_btree_map_u8", default)]
@@ -284,6 +262,10 @@ pub struct StyleSheet {
     pub imports: BTreeMap<String, BTreeSet<String>>,
     #[serde(default)]
     pub font_faces: BTreeMap<String, BTreeSet<BTreeMap<String, String>>>,
+    /// Numbers of the original sources, read back so dynamic styles keep the
+    /// variables they were named by; written by `export_snapshot`.
+    #[serde(rename = "sourceIds", default, skip_serializing)]
+    pub source_ids: BTreeMap<String, u32>,
     #[serde(skip)]
     pub theme: Theme,
 }
@@ -297,11 +279,14 @@ impl StyleSheet {
             sheet: &'a StyleSheet,
             #[serde(rename = "atomNamingVersion")]
             atom_naming_version: u8,
+            #[serde(rename = "sourceIds")]
+            source_ids: BTreeMap<String, u32>,
         }
 
         Export {
             sheet: self,
-            atom_naming_version: 1,
+            atom_naming_version: 3,
+            source_ids: css::file_map::get_original_ids(),
         }
     }
 
@@ -352,6 +337,7 @@ impl StyleSheet {
                 layer: layer.map(ToString::to_string),
                 typography: false,
                 hoisted: false,
+                owner_reset: false,
             },
         )
     }
@@ -536,6 +522,22 @@ impl StyleSheet {
         set_theme_token_levels(length, shadow);
         set_theme_token_values(first_length, first_shadow);
         set_typography_keys(theme.typography.keys().cloned().collect());
+        css::content_typography::set(
+            theme
+                .typography
+                .keys()
+                .map(|preset| {
+                    (
+                        preset.clone(),
+                        theme
+                            .typography_declarations(preset, 0)
+                            .into_iter()
+                            .map(|(level, property, value)| (level, property.to_string(), value))
+                            .collect(),
+                    )
+                })
+                .collect(),
+        );
         self.theme = theme;
     }
 
@@ -544,7 +546,9 @@ impl StyleSheet {
         styles: &FxHashSet<ExtractStyleValue>,
         filename: &str,
         single_css: bool,
-    ) -> (bool, bool) {
+    ) -> Result<(bool, bool), name_registry::NameError> {
+        let claims = self.preflight_styles(styles, filename, single_css)?;
+        self.names.extend(claims);
         let mut collected = false;
         let mut updated_base_style = false;
         freeze_atom_plan();
@@ -570,35 +574,16 @@ impl StyleSheet {
                 ExtractStyleValue::Static(st) if st.property() == "typography" => {
                     let (StyleProperty::ClassName(class_name)
                     | StyleProperty::Variable { class_name, .. }) = st.extract(name_scope);
-                    // `preset|property:level,...` lists the properties declared
-                    // directly beside the preset and the breakpoint each starts at
-                    let (preset, yielded) = st
-                        .value()
-                        .split_once('|')
-                        .unwrap_or_else(|| (st.value(), ""));
-                    let yielded: Vec<(&str, u8)> = yielded
-                        .split(',')
-                        .filter_map(|item| {
-                            let (property, level) = item.split_once(':')?;
-                            Some((property, level.parse().ok()?))
-                        })
-                        .collect();
                     for (level, property, value) in
-                        self.theme.typography_declarations(preset, st.level())
+                        css::content_typography::declarations(st.value(), st.level())
                     {
-                        if yielded
-                            .iter()
-                            .any(|(yielded, from)| *yielded == property && level >= *from)
-                        {
-                            continue;
-                        }
                         if self.insert_property(
                             level,
                             st.style_order(),
                             bucket_scope,
                             StyleSheetProperty {
                                 class_name: class_name.clone(),
-                                property: property.to_string(),
+                                property,
                                 value,
                                 selector: st.selector().cloned(),
                                 // Under the declarations written directly, like the
@@ -610,6 +595,7 @@ impl StyleSheet {
                                 )),
                                 typography: true,
                                 hoisted: false,
+                                owner_reset: false,
                             },
                         ) {
                             collected = true;
@@ -620,7 +606,7 @@ impl StyleSheet {
                     }
                 }
                 ExtractStyleValue::Static(st) => {
-                    let resolved_value = st.resolved_value();
+                    let resolved_value = st.effective_value();
                     let class_name = match st.extract(name_scope) {
                         StyleProperty::ClassName(cls)
                         | StyleProperty::Variable {
@@ -684,6 +670,35 @@ impl StyleSheet {
                             updated_base_style = true;
                         }
                     }
+                    // Custom properties inherit: an element that sets nothing would
+                    // read its ancestor's value, so the element's own class resets
+                    // the variable, which a value set inline then overrides.
+                    if let Some(StyleProperty::Variable {
+                        class_name,
+                        variable_name,
+                        ..
+                    }) = style.extract(name_scope)
+                        && self.insert_property(
+                            0,
+                            dy.style_order(),
+                            bucket_scope,
+                            StyleSheetProperty {
+                                class_name,
+                                property: variable_name,
+                                value: "initial".to_string(),
+                                selector: None,
+                                layer: None,
+                                typography: false,
+                                hoisted: false,
+                                owner_reset: true,
+                            },
+                        )
+                    {
+                        collected = true;
+                        if updates_shared(dy.style_order()) {
+                            updated_base_style = true;
+                        }
+                    }
                 }
 
                 ExtractStyleValue::Keyframes(keyframes) => {
@@ -695,22 +710,7 @@ impl StyleSheet {
                     };
                     if self.add_keyframes(
                         &name,
-                        keyframes
-                            .keyframes
-                            .iter()
-                            .map(|(key, value)| {
-                                // Presize the per-step Vec to the known property count so
-                                // multi-property keyframe steps skip the intermediate grow-reallocs.
-                                let mut props = Vec::with_capacity(value.len());
-                                for style in value {
-                                    props.push((
-                                        style.property().to_string(),
-                                        style.value().to_string(),
-                                    ));
-                                }
-                                (key.clone(), props)
-                            })
-                            .collect(),
+                        keyframes.effective_steps().into_iter().collect(),
                         bucket_scope,
                     ) {
                         collected = true;
@@ -742,7 +742,39 @@ impl StyleSheet {
                 }
             }
         }
-        (collected, updated_base_style)
+        Ok((collected, updated_base_style))
+    }
+
+    pub fn preflight_styles(
+        &self,
+        styles: &FxHashSet<ExtractStyleValue>,
+        filename: &str,
+        single_css: bool,
+    ) -> Result<name_registry::NameRegistry, name_registry::NameError> {
+        self.preflight_styles_with_bits(
+            styles,
+            (filename, single_css),
+            css::content_hash::FingerprintBits::PRODUCTION,
+        )
+    }
+
+    /// Run the production claim path with an explicit fingerprint prefix width.
+    pub fn preflight_styles_with_bits(
+        &self,
+        styles: &FxHashSet<ExtractStyleValue>,
+        source: (&str, bool),
+        bits: css::content_hash::FingerprintBits,
+    ) -> Result<name_registry::NameRegistry, name_registry::NameError> {
+        let (filename, single_css) = source;
+        let scope = if single_css { None } else { Some(filename) };
+        let mut styles: Vec<_> = styles.iter().collect();
+        styles.sort_unstable();
+        name_registry::preflight(
+            &self.names,
+            styles
+                .into_iter()
+                .filter_map(|style| name_registry::claim(style, (filename, scope), bits)),
+        )
     }
 
     #[must_use]
@@ -975,6 +1007,31 @@ impl StyleSheet {
         // themselves they order by condition, then selector group, then level.
         class_rules.sort_by(|a, b| a.0.cmp(&b.0).then_with(|| prop_cmp(a.1, b.1)));
         at_rules.sort_by(|a, b| a.0.cmp(&b.0).then_with(|| prop_cmp(a.2, b.2)));
+
+        let class_rules = if class_rules.iter().any(|rule| rule.1.owner_reset) {
+            let mut resets: BTreeMap<&str, Vec<_>> = BTreeMap::new();
+            class_rules.retain(|rule| {
+                if rule.1.owner_reset {
+                    resets.entry(&rule.1.class_name).or_default().push(*rule);
+                    false
+                } else {
+                    true
+                }
+            });
+            let mut merged = Vec::with_capacity(class_rules.len());
+            for rule in class_rules {
+                if rule.0.1 == 0
+                    && rule.1.selector.is_none()
+                    && let Some(owner_resets) = resets.remove(rule.1.class_name.as_str())
+                {
+                    merged.extend(owner_resets);
+                }
+                merged.push(rule);
+            }
+            resets.into_values().flatten().chain(merged).collect()
+        } else {
+            class_rules
+        };
 
         let mut open: Option<(Wrapper<'_>, Option<usize>)> = None;
         let mut open_rule: Option<&StyleSheetProperty> = None;
@@ -2900,7 +2957,9 @@ mod tests {
         reset_class_map();
         reset_file_map();
         let mut sheet = StyleSheet::default();
-        sheet.update_styles(&FxHashSet::default(), "index.tsx", true);
+        sheet
+            .update_styles(&FxHashSet::default(), "index.tsx", true)
+            .unwrap_or_else(|error| panic!("{error}"));
         assert_debug_snapshot!(
             sheet
                 .create_css(Some("index.tsx"), true)
@@ -2916,7 +2975,9 @@ mod tests {
             ExtractOption { package: "@devup-ui/core".to_string(), css_dir: "@devup-ui/core".to_string(), single_css: true, import_main_css: false, import_aliases: std::collections::HashMap::new() },
         )
         .unwrap();
-        sheet.update_styles(&output.styles, "index.tsx", true);
+        sheet
+            .update_styles(&output.styles, "index.tsx", true)
+            .unwrap_or_else(|error| panic!("{error}"));
         assert_debug_snapshot!(sheet.create_css(None, true).split("*/").nth(1).unwrap());
     }
 
@@ -2950,7 +3011,9 @@ mod tests {
                 });
             }
             let mut sheet = StyleSheet::default();
-            sheet.update_styles(&styles, "index.tsx", true);
+            sheet
+                .update_styles(&styles, "index.tsx", true)
+                .unwrap_or_else(|error| panic!("{error}"));
             outputs.push((
                 sheet.create_css(None, true),
                 css::class_map::get_class_map(),
@@ -2966,7 +3029,9 @@ mod tests {
         let mut sheet = StyleSheet::default();
         let mut styles = FxHashSet::default();
         styles.insert(ExtractStyleValue::Typography("$heading".to_string()));
-        let (collected, updated) = sheet.update_styles(&styles, "index.tsx", true);
+        let (collected, updated) = sheet
+            .update_styles(&styles, "index.tsx", true)
+            .unwrap_or_else(|error| panic!("{error}"));
         // Typography doesn't collect or update
         assert!(!collected);
         assert!(!updated);
@@ -3172,6 +3237,7 @@ mod tests {
             layer: None,
             typography: false,
             hoisted: false,
+            owner_reset: false,
         };
         assert_eq!(make("color", "red").cmp(&make("color", "red")), Equal);
         assert!(make("color", "red") < make("color", "white"));
@@ -3191,6 +3257,7 @@ mod tests {
                 layer: None,
                 typography: false,
                 hoisted: false,
+                owner_reset: false,
             };
         let hover = || Some(StyleSelector::Selector("&:hover".to_string()));
 
@@ -3310,7 +3377,9 @@ mod tests {
                 .with_theme_token_resolution(ThemeTokenResolution::FirstValue),
         ));
 
-        let (collected, _) = sheet.update_styles(&styles, "test.tsx", true);
+        let (collected, _) = sheet
+            .update_styles(&styles, "test.tsx", true)
+            .unwrap_or_else(|error| panic!("{error}"));
         assert!(collected);
 
         let css = sheet.create_css(None, false);
@@ -3332,7 +3401,9 @@ mod tests {
                 .with_theme_token_resolution(ThemeTokenResolution::FirstValue),
         ));
 
-        let (collected, _) = sheet.update_styles(&styles, "test.tsx", true);
+        let (collected, _) = sheet
+            .update_styles(&styles, "test.tsx", true)
+            .unwrap_or_else(|error| panic!("{error}"));
         assert!(collected);
 
         let css = sheet.create_css(None, false);
@@ -3363,7 +3434,9 @@ mod tests {
                 .with_theme_token_resolution(ThemeTokenResolution::FirstValue),
         ));
 
-        let (collected, _) = sheet.update_styles(&styles, "test.tsx", true);
+        let (collected, _) = sheet
+            .update_styles(&styles, "test.tsx", true)
+            .unwrap_or_else(|error| panic!("{error}"));
         assert!(collected);
 
         let css = sheet.create_css(None, false);
@@ -3392,7 +3465,7 @@ mod tests {
         );
     }
 
-    fn pipeline_css(theme: Theme, source: &str) -> String {
+    fn pipeline_css(theme: Theme, source: &str) -> (String, String) {
         css::debug::set_debug(false);
         css::set_prefix(None);
         css::atom_hoist::set_atom_hoist(None);
@@ -3412,22 +3485,58 @@ mod tests {
             },
         )
         .unwrap();
-        sheet.update_styles(&output.styles, "test.tsx", true);
-        // Class names come from a process-wide counter; number them by first
-        // appearance so the expected CSS only pins down structure and order.
+        sheet
+            .update_styles(&output.styles, "test.tsx", true)
+            .unwrap_or_else(|error| panic!("{error}"));
+        // Counter/content identities are immaterial here; first CSS appearance
+        // assigns an injective label shared by the CSS and generated code.
         let mut names: Vec<String> = vec![];
-        compile_regex(r"\.([A-Za-z_][\w-]*)")
+        let css = compile_regex(r"(@layer [^{;]+)|\.([A-Za-z_][\w-]*)")
             .replace_all(
                 sheet.create_css(None, false).split("*/").nth(1).unwrap(),
                 |caps: &regex_lite::Captures| {
-                    let index = names.iter().position(|n| *n == caps[1]).unwrap_or_else(|| {
-                        names.push(caps[1].to_string());
+                    if let Some(layer) = caps.get(1) {
+                        return layer.as_str().to_string();
+                    }
+                    let index = names.iter().position(|n| *n == caps[2]).unwrap_or_else(|| {
+                        names.push(caps[2].to_string());
                         names.len() - 1
                     });
                     format!(".c{index}")
                 },
             )
-            .into_owned()
+            .into_owned();
+        let code = compile_regex(r"[A-Za-z_][\w-]*")
+            .replace_all(&output.code, |caps: &regex_lite::Captures| {
+                names
+                    .iter()
+                    .position(|name| *name == caps[0])
+                    .map_or_else(|| caps[0].to_string(), |index| format!("c{index}"))
+            })
+            .into_owned();
+        // Only generated site variables are relabeled, never theme/manual vars.
+        // Exact token matching preserves distinct sites and every use/reset.
+        let mut variables: Vec<String> = vec![];
+        let variable_regex = compile_regex(r"---S[\w-]+");
+        let css = variable_regex
+            .replace_all(&css, |caps: &regex_lite::Captures| {
+                let index = variables
+                    .iter()
+                    .position(|name| *name == caps[0])
+                    .unwrap_or_else(|| {
+                        variables.push(caps[0].to_string());
+                        variables.len() - 1
+                    });
+                format!("---v{index}")
+            })
+            .into_owned();
+        let code = variable_regex
+            .replace_all(&code, |caps: &regex_lite::Captures| {
+                let index = variables.iter().position(|name| *name == caps[0]).unwrap();
+                format!("---v{index}")
+            })
+            .into_owned();
+        (crate::sheet_test_code::normalize_bindings(&code), css)
     }
 
     #[test]
@@ -3540,7 +3649,11 @@ mod tests {
                 "@layer b;@layer b{a{color:red}@media(min-width:768px){a{color:blue}}}",
             ),
         ] {
-            assert_eq!(pipeline_css(Theme::default(), source), expected, "{source}");
+            assert_eq!(
+                pipeline_css(Theme::default(), source).1,
+                expected,
+                "{source}"
+            );
         }
     }
 
@@ -3556,15 +3669,26 @@ mod tests {
             ),
             (
                 "<div className={css({ color: 'red', '@layer': { base: { color: 'blue', p: [1, null, 2], _hover: { color: 'green' }, '@layer': { inner: { m: 1 } } } } })} />",
-                ".c0{color:red}@layer base{.c1{color:blue}.c2{padding:4px}@media(min-width:768px){.c3{padding:8px}}.c4:hover{color:green}}@layer base.c5{.c6{margin:4px}}",
+                ".c0{color:red}@layer base{.c1{color:blue}.c2{padding:4px}@media(min-width:768px){.c3{padding:8px}}.c4:hover{color:green}}@layer base.inner{.c5{margin:4px}}",
             ),
             // Layered and unlayered declarations keep apart, dynamic ones included.
             (
                 "const A = styled.div({ color: 'red', width: w, '@layer': { base: { color: 'red', width: v } } })",
-                ".c0{color:red}.c1{width:var(--c)}@layer base{.c2{color:red}.c3{width:var(--f)}}",
+                ".c0{---v0:initial}.c1{color:red}.c2{---v1:initial;width:var(---v1)}@layer base{.c3{color:red}.c0{width:var(---v0)}}",
             ),
         ] {
-            assert_eq!(pipeline_css(Theme::default(), source), expected, "{source}");
+            let (code, css) = pipeline_css(Theme::default(), source);
+            assert_eq!(css, expected, "{source}");
+            if source.starts_with("const A") {
+                assert_eq!(
+                    code,
+                    concat!(
+                        "import \"@devup-ui/core/devup-ui.css\";\n",
+                        "const A = ((__capture0, __capture1) => ({ style, className, ...rest }) => <div {...rest} className={[\"c1 c2 c3 c0\", className].filter(Boolean).join(\" \")} style={{\n",
+                        "\t...{\n\t\t\"---v1\": __capture0,\n\t\t\"---v0\": __capture1\n\t},\n\t...style\n}} />)(w, v);\n",
+                    )
+                );
+            }
         }
     }
 
@@ -3587,11 +3711,11 @@ mod tests {
             ),
             (
                 "<Box _hover={{ typography: size }} />",
-                "@layer t;@layer t{.c2:hover{font-size:12px;line-height:1.2}.c3:hover{font-family:var(--heading);font-size:20px;font-weight:700}@media(min-width:768px){.c3:hover{font-size:32px}}}",
+                "@layer t;@layer t{.c2:hover{font-family:var(--heading);font-size:20px;font-weight:700}.c3:hover{font-size:12px;line-height:1.2}@media(min-width:768px){.c2:hover{font-size:32px}}}",
             ),
             (
                 "<Box _hover={{ typography: `${size}` }} />",
-                "@layer t;@layer t{.c2:hover{font-size:12px;line-height:1.2}.c3:hover{font-family:var(--heading);font-size:20px;font-weight:700}@media(min-width:768px){.c3:hover{font-size:32px}}}",
+                "@layer t;@layer t{.c2:hover{font-family:var(--heading);font-size:20px;font-weight:700}.c3:hover{font-size:12px;line-height:1.2}@media(min-width:768px){.c2:hover{font-size:32px}}}",
             ),
             ("<Box _hover={{ typography: 'missing' }} />", "@layer t;"),
             // A declaration written next to the preset wins over the preset's, at
@@ -3614,7 +3738,7 @@ mod tests {
             ),
             (
                 "<Box _hover={{ typography: 'title', fontSize: size }} />",
-                "@layer t;.c2:hover{font-size:var(--c)}@layer t{.c3:hover{font-family:var(--heading);font-weight:700}}",
+                "@layer t;.c2{---v0:initial}.c2:hover{font-size:var(---v0)}@layer t{.c3:hover{font-family:var(--heading);font-weight:700}}",
             ),
             (
                 "<Box _hover={{ typography: 'title', fontSize: cond ? '11px' : [null, null, '12px'] }} />",
@@ -3626,11 +3750,11 @@ mod tests {
             ),
             (
                 "<Box _hover={{ typography: cond ? 'small' : { a: 'title' }[key], fontSize: '11px' }} typography={size} positioning={pos} />",
-                "@layer t;.c2{bottom:0}.c3{left:0}.c4{right:0}.c5{top:0}.c6:hover{font-size:11px}@layer t{.c7:hover{line-height:1.2}.c8:hover{font-family:var(--heading);font-weight:700}}",
+                "@layer t;.c2{bottom:0}.c3{left:0}.c4{right:0}.c5{top:0}.c6:hover{font-size:11px}@layer t{.c7:hover{font-family:var(--heading);font-weight:700}.c8:hover{line-height:1.2}}",
             ),
             (
                 "<Box _hover={{ typography: size, fontSize: '11px' }} />",
-                "@layer t;.c2:hover{font-size:11px}@layer t{.c3:hover{line-height:1.2}.c4:hover{font-family:var(--heading);font-weight:700}}",
+                "@layer t;.c2:hover{font-size:11px}@layer t{.c3:hover{font-family:var(--heading);font-weight:700}.c4:hover{line-height:1.2}}",
             ),
             (
                 "globalCss({ body: { typography: 'small' } })",
@@ -3672,7 +3796,56 @@ mod tests {
                     )),
                 ],
             );
-            let css = pipeline_css(theme, &format!("let size = 'small';\n{source}"));
+            let (code, css) = pipeline_css(theme, &format!("let size = 'small';\n{source}"));
+            let expected_code = match source {
+                "<Box _hover={{ typography: size }} />" => Some(
+                    "<div className={{\n\t\"small\": \"c3\",\n\t\"title\": \"c2\"\n}[size] || \"\"} />;\n",
+                ),
+                "<Box _hover={{ typography: `${size}` }} />" => Some(
+                    "<div className={{\n\t\"small\": \"c3\",\n\t\"title\": \"c2\"\n}[`${size}`] || \"\"} />;\n",
+                ),
+                "<Box _hover={{ typography: 'title', fontSize: size }} />" => {
+                    Some("<div className=\"c3 c2\" style={{ \"---v0\": size }} />;\n")
+                }
+                "<Box _hover={{ typography: 'title', fontSize: cond ? '11px' : [null, null, '12px'] }} />" => {
+                    Some(concat!(
+                        "((__capture0) => <div className={`c4 ${__capture0?.[0] ?? \"\"}`} style={{ ...__capture0?.[1] }} />)(cond ? ((__devupValue) => [\n",
+                        "\t\"c2\",\n\t{},\n\t__devupValue\n])(\"11px\") : ((__devupLevel0, __devupLevel1, __devupLevel2) => [\n",
+                        "\t`${__devupLevel0?.[0] ?? \"\"} ${__devupLevel1?.[0] ?? \"\"} ${__devupLevel2?.[0] ?? \"\"}`,\n",
+                        "\t{\n\t\t...__devupLevel0?.[1],\n\t\t...__devupLevel1?.[1],\n\t\t...__devupLevel2?.[1]\n\t},\n",
+                        "\t[\n\t\t__devupLevel0?.[2],\n\t\t__devupLevel1?.[2],\n\t\t__devupLevel2?.[2]\n\t]\n",
+                        "])(((__devupValue) => [\n\t\"\",\n\t{},\n\t__devupValue\n])(null), ((__devupValue) => [\n",
+                        "\t\"\",\n\t{},\n\t__devupValue\n])(null), ((__devupValue) => [\n\t\"c3\",\n\t{},\n\t__devupValue\n])(\"12px\")));\n",
+                    ))
+                }
+                "<Box _hover={{ typography: size, fontSize: '11px' }} />" => Some(
+                    "<div className={`c2 ${{\n\t\"small\": \"c4\",\n\t\"title\": \"c3\"\n}[size] || \"\"}`} />;\n",
+                ),
+                "<Box _hover={{ typography: cond ? 'small' : { a: 'title' }[key], fontSize: '11px' }} typography={size} positioning={pos} />" => {
+                    Some(concat!(
+                        "((__capture0, __devupSpread0) => <div className={`${`c6 ${__capture0?.[0] ?? \"\"}`} ${__devupSpread0} ${{\n",
+                        "\t\"bottom\": \"c2\",\n\t\"bottom-left\": \"c2 c3\",\n\t\"bottom-right\": \"c2 c4\",\n",
+                        "\t\"left\": \"c3\",\n\t\"right\": \"c4\",\n\t\"top\": \"c5\",\n\t\"top-left\": \"c3 c5\",\n\t\"top-right\": \"c4 c5\"\n",
+                        "}[pos] || \"\"}`} style={{ ...__capture0?.[1] }} />)(((__devupField0, __devupField1) => [\n",
+                        "\t`${__devupField0?.[0] ?? \"\"} ${__devupField1?.[0] ?? \"\"}`,\n",
+                        "\t{\n\t\t...__devupField0?.[1],\n\t\t...__devupField1?.[1]\n\t},\n",
+                        "\t{\n\t\ttypography: __devupField0?.[2],\n\t\tfontSize: __devupField1?.[2]\n\t}\n",
+                        "])(cond ? ((__devupValue) => [\n\t\"c8\",\n\t{},\n\t__devupValue\n])(\"small\") : { a: ((__devupValue) => [\n",
+                        "\t\"c7\",\n\t{},\n\t__devupValue\n])(\"title\") }[key], ((__devupValue) => [\n\t\"\",\n\t{},\n\t__devupValue\n])(\"11px\")), ",
+                        "((__devupTypography) => __devupTypography ? `typo-${__devupTypography}` : \"\")(size));\n",
+                    ))
+                }
+                _ => None,
+            };
+            if let Some(expected_code) = expected_code {
+                assert_eq!(
+                    code,
+                    format!(
+                        "import \"@devup-ui/core/devup-ui.css\";\nlet size = \"small\";\n{expected_code}"
+                    ),
+                    "{source}"
+                );
+            }
             // Drop the theme's own `.typo-*` layer; only the conditional atoms matter here.
             let start = css.find("@layer t{").unwrap();
             let mut depth = 0;
@@ -3687,7 +3860,11 @@ mod tests {
                     (c == '}' && depth == 0).then_some(start + index + 1)
                 })
                 .unwrap();
-            assert_eq!(format!("{}{}", &css[..start], &css[end..]), expected);
+            assert_eq!(
+                format!("{}{}", &css[..start], &css[end..]),
+                expected,
+                "{source}\n{code}"
+            );
         }
     }
 
@@ -3701,7 +3878,9 @@ mod tests {
             ExtractOption { package: "@devup-ui/core".to_string(), css_dir: "@devup-ui/core".to_string(), single_css: true, import_main_css: false, import_aliases: std::collections::HashMap::new() },
         )
         .unwrap();
-        sheet.update_styles(&output.styles, "global.tsx", true);
+        sheet
+            .update_styles(&output.styles, "global.tsx", true)
+            .unwrap_or_else(|error| panic!("{error}"));
         let css = sheet.create_css(None, false);
         assert!(
             css.contains("body{border:1px solid var(--line-100);color:var(--text)}"),
@@ -3719,7 +3898,9 @@ mod tests {
             ExtractOption { package: "@devup-ui/core".to_string(), css_dir: "@devup-ui/core".to_string(), single_css: true, import_main_css: false, import_aliases: std::collections::HashMap::new() },
         )
         .unwrap();
-        sheet.update_styles(&output.styles, "global.tsx", true);
+        sheet
+            .update_styles(&output.styles, "global.tsx", true)
+            .unwrap_or_else(|error| panic!("{error}"));
         assert!(sheet.create_css(None, false).contains("transition:none"));
 
         assert!(sheet.rm_global_css("global.tsx", true));
@@ -3747,7 +3928,9 @@ mod tests {
         )
         .unwrap();
         assert_eq!(
-            sheet.update_styles(&output.styles, "test.tsx", true),
+            sheet
+                .update_styles(&output.styles, "test.tsx", true)
+                .unwrap_or_else(|error| panic!("{error}")),
             (true, true)
         );
     }
@@ -3777,7 +3960,9 @@ let color = "red";
         )
         .unwrap();
 
-        let (collected, _) = sheet.update_styles(&output.styles, "test.tsx", true);
+        let (collected, _) = sheet
+            .update_styles(&output.styles, "test.tsx", true)
+            .unwrap_or_else(|error| panic!("{error}"));
         assert!(collected);
 
         let css = sheet.create_css(None, false);

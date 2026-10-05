@@ -14,6 +14,11 @@ use std::collections::{BTreeMap, HashMap};
 use std::fmt::Display;
 use std::sync::{LazyLock, Mutex};
 use wasm_bindgen::prelude::*;
+mod cache_names;
+#[cfg(test)]
+mod content_location_contract_tests;
+#[cfg(test)]
+mod content_name_tests;
 
 static GLOBAL_STYLE_SHEET: LazyLock<Mutex<StyleSheet>> =
     LazyLock::new(|| Mutex::new(StyleSheet::default()));
@@ -74,7 +79,7 @@ impl Output {
         css_file: Option<String>,
         import_main_css: bool,
         dependencies: Vec<String>,
-    ) -> Self {
+    ) -> Result<Self, String> {
         // Use the bucket identity (single-importer collapse) so the sheet's CSS
         // naming + property bucket + emitted chunk match the canonical class names
         // the extractor already baked into `code`. Identity when no map is loaded.
@@ -83,14 +88,18 @@ impl Output {
         let canonical_filename = canonical(&filename);
         let global = single_css || is_global(&filename);
         with_style_sheet_mut(|sheet| {
+            sheet
+                .preflight_styles(&styles, &canonical_filename, global)
+                .map_err(|error| error.to_string())?;
             // globalCss (@font-face / global selectors) is per-SOURCE-file, never
             // collapsed. rm_global_css MUST use the RAW filename so a collapsed
             // member (sharing the bucket-root's canonical) never wipes the root's
             // globalCss. Atom property bucketing still uses canonical_filename.
             let default_collected = sheet.rm_global_css(&filename, global);
-            let (collected, updated_base_style) =
-                sheet.update_styles(&styles, &canonical_filename, global);
-            Self {
+            let (collected, updated_base_style) = sheet
+                .update_styles(&styles, &canonical_filename, global)
+                .map_err(|error| error.to_string())?;
+            Ok(Self {
                 code,
                 map,
                 css_file,
@@ -110,7 +119,7 @@ impl Output {
                         ))
                     }
                 },
-            }
+            })
         })
     }
 
@@ -218,17 +227,30 @@ pub fn get_prefix() -> Option<String> {
 }
 
 /// Internal function to import a `StyleSheet` (testable without `JsValue`)
-pub fn import_sheet_internal(sheet: StyleSheet) {
-    css::atom_hoist::restore_atom_plan(sheet.atom_plan.clone());
-    with_style_sheet_mut(|global_sheet| *global_sheet = sheet);
+pub fn import_sheet_internal(mut sheet: StyleSheet) -> Result<(), String> {
+    let result = with_style_sheet_mut(|current| {
+        cache_names::validate(&sheet)?;
+        let incoming = sheet::name_registry::preflight(&current.names, sheet.names.clone())
+            .map_err(|error| error.to_string())?;
+        let mut merged = current.names.clone();
+        merged.extend(incoming);
+        sheet.names = merged;
+        css::atom_hoist::restore_atom_plan(sheet.atom_plan.clone());
+        if !sheet.source_ids.is_empty() {
+            css::file_map::set_original_ids(sheet.source_ids.clone());
+        }
+        *current = sheet;
+        Ok(())
+    });
+    cache_names::record(&result);
+    result
 }
 
 #[wasm_bindgen(js_name = "importSheet")]
 #[cfg(not(tarpaulin_include))]
 pub fn import_sheet(sheet_object: JsValue) -> Result<(), JsValue> {
     let sheet: StyleSheet = serde_wasm_bindgen::from_value(sheet_object).map_err(js_error)?;
-    import_sheet_internal(sheet);
-    Ok(())
+    import_sheet_internal(sheet).map_err(js_error)
 }
 
 /// Internal function to export `StyleSheet` as JSON string (testable without `JsValue`)
@@ -331,6 +353,7 @@ pub fn seed_file_map(files: Vec<String>) {
 /// and the module resolver, so the next build starts from its own options
 /// alone. Theme, shorthands and debug mode are set by every build, and stay.
 pub fn reset_build_state_internal() {
+    cache_names::clear();
     css::class_map::reset_class_map();
     css::file_map::reset_file_map();
     css::file_map::reset_canonical_map();
@@ -471,6 +494,7 @@ fn code_extract_internal_impl(
     source_map: SourceMapMode,
     resolver: Option<&ModuleResolver>,
 ) -> Result<Output, String> {
+    cache_names::check()?;
     let option = ExtractOption {
         package: package.to_string(),
         css_dir,
@@ -491,7 +515,7 @@ fn code_extract_internal_impl(
     };
 
     match extracted {
-        Ok(output) => Ok(Output::new(
+        Ok(output) => Output::new(
             output.code,
             output.styles,
             output.map,
@@ -500,7 +524,7 @@ fn code_extract_internal_impl(
             output.css_file,
             import_main_css_in_css,
             output.dependencies,
-        )),
+        ),
         Err(error) => Err(error.to_string()),
     }
 }
@@ -676,6 +700,7 @@ pub fn get_default_theme() -> Result<Option<String>, JsValue> {
 #[wasm_bindgen(js_name = "getCss")]
 #[cfg(not(tarpaulin_include))]
 pub fn get_css(file_num: Option<usize>, import_main_css: bool) -> Result<String, JsValue> {
+    cache_names::check().map_err(js_error)?;
     Ok(with_style_sheet(|sheet| {
         if let Some(file_num) = file_num {
             with_file_map(|map| {
@@ -1307,7 +1332,8 @@ mod tests {
             Some("devup-ui-0.css".to_string()),
             false,
             Vec::new(),
-        );
+        )
+        .unwrap_or_else(|error| panic!("{error}"));
 
         // Test getters
         assert_ne!(output.code(), "");
@@ -1334,7 +1360,8 @@ mod tests {
             None,
             false,
             Vec::new(),
-        );
+        )
+        .unwrap_or_else(|error| panic!("{error}"));
 
         // Test updated_base_style getter
         let _ = output.updated_base_style();
@@ -1397,7 +1424,8 @@ mod tests {
             Some("devup-ui.css".to_string()),
             true, // import_main_css = true
             Vec::new(),
-        );
+        )
+        .unwrap_or_else(|error| panic!("{error}"));
 
         assert!(output.css().is_some());
     }
@@ -1436,7 +1464,8 @@ mod tests {
             None,
             false,
             Vec::new(),
-        );
+        )
+        .unwrap_or_else(|error| panic!("{error}"));
 
         // The updated_base_style should be true because global CSS was removed
         assert!(output.updated_base_style());
@@ -1632,7 +1661,7 @@ mod tests {
         custom_sheet.add_property("custom.tsx", "color", 0, "red", None, Some(0), None);
 
         // Import the custom sheet
-        import_sheet_internal(custom_sheet);
+        import_sheet_internal(custom_sheet).unwrap_or_else(|error| panic!("{error}"));
 
         // Verify the sheet was imported by exporting it
         let result = export_sheet_internal();

@@ -3,6 +3,7 @@ source: libs/sheet/src/lib.rs
 expression: sheet
 ---
 StyleSheet {
+    names: {},
     atom_plan: None,
     properties: {
         "": {
@@ -16,6 +17,7 @@ StyleSheet {
                         layer: None,
                         typography: false,
                         hoisted: false,
+                        owner_reset: false,
                     },
                 },
             },
@@ -26,6 +28,7 @@ StyleSheet {
     global_css_files: {},
     imports: {},
     font_faces: {},
+    source_ids: {},
     theme: Theme {
         colors: {},
         color_scheme: {},

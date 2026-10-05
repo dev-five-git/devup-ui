@@ -33,7 +33,9 @@ fn restored_legacy_rule_stays_local_when_new_rule_is_hoisted_in_same_bucket() {
         extractor::ExtractOption::default(),
     )
     .unwrap_or_else(|error| panic!("{error}"));
-    sheet.update_styles(&output.styles, "mixed.tsx", false);
+    sheet
+        .update_styles(&output.styles, "mixed.tsx", false)
+        .unwrap_or_else(|error| panic!("{error}"));
     let shared = sheet.create_css(None, false);
     let local = sheet.create_css(Some("mixed.tsx"), false);
 

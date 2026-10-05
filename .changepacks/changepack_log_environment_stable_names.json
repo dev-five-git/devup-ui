@@ -1,0 +1,12 @@
+{
+  "changes": {
+    "bindings/devup-ui-wasm/package.json": "Patch",
+    "packages/react/package.json": "Patch",
+    "packages/components/package.json": "Patch",
+    "packages/next-plugin/package.json": "Patch",
+    "packages/vite-plugin/package.json": "Patch",
+    "packages/rsbuild-plugin/package.json": "Patch"
+  },
+  "note": "Stabilize class and runtime-variable names across build environments, use compact deterministic content names, reset generated variables on their owning elements, and preserve authored evaluation order and lazy selection. Exact content-name collisions report both declarations and their best real source locations; conflicting source-variable roles and unprotected naming caches now fail closed.",
+  "date": "2026-10-05T00:00:00.000Z"
+}

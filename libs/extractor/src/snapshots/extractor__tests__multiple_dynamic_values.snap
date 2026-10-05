@@ -8,7 +8,7 @@ ToBTreeSet {
             ExtractDynamicStyle {
                 property: "background",
                 level: 0,
-                identifier: "color",
+                identifier: "__devupSpread2",
                 selector: None,
                 style_order: None,
             },
@@ -17,7 +17,7 @@ ToBTreeSet {
             ExtractDynamicStyle {
                 property: "margin",
                 level: 0,
-                identifier: "margin",
+                identifier: "__devupSpread0",
                 selector: None,
                 style_order: None,
             },
@@ -26,11 +26,11 @@ ToBTreeSet {
             ExtractDynamicStyle {
                 property: "padding",
                 level: 0,
-                identifier: "padding",
+                identifier: "__devupSpread1",
                 selector: None,
                 style_order: None,
             },
         ),
     },
-    code: "import \"@devup-ui/core/devup-ui-0.css\";\nlet color = \"red\";\nlet padding = 10;\nlet margin = 5;\n<div className=\"a-a a-b a-c\" style={{\n\t\"--a\": color,\n\t\"--b\": padding,\n\t\"--c\": margin\n}} />;\n",
+    code: "import \"@devup-ui/core/devup-ui-0.css\";\nlet color = \"red\";\nlet padding = 10;\nlet margin = 5;\n((__devupSpread2, __devupSpread1, __devupSpread0) => <div className=\"OHbdy1nqkg538cj__x OHc5nc7l0wl2jf_fli OHauw0yrhbvtlk9fqo\" style={{\n\t\"---SUimport_s_x7b__x42_ox_x7d__sfrom_s_x27__x40_devup_dui_lcore_x27__xa_let_scolor_s_x3d__s_qred_q_x3b__xa_let_spadding_s_x3d__s10_x3b__xa_let_smargin_s_x3d__s5_x3b__xa__x3c__x42_ox_sbg_x3d__x7b_color_x7d__sp_x3d__x7b_padding_x7d__sm_x3d__x7b_margin_x7d__s_l_x3e__xa_-b7\": __devupSpread2,\n\t\"---SUimport_s_x7b__x42_ox_x7d__sfrom_s_x27__x40_devup_dui_lcore_x27__xa_let_scolor_s_x3d__s_qred_q_x3b__xa_let_spadding_s_x3d__s10_x3b__xa_let_smargin_s_x3d__s5_x3b__xa__x3c__x42_ox_sbg_x3d__x7b_color_x7d__sp_x3d__x7b_padding_x7d__sm_x3d__x7b_margin_x7d__s_l_x3e__xa_-cg\": __devupSpread1,\n\t\"---SUimport_s_x7b__x42_ox_x7d__sfrom_s_x27__x40_devup_dui_lcore_x27__xa_let_scolor_s_x3d__s_qred_q_x3b__xa_let_spadding_s_x3d__s10_x3b__xa_let_smargin_s_x3d__s5_x3b__xa__x3c__x42_ox_sbg_x3d__x7b_color_x7d__sp_x3d__x7b_padding_x7d__sm_x3d__x7b_margin_x7d__s_l_x3e__xa_-cs\": __devupSpread0\n}} />)(color, padding, margin);\n",
 }

@@ -65,23 +65,42 @@ fn resolve_class_name_expression<'a>(
     spread_props: &[Expression<'a>],
     filename: Option<&str>,
     conditional_branch: Option<(Expression<'a>, &mut [ExtractStyleProp<'a>], Option<u8>)>,
-) -> (Option<Expression<'a>>, Vec<ExtractStyleValue>) {
+) -> (
+    Option<Expression<'a>>,
+    Vec<ExtractStyleValue>,
+    Option<(String, Expression<'a>)>,
+) {
+    let (mut tailwind, primary) =
+        extract_tailwind_from_class_name(ast_builder, class_name_prop, style_order, filename);
+    let primary = primary.or_else(|| class_name_prop.clone_in(ast_builder.allocator()));
     if let Some((condition, alt_styles, alt_style_order)) = conditional_branch {
-        // Conditional styleOrder: generate className for both branches
-        let (con_expr, con_tailwind) = get_class_name_expression(
+        crate::assignment_lowering::orders(styles, alt_style_order, false);
+        crate::assignment_lowering::orders(alt_styles, alt_style_order, true);
+        let (alternate_tailwind, alternate) = extract_tailwind_from_class_name(
             ast_builder,
             class_name_prop,
+            alt_style_order,
+            filename,
+        );
+        tailwind.extend(alternate_tailwind);
+        let mut prepared = [
+            primary,
+            alternate.or_else(|| class_name_prop.clone_in(ast_builder.allocator())),
+        ];
+        let capture = class_name_prop.as_ref().and_then(|source| {
+            crate::class_evaluation::capture(ast_builder, source, &mut prepared)
+        });
+        let (con_expr, _) = get_class_name_expression(
+            ast_builder,
+            &prepared[0],
             styles,
             style_order,
             spread_props,
             filename,
         );
-        let alt_class_name_prop = class_name_prop
-            .as_ref()
-            .map(|c| c.clone_in(ast_builder.allocator()));
-        let (alt_expr, alt_tailwind) = get_class_name_expression(
+        let (alt_expr, _) = get_class_name_expression(
             ast_builder,
-            &alt_class_name_prop,
+            &prepared[1],
             alt_styles,
             alt_style_order,
             spread_props,
@@ -91,18 +110,21 @@ fn resolve_class_name_expression<'a>(
         let combined_expr =
             combine_conditional_class_name(ast_builder, condition, con_expr, alt_expr);
 
-        let mut all_tailwind = con_tailwind;
-        all_tailwind.extend(alt_tailwind);
-        (combined_expr, all_tailwind)
+        (combined_expr, tailwind, capture)
     } else {
-        get_class_name_expression(
+        let mut prepared = [primary];
+        let capture = class_name_prop.as_ref().and_then(|source| {
+            crate::class_evaluation::capture(ast_builder, source, &mut prepared)
+        });
+        let (expression, _) = get_class_name_expression(
             ast_builder,
-            class_name_prop,
+            &prepared[0],
             styles,
             style_order,
             spread_props,
             filename,
-        )
+        );
+        (expression, tailwind, capture)
     }
 }
 
@@ -120,7 +142,7 @@ pub fn modify_prop_object<'a>(
     props_prop: Option<Expression<'a>>,
     filename: Option<&str>,
     conditional_branch: Option<(Expression<'a>, &mut [ExtractStyleProp<'a>], Option<u8>)>,
-) -> Vec<ExtractStyleValue> {
+) -> (Vec<ExtractStyleValue>, Option<(String, Expression<'a>)>) {
     let mut class_name_prop = None;
     let mut style_prop = None;
     let mut spread_props = vec![];
@@ -147,7 +169,7 @@ pub fn modify_prop_object<'a>(
         }
     }
 
-    let (class_name_expr, tailwind_styles) = resolve_class_name_expression(
+    let (class_name_expr, tailwind_styles, capture) = resolve_class_name_expression(
         ast_builder,
         &class_name_prop,
         styles,
@@ -195,7 +217,7 @@ pub fn modify_prop_object<'a>(
             ast_builder,
         ));
     }
-    tailwind_styles
+    (tailwind_styles, capture)
 }
 /// modify JSX props
 /// Returns extracted Tailwind styles from static className strings
@@ -211,7 +233,7 @@ pub fn modify_props<'a>(
     props_prop: Option<Expression<'a>>,
     filename: Option<&str>,
     conditional_branch: Option<(Expression<'a>, &mut [ExtractStyleProp<'a>], Option<u8>)>,
-) -> Vec<ExtractStyleValue> {
+) -> (Vec<ExtractStyleValue>, Option<(String, Expression<'a>)>) {
     let mut class_name_prop = None;
     let mut style_prop = None;
     let mut spread_props = vec![];
@@ -254,7 +276,7 @@ pub fn modify_props<'a>(
             }
         }
     }
-    let (class_name_expr, tailwind_styles) = resolve_class_name_expression(
+    let (class_name_expr, tailwind_styles, capture) = resolve_class_name_expression(
         ast_builder,
         &class_name_prop,
         styles,
@@ -301,7 +323,7 @@ pub fn modify_props<'a>(
             ast_builder,
         ));
     }
-    tailwind_styles
+    (tailwind_styles, capture)
 }
 
 /// Returns (className expression, extracted Tailwind styles)

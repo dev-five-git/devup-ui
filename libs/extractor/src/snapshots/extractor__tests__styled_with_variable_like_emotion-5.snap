@@ -1,6 +1,6 @@
 ---
 source: libs/extractor/src/lib.rs
-expression: "ToBTreeSet::from(extract(\"test.tsx\",\nr#\"import {styled} from '@devup-ui/core'\n        const StyledDiv = styled(\"div\")`\n          color: ${obj.color};\n          padding: ${func()};\n          background: ${obj.func()};\n        `\n        \"#,\nExtractOption\n{\n    package: \"@devup-ui/core\".to_string(), css_dir:\n    \"@devup-ui/core\".to_string(), single_css: false, import_main_css: false\n}).unwrap())"
+expression: "ToBTreeSet::from(extract(\"test.tsx\",\nr#\"import {styled} from '@devup-ui/core'\n        const StyledDiv = styled(\"div\")`\n          color: ${obj.color};\n          padding: ${func()};\n          background: ${obj.func()};\n        `\n        \"#,\nExtractOption\n{\n    package: \"@devup-ui/core\".to_string(), css_dir:\n    \"@devup-ui/core\".to_string(), single_css: false, import_main_css: false,\n    import_aliases: HashMap::new()\n}).unwrap())"
 ---
 ToBTreeSet {
     styles: {
@@ -32,5 +32,5 @@ ToBTreeSet {
             },
         ),
     },
-    code: "import \"@devup-ui/core/devup-ui-0.css\";\nconst StyledDiv = ({ style, className, ...rest }) => <div {...rest} className={[\"a-a a-b a-c\", className].filter(Boolean).join(\" \")} style={{\n\t...{\n\t\t\"--a\": func(),\n\t\t\"--b\": obj.color,\n\t\t\"--c\": obj.func()\n\t},\n\t...style\n}} />;\n",
+    code: "import \"@devup-ui/core/devup-ui-0.css\";\nconst StyledDiv = ({ style, className, ...rest }) => <div {...rest} className={[\"OHcd0ux501run_7qa0 OHcytsb307fbkzb1oj OHdvsrx6fkuzqg99_r\", className].filter(Boolean).join(\" \")} style={{\n\t...{\n\t\t\"---SUimport_s_x7b_styled_x7d__sfrom_s_x27__x40_devup_dui_lcore_x27__xa__s_s_s_s_s_s_s_sconst_s_x53_tyled_x44_iv_s_x3d__sstyled_o_qdiv_q_e_x60__xa__s_s_s_s_s_s_s_s_s_scolor_n_s_x24__x7b_obj_pcolor_x7d__x3b__xa__s_s_s_s_s_s_s_s_s_spadding_n_s_x24__x7b_func_o_e_x7d__x3b__xa__s_s_s_s_s_s_s_s_s_sbackground_n_s_x24__x7b_obj_pfunc_o_e_x7d__x3b__xa__s_s_s_s_s_s_s_s_x60__xa__s_s_s_s_s_s_s_s-c4\": func(),\n\t\t\"---SUimport_s_x7b_styled_x7d__sfrom_s_x27__x40_devup_dui_lcore_x27__xa__s_s_s_s_s_s_s_sconst_s_x53_tyled_x44_iv_s_x3d__sstyled_o_qdiv_q_e_x60__xa__s_s_s_s_s_s_s_s_s_scolor_n_s_x24__x7b_obj_pcolor_x7d__x3b__xa__s_s_s_s_s_s_s_s_s_spadding_n_s_x24__x7b_func_o_e_x7d__x3b__xa__s_s_s_s_s_s_s_s_s_sbackground_n_s_x24__x7b_obj_pfunc_o_e_x7d__x3b__xa__s_s_s_s_s_s_s_s_x60__xa__s_s_s_s_s_s_s_s-b8\": obj.color,\n\t\t\"---SUimport_s_x7b_styled_x7d__sfrom_s_x27__x40_devup_dui_lcore_x27__xa__s_s_s_s_s_s_s_sconst_s_x53_tyled_x44_iv_s_x3d__sstyled_o_qdiv_q_e_x60__xa__s_s_s_s_s_s_s_s_s_scolor_n_s_x24__x7b_obj_pcolor_x7d__x3b__xa__s_s_s_s_s_s_s_s_s_spadding_n_s_x24__x7b_func_o_e_x7d__x3b__xa__s_s_s_s_s_s_s_s_s_sbackground_n_s_x24__x7b_obj_pfunc_o_e_x7d__x3b__xa__s_s_s_s_s_s_s_s_x60__xa__s_s_s_s_s_s_s_s-d0\": obj.func()\n\t},\n\t...style\n}} />;\n",
 }

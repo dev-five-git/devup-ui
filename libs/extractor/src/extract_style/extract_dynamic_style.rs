@@ -1,7 +1,10 @@
 use std::fmt::{Debug, Formatter};
 
 use css::{
-    sheet_to_classname, sheet_to_variable_name,
+    Naming, Site,
+    content_name::{AtomContent, ContentName},
+    sheet_to_classname_content, sheet_to_variable_name_at,
+    style_origin::Origin,
     style_selector::{StyleSelector, optimize_selector},
 };
 
@@ -24,6 +27,12 @@ pub struct ExtractDynamicStyle {
     important: bool,
 
     pub(crate) layer: Option<String>,
+
+    pub(crate) naming: Naming,
+
+    /// Where in the original sources it was written; names its variable
+    pub(crate) site: Option<Site>,
+    pub origin: Origin,
 }
 
 impl Debug for ExtractDynamicStyle {
@@ -39,6 +48,9 @@ impl Debug for ExtractDynamicStyle {
         }
         if let Some(layer) = &self.layer {
             s.field("layer", layer);
+        }
+        if self.naming != Naming::Own {
+            s.field("naming", &self.naming);
         }
         s.finish()
     }
@@ -118,7 +130,40 @@ impl ExtractDynamicStyle {
             style_order: None,
             important,
             layer: None,
+            naming: Naming::Own,
+            site: None,
+            origin: crate::style_origin::current(),
         }
+    }
+
+    /// Place it where the code being read has it at `start`.
+    #[must_use]
+    pub fn at(self, start: u32) -> Self {
+        self.at_role(start, 0)
+    }
+
+    pub(crate) fn with_assignment_site(mut self, start: u32) -> Self {
+        self.site = crate::assignment_owner::site(start, self.level, &self.identifier);
+        self
+    }
+
+    /// Select a sub-role by source syntax order, not dynamic extraction order.
+    #[must_use]
+    pub fn at_role(mut self, start: u32, role: usize) -> Self {
+        self.site = crate::provenance::site_at(start, role, &self.identifier);
+        self
+    }
+
+    /// The CSS variable that carries its value.
+    #[must_use]
+    pub fn variable_name(&self) -> String {
+        let selector = super::class_selector(self.selector.as_ref(), self.layer());
+        sheet_to_variable_name_at(
+            self.property.as_str(),
+            self.level,
+            selector.as_deref(),
+            self.site.clone(),
+        )
     }
 
     pub const fn property(&self) -> &str {
@@ -137,6 +182,10 @@ impl ExtractDynamicStyle {
         self.identifier.as_str()
     }
 
+    pub(crate) fn replace_identifier(&mut self, identifier: &str) {
+        self.identifier = identifier.to_string();
+    }
+
     pub const fn style_order(&self) -> Option<u8> {
         self.style_order
     }
@@ -145,41 +194,51 @@ impl ExtractDynamicStyle {
         self.important
     }
 
+    pub const fn naming(&self) -> Naming {
+        self.naming
+    }
+
     pub fn layer(&self) -> Option<&str> {
         self.layer.as_deref()
+    }
+
+    #[must_use]
+    pub fn effective_value(&self) -> String {
+        format!(
+            "var({}){}",
+            self.variable_name(),
+            if self.important { " !important" } else { "" }
+        )
+    }
+
+    fn atom_content<'a>(&'a self, value: &'a str) -> AtomContent<'a> {
+        AtomContent {
+            property: &self.property,
+            value: Some(value),
+            naming: self.naming,
+            level: self.level,
+            order: self.style_order.unwrap_or(255),
+            selector: self.selector.as_ref(),
+            layer: self.layer.as_deref(),
+            dynamic: true,
+        }
+    }
+
+    #[must_use]
+    pub fn content_name(&self) -> ContentName {
+        self.atom_content(&self.effective_value()).content()
     }
 }
 
 impl ExtractStyleProperty for ExtractDynamicStyle {
     fn extract(&self, filename: Option<&str>) -> StyleProperty {
-        let selector = super::class_selector(self.selector.as_ref(), self.layer());
-        let ordinary_class = (!css::atom_hoist::is_atom_hoist()).then(|| {
-            sheet_to_classname(
-                self.property.as_str(),
-                self.level,
-                self.important.then_some("!important"),
-                selector.as_deref(),
-                self.style_order,
-                filename,
-            )
-        });
-        let variable_name =
-            sheet_to_variable_name(self.property.as_str(), self.level, selector.as_deref());
+        let variable_name = self.variable_name();
         let declaration = format!(
             "var({variable_name}){}",
             if self.important { " !important" } else { "" }
         );
         StyleProperty::Variable {
-            class_name: ordinary_class.unwrap_or_else(|| {
-                sheet_to_classname(
-                    self.property.as_str(),
-                    self.level,
-                    Some(&declaration),
-                    selector.as_deref(),
-                    self.style_order,
-                    filename,
-                )
-            }),
+            class_name: sheet_to_classname_content(&self.atom_content(&declaration), filename),
             variable_name,
             identifier: self.identifier.clone(),
         }

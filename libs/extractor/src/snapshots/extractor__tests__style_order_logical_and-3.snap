@@ -49,5 +49,5 @@ ToBTreeSet {
             },
         ),
     },
-    code: "import \"@devup-ui/react/devup-ui.css\";\nimport { jsx as e } from \"react/jsx-runtime\";\nfunction c() {\n\treturn e(\"div\", { className: a === 1 ? \"a b\" : \"c d\" });\n}\nexport { c as Lib };\n",
+    code: "import \"@devup-ui/react/devup-ui.css\";\nimport { jsx as e } from \"react/jsx-runtime\";\nfunction c() {\n\treturn ((__devupSpread0) => e(\"div\", { className: __devupSpread0 ? \"OHa89wox_nbrhu2c7z OLpadding-v16px-o5\" : \"OLbackground-vred OLpadding-v16px\" }))(a === 1);\n}\nexport { c as Lib };\n",
 }

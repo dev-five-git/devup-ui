@@ -35,5 +35,5 @@ ToBTreeSet {
             },
         ),
     },
-    code: "import \"@devup-ui/react/devup-ui.css\";\nconst e = <span className=\"a\" />;\nconst g = <div className=\"b\" />;\nconst h = <div className=\"c\" />;\n",
+    code: "import \"@devup-ui/react/devup-ui.css\";\nconst e = <span className=\"OLbackground-vred\" />;\nconst g = <div className=\"OLbackground-vteal\" />;\nconst h = <div className=\"OLcolor-vnavy\" />;\n",
 }

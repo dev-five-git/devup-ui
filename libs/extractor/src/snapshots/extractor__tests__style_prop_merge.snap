@@ -8,11 +8,11 @@ ToBTreeSet {
             ExtractDynamicStyle {
                 property: "background",
                 level: 0,
-                identifier: "color",
+                identifier: "__devupSpread1",
                 selector: None,
                 style_order: None,
             },
         ),
     },
-    code: "import \"@devup-ui/core/devup-ui-0.css\";\nlet color = \"red\";\n<div className=\"a-a\" style={{\n\t...{ \"--a\": color },\n\t...{ padding: 10 }\n}} />;\n",
+    code: "import \"@devup-ui/core/devup-ui-0.css\";\nlet color = \"red\";\n((__devupSpread0, __devupSpread1) => <div className=\"OHabak5gznbsus8gaw\" style={{\n\t...{ \"---SUimport_s_x7b__x42_ox_x7d__sfrom_s_x27__x40_devup_dui_lcore_x27__xa_let_scolor_s_x3d__s_qred_q_x3b__xa__x3c__x42_ox_sstyle_x3d__x7b__x7b__spadding_n_s10_s_x7d__x7d__sbg_x3d__x7b_color_x7d__s_l_x3e__xa_-bx\": __devupSpread1 },\n\t...__devupSpread0\n}} />)({ padding: 10 }, color);\n",
 }

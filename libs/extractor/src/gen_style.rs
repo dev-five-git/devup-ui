@@ -38,6 +38,14 @@ pub fn gen_styles<'a>(
     }
     let mut properties: Vec<_> = Vec::with_capacity(style_props.len());
     extend_reversed_styles(ast_builder, &mut properties, style_props, filename);
+    let mut assigned = FxHashSet::default();
+    properties.retain(|property| match property {
+        ObjectPropertyKind::ObjectProperty(property) => property
+            .key
+            .name()
+            .is_none_or(|key| assigned.insert(key.into_owned())),
+        ObjectPropertyKind::SpreadProperty(_) => true,
+    });
     if properties.is_empty() {
         return None;
     }
@@ -92,6 +100,13 @@ fn gen_style<'a>(
     filename: Option<&str>,
 ) -> Vec<ObjectPropertyKind<'a>> {
     let mut properties = vec![];
+    if let ExtractStyleProp::Evaluated { binding, .. } = style {
+        properties.push(ObjectPropertyKind::new_spread_property(
+            SPAN,
+            crate::assignment_lowering::projection(ast_builder, binding, 1),
+            ast_builder,
+        ));
+    }
     if let ExtractStyleProp::Static(st) = style {
         if let Some(StyleProperty::Variable {
             variable_name,
@@ -306,22 +321,7 @@ fn gen_style<'a>(
             ));
         }
     }
-    // Cache each property's key once (`PropertyKey::name()` may allocate for computed
-    // keys) instead of recomputing it twice per comparison. The cached key stays a
-    // borrowed `Cow<str>` for the common `StaticIdentifier` props (`color`, `padding`,
-    // ...), so sorting no longer heap-allocates an owned `String` per property.
-    // `Cow<str>: Ord` compares by contents, and `Reverse` keeps the existing descending
-    // order, so the generated property order is byte-identical.
-    properties.sort_by_cached_key(|p| std::cmp::Reverse(object_property_key(p)));
     properties
-}
-
-fn object_property_key<'k>(p: &ObjectPropertyKind<'k>) -> Option<std::borrow::Cow<'k, str>> {
-    if let ObjectPropertyKind::ObjectProperty(p) = p {
-        p.key.name()
-    } else {
-        None
-    }
 }
 
 #[cfg(test)]

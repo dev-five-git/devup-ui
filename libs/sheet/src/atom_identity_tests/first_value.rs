@@ -35,21 +35,24 @@ fn first_value_refs_resolve_without_aliasing_responsive_variables() {
         // When
         let output = extractor::extract("test.tsx", source, extractor::ExtractOption::default())
             .unwrap_or_else(|error| panic!("{error}"));
-        sheet.update_styles(&output.styles, "test.tsx", false);
+        sheet
+            .update_styles(&output.styles, "test.tsx", false)
+            .unwrap_or_else(|error| panic!("{error}"));
         // Then
         let css = sheet.create_css(Some("test.tsx"), false);
-        let classes: Vec<Vec<&str>> = output
-            .code
-            .split("className=\"")
-            .skip(1)
-            .map(|code| {
-                code.split('"')
-                    .next()
-                    .unwrap_or_default()
-                    .split_whitespace()
-                    .collect()
-            })
-            .collect();
+        let classes = crate::sheet_test_code::static_element_classes(
+            &output.code,
+            &[
+                None,
+                Some("$space"),
+                Some("$card"),
+                Some("$space"),
+                None,
+                Some("$zero"),
+                Some("$missing"),
+                Some("$nullable"),
+            ],
+        );
         assert_eq!(classes.len(), 8, "{}", output.code);
         assert_eq!(classes[0].len(), 2);
         for refs in &classes[1..] {
@@ -88,14 +91,12 @@ fn extract_first_value(sheet: &mut StyleSheet) -> String {
         extractor::ExtractOption::default(),
     )
     .unwrap_or_else(|error| panic!("{error}"));
-    sheet.update_styles(&output.styles, "test.tsx", false);
-    output
-        .code
-        .split("className=\"")
-        .nth(1)
-        .and_then(|code| code.split('"').next())
-        .unwrap_or_else(|| panic!("{}", output.code))
-        .to_string()
+    sheet
+        .update_styles(&output.styles, "test.tsx", false)
+        .unwrap_or_else(|error| panic!("{error}"));
+    let classes = crate::sheet_test_code::static_element_classes(&output.code, &[Some("$space")]);
+    assert_eq!(classes[0].len(), 1, "{}", output.code);
+    classes[0][0].clone()
 }
 
 #[test]

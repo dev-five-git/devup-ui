@@ -7,7 +7,7 @@ ToBTreeSet {
         Static(
             ExtractStaticStyle {
                 property: "animation-name",
-                value: "a",
+                value: "KHdpcoq80gd1v1w6jq",
                 level: 0,
                 selector: None,
                 style_order: None,
@@ -45,7 +45,7 @@ ToBTreeSet {
         Static(
             ExtractStaticStyle {
                 property: "color",
-                value: "var(--b)",
+                value: "var(--Ksxv_dtest_ptsx_dtext)",
                 level: 0,
                 selector: None,
                 style_order: None,
@@ -63,7 +63,7 @@ ToBTreeSet {
         ),
         Css(
             ExtractCss {
-                css: ":root{--b:black;}",
+                css: ":root{--Ksxv_dtest_ptsx_dtext:black;}",
                 file: "test.tsx",
             },
         ),
@@ -94,5 +94,5 @@ ToBTreeSet {
             },
         ),
     },
-    code: "import \"@devup-ui/react/devup-ui.css\";\nimport * as stylex from \"@stylexjs/stylex\";\nconst fade = \"a\";\nconst colors = { \"text\": \"var(--b)\" };\nconst styles = {\n\t\"base\": \"d e f g\",\n\t\"bar\": \"h\",\n\t\"none\": \"\"\n};\nexport const A = ({ style, rest }) => <div {...{ className: `d e f g ${[style].flat(Infinity).filter(Boolean).join(\" \")} ${[rest].flat(Infinity).filter(Boolean).join(\" \")} ${[styles[key]?.x].flat(Infinity).filter(Boolean).join(\" \")} ${on ? \"d e f g\" : \"\"} ${!on ? \"d e f g\" : \"\"}` }} />;\n",
+    code: "import \"@devup-ui/react/devup-ui.css\";\nimport * as stylex from \"@stylexjs/stylex\";\nconst fade = \"KHdpcoq80gd1v1w6jq\";\nconst colors = { \"text\": \"var(--Ksxv_dtest_ptsx_dtext)\" };\nconst styles = {\n\t\"base\": \"OHare_5xpcrm3ke9b3 OHbs41ycnv6v05ww77 OHc_25lgrsegvgou83 OHdduvkap6xswg9ne8\",\n\t\"bar\": \"OHdb2fu0hytyo5557b\",\n\t\"none\": \"\"\n};\nexport const A = ({ style, rest }) => <div {...{ className: `OHare_5xpcrm3ke9b3 OHbs41ycnv6v05ww77 OHc_25lgrsegvgou83 OHdduvkap6xswg9ne8 ${[style].flat(Infinity).filter(Boolean).join(\" \")} ${[rest].flat(Infinity).filter(Boolean).join(\" \")} ${[styles[key]?.x].flat(Infinity).filter(Boolean).join(\" \")} ${on ? \"OHare_5xpcrm3ke9b3 OHbs41ycnv6v05ww77 OHc_25lgrsegvgou83 OHdduvkap6xswg9ne8\" : \"\"} ${!on ? \"OHare_5xpcrm3ke9b3 OHbs41ycnv6v05ww77 OHc_25lgrsegvgou83 OHdduvkap6xswg9ne8\" : \"\"}` }} />;\n",
 }

@@ -44,5 +44,5 @@ ToBTreeSet {
             },
         ),
     },
-    code: "import \"@devup-ui/react/devup-ui.css\";\nconst cast = <div className=\"a\" />;\nconst satisfied = <div className=\"b\" />;\nconst nonNull = <div className=\"c\" style={{ \"--d\": v }} />;\nconst parens = <div className=\"e\" />;\n",
+    code: "import \"@devup-ui/react/devup-ui.css\";\nconst cast = <div className=\"OLbackground-vred\" />;\nconst satisfied = <div className=\"OLcolor-vblue\" />;\nconst nonNull = <div className=\"OHcyrmumoo1t8p0k4u\" style={{ \"---SUimport_s_x7b__s_x42_ox_s_x7d__sfrom_s_x27__x40_devup_dui_lreact_x27__x3b__xa_const_scast_s_x3d__s_x3c__x42_ox_sbg_x3d__x7b__x27_red_x27__sas_sany_x7d__s_l_x3e__x3b__xa_const_ssatisfied_s_x3d__s_x3c__x42_ox_scolor_x3d__x7b__x27_blue_x27__ssatisfies_sstring_x7d__s_l_x3e__x3b__xa_const_snon_x4e_ull_s_x3d__s_x3c__x42_ox_smt_x3d__x7b_v_x21__x7d__s_l_x3e__x3b__xa_const_sparens_s_x3d__s_x3c__x42_ox_spt_x3d__x7b__o_x27_4px_x27__e_x7d__s_l_x3e__x3b_-dz\": v }} />;\nconst parens = <div className=\"OHb69ee9ffyalykqlt\" />;\n",
 }

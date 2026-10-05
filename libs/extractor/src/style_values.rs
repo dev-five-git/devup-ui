@@ -7,7 +7,7 @@ use oxc_ast::ast::{BindingPattern, Expression, Str, TemplateLiteral};
 use oxc_ast::builder::AstBuilder;
 use oxc_ast_visit::{VisitMut, walk_mut};
 use oxc_semantic::Scoping;
-use oxc_span::SPAN;
+use oxc_span::GetSpan;
 use oxc_syntax::symbol::SymbolId;
 use rustc_hash::FxHashMap;
 
@@ -96,7 +96,7 @@ impl<'a> VisitMut<'a> for Reads<'_, 'a> {
                 StyleValue::Class(value) | StyleValue::Keyframes(value) => value,
             };
             *it = Expression::new_string_literal(
-                SPAN,
+                it.span(),
                 Str::from_in(value.as_str(), self.ast.allocator()),
                 None,
                 self.ast,

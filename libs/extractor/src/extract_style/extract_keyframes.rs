@@ -1,60 +1,51 @@
-use std::{
-    collections::BTreeMap,
-    hash::{DefaultHasher, Hash, Hasher},
-};
+use std::collections::BTreeMap;
 
-use css::keyframes_to_keyframes_name;
+use css::{content_name::ContentName, style_origin::Origin};
 
 use crate::extract_style::{
     ExtractStyleProperty, extract_static_style::ExtractStaticStyle, style_property::StyleProperty,
 };
 
-#[derive(Debug, Default, PartialEq, Clone, Eq, Hash, Ord, PartialOrd)]
+#[derive(Default, PartialEq, Clone, Eq, Hash, Ord, PartialOrd)]
 pub struct ExtractKeyframes {
     pub keyframes: BTreeMap<String, Vec<ExtractStaticStyle>>,
+    pub origin: Origin,
+}
+
+impl std::fmt::Debug for ExtractKeyframes {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("ExtractKeyframes")
+            .field("keyframes", &self.keyframes)
+            .finish()
+    }
+}
+
+impl ExtractKeyframes {
+    #[must_use]
+    pub fn effective_steps(&self) -> Vec<(String, Vec<(String, String)>)> {
+        self.keyframes
+            .iter()
+            .map(|(step, styles)| {
+                (
+                    step.clone(),
+                    styles
+                        .iter()
+                        .map(|style| (style.property().to_string(), style.effective_value()))
+                        .collect(),
+                )
+            })
+            .collect()
+    }
+
+    #[must_use]
+    pub fn content_name(&self) -> ContentName {
+        ContentName::keyframes(&self.effective_steps())
+    }
 }
 
 impl ExtractStyleProperty for ExtractKeyframes {
-    fn extract(&self, filename: Option<&str>) -> StyleProperty {
-        if css::atom_hoist::is_atom_hoist() {
-            let mut content = String::new();
-            for (step, styles) in &self.keyframes {
-                content.push_str(&css::atom_name::hex(step));
-                content.push('{');
-                for style in styles {
-                    content.push_str(&css::atom_name::hex(style.property()));
-                    content.push(':');
-                    content.push_str(&css::atom_name::hex(style.value()));
-                    content.push(';');
-                }
-                content.push('}');
-            }
-            return StyleProperty::ClassName(keyframes_to_keyframes_name(&content, filename));
-        }
-        let mut hasher = DefaultHasher::new();
-        self.keyframes.hash(&mut hasher);
-        // Format the u64 hash into a stack buffer instead of a throwaway heap
-        // `String`; `keyframes_to_keyframes_name` only reads it as `&str` and
-        // copies it into its own key, so the owned allocation was pure waste.
-        let mut buf = [0u8; 20];
-        let hash_key = write_u64(&mut buf, hasher.finish());
-        StyleProperty::ClassName(keyframes_to_keyframes_name(hash_key, filename))
+    fn extract(&self, _filename: Option<&str>) -> StyleProperty {
+        let content = self.content_name();
+        StyleProperty::ClassName(content.name(css::get_prefix().as_deref().unwrap_or_default()))
     }
-}
-
-/// Writes `value`'s decimal digits into the tail of `buf` and returns the
-/// written slice as `&str`. A `u64` is at most 20 decimal digits, so `buf`
-/// never overflows.
-fn write_u64(buf: &mut [u8; 20], mut value: u64) -> &str {
-    let mut pos = buf.len();
-    loop {
-        pos -= 1;
-        buf[pos] = b'0' + (value % 10) as u8;
-        value /= 10;
-        if value == 0 {
-            break;
-        }
-    }
-    // Only ASCII digits were written, so this slice is valid UTF-8.
-    str::from_utf8(&buf[pos..]).unwrap_or("0")
 }

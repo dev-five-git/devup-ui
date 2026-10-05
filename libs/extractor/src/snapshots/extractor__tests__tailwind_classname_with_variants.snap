@@ -39,5 +39,5 @@ ToBTreeSet {
             },
         ),
     },
-    code: "import \"@devup-ui/core/devup-ui.css\";\n<div className=\"a b c\" />;\n",
+    code: "import \"@devup-ui/core/devup-ui.css\";\n<div className=\"OLpadding-v2rem-l1 OHa5ulqofwiokqwjts OLpadding-v1rem\" />;\n",
 }

@@ -26,5 +26,5 @@ ToBTreeSet {
             },
         ),
     },
-    code: "import \"@devup-ui/core/devup-ui.css\";\n<div className=\"a b\" style={{ \"--c\": [1,.5,...some][100] }} />;\n",
+    code: "import \"@devup-ui/core/devup-ui.css\";\n<div className=\"OLdisplay-vflex-o0 OHbz34or8j8ylexz6z\" style={{ \"---SUimport_s_x7b__x46_lex_x7d__sfrom_s_x27__x40_devup_dui_lcore_x27__xa__s_s_s_s_s_s_s_s_x3c__x46_lex_sopacity_x3d__x7b__x5b_1_m_s0_p5_m_s_p_p_psome_x5d__x5b_100_x5d__x7d__s_l_x3e__xa__s_s_s_s_s_s_s_s-a6\": [1,.5,...some][100] }} />;\n",
 }

@@ -3,6 +3,57 @@ use rstest::rstest;
 use serial_test::serial;
 use std::collections::HashSet;
 
+#[test]
+#[serial]
+fn source_ids_roundtrip_restores_dynamic_names_when_extracting_in_reverse_order() {
+    // Given
+    reset_build_state_internal();
+    css::file_map::seed_file_numbers(&["a.tsx".into(), "z.tsx".into()]);
+    let source = "import {Box} from '@devup-ui/react'; export const View=({pad})=><Box p={pad}/>;";
+    let before = code_extract_internal(
+        "z.tsx",
+        source,
+        "@devup-ui/react",
+        "df".into(),
+        false,
+        false,
+        false,
+        HashMap::new(),
+    )
+    .unwrap_or_else(|error| panic!("{error}"));
+    let ids = css::file_map::get_original_ids();
+    assert_eq!(
+        ids,
+        BTreeMap::from([("a.tsx".into(), 0), ("z.tsx".into(), 1)])
+    );
+    let exported = export_sheet_internal().unwrap_or_else(|error| panic!("{error}"));
+    let files = css::file_map::get_file_map();
+    let classes = with_class_map(Clone::clone);
+    let imported: StyleSheet =
+        serde_json::from_str(&exported).unwrap_or_else(|error| panic!("{error}"));
+    reset_build_state_internal();
+    // When
+    import_sheet_internal(imported).unwrap_or_else(|error| panic!("{error}"));
+    set_file_map(files);
+    set_class_map(classes);
+    let restored_ids = css::file_map::get_original_ids();
+    let after = code_extract_internal(
+        "z.tsx",
+        source,
+        "@devup-ui/react",
+        "df".into(),
+        false,
+        false,
+        false,
+        HashMap::new(),
+    )
+    .unwrap_or_else(|error| panic!("{error}"));
+    // Then
+    assert_eq!(restored_ids, ids);
+    assert_eq!(after.code(), before.code());
+    reset_build_state_internal();
+}
+
 #[rstest]
 #[case(false, false)]
 #[case(false, true)]
@@ -23,20 +74,20 @@ fn legacy_import_changes_cache_generation_when_exported(
     let global = legacy.create_css(None, false);
     css::atom_hoist::set_atom_hoist(atom_mode.then_some(2));
     let imported = serde_json::from_str(&legacy_json).unwrap_or_else(|error| panic!("{error}"));
-    import_sheet_internal(imported);
+    import_sheet_internal(imported).unwrap_or_else(|error| panic!("{error}"));
     // When
     let exported = export_sheet_internal().unwrap_or_else(|error| panic!("{error}"));
     // Then
     assert_ne!(exported, legacy_json);
     let json: serde_json::Value =
         serde_json::from_str(&exported).unwrap_or_else(|error| panic!("{error}"));
-    assert_eq!(json["atomNamingVersion"], 1);
+    assert_eq!(json["atomNamingVersion"], 3);
     let restored: StyleSheet =
         serde_json::from_str(&exported).unwrap_or_else(|error| panic!("{error}"));
     assert_eq!(restored.atom_plan, None);
     assert_eq!(restored.create_css(Some("private.tsx"), false), local);
     assert_eq!(restored.create_css(None, false), global);
-    import_sheet_internal(restored);
+    import_sheet_internal(restored).unwrap_or_else(|error| panic!("{error}"));
     assert_eq!(
         export_sheet_internal().unwrap_or_else(|error| panic!("{error}")),
         exported
@@ -73,7 +124,7 @@ fn exported_generation_roundtrips_frozen_atom_placement() {
     let imported = serde_json::from_str(&exported).unwrap_or_else(|error| panic!("{error}"));
     reset_build_state_internal();
     // When
-    import_sheet_internal(imported);
+    import_sheet_internal(imported).unwrap_or_else(|error| panic!("{error}"));
     // Then
     assert_eq!(global.matches("color:red").count(), 1);
     assert_eq!(local.matches("color:red").count(), 1);

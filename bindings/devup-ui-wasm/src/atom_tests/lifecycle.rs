@@ -47,7 +47,7 @@ fn imported_sheet_keeps_recorded_placement_after_configuration_reset() {
     reset_build_state_internal();
     let imported = serde_json::from_str(&serialized).unwrap_or_else(|error| panic!("{error}"));
     // When
-    import_sheet_internal(imported);
+    import_sheet_internal(imported).unwrap_or_else(|error| panic!("{error}"));
     seed_file_map(vec!["a.tsx".into(), "b.tsx".into(), "private.tsx".into()]);
     // Then
     assert_eq!(
@@ -132,22 +132,94 @@ fn important_and_plain_dynamic_values_emit_distinct_rules_in_every_mode() {
         let output = compile("private.tsx", source);
         // Then
         let css = emitted("private.tsx");
-        let rules = with_style_sheet(|sheet| {
+        let properties = with_style_sheet(|sheet| {
             sheet.properties["private.tsx"]
                 .values()
                 .flat_map(BTreeMap::values)
                 .flatten()
-                .map(|prop| (prop.class_name.clone(), prop.value.clone()))
+                .cloned()
                 .collect::<Vec<_>>()
         });
-        assert_eq!(rules.len(), 2);
-        assert_ne!(rules[0].0, rules[1].0);
-        for (name, value) in rules {
-            assert!(output.code.contains(&name));
-            assert!(css.contains(&format!(".{name}{{color:{value}}}")), "{css}");
-        }
-        if atom {
-            assert_references_resolve(&output.code, &css);
+        let rules: Vec<_> = properties
+            .iter()
+            .filter(|prop| prop.property == "color")
+            .collect();
+        let resets: Vec<_> = properties.iter().filter(|prop| prop.owner_reset).collect();
+        assert_eq!(rules.len(), 3);
+        assert_eq!(resets.len(), 3);
+        assert_eq!(
+            rules
+                .iter()
+                .map(|prop| &prop.class_name)
+                .collect::<HashSet<_>>()
+                .len(),
+            3
+        );
+        assert_eq!(
+            rules
+                .iter()
+                .map(|prop| &prop.value)
+                .collect::<HashSet<_>>()
+                .len(),
+            3
+        );
+        let assignments = css::utils::compile_regex(
+            r#"["'](---(?:du-)?S[a-z0-9_U-]+)["']\s*:\s*(tone\b|differentCode\b|`\$\{tone\}`)"#,
+        );
+        let sites: Vec<_> = assignments.captures_iter(&output.code).collect();
+        assert_eq!(sites.len(), 3, "{}", output.code);
+        assert_eq!(
+            sites
+                .iter()
+                .map(|site| &site[1])
+                .collect::<HashSet<_>>()
+                .len(),
+            3
+        );
+        assert_eq!(&sites[0][2], "tone");
+        assert_eq!(&sites[1][2], "differentCode");
+        assert!(matches!(&sites[2][2], "tone" | "`${tone}`"));
+        assert_references_resolve(&output.code, &css);
+        for (index, site) in sites.iter().enumerate() {
+            let variable = &site[1];
+            let value = format!(
+                "var({variable}){}",
+                if index == 2 { " !important" } else { "" }
+            );
+            let rule = rules
+                .iter()
+                .find(|prop| prop.value == value)
+                .unwrap_or_else(|| panic!("missing site color rule for {value}\n{css}"));
+            assert!(!rule.owner_reset);
+            assert!(output.code.contains(&rule.class_name));
+            let owned: Vec<_> = resets
+                .iter()
+                .filter(|prop| prop.class_name == rule.class_name)
+                .collect();
+            assert_eq!(owned.len(), 1);
+            assert_eq!(owned[0].property, variable);
+            assert_eq!(owned[0].value, "initial");
+            assert_eq!(owned[0].selector, None);
+            assert_eq!(owned[0].layer, None);
+            let selector = format!(".{}{{", rule.class_name);
+            assert_eq!(css.matches(&selector).count(), 1, "{css}");
+            let block = css
+                .split_once(&selector)
+                .unwrap_or_else(|| panic!("missing own class block {selector}\n{css}"))
+                .1;
+            let block = block
+                .split_once('}')
+                .unwrap_or_else(|| panic!("unclosed class block {selector}\n{css}"))
+                .0;
+            let declarations: HashSet<_> =
+                block.split(';').filter(|value| !value.is_empty()).collect();
+            assert_eq!(
+                declarations,
+                HashSet::from([
+                    format!("{variable}:initial").as_str(),
+                    format!("color:{value}").as_str(),
+                ])
+            );
         }
     }
     reset_build_state_internal();

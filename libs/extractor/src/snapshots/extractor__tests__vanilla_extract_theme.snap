@@ -1,6 +1,6 @@
 ---
 source: libs/extractor/src/lib.rs
-expression: "ToBTreeSet::from(extract(\"theme.css.ts\",\nr#\"import { createTheme, style } from '@devup-ui/react'\nexport const [themeClass, vars] = createTheme({\n  color: {\n    brand: 'blue',\n    text: 'black'\n  },\n  space: {\n    small: '4px',\n    medium: '8px',\n    large: '16px'\n  }\n})\nexport const box = style({\n  color: vars.color.text,\n  padding: vars.space.medium\n})\n\"#,\nExtractOption\n{\n    package: \"@devup-ui/react\".to_string(), css_dir:\n    \"@devup-ui/react\".to_string(), single_css: true, import_main_css: false\n}).unwrap())"
+expression: "ToBTreeSet::from(extract(\"theme.css.ts\",\nr\"import { createTheme, style } from '@devup-ui/react'\nexport const [themeClass, vars] = createTheme({\n  color: {\n    brand: 'blue',\n    text: 'black'\n  },\n  space: {\n    small: '4px',\n    medium: '8px',\n    large: '16px'\n  }\n})\nexport const box = style({\n  color: vars.color.text,\n  padding: vars.space.medium\n})\n\",\nExtractOption\n{\n    package: \"@devup-ui/react\".to_string(), css_dir:\n    \"@devup-ui/react\".to_string(), single_css: true, import_main_css: false,\n    import_aliases: HashMap::new()\n}).unwrap())"
 ---
 ToBTreeSet {
     styles: {
@@ -110,5 +110,5 @@ ToBTreeSet {
             },
         ),
     },
-    code: "import \"@devup-ui/react/devup-ui.css\";\nexport const box = \"a b\";\n;\nexport const themeClass = \"theme-0-0\";\nexport const vars = {\n\t\"color\": {\n\t\t\"brand\": \"var(--color-brand-0-1)\",\n\t\t\"text\": \"var(--color-text-0-2)\"\n\t},\n\t\"space\": {\n\t\t\"small\": \"var(--space-small-0-3)\",\n\t\t\"medium\": \"var(--space-medium-0-4)\",\n\t\t\"large\": \"var(--space-large-0-5)\"\n\t}\n};\n",
+    code: "import \"@devup-ui/react/devup-ui.css\";\nexport const box = \"OHbds39taewd_o4t9_ OHb8x4my9ukb5in7kt\";\n;\nexport const themeClass = \"theme-0-0\";\nexport const vars = {\n\t\"color\": {\n\t\t\"brand\": \"var(--color-brand-0-1)\",\n\t\t\"text\": \"var(--color-text-0-2)\"\n\t},\n\t\"space\": {\n\t\t\"small\": \"var(--space-small-0-3)\",\n\t\t\"medium\": \"var(--space-medium-0-4)\",\n\t\t\"large\": \"var(--space-large-0-5)\"\n\t}\n};\n",
 }

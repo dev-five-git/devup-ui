@@ -46,27 +46,87 @@ fn emitted(file: &str) -> String {
 }
 
 fn assert_references_resolve(code: &str, css: &str) {
+    // Read generated payloads, not import paths, identifiers or CSS property keys.
+    let literals =
+        css::utils::compile_regex(r#""(?:\\.|[^"\\])*"|'(?:\\.|[^'\\])*'|`(?:\\.|[^`\\])*`"#);
+    let class = css::utils::compile_regex(
+        r"^(?:du-)?(?:[OR](?:L[a-z0-9_-]+|H[a-z0-9_]{16})|(?:[a-z_][a-z0-9_]*|[a-z0-9_]*a-d)-(?:[a-z_][a-z0-9_]*|[a-z0-9_]*a-d))$",
+    );
+    let animation = css::utils::compile_regex(r"^(?:du-)?K(?:L[a-z0-9_-]+|H[a-z0-9_]{16})$");
+    let variable = css::utils::compile_regex(
+        r"^---(?:du-)?S(?:[a-z_][a-z0-9_]*|U[a-z0-9_]+)-[a-z_][a-z0-9_]*(?:-[a-z_][a-z0-9_]*)?$",
+    );
     let mut classes = 0;
-    for token in code.split(|c: char| !(c.is_ascii_alphanumeric() || c == '-' || c == '_')) {
-        if token.starts_with("a1-") || token.starts_with("du-a1-") {
-            assert!(
-                css.contains(&format!(".{token}")),
-                "unemitted class {token}\n{css}"
-            );
-            classes += 1;
-        } else if token.starts_with("k1-") || token.starts_with("du-k1-") {
-            assert!(
-                css.contains(&format!("@keyframes {token}{{")),
-                "unemitted keyframes {token}"
-            );
-        } else if token.starts_with("--v1-") || token.starts_with("--du-v1-") {
-            assert!(
-                css.contains(&format!("var({token})")),
-                "unemitted variable {token}"
-            );
+    for literal in literals.find_iter(code) {
+        let before = code[..literal.start()].trim_end();
+        if before.ends_with("import") || before.ends_with("from") {
+            continue;
+        }
+        let quoted = literal.as_str();
+        let property_key = code[literal.end()..].trim_start().starts_with(':');
+        for token in quoted[1..quoted.len() - 1].split_whitespace() {
+            if variable.is_match(token) {
+                assert!(
+                    css.contains(&format!("var({token})")),
+                    "unemitted variable {token}"
+                );
+            } else if animation.is_match(token) {
+                assert!(
+                    css.contains(&format!("@keyframes {token}{{")),
+                    "unemitted keyframes {token}"
+                );
+            } else if class.is_match(token) && !property_key {
+                let selector = format!(".{token}");
+                assert!(
+                    css.match_indices(&selector).any(|(at, _)| {
+                        matches!(
+                            css[at + selector.len()..].chars().next(),
+                            Some('{' | ':' | '[' | '.' | '#' | ' ' | ',' | '>' | '+' | '~')
+                        )
+                    }),
+                    "unemitted class {token}\n{css}"
+                );
+                classes += 1;
+            }
         }
     }
     assert!(classes > 0, "fixture must generate classes: {code}");
+}
+
+#[rstest::rstest]
+#[case(r#"<div className="OLcolor-vred c-a"/>"#)]
+#[case(r#"<div className="OLcolor-vred du-a-d-b"/>"#)]
+#[case(r#"<div className="OLcolor-vred RLcolor-vblue"/>"#)]
+#[case(r#"<div className="OLcolor-vred du-RHaaaaaaaaaaaaaaaa"/>"#)]
+#[case(r#"const fade="KHaaaaaaaaaaaaaaaa"; const cls="OLcolor-vred";"#)]
+#[case(r#"const fade="du-KLsfrom-e-"; const cls="OLcolor-vred";"#)]
+#[case(r#"<div className="OLcolor-vred" style={{"---du-Sa-b-c":tone}}/>"#)]
+#[should_panic(expected = "unemitted")]
+fn reference_checker_rejects_dangling_payloads_when_another_class_resolves(#[case] code: &str) {
+    // Given / When / Then: a valid class cannot hide another unresolved reference.
+    assert_references_resolve(code, &format!(".{}{{color:red}}", "OLcolor-vred"));
+}
+
+#[test]
+fn reference_checker_ignores_nonpayload_names_when_valid_classes_are_present() {
+    // Given
+    let code = r#"import "devup-ui"; import "df/devup-ui/a.css";
+        const OLmissing=()=>({"font-family":"Arial"});
+        export const cls="du-c-a du-OLcolor-vred";"#;
+    // When / Then
+    assert_references_resolve(
+        code,
+        &format!(
+            ".{}{{padding:0}}.{}{{color:red}}",
+            "du-c-a", "du-OLcolor-vred"
+        ),
+    );
+}
+
+#[test]
+#[should_panic(expected = "fixture must generate classes")]
+fn reference_checker_rejects_fixtures_when_no_class_is_generated() {
+    assert_references_resolve("export const x=<div/>;", "");
 }
 
 const SOURCE_A: &str = r#"

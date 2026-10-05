@@ -5,18 +5,18 @@ expression: outputs
 [
     (
         "import { css, styled, Box } from '@devup-ui/react';\nconst myCss = css;\nconst again = myCss;\nconst S = styled;\nconst B = Box;\nexport const a = again({ color: 'red' });\nexport const s = S.div({ color: 'blue' });\nexport const b = <B p={1} />;",
-        "export const a = \"a-a\";\nexport const s = ({ style, className, ...rest }) => <div {...rest} className={[\"a-b\", className].filter(Boolean).join(\" \")} style={style} />;\nexport const b = <div className=\"a-c\" />;",
+        "export const a = \"OLcolor-vred\";\nexport const s = ({ style, className, ...rest }) => <div {...rest} className={[\"OLcolor-vblue\", className].filter(Boolean).join(\" \")} style={style} />;\nexport const b = <div className=\"OLpadding-v4px\" />;",
     ),
     (
         "import { css } from '@devup-ui/react';\nexport function f(css) { return css; }\nexport const a = css({ color: 'red' });",
-        "export function f(css) {\n\treturn css;\n}\nexport const a = \"a-a\";",
+        "export function f(css) {\n\treturn css;\n}\nexport const a = \"OLcolor-vred\";",
     ),
     (
         "import { css, Box } from '@devup-ui/react';\ntype T = typeof css;\nexport type P = React.ComponentProps<typeof Box>;\nexport const a = css({ color: 'red' });",
-        "type T = typeof css;\nexport type P = React.ComponentProps<typeof Box>;\nexport const a = \"a-a\";",
+        "type T = typeof css;\nexport type P = React.ComponentProps<typeof Box>;\nexport const a = \"OLcolor-vred\";",
     ),
     (
         "import { css } from '@devup-ui/react';\nconst kept = 1, myCss = css;\nexport const a = myCss({ color: 'red' }) + kept;",
-        "const kept = 1;\nexport const a = \"a-a\" + kept;",
+        "const kept = 1;\nexport const a = \"OLcolor-vred\" + kept;",
     ),
 ]

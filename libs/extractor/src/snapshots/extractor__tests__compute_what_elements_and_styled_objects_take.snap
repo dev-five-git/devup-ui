@@ -12,6 +12,7 @@ ToBTreeSet {
                 selector: None,
                 style_order: None,
                 layer: None,
+                naming: Risky,
             },
         ),
         Static(
@@ -99,5 +100,5 @@ ToBTreeSet {
             },
         ),
     },
-    code: "import \"@devup-ui/react/devup-ui-0.css\";\nimport * as Devup from \"@devup-ui/react\";\nimport { PRIMARY } from \"./tokens\";\nconst make = (n: number) => ({ m: n });\nconst KEY = [\"co\", \"lor\"].join(\"\");\nfunction darken(amount: number, color: string) {\n\treturn color === PRIMARY ? \"#112233\" : color;\n}\nconst card = make(2);\nconst hover = make(3);\nconst parts = [make(4), { p: 1 }];\nexport const a = <div onClick={() => 1} className=\"a-c\" />;\nexport const b = <div className=\"a-d\" />;\nexport const c = <div className=\"a-e\" />;\nexport const d = <div className=\"a-a a-c\" />;\nexport const e = ({ style, className, ...rest }) => <div {...rest} className={[\"a-f a-e a-g\", className].filter(Boolean).join(\" \")} style={style} />;\nexport const f = \"a-h a-a\";\nexport const g = \"a-i\";\nexport const h = <div {...card} />;\nfunction local() {\n\treturn { p: 7 };\n}\nexport const i = <div className=\"a-j\" />;\nexport const j = (register) => ((__devupSpread0) => <div {...__devupSpread0} className={__devupSpread0?.className || \"\"} style={__devupSpread0?.style} />)(register(\"email\"));\n",
+    code: "import \"@devup-ui/react/devup-ui-0.css\";\nimport * as Devup from \"@devup-ui/react\";\nimport { PRIMARY } from \"./tokens\";\nconst make = (n: number) => ({ m: n });\nconst KEY = [\"co\", \"lor\"].join(\"\");\nfunction darken(amount: number, color: string) {\n\treturn color === PRIMARY ? \"#112233\" : color;\n}\nconst card = make(2);\nconst hover = make(3);\nconst parts = [make(4), { p: 1 }];\nexport const a = ((__devupSpread0) => <div onClick={__devupSpread0} className=\"OLmargin-v8px\" />)(() => 1);\nexport const b = <div className=\"OLmargin-v20px\" />;\nexport const c = <div className=\"OHbupla99qknzqgf50\" />;\nexport const d = <div className=\"OLpadding-v4px OLmargin-v8px\" />;\nexport const e = ({ style, className, ...rest }) => <div {...rest} className={[\"OLmargin-v24px OHbupla99qknzqgf50 OLcolor-vred\", className].filter(Boolean).join(\" \")} style={style} />;\nexport const f = \"OLmargin-v16px OLpadding-v4px\";\nexport const g = \"RLcolor-v_h123\";\nexport const h = <div {...card} />;\nfunction local() {\n\treturn { p: 7 };\n}\nexport const i = <div className=\"OLpadding-v28px\" />;\nexport const j = (register) => ((__devupSpread1) => <div {...__devupSpread1} className={__devupSpread1?.className || \"\"} style={__devupSpread1?.style} />)(((__devupSpreadValue) => ({ ...__devupSpreadValue }))(register(\"email\")));\n",
 }

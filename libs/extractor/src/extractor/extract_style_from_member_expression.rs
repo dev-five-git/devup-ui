@@ -17,7 +17,7 @@ use oxc_ast::{
     ast::{ArrayExpressionElement, ComputedMemberExpression, Expression, ObjectPropertyKind},
     builder::AstBuilder,
 };
-use oxc_span::SPAN;
+use oxc_span::Span;
 use std::collections::BTreeMap;
 
 pub(super) fn extract_style_from_member_expression<'a>(
@@ -57,17 +57,28 @@ pub(super) fn extract_style_from_member_expression<'a>(
         _ => false,
     }
     .then(|| mem.object.clone_in(ast_builder.allocator()));
-    let runtime = |whole: &Expression<'a>, offset: u32| {
+    let span = mem.span;
+    let runtime = |whole: &Expression<'a>| {
         runtime_member(
             ast_builder,
             name,
             whole.clone_in(ast_builder.allocator()),
             mem_expression,
-            offset,
+            span,
             level,
             selector,
         )
     };
+
+    if matches!(&mem.object, Expression::ArrayExpression(_))
+        && spread.is_some()
+        && get_number_by_literal_expression(mem_expression).is_none()
+    {
+        return ExtractResult {
+            styles: vec![runtime(&mem.object)],
+            ..ExtractResult::default()
+        };
+    }
 
     if let Expression::ArrayExpression(array) = &mut mem.object
         && !array.elements.is_empty()
@@ -96,20 +107,17 @@ pub(super) fn extract_style_from_member_expression<'a>(
                 }
             }
             return ExtractResult {
-                styles: spread
-                    .iter()
-                    .map(|whole| runtime(whole, mem.span.start))
-                    .collect(),
+                styles: spread.iter().map(runtime).collect(),
                 ..ExtractResult::default()
             };
         }
 
         let mut map = BTreeMap::new();
         for (idx, p) in array.elements.iter_mut().enumerate() {
-            if let ArrayExpressionElement::SpreadElement(sp) = p
+            if let ArrayExpressionElement::SpreadElement(_) = p
                 && let Some(whole) = &spread
             {
-                map.insert(idx.to_string(), Box::new(runtime(whole, sp.span.start)));
+                map.insert(idx.to_string(), Box::new(runtime(whole)));
             } else if let Some(p) = p.as_expression_mut() {
                 map.insert(
                     idx.to_string(),
@@ -148,7 +156,7 @@ pub(super) fn extract_style_from_member_expression<'a>(
                 .any(|p| matches!(p, ObjectPropertyKind::SpreadProperty(_)));
             if replaced && let Some(whole) = &spread {
                 return ExtractResult {
-                    styles: vec![runtime(whole, mem.span.start)],
+                    styles: vec![runtime(whole)],
                     ..ExtractResult::default()
                 };
             }
@@ -206,7 +214,7 @@ pub(super) fn extract_style_from_member_expression<'a>(
             name,
             mem.object.clone_in(ast_builder.allocator()),
             mem_expression,
-            mem.span.start,
+            span,
             level,
             selector,
         ));
@@ -225,12 +233,12 @@ fn runtime_member<'a>(
     name: Option<&str>,
     object: Expression<'a>,
     key: &Expression<'a>,
-    offset: u32,
+    span: Span,
     level: u8,
     selector: &Option<StyleSelector>,
 ) -> ExtractStyleProp<'a> {
     let member = Expression::ComputedMemberExpression(ComputedMemberExpression::boxed(
-        SPAN,
+        span,
         object,
         key.clone_in(ast_builder.allocator()),
         false,
@@ -239,7 +247,7 @@ fn runtime_member<'a>(
     match name {
         Some(name) => dynamic_style(ast_builder, name, &member, level, selector),
         None => ExtractStyleProp::Unreadable {
-            offset,
+            offset: span.start,
             code: readable_code(&member),
             prop: false,
         },

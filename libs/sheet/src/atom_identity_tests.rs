@@ -23,7 +23,9 @@ fn nested_at_rule_pseudo_classes_reference_the_emitted_selector() {
     // When
     let output = extractor::extract("private.tsx", source, extractor::ExtractOption::default())
         .unwrap_or_else(|error| panic!("{error}"));
-    sheet.update_styles(&output.styles, "private.tsx", false);
+    sheet
+        .update_styles(&output.styles, "private.tsx", false)
+        .unwrap_or_else(|error| panic!("{error}"));
     // Then
     let css = sheet.create_css(Some("private.tsx"), false);
     let classes: Vec<&str> = output
@@ -175,7 +177,9 @@ fn global_selector_owner_is_cleanup_only_not_content_identity() {
     for file in ["a.tsx", "b.tsx"] {
         let output = extractor::extract(file, source, extractor::ExtractOption::default())
             .unwrap_or_else(|error| panic!("{error}"));
-        sheet.update_styles(&output.styles, file, false);
+        sheet
+            .update_styles(&output.styles, file, false)
+            .unwrap_or_else(|error| panic!("{error}"));
         for levels in sheet.properties[file].values() {
             for prop in levels.values().flatten() {
                 identities.insert(prop.class_name.clone());
@@ -218,8 +222,12 @@ fn shared_imports_and_fonts_signal_changes_only_when_added() {
         .unwrap_or_else(|error| panic!("{error}"));
     let mut sheet = StyleSheet::default();
     // When
-    let first = sheet.update_styles(&output.styles, "test.tsx", false);
-    let repeated = sheet.update_styles(&output.styles, "test.tsx", false);
+    let first = sheet
+        .update_styles(&output.styles, "test.tsx", false)
+        .unwrap_or_else(|error| panic!("{error}"));
+    let repeated = sheet
+        .update_styles(&output.styles, "test.tsx", false)
+        .unwrap_or_else(|error| panic!("{error}"));
     // Then
     assert!(first.1);
     assert!(!repeated.1);

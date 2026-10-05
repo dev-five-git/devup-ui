@@ -1,7 +1,31 @@
 mod as_visit;
+#[cfg(test)]
+mod assignment_blocker_support;
+#[cfg(test)]
+mod assignment_blocker_tests;
+mod assignment_capture;
+mod assignment_composition;
+mod assignment_consumers;
+mod assignment_lowering;
+#[cfg(test)]
+mod assignment_lowering_tests;
+mod assignment_member;
+mod assignment_object;
+mod assignment_owner;
+#[cfg(test)]
+mod assignment_residual_tests;
+#[cfg(test)]
+mod assignment_test_support;
+mod assignment_value;
 mod build_time_values;
+mod class_evaluation;
 mod component;
 mod css_utils;
+mod element_evaluation;
+mod evaluation_location;
+#[cfg(test)]
+mod evaluation_location_tests;
+mod evaluation_origin;
 pub mod extract_style;
 mod extractor;
 mod gen_class_name;
@@ -10,8 +34,21 @@ mod import_alias_visit;
 mod imported_constants;
 mod module_loader;
 mod mutations;
+#[cfg(test)]
+mod named_capture_order_tests;
+#[cfg(test)]
+mod named_capture_support;
+#[cfg(test)]
+mod named_capture_tests;
 mod prop_modify_utils;
+mod provenance;
 mod source_map;
+mod source_naming;
+mod sparse_sites;
+mod style_export_locations;
+mod style_origin;
+#[cfg(test)]
+mod style_origin_tests;
 mod style_values;
 mod stylex;
 mod tailwind;
@@ -50,6 +87,14 @@ pub enum ImportAlias {
 pub enum ExtractStyleProp<'a> {
     Static(ExtractStyleValue),
     StaticArray(Vec<ExtractStyleProp<'a>>),
+    Evaluated {
+        styles: Vec<ExtractStyleProp<'a>>,
+        source: Expression<'a>,
+        binding: String,
+        evaluation: Option<Expression<'a>>,
+        alternate_order: Option<assignment_lowering::AlternateOrder>,
+        alternate_class: bool,
+    },
     Conditional {
         condition: Expression<'a>,
         consequent: Option<Box<ExtractStyleProp<'a>>>,
@@ -84,6 +129,21 @@ impl<'a> ExtractStyleProp<'a> {
             ExtractStyleProp::StaticArray(arr) => {
                 ExtractStyleProp::StaticArray(arr.iter().map(|s| s.clone_in(alloc)).collect())
             }
+            ExtractStyleProp::Evaluated {
+                styles,
+                source,
+                binding,
+                evaluation,
+                alternate_order,
+                alternate_class,
+            } => Self::Evaluated {
+                styles: styles.iter().map(|style| style.clone_in(alloc)).collect(),
+                source: source.clone_in(alloc),
+                binding: binding.clone(),
+                evaluation: evaluation.as_ref().map(|value| value.clone_in(alloc)),
+                alternate_order: *alternate_order,
+                alternate_class: *alternate_class,
+            },
             ExtractStyleProp::Conditional {
                 condition,
                 consequent,
@@ -143,7 +203,8 @@ impl<'a> ExtractStyleProp<'a> {
                 }
                 (None, None) => vec![],
             },
-            ExtractStyleProp::StaticArray(array) => {
+            ExtractStyleProp::StaticArray(array)
+            | ExtractStyleProp::Evaluated { styles: array, .. } => {
                 array.iter().flat_map(ExtractStyleProp::extract).collect()
             }
             ExtractStyleProp::Expression { styles, .. } => styles.clone(),
@@ -183,7 +244,8 @@ impl<'a> ExtractStyleProp<'a> {
                 }
                 (None, None) => vec![],
             },
-            ExtractStyleProp::StaticArray(array) => array
+            ExtractStyleProp::StaticArray(array)
+            | ExtractStyleProp::Evaluated { styles: array, .. } => array
                 .into_iter()
                 .flat_map(ExtractStyleProp::into_extract)
                 .collect(),
@@ -281,15 +343,25 @@ fn extract_with_source_map(
     source_map: bool,
     resolver: Option<&ModuleResolver>,
 ) -> Result<ExtractOutput, Box<dyn Error>> {
-    extract_source(filename, code, None, option, source_map, resolver)
+    let source = provenance::normalize_source(code);
+    extract_source(filename, &source, None, option, source_map, resolver)
 }
 
-/// `evaluated` is the source `code` was computed from, with the layers of
-/// edits, last made first, that map `code` back to it
+/// The source `code` was computed from, with the layers of edits, last made
+/// first, that map `code` back to it, and where values that depend on an
+/// import that may differ between environments were written
+#[derive(Clone, Copy)]
+struct Evaluated<'a> {
+    source: &'a str,
+    edits: &'a [&'a [import_alias_visit::Edit]],
+    risky: &'a [(usize, usize)],
+}
+
+/// `evaluated` is what `code` was computed from, when it was
 fn extract_source(
     filename: &str,
     code: &str,
-    evaluated: Option<(&str, &[&[import_alias_visit::Edit]])>,
+    evaluated: Option<Evaluated<'_>>,
     option: ExtractOption,
     source_map: bool,
     resolver: Option<&ModuleResolver>,
@@ -320,8 +392,15 @@ fn extract_source(
         });
     }
 
+    let stylesheet_naming = if utils::is_vanilla_extract_file(filename) {
+        source_naming::stylesheet(code, filename, &option)
+    } else {
+        css::Naming::Own
+    };
     let mut dependencies = std::collections::BTreeSet::new();
     let mut evaluation_error = None;
+    let _evaluation_origins = utils::is_vanilla_extract_file(filename)
+        .then(|| style_origin::EvaluationScope::enter(filename, code, &alias_edits));
     // Step 3: Handle vanilla-extract style files (.css.ts, .css.js)
     // `processed_code` is Some only when vanilla-extract generation succeeded;
     // otherwise the untouched `transformed_code` is parsed directly (no copy).
@@ -345,6 +424,7 @@ fn extract_source(
                         ),
                         &option,
                         &referenced,
+                        stylesheet_naming,
                     )?
                 };
                 let code = vanilla_extract::collected_styles_to_code_with_keyframes(
@@ -418,6 +498,24 @@ fn extract_source(
     if fatal_error {
         return Err("Parser panicked".into());
     }
+    let (source, earlier_edits) = evaluated.map_or((code, &[][..]), |evaluated| {
+        (evaluated.source, evaluated.edits)
+    });
+    let edits: Vec<&[import_alias_visit::Edit]> = std::iter::once(alias_edits.as_slice())
+        .chain(earlier_edits.iter().copied())
+        .collect();
+    let _origins = if processed_code.is_some() {
+        style_origin::OriginScope::generated(&mut program)
+    } else {
+        style_origin::OriginScope::enter((filename, source), &edits, &program)
+    };
+    if let Some(evaluated) = evaluated {
+        provenance::MarkRanges(evaluated.risky).visit_program(&mut program);
+    }
+    if processed_code.is_some() && stylesheet_naming == css::Naming::Risky {
+        provenance::MarkRanges(&[(0, code_to_parse.len())]).visit_program(&mut program);
+    }
+    let _sites = provenance::SiteScope::enter(filename, source, &edits);
     let inlined = if processed_code.is_none() {
         imported_constants::inline_constants(
             &oxc_ast::builder::AstBuilder::new(&allocator),
@@ -440,6 +538,7 @@ fn extract_source(
     visitor.import_stylex(inlined.stylex_vars, inlined.stylex_themes);
     visitor.unknown_bindings(&inlined.unknown);
     visitor.changed_bindings(inlined.changed.clone());
+    let attempt = css::class_map::Attempt::begin();
     visitor.visit_program(&mut program);
     if let Some(error) = evaluation_error
         && imports_uncompiled(&program, &option.package)
@@ -451,7 +550,7 @@ fn extract_source(
     if (!visitor.errors.is_empty() || visitor.composes_unknown)
         && evaluated.is_none()
         && !utils::is_vanilla_extract_file(filename)
-        && let Some((computed, value_edits, read)) = build_time_values::evaluate(
+        && let Some((computed, value_edits, read, risky)) = build_time_values::evaluate(
             &transformed_code,
             filename,
             &option,
@@ -459,10 +558,15 @@ fn extract_source(
             &inlined.unknown,
         )
     {
+        drop(attempt);
         let mut output = extract_source(
             filename,
             &computed,
-            Some((code, &[value_edits.as_slice(), alias_edits.as_slice()])),
+            Some(Evaluated {
+                source: code,
+                edits: &[value_edits.as_slice(), alias_edits.as_slice()],
+                risky: &risky,
+            }),
             option,
             source_map,
             resolver,
@@ -473,10 +577,7 @@ fn extract_source(
         output.dependencies = files.into_iter().collect();
         return Ok(output);
     }
-    let (source, earlier_edits) = evaluated.unwrap_or((code, &[]));
-    let edits: Vec<&[import_alias_visit::Edit]> = std::iter::once(alias_edits.as_slice())
-        .chain(earlier_edits.iter().copied())
-        .collect();
+    visitor.errors.extend(provenance::site_errors());
     visitor.errors.append(&mut visitor.unknown_parts);
     if !visitor.errors.is_empty() {
         let mut message = located_errors(filename, source, &edits, visitor.errors);
@@ -492,9 +593,15 @@ fn extract_source(
         CodegenOptions::default()
     };
     let result = Codegen::new().with_options(codegen_options).build(&program);
-    // A stylesheet's output is generated, so its map stays on that code
     let map = result.map.map(|map| {
-        if processed_code.is_some() || edits.iter().all(|edits| edits.is_empty()) {
+        if processed_code.is_some() {
+            source_map::remap(
+                map,
+                code_to_parse,
+                source,
+                &[&[(0, source.len(), code_to_parse.len())]],
+            )
+        } else if edits.iter().all(|edits| edits.is_empty()) {
             map
         } else {
             source_map::remap(map, code_to_parse, source, &edits)
@@ -502,6 +609,7 @@ fn extract_source(
         .to_json_string()
     });
 
+    attempt.commit();
     Ok(ExtractOutput {
         styles: visitor.styles,
         code: result.code,
@@ -553,6 +661,9 @@ fn located_errors(
     edits: &[&[import_alias_visit::Edit]],
     mut errors: Vec<(u32, String)>,
 ) -> String {
+    for (offset, _) in &mut errors {
+        *offset = provenance::source_offset(*offset);
+    }
     errors.sort_unstable();
     errors.dedup();
     errors
@@ -641,6 +752,7 @@ fn extract_class_map_from_code(
     partial_code: &str,
     option: &ExtractOption,
     style_names: &FxHashSet<String>,
+    naming: css::Naming,
 ) -> Result<FxHashMap<String, String>, Box<dyn Error>> {
     let source_type = SourceType::from_path(filename)?;
     let (bucket, global, css_file) = resolve_css_target(filename, option);
@@ -655,6 +767,10 @@ fn extract_class_map_from_code(
     if fatal_error {
         Ok(FxHashMap::default())
     } else {
+        let _origins = style_origin::OriginScope::generated(&mut program);
+        if naming == css::Naming::Risky {
+            provenance::MarkRanges(&[(0, partial_code.len())]).visit_program(&mut program);
+        }
         let mut visitor = DevupVisitor::new(
             &allocator,
             filename,
@@ -14380,6 +14496,7 @@ export const card = style({
                 import_aliases: HashMap::new(),
             },
             &style_names,
+            css::Naming::Own,
         )
         .unwrap();
 
@@ -15384,9 +15501,7 @@ globalStyle('body', { margin: 2 })
     fn test_stylex_numbers_follow_stylex_units() {
         reset_class_map();
         reset_file_map();
-        let output = extract(
-            "test.tsx",
-            r"import stylex from '@stylexjs/stylex';
+        let source = r"import stylex from '@stylexjs/stylex';
 const styles = stylex.create({
   base: {
     fontSize: 16,
@@ -15402,10 +15517,8 @@ const styles = stylex.create({
   },
   dynamic: (opacity, delay) => ({ opacity, transitionDelay: delay, bottom: 3 }),
 });
-const result = stylex.props(styles.dynamic(o, d));",
-            ExtractOption::default(),
-        )
-        .unwrap();
+const result = stylex.props(styles.dynamic(o, d));";
+        let output = extract("test.tsx", source, ExtractOption::default()).unwrap();
         let values = static_values(&output);
         for (property, value) in [
             ("font-size", "16px"),
@@ -15426,14 +15539,37 @@ const result = stylex.props(styles.dynamic(o, d));",
                 "{property}: {value} not in {values:?}"
             );
         }
-        assert!(output.code.contains(r#""--a": o"#), "{}", output.code);
-        assert!(
+        let opacity_site = css::Site {
+            file: css::sparse_site::SourceFile::Unnumbered(source.into()),
+            at: source.find("opacity, transitionDelay").unwrap(),
+            role: 0,
+        };
+        let delay_site = css::Site {
+            file: css::sparse_site::SourceFile::Unnumbered(source.into()),
+            at: source.find("transitionDelay: delay").unwrap() + "transitionDelay: ".len(),
+            role: 0,
+        };
+        assert_eq!(
             output
-                .code
-                .contains(r#"((v) => typeof v === "number" ? v + "ms" : v)(d)"#),
-            "{}",
-            output.code
+                .styles
+                .iter()
+                .filter_map(|style| match style {
+                    ExtractStyleValue::Dynamic(style) => Some(style.site.clone()),
+                    _ => None,
+                })
+                .collect::<std::collections::HashSet<_>>(),
+            std::collections::HashSet::from([Some(opacity_site.clone()), Some(delay_site.clone())])
         );
+        for (site, value) in [
+            (opacity_site, "o"),
+            (
+                delay_site,
+                r#"((v) => typeof v === "number" ? v + "ms" : v)(d)"#,
+            ),
+        ] {
+            let assignment = format!(r#""{}": {value}"#, site.variable_name(""));
+            assert!(output.code.contains(&assignment), "{}", output.code);
+        }
     }
 
     #[test]

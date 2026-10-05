@@ -2,9 +2,12 @@ use std::borrow::Cow;
 use std::fmt::{Debug, Formatter};
 
 use css::{
+    Naming,
+    content_name::{AtomContent, ContentName},
     optimize_multi_css_value::{check_multi_css_optimize, optimize_multi_css_value},
     optimize_value::optimize_value,
-    sheet_to_classname,
+    sheet_to_classname_content,
+    style_origin::Origin,
     style_selector::{StyleSelector, optimize_selector},
     theme_tokens::get_first_theme_token_value,
 };
@@ -41,18 +44,25 @@ pub struct ExtractStaticStyle {
     pub layer: Option<String>,
     /// How theme tokens should be resolved when converting to CSS.
     pub theme_token_resolution: ThemeTokenResolution,
+    /// Which counter, if any, names the class; kept so the sheet names it
+    /// again the same way.
+    pub naming: Naming,
+    pub origin: Origin,
 }
 
 impl Debug for ExtractStaticStyle {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
-        f.debug_struct("ExtractStaticStyle")
-            .field("property", &self.property)
+        let mut s = f.debug_struct("ExtractStaticStyle");
+        s.field("property", &self.property)
             .field("value", &self.value)
             .field("level", &self.level)
             .field("selector", &self.selector)
             .field("style_order", &self.style_order)
-            .field("layer", &self.layer)
-            .finish()
+            .field("layer", &self.layer);
+        if self.naming != Naming::Own {
+            s.field("naming", &self.naming);
+        }
+        s.finish()
     }
 }
 
@@ -106,6 +116,8 @@ impl ExtractStaticStyle {
             style_order: None,
             layer: None,
             theme_token_resolution: ThemeTokenResolution::CssVariable,
+            naming: Naming::Own,
+            origin: crate::style_origin::current(),
         }
     }
 
@@ -138,12 +150,20 @@ impl ExtractStaticStyle {
             style_order: Some(0),
             layer: None,
             theme_token_resolution: ThemeTokenResolution::CssVariable,
+            naming: Naming::Own,
+            origin: crate::style_origin::current(),
         }
     }
 
     #[must_use]
     pub const fn with_theme_token_resolution(mut self, resolution: ThemeTokenResolution) -> Self {
         self.theme_token_resolution = resolution;
+        self
+    }
+
+    #[must_use]
+    pub const fn with_naming(mut self, naming: Naming) -> Self {
+        self.naming = naming;
         self
     }
 
@@ -200,26 +220,46 @@ impl ExtractStaticStyle {
             }
         }
     }
+
+    #[must_use]
+    pub fn content_name(&self) -> ContentName {
+        let value = self.effective_value();
+        self.atom_content(&value).content()
+    }
+
+    #[must_use]
+    pub fn effective_value(&self) -> String {
+        if self.property == "typography" {
+            return css::content_typography::identity(&self.value, self.level);
+        }
+        let value = self.resolved_value();
+        let value = if self.property != "content" && check_multi_css_optimize(&self.property) {
+            optimize_multi_css_value(&value).into_owned()
+        } else {
+            value.into_owned()
+        };
+        css::content_value::emitted(&value).into_owned()
+    }
+
+    fn atom_content<'a>(&'a self, value: &'a str) -> AtomContent<'a> {
+        AtomContent {
+            property: &self.property,
+            value: Some(value),
+            naming: self.naming,
+            level: self.level,
+            order: self.style_order.unwrap_or(255),
+            selector: self.selector.as_ref(),
+            layer: self.layer.as_deref(),
+            dynamic: false,
+        }
+    }
 }
 
 impl ExtractStyleProperty for ExtractStaticStyle {
     fn extract(&self, filename: Option<&str>) -> StyleProperty {
-        let s = self.class_selector();
-        let value = self.resolved_value();
-        // `self.value` is already the result of `optimize_value(convert_value(..))`
-        // (computed in the constructors), so re-running convert_value + optimize_value
-        // here is redundant. Only the multi-css optimization is not applied at construction.
-        let v = if check_multi_css_optimize(&self.property) {
-            optimize_multi_css_value(&value)
-        } else {
-            Cow::Borrowed(value.as_ref())
-        };
-        StyleProperty::ClassName(sheet_to_classname(
-            &self.property,
-            self.level,
-            Some(v.as_ref()),
-            s.as_deref(),
-            self.style_order,
+        let value = self.effective_value();
+        StyleProperty::ClassName(sheet_to_classname_content(
+            &self.atom_content(&value),
             filename,
         ))
     }
@@ -228,6 +268,19 @@ impl ExtractStyleProperty for ExtractStaticStyle {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn content_strings_keep_quotes_when_effective_values_name_and_emit_them() {
+        for value in ["\"\"", "\"red\"", "'hello world'"] {
+            let style = ExtractStaticStyle::new("content", value, 0, None);
+            assert_eq!(style.effective_value(), value);
+            assert_ne!(
+                style.content_name(),
+                ExtractStaticStyle::new("content", value.trim_matches(['\'', '"']), 0, None)
+                    .content_name()
+            );
+        }
+    }
 
     #[test]
     fn test_extract_static_style() {

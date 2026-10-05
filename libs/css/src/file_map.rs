@@ -56,9 +56,12 @@ where
     }
 }
 
+pub use crate::sparse_site::source_ids::{get_original_ids, original_id, set_original_ids};
+
 /// for test
 pub fn reset_file_map() {
     with_file_map_mut(BiHashMap::clear);
+    set_original_ids(std::collections::BTreeMap::new());
 }
 
 pub fn set_file_map(new_map: BiHashMap<String, usize>) {
@@ -99,6 +102,7 @@ pub fn get_file_num_by_filename(filename: &str) -> usize {
 /// not on which file a worker reaches first; files that appear later (in
 /// development) are numbered after the existing ones.
 pub fn seed_file_numbers(files: &[String]) {
+    crate::sparse_site::source_ids::seed_original_ids(files);
     let mut sorted: Vec<String> = files.iter().map(|file| canonical(file)).collect();
     sorted.sort_unstable();
     sorted.dedup();
@@ -170,9 +174,11 @@ where
 /// for test
 pub fn reset_canonical_map() {
     with_canonical_map_mut(std::collections::HashMap::clear);
+    crate::naming::set_collapsed_buckets(&std::collections::HashMap::new());
 }
 
 pub fn set_canonical_map(new_map: std::collections::HashMap<String, String>) {
+    crate::naming::set_collapsed_buckets(&new_map);
     with_canonical_map_mut(|map| *map = new_map);
 }
 

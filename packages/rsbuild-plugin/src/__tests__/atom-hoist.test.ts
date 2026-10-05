@@ -4,6 +4,10 @@ import {
   builtPluginEntry,
   runAtomHoistIntegration,
 } from '../../../next-plugin/src/__tests__/atom-hoist-harness'
+import {
+  environmentMatrix,
+  runEnvironmentOrder,
+} from '../../../next-plugin/src/__tests__/environment-order-harness'
 
 it('serves real hoisted JSX atoms and private sheets in either transform order and fresh builds', () => {
   // Given: two entries reach shared atoms, while their opacity stays private.
@@ -42,3 +46,33 @@ const finish = async () => {
   expect(backward).toBe(forward)
   expect(rebuilt).toBe(forward)
 }, 120_000)
+
+for (const options of environmentMatrix) {
+  it(`locks real WASM web/node bytes atom=${options.atomHoist ?? 'off'} singleCss=${options.singleCss}`, () => {
+    // Given: environment-conditioned imports produce different values and keycounts.
+    const setup = `
+const { DevupUI } = await import(${builtPluginEntry('rsbuild-plugin')});
+const transforms = [];
+let closeBuild;
+await DevupUI({ ...${JSON.stringify(options)}, cssDir, distDir: join(root, 'df') }).setup({
+  context: { rootPath: root }, onCloseBuild(fn) { closeBuild = fn; }, onBeforeBuild() {},
+  transform(options, handler) { transforms.push({ options, handler }); },
+  modifyRspackConfig() {}, modifyRsbuildConfig() {},
+});
+const jsTransform = transforms.find(item => item.options.test instanceof RegExp).handler;
+const cssTransform = transforms.find(item => item.options.test === cssDir).handler;
+const usesCallback = true;
+const transform = (name, code) => jsTransform({ code, resourcePath: join(root, file), environment: { name, config: { output: { target: name } } }, addDependency() {} });
+const loadCss = name => cssTransform({ resourcePath: join(cssDir, name), environment: { name: 'web' } });
+const finish = () => closeBuild();
+`
+    // When: real registered transforms extract web/node in both fresh-process orders.
+    const [forward, backward, rebuilt] = runEnvironmentOrder(setup, [
+      'web',
+      'node',
+    ])
+    // Then: complete JS/maps and loaded CSS (including headers) are stable.
+    expect(backward).toBe(forward)
+    expect(rebuilt).toBe(forward)
+  }, 120_000)
+}
