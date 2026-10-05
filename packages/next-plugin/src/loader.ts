@@ -12,8 +12,9 @@ import {
   CoordinatorRequestError,
   requestCoordinator,
 } from './coordinator-client'
+import { takeExtractOutput } from './coordinator-engine'
 import type { CoordinatorIdentity } from './coordinator-port'
-import { loadWasm } from './wasm'
+import { extractWithModuleResolver, loadWasm } from './wasm'
 
 const stateWriter = createStateWriter((path, content, encoding) =>
   encoding ? writeFile(path, content, encoding) : writeFile(path, content),
@@ -148,8 +149,8 @@ const devupUILoader: RawLoaderDefinitionFunction<DevupUILoaderOptions> =
       return
     }
 
+    const engine = loadWasm()
     const {
-      codeExtract,
       exportClassMap,
       exportFileMap,
       exportSheet,
@@ -158,7 +159,7 @@ const devupUILoader: RawLoaderDefinitionFunction<DevupUILoaderOptions> =
       importFileMap,
       importSheet,
       registerTheme,
-    } = loadWasm()
+    } = engine
     const promises: Promise<void>[] = []
     try {
       if (!init) {
@@ -201,15 +202,17 @@ const devupUILoader: RawLoaderDefinitionFunction<DevupUILoaderOptions> =
         cssFile,
         updatedBaseStyle,
         dependencies = [],
-      } = codeExtract(
-        relativePath,
-        source.toString(),
-        libPackage,
-        relCssDir,
-        singleCss,
-        false,
-        true,
-        importAliases,
+      } = takeExtractOutput(
+        extractWithModuleResolver(engine, true, [
+          relativePath,
+          source.toString(),
+          libPackage,
+          relCssDir,
+          singleCss,
+          false,
+          true,
+          importAliases,
+        ]),
       )
       for (const dependency of dependencies)
         this.addDependency(resolve(projectRoot, dependency))

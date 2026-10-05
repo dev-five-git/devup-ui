@@ -1,8 +1,8 @@
 import { readFileSync } from 'node:fs'
-import { dirname, relative, resolve } from 'node:path'
+import { resolve } from 'node:path'
 
 import { locatedError } from './build-error'
-import { takeExtractOutput } from './coordinator-engine'
+import { extractInput } from './coordinator-engine'
 import type { PrewarmedOutput } from './coordinator-options'
 import { elapsedMs, profileStart, reportProfile } from './profile'
 import type { AppContext } from './session'
@@ -12,38 +12,46 @@ export interface PrewarmResult {
   /** The files that extracted, in extraction order */
   readonly files: string[]
   readonly outputs: Map<string, PrewarmedOutput>
+  readonly preparedInputs?: ReadonlyMap<string, PreparedPrewarmInput>
 }
 
-interface RunPrewarmFields {
+export interface PreparedPrewarmInput {
+  readonly code: string
+  readonly map?: unknown
+  readonly dependencies?: readonly string[]
+}
+
+export interface RunPrewarmFields {
   context: AppContext
   engine: DevupWasm
   /** cwd-relative POSIX names, already in extraction order */
   files: readonly string[]
   /** Time spent choosing `files`, for the profile */
   collectMs: number | undefined
+  /** Complete pre-Devup inputs; supplying this makes preparation required in dev too. */
+  readonly preparedInputs?: ReadonlyMap<string, PreparedPrewarmInput>
 }
 
 function extractOne(
-  { context, engine }: Pick<RunPrewarmFields, 'context' | 'engine'>,
+  { context, engine, preparedInputs }: RunPrewarmFields,
   filename: string,
 ): PrewarmedOutput {
   const resourcePath = resolve(context.root, filename)
-  const relCssDir = `./${relative(dirname(resourcePath), context.cssDir).replaceAll('\\', '/')}`
-  const source = readFileSync(resourcePath, 'utf-8')
-  const extract = context.sourceMap
-    ? engine.codeExtract
-    : engine.codeExtractWithoutSourceMap
-  const output = takeExtractOutput(
-    extract(
-      filename,
-      source,
-      context.libPackage,
-      relCssDir,
-      context.singleCss,
-      false,
-      true,
-      context.importAliases,
-    ),
+  const prepared = preparedInputs?.get(filename)
+  if (preparedInputs && prepared === undefined) {
+    throw new TypeError(`Required prepared source is missing: ${resourcePath}`)
+  }
+  const source = prepared?.code ?? readFileSync(resourcePath, 'utf-8')
+  const output = extractInput(
+    engine,
+    {
+      package: context.libPackage,
+      cssDir: context.cssDir,
+      singleCss: context.singleCss,
+      sourceMap: context.sourceMap,
+      importAliases: context.importAliases,
+    },
+    { filename, resourcePath, source },
   )
   return {
     code: output.code,
@@ -51,7 +59,9 @@ function extractOne(
     map: output.map,
     source,
     updatedBaseStyle: output.updatedBaseStyle,
-    dependencies: output.dependencies,
+    dependencies: prepared
+      ? [...(output.dependencies ?? []), ...(prepared.dependencies ?? [])]
+      : output.dependencies,
   }
 }
 
@@ -81,7 +91,8 @@ export function runPrewarm(fields: RunPrewarmFields): PrewarmResult {
         needs: 'a readable source file the extractor can compile',
         cause,
       })
-      if (fields.context.phase === 'production') throw error
+      if (fields.preparedInputs || fields.context.phase === 'production')
+        throw error
       console.warn(
         `[devup-ui] ${error.message}. Skipped while prewarming; its styles are extracted when the bundler compiles it.`,
       )
@@ -96,5 +107,11 @@ export function runPrewarm(fields: RunPrewarmFields): PrewarmResult {
     files: files.length,
     sourceBytes,
   })
-  return { files, outputs }
+  return {
+    files,
+    outputs,
+    ...(fields.preparedInputs === undefined
+      ? {}
+      : { preparedInputs: fields.preparedInputs }),
+  }
 }

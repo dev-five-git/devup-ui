@@ -17,50 +17,8 @@ import {
 } from 'bun:test'
 
 import { formatPortFile } from '../coordinator-port'
-import type { DevupUILoaderOptions } from '../loader'
-import loader, { resetInit, setWasmForTesting } from '../loader'
-
-const defaults = {
-  package: 'package',
-  cssDir: 'cssDir',
-  sheetFile: 'sheetFile',
-  classMapFile: 'classMapFile',
-  fileMapFile: 'fileMapFile',
-  themeFile: 'themeFile',
-  watch: false,
-  singleCss: true,
-  defaultSheet: {},
-  defaultClassMap: {},
-  defaultFileMap: {},
-}
-function invoke(
-  options: Partial<DevupUILoaderOptions> = {},
-  resourcePath = resolve('App.tsx'),
-) {
-  const addDependency = mock()
-  const callback = mock()
-  const result = new Promise<{ code?: string; map?: string | null }>(
-    (resolve, reject) => {
-      callback.mockImplementation(
-        (error: Error | null, code?: string, map?: string | null) => {
-          if (error) reject(error)
-          else resolve({ code, map })
-        },
-      )
-      Reflect.apply(
-        loader,
-        {
-          getOptions: () => ({ ...defaults, ...options }),
-          resourcePath,
-          addDependency,
-          async: () => callback,
-        },
-        [Buffer.from('source')],
-      )
-    },
-  )
-  return { result, callback, addDependency }
-}
+import { resetInit, setWasmForTesting } from '../loader'
+import { invoke } from './loader-fixture'
 
 describe('local source extraction', () => {
   let spies: ReturnType<typeof spyOn>[] = []
@@ -128,6 +86,7 @@ describe('local source extraction', () => {
       map: '{}',
       cssFile: 'devup-ui-1.css',
       updatedBaseStyle: true,
+      free: mock(),
     })
     const run = invoke({ watch: true })
     expect(await run.result).toEqual({ code: 'compiled', map: '{}' })
@@ -172,6 +131,7 @@ describe('local source extraction', () => {
       code: 'compiled',
       cssFile: 'file.css',
       updatedBaseStyle: false,
+      free: mock(),
     })
     write.mockRejectedValue(new Error('write failed'))
     const run = invoke({ watch: true })
@@ -179,7 +139,7 @@ describe('local source extraction', () => {
     expect(run.callback).toHaveBeenCalledTimes(1)
   })
   it('rejects malformed source maps rather than returning success', async () => {
-    extract.mockReturnValue({ code: 'compiled', map: 'broken' })
+    extract.mockReturnValue({ code: 'compiled', map: 'broken', free: mock() })
     await expect(invoke().result).rejects.toThrow()
   })
 })

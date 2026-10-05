@@ -7,7 +7,7 @@ import {
   type CoordinatorInput,
   importAllocatorState,
 } from './state'
-import type { DevupWasm } from './wasm'
+import { type DevupWasm, extractWithModuleResolver } from './wasm'
 
 export interface ExtractOutputSnapshot extends Omit<PrewarmedOutput, 'source'> {
   css?: string
@@ -100,11 +100,8 @@ export function extractInput(
     settings.cssDir,
   ).replaceAll('\\', '/')
   if (!relCssDir.startsWith('./')) relCssDir = `./${relCssDir}`
-  const extract = settings.sourceMap
-    ? wasm.codeExtract
-    : wasm.codeExtractWithoutSourceMap
   return takeExtractOutput(
-    extract(
+    extractWithModuleResolver(wasm, settings.sourceMap, [
       input.filename,
       input.source,
       settings.package,
@@ -113,7 +110,7 @@ export function extractInput(
       false,
       true,
       settings.importAliases,
-    ),
+    ]),
   )
 }
 

@@ -1,11 +1,16 @@
 import type { SourcePlan } from './plan'
 import type { AppContext } from './session'
-import { type DevupWasm, withModuleResolver } from './wasm'
+import {
+  type DevupWasm,
+  type ModuleResolverSettings,
+  withModuleResolver,
+} from './wasm'
 
 export interface EngineSettings {
   /** The resolved `theme` of the devup config, `{}` when there is none */
   theme: object
   plan: Pick<SourcePlan, 'canonicalMap' | 'fileRoutes' | 'atomThreshold'>
+  readonly resolver?: ModuleResolverSettings
 }
 
 /**
@@ -15,7 +20,7 @@ export interface EngineSettings {
  */
 export function createEngineConfigurer(
   context: AppContext,
-  { theme, plan }: EngineSettings,
+  { theme, plan, resolver }: EngineSettings,
 ): (engine: DevupWasm) => void {
   return (engine) => {
     engine.setDebug(context.debug)
@@ -27,6 +32,6 @@ export function createEngineConfigurer(
     engine.importCanonicalMap(plan.canonicalMap)
     engine.importFileRoutes(plan.fileRoutes)
     engine.setAtomHoist(plan.atomThreshold)
-    withModuleResolver(engine, context.root)
+    withModuleResolver(engine, context.root, resolver)
   }
 }

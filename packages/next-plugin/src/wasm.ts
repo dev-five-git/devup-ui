@@ -3,10 +3,30 @@ import { createRequire } from 'node:module'
 import { dirname, join, relative, resolve } from 'node:path'
 import { compileFunction } from 'node:vm'
 
-import { createModuleResolver } from '@devup-ui/plugin-utils'
+import {
+  createModuleResolver,
+  type ModuleAliases,
+  type PrepareSource,
+} from '@devup-ui/plugin-utils'
 
 export type DevupWasm = typeof import('@devup-ui/wasm')
 export type DevupWebpackPlugin = typeof import('@devup-ui/webpack-plugin')
+
+export interface ModuleResolverSettings {
+  readonly prepareSource?: PrepareSource
+  readonly alias?: ModuleAliases
+  readonly includeMdx?: boolean | readonly string[]
+  readonly conditions?: readonly string[]
+}
+
+const engineResolvers = new WeakMap<
+  DevupWasm,
+  {
+    readonly root: string
+    readonly settings: ModuleResolverSettings | undefined
+    readonly resolver: ReturnType<typeof createModuleResolver>
+  }
+>()
 
 let wasmForTesting: DevupWasm | undefined
 let webpackPluginForTesting: DevupWebpackPlugin | undefined
@@ -42,17 +62,49 @@ function createPluginRequire(projectRoot: string): NodeRequire {
 export function withModuleResolver(
   wasm: DevupWasm,
   projectRoot = process.cwd(),
+  settings?: ModuleResolverSettings,
 ): DevupWasm {
   const root = resolve(projectRoot)
   if ('setModuleResolver' in wasm) {
-    wasm.setModuleResolver(
-      createModuleResolver({
-        cwd: root,
-        toId: (path) => relative(root, path).replaceAll('\\', '/'),
-      }),
+    const previous = engineResolvers.get(wasm)
+    if (
+      settings !== undefined &&
+      previous?.root === root &&
+      previous.settings === settings
     )
+      return wasm
+    const resolver = createModuleResolver({
+      ...settings,
+      cwd: root,
+      toId: (path) => relative(root, path).replaceAll('\\', '/'),
+    })
+    wasm.setModuleResolver(resolver)
+    engineResolvers.set(wasm, { root, settings, resolver })
   }
   return wasm
+}
+
+/** Shared by requests, replay, sealed candidates, prewarm and legacy loaders. */
+export function extractWithModuleResolver(
+  wasm: DevupWasm,
+  sourceMap: boolean,
+  args: Parameters<DevupWasm['codeExtract']>,
+): ReturnType<DevupWasm['codeExtract']> {
+  const configured = engineResolvers.get(wasm)
+  try {
+    // Register the request's own compiler map, not just imported module maps.
+    if (configured?.settings?.prepareSource) {
+      configured.resolver(resolve(configured.root, args[0]), args[0])
+    }
+    const extract = sourceMap
+      ? wasm.codeExtract
+      : wasm.codeExtractWithoutSourceMap
+    return extract(...args)
+  } catch (error) {
+    throw configured?.settings?.prepareSource
+      ? configured.resolver.remapError(error)
+      : error
+  }
 }
 
 /** Evaluate a fresh bridge and WASM instance for one app, in the caller's realm. */
