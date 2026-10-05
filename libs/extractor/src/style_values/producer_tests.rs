@@ -45,6 +45,9 @@ fn residual_classes_survive_when_producer_literals_enter_conditional_composition
         None,
     );
     visitor.import_producer_atoms(atoms);
+    let mut references = crate::vanilla_extract::style_references::StyleReferences::default();
+    references.register(format!("{class} anchor"), "anchor".into());
+    visitor.import_producer_references(references);
     visitor.visit_program(&mut program);
     assert_eq!(visitor.errors.len(), 0);
     assert!(

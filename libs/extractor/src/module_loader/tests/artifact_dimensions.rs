@@ -123,6 +123,6 @@ fn selector_anchors_survive_when_known_atoms_are_overridden()
         vec![("color".into(), "blue".into())]
     );
     assert!(classes.split_whitespace().any(|token| token == "external"));
-    assert!(classes.split_whitespace().any(|token| token == "f0_base"));
+    assert!(classes.split_whitespace().any(|token| token == "f0_0"));
     Ok(())
 }

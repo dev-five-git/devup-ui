@@ -1,6 +1,6 @@
 ---
 source: libs/extractor/src/lib.rs
-expression: "ToBTreeSet::from(extract(\"container.css.ts\",\nr#\"import { createContainer, style } from '@devup-ui/react'\nexport const sidebar = createContainer()\nexport const sidebarContainer = style({\n  containerName: sidebar,\n  containerType: 'inline-size'\n})\nexport const responsive = style({\n  '@container': {\n    [`${sidebar} (min-width: 400px)`]: {\n      flexDirection: 'row'\n    }\n  }\n})\n\"#,\nExtractOption\n{\n    package: \"@devup-ui/react\".to_string(), css_dir:\n    \"@devup-ui/react\".to_string(), single_css: true, import_main_css: false\n}).unwrap())"
+expression: "ToBTreeSet::from(extract(\"container.css.ts\",\nr\"import { createContainer, style } from '@devup-ui/react'\nexport const sidebar = createContainer()\nexport const sidebarContainer = style({\n  containerName: sidebar,\n  containerType: 'inline-size'\n})\nexport const responsive = style({\n  '@container': {\n    [`${sidebar} (min-width: 400px)`]: {\n      flexDirection: 'row'\n    }\n  }\n})\n\",\nExtractOption\n{\n    package: \"@devup-ui/react\".to_string(), css_dir:\n    \"@devup-ui/react\".to_string(), single_css: true, import_main_css: false,\n    import_aliases: HashMap::new()\n}).unwrap())"
 ---
 ToBTreeSet {
     styles: {
@@ -43,5 +43,5 @@ ToBTreeSet {
             },
         ),
     },
-    code: "import \"@devup-ui/react/devup-ui.css\";\nexport const responsive = \"a\";\nexport const sidebarContainer = \"b c\";\nexport const sidebar = \"container-0-0\";\n",
+    code: "import \"@devup-ui/react/devup-ui.css\";\nexport const responsive = \"f0_1 a\";\nexport const sidebarContainer = \"f0_0 b c\";\nexport const sidebar = \"container-0-0\";\n",
 }

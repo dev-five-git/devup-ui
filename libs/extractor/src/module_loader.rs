@@ -133,6 +133,7 @@ pub(crate) struct ModuleLoader<'r> {
     /// imports, which emit their own styles: its output keeps importing them
     pub kept_imports: Vec<String>,
     pub imported_atoms: crate::vanilla_extract::producer_atoms::ProducerAtoms,
+    pub imported_references: crate::vanilla_extract::style_references::StyleReferences,
 }
 
 impl<'r> ModuleLoader<'r> {
@@ -166,6 +167,7 @@ impl<'r> ModuleLoader<'r> {
             dependencies: BTreeSet::new(),
             kept_imports: Vec::new(),
             imported_atoms: Default::default(),
+            imported_references: Default::default(),
         }
     }
 
@@ -307,6 +309,7 @@ impl<'r> ModuleLoader<'r> {
             let unit = Unit::retained(&module.path, &output, &module.code)?;
             self.dependencies.extend(output.dependencies);
             self.imported_atoms.merge(result.atoms);
+            self.imported_references.merge(result.references);
             unit
         } else {
             Unit::written(&module.path, &module.code, &module.code, &[])?
@@ -364,9 +367,9 @@ pub(crate) struct ModuleScript {
     /// What `body` was made of, to tell where its code was written
     pub origin: Rc<Origin>,
     /// `(exported name, expression)`
-    exports: Vec<(String, String)>,
+    pub(crate) exports: Vec<(String, String)>,
     /// Modules re-exported whole
-    spreads: Vec<String>,
+    pub(crate) spreads: Vec<String>,
     /// Written with `module.exports` rather than `export`
     commonjs: bool,
 }
@@ -578,10 +581,11 @@ pub(crate) fn module_script(
                     rewrites.write(&mut body, declaration);
                     id.name.to_string()
                 } else {
-                    body.synthesize(declaration.start as usize, "const __default__ = (");
+                    let default = crate::fresh_name::fresh_name("__default__", script);
+                    body.synthesize(declaration.start as usize, &format!("const {default} = ("));
                     rewrites.write(&mut body, declaration);
                     body.synthesize(declaration.end as usize, ");");
-                    "__default__".to_string()
+                    default
                 };
                 body.synthesize(end, "\n");
                 exports.push(("default".to_string(), local));

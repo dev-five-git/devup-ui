@@ -243,6 +243,7 @@ pub struct DevupVisitor<'a> {
     /// The styles behind `css()` classes the file imports, by binding
     imported_css: FxHashMap<String, Vec<ExtractStyleValue>>,
     imported_atoms: crate::vanilla_extract::producer_atoms::ProducerAtoms,
+    imported_references: crate::vanilla_extract::style_references::StyleReferences,
     pub(crate) style_operand_mode: crate::vanilla_extract::StyleOperandMode,
     /// The styled component just built, by where it starts, for the `const`
     /// it initializes
@@ -425,7 +426,7 @@ impl<'a> DevupVisitor<'a> {
                 }
             }
         }
-        let known = composition.unconditional().filter(|_| classes.is_empty());
+        let known = composition.unconditional();
         let mut props = composition.into_props();
         // Class names come out in reverse, so they read in composing order
         props.reverse();
@@ -628,7 +629,30 @@ impl<'a> DevupVisitor<'a> {
             });
         }
         if let Some(styles) = self.style_values.styles(expression) {
-            return Some(KnownSide::Styles(vec![KnownStyles::Known(styles.to_vec())]));
+            let known = vec![KnownStyles::Known(styles.to_vec())];
+            let residual = self.style_values.class_name(expression).map(|value| {
+                value
+                    .split_whitespace()
+                    .filter(|token| {
+                        !styles.iter().any(|style| {
+                            matches!(style.extract(self.split_filename.as_deref()), Some(crate::extract_style::style_property::StyleProperty::ClassName(class)) if class == *token)
+                        })
+                    })
+                    .collect::<Vec<_>>()
+                    .join(" ")
+            });
+            return Some(match residual.filter(|value| !value.is_empty()) {
+                Some(value) => KnownSide::Mixed(
+                    known,
+                    Expression::new_string_literal(
+                        SPAN,
+                        Str::from_in(value.as_str(), self.ast.allocator()),
+                        None,
+                        &self.ast,
+                    ),
+                ),
+                None => KnownSide::Styles(known),
+            });
         }
         let code = || expression.clone_in_with_semantic_ids(self.ast.allocator());
         match expression {
@@ -780,6 +804,7 @@ impl<'a> DevupVisitor<'a> {
             styled_definitions: FxHashMap::default(),
             imported_css: FxHashMap::default(),
             imported_atoms: Default::default(),
+            imported_references: Default::default(),
             style_operand_mode: Default::default(),
             unknown_bindings: crate::imported_constants::Unknown::default(),
             composes_unknown: false,
@@ -1794,6 +1819,13 @@ impl<'a> DevupVisitor<'a> {
         self.imported_atoms = atoms;
     }
 
+    pub(crate) fn import_producer_references(
+        &mut self,
+        references: crate::vanilla_extract::style_references::StyleReferences,
+    ) {
+        self.imported_references = references;
+    }
+
     /// `StyleX` variables and themes the program imports from other modules,
     /// by the name it binds them to
     pub fn import_stylex(
@@ -2326,6 +2358,8 @@ impl<'a> VisitMut<'a> for DevupVisitor<'a> {
             self.style_values = crate::style_values::StyleValues::new(scoping);
             self.style_values
                 .import_producer_atoms(std::mem::take(&mut self.imported_atoms));
+            self.style_values
+                .import_producer_references(std::mem::take(&mut self.imported_references));
             self.style_values
                 .import(std::mem::take(&mut self.imported_css));
             if self.binds_style_results(it) || self.css_prop != CssProp::Off {

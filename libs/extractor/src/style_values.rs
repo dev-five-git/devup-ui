@@ -15,6 +15,8 @@ use rustc_hash::{FxHashMap, FxHashSet};
 
 use crate::ExtractStyleValue;
 
+mod producer;
+
 #[cfg(test)]
 #[path = "style_values/producer_tests.rs"]
 mod producer_tests;
@@ -40,6 +42,7 @@ pub struct StyleValues {
     /// The styles behind `css()` classes the file imports, by binding
     imported: FxHashMap<String, Vec<ExtractStyleValue>>,
     producer_atoms: crate::vanilla_extract::producer_atoms::ProducerAtoms,
+    producer_references: crate::vanilla_extract::style_references::StyleReferences,
 }
 
 impl StyleValues {
@@ -51,37 +54,12 @@ impl StyleValues {
             values: FxHashMap::default(),
             imported: FxHashMap::default(),
             producer_atoms: Default::default(),
+            producer_references: Default::default(),
         }
     }
 
     pub fn import(&mut self, imported: FxHashMap<String, Vec<ExtractStyleValue>>) {
         self.imported = imported;
-    }
-
-    pub(crate) fn import_producer_atoms(
-        &mut self,
-        atoms: crate::vanilla_extract::producer_atoms::ProducerAtoms,
-    ) {
-        self.producer_atoms = atoms;
-    }
-
-    pub(crate) fn literal_parts(&self, literal: &str) -> Option<(Vec<ExtractStyleValue>, String)> {
-        if !self.has_literal_styles(literal) {
-            return None;
-        }
-        let mut values = Vec::new();
-        let mut residual = Vec::new();
-        for token in literal.split_whitespace() {
-            match self.producer_atoms.get(token) {
-                Some(atoms) => values.extend_from_slice(atoms),
-                None => residual.push(token),
-            }
-        }
-        Some((values, residual.join(" ")))
-    }
-
-    pub(crate) fn has_literal_styles(&self, literal: &str) -> bool {
-        self.producer_atoms.contains_literal(literal)
     }
 
     /// The `const` `id` binds, whose value no code changes
@@ -152,6 +130,13 @@ impl StyleValues {
                 .then(|| self.imported.get(scoping.symbol_name(symbol)))
                 .flatten()
                 .map(Vec::as_slice),
+        }
+    }
+
+    pub(crate) fn class_name(&self, expression: &Expression<'_>) -> Option<&str> {
+        match self.values.get(&self.symbol(expression)?) {
+            Some(StyleValue::Class(value, _)) => Some(value.as_str()),
+            Some(StyleValue::Keyframes(_) | StyleValue::Component(_)) | None => None,
         }
     }
 

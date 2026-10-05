@@ -47,12 +47,6 @@ impl ProducerAtoms {
     pub(crate) fn get(&self, class: &str) -> Option<&[ExtractStyleValue]> {
         self.0.get(class).map(Vec::as_slice)
     }
-
-    pub(crate) fn contains_literal(&self, literal: &str) -> bool {
-        literal
-            .split_whitespace()
-            .any(|class| self.0.contains_key(class))
-    }
 }
 
 #[cfg(test)]

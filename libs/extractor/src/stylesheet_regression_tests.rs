@@ -27,6 +27,7 @@ fn serialization_errors_are_not_replaced_with_empty_styles(#[case] call: &str) {
 #[test]
 #[serial]
 fn style_names_cannot_overwrite_pending_placeholder_entries() -> Result<(), String> {
+    css::file_map::reset_file_map();
     let source = "import { style } from '@devup-ui/react';\nexport const __style_1__ = style({ color: 'red' });\nexport const second = style({ color: 'blue' });";
 
     let (collected, _) = execute_stylesheet(
@@ -42,8 +43,8 @@ fn style_names_cannot_overwrite_pending_placeholder_entries() -> Result<(), Stri
         "@devup-ui/react",
         &Default::default(),
     );
-    assert!(code.contains("export const __style_1__ = css({\"color\":\"red\"})"));
-    assert!(code.contains("export const second = css({\"color\":\"blue\"})"));
+    assert!(code.contains("export const __style_1__ = css({\"color\":\"red\"}, \"f0_0\")"));
+    assert!(code.contains("export const second = css({\"color\":\"blue\"}, \"f0_1\")"));
     Ok(())
 }
 

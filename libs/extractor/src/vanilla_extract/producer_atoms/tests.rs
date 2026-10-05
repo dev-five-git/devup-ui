@@ -102,10 +102,8 @@ fn local_vars_and_at_rules_remain_typed_when_indexes_merge() {
     for value in values {
         if let Some(StyleProperty::ClassName(class)) = value.extract(None) {
             assert_eq!(index.get(&class), Some([value].as_slice()));
-            assert!(index.contains_literal(&format!("external {class} anchor")));
         }
     }
-    assert!(!index.contains_literal("external anchor"));
 }
 
 #[test]

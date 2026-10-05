@@ -305,6 +305,7 @@ fn extract_with_source_map(
 struct ExtractedProducer {
     output: ExtractOutput,
     atoms: vanilla_extract::producer_atoms::ProducerAtoms,
+    references: vanilla_extract::style_references::StyleReferences,
 }
 
 /// `evaluated` is the source `code` was computed from, with the layers of
@@ -370,6 +371,7 @@ fn extract_source(
             dependencies: Vec::new(),
         },
         atoms: Default::default(),
+        references: Default::default(),
     };
 
     if !has_relevant_import && css_prop == css_prop::CssProp::Off && alias_edits.is_empty() {
@@ -379,6 +381,8 @@ fn extract_source(
 
     let mut dependencies = std::collections::BTreeSet::new();
     let mut producer_atoms = vanilla_extract::producer_atoms::ProducerAtoms::default();
+    let mut producer_references = vanilla_extract::style_references::StyleReferences::default();
+    let mut reference_bindings = FxHashMap::default();
     if utils::is_vanilla_extract_file(filename)
         && !values_run
         && stylesheet_policy::imports_plain(&transformed_code, filename, &option, resolver)
@@ -454,6 +458,18 @@ fn extract_source(
             Ok((collected, imports)) => {
                 dependencies = imports.dependencies;
                 producer_atoms = imports.atoms;
+                producer_references = imports.references;
+                producer_references.merge(collected.class_references.clone());
+                reference_bindings = collected
+                    .references
+                    .values()
+                    .filter_map(|reference| match reference {
+                        vanilla_extract::Reference::Style { name, class_name } => {
+                            Some((name.clone(), class_name.clone()))
+                        }
+                        vanilla_extract::Reference::Keyframes(_) => None,
+                    })
+                    .collect();
                 // Keyframes names are generated, so extract the referenced ones
                 // first and substitute their names into the styles using them.
                 let referenced = vanilla_extract::referenced_keyframes(&collected);
@@ -503,6 +519,7 @@ fn extract_source(
                 dependencies: dependencies.into_iter().collect(),
             },
             atoms: producer_atoms,
+            references: producer_references,
         });
     }
 
@@ -591,6 +608,7 @@ fn extract_source(
     visitor.import_stylex(inlined.stylex_vars, inlined.stylex_themes);
     visitor.import_css(inlined.css_styles);
     visitor.import_producer_atoms(producer_atoms.clone());
+    visitor.import_producer_references(producer_references.clone());
     visitor.style_operand_mode = if processed_code.is_some() {
         vanilla_extract::StyleOperandMode::Ordered
     } else {
@@ -675,6 +693,11 @@ fn extract_source(
     } else {
         CodegenOptions::default()
     };
+    vanilla_extract::style_references::record_bindings(
+        &program,
+        &reference_bindings,
+        &mut producer_references,
+    );
     let result = Codegen::new().with_options(codegen_options).build(&program);
     // A stylesheet's output is generated, so its map stays on that code
     let map = result.map.map(|map| {
@@ -700,6 +723,7 @@ fn extract_source(
             dependencies: dependencies.into_iter().collect(),
         },
         atoms: producer_atoms,
+        references: producer_references,
     })
 }
 

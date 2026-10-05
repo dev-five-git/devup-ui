@@ -95,7 +95,7 @@ export const spin = keyframes({ to: { opacity: 1 } })
 export const named = style({ content: `'${box}'` })",
     );
     for expected in [
-        "_box'\", level: 0, selector: None",
+        "_0'\", level: 0, selector: None",
         "@property --size-",
         "var(--size-",
         "container-name",

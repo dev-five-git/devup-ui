@@ -35,6 +35,8 @@ mod contracts;
 mod operands;
 pub(crate) use operands::StyleOperandMode;
 pub(crate) mod producer_atoms;
+mod selector_rules;
+pub(crate) mod style_references;
 mod token_walk;
 mod vars;
 use contracts::{assign_vars, assign_vars_api, create_global_theme_contract};
@@ -69,9 +71,11 @@ pub struct CollectedStyles {
     pub property_rules: Vec<String>,
     /// Exported values other than styles and keyframes: name -> code
     pub constant_exports: Vec<(String, String)>,
+    pub(crate) export_aliases: Vec<(String, String, String)>,
     /// `__style_N__` placeholder -> what it stands for, for placeholders left in
     /// selectors and values
     pub references: FxHashMap<String, Reference>,
+    pub(crate) class_references: style_references::StyleReferences,
 }
 
 /// Target of a placeholder that a selector or value interpolated
@@ -91,6 +95,7 @@ struct Collector {
     placeholders: usize,
     identifiers: usize,
     imported_atoms: Rc<producer_atoms::ProducerAtoms>,
+    imported_references: Rc<style_references::StyleReferences>,
 }
 
 type StyleCollector = Rc<RefCell<Collector>>;
@@ -237,6 +242,7 @@ pub struct StylesheetImports {
     /// imports, which emit their own styles
     pub kept_imports: Vec<String>,
     pub(crate) atoms: producer_atoms::ProducerAtoms,
+    pub(crate) references: style_references::StyleReferences,
 }
 
 #[cfg(test)]
@@ -304,6 +310,7 @@ pub(crate) fn execute_located(
         dependencies: std::mem::take(&mut loader.dependencies),
         kept_imports: std::mem::take(&mut loader.kept_imports),
         atoms: std::mem::take(&mut loader.imported_atoms),
+        references: std::mem::take(&mut loader.imported_references),
     };
     let imported = crate::module_loader::evaluating_import();
     if imported
@@ -320,6 +327,7 @@ pub(crate) fn execute_located(
     let collector: StyleCollector = Rc::new(RefCell::new(Collector {
         file_num,
         imported_atoms: Rc::new(imports.atoms.clone()),
+        imported_references: Rc::new(imports.references.clone()),
         ..Collector::default()
     }));
     let mut context = Context::default();
@@ -353,12 +361,8 @@ pub(crate) fn execute_located(
         })?;
 
     let mut collected = std::mem::take(&mut collector.borrow_mut().styles);
-    let named = name_entries(
-        &mut collected,
-        &top_level_bindings(code),
-        &mut context,
-        file_num,
-    );
+    let named = top_level_bindings(code, &entry, &mut context)
+        .and_then(|bindings| name_entries(&mut collected, &bindings, &mut context, file_num));
     sandbox
         .check(&named.as_ref().err().into_iter().collect::<Vec<_>>())
         .map_err(|failure| {
@@ -438,11 +442,17 @@ thread_local! {
 struct Binding {
     name: String,
     exported: bool,
+    read: String,
+    alias: Option<String>,
     /// Initializer source, when the declaration binds this name alone
     init: Option<String>,
 }
 
-fn top_level_bindings(code: &str) -> Vec<Binding> {
+fn top_level_bindings(
+    code: &str,
+    entry: &crate::module_loader::ModuleScript,
+    context: &mut Context,
+) -> JsResult<Vec<Binding>> {
     let allocator = Allocator::default();
     let program = Parser::new(&allocator, code, SourceType::ts())
         .parse()
@@ -470,12 +480,42 @@ fn top_level_bindings(code: &str) -> Vec<Binding> {
                 bindings.push(Binding {
                     name: identifier.name.to_string(),
                     exported,
+                    read: identifier.name.to_string(),
+                    alias: None,
                     init: init.clone(),
                 });
             }
         }
     }
-    bindings
+    let mut exports = entry.exports.clone();
+    for spread in &entry.spreads {
+        let value = context.eval(Source::from_bytes(spread.as_bytes()))?;
+        if let Some(object) = value.as_object() {
+            for (_, name) in own_keys(&object, context)? {
+                if name != "default" && !exports.iter().any(|(export, _)| export == &name) {
+                    exports.push((name.clone(), format!("{spread}[{}]", json_string(&name))));
+                }
+            }
+        }
+    }
+    for (exported, read) in exports {
+        if let Some(binding) = bindings.iter_mut().find(|binding| binding.name == read)
+            && exported == read
+        {
+            binding.exported = true;
+            continue;
+        }
+        let name =
+            crate::fresh_name::fresh_name(&format!("__ve_export_{}__", bindings.len()), code);
+        bindings.push(Binding {
+            name,
+            exported: false,
+            read,
+            alias: Some(exported),
+            init: None,
+        });
+    }
+    Ok(bindings)
 }
 
 fn placeholder_index(id: &str) -> usize {
@@ -500,7 +540,7 @@ fn name_entries(
         .iter()
         .map(|binding| {
             context
-                .eval(Source::from_bytes(binding.name.as_bytes()))
+                .eval(Source::from_bytes(binding.read.as_bytes()))
                 .map(|value| (binding, value))
         })
         .collect::<JsResult<_>>()?;
@@ -540,6 +580,14 @@ fn name_entries(
     }
 
     for (binding, value) in &values {
+        if let Some(alias) = &binding.alias {
+            if let Some(code) = value_to_code(value, context, &names, &mut Vec::new())? {
+                collected
+                    .export_aliases
+                    .push((binding.name.clone(), alias.clone(), code));
+            }
+            continue;
+        }
         let names_entry = js_str(value).is_some_and(|id| names.get(&id) == Some(&binding.name));
         if binding.exported
             && !names_entry
@@ -568,7 +616,7 @@ fn name_entries(
             collected.styles.insert(name.clone(), entry);
             Reference::Style {
                 name: name.clone(),
-                class_name: format!("f{file_num}_{name}"),
+                class_name: format!("f{file_num}_{}", placeholder_index(id)),
             }
         } else {
             if let Some(entry) = keyframes.remove(id) {
@@ -777,6 +825,12 @@ fn register_style(
     let mut entry = StyleEntry::default();
     let atoms = Rc::clone(&collector.borrow().imported_atoms);
     operands::compose(rule, &mut entry, &atoms, context)?;
+    let references = Rc::clone(&collector.borrow().imported_references);
+    for operand in &mut entry.operands {
+        if let operands::StyleOperand::Rules(json) = operand {
+            *json = selector_rules::rewrite(json, &references);
+        }
+    }
     let mut collector = collector.borrow_mut();
     let id = collector.placeholder();
     collector.styles.styles.insert(id.clone(), entry);
@@ -793,7 +847,10 @@ fn global_style(
     context: &mut Context,
 ) -> JsResult<JsValue> {
     let selector = to_text(args.get_or_undefined(0), context)?;
+    let references = Rc::clone(&collector.borrow().imported_references);
+    let selector = references.selector(&selector);
     let json = style_to_json(args.get_or_undefined(1), context)?;
+    let json = selector_rules::rewrite(&json, &references);
     collector
         .borrow_mut()
         .styles
@@ -1094,6 +1151,11 @@ fn create_theme(
         (args.get_or_undefined(0), args.get_or_undefined(1))
     };
     let class_name = collector.borrow_mut().identifier(js_str(debug_id), "theme");
+    collector
+        .borrow_mut()
+        .styles
+        .class_references
+        .register(class_name.clone(), class_name.clone());
     let (tokens, layer) = split_layer(tokens, context)?;
     let contract = if contract_given {
         args.get_or_undefined(0).clone()
@@ -1207,8 +1269,8 @@ impl CollectedStyles {
 
     /// `variable_name` -> unique class of every style some selector or value refers to
     fn referenced_classes(&self) -> FxHashMap<&str, &str> {
-        self.referenced()
-            .into_iter()
+        self.references
+            .values()
             .filter_map(|reference| match reference {
                 Reference::Style { name, class_name } => Some((name.as_str(), class_name.as_str())),
                 Reference::Keyframes(_) => None,
@@ -1363,6 +1425,12 @@ pub fn collected_styles_to_code_with_keyframes(
 
     for (name, value) in &collected.constant_exports {
         code.push(format!("export const {name} = {value}"));
+    }
+    for (name, alias, value) in &collected.export_aliases {
+        if name != value {
+            code.push(format!("const {name} = {value}"));
+        }
+        code.push(format!("export {{ {name} as {} }}", json_string(alias)));
     }
     code.join("\n")
 }
@@ -1535,24 +1603,24 @@ export const animated = style({ animationName: spin })",
             ),
             r#"import { css, keyframes } from '@devup-ui/react'
 const spin = keyframes({"to":{"opacity":1}})
-const _ve0 = css({"padding":"1px"})
-const _ve1 = css({"padding":"2px"})
-export const animated = css({"animationName":"k"})
-export const box = css({"color":"red"})
+const _ve0 = css({"padding":"1px"}, "f0_0")
+const _ve1 = css({"padding":"2px"}, "f0_1")
+export const animated = css({"animationName":"k"}, "f0_4")
+export const box = css({"color":"red"}, "f0_2")
 export const sizes = { "sm": _ve0, "lg": _ve1 }
 export const alias = box"#
         );
         assert_eq!(
             generate("const _ve0 = 1\nexport const list = [style({ color: 'red' })]"),
             r#"import { css } from '@devup-ui/react'
-const _ve0_ = css({"color":"red"})
+const _ve0_ = css({"color":"red"}, "f0_0")
 export const list = [_ve0_]"#
         );
         assert_eq!(
             generate("export const animated = style({ animationName: keyframes({}) })"),
             r#"import { css, keyframes } from '@devup-ui/react'
 const _ve0 = keyframes({})
-export const animated = css({"animationName":"__style_0__"})"#
+export const animated = css({"animationName":"__style_0__"}, "f0_1")"#
         );
     }
 
@@ -1581,7 +1649,7 @@ export type Box = string
 export const symbol = Symbol('x')"
             ),
             r#"import { css } from '@devup-ui/react'
-const box = css({"color":"red"})
+const box = css({"color":"red"}, "f0_0")
 export const text = "plain \"quoted\""
 export const template = `${box} extra \`tick\` \${x} back\\slash __open`
 export const nothing = undefined
@@ -1610,11 +1678,11 @@ export const combined = style([tone.primary, 'external', [{ margin: 1 }]])
 globalStyle(`${tone.primary} > span`, { fontWeight: 700 })"
             ),
             r#"import { css, globalCss } from '@devup-ui/react'
-const _ve0 = css({"color":"blue"})
-const _ve1 = css({"color":"red"}, "f0__ve1")
-const _ve2 = css({"padding":"4px","content":"sm"})
-export const combined = css({"color":"red"}, "f0__ve1", "external", {"margin":"1px"})
-globalCss({ ".f0__ve1 > span": {"fontWeight":700} })
+const _ve0 = css({"color":"blue"}, "f0_0")
+const _ve1 = css({"color":"red"}, "f0_1")
+const _ve2 = css({"padding":"4px","content":"sm"}, "f0_2")
+export const combined = css({"color":"red"}, "f0_1", "external", {"margin":"1px"}, "f0_3")
+globalCss({ ".f0_1 > span": {"fontWeight":700} })
 export const tone = { "0": _ve0, "primary": _ve1 }
 export const space = { "sm": _ve2 }
 export const none = {}"#
@@ -1634,10 +1702,10 @@ export const later = style([first, second])
 export const again = style([first, second, first])"
             ),
             r#"import { css } from '@devup-ui/react'
-export const again = css({"color":"red","margin":"1px"}, {"color":"blue"}, {"color":"red","margin":"1px"})
-const first = css({"color":"red","margin":"1px"})
-export const later = css({"color":"red","margin":"1px"}, {"color":"blue"})
-const second = css({"color":"blue"})"#
+export const again = css({"color":"red","margin":"1px"}, "f0_0", {"color":"blue"}, "f0_1", {"color":"red","margin":"1px"}, "f0_0", "f0_3")
+const first = css({"color":"red","margin":"1px"}, "f0_0")
+export const later = css({"color":"red","margin":"1px"}, "f0_0", {"color":"blue"}, "f0_1", "f0_2")
+const second = css({"color":"blue"}, "f0_1")"#
         );
     }
 
@@ -1655,13 +1723,13 @@ export const g = style(5)
 export const hover = style({ selectors: { [`${a}:hover &`]: { color: 'blue' } } })"
             ),
             r#"import { css } from '@devup-ui/react'
-const a = css({"color":"red"}, "f0_a")
-const b = css({"color":"red"}, "f0_a", {"margin":"2px"})
-export const c = css({"color":"red"}, "f0_a", {"margin":"2px"}, {"padding":"3px"})
-const e = css({})
-export const f = css({"color":"red"}, "f0_a")
-export const g = css({})
-export const hover = css({"selectors":{".f0_a:hover &":{"color":"blue"}}})"#
+const a = css({"color":"red"}, "f0_0")
+const b = css({"color":"red"}, "f0_0", {"margin":"2px"}, "f0_1")
+export const c = css({"color":"red"}, "f0_0", {"margin":"2px"}, "f0_1", {"padding":"3px"}, "f0_2")
+const e = css("f0_3")
+export const f = css("f0_3", {"color":"red"}, "f0_0", "f0_4")
+export const g = css("f0_5")
+export const hover = css({"selectors":{".f0_0:hover &":{"color":"blue"}}}, "f0_6")"#
         );
     }
 
@@ -1700,7 +1768,7 @@ export const box = style({ vars: { [plain]: '1px', '--raw': 2 }, width: plain, p
             r#"import { css, globalCss } from '@devup-ui/react'
 globalCss`@property --size-0-2{syntax:"<length>";inherits:false;initial-value:0px}`
 globalCss`@property --var-0-3{syntax:"<length> | <percentage>";inherits:true}`
-export const box = css({"vars":{"--var-0-0":"1px","--raw":2},"width":"var(--var-0-0)","padding":0,"zIndex":2,"margin":[1,2]})
+export const box = css({"vars":{"--var-0-0":"1px","--raw":2},"width":"var(--var-0-0)","padding":0,"zIndex":2,"margin":[1,2]}, "f0_0")
 export const plain = "var(--var-0-0)"
 export const named = "var(--_9_lives-0-1)"
 export const typed = "var(--size-0-2)"
@@ -1761,7 +1829,7 @@ export const box = style({ vars: assigned })
 export const emptyVars = createTheme({})"
             ),
             r#"import { css, globalCss } from '@devup-ui/react'
-export const box = css({"vars":{"--color-brand-0-0":"red"}})
+export const box = css({"vars":{"--color-brand-0-0":"red"}}, "f0_0")
 globalCss({ ".theme-0-2": {"@layer":"theme","--color-brand-0-3":"blue","--size-0-4":"4"} })
 globalCss({ ".dark-0-5": {"--color-brand-0-0":"black","--color-text-0-1":"white"} })
 globalCss({ ".theme-0-6": {"--color-brand-0-0":"x"} })

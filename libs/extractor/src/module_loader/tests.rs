@@ -12,10 +12,12 @@ mod artifact_identity;
 mod artifacts;
 mod css_paths;
 mod css_reads;
+mod imported_selectors;
 mod regressions;
 mod retained_css;
 mod sandbox;
 mod side_effect_dependency;
+mod theme_exports;
 
 type Files = &'static [(&'static str, &'static str)];
 
