@@ -23,6 +23,7 @@ import {
   createPreparedResolver,
   type ModuleResolver,
 } from './prepared-resolver'
+import { PreparedSourceTypeError, readPreparedSource } from './prepared-source'
 import {
   createNodeModulesExcludeRegex,
   SOURCE_EXTENSIONS,
@@ -147,7 +148,13 @@ export function buildStaticImportGraph(
 }
 
 export type PreparedSource =
-  string | { readonly code: string; readonly map?: unknown } | undefined
+  | string
+  | {
+      readonly code: string
+      readonly map?: unknown
+      readonly sourceType?: import('./prepared-source').SourceType
+    }
+  | undefined
 export type PrepareSource = (
   filename: string,
 ) => PreparedSource | Promise<PreparedSource>
@@ -163,6 +170,7 @@ class GraphPreparationError extends Error {
     const message = cause instanceof Error ? cause.message : String(cause)
     const location =
       cause instanceof Error &&
+      !(cause instanceof PreparedSourceTypeError) &&
       'line' in cause &&
       typeof cause.line === 'number'
         ? `${cause.line}:${'column' in cause && typeof cause.column === 'number' ? cause.column : 1}`
@@ -186,9 +194,10 @@ async function drivePreparedGraph(
     const filename = step.value
     let prepared: PreparedSource
     try {
-      prepared = await options.prepareSource(filename)
+      prepared = readPreparedSource(await options.prepareSource(filename))
     } catch (cause) {
       const located = new GraphPreparationError(filename, cause)
+      if (cause instanceof PreparedSourceTypeError) throw located
       const remapped = remapMdxError(located, filename)
       throw new Error(
         remapped.message.replaceAll(
@@ -256,6 +265,7 @@ function* traverseGraph(
             file,
             code,
             typeof prepared === 'object' ? prepared.map : undefined,
+            typeof prepared === 'object' ? prepared.sourceType : undefined,
           )
     for (const importRef of imports) {
       const resolution = resolver(importRef.specifier, file)
@@ -851,21 +861,27 @@ function parsePreparedImports(
   filename: string,
   source: string,
   map: unknown,
+  sourceType?: import('./prepared-source').SourceType,
 ): ImportReference[] {
-  return parseSourceImports(filename, source, { map })
+  return parseSourceImports(filename, source, { map, sourceType })
 }
 
 function parseSourceImports(
   filename: string,
   source: string,
-  prepared?: { readonly map: unknown },
+  prepared?: {
+    readonly map: unknown
+    readonly sourceType?: import('./prepared-source').SourceType
+  },
 ): ImportReference[] {
   const parser = getOxcParser()
   try {
     const ast = parser?.parseSync(
       filename,
       source,
-      prepared && !/\.[mc]?tsx?$/i.test(filename)
+      prepared &&
+        (prepared.sourceType === 'compiled-mdx' ||
+          !/\.[mc]?tsx?$/i.test(filename))
         ? { sourceType: 'module', lang: 'jsx' }
         : { sourceType: 'module' },
     )
@@ -886,9 +902,10 @@ function parseSourceImports(
   }
   return scanImports(
     source,
-    /\.[jt]sx$/i.test(filename) ||
+    prepared?.sourceType === 'compiled-mdx' ||
+      /\.[jt]sx$/i.test(filename) ||
       (prepared !== undefined && !/\.[mc]?ts$/i.test(filename)),
-    /\.[mc]?tsx?$/i.test(filename),
+    prepared?.sourceType !== 'compiled-mdx' && /\.[mc]?tsx?$/i.test(filename),
   )
 }
 
@@ -958,6 +975,7 @@ export function __setOxcParserForTest(
 export interface ResolvedModule {
   path: string
   code: string
+  readonly sourceType?: import('./prepared-source').SourceType
 }
 
 export interface CreateModuleResolverOptions {

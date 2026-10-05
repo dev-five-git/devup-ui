@@ -39,6 +39,7 @@ export {
   seedFileNumbers,
 } from './numbering'
 export type { ModuleResolver } from './prepared-resolver'
+export type { SourceType } from './prepared-source'
 export {
   createNodeModulesExcludeRegex,
   createThemeInterfaceArgs,

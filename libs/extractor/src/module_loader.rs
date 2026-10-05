@@ -87,11 +87,11 @@ fn is_evaluating(filename: &str) -> bool {
 /// Loads what a stylesheet imports, each module once, as JavaScript that
 /// defines the module's exports object ahead of the stylesheet
 pub(crate) struct ModuleLoader<'r> {
-    resolver: Option<&'r ModuleResolver>,
+    resolver: Option<&'r ModuleResolver<'r>>,
     option: &'r ExtractOption,
     /// Definitions of the loaded modules, each after the ones it uses
     definitions: Vec<String>,
-    loaded: FxHashMap<String, String>,
+    loaded: FxHashMap<crate::source_type::ModuleCacheKey, String>,
     /// `(path, name)` of the modules being defined, outermost first
     loading: Vec<(String, String)>,
     /// Names of modules imported before they finished evaluating, whose
@@ -138,11 +138,12 @@ impl<'r> ModuleLoader<'r> {
             .ok_or_else(|| format!("Cannot load '{specifier}' without a module resolver"))?;
         let module = resolver(specifier, importer)
             .ok_or_else(|| format!("Cannot resolve '{specifier}' from '{importer}'"))?;
+        let key = (module.path.clone(), module.code.clone(), module.source_type);
         let stylesheet = is_vanilla_extract_file(&module.path);
         if direct && stylesheet {
             self.keep_import(specifier);
         }
-        if let Some(name) = self.loaded.get(&module.path) {
+        if let Some(name) = self.loaded.get(&key) {
             return Ok(name.clone());
         }
         if let Some((_, name)) = self.loading.iter().find(|(path, _)| *path == module.path) {
@@ -165,15 +166,15 @@ impl<'r> ModuleLoader<'r> {
             // The stylesheet importing it is evaluated on its own, so it never
             // starts here
             self.pending.insert(name.clone());
-            self.loaded.insert(module.path, name.clone());
+            self.loaded.insert(key, name.clone());
             return Ok(name);
         }
         self.dependencies.insert(module.path.clone());
         self.loading.push((module.path.clone(), name.clone()));
         let defined = self.define(&name, module, stylesheet, resolver);
-        let (path, _) = self.loading.pop().unwrap_or_default();
+        self.loading.pop();
         defined?;
-        self.loaded.insert(path, name.clone());
+        self.loaded.insert(key, name.clone());
         Ok(name)
     }
 
@@ -187,12 +188,13 @@ impl<'r> ModuleLoader<'r> {
         let code = if stylesheet {
             // Extracted the way the bundler extracts it, so the names it
             // exports are the ones its own CSS uses
-            let output = crate::extract_with_source_map(
+            let output = crate::extract_with_source_type(
                 &module.path,
                 &module.code,
                 self.option.clone(),
                 false,
                 Some(resolver),
+                module.source_type,
             )
             .map_err(|error| error.to_string())?;
             self.dependencies.extend(output.dependencies);
@@ -200,7 +202,11 @@ impl<'r> ModuleLoader<'r> {
         } else {
             module.code
         };
-        let script = crate::vanilla_extract::strip_typescript(&code, &module.path);
+        let script = crate::vanilla_extract::strip_typescript_with_type(
+            &code,
+            &module.path,
+            module.source_type,
+        )?;
         let module_script = module_script(&script, &module.path, self, false)?;
         // Live bindings: a read before the binding is initialized fails as it
         // does in an ES module

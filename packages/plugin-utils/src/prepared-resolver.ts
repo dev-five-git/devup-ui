@@ -7,6 +7,7 @@ import type {
   ResolvedModule,
 } from './import-graph'
 import { remapMdxError } from './mdx-errors'
+import { readPreparedSource } from './prepared-source'
 import type { MdxSelection } from './source-selection'
 
 export interface ModuleResolver {
@@ -40,7 +41,12 @@ export function createPreparedResolver(options: {
 }) {
   const generations = new Map<
     string,
-    { readonly filename: string; readonly code: string; readonly map?: unknown }
+    {
+      readonly filename: string
+      readonly code: string
+      readonly map?: unknown
+      readonly sourceType?: import('./prepared-source').SourceType
+    }
   >()
   const idsByFilename = new Map<string, string>()
   const remappedErrors = new WeakSet<Error>()
@@ -67,7 +73,7 @@ export function createPreparedResolver(options: {
           markdownExtensions.has(extname(filename).toLowerCase())
         )
           throw new TypeError('Markdown source has no prepared JavaScript')
-        return prepared
+        return readPreparedSource(prepared)
       } catch (cause) {
         throw new ModulePreparationError(importer, filename, cause)
       }
@@ -85,7 +91,13 @@ export function createPreparedResolver(options: {
         typeof prepared === 'string' ? { code: prepared } : prepared
       generations.set(id, { filename, ...source })
       idsByFilename.set(filename, id)
-      return { path: id, code: source.code }
+      return {
+        path: id,
+        code: source.code,
+        ...(source.sourceType === undefined
+          ? {}
+          : { sourceType: source.sourceType }),
+      }
     },
     remapError(error: unknown): Error {
       if (error instanceof Error && remappedErrors.has(error)) return error
