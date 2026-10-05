@@ -51,6 +51,7 @@ impl<'a> Visit<'a> for Check<'_> {
 
     fn visit_variable_declarator(&mut self, declarator: &VariableDeclarator<'a>) {
         if self.required(declarator) {
+            self.visit_binding_pattern(&declarator.id);
             if let Some(Expression::CallExpression(call)) =
                 declarator.init.as_ref().map(unwrap_syntax_only)
             {

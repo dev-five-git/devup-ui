@@ -20,6 +20,7 @@ mod stylex;
 mod stylex_boundary_coverage;
 mod stylex_entrypoint_controls;
 mod stylex_entrypoints;
+mod stylex_loader_patterns;
 mod stylex_residuals;
 mod theme_reads;
 
