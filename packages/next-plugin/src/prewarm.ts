@@ -3,6 +3,8 @@ import { extname, relative, resolve } from 'node:path'
 
 import {
   createModuleResolver,
+  type ModuleAliases,
+  type PrepareSource,
   type ResolvedModule,
   type StaticImportGraph,
 } from '@devup-ui/plugin-utils'
@@ -98,16 +100,20 @@ function followSpecifier(
     if (!name || !isPrewarmPackage(name, walk.libPackage, walk.include)) return
   }
   const resolved = resolveLocated(walk, specifier, importer)
-  if (resolved) addPackageFile(walk, resolved.path)
+  if (resolved) addPackageFile(walk, resolved)
 }
 
 /** Add a package file and, through the resolver, what it imports in turn. */
-function addPackageFile(walk: PackageWalk, entry: string): void {
-  const filename = preferEsmFile(entry)
+function addPackageFile(walk: PackageWalk, entry: ResolvedModule): void {
+  const filename = preferEsmFile(entry.path)
   if (!isExtractable(filename) || walk.seen.has(filename)) return
   walk.seen.add(filename)
   walk.files.add(toKey(walk.root, filename))
-  const source = readFileSync(filename, 'utf-8')
+  const source =
+    filename === entry.path
+      ? entry.code
+      : (walk.resolveModule(filename, filename)?.code ??
+        readFileSync(filename, 'utf-8'))
   for (const [, , specifier] of source.matchAll(IMPORT_SPECIFIER)) {
     followSpecifier(walk, specifier, filename)
   }
@@ -121,6 +127,12 @@ export interface CollectPrewarmFilesOptions {
   include: readonly string[]
   /** Also prewarm every source file of the graph, reachable or not */
   prewarmAll: boolean
+  readonly resolver?: {
+    readonly prepareSource?: PrepareSource
+    readonly alias?: ModuleAliases
+    readonly conditions?: readonly string[]
+    readonly includeMdx?: readonly string[]
+  }
 }
 
 /**
@@ -140,6 +152,7 @@ export function collectPrewarmFiles({
   libPackage,
   include,
   prewarmAll,
+  resolver,
 }: CollectPrewarmFilesOptions): string[] {
   const resolvedRoot = resolve(root)
   const files = new Set(
@@ -153,7 +166,7 @@ export function collectPrewarmFiles({
     root: resolvedRoot,
     libPackage,
     include,
-    resolveModule: createModuleResolver({ cwd: resolvedRoot }),
+    resolveModule: createModuleResolver({ cwd: resolvedRoot, ...resolver }),
     files,
     seen: new Set(),
   }

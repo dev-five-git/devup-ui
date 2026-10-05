@@ -1,4 +1,5 @@
 import { isMdxRecord } from './mdx-pipeline'
+import type { MdxDependencyReport } from './mdx-prepare-dependencies'
 
 export type PreparedMdx = {
   readonly filename: string
@@ -7,6 +8,8 @@ export type PreparedMdx = {
   readonly dependencies: readonly string[]
   readonly contextDependencies: readonly string[]
   readonly missingDependencies: readonly string[]
+  readonly buildDependencies: readonly string[]
+  readonly dependencyReports: readonly MdxDependencyReport[]
 }
 
 function fileDependencies(value: unknown): string[] {
@@ -15,7 +18,14 @@ function fileDependencies(value: unknown): string[] {
   return value.filter((file): file is string => typeof file === 'string')
 }
 
-export function prepared(filename: string, value: unknown): PreparedMdx {
+export function prepared(
+  filename: string,
+  value: unknown,
+  recorded: {
+    readonly build: readonly string[]
+    readonly reports: readonly MdxDependencyReport[]
+  } = { build: [], reports: [] },
+): PreparedMdx {
   if (!isMdxRecord(value) || !Array.isArray(value.result))
     throw new TypeError('loader runner returned no compiled source')
   const [source, map] = value.result
@@ -32,5 +42,7 @@ export function prepared(filename: string, value: unknown): PreparedMdx {
     ],
     contextDependencies: fileDependencies(value.contextDependencies),
     missingDependencies: fileDependencies(value.missingDependencies),
+    buildDependencies: [...new Set(recorded.build)],
+    dependencyReports: [...recorded.reports],
   }
 }

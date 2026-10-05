@@ -1,5 +1,7 @@
+import { readFileSync } from 'node:fs'
 import { join, relative, resolve } from 'node:path'
 
+import type { ModuleAliases, PreparedSource } from '@devup-ui/plugin-utils'
 import {
   buildCanonicalMap,
   buildStaticImportGraph,
@@ -13,6 +15,7 @@ import {
 
 import { locatedError } from './build-error'
 import { collectNextEntries } from './entries'
+import { EXTRACTABLE_EXTENSION } from './prewarm'
 import { elapsedMs, profileStart, reportProfile } from './profile'
 import type { AppContext } from './session'
 
@@ -184,6 +187,62 @@ export function planSources(context: AppContext): SourcePlan {
           routes.graph.fileSet.has(resolve(context.root, file)) ||
           file.split('/').includes('node_modules'),
       ),
+  })
+  return { ...routes, seedFiles }
+}
+
+export function sourceDiscoveryExcludes(
+  context: AppContext,
+): readonly string[] {
+  return Object.freeze([
+    '.git',
+    resolve(context.nextDistDir),
+    resolve(context.distDir),
+  ])
+}
+
+export async function planPreparedSources(
+  context: AppContext,
+  settings: {
+    readonly extensions: readonly string[]
+    readonly aliases: ModuleAliases
+    readonly conditions: readonly string[]
+    readonly cacheReader: (filename: string) => PreparedSource
+  },
+): Promise<SourcePlan> {
+  const exclude = sourceDiscoveryExcludes(context)
+  const graph = await buildStaticImportGraph(
+    [...context.sourceRoots, context.root],
+    join(context.root, 'tsconfig.json'),
+    {
+      cwd: context.root,
+      include: context.include,
+      exclude,
+      includeMdx: settings.extensions,
+      alias: settings.aliases,
+      conditions: settings.conditions,
+      prepareSource: settings.cacheReader,
+    },
+  )
+  const routes = planSourceGraph(context, graph)
+  const numbered = collectNumberedFiles({
+    roots: [...context.sourceRoots, context.root],
+    include: [...context.include],
+    cwd: context.root,
+    exclude,
+    includeMdx: settings.extensions,
+    toId: (path) => relative(context.root, path).replaceAll('\\', '/'),
+  })
+  const needles = extractedNeedles(context.libPackage, context.importAliases)
+  const seedFiles = numbered.filter((file) => {
+    const source = settings.cacheReader(resolve(context.root, file))
+    // Numbering uses the extracted text, including styles injected by the compiler.
+    const text =
+      (typeof source === 'string' ? source : source?.code) ??
+      (EXTRACTABLE_EXTENSION.test(file)
+        ? readFileSync(resolve(context.root, file), 'utf8')
+        : undefined)
+    return text !== undefined && needles.some((needle) => text.includes(needle))
   })
   return { ...routes, seedFiles }
 }
