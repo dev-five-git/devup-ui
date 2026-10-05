@@ -32,6 +32,13 @@ use std::rc::Rc;
 mod serialization;
 use serialization::value_to_code;
 
+mod contracts;
+mod token_walk;
+mod vars;
+use contracts::{assign_vars, assign_vars_api, create_global_theme_contract};
+use token_walk::walk_object;
+use vars::fallback_var;
+
 /// A `style()` or `keyframes()` call
 #[derive(Debug, Clone, Default)]
 pub struct StyleEntry {
@@ -960,19 +967,6 @@ fn property_rule(name: &str, declaration: &JsObject, context: &mut Context) -> J
     Ok(rule)
 }
 
-/// `fallbackVar(...values)`: each `var()` falls back to the values after it
-fn fallback_var(_this: &JsValue, args: &[JsValue], context: &mut Context) -> JsResult<JsValue> {
-    let mut result = String::new();
-    for (index, value) in args.iter().rev().enumerate() {
-        let value = to_text(value, context)?;
-        result = match value.strip_suffix(')') {
-            Some(head) if index > 0 => format!("{head}, {result})"),
-            _ => value,
-        };
-    }
-    Ok(js_string!(result).into())
-}
-
 fn create_container(collector: &StyleCollector, args: &[JsValue]) -> JsValue {
     let name = collector
         .borrow_mut()
@@ -1020,37 +1014,6 @@ fn global_layer(
     Ok(declare_layer(collector, parent, name))
 }
 
-type Leaf<'a> = dyn FnMut(&JsValue, &[String], &mut Context) -> JsResult<JsValue> + 'a;
-
-/// vanilla-extract's `walkObject`: `tokens` with every string, number or empty
-/// leaf replaced by `leaf(value, path)`; other values are skipped
-fn walk_object(
-    tokens: &JsValue,
-    context: &mut Context,
-    path: &mut Vec<String>,
-    leaf: &mut Leaf<'_>,
-) -> JsResult<JsValue> {
-    let walked = ObjectInitializer::new(context).build();
-    if let Some(object) = tokens.as_object() {
-        for (key, name) in own_keys(&object, context)? {
-            let value = object.get(key, context)?;
-            path.push(name.clone());
-            let mapped = if value.is_string() || value.is_number() || value.is_null_or_undefined() {
-                Some(leaf(&value, path, context)?)
-            } else if value.as_object().is_some_and(|object| !object.is_array()) {
-                Some(walk_object(&value, context, path, leaf)?)
-            } else {
-                None
-            };
-            path.pop();
-            if let Some(mapped) = mapped {
-                walked.set(js_string!(name), mapped, false, context)?;
-            }
-        }
-    }
-    Ok(walked.into())
-}
-
 /// A contract of `tokens`' shape whose leaves read generated custom properties
 fn contract_of(
     collector: &StyleCollector,
@@ -1078,97 +1041,31 @@ fn create_theme_contract(
     contract_of(collector, args.get_or_undefined(0), context)
 }
 
-/// `createGlobalThemeContract(tokens, map?)`: leaves name their custom property,
-/// or `map(value, path)` does
-fn create_global_theme_contract(
-    _this: &JsValue,
-    args: &[JsValue],
-    context: &mut Context,
-) -> JsResult<JsValue> {
-    let map = args.get_or_undefined(1).as_callable();
-    walk_object(
-        args.get_or_undefined(0),
-        context,
-        &mut Vec::new(),
-        &mut |value, path, context| {
-            let name = match &map {
-                Some(map) => {
-                    let path = JsArray::from_iter(
-                        path.iter().map(|key| js_string!(key.as_str()).into()),
-                        context,
-                    );
-                    map.call(
-                        &JsValue::undefined(),
-                        &[value.clone(), path.into()],
-                        context,
-                    )?
-                }
-                None => value.clone(),
-            };
-            let name = to_text(&name, context)?;
-            Ok(js_string!(format!(
-                "var(--{})",
-                name.strip_prefix("--").unwrap_or(&name)
-            ))
-            .into())
-        },
-    )
-}
-
-/// `(custom property, value)` for every leaf of `tokens`, read from the same
-/// path of `contract`
-fn assign_vars(
-    contract: &JsValue,
-    tokens: &JsValue,
-    context: &mut Context,
-) -> JsResult<Vec<(String, String)>> {
-    let mut vars = Vec::new();
-    walk_object(
-        tokens,
-        context,
-        &mut Vec::new(),
-        &mut |value, path, context| {
-            let mut target = contract.clone();
-            for key in path {
-                target = match target.as_object() {
-                    Some(object) => object.get(js_string!(key.as_str()), context)?,
-                    None => JsValue::undefined(),
-                };
-            }
-            if let Some(reference) = js_str(&target) {
-                vars.push((var_name(&reference).to_string(), to_text(value, context)?));
-            }
-            Ok(JsValue::undefined())
-        },
-    )?;
-    Ok(vars)
-}
-
-fn assign_vars_api(_this: &JsValue, args: &[JsValue], context: &mut Context) -> JsResult<JsValue> {
-    let assigned = ObjectInitializer::new(context).build();
-    for (name, value) in assign_vars(args.get_or_undefined(0), args.get_or_undefined(1), context)? {
-        assigned.set(
-            js_string!(format!("var({name})")),
-            js_string!(value),
-            false,
-            context,
-        )?;
-    }
-    Ok(assigned.into())
-}
-
 /// `tokens` without its `@layer`, and the layer it names
 fn split_layer(tokens: &JsValue, context: &mut Context) -> JsResult<(JsValue, Option<String>)> {
     let Some(object) = tokens.as_object() else {
         return Ok((tokens.clone(), None));
     };
-    let mut layer = None;
+    if !object.has_property(js_string!("@layer"), context)? {
+        return Ok((tokens.clone(), None));
+    }
+    let layer = object.get(js_string!("@layer"), context)?;
+    let layer = if layer.to_boolean() {
+        Some(to_text(&layer, context)?)
+    } else {
+        None
+    };
     let rest = ObjectInitializer::new(context).build();
     for (key, name) in own_keys(&object, context)? {
-        let value = object.get(key, context)?;
-        if name == "@layer" {
-            layer = Some(to_text(&value, context)?);
-        } else {
+        if name != "@layer"
+            && boa_engine::builtins::object::OrdinaryObject::property_is_enumerable(
+                &object.clone().into(),
+                &[js_string!(name.as_str()).into()],
+                context,
+            )?
+            .to_boolean()
+        {
+            let value = object.get(key, context)?;
             rest.set(js_string!(name), value, false, context)?;
         }
     }
@@ -1193,7 +1090,11 @@ fn declare_theme(
         .map(|layer| format!("\"@layer\":{}", json_string(layer)))
         .collect();
     for (name, value) in &vars {
-        declarations.push(format!("{}:{}", json_string(name), json_string(value)));
+        declarations.push(format!(
+            "{}:{}",
+            json_string(var_name(name)),
+            json_string(value)
+        ));
     }
     collector
         .borrow_mut()
@@ -1870,7 +1771,7 @@ export const typed = createVar({ syntax: '<length>', inherits: false, initialVal
 export const union = createVar({ syntax: ['<length>', '<percentage>'], inherits: true })
 export const empty = createVar('')
 export const fallback = fallbackVar(plain, named, 'red')
-export const invalid = fallbackVar('red', 'blue')
+export const literal = fallbackVar('blue')
 export const none = fallbackVar()
 export const box = style({ vars: { [plain]: '1px', '--raw': 2 }, width: plain, padding: 0, zIndex: 2, margin: [1, 2] })"
             ),
@@ -1884,7 +1785,7 @@ export const typed = "var(--size-0-2)"
 export const union = "var(--var-0-3)"
 export const empty = "var(--var-0-4)"
 export const fallback = "var(--var-0-0, var(--_9_lives-0-1, red))"
-export const invalid = "red"
+export const literal = "blue"
 export const none = """#
         );
     }
@@ -1926,16 +1827,16 @@ export const anonymous = "container-0-5""#
                 "const contract = createThemeContract({ color: { brand: null, text: null }, list: [1], flag: true })
 export const [light, lightVars] = createTheme({ '@layer': 'theme', color: { brand: 'blue' }, size: 4 })
 export const dark = createTheme(contract, { color: { brand: 'black', text: 'white' } }, 'dark')
-export const partial = createTheme(contract, { color: { brand: 'x', missing: 'y' } })
-export const emptyTheme = createTheme(contract, {})
+export const partial = createTheme({ color: { brand: contract.color.brand } }, { color: { brand: 'x' } })
+export const emptyTheme = createTheme({}, {})
 export const globalVars = createGlobalTheme(':root', { space: '1px' })
-createGlobalTheme('.scope', contract, { '@layer': 'scoped', color: { text: 'grey' } })
+createGlobalTheme('.scope', { color: { text: contract.color.text } }, { '@layer': 'scoped', color: { text: 'grey' } })
 export const exact = createGlobalThemeContract({ color: 'brand-color', raw: '--raw' })
 export const mapped = createGlobalThemeContract({ color: { brand: null } }, (_value, path) => `x-${path.join('-')}`)
-export const assigned = assignVars(contract, { color: { brand: 'red' } })
-export const unassigned = assignVars(undefined, { a: 'b' })
+export const assigned = assignVars({ color: { brand: contract.color.brand } }, { color: { brand: 'red' } })
+export const unassigned = assignVars(undefined, {})
 export const box = style({ vars: assigned })
-export const notObject = createTheme('tokens')"
+export const emptyVars = createTheme({})"
             ),
             r#"import { css, globalCss } from '@devup-ui/react'
 export const box = css({"vars":{"--color-brand-0-0":"red"}})
@@ -1954,7 +1855,7 @@ export const exact = { "color": "var(--brand-color)", "raw": "var(--raw)" }
 export const mapped = { "color": { "brand": "var(--x-color-brand)" } }
 export const assigned = { "var(--color-brand-0-0)": "red" }
 export const unassigned = {}
-export const notObject = ["theme-0-9", {}]"#
+export const emptyVars = ["theme-0-9", {}]"#
         );
     }
 
@@ -2035,3 +1936,6 @@ const fade = keyframes({"from":{"opacity":0}})"#
 
 #[cfg(test)]
 mod coverage_tests;
+
+#[cfg(test)]
+mod semantic_tests;
