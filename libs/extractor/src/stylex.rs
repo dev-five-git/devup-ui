@@ -664,14 +664,14 @@ pub fn decompose_value_conditions(
                 continue;
             }
         };
-        if let Err(error) = validation::validate_at_rule_condition(&prop.key, "stylex.create") {
-            errors.push(error);
-            continue;
-        }
         let Some(key) = get_string_by_property_key(&prop.key) else {
             errors.push(key_error("stylex.create", &prop.key));
             continue;
         };
+        if let Err(error) = validation::validate_at_rule_condition(&prop.key, "stylex.create") {
+            errors.push(error);
+            continue;
+        }
 
         let final_assignment = assignments::is_final_assignment(&key, &obj.properties[index + 1..]);
         let condition = if key == "default" {

@@ -11,6 +11,7 @@ use crate::{ExtractOption, ExtractOutput, ExtractStyleValue};
 
 mod assignments;
 mod callers;
+mod coverage;
 mod edges;
 mod helpers;
 mod includes;
