@@ -111,47 +111,73 @@ Devup UI는 빌드 타임에 컴포넌트를 변환합니다. 클래스명은 CS
 
 **기본 변환:**
 
+생성된 클래스명과 CSS 변수명은 버전, 빌드 상태, 접두사 설정에 따라 달라질 수 있으므로 직접 재사용하지 마세요.
+
+개발자가 작성:
+
 ```tsx
-// 개발자가 작성:
+import { Box } from '@devup-ui/react'
+
 const example = <Box _hover={{ bg: 'blue' }} bg="red" p={4} />
+```
 
-// Devup UI가 생성:
-const generated = <div className="a b c" />
+Devup UI가 생성:
 
-// CSS:
-// .a { background-color: red; }
-// .b { padding: 1rem; }
-// .c:hover { background-color: blue; }
+```tsx
+import "@devup-ui/react/devup-ui.css";
+const example = <div className="a b c" />;
+```
+
+CSS:
+
+```css
+/*! devup-ui v1.0.82, | Apache License 2.0 | https://devup-ui.com */.b{background:red}.c{padding:16px}.a:hover{background:blue}
 ```
 
 **동적 값은 CSS 변수로 변환:**
 
+개발자가 작성:
+
 ```tsx
-// 개발자가 작성:
+import { Box } from '@devup-ui/react'
+
 const example = <Box bg={colorVariable} />
+```
 
-// Devup UI가 생성:
-const generated = <div className="a" style={{ '--a': colorVariable }} />
+Devup UI가 생성:
 
-// CSS:
-// .a { background-color: var(--a); }
+```tsx
+import "@devup-ui/react/devup-ui.css";
+const example = <div className="a" style={{ "--b": colorVariable }} />;
+```
+
+CSS:
+
+```css
+/*! devup-ui v1.0.82, | Apache License 2.0 | https://devup-ui.com */.a{background:var(--b)}
 ```
 
 **복잡한 표현식과 반응형 배열:**
 
+개발자가 작성:
+
 ```tsx
-// 개발자가 작성:
+import { Box } from '@devup-ui/react'
+
 const example = <Box bg={['red', 'blue', isActive ? 'green' : dynamicColor]} />
+```
 
-// Devup UI가 생성:
-const generated = (
-  <div
-    className={`a b ${isActive ? 'c' : 'd'}`}
-    style={{ '--d': dynamicColor }}
-  />
-)
+Devup UI가 생성:
 
-// 각 브레이크포인트에 대한 반응형 CSS 생성
+```tsx
+import "@devup-ui/react/devup-ui.css";
+const example = <div className={`a b ${isActive ? "c" : "d"}`} style={{ "--e": dynamicColor }} />;
+```
+
+각 브레이크포인트에 대한 반응형 CSS:
+
+```css
+/*! devup-ui v1.0.82, | Apache License 2.0 | https://devup-ui.com */.a{background:red}@media(min-width:480px){.b{background:blue}}@media(min-width:768px){.c{background:green}.d{background:var(--e)}}
 ```
 
 **타입 세이프 테마:**

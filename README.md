@@ -111,47 +111,73 @@ Devup UI transforms your components at build time. Class names are generated usi
 
 **Basic transformation:**
 
+Generated class and CSS variable names may change between versions, build state, and prefix settings; do not manually reuse them.
+
+You write:
+
 ```tsx
-// You write:
-const variable = <Box _hover={{ bg: 'blue' }} bg="red" p={4} />
+import { Box } from '@devup-ui/react'
 
-// Devup UI generates:
-const variable = <div className="a b c" />
+const example = <Box _hover={{ bg: 'blue' }} bg="red" p={4} />
+```
 
-// With CSS:
-// .a { background-color: red; }
-// .b { padding: 1rem; }
-// .c:hover { background-color: blue; }
+Devup UI generates:
+
+```tsx
+import "@devup-ui/react/devup-ui.css";
+const example = <div className="a b c" />;
+```
+
+With CSS:
+
+```css
+/*! devup-ui v1.0.82, | Apache License 2.0 | https://devup-ui.com */.b{background:red}.c{padding:16px}.a:hover{background:blue}
 ```
 
 **Dynamic values become CSS variables:**
 
+You write:
+
 ```tsx
-// You write:
+import { Box } from '@devup-ui/react'
+
 const example = <Box bg={colorVariable} />
+```
 
-// Devup UI generates:
-const example = <div className="a" style={{ '--a': colorVariable }} />
+Devup UI generates:
 
-// With CSS:
-// .a { background-color: var(--a); }
+```tsx
+import "@devup-ui/react/devup-ui.css";
+const example = <div className="a" style={{ "--b": colorVariable }} />;
+```
+
+With CSS:
+
+```css
+/*! devup-ui v1.0.82, | Apache License 2.0 | https://devup-ui.com */.a{background:var(--b)}
 ```
 
 **Complex expressions and responsive arrays:**
 
+You write:
+
 ```tsx
-// You write:
+import { Box } from '@devup-ui/react'
+
 const example = <Box bg={['red', 'blue', isActive ? 'green' : dynamicColor]} />
+```
 
-// Devup UI generates:
-const example = (
-  <div
-    className={`a b ${isActive ? 'c' : 'd'}`}
-    style={{ '--d': dynamicColor }}
-  />
-)
+Devup UI generates:
 
-// With responsive CSS for each breakpoint
+```tsx
+import "@devup-ui/react/devup-ui.css";
+const example = <div className={`a b ${isActive ? "c" : "d"}`} style={{ "--e": dynamicColor }} />;
+```
+
+With responsive CSS for each breakpoint:
+
+```css
+/*! devup-ui v1.0.82, | Apache License 2.0 | https://devup-ui.com */.a{background:red}@media(min-width:480px){.b{background:blue}}@media(min-width:768px){.c{background:green}.d{background:var(--e)}}
 ```
 
 **Type-safe theming:**
