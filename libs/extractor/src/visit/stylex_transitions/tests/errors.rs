@@ -41,3 +41,53 @@ fn invalid_inputs_are_located_when_the_call_cannot_lower(
     );
     assert!(error.contains("cannot use"), "{error}");
 }
+
+#[rstest]
+#[case("group", "true", "boolean true")]
+#[case("imagePair", "() => 1", "a function")]
+#[case("new", "function() { return 1; }", "a function")]
+#[case("old", "runtime.opacity", "an unknown-at-build-time value")]
+#[case("old", "getRuntime().opacity", "an unknown-at-build-time value")]
+#[serial]
+fn invalid_declarations_name_the_slot_and_kind_when_values_cannot_be_static(
+    #[case] slot: &str,
+    #[case] value: &str,
+    #[case] kind: &str,
+) {
+    // Given
+    reset();
+    let source = format!(
+        "import stylex from '@stylexjs/stylex';\nconst result=stylex.viewTransitionClass({{{slot}:{{opacity:{value}}}}});"
+    );
+    // When
+    let error = crate::extract("/src/errors.tsx", &source, crate::ExtractOption::default())
+        .err()
+        .unwrap_or_else(|| panic!("invalid declaration compiled: {source}"))
+        .to_string();
+    // Then
+    assert!(error.contains("/src/errors.tsx:2:"), "{error}");
+    assert!(error.contains("stylex.viewTransitionClass"), "{error}");
+    assert!(
+        error.contains(&format!("slot `{slot}`, declaration `opacity` has {kind}")),
+        "{error}"
+    );
+}
+
+#[rstest]
+#[case("keyframes()")]
+#[case("keyframes({to:{opacity:0}}, {to:{opacity:1}})")]
+#[serial]
+fn keyframes_arity_is_rejected_when_the_dependency_cannot_lower(#[case] call: &str) {
+    // Given
+    reset();
+    let source = format!("import stylex from '@stylexjs/stylex';\nconst fade=stylex.{call};");
+    // When
+    let error = crate::extract("/src/errors.tsx", &source, crate::ExtractOption::default())
+        .err()
+        .unwrap_or_else(|| panic!("invalid keyframes compiled: {source}"))
+        .to_string();
+    // Then
+    assert!(error.contains("/src/errors.tsx:2:12:"), "{error}");
+    assert!(error.contains("stylex.keyframes"), "{error}");
+    assert!(error.contains("cannot use"), "{error}");
+}

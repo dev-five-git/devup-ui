@@ -1,7 +1,7 @@
 use oxc_allocator::Allocator;
-use oxc_ast::ast::{Expression, Statement};
+use oxc_ast::ast::Expression;
 use oxc_ast::builder::AstBuilder;
-use oxc_parser::Parser;
+use oxc_parser::{ParseOptions, Parser};
 use oxc_span::SourceType;
 
 use super::{Constant, ModuleScope, Modules, constant_literal};
@@ -44,13 +44,16 @@ impl ModuleScope<'_, '_> {
             | StylexFunction::Include
             | StylexFunction::Types => return None,
         };
-        let code = format!("{};", value.js_literal()?);
+        let code = value.js_literal()?;
         let allocator = Allocator::default();
-        let parsed = Parser::new(&allocator, &code, SourceType::ts()).parse();
-        let Statement::ExpressionStatement(statement) = parsed.program.body.first()? else {
-            return None;
-        };
-        let Expression::ObjectExpression(object) = unwrap_syntax_only(&statement.expression) else {
+        let expression = Parser::new(&allocator, &code, SourceType::ts())
+            .with_options(ParseOptions {
+                preserve_parens: false,
+                ..ParseOptions::default()
+            })
+            .parse_expression()
+            .ok()?;
+        let Expression::ObjectExpression(object) = unwrap_syntax_only(&expression) else {
             return None;
         };
         let reader =
@@ -117,3 +120,6 @@ impl ModuleScope<'_, '_> {
         )))
     }
 }
+
+#[cfg(test)]
+mod tests;
