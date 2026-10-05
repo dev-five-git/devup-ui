@@ -33,6 +33,49 @@ fn css_retention_relativizes_when_paths_have_compatible_roots(
 }
 
 #[rstest::rstest]
+#[case("/src/card.css.ts", "/../../styles/global.css", "../styles/global.css")]
+#[case("/../../src/card.css.ts", "/styles/global.css", "../styles/global.css")]
+#[case(
+    "C:\\src\\card.css.ts",
+    "c:\\..\\..\\styles\\global.css",
+    "../styles/global.css"
+)]
+fn css_retention_clamps_parent_traversal_when_absolute_paths_reach_volume_root(
+    #[case] root: &str,
+    #[case] target: &str,
+    #[case] expected: &str,
+) -> Result<(), crate::module_loader::retained_css::PathError> {
+    // Given / When
+    let relative = relative_specifier(root, target)?;
+    // Then
+    assert_eq!(relative, expected);
+    Ok(())
+}
+
+#[rstest::rstest]
+#[case(
+    "src/card.css.ts",
+    "../../styles/global.css",
+    "../../../styles/global.css"
+)]
+#[case(
+    "../../src/card.css.ts",
+    "styles/global.css",
+    "../../../styles/global.css"
+)]
+fn css_retention_preserves_parent_segments_when_relative_paths_start_above_base(
+    #[case] root: &str,
+    #[case] target: &str,
+    #[case] expected: &str,
+) -> Result<(), crate::module_loader::retained_css::PathError> {
+    // Given / When
+    let relative = relative_specifier(root, target)?;
+    // Then
+    assert_eq!(relative, expected);
+    Ok(())
+}
+
+#[rstest::rstest]
 #[case("C:/app/card.css.ts", "D:/styles/global.css")]
 #[case("src/card.css.ts", "/styles/global.css")]
 fn css_retention_rejects_when_paths_have_incompatible_roots(

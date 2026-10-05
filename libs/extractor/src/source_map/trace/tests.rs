@@ -78,3 +78,70 @@ fn existing_duplicate_marks_keep_the_last_mapping_when_syntax_marks_are_added() 
     // Then
     assert_eq!(Trace::new(&marked, &[]).resolve(&generated, source, 0), 6);
 }
+
+#[rstest::rstest]
+#[case::computed_member(
+    "const value=(  function () { return registry; }  )()[key].run();",
+    "(function",
+    "function"
+)]
+#[case::private_field(
+    "class Vault { #run; invoke() { return (  function () { return holder; }  )().#run().next(); } }",
+    "(function",
+    "function"
+)]
+fn nested_callee_marks_use_the_original_expression_start_when_grouping_is_printed(
+    #[case] source: &str,
+    #[case] generated_group: &str,
+    #[case] original_expression: &str,
+) -> Result<(), &'static str> {
+    // Given
+    let allocator = Allocator::default();
+    let parsed = Parser::new(&allocator, source, SourceType::mjs()).parse();
+    assert_eq!(parsed.diagnostics.len(), 0);
+    let output = Codegen::new()
+        .with_options(CodegenOptions {
+            source_map_path: Some(PathBuf::from("nested.js")),
+            ..CodegenOptions::default()
+        })
+        .build(&parsed.program);
+    let generated_start = output
+        .code
+        .find(generated_group)
+        .ok_or("expected codegen expression grouping")?;
+    let original_start = source
+        .find(original_expression)
+        .ok_or("expected original expression token")?;
+    let sparse: Vec<_> = marks(
+        &output.map.ok_or("expected codegen source map")?,
+        &output.code,
+        source,
+    )
+    .into_iter()
+    .filter(|&(at, _)| at != generated_start)
+    .collect();
+    let mut marked = sparse.clone();
+
+    // When
+    complete_marks(&parsed.program, &output.code, &mut marked);
+
+    // Then
+    let starts: Vec<_> = marked
+        .iter()
+        .filter(|&&(at, _)| at == generated_start)
+        .map(|&(_, original)| original)
+        .collect();
+    assert_eq!(starts.first(), Some(&original_start));
+    assert_eq!(starts, vec![original_start; starts.len()]);
+    assert_eq!(
+        Trace::new(&marked, &[]).resolve(&output.code, source, generated_start),
+        original_start
+    );
+    let retained: Vec<_> = marked
+        .iter()
+        .copied()
+        .filter(|(at, _)| sparse.binary_search_by_key(at, |(at, _)| *at).is_ok())
+        .collect();
+    assert_eq!(retained, sparse);
+    Ok(())
+}
