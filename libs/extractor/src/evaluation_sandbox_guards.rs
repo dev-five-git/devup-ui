@@ -1,5 +1,6 @@
 //! What the sandbox forbids reading, and the source that guards the globals.
 
+use super::reflection::{check_accessor, check_descriptor};
 use super::{Evidence, function, record};
 
 pub(super) const EXACT_GLOBALS: &[&str] = &[
@@ -55,7 +56,7 @@ pub(super) const EXACT_GLOBALS: &[&str] = &[
     "console",
 ];
 use boa_engine::{
-    Context, JsArgs, JsError, JsObject, JsResult, JsString, JsValue, NativeFunction, js_string,
+    Context, JsArgs, JsError, JsObject, JsResult, JsString, JsValue, NativeFunction,
     object::FunctionObjectBuilder, property::PropertyDescriptor,
 };
 
@@ -97,7 +98,7 @@ fn guard_method(context: &mut Context, holder: &JsObject, label: (&str, &str)) -
         JsString::from(method),
         PropertyDescriptor::builder()
             .get(guard.clone())
-            .set(setter)
+            .set(setter.clone())
             .enumerable(false)
             .configurable(true),
         context,
@@ -107,6 +108,10 @@ fn guard_method(context: &mut Context, holder: &JsObject, label: (&str, &str)) -
             .methods
             .borrow_mut()
             .push((guard, format!("{owner}.{method}")));
+        evidence
+            .methods
+            .borrow_mut()
+            .push((setter, format!("{owner}.{method}")));
     }
     Ok(())
 }
@@ -135,11 +140,14 @@ pub(super) fn guard_methods(context: &mut Context) -> JsResult<()> {
 
 fn guard_descriptor(context: &mut Context) -> JsResult<()> {
     let object = context.intrinsics().constructors().object().constructor();
+    let prototype = context.intrinsics().constructors().object().prototype();
     let reflect = context.intrinsics().objects().reflect();
     for (holder, name, batch) in [
-        (&object, "getOwnPropertyDescriptor", false),
-        (&object, "getOwnPropertyDescriptors", true),
-        (&reflect, "getOwnPropertyDescriptor", false),
+        (&object, "getOwnPropertyDescriptor", Some(false)),
+        (&object, "getOwnPropertyDescriptors", Some(true)),
+        (&reflect, "getOwnPropertyDescriptor", Some(false)),
+        (&prototype, "__lookupGetter__", None),
+        (&prototype, "__lookupSetter__", None),
     ] {
         let original = holder
             .get(JsString::from(name), context)?
@@ -148,22 +156,26 @@ fn guard_descriptor(context: &mut Context) -> JsResult<()> {
         let wrapper = FunctionObjectBuilder::new(
             &realm,
             NativeFunction::from_copy_closure_with_captures(
-                |this, args, captures: &(JsObject, bool), context| {
+                |this, args, captures: &(JsObject, Option<bool>), context| {
                     let site = context
                         .get_data::<Evidence>()
                         .and_then(|evidence| evidence.site.borrow().clone());
                     let value = captures.0.call(this, args, context)?;
-                    if captures.1 {
-                        let descriptors = value.to_object(context)?;
-                        for key in descriptors.own_property_keys(context)? {
-                            check_descriptor(
-                                &descriptors.get(key, context)?,
-                                site.clone(),
-                                context,
-                            )?;
+                    match captures.1 {
+                        Some(true) => {
+                            let descriptors = value.to_object(context)?;
+                            for key in descriptors.own_property_keys(context)? {
+                                check_descriptor(
+                                    &descriptors.get(key, context)?,
+                                    site.clone(),
+                                    context,
+                                )?;
+                            }
                         }
-                    } else {
-                        check_descriptor(&value, site, context)?;
+                        Some(false) => {
+                            check_descriptor(&value, site, context)?;
+                        }
+                        None => check_accessor(&value, site, context)?,
                     }
                     Ok(value)
                 },
@@ -171,7 +183,7 @@ fn guard_descriptor(context: &mut Context) -> JsResult<()> {
             ),
         )
         .name(JsString::from(name))
-        .length(if batch { 1 } else { 2 })
+        .length(if batch == Some(false) { 2 } else { 1 })
         .build();
         holder.define_property_or_throw(
             JsString::from(name),
@@ -184,33 +196,6 @@ fn guard_descriptor(context: &mut Context) -> JsResult<()> {
         )?;
     }
     Ok(())
-}
-
-fn check_descriptor(
-    value: &JsValue,
-    site: Option<(String, u32)>,
-    context: &mut Context,
-) -> JsResult<()> {
-    let getter = value.as_object().and_then(|descriptor| {
-        descriptor
-            .borrow()
-            .properties()
-            .get(&js_string!("get").into())
-            .and_then(|property| property.value().cloned())
-    });
-    let name = context.get_data::<Evidence>().and_then(|evidence| {
-        evidence.methods.borrow().iter().find_map(|(method, name)| {
-            getter
-                .as_ref()?
-                .as_object()
-                .filter(|getter| getter == method)
-                .map(|_| name.clone())
-        })
-    });
-    match name {
-        Some(name) => Err(JsError::from_opaque(record(context, &name, site))),
-        None => Ok(()),
-    }
 }
 
 /// Globals the engine gives whose values depend on the locale or the clock;

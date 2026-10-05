@@ -7,8 +7,12 @@ use crate::import_alias_visit::{Edit, transform_import_aliases_with_edits};
 use crate::vanilla_extract::{Stylesheet, execute_located};
 use crate::{ExtractOption, ImportAlias, ResolvedModule};
 
+mod css_paths;
+mod css_reads;
 mod regressions;
+mod retained_css;
 mod sandbox;
+mod side_effect_dependency;
 
 type Files = &'static [(&'static str, &'static str)];
 

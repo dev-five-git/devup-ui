@@ -49,3 +49,32 @@ fn the_layers_of_edits_are_undone_last_made_first() {
     assert_eq!(trace.resolve("aXYZdG", "abcdef", 5), 4);
     assert_eq!(trace.resolve("aXYZdG", "abcdef", 0), 0);
 }
+
+#[rstest::rstest]
+#[case("const value = foo(bar());")]
+#[case("const value = (")]
+fn existing_marks_are_preserved_when_printed_syntax_cannot_be_paired(#[case] generated: &str) {
+    // Given
+    let source = "const value=foo();bar();";
+    let allocator = Allocator::default();
+    let parsed = Parser::new(&allocator, source, SourceType::mjs()).parse();
+    let mut marked = vec![(0, 6)];
+    // When
+    complete_marks(&parsed.program, generated, &mut marked);
+    // Then
+    assert_eq!(Trace::new(&marked, &[]).resolve(generated, source, 0), 6);
+}
+
+#[test]
+fn existing_duplicate_marks_keep_the_last_mapping_when_syntax_marks_are_added() {
+    // Given
+    let source = "const value=foo();";
+    let allocator = Allocator::default();
+    let parsed = Parser::new(&allocator, source, SourceType::mjs()).parse();
+    let generated = Codegen::new().build(&parsed.program).code;
+    let mut marked = vec![(0, 0), (0, 6)];
+    // When
+    complete_marks(&parsed.program, &generated, &mut marked);
+    // Then
+    assert_eq!(Trace::new(&marked, &[]).resolve(&generated, source, 0), 6);
+}

@@ -12,17 +12,20 @@ use oxc_ast::ast::{
 use oxc_parser::Parser;
 use oxc_semantic::SemanticBuilder;
 use oxc_span::{GetSpan, SourceType, Span};
-use oxc_syntax::symbol::SymbolId;
 use rustc_hash::{FxHashMap, FxHashSet};
 
 use crate::{ExtractOption, ModuleResolver, utils::is_vanilla_extract_file};
 
+mod import_bindings;
 pub(crate) mod operations;
+mod retained_css;
 mod script;
 #[cfg(test)]
 mod tests;
 mod validate;
 
+use import_bindings::{BindingSource, ImportBindings};
+use retained_css::{CssImport, RetainedCss};
 pub(crate) use script::{Body, Origin, SCRIPT_PATH, Script, Unit};
 pub(crate) use validate::validate;
 
@@ -69,6 +72,7 @@ fn is_evaluating(filename: &str) -> bool {
 enum LoadError {
     NoResolver,
     Unresolved,
+    CssPath(retained_css::PathError),
     /// The module's own error, told where it is already
     Failed(String),
 }
@@ -78,6 +82,10 @@ impl LoadError {
     /// `place` gives
     fn describe(self, specifier: &str, importer: &str, place: impl FnOnce() -> String) -> String {
         match self {
+            Self::NoResolver | Self::Unresolved if retained_css::is_css(specifier) => format!(
+                "{}: Cannot resolve CSS '{specifier}' from '{importer}': the stylesheet loads CSS through this helper and the file cannot be found. Fix: correct the path or import CSS from a component module; after creating a missing file, re-save the stylesheet to retry",
+                place()
+            ),
             Self::NoResolver => format!(
                 "{}: Cannot load '{specifier}' without a module resolver. Fix: build through a Devup UI plugin, which resolves imports, or write what '{specifier}' provides in this file",
                 place()
@@ -87,6 +95,7 @@ impl LoadError {
                 place()
             ),
             Self::Failed(error) => error,
+            Self::CssPath(error) => format!("{}: {}", place(), error.describe()),
         }
     }
 }
@@ -116,6 +125,8 @@ pub(crate) struct ModuleLoader<'r> {
     /// bindings are read when used, as ES modules read an import cycle
     pending: FxHashSet<String>,
     next_module: usize,
+    retained_css: RetainedCss,
+    css_bindings: FxHashMap<String, String>,
     /// Every file read, including those the loaded stylesheets read
     pub dependencies: BTreeSet<String>,
     /// What the stylesheet imports for its side effects, and the stylesheets it
@@ -124,6 +135,22 @@ pub(crate) struct ModuleLoader<'r> {
 }
 
 impl<'r> ModuleLoader<'r> {
+    /// Instantiates CSS objects without inventing any of their exports.
+    pub(crate) fn prepare_css(
+        &self,
+        context: &mut boa_engine::Context,
+    ) -> boa_engine::JsResult<()> {
+        for (name, file) in &self.css_bindings {
+            let object = crate::evaluation_sandbox::css_object(context, file)?;
+            context.register_global_property(
+                boa_engine::JsString::from(name.as_str()),
+                object,
+                boa_engine::property::Attribute::empty(),
+            )?;
+        }
+        Ok(())
+    }
+
     pub(crate) fn new(resolver: Option<&'r ModuleResolver>, option: &'r ExtractOption) -> Self {
         Self {
             resolver,
@@ -133,6 +160,8 @@ impl<'r> ModuleLoader<'r> {
             loading: Vec::new(),
             pending: FxHashSet::default(),
             next_module: 0,
+            retained_css: RetainedCss::default(),
+            css_bindings: FxHashMap::default(),
             dependencies: BTreeSet::new(),
             kept_imports: Vec::new(),
         }
@@ -141,6 +170,15 @@ impl<'r> ModuleLoader<'r> {
     fn keep_import(&mut self, specifier: &str) {
         if !self.kept_imports.iter().any(|kept| kept == specifier) {
             self.kept_imports.push(specifier.to_string());
+        }
+    }
+
+    fn keep_entry_import(&mut self, specifier: &str) {
+        if retained_css::is_generated(specifier, self.option)
+            || !retained_css::is_css(specifier)
+            || self.retained_css.keep_root(specifier, self.resolver)
+        {
+            self.keep_import(specifier);
         }
     }
 
@@ -171,6 +209,32 @@ impl<'r> ModuleLoader<'r> {
     fn load(&mut self, specifier: &str, importer: &str, direct: bool) -> Result<String, LoadError> {
         let resolver = self.resolver.ok_or(LoadError::NoResolver)?;
         let module = resolver(specifier, importer).ok_or(LoadError::Unresolved)?;
+        if retained_css::is_css(&module.path) {
+            if let Some(kept) = self
+                .retained_css
+                .retain(
+                    CssImport {
+                        specifier,
+                        path: &module.path,
+                        direct,
+                    },
+                    resolver,
+                    &mut self.kept_imports,
+                )
+                .map_err(LoadError::CssPath)?
+            {
+                self.keep_import(&kept);
+            }
+            if let Some(name) = self.loaded.get(&module.path) {
+                return Ok(name.clone());
+            }
+            let name = format!("__css_{}__", self.next_module);
+            self.next_module += 1;
+            self.css_bindings.insert(name.clone(), module.path.clone());
+            self.pending.insert(name.clone());
+            self.loaded.insert(module.path, name.clone());
+            return Ok(name);
+        }
         let stylesheet = is_vanilla_extract_file(&module.path);
         if direct && stylesheet {
             self.keep_import(specifier);
@@ -329,6 +393,9 @@ pub(crate) fn module_script(
     entry: bool,
 ) -> Result<ModuleScript, String> {
     let (script, filename) = (unit.script(), unit.filename());
+    if entry {
+        loader.retained_css.root = filename.to_string();
+    }
     let load_module = |loader: &mut ModuleLoader<'_>, specifier: &str, at: u32| {
         loader
             .load(specifier, filename, entry)
@@ -360,8 +427,7 @@ pub(crate) fn module_script(
     // Imports of a module still evaluating are read where they are used, as ES
     // modules read an import cycle
     let mut modules: FxHashMap<u32, String> = FxHashMap::default();
-    let mut lazy: FxHashMap<SymbolId, String> = FxHashMap::default();
-    let mut lazy_names: FxHashMap<String, String> = FxHashMap::default();
+    let mut bindings = ImportBindings::default();
     for statement in &program.body {
         let Statement::ImportDeclaration(import) = statement else {
             continue;
@@ -369,8 +435,14 @@ pub(crate) fn module_script(
         let source = import.source.value.as_str();
         let specifiers = import.specifiers.as_deref().map_or(&[][..], |s| s);
         if specifiers.is_empty() {
-            if entry && !crate::package_specifier::is_package(source, &package) {
-                loader.keep_import(source);
+            if !crate::package_specifier::is_package(source, &package)
+                && (entry || !retained_css::is_generated(source, loader.option))
+            {
+                if entry {
+                    loader.keep_entry_import(source);
+                } else {
+                    load_module(loader, source, import.source.span.start)?;
+                }
             }
             continue;
         }
@@ -380,44 +452,15 @@ pub(crate) fn module_script(
             load_module(loader, source, import.source.span.start)?
         };
         if loader.pending.contains(&module) {
-            let lazy_module = &module;
-            for specifier in specifiers {
-                let binding = match specifier {
-                    ImportDeclarationSpecifier::ImportSpecifier(specifier) => {
-                        format!("{lazy_module}[{:?}]", specifier.imported.name())
-                    }
-                    ImportDeclarationSpecifier::ImportDefaultSpecifier(_) => {
-                        format!("{lazy_module}[\"default\"]")
-                    }
-                    ImportDeclarationSpecifier::ImportNamespaceSpecifier(_) => module.clone(),
-                };
-                let local = specifier.local();
-                if let Some(symbol) = local.symbol_id.get() {
-                    lazy.insert(symbol, binding.clone());
-                }
-                lazy_names.insert(local.name.to_string(), binding);
-            }
+            let source = match loader.css_bindings.get(&module) {
+                Some(_) => BindingSource::Css(&module),
+                None => BindingSource::Module(&module),
+            };
+            bindings.link(specifiers, source);
         }
         modules.insert(import.span.start, module);
     }
-    let mut replacements: Vec<(u32, u32, String)> = Vec::new();
-    for (symbol, binding) in &lazy {
-        for reference in semantic.scoping().get_resolved_reference_ids(*symbol) {
-            let node = semantic.scoping().get_reference(*reference).node_id();
-            let span = semantic.nodes().kind(node).span();
-            let replacement = match semantic.nodes().parent_kind(node) {
-                AstKind::ObjectProperty(property) if property.shorthand => {
-                    format!(
-                        "{}: {binding}",
-                        &script[span.start as usize..span.end as usize]
-                    )
-                }
-                AstKind::ExportSpecifier(_) => continue,
-                _ => binding.clone(),
-            };
-            replacements.push((span.start, span.end, replacement));
-        }
-    }
+    let mut replacements = bindings.rewrites(&semantic, script);
     // CommonJS: `require` of a literal path loads the module like an import
     let commonjs = !program.body.iter().any(Statement::is_module_declaration)
         && semantic
@@ -437,11 +480,12 @@ pub(crate) fn module_script(
                 && let [Argument::StringLiteral(specifier)] = call.arguments.as_slice()
             {
                 let module = load_module(loader, specifier.value.as_str(), specifier.span.start)?;
-                replacements.push((
-                    call.span.start,
-                    call.span.end,
-                    format!("(\"__exports__\" in {module} ? {module}.__exports__ : {module})"),
-                ));
+                let replacement = if loader.css_bindings.contains_key(&module) {
+                    module
+                } else {
+                    format!("(\"__exports__\" in {module} ? {module}.__exports__ : {module})")
+                };
+                replacements.push((call.span.start, call.span.end, replacement));
             }
         }
     }
@@ -499,10 +543,7 @@ pub(crate) fn module_script(
             Statement::ExportNamedDeclaration(export) => {
                 for specifier in &export.specifiers {
                     let local = export_name(&specifier.local);
-                    exports.push((
-                        export_name(&specifier.exported),
-                        lazy_names.get(&local).cloned().unwrap_or(local),
-                    ));
+                    exports.push((export_name(&specifier.exported), bindings.exported(local)));
                 }
             }
             Statement::ExportFromDeclaration(export) => {

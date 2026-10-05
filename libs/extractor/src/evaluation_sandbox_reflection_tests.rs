@@ -5,7 +5,7 @@ use rstest::rstest;
 
 use super::{Failure, Sandbox};
 
-fn run(script: &str) -> Result<JsValue, Failure> {
+pub(super) fn run(script: &str) -> Result<JsValue, Failure> {
     let mut context = Context::default();
     let sandbox = Sandbox::new(&mut context).map_err(Failure::Js)?;
     let source = super::instrument(script, "reflection.js");

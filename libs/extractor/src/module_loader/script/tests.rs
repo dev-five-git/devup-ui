@@ -1,4 +1,77 @@
 use super::*;
+use oxc_ast_visit::{Visit, walk};
+use oxc_span::SourceType;
+
+#[derive(Default)]
+struct Calls(Vec<usize>);
+
+impl<'a> Visit<'a> for Calls {
+    fn visit_call_expression(&mut self, call: &oxc_ast::ast::CallExpression<'a>) {
+        self.0.push(call.span.start as usize);
+        walk::walk_call_expression(self, call);
+    }
+}
+
+#[rstest::rstest]
+#[case("()=>{}")]
+#[case("function(){}")]
+#[case("(value)=>value")]
+#[case("async()=>{}")]
+fn anonymous_calls_keep_original_expression_starts_when_formatted(
+    #[case] function: &str,
+) -> Result<(), String> {
+    // Given
+    let source =
+        format!("const label: string='a  b';\nexport const value=({function}).read('key');");
+    let unit = Unit::written("anonymous.ts", &source, &source, &[])?;
+    let allocator = oxc_allocator::Allocator::default();
+    let parsed = oxc_parser::Parser::new(&allocator, unit.script(), SourceType::mjs()).parse();
+    let mut calls = Calls::default();
+    calls.visit_program(&parsed.program);
+    let at = *calls.0.first().ok_or("missing call")?;
+    let expected = source.find(function).ok_or("missing original function")?;
+    // When
+    let location = unit.place(at);
+    // Then
+    assert_eq!(location, crate::locate("anonymous.ts", &source, expected));
+    Ok(())
+}
+
+#[rstest::rstest]
+fn anonymous_calls_keep_distinct_original_sites_when_prior_layers_change(
+    #[values("\n", "\r\n", "\r", "\u{2028}", "\u{2029}")] newline: &str,
+) -> Result<(), String> {
+    // Given
+    let source = format!(
+        "import {{style}} from '@vanilla-extract/css';{newline}const label: string='😀  한';{newline}export const value=style({{first:(()=>{{}}).read('key')?'a  b':'c',second:(()=>{{}}).read('key')?'d':'e'}});"
+    );
+    let aliased = source.replace("@vanilla-extract/css", "@devup-ui/react");
+    let alias_start = source
+        .find("@vanilla-extract/css")
+        .ok_or("missing import")?;
+    let aliases = [(
+        alias_start,
+        alias_start + "@vanilla-extract/css".len(),
+        "@devup-ui/react".len(),
+    )];
+    let prefix = "const earlier: number=0;\n";
+    let code = format!("{prefix}{aliased}");
+    let earlier = [(0, 0, prefix.len())];
+    let unit = Unit::written("duplicates.ts", &code, &source, &[&earlier, &aliases])?;
+    let allocator = oxc_allocator::Allocator::default();
+    let parsed = oxc_parser::Parser::new(&allocator, unit.script(), SourceType::mjs()).parse();
+    let mut calls = Calls::default();
+    calls.visit_program(&parsed.program);
+    let expected: Vec<_> = source
+        .match_indices("()=>{}")
+        .map(|(at, _)| crate::locate("duplicates.ts", &source, at))
+        .collect();
+    // When
+    let locations: Vec<_> = calls.0.iter().skip(1).map(|&at| unit.place(at)).collect();
+    // Then
+    assert_eq!(locations, expected);
+    Ok(())
+}
 
 #[test]
 fn a_generated_module_is_told_by_its_file() {

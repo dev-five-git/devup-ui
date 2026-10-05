@@ -133,3 +133,25 @@ fn every_kind_of_error_has_a_fix() {
     assert!(fix("RangeError: x").starts_with("remove or guard the code"));
     assert!(fix("ReferenceError: x is not initialized").starts_with("remove or guard the code"));
 }
+
+#[test]
+fn generic_fix_is_preserved_when_user_prose_mentions_css_exports() {
+    // Given
+    for error in [
+        "Error: Cannot read CSS export 'card' of '/styles.css'",
+        "ReferenceError: user says ReferenceError: Cannot read CSS export 'card'",
+    ] {
+        // When
+        let told = tell(error);
+        // Then
+        assert_eq!(
+            parts(&told).0,
+            format!("/fallback.ts: JS execution error: {error}")
+        );
+        assert_eq!(
+            parts(&told).1,
+            "remove or guard the code that fails here, or correct the cause above, so the stylesheet evaluates without throwing"
+        );
+        assert_eq!(told.matches("Fix:").count(), 1);
+    }
+}

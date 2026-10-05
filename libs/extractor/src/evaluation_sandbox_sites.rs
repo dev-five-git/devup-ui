@@ -7,6 +7,9 @@ use oxc_ast_visit::{Visit, walk};
 use oxc_semantic::{Scoping, SemanticBuilder};
 use oxc_span::{GetSpan, SourceType, Span};
 
+#[path = "evaluation_sandbox_sites_operations.rs"]
+mod operations;
+
 /// Source edits and read coordinates, reusable before module mapper code generation.
 pub(crate) struct Instrumented {
     pub(crate) code: String,
@@ -200,6 +203,7 @@ pub(crate) fn instrument(source: &str, path: &str) -> Instrumented {
     };
     if parsed.diagnostics.is_empty() {
         reads.visit_program(&parsed.program);
+        operations::Operations(&mut reads).visit_program(&parsed.program);
     }
     reads
         .changes

@@ -102,6 +102,9 @@ fn parse(error: &str) -> (String, Vec<Frame<'_>>, Option<Place>) {
 
 /// What to change for an error to stop
 fn fix(cause: &str) -> String {
+    if cause.starts_with("ReferenceError: Cannot read CSS export '") {
+        return "use the class in a runtime component (className={styles.card}) or write the style with css()".to_string();
+    }
     if cause.contains(IMPORT_CYCLE) {
         return "break the import cycle, or read the imported value only after both modules finished evaluating, for example inside a function called later".to_string();
     }

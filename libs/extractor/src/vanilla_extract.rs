@@ -293,8 +293,8 @@ pub(crate) fn execute_located(
     let file_num = get_file_num_by_filename(filename);
     let run = loader.script(&entry);
     let imports = StylesheetImports {
-        dependencies: loader.dependencies,
-        kept_imports: loader.kept_imports,
+        dependencies: std::mem::take(&mut loader.dependencies),
+        kept_imports: std::mem::take(&mut loader.kept_imports),
     };
     let imported = crate::module_loader::evaluating_import();
     if imported
@@ -314,6 +314,9 @@ pub(crate) fn execute_located(
     }));
     let mut context = Context::default();
     let sandbox = crate::evaluation_sandbox::Sandbox::new(&mut context)
+        .map_err(|error| run.explain(&error.to_string(), filename))?;
+    loader
+        .prepare_css(&mut context)
         .map_err(|error| run.explain(&error.to_string(), filename))?;
     let operations = crate::module_loader::operations::Operations::new(&run.text);
     operations
@@ -387,6 +390,9 @@ fn sandbox_error(
         crate::evaluation_sandbox::Failure::Forbidden(violations) => violations
             .iter()
             .map(|violation| {
+                if let Some(message) = violation.css_message() {
+                    return run.explain(&rebase(message), filename);
+                }
                 let recorded = rebase(&violation.error().to_string());
                 let frames = recorded.find("\n    at ").map_or("", |at| &recorded[at..]);
                 let immutable = format!(
@@ -671,10 +677,11 @@ fn strip(code: &str, filename: &str) -> Stripped {
             ..CodegenOptions::default()
         })
         .build(&program);
-    let marks = generated
+    let mut marks = generated
         .map
         .map(|map| source_map::marks(&map, &generated.code, code))
         .unwrap_or_default();
+    source_map::complete_marks(&program, &generated.code, &mut marks);
     Stripped {
         code: generated.code,
         marks,

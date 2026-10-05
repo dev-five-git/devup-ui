@@ -9,7 +9,7 @@ use crate::import_alias_visit::{Edit, source_offset};
 
 mod trace;
 
-pub(crate) use trace::{Trace, marks};
+pub(crate) use trace::{Trace, complete_marks, marks};
 
 /// Where the lines of a text start, split as the codegen splits them
 pub(crate) struct Lines<'t> {
