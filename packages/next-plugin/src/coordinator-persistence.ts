@@ -1,6 +1,11 @@
 import { writeFileAtomically } from '@devup-ui/plugin-utils'
 
 import {
+  type CommitControl,
+  commitTransaction,
+  CompensationError,
+} from './coordinator-transaction'
+import {
   type CoordinatorSnapshot,
   CoordinatorStateError,
   createSnapshotCommitter,
@@ -8,6 +13,7 @@ import {
 } from './state'
 
 export interface Persistence {
+  assertHealthy(): void
   /** Note that a new state was accepted and is not on disk yet. */
   accept(): void
   /** Commit the state `capture` returns, covering everything accepted so far. */
@@ -16,6 +22,7 @@ export interface Persistence {
   commitCandidate(
     snapshot: CoordinatorSnapshot,
     previous: CoordinatorSnapshot,
+    control?: CommitControl,
   ): Promise<void>
   /**
    * Commit the same way, but only if something accepted is not on disk yet:
@@ -71,7 +78,11 @@ export function createPersistence(files: {
   const enabled = stateFile !== undefined || revisionFile !== undefined
   let accepted = 0
   let persisted = 0
+  let quarantine: CompensationError | undefined
   const persistence: Persistence = {
+    assertHealthy() {
+      if (quarantine !== undefined) throw quarantine
+    },
     accept() {
       accepted += 1
     },
@@ -83,7 +94,25 @@ export function createPersistence(files: {
           })
         : Promise.resolve()
     },
-    async commitCandidate(snapshot, previous) {
+    async commitCandidate(snapshot, previous, control) {
+      if (quarantine !== undefined) throw quarantine
+      if (control !== undefined) {
+        await committer.drain()
+        try {
+          await commitTransaction(files, snapshot, {
+            signal: control.signal,
+            publish() {
+              control.publish()
+              writtenRevision = snapshot.revision
+              persisted = accepted
+            },
+          })
+        } catch (error) {
+          if (error instanceof CompensationError) quarantine = error
+          throw error
+        }
+        return
+      }
       predecessors.set(snapshot, previous)
       try {
         await persistence.commit(() => snapshot)
@@ -96,7 +125,10 @@ export function createPersistence(files: {
         ? persistence.commit(capture)
         : Promise.resolve()
     },
-    drain: () => committer.drain(),
+    async drain() {
+      persistence.assertHealthy()
+      await committer.drain()
+    },
   }
   return persistence
 }

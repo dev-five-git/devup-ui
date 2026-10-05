@@ -4,7 +4,7 @@ import {
   locatedError,
   toExtractResponse,
 } from './coordinator-engine'
-import { preparedInput } from './coordinator-generation'
+import { assertAdoptedRequest, preparedInput } from './coordinator-generation'
 import { type ExtractRequest, HttpError } from './coordinator-http'
 import { createInput } from './coordinator-ledger'
 import type { CoordinatorOptions, Core } from './coordinator-options'
@@ -24,7 +24,10 @@ interface Accepted {
  * through one queue, so the engine is never mutated by two requests at once.
  */
 export function createCore(options: CoordinatorOptions, project: string): Core {
-  const replay = createReplay(options, project)
+  let watchListener: ((inputs: readonly string[]) => void) | undefined
+  const replay = createReplay(options, project, (inputs) =>
+    watchListener?.(inputs),
+  )
   const {
     root,
     settings,
@@ -42,7 +45,10 @@ export function createCore(options: CoordinatorOptions, project: string): Core {
 
   let queue: Promise<unknown> = Promise.resolve()
   function mutate<T>(task: () => Promise<T>): Promise<T> {
-    const run = queue.then(task)
+    const run = queue.then(() => {
+      persistence.assertHealthy()
+      return task()
+    })
     // The caller sees a failure through `run`; the queue just keeps going.
     queue = run.then(
       () => undefined,
@@ -52,8 +58,20 @@ export function createCore(options: CoordinatorOptions, project: string): Core {
   }
 
   async function accept(request: ExtractRequest): Promise<Accepted> {
-    await reconcile(request.filename)
+    await reconcile(request)
     const prepared = preparedInput(live.generation, request)
+    if (live.generation?.ordinaryInputs !== undefined) {
+      await persistence.drain()
+      assertAdoptedRequest(ledger.list(), request)
+      const output =
+        ledger.lookup(request.filename, request.code) ??
+        extractSealed(
+          { live: live.engine, createEngine, configure, settings },
+          liveSnapshot(),
+          request,
+        ).output
+      return { output, committed: Promise.resolve(), cacheHit: true }
+    }
     const cached = ledger.lookup(request.filename, request.code)
     if (cached) {
       return {
@@ -113,20 +131,24 @@ export function createCore(options: CoordinatorOptions, project: string): Core {
           live.config?.files ?? [],
         )
       } catch (error) {
-        plan.fail(
-          request.filename,
-          error instanceof Error ? error.message : String(error),
-        )
+        if (live.generation?.ordinaryInputs === undefined) {
+          plan.fail(
+            request.filename,
+            error instanceof Error ? error.message : String(error),
+          )
+        }
         throw error
       }
     },
     async css({ fileNum, importMainCss, wait }) {
       if (watch) {
-        await mutate(() => reconcile())
-        return {
-          css: live.engine.getCss(fileNum, importMainCss),
-          policy: 'dev-current',
-        }
+        return mutate(async () => {
+          await reconcile()
+          return {
+            css: live.engine.getCss(fileNum, importMainCss),
+            policy: 'dev-current',
+          }
+        })
       }
       if (!wait) {
         throw new HttpError(
@@ -141,6 +163,9 @@ export function createCore(options: CoordinatorOptions, project: string): Core {
       }
       await plan.wait(fileNum)
       return mutate(async () => {
+        if (live.generation !== undefined) {
+          options.preparedSources?.validateForCssFinalization?.(live.generation)
+        }
         sealed = true
         return {
           css: live.engine.getCss(fileNum, importMainCss),
@@ -149,7 +174,15 @@ export function createCore(options: CoordinatorOptions, project: string): Core {
       })
     },
     startup: () => mutate(() => replay.startup()),
-    reconcile: () => mutate(() => reconcile()),
+    reconcile: (changedPaths) =>
+      mutate(() => reconcile(undefined, changedPaths)),
+    watchInputs: () => live.generation?.watchInputs ?? [],
+    onWatchInputs(listener) {
+      watchListener = listener
+      return () => {
+        if (watchListener === listener) watchListener = undefined
+      }
+    },
     async flush() {
       await queue
       await persistence.drain()

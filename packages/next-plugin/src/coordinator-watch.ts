@@ -4,6 +4,7 @@ import { clearTimeout, setTimeout } from 'node:timers'
 
 export interface SourceWatcher {
   close(): void
+  replaceInputs?(inputs: readonly string[]): void
 }
 
 /**
@@ -14,10 +15,12 @@ export interface SourceWatcher {
 export function watchSources(options: {
   readonly roots: readonly string[]
   readonly debounceMs: number
-  onChange(): void
+  onChange(changedPaths?: readonly string[]): void
   onError(error: Error): void
 }): SourceWatcher {
-  const roots = [...new Set(options.roots.map((root) => resolve(root)))]
+  const originalRoots = options.roots.map((root) => resolve(root))
+  let roots = [...new Set(originalRoots)]
+  const changedPaths = new Set<string>()
   const watchers = new Map<
     string,
     {
@@ -43,17 +46,21 @@ export function watchSources(options: {
   }
   // Include the nearest existing ancestor's parent to observe its replacement
   // too, without recursively walking unrelated output or dependency trees.
-  const boundaries = roots.map((root) => {
-    let path = dirname(root)
-    while (!directory(path) && dirname(path) !== path) path = dirname(path)
-    return dirname(path)
-  })
-  const schedule = () => {
+  const boundaries = () =>
+    roots.map((root) => {
+      let path = dirname(root)
+      while (!directory(path) && dirname(path) !== path) path = dirname(path)
+      return dirname(path)
+    })
+  const schedule = (changed?: string) => {
     if (closed) return
+    if (changed !== undefined) changedPaths.add(changed)
     clearTimeout(timer)
     timer = setTimeout(() => {
       refresh()
-      options.onChange()
+      const paths = Object.freeze([...changedPaths].sort())
+      changedPaths.clear()
+      options.onChange(paths)
     }, options.debounceMs)
     timer.unref()
   }
@@ -80,7 +87,7 @@ export function watchSources(options: {
           })
         ) {
           refresh()
-          schedule()
+          schedule(changed)
         }
       })
       watcher.on('error', (error) => {
@@ -97,6 +104,7 @@ export function watchSources(options: {
     }
   }
   const refresh = () => {
+    const limits = boundaries()
     // Release the old subtree before attaching any replacement ancestor: some
     // watch backends share handles between overlapping directory watches.
     for (const [key, entry] of watchers) {
@@ -114,7 +122,7 @@ export function watchSources(options: {
       let path = dirname(root)
       while (true) {
         ancestors.push(path)
-        if (path === boundaries[index] || dirname(path) === path) break
+        if (path === limits[index] || dirname(path) === path) break
         path = dirname(path)
       }
       for (const ancestor of ancestors.reverse()) attach(ancestor, false)
@@ -123,6 +131,18 @@ export function watchSources(options: {
   }
   refresh()
   return {
+    replaceInputs(inputs) {
+      if (closed) return
+      roots = [
+        ...new Set([
+          ...originalRoots,
+          ...inputs.map((input) => resolve(input)),
+        ]),
+      ]
+      for (const { watcher } of watchers.values()) watcher.close()
+      watchers.clear()
+      refresh()
+    },
     close() {
       closed = true
       clearTimeout(timer)

@@ -32,6 +32,7 @@ export function createPreparation(
   let core =
     'prepare' in options ? undefined : createCore(options, identity.project)
   let watcher: SourceWatcher | undefined
+  let releaseWatchListener: (() => void) | undefined
   let watchingEnabled = true
   let started = false
   let timer: ReturnType<typeof setTimeout> | undefined
@@ -39,6 +40,7 @@ export function createPreparation(
   function stopWatching(): void {
     watchingEnabled = false
     watcher?.close()
+    releaseWatchListener?.()
   }
 
   function finish(
@@ -80,9 +82,14 @@ export function createPreparation(
           resolve(complete.projectRoot ?? process.cwd(), dir),
         ),
         debounceMs: 50,
-        onChange: () => void active.reconcile().catch(reportBackgroundError),
+        onChange: (changedPaths) =>
+          void active.reconcile(changedPaths).catch(reportBackgroundError),
         onError: reportBackgroundError,
       })
+      watcher.replaceInputs?.(active.watchInputs?.() ?? [])
+      releaseWatchListener = active.onWatchInputs?.((inputs) =>
+        watcher?.replaceInputs?.(inputs),
+      )
     }
     finish({ status: 'ready', core: active })
   }

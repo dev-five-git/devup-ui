@@ -11,6 +11,8 @@ import { dirname } from 'node:path'
 
 import { writeFileAtomically } from '@devup-ui/plugin-utils'
 
+import type { GenerationPlan } from './coordinator-options'
+import { isGenerationPlan } from './coordinator-plan-codec'
 import type { DevupWasm } from './wasm'
 
 export interface JsonObject {
@@ -40,6 +42,7 @@ export interface CoordinatorSnapshot {
   readonly classMap: JsonObject
   readonly fileMap: JsonObject
   readonly inputs: readonly CoordinatorInput[]
+  readonly plan?: GenerationPlan
 }
 
 export interface AllocatorState {
@@ -89,6 +92,10 @@ const checks: readonly (readonly [string, (value: JsonObject) => boolean])[] = [
   ['sheet object', (value) => isRecord(value.sheet)],
   ['classMap object', (value) => isRecord(value.classMap)],
   ['fileMap object', (value) => isRecord(value.fileMap)],
+  [
+    'optional generation plan',
+    (value) => value.plan === undefined || isGenerationPlan(value.plan),
+  ],
   [
     'inputs array of {filename, resourcePath, source, dependencies, stamps, backing}',
     (value) => Array.isArray(value.inputs) && value.inputs.every(isInput),
@@ -169,6 +176,7 @@ export interface CaptureRequest {
   readonly project: string
   readonly revision: number
   readonly inputs: readonly CoordinatorInput[]
+  readonly plan?: GenerationPlan
 }
 
 /** Export the engine's sheet and maps in one synchronous step. */

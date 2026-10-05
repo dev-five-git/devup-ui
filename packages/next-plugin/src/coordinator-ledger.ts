@@ -4,6 +4,8 @@ import { resolve } from 'node:path'
 
 import type { ExtractOutputSnapshot } from './coordinator-engine'
 import type { ExtractRequest } from './coordinator-http'
+import type { CoordinatorOptions } from './coordinator-options'
+import type { ProductionPlan } from './coordinator-plan'
 import type { CoordinatorInput } from './state'
 
 function hash(content: string | Buffer): string {
@@ -72,6 +74,10 @@ export interface InputLedger {
   list(): CoordinatorInput[]
   /** Swap the live inputs wholesale; cached outputs no longer apply. */
   replace(inputs: readonly CoordinatorInput[]): void
+  stage(
+    inputs: readonly CoordinatorInput[],
+    outputs: ReadonlyMap<string, ExtractOutputSnapshot>,
+  ): () => void
 }
 
 /**
@@ -82,7 +88,7 @@ export interface InputLedger {
  */
 export function createInputLedger(maxOutputs: number): InputLedger {
   let inputs = new Map<string, CoordinatorInput>()
-  const outputs = new Map<string, ExtractOutputSnapshot>()
+  let outputs = new Map<string, ExtractOutputSnapshot>()
   const keyOf = (filename: string, source: string) =>
     `${filename}\0${hash(source)}`
   return {
@@ -118,5 +124,48 @@ export function createInputLedger(maxOutputs: number): InputLedger {
       inputs = new Map(next.map((input) => [input.filename, input]))
       outputs.clear()
     },
+    stage(next, extracted) {
+      const stagedInputs = new Map(next.map((input) => [input.filename, input]))
+      const stagedOutputs = new Map<string, ExtractOutputSnapshot>()
+      for (const input of next) {
+        const output = extracted.get(input.filename)
+        if (output !== undefined)
+          stagedOutputs.set(keyOf(input.filename, input.source), output)
+      }
+      for (const oldest of stagedOutputs.keys()) {
+        if (stagedOutputs.size <= maxOutputs) break
+        stagedOutputs.delete(oldest)
+      }
+      return () => {
+        inputs = stagedInputs
+        outputs = stagedOutputs
+      }
+    },
+  }
+}
+
+export function seedPrewarmedOutputs(
+  ledger: InputLedger,
+  options: CoordinatorOptions,
+  plan: ProductionPlan,
+): void {
+  const root = resolve(options.projectRoot ?? process.cwd())
+  for (const [filename, { source, ...output }] of options.prewarmedOutputs ??
+    []) {
+    const input =
+      options.preparedSources === undefined
+        ? createInput(
+            root,
+            { filename, code: source, resourcePath: resolve(root, filename) },
+            output.dependencies ?? [],
+          )
+        : ledger
+            .list()
+            .find(
+              (input) => input.filename === filename && input.source === source,
+            )
+    if (input === undefined) continue
+    ledger.accept(input, output)
+    plan.note(filename, output.cssFile)
   }
 }

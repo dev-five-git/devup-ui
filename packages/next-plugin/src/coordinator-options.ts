@@ -24,7 +24,9 @@ export interface Core {
   /** Resume from the checkpoint and commit the first state. */
   startup(): Promise<void>
   /** Reconcile with disk outside any request (a watcher fired). */
-  reconcile(): Promise<void>
+  reconcile(changedPaths?: readonly string[]): Promise<void>
+  watchInputs?(): readonly string[]
+  onWatchInputs?(listener: (inputs: readonly string[]) => void): () => void
   /** Resolves once every accepted state is on disk. */
   flush(): Promise<void>
 }
@@ -55,16 +57,37 @@ export interface PreparedSource {
 
 export interface PreparedSourceGeneration {
   readonly sources: readonly PreparedSource[]
+  readonly ordinaryInputs?: readonly CoordinatorInput[]
+  readonly plan?: GenerationPlan
+  readonly watchInputs?: readonly string[]
   /** Captures this generation's configuration AND prepared-source resolver. */
   readonly configureWasm: (wasm: DevupWasm) => void
+}
+
+export interface GenerationPlan {
+  readonly canonicalMap: Readonly<Record<string, string>>
+  readonly expectedBaseFiles: readonly string[]
+}
+
+export interface ReplayExtractionReport {
+  readonly filename: string
+  readonly dependencies: readonly string[]
 }
 
 export interface ReplayPreparation {
   readonly generation: PreparedSourceGeneration
   readonly signal: AbortSignal
+  readonly changedPaths?: readonly string[]
+  readonly observeExtraction?: (
+    inputs: readonly CoordinatorInput[],
+    configureWasm: PreparedSourceGeneration['configureWasm'],
+  ) => readonly ReplayExtractionReport[]
 }
 
 export interface PreparedSources {
+  readonly validateForCssFinalization?: (
+    generation: PreparedSourceGeneration,
+  ) => void
   readonly initial: {
     /** Ordinary inputs; compiled inputs belong to generation.sources. */
     readonly ordinaryInputs: readonly CoordinatorInput[]

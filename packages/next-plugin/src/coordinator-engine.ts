@@ -145,6 +145,7 @@ export interface RebuildPlan {
   readonly theme: object | undefined
   readonly settings: ExtractSettings
   readonly inputs: readonly CoordinatorInput[]
+  readonly outputs?: Map<string, ExtractOutputSnapshot>
 }
 
 /**
@@ -164,7 +165,8 @@ export function buildEngine(plan: RebuildPlan): DevupWasm {
   if (plan.theme !== undefined) fresh.registerTheme(plan.theme)
   for (const input of plan.inputs) {
     try {
-      extractInput(fresh, plan.settings, input)
+      const output = extractInput(fresh, plan.settings, input)
+      plan.outputs?.set(input.filename, output)
     } catch (error) {
       throw locatedError(
         input.filename,
