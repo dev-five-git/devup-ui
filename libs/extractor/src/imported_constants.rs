@@ -31,12 +31,21 @@ use crate::extractor::extract_style_from_expression::{
 use crate::stylex::StylexFunction;
 use crate::{ExtractOption, ExtractStyleValue, ModuleResolver};
 
+mod dependency;
+mod effects;
+#[cfg(test)]
+mod escape_tests;
+mod freeze;
 mod initialization;
 mod lexical;
+pub(crate) mod provenance;
+#[cfg(test)]
+mod provenance_tests;
 #[cfg(test)]
 mod require_tests;
 #[cfg(test)]
 mod safety_tests;
+mod snapshot;
 
 #[derive(Clone, Debug)]
 enum Constant {
@@ -128,7 +137,7 @@ impl Constant {
     /// change
     fn reaches_only_primitives(&self, path: &[Option<String>]) -> bool {
         match path.split_first() {
-            None => !self.is_mutable(),
+            None => !self.is_mutable() && !matches!(self, Self::Function),
             Some((Some(key), rest)) => match member_of(self, key) {
                 Some(member) => member.reaches_only_primitives(rest),
                 // A key the build knows is missing reads `undefined`
@@ -206,6 +215,14 @@ impl Changed {
         expression: &Expression<'_>,
         reads_binding: &dyn Fn(&IdentifierReference<'_>) -> bool,
     ) -> bool {
+        if let Expression::CallExpression(call) = expression {
+            return self.read_by_in(&call.callee, reads_binding)
+                || call.arguments.iter().any(|argument| {
+                    argument
+                        .as_expression()
+                        .is_some_and(|argument| self.read_by_in(argument, reads_binding))
+                });
+        }
         let mut path = Vec::new();
         let mut expression = expression;
         let identifier = loop {
@@ -553,6 +570,11 @@ fn inline_in<'a>(
         for name in &read.names {
             let bound = scope.binds(name);
             let constant = scope.lookup(&mut modules, name);
+            if constant.is_none()
+                && let Some(change) = scope.dependency_change(&mut modules, name)
+            {
+                inlined.changed.whole.insert(name.clone(), change);
+            }
             match &constant {
                 Some(Constant::Changed(change)) => {
                     inlined.changed.whole.insert(name.clone(), change.clone());
@@ -730,10 +752,9 @@ impl<'p, 'a, 'r> ChangeCheck<'p, 'a, 'r> {
     pub(crate) fn is_changed(&self, name: &str) -> bool {
         let mut modules = self.modules.borrow_mut();
         let mut scope = self.scope.borrow_mut();
-        scope.change(&mut modules, name).is_some()
-            || scope
-                .lookup(&mut modules, name)
-                .is_some_and(|value| value.change().is_some())
+        scope
+            .lookup(&mut modules, name)
+            .is_some_and(|value| value.change().is_some())
     }
 }
 
@@ -1243,6 +1264,7 @@ struct ModuleScope<'p, 'a> {
     css_prop: Option<(CssProp, &'p str)>,
     uses: Option<Rc<FxHashMap<String, Vec<crate::mutations::Use>>>>,
     changes: FxHashMap<String, Option<Rc<Change>>>,
+    snapshot_at: Option<u32>,
     /// The semantic analysis the program extracted already has, which the
     /// visitor reuses and building another over the same program would reset
     shared_scoping: Option<&'p Scoping>,
@@ -1267,6 +1289,7 @@ impl<'p, 'a> ModuleScope<'p, 'a> {
             css_prop: None,
             uses: None,
             changes: FxHashMap::default(),
+            snapshot_at: None,
             shared_scoping: None,
             scoping: OnceCell::new(),
         }
@@ -1359,65 +1382,6 @@ impl<'p, 'a> ModuleScope<'p, 'a> {
             },
             handed,
         })
-    }
-
-    /// Where code changes the object or array `name` holds, directly or
-    /// through the `const` it is put in; handing on a value the build does
-    /// not know, such as a function, does not count. A namespace import can
-    /// only have its members changed
-    fn change(&mut self, modules: &mut Modules<'_>, name: &str) -> Option<Rc<Change>> {
-        if let Some(change) = self.changes.get(name) {
-            return change.clone();
-        }
-        self.changes.insert(name.to_string(), None);
-        let uses = if let Some(uses) = &self.uses {
-            uses.clone()
-        } else {
-            let option = modules.option;
-            let uses = Rc::new(crate::mutations::uses(
-                self.program,
-                &|name| self.is_style_import(option, name),
-                self.css_prop,
-            ));
-            self.uses = Some(uses.clone());
-            uses
-        };
-        let namespace = matches!(self.imports.get(name), Some((_, Imported::Namespace)));
-        let value = self.lookup_raw(modules, name);
-        let mut change = None;
-        for found in uses.get(name).into_iter().flatten() {
-            change = match found {
-                crate::mutations::Use::Changes { at, depth } => {
-                    (!namespace || *depth > 1).then(|| self.site(name, *at, false))
-                }
-                crate::mutations::Use::Calls { at, path } => (!namespace
-                    && value
-                        .as_ref()
-                        .is_some_and(|value| !value.reaches_only_primitives(path)))
-                .then(|| self.site(name, *at, true)),
-                crate::mutations::Use::Escapes { at, path, into } => {
-                    let mut path = path.clone();
-                    if namespace && path.is_empty() {
-                        path.push(None);
-                    }
-                    if value
-                        .as_ref()
-                        .is_none_or(|value| value.reaches_only_primitives(&path))
-                    {
-                        continue;
-                    }
-                    match into {
-                        Some(into) => self.change(modules, into),
-                        None => Some(self.site(name, *at, true)),
-                    }
-                }
-            };
-            if change.is_some() {
-                break;
-            }
-        }
-        self.changes.insert(name.to_string(), change.clone());
-        change
     }
 
     fn binds(&self, name: &str) -> bool {
@@ -1558,13 +1522,21 @@ impl<'p, 'a> ModuleScope<'p, 'a> {
     /// What `name` holds, or where code changes it when it is an object or
     /// array the module changes
     fn lookup(&mut self, modules: &mut Modules<'_>, name: &str) -> Option<Constant> {
-        let value = self.lookup_raw(modules, name)?;
-        if value.is_mutable()
+        let value = self.lookup_raw(modules, name);
+        if value.as_ref().is_none_or(Constant::is_mutable)
             && let Some(change) = self.change(modules, name)
         {
-            return Some(Constant::Changed(change));
+            if let Some(value) = &value
+                && self.primitive_snapshot(&change)
+            {
+                return Some(value.clone());
+            }
+            return Some(match value {
+                Some(value) => self.frozen_value(name, value, &change),
+                None => Constant::Changed(change),
+            });
         }
-        Some(value)
+        value
     }
 
     fn lookup_raw(&mut self, modules: &mut Modules<'_>, name: &str) -> Option<Constant> {
@@ -1577,11 +1549,15 @@ impl<'p, 'a> ModuleScope<'p, 'a> {
             return Some(value);
         }
         // Taken out while it is evaluated, so a constant reading itself stops
-        if let Some(init) = self.declarations.remove(name)
-            && let Some(constant) = self.evaluate(modules, init)
-        {
-            self.locals.insert(name.to_string(), constant.clone());
-            return Some(constant);
+        if let Some(init) = self.declarations.remove(name) {
+            let previous = self.snapshot_at;
+            self.snapshot_at = self.snapshot_initializer(init);
+            let constant = self.evaluate(modules, init);
+            self.snapshot_at = previous;
+            if let Some(constant) = constant {
+                self.locals.insert(name.to_string(), constant.clone());
+                return Some(constant);
+            }
         }
         let (source, imported) = self.imports.get(name)?;
         let exports = modules.exports(source, self.path)?;
@@ -1831,6 +1807,29 @@ impl<'p, 'a> ModuleScope<'p, 'a> {
                 member.property.name.as_str(),
             ),
             Expression::CallExpression(call) => {
+                let semantic = SemanticBuilder::new()
+                    .with_build_nodes(true)
+                    .build(self.program)
+                    .semantic;
+                let proof = provenance::Proof {
+                    nodes: semantic.nodes(),
+                    scoping: semantic.scoping(),
+                };
+                if crate::mutations::callees::global(&proof, &call.callee)
+                    == Some(("Object", "freeze"))
+                    && call.arguments.len() == 1
+                    && proof.expression(expression).plain()
+                {
+                    return self.evaluate(modules, call.arguments[0].to_expression());
+                }
+                if let Expression::Identifier(callee) = &call.callee
+                    && call.arguments.is_empty()
+                    && proof.expression(expression).plain()
+                    && let Some(symbol) = binding_of(proof.scoping, callee)
+                    && let Some(body) = proof.factory(symbol)
+                {
+                    return self.evaluate(modules, body);
+                }
                 if let Some(name) = math_member(&call.callee, &|object| self.is_global_math(object))
                 {
                     let mut arguments = Vec::with_capacity(call.arguments.len());

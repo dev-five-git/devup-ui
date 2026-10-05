@@ -792,6 +792,18 @@ impl<'a> DevupVisitor<'a> {
         if self.bindings.compiles(callee) {
             let reads = self.bindings.lowered_reads(it);
             self.report_reads(reads);
+            if let Expression::TaggedTemplateExpression(tag) = it {
+                for expression in &tag.quasi.expressions {
+                    if self.changed_bindings.read_by_in(expression, &|identifier| {
+                        self.bindings.reads_module(identifier)
+                    }) {
+                        self.errors.push((expression.span().start, build_time_error(
+                            &readable_code(callee), &readable_code(expression),
+                            "its values must be exact constants; use a direct value, freeze before escape, or move the mutation outside this computation",
+                        )));
+                    }
+                }
+            }
         }
     }
 

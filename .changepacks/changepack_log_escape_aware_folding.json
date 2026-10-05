@@ -1,0 +1,7 @@
+{
+  "changes": {
+    "bindings/devup-ui-wasm/package.json": "Patch"
+  },
+  "note": "Prevent stale build-time folding after module-local object escapes or writes. Preserve element values through CSS variables and report located build errors for inexact values in build-only styling APIs, including the originating binding and hazard; retain exact reads from proven read-only uses and objects frozen before escape.",
+  "date": "2026-10-01T00:00:00.000Z"
+}

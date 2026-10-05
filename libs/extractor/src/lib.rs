@@ -761,14 +761,21 @@ fn changed_notes(
 ) -> String {
     let mut notes = String::new();
     for change in changed.named_in(message) {
-        let location = match &change.site {
+        let (location, hazard) = match &change.site {
             imported_constants::ChangeSite::Here(offset) => {
                 let offset = edits.iter().fold(*offset as usize, |offset, edits| {
                     import_alias_visit::source_offset(edits, offset)
                 });
-                locate(filename, source, offset)
+                let start = source[..offset].rfind([';', '\n']).map_or(0, |at| at + 1);
+                let end = source[offset..]
+                    .find([';', '\n'])
+                    .map_or(source.len(), |at| offset + at);
+                (
+                    locate(filename, source, offset),
+                    format!(" near `{}`", source[start..end].trim()),
+                )
             }
-            imported_constants::ChangeSite::In(location) => location.clone(),
+            imported_constants::ChangeSite::In(location) => (location.clone(), String::new()),
         };
         let what = if change.handed {
             "is handed here to code that may change it"
@@ -778,7 +785,7 @@ fn changed_notes(
         let _ = std::fmt::Write::write_fmt(
             &mut notes,
             format_args!(
-                "\n{location}: `{}` {what}, so the build cannot read it as a constant",
+                "\n{location}: `{}` {what}{hazard}, so the build cannot read it as a constant; use a direct value, freeze before the first escape, or move the mutation outside the build-time computation",
                 change.name
             ),
         );

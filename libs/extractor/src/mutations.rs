@@ -17,6 +17,9 @@ use rustc_hash::FxHashMap;
 
 use crate::css_prop::{CssProp, CssTakers, binding_of};
 use crate::imported_constants::jsx_root_identifier;
+use crate::imported_constants::provenance::Proof;
+
+pub(crate) mod callees;
 
 /// How code uses a top-level binding
 #[derive(Debug)]
@@ -77,32 +80,6 @@ const ELEMENT_METHODS: [&str; 23] = [
     "entries",
     "at",
     "get",
-];
-
-/// Methods that only read what they are called on
-const READING_METHODS: [&str; 10] = [
-    "join",
-    "includes",
-    "indexOf",
-    "lastIndexOf",
-    "keys",
-    "has",
-    "toString",
-    "valueOf",
-    "hasOwnProperty",
-    "propertyIsEnumerable",
-];
-
-/// Global functions that only read their arguments
-const READING_FUNCTIONS: [&str; 8] = [
-    "String",
-    "Number",
-    "Boolean",
-    "parseInt",
-    "parseFloat",
-    "isNaN",
-    "isFinite",
-    "structuredClone",
 ];
 
 /// The uses of each top-level binding of `program` that may change what it
@@ -262,15 +239,7 @@ impl Context<'_, '_> {
                         path.push(None);
                         self.escapes(parent, at, path)
                     }
-                    Some(
-                        (
-                            "Object",
-                            "keys" | "freeze" | "seal" | "preventExtensions" | "isFrozen"
-                            | "isSealed" | "getOwnPropertyNames" | "hasOwn",
-                        )
-                        | ("JSON" | "Math" | "console" | "", _)
-                        | ("Array", "isArray"),
-                    ) => None,
+                    _ if callees::reads_arguments(&Proof { nodes: self.nodes, scoping: self.scoping }, call) => None,
                     _ => self.escapes(parent, at, path),
                 }
             }
@@ -311,8 +280,27 @@ impl Context<'_, '_> {
 
     /// `path` read as a method called on what comes before its last key
     fn method_call(&self, call: NodeId, at: u32, mut path: Vec<Option<String>>) -> Option<Use> {
-        // Calling the binding itself hands it nothing
-        let method = path.pop()?;
+        // A local call can return captured references into a new holder.
+        let Some(method) = path.pop() else {
+            let AstKind::CallExpression(expression) = self.nodes.kind(call) else {
+                return None;
+            };
+            let Expression::Identifier(identifier) = &expression.callee else {
+                return None;
+            };
+            let symbol = binding_of(self.scoping, identifier)?;
+            let proof = Proof {
+                nodes: self.nodes,
+                scoping: self.scoping,
+            };
+            let body = proof.factory(symbol)?;
+            let mut captures = ReturnedCapture {
+                proof: &proof,
+                found: false,
+            };
+            captures.visit_expression(body);
+            return captures.found.then(|| self.classify(call)).flatten();
+        };
         if let Some(method) = method.as_deref() {
             if MUTATING_METHODS.contains(&method) {
                 return Some(Use::Changes {
@@ -321,10 +309,26 @@ impl Context<'_, '_> {
                 });
             }
             if ELEMENT_METHODS.contains(&method) {
+                if !callees::pristine(
+                    &Proof {
+                        nodes: self.nodes,
+                        scoping: self.scoping,
+                    },
+                    "Array",
+                ) || !matches!(
+                    self.init.map(|init| Proof {
+                        nodes: self.nodes,
+                        scoping: self.scoping
+                    }
+                    .expression(init)),
+                    Some(crate::imported_constants::provenance::Shape::Array(_))
+                ) {
+                    return (!self.in_style(call)).then_some(Use::Calls { at, path });
+                }
                 path.push(None);
                 return self.escapes(call, at, path);
             }
-            if READING_METHODS.contains(&method) || !self.uses_this(&path, method) {
+            if !self.uses_this(&path, method) {
                 return None;
             }
         }
@@ -370,24 +374,15 @@ impl Context<'_, '_> {
         }
     }
 
-    /// `(object, member)` when `callee` is a global function, `("", name)` for
-    /// one that only reads its arguments
+    /// The unmodified semantic global and its member, empty for a direct call.
     fn global_function<'e>(&self, callee: &'e Expression<'_>) -> Option<(&'e str, &'e str)> {
-        match callee {
-            Expression::Identifier(identifier)
-                if READING_FUNCTIONS.contains(&identifier.name.as_str())
-                    && self.is_global(identifier) =>
-            {
-                Some(("", identifier.name.as_str()))
-            }
-            Expression::StaticMemberExpression(member) => match &member.object {
-                Expression::Identifier(object) if self.is_global(object) => {
-                    Some((object.name.as_str(), member.property.name.as_str()))
-                }
-                _ => None,
+        callees::global(
+            &Proof {
+                nodes: self.nodes,
+                scoping: self.scoping,
             },
-            _ => None,
-        }
+            callee,
+        )
     }
 
     /// Whether code at `node` is read by a style API, which never runs it
@@ -463,10 +458,17 @@ impl Context<'_, '_> {
                 | AstKind::SpreadElement(_)
                 | AstKind::ParenthesizedExpression(_)
                 | AstKind::TSAsExpression(_)
-                | AstKind::TSSatisfiesExpression(_) => false,
+                | AstKind::TSSatisfiesExpression(_)
+                | AstKind::ArrowFunctionExpression(_)
+                | AstKind::FunctionBody(_)
+                | AstKind::ReturnStatement(_) => false,
                 AstKind::CallExpression(call) => !matches!(
                     self.global_function(&call.callee),
                     Some(("Object", "freeze" | "seal" | "preventExtensions"))
+                ),
+                AstKind::Function(_) => matches!(
+                    self.nodes.parent_kind(*id),
+                    AstKind::Program(_) | AstKind::ExportDeclaration(_)
                 ),
                 _ => true,
             });
@@ -496,6 +498,14 @@ impl Context<'_, '_> {
                     .map(|name| name.to_string())
             }
             AstKind::ExportDefaultDeclaration(_) => Some(String::new()),
+            AstKind::Function(function)
+                if matches!(
+                    self.nodes.parent_kind(id),
+                    AstKind::Program(_) | AstKind::ExportDeclaration(_)
+                ) =>
+            {
+                function.id.as_ref().map(|id| id.name.to_string())
+            }
             AstKind::AssignmentExpression(assignment)
                 if top_level(id)
                     && assignment
@@ -567,6 +577,27 @@ impl Context<'_, '_> {
 struct ReadsThis {
     found: bool,
     depth: usize,
+}
+
+struct ReturnedCapture<'s, 'a> {
+    proof: &'s Proof<'s, 'a>,
+    found: bool,
+}
+
+impl<'a> Visit<'a> for ReturnedCapture<'_, 'a> {
+    fn visit_identifier_reference(&mut self, identifier: &IdentifierReference<'a>) {
+        if let Some(symbol) = binding_of(self.proof.scoping, identifier)
+            && self.proof.scoping.symbol_scope_id(symbol) == self.proof.scoping.root_scope_id()
+            && matches!(
+                self.proof.binding(symbol),
+                crate::imported_constants::provenance::Shape::Record(_)
+                    | crate::imported_constants::provenance::Shape::Array(_)
+                    | crate::imported_constants::provenance::Shape::Unknown
+            )
+        {
+            self.found = true;
+        }
+    }
 }
 
 impl<'a> Visit<'a> for ReadsThis {
