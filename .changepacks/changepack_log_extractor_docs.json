@@ -1,0 +1,7 @@
+{
+  "changes": {
+    "bindings/devup-ui-wasm/package.json": "Patch"
+  },
+  "note": "The extractor guide shows reproducible native-element output, generated CSS-variable bindings, and actual atomic CSS rather than obsolete class names. Documentation only: no new build errors.",
+  "date": "2026-10-01T00:00:00.000Z"
+}
