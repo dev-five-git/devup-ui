@@ -183,18 +183,25 @@ describe('setup handoff', () => {
   })
 
   it('leaves no token behind when the handoff cannot be written', () => {
+    // Given
     const root = makeProject({
       'df/.devup': 'a file where a directory belongs',
     })
     process.chdir(root)
     const context = app()
+    process.env[`DEVUP_UI_SETUP_TOKEN_${context.appKey}`] = 'stale-token'
 
-    store(context, handoff())
+    // When: writing a handoff needs no live owner; consuming a valid one does.
+    storeSetupHandoff(context, handoff())
     reloadSetupModuleForTesting()
 
+    // Then
     expect(
       process.env[`DEVUP_UI_SETUP_TOKEN_${context.appKey}`],
     ).toBeUndefined()
+    expect(
+      fs.existsSync(join(context.appDir, `handoff-${process.pid}.bin`)),
+    ).toBe(false)
     expect(consumeSetupHandoff(context, 'key')).toBeUndefined()
   })
 

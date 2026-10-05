@@ -12,9 +12,7 @@ it('blocks real webpack modules while preparation is pending and shares compiled
   // Given
   const repo = resolve(import.meta.dir, '../../../..')
   const source = resolve(import.meta.dir, '..')
-  const artifacts = mkdtempSync(
-    join(tmpdir(), 'opencode/workers/w21-next-coordinator/webpack-proof-'),
-  )
+  const artifacts = mkdtempSync(join(tmpdir(), 'devup-webpack-proof-'))
   const entry = join(artifacts, 'entry.ts')
   writeFileSync(
     entry,
