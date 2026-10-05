@@ -81,9 +81,6 @@ export function Radio({
         />
       ) : (
         <Input
-          _focus={{
-            outline: '1px sold var(--border, var(--primary))',
-          }}
           appearance="none"
           bg="light-dark(#fff, #2E2E2E)"
           border="1px solid"
@@ -95,24 +92,6 @@ export function Radio({
           disabled={disabled}
           height="18px"
           m={0}
-          selectors={{
-            // checked
-            '&:checked:not(:disabled)': {
-              bg: 'var(--checkedBg, var(--primary, light-dark(#fff, #2E2E2E)))',
-              border: '3px solid',
-              borderColor: 'var(--checkedBg, light-dark(#fff, #2E2E2E))',
-              boxShadow: '0 0 0 1px var(--checkedBorder, var(--primary))',
-            },
-            // hover
-            '&:hover:not(:disabled,:checked)': {
-              border: '1px solid var(--hoverBorder, var(--primary))',
-              bg: 'var(--hoverBg, light-dark(color-mix(in srgb, var(--primary) 10%, white 90%), color-mix(in srgb, var(--primary) 10%, black 90%)))',
-            },
-            // disabled
-            '&:is(:disabled, [aria-disabled=true])': {
-              bgColor: 'var(--disabledBg, light-dark(#F0F0F3, #47474A))',
-            },
-          }}
           styleOrder={1}
           styleVars={{
             primary: colors?.primary,
@@ -132,6 +111,27 @@ export function Radio({
           type="radio"
           width="18px"
           {...props}
+          _focus={{
+            outline: '1px sold var(--border, var(--primary))',
+          }}
+          selectors={{
+            // checked
+            '&:checked:not(:disabled)': {
+              bg: 'var(--checkedBg, var(--primary, light-dark(#fff, #2E2E2E)))',
+              border: '3px solid',
+              borderColor: 'var(--checkedBg, light-dark(#fff, #2E2E2E))',
+              boxShadow: '0 0 0 1px var(--checkedBorder, var(--primary))',
+            },
+            // hover
+            '&:hover:not(:disabled,:checked)': {
+              border: '1px solid var(--hoverBorder, var(--primary))',
+              bg: 'var(--hoverBg, light-dark(color-mix(in srgb, var(--primary) 10%, white 90%), color-mix(in srgb, var(--primary) 10%, black 90%)))',
+            },
+            // disabled
+            '&:is(:disabled, [aria-disabled=true])': {
+              bgColor: 'var(--disabledBg, light-dark(#F0F0F3, #47474A))',
+            },
+          }}
         />
       )}
       {variant === 'button' ? (

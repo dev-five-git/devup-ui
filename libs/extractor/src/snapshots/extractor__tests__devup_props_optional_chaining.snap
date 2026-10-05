@@ -8,7 +8,7 @@ ToBTreeSet {
             ExtractDynamicStyle {
                 property: "background",
                 level: 0,
-                identifier: "map?.k",
+                identifier: "__devupValue0",
                 selector: None,
                 style_order: None,
             },
@@ -17,11 +17,11 @@ ToBTreeSet {
             ExtractDynamicStyle {
                 property: "color",
                 level: 0,
-                identifier: "map?.[k]",
+                identifier: "__devupValue1",
                 selector: None,
                 style_order: None,
             },
         ),
     },
-    code: "import \"@devup-ui/react/devup-ui.css\";\nconst dotted = <div className=\"a\" style={{ \"--b\": map?.k }} />;\nconst computed = <div className=\"c\" style={{ \"--d\": map?.[k] }} />;\n",
+    code: "import \"@devup-ui/react/devup-ui.css\";\nconst dotted = ((__devupValue0) => <div className=\"a\" style={{ \"--b\": __devupValue0 }} />)(map?.k);\nconst computed = ((__devupValue1) => <div className=\"c\" style={{ \"--d\": __devupValue1 }} />)(map?.[k]);\n",
 }

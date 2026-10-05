@@ -8,20 +8,11 @@ ToBTreeSet {
             ExtractDynamicStyle {
                 property: "background",
                 level: 0,
-                identifier: "first",
-                selector: None,
-                style_order: None,
-            },
-        ),
-        Dynamic(
-            ExtractDynamicStyle {
-                property: "background",
-                level: 0,
-                identifier: "second",
+                identifier: "__devupChoice0[`1`]",
                 selector: None,
                 style_order: None,
             },
         ),
     },
-    code: "import \"@devup-ui/react/devup-ui.css\";\nconst e = <div className={{\n\t\"a\": \"a\",\n\t\"b\": \"a\"\n}[key] || \"\"} style={{ \"--b\": {\n\ta: first,\n\tb: second\n}[key] }} />;\n",
+    code: "import \"@devup-ui/react/devup-ui.css\";\nconst e = ((__devupChoice0) => <div className={{\n\t\"a\": \"a\",\n\t\"b\": \"a\"\n}[__devupChoice0?.[\"0\"]] || \"\"} style={{ \"--b\": {\n\ta: __devupChoice0[`1`],\n\tb: __devupChoice0[`1`]\n}[__devupChoice0?.[\"0\"]] }} />)({\n\ta: [\"a\", first],\n\tb: [\"b\", second]\n}[key]);\n",
 }

@@ -18,7 +18,7 @@ impl Bindings {
         if callee.name != "require" || self.symbol(callee).is_some() {
             return;
         }
-        let from_package = if source.value == "react/jsx-runtime" {
+        let from_package = if matches!(source.value.as_str(), "react/jsx-runtime" | "react") {
             false
         } else if source.value == package {
             true

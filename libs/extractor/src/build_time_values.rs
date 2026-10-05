@@ -118,10 +118,10 @@ const GLOBALS: [&str; 18] = [
 
 /// The members of `Math` every engine gives exactly; the others are
 /// approximations that may differ in their last digits
-const EXACT_MATH: [&str; 20] = [
-    "abs", "ceil", "floor", "round", "trunc", "sign", "max", "min", "sqrt", "fround", "imul",
-    "clz32", "PI", "E", "LN2", "LN10", "LOG2E", "LOG10E", "SQRT2", "SQRT1_2",
-];
+pub(crate) mod exact_math;
+#[cfg(test)]
+mod w22_tests;
+use exact_math::EXACT_MATH;
 
 /// Members giving what the locale, the Unicode data of the engine or chance
 /// make them, and `toString`, which engines only approximate with a radix:

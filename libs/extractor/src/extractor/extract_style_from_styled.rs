@@ -99,13 +99,18 @@ fn combine_forward(inherited: Option<&Forward>, own: Option<Forward>) -> Option<
 }
 
 impl StyledDefinition<'_> {
+    /// Whether the styles and attrs of this component read the prop `name`
+    #[must_use]
+    pub fn reads_prop(&self, name: &str) -> bool {
+        self.reads.whole || self.reads.names.iter().any(|read| read == name)
+    }
+
     /// Whether an element using this component keeps passing the prop `name`:
     /// what its styles read, what it passes on, and what React or the
     /// component itself takes
     #[must_use]
     pub fn takes(&self, name: &str) -> bool {
-        self.reads.whole
-            || self.reads.names.iter().any(|read| read == name)
+        self.reads_prop(name)
             || matches!(
                 name,
                 "className" | "style" | "as" | "forwardedAs" | "key" | "ref" | "children"

@@ -37,6 +37,9 @@ use std::collections::BTreeMap;
 
 const IGNORED_IDENTIFIERS: [&str; 3] = ["undefined", "NaN", "Infinity"];
 
+#[cfg(test)]
+mod direct_tests;
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum LiteralHandling {
     ExpandResponsiveThemeToken,

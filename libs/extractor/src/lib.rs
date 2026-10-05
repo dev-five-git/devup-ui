@@ -17,6 +17,10 @@ mod gen_class_name;
 mod gen_style;
 mod import_alias_visit;
 mod imported_constants;
+#[cfg(test)]
+mod jsx_semantics_tests;
+#[cfg(test)]
+mod legacy_semantics_contract_tests;
 mod module_loader;
 pub mod module_reference;
 mod mutations;
@@ -568,6 +572,13 @@ fn extract_source(
     } else {
         imported_constants::Inlined::default()
     };
+    if !inlined.errors.is_empty() {
+        let (source, earlier_edits) = evaluated.unwrap_or((code, &[]));
+        let edits: Vec<&[import_alias_visit::Edit]> = std::iter::once(alias_edits.as_slice())
+            .chain(earlier_edits.iter().copied())
+            .collect();
+        return Err(located_errors(filename, source, &edits, inlined.errors).into());
+    }
     dependencies.extend(inlined.dependencies);
     let mut visitor = DevupVisitor::new(
         &allocator,
@@ -1977,6 +1988,7 @@ mod tests {
 import clsx from 'clsx'
 
 <DevupButton
+      {...props}
       boxSizing="border-box"
       className={clsx(
         variants[variant],
@@ -1991,7 +2003,6 @@ import clsx from 'clsx'
             }[size]
           : undefined
       }
-      {...props}
     />
 "#,
                 ExtractOption {
@@ -2004,6 +2015,7 @@ import clsx from 'clsx'
             )
             .unwrap()
         ));
+        crate::legacy_semantics_contract_tests::extract_style_props_with_class_name();
     }
 
     #[test]
@@ -3217,6 +3229,7 @@ import clsx from 'clsx'
                 "test.tsx",
                 r"import {Center} from '@devup-ui/core'
     <Center
+      {...props}
       _active={
         variant !== 'disabled' && {
           boxShadow: 'none',
@@ -3232,7 +3245,6 @@ import clsx from 'clsx'
           ],
         }
       }
-      {...props}
     >
       {children}
     </Center>
@@ -3590,6 +3602,7 @@ import clsx from 'clsx'
             )
             .unwrap()
         ));
+        crate::legacy_semantics_contract_tests::extract_selector();
     }
 
     #[test]
@@ -5248,7 +5261,7 @@ e(o, { className: "a", bg: variable, style: { color: "blue" }, ...props })
 
         reset_class_map();
         reset_file_map();
-        assert_debug_snapshot!(ToBTreeSet::from(extract("test.js", r#""use strict";Object.defineProperty(exports,Symbol.toStringTag,{value:"Module"});const e=require("react/jsx-runtime"),{Box,Text,Flex}=require("@devup-ui/react");function t(){return e.jsxs("div",{children:[e.jsx(Box,{["_hover"]:{bg:"blue"},bg:"$text",[variable]:"red",children:"hello"})]})}exports.Lib=t;"#, ExtractOption { package: "@devup-ui/react".to_string(), css_dir: "@devup-ui/react".to_string(), single_css: true, import_main_css: false, import_aliases: HashMap::new() }).unwrap()));
+        assert_debug_snapshot!(extract("test.js", r#""use strict";Object.defineProperty(exports,Symbol.toStringTag,{value:"Module"});const e=require("react/jsx-runtime"),{Box,Text,Flex}=require("@devup-ui/react");function t(){return e.jsxs("div",{children:[e.jsx(Box,{["_hover"]:{bg:"blue"},bg:"$text",[variable]:"red",children:"hello"})]})}exports.Lib=t;"#, ExtractOption { package: "@devup-ui/react".to_string(), css_dir: "@devup-ui/react".to_string(), single_css: true, import_main_css: false, import_aliases: HashMap::new() }).map(ToBTreeSet::from).map_err(|error|error.to_string()));
     }
 
     #[test]
@@ -5449,12 +5462,12 @@ export default function Card({
 }) {
   return (
     <VStack
+      {...props}
       _active={{
         boxShadow: 'none',
         transform: 'scale(0.95)',
       }}
       className={className}
-      {...props}
     >
       {children}
     </VStack>
@@ -5472,6 +5485,7 @@ export default function Card({
             )
             .unwrap()
         ));
+        crate::legacy_semantics_contract_tests::test_rest_props();
     }
 
     #[test]
@@ -7164,10 +7178,11 @@ export {
             .unwrap()
         ));
 
-        // Test 2: styleOrder={condition ? 5 : variable} — ternary with mixed static/dynamic
+        // Test 2: styleOrder={condition ? 5 : variable} — ternary with mixed static/dynamic,
+        // which the stylesheet cannot order by: a located build error
         reset_class_map();
         reset_file_map();
-        assert_debug_snapshot!(ToBTreeSet::from(
+        assert_debug_snapshot!(
             extract(
                 "test.jsx",
                 r#"import {Box} from '@devup-ui/core'
@@ -7181,13 +7196,14 @@ export {
                     import_aliases: HashMap::new()
                 }
             )
-            .unwrap()
-        ));
+            .map(ToBTreeSet::from)
+            .map_err(|error| error.to_string())
+        );
 
-        // Test 3: styleOrder={variable} — fully dynamic styleOrder
+        // Test 3: styleOrder={variable} — fully dynamic styleOrder, a located build error
         reset_class_map();
         reset_file_map();
-        assert_debug_snapshot!(ToBTreeSet::from(
+        assert_debug_snapshot!(
             extract(
                 "test.jsx",
                 r#"import {Box} from '@devup-ui/core'
@@ -7201,8 +7217,9 @@ export {
                     import_aliases: HashMap::new()
                 }
             )
-            .unwrap()
-        ));
+            .map(ToBTreeSet::from)
+            .map_err(|error| error.to_string())
+        );
 
         // Test 4: styleOrder={condition ? 5 : 10} with conditional style props
         // Verifies interaction between conditional styleOrder and conditional style values
@@ -7422,10 +7439,10 @@ export { c as Lib };"#,
         ));
 
         // Coverage: utils.rs:100 — expression_to_style_order with plain variable (not conditional, not static)
-        // Also covers visit.rs:259,262 — fallback from pre-scan None to extract_style_from_expression's result
+        // The order is neither static nor conditional, so the call is a located build error
         reset_class_map();
         reset_file_map();
-        assert_debug_snapshot!(ToBTreeSet::from(
+        assert_debug_snapshot!(
             extract(
                 "test.mjs",
                 r#"import { jsx as e } from "react/jsx-runtime";
@@ -7442,8 +7459,9 @@ export { c as Lib };"#,
                     import_aliases: HashMap::new()
                 }
             )
-            .unwrap()
-        ));
+            .map(ToBTreeSet::from)
+            .map_err(|error| error.to_string())
+        );
 
         // Coverage: visit.rs:297/492 — non-conditional static styleOrder via call expression (fallback _ branch)
         reset_class_map();
@@ -9510,7 +9528,7 @@ const TINY = 0.0000001;
 const HUGE = 1e21;
 const ZERO = -0;
 const PX = 'px';
-const SELF = SELF;
+var SELF = SELF;
 let mutable = 1;
 export const a = <Box p={DOUBLE} m={UNIT} w={SIZE + 1} h={HALF} content={LABEL} top={`${TINY}px`} left={`${HUGE}px`} right={ZERO + PX} bottom={mutable} zIndex={SELF} />;
 export const b = css({ padding: `${SIZE * 2}px`, margin: SIZE - 1, width: SIZE * SIZE, height: (SIZE) });
@@ -9521,6 +9539,7 @@ export const c = <Box p={SIZE / 0} m={PX - 1} w={`${PX}${other}`} h={SIZE % 3} /
             )
             .unwrap()
         ));
+        crate::legacy_semantics_contract_tests::test_inline_local_constants();
     }
 
     #[test]
@@ -15087,15 +15106,15 @@ const V = styled.div.attrs(extra)({ color: 'red' })",
     )]
     #[case(
         "<Box className=\"direct\" style={{ opacity: 1 }} {...rest} />",
-        "className={(\"className\" in Object(rest) ? rest.className : \"direct\") || \"\"} style={\"style\" in Object(rest) ? rest.style : { opacity: 1 }}"
+        "className={(\"className\" in __devupSpread0 ? __devupSpread0.className : \"direct\") || \"\"} style={\"style\" in __devupSpread0 ? __devupSpread0.style : { opacity: 1 }}"
     )]
     #[case(
         "<Box className=\"direct\" {...{ title: 'x' }} {...{ ...rest, className: 'last' }} />",
-        "className=\"last\""
+        "className: \"last\""
     )]
     #[case(
         "<Box className=\"direct\" {...{ className: 'first', ...rest }} />",
-        "className={{\n\tclassName: \"first\",\n\t...rest\n}.className || \"\"}"
+        "className: \"first\",\n\t\t...rest"
     )]
     #[case(
         "<Box className=<i /> color=\"red\" />",
@@ -15103,7 +15122,7 @@ const V = styled.div.attrs(extra)({ color: 'red' })",
     )]
     #[case(
         "<Box {...rest} {...more} />",
-        "className={(\"className\" in Object(more) ? more.className : rest?.className) || \"\"}"
+        "className={(\"className\" in __devupSpread1 ? __devupSpread1.className : __devupSpread0?.className) || \"\"}"
     )]
     #[serial]
     fn test_jsx_props_written_later_win(#[case] element: &str, #[case] expected: &str) {
@@ -19937,7 +19956,17 @@ export const a = <Box {...make(5)} />;",
             &memory_resolver(modules),
         )
         .unwrap();
-        assert!(imported.code.contains(")(make(5))"), "{}", imported.code);
+        assert_eq!(
+            imported.code.matches("make(5)").count(),
+            1,
+            "{}",
+            imported.code
+        );
+        assert!(
+            imported.code.contains("__proto__: null"),
+            "{}",
+            imported.code
+        );
     }
 
     #[test]
