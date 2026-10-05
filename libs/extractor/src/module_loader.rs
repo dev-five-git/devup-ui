@@ -239,7 +239,12 @@ impl<'r> ModuleLoader<'r> {
             self.loaded.insert(module.path, name.clone());
             return Ok(name);
         }
-        let stylesheet = is_vanilla_extract_file(&module.path);
+        let stylesheet = is_vanilla_extract_file(&module.path)
+            || (self
+                .option
+                .import_aliases
+                .contains_key("@vanilla-extract/css")
+                && crate::ordinary_ve::is_module(&module.path, &module.code));
         if direct && stylesheet {
             self.keep_import(specifier);
         }

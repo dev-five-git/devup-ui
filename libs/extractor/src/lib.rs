@@ -20,6 +20,7 @@ mod imported_constants;
 mod module_loader;
 pub mod module_reference;
 mod mutations;
+mod ordinary_ve;
 mod package_specifier;
 mod prop_modify_utils;
 mod prop_valid;
@@ -353,7 +354,14 @@ fn extract_source(
         css_prop,
     } = import_alias_visit::transform_import_aliases_with_edits(
         code,
-        filename,
+        if !utils::is_vanilla_extract_file(filename)
+            && option.import_aliases.contains_key("@vanilla-extract/css")
+            && ordinary_ve::is_module(filename, code)
+        {
+            "ordinary.css.ts"
+        } else {
+            filename
+        },
         &option.package,
         &option.import_aliases,
     );
@@ -436,7 +444,9 @@ fn extract_source(
     // Step 3: Handle vanilla-extract style files (.css.ts, .css.js)
     // `processed_code` is Some only when vanilla-extract generation succeeded;
     // otherwise the untouched `transformed_code` is parsed directly (no copy).
-    let processed_code: Option<String> = if utils::is_vanilla_extract_file(filename)
+    let processed_code: Option<String> = if (utils::is_vanilla_extract_file(filename)
+        || (option.import_aliases.contains_key("@vanilla-extract/css")
+            && ordinary_ve::is_module(filename, code)))
         && stylesheet_policy::plan(&transformed_code, filename, &option, resolver, &|_| false)
             == stylesheet_policy::Plan::Run
     {
