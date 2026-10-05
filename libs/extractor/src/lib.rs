@@ -19,6 +19,8 @@ mod shorthand_tests;
 mod source_map;
 mod style_order;
 #[cfg(test)]
+mod style_order_css_prop_tests;
+#[cfg(test)]
 mod style_order_tests;
 mod style_order_validation;
 mod style_values;

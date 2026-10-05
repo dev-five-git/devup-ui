@@ -179,6 +179,27 @@ mod tests {
     use oxc_span::SourceType;
 
     #[test]
+    fn style_order_runtime_reads_are_not_mistaken_for_static_values()
+    -> Result<(), Box<dyn std::error::Error>> {
+        let allocator = Allocator::default();
+        let bindings = StyleValues::default();
+        for source in ["state.order", "readOrder()"] {
+            let value = Parser::new(&allocator, source, SourceType::ts())
+                .parse_expression()
+                .map_err(|error| format!("{error:?}"))?;
+            let mut errors = Vec::new();
+            Validation {
+                bindings: &bindings,
+                errors: &mut errors,
+            }
+            .value(&value);
+            assert_eq!(errors, vec![], "{source}");
+            assert_eq!(crate::style_order::static_order(&value), None, "{source}");
+        }
+        Ok(())
+    }
+
+    #[test]
     fn style_order_generated_literals_use_readable_fallbacks() {
         let allocator = Allocator::default();
         let builder = oxc_ast::builder::AstBuilder::new(&allocator);

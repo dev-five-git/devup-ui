@@ -683,6 +683,11 @@ impl<'a> DevupVisitor<'a> {
                     props.extend(values.into_iter().map(ExtractStyleProp::Static));
                 }
                 KnownStyles::Rules(mut rules) => {
+                    crate::style_order_validation::validate_rules(
+                        &rules,
+                        &self.style_values,
+                        &mut self.errors,
+                    );
                     self.style_values.read_in(&self.ast, &mut rules);
                     let ExtractResult {
                         mut styles,

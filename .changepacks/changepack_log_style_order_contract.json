@@ -3,6 +3,6 @@
     "bindings/devup-ui-wasm/package.json": "Patch",
     "packages/eslint-plugin/package.json": "Patch"
   },
-  "note": "Validate explicit static styleOrder as an integer from 1 to 254 or its canonical decimal digit string, consistently in extraction and lint. Invalid static values and conditional branches now produce located build errors instead of silently changing cascade order.",
+  "note": "Validate explicit static styleOrder as an integer from 1 to 254 or its canonical decimal digit string, consistently in extraction and lint, including composed Emotion css props. Keep order metadata out of library px conversion. Invalid static values and conditional branches now produce located build errors instead of silently changing cascade order.",
   "date": "2026-10-01T00:00:00.000Z"
 }
