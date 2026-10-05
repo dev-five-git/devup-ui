@@ -16,7 +16,7 @@ use oxc_ast::builder::AstBuilder;
 use oxc_ast_visit::{Visit, VisitMut, walk, walk_mut};
 use oxc_parser::Parser;
 use oxc_semantic::{Scoping, SemanticBuilder};
-use oxc_span::{SPAN, SourceType};
+use oxc_span::{GetSpan, SPAN, SourceType, Span};
 use oxc_syntax::number::NumberBase;
 use oxc_syntax::operator::BinaryOperator;
 use oxc_syntax::symbol::SymbolId;
@@ -45,6 +45,10 @@ mod provenance_tests;
 mod require_tests;
 #[cfg(test)]
 mod safety_tests;
+mod scalar_literals;
+#[cfg(test)]
+mod scalar_projection_tests;
+mod scalar_reads;
 mod snapshot;
 
 #[derive(Clone, Debug)]
@@ -458,6 +462,7 @@ fn inline_in<'a>(
         references: FxHashSet::default(),
         depth: 0,
         class_names: Vec::new(),
+        scalar_reads: Vec::new(),
     };
     read.visit_program(program);
     let initialization = initialization::Initialization::new(program, scoping);
@@ -490,6 +495,7 @@ fn inline_in<'a>(
         loading: Vec::new(),
     };
     let mut symbols: FxHashMap<SymbolId, Constant> = FxHashMap::default();
+    let scalar_reads;
     let reads_math = {
         let mut scope = ModuleScope::new(filename, program, None);
         scope.style_names.extend(
@@ -623,6 +629,7 @@ fn inline_in<'a>(
                 symbols.extend(symbol.get().map(|symbol| (symbol, constant.clone())));
             }
         }
+        scalar_reads = scalar_reads::resolve(&scope, &read.scalar_reads);
         reads_math
     };
     inlined.dependencies = modules.exports.into_keys().collect();
@@ -636,6 +643,7 @@ fn inline_in<'a>(
             scoping,
             initialization: &initialization,
             symbols: &symbols,
+            scalar_reads: &scalar_reads,
             style: &style,
             css_props: &css_props,
             objects: false,
@@ -669,12 +677,13 @@ fn inline_in<'a>(
             symbols.insert(symbol, value);
         }
     }
-    if !symbols.is_empty() || reads_math {
+    if !symbols.is_empty() || reads_math || !scalar_reads.is_empty() {
         Inline {
             ast_builder,
             scoping,
             initialization: &initialization,
             symbols: &symbols,
+            scalar_reads: &scalar_reads,
             style: &style,
             css_props: &css_props,
             objects: false,
@@ -855,6 +864,7 @@ struct StyleReads<'s> {
     /// The bindings the `<ClassNames>` child functions around take `css` and
     /// `cx` by
     class_names: Vec<SymbolId>,
+    scalar_reads: Vec<scalar_reads::Read>,
 }
 
 impl StyleReads<'_> {
@@ -867,6 +877,15 @@ impl StyleReads<'_> {
 }
 
 impl<'a> Visit<'a> for StyleReads<'_> {
+    fn visit_expression(&mut self, expression: &Expression<'a>) {
+        if self.depth > 0
+            && let Some(read) = scalar_reads::Read::new(expression, self.style.scoping)
+        {
+            self.scalar_reads.push(read);
+        }
+        walk::walk_expression(self, expression);
+    }
+
     fn visit_identifier_reference(&mut self, identifier: &IdentifierReference<'a>) {
         if self.depth > 0 {
             self.references.extend(identifier.reference_id.get());
@@ -2058,6 +2077,7 @@ struct Inline<'s, 'a> {
     scoping: &'s Scoping,
     initialization: &'s initialization::Initialization,
     symbols: &'s FxHashMap<SymbolId, Constant>,
+    scalar_reads: &'s FxHashMap<Span, Constant>,
     style: &'s StyleSymbols<'s>,
     css_props: &'s CssTakers<'s>,
     /// Inside what the build reads as style objects
@@ -2073,6 +2093,9 @@ struct Inline<'s, 'a> {
 
 impl<'a> Inline<'_, 'a> {
     fn constant(&self, expression: &Expression<'a>) -> Option<Constant> {
+        if let Some(value) = self.scalar_reads.get(&expression.span()) {
+            return Some(value.clone());
+        }
         match expression {
             Expression::Identifier(identifier) => {
                 let reference = identifier.reference_id.get()?;

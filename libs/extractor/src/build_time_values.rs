@@ -230,6 +230,12 @@ impl<'s, 'a> Finder<'s, 'a> {
     fn bind(&mut self, statement: usize, node: &Statement<'a>, is_style: &dyn Fn(&str) -> bool) {
         let mut declare = |symbol: Option<SymbolId>, usable: bool| {
             if let Some(symbol) = symbol {
+                let usable = usable
+                    && !self
+                        .scoping
+                        .get_resolved_reference_ids(symbol)
+                        .iter()
+                        .any(|reference| self.scoping.get_reference(*reference).is_write());
                 self.bindings.insert(symbol, Binding { statement, usable });
             }
         };

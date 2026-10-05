@@ -23,6 +23,7 @@ fn inline_read_when_the_binding_initializes_on_either_side_of_it_is_safe(
         .unwrap_or_else(|| panic!("tone binding"));
     let symbols = FxHashMap::from_iter([(symbol, Constant::String("red".to_string()))]);
     let inline = Inline {
+        scalar_reads: &FxHashMap::default(),
         ast_builder: &ast_builder,
         scoping: &scoping,
         initialization: &initialization,

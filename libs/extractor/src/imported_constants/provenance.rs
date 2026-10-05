@@ -211,6 +211,14 @@ impl<'a> Proof<'_, 'a> {
     }
 
     pub(crate) fn factory(&self, symbol: SymbolId) -> Option<&Expression<'a>> {
+        if self
+            .scoping
+            .get_resolved_reference_ids(symbol)
+            .iter()
+            .any(|reference| self.scoping.get_reference(*reference).is_write())
+        {
+            return None;
+        }
         let body = match self.nodes.kind(self.scoping.symbol_declaration(symbol)) {
             AstKind::VariableDeclarator(declaration) => {
                 match unwrap_syntax_only(declaration.init.as_ref()?) {

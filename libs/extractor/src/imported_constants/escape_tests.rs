@@ -201,3 +201,13 @@ fn indirect_references_when_their_returned_container_escapes_are_not_static(
     let source = format!("import {{css}} from '@devup-ui/react';{declarations}");
     assert!(extracted(&source, "").is_err(), "{declarations}");
 }
+
+#[rstest]
+#[case("let make=()=>({ p: 1 });make=()=>({ p: 5 });const made=make();")]
+#[case("function make(){return { p: 1 }}make=()=>({ p: 5 });const made=make();")]
+#[case("let make=()=>({ p: 1 });const made=make();make=()=>({ p: 5 });")]
+#[serial_test::serial]
+fn factory_when_its_binding_can_be_reassigned_is_not_evaluated(#[case] declarations: &str) {
+    let source = format!("import {{css}} from '@devup-ui/react';{declarations}css({{p:made.p}});");
+    assert!(extracted(&source, "").is_err(), "{declarations}");
+}
