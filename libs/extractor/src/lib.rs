@@ -8,6 +8,8 @@ mod gen_class_name;
 mod gen_style;
 mod import_alias_visit;
 mod imported_constants;
+#[cfg(test)]
+mod jsx_dev_tests;
 mod module_loader;
 mod mutations;
 mod prop_modify_utils;
