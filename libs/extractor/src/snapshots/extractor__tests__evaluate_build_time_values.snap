@@ -1,0 +1,233 @@
+---
+source: libs/extractor/src/lib.rs
+expression: "ToBTreeSet::from(output)"
+---
+ToBTreeSet {
+    styles: {
+        Static(
+            ExtractStaticStyle {
+                property: "background",
+                value: "darker(.2)",
+                level: 0,
+                selector: None,
+                style_order: None,
+                layer: None,
+            },
+        ),
+        Static(
+            ExtractStaticStyle {
+                property: "color",
+                value: "#369",
+                level: 0,
+                selector: None,
+                style_order: None,
+                layer: None,
+            },
+        ),
+        Static(
+            ExtractStaticStyle {
+                property: "color",
+                value: "darker(.1)",
+                level: 0,
+                selector: None,
+                style_order: None,
+                layer: None,
+            },
+        ),
+        Static(
+            ExtractStaticStyle {
+                property: "color",
+                value: "darker(.2)",
+                level: 0,
+                selector: None,
+                style_order: None,
+                layer: None,
+            },
+        ),
+        Static(
+            ExtractStaticStyle {
+                property: "color",
+                value: "darker(.2)",
+                level: 0,
+                selector: Some(
+                    Global(
+                        "body",
+                        "/src/App.tsx",
+                    ),
+                ),
+                style_order: Some(
+                    0,
+                ),
+                layer: None,
+            },
+        ),
+        Static(
+            ExtractStaticStyle {
+                property: "color",
+                value: "darker(.2)",
+                level: 0,
+                selector: Some(
+                    Selector(
+                        "&:hover",
+                    ),
+                ),
+                style_order: None,
+                layer: None,
+            },
+        ),
+        Static(
+            ExtractStaticStyle {
+                property: "color",
+                value: "darker(.3)",
+                level: 0,
+                selector: None,
+                style_order: None,
+                layer: None,
+            },
+        ),
+        Static(
+            ExtractStaticStyle {
+                property: "content",
+                value: "\"---A\"",
+                level: 0,
+                selector: None,
+                style_order: None,
+                layer: None,
+            },
+        ),
+        Static(
+            ExtractStaticStyle {
+                property: "fill",
+                value: "#369",
+                level: 0,
+                selector: None,
+                style_order: None,
+                layer: None,
+            },
+        ),
+        Static(
+            ExtractStaticStyle {
+                property: "height",
+                value: "16px",
+                level: 0,
+                selector: None,
+                style_order: None,
+                layer: None,
+            },
+        ),
+        Static(
+            ExtractStaticStyle {
+                property: "margin",
+                value: "4px",
+                level: 0,
+                selector: Some(
+                    At {
+                        kind: Media,
+                        query: "(min-width:600px)",
+                        selector: None,
+                        outer: [],
+                        file: None,
+                    },
+                ),
+                style_order: None,
+                layer: None,
+            },
+        ),
+        Static(
+            ExtractStaticStyle {
+                property: "margin",
+                value: "64px",
+                level: 0,
+                selector: None,
+                style_order: None,
+                layer: None,
+            },
+        ),
+        Static(
+            ExtractStaticStyle {
+                property: "outline-color",
+                value: "teal",
+                level: 0,
+                selector: None,
+                style_order: None,
+                layer: None,
+            },
+        ),
+        Static(
+            ExtractStaticStyle {
+                property: "padding",
+                value: "4px",
+                level: 0,
+                selector: None,
+                style_order: None,
+                layer: None,
+            },
+        ),
+        Static(
+            ExtractStaticStyle {
+                property: "padding",
+                value: "8px",
+                level: 0,
+                selector: None,
+                style_order: None,
+                layer: None,
+            },
+        ),
+        Static(
+            ExtractStaticStyle {
+                property: "top",
+                value: "-8px",
+                level: 0,
+                selector: None,
+                style_order: None,
+                layer: None,
+            },
+        ),
+        Static(
+            ExtractStaticStyle {
+                property: "width",
+                value: "32px",
+                level: 0,
+                selector: None,
+                style_order: None,
+                layer: None,
+            },
+        ),
+        Static(
+            ExtractStaticStyle {
+                property: "z-index",
+                value: "4",
+                level: 0,
+                selector: None,
+                style_order: None,
+                layer: None,
+            },
+        ),
+        Dynamic(
+            ExtractDynamicStyle {
+                property: "color",
+                level: 0,
+                identifier: "darken(.4,`#336699`)",
+                selector: None,
+                style_order: None,
+            },
+        ),
+        Keyframes(
+            ExtractKeyframes {
+                keyframes: {
+                    "from": [
+                        ExtractStaticStyle {
+                            property: "opacity",
+                            value: ".5",
+                            level: 0,
+                            selector: None,
+                            style_order: None,
+                            layer: None,
+                        },
+                    ],
+                },
+            },
+        ),
+    },
+    code: "import \"@devup-ui/react/devup-ui-0.css\";\nimport * as stylex from \"@stylexjs/stylex\";\nimport { PRIMARY, SPACE } from \"./color\";\nimport { card } from \"./styles\";\nimport { BEFORE } from \"./fails\";\nexport const SIZE = 4;\nexport default function twice(n: number) {\n\treturn n * 2;\n}\nenum Level {\n\tLow = 1,\n\tHigh = twice(2)\n}\nfunction darken(amount: number, color: string): string {\n\treturn color === PRIMARY ? `darker(${amount})` : color;\n}\nconst LIGHT = darken(.2, PRIMARY);\nconst color = darken(.3, PRIMARY);\nconst make = (size: number) => ({\n\tp: size,\n\t_hover: { color: LIGHT }\n});\nconst label = (text: string) => text.toUpperCase().padStart(4, \"-\");\nexport const a = \"a-n a-o a-p a-q a-e a-r\";\nexport const b = \"a-s\";\n;\nconst styles = { \"base\": \"a-t\" };\nexport const c = <div {...{ className: \"a-t\" }} className={`a-a ${{ className: \"a-t\" }?.className || \"\"}`} style={{ \"--a\": darken(.4,`#336699`) }} />;\nexport const d = \"a-u a-v a-w a-x a-y a-i\";\nexport const e = (dark: boolean) => `a-_ ${dark ? \"a-t\" : \"a-j\"} ${dark ? \"a-z\" : \"\"}`;\nexport const f = `a-aa ${card}`;\n",
+}

@@ -1,7 +1,6 @@
 use std::fmt::{Debug, Formatter};
 
 use css::{
-    optimize_value::optimize_value,
     sheet_to_classname, sheet_to_variable_name,
     style_selector::{StyleSelector, optimize_selector},
 };
@@ -23,6 +22,8 @@ pub struct ExtractDynamicStyle {
 
     /// Whether the value had `!important` that was stripped from the identifier
     important: bool,
+
+    pub(crate) layer: Option<String>,
 }
 
 impl Debug for ExtractDynamicStyle {
@@ -35,6 +36,9 @@ impl Debug for ExtractDynamicStyle {
             .field("style_order", &self.style_order);
         if self.important {
             s.field("important", &self.important);
+        }
+        if let Some(layer) = &self.layer {
+            s.field("layer", layer);
         }
         s.finish()
     }
@@ -79,6 +83,22 @@ fn strip_important(identifier: String) -> (String, bool) {
     (identifier, false)
 }
 
+/// `identifier`, the code the element runs, without the statement's semicolon;
+/// only a template holding the whole CSS value loses the `;` ending it. The
+/// code is not optimized as CSS, as that would rewrite the literals it passes on
+fn runtime_code(identifier: &str) -> String {
+    let code = identifier.trim();
+    let code = code.strip_suffix(';').unwrap_or(code);
+    match code
+        .strip_prefix('`')
+        .and_then(|code| code.strip_suffix('`'))
+        .filter(|value| value.ends_with(';'))
+    {
+        Some(value) => format!("`{}`", value.trim_end_matches(';')),
+        None => code.to_string(),
+    }
+}
+
 impl ExtractDynamicStyle {
     /// create a new `ExtractDynamicStyle`
     pub fn new(
@@ -89,8 +109,7 @@ impl ExtractDynamicStyle {
     ) -> Self {
         // `optimize_value` returns `Cow`; `strip_important` takes ownership (and
         // the struct stores the `String`), so materialize the owned form here.
-        let optimized = optimize_value(identifier).into_owned();
-        let (identifier, important) = strip_important(optimized);
+        let (identifier, important) = strip_important(runtime_code(identifier));
         Self {
             property: property.to_string(),
             level,
@@ -98,6 +117,7 @@ impl ExtractDynamicStyle {
             selector: selector.map(optimize_selector),
             style_order: None,
             important,
+            layer: None,
         }
     }
 
@@ -124,11 +144,15 @@ impl ExtractDynamicStyle {
     pub const fn important(&self) -> bool {
         self.important
     }
+
+    pub fn layer(&self) -> Option<&str> {
+        self.layer.as_deref()
+    }
 }
 
 impl ExtractStyleProperty for ExtractDynamicStyle {
     fn extract(&self, filename: Option<&str>) -> StyleProperty {
-        let selector = self.selector.as_ref().map(StyleSelector::as_class_str);
+        let selector = super::class_selector(self.selector.as_ref(), self.layer());
         StyleProperty::Variable {
             class_name: sheet_to_classname(
                 self.property.as_str(),

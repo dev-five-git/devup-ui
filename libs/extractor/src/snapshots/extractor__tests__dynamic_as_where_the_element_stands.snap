@@ -1,0 +1,39 @@
+---
+source: libs/extractor/src/lib.rs
+expression: "ToBTreeSet::from(output)"
+---
+ToBTreeSet {
+    styles: {
+        Static(
+            ExtractStaticStyle {
+                property: "margin",
+                value: "4px",
+                level: 0,
+                selector: None,
+                style_order: None,
+                layer: None,
+            },
+        ),
+        Static(
+            ExtractStaticStyle {
+                property: "padding",
+                value: "4px",
+                level: 0,
+                selector: None,
+                style_order: None,
+                layer: None,
+            },
+        ),
+        Static(
+            ExtractStaticStyle {
+                property: "padding",
+                value: "8px",
+                level: 0,
+                selector: None,
+                style_order: None,
+                layer: None,
+            },
+        ),
+    },
+    code: "import \"@devup-ui/react/devup-ui-0.css\";\nexport const a = (on, C, items) => <section title={<C className=\"a-a\" />}>\n    {on ? <a className=\"a-b\" /> : <b className=\"a-b\" />}\n    {items.map((item) => <C key={item} className=\"a-c\" />)}\n    <span>{on}</span>\n  </section>;\nexport const after = 42;\n",
+}

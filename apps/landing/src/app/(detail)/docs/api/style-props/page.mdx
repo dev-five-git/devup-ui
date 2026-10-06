@@ -10,6 +10,8 @@ export const metadata = {
 
 The attributes defined in Style Property correspond to those defined in Props, allowing them to be used directly as component props.
 
+A number given to a length is on the spacing scale (`p={4}` is `16px`). Times are milliseconds, never scaled: `transitionDuration={300}`, `transitionDelay`, `animationDuration` and `animationDelay` give `300ms`. Unitless properties such as `lineHeight`, `zIndex`, `opacity` and the counters (`counterReset`, `counterIncrement`, `counterSet`) keep the number as written.
+
 ## Animation
 
 <table>

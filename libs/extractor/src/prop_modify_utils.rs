@@ -2,7 +2,9 @@ use crate::extract_style::ExtractStyleProperty;
 use crate::extract_style::style_property::StyleProperty;
 use crate::gen_class_name::gen_class_names;
 use crate::gen_style::gen_styles;
-use crate::tailwind::{has_tailwind_classes, parse_single_class, parse_tailwind_to_styles};
+use crate::tailwind::{
+    TailwindClass, has_tailwind_classes, parse_single_class, parse_tailwind_to_styles,
+};
 use crate::utils::{get_str_by_property_key, merge_object_expressions};
 use crate::{ExtractStyleProp, ExtractStyleValue};
 use oxc_allocator::{CloneIn, FromIn, GetAllocator};
@@ -339,18 +341,23 @@ pub fn get_class_name_expression<'a>(
         class_expressions.push(class_name);
     }
     if class_name_prop.is_none() {
-        class_expressions.extend(spread_props.iter().map(|ex| {
-            convert_class_name(
-                ast_builder,
-                &Expression::StaticMemberExpression(StaticMemberExpression::boxed(
-                    SPAN,
-                    ex.clone_in(ast_builder.allocator()),
-                    IdentifierName::new(SPAN, "className", ast_builder),
-                    true,
-                    ast_builder,
-                )),
-            )
-        }));
+        class_expressions.extend(
+            spread_props
+                .iter()
+                .filter(|ex| may_hold(ex, "className"))
+                .map(|ex| {
+                    convert_class_name(
+                        ast_builder,
+                        &Expression::StaticMemberExpression(StaticMemberExpression::boxed(
+                            SPAN,
+                            ex.clone_in(ast_builder.allocator()),
+                            IdentifierName::new(SPAN, "className", ast_builder),
+                            true,
+                            ast_builder,
+                        )),
+                    )
+                }),
+        );
     }
     let expression = merge_string_expressions(ast_builder, &class_expressions);
 
@@ -432,8 +439,10 @@ fn extract_tailwind_from_class_name<'a>(
             let mut tailwind_styles: Vec<ExtractStyleValue> =
                 Vec::with_capacity(all_classes.bytes().filter(u8::is_ascii_whitespace).count() + 1);
             for class in all_classes.split_whitespace() {
-                if let Some(parsed) = parse_single_class(class) {
-                    let mut static_style = parsed.to_static_style();
+                if let Some(mut static_style) = parse_single_class(class)
+                    .as_ref()
+                    .and_then(TailwindClass::to_static_style)
+                {
                     if let Some(order) = style_order {
                         static_style.style_order = Some(order);
                     }
@@ -642,6 +651,20 @@ fn extract_classes_from_expression(expr: &Expression, classes: &mut String) {
     }
 }
 
+/// Whether the object `spread` gives may hold `key`: an object literal holds
+/// only the keys it writes
+fn may_hold(spread: &Expression<'_>, key: &str) -> bool {
+    let Expression::ObjectExpression(object) = crate::utils::unwrap_syntax_only(spread) else {
+        return true;
+    };
+    object.properties.iter().any(|property| match property {
+        ObjectPropertyKind::ObjectProperty(property) => {
+            property.computed || get_str_by_property_key(&property.key).as_deref() == Some(key)
+        }
+        ObjectPropertyKind::SpreadProperty(_) => true,
+    })
+}
+
 pub fn get_style_expression<'a>(
     ast_builder: &AstBuilder<'a>,
     style_prop: &Option<Expression<'a>>,
@@ -664,15 +687,17 @@ pub fn get_style_expression<'a>(
         style_expressions.push(style_prop);
     }
     if style_prop.is_none() {
-        style_expressions.extend(spread_props.iter().map(|ex| {
-            Expression::StaticMemberExpression(StaticMemberExpression::boxed(
-                SPAN,
-                ex.clone_in(ast_builder.allocator()),
-                IdentifierName::new(SPAN, "style", ast_builder),
-                true,
-                ast_builder,
-            ))
-        }));
+        style_expressions.extend(spread_props.iter().filter(|ex| may_hold(ex, "style")).map(
+            |ex| {
+                Expression::StaticMemberExpression(StaticMemberExpression::boxed(
+                    SPAN,
+                    ex.clone_in(ast_builder.allocator()),
+                    IdentifierName::new(SPAN, "style", ast_builder),
+                    true,
+                    ast_builder,
+                ))
+            },
+        ));
     }
 
     merge_object_expressions(ast_builder, &style_expressions)

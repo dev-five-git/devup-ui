@@ -1,11 +1,13 @@
 use std::borrow::Cow;
 
+use crate::extract_style::constant::MAINTAIN_VALUE_PROPERTIES;
+use css::utils::to_kebab_case;
 use oxc_allocator::{Allocator, CloneIn, GetAllocator};
 use oxc_ast::{
     ast::{
         Argument, CallExpression, Expression, ExpressionStatement, IdentifierName,
-        JSXAttributeValue, ObjectPropertyKind, Program, PropertyKey, Statement,
-        StaticMemberExpression,
+        JSXAttributeValue, ObjectExpression, ObjectProperty, ObjectPropertyKind, Program,
+        PropertyKey, Statement, StaticMemberExpression,
     },
     builder::AstBuilder,
 };
@@ -14,15 +16,51 @@ use oxc_codegen::{Codegen, CodegenOptions};
 #[cfg(test)]
 use oxc_parser::Parser;
 use oxc_span::{SPAN, SourceType};
-use oxc_syntax::operator::{LogicalOperator, UnaryOperator};
+use oxc_syntax::operator::{BinaryOperator, LogicalOperator, UnaryOperator};
 
 /// Check if a filename is a vanilla-extract style file.
-///
-/// This lives here rather than in `vanilla_extract` because that module is behind
-/// the `vanilla-extract` feature (it pulls in the Boa evaluator), while import
-/// rewriting needs the check in every build — including the lite WASM variant.
 pub(super) fn is_vanilla_extract_file(filename: &str) -> bool {
     filename.ends_with(".css.ts") || filename.ends_with(".css.js")
+}
+
+/// Whether vanilla-extract leaves a number on `key` without a unit: unitless
+/// properties, custom properties, and array indices.
+pub(super) fn is_unitless_key(key: &str) -> bool {
+    key.starts_with("--")
+        || key.starts_with("var(")
+        || key.bytes().all(|byte| byte.is_ascii_digit())
+        || MAINTAIN_VALUE_PROPERTIES.contains(to_kebab_case(key).as_ref())
+}
+
+/// Whether a number on `key` stays bare in a library whose numbers mean pixels:
+/// unitless keys, and Devup UI shorthands (`p`, `bg`, `mx`, ...), which keep
+/// Devup UI's spacing scale because no such library defines them.
+pub(super) fn keeps_bare_number(key: &str) -> bool {
+    if is_unitless_key(key) {
+        return true;
+    }
+    let mut properties = css::disassemble_property(key);
+    let kebab = to_kebab_case(key);
+    !(properties.len() == 1
+        && properties.next().is_some_and(|property| {
+            property.trim_start_matches('-') == kebab.trim_start_matches('-')
+        }))
+}
+
+/// A JS number literal (`8`, `-8`, `(8)`), unlike a numeric string.
+pub(super) fn js_number_literal(value: &Expression) -> Option<f64> {
+    match value {
+        Expression::NumericLiteral(number) => Some(number.value),
+        Expression::ParenthesizedExpression(inner) => js_number_literal(&inner.expression),
+        Expression::UnaryExpression(unary) => {
+            js_number_literal(&unary.argument).and_then(|number| match unary.operator {
+                UnaryOperator::UnaryNegation => Some(-number),
+                UnaryOperator::UnaryPlus => Some(number),
+                _ => None,
+            })
+        }
+        _ => None,
+    }
 }
 
 /// Strip the wrappers that exist only in the source text: TypeScript's `as` /
@@ -84,6 +122,25 @@ fn minify_codegen_options() -> CodegenOptions {
 }
 
 pub(super) fn expression_to_code(expression: &Expression) -> String {
+    generate_code(expression, minify_codegen_options())
+}
+
+/// `expression` as it would be written, on one line, for messages
+pub(super) fn readable_code(expression: &Expression) -> String {
+    let code = generate_code(expression, CodegenOptions::default());
+    let code = code.trim_end().trim_end_matches(';');
+    // The parentheses keep a statement from reading as a block or a directive
+    let code = match expression {
+        Expression::ObjectExpression(_) | Expression::StringLiteral(_) => code
+            .strip_prefix('(')
+            .and_then(|code| code.strip_suffix(')'))
+            .unwrap_or(code),
+        _ => code,
+    };
+    code.lines().map(str::trim).collect::<Vec<_>>().join(" ")
+}
+
+fn generate_code(expression: &Expression, options: CodegenOptions) -> String {
     let allocator = Allocator::default();
     let builder = oxc_ast::builder::AstBuilder::new(&allocator);
     // Build the one-statement `Program` directly instead of parsing an empty
@@ -105,10 +162,7 @@ pub(super) fn expression_to_code(expression: &Expression) -> String {
         &builder,
     );
 
-    Codegen::new()
-        .with_options(minify_codegen_options())
-        .build(&program)
-        .code
+    Codegen::new().with_options(options).build(&program).code
 }
 
 pub(super) fn is_same_expression<'a>(a: &Expression<'a>, b: &Expression<'a>) -> bool {
@@ -293,9 +347,33 @@ pub(super) fn get_number_by_literal_expression(expr: &Expression) -> Option<f64>
 /// `Cow::Owned`. The borrow is tied to the arena lifetime `'a`, not the `&expr`
 /// reference, so a caller can drop the borrow and mutate `*expr` immediately
 /// after (see `as_visit`): the arena bytes outlive the node reassignment.
+/// `number` as JavaScript's `String(number)` writes it
+pub(crate) fn js_number_string(number: f64) -> String {
+    if number.is_infinite() {
+        return if number > 0.0 {
+            "Infinity"
+        } else {
+            "-Infinity"
+        }
+        .to_string();
+    }
+    if number == 0.0 {
+        return "0".to_string();
+    }
+    if (1e-6..1e21).contains(&number.abs()) {
+        return number.to_string();
+    }
+    // Exponent notation, with an explicit sign on a positive exponent
+    let exponent = format!("{number:e}");
+    match exponent.split_once('e') {
+        Some((mantissa, power)) if !power.starts_with('-') => format!("{mantissa}e+{power}"),
+        _ => exponent,
+    }
+}
+
 pub(super) fn get_string_by_literal_expression<'a>(expr: &Expression<'a>) -> Option<Cow<'a, str>> {
     get_number_by_literal_expression(expr)
-        .map(|num| Cow::Owned(num.to_string()))
+        .map(|num| Cow::Owned(js_number_string(num)))
         .or_else(|| match expr {
             Expression::ParenthesizedExpression(parenthesized) => {
                 get_string_by_literal_expression(&parenthesized.expression)
@@ -390,6 +468,168 @@ pub(super) fn wrap_array_filter<'a>(
     Some(join_call)
 }
 
+/// Whether reading `expression` again gives the same value and changes
+/// nothing: literals, reads and functions, not calls, `new` or assignments
+pub(super) fn is_pure(expression: &Expression<'_>) -> bool {
+    use oxc_ast::ast::{ArrayExpressionElement, PropertyKind};
+    match expression {
+        Expression::BooleanLiteral(_)
+        | Expression::NullLiteral(_)
+        | Expression::NumericLiteral(_)
+        | Expression::BigIntLiteral(_)
+        | Expression::StringLiteral(_)
+        | Expression::RegExpLiteral(_)
+        | Expression::Identifier(_)
+        | Expression::ThisExpression(_)
+        | Expression::ArrowFunctionExpression(_)
+        | Expression::FunctionExpression(_) => true,
+        Expression::TemplateLiteral(template) => template.expressions.iter().all(is_pure),
+        Expression::StaticMemberExpression(member) => is_pure(&member.object),
+        Expression::PrivateFieldExpression(member) => is_pure(&member.object),
+        Expression::ComputedMemberExpression(member) => {
+            is_pure(&member.object) && is_pure(&member.expression)
+        }
+        Expression::UnaryExpression(unary) => {
+            unary.operator != UnaryOperator::Delete && is_pure(&unary.argument)
+        }
+        Expression::BinaryExpression(binary) => is_pure(&binary.left) && is_pure(&binary.right),
+        Expression::LogicalExpression(logical) => is_pure(&logical.left) && is_pure(&logical.right),
+        Expression::ConditionalExpression(conditional) => {
+            is_pure(&conditional.test)
+                && is_pure(&conditional.consequent)
+                && is_pure(&conditional.alternate)
+        }
+        Expression::ArrayExpression(array) => array.elements.iter().all(|element| match element {
+            ArrayExpressionElement::SpreadElement(spread) => is_pure(&spread.argument),
+            ArrayExpressionElement::Elision(_) => true,
+            element => element.as_expression().is_some_and(is_pure),
+        }),
+        Expression::ObjectExpression(object) => {
+            object.properties.iter().all(|property| match property {
+                ObjectPropertyKind::ObjectProperty(property) => {
+                    property.key.as_expression().is_none_or(is_pure)
+                        && (property.kind != PropertyKind::Init || is_pure(&property.value))
+                }
+                ObjectPropertyKind::SpreadProperty(spread) => is_pure(&spread.argument),
+            })
+        }
+        Expression::ParenthesizedExpression(inner) => is_pure(&inner.expression),
+        Expression::TSAsExpression(inner) => is_pure(&inner.expression),
+        Expression::TSSatisfiesExpression(inner) => is_pure(&inner.expression),
+        Expression::TSNonNullExpression(inner) => is_pure(&inner.expression),
+        Expression::TSTypeAssertion(inner) => is_pure(&inner.expression),
+        _ => false,
+    }
+}
+
+/// Finds whether code waits (`await`) or yields outside the functions it
+/// holds, which no function wrapped around it could do in its place
+#[derive(Default)]
+pub(super) struct Suspends {
+    pub found: bool,
+}
+
+impl<'a> oxc_ast_visit::Visit<'a> for Suspends {
+    fn visit_await_expression(&mut self, _: &oxc_ast::ast::AwaitExpression<'a>) {
+        self.found = true;
+    }
+    fn visit_yield_expression(&mut self, _: &oxc_ast::ast::YieldExpression<'a>) {
+        self.found = true;
+    }
+    fn visit_function(&mut self, _: &oxc_ast::ast::Function<'a>, _: oxc_syntax::scope::ScopeFlags) {
+    }
+    fn visit_arrow_function_expression(&mut self, _: &oxc_ast::ast::ArrowFunctionExpression<'a>) {}
+    fn visit_class(&mut self, _: &oxc_ast::ast::Class<'a>) {}
+}
+
+/// Whether an element can read its impure spreads once through a function
+/// wrapped around it: what stays in that function (style props, `className`
+/// and `style`) neither waits nor yields, as the spreads and the other
+/// attributes and children before the last of them move out of it
+pub(super) fn reads_spreads_once(element: &oxc_ast::ast::JSXElement<'_>) -> bool {
+    use oxc_ast::ast::{JSXAttributeItem, JSXAttributeName};
+    use oxc_ast_visit::Visit;
+    let mut impure = false;
+    let mut suspends = Suspends::default();
+    for attribute in &element.opening_element.attributes {
+        match attribute {
+            JSXAttributeItem::SpreadAttribute(spread) => impure |= !is_pure(&spread.argument),
+            JSXAttributeItem::Attribute(attribute) => {
+                if !matches!(&attribute.name, JSXAttributeName::Identifier(name)
+                    if stays_attribute(&name.name))
+                    && let Some(value) = &attribute.value
+                {
+                    suspends.visit_jsx_attribute_value(value);
+                }
+            }
+        }
+    }
+    impure && !suspends.found
+}
+
+/// Whether the prop `name` stays an attribute of the element built, rather
+/// than becoming its classes or style
+pub(super) fn stays_attribute(name: &str) -> bool {
+    css::is_special_property::is_special_property(name) && !matches!(name, "className" | "style")
+}
+
+/// `((name, ...) => body)(value, ...)`: each value is evaluated once, where
+/// `body` reads it as often as it needs
+pub(super) fn call_with_values<'a>(
+    builder: &AstBuilder<'a>,
+    values: Vec<(String, Expression<'a>)>,
+    body: Expression<'a>,
+) -> Expression<'a> {
+    use oxc_ast::ast::{BindingPattern, FormalParameter, FormalParameterKind, FormalParameters};
+    let mut parameters = oxc_allocator::Vec::with_capacity_in(values.len(), builder);
+    let mut arguments = oxc_allocator::Vec::with_capacity_in(values.len(), builder);
+    for (name, value) in values {
+        parameters.push(FormalParameter::new(
+            SPAN,
+            oxc_allocator::Vec::new_in(builder),
+            BindingPattern::new_binding_identifier(
+                SPAN,
+                <oxc_ast::ast::Ident<'a> as oxc_allocator::FromIn<'a, &str>>::from_in(
+                    name.as_str(),
+                    builder.allocator(),
+                ),
+                builder,
+            ),
+            None::<oxc_allocator::Box<oxc_ast::ast::TSTypeAnnotation<'a>>>,
+            None::<oxc_allocator::Box<Expression<'a>>>,
+            false,
+            None,
+            false,
+            false,
+            builder,
+        ));
+        arguments.push(Argument::from(value));
+    }
+    let arrow = Expression::new_arrow_function_expression(
+        SPAN,
+        false,
+        None::<oxc_allocator::Box<oxc_ast::ast::TSTypeParameterDeclaration<'a>>>,
+        FormalParameters::boxed(
+            SPAN,
+            FormalParameterKind::ArrowFormalParameters,
+            parameters,
+            None::<oxc_allocator::Box<oxc_ast::ast::FormalParameterRest<'a>>>,
+            builder,
+        ),
+        None::<oxc_allocator::Box<oxc_ast::ast::TSTypeAnnotation<'a>>>,
+        body.into(),
+        builder,
+    );
+    Expression::new_call_expression(
+        SPAN,
+        Expression::new_parenthesized_expression(SPAN, arrow, builder),
+        None::<oxc_allocator::Box<'_, oxc_ast::ast::TSTypeParameterInstantiation<'_>>>,
+        arguments,
+        false,
+        builder,
+    )
+}
+
 pub(super) fn wrap_direct_call<'a>(
     builder: &AstBuilder<'a>,
     expr: &Expression<'a>,
@@ -434,6 +674,631 @@ pub(super) fn merge_object_expressions<'a>(
         ));
     }
     Some(Expression::new_object_expression(SPAN, props, ast_builder))
+}
+
+/// Several style arguments, or arrays of them, as vanilla-extract, Emotion and
+/// styled-components compose them
+pub(super) struct StyleArguments<'a> {
+    /// Classes composed as they are: other styles held in variables, strings
+    pub classes: Vec<Expression<'a>>,
+    /// The rule objects merged: later declarations replace earlier ones and
+    /// nested rules merge
+    pub rules: Expression<'a>,
+}
+
+/// `None` for a single argument read as it is written, or when a part is
+/// neither a rule object nor a class (`null`/`undefined`/`false` parts are
+/// skipped).
+pub(super) fn style_arguments<'a>(
+    ast_builder: &AstBuilder<'a>,
+    arguments: &[Argument<'a>],
+) -> Option<StyleArguments<'a>> {
+    if reads_directly(arguments) {
+        return None;
+    }
+    let mut parts = Vec::new();
+    let mut classes = Vec::new();
+    for argument in arguments {
+        let expression = match argument {
+            Argument::SpreadElement(spread) => match unwrap_syntax_only(&spread.argument) {
+                array @ Expression::ArrayExpression(_) => array,
+                _ => return None,
+            },
+            argument => argument.to_expression(),
+        };
+        collect_style_parts(ast_builder, expression, &mut parts, &mut classes)?;
+    }
+    let mut merged = oxc_allocator::Vec::new_in(ast_builder);
+    for part in parts {
+        match part {
+            StylePart::Rules(object) => {
+                merge_style_properties(ast_builder, &mut merged, &object.properties);
+            }
+            StylePart::Conditional {
+                test,
+                consequent,
+                alternate,
+            } => merge_conditional_properties(
+                ast_builder,
+                &mut merged,
+                &test,
+                consequent.map_or(&[], |object| &object.properties),
+                alternate.map_or(&[], |object| &object.properties),
+            )?,
+        }
+    }
+    Some(StyleArguments {
+        classes,
+        rules: Expression::new_object_expression(SPAN, merged, ast_builder),
+    })
+}
+
+/// Whether a part `css()` or `styled()` joins, or an object a JSX spread
+/// gives, reads what `unknown` holds
+pub(super) fn reads_unknown(
+    expression: &Expression<'_>,
+    unknown: &crate::imported_constants::Unknown,
+) -> bool {
+    match unwrap_syntax_only(expression) {
+        Expression::ArrayExpression(array) => array.elements.iter().any(|element| {
+            element
+                .as_expression()
+                .is_some_and(|element| reads_unknown(element, unknown))
+        }),
+        Expression::LogicalExpression(logical) => {
+            (logical.operator != LogicalOperator::And && reads_unknown(&logical.left, unknown))
+                || reads_unknown(&logical.right, unknown)
+        }
+        Expression::ConditionalExpression(conditional) => {
+            reads_unknown(&conditional.consequent, unknown)
+                || reads_unknown(&conditional.alternate, unknown)
+        }
+        expression => unknown.read_by(expression),
+    }
+}
+
+pub(super) fn binding_root<'e>(expression: &'e Expression<'_>) -> Option<&'e str> {
+    match expression {
+        Expression::Identifier(identifier) => Some(identifier.name.as_str()),
+        Expression::StaticMemberExpression(member) => binding_root(&member.object),
+        Expression::ComputedMemberExpression(member) => binding_root(&member.object),
+        _ => None,
+    }
+}
+
+/// A single style argument that needs no composing: a rule object, CSS text,
+/// or a condition choosing between rule objects
+pub(super) fn reads_directly(arguments: &[Argument<'_>]) -> bool {
+    let [argument] = arguments else {
+        return false;
+    };
+    let expression = match argument {
+        Argument::SpreadElement(spread) => Some(&spread.argument),
+        argument => argument.as_expression(),
+    };
+    match expression.map(unwrap_syntax_only) {
+        Some(
+            Expression::ObjectExpression(_)
+            | Expression::TemplateLiteral(_)
+            | Expression::StringLiteral(_),
+        ) => true,
+        Some(Expression::ConditionalExpression(conditional)) => {
+            [&conditional.consequent, &conditional.alternate]
+                .into_iter()
+                .all(|side| matches!(branch(side), Some(Branch::Rules(_) | Branch::Empty)))
+        }
+        _ => false,
+    }
+}
+
+enum StylePart<'b, 'a> {
+    Rules(&'b ObjectExpression<'a>),
+    Conditional {
+        test: Expression<'a>,
+        consequent: Option<&'b ObjectExpression<'a>>,
+        alternate: Option<&'b ObjectExpression<'a>>,
+    },
+}
+
+enum Branch<'b, 'a> {
+    Empty,
+    Rules(&'b ObjectExpression<'a>),
+    Class(&'b Expression<'a>),
+}
+
+fn branch<'b, 'a>(expression: &'b Expression<'a>) -> Option<Branch<'b, 'a>> {
+    let expression = unwrap_syntax_only(expression);
+    match expression {
+        Expression::ObjectExpression(object) => Some(Branch::Rules(object)),
+        Expression::NullLiteral(_) | Expression::BooleanLiteral(_) => Some(Branch::Empty),
+        Expression::Identifier(identifier) if identifier.name == "undefined" => Some(Branch::Empty),
+        Expression::Identifier(_)
+        | Expression::StaticMemberExpression(_)
+        | Expression::ComputedMemberExpression(_)
+        | Expression::StringLiteral(_)
+        | Expression::TemplateLiteral(_) => Some(Branch::Class(expression)),
+        _ => None,
+    }
+}
+
+/// `value` as a class: itself when it is a string, nothing otherwise, as the
+/// libraries skip `true` and other non-class values
+fn string_class<'a>(ast_builder: &AstBuilder<'a>, value: &Expression<'a>) -> Expression<'a> {
+    if matches!(
+        value,
+        Expression::StringLiteral(_) | Expression::TemplateLiteral(_)
+    ) {
+        return value.clone_in(ast_builder.allocator());
+    }
+    let is_string = Expression::new_binary_expression(
+        SPAN,
+        Expression::new_unary_expression(
+            SPAN,
+            UnaryOperator::Typeof,
+            value.clone_in(ast_builder.allocator()),
+            ast_builder,
+        ),
+        BinaryOperator::StrictEquality,
+        Expression::new_string_literal(SPAN, "string", None, ast_builder),
+        ast_builder,
+    );
+    Expression::new_conditional_expression(
+        SPAN,
+        is_string,
+        value.clone_in(ast_builder.allocator()),
+        Expression::new_string_literal(SPAN, "", None, ast_builder),
+        ast_builder,
+    )
+}
+
+/// The first value in `props` that is only known at runtime
+pub(super) fn runtime_value(props: &[crate::ExtractStyleProp<'_>]) -> Option<String> {
+    let mut unreadable = Vec::new();
+    unreadable_styles(props, true, &mut unreadable);
+    unreadable
+        .into_iter()
+        .next()
+        .map(|(_, code)| code)
+        .or_else(|| {
+            props
+                .iter()
+                .flat_map(crate::ExtractStyleProp::extract)
+                .find_map(|value| match value {
+                    crate::ExtractStyleValue::Dynamic(style) => {
+                        Some(style.identifier().to_string())
+                    }
+                    _ => None,
+                })
+        })
+}
+
+/// The first value in `props` only known at runtime, a runtime condition
+/// choosing between values included: what styles with no class to switch
+/// between, global styles and keyframes, cannot hold
+pub(super) fn fixed_value(props: &[crate::ExtractStyleProp<'_>]) -> Option<String> {
+    fn condition(prop: &crate::ExtractStyleProp<'_>) -> Option<String> {
+        use crate::ExtractStyleProp;
+        match prop {
+            ExtractStyleProp::Conditional { condition, .. }
+            | ExtractStyleProp::Enum { condition, .. } => Some(readable_code(condition)),
+            ExtractStyleProp::MemberExpression { expression, .. } => {
+                Some(readable_code(expression))
+            }
+            ExtractStyleProp::StaticArray(props) => props.iter().find_map(condition),
+            _ => None,
+        }
+    }
+    runtime_value(props).or_else(|| props.iter().find_map(condition))
+}
+
+/// Where `props` holds styles the build cannot read, with their code; with
+/// `keys`, computed keys among an element's props too
+pub(super) fn unreadable_styles(
+    props: &[crate::ExtractStyleProp<'_>],
+    keys: bool,
+    found: &mut Vec<(u32, String)>,
+) {
+    use crate::ExtractStyleProp;
+    for prop in props {
+        match prop {
+            ExtractStyleProp::Unreadable { offset, code, prop } => {
+                if keys || !prop {
+                    found.push((*offset, code.clone()));
+                }
+            }
+            ExtractStyleProp::StaticArray(props) => unreadable_styles(props, keys, found),
+            ExtractStyleProp::Conditional {
+                consequent,
+                alternate,
+                ..
+            } => {
+                for branch in [consequent, alternate].into_iter().flatten() {
+                    unreadable_styles(std::slice::from_ref(branch.as_ref()), keys, found);
+                }
+            }
+            ExtractStyleProp::Enum { map, .. } => {
+                for props in map.values() {
+                    unreadable_styles(props, keys, found);
+                }
+            }
+            ExtractStyleProp::MemberExpression { map, .. } => {
+                for prop in map.values() {
+                    unreadable_styles(std::slice::from_ref(prop.as_ref()), keys, found);
+                }
+            }
+            ExtractStyleProp::Static(_) | ExtractStyleProp::Expression { .. } => {}
+        }
+    }
+}
+
+pub(super) const STYLE_OBJECT: &str =
+    "its styles must be an object literal or a constant object, or be computed from constants";
+
+pub(super) fn build_time_error(api: &str, code: &str, requirement: &str) -> String {
+    format!("`{api}()` cannot use `{code}` at build time: {requirement}")
+}
+
+pub(super) const RUNTIME_VALUE: &str = "its values must be literals, theme tokens or constants";
+
+const COMPUTED_VALUE: &str =
+    "its values must be literals, theme tokens or constants, or be computed from them";
+
+/// `api` has no element to set a runtime value on, so its values must be
+/// known at build time
+pub(super) fn runtime_value_error(api: &str, value: &str) -> String {
+    build_time_error(api, value, COMPUTED_VALUE)
+}
+
+pub(super) fn element_error(component: &str, code: &str, requirement: &str) -> String {
+    format!("`<{component}>` cannot use `{code}` at build time: {requirement}")
+}
+
+pub(super) fn spread_error(api: &str, spread: &oxc_ast::ast::SpreadElement<'_>) -> (u32, String) {
+    (
+        spread.span.start,
+        build_time_error(
+            api,
+            &format!("...{}", readable_code(&spread.argument)),
+            "write every entry out, as its keys must be known",
+        ),
+    )
+}
+
+pub(super) fn key_error(api: &str, key: &PropertyKey<'_>) -> (u32, String) {
+    let code = key.as_expression().map_or_else(String::new, readable_code);
+    (
+        oxc_span::GetSpan::span(key).start,
+        build_time_error(api, &format!("[{code}]"), "its keys must be known"),
+    )
+}
+
+pub(super) fn readable_argument(argument: &Argument<'_>) -> String {
+    if let Argument::SpreadElement(spread) = argument {
+        return format!("...{}", readable_code(&spread.argument));
+    }
+    argument
+        .as_expression()
+        .map_or_else(String::new, readable_code)
+}
+
+/// `value` as class names at runtime: a class string, a falsy value, or an
+/// array of them nested to any depth
+pub(super) fn runtime_classes<'a>(
+    builder: &AstBuilder<'a>,
+    value: &Expression<'a>,
+) -> Expression<'a> {
+    let method = |object: Expression<'a>, name: &'static str, argument: Expression<'a>| {
+        let mut arguments = oxc_allocator::Vec::with_capacity_in(1, builder);
+        arguments.push(Argument::from(argument));
+        Expression::new_call_expression(
+            SPAN,
+            Expression::StaticMemberExpression(StaticMemberExpression::boxed(
+                SPAN,
+                object,
+                IdentifierName::new(SPAN, name, builder),
+                false,
+                builder,
+            )),
+            None::<oxc_allocator::Box<'_, oxc_ast::ast::TSTypeParameterInstantiation<'_>>>,
+            arguments,
+            false,
+            builder,
+        )
+    };
+    let mut elements = oxc_allocator::Vec::with_capacity_in(1, builder);
+    elements.push(value.clone_in(builder.allocator()).into());
+    let array = Expression::new_array_expression(SPAN, elements, builder);
+    let flat = method(
+        array,
+        "flat",
+        Expression::new_identifier(SPAN, "Infinity", builder),
+    );
+    let filtered = method(
+        flat,
+        "filter",
+        Expression::new_identifier(SPAN, "Boolean", builder),
+    );
+    method(
+        filtered,
+        "join",
+        Expression::new_string_literal(SPAN, " ", None, builder),
+    )
+}
+
+pub(super) fn unplaced_error(expression: &Expression<'_>) -> String {
+    format!(
+        "Cannot place `{}` at build time: an interpolation in a selector or a property name must be a literal or a constant",
+        readable_code(expression)
+    )
+}
+
+pub(super) fn uncomposable_error(arguments: &[Argument<'_>]) -> String {
+    let arguments: Vec<String> = arguments.iter().map(readable_argument).collect();
+    format!(
+        "Cannot compose `{}` at build time: each style must be a rule object, a class, or a condition choosing between them",
+        arguments.join(", ")
+    )
+}
+
+fn collect_style_parts<'b, 'a>(
+    ast_builder: &AstBuilder<'a>,
+    expression: &'b Expression<'a>,
+    parts: &mut Vec<StylePart<'b, 'a>>,
+    classes: &mut Vec<Expression<'a>>,
+) -> Option<()> {
+    let clone = |expression: &Expression<'a>| expression.clone_in(ast_builder.allocator());
+    let class = |branch: &Branch<'b, 'a>| match branch {
+        Branch::Class(class) => Some(clone(class)),
+        _ => None,
+    };
+    let rules = |branch: &Branch<'b, 'a>| match branch {
+        Branch::Rules(object) => Some(*object),
+        _ => None,
+    };
+    let (test, class_true, rules_true, class_false, rules_false) =
+        match unwrap_syntax_only(expression) {
+            Expression::ArrayExpression(array) => {
+                for element in &array.elements {
+                    collect_style_parts(ast_builder, element.as_expression()?, parts, classes)?;
+                }
+                return Some(());
+            }
+            Expression::LogicalExpression(logical) if logical.operator == LogicalOperator::And => {
+                let right = branch(&logical.right)?;
+                (
+                    clone(&logical.left),
+                    class(&right),
+                    rules(&right),
+                    None,
+                    None,
+                )
+            }
+            // `left || right` and `left ?? right`: `left` while it applies, `right`
+            // otherwise
+            Expression::LogicalExpression(logical) => match branch(&logical.left)? {
+                Branch::Rules(object) => {
+                    parts.push(StylePart::Rules(object));
+                    return Some(());
+                }
+                Branch::Empty => {
+                    if logical.operator == LogicalOperator::Coalesce
+                        && matches!(
+                            unwrap_syntax_only(&logical.left),
+                            Expression::BooleanLiteral(_)
+                        )
+                    {
+                        return Some(());
+                    }
+                    return collect_style_parts(ast_builder, &logical.right, parts, classes);
+                }
+                Branch::Class(left) => {
+                    let right = branch(&logical.right)?;
+                    let test = if logical.operator == LogicalOperator::Or {
+                        clone(left)
+                    } else {
+                        Expression::new_binary_expression(
+                            SPAN,
+                            clone(left),
+                            BinaryOperator::Inequality,
+                            Expression::new_null_literal(SPAN, ast_builder),
+                            ast_builder,
+                        )
+                    };
+                    (
+                        test,
+                        Some(string_class(ast_builder, left)),
+                        None,
+                        class(&right),
+                        rules(&right),
+                    )
+                }
+            },
+            Expression::ConditionalExpression(conditional) => {
+                let (consequent, alternate) = (
+                    branch(&conditional.consequent)?,
+                    branch(&conditional.alternate)?,
+                );
+                (
+                    clone(&conditional.test),
+                    class(&consequent),
+                    rules(&consequent),
+                    class(&alternate),
+                    rules(&alternate),
+                )
+            }
+            _ => {
+                match branch(expression)? {
+                    Branch::Rules(object) => parts.push(StylePart::Rules(object)),
+                    Branch::Class(class) => classes.push(clone(class)),
+                    Branch::Empty => {}
+                }
+                return Some(());
+            }
+        };
+    if class_true.is_some() || class_false.is_some() {
+        let empty = || Expression::new_string_literal(SPAN, "", None, ast_builder);
+        classes.push(Expression::new_conditional_expression(
+            SPAN,
+            clone(&test),
+            class_true.unwrap_or_else(empty),
+            class_false.unwrap_or_else(empty),
+            ast_builder,
+        ));
+    }
+    if rules_true.is_some() || rules_false.is_some() {
+        parts.push(StylePart::Conditional {
+            test,
+            consequent: rules_true,
+            alternate: rules_false,
+        });
+    }
+    Some(())
+}
+/// Merge `test ? consequent : alternate` into `merged` one property at a time,
+/// so each property becomes `test ? value : fallback` over what came before.
+/// A class per branch would not do: which of two atomic classes wins depends on
+/// the stylesheet order, not on the order they were composed in.
+fn merge_conditional_properties<'a>(
+    ast_builder: &AstBuilder<'a>,
+    merged: &mut oxc_allocator::Vec<'a, ObjectPropertyKind<'a>>,
+    test: &Expression<'a>,
+    consequent: &[ObjectPropertyKind<'a>],
+    alternate: &[ObjectPropertyKind<'a>],
+) -> Option<()> {
+    let mut keys: Vec<Cow<'_, str>> = Vec::new();
+    for property in consequent.iter().chain(alternate) {
+        let key = static_property(property)?.0;
+        if !keys.contains(&key) {
+            keys.push(key);
+        }
+    }
+    for key in keys {
+        let previous = merged
+            .iter()
+            .position(|property| static_property(property).is_some_and(|(k, _)| k == key))
+            .map(|index| merged.remove(index));
+        let fallback = previous
+            .as_ref()
+            .and_then(static_property)
+            .map(|(_, property)| &property.value);
+        let (when_true, when_false) = (
+            find_property(consequent, &key),
+            find_property(alternate, &key),
+        );
+        let source = when_true.or(when_false)?;
+        let when_true = when_true.map(|property| &property.value);
+        let when_false = when_false.map(|property| &property.value);
+        let value = if [when_true, when_false, fallback]
+            .iter()
+            .any(|value| matches!(value, Some(Expression::ObjectExpression(_))))
+        {
+            let mut nested = oxc_allocator::Vec::new_in(ast_builder);
+            merge_style_properties(ast_builder, &mut nested, object_properties(fallback)?);
+            merge_conditional_properties(
+                ast_builder,
+                &mut nested,
+                test,
+                object_properties(when_true)?,
+                object_properties(when_false)?,
+            )?;
+            Expression::new_object_expression(SPAN, nested, ast_builder)
+        } else {
+            let (when_true, when_false) = (when_true.or(fallback), when_false.or(fallback));
+            Expression::new_conditional_expression(
+                SPAN,
+                test.clone_in(ast_builder.allocator()),
+                value_or_undefined(ast_builder, when_true),
+                value_or_undefined(ast_builder, when_false),
+                ast_builder,
+            )
+        };
+        let mut property = source.clone_in(ast_builder.allocator());
+        property.value = value;
+        merged.push(ObjectPropertyKind::ObjectProperty(property));
+    }
+    Some(())
+}
+
+fn find_property<'b, 'a>(
+    properties: &'b [ObjectPropertyKind<'a>],
+    key: &str,
+) -> Option<&'b oxc_allocator::Box<'a, ObjectProperty<'a>>> {
+    properties
+        .iter()
+        .filter_map(static_property)
+        .find_map(|(k, property)| (k == key).then_some(property))
+}
+
+fn object_properties<'b, 'a>(
+    value: Option<&'b Expression<'a>>,
+) -> Option<&'b [ObjectPropertyKind<'a>]> {
+    match value {
+        None => Some(&[]),
+        Some(Expression::ObjectExpression(object)) => Some(&object.properties),
+        Some(_) => None,
+    }
+}
+
+fn value_or_undefined<'a>(
+    ast_builder: &AstBuilder<'a>,
+    value: Option<&Expression<'a>>,
+) -> Expression<'a> {
+    value.map_or_else(
+        || Expression::new_identifier(SPAN, "undefined", ast_builder),
+        |value| value.clone_in(ast_builder.allocator()),
+    )
+}
+fn static_property<'b, 'a>(
+    property: &'b ObjectPropertyKind<'a>,
+) -> Option<(Cow<'b, str>, &'b oxc_allocator::Box<'a, ObjectProperty<'a>>)> {
+    match property {
+        ObjectPropertyKind::ObjectProperty(property) if !property.computed => {
+            Some((get_str_by_property_key(&property.key)?, property))
+        }
+        _ => None,
+    }
+}
+
+fn merge_style_properties<'a>(
+    ast_builder: &AstBuilder<'a>,
+    merged: &mut oxc_allocator::Vec<'a, ObjectPropertyKind<'a>>,
+    properties: &[ObjectPropertyKind<'a>],
+) {
+    for property in properties {
+        let existing = match property {
+            ObjectPropertyKind::ObjectProperty(property) if !property.computed => {
+                get_str_by_property_key(&property.key).and_then(|key| {
+                    merged.iter().position(|existing| {
+                        matches!(existing, ObjectPropertyKind::ObjectProperty(existing)
+                            if !existing.computed
+                                && get_str_by_property_key(&existing.key).as_deref() == Some(key.as_ref()))
+                    })
+                })
+            }
+            _ => None,
+        };
+        let Some(index) = existing else {
+            merged.push(property.clone_in(ast_builder.allocator()));
+            continue;
+        };
+        let previous = merged.remove(index);
+        if let (
+            ObjectPropertyKind::ObjectProperty(previous),
+            ObjectPropertyKind::ObjectProperty(next),
+        ) = (&previous, property)
+            && let (Expression::ObjectExpression(before), Expression::ObjectExpression(after)) =
+                (&previous.value, &next.value)
+        {
+            let mut nested = oxc_allocator::Vec::new_in(ast_builder);
+            merge_style_properties(ast_builder, &mut nested, &before.properties);
+            merge_style_properties(ast_builder, &mut nested, &after.properties);
+            let mut combined = next.clone_in(ast_builder.allocator());
+            combined.value = Expression::new_object_expression(SPAN, nested, ast_builder);
+            merged.push(ObjectPropertyKind::ObjectProperty(combined));
+        } else {
+            merged.push(property.clone_in(ast_builder.allocator()));
+        }
+    }
 }
 
 /// Borrowing variant of [`get_string_by_property_key`].
@@ -494,6 +1359,211 @@ mod tests {
         // Non-numeric values borrow the input; only the numeric branch allocates.
         assert!(matches!(convert_value("foo"), Cow::Borrowed(_)));
         assert!(matches!(convert_value("4"), Cow::Owned(_)));
+    }
+
+    #[test]
+    fn test_js_number_literal() {
+        let allocator = Allocator::default();
+        for (source, expected) in [
+            ("8", Some(8.0)),
+            ("(8)", Some(8.0)),
+            ("+8", Some(8.0)),
+            ("-8", Some(-8.0)),
+            ("-(1.5)", Some(-1.5)),
+            ("!8", None),
+            ("'8'", None),
+            ("-x", None),
+        ] {
+            let expression = Parser::new(&allocator, source, SourceType::ts())
+                .parse_expression()
+                .unwrap();
+            assert_eq!(js_number_literal(&expression), expected, "{source}");
+        }
+        assert!(is_unitless_key("lineHeight"));
+        assert!(is_unitless_key("--gap"));
+        assert!(is_unitless_key("0"));
+        assert!(!is_unitless_key("padding"));
+        assert!(keeps_bare_number("lineHeight"));
+        assert!(keeps_bare_number("p"));
+        assert!(keeps_bare_number("mx"));
+        assert!(!keeps_bare_number("padding"));
+        assert!(!keeps_bare_number("backgroundColor"));
+        assert!(!keeps_bare_number("WebkitTextStrokeWidth"));
+    }
+
+    #[test]
+    fn test_is_pure_and_suspends() {
+        use oxc_ast_visit::Visit;
+        let allocator = Allocator::default();
+        for (source, pure) in [
+            ("true", true),
+            ("null", true),
+            ("1", true),
+            ("1n", true),
+            ("'a'", true),
+            ("/a/", true),
+            ("a", true),
+            ("this", true),
+            ("() => f()", true),
+            ("function () { f(); }", true),
+            ("`a${b}`", true),
+            ("`a${f()}`", false),
+            ("a.b", true),
+            ("a[b]", true),
+            ("a[f()]", false),
+            ("-a", true),
+            ("delete a.b", false),
+            ("a + b", true),
+            ("a || f()", false),
+            ("a ? b : c", true),
+            ("[a, , ...b]", true),
+            ("[f()]", false),
+            ("({ a, [b]: c, get d() { return f(); }, ...e })", true),
+            ("({ [f()]: 1 })", false),
+            ("({ ...f() })", false),
+            ("(a)", true),
+            ("a as T", true),
+            ("a satisfies T", true),
+            ("a!", true),
+            ("<T>a", true),
+            ("f()", false),
+            ("new A()", false),
+            ("a = 1", false),
+            ("a++", false),
+            ("tag`a`", false),
+        ] {
+            let expression = Parser::new(&allocator, source, SourceType::ts())
+                .parse_expression()
+                .unwrap();
+            assert_eq!(is_pure(&expression), pure, "{source}");
+        }
+        for (source, found) in [
+            (
+                "[await a, async function () { await b; }, class { m() {} }]",
+                true,
+            ),
+            (
+                "[async function () { await b; }, class { m() { f(); } }]",
+                false,
+            ),
+            ("yield 1", true),
+            ("async () => await a", false),
+        ] {
+            let code = format!("async function* wrapper() {{ return ({source}); }}");
+            let program = Parser::new(&allocator, &code, SourceType::ts())
+                .parse()
+                .program;
+            let Statement::FunctionDeclaration(function) = &program.body[0] else {
+                panic!("{source}");
+            };
+            let mut suspends = Suspends::default();
+            suspends.visit_statements(&function.body.as_ref().unwrap().statements);
+            assert_eq!(suspends.found, found, "{source}");
+        }
+    }
+
+    #[test]
+    #[allow(clippy::literal_string_with_formatting_args)]
+    fn test_style_arguments() {
+        let allocator = Allocator::default();
+        let ast_builder = AstBuilder::new(&allocator);
+        let compose = |source: &str| {
+            let parsed = Parser::new(&allocator, source, SourceType::tsx()).parse();
+            let Statement::ExpressionStatement(statement) = &parsed.program.body[0] else {
+                unreachable!()
+            };
+            let Expression::CallExpression(call) = &statement.expression else {
+                unreachable!()
+            };
+            style_arguments(&ast_builder, &call.arguments).map(
+                |StyleArguments { classes, rules }| {
+                    (
+                        classes
+                            .iter()
+                            .map(expression_to_code)
+                            .collect::<std::vec::Vec<_>>(),
+                        expression_to_code(&rules),
+                    )
+                },
+            )
+        };
+        assert_eq!(compose("f({ a: 1 })"), None);
+        assert_eq!(compose("f(`a: 1;`)"), None);
+        assert_eq!(compose("f(...{ a: 1 })"), None);
+        assert_eq!(compose("f(cond ? { a: 1 } : null)"), None);
+        assert_eq!(
+            compose("f(x)"),
+            Some((vec!["x;".to_string()], "({});".to_string()))
+        );
+        assert_eq!(
+            compose("f(cond ? x : { a: 1 })"),
+            Some((
+                vec!["cond?x:``;".to_string()],
+                "({a:cond?undefined:1});".to_string()
+            ))
+        );
+        assert_eq!(compose("f(...x)"), None);
+        assert_eq!(
+            compose("f([{ a: 1 }, [cond && x]])"),
+            Some((vec!["cond?x:``;".to_string()], "({a:1});".to_string()))
+        );
+        assert_eq!(
+            compose(
+                "f({ a: 1, b: { c: 1 } }, cond && { a: 2, b: { d: 2 } }, flag ? { e: 1 } : null, (on ? x : { a: 3 }), off ? null : undefined)"
+            ),
+            Some((
+                vec!["on?x:``;".to_string()],
+                "({b:{c:1,d:cond?2:undefined},e:flag?1:undefined,a:on?cond?2:1:3});".to_string()
+            ))
+        );
+        assert_eq!(compose("f({ a: 1 }, cond && y())"), None);
+        assert_eq!(compose("f({ a: 1 }, flag ? y() : null)"), None);
+        assert_eq!(compose("f({ a: 1 }, flag ? null : y())"), None);
+        assert_eq!(compose("f({ a: 1 }, cond && { [k]: 1 })"), None);
+        assert_eq!(compose("f({ b: 1 }, cond && { b: { c: 1 } })"), None);
+        let classes = |classes: &[&str]| classes.iter().map(ToString::to_string).collect();
+        assert_eq!(
+            compose("f({ a: 1 }, cond || { a: 2 })"),
+            Some((
+                classes(&["cond?typeof cond===`string`?cond:``:``;"]),
+                "({a:cond?1:2});".to_string()
+            ))
+        );
+        assert_eq!(
+            compose("f({ a: 1 }, cond ?? { a: 2 })"),
+            Some((
+                classes(&["cond!=null?typeof cond===`string`?cond:``:``;"]),
+                "({a:cond!=null?1:2});".to_string()
+            ))
+        );
+        assert_eq!(
+            compose("f({ a: 1 }, 's' || 'b')"),
+            Some((classes(&["`s`?`s`:`b`;"]), "({a:1});".to_string()))
+        );
+        assert_eq!(
+            compose("f({ a: 1 }, null || { a: 2 }, false ?? { a: 3 }, { b: 1 } || x)"),
+            Some((classes(&[]), "({a:2,b:1});".to_string()))
+        );
+        assert_eq!(compose("f({ a: 1 }, cond || y())"), None);
+        assert_eq!(compose("f({ a: 1 }, y() || { a: 2 })"), None);
+        assert_eq!(
+            compose(
+                "f([{ a: 1, b: { c: 1 }, d: { e: 1 } }, null, undefined, false, [{ a: 2, b: { f: 2 }, d: 3, [g]: 1, ...h, 'i': 1 }]], { [g]: 2, i: 2 })"
+            ),
+            Some((
+                std::vec::Vec::new(),
+                "({a:2,b:{c:1,f:2},d:3,[g]:1,...h,[g]:2,i:2});".to_string()
+            ))
+        );
+        assert_eq!(
+            compose("f([x, a.b, a[b], 'c', `d`, { e: 1 }])"),
+            Some((
+                ["x;", "a.b;", "a[b];", "`c`;", "`d`;"]
+                    .map(ToString::to_string)
+                    .to_vec(),
+                "({e:1});".to_string()
+            ))
+        );
     }
 
     #[test]

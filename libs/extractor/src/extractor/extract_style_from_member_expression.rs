@@ -8,7 +8,7 @@ use crate::{
     },
     utils::{
         get_number_by_literal_expression, get_str_by_property_key,
-        get_string_by_literal_expression, get_string_by_property_key,
+        get_string_by_literal_expression, get_string_by_property_key, readable_code,
     },
 };
 use css::style_selector::StyleSelector;
@@ -43,6 +43,32 @@ pub(super) fn extract_style_from_member_expression<'a>(
         mem.object = inner;
     }
 
+    // With a spread in it, the literal as written gives what a position it
+    // does not spell out holds
+    let spread = match &mem.object {
+        Expression::ArrayExpression(array) => array
+            .elements
+            .iter()
+            .any(|element| matches!(element, ArrayExpressionElement::SpreadElement(_))),
+        Expression::ObjectExpression(object) => object
+            .properties
+            .iter()
+            .any(|property| matches!(property, ObjectPropertyKind::SpreadProperty(_))),
+        _ => false,
+    }
+    .then(|| mem.object.clone_in(ast_builder.allocator()));
+    let runtime = |whole: &Expression<'a>, offset: u32| {
+        runtime_member(
+            ast_builder,
+            name,
+            whole.clone_in(ast_builder.allocator()),
+            mem_expression,
+            offset,
+            level,
+            selector,
+        )
+    };
+
     if let Expression::ArrayExpression(array) = &mut mem.object
         && !array.elements.is_empty()
     {
@@ -50,12 +76,13 @@ pub(super) fn extract_style_from_member_expression<'a>(
             if num < 0f64 {
                 return ExtractResult::default();
             }
-            let mut etc = None;
+            // Only the elements before the first spread sit at a fixed index
             let selected_index = (num.fract() == 0.0).then_some(num as usize);
             for (idx, p) in array.elements.iter_mut().enumerate() {
-                if let ArrayExpressionElement::SpreadElement(sp) = p {
-                    etc = Some(sp.argument.clone_in(ast_builder.allocator()));
-                } else if Some(idx) == selected_index
+                if matches!(p, ArrayExpressionElement::SpreadElement(_)) {
+                    break;
+                }
+                if Some(idx) == selected_index
                     && let Some(p) = p.as_expression_mut()
                 {
                     return extract_style_from_expression(
@@ -68,58 +95,21 @@ pub(super) fn extract_style_from_member_expression<'a>(
                     );
                 }
             }
-            // If `name` is None (pseudo-selector recursion) we cannot emit a
-            // dynamic_style because there is no CSS property slot to bind to.
-            // Fall back to an empty result in that case.
             return ExtractResult {
-                props: None,
-                styles: etc
-                    .zip(name)
-                    .map(|(etc, name)| {
-                        vec![dynamic_style(
-                            ast_builder,
-                            name,
-                            &Expression::ComputedMemberExpression(ComputedMemberExpression::boxed(
-                                SPAN,
-                                etc,
-                                mem_expression.clone_in(ast_builder.allocator()),
-                                false,
-                                ast_builder,
-                            )),
-                            level,
-                            selector,
-                        )]
-                    })
-                    .unwrap_or_default(),
-                tag: None,
-                style_order: None,
-                style_vars: None,
+                styles: spread
+                    .iter()
+                    .map(|whole| runtime(whole, mem.span.start))
+                    .collect(),
+                ..ExtractResult::default()
             };
         }
 
         let mut map = BTreeMap::new();
         for (idx, p) in array.elements.iter_mut().enumerate() {
-            if let ArrayExpressionElement::SpreadElement(sp) = p {
-                // Skip spread elements entirely when `name` is None — we
-                // can't synthesize a dynamic style without a prop name.
-                if let Some(name) = name {
-                    map.insert(
-                        idx.to_string(),
-                        Box::new(dynamic_style(
-                            ast_builder,
-                            name,
-                            &Expression::ComputedMemberExpression(ComputedMemberExpression::boxed(
-                                SPAN,
-                                sp.argument.clone_in(ast_builder.allocator()),
-                                mem_expression.clone_in(ast_builder.allocator()),
-                                false,
-                                ast_builder,
-                            )),
-                            level,
-                            selector,
-                        )),
-                    );
-                }
+            if let ArrayExpressionElement::SpreadElement(sp) = p
+                && let Some(whole) = &spread
+            {
+                map.insert(idx.to_string(), Box::new(runtime(whole, sp.span.start)));
             } else if let Some(p) = p.as_expression_mut() {
                 map.insert(
                     idx.to_string(),
@@ -147,48 +137,40 @@ pub(super) fn extract_style_from_member_expression<'a>(
     {
         let mut map = BTreeMap::new();
         if let Some(k) = get_string_by_literal_expression(mem_expression) {
-            let mut etc = None;
-            for p in &mut obj.properties {
-                if let ObjectPropertyKind::ObjectProperty(o) = p {
-                    if let Some(property_name) = get_str_by_property_key(&o.key)
-                        && property_name == k
-                    {
-                        return ExtractResult {
-                            styles: extract_style_from_expression(
-                                ast_builder,
-                                name,
-                                &mut o.value,
-                                level,
-                                selector,
-                                LiteralHandling::ExpandResponsiveThemeToken,
-                            )
-                            .styles,
-                            ..ExtractResult::default()
-                        };
-                    }
-                } else if let ObjectPropertyKind::SpreadProperty(sp) = p {
-                    etc = Some(sp.argument.clone_in(ast_builder.allocator()));
+            // The last property written for the key gives it, unless a spread
+            // after it may replace it
+            let written = obj.properties.iter().rposition(|p| {
+                matches!(p, ObjectPropertyKind::ObjectProperty(o)
+                    if get_str_by_property_key(&o.key).as_deref() == Some(k.as_ref()))
+            });
+            let replaced = obj.properties[written.map_or(0, |index| index + 1)..]
+                .iter()
+                .any(|p| matches!(p, ObjectPropertyKind::SpreadProperty(_)));
+            if replaced && let Some(whole) = &spread {
+                return ExtractResult {
+                    styles: vec![runtime(whole, mem.span.start)],
+                    ..ExtractResult::default()
+                };
+            }
+            for p in obj.properties.iter_mut().rev() {
+                if let ObjectPropertyKind::ObjectProperty(o) = p
+                    && get_str_by_property_key(&o.key).as_deref() == Some(k.as_ref())
+                {
+                    return ExtractResult {
+                        styles: extract_style_from_expression(
+                            ast_builder,
+                            name,
+                            &mut o.value,
+                            level,
+                            selector,
+                            LiteralHandling::ExpandResponsiveThemeToken,
+                        )
+                        .styles,
+                        ..ExtractResult::default()
+                    };
                 }
             }
-
-            match (etc, name) {
-                (Some(etc), Some(name)) => ret.push(dynamic_style(
-                    ast_builder,
-                    name,
-                    &Expression::ComputedMemberExpression(ComputedMemberExpression::boxed(
-                        SPAN,
-                        etc,
-                        mem_expression.clone_in(ast_builder.allocator()),
-                        false,
-                        ast_builder,
-                    )),
-                    level,
-                    selector,
-                )),
-                // No spread fallback, or no prop name (pseudo-selector
-                // recursion): return empty instead of panicking.
-                _ => return ExtractResult::default(),
-            }
+            return ExtractResult::default();
         }
 
         for p in &mut obj.properties {
@@ -215,21 +197,16 @@ pub(super) fn extract_style_from_member_expression<'a>(
             expression: mem_expression.clone_in(ast_builder.allocator()),
             map,
         });
-    } else if let Expression::Identifier(_) = &mut mem.object
-        && let Some(name) = name
-    {
-        // When `name` is None we are in a pseudo-selector recursion and
-        // cannot emit a dynamic_style — skip gracefully.
-        ret.push(dynamic_style(
+    } else if !matches!(
+        &mem.object,
+        Expression::ArrayExpression(_) | Expression::ObjectExpression(_)
+    ) {
+        ret.push(runtime_member(
             ast_builder,
             name,
-            &Expression::ComputedMemberExpression(ComputedMemberExpression::boxed(
-                SPAN,
-                mem.object.clone_in(ast_builder.allocator()),
-                mem_expression.clone_in(ast_builder.allocator()),
-                false,
-                ast_builder,
-            )),
+            mem.object.clone_in(ast_builder.allocator()),
+            mem_expression,
+            mem.span.start,
             level,
             selector,
         ));
@@ -238,5 +215,33 @@ pub(super) fn extract_style_from_member_expression<'a>(
     ExtractResult {
         styles: ret,
         ..ExtractResult::default()
+    }
+}
+
+/// `object[key]` known only at runtime: a CSS variable for a property, and
+/// under a selector, which takes styles, what the build cannot read
+fn runtime_member<'a>(
+    ast_builder: &AstBuilder<'a>,
+    name: Option<&str>,
+    object: Expression<'a>,
+    key: &Expression<'a>,
+    offset: u32,
+    level: u8,
+    selector: &Option<StyleSelector>,
+) -> ExtractStyleProp<'a> {
+    let member = Expression::ComputedMemberExpression(ComputedMemberExpression::boxed(
+        SPAN,
+        object,
+        key.clone_in(ast_builder.allocator()),
+        false,
+        ast_builder,
+    ));
+    match name {
+        Some(name) => dynamic_style(ast_builder, name, &member, level, selector),
+        None => ExtractStyleProp::Unreadable {
+            offset,
+            code: readable_code(&member),
+            prop: false,
+        },
     }
 }

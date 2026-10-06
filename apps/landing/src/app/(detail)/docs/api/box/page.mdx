@@ -65,6 +65,12 @@ However, the following properties are exceptions and **are not multiplied by 4**
 - `grid-row`, `grid-row-start`, `grid-row-end`
 - `animation-iteration-count`
 - `tab-size`, `moz-tab-size`, `-webkit-line-clamp`
+- `grid-area`
+- `column-count`, `columns`, `orphans`, `widows`, `zoom`
+- `border-image`, `border-image-outset`, `border-image-slice`, `border-image-width`
+- `mask-border`, `mask-border-outset`, `mask-border-slice`, `mask-border-width`
+- `box-flex`, `box-flex-group`, `box-ordinal-group`, `initial-letter`, `max-lines`, `shape-image-threshold`
+- `fill-opacity`, `flood-opacity`, `stop-opacity`, `stroke-opacity`, `stroke-width`, `stroke-dashoffset`, `stroke-miterlimit`
 
 ### Rendering as Another Element
 
@@ -89,5 +95,19 @@ function App() {
 ```css
 .a {
   background: red;
+}
+```
+
+`as` also takes a component (`as={Link}`, `as={motion.div}`) or a condition between names (`as={href ? 'a' : 'button'}`), which becomes an element for each name. `undefined`, `null` and `false` give the default element — `div` for `Box`. Any other value, such as a prop or `` `h${level}` ``, is read at runtime, once, and gives the default element when it is empty:
+
+```tsx
+function Card({ as }) {
+  return <Box as={as} bg="red" />
+}
+```
+
+```tsx
+function Card({ as }) {
+  return ((DevupAs0) => <DevupAs0 className="a" />)(as || 'div')
 }
 ```

@@ -34,8 +34,26 @@ describe('no-useless-tailing-nulls rule', () => {
         code: 'css({ w: [1, 2, null] })',
         filename: 'src/app/page.tsx',
       },
+      ...[
+        '<Box data-rows={[3, null, null]} />',
+        '<Box props={{ rows: [3, null] }} />',
+        '<Box w={pick([3, null])} />',
+      ].map((use) => ({
+        code: `import { Box } from "@devup-ui/react";\n${use}`,
+        filename: 'src/app/page.tsx',
+      })),
     ],
     invalid: [
+      {
+        code: 'import { Box } from "@devup-ui/react";\n<Box icon={<Box w={[1, null]} />} m={[2, null]} />',
+        output:
+          'import { Box } from "@devup-ui/react";\n<Box icon={<Box w={[1]} />} m={[2]} />',
+        filename: 'src/app/page.tsx',
+        errors: [
+          { messageId: 'uselessTailingNulls' },
+          { messageId: 'uselessTailingNulls' },
+        ],
+      },
       {
         code: 'import { Box } from "@devup-ui/react";\n<Box w={[1, 2, null]} />',
         output: 'import { Box } from "@devup-ui/react";\n<Box w={[1, 2]} />',

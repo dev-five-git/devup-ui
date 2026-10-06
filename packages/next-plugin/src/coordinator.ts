@@ -6,7 +6,6 @@ import { getFileNumByFilename } from '@devup-ui/plugin-utils'
 
 import { formatPortFile, removeOwnPortFile } from './coordinator-port'
 import { elapsedMs, profileStart, reportProfile } from './profile'
-import { transformStaticVanillaExtract } from './static-vanilla'
 import type { DevupWasm } from './wasm'
 
 export interface CoordinatorOptions {
@@ -49,8 +48,6 @@ export interface CoordinatorOptions {
   prewarmedOutputs?: Map<string, PrewarmedOutput>
   /** Generate transform source maps. Defaults to true for existing callers. */
   sourceMap?: boolean
-  /** Production-only static `.css.ts` fast path selected with the lite WASM. */
-  staticVanillaExtract?: boolean
   /**
    * Idle threshold (ms) for the base-css `/css` wait. Defaults to 2500.
    * FALLBACK ONLY — used when `expectedBaseFiles` is empty (no deterministic
@@ -78,6 +75,8 @@ export interface PrewarmedOutput {
   map?: string
   source: string
   updatedBaseStyle: boolean
+  /** Files the extraction read through the module resolver */
+  dependencies?: string[]
 }
 
 interface ExtractOutputSnapshot extends Omit<PrewarmedOutput, 'source'> {
@@ -95,6 +94,7 @@ export function takeExtractOutput(
       cssFile: output.cssFile,
       map: output.map,
       updatedBaseStyle: output.updatedBaseStyle,
+      dependencies: output.dependencies,
     }
   } finally {
     output.free()
@@ -378,7 +378,6 @@ export function startCoordinator(options: CoordinatorOptions): {
     getCss,
   } = wasm
   const prewarmedOutputs = options.prewarmedOutputs ?? new Map()
-  const staticVanillaExtract = options.staticVanillaExtract ?? false
   const extract =
     options.sourceMap === false ? codeExtractWithoutSourceMap : codeExtract
 
@@ -474,9 +473,7 @@ export function startCoordinator(options: CoordinatorOptions): {
           : takeExtractOutput(
               extract(
                 filename,
-                (staticVanillaExtract
-                  ? transformStaticVanillaExtract(filename, code, libPackage)
-                  : undefined) ?? code,
+                code,
                 libPackage,
                 relCssDir,
                 singleCss,
@@ -613,6 +610,7 @@ export function startCoordinator(options: CoordinatorOptions): {
             map: result.map,
             cssFile: result.cssFile,
             updatedBaseStyle: result.updatedBaseStyle,
+            dependencies: result.dependencies,
           }),
         )
         reportProfile('coordinator.extract', {

@@ -19,7 +19,7 @@ ToBTreeSet {
                     0,
                 ),
                 layer: Some(
-                    "reset",
+                    "reset-0-0",
                 ),
             },
         ),
@@ -38,10 +38,16 @@ ToBTreeSet {
                     0,
                 ),
                 layer: Some(
-                    "reset",
+                    "reset-0-0",
                 ),
             },
         ),
+        Css(
+            ExtractCss {
+                css: "@layer reset-0-0,base-0-1,components-0-2;",
+                file: "layers.css.ts",
+            },
+        ),
     },
-    code: "import \"@devup-ui/react/devup-ui.css\";\n;\nexport const base = \"base\";\nexport const components = \"components\";\nexport const reset = \"reset\";\n",
+    code: "import \"@devup-ui/react/devup-ui.css\";\n;\n;\nexport const reset = \"reset-0-0\";\nexport const base = \"base-0-1\";\nexport const components = \"components-0-2\";\n",
 }

@@ -1,0 +1,49 @@
+---
+source: libs/extractor/src/lib.rs
+expression: "ToBTreeSet::from(extract(\"test.tsx\", code, ExtractOption\n{\n    package: \"@devup-ui/react\".to_string(), css_dir:\n    \"@devup-ui/react\".to_string(), single_css: true, import_main_css: false,\n    import_aliases: aliases.clone(),\n},).unwrap())"
+---
+ToBTreeSet {
+    styles: {
+        Static(
+            ExtractStaticStyle {
+                property: "height",
+                value: "2px",
+                level: 0,
+                selector: None,
+                style_order: None,
+                layer: None,
+            },
+        ),
+        Static(
+            ExtractStaticStyle {
+                property: "left",
+                value: "9px",
+                level: 0,
+                selector: None,
+                style_order: None,
+                layer: None,
+            },
+        ),
+        Static(
+            ExtractStaticStyle {
+                property: "right",
+                value: "7px",
+                level: 0,
+                selector: None,
+                style_order: None,
+                layer: None,
+            },
+        ),
+        Static(
+            ExtractStaticStyle {
+                property: "width",
+                value: "1px",
+                level: 0,
+                selector: None,
+                style_order: None,
+                layer: None,
+            },
+        ),
+    },
+    code: "import \"@devup-ui/react/devup-ui.css\";\nexport const G = (__devupProps) => (({ style, className, ...rest }) => <div {...rest} className={[\"a\", className].filter(Boolean).join(\" \")} style={style} />)({\n\t...__devupProps,\n\t...{ type: \"button\" }\n});\nexport const H = ({ style, className, ...rest }) => <Base {...rest} className={[\"b\", className].filter(Boolean).join(\" \")} style={style} />;\nexport const I = ({ style, className, ...rest }) => <div {...rest} className={[\"c\", className].filter(Boolean).join(\" \")} style={style} />;\nexport const j = \"d\";\n",
+}

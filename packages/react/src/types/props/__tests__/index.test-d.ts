@@ -128,6 +128,30 @@ describe('index', () => {
       `,
     })
   })
+  it('media shorthands and at-rule keys', () => {
+    assertType<DevupComponentProps<'div'>>({
+      _motionReduce: { transition: 'none' },
+      _motionSafe: { _hover: { transform: 'scale(1.05)' } },
+      _portrait: { flexDir: 'column' },
+      _landscape: [{ flexDir: 'row' }, null, { flexDir: 'column' }],
+      _contrastMore: { borderColor: 'black' },
+      _contrastLess: { borderColor: 'gray' },
+      _forcedColors: { borderColor: 'CanvasText' },
+      _print: { display: 'none' },
+      _screen: { display: 'block' },
+      _all: { color: 'black' },
+      '@media (prefers-reduced-motion: reduce)': { transition: 'none' },
+      '@supports (display: grid)': { display: 'grid' },
+      '@container sidebar (min-width: 400px)': { p: 2 },
+      _hover: {
+        _motionReduce: { transform: 'none' },
+        '@media print': { color: 'black' },
+      },
+    })
+
+    expectTypeOf<DevupComponentProps<'div'>>().not.toHaveProperty('_speech')
+  })
+
   it('DevupComponentAdditionalProps', () => {
     // eslint-disable-next-line @typescript-eslint/no-unused-vars
     function Foo({ children: _ }: { children?: string; c: string }) {

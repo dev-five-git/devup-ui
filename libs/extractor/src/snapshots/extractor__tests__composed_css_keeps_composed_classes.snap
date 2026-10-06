@@ -1,0 +1,39 @@
+---
+source: libs/extractor/src/lib.rs
+expression: "ToBTreeSet::from(extract(\"test.tsx\",\nr\"import { style } from '@vanilla-extract/css';\nimport { css } from '@emotion/react';\nconst base = style({ color: 'red' });\nexport const a = style([base, { margin: 2 }]);\nexport const b = css(base, 'extra', { padding: 1 });\nexport const c = css([base]);\nexport const d = style([cond && base]);\",\nExtractOption\n{\n    package: \"@devup-ui/react\".to_string(), css_dir:\n    \"@devup-ui/react\".to_string(), single_css: true, import_main_css: false,\n    import_aliases:\n    HashMap::from([(\"@emotion/react\".to_string(), ImportAlias::NamedToNamed),\n    (\"@vanilla-extract/css\".to_string(), ImportAlias::NamedToNamed)])\n},).unwrap())"
+---
+ToBTreeSet {
+    styles: {
+        Static(
+            ExtractStaticStyle {
+                property: "color",
+                value: "red",
+                level: 0,
+                selector: None,
+                style_order: None,
+                layer: None,
+            },
+        ),
+        Static(
+            ExtractStaticStyle {
+                property: "margin",
+                value: "2px",
+                level: 0,
+                selector: None,
+                style_order: None,
+                layer: None,
+            },
+        ),
+        Static(
+            ExtractStaticStyle {
+                property: "padding",
+                value: "1px",
+                level: 0,
+                selector: None,
+                style_order: None,
+                layer: None,
+            },
+        ),
+    },
+    code: "import \"@devup-ui/react/devup-ui.css\";\nconst base = \"a\";\nexport const a = \"a b\";\nexport const b = \"a extra c\";\nexport const c = \"a\";\nexport const d = cond ? \"a\" : \"\";\n",
+}

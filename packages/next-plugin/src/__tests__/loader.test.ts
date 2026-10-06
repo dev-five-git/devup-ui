@@ -1,7 +1,7 @@
 import * as fs from 'node:fs'
 import * as fsPromises from 'node:fs/promises'
 import * as http from 'node:http'
-import { join } from 'node:path'
+import { join, resolve } from 'node:path'
 
 import * as wasm from '@devup-ui/wasm'
 import {
@@ -132,6 +132,7 @@ describe('devupUILoader', () => {
       map: undefined,
       cssFile: undefined,
       updatedBaseStyle: false,
+      dependencies: ['src/tokens.ts'],
       [Symbol.dispose]: mock(),
     })
 
@@ -149,6 +150,7 @@ describe('devupUILoader', () => {
     expect(importClassMapSpy).toHaveBeenCalledWith(defaultClassMap)
     expect(importSheetSpy).toHaveBeenCalledWith(defaultSheet)
     expect(registerThemeSpy).toHaveBeenCalledWith(theme)
+    expect(t.addDependency).toHaveBeenCalledWith(resolve('src/tokens.ts'))
   })
 
   // Test WATCH mode init (lines 55-67) + CSS writing (lines 94-111)
@@ -475,6 +477,7 @@ describe('devupUILoader', () => {
         map: '{"version":3}',
         cssFile: 'devup-ui-1.css',
         updatedBaseStyle: true,
+        dependencies: ['src/tokens.ts', 1],
       })
 
       const requestSpy = spyOn(http, 'request').mockImplementation(
@@ -531,6 +534,9 @@ describe('devupUILoader', () => {
           '{"version":3}',
         )
       })
+
+      expect(t.addDependency).toHaveBeenCalledWith(resolve('src/tokens.ts'))
+      expect(t.addDependency).not.toHaveBeenCalledWith(resolve('1'))
 
       // Verify HTTP request was made
       expect(requestSpy).toHaveBeenCalledTimes(1)
@@ -1045,5 +1051,69 @@ describe('devupUILoader', () => {
 
       requestSpy.mockRestore()
     })
+  })
+})
+
+describe('devupUILoader connection diagnostics', () => {
+  it('reports the unreachable endpoint and port file on connection errors', async () => {
+    existsSyncSpy.mockReturnValue(true)
+    readFileSyncSpy.mockReturnValue('12346')
+
+    const requestSpy = spyOn(http, 'request').mockImplementation(() => {
+      const fakeReq = {
+        on: mock((event: string, handler: (...args: unknown[]) => void) => {
+          if (event === 'error') {
+            queueMicrotask(() =>
+              handler(
+                Object.assign(new Error('refused'), {
+                  code: 'ECONNREFUSED',
+                }),
+              ),
+            )
+          }
+          return fakeReq
+        }),
+        write: mock(),
+        end: mock(),
+      }
+      return asClientRequest(fakeReq)
+    })
+
+    try {
+      const asyncCallback = mock()
+      const t = {
+        getOptions: () => ({
+          package: 'package',
+          cssDir: 'cssDir',
+          sheetFile: 'sheetFile',
+          classMapFile: 'classMapFile',
+          fileMapFile: 'fileMapFile',
+          themeFile: 'themeFile',
+          watch: true,
+          singleCss: true,
+          coordinatorPortFile: 'coordinator.port',
+        }),
+        async: mock().mockReturnValue(asyncCallback),
+        resourcePath: join(process.cwd(), 'src', 'App.tsx'),
+        addDependency: mock(),
+      }
+
+      devupUILoader.bind(asLoaderContext(t))(
+        Buffer.from('source code'),
+        'src/App.tsx',
+      )
+
+      await waitFor(() => {
+        expect(asyncCallback).toHaveBeenCalledWith(
+          expect.objectContaining({
+            message: expect.stringContaining(
+              'Coordinator unreachable at 127.0.0.1:12346 (unknown owner, port file coordinator.port): refused.',
+            ),
+          }),
+        )
+      })
+    } finally {
+      requestSpy.mockRestore()
+    }
   })
 })

@@ -133,6 +133,7 @@ describe('coordinator', () => {
       map: '{"version":3}',
       cssFile: 'devup-ui-1.css',
       updatedBaseStyle: true,
+      dependencies: ['src/tokens.ts'],
       free: mock(),
       [Symbol.dispose]: mock(),
     }
@@ -172,6 +173,7 @@ describe('coordinator', () => {
     expect(data.map).toBe('{"version":3}')
     expect(data.cssFile).toBe('devup-ui-1.css')
     expect(data.updatedBaseStyle).toBe(true)
+    expect(data.dependencies).toEqual(['src/tokens.ts'])
 
     // Verify WASM was called
     expect(codeExtractSpy).toHaveBeenCalledTimes(1)
@@ -211,53 +213,6 @@ describe('coordinator', () => {
     expect(res.status).toBe(200)
     expect(codeExtractWithoutSourceMapSpy).toHaveBeenCalledTimes(1)
     expect(codeExtractSpy).not.toHaveBeenCalled()
-    expect(extractOutput.free).toHaveBeenCalledTimes(1)
-    coordinator.close()
-  })
-
-  it('uses the static vanilla transform on a production cache miss', async () => {
-    const source = `import { style } from '@vanilla-extract/css'
-export const box = style({ color: 'red' })`
-    const extractOutput = {
-      code: 'transformed code',
-      map: undefined,
-      cssFile: undefined,
-      updatedBaseStyle: false,
-      free: mock(),
-      [Symbol.dispose]: mock(),
-    }
-    codeExtractWithoutSourceMapSpy.mockReturnValue(extractOutput)
-    const coordinator = startCoordinator(
-      makeOptions({ sourceMap: false, staticVanillaExtract: true }),
-    )
-    await new Promise((resolve) => setTimeout(resolve, 100))
-    const port = parseInt(
-      (writeFileSyncSpy.mock.calls[0] as [string, string])[1],
-    )
-
-    const res = await httpRequest(
-      port,
-      'POST',
-      '/extract',
-      JSON.stringify({
-        filename: 'src/styles.css.ts',
-        code: source,
-        resourcePath: join(process.cwd(), 'src', 'styles.css.ts'),
-      }),
-    )
-
-    expect(res.status).toBe(200)
-    expect(codeExtractWithoutSourceMapSpy).toHaveBeenCalledWith(
-      'src/styles.css.ts',
-      `import { css } from '@devup-ui/react'
-export const box = css({ color: 'red' })`,
-      '@devup-ui/react',
-      './../.tmp-coordinator-test/css',
-      false,
-      false,
-      true,
-      {},
-    )
     expect(extractOutput.free).toHaveBeenCalledTimes(1)
     coordinator.close()
   })

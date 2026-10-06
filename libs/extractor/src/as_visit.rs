@@ -1,62 +1,152 @@
-use crate::utils::get_string_by_literal_expression;
-use oxc_allocator::{Allocator, CloneIn, GetAllocator};
-use oxc_ast::ast::{Expression, JSXElement, JSXElementName, Str};
-use oxc_ast_visit::VisitMut;
-use oxc_ast_visit::walk_mut::walk_expression;
+//! The element `<Component as={...} />` renders: a name the build knows, a
+//! condition choosing between such names, or a type only the runtime gives
 
+use oxc_allocator::{CloneIn, FromIn, GetAllocator};
+use oxc_ast::ast::{
+    Expression, JSXElement, JSXElementName, JSXIdentifier, JSXMemberExpressionObject, Str,
+};
 use oxc_ast::builder::AstBuilder;
 use oxc_span::SPAN;
+use oxc_syntax::operator::LogicalOperator;
 
-pub struct AsVisitor<'a> {
-    ast: AstBuilder<'a>,
-    element: JSXElement<'a>,
+use crate::utils::unwrap_syntax_only;
+
+/// What an element with an `as` becomes
+pub enum As<'a> {
+    /// The element renamed
+    Name(JSXElementName<'a>),
+    /// A condition choosing between the element renamed for each name
+    Choice(Expression<'a>),
+    /// A type only the runtime gives, or the default tag when it gives
+    /// nothing (`undefined`, `null`, `false`)
+    Runtime(Expression<'a>),
 }
 
-impl<'a> AsVisitor<'a> {
-    pub fn new(allocator: &'a Allocator, element: JSXElement<'a>) -> Self {
-        Self {
-            ast: AstBuilder::new(allocator),
-            element,
+/// What an element whose `as` is `value` becomes; `default` is the tag it
+/// renders without one
+pub fn resolve<'a>(
+    ast: &AstBuilder<'a>,
+    element: &JSXElement<'a>,
+    value: Expression<'a>,
+    default: &str,
+) -> As<'a> {
+    if let Some(name) = element_name(ast, &value, default) {
+        return As::Name(name);
+    }
+    if let Some(choice) = choice(ast, element, &value, default) {
+        return As::Choice(choice);
+    }
+    As::Runtime(Expression::new_logical_expression(
+        SPAN,
+        Expression::new_parenthesized_expression(SPAN, value, ast),
+        LogicalOperator::Or,
+        Expression::new_string_literal(SPAN, Str::from_in(default, ast.allocator()), None, ast),
+        ast,
+    ))
+}
+
+/// Name `element` `name`
+pub fn rename<'a>(ast: &AstBuilder<'a>, element: &mut JSXElement<'a>, name: JSXElementName<'a>) {
+    if let Some(closing) = &mut element.closing_element {
+        closing.name = name.clone_in(ast.allocator());
+    }
+    element.opening_element.name = name;
+}
+
+/// The name JSX gives `value`: a tag, a component, a member such as
+/// `motion.div`, or the default tag for nothing
+fn element_name<'a>(
+    ast: &AstBuilder<'a>,
+    value: &Expression<'a>,
+    default: &str,
+) -> Option<JSXElementName<'a>> {
+    let tag = |name: &str| {
+        JSXElementName::new_identifier(
+            SPAN,
+            Str::from_in(
+                if name.is_empty() { default } else { name },
+                ast.allocator(),
+            ),
+            ast,
+        )
+    };
+    match unwrap_syntax_only(value) {
+        Expression::StringLiteral(literal) => Some(tag(&literal.value)),
+        Expression::TemplateLiteral(template) if template.expressions.is_empty() => template.quasis
+            [0]
+        .value
+        .cooked
+        .as_ref()
+        .map(|text| tag(text)),
+        Expression::NullLiteral(_) => Some(tag("")),
+        Expression::BooleanLiteral(literal) if !literal.value => Some(tag("")),
+        Expression::Identifier(identifier) if identifier.name == "undefined" => Some(tag("")),
+        // A name JSX reads as a binding rather than a tag
+        Expression::Identifier(identifier)
+            if !identifier
+                .name
+                .starts_with(|c: char| c.is_ascii_lowercase()) =>
+        {
+            Some(tag(&identifier.name))
         }
+        Expression::StaticMemberExpression(member) => Some(JSXElementName::new_member_expression(
+            SPAN,
+            member_object(ast, &member.object)?,
+            JSXIdentifier::new(
+                SPAN,
+                Str::from_in(member.property.name.as_str(), ast.allocator()),
+                ast,
+            ),
+            ast,
+        )),
+        _ => None,
     }
 }
 
-fn change_element_name<'a>(ast: &AstBuilder<'a>, element: &mut JSXElement<'a>, element_name: &str) {
-    let element_name = JSXElementName::new_identifier(SPAN, Str::from(element_name), ast);
-    element.opening_element.name = element_name.clone_in(ast.allocator());
-    if let Some(el) = &mut element.closing_element {
-        el.name = element_name.clone_in(ast.allocator());
-    }
-}
-
-impl<'a> VisitMut<'a> for AsVisitor<'a> {
-    fn visit_expression(&mut self, it: &mut oxc_ast::ast::Expression<'a>) {
-        if let Some(element_name) = get_string_by_literal_expression(it) {
-            let mut element = self.element.clone_in(self.ast.allocator());
-            change_element_name(&self.ast, &mut element, &element_name);
-            *it = Expression::JSXElement(oxc_allocator::Box::new_in(element, &self.ast));
-        } else if let Expression::Identifier(ident) = it {
-            let element_name = ident.name.to_string();
-            if element_name != "undefined" {
-                let mut element = self.element.clone_in(self.ast.allocator());
-                change_element_name(&self.ast, &mut element, &element_name);
-                *it = Expression::JSXElement(oxc_allocator::Box::new_in(element, &self.ast));
-            }
-        } else if let Expression::ConditionalExpression(conditional) = it {
-            self.visit_expression(&mut conditional.consequent);
-            self.visit_expression(&mut conditional.alternate);
-        } else if let Expression::ComputedMemberExpression(member) = it {
-            self.visit_expression(&mut member.object);
-        } else {
-            walk_expression(self, it);
+fn member_object<'a>(
+    ast: &AstBuilder<'a>,
+    object: &Expression<'a>,
+) -> Option<JSXMemberExpressionObject<'a>> {
+    match unwrap_syntax_only(object) {
+        Expression::Identifier(identifier) => Some(
+            JSXMemberExpressionObject::new_identifier_reference(SPAN, identifier.name, ast),
+        ),
+        Expression::StaticMemberExpression(member) => {
+            Some(JSXMemberExpressionObject::new_member_expression(
+                SPAN,
+                member_object(ast, &member.object)?,
+                JSXIdentifier::new(
+                    SPAN,
+                    Str::from_in(member.property.name.as_str(), ast.allocator()),
+                    ast,
+                ),
+                ast,
+            ))
         }
+        _ => None,
     }
+}
 
-    fn visit_object_property(&mut self, it: &mut oxc_ast::ast::ObjectProperty<'a>) {
-        self.visit_expression(&mut it.value);
+/// `value` as `element` renamed for each name a condition chooses, when every
+/// choice is a name
+fn choice<'a>(
+    ast: &AstBuilder<'a>,
+    element: &JSXElement<'a>,
+    value: &Expression<'a>,
+    default: &str,
+) -> Option<Expression<'a>> {
+    if let Expression::ConditionalExpression(conditional) = unwrap_syntax_only(value) {
+        return Some(Expression::new_conditional_expression(
+            SPAN,
+            conditional.test.clone_in(ast.allocator()),
+            choice(ast, element, &conditional.consequent, default)?,
+            choice(ast, element, &conditional.alternate, default)?,
+            ast,
+        ));
     }
-
-    fn visit_spread_element(&mut self, _: &mut oxc_ast::ast::SpreadElement<'a>) {
-        // spread be mantained
-    }
+    let mut renamed = element.clone_in(ast.allocator());
+    rename(ast, &mut renamed, element_name(ast, value, default)?);
+    Some(Expression::JSXElement(oxc_allocator::Box::new_in(
+        renamed, ast,
+    )))
 }

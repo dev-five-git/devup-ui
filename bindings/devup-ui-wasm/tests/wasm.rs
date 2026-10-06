@@ -46,3 +46,16 @@ fn test_object_to_typography() {
     assert_eq!(typography.line_height.unwrap(), "1.5");
     assert_eq!(typography.letter_spacing.unwrap(), "1px");
 }
+
+#[allow(dead_code)]
+#[wasm_bindgen_test]
+fn test_extract_vanilla_extract_file() {
+    let output = extractor::extract(
+        "styles.css.ts",
+        "import { style } from '@devup-ui/react'\nexport const box = style({ color: 'red' })\n",
+        extractor::ExtractOption::default(),
+    )
+    .unwrap();
+    assert_eq!(output.styles.len(), 1);
+    assert!(!output.code.contains("style("));
+}

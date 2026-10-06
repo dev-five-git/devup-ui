@@ -1,7 +1,7 @@
 import { existsSync, readFileSync } from 'node:fs'
 import { writeFile } from 'node:fs/promises'
 import { Agent, request } from 'node:http'
-import { basename, dirname, join, relative } from 'node:path'
+import { basename, dirname, join, relative, resolve } from 'node:path'
 
 import type { RawLoaderDefinitionFunction } from 'webpack'
 
@@ -39,6 +39,7 @@ interface CoordinatorResponse {
   code?: string
   error?: string
   map?: string
+  dependencies: string[]
 }
 
 function toLoaderError(error: unknown): Error {
@@ -57,7 +58,7 @@ function readCoordinatorPort(portFile: string): number {
 function parseCoordinatorResponse(content: string): CoordinatorResponse {
   const data: unknown = JSON.parse(content)
   if (typeof data !== 'object' || data === null) {
-    return {}
+    return { dependencies: [] }
   }
 
   const record = data as Record<string, unknown>
@@ -65,6 +66,11 @@ function parseCoordinatorResponse(content: string): CoordinatorResponse {
     code: typeof record.code === 'string' ? record.code : undefined,
     error: typeof record.error === 'string' ? record.error : undefined,
     map: typeof record.map === 'string' ? record.map : undefined,
+    dependencies: Array.isArray(record.dependencies)
+      ? record.dependencies.filter(
+          (dependency): dependency is string => typeof dependency === 'string',
+        )
+      : [],
   }
 }
 
@@ -82,6 +88,7 @@ function coordinatorExtract(
     err: Error | null,
     content?: string,
     sourceMap?: string | null,
+    dependencies?: string[],
   ) => void,
 ): void {
   const req = request(
@@ -110,7 +117,7 @@ function coordinatorExtract(
             return
           }
           const sourceMap = parseSourceMap(data.map)
-          callback(null, data.code, sourceMap)
+          callback(null, data.code, sourceMap, data.dependencies)
         } catch (e) {
           callback(toLoaderError(e))
         }
@@ -169,20 +176,31 @@ const devupUILoader: RawLoaderDefinitionFunction<DevupUILoaderOptions> =
             code: source.toString(),
             resourcePath: this.resourcePath,
           })
-          coordinatorExtract(port, body, (err, content, sourceMap) => {
-            if (err) {
-              if (isConnectionError(err)) {
-                // Forget a port that no longer answers so the next file
-                // re-reads the port file instead of repeating the timeout.
-                cachedPorts.delete(coordinatorPortFile)
-                return callback(
-                  unreachableCoordinatorError(coordinatorPortFile, err),
-                )
+          coordinatorExtract(
+            port,
+            body,
+            (err, content, sourceMap, dependencies = []) => {
+              if (err) {
+                if (isConnectionError(err)) {
+                  // Forget a port that no longer answers so the next file
+                  // re-reads the port file instead of repeating the timeout.
+                  cachedPorts.delete(coordinatorPortFile)
+                  return callback(
+                    unreachableCoordinatorError(coordinatorPortFile, err),
+                  )
+                }
+                return callback(err)
               }
-              return callback(err)
-            }
-            callback(null, content, sourceMap as Parameters<typeof callback>[2])
-          })
+              for (const dependency of dependencies) {
+                this.addDependency(resolve(dependency))
+              }
+              callback(
+                null,
+                content,
+                sourceMap as Parameters<typeof callback>[2],
+              )
+            },
+          )
         } catch (error) {
           callback(toLoaderError(error))
         }
@@ -202,7 +220,7 @@ const devupUILoader: RawLoaderDefinitionFunction<DevupUILoaderOptions> =
       importFileMap,
       importSheet,
       registerTheme,
-    } = loadWasm(false)
+    } = loadWasm()
     const promises: Promise<void>[] = []
     if (!init) {
       init = true
@@ -241,7 +259,13 @@ const devupUILoader: RawLoaderDefinitionFunction<DevupUILoaderOptions> =
       const relativePath = relative(process.cwd(), id).replaceAll('\\', '/')
 
       if (!relCssDir.startsWith('./')) relCssDir = `./${relCssDir}`
-      const { code, map, cssFile, updatedBaseStyle } = codeExtract(
+      const {
+        code,
+        map,
+        cssFile,
+        updatedBaseStyle,
+        dependencies = [],
+      } = codeExtract(
         relativePath,
         source.toString(),
         libPackage,
@@ -251,6 +275,9 @@ const devupUILoader: RawLoaderDefinitionFunction<DevupUILoaderOptions> =
         true,
         importAliases,
       )
+      for (const dependency of dependencies) {
+        this.addDependency(resolve(dependency))
+      }
       const sourceMap = parseSourceMap(map)
       if (updatedBaseStyle && watch) {
         // update base style

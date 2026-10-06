@@ -1,0 +1,47 @@
+---
+source: libs/extractor/src/lib.rs
+expression: "ToBTreeSet::from(extract(\"test.tsx\",\n\"import { css } from '@devup-ui/react';\\nconst card = css({ p: 1 });\\nconst HOVER = ':hover';\\nexport const a = css({ selectors: { [`.${card}${HOVER} &`]: { m: 1 } }, [`.${card} &`]: { m: 2 } });\",\nExtractOption\n{ import_main_css: false, ..ExtractOption::default() },).unwrap())"
+---
+ToBTreeSet {
+    styles: {
+        Static(
+            ExtractStaticStyle {
+                property: "margin",
+                value: "4px",
+                level: 0,
+                selector: Some(
+                    Selector(
+                        ".a-a:hover &",
+                    ),
+                ),
+                style_order: None,
+                layer: None,
+            },
+        ),
+        Static(
+            ExtractStaticStyle {
+                property: "margin",
+                value: "8px",
+                level: 0,
+                selector: Some(
+                    Selector(
+                        ".a-a &",
+                    ),
+                ),
+                style_order: None,
+                layer: None,
+            },
+        ),
+        Static(
+            ExtractStaticStyle {
+                property: "padding",
+                value: "4px",
+                level: 0,
+                selector: None,
+                style_order: None,
+                layer: None,
+            },
+        ),
+    },
+    code: "import \"@devup-ui/react/devup-ui-0.css\";\nconst card = \"a-a\";\nconst HOVER = \":hover\";\nexport const a = \"a-b a-c\";\n",
+}

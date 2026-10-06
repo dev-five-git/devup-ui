@@ -50,6 +50,7 @@ impl ExtractStyleValue {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use serial_test::serial;
 
     #[test]
     fn test_style_order() {
@@ -67,6 +68,7 @@ mod tests {
         }
     }
     #[test]
+    #[serial]
     fn test_extract() {
         let style = ExtractStaticStyle::new("margin", "10px", 0, None);
         let value = ExtractStyleValue::Static(style);

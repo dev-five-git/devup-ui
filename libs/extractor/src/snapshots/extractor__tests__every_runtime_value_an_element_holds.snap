@@ -1,0 +1,91 @@
+---
+source: libs/extractor/src/lib.rs
+expression: "ToBTreeSet::from(extract(\"test.tsx\",\n\"import { Box } from '@devup-ui/react';\\nclass A { #w = 1; render(f) { return <Box w={this.#w} {...this.#w} {...f()} />; } }\\nexport const a = async (f, X, tag) => <Box w={await f()} h={(f(), 2)} bg={new X()} color={tag`x`} zIndex={10n} m={f.n++} p={(f.v = 3)} opacity={null} flex={false} />;\",\nExtractOption::default(),).unwrap())"
+---
+ToBTreeSet {
+    styles: {
+        Static(
+            ExtractStaticStyle {
+                property: "flex",
+                value: "false",
+                level: 0,
+                selector: None,
+                style_order: None,
+                layer: None,
+            },
+        ),
+        Dynamic(
+            ExtractDynamicStyle {
+                property: "background",
+                level: 0,
+                identifier: "new X",
+                selector: None,
+                style_order: None,
+            },
+        ),
+        Dynamic(
+            ExtractDynamicStyle {
+                property: "color",
+                level: 0,
+                identifier: "tag`x`",
+                selector: None,
+                style_order: None,
+            },
+        ),
+        Dynamic(
+            ExtractDynamicStyle {
+                property: "height",
+                level: 0,
+                identifier: "(f(),2)",
+                selector: None,
+                style_order: None,
+            },
+        ),
+        Dynamic(
+            ExtractDynamicStyle {
+                property: "margin",
+                level: 0,
+                identifier: "f.n++",
+                selector: None,
+                style_order: None,
+            },
+        ),
+        Dynamic(
+            ExtractDynamicStyle {
+                property: "padding",
+                level: 0,
+                identifier: "f.v=3",
+                selector: None,
+                style_order: None,
+            },
+        ),
+        Dynamic(
+            ExtractDynamicStyle {
+                property: "width",
+                level: 0,
+                identifier: "await f()",
+                selector: None,
+                style_order: None,
+            },
+        ),
+        Dynamic(
+            ExtractDynamicStyle {
+                property: "width",
+                level: 0,
+                identifier: "this.#w",
+                selector: None,
+                style_order: None,
+            },
+        ),
+        Dynamic(
+            ExtractDynamicStyle {
+                property: "z-index",
+                level: 0,
+                identifier: "10n",
+                selector: None,
+                style_order: None,
+            },
+        ),
+    },
+    code: "import \"@devup-ui/react/devup-ui-0.css\";\nclass A {\n\t#w = 1;\n\trender(f) {\n\t\treturn ((__devupSpread0) => <div {...this.#w} {...__devupSpread0} className={`a-a ${__devupSpread0?.className || \"\"} ${this.#w?.className || \"\"}`} style={{\n\t\t\t...{ \"--a\": this.#w },\n\t\t\t...__devupSpread0?.style,\n\t\t\t...this.#w?.style\n\t\t}} />)(f());\n\t}\n}\nexport const a = async (f, X, tag) => <div className=\"a-a a-b a-c a-d a-e a-f a-g a-h\" style={{\n\t\"--a\": await f(),\n\t\"--b\": (f(),2),\n\t\"--c\": new X,\n\t\"--d\": tag`x`,\n\t\"--e\": 10n,\n\t\"--f\": f.n++,\n\t\"--g\": f.v=3\n}} />;\n",
+}

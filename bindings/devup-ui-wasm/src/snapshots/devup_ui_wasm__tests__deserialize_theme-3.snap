@@ -4,6 +4,7 @@ expression: theme
 ---
 Theme {
     colors: {},
+    color_scheme: {},
     breakpoints: [
         0,
         480,
@@ -32,6 +33,10 @@ Theme {
                         letter_spacing: Some(
                             "-0.02em",
                         ),
+                        font_style: Some(
+                            "normal",
+                        ),
+                        text_transform: None,
                     },
                 ),
                 None,
@@ -54,6 +59,10 @@ Theme {
                         letter_spacing: Some(
                             "-0.02em",
                         ),
+                        font_style: Some(
+                            "normal",
+                        ),
+                        text_transform: None,
                     },
                 ),
             ],
@@ -77,6 +86,10 @@ Theme {
                         letter_spacing: Some(
                             "-0.02em",
                         ),
+                        font_style: Some(
+                            "normal",
+                        ),
+                        text_transform: None,
                     },
                 ),
                 None,
@@ -99,6 +112,10 @@ Theme {
                         letter_spacing: Some(
                             "-0.02em",
                         ),
+                        font_style: Some(
+                            "normal",
+                        ),
+                        text_transform: None,
                     },
                 ),
             ],
@@ -122,6 +139,10 @@ Theme {
                         letter_spacing: Some(
                             "-0.01em",
                         ),
+                        font_style: Some(
+                            "normal",
+                        ),
+                        text_transform: None,
                     },
                 ),
                 None,
@@ -144,6 +165,10 @@ Theme {
                         letter_spacing: Some(
                             "-0.01em",
                         ),
+                        font_style: Some(
+                            "normal",
+                        ),
+                        text_transform: None,
                     },
                 ),
             ],
@@ -167,6 +192,10 @@ Theme {
                         letter_spacing: Some(
                             "-0.02em",
                         ),
+                        font_style: Some(
+                            "normal",
+                        ),
+                        text_transform: None,
                     },
                 ),
                 None,
@@ -189,6 +218,10 @@ Theme {
                         letter_spacing: Some(
                             "-0.02em",
                         ),
+                        font_style: Some(
+                            "normal",
+                        ),
+                        text_transform: None,
                     },
                 ),
             ],
@@ -212,6 +245,10 @@ Theme {
                         letter_spacing: Some(
                             "-0.01em",
                         ),
+                        font_style: Some(
+                            "normal",
+                        ),
+                        text_transform: None,
                     },
                 ),
                 None,
@@ -234,6 +271,10 @@ Theme {
                         letter_spacing: Some(
                             "-0.01em",
                         ),
+                        font_style: Some(
+                            "normal",
+                        ),
+                        text_transform: None,
                     },
                 ),
             ],
@@ -257,6 +298,10 @@ Theme {
                         letter_spacing: Some(
                             "-0.02em",
                         ),
+                        font_style: Some(
+                            "normal",
+                        ),
+                        text_transform: None,
                     },
                 ),
                 None,
@@ -279,6 +324,10 @@ Theme {
                         letter_spacing: Some(
                             "-0.02em",
                         ),
+                        font_style: Some(
+                            "normal",
+                        ),
+                        text_transform: None,
                     },
                 ),
             ],
@@ -302,6 +351,10 @@ Theme {
                         letter_spacing: Some(
                             "-0.02em",
                         ),
+                        font_style: Some(
+                            "normal",
+                        ),
+                        text_transform: None,
                     },
                 ),
                 None,
@@ -324,6 +377,10 @@ Theme {
                         letter_spacing: Some(
                             "-0.02em",
                         ),
+                        font_style: Some(
+                            "normal",
+                        ),
+                        text_transform: None,
                     },
                 ),
             ],
@@ -347,6 +404,10 @@ Theme {
                         letter_spacing: Some(
                             "-0.01em",
                         ),
+                        font_style: Some(
+                            "normal",
+                        ),
+                        text_transform: None,
                     },
                 ),
                 None,
@@ -369,6 +430,10 @@ Theme {
                         letter_spacing: Some(
                             "-0.01em",
                         ),
+                        font_style: Some(
+                            "normal",
+                        ),
+                        text_transform: None,
                     },
                 ),
             ],
@@ -392,6 +457,10 @@ Theme {
                         letter_spacing: Some(
                             "-0.02em",
                         ),
+                        font_style: Some(
+                            "normal",
+                        ),
+                        text_transform: None,
                     },
                 ),
             ],
@@ -415,6 +484,10 @@ Theme {
                         letter_spacing: Some(
                             "-0.02em",
                         ),
+                        font_style: Some(
+                            "normal",
+                        ),
+                        text_transform: None,
                     },
                 ),
                 None,
@@ -437,6 +510,10 @@ Theme {
                         letter_spacing: Some(
                             "-0.02em",
                         ),
+                        font_style: Some(
+                            "normal",
+                        ),
+                        text_transform: None,
                     },
                 ),
             ],
@@ -460,6 +537,10 @@ Theme {
                         letter_spacing: Some(
                             "-0.02em",
                         ),
+                        font_style: Some(
+                            "normal",
+                        ),
+                        text_transform: None,
                     },
                 ),
                 None,
@@ -482,6 +563,10 @@ Theme {
                         letter_spacing: Some(
                             "-0.02em",
                         ),
+                        font_style: Some(
+                            "normal",
+                        ),
+                        text_transform: None,
                     },
                 ),
             ],
@@ -505,6 +590,10 @@ Theme {
                         letter_spacing: Some(
                             "-0.02em",
                         ),
+                        font_style: Some(
+                            "normal",
+                        ),
+                        text_transform: None,
                     },
                 ),
                 None,
@@ -527,6 +616,10 @@ Theme {
                         letter_spacing: Some(
                             "-0.02em",
                         ),
+                        font_style: Some(
+                            "normal",
+                        ),
+                        text_transform: None,
                     },
                 ),
             ],
@@ -550,6 +643,10 @@ Theme {
                         letter_spacing: Some(
                             "-0.01em",
                         ),
+                        font_style: Some(
+                            "normal",
+                        ),
+                        text_transform: None,
                     },
                 ),
                 None,
@@ -572,6 +669,10 @@ Theme {
                         letter_spacing: Some(
                             "-0.01em",
                         ),
+                        font_style: Some(
+                            "normal",
+                        ),
+                        text_transform: None,
                     },
                 ),
             ],
@@ -595,6 +696,10 @@ Theme {
                         letter_spacing: Some(
                             "-0.01em",
                         ),
+                        font_style: Some(
+                            "normal",
+                        ),
+                        text_transform: None,
                     },
                 ),
                 None,
@@ -617,6 +722,10 @@ Theme {
                         letter_spacing: Some(
                             "-0.01em",
                         ),
+                        font_style: Some(
+                            "normal",
+                        ),
+                        text_transform: None,
                     },
                 ),
             ],
@@ -640,6 +749,10 @@ Theme {
                         letter_spacing: Some(
                             "-0.01em",
                         ),
+                        font_style: Some(
+                            "normal",
+                        ),
+                        text_transform: None,
                     },
                 ),
                 None,
@@ -662,6 +775,10 @@ Theme {
                         letter_spacing: Some(
                             "-0.01em",
                         ),
+                        font_style: Some(
+                            "normal",
+                        ),
+                        text_transform: None,
                     },
                 ),
             ],
@@ -685,6 +802,10 @@ Theme {
                         letter_spacing: Some(
                             "-0.01em",
                         ),
+                        font_style: Some(
+                            "normal",
+                        ),
+                        text_transform: None,
                     },
                 ),
                 None,
@@ -707,6 +828,10 @@ Theme {
                         letter_spacing: Some(
                             "-0.01em",
                         ),
+                        font_style: Some(
+                            "normal",
+                        ),
+                        text_transform: None,
                     },
                 ),
             ],
@@ -730,6 +855,10 @@ Theme {
                         letter_spacing: Some(
                             "-0.01em",
                         ),
+                        font_style: Some(
+                            "normal",
+                        ),
+                        text_transform: None,
                     },
                 ),
                 None,
@@ -752,6 +881,10 @@ Theme {
                         letter_spacing: Some(
                             "-0.01em",
                         ),
+                        font_style: Some(
+                            "normal",
+                        ),
+                        text_transform: None,
                     },
                 ),
             ],

@@ -33,6 +33,8 @@ const el = <div {...{ className: `a ${colors[color] || ''}` }} />
 
 Computed access such as `colors[color]` is resolved against the object the `create()` call was rewritten into, so every generated atom stays reachable. `stylex.attrs()` behaves the same but emits `class` instead of `className`.
 
+Numbers get the unit StyleX gives them: `fontSize: 16` is `16px`, `transitionDuration: 300` is `300ms`, and unitless properties such as `lineHeight` stay as written. A number passed to a dynamic style gets the same unit at runtime.
+
 Accepted argument shapes:
 
 ```tsx
@@ -75,6 +77,63 @@ const el = <div {...{ className: 'c d' }} />
 ```
 
 `createThemeContract()` produces the same references without publishing a `:root` block, and `defineConsts()` inlines its values into the `create()` calls that read them.
+
+A variable or theme value can depend on at-rules, with an optional `types.*()` wrapper. Each set of conditions becomes one block after the unconditional values, and nested conditions come after the ones they refine, so the more specific value wins:
+
+```tsx
+const DARK = '@media (prefers-color-scheme: dark)'
+
+const colors = stylex.defineVars({
+  text: { default: 'black', [DARK]: 'white' },
+  accent: stylex.types.color({ default: 'blue', [DARK]: 'lightblue' }),
+})
+const dracula = stylex.createTheme(colors, {
+  text: { default: 'purple', [DARK]: 'pink' },
+})
+```
+
+```css
+:root {
+  --a: black;
+  --b: blue;
+}
+@media (prefers-color-scheme: dark) {
+  :root {
+    --a: white;
+    --b: lightblue;
+  }
+}
+.c {
+  --a: purple;
+}
+@media (prefers-color-scheme: dark) {
+  .c {
+    --a: pink;
+  }
+}
+```
+
+Conditions are `default`, `@media`, `@supports` and `@container` keys, and `null` leaves a variable unset under its condition. A value that is not static is a build error naming it; pseudo-class keys count as not static, because a variable is set on `:root` or a theme class, not on the element being styled.
+
+As StyleX requires, variables usually live in a `.stylex.ts` file and are imported where they are used. Imports resolve like the bundler resolves them, and the importing file reads the same custom properties, theme classes and constants that the defining file generates:
+
+```tsx
+// tokens.stylex.ts
+export const colors = stylex.defineVars({ primary: 'blue' })
+export const spacing = stylex.defineConsts({ gap: '8px' })
+
+// Button.tsx
+import { colors, spacing } from './tokens.stylex'
+
+const dark = stylex.createTheme(colors, { primary: 'navy' })
+const styles = stylex.create({
+  box: { color: colors.primary, marginTop: spacing.gap },
+})
+```
+
+A value in `create()` that this file's own functions compute from constants with exact built-ins, such as `double(SIZE)`, is computed at build time; another module's code never runs, and code whose result is not certain (`Date`, `Math.random`, `Math.sin`, locale methods, `new`, `this`...) is not run. A value only known at runtime, such as a prop or a state, is a build error naming it, as is anything `create()`, `defineVars()`, `defineConsts()`, `createTheme()`, `keyframes()`, `positionTry()` or `viewTransitionClass()` cannot read (a spread, a computed key, a non-object argument). Pass runtime values through a dynamic style (`(color) => ({ color })`), which becomes a CSS variable instead.
+
+`stylex.props()` accepts styles compiled elsewhere — a `style` prop a parent passes, a spread, another module's namespaces — and joins their class names at runtime; namespaces of this file resolve at build time.
 
 ## At-rules
 

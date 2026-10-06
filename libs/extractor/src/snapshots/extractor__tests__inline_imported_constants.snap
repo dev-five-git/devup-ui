@@ -1,0 +1,479 @@
+---
+source: libs/extractor/src/lib.rs
+expression: "ToBTreeSet::from(output)"
+---
+ToBTreeSet {
+    styles: {
+        Static(
+            ExtractStaticStyle {
+                property: "accent-color",
+                value: "lime",
+                level: 0,
+                selector: None,
+                style_order: None,
+                layer: None,
+            },
+        ),
+        Static(
+            ExtractStaticStyle {
+                property: "background",
+                value: "blue",
+                level: 0,
+                selector: None,
+                style_order: None,
+                layer: None,
+            },
+        ),
+        Static(
+            ExtractStaticStyle {
+                property: "background",
+                value: "teal",
+                level: 0,
+                selector: None,
+                style_order: None,
+                layer: None,
+            },
+        ),
+        Static(
+            ExtractStaticStyle {
+                property: "border-color",
+                value: "green",
+                level: 0,
+                selector: None,
+                style_order: None,
+                layer: None,
+            },
+        ),
+        Static(
+            ExtractStaticStyle {
+                property: "border-color",
+                value: "navy",
+                level: 0,
+                selector: None,
+                style_order: None,
+                layer: None,
+            },
+        ),
+        Static(
+            ExtractStaticStyle {
+                property: "bottom",
+                value: "navy",
+                level: 0,
+                selector: None,
+                style_order: None,
+                layer: None,
+            },
+        ),
+        Static(
+            ExtractStaticStyle {
+                property: "caret-color",
+                value: "y",
+                level: 0,
+                selector: None,
+                style_order: None,
+                layer: None,
+            },
+        ),
+        Static(
+            ExtractStaticStyle {
+                property: "color",
+                value: "16px",
+                level: 0,
+                selector: None,
+                style_order: None,
+                layer: None,
+            },
+        ),
+        Static(
+            ExtractStaticStyle {
+                property: "color",
+                value: "blue",
+                level: 0,
+                selector: None,
+                style_order: None,
+                layer: None,
+            },
+        ),
+        Static(
+            ExtractStaticStyle {
+                property: "color",
+                value: "maroon",
+                level: 0,
+                selector: None,
+                style_order: None,
+                layer: None,
+            },
+        ),
+        Static(
+            ExtractStaticStyle {
+                property: "color",
+                value: "red",
+                level: 0,
+                selector: None,
+                style_order: None,
+                layer: None,
+            },
+        ),
+        Static(
+            ExtractStaticStyle {
+                property: "column-rule-color",
+                value: "purple",
+                level: 0,
+                selector: None,
+                style_order: None,
+                layer: None,
+            },
+        ),
+        Static(
+            ExtractStaticStyle {
+                property: "content",
+                value: "olive",
+                level: 0,
+                selector: None,
+                style_order: None,
+                layer: None,
+            },
+        ),
+        Static(
+            ExtractStaticStyle {
+                property: "fill",
+                value: "indigo",
+                level: 0,
+                selector: None,
+                style_order: None,
+                layer: None,
+            },
+        ),
+        Static(
+            ExtractStaticStyle {
+                property: "fill",
+                value: "teal",
+                level: 0,
+                selector: None,
+                style_order: None,
+                layer: None,
+            },
+        ),
+        Static(
+            ExtractStaticStyle {
+                property: "flood-color",
+                value: "red",
+                level: 0,
+                selector: None,
+                style_order: None,
+                layer: None,
+            },
+        ),
+        Static(
+            ExtractStaticStyle {
+                property: "lighting-color",
+                value: "orange",
+                level: 0,
+                selector: None,
+                style_order: None,
+                layer: None,
+            },
+        ),
+        Static(
+            ExtractStaticStyle {
+                property: "margin",
+                value: "-8px",
+                level: 0,
+                selector: None,
+                style_order: None,
+                layer: None,
+            },
+        ),
+        Static(
+            ExtractStaticStyle {
+                property: "outline-color",
+                value: "teal",
+                level: 0,
+                selector: None,
+                style_order: None,
+                layer: None,
+            },
+        ),
+        Static(
+            ExtractStaticStyle {
+                property: "padding",
+                value: "16px",
+                level: 0,
+                selector: None,
+                style_order: None,
+                layer: None,
+            },
+        ),
+        Static(
+            ExtractStaticStyle {
+                property: "right",
+                value: "red",
+                level: 0,
+                selector: None,
+                style_order: None,
+                layer: None,
+            },
+        ),
+        Static(
+            ExtractStaticStyle {
+                property: "stop-color",
+                value: "navy",
+                level: 0,
+                selector: None,
+                style_order: None,
+                layer: None,
+            },
+        ),
+        Static(
+            ExtractStaticStyle {
+                property: "stop-color",
+                value: "plum",
+                level: 0,
+                selector: None,
+                style_order: None,
+                layer: None,
+            },
+        ),
+        Static(
+            ExtractStaticStyle {
+                property: "stroke",
+                value: "navy",
+                level: 0,
+                selector: None,
+                style_order: None,
+                layer: None,
+            },
+        ),
+        Static(
+            ExtractStaticStyle {
+                property: "stroke",
+                value: "plum",
+                level: 0,
+                selector: None,
+                style_order: None,
+                layer: None,
+            },
+        ),
+        Static(
+            ExtractStaticStyle {
+                property: "text-decoration-color",
+                value: "red",
+                level: 0,
+                selector: None,
+                style_order: None,
+                layer: None,
+            },
+        ),
+        Static(
+            ExtractStaticStyle {
+                property: "text-decoration-color",
+                value: "teal",
+                level: 0,
+                selector: None,
+                style_order: None,
+                layer: None,
+            },
+        ),
+        Static(
+            ExtractStaticStyle {
+                property: "width",
+                value: "10px",
+                level: 0,
+                selector: None,
+                style_order: None,
+                layer: None,
+            },
+        ),
+        Static(
+            ExtractStaticStyle {
+                property: "z-index",
+                value: "12",
+                level: 0,
+                selector: None,
+                style_order: None,
+                layer: None,
+            },
+        ),
+        Dynamic(
+            ExtractDynamicStyle {
+                property: "accent-color",
+                level: 0,
+                identifier: "DYNAMIC",
+                selector: None,
+                style_order: None,
+            },
+        ),
+        Dynamic(
+            ExtractDynamicStyle {
+                property: "caret-color",
+                level: 0,
+                identifier: "MUTABLE",
+                selector: None,
+                style_order: None,
+            },
+        ),
+        Dynamic(
+            ExtractDynamicStyle {
+                property: "color",
+                level: 0,
+                identifier: "PRIMARY",
+                selector: None,
+                style_order: None,
+            },
+        ),
+        Dynamic(
+            ExtractDynamicStyle {
+                property: "column-gap",
+                level: 0,
+                identifier: "colors[key]",
+                selector: None,
+                style_order: None,
+            },
+        ),
+        Dynamic(
+            ExtractDynamicStyle {
+                property: "column-rule-color",
+                level: 0,
+                identifier: "marker",
+                selector: None,
+                style_order: None,
+            },
+        ),
+        Dynamic(
+            ExtractDynamicStyle {
+                property: "flex",
+                level: 0,
+                identifier: "notThere",
+                selector: None,
+                style_order: None,
+            },
+        ),
+        Dynamic(
+            ExtractDynamicStyle {
+                property: "flex-basis",
+                level: 0,
+                identifier: "gone",
+                selector: None,
+                style_order: None,
+            },
+        ),
+        Dynamic(
+            ExtractDynamicStyle {
+                property: "flex-grow",
+                level: 0,
+                identifier: "helper",
+                selector: None,
+                style_order: None,
+            },
+        ),
+        Dynamic(
+            ExtractDynamicStyle {
+                property: "flex-shrink",
+                level: 0,
+                identifier: "looped",
+                selector: None,
+                style_order: None,
+            },
+        ),
+        Dynamic(
+            ExtractDynamicStyle {
+                property: "flood-color",
+                level: 0,
+                identifier: "twice.A",
+                selector: None,
+                style_order: None,
+            },
+        ),
+        Dynamic(
+            ExtractDynamicStyle {
+                property: "gap",
+                level: 0,
+                identifier: "colors.skip",
+                selector: None,
+                style_order: None,
+            },
+        ),
+        Dynamic(
+            ExtractDynamicStyle {
+                property: "left",
+                level: 0,
+                identifier: "NEG_STRING",
+                selector: None,
+                style_order: None,
+            },
+        ),
+        Dynamic(
+            ExtractDynamicStyle {
+                property: "lighting-color",
+                level: 0,
+                identifier: "DYNAMIC",
+                selector: None,
+                style_order: None,
+            },
+        ),
+        Dynamic(
+            ExtractDynamicStyle {
+                property: "order",
+                level: 0,
+                identifier: "`red`[`length`]",
+                selector: None,
+                style_order: None,
+            },
+        ),
+        Dynamic(
+            ExtractDynamicStyle {
+                property: "order",
+                level: 0,
+                identifier: "alsoMutable",
+                selector: None,
+                style_order: None,
+            },
+        ),
+        Dynamic(
+            ExtractDynamicStyle {
+                property: "outline-color",
+                level: 0,
+                identifier: "MUTATED",
+                selector: None,
+                style_order: None,
+            },
+        ),
+        Dynamic(
+            ExtractDynamicStyle {
+                property: "row-gap",
+                level: 0,
+                identifier: "colors.nope",
+                selector: None,
+                style_order: None,
+            },
+        ),
+        Dynamic(
+            ExtractDynamicStyle {
+                property: "top",
+                level: 0,
+                identifier: "missing",
+                selector: None,
+                style_order: None,
+            },
+        ),
+        Dynamic(
+            ExtractDynamicStyle {
+                property: "z-index",
+                level: 0,
+                identifier: "NOT_OBJECT",
+                selector: None,
+                style_order: None,
+            },
+        ),
+        Dynamic(
+            ExtractDynamicStyle {
+                property: "z-index",
+                level: 0,
+                identifier: "`red`.length",
+                selector: None,
+                style_order: None,
+            },
+        ),
+    },
+    code: "import \"@devup-ui/react/devup-ui.css\";\nimport * as Devup from \"@devup-ui/react\";\nimport { PRIMARY, SIZE, NEG, TEMPLATE, colors, ALIAS, MUTABLE, DYNAMIC, renamed, alsoMutable, reBase, notThere, gone, value, ns, NEG_STRING, TEMPLATE_EXPRESSION, SPACED, NOT_OBJECT, helper, looped } from \"./tokens\";\nimport orange from \"./tokens\";\nimport * as tokens from \"./tokens\";\nimport named from \"./named\";\nimport { handler } from \"./handler\";\nimport cjs, { COMPILED, FROM_REQUIRE, DESTRUCTURED, MUTATED, DYNAMIC } from \"./cjs-tokens\";\nimport cjsObject, { OBJ, OVERRIDDEN, LATER } from \"./cjs-object\";\nimport twelve from \"./cjs-value\";\nimport twice from \"./cjs-twice\";\nimport marker, { named as markerNamed } from \"./cjs-marker\";\nimport { unused } from \"./unused\";\nimport missing from \"./missing\";\nexport const a = <div {...colors} onClick={handler} className={`a b c d e f g h i k m n o p q r s t v x y z aa ac ae ag ai ak am ao ${colors?.className || \"\"}`} style={{\n\t...{\n\t\t\"--j\": MUTABLE,\n\t\t\"--l\": DYNAMIC,\n\t\t\"--u\": missing,\n\t\t\"--w\": NEG_STRING,\n\t\t\"--_\": NOT_OBJECT,\n\t\t\"--ab\": colors.skip,\n\t\t\"--a-d\": colors.nope,\n\t\t\"--af\": colors[key],\n\t\t\"--ah\": alsoMutable,\n\t\t\"--aj\": notThere,\n\t\t\"--al\": gone,\n\t\t\"--an\": helper,\n\t\t\"--ap\": looped\n\t},\n\t...colors?.style\n}} />;\nexport const b = \"a\";\nexport const c = <div className=\"aq\" />;\nexport const d = ({ style, className, ...rest }) => <div {...rest} className={[\"a\", className].filter(Boolean).join(\" \")} style={style} />;\nexport const e = (PRIMARY) => <div className=\"ar\" style={{ \"--as\": PRIMARY }} />;\nexport const f = {\n\tPRIMARY,\n\tunused,\n\tSIZE: tokens.SIZE\n};\nexport const g = <div color={PRIMARY} />;\nexport const h = <Devup.Inner.Box color={4} />;\nexport const i = Devup[\"css\"]({ color: SIZE });\nexport const l = <div className=\"at au av aw ay az a0 a1 a2 a3 a4 a6 a8 a_\" style={{\n\t\"--ax\": MUTATED,\n\t\"--a5\": twice.A,\n\t\"--a7\": DYNAMIC,\n\t\"--a9\": marker\n}} />;\nexport const j = <div className=\"z ag\" style={{\n\t\"--_\": `red`.length,\n\t\"--ah\": `red`[`length`]\n}} />;\nexport const k = ({ style, className, ...rest }) => <div {...rest} className={[\"ba\", className].filter(Boolean).join(\" \")} style={style} />;\n",
+}

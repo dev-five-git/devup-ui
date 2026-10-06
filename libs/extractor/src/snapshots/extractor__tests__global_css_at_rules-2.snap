@@ -12,9 +12,13 @@ ToBTreeSet {
                 selector: Some(
                     At {
                         kind: Supports,
-                        query: "(display: grid)",
+                        query: "(display:grid)",
                         selector: Some(
                             ".grid-container",
+                        ),
+                        outer: [],
+                        file: Some(
+                            "test.tsx",
                         ),
                     },
                 ),

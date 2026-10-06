@@ -17,6 +17,7 @@ import {
   computeCompiledFiles,
   computeFileReach,
   computeFileRoutes,
+  createModuleResolver,
   planAtomHoist,
   runImportGraphCli,
 } from './import-graph'
@@ -1289,5 +1290,129 @@ describe('runImportGraphCli', () => {
     expect(infoSpy).toHaveBeenCalledWith('{}')
 
     infoSpy.mockRestore()
+  })
+})
+describe('createModuleResolver', () => {
+  let root: string
+
+  beforeEach(() => {
+    root = mkdtempSync(join(tmpdir(), 'devup-ui-module-resolver-'))
+    const files: Record<string, string> = {
+      'src/theme.css.ts': 'export const theme = 1',
+      'src/tokens.ts': 'export const PRIMARY = "red"',
+      'src/dir/index.ts': 'export const index = 1',
+      'src/style.css': 'body {}',
+      'tsconfig.json': JSON.stringify({
+        compilerOptions: { baseUrl: '.', paths: { '@/*': ['src/*'] } },
+      }),
+    }
+    for (const [path, code] of Object.entries(files)) {
+      mkdirSync(dirname(join(root, path)), { recursive: true })
+      writeFileSync(join(root, path), code)
+    }
+  })
+
+  afterEach(() => {
+    rmSync(root, { recursive: true, force: true })
+  })
+
+  it('resolves relative, aliased and absolute imports to files it reads', () => {
+    const resolveModule = createModuleResolver({
+      cwd: root,
+      toId: (path) => `id:${path.replaceAll('\\', '/')}`,
+    })
+    const posix = (path: string) =>
+      `id:${join(root, path).replaceAll('\\', '/')}`
+    expect(resolveModule('./theme.css', 'src/App.tsx')).toEqual({
+      path: posix('src/theme.css.ts'),
+      code: 'export const theme = 1',
+    })
+    expect(resolveModule('./tokens', join(root, 'src/App.tsx'))?.path).toBe(
+      posix('src/tokens.ts'),
+    )
+    expect(resolveModule('./tokens.ts', 'src/App.tsx')?.path).toBe(
+      posix('src/tokens.ts'),
+    )
+    expect(resolveModule('./dir', 'src/App.tsx')?.path).toBe(
+      posix('src/dir/index.ts'),
+    )
+    expect(resolveModule('@/tokens', 'src/App.tsx')?.path).toBe(
+      posix('src/tokens.ts'),
+    )
+    expect(resolveModule(join(root, 'src/tokens'), 'src/App.tsx')?.path).toBe(
+      posix('src/tokens.ts'),
+    )
+    expect(resolveModule('./style.css', 'src/App.tsx')).toBeUndefined()
+    expect(resolveModule('./missing.ts', 'src/App.tsx')).toBeUndefined()
+    expect(resolveModule('not-installed', 'src/App.tsx')).toBeUndefined()
+  })
+
+  it('resolves packages like the bundler', () => {
+    const packages: Record<string, string> = {
+      'node_modules/main-pkg/package.json': JSON.stringify({
+        main: 'lib/index.js',
+      }),
+      'node_modules/main-pkg/lib/index.js': 'main',
+      'node_modules/main-pkg/extra.js': 'extra',
+      'node_modules/module-pkg/package.json': JSON.stringify({
+        module: 'esm.mjs',
+        main: 'cjs.js',
+      }),
+      'node_modules/module-pkg/esm.mjs': 'module',
+      'node_modules/bare-pkg/package.json': '{}',
+      'node_modules/bare-pkg/index.js': 'bare',
+      'node_modules/@scope/tokens/package.json': JSON.stringify({
+        exports: {
+          '.': { types: './t.d.ts', import: './esm.js', require: './cjs.cjs' },
+          './colors': './colors.js',
+          './sub/*': { default: './sub/*.js' },
+          './blocked': null,
+        },
+      }),
+      'node_modules/@scope/tokens/esm.js': 'scoped',
+      'node_modules/@scope/tokens/colors.js': 'colors',
+      'node_modules/@scope/tokens/sub/deep.js': 'deep',
+      'node_modules/string-pkg/package.json': JSON.stringify({
+        exports: './entry.js',
+      }),
+      'node_modules/string-pkg/entry.js': 'string',
+      'node_modules/array-pkg/package.json': JSON.stringify({
+        exports: [{ worker: './worker.js' }, './fallback.js'],
+      }),
+      'node_modules/array-pkg/fallback.js': 'array',
+      'node_modules/cjs-pkg/package.json': JSON.stringify({
+        exports: { require: './index.cjs' },
+      }),
+      'node_modules/cjs-pkg/index.cjs': 'cjs',
+      'node_modules/number-pkg/package.json': JSON.stringify({ exports: 1 }),
+    }
+    for (const [path, code] of Object.entries(packages)) {
+      mkdirSync(dirname(join(root, path)), { recursive: true })
+      writeFileSync(join(root, path), code)
+    }
+    const resolveModule = createModuleResolver({ cwd: root })
+    const code = (specifier: string) =>
+      resolveModule(specifier, 'src/nested/App.tsx')?.code
+    expect(code('main-pkg')).toBe('main')
+    expect(code('main-pkg/extra')).toBe('extra')
+    expect(code('module-pkg')).toBe('module')
+    expect(code('bare-pkg')).toBe('bare')
+    expect(code('@scope/tokens')).toBe('scoped')
+    expect(code('@scope/tokens/colors')).toBe('colors')
+    expect(code('@scope/tokens/sub/deep')).toBe('deep')
+    expect(code('@scope/tokens/blocked')).toBeUndefined()
+    expect(code('@scope/tokens/missing')).toBeUndefined()
+    expect(code('string-pkg')).toBe('string')
+    expect(code('string-pkg/other')).toBeUndefined()
+    expect(code('array-pkg')).toBe('array')
+    expect(code('cjs-pkg')).toBe('cjs')
+    expect(code('number-pkg')).toBeUndefined()
+    expect(code('not-installed')).toBeUndefined()
+  })
+  it('defaults to the working directory and the path itself', () => {
+    const resolveModule = createModuleResolver()
+    expect(resolveModule('./tokens', join(root, 'src/App.tsx'))?.path).toBe(
+      join(root, 'src/tokens.ts'),
+    )
   })
 })

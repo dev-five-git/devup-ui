@@ -1,7 +1,8 @@
-import { afterEach, describe, expect, it } from 'bun:test'
 import { mkdtempSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
+
+import { afterEach, describe, expect, it } from 'bun:test'
 
 import {
   formatPortFile,
@@ -25,7 +26,8 @@ const DEAD_PID = 2 ** 31 - 2
 const LIVE_FOREIGN_PID = process.ppid
 
 afterEach(() => {
-  for (const dir of dirs.splice(0)) rmSync(dir, { recursive: true, force: true })
+  for (const dir of dirs.splice(0))
+    rmSync(dir, { recursive: true, force: true })
 })
 
 describe('coordinator port file', () => {

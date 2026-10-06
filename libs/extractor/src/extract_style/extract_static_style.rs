@@ -10,7 +10,9 @@ use css::{
 
 use crate::{
     extract_style::{
-        ExtractStyleProperty, constant::MAINTAIN_VALUE_PROPERTIES, style_property::StyleProperty,
+        ExtractStyleProperty,
+        constant::{MAINTAIN_VALUE_PROPERTIES, TIME_PROPERTIES},
+        style_property::StyleProperty,
     },
     utils::{convert_value, gcd},
 };
@@ -65,22 +67,28 @@ impl ExtractStaticStyle {
         // immediately re-copied by `optimize_value` (which takes `&str` and owns its
         // own result). Only the aspect-ratio reduction and the `convert_value` branch
         // must own; both already produce owned `String`s. Byte-identical output.
-        let normalized: Cow<str> = if MAINTAIN_VALUE_PROPERTIES.contains(property) {
-            if apply_aspect_ratio && property == "aspect-ratio" && value.contains('/') {
-                if let Some((a, b)) = value.split_once('/').and_then(|(a, b)| {
-                    Some((a.trim().parse::<u32>().ok()?, b.trim().parse::<u32>().ok()?))
-                }) {
-                    let gcd = gcd(a, b);
-                    Cow::Owned(format!("{}/{}", a / gcd, b / gcd))
+        let normalized: Cow<str> =
+            if MAINTAIN_VALUE_PROPERTIES.contains(property) || property.starts_with("--") {
+                if apply_aspect_ratio && property == "aspect-ratio" && value.contains('/') {
+                    if let Some((a, b)) = value.split_once('/').and_then(|(a, b)| {
+                        Some((a.trim().parse::<u32>().ok()?, b.trim().parse::<u32>().ok()?))
+                    }) {
+                        let gcd = gcd(a, b);
+                        Cow::Owned(format!("{}/{}", a / gcd, b / gcd))
+                    } else {
+                        Cow::Borrowed(value)
+                    }
                 } else {
                     Cow::Borrowed(value)
                 }
+            } else if TIME_PROPERTIES.contains(property) {
+                // A time is written in `ms`, never on the spacing scale
+                value.parse::<f64>().map_or(Cow::Borrowed(value), |number| {
+                    Cow::Owned(format!("{}ms", crate::utils::js_number_string(number)))
+                })
             } else {
-                Cow::Borrowed(value)
-            }
-        } else {
-            convert_value(value)
-        };
+                convert_value(value)
+            };
         // `optimize_value` returns `Cow` (borrowed when no optimization pass
         // fires); this constructor stores an owned `String`, so materialize it
         // here — a borrowed result costs exactly the one copy it always did.
@@ -144,6 +152,13 @@ impl ExtractStaticStyle {
         self.layer.as_deref()
     }
 
+    /// The selector part of the class name key, holding the layer so a layered
+    /// declaration never shares a class with an unlayered one
+    #[must_use]
+    pub fn class_selector(&self) -> Option<Cow<'_, str>> {
+        super::class_selector(self.selector.as_ref(), self.layer.as_deref())
+    }
+
     #[must_use]
     pub const fn property(&self) -> &str {
         self.property.as_str()
@@ -177,7 +192,7 @@ impl ExtractStaticStyle {
 
 impl ExtractStyleProperty for ExtractStaticStyle {
     fn extract(&self, filename: Option<&str>) -> StyleProperty {
-        let s = self.selector.as_ref().map(StyleSelector::as_class_str);
+        let s = self.class_selector();
         // `self.value` is already the result of `optimize_value(convert_value(..))`
         // (computed in the constructors), so re-running convert_value + optimize_value
         // here is redundant. Only the multi-css optimization is not applied at construction.
@@ -210,6 +225,14 @@ mod tests {
         assert_eq!(style.selector(), None);
         assert_eq!(style.style_order(), None);
         assert_eq!(style.layer(), None);
+        assert_eq!(
+            ExtractStaticStyle::new("--columns", "4", 0, None).value(),
+            "4"
+        );
+        assert_eq!(
+            ExtractStaticStyle::new("padding", "4", 0, None).value(),
+            "16px"
+        );
     }
 
     #[test]

@@ -9,6 +9,22 @@ pub mod extract_style_value;
 pub mod style_property;
 
 use crate::extract_style::style_property::StyleProperty;
+use css::style_selector::StyleSelector;
+use std::borrow::Cow;
+
+fn class_selector<'a>(
+    selector: Option<&'a StyleSelector>,
+    layer: Option<&str>,
+) -> Option<Cow<'a, str>> {
+    let selector = selector.map(StyleSelector::as_class_str);
+    match layer {
+        Some(layer) => Some(Cow::Owned(format!(
+            "{}@layer {layer}",
+            selector.as_deref().unwrap_or_default()
+        ))),
+        None => selector,
+    }
+}
 
 pub trait ExtractStyleProperty {
     /// extract style properties

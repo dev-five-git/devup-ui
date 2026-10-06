@@ -3,9 +3,13 @@ use css::file_map::{
     canonical, is_global, set_canonical_map, set_file_map, with_canonical_map, with_file_map,
 };
 use extractor::extract_style::extract_style_value::ExtractStyleValue;
-use extractor::{ExtractOption, ImportAlias, extract, extract_without_source_map, has_devup_ui};
+use extractor::{
+    ExtractOption, ImportAlias, ModuleResolver, ResolvedModule, extract, extract_with_modules,
+    extract_without_source_map, has_devup_ui,
+};
 use rustc_hash::FxHashSet;
 use sheet::StyleSheet;
+use std::cell::RefCell;
 use std::collections::{BTreeMap, HashMap};
 use std::fmt::Display;
 use std::sync::{LazyLock, Mutex};
@@ -18,6 +22,10 @@ static GLOBAL_STYLE_SHEET: LazyLock<Mutex<StyleSheet>> =
 enum SourceMapMode {
     Generate,
     Skip,
+}
+
+thread_local! {
+    static MODULE_RESOLVER: RefCell<Option<js_sys::Function>> = const { RefCell::new(None) };
 }
 
 fn with_style_sheet<F, R>(f: F) -> R
@@ -52,9 +60,11 @@ pub struct Output {
     css_file: Option<String>,
     updated_base_style: bool,
     css: Option<String>,
+    dependencies: Vec<String>,
 }
 #[wasm_bindgen]
 impl Output {
+    #[allow(clippy::too_many_arguments)]
     fn new(
         code: String,
         styles: FxHashSet<ExtractStyleValue>,
@@ -63,6 +73,7 @@ impl Output {
         filename: String,
         css_file: Option<String>,
         import_main_css: bool,
+        dependencies: Vec<String>,
     ) -> Self {
         // Use the bucket identity (single-importer collapse) so the sheet's CSS
         // naming + property bucket + emitted chunk match the canonical class names
@@ -83,6 +94,7 @@ impl Output {
                 code,
                 map,
                 css_file,
+                dependencies,
                 updated_base_style: updated_base_style || default_collected,
                 css: {
                     if !collected && !default_collected {
@@ -133,6 +145,13 @@ impl Output {
     #[must_use]
     pub fn css(&self) -> Option<String> {
         self.css.clone()
+    }
+
+    /// Files read through the module resolver, for the bundler to watch
+    #[wasm_bindgen(getter, js_name = "dependencies")]
+    #[must_use]
+    pub fn dependencies(&self) -> Vec<String> {
+        self.dependencies.clone()
     }
 }
 
@@ -337,6 +356,7 @@ pub fn code_extract_internal(
         import_main_css_in_css,
         import_aliases,
         SourceMapMode::Generate,
+        None,
     )
 }
 
@@ -361,6 +381,35 @@ pub fn code_extract_without_source_map_internal(
         import_main_css_in_css,
         import_aliases,
         SourceMapMode::Skip,
+        None,
+    )
+}
+
+/// [`code_extract_internal`] reading the modules a file imports through
+/// `resolver`
+#[allow(clippy::too_many_arguments)]
+pub fn code_extract_with_modules_internal(
+    filename: &str,
+    code: &str,
+    package: &str,
+    css_dir: String,
+    single_css: bool,
+    import_main_css_in_code: bool,
+    import_main_css_in_css: bool,
+    import_aliases: HashMap<String, ImportAlias>,
+    resolver: &ModuleResolver,
+) -> Result<Output, String> {
+    code_extract_internal_impl(
+        filename,
+        code,
+        package,
+        css_dir,
+        single_css,
+        import_main_css_in_code,
+        import_main_css_in_css,
+        import_aliases,
+        SourceMapMode::Generate,
+        Some(resolver),
     )
 }
 
@@ -375,6 +424,7 @@ fn code_extract_internal_impl(
     import_main_css_in_css: bool,
     import_aliases: HashMap<String, ImportAlias>,
     source_map: SourceMapMode,
+    resolver: Option<&ModuleResolver>,
 ) -> Result<Output, String> {
     let option = ExtractOption {
         package: package.to_string(),
@@ -383,9 +433,16 @@ fn code_extract_internal_impl(
         import_main_css: import_main_css_in_code,
         import_aliases,
     };
-    let extracted = match source_map {
-        SourceMapMode::Generate => extract(filename, code, option),
-        SourceMapMode::Skip => extract_without_source_map(filename, code, option),
+    let extracted = match (resolver, source_map) {
+        (Some(resolver), mode) => extract_with_modules(
+            filename,
+            code,
+            option,
+            matches!(mode, SourceMapMode::Generate),
+            resolver,
+        ),
+        (None, SourceMapMode::Generate) => extract(filename, code, option),
+        (None, SourceMapMode::Skip) => extract_without_source_map(filename, code, option),
     };
 
     match extracted {
@@ -397,9 +454,75 @@ fn code_extract_internal_impl(
             filename.to_string(),
             output.css_file,
             import_main_css_in_css,
+            output.dependencies,
         )),
         Err(error) => Err(error.to_string()),
     }
+}
+
+/// Set how the imports of the files being extracted are resolved.
+///
+/// `(specifier, importer) => ({ path, code })`, or nothing when they cannot be.
+/// Imported stylesheets are then evaluated, and imported constants inlined.
+#[wasm_bindgen(js_name = "setModuleResolver")]
+#[cfg(not(tarpaulin_include))]
+pub fn set_module_resolver(resolver: Option<js_sys::Function>) {
+    MODULE_RESOLVER.with_borrow_mut(|current| *current = resolver);
+}
+
+#[cfg(not(tarpaulin_include))]
+fn call_module_resolver(
+    resolver: &js_sys::Function,
+    specifier: &str,
+    importer: &str,
+) -> Option<ResolvedModule> {
+    let module = resolver
+        .call2(&JsValue::NULL, &specifier.into(), &importer.into())
+        .ok()?;
+    let field = |name: &str| {
+        js_sys::Reflect::get(&module, &name.into())
+            .ok()?
+            .as_string()
+    };
+    Some(ResolvedModule {
+        path: field("path")?,
+        code: field("code")?,
+    })
+}
+
+/// Extract with the resolver set by `setModuleResolver`, if any
+#[cfg(not(tarpaulin_include))]
+#[allow(clippy::too_many_arguments)]
+fn code_extract_js(
+    filename: &str,
+    code: &str,
+    package: &str,
+    css_dir: String,
+    single_css: bool,
+    import_main_css_in_code: bool,
+    import_main_css_in_css: bool,
+    import_aliases: JsValue,
+    source_map: SourceMapMode,
+) -> Result<Output, JsValue> {
+    let import_aliases = import_aliases_from_js(import_aliases)?;
+    let resolver = MODULE_RESOLVER.with_borrow(Clone::clone).map(|resolver| {
+        move |specifier: &str, importer: &str| call_module_resolver(&resolver, specifier, importer)
+    });
+    code_extract_internal_impl(
+        filename,
+        code,
+        package,
+        css_dir,
+        single_css,
+        import_main_css_in_code,
+        import_main_css_in_css,
+        import_aliases,
+        source_map,
+        resolver
+            .as_ref()
+            .map(|resolver| resolver as &ModuleResolver),
+    )
+    .map_err(js_error)
 }
 
 #[cfg(not(tarpaulin_include))]
@@ -433,7 +556,7 @@ pub fn code_extract(
     import_main_css_in_css: bool,
     import_aliases: JsValue,
 ) -> Result<Output, JsValue> {
-    code_extract_internal(
+    code_extract_js(
         filename,
         code,
         package,
@@ -441,9 +564,9 @@ pub fn code_extract(
         single_css,
         import_main_css_in_code,
         import_main_css_in_css,
-        import_aliases_from_js(import_aliases)?,
+        import_aliases,
+        SourceMapMode::Generate,
     )
-    .map_err(js_error)
 }
 
 #[cfg(not(tarpaulin_include))]
@@ -459,7 +582,7 @@ pub fn code_extract_without_source_map(
     import_main_css_in_css: bool,
     import_aliases: JsValue,
 ) -> Result<Output, JsValue> {
-    code_extract_without_source_map_internal(
+    code_extract_js(
         filename,
         code,
         package,
@@ -467,9 +590,9 @@ pub fn code_extract_without_source_map(
         single_css,
         import_main_css_in_code,
         import_main_css_in_css,
-        import_aliases_from_js(import_aliases)?,
+        import_aliases,
+        SourceMapMode::Generate,
     )
-    .map_err(js_error)
 }
 
 /// Internal function to register theme (testable without `JsValue`)
@@ -1054,6 +1177,37 @@ mod tests {
 
     #[test]
     #[serial]
+    fn test_code_extract_with_modules() {
+        {
+            let mut sheet = GLOBAL_STYLE_SHEET.lock().unwrap();
+            *sheet = StyleSheet::default();
+        }
+        let resolver = |specifier: &str, _: &str| {
+            (specifier == "./tokens").then(|| ResolvedModule {
+                path: "/src/tokens.ts".to_string(),
+                code: "export const PRIMARY = 'red'".to_string(),
+            })
+        };
+        {
+            let output = code_extract_with_modules_internal(
+                "/src/App.tsx",
+                "import { Box } from '@devup-ui/react';\nimport { PRIMARY } from './tokens';\nexport const a = <Box color={PRIMARY} />;",
+                "@devup-ui/react",
+                "@devup-ui/react".to_string(),
+                true,
+                false,
+                false,
+                HashMap::new(),
+                &resolver,
+            )
+            .unwrap();
+            assert_eq!(output.dependencies(), ["/src/tokens.ts"]);
+            assert!(!output.code().contains("--"), "{}", output.code());
+        }
+    }
+
+    #[test]
+    #[serial]
     fn deserialize_theme() {
         {
             let theme: Theme = serde_json::from_str(
@@ -1393,10 +1547,11 @@ mod tests {
             "test.tsx".to_string(),
             Some("devup-ui-0.css".to_string()),
             false,
+            Vec::new(),
         );
 
         // Test getters
-        assert!(!output.code().is_empty());
+        assert_ne!(output.code(), "");
         assert_eq!(output.css_file(), Some("devup-ui-0.css".to_string()));
         assert_eq!(output.map(), Some("//# sourceMappingURL=test".to_string()));
         assert!(output.css().is_some());
@@ -1419,6 +1574,7 @@ mod tests {
             "test.tsx".to_string(),
             None,
             false,
+            Vec::new(),
         );
 
         // Test updated_base_style getter
@@ -1481,6 +1637,7 @@ mod tests {
             "test.tsx".to_string(),
             Some("devup-ui.css".to_string()),
             true, // import_main_css = true
+            Vec::new(),
         );
 
         assert!(output.css().is_some());
@@ -1519,6 +1676,7 @@ mod tests {
             "test.tsx".to_string(),
             None,
             false,
+            Vec::new(),
         );
 
         // The updated_base_style should be true because global CSS was removed
@@ -1793,7 +1951,7 @@ mod tests {
 
         assert!(result.is_ok());
         let output = result.unwrap();
-        assert!(!output.code().is_empty());
+        assert_ne!(output.code(), "");
         assert!(output.map().is_some());
     }
 
@@ -1817,7 +1975,7 @@ mod tests {
 
         assert!(result.is_ok());
         let output = result.unwrap();
-        assert!(!output.code().is_empty());
+        assert_ne!(output.code(), "");
         assert!(output.map().is_none());
     }
 
@@ -1842,7 +2000,7 @@ mod tests {
 
         assert!(result.is_err());
         if let Err(error) = result {
-            assert!(!error.is_empty());
+            assert_ne!(error, "");
         }
     }
 

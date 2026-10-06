@@ -36,4 +36,6 @@ pub struct GlobalExtractResult<'a> {
 #[derive(Debug)]
 pub struct KeyframesExtractResult {
     pub keyframes: ExtractKeyframes,
+    /// A value only known at runtime, which keyframes cannot hold
+    pub runtime_value: Option<String>,
 }
