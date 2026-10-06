@@ -23,14 +23,21 @@ import {
   extractWithModuleResolver,
   withModuleResolver,
 } from '../wasm'
+import {
+  releaseSourceReporter,
+  type ReporterOptions,
+  sourceReporter,
+} from './mdx-source-reporter'
 
 const workspace = resolve(import.meta.dir, '../../../..')
 const installedRoot = join(workspace, 'apps/landing')
 const installed = createRequire(join(installedRoot, 'package.json'))
 const roots: string[] = []
 afterEach(() => {
-  for (const root of roots.splice(0))
+  for (const root of roots.splice(0)) {
+    releaseSourceReporter(root)
     rmSync(root, { recursive: true, force: true })
+  }
 })
 
 export function sourceFixture(
@@ -55,34 +62,18 @@ export function sourceFixture(
   }
   write('package.json', '{}')
   for (const [file, source] of Object.entries(files)) write(file, source)
+  const reporter = sourceReporter(root)
+  const reporterFile = resolve(import.meta.dir, 'mdx-source-reporter.ts')
+  const reporterRequest = `require(${JSON.stringify(reporterFile)}).sourceReporter(${JSON.stringify(root)})`
   const plugin = write(
     'reporting-remark.cjs',
-    `
-const fs = require('node:fs'); const path = require('node:path');
-let context; const counts = new Map();
-function remark(options) { return async function(tree, file) {
-  counts.set(file.path, (counts.get(file.path) || 0) + 1);
-  if (options.before) await options.before(file.path);
-  const data = options.data || path.join(path.dirname(file.path), 'data.json');
-  if (fs.existsSync(data) && !tree.children.some(child => child.type === 'mdxjsEsm' && child.value.includes('css'))) tree.children.unshift({type:'mdxjsEsm',value:'',data:{estree:{type:'Program',sourceType:'module',body:[{type:'ImportDeclaration',source:{type:'Literal',value:'@devup-ui/react'},specifiers:[{type:'ImportSpecifier',local:{type:'Identifier',name:'css'},imported:{type:'Identifier',name:'css'}}]}]}}});
-  if (fs.existsSync(data)) { context.addDependency(data); const value = JSON.parse(fs.readFileSync(data, 'utf8')); tree.children.push({type:'mdxjsEsm',value:'',data:{estree:{type:'Program',sourceType:'module',body:[{type:'ExportNamedDeclaration',specifiers:[],declaration:{type:'VariableDeclaration',kind:'const',declarations:[{type:'VariableDeclarator',id:{type:'Identifier',name:'injectedStyle'},init:{type:'CallExpression',callee:{type:'Identifier',name:'css'},arguments:[{type:'ObjectExpression',properties:[{type:'Property',kind:'init',computed:false,method:false,shorthand:false,key:{type:'Identifier',name:'color'},value:{type:'Literal',value:value.color}}]}]}}]}}]}}}); }
-  const directory = path.join(path.dirname(file.path), 'reported');
-  if (fs.existsSync(directory)) { context.addContextDependency(directory); tree.children.push({type:'paragraph',children:[{type:'text',value:fs.readdirSync(directory).join(',')}]}); }
-  const missing = path.join(path.dirname(file.path), 'optional.json');
-  if (!fs.existsSync(missing)) context.addMissingDependency(missing); else context.addDependency(missing);
-  const build = path.join(path.dirname(file.path), 'build.json'); if (fs.existsSync(build)) context.addBuildDependency(build);
-} }
-remark.setContext = value => { context = value }; remark.counts = counts; module.exports = remark;
-`,
+    `module.exports = ${reporterRequest}.remark`,
   )
   const raw = write(
     'reporting-raw.cjs',
-    `const seen = []; module.exports = function(source) { seen.push(this.loaders[0].options); require(this.getOptions().plugin).setContext(this); return source }; module.exports.seen = seen`,
+    `module.exports = ${reporterRequest}.raw`,
   )
-  const pluginOptions: {
-    before?: (filename: string) => Promise<void>
-    data?: string
-  } = {}
+  const pluginOptions: ReporterOptions = {}
   const compilerOptions = {
     jsx: true,
     format: 'mdx',
@@ -199,19 +190,7 @@ remark.setContext = value => { context = value }; remark.counts = counts; module
     manager: createMdxSourceManager(binding),
     signal: new AbortController().signal,
     extractionCalls: () => extractionCalls,
-    counts: () => {
-      const module: unknown = createRequire(join(root, 'package.json'))(plugin)
-      if (
-        typeof module !== 'function' ||
-        !('counts' in module) ||
-        !(module.counts instanceof Map)
-      )
-        throw new TypeError('Missing compiler counter')
-      return [...module.counts.values()].reduce(
-        (sum: number, value: number) => sum + value,
-        0,
-      )
-    },
+    counts: reporter.counts,
     css(
       generation: Awaited<
         ReturnType<ReturnType<typeof createMdxSourceManager>['prepare']>
