@@ -128,7 +128,7 @@ fn gen_class_name<'a>(
         ExtractStyleProp::Expression { expression, .. } => {
             Some(expression.clone_in(ast_builder.allocator()))
         }
-        ExtractStyleProp::Unreadable { .. } => None,
+        ExtractStyleProp::Unreadable { .. } | ExtractStyleProp::Diagnostic { .. } => None,
         // direct select
         ExtractStyleProp::MemberExpression { map, expression } => {
             let exp = Expression::ComputedMemberExpression(ComputedMemberExpression::boxed(

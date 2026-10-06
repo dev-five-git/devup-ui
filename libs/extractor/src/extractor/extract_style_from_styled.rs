@@ -11,10 +11,9 @@ use crate::{
     gen_style::gen_styles,
     styled_reads::{Forward, Reads, withheld},
     utils::{
-        STYLE_OBJECT, StyleArguments, build_time_error, call_with_values, merge_object_expressions,
-        readable_code, reads_directly, style_arguments, uncomposable_error, unplaced_error,
-        unreadable_styles, unwrap_syntax_only, unwrap_syntax_only_mut, wrap_array_filter,
-        wrap_direct_call,
+        STYLE_OBJECT, build_time_error, call_with_values, merge_object_expressions, readable_code,
+        reads_directly, uncomposable_error, unplaced_error, unreadable_styles, unwrap_syntax_only,
+        unwrap_syntax_only_mut, wrap_array_filter, wrap_direct_call,
     },
 };
 use oxc_allocator::{CloneIn, FromIn, GetAllocator};
@@ -28,6 +27,9 @@ use oxc_ast::{
 };
 use oxc_span::{GetSpan, SPAN};
 use oxc_syntax::operator::{BinaryOperator, LogicalOperator, UnaryOperator};
+
+mod input;
+pub(crate) use input::StyledInput;
 
 /// The binding a styled component reads the component it renders through, when
 /// only the runtime gives that component
@@ -64,6 +66,8 @@ pub struct StyledDefinition<'a> {
     /// The class other styles select it by, which a component extending it
     /// gives too, as it renders this one
     marker: Option<String>,
+    environment: Option<crate::styled_environment::Environment>,
+    renders: Vec<(String, Expression<'a>)>,
 }
 
 /// `marker` as a class among those a component gives
@@ -82,6 +86,93 @@ fn marker_class<'a>(ast_builder: &AstBuilder<'a>, marker: &str) -> Expression<'a
 pub struct Naming<'s> {
     pub split_filename: Option<&'s str>,
     pub marker: Option<&'s str>,
+}
+
+pub(crate) struct PreparedStyled<'a> {
+    pub styles: Vec<ExtractStyleProp<'a>>,
+    pub classes: Vec<Expression<'a>>,
+    pub reads: Reads,
+    pub renders: Vec<(String, Expression<'a>)>,
+}
+
+struct RenderInput<'r, 'a> {
+    classes: &'r Option<Expression<'a>>,
+    variables: &'r Option<Expression<'a>>,
+    reads: &'r Reads,
+    forward: Option<&'r Forward>,
+}
+
+fn create_for_base<'a>(
+    builder: &AstBuilder<'a>,
+    base: &Base<'a>,
+    input: RenderInput<'_, 'a>,
+) -> Expression<'a> {
+    let component = create_styled_component(
+        builder,
+        &base.name,
+        input.classes,
+        input.variables,
+        &withheld(
+            input.reads,
+            renders_tag(&base.name, base.bound.as_ref()),
+            input.forward,
+        ),
+    );
+    if base.bound.is_none() {
+        return component;
+    }
+    let native = create_styled_component(
+        builder,
+        &base.name,
+        input.classes,
+        input.variables,
+        &withheld(input.reads, true, input.forward),
+    );
+    let test = Expression::new_binary_expression(
+        SPAN,
+        Expression::new_unary_expression(
+            SPAN,
+            UnaryOperator::Typeof,
+            Expression::new_identifier(SPAN, STYLED_BASE, builder),
+            builder,
+        ),
+        BinaryOperator::StrictEquality,
+        Expression::new_string_literal(SPAN, "string", None, builder),
+        builder,
+    );
+    Expression::new_conditional_expression(SPAN, test, native, component, builder)
+}
+
+fn render_values<'a>(
+    builder: &AstBuilder<'a>,
+    mut component: Expression<'a>,
+    values: &[(String, Expression<'a>)],
+) -> Expression<'a> {
+    if values.is_empty() {
+        return component;
+    }
+    if let Expression::ConditionalExpression(conditional) = &mut component {
+        conditional.consequent = render_values(
+            builder,
+            conditional.consequent.clone_in(builder.allocator()),
+            values,
+        );
+        conditional.alternate = render_values(
+            builder,
+            conditional.alternate.clone_in(builder.allocator()),
+            values,
+        );
+    }
+    if let Expression::ArrowFunctionExpression(arrow) = &mut component
+        && let Some(body) = arrow.body.as_expression()
+    {
+        let values = values
+            .iter()
+            .map(|(name, value)| (name.clone(), value.clone_in(builder.allocator())))
+            .collect();
+        arrow.body = call_with_values(builder, values, body.clone_in(builder.allocator())).into();
+    }
+    component
 }
 
 /// Whether a styled component renders a tag, which takes only valid
@@ -133,12 +224,20 @@ impl StyledDefinition<'_> {
 }
 
 impl<'a> StyledDefinition<'a> {
+    pub(crate) fn save_environment(&mut self, environment: crate::styled_environment::Environment) {
+        self.environment = Some(environment);
+    }
+
+    pub(crate) const fn environment(&self) -> Option<&crate::styled_environment::Environment> {
+        self.environment.as_ref()
+    }
     /// The tag an element using this component can render in its place, with
     /// the styles the component gives it: a tag, with no attrs, no props read
     /// and no value only the runtime gives
     #[must_use]
     pub fn inline(&self) -> Option<(&str, &[ExtractStyleProp<'a>])> {
-        (renders_tag(&self.name, self.bound.as_ref())
+        (self.environment.is_none()
+            && renders_tag(&self.name, self.bound.as_ref())
             && self.attrs.is_empty()
             && self.reads == Reads::default()
             && self.classes.is_empty()
@@ -179,9 +278,20 @@ pub fn with_component<'a>(
 ) -> Option<(Expression<'a>, StyledDefinition<'a>)> {
     let name = match unwrap_syntax_only(target) {
         Expression::StringLiteral(literal) => literal.value.to_string(),
-        target => jsx_name(target)?,
+        Expression::NullLiteral(_)
+        | Expression::BooleanLiteral(_)
+        | Expression::NumericLiteral(_) => return None,
+        _ => STYLED_BASE.to_string(),
     };
-    let base = Base::named(name);
+    let base = if matches!(unwrap_syntax_only(target), Expression::StringLiteral(_)) {
+        Base::named(name)
+    } else {
+        Base {
+            name: STYLED_BASE.to_string(),
+            styles: None,
+            bound: Some(target.clone_in(ast_builder.allocator())),
+        }
+    };
     let allocator = ast_builder.allocator();
     let mut styles: Vec<ExtractStyleProp<'a>> = definition
         .styles
@@ -198,19 +308,18 @@ pub fn with_component<'a>(
             split_filename,
         )),
     );
-    let withheld = withheld(
-        &definition.reads,
-        renders_tag(&base.name, None),
-        definition.forward.as_ref(),
-    );
-    let component = create_styled_component(
+    let variables = gen_styles(ast_builder, &styles, None);
+    let component = create_for_base(
         ast_builder,
-        &base.name,
-        &class_name,
-        &gen_styles(ast_builder, &styles, None),
-        &withheld,
+        &base,
+        RenderInput {
+            classes: &class_name,
+            variables: &variables,
+            reads: &definition.reads,
+            forward: definition.forward.as_ref(),
+        },
     );
-    let new_definition = base.definition(
+    let mut new_definition = base.definition(
         ast_builder,
         classes,
         &styles,
@@ -218,8 +327,20 @@ pub fn with_component<'a>(
         definition.reads.clone(),
         definition.forward.clone(),
     );
+    let component = render_values(ast_builder, component, &definition.renders);
+    new_definition
+        .environment
+        .clone_from(&definition.environment);
+    new_definition.renders = definition
+        .renders
+        .iter()
+        .map(|(name, value)| (name.clone(), value.clone_in(allocator)))
+        .collect();
     Some((
-        apply_attrs(ast_builder, component, &definition.attrs),
+        base.render(
+            ast_builder,
+            apply_attrs(ast_builder, component, &definition.attrs),
+        ),
         new_definition,
     ))
 }
@@ -337,12 +458,9 @@ impl<'a> Base<'a> {
             reads,
             forward,
             marker: None,
+            environment: None,
+            renders: Vec::new(),
         }
-    }
-
-    /// The props a component rendering this base keeps away from it
-    fn withheld(&self, reads: &Reads, forward: Option<&Forward>) -> Vec<String> {
-        withheld(reads, renders_tag(&self.name, self.bound.as_ref()), forward)
     }
 
     const fn named(name: String) -> Self {
@@ -480,13 +598,48 @@ fn resolve_styled_call_target<'a>(
     if call.arguments.len() == 2
         && matches!(unwrap_syntax_only(&call.callee), Expression::Identifier(_))
         && call.arguments[1].as_expression().is_some_and(|styles| {
-            matches!(unwrap_syntax_only(styles), Expression::ObjectExpression(_))
+            matches!(
+                unwrap_syntax_only(styles),
+                Expression::ObjectExpression(_)
+                    | Expression::ConditionalExpression(_)
+                    | Expression::LogicalExpression(_)
+                    | Expression::ArrowFunctionExpression(_)
+            ) || crate::css_utils::literal::is_rule_text(styles)
         })
         && let Some(base) = tag_from_argument(ast_builder, &call.arguments[0], imports)
     {
         return Some((base, 1));
     }
     None
+}
+
+pub(crate) fn prepares_styled<'a>(
+    ast: &AstBuilder<'a>,
+    expression: &Expression<'a>,
+    imports: Kinds<'_>,
+) -> bool {
+    match expression {
+        Expression::TaggedTemplateExpression(tag) => {
+            extract_base_tag_and_class_name(ast, &tag.tag, imports).is_some()
+        }
+        Expression::CallExpression(call) => {
+            extract_base_tag_and_class_name(ast, &call.callee, imports).is_some()
+                || (call.arguments.len() == 2
+                    && matches!(unwrap_syntax_only(&call.callee), Expression::Identifier(_))
+                    && tag_from_argument(ast, &call.arguments[0], imports).is_some()
+                    && call.arguments[1].as_expression().is_some_and(|value| {
+                        matches!(
+                            unwrap_syntax_only(value),
+                            Expression::ObjectExpression(_)
+                                | Expression::ConditionalExpression(_)
+                                | Expression::LogicalExpression(_)
+                                | Expression::ArrowFunctionExpression(_)
+                                | Expression::FunctionExpression(_)
+                        ) || crate::css_utils::literal::is_rule_text(value)
+                    }))
+        }
+        _ => false,
+    }
 }
 
 /// Extract styles from styled function calls
@@ -499,45 +652,60 @@ fn resolve_styled_call_target<'a>(
 pub fn extract_style_from_styled<'a>(
     ast_builder: &AstBuilder<'a>,
     expression: &mut Expression<'a>,
-    naming: Naming<'_>,
-    imports: Kinds<'_>,
-    attrs: &[Expression<'a>],
-    inherited: Option<&StyledDefinition<'a>>,
-    forward: Option<Forward>,
+    input: StyledInput<'_, 'a>,
 ) -> StyledExtraction<'a> {
+    let StyledInput {
+        naming,
+        imports,
+        attrs,
+        inherited,
+        forward,
+        prepared,
+    } = input;
     let Naming {
         split_filename,
         marker,
     } = naming;
     let forward = combine_forward(inherited.and_then(|i| i.forward.as_ref()), forward);
     let mut reads = inherited.map_or_else(Reads::default, |inherited| inherited.reads.clone());
+    let mut renders: Vec<_> = inherited
+        .into_iter()
+        .flat_map(|definition| definition.renders.iter())
+        .map(|(name, value)| (name.clone(), value.clone_in(ast_builder.allocator())))
+        .collect();
+    if let Some(prepared) = &prepared {
+        reads.whole |= prepared.reads.whole;
+        for name in &prepared.reads.names {
+            if !reads.names.contains(name) {
+                reads.names.push(name.clone());
+            }
+        }
+        renders.extend(
+            prepared
+                .renders
+                .iter()
+                .map(|(name, value)| (name.clone(), value.clone_in(ast_builder.allocator()))),
+        );
+    }
     for attr in attrs {
         reads.read_in(attr);
     }
     let mut composed_classes = Vec::new();
     let mut errors = Vec::new();
     if let Expression::CallExpression(call) = expression
+        && prepared.is_none()
         && extract_base_tag_and_class_name(ast_builder, &call.callee, imports).is_some()
+        && !reads_directly(&call.arguments)
     {
-        match style_arguments(ast_builder, &call.arguments) {
-            Some(StyleArguments { classes, rules }) => {
-                call.arguments =
-                    oxc_allocator::Vec::from_array_in([Argument::from(rules)], ast_builder);
-                composed_classes = classes;
-            }
-            None if !reads_directly(&call.arguments) => {
-                errors.push((call.span.start, uncomposable_error(&call.arguments)));
-                call.arguments = oxc_allocator::Vec::from_array_in(
-                    [Argument::from(Expression::new_object_expression(
-                        SPAN,
-                        oxc_allocator::Vec::new_in(ast_builder),
-                        ast_builder,
-                    ))],
-                    ast_builder,
-                );
-            }
-            None => {}
-        }
+        errors.push((call.span.start, uncomposable_error(&call.arguments)));
+        call.arguments = oxc_allocator::Vec::from_array_in(
+            [Argument::from(Expression::new_object_expression(
+                SPAN,
+                oxc_allocator::Vec::new_in(ast_builder),
+                ast_builder,
+            ))],
+            ast_builder,
+        );
     }
     let (result, new_expr, definition) = if let Expression::TaggedTemplateExpression(tag) =
         expression
@@ -559,10 +727,27 @@ pub fn extract_style_from_styled<'a>(
             let expression = &tag.quasi.expressions[index];
             errors.push((expression.span().start, unplaced_error(expression)));
         }
-        let own: Vec<ExtractStyleProp<'_>> = styles
+        let mut own: Vec<ExtractStyleProp<'_>> = styles
             .into_iter()
             .map(|ex| ExtractStyleProp::Static(ex.into()))
             .collect();
+        let mut literal = Expression::TemplateLiteral(oxc_allocator::Box::new_in(
+            tag.quasi
+                .clone_in_with_semantic_ids(ast_builder.allocator()),
+            ast_builder,
+        ));
+        if crate::css_utils::literal::lower(ast_builder, &mut literal) {
+            own = extract_style_from_expression(
+                ast_builder,
+                None,
+                &mut literal,
+                0,
+                &None,
+                LiteralHandling::ExpandResponsiveThemeToken,
+            )
+            .styles;
+            crate::style_diagnostics::collect(&own, &mut errors);
+        }
         let defaults = base.styles.take();
         let base = base.extending(ast_builder, inherited);
         let mut props_styles = compose_styles(ast_builder, inherited, defaults, own);
@@ -609,12 +794,16 @@ pub fn extract_style_from_styled<'a>(
             None,
             ast_builder,
         ));
-        let component = create_styled_component(
+        let variables = gen_styles(ast_builder, &props_styles, None);
+        let component = create_for_base(
             ast_builder,
-            &base.name,
-            &class_name,
-            &gen_styles(ast_builder, &props_styles, None),
-            &base.withheld(&reads, forward.as_ref()),
+            &base,
+            RenderInput {
+                classes: &class_name,
+                variables: &variables,
+                reads: &reads,
+                forward: forward.as_ref(),
+            },
         );
         let mut definition =
             base.definition(ast_builder, classes, &props_styles, &attrs, reads, forward);
@@ -665,6 +854,11 @@ pub fn extract_style_from_styled<'a>(
             LiteralHandling::ExpandResponsiveThemeToken,
         );
         let mut unreadable = Vec::new();
+        if let Some(prepared) = prepared {
+            styles = prepared.styles;
+            composed_classes.extend(prepared.classes);
+        }
+        crate::style_diagnostics::collect(&styles, &mut errors);
         unreadable_styles(&styles, true, &mut unreadable);
         errors.extend(
             unreadable
@@ -695,14 +889,20 @@ pub fn extract_style_from_styled<'a>(
                     split_filename,
                 )),
         );
-        let component = create_styled_component(
+        let variables = gen_styles(ast_builder, &styles, None);
+        let component = create_for_base(
             ast_builder,
-            &base.name,
-            &class_name,
-            &gen_styles(ast_builder, &styles, None),
-            &base.withheld(&reads, forward.as_ref()),
+            &base,
+            RenderInput {
+                classes: &class_name,
+                variables: &variables,
+                reads: &reads,
+                forward: forward.as_ref(),
+            },
         );
+        let component = render_values(ast_builder, component, &renders);
         let mut definition = base.definition(ast_builder, classes, &styles, &attrs, reads, forward);
+        definition.renders = renders;
         definition.marker = marker.map(str::to_string);
         let styled_component =
             base.render(ast_builder, apply_attrs(ast_builder, component, &attrs));
@@ -1501,7 +1701,7 @@ fn create_styled_component<'a>(
         None::<oxc_allocator::Box<oxc_ast::ast::JSXClosingElement<'a>>>,
         ast_builder,
     );
-    Expression::new_arrow_function_expression(
+    let render = Expression::new_arrow_function_expression(
         SPAN,
         false,
         None::<oxc_allocator::Box<oxc_ast::ast::TSTypeParameterDeclaration<'a>>>,
@@ -1509,5 +1709,14 @@ fn create_styled_component<'a>(
         None::<oxc_allocator::Box<oxc_ast::ast::TSTypeAnnotation<'a>>>,
         body.into(),
         ast_builder,
+    );
+    named_arrow(
+        ast_builder,
+        "__devupStyleProps",
+        wrap_direct_call(
+            ast_builder,
+            &render,
+            &[identifier(ast_builder, "__devupStyleProps")],
+        ),
     )
 }

@@ -2,6 +2,16 @@ use std::borrow::Cow;
 use std::collections::BTreeMap;
 use std::fmt::Write as _;
 
+pub(crate) mod cursor;
+pub(crate) mod global;
+pub(crate) mod literal;
+mod literal_effects;
+mod literal_origins;
+mod literal_scopes;
+pub(crate) mod literal_tree;
+mod literal_trivia;
+mod literal_values;
+
 use crate::utils::{
     get_str_by_property_key, get_string_by_literal_expression, readable_code, runtime_value_error,
     wrap_direct_call,
@@ -9,7 +19,6 @@ use crate::utils::{
 use css::{
     at_rule::split_at_rule_key,
     optimize_multi_css_value::{check_multi_css_optimize, optimize_multi_css_value},
-    rm_css_comment::rm_css_comment,
     style_selector::StyleSelector,
 };
 use oxc_allocator::Allocator;
@@ -154,13 +163,25 @@ pub(crate) enum Place {
 
 /// Where an interpolation stands, from the CSS written before and after it
 pub(crate) fn interpolation_place(before: &str, after: &[TemplateElement<'_>]) -> Place {
-    let head = &before[before.rfind([';', '{', '}']).map_or(0, |index| index + 1)..];
+    let marks = cursor::boundaries(before);
+    let start = marks
+        .iter()
+        .rev()
+        .find(|(_, byte)| matches!(byte, b';' | b'{' | b'}'))
+        .map_or(0, |(index, _)| index + 1);
+    let head = &before[start..];
     let rest: String = after.iter().map(|quasi| quasi.value.raw.as_str()).collect();
-    let end = rest.find([';', '{', '}']);
-    if end.is_some_and(|end| rest.as_bytes()[end] == b'{') {
+    let full = format!("{before}{rest}");
+    let end = cursor::boundaries(&full)
+        .into_iter()
+        .find(|(index, byte)| *index >= before.len() && matches!(byte, b';' | b'{' | b'}'));
+    if end.is_some_and(|(_, byte)| byte == b'{') {
         return Place::Other;
     }
-    if head.contains(':') {
+    if marks
+        .iter()
+        .any(|(index, byte)| *index >= start && *byte == b':')
+    {
         Place::Value
     } else if head.trim().is_empty()
         && rest
@@ -526,7 +547,7 @@ pub fn css_to_style(
     selector: &Option<StyleSelector>,
 ) -> Vec<ExtractStaticStyle> {
     let mut styles = vec![];
-    collect_css_block(&rm_css_comment(css), level, selector, &mut styles);
+    collect_css_block(css, level, selector, &mut styles);
 
     // A single declaration (or none) is trivially ordered, so skip the comparison
     // sort's setup entirely for the very common single-property case. The multi-source
@@ -547,35 +568,27 @@ fn collect_css_block(
     selector: &Option<StyleSelector>,
     styles: &mut Vec<ExtractStaticStyle>,
 ) {
-    let mut rest = css;
-    while let Some(open) = rest.find('{') {
-        let head = &rest[..open];
-        let (declarations, prelude) = head.rsplit_once(';').unwrap_or(("", head));
-        styles.extend(css_to_style_block(declarations, level, selector));
-
-        let body_start = open + 1;
-        let mut depth = 1usize;
-        let body_end = rest[body_start..]
-            .char_indices()
-            .find_map(|(index, c)| {
-                match c {
-                    '{' => depth += 1,
-                    '}' => depth -= 1,
-                    _ => {}
+    for item in cursor::items(css) {
+        match item {
+            cursor::Item::Declaration { key, value } => {
+                styles.extend(css_to_style_block(
+                    &css[key.start..value.end],
+                    level,
+                    selector,
+                ));
+            }
+            cursor::Item::Block { prelude, body } => {
+                let prelude = cursor::clean(&css[prelude]);
+                let prelude = prelude.trim();
+                if prelude.is_empty() || prelude == "&" {
+                    collect_css_block(&css[body], level, selector, styles);
+                } else if let Some(nested) = nest_prelude(selector.as_ref(), prelude) {
+                    collect_css_block(&css[body], level, &Some(nested), styles);
                 }
-                (depth == 0).then_some(body_start + index)
-            })
-            .unwrap_or(rest.len());
-        let body = &rest[body_start..body_end];
-        let prelude = prelude.trim();
-        if prelude.is_empty() || prelude == "&" {
-            collect_css_block(body, level, selector, styles);
-        } else if let Some(nested) = nest_prelude(selector.as_ref(), prelude) {
-            collect_css_block(body, level, &Some(nested), styles);
+            }
+            cursor::Item::Statement(_) => {}
         }
-        rest = rest.get(body_end + 1..).unwrap_or_default();
     }
-    styles.extend(css_to_style_block(rest, level, selector));
 }
 
 /// The selector a nested block applies to: at-rule preludes wrap `parent`,
@@ -641,7 +654,7 @@ fn css_to_style_block(
     level: u8,
     selector: &Option<StyleSelector>,
 ) -> Vec<ExtractStaticStyle> {
-    let cleaned = rm_css_comment(css);
+    let cleaned = cursor::clean(css);
     // Presize to an upper bound (`;`-count + 1 = max declarations). A single byte
     // fold computes the count in one pass: for the dominant single-declaration
     // block (template/styled, no `;`) it returns 0 so `+1` still presizes to 1,
@@ -650,16 +663,16 @@ fn css_to_style_block(
     // present.
     let cap = cleaned.bytes().filter(|&b| b == b';').count() + 1;
     let mut styles = Vec::with_capacity(cap);
-    for s in cleaned.split(';') {
-        let s = s.trim();
-        if s.is_empty() {
-            continue;
-        }
-        let Some((property, value)) = s.split_once(':') else {
+    for item in cursor::items(&cleaned) {
+        let cursor::Item::Declaration { key, value } = item else {
             continue;
         };
-        let property = property.trim();
-        let value = value.trim();
+        let property_name = literal_values::canonical_key(cleaned[key].trim());
+        let property = property_name.as_str();
+        if crate::style_order::reserved(property) {
+            continue;
+        }
+        let value = cleaned[value].trim();
         let value: Cow<str> = optimize_decl_value(property, value);
         styles.push(ExtractStaticStyle::new(
             property,
@@ -673,108 +686,57 @@ fn css_to_style_block(
 
 pub fn keyframes_to_keyframes_style(keyframes: &str) -> BTreeMap<String, Vec<ExtractStaticStyle>> {
     let mut map = BTreeMap::new();
-    let mut input = keyframes;
-
-    while let Some(start) = input.find('{') {
-        let key = input[..start].trim().to_string();
-        let rest = &input[start + 1..];
-        if let Some(end) = rest.find('}') {
-            let block = &rest[..end];
-            // css_to_style already returns styles sorted by property.
-            map.insert(key, css_to_style(block, 0, &None));
-            input = &rest[end + 1..];
-        } else {
-            break;
+    for item in cursor::items(keyframes) {
+        if let cursor::Item::Block { prelude, body } = item {
+            if body.end == keyframes.len() {
+                continue;
+            }
+            map.insert(
+                keyframes[prelude].trim().to_string(),
+                css_to_style(&keyframes[body], 0, &None),
+            );
         }
     }
     map
 }
 
 pub fn optimize_css_block(css: &str) -> String {
-    // First pass: remove comments and normalize whitespace around structural
-    // chars. `rm_css_comment` now returns `Cow`, so an already-clean block is
-    // borrowed straight from `css` with no whole-block copy; reborrow as `&str`
-    // for the slicing below.
-    let cleaned = rm_css_comment(css);
-    let cleaned: &str = &cleaned;
-
-    // Second pass: trim around {, }, ; and optimize declarations in one go
-    let mut result = String::with_capacity(cleaned.len());
-    // Trim whitespace around every `{` and `}` boundary in ONE pass, writing into a
-    // single buffer. This is equivalent to the previous split('{')-then-split('}')
-    // rebuild but avoids the intermediate whole-string allocation: each segment between
-    // two structural chars is trimmed once and the consumed `{`/`}` is re-emitted.
-    //
-    // Fast path: a segment with NO `{`/`}` boundary has nothing to re-emit — the
-    // per-declaration `.split(';')` loop below already `.trim()`s every part, so the
-    // brace-boundary rewrite would produce a string byte-identical to `cleaned`. In
-    // that case borrow `cleaned` directly (`Cow::Borrowed`) instead of allocating and
-    // filling a second whole-string buffer.
-    let bytes = cleaned.as_bytes();
-    let trimmed: Cow<str> = if bytes.iter().any(|&b| b == b'{' || b == b'}') {
-        let mut buf = String::with_capacity(cleaned.len());
-        let mut segment_start = 0;
-        for (idx, &b) in bytes.iter().enumerate() {
-            if b == b'{' || b == b'}' {
-                buf.push_str(cleaned[segment_start..idx].trim());
-                buf.push(b as char);
-                segment_start = idx + 1;
-            }
-        }
-        buf.push_str(cleaned[segment_start..].trim());
-        Cow::Owned(buf)
-    } else {
-        Cow::Borrowed(cleaned)
-    };
-
-    let mut first_segment = true;
-    for s in trimmed.split(';') {
-        if !first_segment {
+    let mut result = String::with_capacity(css.len());
+    let mut declaration = false;
+    for item in cursor::items(css) {
+        if declaration {
             result.push(';');
         }
-        first_segment = false;
-
-        let last_part = if let Some((prefix, last_part)) = s.rsplit_once('{') {
-            append_brace_prefix(&mut result, prefix);
-            last_part.trim()
-        } else {
-            s.trim()
-        };
-
-        if let Some((property, value)) = last_part.split_once(':') {
-            let property = property.trim();
-            let value = value.trim();
-
-            let property_name = property
-                .rsplit_once('{')
-                .map_or(property, |(_, property_name)| property_name);
-            let optimized_value = optimize_decl_value(property_name, value);
-            result.push_str(property);
-            result.push(':');
-            result.push_str(&optimized_value);
-        } else {
-            result.push_str(last_part);
+        declaration = false;
+        match item {
+            cursor::Item::Declaration { key, value } => {
+                let key = literal_values::canonical_key(cursor::clean(&css[key]).trim());
+                if crate::style_order::reserved(key.trim()) {
+                    continue;
+                }
+                let value = cursor::clean(&css[value]);
+                result.push_str(key.trim());
+                result.push(':');
+                result.push_str(&optimize_decl_value(key.trim(), value.trim()));
+                declaration = true;
+            }
+            cursor::Item::Block { prelude, body } => {
+                let prelude = cursor::clean(&css[prelude]);
+                result.push_str(&prelude.trim().replace(", ", ","));
+                result.push('{');
+                result.push_str(&optimize_css_block(&css[body]));
+                result.push('}');
+            }
+            cursor::Item::Statement(range) => {
+                result.push_str(cursor::clean(&css[range]).trim());
+                result.push(';');
+            }
         }
     }
-
-    trim_string_in_place(&mut result);
-    if result.is_empty() {
-        return String::new();
-    }
-    remove_semicolon_before_closing_brace(&mut result);
     result
 }
 
-fn append_brace_prefix(result: &mut String, prefix: &str) {
-    for (idx, part) in prefix.split('{').enumerate() {
-        if idx > 0 {
-            result.push('{');
-        }
-        result.push_str(part.trim());
-    }
-    result.push('{');
-}
-
+#[cfg(test)]
 fn trim_string_in_place(value: &mut String) {
     let trimmed_start = value.len() - value.trim_start().len();
     if trimmed_start > 0 {
@@ -785,6 +747,7 @@ fn trim_string_in_place(value: &mut String) {
     value.truncate(trimmed_len);
 }
 
+#[cfg(test)]
 fn remove_semicolon_before_closing_brace(value: &mut String) {
     if !value.contains(";}") {
         return;

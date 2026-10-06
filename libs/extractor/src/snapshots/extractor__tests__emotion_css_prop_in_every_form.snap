@@ -56,7 +56,7 @@ expression: "emotion_outputs(&[(\"test.tsx\",\n\"export const App = () => <div c
                     },
                 ),
             },
-            code: "import \"@devup-ui/react/devup-ui.css\";\nexport const App = ({ danger }) => <div className={danger ? \"a\" : \"b\"} />;\n",
+            code: "import \"@devup-ui/react/devup-ui.css\";\nexport const App = ({ danger }) => ((__devupValue0) => <div className={__devupValue0 ? \"a\" : \"b\"} />)(danger);\n",
         },
     ),
     (
@@ -84,7 +84,7 @@ expression: "emotion_outputs(&[(\"test.tsx\",\n\"export const App = () => <div c
                     },
                 ),
             },
-            code: "import \"@devup-ui/react/devup-ui.css\";\nexport const App = ({ active }) => <div className={active ? \"a\" : \"b\"} />;\n",
+            code: "import \"@devup-ui/react/devup-ui.css\";\nexport const App = ({ active }) => ((__devupValue0) => <div className={!__devupValue0 ? \"a\" : __devupValue0 ? \"b\" : \"\"} />)(active);\n",
         },
     ),
     (
@@ -275,6 +275,16 @@ expression: "emotion_outputs(&[(\"test.tsx\",\n\"export const App = () => <div c
                 ),
                 Static(
                     ExtractStaticStyle {
+                        property: "color",
+                        value: "red",
+                        level: 0,
+                        selector: None,
+                        style_order: None,
+                        layer: None,
+                    },
+                ),
+                Static(
+                    ExtractStaticStyle {
                         property: "margin",
                         value: "0",
                         level: 0,
@@ -284,7 +294,7 @@ expression: "emotion_outputs(&[(\"test.tsx\",\n\"export const App = () => <div c
                     },
                 ),
             },
-            code: "import \"@devup-ui/react/devup-ui.css\";\nconst override = \"a\";\nexport const App = () => <div className={`${override + \" external\" || \"\"} b`} />;\n",
+            code: "import \"@devup-ui/react/devup-ui.css\";\nconst override = \"a\";\nexport const App = () => <div className={`${\"a\" + \" external\" || \"\"} b c`} />;\n",
         },
     ),
     (
@@ -303,6 +313,16 @@ expression: "emotion_outputs(&[(\"test.tsx\",\n\"export const App = () => <div c
                 ),
                 Static(
                     ExtractStaticStyle {
+                        property: "color",
+                        value: "red",
+                        level: 0,
+                        selector: None,
+                        style_order: None,
+                        layer: None,
+                    },
+                ),
+                Static(
+                    ExtractStaticStyle {
                         property: "margin",
                         value: "0",
                         level: 0,
@@ -312,7 +332,7 @@ expression: "emotion_outputs(&[(\"test.tsx\",\n\"export const App = () => <div c
                     },
                 ),
             },
-            code: "import \"@devup-ui/react/devup-ui.css\";\nconst override = \"a\";\nexport const App = () => <div className={`${override} external b`} />;\n",
+            code: "import \"@devup-ui/react/devup-ui.css\";\nconst override = \"a\";\nexport const App = () => ((__devupValue0) => <div className={`${__devupValue0} external b c`} />)(`${override}`);\n",
         },
     ),
     (
@@ -350,7 +370,7 @@ expression: "emotion_outputs(&[(\"test.tsx\",\n\"export const App = () => <div c
                     },
                 ),
             },
-            code: "import \"@devup-ui/react/devup-ui.css\";\nconst base = \"a b\";\nexport const App = ({ cls }) => <><div className=\"b c\" /><div className=\"b c\" /><div className={cond ? \"a\" : \"c\"} /><div className={`c ${cls}`} /></>;\n",
+            code: "import \"@devup-ui/react/devup-ui.css\";\nconst base = \"a b\";\nexport const App = ({ cls }) => <><div className=\"a c\" /><div className=\"a c\" /><div className={cond ? \"b\" : \"c\"} /><div className={`c ${cls}`} /></>;\n",
         },
     ),
     (
@@ -407,13 +427,13 @@ expression: "emotion_outputs(&[(\"test.tsx\",\n\"export const App = () => <div c
                     ExtractDynamicStyle {
                         property: "color",
                         level: 0,
-                        identifier: "c",
+                        identifier: "__devupValue0",
                         selector: None,
                         style_order: None,
                     },
                 ),
             },
-            code: "import \"@devup-ui/react/devup-ui.css\";\nexport const App = ({ c }) => <><div className=\"a b\" /><div className=\"c\" style={{ \"--d\": c }} /><div /><div /><div /><div /><div /><div /></>;\n",
+            code: "import \"@devup-ui/react/devup-ui.css\";\nexport const App = ({ c }) => <><div className=\"a b\" />{((__devupValue0) => <div className=\"c\" style={{ \"--d\": __devupValue0 }} />)(c)}<div /><div /><div /><div /><div /><div /></>;\n",
         },
     ),
     (
@@ -496,13 +516,13 @@ expression: "emotion_outputs(&[(\"test.tsx\",\n\"export const App = () => <div c
                     ExtractDynamicStyle {
                         property: "width",
                         level: 0,
-                        identifier: "f({size:4})",
+                        identifier: "__devupValue0",
                         selector: None,
                         style_order: None,
                     },
                 ),
             },
-            code: "import \"@devup-ui/react/devup-ui.css\";\nconst SPACE = 4;\nconst base = {\n\tpadding: 4,\n\tlineHeight: 1.5,\n\t\"&:hover\": { margin: 2 }\n};\nexport const App = () => <div className=\"a b c d f\" style={{ \"--e\": f({size:4}) }} />;\n",
+            code: "import \"@devup-ui/react/devup-ui.css\";\nconst SPACE = 4;\nconst base = {\n\tpadding: 4,\n\tlineHeight: 1.5,\n\t\"&:hover\": { margin: 2 }\n};\nexport const App = () => ((__devupValue0) => <div className=\"a b c d f\" style={{ \"--e\": __devupValue0 }} />)(f({ size: 4 }));\n",
         },
     ),
     (
@@ -540,7 +560,7 @@ expression: "emotion_outputs(&[(\"test.tsx\",\n\"export const App = () => <div c
                     },
                 ),
             },
-            code: "import \"@devup-ui/react/devup-ui.css\";\nexport const App = ({ cls, s }) => <><div className={`${cls ? \"\" : \"a\"} ${cls ? typeof cls === \"string\" ? cls : \"\" : \"\"}`} /><div className={`${s != null ? \"\" : \"b\"} ${s != null ? typeof s === \"string\" ? s : \"\" : \"\"}`} /><div className=\"a\" /><div className className=\"c\" /></>;\n",
+            code: "import \"@devup-ui/react/devup-ui.css\";\nexport const App = ({ cls, s }) => <>{((__devupValue0) => <div className={`${__devupValue0 ? \"\" : \"a\"} ${__devupValue0 ? typeof __devupValue0 === \"string\" ? __devupValue0 : \"\" : \"\"}`} />)(cls)}{((__devupValue1) => <div className={`${__devupValue1 != null ? \"\" : \"b\"} ${__devupValue1 != null ? typeof __devupValue1 === \"string\" ? __devupValue1 : \"\" : \"\"}`} />)(s)}<div className=\"a\" /><div className className=\"c\" /></>;\n",
         },
     ),
     (

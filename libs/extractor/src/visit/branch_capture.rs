@@ -19,7 +19,11 @@ impl<'a> VisitMut<'a> for BranchReads<'a, '_> {
         if let Expression::Identifier(identifier) = expression
             && let Some(read) = self.reads.get(identifier.name.as_str())
         {
-            *expression = read.clone_in(self.ast.allocator());
+            *expression = Expression::new_parenthesized_expression(
+                expression.span(),
+                read.clone_in(self.ast.allocator()),
+                self.ast,
+            );
         } else {
             walk_mut::walk_expression(self, expression);
         }
@@ -51,6 +55,10 @@ impl<'a> DevupVisitor<'a> {
     ) {
         let name = self.names.fresh("__devupBranch");
         let left_name = self.names.fresh("__devupValue");
+        let left_span = logical.left.span();
+        if let Some(finite) = self.style_values.finite(&logical.left).cloned() {
+            self.style_values.origin(left_span, finite);
+        }
         let left = logical.left.take_in(&self.ast);
         let left_read = Expression::new_identifier(
             SPAN,
@@ -70,7 +78,11 @@ impl<'a> DevupVisitor<'a> {
             elements.push(value.into());
         }
         reads.visit_expression(&mut logical.right);
-        logical.left = self.branch_slot(&name, 0);
+        logical.left = Expression::new_parenthesized_expression(
+            left_span,
+            self.branch_slot(&name, 0),
+            &self.ast,
+        );
         let test = match logical.operator {
             LogicalOperator::And => left_read.clone_in(self.ast.allocator()),
             LogicalOperator::Or => Expression::new_unary_expression(

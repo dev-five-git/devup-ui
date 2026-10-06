@@ -18,5 +18,5 @@ expression: errors
     "test.tsx:1:73: `css` on `<div>` cannot use `s[0]` at build time: a style object it composes must be written in it, or declared with `const` at the top level of the module, where the build reads it",
     "test.tsx:2:36: `css` on `<div>` cannot use `s` at build time: its styles must be an object literal or a constant object, or be computed from constants",
     "test.tsx:3:37: `css` on `<div>` cannot use `s` at build time: its styles must be an object literal or a constant object, or be computed from constants\ntest.tsx:2:1: `s` is changed here, so the build cannot read it as a constant",
-    "test.tsx:3:55: `css` on `<Button>` overrides styles `Button` sets, which the build orders only for a styled component rendering a tag with no attrs or props read, given no spread, `as` or `forwardedAs`: move these styles into `styled(Button)(...)`",
+    "",
 ]

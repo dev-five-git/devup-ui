@@ -29,14 +29,15 @@ impl<'a> DevupVisitor<'a> {
     pub(super) fn prescan_style_order(
         &mut self,
         element: &str,
-        props: &Expression<'a>,
+        props: &mut Expression<'a>,
     ) -> ParsedStyleOrder<'a> {
-        let Expression::ObjectExpression(object) = props else {
+        let Expression::ObjectExpression(object) = crate::utils::unwrap_syntax_only(props) else {
             return ParsedStyleOrder::None;
         };
         let written = object
             .properties
             .iter()
+            .rev()
             .find_map(|property| match property {
                 ObjectPropertyKind::ObjectProperty(property)
                     if get_str_by_property_key(&property.key)
@@ -51,10 +52,16 @@ impl<'a> DevupVisitor<'a> {
         };
         let parsed = self.parsed_order(value);
         if matches!(parsed, ParsedStyleOrder::Unsupported) {
+            let (offset, _) = crate::style_order::parse(value, self.ast.allocator())
+                .err()
+                .unwrap_or_else(|| (value.span().start, String::new()));
             self.errors.push((
-                value.span().start,
+                offset,
                 element_error(element, &readable_code(value), STYLE_ORDER_VALUE),
             ));
+        }
+        if let Expression::ObjectExpression(object) = crate::utils::unwrap_syntax_only_mut(props) {
+            object.properties.retain(|property| !matches!(property, ObjectPropertyKind::ObjectProperty(property) if get_str_by_property_key(&property.key).is_some_and(|key| key == "styleOrder")));
         }
         parsed
     }
@@ -77,7 +84,14 @@ impl<'a> DevupVisitor<'a> {
                 JSXAttributeValue::ExpressionContainer(container) => container
                     .expression
                     .as_expression()
-                    .map(|value| (value.span().start, readable_code(value)))
+                    .map(|value| {
+                        (
+                            crate::style_order::parse(value, self.ast.allocator())
+                                .err()
+                                .map_or_else(|| value.span().start, |(offset, _)| offset),
+                            readable_code(value),
+                        )
+                    })
                     .unwrap_or_default(),
                 JSXAttributeValue::StringLiteral(literal) => {
                     (literal.span.start, format!("{:?}", literal.value))

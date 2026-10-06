@@ -30,7 +30,11 @@ use crate::extractor::extract_style_from_expression::{
 };
 use crate::stylex::StylexFunction;
 use crate::{ExtractOption, ExtractStyleValue, ModuleResolver};
+use oxc_span::GetSpan;
 
+mod literal_locations;
+
+mod finite_producers;
 mod initialization;
 mod lexical;
 #[cfg(test)]
@@ -61,6 +65,7 @@ enum Constant {
     /// name, never rules; for a `css()` class, the styles behind it when
     /// they are known
     Style(Option<Rc<Vec<ExtractStyleValue>>>),
+    FiniteStyle(crate::finite_styles::FiniteStyles),
     /// An object or array code changes, or a value read from one
     Changed(Rc<Change>),
 }
@@ -176,6 +181,8 @@ pub(crate) struct Inlined {
     pub stylex_themes: FxHashMap<String, String>,
     /// The styles behind imported `css()` classes
     pub css_styles: FxHashMap<String, Vec<ExtractStyleValue>>,
+    pub css_finite: FxHashMap<String, crate::finite_styles::FiniteStyles>,
+    pub css_arrays: FxHashMap<String, Vec<crate::finite_styles::FiniteStyles>>,
     pub unknown: Unknown,
     pub changed: Changed,
     /// The semantic analysis of the program as parsed, so the visitor reuses
@@ -581,6 +588,8 @@ fn inline_in<'a>(
             let Some(constant) = constant else {
                 continue;
             };
+            finite_producers::transport(name, &constant, &mut inlined.css_finite);
+            finite_producers::transport_arrays(name, &constant, &mut inlined.css_arrays);
             match &constant {
                 Constant::Vars(vars) => {
                     inlined
@@ -1249,6 +1258,8 @@ struct ModuleScope<'p, 'a> {
     /// The semantic analysis of a module read, built when a `StyleX` callee
     /// first needs the binding it reads told
     scoping: OnceCell<Scoping>,
+    finite_origins: Option<FxHashMap<(usize, usize), crate::finite_styles::FiniteStyles>>,
+    finite_arrays: FxHashMap<(usize, usize), Vec<crate::finite_styles::FiniteStyles>>,
 }
 
 impl<'p, 'a> ModuleScope<'p, 'a> {
@@ -1269,6 +1280,8 @@ impl<'p, 'a> ModuleScope<'p, 'a> {
             changes: FxHashMap::default(),
             shared_scoping: None,
             scoping: OnceCell::new(),
+            finite_origins: None,
+            finite_arrays: FxHashMap::default(),
         }
     }
 
@@ -1578,7 +1591,18 @@ impl<'p, 'a> ModuleScope<'p, 'a> {
         }
         // Taken out while it is evaluated, so a constant reading itself stops
         if let Some(init) = self.declarations.remove(name)
-            && let Some(constant) = self.evaluate(modules, init)
+            && let Some(constant) = self
+                .finite_css(modules, crate::utils::unwrap_syntax_only(init).span())
+                .map(Constant::FiniteStyle)
+                .or_else(|| {
+                    self.finite_array(crate::utils::unwrap_syntax_only(init).span())
+                        .map(|values| {
+                            Constant::Array(Rc::new(
+                                values.into_iter().map(Constant::FiniteStyle).collect(),
+                            ))
+                        })
+                })
+                .or_else(|| self.evaluate(modules, init))
         {
             self.locals.insert(name.to_string(), constant.clone());
             return Some(constant);
@@ -1840,6 +1864,9 @@ impl<'p, 'a> ModuleScope<'p, 'a> {
                     return fold_math(&name, &arguments);
                 }
                 if self.is_style_api(modules, &call.callee) {
+                    if let Some(finite) = self.finite_css(modules, call.span) {
+                        return Some(Constant::FiniteStyle(finite));
+                    }
                     return Some(Constant::Style(self.css_styles(modules, call)));
                 }
                 self.evaluate_stylex(modules, call)
@@ -1847,6 +1874,9 @@ impl<'p, 'a> ModuleScope<'p, 'a> {
             Expression::TaggedTemplateExpression(tagged)
                 if self.is_style_api(modules, &tagged.tag) =>
             {
+                if let Some(finite) = self.finite_css(modules, tagged.span) {
+                    return Some(Constant::FiniteStyle(finite));
+                }
                 Some(Constant::Style(None))
             }
             Expression::TSAsExpression(inner) => self.evaluate(modules, &inner.expression),
@@ -2163,6 +2193,17 @@ impl<'a> Inline<'_, 'a> {
             Constant::Number(number) => number != 0.0 && !number.is_nan(),
             Constant::Null | Constant::Undefined => false,
             Constant::Bool(value) => value,
+            Constant::Style(None) => return None,
+            Constant::Style(Some(styles)) => !styles.is_empty(),
+            Constant::FiniteStyle(finite) => {
+                if finite.results.iter().all(|(text, _)| text.is_empty()) {
+                    false
+                } else if finite.results.iter().all(|(text, _)| !text.is_empty()) {
+                    true
+                } else {
+                    return None;
+                }
+            }
             _ => true,
         })
     }
@@ -2326,10 +2367,11 @@ fn constant_literal<'a>(
 impl<'a> VisitMut<'a> for Inline<'_, 'a> {
     fn visit_expression(&mut self, expression: &mut Expression<'a>) {
         if self.styles {
-            if let Some(literal) = self
+            if let Some(mut literal) = self
                 .constant(expression)
                 .and_then(|constant| self.literal(&constant))
             {
+                literal_locations::place(&mut literal, expression.span());
                 *expression = literal;
                 if self.px {
                     px_rules(self.ast_builder, expression);

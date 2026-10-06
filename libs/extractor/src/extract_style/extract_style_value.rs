@@ -39,7 +39,7 @@ impl ExtractStyleValue {
             ExtractStyleValue::Static(style) if style.style_order.is_none() => {
                 style.style_order = Some(order);
             }
-            ExtractStyleValue::Dynamic(style) => {
+            ExtractStyleValue::Dynamic(style) if style.style_order.is_none() => {
                 style.style_order = Some(order);
             }
             _ => {}

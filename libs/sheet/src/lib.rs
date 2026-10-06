@@ -3708,7 +3708,7 @@ mod tests {
         let mut sheet = StyleSheet::default();
         let output = extract(
             "test.tsx",
-            "import {Box} from '@devup-ui/core'\n<Box styleOrder={0} bg={color} />",
+            "import {Box} from '@devup-ui/core'\n<Box bg={color} />",
             ExtractOption {
                 package: "@devup-ui/core".to_string(),
                 css_dir: "@devup-ui/core".to_string(),
@@ -3718,10 +3718,15 @@ mod tests {
             },
         )
         .unwrap();
-        assert_eq!(
-            sheet.update_styles(&output.styles, "test.tsx", true),
-            (true, true)
-        );
+        let styles = output
+            .styles
+            .into_iter()
+            .map(|mut style| {
+                style.set_style_order(0);
+                style
+            })
+            .collect();
+        assert_eq!(sheet.update_styles(&styles, "test.tsx", true), (true, true));
     }
 
     #[test]

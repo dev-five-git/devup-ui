@@ -6,12 +6,14 @@ use oxc_allocator::{Allocator, CloneIn, GetAllocator};
 use oxc_ast::{
     ast::{
         Argument, CallExpression, Expression, ExpressionStatement, IdentifierName,
-        JSXAttributeValue, ObjectExpression, ObjectProperty, ObjectPropertyKind, Program,
-        PropertyKey, Statement, StaticMemberExpression,
+        JSXAttributeValue, ObjectPropertyKind, Program, PropertyKey, Statement,
+        StaticMemberExpression,
     },
     builder::AstBuilder,
 };
 
+#[cfg(test)]
+use oxc_ast::ast::{ObjectExpression, ObjectProperty};
 use oxc_codegen::{Codegen, CodegenOptions};
 #[cfg(test)]
 mod w22_tests;
@@ -201,6 +203,7 @@ pub(super) enum ParsedStyleOrder<'a> {
         consequent: Option<u8>,
         alternate: Option<u8>,
     },
+    Tree(crate::style_order::Order<'a>),
     /// A value that is neither of these, which the stylesheet cannot order by
     Unsupported,
 }
@@ -227,36 +230,11 @@ pub(super) fn jsx_expression_to_style_order<'a>(
             .map_or(ParsedStyleOrder::None, |e| {
                 expression_to_style_order(e, allocator)
             }),
-        _ => jsx_expression_to_number(expr).map_or(ParsedStyleOrder::Unsupported, |n| {
-            ParsedStyleOrder::Static(n as u8)
-        }),
-    }
-}
-
-/// What a branch of a `styleOrder` gives the build
-enum OrderBranch {
-    Number(u8),
-    Nothing,
-}
-
-/// What a `styleOrder` branch gives: a number, nothing, or neither
-fn style_order_branch(
-    expr: &Expression<'_>,
-    nothing: &impl Fn(&Expression<'_>) -> bool,
-) -> Option<OrderBranch> {
-    let expr = unwrap_syntax_only(expr);
-    if let Some(number) = get_number_by_literal_expression(expr) {
-        return Some(OrderBranch::Number(number as u8));
-    }
-    nothing(expr).then_some(OrderBranch::Nothing)
-}
-
-impl OrderBranch {
-    const fn order(&self) -> Option<u8> {
-        match self {
-            OrderBranch::Number(number) => Some(*number),
-            OrderBranch::Nothing => None,
+        JSXAttributeValue::StringLiteral(literal) => {
+            crate::style_order::string_order(literal.value.as_str())
+                .map_or(ParsedStyleOrder::Unsupported, ParsedStyleOrder::Static)
         }
+        _ => ParsedStyleOrder::Unsupported,
     }
 }
 
@@ -279,44 +257,28 @@ pub(super) fn expression_to_style_order<'a>(
 pub(super) fn expression_to_style_order_with<'a>(
     expr: &Expression<'a>,
     allocator: &'a Allocator,
-    nothing: &impl Fn(&Expression<'_>) -> bool,
+    _nothing: &impl Fn(&Expression<'_>) -> bool,
 ) -> ParsedStyleOrder<'a> {
-    // Inspect `expr` ONCE. A numeric-literal probe (`get_number_by_literal_expression`)
-    // never matches a conditional/logical node, so folding it into the default arm is
-    // behavior-identical to the former "static probe first, then re-match" flow while
-    // avoiding the redundant second inspection of `expr`.
-    match unwrap_syntax_only(expr) {
-        // Conditional: `cond ? a : b` → Conditional with both branches probed.
-        Expression::ConditionalExpression(cond) => {
-            match (
-                style_order_branch(&cond.consequent, nothing),
-                style_order_branch(&cond.alternate, nothing),
-            ) {
+    use crate::style_order::Order;
+    match crate::style_order::parse(expr, allocator) {
+        Ok(Order::Static(order)) => ParsedStyleOrder::Static(order),
+        Ok(Order::Absent) => ParsedStyleOrder::None,
+        Ok(Order::Conditional { test, yes, no }) => {
+            let leaf = |order: &Order<'_>| match order {
+                Order::Static(order) => Some(Some(*order)),
+                Order::Absent => Some(None),
+                Order::Conditional { .. } => None,
+            };
+            match (leaf(&yes), leaf(&no)) {
                 (Some(consequent), Some(alternate)) => ParsedStyleOrder::Conditional {
-                    condition: cond.test.clone_in(allocator),
-                    consequent: consequent.order(),
-                    alternate: alternate.order(),
+                    condition: test,
+                    consequent,
+                    alternate,
                 },
-                _ => ParsedStyleOrder::Unsupported,
+                _ => ParsedStyleOrder::Tree(Order::Conditional { test, yes, no }),
             }
         }
-        // Logical &&: `a === 1 && 5` → truthy → right side (number), falsy → None.
-        Expression::LogicalExpression(logical) if logical.operator == LogicalOperator::And => {
-            style_order_branch(&logical.right, nothing).map_or(
-                ParsedStyleOrder::Unsupported,
-                |consequent| ParsedStyleOrder::Conditional {
-                    condition: logical.left.clone_in(allocator),
-                    consequent: consequent.order(),
-                    alternate: None,
-                },
-            )
-        }
-        // Otherwise a number, or nothing at all.
-        expr => match style_order_branch(expr, nothing) {
-            Some(OrderBranch::Number(number)) => ParsedStyleOrder::Static(number),
-            Some(OrderBranch::Nothing) => ParsedStyleOrder::None,
-            None => ParsedStyleOrder::Unsupported,
-        },
+        Err(_) => ParsedStyleOrder::Unsupported,
     }
 }
 
@@ -705,6 +667,7 @@ pub(super) fn merge_object_expressions<'a>(
 
 /// Several style arguments, or arrays of them, as vanilla-extract, Emotion and
 /// styled-components compose them
+#[cfg(test)]
 pub(super) struct StyleArguments<'a> {
     /// Classes composed as they are: other styles held in variables, strings
     pub classes: Vec<Expression<'a>>,
@@ -716,6 +679,7 @@ pub(super) struct StyleArguments<'a> {
 /// `None` for a single argument read as it is written, or when a part is
 /// neither a rule object nor a class (`null`/`undefined`/`false` parts are
 /// skipped).
+#[cfg(test)]
 pub(super) fn style_arguments<'a>(
     ast_builder: &AstBuilder<'a>,
     arguments: &[Argument<'a>],
@@ -814,12 +778,13 @@ pub(super) fn reads_directly(arguments: &[Argument<'_>]) -> bool {
         Some(Expression::ConditionalExpression(conditional)) => {
             [&conditional.consequent, &conditional.alternate]
                 .into_iter()
-                .all(|side| matches!(branch(side), Some(Branch::Rules(_) | Branch::Empty)))
+                .all(|side| matches!(unwrap_syntax_only(side), Expression::ObjectExpression(_) | Expression::NullLiteral(_) | Expression::BooleanLiteral(_)) || matches!(unwrap_syntax_only(side), Expression::Identifier(value) if value.name == "undefined"))
         }
         _ => false,
     }
 }
 
+#[cfg(test)]
 enum StylePart<'b, 'a> {
     Rules(&'b ObjectExpression<'a>),
     Conditional {
@@ -829,12 +794,14 @@ enum StylePart<'b, 'a> {
     },
 }
 
+#[cfg(test)]
 enum Branch<'b, 'a> {
     Empty,
     Rules(&'b ObjectExpression<'a>),
     Class(&'b Expression<'a>),
 }
 
+#[cfg(test)]
 fn branch<'b, 'a>(expression: &'b Expression<'a>) -> Option<Branch<'b, 'a>> {
     let expression = unwrap_syntax_only(expression);
     match expression {
@@ -958,7 +925,9 @@ pub(super) fn unreadable_styles(
                     unreadable_styles(std::slice::from_ref(prop.as_ref()), keys, found);
                 }
             }
-            ExtractStyleProp::Static(_) | ExtractStyleProp::Expression { .. } => {}
+            ExtractStyleProp::Static(_)
+            | ExtractStyleProp::Expression { .. }
+            | ExtractStyleProp::Diagnostic { .. } => {}
         }
     }
 }
@@ -1101,6 +1070,7 @@ pub(super) fn uncomposable_error(arguments: &[Argument<'_>]) -> String {
     )
 }
 
+#[cfg(test)]
 fn collect_style_parts<'b, 'a>(
     ast_builder: &AstBuilder<'a>,
     expression: &'b Expression<'a>,
@@ -1219,6 +1189,7 @@ fn collect_style_parts<'b, 'a>(
 /// so each property becomes `test ? value : fallback` over what came before.
 /// A class per branch would not do: which of two atomic classes wins depends on
 /// the stylesheet order, not on the order they were composed in.
+#[cfg(test)]
 fn merge_conditional_properties<'a>(
     ast_builder: &AstBuilder<'a>,
     merged: &mut oxc_allocator::Vec<'a, ObjectPropertyKind<'a>>,
@@ -1280,6 +1251,7 @@ fn merge_conditional_properties<'a>(
     Some(())
 }
 
+#[cfg(test)]
 fn find_property<'b, 'a>(
     properties: &'b [ObjectPropertyKind<'a>],
     key: &str,
@@ -1290,6 +1262,7 @@ fn find_property<'b, 'a>(
         .find_map(|(k, property)| (k == key).then_some(property))
 }
 
+#[cfg(test)]
 fn object_properties<'b, 'a>(
     value: Option<&'b Expression<'a>>,
 ) -> Option<&'b [ObjectPropertyKind<'a>]> {
@@ -1300,6 +1273,7 @@ fn object_properties<'b, 'a>(
     }
 }
 
+#[cfg(test)]
 fn value_or_undefined<'a>(
     ast_builder: &AstBuilder<'a>,
     value: Option<&Expression<'a>>,
@@ -1309,6 +1283,7 @@ fn value_or_undefined<'a>(
         |value| value.clone_in(ast_builder.allocator()),
     )
 }
+#[cfg(test)]
 fn static_property<'b, 'a>(
     property: &'b ObjectPropertyKind<'a>,
 ) -> Option<(Cow<'b, str>, &'b oxc_allocator::Box<'a, ObjectProperty<'a>>)> {
@@ -1320,6 +1295,7 @@ fn static_property<'b, 'a>(
     }
 }
 
+#[cfg(test)]
 fn merge_style_properties<'a>(
     ast_builder: &AstBuilder<'a>,
     merged: &mut oxc_allocator::Vec<'a, ObjectPropertyKind<'a>>,

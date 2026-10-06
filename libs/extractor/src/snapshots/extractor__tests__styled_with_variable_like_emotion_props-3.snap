@@ -17,7 +17,7 @@ ToBTreeSet {
             ExtractDynamicStyle {
                 property: "margin",
                 level: 0,
-                identifier: "margin",
+                identifier: "__devupValue0",
                 selector: None,
                 style_order: None,
             },
@@ -26,11 +26,11 @@ ToBTreeSet {
             ExtractDynamicStyle {
                 property: "padding",
                 level: 0,
-                identifier: "padding",
+                identifier: "__devupValue1",
                 selector: None,
                 style_order: None,
             },
         ),
     },
-    code: "import \"@devup-ui/core/devup-ui-0.css\";\nimport { forwardRef as __devupForwardRef } from \"react\";\nlet margin = \"10px\";\nlet padding = \"20px\";\nconst StyledDiv = __devupForwardRef((__devupRefProps, __devupRef) => (({ style, className, as: DevupAs = \"div\", forwardedAs, ...rest }) => <DevupAs {...(({ \"bg\": __devupOmit0, \"theme\": __devupOmit1, ...__devupDom }) => __devupDom)(rest)} as={forwardedAs} className={[\"a-a a-b a-c\", className].filter(Boolean).join(\" \")} style={{\n\t...{\n\t\t\"--a\": padding,\n\t\t\"--b\": margin,\n\t\t\"--c\": (props=>props.bg||`white`)(rest)\n\t},\n\t...style\n}} />)({\n\t...__devupRefProps,\n\tref: __devupRef\n}));\n",
+    code: "import \"@devup-ui/core/devup-ui-0.css\";\nimport { forwardRef as __devupForwardRef } from \"react\";\nlet margin = \"10px\";\nlet padding = \"20px\";\nconst StyledDiv = ((__devupValue0, __devupValue1) => ((__devupEnvironment0Component) => (__devupEnvironment0Component[\"__devupEnvironment0\"] = (__devupEnvironment0Continue) => __devupEnvironment0Continue(__devupValue0, __devupValue1), __devupEnvironment0Component))(__devupForwardRef((__devupRefProps, __devupRef) => ((__devupStyleProps) => (({ style, className, as: DevupAs = \"div\", forwardedAs, ...rest }) => <DevupAs {...(({ \"bg\": __devupOmit0, \"theme\": __devupOmit1, ...__devupDom }) => __devupDom)(rest)} as={forwardedAs} className={[\"a-a a-b a-c\", className].filter(Boolean).join(\" \")} style={{\n\t...{\n\t\t\"--a\": __devupValue1,\n\t\t\"--b\": __devupValue0,\n\t\t\"--c\": (props=>props.bg||`white`)(rest)\n\t},\n\t...style\n}} />)(__devupStyleProps))({\n\t...__devupRefProps,\n\tref: __devupRef\n}))))(margin, padding);\n",
 }

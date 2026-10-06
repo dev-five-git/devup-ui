@@ -196,6 +196,13 @@ fn js_value_to_json(value: &JsValue, context: &mut Context) -> JsResult<String> 
 fn pixelify(_this: &JsValue, args: &[JsValue], context: &mut Context) -> JsResult<JsValue> {
     let key = to_text(args.get_or_undefined(0), context)?;
     let value = args.get_or_undefined(1);
+    if crate::style_order::reserved(&key) {
+        return Ok(if value.is_undefined() {
+            JsValue::null()
+        } else {
+            value.clone()
+        });
+    }
     if key == "vars"
         && let Some(vars) = value.as_object()
     {

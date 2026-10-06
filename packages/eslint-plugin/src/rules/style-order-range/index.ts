@@ -10,12 +10,13 @@ import {
   imported,
   jsxApi,
   jsxName,
-  keyOf,
   modeOf,
   styleComponent,
   styledFactory,
+  textAllowed,
 } from './api-context'
 import { deferredValue } from './deferred-value'
+import { factorySettings } from './factory-settings'
 import { staticValue, unwrap, validOrder } from './static-value'
 import { createStyleTree, type Site } from './style-tree'
 
@@ -98,10 +99,35 @@ export const styleOrderRange = createRule({
         data: { api },
       })
     }
-    const { walk, props } = createStyleTree(scopeOf, check)
+    const textReports = new Set<string>()
+    const { walk, props } = createStyleTree(scopeOf, check, (diagnostic) => {
+      const key = `${diagnostic.start}:${diagnostic.messageId}`
+      if (textReports.has(key)) return
+      textReports.add(key)
+      context.report({
+        loc: {
+          start: context.sourceCode.getLocFromIndex(diagnostic.start),
+          end: context.sourceCode.getLocFromIndex(diagnostic.end),
+        },
+        messageId: diagnostic.messageId,
+        data: { api: diagnostic.site.api },
+      })
+    })
     return {
       ImportDeclaration(node) {
         if (node.source.value === '@emotion/react') emotionCss = true
+      },
+      TaggedTemplateExpression(node) {
+        const api = imported(node.tag, scopeOf)
+        const mode = modeOf(api)
+        if (mode)
+          walk(node.quasi, {
+            mode,
+            api: `${api?.source}.${api?.name}`,
+            allowText: textAllowed(api, context.filename),
+          })
+        else if (styledFactory(node.tag, scopeOf))
+          walk(node.quasi, { mode: 'class', api: 'styled', callbacks: true })
       },
       CallExpression(node) {
         const args = argumentsOf(node.arguments, scopeOf)
@@ -109,7 +135,14 @@ export const styleOrderRange = createRule({
         const mode = modeOf(api)
         if (mode) {
           const label = `${api?.source}.${api?.name}`
-          for (const argument of args) walk(argument, { mode, api: label })
+          for (const argument of args.slice(
+            api?.name === 'globalStyle' ? 1 : 0,
+          ))
+            walk(argument, {
+              mode,
+              api: label,
+              allowText: textAllowed(api, context.filename),
+            })
         } else if (
           api?.source === '@vanilla-extract/css' &&
           api.name === 'styleVariants'
@@ -142,14 +175,15 @@ export const styleOrderRange = createRule({
           })
         } else if (styledFactory(node.callee, scopeOf)) {
           const callee = unwrap(node.callee)
-          if (
-            callee.type === AST_NODE_TYPES.MemberExpression &&
-            ['attrs', 'withConfig'].includes(keyOf(callee, scopeOf) ?? '')
-          )
-            return
+          if (factorySettings(callee, scopeOf)) return
           const start = imported(callee, scopeOf)?.name === 'styled' ? 1 : 0
           for (const argument of args.slice(start))
-            walk(argument, { mode: 'class', api: 'styled', returnsRules: true })
+            walk(argument, {
+              mode: 'class',
+              api: 'styled',
+              returnsRules: true,
+              callbacks: true,
+            })
         }
       },
       JSXOpeningElement(node) {

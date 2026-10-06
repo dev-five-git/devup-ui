@@ -1,6 +1,13 @@
 import { AST_NODE_TYPES, type TSESTree } from '@typescript-eslint/utils'
 
-import { keyOf, type Mode } from './api-context'
+import {
+  imported,
+  keyOf,
+  type Mode,
+  modeOf,
+  styledFactory,
+} from './api-context'
+import { createLiteralTree, type TextDiagnostic } from './literal-tree'
 import { constant, type ScopeOf, staticValue, unwrap } from './static-value'
 
 export type Site = {
@@ -10,6 +17,10 @@ export type Site = {
   readonly returnsRules?: boolean
   readonly conditional?: boolean
   readonly record?: boolean
+  readonly text?: boolean
+  readonly allowText?: boolean
+  readonly declarations?: boolean
+  readonly callbacks?: boolean
 }
 type OrderCheck = (input: TSESTree.Node, site: Site) => void
 
@@ -25,7 +36,16 @@ const RECORDS = new Set([
   '@container',
 ])
 
-export function createStyleTree(scopeOf: ScopeOf, check: OrderCheck) {
+export function createStyleTree(
+  scopeOf: ScopeOf,
+  check: OrderCheck,
+  report: (diagnostic: TextDiagnostic) => void,
+) {
+  const literal = createLiteralTree(scopeOf, {
+    check,
+    report,
+    walk: (node, site) => walk(node, site),
+  })
   const walk = (
     input: TSESTree.Node,
     site: Site,
@@ -41,6 +61,17 @@ export function createStyleTree(scopeOf: ScopeOf, check: OrderCheck) {
         if (init) walk(init, site, next)
         break
       }
+      case AST_NODE_TYPES.Literal:
+      case AST_NODE_TYPES.TemplateLiteral:
+        literal(node, site)
+        break
+      case AST_NODE_TYPES.TaggedTemplateExpression:
+        if (
+          modeOf(imported(node.tag, scopeOf)) ||
+          styledFactory(node.tag, scopeOf)
+        )
+          walk(node.quasi, site, next)
+        break
       case AST_NODE_TYPES.ObjectExpression:
         for (const property of node.properties) {
           if (property.type === AST_NODE_TYPES.SpreadElement) {
@@ -49,7 +80,11 @@ export function createStyleTree(scopeOf: ScopeOf, check: OrderCheck) {
           }
           const key = keyOf(property, scopeOf)
           if (site.record) {
-            walk(property.value, { ...site, record: false }, next)
+            walk(
+              property.value,
+              { ...site, record: false, text: true, declarations: true },
+              next,
+            )
           } else if (mode === 'namespaces') {
             walk(
               property.value,
@@ -69,7 +104,25 @@ export function createStyleTree(scopeOf: ScopeOf, check: OrderCheck) {
           } else if (key !== null && !DATA.has(key)) {
             walk(
               property.value,
-              { ...site, returnsRules: false, record: RECORDS.has(key) },
+              {
+                ...site,
+                mode: /^@font-face\b/i.test(key)
+                  ? 'fontface'
+                  : /^@(?:[\w-]*keyframes)\b/i.test(key)
+                    ? 'keyframes'
+                    : mode,
+                returnsRules: false,
+                record: RECORDS.has(key),
+                declarations: !/^@(?:[\w-]*keyframes)\b/i.test(key),
+                text:
+                  RECORDS.has(key) ||
+                  key.startsWith('_') ||
+                  key.startsWith('@') ||
+                  key.startsWith('&') ||
+                  key.startsWith(':') ||
+                  ((mode === 'global' || mode === 'keyframes') &&
+                    !site.declarations),
+              },
               next,
             )
           }

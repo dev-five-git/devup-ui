@@ -121,7 +121,7 @@ fn bind(style: &mut ExtractStyleProp<'_>, slot: &Slot<'_>) -> Result<(), Unbinda
             .into_iter()
             .flatten()
             .try_for_each(|branch| bind(branch, slot)),
-        ExtractStyleProp::Unreadable { .. } => Ok(()),
+        ExtractStyleProp::Unreadable { .. } | ExtractStyleProp::Diagnostic { .. } => Ok(()),
     }
 }
 

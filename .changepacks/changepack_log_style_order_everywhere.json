@@ -1,0 +1,10 @@
+{
+  "changes": {
+    "bindings/devup-ui-wasm/package.json": "Patch",
+    "packages/eslint-plugin/package.json": "Patch",
+    "packages/react/package.json": "Patch",
+    "packages/components/package.json": "Patch"
+  },
+  "note": "Honor object styleOrder and literal CSS style-order in css and styled with source evaluation preserved, place static global rules in cascade order layers, and keep reserved order metadata out of CSS declarations. Preserve finite composition, captured component selection, CSS text and component selectors without replaying source predicates. Invalid explicit orders, runtime global orders, and meaningless keyframe, font-face descriptor or StyleX declaration orders produce located build errors with matching object and literal editor diagnostics.",
+  "date": "2026-10-01T00:00:00.000Z"
+}

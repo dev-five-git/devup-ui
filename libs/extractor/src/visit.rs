@@ -26,7 +26,7 @@ use crate::extractor::{
     },
     extract_style_from_jsx::extract_style_from_jsx,
     extract_style_from_styled::{
-        FORWARD_REF, Naming, StyledDefinition, StyledExtraction, extended,
+        FORWARD_REF, Naming, StyledDefinition, StyledExtraction, StyledInput, extended,
         extract_style_from_styled, forward_ref, read_forward, take_styled_modifiers,
         with_component,
     },
@@ -73,36 +73,48 @@ use oxc_syntax::symbol::SymbolId;
 
 use crate::utils::{
     CLASS_NAMES_CALL, CLASS_NAMES_CHILD, CLASS_NAMES_CLASS_MAP, CLASS_NAMES_PART, CSS_PROP_SPREAD,
-    CSS_PROP_VALUE, LOCAL_STYLES, ParsedStyleOrder, RUNTIME_VALUE, STYLE_OBJECT, StyleArguments,
-    build_time_error, call_with_values, css_prop_error, css_prop_override_error, element_error,
-    fixed_value, get_string_by_literal_expression, get_string_by_property_key, key_error,
-    readable_argument, readable_code, reads_directly, reads_unknown, runtime_classes,
-    runtime_value, runtime_value_error, spread_error, string_class, style_arguments,
-    uncomposable_error, unplaced_error, unreadable_styles, unwrap_syntax_only,
-    unwrap_syntax_only_mut,
+    CSS_PROP_VALUE, LOCAL_STYLES, ParsedStyleOrder, RUNTIME_VALUE, STYLE_OBJECT, build_time_error,
+    call_with_values, css_prop_error, css_prop_override_error, element_error, fixed_value,
+    get_string_by_literal_expression, get_string_by_property_key, key_error, readable_argument,
+    readable_code, reads_unknown, runtime_classes, runtime_value, runtime_value_error,
+    spread_error, string_class, uncomposable_error, unplaced_error, unreadable_styles,
+    unwrap_syntax_only, unwrap_syntax_only_mut,
 };
 use oxc_ast::builder::AstBuilder;
 use oxc_span::{GetSpan, SPAN};
 use rustc_hash::{FxHashMap, FxHashSet};
 use std::rc::Rc;
 
+mod block_callbacks;
 mod branch_capture;
+mod branch_evaluation;
 mod call_order;
 mod call_target;
 mod capture;
 mod class_capture;
+mod css_capture;
 mod element_calls;
+mod finite_callbacks;
 mod imports;
 mod jsx_order;
+mod literal_callback_order;
+mod literal_callbacks;
+mod literal_globals;
+mod literal_parts;
 mod names;
 mod order;
 #[cfg(test)]
 mod order_tests;
+mod ordered_parts;
 mod selected_capture;
 #[cfg(test)]
 mod semantics_helpers_tests;
 mod spread_slots;
+mod style_calls;
 mod style_order;
+mod style_shapes;
+mod styled_callbacks;
+mod styled_parts;
 
 use spread_slots::{Overridden, is_unknown_spread, take_known_overridden};
 
@@ -113,6 +125,7 @@ enum Text {
     Classes,
     /// CSS text, as Emotion's `css` prop takes it
     Rules,
+    Arguments,
 }
 
 /// Emotion's `css` prop taken off an element: what it composes, the parts
@@ -160,6 +173,7 @@ fn style_property_into_string(style_property: StyleProperty) -> String {
 }
 
 pub struct DevupVisitor<'a> {
+    pub(crate) source: Option<&'a str>,
     pub ast: AstBuilder<'a>,
     filename: String,
     /// The bindings the file declares for the APIs the build compiles
@@ -221,7 +235,8 @@ pub struct DevupVisitor<'a> {
     style_values: crate::style_values::StyleValues,
     /// The styles of the last `css()` call giving a class, by where it starts,
     /// for the `const` it initializes
-    css_styles: Option<(u32, Vec<ExtractStyleValue>)>,
+    css_styles: FxHashMap<(u32, u32), Vec<ExtractStyleValue>>,
+    css_texts: FxHashSet<(u32, u32)>,
     /// The styles behind `css()` classes the file imports, by binding
     imported_css: FxHashMap<String, Vec<ExtractStyleValue>>,
     /// The styled component just built, by where it starts, for the `const`
@@ -288,6 +303,27 @@ fn reads_binding(
 }
 
 impl<'a> DevupVisitor<'a> {
+    fn reads_unknown_part(&self, expression: &Expression<'a>) -> bool {
+        match unwrap_syntax_only(expression) {
+            Expression::CallExpression(call) if self.util_type(&call.callee).is_some() => false,
+            Expression::ArrayExpression(array) => array
+                .elements
+                .iter()
+                .filter_map(|element| element.as_expression())
+                .any(|value| self.reads_unknown_part(value)),
+            Expression::LogicalExpression(logical) => {
+                (logical.operator != LogicalOperator::And && self.reads_unknown_part(&logical.left))
+                    || self.reads_unknown_part(&logical.right)
+            }
+            Expression::ConditionalExpression(conditional) => {
+                self.reads_unknown_part(&conditional.consequent)
+                    || self.reads_unknown_part(&conditional.alternate)
+            }
+            expression => reads_unknown(expression, &self.unknown_bindings, &|identifier| {
+                self.bindings.reads_module(identifier)
+            }),
+        }
+    }
     pub fn changed_bindings(&mut self, changed: crate::imported_constants::Changed) {
         self.changed_bindings = changed;
     }
@@ -304,9 +340,9 @@ impl<'a> DevupVisitor<'a> {
                 argument => argument.to_expression(),
             };
             if self.bindings.kind(expression).is_none()
-                && reads_unknown(expression, &self.unknown_bindings, &|identifier| {
-                    self.bindings.reads_module(identifier)
-                })
+                && self.style_values.finite(expression).is_none()
+                && self.style_values.arrays(expression).is_none()
+                && self.reads_unknown_part(expression)
             {
                 self.composes_unknown = true;
                 self.unknown_parts.push((
@@ -344,6 +380,7 @@ impl<'a> DevupVisitor<'a> {
     /// styles merge, a later declaration replacing an earlier one. `None` when
     /// no part is such a class, or a part is one composing does not read.
     fn compose_known_styles(&mut self, call: &CallExpression<'a>) -> Option<Expression<'a>> {
+        if call.arguments.iter().any(|argument| matches!(argument, Argument::SpreadElement(spread) if !style_shapes::finite_spread(&spread.argument))) { return None; }
         let arguments: Vec<&Expression<'a>> = call
             .arguments
             .iter()
@@ -352,21 +389,14 @@ impl<'a> DevupVisitor<'a> {
                 argument => argument.to_expression(),
             })
             .collect();
-        if !arguments
-            .iter()
-            .any(|argument| self.reads_known_styles(argument))
-        {
-            return None;
-        }
         let mut parts = Vec::new();
         for argument in &arguments {
-            self.known_parts(argument, &mut parts, Text::Classes)?;
+            self.known_parts(argument, &mut parts, Text::Arguments)?;
         }
-        self.unknown_arguments("css", &call.arguments);
-        self.changed_arguments("css", &call.arguments);
-        let (result, known) = self.composed_class(call.span.start, parts);
+        let (result, known) = self.composed_class(call.span, parts);
         if let Some(known) = known {
-            self.css_styles = Some((call.span.start, known));
+            self.css_styles
+                .insert((call.span.start, call.span.end), known);
         }
         Some(result)
     }
@@ -375,9 +405,10 @@ impl<'a> DevupVisitor<'a> {
     /// always set when no class the build does not know joins them
     fn composed_class(
         &mut self,
-        offset: u32,
+        span: oxc_span::Span,
         parts: Vec<KnownPart<'a>>,
     ) -> (Expression<'a>, Option<Vec<ExtractStyleValue>>) {
+        let offset = span.start;
         let mut composition = crate::composition::Composition::default();
         let mut classes = Vec::new();
         for part in parts {
@@ -401,23 +432,35 @@ impl<'a> DevupVisitor<'a> {
                 }
             }
         }
-        let known = composition.unconditional().filter(|_| classes.is_empty());
+        let closed = classes.is_empty();
+        let known = composition.unconditional().filter(|_| closed);
         let mut props = composition.into_props();
         // Class names come out in reverse, so they read in composing order
         props.reverse();
         let class_name =
             gen_class_names(&self.ast, &mut props, None, self.split_filename.as_deref());
-        self.styles
-            .extend(props.into_iter().flat_map(ExtractStyleProp::into_extract));
         let result =
             merge_expression_for_class_name(&self.ast, classes.into_iter().chain(class_name))
                 .unwrap_or_else(|| Expression::new_string_literal(SPAN, "", None, &self.ast));
+        if closed
+            && let Some(finite) =
+                crate::finite_styles::FiniteStyles::emitted(&self.ast, &props, &result)
+        {
+            self.style_values.origin(span, finite);
+        }
+        self.styles
+            .extend(props.into_iter().flat_map(ExtractStyleProp::into_extract));
         (result, known)
     }
 
     /// Whether `expression`, or a part of it, is a class whose styles the
     /// build knows
     fn reads_known_styles(&self, expression: &Expression<'a>) -> bool {
+        if self.style_values.finite(expression).is_some()
+            || self.style_values.arrays(expression).is_some()
+        {
+            return true;
+        }
         match unwrap_syntax_only(expression) {
             Expression::ArrayExpression(array) => array.elements.iter().any(|element| {
                 element
@@ -442,23 +485,79 @@ impl<'a> DevupVisitor<'a> {
         parts: &mut Vec<KnownPart<'a>>,
         text: Text,
     ) -> Option<()> {
+        if let Some(array) = self.style_values.arrays(expression) {
+            for (index, finite) in array.iter().enumerate() {
+                let saved = Expression::new_computed_member_expression(
+                    SPAN,
+                    expression.clone_in_with_semantic_ids(self.ast.allocator()),
+                    Expression::new_string_literal(
+                        SPAN,
+                        self.ast.allocator().alloc_str(&index.to_string()),
+                        None,
+                        &self.ast,
+                    ),
+                    false,
+                    &self.ast,
+                );
+                parts.push(KnownPart::Styles(vec![KnownStyles::Finite(
+                    finite.clone(),
+                    saved,
+                )]));
+            }
+            return Some(());
+        }
+        if let Some(styles) = self.style_values.styles(unwrap_syntax_only(expression)) {
+            parts.push(KnownPart::Styles(vec![KnownStyles::Known(styles.to_vec())]));
+            return Some(());
+        }
+        if let Some(finite) = self.style_values.finite(expression) {
+            parts.push(KnownPart::Styles(vec![KnownStyles::Finite(
+                finite.clone(),
+                expression.clone_in_with_semantic_ids(self.ast.allocator()),
+            )]));
+            return Some(());
+        }
         let clone = |expression: &Expression<'a>| {
             expression.clone_in_with_semantic_ids(self.ast.allocator())
         };
-        let (test, consequent, alternate) = match unwrap_syntax_only(expression) {
+        match unwrap_syntax_only(expression) {
             Expression::ArrayExpression(array) => {
                 for element in &array.elements {
                     self.known_parts(element.as_expression()?, parts, text)?;
                 }
-                return Some(());
+                Some(())
             }
             Expression::LogicalExpression(logical) if logical.operator == LogicalOperator::And => {
-                (&logical.left, &logical.right, None)
+                let mut side = Vec::new();
+                self.known_parts(&logical.right, &mut side, text)?;
+                parts.extend(self.guarded_parts(&logical.left, side));
+                Some(())
             }
             // `left || right` and `left ?? right`: `left` while it applies, `right`
             // otherwise
             Expression::LogicalExpression(logical) => {
-                return match self.known_side(&logical.left, text)? {
+                if let Some(finite) = self.style_values.finite(&logical.left) {
+                    let mut left = Vec::new();
+                    self.known_parts(&logical.left, &mut left, text)?;
+                    if logical.operator == LogicalOperator::Coalesce
+                        || finite.results.iter().all(|(text, _)| !text.is_empty())
+                    {
+                        parts.extend(left);
+                        return Some(());
+                    }
+                    parts.extend(self.guarded_parts(&logical.left, left));
+                    let mut right = Vec::new();
+                    self.known_parts(&logical.right, &mut right, text)?;
+                    let inverse = Expression::new_unary_expression(
+                        SPAN,
+                        UnaryOperator::LogicalNot,
+                        clone(&logical.left),
+                        &self.ast,
+                    );
+                    parts.extend(self.guarded_parts(&inverse, right));
+                    return Some(());
+                }
+                match self.known_side(&logical.left, text)? {
                     KnownSide::Styles(side) => {
                         parts.push(KnownPart::Styles(side));
                         Some(())
@@ -486,19 +585,29 @@ impl<'a> DevupVisitor<'a> {
                         );
                         Some(())
                     }
-                };
+                }
             }
-            Expression::ConditionalExpression(conditional) => (
-                &conditional.test,
-                &conditional.consequent,
-                Some(&conditional.alternate),
-            ),
+            Expression::ConditionalExpression(conditional) => {
+                let mut yes = Vec::new();
+                let mut no = Vec::new();
+                self.known_parts(&conditional.consequent, &mut yes, text)?;
+                self.known_parts(&conditional.alternate, &mut no, text)?;
+                parts.extend(self.guarded_parts(&conditional.test, yes));
+                let inverse = Expression::new_unary_expression(
+                    SPAN,
+                    UnaryOperator::LogicalNot,
+                    conditional.test.clone_in(self.ast.allocator()),
+                    &self.ast,
+                );
+                parts.extend(self.guarded_parts(&inverse, no));
+                Some(())
+            }
             Expression::CallExpression(call) if self.class_names_text(&call.callee).is_some() => {
                 let text = self.class_names_text(&call.callee)?;
                 for argument in &call.arguments {
                     self.known_parts(argument.as_expression()?, parts, text)?;
                 }
-                return Some(());
+                Some(())
             }
             expression => {
                 match self.known_side(expression, text)? {
@@ -506,15 +615,9 @@ impl<'a> DevupVisitor<'a> {
                     KnownSide::Class(class) => parts.push(KnownPart::Class(class)),
                     KnownSide::Empty => {}
                 }
-                return Some(());
+                Some(())
             }
-        };
-        let consequent = self.known_side(consequent, text)?;
-        let alternate = alternate.map_or(Some(KnownSide::Empty), |alternate| {
-            self.known_side(alternate, text)
-        })?;
-        self.push_choice(parts, test, consequent, alternate);
-        Some(())
+        }
     }
 
     /// `test ? consequent : alternate` among the parts, its classes and its
@@ -563,7 +666,19 @@ impl<'a> DevupVisitor<'a> {
     /// A side of a condition among composed parts. Its code keeps the bindings
     /// it reads, so the values the file binds them to are read in it.
     fn known_side(&self, expression: &Expression<'a>, text: Text) -> Option<KnownSide<'a>> {
+        if let Some(finite) = self.style_values.finite(expression) {
+            return Some(KnownSide::Styles(vec![KnownStyles::Finite(
+                finite.clone(),
+                expression.clone_in_with_semantic_ids(self.ast.allocator()),
+            )]));
+        }
         let expression = unwrap_syntax_only(expression);
+        let text = if text == Text::Arguments && crate::css_utils::literal::is_rule_text(expression)
+        {
+            Text::Rules
+        } else {
+            text
+        };
         if let Some(styles) = self.style_values.styles(expression) {
             return Some(KnownSide::Styles(vec![KnownStyles::Known(styles.to_vec())]));
         }
@@ -583,6 +698,9 @@ impl<'a> DevupVisitor<'a> {
             }
             Expression::NullLiteral(_) | Expression::BooleanLiteral(_) => Some(KnownSide::Empty),
             Expression::Identifier(identifier) if identifier.name == "undefined" => {
+                Some(KnownSide::Empty)
+            }
+            Expression::UnaryExpression(unary) if unary.operator == UnaryOperator::Void => {
                 Some(KnownSide::Empty)
             }
             Expression::Identifier(_)
@@ -639,7 +757,17 @@ impl<'a> DevupVisitor<'a> {
                 KnownStyles::Known(values) => {
                     props.extend(values.into_iter().map(ExtractStyleProp::Static));
                 }
+                KnownStyles::Finite(finite, saved) => props.extend(finite.props(&self.ast, &saved)),
                 KnownStyles::Rules(mut rules) => {
+                    crate::css_utils::literal::lower_with_source(
+                        &self.ast,
+                        &mut rules,
+                        self.source,
+                    );
+                    if let Some(styles) = self.literal_scope(&rules, element) {
+                        props.extend(styles);
+                        continue;
+                    }
                     self.style_values.read_in(&self.ast, &mut rules);
                     let ExtractResult {
                         mut styles,
@@ -653,12 +781,19 @@ impl<'a> DevupVisitor<'a> {
                         &None,
                         LiteralHandling::ExpandResponsiveThemeToken,
                     );
+                    crate::style_diagnostics::collect(&styles, &mut self.errors);
                     if let Some(element) = element {
                         let mut unreadable = Vec::new();
                         unreadable_styles(&styles, true, &mut unreadable);
                         for (at, code) in unreadable {
-                            self.errors
-                                .push((at, css_prop_error(element, &code, STYLE_OBJECT)));
+                            self.errors.push((
+                                at,
+                                if element == "styled" {
+                                    build_time_error("styled", &code, STYLE_OBJECT)
+                                } else {
+                                    css_prop_error(element, &code, STYLE_OBJECT)
+                                },
+                            ));
                         }
                     } else if let Some(value) = runtime_value(&styles) {
                         self.errors
@@ -683,6 +818,7 @@ impl<'a> DevupVisitor<'a> {
         split_filename: Option<String>,
     ) -> Self {
         Self {
+            source: None,
             ast: AstBuilder::new(allocator),
             filename: filename.to_string(),
             bindings: Bindings::default(),
@@ -708,7 +844,8 @@ impl<'a> DevupVisitor<'a> {
             names: names::Names::default(),
             scoping: None,
             style_values: crate::style_values::StyleValues::default(),
-            css_styles: None,
+            css_styles: FxHashMap::default(),
+            css_texts: FxHashSet::default(),
             pending_styled: None,
             devup_styled: FxHashSet::default(),
             selected_components: FxHashSet::default(),
@@ -958,6 +1095,20 @@ impl<'a> DevupVisitor<'a> {
     /// stands in as the parts around the mixin, and a function of the theme as
     /// the rules it gives
     fn css_prop_value(&mut self, element: &str, value: &mut Expression<'a>) {
+        if let Expression::TemplateLiteral(template) = unwrap_syntax_only_mut(value)
+            && let Err(unplaced) = template_parts(&self.ast, template, false)
+        {
+            *value = self.css_prop_failure(element, unplaced);
+            return;
+        }
+        crate::css_utils::literal_tree::lower(
+            &self.ast,
+            value,
+            crate::css_utils::literal_tree::Scope {
+                source: self.source,
+                global: false,
+            },
+        );
         let parts = match unwrap_syntax_only_mut(value) {
             Expression::ArrayExpression(array) => {
                 for part in &mut array.elements {
@@ -1001,21 +1152,37 @@ impl<'a> DevupVisitor<'a> {
                     .util_type(&tag.tag)
                     .is_some_and(|util| matches!(util.as_ref(), UtilType::Css)) =>
             {
-                match template_parts(&self.ast, &tag.quasi, true) {
-                    Ok(parts) => Expression::new_array_expression(
-                        SPAN,
-                        oxc_allocator::Vec::from_iter_in(
-                            parts.into_iter().map(Into::into),
+                let mut literal = Expression::TemplateLiteral(oxc_allocator::Box::new_in(
+                    tag.quasi.clone_in_with_semantic_ids(self.ast.allocator()),
+                    &self.ast,
+                ));
+                if crate::css_utils::literal::lower_with_source(
+                    &self.ast,
+                    &mut literal,
+                    self.source,
+                ) {
+                    literal
+                } else {
+                    match template_parts(&self.ast, &tag.quasi, true) {
+                        Ok(parts) => Expression::new_array_expression(
+                            SPAN,
+                            oxc_allocator::Vec::from_iter_in(
+                                parts.into_iter().map(Into::into),
+                                &self.ast,
+                            ),
                             &self.ast,
                         ),
-                        &self.ast,
-                    ),
-                    Err(unplaced) => self.css_prop_failure(element, unplaced),
+                        Err(unplaced) => self.css_prop_failure(element, unplaced),
+                    }
                 }
             }
             Expression::TemplateLiteral(template) => {
                 match template_parts(&self.ast, template, false) {
-                    Ok(_) => return,
+                    Ok(_) => {
+                        self.css_texts
+                            .insert((template.span.start, template.span.end));
+                        return;
+                    }
                     Err(unplaced) => self.css_prop_failure(element, unplaced),
                 }
             }
@@ -1525,12 +1692,36 @@ impl<'a> DevupVisitor<'a> {
         if self.class_names_text(&call.callee).is_none() {
             return false;
         }
-        let offset = call.span.start;
+        let span = call.span;
+        let offset = span.start;
+        let text = self.class_names_text(&call.callee).unwrap_or(Text::Classes);
         self.unknown_arguments("css", &call.arguments);
         self.changed_arguments("css", &call.arguments);
+        walk_expression(self, it);
+        let mut captured = Vec::new();
+        if let Expression::CallExpression(call) = it {
+            let supported = call.arguments.iter().all(|argument| {
+                argument
+                    .as_expression()
+                    .is_some_and(|value| self.known_parts(value, &mut Vec::new(), text).is_some())
+            });
+            for argument in &mut call.arguments {
+                if supported && let Some(value) = argument.as_expression_mut() {
+                    if text == Text::Rules
+                        && let Expression::TemplateLiteral(template) = value
+                    {
+                        for value in &mut template.expressions {
+                            self.capture_shape(value, &mut captured);
+                        }
+                    } else {
+                        self.capture_style_argument(value, &mut captured);
+                    }
+                }
+            }
+        }
         let mut parts = Vec::new();
         *it = if self.known_parts(it, &mut parts, Text::Classes).is_some() {
-            self.composed_class(offset, parts).0
+            self.composed_class(span, parts).0
         } else {
             self.errors.push((
                 offset,
@@ -1538,6 +1729,16 @@ impl<'a> DevupVisitor<'a> {
             ));
             Expression::new_string_literal(SPAN, "", None, &self.ast)
         };
+        if !captured.is_empty() {
+            *it = call_with_values(&self.ast, captured, it.clone_in(self.ast.allocator()));
+        }
+        match it {
+            Expression::StringLiteral(value) => value.span = span,
+            Expression::TemplateLiteral(value) => value.span = span,
+            Expression::CallExpression(value) => value.span = span,
+            Expression::ConditionalExpression(value) => value.span = span,
+            _ => {}
+        }
         true
     }
 }
@@ -1744,6 +1945,28 @@ impl<'a> DevupVisitor<'a> {
     /// modules, by the name it binds them to
     pub fn import_css(&mut self, styles: FxHashMap<String, Vec<ExtractStyleValue>>) {
         self.imported_css = styles;
+    }
+    pub(crate) fn import_finite_css(
+        &mut self,
+        finite: FxHashMap<String, crate::finite_styles::FiniteStyles>,
+    ) {
+        self.style_values.import_finite(finite);
+    }
+    pub(crate) fn import_css_arrays(
+        &mut self,
+        arrays: FxHashMap<String, Vec<crate::finite_styles::FiniteStyles>>,
+    ) {
+        self.style_values.import_arrays(arrays);
+    }
+    pub(crate) fn finite_array_origins(
+        &self,
+    ) -> FxHashMap<(u32, u32), Vec<crate::finite_styles::FiniteStyles>> {
+        self.style_values.array_origins()
+    }
+    pub(crate) fn finite_origins(
+        &self,
+    ) -> FxHashMap<(u32, u32), crate::finite_styles::FiniteStyles> {
+        self.style_values.origins()
     }
 
     /// `StyleX` variables and themes the program imports from other modules,
@@ -2276,7 +2499,7 @@ impl<'a> VisitMut<'a> for DevupVisitor<'a> {
             self.names.reserve(&scoping);
             self.bindings.scope(Rc::clone(&scoping));
             self.bind_imported_stylex();
-            self.style_values = crate::style_values::StyleValues::new(scoping);
+            self.style_values.scope(scoping);
             self.style_values
                 .import(std::mem::take(&mut self.imported_css));
             if self.binds_style_results(it) || self.css_prop != CssProp::Off {
@@ -2339,6 +2562,15 @@ impl<'a> VisitMut<'a> for DevupVisitor<'a> {
         if !self.class_names_scope.is_empty() && self.compile_class_names_call(it) {
             return;
         }
+        let source_span = it.span();
+        if let Expression::CallExpression(call) = &*it
+            && self
+                .util_type(&call.callee)
+                .is_some_and(|util| matches!(util.as_ref(), UtilType::Css))
+        {
+            self.unknown_arguments("css", &call.arguments);
+            self.changed_arguments("css", &call.arguments);
+        }
         if self.bindings.may_style() {
             match it {
                 Expression::CallExpression(call) => self.plain_styled(&mut call.callee),
@@ -2377,6 +2609,29 @@ impl<'a> VisitMut<'a> for DevupVisitor<'a> {
             && let Some(options) = call.arguments.pop()
         {
             configs.insert(0, options.into_expression());
+        }
+        let mut source_reads = crate::styled_reads::Reads::default();
+        for attr in &attrs {
+            source_reads.read_in(attr);
+        }
+        match &*it {
+            Expression::CallExpression(call) => {
+                let index = usize::from(
+                    matches!(unwrap_syntax_only(&call.callee), Expression::Identifier(_))
+                        && call.arguments.len() == 2,
+                );
+                for argument in call.arguments.iter().skip(index) {
+                    if let Some(value) = argument.as_expression() {
+                        source_reads.read_in(value);
+                    }
+                }
+            }
+            Expression::TaggedTemplateExpression(tag) => {
+                for value in &tag.quasi.expressions {
+                    source_reads.read_in(value);
+                }
+            }
+            _ => {}
         }
         let (forward, forward_error) = read_forward(&configs.iter().collect::<Vec<_>>());
         if let Some(error) = forward_error {
@@ -2417,15 +2672,7 @@ impl<'a> VisitMut<'a> for DevupVisitor<'a> {
                 });
 
             if is_styled {
-                self.style_values.read_in(&self.ast, it);
-                if let Expression::CallExpression(call) = &*it {
-                    self.unknown_arguments("styled", &call.arguments);
-                    self.changed_arguments("styled", &call.arguments);
-                }
-                let inherited = extended(it)
-                    .and_then(|base| self.style_values.symbol(base))
-                    .and_then(|symbol| self.styled_definitions.get(&symbol))
-                    .filter(|definition| definition.extendable());
+                let inherited_symbol = extended(it).and_then(|base| self.style_values.symbol(base));
                 let takes_styles = extended(it).is_some_and(|base| {
                     self.bindings.kind(base).is_some()
                         || self
@@ -2433,6 +2680,44 @@ impl<'a> VisitMut<'a> for DevupVisitor<'a> {
                             .symbol(base)
                             .is_some_and(|symbol| self.devup_styled.contains(&symbol))
                 });
+                if let Expression::CallExpression(call) = &*it {
+                    let index = usize::from(
+                        call.arguments.len() == 2
+                            && matches!(
+                                unwrap_syntax_only(&call.callee),
+                                Expression::Identifier(_)
+                            ),
+                    );
+                    self.unknown_arguments("styled", &call.arguments[index..]);
+                    self.changed_arguments("styled", &call.arguments[index..]);
+                }
+                let mut construction_values = Vec::new();
+                let prepares = crate::extractor::extract_style_from_styled::prepares_styled(
+                    &self.ast,
+                    it,
+                    &|expression| self.bindings.kind(expression),
+                );
+                if prepares {
+                    self.prepare_styled_template(it);
+                    self.capture_styled_base(it, &mut construction_values);
+                }
+                let inherited_receiver =
+                    extended(it).map(|base| base.clone_in(self.ast.allocator()));
+                let mut prepared = if prepares {
+                    self.prepare_styled_parts(it, &mut construction_values, &mut attrs)
+                } else {
+                    None
+                };
+                if let Some(prepared) = &mut prepared {
+                    prepared.reads = source_reads;
+                }
+                self.style_values.read_in(&self.ast, it);
+                let inherited = inherited_symbol
+                    .and_then(|symbol| self.styled_definitions.get(&symbol))
+                    .filter(|definition| definition.extendable());
+                let parent_environment = inherited
+                    .and_then(|definition| definition.environment())
+                    .cloned();
                 let start = it.span().start;
                 let marker = self
                     .pending_marker
@@ -2442,18 +2727,21 @@ impl<'a> VisitMut<'a> for DevupVisitor<'a> {
                     result,
                     expression,
                     errors,
-                    definition,
+                    mut definition,
                 } = extract_style_from_styled(
                     &self.ast,
                     it,
-                    Naming {
-                        split_filename: self.split_filename.as_deref(),
-                        marker: marker.as_deref(),
+                    StyledInput {
+                        naming: Naming {
+                            split_filename: self.split_filename.as_deref(),
+                            marker: marker.as_deref(),
+                        },
+                        imports: &|expression| self.bindings.kind(expression),
+                        attrs: &attrs,
+                        inherited,
+                        forward,
+                        prepared,
                     },
-                    &|expression| self.bindings.kind(expression),
-                    &attrs,
-                    inherited,
-                    forward,
                 );
                 self.errors.extend(errors);
                 self.styles.extend(
@@ -2468,6 +2756,39 @@ impl<'a> VisitMut<'a> for DevupVisitor<'a> {
                 } else {
                     expression
                 };
+                if !construction_values.is_empty() || parent_environment.is_some() {
+                    let mut names = parent_environment
+                        .as_ref()
+                        .map_or_else(Vec::new, |environment| environment.names.clone());
+                    names.extend(construction_values.iter().map(|(name, _)| name.clone()));
+                    let environment = crate::styled_environment::Environment {
+                        key: self.names.fresh("__devupEnvironment"),
+                        names,
+                    };
+                    *it = crate::styled_environment::attach(
+                        &self.ast,
+                        &environment,
+                        it.clone_in(self.ast.allocator()),
+                    );
+                    if let Some(definition) = &mut definition {
+                        definition.save_environment(environment);
+                    }
+                }
+                if let (Some(parent), Some(receiver)) = (&parent_environment, &inherited_receiver) {
+                    *it = crate::styled_environment::rebind(
+                        &self.ast,
+                        receiver,
+                        parent,
+                        it.clone_in(self.ast.allocator()),
+                    );
+                }
+                if !construction_values.is_empty() {
+                    *it = crate::utils::call_with_values(
+                        &self.ast,
+                        construction_values,
+                        it.clone_in(self.ast.allocator()),
+                    );
+                }
                 self.pending_styled =
                     definition.map(|definition| (start, definition, takes_styles));
             }
@@ -2475,19 +2796,31 @@ impl<'a> VisitMut<'a> for DevupVisitor<'a> {
 
         // `Component.withComponent(target)` on a styled component the file
         // defines renders its styles as `target`
+        let mut retarget_values = Vec::new();
+        if let Expression::CallExpression(call) = &mut *it
+            && let Expression::StaticMemberExpression(member) = &call.callee
+            && member.property.name == "withComponent"
+            && self
+                .style_values
+                .symbol(&member.object)
+                .is_some_and(|symbol| self.styled_definitions.contains_key(&symbol))
+            && call.arguments.len() == 1
+            && let Some(target) = call.arguments[0].as_expression_mut()
+            && !matches!(unwrap_syntax_only(target), Expression::StringLiteral(_))
+        {
+            let name = self.names.fresh("__devupTarget");
+            retarget_values.push(self.capture_as(name, target));
+        }
         if let Expression::CallExpression(call) = it
-            && let [
-                Argument::StringLiteral(_)
-                | Argument::Identifier(_)
-                | Argument::StaticMemberExpression(_),
-            ] = call.arguments.as_slice()
+            && call.arguments.len() == 1
+            && call.arguments[0].as_expression().is_some()
             && let Expression::StaticMemberExpression(member) = &call.callee
             && member.property.name == "withComponent"
             && let Some(definition) = self
                 .style_values
                 .symbol(&member.object)
                 .and_then(|symbol| self.styled_definitions.get(&symbol))
-            && let Some((component, definition)) = with_component(
+            && let Some((component, mut definition)) = with_component(
                 &self.ast,
                 definition,
                 call.arguments[0].to_expression(),
@@ -2495,8 +2828,41 @@ impl<'a> VisitMut<'a> for DevupVisitor<'a> {
             )
         {
             let start = call.span.start;
+            let parent_environment = definition.environment().cloned();
+            let receiver = member.object.clone_in(self.ast.allocator());
             self.forwards_refs = true;
             *it = forward_ref(&self.ast, component);
+            if parent_environment.is_some() || !retarget_values.is_empty() {
+                let mut names = parent_environment
+                    .as_ref()
+                    .map_or_else(Vec::new, |environment| environment.names.clone());
+                names.extend(retarget_values.iter().map(|(name, _)| name.clone()));
+                let environment = crate::styled_environment::Environment {
+                    key: self.names.fresh("__devupEnvironment"),
+                    names,
+                };
+                *it = crate::styled_environment::attach(
+                    &self.ast,
+                    &environment,
+                    it.clone_in(self.ast.allocator()),
+                );
+                definition.save_environment(environment);
+            }
+            if let Some(environment) = &parent_environment {
+                *it = crate::styled_environment::rebind(
+                    &self.ast,
+                    &receiver,
+                    environment,
+                    it.clone_in(self.ast.allocator()),
+                );
+            }
+            if !retarget_values.is_empty() {
+                *it = crate::utils::call_with_values(
+                    &self.ast,
+                    retarget_values,
+                    it.clone_in(self.ast.allocator()),
+                );
+            }
             self.pending_styled = Some((start, definition, false));
         }
 
@@ -2818,7 +3184,10 @@ impl<'a> VisitMut<'a> for DevupVisitor<'a> {
             let KeyframesExtractResult {
                 keyframes,
                 runtime_value,
-            } = extract_keyframes_from_expression(&self.ast, arg);
+            } = {
+                crate::style_order::reject(arg, "stylex.keyframes", &mut self.errors);
+                extract_keyframes_from_expression(&self.ast, arg)
+            };
             if let Some(value) = runtime_value {
                 self.errors.push((
                     call.span.start,
@@ -2903,6 +3272,69 @@ impl<'a> VisitMut<'a> for DevupVisitor<'a> {
             ));
         }
 
+        let mut css_captures = Vec::new();
+        if let Expression::CallExpression(call) = it
+            && let Some(util) = self.util_type(&call.callee)
+        {
+            let supported = !matches!(util.as_ref(), UtilType::Css)
+                || call.arguments.iter().all(|argument| {
+                    let value = match argument {
+                        Argument::SpreadElement(spread) => &spread.argument,
+                        argument => argument.to_expression(),
+                    };
+                    (!matches!(argument, Argument::SpreadElement(_))
+                        || style_shapes::finite_spread(value))
+                        && self
+                            .known_parts(value, &mut Vec::new(), Text::Classes)
+                            .is_some()
+                });
+            if matches!(util.as_ref(), UtilType::Css)
+                && (style_shapes::conditional_unknown_keys(&call.arguments)
+                    || (call.arguments.len() > 1
+                        && style_shapes::malformed_selectors(&call.arguments)))
+            {
+                self.errors
+                    .push((call.span.start, uncomposable_error(&call.arguments)));
+                call.arguments.clear();
+            }
+            let global_text = util.is_global() && call.arguments.len() == 1;
+            for argument in &mut call.arguments {
+                let value = match argument {
+                    Argument::SpreadElement(spread) => Some(&mut spread.argument),
+                    argument => argument.as_expression_mut(),
+                };
+                if let Some(value) = value {
+                    if !self.reads_known_styles(value) {
+                        self.style_values.read_in(&self.ast, value);
+                    }
+                    if matches!(util.as_ref(), UtilType::Css) && supported {
+                        self.capture_style_argument(value, &mut css_captures);
+                    } else if util.is_global() {
+                        if global_text {
+                            self.literal_global(value);
+                        }
+                        crate::css_utils::literal_tree::lower(
+                            &self.ast,
+                            value,
+                            crate::css_utils::literal_tree::Scope {
+                                source: self.source,
+                                global: global_text,
+                            },
+                        );
+                        self.check_style_orders(value, true);
+                    } else if matches!(util.as_ref(), UtilType::Keyframes) {
+                        crate::css_utils::literal_tree::lower(
+                            &self.ast,
+                            value,
+                            crate::css_utils::literal_tree::Scope {
+                                source: self.source,
+                                global: true,
+                            },
+                        );
+                    }
+                }
+            }
+        }
         if let Expression::CallExpression(call) = it
             && self
                 .util_type(&call.callee)
@@ -2921,25 +3353,14 @@ impl<'a> VisitMut<'a> for DevupVisitor<'a> {
                 }
                 let offset = call.span.start;
                 let is_css = matches!(util_type.as_ref(), UtilType::Css);
-                if is_css {
-                    self.unknown_arguments("css", &call.arguments);
-                    self.changed_arguments("css", &call.arguments);
-                }
-                let composed_classes = if is_css
-                    && let Some(StyleArguments { classes, rules }) =
-                        style_arguments(&self.ast, &call.arguments)
+                let composed_classes: Vec<Expression<'a>> = vec![];
                 {
-                    call.arguments =
-                        oxc_allocator::Vec::from_array_in([Argument::from(rules)], &self.ast);
-                    classes
-                } else {
-                    if is_css && !reads_directly(&call.arguments) {
+                    if is_css {
                         self.errors
                             .push((offset, uncomposable_error(&call.arguments)));
                         call.arguments.clear();
                     }
-                    vec![]
-                };
+                }
                 if call.arguments.len() == 1 {
                     let r = util_type.as_ref();
                     *it = if matches!(r, UtilType::Css) {
@@ -2959,6 +3380,7 @@ impl<'a> VisitMut<'a> for DevupVisitor<'a> {
                             &None,
                             LiteralHandling::ExpandResponsiveThemeToken,
                         );
+                        crate::style_diagnostics::collect(&styles, &mut self.errors);
                         if let Some(value) = runtime_value(&styles) {
                             self.errors
                                 .push((offset, runtime_value_error("css", &value)));
@@ -2993,10 +3415,9 @@ impl<'a> VisitMut<'a> for DevupVisitor<'a> {
                             self.styles.extend(
                                 styles.into_iter().flat_map(ExtractStyleProp::into_extract),
                             );
-                            if let Some(Some(known)) = known
-                                && matches!(class_name, Some(Expression::StringLiteral(_)))
-                            {
-                                self.css_styles = Some((offset, known));
+                            if let Some(Some(known)) = known {
+                                self.css_styles
+                                    .insert((call.span.start, call.span.end), known);
                             }
                             if let Some(cls) = class_name {
                                 cls
@@ -3005,6 +3426,9 @@ impl<'a> VisitMut<'a> for DevupVisitor<'a> {
                             }
                         }
                     } else if matches!(r, UtilType::Keyframes) {
+                        if let Some(value) = call.arguments[0].as_expression() {
+                            crate::style_order::reject(value, "keyframes", &mut self.errors);
+                        }
                         let KeyframesExtractResult {
                             keyframes,
                             runtime_value,
@@ -3045,6 +3469,7 @@ impl<'a> VisitMut<'a> for DevupVisitor<'a> {
                             },
                             &self.filename,
                         );
+                        crate::style_diagnostics::collect(&styles, &mut self.errors);
                         if let Some(value) = fixed_value(&styles) {
                             self.errors
                                 .push((offset, runtime_value_error("globalCss", &value)));
@@ -3101,6 +3526,7 @@ impl<'a> VisitMut<'a> for DevupVisitor<'a> {
                         &mut folded,
                         &self.filename,
                     );
+                    crate::style_diagnostics::collect(&styles, &mut self.errors);
                     if let Some(value) = fixed_value(&styles) {
                         self.errors
                             .push((offset, runtime_value_error("globalCss", &value)));
@@ -3137,6 +3563,13 @@ impl<'a> VisitMut<'a> for DevupVisitor<'a> {
                 }
             }
         } else if let Expression::TaggedTemplateExpression(tag) = it
+            && self
+                .util_type(&tag.tag)
+                .is_some_and(|util| matches!(util.as_ref(), UtilType::Css))
+            && let Some(result) = self.compose_css_template(tag, &mut css_captures)
+        {
+            *it = result;
+        } else if let Expression::TaggedTemplateExpression(tag) = it
             && let Some(css_type) = self.util_type(&tag.tag)
         {
             self.style_values.read_in_text(&self.ast, &mut tag.quasi);
@@ -3146,6 +3579,26 @@ impl<'a> VisitMut<'a> for DevupVisitor<'a> {
                 UtilType::Keyframes => "keyframes",
                 UtilType::GlobalCss | UtilType::GlobalCssComponent => "globalCss",
             };
+            let mut literal = Expression::TemplateLiteral(oxc_allocator::Box::new_in(
+                tag.quasi.clone_in_with_semantic_ids(self.ast.allocator()),
+                &self.ast,
+            ));
+            let before_errors = self.errors.len();
+            if matches!(r, UtilType::Keyframes)
+                && let Some(text) = crate::css_utils::literal::CssText::with_source(
+                    &self.ast,
+                    &literal,
+                    self.source,
+                )
+            {
+                self.errors.extend(crate::css_utils::global::reject(
+                    &text,
+                    0..text.text.len(),
+                    "keyframes",
+                ));
+            }
+            let forbidden_order = self.errors.len() != before_errors;
+            let handled_global = r.is_global() && self.literal_global(&mut literal);
             let mut build_css_str = || {
                 template_css_text(&tag.quasi, api).unwrap_or_else(|error| {
                     self.errors.push(error);
@@ -3191,8 +3644,13 @@ impl<'a> VisitMut<'a> for DevupVisitor<'a> {
                     .unwrap_or_else(|| Expression::new_string_literal(SPAN, "", None, &self.ast))
                 // already set style order
             } else if matches!(r, UtilType::Keyframes) {
+                let text = if forbidden_order {
+                    String::new()
+                } else {
+                    build_css_str()
+                };
                 let keyframes = ExtractKeyframes {
-                    keyframes: keyframes_to_keyframes_style(&build_css_str()),
+                    keyframes: keyframes_to_keyframes_style(&text),
                 };
                 let name =
                     style_property_into_string(keyframes.extract(self.split_filename.as_deref()));
@@ -3205,18 +3663,36 @@ impl<'a> VisitMut<'a> for DevupVisitor<'a> {
                     &self.ast,
                 )
             } else {
-                let optimized_css = optimize_css_block(&build_css_str());
-                if !optimized_css.is_empty() {
-                    let css = ExtractStyleValue::Css(ExtractCss {
-                        css: optimized_css,
-                        file: self.filename.clone(),
-                    });
-                    self.styles.insert(css);
+                if !handled_global {
+                    let optimized_css = optimize_css_block(&build_css_str());
+                    if !optimized_css.is_empty() {
+                        let css = ExtractStyleValue::Css(ExtractCss {
+                            css: optimized_css,
+                            file: self.filename.clone(),
+                        });
+                        self.styles.insert(css);
+                    }
                 }
                 self.global_css_result(r.is_component())
             }
         }
 
+        if !css_captures.is_empty() {
+            *it = crate::utils::call_with_values(
+                &self.ast,
+                css_captures,
+                it.clone_in(self.ast.allocator()),
+            );
+        }
+        if self.style_values.at(source_span).is_some() {
+            match it {
+                Expression::StringLiteral(value) => value.span = source_span,
+                Expression::TemplateLiteral(value) => value.span = source_span,
+                Expression::CallExpression(value) => value.span = source_span,
+                Expression::ConditionalExpression(value) => value.span = source_span,
+                _ => {}
+            }
+        }
         if let Expression::JSXElement(_) = it
             && let Some(replacement) = self.pending_replacement.take()
         {
@@ -3261,19 +3737,48 @@ impl<'a> VisitMut<'a> for DevupVisitor<'a> {
                 let reads = self.bindings.lowered_reads(props);
                 self.report_reads(reads);
             }
-            let order = if element_kind.is_some() {
+            let takes_css = self.css_prop.takes_type(expr, |_| element_kind.is_some());
+            let element_label = match expr {
+                Expression::StringLiteral(literal) => literal.value.to_string(),
+                expression => readable_code(expression),
+            };
+            let mut literal_css = false;
+            if takes_css && let Some(Argument::ObjectExpression(props)) = it.arguments.get_mut(1) {
+                for property in &mut props.properties {
+                    if let ObjectPropertyKind::ObjectProperty(property) = property
+                        && property.key.static_name().is_some_and(|key| key == "css")
+                    {
+                        literal_css |= self.prepare_literal_css_prop(&mut property.value);
+                    }
+                }
+            }
+            let has_css = takes_css && it.arguments.get(1).and_then(Argument::as_expression).is_some_and(|value| matches!(value, Expression::ObjectExpression(object) if object.properties.iter().any(|property| matches!(property, ObjectPropertyKind::ObjectProperty(property) if !property.computed && property.key.static_name().is_some_and(|key| key == "css")))));
+            let mut order = if element_kind.is_some() || literal_css || has_css {
                 it.arguments
                     .get_mut(1)
                     .and_then(Argument::as_expression_mut)
-                    .map(|props| self.order_call_props(props))
+                    .map(|props| {
+                        self.order_call_props(props, element_kind.is_some(), &element_label)
+                    })
             } else {
                 None
+            };
+            let read_once = if element_kind.is_none() {
+                order.take().map_or_else(Vec::new, |order| {
+                    self.finish_call_props(order, it.arguments[1].to_expression_mut())
+                })
+            } else {
+                Vec::new()
             };
             let css = self.take_jsx_css_prop(it, element_kind.is_some());
             if element_kind.is_none()
                 && let Some(css) = css
             {
                 self.lower_jsx_css_prop(it, css);
+                if !read_once.is_empty() {
+                    let props = it.arguments[1].to_expression_mut().take_in(&self.ast);
+                    it.arguments[1] = Argument::from(call_with_values(&self.ast, read_once, props));
+                }
             } else if let Some(kind) = element_kind
                 && it
                     .arguments
@@ -3282,8 +3787,8 @@ impl<'a> VisitMut<'a> for DevupVisitor<'a> {
             {
                 // Pre-scan: detect conditional styleOrder before extract_style_from_expression
                 // consumes the property (which only handles static values)
-                let parsed_style_order =
-                    self.prescan_style_order(&kind.to_string(), it.arguments[1].to_expression());
+                let parsed_style_order = self
+                    .prescan_style_order(&kind.to_string(), it.arguments[1].to_expression_mut());
                 let mut overridden = match it.arguments[1].to_expression_mut() {
                     Expression::ObjectExpression(object) => {
                         spread_slots::take_overridden(&self.ast, object, 0)
@@ -3313,6 +3818,7 @@ impl<'a> VisitMut<'a> for DevupVisitor<'a> {
                     LiteralHandling::ExpandResponsiveThemeToken,
                 );
                 props_styles.extend(styles);
+                crate::style_diagnostics::collect(&props_styles, &mut self.errors);
 
                 if let Some(t) = _tag {
                     tag = t;
@@ -3348,6 +3854,13 @@ impl<'a> VisitMut<'a> for DevupVisitor<'a> {
                     other => other,
                 };
 
+                let parsed_style_order = if let ParsedStyleOrder::Tree(tree) = parsed_style_order {
+                    props_styles =
+                        crate::style_order::apply(tree, props_styles, self.ast.allocator());
+                    ParsedStyleOrder::None
+                } else {
+                    parsed_style_order
+                };
                 let read_once = order.map_or_else(Vec::new, |order| {
                     self.finish_call_props(order, it.arguments[1].to_expression_mut())
                 });
@@ -3445,14 +3958,15 @@ impl<'a> VisitMut<'a> for DevupVisitor<'a> {
     }
 
     fn visit_variable_declarator(&mut self, it: &mut VariableDeclarator<'a>) {
-        let style_result = match &it.init {
+        let style_result = match it.init.as_ref().map(unwrap_syntax_only) {
             Some(Expression::CallExpression(call)) => self.util_type(&call.callee),
             Some(Expression::TaggedTemplateExpression(tag)) => self.util_type(&tag.tag),
             _ => None,
         }
         .filter(|util| matches!(util.as_ref(), UtilType::Css | UtilType::Keyframes))
         .and_then(|util| Some((util, self.style_values.constant(&it.id)?)));
-        let start = it.init.as_ref().map(|init| init.span().start);
+        let origin = it.init.as_ref().map(|init| unwrap_syntax_only(init).span());
+        let start = origin.map(|span| span.start);
         let styled_binding = self.style_values.constant(&it.id);
         if self.css_prop != CssProp::Off
             && matches!(
@@ -3493,6 +4007,24 @@ impl<'a> VisitMut<'a> for DevupVisitor<'a> {
         }
 
         walk_variable_declarator(self, it);
+        if let Some(symbol) = self.style_values.constant(&it.id)
+            && let Some(init) = &it.init
+            && let Some(array) = self.style_values.chosen_array(init)
+        {
+            self.style_values
+                .remember_array(symbol, unwrap_syntax_only(init).span(), array);
+        }
+        if let Some(symbol) = self.style_values.constant(&it.id)
+            && let Some(init) = &it.init
+            && let Some(finite) = self
+                .style_values
+                .chosen(init)
+                .or_else(|| origin.and_then(|span| self.style_values.at(span).cloned()))
+        {
+            self.style_values
+                .origin(unwrap_syntax_only(init).span(), finite.clone());
+            self.style_values.remember_finite(symbol, finite);
+        }
 
         // A binding selected but not to a styled component stays unread
         if let Some(((symbol, _), _)) = marked
@@ -3511,22 +4043,26 @@ impl<'a> VisitMut<'a> for DevupVisitor<'a> {
             }
         }
 
-        if let Some((util, symbol)) = style_result
-            && let Some(Expression::StringLiteral(value)) = &it.init
-        {
-            let value = value.value.to_string();
+        if let Some((util, symbol)) = style_result {
             let styles = self
                 .css_styles
-                .take()
-                .and_then(|(at, styles)| (Some(at) == start).then_some(styles));
-            self.style_values.insert(
-                symbol,
-                if matches!(util.as_ref(), UtilType::Css) {
-                    crate::style_values::StyleValue::Class(value, styles)
-                } else {
-                    crate::style_values::StyleValue::Keyframes(value)
-                },
-            );
+                .get(&origin.map_or((0, 0), |span| (span.start, span.end)))
+                .cloned();
+            if let Some(Expression::StringLiteral(value)) = &it.init {
+                let value = value.value.to_string();
+                self.style_values.insert(
+                    symbol,
+                    if matches!(util.as_ref(), UtilType::Css) {
+                        crate::style_values::StyleValue::Class(value, styles)
+                    } else {
+                        crate::style_values::StyleValue::Keyframes(value)
+                    },
+                );
+            } else if matches!(util.as_ref(), UtilType::Css)
+                && let Some(styles) = styles
+            {
+                self.style_values.remember_styles(symbol, styles);
+            }
         }
 
         // Phase 4c: Check for destructuring of stylex.create()
@@ -3689,15 +4225,39 @@ impl<'a> VisitMut<'a> for DevupVisitor<'a> {
         // element as they are for the component, where only what the
         // component reads and passes on stays an attribute
         let has_css = self.takes_css(&elem.opening_element.name) && elem.opening_element.attributes.iter().any(|attribute| matches!(attribute, Attribute(attribute) if matches!(&attribute.name, Identifier(name) if name.name == "css")));
+        let mut literal_css = false;
+        if has_css {
+            for attribute in &mut elem.opening_element.attributes {
+                if let Attribute(attribute) = attribute
+                    && matches!(&attribute.name, Identifier(name) if name.name == "css")
+                    && let Some(JSXAttributeValue::ExpressionContainer(container)) =
+                        &mut attribute.value
+                    && let Some(value) = container.expression.as_expression_mut()
+                {
+                    literal_css |= self.prepare_literal_css_prop(value);
+                }
+            }
+        }
         let takes_styles =
             !has_css && styled_symbol.is_some_and(|symbol| self.devup_styled.contains(&symbol));
         let kind = self.bindings.element(&elem.opening_element.name);
-        let attributes_kept = self.styled_attributes(
+        let mut attributes_kept = self.styled_attributes(
             styled_symbol,
             &elem.opening_element.attributes,
             takes_styles,
         );
-        let mut order = if kind.is_some() || takes_styles {
+        if kind.is_none() && !takes_styles && has_css {
+            attributes_kept.extend(elem.opening_element.attributes.iter().filter_map(
+                |attribute| match attribute {
+                    Attribute(attribute) => match &attribute.name {
+                        Identifier(name) if name.name != "css" => Some(name.name.to_string()),
+                        _ => None,
+                    },
+                    JSXAttributeItem::SpreadAttribute(_) => None,
+                },
+            ));
+        }
+        let mut order = if kind.is_some() || takes_styles || literal_css || has_css {
             self.order_attributes(elem, &attributes_kept)
         } else {
             jsx_order::AttributeOrder::default()
@@ -3745,10 +4305,21 @@ impl<'a> VisitMut<'a> for DevupVisitor<'a> {
                 {
                     let offset = expression.span().start;
                     self.style_values.read_in(&self.ast, expression);
+                    self.literal_global(expression);
+                    crate::css_utils::literal_tree::lower(
+                        &self.ast,
+                        expression,
+                        crate::css_utils::literal_tree::Scope {
+                            source: self.source,
+                            global: true,
+                        },
+                    );
+                    self.check_style_orders(expression, true);
                     let GlobalExtractResult {
                         styles,
                         style_order,
                     } = extract_global_style_from_expression(&self.ast, expression, &self.filename);
+                    crate::style_diagnostics::collect(&styles, &mut self.errors);
                     if let Some(value) = fixed_value(&styles) {
                         self.errors
                             .push((offset, element_error(&name, &value, RUNTIME_VALUE)));
@@ -3985,6 +4556,11 @@ impl<'a> VisitMut<'a> for DevupVisitor<'a> {
                 props_styles.extend(bound);
             }
 
+            crate::style_diagnostics::collect(&props_styles, &mut self.errors);
+            if let ParsedStyleOrder::Tree(order) = parsed_style_order {
+                props_styles = crate::style_order::apply(order, props_styles, self.ast.allocator());
+                parsed_style_order = ParsedStyleOrder::None;
+            }
             if let ParsedStyleOrder::Conditional {
                 condition,
                 consequent,
@@ -4103,7 +4679,28 @@ impl<'a> VisitMut<'a> for DevupVisitor<'a> {
                 self.pending_replacement = Some(call_with_values(&self.ast, values, element));
             }
         } else if let Some(css) = css {
+            self.snapshot_css_attributes(&mut elem.opening_element.attributes, &mut order);
             self.lower_css_prop(elem, css);
+            for attribute in &mut elem.opening_element.attributes {
+                if let JSXAttributeItem::SpreadAttribute(spread) = attribute
+                    && let Some(slot) = order.spreads.get(&spread.span.start)
+                {
+                    let name = order.values[*slot].0.clone();
+                    order.values[*slot].1 = Some(self.snapshot_as(name, &mut spread.argument).1);
+                }
+            }
+            let values: Vec<_> = order
+                .values
+                .into_iter()
+                .filter_map(|(name, value)| Some((name, value?)))
+                .collect();
+            if !values.is_empty() {
+                let element = Expression::JSXElement(oxc_allocator::Box::new_in(
+                    elem.clone_in_with_semantic_ids(self.ast.allocator()),
+                    &self.ast,
+                ));
+                self.pending_replacement = Some(call_with_values(&self.ast, values, element));
+            }
         }
     }
 }

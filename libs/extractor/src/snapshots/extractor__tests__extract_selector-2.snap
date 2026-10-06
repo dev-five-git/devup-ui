@@ -97,5 +97,5 @@ ToBTreeSet {
             },
         ),
     },
-    code: "import \"@devup-ui/core/devup-ui.css\";\n((__devupSpread0) => <div {...__devupSpread0} className={`${__devupSpread0?.className || \"\"} a b c ${variant !== \"disabled\" ? \"d e\" : \"\"} ${variant !== \"disabled\" ? \"f g\" : \"\"}`} style={__devupSpread0?.style}>\n      {children}\n    </div>)({\n\t__proto__: null,\n\t...props\n});\n",
+    code: "import \"@devup-ui/core/devup-ui.css\";\n((__devupSpread0, __devupValue0, __devupValue1) => <div {...__devupSpread0} className={`${__devupSpread0?.className || \"\"} a b c ${__devupValue0 ? \"d e\" : \"\"} ${__devupValue1 ? \"f g\" : \"\"}`} style={__devupSpread0?.style}>\n      {children}\n    </div>)({\n\t__proto__: null,\n\t...props\n}, variant !== \"disabled\", variant !== \"disabled\");\n",
 }

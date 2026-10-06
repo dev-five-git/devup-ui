@@ -46,7 +46,11 @@ pub(super) struct Evaluation {
 /// `elements` building plain objects: `{ type, props, children }`
 pub(super) fn evaluate(source: &str, probe: &str) -> Evaluation {
     let compiled = output(source).code;
-    let script = plain_script(&compiled);
+    evaluate_code(&compiled, probe)
+}
+
+pub(super) fn evaluate_code(compiled: &str, probe: &str) -> Evaluation {
+    let script = plain_script(compiled);
     let joined = run(&format!(
         "const trace = []; const h = (type, props, ...children) => ({{ type, props: props && {{ ...props }}, children }}); const jsx = (type, props) => ({{ type, props: props && {{ ...props }} }}); const createElement = h; const React = {{ createElement: h }}; const ReactNS = React; {script}\nreturn JSON.stringify([{probe}, trace]);"
     ));

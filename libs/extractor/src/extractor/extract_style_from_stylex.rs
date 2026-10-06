@@ -48,6 +48,7 @@ pub fn extract_stylex_declarations(
     errors: &mut Vec<(u32, String)>,
     resolver: StylexResolver<'_>,
 ) -> Vec<(String, String)> {
+    crate::style_order::reject_object(object, api, errors);
     let mut declarations = vec![];
     for property in &object.properties {
         let property = match property {
@@ -62,6 +63,9 @@ pub fn extract_stylex_declarations(
             continue;
         };
         let name = normalize_stylex_property(name.as_ref());
+        if crate::style_order::reserved(&name) {
+            continue;
+        }
         match stylex_value(&name, &property.value) {
             Some(value) => declarations.push((name, optimize_value(&value).into_owned())),
             None => errors.push((
@@ -224,6 +228,7 @@ fn extract_stylex_namespace<'a>(
     errors: &mut Vec<(u32, String)>,
     resolver: StylexResolver<'_>,
 ) -> (Vec<ExtractStyleProp<'a>>, Vec<StylexIncludeRef>) {
+    crate::style_order::reject_object(namespace, "stylex.create", errors);
     let mut styles = vec![];
     let mut include_refs = vec![];
     for style_prop in &namespace.properties {
@@ -243,6 +248,9 @@ fn extract_stylex_namespace<'a>(
             continue;
         };
 
+        if crate::style_order::reserved(&prop_name) {
+            continue;
+        }
         // Phase 2: pseudo-element / pseudo-class top-level keys
         if prop_name.starts_with(':') {
             let Expression::ObjectExpression(inner_obj) = &style_prop.value else {
@@ -269,6 +277,9 @@ fn extract_stylex_namespace<'a>(
                     errors.push(key_error("stylex.create", &inner_prop.key));
                     continue;
                 };
+                if crate::style_order::reserved(&inner_name) {
+                    continue;
+                }
                 push_decomposed(
                     &mut styles,
                     decompose_value_conditions(
@@ -373,6 +384,7 @@ fn extract_stylex_dynamic_namespace<'a>(
         return None;
     };
 
+    crate::style_order::reject_object(body_obj, "stylex.create", errors);
     // 3. Process each property
     let mut styles = vec![];
     let mut css_vars = vec![];
@@ -390,6 +402,9 @@ fn extract_stylex_dynamic_namespace<'a>(
             continue;
         };
         let css_property = normalize_stylex_property(&prop_name);
+        if crate::style_order::reserved(&css_property) {
+            continue;
+        }
 
         // Check if value references a parameter (dynamic)
         let is_dynamic = if prop.shorthand {

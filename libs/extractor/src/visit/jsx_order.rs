@@ -2,10 +2,7 @@
 
 use super::DevupVisitor;
 use super::capture::Captured;
-use super::order::{
-    Item, Reach, Role, classify, is_merged, is_style, last_captured, reach, suspends,
-    written_properties,
-};
+use super::order::{Reach, Role, classify, is_merged, last_captured, reach};
 use super::spread_slots::is_unknown_spread;
 use crate::utils::Suspends;
 use css::disassemble_property;
@@ -19,6 +16,8 @@ use oxc_ast_visit::Visit;
 use oxc_span::SPAN;
 use rustc_hash::{FxHashMap, FxHashSet};
 use std::borrow::Cow;
+
+mod items;
 
 pub(super) fn spread_attribute<'b, 'a>(
     attribute: &'b JSXAttributeItem<'a>,
@@ -89,64 +88,6 @@ fn child_suspends(child: &JSXChild<'_>) -> bool {
 }
 
 impl<'a> DevupVisitor<'a> {
-    /// The items for the order `attributes` evaluate in
-    fn attribute_items(
-        &self,
-        attributes: &[JSXAttributeItem<'a>],
-        kept: &FxHashSet<String>,
-    ) -> Vec<Item> {
-        let mut written: FxHashSet<String> = FxHashSet::default();
-        let mut lost = vec![false; attributes.len()];
-        for (index, attribute) in attributes.iter().enumerate().rev() {
-            let names: Vec<String> = match attribute {
-                Attribute(attribute) => match &attribute.name {
-                    Identifier(name) if is_style(&name.name, kept) => {
-                        let names: Vec<_> = disassemble_property(&name.name)
-                            .map(Cow::into_owned)
-                            .collect();
-                        lost[index] = names.len() > 1 || names.iter().all(|n| written.contains(n));
-                        names
-                    }
-                    _ => Vec::new(),
-                },
-                SpreadAttribute(spread) => written_properties(&spread.argument)
-                    .iter()
-                    .flat_map(|key| disassemble_property(key).map(Cow::into_owned))
-                    .collect(),
-            };
-            written.extend(names);
-        }
-        attributes
-            .iter()
-            .zip(lost)
-            .map(|(attribute, lost)| match attribute {
-                Attribute(attribute) => {
-                    let value = value_of(attribute);
-                    let (role, _) = classify_attribute(&attribute.name, kept);
-                    Item {
-                        role,
-                        reach: value.map_or(Reach::Constant, |value| reach(&self.bindings, value)),
-                        lost,
-                        snapshot: false,
-                        suspends: value.is_some_and(suspends),
-                    }
-                }
-                SpreadAttribute(spread) => {
-                    let read = reach(&self.bindings, &spread.argument);
-                    let unknown = is_unknown_spread(&spread.argument);
-                    let snapshot = unknown;
-                    Item {
-                        role: if unknown { Role::Stays } else { Role::Moved },
-                        reach: read,
-                        lost: !unknown,
-                        snapshot,
-                        suspends: suspends(&spread.argument),
-                    }
-                }
-            })
-            .collect()
-    }
-
     /// Capture the attributes of `element` that must be evaluated before it is
     /// built for them to evaluate in the order written: the ones compiling
     /// moves behind a later one, drops, or repeats, and everything written
@@ -167,6 +108,7 @@ impl<'a> DevupVisitor<'a> {
             .element(&element.opening_element.name)
             .map_or("div", |kind| kind.to_tag());
         let children_suspend = element.children.iter().any(child_suspends);
+        let element_label = element.opening_element.name.to_string();
         let attributes = &mut element.opening_element.attributes;
         for attribute in attributes.iter_mut() {
             if let Attribute(attribute) = attribute
@@ -206,6 +148,8 @@ impl<'a> DevupVisitor<'a> {
                         matches!(&attribute.name, Identifier(name) if name.name == "className");
                     let order_value =
                         matches!(&attribute.name, Identifier(name) if name.name == "styleOrder");
+                    let css_value =
+                        matches!(&attribute.name, Identifier(name) if name.name == "css");
                     let Some(value) = attribute.value.as_mut().and_then(|value| match value {
                         JSXAttributeValue::ExpressionContainer(container) => {
                             container.expression.as_expression_mut()
@@ -215,6 +159,9 @@ impl<'a> DevupVisitor<'a> {
                         continue;
                     };
                     if item.reach == Reach::Constant {
+                        continue;
+                    }
+                    if css_value && !self.prepare_css_capture(&element_label, value) {
                         continue;
                     }
                     if order_value

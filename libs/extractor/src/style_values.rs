@@ -14,6 +14,9 @@ use oxc_syntax::symbol::SymbolId;
 use rustc_hash::{FxHashMap, FxHashSet};
 
 use crate::ExtractStyleValue;
+mod arrays;
+mod component_keys;
+mod finite;
 
 /// The name a style API call gives
 pub enum StyleValue {
@@ -35,17 +38,20 @@ pub struct StyleValues {
     values: FxHashMap<SymbolId, StyleValue>,
     /// The styles behind `css()` classes the file imports, by binding
     imported: FxHashMap<String, Vec<ExtractStyleValue>>,
+    captured: FxHashMap<SymbolId, Vec<ExtractStyleValue>>,
+    finite: FxHashMap<SymbolId, crate::finite_styles::FiniteStyles>,
+    origins: FxHashMap<(u32, u32), crate::finite_styles::FiniteStyles>,
+    imported_finite: FxHashMap<String, crate::finite_styles::FiniteStyles>,
+    arrays: FxHashMap<SymbolId, Vec<crate::finite_styles::FiniteStyles>>,
+    array_origins: FxHashMap<(u32, u32), Vec<crate::finite_styles::FiniteStyles>>,
+    imported_arrays: FxHashMap<String, Vec<crate::finite_styles::FiniteStyles>>,
 }
 
 impl StyleValues {
     /// The values of the bindings `scoping`, which the other readers of the
     /// program share, tells
-    pub fn new(scoping: Rc<Scoping>) -> Self {
-        Self {
-            scoping: Some(scoping),
-            values: FxHashMap::default(),
-            imported: FxHashMap::default(),
-        }
+    pub fn scope(&mut self, scoping: Rc<Scoping>) {
+        self.scoping = Some(scoping);
     }
 
     pub fn import(&mut self, imported: FxHashMap<String, Vec<ExtractStyleValue>>) {
@@ -76,6 +82,13 @@ impl StyleValues {
 
     pub fn remove(&mut self, symbol: SymbolId) {
         self.values.remove(&symbol);
+        self.captured.remove(&symbol);
+        self.finite.remove(&symbol);
+        self.arrays.remove(&symbol);
+    }
+
+    pub fn remember_styles(&mut self, symbol: SymbolId, styles: Vec<ExtractStyleValue>) {
+        self.captured.insert(symbol, styles);
     }
 
     /// The binding `expression` reads, when it reads one
@@ -111,6 +124,9 @@ impl StyleValues {
             .get_reference(identifier.reference_id.get()?)
             .symbol_id()?;
         let scoping = self.scoping.as_ref()?;
+        if let Some(styles) = self.captured.get(&symbol) {
+            return Some(styles);
+        }
         match self.values.get(&symbol) {
             Some(StyleValue::Class(_, Some(styles))) => Some(styles),
             Some(_) => None,

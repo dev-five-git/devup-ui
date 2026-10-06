@@ -8,11 +8,11 @@ ToBTreeSet {
             ExtractDynamicStyle {
                 property: "margin",
                 level: 0,
-                identifier: "a",
+                identifier: "__devupBranch0[`1`]",
                 selector: None,
                 style_order: None,
             },
         ),
     },
-    code: "import \"@devup-ui/core/devup-ui.css\";\n<div className={(a === 1 || a === 2) && b === 3 ? \"a\" : \"\"} style={{ \"--b\": (a === 1 || a === 2) && b === 3 ? a : void 0 }} />;\n",
+    code: "import \"@devup-ui/core/devup-ui.css\";\n((__devupBranch0) => <div className={__devupBranch0[\"0\"] ? \"a\" : \"\"} style={{ \"--b\": __devupBranch0[\"0\"] ? __devupBranch0[`1`] : void 0 }} />)(((__devupValue0) => __devupValue0 ? [__devupValue0, a] : [__devupValue0])((a === 1 || a === 2) && b === 3));\n",
 }

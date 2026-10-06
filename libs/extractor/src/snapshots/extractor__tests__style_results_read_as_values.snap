@@ -17,16 +17,6 @@ ToBTreeSet {
         Static(
             ExtractStaticStyle {
                 property: "animation",
-                value: "a-a 4s",
-                level: 0,
-                selector: None,
-                style_order: None,
-                layer: None,
-            },
-        ),
-        Static(
-            ExtractStaticStyle {
-                property: "animation",
                 value: "a-b 2s",
                 level: 0,
                 selector: None,
@@ -107,6 +97,15 @@ ToBTreeSet {
                 style_order: None,
             },
         ),
+        Dynamic(
+            ExtractDynamicStyle {
+                property: "animation",
+                level: 0,
+                identifier: "__devupValue1",
+                selector: None,
+                style_order: None,
+            },
+        ),
         Keyframes(
             ExtractKeyframes {
                 keyframes: {
@@ -140,5 +139,5 @@ ToBTreeSet {
             },
         ),
     },
-    code: "import \"@devup-ui/react/devup-ui-0.css\";\nimport { forwardRef as __devupForwardRef } from \"react\";\nimport { Global } from \"@devup-ui/react/compat\";\nconst fadeIn = \"a-a\";\nconst slide = \"a-b\";\nconst card = \"a-c\";\nexport const a = \"a-d a-e\";\nexport const b = \"a-c a-f\";\nexport const c = \"a-g\";\nexport const d = ((__devupValue0) => <div className=\"a-d a-h\" style={{ \"--a\": __devupValue0 }} />)(`${slide} 3s`);\nexport const E = __devupForwardRef((__devupRefProps, __devupRef) => (({ style, className, as: DevupAs = \"div\", forwardedAs, ...rest }) => <DevupAs {...(({ \"theme\": __devupOmit0, ...__devupDom }) => __devupDom)(rest)} as={forwardedAs} className={[\"a-i\", className].filter(Boolean).join(\" \")} style={style} />)({\n\t...__devupRefProps,\n\tref: __devupRef\n}));\n;\nexport const g = <Global />;\n",
+    code: "import \"@devup-ui/react/devup-ui-0.css\";\nimport { forwardRef as __devupForwardRef } from \"react\";\nimport { Global } from \"@devup-ui/react/compat\";\nconst fadeIn = \"a-a\";\nconst slide = \"a-b\";\nconst card = \"a-c\";\nexport const a = \"a-d a-e\";\nexport const b = \"a-c a-f\";\nexport const c = \"a-g\";\nexport const d = ((__devupValue0) => <div className=\"a-e a-h\" style={{ \"--a\": __devupValue0 }} />)(`${slide} 3s`);\nexport const E = ((__devupValue1) => ((__devupEnvironment0Component) => (__devupEnvironment0Component[\"__devupEnvironment0\"] = (__devupEnvironment0Continue) => __devupEnvironment0Continue(__devupValue1), __devupEnvironment0Component))(__devupForwardRef((__devupRefProps, __devupRef) => ((__devupStyleProps) => (({ style, className, as: DevupAs = \"div\", forwardedAs, ...rest }) => <DevupAs {...(({ \"theme\": __devupOmit0, ...__devupDom }) => __devupDom)(rest)} as={forwardedAs} className={[\"a-h\", className].filter(Boolean).join(\" \")} style={{\n\t...{ \"--a\": __devupValue1 },\n\t...style\n}} />)(__devupStyleProps))({\n\t...__devupRefProps,\n\tref: __devupRef\n}))))(`${fadeIn} 4s`);\n;\nexport const g = <Global />;\n",
 }

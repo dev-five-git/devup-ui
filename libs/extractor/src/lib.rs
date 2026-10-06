@@ -12,6 +12,7 @@ mod diagnostics_tests;
 mod evaluation_sandbox;
 pub mod extract_style;
 mod extractor;
+pub mod finite_styles;
 mod fresh_name;
 mod gen_class_name;
 mod gen_style;
@@ -29,7 +30,10 @@ mod prop_modify_utils;
 mod prop_valid;
 mod scope;
 mod source_map;
+mod style_diagnostics;
+mod style_order;
 mod style_values;
+mod styled_environment;
 mod styled_reads;
 mod stylesheet_policy;
 #[cfg(test)]
@@ -69,6 +73,10 @@ pub enum ImportAlias {
 
 #[derive(Debug)]
 pub enum ExtractStyleProp<'a> {
+    Diagnostic {
+        offset: u32,
+        message: String,
+    },
     Static(ExtractStyleValue),
     StaticArray(Vec<ExtractStyleProp<'a>>),
     Conditional {
@@ -101,6 +109,10 @@ pub enum ExtractStyleProp<'a> {
 impl<'a> ExtractStyleProp<'a> {
     pub fn clone_in(&self, alloc: &'a Allocator) -> Self {
         match self {
+            ExtractStyleProp::Diagnostic { offset, message } => ExtractStyleProp::Diagnostic {
+                offset: *offset,
+                message: message.clone(),
+            },
             ExtractStyleProp::Static(v) => ExtractStyleProp::Static(v.clone()),
             ExtractStyleProp::StaticArray(arr) => {
                 ExtractStyleProp::StaticArray(arr.iter().map(|s| s.clone_in(alloc)).collect())
@@ -175,7 +187,7 @@ impl<'a> ExtractStyleProp<'a> {
                 .values()
                 .flat_map(|s| s.iter().flat_map(ExtractStyleProp::extract))
                 .collect(),
-            ExtractStyleProp::Unreadable { .. } => vec![],
+            ExtractStyleProp::Unreadable { .. } | ExtractStyleProp::Diagnostic { .. } => vec![],
         }
     }
 
@@ -216,7 +228,7 @@ impl<'a> ExtractStyleProp<'a> {
                 .into_values()
                 .flat_map(|s| s.into_iter().flat_map(ExtractStyleProp::into_extract))
                 .collect(),
-            ExtractStyleProp::Unreadable { .. } => vec![],
+            ExtractStyleProp::Unreadable { .. } | ExtractStyleProp::Diagnostic { .. } => vec![],
         }
     }
 }
@@ -588,7 +600,10 @@ fn extract_source(
         if global { None } else { Some(bucket) },
     );
     visitor.import_stylex(inlined.stylex_vars, inlined.stylex_themes);
+    visitor.source = Some(code_to_parse);
     visitor.import_css(inlined.css_styles);
+    visitor.import_finite_css(inlined.css_finite);
+    visitor.import_css_arrays(inlined.css_arrays);
     visitor.unknown_bindings(&inlined.unknown);
     visitor.changed_bindings(inlined.changed.clone());
     visitor.takes_css_prop(css_prop);
@@ -7135,22 +7150,25 @@ export {
 
         reset_class_map();
         reset_file_map();
-        assert_debug_snapshot!(ToBTreeSet::from(
-            extract(
-                "test.jsx",
-                r#"import {Box, css} from '@devup-ui/core'
+        let message = extract(
+            "test.jsx",
+            r#"import {Box, css} from '@devup-ui/core'
     <Box className={css({color:"white"})} styleOrder={null} />
             "#,
-                ExtractOption {
-                    package: "@devup-ui/core".to_string(),
-                    css_dir: "@devup-ui/core".to_string(),
-                    single_css: true,
-                    import_main_css: false,
-                    import_aliases: HashMap::new()
-                }
-            )
-            .unwrap()
-        ));
+            ExtractOption {
+                package: "@devup-ui/core".to_string(),
+                css_dir: "@devup-ui/core".to_string(),
+                single_css: true,
+                import_main_css: false,
+                import_aliases: HashMap::new(),
+            },
+        )
+        .unwrap_err()
+        .to_string();
+        assert!(
+            message.starts_with("test.jsx:2:") && message.contains("styleOrder"),
+            "{message}"
+        );
     }
 
     #[test]
@@ -14824,27 +14842,27 @@ const Button = styled.button({ bg: 'red' })
     )]
     #[case(
         "css(yellow, on && azure)",
-        r#"`color-0-red-_a__c_hover-255 ${on ? "background-0-black--255" : ""} ${on ? "color-0-azure--255" : "color-0-yellow--255"}`"#
+        r#"((__devupValue0) => `color-0-red-_a__c_hover-255 ${__devupValue0 ? "background-0-black--255" : ""} ${__devupValue0 ? "color-0-azure--255" : "color-0-yellow--255"}`)(on)"#
     )]
     #[case(
         "css(on ? yellow : azure)",
-        r#"`${on ? "color-0-red-_a__c_hover-255" : ""} ${on ? "color-0-yellow--255" : "color-0-azure--255"} ${on ? "" : "background-0-black--255"}`"#
+        r#"((__devupValue0) => `${__devupValue0 ? "color-0-red-_a__c_hover-255" : ""} ${!__devupValue0 ? "background-0-black--255" : ""} ${!__devupValue0 ? "color-0-azure--255" : __devupValue0 ? "color-0-yellow--255" : ""}`)(on)"#
     )]
     #[case(
         "css(yellow, on ? { color: 'pink' } : null)",
-        r#"`color-0-red-_a__c_hover-255 ${on ? "color-0-pink--255" : "color-0-yellow--255"}`"#
+        r#"((__devupValue0) => `color-0-red-_a__c_hover-255 ${__devupValue0 ? "color-0-pink--255" : "color-0-yellow--255"}`)(on)"#
     )]
     #[case(
         "css(yellow, { color: on ? 'pink' : 'teal' })",
-        r#"`color-0-red-_a__c_hover-255 ${on ? "color-0-pink--255" : "color-0-teal--255"}`"#
+        r#"((__devupValue0) => `color-0-red-_a__c_hover-255 ${__devupValue0 ? "color-0-pink--255" : "color-0-teal--255"}`)(on)"#
     )]
     #[case(
         "css(yellow, ext, azure)",
-        r"`color-0-red-_a__c_hover-255 background-0-black--255 color-0-azure--255 ${ext}`"
+        r"((__devupValue0) => `color-0-red-_a__c_hover-255 background-0-black--255 color-0-azure--255 ${__devupValue0}`)(ext)"
     )]
     #[case(
         "css(yellow, on ? 'plain' : azure)",
-        r#"`${on ? "plain" : ""} ${`color-0-red-_a__c_hover-255 ${on ? "" : "background-0-black--255"} ${on ? "color-0-yellow--255" : "color-0-azure--255"}`}`"#
+        r#"((__devupValue0) => `${__devupValue0 ? "plain" : ""} ${`color-0-red-_a__c_hover-255 ${!__devupValue0 ? "background-0-black--255" : ""} ${!__devupValue0 ? "color-0-azure--255" : "color-0-yellow--255"}`}`)(on)"#
     )]
     #[case(
         "css(azure, wide)",
@@ -14856,7 +14874,7 @@ const Button = styled.button({ bg: 'red' })
     )]
     #[case(
         "css(yellow, ordered)",
-        r#""color-0-red-_a__c_hover-255 color-0-navy--3""#
+        r#""color-0-red-_a__c_hover-255 color-0-yellow--255 color-0-navy--3""#
     )]
     #[case("css(heading, body)", r#""typo-body""#)]
     #[case(
@@ -14865,19 +14883,22 @@ const Button = styled.button({ bg: 'red' })
     )]
     #[case(
         "css(yellow, { color: { a: 'red', b: 'blue' }[size] })",
-        r"`color-0-red-_a__c_hover-255 color-0-yellow--255 ${{"
+        r#"((__devupChoice0) => `color-0-red-_a__c_hover-255 ${__devupChoice0?.["0"] === "a" ? "color-0-red--255" : __devupChoice0?.["0"] === "b" ? "color-0-blue--255" : "color-0-yellow--255"}`)({
+	a: ["a"],
+	b: ["b"]
+}[size])"#
     )]
     #[case(
         "css(yellow, on ? { color: { a: 'red' }[size] } : null)",
-        r#"`color-0-red-_a__c_hover-255 color-0-yellow--255 ${on ? { "a": "color-0-red--255" }[size] || "" : ""}`"#
+        r#"((__devupBranch0) => `color-0-red-_a__c_hover-255 ${__devupBranch0["0"] ? __devupBranch0["1"]?.["0"] === "a" ? "color-0-red--255" : "color-0-yellow--255" : "color-0-yellow--255"}`)(on ? [true, { a: ["a"] }[size]] : [false])"#
     )]
     #[case(
         "css(yellow, on || azure)",
-        r#"`${on ? typeof on === "string" ? on : "" : ""} ${`color-0-red-_a__c_hover-255 ${on ? "" : "background-0-black--255"} ${on ? "color-0-yellow--255" : "color-0-azure--255"}`}`"#
+        r#"((__devupValue0) => `${__devupValue0 ? typeof __devupValue0 === "string" ? __devupValue0 : "" : ""} ${`color-0-red-_a__c_hover-255 ${__devupValue0 ? "" : "background-0-black--255"} ${__devupValue0 ? "color-0-yellow--255" : "color-0-azure--255"}`}`)(on)"#
     )]
     #[case(
         "css(yellow, ext ?? azure)",
-        r#"`${ext != null ? typeof ext === "string" ? ext : "" : ""} ${`color-0-red-_a__c_hover-255 ${ext != null ? "" : "background-0-black--255"} ${ext != null ? "color-0-yellow--255" : "color-0-azure--255"}`}`"#
+        r#"((__devupValue0) => `${__devupValue0 != null ? typeof __devupValue0 === "string" ? __devupValue0 : "" : ""} ${`color-0-red-_a__c_hover-255 ${__devupValue0 != null ? "" : "background-0-black--255"} ${__devupValue0 != null ? "color-0-yellow--255" : "color-0-azure--255"}`}`)(ext)"#
     )]
     #[case(
         "css(yellow, null ?? azure)",
@@ -14893,19 +14914,19 @@ const Button = styled.button({ bg: 'red' })
     )]
     #[case(
         "css(yellow, on || 'plain')",
-        r#"`color-0-red-_a__c_hover-255 color-0-yellow--255 ${on ? typeof on === "string" ? on : "" : "plain"}`"#
+        r#"((__devupValue0) => `color-0-red-_a__c_hover-255 color-0-yellow--255 ${__devupValue0 ? typeof __devupValue0 === "string" ? __devupValue0 : "" : "plain"}`)(on)"#
     )]
     #[case(
         "css(yellow, { color: on ? 'a' : 'b', m: [1, 2], styleOrder: 2 })",
-        r#"`color-0-red-_a__c_hover-255 margin-0-4px--2 margin-1-8px--2 ${on ? "color-0-a--2" : "color-0-b--2"}`"#
+        r#"((__devupValue0) => `color-0-red-_a__c_hover-255 color-0-yellow--255 margin-0-4px--2 margin-1-8px--2 ${__devupValue0 ? "color-0-a--2" : "color-0-b--2"}`)(on)"#
     )]
     #[case(
         "css(yellow, { color: { a: 'x' }[size], styleOrder: 2 })",
-        r#"`color-0-red-_a__c_hover-255 color-0-yellow--255 ${{ "a": "color-0-x--2" }[size] || ""}`"#
+        r#"((__devupChoice0) => `color-0-red-_a__c_hover-255 color-0-yellow--255 ${__devupChoice0?.["0"] === "a" ? "color-0-x--2" : ""}`)({ a: ["a"] }[size])"#
     )]
     #[case(
         "css(yellow, on ? { color: other ? 'a' : 'b' } : null)",
-        r#"`color-0-red-_a__c_hover-255 ${on ? other ? "color-0-a--255" : "color-0-b--255" : "color-0-yellow--255"}`"#
+        r#"((__devupBranch0) => `color-0-red-_a__c_hover-255 ${__devupBranch0["0"] ? __devupBranch0["1"] ? "color-0-a--255" : "color-0-b--255" : "color-0-yellow--255"}`)(on ? [true, other] : [false])"#
     )]
     #[case(
         "css(yellow, fade)",
@@ -14913,7 +14934,7 @@ const Button = styled.button({ bg: 'red' })
     )]
     #[case(
         "css(yellow, { color: ['x', 'y'][idx], styleOrder: 2 })",
-        "`color-0-red-_a__c_hover-255 color-0-yellow--255 ${{\n\t\"0\": \"color-0-x--2\",\n\t\"1\": \"color-0-y--2\"\n}[idx] || \"\"}`"
+        r#"((__devupChoice0) => `color-0-red-_a__c_hover-255 color-0-yellow--255 ${__devupChoice0?.["0"] === "0" ? "color-0-x--2" : __devupChoice0?.["0"] === "1" ? "color-0-y--2" : ""}`)([["0"], ["1"]][idx])"#
     )]
     #[case(
         "css(yellow, { color: 'pink' } || azure)",
@@ -14965,12 +14986,12 @@ const FromChanging = styled(Changing)({ color: 'blue' })
 const Ordered = styled.div({ color: 'red', styleOrder: 3 })",
         );
         for expected in [
-            "const Ext = __devupForwardRef((__devupRefProps, __devupRef) => (({ style, className, as: DevupAs = \"button\", forwardedAs, ...rest }) => <DevupAs {...(({ \"theme\": __devupOmit0, ...__devupDom }) => __devupDom)(rest)} as={forwardedAs} className={[\"color-0-blue-_a__c_hover-255 color-0-blue--255 background-0-white--255\", className]",
-            "const ObjExt = __devupForwardRef((__devupRefProps, __devupRef) => (({ style, className, as: DevupAs = \"div\", forwardedAs, ...rest }) => <DevupAs {...(({ \"theme\": __devupOmit0, ...__devupDom }) => __devupDom)(rest)} as={forwardedAs} className={[\"color-0-blue--255 padding-0-8px--255\", className]",
-            "const Twice = __devupForwardRef((__devupRefProps, __devupRef) => (({ style, className, as: DevupAs = \"div\", forwardedAs, ...rest }) => <DevupAs {...(({ \"theme\": __devupOmit0, ...__devupDom }) => __devupDom)(rest)} as={forwardedAs} className={[\"margin-0-4px--255 color-0-blue--255 padding-0-8px--255\", className]",
-            "const FromRuntime = __devupForwardRef((__devupRefProps, __devupRef) => (({ style, className, as: DevupAs = Runtime, forwardedAs, ...rest }) => <DevupAs {...rest}",
-            "const FromChanging = __devupForwardRef((__devupRefProps, __devupRef) => (({ style, className, as: DevupAs = Changing, forwardedAs, ...rest }) => <DevupAs {...rest}",
-            "const Ordered = __devupForwardRef((__devupRefProps, __devupRef) => (({ style, className, as: DevupAs = \"div\", forwardedAs, ...rest }) => <DevupAs {...(({ \"theme\": __devupOmit0, ...__devupDom }) => __devupDom)(rest)} as={forwardedAs} className={[\"color-0-red--3\", className]",
+            "const Ext = ((__devupBase0) => ((__devupEnvironment0Component) => (__devupEnvironment0Component[\"__devupEnvironment0\"] = (__devupEnvironment0Continue) => __devupEnvironment0Continue(__devupBase0), __devupEnvironment0Component))(__devupForwardRef((__devupRefProps, __devupRef) => ((__devupStyleProps) => (({ style, className, as: DevupAs = \"button\", forwardedAs, ...rest }) => <DevupAs {...(({ \"theme\": __devupOmit0, ...__devupDom }) => __devupDom)(rest)} as={forwardedAs} className={[\"color-0-blue-_a__c_hover-255 color-0-blue--255 background-0-white--255\", className]",
+            "const ObjExt = ((__devupBase1) => ((__devupEnvironment1Component) => (__devupEnvironment1Component[\"__devupEnvironment1\"] = (__devupEnvironment1Continue) => __devupEnvironment1Continue(__devupBase1), __devupEnvironment1Component))(__devupForwardRef((__devupRefProps, __devupRef) => ((__devupStyleProps) => (({ style, className, as: DevupAs = \"div\", forwardedAs, ...rest }) => <DevupAs {...(({ \"theme\": __devupOmit0, ...__devupDom }) => __devupDom)(rest)} as={forwardedAs} className={[\"color-0-blue--255 padding-0-8px--255\", className]",
+            "const Twice = ((__devupBase2) => __devupBase2[\"__devupEnvironment1\"]((__devupBase1) => ((__devupEnvironment2Component) => (__devupEnvironment2Component[\"__devupEnvironment2\"] = (__devupEnvironment2Continue) => __devupEnvironment2Continue(__devupBase1, __devupBase2), __devupEnvironment2Component))(__devupForwardRef((__devupRefProps, __devupRef) => ((__devupStyleProps) => (({ style, className, as: DevupAs = \"div\", forwardedAs, ...rest }) => <DevupAs {...(({ \"theme\": __devupOmit0, ...__devupDom }) => __devupDom)(rest)} as={forwardedAs} className={[\"margin-0-4px--255 color-0-blue--255 padding-0-8px--255\", className]",
+            "const FromRuntime = ((__devupBase4) => __devupBase4[\"__devupEnvironment3\"]((__devupBase3) => ((__devupEnvironment4Component) => (__devupEnvironment4Component[\"__devupEnvironment4\"] = (__devupEnvironment4Continue) => __devupEnvironment4Continue(__devupBase3, __devupBase4), __devupEnvironment4Component))(__devupForwardRef((__devupRefProps, __devupRef) => ((__devupStyleProps) => (({ style, className, as: DevupAs = __devupBase3, forwardedAs, ...rest }) => <DevupAs {...rest}",
+            "const FromChanging = ((__devupBase5) => ((__devupEnvironment5Component) => (__devupEnvironment5Component[\"__devupEnvironment5\"] = (__devupEnvironment5Continue) => __devupEnvironment5Continue(__devupBase5), __devupEnvironment5Component))(__devupForwardRef((__devupRefProps, __devupRef) => ((__devupStyleProps) => (({ style, className, as: DevupAs = __devupBase5, forwardedAs, ...rest }) => <DevupAs {...rest}",
+            "const Ordered = __devupForwardRef((__devupRefProps, __devupRef) => ((__devupStyleProps) => (({ style, className, as: DevupAs = \"div\", forwardedAs, ...rest }) => <DevupAs {...(({ \"theme\": __devupOmit0, ...__devupDom }) => __devupDom)(rest)} as={forwardedAs} className={[\"color-0-red--3\", className]",
         ] {
             assert!(code.contains(expected), "{expected}\n{code}");
         }
@@ -14993,13 +15014,16 @@ export const Other = other.withComponent('aside')
 export const a = <Section as=\"a\" forwardedAs=\"b\" />",
         );
         for expected in [
-            "export const Aside = __devupForwardRef((__devupRefProps, __devupRef) => ((__devupProps) => (({ style, className, as: DevupAs = \"aside\", forwardedAs, ...rest }) => <DevupAs {...(({ \"theme\": __devupOmit0, ...__devupDom }) => __devupDom)(rest)} as={forwardedAs} className={[\"color-0-red--255\", className]",
-            "as: DevupAs = Link,",
-            "as: DevupAs = motion.div,",
-            "export const Again = __devupForwardRef((__devupRefProps, __devupRef) => ((__devupProps) => (({ style, className, as: DevupAs = \"nav\",",
-            "export const Kept = Section.withComponent(make());",
+            "export const Aside = Section[\"__devupEnvironment0\"]((__devupAttrs0) => ((__devupEnvironment1Component) => (__devupEnvironment1Component[\"__devupEnvironment1\"] = (__devupEnvironment1Continue) => __devupEnvironment1Continue(__devupAttrs0), __devupEnvironment1Component))(__devupForwardRef((__devupRefProps, __devupRef) => ((__devupProps) => ((__devupStyleProps) => (({ style, className, as: DevupAs = \"aside\", forwardedAs, ...rest }) => <DevupAs {...(({ \"theme\": __devupOmit0, ...__devupDom }) => __devupDom)(rest)} as={forwardedAs} className={[\"color-0-red--255\", className]",
+            "export const Linked = ((__devupTarget0) => Section[\"__devupEnvironment0\"]((__devupAttrs0) => ((__devupEnvironment2Component) => (__devupEnvironment2Component[\"__devupEnvironment2\"] = (__devupEnvironment2Continue) => __devupEnvironment2Continue(__devupAttrs0, __devupTarget0), __devupEnvironment2Component))",
+            "})))))(Link);",
+            "export const Nested = ((__devupTarget1) => Section[\"__devupEnvironment0\"]((__devupAttrs0) => ((__devupEnvironment3Component) => (__devupEnvironment3Component[\"__devupEnvironment3\"] = (__devupEnvironment3Continue) => __devupEnvironment3Continue(__devupAttrs0, __devupTarget1), __devupEnvironment3Component))",
+            "})))))(motion.div);",
+            "export const Again = Aside[\"__devupEnvironment1\"]((__devupAttrs0) => ((__devupEnvironment4Component) => (__devupEnvironment4Component[\"__devupEnvironment4\"] = (__devupEnvironment4Continue) => __devupEnvironment4Continue(__devupAttrs0), __devupEnvironment4Component))(__devupForwardRef((__devupRefProps, __devupRef) => ((__devupProps) => ((__devupStyleProps) => (({ style, className, as: DevupAs = \"nav\",",
+            "export const Kept = ((__devupTarget2) => Section[\"__devupEnvironment0\"]((__devupAttrs0) => ((__devupEnvironment5Component) => (__devupEnvironment5Component[\"__devupEnvironment5\"] = (__devupEnvironment5Continue) => __devupEnvironment5Continue(__devupAttrs0, __devupTarget2), __devupEnvironment5Component))",
+            "})))))(make());",
             "export const Other = other.withComponent(\"aside\");",
-            "...{ role: \"region\" }",
+            "}))))({ role: \"region\" });",
             "<Section as=\"a\" forwardedAs=\"b\" />",
         ] {
             assert!(code.contains(expected), "{expected}\n{code}");
@@ -15084,12 +15108,16 @@ const F = styled.div.attrs((p) => ({ id: p.id }))({ color: 'red' })
 const V = styled.div.attrs(extra)({ color: 'red' })",
         );
         for expected in [
-            "...{\n\t\t...__devupProps,\n\t\t...{\n\t\t\ttype: \"text\",\n\t\t\ttitle: \"base\"\n\t\t}\n\t},\n\t...{ type: \"password\" }",
+            "...typeof __devupAttrs1 === \"function\" ? __devupAttrs1(__devupContext) : __devupAttrs1\n}))(((__devupContext) => ((__devupAttrs) => ({\n\t...__devupContext,\n\t...__devupAttrs,\n\tclassName: [__devupContext.className, __devupAttrs.className].filter(Boolean).join(\" \") || undefined,\n\tstyle: {\n\t\t...__devupContext.style,\n\t\t...__devupAttrs.style\n\t}\n}))({\n\t...{},\n\t...typeof __devupAttrs0 === \"function\" ? __devupAttrs0(__devupContext) : __devupAttrs0",
+            "}))))({\n\ttype: \"text\",\n\ttitle: \"base\"\n});",
+            "})))))(Base, { type: \"password\" });",
             "className: [__devupContext.className, __devupAttrs.className].filter(Boolean).join(\" \") || undefined",
             "className: [__devupContext.className, __devupProps.className].filter(Boolean).join(\" \") || undefined",
             "...__devupContext.style,\n\t\t...__devupAttrs.style",
-            "((p) => ({ id: p.id }))(__devupContext)",
-            "typeof extra === \"function\" ? extra(__devupContext) : extra",
+            "typeof __devupAttrs3 === \"function\" ? __devupAttrs3(__devupContext) : __devupAttrs3",
+            "}))))((p) => ({ id: p.id }));",
+            "typeof __devupAttrs4 === \"function\" ? __devupAttrs4(__devupContext) : __devupAttrs4",
+            "}))))(extra);",
         ] {
             assert!(code.contains(expected), "{expected}\n{code}");
         }
@@ -15199,8 +15227,8 @@ export const d = css(ordered, danger, called);",
         for expected in [
             r#"export const a = "color-0-red-_a__c_hover-255-a color-0-crimson--255-a";"#,
             r#"export const b = "color-0-red-_a__c_hover-255-a color-0-teal--255-a margin-0-4px--255-a";"#,
-            "export const c = `${twice} ${text} ${runtime} ${listed} ${spaced} ${fade}`;",
-            "export const d = `margin-0-8px--2-a color-0-crimson--255-a ${called}`;",
+            "export const c = ((__devupValue0, __devupValue1, __devupValue2, __devupValue3, __devupValue4, __devupValue5) => `${__devupValue0} ${__devupValue1} ${__devupValue2} ${__devupValue3} ${__devupValue4} ${__devupValue5}`)(twice, text, runtime, listed, spaced, fade);",
+            "export const d = ((__devupValue6) => `margin-0-8px--2-a color-0-f--2-a color-0-crimson--255-a ${__devupValue6}`)(called);",
         ] {
             assert!(
                 output.code.contains(expected),
@@ -20415,11 +20443,11 @@ export const f = css(card, { p: String(SIZE) + 'px' });",
             ),
             (
                 "import { darken } from 'polished';\nexport const a = css({ color: darken(0.1, 'red') });",
-                "`css()` cannot use `darken(.1,`red`)`",
+                "`css()` cannot use `darken(.1, \"red\")`",
             ),
             (
                 "import { darken } from './color';\nexport const a = css({ color: darken(0.1, 'red') });",
-                "`css()` cannot use `darken(.1,`red`)`",
+                "`css()` cannot use `darken(.1, \"red\")`",
             ),
             (
                 "import { DARK, hover } from './color';\nexport const a = css({ color: DARK });\nexport const b = css({ _hover: hover });",
@@ -20431,7 +20459,7 @@ export const f = css(card, { p: String(SIZE) + 'px' });",
             ),
             (
                 "const plain = (text) => text.replace(/-/g, '');\nexport const a = css({ content: plain('a-b') });",
-                "`css()` cannot use `plain(`a-b`)`",
+                "`css()` cannot use `plain(\"a-b\")`",
             ),
             (
                 "const LABEL = 'i'.toLocaleUpperCase();\nconst pick = () => LABEL;\nexport const a = css({ content: pick() });",
@@ -20439,7 +20467,7 @@ export const f = css(card, { p: String(SIZE) + 'px' });",
             ),
             (
                 "const fold = (text) => text.normalize('NFD');\nexport const a = css({ content: fold('a') });",
-                "`css()` cannot use `fold(`a`)`",
+                "`css()` cannot use `fold(\"a\")`",
             ),
             (
                 "const W = typeof IntersectionObserver === 'undefined' ? 10 : 20;\nexport const a = css({ width: W });",
@@ -20475,7 +20503,7 @@ export const f = css(card, { p: String(SIZE) + 'px' });",
             ),
             (
                 "const pick = { a: () => 1 };\nconst key = 'a';\nexport const a = css({ width: pick[key]() });",
-                "`css()` cannot use `pick[`a`]()`",
+                "`css()` cannot use `pick[\"a\"]()`",
             ),
             (
                 "const read = { get a() { return 1; } };\nexport const a = css({ width: read.a });",
@@ -20510,7 +20538,13 @@ export const f = css(card, { p: String(SIZE) + 'px' });",
             &resolver,
         )
         .unwrap();
-        assert!(switched.code.contains("hasIO ?"), "{}", switched.code);
+        assert!(
+            switched.code.contains(
+                "export const a = ((__devupValue0) => __devupValue0 ? \"a-a\" : \"a-b\")(hasIO);"
+            ),
+            "{}",
+            switched.code
+        );
         let option = ExtractOption::default();
         for (code, computes) in [
             (

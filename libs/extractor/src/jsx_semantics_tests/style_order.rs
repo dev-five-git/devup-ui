@@ -5,7 +5,7 @@ use serial_test::serial;
 #[serial]
 fn style_order_the_build_knows_is_kept() {
     let rendered = code(&format!(
-        "{BOX}const ORDER = 3;\nexport const a = <Box styleOrder={{ORDER}} color=\"red\" />;\nexport const b = <Box styleOrder={{5 as number}} color=\"red\" />;\nexport const c = <Box styleOrder={{undefined}} color=\"red\" />;\nexport const d = <Box styleOrder={{cond ? 1 : undefined}} color=\"red\" />;\nexport const e = <Box styleOrder={{cond && 2}} color=\"red\" />;\nexport const f = <Box styleOrder=\"7\" color=\"red\" />;\nexport const g = <Box styleOrder={{void 0}} color=\"red\" />;\nexport const h = <Box styleOrder={{cond ? null : void 0}} color=\"red\" />;"
+        "{BOX}const ORDER = 3;\nexport const a = <Box styleOrder={{ORDER}} color=\"red\" />;\nexport const b = <Box styleOrder={{5 as number}} color=\"red\" />;\nexport const c = <Box color=\"red\" />;\nexport const d = <Box styleOrder={{cond ? 1 : 4}} color=\"red\" />;\nexport const e = <Box styleOrder={{cond && 2}} color=\"red\" />;\nexport const f = <Box styleOrder=\"7\" color=\"red\" />;"
     ));
 
     for order in ["--3-", "--5-", "--255-", "--1-", "--2-", "--7-"] {
@@ -47,6 +47,11 @@ fn style_order_that_is_not_a_number_or_a_condition_of_numbers_is_an_error() {
         ("{cond ? 1 : other}", "cond ? 1 : other"),
         ("{cond ? other : 2}", "cond ? other : 2"),
         ("{cond && other}", "cond && other"),
+        ("{null}", "null"),
+        ("{true}", "true"),
+        ("{false}", "false"),
+        ("{undefined}", "undefined"),
+        ("{void 0}", "void 0"),
         ("\"abc\"", "\"abc\""),
         ("<div />", "<element>"),
         ("<></>", "<>...</>"),

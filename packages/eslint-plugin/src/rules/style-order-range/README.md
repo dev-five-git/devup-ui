@@ -37,6 +37,24 @@ spread arrays are expanded; selector/layer record keys named `styleOrder` remain
 record keys rather than metadata. The build remains authoritative for deferred
 range proofs.
 
+Accepted CSS-text routes check real `style-order` declarations (and the
+`styleOrder` alias), including tagged templates, string arguments and nested
+selector/at-rule text. A lexical scan preserves comments, quotes, escapes,
+functions, attribute selectors and custom-property brace streams; content
+strings, ordinary property values, data records and selectors named
+`styleOrder` are not directives. Diagnostics refer to the original declaration
+token or interpolation, not normalized text.
+
+Bare CSS numeric tokens follow Number semantics (`+2.0` is valid); quoted CSS
+strings are decoded once and must be canonical (`"02"` is invalid). Exact
+interpolations preserve primitive types. Mixed finite interpolations are
+strings, so their resulting values must be canonical. Only styled APIs may
+inspect function interpolations as callbacks; no callback is executed by the
+rule. Global text requires static metadata, and frame/font-face scopes reject
+metadata regardless of its value. Vanilla-extract `style` strings in `.css.ts`
+modules remain class composition rather than CSS text; accepted alias text
+routes outside those modules and `globalStyle` text are checked.
+
 ### Examples of **incorrect** code for this rule:
 
 ```jsx

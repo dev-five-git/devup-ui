@@ -15,7 +15,7 @@ fn class_names_calls_follow_the_bindings_the_child_function_declares() {
     assert_eq!(visited.errors, Vec::<String>::new());
     assert_eq!(visited.styles, 2);
     for expected in [
-        "export const a = <div className={`a ${flag ? \"on\" : \"\"}`} />;",
+        "export const a = <div className={((__devupValue0) => `a ${__devupValue0 ? \"on\" : \"\"}`)(flag)} />;",
         "((css) => css({ color: \"blue\" }))((x) => x)",
         "<ClassNames>{({ css }) => <div className={css({ color: \"green\" })} />}</ClassNames>",
         "export const d = <div className={\"b\"} />;",

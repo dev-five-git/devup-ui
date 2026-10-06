@@ -14,8 +14,8 @@ use oxc_ast::ast::{Expression, ObjectExpression, ObjectPropertyKind, PropertyKin
 use rustc_hash::FxHashSet;
 
 impl<'a> DevupVisitor<'a> {
-    fn property_items(&self, object: &ObjectExpression<'a>) -> Vec<Item> {
-        let kept = FxHashSet::default();
+    fn property_items(&self, object: &ObjectExpression<'a>, takes_styles: bool) -> Vec<Item> {
+        let kept = super::branch_evaluation::kept(object, takes_styles);
         let mut written = FxHashSet::default();
         let mut items = Vec::new();
         for property in object.properties.iter().rev() {
@@ -45,7 +45,10 @@ impl<'a> DevupVisitor<'a> {
                         .into_iter()
                         .flat_map(|key| disassemble_property(key).map(std::borrow::Cow::into_owned))
                         .collect();
-                    let lost = keys.len() > 1
+                    let lost = key.as_ref().is_some_and(|key| key == "typography")
+                        || (role == Role::Moved
+                            && super::branch_evaluation::branches(&property.value))
+                        || keys.len() > 1
                         || (!keys.is_empty() && keys.iter().all(|key| written.contains(key)));
                     written.extend(keys);
                     Item {
@@ -65,7 +68,12 @@ impl<'a> DevupVisitor<'a> {
     }
 
     /// Capture the source prefix before extracting or discarding any prop.
-    pub(super) fn order_call_props(&mut self, props: &mut Expression<'a>) -> AttributeOrder<'a> {
+    pub(super) fn order_call_props(
+        &mut self,
+        props: &mut Expression<'a>,
+        takes_styles: bool,
+        element: &str,
+    ) -> AttributeOrder<'a> {
         let mut order = AttributeOrder::default();
         let style_order = match crate::utils::unwrap_syntax_only(props) {
             Expression::ObjectExpression(object) => {
@@ -96,7 +104,7 @@ impl<'a> DevupVisitor<'a> {
                 self.style_values.read_in(&self.ast, &mut property.value);
             }
         }
-        let items = self.property_items(object);
+        let items = self.property_items(object, takes_styles);
         let Some(mut last) = last_captured(&items, false) else {
             return order;
         };
@@ -142,6 +150,11 @@ impl<'a> DevupVisitor<'a> {
                     *property = ObjectPropertyKind::new_spread_property(span, value, &self.ast);
                 }
                 ObjectPropertyKind::ObjectProperty(property) => {
+                    if property.key.static_name().is_some_and(|key| key == "css")
+                        && !self.prepare_css_capture(element, &mut property.value)
+                    {
+                        continue;
+                    }
                     let merged = property
                         .key
                         .static_name()

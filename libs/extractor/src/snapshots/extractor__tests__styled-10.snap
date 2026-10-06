@@ -25,5 +25,5 @@ ToBTreeSet {
             },
         ),
     },
-    code: "import \"@devup-ui/core/devup-ui-0.css\";\nimport { forwardRef as __devupForwardRef } from \"react\";\nconst StyledComponent = __devupForwardRef((__devupRefProps, __devupRef) => (({ style, className, as: DevupAs = CustomComponent, forwardedAs, ...rest }) => <DevupAs {...rest} as={forwardedAs} className={[\"a-a a-b\", className].filter(Boolean).join(\" \")} style={style} />)({\n\t...__devupRefProps,\n\tref: __devupRef\n}));\n",
+    code: "import \"@devup-ui/core/devup-ui-0.css\";\nimport { forwardRef as __devupForwardRef } from \"react\";\nconst StyledComponent = ((__devupBase0) => ((__devupEnvironment0Component) => (__devupEnvironment0Component[\"__devupEnvironment0\"] = (__devupEnvironment0Continue) => __devupEnvironment0Continue(__devupBase0), __devupEnvironment0Component))(__devupForwardRef((__devupRefProps, __devupRef) => ((__devupStyleProps) => (({ style, className, as: DevupAs = __devupBase0, forwardedAs, ...rest }) => <DevupAs {...rest} as={forwardedAs} className={[\"a-a a-b\", className].filter(Boolean).join(\" \")} style={style} />)(__devupStyleProps))({\n\t...__devupRefProps,\n\tref: __devupRef\n}))))(CustomComponent);\n",
 }

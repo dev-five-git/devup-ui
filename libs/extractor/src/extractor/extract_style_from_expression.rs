@@ -40,6 +40,9 @@ const IGNORED_IDENTIFIERS: [&str; 3] = ["undefined", "NaN", "Infinity"];
 #[cfg(test)]
 mod direct_tests;
 
+mod literal_context;
+mod typography_lookup;
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum LiteralHandling {
     ExpandResponsiveThemeToken,
@@ -217,6 +220,88 @@ pub fn extract_style_from_expression<'a>(
     let mut typo = false;
     let expression = unwrap_syntax_only_mut(expression);
 
+    if let Some(styles) = literal_context::reject(name, expression) {
+        return ExtractResult {
+            styles,
+            ..ExtractResult::default()
+        };
+    }
+
+    if matches!(
+        name,
+        Some("__devupLiteralEffect" | "__devup-literal-effect")
+    ) {
+        return ExtractResult::default();
+    }
+
+    if name.is_none() {
+        crate::css_utils::literal::lower(ast_builder, expression);
+    }
+
+    if matches!(name, Some("__devupLiteralUnplaced" | "__devupLiteralMixin")) {
+        return ExtractResult {
+            styles: vec![ExtractStyleProp::Diagnostic {
+                offset: expression.span().start,
+                message: crate::utils::unplaced_error(expression),
+            }],
+            ..ExtractResult::default()
+        };
+    }
+
+    if name.is_some_and(crate::style_order::reserved) {
+        return ExtractResult {
+            styles: vec![ExtractStyleProp::Diagnostic {
+                offset: expression.span().start,
+                message: crate::style_order::invalid_order(&crate::utils::readable_code(
+                    expression,
+                )),
+            }],
+            ..ExtractResult::default()
+        };
+    }
+
+    if name.is_none()
+        && let Expression::ObjectExpression(object) = expression
+    {
+        flatten_spreads(ast_builder, object);
+        if let Some(order) = crate::style_order::take(object, ast_builder.allocator()) {
+            let mut result = extract_style_from_expression(
+                ast_builder,
+                name,
+                expression,
+                level,
+                selector,
+                literal_handling,
+            );
+            match order {
+                Ok(crate::style_order::Order::Conditional { test, .. })
+                    if matches!(
+                        selector,
+                        Some(StyleSelector::Global(_, _) | StyleSelector::At { file: Some(_), .. })
+                    ) =>
+                {
+                    result.styles.push(ExtractStyleProp::Diagnostic {
+                        offset: test.span().start,
+                        message: crate::utils::build_time_error("styleOrder", &crate::utils::readable_code(&test), "global styles require a static order; they have no runtime class selection"),
+                    });
+                }
+                Ok(order) => {
+                    result.style_order = match &order {
+                        crate::style_order::Order::Static(order) => Some(*order),
+                        crate::style_order::Order::Absent
+                        | crate::style_order::Order::Conditional { .. } => None,
+                    };
+                    result.styles =
+                        crate::style_order::apply(order, result.styles, ast_builder.allocator());
+                }
+                Err((offset, message)) => result
+                    .styles
+                    .push(ExtractStyleProp::Diagnostic { offset, message }),
+            }
+            return result;
+        }
+    }
+
     if name.is_none() && selector.is_none() {
         let mut style_order = None;
         let mut style_vars = None;
@@ -327,6 +412,26 @@ pub fn extract_style_from_expression<'a>(
                 style_order,
                 style_vars,
             },
+            Expression::LogicalExpression(logical) if logical.operator == LogicalOperator::And => {
+                ExtractResult {
+                    styles: vec![ExtractStyleProp::Conditional {
+                        condition: logical.left.clone_in(ast_builder.allocator()),
+                        consequent: Some(Box::new(ExtractStyleProp::StaticArray(
+                            extract_style_from_expression(
+                                ast_builder,
+                                None,
+                                &mut logical.right,
+                                level,
+                                selector,
+                                literal_handling,
+                            )
+                            .styles,
+                        ))),
+                        alternate: None,
+                    }],
+                    ..ExtractResult::default()
+                }
+            }
             Expression::TemplateLiteral(tmp) => ExtractResult {
                 styles: css_to_style_literal(tmp, level, selector)
                     .into_iter()
@@ -552,6 +657,16 @@ pub fn extract_style_from_expression<'a>(
             }
         }
     } else {
+        if typo && typography_lookup::opaque(expression) {
+            return ExtractResult {
+                styles: vec![typography_lookup::dynamic(
+                    ast_builder,
+                    expression,
+                    (level, selector),
+                )],
+                ..ExtractResult::default()
+            };
+        }
         // `name` is `None` only under a selector (`_hover: value`), which takes
         // styles rather than a value a CSS variable could hold
         match expression {
@@ -660,66 +775,6 @@ pub fn extract_style_from_expression<'a>(
                 };
                 if IGNORED_IDENTIFIERS.contains(&identifier.name.as_str()) {
                     ExtractResult::default()
-                } else if typo
-                    && let Some(style) = conditional_typography(
-                        ast_builder,
-                        &Expression::new_identifier(SPAN, identifier.name.as_str(), ast_builder),
-                        level,
-                        selector,
-                    )
-                {
-                    ExtractResult {
-                        styles: vec![style],
-                        ..ExtractResult::default()
-                    }
-                } else if typo {
-                    ExtractResult {
-                        styles: vec![ExtractStyleProp::Expression {
-                            expression: Expression::new_conditional_expression(
-                                SPAN,
-                                Expression::new_identifier(
-                                    SPAN,
-                                    identifier.name.as_str(),
-                                    ast_builder,
-                                ),
-                                Expression::new_template_literal(
-                                    SPAN,
-                                    oxc_allocator::Vec::from_array_in(
-                                        [
-                                            TemplateElement::new(
-                                                SPAN,
-                                                TemplateElementValue {
-                                                    raw: Str::from("typo-"),
-                                                    cooked: None,
-                                                },
-                                                false,
-                                                ast_builder,
-                                            ),
-                                            TemplateElement::new(
-                                                SPAN,
-                                                TemplateElementValue {
-                                                    raw: Str::from(""),
-                                                    cooked: None,
-                                                },
-                                                true,
-                                                ast_builder,
-                                            ),
-                                        ],
-                                        ast_builder,
-                                    ),
-                                    oxc_allocator::Vec::from_array_in(
-                                        [expression.clone_in(ast_builder.allocator())],
-                                        ast_builder,
-                                    ),
-                                    ast_builder,
-                                ),
-                                Expression::new_string_literal(SPAN, "", None, ast_builder),
-                                ast_builder,
-                            ),
-                            styles: vec![],
-                        }],
-                        ..ExtractResult::default()
-                    }
                 } else {
                     ExtractResult {
                         styles: vec![dynamic_style(
@@ -1082,7 +1137,8 @@ pub(crate) fn place_in_layer(props: &mut [ExtractStyleProp<'_>], layer: &str) {
             // A `typography` preset is shared by every use, so it stays out of layers
             ExtractStyleProp::Static(_)
             | ExtractStyleProp::Expression { .. }
-            | ExtractStyleProp::Unreadable { .. } => {}
+            | ExtractStyleProp::Unreadable { .. }
+            | ExtractStyleProp::Diagnostic { .. } => {}
         }
     }
 }
@@ -1136,7 +1192,9 @@ fn declared_from(props: &[ExtractStyleProp<'_>]) -> Declared {
                 map.values()
                     .map(|prop| declared_from(std::slice::from_ref(prop.as_ref()))),
             ),
-            ExtractStyleProp::Expression { .. } | ExtractStyleProp::Unreadable { .. } => continue,
+            ExtractStyleProp::Expression { .. }
+            | ExtractStyleProp::Unreadable { .. }
+            | ExtractStyleProp::Diagnostic { .. } => continue,
         };
         for (key, level) in found {
             declared
@@ -1210,7 +1268,8 @@ fn skip_declared(props: &mut [ExtractStyleProp<'_>], declared: &Declared) {
             }
             ExtractStyleProp::Static(_)
             | ExtractStyleProp::Expression { .. }
-            | ExtractStyleProp::Unreadable { .. } => {}
+            | ExtractStyleProp::Unreadable { .. }
+            | ExtractStyleProp::Diagnostic { .. } => {}
         }
     }
 }

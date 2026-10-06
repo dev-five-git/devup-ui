@@ -18,6 +18,7 @@ struct CascadeKey {
     selector: Option<StyleSelector>,
     level: u8,
     layer: Option<String>,
+    order: u8,
 }
 
 impl CascadeKey {
@@ -43,6 +44,11 @@ impl CascadeKey {
             selector: selector.cloned(),
             level,
             layer: layer.map(ToString::to_string),
+            order: match value {
+                ExtractStyleValue::Static(style) => style.style_order().unwrap_or(255),
+                ExtractStyleValue::Dynamic(style) => style.style_order().unwrap_or(255),
+                _ => 255,
+            },
         }
     }
 }
@@ -123,6 +129,25 @@ impl<'a> Composition<'a> {
                     self.overlays(ast_builder, prop, overlays);
                 }
             }
+            ExtractStyleProp::Enum { map, condition } => {
+                let entries = map
+                    .into_iter()
+                    .map(|(key, props)| (key, ExtractStyleProp::StaticArray(props)))
+                    .collect();
+                self.overlays(
+                    ast_builder,
+                    key_choice(ast_builder, &condition, entries),
+                    overlays,
+                );
+            }
+            ExtractStyleProp::MemberExpression { map, expression } => {
+                let entries = map.into_iter().map(|(key, prop)| (key, *prop)).collect();
+                self.overlays(
+                    ast_builder,
+                    key_choice(ast_builder, &expression, entries),
+                    overlays,
+                );
+            }
             ExtractStyleProp::Conditional {
                 condition,
                 consequent,
@@ -198,13 +223,56 @@ impl<'a> Composition<'a> {
         }
         let mut values = Vec::new();
         for (_, choice) in &self.entries {
-            match choice {
-                Choice::Atom(value) => values.push(value.clone()),
-                // A key is empty only under a condition
-                Choice::Empty | Choice::Conditional { .. } => return None,
-            }
+            values.push(fixed_choice(choice)?.clone());
         }
         Some(values)
+    }
+}
+
+fn key_choice<'a>(
+    ast: &AstBuilder<'a>,
+    condition: &Expression<'a>,
+    mut entries: Vec<(String, ExtractStyleProp<'a>)>,
+) -> ExtractStyleProp<'a> {
+    use oxc_allocator::FromIn;
+    use oxc_ast::ast::{BinaryOperator, Str};
+    use oxc_span::SPAN;
+    entries.sort_by(|a, b| a.0.cmp(&b.0));
+    let mut previous = ExtractStyleProp::StaticArray(vec![]);
+    for (key, prop) in entries.into_iter().rev() {
+        previous = ExtractStyleProp::Conditional {
+            condition: Expression::new_binary_expression(
+                SPAN,
+                condition.clone_in(ast.allocator()),
+                BinaryOperator::StrictEquality,
+                Expression::new_string_literal(
+                    SPAN,
+                    Str::from_in(key.as_str(), ast.allocator()),
+                    None,
+                    ast,
+                ),
+                ast,
+            ),
+            consequent: Some(Box::new(prop)),
+            alternate: Some(Box::new(previous)),
+        };
+    }
+    previous
+}
+
+fn fixed_choice<'s>(choice: &'s Choice<'_>) -> Option<&'s ExtractStyleValue> {
+    match choice {
+        Choice::Atom(value) => Some(value),
+        Choice::Empty => None,
+        Choice::Conditional {
+            consequent,
+            alternate,
+            ..
+        } => {
+            let yes = fixed_choice(consequent)?;
+            let no = fixed_choice(alternate)?;
+            (yes == no).then_some(yes)
+        }
     }
 }
 
@@ -212,6 +280,7 @@ impl<'a> Composition<'a> {
 pub enum KnownStyles<'a> {
     /// The styles of a `css()` class the file binds
     Known(Vec<ExtractStyleValue>),
+    Finite(crate::finite_styles::FiniteStyles, Expression<'a>),
     /// A rule object
     Rules(Expression<'a>),
 }
@@ -264,7 +333,9 @@ pub fn set_prop_order(prop: &mut ExtractStyleProp<'_>, order: u8) {
             }
         }
         // Class names the code gives, and styles reported as errors
-        ExtractStyleProp::Expression { .. } | ExtractStyleProp::Unreadable { .. } => {}
+        ExtractStyleProp::Expression { .. }
+        | ExtractStyleProp::Unreadable { .. }
+        | ExtractStyleProp::Diagnostic { .. } => {}
     }
 }
 
@@ -294,9 +365,18 @@ fn keys(props: &[ExtractStyleProp<'_>]) -> Option<Vec<CascadeKey>> {
                     keys.extend(self::keys(std::slice::from_ref(side.as_ref()))?);
                 }
             }
-            ExtractStyleProp::Expression { .. } | ExtractStyleProp::Unreadable { .. } => {}
-            ExtractStyleProp::Enum { .. } | ExtractStyleProp::MemberExpression { .. } => {
-                return None;
+            ExtractStyleProp::Expression { .. }
+            | ExtractStyleProp::Unreadable { .. }
+            | ExtractStyleProp::Diagnostic { .. } => {}
+            ExtractStyleProp::Enum { map, .. } => {
+                for props in map.values() {
+                    keys.extend(self::keys(props)?);
+                }
+            }
+            ExtractStyleProp::MemberExpression { map, .. } => {
+                for prop in map.values() {
+                    keys.extend(self::keys(std::slice::from_ref(prop.as_ref()))?);
+                }
             }
         }
     }
@@ -317,7 +397,11 @@ fn keyed(prop: &ExtractStyleProp<'_>) -> bool {
             .into_iter()
             .flatten()
             .all(|side| keyed(side)),
-        _ => false,
+        ExtractStyleProp::Enum { map, .. } => map.values().flatten().all(keyed),
+        ExtractStyleProp::MemberExpression { map, .. } => map.values().all(|prop| keyed(prop)),
+        ExtractStyleProp::Expression { .. }
+        | ExtractStyleProp::Unreadable { .. }
+        | ExtractStyleProp::Diagnostic { .. } => false,
     }
 }
 

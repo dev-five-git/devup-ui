@@ -757,12 +757,18 @@ pub(crate) fn template_parts<'a>(
 ) -> Result<Vec<Expression<'a>>, (Expression<'a>, &'static str)> {
     let mut parts = Vec::new();
     let mut text = String::new();
-    let mut depth = 0usize;
     let mut from = 0;
     for (index, expression) in template.expressions.iter().enumerate() {
         let quasi = template.quasis[index].value.raw.as_str();
         text.push_str(quasi);
-        depth = (depth + quasi.matches('{').count()).saturating_sub(quasi.matches('}').count());
+        let depth =
+            crate::css_utils::cursor::boundaries(&text)
+                .iter()
+                .fold(0usize, |depth, (_, byte)| match byte {
+                    b'{' => depth + 1,
+                    b'}' => depth.saturating_sub(1),
+                    _ => depth,
+                });
         let place = interpolation_place(&text, &template.quasis[index + 1..]);
         if matches!(place, Place::Value) || get_string_by_literal_expression(expression).is_some() {
             continue;
@@ -798,7 +804,7 @@ fn segment<'a>(
     let allocator = ast.allocator();
     let quasis = quasis.iter().enumerate().map(|(index, quasi)| {
         TemplateElement::new(
-            SPAN,
+            quasi.span,
             TemplateElementValue {
                 raw: quasi.value.raw,
                 cooked: quasi.value.cooked,
@@ -811,7 +817,7 @@ fn segment<'a>(
         .iter()
         .map(|expression| expression.clone_in_with_semantic_ids(allocator));
     Some(Expression::new_template_literal(
-        SPAN,
+        template.span,
         oxc_allocator::Vec::from_iter_in(quasis, ast),
         oxc_allocator::Vec::from_iter_in(expressions, ast),
         ast,

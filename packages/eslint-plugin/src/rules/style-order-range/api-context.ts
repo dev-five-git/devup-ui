@@ -8,6 +8,8 @@ import {
   variableOf,
 } from './static-value'
 
+export { argumentsOf } from './api-arguments'
+
 export type Api = { readonly source: string; readonly name: string }
 export type Mode =
   'class' | 'global' | 'keyframes' | 'stylex' | 'namespaces' | 'fontface'
@@ -167,15 +169,33 @@ export function modeOf(api: Api | null): Mode | null {
   }
 }
 
-export function styledFactory(input: TSESTree.Node, scopeOf: ScopeOf): boolean {
+export function textAllowed(api: Api | null, filename: string): boolean {
+  return !(
+    api?.source === '@vanilla-extract/css' &&
+    api.name === 'style' &&
+    /\.css\.[cm]?[jt]sx?$/.test(filename)
+  )
+}
+
+export function styledFactory(
+  input: TSESTree.Node,
+  scopeOf: ScopeOf,
+  seen = new Set<TSESTree.Node>(),
+): boolean {
   const node = unwrap(input)
+  if (seen.has(node)) return false
+  const next = new Set(seen).add(node)
   const api = imported(node, scopeOf)
   if (api?.name === 'styled') return true
   switch (node.type) {
+    case AST_NODE_TYPES.Identifier: {
+      const init = constant(node, scopeOf)
+      return init !== null && styledFactory(init, scopeOf, next)
+    }
     case AST_NODE_TYPES.MemberExpression:
-      return styledFactory(node.object, scopeOf)
+      return styledFactory(node.object, scopeOf, next)
     case AST_NODE_TYPES.CallExpression:
-      return styledFactory(node.callee, scopeOf)
+      return styledFactory(node.callee, scopeOf, next)
     default:
       return false
   }
@@ -228,35 +248,4 @@ export function styleComponent(
     return false
   const init = constant(node, scopeOf)
   return init !== null && styleComponent(init, scopeOf, new Set(seen).add(node))
-}
-
-export function argumentsOf(
-  args: readonly TSESTree.Node[],
-  scopeOf: ScopeOf,
-): TSESTree.Node[] {
-  const expand = (
-    input: TSESTree.Node,
-    seen = new Set<TSESTree.Node>(),
-  ): TSESTree.Node[] => {
-    const node = unwrap(input)
-    if (seen.has(node)) return []
-    const next = new Set(seen).add(node)
-    if (node.type === AST_NODE_TYPES.Identifier) {
-      const init = constant(node, scopeOf)
-      return init ? expand(init, next) : []
-    }
-    if (node.type !== AST_NODE_TYPES.ArrayExpression) return []
-    return node.elements.flatMap((element) =>
-      element === null
-        ? []
-        : element.type === AST_NODE_TYPES.SpreadElement
-          ? expand(element.argument, next)
-          : [element],
-    )
-  }
-  return args.flatMap((argument) =>
-    argument.type === AST_NODE_TYPES.SpreadElement
-      ? expand(argument.argument)
-      : [argument],
-  )
 }
