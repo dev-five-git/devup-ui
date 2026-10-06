@@ -19,6 +19,7 @@ export interface WebpackPreparationBinding {
   readonly session: AppSession
   readonly handle: PreparedCoordinatorHandle
   readonly pipelines: readonly MdxPipeline[]
+  readonly effectiveConfiguration: Compiler['options']
 }
 
 export interface WebpackCoordinatorIntegration extends RuleFields {
@@ -72,6 +73,7 @@ export function createWebpackCoordinatorBridge(
                   session,
                   handle,
                   pipelines,
+                  effectiveConfiguration: compiler.options,
                 })
                 await Promise.all([handle.ready, handle.prepared])
               },
