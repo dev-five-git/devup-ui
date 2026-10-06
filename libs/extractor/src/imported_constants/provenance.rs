@@ -9,6 +9,7 @@ use oxc_ast::{
     },
 };
 use oxc_semantic::{AstNodes, Scoping};
+use oxc_span::GetSpan;
 use oxc_syntax::symbol::SymbolId;
 use rustc_hash::FxHashSet;
 
@@ -209,12 +210,7 @@ impl<'a> Proof<'_, 'a> {
     }
 
     pub(crate) fn factory(&self, symbol: SymbolId) -> Option<&Expression<'a>> {
-        if self
-            .scoping
-            .get_resolved_reference_ids(symbol)
-            .iter()
-            .any(|reference| self.scoping.get_reference(*reference).is_write())
-        {
+        if self.write(symbol).is_some() {
             return None;
         }
         let body = match self.nodes.kind(self.scoping.symbol_declaration(symbol)) {
@@ -255,5 +251,15 @@ impl<'a> Proof<'_, 'a> {
             [Statement::ReturnStatement(statement)] => statement.argument.as_ref(),
             _ => None,
         }
+    }
+
+    pub(crate) fn write(&self, symbol: SymbolId) -> Option<u32> {
+        self.scoping
+            .get_resolved_reference_ids(symbol)
+            .iter()
+            .map(|reference| self.scoping.get_reference(*reference))
+            .filter(|reference| reference.is_write())
+            .map(|reference| self.nodes.kind(reference.node_id()).span().start)
+            .min()
     }
 }

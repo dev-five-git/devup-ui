@@ -32,6 +32,7 @@ use crate::stylex::StylexFunction;
 use crate::{ExtractOption, ExtractStyleValue, ModuleResolver};
 
 mod dependency;
+mod diagnostic_reads;
 mod effects;
 #[cfg(test)]
 mod escape_tests;
@@ -40,6 +41,8 @@ mod eval_identity;
 #[cfg(test)]
 mod eval_policy_tests;
 mod freeze;
+#[cfg(test)]
+mod gate_fix_tests;
 #[cfg(test)]
 mod hidden_escape_tests;
 mod initialization;
@@ -271,32 +274,6 @@ impl Changed {
             }
         }
         value.change().is_some()
-    }
-
-    /// The changes of the bindings `message` names, by the name the module
-    /// changing them uses
-    pub(crate) fn named_in(&self, message: &str) -> Vec<Rc<Change>> {
-        let is_part = |c: char| c.is_alphanumeric() || c == '_' || c == '$';
-        let mut changes: Vec<Rc<Change>> = self
-            .whole
-            .iter()
-            .map(|(name, change)| (name, Some(change.clone())))
-            .chain(
-                self.holding
-                    .iter()
-                    .map(|(name, value)| (name, value.change())),
-            )
-            .filter(|(name, _)| {
-                message.match_indices(name.as_str()).any(|(index, _)| {
-                    !message[..index].ends_with(is_part)
-                        && !message[index + name.len()..].starts_with(is_part)
-                })
-            })
-            .filter_map(|(_, change)| change)
-            .collect();
-        changes.sort_unstable_by(|a, b| a.name.cmp(&b.name));
-        changes.dedup_by(|a, b| Rc::ptr_eq(a, b));
-        changes
     }
 }
 
@@ -1303,6 +1280,7 @@ struct ModuleScope<'p, 'a> {
     css_prop: Option<(CssProp, &'p str)>,
     uses: Option<Rc<FxHashMap<String, Vec<crate::mutations::Use>>>>,
     changes: FxHashMap<String, Option<Rc<Change>>>,
+    hazards: FxHashMap<String, Vec<Rc<Change>>>,
     snapshot_at: Option<u32>,
     /// The semantic analysis the program extracted already has, which the
     /// visitor reuses and building another over the same program would reset
@@ -1329,6 +1307,7 @@ impl<'p, 'a> ModuleScope<'p, 'a> {
             css_prop: None,
             uses: None,
             changes: FxHashMap::default(),
+            hazards: FxHashMap::default(),
             snapshot_at: None,
             shared_scoping: None,
             scoping: OnceCell::new(),

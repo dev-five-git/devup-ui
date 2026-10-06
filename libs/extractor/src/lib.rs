@@ -580,6 +580,9 @@ fn extract_source(
         return Err(located_errors(filename, source, &edits, inlined.errors).into());
     }
     dependencies.extend(inlined.dependencies);
+    let consumer_changes = inlined
+        .changed
+        .consumers(&program, inlined.scoping.as_deref());
     let mut visitor = DevupVisitor::new(
         &allocator,
         filename,
@@ -656,8 +659,15 @@ fn extract_source(
         .collect();
     visitor.errors.append(&mut visitor.unknown_parts);
     if !visitor.errors.is_empty() {
+        let mut origins: Vec<_> = visitor
+            .errors
+            .iter()
+            .flat_map(|(offset, _)| consumer_changes.get(offset).into_iter().flatten().cloned())
+            .collect();
+        origins.sort_by(|a, b| a.name.cmp(&b.name).then(a.site.cmp(&b.site)));
+        origins.dedup_by(|a, b| a.name == b.name && a.site == b.site);
         let mut message = located_errors(filename, source, &edits, visitor.errors);
-        message += &changed_notes(&message, filename, source, &edits, &inlined.changed);
+        message += &changed_notes(&origins, filename, source, &edits);
         return Err(message.into());
     }
     let codegen_options = if source_map {
@@ -751,16 +761,15 @@ fn locate(filename: &str, source: &str, offset: usize) -> String {
     format!("{filename}:{line}:{column}")
 }
 
-/// A line for each binding `message` names that code changes, telling where
+/// A line for each semantic hazard the rejected consumers read, telling where.
 fn changed_notes(
-    message: &str,
+    origins: &[std::rc::Rc<imported_constants::Change>],
     filename: &str,
     source: &str,
     edits: &[&[import_alias_visit::Edit]],
-    changed: &imported_constants::Changed,
 ) -> String {
     let mut notes = String::new();
-    for change in changed.named_in(message) {
+    for change in origins {
         let (location, hazard) = match &change.site {
             imported_constants::ChangeSite::Here(offset) => {
                 let offset = edits.iter().fold(*offset as usize, |offset, edits| {

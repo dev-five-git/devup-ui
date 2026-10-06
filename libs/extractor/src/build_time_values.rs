@@ -641,7 +641,7 @@ impl<'s, 'a> Finder<'s, 'a> {
         let statement = &self.statements[index];
         let mut reads = Reads::new(self.scoping);
         reads.visit_statement(statement);
-        let closure = if reads.impure {
+        let closure = if reads.impure || self.eval.statement(self.scoping, statement).is_some() {
             None
         } else {
             self.closure(statement.span(), &reads.references)

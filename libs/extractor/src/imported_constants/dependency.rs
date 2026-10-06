@@ -1,6 +1,6 @@
 //! Originating hazards of transitive function dependencies for located errors.
 
-use super::{Change, ModuleScope, Modules};
+use super::{Change, ModuleScope, Modules, provenance::Proof};
 use crate::css_prop::binding_of;
 use oxc_ast::AstKind;
 use oxc_ast::ast::IdentifierReference;
@@ -21,12 +21,21 @@ impl ModuleScope<'_, '_> {
             .build(self.program)
             .semantic;
         let symbol = semantic.scoping().get_root_binding(name.into())?;
+        let proof = Proof {
+            nodes: semantic.nodes(),
+            scoping: semantic.scoping(),
+        };
         let mut pending = vec![symbol];
         let mut seen = FxHashSet::default();
         let mut found = Vec::new();
         while let Some(symbol) = pending.pop() {
             if !seen.insert(symbol) {
                 continue;
+            }
+            if proof.scoping.symbol_scope_id(symbol) == proof.scoping.root_scope_id()
+                && let Some(at) = proof.write(symbol)
+            {
+                found.push(self.site(proof.scoping.symbol_name(symbol), at, false));
             }
             if semantic.scoping().symbol_scope_id(symbol) == semantic.scoping().root_scope_id()
                 && let Some(change) = self.change(modules, semantic.scoping().symbol_name(symbol))
@@ -36,6 +45,8 @@ impl ModuleScope<'_, '_> {
             let mut reads = Dependencies {
                 scoping: semantic.scoping(),
                 symbols: Vec::new(),
+                eval: &self.eval,
+                barrier: None,
             };
             match semantic
                 .nodes()
@@ -54,6 +65,9 @@ impl ModuleScope<'_, '_> {
                 _ => {}
             }
             pending.extend(reads.symbols);
+            if let Some((name, at)) = reads.barrier {
+                found.push(self.site(&name, at, false));
+            }
         }
         found.sort_by(|left, right| left.site.cmp(&right.site).then(left.name.cmp(&right.name)));
         found.into_iter().next()
@@ -63,11 +77,23 @@ impl ModuleScope<'_, '_> {
 struct Dependencies<'s> {
     scoping: &'s Scoping,
     symbols: Vec<SymbolId>,
+    eval: &'s super::eval_barriers::EvalBarriers,
+    barrier: Option<(String, u32)>,
 }
 
 impl<'a> Visit<'a> for Dependencies<'_> {
     fn visit_identifier_reference(&mut self, identifier: &IdentifierReference<'a>) {
         self.symbols.extend(binding_of(self.scoping, identifier));
+        if let Some(at) = self
+            .eval
+            .affects(binding_of(self.scoping, identifier), identifier.span)
+            && self
+                .barrier
+                .as_ref()
+                .is_none_or(|(_, previous)| at < *previous)
+        {
+            self.barrier = Some((identifier.name.to_string(), at));
+        }
     }
     fn visit_ts_type(&mut self, _: &oxc_ast::ast::TSType<'a>) {}
 }

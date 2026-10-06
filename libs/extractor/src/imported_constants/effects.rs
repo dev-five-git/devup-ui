@@ -22,7 +22,7 @@ impl ModuleScope<'_, '_> {
             && let Some(change) = self.change(modules, name)
         {
             if let Some(value) = &value
-                && self.primitive_snapshot(&change)
+                && self.primitive_snapshot(name)
             {
                 return Some(value.clone());
             }
@@ -123,13 +123,13 @@ impl ModuleScope<'_, '_> {
                     continue;
                 }
                 let change = self.site(name, at, handed);
-                Self::keep_first(&mut self.changes, name, change);
+                self.record_hazard(name, change);
             }
         }
         loop {
             let mut updated = false;
             for (name, into) in &edges {
-                if let Some(change) = self.changes.get(into).cloned().flatten() {
+                for change in self.hazards.get(into).cloned().unwrap_or_default() {
                     if let ChangeSite::Here(at) = change.site
                         && proof
                             .scoping
@@ -149,7 +149,7 @@ impl ModuleScope<'_, '_> {
                         },
                         handed: change.handed,
                     });
-                    updated |= Self::keep_first(&mut self.changes, name, original);
+                    updated |= self.record_hazard(name, original);
                 }
             }
             if !updated {
@@ -199,6 +199,19 @@ impl ModuleScope<'_, '_> {
                 Constant::Array(Rc::new(values.iter().map(protect).collect()))
             }
         }
+    }
+
+    fn record_hazard(&mut self, name: &str, change: Rc<Change>) -> bool {
+        Self::keep_first(&mut self.changes, name, change.clone());
+        let hazards = self.hazards.entry(name.to_string()).or_default();
+        if hazards
+            .iter()
+            .any(|previous| previous.site == change.site && previous.handed == change.handed)
+        {
+            return false;
+        }
+        hazards.push(change);
+        true
     }
 
     fn keep_first(

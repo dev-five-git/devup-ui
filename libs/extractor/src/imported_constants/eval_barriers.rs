@@ -5,7 +5,7 @@ use super::provenance::{Proof, Shape};
 use crate::{css_prop::binding_of, utils::unwrap_syntax_only};
 use oxc_ast::{
     AstKind,
-    ast::{Expression, IdentifierReference, Program},
+    ast::{Expression, IdentifierReference, Program, Statement},
 };
 use oxc_ast_visit::{Visit, walk};
 use oxc_semantic::{Scoping, SemanticBuilder};
@@ -137,10 +137,21 @@ impl EvalBarriers {
         let mut reads = Reads {
             barriers: self,
             scoping,
-            span: expression.span(),
+            span: Some(expression.span()),
             at: None,
         };
         reads.visit_expression(expression);
+        reads.at
+    }
+
+    pub(crate) fn statement(&self, scoping: &Scoping, statement: &Statement<'_>) -> Option<u32> {
+        let mut reads = Reads {
+            barriers: self,
+            scoping,
+            span: None,
+            at: None,
+        };
+        reads.visit_statement(statement);
         reads.at
     }
 }
@@ -187,16 +198,16 @@ fn expand_reachable(proof: &Proof<'_, '_>, visible: &mut FxHashSet<SymbolId>) {
 struct Reads<'s> {
     barriers: &'s EvalBarriers,
     scoping: &'s Scoping,
-    span: Span,
+    span: Option<Span>,
     at: Option<u32>,
 }
 
 impl<'a> Visit<'a> for Reads<'_> {
     fn visit_identifier_reference(&mut self, identifier: &IdentifierReference<'a>) {
-        if let Some(at) = self
-            .barriers
-            .affects(binding_of(self.scoping, identifier), self.span)
-        {
+        if let Some(at) = self.barriers.affects(
+            binding_of(self.scoping, identifier),
+            self.span.unwrap_or(identifier.span),
+        ) {
             self.at = Some(self.at.map_or(at, |previous| previous.min(at)));
         }
     }
