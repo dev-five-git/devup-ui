@@ -4,6 +4,7 @@ use serial_test::serial;
 
 mod demand_lifecycle;
 mod demand_producers;
+mod demand_prototype;
 mod demand_support;
 mod demand_views;
 mod mixed_aliases;

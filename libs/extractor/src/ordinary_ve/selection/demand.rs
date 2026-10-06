@@ -2,7 +2,7 @@
 
 use oxc_ast::{AstKind, ast::Program};
 use oxc_semantic::Semantic;
-use oxc_span::{GetSpan, Span};
+use oxc_span::Span;
 use oxc_syntax::{node::NodeId, symbol::SymbolId};
 use rustc_hash::{FxHashMap, FxHashSet};
 
@@ -88,10 +88,16 @@ pub(crate) fn select_for_package<'a>(
         }
         let selected: FxHashSet<_> = view.units.keys().copied().collect();
         for node in semantic.nodes().iter() {
-            if let AstKind::ThisExpression(_) = node.kind()
+            if let AstKind::ThisExpression(this) = node.kind()
                 && let Some(owner) = index
                     .owner(node.id())
                     .filter(|owner| selected.contains(owner))
+                && !view.properties.get(&owner).is_some_and(|properties| {
+                    properties
+                        .omitted
+                        .iter()
+                        .any(|span| span.contains_inclusive(this.span))
+                })
                 && let AstKind::VariableDeclarator(declarator) = semantic.nodes().kind(owner)
                 && declarator.init.as_ref().is_some_and(|init| {
                     matches!(
@@ -156,12 +162,23 @@ pub(crate) fn select_for_package<'a>(
                 continue;
             }
             let member = closure::demand(&index, node.id());
-            let dependency = if let AstKind::VariableDeclarator(declarator) =
-                semantic.nodes().kind(owner)
-                && declarator.init.as_ref().is_some_and(|init| {
-                    crate::utils::unwrap_syntax_only(init).span() == identifier.span
-                }) {
-                view.units[&owner].clone()
+            let projected = view
+                .properties
+                .get(&owner)
+                .and_then(|properties| properties.dependency(identifier.span))
+                .cloned();
+            let alias =
+                if let AstKind::VariableDeclarator(declarator) = semantic.nodes().kind(owner) {
+                    declarator
+                        .init
+                        .as_ref()
+                        .and_then(|init| properties::forward(init, &view.units[&owner]))
+                        .and_then(|(span, demand)| (span == identifier.span).then_some(demand))
+                } else {
+                    None
+                };
+            let dependency = if let Some(demand) = projected.or(alias) {
+                demand
             } else {
                 match member {
                     MemberDemand::Whole => Demand::whole(),

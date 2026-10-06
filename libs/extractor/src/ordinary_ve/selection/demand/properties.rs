@@ -1,13 +1,14 @@
-use oxc_ast::ast::{Expression, ObjectPropertyKind};
+use oxc_ast::ast::{Expression, ObjectProperty, ObjectPropertyKind, PropertyKind};
 use oxc_span::Span;
 
 use crate::module_loader::{Mapped, demand::Demand};
-use crate::utils::unwrap_syntax_only;
+use crate::utils::{get_string_by_literal_expression, unwrap_syntax_only};
 
 pub(super) struct Properties {
     span: Span,
     kept: Vec<(Span, Option<Self>)>,
     pub omitted: Vec<Span>,
+    forwarded: Vec<(Span, Demand)>,
 }
 
 impl Properties {
@@ -19,27 +20,43 @@ impl Properties {
             return None;
         };
         if object.properties.iter().any(|property| match property {
-            ObjectPropertyKind::ObjectProperty(property) => {
-                property.computed || property.key.static_name().is_none()
-            }
+            ObjectPropertyKind::ObjectProperty(property) => name(property).is_none(),
             ObjectPropertyKind::SpreadProperty(_) => true,
         }) {
             return None;
         }
+        let mut inherited = demand.clone();
+        for property in &object.properties {
+            if let ObjectPropertyKind::ObjectProperty(property) = property
+                && !prototype(property)
+                && let Some(name) = name(property)
+            {
+                inherited.members.remove(&name);
+            }
+        }
         let mut kept = Vec::new();
         let mut omitted = Vec::new();
+        let mut forwarded = Vec::new();
         for property in &object.properties {
             let ObjectPropertyKind::ObjectProperty(property) = property else {
                 continue;
             };
-            let Some(name) = property.key.static_name() else {
+            let Some(name) = name(property) else {
                 continue;
             };
-            match demand.child(&name) {
+            let child = if prototype(property) {
+                (!inherited.members.is_empty()).then_some(&inherited)
+            } else {
+                demand.child(&name)
+            };
+            match child {
                 Some(child) => {
                     let nested = Self::select(&property.value, child);
                     if let Some(nested) = &nested {
                         omitted.extend_from_slice(&nested.omitted);
+                        forwarded.extend_from_slice(&nested.forwarded);
+                    } else if let Some(dependency) = forward(&property.value, child) {
+                        forwarded.push(dependency);
                     }
                     kept.push((property.span, nested));
                 }
@@ -50,7 +67,14 @@ impl Properties {
             span: object.span,
             kept,
             omitted,
+            forwarded,
         })
+    }
+
+    pub fn dependency(&self, span: Span) -> Option<&Demand> {
+        self.forwarded
+            .iter()
+            .find_map(|(read, demand)| (*read == span).then_some(demand))
     }
 
     pub fn write(&self, source: &str, mapped: &mut Mapped) {
@@ -72,5 +96,40 @@ impl Properties {
         mapped.copy(source, Span::new(span.start, self.span.start));
         self.write(source, mapped);
         mapped.copy(source, Span::new(self.span.end, span.end));
+    }
+}
+
+fn name(property: &ObjectProperty<'_>) -> Option<String> {
+    if property.computed {
+        get_string_by_literal_expression(unwrap_syntax_only(property.key.as_expression()?))
+            .map(std::borrow::Cow::into_owned)
+    } else {
+        property.key.static_name().map(std::borrow::Cow::into_owned)
+    }
+}
+
+fn prototype(property: &ObjectProperty<'_>) -> bool {
+    !property.computed
+        && !property.method
+        && !property.shorthand
+        && property.kind == PropertyKind::Init
+        && property
+            .key
+            .static_name()
+            .is_some_and(|name| name == "__proto__")
+}
+
+pub(super) fn forward(expression: &Expression<'_>, demand: &Demand) -> Option<(Span, Demand)> {
+    match unwrap_syntax_only(expression) {
+        Expression::Identifier(identifier) => Some((identifier.span, demand.clone())),
+        Expression::StaticMemberExpression(member) => forward(
+            &member.object,
+            &Demand::prefixed(member.property.name.as_str(), demand),
+        ),
+        Expression::ComputedMemberExpression(member) => {
+            let key = get_string_by_literal_expression(unwrap_syntax_only(&member.expression))?;
+            forward(&member.object, &Demand::prefixed(&key, demand))
+        }
+        _ => None,
     }
 }
