@@ -3,8 +3,9 @@ use std::sync::Arc;
 pub(crate) mod source_ids;
 
 use crate::{
-    atom_hoist, atom_name, class_num_for_key, debug::is_debug, encode_selector,
-    naming::escape_into, num_to_nm_base::num_to_nm_base, with_prefix, write_u8,
+    atom_hoist, atom_name, class_num_for_key, content_hash::FingerprintBits,
+    content_name::ContentName, debug::is_debug, encode_selector, num_to_nm_base::num_to_nm_base,
+    with_prefix, write_u8,
 };
 use source_ids::original_id;
 
@@ -44,10 +45,16 @@ fn number(number: usize) -> String {
 }
 
 impl Site {
-    /// Grammar: `---<prefix>S(<base37>|U<escaped-normalized-source>)-<base37>[-<role>]`.
-    /// Theme keys cannot start with `-`; uppercase U is outside the numeric alphabet.
+    /// Grammar: `---<prefix>S(<base37>|U<L|H><payload>)-<base37>[-<role>]`.
+    /// The source file part is at most 18 bytes; lossless wins ties with 80 bits.
     #[must_use]
     pub fn variable_name(&self, prefix: &str) -> String {
+        self.variable_name_with_bits(prefix, FingerprintBits::PRODUCTION)
+    }
+
+    /// Width is explicit for the same production naming/collision path.
+    #[must_use]
+    pub fn variable_name_with_bits(&self, prefix: &str, bits: FingerprintBits) -> String {
         let mut name = format!("---{prefix}S");
         match &self.file {
             SourceFile::D9(file) => {
@@ -60,8 +67,7 @@ impl Site {
                 name.push_str(&number(file));
             }
             SourceFile::Unnumbered(source) => {
-                name.push('U');
-                escape_into(&mut name, source);
+                name.push_str(&ContentName::source(source).name_with_bits("", bits));
             }
         }
         name.push('-');
@@ -196,11 +202,11 @@ mod tests {
         assert_eq!(
             names,
             [
-                "---SUa-a",
-                "---SU_x55_-a",
-                "---SUa_db-a",
-                "---SUa_udb-a",
-                "---SU_xe9_-a"
+                "---SULa-a",
+                "---SUL_x55_-a",
+                "---SULa_db-a",
+                "---SULa_udb-a",
+                "---SUL_xe9_-a"
             ]
         );
     }

@@ -14,5 +14,5 @@ ToBTreeSet {
             },
         ),
     },
-    code: "import \"@devup-ui/core/devup-ui.css\";\nimport { jsx as e } from \"react/jsx-runtime\";\n((__devupSpread1, __devupSpread2, __devupSpread0) => e(__devupSpread1, {\n\tclassName: \"a OHc508suil2fcyb0_e\",\n\tstyle: {\n\t\t...{ \"---SUimport_s_x7b__sjsx_sas_se_s_x7d__sfrom_s_qreact_ljsx_druntime_q_x3b__xa__s_s_s_s_s_s_s_simport_s_x7b__s_x42_ox_sas_so_s_x7d__sfrom_s_q_x40_devup_dui_lcore_q_x3b__xa__s_s_s_s_s_s_s_se_oo_m_s_x7b__sas_n_s_x56_ariable_m_sclass_x4e_ame_n_s_qa_q_m_sbg_n_svariable_m_sstyle_n_s_x7b__scolor_n_s_qblue_q_s_x7d__m_sprops_n_s_x7b__sanimate_n_s_x7b__sduration_n_s1_s_x7d__s_x7d__s_x7d__e_xa__s_s_s_s_s_s_s_s-di\": __devupSpread2 },\n\t\t...__devupSpread0\n\t},\n\t...{ animate: { duration: 1 } }\n}))(Variable || \"div\", variable, { color: \"blue\" });\n",
+    code: "import \"@devup-ui/core/devup-ui.css\";\nimport { jsx as e } from \"react/jsx-runtime\";\n((__devupSpread1, __devupSpread2, __devupSpread0) => e(__devupSpread1, {\n\tclassName: \"a OHb230lwd7rr13g3kh\",\n\tstyle: {\n\t\t...{ \"---SUHapdp7wqs7h4tw95_-di\": __devupSpread2 },\n\t\t...__devupSpread0\n\t},\n\t...{ animate: { duration: 1 } }\n}))(Variable || \"div\", variable, { color: \"blue\" });\n",
 }

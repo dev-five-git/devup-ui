@@ -28,13 +28,13 @@ impl Display for NameError {
         for claim in [&self.first, &self.second] {
             writeln!(
                 f,
-                "{}: generated style name `{}` cannot be used at build time: also names a different declaration; complete content: `{}`; descriptor: {:02x?}",
+                "{}: generated style name `{}` cannot be used at build time: also names different content; complete content: `{}`; descriptor: {:02x?}",
                 claim.location, self.name, claim.content, claim.descriptor
             )?;
         }
         write!(
             f,
-            "change one declaration, or increase the fixed fingerprint width and rebuild all caches"
+            "change one declaration or source, or increase the fixed fingerprint width and rebuild all caches"
         )
     }
 }
@@ -128,6 +128,42 @@ pub(crate) fn claim(
             content: description,
             origin: origin.0.as_deref().cloned(),
             location,
+        },
+    ))
+}
+
+pub(crate) fn source_claim(
+    style: &ExtractStyleValue,
+    filename: &str,
+    bits: FingerprintBits,
+) -> Option<(String, NameClaim)> {
+    let (source, origin) = match style {
+        ExtractStyleValue::Dynamic(style) => match &style.site()?.file {
+            css::sparse_site::SourceFile::Unnumbered(source) => (source, &style.origin),
+            css::sparse_site::SourceFile::D9(_) => return None,
+        },
+        ExtractStyleValue::Static(_)
+        | ExtractStyleValue::Keyframes(_)
+        | ExtractStyleValue::Typography(_)
+        | ExtractStyleValue::Css(_)
+        | ExtractStyleValue::Import(_)
+        | ExtractStyleValue::FontFace(_) => return None,
+    };
+    let content = css::content_name::ContentName::source(source);
+    let prefix = format!("---{}S", css::get_prefix().as_deref().unwrap_or_default());
+    let name = content.name_with_bits(&prefix, bits);
+    Some((
+        name,
+        NameClaim {
+            descriptor: content.descriptor,
+            content: source.to_string(),
+            location: origin
+                .location()
+                .unwrap_or_else(|| RealLocation::ModuleExport {
+                    file: filename.into(),
+                    binding: None,
+                }),
+            origin: origin.0.as_deref().cloned(),
         },
     ))
 }

@@ -68,6 +68,52 @@ if (process.argv[2] === 'goldens') {
   ])
   assert.deepEqual(sheet.names[animation].descriptor, [...frames])
   output.free()
+} else if (process.argv[2] === 'compact-sources') {
+  const source =
+    '// filler\n'.repeat(10_240) +
+    "import {Box} from '@devup-ui/react';\nexport const View=(p)=><Box color={p.c} w={p.w}/>;\n"
+  const root = '---SUH' + fingerprint(Buffer.from(source))
+  const run = (received) => {
+    wasm.resetBuildState()
+    wasm.setDebug(false)
+    wasm.registerTheme({})
+    const output = compile('/real/large.tsx', received)
+    const variables = output.code.match(/---SUH[a-z0-9_]{16}-[a-z0-9_]+/gu)
+    assert.equal(variables.length, 2)
+    assert.ok(variables.every((name) => name.startsWith(root + '-')))
+    assert.ok(variables.every((name) => name.length <= 38))
+    const css = wasm.getCss(null, false)
+    assert.ok(variables.every((name) => css.includes(name)))
+    const sheet = JSON.parse(wasm.exportSheet())
+    assert.equal(sheet.names[root].content, source)
+    assert.deepEqual(sheet.names[root].descriptor, [...Buffer.from(source)])
+    const result = {
+      code: output.code,
+      css: output.css,
+      map: output.map,
+      cssFile: output.cssFile,
+      updatedBaseStyle: output.updatedBaseStyle,
+      dependencies: output.dependencies,
+      completeCss: css,
+    }
+    output.free()
+    wasm.resetBuildState()
+    wasm.importSheet(sheet)
+    const restored = compile('/real/other.tsx', source)
+    assert.equal(restored.code, result.code)
+    assert.equal(wasm.getCss(null, false), css)
+    restored.free()
+    return result
+  }
+  const baseline = run(source)
+  for (const received of [
+    source,
+    source.replaceAll('\n', '\r\n'),
+    '\uFEFF' + source,
+    '\uFEFF' + source.replaceAll('\n', '\r\n'),
+  ]) {
+    assert.deepEqual(run(received), baseline)
+  }
 } else if (process.argv[2] === 'cache-conflict') {
   compile(
     'a.tsx',

@@ -1,6 +1,7 @@
 pub mod name_registry;
 #[cfg(test)]
 mod name_registry_tests;
+mod style_claims;
 pub mod theme;
 
 #[cfg(test)]
@@ -743,38 +744,6 @@ impl StyleSheet {
             }
         }
         Ok((collected, updated_base_style))
-    }
-
-    pub fn preflight_styles(
-        &self,
-        styles: &FxHashSet<ExtractStyleValue>,
-        filename: &str,
-        single_css: bool,
-    ) -> Result<name_registry::NameRegistry, name_registry::NameError> {
-        self.preflight_styles_with_bits(
-            styles,
-            (filename, single_css),
-            css::content_hash::FingerprintBits::PRODUCTION,
-        )
-    }
-
-    /// Run the production claim path with an explicit fingerprint prefix width.
-    pub fn preflight_styles_with_bits(
-        &self,
-        styles: &FxHashSet<ExtractStyleValue>,
-        source: (&str, bool),
-        bits: css::content_hash::FingerprintBits,
-    ) -> Result<name_registry::NameRegistry, name_registry::NameError> {
-        let (filename, single_css) = source;
-        let scope = if single_css { None } else { Some(filename) };
-        let mut styles: Vec<_> = styles.iter().collect();
-        styles.sort_unstable();
-        name_registry::preflight(
-            &self.names,
-            styles
-                .into_iter()
-                .filter_map(|style| name_registry::claim(style, (filename, scope), bits)),
-        )
     }
 
     #[must_use]

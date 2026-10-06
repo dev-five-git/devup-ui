@@ -10,7 +10,7 @@ const fixture = fileURLToPath(
   ),
 )
 
-it.each(['goldens', 'cache-conflict'] as const)(
+it.each(['goldens', 'cache-conflict', 'compact-sources'] as const)(
   'public WASM content naming: %s',
   (mode) => {
     // Given / When: a fresh Node process uses the real packaged WASM, not spies.

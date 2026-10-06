@@ -24,5 +24,5 @@ ToBTreeSet {
             },
         ),
     },
-    code: "import \"@devup-ui/react/devup-ui.css\";\nimport stylex from \"@stylexjs/stylex\";\nconst styles = { \"bar\": \"OLwidth-v100_c OHa0lph_i98slugxpd\" };\nconst result = {\n\tclassName: \"OLwidth-v100_c OHa0lph_i98slugxpd\",\n\tstyle: { \"---SUimport_sstylex_sfrom_s_x27__x40_stylexjs_lstylex_x27__x3b__xa_const_sstyles_s_x3d__sstylex_pcreate_o_x7b__xa__s_sbar_n_s_oheight_e_s_x3d__x3e__s_o_x7b__xa__s_s_s_sheight_m_xa__s_s_s_swidth_n_s_x27_100_c_x27__m_xa__s_s_x7d__e_m_xa__x7d__e_x3b__xa_const_sresult_s_x3d__sstylex_pprops_ostyles_pbar_oh_e_e_x3b_-b6\": ((v) => typeof v === \"number\" ? v + \"px\" : v)(h) }\n};\n",
+    code: "import \"@devup-ui/react/devup-ui.css\";\nimport stylex from \"@stylexjs/stylex\";\nconst styles = { \"bar\": \"OLwidth-v100_c OHazyflpgbui_vdf6v\" };\nconst result = {\n\tclassName: \"OLwidth-v100_c OHazyflpgbui_vdf6v\",\n\tstyle: { \"---SUHa4_ugfm6w7fioar3-b6\": ((v) => typeof v === \"number\" ? v + \"px\" : v)(h) }\n};\n",
 }

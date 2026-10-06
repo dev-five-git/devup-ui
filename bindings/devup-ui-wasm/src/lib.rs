@@ -15,6 +15,9 @@ use std::fmt::Display;
 use std::sync::{LazyLock, Mutex};
 use wasm_bindgen::prelude::*;
 mod cache_names;
+mod cache_source_names;
+#[cfg(test)]
+mod compact_source_tests;
 #[cfg(test)]
 mod content_location_contract_tests;
 #[cfg(test)]

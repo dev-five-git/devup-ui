@@ -54,6 +54,20 @@ fn content_name(name: &str) -> bool {
 }
 
 pub(crate) fn validate(sheet: &StyleSheet) -> Result<(), String> {
+    for property in sheet
+        .properties
+        .values()
+        .flat_map(|orders| orders.values())
+        .flat_map(|levels| levels.values())
+        .flatten()
+    {
+        if property.owner_reset {
+            crate::cache_source_names::validate(&property.property, &sheet.names)?;
+        }
+        if let Some(reference) = property.value.strip_prefix("var(") {
+            crate::cache_source_names::validate(reference, &sheet.names)?;
+        }
+    }
     let atoms = sheet
         .properties
         .values()

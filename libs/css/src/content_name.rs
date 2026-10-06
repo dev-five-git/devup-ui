@@ -153,6 +153,18 @@ impl AtomContent<'_> {
 }
 
 impl ContentName {
+    /// Exact normalized source bytes, in the unnumbered site's separate domain.
+    #[must_use]
+    pub fn source(source: &str) -> Self {
+        let mut lossless = String::new();
+        escape_into(&mut lossless, source);
+        Self {
+            descriptor: source.as_bytes().to_vec(),
+            lossless,
+            domain: 'U',
+        }
+    }
+
     /// Keyframe step and declaration order are significant, exactly as emitted.
     #[must_use]
     pub fn keyframes(steps: &[(String, Vec<(String, String)>)]) -> Self {

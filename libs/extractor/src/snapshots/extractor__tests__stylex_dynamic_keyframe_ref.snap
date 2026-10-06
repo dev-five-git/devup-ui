@@ -50,5 +50,5 @@ ToBTreeSet {
             },
         ),
     },
-    code: "import \"@devup-ui/react/devup-ui.css\";\nimport stylex from \"@stylexjs/stylex\";\nconst fadeIn = \"KHdpcoq80gd1v1w6jq\";\nconst styles = { \"base\": \"OHdwmkvl8q4vyooo5m OHdduvkap6xswg9ne8\" };\n",
+    code: "import \"@devup-ui/react/devup-ui.css\";\nimport stylex from \"@stylexjs/stylex\";\nconst fadeIn = \"KHdpcoq80gd1v1w6jq\";\nconst styles = { \"base\": \"OHbr218bxhh4a98u89 OHdduvkap6xswg9ne8\" };\n",
 }

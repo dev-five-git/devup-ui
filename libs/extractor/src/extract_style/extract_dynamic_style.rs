@@ -198,6 +198,11 @@ impl ExtractDynamicStyle {
         self.naming
     }
 
+    /// Read source identity without changing its position or syntax role.
+    pub const fn site(&self) -> Option<&Site> {
+        self.site.as_ref()
+    }
+
     pub fn layer(&self) -> Option<&str> {
         self.layer.as_deref()
     }

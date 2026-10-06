@@ -23,5 +23,5 @@ ToBTreeSet {
             },
         ),
     },
-    code: "import \"@devup-ui/core/devup-ui.css\";\n((__devupSpread1, __devupSpread0) => <div className=\"OHabdd1h0478zzbq56 OHak1wvpjp94v5mji6\" style={{\n\t\"---SUimport_s_x7b__s_x42_ox_s_x7d__sfrom_s_q_x40_devup_dui_lcore_q_x3b__xa__x3c__x42_ox_spadding_x3d__x7b_some_x53_tyle_x56_ar_x7d__smargin_x3d__x7b_some_x53_tyle_x56_ar2_x7d__s_l_x3e__x3b__xa_-az\": __devupSpread1,\n\t\"---SUimport_s_x7b__s_x42_ox_s_x7d__sfrom_s_q_x40_devup_dui_lcore_q_x3b__xa__x3c__x42_ox_spadding_x3d__x7b_some_x53_tyle_x56_ar_x7d__smargin_x3d__x7b_some_x53_tyle_x56_ar2_x7d__s_l_x3e__x3b__xa_-bk\": __devupSpread0\n}} />)(someStyleVar, someStyleVar2);\n",
+    code: "import \"@devup-ui/core/devup-ui.css\";\n((__devupSpread1, __devupSpread0) => <div className=\"OHa_rprl97atut6n4_ OHcgeztw3fey5cnmin\" style={{\n\t\"---SUHdi6rtaah8w66vnsi-az\": __devupSpread1,\n\t\"---SUHdi6rtaah8w66vnsi-bk\": __devupSpread0\n}} />)(someStyleVar, someStyleVar2);\n",
 }
