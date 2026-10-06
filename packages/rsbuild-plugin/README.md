@@ -220,6 +220,41 @@ arrival order. `atomHoist` composes its shared CSS cache group with existing
 groups and creates `splitChunks` when absent; `splitChunks: false` is an error
 when atom hoisting is requested.
 
+## MDX Selection And Compiled-Source Guards
+
+The graph and build-time resolver receive the same native Rspack `resolve.alias`
+map-or-false option. Rspack accepts ordered mixed string/false candidates:
+the first resolving file wins, and a reached false ignores the module. Empty
+arrays fall through to the raw request; a real rewriting all-miss remains
+terminal. Rspack's public alias type does not accept Webpack-style descriptor
+arrays. Unsupported wildcard names fail with the importer/key instead of being
+silently dropped.
+
+`mdxExtensions` defaults to `['.mdx']`; `.md` and custom literal extensions such
+as `.mdown` are opt-in. Configure the project MDX loader for the same list.
+Devup runs on its compiled JavaScript/JSX in a post-loader, retaining the actual
+filename. Extraction, graph discovery and numbering share the selected list.
+
+With extraction enabled, build, dev-server compilations and watch rebuilds use
+Rspack's public used-dependency export IDs and actual module targets. A
+definitely named compile-time export used by a module outside the supported
+JS/TS or selected MDX extensions produces a located module/import error and an
+`mdxExtensions` remedy. Static namespace/require member uses remain guarded when
+the dependency names the export. Runtime helpers and unused imports are allowed.
+For an intended runtime compatibility alias, set `importAliases[package] = false`.
+
+Whole namespace/require-result objects and dynamic imports are opaque and are
+allowed. Rspack additionally exposes some namespace/require destructuring uses
+with `ids = []`, and the installed Rspack may omit export IDs for CommonJS
+require members, bound results and destructuring altogether. Some renamed
+forwarding cannot be traced through its public export data. Those forms are
+also opaque and allowed, even though another
+bundler with definite export IDs can reject the same source. No provided-export
+query is made at `finishModules`. Hidden compile-time exports can still throw
+`Cannot run on the runtime` when rendered; add the extension to `mdxExtensions`
+and let Devup compile it. The guard does not expand ordinary JS/TS `include`
+selection or change `extractCss: false` publishing.
+
 ## Custom Shorthands
 
 ```ts

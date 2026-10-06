@@ -196,6 +196,38 @@ output is not standalone browser JavaScript: without this consumer setup, the
 component placeholders throw `Cannot run on the runtime`. No styling runtime is
 added by either supported publishing mode.
 
+## MDX Selection And Compiled-Source Guards
+
+Native `resolve.alias` maps or ordered descriptors are passed unchanged to the
+shared graph, build-time resolver and loader; resolver cache identity includes
+their order and values. Duplicate descriptors and literal-dollar names retain
+native semantics. Empty candidate arrays perform no rewrite and fall through;
+an actual rewriting all-miss is terminal. The installed enhanced-resolve factory
+rejects mixed string/false arrays before its alias handler, so Webpack reports
+its own construction error for those arrays. Wildcard names the shared resolver
+cannot represent are located configuration errors, never silently dropped.
+
+`mdxExtensions` defaults to `['.mdx']`. Configure a project MDX loader for every
+literal extension you opt into, for example `['.mdx', '.mdown']`; `.md` is not
+selected by default. Devup's post-loader extracts compiler-produced JavaScript
+with JSX under the actual filename. Graph discovery and numbering use the same
+selection as extraction.
+
+With extraction enabled, the guard runs after loaders in build, development
+compilations and watch rebuilds. Public parser facts, used dependency export IDs
+and actual module targets identify definitely used compile-time exports in
+modules outside the supported JS/TS and selected MDX extensions. Named bindings,
+static namespace/require-result members and destructuring with known export IDs
+produce a located module/import error and an `mdxExtensions` remedy. Runtime
+helpers and unused imports are allowed; an intended runtime compatibility alias
+can be disabled through `importAliases[package] = false`.
+
+Whole namespace/require-result objects and dynamic imports are opaque and are
+allowed. Compile-time exports reached only through these opaque forms may throw
+`Cannot run on the runtime` when rendered; let Devup compile the extension
+instead. The guard does not expand extraction to ordinary JS/TS excluded by
+`include` or change intentional uncompiled-library publishing.
+
 ## Custom Shorthands
 
 ```ts

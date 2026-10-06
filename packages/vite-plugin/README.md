@@ -225,6 +225,43 @@ that library, or publish separately imported, precompiled CSS. The real-build
 matrix is qualified with Vite 8.3.1 / Rolldown 1.2.10; no private adapter or
 bundler version pin is required.
 
+## MDX Selection And Compiled-Source Guards
+
+`mdxExtensions` defaults to `['.mdx']`. Add literal extensions such as
+`['.mdx', '.md', '.mdown']` only when your project compiler handles them as MDX.
+The same list controls post-compiler extraction, graph discovery and numbering.
+Compiled output is JavaScript with JSX under its real filename, never renamed
+to a JavaScript extension. Configure the MDX compiler separately; Devup runs
+after it. Ordinary JavaScript/TypeScript extensions keep their existing handling.
+
+`DevupUI()` returns the main `devup-ui` plugin, the unchanged
+`devup-ui:restore-forwarded-css` plugin, and three independent companions:
+`devup-ui:mdx`, `devup-ui:aggregate-css-guard`, and
+`devup-ui:compiled-source-guard`. The main plugin remains `enforce: 'pre'`;
+the MDX companion is `enforce: 'post'` and only transforms source.
+
+During builds with extraction enabled, the compiled-source guard inspects final
+code through Vite's public parser and resolved module graph. An extension outside
+the JavaScript/TypeScript and MDX lists fails with its module, used import and
+`mdxExtensions` remedy when a compile-time export is definitely referenced by
+name, static namespace/member access or destructuring. Runtime helpers such as
+`getTheme`, `setTheme`, `initTheme`, `useTheme` and `ThemeScript`, and unused
+imports, are allowed. An active compatibility alias can be disabled with
+`importAliases[package] = false` when runtime use is intended.
+
+Whole namespace/require-result objects and dynamic imports are opaque and are
+not rejected; compile-time exports reached only that way may still throw
+`Cannot run on the runtime` when rendered. Let Devup transform the extension
+instead. Ordinary JS/TS excluded by `include`, and intentional
+`extractCss: false` publishing, are not broadened by this guard.
+
+The complete forwarding graph is finalized by build hooks, not available as an
+equivalent completed graph in the dev server. This guard is build-only, including
+build-watch compilations; unselected extensions in dev may therefore retain
+placeholders and throw when rendered. Add the extension to `mdxExtensions` and
+configure its compiler for both dev and build. Vite's native alias format has
+no `false` target.
+
 ## Custom Shorthands
 
 Custom shorthands are build-plugin options, not theme tokens. Every target
