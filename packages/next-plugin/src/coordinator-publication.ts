@@ -40,17 +40,29 @@ export function stagePublication(
   const { live, ledger, plan, signal, onWatchInputs } = owner
   const publishLedger = ledger.stage(
     candidate.survivors,
-    candidate.transactional ? candidate.outputs : new Map(),
+    candidate.generation?.ordinaryInputs !== undefined
+      ? candidate.outputs
+      : new Map(),
+    candidate.outputs,
   )
   const publishPlan =
     candidate.generation?.plan === undefined
       ? undefined
       : plan.stage(candidate.generation.plan, candidate.outputs)
-  const previousWatches = live.generation?.watchInputs ?? []
+  const previousWatches = [
+    ...(live.generation?.watchInputs ?? []),
+    ...ledger.resolutionInputs().map((input) => input.path),
+  ]
+  const nextWatches = [
+    ...(candidate.generation?.watchInputs ?? []),
+    ...[...candidate.outputs.values()].flatMap((output) =>
+      (output.resolutionInputs ?? []).map((input) => input.path),
+    ),
+  ]
   return () => {
     if (candidate.transactional && onWatchInputs !== undefined) {
       try {
-        onWatchInputs(candidate.generation?.watchInputs ?? [])
+        onWatchInputs(nextWatches)
         signal.throwIfAborted()
       } catch (cause) {
         try {
@@ -73,7 +85,6 @@ export function stagePublication(
     publishPlan?.()
     for (const input of candidate.removed) plan.forget(input.filename)
     live.config = candidate.config ?? live.config
-    if (!candidate.transactional)
-      onWatchInputs?.(candidate.generation?.watchInputs ?? [])
+    if (!candidate.transactional) onWatchInputs?.(nextWatches)
   }
 }

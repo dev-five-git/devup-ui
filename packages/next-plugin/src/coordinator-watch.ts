@@ -40,6 +40,8 @@ export function watchSources(options: {
       const stat = statSync(path, { throwIfNoEntry: false })
       return stat?.isDirectory() ? stat : undefined
     } catch (error) {
+      if (error instanceof Error && 'code' in error && error.code === 'ENOTDIR')
+        return undefined
       report(error)
       return undefined
     }

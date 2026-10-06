@@ -1,5 +1,5 @@
 import * as fs from 'node:fs'
-import { join } from 'node:path'
+import { join, sep } from 'node:path'
 import { setTimeout as delay } from 'node:timers/promises'
 
 import { afterEach, describe, expect, it, spyOn } from 'bun:test'
@@ -10,6 +10,52 @@ import { createTestApp, eventually, removeTestApps } from './coordinator-app'
 afterEach(removeTestApps)
 
 describe('watchSources', () => {
+  it('keeps an absent descendant watch usable when its prefix becomes a file', async () => {
+    // Given
+    const app = createTestApp()
+    const prefix = join(app.root, 'earlier.js')
+    const probe = join(prefix, 'nested', 'index.cjs')
+    const original = fs.statSync
+    const stat = spyOn(fs, 'statSync').mockImplementation(
+      (...args: unknown[]) => {
+        const result = Reflect.apply(original, fs, args)
+        // Windows returns undefined where POSIX throws for a file prefix.
+        if (
+          process.platform === 'win32' &&
+          result === undefined &&
+          typeof args[0] === 'string' &&
+          args[0].startsWith(prefix + sep) &&
+          original(prefix, { throwIfNoEntry: false })?.isFile()
+        )
+          throw Object.assign(new Error('not a directory'), { code: 'ENOTDIR' })
+        return result
+      },
+    )
+    const errors: Error[] = []
+    const event = Promise.withResolvers<void>()
+    const watcher = watchSources({
+      roots: [probe],
+      debounceMs: 5,
+      onChange: () => event.resolve(),
+      onError: (error) => errors.push(error),
+    })
+    const timer = setTimeout(
+      () => event.reject(new Error('No watch event')),
+      1000,
+    )
+    try {
+      // When
+      app.write('earlier.js', 'export const color = "blue"')
+      await event.promise
+      // Then
+      expect(errors).toEqual([])
+    } finally {
+      clearTimeout(timer)
+      watcher.close()
+      stat.mockRestore()
+    }
+  })
+
   it.each(['src', 'app', 'pages', 'nested/src/app'])(
     'notices creation of missing %s',
     async (root) => {

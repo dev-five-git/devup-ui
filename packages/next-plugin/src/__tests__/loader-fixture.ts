@@ -25,6 +25,7 @@ export function invoke(
 ) {
   const addDependency = mock()
   const addMissingDependency = mock()
+  const addContextDependency = mock()
   const callback = mock()
   const result = new Promise<{
     readonly code?: string | undefined
@@ -43,10 +44,17 @@ export function invoke(
         resourcePath,
         addDependency,
         addMissingDependency,
+        addContextDependency,
         async: () => callback,
       },
       [Buffer.from(source)],
     )
   })
-  return { result, callback, addDependency, addMissingDependency }
+  return {
+    result,
+    callback,
+    addDependency,
+    addMissingDependency,
+    addContextDependency,
+  }
 }

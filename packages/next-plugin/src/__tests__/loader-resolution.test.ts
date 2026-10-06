@@ -62,6 +62,7 @@ it.each([undefined, true, false])(
       // When
       const files: string[] = []
       const missing: string[] = []
+      const contexts: string[] = []
       const result = Promise.withResolvers<void>()
       const options = {
         ...settings,
@@ -87,6 +88,7 @@ it.each([undefined, true, false])(
           resourcePath: input.resourcePath,
           addDependency: (path: string) => files.push(path),
           addMissingDependency: (path: string) => missing.push(path),
+          addContextDependency: (path: string) => contexts.push(path),
           async: () => (error: Error | null) =>
             error ? result.reject(error) : result.resolve(),
         },
@@ -104,6 +106,8 @@ it.each([undefined, true, false])(
       expect(files).toContain(transport(f.manifest))
       expect(missing).toContain(transport(join(f.root, 'tsconfig.json')))
       expect(files).not.toContain(transport(join(f.root, 'tsconfig.json')))
+      expect(contexts).toContain(transport(f.root))
+      expect(new Set(contexts).size).toBe(contexts.length)
     } finally {
       await handle.drain()
       await new Promise<void>((resolve, reject) =>

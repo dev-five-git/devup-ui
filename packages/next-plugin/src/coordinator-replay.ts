@@ -16,7 +16,6 @@ import {
 import type { ExtractRequest } from './coordinator-http'
 import {
   createInputLedger,
-  isCurrent,
   isGone,
   orderInputs,
   seedPrewarmedOutputs,
@@ -29,6 +28,7 @@ import type {
 import { createPersistence } from './coordinator-persistence'
 import { createProductionPlan } from './coordinator-plan'
 import { stagePublication } from './coordinator-publication'
+import { createReplayStartup } from './coordinator-startup'
 import {
   type AllocatorState,
   captureCoordinatorState,
@@ -117,7 +117,9 @@ export function createReplay(
   async function rebuild(request: RebuildRequest): Promise<void> {
     controller.signal.throwIfAborted()
     const generation = request.generation ?? live.generation
-    const transactional = generation?.ordinaryInputs !== undefined
+    const transactional =
+      generation?.ordinaryInputs !== undefined ||
+      ledger.resolutionInputs().length > 0
     if (transactional) await persistence.drain()
     const outputs = new Map<string, ExtractOutputSnapshot>()
     const fresh = buildEngine({
@@ -209,7 +211,13 @@ export function createReplay(
       ...inputs.filter(isGone),
       ...ledger.list().filter((input) => !filenames.has(input.filename)),
     ]
-    if (removed.length === 0 && !configChanged && !generationChanged) return
+    if (
+      removed.length === 0 &&
+      !configChanged &&
+      !generationChanged &&
+      !ledger.resolutionChanged()
+    )
+      return
     const drop = new Set(removed.map((input) => input.filename))
     if (
       superseding !== undefined &&
@@ -238,18 +246,9 @@ export function createReplay(
     reconcile,
     close: () =>
       controller.abort(new CoordinatorShutdownError('replay preparation')),
-    async startup(): Promise<void> {
-      controller.signal.throwIfAborted()
-      if (checkpoint === undefined) {
-        await persistence.commit(snapshot)
-        controller.signal.throwIfAborted()
-        return
-      }
-      await rebuild({
-        survivors: checkpoint.inputs.filter(isCurrent),
-        removed: [],
-        allocator: checkpoint,
-      })
-    },
+    startup: createReplayStartup(checkpoint, controller.signal, {
+      commit: () => persistence.commit(snapshot),
+      rebuild,
+    }),
   }
 }

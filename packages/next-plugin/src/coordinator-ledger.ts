@@ -8,6 +8,10 @@ import type { ExtractOutputSnapshot } from './coordinator-engine'
 import type { ExtractRequest } from './coordinator-http'
 import type { CoordinatorOptions } from './coordinator-options'
 import type { ProductionPlan } from './coordinator-plan'
+import {
+  changedMdxInput,
+  type MdxInputFingerprint,
+} from './mdx-source-freshness'
 import type { CoordinatorInput } from './state'
 
 function hash(content: string | Buffer): string {
@@ -79,11 +83,14 @@ export interface InputLedger {
   ): ExtractOutputSnapshot | undefined
   /** Live inputs in replay (path) order. */
   list(): CoordinatorInput[]
+  resolutionInputs(): readonly MdxInputFingerprint[]
+  resolutionChanged(): boolean
   /** Swap the live inputs wholesale; cached outputs no longer apply. */
   replace(inputs: readonly CoordinatorInput[]): void
   stage(
     inputs: readonly CoordinatorInput[],
     outputs: ReadonlyMap<string, ExtractOutputSnapshot>,
+    proofs?: ReadonlyMap<string, ExtractOutputSnapshot>,
   ): () => void
 }
 
@@ -96,10 +103,12 @@ export interface InputLedger {
 export function createInputLedger(maxOutputs: number): InputLedger {
   let inputs = new Map<string, CoordinatorInput>()
   let outputs = new Map<string, ExtractOutputSnapshot>()
+  let proofs = new Map<string, readonly MdxInputFingerprint[]>()
   const keyOf = (filename: string, source: string, sourceType?: SourceType) =>
     `${filename}\0${sourceType ?? ''}\0${hash(source)}`
   return {
     accept(input, output) {
+      proofs.set(input.filename, output.resolutionInputs ?? [])
       inputs.set(input.filename, input)
       const key = keyOf(input.filename, input.source, input.sourceType)
       outputs.delete(key)
@@ -128,11 +137,23 @@ export function createInputLedger(maxOutputs: number): InputLedger {
     list() {
       return orderInputs([...inputs.values()])
     },
+    resolutionInputs: () => [...proofs.values()].flat(),
+    resolutionChanged: () =>
+      [...proofs].some(
+        ([filename, inputs]) => changedMdxInput(filename, inputs) !== undefined,
+      ),
     replace(next) {
       inputs = new Map(next.map((input) => [input.filename, input]))
       outputs.clear()
+      proofs.clear()
     },
-    stage(next, extracted) {
+    stage(next, extracted, observed = extracted) {
+      const stagedProofs = new Map(
+        [...observed].map(
+          ([filename, output]) =>
+            [filename, output.resolutionInputs ?? []] as const,
+        ),
+      )
       const stagedInputs = new Map(next.map((input) => [input.filename, input]))
       const stagedOutputs = new Map<string, ExtractOutputSnapshot>()
       for (const input of next) {
@@ -150,6 +171,7 @@ export function createInputLedger(maxOutputs: number): InputLedger {
       return () => {
         inputs = stagedInputs
         outputs = stagedOutputs
+        proofs = stagedProofs
       }
     },
   }

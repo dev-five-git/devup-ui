@@ -15,7 +15,10 @@ import {
 } from './coordinator-client'
 import { takeExtractOutput } from './coordinator-engine'
 import type { CoordinatorIdentity } from './coordinator-port'
-import { loaderResolutionWatchPath } from './loader-resolution-watch'
+import {
+  loaderResolutionWatchPath,
+  registerLoaderMissingDependencies,
+} from './loader-resolution-watch'
 import { parseCoordinatorResponse, parseSourceMap } from './loader-response'
 import { extractWithModuleResolver, loadWasm } from './wasm'
 
@@ -117,13 +120,12 @@ const devupUILoader: RawLoaderDefinitionFunction<DevupUILoaderOptions> =
                 this._compiler,
               ),
             )
-          for (const dependency of data.missingDependencies)
-            this.addMissingDependency(
-              loaderResolutionWatchPath(
-                resolve(projectRoot, dependency),
-                this._compiler,
-              ),
-            )
+          registerLoaderMissingDependencies(
+            this,
+            data.missingDependencies.map((dependency) =>
+              resolve(projectRoot, dependency),
+            ),
+          )
           return data
         })
         .then(

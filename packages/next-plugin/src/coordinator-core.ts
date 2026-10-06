@@ -41,6 +41,10 @@ export function createCore(options: CoordinatorOptions, project: string): Core {
     reconcile,
   } = replay
   const watch = options.watch ?? false
+  const watchInputs = () => [
+    ...(live.generation?.watchInputs ?? []),
+    ...ledger.resolutionInputs().map((input) => input.path),
+  ]
   let sealed = false
 
   let queue: Promise<unknown> = Promise.resolve()
@@ -119,6 +123,7 @@ export function createCore(options: CoordinatorOptions, project: string): Core {
       try {
         const accepted = await mutate(() => accept(request))
         await accepted.committed
+        if (watch) watchListener?.(watchInputs())
         plan.succeed(request.filename)
         reportProfile('coordinator.extract', {
           cacheHit: accepted.cacheHit,
@@ -180,7 +185,7 @@ export function createCore(options: CoordinatorOptions, project: string): Core {
     startup: () => mutate(() => replay.startup()),
     reconcile: (changedPaths) =>
       mutate(() => reconcile(undefined, changedPaths)),
-    watchInputs: () => live.generation?.watchInputs ?? [],
+    watchInputs,
     onWatchInputs(listener) {
       watchListener = listener
       return () => {
