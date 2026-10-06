@@ -27,7 +27,7 @@ it('retains cyclic raw options and genuine context when a custom raw loader runs
     ...request.pipeline,
     loaders: [
       ...request.pipeline.loaders,
-      { loader: raw, options: configured },
+      { loader: raw, options: configured, ident: 'caller-cyclic-raw' },
     ],
   }
   // When

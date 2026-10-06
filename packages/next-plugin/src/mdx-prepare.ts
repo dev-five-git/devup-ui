@@ -1,7 +1,12 @@
 import { createRequire } from 'node:module'
 import { dirname, isAbsolute, join, resolve } from 'node:path'
-import { fileURLToPath } from 'node:url'
 
+import {
+  type MdxInvocation,
+  MdxLoaderExecutionError,
+  mdxLoaderPath,
+  requireMdxInvocation,
+} from './mdx-invocation'
 import {
   createMdxOptionsInstance,
   type MdxOptionsInstance,
@@ -39,6 +44,7 @@ export type MdxCompileRequest = {
   readonly deadline: MdxDeadline
   readonly context?: MdxPreparationContext
   readonly optionsInstance?: MdxOptionsInstance
+  readonly invocation?: MdxInvocation
 }
 
 // 30s preparation + 60s completion leaves 30s of the 120s client budget.
@@ -59,15 +65,18 @@ export class MdxCompileError extends Error {
   constructor(
     readonly filename: string,
     cause: unknown,
+    pipeline?: MdxPipeline,
   ) {
+    const original =
+      cause instanceof MdxLoaderExecutionError ? cause.cause : cause
     const position =
-      isMdxRecord(cause) && isMdxRecord(cause.place) ? cause.place : {}
+      isMdxRecord(original) && isMdxRecord(original.place) ? original.place : {}
     const start = isMdxRecord(position.start) ? position.start : position
     const line = typeof start.line === 'number' ? start.line : 1
     const column = typeof start.column === 'number' ? start.column : 1
     super(
-      `${filename}:${line}:${column}: devup-ui MDX preparation cannot use \`${filename}\` at build time: ${cause instanceof Error ? cause.message : String(cause)}; needs the configured compiler to complete successfully`,
-      { cause },
+      `${filename}:${line}:${column}: devup-ui MDX preparation cannot use \`${filename}\` at build time: ${cause instanceof Error ? cause.message : String(cause)}; rule "${pipeline?.ruleKey ?? '<unavailable>'}" loader ${pipeline?.loaders[0]?.loader ?? '<unavailable>'}; needs the configured compiler to complete successfully with observable original descriptors and representable loader context`,
+      { cause: original },
     )
     this.line = line
     this.column = column
@@ -84,9 +93,14 @@ export async function compileMdx(
     10_000,
     deadline.expiresAt - Date.now(),
   )
-  if (signal.aborted) throw new MdxCompileError(filename, signal.reason)
+  if (signal.aborted)
+    throw new MdxCompileError(filename, signal.reason, pipeline)
   if (timeoutMs <= 0)
-    throw new MdxCompileError(filename, 'MDX preparation deadline exceeded')
+    throw new MdxCompileError(
+      filename,
+      'MDX preparation deadline exceeded',
+      pipeline,
+    )
   try {
     const projectRequire = createRequire(join(root, 'package.json'))
     const runner: unknown = projectRequire(
@@ -98,54 +112,53 @@ export async function compileMdx(
     const devupMdxPrewarm = new Map<number, MdxPrewarmStep>()
     const context = request.context ?? { owner: {}, generation: {} }
     const instance = request.optionsInstance ?? createMdxOptionsInstance()
-    const loaders = instance.loadersFor(pipeline).map((loader, index) => {
-      const options = loader.options
-      const file = projectRequire.resolve(
-        isAbsolute(loader.loader)
-          ? loader.loader
-          : loader.loader.startsWith('.')
-            ? resolve(root, loader.loader)
-            : loader.loader,
-      )
-      const step = recognizeMdxPrewarmStep(file)
-      if (step)
-        devupMdxPrewarm.set(index, {
-          ...step,
-          compiler: mdxPrewarmCacheOwner(context, pipeline, dirname(filename)),
+    const invocation =
+      request.invocation &&
+      requireMdxInvocation(pipeline, request.invocation, filename)
+    const loaders = invocation
+      ? instance.invocationLoadersFor(pipeline, invocation)
+      : instance.loadersFor(pipeline).map((loader) => {
+          const path = mdxLoaderPath(loader)
+          const file = projectRequire.resolve(
+            isAbsolute(path)
+              ? path
+              : path.startsWith('.')
+                ? resolve(root, path)
+                : path,
+          )
+          return { ...loader, loader: file + loader.loader.slice(path.length) }
         })
-      return {
-        ...loader,
-        loader: step
-          ? fileURLToPath(
-              new URL(
-                import.meta.url.endsWith('.ts')
-                  ? './mdx-prewarm-loader.ts'
-                  : './mdx-prewarm-loader.js',
-                import.meta.url,
-              ),
-            )
-          : file,
-        ...(step ? { type: 'module' } : {}),
-        ...(typeof options === 'string' || isMdxRecord(options)
-          ? { options }
-          : {}),
-        ...(isMdxRecord(options)
-          ? { ident: loader.ident ?? `devup-mdx-preparation-${index}` }
-          : {}),
-      }
-    })
+    const compilerIndex = invocation?.compilerIndex ?? 0
+    const compiler = loaders[compilerIndex]
+    if (!compiler) throw new TypeError('configured MDX compiler is unavailable')
+    const compilerPath = mdxLoaderPath(compiler)
+    const step = recognizeMdxPrewarmStep(compilerPath)
+    if (step)
+      devupMdxPrewarm.set(compilerIndex, {
+        ...step,
+        compiler: mdxPrewarmCacheOwner(context, pipeline, dirname(filename)),
+      })
     return await runMdxLoaders({
       root,
       filename,
+      ...(invocation ? { resource: invocation.resource } : {}),
       signal,
       timeoutMs,
       loaders,
       context,
       steps: devupMdxPrewarm,
       runLoaders,
+      seam: {
+        ruleKey: pipeline.ruleKey,
+        compilerIndex,
+        compilerPath,
+        loaderCount: loaders.length,
+        bridge: step !== undefined,
+        ...(invocation ? { ownIndex: invocation.ownIndex } : {}),
+      },
     })
   } catch (cause) {
     if (cause instanceof MdxCompileError) throw cause
-    throw new MdxCompileError(filename, cause)
+    throw new MdxCompileError(filename, cause, pipeline)
   }
 }

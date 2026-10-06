@@ -1,7 +1,11 @@
 import { readFile } from 'node:fs'
 import { parse } from 'node:querystring'
 
-import type { MdxLoader } from './mdx-pipeline'
+import type { MdxInvocationLoader } from './mdx-invocation'
+import {
+  installMdxNormalCapture,
+  type MdxNormalSeam,
+} from './mdx-normal-capture'
 import { recordMdxDependencies } from './mdx-prepare-dependencies'
 import { prepared, type PreparedMdx } from './mdx-prepare-result'
 import type {
@@ -11,7 +15,7 @@ import type {
 
 type RunnerOptions = {
   readonly resource: string
-  readonly loaders: readonly MdxLoader[]
+  readonly loaders: readonly MdxInvocationLoader[]
   readonly context: object
   readonly readResource: typeof readFile
 }
@@ -26,12 +30,14 @@ export function isRunLoaders(value: unknown): value is RunLoaders {
 export function runMdxLoaders(request: {
   readonly root: string
   readonly filename: string
+  readonly resource?: string
   readonly signal: AbortSignal
   readonly timeoutMs: number
-  readonly loaders: readonly MdxLoader[]
+  readonly loaders: readonly MdxInvocationLoader[]
   readonly context: MdxPreparationContext
   readonly steps: ReadonlyMap<number, MdxPrewarmStep>
   readonly runLoaders: RunLoaders
+  readonly seam?: MdxNormalSeam
 }): Promise<PreparedMdx> {
   const {
     root,
@@ -55,11 +61,17 @@ export function runMdxLoaders(request: {
         return
       }
       resolveOutput(
-        Promise.resolve().then(() => prepared(filename, result, dependencies)),
+        Promise.resolve().then(() => {
+          signal.throwIfAborted()
+          return prepared(filename, result, dependencies)
+        }),
       )
     }
     const abort = () => finish(signal.reason)
-    const timer = setTimeout(() => finish('MDX compiler timeout'), timeoutMs)
+    const timer = setTimeout(
+      () => finish(capture?.timeoutError() ?? 'MDX compiler timeout'),
+      timeoutMs,
+    )
     signal.addEventListener('abort', abort, { once: true })
     const loaderContext = {
       rootContext: root,
@@ -79,16 +91,31 @@ export function runMdxLoaders(request: {
       emitError: (error: unknown) => finish(error),
     }
     const dependencies = recordMdxDependencies(filename, loaderContext)
+    const capture = request.seam
+      ? installMdxNormalCapture(loaderContext, request.seam)
+      : undefined
+    const callback = (error: unknown, result: unknown) => {
+      if (settled) return
+      if (!capture) {
+        finish(error, result)
+        return
+      }
+      try {
+        finish(null, capture.accept(error, result))
+      } catch (cause) {
+        finish(cause)
+      }
+    }
     async function start() {
       if (settled) return
       runLoaders(
         {
-          resource: filename,
+          resource: request.resource ?? filename,
           loaders,
           readResource: readFile,
           context: loaderContext,
         },
-        finish,
+        callback,
       )
     }
     void start().catch(finish)

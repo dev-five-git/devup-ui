@@ -3,6 +3,8 @@ export type MdxLoader = {
   readonly loader: string
   readonly options?: string | Readonly<Record<string, unknown>>
   readonly ident?: string
+  readonly fragment?: string
+  readonly type?: string
 }
 export type MdxPipeline = {
   readonly bundler: 'turbo' | 'webpack'
@@ -38,20 +40,23 @@ function loaderDescriptor(value: unknown): MdxLoader | undefined {
   )
     return
   if (value.ident !== undefined && typeof value.ident !== 'string') return
+  if (value.fragment !== undefined && typeof value.fragment !== 'string') return
+  if (value.type !== undefined && typeof value.type !== 'string') return
   return {
     loader: value.loader,
     ...(value.options === undefined ? {} : { options: value.options }),
     ...(value.ident === undefined ? {} : { ident: value.ident }),
+    ...(value.fragment === undefined ? {} : { fragment: value.fragment }),
+    ...(value.type === undefined ? {} : { type: value.type }),
   }
 }
 
-function isCompiler(loader: string): boolean {
+export function isMdxCompiler(loader: string): boolean {
+  const path = (loader.split(/[?#]/)[0] ?? '').replaceAll('\\', '/')
   return (
-    /(?:^|\/)@next\/mdx\/mdx-js-loader(?:\.js)?$/.test(
-      loader.replaceAll('\\', '/'),
-    ) ||
+    /(?:^|\/)@next\/mdx\/mdx-js-loader(?:\.js)?$/.test(path) ||
     /(?:^|\/)@mdx-js\/loader(?:\/index\.(?:js|cjs)|\/lib\/index\.js)?$/.test(
-      loader.replaceAll('\\', '/'),
+      path,
     )
   )
 }
@@ -78,9 +83,26 @@ export function requireMdxPipeline(
       pipeline?.issue ?? 'configured MDX compiler chain is unavailable',
     )
   }
+  if (pipeline.loaders.slice(1).some((loader) => isMdxCompiler(loader.loader)))
+    throw new MdxPipelineError(
+      filename,
+      `rule "${pipeline.ruleKey}" contains multiple MDX compilers`,
+    )
   return pipeline
 }
 
+export function composeMdxRules(
+  input: Extract<MdxRuleSet, { readonly bundler: 'turbo' }>,
+  extraction: MdxLoader,
+): { rules: Record<string, unknown>; pipelines: MdxPipeline[] }
+export function composeMdxRules(
+  input: Extract<MdxRuleSet, { readonly bundler: 'webpack' }>,
+  extraction: MdxLoader,
+): { rules: unknown[]; pipelines: MdxPipeline[] }
+export function composeMdxRules(
+  input: MdxRuleSet,
+  extraction: MdxLoader,
+): { rules: unknown[] | Record<string, unknown>; pipelines: MdxPipeline[] }
 export function composeMdxRules(input: MdxRuleSet, extraction: MdxLoader) {
   const pipelines: MdxPipeline[] = []
   function compose(
@@ -99,7 +121,7 @@ export function composeMdxRules(input: MdxRuleSet, extraction: MdxLoader) {
       )
       const descriptors = normalized.map(loaderDescriptor)
       const compilerIndex = descriptors.findIndex(
-        (loader) => loader && isCompiler(loader.loader),
+        (loader) => loader && isMdxCompiler(loader.loader),
       )
       if (compilerIndex >= 0) {
         const segment = descriptors.slice(compilerIndex)
@@ -115,7 +137,8 @@ export function composeMdxRules(input: MdxRuleSet, extraction: MdxLoader) {
           ? 'malformed compiler loader options'
           : forbidden
             ? 'pre-extraction chain contains Devup, SWC or Flight'
-            : loaders.filter((loader) => isCompiler(loader.loader)).length !== 1
+            : loaders.filter((loader) => isMdxCompiler(loader.loader))
+                  .length !== 1
               ? 'multiple MDX compilers in one chain'
               : undefined
         pipelines.push({

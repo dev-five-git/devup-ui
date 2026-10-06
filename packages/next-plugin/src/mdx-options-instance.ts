@@ -1,9 +1,14 @@
 import { isDeepStrictEqual } from 'node:util'
 
+import type { MdxInvocation, MdxInvocationLoader } from './mdx-invocation'
 import { isMdxRecord, type MdxLoader, type MdxPipeline } from './mdx-pipeline'
 
 export type MdxOptionsInstance = {
   readonly loadersFor: (pipeline: MdxPipeline) => readonly MdxLoader[]
+  readonly invocationLoadersFor: (
+    pipeline: MdxPipeline,
+    invocation: MdxInvocation,
+  ) => readonly MdxInvocationLoader[]
 }
 
 export class MdxTurboOptionsError extends TypeError {
@@ -17,8 +22,13 @@ export class MdxTurboOptionsError extends TypeError {
   }
 }
 
-function webpackCompiler(loader: MdxLoader): MdxLoader {
+function webpackCompiler(
+  loader: MdxLoader,
+  instances: WeakMap<object, Readonly<Record<string, unknown>>>,
+): MdxLoader {
   if (!isMdxRecord(loader.options)) return loader
+  const existing = instances.get(loader.options)
+  if (existing) return { ...loader, options: existing }
   // Only the approved wrapper-mutated shells are detached. Plugin options stay shared.
   const options = { ...loader.options }
   for (const key of ['remarkPlugins', 'rehypePlugins', 'recmaPlugins']) {
@@ -28,6 +38,7 @@ function webpackCompiler(loader: MdxLoader): MdxLoader {
         Array.isArray(plugin) ? [...plugin] : plugin,
       )
   }
+  instances.set(loader.options, options)
   return { ...loader, options }
 }
 
@@ -55,7 +66,38 @@ function turboLoader(loader: MdxLoader, ruleKey: string): MdxLoader {
 // Create once per preparation run, reuse for every file, discard before dev re-preparation.
 export function createMdxOptionsInstance(): MdxOptionsInstance {
   const instances = new WeakMap<MdxPipeline, readonly MdxLoader[]>()
+  const webpackOptions = new WeakMap<
+    object,
+    Readonly<Record<string, unknown>>
+  >()
+  const invocations = new WeakMap<
+    MdxPipeline,
+    WeakMap<MdxInvocation, readonly MdxInvocationLoader[]>
+  >()
   return {
+    invocationLoadersFor(pipeline, invocation) {
+      let scoped = invocations.get(pipeline)
+      if (!scoped) invocations.set(pipeline, (scoped = new WeakMap()))
+      const existing = scoped.get(invocation)
+      if (existing) return existing
+      const loaders = invocation.loaders.map((loader, index) => {
+        switch (pipeline.bundler) {
+          case 'webpack':
+            return index === invocation.compilerIndex &&
+              typeof loader !== 'string'
+              ? webpackCompiler(loader, webpackOptions)
+              : loader
+          case 'turbo':
+            return typeof loader === 'string'
+              ? loader
+              : { ...loader, ...turboLoader(loader, pipeline.ruleKey) }
+          default:
+            return pipeline.bundler satisfies never
+        }
+      })
+      scoped.set(invocation, loaders)
+      return loaders
+    },
     loadersFor(pipeline) {
       const existing = instances.get(pipeline)
       if (existing) return existing
@@ -63,7 +105,7 @@ export function createMdxOptionsInstance(): MdxOptionsInstance {
       switch (pipeline.bundler) {
         case 'webpack':
           loaders = pipeline.loaders.map((loader, index) =>
-            index === 0 ? webpackCompiler(loader) : loader,
+            index === 0 ? webpackCompiler(loader, webpackOptions) : loader,
           )
           break
         case 'turbo':

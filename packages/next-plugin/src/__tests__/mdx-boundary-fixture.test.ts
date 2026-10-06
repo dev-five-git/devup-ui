@@ -70,10 +70,7 @@ export async function originalCompile(request: ReturnType<typeof fixture>) {
     runLoaders(
       {
         resource: request.filename,
-        loaders: request.pipeline.loaders.map((loader) => ({
-          ...loader,
-          ident: 'original',
-        })),
+        loaders: request.pipeline.loaders,
         readResource: readFile,
         context: {
           sourceMap: request.context.sourceMap,
