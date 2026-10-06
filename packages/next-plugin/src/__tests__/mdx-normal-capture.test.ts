@@ -61,7 +61,7 @@ it('rejects an unknown original compiler pitch that bypasses its normal', async 
   const loader = join(directory, 'mdx-js-loader.js')
   writeFileSync(
     loader,
-    'module.exports = function() { throw new Error("must not run") }; module.exports.pitch = function() { return "bypassed" }',
+    `module.exports = { default: require(${JSON.stringify(join(import.meta.dir, 'mdx-own-slot-normals.cjs'))}).compiler, pitch: function() { return "bypassed" } }`,
   )
   const pipeline = { ...request.pipeline, loaders: [{ loader }] }
   // When / Then

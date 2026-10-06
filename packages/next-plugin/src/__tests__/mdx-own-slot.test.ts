@@ -59,7 +59,7 @@ it('captures post-compiler bytes at the existing Devup slot when full descriptor
   const downstream = join(request.root, 'downstream.cjs')
   writeFileSync(
     downstream,
-    'module.exports = function() { throw new Error("downstream normal executed") }',
+    `module.exports = require(${JSON.stringify(resolve(import.meta.dir, 'mdx-own-slot-normals.cjs'))}).downstream`,
   )
   const invocation = {
     resource: request.filename,

@@ -44,7 +44,7 @@ it('rejects at the original runner callback when a downstream pitch bypasses Dev
   const downstream = join(request.root, 'downstream.cjs')
   writeFileSync(
     downstream,
-    'module.exports = function(source) { return source }; module.exports.pitch = function() { return "bypass" }',
+    `module.exports = { default: require(${JSON.stringify(join(import.meta.dir, 'mdx-own-slot-normals.cjs'))}).default, pitch: function() { return "bypass" } }`,
   )
   const invocation = {
     ...request.invocation,
