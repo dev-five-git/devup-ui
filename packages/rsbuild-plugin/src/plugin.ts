@@ -12,6 +12,7 @@ import {
   createCompatTypes,
   createDependencyGuard,
   createModuleResolver,
+  type CreateModuleResolverOptions,
   createNodeModulesExcludeRegex,
   createStateWriter,
   createThemeInterfaceArgs,
@@ -27,6 +28,8 @@ import {
   normalizeMdxExtensions,
   planAtomHoist,
   remapMdxError,
+  type ResolutionInputObserver,
+  resolutionWatchPath,
   resolveProjectPaths,
   resolveSourceDirs,
   seedFileNumbers,
@@ -212,9 +215,14 @@ export const DevupUI = ({
           roots: string[]
           entries: string[]
           resolver: ReturnType<typeof createModuleResolver>
+          resolverOptions: CreateModuleResolverOptions
+          preserveSymlinks: boolean
+          inputFiles: Set<string>
+          missingInputs: Set<string>
         }
       >()
       const prewarm = (plan: NonNullable<ReturnType<typeof plans.get>>) => {
+        plan.resolver = createModuleResolver(plan.resolverOptions)
         setModuleResolver(plan.resolver)
         for (const file of computeReachableFiles({
           srcDir: plan.roots,
@@ -323,14 +331,25 @@ export const DevupUI = ({
             ]),
           ]
           const tsconfigPath = resolve(root, 'tsconfig.json')
+          const inputFiles = new Set<string>()
+          const missingInputs = new Set<string>()
+          const preserveSymlinks = normalized.resolve?.symlinks === false
+          const onResolutionInputs: ResolutionInputObserver = (inputs) => {
+            for (const path of inputs.fileDependencies)
+              inputFiles.add(resolutionWatchPath(path, preserveSymlinks))
+            for (const path of inputs.missingDependencies)
+              missingInputs.add(resolutionWatchPath(path, preserveSymlinks))
+          }
           try {
-            const resolver = createModuleResolver({
+            const resolverOptions = {
               cwd: root,
               includeMdx: mdxExtensions,
               conditions,
               alias: normalized.resolve?.alias,
               toId,
-            })
+              onResolutionInputs,
+            }
+            const resolver = createModuleResolver(resolverOptions)
             setModuleResolver(resolver)
             const graph = buildStaticImportGraph(roots, tsconfigPath, {
               includeMdx: mdxExtensions,
@@ -339,8 +358,18 @@ export const DevupUI = ({
               conditions,
               alias: normalized.resolve?.alias,
               exclude: [basename(outputDir), basename(cssDir)],
+              onResolutionInputs,
             })
-            const plan = { graph, roots, entries, resolver }
+            const plan = {
+              graph,
+              roots,
+              entries,
+              resolver,
+              resolverOptions,
+              preserveSymlinks,
+              inputFiles,
+              missingInputs,
+            }
             plans.set(environment.name, plan)
             if (atomMode) {
               const canonicalMap = buildCanonicalMap({
@@ -408,6 +437,11 @@ export const DevupUI = ({
               passes = 0
             })
             compiler.hooks.thisCompilation.tap(PLUGIN_NAME, (compilation) => {
+              const plan = plans.get(environment.name)
+              for (const path of plan?.inputFiles ?? [])
+                compilation.fileDependencies.add(path)
+              for (const path of plan?.missingInputs ?? [])
+                compilation.missingDependencies.add(path)
               const served = new Map<string, string>()
               servedCss.set(environment.name, served)
               const basePath = join(cssDir, 'devup-ui.css')
@@ -528,11 +562,27 @@ export const DevupUI = ({
         code,
         resourcePath,
         addDependency,
+        addMissingDependency,
         environment,
       }) => {
         if (excludeModules.test(resourcePath)) return code
         const plan = plans.get(environment?.name)
-        if (plan) setModuleResolver(plan.resolver)
+        if (plan)
+          setModuleResolver(
+            createModuleResolver({
+              ...plan.resolverOptions,
+              onResolutionInputs: (inputs) => {
+                for (const path of inputs.fileDependencies)
+                  addDependency(
+                    resolutionWatchPath(path, plan.preserveSymlinks),
+                  )
+                for (const path of inputs.missingDependencies)
+                  addMissingDependency(
+                    resolutionWatchPath(path, plan.preserveSymlinks),
+                  )
+              },
+            }),
+          )
         // The stylesheet import is emitted relative to the importing file, as
         // in the next/webpack/vite loaders. An absolute cssDir would bake this
         // checkout's path into the emitted module, so byte-identical sources

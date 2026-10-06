@@ -822,6 +822,8 @@ const App = () => <Box></Box>`,
       config.plugins![0]!.apply(compiler)
       const compilation = {
         assets: { 'index.js': {} },
+        fileDependencies: new Set<string>(),
+        missingDependencies: new Set<string>(),
         deleteAsset: mock(),
         hooks: {
           finishModules: { tap: tap('finishModules') },

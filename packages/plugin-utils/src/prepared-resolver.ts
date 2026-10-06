@@ -1,4 +1,3 @@
-import { readFileSync } from 'node:fs'
 import { extname } from 'node:path'
 
 import type {
@@ -9,6 +8,11 @@ import type {
 } from './import-graph'
 import { remapMdxError } from './mdx-errors'
 import { readPreparedSource } from './prepared-source'
+import {
+  createResolutionInputs,
+  readResolutionFile,
+  type ResolutionInputObserver,
+} from './resolution-inputs'
 import type { MdxSelection } from './source-selection'
 
 export interface ModuleResolver {
@@ -39,6 +43,7 @@ function isThenable(value: unknown): value is PromiseLike<unknown> {
 export function createPreparedResolver(options: {
   readonly prepareSource?: PrepareSource
   readonly includeMdx?: MdxSelection
+  readonly onResolutionInputs?: ResolutionInputObserver
 }) {
   const generations = new Map<
     string,
@@ -74,7 +79,13 @@ export function createPreparedResolver(options: {
           markdownExtensions.has(extname(filename).toLowerCase())
         )
           throw new TypeError('Markdown source has no prepared JavaScript')
-        return readPreparedSource(prepared)
+        const source = readPreparedSource(prepared)
+        if (source !== undefined) {
+          const inputs = createResolutionInputs()
+          inputs.file(filename)
+          options.onResolutionInputs?.(inputs.snapshot())
+        }
+        return source
       } catch (cause) {
         throw new ModulePreparationError(importer, filename, cause)
       }
@@ -86,7 +97,12 @@ export function createPreparedResolver(options: {
     ): ResolvedModule {
       if (prepared === undefined) {
         generations.delete(id)
-        return { path: id, code: readFileSync(filename, 'utf-8') }
+        const inputs = createResolutionInputs()
+        try {
+          return { path: id, code: readResolutionFile(filename, inputs) }
+        } finally {
+          options.onResolutionInputs?.(inputs.snapshot())
+        }
       }
       const source =
         typeof prepared === 'string' ? { code: prepared } : prepared

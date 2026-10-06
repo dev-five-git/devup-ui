@@ -182,6 +182,7 @@ it.each(['mts', 'cts', 'cjs', 'mjs'])(
       code: readFileSync(path, 'utf-8'),
       resourcePath: path,
       addDependency: mock(),
+      addMissingDependency: mock(),
       environment: { name: 'web' },
     })
     expect(result.code).not.toContain('css(')
@@ -210,6 +211,7 @@ it('extracts compiled MDX in the post-loader without prewarming raw markdown', a
     code: box('red'),
     resourcePath: path,
     addDependency: mock(),
+    addMissingDependency: mock(),
     environment: { name: 'web' },
   })
   expect(result.code).not.toContain('<Box')

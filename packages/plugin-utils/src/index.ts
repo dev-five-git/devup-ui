@@ -68,6 +68,11 @@ export {
 export type { ModuleResolver } from './prepared-resolver'
 export type { SourceType } from './prepared-source'
 export {
+  type ResolutionInputObserver,
+  type ResolutionInputs,
+} from './resolution-inputs'
+export { resolutionWatchPath } from './resolution-watch-path'
+export {
   createNodeModulesExcludeRegex,
   createThemeInterfaceArgs,
   DEFAULT_THEME_INTERFACE_NAMES,

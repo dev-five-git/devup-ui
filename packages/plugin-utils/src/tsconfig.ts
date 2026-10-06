@@ -1,8 +1,15 @@
-import { existsSync, readFileSync, realpathSync } from 'node:fs'
+import { existsSync } from 'node:fs'
 import { createRequire } from 'node:module'
 import { dirname, isAbsolute, join, resolve } from 'node:path'
 
 import { ConfigLoadError } from './load-config'
+import { recordPackagedConfigInputs } from './packaged-config-inputs'
+import {
+  readResolutionFile,
+  realpathResolution,
+  recordResolutionFailure,
+  type ResolutionInputCollector,
+} from './resolution-inputs'
 
 export interface PathAlias {
   readonly prefix: string
@@ -61,58 +68,84 @@ function parseJsonc(source: string): unknown {
   return JSON.parse(json)
 }
 
-function resolveParent(specifier: string, file: string): string {
+function resolveParent(
+  specifier: string,
+  file: string,
+  inputs?: ResolutionInputCollector,
+): string {
   if (specifier.startsWith('.') || isAbsolute(specifier)) {
     const candidate = resolve(dirname(file), specifier)
-    return existsSync(candidate) ? candidate : `${candidate}.json`
+    const exists = existsSync(candidate)
+    inputs?.probe(candidate, exists)
+    return exists ? candidate : `${candidate}.json`
   }
   const require = createRequire(file)
+  let selected: string | undefined
   try {
-    const resolved = require.resolve(specifier)
-    if (resolved.endsWith('.json')) return resolved
-    const manifestPath = require.resolve(`${specifier}/package.json`)
-    const manifest: unknown = JSON.parse(readFileSync(manifestPath, 'utf-8'))
-    return join(
-      dirname(manifestPath),
-      isRecord(manifest) && typeof manifest.tsconfig === 'string'
-        ? manifest.tsconfig
-        : 'tsconfig.json',
-    )
-  } catch (cause) {
-    if (
-      !(cause instanceof Error) ||
-      !('code' in cause) ||
-      cause.code !== 'MODULE_NOT_FOUND'
-    )
-      throw cause
     try {
-      return require.resolve(`${specifier}/tsconfig.json`)
-    } catch (fallback) {
-      if (
-        !(fallback instanceof Error) ||
-        !('code' in fallback) ||
-        fallback.code !== 'MODULE_NOT_FOUND'
-      )
-        throw fallback
+      const resolved = require.resolve(specifier)
+      selected = resolved
+      if (resolved.endsWith('.json')) return resolved
       const manifestPath = require.resolve(`${specifier}/package.json`)
-      const manifest: unknown = JSON.parse(readFileSync(manifestPath, 'utf-8'))
-      const configName =
+      const manifest: unknown = JSON.parse(
+        readResolutionFile(manifestPath, inputs),
+      )
+      return join(
+        dirname(manifestPath),
         isRecord(manifest) && typeof manifest.tsconfig === 'string'
           ? manifest.tsconfig
-          : 'tsconfig.json'
-      return join(dirname(manifestPath), configName)
+          : 'tsconfig.json',
+      )
+    } catch (cause) {
+      if (
+        !(cause instanceof Error) ||
+        !('code' in cause) ||
+        cause.code !== 'MODULE_NOT_FOUND'
+      )
+        throw cause
+      try {
+        const resolved = require.resolve(`${specifier}/tsconfig.json`)
+        selected = resolved
+        return resolved
+      } catch (fallback) {
+        if (
+          !(fallback instanceof Error) ||
+          !('code' in fallback) ||
+          fallback.code !== 'MODULE_NOT_FOUND'
+        )
+          throw fallback
+        const manifestPath = require.resolve(`${specifier}/package.json`)
+        selected = manifestPath
+        const manifest: unknown = JSON.parse(
+          readResolutionFile(manifestPath, inputs),
+        )
+        const configName =
+          isRecord(manifest) && typeof manifest.tsconfig === 'string'
+            ? manifest.tsconfig
+            : 'tsconfig.json'
+        return join(dirname(manifestPath), configName)
+      }
     }
+  } finally {
+    recordPackagedConfigInputs(
+      { request: specifier, importer: file, resolved: selected },
+      inputs,
+    )
   }
 }
 
-function loadAliases(file: string, stack: readonly string[]): AliasConfig {
+function loadAliases(
+  file: string,
+  stack: readonly string[],
+  inputs?: ResolutionInputCollector,
+): AliasConfig {
   try {
-    const canonical = realpathSync(file)
+    const canonical = realpathResolution(file, inputs)
     if (stack.includes(canonical) || stack.length >= 128)
       throw new Error(
         `Tsconfig inheritance cycle or depth limit: ${[...stack, canonical].join(' -> ')}`,
       )
-    const config = parseJsonc(readFileSync(file, 'utf-8'))
+    const config = parseJsonc(readResolutionFile(file, inputs))
     if (!isRecord(config)) throw new TypeError('Expected a tsconfig object')
     const parents =
       config.extends === undefined
@@ -129,7 +162,11 @@ function loadAliases(file: string, stack: readonly string[]): AliasConfig {
     for (const parent of parents)
       inherited = {
         ...inherited,
-        ...loadAliases(resolveParent(parent, file), [...stack, canonical]),
+        ...loadAliases(
+          resolveParent(parent, file, inputs),
+          [...stack, canonical],
+          inputs,
+        ),
       }
     if (config.compilerOptions === undefined) return inherited
     if (!isRecord(config.compilerOptions))
@@ -164,19 +201,24 @@ function loadAliases(file: string, stack: readonly string[]): AliasConfig {
     return { ...inherited, ...current }
   } catch (cause) {
     if (cause instanceof ConfigLoadError) throw cause
+    recordResolutionFailure(file, cause, inputs)
     throw new ConfigLoadError(file, cause)
   }
 }
 
-export function readPathAliases(tsconfigPath?: string): {
+export function readPathAliases(
+  tsconfigPath?: string,
+  inputs?: ResolutionInputCollector,
+): {
   aliases: PathAlias[]
   baseDir: string
   baseUrl?: string
 } {
-  if (!tsconfigPath || !existsSync(tsconfigPath))
-    return { aliases: [], baseDir: process.cwd() }
+  const exists = tsconfigPath ? existsSync(tsconfigPath) : false
+  if (tsconfigPath) inputs?.probe(tsconfigPath, exists)
+  if (!tsconfigPath || !exists) return { aliases: [], baseDir: process.cwd() }
   const file = resolve(tsconfigPath)
-  const config = loadAliases(file, [])
+  const config = loadAliases(file, [], inputs)
   const baseDir = config.baseUrl ?? config.pathsOrigin ?? dirname(file)
   const aliases = Object.entries(config.paths ?? {}).map(([alias, targets]) => {
     const star = alias.indexOf('*')

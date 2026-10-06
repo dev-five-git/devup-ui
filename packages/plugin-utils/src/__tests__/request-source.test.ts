@@ -1,3 +1,5 @@
+import { join } from 'node:path'
+
 import { expect, it } from 'bun:test'
 
 import { scanImports } from '../import-scanner'
@@ -29,7 +31,17 @@ it('preserves raw Markdown offsets through prose, fences, comments and CRLF', ()
       kind: 'static-import',
       position: { offset: 66, line: 8, column: 8 },
       source: 'source',
-      outcome: { kind: 'resolved', path: leaf },
+      outcome: {
+        kind: 'resolved',
+        path: leaf,
+        inputs: {
+          fileDependencies: [leaf],
+          missingDependencies: [
+            join(root, 'src/leaf'),
+            join(root, 'tsconfig.json'),
+          ].sort(),
+        },
+      },
     },
   ])
 })
@@ -63,7 +75,17 @@ it.each([
       position: { offset: 8, line: 2, column: 8 },
       source: 'compiled',
       map,
-      outcome: { kind: 'resolved', path: leaf },
+      outcome: {
+        kind: 'resolved',
+        path: leaf,
+        inputs: {
+          fileDependencies: [leaf],
+          missingDependencies: [
+            join(root, 'src/leaf'),
+            join(root, 'tsconfig.json'),
+          ].sort(),
+        },
+      },
     },
   ])
   expect(visits.sort()).toEqual(graph.files)

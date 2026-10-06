@@ -7,6 +7,8 @@ import {
   isMdxSource,
   type ModuleAliasOptions,
   remapMdxError,
+  type ResolutionInputObserver,
+  resolutionWatchPath,
 } from '@devup-ui/plugin-utils'
 import {
   codeExtract,
@@ -31,6 +33,7 @@ export interface DevupUILoaderOptions {
   conditions?: readonly string[]
   mdxExtensions?: readonly string[]
   alias?: ModuleAliasOptions
+  symlinks?: boolean
 }
 
 function toLoaderError(error: unknown): Error {
@@ -47,31 +50,24 @@ function parseSourceMap(sourceMap: string | undefined): string | null {
 const stateWriter = createStateWriter((path, content, encoding) =>
   encoding ? writeFile(path, content, encoding) : writeFile(path, content),
 )
-const moduleResolvers = new Map<
-  string,
-  ReturnType<typeof createModuleResolver>
->()
-
 /** Resolve imports to the cwd-relative ids this loader extracts files under */
 function setCwdModuleResolver(options: {
   readonly rootDir: string
   readonly conditions: readonly string[]
   readonly mdxExtensions: readonly string[]
   readonly alias: ModuleAliasOptions | undefined
+  readonly onResolutionInputs: ResolutionInputObserver
 }): void {
-  const { rootDir, conditions, mdxExtensions, alias } = options
-  const key = JSON.stringify([rootDir, conditions, mdxExtensions, alias])
-  let moduleResolver = moduleResolvers.get(key)
-  if (!moduleResolver) {
-    moduleResolver = createModuleResolver({
-      cwd: rootDir,
-      includeMdx: mdxExtensions,
-      conditions,
-      alias,
-      toId: (path) => relative(rootDir, path).replaceAll('\\', '/'),
-    })
-    moduleResolvers.set(key, moduleResolver)
-  }
+  const { rootDir, conditions, mdxExtensions, alias, onResolutionInputs } =
+    options
+  const moduleResolver = createModuleResolver({
+    cwd: rootDir,
+    includeMdx: mdxExtensions,
+    conditions,
+    alias,
+    onResolutionInputs,
+    toId: (path) => relative(rootDir, path).replaceAll('\\', '/'),
+  })
   setModuleResolver(moduleResolver)
 }
 
@@ -90,6 +86,7 @@ const devupUILoader: RawLoaderDefinitionFunction<DevupUILoaderOptions> =
       conditions = ['import', 'module', 'node'],
       mdxExtensions = ['.mdx'],
       alias,
+      symlinks = true,
     } = this.getOptions()
     const callback = this.async()
     const id = this.resourcePath
@@ -110,7 +107,18 @@ const devupUILoader: RawLoaderDefinitionFunction<DevupUILoaderOptions> =
       const relativePath = relative(rootDir, id).replaceAll('\\', '/')
 
       if (!relCssDir.startsWith('./')) relCssDir = `./${relCssDir}`
-      setCwdModuleResolver({ rootDir, conditions, mdxExtensions, alias })
+      setCwdModuleResolver({
+        rootDir,
+        conditions,
+        mdxExtensions,
+        alias,
+        onResolutionInputs: (inputs) => {
+          for (const file of inputs.fileDependencies)
+            this.addDependency(resolutionWatchPath(file, !symlinks))
+          for (const path of inputs.missingDependencies)
+            this.addMissingDependency(resolutionWatchPath(path, !symlinks))
+        },
+      })
       const {
         code,
         css = '',
