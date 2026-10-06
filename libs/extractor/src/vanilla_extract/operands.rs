@@ -11,6 +11,7 @@ pub(crate) enum StyleOperandMode {
     #[default]
     Merged,
     Ordered,
+    Generated(Option<String>),
 }
 
 #[derive(Debug, Clone)]

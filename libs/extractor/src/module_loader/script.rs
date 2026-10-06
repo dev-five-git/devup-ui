@@ -11,10 +11,23 @@ use crate::vanilla_extract::strip_typescript_marked;
 
 mod explain;
 mod retained;
+pub(crate) mod selected;
 #[cfg(test)]
 mod tests;
 
 pub(crate) use explain::SCRIPT_PATH;
+
+pub(crate) struct OriginalPosition<'a> {
+    pub filename: &'a str,
+    pub source: &'a str,
+    pub offset: usize,
+}
+
+impl OriginalPosition<'_> {
+    pub(crate) fn place(&self) -> String {
+        crate::locate(self.filename, self.source, self.offset)
+    }
+}
 
 /// A module as written, and how its script traces back to it
 struct Written {
@@ -78,6 +91,10 @@ impl Unit {
     /// `filename:line:column` of the byte `offset` of the script as written,
     /// `None` where the build generated it
     fn locate(&self, offset: usize) -> Option<String> {
+        self.original(offset).map(|position| position.place())
+    }
+
+    fn original(&self, offset: usize) -> Option<OriginalPosition<'_>> {
         let written = self.written.as_ref()?;
         if written.retained.as_ref().is_some_and(|ranges| {
             !ranges
@@ -87,7 +104,11 @@ impl Unit {
             return None;
         }
         let offset = written.trace.resolve(&self.script, &written.source, offset);
-        Some(crate::locate(&self.filename, &written.source, offset))
+        Some(OriginalPosition {
+            filename: &self.filename,
+            source: &written.source,
+            offset,
+        })
     }
 
     /// Where the byte `offset` of the script is, down to the file for generated
@@ -114,13 +135,20 @@ pub(crate) struct Origin {
 
 impl Origin {
     fn locate(&self, offset: usize) -> Option<String> {
+        self.unit.locate(self.script_offset(offset))
+    }
+
+    fn original(&self, offset: usize) -> Option<OriginalPosition<'_>> {
+        self.unit.original(self.script_offset(offset))
+    }
+
+    fn script_offset(&self, offset: usize) -> usize {
         let piece = &self.pieces[self.pieces.partition_point(|piece| piece.start <= offset) - 1];
-        let script = if piece.copied {
+        if piece.copied {
             piece.script + offset - piece.start
         } else {
             piece.script
-        };
-        self.unit.locate(script)
+        }
     }
 }
 
@@ -186,6 +214,14 @@ pub(crate) struct Script {
 }
 
 impl Script {
+    pub(crate) fn original(&self, offset: usize) -> Option<OriginalPosition<'_>> {
+        let (start, _, origin) = self
+            .parts
+            .iter()
+            .find(|(start, end, _)| (*start..*end).contains(&offset))?;
+        origin.original(offset - start)
+    }
+
     pub(crate) fn generated(&mut self, text: &str) {
         self.text.push_str(text);
     }

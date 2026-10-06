@@ -56,3 +56,23 @@ fn analysis_given_to_the_visitor_is_reused() {
     assert!(printed.contains("export const a = \"a\";"), "{printed}");
     assert_eq!(visitor.styles.len(), 1);
 }
+
+#[test]
+#[serial]
+fn runtime_source_survives_when_syntax_validation_is_the_only_semantic_analysis()
+-> Result<(), Box<dyn std::error::Error>> {
+    // Given
+    reset_class_map();
+    reset_file_map();
+    let source = "// @devup-ui/react\nconst handler=()=>document.body.append(window.name);export const view=<button onClick={handler}>{window.name}</button>;throw new Error('runtime only');";
+    let allocator = Allocator::default();
+    let authored = Parser::new(&allocator, source, SourceType::tsx()).parse();
+    assert_eq!(authored.diagnostics.len(), 0);
+    let expected = Codegen::new().build(&authored.program).code;
+    // When
+    let output = crate::extract("scoping.tsx", source, crate::ExtractOption::default())?;
+    // Then
+    assert_eq!(output.styles.len(), 0);
+    assert_eq!(output.code, expected);
+    Ok(())
+}

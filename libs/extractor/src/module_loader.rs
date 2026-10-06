@@ -20,12 +20,14 @@ mod import_bindings;
 pub(crate) mod operations;
 mod retained_css;
 mod script;
+mod selected_policy;
 #[cfg(test)]
 mod tests;
 mod validate;
 
 use import_bindings::{BindingSource, ImportBindings};
 use retained_css::{CssImport, RetainedCss};
+pub(crate) use script::selected::Mapped;
 pub(crate) use script::{Body, Origin, SCRIPT_PATH, Script, Unit};
 pub(crate) use validate::validate;
 
@@ -125,6 +127,7 @@ pub(crate) struct ModuleLoader<'r> {
     /// bindings are read when used, as ES modules read an import cycle
     pending: FxHashSet<String>,
     next_module: usize,
+    static_producers_only: bool,
     retained_css: RetainedCss,
     css_bindings: FxHashMap<String, String>,
     /// Every file read, including those the loaded stylesheets read
@@ -162,6 +165,7 @@ impl<'r> ModuleLoader<'r> {
             loading: Vec::new(),
             pending: FxHashSet::default(),
             next_module: 0,
+            static_producers_only: false,
             retained_css: RetainedCss::default(),
             css_bindings: FxHashMap::default(),
             dependencies: BTreeSet::new(),
@@ -169,6 +173,10 @@ impl<'r> ModuleLoader<'r> {
             imported_atoms: Default::default(),
             imported_references: Default::default(),
         }
+    }
+
+    pub(crate) const fn restrict_to_static_producers(&mut self) {
+        self.static_producers_only = true;
     }
 
     fn keep_import(&mut self, specifier: &str) {
@@ -245,6 +253,14 @@ impl<'r> ModuleLoader<'r> {
                 .import_aliases
                 .contains_key("@vanilla-extract/css")
                 && crate::ordinary_ve::is_module(&module.path, &module.code));
+        if self.static_producers_only
+            && self
+                .option
+                .import_aliases
+                .contains_key("@vanilla-extract/css")
+        {
+            selected_policy::check(&module).map_err(LoadError::Failed)?;
+        }
         if direct && stylesheet {
             self.keep_import(specifier);
         }

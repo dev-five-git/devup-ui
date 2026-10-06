@@ -2,6 +2,17 @@ use crate::{ExtractOption, ImportAlias, ResolvedModule, extract_with_modules};
 use rstest::rstest;
 use serial_test::serial;
 
+mod mixed_aliases;
+mod mixed_apis;
+mod mixed_canonical;
+mod mixed_gate;
+mod mixed_graph;
+mod mixed_imports;
+mod mixed_review;
+mod mixed_rewrite;
+mod mixed_selection;
+mod mixed_support;
+
 fn option() -> ExtractOption {
     ExtractOption {
         single_css: true,

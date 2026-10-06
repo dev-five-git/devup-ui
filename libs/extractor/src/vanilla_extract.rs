@@ -34,12 +34,16 @@ use serialization::value_to_code;
 mod contracts;
 mod operands;
 pub(crate) use operands::StyleOperandMode;
+pub(crate) mod capture;
+mod execution;
+mod naming;
 pub(crate) mod producer_atoms;
 mod selector_rules;
 pub(crate) mod style_references;
 mod token_walk;
 mod vars;
 use contracts::{assign_vars, assign_vars_api, create_global_theme_contract};
+use naming::{NameScope, name_values};
 use token_walk::walk_object;
 use vars::fallback_var;
 
@@ -294,100 +298,8 @@ pub(crate) fn execute_located(
     option: &crate::ExtractOption,
     resolver: Option<&crate::ModuleResolver>,
 ) -> Result<(CollectedStyles, StylesheetImports), String> {
-    let Stylesheet {
-        filename,
-        code,
-        source,
-        edits,
-    } = stylesheet;
-    let _evaluating = Evaluating::enter(filename);
-    let mut loader = ModuleLoader::new(resolver, option);
-    let unit = Unit::written(filename, code, source, edits)?;
-    let entry = module_script(&unit, &mut loader, true)?;
-    let file_num = get_file_num_by_filename(filename);
-    let run = loader.script(&entry);
-    let imports = StylesheetImports {
-        dependencies: std::mem::take(&mut loader.dependencies),
-        kept_imports: std::mem::take(&mut loader.kept_imports),
-        atoms: std::mem::take(&mut loader.imported_atoms),
-        references: std::mem::take(&mut loader.imported_references),
-    };
-    let imported = crate::module_loader::evaluating_import();
-    if imported
-        && let Some(collected) = IMPORTED_RUNS.with_borrow(|runs| {
-            runs.get(filename)
-                .filter(|(num, cached, text, _)| {
-                    *num == file_num && cached == code && *text == run.text
-                })
-                .map(|(.., collected)| collected.clone())
-        })
-    {
-        return Ok((collected, imports));
-    }
-    let collector: StyleCollector = Rc::new(RefCell::new(Collector {
-        file_num,
-        imported_atoms: Rc::new(imports.atoms.clone()),
-        imported_references: Rc::new(imports.references.clone()),
-        ..Collector::default()
-    }));
-    let mut context = Context::default();
-    let sandbox = crate::evaluation_sandbox::Sandbox::new(&mut context)
-        .map_err(|error| run.explain(&error.to_string(), filename))?;
-    loader
-        .prepare_css(&mut context)
-        .map_err(|error| run.explain(&error.to_string(), filename))?;
-    let operations = crate::module_loader::operations::Operations::new(&run.text);
-    operations
-        .prepare(&mut context)
-        .map_err(|error| run.explain(&error.to_string(), filename))?;
-    let instrumented = crate::evaluation_sandbox::instrument(&operations.code, SCRIPT_PATH);
-    sandbox
-        .prepare(&mut context, &instrumented)
-        .map_err(|error| run.explain(&instrumented.explain(&error.to_string()), filename))?;
-    register_vanilla_extract_apis(&mut context, &collector)
-        .map_err(|e| Script::default().explain(&e, filename))?;
-    sandbox
-        .run_source(
-            &mut context,
-            Source::from_bytes(instrumented.code.as_bytes()).with_path(Path::new(SCRIPT_PATH)),
-        )
-        .map_err(|failure| {
-            sandbox_error(
-                failure,
-                &run,
-                |error| operations.explain(&instrumented.explain(error), &context),
-                filename,
-            )
-        })?;
-
-    let mut collected = std::mem::take(&mut collector.borrow_mut().styles);
-    let named = top_level_bindings(code, &entry, &mut context)
-        .and_then(|bindings| name_entries(&mut collected, &bindings, &mut context, file_num));
-    sandbox
-        .check(&named.as_ref().err().into_iter().collect::<Vec<_>>())
-        .map_err(|failure| {
-            sandbox_error(
-                failure,
-                &run,
-                |error| operations.explain(&instrumented.explain(error), &context),
-                filename,
-            )
-        })?;
-    named.map_err(|error| {
-        run.explain(
-            &operations.explain(&instrumented.explain(&error.to_string()), &context),
-            filename,
-        )
-    })?;
-    if imported {
-        IMPORTED_RUNS.with_borrow_mut(|runs| {
-            runs.insert(
-                filename.to_string(),
-                (file_num, code.to_string(), run.text, collected.clone()),
-            );
-        });
-    }
-    Ok((collected, imports))
+    execution::execute(execution::Input::Stylesheet(stylesheet), option, resolver)
+        .map(|result| (result.collected, result.imports))
 }
 
 /// Formats sandbox failures through the same original-source trace as execution errors.
@@ -523,110 +435,6 @@ fn placeholder_index(id: &str) -> usize {
         .trim_end_matches("__")
         .parse()
         .unwrap_or_default()
-}
-
-/// Name every style and keyframes after the variable holding it (`_veN` when
-/// none does), and turn the other exported values into code.
-///
-/// Names come from the values the variables hold after the stylesheet ran, so
-/// calls nested in objects, arrays or helpers do not shift them.
-fn name_entries(
-    collected: &mut CollectedStyles,
-    bindings: &[Binding],
-    context: &mut Context,
-    file_num: usize,
-) -> JsResult<()> {
-    let values: Vec<(&Binding, JsValue)> = bindings
-        .iter()
-        .map(|binding| {
-            context
-                .eval(Source::from_bytes(binding.read.as_bytes()))
-                .map(|value| (binding, value))
-        })
-        .collect::<JsResult<_>>()?;
-
-    let mut names: FxHashMap<String, String> = FxHashMap::default();
-    for (binding, value) in &values {
-        if let Some(id) = js_str(value)
-            && !names.contains_key(&id)
-            && let Some(entry) = collected
-                .styles
-                .get_mut(&id)
-                .or_else(|| collected.keyframes.get_mut(&id))
-        {
-            entry.exported = binding.exported;
-            names.insert(id, binding.name.clone());
-        }
-    }
-
-    let declared: FxHashSet<&str> = bindings
-        .iter()
-        .map(|binding| binding.name.as_str())
-        .collect();
-    let mut anonymous: Vec<String> = collected
-        .styles
-        .keys()
-        .chain(collected.keyframes.keys())
-        .filter(|id| !names.contains_key(*id))
-        .cloned()
-        .collect();
-    anonymous.sort_by_key(|id| placeholder_index(id));
-    for id in anonymous {
-        let mut name = format!("_ve{}", placeholder_index(&id));
-        while declared.contains(name.as_str()) {
-            name.push('_');
-        }
-        names.insert(id, name);
-    }
-
-    for (binding, value) in &values {
-        if let Some(alias) = &binding.alias {
-            if let Some(code) = value_to_code(value, context, &names, &mut Vec::new())? {
-                collected
-                    .export_aliases
-                    .push((binding.name.clone(), alias.clone(), code));
-            }
-            continue;
-        }
-        let names_entry = js_str(value).is_some_and(|id| names.get(&id) == Some(&binding.name));
-        if binding.exported
-            && !names_entry
-            && let Some(code) = value_to_code(value, context, &names, &mut Vec::new())?
-                .or_else(|| binding.init.clone())
-        {
-            collected
-                .constant_exports
-                .push((binding.name.clone(), code));
-        }
-    }
-
-    let mut styles = std::mem::take(&mut collected.styles);
-    let mut keyframes = std::mem::take(&mut collected.keyframes);
-    let mut ordered: Vec<_> = names.iter().collect();
-    ordered.sort_by_key(|(id, _)| placeholder_index(id));
-    for (id, name) in ordered {
-        let reference = if let Some(mut entry) = styles.remove(id) {
-            for operand in &mut entry.operands {
-                if let operands::StyleOperand::Base(base) = operand
-                    && let Some(base_name) = names.get(base.as_str())
-                {
-                    base_name.clone_into(base);
-                }
-            }
-            collected.styles.insert(name.clone(), entry);
-            Reference::Style {
-                name: name.clone(),
-                class_name: format!("f{file_num}_{}", placeholder_index(id)),
-            }
-        } else {
-            if let Some(entry) = keyframes.remove(id) {
-                collected.keyframes.insert(name.clone(), entry);
-            }
-            Reference::Keyframes(name.clone())
-        };
-        collected.references.insert(id.clone(), reference);
-    }
-    Ok(())
 }
 
 fn is_plain_object(object: &JsObject, context: &Context) -> bool {

@@ -67,6 +67,10 @@ pub(crate) struct Operations {
 }
 
 impl Operations {
+    pub(crate) fn original_offset(&self, offset: usize) -> usize {
+        crate::import_alias_visit::source_offset(&self.edits, offset)
+    }
+
     pub(crate) fn new(source: &str) -> Self {
         let mut hash = rustc_hash::FxHasher::default();
         source.hash(&mut hash);
@@ -174,7 +178,7 @@ impl Operations {
                     inserted += length;
                     (start..start + length).contains(&offset)
                 });
-                let original = crate::import_alias_visit::source_offset(&self.edits, offset);
+                let original = self.original_offset(offset);
                 let place = crate::locate(super::SCRIPT_PATH, &self.source, original);
                 let operation =
                     generated || active.as_ref().is_some_and(|(_, array, _)| *array == place);

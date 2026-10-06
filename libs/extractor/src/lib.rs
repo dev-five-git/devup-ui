@@ -309,18 +309,27 @@ struct ExtractedProducer {
     references: vanilla_extract::style_references::StyleReferences,
 }
 
-/// `evaluated` is the source `code` was computed from, with the layers of
-/// edits, last made first, that map `code` back to it; `values_run` tells that
-/// the values only running code gives are in `code` already
+#[derive(Clone, Copy)]
+struct Evaluated<'a> {
+    source: &'a str,
+    edits: &'a [&'a [import_alias_visit::Edit]],
+    native: Option<&'a ordinary_ve::Prepared>,
+}
+
+/// `evaluation` retains authored source, last-made-first edits and the native
+/// prepared stage across recursion. `values_run` independently tracks computed
+/// ordinary values; it must not stand in for native preparation.
 fn extract_source(
     filename: &str,
     code: &str,
-    evaluated: Option<(&str, &[&[import_alias_visit::Edit]])>,
+    evaluation: Option<Evaluated<'_>>,
     values_run: bool,
     option: ExtractOption,
     source_map: bool,
     resolver: Option<&ModuleResolver>,
 ) -> Result<ExtractedProducer, Box<dyn Error>> {
+    let native = evaluation.and_then(|stage| stage.native);
+    let evaluated = evaluation.map(|stage| (stage.source, stage.edits));
     if evaluated.is_none() {
         match barrel::rewrite(code, filename, &option.package, resolver) {
             barrel::Barreled::Unchanged => {}
@@ -331,7 +340,11 @@ fn extract_source(
                 let mut output = extract_source(
                     filename,
                     &barreled.code,
-                    Some((code, &[barreled.edits.as_slice()])),
+                    Some(Evaluated {
+                        source: code,
+                        edits: &[barreled.edits.as_slice()],
+                        native,
+                    }),
                     false,
                     option,
                     source_map,
@@ -344,6 +357,41 @@ fn extract_source(
                 return Ok(output);
             }
         }
+    }
+    if native.is_none() {
+        let (source, earlier_edits) = evaluated.unwrap_or((code, &[]));
+        if let Some(prepared) = ordinary_ve::prepare(
+            vanilla_extract::Stylesheet {
+                filename,
+                code,
+                source,
+                edits: earlier_edits,
+            },
+            &option,
+            resolver,
+        )? {
+            let layers: Vec<&[import_alias_visit::Edit]> =
+                std::iter::once(prepared.edits.as_slice())
+                    .chain(earlier_edits.iter().copied())
+                    .collect();
+            return extract_source(
+                filename,
+                &prepared.code,
+                Some(Evaluated {
+                    source,
+                    edits: &layers,
+                    native: Some(&prepared),
+                }),
+                values_run,
+                option,
+                source_map,
+                resolver,
+            );
+        }
+    }
+    let mut aliases = option.import_aliases.clone();
+    if native.is_some() {
+        aliases.remove("@vanilla-extract/css");
     }
     // Step 1: Transform import aliases
     // e.g., `import styled from '@emotion/styled'` → `import { styled } from '@devup-ui/react'`
@@ -363,12 +411,13 @@ fn extract_source(
             filename
         },
         &option.package,
-        &option.import_aliases,
+        &aliases,
     );
 
     // Step 2: Check if code contains the target package (after transformation),
     // gives an element a `css` prop, or had an import rewritten
-    let has_relevant_import = transformed_code.contains(option.package.as_str())
+    let has_relevant_import = native.is_some()
+        || transformed_code.contains(option.package.as_str())
         || transformed_code.contains(STYLEX_PACKAGE);
     let unchanged = || ExtractedProducer {
         output: ExtractOutput {
@@ -387,11 +436,17 @@ fn extract_source(
         return Ok(unchanged());
     }
 
-    let mut dependencies = std::collections::BTreeSet::new();
-    let mut producer_atoms = vanilla_extract::producer_atoms::ProducerAtoms::default();
-    let mut producer_references = vanilla_extract::style_references::StyleReferences::default();
-    let mut reference_bindings = FxHashMap::default();
-    if utils::is_vanilla_extract_file(filename)
+    let mut dependencies = native.map_or_else(Default::default, |prepared| {
+        prepared.imports.dependencies.clone()
+    });
+    let mut producer_atoms =
+        native.map_or_else(Default::default, |prepared| prepared.imports.atoms.clone());
+    let mut producer_references =
+        native.map_or_else(Default::default, |prepared| prepared.references.clone());
+    let mut reference_bindings =
+        native.map_or_else(Default::default, |prepared| prepared.bindings.clone());
+    if native.is_none()
+        && utils::is_vanilla_extract_file(filename)
         && !values_run
         && stylesheet_policy::imports_plain(&transformed_code, filename, &option, resolver)
         && let Some((computed, value_edits, read)) = build_time_values::evaluate_located(
@@ -429,7 +484,11 @@ fn extract_source(
         let mut output = extract_source(
             filename,
             &computed,
-            Some((source, &layers)),
+            Some(Evaluated {
+                source,
+                edits: &layers,
+                native,
+            }),
             true,
             option,
             source_map,
@@ -444,9 +503,10 @@ fn extract_source(
     // Step 3: Handle vanilla-extract style files (.css.ts, .css.js)
     // `processed_code` is Some only when vanilla-extract generation succeeded;
     // otherwise the untouched `transformed_code` is parsed directly (no copy).
-    let processed_code: Option<String> = if (utils::is_vanilla_extract_file(filename)
-        || (option.import_aliases.contains_key("@vanilla-extract/css")
-            && ordinary_ve::is_module(filename, code)))
+    let processed_code: Option<String> = if native.is_none()
+        && (utils::is_vanilla_extract_file(filename)
+            || (option.import_aliases.contains_key("@vanilla-extract/css")
+                && ordinary_ve::is_module(filename, code)))
         && stylesheet_policy::plan(&transformed_code, filename, &option, resolver, &|_| false)
             == stylesheet_policy::Plan::Run
     {
@@ -563,14 +623,14 @@ fn extract_source(
             ..ParseOptions::default()
         })
         .parse();
-    let semantic_diagnostics = if diagnostics.is_empty() {
+    let semantic = diagnostics.is_empty().then(|| {
         oxc_semantic::SemanticBuilder::new()
             .with_check_syntax_error(true)
             .build(&program)
-            .diagnostics
-    } else {
-        Default::default()
-    };
+    });
+    let semantic_diagnostics = semantic
+        .as_ref()
+        .map_or(&[][..], |result| result.diagnostics.as_slice());
     if fatal_error || !diagnostics.is_empty() || !semantic_diagnostics.is_empty() {
         let (source, earlier_edits) = evaluated.unwrap_or((code, &[]));
         let edits: Vec<&[import_alias_visit::Edit]> = std::iter::once(alias_edits.as_slice())
@@ -595,6 +655,7 @@ fn extract_source(
             .collect();
         return Err(located_errors(filename, source, &edits, errors).into());
     }
+    let validated_scoping = semantic.map(|result| std::rc::Rc::new(result.semantic.into_scoping()));
     let inlined = if processed_code.is_none() {
         imported_constants::inline_constants(
             &oxc_ast::builder::AstBuilder::new(&allocator),
@@ -619,7 +680,9 @@ fn extract_source(
     visitor.import_css(inlined.css_styles);
     visitor.import_producer_atoms(producer_atoms.clone());
     visitor.import_producer_references(producer_references.clone());
-    visitor.style_operand_mode = if processed_code.is_some() {
+    visitor.style_operand_mode = if let Some(prepared) = native {
+        vanilla_extract::StyleOperandMode::Generated(prepared.css.clone())
+    } else if processed_code.is_some() {
         vanilla_extract::StyleOperandMode::Ordered
     } else {
         vanilla_extract::StyleOperandMode::Merged
@@ -627,7 +690,7 @@ fn extract_source(
     visitor.unknown_bindings(&inlined.unknown);
     visitor.changed_bindings(inlined.changed.clone());
     visitor.takes_css_prop(css_prop);
-    visitor.reuse_scoping(inlined.scoping);
+    visitor.reuse_scoping(inlined.scoping.or(validated_scoping));
     visitor.visit_program(&mut program);
     if !has_relevant_import && alias_edits.is_empty() && !visitor.compiled_css_prop {
         // No element took the `css` prop the text seemed to give
@@ -673,7 +736,11 @@ fn extract_source(
         let mut output = extract_source(
             filename,
             &computed,
-            Some((source, &layers)),
+            Some(Evaluated {
+                source,
+                edits: &layers,
+                native,
+            }),
             true,
             option,
             source_map,
@@ -18743,6 +18810,7 @@ const base = style({ color: 'red' });
 export const a = style([base, { margin: 2 }]);
 export const b = css(base, 'extra', { padding: 1 });
 export const c = css([base]);
+const cond = true;
 export const d = style([cond && base]);",
                 ExtractOption {
                     package: "@devup-ui/react".to_string(),

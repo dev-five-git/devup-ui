@@ -1,6 +1,6 @@
 ---
 source: libs/extractor/src/lib.rs
-expression: "ToBTreeSet::from(extract(\"test.tsx\",\nr\"import { style } from '@vanilla-extract/css';\nimport { css } from '@emotion/react';\nconst base = style({ color: 'red' });\nexport const a = style([base, { margin: 2 }]);\nexport const b = css(base, 'extra', { padding: 1 });\nexport const c = css([base]);\nexport const d = style([cond && base]);\",\nExtractOption\n{\n    package: \"@devup-ui/react\".to_string(), css_dir:\n    \"@devup-ui/react\".to_string(), single_css: true, import_main_css: false,\n    import_aliases:\n    HashMap::from([(\"@emotion/react\".to_string(), ImportAlias::NamedToNamed),\n    (\"@vanilla-extract/css\".to_string(), ImportAlias::NamedToNamed)])\n},).unwrap())"
+expression: "ToBTreeSet::from(extract(\"test.tsx\",\nr\"import { style } from '@vanilla-extract/css';\nimport { css } from '@emotion/react';\nconst base = style({ color: 'red' });\nexport const a = style([base, { margin: 2 }]);\nexport const b = css(base, 'extra', { padding: 1 });\nexport const c = css([base]);\nconst cond = true;\nexport const d = style([cond && base]);\",\nExtractOption\n{\n    package: \"@devup-ui/react\".to_string(), css_dir:\n    \"@devup-ui/react\".to_string(), single_css: true, import_main_css: false,\n    import_aliases:\n    HashMap::from([(\"@emotion/react\".to_string(), ImportAlias::NamedToNamed),\n    (\"@vanilla-extract/css\".to_string(), ImportAlias::NamedToNamed)])\n},).unwrap())"
 ---
 ToBTreeSet {
     styles: {
@@ -35,5 +35,5 @@ ToBTreeSet {
             },
         ),
     },
-    code: "import \"@devup-ui/react/devup-ui.css\";\nconst base = \"a\";\nexport const a = \"a b\";\nexport const b = \"extra a c\";\nexport const c = \"a\";\nexport const d = cond ? \"a\" : \"\";\n",
+    code: "import \"@devup-ui/react/devup-ui.css\";\nconst __ve_capture_0__ = \"f0_0 a\";\nconst __ve_capture_1__ = \"f0_0 f0_1 a b\";\nconst __ve_capture_2__ = \"f0_0 f0_2 a\";\nconst base = __ve_capture_0__;\nexport const a = __ve_capture_1__;\nexport const b = `extra c ${base}`;\nexport const c = base;\nconst cond = true;\nexport const d = __ve_capture_2__;\n",
 }

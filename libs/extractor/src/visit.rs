@@ -366,10 +366,15 @@ impl<'a> DevupVisitor<'a> {
                 argument => argument.to_expression(),
             })
             .collect();
-        let ordered_rules = matches!(
-            self.style_operand_mode,
-            crate::vanilla_extract::StyleOperandMode::Ordered
-        ) && arguments.len() > 1
+        let ordered = match &self.style_operand_mode {
+            crate::vanilla_extract::StyleOperandMode::Merged => false,
+            crate::vanilla_extract::StyleOperandMode::Ordered => true,
+            crate::vanilla_extract::StyleOperandMode::Generated(name) => matches!(
+                &call.callee, Expression::Identifier(identifier) if name.as_deref() == Some(identifier.name.as_str())
+            ),
+        };
+        let ordered_rules = ordered
+            && arguments.len() > 1
             && arguments.iter().any(|argument| {
                 matches!(
                     unwrap_syntax_only(argument),

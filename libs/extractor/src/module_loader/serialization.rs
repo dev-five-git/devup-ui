@@ -10,50 +10,68 @@ pub(super) fn value_to_code(
     names: &FxHashMap<String, String>,
     seen: &mut Vec<JsObject>,
 ) -> JsResult<Option<String>> {
-    if let Some(text) = js_str(value) {
-        return Ok(Some(string_code(&text, names)));
+    Serializer {
+        context,
+        names,
+        seen,
     }
-    if value.is_null_or_undefined() || value.is_number() || value.as_boolean().is_some() {
-        return to_text(value, context).map(Some);
-    }
-    let Some(object) = value.as_object() else {
-        return Ok(None);
-    };
-    if object.is_callable()
-        || seen
-            .iter()
-            .any(|visited| JsObject::equals(visited, &object))
-    {
-        return Ok(None);
-    }
-    seen.push(object.clone());
-    let mut parts = Vec::new();
-    let code = if let Some(items) = array_items(value, context)? {
-        for item in &items {
-            let Some(code) = value_to_code(item, context, names, seen)? else {
-                return Ok(None);
-            };
-            parts.push(code);
+    .encode(value)
+}
+
+struct Serializer<'a> {
+    context: &'a mut Context,
+    names: &'a FxHashMap<String, String>,
+    seen: &'a mut Vec<JsObject>,
+}
+
+impl Serializer<'_> {
+    fn encode(&mut self, value: &JsValue) -> JsResult<Option<String>> {
+        if let Some(text) = js_str(value) {
+            return Ok(Some(string_code(&text, self.names)));
         }
-        format!("[{}]", parts.join(", "))
-    } else if is_plain_object(&object, context) {
-        for (key, name) in own_keys(&object, context)? {
-            let item = object.get(key, context)?;
-            let Some(code) = value_to_code(&item, context, names, seen)? else {
-                return Ok(None);
-            };
-            parts.push(format!("{}: {code}", json_string(&name)));
+        if value.is_null_or_undefined() || value.is_number() || value.as_boolean().is_some() {
+            return to_text(value, self.context).map(Some);
         }
-        if parts.is_empty() {
-            "{}".to_string()
+        let Some(object) = value.as_object() else {
+            return Ok(None);
+        };
+        if object.is_callable()
+            || self
+                .seen
+                .iter()
+                .any(|visited| JsObject::equals(visited, &object))
+        {
+            return Ok(None);
+        }
+        self.seen.push(object.clone());
+        let mut parts = Vec::new();
+        let code = if let Some(items) = array_items(value, self.context)? {
+            for item in &items {
+                let Some(code) = self.encode(item)? else {
+                    return Ok(None);
+                };
+                parts.push(code);
+            }
+            format!("[{}]", parts.join(", "))
+        } else if is_plain_object(&object, self.context) {
+            for (key, name) in own_keys(&object, self.context)? {
+                let item = object.get(key, self.context)?;
+                let Some(code) = self.encode(&item)? else {
+                    return Ok(None);
+                };
+                parts.push(format!("{}: {code}", json_string(&name)));
+            }
+            if parts.is_empty() {
+                "{}".to_string()
+            } else {
+                format!("{{ {} }}", parts.join(", "))
+            }
         } else {
-            format!("{{ {} }}", parts.join(", "))
-        }
-    } else {
-        return Ok(None);
-    };
-    seen.pop();
-    Ok(Some(code))
+            return Ok(None);
+        };
+        self.seen.pop();
+        Ok(Some(code))
+    }
 }
 
 #[cfg(test)]
