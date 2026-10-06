@@ -6,7 +6,39 @@ use oxc_semantic::SemanticBuilder;
 use rustc_hash::FxHashMap;
 use std::rc::Rc;
 
+/// Evaluated own slots eligible for shallow freeze protection. Namespace
+/// exports are not locally allocated containers and cannot acquire this proof.
+enum Container {
+    Record(Rc<Vec<(String, Constant)>>),
+    Array(Rc<Vec<Constant>>),
+}
+
 impl ModuleScope<'_, '_> {
+    /// What `name` holds, or where code changes it when it is an object or
+    /// array the module changes.
+    pub(super) fn lookup(&mut self, modules: &mut Modules<'_>, name: &str) -> Option<Constant> {
+        let value = self.lookup_raw(modules, name);
+        if value.as_ref().is_none_or(Constant::is_mutable)
+            && let Some(change) = self.change(modules, name)
+        {
+            if let Some(value) = &value
+                && self.primitive_snapshot(&change)
+            {
+                return Some(value.clone());
+            }
+            return Some(match value {
+                Some(Constant::Record(fields)) => {
+                    self.frozen_value(name, Container::Record(fields), &change)
+                }
+                Some(Constant::Array(values)) => {
+                    self.frozen_value(name, Container::Array(values), &change)
+                }
+                Some(_) | None => Constant::Changed(change),
+            });
+        }
+        value
+    }
+
     pub(super) fn change(&mut self, modules: &mut Modules<'_>, name: &str) -> Option<Rc<Change>> {
         if self.uses.is_none() {
             let option = modules.option;
@@ -126,12 +158,7 @@ impl ModuleScope<'_, '_> {
         }
     }
 
-    pub(super) fn frozen_value(
-        &self,
-        name: &str,
-        value: Constant,
-        change: &Rc<Change>,
-    ) -> Constant {
+    fn frozen_value(&self, name: &str, value: Container, change: &Rc<Change>) -> Constant {
         let ChangeSite::Here(at) = change.site else {
             return Constant::Changed(change.clone());
         };
@@ -162,16 +189,15 @@ impl ModuleScope<'_, '_> {
             }
         };
         match value {
-            Constant::Record(fields) => Constant::Record(Rc::new(
+            Container::Record(fields) => Constant::Record(Rc::new(
                 fields
                     .iter()
                     .map(|(key, value)| (key.clone(), protect(value)))
                     .collect(),
             )),
-            Constant::Array(values) => {
+            Container::Array(values) => {
                 Constant::Array(Rc::new(values.iter().map(protect).collect()))
             }
-            other => other,
         }
     }
 

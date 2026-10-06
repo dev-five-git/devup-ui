@@ -68,6 +68,10 @@ pub(super) fn reads_arguments(proof: &Proof<'_, '_>, call: &CallExpression<'_>) 
     scalar(proof, &parameters, returned)
 }
 
+#[cfg(test)]
+#[path = "readonly_helper_tests.rs"]
+mod tests;
+
 fn scalar_return<'s, 'a>(body: &'s FunctionBody<'a>) -> Option<&'s Expression<'a>> {
     match body.statements.as_slice() {
         [Statement::ReturnStatement(statement)] => statement.argument.as_ref(),

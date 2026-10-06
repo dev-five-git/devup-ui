@@ -504,8 +504,7 @@ fn inline_in<'a>(
         loading: Vec::new(),
     };
     let mut symbols: FxHashMap<SymbolId, Constant> = FxHashMap::default();
-    let scalar_reads;
-    let reads_math = {
+    let (reads_math, scalar_reads) = {
         let mut scope = ModuleScope::new(filename, program, None);
         scope.style_names.extend(
             style
@@ -646,8 +645,10 @@ fn inline_in<'a>(
                 symbols.extend(symbol.get().map(|symbol| (symbol, constant.clone())));
             }
         }
-        scalar_reads = scalar_reads::resolve(&scope, &read.scalar_reads);
-        reads_math
+        (
+            reads_math,
+            scalar_reads::resolve(&scope, &read.scalar_reads),
+        )
     };
     inlined.dependencies = modules.exports.into_keys().collect();
     let mut pending = declarations;
@@ -1557,26 +1558,6 @@ impl<'p, 'a> ModuleScope<'p, 'a> {
             }
         }
         names
-    }
-
-    /// What `name` holds, or where code changes it when it is an object or
-    /// array the module changes
-    fn lookup(&mut self, modules: &mut Modules<'_>, name: &str) -> Option<Constant> {
-        let value = self.lookup_raw(modules, name);
-        if value.as_ref().is_none_or(Constant::is_mutable)
-            && let Some(change) = self.change(modules, name)
-        {
-            if let Some(value) = &value
-                && self.primitive_snapshot(&change)
-            {
-                return Some(value.clone());
-            }
-            return Some(match value {
-                Some(value) => self.frozen_value(name, value, &change),
-                None => Constant::Changed(change),
-            });
-        }
-        value
     }
 
     fn lookup_raw(&mut self, modules: &mut Modules<'_>, name: &str) -> Option<Constant> {

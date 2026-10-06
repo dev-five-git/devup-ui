@@ -22,6 +22,7 @@ use crate::imported_constants::provenance::Proof;
 pub(crate) mod callees;
 mod compiled;
 mod readonly_helpers;
+mod receiver;
 
 /// How code uses a top-level binding
 #[derive(Debug)]
@@ -217,7 +218,7 @@ impl Context<'_, '_> {
                 changes(&path)
             }
             AstKind::CallExpression(call) if call.callee.span() == span => {
-                self.method_call(parent, at, path)
+                self.method_call(receiver::CallSite { node: parent, expression: call }, at, path)
             }
             AstKind::CallExpression(call) => {
                 let function = self.global_function(&call.callee);
@@ -292,63 +293,6 @@ impl Context<'_, '_> {
             }
             _ => None,
         }
-    }
-
-    /// `path` read as a method called on what comes before its last key
-    fn method_call(&self, call: NodeId, at: u32, mut path: Vec<Option<String>>) -> Option<Use> {
-        // A local call can return captured references into a new holder.
-        let Some(method) = path.pop() else {
-            let AstKind::CallExpression(expression) = self.nodes.kind(call) else {
-                return None;
-            };
-            let Expression::Identifier(identifier) = &expression.callee else {
-                return None;
-            };
-            let symbol = binding_of(self.scoping, identifier)?;
-            let proof = Proof {
-                nodes: self.nodes,
-                scoping: self.scoping,
-            };
-            let body = proof.factory(symbol)?;
-            let mut captures = ReturnedCapture {
-                proof: &proof,
-                found: false,
-            };
-            captures.visit_expression(body);
-            return captures.found.then(|| self.classify(call)).flatten();
-        };
-        if let Some(method) = method.as_deref() {
-            if MUTATING_METHODS.contains(&method) {
-                return Some(Use::Changes {
-                    at,
-                    depth: path.len() + 1,
-                });
-            }
-            if ELEMENT_METHODS.contains(&method) {
-                if !callees::pristine(
-                    &Proof {
-                        nodes: self.nodes,
-                        scoping: self.scoping,
-                    },
-                    "Array",
-                ) || !matches!(
-                    self.init.map(|init| Proof {
-                        nodes: self.nodes,
-                        scoping: self.scoping
-                    }
-                    .expression(init)),
-                    Some(crate::imported_constants::provenance::Shape::Array(_))
-                ) {
-                    return (!self.in_style(call)).then_some(Use::Calls { at, path });
-                }
-                path.push(None);
-                return self.escapes(call, at, path);
-            }
-            if !self.uses_this(&path, method) {
-                return None;
-            }
-        }
-        (!self.in_style(call)).then_some(Use::Calls { at, path })
     }
 
     /// Whether the method `method` of what `path` leads to in the binding's
@@ -800,3 +744,6 @@ function inner() { const kept = { a }; }"
 
 #[cfg(test)]
 mod scope_tests;
+
+#[cfg(test)]
+mod freeze_return_tests;

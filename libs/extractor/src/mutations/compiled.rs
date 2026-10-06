@@ -134,3 +134,7 @@ impl Context<'_, '_> {
         }
     }
 }
+
+#[cfg(test)]
+#[path = "compiled_tests.rs"]
+mod tests;

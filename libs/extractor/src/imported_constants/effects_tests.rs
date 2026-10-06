@@ -97,3 +97,14 @@ fn dependency_cause_when_aliases_share_a_hazard_uses_the_binding_name_tie_break(
     // Then
     assert!(error.contains("`a`"), "{error}");
 }
+
+#[test]
+#[serial_test::serial]
+fn frozen_namespace_when_nested_exports_escape_is_not_a_local_container_proof() {
+    // Given
+    let source = "import {css} from '@devup-ui/react';import * as values from './values';Object.freeze(values);watch(values);css({p:values.made.p});";
+    // When
+    let result = extracted(source, "export const made={ p: 1 };");
+    // Then
+    assert!(result.is_err(), "{result:?}");
+}

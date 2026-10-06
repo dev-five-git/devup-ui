@@ -119,6 +119,7 @@ fn indirect_eval_when_mutating_globals_blocks_later_math(#[case] hazard: &str) {
 #[rstest]
 #[case("const eval=()=>0;eval('made.p=2');")]
 #[case("function other(eval){eval('made.p=2')}other(()=>0);")]
+#[case("const first=second;const second=first;first(input);")]
 fn shadowed_eval_when_valid_in_script_is_not_a_lexical_barrier(#[case] source: &str) {
     // Given
     let allocator = oxc_allocator::Allocator::default();
