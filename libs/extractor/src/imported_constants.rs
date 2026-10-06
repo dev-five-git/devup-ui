@@ -25,7 +25,10 @@ use oxc_syntax::symbol::SymbolId;
 use rustc_hash::{FxHashMap, FxHashSet};
 
 use crate::stylex::StylexFunction;
-use crate::{ExtractOption, ModuleResolver};
+use crate::{ExtractOption, ModuleResolution, ModuleResolver};
+
+mod exports;
+use exports::Exports;
 
 #[derive(Clone, Debug)]
 enum Constant {
@@ -41,6 +44,8 @@ enum Constant {
     Object(Rc<FxHashMap<String, Constant>>),
     /// An object literal every property of which is known, in source order
     Record(Rc<Vec<(String, Constant)>>),
+    /// An ignored module's empty `CommonJS` object, with ordinary prototype reads
+    IgnoredObject,
     Array(Rc<Vec<Constant>>),
     /// `StyleX` custom properties by key, which read as their `var()`
     Vars(Rc<FxHashMap<String, String>>),
@@ -56,7 +61,10 @@ enum Constant {
 impl Constant {
     /// Whether code can change what it holds
     const fn is_mutable(&self) -> bool {
-        matches!(self, Self::Object(_) | Self::Record(_) | Self::Array(_))
+        matches!(
+            self,
+            Self::Object(_) | Self::Record(_) | Self::IgnoredObject | Self::Array(_)
+        )
     }
 
     /// Whether this value or one it holds is a function
@@ -77,7 +85,8 @@ impl Constant {
             Self::Number(number) => Some(crate::utils::js_number_string(*number)),
             Self::Null => Some("null".to_string()),
             Self::Bool(value) => Some(value.to_string()),
-            Self::Undefined => Some("undefined".to_string()),
+            Self::Undefined => Some("(void 0)".to_string()),
+            Self::IgnoredObject => Some("({})".to_string()),
             Self::Record(entries) => {
                 let mut properties = Vec::with_capacity(entries.len());
                 for (key, value) in entries.iter() {
@@ -734,15 +743,14 @@ struct Modules<'r> {
 }
 
 impl Modules<'_> {
-    fn exports(
-        &mut self,
-        specifier: &str,
-        importer: &str,
-    ) -> Option<Rc<FxHashMap<String, Constant>>> {
-        let module = (self.resolver?)(specifier, importer)?;
+    fn exports(&mut self, specifier: &str, importer: &str) -> Option<Exports> {
+        let module = match (self.resolver?)(specifier, importer)? {
+            ModuleResolution::Ignored => return Some(Exports::Ignored),
+            ModuleResolution::Resolved(module) => module,
+        };
         let key = (module.path.clone(), module.code.clone(), module.source_type);
         if let Some(exports) = self.exports.get(&key) {
-            return Some(exports.clone());
+            return Some(Exports::Partial(exports.clone()));
         }
         if self.loading.contains(&module.path) {
             return None;
@@ -751,7 +759,7 @@ impl Modules<'_> {
         let exports = Rc::new(self.read(&module.path, &module.code, module.source_type));
         self.loading.pop();
         self.exports.insert(key, exports.clone());
-        Some(exports)
+        Some(Exports::Partial(exports))
     }
 
     fn read(
@@ -805,11 +813,8 @@ impl Modules<'_> {
                 Statement::ExportFromDeclaration(export) => {
                     if let Some(from) = self.exports(&export.source.value, path) {
                         for specifier in &export.specifiers {
-                            if let Some(constant) = from.get(specifier.local.name().as_str()) {
-                                exports.insert(
-                                    specifier.exported.name().to_string(),
-                                    constant.clone(),
-                                );
+                            if let Some(constant) = from.named(specifier.local.name().as_str()) {
+                                exports.insert(specifier.exported.name().to_string(), constant);
                             }
                         }
                     }
@@ -818,10 +823,10 @@ impl Modules<'_> {
                     if let Some(from) = self.exports(&export.source.value, path) {
                         match &export.exported {
                             Some(exported) => {
-                                exports.insert(exported.name().to_string(), Constant::Object(from));
+                                exports.insert(exported.name().to_string(), from.namespace());
                             }
                             None => {
-                                for (name, constant) in from.iter() {
+                                for (name, constant) in from.entries() {
                                     if name != "default" {
                                         exports
                                             .entry(name.clone())
@@ -1092,8 +1097,9 @@ impl<'p, 'a> ModuleScope<'p, 'a> {
             self.uses = Some(uses.clone());
             uses
         };
-        let namespace = matches!(self.imports.get(name), Some((_, Imported::Namespace)));
         let value = self.lookup_raw(modules, name);
+        let namespace = matches!(self.imports.get(name), Some((_, Imported::Namespace)))
+            && !matches!(value, Some(Constant::IgnoredObject));
         let mut change = None;
         for found in uses.get(name).into_iter().flatten() {
             change = match found {
@@ -1271,8 +1277,8 @@ impl<'p, 'a> ModuleScope<'p, 'a> {
         let (source, imported) = self.imports.get(name)?;
         let exports = modules.exports(source, self.path)?;
         match imported {
-            Imported::Named(export) => exports.get(export).cloned(),
-            Imported::Namespace => Some(Constant::Object(exports)),
+            Imported::Named(export) => exports.named(export),
+            Imported::Namespace => Some(exports.namespace()),
         }
     }
 
@@ -1476,6 +1482,18 @@ impl<'p, 'a> ModuleScope<'p, 'a> {
                 member.property.name.as_str(),
             ),
             Expression::CallExpression(call) => match &call.callee {
+                Expression::Identifier(callee)
+                    if callee.name == "require" && !self.binds("require") =>
+                {
+                    let [Argument::StringLiteral(source)] = call.arguments.as_slice() else {
+                        return None;
+                    };
+                    Some(
+                        modules
+                            .exports(source.value.as_str(), self.path)?
+                            .namespace(),
+                    )
+                }
                 Expression::StaticMemberExpression(callee)
                     if self.is_global_math(&callee.object) =>
                 {
@@ -1529,12 +1547,15 @@ impl<'p, 'a> ModuleScope<'p, 'a> {
                     (key, value)
                 }
                 ObjectPropertyKind::SpreadProperty(spread) => {
-                    if let Some(Constant::Record(spread)) = self.evaluate(modules, &spread.argument)
-                    {
-                        for (key, value) in spread.iter() {
-                            set_entry(&mut entries, key.clone(), value.clone());
+                    match self.evaluate(modules, &spread.argument) {
+                        Some(Constant::IgnoredObject) => continue,
+                        Some(Constant::Record(spread)) => {
+                            for (key, value) in spread.iter() {
+                                set_entry(&mut entries, key.clone(), value.clone());
+                            }
+                            continue;
                         }
-                        continue;
+                        _ => {}
                     }
                     (None, None)
                 }
@@ -1590,6 +1611,25 @@ fn member_of(object: &Constant, key: &str) -> Option<Constant> {
             .iter()
             .find(|(name, _)| name == key)
             .map(|(_, value)| value.clone()),
+        Constant::IgnoredObject
+            if !matches!(
+                key,
+                "constructor"
+                    | "toString"
+                    | "toLocaleString"
+                    | "valueOf"
+                    | "hasOwnProperty"
+                    | "isPrototypeOf"
+                    | "propertyIsEnumerable"
+                    | "__proto__"
+                    | "__defineGetter__"
+                    | "__defineSetter__"
+                    | "__lookupGetter__"
+                    | "__lookupSetter__"
+            ) =>
+        {
+            Some(Constant::Undefined)
+        }
         Constant::Array(values) => key
             .parse::<usize>()
             .ok()
@@ -1874,6 +1914,17 @@ impl<'a> Inline<'_, 'a> {
             )),
             Constant::Null => Some(Expression::new_null_literal(SPAN, builder)),
             Constant::Bool(value) => Some(Expression::new_boolean_literal(SPAN, *value, builder)),
+            Constant::Undefined => Some(Expression::new_unary_expression(
+                SPAN,
+                oxc_syntax::operator::UnaryOperator::Void,
+                Expression::new_numeric_literal(SPAN, 0.0, None, NumberBase::Decimal, builder),
+                builder,
+            )),
+            Constant::IgnoredObject if self.objects => Some(Expression::new_object_expression(
+                SPAN,
+                oxc_allocator::Vec::new_in(builder),
+                builder,
+            )),
             Constant::Record(entries) if self.objects => {
                 let mut properties = oxc_allocator::Vec::with_capacity_in(entries.len(), builder);
                 for (key, value) in entries.iter() {
@@ -1961,7 +2012,9 @@ impl<'a> VisitMut<'a> for Inline<'_, 'a> {
     }
 
     fn visit_call_expression(&mut self, call: &mut oxc_ast::ast::CallExpression<'a>) {
-        self.visit_expression(&mut call.callee);
+        if !matches!(self.constant(&call.callee), Some(Constant::Undefined)) {
+            self.visit_expression(&mut call.callee);
+        }
         let objects = self.apis.reads(&call.callee);
         let styles = is_style_root(self.style_roots, &call.callee);
         self.reading_styles(styles, |inline| {

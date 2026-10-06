@@ -2,6 +2,7 @@ import { readFileSync } from 'node:fs'
 import { extname } from 'node:path'
 
 import type {
+  ModuleResolution,
   PreparedSource,
   PrepareSource,
   ResolvedModule,
@@ -11,7 +12,7 @@ import { readPreparedSource } from './prepared-source'
 import type { MdxSelection } from './source-selection'
 
 export interface ModuleResolver {
-  (specifier: string, importer: string): ResolvedModule | undefined
+  (specifier: string, importer: string): ModuleResolution | undefined
   remapError(error: unknown): Error
 }
 

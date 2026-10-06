@@ -52,7 +52,7 @@ export function createMdxOwnership(options: {
     observe(filename: string, contents: string, typescript: boolean) {
       for (const reference of scanImports(contents, true, typescript)) {
         const target = resolver(reference.specifier, filename)
-        if (target) reach(target.path, filename)
+        if (target?.path !== undefined) reach(target.path, filename)
       }
     },
     loaded(filename: string) {
