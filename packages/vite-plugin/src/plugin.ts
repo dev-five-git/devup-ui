@@ -24,6 +24,8 @@ import {
   normalizeMdxExtensions,
   planAtomHoist,
   remapMdxError,
+  type ResolutionInputObserver,
+  resolutionWatchPath,
   resolveProjectPaths,
   resolveSourceDirs,
   seedFileNumbers,
@@ -55,6 +57,7 @@ import type {
 
 import { createAggregateCssPreparation } from './aggregate-css'
 import { createCompiledGuard } from './compiled-guard'
+import { createMissingInputWatch } from './resolution-watch'
 
 /**
  * CSS entry files emitted by devup-ui: `devup-ui.css`, `devup-ui-3.css`, ...
@@ -324,20 +327,33 @@ export function DevupUI({
   let isServe = false
   let isProduction = false
   let seedWarningEmitted = false
-  const resolvers = new Map<string, ReturnType<typeof createModuleResolver>>()
-  function moduleResolver(conditions: readonly string[]) {
-    const key = JSON.stringify([projectRoot, conditions])
-    let resolver = resolvers.get(key)
-    if (!resolver) {
-      resolver = createModuleResolver({
-        cwd: projectRoot,
-        includeMdx: mdxExtensions,
-        conditions,
-        toId: (path) => path.replaceAll('\\', '/'),
-      })
-      resolvers.set(key, resolver)
-    }
-    return resolver
+  const setupWatchFiles = new Set<string>()
+  const missingWatchContexts = new Map<object, (path: string) => void>()
+  const missingInputWatch = createMissingInputWatch()
+  let fallbackConditions: readonly string[] = [
+    'import',
+    'module',
+    'require',
+    'node',
+  ]
+  const observeSetup: ResolutionInputObserver = (inputs) => {
+    for (const path of [
+      ...inputs.fileDependencies,
+      ...inputs.missingDependencies,
+    ])
+      setupWatchFiles.add(path)
+  }
+  function moduleResolver(
+    conditions: readonly string[],
+    onResolutionInputs: ResolutionInputObserver = observeSetup,
+  ) {
+    return createModuleResolver({
+      cwd: projectRoot,
+      includeMdx: mdxExtensions,
+      conditions,
+      onResolutionInputs,
+      toId: (path) => path.replaceAll('\\', '/'),
+    })
   }
   // The dev server watches cssDir, so every write is an update signal. A
   // module transformed again writes its sheet again, and the reload that
@@ -357,21 +373,45 @@ export function DevupUI({
       resolveFallbackPaths()
       const fileName = id.split('?')[0]
       if (excludeModules.test(fileName)) return
+      const environment = this.environment ?? plugin
+      const preserveSymlinks =
+        this.environment?.config.resolve.preserveSymlinks ??
+        resolvedConfig?.resolve?.preserveSymlinks
+      missingInputWatch.start(fileName, environment)
       aggregateCss.observe(this.environment ?? plugin, id)
       const environmentConditions = this.environment?.config.resolve.conditions
-      if (environmentConditions) {
-        setModuleResolver(
-          moduleResolver(
-            ['import', ...environmentConditions].map((condition) =>
-              condition === 'development|production'
-                ? isProduction
-                  ? 'production'
-                  : 'development'
-                : condition,
-            ),
+      setModuleResolver(
+        moduleResolver(
+          (environmentConditions
+            ? ['import', ...environmentConditions]
+            : fallbackConditions
+          ).map((condition) =>
+            condition === 'development|production'
+              ? isProduction
+                ? 'production'
+                : 'development'
+              : condition,
           ),
-        )
-      }
+          (inputs) => {
+            for (const path of inputs.fileDependencies)
+              this.addWatchFile(
+                resolutionWatchPath(path, preserveSymlinks).replaceAll(
+                  '\\',
+                  '/',
+                ),
+              )
+            for (const path of inputs.missingDependencies) {
+              const watched = resolutionWatchPath(
+                path,
+                preserveSymlinks,
+              ).replaceAll('\\', '/')
+              setupWatchFiles.add(path)
+              missingInputWatch.observe(fileName, watched, environment)
+              missingWatchContexts.get(this.environment ?? plugin)?.(watched)
+            }
+          },
+        ),
+      )
       let rel = relative(dirname(id), cssDir).replaceAll('\\', '/')
       if (!rel.startsWith('./')) rel = `./${rel}`
       const {
@@ -422,6 +462,9 @@ export function DevupUI({
     // otherwise recreates this plugin for every environment build, which makes
     // each environment independently emit the same CSS asset.
     sharedDuringBuild: true,
+    configureServer(server) {
+      missingInputWatch.attach(server)
+    },
     async configResolved(config) {
       resolvedConfig = config
       try {
@@ -454,6 +497,7 @@ export function DevupUI({
             : condition,
         )
         // Vite ids are POSIX absolute paths
+        fallbackConditions = conditions
         setModuleResolver(moduleResolver(conditions))
         const sourceDirs = resolveSourceDirs(projectRoot, configuredSourceDirs)
         const input =
@@ -512,6 +556,7 @@ export function DevupUI({
               cwd: root,
               include,
               conditions,
+              onResolutionInputs: observeSetup,
             })
 
             const canonicalMap = buildCanonicalMap({
@@ -612,9 +657,22 @@ export function DevupUI({
       return true
     },
     closeBundle(this: void) {
+      missingInputWatch.close()
+      missingWatchContexts.clear()
       endBuild()
     },
     buildStart(options) {
+      missingWatchContexts.set(this.environment ?? plugin, (path) =>
+        this.addWatchFile(path),
+      )
+      for (const path of setupWatchFiles)
+        this.addWatchFile(
+          resolutionWatchPath(
+            path,
+            this.environment?.config.resolve.preserveSymlinks ??
+              resolvedConfig?.resolve?.preserveSymlinks,
+          ).replaceAll('\\', '/'),
+        )
       if (isServe || !extractCss) return
       aggregateCss.start(
         this.environment ?? plugin,

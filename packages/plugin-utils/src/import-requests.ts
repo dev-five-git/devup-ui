@@ -1,7 +1,12 @@
 import type { ImportRequestReference } from './import-scanner'
+import type { ResolutionInputs } from './resolution-inputs'
 
 export type ImportRequestOutcome =
-  | { readonly kind: 'resolved'; readonly path: string }
+  | {
+      readonly kind: 'resolved'
+      readonly path: string
+      readonly inputs: ResolutionInputs
+    }
   | { readonly kind: 'external'; readonly request: string }
   | { readonly kind: 'ignored' }
   | { readonly kind: 'excluded'; readonly entry: string }

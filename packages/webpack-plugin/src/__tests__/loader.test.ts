@@ -26,7 +26,7 @@ type LoaderThis = ThisParameterType<typeof devupUILoader>
 type LoaderCallback = ReturnType<LoaderThis['async']>
 interface TestLoaderContext extends Pick<
   LoaderThis,
-  'async' | 'resourcePath' | 'addDependency'
+  'async' | 'resourcePath' | 'addDependency' | 'addMissingDependency'
 > {
   getOptions: () => Partial<DevupUILoaderOptions>
   _compiler?: { __DEVUP_CACHE: string }
@@ -58,6 +58,7 @@ function createLoaderContext(
     async: mock().mockReturnValue(callback),
     resourcePath,
     addDependency: mock(),
+    addMissingDependency: mock(),
     ...overrides,
   } as unknown as LoaderThis
 }
@@ -130,6 +131,71 @@ const waitFor = async (fn: () => void, timeout = 1000) => {
 }
 
 describe('devupUILoader', () => {
+  it('refreshes same-root configuration and isolates watches when successive loaders evaluate imports', async () => {
+    // Given unchanged loader options and separately owned dependency subscriptions.
+    const rootDir = mkdtempSync(join(tmpdir(), 'loader-inputs-'))
+    writeFileSync(join(rootDir, 'red.ts'), "export const color='red'")
+    writeFileSync(join(rootDir, 'blue.ts'), "export const color='blue'")
+    const selected: (string | undefined)[] = []
+    const observed = [mock(), mock(), mock()]
+    const missing = [mock(), mock(), mock()]
+    const register = spyOn(wasm, 'setModuleResolver').mockImplementation(
+      (resolver: ReturnType<typeof createModuleResolver>) => {
+        selected.push(resolver('color', 'main.ts')?.code)
+      },
+    )
+    try {
+      // When a missing config is created and its inherited target changes at the same root.
+      for (const index of [0, 1, 2]) {
+        if (index === 1)
+          writeFileSync(
+            join(rootDir, 'tsconfig.json'),
+            '{"extends":"./base.json"}',
+          )
+        if (index > 0)
+          writeFileSync(
+            join(rootDir, 'base.json'),
+            JSON.stringify({
+              compilerOptions: {
+                paths: { color: [index === 1 ? 'red.ts' : 'blue.ts'] },
+              },
+            }),
+          )
+        await new Promise<void>((done) => {
+          const context = createLoaderContext(
+            { rootDir, cssDir: join(rootDir, 'df') },
+            () => done(),
+            join(rootDir, 'main.ts'),
+            {
+              addDependency: observed[index],
+              addMissingDependency: missing[index],
+            },
+          )
+          devupUILoader.call(context, Buffer.from('export {}'))
+        })
+      }
+      // Then each invocation sees current config and watches only through its own context.
+      expect(selected).toEqual([
+        undefined,
+        "export const color='red'",
+        "export const color='blue'",
+      ])
+      expect(missing[0]?.mock.calls).toContainEqual([
+        join(rootDir, 'tsconfig.json'),
+      ])
+      expect(observed[1]?.mock.calls).toContainEqual([join(rootDir, 'red.ts')])
+      expect(observed[2]?.mock.calls).toContainEqual([join(rootDir, 'blue.ts')])
+      expect(observed[0]?.mock.calls).not.toContainEqual([
+        join(rootDir, 'blue.ts'),
+      ])
+      expect(observed[1]?.mock.calls).not.toContainEqual([
+        join(rootDir, 'blue.ts'),
+      ])
+    } finally {
+      register.mockRestore()
+      rmSync(rootDir, { recursive: true, force: true })
+    }
+  })
   it('selects a fresh native alias resolver when ordered entries change at the same root', async () => {
     const root = mkdtempSync(join(tmpdir(), 'loader-alias-'))
     const target = join(root, 'chosen.js')

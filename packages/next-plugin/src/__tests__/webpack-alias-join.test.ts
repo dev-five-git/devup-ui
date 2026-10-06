@@ -15,6 +15,7 @@ import {
   withModuleResolver,
 } from '../wasm'
 import { webpackResourceResolver } from '../webpack-resource-delivery'
+import { expectedJoinResolution } from './join-resolution-inputs'
 import { mdxRule, withSelector } from './webpack-resource-fixture'
 
 const aliasFixture: () => {
@@ -116,7 +117,15 @@ it.each(['first', 'empty', 'self'])(
     const result = await observe({ resolve: { alias } })
     // Then
     expect(result.native).toBe(blue)
-    expect(result.outcome).toEqual({ kind: 'resolved', path: blue })
+    expect(result.outcome).toEqual(
+      expectedJoinResolution(
+        fixture.root,
+        [blue],
+        kind === 'first'
+          ? ['missing', 'missing/package.json', 'missing/index.ts']
+          : [],
+      ),
+    )
     expect(result.css).toContain('color:blue')
   },
 )
@@ -152,7 +161,13 @@ it('matches native subpath fallback when an earlier descriptor is exact', async 
   const result = await observe({ resolve: { alias } }, request)
   // Then
   expect(result.native).toBe(blue)
-  expect(result.outcome).toEqual({ kind: 'resolved', path: blue })
+  expect(result.outcome).toEqual(
+    expectedJoinResolution(
+      fixture.root,
+      [blue],
+      ['target/child', 'target/child.ts'],
+    ),
+  )
   expect(result.css).toContain('color:blue')
 })
 
@@ -169,7 +184,13 @@ it('preserves enhanced-resolve global false at the effective resolver seam', asy
   // Then
   expect(result.native).toBe(blue)
   expect(result.aliases).toBe(false)
-  expect(result.outcome).toEqual({ kind: 'resolved', path: blue })
+  expect(result.outcome).toEqual(
+    expectedJoinResolution(
+      fixture.root,
+      [blue, join(fixture.root, 'node_modules/provider/package.json')],
+      ['src/node_modules/provider/package.json'],
+    ),
+  )
   expect(result.css).toContain('color:blue')
 })
 
@@ -198,7 +219,15 @@ it.each(['module', 'main'])(
     })
     // Then
     expect(result.native).toBe(blue)
-    expect(result.outcome).toEqual({ kind: 'resolved', path: blue })
+    expect(result.outcome).toEqual(
+      expectedJoinResolution(
+        fixture.root,
+        [blue, join(fixture.root, 'target/package.json')],
+        field === 'main'
+          ? ['target.ts', 'target/absent.js', 'target/absent.js/package.json']
+          : ['target.ts'],
+      ),
+    )
     expect(result.css).toContain('color:blue')
   },
 )

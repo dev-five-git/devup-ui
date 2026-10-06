@@ -458,16 +458,30 @@ describe('devupUIWebpackPlugin', () => {
         expect(statSpy).not.toHaveBeenCalled()
       }
     } else expect(compiler.hooks.watchRun.tapPromise).not.toHaveBeenCalled()
+    const resolutionTap = compiler.hooks.afterCompile.tap.mock.calls.find(
+      ([name]) => name === 'DevupUIResolutionInputs',
+    )
+    expect(resolutionTap).toBeDefined()
+    const inputFiles = new Set<string>()
+    const missingInputs = new Set<string>()
+    resolutionTap?.[1]({
+      fileDependencies: inputFiles,
+      missingDependencies: missingInputs,
+    })
+    expect(missingInputs).toContain(resolve('tsconfig.json'))
+    const themeTaps = compiler.hooks.afterCompile.tap.mock.calls.filter(
+      ([name]) => name === 'DevupUIWebpackPlugin',
+    )
     if (options.existsDevupFile) {
       expect(compiler.hooks.afterCompile.tap).toHaveBeenCalled()
       const add = mock()
-      compiler.hooks.afterCompile.tap.mock.calls[0][1]({
+      themeTaps[0]?.[1]({
         fileDependencies: {
           add,
         },
       })
       expect(add).toHaveBeenCalledWith(resolve(plugin.options.devupFile))
-    } else expect(compiler.hooks.afterCompile.tap).not.toHaveBeenCalled()
+    } else expect(themeTaps).toHaveLength(0)
     if (options.existsCssDir) {
       expect(mkdirSpy).not.toHaveBeenCalledWith(plugin.options.cssDir, {
         recursive: true,

@@ -24,6 +24,8 @@ import {
   mergeImportAliases,
   normalizeMdxExtensions,
   planAtomHoist,
+  type ResolutionInputObserver,
+  resolutionWatchPath,
   resolveProjectPaths,
   resolveSourceDirs,
   seedFileNumbers,
@@ -228,6 +230,26 @@ export class DevupUIWebpackPlugin {
     this.fileMapFile = join(paths.distDir, 'fileMap.json')
     const sourceDirs = resolveSourceDirs(cwd, this.options.sourceDirs)
     const resolveOptions = compiler.options.resolve
+    const inputFiles = new Set<string>()
+    const missingInputs = new Set<string>()
+    const onResolutionInputs: ResolutionInputObserver = (inputs) => {
+      for (const path of inputs.fileDependencies)
+        inputFiles.add(
+          resolutionWatchPath(path, resolveOptions?.symlinks === false),
+        )
+      for (const path of inputs.missingDependencies)
+        missingInputs.add(
+          resolutionWatchPath(path, resolveOptions?.symlinks === false),
+        )
+    }
+    compiler.hooks.afterCompile.tap(
+      'DevupUIResolutionInputs',
+      (compilation) => {
+        for (const path of inputFiles) compilation.fileDependencies.add(path)
+        for (const path of missingInputs)
+          compilation.missingDependencies.add(path)
+      },
+    )
     const baseConditions = resolveOptions?.conditionNames ?? [
       'webpack',
       compiler.options.mode === 'development' ? 'development' : 'production',
@@ -278,6 +300,7 @@ export class DevupUIWebpackPlugin {
           includeMdx: this.mdxExtensions,
           conditions,
           alias: resolveOptions?.alias,
+          onResolutionInputs,
           toId: (path) => relative(cwd, path).replaceAll('\\', '/'),
         }),
       )
@@ -351,6 +374,7 @@ export class DevupUIWebpackPlugin {
         include: this.options.include,
         conditions,
         alias: resolveOptions?.alias,
+        onResolutionInputs,
       })
       const canonicalMap = buildCanonicalMap({
         srcDir,
@@ -545,6 +569,7 @@ export class DevupUIWebpackPlugin {
         conditions,
         alias: resolveOptions?.alias,
         mdxExtensions: this.mdxExtensions,
+        symlinks: resolveOptions?.symlinks,
       },
     }
     compiler.options.module.rules.push(

@@ -5,6 +5,7 @@ import { expect, it } from 'bun:test'
 
 import { createMdxSourceManager } from '../mdx-source-generation'
 import { immutableMdxPlan } from '../mdx-source-immutable'
+import { expectedJoinInputs } from './join-resolution-inputs'
 import { sourceFixture, styledMdx } from './mdx-source-fixture'
 
 it('retains request correlations when real generations swap the same target set', async () => {
@@ -77,7 +78,15 @@ it('transports the exact compiled producer ledger and map through immutable deli
     source: 'compiled',
     kind: 'static-import',
     request: './leaf',
-    outcome: { kind: 'resolved', path: join(f.root, 'app/leaf.ts') },
+    outcome: {
+      kind: 'resolved',
+      path: join(f.root, 'app/leaf.ts'),
+      inputs: expectedJoinInputs(
+        f.root,
+        [join(f.root, 'app/leaf.ts')],
+        ['app/leaf'],
+      ),
+    },
   })
   expect(edge?.map).toBe(
     generation.compiled[join(f.root, 'app/page.mdx')]?.prepared.map,
@@ -138,7 +147,15 @@ it('preserves raw spelling, decoded request and duplicate source coordinates', a
       specifier: './leaf',
       position: { offset, line: 1, column: offset + 1 },
       source: 'source',
-      outcome: { kind: 'resolved', path: join(f.root, 'app/leaf.ts') },
+      outcome: {
+        kind: 'resolved',
+        path: join(f.root, 'app/leaf.ts'),
+        inputs: expectedJoinInputs(
+          f.root,
+          [join(f.root, 'app/leaf.ts')],
+          ['app/leaf'],
+        ),
+      },
     })),
   )
 })
@@ -170,7 +187,15 @@ it('delivers descriptor aliases through prepared graph and WASM under original f
   expect(
     generation.plan.graph.requests?.find((edge) => edge.specifier === 'value')
       ?.outcome,
-  ).toEqual({ kind: 'resolved', path: value })
+  ).toEqual({
+    kind: 'resolved',
+    path: value,
+    inputs: expectedJoinInputs(
+      f.root,
+      [value],
+      ['absent', 'absent/package.json', 'absent/index.ts'],
+    ),
+  })
   expect(f.css(generation)).toContain('color:blue')
 })
 

@@ -35,7 +35,17 @@ import('./a'); require('./a'); import './a';`
       specifier: './a',
       position: { offset, line, column },
       source: 'source',
-      outcome: { kind: 'resolved', path: leaf },
+      outcome: {
+        kind: 'resolved',
+        path: leaf,
+        inputs: {
+          fileDependencies: [leaf],
+          missingDependencies: [
+            join(root, 'src/a'),
+            join(root, 'tsconfig.json'),
+          ].sort(),
+        },
+      },
     })),
   )
   expect(graph.staticImports.get(entry)).toEqual(new Set([leaf]))

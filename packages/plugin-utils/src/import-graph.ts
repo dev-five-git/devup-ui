@@ -34,6 +34,13 @@ import {
 } from './prepared-resolver'
 import { PreparedSourceTypeError, readPreparedSource } from './prepared-source'
 import {
+  createResolutionInputs,
+  readResolutionFile,
+  realpathResolution,
+  type ResolutionInputCollector,
+  type ResolutionInputObserver,
+} from './resolution-inputs'
+import {
   createNodeModulesExcludeRegex,
   SOURCE_EXTENSIONS,
   SOURCE_FILE_RE,
@@ -251,6 +258,8 @@ function* traverseGraph(
       exclusionObservation.outcome = { kind: 'excluded', entry }
     return entry !== undefined
   }
+  let resolutionInputs = createResolutionInputs().snapshot()
+  const graphInputs = createResolutionInputs()
   const resolver = createModulePathResolver(
     {
       cwd,
@@ -258,6 +267,10 @@ function* traverseGraph(
       conditions: options.conditions,
       alias: options.alias,
       includeMdx: options.includeMdx,
+      onResolutionInputs: (inputs) => {
+        resolutionInputs = inputs
+        options.onResolutionInputs?.(inputs)
+      },
     },
     excludedDirectory,
   )
@@ -281,6 +294,8 @@ function* traverseGraph(
   for (let index = 0; index < files.length; index += 1) {
     const file = files[index]
     const prepared = yield file
+    graphInputs.file(file)
+    options.onResolutionInputs?.(graphInputs.snapshot())
     const code = typeof prepared === 'string' ? prepared : prepared?.code
     const imports =
       code === undefined
@@ -323,7 +338,7 @@ function* traverseGraph(
           ...request,
           outcome:
             resolved !== undefined
-              ? { kind: 'resolved', path: resolved }
+              ? { kind: 'resolved', path: resolved, inputs: resolutionInputs }
               : !importRef.specifier.startsWith('.') &&
                   !importRef.specifier.startsWith('/') &&
                   !isAbsolute(importRef.specifier)
@@ -346,17 +361,17 @@ function* traverseGraph(
           const parts = request.split('/')
           const name = parts.slice(0, request.startsWith('@') ? 2 : 1).join('/')
           if (!excluded.test(`node_modules/${name}/`)) {
-            const dir = findPackage(dirname(file), name)
+            const dir = findPackage(dirname(file), name, undefined, graphInputs)
             if (dir) includedRoots.add(realpathSync(dir))
           }
           if (isAbsolute(request) && !local && !excluded.test(resolved)) {
             let directory = dirname(resolved)
             while (
               dirname(directory) !== directory &&
-              !isFile(join(directory, 'package.json'))
+              !isFile(join(directory, 'package.json'), graphInputs)
             )
               directory = dirname(directory)
-            if (isFile(join(directory, 'package.json')))
+            if (isFile(join(directory, 'package.json'), graphInputs))
               includedRoots.add(realpathSync(directory))
           }
         }
@@ -410,6 +425,8 @@ function* traverseGraph(
           outcome: { kind: 'error', error },
         })
         throw error
+      } finally {
+        options.onResolutionInputs?.(graphInputs.snapshot())
       }
     }
   }
@@ -427,6 +444,7 @@ function* traverseGraph(
 }
 
 export interface StaticImportGraphOptions {
+  readonly onResolutionInputs?: ResolutionInputObserver
   /** Include MDX only when the caller compiles it before extraction. */
   readonly includeMdx?: MdxSelection
   readonly alias?: ModuleAliasOptions
@@ -1071,6 +1089,7 @@ export interface IgnoredModule {
 export type ModuleResolution = ResolvedModule | IgnoredModule
 
 export interface CreateModuleResolverOptions {
+  readonly onResolutionInputs?: ResolutionInputObserver
   readonly prepareSource?: PrepareSource
   readonly alias?: ModuleAliasOptions
   readonly includeMdx?: MdxSelection
@@ -1122,6 +1141,7 @@ function createModulePathResolver(
     conditions = ['import', 'module', 'require', 'node'],
     alias = {},
     includeMdx,
+    onResolutionInputs,
   }: CreateModuleResolverOptions = {},
   excludedDirectory: (
     directory: string,
@@ -1130,34 +1150,51 @@ function createModulePathResolver(
   specifier: string,
   importer: string,
 ) => AliasResolution | IgnoredModule | false | undefined {
-  const { aliases, baseDir, baseUrl } = readPathAliases(tsconfigPath)
+  const setupInputs = createResolutionInputs()
+  const config = (() => {
+    try {
+      return readPathAliases(tsconfigPath, setupInputs)
+    } finally {
+      onResolutionInputs?.(setupInputs.snapshot())
+    }
+  })()
+  const { aliases, baseDir, baseUrl } = config
+  const setup = setupInputs.snapshot()
   const extensions = sourceExtensions(includeMdx)
-  const fileResolver = (path: string) =>
-    resolveFile(path, { extensions, excludedDirectory })
   return (specifier, importer) => {
+    const inputs = createResolutionInputs(setup)
+    const fileResolver = (path: string) =>
+      resolveFile(path, { extensions, excludedDirectory, inputs })
     const from = resolve(cwd, importer)
-    return resolveModuleAlias(specifier, {
-      alias,
-      importer: from,
-      resolveRequest: (request, aliased) =>
-        request.startsWith('.')
-          ? fileResolver(resolve(dirname(from), request))
-          : isAbsolute(request)
-            ? fileResolver(request)
-            : (resolveAliasCandidates(request, {
-                aliases,
-                aliasBaseDir: baseDir,
-              })
-                .map(fileResolver)
-                .find((candidate) => candidate !== undefined) ??
-              (baseUrl ? fileResolver(resolve(baseUrl, request)) : undefined) ??
-              resolvePackage(request, from, {
-                conditions,
-                fileResolver,
-                excludedDirectory,
-                aliased,
-              })),
-    })
+    try {
+      return resolveModuleAlias(specifier, {
+        alias,
+        importer: from,
+        resolveRequest: (request, aliased) =>
+          request.startsWith('.')
+            ? fileResolver(resolve(dirname(from), request))
+            : isAbsolute(request)
+              ? fileResolver(request)
+              : (resolveAliasCandidates(request, {
+                  aliases,
+                  aliasBaseDir: baseDir,
+                })
+                  .map(fileResolver)
+                  .find((candidate) => candidate !== undefined) ??
+                (baseUrl
+                  ? fileResolver(resolve(baseUrl, request))
+                  : undefined) ??
+                resolvePackage(request, from, {
+                  conditions,
+                  fileResolver,
+                  excludedDirectory,
+                  aliased,
+                  inputs,
+                })),
+      })
+    } finally {
+      onResolutionInputs?.(inputs.snapshot())
+    }
   }
 }
 
@@ -1169,6 +1206,7 @@ function resolvePackage(
     readonly fileResolver: (path: string) => string | false | undefined
     readonly excludedDirectory: (directory: string) => boolean
     readonly aliased: boolean
+    readonly inputs?: ResolutionInputCollector
   },
 ): string | false | undefined {
   const parts = specifier.split('/')
@@ -1178,6 +1216,7 @@ function resolvePackage(
     dirname(importer),
     name,
     options.excludedDirectory,
+    options.inputs,
   )
   if (packageDir === false) return false
   if (!packageDir) return undefined
@@ -1188,7 +1227,7 @@ function resolvePackage(
   )
     return false
   const manifestFile = join(packageDir, 'package.json')
-  const manifest = readPackageManifest(manifestFile)
+  const manifest = readPackageManifest(manifestFile, options.inputs)
   const found = resolvePackageEntry(
     packageDir,
     manifest,
@@ -1198,12 +1237,15 @@ function resolvePackage(
   )
   if (found === undefined && options.aliased && manifest.exports !== undefined)
     throw new ModuleAliasPackageError(importer, specifier)
-  return found ? realpathSync(found) : found
+  return found ? realpathResolution(found, options.inputs) : found
 }
 
-function readPackageManifest(file: string): Record<string, unknown> {
+function readPackageManifest(
+  file: string,
+  inputs?: ResolutionInputCollector,
+): Record<string, unknown> {
   try {
-    const manifest: unknown = JSON.parse(readFileSync(file, 'utf-8'))
+    const manifest: unknown = JSON.parse(readResolutionFile(file, inputs))
     if (!isRecord(manifest) || Array.isArray(manifest))
       throw new TypeError('Expected a package manifest object')
     return manifest
@@ -1216,14 +1258,15 @@ function findPackage(
   dir: string,
   name: string,
   excludedDirectory?: (directory: string) => boolean,
+  inputs?: ResolutionInputCollector,
 ): string | false | undefined {
   const packageDir = join(dir, 'node_modules', name)
   if (excludedDirectory?.(packageDir)) return false
-  if (isFile(join(packageDir, 'package.json'))) return packageDir
+  if (isFile(join(packageDir, 'package.json'), inputs)) return packageDir
   const parent = dirname(dir)
   return parent === dir
     ? undefined
-    : findPackage(parent, name, excludedDirectory)
+    : findPackage(parent, name, excludedDirectory, inputs)
 }
 function resolvePackageEntry(
   dir: string,
@@ -1331,6 +1374,7 @@ function resolveFile(
   options: {
     readonly extensions: readonly string[]
     readonly excludedDirectory: (directory: string) => boolean
+    readonly inputs?: ResolutionInputCollector
   } = {
     extensions: jsExtensions,
     excludedDirectory: createDirectoryExclusion(),
@@ -1342,15 +1386,15 @@ function resolveFile(
     options.excludedDirectory(candidateBase)
   )
     return false
-  if (isFile(candidateBase)) return resolve(candidateBase)
+  if (isFile(candidateBase, options.inputs)) return resolve(candidateBase)
 
   for (const jsExtension of options.extensions) {
     const candidate = `${candidateBase}${jsExtension}`
-    if (isFile(candidate)) return resolve(candidate)
+    if (isFile(candidate, options.inputs)) return resolve(candidate)
   }
   const manifestFile = join(candidateBase, 'package.json')
-  if (isFile(manifestFile)) {
-    const canonical = realpathSync(candidateBase)
+  if (isFile(manifestFile, options.inputs)) {
+    const canonical = realpathResolution(candidateBase, options.inputs)
     if (stack.includes(canonical))
       throw new ConfigLoadError(
         manifestFile,
@@ -1358,7 +1402,7 @@ function resolveFile(
           `Package directory entry cycle: ${[...stack, canonical].join(' -> ')}`,
         ),
       )
-    const manifest = readPackageManifest(manifestFile)
+    const manifest = readPackageManifest(manifestFile, options.inputs)
     for (const main of [manifest.module, manifest.main]) {
       if (typeof main !== 'string' || !main || main === '.' || main === './')
         continue
@@ -1371,22 +1415,27 @@ function resolveFile(
   }
   for (const jsExtension of options.extensions) {
     const candidate = join(candidateBase, `index${jsExtension}`)
-    if (isFile(candidate)) return resolve(candidate)
+    if (isFile(candidate, options.inputs)) return resolve(candidate)
   }
 
   return undefined
 }
 
-function isFile(path: string): boolean {
+function isFile(path: string, inputs?: ResolutionInputCollector): boolean {
   try {
-    return statSync(path).isFile()
+    const file = statSync(path).isFile()
+    if (file) inputs?.file(path)
+    return file
   } catch (cause) {
     if (
       cause instanceof Error &&
       'code' in cause &&
       (cause.code === 'ENOENT' || cause.code === 'ENOTDIR')
-    )
+    ) {
+      inputs?.missing(path)
       return false
+    }
+    inputs?.file(path)
     throw cause
   }
 }
