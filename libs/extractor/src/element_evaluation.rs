@@ -39,6 +39,19 @@ pub(crate) fn typography<'a>(
     source: &Expression<'a>,
     next: &mut usize,
 ) -> Option<(String, Expression<'a>)> {
+    if let [ExtractStyleProp::Enum { condition, .. }] = styles.as_mut_slice() {
+        let name = format!("__devupSpread{next}");
+        *next += 1;
+        let input = std::mem::replace(
+            condition,
+            Expression::new_identifier(
+                source.span(),
+                Str::from_in(name.as_str(), ast.allocator()),
+                ast,
+            ),
+        );
+        return Some((name, input));
+    }
     let mut class = crate::gen_class_name::gen_class_names(ast, styles, None, None)?;
     if matches!(class, Expression::StringLiteral(_))
         && get_string_by_literal_expression(source).is_none()

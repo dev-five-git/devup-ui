@@ -11,6 +11,9 @@ use crate::{
     utils::{call_with_values, merge_object_expressions},
 };
 
+#[path = "assignment_class_reference.rs"]
+mod assignment_class_reference;
+
 impl<'a> Lowering<'_, 'a> {
     pub(super) fn array(
         &self,
@@ -120,21 +123,29 @@ impl<'a> Lowering<'_, 'a> {
             }
         }
         let mut props: Vec<_> = values.into_iter().map(ExtractStyleProp::Static).collect();
-        let alternatives = self.alternate_order.map(|_| {
-            props
+        let mut class_props = styles
+            .iter()
+            .map(|style| style.clone_in(ast.allocator()))
+            .collect::<Vec<_>>();
+        let class_alternatives = self.alternate_order.map(|_| {
+            class_props
                 .iter()
-                .map(|prop| prop.clone_in(ast.allocator()))
+                .map(|style| style.clone_in(ast.allocator()))
                 .collect::<Vec<_>>()
         });
-        let class = gen_class_names(ast, &mut props, self.order, self.filename)
+        let mut class = gen_class_names(ast, &mut class_props, self.order, self.filename)
             .unwrap_or_else(|| Expression::new_string_literal(SPAN, "", None, ast));
-        let alternate = self
-            .alternate_order
-            .zip(alternatives)
-            .map(|(order, mut alternative)| {
-                gen_class_names(ast, &mut alternative, order.value, self.filename)
-                    .unwrap_or_else(|| Expression::new_string_literal(SPAN, "", None, ast))
-            });
+        assignment_class_reference::replace(ast, source, &mut class);
+        let alternate =
+            self.alternate_order
+                .zip(class_alternatives)
+                .map(|(order, mut alternative)| {
+                    let mut class =
+                        gen_class_names(ast, &mut alternative, order.value, self.filename)
+                            .unwrap_or_else(|| Expression::new_string_literal(SPAN, "", None, ast));
+                    assignment_class_reference::replace(ast, source, &mut class);
+                    class
+                });
         props.reverse();
         let inline = gen_styles(ast, &props, self.filename).unwrap_or_else(|| empty(ast));
         let mut value = Expression::new_identifier(SPAN, "__devupValue", ast);

@@ -39,6 +39,9 @@ use std::collections::BTreeMap;
 mod boolean_expression;
 #[cfg(test)]
 mod boolean_or_tests;
+mod class_only_expression;
+#[cfg(test)]
+mod typography_class_tests;
 
 const IGNORED_IDENTIFIERS: [&str; 3] = ["undefined", "NaN", "Infinity"];
 
@@ -294,6 +297,28 @@ fn extract_style_values<'a>(
 ) -> ExtractResult<'a> {
     let mut typo = false;
     let expression = unwrap_syntax_only_mut(expression);
+
+    if let Some(name) = name
+        && (name == "typography" || get_enum_property_map(name).is_some())
+        && class_only_expression::runtime_scalar(expression)
+        && get_string_by_literal_expression(expression).is_none()
+        && !matches!(
+            expression,
+            Expression::BooleanLiteral(_) | Expression::NullLiteral(_)
+        )
+        && !matches!(expression, Expression::Identifier(value) if IGNORED_IDENTIFIERS.contains(&value.name.as_str()))
+    {
+        return ExtractResult {
+            styles: vec![dynamic_style(
+                ast_builder,
+                name,
+                expression,
+                level,
+                selector,
+            )],
+            ..ExtractResult::default()
+        };
+    }
 
     if name.is_none() && selector.is_none() {
         let mut style_order = None;
@@ -691,7 +716,7 @@ fn extract_style_values<'a>(
                     } else if typo {
                         vec![ExtractStyleProp::Expression {
                             expression: Expression::new_template_literal(
-                                SPAN,
+                                expression.span(),
                                 oxc_allocator::Vec::from_array_in(
                                     [
                                         TemplateElement::new(
@@ -1405,7 +1430,14 @@ pub fn dynamic_style<'a>(
     level: u8,
     selector: &Option<StyleSelector>,
 ) -> ExtractStyleProp<'a> {
-    if let Some(map) = get_enum_property_map(name) {
+    if name == "typography" {
+        conditional_typography(ast_builder, expression, level, selector).unwrap_or_else(|| {
+            ExtractStyleProp::Expression {
+                expression: crate::element_evaluation::raw_typography(ast_builder, expression),
+                styles: vec![],
+            }
+        })
+    } else if let Some(map) = get_enum_property_map(name) {
         ExtractStyleProp::Enum {
             condition: expression.clone_in(ast_builder.allocator()),
             map: map

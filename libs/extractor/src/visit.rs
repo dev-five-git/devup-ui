@@ -2072,7 +2072,16 @@ impl<'a> VisitMut<'a> for DevupVisitor<'a> {
                             .iter()
                             .map(|index| props_styles[*index].clone_in(self.ast.allocator()))
                             .collect::<Vec<_>>();
-                        if key == "typography"
+                        if (key == "typography"
+                            || css::get_enum_property_map(&key).is_some()
+                                && object
+                                    .properties
+                                    .iter()
+                                    .any(|later| later.span().start > property.span.start))
+                            && !matches!(
+                                unwrap_syntax_only(&property.value),
+                                Expression::ArrayExpression(_) | Expression::ObjectExpression(_)
+                            )
                             && let Some(value) = crate::element_evaluation::typography(
                                 &self.ast,
                                 &mut selected,
@@ -2460,6 +2469,12 @@ impl<'a> VisitMut<'a> for DevupVisitor<'a> {
             // A spread whose value may change when read again is read once, as
             // its `className` and `style` are read beside it
             let captures_assignments = crate::element_evaluation::needed(elem);
+            let last_attribute = elem
+                .opening_element
+                .attributes
+                .last()
+                .map_or(0, |attribute| attribute.span().start);
+            let has_children = !elem.children.is_empty();
             let mut assignment_reads =
                 crate::element_evaluation::capture(&self.ast, elem, &mut self.spreads_read_once);
             let attrs = &mut elem.opening_element.attributes;
@@ -2548,9 +2563,17 @@ impl<'a> VisitMut<'a> for DevupVisitor<'a> {
                         assignment_reads.push((name, std::mem::replace(&mut tag_name, reference)));
                     }
                     if captures_assignments
-                        && property_name == "typography"
+                        && (property_name == "typography"
+                            || css::get_enum_property_map(property_name).is_some())
+                        && (property_name == "typography"
+                            || attr.span.start < last_attribute
+                            || has_children)
                         && let Some(JSXAttributeValue::ExpressionContainer(container)) = &attr.value
                         && let Some(source) = container.expression.as_expression()
+                        && !matches!(
+                            unwrap_syntax_only(source),
+                            Expression::ArrayExpression(_) | Expression::ObjectExpression(_)
+                        )
                         && let Some(value) = crate::element_evaluation::typography(
                             &self.ast,
                             &mut attribute_styles,
