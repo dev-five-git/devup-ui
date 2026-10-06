@@ -3,6 +3,72 @@ use serial_test::serial;
 
 #[test]
 #[serial]
+fn ignored_default_when_serialized_is_an_ordinary_empty_object() -> Result<(), String> {
+    let filename = "/src/ignored-literal.ts";
+    let allocator = Allocator::default();
+    let parsed = Parser::new(
+        &allocator,
+        "import ignored from 'empty';",
+        SourceType::from_path(filename).map_err(|error| error.to_string())?,
+    )
+    .parse();
+    assert_eq!(parsed.diagnostics.errors().count(), 0);
+    let resolver = |_: &str, _: &str| Some(ModuleResolution::Ignored);
+    let option = ExtractOption::default();
+    let check =
+        imported_constants::ChangeCheck::new(&parsed.program, filename, &option, Some(&resolver));
+    let literal = check
+        .known("ignored")
+        .ok_or_else(|| "Ignored default import must have a known value".to_string())?;
+    let value = boa_engine::Context::default()
+        .eval(boa_engine::Source::from_bytes(&format!(
+            "const value = {literal}; Object.keys(value).length === 0 && Object.getPrototypeOf(value) === Object.prototype;"
+        )))
+        .map_err(|error| error.to_string())?;
+    assert_eq!(value.as_boolean(), Some(true));
+    Ok(())
+}
+
+#[test]
+#[serial]
+fn ignored_object_when_spread_into_style_preserves_static_color() -> Result<(), Box<dyn Error>> {
+    let resolver = |_: &str, _: &str| Some(ModuleResolution::Ignored);
+    let output = extract_with_modules(
+        "/src/ignored-spread.ts",
+        "import {css} from '@devup-ui/react'; import ignored from 'empty'; const input = {...ignored, color: 'red'}; export const cls = css(input);",
+        ExtractOption::default(),
+        false,
+        &resolver,
+    )?;
+    assert_eq!(output.styles.len(), 1);
+    assert!(output.styles.iter().all(|style| matches!(
+        style, ExtractStyleValue::Static(style) if style.property == "color" && style.value == "red"
+    )));
+    assert!(!output.code.contains("css("), "{}", output.code);
+    assert_eq!(output.dependencies, Vec::<String>::new());
+    Ok(())
+}
+
+#[test]
+#[serial]
+fn ignored_object_when_used_as_style_extracts_empty_static_rules() -> Result<(), Box<dyn Error>> {
+    let resolver = |_: &str, _: &str| Some(ModuleResolution::Ignored);
+    let output = extract_with_modules(
+        "/src/ignored-style.ts",
+        "import {css} from '@devup-ui/react'; import ignored from 'empty'; export const cls = css(ignored);",
+        ExtractOption::default(),
+        false,
+        &resolver,
+    )?;
+    assert_eq!(output.styles.len(), 0, "{:?}", output.styles);
+    assert!(!output.code.contains("css("), "{}", output.code);
+    assert!(!output.code.contains("--"), "{}", output.code);
+    assert_eq!(output.dependencies, Vec::<String>::new());
+    Ok(())
+}
+
+#[test]
+#[serial]
 fn ignored_named_values_when_resolved_have_no_dynamic_style_or_dependency()
 -> Result<(), Box<dyn Error>> {
     let resolver = |_: &str, _: &str| Some(ModuleResolution::Ignored);
