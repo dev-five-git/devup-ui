@@ -5,22 +5,22 @@ expression: outputs
 [
     (
         "export const A = styled(motion.div)`color: red;`;",
-        "export const A = ({ style, className, ...rest }) => <motion.div {...rest} className={[\"OLcolor-vred\", className].filter(Boolean).join(\" \")} style={style} />;",
+        "export const A = ({ style, className, ...rest }) => <motion.div {...rest} className={[\"FLtest_ptsx-OLcolor-vred\", className].filter(Boolean).join(\" \")} style={style} />;",
     ),
     (
         "export const B = styled((Motion as any).Div.Inner)({ color: 'red' });",
-        "export const B = ({ style, className, ...rest }) => <Motion.Div.Inner {...rest} className={[\"OLcolor-vred\", className].filter(Boolean).join(\" \")} style={style} />;",
+        "export const B = ({ style, className, ...rest }) => <Motion.Div.Inner {...rest} className={[\"FLtest_ptsx-OLcolor-vred\", className].filter(Boolean).join(\" \")} style={style} />;",
     ),
     (
         "export const C = styled(forwardRef((p, r) => <div ref={r} {...p} />)).attrs({ role: 'x' })`color: red;`;",
-        "export const C = ((DevupStyled) => (__devupProps) => (({ style, className, ...rest }) => <DevupStyled {...rest} className={[\"OLcolor-vred\", className].filter(Boolean).join(\" \")} style={style} />)({\n\t...__devupProps,\n\t...{ role: \"x\" }\n}))(forwardRef((p, r) => <div ref={r} {...p} />));",
+        "export const C = ((DevupStyled) => (__devupProps) => (({ style, className, ...rest }) => <DevupStyled {...rest} className={[\"FLtest_ptsx-OLcolor-vred\", className].filter(Boolean).join(\" \")} style={style} />)({\n\t...__devupProps,\n\t...{ role: \"x\" }\n}))(forwardRef((p, r) => <div ref={r} {...p} />));",
     ),
     (
         "export const D = (tag) => styled(tag, { color: 'red' });",
-        "export const D = (tag) => ((DevupStyled) => ({ style, className, ...rest }) => <DevupStyled {...rest} className={[\"OLcolor-vred\", className].filter(Boolean).join(\" \")} style={style} />)(tag);",
+        "export const D = (tag) => ((DevupStyled) => ({ style, className, ...rest }) => <DevupStyled {...rest} className={[\"FLtest_ptsx-OLcolor-vred\", className].filter(Boolean).join(\" \")} style={style} />)(tag);",
     ),
     (
         "export const E = styled(getThing().div)`color: red;`;",
-        "export const E = ((DevupStyled) => ({ style, className, ...rest }) => <DevupStyled {...rest} className={[\"OLcolor-vred\", className].filter(Boolean).join(\" \")} style={style} />)(getThing().div);",
+        "export const E = ((DevupStyled) => ({ style, className, ...rest }) => <DevupStyled {...rest} className={[\"FLtest_ptsx-OLcolor-vred\", className].filter(Boolean).join(\" \")} style={style} />)(getThing().div);",
     ),
 ]

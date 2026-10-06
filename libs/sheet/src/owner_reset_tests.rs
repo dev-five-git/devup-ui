@@ -98,8 +98,8 @@ fn owner_reset_is_plain_when_consumer_is_conditional_or_another_subject(#[case] 
                             Some("owner.tsx")
                         };
                         let emitted = sheet.create_css(filename, false);
-                        let serialized =
-                            serde_json::to_string(&sheet).unwrap_or_else(|error| panic!("{error}"));
+                        let serialized = serde_json::to_string(&sheet.export_snapshot())
+                            .unwrap_or_else(|error| panic!("{error}"));
                         let restored: StyleSheet = serde_json::from_str(&serialized)
                             .unwrap_or_else(|error| panic!("{error}"));
                         assert_eq!(restored.create_css(filename, false), emitted);

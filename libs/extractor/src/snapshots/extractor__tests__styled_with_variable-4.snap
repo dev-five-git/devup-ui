@@ -29,5 +29,5 @@ ToBTreeSet {
             },
         ),
     },
-    code: "import \"@devup-ui/core/devup-ui-0.css\";\nconst StyledComponent = ({ style, className, ...rest }) => <div {...rest} className={[\"OHcpaugheu4ltw2pel OHac9kp86d1e1yjxwi\", className].filter(Boolean).join(\" \")} style={style} />;\n",
+    code: "import \"@devup-ui/core/devup-ui-0.css\";\nconst StyledComponent = ({ style, className, ...rest }) => <div {...rest} className={[\"FLtest_ptsx-OHcpaugheu4ltw2pel FLtest_ptsx-OHac9kp86d1e1yjxwi\", className].filter(Boolean).join(\" \")} style={style} />;\n",
 }

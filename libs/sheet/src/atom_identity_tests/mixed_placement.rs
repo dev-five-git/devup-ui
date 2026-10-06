@@ -3,7 +3,7 @@ use std::collections::{HashMap, HashSet};
 
 #[test]
 #[serial]
-fn restored_legacy_rule_stays_local_when_new_rule_is_hoisted_in_same_bucket() {
+fn restored_current_manual_rule_stays_local_when_new_rule_is_hoisted_in_same_bucket() {
     // Given
     css::atom_hoist::set_atom_hoist(None);
     css::atom_hoist::restore_atom_plan(None);
@@ -16,7 +16,8 @@ fn restored_legacy_rule_stays_local_when_new_rule_is_hoisted_in_same_bucket() {
     let mut legacy = StyleSheet::default();
     legacy.set_theme(Theme::default());
     legacy.add_property("legacy", "color", 0, "red", None, None, Some("mixed.tsx"));
-    let persisted = serde_json::to_string(&legacy).unwrap_or_else(|error| panic!("{error}"));
+    let persisted =
+        serde_json::to_string(&legacy.export_snapshot()).unwrap_or_else(|error| panic!("{error}"));
     assert!(!persisted.contains("\"h\":"), "{persisted}");
     let mut sheet: StyleSheet =
         serde_json::from_str(&persisted).unwrap_or_else(|error| panic!("{error}"));

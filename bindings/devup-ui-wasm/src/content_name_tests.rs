@@ -120,41 +120,34 @@ fn sheet_import_merges_exact_claims_and_rejects_unequal_claims_atomically() {
 
 #[test]
 #[serial]
-fn rejected_cache_import_cannot_be_hidden_by_a_plugin_catch() {
+fn missing_cached_atom_claim_restores_no_state_and_produces_cold_bytes() {
     // Given
     reset_build_state_internal();
     css::debug::set_debug(false);
-    compile(
+    let cold = compile(
         "source.tsx",
         "import {css} from '@devup-ui/react';export const x=css({color:'red'});",
     )
     .unwrap_or_else(|error| panic!("{error}"));
+    let cold_css = with_style_sheet(|sheet| sheet.create_css(None, false));
     let snapshot = export_sheet_internal().unwrap_or_else(|error| panic!("{error}"));
     let mut incomplete: StyleSheet =
         serde_json::from_str(&snapshot).unwrap_or_else(|error| panic!("{error}"));
     incomplete.names.clear();
-    let rejected = import_sheet_internal(incomplete)
-        .err()
-        .unwrap_or_else(|| panic!("unprotected cache was imported"));
+    reset_build_state_internal();
     // When
-    let next = compile(
-        "other.tsx",
-        "import {css} from '@devup-ui/react';export const x=css({padding:'4px'});",
-    );
+    assert_eq!(import_sheet_internal(incomplete), Ok(()));
     // Then
-    assert_eq!(next.err(), Some(rejected));
+    assert_eq!(with_style_sheet(|sheet| sheet.names.len()), 0);
+    let next = compile(
+        "source.tsx",
+        "import {css} from '@devup-ui/react';export const x=css({color:'red'});",
+    )
+    .unwrap_or_else(|error| panic!("{error}"));
+    assert_eq!(next.code(), cold.code());
     assert_eq!(
-        export_sheet_internal().unwrap_or_else(|error| panic!("{error}")),
-        snapshot
-    );
-    let valid = serde_json::from_str(&snapshot).unwrap_or_else(|error| panic!("{error}"));
-    import_sheet_internal(valid).unwrap_or_else(|error| panic!("{error}"));
-    assert!(
-        compile(
-            "other.tsx",
-            "import {css} from '@devup-ui/react';export const x=css({padding:'4px'});"
-        )
-        .is_ok()
+        with_style_sheet(|sheet| sheet.create_css(None, false)),
+        cold_css
     );
     reset_build_state_internal();
 }

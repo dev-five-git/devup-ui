@@ -32,5 +32,5 @@ ToBTreeSet {
             },
         ),
     },
-    code: "import \"@devup-ui/core/devup-ui-0.css\";\nlet margin = \"10px\";\nlet padding = \"20px\";\nconst StyledDiv = ({ style, className, ...rest }) => <div {...rest} className={[\"OHbra93yf_d3m2y_f4 OHdl8ftz6i8bwn2t8t OHbkj0dwr9b05h3bf3\", className].filter(Boolean).join(\" \")} style={{\n\t...{\n\t\t\"---SUHamkkkzip9jgs7oae-ek\": padding,\n\t\t\"---SUHamkkkzip9jgs7oae-dr\": margin,\n\t\t\"---SUHamkkkzip9jgs7oae-fh\": (props=>props.bg||`white`)(rest)\n\t},\n\t...style\n}} />;\n",
+    code: "import \"@devup-ui/core/devup-ui-0.css\";\nlet margin = \"10px\";\nlet padding = \"20px\";\nconst StyledDiv = ({ style, className, ...rest }) => <div {...rest} className={[\"FLtest_ptsx-OHbra93yf_d3m2y_f4 FLtest_ptsx-OHdl8ftz6i8bwn2t8t FLtest_ptsx-OHbkj0dwr9b05h3bf3\", className].filter(Boolean).join(\" \")} style={{\n\t...{\n\t\t\"---SUHamkkkzip9jgs7oae-ek\": padding,\n\t\t\"---SUHamkkkzip9jgs7oae-dr\": margin,\n\t\t\"---SUHamkkkzip9jgs7oae-fh\": (props=>props.bg||`white`)(rest)\n\t},\n\t...style\n}} />;\n",
 }

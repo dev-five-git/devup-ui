@@ -36,6 +36,7 @@ import {
   setAtomHoist,
   setDebug,
   setModuleResolver,
+  setNamingRoot,
   setPrefix,
 } from '@devup-ui/wasm'
 import type { RsbuildPlugin, Rspack } from '@rsbuild/core'
@@ -152,6 +153,7 @@ export const DevupUI = ({
       api.onCloseBuild?.(endBuild)
       setDebug(debug)
       setPrefix(prefix ?? null)
+      setNamingRoot(api.context.rootPath)
 
       if (!existsSync(distDir)) await mkdir(distDir, { recursive: true })
       await writeFile(join(distDir, '.gitignore'), '*', 'utf-8')

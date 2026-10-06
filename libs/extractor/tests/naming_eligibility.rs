@@ -63,7 +63,7 @@ fn assert_imported_atoms_leave_padding_first(output: &extractor::ExtractOutput, 
             padding += 1;
         } else {
             assert!(
-                class_name.starts_with("RL") || class_name.starts_with("RH"),
+                class_name.starts_with("a-RL") || class_name.starts_with("a-RH"),
                 "imported atom must be content-named: {class_name} {style:?}"
             );
             imported += 1;
@@ -150,14 +150,14 @@ fn equal_imported_and_local_values_keep_disjoint_identities() {
     assert_eq!(
         names
             .iter()
-            .filter(|name| name.starts_with("RL") || name.starts_with("RH"))
+            .filter(|name| name.starts_with("a-RL") || name.starts_with("a-RH"))
             .count(),
         1
     );
     assert_eq!(
         names
             .iter()
-            .filter(|name| !name.starts_with("RL") && !name.starts_with("RH"))
+            .filter(|name| !name.starts_with("a-RL") && !name.starts_with("a-RH"))
             .map(String::as_str)
             .collect::<Vec<_>>(),
         vec!["a-a", "a-b"]

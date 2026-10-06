@@ -151,8 +151,19 @@ test.describe('Landing Page - Zero Runtime Validation', () => {
       /^[OR](?:H[a-z0-9_]{16}|L(?=[a-z0-9_-]{1,16}$)(?:d-)?[a-z0-9_]{1,16}(?:-[vlosgay0-3][a-z0-9_]{0,14}){0,7})$/
     const privateCounterAtom =
       /^(?:(?![a-z0-9_]{0,5}ad-)[a-z_][a-z0-9_]{0,6}|[a-z_][a-z0-9_]{0,4}a-d|a-d)-(?:(?![a-z0-9_]{0,11}ad$)[a-z_][a-z0-9_]{0,12}|[a-z_][a-z0-9_]{0,10}a-d|a-d)$/
+    // Landing has no project prefix. D9 retains its existing anti-ad splice.
+    const d9Scope =
+      '(?:(?![a-z0-9_]{0,5}ad-)[a-z_][a-z0-9_]{0,6}|[a-z_][a-z0-9_]{0,4}a-d|a-d)'
+    const fallbackScope =
+      'F(?:H[a-z0-9_]{16}|L(?=[a-z0-9_]{1,16}-)(?:[a-z0-9]|_(?:[dupchoemslnaq]|x[0-9a-f]+_)){1,16})'
+    const scopedContentAtom = new RegExp(
+      `^(?:${d9Scope}|${fallbackScope})-${contentAtom.source.slice(1, -1)}$`,
+    )
     const isCompiledAtom = (className: string) =>
-      contentAtom.test(className) || privateCounterAtom.test(className)
+      contentAtom.test(className) ||
+      (className.length <= (className.startsWith('F') ? 37 : 27) &&
+        scopedContentAtom.test(className)) ||
+      privateCounterAtom.test(className)
     const atomicClasses = headingClasses.filter(isCompiledAtom)
     expect(atomicClasses.length).toBeGreaterThan(1)
     expect(

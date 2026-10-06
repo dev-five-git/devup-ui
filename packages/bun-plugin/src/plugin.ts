@@ -23,6 +23,7 @@ import {
   seedFileMap,
   setDebug,
   setModuleResolver,
+  setNamingRoot,
   setPrefix,
 } from '@devup-ui/wasm'
 import { type BunPlugin, plugin, type PluginBuilder } from 'bun'
@@ -173,6 +174,7 @@ function DevupUI(options: DevupUIBunPluginOptions = {}) {
       // A build starts from its own options, not from what an earlier build in
       // this process left in the engine
       const endBuild = beginBuild({ resetBuildState })
+      setNamingRoot(resolve(build.config?.root ?? process.cwd()))
       build.onEnd?.(endBuild)
       await initialize(options)
       setDebug(options.debug ?? !bundling)

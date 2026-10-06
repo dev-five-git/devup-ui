@@ -15,5 +15,5 @@ ToBTreeSet {
             },
         ),
     },
-    code: "import \"@devup-ui/react/devup-ui.css\";\n((__devupAssignment52) => <div className={__devupAssignment52?.[0] ?? \"\"} style={{ ...__devupAssignment52?.[1] }} />)(((__devupLevel0) => [\n\t__devupLevel0?.[0] ?? \"\",\n\t__devupLevel0?.[1],\n\t[__devupLevel0?.[2]]\n])(((__devupValue) => [\n\t\"OHc6qzz8i9hvx85gw3\",\n\t{},\n\t__devupValue\n])(\"$containerX\")));\n",
+    code: "import \"@devup-ui/react/devup-ui.css\";\n<div className=\"OHc6qzz8i9hvx85gw3\" />;\n",
 }

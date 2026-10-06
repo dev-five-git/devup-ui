@@ -37,5 +37,5 @@ ToBTreeSet {
             },
         ),
     },
-    code: "import \"@devup-ui/core/devup-ui.css\";\n((__devupAssignment54) => <div className={`OLdisplay-vflex-o0 ${__devupAssignment54?.[0] ?? \"\"}`} style={{ ...__devupAssignment54?.[1] }} />)(((__devupLevel0, __devupLevel1, __devupLevel2) => [\n\t`${__devupLevel0?.[0] ?? \"\"} ${__devupLevel1?.[0] ?? \"\"} ${__devupLevel2?.[0] ?? \"\"}`,\n\t{\n\t\t...__devupLevel0?.[1],\n\t\t...__devupLevel1?.[1],\n\t\t...__devupLevel2?.[1]\n\t},\n\t[\n\t\t__devupLevel0?.[2],\n\t\t__devupLevel1?.[2],\n\t\t__devupLevel2?.[2]\n\t]\n])(((__devupValue) => [\n\t\"OLdisplay-vnone\",\n\t{},\n\t__devupValue\n])(\"none\"), ((__devupValue) => [\n\t\"\",\n\t{},\n\t__devupValue\n])(null), ((__devupValue) => [\n\t\"OLdisplay-vflex-l2\",\n\t{},\n\t__devupValue\n])(\"flex\")));\n",
+    code: "import \"@devup-ui/core/devup-ui.css\";\n<div className=\"OLdisplay-vflex-o0 OLdisplay-vnone OLdisplay-vflex-l2\" />;\n",
 }

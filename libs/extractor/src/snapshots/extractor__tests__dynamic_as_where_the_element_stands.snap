@@ -35,5 +35,5 @@ ToBTreeSet {
             },
         ),
     },
-    code: "import \"@devup-ui/react/devup-ui-0.css\";\nexport const a = (on, C, items) => <section title={((DevupAs0) => <DevupAs0 className=\"OLmargin-v4px\" />)(C || \"div\")}>\n    {((DevupAs1) => <DevupAs1 className=\"OLpadding-v4px\" />)((on ? \"a\" : \"b\") || \"div\")}\n    {items.map((item) => ((__devupSpread0, DevupAs2) => <DevupAs2 key={__devupSpread0} className=\"OLpadding-v8px\" />)(item, C || \"div\"))}\n    <span>{on}</span>\n  </section>;\nexport const after = 42;\n",
+    code: "import \"@devup-ui/react/devup-ui-0.css\";\nexport const a = (on, C, items) => <section title={((DevupAs0) => <DevupAs0 className=\"FLtest_ptsx-OLmargin-v4px\" />)(C || \"div\")}>\n    {((DevupAs1) => <DevupAs1 className=\"FLtest_ptsx-OLpadding-v4px\" />)((on ? \"a\" : \"b\") || \"div\")}\n    {items.map((item) => ((__devupSpread0, DevupAs2) => <DevupAs2 key={__devupSpread0} className=\"FLtest_ptsx-OLpadding-v8px\" />)(item, C || \"div\"))}\n    <span>{on}</span>\n  </section>;\nexport const after = 42;\n",
 }

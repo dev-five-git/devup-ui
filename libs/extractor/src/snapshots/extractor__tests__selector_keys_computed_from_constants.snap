@@ -11,7 +11,7 @@ ToBTreeSet {
                 level: 0,
                 selector: Some(
                     Selector(
-                        ".OLpadding-v4px:hover &",
+                        ".FLtest_ptsx-OLpadding-v4px:hover &",
                     ),
                 ),
                 style_order: None,
@@ -25,7 +25,7 @@ ToBTreeSet {
                 level: 0,
                 selector: Some(
                     Selector(
-                        ".OLpadding-v4px &",
+                        ".FLtest_ptsx-OLpadding-v4px &",
                     ),
                 ),
                 style_order: None,
@@ -43,5 +43,5 @@ ToBTreeSet {
             },
         ),
     },
-    code: "import \"@devup-ui/react/devup-ui-0.css\";\nconst card = \"OLpadding-v4px\";\nconst HOVER = \":hover\";\nexport const a = \"OHbybqy_8dtzyu6hcs OHdpx06mzt2mhwpc_9\";\n",
+    code: "import \"@devup-ui/react/devup-ui-0.css\";\nconst card = \"FLtest_ptsx-OLpadding-v4px\";\nconst HOVER = \":hover\";\nexport const a = \"FLtest_ptsx-OHbnq8un5iv6j36rc7 FLtest_ptsx-OHcnfu5sete6l1d07_\";\n",
 }

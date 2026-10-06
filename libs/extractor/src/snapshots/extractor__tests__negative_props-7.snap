@@ -35,5 +35,5 @@ ToBTreeSet {
             },
         ),
     },
-    code: "import \"@devup-ui/core/devup-ui.css\";\n((__devupAssignment56) => <div className={__devupAssignment56?.[0] ?? \"\"} style={{ ...__devupAssignment56?.[1] }} />)(((__devupLevel0, __devupLevel1, __devupLevel2) => [\n\t`${__devupLevel0?.[0] ?? \"\"} ${__devupLevel1?.[0] ?? \"\"} ${__devupLevel2?.[0] ?? \"\"}`,\n\t{\n\t\t...__devupLevel0?.[1],\n\t\t...__devupLevel1?.[1],\n\t\t...__devupLevel2?.[1]\n\t},\n\t[\n\t\t__devupLevel0?.[2],\n\t\t__devupLevel1?.[2],\n\t\t__devupLevel2?.[2]\n\t]\n])(((__devupValue) => [\n\t\"OLz_dindex-v_d1\",\n\t{},\n\t__devupValue\n])(-1), ((__devupValue) => [\n\t\"OLz_dindex-v_d2-l1\",\n\t{},\n\t__devupValue\n])(-2), ((__devupValue) => [\n\t\"OLz_dindex-v_d3-l2\",\n\t{},\n\t__devupValue\n])(-3)));\n",
+    code: "import \"@devup-ui/core/devup-ui.css\";\n<div className=\"OLz_dindex-v_d1 OLz_dindex-v_d2-l1 OLz_dindex-v_d3-l2\" />;\n",
 }

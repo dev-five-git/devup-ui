@@ -35,6 +35,7 @@ import {
   setAtomHoist,
   setDebug,
   setModuleResolver,
+  setNamingRoot,
   setPrefix,
 } from '@devup-ui/wasm'
 import type {
@@ -341,6 +342,7 @@ export function DevupUI({
       resolvedConfig = config
       isServe = config?.command === 'serve'
       const projectRoot = config?.root ?? process.cwd()
+      setNamingRoot(projectRoot)
       // Vite ids are POSIX absolute paths
       setModuleResolver(
         createModuleResolver({

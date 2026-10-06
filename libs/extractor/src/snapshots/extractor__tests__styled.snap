@@ -25,5 +25,5 @@ ToBTreeSet {
             },
         ),
     },
-    code: "import \"@devup-ui/core/devup-ui-0.css\";\nconst StyledDiv = ({ style, className, ...rest }) => <section {...rest} className={[\"OLcolor-vblue OLbackground-vred\", className].filter(Boolean).join(\" \")} style={style} />;\n",
+    code: "import \"@devup-ui/core/devup-ui-0.css\";\nconst StyledDiv = ({ style, className, ...rest }) => <section {...rest} className={[\"FLtest_ptsx-OLcolor-vblue FLtest_ptsx-OLbackground-vred\", className].filter(Boolean).join(\" \")} style={style} />;\n",
 }

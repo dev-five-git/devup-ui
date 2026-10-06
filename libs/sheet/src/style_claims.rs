@@ -34,6 +34,9 @@ impl StyleSheet {
         let atoms = styles
             .iter()
             .filter_map(|style| name_registry::claim(style, (filename, scope), bits));
-        name_registry::preflight(&self.names, sources.chain(atoms))
+        let scopes = styles
+            .iter()
+            .filter_map(|style| name_registry::scope_claim(style, (filename, scope), bits));
+        name_registry::preflight(&self.names, sources.chain(scopes).chain(atoms))
     }
 }

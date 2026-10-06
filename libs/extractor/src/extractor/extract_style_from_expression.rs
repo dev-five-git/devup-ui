@@ -258,6 +258,14 @@ pub fn extract_style_from_expression<'a>(
         if result.styles.is_empty() {
             return result;
         }
+        if crate::static_assignment::literal_source(&source)
+            && result
+                .styles
+                .iter()
+                .all(crate::static_assignment::class_only)
+        {
+            return result;
+        }
         if !matches!(unwrap_syntax_only(&source), Expression::ArrayExpression(_))
             && let Some(scalar) = crate::assignment_owner::scalar(&source, &result.styles)
         {
@@ -1347,6 +1355,7 @@ fn typography_atom(name: &str, level: u8, selector: &Option<StyleSelector>) -> E
         layer: None,
         theme_token_resolution: ThemeTokenResolution::default(),
         naming: css::Naming::Own,
+        counter_owner: crate::sparse_sites::counter_owner(),
         origin: crate::style_origin::current(),
     }
 }

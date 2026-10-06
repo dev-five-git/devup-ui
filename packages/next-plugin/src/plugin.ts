@@ -235,11 +235,13 @@ export function DevupUI(
       registerTheme,
       setAtomHoist,
       setPrefix,
+      setNamingRoot,
     } = wasm
 
     registerShorthands(shorthands ?? {})
 
     setPrefix(prefix ?? null)
+    setNamingRoot(process.cwd())
 
     writeFileSync(
       join(distDir, 'compat.d.ts'),

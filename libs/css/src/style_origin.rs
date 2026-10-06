@@ -110,3 +110,46 @@ impl Origin {
         }
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn filling_missing_witness_keeps_the_first_real_expression() {
+        let first = StyleOrigin {
+            file: "src/first.tsx".into(),
+            line: 2,
+            column: 7,
+            expression: "first.value".into(),
+        };
+        let later = StyleOrigin {
+            file: "src/later.tsx".into(),
+            expression: "later.value".into(),
+            ..first
+        };
+        let mut origin = Origin::default();
+
+        origin.fill(Some(&first));
+        origin.fill(Some(&later));
+
+        assert_eq!(origin.location(), Some(RealLocation::Exact(first)));
+    }
+
+    #[test]
+    fn diagnostic_witnesses_do_not_change_style_ordering() {
+        let left = Origin::from_location(RealLocation::ModuleExport {
+            file: "src/left.css.ts".into(),
+            binding: Some("left".into()),
+        });
+        let right = Origin::from_location(RealLocation::ModuleExport {
+            file: "src/right.css.ts".into(),
+            binding: Some("right".into()),
+        });
+
+        let ordering = left.partial_cmp(&right);
+
+        assert_eq!(ordering, Some(Ordering::Equal));
+        assert_ne!(left.location(), right.location());
+    }
+}

@@ -128,6 +128,8 @@ if (process.argv[2] === 'goldens') {
   wasm.importSheet(sheet)
   const before = wasm.exportSheet()
   const css = wasm.getCss(null, false)
+  assert.ok(css.includes('padding:11px'))
+  let collision
   assert.throws(
     () =>
       compile(
@@ -139,11 +141,21 @@ if (process.argv[2] === 'goldens') {
       assert.ok(error.message.includes('a.tsx:2:27:'))
       assert.ok(error.message.includes('b.tsx:2:27:'))
       assert.ok(error.message.includes('OLcolor-vred'))
+      collision = error.message
       return true
     },
   )
   assert.equal(wasm.exportSheet(), before)
-  assert.equal(wasm.getCss(null, false), css)
+  assert.throws(
+    () => wasm.getCss(null, false),
+    (error) => {
+      assert.ok(error instanceof Error)
+      assert.ok(error.message.includes('a.tsx:2:27:'))
+      assert.ok(error.message.includes('b.tsx:2:27:'))
+      assert.equal(error.message, collision)
+      return true
+    },
+  )
 } else {
   assert.fail('unknown fixture mode')
 }

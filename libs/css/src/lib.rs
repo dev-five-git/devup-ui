@@ -17,10 +17,14 @@ pub mod file_routes;
 pub mod is_special_property;
 mod legacy_variable_names;
 pub mod naming;
+pub mod naming_root;
+pub mod naming_scope;
 mod num_to_nm_base;
 pub mod optimize_multi_css_value;
 pub mod optimize_value;
 pub mod rm_css_comment;
+#[cfg(test)]
+mod scoped_name_tests;
 mod selector_separator;
 pub mod sparse_site;
 pub mod style_origin;
@@ -483,8 +487,18 @@ pub fn sheet_to_classname_content(
     content: &content_name::AtomContent<'_>,
     filename: Option<&str>,
 ) -> String {
+    sheet_to_classname_owned(content, filename, naming::CounterOwner::Inactive)
+}
+
+/// Keep original counter ownership separate from canonical content and delivery scope.
+#[must_use]
+pub fn sheet_to_classname_owned(
+    content: &content_name::AtomContent<'_>,
+    filename: Option<&str>,
+    owner: naming::CounterOwner,
+) -> String {
     let descriptor = content.content();
-    match naming::private_counter(filename, content.naming, content.order) {
+    match naming::owned_private_counter(owner, (filename, content.order), content.naming) {
         Some(id) => {
             let scope = format!("D9-{id}");
             let number = class_num_for_key(&scope, |key| {
@@ -493,7 +507,11 @@ pub fn sheet_to_classname_content(
             let file = num_to_nm_base(usize::try_from(id).unwrap_or_default());
             with_prefix(|prefix| format!("{prefix}{file}-{number}"))
         }
-        None => with_prefix(|prefix| descriptor.name(prefix)),
+        None => naming_scope::name(
+            &descriptor,
+            (filename, content.order),
+            content_hash::FingerprintBits::PRODUCTION,
+        ),
     }
 }
 
@@ -928,7 +946,7 @@ mod tests {
         set_debug(true);
         let class_name =
             sheet_to_classname("background", 0, Some("red"), None, None, Some("test.tsx"));
-        assert_eq!(class_name, "OLbackground-vred");
+        assert_eq!(class_name, "FLtest_ptsx-OLbackground-vred");
         set_debug(false);
     }
 
@@ -1179,9 +1197,9 @@ mod tests {
 
         let class3 =
             sheet_to_classname("background", 0, Some("red"), None, None, Some("other.tsx"));
-        assert_eq!(
+        assert_ne!(
             class1, class3,
-            "without D9 both own atoms use their content identity"
+            "independently delivered sheets must retain distinct identities without D9"
         );
     }
 

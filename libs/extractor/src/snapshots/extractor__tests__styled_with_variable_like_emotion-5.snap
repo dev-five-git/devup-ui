@@ -32,5 +32,5 @@ ToBTreeSet {
             },
         ),
     },
-    code: "import \"@devup-ui/core/devup-ui-0.css\";\nconst StyledDiv = ({ style, className, ...rest }) => <div {...rest} className={[\"OHb1vn2t9tjmgz5n_p OHc76t6q84pyzome4j OHcz3j5id7i43la3vy\", className].filter(Boolean).join(\" \")} style={{\n\t...{\n\t\t\"---SUHdt_m59rnufq1mgak-c4\": func(),\n\t\t\"---SUHdt_m59rnufq1mgak-b8\": obj.color,\n\t\t\"---SUHdt_m59rnufq1mgak-d0\": obj.func()\n\t},\n\t...style\n}} />;\n",
+    code: "import \"@devup-ui/core/devup-ui-0.css\";\nconst StyledDiv = ({ style, className, ...rest }) => <div {...rest} className={[\"FLtest_ptsx-OHb1vn2t9tjmgz5n_p FLtest_ptsx-OHc76t6q84pyzome4j FLtest_ptsx-OHcz3j5id7i43la3vy\", className].filter(Boolean).join(\" \")} style={{\n\t...{\n\t\t\"---SUHdt_m59rnufq1mgak-c4\": func(),\n\t\t\"---SUHdt_m59rnufq1mgak-b8\": obj.color,\n\t\t\"---SUHdt_m59rnufq1mgak-d0\": obj.func()\n\t},\n\t...style\n}} />;\n",
 }

@@ -38,13 +38,14 @@ function createCodeExtractResult(
 
 function createSetupContext(
   overrides: Partial<RsbuildSetupContext> = {},
+  rootPath = process.cwd(),
 ): RsbuildSetupContext {
   return {
     transform: mock(),
     modifyRsbuildConfig: mock(),
     modifyRspackConfig: mock(),
     onBeforeBuild: mock(),
-    context: { rootPath: process.cwd() },
+    context: { rootPath },
     renderChunk: mock(),
     generateBundle: mock(),
     closeBundle: mock(),
@@ -67,6 +68,7 @@ let getThemeInterfaceSpy: ReturnType<typeof spyOn>
 let registerThemeSpy: ReturnType<typeof spyOn>
 let setDebugSpy: ReturnType<typeof spyOn>
 let setPrefixSpy: ReturnType<typeof spyOn>
+let setNamingRootSpy: ReturnType<typeof spyOn>
 
 beforeAll(() => {
   existsSyncSpy = spyOn(fs, 'existsSync').mockReturnValue(false)
@@ -80,6 +82,7 @@ beforeAll(() => {
   registerThemeSpy = spyOn(wasm, 'registerTheme').mockReturnValue(undefined)
   setDebugSpy = spyOn(wasm, 'setDebug').mockReturnValue(undefined)
   setPrefixSpy = spyOn(wasm, 'setPrefix').mockReturnValue(undefined)
+  setNamingRootSpy = spyOn(wasm, 'setNamingRoot').mockReturnValue(undefined)
 })
 
 afterAll(() => {
@@ -94,9 +97,15 @@ afterAll(() => {
   registerThemeSpy.mockRestore()
   setDebugSpy.mockRestore()
   setPrefixSpy.mockRestore()
+  setNamingRootSpy.mockRestore()
 })
 
 describe('DevupUIRsbuildPlugin', () => {
+  it('sets the Rsbuild naming root once before registering extraction', async () => {
+    setNamingRootSpy.mockClear()
+    await DevupUI().setup(createSetupContext({}, '/naming-project'))
+    expect(setNamingRootSpy.mock.calls).toEqual([['/naming-project']])
+  })
   it('should export DevupUIRsbuildPlugin', () => {
     expect(DevupUI).toBeDefined()
   })

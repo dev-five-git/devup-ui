@@ -1,3 +1,4 @@
+pub mod cache_snapshot;
 pub mod name_registry;
 #[cfg(test)]
 mod name_registry_tests;
@@ -245,13 +246,15 @@ where
 
     Ok(result)
 }
-#[derive(Default, Deserialize, Serialize, Debug)]
+#[derive(Default, Serialize)]
 pub struct StyleSheet {
+    #[serde(skip)]
+    pub cache_restore: cache_snapshot::CacheRestore,
     #[serde(default)]
     pub names: name_registry::NameRegistry,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(default)]
     pub atom_plan: Option<BTreeSet<String>>,
-    #[serde(deserialize_with = "deserialize_btree_map_u8", default)]
+    #[serde(default)]
     pub properties: BTreeMap<String, PropertyMap>,
     #[serde(default)]
     pub css: BTreeMap<String, BTreeSet<StyleSheetCss>>,
@@ -274,21 +277,7 @@ pub struct StyleSheet {
 impl StyleSheet {
     /// Borrow the sheet with its naming generation for build-cache fingerprints.
     pub fn export_snapshot(&self) -> impl Serialize + '_ {
-        #[derive(Serialize)]
-        struct Export<'a> {
-            #[serde(flatten)]
-            sheet: &'a StyleSheet,
-            #[serde(rename = "atomNamingVersion")]
-            atom_naming_version: u8,
-            #[serde(rename = "sourceIds")]
-            source_ids: BTreeMap<String, u32>,
-        }
-
-        Export {
-            sheet: self,
-            atom_naming_version: 3,
-            source_ids: css::file_map::get_original_ids(),
-        }
+        cache_snapshot::export(self)
     }
 
     #[allow(clippy::too_many_arguments)]
@@ -2440,6 +2429,10 @@ mod tests {
         {
             let sheet: StyleSheet = serde_json::from_str(
                 r##"{
+            "atomNamingVersion": 4,
+            "names": {}, "atom_plan": null, "keyframes": {},
+            "global_css_files": [], "imports": {}, "font_faces": {},
+            "sourceIds": {}, "classMap": {}, "fileMap": {},
             "properties": {
                 "": {
                     "255": {
@@ -2471,13 +2464,17 @@ mod tests {
             }
         }"##,
             )
-            .unwrap();
+            .unwrap_or_else(|error| panic!("{error}"));
             assert_debug_snapshot!(sheet);
         }
 
         {
             let sheet: Result<StyleSheet, _> = serde_json::from_str(
                 r##"{
+            "atomNamingVersion": 4,
+            "names": {}, "atom_plan": null, "keyframes": {},
+            "global_css_files": [], "imports": {}, "font_faces": {},
+            "sourceIds": {}, "classMap": {}, "fileMap": {},
             "properties": {
                 "wrong": [
                     {

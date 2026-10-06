@@ -23,5 +23,5 @@ ToBTreeSet {
             },
         ),
     },
-    code: "import \"@devup-ui/core/devup-ui-0.css\";\nlet fontSize = \"18px\";\nconst StyledComponent = ({ style, className, ...rest }) => <div {...rest} className={[\"OHclv_cefbyz6dppx8 OHalnw9wsfiw8cn_yo\", className].filter(Boolean).join(\" \")} style={{\n\t...{\n\t\t\"---SUHapx79zicdd5hqfd6-de\": fontSize,\n\t\t\"---SUHapx79zicdd5hqfd6-d8\": (props=>props.color||`black`)(rest)\n\t},\n\t...style\n}} />;\n",
+    code: "import \"@devup-ui/core/devup-ui-0.css\";\nlet fontSize = \"18px\";\nconst StyledComponent = ({ style, className, ...rest }) => <div {...rest} className={[\"FLtest_ptsx-OHclv_cefbyz6dppx8 FLtest_ptsx-OHalnw9wsfiw8cn_yo\", className].filter(Boolean).join(\" \")} style={{\n\t...{\n\t\t\"---SUHapx79zicdd5hqfd6-de\": fontSize,\n\t\t\"---SUHapx79zicdd5hqfd6-d8\": (props=>props.color||`black`)(rest)\n\t},\n\t...style\n}} />;\n",
 }

@@ -50,7 +50,7 @@ fn assert_references_resolve(code: &str, css: &str) {
     let literals =
         css::utils::compile_regex(r#""(?:\\.|[^"\\])*"|'(?:\\.|[^'\\])*'|`(?:\\.|[^`\\])*`"#);
     let class = css::utils::compile_regex(
-        r"^(?:du-)?(?:[OR](?:L[a-z0-9_-]+|H[a-z0-9_]{16})|(?:[a-z_][a-z0-9_]*|[a-z0-9_]*a-d)-(?:[a-z_][a-z0-9_]*|[a-z0-9_]*a-d))$",
+        r"^(?:du-)?(?:(?:(?:[a-z_][a-z0-9_]*|[a-z0-9_]*a-d|F(?:L[a-z0-9_]{0,16}|H[a-z0-9_]{16}))-)?[OR](?:L[a-z0-9_-]+|H[a-z0-9_]{16})|(?:[a-z_][a-z0-9_]*|[a-z0-9_]*a-d)-(?:[a-z_][a-z0-9_]*|[a-z0-9_]*a-d))$",
     );
     let animation = css::utils::compile_regex(r"^(?:du-)?K(?:L[a-z0-9_-]+|H[a-z0-9_]{16})$");
     let variable = css::utils::compile_regex(
@@ -98,6 +98,7 @@ fn assert_references_resolve(code: &str, css: &str) {
 #[case(r#"<div className="OLcolor-vred du-a-d-b"/>"#)]
 #[case(r#"<div className="OLcolor-vred RLcolor-vblue"/>"#)]
 #[case(r#"<div className="OLcolor-vred du-RHaaaaaaaaaaaaaaaa"/>"#)]
+#[case(r#"<div className="OLcolor-vred a-d-RHaaaaaaaaaaaaaaaa"/>"#)]
 #[case(r#"const fade="KHaaaaaaaaaaaaaaaa"; const cls="OLcolor-vred";"#)]
 #[case(r#"const fade="du-KLsfrom-e-"; const cls="OLcolor-vred";"#)]
 #[case(r#"<div className="OLcolor-vred" style={{"---du-Sa-b-c":tone}}/>"#)]

@@ -55,5 +55,5 @@ ToBTreeSet {
             },
         ),
     },
-    code: "import \"@devup-ui/core/devup-ui-0.css\";\n<div className={`OLwidth-v100_c ${{\n\t\"bottom\": \"OLbottom-v0\",\n\t\"bottom-left\": \"OLbottom-v0 OLleft-v0\",\n\t\"bottom-right\": \"OLbottom-v0 OLright-v0\",\n\t\"left\": \"OLleft-v0\",\n\t\"right\": \"OLright-v0\",\n\t\"top\": \"OLtop-v0\",\n\t\"top-left\": \"OLleft-v0 OLtop-v0\",\n\t\"top-right\": \"OLright-v0 OLtop-v0\"\n}[a] || \"\"}`} />;\n",
+    code: "import \"@devup-ui/core/devup-ui-0.css\";\n<div className={`FLtest_ptsx-OLwidth-v100_c ${{\n\t\"bottom\": \"FLtest_ptsx-OLbottom-v0\",\n\t\"bottom-left\": \"FLtest_ptsx-OLbottom-v0 FLtest_ptsx-OLleft-v0\",\n\t\"bottom-right\": \"FLtest_ptsx-OLbottom-v0 FLtest_ptsx-OLright-v0\",\n\t\"left\": \"FLtest_ptsx-OLleft-v0\",\n\t\"right\": \"FLtest_ptsx-OLright-v0\",\n\t\"top\": \"FLtest_ptsx-OLtop-v0\",\n\t\"top-left\": \"FLtest_ptsx-OLleft-v0 FLtest_ptsx-OLtop-v0\",\n\t\"top-right\": \"FLtest_ptsx-OLright-v0 FLtest_ptsx-OLtop-v0\"\n}[a] || \"\"}`} />;\n",
 }

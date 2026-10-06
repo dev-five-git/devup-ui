@@ -6,6 +6,9 @@ pub(super) mod extract_import;
 pub(super) mod extract_keyframes;
 pub mod extract_static_style;
 pub mod extract_style_value;
+#[cfg(test)]
+mod original_owner_tests;
+mod static_identity;
 pub mod style_property;
 
 use crate::extract_style::style_property::StyleProperty;

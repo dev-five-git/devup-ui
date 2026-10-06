@@ -61,5 +61,5 @@ ToBTreeSet {
             },
         ),
     },
-    code: "import \"@devup-ui/core/devup-ui.css\";\n((__devupAssignment56) => <div className={__devupAssignment56?.[0] ?? \"\"} style={{ ...__devupAssignment56?.[1] }} />)(((__devupLevel0, __devupLevel1) => [\n\t`${__devupLevel0?.[0] ?? \"\"} ${__devupLevel1?.[0] ?? \"\"}`,\n\t{\n\t\t...__devupLevel0?.[1],\n\t\t...__devupLevel1?.[1]\n\t},\n\t[__devupLevel0?.[2], __devupLevel1?.[2]]\n])(((__devupField0) => [\n\t__devupField0?.[0] ?? \"\",\n\t__devupField0?.[1],\n\t{ mx: __devupField0?.[2] }\n])(((__devupValue) => [\n\t\"OHc8n7_58lt_fyfsso OHadjro4fwu1p5k40z\",\n\t{},\n\t__devupValue\n])(10)), ((__devupField0) => [\n\t__devupField0?.[0] ?? \"\",\n\t__devupField0?.[1],\n\t{ mx: __devupField0?.[2] }\n])(((__devupValue) => [\n\t\"OHbnoj_i0alh3rn87e OHcx2hqc1xelpinodz\",\n\t{},\n\t__devupValue\n])(20))));\n",
+    code: "import \"@devup-ui/core/devup-ui.css\";\n<div className=\"OHadjro4fwu1p5k40z OHc8n7_58lt_fyfsso OHcx2hqc1xelpinodz OHbnoj_i0alh3rn87e\" />;\n",
 }

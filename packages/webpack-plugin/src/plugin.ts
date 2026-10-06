@@ -40,6 +40,7 @@ import {
   setAtomHoist,
   setDebug,
   setModuleResolver,
+  setNamingRoot,
   setPrefix,
 } from '@devup-ui/wasm'
 import { type Compiler } from 'webpack'
@@ -207,6 +208,7 @@ export class DevupUIWebpackPlugin {
     compiler.hooks.shutdown?.tap('DevupUIWebpackPlugin', endBuild)
     setDebug(this.options.debug)
     setPrefix(this.options.prefix ?? null)
+    setNamingRoot(compiler.options.context ?? process.cwd(), process.cwd())
     const existsDevup = existsSync(this.options.devupFile)
     // read devup.json
     if (!existsSync(this.options.distDir))

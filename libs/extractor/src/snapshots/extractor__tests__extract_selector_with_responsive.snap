@@ -61,5 +61,5 @@ ToBTreeSet {
             },
         ),
     },
-    code: "import \"@devup-ui/core/devup-ui.css\";\n((__devupAssignment72) => <div className={__devupAssignment72?.[0] ?? \"\"} style={{ ...__devupAssignment72?.[1] }} />)(((__devupLevel0, __devupLevel1) => [\n\t`${__devupLevel0?.[0] ?? \"\"} ${__devupLevel1?.[0] ?? \"\"}`,\n\t{\n\t\t...__devupLevel0?.[1],\n\t\t...__devupLevel1?.[1]\n\t},\n\t[__devupLevel0?.[2], __devupLevel1?.[2]]\n])(((__devupValue) => [\n\t\"OHb769b560qxf3uhct OHdm2ibn5qc2m5xw09\",\n\t{},\n\t__devupValue\n])(1), ((__devupValue) => [\n\t\"OHbq8i8vcwgx7z3i6k OHco2x1de2hf7ohpjw\",\n\t{},\n\t__devupValue\n])(2)));\n",
+    code: "import \"@devup-ui/core/devup-ui.css\";\n<div className=\"OHb769b560qxf3uhct OHbq8i8vcwgx7z3i6k OHdm2ibn5qc2m5xw09 OHco2x1de2hf7ohpjw\" />;\n",
 }

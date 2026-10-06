@@ -1,7 +1,7 @@
-use css::class_map::{set_class_map, with_class_map};
-use css::file_map::{
-    canonical, is_global, set_canonical_map, set_file_map, with_canonical_map, with_file_map,
-};
+use css::class_map::with_class_map;
+use css::file_map::{canonical, is_global, set_canonical_map, with_canonical_map, with_file_map};
+#[cfg(test)]
+use css::{class_map::set_class_map, file_map::set_file_map};
 use extractor::extract_style::extract_style_value::ExtractStyleValue;
 use extractor::{
     ExtractOption, ImportAlias, ModuleResolver, ResolvedModule, extract, extract_with_modules,
@@ -14,14 +14,32 @@ use std::collections::{BTreeMap, HashMap};
 use std::fmt::Display;
 use std::sync::{LazyLock, Mutex};
 use wasm_bindgen::prelude::*;
+mod cache_atom_proof;
+mod cache_descriptor;
 mod cache_names;
+mod cache_restore;
 mod cache_source_names;
+mod cache_special_proof;
+#[cfg(test)]
+mod cache_v4_tests;
 #[cfg(test)]
 mod compact_source_tests;
 #[cfg(test)]
 mod content_location_contract_tests;
 #[cfg(test)]
 mod content_name_tests;
+#[cfg(test)]
+mod naming_root_tests;
+#[cfg(test)]
+mod original_counter_tests;
+#[cfg(test)]
+mod prefix_cache_tests;
+#[cfg(test)]
+mod scoped_cache_tests;
+#[cfg(test)]
+mod scoped_cascade_tests;
+#[cfg(test)]
+mod static_theme_tests;
 
 static GLOBAL_STYLE_SHEET: LazyLock<Mutex<StyleSheet>> =
     LazyLock::new(|| Mutex::new(StyleSheet::default()));
@@ -93,7 +111,11 @@ impl Output {
         with_style_sheet_mut(|sheet| {
             sheet
                 .preflight_styles(&styles, &canonical_filename, global)
-                .map_err(|error| error.to_string())?;
+                .map_err(|error| {
+                    let message = error.to_string();
+                    cache_names::record(&Err(message.clone()));
+                    message
+                })?;
             // globalCss (@font-face / global selectors) is per-SOURCE-file, never
             // collapsed. rm_global_css MUST use the RAW filename so a collapsed
             // member (sharing the bucket-root's canonical) never wipes the root's
@@ -223,6 +245,15 @@ pub fn set_prefix(prefix: Option<String>) {
     css::set_prefix(prefix);
 }
 
+/// Set the build's names-only project root before extraction in every compiler.
+/// This never changes resolver IDs, extraction keys, buckets or D9 numbering.
+///
+/// Supply the existing ID basis when relative extraction IDs are not root-relative.
+#[wasm_bindgen(js_name = "setNamingRoot")]
+pub fn set_naming_root(root: Option<String>, relative_base: Option<String>) {
+    css::naming_root::set_context(root, relative_base);
+}
+
 #[wasm_bindgen(js_name = "getPrefix")]
 #[must_use]
 pub fn get_prefix() -> Option<String> {
@@ -230,29 +261,15 @@ pub fn get_prefix() -> Option<String> {
 }
 
 /// Internal function to import a `StyleSheet` (testable without `JsValue`)
-pub fn import_sheet_internal(mut sheet: StyleSheet) -> Result<(), String> {
-    let result = with_style_sheet_mut(|current| {
-        cache_names::validate(&sheet)?;
-        let incoming = sheet::name_registry::preflight(&current.names, sheet.names.clone())
-            .map_err(|error| error.to_string())?;
-        let mut merged = current.names.clone();
-        merged.extend(incoming);
-        sheet.names = merged;
-        css::atom_hoist::restore_atom_plan(sheet.atom_plan.clone());
-        if !sheet.source_ids.is_empty() {
-            css::file_map::set_original_ids(sheet.source_ids.clone());
-        }
-        *current = sheet;
-        Ok(())
-    });
-    cache_names::record(&result);
-    result
+pub fn import_sheet_internal(sheet: StyleSheet) -> Result<(), String> {
+    cache_restore::import(sheet)
 }
 
 #[wasm_bindgen(js_name = "importSheet")]
 #[cfg(not(tarpaulin_include))]
 pub fn import_sheet(sheet_object: JsValue) -> Result<(), JsValue> {
-    let sheet: StyleSheet = serde_wasm_bindgen::from_value(sheet_object).map_err(js_error)?;
+    let sheet: StyleSheet =
+        serde_wasm_bindgen::from_value(sheet_object).unwrap_or_else(|_| cache_restore::absent());
     import_sheet_internal(sheet).map_err(js_error)
 }
 
@@ -283,7 +300,7 @@ pub fn export_class_map_internal() -> Result<String, String> {
 #[wasm_bindgen(js_name = "importClassMap")]
 #[cfg(not(tarpaulin_include))]
 pub fn import_class_map(sheet_object: JsValue) -> Result<(), JsValue> {
-    set_class_map(serde_wasm_bindgen::from_value(sheet_object).map_err(js_error)?);
+    cache_restore::classes(serde_wasm_bindgen::from_value(sheet_object).ok());
     Ok(())
 }
 
@@ -305,7 +322,7 @@ pub fn export_file_map_internal() -> Result<String, String> {
 #[wasm_bindgen(js_name = "importFileMap")]
 #[cfg(not(tarpaulin_include))]
 pub fn import_file_map(sheet_object: JsValue) -> Result<(), JsValue> {
-    set_file_map(serde_wasm_bindgen::from_value(sheet_object).map_err(js_error)?);
+    cache_restore::files(serde_wasm_bindgen::from_value(sheet_object).ok());
     Ok(())
 }
 
@@ -347,6 +364,7 @@ pub fn export_canonical_map() -> Result<String, JsValue> {
 /// workers reach files in.
 #[wasm_bindgen(js_name = "seedFileMap")]
 pub fn seed_file_map(files: Vec<String>) {
+    cache_restore::seeded(&files);
     css::file_map::seed_file_numbers(&files);
 }
 
@@ -357,6 +375,7 @@ pub fn seed_file_map(files: Vec<String>) {
 /// alone. Theme, shorthands and debug mode are set by every build, and stay.
 pub fn reset_build_state_internal() {
     cache_names::clear();
+    cache_restore::clear();
     css::class_map::reset_class_map();
     css::file_map::reset_file_map();
     css::file_map::reset_canonical_map();
@@ -364,6 +383,7 @@ pub fn reset_build_state_internal() {
     css::atom_hoist::set_atom_hoist(None);
     css::atom_hoist::restore_atom_plan(None);
     css::set_prefix(None);
+    css::naming_root::set_root(None);
     with_style_sheet_mut(|sheet| *sheet = StyleSheet::default());
     MODULE_RESOLVER.with_borrow_mut(|current| *current = None);
 }

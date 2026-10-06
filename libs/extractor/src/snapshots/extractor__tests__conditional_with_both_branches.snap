@@ -25,5 +25,5 @@ ToBTreeSet {
             },
         ),
     },
-    code: "import \"@devup-ui/core/devup-ui-0.css\";\nconst isActive = true;\n<div className=\"OLbackground-vred OLpadding-v16px\" />;\n",
+    code: "import \"@devup-ui/core/devup-ui-0.css\";\nconst isActive = true;\n<div className=\"FLtest_ptsx-OLbackground-vred FLtest_ptsx-OLpadding-v16px\" />;\n",
 }

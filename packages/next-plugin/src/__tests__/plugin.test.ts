@@ -77,6 +77,7 @@ let unlinkSyncSpy: ReturnType<typeof spyOn>
 let getDefaultThemeSpy: ReturnType<typeof spyOn>
 let getThemeInterfaceSpy: ReturnType<typeof spyOn>
 let setPrefixSpy: ReturnType<typeof spyOn>
+let setNamingRootSpy: ReturnType<typeof spyOn>
 let registerThemeSpy: ReturnType<typeof spyOn>
 let getCssSpy: ReturnType<typeof spyOn>
 let importSheetSpy: ReturnType<typeof spyOn>
@@ -104,6 +105,7 @@ beforeEach(() => {
   getDefaultThemeSpy = spyOn(wasm, 'getDefaultTheme').mockReturnValue(undefined)
   getThemeInterfaceSpy = spyOn(wasm, 'getThemeInterface').mockReturnValue('')
   setPrefixSpy = spyOn(wasm, 'setPrefix').mockReturnValue(undefined)
+  setNamingRootSpy = spyOn(wasm, 'setNamingRoot').mockReturnValue(undefined)
   registerThemeSpy = spyOn(wasm, 'registerTheme').mockReturnValue(undefined)
   getCssSpy = spyOn(wasm, 'getCss').mockReturnValue('')
   importSheetSpy = spyOn(wasm, 'importSheet').mockReturnValue(undefined)
@@ -166,6 +168,7 @@ afterEach(() => {
   getDefaultThemeSpy.mockRestore()
   getThemeInterfaceSpy.mockRestore()
   setPrefixSpy.mockRestore()
+  setNamingRootSpy.mockRestore()
   registerThemeSpy.mockRestore()
   getCssSpy.mockRestore()
   importSheetSpy.mockRestore()
@@ -181,6 +184,11 @@ afterEach(() => {
 })
 
 describe('DevupUINextPlugin', () => {
+  it('sets the project naming root once before Turbopack extraction setup', () => {
+    process.env.TURBOPACK = '1'
+    DevupUI({})
+    expect(setNamingRootSpy.mock.calls).toEqual([[process.cwd()]])
+  })
   describe('webpack', () => {
     it('should apply webpack plugin', async () => {
       const ret = DevupUI({})

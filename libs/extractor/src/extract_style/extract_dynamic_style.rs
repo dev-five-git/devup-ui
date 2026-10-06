@@ -3,7 +3,7 @@ use std::fmt::{Debug, Formatter};
 use css::{
     Naming, Site,
     content_name::{AtomContent, ContentName},
-    sheet_to_classname_content, sheet_to_variable_name_at,
+    sheet_to_classname_owned, sheet_to_variable_name_at,
     style_origin::Origin,
     style_selector::{StyleSelector, optimize_selector},
 };
@@ -203,6 +203,15 @@ impl ExtractDynamicStyle {
         self.site.as_ref()
     }
 
+    /// Original allocation identity already carried by the dynamic source site.
+    pub fn counter_owner(&self) -> css::naming::CounterOwner {
+        self.site
+            .as_ref()
+            .map_or(css::naming::CounterOwner::Inactive, |site| {
+                css::naming::CounterOwner::from_source(&site.file)
+            })
+    }
+
     pub fn layer(&self) -> Option<&str> {
         self.layer.as_deref()
     }
@@ -243,7 +252,11 @@ impl ExtractStyleProperty for ExtractDynamicStyle {
             if self.important { " !important" } else { "" }
         );
         StyleProperty::Variable {
-            class_name: sheet_to_classname_content(&self.atom_content(&declaration), filename),
+            class_name: sheet_to_classname_owned(
+                &self.atom_content(&declaration),
+                filename,
+                self.counter_owner(),
+            ),
             variable_name,
             identifier: self.identifier.clone(),
         }

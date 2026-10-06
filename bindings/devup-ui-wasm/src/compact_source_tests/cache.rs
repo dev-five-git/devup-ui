@@ -78,12 +78,13 @@ fn source_claims_roundtrip_when_cached_sheet_is_imported_into_a_fresh_build(#[ca
 #[case(false)]
 #[case(true)]
 #[serial]
-fn cache_import_fails_closed_when_only_source_claim_metadata_is_missing(
+fn missing_source_claim_metadata_restores_nothing_and_matches_cold_output(
     #[case] retain_reset: bool,
 ) {
     // Given: all atom claims exist, but the exact source claim is missing.
     fresh();
-    compile("/real/a.tsx", SOURCE).unwrap_or_else(|error| panic!("{error}"));
+    let cold = compile("/real/a.tsx", SOURCE).unwrap_or_else(|error| panic!("{error}"));
+    let cold_css = with_style_sheet(|sheet| sheet.create_css(None, false));
     let snapshot = export_sheet_internal().unwrap_or_else(|error| panic!("{error}"));
     let mut incomplete: StyleSheet =
         serde_json::from_str(&snapshot).unwrap_or_else(|error| panic!("{error}"));
@@ -99,21 +100,18 @@ fn cache_import_fails_closed_when_only_source_claim_metadata_is_missing(
             }
         }
     }
-    let rejected = import_sheet_internal(incomplete)
-        .err()
-        .unwrap_or_else(|| panic!("source protection is mandatory"));
-    // When: a plugin catches the error and tries a subsequent extraction.
-    let next = compile("/real/next.tsx", SOURCE);
-    // Then: the failed import stays sticky and neither CSS nor claims is replaced.
-    assert!(rejected.contains("exact source claim"), "{rejected}");
-    assert_eq!(next.err(), Some(rejected));
+    fresh();
+    // When: a current snapshot lacks source proof but retains valid atom proof.
+    assert_eq!(import_sheet_internal(incomplete), Ok(()));
+    // Then: no cached source/atom alias survives and complete output is cold.
+    assert_eq!(with_style_sheet(|sheet| sheet.names.len()), 0);
+    assert_eq!(css::file_map::get_original_ids(), BTreeMap::new());
+    let next = compile("/real/a.tsx", SOURCE).unwrap_or_else(|error| panic!("{error}"));
+    assert_eq!(next.code(), cold.code());
     assert_eq!(
-        export_sheet_internal().unwrap_or_else(|error| panic!("{error}")),
-        snapshot
+        with_style_sheet(|sheet| sheet.create_css(None, false)),
+        cold_css
     );
-    let valid = serde_json::from_str(&snapshot).unwrap_or_else(|error| panic!("{error}"));
-    import_sheet_internal(valid).unwrap_or_else(|error| panic!("{error}"));
-    assert!(compile("/real/next.tsx", SOURCE).is_ok());
     reset_build_state_internal();
 }
 
@@ -161,12 +159,13 @@ fn unequal_cached_source_claims_report_both_real_files_before_replacing_the_shee
 #[case(false)]
 #[case(true)]
 #[serial]
-fn cache_import_rejects_corrupted_source_proof_even_when_the_named_entry_exists(
+fn corrupt_source_proof_restores_nothing_even_when_the_named_entry_exists(
     #[case] corrupt_content: bool,
 ) {
     // Given: a source variable whose claim exists but has inconsistent proof bytes.
     fresh();
-    compile("/real/a.tsx", SOURCE).unwrap_or_else(|error| panic!("{error}"));
+    let cold = compile("/real/a.tsx", SOURCE).unwrap_or_else(|error| panic!("{error}"));
+    let cold_css = with_style_sheet(|sheet| sheet.create_css(None, false));
     let snapshot = export_sheet_internal().unwrap_or_else(|error| panic!("{error}"));
     let mut corrupt: StyleSheet =
         serde_json::from_str(&snapshot).unwrap_or_else(|error| panic!("{error}"));
@@ -182,15 +181,17 @@ fn cache_import_rejects_corrupted_source_proof_even_when_the_named_entry_exists(
     } else {
         claim.descriptor.push(0);
     }
-    // When: the cache boundary checks exact proof and content-only naming together.
-    let error = import_sheet_internal(corrupt)
-        .err()
-        .unwrap_or_else(|| panic!("invalid source proof"));
-    // Then: existence alone cannot bypass collision protection.
-    assert!(error.contains("invalid exact source claim"), "{error}");
+    fresh();
+    // When: source proof and content-only naming disagree at admission.
+    assert_eq!(import_sheet_internal(corrupt), Ok(()));
+    // Then: existence alone cannot adopt the original alias or any cached atom.
+    assert_eq!(with_style_sheet(|sheet| sheet.names.len()), 0);
+    assert_eq!(css::file_map::get_original_ids(), BTreeMap::new());
+    let next = compile("/real/a.tsx", SOURCE).unwrap_or_else(|error| panic!("{error}"));
+    assert_eq!(next.code(), cold.code());
     assert_eq!(
-        export_sheet_internal().unwrap_or_else(|error| panic!("{error}")),
-        snapshot
+        with_style_sheet(|sheet| sheet.create_css(None, false)),
+        cold_css
     );
     reset_build_state_internal();
 }

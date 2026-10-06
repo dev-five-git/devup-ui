@@ -15,5 +15,5 @@ ToBTreeSet {
             },
         ),
     },
-    code: "import \"@devup-ui/core/devup-ui-0.css\";\nconst Component = ({ className }) => {\n\treturn ((__devupClass101) => <div className={`${__devupClass101 || \"\"} OLbackground-vred`} />)(className);\n};\n",
+    code: "import \"@devup-ui/core/devup-ui-0.css\";\nconst Component = ({ className }) => {\n\treturn ((__devupClass101) => <div className={`${__devupClass101 || \"\"} FLtest_ptsx-OLbackground-vred`} />)(className);\n};\n",
 }

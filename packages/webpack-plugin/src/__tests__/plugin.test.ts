@@ -26,6 +26,7 @@ interface MockCompiler {
     plugins: unknown[]
     entry?: unknown
     context?: string
+    target?: string
   }
   watchMode?: boolean
   webpack: {
@@ -77,6 +78,7 @@ let importSheetSpy: ReturnType<typeof spyOn>
 let registerThemeSpy: ReturnType<typeof spyOn>
 let setDebugSpy: ReturnType<typeof spyOn>
 let setPrefixSpy: ReturnType<typeof spyOn>
+let setNamingRootSpy: ReturnType<typeof spyOn>
 let loadDevupConfigSyncSpy: ReturnType<typeof spyOn>
 let existsSyncSpy: ReturnType<typeof spyOn>
 let mkdirSyncSpy: ReturnType<typeof spyOn>
@@ -100,6 +102,7 @@ beforeEach(() => {
   registerThemeSpy = spyOn(wasm, 'registerTheme').mockReturnValue(undefined)
   setDebugSpy = spyOn(wasm, 'setDebug').mockReturnValue(undefined)
   setPrefixSpy = spyOn(wasm, 'setPrefix').mockReturnValue(undefined)
+  setNamingRootSpy = spyOn(wasm, 'setNamingRoot').mockReturnValue(undefined)
   loadDevupConfigSyncSpy = spyOn(
     pluginUtils,
     'loadDevupConfigSync',
@@ -125,6 +128,7 @@ afterEach(() => {
   registerThemeSpy.mockRestore()
   setDebugSpy.mockRestore()
   setPrefixSpy.mockRestore()
+  setNamingRootSpy.mockRestore()
   loadDevupConfigSyncSpy.mockRestore()
   existsSyncSpy.mockRestore()
   mkdirSyncSpy.mockRestore()
@@ -175,6 +179,18 @@ function createCompiler(): MockCompiler {
 }
 
 describe('devupUIWebpackPlugin', () => {
+  it('sets the same context naming root once in every compiler', () => {
+    for (const target of ['web', 'node']) {
+      const compiler = createCompiler()
+      compiler.options.context = '/naming-project'
+      compiler.options.target = target
+      new DevupUIWebpackPlugin({}).apply(asCompiler(compiler))
+    }
+    expect(setNamingRootSpy.mock.calls).toEqual([
+      ['/naming-project', process.cwd()],
+      ['/naming-project', process.cwd()],
+    ])
+  })
   console.error = mock()
 
   describe('deterministic file numbering', () => {

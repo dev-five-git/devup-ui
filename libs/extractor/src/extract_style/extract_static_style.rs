@@ -6,7 +6,7 @@ use css::{
     content_name::{AtomContent, ContentName},
     optimize_multi_css_value::{check_multi_css_optimize, optimize_multi_css_value},
     optimize_value::optimize_value,
-    sheet_to_classname_content,
+    sheet_to_classname_owned,
     style_origin::Origin,
     style_selector::{StyleSelector, optimize_selector},
     theme_tokens::get_first_theme_token_value,
@@ -28,7 +28,7 @@ pub enum ThemeTokenResolution {
     FirstValue,
 }
 
-#[derive(PartialEq, Clone, Eq, Hash, Ord, PartialOrd)]
+#[derive(Clone)]
 pub struct ExtractStaticStyle {
     /// property
     pub property: String,
@@ -47,6 +47,8 @@ pub struct ExtractStaticStyle {
     /// Which counter, if any, names the class; kept so the sheet names it
     /// again the same way.
     pub naming: Naming,
+    /// Captured original allocation identity, retained for deferred sheet emission.
+    pub counter_owner: css::naming::CounterOwner,
     pub origin: Origin,
 }
 
@@ -117,6 +119,7 @@ impl ExtractStaticStyle {
             layer: None,
             theme_token_resolution: ThemeTokenResolution::CssVariable,
             naming: Naming::Own,
+            counter_owner: crate::sparse_sites::counter_owner(),
             origin: crate::style_origin::current(),
         }
     }
@@ -151,6 +154,7 @@ impl ExtractStaticStyle {
             layer: None,
             theme_token_resolution: ThemeTokenResolution::CssVariable,
             naming: Naming::Own,
+            counter_owner: crate::sparse_sites::counter_owner(),
             origin: crate::style_origin::current(),
         }
     }
@@ -258,9 +262,10 @@ impl ExtractStaticStyle {
 impl ExtractStyleProperty for ExtractStaticStyle {
     fn extract(&self, filename: Option<&str>) -> StyleProperty {
         let value = self.effective_value();
-        StyleProperty::ClassName(sheet_to_classname_content(
+        StyleProperty::ClassName(sheet_to_classname_owned(
             &self.atom_content(&value),
             filename,
+            self.counter_owner,
         ))
     }
 }

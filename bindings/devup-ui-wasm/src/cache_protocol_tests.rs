@@ -59,7 +59,7 @@ fn source_ids_roundtrip_restores_dynamic_names_when_extracting_in_reverse_order(
 #[case(false, true)]
 #[case(true, true)]
 #[serial]
-fn legacy_import_changes_cache_generation_when_exported(
+fn legacy_serialized_import_is_cold_and_rewritten_current(
     #[case] with_styles: bool,
     #[case] atom_mode: bool,
 ) {
@@ -70,8 +70,8 @@ fn legacy_import_changes_cache_generation_when_exported(
         legacy.add_property("old", "color", 0, "red", None, None, Some("private.tsx"));
     }
     let legacy_json = serde_json::to_string(&legacy).unwrap_or_else(|error| panic!("{error}"));
-    let local = legacy.create_css(Some("private.tsx"), false);
-    let global = legacy.create_css(None, false);
+    let local = StyleSheet::default().create_css(Some("private.tsx"), false);
+    let global = StyleSheet::default().create_css(None, false);
     css::atom_hoist::set_atom_hoist(atom_mode.then_some(2));
     let imported = serde_json::from_str(&legacy_json).unwrap_or_else(|error| panic!("{error}"));
     import_sheet_internal(imported).unwrap_or_else(|error| panic!("{error}"));
@@ -81,7 +81,7 @@ fn legacy_import_changes_cache_generation_when_exported(
     assert_ne!(exported, legacy_json);
     let json: serde_json::Value =
         serde_json::from_str(&exported).unwrap_or_else(|error| panic!("{error}"));
-    assert_eq!(json["atomNamingVersion"], 3);
+    assert_eq!(json["atomNamingVersion"], 4);
     let restored: StyleSheet =
         serde_json::from_str(&exported).unwrap_or_else(|error| panic!("{error}"));
     assert_eq!(restored.atom_plan, None);

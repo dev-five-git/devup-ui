@@ -28,6 +28,16 @@ thread_local! {
     static SITES: RefCell<Option<SiteContext>> = const { RefCell::new(None) };
 }
 
+pub(crate) fn counter_owner() -> css::naming::CounterOwner {
+    SITES.with_borrow(|context| {
+        context
+            .as_ref()
+            .map_or(css::naming::CounterOwner::Inactive, |context| {
+                css::naming::CounterOwner::from_source(&context.file)
+            })
+    })
+}
+
 /// Own edit layers map positions back to received source; upstream maps never participate.
 pub(crate) struct SiteScope(Option<SiteContext>);
 

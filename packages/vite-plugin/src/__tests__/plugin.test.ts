@@ -194,6 +194,7 @@ let getThemeInterfaceSpy: ReturnType<typeof spyOn>
 let registerThemeSpy: ReturnType<typeof spyOn>
 let setDebugSpy: ReturnType<typeof spyOn>
 let setPrefixSpy: ReturnType<typeof spyOn>
+let setNamingRootSpy: ReturnType<typeof spyOn>
 
 beforeEach(() => {
   existsSyncSpy = spyOn(fs, 'existsSync').mockReturnValue(false)
@@ -214,6 +215,7 @@ beforeEach(() => {
   registerThemeSpy = spyOn(wasm, 'registerTheme').mockReturnValue(undefined)
   setDebugSpy = spyOn(wasm, 'setDebug').mockReturnValue(undefined)
   setPrefixSpy = spyOn(wasm, 'setPrefix').mockReturnValue(undefined)
+  setNamingRootSpy = spyOn(wasm, 'setNamingRoot').mockReturnValue(undefined)
 })
 
 afterEach(() => {
@@ -229,9 +231,36 @@ afterEach(() => {
   registerThemeSpy.mockRestore()
   setDebugSpy.mockRestore()
   setPrefixSpy.mockRestore()
+  setNamingRootSpy.mockRestore()
 })
 
 describe('devupUIVitePlugin', () => {
+  it('sets one naming root for all environments before extraction', async () => {
+    const events: string[] = []
+    setNamingRootSpy.mockImplementation(() => {
+      events.push('root')
+    })
+    codeExtractSpy.mockImplementation(() => {
+      events.push('extract')
+      return createCodeExtractResult()
+    })
+    const plugin = createPlugin({})
+    await plugin.configResolved({ root: '/naming-project' })
+    for (const name of ['client', 'server', 'rsc']) {
+      await plugin.transform.call(
+        {
+          environment: {
+            name,
+            config: { consumer: name === 'client' ? 'client' : 'server' },
+          },
+        },
+        "import {Box} from '@devup-ui/react'; export const x=<Box/>;",
+        '/naming-project/src/x.tsx',
+      )
+    }
+    expect(setNamingRootSpy.mock.calls).toEqual([['/naming-project']])
+    expect(events).toEqual(['root', 'extract', 'extract', 'extract'])
+  })
   console.error = mock()
 
   it('should apply default options', () => {
@@ -580,14 +609,23 @@ describe('devupUIVitePlugin', () => {
       it('leaves an already-populated map alone on a second configResolved', async () => {
         onlyDirs('src')
         listSourceFilesSpy.mockReturnValue(['/p/src/a.tsx'])
-        const previousMap = wasm.exportFileMap()
+        const previousSheet = wasm.exportSheet()
         const existingMap = {
           '/p/src/a.tsx': 0,
           '/monorepo/packages/ui/X.tsx': 1,
         }
         seedFileMapSpy.mockImplementation(seedFileMap)
         const plugin = createPlugin({})
-        wasm.importFileMap(existingMap)
+        wasm.resetBuildState()
+        seedFileMap(['/p/src/a.tsx'])
+        seedFileMap(['/monorepo/packages/ui/X.tsx'])
+        const snapshot = JSON.parse(wasm.exportSheet())
+        const classes = JSON.parse(wasm.exportClassMap())
+        const files = JSON.parse(wasm.exportFileMap())
+        wasm.resetBuildState()
+        wasm.importSheet(snapshot)
+        wasm.importClassMap(classes)
+        wasm.importFileMap(files)
         try {
           await plugin.configResolved({ root: '/p' })
           await plugin.configResolved({ root: '/p' })
@@ -595,7 +633,33 @@ describe('devupUIVitePlugin', () => {
           expect(seedFileMapSpy).toHaveBeenCalledTimes(2)
           expect(JSON.parse(wasm.exportFileMap())).toEqual(existingMap)
         } finally {
-          wasm.importFileMap(JSON.parse(previousMap))
+          wasm.resetBuildState()
+          wasm.importSheet(JSON.parse(previousSheet))
+        }
+      })
+
+      it('numbers like a cold build when only a companion map was cached', async () => {
+        onlyDirs('src')
+        listSourceFilesSpy.mockReturnValue(['/p/src/a.tsx'])
+        const previousSheet = wasm.exportSheet()
+        seedFileMapSpy.mockImplementation(seedFileMap)
+        const plugin = createPlugin({})
+        wasm.resetBuildState()
+        wasm.importFileMap({
+          '/p/src/a.tsx': 7,
+          '/monorepo/packages/ui/X.tsx': 8,
+        })
+        try {
+          await plugin.configResolved({ root: '/p' })
+          await plugin.configResolved({ root: '/p' })
+
+          expect(seedFileMapSpy).toHaveBeenCalledTimes(2)
+          expect(JSON.parse(wasm.exportFileMap())).toEqual({
+            '/p/src/a.tsx': 0,
+          })
+        } finally {
+          wasm.resetBuildState()
+          wasm.importSheet(JSON.parse(previousSheet))
         }
       })
 

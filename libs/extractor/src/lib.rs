@@ -45,6 +45,9 @@ mod provenance;
 mod source_map;
 mod source_naming;
 mod sparse_sites;
+mod static_assignment;
+#[cfg(test)]
+mod static_assignment_tests;
 mod style_export_locations;
 mod style_origin;
 #[cfg(test)]

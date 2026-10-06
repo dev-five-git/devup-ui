@@ -36,6 +36,7 @@ fn raw_static_style<'a>(
         layer: None,
         theme_token_resolution: Default::default(),
         naming: css::Naming::Own,
+        counter_owner: crate::sparse_sites::counter_owner(),
         origin: crate::style_origin::current(),
     }))
 }

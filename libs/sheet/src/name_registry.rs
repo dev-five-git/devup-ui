@@ -84,10 +84,10 @@ pub(crate) fn claim(
 ) -> Option<(String, NameClaim)> {
     let (content, origin) = match style {
         ExtractStyleValue::Static(style) => {
-            if css::naming::private_counter(
-                source.1,
+            if css::naming::owned_private_counter(
+                style.counter_owner,
+                (source.1, style.style_order.unwrap_or(255)),
                 style.naming,
-                style.style_order.unwrap_or(255),
             )
             .is_some()
             {
@@ -96,10 +96,10 @@ pub(crate) fn claim(
             (style.content_name(), &style.origin)
         }
         ExtractStyleValue::Dynamic(style) => {
-            if css::naming::private_counter(
-                source.1,
+            if css::naming::owned_private_counter(
+                style.counter_owner(),
+                (source.1, style.style_order().unwrap_or(255)),
                 style.naming(),
-                style.style_order().unwrap_or(255),
             )
             .is_some()
             {
@@ -113,7 +113,12 @@ pub(crate) fn claim(
         | ExtractStyleValue::Import(_)
         | ExtractStyleValue::FontFace(_) => return None,
     };
-    let name = content.name_with_bits(css::get_prefix().as_deref().unwrap_or_default(), bits);
+    let order = match style {
+        ExtractStyleValue::Static(style) => style.style_order.unwrap_or(255),
+        ExtractStyleValue::Dynamic(style) => style.style_order().unwrap_or(255),
+        _ => 0,
+    };
+    let name = css::naming_scope::name(&content, (source.1, order), bits);
     let location = origin
         .location()
         .unwrap_or_else(|| RealLocation::ModuleExport {
@@ -128,6 +133,47 @@ pub(crate) fn claim(
             content: description,
             origin: origin.0.as_deref().cloned(),
             location,
+        },
+    ))
+}
+
+pub(crate) fn scope_claim(
+    style: &ExtractStyleValue,
+    source: (&str, Option<&str>),
+    bits: FingerprintBits,
+) -> Option<(String, NameClaim)> {
+    let (order, origin, owner, naming) = match style {
+        ExtractStyleValue::Static(style) => (
+            style.style_order.unwrap_or(255),
+            &style.origin,
+            style.counter_owner,
+            style.naming,
+        ),
+        ExtractStyleValue::Dynamic(style) => (
+            style.style_order().unwrap_or(255),
+            &style.origin,
+            style.counter_owner(),
+            style.naming(),
+        ),
+        _ => return None,
+    };
+    if css::naming::owned_private_counter(owner, (source.1, order), naming).is_some() {
+        return None;
+    }
+    let content = css::naming_scope::fallback(source.1, order)?;
+    let name = content.name_with_bits(css::get_prefix().as_deref().unwrap_or_default(), bits);
+    Some((
+        name,
+        NameClaim {
+            content: String::from_utf8_lossy(&content.descriptor).into_owned(),
+            descriptor: content.descriptor,
+            location: origin
+                .location()
+                .unwrap_or_else(|| RealLocation::ModuleExport {
+                    file: source.0.into(),
+                    binding: None,
+                }),
+            origin: origin.0.as_deref().cloned(),
         },
     ))
 }

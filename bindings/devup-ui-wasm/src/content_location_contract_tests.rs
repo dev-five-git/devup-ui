@@ -242,7 +242,8 @@ fn cached_opaque_claims_still_reject_exact_collisions_when_no_witness_exists() {
         match sheet.preflight_styles_with_bits(&output.styles, (&file, true), bits) {
             Ok(claims) => {
                 sheet.names.extend(claims);
-                let json = serde_json::to_string(&sheet).unwrap_or_else(|error| panic!("{error}"));
+                let json = serde_json::to_string(&sheet.export_snapshot())
+                    .unwrap_or_else(|error| panic!("{error}"));
                 sheet = serde_json::from_str(&json).unwrap_or_else(|error| panic!("{error}"));
             }
             Err(error) => {

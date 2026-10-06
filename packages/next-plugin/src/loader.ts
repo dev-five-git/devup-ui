@@ -225,10 +225,12 @@ const devupUILoader: RawLoaderDefinitionFunction<DevupUILoaderOptions> =
       importFileMap,
       importSheet,
       registerTheme,
+      setNamingRoot,
     } = loadWasm()
     const promises: Promise<void>[] = []
     if (!init) {
       init = true
+      setNamingRoot(process.cwd())
       if (watch) {
         this.addDependency(sheetFile)
         this.addDependency(classMapFile)

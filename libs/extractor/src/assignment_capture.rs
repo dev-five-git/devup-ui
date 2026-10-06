@@ -190,7 +190,7 @@ fn literal_fields<'b, 'a>(
                         Expression::ObjectExpression(_) => literal_fields(value, fields),
                         Expression::ArrowFunctionExpression(_)
                         | Expression::FunctionExpression(_) => {}
-                        _ if crate::utils::get_string_by_literal_expression(value).is_some() => {}
+                        _ if crate::static_assignment::literal_source(value) => {}
                         _ => fields.push((
                             value,
                             property.key.name().is_some_and(|name| name == "typography"),

@@ -153,6 +153,18 @@ impl AtomContent<'_> {
 }
 
 impl ContentName {
+    /// Exact canonical sheet key, distinct from source sites and declaration content.
+    #[must_use]
+    pub fn scope(key: &str) -> Self {
+        let mut lossless = String::new();
+        escape_into(&mut lossless, key);
+        Self {
+            descriptor: key.as_bytes().to_vec(),
+            lossless,
+            domain: 'F',
+        }
+    }
+
     /// Exact normalized source bytes, in the unnumbered site's separate domain.
     #[must_use]
     pub fn source(source: &str) -> Self {

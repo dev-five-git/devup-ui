@@ -197,7 +197,7 @@ fn only_original_d9_private_own_atoms_take_counter_slots_even_in_atom_mode() {
     // Then
     assert_eq!(private, "b-a");
     assert_eq!(shared, "OLcolor-vred");
-    assert_eq!(unnumbered, "OLcolor-vred");
+    assert_eq!(unnumbered, "FLunknown_ptsx-OLcolor-vred");
     assert_eq!(
         private_counter(Some("private.tsx"), Naming::Risky, 255),
         None

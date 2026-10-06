@@ -40,19 +40,7 @@ fn first_value_refs_resolve_without_aliasing_responsive_variables() {
             .unwrap_or_else(|error| panic!("{error}"));
         // Then
         let css = sheet.create_css(Some("test.tsx"), false);
-        let classes = crate::sheet_test_code::static_element_classes(
-            &output.code,
-            &[
-                None,
-                Some("$space"),
-                Some("$card"),
-                Some("$space"),
-                None,
-                Some("$zero"),
-                Some("$missing"),
-                Some("$nullable"),
-            ],
-        );
+        let classes = crate::sheet_test_code::static_element_classes(&output.code, &[None; 8]);
         assert_eq!(classes.len(), 8, "{}", output.code);
         assert_eq!(classes[0].len(), 2);
         for refs in &classes[1..] {
@@ -94,7 +82,7 @@ fn extract_first_value(sheet: &mut StyleSheet) -> String {
     sheet
         .update_styles(&output.styles, "test.tsx", false)
         .unwrap_or_else(|error| panic!("{error}"));
-    let classes = crate::sheet_test_code::static_element_classes(&output.code, &[Some("$space")]);
+    let classes = crate::sheet_test_code::static_element_classes(&output.code, &[None]);
     assert_eq!(classes[0].len(), 1, "{}", output.code);
     classes[0][0].clone()
 }

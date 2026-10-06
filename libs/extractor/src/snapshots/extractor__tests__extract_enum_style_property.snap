@@ -25,5 +25,5 @@ ToBTreeSet {
             },
         ),
     },
-    code: "import \"@devup-ui/core/devup-ui-0.css\";\n<div className=\"OLleft-v0 OLtop-v0\" />;\n",
+    code: "import \"@devup-ui/core/devup-ui-0.css\";\n<div className=\"FLtest_ptsx-OLleft-v0 FLtest_ptsx-OLtop-v0\" />;\n",
 }
