@@ -23,6 +23,7 @@ import {
   extractWithModuleResolver,
   withModuleResolver,
 } from '../wasm'
+import { extractionResolutionProof } from '../wasm-resolution-proof'
 import {
   releaseSourceReporter,
   type ReporterOptions,
@@ -172,6 +173,7 @@ export function sourceFixture(
           return {
             filename: input.filename,
             dependencies: [...output.dependencies],
+            resolutionInputs: extractionResolutionProof(output),
           }
         } finally {
           output.free()

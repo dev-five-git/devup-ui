@@ -3,6 +3,7 @@ import type { SourceType } from '@devup-ui/plugin-utils'
 import type { ExtractResponse } from './coordinator-engine'
 import type { ExtractRequest } from './coordinator-http'
 import type { CoordinatorIdentity } from './coordinator-port'
+import type { MdxInputFingerprint } from './mdx-source-freshness'
 import type { CoordinatorInput } from './state'
 import type { DevupWasm } from './wasm'
 
@@ -42,6 +43,7 @@ export interface PrewarmedOutput {
   updatedBaseStyle: boolean
   /** Files the extraction read through the module resolver */
   dependencies?: string[]
+  readonly resolutionInputs?: readonly MdxInputFingerprint[]
 }
 
 export interface PreparedSourceEvidence {
@@ -63,6 +65,7 @@ export interface PreparedSourceGeneration {
   readonly ordinaryInputs?: readonly CoordinatorInput[]
   readonly plan?: GenerationPlan
   readonly watchInputs?: readonly string[]
+  readonly resolutionInputs?: readonly MdxInputFingerprint[]
   /** Captures this generation's configuration AND prepared-source resolver. */
   readonly configureWasm: (wasm: DevupWasm) => void
 }
@@ -75,6 +78,7 @@ export interface GenerationPlan {
 export interface ReplayExtractionReport {
   readonly filename: string
   readonly dependencies: readonly string[]
+  readonly resolutionInputs?: readonly MdxInputFingerprint[]
 }
 
 export interface ReplayPreparation {

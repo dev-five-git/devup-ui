@@ -7,6 +7,7 @@ import {
 } from '@devup-ui/plugin-utils'
 
 import type { PreparedSourceGeneration } from './coordinator-options'
+import { verifyResolutionProof } from './mdx-resolution-proof'
 import { affectedMdxSources } from './mdx-source-affected'
 import {
   exportMdxRestartCache,
@@ -80,13 +81,23 @@ export function createMdxSourceManager(
         const changes = control.changedPaths ?? []
         const dirty = new Set(changes)
         if (previous && old) {
+          for (const input of previous.resolutionInputs)
+            if (dirty.has(input.path) && !changedMdxInput(root, [input]))
+              dirty.delete(input.path)
           for (const input of old.ordinary)
             if (changedMdxInput(root, [input])) dirty.add(input.path)
           for (const [filename, entry] of old.entries)
-            if (changedMdxInput(filename, entry.inputs)) dirty.add(filename)
-          for (const path of changes)
-            for (const filename of affectedMdxSources(previous, path))
+            if (
+              changedMdxInput(filename, [
+                ...entry.inputs,
+                ...(entry.resolutionInputs ?? []),
+              ])
+            )
               dirty.add(filename)
+          for (const path of changes)
+            if (dirty.has(path))
+              for (const filename of affectedMdxSources(previous, path))
+                dirty.add(filename)
           for (const filename of old.entries.keys()) {
             if (
               computeReachableFiles({
@@ -105,67 +116,76 @@ export function createMdxSourceManager(
           dirty,
           deadline,
         })
-        if (
-          previous &&
-          old &&
-          run.entries.size === old.entries.size &&
-          [...run.entries].every(
-            ([filename, entry]) => entry === old.entries.get(filename),
-          ) &&
-          isDeepStrictEqual(
-            [
-              run.plan.seedFiles,
-              run.plan.canonicalMap,
-              run.plan.fileRoutes,
-              run.plan.atomThreshold,
-              run.plan.expectedBaseFiles,
-            ],
-            [
-              previous.plan.seedFiles,
-              previous.plan.canonicalMap,
-              previous.plan.fileRoutes,
-              previous.plan.atomThreshold,
-              previous.plan.expectedBaseFiles,
-            ],
-          )
-        ) {
-          const ordinary = collectMdxOrdinaryInputs(binding, [
-            ...run.planned,
-            ...old.ordinary.map((input) => input.path),
-          ])
+        try {
+          verifyResolutionProof(root, run.resolution.snapshot())
           if (
-            ordinary.pending.length === 0 &&
-            !changedMdxInput(root, old.ordinary) &&
-            JSON.stringify(
-              ordinary.ordinaryInputs.map((input) => [
-                input.filename,
-                input.source,
-              ]),
-            ) ===
+            previous &&
+            old &&
+            run.entries.size === old.entries.size &&
+            [...run.entries].every(
+              ([filename, entry]) => entry === old.entries.get(filename),
+            ) &&
+            isDeepStrictEqual(
+              [
+                run.plan.seedFiles,
+                run.plan.canonicalMap,
+                run.plan.fileRoutes,
+                run.plan.atomThreshold,
+                run.plan.expectedBaseFiles,
+              ],
+              [
+                previous.plan.seedFiles,
+                previous.plan.canonicalMap,
+                previous.plan.fileRoutes,
+                previous.plan.atomThreshold,
+                previous.plan.expectedBaseFiles,
+              ],
+            )
+          ) {
+            const ordinary = collectMdxOrdinaryInputs(binding, [
+              ...run.planned,
+              ...old.ordinary.map((input) => input.path),
+            ])
+            if (
+              ordinary.pending.length === 0 &&
+              !changedMdxInput(root, previous.resolutionInputs) &&
+              !changedMdxInput(root, old.ordinary) &&
               JSON.stringify(
-                previous.ordinaryInputs.map((input) => [
+                ordinary.ordinaryInputs.map((input) => [
                   input.filename,
                   input.source,
                 ]),
-              )
+              ) ===
+                JSON.stringify(
+                  previous.ordinaryInputs.map((input) => [
+                    input.filename,
+                    input.source,
+                  ]),
+                )
+            )
+              return previous
+          }
+          const delivered = await deliverMdxSourceGeneration(
+            control.extractDependencies === undefined
+              ? binding
+              : {
+                  ...binding,
+                  extractDependencies: control.extractDependencies,
+                },
+            run,
+            signal,
           )
-            return previous
+          states.set(delivered.generation.configureWasm, {
+            generation: delivered.generation,
+            graph: run.graph,
+            entries: run.entries,
+            ordinary: delivered.ordinary,
+            pending: run.pending,
+          })
+          return delivered.generation
+        } finally {
+          run.resolution.retire()
         }
-        const delivered = await deliverMdxSourceGeneration(
-          control.extractDependencies === undefined
-            ? binding
-            : { ...binding, extractDependencies: control.extractDependencies },
-          run,
-          signal,
-        )
-        states.set(delivered.generation.configureWasm, {
-          generation: delivered.generation,
-          graph: run.graph,
-          entries: run.entries,
-          ordinary: delivered.ordinary,
-          pending: run.pending,
-        })
-        return delivered.generation
       },
     )
   }
@@ -206,7 +226,10 @@ export function createMdxSourceManager(
       const pending = state.pending.values().next().value
       if (pending) throw new MdxNativeInputPendingError(pending)
       for (const [filename, entry] of state.entries) {
-        const changed = changedMdxInput(filename, entry.inputs)
+        const changed = changedMdxInput(filename, [
+          ...entry.inputs,
+          ...(entry.resolutionInputs ?? []),
+        ])
         if (changed)
           throw new MdxFreshnessError(
             filename,
@@ -214,7 +237,10 @@ export function createMdxSourceManager(
             'input changed before CSS finalization',
           )
       }
-      const changed = changedMdxInput(root, state.ordinary)
+      const changed = changedMdxInput(root, [
+        ...state.ordinary,
+        ...state.generation.resolutionInputs,
+      ])
       if (changed)
         throw new MdxFreshnessError(
           root,

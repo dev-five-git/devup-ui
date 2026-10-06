@@ -1,7 +1,11 @@
 import { readFileSync } from 'node:fs'
 import { join, relative, resolve } from 'node:path'
 
-import type { ModuleAliasOptions, PreparedSource } from '@devup-ui/plugin-utils'
+import type {
+  ModuleAliasOptions,
+  PreparedSource,
+  ResolutionInputObserver,
+} from '@devup-ui/plugin-utils'
 import {
   buildCanonicalMap,
   buildStaticImportGraph,
@@ -208,6 +212,7 @@ export async function planPreparedSources(
     readonly aliases: ModuleAliasOptions
     readonly conditions: readonly string[]
     readonly cacheReader: (filename: string) => PreparedSource
+    readonly onResolutionInputs?: ResolutionInputObserver
   },
 ): Promise<SourcePlan> {
   const exclude = sourceDiscoveryExcludes(context)
@@ -222,6 +227,7 @@ export async function planPreparedSources(
       alias: settings.aliases,
       conditions: settings.conditions,
       prepareSource: settings.cacheReader,
+      onResolutionInputs: settings.onResolutionInputs,
     },
   )
   const routes = planSourceGraph(context, graph)

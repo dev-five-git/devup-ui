@@ -2,6 +2,7 @@ import { resolve } from 'node:path'
 
 import { computeReachableFiles } from '@devup-ui/plugin-utils'
 
+import { deliverResolutionProof } from './mdx-resolution-delivery'
 import type { MdxCacheEntry } from './mdx-source-cache'
 import {
   changedMdxInput,
@@ -124,6 +125,7 @@ export async function deliverMdxSourceGeneration(
   }
   for (const expectation of ordinary.pending)
     run.pending.set(expectation.filename, expectation)
+  const resolutionInputs = deliverResolutionProof(run, root, reports)
   for (const report of reports) {
     const filename = resolve(root, report.filename)
     const entry = entries.get(filename)
@@ -206,7 +208,11 @@ export async function deliverMdxSourceGeneration(
       Object.fromEntries(
         [...entries].map(([filename, entry]) => [
           filename,
-          Object.freeze({ prepared: entry.prepared, inputs: entry.inputs }),
+          Object.freeze({
+            prepared: entry.prepared,
+            inputs: entry.inputs,
+            resolutionInputs: entry.resolutionInputs,
+          }),
         ]),
       ),
     ),
@@ -214,10 +220,12 @@ export async function deliverMdxSourceGeneration(
     ordinaryInputs,
     pendingOrdinary: Object.freeze([...run.pending.values()]),
     cacheReader,
+    resolutionInputs,
     watchInputs: Object.freeze(
       [
         ...new Set([
           ...ordinary.fingerprints.map((input) => input.path),
+          ...resolutionInputs.map((input) => input.path),
           ...run.pending.keys(),
           ...[...entries.values()].flatMap((entry) =>
             entry.inputs.map((input) => input.path),

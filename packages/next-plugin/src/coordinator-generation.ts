@@ -17,6 +17,15 @@ export function immutableGeneration(
 ): PreparedSourceGeneration {
   return Object.freeze({
     configureWasm: generation.configureWasm,
+    ...(generation.resolutionInputs === undefined
+      ? {}
+      : {
+          resolutionInputs: Object.freeze(
+            generation.resolutionInputs.map((input) =>
+              Object.freeze({ ...input }),
+            ),
+          ),
+        }),
     ...(generation.ordinaryInputs === undefined
       ? {}
       : {

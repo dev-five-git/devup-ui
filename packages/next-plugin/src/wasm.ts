@@ -7,7 +7,13 @@ import {
   createModuleResolver,
   type ModuleAliasOptions,
   type PrepareSource,
+  type ResolutionInputObserver,
 } from '@devup-ui/plugin-utils'
+
+import {
+  createEngineResolutionProof,
+  withExtractionResolutionProof,
+} from './wasm-resolution-proof'
 
 export type DevupWasm = typeof import('@devup-ui/wasm')
 export type DevupWebpackPlugin = typeof import('@devup-ui/webpack-plugin')
@@ -17,6 +23,7 @@ export interface ModuleResolverSettings {
   readonly alias?: ModuleAliasOptions
   readonly includeMdx?: boolean | readonly string[]
   readonly conditions?: readonly string[]
+  readonly onResolutionInputs?: ResolutionInputObserver
 }
 
 const engineResolvers = new WeakMap<
@@ -73,13 +80,20 @@ export function withModuleResolver(
       previous.settings === settings
     )
       return wasm
+    const proof = createEngineResolutionProof(
+      wasm,
+      root,
+      settings?.onResolutionInputs,
+    )
     const resolver = createModuleResolver({
       ...settings,
+      onResolutionInputs: proof.observe,
       cwd: root,
       toId: (path) => relative(root, path).replaceAll('\\', '/'),
     })
     wasm.setModuleResolver(resolver)
     engineResolvers.set(wasm, { root, settings, resolver })
+    proof.install()
   }
   return wasm
 }
@@ -92,17 +106,23 @@ export function extractWithModuleResolver(
 ): ReturnType<DevupWasm['codeExtract']> {
   const configured = engineResolvers.get(wasm)
   try {
-    // Register the request's own compiler map, not just imported module maps.
-    const prepared = configured?.settings?.prepareSource
-      ? configured.resolver(resolve(configured.root, args[0]), args[0])
-      : undefined
-    const extract = sourceMap
-      ? wasm.codeExtract
-      : wasm.codeExtractWithoutSourceMap
-    const sourceType = args[8] ?? prepared?.sourceType
-    const extractionArgs: Parameters<DevupWasm['codeExtract']> = [...args]
-    if (sourceType !== undefined) extractionArgs[8] = sourceType
-    return extract(...extractionArgs)
+    return withExtractionResolutionProof(
+      wasm,
+      resolve(configured?.root ?? process.cwd(), args[0]),
+      () => {
+        // Register the request's own compiler map, not just imported module maps.
+        const prepared = configured?.settings?.prepareSource
+          ? configured.resolver(resolve(configured.root, args[0]), args[0])
+          : undefined
+        const extract = sourceMap
+          ? wasm.codeExtract
+          : wasm.codeExtractWithoutSourceMap
+        const sourceType = args[8] ?? prepared?.sourceType
+        const extractionArgs: Parameters<DevupWasm['codeExtract']> = [...args]
+        if (sourceType !== undefined) extractionArgs[8] = sourceType
+        return extract(...extractionArgs)
+      },
+    )
   } catch (error) {
     throw configured?.settings?.prepareSource
       ? configured.resolver.remapError(error)

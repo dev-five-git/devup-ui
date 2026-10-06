@@ -23,6 +23,9 @@ export function createReplayObserver(
       ordered.map(({ filename }) =>
         Object.freeze({
           filename,
+          ...(outputs.get(filename)?.resolutionInputs === undefined
+            ? {}
+            : { resolutionInputs: outputs.get(filename)?.resolutionInputs }),
           dependencies: Object.freeze([
             ...(outputs.get(filename)?.dependencies ?? []),
           ]),

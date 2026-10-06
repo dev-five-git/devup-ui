@@ -63,6 +63,7 @@ export type MdxSourcePlan = Omit<
 export type MdxExtractionReport = {
   readonly filename: string
   readonly dependencies: readonly string[]
+  readonly resolutionInputs?: readonly MdxInputFingerprint[]
 }
 export type MdxExtractionView = {
   readonly plan: MdxSourcePlan
@@ -95,6 +96,7 @@ export type MdxPreparationRun = {
 export type MdxCompiledRecord = {
   readonly prepared: PreparedMdx
   readonly inputs: readonly MdxInputFingerprint[]
+  readonly resolutionInputs?: readonly MdxInputFingerprint[]
 }
 export type MdxSourceGeneration = PreparedSourceGeneration &
   MdxExtractionView & {
@@ -105,4 +107,5 @@ export type MdxSourceGeneration = PreparedSourceGeneration &
     readonly cacheReader: (filename: string) => PreparedSource
     readonly watchInputs: readonly string[]
     readonly extractionDependencies: readonly MdxExtractionReport[]
+    readonly resolutionInputs: readonly MdxInputFingerprint[]
   }

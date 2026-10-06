@@ -5,6 +5,10 @@ import {
   snapshotMdxBindingValue,
 } from './mdx-binding-value'
 import { isMdxRecord } from './mdx-pipeline'
+import {
+  readCompilerRestartReports,
+  readResolutionRestartProof,
+} from './mdx-resolution-cache'
 import { reportedMdxInputs, sourceHash } from './mdx-source-freshness'
 import { immutableMdxMap } from './mdx-source-immutable'
 import type {
@@ -106,6 +110,8 @@ export function exportMdxRestartCache(
               mode: entry.mode,
               prepared: entry.prepared,
               inputs: entry.inputs,
+              resolutionInputs: entry.resolutionInputs,
+              resolutionProofVersion: 1,
             },
           ],
     ),
@@ -165,6 +171,10 @@ export function importMdxRestartCache(
         mtime: input.mtime,
       })
     })
+    const resolutionInputs =
+      value.resolutionProofVersion === 1
+        ? readResolutionRestartProof(value.resolutionInputs)
+        : undefined
     const portable = portableValue(value.identity)
     if (
       portable === undefined ||
@@ -180,7 +190,7 @@ export function importMdxRestartCache(
       contextDependencies: paths(p.contextDependencies),
       missingDependencies: paths(p.missingDependencies),
       buildDependencies: paths(p.buildDependencies),
-      dependencyReports: Object.freeze([]),
+      dependencyReports: readCompilerRestartReports(p.dependencyReports),
     })
     if (
       entries.has(value.filename) ||
@@ -196,6 +206,7 @@ export function importMdxRestartCache(
       )
     )
       throw new TypeError('Incomplete MDX restart input proof')
+    if (resolutionInputs === undefined) continue
     entries.set(
       value.filename,
       Object.freeze({
@@ -206,6 +217,7 @@ export function importMdxRestartCache(
         mode: value.mode,
         prepared,
         inputs: Object.freeze(inputs),
+        resolutionInputs: Object.freeze(resolutionInputs),
       }),
     )
   }

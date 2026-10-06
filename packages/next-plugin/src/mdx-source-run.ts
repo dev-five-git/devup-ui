@@ -12,6 +12,7 @@ import {
   createMdxOptionsInstance,
   type MdxDeadline,
 } from './mdx-prepare'
+import { createResolutionProof } from './mdx-resolution-proof'
 import {
   captureMdxCacheIdentity,
   compatibleMdxCache,
@@ -51,6 +52,7 @@ export async function runMdxSourcePreparation(
   const accuracy = createMdxTimestampAccuracy()
   const entries = new Map<string, MdxCacheEntry>()
   const pending = new Map<string, MdxNativeExpectation>()
+  const resolution = createResolutionProof(context.root)
   let extracting = false
   const cacheReader = (filename: string) => {
     const prepared = entries.get(resolve(filename))?.prepared
@@ -82,6 +84,7 @@ export async function runMdxSourcePreparation(
     alias: binding.aliases,
     conditions: binding.conditions,
     includeMdx: binding.extensions,
+    onResolutionInputs: resolution.observe,
   })
   const raw = buildStaticImportGraph(roots, tsconfig, {
     cwd: context.root,
@@ -90,6 +93,7 @@ export async function runMdxSourcePreparation(
     alias: binding.aliases,
     conditions: binding.conditions,
     includeMdx: binding.extensions,
+    onResolutionInputs: resolution.observe,
   })
   let plan = { ...planSourceGraph(context, raw), seedFiles: [] as string[] }
   for (;;) {
@@ -136,7 +140,8 @@ export async function runMdxSourcePreparation(
         cached &&
         !dependencyChanged &&
         compatibleMdxCache(cached, selection) &&
-        !changedMdxInput(filename, cached.inputs)
+        !changedMdxInput(filename, cached.inputs) &&
+        !changedMdxInput(filename, cached.resolutionInputs ?? [])
       )
         entries.set(filename, cached)
       else {
@@ -185,6 +190,7 @@ export async function runMdxSourcePreparation(
       aliases: binding.aliases,
       conditions: binding.conditions,
       cacheReader,
+      onResolutionInputs: resolution.observe,
     })
     if (!added) break
   }
@@ -222,6 +228,7 @@ export async function runMdxSourcePreparation(
     plan,
     planned,
     pending,
+    resolution,
     enableExtraction: () => {
       extracting = true
     },

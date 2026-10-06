@@ -1,16 +1,21 @@
 import { dirname, relative } from 'node:path'
 
+import type { ResolutionInputs } from '@devup-ui/plugin-utils'
+
 import type { ExtractRequest } from './coordinator-http'
 import type { PrewarmedOutput } from './coordinator-options'
+import type { MdxInputFingerprint } from './mdx-source-freshness'
 import {
   type AllocatorState,
   type CoordinatorInput,
   importAllocatorState,
 } from './state'
 import { type DevupWasm, extractWithModuleResolver } from './wasm'
+import { extractionResolutionProof } from './wasm-resolution-proof'
 
 export interface ExtractOutputSnapshot extends Omit<PrewarmedOutput, 'source'> {
   css?: string
+  readonly resolutionInputs?: readonly MdxInputFingerprint[]
 }
 
 /** Copy every WASM-backed getter once, then release its Rust allocation. */
@@ -18,6 +23,7 @@ export function takeExtractOutput(
   output: ReturnType<DevupWasm['codeExtract']>,
 ): ExtractOutputSnapshot {
   try {
+    const proof = extractionResolutionProof(output)
     return {
       code: output.code,
       css: output.css,
@@ -25,6 +31,7 @@ export function takeExtractOutput(
       map: output.map,
       updatedBaseStyle: output.updatedBaseStyle,
       dependencies: output.dependencies,
+      ...(proof.length ? { resolutionInputs: proof } : {}),
     }
   } finally {
     output.free()
@@ -37,6 +44,7 @@ export interface ExtractResponse {
   cssFile?: string
   updatedBaseStyle: boolean
   dependencies: string[]
+  readonly resolutionInputs?: ResolutionInputs
 }
 
 /**
@@ -58,6 +66,22 @@ export function toExtractResponse(
     cssFile: output.cssFile,
     updatedBaseStyle: output.updatedBaseStyle,
     dependencies: [...(output.dependencies ?? []), ...watched],
+    ...(output.resolutionInputs?.length
+      ? {
+          resolutionInputs: Object.freeze({
+            fileDependencies: Object.freeze(
+              output.resolutionInputs
+                .filter((input) => input.kind === 'file')
+                .map((input) => input.path),
+            ),
+            missingDependencies: Object.freeze(
+              output.resolutionInputs
+                .filter((input) => input.kind === 'missing')
+                .map((input) => input.path),
+            ),
+          }),
+        }
+      : {}),
   }
 }
 

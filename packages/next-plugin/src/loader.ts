@@ -15,6 +15,8 @@ import {
 } from './coordinator-client'
 import { takeExtractOutput } from './coordinator-engine'
 import type { CoordinatorIdentity } from './coordinator-port'
+import { loaderResolutionWatchPath } from './loader-resolution-watch'
+import { parseCoordinatorResponse, parseSourceMap } from './loader-response'
 import { extractWithModuleResolver, loadWasm } from './wasm'
 
 const stateWriter = createStateWriter((path, content, encoding) =>
@@ -47,37 +49,6 @@ let init = false
 
 function toLoaderError(error: unknown): Error {
   return error instanceof Error ? error : new Error(String(error))
-}
-
-function parseCoordinatorResponse(content: string) {
-  const data: unknown = JSON.parse(content)
-  if (
-    typeof data !== 'object' ||
-    data === null ||
-    !('code' in data) ||
-    typeof data.code !== 'string'
-  ) {
-    throw new Error('Coordinator response missing code')
-  }
-  const map =
-    'map' in data && typeof data.map === 'string' ? data.map : undefined
-  return {
-    code: data.code,
-    map: parseSourceMap(map),
-    dependencies:
-      'dependencies' in data && Array.isArray(data.dependencies)
-        ? data.dependencies.filter(
-            (dependency): dependency is string =>
-              typeof dependency === 'string',
-          )
-        : [],
-  }
-}
-
-function parseSourceMap(sourceMap: string | undefined): string | null {
-  if (!sourceMap) return null
-  JSON.parse(sourceMap)
-  return sourceMap
 }
 
 const devupUILoader: RawLoaderDefinitionFunction<DevupUILoaderOptions> =
@@ -139,6 +110,20 @@ const devupUILoader: RawLoaderDefinitionFunction<DevupUILoaderOptions> =
           const data = parseCoordinatorResponse(content)
           for (const dependency of data.dependencies)
             this.addDependency(resolve(projectRoot, dependency))
+          for (const dependency of data.fileDependencies)
+            this.addDependency(
+              loaderResolutionWatchPath(
+                resolve(projectRoot, dependency),
+                this._compiler,
+              ),
+            )
+          for (const dependency of data.missingDependencies)
+            this.addMissingDependency(
+              loaderResolutionWatchPath(
+                resolve(projectRoot, dependency),
+                this._compiler,
+              ),
+            )
           return data
         })
         .then(

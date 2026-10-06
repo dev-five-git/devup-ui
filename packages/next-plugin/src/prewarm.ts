@@ -6,6 +6,7 @@ import {
   type ModuleAliasOptions,
   type ModuleResolution,
   type PrepareSource,
+  type ResolutionInputObserver,
   type ResolvedModule,
   type StaticImportGraph,
 } from '@devup-ui/plugin-utils'
@@ -134,6 +135,7 @@ export interface CollectPrewarmFilesOptions {
     readonly alias?: ModuleAliasOptions
     readonly conditions?: readonly string[]
     readonly includeMdx?: readonly string[]
+    readonly onResolutionInputs?: ResolutionInputObserver
   }
 }
 

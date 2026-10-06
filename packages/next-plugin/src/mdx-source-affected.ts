@@ -9,7 +9,7 @@ export function affectedMdxSources(
   return Object.freeze(
     Object.entries(generation.compiled)
       .filter(([, entry]) =>
-        entry.inputs.some((input) => {
+        [...entry.inputs, ...(entry.resolutionInputs ?? [])].some((input) => {
           if (input.path === path) return true
           const child = relative(input.path, path)
           return (
