@@ -72,6 +72,7 @@ export async function runMdxSourcePreparation(
     return prepared
       ? {
           code: prepared.source,
+          sourceType: 'compiled-mdx' as const,
           ...(prepared.map === undefined ? {} : { map: prepared.map }),
         }
       : undefined
@@ -145,7 +146,7 @@ export async function runMdxSourcePreparation(
           root: context.root,
           filename,
           pipeline: requireMdxPipeline(filename, selection.pipeline),
-          context: selection.context,
+          context: { ...selection.context, generation: optionsInstance },
           signal,
           deadline,
           optionsInstance,
@@ -202,7 +203,12 @@ export async function runMdxSourcePreparation(
     if (!planned.has(filename)) entries.delete(filename)
   const verify = createModuleResolver({ cwd: context.root, ...resolver })
   for (const filename of planned) {
-    if (/\.mdx?$/i.test(filename) && !entries.has(filename))
+    if (
+      binding.extensions.some((extension) =>
+        filename.toLowerCase().endsWith(extension),
+      ) &&
+      !entries.has(filename)
+    )
       verify(
         filename,
         [...(graph.staticImporters.get(filename) ?? [])][0] ?? filename,

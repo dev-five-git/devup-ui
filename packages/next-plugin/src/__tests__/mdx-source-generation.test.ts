@@ -188,11 +188,18 @@ it('never serves excluded compiled records while ordinary output dependencies st
   )
 })
 
-it('rejects other configured extensions until the explicit source type API is merged', () => {
+it('accepts other configured extensions with the merged explicit source type API', async () => {
   // Given
-  const f = sourceFixture({})
-  // When / Then
-  expect(() =>
-    createMdxSourceManager({ ...f.binding, extensions: ['.mdown'] }),
-  ).toThrow(`${f.binding.configFile}:1:1`)
+  const f = sourceFixture(
+    {
+      'app/page.tsx': `import './content.mdown'; export default ()=>null`,
+      'app/content.mdown': styledMdx,
+    },
+    { extensions: ['.mdown'] },
+  )
+  // When
+  const generation = await f.manager.prepare(f.signal)
+  // Then
+  expect(generation.sources[0]?.input.filename).toBe('app/content.mdown')
+  expect(f.css(generation)).toContain('background:red')
 })

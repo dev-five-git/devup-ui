@@ -107,7 +107,8 @@ export function assertAdoptedRequest(
   const input = inputs.find(({ filename }) => filename === request.filename)
   if (
     input?.source !== request.code ||
-    input.resourcePath !== request.resourcePath
+    input.resourcePath !== request.resourcePath ||
+    input.sourceType !== request.sourceType
   ) {
     throw locatedError(
       request.filename,
@@ -125,7 +126,10 @@ export function preparedInput(
   const input = generation?.sources.find(
     (source) => source.input.filename === request.filename,
   )?.input
-  if (input !== undefined && input.source !== request.code) {
+  if (
+    input !== undefined &&
+    (input.source !== request.code || input.sourceType !== request.sourceType)
+  ) {
     throw locatedError(
       request.filename,
       'accept compiled source from a different prepared generation',

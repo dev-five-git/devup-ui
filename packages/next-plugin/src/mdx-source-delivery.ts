@@ -33,6 +33,7 @@ function compiledSources(
         filename: sourceInputKey(root, filename),
         resourcePath: filename,
         source: entry.prepared.source,
+        sourceType: 'compiled-mdx' as const,
         dependencies: Object.freeze(
           entry.inputs
             .filter(

@@ -1,4 +1,4 @@
-import { isAbsolute, join, relative } from 'node:path'
+import { join } from 'node:path'
 import { isDeepStrictEqual } from 'node:util'
 
 import {
@@ -7,6 +7,7 @@ import {
 } from '@devup-ui/plugin-utils'
 
 import type { PreparedSourceGeneration } from './coordinator-options'
+import { affectedMdxSources } from './mdx-source-affected'
 import {
   exportMdxRestartCache,
   importMdxRestartCache,
@@ -25,9 +26,11 @@ import { runMdxSourcePreparation } from './mdx-source-run'
 import type {
   MdxBuildBinding,
   MdxNativeExpectation,
+  MdxPreparationRun,
   MdxSourceGeneration,
 } from './mdx-source-types'
 
+export { affectedMdxSources } from './mdx-source-affected'
 export type {
   MdxBuildBinding,
   MdxPipelineSelection,
@@ -41,40 +44,15 @@ export class MdxSourceExtensionError extends Error {
     readonly extension: string,
   ) {
     super(
-      `${configFile}:1:1: MDX extension ${extension} needs the explicit #755 SourceType API; use .md or .mdx until that API is available`,
+      `${configFile}:1:1: MDX extension predicate ${extension} needs a certified finite anchored literal suffix condition; use a literal extension or finite extension alternation`,
     )
   }
-}
-
-export function affectedMdxSources(
-  generation: MdxSourceGeneration,
-  path: string,
-): readonly string[] {
-  return Object.freeze(
-    Object.entries(generation.compiled)
-      .filter(([, entry]) =>
-        entry.inputs.some((input) => {
-          if (input.path === path) return true
-          const child = relative(input.path, path)
-          return (
-            input.kind === 'context' &&
-            child.split(/[\\/]/)[0] !== '..' &&
-            !isAbsolute(child)
-          )
-        }),
-      )
-      .map(([filename]) => filename)
-      .sort(),
-  )
 }
 
 export function createMdxSourceManager(
   binding: MdxBuildBinding,
   restartCache?: string,
 ) {
-  for (const extension of binding.extensions)
-    if (extension !== '.md' && extension !== '.mdx')
-      throw new MdxSourceExtensionError(binding.configFile, extension)
   const root = binding.effectiveAppContext.root
   const stored =
     restartCache === undefined
@@ -93,12 +71,13 @@ export function createMdxSourceManager(
   async function prepare(
     signal: AbortSignal,
     previous?: MdxSourceGeneration,
-    changes: readonly string[] = [],
+    control: MdxPreparationRun = {},
   ): Promise<MdxSourceGeneration> {
     return withMdxSourceControl(
       { filename: root, signal },
       async (signal, deadline) => {
         const old = previous ? stateFor(previous) : undefined
+        const changes = control.changedPaths ?? []
         const dirty = new Set(changes)
         if (previous && old) {
           for (const input of old.ordinary)
@@ -172,7 +151,13 @@ export function createMdxSourceManager(
           )
             return previous
         }
-        const delivered = await deliverMdxSourceGeneration(binding, run, signal)
+        const delivered = await deliverMdxSourceGeneration(
+          control.extractDependencies === undefined
+            ? binding
+            : { ...binding, extractDependencies: control.extractDependencies },
+          run,
+          signal,
+        )
         states.set(delivered.generation.configureWasm, {
           generation: delivered.generation,
           graph: run.graph,
@@ -193,11 +178,12 @@ export function createMdxSourceManager(
       throw new TypeError('Generation does not belong to this source manager')
     return state
   }
-  type RefreshRequest<T extends PreparedSourceGeneration> = {
-    readonly generation: T
-    readonly signal: AbortSignal
-    readonly changedPaths?: readonly string[]
-  }
+  type RefreshRequest<T extends PreparedSourceGeneration> =
+    MdxPreparationRun & {
+      readonly generation: T
+      readonly signal: AbortSignal
+      readonly changedPaths?: readonly string[]
+    }
   function refresh(
     request: RefreshRequest<MdxSourceGeneration>,
   ): Promise<MdxSourceGeneration>
@@ -208,11 +194,12 @@ export function createMdxSourceManager(
     request: RefreshRequest<PreparedSourceGeneration>,
   ): Promise<PreparedSourceGeneration> {
     const original = stateFor(request.generation).generation
-    const next = await prepare(request.signal, original, request.changedPaths)
+    const next = await prepare(request.signal, original, request)
     return next === original ? request.generation : next
   }
   return Object.freeze({
-    prepare: (signal: AbortSignal) => prepare(signal),
+    prepare: (signal: AbortSignal, control?: MdxPreparationRun) =>
+      prepare(signal, undefined, control),
     refresh,
     validateForCssFinalization(generation: PreparedSourceGeneration) {
       const state = stateFor(generation)

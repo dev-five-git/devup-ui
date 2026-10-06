@@ -110,7 +110,10 @@ it('rejects a dev result when a reported input is modified during its single com
     true,
   )
   f.pluginOptions.before = async () => {
-    f.write('app/data.json', '{"color":"blue"}', false)
+    const input = f.write('app/data.json', '{"color":"blue"}', false)
+    // NTFS write timestamps can lag the compile clock by a Windows clock tick.
+    const changedAt = new Date()
+    utimesSync(input, changedAt, changedAt)
   }
   // When / Then
   await expect(f.manager.prepare(f.signal)).rejects.toBeInstanceOf(

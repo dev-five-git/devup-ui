@@ -2,6 +2,8 @@ import { createHash } from 'node:crypto'
 import { existsSync, readFileSync } from 'node:fs'
 import { resolve } from 'node:path'
 
+import type { SourceType } from '@devup-ui/plugin-utils'
+
 import type { ExtractOutputSnapshot } from './coordinator-engine'
 import type { ExtractRequest } from './coordinator-http'
 import type { CoordinatorOptions } from './coordinator-options'
@@ -23,7 +25,7 @@ export function createInput(
   {
     code,
     ...request
-  }: Pick<ExtractRequest, 'filename' | 'resourcePath' | 'code'>,
+  }: Pick<ExtractRequest, 'filename' | 'resourcePath' | 'code' | 'sourceType'>,
   dependencies: readonly string[],
 ): CoordinatorInput {
   return {
@@ -49,6 +51,7 @@ export function isGone(input: CoordinatorInput): boolean {
 export function isCurrent(input: CoordinatorInput): boolean {
   // Compiled Markdown needs a fresh provider generation, not a raw backing stamp.
   return (
+    input.sourceType === undefined &&
     !/\.mdx?$/i.test(input.resourcePath) &&
     (input.backing === '' || stampFile(input.resourcePath) === input.backing)
   )
@@ -69,7 +72,11 @@ export interface InputLedger {
    * The output of an earlier identical transform, if the engine still holds
    * exactly that source and nothing it read has changed since.
    */
-  lookup(filename: string, source: string): ExtractOutputSnapshot | undefined
+  lookup(
+    filename: string,
+    source: string,
+    sourceType?: SourceType,
+  ): ExtractOutputSnapshot | undefined
   /** Live inputs in replay (path) order. */
   list(): CoordinatorInput[]
   /** Swap the live inputs wholesale; cached outputs no longer apply. */
@@ -89,12 +96,12 @@ export interface InputLedger {
 export function createInputLedger(maxOutputs: number): InputLedger {
   let inputs = new Map<string, CoordinatorInput>()
   let outputs = new Map<string, ExtractOutputSnapshot>()
-  const keyOf = (filename: string, source: string) =>
-    `${filename}\0${hash(source)}`
+  const keyOf = (filename: string, source: string, sourceType?: SourceType) =>
+    `${filename}\0${sourceType ?? ''}\0${hash(source)}`
   return {
     accept(input, output) {
       inputs.set(input.filename, input)
-      const key = keyOf(input.filename, input.source)
+      const key = keyOf(input.filename, input.source, input.sourceType)
       outputs.delete(key)
       outputs.set(key, output)
       for (const oldest of outputs.keys()) {
@@ -102,14 +109,15 @@ export function createInputLedger(maxOutputs: number): InputLedger {
         outputs.delete(oldest)
       }
     },
-    lookup(filename, source) {
+    lookup(filename, source, sourceType) {
       const input = inputs.get(filename)
       const fresh =
         input?.source === source &&
+        input.sourceType === sourceType &&
         Object.entries(input.stamps).every(
           ([path, stamp]) => stampFile(path) === stamp,
         )
-      const key = keyOf(filename, source)
+      const key = keyOf(filename, source, sourceType)
       const output = fresh ? outputs.get(key) : undefined
       if (output) {
         outputs.delete(key)
@@ -130,7 +138,10 @@ export function createInputLedger(maxOutputs: number): InputLedger {
       for (const input of next) {
         const output = extracted.get(input.filename)
         if (output !== undefined)
-          stagedOutputs.set(keyOf(input.filename, input.source), output)
+          stagedOutputs.set(
+            keyOf(input.filename, input.source, input.sourceType),
+            output,
+          )
       }
       for (const oldest of stagedOutputs.keys()) {
         if (stagedOutputs.size <= maxOutputs) break
@@ -150,13 +161,20 @@ export function seedPrewarmedOutputs(
   plan: ProductionPlan,
 ): void {
   const root = resolve(options.projectRoot ?? process.cwd())
-  for (const [filename, { source, ...output }] of options.prewarmedOutputs ??
-    []) {
+  for (const [
+    filename,
+    { source, sourceType, ...output },
+  ] of options.prewarmedOutputs ?? []) {
     const input =
       options.preparedSources === undefined
         ? createInput(
             root,
-            { filename, code: source, resourcePath: resolve(root, filename) },
+            {
+              filename,
+              code: source,
+              resourcePath: resolve(root, filename),
+              ...(sourceType === undefined ? {} : { sourceType }),
+            },
             output.dependencies ?? [],
           )
         : ledger

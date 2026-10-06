@@ -9,7 +9,7 @@ import {
 } from 'node:fs'
 import { dirname } from 'node:path'
 
-import { writeFileAtomically } from '@devup-ui/plugin-utils'
+import { type SourceType, writeFileAtomically } from '@devup-ui/plugin-utils'
 
 import type { GenerationPlan } from './coordinator-options'
 import { isGenerationPlan } from './coordinator-plan-codec'
@@ -24,6 +24,7 @@ export interface CoordinatorInput {
   readonly filename: string
   readonly resourcePath: string
   readonly source: string
+  readonly sourceType?: SourceType
   /** Files the extraction read through the module resolver (root-relative) */
   readonly dependencies: readonly string[]
   /** Content hash of each dependency (absolute path) when it was accepted */
@@ -73,6 +74,7 @@ function isInput(value: unknown): boolean {
     typeof value.filename === 'string' &&
     typeof value.resourcePath === 'string' &&
     typeof value.source === 'string' &&
+    (value.sourceType === undefined || value.sourceType === 'compiled-mdx') &&
     typeof value.backing === 'string' &&
     isStringArray(value.dependencies) &&
     isRecord(value.stamps) &&

@@ -93,13 +93,16 @@ export function extractWithModuleResolver(
   const configured = engineResolvers.get(wasm)
   try {
     // Register the request's own compiler map, not just imported module maps.
-    if (configured?.settings?.prepareSource) {
-      configured.resolver(resolve(configured.root, args[0]), args[0])
-    }
+    const prepared = configured?.settings?.prepareSource
+      ? configured.resolver(resolve(configured.root, args[0]), args[0])
+      : undefined
     const extract = sourceMap
       ? wasm.codeExtract
       : wasm.codeExtractWithoutSourceMap
-    return extract(...args)
+    const sourceType = args[8] ?? prepared?.sourceType
+    const extractionArgs: Parameters<DevupWasm['codeExtract']> = [...args]
+    if (sourceType !== undefined) extractionArgs[8] = sourceType
+    return extract(...extractionArgs)
   } catch (error) {
     throw configured?.settings?.prepareSource
       ? configured.resolver.remapError(error)

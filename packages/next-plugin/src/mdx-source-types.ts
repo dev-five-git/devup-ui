@@ -87,6 +87,11 @@ export type MdxBuildBinding = {
   ) => Promise<readonly MdxExtractionReport[]>
 }
 
+export type MdxPreparationRun = {
+  readonly changedPaths?: readonly string[]
+  readonly extractDependencies?: MdxBuildBinding['extractDependencies']
+}
+
 export type MdxCompiledRecord = {
   readonly prepared: PreparedMdx
   readonly inputs: readonly MdxInputFingerprint[]

@@ -1,3 +1,5 @@
+import type { SourceType } from '@devup-ui/plugin-utils'
+
 import type { ExtractResponse } from './coordinator-engine'
 import type { ExtractRequest } from './coordinator-http'
 import type { CoordinatorIdentity } from './coordinator-port'
@@ -36,6 +38,7 @@ export interface PrewarmedOutput {
   cssFile?: string
   map?: string
   source: string
+  readonly sourceType?: SourceType
   updatedBaseStyle: boolean
   /** Files the extraction read through the module resolver */
   dependencies?: string[]

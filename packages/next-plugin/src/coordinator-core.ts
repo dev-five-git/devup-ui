@@ -64,7 +64,7 @@ export function createCore(options: CoordinatorOptions, project: string): Core {
       await persistence.drain()
       assertAdoptedRequest(ledger.list(), request)
       const output =
-        ledger.lookup(request.filename, request.code) ??
+        ledger.lookup(request.filename, request.code, request.sourceType) ??
         extractSealed(
           { live: live.engine, createEngine, configure, settings },
           liveSnapshot(),
@@ -72,7 +72,11 @@ export function createCore(options: CoordinatorOptions, project: string): Core {
         ).output
       return { output, committed: Promise.resolve(), cacheHit: true }
     }
-    const cached = ledger.lookup(request.filename, request.code)
+    const cached = ledger.lookup(
+      request.filename,
+      request.code,
+      request.sourceType,
+    )
     if (cached) {
       return {
         output: cached,

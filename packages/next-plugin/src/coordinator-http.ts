@@ -1,5 +1,7 @@
 import type { IncomingMessage, ServerResponse } from 'node:http'
 
+import type { SourceType } from '@devup-ui/plugin-utils'
+
 import { locatedError } from './coordinator-engine'
 import type { CoordinatorIdentity } from './coordinator-port'
 
@@ -16,6 +18,7 @@ export interface ExtractRequest {
   readonly filename: string
   readonly code: string
   readonly resourcePath: string
+  readonly sourceType?: SourceType
 }
 
 export function readBody(req: IncomingMessage): Promise<string> {
@@ -84,7 +87,10 @@ export function parseExtractRequest(body: string): ExtractRequest {
     !('code' in data) ||
     typeof data.code !== 'string' ||
     !('resourcePath' in data) ||
-    typeof data.resourcePath !== 'string'
+    typeof data.resourcePath !== 'string' ||
+    ('sourceType' in data &&
+      data.sourceType !== undefined &&
+      data.sourceType !== 'compiled-mdx')
   ) {
     throw new HttpError(
       400,
@@ -100,6 +106,9 @@ export function parseExtractRequest(body: string): ExtractRequest {
     filename: data.filename,
     code: data.code,
     resourcePath: data.resourcePath,
+    ...('sourceType' in data && data.sourceType === 'compiled-mdx'
+      ? { sourceType: data.sourceType }
+      : {}),
   }
 }
 

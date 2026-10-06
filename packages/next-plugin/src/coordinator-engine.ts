@@ -93,7 +93,10 @@ export interface ExtractSettings {
 export function extractInput(
   wasm: DevupWasm,
   settings: ExtractSettings,
-  input: Pick<CoordinatorInput, 'filename' | 'resourcePath' | 'source'>,
+  input: Pick<
+    CoordinatorInput,
+    'filename' | 'resourcePath' | 'source' | 'sourceType'
+  >,
 ): ExtractOutputSnapshot {
   let relCssDir = relative(
     dirname(input.resourcePath),
@@ -110,6 +113,7 @@ export function extractInput(
       false,
       true,
       settings.importAliases,
+      ...(input.sourceType ? ([input.sourceType] as const) : ([] as const)),
     ]),
   )
 }
@@ -121,7 +125,7 @@ export function extractRequest(
   {
     code,
     ...request
-  }: Pick<ExtractRequest, 'filename' | 'resourcePath' | 'code'>,
+  }: Pick<ExtractRequest, 'filename' | 'resourcePath' | 'code' | 'sourceType'>,
 ): ExtractOutputSnapshot {
   try {
     return extractInput(wasm, settings, { ...request, source: code })

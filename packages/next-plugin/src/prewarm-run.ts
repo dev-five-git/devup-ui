@@ -1,6 +1,8 @@
 import { readFileSync } from 'node:fs'
 import { resolve } from 'node:path'
 
+import type { SourceType } from '@devup-ui/plugin-utils'
+
 import { locatedError } from './build-error'
 import { extractInput } from './coordinator-engine'
 import type { PrewarmedOutput } from './coordinator-options'
@@ -17,6 +19,7 @@ export interface PrewarmResult {
 
 export interface PreparedPrewarmInput {
   readonly code: string
+  readonly sourceType?: SourceType
   readonly map?: unknown
   readonly dependencies?: readonly string[]
 }
@@ -51,13 +54,23 @@ function extractOne(
       sourceMap: context.sourceMap,
       importAliases: context.importAliases,
     },
-    { filename, resourcePath, source },
+    {
+      filename,
+      resourcePath,
+      source,
+      ...(prepared?.sourceType === undefined
+        ? {}
+        : { sourceType: prepared.sourceType }),
+    },
   )
   return {
     code: output.code,
     cssFile: output.cssFile,
     map: output.map,
     source,
+    ...(prepared?.sourceType === undefined
+      ? {}
+      : { sourceType: prepared.sourceType }),
     updatedBaseStyle: output.updatedBaseStyle,
     dependencies: prepared
       ? [...(output.dependencies ?? []), ...(prepared.dependencies ?? [])]

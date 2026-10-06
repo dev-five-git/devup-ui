@@ -5,6 +5,7 @@ import { basename, dirname, join, relative, resolve } from 'node:path'
 import {
   collectDevupConfigFiles,
   createStateWriter,
+  type SourceType,
 } from '@devup-ui/plugin-utils'
 import type { RawLoaderDefinitionFunction } from 'webpack'
 
@@ -40,6 +41,7 @@ export interface DevupUILoaderOptions {
   defaultClassMap: object
   defaultFileMap: object
   importAliases?: Record<string, string | null>
+  readonly sourceType?: SourceType
 }
 let init = false
 
@@ -100,6 +102,7 @@ const devupUILoader: RawLoaderDefinitionFunction<DevupUILoaderOptions> =
       defaultFileMap,
       defaultSheet,
       importAliases = {},
+      sourceType,
     } = this.getOptions()
     const callback = this.async()
     if (coordinatorPortFile) {
@@ -117,6 +120,7 @@ const devupUILoader: RawLoaderDefinitionFunction<DevupUILoaderOptions> =
           ),
           code: source.toString(),
           resourcePath: this.resourcePath,
+          ...(sourceType === undefined ? {} : { sourceType }),
         }),
       }
       try {
@@ -212,6 +216,7 @@ const devupUILoader: RawLoaderDefinitionFunction<DevupUILoaderOptions> =
           false,
           true,
           importAliases,
+          ...(sourceType ? ([sourceType] as const) : ([] as const)),
         ]),
       )
       for (const dependency of dependencies)

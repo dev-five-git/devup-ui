@@ -98,8 +98,8 @@ export function digest(value: unknown): string {
 export function createAppContext(
   config: AppConfigInput,
   options: AppOptionsInput,
+  root = resolve(process.cwd()),
 ): AppContext {
-  const root = resolve(process.cwd())
   const watch = process.env.NODE_ENV === 'development'
   const distDir = resolve(root, options.distDir ?? 'df')
   const atomHoist =
