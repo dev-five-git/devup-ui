@@ -78,17 +78,18 @@ it('reports all candidates at the real importer without original or lateral fall
   ).toThrow(message)
 })
 
-it('fails an empty matched candidate list without falling through', () => {
-  const { root, entry, file } = fixture
+it('continues to the next key when a matched candidate list is empty', () => {
+  const { root, entry, file, installed } = fixture
   file('src/main.ts', "import 'provider'")
-  const alias = { provider: [], provider$: file('later.js') }
-  const message = `${entry}:1:1: Module alias provider cannot resolve candidates []`
-  expect(() =>
-    createModuleResolver({ cwd: root, alias })('provider', entry),
-  ).toThrow(message)
-  expect(() =>
-    buildStaticImportGraph('src', undefined, { cwd: root, alias }),
-  ).toThrow(message)
+  const chosen = file('later.js')
+  const alias = { provider: [], provider$: chosen }
+  expect(installed('provider', { alias })).toBe(chosen)
+  expect(
+    createModuleResolver({ cwd: root, alias })('provider', entry)?.path,
+  ).toBe(chosen)
+  expect(
+    buildStaticImportGraph('src', undefined, { cwd: root, alias }).files,
+  ).toEqual([entry, chosen].sort())
 })
 
 it('tries another candidate after a complete nested alias miss', () => {

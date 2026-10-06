@@ -10,7 +10,16 @@ import { createRequire } from 'node:module'
 import { dirname, isAbsolute, join, relative, resolve } from 'node:path'
 
 import { createDirectoryExclusion } from './directory-exclusion'
-import { type ImportReference, scanImports } from './import-scanner'
+import {
+  freezeImportRequests,
+  type ImportGraphRequest,
+  type ImportRequestOutcome,
+  retainImportGraphFailure,
+} from './import-requests'
+import {
+  type ImportRequestReference,
+  scanImportRequests,
+} from './import-scanner'
 import { ConfigLoadError } from './load-config'
 import { remapMdxError } from './mdx-errors'
 import {
@@ -36,7 +45,7 @@ import {
   type SourceSelectionOptions,
 } from './source-selection'
 import { type PathAlias, readPathAliases } from './tsconfig'
-import type { ModuleAliases } from './types'
+import type { ModuleAliasOptions } from './types'
 
 /**
  * How map keys (and bucket-root values) are stringified.
@@ -95,6 +104,7 @@ let cachedOxcParser: false | OxcParser | undefined
  * hoisting reads and parses every source file only ONCE per build.
  */
 export interface StaticImportGraph {
+  readonly requests?: readonly ImportGraphRequest[]
   /** absolute paths, sorted by POSIX path relative to `srcDir`. */
   files: string[]
   fileSet: Set<string>
@@ -119,6 +129,10 @@ export interface StaticImportGraph {
   externalImports?: Map<string, Set<string>>
 }
 
+export interface ScannedStaticImportGraph extends StaticImportGraph {
+  readonly requests: readonly ImportGraphRequest[]
+}
+
 /**
  * Scan `srcDir` once (`listSourceFiles` -> read -> parse imports -> resolve)
  * and return the full static import graph. All three graph consumers accept
@@ -128,17 +142,17 @@ export function buildStaticImportGraph(
   srcDir: string | string[],
   tsconfigPath: string | undefined,
   options: PreparedGraphOptions,
-): Promise<StaticImportGraph>
+): Promise<ScannedStaticImportGraph>
 export function buildStaticImportGraph(
   srcDir: string | string[],
   tsconfigPath?: string,
   options?: SyncGraphOptions,
-): StaticImportGraph
+): ScannedStaticImportGraph
 export function buildStaticImportGraph(
   srcDir: string | string[],
   tsconfigPath?: string,
   options: SyncGraphOptions | PreparedGraphOptions = {},
-): StaticImportGraph | Promise<StaticImportGraph> {
+): ScannedStaticImportGraph | Promise<ScannedStaticImportGraph> {
   if (options.prepareSource)
     return drivePreparedGraph(srcDir, tsconfigPath, options)
   const traversal = traverseGraph(srcDir, tsconfigPath, options)
@@ -187,7 +201,7 @@ async function drivePreparedGraph(
   srcDir: string | string[],
   tsconfigPath: string | undefined,
   options: PreparedGraphOptions,
-): Promise<StaticImportGraph> {
+): Promise<ScannedStaticImportGraph> {
   const traversal = traverseGraph(srcDir, tsconfigPath, options)
   let step = traversal.next()
   while (!step.done) {
@@ -216,7 +230,7 @@ function* traverseGraph(
   srcDir: string | string[],
   tsconfigPath: string | undefined,
   options: StaticImportGraphOptions,
-): Generator<string, StaticImportGraph, PreparedSource> {
+): Generator<string, ScannedStaticImportGraph, PreparedSource> {
   const cwd = resolve(options.cwd ?? process.cwd())
   const roots = (typeof srcDir === 'string' ? [srcDir] : srcDir).map((dir) =>
     resolve(cwd, dir),
@@ -227,7 +241,16 @@ function* traverseGraph(
     ),
   ].sort(compareCodePoints)
   const fileSet = new Set(files)
-  const excludedDirectory = createDirectoryExclusion(options.exclude)
+  const directoryExclusion = createDirectoryExclusion(options.exclude)
+  const exclusionObservation: { outcome: ImportRequestOutcome } = {
+    outcome: { kind: 'unresolved' },
+  }
+  const excludedDirectory = (directory: string) => {
+    const entry = directoryExclusion.match(directory)
+    if (entry !== undefined)
+      exclusionObservation.outcome = { kind: 'excluded', entry }
+    return entry !== undefined
+  }
   const resolver = createModulePathResolver(
     {
       cwd,
@@ -246,6 +269,7 @@ function* traverseGraph(
   const dynamicImports = new Map<string, Set<string>>()
   const dynamicTargets = new Set<string>()
   const externalImports = new Map<string, Set<string>>()
+  const requests: ImportGraphRequest[] = []
 
   for (const file of files) {
     staticImporters.set(file, new Set())
@@ -268,85 +292,130 @@ function* traverseGraph(
             typeof prepared === 'object' ? prepared.sourceType : undefined,
           )
     for (const importRef of imports) {
-      const resolution = resolver(importRef.specifier, file)
-      if (resolution === false) continue
-      if (resolution?.ignored === true) continue
-      const resolved = resolution?.path
-      if (resolved && excludedDirectory(dirname(resolved))) continue
-      const rewritten = resolution?.request ?? importRef.specifier
-      const local =
-        resolved !== undefined &&
-        isInsideDir(cwd, resolved) &&
-        !relative(cwd, resolved).split(/[\\/]/).includes('node_modules')
-      if (resolved && local && rewritten !== importRef.specifier)
-        localAliasRoots.add(dirname(resolved))
-      if (
-        resolved &&
-        !importRef.specifier.startsWith('.') &&
-        !isAbsolute(importRef.specifier)
-      ) {
-        const request = rewritten
-        const parts = request.split('/')
-        const name = parts.slice(0, request.startsWith('@') ? 2 : 1).join('/')
-        if (!excluded.test(`node_modules/${name}/`)) {
-          const dir = findPackage(dirname(file), name)
-          if (dir) includedRoots.add(realpathSync(dir))
+      const request = {
+        importer: file,
+        request: importRef.request,
+        specifier: importRef.specifier,
+        kind: importRef.requestKind,
+        position: importRef.position,
+        source: code === undefined ? 'source' : 'compiled',
+        ...(code === undefined
+          ? {}
+          : { map: typeof prepared === 'object' ? prepared.map : undefined }),
+      } satisfies Omit<ImportGraphRequest, 'outcome'>
+      exclusionObservation.outcome = { kind: 'unresolved' }
+      try {
+        const resolution = resolver(importRef.specifier, file)
+        if (resolution === false) {
+          requests.push({ ...request, outcome: exclusionObservation.outcome })
+          continue
         }
-        if (isAbsolute(request) && !local && !excluded.test(resolved)) {
-          let directory = dirname(resolved)
-          while (
-            dirname(directory) !== directory &&
-            !isFile(join(directory, 'package.json'))
-          )
-            directory = dirname(directory)
-          if (isFile(join(directory, 'package.json')))
-            includedRoots.add(realpathSync(directory))
+        if (resolution?.ignored === true) {
+          requests.push({ ...request, outcome: { kind: 'ignored' } })
+          continue
         }
-      }
-      const target =
-        resolved &&
-        isSelectedSource(resolved, options.includeMdx) &&
-        (fileSet.has(resolved) ||
-          roots.some(
-            (root) =>
-              isInsideDir(root, resolved) &&
-              !relative(root, resolved).split(/[\\/]/).includes('node_modules'),
-          ) ||
-          (local &&
-            [...localAliasRoots].some((root) => isInsideDir(root, resolved))) ||
-          (!excluded.test(resolved) &&
-            [...includedRoots].some((root) => isInsideDir(root, resolved))))
-          ? resolved
-          : undefined
-      if (!target) {
+        const resolved = resolution?.path
+        if (resolved && excludedDirectory(dirname(resolved))) {
+          requests.push({ ...request, outcome: exclusionObservation.outcome })
+          continue
+        }
+        requests.push({
+          ...request,
+          outcome:
+            resolved !== undefined
+              ? { kind: 'resolved', path: resolved }
+              : !importRef.specifier.startsWith('.') &&
+                  !importRef.specifier.startsWith('/') &&
+                  !isAbsolute(importRef.specifier)
+                ? { kind: 'external', request: importRef.specifier }
+                : { kind: 'unresolved' },
+        })
+        const rewritten = resolution?.request ?? importRef.specifier
+        const local =
+          resolved !== undefined &&
+          isInsideDir(cwd, resolved) &&
+          !relative(cwd, resolved).split(/[\\/]/).includes('node_modules')
+        if (resolved && local && rewritten !== importRef.specifier)
+          localAliasRoots.add(dirname(resolved))
         if (
+          resolved &&
           !importRef.specifier.startsWith('.') &&
-          !importRef.specifier.startsWith('/') &&
           !isAbsolute(importRef.specifier)
         ) {
-          externalImports.get(file)?.add(importRef.specifier)
+          const request = rewritten
+          const parts = request.split('/')
+          const name = parts.slice(0, request.startsWith('@') ? 2 : 1).join('/')
+          if (!excluded.test(`node_modules/${name}/`)) {
+            const dir = findPackage(dirname(file), name)
+            if (dir) includedRoots.add(realpathSync(dir))
+          }
+          if (isAbsolute(request) && !local && !excluded.test(resolved)) {
+            let directory = dirname(resolved)
+            while (
+              dirname(directory) !== directory &&
+              !isFile(join(directory, 'package.json'))
+            )
+              directory = dirname(directory)
+            if (isFile(join(directory, 'package.json')))
+              includedRoots.add(realpathSync(directory))
+          }
         }
-        continue
+        const target =
+          resolved &&
+          isSelectedSource(resolved, options.includeMdx) &&
+          (fileSet.has(resolved) ||
+            roots.some(
+              (root) =>
+                isInsideDir(root, resolved) &&
+                !relative(root, resolved)
+                  .split(/[\\/]/)
+                  .includes('node_modules'),
+            ) ||
+            (local &&
+              [...localAliasRoots].some((root) =>
+                isInsideDir(root, resolved),
+              )) ||
+            (!excluded.test(resolved) &&
+              [...includedRoots].some((root) => isInsideDir(root, resolved))))
+            ? resolved
+            : undefined
+        if (!target) {
+          if (
+            !importRef.specifier.startsWith('.') &&
+            !importRef.specifier.startsWith('/') &&
+            !isAbsolute(importRef.specifier)
+          ) {
+            externalImports.get(file)?.add(importRef.specifier)
+          }
+          continue
+        }
+        if (!fileSet.has(target)) {
+          fileSet.add(target)
+          files.push(target)
+          staticImporters.set(target, new Set())
+          staticImports.set(target, new Set())
+          dynamicImports.set(target, new Set())
+          externalImports.set(target, new Set())
+        }
+        if (importRef.kind === 'dynamic') {
+          dynamicTargets.add(target)
+          dynamicImports.get(file)?.add(target)
+          continue
+        }
+        staticImporters.get(target)?.add(file)
+        staticImports.get(file)?.add(target)
+      } catch (error) {
+        retainImportGraphFailure(error, {
+          ...request,
+          outcome: { kind: 'error', error },
+        })
+        throw error
       }
-      if (!fileSet.has(target)) {
-        fileSet.add(target)
-        files.push(target)
-        staticImporters.set(target, new Set())
-        staticImports.set(target, new Set())
-        dynamicImports.set(target, new Set())
-        externalImports.set(target, new Set())
-      }
-      if (importRef.kind === 'dynamic') {
-        dynamicTargets.add(target)
-        dynamicImports.get(file)?.add(target)
-        continue
-      }
-      staticImporters.get(target)?.add(file)
-      staticImports.get(file)?.add(target)
     }
   }
 
   return {
+    requests: freezeImportRequests(requests),
     files: files.sort(compareCodePoints),
     fileSet,
     staticImports,
@@ -360,7 +429,7 @@ function* traverseGraph(
 export interface StaticImportGraphOptions {
   /** Include MDX only when the caller compiles it before extraction. */
   readonly includeMdx?: MdxSelection
-  readonly alias?: ModuleAliases
+  readonly alias?: ModuleAliasOptions
   readonly cwd?: string
   readonly include?: readonly string[]
   readonly conditions?: readonly string[]
@@ -565,7 +634,8 @@ export function computeReachableFiles(
   const queue = opts.entries
     .map((entry) => resolveFile(resolve(entry)))
     .filter(
-      (entry): entry is string => entry !== undefined && fileSet.has(entry),
+      (entry): entry is string =>
+        typeof entry === 'string' && fileSet.has(entry),
     )
   const reached = new Set<string>()
   for (let index = 0; index < queue.length; index += 1) {
@@ -852,9 +922,12 @@ export function listSourceFiles(
   )
 }
 
-function parseImports(filename: string, source: string): ImportReference[] {
+function parseImports(
+  filename: string,
+  source: string,
+): ImportRequestReference[] {
   if (!SOURCE_FILE_RE.test(filename))
-    return scanImports(mdxEsmSource(source), false, false)
+    return scanImportRequests(mdxEsmSource(source), false, false)
   return parseSourceImports(filename, source)
 }
 
@@ -863,7 +936,7 @@ function parsePreparedImports(
   source: string,
   map: unknown,
   sourceType?: import('./prepared-source').SourceType,
-): ImportReference[] {
+): ImportRequestReference[] {
   return parseSourceImports(filename, source, { map, sourceType })
 }
 
@@ -874,7 +947,7 @@ function parseSourceImports(
     readonly map: unknown
     readonly sourceType?: import('./prepared-source').SourceType
   },
-): ImportReference[] {
+): ImportRequestReference[] {
   const parser = getOxcParser()
   try {
     const ast = parser?.parseSync(
@@ -901,7 +974,7 @@ function parseSourceImports(
       { cause },
     )
   }
-  return scanImports(
+  return scanImportRequests(
     source,
     prepared?.sourceType === 'compiled-mdx' ||
       /\.[jt]sx$/i.test(filename) ||
@@ -915,11 +988,13 @@ function mdxEsmSource(source: string): string {
   let fence = ''
   let esm = false
   let comment = false
-  for (const line of source.split(/\r?\n/)) {
+  for (const line of source.split(/(?<=\n)/)) {
+    const blank = line.replace(/[^\r\n]/g, ' ')
     if (line.includes('<!--')) comment = true
     if (comment) {
       if (line.includes('-->')) comment = false
       esm = false
+      blocks.push(blank)
       continue
     }
     const marker = /^\s{0,3}(`{3,}|~{3,})/.exec(line)?.[1]
@@ -928,18 +1003,22 @@ function mdxEsmSource(source: string): string {
       else if (marker[0] === fence[0] && marker.length >= fence.length)
         fence = ''
       esm = false
+      blocks.push(blank)
       continue
     }
-    if (fence) continue
+    if (fence) {
+      blocks.push(blank)
+      continue
+    }
     if (!line.trim()) {
       esm = false
-      blocks.push('')
+      blocks.push(blank)
       continue
     }
     if (/^(?:import\s+(?!\()|export\s+)/.test(line)) esm = true
-    if (esm) blocks.push(line)
+    blocks.push(esm ? line : blank)
   }
-  return blocks.join('\n')
+  return blocks.join('')
 }
 
 function getOxcParser(): OxcParser | undefined {
@@ -993,7 +1072,7 @@ export type ModuleResolution = ResolvedModule | IgnoredModule
 
 export interface CreateModuleResolverOptions {
   readonly prepareSource?: PrepareSource
-  readonly alias?: ModuleAliases
+  readonly alias?: ModuleAliasOptions
   readonly includeMdx?: MdxSelection
   cwd?: string
   tsconfigPath?: string
@@ -1044,7 +1123,9 @@ function createModulePathResolver(
     alias = {},
     includeMdx,
   }: CreateModuleResolverOptions = {},
-  excludedDirectory = createDirectoryExclusion(),
+  excludedDirectory: (
+    directory: string,
+  ) => boolean = createDirectoryExclusion(),
 ): (
   specifier: string,
   importer: string,
@@ -1052,9 +1133,7 @@ function createModulePathResolver(
   const { aliases, baseDir, baseUrl } = readPathAliases(tsconfigPath)
   const extensions = sourceExtensions(includeMdx)
   const fileResolver = (path: string) =>
-    excludedDirectory(dirname(path)) || excludedDirectory(path)
-      ? false
-      : resolveFile(path, extensions)
+    resolveFile(path, { extensions, excludedDirectory })
   return (specifier, importer) => {
     const from = resolve(cwd, importer)
     return resolveModuleAlias(specifier, {
@@ -1109,14 +1188,7 @@ function resolvePackage(
   )
     return false
   const manifestFile = join(packageDir, 'package.json')
-  let manifest: unknown
-  try {
-    manifest = JSON.parse(readFileSync(manifestFile, 'utf-8'))
-    if (!isRecord(manifest) || Array.isArray(manifest))
-      throw new TypeError('Expected a package manifest object')
-  } catch (cause) {
-    throw new ConfigLoadError(manifestFile, cause)
-  }
+  const manifest = readPackageManifest(manifestFile)
   const found = resolvePackageEntry(
     packageDir,
     manifest,
@@ -1127,6 +1199,17 @@ function resolvePackage(
   if (found === undefined && options.aliased && manifest.exports !== undefined)
     throw new ModuleAliasPackageError(importer, specifier)
   return found ? realpathSync(found) : found
+}
+
+function readPackageManifest(file: string): Record<string, unknown> {
+  try {
+    const manifest: unknown = JSON.parse(readFileSync(file, 'utf-8'))
+    if (!isRecord(manifest) || Array.isArray(manifest))
+      throw new TypeError('Expected a package manifest object')
+    return manifest
+  } catch (cause) {
+    throw new ConfigLoadError(file, cause)
+  }
 }
 
 function findPackage(
@@ -1245,15 +1328,48 @@ function resolveAliasCandidates(
 
 function resolveFile(
   candidateBase: string,
-  extensions: readonly string[] = jsExtensions,
-): string | undefined {
+  options: {
+    readonly extensions: readonly string[]
+    readonly excludedDirectory: (directory: string) => boolean
+  } = {
+    extensions: jsExtensions,
+    excludedDirectory: createDirectoryExclusion(),
+  },
+  stack: readonly string[] = [],
+): string | false | undefined {
+  if (
+    options.excludedDirectory(dirname(candidateBase)) ||
+    options.excludedDirectory(candidateBase)
+  )
+    return false
   if (isFile(candidateBase)) return resolve(candidateBase)
 
-  for (const jsExtension of extensions) {
+  for (const jsExtension of options.extensions) {
     const candidate = `${candidateBase}${jsExtension}`
     if (isFile(candidate)) return resolve(candidate)
   }
-  for (const jsExtension of extensions) {
+  const manifestFile = join(candidateBase, 'package.json')
+  if (isFile(manifestFile)) {
+    const canonical = realpathSync(candidateBase)
+    if (stack.includes(canonical))
+      throw new ConfigLoadError(
+        manifestFile,
+        new Error(
+          `Package directory entry cycle: ${[...stack, canonical].join(' -> ')}`,
+        ),
+      )
+    const manifest = readPackageManifest(manifestFile)
+    for (const main of [manifest.module, manifest.main]) {
+      if (typeof main !== 'string' || !main || main === '.' || main === './')
+        continue
+      const found = resolveFile(join(candidateBase, main), options, [
+        ...stack,
+        canonical,
+      ])
+      if (found !== undefined) return found
+    }
+  }
+  for (const jsExtension of options.extensions) {
     const candidate = join(candidateBase, `index${jsExtension}`)
     if (isFile(candidate)) return resolve(candidate)
   }

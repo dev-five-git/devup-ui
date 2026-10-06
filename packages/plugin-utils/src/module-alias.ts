@@ -1,5 +1,5 @@
 import type { IgnoredModule } from './import-graph'
-import type { ModuleAliases } from './types'
+import type { ModuleAliasDescriptor, ModuleAliasOptions } from './types'
 
 export class ModuleAliasError extends Error {
   constructor(importer: string, specifier: string) {
@@ -33,6 +33,18 @@ export class ModuleAliasPackageError extends Error {
   }
 }
 
+export class ModuleAliasConfigurationError extends Error {
+  readonly name = 'ModuleAliasConfigurationError'
+  constructor(
+    readonly importer: string,
+    readonly key: string,
+  ) {
+    super(
+      `${importer}:1:1: Module alias ${key} cannot use wildcard names in the shared resolver`,
+    )
+  }
+}
+
 export interface AliasResolution {
   readonly ignored?: never
   readonly path: string
@@ -43,7 +55,7 @@ export interface AliasResolution {
 export function resolveModuleAlias(
   specifier: string,
   context: {
-    readonly alias: ModuleAliases
+    readonly alias: ModuleAliasOptions
     readonly importer: string
     readonly resolveRequest: (
       request: string,
@@ -51,6 +63,19 @@ export function resolveModuleAlias(
     ) => string | false | undefined
   },
 ): AliasResolution | IgnoredModule | false | undefined {
+  const descriptors: readonly (ModuleAliasDescriptor & {
+    readonly key: string
+  })[] =
+    context.alias === false
+      ? []
+      : Array.isArray(context.alias)
+        ? context.alias.map((entry) => ({ ...entry, key: entry.name }))
+        : Object.entries(context.alias).map(([key, alias]) => ({
+            key,
+            name: key.endsWith('$') ? key.slice(0, -1) : key,
+            onlyModule: key.endsWith('$'),
+            alias,
+          }))
   let failure:
     { readonly key: string; readonly candidates: readonly string[] } | undefined
   function visit(
@@ -61,9 +86,9 @@ export function resolveModuleAlias(
     if (visited.has(request))
       throw new ModuleAliasError(context.importer, specifier)
     const next = new Set(visited).add(request)
-    for (const [key, value] of Object.entries(context.alias)) {
-      const exact = key.endsWith('$')
-      const name = exact ? key.slice(0, -1) : key
+    for (const { key, name, alias: value, onlyModule: exact } of descriptors) {
+      if (name.includes('*'))
+        throw new ModuleAliasConfigurationError(context.importer, key)
       if (request !== name && (exact || !request.startsWith(`${name}/`)))
         continue
       const targets = typeof value === 'object' ? value : [value]
@@ -76,12 +101,12 @@ export function resolveModuleAlias(
         .map((target) =>
           target === false ? false : target + request.slice(name.length),
         )
-      if (targets.length && !candidates.length) continue
+      if (!candidates.length) continue
       failure ??= {
         key,
         candidates: candidates.filter((candidate) => candidate !== false),
       }
-      let missing = !candidates.length
+      let missing = false
       for (const candidate of candidates) {
         if (candidate === false) return { ignored: true }
         const resolved = visit(candidate, next, true)

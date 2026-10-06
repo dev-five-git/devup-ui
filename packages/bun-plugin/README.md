@@ -71,12 +71,14 @@ watch/loading behavior; restart Bun after adding a new styling module or
 changing `include`. Precompiled libraries must still publish their extracted
 CSS for consumers to import.
 
-Raw `.mdx` files are compiled asynchronously using the project's optional
-`@mdx-js/mdx` installation before extraction. Install that compiler in the
-project when authoring Devup UI/compatibility/StyleX code in MDX. Without a
-compiler, unrelated MDX is left to another plugin; styling MDX fails with a
-located installation diagnostic. Extractor errors use the compiler's source
-map when available, otherwise their locations are labeled `in compiled MDX`.
+`mdxExtensions` defaults to `['.mdx']`; `.md` and custom literal extensions such
+as `.mdown` are opt-in. Devup compiles every selected file asynchronously using
+the project's own `@mdx-js/mdx`, with explicit MDX format, before extraction.
+Install that compiler even for plain selected MDX: missing compilation is a
+located installation error, not a silent handoff to another plugin. The same
+list controls loading, graph discovery and numbering. Compiled JavaScript/JSX
+keeps its real filename. Extractor errors use the compiler's source map when
+available, otherwise their locations are labeled `in compiled MDX`.
 
 `root` defaults to `Bun.build`'s root, or the runtime's working directory.
 Relative `devupFile` (default `devup.json`), `distDir` (default `df`) and
@@ -89,6 +91,36 @@ Build-time imported modules remain explicit side-effect imports in Bun's graph
 so runtime watch mode can reload their importers. `Bun.build` takes CSS only
 after extraction completes. Runtime imports synchronously publish changed CSS
 to disk; identical revisions skip writes, without delaying read-after-import.
+
+## MDX Ownership And Public API Limits
+
+In `Bun.build`, selected MDX entries and selected files reached by literal
+imports in modules Devup processes must go through Devup's own loader. A file
+claimed first by another plugin is a located ownership error naming its target
+and extension. Let Devup compile that extension, or remove it from
+`mdxExtensions`. CSS finalization checks after `defer()`; an independent
+`onEnd` check covers builds without stylesheet imports. Watch rebuilds that
+execute these build callbacks receive the same check.
+
+Bun does not expose loader chaining or another plugin's final module/resolve
+target. A module loaded by another plugin under an extension Devup does not own
+is invisible, including definitely used Devup exports. Such placeholders may
+throw `Cannot run on the runtime` when rendered. Add the extension to
+`mdxExtensions` and let Devup's project compiler load it instead of a separate
+MDX plugin. Devup does not reject an indistinguishable harmless module or claim
+to inspect another loader's final code.
+
+Whole namespace/require-result uses and dynamic imports do not prove which
+export is used. They remain opaque rather than being conservatively rejected.
+Runtime helpers and unused imports are not compile-time-use violations.
+
+The whole-build ownership guarantee does not apply to `Bun.plugin` runtime
+registration: that API has no build `onEnd`/`defer` finalization point. Runtime
+loading still compiles files Devup owns. An `onEnd` rejection can occur after
+output files are written, even with `throw: false`; publish build artifacts only
+after successful completion. Ownership diagnostics use the real importer
+`:1:1` as an honest file-level fallback because this callback has no import
+span; a structured CSS-load diagnostic may identify the virtual stylesheet.
 
 ## Custom Shorthands
 

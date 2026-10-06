@@ -35,10 +35,16 @@ export {
   type PreparedSource,
   type PrepareSource,
   type ResolvedModule,
+  type ScannedStaticImportGraph,
   type StaticImportGraph,
   type StaticImportGraphOptions,
   type SyncGraphOptions,
 } from './import-graph'
+export {
+  importGraphFailureOf,
+  type ImportGraphRequest,
+  type ImportRequestOutcome,
+} from './import-requests'
 export { type ImportReference, scanImports } from './import-scanner'
 export {
   ConfigLoadError,
@@ -92,7 +98,9 @@ export type {
   DevupConfig,
   DevupTheme,
   ImportAliases,
+  ModuleAliasDescriptor,
   ModuleAliases,
+  ModuleAliasOptions,
   ThemeColors,
   ThemeTypography,
   Typography,

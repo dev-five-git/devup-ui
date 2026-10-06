@@ -69,7 +69,11 @@ const prepared = await buildStaticImportGraph('src', undefined, {
   prepareSource: async (filename) => {
     if (!filename.endsWith('.mdx') && !filename.endsWith('.mdown')) return undefined
     const compiled = await compileProjectMarkdown(filename)
-    return { code: String(compiled.value), map: compiled.map }
+    return {
+      code: String(compiled.value),
+      map: compiled.map,
+      sourceType: 'compiled-mdx',
+    }
   },
 })
 ```
@@ -80,26 +84,57 @@ real absolute filename once, including discovered providers and eligible
 included-package dependencies. It returns a string, `{ code: string, map?:
 unknown }`, `undefined`, or a Promise of those values. Only `undefined` reads raw
 source; `''` is valid prepared code. Relative imports, keys and diagnostics keep
-the actual filename. Prepared JS/JSX bypasses the raw Markdown ESM-block filter,
+the actual filename. Prepared code bypasses the raw Markdown ESM-block filter,
 so compiler-injected provider/remark/rehype imports can be discovered. Configure
 the project compiler to interpret custom extensions as MDX where required.
 
+Prepared objects and resolved modules accept `sourceType?: 'compiled-mdx'`.
+This explicitly selects JavaScript with JSX, including under `.mdown` or a TS
+filename; ordinary filename-derived JS/TS grammar is unchanged when omitted.
+The extraction functions receive this value as their optional ninth argument.
+`.md` and `.mdx` retain their compiled-MDX extractor defaults; a custom extraction
+extension without an explicit type is a located error, never a renamed-file
+workaround. Invalid values or throwing type getters fail at the preparation
+boundary with the real filename/importer and cause. The field follows prepared
+resolver generations into WASM, including imported constants after JSX and
+reexports, and caches include the selected type.
+
 The graph is an **import scanner, not a full syntax validator**. The caller's
 compiler and bundler own validation of the same compiled output. No parser
-dependency is installed by this package. If optional `oxc-parser` is available,
-its prepared-source exceptions/diagnostics fail rather than falling back to raw
-source or lexical scanning. Compiler failures retain the real filename and
+dependency is installed by this package. **Every edge always comes from one
+dependency-free scanner.** If optional `oxc-parser` is available, it supplies
+syntax diagnostics only: its AST and `program` getter never determine edges.
+Parser exceptions/diagnostics fail rather than falling back to raw source or
+changing edge authority. Compiler failures retain the real filename and
 original cause; setup/hook failures reject the Promise. Parser positions are
 remapped using `remapMdxError` when a map is supplied; unmapped positions are
 explicitly labeled `in compiled output`, not presented as Markdown coordinates.
 
-The dependency-free lexer masks ordinary strings, template contents, comments,
-regular expressions and JSX text, while preserving import literal arguments and
-JSX expression imports. It retains existing type-only elision. It is not a
-general JavaScript parser: computed imports, CommonJS `require` discovery and
-template-interpolation import discovery are not a new guarantee. The legacy
-optional AST/fallback difference for template-interpolation imports is unchanged.
-Raw opted-in Markdown scans only ESM blocks, not code fences or prose.
+The lexer keeps real filename language context: comparisons/shifts are not JSX,
+TSX generic arrows are not tags, and type-only imports are not runtime edges.
+Prepared ordinary TS retains its TS grammar; explicit compiled-MDX output uses
+JS/JSX grammar even under a TS filename. The lexer masks ordinary strings, outer
+template text, comments, regular
+expressions and JSX text/quoted attributes. Template `${...}` expressions,
+including nested templates, and JSX brace/attribute expressions are real code:
+literal `require('...')` adds static edges and literal `import('...')` adds dynamic
+edges there just as in ordinary code. Normal imports, side-effect imports and
+export-from declarations add static edges; type-only declarations/specifiers are
+elided without dropping value bindings named `type`. Escaped specifiers are
+decoded without evaluating source. Nonliteral/computed or concatenated arguments
+such as `import(name)`, `require(name)` and `import('./' + name)` add no edge.
+The scanner is not a full parser; builders retain fail-closed checks for modules
+the bundler actually loads but the static graph misses. Raw opted-in Markdown
+scans only ESM blocks, not code fences or prose.
+
+The checked-in differential gate is runnable from the repository root with
+`bun test ./packages/plugin-utils/src/__tests__/parser-corpus.test.ts` (and runs
+in the root suite). It compares complete graphs for every package `src` root and
+`apps/landing/src`, including real landing docs compiled once using the project's
+MDX compiler/provider options, with diagnostics disabled and injected. It asserts
+one diagnostic invocation per source and zero AST getter reads; independent
+targeted fixtures also assert expected literal edges and reject contradictory AST
+dependencies. The optional Oxc package is not installed by this gate.
 
 ## Synchronous prepared module resolver
 
@@ -138,8 +173,10 @@ Each resolved generation replaces its prior code/map; ordinary raw JS/TS removes
 its stale map. Keep the resolver for its build/compiler context, replace cache
 entries when recompiling, and discard it when that context ends. Vite and Bun
 create build-context resolvers; Webpack creates compiler/loader-context resolvers.
-Only Next's prepared-source integration on #752 supplies this hook and wraps
-extraction errors; this utility change adds no wrappers to other plugins.
+Bun supplies this hook for its own compiled MDX cache and wraps extraction
+errors; Next's prepared-source integration on #752 also owns its preparation
+and wrapping. Vite, Webpack and Rsbuild do not gain a separate project MDX
+preparation cache from this shared API.
 
 Every exact prepared-id location in an error is remapped through `remapMdxError`;
 other file locations are untouched. Missing/uncovered mappings explicitly say
@@ -155,7 +192,21 @@ compiler maps; the imported-module end-to-end mapping check runs after #755 and
 ## Resolver aliases
 
 Both `createModuleResolver` and graph options accept an optional readonly
-`alias: ModuleAliases` (`Readonly<Record<string, string | readonly string[]>>`). Targets are strings or ordered string candidate arrays:
+`alias: ModuleAliasOptions`. The existing `ModuleAliases` map type remains
+`Readonly<Record<string, string | false | readonly (string | false)[]>>`.
+The option also accepts native `false` (disable aliases) or ordered descriptors:
+
+```ts
+const alias = [
+  { name: 'provider', alias: ['first-provider', false], onlyModule: true },
+  { name: 'provider$', alias: false, onlyModule: false },
+] as const
+```
+
+Descriptors preserve declaration order and duplicate names; a literal `$` in
+their name remains a prefix when `onlyModule` is false. In the map form,
+`provider$` instead means the exact name `provider`.
+Targets are strings, `false`, or ordered string/false candidate arrays:
 absolute file/directory paths or package requests. They run before tsconfig
 paths, baseUrl and package resolution.
 
@@ -165,20 +216,47 @@ paths, baseUrl and package resolution.
   key before an overlapping broad key.
 - Each candidate undergoes full native resolution in order; the first resolving
   candidate wins. A failed matched key never falls through to the original request
-  or a later key. All unresolved candidates (including an empty array) produce an
+  or a later key. All unresolved rewriting candidates produce an
   importer-located error naming the key and every rewritten candidate tried.
-  Unaliased unresolved requests still return `undefined`.
+  Later descriptors with the same name do not bypass that failure. Empty arrays
+  and selfguard-only entries perform no rewrite, so they continue to the next
+  descriptor/key and then the raw request. Unaliased unresolved requests still
+  return `undefined`.
 - Finite chains resolve; self-aliases are skipped; cycles produce an
   importer-located failure.
+- A reached `false` immediately resolves to `{ ignored: true }`, including when
+  reached through another string alias. String candidates re-enter the alias map;
+  a request equal to or below its target is not aliased again. Earlier resolving
+  candidates win, and newly created earlier files are visible on the next call.
 - Package exports and active conditions are applied after rewriting. Graph
   package eligibility uses the actual target package, not the alias name.
+- Filesystem directory requests read their own `package.json` and try the shared
+  `module`, `main`, then index order after file/extension probes. These absolute
+  or relative directory paths follow native main-field resolution, not a bare
+  package's exports restriction. Recursive entries honor exclusions before IO;
+  malformed manifests and directory cycles are located errors. Installed Next's
+  absolute `@swc/helpers/_` prefix alias is covered with the real helper package.
 - Export/active-target failures, configuration/I/O errors and cycles are fatal,
   not ordinary misses that advance to the next candidate. Excluded candidates
   are skipped before I/O; an entirely excluded list stays excluded, not external.
 - Project-local aliased providers outside configured source roots can be
   followed; excluded directories and excluded external packages remain excluded.
 
+Ignored results have no `path`, `code` or `sourceType`. `ModuleResolution` is
+`ResolvedModule | IgnoredModule`; narrow the ignored result before reading file
+fields. Neither the graph nor the evaluator scans, prepares, watches or numbers
+a manufactured ignored file. Physically enumerated real source files retain
+their normal numbering. Evaluated ignored imports use an empty CommonJS export
+object: missing named values are `undefined`, the default follows existing
+CommonJS interop, and namespace/require values are empty objects.
+
 This subset is tested against installed enhanced-resolve 5.25.1 with real files.
-Alias `false` (ignore) and wildcard keys are unsupported; `false` is rejected by
-the public type. Empty arrays intentionally fail rather than enhanced-resolve's
-empty-array fallthrough behavior.
+Its `AliasUtils` supports reached false candidates, but its public
+`ResolverFactory` currently rejects mixed string/false arrays before that handler;
+Webpack therefore stops with its own construction error for those arrays.
+Rspack's native map-or-false format accepts mixed false arrays and has the same
+terminal-rewrite/empty-array behavior. Webpack passes its native map or ordered
+descriptors unchanged through graph, setup and loader resolver/cache; Rsbuild
+passes the actual Rspack map-or-false form. Unsupported wildcard alias names fail
+with an importer-located configuration error naming the key instead of being
+silently dropped.

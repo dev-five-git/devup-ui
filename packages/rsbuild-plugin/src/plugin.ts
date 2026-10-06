@@ -328,6 +328,7 @@ export const DevupUI = ({
               cwd: root,
               includeMdx: mdxExtensions,
               conditions,
+              alias: normalized.resolve?.alias,
               toId,
             })
             setModuleResolver(resolver)
@@ -336,6 +337,7 @@ export const DevupUI = ({
               cwd: root,
               include,
               conditions,
+              alias: normalized.resolve?.alias,
               exclude: [basename(outputDir), basename(cssDir)],
             })
             const plan = { graph, roots, entries, resolver }

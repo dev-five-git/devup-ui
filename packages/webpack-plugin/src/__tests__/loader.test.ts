@@ -130,6 +130,43 @@ const waitFor = async (fn: () => void, timeout = 1000) => {
 }
 
 describe('devupUILoader', () => {
+  it('selects a fresh native alias resolver when ordered entries change at the same root', async () => {
+    const root = mkdtempSync(join(tmpdir(), 'loader-alias-'))
+    const target = join(root, 'chosen.js')
+    writeFileSync(target, 'export const value="blue"')
+    const selected: unknown[] = []
+    const register = spyOn(wasm, 'setModuleResolver').mockImplementation(
+      (resolver: ReturnType<typeof createModuleResolver>) => {
+        selected.push(resolver('provider', 'src/main.ts'))
+      },
+    )
+    try {
+      for (const alias of [
+        [{ name: 'provider', alias: false }],
+        [
+          { name: 'provider', alias: target },
+          { name: 'provider', alias: false },
+        ],
+        [{ name: 'provider', alias: false }],
+      ] as const) {
+        await new Promise<void>((done) => {
+          const context = createLoaderContext(
+            { rootDir: root, alias, cssDir: join(root, 'df') },
+            () => done(),
+          )
+          devupUILoader.call(context, Buffer.from('export {}'))
+        })
+      }
+      expect(selected).toEqual([
+        { ignored: true },
+        { path: 'chosen.js', code: 'export const value="blue"' },
+        { ignored: true },
+      ])
+    } finally {
+      register.mockRestore()
+      rmSync(root, { recursive: true, force: true })
+    }
+  })
   it('keys resolver reuse by the explicit project root and active conditions', async () => {
     const root = mkdtempSync(
       join(process.env.DEVUP_PLUGIN_TEST_TMP ?? tmpdir(), 'loader-'),

@@ -32,7 +32,9 @@ export function aliasFixture() {
     dispose: () => fs.rmSync(root, { recursive: true, force: true }),
     installed: (
       request: string,
-      options: CreateModuleResolverOptions,
+      options: CreateModuleResolverOptions & {
+        readonly mainFields?: readonly string[]
+      },
     ): string | false => {
       const resolver = enhancedResolve.ResolverFactory.createResolver({
         fileSystem: fs,
@@ -40,6 +42,7 @@ export function aliasFixture() {
         extensions: ['.js', '.ts'],
         alias: options.alias,
         conditionNames: options.conditions ?? ['import', 'browser'],
+        mainFields: options.mainFields ?? ['main'],
       })
       return resolver.resolveSync({}, dirname(entry), request)
     },
