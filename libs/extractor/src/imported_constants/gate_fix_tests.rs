@@ -2,6 +2,96 @@ use super::exact_tests::{extracted, static_values};
 use rstest::rstest;
 
 #[rstest]
+#[case("'13px' as typeof made.w")]
+#[case("'13px' satisfies typeof made.w")]
+fn gate_coverage_when_changed_binding_is_only_a_type_query_omits_runtime_origins(
+    #[case] assertion: &str,
+) {
+    // Given
+    let source = format!(
+        "import {{css}} from '@devup-ui/react';const made={{w:'13px'}};const typed={assertion};watch(made);css({{w:made.w}});"
+    );
+    let allocator = oxc_allocator::Allocator::default();
+    let mut parsed =
+        oxc_parser::Parser::new(&allocator, &source, oxc_span::SourceType::ts()).parse();
+    assert_eq!(parsed.diagnostics.len(), 0);
+    let inlined = super::inline_constants(
+        &oxc_ast::builder::AstBuilder::new(&allocator),
+        &mut parsed.program,
+        "/src/App.ts",
+        &crate::ExtractOption::default(),
+        None,
+        crate::css_prop::CssProp::Off,
+    );
+    let typed_at = u32::try_from(
+        source
+            .find(assertion)
+            .unwrap_or_else(|| panic!("type assertion")),
+    )
+    .unwrap_or_else(|error| panic!("{error}"));
+    let runtime_at = u32::try_from(
+        source
+            .rfind("made.w")
+            .unwrap_or_else(|| panic!("runtime read")),
+    )
+    .unwrap_or_else(|error| panic!("{error}"));
+    // When
+    let consumers = inlined
+        .changed
+        .consumers(&parsed.program, inlined.scoping.as_deref());
+    // Then
+    assert_eq!(
+        consumers[&typed_at]
+            .iter()
+            .map(|change| change.name.as_str())
+            .collect::<Vec<_>>(),
+        Vec::<&str>::new()
+    );
+    assert_eq!(
+        consumers[&runtime_at]
+            .iter()
+            .map(|change| change.name.as_str())
+            .collect::<std::collections::BTreeSet<_>>(),
+        std::collections::BTreeSet::from(["made"])
+    );
+}
+
+#[test]
+#[serial_test::serial]
+fn gate_coverage_when_imported_copy_has_foreign_hazard_declines_snapshot() {
+    // Given
+    let module = "export const made={w:'13px'};export const copied=made.w;\nwatch(made);";
+    let source =
+        "import {css} from '@devup-ui/react';import {copied} from './values';css({ w: copied });";
+    // When
+    let error = extracted(source, module)
+        .err()
+        .unwrap_or_else(|| panic!("foreign hazard must prevent a local snapshot proof"));
+    // Then
+    assert!(
+        error.contains("/src/App.tsx:1:69") && error.contains("cannot use `copied` at build time"),
+        "{error}"
+    );
+}
+
+#[test]
+#[serial_test::serial]
+fn gate_coverage_when_element_reads_imported_foreign_snapshot_keeps_css_variable() {
+    // Given
+    let module = "export const made={w:'13px'};export const copied=made.w;\nwatch(made);";
+    let source = "import {Box} from '@devup-ui/react';import {copied} from './values';export const a=<Box w={copied}/>;";
+    // When
+    let output = extracted(source, module).unwrap_or_else(|error| panic!("{error}"));
+    // Then
+    assert_eq!(static_values(&output), Vec::<String>::new());
+    assert!(
+        output.code.contains("copied") && output.code.contains("--"),
+        "{}",
+        output.code
+    );
+}
+
+#[rstest]
 #[case("watch(made);function writer(){made.p=2}")]
 #[case("function writer(){made.p=2}watch(made);")]
 #[case("watch(alias);function writer(){alias.p=2}")]
