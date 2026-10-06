@@ -1,21 +1,15 @@
-import { createRequire } from 'node:module'
-import { join } from 'node:path'
+import { execFile } from 'node:child_process'
+import { mkdtempSync, rmSync } from 'node:fs'
+import { createRequire, Module } from 'node:module'
+import { tmpdir } from 'node:os'
+import { join, resolve } from 'node:path'
+import { promisify } from 'node:util'
 
-import { createModuleResolver } from '@devup-ui/plugin-utils'
 import { expect, it } from 'bun:test'
 
-import { compilerResourceBoundary } from '../webpack-resource-compiler'
-import { webpackResourceResolver } from '../webpack-resource-delivery'
-import type { WebpackResourceBinding } from '../webpack-resource-native'
-
-const {
-  withStockClient,
-}: {
-  readonly withStockClient: <T>(
-    scenario: { readonly router: 'app' | 'pages'; readonly dev: boolean },
-    run: (binding: WebpackResourceBinding) => T | Promise<T>,
-  ) => Promise<T>
-} = createRequire(import.meta.url)('./webpack-resource-stock-fixture.cjs')
+const workspace = resolve(import.meta.dir, '../../../..')
+const installed = createRequire(join(workspace, 'apps/landing/package.json'))
+const runNode = promisify(execFile)
 
 it.each([
   { router: 'app', dev: true },
@@ -25,57 +19,59 @@ it.each([
 ] as const)(
   'represents unchanged stock client aliases and ignores instrumentation fallback in %j',
   async (scenario) => {
-    // Given the installed Next config producer and its actual receiving NMF.
-    await withStockClient(scenario, async (binding) => {
-      const original = binding.compiler.options.resolve.alias
-      const entries = Object.entries(original ?? {}).map(
-        ([key, value]): [string, unknown] => [
-          key,
-          Array.isArray(value) ? [...value] : value,
+    // Given an owned bundle of source helpers and untouched parent module hooks.
+    const originalRequire = Module.prototype.require
+    const originalResolve: unknown = Reflect.get(Module, '_resolveFilename')
+    const config: unknown = installed('next/dist/server/config-shared')
+    const mdx = installed.resolve('@next/mdx/mdx-js-loader')
+    const root = mkdtempSync(join(tmpdir(), 'devup-next-stock-worker-'))
+    try {
+      const bundle = await Bun.build({
+        entrypoints: [
+          join(import.meta.dir, 'webpack-resource-stock-worker.ts'),
         ],
-      )
-      // When the helper initializes a shared resolver without filtering stock entries.
-      const settings = webpackResourceResolver(binding)
-      const prepared: string[] = []
-      const resolver = createModuleResolver({
-        cwd: binding.compiler.context,
-        alias: settings.aliases,
-        conditions: settings.conditions,
-        prepareSource: (filename) => {
-          prepared.push(filename)
-          return undefined
-        },
+        outdir: root,
+        target: 'node',
+        format: 'cjs',
+        naming: 'worker.cjs',
       })
-      const result = resolver(
-        'private-next-instrumentation-client-user',
-        join(binding.compiler.context, 'client.tsx'),
+      expect(bundle.success).toBe(true)
+      // When installed Next runs only inside the bounded, non-detached Node child.
+      const child = await runNode(
+        'node',
+        [
+          join(root, 'worker.cjs'),
+          workspace,
+          scenario.router,
+          String(scenario.dev),
+        ],
+        {
+          cwd: workspace,
+          timeout: 55000,
+          killSignal: 'SIGKILL',
+          maxBuffer: 1024 * 1024,
+        },
       )
-      const native = await new Promise<string | false | undefined>(
-        (resolve, reject) =>
-          binding.params.normalModuleFactory
-            .getResolver('normal')
-            .resolve(
-              {},
-              binding.compiler.context,
-              'private-next-instrumentation-client-user',
-              {},
-              (error, value) => (error ? reject(error) : resolve(value)),
-            ),
-      )
-      // Then aliases are lossless and ignore has no path/code/preparation authority.
-      expect(entries).toEqual(Object.entries(settings.aliases))
-      expect(binding.compiler.options.resolve.alias).toBe(original)
-      expect(Object.entries(original ?? {})).toEqual(entries)
-      expect(result).toEqual({ ignored: true })
-      expect(native).toBe(false)
-      expect(prepared).toEqual([])
-      expect(
-        compilerResourceBoundary(
-          binding,
-          join(binding.compiler.context, 'page.mdx'),
-        ),
-      ).toMatchObject({ rulePosition: 'webpack.externals' })
-      return true
-    })
+      // Then execFile has observed a successful close and the native proof receipt.
+      expect(child.stderr).toBe('')
+      const result: unknown = JSON.parse(child.stdout)
+      expect(result).toEqual({
+        ...scenario,
+        runtime: 'node',
+        shared: { ignored: true },
+        native: false,
+        prepared: [],
+        guard: 'webpack.externals',
+      })
+      expect(Module.prototype.require).toBe(originalRequire)
+      expect(Reflect.get(Module, '_resolveFilename')).toBe(originalResolve)
+      expect(installed('next/dist/server/config-shared')).toBe(config)
+      expect(installed.resolve('@next/mdx/mdx-js-loader')).toBe(mdx)
+      const { createWasm } = await import('../wasm')
+      expect(createWasm(workspace)).toBeDefined()
+    } finally {
+      rmSync(root, { recursive: true, force: true })
+    }
   },
+  60000,
 )

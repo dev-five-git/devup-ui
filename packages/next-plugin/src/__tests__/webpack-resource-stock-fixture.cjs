@@ -5,14 +5,14 @@ const { join, resolve } = require('node:path')
 
 const workspace = resolve(__dirname, '../../../..')
 const installed = createRequire(join(workspace, 'apps/landing/package.json'))
-const { default: getBaseWebpackConfig } = installed(
-  'next/dist/build/webpack-config',
-)
-const { defaultConfig } = installed('next/dist/server/config-shared')
-const { trace } = installed('next/dist/trace')
-const bundle = installed('next/dist/compiled/webpack/webpack')
-
 exports.withStockClient = async function withStockClient(scenario, run) {
+  // Next installs process-global require hooks; callers must own a Node realm.
+  const { default: getBaseWebpackConfig } = installed(
+    'next/dist/build/webpack-config',
+  )
+  const { defaultConfig } = installed('next/dist/server/config-shared')
+  const { trace } = installed('next/dist/trace')
+  const bundle = installed('next/dist/compiled/webpack/webpack')
   const root = mkdtempSync(join(tmpdir(), 'devup-next-stock-alias-'))
   try {
     const directory = join(root, scenario.router)
