@@ -1,6 +1,8 @@
-module.exports = function downstream(source) {
-  return source
-}
-module.exports.pitch = function pitch() {
-  return 'export default "replacement"'
-}
+module.exports = Object.assign(
+  require('./webpack-resource-downstream.cjs').bind(null),
+  {
+    pitch() {
+      return 'export default "replacement"'
+    },
+  },
+)
