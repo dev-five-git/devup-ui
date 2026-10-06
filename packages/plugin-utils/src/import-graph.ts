@@ -565,7 +565,8 @@ export function computeReachableFiles(
   const queue = opts.entries
     .map((entry) => resolveFile(resolve(entry)))
     .filter(
-      (entry): entry is string => entry !== undefined && fileSet.has(entry),
+      (entry): entry is string =>
+        typeof entry === 'string' && fileSet.has(entry),
     )
   const reached = new Set<string>()
   for (let index = 0; index < queue.length; index += 1) {
@@ -1052,9 +1053,7 @@ function createModulePathResolver(
   const { aliases, baseDir, baseUrl } = readPathAliases(tsconfigPath)
   const extensions = sourceExtensions(includeMdx)
   const fileResolver = (path: string) =>
-    excludedDirectory(dirname(path)) || excludedDirectory(path)
-      ? false
-      : resolveFile(path, extensions)
+    resolveFile(path, { extensions, excludedDirectory })
   return (specifier, importer) => {
     const from = resolve(cwd, importer)
     return resolveModuleAlias(specifier, {
@@ -1109,14 +1108,7 @@ function resolvePackage(
   )
     return false
   const manifestFile = join(packageDir, 'package.json')
-  let manifest: unknown
-  try {
-    manifest = JSON.parse(readFileSync(manifestFile, 'utf-8'))
-    if (!isRecord(manifest) || Array.isArray(manifest))
-      throw new TypeError('Expected a package manifest object')
-  } catch (cause) {
-    throw new ConfigLoadError(manifestFile, cause)
-  }
+  const manifest = readPackageManifest(manifestFile)
   const found = resolvePackageEntry(
     packageDir,
     manifest,
@@ -1127,6 +1119,17 @@ function resolvePackage(
   if (found === undefined && options.aliased && manifest.exports !== undefined)
     throw new ModuleAliasPackageError(importer, specifier)
   return found ? realpathSync(found) : found
+}
+
+function readPackageManifest(file: string): Record<string, unknown> {
+  try {
+    const manifest: unknown = JSON.parse(readFileSync(file, 'utf-8'))
+    if (!isRecord(manifest) || Array.isArray(manifest))
+      throw new TypeError('Expected a package manifest object')
+    return manifest
+  } catch (cause) {
+    throw new ConfigLoadError(file, cause)
+  }
 }
 
 function findPackage(
@@ -1245,15 +1248,48 @@ function resolveAliasCandidates(
 
 function resolveFile(
   candidateBase: string,
-  extensions: readonly string[] = jsExtensions,
-): string | undefined {
+  options: {
+    readonly extensions: readonly string[]
+    readonly excludedDirectory: (directory: string) => boolean
+  } = {
+    extensions: jsExtensions,
+    excludedDirectory: createDirectoryExclusion(),
+  },
+  stack: readonly string[] = [],
+): string | false | undefined {
+  if (
+    options.excludedDirectory(dirname(candidateBase)) ||
+    options.excludedDirectory(candidateBase)
+  )
+    return false
   if (isFile(candidateBase)) return resolve(candidateBase)
 
-  for (const jsExtension of extensions) {
+  for (const jsExtension of options.extensions) {
     const candidate = `${candidateBase}${jsExtension}`
     if (isFile(candidate)) return resolve(candidate)
   }
-  for (const jsExtension of extensions) {
+  const manifestFile = join(candidateBase, 'package.json')
+  if (isFile(manifestFile)) {
+    const canonical = realpathSync(candidateBase)
+    if (stack.includes(canonical))
+      throw new ConfigLoadError(
+        manifestFile,
+        new Error(
+          `Package directory entry cycle: ${[...stack, canonical].join(' -> ')}`,
+        ),
+      )
+    const manifest = readPackageManifest(manifestFile)
+    for (const main of [manifest.module, manifest.main]) {
+      if (typeof main !== 'string' || !main || main === '.' || main === './')
+        continue
+      const found = resolveFile(join(candidateBase, main), options, [
+        ...stack,
+        canonical,
+      ])
+      if (found !== undefined) return found
+    }
+  }
+  for (const jsExtension of options.extensions) {
     const candidate = join(candidateBase, `index${jsExtension}`)
     if (isFile(candidate)) return resolve(candidate)
   }
