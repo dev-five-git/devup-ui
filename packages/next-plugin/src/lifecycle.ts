@@ -89,6 +89,8 @@ export function retainSession({
   const closeOnce = (): void => {
     if (closed) return
     closed = true
+    process.off('beforeExit', drainAndClose)
+    process.off('exit', closeOnce)
     release()
     coordinator.close()
     rmSync(session.sessionDir, { recursive: true, force: true })
