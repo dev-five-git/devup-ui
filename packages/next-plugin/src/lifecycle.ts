@@ -19,7 +19,7 @@ export interface SessionOwner {
   readonly setup?: LiveSetup
   readonly drain: () => Promise<void>
   readonly afterCompile: () => Promise<void>
-  readonly close: () => void
+  readonly close: (cause?: Error) => void
 }
 
 // A released token stays reserved: an old exit callback still owns its directory.
@@ -59,7 +59,7 @@ interface RetainFields {
   readonly session: AppSession
   readonly coordinator: CoordinatorHandle
   readonly setup?: LiveSetup
-  readonly releaseAdapter?: () => void
+  readonly releaseAdapter?: (cause?: Error) => void
 }
 
 /**
@@ -80,18 +80,18 @@ export function retainSession({
   }
   let closed = false
   let released = false
-  const release = (): void => {
+  const release = (cause?: Error): void => {
     if (released) return
     released = true
     sessions().set(session.token, undefined)
-    releaseAdapter?.()
+    releaseAdapter?.(cause)
   }
-  const closeOnce = (): void => {
+  const closeOnce = (cause?: Error | number): void => {
     if (closed) return
     closed = true
     process.off('beforeExit', drainAndClose)
     process.off('exit', closeOnce)
-    release()
+    release(cause instanceof Error ? cause : undefined)
     coordinator.close()
     rmSync(session.sessionDir, { recursive: true, force: true })
   }

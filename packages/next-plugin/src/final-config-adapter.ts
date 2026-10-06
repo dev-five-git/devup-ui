@@ -38,7 +38,7 @@ export function installFinalConfigAdapter(
   config: NextConfig,
   session: FinalConfigAdapterSession,
   options: FinalConfigAdapterOptions,
-): { readonly config: NextConfig; readonly release: () => void } {
+): { readonly config: NextConfig; readonly release: (cause?: Error) => void } {
   const projectDir = resolve(session.projectDir)
   const context = { phase: 'config-wrapper', nextVersion: '', projectDir }
   const timeoutMs = options.timeoutMs ?? 45000
@@ -101,15 +101,16 @@ export function installFinalConfigAdapter(
   records.set(session.token, record)
   return {
     config: { ...wrapped, adapterPath },
-    release: () => {
+    release: (cause) => {
       if (records.get(session.token) !== record) return
       records.delete(session.token)
       for (const [controller, activeContext] of record.controllers) {
         controller.abort(
-          new FinalConfigAdapterError(activeContext, session.configFile, {
-            stage: 'session release',
-            cause: `released token ${session.token}`,
-          }),
+          cause ??
+            new FinalConfigAdapterError(activeContext, session.configFile, {
+              stage: 'session release',
+              cause: `released token ${session.token}`,
+            }),
         )
       }
     },
