@@ -1,6 +1,6 @@
 use std::collections::hash_map::Entry;
 
-use super::{Binding, Context, FinalizeError, FxHashMap, JsValue, MutationCheck, Source};
+use super::{Binding, Context, FinalizeError, FxHashMap, JsValue, MutationCheck};
 use boa_engine::{JsString, property::PropertyKey};
 
 pub(super) fn check(
@@ -15,9 +15,7 @@ pub(super) fn check(
     for check in checks {
         let value = match known.entry(check.read.as_str()) {
             Entry::Occupied(entry) => entry.into_mut(),
-            Entry::Vacant(entry) => {
-                entry.insert(context.eval(Source::from_bytes(check.read.as_bytes()))?)
-            }
+            Entry::Vacant(entry) => entry.insert(super::observations::read(context, &check.read)?),
         };
         if mutable(value, &check.path) {
             return Err(FinalizeError::Located(format!(

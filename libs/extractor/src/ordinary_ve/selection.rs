@@ -9,6 +9,7 @@ mod apis;
 mod binding_path;
 mod call_graph;
 mod closure;
+pub(crate) mod demand;
 mod escapes;
 mod index;
 pub(crate) mod plan;
@@ -20,8 +21,16 @@ pub(crate) use plan::Selection;
 /// Select native initialization owners and their individual lexical inputs.
 /// `semantic` must describe this unmodified program with AST nodes enabled.
 pub(crate) fn select<'a>(program: &Program<'a>, semantic: &Semantic<'a>) -> Selection {
+    select_for_package(program, semantic, "@vanilla-extract/css")
+}
+
+pub(crate) fn select_for_package<'a>(
+    program: &Program<'a>,
+    semantic: &Semantic<'a>,
+    package: &str,
+) -> Selection {
     let index = index::Index::new(program, semantic);
-    let apis = apis::Apis::new(program, semantic);
+    let apis = apis::Apis::for_package(program, semantic, package);
     let mut graph = call_graph::Graph::new(&index, &apis);
     let root_units = index.ordered(&graph.roots);
     let closure = closure::collect(&index, &apis, &mut graph);

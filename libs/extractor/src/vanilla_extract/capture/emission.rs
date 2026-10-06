@@ -8,7 +8,7 @@ use rustc_hash::FxHashMap;
 use std::collections::BTreeSet;
 
 mod definitions;
-mod render;
+pub(super) mod render;
 use render::Renderer;
 
 #[derive(Debug)]

@@ -5,9 +5,9 @@ use crate::vanilla_extract::{CollectedStyles, Stylesheet, StylesheetImports, cap
 
 mod aliases;
 pub(crate) mod diagnostics;
-mod imports;
+pub(crate) mod imports;
 mod observe;
-mod policy;
+pub(crate) mod policy;
 mod source;
 #[cfg(test)]
 mod tests;
@@ -41,6 +41,9 @@ pub(crate) fn execute(
         stylesheet,
         selection,
     } = module;
+    let mut loader = crate::module_loader::ModuleLoader::new(resolver, option);
+    loader.select_demands(stylesheet, true)?;
+    let selection = loader.entry_selection().unwrap_or(selection);
     policy::check(stylesheet, selection)?;
     let mutations = policy::observations(stylesheet, selection)?;
     let selected = source::build(stylesheet, selection, option)?;
@@ -54,8 +57,7 @@ pub(crate) fn execute(
             observer: &selected.observations.helper,
             observations: &selected.observations.sites,
         },
-        option,
-        resolver,
+        loader,
     )?;
     let captures = selected
         .identities

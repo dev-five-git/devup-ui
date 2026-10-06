@@ -5,7 +5,7 @@ use super::definitions::Definition;
 use rustc_hash::FxHashMap;
 use std::collections::BTreeSet;
 
-pub(super) struct Renderer<'a> {
+pub(in crate::vanilla_extract::capture) struct Renderer<'a> {
     names: &'a FxHashMap<String, String>,
     pub(super) pools: Vec<String>,
     pooled: Vec<bool>,

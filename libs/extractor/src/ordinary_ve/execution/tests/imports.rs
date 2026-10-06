@@ -70,7 +70,7 @@ fn retains_actual_imported_vars_base_atoms_and_css_edges_when_a_stylesheet_produ
 
 #[test]
 #[serial]
-fn rejects_imported_mixed_producers_when_their_preserved_source_would_execute() {
+fn imports_mixed_producers_without_executing_their_preserved_source() -> Result<(), String> {
     // Given
     css::file_map::reset_file_map();
     let resolver = |source: &str, _: &str| {
@@ -81,14 +81,17 @@ fn rejects_imported_mixed_producers_when_their_preserved_source_would_execute() 
     };
     let code = "import {style} from '@vanilla-extract/css';import {base} from './producer';const box=style([base,{color:'blue'}]);";
     // When
-    let result = run(written("/consumer.ts", code), Some(&resolver));
+    let result = run(written("/consumer.ts", code), Some(&resolver))?;
     // Then
-    let error = result
-        .err()
-        .unwrap_or_else(|| panic!("mixed imported producer unexpectedly succeeded"));
-    assert!(error.contains("/producer.tsx:1:"), "{error}");
-    assert!(error.contains("selected-view integration"), "{error}");
-    assert!(!error.contains("must not run"), "{error}");
+    let lowered = collected_styles_to_code_with_keyframes(
+        &result.collected,
+        "@devup-ui/react",
+        &rustc_hash::FxHashMap::default(),
+    );
+    assert!(lowered.contains("blue"), "{lowered}");
+    assert!(!lowered.contains("red"), "{lowered}");
+    assert!(result.imports.dependencies.contains("/producer.tsx"));
+    Ok(())
 }
 
 #[test]

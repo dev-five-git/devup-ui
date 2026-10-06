@@ -3,7 +3,7 @@ use crate::module_loader::Mapped;
 use crate::ordinary_ve::selection::plan::{ImportName, MemberDemand, NativeBinding};
 use crate::vanilla_extract::json_string;
 
-pub(super) fn write(
+pub(in crate::ordinary_ve) fn write(
     module: SelectedModule<'_>,
     option: &crate::ExtractOption,
     mapped: &mut Mapped,
@@ -55,7 +55,10 @@ pub(super) fn write(
                 import.source.as_str(),
             ),
         };
-        if import.native.is_some() && !option.import_aliases.contains_key("@vanilla-extract/css") {
+        if import.native.is_some()
+            && import.source != option.package
+            && !option.import_aliases.contains_key("@vanilla-extract/css")
+        {
             return Err(format!(
                 "{}: native slice execution requires the enabled vanilla-extract alias",
                 policy::place(stylesheet, import.specifier.start)

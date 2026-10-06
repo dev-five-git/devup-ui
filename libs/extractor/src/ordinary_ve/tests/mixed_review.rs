@@ -112,21 +112,14 @@ fn module_vars_survive_when_a_known_statement_owns_native_initialization(
 #[case("css.ts")]
 #[case("css.js")]
 #[serial]
-fn mixed_stylesheet_import_is_refused_when_preserved_runtime_would_execute(
+fn mixed_stylesheet_import_succeeds_without_executing_preserved_runtime(
     #[case] extension: &str,
-) {
+) -> Result<(), Box<dyn std::error::Error>> {
     // Given
     css::file_map::reset_file_map();
     css::class_map::reset_class_map();
     let path = format!("/review-producer.{extension}");
     let producer = "import {style} from '@vanilla-extract/css';\nexport const base=style({color:'red'});\nthrow new Error('preserved producer executed');";
-    let expected = crate::locate(
-        &path,
-        producer,
-        producer
-            .find("base=")
-            .unwrap_or_else(|| panic!("fixture base missing")),
-    );
     let resolver = move |specifier: &str, _: &str| {
         (specifier == "./producer").then(|| ResolvedModule {
             path: path.clone(),
@@ -135,16 +128,13 @@ fn mixed_stylesheet_import_is_refused_when_preserved_runtime_would_execute(
     };
     let source = "import {style} from '@vanilla-extract/css';import {base} from './producer';export const box=style([base,{color:'blue'}]);const browser=window.document;";
     // When
-    let result = extract_with_modules("/mixed.ts", source, super::option(), false, &resolver);
+    let output = extract_with_modules("/mixed.ts", source, super::option(), false, &resolver)?;
     // Then
-    let error = result
-        .err()
-        .unwrap_or_else(|| panic!("mixed stylesheet import unexpectedly succeeded"))
-        .to_string();
-    assert!(error.starts_with(&expected), "{error}");
-    assert!(error.contains("selected-view integration"), "{error}");
-    assert!(error.contains("Fix:"), "{error}");
-    assert!(!error.contains("preserved producer executed"), "{error}");
+    assert_consumed(&output);
+    assert!(has_static(&output, "color", "blue"));
+    assert!(!has_static(&output, "color", "red"));
+    super::demand_support::assert_import(&output, "./producer");
+    Ok(())
 }
 
 #[rstest]

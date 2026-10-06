@@ -10,7 +10,7 @@ pub(super) use scalar::Scalar;
 pub(super) use shape::{Kind, Property, Shape};
 
 #[derive(Debug)]
-pub(super) enum GraphError {
+pub(crate) enum GraphError {
     Unsupported(&'static str),
     Engine(boa_engine::JsError),
 }

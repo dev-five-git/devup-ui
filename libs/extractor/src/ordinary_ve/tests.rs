@@ -2,6 +2,10 @@ use crate::{ExtractOption, ImportAlias, ResolvedModule, extract_with_modules};
 use rstest::rstest;
 use serial_test::serial;
 
+mod demand_lifecycle;
+mod demand_producers;
+mod demand_support;
+mod demand_views;
 mod mixed_aliases;
 mod mixed_apis;
 mod mixed_canonical;

@@ -9,8 +9,10 @@ mod emission;
 mod graph;
 mod mutations;
 mod observations;
+pub(crate) mod terminal;
 pub(crate) use emission::Emission;
 pub(super) use emission::Finished;
+pub(super) use observations::Samplers;
 pub(crate) use observations::{Observation, ObservationKind};
 
 pub(crate) struct Capture {
@@ -49,14 +51,17 @@ pub(crate) struct Selected<'a> {
 
 pub(crate) fn execute(
     selected: Selected<'_>,
-    option: &crate::ExtractOption,
-    resolver: Option<&crate::ModuleResolver>,
+    loader: crate::module_loader::ModuleLoader<'_>,
 ) -> Result<super::execution::Executed, String> {
-    execution::execute(execution::Input::Selected(selected), option, resolver)
+    execution::run(execution::Input::Selected(selected), loader)
 }
 
-pub(super) fn prepare(context: &mut Context, selected: &Selected<'_>) -> JsResult<()> {
-    observations::prepare(context, selected)
+pub(super) fn prepare(
+    context: &mut Context,
+    selected: &Selected<'_>,
+    samplers: observations::Samplers,
+) -> JsResult<()> {
+    observations::prepare(context, selected, samplers)
 }
 
 pub(super) fn finish(

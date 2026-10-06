@@ -47,6 +47,16 @@ impl ProducerAtoms {
     pub(crate) fn get(&self, class: &str) -> Option<&[ExtractStyleValue]> {
         self.0.get(class).map(Vec::as_slice)
     }
+
+    pub(crate) fn alias(&mut self, alias: String, classes: &str) {
+        let values = classes
+            .split_whitespace()
+            .filter_map(|class| self.get(class))
+            .flatten()
+            .cloned()
+            .collect();
+        self.0.insert(alias, values);
+    }
 }
 
 #[cfg(test)]

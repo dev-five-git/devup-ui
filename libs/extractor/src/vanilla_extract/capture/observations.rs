@@ -32,9 +32,19 @@ pub(super) struct State {
     pub failure: Option<String>,
     unsupported: std::collections::BTreeSet<String>,
     bindings: std::collections::BTreeMap<String, Value>,
+    samplers: Samplers,
 }
 
-pub(super) fn prepare(context: &mut Context, selected: &super::Selected<'_>) -> JsResult<()> {
+pub(in crate::vanilla_extract) struct Samplers {
+    pub reads: rustc_hash::FxHashMap<String, String>,
+    pub namespaces: Vec<String>,
+}
+
+pub(super) fn prepare(
+    context: &mut Context,
+    selected: &super::Selected<'_>,
+    samplers: Samplers,
+) -> JsResult<()> {
     context.insert_data(State {
         graph: Graph::default(),
         recorded: Vec::new(),
@@ -42,6 +52,7 @@ pub(super) fn prepare(context: &mut Context, selected: &super::Selected<'_>) -> 
         failure: None,
         unsupported: std::collections::BTreeSet::new(),
         bindings: std::collections::BTreeMap::new(),
+        samplers,
     });
     context.register_global_builtin_callable(
         JsString::from(selected.observer),
@@ -92,7 +103,19 @@ fn record(
             }
             Err(cause) => {
                 if input {
-                    state.unsupported.insert(read.clone());
+                    let callable = value.as_object().is_some_and(|object| object.is_callable());
+                    let mut namespace = false;
+                    if let Some(object) = value.as_object() {
+                        for name in &state.samplers.namespaces {
+                            let module = context.eval(Source::from_bytes(name.as_bytes()))?;
+                            namespace |= module.as_object().is_some_and(|module| {
+                                boa_engine::JsObject::equals(&object, &module)
+                            });
+                        }
+                    }
+                    if !state.samplers.reads.contains_key(read) || (!callable && !namespace) {
+                        state.unsupported.insert(read.clone());
+                    }
                 } else {
                     state.failure = Some(format!(
                         "{}: native result cannot be captured exactly: {cause}. Fix: return literals, arrays or plain records instead of functions, cyclic or exotic values",
@@ -119,7 +142,12 @@ fn record(
     }
     let mut bindings = Vec::new();
     for (read, previous) in &mut state.bindings {
-        let value = context.eval(Source::from_bytes(read.as_bytes()))?;
+        let expression = state
+            .samplers
+            .reads
+            .get(read)
+            .map_or(read.as_str(), String::as_str);
+        let value = context.eval(Source::from_bytes(expression.as_bytes()))?;
         let value = match state.graph.value(&value, context) {
             Ok(value) => value,
             Err(cause) => {
@@ -130,7 +158,7 @@ fn record(
                 continue;
             }
         };
-        if *previous != value {
+        if *previous != value && !state.samplers.reads.contains_key(read) {
             bindings.push((read.clone(), value.clone()));
         }
         *previous = value;
@@ -142,6 +170,14 @@ fn record(
         bindings,
     });
     Ok(())
+}
+
+pub(super) fn read(context: &mut Context, name: &str) -> JsResult<boa_engine::JsValue> {
+    let expression = context
+        .get_data::<State>()
+        .and_then(|state| state.samplers.reads.get(name))
+        .map_or_else(|| name.to_string(), Clone::clone);
+    context.eval(Source::from_bytes(expression.as_bytes()))
 }
 
 fn paths(graph: &Graph, value: &Value, read: &str, anchors: &mut Vec<(NodeId, String)>) {

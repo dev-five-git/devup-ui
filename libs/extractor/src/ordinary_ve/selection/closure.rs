@@ -82,7 +82,7 @@ pub(super) fn collect(index: &Index<'_, '_>, apis: &Apis<'_, '_>, graph: &mut Gr
     closure
 }
 
-fn demand(index: &Index<'_, '_>, node: NodeId) -> MemberDemand {
+pub(super) fn demand(index: &Index<'_, '_>, node: NodeId) -> MemberDemand {
     let nodes = index.semantic.nodes();
     let mut span: Span = nodes.kind(node).span();
     let mut path = Vec::new();

@@ -8,11 +8,10 @@ use oxc_syntax::symbol::SymbolId;
 use rustc_hash::FxHashSet;
 
 mod dispatch;
-pub(crate) use dispatch::mixed;
 mod edits;
 mod emission;
 pub(crate) mod execution;
-mod lowering;
+pub(crate) mod lowering;
 mod prepare;
 mod rewrite;
 pub(crate) mod selection;

@@ -16,11 +16,11 @@ use rustc_hash::{FxHashMap, FxHashSet};
 
 use crate::{ExtractOption, ModuleResolver, utils::is_vanilla_extract_file};
 
+pub(crate) mod demand;
 mod import_bindings;
 pub(crate) mod operations;
 mod retained_css;
 mod script;
-mod selected_policy;
 #[cfg(test)]
 mod tests;
 mod validate;
@@ -38,6 +38,7 @@ pub(crate) const PACKAGE_BINDING: &str = "__vanilla_extract__";
 pub(crate) const IMPORT_CYCLE: &str = "before its initialization: it is part of an import cycle";
 
 const MODULE_HELPER: &str = "function __module__(path) { let started = false; const module = new Proxy({}, { get(target, key, receiver) { if (!started && typeof key === \"string\") throw new ReferenceError(`Cannot access '${key}' of '${path}' before its initialization: it is part of an import cycle`); return Reflect.get(target, key, receiver); } }); return { module, start() { started = true; } }; }\n";
+const SELECTED_MODULE_HELPER: &str = "function __module__(path) { let started = false; function early(key) { throw new ReferenceError(`Cannot access '${key}' of '${path}' before its initialization: it is part of an import cycle`); } const module = new Proxy({}, { get(target, key, receiver) { if (!started && typeof key === \"string\" && !Reflect.has(target,key)) return early(key); try { return Reflect.get(target,key,receiver); } catch (error) { if (error instanceof ReferenceError && typeof key === \"string\") return early(key); throw error; } } }); return { module, start() { started = true; } }; }\n";
 
 thread_local! {
     /// Stylesheets being evaluated, outermost first: a stylesheet importing one
@@ -110,6 +111,7 @@ enum Definition {
         body: String,
         tail: String,
         origin: Rc<Origin>,
+        resume: Option<String>,
     },
 }
 
@@ -127,7 +129,9 @@ pub(crate) struct ModuleLoader<'r> {
     /// bindings are read when used, as ES modules read an import cycle
     pending: FxHashSet<String>,
     next_module: usize,
-    static_producers_only: bool,
+    selected: Option<demand::Frozen>,
+    entry_module: Option<(String, String)>,
+    module_helper: String,
     retained_css: RetainedCss,
     css_bindings: FxHashMap<String, String>,
     /// Every file read, including those the loaded stylesheets read
@@ -165,7 +169,9 @@ impl<'r> ModuleLoader<'r> {
             loading: Vec::new(),
             pending: FxHashSet::default(),
             next_module: 0,
-            static_producers_only: false,
+            selected: None,
+            entry_module: None,
+            module_helper: "__module__".to_string(),
             retained_css: RetainedCss::default(),
             css_bindings: FxHashMap::default(),
             dependencies: BTreeSet::new(),
@@ -175,8 +181,85 @@ impl<'r> ModuleLoader<'r> {
         }
     }
 
-    pub(crate) const fn restrict_to_static_producers(&mut self) {
-        self.static_producers_only = true;
+    pub(crate) fn select_demands(
+        &mut self,
+        stylesheet: crate::vanilla_extract::Stylesheet<'_>,
+        selected: bool,
+    ) -> Result<(), String> {
+        if !selected
+            && !self
+                .option
+                .import_aliases
+                .contains_key("@vanilla-extract/css")
+        {
+            return Ok(());
+        }
+        self.selected = Some(demand::Frozen::discover(stylesheet, selected, self)?);
+        self.module_helper = self.fresh_module_name("__module__");
+        let name = self.fresh_module_name(&format!("__module_{}__", self.next_module));
+        self.next_module += 1;
+        self.definitions.push(Definition::Generated(format!(
+            "{}const {name}$={}({:?});const {name}={name}$.module;\n",
+            SELECTED_MODULE_HELPER.replace("__module__", &self.module_helper),
+            self.module_helper,
+            stylesheet.filename
+        )));
+        self.loaded
+            .insert(stylesheet.filename.to_string(), name.clone());
+        self.pending.insert(name.clone());
+        self.entry_module = Some((stylesheet.filename.to_string(), name));
+        Ok(())
+    }
+
+    pub(crate) const fn has_demands(&self) -> bool {
+        self.selected.is_some()
+    }
+
+    pub(crate) fn environments(&self) -> &[demand::Producer] {
+        self.selected
+            .as_ref()
+            .map_or(&[], |selected| selected.environments.as_slice())
+    }
+
+    pub(crate) const fn option(&self) -> &ExtractOption {
+        self.option
+    }
+
+    pub(crate) fn namespaces(&self) -> Vec<String> {
+        self.loaded
+            .values()
+            .filter(|name| !self.css_bindings.contains_key(*name))
+            .cloned()
+            .collect()
+    }
+
+    pub(crate) fn entry_selection(&self) -> Option<&crate::ordinary_ve::selection::Selection> {
+        self.selected
+            .as_ref()
+            .and_then(|selected| selected.entry.as_ref())
+    }
+
+    pub(crate) fn producers(&self) -> &[demand::Producer] {
+        self.selected
+            .as_ref()
+            .map_or(&[], |selected| selected.producers.as_slice())
+    }
+
+    fn package_binding(&self, filename: &str) -> String {
+        self.producers()
+            .iter()
+            .find(|producer| producer.filename == filename)
+            .map_or_else(
+                || PACKAGE_BINDING.to_string(),
+                |producer| producer.namespace.clone(),
+            )
+    }
+
+    fn fresh_module_name(&self, base: &str) -> String {
+        self.selected.as_ref().map_or_else(
+            || base.to_string(),
+            |selected| crate::fresh_name::fresh_name(base, &selected.source),
+        )
     }
 
     fn keep_import(&mut self, specifier: &str) {
@@ -197,6 +280,9 @@ impl<'r> ModuleLoader<'r> {
     /// The script to run: the loaded modules' definitions, then the `entry`
     /// stylesheet
     pub(crate) fn script(&self, entry: &ModuleScript) -> Script {
+        if self.selected.is_some() {
+            return demand::script::build(self, entry);
+        }
         let mut script = Script::default();
         for definition in &self.definitions {
             match definition {
@@ -206,6 +292,7 @@ impl<'r> ModuleLoader<'r> {
                     body,
                     tail,
                     origin,
+                    resume: _,
                 } => {
                     script.generated(head);
                     script.body(body, origin);
@@ -222,6 +309,9 @@ impl<'r> ModuleLoader<'r> {
         let resolver = self.resolver.ok_or(LoadError::NoResolver)?;
         let module = resolver(specifier, importer).ok_or(LoadError::Unresolved)?;
         if retained_css::is_css(&module.path) {
+            if self.has_demands() {
+                self.dependencies.insert(module.path.clone());
+            }
             if let Some(kept) = self
                 .retained_css
                 .retain(
@@ -253,15 +343,7 @@ impl<'r> ModuleLoader<'r> {
                 .import_aliases
                 .contains_key("@vanilla-extract/css")
                 && crate::ordinary_ve::is_module(&module.path, &module.code));
-        if self.static_producers_only
-            && self
-                .option
-                .import_aliases
-                .contains_key("@vanilla-extract/css")
-        {
-            selected_policy::check(&module).map_err(LoadError::Failed)?;
-        }
-        if direct && stylesheet {
+        if direct && (stylesheet || self.selected.is_some()) {
             self.keep_import(specifier);
         }
         if let Some(name) = self.loaded.get(&module.path) {
@@ -272,7 +354,7 @@ impl<'r> ModuleLoader<'r> {
             self.pending.insert(name.clone());
             return Ok(name);
         }
-        let name = format!("__module_{}__", self.next_module);
+        let name = self.fresh_module_name(&format!("__module_{}__", self.next_module));
         self.next_module += 1;
         // Created before the modules it imports, so a cycle among them can
         // reach it; reading it before it starts evaluating is an error
@@ -281,10 +363,10 @@ impl<'r> ModuleLoader<'r> {
                 .push(Definition::Generated(MODULE_HELPER.to_string()));
         }
         self.definitions.push(Definition::Generated(format!(
-            "const {name}$ = __module__({:?});\nconst {name} = {name}$.module;\n",
-            module.path
+            "const {name}$ = {}({:?});\nconst {name} = {name}$.module;\n",
+            self.module_helper, module.path
         )));
-        if is_evaluating(&module.path) {
+        if self.selected.is_none() && is_evaluating(&module.path) {
             // The stylesheet importing it is evaluated on its own, so it never
             // starts here
             self.pending.insert(name.clone());
@@ -313,7 +395,13 @@ impl<'r> ModuleLoader<'r> {
             source: &module.code,
             edits: &[],
         })?;
-        let unit = if stylesheet {
+        let unit = if let Some(unit) = self
+            .selected
+            .as_ref()
+            .and_then(|selected| selected.units.get(&module.path))
+        {
+            unit.clone()
+        } else if stylesheet {
             // Extracted the way the bundler extracts it, so the names it
             // exports are the ones its own CSS uses
             let result = crate::extract_source(
@@ -336,12 +424,24 @@ impl<'r> ModuleLoader<'r> {
             Unit::written(&module.path, &module.code, &module.code, &[])?
         };
         let module_script = module_script(&unit, self, false)?;
+        // Reserve native owners after their dependencies, as recursive extraction did.
+        if self
+            .producers()
+            .iter()
+            .any(|producer| producer.filename == module.path)
+        {
+            let _ = css::file_map::get_file_num_by_filename(&module.path);
+        }
         // Live bindings: a read before the binding is initialized fails as it
         // does in an ES module
         let getters: Vec<String> = module_script
             .exports
             .iter()
             .map(|(exported, local)| {
+                let local = self.selected.as_ref().map_or_else(
+                    || local.clone(),
+                    |selected| selected.exported(&module.path, local),
+                );
                 format!("{exported:?}: {{ get() {{ return {local}; }}, enumerable: true }}")
             })
             .collect();
@@ -349,15 +449,29 @@ impl<'r> ModuleLoader<'r> {
             // Its exports are what `module.exports` holds once it ran; the
             // default follows bundler interop (`__esModule` marks a compiled
             // ES module)
+            let (open, close, resume) = if self.has_demands() {
+                (
+                    format!("const {name}$run=(function*(){{\nyield;\n"),
+                    format!("\n}})();{name}$run.next();\n"),
+                    Some(format!("{name}$run.next();\n")),
+                )
+            } else {
+                (
+                    "(function () {\n".to_string(),
+                    "\n})();\n".to_string(),
+                    None,
+                )
+            };
             self.definitions.push(Definition::Module {
                 head: format!(
-                    "(function () {{\n{name}$.start();\nconst module = {{ exports: {{}} }};\nconst exports = module.exports;\n"
+                    "{open}{name}$.start();\nconst module = {{ exports: {{}} }};\nconst exports = module.exports;\n"
                 ),
                 body: module_script.body,
                 tail: format!(
-                    "\nconst e = module.exports;\nObject.defineProperty({name}, \"__exports__\", {{ value: e }});\nif (e !== null && (typeof e === \"object\" || typeof e === \"function\")) for (const key of Object.keys(e)) if (key !== \"default\") Object.defineProperty({name}, key, {{ get: () => e[key], enumerable: true }});\nObject.defineProperty({name}, \"default\", {{ value: e !== null && typeof e === \"object\" && e.__esModule ? e.default : e, enumerable: true }});\n}})();\n"
+                    "\nconst e = module.exports;\nObject.defineProperty({name}, \"__exports__\", {{ value: e }});\nif (e !== null && (typeof e === \"object\" || typeof e === \"function\")) for (const key of Object.keys(e)) if (key !== \"default\") Object.defineProperty({name}, key, {{ get: () => e[key], enumerable: true }});\nObject.defineProperty({name}, \"default\", {{ value: e !== null && typeof e === \"object\" && e.__esModule ? e.default : e, enumerable: true }});{close}"
                 ),
                 origin: module_script.origin,
+                resume,
             });
             return Ok(());
         }
@@ -368,14 +482,31 @@ impl<'r> ModuleLoader<'r> {
                 "for (const key of Object.keys({spread})) if (key !== \"default\" && !(key in {name})) Object.defineProperty({name}, key, {{ get: () => {spread}[key], enumerable: true }});"
             );
         }
+        let (head, tail, resume) = if self.selected.is_some() {
+            (
+                format!(
+                    "const {name}$run=(function*(){{\nObject.defineProperties({name},{{{}}});\n{spreads}yield;\n{name}$.start();\n",
+                    getters.join(", ")
+                ),
+                format!("\n}})();{name}$run.next();\n"),
+                Some(format!("{name}$run.next();\n")),
+            )
+        } else {
+            (
+                format!(
+                    "(function () {{\n{name}$.start();\nObject.defineProperties({name}, {{ {} }});\n{spreads}",
+                    getters.join(", ")
+                ),
+                "\n})();\n".to_string(),
+                None,
+            )
+        };
         self.definitions.push(Definition::Module {
-            head: format!(
-                "(function () {{\n{name}$.start();\nObject.defineProperties({name}, {{ {} }});\n{spreads}",
-                getters.join(", ")
-            ),
+            head,
             body: module_script.body,
-            tail: "\n})();\n".to_string(),
+            tail,
             origin: module_script.origin,
+            resume,
         });
         Ok(())
     }
@@ -393,6 +524,7 @@ pub(crate) struct ModuleScript {
     pub(crate) spreads: Vec<String>,
     /// Written with `module.exports` rather than `export`
     commonjs: bool,
+    pub(crate) reads: FxHashMap<String, String>,
 }
 
 /// The replacements of a module's code, applied as its statements are copied
@@ -477,11 +609,11 @@ pub(crate) fn module_script(
             continue;
         }
         let module = if source == package {
-            PACKAGE_BINDING.to_string()
+            loader.package_binding(filename)
         } else {
             load_module(loader, source, import.source.span.start)?
         };
-        if loader.pending.contains(&module) {
+        if loader.has_demands() || loader.pending.contains(&module) {
             let source = match loader.css_bindings.get(&module) {
                 Some(_) => BindingSource::Css(&module),
                 None => BindingSource::Module(&module),
@@ -491,6 +623,9 @@ pub(crate) fn module_script(
         modules.insert(import.span.start, module);
     }
     let mut replacements = bindings.rewrites(&semantic, script);
+    if let Some(selected) = &loader.selected {
+        replacements.extend(selected.rewrites(filename, &semantic));
+    }
     // CommonJS: `require` of a literal path loads the module like an import
     let commonjs = !program.body.iter().any(Statement::is_module_declaration)
         && semantic
@@ -535,7 +670,7 @@ pub(crate) fn module_script(
                 let Some(module) = modules.get(&import.span.start) else {
                     continue;
                 };
-                if loader.pending.contains(module) {
+                if loader.has_demands() || loader.pending.contains(module) {
                     continue;
                 }
                 let at = import.span.start as usize;
@@ -635,6 +770,7 @@ pub(crate) fn module_script(
         exports,
         spreads,
         commonjs,
+        reads: bindings.reads(),
     })
 }
 fn export_name(name: &ModuleExportName<'_>) -> String {

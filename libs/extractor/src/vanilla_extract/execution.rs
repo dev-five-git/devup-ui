@@ -28,6 +28,16 @@ pub(super) fn execute(
         Input::Stylesheet(stylesheet) => *stylesheet,
         Input::Selected(selected) => selected.stylesheet,
     };
+    let mut loader = ModuleLoader::new(resolver, option);
+    loader.select_demands(stylesheet, matches!(&input, Input::Selected(_)))?;
+    run(input, loader)
+}
+
+pub(super) fn run(input: Input<'_>, mut loader: ModuleLoader<'_>) -> Result<Executed, String> {
+    let stylesheet = match &input {
+        Input::Stylesheet(stylesheet) => *stylesheet,
+        Input::Selected(selected) => selected.stylesheet,
+    };
     let Stylesheet {
         filename,
         code,
@@ -35,10 +45,6 @@ pub(super) fn execute(
         edits,
     } = stylesheet;
     let _evaluating = Evaluating::enter(filename);
-    let mut loader = ModuleLoader::new(resolver, option);
-    if matches!(&input, Input::Selected(_)) {
-        loader.restrict_to_static_producers();
-    }
     let unit = match &input {
         Input::Stylesheet(_) => Unit::written(filename, code, source, edits)?,
         Input::Selected(selected) => Unit::selected(stylesheet, selected.mapped)?,
@@ -46,15 +52,16 @@ pub(super) fn execute(
     let entry = module_script(&unit, &mut loader, true)?;
     let file_num = get_file_num_by_filename(filename);
     let run = loader.script(&entry);
-    let imports = StylesheetImports {
+    let mut imports = StylesheetImports {
         dependencies: std::mem::take(&mut loader.dependencies),
         kept_imports: std::mem::take(&mut loader.kept_imports),
-        atoms: std::mem::take(&mut loader.imported_atoms),
-        references: std::mem::take(&mut loader.imported_references),
+        atoms: loader.imported_atoms.clone(),
+        references: loader.imported_references.clone(),
     };
     let imported =
         crate::module_loader::evaluating_import() && matches!(&input, Input::Stylesheet(_));
     if imported
+        && loader.producers().is_empty()
         && let Some(collected) = IMPORTED_RUNS.with_borrow(|runs| {
             runs.get(filename)
                 .filter(|(num, cached, text, _)| {
@@ -87,23 +94,35 @@ pub(super) fn execute(
         .prepare(&mut context)
         .map_err(|error| run.explain(&error.to_string(), filename))?;
     match &input {
-        Input::Selected(selected) => capture::prepare(&mut context, selected)
-            .map_err(|error| run.explain(&error.to_string(), filename))?,
+        Input::Selected(selected) => capture::prepare(
+            &mut context,
+            selected,
+            capture::Samplers {
+                reads: entry.reads.clone(),
+                namespaces: loader.namespaces(),
+            },
+        )
+        .map_err(|error| run.explain(&error.to_string(), filename))?,
         Input::Stylesheet(_) => {}
     }
     let instrumented = crate::evaluation_sandbox::instrument(&operations.code, SCRIPT_PATH);
     sandbox
         .prepare(&mut context, &instrumented)
         .map_err(|error| run.explain(&instrumented.explain(&error.to_string()), filename))?;
-    register_vanilla_extract_apis(&mut context, &collector)
-        .map_err(|error| Script::default().explain(&error, filename))?;
+    if loader.has_demands() {
+        super::demand_runtime::prepare(&mut context, &loader, &collector)
+            .map_err(|error| Script::default().explain(&error, filename))?;
+    } else {
+        register_vanilla_extract_apis(&mut context, &collector)
+            .map_err(|error| Script::default().explain(&error, filename))?;
+    }
     let explain = |failure: crate::evaluation_sandbox::Failure, context: &Context| {
-        let required = match &input {
-            Input::Stylesheet(_) => None,
-            Input::Selected(_) => {
+        let required = loader
+            .has_demands()
+            .then(|| {
                 crate::ordinary_ve::execution::diagnostics::required(&failure, &run, &operations)
-            }
-        };
+            })
+            .flatten();
         let message = sandbox_error(
             failure,
             &run,
@@ -155,7 +174,10 @@ pub(super) fn execute(
             filename,
         ),
     })?;
-    if imported {
+    if loader.has_demands() {
+        super::demand_runtime::finish(&mut context, &mut imports)?;
+    }
+    if imported && loader.producers().is_empty() {
         IMPORTED_RUNS.with_borrow_mut(|runs| {
             runs.insert(
                 filename.to_string(),

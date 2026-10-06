@@ -13,12 +13,12 @@ use crate::vanilla_extract::{
     referenced_keyframes,
 };
 
-pub(super) struct Lowered {
+pub(crate) struct Lowered {
     pub code: String,
     pub css: Option<String>,
 }
 
-pub(super) fn lower(
+pub(crate) fn lower(
     stylesheet: crate::vanilla_extract::Stylesheet<'_>,
     collected: &CollectedStyles,
     option: &crate::ExtractOption,

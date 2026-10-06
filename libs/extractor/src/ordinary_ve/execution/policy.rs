@@ -3,7 +3,7 @@ use crate::import_alias_visit::source_offset;
 use crate::mutations::Use;
 use oxc_span::GetSpan;
 
-pub(super) fn place(stylesheet: Stylesheet<'_>, at: u32) -> String {
+pub(crate) fn place(stylesheet: Stylesheet<'_>, at: u32) -> String {
     let offset = stylesheet.edits.iter().fold(
         usize::try_from(at).unwrap_or(stylesheet.code.len()),
         |offset, edits| source_offset(edits, offset),
@@ -11,7 +11,7 @@ pub(super) fn place(stylesheet: Stylesheet<'_>, at: u32) -> String {
     crate::locate(stylesheet.filename, stylesheet.source, offset)
 }
 
-pub(super) fn check(stylesheet: Stylesheet<'_>, selection: &Selection) -> Result<(), String> {
+pub(crate) fn check(stylesheet: Stylesheet<'_>, selection: &Selection) -> Result<(), String> {
     if let Some(escape) = selection.escapes.first() {
         return Err(format!(
             "{}: {}. Fix: {}",

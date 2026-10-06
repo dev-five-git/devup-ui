@@ -20,7 +20,7 @@ pub(super) struct Apis<'s, 'a> {
 }
 
 impl<'s, 'a> Apis<'s, 'a> {
-    pub fn new(program: &Program<'a>, semantic: &'s Semantic<'a>) -> Self {
+    pub fn for_package(program: &Program<'a>, semantic: &'s Semantic<'a>, package: &str) -> Self {
         let mut apis = Self {
             semantic,
             bindings: FxHashMap::default(),
@@ -52,8 +52,7 @@ impl<'s, 'a> Apis<'s, 'a> {
                     }
                 };
                 let erased = erased || import.import_kind.is_type();
-                let native =
-                    native.filter(|_| !erased && import.source.value == "@vanilla-extract/css");
+                let native = native.filter(|_| !erased && import.source.value == package);
                 if let Some(native) = native {
                     apis.bindings.insert(symbol, native);
                 }

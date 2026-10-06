@@ -18,6 +18,9 @@ pub(super) struct ImportBindings {
 }
 
 impl ImportBindings {
+    pub(super) fn reads(&self) -> FxHashMap<String, String> {
+        self.names.clone()
+    }
     pub(super) fn link(
         &mut self,
         specifiers: &[ImportDeclarationSpecifier<'_>],
@@ -67,6 +70,12 @@ impl ImportBindings {
                 let parent = semantic.nodes().parent_kind(node);
                 let expression = binding;
                 let replacement = match parent {
+                    AstKind::CallExpression(call) if call.callee.span() == span => {
+                        format!("(0,{expression})")
+                    }
+                    AstKind::TaggedTemplateExpression(tagged) if tagged.tag.span() == span => {
+                        format!("(0,{expression})")
+                    }
                     AstKind::ObjectProperty(property) if property.shorthand => format!(
                         "{}: {expression}",
                         &script[usize::try_from(span.start).unwrap_or(script.len())

@@ -35,6 +35,7 @@ mod contracts;
 mod operands;
 pub(crate) use operands::StyleOperandMode;
 pub(crate) mod capture;
+mod demand_runtime;
 mod execution;
 mod naming;
 pub(crate) mod producer_atoms;
@@ -97,6 +98,7 @@ struct Collector {
     styles: CollectedStyles,
     file_num: usize,
     placeholders: usize,
+    placeholder_owner: Option<usize>,
     identifiers: usize,
     imported_atoms: Rc<producer_atoms::ProducerAtoms>,
     imported_references: Rc<style_references::StyleReferences>,
@@ -106,7 +108,10 @@ type StyleCollector = Rc<RefCell<Collector>>;
 
 impl Collector {
     fn placeholder(&mut self) -> String {
-        let id = format!("__style_{}__", self.placeholders);
+        let id = match self.placeholder_owner {
+            Some(owner) => format!("__style_{}_owner{owner}__", self.placeholders),
+            None => format!("__style_{}__", self.placeholders),
+        };
         self.placeholders += 1;
         id
     }
@@ -433,6 +438,9 @@ fn top_level_bindings(
 fn placeholder_index(id: &str) -> usize {
     id.trim_start_matches("__style_")
         .trim_end_matches("__")
+        .split('_')
+        .next()
+        .unwrap_or_default()
         .parse()
         .unwrap_or_default()
 }
