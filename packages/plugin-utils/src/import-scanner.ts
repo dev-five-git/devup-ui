@@ -5,6 +5,17 @@ export interface ImportReference {
   readonly specifier: string
 }
 
+export interface ImportRequestReference extends ImportReference {
+  readonly requestKind:
+    'static-import' | 're-export' | 'literal-dynamic-import' | 'literal-require'
+  readonly request: string
+  readonly position: {
+    readonly offset: number
+    readonly line: number
+    readonly column: number
+  }
+}
+
 function literalValue(raw: string): string {
   return raw
     .slice(1, -1)
@@ -62,17 +73,58 @@ export function scanImports(
   jsx: boolean,
   typescript = true,
 ): ImportReference[] {
+  return scanImportRequests(source, jsx, typescript).map(
+    ({ kind, specifier }) => ({
+      kind,
+      specifier,
+    }),
+  )
+}
+
+export function scanImportRequests(
+  source: string,
+  jsx: boolean,
+  typescript = true,
+): ImportRequestReference[] {
   const tokens = [
     ...maskImportText(source, jsx, typescript).matchAll(
       /(['"])[^'"]*\1|[\w$]+|[^\s]/g,
     ),
   ].map((match) => ({
     value: match[0],
+    offset: match.index,
     literal: match[1]
       ? literalValue(source.slice(match.index, match.index + match[0].length))
       : undefined,
   }))
-  const imports: ImportReference[] = []
+  const imports: ImportRequestReference[] = []
+  function reference(
+    token: (typeof tokens)[number] & { readonly literal: string },
+    requestKind: ImportRequestReference['requestKind'],
+  ): ImportRequestReference {
+    const before = source.slice(0, token.offset)
+    return {
+      kind: requestKind === 'literal-dynamic-import' ? 'dynamic' : 'static',
+      specifier: token.literal,
+      requestKind,
+      request: source.slice(
+        token.offset + 1,
+        token.offset + token.value.length - 1,
+      ),
+      position: {
+        offset: token.offset,
+        line: before.split(/\r\n|[\r\n\u2028\u2029]/).length,
+        column:
+          token.offset -
+          Math.max(
+            before.lastIndexOf('\n'),
+            before.lastIndexOf('\r'),
+            before.lastIndexOf('\u2028'),
+            before.lastIndexOf('\u2029'),
+          ),
+      },
+    }
+  }
   for (let index = 0; index < tokens.length; index += 1) {
     const word = tokens[index].value
     if (
@@ -85,15 +137,19 @@ export function scanImports(
       const argument = tokens[index + 2]?.literal
       const end = tokens[index + 3]?.value
       if (argument && (end === ')' || (word === 'import' && end === ',')))
-        imports.push({
-          kind: word === 'require' ? 'static' : 'dynamic',
-          specifier: argument,
-        })
+        imports.push(
+          reference(
+            { ...tokens[index + 2], literal: argument },
+            word === 'require' ? 'literal-require' : 'literal-dynamic-import',
+          ),
+        )
       continue
     }
     if (word === 'require') continue
     if (word === 'import' && next?.literal) {
-      imports.push({ kind: 'static', specifier: next.literal })
+      imports.push(
+        reference({ ...next, literal: next.literal }, 'static-import'),
+      )
       continue
     }
     const clause: string[] = []
@@ -111,7 +167,12 @@ export function scanImports(
           !(clause[0] === 'type' && clause.length > 1 && clause[1] !== ',') &&
           !allInlineTypes(clause)
         )
-          imports.push({ kind: 'static', specifier })
+          imports.push(
+            reference(
+              { ...tokens[cursor + 1], literal: specifier },
+              word === 'export' ? 're-export' : 'static-import',
+            ),
+          )
         break
       }
       if (
