@@ -4162,7 +4162,7 @@ mod tests {
     #[test]
     fn test_empty_string() {
         let styles = parse_tailwind_to_styles("");
-        assert!(styles.is_empty());
+        assert_eq!(styles, vec![]);
     }
 
     #[test]
