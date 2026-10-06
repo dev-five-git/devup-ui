@@ -116,13 +116,12 @@ impl<'a> Proof<'_, 'a> {
                 let mut fields = Vec::new();
                 for property in &object.properties {
                     match property {
-                        ObjectPropertyKind::ObjectProperty(property)
-                            if property.kind == PropertyKind::Init && !property.computed =>
-                        {
-                            let Some(key) = property.key.static_name() else {
-                                return Shape::Unknown;
-                            };
-                            fields.push((key.to_string(), self.value(&property.value, seen)));
+                        ObjectPropertyKind::ObjectProperty(property) => {
+                            match (property.kind, property.computed, property.key.static_name()) {
+                                (PropertyKind::Init, false, Some(key)) => fields
+                                    .push((key.to_string(), self.value(&property.value, seen))),
+                                _ => return Shape::Unknown,
+                            }
                         }
                         ObjectPropertyKind::SpreadProperty(spread) => {
                             let Shape::Record(spread) = self.value(&spread.argument, seen) else {
@@ -130,7 +129,6 @@ impl<'a> Proof<'_, 'a> {
                             };
                             fields.extend(spread);
                         }
-                        ObjectPropertyKind::ObjectProperty(_) => return Shape::Unknown,
                     }
                 }
                 Shape::Record(fields)

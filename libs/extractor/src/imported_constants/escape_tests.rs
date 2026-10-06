@@ -115,6 +115,12 @@ fn freeze_when_not_before_all_hazards_does_not_restore_exactness(#[case] hazard:
 #[case("Object.keys=watch;Object.keys(made);")]
 #[case("JSON.stringify(made,watch);")]
 #[case("Object.defineProperty(Object,'freeze',{ value: watch });Object.freeze(made);")]
+#[case("Object=other;Object.keys(made);")]
+#[case("Array=other;console.log(made);")]
+#[case("JSON[key](made);")]
+#[case("JSON[1](made);")]
+#[case("({JSON}).JSON.stringify(made);")]
+#[case("watch(Array);console.log(made);")]
 #[serial_test::serial]
 fn readonly_callee_when_identity_or_callbacks_are_uncertain_blocks_folding(#[case] hazard: &str) {
     let source = format!(
@@ -210,4 +216,31 @@ fn indirect_references_when_their_returned_container_escapes_are_not_static(
 fn factory_when_its_binding_can_be_reassigned_is_not_evaluated(#[case] declarations: &str) {
     let source = format!("import {{css}} from '@devup-ui/react';{declarations}css({{p:made.p}});");
     assert!(extracted(&source, "").is_err(), "{declarations}");
+}
+
+#[test]
+#[serial_test::serial]
+fn shallow_frozen_array_when_nested_elements_escape_preserves_only_scalar_elements() {
+    // Given
+    let source = "import { Box } from '@devup-ui/react';const make=()=>[1,{ p:2 }];const made=Object.freeze(make());watch(made);export const view=<Box p={made[0]} m={made[1].p}/>;";
+    // When
+    let output = extracted(source, "").unwrap_or_else(|error| panic!("{error}"));
+    // Then
+    assert_eq!(static_values(&output), vec!["4px".to_string()]);
+    assert!(
+        output.code.contains("made[1].p") && output.code.contains("--"),
+        "{}",
+        output.code
+    );
+}
+
+#[test]
+#[serial_test::serial]
+fn shallow_freeze_when_an_overflowing_literal_leaves_partial_fields_keeps_the_known_scalar() {
+    // Given
+    let source = "import { Box } from '@devup-ui/react';const make=()=>({ p:1,child:{ p:2 },n:1e999 });const made=Object.freeze(make());watch(made);export const view=<Box p={made.p}/>;";
+    // When
+    let output = extracted(source, "").unwrap_or_else(|error| panic!("{error}"));
+    // Then
+    assert_eq!(static_values(&output), vec!["4px".to_string()]);
 }

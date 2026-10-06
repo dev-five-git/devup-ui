@@ -27,6 +27,7 @@ fn inline_read_when_the_binding_initializes_on_either_side_of_it_is_safe(
         ast_builder: &ast_builder,
         scoping: &scoping,
         initialization: &initialization,
+        eval: &eval_barriers::EvalBarriers::new(&parsed.program),
         symbols: &symbols,
         style: &style,
         css_props: &css_props,

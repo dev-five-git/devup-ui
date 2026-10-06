@@ -62,10 +62,12 @@ pub(super) fn before(
     if frozen >= hazard {
         return false;
     }
-    for (name, found) in uses {
-        let Some(symbol) = proof.scoping.get_root_binding(name.as_str().into()) else {
-            continue;
-        };
+    for (symbol, found) in proof
+        .scoping
+        .get_bindings(proof.scoping.root_scope_id())
+        .iter()
+        .filter_map(|(name, symbol)| uses.get(name.as_str()).map(|found| (*symbol, found)))
+    {
         if identity != self::identity(proof, symbol) {
             continue;
         }

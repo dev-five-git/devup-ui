@@ -20,6 +20,8 @@ use crate::imported_constants::jsx_root_identifier;
 use crate::imported_constants::provenance::Proof;
 
 pub(crate) mod callees;
+mod compiled;
+mod readonly_helpers;
 
 /// How code uses a top-level binding
 #[derive(Debug)]
@@ -233,6 +235,20 @@ impl Context<'_, '_> {
                     });
                 }
                 match function {
+                    Some(("Object", "freeze")) if call.arguments.len() == 1 => {
+                        let found = self.classify(parent)?;
+                        match found {
+                            Use::Escapes { path: returned, into, .. } => {
+                                path.extend(returned);
+                                Some(Use::Escapes { at, path, into })
+                            }
+                            Use::Changes { depth, .. } => Some(Use::Changes { at, depth: path.len() + depth }),
+                            Use::Calls { path: returned, .. } => {
+                                path.extend(returned);
+                                Some(Use::Calls { at, path })
+                            }
+                        }
+                    }
                     Some(
                         ("Object", "assign" | "values" | "entries") | ("Array", "from" | "of"),
                     ) => {
@@ -387,20 +403,41 @@ impl Context<'_, '_> {
 
     /// Whether code at `node` is read by a style API, which never runs it
     fn in_style(&self, node: NodeId) -> bool {
+        let mut runtime_call = false;
         std::iter::once(node)
             .chain(self.nodes.ancestor_ids(node))
-            .any(|id| match self.nodes.kind(id) {
+            .find_map(|id| match self.nodes.kind(id) {
                 AstKind::CallExpression(call) => {
-                    self.is_style(&call.callee) || self.is_class_names_call(id, &call.callee)
+                    if self.compiled_call(&call.callee)
+                        || self.is_class_names_call(id, &call.callee)
+                    {
+                        Some(true)
+                    } else {
+                        runtime_call = true;
+                        None
+                    }
                 }
                 AstKind::TaggedTemplateExpression(tagged) => {
-                    self.is_style(&tagged.tag) || self.is_class_names_call(id, &tagged.tag)
+                    if self.compiled_call(&tagged.tag) || self.is_class_names_call(id, &tagged.tag)
+                    {
+                        Some(true)
+                    } else {
+                        runtime_call = true;
+                        None
+                    }
                 }
-                AstKind::JSXOpeningElement(element) => self.is_style_element(&element.name),
-                AstKind::JSXAttribute(attribute) => self.is_css_attribute(id, attribute),
-                AstKind::ObjectProperty(property) => self.is_css_property(id, property),
-                _ => false,
+                AstKind::JSXOpeningElement(element) => {
+                    Some(!runtime_call && self.is_style_element(&element.name))
+                }
+                AstKind::JSXAttribute(attribute) if self.is_css_attribute(id, attribute) => {
+                    Some(true)
+                }
+                AstKind::ObjectProperty(property) if self.is_css_property(id, property) => {
+                    Some(true)
+                }
+                _ => None,
             })
+            .unwrap_or(false)
     }
 
     /// Whether `callee`, called at `id`, is the `css` or `cx` a `<ClassNames>`
@@ -553,18 +590,6 @@ impl Context<'_, '_> {
                     .get_root_binding(identifier.name.as_str().into())
                     == Some(symbol)
             })
-    }
-
-    fn is_style(&self, callee: &Expression<'_>) -> bool {
-        let mut expression = callee;
-        loop {
-            match crate::utils::unwrap_syntax_only(expression) {
-                Expression::Identifier(identifier) => return self.is_style_reference(identifier),
-                Expression::StaticMemberExpression(member) => expression = &member.object,
-                Expression::CallExpression(call) => expression = &call.callee,
-                _ => return false,
-            }
-        }
     }
 
     fn is_style_element(&self, name: &JSXElementName<'_>) -> bool {

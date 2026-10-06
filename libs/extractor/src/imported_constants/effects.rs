@@ -183,15 +183,14 @@ impl ModuleScope<'_, '_> {
         let slot = changes.entry(name.to_string()).or_default();
         let earlier = slot
             .as_ref()
-            .is_none_or(|previous| match (&change.site, &previous.site) {
-                (ChangeSite::Here(next), ChangeSite::Here(previous)) => next < previous,
-                (ChangeSite::In(next), ChangeSite::In(previous)) => next < previous,
-                (ChangeSite::Here(_), ChangeSite::In(_)) => true,
-                (ChangeSite::In(_), ChangeSite::Here(_)) => false,
-            });
+            .is_none_or(|previous| change.site < previous.site);
         if earlier {
             *slot = Some(change);
         }
         earlier
     }
 }
+
+#[cfg(test)]
+#[path = "effects_tests.rs"]
+mod tests;

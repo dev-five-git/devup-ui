@@ -57,3 +57,15 @@ fn console_call_when_user_code_may_run_does_not_prove_exactness(#[case] declarat
     // Then
     assert!(output.is_err(), "{output:?}");
 }
+
+#[test]
+fn local_call_when_wrapped_in_a_type_assertion_has_no_mutable_receiver() {
+    // Given
+    let allocator = oxc_allocator::Allocator::default();
+    let source = "const make=()=>({ p:1 });(make as (()=>object))();";
+    let parsed = oxc_parser::Parser::new(&allocator, source, oxc_span::SourceType::ts()).parse();
+    // When
+    let found = crate::mutations::uses(&parsed.program, &|_| false, None);
+    // Then
+    assert_eq!(found.len(), 0);
+}

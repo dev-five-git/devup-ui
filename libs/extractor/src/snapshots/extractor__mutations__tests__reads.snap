@@ -14,7 +14,7 @@ expression: "describe(\"import { css, Box } from '@devup-ui/react'; import * as 
     "a escapes [] into None: a); JSON.stringify(a); Math.max(a.x); console.log(a); Array.isArray(a);",
     "a escapes [] into None: a); Math.max(a.x); console.log(a); Array.isArray(a);",
     "a escapes [] into None: a); Object.freeze(a); Object.hasOwn(a, 'x'); Object.getOwnPropertyNames(a); JSON.stringify(a); Math.max(a.x); console.log(a); Array.isArray(a);",
-    "a escapes [] into None: a); Object.hasOwn(a, 'x'); Object.getOwnPropertyNames(a); JSON.stringify(a); Math.max(a.x); console.log(a); Array.isArray(a);",
     "a escapes [] into None: a); Object.keys(a); Object.freeze(a); Object.hasOwn(a, 'x'); Object.getOwnPropertyNames(a); JSON.stringify(a); Math.max(a.x); console.log(a); Array.isArray(a);",
+    "a escapes [] into None: a)} />; <Devup.Box>{a}</Devup.Box>; <Other value={a} />; <Other {...a} />; <Other>{a}</Other>;",
     "a escapes [] into None: a, 'x'); Object.getOwnPropertyNames(a); JSON.stringify(a); Math.max(a.x); console.log(a); Array.isArray(a);",
 ]

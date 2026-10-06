@@ -32,7 +32,10 @@ pub(crate) fn global<'e>(
         }
         _ => return None,
     };
-    if binding_of(proof.scoping, identifier).is_some() {
+    if binding_of(proof.scoping, identifier).is_some()
+        || crate::imported_constants::eval_barriers::EvalBarriers::globals(proof, callee.span())
+            .is_some()
+    {
         return None;
     }
     pristine(proof, identifier.name.as_str()).then_some((identifier.name.as_str(), member))
@@ -79,8 +82,11 @@ pub(crate) fn pristine(proof: &Proof<'_, '_>, name: &str) -> bool {
 
 /// Callbacks and user coercion/serialization hooks are not read-only proofs.
 pub(super) fn reads_arguments(proof: &Proof<'_, '_>, call: &CallExpression<'_>) -> bool {
-    let Some(callee) = global(proof, &call.callee) else {
+    if crate::imported_constants::eval_barriers::EvalBarriers::globals(proof, call.span).is_some() {
         return false;
+    }
+    let Some(callee) = global(proof, &call.callee) else {
+        return super::readonly_helpers::reads_arguments(proof, call);
     };
     let arguments_plain = || {
         if !pristine(proof, "Object") || !pristine(proof, "Array") {

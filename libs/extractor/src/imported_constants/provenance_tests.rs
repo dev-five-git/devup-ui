@@ -24,6 +24,7 @@ use rstest::rstest;
 #[case("const value=unknown;", vec![None], (false,false,false))]
 #[case("const value=unknown;", vec![Some("p")], (false,false,false))]
 #[case("const value={get p(){return 1}};", vec![], (false,false,false))]
+#[case("const value={1n:1};", vec![Some("1")], (true,true,true))]
 #[case("const value={ valueOf: 1 };", vec![], (false,false,false))]
 #[case("const value={...unknown};", vec![], (false,false,false))]
 #[case("const value=[...unknown];", vec![], (false,false,false))]

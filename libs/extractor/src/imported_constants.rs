@@ -35,7 +35,13 @@ mod dependency;
 mod effects;
 #[cfg(test)]
 mod escape_tests;
+pub(crate) mod eval_barriers;
+mod eval_identity;
+#[cfg(test)]
+mod eval_policy_tests;
 mod freeze;
+#[cfg(test)]
+mod hidden_escape_tests;
 mod initialization;
 mod lexical;
 pub(crate) mod provenance;
@@ -45,6 +51,8 @@ mod provenance_tests;
 mod require_tests;
 #[cfg(test)]
 mod safety_tests;
+#[cfg(test)]
+mod scalar_coverage_tests;
 mod scalar_literals;
 #[cfg(test)]
 mod scalar_projection_tests;
@@ -171,7 +179,7 @@ pub(crate) struct Change {
     pub handed: bool,
 }
 
-#[derive(Debug)]
+#[derive(Debug, PartialEq, Eq, PartialOrd, Ord)]
 pub(crate) enum ChangeSite {
     /// An offset in the file extracted
     Here(u32),
@@ -466,6 +474,7 @@ fn inline_in<'a>(
     };
     read.visit_program(program);
     let initialization = initialization::Initialization::new(program, scoping);
+    let eval = eval_barriers::EvalBarriers::new(program);
     let declarations = lexical::declarations(ast_builder, program, scoping);
     loop {
         let before = read.symbols.len();
@@ -574,6 +583,14 @@ fn inline_in<'a>(
             return Inlined::default();
         }
         for name in &read.names {
+            if let Some(symbol) = scoping.get_root_binding(name.as_str().into())
+                && let Some(at) = eval.origin(symbol)
+            {
+                inlined
+                    .changed
+                    .whole
+                    .insert(name.clone(), scope.site(name, at, false));
+            }
             let bound = scope.binds(name);
             let constant = scope.lookup(&mut modules, name);
             if constant.is_none()
@@ -642,6 +659,7 @@ fn inline_in<'a>(
             ast_builder,
             scoping,
             initialization: &initialization,
+            eval: &eval,
             symbols: &symbols,
             scalar_reads: &scalar_reads,
             style: &style,
@@ -682,6 +700,7 @@ fn inline_in<'a>(
             ast_builder,
             scoping,
             initialization: &initialization,
+            eval: &eval,
             symbols: &symbols,
             scalar_reads: &scalar_reads,
             style: &style,
@@ -1290,6 +1309,7 @@ struct ModuleScope<'p, 'a> {
     /// The semantic analysis of a module read, built when a `StyleX` callee
     /// first needs the binding it reads told
     scoping: OnceCell<Scoping>,
+    eval: eval_barriers::EvalBarriers,
 }
 
 impl<'p, 'a> ModuleScope<'p, 'a> {
@@ -1311,6 +1331,7 @@ impl<'p, 'a> ModuleScope<'p, 'a> {
             snapshot_at: None,
             shared_scoping: None,
             scoping: OnceCell::new(),
+            eval: eval_barriers::EvalBarriers::new(program),
         }
     }
 
@@ -1745,6 +1766,13 @@ impl<'p, 'a> ModuleScope<'p, 'a> {
         modules: &mut Modules<'_>,
         expression: &Expression<'_>,
     ) -> Option<Constant> {
+        if self
+            .eval
+            .expression(self.semantic_scoping(), expression)
+            .is_some()
+        {
+            return None;
+        }
         match expression {
             Expression::StringLiteral(literal) => Some(Constant::String(literal.value.to_string())),
             Expression::NumericLiteral(literal) => Some(Constant::Number(literal.value)),
@@ -2076,6 +2104,7 @@ struct Inline<'s, 'a> {
     ast_builder: &'s AstBuilder<'a>,
     scoping: &'s Scoping,
     initialization: &'s initialization::Initialization,
+    eval: &'s eval_barriers::EvalBarriers,
     symbols: &'s FxHashMap<SymbolId, Constant>,
     scalar_reads: &'s FxHashMap<Span, Constant>,
     style: &'s StyleSymbols<'s>,
@@ -2093,6 +2122,9 @@ struct Inline<'s, 'a> {
 
 impl<'a> Inline<'_, 'a> {
     fn constant(&self, expression: &Expression<'a>) -> Option<Constant> {
+        if self.eval.expression(self.scoping, expression).is_some() {
+            return None;
+        }
         if let Some(value) = self.scalar_reads.get(&expression.span()) {
             return Some(value.clone());
         }

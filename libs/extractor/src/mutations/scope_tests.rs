@@ -45,8 +45,8 @@ fn a_local_named_like_a_style_api_is_not_one() {
     for (code, escapes) in [
         ("css(a);", 0),
         ("css.x(a);", 0),
-        ("<Box p={f(a)} />;", 0),
-        ("<Devup.Box p={f(a)} />;", 0),
+        ("<Box p={f(a)} />;", 1),
+        ("<Devup.Box p={f(a)} />;", 1),
         ("function f(css) { css(a); }", 1),
         ("function f() { const css = g; css(a); }", 1),
         ("function f(css) { css.x(a); }", 1),

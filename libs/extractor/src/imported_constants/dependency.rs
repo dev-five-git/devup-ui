@@ -1,6 +1,6 @@
 //! Originating hazards of transitive function dependencies for located errors.
 
-use super::{Change, ChangeSite, ModuleScope, Modules};
+use super::{Change, ModuleScope, Modules};
 use crate::css_prop::binding_of;
 use oxc_ast::AstKind;
 use oxc_ast::ast::IdentifierReference;
@@ -55,15 +55,7 @@ impl ModuleScope<'_, '_> {
             }
             pending.extend(reads.symbols);
         }
-        found.sort_by(|left, right| {
-            match (&left.site, &right.site) {
-                (ChangeSite::Here(left), ChangeSite::Here(right)) => left.cmp(right),
-                (ChangeSite::In(left), ChangeSite::In(right)) => left.cmp(right),
-                (ChangeSite::Here(_), ChangeSite::In(_)) => std::cmp::Ordering::Less,
-                (ChangeSite::In(_), ChangeSite::Here(_)) => std::cmp::Ordering::Greater,
-            }
-            .then(left.name.cmp(&right.name))
-        });
+        found.sort_by(|left, right| left.site.cmp(&right.site).then(left.name.cmp(&right.name)));
         found.into_iter().next()
     }
 }

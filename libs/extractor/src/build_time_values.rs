@@ -168,6 +168,7 @@ struct Binding {
 }
 
 struct Finder<'s, 'a> {
+    eval: crate::imported_constants::eval_barriers::EvalBarriers,
     scoping: &'s Scoping,
     statements: &'s [Statement<'a>],
     bindings: FxHashMap<SymbolId, Binding>,
@@ -206,6 +207,7 @@ impl<'s, 'a> Finder<'s, 'a> {
         known: &'s dyn Fn(&str) -> Option<String>,
     ) -> Self {
         let mut finder = Self {
+            eval: crate::imported_constants::eval_barriers::EvalBarriers::new(program),
             scoping,
             statements: &program.body,
             bindings: FxHashMap::default(),
@@ -575,6 +577,9 @@ impl<'s, 'a> Finder<'s, 'a> {
         rules_only: bool,
     ) -> bool {
         let span = expression.span();
+        if self.eval.expression(self.scoping, expression).is_some() {
+            return false;
+        }
         let mut reads = Reads::new(self.scoping);
         reads.visit_expression(expression);
         if reads.impure {
