@@ -5,7 +5,7 @@ import { compileFunction } from 'node:vm'
 
 import {
   createModuleResolver,
-  type ModuleAliases,
+  type ModuleAliasOptions,
   type PrepareSource,
 } from '@devup-ui/plugin-utils'
 
@@ -14,7 +14,7 @@ export type DevupWebpackPlugin = typeof import('@devup-ui/webpack-plugin')
 
 export interface ModuleResolverSettings {
   readonly prepareSource?: PrepareSource
-  readonly alias?: ModuleAliases
+  readonly alias?: ModuleAliasOptions
   readonly includeMdx?: boolean | readonly string[]
   readonly conditions?: readonly string[]
 }

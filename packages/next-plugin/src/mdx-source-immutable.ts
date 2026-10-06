@@ -124,6 +124,7 @@ export function immutableMdxPlan(
     canonicalMap: Object.freeze({ ...plan.canonicalMap }),
     fileRoutes: Object.freeze(fileRoutes),
     graph: Object.freeze({
+      ...(graph.requests === undefined ? {} : { requests: graph.requests }),
       files: Object.freeze([...graph.files]),
       fileSet: new ImmutableSet(graph.fileSet),
       staticImports: edges(graph.staticImports),

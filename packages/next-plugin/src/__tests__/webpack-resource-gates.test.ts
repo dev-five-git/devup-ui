@@ -42,7 +42,7 @@ describe('initial native preparation gates', () => {
     // When
     const result = await withSelector(config, (selector) => selector.aliases)
     // Then
-    expect(result).toEqual({ provider: ['first'] })
+    expect(result).toEqual([{ name: 'provider', alias: 'first' }])
   })
 
   it('rejects a compiler whose native resolver substitutes an unrecognized compiler module', async () => {

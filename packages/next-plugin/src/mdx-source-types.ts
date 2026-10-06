@@ -1,5 +1,5 @@
 import type {
-  ModuleAliases,
+  ModuleAliasOptions,
   PreparedSource,
   StaticImportGraph,
 } from '@devup-ui/plugin-utils'
@@ -72,7 +72,7 @@ export type MdxExtractionView = {
 export type MdxBuildBinding = {
   readonly effectiveAppContext: AppContext
   readonly extensions: readonly string[]
-  readonly aliases: ModuleAliases
+  readonly aliases: ModuleAliasOptions
   readonly conditions: readonly string[]
   readonly configFile: string
   readonly selectPipeline: (

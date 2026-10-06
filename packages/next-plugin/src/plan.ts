@@ -1,7 +1,7 @@
 import { readFileSync } from 'node:fs'
 import { join, relative, resolve } from 'node:path'
 
-import type { ModuleAliases, PreparedSource } from '@devup-ui/plugin-utils'
+import type { ModuleAliasOptions, PreparedSource } from '@devup-ui/plugin-utils'
 import {
   buildCanonicalMap,
   buildStaticImportGraph,
@@ -205,7 +205,7 @@ export async function planPreparedSources(
   context: AppContext,
   settings: {
     readonly extensions: readonly string[]
-    readonly aliases: ModuleAliases
+    readonly aliases: ModuleAliasOptions
     readonly conditions: readonly string[]
     readonly cacheReader: (filename: string) => PreparedSource
   },

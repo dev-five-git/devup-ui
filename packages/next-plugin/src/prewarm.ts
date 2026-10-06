@@ -3,7 +3,7 @@ import { extname, relative, resolve } from 'node:path'
 
 import {
   createModuleResolver,
-  type ModuleAliases,
+  type ModuleAliasOptions,
   type ModuleResolution,
   type PrepareSource,
   type ResolvedModule,
@@ -131,7 +131,7 @@ export interface CollectPrewarmFilesOptions {
   prewarmAll: boolean
   readonly resolver?: {
     readonly prepareSource?: PrepareSource
-    readonly alias?: ModuleAliases
+    readonly alias?: ModuleAliasOptions
     readonly conditions?: readonly string[]
     readonly includeMdx?: readonly string[]
   }

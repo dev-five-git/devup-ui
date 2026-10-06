@@ -1,4 +1,7 @@
-import type { ModuleAliases } from '@devup-ui/plugin-utils'
+import type {
+  ModuleAliasDescriptor,
+  ModuleAliasOptions,
+} from '@devup-ui/plugin-utils'
 
 import { isMdxRecord } from './mdx-pipeline'
 import type { WebpackResourceBinding } from './webpack-resource-native'
@@ -29,40 +32,34 @@ export function webpackResourceDelivery(binding: WebpackResourceBinding) {
   return Object.freeze({ sourceMap, mode })
 }
 
+function immutableAliasTarget(target: ModuleAliasDescriptor['alias']) {
+  return typeof target === 'object' ? Object.freeze([...target]) : target
+}
+
+function immutableModuleAliases(alias: ModuleAliasOptions): ModuleAliasOptions {
+  if (alias === false) return false
+  return Array.isArray(alias)
+    ? Object.freeze(
+        alias.map((item: ModuleAliasDescriptor) =>
+          Object.freeze({ ...item, alias: immutableAliasTarget(item.alias) }),
+        ),
+      )
+    : Object.freeze(
+        Object.fromEntries<ModuleAliasDescriptor['alias']>(
+          Object.entries(alias).map(([key, value]) => [
+            key,
+            immutableAliasTarget(value),
+          ]),
+        ),
+      )
+}
+
 export function webpackResourceResolver(binding: WebpackResourceBinding): {
-  readonly aliases: ModuleAliases
+  readonly aliases: ModuleAliasOptions
   readonly conditions: readonly string[]
 } {
-  const aliases: Record<string, ModuleAliases[string]> = {}
   const alias = binding.effectiveConfiguration.resolve?.alias ?? {}
-  if (Array.isArray(alias)) {
-    for (const item of alias) {
-      const key = `${item.name}${item.onlyModule ? '$' : ''}`
-      if (Object.hasOwn(aliases, key))
-        throw new TypeError(
-          'native alias descriptor order cannot be represented losslessly',
-        )
-      Object.defineProperty(aliases, key, {
-        value:
-          item.alias === false
-            ? false
-            : Object.freeze(
-                typeof item.alias === 'string' ? [item.alias] : [...item.alias],
-              ),
-        enumerable: true,
-      })
-    }
-  } else {
-    for (const [key, value] of Object.entries(alias)) {
-      Object.defineProperty(aliases, key, {
-        value:
-          typeof value === 'string' || value === false
-            ? value
-            : Object.freeze([...value]),
-        enumerable: true,
-      })
-    }
-  }
+  const aliases = immutableModuleAliases(alias)
   const resolver = binding.compiler.resolverFactory.get('normal')
   const conditions: unknown = resolver.options.conditionNames
   if (
@@ -74,7 +71,7 @@ export function webpackResourceResolver(binding: WebpackResourceBinding): {
   for (const value of conditions)
     if (typeof value === 'string') values.push(value)
   return Object.freeze({
-    aliases: Object.freeze(aliases),
+    aliases,
     conditions: Object.freeze(values),
   })
 }

@@ -41,13 +41,13 @@ describe('native resolver representation', () => {
     }))
     // Then
     expect(result).toEqual({
-      aliases: { provider$: false },
+      aliases: [{ name: 'provider', onlyModule: true, alias: false }],
       resolution: { ignored: true },
     })
   })
 
   it.each([{ descriptor: true }, { descriptor: false }])(
-    'retains ordered false candidates at the effective resolver boundary %j',
+    'retains injected shared mixed candidates without claiming native Factory acceptance %j',
     async ({ descriptor }) => {
       // Given
       const candidates = ['missing-provider', false, mdxLoader] as const
@@ -83,7 +83,9 @@ describe('native resolver representation', () => {
       })
       // Then
       expect(result).toEqual({
-        aliases: { provider$: candidates },
+        aliases: descriptor
+          ? [{ name: 'provider', onlyModule: true, alias: candidates }]
+          : { provider$: candidates },
         resolution: { ignored: true },
       })
     },
@@ -102,24 +104,31 @@ describe('native resolver representation', () => {
     // When
     const result = await withSelector(config, (selector) => selector.aliases)
     // Then
-    expect(result).toEqual({ provider$: ['first', 'second'] })
+    expect(result).toEqual([
+      { name: 'provider', onlyModule: true, alias: ['first', 'second'] },
+    ])
   })
 
-  it('refuses duplicate alias descriptors rather than selecting the last descriptor', async () => {
+  it('selects a reached false before a later duplicate descriptor', async () => {
     // Given
     const config: Configuration = {
       resolve: {
         alias: [
-          { name: 'provider', alias: 'first' },
+          { name: 'provider', alias: false },
           { name: 'provider', alias: 'second' },
         ],
       },
       module: { rules: [mdxRule()] },
     }
-    // When / Then
-    await expect(withSelector(config, () => true)).rejects.toBeInstanceOf(
-      TypeError,
+    // When
+    const result = await withSelector(config, (selector, compiler) =>
+      createModuleResolver({ cwd: compiler.context, alias: selector.aliases })(
+        'provider',
+        'page.tsx',
+      ),
     )
+    // Then
+    expect(result).toEqual({ ignored: true })
   })
 
   it('preserves string aliases without converting them into unordered candidates', async () => {
@@ -147,9 +156,42 @@ describe('native resolver representation', () => {
     // When
     const aliases = await withSelector(config, (selector) => selector.aliases)
     // Then
-    expect(Object.hasOwn(aliases, 'constructor')).toBe(true)
-    expect(Object.hasOwn(aliases, '__proto__')).toBe(true)
-    expect(aliases['__proto__']).toEqual(['second'])
-    expect(Object.getPrototypeOf(aliases)).toBe(Object.prototype)
+    expect(aliases).toEqual([
+      { name: 'constructor', alias: 'first' },
+      { name: '__proto__', alias: 'second' },
+    ])
+  })
+
+  it('detaches frozen descriptor shells and candidates without freezing caller state', async () => {
+    // Given
+    const candidates = [mdxLoader]
+    const descriptor = { name: 'provider', alias: candidates, onlyModule: true }
+    const alias = [descriptor]
+    // When
+    const result = await withSelector(
+      { resolve: { alias }, module: { rules: [mdxRule()] } },
+      (selector, compiler) => {
+        candidates.splice(0, 1, 'missing')
+        descriptor.name = 'changed'
+        descriptor.onlyModule = false
+        alias.push({ name: 'provider', alias: ['later'], onlyModule: false })
+        return {
+          resolution: createModuleResolver({
+            cwd: compiler.context,
+            alias: selector.aliases,
+          })('provider', 'page.tsx'),
+          frozen:
+            Object.isFrozen(selector.aliases) &&
+            Object.values(selector.aliases).every(
+              (entry) => Object.isFrozen(entry) && Object.isFrozen(entry.alias),
+            ),
+        }
+      },
+    )
+    // Then
+    expect(result.resolution?.path).toBe(mdxLoader)
+    expect(result.frozen).toBe(true)
+    expect(candidates).toEqual(['missing'])
+    expect(descriptor.name).toBe('changed')
   })
 })
