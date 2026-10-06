@@ -69,6 +69,7 @@ describe('Next webpack coordinator bridge', () => {
                   options: expect.objectContaining({
                     coordinatorPortFile: integration.session.endpointFile,
                     coordinatorIdentity: integration.session.identity,
+                    sourceType: 'compiled-mdx',
                   }),
                 },
                 { loader: '@next/mdx/mdx-js-loader', options },
@@ -120,6 +121,15 @@ describe('Next webpack coordinator bridge', () => {
       },
     ])
     expect(Object.values(turbo)).toHaveLength(2)
+    expect(rules?.[0]).toMatchObject({
+      use: [
+        {
+          options: expect.not.objectContaining({
+            sourceType: expect.anything(),
+          }),
+        },
+      ],
+    })
   })
 
   it('awaits binding plus both readiness gates before compilation work', async () => {

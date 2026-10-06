@@ -35,8 +35,12 @@ export function createWebpackCoordinatorBridge(
   const { context, session, handle, prepare } = integration
   const { shared, source } = createCoordinatorLoaderOptions(integration)
   const extraction = { loader: '@devup-ui/next-plugin/loader', options: source }
+  const mdxExtraction = {
+    ...extraction,
+    options: { ...source, sourceType: 'compiled-mdx' },
+  }
   return (config) => {
-    const { rules, pipelines } = composeWebpackMdxRules(config, extraction)
+    const { rules, pipelines } = composeWebpackMdxRules(config, mdxExtraction)
     return {
       ...config,
       module: {

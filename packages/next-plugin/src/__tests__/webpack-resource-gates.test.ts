@@ -82,23 +82,21 @@ describe('initial native preparation gates', () => {
     expect(result.first?.identity).toBe(result.second?.identity)
   })
 
-  it('rejects custom MDX extensions while SourceType7f is unannounced', async () => {
+  it('admits configured custom MDX extensions with the original compiler options', async () => {
     // Given
-    const config = { module: { rules: [{ ...mdxRule(), test: /\.mdown$/ }] } }
-    // When / Then
-    await expect(
-      withSelector(config, (selector) =>
-        selector.selectPipeline(
-          source.replace(/\.mdx$/, '.mdown'),
-          new AbortController().signal,
-        ),
-      ),
-    ).rejects.toMatchObject({
-      unknownFact: 'extraction source type',
-      boundary: {
-        reason: expect.stringMatching(/extension \.mdown.*use \.md or \.mdx/),
-      },
-    })
+    const filename = source.replace(/\.mdx$/, '.mdown')
+    const options = { jsx: true, format: 'mdx' }
+    const config = {
+      module: { rules: [{ ...mdxRule(options), test: /\.mdown$/ }] },
+    }
+    // When
+    const selection = await withSelector(config, (selector) =>
+      selector.selectPipeline(filename, new AbortController().signal),
+    )
+    // Then
+    expect(selection?.loaders[0]?.options).toBe(options)
+    expect(selection?.pipeline.ruleKey).toBe('0')
+    expect(selection?.pipeline.loaders[0]?.loader).toBe(mdxLoader)
   })
 
   it('admits markdown through the original native MDX compiler without renaming its resource', async () => {

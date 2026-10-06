@@ -1,5 +1,3 @@
-import { extname } from 'node:path'
-
 import type { MdxNativeLoaderFacts } from './mdx-binding'
 import { snapshotMdxBindingValue } from './mdx-binding-value'
 import type { MdxLoader, MdxPipeline } from './mdx-pipeline'
@@ -104,14 +102,6 @@ export async function createWebpackResourceSelector(
         throw new WebpackResourceError(configFile, qualification.boundary)
       if (!qualification.pipeline) return
       const original = qualification.pipeline
-      if (!['.md', '.mdx'].includes(extname(filename)))
-        throw new WebpackResourceError(configFile, {
-          filename,
-          rulePosition: original.ruleKey,
-          test: '<native MDX>',
-          unknownFact: 'extraction source type',
-          reason: `compiled MDX under extension ${extname(filename) || '<none>'} is not supported yet (SourceType7f is unannounced); use .md or .mdx`,
-        })
       const effects = native.exec(resourceFacts(binding, filename))
       const normal = nativeLoaders(effects, 'use')
       const devup = normal.findLastIndex(isDevupLoader)

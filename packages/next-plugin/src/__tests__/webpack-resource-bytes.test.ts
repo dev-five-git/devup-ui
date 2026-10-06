@@ -19,6 +19,7 @@ import {
   createMdxOptionsInstance,
 } from '../mdx-prepare'
 import { isRunLoaders } from '../mdx-prepare-runner'
+import { createWasm, extractWithModuleResolver } from '../wasm'
 import { mdxRule, withSelector } from './webpack-resource-fixture'
 
 const workspace = fileURLToPath(new URL('../../../../', import.meta.url))
@@ -31,6 +32,8 @@ describe('selected native MDX input bytes', () => {
     { extension: '.md', sourceMap: true },
     { extension: '.mdx', sourceMap: false },
     { extension: '.mdx', sourceMap: true },
+    { extension: '.mdown', sourceMap: false },
+    { extension: '.mdown', sourceMap: true },
   ]) {
     it(`matches the unsubstituted installed compiler for ${extension} when maps are ${sourceMap}`, async () => {
       // Given
@@ -41,13 +44,19 @@ describe('selected native MDX input bytes', () => {
         join(root, 'node_modules'),
         'junction',
       )
-      writeFileSync(filename, '# Native bytes\n\n<Box bg="red" />')
+      const options = extension === '.mdown' ? { jsx: true, format: 'mdx' } : {}
+      writeFileSync(
+        filename,
+        `import { Box } from '@devup-ui/react'\n\n# Native bytes\n\n<Box bg="red" />`,
+      )
       try {
         const result = await withSelector(
           {
             context: root,
             devtool: sourceMap ? 'source-map' : false,
-            module: { rules: [{ ...mdxRule(), test: /\.mdx?$/ }] },
+            module: {
+              rules: [{ ...mdxRule(options), test: /\.(md|mdx|mdown)$/ }],
+            },
           },
           async (selector, compiler) => {
             const signal = new AbortController().signal
@@ -96,11 +105,55 @@ describe('selected native MDX input bytes', () => {
               deadline: createMdxDeadline(),
               optionsInstance: createMdxOptionsInstance(),
             })
+            const sources =
+              extension === '.mdown'
+                ? [
+                    prepared.source,
+                    (
+                      await compileMdx({
+                        root,
+                        filename,
+                        pipeline: selection.pipeline,
+                        context: {
+                          ...selection.context,
+                          sourceMap: !sourceMap,
+                        },
+                        signal,
+                        deadline: createMdxDeadline(),
+                        optionsInstance: createMdxOptionsInstance(),
+                      })
+                    ).source,
+                  ]
+                : []
+            const css = sources.flatMap((code) =>
+              [false, true].map((maps) => {
+                const engine = createWasm(root)
+                const output = extractWithModuleResolver(engine, maps, [
+                  filename,
+                  code,
+                  '@devup-ui/react',
+                  './df',
+                  true,
+                  false,
+                  false,
+                  {},
+                  'compiled-mdx',
+                ])
+                try {
+                  expect(output.code).not.toContain('<Box')
+                  return engine.getCss(null, false)
+                } finally {
+                  output.free()
+                }
+              }),
+            )
             return {
               native: nativeSource.toString(),
               code: prepared.source,
               sourceMap: selection.context.sourceMap,
               map: prepared.map,
+              options: selection.loaders[0]?.options,
+              css,
             }
           },
         )
@@ -108,6 +161,15 @@ describe('selected native MDX input bytes', () => {
         expect(result.code).toBe(result.native)
         expect(result.sourceMap).toBe(sourceMap)
         expect(result.map !== undefined).toBe(sourceMap)
+        expect(result.options).toBe(options)
+        if (extension === '.mdown') {
+          expect(result.code).toContain('<Box')
+          expect(result.css[0]).toContain('background:red')
+          expect(result.css[1]).toBe(result.css[0])
+          expect(result.css[2]).toBe(result.css[0])
+          expect(result.css[3]).toBe(result.css[0])
+          expect(options).toEqual({ jsx: true, format: 'mdx' })
+        }
       } finally {
         rmSync(root, { recursive: true, force: true })
       }
