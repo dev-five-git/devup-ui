@@ -132,7 +132,11 @@ fn static_styles(output: &ExtractOutput) -> Vec<(String, String)> {
 
 /// What the JavaScript `body` returns, run as the build's output runs it
 fn run(body: &str) -> String {
-    let script = format!("(function() {{ {body} }})()");
+    run_script(&format!("(function() {{ {body} }})()"))
+}
+
+/// Run a script directly so whole-file probes do not add a recursive parser frame.
+fn run_script(script: &str) -> String {
     let mut context = boa_engine::Context::default();
     let value = context
         .eval(boa_engine::Source::from_bytes(script.as_bytes()))

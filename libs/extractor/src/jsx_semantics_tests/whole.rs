@@ -51,8 +51,8 @@ pub(super) fn evaluate(source: &str, probe: &str) -> Evaluation {
 
 pub(super) fn evaluate_code(compiled: &str, probe: &str) -> Evaluation {
     let script = plain_script(compiled);
-    let joined = run(&format!(
-        "const trace = []; const h = (type, props, ...children) => ({{ type, props: props && {{ ...props }}, children }}); const jsx = (type, props) => ({{ type, props: props && {{ ...props }} }}); const createElement = h; const React = {{ createElement: h }}; const ReactNS = React; {script}\nreturn JSON.stringify([{probe}, trace]);"
+    let joined = run_script(&format!(
+        "const trace = []; const h = (type, props, ...children) => ({{ type, props: props && {{ ...props }}, children }}); const jsx = (type, props) => ({{ type, props: props && {{ ...props }} }}); const createElement = h; const React = {{ createElement: h }}; const ReactNS = React; {script}\nJSON.stringify([{probe}, trace]);"
     ));
     let (element, trace): (serde_json::Value, serde_json::Value) =
         serde_json::from_str(&joined).unwrap_or_else(|error| panic!("{error}: {joined}"));
