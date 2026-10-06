@@ -222,14 +222,22 @@ pub struct ResolvedModule {
     pub source_type: Option<ExtractSourceType>,
 }
 
+/// A native file resolution or a successful alias ignore without source.
+pub enum ModuleResolution {
+    Resolved(ResolvedModule),
+    Ignored,
+}
+
 mod source_type;
 pub use source_type::{ExtractSourceType, parse_source_type};
+#[cfg(test)]
+mod ignored_module_tests;
 #[cfg(test)]
 mod source_type_tests;
 
 /// Resolves `(specifier, importer)` the way the bundler does; `None` when it
 /// cannot
-pub type ModuleResolver<'a> = dyn Fn(&str, &str) -> Option<ResolvedModule> + 'a;
+pub type ModuleResolver<'a> = dyn Fn(&str, &str) -> Option<ModuleResolution> + 'a;
 
 #[derive(Clone)]
 pub struct ExtractOption {
@@ -325,7 +333,11 @@ pub fn extract_with_source_type(
             return None;
         }
         let module = resolver?(specifier, importer)?;
-        if let Err(error) = source_type::validate_module(&module) {
+        let validation = match &module {
+            ModuleResolution::Resolved(module) => source_type::validate_module(module),
+            ModuleResolution::Ignored => Ok(()),
+        };
+        if let Err(error) = validation {
             *fault.borrow_mut() = Some(error);
             return None;
         }
@@ -18370,7 +18382,7 @@ export const d = style([cond && base]);",
 
     fn memory_resolver(
         files: &'static [(&'static str, &'static str)],
-    ) -> impl Fn(&str, &str) -> Option<ResolvedModule> {
+    ) -> impl Fn(&str, &str) -> Option<ModuleResolution> {
         move |specifier, importer| {
             let directory = importer
                 .rsplit_once('/')
@@ -18383,10 +18395,12 @@ export const d = style([cond && base]);",
                         .iter()
                         .any(|extension| format!("{path}{extension}") == *file)
                 })
-                .map(|(file, code)| ResolvedModule {
-                    source_type: None,
-                    path: (*file).to_string(),
-                    code: (*code).to_string(),
+                .map(|(file, code)| {
+                    ModuleResolution::Resolved(ResolvedModule {
+                        source_type: None,
+                        path: (*file).to_string(),
+                        code: (*code).to_string(),
+                    })
                 })
         }
     }

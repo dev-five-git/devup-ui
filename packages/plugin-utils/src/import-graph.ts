@@ -270,6 +270,7 @@ function* traverseGraph(
     for (const importRef of imports) {
       const resolution = resolver(importRef.specifier, file)
       if (resolution === false) continue
+      if (resolution?.ignored === true) continue
       const resolved = resolution?.path
       if (resolved && excludedDirectory(dirname(resolved))) continue
       const rewritten = resolution?.request ?? importRef.specifier
@@ -973,10 +974,22 @@ export function __setOxcParserForTest(
 
 /** A module an import resolved to, as `setModuleResolver` expects it. */
 export interface ResolvedModule {
+  readonly ignored?: never
   path: string
   code: string
   readonly sourceType?: import('./prepared-source').SourceType
 }
+
+/** Successful native ignore: no filesystem module or manufactured source. */
+export interface IgnoredModule {
+  readonly ignored: true
+  readonly path?: never
+  readonly code?: never
+  readonly sourceType?: never
+  readonly request?: never
+}
+
+export type ModuleResolution = ResolvedModule | IgnoredModule
 
 export interface CreateModuleResolverOptions {
   readonly prepareSource?: PrepareSource
@@ -1011,6 +1024,7 @@ export function createModuleResolver({
     (specifier: string, importer: string) => {
       const resolution = resolver(specifier, importer)
       if (!resolution) return undefined
+      if (resolution.ignored === true) return resolution
       const { path } = resolution
       const source = prepared.read(
         path,
@@ -1034,7 +1048,7 @@ function createModulePathResolver(
 ): (
   specifier: string,
   importer: string,
-) => AliasResolution | false | undefined {
+) => AliasResolution | IgnoredModule | false | undefined {
   const { aliases, baseDir, baseUrl } = readPathAliases(tsconfigPath)
   const extensions = sourceExtensions(includeMdx)
   const fileResolver = (path: string) =>

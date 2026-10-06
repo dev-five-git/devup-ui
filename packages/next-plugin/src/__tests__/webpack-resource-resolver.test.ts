@@ -1,20 +1,93 @@
+import { createModuleResolver } from '@devup-ui/plugin-utils'
 import { describe, expect, it } from 'bun:test'
 import type { Configuration } from 'webpack'
 
-import { mdxRule, withSelector } from './webpack-resource-fixture'
+import { webpackResourceResolver } from '../webpack-resource-delivery'
+import { mdxLoader, mdxRule, withSelector } from './webpack-resource-fixture'
 
 describe('native resolver representation', () => {
-  it('refuses disabled aliases instead of silently changing native resolver meaning', async () => {
+  it('resolves disabled aliases as ignored without manufacturing a module', async () => {
     // Given
     const config: Configuration = {
       resolve: { alias: { provider: false } },
       module: { rules: [mdxRule()] },
     }
-    // When / Then
-    await expect(withSelector(config, () => true)).rejects.toBeInstanceOf(
-      TypeError,
+    // When
+    const result = await withSelector(config, (selector, compiler) =>
+      createModuleResolver({ cwd: compiler.context, alias: selector.aliases })(
+        'provider',
+        'page.tsx',
+      ),
     )
+    // Then
+    expect(result).toEqual({ ignored: true })
   })
+
+  it('preserves an exact ignored descriptor as false', async () => {
+    // Given
+    const config: Configuration = {
+      resolve: {
+        alias: [{ name: 'provider', onlyModule: true, alias: false }],
+      },
+      module: { rules: [mdxRule()] },
+    }
+    // When
+    const result = await withSelector(config, (selector, compiler) => ({
+      aliases: selector.aliases,
+      resolution: createModuleResolver({
+        cwd: compiler.context,
+        alias: selector.aliases,
+      })('provider', 'page.tsx'),
+    }))
+    // Then
+    expect(result).toEqual({
+      aliases: { provider$: false },
+      resolution: { ignored: true },
+    })
+  })
+
+  it.each([{ descriptor: true }, { descriptor: false }])(
+    'retains ordered false candidates at the effective resolver boundary %j',
+    async ({ descriptor }) => {
+      // Given
+      const candidates = ['missing-provider', false, mdxLoader] as const
+      const config: Configuration = {
+        module: { rules: [mdxRule()] },
+      }
+      // When
+      const result = await withSelector(config, (_, compiler, binding) => {
+        const effectiveConfiguration = {
+          ...binding.effectiveConfiguration,
+          resolve: Object.defineProperty(
+            { ...binding.effectiveConfiguration.resolve },
+            'alias',
+            {
+              value: descriptor
+                ? [{ name: 'provider', onlyModule: true, alias: candidates }]
+                : { provider$: candidates },
+              enumerable: true,
+            },
+          ),
+        }
+        const settings = webpackResourceResolver({
+          ...binding,
+          effectiveConfiguration,
+        })
+        return {
+          aliases: settings.aliases,
+          resolution: createModuleResolver({
+            cwd: compiler.context,
+            alias: settings.aliases,
+          })('provider', 'page.tsx'),
+        }
+      })
+      // Then
+      expect(result).toEqual({
+        aliases: { provider$: candidates },
+        resolution: { ignored: true },
+      })
+    },
+  )
 
   it('preserves unique alias descriptors and candidate order', async () => {
     // Given

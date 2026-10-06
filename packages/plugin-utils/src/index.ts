@@ -1,5 +1,17 @@
 export { beginBuild, type ResettableEngine } from './build-session'
+export {
+  type CompiledReference,
+  createCompileTimeClassifier,
+  isCompileTimeAlias,
+  UntransformedSourceError,
+} from './compiled-guard'
 export { collectDevupConfigFiles } from './config-files'
+export {
+  createDependencyGuard,
+  type DependencyGuardOptions,
+  type GuardModule,
+} from './dependency-guard'
+export { compiledFacts, type GuardFacts } from './guard-facts'
 export {
   type AtomHoistPlan,
   buildCanonicalMap,
@@ -15,7 +27,9 @@ export {
   type ComputeReachableFilesOptions,
   createModuleResolver,
   type CreateModuleResolverOptions,
+  type IgnoredModule,
   listSourceFiles,
+  type ModuleResolution,
   planAtomHoist,
   type PreparedGraphOptions,
   type PreparedSource,
@@ -25,6 +39,7 @@ export {
   type StaticImportGraphOptions,
   type SyncGraphOptions,
 } from './import-graph'
+export { type ImportReference, scanImports } from './import-scanner'
 export {
   ConfigLoadError,
   deepMerge,
@@ -32,6 +47,12 @@ export {
   loadDevupConfigSync,
 } from './load-config'
 export { remapMdxError } from './mdx-errors'
+export {
+  isMdxSource,
+  mdxSourceFilter,
+  normalizeMdxExtensions,
+  selectedSourceFilter,
+} from './mdx-selection'
 export {
   collectNumberedFiles,
   type CollectNumberedFilesOptions,
@@ -56,7 +77,11 @@ export {
   SOURCE_EXTENSIONS,
   SOURCE_FILE_RE,
 } from './shared'
-export type { MdxSelection, SourceSelectionOptions } from './source-selection'
+export {
+  isSelectedSource,
+  type MdxSelection,
+  type SourceSelectionOptions,
+} from './source-selection'
 export {
   createStateWriter,
   type StateWriter,

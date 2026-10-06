@@ -1,3 +1,4 @@
+import type { IgnoredModule } from './import-graph'
 import type { ModuleAliases } from './types'
 
 export class ModuleAliasError extends Error {
@@ -33,6 +34,7 @@ export class ModuleAliasPackageError extends Error {
 }
 
 export interface AliasResolution {
+  readonly ignored?: never
   readonly path: string
   readonly request: string
 }
@@ -48,14 +50,14 @@ export function resolveModuleAlias(
       aliased: boolean,
     ) => string | false | undefined
   },
-): AliasResolution | false | undefined {
+): AliasResolution | IgnoredModule | false | undefined {
   let failure:
     { readonly key: string; readonly candidates: readonly string[] } | undefined
   function visit(
     request: string,
     visited: ReadonlySet<string>,
     aliased: boolean,
-  ): AliasResolution | false | undefined {
+  ): AliasResolution | IgnoredModule | false | undefined {
     if (visited.has(request))
       throw new ModuleAliasError(context.importer, specifier)
     const next = new Set(visited).add(request)
@@ -64,16 +66,24 @@ export function resolveModuleAlias(
       const name = exact ? key.slice(0, -1) : key
       if (request !== name && (exact || !request.startsWith(`${name}/`)))
         continue
-      const targets = typeof value === 'string' ? [value] : value
+      const targets = typeof value === 'object' ? value : [value]
       const candidates = targets
         .filter(
-          (target) => request !== target && !request.startsWith(`${target}/`),
+          (target) =>
+            target === false ||
+            (request !== target && !request.startsWith(`${target}/`)),
         )
-        .map((target) => target + request.slice(name.length))
+        .map((target) =>
+          target === false ? false : target + request.slice(name.length),
+        )
       if (targets.length && !candidates.length) continue
-      failure ??= { key, candidates }
+      failure ??= {
+        key,
+        candidates: candidates.filter((candidate) => candidate !== false),
+      }
       let missing = !candidates.length
       for (const candidate of candidates) {
+        if (candidate === false) return { ignored: true }
         const resolved = visit(candidate, next, true)
         if (resolved) return resolved
         if (resolved === undefined) missing = true

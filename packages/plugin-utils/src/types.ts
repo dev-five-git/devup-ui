@@ -63,8 +63,10 @@ export interface DevupTheme {
 /** Custom style prop aliases mapped to one or more CSS property names. */
 export type CustomShorthands = Record<string, readonly string[]>
 
-/** Ordered native module alias candidates; false/ignore aliases are unsupported. */
-export type ModuleAliases = Readonly<Record<string, string | readonly string[]>>
+/** Ordered alias candidates; a reached false explicitly ignores the module. */
+export type ModuleAliases = Readonly<
+  Record<string, string | false | readonly (string | false)[]>
+>
 
 /**
  * Devup configuration file structure (devup.json)

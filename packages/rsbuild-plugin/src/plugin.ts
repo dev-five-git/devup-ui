@@ -10,6 +10,7 @@ import {
   computeFileReach,
   computeReachableFiles,
   createCompatTypes,
+  createDependencyGuard,
   createModuleResolver,
   createNodeModulesExcludeRegex,
   createStateWriter,
@@ -17,10 +18,13 @@ import {
   type CustomShorthands,
   extractedNeedles,
   getFileNumByFilename,
-  GRAPH_SOURCE_FILE_RE,
   type ImportAliases,
+  isMdxSource,
+  isSelectedSource,
   loadDevupConfig,
+  mdxSourceFilter,
   mergeImportAliases,
+  normalizeMdxExtensions,
   planAtomHoist,
   remapMdxError,
   resolveProjectPaths,
@@ -61,6 +65,7 @@ export interface DevupUIRsbuildPluginOptions {
   prefix?: string
   shorthands?: CustomShorthands
   sourceDirs?: string | string[]
+  mdxExtensions?: readonly string[]
   /**
    * Atom-level route-aware hoisting threshold (min routes sharing an atom for it
    * to hoist into the shared devup-ui.css; clamped to >= 2; omit to disable).
@@ -128,9 +133,11 @@ export const DevupUI = ({
   sourceDirs: configuredSourceDirs,
   atomHoist,
   importAliases: userImportAliases,
+  mdxExtensions: configuredMdxExtensions,
 }: Partial<DevupUIRsbuildPluginOptions> = {}): RsbuildPlugin => {
   registerShorthands(shorthands ?? {})
   const importAliases = mergeImportAliases(userImportAliases)
+  const mdxExtensions = normalizeMdxExtensions(configuredMdxExtensions)
   const excludeModules = createNodeModulesExcludeRegex(include)
   let seedWarningEmitted = false
   const stateWriter = createStateWriter((path, content, encoding) =>
@@ -246,6 +253,11 @@ export const DevupUI = ({
       })
 
       const servedCss = new Map<string, Map<string, string>>()
+      const checkCompiled = createDependencyGuard({
+        package: libPackage,
+        mdxExtensions,
+        importAliases,
+      })
       const stylesheet = (resourcePath: string) =>
         // A file's stylesheet imports the shared base, except in atom mode,
         // where the entry code imports the base itself so that hoisted atoms
@@ -302,7 +314,7 @@ export const DevupUI = ({
                         : (value.import ?? []),
                   )
           const entries = rawEntries
-            .filter((file) => GRAPH_SOURCE_FILE_RE.test(file))
+            .filter((file) => isSelectedSource(file, mdxExtensions))
             .map((file) => resolve(root, file))
           const roots = [
             ...new Set([
@@ -314,12 +326,13 @@ export const DevupUI = ({
           try {
             const resolver = createModuleResolver({
               cwd: root,
+              includeMdx: mdxExtensions,
               conditions,
               toId,
             })
             setModuleResolver(resolver)
             const graph = buildStaticImportGraph(roots, tsconfigPath, {
-              includeMdx: true,
+              includeMdx: mdxExtensions,
               cwd: root,
               include,
               conditions,
@@ -359,7 +372,7 @@ export const DevupUI = ({
                 { seedFileMap },
                 collectNumberedFiles({
                   roots,
-                  includeMdx: true,
+                  includeMdx: mdxExtensions,
                   include,
                   cwd: root,
                   needles: extractedNeedles(libPackage, importAliases),
@@ -411,6 +424,30 @@ export const DevupUI = ({
                 if (stylesheet(basePath) !== base) changed.add(basePath)
                 stale = [...changed]
               })
+              compilation.hooks.finishModules.tap(
+                'DevupUICompiledSourceGuard',
+                (modules) => {
+                  const dependencies = new Map<unknown, Rspack.Dependency>()
+                  for (const module of modules)
+                    for (const dependency of module.dependencies)
+                      dependencies.set(dependency, dependency)
+                  compilation.errors.push(
+                    ...checkCompiled(modules, {
+                      graph: compilation.moduleGraph,
+                      target(dependency) {
+                        const actual = dependencies.get(dependency)
+                        const module =
+                          actual && compilation.moduleGraph.getModule(actual)
+                        return module &&
+                          'resource' in module &&
+                          typeof module.resource === 'string'
+                          ? module.resource
+                          : undefined
+                      },
+                    }),
+                  )
+                },
+              )
               // The next pass writes the build; this one writes none of its files
               compilation.hooks.processAssets.tap(
                 {
@@ -533,9 +570,12 @@ export const DevupUI = ({
               atomMode,
               !atomMode,
               importAliases,
+              ...(isMdxSource(resourcePath, mdxExtensions)
+                ? (['compiled-mdx'] as const)
+                : ([] as const)),
             )
           } catch (error) {
-            if (/\.mdx$/i.test(resourcePath))
+            if (isMdxSource(resourcePath, mdxExtensions))
               throw remapMdxError(error, resourcePath)
             throw error
           }
@@ -572,7 +612,10 @@ export const DevupUI = ({
       // Rsbuild's order: post installs an enforce: post Rspack loader. Its
       // transform context does not expose the incoming map, so located errors
       // are explicitly labelled as compiled MDX rather than claiming raw lines.
-      api.transform({ test: /\.mdx$/i, order: 'post' }, extract)
+      api.transform(
+        { test: mdxSourceFilter(mdxExtensions), order: 'post' },
+        extract,
+      )
     },
   }
 }

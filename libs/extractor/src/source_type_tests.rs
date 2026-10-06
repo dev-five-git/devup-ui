@@ -22,11 +22,11 @@ fn extracts_real_filename_when_compiled_mode_is_supplied() -> Result<(), Box<dyn
 #[serial]
 fn derives_child_language_when_root_is_compiled_mdx() -> Result<(), Box<dyn Error>> {
     let resolver = |_: &str, _: &str| {
-        Some(ResolvedModule {
+        Some(ModuleResolution::Resolved(ResolvedModule {
             path: "token.ts".to_string(),
             code: "export enum Colors { PRIMARY = 'red' }".to_string(),
             source_type: None,
-        })
+        }))
     };
     let output = extract_with_source_type(
         "page.mdown",
@@ -45,11 +45,11 @@ fn derives_child_language_when_root_is_compiled_mdx() -> Result<(), Box<dyn Erro
 #[serial]
 fn rejects_child_extension_when_constants_would_fall_back() {
     let resolver = |_: &str, _: &str| {
-        Some(ResolvedModule {
+        Some(ModuleResolution::Resolved(ResolvedModule {
             path: "token.custom".to_string(),
             code: "export const PRIMARY = 'red';".to_string(),
             source_type: None,
-        })
+        }))
     };
     let result = extract_with_source_type(
         "page.tsx",
@@ -67,12 +67,12 @@ fn rejects_child_extension_when_constants_would_fall_back() {
 fn evaluates_stylesheet_when_imported_compiled_jsx_has_trailing_constants()
 -> Result<(), Box<dyn Error>> {
     let resolver = |_: &str, _: &str| {
-        Some(ResolvedModule {
+        Some(ModuleResolution::Resolved(ResolvedModule {
             path: "token.mdown".to_string(),
             code: "export function view() { return <div/>; } export const PRIMARY = 'blue';"
                 .to_string(),
             source_type: Some(ExtractSourceType::CompiledMdx),
-        })
+        }))
     };
     let output = extract_with_source_type(
         "theme.css.ts",
@@ -107,11 +107,11 @@ fn evaluates_generated_values_when_root_keeps_custom_filename() -> Result<(), Bo
 #[serial]
 fn reads_commonjs_exports_when_compiled_jsx_precedes_assignment() -> Result<(), Box<dyn Error>> {
     let resolver = |_: &str, _: &str| {
-        Some(ResolvedModule {
+        Some(ModuleResolution::Resolved(ResolvedModule {
             path: "tokens.mdown".to_string(),
             code: "function view() { return <div/>; } exports.PRIMARY = 'blue';".to_string(),
             source_type: Some(ExtractSourceType::CompiledMdx),
-        })
+        }))
     };
     let output = extract_with_source_type(
         "page.tsx",

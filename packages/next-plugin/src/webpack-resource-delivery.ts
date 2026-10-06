@@ -33,30 +33,32 @@ export function webpackResourceResolver(binding: WebpackResourceBinding): {
   readonly aliases: ModuleAliases
   readonly conditions: readonly string[]
 } {
-  const aliases: Record<string, string | readonly string[]> = {}
+  const aliases: Record<string, ModuleAliases[string]> = {}
   const alias = binding.effectiveConfiguration.resolve?.alias ?? {}
   if (Array.isArray(alias)) {
     for (const item of alias) {
       const key = `${item.name}${item.onlyModule ? '$' : ''}`
-      if (Object.hasOwn(aliases, key) || item.alias === false)
+      if (Object.hasOwn(aliases, key))
         throw new TypeError(
           'native alias descriptor order cannot be represented losslessly',
         )
       Object.defineProperty(aliases, key, {
-        value: Object.freeze(
-          typeof item.alias === 'string' ? [item.alias] : [...item.alias],
-        ),
+        value:
+          item.alias === false
+            ? false
+            : Object.freeze(
+                typeof item.alias === 'string' ? [item.alias] : [...item.alias],
+              ),
         enumerable: true,
       })
     }
   } else {
     for (const [key, value] of Object.entries(alias)) {
-      if (value === false)
-        throw new TypeError(
-          'disabled native aliases cannot be represented losslessly',
-        )
       Object.defineProperty(aliases, key, {
-        value: typeof value === 'string' ? value : Object.freeze([...value]),
+        value:
+          typeof value === 'string' || value === false
+            ? value
+            : Object.freeze([...value]),
         enumerable: true,
       })
     }

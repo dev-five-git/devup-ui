@@ -70,9 +70,7 @@ it.each(['unrelated', 'styling'])(
     )
     try {
       await f.setup({}, { entrypoints: [path], plugins: [] })
-      if (scenario === 'styling')
-        await expect(f.load(path)).rejects.toThrow('page.mdx:1:1')
-      else expect(await f.load(path)).toBeUndefined()
+      await expect(f.load(path)).rejects.toThrow('page.mdx:1:1')
     } finally {
       await f.cleanup()
     }

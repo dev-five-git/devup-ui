@@ -5,7 +5,9 @@ use css::file_map::{
 #[cfg(test)]
 use extractor::extract;
 use extractor::extract_style::extract_style_value::ExtractStyleValue;
-use extractor::{ExtractOption, ImportAlias, ModuleResolver, ResolvedModule, has_devup_ui};
+use extractor::{
+    ExtractOption, ImportAlias, ModuleResolution, ModuleResolver, ResolvedModule, has_devup_ui,
+};
 use rustc_hash::FxHashSet;
 use sheet::StyleSheet;
 use std::cell::RefCell;
@@ -573,12 +575,29 @@ fn call_module_resolver(
     resolver: &js_sys::Function,
     specifier: &str,
     importer: &str,
-) -> Result<Option<ResolvedModule>, String> {
+) -> Result<Option<ModuleResolution>, String> {
     let module = resolver
         .call2(&JsValue::NULL, &specifier.into(), &importer.into())
         .map_err(|error| resolver_cause(&error))?;
     if module.is_null() || module.is_undefined() {
         return Ok(None);
+    }
+    if !module.is_object() {
+        return Err("resolver result must be an object".to_string());
+    }
+    let ignored = js_sys::Reflect::get(&module, &"ignored".into()).map_err(|error| {
+        format!(
+            "reading resolver field `ignored`: {}",
+            resolver_cause(&error)
+        )
+    })?;
+    if !ignored.is_undefined() {
+        return match ignored.as_bool() {
+            Some(true) => Ok(Some(ModuleResolution::Ignored)),
+            Some(false) | None => {
+                Err("resolver field `ignored` must be true or undefined".to_string())
+            }
+        };
     }
     let field = |name: &str| {
         js_sys::Reflect::get(&module, &name.into())
@@ -591,7 +610,7 @@ fn call_module_resolver(
             .as_string()
             .ok_or_else(|| format!("resolver field `{name}` must be a string"))
     };
-    Ok(Some(ResolvedModule {
+    Ok(Some(ModuleResolution::Resolved(ResolvedModule {
         path: field("path")?,
         code: field("code")?,
         source_type: source_type_from_js(
@@ -602,7 +621,7 @@ fn call_module_resolver(
                 )
             })?,
         )?,
-    }))
+    })))
 }
 
 /// Extract with the resolver set by `setModuleResolver`, if any
@@ -1392,10 +1411,12 @@ mod tests {
             *sheet = StyleSheet::default();
         }
         let resolver = |specifier: &str, _: &str| {
-            (specifier == "./tokens").then(|| ResolvedModule {
-                source_type: None,
-                path: "/src/tokens.ts".to_string(),
-                code: "export const PRIMARY = 'red'".to_string(),
+            (specifier == "./tokens").then(|| {
+                ModuleResolution::Resolved(ResolvedModule {
+                    source_type: None,
+                    path: "/src/tokens.ts".to_string(),
+                    code: "export const PRIMARY = 'red'".to_string(),
+                })
             })
         };
         {

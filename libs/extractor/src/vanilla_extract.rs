@@ -1498,10 +1498,12 @@ mod tests {
                     path.trim_end_matches(".ts")
                         == specifier.trim_start_matches('.').trim_end_matches(".ts")
                 })
-                .map(|(path, code)| crate::ResolvedModule {
-                    source_type: None,
-                    path: (*path).to_string(),
-                    code: (*code).to_string(),
+                .map(|(path, code)| {
+                    crate::ModuleResolution::Resolved(crate::ResolvedModule {
+                        source_type: None,
+                        path: (*path).to_string(),
+                        code: (*code).to_string(),
+                    })
                 })
         };
         execute_stylesheet(

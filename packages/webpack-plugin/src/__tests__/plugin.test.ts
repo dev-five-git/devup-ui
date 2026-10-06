@@ -792,10 +792,12 @@ describe('devupUIWebpackPlugin', () => {
       return { compiler, plugin, compilation, taps, run, start }
     }
 
-    it('taps nothing in watch mode', () => {
+    it('does not request another CSS pass in watch mode', () => {
       const { compiler } = compile(true)
       expect(compiler.hooks.run.tap).not.toHaveBeenCalled()
-      expect(compiler.hooks.thisCompilation.tap).not.toHaveBeenCalled()
+      expect(
+        compiler.hooks.thisCompilation.tap.mock.calls.map(([name]) => name),
+      ).not.toContain('DevupUIWebpackPlugin')
     })
 
     it('writes the shared base to disk when it does not hold it yet', () => {

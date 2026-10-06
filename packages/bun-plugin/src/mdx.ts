@@ -8,7 +8,7 @@ type CompiledMdx = { readonly value: string; readonly map?: unknown }
 type Compiler = {
   readonly compile: (
     input: { readonly value: string; readonly path: string },
-    options: { readonly jsx: true },
+    options: { readonly jsx: true; readonly format: 'mdx' },
   ) => Promise<CompiledMdx>
 }
 
@@ -57,5 +57,8 @@ export async function compileMdx(
     throw new TypeError(
       `${filename}:1:1: @mdx-js/mdx does not export compile()`,
     )
-  return compiler.compile({ value: contents, path: filename }, { jsx: true })
+  return compiler.compile(
+    { value: contents, path: filename },
+    { jsx: true, format: 'mdx' },
+  )
 }

@@ -33,12 +33,12 @@ fn source_type_extracts_compiled_mdx_when_native_variants_use_real_filename() ->
     )?;
     assert_eq!(unmapped.map(), None);
     let resolver = |_: &str, _: &str| {
-        Some(ResolvedModule {
+        Some(ModuleResolution::Resolved(ResolvedModule {
             path: "tokens.mdown".to_string(),
             code: "export function view() {return <div/>;} export const PRIMARY = 'blue';"
                 .to_string(),
             source_type: mode,
-        })
+        }))
     };
     let imported = code_extract_with_modules_internal(
         "page.mdown",
@@ -75,11 +75,11 @@ fn source_type_preserves_sheet_when_unknown_child_validation_fails() -> Result<(
     )?;
     let before = export_sheet_internal()?;
     let resolver = |_: &str, _: &str| {
-        Some(ResolvedModule {
+        Some(ModuleResolution::Resolved(ResolvedModule {
             path: "tokens.custom".to_string(),
             code: "export const PRIMARY = 'red';".to_string(),
             source_type: None,
-        })
+        }))
     };
     let result = code_extract_with_modules_internal(
         "page.tsx",

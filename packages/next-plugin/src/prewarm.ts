@@ -4,6 +4,7 @@ import { extname, relative, resolve } from 'node:path'
 import {
   createModuleResolver,
   type ModuleAliases,
+  type ModuleResolution,
   type PrepareSource,
   type ResolvedModule,
   type StaticImportGraph,
@@ -67,7 +68,7 @@ interface PackageWalk {
   readonly resolveModule: (
     specifier: string,
     importer: string,
-  ) => ResolvedModule | undefined
+  ) => ModuleResolution | undefined
   readonly files: Set<string>
   readonly seen: Set<string>
 }
@@ -78,7 +79,9 @@ function resolveLocated(
   importer: string,
 ): ResolvedModule | undefined {
   try {
-    return walk.resolveModule(specifier, importer)
+    const resolved = walk.resolveModule(specifier, importer)
+    if (resolved?.ignored === true) return undefined
+    return resolved
   } catch (cause) {
     throw locatedError({
       file: importer,
@@ -107,13 +110,12 @@ function followSpecifier(
 function addPackageFile(walk: PackageWalk, entry: ResolvedModule): void {
   const filename = preferEsmFile(entry.path)
   if (!isExtractable(filename) || walk.seen.has(filename)) return
+  const resolved =
+    filename === entry.path ? entry : walk.resolveModule(filename, filename)
+  if (resolved?.ignored === true) return
   walk.seen.add(filename)
   walk.files.add(toKey(walk.root, filename))
-  const source =
-    filename === entry.path
-      ? entry.code
-      : (walk.resolveModule(filename, filename)?.code ??
-        readFileSync(filename, 'utf-8'))
+  const source = resolved?.code ?? readFileSync(filename, 'utf-8')
   for (const [, , specifier] of source.matchAll(IMPORT_SPECIFIER)) {
     followSpecifier(walk, specifier, filename)
   }
