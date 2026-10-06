@@ -5,6 +5,7 @@ import {
   createModuleResolver,
   createStateWriter,
   isMdxSource,
+  type ModuleAliasOptions,
   remapMdxError,
 } from '@devup-ui/plugin-utils'
 import {
@@ -29,6 +30,7 @@ export interface DevupUILoaderOptions {
   rootDir?: string
   conditions?: readonly string[]
   mdxExtensions?: readonly string[]
+  alias?: ModuleAliasOptions
 }
 
 function toLoaderError(error: unknown): Error {
@@ -51,18 +53,21 @@ const moduleResolvers = new Map<
 >()
 
 /** Resolve imports to the cwd-relative ids this loader extracts files under */
-function setCwdModuleResolver(
-  rootDir: string,
-  conditions: readonly string[],
-  mdxExtensions: readonly string[],
-): void {
-  const key = JSON.stringify([rootDir, conditions, mdxExtensions])
+function setCwdModuleResolver(options: {
+  readonly rootDir: string
+  readonly conditions: readonly string[]
+  readonly mdxExtensions: readonly string[]
+  readonly alias: ModuleAliasOptions | undefined
+}): void {
+  const { rootDir, conditions, mdxExtensions, alias } = options
+  const key = JSON.stringify([rootDir, conditions, mdxExtensions, alias])
   let moduleResolver = moduleResolvers.get(key)
   if (!moduleResolver) {
     moduleResolver = createModuleResolver({
       cwd: rootDir,
       includeMdx: mdxExtensions,
       conditions,
+      alias,
       toId: (path) => relative(rootDir, path).replaceAll('\\', '/'),
     })
     moduleResolvers.set(key, moduleResolver)
@@ -84,6 +89,7 @@ const devupUILoader: RawLoaderDefinitionFunction<DevupUILoaderOptions> =
       rootDir = process.cwd(),
       conditions = ['import', 'module', 'node'],
       mdxExtensions = ['.mdx'],
+      alias,
     } = this.getOptions()
     const callback = this.async()
     const id = this.resourcePath
@@ -104,7 +110,7 @@ const devupUILoader: RawLoaderDefinitionFunction<DevupUILoaderOptions> =
       const relativePath = relative(rootDir, id).replaceAll('\\', '/')
 
       if (!relCssDir.startsWith('./')) relCssDir = `./${relCssDir}`
-      setCwdModuleResolver(rootDir, conditions, mdxExtensions)
+      setCwdModuleResolver({ rootDir, conditions, mdxExtensions, alias })
       const {
         code,
         css = '',

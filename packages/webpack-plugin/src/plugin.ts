@@ -277,6 +277,7 @@ export class DevupUIWebpackPlugin {
           cwd,
           includeMdx: this.mdxExtensions,
           conditions,
+          alias: resolveOptions?.alias,
           toId: (path) => relative(cwd, path).replaceAll('\\', '/'),
         }),
       )
@@ -349,6 +350,7 @@ export class DevupUIWebpackPlugin {
         cwd,
         include: this.options.include,
         conditions,
+        alias: resolveOptions?.alias,
       })
       const canonicalMap = buildCanonicalMap({
         srcDir,
@@ -541,6 +543,7 @@ export class DevupUIWebpackPlugin {
         importAliases: this.importAliases,
         rootDir: cwd,
         conditions,
+        alias: resolveOptions?.alias,
         mdxExtensions: this.mdxExtensions,
       },
     }

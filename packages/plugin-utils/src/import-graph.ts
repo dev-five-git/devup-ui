@@ -36,7 +36,7 @@ import {
   type SourceSelectionOptions,
 } from './source-selection'
 import { type PathAlias, readPathAliases } from './tsconfig'
-import type { ModuleAliases } from './types'
+import type { ModuleAliasOptions } from './types'
 
 /**
  * How map keys (and bucket-root values) are stringified.
@@ -360,7 +360,7 @@ function* traverseGraph(
 export interface StaticImportGraphOptions {
   /** Include MDX only when the caller compiles it before extraction. */
   readonly includeMdx?: MdxSelection
-  readonly alias?: ModuleAliases
+  readonly alias?: ModuleAliasOptions
   readonly cwd?: string
   readonly include?: readonly string[]
   readonly conditions?: readonly string[]
@@ -993,7 +993,7 @@ export type ModuleResolution = ResolvedModule | IgnoredModule
 
 export interface CreateModuleResolverOptions {
   readonly prepareSource?: PrepareSource
-  readonly alias?: ModuleAliases
+  readonly alias?: ModuleAliasOptions
   readonly includeMdx?: MdxSelection
   cwd?: string
   tsconfigPath?: string
