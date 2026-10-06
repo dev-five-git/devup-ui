@@ -38,7 +38,9 @@ import {
 import type {
   EnvironmentModuleNode,
   ModuleNode,
+  Plugin,
   PluginOption,
+  ResolvedConfig,
   UserConfig,
 } from 'vite'
 
@@ -124,9 +126,75 @@ interface ConfigHookMeta {
 }
 
 interface ViteOutputWithMetadata {
+  type?: string
+  fileName?: string
   viteMetadata?: {
     importedCss?: Set<string>
   }
+}
+
+type ForwardableBundle = Record<string, ViteOutputWithMetadata>
+
+/**
+ * Name a CSS file is parked under while @vitejs/plugin-rsc forwards it, chosen
+ * so that nothing treats it as a stylesheet and it cannot meet a real output.
+ */
+function getForwardStandInName(file: string): string {
+  return `${file}.devup-forwarded`
+}
+
+/**
+ * @vitejs/plugin-rsc copies every CSS file its server bundle references into
+ * the client output with `emitFile`. For a file the client already emitted that
+ * is a FILE_NAME_CONFLICT, and the copy replaces the client's own, dropping the
+ * names its build manifest is keyed by. The same plugin reads the server
+ * bundle's `importedCss` to learn which CSS each server page depends on, so
+ * that metadata has to stay whole.
+ *
+ * It takes what it forwards from `bundle[file]`. For each file the client
+ * already owns, the server bundle gets a stand-in copy under another name: the
+ * forward lands on a throwaway file and the real one is emitted once.
+ *
+ * Returns the undo that puts the originals back and drops the stand-ins.
+ */
+function parkForwardedCss(
+  clientBundle: ForwardableBundle,
+  serverBundle: ForwardableBundle,
+): (outputBundle: ForwardableBundle) => void {
+  const files = new Set<string>()
+  for (const output of Object.values(serverBundle)) {
+    for (const file of output.viteMetadata?.importedCss ?? []) {
+      if (file in clientBundle && serverBundle[file]?.type === 'asset') {
+        files.add(file)
+      }
+    }
+  }
+  for (const file of files) {
+    serverBundle[file].fileName = getForwardStandInName(file)
+  }
+  return (outputBundle) => {
+    for (const file of files) {
+      serverBundle[file].fileName = file
+      delete outputBundle[getForwardStandInName(file)]
+    }
+  }
+}
+
+interface RscPluginApi {
+  manager?: { bundles?: Record<string, ForwardableBundle> }
+}
+
+/**
+ * The server bundles @vitejs/plugin-rsc itself tracks (and later reads to
+ * forward CSS). Bundle objects handed to a plugin are per-plugin views, and
+ * only the ones plugin-rsc holds reflect an edit it will see.
+ */
+function getRscServerBundles(config: ResolvedConfig | undefined) {
+  const rsc = config?.plugins.find((plugin) => plugin.name === 'rsc:minimal')
+  const bundles = (rsc?.api as RscPluginApi | undefined)?.manager?.bundles
+  return Object.entries(bundles ?? {})
+    .filter(([name]) => name !== 'client')
+    .map(([, bundle]) => bundle)
 }
 
 /**
@@ -281,7 +349,11 @@ export function DevupUI({
   }
   const importAliases = mergeImportAliases(userImportAliases)
   const cssMap = new Map()
-  let serverBundleToForward: Record<string, ViteOutputWithMetadata> | undefined
+  let resolvedConfig: ResolvedConfig | undefined
+  // Set by the client `generateBundle`, run by the late hook of the sibling
+  // plugin once @vitejs/plugin-rsc has forwarded.
+  let restoreForwardedCss:
+    ((outputBundle: ForwardableBundle) => void) | undefined
   let isServe = false
   // The dev server watches cssDir, so every write is an update signal. A
   // module transformed again writes its sheet again, and the reload that
@@ -299,13 +371,14 @@ export function DevupUI({
     writtenCss.set(fileName, css)
     return writeFile(join(cssDir, fileName), css, 'utf-8')
   }
-  return {
+  const plugin: Plugin = {
     name: 'devup-ui',
     // The WASM sheet and transform state are intentionally shared. Vite
     // otherwise recreates this plugin for every environment build, which makes
     // each environment independently emit the same CSS asset.
     sharedDuringBuild: true,
     async configResolved(config) {
+      resolvedConfig = config
       isServe = config?.command === 'serve'
       const projectRoot = config?.root ?? process.cwd()
       // Vite ids are POSIX absolute paths
@@ -623,23 +696,30 @@ export function DevupUI({
 
       const environment = this.environment
       if (!environment || !writesOutput) return
-      if (environment.config.consumer === 'client' && serverBundleToForward) {
-        // @vitejs/plugin-rsc forwards every CSS file referenced by the RSC
-        // bundle into the client bundle. Files the client already emitted are
-        // registered twice and trigger FILE_NAME_CONFLICT. Keep both bundles'
-        // imports and client metadata intact, but remove overlaps from the RSC
-        // forwarding set before its later generateBundle hook reads it.
-        for (const output of Object.values(serverBundleToForward)) {
-          for (const file of cssFiles) {
-            output.viteMetadata?.importedCss?.delete(file)
-          }
+      if (environment.config.consumer === 'client') {
+        const undo = getRscServerBundles(resolvedConfig).map((serverBundle) =>
+          parkForwardedCss(
+            bundle as unknown as ForwardableBundle,
+            serverBundle,
+          ),
+        )
+        restoreForwardedCss = (outputBundle) => {
+          for (const restore of undo) restore(outputBundle)
         }
-      } else if (environment.config.consumer === 'server') {
-        serverBundleToForward = bundle as unknown as Record<
-          string,
-          ViteOutputWithMetadata
-        >
       }
     },
   }
+  const restorePlugin: Plugin = {
+    name: 'devup-ui:restore-forwarded-css',
+    sharedDuringBuild: true,
+    apply: 'build',
+    generateBundle: {
+      order: 'post',
+      handler(_options, bundle) {
+        restoreForwardedCss?.(bundle as unknown as ForwardableBundle)
+        restoreForwardedCss = undefined
+      },
+    },
+  }
+  return [plugin, restorePlugin]
 }
