@@ -124,12 +124,16 @@ fn identity(proof: &Proof<'_, '_>, symbol: SymbolId) -> SymbolId {
 
 #[cfg(test)]
 mod tests {
-    #[test]
-    fn identity_when_binding_is_uninitialized_retains_its_semantic_symbol() {
+    #[rstest::rstest]
+    #[case("let pending;")]
+    #[case("function pending() {}")]
+    fn identity_when_binding_has_no_variable_initializer_retains_its_semantic_symbol(
+        #[case] source: &str,
+    ) {
         // Given
         let allocator = oxc_allocator::Allocator::default();
         let parsed =
-            oxc_parser::Parser::new(&allocator, "let pending;", oxc_span::SourceType::ts()).parse();
+            oxc_parser::Parser::new(&allocator, source, oxc_span::SourceType::ts()).parse();
         assert_eq!(parsed.diagnostics.len(), 0);
         let semantic = oxc_semantic::SemanticBuilder::new()
             .with_build_nodes(true)

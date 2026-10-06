@@ -51,6 +51,9 @@ fn earliest_cause_when_sites_compete_preserves_the_location_policy(
 )]
 #[case("const made=Object.freeze({ p:1 });const box={ made };watch(box);css({ p:made.p });")]
 #[case("let other;watch(other);const made=Object.freeze({ p:1 });watch(made);css({ p:made.p });")]
+#[case(
+    "function read(){return made}const made=Object.freeze({ p:1 });watch(read);css({ p:made.p });"
+)]
 #[serial_test::serial]
 fn alias_escape_when_the_identity_is_frozen_beforehand_preserves_exactness(#[case] body: &str) {
     // Given
