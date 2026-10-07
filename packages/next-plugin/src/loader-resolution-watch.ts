@@ -1,8 +1,7 @@
-import { statSync } from 'node:fs'
-import { dirname } from 'node:path'
-
 import { resolutionWatchPath } from '@devup-ui/plugin-utils'
 import type { Compiler, LoaderContext } from 'webpack'
+
+import { MdxFreshnessError } from './mdx-source-freshness'
 
 export function loaderResolutionWatchPath(
   path: string,
@@ -14,33 +13,37 @@ export function loaderResolutionWatchPath(
     : path
 }
 
-export function registerLoaderMissingDependencies(
+export async function registerLoaderMissingDependencies(
   context: Pick<
     LoaderContext<unknown>,
-    '_compiler' | 'addMissingDependency' | 'addContextDependency'
+    '_compiler' | 'addMissingDependency' | 'fs' | 'resourcePath'
   >,
   paths: readonly string[],
-): void {
-  const ancestors = new Set<string>()
+): Promise<void> {
   for (const path of paths) {
     const missing = loaderResolutionWatchPath(path, context._compiler)
     context.addMissingDependency(missing)
-    let ancestor = dirname(missing)
-    while (true) {
-      try {
-        if (statSync(ancestor, { throwIfNoEntry: false })?.isDirectory()) break
-      } catch (error) {
-        if (
-          !(error instanceof Error) ||
-          !('code' in error) ||
-          (error.code !== 'ENOENT' && error.code !== 'ENOTDIR')
-        )
-          throw error
-      }
-      ancestor = dirname(ancestor)
-    }
-    ancestors.add(ancestor)
+    if (typeof context.fs?.readFile !== 'function')
+      throw new TypeError(
+        `Exact missing input tracking requires loader fs.readFile for ${missing}`,
+      )
+    await new Promise<void>((resolve, reject) => {
+      context.fs.readFile(missing, (error) => {
+        if (error?.code === 'ENOENT' || error?.code === 'ENOTDIR') resolve()
+        else if (error) reject(error)
+        else
+          reject(
+            new MdxFreshnessError(
+              context.resourcePath,
+              {
+                kind: 'missing',
+                path: missing,
+                loader: '@devup-ui/next-plugin/loader',
+              },
+              'observed missing resolution input became readable during delivery',
+            ),
+          )
+      })
+    })
   }
-  // Turbopack transports contexts, but not loader-runner's missing category.
-  for (const ancestor of ancestors) context.addContextDependency(ancestor)
 }

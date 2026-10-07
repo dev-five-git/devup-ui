@@ -1,3 +1,4 @@
+import * as fs from 'node:fs'
 import { resolve } from 'node:path'
 
 import { mock } from 'bun:test'
@@ -42,6 +43,7 @@ export function invoke(
       {
         getOptions: () => ({ ...defaults, ...options }),
         resourcePath,
+        fs,
         addDependency,
         addMissingDependency,
         addContextDependency,

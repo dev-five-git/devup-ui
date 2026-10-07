@@ -1,4 +1,5 @@
 import { randomUUID } from 'node:crypto'
+import { readFile } from 'node:fs'
 import { createRequire } from 'node:module'
 import { join } from 'node:path'
 
@@ -63,6 +64,10 @@ it.each([undefined, true, false])(
       const files: string[] = []
       const missing: string[] = []
       const contexts: string[] = []
+      const reads: {
+        readonly path: string
+        readonly code: string | undefined
+      }[] = []
       const result = Promise.withResolvers<void>()
       const options = {
         ...settings,
@@ -84,6 +89,19 @@ it.each([undefined, true, false])(
         loader,
         {
           _compiler: compiler,
+          fs: {
+            readFile: (
+              path: string,
+              callback: (
+                error: NodeJS.ErrnoException | null,
+                data?: Buffer,
+              ) => void,
+            ) =>
+              readFile(path, (error, data) => {
+                reads.push({ path, code: error?.code })
+                callback(error, data)
+              }),
+          },
           getOptions: () => options,
           resourcePath: input.resourcePath,
           addDependency: (path: string) => files.push(path),
@@ -106,8 +124,11 @@ it.each([undefined, true, false])(
       expect(files).toContain(transport(f.manifest))
       expect(missing).toContain(transport(join(f.root, 'tsconfig.json')))
       expect(files).not.toContain(transport(join(f.root, 'tsconfig.json')))
-      expect(contexts).toContain(transport(f.root))
-      expect(new Set(contexts).size).toBe(contexts.length)
+      expect(contexts).toEqual([])
+      expect(reads).toContainEqual({
+        path: transport(join(f.root, 'tsconfig.json')),
+        code: 'ENOENT',
+      })
     } finally {
       await handle.drain()
       await new Promise<void>((resolve, reject) =>

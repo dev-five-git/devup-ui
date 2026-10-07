@@ -109,7 +109,7 @@ const devupUILoader: RawLoaderDefinitionFunction<DevupUILoaderOptions> =
         return
       }
       requestCoordinator(operation)
-        .then((content) => {
+        .then(async (content) => {
           const data = parseCoordinatorResponse(content)
           for (const dependency of data.dependencies)
             this.addDependency(resolve(projectRoot, dependency))
@@ -120,7 +120,7 @@ const devupUILoader: RawLoaderDefinitionFunction<DevupUILoaderOptions> =
                 this._compiler,
               ),
             )
-          registerLoaderMissingDependencies(
+          await registerLoaderMissingDependencies(
             this,
             data.missingDependencies.map((dependency) =>
               resolve(projectRoot, dependency),
