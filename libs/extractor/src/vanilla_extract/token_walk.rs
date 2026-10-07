@@ -1,44 +1,74 @@
 use std::collections::BTreeSet;
+use std::vec::IntoIter;
 
 use boa_engine::{
-    Context, JsResult, JsValue, builtins::object::OrdinaryObject, js_string,
-    object::ObjectInitializer, property::PropertyKey,
+    Context, JsNativeError, JsObject, JsResult, JsValue, builtins::object::OrdinaryObject,
+    js_string, object::ObjectInitializer, property::PropertyKey,
 };
 
 use super::own_keys;
 
 type Leaf<'a> = dyn FnMut(&JsValue, &[String], &mut Context) -> JsResult<JsValue> + 'a;
 
-/// Keys visited by JavaScript `for...in`, including inherited enumerable keys.
-fn enumerable_keys(
-    tokens: &JsValue,
-    context: &mut Context,
-) -> JsResult<Vec<(PropertyKey, String)>> {
-    let mut keys = Vec::new();
-    let mut seen = BTreeSet::new();
-    let mut prototype = if tokens.is_null_or_undefined() {
-        None
-    } else {
-        Some(tokens.to_object(context)?)
-    };
-    while let Some(object) = prototype {
-        for (key, name) in own_keys(&object, context)? {
-            if seen.insert(name.clone())
-                && OrdinaryObject::property_is_enumerable(
-                    &object.clone().into(),
-                    &[js_string!(name.as_str()).into()],
-                    context,
-                )?
-                .to_boolean()
-            {
-                keys.push((key, name));
-            }
-        }
-        prototype =
-            OrdinaryObject::get_prototype_of(&JsValue::undefined(), &[object.into()], context)?
-                .as_object();
+/// Live `for...in` keys, snapshotting each object's keys only when reached.
+pub(super) struct EnumerableKeys {
+    current: Option<JsObject>,
+    remaining: Option<IntoIter<(PropertyKey, String)>>,
+    seen: BTreeSet<String>,
+}
+
+impl EnumerableKeys {
+    pub(super) fn new(tokens: &JsValue, context: &mut Context) -> JsResult<Self> {
+        let current = if tokens.is_null_or_undefined() {
+            None
+        } else {
+            Some(tokens.to_object(context)?)
+        };
+        Ok(Self {
+            current,
+            remaining: None,
+            seen: BTreeSet::new(),
+        })
     }
-    Ok(keys)
+
+    pub(super) fn next(
+        &mut self,
+        context: &mut Context,
+    ) -> JsResult<Option<(PropertyKey, String)>> {
+        while let Some(object) = &self.current {
+            if self.remaining.is_none() {
+                self.remaining = Some(own_keys(object, context)?.into_iter());
+            }
+            while let Some((key, name)) = self.remaining.as_mut().and_then(Iterator::next) {
+                if self.seen.contains(&name) {
+                    continue;
+                }
+                let descriptor = OrdinaryObject::get_own_property_descriptor(
+                    &JsValue::undefined(),
+                    &[object.clone().into(), (&key).into()],
+                    context,
+                )?;
+                let Some(descriptor) = descriptor.as_object() else {
+                    continue;
+                };
+                self.seen.insert(name.clone());
+                if descriptor
+                    .get(js_string!("enumerable"), context)?
+                    .to_boolean()
+                {
+                    return Ok(Some((key, name)));
+                }
+            }
+            self.current = OrdinaryObject::get_prototype_of(
+                &JsValue::undefined(),
+                &[object.clone().into()],
+                context,
+            )?
+            .as_object();
+            self.remaining = None;
+        }
+        Ok(None)
+    }
 }
 
 /// Replace upstream token leaves; arrays, functions and booleans are skipped.
@@ -48,24 +78,65 @@ pub(super) fn walk_object(
     path: &mut Vec<String>,
     leaf: &mut Leaf<'_>,
 ) -> JsResult<JsValue> {
-    let walked = ObjectInitializer::new(context).build();
-    for (key, name) in enumerable_keys(tokens, context)? {
-        let value = tokens.to_object(context)?.get(key, context)?;
-        path.push(name.clone());
-        let mapped = if value.is_string() || value.is_number() || value.is_null_or_undefined() {
-            Some(leaf(&value, path, context)?)
-        } else if value
-            .as_object()
-            .is_some_and(|object| !object.is_array() && !object.is_callable())
-        {
-            Some(walk_object(&value, context, path, leaf)?)
-        } else {
-            None
-        };
-        path.pop();
-        if let Some(mapped) = mapped {
-            walked.set(js_string!(name), mapped, false, context)?;
-        }
+    TokenWalk {
+        path,
+        leaf,
+        ancestry: Vec::new(),
     }
-    Ok(walked.into())
+    .walk(tokens, context)
+}
+
+struct TokenWalk<'walk, 'leaf> {
+    path: &'walk mut Vec<String>,
+    leaf: &'walk mut Leaf<'leaf>,
+    ancestry: Vec<JsObject>,
+}
+
+impl TokenWalk<'_, '_> {
+    fn walk(&mut self, tokens: &JsValue, context: &mut Context) -> JsResult<JsValue> {
+        let object = tokens.as_object();
+        if let Some(object) = &object {
+            if self
+                .ancestry
+                .iter()
+                .any(|ancestor| JsObject::equals(ancestor, object))
+            {
+                return Err(JsNativeError::error()
+                    .with_message(format!(
+                        "Cyclic theme token object at \"{}\" cannot form a finite contract. Fix: supply an acyclic finite token object",
+                        self.path.join(".")
+                    ))
+                    .into());
+            }
+            self.ancestry.push(object.clone());
+        }
+        let result = (|| {
+            let walked = ObjectInitializer::new(context).build();
+            let mut keys = EnumerableKeys::new(tokens, context)?;
+            while let Some((key, name)) = keys.next(context)? {
+                let value = tokens.to_object(context)?.get(key, context)?;
+                self.path.push(name.clone());
+                let mapped =
+                    if value.is_string() || value.is_number() || value.is_null_or_undefined() {
+                        (self.leaf)(&value, self.path, context).map(Some)
+                    } else if value
+                        .as_object()
+                        .is_some_and(|object| !object.is_array() && !object.is_callable())
+                    {
+                        self.walk(&value, context).map(Some)
+                    } else {
+                        Ok(None)
+                    };
+                self.path.pop();
+                if let Some(mapped) = mapped? {
+                    walked.set(js_string!(name), mapped, false, context)?;
+                }
+            }
+            Ok(walked.into())
+        })();
+        if object.is_some() {
+            self.ancestry.pop();
+        }
+        result
+    }
 }

@@ -7,7 +7,7 @@ ToBTreeSet {
         Static(
             ExtractStaticStyle {
                 property: "font-family",
-                value: "font-0-0",
+                value: "\"font-0-0\"",
                 level: 0,
                 selector: None,
                 style_order: None,
@@ -17,7 +17,7 @@ ToBTreeSet {
         Static(
             ExtractStaticStyle {
                 property: "font-family",
-                value: "font-0-1",
+                value: "\"font-0-1\"",
                 level: 0,
                 selector: None,
                 style_order: None,
@@ -45,5 +45,5 @@ ToBTreeSet {
             },
         ),
     },
-    code: "import \"@devup-ui/react/devup-ui.css\";\nexport const heading = \"f0_1 a\";\nexport const text = \"f0_0 b\";\n;\nexport const customFont = \"font-0-0\";\nexport const secondFont = \"font-0-1\";\n",
+    code: "import \"@devup-ui/react/devup-ui.css\";\nexport const heading = \"f0_1 a\";\nexport const text = \"f0_0 b\";\n;\nexport const customFont = \"\\\"font-0-0\\\"\";\nexport const secondFont = \"\\\"font-0-1\\\"\";\n",
 }

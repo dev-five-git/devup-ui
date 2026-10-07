@@ -45,7 +45,7 @@ mod token_walk;
 mod vars;
 use contracts::{assign_vars, assign_vars_api, create_global_theme_contract};
 use naming::{NameScope, name_values};
-use token_walk::walk_object;
+use token_walk::{EnumerableKeys, walk_object};
 use vars::fallback_var;
 
 /// A `style()` or `keyframes()` call
@@ -684,20 +684,20 @@ fn style_variants(
 ) -> JsResult<JsValue> {
     let variants = ObjectInitializer::new(context).build();
     let map = args.get_or_undefined(1).as_callable();
-    if let Some(data) = args.get_or_undefined(0).as_object() {
-        for (key, name) in own_keys(&data, context)? {
-            let value = data.get(key, context)?;
-            let rule = match &map {
-                Some(map) => map.call(
-                    &JsValue::undefined(),
-                    &[value, js_string!(name.as_str()).into()],
-                    context,
-                )?,
-                None => value,
-            };
-            let id = register_style(collector, &rule, context)?;
-            variants.set(js_string!(name), js_string!(id), false, context)?;
-        }
+    let data = args.get_or_undefined(0);
+    let mut keys = EnumerableKeys::new(data, context)?;
+    while let Some((key, name)) = keys.next(context)? {
+        let value = data.to_object(context)?.get(key, context)?;
+        let rule = match &map {
+            Some(map) => map.call(
+                &JsValue::undefined(),
+                &[value, js_string!(name.as_str()).into()],
+                context,
+            )?,
+            None => value,
+        };
+        let id = register_style(collector, &rule, context)?;
+        variants.set(js_string!(name), js_string!(id), false, context)?;
     }
     Ok(variants.into())
 }
@@ -726,10 +726,30 @@ fn font_face(
     args: &[JsValue],
     context: &mut Context,
 ) -> JsResult<JsValue> {
-    let family = collector
-        .borrow_mut()
-        .identifier(js_str(args.get_or_undefined(1)), "font");
-    let faces = font_face_rules(&family, args.get_or_undefined(0), context)?;
+    let rule = args.get_or_undefined(0);
+    let rules = array_items(rule, context)?.unwrap_or_else(|| vec![rule.clone()]);
+    for rule in &rules {
+        if rule
+            .to_object(context)?
+            .has_property(js_string!("fontFamily"), context)?
+        {
+            return Err(boa_engine::JsNativeError::error()
+                .with_message("fontFace rule contains fontFamily, which cannot be supplied for a generated local family. Fix: remove fontFamily or use globalFontFace to declare a given family")
+                .into());
+        }
+    }
+    // Generated identifiers contain only CSS-safe ASCII identifier characters.
+    let family = format!(
+        "\"{}\"",
+        collector
+            .borrow_mut()
+            .identifier(js_str(args.get_or_undefined(1)), "font")
+    );
+    let family_json = json_string(&family);
+    let faces = rules
+        .iter()
+        .map(|rule| font_face_rule(&family_json, rule, context))
+        .collect::<JsResult<Vec<_>>>()?;
     collector.borrow_mut().styles.font_faces.extend(faces);
     Ok(js_string!(family).into())
 }
@@ -1560,9 +1580,9 @@ fontFace({})
 globalFontFace('Inter', { src: 'local(Inter)' })"
             ),
             r#"import { globalCss } from '@devup-ui/react'
-globalCss({ fontFaces: [{"src":"local(a)","fontFamily":"Body_Font-0-0"}, {"src":"local(b)","fontFamily":"font-0-1"}, {"src":"local(c)","fontWeight":700,"fontFamily":"font-0-1"}, {"fontFamily":"font-0-2"}, {"src":"local(Inter)","fontFamily":"Inter"}] })
-export const body = "Body_Font-0-0"
-export const icons = "font-0-1""#
+globalCss({ fontFaces: [{"src":"local(a)","fontFamily":"\"Body_Font-0-0\""}, {"src":"local(b)","fontFamily":"\"font-0-1\""}, {"src":"local(c)","fontWeight":700,"fontFamily":"\"font-0-1\""}, {"fontFamily":"\"font-0-2\""}, {"src":"local(Inter)","fontFamily":"Inter"}] })
+export const body = "\"Body_Font-0-0\""
+export const icons = "\"font-0-1\"""#
         );
     }
 
@@ -1748,3 +1768,6 @@ mod semantic_tests;
 
 #[cfg(test)]
 mod non_object_tokens_tests;
+
+#[cfg(test)]
+mod decision10_tests;
