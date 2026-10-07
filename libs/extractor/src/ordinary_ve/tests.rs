@@ -2,6 +2,16 @@ use crate::{ExtractOption, ImportAlias, ResolvedModule, extract_with_modules};
 use rstest::rstest;
 use serial_test::serial;
 
+mod api_asi;
+mod api_provenance;
+mod api_provenance_policy;
+mod consumer_bridge;
+mod consumer_cjs_review;
+mod consumer_failures;
+mod consumer_lifecycle;
+mod consumer_review;
+mod consumer_runtime_review;
+mod consumer_support;
 mod demand_lifecycle;
 mod demand_producers;
 mod demand_prototype;

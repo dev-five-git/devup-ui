@@ -38,7 +38,7 @@ pub(crate) const PACKAGE_BINDING: &str = "__vanilla_extract__";
 pub(crate) const IMPORT_CYCLE: &str = "before its initialization: it is part of an import cycle";
 
 const MODULE_HELPER: &str = "function __module__(path) { let started = false; const module = new Proxy({}, { get(target, key, receiver) { if (!started && typeof key === \"string\") throw new ReferenceError(`Cannot access '${key}' of '${path}' before its initialization: it is part of an import cycle`); return Reflect.get(target, key, receiver); } }); return { module, start() { started = true; } }; }\n";
-const SELECTED_MODULE_HELPER: &str = "function __module__(path) { let started = false; function early(key) { throw new ReferenceError(`Cannot access '${key}' of '${path}' before its initialization: it is part of an import cycle`); } const module = new Proxy({}, { get(target, key, receiver) { if (!started && typeof key === \"string\" && !Reflect.has(target,key)) return early(key); try { return Reflect.get(target,key,receiver); } catch (error) { if (error instanceof ReferenceError && typeof key === \"string\") return early(key); throw error; } } }); return { module, start() { started = true; } }; }\n";
+const SELECTED_MODULE_HELPER: &str = "function __module__(path, required = false) { let started = false; function early(key) { throw new ReferenceError(`Cannot access '${key}' of '${path}' before its initialization: it is part of an import cycle`); } const module = new Proxy({}, { get(target, key, receiver) { if (!started && typeof key === \"string\" && !Reflect.has(target,key)) return early(key); if (started && required && typeof key === \"string\" && !({}).hasOwnProperty.call(target,key)) throw new TypeError(`required export '${key}' of '${path}' has no selected binding. Fix: import an existing runtime export`); try { return Reflect.get(target,key,receiver); } catch (error) { if (error instanceof ReferenceError && typeof key === \"string\") return early(key); throw error; } } }); return { module, start() { started = true; } }; }\n";
 
 thread_local! {
     /// Stylesheets being evaluated, outermost first: a stylesheet importing one
@@ -186,29 +186,53 @@ impl<'r> ModuleLoader<'r> {
         stylesheet: crate::vanilla_extract::Stylesheet<'_>,
         selected: bool,
     ) -> Result<(), String> {
+        self.select_input(stylesheet, (selected, None)).map(|_| ())
+    }
+
+    pub(crate) fn select_consumers(
+        &mut self,
+        stylesheet: crate::vanilla_extract::Stylesheet<'_>,
+        plan: &crate::imported_constants::consumer::ReadPlan,
+    ) -> Result<bool, String> {
+        self.select_input(stylesheet, (true, Some(plan)))
+    }
+
+    fn select_input(
+        &mut self,
+        stylesheet: crate::vanilla_extract::Stylesheet<'_>,
+        input: (bool, Option<&crate::imported_constants::consumer::ReadPlan>),
+    ) -> Result<bool, String> {
+        let (selected, consumer) = input;
         if !selected
             && !self
                 .option
                 .import_aliases
                 .contains_key("@vanilla-extract/css")
         {
-            return Ok(());
+            return Ok(false);
         }
-        self.selected = Some(demand::Frozen::discover(stylesheet, selected, self)?);
+        let frozen = demand::Frozen::discover(stylesheet, input, self)?;
+        if consumer.is_some() && frozen.entry_view.is_none() {
+            return Ok(false);
+        }
+        self.dependencies
+            .extend(frozen.dependencies.iter().cloned());
+        self.selected = Some(frozen);
         self.module_helper = self.fresh_module_name("__module__");
         let name = self.fresh_module_name(&format!("__module_{}__", self.next_module));
         self.next_module += 1;
         self.definitions.push(Definition::Generated(format!(
-            "{}const {name}$={}({:?});const {name}={name}$.module;\n",
+            "{}const {name}$={}({:?},{});const {name}={name}$.module;\n",
             SELECTED_MODULE_HELPER.replace("__module__", &self.module_helper),
             self.module_helper,
-            stylesheet.filename
+            stylesheet.filename,
+            consumer.is_some()
         )));
         self.loaded
             .insert(stylesheet.filename.to_string(), name.clone());
         self.pending.insert(name.clone());
         self.entry_module = Some((stylesheet.filename.to_string(), name));
-        Ok(())
+        Ok(true)
     }
 
     pub(crate) const fn has_demands(&self) -> bool {
@@ -234,9 +258,19 @@ impl<'r> ModuleLoader<'r> {
     }
 
     pub(crate) fn entry_selection(&self) -> Option<&crate::ordinary_ve::selection::Selection> {
+        self.selected.as_ref().and_then(|selected| {
+            selected
+                .entry_view
+                .as_ref()
+                .map(|view| &view.selection)
+                .or(selected.entry.as_ref())
+        })
+    }
+
+    pub(crate) fn entry_view(&self) -> Option<&crate::ordinary_ve::selection::demand::View> {
         self.selected
             .as_ref()
-            .and_then(|selected| selected.entry.as_ref())
+            .and_then(|selected| selected.entry_view.as_ref())
     }
 
     pub(crate) fn producers(&self) -> &[demand::Producer] {
@@ -306,6 +340,9 @@ impl<'r> ModuleLoader<'r> {
 
     /// The name of the exports object of `specifier` imported by `importer`
     fn load(&mut self, specifier: &str, importer: &str, direct: bool) -> Result<String, LoadError> {
+        if specifier == self.option.package {
+            return Ok(self.package_binding(importer));
+        }
         let resolver = self.resolver.ok_or(LoadError::NoResolver)?;
         let module = resolver(specifier, importer).ok_or(LoadError::Unresolved)?;
         if retained_css::is_css(&module.path) {
@@ -363,8 +400,10 @@ impl<'r> ModuleLoader<'r> {
                 .push(Definition::Generated(MODULE_HELPER.to_string()));
         }
         self.definitions.push(Definition::Generated(format!(
-            "const {name}$ = {}({:?});\nconst {name} = {name}$.module;\n",
-            self.module_helper, module.path
+            "const {name}$ = {}({:?},{});\nconst {name} = {name}$.module;\n",
+            self.module_helper,
+            module.path,
+            self.entry_view().is_some()
         )));
         if self.selected.is_none() && is_evaluating(&module.path) {
             // The stylesheet importing it is evaluated on its own, so it never
@@ -616,6 +655,7 @@ pub(crate) fn module_script(
         if loader.has_demands() || loader.pending.contains(&module) {
             let source = match loader.css_bindings.get(&module) {
                 Some(_) => BindingSource::Css(&module),
+                None if loader.entry_view().is_some() => BindingSource::RequiredModule(&module),
                 None => BindingSource::Module(&module),
             };
             bindings.link(specifiers, source);

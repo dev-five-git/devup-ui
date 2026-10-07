@@ -7,6 +7,7 @@ use boa_engine::{
 };
 use std::{cell::RefCell, collections::BTreeSet, rc::Rc};
 
+mod audit;
 mod compile;
 mod finalize;
 
@@ -19,6 +20,7 @@ struct Owner {
 
 struct State {
     owners: Vec<Owner>,
+    audits: Vec<audit::Audit>,
     entry: StyleCollector,
     terminal: super::capture::terminal::Terminal,
     atoms: super::producer_atoms::ProducerAtoms,
@@ -82,8 +84,10 @@ pub(super) fn prepare(
             )
             .map_err(|error| error.to_string())?;
     }
+    let audits = audit::prepare(context, loader.environments())?;
     context.insert_data(State {
         owners,
+        audits,
         entry: entry.clone(),
         terminal: Default::default(),
         atoms: loader.imported_atoms.clone(),
@@ -105,13 +109,34 @@ pub(super) fn finish(context: &mut Context, imports: &mut StylesheetImports) -> 
     let state = context
         .remove_data::<State>()
         .ok_or_else(|| "missing final demand session".to_string())?;
+    imports.atoms.merge(state.atoms);
+    imports.references.merge(state.references);
+    Ok(())
+}
+
+pub(super) fn validate(context: &Context) -> Result<(), String> {
+    let state = context
+        .get_data::<State>()
+        .ok_or_else(|| "missing final demand session".to_string())?;
     if let Some(owner) = state.owners.iter().find(|owner| !owner.finalized) {
         return Err(format!(
             "{}:1:1: native producer did not initialize. Fix: retain its original initialization schedule",
             owner.plan.filename
         ));
     }
-    imports.atoms.merge(state.atoms);
-    imports.references.merge(state.references);
+    if let Some(audit) = state.audits.iter().find(|audit| !audit.checked) {
+        return Err(format!(
+            "{}:1:1: required selected-data mutation audit did not initialize. Fix: retain its exact module schedule",
+            audit.plan.filename
+        ));
+    }
     Ok(())
+}
+
+pub(super) fn resolve(context: &mut Context, value: JsValue) -> JsResult<JsValue> {
+    if context.get_data::<State>().is_some() {
+        read(&JsValue::undefined(), std::slice::from_ref(&value), context)
+    } else {
+        Ok(value)
+    }
 }

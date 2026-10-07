@@ -38,6 +38,8 @@ impl Owner {
         let mut class_references = imports.references.clone();
         class_references.merge(collected.class_references.clone());
         let prepared = crate::ordinary_ve::Prepared {
+            native: true,
+            readback: false,
             code: lowered.code,
             edits: Vec::new(),
             imports,
@@ -52,6 +54,7 @@ impl Owner {
                 source: &self.plan.source,
                 edits: &[],
                 native: Some(&prepared),
+                readback: None,
             }),
             true,
             option.clone(),

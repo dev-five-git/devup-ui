@@ -15,9 +15,20 @@ use super::{
     targets,
 };
 use crate::module_loader::demand::Demand;
+mod audit;
+mod commonjs;
 mod exports;
 mod properties;
+mod provenance;
 mod render;
+pub(crate) use provenance::select_consumer;
+pub(crate) use provenance::{select_reads, select_resolved};
+
+#[derive(Clone, Copy)]
+pub(super) enum Seeds<'a> {
+    Native,
+    Consumer(&'a [Span]),
+}
 
 pub(crate) struct View {
     pub selection: Selection,
@@ -25,22 +36,31 @@ pub(crate) struct View {
     pub forwarded: Vec<(String, Demand, Span)>,
     pub reexports: Vec<Span>,
     pub default: Option<(Span, String)>,
+    pub native_units: FxHashSet<NodeId>,
+    pub native_imports: FxHashSet<SymbolId>,
     symbols: FxHashMap<SymbolId, Demand>,
     units: FxHashMap<NodeId, Demand>,
     properties: FxHashMap<NodeId, properties::Properties>,
 }
 
-pub(crate) fn select_for_package<'a>(
+fn select_with_apis<'a>(
     parsed: (&Program<'a>, &Semantic<'a>),
     demand: &Demand,
-    package: &str,
+    input: (&Apis<'_, 'a>, Seeds<'_>),
 ) -> View {
+    let (apis, seeds) = input;
     let (program, semantic) = parsed;
     let index = Index::new(program, semantic);
-    let apis = Apis::for_package(program, semantic, package);
-    let mut graph = Graph::new(&index, &apis);
+    let mut graph = Graph::new(&index, apis);
+    let selection = super::select_with_apis(program, semantic, apis);
     let mut view = View {
-        selection: super::select_for_package(program, semantic, package),
+        native_units: selection.units.iter().map(|unit| unit.node).collect(),
+        native_imports: selection
+            .imports
+            .iter()
+            .map(|import| import.binding.symbol)
+            .collect(),
+        selection,
         exports: Vec::new(),
         forwarded: Vec::new(),
         reexports: Vec::new(),
@@ -50,6 +70,13 @@ pub(crate) fn select_for_package<'a>(
         properties: FxHashMap::default(),
     };
     exports::seed(program, &index, demand, &mut view);
+    match seeds {
+        Seeds::Native => {}
+        Seeds::Consumer(reads) => {
+            commonjs::seed(&index, demand, &mut view);
+            audit::seed(&index, reads, &mut view);
+        }
+    }
     for root in &view.selection.roots {
         view.units.insert(root.owner, Demand::whole());
     }
@@ -63,7 +90,7 @@ pub(crate) fn select_for_package<'a>(
                     .or_default()
                     .merge(&exports::binding_demand(&index, *symbol, demand));
             }
-            for callable in targets::binding_callables(*symbol, &apis) {
+            for callable in targets::binding_callables(*symbol, apis) {
                 graph.active.extend(graph.reachable(callable));
             }
             for reference in semantic.scoping().get_resolved_reference_ids(*symbol) {
@@ -79,13 +106,13 @@ pub(crate) fn select_for_package<'a>(
         view.properties.clear();
         for (owner, demanded) in &view.units {
             graph.active.extend(graph.reachable(*owner));
-            if let AstKind::VariableDeclarator(declarator) = semantic.nodes().kind(*owner)
-                && let Some(init) = &declarator.init
+            if let Some(init) = commonjs::initializer(semantic.nodes().kind(*owner))
                 && let Some(properties) = properties::Properties::select(init, demanded)
             {
                 view.properties.insert(*owner, properties);
             }
         }
+        commonjs::activate(&index, &view, (apis, &mut graph));
         let selected: FxHashSet<_> = view.units.keys().copied().collect();
         for node in semantic.nodes().iter() {
             if let AstKind::ThisExpression(this) = node.kind()
@@ -167,16 +194,9 @@ pub(crate) fn select_for_package<'a>(
                 .get(&owner)
                 .and_then(|properties| properties.dependency(identifier.span))
                 .cloned();
-            let alias =
-                if let AstKind::VariableDeclarator(declarator) = semantic.nodes().kind(owner) {
-                    declarator
-                        .init
-                        .as_ref()
-                        .and_then(|init| properties::forward(init, &view.units[&owner]))
-                        .and_then(|(span, demand)| (span == identifier.span).then_some(demand))
-                } else {
-                    None
-                };
+            let alias = commonjs::initializer(semantic.nodes().kind(owner))
+                .and_then(|init| properties::forward(init, &view.units[&owner]))
+                .and_then(|(span, demand)| (span == identifier.span).then_some(demand));
             let dependency = if let Some(demand) = projected.or(alias) {
                 demand
             } else {
@@ -208,7 +228,7 @@ pub(crate) fn select_for_package<'a>(
         .imports
         .sort_by_key(|import| import.specifier.start);
     for import in &view.selection.imports {
-        if import.native.is_some() {
+        if import.source == "@vanilla-extract/css" || import.source == "@devup-ui/react" {
             continue;
         }
         let child = view
@@ -223,6 +243,9 @@ pub(crate) fn select_for_package<'a>(
         };
         view.forwarded
             .push((import.source.clone(), demand, import.specifier));
+    }
+    if matches!(seeds, Seeds::Consumer(_)) {
+        commonjs::requests(&index, &mut view);
     }
     view
 }

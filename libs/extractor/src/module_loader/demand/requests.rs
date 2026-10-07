@@ -9,16 +9,16 @@ use super::Demand;
 use crate::ordinary_ve::selection::plan::{ImportName, MemberDemand};
 
 pub(super) fn entry<'a>(
-    program: &Program<'a>,
-    semantic: &Semantic<'a>,
+    parsed: (&Program<'a>, &Semantic<'a>),
     selected: bool,
+    selection: &crate::ordinary_ve::selection::Selection,
 ) -> Vec<(String, Demand, Span)> {
-    let selection = crate::ordinary_ve::selection::select(program, semantic);
+    let (program, semantic) = parsed;
     if selected {
         return selection
             .imports
             .iter()
-            .filter(|import| import.native.is_none())
+            .filter(|import| import.native.is_none() || import.source != "@vanilla-extract/css")
             .map(|import| {
                 let mut child = Demand::default();
                 for demand in selection

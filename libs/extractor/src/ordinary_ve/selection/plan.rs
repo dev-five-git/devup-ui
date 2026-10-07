@@ -58,6 +58,7 @@ pub(crate) struct ImportBinding {
     pub imported: ImportName,
     pub erased: bool,
     pub native: Option<NativeBinding>,
+    pub preserved: bool,
 }
 
 /// A lexical read, not an assertion that its branch executes.
@@ -174,4 +175,7 @@ pub(crate) struct Selection {
     pub checks: Vec<Escape>,
     /// All original lexical bindings, including excluded source and parameters.
     pub reserved_names: BTreeSet<String>,
+    pub dependencies: BTreeSet<String>,
+    pub provenance_errors: Vec<(Span, String)>,
+    pub provenance_failure: Option<String>,
 }

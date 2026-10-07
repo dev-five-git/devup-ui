@@ -12,6 +12,18 @@ pub(crate) struct Rendered {
 }
 
 impl View {
+    pub(crate) fn copy_unit(
+        &self,
+        module: crate::ordinary_ve::execution::SelectedModule<'_>,
+        unit: &crate::ordinary_ve::selection::plan::Unit,
+        mapped: &mut Mapped,
+    ) {
+        match self.properties.get(&unit.node) {
+            Some(properties) => properties.replace(module, unit.span, mapped),
+            None => crate::ordinary_ve::execution::imports::copy(module, unit.span, mapped),
+        }
+    }
+
     pub(crate) fn render(
         &self,
         stylesheet: Stylesheet<'_>,
@@ -27,7 +39,16 @@ impl View {
             &mut mapped,
         )?;
         for span in &self.reexports {
-            mapped.copy(stylesheet.code, *span);
+            let package = self.forwarded.iter().find(|(source, _, site)| {
+                source == "@vanilla-extract/css" && span.contains_inclusive(*site)
+            });
+            if let Some((_, _, site)) = package {
+                mapped.copy(stylesheet.code, oxc_span::Span::new(span.start, site.start));
+                mapped.synthesize(site.start, &json_string(&option.package));
+                mapped.copy(stylesheet.code, oxc_span::Span::new(site.end, span.end));
+            } else {
+                mapped.copy(stylesheet.code, *span);
+            }
             mapped.synthesize(span.end, "\n");
         }
         for unit in &self.selection.units {
@@ -70,8 +91,22 @@ impl View {
                 UnitKind::Function { erased: false } | UnitKind::Statement => {}
             }
             match self.properties.get(&unit.node) {
-                Some(properties) => properties.replace(stylesheet.code, unit.span, &mut mapped),
-                None => mapped.copy(stylesheet.code, unit.span),
+                Some(properties) => properties.replace(
+                    crate::ordinary_ve::execution::SelectedModule {
+                        stylesheet,
+                        selection: &self.selection,
+                    },
+                    unit.span,
+                    &mut mapped,
+                ),
+                None => crate::ordinary_ve::execution::imports::copy(
+                    crate::ordinary_ve::execution::SelectedModule {
+                        stylesheet,
+                        selection: &self.selection,
+                    },
+                    unit.span,
+                    &mut mapped,
+                ),
             }
             if self
                 .default

@@ -18,6 +18,9 @@ use rustc_hash::FxHashMap;
 use crate::css_prop::{CssProp, CssTakers, binding_of};
 use crate::imported_constants::jsx_root_identifier;
 
+mod commonjs;
+pub(crate) use commonjs::uses as commonjs_uses;
+
 /// How code uses a top-level binding
 #[derive(Debug)]
 pub(crate) enum Use {

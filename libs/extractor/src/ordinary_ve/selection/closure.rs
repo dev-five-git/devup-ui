@@ -9,7 +9,6 @@ use super::{
     index::Index,
     plan::{ImportDemand, MemberDemand, Read},
 };
-use crate::utils::{get_string_by_literal_expression, unwrap_syntax_only};
 
 #[derive(Default)]
 pub(super) struct Closure {
@@ -67,11 +66,29 @@ pub(super) fn collect(index: &Index<'_, '_>, apis: &Apis<'_, '_>, graph: &mut Gr
             }
             if apis.imports.contains_key(&symbol) {
                 closure.imports.insert(symbol);
-                closure.demands.push(ImportDemand {
-                    symbol,
-                    read: identifier.span,
-                    member: demand(index, node.id()),
-                });
+                let member = demand(index, node.id());
+                if matches!(member, MemberDemand::Whole)
+                    && let Some(shape) = apis.shapes.get(&symbol)
+                    && matches!(
+                        shape.as_ref(),
+                        crate::barrel::native::Shape::Namespace(_)
+                            | crate::barrel::native::Shape::PackageNamespace(_)
+                    )
+                {
+                    for path in shape.paths() {
+                        closure.demands.push(ImportDemand {
+                            symbol,
+                            read: identifier.span,
+                            member: MemberDemand::Path(path),
+                        });
+                    }
+                } else {
+                    closure.demands.push(ImportDemand {
+                        symbol,
+                        read: identifier.span,
+                        member,
+                    });
+                }
             } else if let Some(dependency) = index.bindings.get(&symbol) {
                 pending.push(*dependency);
             }
@@ -93,12 +110,11 @@ pub(super) fn demand(index: &Index<'_, '_>, node: NodeId) -> MemberDemand {
                 path.push(member.property.name.to_string());
             }
             AstKind::ComputedMemberExpression(member) if member.object.span() == span => {
-                let Some(key) =
-                    get_string_by_literal_expression(unwrap_syntax_only(&member.expression))
+                let Some(key) = super::static_key::resolve(&member.expression, index.semantic)
                 else {
                     return MemberDemand::Whole;
                 };
-                path.push(key.into_owned());
+                path.push(key);
             }
             AstKind::ParenthesizedExpression(_)
             | AstKind::TSAsExpression(_)

@@ -12,6 +12,7 @@ mod observations;
 pub(crate) mod terminal;
 pub(crate) use emission::Emission;
 pub(super) use emission::Finished;
+pub(super) use mutations::check as check_mutations;
 pub(super) use observations::Samplers;
 pub(crate) use observations::{Observation, ObservationKind};
 
@@ -22,6 +23,7 @@ pub(crate) struct Capture {
     pub root: oxc_span::Span,
 }
 
+#[derive(Clone)]
 pub(crate) struct MutationCheck {
     pub read: String,
     pub path: Vec<Option<String>>,
@@ -56,6 +58,14 @@ pub(crate) fn execute(
     execution::run(execution::Input::Selected(selected), loader)
 }
 
+pub(crate) fn execute_reads(
+    selected: Selected<'_>,
+    loader: crate::module_loader::ModuleLoader<'_>,
+    reads: &[oxc_span::Span],
+) -> Result<super::execution::Executed, String> {
+    execution::run(execution::Input::Readback(selected, reads), loader)
+}
+
 pub(super) fn prepare(
     context: &mut Context,
     selected: &Selected<'_>,
@@ -65,10 +75,11 @@ pub(super) fn prepare(
 }
 
 pub(super) fn finish(
-    selected: &Selected<'_>,
+    input: (&Selected<'_>, &[oxc_span::Span]),
     collected: &mut CollectedStyles,
     context: &mut Context,
 ) -> Result<emission::Finished, FinalizeError> {
+    let (selected, reads) = input;
     let captures = selected.captures;
     let bindings: Vec<_> = captures
         .iter()
@@ -85,13 +96,20 @@ pub(super) fn finish(
         .map(|binding| {
             context
                 .eval(Source::from_bytes(binding.read.as_bytes()))
+                .and_then(|value| super::demand_runtime::resolve(context, value))
                 .map(|value| (binding, value))
         })
         .collect::<JsResult<_>>()?;
     mutations::check(selected.mutations, &values, context)?;
+    let native_values: Vec<_> = values
+        .iter()
+        .zip(captures)
+        .filter(|(_, capture)| !reads.contains(&capture.root))
+        .map(|((binding, value), _)| (*binding, value.clone()))
+        .collect();
     let names = name_values(
         collected,
-        &values,
+        &native_values,
         NameScope {
             file_num: get_file_num_by_filename(selected.stylesheet.filename),
             reserved: selected.reserved,
@@ -113,7 +131,7 @@ pub(super) fn finish(
             "{}: native result `{}` cannot be captured exactly: {cause}. Fix: return literals, arrays or plain records instead of functions, cyclic or exotic values",
             capture.place, capture.read)))
     }).collect::<Result<Vec<_>, _>>()?;
-    emission::finish(
+    let readback = emission::readback(
         &state,
         emission::Inputs {
             roots: &roots,
@@ -121,5 +139,18 @@ pub(super) fn finish(
             names: &names,
             reserved: selected.reserved,
         },
-    )
+        reads,
+    )?;
+    let mut finished = emission::finish(
+        &state,
+        emission::Inputs {
+            roots: &roots,
+            captures,
+            names: &names,
+            reserved: selected.reserved,
+        },
+        reads,
+    )?;
+    finished.readback = readback;
+    Ok(finished)
 }

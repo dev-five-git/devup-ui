@@ -39,6 +39,7 @@ pub(crate) struct Emission {
 pub(in crate::vanilla_extract) struct Finished {
     pub captures: Vec<String>,
     pub emission: Emission,
+    pub readback: Vec<(Span, String)>,
 }
 
 pub(super) struct Inputs<'a> {
@@ -48,10 +49,16 @@ pub(super) struct Inputs<'a> {
     pub reserved: &'a BTreeSet<String>,
 }
 
-pub(super) fn finish(state: &State, input: Inputs<'_>) -> Result<Finished, FinalizeError> {
+pub(super) fn finish(
+    state: &State,
+    input: Inputs<'_>,
+    snapshot_only: &[Span],
+) -> Result<Finished, FinalizeError> {
     let mut uses = vec![0usize; state.graph.nodes.len()];
-    for value in input.roots {
-        count(value, &mut uses);
+    for (value, capture) in input.roots.iter().zip(input.captures) {
+        if !snapshot_only.contains(&capture.root) {
+            count(value, &mut uses);
+        }
     }
     for node in &state.graph.nodes {
         if let Some(shape) = &node.shape {
@@ -70,7 +77,11 @@ pub(super) fn finish(state: &State, input: Inputs<'_>) -> Result<Finished, Final
         })
         .collect();
     let mut first: Vec<Option<Shape>> = vec![None; pooled.len()];
-    for event in &state.recorded {
+    for event in state
+        .recorded
+        .iter()
+        .filter(|event| !snapshot_only.contains(&event.site.span))
+    {
         for (id, _) in &event.anchors {
             pooled[id.0] = true;
         }
@@ -90,7 +101,11 @@ pub(super) fn finish(state: &State, input: Inputs<'_>) -> Result<Finished, Final
     let mut renderer = Renderer::new(input.names, input.reserved, pooled);
     let mut emission = Emission::default();
     let mut captures = vec![String::new(); input.roots.len()];
-    for event in &state.recorded {
+    for event in state
+        .recorded
+        .iter()
+        .filter(|event| !snapshot_only.contains(&event.site.span))
+    {
         renderer.observe(&event.shapes);
         match event.site.kind {
             ObservationKind::Input { declarator } => {
@@ -127,6 +142,9 @@ pub(super) fn finish(state: &State, input: Inputs<'_>) -> Result<Finished, Final
         }
     }
     for (index, value) in input.roots.iter().enumerate() {
+        if snapshot_only.contains(&input.captures[index].root) {
+            continue;
+        }
         if captures[index].is_empty() {
             let mut statements = Vec::new();
             let value = renderer.value(value, &mut statements).map_err(|cause|
@@ -140,7 +158,79 @@ pub(super) fn finish(state: &State, input: Inputs<'_>) -> Result<Finished, Final
         }
     }
     emission.header = renderer.header();
-    Ok(Finished { captures, emission })
+    Ok(Finished {
+        captures,
+        emission,
+        readback: Vec::new(),
+    })
+}
+
+pub(super) fn readback(
+    state: &State,
+    input: Inputs<'_>,
+    slots: &[Span],
+) -> Result<Vec<(Span, String)>, FinalizeError> {
+    let roots: Vec<_> = input
+        .captures
+        .iter()
+        .zip(input.roots)
+        .filter(|(capture, _)| slots.contains(&capture.root))
+        .map(|(capture, value)| {
+            let site = state.recorded.iter().find(|event| event.site.span == capture.root && event.site.kind == ObservationKind::After)
+                .ok_or_else(|| FinalizeError::Located(format!("{}: consumer read has no original-site snapshot. Fix: report this extraction error", capture.place)))?;
+            Ok((capture, value, site))
+        }).collect::<Result<Vec<_>, FinalizeError>>()?;
+    let mut uses = vec![0usize; state.graph.nodes.len()];
+    let mut pooled = vec![false; state.graph.nodes.len()];
+    let mut pending: Vec<_> = roots
+        .iter()
+        .map(|(capture, value, site)| (*value, *site, capture.root.start))
+        .collect();
+    let mut visited = BTreeSet::new();
+    while let Some((value, site, root)) = pending.pop() {
+        count(value, &mut uses);
+        if let Value::Node(id) = value
+            && visited.insert((root, id.0))
+            && let Some((_, shape)) = site.shapes.iter().find(|(node, _)| node == id)
+        {
+            pooled[id.0] |= !shape.plain();
+            pending.extend(
+                shape
+                    .properties
+                    .iter()
+                    .map(|property| (&property.value, site, root)),
+            );
+        }
+    }
+    for (pool, count) in pooled.iter_mut().zip(uses) {
+        *pool |= count > 1;
+    }
+    if pooled.iter().any(|pooled| *pooled)
+        && let Some((capture, _, _)) = roots
+            .iter()
+            .find(|(_, value, _)| matches!(value, Value::Node(_)))
+    {
+        return Err(FinalizeError::Located(format!(
+            "{}: consumer result cannot be represented exactly as a styling literal. Fix: observe a scalar leaf or compute the observation inside the selected helper",
+            capture.place
+        )));
+    }
+    let mut reads = Vec::new();
+    for (capture, value, site) in roots {
+        let mut renderer = Renderer::new(input.names, input.reserved, pooled.clone());
+        renderer.observe(&site.shapes);
+        let mut statements = Vec::new();
+        let expression = renderer.value(value, &mut statements).map_err(|cause|
+            FinalizeError::Located(format!("{}: consumer result cannot be captured exactly: {cause}. Fix: return exact data-only values", capture.place)))?;
+        if !statements.is_empty() || !renderer.header().is_empty() {
+            return Err(FinalizeError::Located(format!(
+                "{}: consumer result cannot be represented exactly as a styling literal. Fix: observe a scalar leaf or compute the observation inside the selected helper",
+                capture.place
+            )));
+        }
+        reads.push((capture.root, expression));
+    }
+    Ok(reads)
 }
 
 const fn count(value: &Value, uses: &mut [usize]) {

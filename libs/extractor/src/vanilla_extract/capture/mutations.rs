@@ -3,7 +3,7 @@ use std::collections::hash_map::Entry;
 use super::{Binding, Context, FinalizeError, FxHashMap, JsValue, MutationCheck};
 use boa_engine::{JsString, property::PropertyKey};
 
-pub(super) fn check(
+pub(in crate::vanilla_extract) fn check(
     checks: &[MutationCheck],
     values: &[(&Binding, JsValue)],
     context: &mut Context,

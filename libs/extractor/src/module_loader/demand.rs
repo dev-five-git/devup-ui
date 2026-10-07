@@ -1,7 +1,6 @@
 use super::{Unit, retained_css};
 use crate::vanilla_extract::Stylesheet;
 use oxc_allocator::Allocator;
-use oxc_ast::ast::Statement;
 use oxc_parser::Parser;
 use oxc_semantic::{Semantic, SemanticBuilder};
 use oxc_span::SourceType;
@@ -9,6 +8,7 @@ use rustc_hash::FxHashMap;
 use std::{collections::BTreeSet, rc::Rc};
 mod analysis;
 mod path;
+mod publish;
 mod reads;
 mod requests;
 pub(super) mod script;
@@ -23,6 +23,7 @@ pub(crate) struct Producer {
     pub bindings: Vec<crate::ordinary_ve::selection::plan::Binding>,
     pub native: Vec<crate::ordinary_ve::selection::plan::Binding>,
     pub reserved: BTreeSet<String>,
+    pub checks: Vec<crate::vanilla_extract::capture::MutationCheck>,
 }
 
 #[derive(Default)]
@@ -31,7 +32,9 @@ pub(super) struct Frozen {
     pub producers: Vec<Producer>,
     pub environments: Vec<Producer>,
     pub entry: Option<crate::ordinary_ve::selection::Selection>,
+    pub entry_view: Option<crate::ordinary_ve::selection::demand::View>,
     pub source: String,
+    pub dependencies: BTreeSet<String>,
 }
 
 impl Frozen {
@@ -52,9 +55,10 @@ impl Frozen {
     }
     pub fn discover(
         stylesheet: Stylesheet<'_>,
-        selected: bool,
+        input: (bool, Option<&crate::imported_constants::consumer::ReadPlan>),
         loader: &super::ModuleLoader<'_>,
     ) -> Result<Self, String> {
+        let (selected, consumer) = input;
         let allocator = Allocator::default();
         let parsed = Parser::new(
             &allocator,
@@ -68,27 +72,70 @@ impl Frozen {
             .semantic;
         let arena = Allocator::default();
         let mut modules: FxHashMap<String, Module<'_>> = FxHashMap::default();
-        let mut pending: Vec<_> = requests::entry(&parsed.program, &semantic, selected)
-            .into_iter()
-            .map(|(specifier, demand, site)| {
-                (
-                    stylesheet.filename.to_string(),
-                    specifier,
-                    demand,
-                    crate::ordinary_ve::execution::policy::place(stylesheet, site.start),
-                )
-            })
-            .collect();
+        let entry_selection = crate::ordinary_ve::selection::select_resolved(
+            (&parsed.program, &semantic),
+            (stylesheet.filename, "@vanilla-extract/css"),
+            loader.resolver,
+        );
+        let entry_view = consumer.map(|plan| {
+            let mut view = crate::ordinary_ve::selection::demand::select_reads(
+                (&parsed.program, &semantic),
+                (&Demand::default(), &plan.reads),
+                (stylesheet.filename, "@vanilla-extract/css", loader.resolver),
+            );
+            view.audit((&parsed.program, &semantic), loader.option);
+            view
+        });
+        let mut dependencies = entry_selection.dependencies.clone();
+        let mut failures = Vec::new();
+        let mut pending: Vec<_> =
+            requests::entry((&parsed.program, &semantic), selected, &entry_selection)
+                .into_iter()
+                .map(|(specifier, demand, site)| {
+                    (
+                        stylesheet.filename.to_string(),
+                        specifier,
+                        demand,
+                        crate::ordinary_ve::execution::policy::place(stylesheet, site.start),
+                    )
+                })
+                .collect();
+        if let Some(view) = &entry_view {
+            pending.extend(
+                view.forwarded
+                    .iter()
+                    .cloned()
+                    .map(|(specifier, demand, site)| {
+                        (
+                            stylesheet.filename.to_string(),
+                            specifier,
+                            demand,
+                            crate::ordinary_ve::execution::policy::place(stylesheet, site.start),
+                        )
+                    }),
+            );
+        }
         while let Some((importer, specifier, demand, place)) = pending.pop() {
             if specifier == loader.option.package || specifier == "@vanilla-extract/css" {
                 continue;
             }
-            let resolver = loader.resolver.ok_or_else(|| {
-                super::LoadError::NoResolver.describe(&specifier, &importer, || place.clone())
-            })?;
-            let module = resolver(&specifier, &importer).ok_or_else(|| {
-                super::LoadError::Unresolved.describe(&specifier, &importer, || place.clone())
-            })?;
+            let module = match loader.resolver {
+                Some(resolver) => resolver(&specifier, &importer).ok_or_else(|| {
+                    super::LoadError::Unresolved.describe(&specifier, &importer, || place.clone())
+                }),
+                None => {
+                    Err(super::LoadError::NoResolver
+                        .describe(&specifier, &importer, || place.clone()))
+                }
+            };
+            let module = match module {
+                Ok(module) => module,
+                Err(error) if consumer.is_some() => {
+                    failures.push(error);
+                    continue;
+                }
+                Err(error) => return Err(error),
+            };
             if retained_css::is_css(&module.path) {
                 continue;
             }
@@ -120,7 +167,22 @@ impl Frozen {
             if !record.demand.merge(&demand) {
                 continue;
             }
-            let view = record.view(&module.path, loader.option);
+            let view = if module.path == stylesheet.filename
+                && let Some(plan) = consumer
+            {
+                let mut view = crate::ordinary_ve::selection::demand::select_reads(
+                    (record.program, &record.semantic),
+                    (&record.demand, &plan.reads),
+                    (stylesheet.filename, "@vanilla-extract/css", loader.resolver),
+                );
+                view.audit((record.program, &record.semantic), loader.option);
+                view
+            } else if consumer.is_some() {
+                record.original_view(&module.path, loader.option, loader.resolver)
+            } else {
+                record.view(&module.path, loader.option, loader.resolver)
+            };
+            dependencies.extend(view.selection.dependencies.iter().cloned());
             pending.extend(view.forwarded.into_iter().map(|(specifier, demand, site)| {
                 (
                     module.path.clone(),
@@ -134,7 +196,27 @@ impl Frozen {
                 )
             }));
         }
-        let mut frozen = Self::default();
+        if consumer.is_some()
+            && entry_selection.roots.is_empty()
+            && !modules.iter().any(|(filename, module)| {
+                !module
+                    .original_view(filename, loader.option, loader.resolver)
+                    .selection
+                    .roots
+                    .is_empty()
+            })
+        {
+            return Ok(Self::default());
+        }
+        if let Some(error) = failures.into_iter().next() {
+            return Err(error);
+        }
+        let mut frozen = Self {
+            entry: selected.then_some(entry_selection),
+            entry_view,
+            dependencies,
+            ..Self::default()
+        };
         let mut modules: Vec<_> = modules.into_iter().collect();
         modules.sort_by(|left, right| left.0.cmp(&right.0));
         let original_sources = std::iter::once(stylesheet.code)
@@ -142,85 +224,7 @@ impl Frozen {
             .collect::<Vec<_>>()
             .join("\n");
         frozen.source.clone_from(&original_sources);
-        for (filename, module) in modules {
-            if filename == stylesheet.filename {
-                frozen.entry = Some(module.view(&filename, loader.option).selection);
-                continue;
-            }
-            let stylesheet = Stylesheet {
-                filename: &filename,
-                code: module.code,
-                source: module.code,
-                edits: &[],
-            };
-            super::validate(stylesheet)?;
-            let view = module.view(&filename, loader.option);
-            let native = view
-                .selection
-                .imports
-                .iter()
-                .any(|import| import.native.is_some());
-            let commonjs = !module
-                .program
-                .body
-                .iter()
-                .any(Statement::is_module_declaration)
-                && module
-                    .semantic
-                    .scoping()
-                    .root_unresolved_references()
-                    .keys()
-                    .any(|name| matches!(name.as_str(), "module" | "exports" | "require"));
-            if commonjs {
-                continue;
-            }
-            if crate::utils::is_vanilla_extract_file(&filename) && !native {
-                continue;
-            }
-            let mut rendered = view.render(stylesheet, loader.option)?;
-            let namespace = crate::fresh_name::fresh_name(
-                &format!("__ve_owner_{}__", frozen.environments.len()),
-                &original_sources,
-            );
-            let producer = Producer {
-                filename: filename.clone(),
-                source: module.code.to_string(),
-                namespace: namespace.clone(),
-                bindings: rendered.bindings,
-                native: rendered.native,
-                reserved: view.selection.reserved_names.clone(),
-            };
-            if native {
-                crate::ordinary_ve::execution::policy::check(stylesheet, &view.selection)?;
-                let reads = producer
-                    .bindings
-                    .iter()
-                    .map(|binding| binding.name.clone())
-                    .collect::<Vec<_>>()
-                    .join(",");
-                rendered
-                    .mapped
-                    .synthesize(0, &format!("{namespace}$finish([{reads}]);\n"));
-                frozen.producers.push(producer.clone());
-            }
-            frozen.environments.push(producer);
-            for statement in &module.program.body {
-                if let Statement::ImportDeclaration(import) = statement
-                    && import
-                        .specifiers
-                        .as_ref()
-                        .is_none_or(|specifiers| specifiers.is_empty())
-                    && retained_css::is_css(import.source.value.as_str())
-                {
-                    rendered.mapped.copy(module.code, import.span);
-                    rendered.mapped.synthesize(import.span.end, "\n");
-                }
-            }
-            frozen.units.insert(
-                filename.clone(),
-                Unit::selected(stylesheet, &rendered.mapped)?,
-            );
-        }
+        frozen.publish(modules, (stylesheet, consumer, &original_sources), loader)?;
         Ok(frozen)
     }
 }

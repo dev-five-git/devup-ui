@@ -175,6 +175,7 @@ pub(super) fn imports(
             .filter(|specifier| {
                 !selection.imports.iter().any(|binding| {
                     binding.native.is_some()
+                        && !binding.preserved
                         && binding.declaration == import.span
                         && binding.specifier == specifier.span()
                 })
@@ -184,7 +185,11 @@ pub(super) fn imports(
             continue;
         }
         let text = if remaining.is_empty() {
-            String::new()
+            if import.source.value.starts_with('.') || import.source.value.starts_with('/') {
+                format!("import {};", import.source.span.source_text(source))
+            } else {
+                String::new()
+            }
         } else {
             let mut head = Vec::new();
             let mut named = Vec::new();

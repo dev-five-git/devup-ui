@@ -77,25 +77,50 @@ impl Properties {
             .find_map(|(read, demand)| (*read == span).then_some(demand))
     }
 
-    pub fn write(&self, source: &str, mapped: &mut Mapped) {
+    pub fn write(
+        &self,
+        source: crate::ordinary_ve::execution::SelectedModule<'_>,
+        mapped: &mut Mapped,
+    ) {
         mapped.synthesize(self.span.start, "{");
         for (span, nested) in &self.kept {
             if let Some(nested) = nested {
-                mapped.copy(source, Span::new(span.start, nested.span.start));
+                crate::ordinary_ve::execution::imports::copy(
+                    source,
+                    Span::new(span.start, nested.span.start),
+                    mapped,
+                );
                 nested.write(source, mapped);
-                mapped.copy(source, Span::new(nested.span.end, span.end));
+                crate::ordinary_ve::execution::imports::copy(
+                    source,
+                    Span::new(nested.span.end, span.end),
+                    mapped,
+                );
             } else {
-                mapped.copy(source, *span);
+                crate::ordinary_ve::execution::imports::copy(source, *span, mapped);
             }
             mapped.synthesize(span.end, ",");
         }
         mapped.synthesize(self.span.end, "}");
     }
 
-    pub fn replace(&self, source: &str, span: Span, mapped: &mut Mapped) {
-        mapped.copy(source, Span::new(span.start, self.span.start));
+    pub fn replace(
+        &self,
+        source: crate::ordinary_ve::execution::SelectedModule<'_>,
+        span: Span,
+        mapped: &mut Mapped,
+    ) {
+        crate::ordinary_ve::execution::imports::copy(
+            source,
+            Span::new(span.start, self.span.start),
+            mapped,
+        );
         self.write(source, mapped);
-        mapped.copy(source, Span::new(self.span.end, span.end));
+        crate::ordinary_ve::execution::imports::copy(
+            source,
+            Span::new(self.span.end, span.end),
+            mapped,
+        );
     }
 }
 

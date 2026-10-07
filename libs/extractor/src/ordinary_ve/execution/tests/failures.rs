@@ -110,15 +110,30 @@ fn fails_located_capture_when_a_native_root_returns_unrepresentable_data(
 
 #[test]
 #[serial]
-fn diagnoses_an_executed_dynamic_namespace_branch_at_its_original_site() {
+fn compiles_an_executed_namespace_branch_when_its_const_key_is_exact() {
     // Given
     css::file_map::reset_file_map();
     let code = "import * as ve from '@vanilla-extract/css';const chosen=false;const name='style';const box=chosen?ve.style({color:'red'}):ve[name]({color:'blue'});";
+    // When
+    let output =
+        crate::extract_with_modules("/dynamic.ts", code, super::option(), false, &|_, _| None)
+            .unwrap_or_else(|error| panic!("exact native key failed: {error}"));
+    // Then
+    assert!(output.styles.iter().any(|style| matches!(style, crate::ExtractStyleValue::Static(style) if style.property == "color" && style.value == "blue")));
+    assert!(!output.styles.iter().any(|style| matches!(style, crate::ExtractStyleValue::Static(style) if style.property == "color" && style.value == "red")));
+}
+
+#[test]
+#[serial]
+fn diagnoses_the_first_required_runtime_read_when_a_namespace_key_is_unknown() {
+    // Given
+    css::file_map::reset_file_map();
+    let code = "import * as ve from '@vanilla-extract/css';const chosen=false;const name=window.name;const box=chosen?ve.style({color:'red'}):ve[name]({color:'blue'});";
     let expected = crate::locate(
         "/dynamic.ts",
         code,
-        code.find("ve[name]")
-            .unwrap_or_else(|| panic!("fixture namespace missing")),
+        code.find("window.name")
+            .unwrap_or_else(|| panic!("fixture runtime key missing")),
     );
     // When
     let result = run(written("/dynamic.ts", code), None);
@@ -127,7 +142,15 @@ fn diagnoses_an_executed_dynamic_namespace_branch_at_its_original_site() {
         .err()
         .unwrap_or_else(|| panic!("dynamic namespace unexpectedly succeeded"));
     assert!(error.contains(&expected), "{error}");
-    assert!(error.contains("static API member"), "{error}");
+    assert!(
+        error.contains("native styling cannot use `window.name` at build time"),
+        "{error}"
+    );
+    assert!(
+        error.contains("this required expression needs an exact, static input"),
+        "{error}"
+    );
+    assert!(error.contains("Fix:"), "{error}");
 }
 
 #[test]

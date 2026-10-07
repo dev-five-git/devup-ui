@@ -8,6 +8,7 @@ use rustc_hash::FxHashMap;
 
 pub(super) enum BindingSource<'a> {
     Module(&'a str),
+    RequiredModule(&'a str),
     Css(&'a str),
 }
 
@@ -27,16 +28,20 @@ impl ImportBindings {
         source: BindingSource<'_>,
     ) {
         for specifier in specifiers {
-            let binding = match &source {
-                BindingSource::Module(module) => match specifier {
-                    ImportDeclarationSpecifier::ImportSpecifier(specifier) => {
-                        format!("{module}[{:?}]", specifier.imported.name())
+            let mut binding = match &source {
+                BindingSource::Module(module) | BindingSource::RequiredModule(module) => {
+                    match specifier {
+                        ImportDeclarationSpecifier::ImportSpecifier(specifier) => {
+                            format!("{module}[{:?}]", specifier.imported.name())
+                        }
+                        ImportDeclarationSpecifier::ImportDefaultSpecifier(_) => {
+                            format!("{module}[\"default\"]")
+                        }
+                        ImportDeclarationSpecifier::ImportNamespaceSpecifier(_) => {
+                            module.to_string()
+                        }
                     }
-                    ImportDeclarationSpecifier::ImportDefaultSpecifier(_) => {
-                        format!("{module}[\"default\"]")
-                    }
-                    ImportDeclarationSpecifier::ImportNamespaceSpecifier(_) => module.to_string(),
-                },
+                }
                 BindingSource::Css(module) => match specifier {
                     ImportDeclarationSpecifier::ImportSpecifier(specifier) => {
                         format!("{module}[{:?}]", specifier.imported.name())
@@ -45,6 +50,25 @@ impl ImportBindings {
                     | ImportDeclarationSpecifier::ImportNamespaceSpecifier(_) => module.to_string(),
                 },
             };
+            if let BindingSource::RequiredModule(module) = &source {
+                let key = match specifier {
+                    ImportDeclarationSpecifier::ImportSpecifier(specifier) => {
+                        Some(specifier.imported.name().to_string())
+                    }
+                    ImportDeclarationSpecifier::ImportDefaultSpecifier(_) => {
+                        Some("default".to_string())
+                    }
+                    ImportDeclarationSpecifier::ImportNamespaceSpecifier(_) => None,
+                };
+                if let Some(key) = key {
+                    binding = format!(
+                        "(()=>{{if(!({{}}).hasOwnProperty.call({module},{key:?}))throw new TypeError({message:?});return {binding};}})()",
+                        message = format!(
+                            "required export `{key}` has no selected binding. Fix: import an existing runtime export"
+                        )
+                    );
+                }
+            }
             let local = specifier.local();
             self.names.insert(local.name.to_string(), binding.clone());
             if let Some(symbol) = local.symbol_id.get() {

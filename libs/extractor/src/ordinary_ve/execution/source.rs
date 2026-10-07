@@ -1,10 +1,7 @@
 use std::collections::BTreeSet;
 
 use oxc_allocator::Allocator;
-use oxc_ast::{
-    AstKind,
-    ast::{Statement, VariableDeclarationKind},
-};
+use oxc_ast::ast::{Statement, VariableDeclarationKind};
 use oxc_parser::Parser;
 use oxc_semantic::SemanticBuilder;
 use oxc_span::{GetSpan, SourceType, Span};
@@ -12,10 +9,9 @@ use oxc_span::{GetSpan, SourceType, Span};
 use super::{SelectedModule, Selection, Stylesheet, imports, observe::Observations, policy};
 use crate::module_loader::Mapped;
 use crate::ordinary_ve::selection::plan::{Binding, UnitKind};
-use crate::vanilla_extract::{
-    capture::{Capture, Observation, ObservationKind},
-    json_string,
-};
+use crate::vanilla_extract::capture::{Capture, Observation, ObservationKind};
+
+mod checks;
 
 pub(super) struct Source {
     pub mapped: Mapped,
@@ -39,6 +35,39 @@ pub(super) fn build(
     selection: &Selection,
     option: &crate::ExtractOption,
 ) -> Result<Source, String> {
+    build_inner(
+        SelectedModule {
+            stylesheet,
+            selection,
+        },
+        option,
+        None,
+    )
+}
+
+pub(super) fn build_reads(
+    module: SelectedModule<'_>,
+    option: &crate::ExtractOption,
+    consumer: (
+        &crate::ordinary_ve::selection::demand::View,
+        &crate::imported_constants::consumer::ReadPlan,
+    ),
+) -> Result<Source, String> {
+    build_inner(module, option, Some(consumer))
+}
+
+fn build_inner(
+    module: SelectedModule<'_>,
+    option: &crate::ExtractOption,
+    consumer: Option<(
+        &crate::ordinary_ve::selection::demand::View,
+        &crate::imported_constants::consumer::ReadPlan,
+    )>,
+) -> Result<Source, String> {
+    let SelectedModule {
+        stylesheet,
+        selection,
+    } = module;
     let allocator = Allocator::default();
     let parsed = Parser::new(
         &allocator,
@@ -72,6 +101,9 @@ pub(super) fn build(
         .imports
         .iter()
         .filter(|import| import.native.is_none())
+        .filter(|import| {
+            consumer.is_none_or(|(view, _)| view.native_imports.contains(&import.binding.symbol))
+        })
     {
         source.observations.write(
             &mut source.mapped,
@@ -84,54 +116,7 @@ pub(super) fn build(
             },
         );
     }
-    let expression = |span: Span, code: String| {
-        let shorthand = semantic.nodes().iter().any(|node| matches!(node.kind(),
-            AstKind::ObjectProperty(property) if property.shorthand && property.value.span() == span));
-        let prefix = if shorthand {
-            format!("{}: ", span.source_text(stylesheet.code))
-        } else {
-            String::new()
-        };
-        (span, format!("{prefix}{code}"))
-    };
-    let mut checks: Vec<_> = selection
-        .checks
-        .iter()
-        .map(|escape| {
-            let message = format!(
-                "{}: {}. Fix: {}",
-                policy::place(stylesheet, escape.span.start),
-                escape.cause(),
-                escape.fix()
-            );
-            expression(
-                escape.span,
-                format!("(function(){{throw {};}})()", json_string(&message)),
-            )
-        })
-        .collect::<Vec<_>>();
-    // Boa can attribute a bound TDZ read to its enclosing property. An immediate
-    // thunk gives that read its own frame, anchored through the existing trace.
-    for read in selection.reads.iter().filter(|read| !read.write) {
-        let forward = read.symbol.is_some_and(|symbol| {
-            selection.units.iter().any(|unit| {
-                matches!(
-                    unit.kind,
-                    UnitKind::Declarator {
-                        kind: VariableDeclarationKind::Const | VariableDeclarationKind::Let,
-                        ..
-                    }
-                ) && unit
-                    .bindings
-                    .iter()
-                    .any(|binding| binding.symbol == symbol && binding.span.start > read.span.start)
-            })
-        });
-        if forward && read.name != "eval" && !checks.iter().any(|(span, _)| *span == read.span) {
-            checks.push(expression(read.span, format!("(()=>{})()", read.name)));
-        }
-    }
-    checks.sort_by_key(|(span, _)| span.start);
+    let checks = checks::build(module, &semantic);
     let copy = |mapped: &mut Mapped, span: Span| {
         let mut start = span.start;
         for (check, replacement) in &checks {
@@ -143,7 +128,9 @@ pub(super) fn build(
         }
         mapped.copy(stylesheet.code, Span::new(start, span.end));
     };
+    let mut slots = super::consumer::Slots::new(consumer.map(|(_, plan)| plan));
     for unit in &selection.units {
+        slots.before(&mut source, (module, unit.span))?;
         let root = selection.roots.iter().find(|root| root.owner == unit.node);
         let capture_start = source.captures.len();
         if root.is_some() {
@@ -174,7 +161,11 @@ pub(super) fn build(
                 source
                     .mapped
                     .synthesize(unit.span.start, &format!("{keyword} "));
-                copy(&mut source.mapped, unit.span);
+                if let Some((view, _)) = consumer {
+                    view.copy_unit(module, unit, &mut source.mapped);
+                } else {
+                    copy(&mut source.mapped, unit.span);
+                }
                 source.mapped.synthesize(unit.span.end, ";\n");
             }
             UnitKind::Function { .. } | UnitKind::Statement => {
@@ -212,7 +203,11 @@ pub(super) fn build(
                     });
                     source.identities.push((unit.span, None));
                 } else {
-                    copy(&mut source.mapped, unit.span);
+                    if let Some((view, _)) = consumer {
+                        view.copy_unit(module, unit, &mut source.mapped);
+                    } else {
+                        copy(&mut source.mapped, unit.span);
+                    }
                     source.mapped.synthesize(unit.span.end, "\n");
                 }
             }
@@ -236,9 +231,12 @@ pub(super) fn build(
             },
             unit,
             &source.captures[capture_start..],
-        ) {
+        ) && (consumer.is_none_or(|(view, _)| view.native_units.contains(&unit.node))
+            || !matches!(site.kind, ObservationKind::Input { .. }))
+        {
             source.observations.write(&mut source.mapped, site);
         }
     }
+    slots.finish(&mut source, module);
     Ok(source)
 }

@@ -10,6 +10,7 @@ use super::{
 pub(super) enum Input<'a> {
     Stylesheet(Stylesheet<'a>),
     Selected(capture::Selected<'a>),
+    Readback(capture::Selected<'a>, &'a [oxc_span::Span]),
 }
 
 pub(crate) struct Executed {
@@ -17,6 +18,7 @@ pub(crate) struct Executed {
     pub imports: StylesheetImports,
     pub captures: Vec<String>,
     pub emission: capture::Emission,
+    pub readback: Vec<(oxc_span::Span, String)>,
 }
 
 pub(super) fn execute(
@@ -26,17 +28,17 @@ pub(super) fn execute(
 ) -> Result<Executed, String> {
     let stylesheet = match &input {
         Input::Stylesheet(stylesheet) => *stylesheet,
-        Input::Selected(selected) => selected.stylesheet,
+        Input::Selected(selected) | Input::Readback(selected, _) => selected.stylesheet,
     };
     let mut loader = ModuleLoader::new(resolver, option);
-    loader.select_demands(stylesheet, matches!(&input, Input::Selected(_)))?;
+    loader.select_demands(stylesheet, !matches!(&input, Input::Stylesheet(_)))?;
     run(input, loader)
 }
 
 pub(super) fn run(input: Input<'_>, mut loader: ModuleLoader<'_>) -> Result<Executed, String> {
     let stylesheet = match &input {
         Input::Stylesheet(stylesheet) => *stylesheet,
-        Input::Selected(selected) => selected.stylesheet,
+        Input::Selected(selected) | Input::Readback(selected, _) => selected.stylesheet,
     };
     let Stylesheet {
         filename,
@@ -47,7 +49,9 @@ pub(super) fn run(input: Input<'_>, mut loader: ModuleLoader<'_>) -> Result<Exec
     let _evaluating = Evaluating::enter(filename);
     let unit = match &input {
         Input::Stylesheet(_) => Unit::written(filename, code, source, edits)?,
-        Input::Selected(selected) => Unit::selected(stylesheet, selected.mapped)?,
+        Input::Selected(selected) | Input::Readback(selected, _) => {
+            Unit::selected(stylesheet, selected.mapped)?
+        }
     };
     let entry = module_script(&unit, &mut loader, true)?;
     let file_num = get_file_num_by_filename(filename);
@@ -75,6 +79,7 @@ pub(super) fn run(input: Input<'_>, mut loader: ModuleLoader<'_>) -> Result<Exec
             imports,
             captures: Vec::new(),
             emission: capture::Emission::default(),
+            readback: Vec::new(),
         });
     }
     let collector: StyleCollector = Rc::new(RefCell::new(Collector {
@@ -94,7 +99,7 @@ pub(super) fn run(input: Input<'_>, mut loader: ModuleLoader<'_>) -> Result<Exec
         .prepare(&mut context)
         .map_err(|error| run.explain(&error.to_string(), filename))?;
     match &input {
-        Input::Selected(selected) => capture::prepare(
+        Input::Selected(selected) | Input::Readback(selected, _) => capture::prepare(
             &mut context,
             selected,
             capture::Samplers {
@@ -140,6 +145,9 @@ pub(super) fn run(input: Input<'_>, mut loader: ModuleLoader<'_>) -> Result<Exec
             Source::from_bytes(instrumented.code.as_bytes()).with_path(Path::new(SCRIPT_PATH)),
         )
         .map_err(|failure| explain(failure, &context))?;
+    if loader.has_demands() {
+        super::demand_runtime::validate(&context)?;
+    }
     let mut collected = std::mem::take(&mut collector.borrow_mut().styles);
     let named = match &input {
         Input::Stylesheet(_) => top_level_bindings(code, &entry, &mut context)
@@ -152,7 +160,10 @@ pub(super) fn run(input: Input<'_>, mut loader: ModuleLoader<'_>) -> Result<Exec
             })
             .map(|()| capture::Finished::default())
             .map_err(capture::FinalizeError::Js),
-        Input::Selected(selected) => capture::finish(selected, &mut collected, &mut context),
+        Input::Selected(selected) => capture::finish((selected, &[]), &mut collected, &mut context),
+        Input::Readback(selected, reads) => {
+            capture::finish((selected, reads), &mut collected, &mut context)
+        }
     };
     sandbox
         .check(
@@ -190,5 +201,6 @@ pub(super) fn run(input: Input<'_>, mut loader: ModuleLoader<'_>) -> Result<Exec
         imports,
         captures: finished.captures,
         emission: finished.emission,
+        readback: finished.readback,
     })
 }

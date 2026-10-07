@@ -4,7 +4,7 @@ use oxc_allocator::Allocator;
 use oxc_ast::ast::Statement;
 use oxc_parser::Parser;
 use oxc_semantic::SemanticBuilder;
-use oxc_span::{GetSpan, SourceType, Span};
+use oxc_span::{SourceType, Span};
 use rustc_hash::FxHashMap;
 
 use super::{
@@ -16,7 +16,11 @@ use crate::vanilla_extract::{
     Reference, Stylesheet, StylesheetImports, style_references::StyleReferences,
 };
 
+mod preserved;
+
 pub(crate) struct Prepared {
+    pub native: bool,
+    pub readback: bool,
     pub code: String,
     pub edits: Vec<crate::import_alias_visit::Edit>,
     pub imports: StylesheetImports,
@@ -47,16 +51,24 @@ pub(crate) fn prepare(
         .with_build_nodes(true)
         .build(&parsed.program)
         .semantic;
-    let selection = selection::select(&parsed.program, &semantic);
-    if !selection
+    let selection = selection::select_resolved(
+        (&parsed.program, &semantic),
+        (stylesheet.filename, "@vanilla-extract/css"),
+        resolver,
+    );
+    execution::policy::check(stylesheet, &selection)?;
+    let native = selection
         .imports
         .iter()
-        .any(|import| import.native.is_some())
-    {
+        .any(|import| import.native.is_some());
+    let plan = crate::imported_constants::consumer::plan(&parsed.program, &semantic, option);
+    let readback = !plan.slots.is_empty();
+    if !native && !readback {
         return Ok(None);
     }
     crate::module_loader::validate(stylesheet)?;
-    if selection.escapes.is_empty()
+    if !readback
+        && selection.escapes.is_empty()
         && selection.checks.is_empty()
         && !super::dispatch::mixed(&parsed.program, &semantic, &selection)
         && (super::is_module(stylesheet.filename, stylesheet.code)
@@ -64,14 +76,18 @@ pub(crate) fn prepare(
     {
         return Ok(None);
     }
-    let mut result = execution::execute(
-        SelectedModule {
-            stylesheet,
-            selection: &selection,
-        },
-        option,
-        resolver,
-    )?;
+    let module = SelectedModule {
+        stylesheet,
+        selection: &selection,
+    };
+    let mut result = if readback {
+        let Some(result) = execution::execute_reads(module, (option, resolver), &plan)? else {
+            return Ok(None);
+        };
+        result
+    } else {
+        execution::execute(module, option, resolver)?
+    };
     let mut reserved = selection.reserved_names.clone();
     reserved.extend(result.captures.iter().map(|capture| capture.name.clone()));
     reserved.extend(
@@ -127,66 +143,14 @@ pub(crate) fn prepare(
         &parsed.program,
         &result,
     );
+    super::readback::replace((stylesheet, &semantic), &plan, (&result, &mut replacements))?;
     replacements.extend(rewrite::imports(
         &parsed.program,
         stylesheet.code,
         &selection,
     ));
     super::emission::apply(&result.emission, &mut replacements);
-    for import in selection
-        .imports
-        .iter()
-        .filter(|import| import.native.is_some())
-    {
-        for reference in semantic
-            .scoping()
-            .get_resolved_reference_ids(import.binding.symbol)
-        {
-            let reference = semantic.scoping().get_reference(*reference);
-            let span = semantic.nodes().kind(reference.node_id()).span();
-            if reference.is_value()
-                && !replacements
-                    .iter()
-                    .any(|edit| edit.span.contains_inclusive(span))
-            {
-                return Err(crate::located_errors(
-                    stylesheet.filename,
-                    stylesheet.source,
-                    stylesheet.edits,
-                    vec![(
-                        span.start,
-                        format!(
-                            "native binding `{}` escapes preserved source. Fix: use the API only in exact initializers and retain computed values",
-                            import.binding.name
-                        ),
-                    )],
-                ));
-            }
-        }
-    }
-    for call in &selection.native_calls {
-        if !selection
-            .roots
-            .iter()
-            .any(|root| root.native_calls.contains(&call.node))
-            || !replacements
-                .iter()
-                .any(|edit| edit.span.contains_inclusive(call.span))
-        {
-            return Err(crate::located_errors(
-                stylesheet.filename,
-                stylesheet.source,
-                stylesheet.edits,
-                vec![(
-                    call.callee.start,
-                    format!(
-                        "native `{}` call cannot remain in preserved source. Fix: report this extraction error with the original module",
-                        call.api
-                    ),
-                )],
-            ));
-        }
-    }
+    preserved::check(module, &semantic, &replacements)?;
     let imported: BTreeSet<_> = parsed
         .program
         .body
@@ -233,8 +197,11 @@ pub(crate) fn prepare(
         )
     })?;
     let mut references = result.imports.references.clone();
+    result.imports.dependencies.extend(selection.dependencies);
     references.merge(result.collected.class_references);
     Ok(Some(Prepared {
+        native,
+        readback,
         code,
         edits,
         imports: result.imports,

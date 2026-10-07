@@ -12,6 +12,15 @@ pub(crate) fn place(stylesheet: Stylesheet<'_>, at: u32) -> String {
 }
 
 pub(crate) fn check(stylesheet: Stylesheet<'_>, selection: &Selection) -> Result<(), String> {
+    if let Some(failure) = &selection.provenance_failure {
+        return Err(failure.clone());
+    }
+    if let Some((site, message)) = selection.provenance_errors.first() {
+        return Err(format!(
+            "{}: {message}. Fix: use an unambiguous immutable native API binding and keep its exact reads in initializers",
+            place(stylesheet, site.start)
+        ));
+    }
     if let Some(escape) = selection.escapes.first() {
         return Err(format!(
             "{}: {}. Fix: {}",
@@ -41,7 +50,7 @@ pub(crate) fn check(stylesheet: Stylesheet<'_>, selection: &Selection) -> Result
     Ok(())
 }
 
-pub(super) fn observations(
+pub(crate) fn observations(
     stylesheet: Stylesheet<'_>,
     selection: &Selection,
 ) -> Result<Vec<crate::vanilla_extract::capture::MutationCheck>, String> {
@@ -113,4 +122,46 @@ pub(super) fn writes(
         }
     }
     Ok(())
+}
+
+pub(crate) fn commonjs_observations<'a>(
+    stylesheet: Stylesheet<'_>,
+    selection: &Selection,
+    parsed: (&oxc_ast::ast::Program<'a>, &oxc_semantic::Semantic<'a>),
+) -> Vec<crate::vanilla_extract::capture::MutationCheck> {
+    let aliases = super::aliases::Aliases::new(stylesheet, selection);
+    crate::mutations::commonjs_uses(parsed.0, parsed.1)
+        .into_iter()
+        .filter_map(|(read, usage)| {
+            let (mut at, path) = match &usage {
+                Use::Changes { at, .. } => (*at, Vec::new()),
+                Use::Escapes {
+                    into: Some(into), ..
+                } if into.is_empty() => return None,
+                Use::Calls { at, path } | Use::Escapes { at, path, .. } => (*at, path.clone()),
+            };
+            if selection
+                .units
+                .iter()
+                .any(|unit| (unit.span.start..unit.span.end).contains(&at))
+            {
+                return None;
+            }
+            if let Use::Escapes {
+                into: Some(into), ..
+            } = &usage
+            {
+                match aliases.classify(&read, into) {
+                    super::aliases::Alias::Readonly => return None,
+                    super::aliases::Alias::Mutable(site) => at = site,
+                    super::aliases::Alias::Other => {}
+                }
+            }
+            Some(crate::vanilla_extract::capture::MutationCheck {
+                read,
+                path,
+                place: place(stylesheet, at),
+            })
+        })
+        .collect()
 }

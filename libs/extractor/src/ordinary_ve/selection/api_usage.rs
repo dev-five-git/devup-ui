@@ -6,7 +6,6 @@ use super::{
     apis::Apis,
     plan::{EscapeKind, NativeBinding},
 };
-use crate::utils::{get_string_by_literal_expression, unwrap_syntax_only};
 
 pub(super) fn classify(
     apis: &Apis<'_, '_>,
@@ -23,24 +22,34 @@ pub(super) fn classify(
             | AstKind::TSAsExpression(_)
             | AstKind::TSSatisfiesExpression(_)
             | AstKind::TSNonNullExpression(_)
-            | AstKind::TSInstantiationExpression(_) => {}
+            | AstKind::TSInstantiationExpression(_)
+            | AstKind::ObjectProperty(_)
+            | AstKind::ObjectExpression(_) => {}
             AstKind::StaticMemberExpression(member) if member.object.span() == span => {
                 let Some(member_binding) =
                     apis.member(&member.object, member.property.name.as_str())
                 else {
-                    return Some(EscapeKind::NativeValue);
+                    return (binding != NativeBinding::Namespace
+                        || matches!(
+                            apis.shape(&member.object).as_deref(),
+                            Some(crate::barrel::native::Shape::PackageNamespace(_))
+                        ))
+                    .then_some(EscapeKind::NativeValue);
                 };
                 binding = member_binding;
             }
             AstKind::ComputedMemberExpression(member) if member.object.span() == span => {
-                if get_string_by_literal_expression(unwrap_syntax_only(&member.expression))
-                    .is_none()
-                {
+                if apis.key(&member.expression).is_none() {
                     return Some(EscapeKind::DynamicNamespace);
                 }
-                let key = get_string_by_literal_expression(unwrap_syntax_only(&member.expression))?;
+                let key = apis.key(&member.expression)?;
                 let Some(member_binding) = apis.member(&member.object, &key) else {
-                    return Some(EscapeKind::NativeValue);
+                    return (binding != NativeBinding::Namespace
+                        || matches!(
+                            apis.shape(&member.object).as_deref(),
+                            Some(crate::barrel::native::Shape::PackageNamespace(_))
+                        ))
+                    .then_some(EscapeKind::NativeValue);
                 };
                 binding = member_binding;
             }

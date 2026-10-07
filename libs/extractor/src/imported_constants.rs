@@ -16,7 +16,7 @@ use oxc_ast::builder::AstBuilder;
 use oxc_ast_visit::{Visit, VisitMut, walk, walk_mut};
 use oxc_parser::Parser;
 use oxc_semantic::{Scoping, SemanticBuilder};
-use oxc_span::{SPAN, SourceType};
+use oxc_span::{GetSpan, SPAN, SourceType, Span};
 use oxc_syntax::number::NumberBase;
 use oxc_syntax::operator::BinaryOperator;
 use oxc_syntax::symbol::SymbolId;
@@ -30,6 +30,8 @@ use crate::extractor::extract_style_from_expression::{
 };
 use crate::stylex::StylexFunction;
 use crate::{ExtractOption, ExtractStyleValue, ModuleResolver};
+
+pub(crate) mod consumer;
 
 #[derive(Clone, Debug)]
 enum Constant {
@@ -160,6 +162,8 @@ pub(crate) enum ChangeSite {
 #[derive(Default)]
 pub(crate) struct Inlined {
     pub dependencies: BTreeSet<String>,
+    pub atoms: crate::vanilla_extract::producer_atoms::ProducerAtoms,
+    pub references: crate::vanilla_extract::style_references::StyleReferences,
     pub stylex_vars: FxHashMap<String, FxHashMap<String, String>>,
     pub stylex_themes: FxHashMap<String, String>,
     /// The styles behind imported `css()` classes
@@ -398,35 +402,16 @@ fn inline_in<'a>(
 ) -> Inlined {
     let compat = format!("{}/compat", option.package);
     let css_props = CssTakers::new(program, scoping, css_prop, &compat);
-    let mut style = StyleSymbols::new(scoping);
-    for statement in &program.body {
-        if let Statement::ImportDeclaration(import) = statement
-            && is_style_package(option, &import.source.value)
-        {
-            let stylex = import.source.value == crate::STYLEX_PACKAGE;
-            for specifier in import.specifiers.iter().flatten() {
-                if let Some(local) = specifier.local().symbol_id.get() {
-                    style.roots.insert(local);
-                    match specifier {
-                        ImportDeclarationSpecifier::ImportSpecifier(specifier) => {
-                            if takes_style_objects(stylex, &specifier.imported.name()) {
-                                style.functions.insert(local);
-                            }
-                        }
-                        _ => {
-                            style.namespaces.insert(local, stylex);
-                        }
-                    }
-                }
-            }
-        }
-    }
+    let style = StyleSymbols::from_program(program, scoping, option);
     let mut read = StyleReads {
         style: &style,
         css_props: &css_props,
         names: FxHashSet::default(),
         depth: 0,
         class_names: Vec::new(),
+        slots: Vec::new(),
+        callee: false,
+        known: None,
     };
     read.visit_program(program);
     if read.names.is_empty() {
@@ -683,6 +668,34 @@ fn takes_style_objects(stylex: bool, export: &str) -> bool {
 }
 
 impl<'s> StyleSymbols<'s> {
+    fn from_program(program: &Program<'_>, scoping: &'s Scoping, option: &ExtractOption) -> Self {
+        let mut style = Self::new(scoping);
+        for statement in &program.body {
+            if let Statement::ImportDeclaration(import) = statement
+                && is_style_package(option, &import.source.value)
+                && !import.import_kind.is_type()
+            {
+                let stylex = import.source.value == crate::STYLEX_PACKAGE;
+                for specifier in import.specifiers.iter().flatten() {
+                    if let Some(local) = specifier.local().symbol_id.get() {
+                        style.roots.insert(local);
+                        match specifier {
+                            ImportDeclarationSpecifier::ImportSpecifier(specifier) => {
+                                if takes_style_objects(stylex, &specifier.imported.name()) {
+                                    style.functions.insert(local);
+                                }
+                            }
+                            _ => {
+                                style.namespaces.insert(local, stylex);
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        style
+    }
+
     fn new(scoping: &'s Scoping) -> Self {
         Self {
             scoping,
@@ -752,6 +765,9 @@ struct StyleReads<'s> {
     /// The bindings the `<ClassNames>` child functions around take `css` and
     /// `cx` by
     class_names: Vec<SymbolId>,
+    slots: Vec<Span>,
+    callee: bool,
+    known: Option<&'s dyn Fn(&IdentifierReference<'_>) -> bool>,
 }
 
 impl StyleReads<'_> {
@@ -764,10 +780,72 @@ impl StyleReads<'_> {
 }
 
 impl<'a> Visit<'a> for StyleReads<'_> {
+    fn visit_expression(&mut self, expression: &Expression<'a>) {
+        if self.depth > 0
+            && !self.callee
+            && !self.style.is_root(expression)
+            && let Some(known) = self.known
+            && consumer::closed(expression, self.style, known)
+        {
+            self.slots.push(expression.span());
+        }
+        walk::walk_expression(self, expression);
+    }
+
     fn visit_identifier_reference(&mut self, identifier: &IdentifierReference<'a>) {
         if self.depth > 0 && reads_top_level(self.style.scoping, identifier) {
             self.names.insert(identifier.name.to_string());
+            if !self.callee
+                && binding_of(self.style.scoping, identifier).is_some()
+                && !self.style.has(identifier)
+                && self.known.is_some_and(|known| known(identifier))
+            {
+                self.slots.push(identifier.span);
+            }
         }
+    }
+
+    fn visit_static_member_expression(
+        &mut self,
+        member: &oxc_ast::ast::StaticMemberExpression<'a>,
+    ) {
+        if self.depth > 0
+            && !self.callee
+            && let Some(known) = self.known
+            && consumer::member((&member.object, None), self.style, known)
+        {
+            self.slots.push(member.span);
+        }
+        walk::walk_static_member_expression(self, member);
+    }
+
+    fn visit_computed_member_expression(
+        &mut self,
+        member: &oxc_ast::ast::ComputedMemberExpression<'a>,
+    ) {
+        if self.depth > 0
+            && !self.callee
+            && let Some(known) = self.known
+            && consumer::member(
+                (&member.object, Some(&member.expression)),
+                self.style,
+                known,
+            )
+        {
+            self.slots.push(member.span);
+        }
+        walk::walk_computed_member_expression(self, member);
+    }
+
+    fn visit_template_literal(&mut self, template: &oxc_ast::ast::TemplateLiteral<'a>) {
+        if self.depth > 0
+            && !self.callee
+            && let Some(known) = self.known
+            && consumer::template(template, self.style, known)
+        {
+            self.slots.push(template.span);
+        }
+        walk::walk_template_literal(self, template);
     }
 
     fn visit_jsx_element(&mut self, element: &oxc_ast::ast::JSXElement<'a>) {
@@ -779,7 +857,17 @@ impl<'a> Visit<'a> for StyleReads<'_> {
     }
 
     fn visit_call_expression(&mut self, call: &oxc_ast::ast::CallExpression<'a>) {
+        if self.depth > 0
+            && !self.callee
+            && !self.style.is_root(&call.callee)
+            && let Some(known) = self.known
+            && consumer::call(call, self.style, known)
+        {
+            self.slots.push(call.span);
+        }
+        let outer = std::mem::replace(&mut self.callee, true);
         self.visit_expression(&call.callee);
+        self.callee = outer;
         let style = self.style.is_root(&call.callee)
             || self
                 .css_props
@@ -807,7 +895,9 @@ impl<'a> Visit<'a> for StyleReads<'_> {
         &mut self,
         tagged: &oxc_ast::ast::TaggedTemplateExpression<'a>,
     ) {
+        let outer = std::mem::replace(&mut self.callee, true);
         self.visit_expression(&tagged.tag);
+        self.callee = outer;
         let style = self.style.is_root(&tagged.tag)
             || self
                 .css_props
@@ -816,9 +906,17 @@ impl<'a> Visit<'a> for StyleReads<'_> {
     }
 
     fn visit_jsx_opening_element(&mut self, element: &oxc_ast::ast::JSXOpeningElement<'a>) {
-        let style = self.style.is_component(&element.name);
+        let component = self.style.is_component(&element.name);
         for attribute in &element.attributes {
-            let style = style
+            let style = (component
+                && (self.known.is_none()
+                    || match attribute {
+                        JSXAttributeItem::Attribute(attribute) => matches!(&attribute.name,
+                    oxc_ast::ast::JSXAttributeName::Identifier(name)
+                        if !css::is_special_property::is_special_property(&name.name)
+                            && !matches!(name.name.as_str(), "as" | "props" | "styleVars")),
+                        JSXAttributeItem::SpreadAttribute(_) => true,
+                    }))
                 || self
                     .css_props
                     .attribute(&element.name, attribute, |identifier| {

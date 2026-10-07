@@ -87,6 +87,8 @@ use rustc_hash::{FxHashMap, FxHashSet};
 use std::borrow::Cow;
 use std::rc::Rc;
 
+mod global_styles;
+
 /// What text among composed parts holds
 #[derive(Clone, Copy, PartialEq, Eq)]
 enum Text {
@@ -3127,16 +3129,7 @@ impl<'a> VisitMut<'a> for DevupVisitor<'a> {
                                 .push((offset, runtime_value_error("globalCss", &value)));
                         }
                         // already set style order
-                        let style_order = style_order.unwrap_or(0);
-                        self.styles.extend(
-                            styles
-                                .into_iter()
-                                .flat_map(ExtractStyleProp::into_extract)
-                                .map(|mut style| {
-                                    style.set_style_order(style_order);
-                                    style
-                                }),
-                        );
+                        self.publish_global_styles(styles, style_order.unwrap_or(0));
                         self.global_css_result(r.is_component())
                     }
                 } else if call.arguments.len() == 2
@@ -3182,16 +3175,7 @@ impl<'a> VisitMut<'a> for DevupVisitor<'a> {
                         self.errors
                             .push((offset, runtime_value_error("globalCss", &value)));
                     }
-                    let style_order = style_order.unwrap_or(0);
-                    self.styles.extend(
-                        styles
-                            .into_iter()
-                            .flat_map(ExtractStyleProp::into_extract)
-                            .map(|mut style| {
-                                style.set_style_order(style_order);
-                                style
-                            }),
-                    );
+                    self.publish_global_styles(styles, style_order.unwrap_or(0));
                     *it = self.global_css_result(util_type.is_component());
                 } else {
                     *it = match util_type.as_ref() {
@@ -3792,16 +3776,7 @@ impl<'a> VisitMut<'a> for DevupVisitor<'a> {
                         self.errors
                             .push((offset, element_error(&name, &value, RUNTIME_VALUE)));
                     }
-                    let style_order = style_order.unwrap_or(0);
-                    self.styles.extend(
-                        styles
-                            .into_iter()
-                            .flat_map(ExtractStyleProp::into_extract)
-                            .map(|mut style| {
-                                style.set_style_order(style_order);
-                                style
-                            }),
-                    );
+                    self.publish_global_styles(styles, style_order.unwrap_or(0));
                 }
                 elem.opening_element.attributes.remove(i);
             }

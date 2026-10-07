@@ -26,6 +26,10 @@ impl StyleValues {
         self.producer_references.contains_class_list(literal)
     }
 
+    pub(crate) fn producer_selector(&self, selector: &str) -> String {
+        self.producer_references.selector(selector)
+    }
+
     pub(crate) fn import_producer_references(&mut self, references: StyleReferences) {
         self.producer_references = references;
     }

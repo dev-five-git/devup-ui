@@ -59,10 +59,22 @@ impl Aliases {
                 if scoping.symbol_scope_id(symbol) != scoping.root_scope_id() {
                     return None;
                 }
-                let Expression::Identifier(source) = unwrap_syntax_only(declarator.init.as_ref()?)
-                else {
-                    return None;
-                };
+                let initializer = unwrap_syntax_only(declarator.init.as_ref()?);
+                if let Some(member) = initializer.as_member_expression()
+                    && member.static_property_name() == Some("exports")
+                    && matches!(member.object(), Expression::Identifier(source)
+                        if source.name == "module" && source.reference_id.get().is_some_and(|reference|
+                            scoping.get_reference(reference).symbol_id().is_none()))
+                {
+                    return Some((identifier.name.to_string(), "module.exports".to_string()));
+                }
+                let Expression::Identifier(source) = initializer else { return None };
+                if source.name == "exports"
+                    && source.reference_id.get().is_some_and(|reference|
+                        scoping.get_reference(reference).symbol_id().is_none())
+                {
+                    return Some((identifier.name.to_string(), "exports".to_string()));
+                }
                 let source_symbol = scoping
                     .get_reference(source.reference_id.get()?)
                     .symbol_id()?;

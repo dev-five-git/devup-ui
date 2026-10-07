@@ -40,6 +40,14 @@ enum Link {
         source: String,
         imported: Option<String>,
     },
+    Member {
+        base: Box<Link>,
+        name: String,
+    },
+    Changed {
+        base: Box<Link>,
+        place: String,
+    },
 }
 
 /// What a module exports, read without running it
@@ -78,6 +86,10 @@ fn has_reexport_syntax(code: &str) -> bool {
 }
 
 fn analyze(module: &ResolvedModule, package: &str) -> Exports {
+    analyze_mode(module, package, false)
+}
+
+fn analyze_mode(module: &ResolvedModule, package: &str, native: bool) -> Exports {
     let mentions_package = module.code.contains(package);
     let mut exports = Exports {
         path: module.path.clone(),
@@ -86,7 +98,7 @@ fn analyze(module: &ResolvedModule, package: &str) -> Exports {
         mentions_package,
         trivial: !mentions_package && !has_reexport_syntax(&module.code),
     };
-    if exports.trivial {
+    if exports.trivial && !native {
         return exports;
     }
     let allocator = Allocator::default();
@@ -94,7 +106,10 @@ fn analyze(module: &ResolvedModule, package: &str) -> Exports {
     let program = Parser::new(&allocator, &module.code, source_type)
         .parse()
         .program;
-    let semantic = SemanticBuilder::new().build(&program).semantic;
+    let semantic = SemanticBuilder::new()
+        .with_build_nodes(native)
+        .build(&program)
+        .semantic;
     let mut imports: FxHashMap<SymbolId, Link> = FxHashMap::default();
     for statement in &program.body {
         if let Statement::ImportDeclaration(import) = statement
@@ -126,6 +141,18 @@ fn analyze(module: &ResolvedModule, package: &str) -> Exports {
                 }));
             }
         }
+    }
+    if native {
+        loop {
+            let before = imports.len();
+            for statement in &program.body {
+                native::aliases::extend(statement, &mut imports, &semantic);
+            }
+            if imports.len() == before {
+                break;
+            }
+        }
+        native::aliases::changes(&program, &mut imports, (&semantic, module));
     }
     for statement in &program.body {
         match statement {
@@ -184,6 +211,18 @@ fn analyze(module: &ResolvedModule, package: &str) -> Exports {
                     exports.named.insert(name, Link::Own);
                 }
                 if let Declaration::VariableDeclaration(declaration) = &export.declaration {
+                    if native {
+                        for declarator in &declaration.declarations {
+                            for id in declarator.id.get_binding_identifiers() {
+                                if let Some(link) =
+                                    id.symbol_id.get().and_then(|symbol| imports.get(&symbol))
+                                {
+                                    exports.named.insert(id.name.to_string(), link.clone());
+                                }
+                            }
+                        }
+                        continue;
+                    }
                     for (id, link) in alias_links(declaration, &imports, &semantic) {
                         exports.named.insert(id.name.to_string(), link.clone());
                         imports.extend(id.symbol_id.get().map(|symbol| (symbol, link)));
@@ -197,6 +236,9 @@ fn analyze(module: &ResolvedModule, package: &str) -> Exports {
                             .and_then(|symbol| imports.get(&symbol))
                             .cloned()
                     }
+                    declaration if native => declaration.as_expression().and_then(|expression| {
+                        native::aliases::expression(expression, &imports, &semantic)
+                    }),
                     _ => None,
                 };
                 exports
@@ -290,6 +332,7 @@ struct Walker<'r, 'p> {
     package: &'p str,
     modules: FxHashMap<String, Rc<Exports>>,
     dependencies: BTreeSet<String>,
+    native: bool,
 }
 
 impl Walker<'_, '_> {
@@ -303,7 +346,13 @@ impl Walker<'_, '_> {
         Some(
             self.modules
                 .entry(resolved.path.clone())
-                .or_insert_with(|| Rc::new(analyze(&resolved, self.package)))
+                .or_insert_with(|| {
+                    Rc::new(if self.native {
+                        analyze_mode(&resolved, self.package, true)
+                    } else {
+                        analyze(&resolved, self.package)
+                    })
+                })
                 .clone(),
         )
     }
@@ -331,7 +380,7 @@ impl Walker<'_, '_> {
         }
         reading.push(key);
         let origin = match module.named.get(name) {
-            Some(Link::Own) => Origin::Other,
+            Some(Link::Own | Link::Member { .. } | Link::Changed { .. }) => Origin::Other,
             Some(Link::From { source, imported }) => {
                 self.follow(module, source, imported.as_deref(), reading)
             }
@@ -412,7 +461,7 @@ impl Walker<'_, '_> {
             .values()
             .filter_map(|link| match link {
                 Link::From { source, .. } => Some(source),
-                Link::Own => None,
+                Link::Own | Link::Member { .. } | Link::Changed { .. } => None,
             })
             .chain(&module.stars);
         sources.into_iter().any(|source| {
@@ -500,6 +549,7 @@ impl Generated {
 
 mod aliases;
 mod gate;
+pub(crate) mod native;
 use aliases::{Reach, declarator_removal, export_edits, is_assigned_from};
 
 fn unreadable(local: &str, code: &str) -> String {
@@ -970,6 +1020,7 @@ pub(crate) fn rewrite(
         package,
         modules: FxHashMap::default(),
         dependencies: BTreeSet::new(),
+        native: false,
     };
     let mut edits: Vec<(usize, usize, String)> = Vec::new();
     let mut found = Found::default();

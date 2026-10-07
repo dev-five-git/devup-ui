@@ -314,6 +314,7 @@ struct Evaluated<'a> {
     source: &'a str,
     edits: &'a [&'a [import_alias_visit::Edit]],
     native: Option<&'a ordinary_ve::Prepared>,
+    readback: Option<&'a ordinary_ve::Prepared>,
 }
 
 /// `evaluation` retains authored source, last-made-first edits and the native
@@ -329,6 +330,7 @@ fn extract_source(
     resolver: Option<&ModuleResolver>,
 ) -> Result<ExtractedProducer, Box<dyn Error>> {
     let native = evaluation.and_then(|stage| stage.native);
+    let readback = evaluation.and_then(|stage| stage.readback);
     let evaluated = evaluation.map(|stage| (stage.source, stage.edits));
     if evaluated.is_none() {
         match barrel::rewrite(code, filename, &option.package, resolver) {
@@ -344,6 +346,7 @@ fn extract_source(
                         source: code,
                         edits: &[barreled.edits.as_slice()],
                         native,
+                        readback,
                     }),
                     false,
                     option,
@@ -358,7 +361,7 @@ fn extract_source(
             }
         }
     }
-    if native.is_none() {
+    if native.is_none() && readback.is_none() {
         let (source, earlier_edits) = evaluated.unwrap_or((code, &[]));
         if let Some(prepared) = ordinary_ve::prepare(
             vanilla_extract::Stylesheet {
@@ -380,7 +383,8 @@ fn extract_source(
                 Some(Evaluated {
                     source,
                     edits: &layers,
-                    native: Some(&prepared),
+                    native: prepared.native.then_some(&prepared),
+                    readback: prepared.readback.then_some(&prepared),
                 }),
                 values_run,
                 option,
@@ -417,6 +421,7 @@ fn extract_source(
     // Step 2: Check if code contains the target package (after transformation),
     // gives an element a `css` prop, or had an import rewritten
     let has_relevant_import = native.is_some()
+        || readback.is_some()
         || transformed_code.contains(option.package.as_str())
         || transformed_code.contains(STYLEX_PACKAGE);
     let unchanged = || ExtractedProducer {
@@ -446,6 +451,7 @@ fn extract_source(
     let mut reference_bindings =
         native.map_or_else(Default::default, |prepared| prepared.bindings.clone());
     if native.is_none()
+        && readback.is_none()
         && utils::is_vanilla_extract_file(filename)
         && !values_run
         && stylesheet_policy::imports_plain(&transformed_code, filename, &option, resolver)
@@ -488,6 +494,7 @@ fn extract_source(
                 source,
                 edits: &layers,
                 native,
+                readback,
             }),
             true,
             option,
@@ -504,6 +511,7 @@ fn extract_source(
     // `processed_code` is Some only when vanilla-extract generation succeeded;
     // otherwise the untouched `transformed_code` is parsed directly (no copy).
     let processed_code: Option<String> = if native.is_none()
+        && readback.is_none()
         && (utils::is_vanilla_extract_file(filename)
             || (option.import_aliases.contains_key("@vanilla-extract/css")
                 && ordinary_ve::is_module(filename, code)))
@@ -656,7 +664,7 @@ fn extract_source(
         return Err(located_errors(filename, source, &edits, errors).into());
     }
     let validated_scoping = semantic.map(|result| std::rc::Rc::new(result.semantic.into_scoping()));
-    let inlined = if processed_code.is_none() {
+    let mut inlined = if processed_code.is_none() {
         imported_constants::inline_constants(
             &oxc_ast::builder::AstBuilder::new(&allocator),
             &mut program,
@@ -668,7 +676,16 @@ fn extract_source(
     } else {
         imported_constants::Inlined::default()
     };
+    if let Some(prepared) = readback {
+        inlined
+            .dependencies
+            .extend(prepared.imports.dependencies.iter().cloned());
+        inlined.atoms.merge(prepared.imports.atoms.clone());
+        inlined.references.merge(prepared.references.clone());
+    }
     dependencies.extend(inlined.dependencies);
+    producer_atoms.merge(inlined.atoms);
+    producer_references.merge(inlined.references);
     let mut visitor = DevupVisitor::new(
         &allocator,
         filename,
@@ -740,6 +757,7 @@ fn extract_source(
                 source,
                 edits: &layers,
                 native,
+                readback,
             }),
             true,
             option,
