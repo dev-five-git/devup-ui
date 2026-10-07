@@ -178,7 +178,6 @@ fn metadata_guards_stay_lazy_when_an_ordinary_value_needs_fallback() {
 }
 
 #[rstest]
-#[serial]
 #[case(
     "function make(n){return n+'px'};const a=css({w:make(2)});",
     "width",
@@ -203,6 +202,7 @@ fn metadata_guards_stay_lazy_when_an_ordinary_value_needs_fallback() {
     "2px",
     None
 )]
+#[serial]
 fn computable_values_keep_boa_fallback_when_static_extraction_needs_evaluation(
     #[case] body: &str,
     #[case] property: &str,
