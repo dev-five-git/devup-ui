@@ -6,6 +6,10 @@ use crate::{
     utils::{expression_to_code, unwrap_syntax_only},
 };
 
+#[cfg(test)]
+#[path = "typography_projection_boundary_tests.rs"]
+mod boundary_tests;
+
 pub(super) fn base_only(style: &ExtractStyleProp<'_>) -> bool {
     match style {
         ExtractStyleProp::Static(ExtractStyleValue::Typography(_)) => true,

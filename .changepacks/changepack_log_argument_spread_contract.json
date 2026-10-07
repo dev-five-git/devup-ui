@@ -1,0 +1,7 @@
+{
+  "changes": {
+    "bindings/devup-ui-wasm/package.json": "Patch"
+  },
+  "note": "Keep JavaScript argument-spread semantics in css() and styled(): compose supported literal arrays statically, and reject strings, other iterables and unknown spreads with a located composition error instructing users to pass the value itself instead. No iterators execute at build time or at styling runtime. Preserve optional producer coordinates and checked prelude offsets for located collision diagnostics.",
+  "date": "2026-10-07T00:00:00.000Z"
+}

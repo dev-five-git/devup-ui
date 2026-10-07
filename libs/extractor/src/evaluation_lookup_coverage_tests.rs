@@ -1,4 +1,4 @@
-use super::{CopiedSource, EvaluationLookup, StrippedSource, byte_offset};
+use super::{CopiedSource, EvaluationLookup, StrippedSource, copied_body_offset};
 use boa_engine::{Context, JsValue, NativeFunction, Source, js_string};
 use css::style_origin::{RealLocation, StyleOrigin};
 use rstest::rstest;
@@ -131,7 +131,34 @@ fn end_columns_map_utf16_units_to_exact_byte_offsets(
     #[case] expected: Option<usize>,
 ) {
     // Given / When
-    let actual = byte_offset(coordinate.0, coordinate.1, coordinate.2);
+    let actual = copied_body_offset(coordinate.0, Some((coordinate.1, coordinate.2)), 0);
+    // Then
+    assert_eq!(actual, expected);
+}
+
+#[rstest]
+#[case(("a", None, 0), None)]
+#[case(("a", Some((1, 1)), 0), Some(0))]
+#[case(("a", Some((1, 1)), 1), None)]
+#[case(("a", Some((1, 2)), 1), Some(0))]
+#[case(("a", Some((1, 2)), 2), None)]
+#[case(("a", Some((1, 3)), 0), None)]
+#[case(("a", Some((0, 1)), 0), None)]
+#[case(("a", Some((1, 0)), 0), None)]
+#[case(("a", Some((2, 1)), 0), None)]
+#[case(("😀", Some((1, 2)), 0), None)]
+#[case(("😀", Some((1, 3)), 0), Some(4))]
+#[case(("a\n😀b", Some((2, 1)), 2), Some(0))]
+#[case(("a\n😀b", Some((2, 3)), 2), Some(4))]
+#[case(("a\n😀b", Some((2, 4)), 2), Some(5))]
+#[case(("", Some((1, 1)), 0), None)]
+#[case(("a\n", Some((2, 1)), 0), None)]
+fn hard_copied_body_coordinates_preserve_absence_and_prefix_boundaries(
+    #[case] input: (&str, Option<(u32, u32)>, usize),
+    #[case] expected: Option<usize>,
+) {
+    // Given / When
+    let actual = copied_body_offset(input.0, input.1, input.2);
     // Then
     assert_eq!(actual, expected);
 }

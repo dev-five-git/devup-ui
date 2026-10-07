@@ -5,6 +5,7 @@ mod naming;
 mod normalization;
 mod operands;
 mod origins;
+mod residual_operands;
 
 use oxc_allocator::{Allocator, CloneIn};
 use oxc_ast::ast::{Expression, Statement};
@@ -34,3 +35,14 @@ pub(crate) fn code(expression: &Expression<'_>) -> String {
         .trim_end_matches(';')
         .to_string()
 }
+
+#[test]
+#[should_panic(expected = "expression fixture")]
+fn residual_expression_fixture_rejects_valid_declaration_statement() {
+    // Given: valid TS, but not the expression-statement fixture contract.
+    let allocator = Allocator::default();
+    // When / Then: the helper intentionally rejects the statement shape.
+    expression(&allocator, "let value = 1;");
+}
+
+mod spread_alignment;

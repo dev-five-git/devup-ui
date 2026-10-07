@@ -4487,7 +4487,7 @@ import clsx from 'clsx'
             extract(
                 "test.tsx",
                 r#"import { css } from "@devup-ui/core";
-<Box className={css(...{bg: "red"})}/>;
+<Box className={css(...[{bg: "red"}])}/>;
 "#,
                 ExtractOption {
                     package: "@devup-ui/core".to_string(),
@@ -4506,7 +4506,7 @@ import clsx from 'clsx'
             extract(
                 "test.tsx",
                 r#"import { css } from "@devup-ui/core";
-<Box className={css(...{})}/>;
+<Box className={css(...[{}])}/>;
 "#,
                 ExtractOption {
                     package: "@devup-ui/core".to_string(),
@@ -4525,7 +4525,7 @@ import clsx from 'clsx'
             extract(
                 "test.tsx",
                 r#"import { css } from "@devup-ui/core";
-<Box className={css(...{...{bg: "red"}})}/>;
+<Box className={css(...[{...{bg: "red"}}])}/>;
 "#,
                 ExtractOption {
                     package: "@devup-ui/core".to_string(),
@@ -19156,7 +19156,7 @@ export const f = (rest, handler, k) => <Box {...rest} {...{ p: 1, onClick: handl
 export const g = (theme, key) => <Box bg={theme.colors[key]} color={{ a: 'red', ...theme.more }['b']} />;
 export const h = (Base) => styled.div(Base);
 export const i = keyframes({ from: { opacity: 0 } } as const);
-export const j = css(...{ bg: 'red' });",
+export const j = css(...[{ bg: 'red' }]);",
                 ExtractOption::default(),
             )
             .unwrap()
@@ -20569,7 +20569,7 @@ export const K = styled.div(base, cond && { color: 'blue' }, { margin: 1 });",
             ),
             (
                 "import { css } from '@devup-ui/react';\ncss({ color: 'red' }, ...rest);",
-                "Cannot compose `{ color: \"red\" }, ...rest` at build time: each style must be a rule object, a class, or a condition choosing between them",
+                "Cannot compose `{ color: \"red\" }, ...rest` at build time: each style must be a rule object, a class, or a condition choosing between them; pass the value itself instead of spreading it",
             ),
             (
                 "import { styled } from '@devup-ui/react';\nstyled.div({ color: 'red' }, getStyles());",

@@ -143,13 +143,13 @@ impl EvaluationLookup {
             if path.as_ref() != Path::new(&self.file) {
                 continue;
             }
-            let Some(position) = frame.position else {
-                continue;
-            };
-            let Some(offset) =
-                byte_offset(&self.run, position.line_number(), position.column_number())
-                    .and_then(|offset| offset.checked_sub(self.prefix))
-            else {
+            let Some(offset) = copied_body_offset(
+                &self.run,
+                frame
+                    .position
+                    .map(|position| (position.line_number(), position.column_number())),
+                self.prefix,
+            ) else {
                 continue;
             };
             let Some(copy) = self
@@ -177,7 +177,12 @@ impl EvaluationLookup {
     }
 }
 
-fn byte_offset(source: &str, line: u32, column: u32) -> Option<usize> {
+fn copied_body_offset(
+    source: &str,
+    coordinate: Option<(u32, u32)>,
+    prefix: usize,
+) -> Option<usize> {
+    let (line, column) = coordinate?;
     let row = usize::try_from(line.checked_sub(1)?).ok()?;
     let mut start = 0;
     let text = source
@@ -194,10 +199,10 @@ fn byte_offset(source: &str, line: u32, column: u32) -> Option<usize> {
     let mut units = column.checked_sub(1)?;
     for character in text.chars() {
         if units == 0 {
-            return Some(start);
+            return start.checked_sub(prefix);
         }
         units = units.checked_sub(u32::try_from(character.len_utf16()).ok()?)?;
         start += character.len_utf8();
     }
-    (units == 0).then_some(start)
+    (units == 0).then_some(start)?.checked_sub(prefix)
 }

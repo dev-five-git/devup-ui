@@ -305,10 +305,9 @@ pub fn extract_style_from_styled<'a>(
         // or styled("div", { bg: "red" })
 
         // Retain authored fields before extraction rewrites conditional/member values.
-        let creation_source = match &call.arguments[style_index] {
-            Argument::SpreadElement(spread) => spread.argument.clone_in(ast_builder.allocator()),
-            argument => argument.to_expression().clone_in(ast_builder.allocator()),
-        };
+        let creation_source = call.arguments[style_index]
+            .to_expression()
+            .clone_in(ast_builder.allocator());
         // Extract styles from object expression
         let ExtractResult {
             mut styles,
@@ -319,11 +318,7 @@ pub fn extract_style_from_styled<'a>(
         } = extract_style_from_expression(
             ast_builder,
             None,
-            if let Argument::SpreadElement(spread) = &mut call.arguments[style_index] {
-                &mut spread.argument
-            } else {
-                call.arguments[style_index].to_expression_mut()
-            },
+            call.arguments[style_index].to_expression_mut(),
             0,
             &None,
             LiteralHandling::ExpandResponsiveThemeToken,

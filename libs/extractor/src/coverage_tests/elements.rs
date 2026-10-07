@@ -4,6 +4,116 @@ use rstest::rstest;
 use serial_test::serial;
 
 #[rstest]
+#[case("styled.div")]
+#[case("css")]
+#[serial]
+fn hard_string_spread_reports_the_authored_call(#[case] factory: &str) {
+    // Given
+    let source = format!(
+        "import {{styled,css}} from '@devup-ui/react';\nexport const A = {factory}(...'color:red;');"
+    );
+    let offset = source
+        .find(&format!("{factory}(..."))
+        .unwrap_or_else(|| panic!("authored call"));
+    let before = &source[..offset];
+    let line = before.bytes().filter(|byte| *byte == b'\n').count() + 1;
+    let column = before
+        .rsplit('\n')
+        .next()
+        .unwrap_or_else(|| panic!("authored line"))
+        .len()
+        + 1;
+    css::class_map::reset_class_map();
+    css::file_map::reset_file_map();
+    // When
+    let Err(actual) = crate::extract("spread.tsx", &source, crate::ExtractOption::default()) else {
+        panic!("string iteration is not static style composition");
+    };
+    // Then
+    assert_eq!(
+        actual.to_string(),
+        format!(
+            "spread.tsx:{line}:{column}: Cannot compose `...\"color:red;\"` at build time: each style must be a rule object, a class, or a condition choosing between them; pass the value itself instead of spreading it"
+        )
+    );
+}
+
+#[rstest]
+#[case("styled.div", "{[Symbol.iterator]: function*(){yield {color:'red'}}}")]
+#[case("css", "{[Symbol.iterator]: function*(){yield {color:'red'}}}")]
+#[case("styled.div", "globalThis.styles")]
+#[case("css", "globalThis.styles")]
+#[serial]
+fn hard_unsupported_spread_reports_the_authored_call(#[case] factory: &str, #[case] operand: &str) {
+    // Given: a valid iterator or a value whose iterable contents are unknown.
+    let source = format!(
+        "import {{styled,css}} from '@devup-ui/react';\nexport const A = {factory}(...{operand});"
+    );
+    let offset = source
+        .find(&format!("{factory}(..."))
+        .unwrap_or_else(|| panic!("authored call"));
+    let before = &source[..offset];
+    let line = before.bytes().filter(|byte| *byte == b'\n').count() + 1;
+    let column = before
+        .rsplit('\n')
+        .next()
+        .unwrap_or_else(|| panic!("authored line"))
+        .chars()
+        .count()
+        + 1;
+    let allocator = oxc_allocator::Allocator::default();
+    let expression = oxc_parser::Parser::new(&allocator, operand, oxc_span::SourceType::ts())
+        .parse_expression()
+        .unwrap_or_else(|error| panic!("valid spread operand: {error:?}"));
+    let code = crate::utils::readable_code(&expression);
+    css::class_map::reset_class_map();
+    css::file_map::reset_file_map();
+    // When
+    let Err(actual) = crate::extract("spread.tsx", &source, crate::ExtractOption::default()) else {
+        panic!("unsupported argument spread must not execute its iterator");
+    };
+    // Then: the call, rather than its computed iterator key, owns the diagnostic.
+    assert_eq!(
+        actual.to_string(),
+        format!(
+            "spread.tsx:{line}:{column}: Cannot compose `...{code}` at build time: each style must be a rule object, a class, or a condition choosing between them; pass the value itself instead of spreading it"
+        )
+    );
+}
+
+#[test]
+#[serial]
+fn hard_array_css_spread_selects_the_later_literal_rule() {
+    // Given
+    let source = "import {css}from '@devup-ui/react';const node={className:css(...[{color:'blue'},{color:'red'}])};";
+    // When
+    let actual = selected(source, "JSON.stringify(assigned(node));");
+    // Then
+    assert_eq!(actual, "[\"color:red:0\"]");
+}
+
+#[rstest]
+#[case("styled.div")]
+#[case("styled('div')")]
+#[serial]
+fn hard_array_styled_spread_reads_its_getter_at_creation_only(#[case] factory: &str) {
+    // Given
+    let source = format!(
+        "import {{styled}}from '@devup-ui/react';let reads=0;Object.defineProperty(globalThis,'color',{{get(){{reads++;return 'red'}}}});const A={factory}(...[{{color:globalThis.color}}]);const created=reads;const first=A({{}}),second=A({{}});"
+    );
+    // When
+    let actual = selected(
+        &source,
+        "JSON.stringify([created,reads,first.className===second.className,Object.values(first.style),Object.values(second.style),assigned(first),assigned(second)]);",
+    );
+    // Then
+    assert_eq!(
+        actual,
+        "[1,1,true,[\"red\"],[\"red\"],[\"color:red:0\"],[\"color:red:0\"]]"
+    );
+}
+
+#[rstest]
 #[case(
     "<Box className={state.enabled&&'p-4'}/>",
     true,

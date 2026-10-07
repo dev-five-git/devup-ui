@@ -23,6 +23,10 @@ use std::borrow::Cow;
 #[path = "prop_coverage_tests.rs"]
 mod coverage_tests;
 
+#[cfg(test)]
+#[path = "tailwind_logical_ir_tests.rs"]
+mod tailwind_logical_ir_tests;
+
 /// Combine two optional className expressions into a conditional expression.
 /// `condition ? con_expr : alt_expr`, falling back to `""` for the missing branch.
 /// Returns `None` only when both branches are `None`.

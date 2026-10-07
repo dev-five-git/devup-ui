@@ -750,10 +750,7 @@ pub(super) fn reads_directly(arguments: &[Argument<'_>]) -> bool {
     let [argument] = arguments else {
         return false;
     };
-    let expression = match argument {
-        Argument::SpreadElement(spread) => Some(&spread.argument),
-        argument => argument.as_expression(),
-    };
+    let expression = argument.as_expression();
     match expression.map(unwrap_syntax_only) {
         Some(
             Expression::ObjectExpression(_)
@@ -1015,9 +1012,17 @@ pub(super) fn unplaced_error(expression: &Expression<'_>) -> String {
 }
 
 pub(super) fn uncomposable_error(arguments: &[Argument<'_>]) -> String {
+    let fix = if arguments
+        .iter()
+        .any(|argument| matches!(argument, Argument::SpreadElement(_)))
+    {
+        "; pass the value itself instead of spreading it"
+    } else {
+        ""
+    };
     let arguments: Vec<String> = arguments.iter().map(readable_argument).collect();
     format!(
-        "Cannot compose `{}` at build time: each style must be a rule object, a class, or a condition choosing between them",
+        "Cannot compose `{}` at build time: each style must be a rule object, a class, or a condition choosing between them{fix}",
         arguments.join(", ")
     )
 }
