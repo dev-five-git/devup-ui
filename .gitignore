@@ -26,3 +26,4 @@ playwright-report
 /.changepacks/publish.tgz
 benchmark-run.json
 wasm-size.json
+release-results.json
