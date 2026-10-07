@@ -1,35 +1,65 @@
-import { existsSync } from 'node:fs'
-import { createRequire } from 'node:module'
-import { isAbsolute, join, relative } from 'node:path'
+import { statSync } from 'node:fs'
 
-import type { ResolutionInputCollector } from './resolution-inputs'
-import { resolutionWatchPath } from './resolution-watch-path'
+import { isRecord, parseJsonc } from './jsonc'
+import { ConfigLoadError } from './load-config'
+import {
+  readResolutionFile,
+  recordResolutionFailure,
+  type ResolutionInputCollector,
+} from './resolution-inputs'
 
-interface PackagedConfigLookup {
-  readonly request: string
-  readonly importer: string
-  readonly resolved: string | undefined
+export function isResolutionFile(
+  path: string,
+  inputs?: ResolutionInputCollector,
+): boolean {
+  try {
+    const file = statSync(path).isFile()
+    if (file) inputs?.file(path)
+    return file
+  } catch (cause) {
+    recordResolutionFailure(path, cause, inputs)
+    if (
+      cause instanceof Error &&
+      'code' in cause &&
+      (cause.code === 'ENOENT' || cause.code === 'ENOTDIR')
+    )
+      return false
+    throw cause
+  }
 }
 
-export function recordPackagedConfigInputs(
-  lookup: PackagedConfigLookup,
+export function readPackageManifest(
+  file: string,
+  purpose: 'module' | 'tsconfig-extends',
   inputs?: ResolutionInputCollector,
-): void {
-  if (!inputs) return
-  const { request, importer, resolved } = lookup
-  const require = createRequire(importer)
-  const name = request
-    .split('/')
-    .slice(0, request.startsWith('@') ? 2 : 1)
-    .join('/')
-  for (const directory of require.resolve.paths(request) ?? []) {
-    const candidate = join(directory, name)
-    const exists = existsSync(candidate)
-    inputs.probe(candidate, exists)
-    if (exists && resolved) {
-      const canonical = resolutionWatchPath(candidate)
-      const subpath = relative(canonical, resolved)
-      if (!subpath.startsWith('..') && !isAbsolute(subpath)) break
-    }
+): Record<string, unknown> {
+  // TypeScript 6.0.3 lib/typescript.js:21164-21184 reads JSON/JSONC, parse misses => {}.
+  // The @typescript/typescript6 6.0.2 wrapper reexports this installed compiler.
+  switch (purpose) {
+    case 'module':
+      try {
+        const manifest: unknown = JSON.parse(readResolutionFile(file, inputs))
+        if (!isRecord(manifest))
+          throw new TypeError('Expected a package manifest object')
+        return manifest
+      } catch (cause) {
+        throw new ConfigLoadError(file, cause)
+      }
+    case 'tsconfig-extends':
+      if (!isResolutionFile(file, inputs)) return {}
+      try {
+        const source = readResolutionFile(file, inputs)
+        let manifest: unknown
+        try {
+          manifest = JSON.parse(source)
+        } catch (cause) {
+          if (!(cause instanceof SyntaxError)) throw cause
+          manifest = parseJsonc(source, true)
+        }
+        return isRecord(manifest) ? manifest : {}
+      } catch (cause) {
+        if (cause instanceof SyntaxError) return {}
+        throw cause
+      }
   }
 }

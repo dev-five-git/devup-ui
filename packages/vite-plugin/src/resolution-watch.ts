@@ -1,4 +1,4 @@
-import { dirname } from 'node:path'
+import { basename, dirname } from 'node:path'
 
 import type { ViteDevServer } from 'vite'
 
@@ -38,7 +38,11 @@ export function createMissingInputWatch() {
     },
     observe(importer: string, path: string, environment: object) {
       missingByEnvironment.get(environment)?.get(importer)?.add(path)
-      server?.watcher.add(dirname(path))
+      // Scope manifests can be probed up to the drive root; never enroll that tree.
+      // Competing source candidates retain their established directory transport.
+      server?.watcher.add(
+        basename(path) === 'package.json' ? path : dirname(path),
+      )
     },
     close() {
       server?.watcher

@@ -122,23 +122,30 @@ it('freezes deterministic snapshots without redoing successful resolution IO', (
   }
 })
 
-it.each(['main', 'fallback', 'json'])(
+it.each(['main', 'fallback', 'json', 'exports', 'direct'])(
   'records actual loaded packaged config chain when using %s resolution',
   (mode) => {
     // Given a package-config extension found below an absent nearer node_modules directory.
-    const config = file('src/tsconfig.json', '{"extends":"preset"}')
+    const config = file(
+      'src/tsconfig.json',
+      JSON.stringify({
+        extends: mode === 'direct' ? 'preset/base.json' : 'preset',
+      }),
+    )
     const manifest = file(
       'node_modules/preset/package.json',
       mode === 'main'
         ? '{"main":"index.js","tsconfig":"base.json"}'
-        : mode === 'json'
-          ? '{"main":"base.json"}'
-          : '{}',
+        : mode === 'exports'
+          ? '{"exports":"./base.json"}'
+          : mode === 'json'
+            ? '{"main":"base.json"}'
+            : '{}',
     )
     if (mode === 'main')
       file('node_modules/preset/index.js', 'module.exports={}')
     const base = file(
-      `node_modules/preset/${mode === 'fallback' ? 'tsconfig.json' : 'base.json'}`,
+      `node_modules/preset/${mode === 'fallback' || mode === 'json' ? 'tsconfig.json' : 'base.json'}`,
       '{}',
     )
     const observations: unknown[] = []
@@ -149,13 +156,14 @@ it.each(['main', 'fallback', 'json'])(
       onResolutionInputs: (inputs) => observations.push(inputs),
     })
     // Then only owned reads and public-search missing directories are recorded.
-    expect(observations).toContainEqual({
-      fileDependencies: (mode === 'main'
-        ? [config, manifest, base]
-        : [config, base]
-      ).sort(),
-      missingDependencies: [join(root, 'src/node_modules/preset')],
-    })
+    expect(observations).toContainEqual(
+      expect.objectContaining({
+        fileDependencies: [config, manifest, base].sort(),
+        missingDependencies: expect.arrayContaining([
+          join(root, 'src/node_modules/preset/package.json'),
+        ]),
+      }),
+    )
   },
 )
 

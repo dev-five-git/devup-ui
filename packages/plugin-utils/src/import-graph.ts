@@ -3,7 +3,6 @@ import {
   readdirSync,
   readFileSync,
   realpathSync,
-  statSync,
   writeFileSync,
 } from 'node:fs'
 import { createRequire } from 'node:module'
@@ -20,13 +19,11 @@ import {
   type ImportRequestReference,
   scanImportRequests,
 } from './import-scanner'
-import { ConfigLoadError } from './load-config'
 import { remapMdxError } from './mdx-errors'
-import {
-  type AliasResolution,
-  ModuleAliasPackageError,
-  resolveModuleAlias,
-} from './module-alias'
+import { type AliasResolution, resolveModuleAlias } from './module-alias'
+import { resolveFile } from './owned-file-resolution'
+import { findPackage, resolvePackage } from './owned-module-resolution'
+import { isResolutionFile as isFile } from './packaged-config-inputs'
 import { preparedDiagnostics } from './prepared-diagnostics'
 import {
   createPreparedResolver,
@@ -35,16 +32,9 @@ import {
 import { PreparedSourceTypeError, readPreparedSource } from './prepared-source'
 import {
   createResolutionInputs,
-  readResolutionFile,
-  realpathResolution,
-  type ResolutionInputCollector,
   type ResolutionInputObserver,
 } from './resolution-inputs'
-import {
-  createNodeModulesExcludeRegex,
-  SOURCE_EXTENSIONS,
-  SOURCE_FILE_RE,
-} from './shared'
+import { createNodeModulesExcludeRegex, SOURCE_FILE_RE } from './shared'
 import {
   isSelectedSource,
   type MdxSelection,
@@ -95,7 +85,6 @@ interface ResolveContext {
   srcDir: string
 }
 
-const jsExtensions: readonly string[] = SOURCE_EXTENSIONS
 const testFileRegex = /\.(?:test|spec)\.[mc]?[jt]sx?$/i
 const routeFileRegex =
   /(^|\/)(page|layout|template|default|loading|error|not-found|global-error)\.[^./]+$/
@@ -1198,149 +1187,6 @@ function createModulePathResolver(
   }
 }
 
-function resolvePackage(
-  specifier: string,
-  importer: string,
-  options: {
-    readonly conditions: readonly string[]
-    readonly fileResolver: (path: string) => string | false | undefined
-    readonly excludedDirectory: (directory: string) => boolean
-    readonly aliased: boolean
-    readonly inputs?: ResolutionInputCollector
-  },
-): string | false | undefined {
-  const parts = specifier.split('/')
-  const nameLength = specifier.startsWith('@') ? 2 : 1
-  const name = parts.slice(0, nameLength).join('/')
-  const packageDir = findPackage(
-    dirname(importer),
-    name,
-    options.excludedDirectory,
-    options.inputs,
-  )
-  if (packageDir === false) return false
-  if (!packageDir) return undefined
-  const target = join(packageDir, ...parts.slice(nameLength))
-  if (
-    options.excludedDirectory(dirname(target)) ||
-    options.excludedDirectory(target)
-  )
-    return false
-  const manifestFile = join(packageDir, 'package.json')
-  const manifest = readPackageManifest(manifestFile, options.inputs)
-  const found = resolvePackageEntry(
-    packageDir,
-    manifest,
-    ['.', ...parts.slice(nameLength)].join('/'),
-    options.conditions,
-    options.fileResolver,
-  )
-  if (found === undefined && options.aliased && manifest.exports !== undefined)
-    throw new ModuleAliasPackageError(importer, specifier)
-  return found ? realpathResolution(found, options.inputs) : found
-}
-
-function readPackageManifest(
-  file: string,
-  inputs?: ResolutionInputCollector,
-): Record<string, unknown> {
-  try {
-    const manifest: unknown = JSON.parse(readResolutionFile(file, inputs))
-    if (!isRecord(manifest) || Array.isArray(manifest))
-      throw new TypeError('Expected a package manifest object')
-    return manifest
-  } catch (cause) {
-    throw new ConfigLoadError(file, cause)
-  }
-}
-
-function findPackage(
-  dir: string,
-  name: string,
-  excludedDirectory?: (directory: string) => boolean,
-  inputs?: ResolutionInputCollector,
-): string | false | undefined {
-  const packageDir = join(dir, 'node_modules', name)
-  if (excludedDirectory?.(packageDir)) return false
-  if (isFile(join(packageDir, 'package.json'), inputs)) return packageDir
-  const parent = dirname(dir)
-  return parent === dir
-    ? undefined
-    : findPackage(parent, name, excludedDirectory, inputs)
-}
-function resolvePackageEntry(
-  dir: string,
-  manifest: Record<string, unknown>,
-  subpath: string,
-  conditions: readonly string[],
-  fileResolver: (path: string) => string | false | undefined,
-): string | false | undefined {
-  if (manifest.exports !== undefined) {
-    const target = exportsTarget(manifest.exports, subpath, conditions)
-    return typeof target !== 'string'
-      ? undefined
-      : fileResolver(join(dir, target))
-  }
-  if (subpath !== '.') return fileResolver(join(dir, subpath))
-  const main = [manifest.module, manifest.main].find(
-    (entry): entry is string => typeof entry === 'string',
-  )
-  return fileResolver(join(dir, main ?? 'index'))
-}
-
-function exportsTarget(
-  exports: unknown,
-  subpath: string,
-  conditions: readonly string[],
-): string | null | undefined {
-  const subpaths =
-    isRecord(exports) && !Array.isArray(exports)
-      ? Object.keys(exports).filter((key) => key.startsWith('.'))
-      : []
-  if (subpaths.length === 0) {
-    return subpath === '.' ? conditionTarget(exports, conditions) : undefined
-  }
-  const map = exports as Record<string, unknown>
-  if (subpath in map) return conditionTarget(map[subpath], conditions)
-  for (const key of subpaths) {
-    const [prefix, suffix = ''] = key.split('*')
-    if (
-      key.includes('*') &&
-      subpath.startsWith(prefix) &&
-      subpath.endsWith(suffix) &&
-      subpath.length >= prefix.length + suffix.length
-    ) {
-      const matched = subpath.slice(
-        prefix.length,
-        subpath.length - suffix.length,
-      )
-      return conditionTarget(map[key], conditions)?.replaceAll('*', matched)
-    }
-  }
-  return undefined
-}
-
-function conditionTarget(
-  value: unknown,
-  conditions: readonly string[],
-): string | null | undefined {
-  if (typeof value === 'string') return value
-  if (value === null) return null
-  if (Array.isArray(value)) {
-    for (const entry of value) {
-      const target = conditionTarget(entry, conditions)
-      if (target !== undefined) return target
-    }
-    return undefined
-  }
-  if (!isRecord(value)) return undefined
-  for (const [condition, branch] of Object.entries(value)) {
-    if (condition !== 'default' && !conditions.includes(condition)) continue
-    const target = conditionTarget(branch, conditions)
-    if (target !== undefined) return target
-  }
-  return undefined
-}
 function resolveAliasCandidates(
   specifier: string,
   context: Pick<ResolveContext, 'aliases' | 'aliasBaseDir'>,
@@ -1367,77 +1213,6 @@ function resolveAliasCandidates(
     break
   }
   return candidates
-}
-
-function resolveFile(
-  candidateBase: string,
-  options: {
-    readonly extensions: readonly string[]
-    readonly excludedDirectory: (directory: string) => boolean
-    readonly inputs?: ResolutionInputCollector
-  } = {
-    extensions: jsExtensions,
-    excludedDirectory: createDirectoryExclusion(),
-  },
-  stack: readonly string[] = [],
-): string | false | undefined {
-  if (
-    options.excludedDirectory(dirname(candidateBase)) ||
-    options.excludedDirectory(candidateBase)
-  )
-    return false
-  if (isFile(candidateBase, options.inputs)) return resolve(candidateBase)
-
-  for (const jsExtension of options.extensions) {
-    const candidate = `${candidateBase}${jsExtension}`
-    if (isFile(candidate, options.inputs)) return resolve(candidate)
-  }
-  const manifestFile = join(candidateBase, 'package.json')
-  if (isFile(manifestFile, options.inputs)) {
-    const canonical = realpathResolution(candidateBase, options.inputs)
-    if (stack.includes(canonical))
-      throw new ConfigLoadError(
-        manifestFile,
-        new Error(
-          `Package directory entry cycle: ${[...stack, canonical].join(' -> ')}`,
-        ),
-      )
-    const manifest = readPackageManifest(manifestFile, options.inputs)
-    for (const main of [manifest.module, manifest.main]) {
-      if (typeof main !== 'string' || !main || main === '.' || main === './')
-        continue
-      const found = resolveFile(join(candidateBase, main), options, [
-        ...stack,
-        canonical,
-      ])
-      if (found !== undefined) return found
-    }
-  }
-  for (const jsExtension of options.extensions) {
-    const candidate = join(candidateBase, `index${jsExtension}`)
-    if (isFile(candidate, options.inputs)) return resolve(candidate)
-  }
-
-  return undefined
-}
-
-function isFile(path: string, inputs?: ResolutionInputCollector): boolean {
-  try {
-    const file = statSync(path).isFile()
-    if (file) inputs?.file(path)
-    return file
-  } catch (cause) {
-    if (
-      cause instanceof Error &&
-      'code' in cause &&
-      (cause.code === 'ENOENT' || cause.code === 'ENOTDIR')
-    ) {
-      inputs?.missing(path)
-      return false
-    }
-    inputs?.file(path)
-    throw cause
-  }
 }
 
 function isInsideDir(dir: string, file: string): boolean {
