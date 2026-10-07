@@ -191,7 +191,11 @@ impl<'a> DevupVisitor<'a> {
                             order.as_name = Some(as_name);
                         }
                         Role::Moved if !merged => {
-                            self.capture_shape(value, &mut captured);
+                            if order_value {
+                                self.capture_order_shape(value, &mut captured);
+                            } else {
+                                self.capture_shape(value, &mut captured);
+                            }
                         }
                         Role::Moved if class_name => {
                             self.capture_class_name(value, &mut captured, style_order);

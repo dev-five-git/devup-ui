@@ -79,7 +79,7 @@ fn changed_top_level_binding_is_reported_but_a_local_of_the_same_name_is_not() {
         shadowed
             .as_ref()
             .is_ok_and(|code| code.contains("export const real = \"a-a\"")
-                && code.contains("<div {...__devupSpread0} className=")
+                && code.contains("<div {...(({ \"styleOrder\": __devupOrder, \"style-order\": __devupKebabOrder, ...__devupProps }) => __devupProps)({ __proto__: null, ...__devupSpread0 })} className=")
                 && code.contains("...base")),
         "{shadowed:?}"
     );

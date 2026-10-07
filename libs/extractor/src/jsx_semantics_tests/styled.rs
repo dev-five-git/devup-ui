@@ -36,7 +36,9 @@ fn an_explicit_style_after_a_spread_compiles_into_the_component() {
         output.code
     );
     assert!(
-        output.code.contains("<Card {...__devupSpread"),
+        output.code.split_whitespace().collect::<Vec<_>>().join(" ").contains(
+            "<Card {...(({ \"styleOrder\": __devupOrder, \"style-order\": __devupKebabOrder, ...__devupProps }) => __devupProps)({ __proto__: null, ...__devupSpread0 })} className="
+        ),
         "{}",
         output.code
     );

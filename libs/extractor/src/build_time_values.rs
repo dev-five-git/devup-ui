@@ -510,7 +510,14 @@ impl<'s, 'a> Finder<'s, 'a> {
                             {
                                 self.values(key, None);
                             }
-                            let key = property.key.static_name();
+                            let key = property
+                                .key
+                                .static_name()
+                                .or_else(|| crate::utils::get_str_by_property_key(&property.key));
+                            if key.as_deref().is_some_and(crate::style_order::reserved) {
+                                self.order_values(&property.value);
+                                continue;
+                            }
                             self.values(
                                 &property.value,
                                 key.as_deref().filter(|_| property.shorthand),
@@ -540,6 +547,7 @@ impl<'s, 'a> Finder<'s, 'a> {
             | Expression::BooleanLiteral(_)
             | Expression::ArrowFunctionExpression(_)
             | Expression::FunctionExpression(_) => {}
+            Expression::TemplateLiteral(template) if self.metadata_template(template) => {}
             inner if get_string_by_literal_expression(inner).is_some() => {}
             inner => {
                 if self.candidate(expression, shorthand, false) {
@@ -560,6 +568,38 @@ impl<'s, 'a> Finder<'s, 'a> {
                 }
             }
         }
+    }
+
+    fn order_values(&mut self, expression: &Expression<'a>) {
+        match unwrap_syntax_only(expression) {
+            Expression::ConditionalExpression(conditional) => {
+                self.values(&conditional.test, None);
+                self.order_values(&conditional.consequent);
+                self.order_values(&conditional.alternate);
+            }
+            Expression::LogicalExpression(logical) if logical.operator == LogicalOperator::And => {
+                self.values(&logical.left, None);
+                self.order_values(&logical.right);
+            }
+            _ => self.values(expression, None),
+        }
+    }
+
+    fn metadata_template(&mut self, template: &oxc_ast::ast::TemplateLiteral<'a>) -> bool {
+        let allocator = Allocator::default();
+        let ast = oxc_ast::builder::AstBuilder::new(&allocator);
+        let metadata = crate::imported_constants::order_metadata::holes(&ast, template);
+        if metadata.is_empty() {
+            return false;
+        }
+        for expression in &template.expressions {
+            if metadata.contains(&expression.span()) {
+                self.order_values(expression);
+            } else {
+                self.values(expression, None);
+            }
+        }
+        true
     }
 
     fn candidate(
@@ -688,7 +728,7 @@ impl<'a> Visit<'a> for Finder<'_, 'a> {
         &mut self,
         tagged: &oxc_ast::ast::TaggedTemplateExpression<'a>,
     ) {
-        if self.is_api(&tagged.tag) {
+        if self.is_api(&tagged.tag) && !self.metadata_template(&tagged.quasi) {
             for expression in &tagged.quasi.expressions {
                 self.values(expression, None);
             }

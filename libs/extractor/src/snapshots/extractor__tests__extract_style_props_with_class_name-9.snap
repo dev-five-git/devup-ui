@@ -21,5 +21,5 @@ ToBTreeSet {
             "buttonS",
         ),
     },
-    code: "import \"@devup-ui/core/devup-ui.css\";\nimport clsx from \"clsx\";\n((__devupSpread0, __devupValue0, __devupBranch0) => <button {...__devupSpread0} className={`${__devupValue0 || \"\"} a ${__devupBranch0[\"0\"] ? {\n\t\"md\": \"typo-buttonM\",\n\t\"sm\": \"typo-buttonS\"\n}[__devupBranch0[\"1\"]?.[\"0\"]] || \"\" : \"\"}`} style={__devupSpread0?.style} />)({\n\t__proto__: null,\n\t...props\n}, clsx(variants[variant], isError && variant === \"default\" && errorClassNames, className), isPrimary ? [true, {\n\tsm: [\"sm\"],\n\tmd: [\"md\"]\n}[size]] : [false]);\n",
+    code: "import \"@devup-ui/core/devup-ui.css\";\nimport clsx from \"clsx\";\n((__devupSpread0, __devupValue0, __devupBranch0) => <button {...(({ \"styleOrder\": __devupOrder, \"style-order\": __devupKebabOrder, ...__devupProps }) => __devupProps)({\n\t__proto__: null,\n\t...__devupSpread0\n})} className={`${__devupValue0 || \"\"} a ${__devupBranch0[\"0\"] ? {\n\t\"md\": \"typo-buttonM\",\n\t\"sm\": \"typo-buttonS\"\n}[__devupBranch0[\"1\"]?.[\"0\"]] || \"\" : \"\"}`} style={__devupSpread0?.style} />)({\n\t__proto__: null,\n\t...props\n}, clsx(variants[variant], isError && variant === \"default\" && errorClassNames, className), isPrimary ? [true, {\n\tsm: [\"sm\"],\n\tmd: [\"md\"]\n}[size]] : [false]);\n",
 }

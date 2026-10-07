@@ -1,15 +1,39 @@
 //! Reserved cascade metadata shared by JSX and declaration objects.
 
 use boa_engine::{Context, JsString, Source};
-use oxc_allocator::{Allocator, CloneIn};
+use oxc_allocator::Allocator;
 use oxc_ast::ast::{Expression, ObjectExpression, ObjectPropertyKind};
-use oxc_span::GetSpan;
-use oxc_syntax::operator::{LogicalOperator, UnaryOperator};
+use oxc_syntax::operator::UnaryOperator;
 
 use crate::ExtractStyleProp;
-use crate::utils::{build_time_error, expression_to_code, readable_code, unwrap_syntax_only};
+use crate::utils::{build_time_error, expression_to_code, unwrap_syntax_only};
 
+mod parsing;
 mod rejection;
+pub(crate) use parsing::{OrderError, parse_typed};
+
+#[derive(Clone, Copy)]
+pub(crate) enum MetadataContext {
+    Ordinary,
+    Order,
+}
+
+impl MetadataContext {
+    pub(crate) const fn selected(metadata: bool) -> Self {
+        if metadata {
+            Self::Order
+        } else {
+            Self::Ordinary
+        }
+    }
+
+    pub(crate) const fn preserves_order(self) -> bool {
+        match self {
+            Self::Ordinary => false,
+            Self::Order => true,
+        }
+    }
+}
 
 /// Canonical decimal digits naming a user-addressable layer.
 pub(crate) fn string_order(value: &str) -> Option<u8> {
@@ -150,52 +174,24 @@ pub(crate) fn parse<'a>(
     value: &Expression<'a>,
     allocator: &'a Allocator,
 ) -> Result<Order<'a>, (u32, String)> {
-    match unwrap_syntax_only(value) {
-        Expression::ConditionalExpression(conditional) => {
-            let yes = parse(&conditional.consequent, allocator)?;
-            let no = parse(&conditional.alternate, allocator)?;
-            Ok(match truthiness(&conditional.test) {
-                Some(true) => yes,
-                Some(false) => no,
-                None => Order::Conditional {
-                    test: conditional.test.clone_in(allocator),
-                    yes: Box::new(yes),
-                    no: Box::new(no),
-                },
-            })
-        }
-        Expression::LogicalExpression(logical) if logical.operator == LogicalOperator::And => {
-            let yes = parse(&logical.right, allocator)?;
-            Ok(match truthiness(&logical.left) {
-                Some(true) => yes,
-                Some(false) => Order::Absent,
-                None => Order::Conditional {
-                    test: logical.left.clone_in(allocator),
-                    yes: Box::new(yes),
-                    no: Box::new(Order::Absent),
-                },
-            })
-        }
-        value => static_order(value)
-            .map(Order::Static)
-            .ok_or_else(|| (value.span().start, invalid_order(&readable_code(value)))),
-    }
+    parse_typed(value, allocator).map_err(|error| error.diagnostic)
 }
 
 /// Remove reserved keys before CSS extraction; the last written order controls the object.
 pub(crate) fn take<'a>(
     object: &mut ObjectExpression<'a>,
     allocator: &'a Allocator,
-) -> Option<Result<Order<'a>, (u32, String)>> {
+) -> Option<Result<Order<'a>, OrderError>> {
     let mut order = None;
     object.properties.retain(|property| {
         if let ObjectPropertyKind::ObjectProperty(property) = property
             && property
                 .key
                 .static_name()
+                .or_else(|| crate::utils::get_str_by_property_key(&property.key))
                 .is_some_and(|name| reserved(&name))
         {
-            order = Some(parse(&property.value, allocator));
+            order = Some(parse_typed(&property.value, allocator));
             false
         } else {
             true

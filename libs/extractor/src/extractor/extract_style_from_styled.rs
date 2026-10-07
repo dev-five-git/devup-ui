@@ -350,6 +350,7 @@ pub struct StyledExtraction<'a> {
     pub result: ExtractResult<'a>,
     pub expression: Expression<'a>,
     pub errors: Vec<(u32, String)>,
+    pub error_disposition: crate::ErrorDisposition,
     pub definition: Option<StyledDefinition<'a>>,
 }
 
@@ -692,6 +693,7 @@ pub fn extract_style_from_styled<'a>(
     }
     let mut composed_classes = Vec::new();
     let mut errors = Vec::new();
+    let mut error_disposition = crate::ErrorDisposition::NeedsEvaluation;
     if let Expression::CallExpression(call) = expression
         && prepared.is_none()
         && extract_base_tag_and_class_name(ast_builder, &call.callee, imports).is_some()
@@ -746,7 +748,7 @@ pub fn extract_style_from_styled<'a>(
                 LiteralHandling::ExpandResponsiveThemeToken,
             )
             .styles;
-            crate::style_diagnostics::collect(&own, &mut errors);
+            error_disposition.include(crate::style_diagnostics::collect(&own, &mut errors));
         }
         let defaults = base.styles.take();
         let base = base.extending(ast_builder, inherited);
@@ -858,7 +860,7 @@ pub fn extract_style_from_styled<'a>(
             styles = prepared.styles;
             composed_classes.extend(prepared.classes);
         }
-        crate::style_diagnostics::collect(&styles, &mut errors);
+        error_disposition.include(crate::style_diagnostics::collect(&styles, &mut errors));
         unreadable_styles(&styles, true, &mut unreadable);
         errors.extend(
             unreadable
@@ -932,6 +934,7 @@ pub fn extract_style_from_styled<'a>(
         result: result.unwrap_or_else(ExtractResult::default),
         expression: new_expr.unwrap_or_else(|| expression.clone_in(ast_builder.allocator())),
         errors,
+        error_disposition,
         definition,
     }
 }

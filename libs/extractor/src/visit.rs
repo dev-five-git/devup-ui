@@ -188,6 +188,7 @@ pub struct DevupVisitor<'a> {
     /// Styles the file writes that cannot be extracted at build time, by the
     /// offset of the code each is about
     pub errors: Vec<(u32, String)>,
+    pub(crate) error_disposition: crate::ErrorDisposition,
     /// Pending `StyleX` namespace map from the most recent `stylex.create()` call.
     /// Set in `visit_expression`, consumed in `visit_variable_declarator`.
     stylex_pending_create: Option<FxHashMap<String, StylexNamespaceValue>>,
@@ -196,6 +197,8 @@ pub struct DevupVisitor<'a> {
     stylex_namespaces: FxHashMap<SymbolId, FxHashMap<String, StylexNamespaceValue>>,
     /// What the `<ClassNames>` child functions being compiled take
     class_names_scope: Vec<ClassNamesSymbols>,
+    /// Capture metadata tests without selecting away explicit alternatives.
+    order_metadata_capture: crate::style_order::MetadataContext,
 
     /// `defineVars` and `defineConsts` members of a binding as `key` ->
     /// `"var(--x)"`, so a `stylex.create()` value referencing one resolves to
@@ -781,7 +784,8 @@ impl<'a> DevupVisitor<'a> {
                         &None,
                         LiteralHandling::ExpandResponsiveThemeToken,
                     );
-                    crate::style_diagnostics::collect(&styles, &mut self.errors);
+                    self.error_disposition
+                        .include(crate::style_diagnostics::collect(&styles, &mut self.errors));
                     if let Some(element) = element {
                         let mut unreadable = Vec::new();
                         unreadable_styles(&styles, true, &mut unreadable);
@@ -818,6 +822,7 @@ impl<'a> DevupVisitor<'a> {
         split_filename: Option<String>,
     ) -> Self {
         Self {
+            order_metadata_capture: crate::style_order::MetadataContext::Ordinary,
             source: None,
             ast: AstBuilder::new(allocator),
             filename: filename.to_string(),
@@ -827,6 +832,7 @@ impl<'a> DevupVisitor<'a> {
             css_files,
             styles: FxHashSet::default(),
             errors: Vec::new(),
+            error_disposition: crate::ErrorDisposition::NeedsEvaluation,
             split_filename,
             class_names_scope: Vec::new(),
             stylex_var_refs: FxHashMap::default(),
@@ -2727,6 +2733,7 @@ impl<'a> VisitMut<'a> for DevupVisitor<'a> {
                     result,
                     expression,
                     errors,
+                    error_disposition,
                     mut definition,
                 } = extract_style_from_styled(
                     &self.ast,
@@ -2744,6 +2751,7 @@ impl<'a> VisitMut<'a> for DevupVisitor<'a> {
                     },
                 );
                 self.errors.extend(errors);
+                self.error_disposition.include(error_disposition);
                 self.styles.extend(
                     result
                         .styles
@@ -3353,79 +3361,14 @@ impl<'a> VisitMut<'a> for DevupVisitor<'a> {
                 }
                 let offset = call.span.start;
                 let is_css = matches!(util_type.as_ref(), UtilType::Css);
-                let composed_classes: Vec<Expression<'a>> = vec![];
-                {
-                    if is_css {
-                        self.errors
-                            .push((offset, uncomposable_error(&call.arguments)));
-                        call.arguments.clear();
-                    }
+                if is_css {
+                    self.errors
+                        .push((offset, uncomposable_error(&call.arguments)));
+                    call.arguments.clear();
                 }
                 if call.arguments.len() == 1 {
                     let r = util_type.as_ref();
-                    *it = if matches!(r, UtilType::Css) {
-                        let ExtractResult {
-                            mut styles,
-                            style_order,
-                            ..
-                        } = extract_style_from_expression(
-                            &self.ast,
-                            None,
-                            if let Argument::SpreadElement(spread) = &mut call.arguments[0] {
-                                &mut spread.argument
-                            } else {
-                                call.arguments[0].to_expression_mut()
-                            },
-                            0,
-                            &None,
-                            LiteralHandling::ExpandResponsiveThemeToken,
-                        );
-                        crate::style_diagnostics::collect(&styles, &mut self.errors);
-                        if let Some(value) = runtime_value(&styles) {
-                            self.errors
-                                .push((offset, runtime_value_error("css", &value)));
-                        }
-
-                        if styles.is_empty() {
-                            Expression::new_string_literal(SPAN, "", None, &self.ast)
-                        } else {
-                            let known = composed_classes.is_empty().then(|| {
-                                let mut known = crate::composition::Composition::default();
-                                let mut props: Vec<ExtractStyleProp<'a>> = styles
-                                    .iter()
-                                    .map(|prop| prop.clone_in(self.ast.allocator()))
-                                    .collect();
-                                if let Some(order) = style_order {
-                                    for prop in &mut props {
-                                        set_prop_order(prop, order);
-                                    }
-                                }
-                                known.apply(&self.ast, props);
-                                known.unconditional()
-                            });
-                            // css can not reachable
-                            let class_name = gen_class_names(
-                                &self.ast,
-                                &mut styles,
-                                style_order,
-                                self.split_filename.as_deref(),
-                            );
-
-                            // already set style order
-                            self.styles.extend(
-                                styles.into_iter().flat_map(ExtractStyleProp::into_extract),
-                            );
-                            if let Some(Some(known)) = known {
-                                self.css_styles
-                                    .insert((call.span.start, call.span.end), known);
-                            }
-                            if let Some(cls) = class_name {
-                                cls
-                            } else {
-                                Expression::new_string_literal(SPAN, "", None, &self.ast)
-                            }
-                        }
-                    } else if matches!(r, UtilType::Keyframes) {
+                    *it = if matches!(r, UtilType::Keyframes) {
                         if let Some(value) = call.arguments[0].as_expression() {
                             crate::style_order::reject(value, "keyframes", &mut self.errors);
                         }
@@ -3469,7 +3412,8 @@ impl<'a> VisitMut<'a> for DevupVisitor<'a> {
                             },
                             &self.filename,
                         );
-                        crate::style_diagnostics::collect(&styles, &mut self.errors);
+                        self.error_disposition
+                            .include(crate::style_diagnostics::collect(&styles, &mut self.errors));
                         if let Some(value) = fixed_value(&styles) {
                             self.errors
                                 .push((offset, runtime_value_error("globalCss", &value)));
@@ -3526,7 +3470,8 @@ impl<'a> VisitMut<'a> for DevupVisitor<'a> {
                         &mut folded,
                         &self.filename,
                     );
-                    crate::style_diagnostics::collect(&styles, &mut self.errors);
+                    self.error_disposition
+                        .include(crate::style_diagnostics::collect(&styles, &mut self.errors));
                     if let Some(value) = fixed_value(&styles) {
                         self.errors
                             .push((offset, runtime_value_error("globalCss", &value)));
@@ -3549,17 +3494,6 @@ impl<'a> VisitMut<'a> for DevupVisitor<'a> {
                         }
                         global => self.global_css_result(global.is_component()),
                     };
-                }
-                if !composed_classes.is_empty() {
-                    let own = std::mem::replace(
-                        it,
-                        Expression::new_string_literal(SPAN, "", None, &self.ast),
-                    );
-                    *it = merge_expression_for_class_name(
-                        &self.ast,
-                        composed_classes.into_iter().chain([own]),
-                    )
-                    .unwrap_or_else(|| Expression::new_string_literal(SPAN, "", None, &self.ast));
                 }
             }
         } else if let Expression::TaggedTemplateExpression(tag) = it
@@ -3818,7 +3752,11 @@ impl<'a> VisitMut<'a> for DevupVisitor<'a> {
                     LiteralHandling::ExpandResponsiveThemeToken,
                 );
                 props_styles.extend(styles);
-                crate::style_diagnostics::collect(&props_styles, &mut self.errors);
+                self.error_disposition
+                    .include(crate::style_diagnostics::collect(
+                        &props_styles,
+                        &mut self.errors,
+                    ));
 
                 if let Some(t) = _tag {
                     tag = t;
@@ -3951,6 +3889,15 @@ impl<'a> VisitMut<'a> for DevupVisitor<'a> {
                 }
 
                 it.arguments[0] = Argument::from(tag);
+                if !matches!(
+                    it.arguments[1].to_expression(),
+                    Expression::ObjectExpression(_)
+                ) {
+                    let props = it.arguments[1].to_expression_mut().take_in(&self.ast);
+                    it.arguments[1] = Argument::from(
+                        crate::prop_modify_utils::without_order_props(&self.ast, props),
+                    );
+                }
                 self.finish_element_call(it, read_once, kind.to_tag());
             }
         }
@@ -4319,7 +4266,8 @@ impl<'a> VisitMut<'a> for DevupVisitor<'a> {
                         styles,
                         style_order,
                     } = extract_global_style_from_expression(&self.ast, expression, &self.filename);
-                    crate::style_diagnostics::collect(&styles, &mut self.errors);
+                    self.error_disposition
+                        .include(crate::style_diagnostics::collect(&styles, &mut self.errors));
                     if let Some(value) = fixed_value(&styles) {
                         self.errors
                             .push((offset, element_error(&name, &value, RUNTIME_VALUE)));
@@ -4556,7 +4504,11 @@ impl<'a> VisitMut<'a> for DevupVisitor<'a> {
                 props_styles.extend(bound);
             }
 
-            crate::style_diagnostics::collect(&props_styles, &mut self.errors);
+            self.error_disposition
+                .include(crate::style_diagnostics::collect(
+                    &props_styles,
+                    &mut self.errors,
+                ));
             if let ParsedStyleOrder::Tree(order) = parsed_style_order {
                 props_styles = crate::style_order::apply(order, props_styles, self.ast.allocator());
                 parsed_style_order = ParsedStyleOrder::None;

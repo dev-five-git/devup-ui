@@ -9,6 +9,21 @@ use oxc_ast::ast::{ArrayExpressionElement, Expression, ObjectPropertyKind, Prope
 use oxc_span::SPAN;
 
 impl<'a> DevupVisitor<'a> {
+    pub(in crate::visit) fn capture_order_shape(
+        &mut self,
+        value: &mut Expression<'a>,
+        captured: &mut Vec<Captured<'a>>,
+    ) {
+        if crate::style_order::parse_typed(value, self.ast.allocator()).is_err() {
+            return;
+        }
+        let outer = std::mem::replace(
+            &mut self.order_metadata_capture,
+            crate::style_order::MetadataContext::Order,
+        );
+        self.capture_shape(value, captured);
+        self.order_metadata_capture = outer;
+    }
     pub(in crate::visit) fn capture_shape(
         &mut self,
         value: &mut Expression<'a>,
@@ -63,7 +78,8 @@ impl<'a> DevupVisitor<'a> {
             self.capture_leaf(value, captured);
             return;
         }
-        if let Expression::LogicalExpression(logical) = unwrap_syntax_only(value)
+        if !self.order_metadata_capture.preserves_order()
+            && let Expression::LogicalExpression(logical) = unwrap_syntax_only(value)
             && let Some(left) = literal_choice(&self.bindings, &logical.left, logical.operator)
         {
             *value = if left {
@@ -131,13 +147,26 @@ impl<'a> DevupVisitor<'a> {
                         }
                         ObjectPropertyKind::ObjectProperty(property) => {
                             if property.computed
+                                && property
+                                    .key
+                                    .static_name()
+                                    .or_else(|| {
+                                        crate::utils::get_str_by_property_key(&property.key)
+                                    })
+                                    .is_none()
                                 && let Some(key) = property.key.as_expression_mut()
                             {
                                 self.capture_leaf(key, captured);
                             }
                             if property.kind == PropertyKind::Init {
                                 property.shorthand = false;
-                                self.capture_shape(&mut property.value, captured);
+                                if crate::utils::get_str_by_property_key(&property.key)
+                                    .is_some_and(|key| crate::style_order::reserved(&key))
+                                {
+                                    self.capture_order_shape(&mut property.value, captured);
+                                } else {
+                                    self.capture_shape(&mut property.value, captured);
+                                }
                             }
                         }
                     }

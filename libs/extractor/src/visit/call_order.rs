@@ -35,7 +35,10 @@ impl<'a> DevupVisitor<'a> {
                     }
                 }
                 ObjectPropertyKind::ObjectProperty(property) => {
-                    let key = property.key.static_name();
+                    let key = property
+                        .key
+                        .static_name()
+                        .or_else(|| crate::utils::get_str_by_property_key(&property.key));
                     let (role, style) = key
                         .as_ref()
                         .map_or((Role::Stays, false), |key| classify(key, &kept));
@@ -136,7 +139,12 @@ impl<'a> DevupVisitor<'a> {
                     self.capture_shape(&mut spread.argument, &mut captured);
                 }
                 ObjectPropertyKind::ObjectProperty(written)
-                    if written.computed && written.key.static_name().is_none() =>
+                    if written.computed
+                        && written
+                            .key
+                            .static_name()
+                            .or_else(|| crate::utils::get_str_by_property_key(&written.key))
+                            .is_none() =>
                 {
                     let span = written.span;
                     let original = property.take_in(&self.ast);
@@ -172,7 +180,16 @@ impl<'a> DevupVisitor<'a> {
                     }
                     property.shorthand = false;
                     if item.role == Role::Moved && !merged {
-                        self.capture_shape(&mut property.value, &mut captured);
+                        if property
+                            .key
+                            .static_name()
+                            .or_else(|| crate::utils::get_str_by_property_key(&property.key))
+                            .is_some_and(|key| crate::style_order::reserved(&key))
+                        {
+                            self.capture_order_shape(&mut property.value, &mut captured);
+                        } else {
+                            self.capture_shape(&mut property.value, &mut captured);
+                        }
                     } else if property
                         .key
                         .static_name()
@@ -242,7 +259,14 @@ pub(super) fn unsafe_to_extract(value: &Expression<'_>) -> bool {
         Expression::ObjectExpression(object) => {
             object.properties.iter().any(|property| match property {
                 ObjectPropertyKind::ObjectProperty(property) => {
-                    property.kind != PropertyKind::Init || property.computed || property.method
+                    property.kind != PropertyKind::Init
+                        || (property.computed
+                            && property
+                                .key
+                                .static_name()
+                                .or_else(|| crate::utils::get_str_by_property_key(&property.key))
+                                .is_none())
+                        || property.method
                 }
                 ObjectPropertyKind::SpreadProperty(_) => false,
             })

@@ -3,6 +3,7 @@ use serial_test::serial;
 
 mod captured;
 mod contexts;
+mod coverage;
 
 fn orders(source: &str) -> Vec<(String, u8, Option<u8>)> {
     let mut result: Vec<_> = output(source)

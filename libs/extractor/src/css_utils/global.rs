@@ -86,7 +86,11 @@ pub(crate) fn extract_text<'a>(
     props.extend(
         errors
             .into_iter()
-            .map(|(offset, message)| ExtractStyleProp::Diagnostic { offset, message }),
+            .map(|(offset, message)| ExtractStyleProp::Diagnostic {
+                offset,
+                message,
+                disposition: crate::ErrorDisposition::Definitive,
+            }),
     );
     props.extend(raw.into_iter().map(|css| {
         ExtractStyleProp::Static(ExtractStyleValue::Css(ExtractCss {

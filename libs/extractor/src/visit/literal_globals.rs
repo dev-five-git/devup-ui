@@ -17,7 +17,8 @@ impl<'a> DevupVisitor<'a> {
         else {
             return false;
         };
-        crate::style_diagnostics::collect(&props, &mut self.errors);
+        self.error_disposition
+            .include(crate::style_diagnostics::collect(&props, &mut self.errors));
         if let Some(runtime) = fixed_value(&props) {
             self.errors.push((
                 expression.span().start,

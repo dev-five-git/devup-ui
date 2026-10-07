@@ -32,6 +32,7 @@ fn inline_read_when_the_binding_initializes_on_either_side_of_it_is_safe(
         objects: false,
         styles: false,
         px: false,
+        order_metadata: crate::style_order::MetadataContext::Ordinary,
         class_names: Vec::new(),
     };
     let expression = parsed

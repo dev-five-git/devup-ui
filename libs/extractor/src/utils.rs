@@ -17,6 +17,8 @@ use oxc_ast::ast::{ObjectExpression, ObjectProperty};
 use oxc_codegen::{Codegen, CodegenOptions};
 #[cfg(test)]
 mod w22_tests;
+#[cfg(test)]
+use w22_tests::is_pure;
 
 #[cfg(test)]
 use oxc_parser::Parser;
@@ -243,22 +245,6 @@ pub(super) fn expression_to_style_order<'a>(
     expr: &Expression<'a>,
     allocator: &'a Allocator,
 ) -> ParsedStyleOrder<'a> {
-    expression_to_style_order_with(expr, allocator, &|value| match value {
-        Expression::NullLiteral(_) | Expression::BooleanLiteral(_) => true,
-        Expression::Identifier(identifier) => identifier.name == "undefined",
-        Expression::UnaryExpression(unary) => {
-            unary.operator == UnaryOperator::Void && is_pure(&unary.argument)
-        }
-        _ => false,
-    })
-}
-
-/// Parse order branches using the caller's lexical meaning of an empty value.
-pub(super) fn expression_to_style_order_with<'a>(
-    expr: &Expression<'a>,
-    allocator: &'a Allocator,
-    _nothing: &impl Fn(&Expression<'_>) -> bool,
-) -> ParsedStyleOrder<'a> {
     use crate::style_order::Order;
     match crate::style_order::parse(expr, allocator) {
         Ok(Order::Static(order)) => ParsedStyleOrder::Static(order),
@@ -484,60 +470,6 @@ pub(super) fn wrap_array_filter<'a>(
     ));
 
     Some(join_call)
-}
-
-/// Whether reading `expression` again gives the same value and changes
-/// nothing: literals, reads and functions, not calls, `new` or assignments
-pub(super) fn is_pure(expression: &Expression<'_>) -> bool {
-    use oxc_ast::ast::{ArrayExpressionElement, PropertyKind};
-    match expression {
-        Expression::BooleanLiteral(_)
-        | Expression::NullLiteral(_)
-        | Expression::NumericLiteral(_)
-        | Expression::BigIntLiteral(_)
-        | Expression::StringLiteral(_)
-        | Expression::RegExpLiteral(_)
-        | Expression::Identifier(_)
-        | Expression::ThisExpression(_)
-        | Expression::ArrowFunctionExpression(_)
-        | Expression::FunctionExpression(_) => true,
-        Expression::TemplateLiteral(template) => template.expressions.iter().all(is_pure),
-        Expression::StaticMemberExpression(member) => is_pure(&member.object),
-        Expression::PrivateFieldExpression(member) => is_pure(&member.object),
-        Expression::ComputedMemberExpression(member) => {
-            is_pure(&member.object) && is_pure(&member.expression)
-        }
-        Expression::UnaryExpression(unary) => {
-            unary.operator != UnaryOperator::Delete && is_pure(&unary.argument)
-        }
-        Expression::BinaryExpression(binary) => is_pure(&binary.left) && is_pure(&binary.right),
-        Expression::LogicalExpression(logical) => is_pure(&logical.left) && is_pure(&logical.right),
-        Expression::ConditionalExpression(conditional) => {
-            is_pure(&conditional.test)
-                && is_pure(&conditional.consequent)
-                && is_pure(&conditional.alternate)
-        }
-        Expression::ArrayExpression(array) => array.elements.iter().all(|element| match element {
-            ArrayExpressionElement::SpreadElement(spread) => is_pure(&spread.argument),
-            ArrayExpressionElement::Elision(_) => true,
-            element => element.as_expression().is_some_and(is_pure),
-        }),
-        Expression::ObjectExpression(object) => {
-            object.properties.iter().all(|property| match property {
-                ObjectPropertyKind::ObjectProperty(property) => {
-                    property.key.as_expression().is_none_or(is_pure)
-                        && (property.kind != PropertyKind::Init || is_pure(&property.value))
-                }
-                ObjectPropertyKind::SpreadProperty(spread) => is_pure(&spread.argument),
-            })
-        }
-        Expression::ParenthesizedExpression(inner) => is_pure(&inner.expression),
-        Expression::TSAsExpression(inner) => is_pure(&inner.expression),
-        Expression::TSSatisfiesExpression(inner) => is_pure(&inner.expression),
-        Expression::TSNonNullExpression(inner) => is_pure(&inner.expression),
-        Expression::TSTypeAssertion(inner) => is_pure(&inner.expression),
-        _ => false,
-    }
 }
 
 /// Finds whether code waits (`await`) or yields outside the functions it

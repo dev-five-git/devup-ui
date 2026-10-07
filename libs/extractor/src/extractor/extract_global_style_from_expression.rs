@@ -109,8 +109,9 @@ fn collect_global_styles<'a>(
                 Ok(crate::style_order::Order::Conditional { test, .. }) => styles.push(ExtractStyleProp::Diagnostic {
                     offset: test.span().start,
                     message: crate::utils::build_time_error("styleOrder", &crate::utils::readable_code(&test), "global styles require a static order; they have no runtime class selection"),
+                    disposition: crate::ErrorDisposition::NeedsEvaluation,
                 }),
-                Err((offset, message)) => styles.push(ExtractStyleProp::Diagnostic { offset, message }),
+                Err(error) => styles.push(ExtractStyleProp::Diagnostic { offset: error.diagnostic.0, message: error.diagnostic.1, disposition: error.disposition }),
             }
             return;
         }
@@ -251,7 +252,11 @@ fn collect_global_styles<'a>(
                             let mut errors = Vec::new();
                             crate::style_order::reject(&o.value, "fontFaces", &mut errors);
                             styles.extend(errors.into_iter().map(|(offset, message)| {
-                                ExtractStyleProp::Diagnostic { offset, message }
+                                ExtractStyleProp::Diagnostic {
+                                    offset,
+                                    message,
+                                    disposition: crate::ErrorDisposition::Definitive,
+                                }
                             }));
                             if let Expression::ArrayExpression(arr) = &o.value {
                                 for p in &arr.elements {

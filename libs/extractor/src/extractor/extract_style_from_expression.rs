@@ -10,9 +10,9 @@ use crate::{
         ExtractResult, extract_style_from_member_expression::extract_style_from_member_expression,
     },
     utils::{
-        expression_to_code, get_number_by_literal_expression, get_str_by_property_key,
-        get_string_by_literal_expression, get_string_by_property_key, is_same_expression,
-        readable_code, unwrap_syntax_only, unwrap_syntax_only_mut,
+        expression_to_code, get_str_by_property_key, get_string_by_literal_expression,
+        get_string_by_property_key, is_same_expression, readable_code, unwrap_syntax_only,
+        unwrap_syntax_only_mut,
     },
 };
 use css::{
@@ -243,6 +243,7 @@ pub fn extract_style_from_expression<'a>(
             styles: vec![ExtractStyleProp::Diagnostic {
                 offset: expression.span().start,
                 message: crate::utils::unplaced_error(expression),
+                disposition: crate::ErrorDisposition::NeedsEvaluation,
             }],
             ..ExtractResult::default()
         };
@@ -255,6 +256,7 @@ pub fn extract_style_from_expression<'a>(
                 message: crate::style_order::invalid_order(&crate::utils::readable_code(
                     expression,
                 )),
+                disposition: crate::ErrorDisposition::Definitive,
             }],
             ..ExtractResult::default()
         };
@@ -283,6 +285,7 @@ pub fn extract_style_from_expression<'a>(
                     result.styles.push(ExtractStyleProp::Diagnostic {
                         offset: test.span().start,
                         message: crate::utils::build_time_error("styleOrder", &crate::utils::readable_code(&test), "global styles require a static order; they have no runtime class selection"),
+                        disposition: crate::ErrorDisposition::NeedsEvaluation,
                     });
                 }
                 Ok(order) => {
@@ -294,16 +297,18 @@ pub fn extract_style_from_expression<'a>(
                     result.styles =
                         crate::style_order::apply(order, result.styles, ast_builder.allocator());
                 }
-                Err((offset, message)) => result
-                    .styles
-                    .push(ExtractStyleProp::Diagnostic { offset, message }),
+                Err(error) => result.styles.push(ExtractStyleProp::Diagnostic {
+                    offset: error.diagnostic.0,
+                    message: error.diagnostic.1,
+                    disposition: error.disposition,
+                }),
             }
             return result;
         }
     }
 
     if name.is_none() && selector.is_none() {
-        let mut style_order = None;
+        let style_order = None;
         let mut style_vars = None;
         let mut props = None;
         return match expression {
@@ -326,10 +331,7 @@ pub fn extract_style_from_expression<'a>(
                             {
                                 for disassembled in disassemble_property(&name) {
                                     let disassembled: &str = &disassembled;
-                                    if name == "styleOrder" {
-                                        style_order = get_number_by_literal_expression(&prop.value)
-                                            .map(|v| v as u8);
-                                    } else if name == "styleVars" {
+                                    if name == "styleVars" {
                                         style_vars =
                                             Some(prop.value.clone_in(ast_builder.allocator()));
                                     } else if name == "props" {

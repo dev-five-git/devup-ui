@@ -7,7 +7,7 @@ use crate::tailwind::{
 };
 use crate::utils::{get_str_by_property_key, merge_object_expressions};
 use crate::{ExtractStyleProp, ExtractStyleValue};
-use oxc_allocator::{CloneIn, FromIn, GetAllocator};
+use oxc_allocator::{CloneIn, FromIn, GetAllocator, TakeIn};
 use oxc_ast::ast::JSXAttributeName::Identifier;
 use oxc_ast::ast::{
     Expression, IdentifierName, JSXAttributeItem, JSXAttributeName, JSXAttributeValue,
@@ -19,6 +19,8 @@ use oxc_span::SPAN;
 use rustc_hash::FxHashMap;
 use std::borrow::Cow;
 
+mod order_forward;
+pub(crate) use order_forward::without_order_props;
 #[cfg(test)]
 mod written_tests;
 
@@ -134,6 +136,9 @@ pub fn modify_prop_object<'a>(
                 style_values.push(Written::Spread(
                     spread.argument.clone_in(ast_builder.allocator()),
                 ));
+                let mut spread = spread;
+                let value = spread.argument.take_in(ast_builder);
+                spread.argument = order_forward::without_order_props(ast_builder, value);
                 props.push(ObjectPropertyKind::SpreadProperty(spread));
             }
             prop @ ObjectPropertyKind::ObjectProperty(_) => props.push(prop),
@@ -236,6 +241,9 @@ pub fn modify_props<'a>(
                 style_values.push(Written::Spread(
                     spread.argument.clone_in(ast_builder.allocator()),
                 ));
+                let mut spread = spread;
+                let value = spread.argument.take_in(ast_builder);
+                spread.argument = order_forward::without_order_props(ast_builder, value);
                 props.push(JSXAttributeItem::SpreadAttribute(spread));
             }
             prop @ JSXAttributeItem::Attribute(_) => props.push(prop),

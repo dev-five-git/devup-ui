@@ -1,8 +1,7 @@
-use std::fmt::Write as _;
 use std::ops::Range;
 
 use oxc_allocator::{CloneIn, GetAllocator};
-use oxc_ast::ast::{Expression, Str, TemplateElement, TemplateElementValue};
+use oxc_ast::ast::{Expression, Str, TemplateElement, TemplateElementValue, TemplateLiteral};
 use oxc_ast::builder::AstBuilder;
 use oxc_span::{GetSpan, Span};
 
@@ -50,39 +49,54 @@ impl<'a> CssText<'a> {
                 }
             }
             Expression::TemplateLiteral(template) => {
-                for (index, quasi) in template.quasis.iter().enumerate() {
-                    let start = result.text.len();
-                    result.text.push_str(&quasi.value.raw);
-                    if let Some(ranges) = source.and_then(|source| {
-                        super::literal_origins::quasi_ranges(
-                            &quasi.value.raw,
-                            source,
-                            quasi.span.start,
-                        )
-                    }) {
-                        result
-                            .origins
-                            .extend(ranges.into_iter().map(|(range, origin)| {
-                                (range.start + start..range.end + start, origin)
-                            }));
-                    } else {
-                        result
-                            .origins
-                            .push((start..result.text.len(), quasi.span.start));
-                    }
-                    if let Some(expression) = template.expressions.get(index) {
-                        let start = result.text.len();
-                        write!(result.text, "__DEVUP_HOLE_{index}__").ok()?;
-                        result.holes.push((
-                            start..result.text.len(),
-                            expression.clone_in_with_semantic_ids(ast.allocator()),
-                        ));
-                    }
-                }
+                result = Self::from_template(ast, template, source);
+                result.span = expression.span();
             }
             _ => return None,
         }
         Some(result)
+    }
+
+    pub(crate) fn from_template(
+        ast: &AstBuilder<'a>,
+        template: &TemplateLiteral<'_>,
+        source: Option<&str>,
+    ) -> Self {
+        let mut result = Self {
+            text: String::new(),
+            holes: Vec::new(),
+            origins: Vec::new(),
+            span: template.span,
+            fixed_origin: false,
+        };
+        for (index, quasi) in template.quasis.iter().enumerate() {
+            let start = result.text.len();
+            result.text.push_str(&quasi.value.raw);
+            if let Some(ranges) = source.and_then(|source| {
+                super::literal_origins::quasi_ranges(&quasi.value.raw, source, quasi.span.start)
+            }) {
+                result.origins.extend(
+                    ranges
+                        .into_iter()
+                        .map(|(range, origin)| (range.start + start..range.end + start, origin)),
+                );
+            } else {
+                result
+                    .origins
+                    .push((start..result.text.len(), quasi.span.start));
+            }
+            if let Some(expression) = template.expressions.get(index) {
+                let start = result.text.len();
+                result.text.push_str("__DEVUP_HOLE_");
+                result.text.push_str(&index.to_string());
+                result.text.push_str("__");
+                result.holes.push((
+                    start..result.text.len(),
+                    expression.clone_in_with_semantic_ids(ast.allocator()),
+                ));
+            }
+        }
+        result
     }
 
     pub(crate) fn offset(&self, at: usize) -> u32 {

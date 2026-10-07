@@ -339,30 +339,26 @@ pub fn set_prop_order(prop: &mut ExtractStyleProp<'_>, order: u8) {
     }
 }
 
-/// Whether `later` may set what `earlier` sets, so the order of their classes
-/// decides which applies: a style whose key the build cannot tell may
+/// Whether `later` sets a known key that `earlier` also sets.
 pub fn overlaps(earlier: &[ExtractStyleProp<'_>], later: &[ExtractStyleProp<'_>]) -> bool {
-    match (keys(earlier), keys(later)) {
-        (Some(earlier), Some(later)) => later.iter().any(|key| earlier.contains(key)),
-        _ => true,
-    }
+    let earlier = keys(earlier);
+    keys(later).iter().any(|key| earlier.contains(key))
 }
 
-/// The keys `props` set, `None` when a style chosen at runtime has none;
-/// classes only the runtime gives compose at runtime, so they set none here
-fn keys(props: &[ExtractStyleProp<'_>]) -> Option<Vec<CascadeKey>> {
+/// Known keys `props` set; runtime classes have no known keys here.
+fn keys(props: &[ExtractStyleProp<'_>]) -> Vec<CascadeKey> {
     let mut keys = Vec::new();
     for prop in props {
         match prop {
             ExtractStyleProp::Static(value) => keys.push(CascadeKey::of(value)),
-            ExtractStyleProp::StaticArray(props) => keys.extend(self::keys(props)?),
+            ExtractStyleProp::StaticArray(props) => keys.extend(self::keys(props)),
             ExtractStyleProp::Conditional {
                 consequent,
                 alternate,
                 ..
             } => {
                 for side in [consequent, alternate].into_iter().flatten() {
-                    keys.extend(self::keys(std::slice::from_ref(side.as_ref()))?);
+                    keys.extend(self::keys(std::slice::from_ref(side.as_ref())));
                 }
             }
             ExtractStyleProp::Expression { .. }
@@ -370,17 +366,17 @@ fn keys(props: &[ExtractStyleProp<'_>]) -> Option<Vec<CascadeKey>> {
             | ExtractStyleProp::Diagnostic { .. } => {}
             ExtractStyleProp::Enum { map, .. } => {
                 for props in map.values() {
-                    keys.extend(self::keys(props)?);
+                    keys.extend(self::keys(props));
                 }
             }
             ExtractStyleProp::MemberExpression { map, .. } => {
                 for prop in map.values() {
-                    keys.extend(self::keys(std::slice::from_ref(prop.as_ref()))?);
+                    keys.extend(self::keys(std::slice::from_ref(prop.as_ref())));
                 }
             }
         }
     }
-    Some(keys)
+    keys
 }
 
 /// Whether every style `prop` holds has a key, so a condition around it can be

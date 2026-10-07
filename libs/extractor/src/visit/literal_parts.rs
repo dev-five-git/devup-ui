@@ -111,7 +111,8 @@ impl<'a> DevupVisitor<'a> {
         Some(match order {
             Some(Ok(order)) => crate::style_order::apply(order, props, self.ast.allocator()),
             Some(Err(error)) => {
-                self.errors.push(error);
+                self.error_disposition.include(error.disposition);
+                self.errors.push(error.diagnostic);
                 props
             }
             None => props,

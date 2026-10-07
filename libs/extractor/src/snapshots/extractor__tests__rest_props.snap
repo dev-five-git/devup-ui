@@ -30,5 +30,5 @@ ToBTreeSet {
             },
         ),
     },
-    code: "import \"@devup-ui/core/devup-ui.css\";\n((__devupSpread0) => <div {...__devupSpread0} className={`${__devupSpread0?.className || \"\"} b c`} style={{\n\t...{ \"--a\": \"opacity\" in __devupSpread0 ? __devupSpread0.opacity : void 0 },\n\t...__devupSpread0?.style\n}} />)({\n\t__proto__: null,\n\t...props\n});\n",
+    code: "import \"@devup-ui/core/devup-ui.css\";\n((__devupSpread0) => <div {...(({ \"styleOrder\": __devupOrder, \"style-order\": __devupKebabOrder, ...__devupProps }) => __devupProps)({\n\t__proto__: null,\n\t...__devupSpread0\n})} className={`${__devupSpread0?.className || \"\"} b c`} style={{\n\t...{ \"--a\": \"opacity\" in __devupSpread0 ? __devupSpread0.opacity : void 0 },\n\t...__devupSpread0?.style\n}} />)({\n\t__proto__: null,\n\t...props\n});\n",
 }

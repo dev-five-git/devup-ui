@@ -19,7 +19,11 @@ pub(super) fn reject<'a>(
     Some(
         errors
             .into_iter()
-            .map(|(offset, message)| ExtractStyleProp::Diagnostic { offset, message })
+            .map(|(offset, message)| ExtractStyleProp::Diagnostic {
+                offset,
+                message,
+                disposition: crate::ErrorDisposition::Definitive,
+            })
             .collect(),
     )
 }

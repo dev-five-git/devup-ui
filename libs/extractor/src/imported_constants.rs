@@ -628,6 +628,7 @@ fn inline_in<'a>(
             objects: false,
             styles: false,
             px: false,
+            order_metadata: crate::style_order::MetadataContext::Ordinary,
             class_names: Vec::new(),
         };
         let resolved: Vec<_> = pending
@@ -667,6 +668,7 @@ fn inline_in<'a>(
             objects: false,
             styles: false,
             px: false,
+            order_metadata: crate::style_order::MetadataContext::Ordinary,
             class_names: Vec::new(),
         }
         .visit_program(program);
@@ -2097,6 +2099,8 @@ struct Inline<'s, 'a> {
     styles: bool,
     /// Inside a `css` prop, whose numbers Emotion reads as `px` lengths
     px: bool,
+    /// Preserve the alternatives that the strict metadata parser must validate.
+    order_metadata: crate::style_order::MetadataContext,
     /// The bindings the `<ClassNames>` child functions around take `css` and
     /// `cx` by
     class_names: Vec<SymbolId>,
@@ -2283,10 +2287,9 @@ impl<'a> Inline<'_, 'a> {
 fn px_value<'a>(ast_builder: &AstBuilder<'a>, property: &mut oxc_ast::ast::ObjectProperty<'a>) {
     if let Some(number) = crate::utils::js_number_literal(&property.value)
         && number != 0.0
-        && property
-            .key
-            .static_name()
-            .is_some_and(|key| !crate::utils::keeps_bare_number(&key))
+        && property.key.static_name().is_some_and(|key| {
+            !crate::style_order::reserved(&key) && !crate::utils::keeps_bare_number(&key)
+        })
     {
         property.value = Expression::new_string_literal(
             SPAN,
@@ -2364,7 +2367,25 @@ fn constant_literal<'a>(
     }
 }
 
+pub(crate) mod order_metadata;
+
 impl<'a> VisitMut<'a> for Inline<'_, 'a> {
+    fn visit_template_literal(&mut self, template: &mut oxc_ast::ast::TemplateLiteral<'a>) {
+        let metadata = if self.styles {
+            order_metadata::holes(self.ast_builder, template)
+        } else {
+            Vec::new()
+        };
+        for expression in &mut template.expressions {
+            let outer = self.order_metadata;
+            self.order_metadata = crate::style_order::MetadataContext::selected(
+                outer.preserves_order() || metadata.contains(&expression.span()),
+            );
+            self.visit_expression(expression);
+            self.order_metadata = outer;
+        }
+    }
+
     fn visit_expression(&mut self, expression: &mut Expression<'a>) {
         if self.styles {
             if let Some(mut literal) = self
@@ -2378,7 +2399,9 @@ impl<'a> VisitMut<'a> for Inline<'_, 'a> {
                 }
                 return;
             }
-            if let Some(chosen) = self.chosen(expression) {
+            if !self.order_metadata.preserves_order()
+                && let Some(chosen) = self.chosen(expression)
+            {
                 *expression = chosen;
                 self.visit_expression(expression);
                 return;
@@ -2461,6 +2484,13 @@ impl<'a> VisitMut<'a> for Inline<'_, 'a> {
         let styled = self.style.is_component(&element.name);
         let element_name = &element.name;
         for attribute in &mut element.attributes {
+            let metadata = styled
+                && matches!(attribute, JSXAttributeItem::Attribute(attribute)
+                if matches!(&attribute.name, oxc_ast::ast::JSXAttributeName::Identifier(name) if crate::style_order::reserved(&name.name)));
+            let outer_metadata = std::mem::replace(
+                &mut self.order_metadata,
+                crate::style_order::MetadataContext::selected(metadata),
+            );
             if self
                 .css_props
                 .attribute(element_name, attribute, |identifier| {
@@ -2468,6 +2498,7 @@ impl<'a> VisitMut<'a> for Inline<'_, 'a> {
                 })
             {
                 self.reading_css(true, |inline| inline.visit_jsx_attribute_item(attribute));
+                self.order_metadata = outer_metadata;
                 continue;
             }
             let objects = styled
@@ -2483,20 +2514,32 @@ impl<'a> VisitMut<'a> for Inline<'_, 'a> {
                 inline
                     .reading_objects(objects, |inline| inline.visit_jsx_attribute_item(attribute));
             });
+            self.order_metadata = outer_metadata;
         }
     }
 
     fn visit_object_property(&mut self, property: &mut oxc_ast::ast::ObjectProperty<'a>) {
+        self.visit_property_key(&mut property.key);
+        let metadata = self.styles
+            && self.objects
+            && crate::utils::get_str_by_property_key(&property.key)
+                .is_some_and(|key| crate::style_order::reserved(&key));
+        let outer_metadata = std::mem::replace(
+            &mut self.order_metadata,
+            crate::style_order::MetadataContext::selected(metadata),
+        );
         let inlined_number = self.px
             && self.styles
+            && !metadata
             && matches!(self.constant(&property.value), Some(Constant::Number(_)));
-        walk_mut::walk_object_property(self, property);
+        self.visit_expression(&mut property.value);
         if property.shorthand && !matches!(property.value, Expression::Identifier(_)) {
             property.shorthand = false;
         }
         if inlined_number {
             px_value(self.ast_builder, property);
         }
+        self.order_metadata = outer_metadata;
     }
 }
 

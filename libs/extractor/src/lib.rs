@@ -71,11 +71,29 @@ pub enum ImportAlias {
     NamedToNamed,
 }
 
+/// Whether evaluating a computed value can resolve an extraction diagnostic.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub enum ErrorDisposition {
+    #[default]
+    NeedsEvaluation,
+    Definitive,
+}
+
+impl ErrorDisposition {
+    pub(crate) const fn include(&mut self, other: Self) {
+        match other {
+            Self::NeedsEvaluation => {}
+            Self::Definitive => *self = Self::Definitive,
+        }
+    }
+}
+
 #[derive(Debug)]
 pub enum ExtractStyleProp<'a> {
     Diagnostic {
         offset: u32,
         message: String,
+        disposition: ErrorDisposition,
     },
     Static(ExtractStyleValue),
     StaticArray(Vec<ExtractStyleProp<'a>>),
@@ -109,9 +127,14 @@ pub enum ExtractStyleProp<'a> {
 impl<'a> ExtractStyleProp<'a> {
     pub fn clone_in(&self, alloc: &'a Allocator) -> Self {
         match self {
-            ExtractStyleProp::Diagnostic { offset, message } => ExtractStyleProp::Diagnostic {
+            ExtractStyleProp::Diagnostic {
+                offset,
+                message,
+                disposition,
+            } => ExtractStyleProp::Diagnostic {
                 offset: *offset,
                 message: message.clone(),
+                disposition: *disposition,
             },
             ExtractStyleProp::Static(v) => ExtractStyleProp::Static(v.clone()),
             ExtractStyleProp::StaticArray(arr) => {
@@ -616,6 +639,7 @@ fn extract_source(
     // Run the code a value computes, or tell rules the module computes from a
     // class it composes
     if (!visitor.errors.is_empty() || visitor.composes_unknown)
+        && visitor.error_disposition == ErrorDisposition::NeedsEvaluation
         && !values_run
         && !utils::is_vanilla_extract_file(filename)
         && let Some((computed, value_edits, read)) = build_time_values::evaluate_located(

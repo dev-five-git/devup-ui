@@ -99,16 +99,21 @@ impl<'a> DevupVisitor<'a> {
                                 .static_name()
                                 .is_some_and(|name| crate::style_order::reserved(&name))
                             {
-                                let parsed = crate::style_order::parse(
+                                let parsed = crate::style_order::parse_typed(
                                     &property.value,
                                     self.ast.allocator(),
                                 );
                                 let error = match parsed {
-                                    Err(error) => Some(error),
+                                    Err(error) => {
+                                        self.error_disposition.include(error.disposition);
+                                        Some(error.diagnostic)
+                                    }
                                     Ok(_)
                                         if property.kind != PropertyKind::Init
                                             || property.method =>
                                     {
+                                        self.error_disposition
+                                            .include(crate::ErrorDisposition::Definitive);
                                         Some((
                                             property.span.start,
                                             crate::utils::build_time_error(
