@@ -1,8 +1,7 @@
 use css::style_origin::{RealLocation, StyleOrigin};
 use oxc_allocator::Allocator;
 use oxc_ast::ast::{
-    CallExpression, Expression, ImportDeclarationSpecifier, ModuleExportName, Statement,
-    VariableDeclarator,
+    CallExpression, Expression, ImportDeclarationSpecifier, Statement, VariableDeclarator,
 };
 use oxc_ast_visit::{Visit, walk};
 use oxc_parser::Parser;
@@ -78,12 +77,8 @@ pub(crate) fn instrument_with_edits(
             for specifier in specifiers {
                 match specifier {
                     ImportDeclarationSpecifier::ImportSpecifier(import) => {
-                        let name = match &import.imported {
-                            ModuleExportName::IdentifierName(name) => name.name.as_str(),
-                            ModuleExportName::IdentifierReference(name) => name.name.as_str(),
-                            ModuleExportName::StringLiteral(name) => name.value.as_str(),
-                        };
-                        if factory_name(name)
+                        let name = import.imported.name();
+                        if factory_name(name.as_str())
                             && let Some(symbol) = import.local.symbol_id.get()
                         {
                             factories.insert(symbol);

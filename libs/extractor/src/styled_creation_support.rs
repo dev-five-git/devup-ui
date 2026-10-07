@@ -4,6 +4,20 @@ use crate::{
     extract_style::style_property::StyleProperty,
 };
 
+#[test]
+#[serial_test::serial]
+fn literal_typography_remains_selected_beside_static_css_after_repeated_renders() {
+    // Given
+    let setup = "const state={};";
+    // When
+    let actual = selected("{typography:'heading',color:'red'}", setup);
+    // Then
+    assert_eq!(
+        actual,
+        "[[[\"color\",\"red\",0,null],[\"typography\",\"heading\",0,null]],[[\"color\",\"red\",0,null],[\"typography\",\"heading\",0,null]]]"
+    );
+}
+
 pub(super) const RULES: &str = r"{ '@layer': { base: {
   color: cond ? 'red' : 'blue',
   positioning: pos,

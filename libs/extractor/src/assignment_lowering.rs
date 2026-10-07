@@ -6,7 +6,7 @@ use oxc_ast::{
     },
     builder::AstBuilder,
 };
-use oxc_span::SPAN;
+use oxc_span::{GetSpan, SPAN};
 use oxc_syntax::number::NumberBase;
 
 pub(crate) use crate::assignment_capture::{
@@ -16,6 +16,29 @@ use crate::{
     ExtractStyleProp,
     utils::{call_with_values, unwrap_syntax_only},
 };
+
+pub(crate) fn styled_argument<'a>(
+    ast: &AstBuilder<'a>,
+    source: &Expression<'a>,
+    styles: &mut Vec<ExtractStyleProp<'a>>,
+) {
+    if matches!(
+        unwrap_syntax_only(source),
+        Expression::ConditionalExpression(_)
+            | Expression::LogicalExpression(_)
+            | Expression::ComputedMemberExpression(_)
+    ) && !crate::static_assignment::literal_source(source)
+    {
+        *styles = vec![ExtractStyleProp::Evaluated {
+            binding: crate::sparse_sites::binding_name(source.span().start),
+            styles: std::mem::take(styles),
+            source: source.clone_in(ast.allocator()),
+            evaluation: None,
+            alternate_order: None,
+            alternate_class: false,
+        }];
+    }
+}
 
 pub(crate) fn projection<'a>(ast: &AstBuilder<'a>, binding: &str, slot: u8) -> Expression<'a> {
     let value = Expression::new_chain_expression(

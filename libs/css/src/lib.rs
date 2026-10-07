@@ -17,6 +17,8 @@ pub mod file_routes;
 pub mod is_special_property;
 mod legacy_variable_names;
 pub mod naming;
+#[cfg(test)]
+mod naming_coverage_tests;
 pub mod naming_root;
 pub mod naming_scope;
 mod num_to_nm_base;

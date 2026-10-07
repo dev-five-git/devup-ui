@@ -29,11 +29,15 @@ impl<'a> Lowering<'_, 'a> {
                 let mut selected: Vec<_> = styles
                     .iter()
                     .filter(|style| {
+                        if crate::assignment_owner::contains_consumer(value.span(), style) {
+                            return true;
+                        }
                         style.extract().iter().any(|value| match value {
                             ExtractStyleValue::Dynamic(style) => {
                                 usize::from(style.level()) == index
                             }
                             ExtractStyleValue::Static(style) => usize::from(style.level()) == index,
+                            ExtractStyleValue::Typography(_) => index == 0,
                             _ => false,
                         })
                     })
@@ -98,17 +102,18 @@ impl<'a> Lowering<'_, 'a> {
             .any(|value| matches!(value, ExtractStyleValue::Dynamic(style) if style.important()));
         let normalized = values.iter().any(|value| matches!(value, ExtractStyleValue::Dynamic(_) if matches!(source, Expression::TemplateLiteral(_)))) || important;
         let suffix = match source {
-            _ if !normalized => "",
-            Expression::TemplateLiteral(template) => template.quasis.last().map_or("", |quasi| {
-                let original = quasi.value.raw.as_str();
-                let trimmed = original.trim_end_matches(';');
-                let cleaned = if important {
-                    trimmed.strip_suffix(" !important").unwrap_or(trimmed)
-                } else {
-                    trimmed
-                };
-                original.strip_prefix(cleaned).unwrap_or("")
-            }),
+            Expression::TemplateLiteral(template) if normalized => {
+                template.quasis.last().map_or("", |quasi| {
+                    let original = quasi.value.raw.as_str();
+                    let trimmed = original.trim_end_matches(';');
+                    let cleaned = if important {
+                        trimmed.strip_suffix(" !important").unwrap_or(trimmed)
+                    } else {
+                        trimmed
+                    };
+                    original.strip_prefix(cleaned).unwrap_or("")
+                })
+            }
             _ if important => " !important",
             _ => "",
         };

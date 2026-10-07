@@ -7,6 +7,8 @@ pub mod theme;
 
 #[cfg(test)]
 mod atom_identity_tests;
+#[cfg(test)]
+mod theme_declaration_coverage_tests;
 
 #[cfg(test)]
 mod owner_reset_tests;

@@ -13,6 +13,10 @@ use oxc_transformer::{TransformOptions, Transformer};
 
 use crate::import_alias_visit::{Edit, source_offset};
 
+#[cfg(test)]
+#[path = "evaluation_lookup_coverage_tests.rs"]
+mod coverage_tests;
+
 #[derive(Clone)]
 pub(crate) struct StrippedSource {
     pub code: String,

@@ -723,7 +723,12 @@ pub fn get_default_theme() -> Result<Option<String>, JsValue> {
 #[wasm_bindgen(js_name = "getCss")]
 #[cfg(not(tarpaulin_include))]
 pub fn get_css(file_num: Option<usize>, import_main_css: bool) -> Result<String, JsValue> {
-    cache_names::check().map_err(js_error)?;
+    get_css_internal(file_num, import_main_css).map_err(js_error)
+}
+
+/// Internal CSS retrieval using the same sticky-error and file-selection contract as getCss.
+pub fn get_css_internal(file_num: Option<usize>, import_main_css: bool) -> Result<String, String> {
+    cache_names::check()?;
     Ok(with_style_sheet(|sheet| {
         if let Some(file_num) = file_num {
             with_file_map(|map| {

@@ -766,33 +766,6 @@ fn extract_style_values<'a>(
                 };
                 if IGNORED_IDENTIFIERS.contains(&identifier.name.as_str()) {
                     ExtractResult::default()
-                } else if typo
-                    && let Some(style) = conditional_typography(
-                        ast_builder,
-                        &Expression::new_identifier(
-                            identifier.span,
-                            identifier.name.as_str(),
-                            ast_builder,
-                        ),
-                        level,
-                        selector,
-                    )
-                {
-                    ExtractResult {
-                        styles: vec![style],
-                        ..ExtractResult::default()
-                    }
-                } else if typo {
-                    ExtractResult {
-                        styles: vec![ExtractStyleProp::Expression {
-                            expression: crate::element_evaluation::raw_typography(
-                                ast_builder,
-                                expression,
-                            ),
-                            styles: vec![],
-                        }],
-                        ..ExtractResult::default()
-                    }
                 } else {
                     ExtractResult {
                         styles: vec![dynamic_style(

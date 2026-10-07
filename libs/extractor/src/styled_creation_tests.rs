@@ -1,6 +1,9 @@
 #[path = "styled_creation_support.rs"]
 mod support;
 
+#[path = "styled_creation_argument_tests.rs"]
+mod whole_arguments;
+
 use crate::assignment_test_support::{compiled_jsx, evaluate};
 use rstest::rstest;
 use serial_test::serial;

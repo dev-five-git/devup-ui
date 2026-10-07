@@ -335,6 +335,7 @@ pub fn extract_style_from_styled<'a>(
                 .into_iter()
                 .map(|(offset, code)| (offset, build_time_error("styled", &code, STYLE_OBJECT))),
         );
+        crate::assignment_lowering::styled_argument(ast_builder, &creation_source, &mut styles);
         if let Some(default_class_name) = base.styles.take() {
             styles.extend(default_class_name.into_iter().map(ExtractStyleProp::Static));
         }
@@ -354,22 +355,16 @@ pub fn extract_style_from_styled<'a>(
             &class_name,
             &gen_styles(ast_builder, &styles, None),
         );
-        if matches!(
-            unwrap_syntax_only(&creation_source),
-            Expression::ObjectExpression(_)
-        ) {
-            crate::assignment_capture::styled_creation(
-                ast_builder,
-                &mut component,
-                crate::assignment_capture::StyledCreation {
-                    source: &creation_source,
-                    styles: &mut styles,
-                },
-            );
-        } else {
-            crate::assignment_lowering::component(ast_builder, &mut component, &mut styles);
-        }
-        let styled_component = base.render(ast_builder, apply_attrs(ast_builder, component, attrs));
+        component = apply_attrs(ast_builder, component, attrs);
+        crate::assignment_capture::styled_creation(
+            ast_builder,
+            &mut component,
+            crate::assignment_capture::StyledCreation {
+                source: &creation_source,
+                styles: &mut styles,
+            },
+        );
+        let styled_component = base.render(ast_builder, component);
 
         let result = ExtractResult {
             styles,

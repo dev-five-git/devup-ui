@@ -354,9 +354,8 @@ pub(crate) fn inline_constants<'a>(
     }
     let mut modules = Modules::new(resolver, option);
     let mut symbols: FxHashMap<SymbolId, Constant> = FxHashMap::default();
-    let namings;
     let mut inlined = Inlined::default();
-    let (scoping, reads_math) = {
+    let (scoping, reads_math, namings) = {
         let mut scope = ModuleScope::new(filename, program, None);
         scope
             .style_names
@@ -426,7 +425,7 @@ pub(crate) fn inline_constants<'a>(
             .build(program)
             .semantic
             .into_scoping();
-        namings = crate::source_naming::symbols(program, &scoping, option);
+        let namings = crate::source_naming::symbols(program, &scoping, option);
         for name in &read.names {
             let bound = scope.binds(name);
             let constant = scope.lookup(&mut modules, name);
@@ -473,7 +472,7 @@ pub(crate) fn inline_constants<'a>(
                 symbols.extend(symbol.get().map(|symbol| (symbol, constant.clone())));
             }
         }
-        (scoping, reads_math)
+        (scoping, reads_math, namings)
     };
     inlined.dependencies = modules.exports.into_keys().collect();
     if !symbols.is_empty() || !namings.is_empty() || reads_math {
@@ -1712,6 +1711,10 @@ struct Dependencies<'s> {
     namings: &'s FxHashMap<SymbolId, Naming>,
     naming: Naming,
 }
+
+#[cfg(test)]
+#[path = "dependency_coverage_tests.rs"]
+mod dependency_coverage_tests;
 
 impl<'a> Visit<'a> for Dependencies<'_> {
     fn visit_call_expression(&mut self, call: &oxc_ast::ast::CallExpression<'a>) {

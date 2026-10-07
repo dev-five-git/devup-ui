@@ -2078,10 +2078,13 @@ impl<'a> VisitMut<'a> for DevupVisitor<'a> {
                                     .properties
                                     .iter()
                                     .any(|later| later.span().start > property.span.start))
-                            && !matches!(
-                                unwrap_syntax_only(&property.value),
-                                Expression::ArrayExpression(_) | Expression::ObjectExpression(_)
-                            )
+                            && (key == "typography"
+                                && !crate::static_assignment::literal_source(&property.value)
+                                || !matches!(
+                                    unwrap_syntax_only(&property.value),
+                                    Expression::ArrayExpression(_)
+                                        | Expression::ObjectExpression(_)
+                                ))
                             && let Some(value) = crate::element_evaluation::typography(
                                 &self.ast,
                                 &mut selected,
@@ -2570,10 +2573,12 @@ impl<'a> VisitMut<'a> for DevupVisitor<'a> {
                             || has_children)
                         && let Some(JSXAttributeValue::ExpressionContainer(container)) = &attr.value
                         && let Some(source) = container.expression.as_expression()
-                        && !matches!(
-                            unwrap_syntax_only(source),
-                            Expression::ArrayExpression(_) | Expression::ObjectExpression(_)
-                        )
+                        && (property_name == "typography"
+                            && !crate::static_assignment::literal_source(source)
+                            || !matches!(
+                                unwrap_syntax_only(source),
+                                Expression::ArrayExpression(_) | Expression::ObjectExpression(_)
+                            ))
                         && let Some(value) = crate::element_evaluation::typography(
                             &self.ast,
                             &mut attribute_styles,
@@ -2826,6 +2831,10 @@ impl<'a> VisitMut<'a> for DevupVisitor<'a> {
         }
     }
 }
+
+#[cfg(test)]
+#[path = "visit_capture_coverage_tests.rs"]
+mod capture_coverage_tests;
 
 #[cfg(test)]
 #[allow(clippy::expect_used, clippy::unwrap_used)]

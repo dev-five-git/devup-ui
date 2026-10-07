@@ -20,6 +20,8 @@ mod assignment_value;
 mod build_time_values;
 mod class_evaluation;
 mod component;
+#[cfg(test)]
+mod coverage_tests;
 mod css_utils;
 mod element_evaluation;
 mod evaluation_location;

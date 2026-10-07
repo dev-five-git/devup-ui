@@ -14,6 +14,10 @@ use crate::{
 mod element_capture;
 pub(crate) use element_capture::{capture, default_type};
 
+#[path = "element_typography.rs"]
+mod element_typography;
+pub(crate) use element_typography::capture as typography;
+
 #[cfg(test)]
 #[path = "assignment_container_tests.rs"]
 mod assignment_container_tests;
@@ -31,53 +35,6 @@ pub(crate) fn needed(element: &JSXElement<'_>) -> bool {
         && matches!(&attribute.value, Some(JSXAttributeValue::ExpressionContainer(container))
             if container.expression.as_expression().is_some_and(|value| get_string_by_literal_expression(value).is_none()))))
         && (values > 1 || !element.children.is_empty())
-}
-
-pub(crate) fn typography<'a>(
-    ast: &AstBuilder<'a>,
-    styles: &mut Vec<ExtractStyleProp<'a>>,
-    source: &Expression<'a>,
-    next: &mut usize,
-) -> Option<(String, Expression<'a>)> {
-    if let [ExtractStyleProp::Enum { condition, .. }] = styles.as_mut_slice() {
-        let name = format!("__devupSpread{next}");
-        *next += 1;
-        let input = std::mem::replace(
-            condition,
-            Expression::new_identifier(
-                source.span(),
-                Str::from_in(name.as_str(), ast.allocator()),
-                ast,
-            ),
-        );
-        return Some((name, input));
-    }
-    let mut class = crate::gen_class_name::gen_class_names(ast, styles, None, None)?;
-    if matches!(class, Expression::StringLiteral(_))
-        && get_string_by_literal_expression(source).is_none()
-    {
-        class = crate::utils::call_with_values(
-            ast,
-            vec![(
-                "__devupTypography".to_string(),
-                source.clone_in(ast.allocator()),
-            )],
-            class,
-        );
-    }
-    *class.span_mut() = source.span();
-    let name = format!("__devupSpread{next}");
-    *next += 1;
-    let values = styles.iter().flat_map(ExtractStyleProp::extract).collect();
-    *styles = vec![ExtractStyleProp::Expression {
-        styles: values,
-        expression: Expression::new_identifier(
-            source.span(),
-            Str::from_in(name.as_str(), ast.allocator()),
-            ast,
-        ),
-    }];
-    Some((name, class))
 }
 
 pub(crate) fn raw_typography<'a>(ast: &AstBuilder<'a>, source: &Expression<'a>) -> Expression<'a> {

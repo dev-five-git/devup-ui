@@ -23,16 +23,13 @@ fn counter_label(number: usize) -> String {
     }
 }
 
-fn variable_owner(value: &str, prefix: &str, owner: u32) -> bool {
+fn variable_owner(value: &str, prefix: &str, owner_label: &str) -> bool {
     let variable = value.strip_prefix("var(").and_then(|value| {
         value
             .strip_suffix(')')
             .or_else(|| value.strip_suffix(") !important"))
     });
-    let Ok(owner) = usize::try_from(owner) else {
-        return false;
-    };
-    let mut number = counter_label(owner);
+    let mut number = owner_label.to_string();
     number.retain(|character| character != '-');
     variable.is_some_and(|variable| variable.starts_with(&format!("---{prefix}S{number}-")))
 }
@@ -40,9 +37,9 @@ fn variable_owner(value: &str, prefix: &str, owner: u32) -> bool {
 fn declaration_matches(
     property: &StyleSheetProperty,
     position: (u8, u8),
-    slot: (&str, u32),
+    slot: (&str, &str),
 ) -> bool {
-    let (key, owner) = slot;
+    let (key, owner_label) = slot;
     let prefix = css::get_prefix().unwrap_or_default();
     [false, true].into_iter().any(|dynamic| {
         let content = AtomContent {
@@ -57,7 +54,7 @@ fn declaration_matches(
         }
         .content();
         css::atom_name::hex(&content.lossless) == key
-            && (!dynamic || variable_owner(&property.value, &prefix, owner))
+            && (!dynamic || variable_owner(&property.value, &prefix, owner_label))
     })
 }
 
@@ -112,7 +109,11 @@ pub(super) fn validate(sheet: &StyleSheet, classes: &ClassMap) -> bool {
                                     other.owner_reset && other.class_name == property.class_name
                                 });
                                 (!owns_reset || key.starts_with("642d"))
-                                    && declaration_matches(property, (*level, *order), (key, owner))
+                                    && declaration_matches(
+                                        property,
+                                        (*level, *order),
+                                        (key, &owner_label),
+                                    )
                             }
                     })
                 })

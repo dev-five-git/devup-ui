@@ -1,6 +1,23 @@
 use crate::assignment_test_support::{evaluate, extracted, jsx_js};
 use crate::{ExtractStyleValue, extract_style::style_property::StyleProperty};
 
+#[test]
+#[serial_test::serial]
+fn unrelated_typography_record_does_not_change_selected_selector_association() {
+    // Given
+    let source = "import {Box,css}from '@devup-ui/react';const unused=()=>css({typography:'heading'});let trace=[];const node=<Box _hover={{color:'red'}}/>;";
+    assert!(
+        extracted(source)
+            .styles
+            .iter()
+            .any(|value| matches!(value, ExtractStyleValue::Typography(name) if name == "heading"))
+    );
+    // When
+    let actual = associated(source);
+    // Then
+    assert_eq!(actual, "[\"&:hover|color:red:0|\"]");
+}
+
 pub(super) fn associated(source: &str) -> String {
     let output = extracted(source);
     let records = output

@@ -114,11 +114,7 @@ pub(super) fn extract_style_from_member_expression<'a>(
 
         let mut map = BTreeMap::new();
         for (idx, p) in array.elements.iter_mut().enumerate() {
-            if let ArrayExpressionElement::SpreadElement(_) = p
-                && let Some(whole) = &spread
-            {
-                map.insert(idx.to_string(), Box::new(runtime(whole)));
-            } else if let Some(p) = p.as_expression_mut() {
+            if let Some(p) = p.as_expression_mut() {
                 map.insert(
                     idx.to_string(),
                     Box::new(ExtractStyleProp::StaticArray(

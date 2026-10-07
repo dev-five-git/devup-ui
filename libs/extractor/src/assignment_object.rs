@@ -1,7 +1,7 @@
 use crate::{
     ExtractStyleProp, ExtractStyleValue,
     assignment_lowering::{Classes, Lowering, empty, projection},
-    gen_class_name::merge_expression_for_class_name,
+    gen_class_name::{gen_class_names, merge_expression_for_class_name},
     utils::{call_with_values, get_string_by_property_key, merge_object_expressions},
 };
 use oxc_allocator::{CloneIn, GetAllocator};
@@ -18,6 +18,7 @@ impl<'a> Lowering<'_, 'a> {
         let mut raw = source.clone_in(ast.allocator());
         let mut values = Vec::new();
         let mut refs = Vec::new();
+        let mut assigned = vec![false; styles.len()];
         for (index, property) in raw.properties.iter_mut().enumerate() {
             if let ObjectPropertyKind::ObjectProperty(property) = property {
                 let names = get_string_by_property_key(&property.key)
@@ -29,22 +30,35 @@ impl<'a> Lowering<'_, 'a> {
                     .unwrap_or_default();
                 let mut consumers = styles
                     .iter()
-                    .filter(|style| {
-                        if crate::assignment_owner::contains_consumer(source.span(), style) {
-                            return crate::assignment_owner::contains_consumer(
-                                property.value.span(),
-                                style,
-                            );
+                    .enumerate()
+                    .filter_map(|(index, style)| {
+                        let consumes =
+                            if crate::assignment_owner::contains_consumer(source.span(), style) {
+                                crate::assignment_owner::contains_consumer(
+                                    property.value.span(),
+                                    style,
+                                )
+                            } else {
+                                style.extract().iter().any(|value| match value {
+                                    ExtractStyleValue::Static(value) => {
+                                        names.contains(&value.property)
+                                    }
+                                    ExtractStyleValue::Dynamic(value) => {
+                                        names.iter().any(|name| name == value.property())
+                                    }
+                                    ExtractStyleValue::Typography(_) => {
+                                        names.iter().any(|name| name == "typography")
+                                    }
+                                    _ => false,
+                                })
+                            };
+                        assigned[index] |= consumes;
+                        if consumes {
+                            Some(style.clone_in(ast.allocator()))
+                        } else {
+                            None
                         }
-                        style.extract().iter().any(|value| match value {
-                            ExtractStyleValue::Static(value) => names.contains(&value.property),
-                            ExtractStyleValue::Dynamic(value) => {
-                                names.iter().any(|name| name == value.property())
-                            }
-                            _ => false,
-                        })
                     })
-                    .map(|style| style.clone_in(ast.allocator()))
                     .collect::<Vec<_>>();
                 let binding = format!("__devupField{index}");
                 values.push((binding.clone(), self.lower(&property.value, &mut consumers)));
@@ -52,10 +66,29 @@ impl<'a> Lowering<'_, 'a> {
                 refs.push(binding);
             }
         }
+        let mut residual = styles
+            .iter()
+            .zip(assigned)
+            .filter(|(_, assigned)| !assigned)
+            .map(|(style, _)| style.clone_in(ast.allocator()))
+            .collect::<Vec<_>>();
+        let alternate = self.alternate_order.and_then(|order| {
+            let mut residual = residual
+                .iter()
+                .map(|style| style.clone_in(ast.allocator()))
+                .collect::<Vec<_>>();
+            gen_class_names(ast, &mut residual, order.value, self.filename)
+        });
+        let residual = gen_class_names(ast, &mut residual, self.order, self.filename);
         let classes = |slot| {
+            let residual = if slot == 3 { &alternate } else { &residual };
             merge_expression_for_class_name(
                 ast,
-                refs.iter().map(|name| projection(ast, name, slot)),
+                refs.iter().map(|name| projection(ast, name, slot)).chain(
+                    residual
+                        .as_ref()
+                        .map(|class| class.clone_in(ast.allocator())),
+                ),
             )
             .unwrap_or_else(|| Expression::new_string_literal(oxc_span::SPAN, "", None, ast))
         };

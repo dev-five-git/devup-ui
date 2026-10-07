@@ -2,10 +2,14 @@ use super::*;
 
 #[path = "cache_allocator_tests.rs"]
 mod allocators;
+#[path = "cache_naming_coverage_tests.rs"]
+mod naming_coverage;
 #[path = "cache_reset_tests.rs"]
 mod resets;
 #[path = "cache_seed_tests.rs"]
 mod seeds;
+#[path = "cache_typography_coverage_tests.rs"]
+mod typography_coverage;
 
 fn fresh() {
     reset_build_state_internal();

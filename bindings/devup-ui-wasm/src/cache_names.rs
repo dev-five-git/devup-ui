@@ -165,6 +165,7 @@ mod tests {
             "OHshort",
             "OLlonger_than_sixteen_payload",
             "prefix-L",
+            "OXred",
         ] {
             assert!(!content_name(name), "{name}");
         }
