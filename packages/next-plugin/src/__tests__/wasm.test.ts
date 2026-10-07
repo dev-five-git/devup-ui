@@ -24,12 +24,12 @@ import {
   loadWasm,
   loadWebpackPlugin,
   requireFromPlugin,
+  resetWasmForTesting,
   setWasmForTesting,
   setWebpackPluginForTesting,
   withModuleResolver,
 } from '../wasm'
 
-const originalCwd = process.cwd()
 let tempRoots: string[] = []
 
 beforeAll(() => {
@@ -37,9 +37,7 @@ beforeAll(() => {
 })
 
 afterEach(() => {
-  process.chdir(originalCwd)
-  setWasmForTesting(undefined)
-  setWebpackPluginForTesting(undefined)
+  resetWasmForTesting()
 })
 
 afterAll(() => {
@@ -73,6 +71,31 @@ describe('WASM loading', () => {
     expect(loadWasm()).toBe(loaded)
   })
 
+  it('installs a fresh resolver after clearing the loaded namespace cache', () => {
+    const root = mkdtempSync(join(tmpdir(), 'devup-ui-next-resolver-'))
+    tempRoots.push(root)
+    writeFileSync(join(root, 'tokens.ts'), "export const tone = 'green'")
+    const engine = loadWasm()
+    engine.setModuleResolver(() => ({
+      path: join(root, 'tokens.ts'),
+      code: "export const tone = 'blue'",
+    }))
+    resetWasmForTesting()
+    const fresh = loadWasm()
+    fresh.codeExtract(
+      join(root, 'view.tsx'),
+      "import { Box } from '@devup-ui/react'; import { tone } from './tokens'; export const view = <Box bg={tone} />",
+      '@devup-ui/react',
+      'df',
+      true,
+      false,
+      false,
+      {},
+    )
+    expect(fresh.getCss(null, false)).toContain('green')
+    expect(fresh.getCss(null, false)).not.toContain('blue')
+  })
+
   it('resolves dependencies from a Bun-style isolated install', () => {
     const root = mkdtempSync(join(tmpdir(), 'devup-ui-next-isolated-'))
     tempRoots.push(root)
@@ -104,11 +127,9 @@ describe('WASM loading', () => {
       process.platform === 'win32' ? 'junction' : 'dir',
     )
 
-    process.chdir(root)
-
-    expect(requireFromPlugin<{ isolated: boolean }>('@devup-ui/wasm')).toEqual({
-      isolated: true,
-    })
+    expect(
+      requireFromPlugin<{ isolated: boolean }>('@devup-ui/wasm', root),
+    ).toEqual({ isolated: true })
   })
 
   it('loads or injects the Webpack plugin without a static dependency', () => {

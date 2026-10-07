@@ -309,6 +309,8 @@ thread_local! {
     static STRIPPED: RefCell<FxHashMap<String, (String, String)>> = RefCell::default();
 }
 
+pub(crate) mod test_state;
+
 /// A name a top-level variable declaration of the stylesheet binds
 struct Binding {
     name: String,
@@ -1285,18 +1287,22 @@ fn inner_json(json: &str) -> &str {
         .trim()
 }
 
-/// Styles `entry` composes, transitively and in order, each once
+/// Styles `entry` composes, transitively and in order; a style composed again
+/// later is listed again, as its declarations then win. `composing` holds the
+/// styles being expanded, so a style composing itself stops.
 fn collect_bases<'a>(
     collected: &'a CollectedStyles,
     entry: &'a StyleEntry,
-    seen: &mut FxHashSet<&'a str>,
+    composing: &mut Vec<&'a str>,
     bases: &mut Vec<(&'a str, &'a StyleEntry)>,
 ) {
     for base in &entry.bases {
-        if seen.insert(base.as_str())
+        if !composing.contains(&base.as_str())
             && let Some(base_entry) = collected.styles.get(base)
         {
-            collect_bases(collected, base_entry, seen, bases);
+            composing.push(base);
+            collect_bases(collected, base_entry, composing, bases);
+            composing.pop();
             bases.push((base.as_str(), base_entry));
         }
     }
@@ -1311,34 +1317,39 @@ fn composed_css(
     name: &str,
     entry: &StyleEntry,
 ) -> String {
-    let mut seen = FxHashSet::default();
-    seen.insert(name);
+    let mut composing = vec![name];
     let mut bases = Vec::new();
-    collect_bases(collected, entry, &mut seen, &mut bases);
+    collect_bases(collected, entry, &mut composing, &mut bases);
 
+    // One argument per style: `css()` merges them, a later declaration
+    // replacing an earlier one, which one object holding both would not do
     let mut rules = Vec::with_capacity(bases.len() + 1);
-    let mut classes = Vec::new();
+    let mut all_classes: Vec<&str> = Vec::new();
     for (base_name, base) in &bases {
         let json = collected.resolve_json(&base.json, keyframes_names);
-        let inner = inner_json(&json);
-        if !inner.is_empty() {
-            rules.push(inner.to_string());
+        if !inner_json(&json).is_empty() {
+            rules.push(json);
         }
-        classes.extend(base.classes.iter().map(String::as_str));
-        classes.extend(referenced_classes.get(base_name).copied());
+        all_classes.extend(base.classes.iter().map(String::as_str));
+        all_classes.extend(referenced_classes.get(base_name).copied());
     }
-    classes.extend(entry.classes.iter().map(String::as_str));
-    classes.extend(referenced_classes.get(name).copied());
+    all_classes.extend(entry.classes.iter().map(String::as_str));
+    all_classes.extend(referenced_classes.get(name).copied());
+    let mut classes: Vec<&str> = Vec::with_capacity(all_classes.len());
+    for class in all_classes {
+        if !classes.contains(&class) {
+            classes.push(class);
+        }
+    }
 
     let own = collected.resolve_json(&entry.json, keyframes_names);
     let css = if bases.is_empty() {
         format!("css({own})")
     } else {
-        let inner = inner_json(&own);
-        if !inner.is_empty() {
-            rules.push(inner.to_string());
+        if !inner_json(&own).is_empty() {
+            rules.push(own);
         }
-        format!("css({{{}}})", rules.join(","))
+        format!("css({})", rules.join(", "))
     };
     if classes.is_empty() {
         css
@@ -1450,6 +1461,7 @@ mod tests {
 
     #[test]
     fn test_strip_typescript_once_per_source() {
+        let _state = test_state::CacheGuard::new();
         let stripped = strip_typescript("export const a: number = 1;", "strip-cache.ts");
         assert_eq!(
             strip_typescript("export const a: number = 1;", "strip-cache.ts"),
@@ -1488,6 +1500,7 @@ mod tests {
     #[test]
     #[serial]
     fn test_stylesheet_import_errors() {
+        let _state = crate::test_state::TestStateGuard::new();
         assert_eq!(
             execute_stylesheet(
                 "import { b } from './b'\nexport const x = b",
@@ -1578,6 +1591,7 @@ mod tests {
     #[test]
     #[serial]
     fn test_names_follow_the_values_variables_hold() {
+        let _state = crate::test_state::TestStateGuard::new();
         assert_eq!(
             generate_with(
                 "export const sizes = { sm: style({ padding: 1 }), lg: style({ padding: 2 }) }
@@ -1613,6 +1627,7 @@ export const animated = css({"animationName":"__style_0__"})"#
     #[test]
     #[serial]
     fn test_exported_values_become_code() {
+        let _state = crate::test_state::TestStateGuard::new();
         assert_eq!(
             generate(
                 "const box = style({ color: 'red' })
@@ -1657,6 +1672,7 @@ export const symbol = Symbol('x')"#
     #[test]
     #[serial]
     fn test_style_variants_are_styles() {
+        let _state = crate::test_state::TestStateGuard::new();
         assert_eq!(
             generate(
                 "export const tone = styleVariants({ primary: { color: 'red' }, 0: { color: 'blue' }, [Symbol('s')]: { color: 'green' } })
@@ -1669,7 +1685,7 @@ globalStyle(`${tone.primary} > span`, { fontWeight: 700 })"
 const _ve0 = css({"color":"blue"})
 const _ve1 = css({"color":"red"}) + " f0__ve1"
 const _ve2 = css({"padding":"4px","content":"sm"})
-export const combined = css({"color":"red","margin":"1px"}) + " f0__ve1 external"
+export const combined = css({"color":"red"}, {"margin":"1px"}) + " f0__ve1 external"
 globalCss({ ".f0__ve1 > span": {"fontWeight":700} })
 export const tone = { "0": _ve0, "primary": _ve1 }
 export const space = { "sm": _ve2 }
@@ -1677,9 +1693,31 @@ export const none = {}"#
         );
     }
 
+    // Each composed style is an argument of its own, so a later one's
+    // declaration replaces an earlier one's, a style composed again included
+    #[test]
+    #[serial]
+    fn test_composition_keeps_later_declarations() {
+        let _state = crate::test_state::TestStateGuard::new();
+        assert_eq!(
+            generate(
+                "const first = style({ color: 'red', margin: 1 })
+const second = style({ color: 'blue' })
+export const later = style([first, second])
+export const again = style([first, second, first])"
+            ),
+            r#"import { css } from '@devup-ui/react'
+export const again = css({"color":"red","margin":"1px"}, {"color":"blue"}, {"color":"red","margin":"1px"})
+const first = css({"color":"red","margin":"1px"})
+export const later = css({"color":"red","margin":"1px"}, {"color":"blue"})
+const second = css({"color":"blue"})"#
+        );
+    }
+
     #[test]
     #[serial]
     fn test_composition_is_transitive() {
+        let _state = crate::test_state::TestStateGuard::new();
         assert_eq!(
             generate(
                 "const a = style({ color: 'red' })
@@ -1694,8 +1732,8 @@ export const hover = style({ selectors: { [`${a}:hover &`]: { color: 'blue' } } 
             ),
             r#"import { css } from '@devup-ui/react'
 const a = css({"color":"red"}) + " f0_a"
-const b = css({"color":"red","margin":"2px"}) + " f0_a"
-export const c = css({"color":"red","margin":"2px","padding":"3px"}) + " f0_a"
+const b = css({"color":"red"}, {"margin":"2px"}) + " f0_a"
+export const c = css({"color":"red"}, {"margin":"2px"}, {"padding":"3px"}) + " f0_a"
 const e = css({})
 export const f = css({"color":"red"}) + " f0_a"
 export const g = css({})
@@ -1707,6 +1745,7 @@ export const hover = css({"selectors":{".f0_a:hover &":{"color":"blue"}}})"#
     #[test]
     #[serial]
     fn test_font_faces() {
+        let _state = crate::test_state::TestStateGuard::new();
         assert_eq!(
             generate(
                 "export const body = fontFace({ src: 'local(a)' }, 'Body Font')
@@ -1726,6 +1765,7 @@ export const icons = "font-0-1""#
     #[test]
     #[serial]
     fn test_vars_follow_vanilla_extract() {
+        let _state = crate::test_state::TestStateGuard::new();
         assert_eq!(
             generate(
                 "export const plain = createVar()
@@ -1756,6 +1796,7 @@ export const none = """#
     #[test]
     #[serial]
     fn test_layers_and_containers() {
+        let _state = crate::test_state::TestStateGuard::new();
         assert_eq!(
             generate(
                 "export const reset = layer()
@@ -1785,6 +1826,7 @@ export const anonymous = "container-0-5""#
     #[test]
     #[serial]
     fn test_themes_and_contracts() {
+        let _state = crate::test_state::TestStateGuard::new();
         assert_eq!(
             generate(
                 "const contract = createThemeContract({ color: { brand: null, text: null }, list: [1], flag: true })
@@ -1825,6 +1867,7 @@ export const notObject = ["theme-0-9", {}]"#
     #[test]
     #[serial]
     fn test_nothing_collected() {
+        let _state = crate::test_state::TestStateGuard::new();
         assert_eq!(generate("const x = 1"), "");
         reset_file_map();
         assert!(execute_vanilla_extract("throw new Error('x')", PACKAGE, "test.css.ts").is_err());
@@ -1868,6 +1911,7 @@ export const notObject = ["theme-0-9", {}]"#
     #[test]
     #[serial]
     fn test_referenced_keyframes() {
+        let _state = crate::test_state::TestStateGuard::new();
         reset_file_map();
         let collected = execute_vanilla_extract(
             "import { style, keyframes } from '@devup-ui/react'

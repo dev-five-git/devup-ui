@@ -1,6 +1,7 @@
 mod as_visit;
 mod build_time_values;
 mod component;
+mod composition;
 mod css_utils;
 pub mod extract_style;
 mod extractor;
@@ -11,10 +12,14 @@ mod imported_constants;
 mod module_loader;
 mod mutations;
 mod prop_modify_utils;
+mod prop_valid;
 mod source_map;
 mod style_values;
+mod styled_reads;
 mod stylex;
 mod tailwind;
+#[doc(hidden)]
+pub mod test_state;
 mod util_type;
 mod utils;
 mod vanilla_extract;
@@ -437,6 +442,7 @@ fn extract_source(
         if global { None } else { Some(bucket) },
     );
     visitor.import_stylex(inlined.stylex_vars, inlined.stylex_themes);
+    visitor.import_css(inlined.css_styles);
     visitor.unknown_bindings(&inlined.unknown);
     visitor.changed_bindings(inlined.changed.clone());
     visitor.visit_program(&mut program);
@@ -882,6 +888,7 @@ mod tests {
     #[serial]
     fn extract_canonical_bucket_merge() {
         use css::file_map::{reset_canonical_map, set_canonical_map};
+        let _state = test_state::TestStateGuard::default();
         reset_class_map();
         reset_file_map();
         reset_canonical_map();
@@ -915,6 +922,7 @@ mod tests {
     #[serial]
     fn extract_global_hoist() {
         use css::file_map::{GLOBAL_BUCKET, reset_canonical_map, set_canonical_map};
+        let _state = test_state::TestStateGuard::new();
         reset_class_map();
         reset_file_map();
         reset_canonical_map();
@@ -11913,6 +11921,7 @@ globalCss({
     #[test]
     #[serial]
     fn test_vanilla_extract_style_css_ts() {
+        let _state = test_state::TestStateGuard::new();
         reset_class_map();
         reset_file_map();
         // .css.ts file with style function (vanilla-extract API)
@@ -11937,6 +11946,7 @@ export const container: string = style({ background: "red", padding: 16 })
     #[test]
     #[serial]
     fn test_vanilla_extract_style_css_js() {
+        let _state = test_state::TestStateGuard::new();
         reset_class_map();
         reset_file_map();
         // .css.js file with style function
@@ -11982,6 +11992,7 @@ export const link = style({ color: "blue", textDecoration: "underline" })
     #[test]
     #[serial]
     fn test_vanilla_extract_css_ts_with_vanilla_extract_import() {
+        let _state = test_state::TestStateGuard::new();
         reset_class_map();
         reset_file_map();
         // .css.ts file with import from @vanilla-extract/css (not @devup-ui/react)
@@ -12020,6 +12031,7 @@ export const text = style({
     #[test]
     #[serial]
     fn test_vanilla_extract_with_variable() {
+        let _state = test_state::TestStateGuard::new();
         reset_class_map();
         reset_file_map();
         // Variables should be evaluated at execution time
@@ -12046,6 +12058,7 @@ export const button = style({ background: primaryColor, padding: spacing })
     #[test]
     #[serial]
     fn test_vanilla_extract_with_computed() {
+        let _state = test_state::TestStateGuard::new();
         reset_class_map();
         reset_file_map();
         // Computed values should be evaluated
@@ -12071,6 +12084,7 @@ export const box = style({ padding: base * 2, margin: base / 2 })
     #[test]
     #[serial]
     fn test_vanilla_extract_with_spread() {
+        let _state = test_state::TestStateGuard::new();
         reset_class_map();
         reset_file_map();
         // Spread operator should work
@@ -12096,6 +12110,7 @@ export const extended = style({ ...baseStyle, background: "red" })
     #[test]
     #[serial]
     fn test_vanilla_extract_with_pseudo_selector() {
+        let _state = test_state::TestStateGuard::new();
         reset_class_map();
         reset_file_map();
         // devup-ui extension: _hover pseudo selector
@@ -12120,6 +12135,7 @@ export const hoverButton = style({ background: "gray", _hover: { background: "bl
     #[test]
     #[serial]
     fn test_vanilla_extract_with_responsive_array() {
+        let _state = test_state::TestStateGuard::new();
         reset_class_map();
         reset_file_map();
         // devup-ui extension: responsive arrays
@@ -12144,6 +12160,7 @@ export const responsiveBox = style({ padding: [8, 16, 32] })
     #[test]
     #[serial]
     fn test_vanilla_extract_with_keyframes_and_global() {
+        let _state = test_state::TestStateGuard::new();
         reset_class_map();
         reset_file_map();
         // .css.ts file with keyframes (vanilla-extract API)
@@ -12189,6 +12206,7 @@ globalStyle("body", { margin: 0, padding: 0 })
     #[test]
     #[serial]
     fn test_vanilla_extract_create_var() {
+        let _state = test_state::TestStateGuard::new();
         reset_class_map();
         reset_file_map();
         // createVar - CSS variable creation
@@ -12242,6 +12260,7 @@ export const box = style({
     #[test]
     #[serial]
     fn test_vanilla_extract_style_variants() {
+        let _state = test_state::TestStateGuard::new();
         reset_class_map();
         reset_file_map();
         // styleVariants - create multiple style variants
@@ -12294,6 +12313,7 @@ export const button = styleVariants({
     #[test]
     #[serial]
     fn test_vanilla_extract_font_face() {
+        let _state = test_state::TestStateGuard::new();
         reset_class_map();
         reset_file_map();
         reset_file_map();
@@ -12351,6 +12371,7 @@ export const body = style({
     #[test]
     #[serial]
     fn test_vanilla_extract_theme() {
+        let _state = test_state::TestStateGuard::new();
         reset_class_map();
         reset_file_map();
         reset_file_map();
@@ -12428,6 +12449,7 @@ export const darkTheme = createTheme(vars, {
     #[test]
     #[serial]
     fn test_layer_record_places_every_declaration() {
+        let _state = test_state::TestStateGuard::new();
         reset_class_map();
         reset_file_map();
         assert_debug_snapshot!(ToBTreeSet::from(
@@ -12459,6 +12481,7 @@ const A = styled.div({ '@layer': { base: {
     #[test]
     #[serial]
     fn test_vanilla_extract_layer_records() {
+        let _state = test_state::TestStateGuard::new();
         reset_class_map();
         reset_file_map();
         assert_debug_snapshot!(ToBTreeSet::from(
@@ -12488,6 +12511,7 @@ export const button = style({ color: 'red', '@layer': { [components]: { color: '
     #[test]
     #[serial]
     fn test_vanilla_extract_layer() {
+        let _state = test_state::TestStateGuard::new();
         reset_class_map();
         reset_file_map();
         reset_file_map();
@@ -12520,6 +12544,7 @@ globalStyle('*', {
     #[test]
     #[serial]
     fn test_vanilla_extract_container() {
+        let _state = test_state::TestStateGuard::new();
         reset_class_map();
         reset_file_map();
         // createContainer - container queries
@@ -12555,6 +12580,7 @@ export const responsive = style({
     #[test]
     #[serial]
     fn test_vanilla_extract_global_theme() {
+        let _state = test_state::TestStateGuard::new();
         reset_class_map();
         reset_file_map();
         // createGlobalTheme - global theme variables on :root
@@ -12588,6 +12614,7 @@ export const vars = createGlobalTheme(':root', {
     #[test]
     #[serial]
     fn test_vanilla_extract_composition() {
+        let _state = test_state::TestStateGuard::new();
         reset_class_map();
         reset_file_map();
         // style composition - array of styles
@@ -12623,6 +12650,7 @@ export const button = style([base, interactive, {
     #[test]
     #[serial]
     fn test_vanilla_extract_selectors() {
+        let _state = test_state::TestStateGuard::new();
         reset_class_map();
         reset_file_map();
         // complex selectors
@@ -12696,6 +12724,7 @@ export const child = style({
     #[test]
     #[serial]
     fn test_vanilla_extract_media_queries() {
+        let _state = test_state::TestStateGuard::new();
         reset_class_map();
         reset_file_map();
         // @media queries
@@ -12734,6 +12763,7 @@ export const responsive = style({
     #[test]
     #[serial]
     fn test_vanilla_extract_supports() {
+        let _state = test_state::TestStateGuard::new();
         reset_class_map();
         reset_file_map();
         // @supports queries
@@ -12928,6 +12958,7 @@ export const grid = style({
     #[test]
     #[serial]
     fn test_vanilla_extract_invalid_js_execution() {
+        let _state = test_state::TestStateGuard::new();
         // Test vanilla-extract file with invalid JS (covers line 107 fallback)
         reset_class_map();
         reset_file_map();
@@ -12954,6 +12985,7 @@ export const broken = style((() => { throw new Error("fail"); })())
     #[test]
     #[serial]
     fn test_vanilla_extract_empty_styles() {
+        let _state = test_state::TestStateGuard::new();
         // Test vanilla-extract file that produces empty styles (covers line 116)
         reset_class_map();
         reset_file_map();
@@ -12979,6 +13011,7 @@ const unused = 1;
     #[test]
     #[serial]
     fn test_vanilla_extract_constant_exports() {
+        let _state = test_state::TestStateGuard::new();
         // Test vanilla-extract file with constant exports (covers lines 576-577)
         reset_class_map();
         reset_file_map();
@@ -13006,6 +13039,7 @@ export const box = style({ padding: SPACING })
     #[test]
     #[serial]
     fn test_vanilla_extract_theme_with_vars() {
+        let _state = test_state::TestStateGuard::new();
         // Test createTheme with array destructuring [themeClass, vars] (covers lines 406-430)
         reset_class_map();
         reset_file_map();
@@ -13040,6 +13074,7 @@ export const [lightTheme, vars] = createTheme({
     #[test]
     #[serial]
     fn test_vanilla_extract_non_exported_theme() {
+        let _state = test_state::TestStateGuard::new();
         // Test non-exported createTheme (covers theme branches without export)
         reset_class_map();
         reset_file_map();
@@ -13073,6 +13108,7 @@ export const themed = style({
     #[test]
     #[serial]
     fn test_vanilla_extract_style_composition_empty() {
+        let _state = test_state::TestStateGuard::new();
         // Test style with empty composition array
         reset_class_map();
         reset_file_map();
@@ -13099,6 +13135,7 @@ export const withEmpty = style([{}])
     #[test]
     #[serial]
     fn test_vanilla_extract_style_variants_with_base() {
+        let _state = test_state::TestStateGuard::new();
         // Test styleVariants with base composition (covers lines 1165-1177)
         reset_class_map();
         reset_file_map();
@@ -13132,6 +13169,7 @@ export const sizes = styleVariants({
     #[test]
     #[serial]
     fn test_vanilla_extract_layer_and_container() {
+        let _state = test_state::TestStateGuard::new();
         // Test layer() and createContainer() together (covers lines 1207-1216)
         reset_class_map();
         reset_file_map();
@@ -13163,6 +13201,7 @@ export const containerStyle = style({
     #[test]
     #[serial]
     fn test_vanilla_extract_all_imports() {
+        let _state = test_state::TestStateGuard::new();
         // Test file that uses css, globalCss, and keyframes together (covers lines 1049, 1052)
         reset_class_map();
         reset_file_map();
@@ -13200,6 +13239,7 @@ export const box = style({
     #[test]
     #[serial]
     fn test_vanilla_extract_theme_without_vars_name() {
+        let _state = test_state::TestStateGuard::new();
         // Test createTheme two-arg form (covers lines 1108, 1111)
         reset_class_map();
         reset_file_map();
@@ -13236,6 +13276,7 @@ export const darkTheme = createTheme(contract, {
     #[test]
     #[serial]
     fn test_vanilla_extract_font_face_with_style() {
+        let _state = test_state::TestStateGuard::new();
         // Test fontFace used in style (covers fontFace placeholder replacement)
         reset_class_map();
         reset_file_map();
@@ -13267,6 +13308,7 @@ export const text = style({
     #[test]
     #[serial]
     fn test_vanilla_extract_vars_only() {
+        let _state = test_state::TestStateGuard::new();
         // Test createVar exports (covers lines 1191-1192)
         reset_class_map();
         reset_file_map();
@@ -13297,6 +13339,7 @@ export const box = style({
     #[test]
     #[serial]
     fn test_vanilla_extract_global_theme_empty_vars() {
+        let _state = test_state::TestStateGuard::new();
         // Test createGlobalTheme with empty vars (covers line 1142 branch)
         reset_class_map();
         reset_file_map();
@@ -13323,6 +13366,7 @@ export const box = style({ padding: 8 })
     #[test]
     #[serial]
     fn test_vanilla_extract_non_exported_styles() {
+        let _state = test_state::TestStateGuard::new();
         // Test non-exported styles mixed with exported (covers export flag branches)
         reset_class_map();
         reset_file_map();
@@ -13347,6 +13391,7 @@ export const publicStyle = style({ margin: 8 })
     #[test]
     #[serial]
     fn test_vanilla_extract_selector_references() {
+        let _state = test_state::TestStateGuard::new();
         // Test styles referencing each other in selectors (covers find_selector_references)
         reset_class_map();
         reset_file_map();
@@ -13604,6 +13649,7 @@ globalCss({
     #[test]
     #[serial]
     fn test_stylesheet_evaluation_errors() {
+        let _state = test_state::TestStateGuard::new();
         reset_class_map();
         reset_file_map();
         let error = extract(
@@ -13634,6 +13680,7 @@ globalCss({
     #[test]
     #[serial]
     fn test_vanilla_extract_execution_fallback() {
+        let _state = test_state::TestStateGuard::new();
         // Test vanilla-extract file with execution error (covers line 116 fallback)
         reset_class_map();
         reset_file_map();
@@ -13659,6 +13706,7 @@ const x = style({ padding: [[[}}} // invalid syntax
     #[test]
     #[serial]
     fn test_import_alias_vanilla_extract_named() {
+        let _state = test_state::TestStateGuard::new();
         // Test @vanilla-extract/css named exports in regular .tsx files (NOT .css.ts)
         // Note: .css.ts files use vanilla-extract's own processing which doesn't go through import aliases
         reset_class_map();
@@ -13691,6 +13739,7 @@ const buttonStyle = css({ bg: 'red', p: 4 })
     #[test]
     #[serial]
     fn test_vanilla_extract_keyframes_export() {
+        let _state = test_state::TestStateGuard::new();
         // Test exported keyframes (covers lines 1052, 1152-1153)
         reset_class_map();
         reset_file_map();
@@ -13724,6 +13773,7 @@ export const spinner = style({ animation: spin })
     #[test]
     #[serial]
     fn test_vanilla_extract_theme_vars_name_only() {
+        let _state = test_state::TestStateGuard::new();
         // Test createTheme with vars_name but no vars_object_json (covers line 1301)
         reset_class_map();
         reset_file_map();
@@ -13751,6 +13801,7 @@ export const myTheme = createTheme({
     #[test]
     #[serial]
     fn test_vanilla_extract_style_variants_mixed() {
+        let _state = test_state::TestStateGuard::new();
         // Test styleVariants with mixed base and no-base (covers lines 1161-1184)
         reset_class_map();
         reset_file_map();
@@ -13781,6 +13832,7 @@ export const buttons = styleVariants({
     #[test]
     #[serial]
     fn test_vanilla_extract_global_theme_with_vars() {
+        let _state = test_state::TestStateGuard::new();
         // Test createGlobalTheme with CSS vars (covers lines 1142-1144)
         reset_class_map();
         reset_file_map();
@@ -13816,6 +13868,7 @@ export const box = style({ padding: 8 })
     #[test]
     #[serial]
     fn test_vanilla_extract_font_face_empty_props() {
+        let _state = test_state::TestStateGuard::new();
         // Test fontFace with minimal properties (covers line 1132-1135 empty props branch)
         reset_class_map();
         reset_file_map();
@@ -13842,6 +13895,7 @@ export const text = style({ fontFamily: minimalFont })
     #[test]
     #[serial]
     fn test_vanilla_extract_imports_combination() {
+        let _state = test_state::TestStateGuard::new();
         // Test file with multiple import types (covers lines 1049, 1052 import generation)
         reset_class_map();
         reset_file_map();
@@ -13870,6 +13924,7 @@ export const animated = style({ animation: fadeIn })
     #[test]
     #[serial]
     fn test_vanilla_extract_theme_export_variations() {
+        let _state = test_state::TestStateGuard::new();
         // Test createTheme with different export patterns (covers lines 1103-1111)
         reset_class_map();
         reset_file_map();
@@ -13904,6 +13959,7 @@ export const box = style({ padding: 8 })
     #[test]
     #[serial]
     fn test_vanilla_extract_style_composition_multiple() {
+        let _state = test_state::TestStateGuard::new();
         // Test style with multiple style objects in composition array (covers lines 728-729)
         reset_class_map();
         reset_file_map();
@@ -13930,6 +13986,7 @@ export const complex = style([base, { margin: 4 }, { color: 'blue' }])
     #[test]
     #[serial]
     fn test_vanilla_extract_selector_class_replacement() {
+        let _state = test_state::TestStateGuard::new();
         // Test selector references that need class name replacement (covers collected_styles_to_code_with_classes)
         reset_class_map();
         reset_file_map();
@@ -13960,6 +14017,7 @@ export const child = style({
     #[test]
     #[serial]
     fn test_vanilla_extract_all_exports_combined() {
+        let _state = test_state::TestStateGuard::new();
         // Test file with styles, keyframes, globalStyles, themes, vars, containers, layers, fontFaces combined
         // Covers multiple import generation paths and code generation
         reset_class_map();
@@ -13992,6 +14050,7 @@ export const box = style({ fontFamily: myFont })
     #[test]
     #[serial]
     fn test_vanilla_extract_theme_array_destructure() {
+        let _state = test_state::TestStateGuard::new();
         // Test createTheme with array destructuring [themeClass, vars] (covers lines 384, 386-387)
         reset_class_map();
         reset_file_map();
@@ -14021,6 +14080,7 @@ export const themed = style({ color: themeVars.colors.primary })
     #[test]
     #[serial]
     fn test_vanilla_extract_font_face_placeholder() {
+        let _state = test_state::TestStateGuard::new();
         // Test fontFace placeholder remapping (covers lines 503-505)
         reset_class_map();
         reset_file_map();
@@ -14055,6 +14115,7 @@ export const heading = style({ fontFamily: secondFont })
     #[test]
     #[serial]
     fn test_vanilla_extract_global_theme_placeholder() {
+        let _state = test_state::TestStateGuard::new();
         // Test createGlobalTheme placeholder remapping (covers global theme paths)
         reset_class_map();
         reset_file_map();
@@ -14179,6 +14240,7 @@ globalCss({
     #[test]
     #[serial]
     fn test_vanilla_extract_selector_refs_triggers_with_classes() {
+        let _state = test_state::TestStateGuard::new();
         // Test that triggers collected_styles_to_code_with_classes path (selector references)
         reset_class_map();
         reset_file_map();
@@ -14209,6 +14271,7 @@ globalStyle('body', { margin: 0 })
     #[test]
     #[serial]
     fn test_vanilla_extract_theme_without_vars_json() {
+        let _state = test_state::TestStateGuard::new();
         // Test createTheme that has vars_name but might not have vars_object_json (covers line 1111)
         reset_class_map();
         reset_file_map();
@@ -14273,6 +14336,7 @@ globalCss({
     #[test]
     #[serial]
     fn test_selector_refs_with_global_theme() {
+        let _state = test_state::TestStateGuard::new();
         // Test that triggers append_non_style_code with global themes (covers lines 1142-1144, 1221-1222)
         // Need selector references + createGlobalTheme
         reset_class_map();
@@ -14307,6 +14371,7 @@ export const child = style({
     #[test]
     #[serial]
     fn test_vanilla_extract_with_at_container_selector() {
+        let _state = test_state::TestStateGuard::new();
         // Test @container with selector context (covers line 134 in extract_style_from_expression.rs)
         reset_class_map();
         reset_file_map();
@@ -14551,6 +14616,450 @@ const Button = styled.button({ bg: 'red' })
             )
             .unwrap()
         ));
+    }
+
+    /// `code` extracted with readable class names
+    fn readable_code(code: &str) -> String {
+        let _state = test_state::TestStateGuard::new();
+        reset_class_map();
+        reset_file_map();
+        css::debug::set_debug(true);
+        let output = extract(
+            "test.tsx",
+            code,
+            ExtractOption {
+                package: "@devup-ui/core".to_string(),
+                css_dir: "@devup-ui/core".to_string(),
+                single_css: true,
+                import_main_css: false,
+                import_aliases: HashMap::new(),
+            },
+        );
+        match output {
+            Ok(output) => output.code,
+            Err(error) => error.to_string(),
+        }
+    }
+
+    // A later part of `css(...)` replaces an earlier part's declaration of the
+    // same property, selector, breakpoint and layer, whatever the stylesheet
+    // order of their classes
+    #[rstest]
+    #[case(
+        "css(yellow, azure)",
+        r#""color-0-red-_a__c_hover-255 background-0-black--255 color-0-azure--255""#
+    )]
+    #[case(
+        "css(azure, yellow)",
+        r#""background-0-black--255 color-0-red-_a__c_hover-255 color-0-yellow--255""#
+    )]
+    #[case(
+        "css({ color: 'green' }, yellow)",
+        r#""color-0-red-_a__c_hover-255 color-0-yellow--255""#
+    )]
+    #[case(
+        "css(yellow, { color: 'green' })",
+        r#""color-0-red-_a__c_hover-255 color-0-green--255""#
+    )]
+    #[case(
+        "css([yellow, azure])",
+        r#""color-0-red-_a__c_hover-255 background-0-black--255 color-0-azure--255""#
+    )]
+    #[case(
+        "css(...[yellow, azure])",
+        r#""color-0-red-_a__c_hover-255 background-0-black--255 color-0-azure--255""#
+    )]
+    #[case(
+        "css(yellow, null, undefined, false, azure)",
+        r#""color-0-red-_a__c_hover-255 background-0-black--255 color-0-azure--255""#
+    )]
+    #[case(
+        "css(yellow, on && azure)",
+        r#"`color-0-red-_a__c_hover-255 ${on ? "background-0-black--255" : ""} ${on ? "color-0-azure--255" : "color-0-yellow--255"}`"#
+    )]
+    #[case(
+        "css(on ? yellow : azure)",
+        r#"`${on ? "color-0-red-_a__c_hover-255" : ""} ${on ? "color-0-yellow--255" : "color-0-azure--255"} ${on ? "" : "background-0-black--255"}`"#
+    )]
+    #[case(
+        "css(yellow, on ? { color: 'pink' } : null)",
+        r#"`color-0-red-_a__c_hover-255 ${on ? "color-0-pink--255" : "color-0-yellow--255"}`"#
+    )]
+    #[case(
+        "css(yellow, { color: on ? 'pink' : 'teal' })",
+        r#"`color-0-red-_a__c_hover-255 ${on ? "color-0-pink--255" : "color-0-teal--255"}`"#
+    )]
+    #[case(
+        "css(yellow, ext, azure)",
+        r"`color-0-red-_a__c_hover-255 background-0-black--255 color-0-azure--255 ${ext}`"
+    )]
+    #[case(
+        "css(yellow, on ? 'plain' : azure)",
+        r#"`${on ? "plain" : ""} ${`color-0-red-_a__c_hover-255 ${on ? "" : "background-0-black--255"} ${on ? "color-0-yellow--255" : "color-0-azure--255"}`}`"#
+    )]
+    #[case(
+        "css(azure, wide)",
+        r#""background-0-black--255 color-0-a1--255 color-1-b1--255""#
+    )]
+    #[case(
+        "css(wide, { color: [null, 'x2'] })",
+        r#""color-0-a1--255 color-1-x2--255""#
+    )]
+    #[case(
+        "css(yellow, ordered)",
+        r#""color-0-red-_a__c_hover-255 color-0-navy--3""#
+    )]
+    #[case("css(heading, body)", r#""typo-body""#)]
+    #[case(
+        "css(chained, { color: 'gold' })",
+        r#""color-0-red-_a__c_hover-255 background-0-black--255 color-0-gold--255""#
+    )]
+    #[case(
+        "css(yellow, { color: { a: 'red', b: 'blue' }[size] })",
+        r"`color-0-red-_a__c_hover-255 color-0-yellow--255 ${{"
+    )]
+    #[case(
+        "css(yellow, on ? { color: { a: 'red' }[size] } : null)",
+        r#"`color-0-red-_a__c_hover-255 color-0-yellow--255 ${on ? { "a": "color-0-red--255" }[size] || "" : ""}`"#
+    )]
+    #[case(
+        "css(yellow, on || azure)",
+        r#"`${on ? typeof on === "string" ? on : "" : ""} ${`color-0-red-_a__c_hover-255 ${on ? "" : "background-0-black--255"} ${on ? "color-0-yellow--255" : "color-0-azure--255"}`}`"#
+    )]
+    #[case(
+        "css(yellow, ext ?? azure)",
+        r#"`${ext != null ? typeof ext === "string" ? ext : "" : ""} ${`color-0-red-_a__c_hover-255 ${ext != null ? "" : "background-0-black--255"} ${ext != null ? "color-0-yellow--255" : "color-0-azure--255"}`}`"#
+    )]
+    #[case(
+        "css(yellow, null ?? azure)",
+        r#""color-0-red-_a__c_hover-255 background-0-black--255 color-0-azure--255""#
+    )]
+    #[case(
+        "css(yellow, false ?? azure)",
+        r#""color-0-red-_a__c_hover-255 color-0-yellow--255""#
+    )]
+    #[case(
+        "css(azure || yellow)",
+        r#""background-0-black--255 color-0-azure--255""#
+    )]
+    #[case(
+        "css(yellow, on || 'plain')",
+        r#"`color-0-red-_a__c_hover-255 color-0-yellow--255 ${on ? typeof on === "string" ? on : "" : "plain"}`"#
+    )]
+    #[case(
+        "css(yellow, { color: on ? 'a' : 'b', m: [1, 2], styleOrder: 2 })",
+        r#"`color-0-red-_a__c_hover-255 margin-0-4px--2 margin-1-8px--2 ${on ? "color-0-a--2" : "color-0-b--2"}`"#
+    )]
+    #[case(
+        "css(yellow, { color: { a: 'x' }[size], styleOrder: 2 })",
+        r#"`color-0-red-_a__c_hover-255 color-0-yellow--255 ${{ "a": "color-0-x--2" }[size] || ""}`"#
+    )]
+    #[case(
+        "css(yellow, on ? { color: other ? 'a' : 'b' } : null)",
+        r#"`color-0-red-_a__c_hover-255 ${on ? other ? "color-0-a--255" : "color-0-b--255" : "color-0-yellow--255"}`"#
+    )]
+    #[case(
+        "css(yellow, fade)",
+        r"`color-0-red-_a__c_hover-255 color-0-yellow--255 ${fade}`"
+    )]
+    #[case(
+        "css(yellow, { color: ['x', 'y'][idx], styleOrder: 2 })",
+        "`color-0-red-_a__c_hover-255 color-0-yellow--255 ${{\n\t\"0\": \"color-0-x--2\",\n\t\"1\": \"color-0-y--2\"\n}[idx] || \"\"}`"
+    )]
+    #[case(
+        "css(yellow, { color: 'pink' } || azure)",
+        r#""color-0-red-_a__c_hover-255 color-0-pink--255""#
+    )]
+    #[case(
+        "css(yellow, undefined ?? azure)",
+        r#""color-0-red-_a__c_hover-255 background-0-black--255 color-0-azure--255""#
+    )]
+    #[case(
+        "css(yellow, false ?? azure)",
+        r#""color-0-red-_a__c_hover-255 color-0-yellow--255""#
+    )]
+    #[serial]
+    fn test_css_composes_known_classes(#[case] call: &str, #[case] expected: &str) {
+        let code = readable_code(&format!(
+            "import {{css, keyframes}} from '@devup-ui/core'
+const yellow = css({{ color: 'yellow', _hover: {{ color: 'red' }} }})
+const azure = css({{ color: 'azure', bg: 'black' }})
+const wide = css({{ color: ['a1', 'b1'] }})
+const ordered = css({{ color: 'navy', styleOrder: 3 }})
+const heading = css({{ typography: 'heading' }})
+const body = css({{ typography: 'body' }})
+const chained = css(yellow, azure)
+const fade = keyframes({{ from: {{ opacity: 0 }} }})
+export const result = {call}
+"
+        ));
+        assert!(
+            code.contains(&format!("export const result = {expected}")),
+            "{code}"
+        );
+    }
+
+    #[test]
+    #[serial]
+    fn test_styled_extension_composes_base() {
+        let code = readable_code(
+            "import {styled} from '@devup-ui/core'
+const Base = styled.button`color: red; background: white; &:hover { color: red; }`
+const Ext = styled(Base)`color: blue; &:hover { color: blue; }`
+const Obj = styled.div({ color: 'red', p: 2 })
+const ObjExt = styled(Obj)({ color: 'blue' })
+const Twice = styled(ObjExt, { m: 1 })
+const Runtime = styled(make())({ color: 'red' })
+const FromRuntime = styled(Runtime)({ color: 'blue' })
+let Changing = styled.div({ color: 'red' })
+const FromChanging = styled(Changing)({ color: 'blue' })
+const Ordered = styled.div({ color: 'red', styleOrder: 3 })",
+        );
+        for expected in [
+            "const Ext = __devupForwardRef((__devupRefProps, __devupRef) => (({ style, className, as: DevupAs = \"button\", forwardedAs, ...rest }) => <DevupAs {...(({ \"theme\": __devupOmit0, ...__devupDom }) => __devupDom)(rest)} as={forwardedAs} className={[\"color-0-blue-_a__c_hover-255 color-0-blue--255 background-0-white--255\", className]",
+            "const ObjExt = __devupForwardRef((__devupRefProps, __devupRef) => (({ style, className, as: DevupAs = \"div\", forwardedAs, ...rest }) => <DevupAs {...(({ \"theme\": __devupOmit0, ...__devupDom }) => __devupDom)(rest)} as={forwardedAs} className={[\"color-0-blue--255 padding-0-8px--255\", className]",
+            "const Twice = __devupForwardRef((__devupRefProps, __devupRef) => (({ style, className, as: DevupAs = \"div\", forwardedAs, ...rest }) => <DevupAs {...(({ \"theme\": __devupOmit0, ...__devupDom }) => __devupDom)(rest)} as={forwardedAs} className={[\"margin-0-4px--255 color-0-blue--255 padding-0-8px--255\", className]",
+            "const FromRuntime = __devupForwardRef((__devupRefProps, __devupRef) => (({ style, className, as: DevupAs = Runtime, forwardedAs, ...rest }) => <DevupAs {...rest}",
+            "const FromChanging = __devupForwardRef((__devupRefProps, __devupRef) => (({ style, className, as: DevupAs = Changing, forwardedAs, ...rest }) => <DevupAs {...rest}",
+            "const Ordered = __devupForwardRef((__devupRefProps, __devupRef) => (({ style, className, as: DevupAs = \"div\", forwardedAs, ...rest }) => <DevupAs {...(({ \"theme\": __devupOmit0, ...__devupDom }) => __devupDom)(rest)} as={forwardedAs} className={[\"color-0-red--3\", className]",
+        ] {
+            assert!(code.contains(expected), "{expected}\n{code}");
+        }
+    }
+
+    // `withComponent` renders the same styles as another tag or component, and
+    // `as` changes what a styled component renders while `forwardedAs` passes on
+    #[test]
+    #[serial]
+    fn test_styled_with_component_and_as() {
+        let code = readable_code(
+            "import {styled} from '@devup-ui/core'
+const Section = styled.section.attrs({ role: 'region' })({ color: 'red' })
+export const Aside = Section.withComponent('aside')
+export const Linked = Section.withComponent(Link)
+export const Nested = Section.withComponent(motion.div)
+export const Again = Aside.withComponent('nav')
+export const Kept = Section.withComponent(make())
+export const Other = other.withComponent('aside')
+export const a = <Section as=\"a\" forwardedAs=\"b\" />",
+        );
+        for expected in [
+            "export const Aside = __devupForwardRef((__devupRefProps, __devupRef) => ((__devupProps) => (({ style, className, as: DevupAs = \"aside\", forwardedAs, ...rest }) => <DevupAs {...(({ \"theme\": __devupOmit0, ...__devupDom }) => __devupDom)(rest)} as={forwardedAs} className={[\"color-0-red--255\", className]",
+            "as: DevupAs = Link,",
+            "as: DevupAs = motion.div,",
+            "export const Again = __devupForwardRef((__devupRefProps, __devupRef) => ((__devupProps) => (({ style, className, as: DevupAs = \"nav\",",
+            "export const Kept = Section.withComponent(make());",
+            "export const Other = other.withComponent(\"aside\");",
+            "...{ role: \"region\" }",
+            "<Section as=\"a\" forwardedAs=\"b\" />",
+        ] {
+            assert!(code.contains(expected), "{expected}\n{code}");
+        }
+    }
+
+    // A styled component keeps the props its styles read, `$` props and `theme`
+    // away from the tag, follows `shouldForwardProp` as the build evaluates it,
+    // and an element using it drops what it neither reads nor passes on
+    #[test]
+    #[serial]
+    fn test_styled_prop_forwarding() {
+        let code = readable_code(
+            "import {styled} from '@devup-ui/core'
+import isPropValid from '@emotion/is-prop-valid'
+const A = styled('h1', { shouldForwardProp: (prop) => prop !== 'tone' })({ color: 'red' })
+const B = styled.div`color: ${(p) => p.$c}; background: ${(p) => p.tone};`
+const C = styled.div.withConfig({ shouldForwardProp: (prop, valid) => valid(prop) && !['x', 'y'].includes(prop) })({ color: 'red' })
+const D = styled('p', { shouldForwardProp: (prop) => isPropValid(prop) || prop.startsWith('data-') })({ color: 'red' })
+const E = styled('p', { shouldForwardProp: () => true })({ color: 'red' })
+const F = styled(Link)`color: ${(p) => p.$c};`
+const G = styled('p', { shouldForwardProp: function (prop) { return prop === 'id' } })({ color: 'red' })
+const H = styled.div`color: ${function (p) { return p.c }};`
+const I = styled.div`color: ${({ tone, ...more }) => tone};`
+const J = styled.div`color: ${(p) => p[key]}; margin: ${([a]) => a}; padding: ${() => 1};`
+const K = styled(A, { shouldForwardProp: (prop) => 'id' === prop || prop === 'title' })({ color: 'blue' })
+const L = styled.div.withConfig(config)`color: ${(p) => { return p.level }}; margin: ${({ [k]: v }) => v};`
+const M = styled('p', { shouldForwardProp: (prop) => { return prop === 'id' } })({ color: 'red' })
+export const a = <A tone=\"loud\" invalidThing=\"x\" data-ok=\"yes\" />
+export const b = <B tone=\"x\" $c=\"red\" theme={{}} aria-label=\"ok\" junk=\"j\" {...rest} />
+export const j = <J junk=\"j\" />
+export const f = <F junk=\"j\" xlink:href=\"#a\" />
+export const k = <K title=\"t\" tone=\"x\" />",
+        );
+        for expected in [
+            "{...(({ \"tone\": __devupOmit0, ...__devupDom }) => __devupDom)(rest)}",
+            "{...(({ \"$c\": __devupOmit0, \"tone\": __devupOmit1, \"theme\": __devupOmit2, ...__devupDom }) => __devupDom)(rest)}",
+            "{...(({ \"x\": __devupOmit0, \"y\": __devupOmit1, \"theme\": __devupOmit2, ...__devupDom }) => __devupDom)(rest)}",
+            "{...(({ \"$c\": __devupOmit0, ...__devupDom }) => __devupDom)(rest)}",
+            "export const a = <A invalidThing=\"x\" data-ok=\"yes\" />",
+            "export const b = <B tone=\"x\" $c=\"red\" aria-label=\"ok\" {...rest} />",
+            "export const j = <J junk=\"j\" />",
+            "export const f = <F junk=\"j\" xlink:href=\"#a\" />",
+            "export const k = <K title=\"t\" />",
+            "{...(({ \"level\": __devupOmit0, \"theme\": __devupOmit1, ...__devupDom }) => __devupDom)(rest)}",
+        ] {
+            assert!(code.contains(expected), "{expected}\n{code}");
+        }
+        let error = readable_code(
+            "import {styled} from '@devup-ui/core'
+const A = styled('h1', { shouldForwardProp: (prop) => allowed.has(prop) })({ color: 'red' })
+const B = styled('h1', { shouldForwardProp: (prop) => prop === other })({ color: 'red' })
+const C = styled('h1', { shouldForwardProp: (prop) => prop > 'a' })({ color: 'red' })
+const D = styled('h1', { shouldForwardProp: (prop) => prop ?? 'a' })({ color: 'red' })
+const E = styled('h1', { shouldForwardProp: (prop) => { const x = 1; return x } })({ color: 'red' })
+const F = styled('h1', { shouldForwardProp: check })({ color: 'red' })
+const G = styled('h1', { shouldForwardProp: ({ a }) => a })({ color: 'red' })
+const H = styled('h1', { shouldForwardProp: (prop) => [x].includes(prop) })({ color: 'red' })
+const I = styled('h1', { shouldForwardProp: (prop) => list.includes(prop) })({ color: 'red' })
+const J = styled('h1', { shouldForwardProp: (prop) => prop.endsWith('a') })({ color: 'red' })
+const K = styled('h1', { [k]: 1, ...o, shouldForwardProp: (prop) => valid(prop, 1) })({ color: 'red' })
+const L = styled('h1', { shouldForwardProp: (prop) => prop === 'a' ?? prop === 'b' })({ color: 'red' })
+const M = styled('h1', { shouldForwardProp: (prop) => x === y })({ color: 'red' })
+const N = styled('h1', { shouldForwardProp: (prop) => { prop === 'a' } })({ color: 'red' })",
+        );
+        assert!(
+            error.contains("`shouldForwardProp` must be a function"),
+            "{error}"
+        );
+        assert!(error.contains("allowed.has(prop)"), "{error}");
+    }
+
+    #[test]
+    #[serial]
+    fn test_styled_attrs_merge_in_order() {
+        let code = readable_code(
+            "import {styled} from '@devup-ui/core'
+const Base = styled.input.attrs({ type: 'text', title: 'base' })({ color: 'red' })
+const Ext = styled(Base).attrs({ type: 'password' })({ color: 'blue' })
+const X = styled.div.attrs({ className: 'from-attrs', style: { color: 'green' } })({ color: 'red' })
+const F = styled.div.attrs((p) => ({ id: p.id }))({ color: 'red' })
+const V = styled.div.attrs(extra)({ color: 'red' })",
+        );
+        for expected in [
+            "...{\n\t\t...__devupProps,\n\t\t...{\n\t\t\ttype: \"text\",\n\t\t\ttitle: \"base\"\n\t\t}\n\t},\n\t...{ type: \"password\" }",
+            "className: [__devupContext.className, __devupAttrs.className].filter(Boolean).join(\" \") || undefined",
+            "className: [__devupContext.className, __devupProps.className].filter(Boolean).join(\" \") || undefined",
+            "...__devupContext.style,\n\t\t...__devupAttrs.style",
+            "((p) => ({ id: p.id }))(__devupContext)",
+            "typeof extra === \"function\" ? extra(__devupContext) : extra",
+        ] {
+            assert!(code.contains(expected), "{expected}\n{code}");
+        }
+    }
+
+    #[rstest]
+    #[case(
+        "<Box className=\"direct\" style={{ opacity: 1 }} {...{ className: 'spread', style: { opacity: 2 } }} />",
+        "className=\"spread\" style={{ opacity: 2 }}"
+    )]
+    #[case(
+        "<Box {...{ className: 'spread', style: { opacity: 2 } }} className=\"direct\" style={{ opacity: 1 }} />",
+        "className=\"direct\" style={{ opacity: 1 }}"
+    )]
+    #[case(
+        "<Box className=\"direct\" style={{ opacity: 1 }} {...rest} />",
+        "className={(\"className\" in Object(rest) ? rest.className : \"direct\") || \"\"} style={\"style\" in Object(rest) ? rest.style : { opacity: 1 }}"
+    )]
+    #[case(
+        "<Box className=\"direct\" {...{ title: 'x' }} {...{ ...rest, className: 'last' }} />",
+        "className=\"last\""
+    )]
+    #[case(
+        "<Box className=\"direct\" {...{ className: 'first', ...rest }} />",
+        "className={{\n\tclassName: \"first\",\n\t...rest\n}.className || \"\"}"
+    )]
+    #[case(
+        "<Box className=<i /> color=\"red\" />",
+        "<div className=\"color-0-red--255\" />"
+    )]
+    #[case(
+        "<Box {...rest} {...more} />",
+        "className={(\"className\" in Object(more) ? more.className : rest?.className) || \"\"}"
+    )]
+    #[serial]
+    fn test_jsx_props_written_later_win(#[case] element: &str, #[case] expected: &str) {
+        let code = readable_code(&format!(
+            "import {{Box}} from '@devup-ui/core'
+export const a = {element}"
+        ));
+        assert!(code.contains(expected), "{expected}\n{code}");
+    }
+
+    #[test]
+    #[serial]
+    fn test_css_composing_reports_runtime_values() {
+        let code = readable_code(
+            "import {css} from '@devup-ui/core'
+const base = css({ color: 'red' })
+export const a = css(base, { color: tone })
+export const b = css(base, { [key]: 'x', styleOrder: 2 })
+export const c = css(base, getStyles())
+export const d = css(base, { positioning: side, styleOrder: 2 })",
+        );
+        assert!(!code.contains("test.tsx:6:"), "{code}");
+        assert!(code.contains("`css()` cannot use `tone`"), "{code}");
+        assert!(
+            code.contains("Cannot compose `\"color-0-red--255\", getStyles()`"),
+            "{code}"
+        );
+    }
+
+    // The styles of a `css()` class another module exports compose as well
+    #[test]
+    #[serial]
+    fn test_css_composes_imported_classes() {
+        let _state = test_state::TestStateGuard::new();
+        reset_class_map();
+        reset_file_map();
+        let modules: &[(&str, &str)] = &[(
+            "/src/styles.ts",
+            "import { css, keyframes } from '@devup-ui/react';
+import * as Devup from '@devup-ui/react';
+const brand = 'teal';
+export const base = css({ color: brand, _hover: { color: 'red' } });
+export const danger = css({ color: 'crimson' });
+export const twice = css({ color: 'a' }, { m: 1 });
+export const text = css`color: blue;`;
+export const runtime = css({ color: globalThis.tone });
+export const listed = css([{ color: 'b' }]);
+export const spaced = Devup.css({ color: 'c' });
+export const fade = keyframes({ from: { opacity: 0 } });
+export const called = Devup({ color: 'e' });
+export const ordered = css({ color: 'f', m: 2, styleOrder: 2 });",
+        )];
+        let resolver = memory_resolver(modules);
+        css::debug::set_debug(true);
+        let output = extract_with_modules(
+            "/src/App.tsx",
+            "import { css } from '@devup-ui/react';
+import { base, danger, twice, text, runtime, listed, spaced, fade, called, ordered } from './styles';
+export const a = css(base, danger);
+export const b = css(danger, base, { m: 1 });
+export const c = css(twice, text, runtime, listed, spaced, fade);
+export const d = css(ordered, danger, called);",
+            ExtractOption {
+                import_aliases: HashMap::from([(
+                    "@emotion/css".to_string(),
+                    ImportAlias::NamedToNamed,
+                )]),
+                ..ExtractOption::default()
+            },
+            false,
+            &resolver,
+        )
+        .unwrap();
+        css::debug::set_debug(false);
+        for expected in [
+            r#"export const a = "color-0-red-_a__c_hover-255-a color-0-crimson--255-a";"#,
+            r#"export const b = "color-0-red-_a__c_hover-255-a color-0-teal--255-a margin-0-4px--255-a";"#,
+            "export const c = `${twice} ${text} ${runtime} ${listed} ${spaced} ${fade}`;",
+            "export const d = `margin-0-8px--2-a color-0-crimson--255-a ${called}`;",
+        ] {
+            assert!(
+                output.code.contains(expected),
+                "{expected} in {}",
+                output.code
+            );
+        }
     }
 
     #[test]
@@ -15307,6 +15816,7 @@ const styles = stylex.create({
     #[test]
     #[serial]
     fn test_vanilla_extract_numbers_follow_vanilla_extract_units() {
+        let _state = test_state::TestStateGuard::new();
         reset_class_map();
         reset_file_map();
         let output = extract(
@@ -17127,6 +17637,7 @@ const composed = stylex.create({ combined: { ...stylex.include(base.root) } });"
     #[test]
     #[serial]
     fn test_length_token_extraction() {
+        let _state = test_state::TestStateGuard::new();
         // Test $token on gap prop
         reset_class_map();
         reset_file_map();
@@ -17191,6 +17702,7 @@ const composed = stylex.create({ combined: { ...stylex.include(base.root) } });"
     #[test]
     #[serial]
     fn test_shadow_token_extraction() {
+        let _state = test_state::TestStateGuard::new();
         // Test $token on boxShadow prop
         reset_class_map();
         reset_file_map();
@@ -17236,6 +17748,7 @@ const composed = stylex.create({ combined: { ...stylex.include(base.root) } });"
     #[serial]
     fn test_responsive_length_token_literal_vs_array() {
         use css::theme_tokens::set_theme_token_levels;
+        let _state = test_state::TestStateGuard::new();
 
         let mut length = BTreeMap::new();
         length.insert("containerX".to_string(), vec![0, 2]);
@@ -17326,6 +17839,7 @@ const composed = stylex.create({ combined: { ...stylex.include(base.root) } });"
     #[serial]
     fn test_responsive_shadow_token_literal_vs_array() {
         use css::theme_tokens::set_theme_token_levels;
+        let _state = test_state::TestStateGuard::new();
 
         let mut shadow = BTreeMap::new();
         shadow.insert("card".to_string(), vec![0, 3]);

@@ -33,6 +33,7 @@ mod tests {
     #[test]
     #[serial]
     fn test_atom_hoist() {
+        let _state = crate::test_state::TestStateGuard::new();
         set_atom_hoist(None);
         assert!(!is_atom_hoist());
         assert_eq!(atom_hoist_threshold(), None);

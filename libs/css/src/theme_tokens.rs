@@ -2,7 +2,7 @@ use std::collections::BTreeMap;
 use std::sync::{LazyLock, RwLock};
 
 #[derive(Default, Debug)]
-struct ThemeTokenRegistry {
+pub(crate) struct ThemeTokenRegistry {
     length: BTreeMap<String, Vec<u8>>,
     shadow: BTreeMap<String, Vec<u8>>,
     typography: Vec<String>,
@@ -10,6 +10,22 @@ struct ThemeTokenRegistry {
 
 static TOKEN_REGISTRY: LazyLock<RwLock<ThemeTokenRegistry>> =
     LazyLock::new(|| RwLock::new(ThemeTokenRegistry::default()));
+
+pub(crate) fn replace_registry(registry: ThemeTokenRegistry) -> ThemeTokenRegistry {
+    let previous = std::mem::replace(
+        &mut *TOKEN_REGISTRY
+            .write()
+            .unwrap_or_else(std::sync::PoisonError::into_inner),
+        registry,
+    );
+    TOKEN_REGISTRY.clear_poison();
+    previous
+}
+
+/// Clear all responsive tokens and typography names at a quiescent test boundary.
+pub fn reset_theme_tokens() {
+    replace_registry(ThemeTokenRegistry::default());
+}
 
 pub fn set_theme_token_levels(
     length: BTreeMap<String, Vec<u8>>,
@@ -83,6 +99,7 @@ mod tests {
     #[test]
     #[serial]
     fn test_get_responsive_theme_token() {
+        let _state = crate::test_state::TestStateGuard::new();
         let mut length = BTreeMap::new();
         length.insert("containerX".to_string(), vec![0, 2]);
         let mut shadow = BTreeMap::new();
@@ -98,6 +115,7 @@ mod tests {
     #[test]
     #[serial]
     fn test_is_responsive_theme_token() {
+        let _state = crate::test_state::TestStateGuard::new();
         let mut length = BTreeMap::new();
         length.insert("containerX".to_string(), vec![0, 2]);
         length.insert("single".to_string(), vec![0]);
@@ -116,6 +134,7 @@ mod tests {
     #[test]
     #[serial]
     fn test_typography_keys() {
+        let _state = crate::test_state::TestStateGuard::new();
         set_typography_keys(vec!["body".to_string(), "title".to_string()]);
         assert_eq!(get_typography_keys(), vec!["body", "title"]);
         set_typography_keys(vec![]);
@@ -127,5 +146,40 @@ mod tests {
         let value = std::hint::black_box("noprefix");
 
         assert!(!is_responsive_theme_token(value));
+    }
+
+    #[test]
+    #[serial]
+    fn scope_restores_registries_when_private_locks_are_poisoned() {
+        let _state = crate::test_state::TestStateGuard::new();
+        set_typography_keys(vec!["outer".into()]);
+        crate::set_custom_shorthands(BTreeMap::from([("alias".into(), vec!["left".into()])]));
+        let nested = crate::test_state::TestStateGuard::new();
+        for poison_tokens in [false, true] {
+            let result = std::panic::catch_unwind(|| {
+                if poison_tokens {
+                    let _lock = TOKEN_REGISTRY
+                        .write()
+                        .unwrap_or_else(std::sync::PoisonError::into_inner);
+                    panic!("poison tokens");
+                }
+                let _lock = crate::CUSTOM_SHORTHANDS
+                    .write()
+                    .unwrap_or_else(std::sync::PoisonError::into_inner);
+                panic!("poison shorthands");
+            });
+            assert!(result.is_err());
+        }
+        crate::test_state::reset_state_for_testing();
+        assert!(!crate::CUSTOM_SHORTHANDS.is_poisoned());
+        assert!(!TOKEN_REGISTRY.is_poisoned());
+        assert_eq!(crate::get_custom_shorthand_names(), Vec::<String>::new());
+        assert_eq!(get_typography_keys(), Vec::<String>::new());
+        drop(nested);
+        assert_eq!(get_typography_keys(), vec!["outer"]);
+        assert_eq!(
+            crate::disassemble_property("alias").collect::<Vec<_>>(),
+            vec!["left"]
+        );
     }
 }

@@ -1,0 +1,7 @@
+{
+    "changes":  {
+                    "bindings/devup-ui-wasm/package.json":  "Patch"
+                },
+    "note":  "CI and test infrastructure: the workflow pins every third-party action by commit SHA and every toolchain (Rust 1.99.0, Bun, Node, wasm-pack, cargo-binstall by checksum, cargo-tarpaulin) with the versions in the cache keys, runs pull requests read-only and moves npm publishing and Pages deployment into jobs that run only on pushes to main, never creates or commits e2e baselines, and sets timeouts. The wasm package build now starts from an empty pkg/ and verify:dist rejects files of the removed lite export, its README describes the real API, state and errors, and a Bun test checks the JS/WASM interface. The README benchmark tables are generated from one checked result file in both languages with the CSS size in its own column.",
+    "date":  "2026-10-01T00:00:00.000Z"
+}

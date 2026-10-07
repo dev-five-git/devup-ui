@@ -110,6 +110,7 @@ mod tests {
     #[test]
     #[serial]
     fn test_set_get_reset_file_routes() {
+        let _state = crate::test_state::TestStateGuard::new();
         let mut m = HashMap::new();
         m.insert("a.tsx".to_string(), HashSet::from([0u32, 1]));
         set_file_routes(m.clone());
@@ -121,6 +122,7 @@ mod tests {
     #[test]
     #[serial]
     fn test_route_count_for_files_union() {
+        let _state = crate::test_state::TestStateGuard::new();
         let mut m = HashMap::new();
         m.insert("a.tsx".to_string(), HashSet::from([0u32, 1]));
         m.insert("b.tsx".to_string(), HashSet::from([1u32, 2]));
@@ -138,6 +140,7 @@ mod tests {
     #[test]
     #[serial]
     fn test_route_count_for_files_without_registered_routes() {
+        let _state = crate::test_state::TestStateGuard::new();
         let mut m = HashMap::new();
         m.insert("registered.tsx".to_string(), HashSet::from([0u32]));
         set_file_routes(m);

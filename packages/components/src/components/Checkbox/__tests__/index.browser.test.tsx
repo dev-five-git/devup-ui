@@ -1,5 +1,6 @@
 import { describe, expect, it, mock } from 'bun:test'
 import { act, render, userEvent } from 'bun-test-env-dom'
+import { createRef } from 'react'
 
 import { Checkbox } from '../index'
 
@@ -420,5 +421,11 @@ describe('Checkbox', () => {
 
     expect(onChange).toHaveBeenCalledWith(true)
     expect(onChange).toHaveBeenCalledTimes(1)
+  })
+
+  it('hands its ref to the checkbox input', () => {
+    const ref = createRef<HTMLInputElement>()
+    render(<Checkbox ref={ref}>Test Checkbox</Checkbox>)
+    expect(ref.current?.type).toBe('checkbox')
   })
 })
