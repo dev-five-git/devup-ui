@@ -41,13 +41,24 @@ Everything is exported from `pkg/index.js` (types in `pkg/index.d.ts`).
 ## State
 
 The module keeps its state, the sheet, class maps, theme, prefix and debug flag,
-in one global per process, and there is no single reset. Two consequences:
+in one global per process. Two consequences:
 
 - Register the theme, shorthands, prefix and resolver before the first
   `codeExtract`, and extract the files of one build in one process.
-- Tests that share a process share that state. Set what a test depends on
-  (`registerTheme`, `setPrefix`, `setDebug`, `importSheet`) at its start, and
-  run files that need an empty sheet in their own process.
+- Tests that share a process share that state. The internal/testing-only
+  `resetStateForTesting()` export (available in normal artifacts) clears the
+  sheet, resolver, prefix/debug/hoist configuration, class/file/canonical/route
+  maps, shorthands, theme-token registry and imported stylesheet caches. Call
+  only at a quiescent test boundary, never in a resolver callback or between
+  environments of a build that intentionally share state. Native caches reset
+  on the calling thread.
+
+Rust tests use hidden `css::test_state::TestStateGuard` and
+`extractor::test_state::TestStateGuard` support compiled into dependencies so
+dependent-crate tests can restore owned snapshots on normal exit, nesting and
+unwind. Binding tests compose these with sheet/resolver snapshots. Keep a named
+guard on its creating thread and retain `#[serial]`: guards clean up but do not
+serialize concurrent tests. Cleanup does not run for panic=abort.
 
 ## Errors
 

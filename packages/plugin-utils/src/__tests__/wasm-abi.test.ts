@@ -1,4 +1,4 @@
-import { afterEach, beforeEach, describe, expect, it } from 'bun:test'
+import { describe, expect, it, mock } from 'bun:test'
 
 // The compiled module as a plugin loads it: the Rust tests cover the crates, not
 // this boundary (every wrapper is excluded from tarpaulin), so the contract the
@@ -33,16 +33,6 @@ function extract(code: string, filename = 'abi.tsx') {
   return wasm.codeExtract(filename, code, PACKAGE, 'df', true, false, false, {})
 }
 
-let saved: ReturnType<typeof saveState>
-
-beforeEach(() => {
-  saved = saveState()
-})
-
-afterEach(() => {
-  restoreState(saved)
-})
-
 describe('@devup-ui/wasm exports', () => {
   it('exposes exactly the functions the plugins call', () => {
     // default is the CommonJS module object a Node-style import adds
@@ -71,6 +61,7 @@ describe('@devup-ui/wasm exports', () => {
       'isDebug',
       'registerShorthands',
       'registerTheme',
+      'resetStateForTesting',
       'setAtomHoist',
       'setDebug',
       'setModuleResolver',
@@ -182,6 +173,57 @@ describe('@devup-ui/wasm theme', () => {
 })
 
 describe('@devup-ui/wasm state', () => {
+  it('resets every compiler-state group through the real WASM ABI', () => {
+    const source = `import { Box } from '${PACKAGE}'; export const view = <Box p={3} w='$gutter' />`
+    wasm.resetStateForTesting()
+    const emptyCss = wasm.getCss(null, false)
+    const baseline = extract(source, 'fresh.tsx')
+    const baselineCode = baseline.code
+    const baselineCss = wasm.getCss(null, false)
+    const resolver = mock(() => undefined)
+    wasm.setPrefix('dirty-')
+    wasm.setDebug(true)
+    wasm.setAtomHoist(2)
+    wasm.importCanonicalMap({ 'fresh.tsx': 'previous.tsx' })
+    wasm.importFileRoutes({ 'previous.tsx': [1, 2] })
+    wasm.registerShorthands({ customInset: ['left', 'right'] })
+    wasm.registerTheme({
+      colors: { default: { stale: '#abcdef' } },
+      typography: {
+        staleHeading: [{ fontSize: '12px' }, { fontSize: '18px' }],
+      },
+      length: { default: { gutter: ['5px', '9px'] } },
+      shadow: { default: { staleShadow: ['0 1px 2px red', '0 2px 4px blue'] } },
+    })
+    wasm.setModuleResolver(resolver)
+    extract(
+      `import { Box } from '${PACKAGE}'; export const dirty = <Box customInset={4} typography='staleHeading' />`,
+      'dirty.tsx',
+    )
+
+    wasm.resetStateForTesting()
+
+    expect(wasm.getPrefix()).toBeUndefined()
+    expect(wasm.isDebug()).toBe(false)
+    expect(wasm.getDefaultTheme()).toBeUndefined()
+    expect(JSON.parse(wasm.exportClassMap())).toEqual({})
+    expect(JSON.parse(wasm.exportFileMap())).toEqual({})
+    expect(JSON.parse(wasm.exportCanonicalMap())).toEqual({})
+    expect(wasm.getCss(null, false)).toBe(emptyCss)
+    resolver.mockClear()
+    const fresh = extract(source, 'fresh.tsx')
+    expect(fresh.code).toBe(baselineCode)
+    expect(wasm.getCss(null, false)).toBe(baselineCss)
+    expect(resolver).not.toHaveBeenCalled()
+  })
+
+  it('starts each test from the preload baseline after previous mutations', () => {
+    expect(wasm.getPrefix()).toBeUndefined()
+    expect(wasm.isDebug()).toBe(true)
+    expect(JSON.parse(wasm.exportSheet()).css).toEqual({})
+    expect(JSON.parse(wasm.exportCanonicalMap())).toEqual({})
+  })
+
   it('puts the process back as a test found it', () => {
     const before = saveState()
     wasm.setDebug(!before.debug)

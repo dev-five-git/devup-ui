@@ -1408,6 +1408,7 @@ mod tests {
     #[test]
     #[serial]
     fn test_create_css_sort_test() {
+        let _state = css::test_state::TestStateGuard::new();
         let mut sheet = StyleSheet::default();
         sheet.add_property("test", "background-color", 1, "red", None, None, None);
         sheet.add_property("test", "background", 1, "some", None, None, None);
@@ -1431,6 +1432,7 @@ mod tests {
         use css::atom_hoist::set_atom_hoist;
         use css::file_routes::{reset_file_routes, set_file_routes};
         use std::collections::{HashMap, HashSet};
+        let _state = css::test_state::TestStateGuard::new();
 
         reset_class_map();
         reset_file_map();
@@ -1535,6 +1537,7 @@ mod tests {
         use css::atom_hoist::set_atom_hoist;
         use css::file_routes::{get_file_routes, set_file_routes};
         use std::collections::{HashMap, HashSet};
+        let _state = css::test_state::TestStateGuard::new();
 
         let previous_threshold = atom_hoist_threshold();
         let previous_routes = get_file_routes();
@@ -1577,6 +1580,7 @@ mod tests {
     #[serial]
     fn rm_global_css_clears_collapsed_globals_from_canonical_bucket() {
         use css::file_map::{reset_canonical_map, set_canonical_map};
+        let _state = css::test_state::TestStateGuard::new();
         reset_class_map();
         reset_file_map();
         reset_canonical_map();
@@ -1642,6 +1646,7 @@ mod tests {
     #[test]
     #[serial]
     fn font_faces_deduplicated_across_file_keys() {
+        let _state = css::test_state::TestStateGuard::new();
         let props = BTreeMap::from([
             ("font-family".to_string(), "Roboto".to_string()),
             ("src".to_string(), "url(/r.woff2)".to_string()),
@@ -1663,6 +1668,7 @@ mod tests {
     #[test]
     #[serial]
     fn rm_global_css_clears_imports() {
+        let _state = css::test_state::TestStateGuard::new();
         let mut sheet = StyleSheet::default();
         sheet.add_import("a.tsx", "\"https://example.com/stale.css\"");
         assert!(sheet.create_css(None, false).contains("stale.css"));
@@ -1676,6 +1682,7 @@ mod tests {
     #[test]
     #[serial]
     fn test_create_css_with_selector_sort_test() {
+        let _state = css::test_state::TestStateGuard::new();
         let mut sheet = StyleSheet::default();
         sheet.add_property(
             "test",
@@ -1710,6 +1717,7 @@ mod tests {
     #[test]
     #[serial]
     fn test_create_css_with_basic_sort_test() {
+        let _state = css::test_state::TestStateGuard::new();
         let mut sheet = StyleSheet::default();
         sheet.add_property("test", "background-color", 1, "red", None, Some(0), None);
         sheet.add_property("test", "background", 1, "some", None, None, None);
@@ -1729,6 +1737,7 @@ mod tests {
     #[test]
     #[serial]
     fn test_create_css_with_selector_and_basic_sort_test() {
+        let _state = css::test_state::TestStateGuard::new();
         let mut sheet = StyleSheet::default();
         sheet.add_property(
             "test",
@@ -1752,6 +1761,7 @@ mod tests {
     #[test]
     #[serial]
     fn test_import_css() {
+        let _state = css::test_state::TestStateGuard::new();
         let sheet = StyleSheet::default();
         assert_debug_snapshot!(
             sheet
@@ -1765,6 +1775,7 @@ mod tests {
     #[test]
     #[serial]
     fn test_create_css() {
+        let _state = css::test_state::TestStateGuard::new();
         let mut sheet = StyleSheet::default();
         sheet.add_property("test", "margin", 1, "40px", None, None, None);
         assert_debug_snapshot!(sheet.create_css(None, false).split("*/").nth(1).unwrap());
@@ -1925,6 +1936,7 @@ mod tests {
     #[test]
     #[serial]
     fn test_reset_global_css() {
+        let _state = css::test_state::TestStateGuard::new();
         let mut sheet = StyleSheet::default();
         sheet.add_css("test.tsx", "div {display:flex;}");
         sheet.add_css("test2.tsx", "div {display:flex;}");
@@ -1942,6 +1954,7 @@ mod tests {
     #[test]
     #[serial]
     fn test_style_order_create_css() {
+        let _state = css::test_state::TestStateGuard::new();
         let mut sheet = StyleSheet::default();
         sheet.add_property("test", "margin-left", 0, "40px", None, Some(1), None);
         sheet.add_property("test", "margin-right", 0, "40px", None, Some(1), None);
@@ -1971,6 +1984,7 @@ mod tests {
     #[test]
     #[serial]
     fn wrong_breakpoint() {
+        let _state = css::test_state::TestStateGuard::new();
         let mut sheet = StyleSheet::default();
         sheet.add_property("test", "margin-left", 10, "40px", None, None, None);
         sheet.add_property("test", "margin-right", 10, "40px", None, None, None);
@@ -1980,6 +1994,7 @@ mod tests {
     #[test]
     #[serial]
     fn test_selector_with_prefix() {
+        let _state = css::test_state::TestStateGuard::new();
         let mut sheet = StyleSheet::default();
         sheet.add_property(
             "test",
@@ -2023,6 +2038,7 @@ mod tests {
     #[test]
     #[serial]
     fn test_theme_selector() {
+        let _state = css::test_state::TestStateGuard::new();
         let mut sheet = StyleSheet::default();
         sheet.add_property(
             "test",
@@ -2166,6 +2182,7 @@ mod tests {
     #[test]
     #[serial]
     fn test_print_selector() {
+        let _state = css::test_state::TestStateGuard::new();
         let mut sheet = StyleSheet::default();
         sheet.add_property(
             "test",
@@ -2270,6 +2287,7 @@ mod tests {
     #[test]
     #[serial]
     fn test_screen_selector() {
+        let _state = css::test_state::TestStateGuard::new();
         let mut sheet = StyleSheet::default();
         sheet.add_property(
             "test",
@@ -2287,6 +2305,7 @@ mod tests {
     #[test]
     #[serial]
     fn test_motion_reduce_selector() {
+        let _state = css::test_state::TestStateGuard::new();
         let mut sheet = StyleSheet::default();
         sheet.add_property(
             "test",
@@ -2304,6 +2323,7 @@ mod tests {
     #[test]
     #[serial]
     fn test_all_media_selector() {
+        let _state = css::test_state::TestStateGuard::new();
         let mut sheet = StyleSheet::default();
         sheet.add_property(
             "test",
@@ -2321,6 +2341,7 @@ mod tests {
     #[test]
     #[serial]
     fn test_selector_with_query() {
+        let _state = css::test_state::TestStateGuard::new();
         let mut sheet = StyleSheet::default();
         sheet.add_property(
             "test",
@@ -2359,6 +2380,7 @@ mod tests {
     #[test]
     #[serial]
     fn test_selector_with_supports() {
+        let _state = css::test_state::TestStateGuard::new();
         let mut sheet = StyleSheet::default();
         sheet.add_property(
             "test",
@@ -2382,6 +2404,7 @@ mod tests {
     #[test]
     #[serial]
     fn test_selector_with_container() {
+        let _state = css::test_state::TestStateGuard::new();
         let mut sheet = StyleSheet::default();
         sheet.add_property(
             "test",
@@ -2480,6 +2503,7 @@ mod tests {
     #[test]
     #[serial]
     fn test_create_css_with_global_selector() {
+        let _state = css::test_state::TestStateGuard::new();
         let mut sheet = StyleSheet::default();
         sheet.add_property(
             "test",
@@ -2656,6 +2680,7 @@ mod tests {
     #[test]
     #[serial]
     fn test_create_css_with_imports() {
+        let _state = css::test_state::TestStateGuard::new();
         {
             let mut sheet = StyleSheet::default();
             sheet.add_import("test.tsx", "@devup-ui/core/css/global.css");
@@ -2687,6 +2712,7 @@ mod tests {
     #[test]
     #[serial]
     fn test_get_theme_interface() {
+        let _state = css::test_state::TestStateGuard::new();
         let sheet = StyleSheet::default();
         assert_eq!(
             sheet.create_interface(
@@ -2830,6 +2856,7 @@ mod tests {
     #[test]
     #[serial]
     fn test_keyframes() {
+        let _state = css::test_state::TestStateGuard::new();
         let mut sheet = StyleSheet::default();
         let mut keyframes: BTreeMap<String, Vec<(String, String)>> = BTreeMap::new();
 
@@ -2868,6 +2895,7 @@ mod tests {
     #[test]
     #[serial]
     fn test_font_face() {
+        let _state = css::test_state::TestStateGuard::new();
         let mut sheet = StyleSheet::default();
         let mut font_face_props = BTreeMap::new();
         font_face_props.insert("font-family".to_string(), "Roboto".to_string());
@@ -2891,6 +2919,7 @@ mod tests {
     #[test]
     #[serial]
     fn test_update_styles() {
+        let _state = css::test_state::TestStateGuard::new();
         reset_class_map();
         reset_file_map();
         let mut sheet = StyleSheet::default();
@@ -2913,6 +2942,7 @@ mod tests {
     #[serial]
     fn test_update_styles_with_typography() {
         use extractor::extract_style::extract_style_value::ExtractStyleValue;
+        let _state = css::test_state::TestStateGuard::new();
 
         let mut sheet = StyleSheet::default();
         let mut styles = FxHashSet::default();
@@ -2926,6 +2956,7 @@ mod tests {
     #[test]
     #[serial]
     fn test_global_styles_with_custom_layer() {
+        let _state = css::test_state::TestStateGuard::new();
         let mut sheet = StyleSheet::default();
         // Add global style with layer
         sheet.add_property_with_layer(
@@ -2979,6 +3010,7 @@ mod tests {
     #[test]
     #[serial]
     fn test_custom_layer_keeps_selector_order() {
+        let _state = css::test_state::TestStateGuard::new();
         let mut sheet = StyleSheet::default();
         for (selector, value) in [("a:active", "blue"), ("a:hover", "red"), ("a", "black")] {
             sheet.add_property_with_layer(
@@ -3005,6 +3037,7 @@ mod tests {
     #[test]
     #[serial]
     fn test_at_rules_with_breakpoints() {
+        let _state = css::test_state::TestStateGuard::new();
         let mut sheet = StyleSheet::default();
         // Add @supports with breakpoint (level 1)
         sheet.add_property(
@@ -3031,6 +3064,7 @@ mod tests {
     #[test]
     #[serial]
     fn test_container_with_breakpoints() {
+        let _state = css::test_state::TestStateGuard::new();
         let mut sheet = StyleSheet::default();
         // Add @container with breakpoint (level 1)
         sheet.add_property(
@@ -3057,6 +3091,7 @@ mod tests {
     #[test]
     #[serial]
     fn test_theme_layer_in_css() {
+        let _state = css::test_state::TestStateGuard::new();
         let mut sheet = StyleSheet::default();
         let mut theme = Theme::default();
         let mut color_theme = ColorTheme::default();
@@ -3076,6 +3111,7 @@ mod tests {
     #[test]
     #[serial]
     fn test_layer_with_breakpoints() {
+        let _state = css::test_state::TestStateGuard::new();
         let mut sheet = StyleSheet::default();
         // Add @layer with breakpoint (level 1)
         sheet.add_property(
@@ -3168,6 +3204,7 @@ mod tests {
     #[test]
     #[serial]
     fn test_existing_collection_buckets_are_reused() {
+        let _state = css::test_state::TestStateGuard::new();
         let mut sheet = StyleSheet::default();
         assert!(sheet.add_property("a", "color", 0, "red", None, None, Some("test.tsx")));
         assert!(sheet.add_property("b", "display", 0, "block", None, None, Some("test.tsx")));
@@ -3192,6 +3229,7 @@ mod tests {
     #[test]
     #[serial]
     fn test_compute_hoisted_atoms_skips_base_style_order() {
+        let _state = css::test_state::TestStateGuard::new();
         let mut sheet = StyleSheet::default();
         sheet.add_property("base", "color", 0, "red", None, Some(0), Some("test.tsx"));
 
@@ -3201,6 +3239,7 @@ mod tests {
     #[test]
     #[serial]
     fn test_keyframes_multi_property() {
+        let _state = css::test_state::TestStateGuard::new();
         let mut sheet = StyleSheet::default();
         let mut keyframes: BTreeMap<String, Vec<(String, String)>> = BTreeMap::new();
         // Multiple properties in a single keyframe step to cover the semicolon separator (line 548)
@@ -3229,6 +3268,7 @@ mod tests {
     #[test]
     #[serial]
     fn test_first_value_theme_token_resolution_uses_base_value_only() {
+        let _state = css::test_state::TestStateGuard::new();
         reset_class_map();
         reset_file_map();
         let mut sheet = StyleSheet::default();
@@ -3261,6 +3301,7 @@ mod tests {
     #[test]
     #[serial]
     fn test_first_value_without_dollar_prefix_uses_raw_value() {
+        let _state = css::test_state::TestStateGuard::new();
         reset_class_map();
         reset_file_map();
         let mut sheet = StyleSheet::default();
@@ -3282,6 +3323,7 @@ mod tests {
     #[test]
     #[serial]
     fn test_first_value_box_shadow_resolves_shadow_token() {
+        let _state = css::test_state::TestStateGuard::new();
         reset_class_map();
         reset_file_map();
         let mut sheet = StyleSheet::default();
@@ -3313,6 +3355,7 @@ mod tests {
     #[test]
     #[serial]
     fn test_important_in_css_via_add_property() {
+        let _state = css::test_state::TestStateGuard::new();
         // Verify that !important in the value is preserved in the final CSS output
         let mut sheet = StyleSheet::default();
         sheet.add_property(
@@ -3333,6 +3376,7 @@ mod tests {
     }
 
     fn pipeline_css(theme: Theme, source: &str) -> String {
+        let _state = extractor::test_state::TestStateGuard::new();
         css::debug::set_debug(false);
         css::set_prefix(None);
         css::atom_hoist::set_atom_hoist(None);
@@ -3658,6 +3702,7 @@ mod tests {
     #[test]
     #[serial]
     fn test_rm_global_css_drops_global_at_rules() {
+        let _state = css::test_state::TestStateGuard::new();
         let mut sheet = StyleSheet::default();
         let output = extract(
             "global.tsx",
@@ -3683,6 +3728,7 @@ mod tests {
     #[test]
     #[serial]
     fn test_dynamic_base_style_updates_base_sheet() {
+        let _state = css::test_state::TestStateGuard::new();
         reset_class_map();
         reset_file_map();
         let mut sheet = StyleSheet::default();
