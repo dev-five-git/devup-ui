@@ -1,7 +1,8 @@
 import { execFile, spawn } from 'node:child_process'
 import { once } from 'node:events'
-import { readFile } from 'node:fs/promises'
 import { promisify } from 'node:util'
+
+import { readPrivateBytes } from './process-memory.mjs'
 
 const execute = promisify(execFile)
 const memoryLimit = 6 * 1024 ** 3
@@ -27,16 +28,7 @@ async function processSnapshot() {
 
 async function privateBytes(row) {
   if (process.platform === 'win32') return row.bytes
-  try {
-    const contents = await readFile(`/proc/${row.pid}/smaps_rollup`, 'utf8')
-    return [
-      ...contents.matchAll(/^Private_(?:Clean|Dirty|Hugetlb):\s+(\d+) kB$/gm),
-    ].reduce((total, match) => total + Number(match[1]) * 1024, 0)
-  } catch (error) {
-    if (error instanceof Error && 'code' in error && error.code === 'ENOENT')
-      return 0
-    throw error
-  }
+  return readPrivateBytes(row.pid)
 }
 
 async function stopTree(pids) {

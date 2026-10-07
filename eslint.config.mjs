@@ -11,6 +11,7 @@ export default [
       'bindings/devup-ui-wasm/pkg',
       'test-results',
       'release-results.json',
+      'release-package-build.json',
     ],
   },
   // eslint-plugin-devup

@@ -340,9 +340,10 @@ jobs:
         with:
           node-version: ${{ env.NODE_VERSION }}
       - run: bun install
+      - name: Test exited-process memory sampling
+        run: node --test e2e/release/process-memory.test.mjs
       - name: Build packages under the memory watchdog
-        run: |
-          node --input-type=module -e "import { runGuarded } from './e2e/release/guarded-process.mjs'; await runGuarded('bun', ['run', 'build'], { timeoutMs: 1200000 });"
+        run: node e2e/release/build-packages.mjs
       - name: Cache Playwright browsers
         uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6
         with:
@@ -357,7 +358,9 @@ jobs:
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
         with:
           name: release-compat-results
-          path: release-results.json
+          path: |
+            release-package-build.json
+            release-results.json
           if-no-files-found: error
           retention-days: 30
 

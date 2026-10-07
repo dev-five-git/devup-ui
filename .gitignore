@@ -27,3 +27,4 @@ playwright-report
 benchmark-run.json
 wasm-size.json
 release-results.json
+release-package-build.json

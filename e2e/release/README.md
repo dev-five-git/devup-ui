@@ -44,6 +44,12 @@ observed private memory. CI uploads it even on a failed fixture. A known plugin
 bug remains a failing gate until the owning PR fixes it; do not add fixture
 workarounds, expected failures, or skipped assertions.
 
+The separately guarded package build writes `release-package-build.json` even
+when it fails before consumer setup. CI first runs the process-memory tests:
+an exited Linux process (`ENOENT` or `ESRCH` during a proc read) contributes zero,
+while permission failures remain errors rather than silently undercounting a
+live process. The 6 GiB cap is unchanged.
+
 For a local focused run, set `RELEASE_TARGETS` to a comma-separated target list
 and `RELEASE_BROWSERS` to a comma-separated browser list. CI leaves both unset
 and always runs the full matrix. `RELEASE_FIXTURE_ROOT` selects the parent of the
