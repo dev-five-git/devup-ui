@@ -3879,6 +3879,61 @@ mod tests {
 
     #[test]
     #[serial]
+    fn test_tailwind_classes_css() {
+        reset_class_map();
+        reset_file_map();
+        let mut sheet = StyleSheet::default();
+        for (file, code) in [
+            (
+                "a.tsx",
+                "import {Box} from '@devup-ui/core'\n<Box className=\"translate-x-4 hover:focus:mt-4 card\" />",
+            ),
+            (
+                "b.tsx",
+                "import {Box} from '@devup-ui/core'\n<Box className=\"translate-y-2 before:inline-block text-sm\" />",
+            ),
+        ] {
+            let output = extract(
+                file,
+                code,
+                ExtractOption {
+                    package: "@devup-ui/core".to_string(),
+                    css_dir: "@devup-ui/core".to_string(),
+                    single_css: true,
+                    import_main_css: false,
+                    import_aliases: std::collections::HashMap::new(),
+                },
+            )
+            .unwrap();
+            sheet.update_styles(&output.styles, file, true).unwrap();
+        }
+        let css = sheet.create_css(None, false);
+        // The registrations are written once however many files use them
+        assert_eq!(
+            css.matches("@property --tw-translate-x{").count(),
+            1,
+            "{css}"
+        );
+        assert!(
+            css.contains("@property --tw-content{syntax:\"*\";inherits:false;initial-value:\"\"}"),
+            "{css}"
+        );
+        for rule in [
+            ".OHa6rxgmn20xxa3xjy{--tw-translate-x:1rem}",
+            ".OHbthgbe54ph87kjzs{--tw-translate-y:.5rem}",
+            ".OHca1k0lv7u879ersf{translate:var(--tw-translate-x) var(--tw-translate-y)}",
+            ".OHcajqalo_p20xmjh8{font-size:.875rem}",
+            ".OHbkdbnvb9xhfqwzek{line-height:var(--tw-leading,calc(1.25 / .875))}",
+            ".OHb8o11h_bnuqguo2o::before{content:var(--tw-content)}",
+            ".OHbohq0bo7m9z_n4o6::before{display:inline-block}",
+            "@media(hover:hover){.OHa5ynunt1t3zk0t5h:hover:focus{margin-top:1rem}}",
+        ] {
+            assert!(css.contains(rule), "{rule} in {css}");
+        }
+    }
+
+    #[test]
+    #[serial]
     fn test_dynamic_base_style_updates_base_sheet() {
         reset_class_map();
         reset_file_map();

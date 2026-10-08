@@ -6,6 +6,48 @@ ToBTreeSet {
     styles: {
         Static(
             ExtractStaticStyle {
+                property: "--tw-scale-x",
+                value: "95%",
+                level: 0,
+                selector: Some(
+                    Selector(
+                        "&:active",
+                    ),
+                ),
+                style_order: None,
+                layer: None,
+            },
+        ),
+        Static(
+            ExtractStaticStyle {
+                property: "--tw-scale-y",
+                value: "95%",
+                level: 0,
+                selector: Some(
+                    Selector(
+                        "&:active",
+                    ),
+                ),
+                style_order: None,
+                layer: None,
+            },
+        ),
+        Static(
+            ExtractStaticStyle {
+                property: "--tw-scale-z",
+                value: "95%",
+                level: 0,
+                selector: Some(
+                    Selector(
+                        "&:active",
+                    ),
+                ),
+                style_order: None,
+                layer: None,
+            },
+        ),
+        Static(
+            ExtractStaticStyle {
                 property: "background-color",
                 value: "#111827",
                 level: 0,
@@ -24,9 +66,15 @@ ToBTreeSet {
                 value: "#1F2937",
                 level: 0,
                 selector: Some(
-                    Selector(
-                        ":root[data-theme=dark]:hover &",
-                    ),
+                    At {
+                        kind: Media,
+                        query: "(hover:hover)",
+                        selector: Some(
+                            ":root[data-theme=dark] &:hover",
+                        ),
+                        outer: [],
+                        file: None,
+                    },
                 ),
                 style_order: None,
                 layer: None,
@@ -38,9 +86,15 @@ ToBTreeSet {
                 value: "#3B82F6",
                 level: 0,
                 selector: Some(
-                    Selector(
-                        "&:hover",
-                    ),
+                    At {
+                        kind: Media,
+                        query: "(hover:hover)",
+                        selector: Some(
+                            "&:hover",
+                        ),
+                        outer: [],
+                        file: None,
+                    },
                 ),
                 style_order: None,
                 layer: None,
@@ -136,8 +190,8 @@ ToBTreeSet {
         ),
         Static(
             ExtractStaticStyle {
-                property: "transform",
-                value: "scale(.95)",
+                property: "scale",
+                value: "var(--tw-scale-x) var(--tw-scale-y)",
                 level: 0,
                 selector: Some(
                     Selector(
@@ -148,6 +202,12 @@ ToBTreeSet {
                 layer: None,
             },
         ),
+        Css(
+            ExtractCss {
+                css: "@property --tw-translate-x{syntax:\"*\";inherits:false;initial-value:0}@property --tw-translate-y{syntax:\"*\";inherits:false;initial-value:0}@property --tw-scale-x{syntax:\"*\";inherits:false;initial-value:1}@property --tw-scale-y{syntax:\"*\";inherits:false;initial-value:1}@property --tw-scale-z{syntax:\"*\";inherits:false;initial-value:1}@property --tw-rotate-x{syntax:\"*\";inherits:false}@property --tw-rotate-y{syntax:\"*\";inherits:false}@property --tw-rotate-z{syntax:\"*\";inherits:false}@property --tw-skew-x{syntax:\"*\";inherits:false}@property --tw-skew-y{syntax:\"*\";inherits:false}@property --tw-leading{syntax:\"*\";inherits:false}@property --tw-content{syntax:\"*\";inherits:false;initial-value:\"\"}@property --tw-scroll-snap-strictness{syntax:\"*\";inherits:false;initial-value:proximity}",
+                file: "@devup-ui/tailwind",
+            },
+        ),
     },
-    code: "import \"@devup-ui/core/devup-ui.css\";\n<div className=\"OHaji7fbu2zwayk02b OHbr0w09isj5t69agn OHc5zjyk9zs2ma4byx OHbzs1woan_ox9cl89 OHcncc6al348pwoeqf OHa5ulqofwiokqwjts OLpadding-v3rem-l5 OHcqf2z4mv572u38z6 OLpadding-v2rem-l3 OHc4sa3mkal6l_ei3s OLpadding-v1rem-l1 OLpadding-v_p5rem\" />;\n",
+    code: "import \"@devup-ui/core/devup-ui.css\";\n<div className=\"OLpadding-v_p5rem OLpadding-v1rem-l1 OHc4sa3mkal6l_ei3s OLpadding-v2rem-l3 OHcqf2z4mv572u38z6 OLpadding-v3rem-l5 OHawx46kbb3rb25az3 OHcncc6al348pwoeqf OHb4_z7ssikoihd3c5 OHadnij6uggfc9cp0q OHc9fvao8pi13igxpc OHatjtdk14ygy98b6o OHc5zjyk9zs2ma4byx OHbr0w09isj5t69agn OHaqk1p8usapn1j3v0\" />;\n",
 }

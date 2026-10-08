@@ -6,6 +6,16 @@ ToBTreeSet {
     styles: {
         Static(
             ExtractStaticStyle {
+                property: "--tw-leading",
+                value: "1.625",
+                level: 0,
+                selector: None,
+                style_order: None,
+                layer: None,
+            },
+        ),
+        Static(
+            ExtractStaticStyle {
                 property: "align-items",
                 value: "center",
                 level: 0,
@@ -108,9 +118,15 @@ ToBTreeSet {
                 value: "0 20px 25px -5px rgb(0 0 0 / .1),0 8px 10px -6px rgb(0 0 0 / .1)",
                 level: 0,
                 selector: Some(
-                    Selector(
-                        "&:hover",
-                    ),
+                    At {
+                        kind: Media,
+                        query: "(hover:hover)",
+                        selector: Some(
+                            "&:hover",
+                        ),
+                        outer: [],
+                        file: None,
+                    },
                 ),
                 style_order: None,
                 layer: None,
@@ -352,6 +368,36 @@ ToBTreeSet {
         ),
         Static(
             ExtractStaticStyle {
+                property: "line-height",
+                value: "var(--tw-leading,calc(1.25 / .875))",
+                level: 0,
+                selector: None,
+                style_order: None,
+                layer: None,
+            },
+        ),
+        Static(
+            ExtractStaticStyle {
+                property: "line-height",
+                value: "var(--tw-leading,calc(1.75 / 1.125))",
+                level: 0,
+                selector: None,
+                style_order: None,
+                layer: None,
+            },
+        ),
+        Static(
+            ExtractStaticStyle {
+                property: "line-height",
+                value: "var(--tw-leading,calc(1.75 / 1.25))",
+                level: 0,
+                selector: None,
+                style_order: None,
+                layer: None,
+            },
+        ),
+        Static(
+            ExtractStaticStyle {
                 property: "margin-top",
                 value: ".25rem",
                 level: 0,
@@ -410,6 +456,12 @@ ToBTreeSet {
                 layer: None,
             },
         ),
+        Css(
+            ExtractCss {
+                css: "@property --tw-translate-x{syntax:\"*\";inherits:false;initial-value:0}@property --tw-translate-y{syntax:\"*\";inherits:false;initial-value:0}@property --tw-scale-x{syntax:\"*\";inherits:false;initial-value:1}@property --tw-scale-y{syntax:\"*\";inherits:false;initial-value:1}@property --tw-scale-z{syntax:\"*\";inherits:false;initial-value:1}@property --tw-rotate-x{syntax:\"*\";inherits:false}@property --tw-rotate-y{syntax:\"*\";inherits:false}@property --tw-rotate-z{syntax:\"*\";inherits:false}@property --tw-skew-x{syntax:\"*\";inherits:false}@property --tw-skew-y{syntax:\"*\";inherits:false}@property --tw-leading{syntax:\"*\";inherits:false}@property --tw-content{syntax:\"*\";inherits:false;initial-value:\"\"}@property --tw-scroll-snap-strictness{syntax:\"*\";inherits:false;initial-value:proximity}",
+                file: "@devup-ui/tailwind",
+            },
+        ),
     },
-    code: "import \"@devup-ui/core/devup-ui.css\";\n// Card component with comprehensive Tailwind usage\nexport const Card = () => <div className=\"OHaadkd3fjvm0ncn61 OHa7a9qfiyswj5xvyi OHbwtwpnv9ii9mrobd OLpadding-v1_p5rem OHc9gnal1bmpqvou03 OHbr3hxvk3k14ogtk3 OHa27vz2igz6c7klbx\">\n    <div className=\"OHakccef9adk46p93g OHcbii5pbpghc_fo_l OLgap-v1rem OHdqqucorwlkl9_w4h OLdisplay-vflex-o0\">\n      <div className=\"OHaga_jklffbvfug08 OHcv8oijaub8u8k_sq OLdisplay-vflex OHa6zdaj9656pczqmg OHa4wq3rqwuiq0rksj OLheight-v3rem OLwidth-v3rem\">\n        <span className=\"OHbxlsdadakndari3k OHdg7ch0hkyvuin4uo OHc3oqq9xzpql0nn4e\">A</span>\n      </div>\n      <div className=\"OLflex-v1_s1_s0\">\n        <span className=\"OHbsqy5jjsn3ni4yya OHdu1x_fd3_zyoqf4_ OHap2d0xtugbsi2bif OLcolor-v_h111827\">Title</span>\n        <span className=\"OHcb9b6jr78lksnroh OHct77ucd4xjs8btbi OHcajqalo_p20xmjh8 OHa3bzu4blmqn0r9xi\">Subtitle</span>\n      </div>\n    </div>\n    <div className=\"OHctawh2276upcmkdl OHcukebo3hq8a4ffnj OHcg1arnnmrpe6xko6 OHdt14ba2xfy0fpkw6\">\n      <span className=\"OHcdxneel4qs6hijo_ OHc4rg4fildl4ns27w OLcolor-v_h374151\">\n        Content goes here with multiple Tailwind utilities combined.\n      </span>\n    </div>\n  </div>;\n",
+    code: "import \"@devup-ui/core/devup-ui.css\";\n// Card component with comprehensive Tailwind usage\nexport const Card = () => <div className=\"OHa27vz2igz6c7klbx OHbr3hxvk3k14ogtk3 OHc9gnal1bmpqvou03 OLpadding-v1_p5rem OHc25lftmk8zmxz7a3 OHa7a9qfiyswj5xvyi OHaadkd3fjvm0ncn61\">\n    <div className=\"OHdqqucorwlkl9_w4h OLgap-v1rem OHcbii5pbpghc_fo_l OHakccef9adk46p93g OLdisplay-vflex-o0\">\n      <div className=\"OLwidth-v3rem OLheight-v3rem OHa4wq3rqwuiq0rksj OHa6zdaj9656pczqmg OLdisplay-vflex OHcv8oijaub8u8k_sq OHaga_jklffbvfug08\">\n        <span className=\"OHc3oqq9xzpql0nn4e OHdg7ch0hkyvuin4uo OHbxlsdadakndari3k OHc4rs765sfluze7nw\">A</span>\n      </div>\n      <div className=\"OLflex-v1_s1_s0\">\n        <span className=\"OLcolor-v_h111827 OHap2d0xtugbsi2bif OHdu1x_fd3_zyoqf4_ OHa4eoarosh01o9d2g OHbsqy5jjsn3ni4yya\">Title</span>\n        <span className=\"OHa3bzu4blmqn0r9xi OHcajqalo_p20xmjh8 OHbkdbnvb9xhfqwzek OHct77ucd4xjs8btbi OHcb9b6jr78lksnroh\">Subtitle</span>\n      </div>\n    </div>\n    <div className=\"OHdt14ba2xfy0fpkw6 OHcg1arnnmrpe6xko6 border-t OHcukebo3hq8a4ffnj OHctawh2276upcmkdl\">\n      <span className=\"OLcolor-v_h374151 OHdghx6t2_gyv40hy3 OHc4rg4fildl4ns27w OHcdxneel4qs6hijo_\">\n        Content goes here with multiple Tailwind utilities combined.\n      </span>\n    </div>\n  </div>;\n",
 }
