@@ -12,6 +12,7 @@ import {
 } from 'bun:test'
 
 import devupUICssLoader from '../css-loader'
+import { servedCss } from '../served-css'
 
 type CodeExtractResult = ReturnType<typeof wasm.codeExtract>
 type CssLoaderThis = ThisParameterType<typeof devupUICssLoader>
@@ -34,12 +35,15 @@ function createCodeExtractResult(
 function createCssLoaderContext(
   resourcePath: string,
   callback: ReturnType<typeof mock>,
+  compilation?: object,
 ): CssLoaderThis {
   return {
     callback,
+    cacheable: mock(),
     addContextDependency: mock(),
     resourcePath,
     getOptions: () => ({ watch: resourcePath.includes('devup-ui') }),
+    _compilation: compilation,
   } as unknown as CssLoaderThis
 }
 
@@ -107,5 +111,23 @@ describe('devupUICssLoader', () => {
     )
 
     expect(getCssSpy).toBeCalledTimes(1)
+  })
+
+  it('records the stylesheet it serves in its compilation, uncached', () => {
+    const callback = mock()
+    const compilation = {}
+    getCssSpy.mockReturnValue('base css')
+    const context = createCssLoaderContext(
+      '/df/devup-ui/devup-ui.css',
+      callback,
+      compilation,
+    )
+    devupUICssLoader.bind(context)(Buffer.from(''), '')
+
+    expect(context.cacheable).toHaveBeenCalledWith(false)
+    expect(servedCss(compilation)).toEqual(
+      new Map([['/df/devup-ui/devup-ui.css', 'base css']]),
+    )
+    expect(servedCss(compilation)).toBe(servedCss(compilation))
   })
 })
