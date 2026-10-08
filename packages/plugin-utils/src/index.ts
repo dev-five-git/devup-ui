@@ -9,6 +9,8 @@ export {
   type ComputeFileReachOptions,
   computeFileRoutes,
   type ComputeFileRoutesOptions,
+  computeReachableFiles,
+  type ComputeReachableFilesOptions,
   createModuleResolver,
   type CreateModuleResolverOptions,
   listSourceFiles,

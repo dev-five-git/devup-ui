@@ -17,10 +17,61 @@ import {
   computeCompiledFiles,
   computeFileReach,
   computeFileRoutes,
+  computeReachableFiles,
   createModuleResolver,
   planAtomHoist,
   runImportGraphCli,
 } from './import-graph'
+
+describe('computeReachableFiles', () => {
+  let tempRoot: string
+  let srcDir: string
+
+  beforeEach(() => {
+    tempRoot = mkdtempSync(join(tmpdir(), 'devup-ui-reachable-files-'))
+    srcDir = join(tempRoot, 'src')
+  })
+
+  afterEach(() => {
+    rmSync(tempRoot, { recursive: true, force: true })
+  })
+
+  function writeFixture(path: string, code: string): void {
+    const filePath = join(tempRoot, path)
+    mkdirSync(dirname(filePath), { recursive: true })
+    writeFileSync(filePath, code)
+  }
+
+  it('follows static and dynamic imports from the entries only', () => {
+    writeFixture('src/index.tsx', "import './a'\nimport('./lazy')\n")
+    writeFixture('src/a.tsx', "import './b'\n")
+    writeFixture('src/b.tsx', 'export const b = 1\n')
+    writeFixture('src/lazy.tsx', "import './b'\n")
+    writeFixture('src/unused.stories.tsx', "import './a'\n")
+
+    expect(
+      computeReachableFiles({ srcDir, entries: [join(srcDir, 'index')] }),
+    ).toEqual(
+      ['a.tsx', 'b.tsx', 'index.tsx', 'lazy.tsx'].map((file) =>
+        join(srcDir, file),
+      ),
+    )
+  })
+
+  it('reaches nothing from entries outside the source directory', () => {
+    writeFixture('src/a.tsx', 'export const a = 1\n')
+    writeFixture('other/entry.tsx', "import '../src/a'\n")
+    const graph = buildStaticImportGraph(srcDir)
+
+    expect(
+      computeReachableFiles({
+        srcDir,
+        entries: [join(tempRoot, 'other/entry.tsx'), join(srcDir, 'missing')],
+        graph,
+      }),
+    ).toEqual([])
+  })
+})
 
 describe('buildCanonicalMap', () => {
   let tempRoot: string
