@@ -10,7 +10,8 @@ use css::{
     style_selector::{
         AtRule, AtRuleKind, StyleSelector, get_selector_order, global_selector_order, write_at_rule,
     },
-    theme_tokens::{set_theme_token_levels, set_typography_keys},
+    tailwind_definitions::set_tailwind_css,
+    theme_tokens::{set_color_tokens, set_theme_token_levels, set_typography_keys},
     utils::compile_regex,
     write_merge_selector,
 };
@@ -481,6 +482,8 @@ impl StyleSheet {
             theme.get_shadow_token_levels(),
         );
         set_typography_keys(theme.typography.keys().cloned().collect());
+        set_color_tokens(theme.get_color_token_names());
+        set_tailwind_css(&theme.tailwind_css);
         self.theme = theme;
     }
 
@@ -3631,6 +3634,25 @@ mod tests {
         }
     }
 
+    #[test]
+    #[serial]
+    fn test_set_theme_reads_the_tailwind_css() {
+        let theme: Theme =
+            serde_json::from_str(r#"{"tailwindCss": "@theme { --color-brand: #0af; }"}"#).unwrap();
+        let mut sheet = StyleSheet::default();
+
+        sheet.set_theme(theme);
+        assert_eq!(
+            css::tailwind_definitions::theme_value("color", "brand").as_deref(),
+            Some("#0af")
+        );
+
+        sheet.set_theme(Theme::default());
+        assert_eq!(
+            css::tailwind_definitions::theme_value("color", "brand"),
+            None
+        );
+    }
     #[test]
     #[serial]
     fn test_global_css_reads_theme_tokens() {

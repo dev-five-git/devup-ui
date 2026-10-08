@@ -24,6 +24,9 @@ pub enum StyleValue {
 pub struct StyleValues {
     scoping: Option<Scoping>,
     values: FxHashMap<SymbolId, StyleValue>,
+    /// The `const`s the file binds to a string, which a `className` reads as
+    /// the classes they hold
+    texts: FxHashMap<SymbolId, String>,
 }
 
 impl StyleValues {
@@ -31,6 +34,7 @@ impl StyleValues {
         Self {
             scoping: Some(scoping),
             values: FxHashMap::default(),
+            texts: FxHashMap::default(),
         }
     }
 
@@ -46,6 +50,22 @@ impl StyleValues {
 
     pub fn insert(&mut self, symbol: SymbolId, value: StyleValue) {
         self.values.insert(symbol, value);
+    }
+
+    pub fn insert_text(&mut self, symbol: SymbolId, text: String) {
+        self.texts.insert(symbol, text);
+    }
+
+    /// `expression`, a `className`, reading the strings the constants hold
+    pub fn read_in_class<'a>(&self, ast: &AstBuilder<'a>, expression: &mut Expression<'a>) {
+        if let Some(scoping) = self.scoping.as_ref().filter(|_| !self.texts.is_empty()) {
+            ClassReads {
+                ast,
+                scoping,
+                texts: &self.texts,
+            }
+            .visit_expression(expression);
+        }
     }
 
     /// `expression` reading what the bindings recorded hold
@@ -121,5 +141,32 @@ impl<'a> VisitMut<'a> for Reads<'_, 'a> {
         );
         walk_mut::walk_object_expression(self, it);
         (self.in_rules, self.in_text) = outer;
+    }
+}
+
+struct ClassReads<'s, 'a> {
+    ast: &'s AstBuilder<'a>,
+    scoping: &'s Scoping,
+    texts: &'s FxHashMap<SymbolId, String>,
+}
+
+impl<'a> VisitMut<'a> for ClassReads<'_, 'a> {
+    fn visit_expression(&mut self, it: &mut Expression<'a>) {
+        if let Expression::Identifier(identifier) = it
+            && let Some(text) = identifier
+                .reference_id
+                .get()
+                .and_then(|reference| self.scoping.get_reference(reference).symbol_id())
+                .and_then(|symbol| self.texts.get(&symbol))
+        {
+            *it = Expression::new_string_literal(
+                SPAN,
+                Str::from_in(text.as_str(), self.ast.allocator()),
+                None,
+                self.ast,
+            );
+            return;
+        }
+        walk_mut::walk_expression(self, it);
     }
 }

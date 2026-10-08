@@ -1,4 +1,4 @@
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 use std::sync::{LazyLock, RwLock};
 
 #[derive(Default, Debug)]
@@ -6,6 +6,7 @@ struct ThemeTokenRegistry {
     length: BTreeMap<String, Vec<u8>>,
     shadow: BTreeMap<String, Vec<u8>>,
     typography: Vec<String>,
+    colors: BTreeSet<String>,
 }
 
 static TOKEN_REGISTRY: LazyLock<RwLock<ThemeTokenRegistry>> =
@@ -25,6 +26,28 @@ pub fn set_typography_keys(keys: Vec<String>) {
     if let Ok(mut registry) = TOKEN_REGISTRY.write() {
         registry.typography = keys;
     }
+}
+
+/// Registers the names of the theme's colors, which Tailwind classes such as
+/// `bg-primary` can use
+pub fn set_color_tokens(names: BTreeSet<String>) {
+    if let Ok(mut registry) = TOKEN_REGISTRY.write() {
+        registry.colors = names;
+    }
+}
+
+/// Whether the theme defines the color `name`, a CSS variable of that name
+pub fn is_color_token(name: &str) -> bool {
+    TOKEN_REGISTRY
+        .read()
+        .is_ok_and(|registry| registry.colors.contains(name))
+}
+
+/// Whether the theme defines the shadow `name`, a CSS variable of that name
+pub fn is_shadow_token(name: &str) -> bool {
+    TOKEN_REGISTRY
+        .read()
+        .is_ok_and(|registry| registry.shadow.contains_key(name))
 }
 
 /// Typography names defined by the registered theme, so a dynamic
@@ -120,6 +143,23 @@ mod tests {
         assert_eq!(get_typography_keys(), vec!["body", "title"]);
         set_typography_keys(vec![]);
         assert_eq!(get_typography_keys(), Vec::<String>::new());
+    }
+
+    #[test]
+    #[serial]
+    fn test_color_and_shadow_tokens() {
+        set_color_tokens(BTreeSet::from(["primary".to_string()]));
+        let mut shadow = BTreeMap::new();
+        shadow.insert("card".to_string(), vec![0]);
+        set_theme_token_levels(BTreeMap::new(), shadow);
+
+        assert!(is_color_token("primary"));
+        assert!(!is_color_token("card"));
+        assert!(is_shadow_token("card"));
+        assert!(!is_shadow_token("primary"));
+        set_color_tokens(BTreeSet::new());
+        set_theme_token_levels(BTreeMap::new(), BTreeMap::new());
+        assert!(!is_color_token("primary"));
     }
 
     #[test]

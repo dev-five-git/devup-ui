@@ -5,6 +5,46 @@ expression: sort_styles(styles)
 {
     Static(
         ExtractStaticStyle {
+            property: "--tw-duration",
+            value: "200ms",
+            level: 0,
+            selector: None,
+            style_order: None,
+            layer: None,
+        },
+    ),
+    Static(
+        ExtractStaticStyle {
+            property: "--tw-shadow",
+            value: "0 10px 15px -3px var(--tw-shadow-color,rgb(0 0 0 / .1)),0 4px 6px -4px var(--tw-shadow-color,rgb(0 0 0 / .1))",
+            level: 0,
+            selector: Some(
+                At {
+                    kind: Media,
+                    query: "(hover:hover)",
+                    selector: Some(
+                        "&:hover",
+                    ),
+                    outer: [],
+                    file: None,
+                },
+            ),
+            style_order: None,
+            layer: None,
+        },
+    ),
+    Static(
+        ExtractStaticStyle {
+            property: "--tw-shadow",
+            value: "0 4px 6px -1px var(--tw-shadow-color,rgb(0 0 0 / .1)),0 2px 4px -2px var(--tw-shadow-color,rgb(0 0 0 / .1))",
+            level: 0,
+            selector: None,
+            style_order: None,
+            layer: None,
+        },
+    ),
+    Static(
+        ExtractStaticStyle {
             property: "align-items",
             value: "center",
             level: 0,
@@ -36,7 +76,17 @@ expression: sort_styles(styles)
     Static(
         ExtractStaticStyle {
             property: "box-shadow",
-            value: "0 10px 15px -3px rgb(0 0 0 / .1),0 4px 6px -4px rgb(0 0 0 / .1)",
+            value: "var(--tw-inset-shadow,0 0 #0000),var(--tw-inset-ring-shadow,0 0 #0000),var(--tw-ring-offset-shadow,0 0 #0000),var(--tw-ring-shadow,0 0 #0000),var(--tw-shadow)",
+            level: 0,
+            selector: None,
+            style_order: None,
+            layer: None,
+        },
+    ),
+    Static(
+        ExtractStaticStyle {
+            property: "box-shadow",
+            value: "var(--tw-inset-shadow,0 0 #0000),var(--tw-inset-ring-shadow,0 0 #0000),var(--tw-ring-offset-shadow,0 0 #0000),var(--tw-ring-shadow,0 0 #0000),var(--tw-shadow)",
             level: 0,
             selector: Some(
                 At {
@@ -49,16 +99,6 @@ expression: sort_styles(styles)
                     file: None,
                 },
             ),
-            style_order: None,
-            layer: None,
-        },
-    ),
-    Static(
-        ExtractStaticStyle {
-            property: "box-shadow",
-            value: "0 4px 6px -1px rgb(0 0 0 / .1),0 2px 4px -2px rgb(0 0 0 / .1)",
-            level: 0,
-            selector: None,
             style_order: None,
             layer: None,
         },
@@ -105,8 +145,28 @@ expression: sort_styles(styles)
     ),
     Static(
         ExtractStaticStyle {
+            property: "transition-duration",
+            value: "var(--tw-duration,150ms)",
+            level: 0,
+            selector: None,
+            style_order: None,
+            layer: None,
+        },
+    ),
+    Static(
+        ExtractStaticStyle {
             property: "transition-property",
             value: "box-shadow",
+            level: 0,
+            selector: None,
+            style_order: None,
+            layer: None,
+        },
+    ),
+    Static(
+        ExtractStaticStyle {
+            property: "transition-timing-function",
+            value: "var(--tw-ease,cubic-bezier(.4,0,.2,1))",
             level: 0,
             selector: None,
             style_order: None,

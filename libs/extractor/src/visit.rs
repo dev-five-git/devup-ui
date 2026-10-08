@@ -23,7 +23,7 @@ use crate::extractor::{
     extract_style_from_styled::{extract_style_from_styled, take_styled_modifiers},
 };
 use crate::gen_class_name::{gen_class_names, merge_expression_for_class_name};
-use crate::prop_modify_utils::{convert_class_name, modify_prop_object, modify_props};
+use crate::prop_modify_utils::{compile_cva, convert_class_name, modify_prop_object, modify_props};
 use crate::stylex::{
     StylexDynamicInfo, StylexFunction, StylexNamespaceValue, create_theme_class,
     css_variable_block, css_variable_rules, define_vars_variable, variable_values,
@@ -207,6 +207,28 @@ fn is_alias(declarator: &VariableDeclarator<'_>, compiled: &FxHashSet<String>) -
 
 /// The reads of `names` a program keeps outside the types it erases; with
 /// `scoping`, only those no binding of the program declares
+/// Whether the file has a `className` that is more than a string
+#[derive(Default)]
+struct DynamicClassNames {
+    found: bool,
+}
+
+impl<'a> oxc_ast_visit::Visit<'a> for DynamicClassNames {
+    fn visit_jsx_attribute(&mut self, it: &oxc_ast::ast::JSXAttribute<'a>) {
+        if let oxc_ast::ast::JSXAttributeName::Identifier(name) = &it.name
+            && name.name == "className"
+            && let Some(JSXAttributeValue::ExpressionContainer(container)) = &it.value
+            && container
+                .expression
+                .as_expression()
+                .is_some_and(|expression| !matches!(expression, Expression::StringLiteral(_)))
+        {
+            self.found = true;
+        }
+        oxc_ast_visit::walk::walk_jsx_attribute(self, it);
+    }
+}
+
 struct CompiledReads<'s> {
     names: &'s FxHashSet<String>,
     scoping: Option<&'s oxc_semantic::Scoping>,
@@ -451,17 +473,20 @@ impl<'a> DevupVisitor<'a> {
     /// Whether `program` imports a style function whose result it may bind:
     /// `css()` gives a class, `keyframes()` a name
     fn binds_style_results(&self, program: &Program<'a>) -> bool {
-        program.body.iter().any(|statement| {
-            matches!(statement, Statement::ImportDeclaration(import)
-            if (import.source.value == self.package
-                || import.source.value == self.compat_package.as_str())
-                && import.specifiers.iter().flatten().any(|specifier| match specifier {
-                    ImportSpecifier(specifier) => {
-                        matches!(specifier.imported.name().as_str(), "css" | "keyframes")
-                    }
-                    _ => true,
-                }))
-        })
+        let mut class_names = DynamicClassNames::default();
+        oxc_ast_visit::Visit::visit_program(&mut class_names, program);
+        class_names.found
+            || program.body.iter().any(|statement| {
+                matches!(statement, Statement::ImportDeclaration(import)
+                if (import.source.value == self.package
+                    || import.source.value == self.compat_package.as_str())
+                    && import.specifiers.iter().flatten().any(|specifier| match specifier {
+                        ImportSpecifier(specifier) => {
+                            matches!(specifier.imported.name().as_str(), "css" | "keyframes")
+                        }
+                        _ => true,
+                    }))
+            })
     }
 
     /// Put the spreads of `props` that may change when read again, and the
@@ -1919,6 +1944,10 @@ impl<'a> VisitMut<'a> for DevupVisitor<'a> {
         }
     }
     fn visit_call_expression(&mut self, it: &mut CallExpression<'a>) {
+        if matches!(&it.callee, Expression::Identifier(callee) if callee.name == "cva") {
+            let styles = compile_cva(&self.ast, it, self.split_filename.as_deref());
+            self.styles.extend(styles);
+        }
         let jsx = if let Expression::Identifier(ident) = &it.callee {
             self.jsx_imports.get(ident.name.as_str()).cloned()
         } else if let Some(name) = &self.jsx_object
@@ -2163,7 +2192,24 @@ impl<'a> VisitMut<'a> for DevupVisitor<'a> {
         .filter(|util| matches!(util.as_ref(), UtilType::Css | UtilType::Keyframes))
         .and_then(|util| Some((util, self.style_values.constant(&it.id)?)));
 
+        let class_text = match &it.init {
+            Some(Expression::StringLiteral(text)) => Some(text.value.to_string()),
+            Some(Expression::TemplateLiteral(template)) if template.expressions.is_empty() => {
+                template
+                    .quasis
+                    .first()
+                    .and_then(|quasi| quasi.value.cooked.as_ref())
+                    .map(ToString::to_string)
+            }
+            _ => None,
+        }
+        .zip(self.style_values.constant(&it.id));
+
         walk_variable_declarator(self, it);
+
+        if let Some((text, symbol)) = class_text {
+            self.style_values.insert_text(symbol, text);
+        }
 
         if let Some((util, symbol)) = style_result
             && let Some(Expression::StringLiteral(value)) = &it.init
@@ -2585,6 +2631,17 @@ impl<'a> VisitMut<'a> for DevupVisitor<'a> {
                         }
                         JSXChild::Text(_) => {}
                     }
+                }
+            }
+
+            for attr in attrs.iter_mut() {
+                if let Attribute(attr) = attr
+                    && let Identifier(name) = &attr.name
+                    && name.name == "className"
+                    && let Some(JSXAttributeValue::ExpressionContainer(container)) = &mut attr.value
+                    && let Some(expression) = container.expression.as_expression_mut()
+                {
+                    self.style_values.read_in_class(&self.ast, expression);
                 }
             }
 
