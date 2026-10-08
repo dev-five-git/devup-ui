@@ -1,7 +1,7 @@
 import { spawn } from 'node:child_process'
 import { randomUUID } from 'node:crypto'
 import { existsSync, readFileSync, writeFileSync } from 'node:fs'
-import { join, resolve } from 'node:path'
+import { isAbsolute, join, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 
 import type { TestGroup } from './groups'
@@ -186,8 +186,9 @@ export class ProducerResult {
           /(?:\.|_)(?:test|spec)\.(?:js|jsx|ts|tsx|mjs|cjs|mts|cts)$/.test(path)
         )
           continue
-        if (!path || !existsSync(resolve(run.root, path.split('?')[0] ?? path)))
-          continue
+        const file = resolve(run.root, path.split('?')[0] ?? path)
+        const mappedFile = isAbsolute(path) && Boolean(event['sourceMapURL'])
+        if (!path || (!mappedFile && !existsSync(file))) continue
         const matching = profiles.filter(
           (profile) => profile.scriptId === scriptId,
         )
