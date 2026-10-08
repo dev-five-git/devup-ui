@@ -42,6 +42,9 @@ function createSetupContext(
   return {
     transform: mock(),
     modifyRsbuildConfig: mock(),
+    modifyRspackConfig: mock(),
+    onBeforeBuild: mock(),
+    context: { rootPath: process.cwd() },
     renderChunk: mock(),
     generateBundle: mock(),
     closeBundle: mock(),
@@ -261,15 +264,17 @@ describe('DevupUIRsbuildPlugin', () => {
       expect.any(Function),
     )
 
+    const getCssSpy = spyOn(wasm, 'getCss').mockReturnValue('file css')
     expect(
       transform.mock.calls[0][1]({
-        code: `
-                .devup-ui-1 {
-                    color: red;
-                }
-            `,
+        code: '/* placeholder */',
+        resourcePath: resolve('df', 'devup-ui', 'devup-ui-1.css'),
+        environment: { name: 'web' },
       }),
-    ).toBe('')
+    ).toBe('file css')
+    // A file's stylesheet imports the shared base
+    expect(getCssSpy).toHaveBeenCalledWith(1, true)
+    getCssSpy.mockRestore()
   })
   it('should transform code', async () => {
     const plugin = DevupUI()
@@ -291,11 +296,6 @@ describe('DevupUIRsbuildPlugin', () => {
       expect.any(Function),
     )
 
-    expect(
-      transform.mock.calls[0][1]({
-        code: ``,
-      }),
-    ).toBe('')
     codeExtractSpy.mockReturnValue(
       createCodeExtractResult({
         code: '<div></div>',
@@ -607,12 +607,14 @@ const App = () => <Box></Box>`,
       const servedChunk = transform.mock.calls[0][1]({
         code: '',
         resourcePath: resolve('df', 'devup-ui', 'devup-ui-3.css'),
+        environment: { name: 'web' },
       })
       expect(servedChunk).toBe('CSS_FOR_3')
       expect(getCssSpy).toHaveBeenCalledWith(3, false)
       const servedBase = transform.mock.calls[0][1]({
         code: '',
         resourcePath: resolve('df', 'devup-ui', 'devup-ui.css'),
+        environment: { name: 'web' },
       })
       expect(servedBase).toBe('CSS_FOR_null')
       expect(getCssSpy).toHaveBeenCalledWith(null, false)
@@ -708,6 +710,176 @@ const App = () => <Box></Box>`,
       const cfgArr = { tools: { rspack: prevArr as unknown } }
       modifyArr.mock.calls[0][0](cfgArr)
       expect((cfgArr.tools.rspack as unknown[]).length).toBe(2)
+    })
+  })
+
+  describe('stylesheets built too early', () => {
+    let getCssSpy: ReturnType<typeof spyOn>
+    let readFileSyncSpy: ReturnType<typeof spyOn>
+    let computeReachableFilesSpy: ReturnType<typeof spyOn>
+
+    afterEach(() => {
+      getCssSpy.mockRestore()
+      readFileSyncSpy.mockRestore()
+      computeReachableFilesSpy.mockRestore()
+      existsSyncSpy.mockReturnValue(false)
+    })
+
+    async function setup(options: Parameters<typeof DevupUI>[0] = {}) {
+      getCssSpy = spyOn(wasm, 'getCss').mockReturnValue('before')
+      readFileSyncSpy = spyOn(fs, 'readFileSync').mockReturnValue('source')
+      computeReachableFilesSpy = spyOn(
+        pluginUtils,
+        'computeReachableFiles',
+      ).mockReturnValue([resolve('src', 'App.tsx')])
+      codeExtractSpy.mockReturnValue(createCodeExtractResult())
+      const transform = mock()
+      const onBeforeBuild = mock()
+      const modifyRspackConfig = mock()
+      await DevupUI(options).setup(
+        createSetupContext({ transform, onBeforeBuild, modifyRspackConfig }),
+      )
+      const config: { plugins?: { apply(compiler: unknown): void }[] } = {}
+      modifyRspackConfig.mock.calls[0][0](config, {
+        environment: { name: 'web' },
+      })
+      const taps: Record<string, (...args: unknown[]) => unknown> = {}
+      const tap =
+        (hook: string) => (_: unknown, fn: (...args: unknown[]) => unknown) => {
+          taps[hook] = fn
+        }
+      const compiler = {
+        watchMode: false,
+        rspack: { Compilation: { PROCESS_ASSETS_STAGE_REPORT: 5000 } },
+        hooks: {
+          run: { tap: tap('run') },
+          thisCompilation: { tap: tap('start') },
+        },
+      }
+      config.plugins![0]!.apply(compiler)
+      const compilation = {
+        assets: { 'index.js': {} },
+        deleteAsset: mock(),
+        hooks: {
+          finishModules: { tap: tap('finishModules') },
+          processAssets: { tap: tap('processAssets') },
+          needAdditionalPass: { tap: tap('needAdditionalPass') },
+        },
+      }
+      const serve = (resourcePath: string) =>
+        transform.mock.calls[0][1]({
+          resourcePath,
+          environment: { name: 'web' },
+        })
+      return { onBeforeBuild, compiler, compilation, taps, serve }
+    }
+
+    it('extracts the files the entries reach before building', async () => {
+      const { onBeforeBuild } = await setup({ atomHoist: undefined })
+      codeExtractSpy.mockClear()
+      onBeforeBuild.mock.calls[0][0]({
+        environments: {
+          web: {
+            entry: {
+              a: './src/a.tsx',
+              b: ['./src/b.tsx'],
+              c: { import: './src/c.tsx' },
+              d: { import: ['./src/d.tsx'] },
+            },
+          },
+        },
+      })
+      expect(computeReachableFilesSpy).toHaveBeenCalledWith({
+        srcDir: resolve(process.cwd(), 'src'),
+        tsconfigPath: resolve(process.cwd(), 'tsconfig.json'),
+        entries: ['a', 'b', 'c', 'd'].map((name) =>
+          resolve(process.cwd(), `./src/${name}.tsx`),
+        ),
+      })
+      expect(codeExtractSpy).toHaveBeenCalledWith(
+        resolve('src', 'App.tsx'),
+        'source',
+        '@devup-ui/react',
+        expect.stringMatching(/^\.\//),
+        false,
+        false,
+        true,
+        expect.anything(),
+      )
+
+      // an extraction error is reported by the transform of that file
+      codeExtractSpy.mockImplementation(() => {
+        throw new Error('boom')
+      })
+      expect(() =>
+        onBeforeBuild.mock.calls[0][0]({ environments: {} }),
+      ).not.toThrow()
+    })
+
+    it('extracts under posix names in atom mode', async () => {
+      const { onBeforeBuild } = await setup({ atomHoist: 2 })
+      codeExtractSpy.mockClear()
+      onBeforeBuild.mock.calls[0][0]({ environments: {} })
+      expect(codeExtractSpy.mock.calls[0]![0]).toBe(
+        resolve('src', 'App.tsx').replaceAll('\\', '/'),
+      )
+    })
+
+    it('compiles once more, writing no file, when a stylesheet changed', async () => {
+      const { compiler, compilation, taps, serve } = await setup()
+      writeFileSyncSpy.mockClear()
+      taps.start!(compilation)
+      // the shared base is written first, as the CSS loaders read it from disk
+      expect(writeFileSyncSpy).toHaveBeenCalledWith(
+        resolve('df', 'devup-ui', 'devup-ui.css'),
+        'before',
+        'utf-8',
+      )
+      serve(resolve('df', 'devup-ui', 'devup-ui-1.css'))
+      getCssSpy.mockReturnValue('after')
+      taps.finishModules!()
+      taps.processAssets!()
+      expect(compilation.deleteAsset).toHaveBeenCalledWith('index.js')
+      writeFileSyncSpy.mockClear()
+      expect(taps.needAdditionalPass!()).toBe(true)
+      expect(writeFileSyncSpy).toHaveBeenCalledWith(
+        resolve('df', 'devup-ui', 'devup-ui-1.css'),
+        'after',
+        'utf-8',
+      )
+      expect(writeFileSyncSpy).toHaveBeenCalledWith(
+        resolve('df', 'devup-ui', 'devup-ui.css'),
+        'after',
+        'utf-8',
+      )
+
+      // one more pass per run at most
+      compilation.deleteAsset.mockClear()
+      taps.processAssets!()
+      expect(compilation.deleteAsset).not.toHaveBeenCalled()
+      expect(taps.needAdditionalPass!()).toBe(false)
+      taps.run!()
+      expect(taps.needAdditionalPass!()).toBe(true)
+
+      // the dev server rebuilds through the files the transforms write
+      compiler.watchMode = true
+      taps.start!(compilation)
+      taps.finishModules!()
+      expect(taps.needAdditionalPass!()).toBe(false)
+    })
+
+    it('keeps the pass when every stylesheet is current', async () => {
+      const { compilation, taps, serve } = await setup()
+      existsSyncSpy.mockReturnValue(true)
+      readFileSyncSpy.mockReturnValue('before')
+      writeFileSyncSpy.mockClear()
+      taps.start!(compilation)
+      expect(writeFileSyncSpy).not.toHaveBeenCalled()
+      serve(resolve('df', 'devup-ui', 'devup-ui-1.css'))
+      taps.finishModules!()
+      taps.processAssets!()
+      expect(compilation.deleteAsset).not.toHaveBeenCalled()
+      expect(taps.needAdditionalPass!()).toBe(false)
     })
   })
 })
