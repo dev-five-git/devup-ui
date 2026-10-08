@@ -8,11 +8,11 @@ ToBTreeSet {
             ExtractDynamicStyle {
                 property: "background",
                 level: 0,
-                identifier: "colors[variant]",
+                identifier: "__devupValue0",
                 selector: None,
                 style_order: None,
             },
         ),
     },
-    code: "import \"@devup-ui/core/devup-ui-0.css\";\nlet variant = \"primary\";\nlet colors = {\n\tprimary: \"blue\",\n\tsecondary: \"red\"\n};\n<div className=\"a-a\" style={{ \"--a\": colors[variant] }} />;\n",
+    code: "import \"@devup-ui/core/devup-ui-0.css\";\nlet variant = \"primary\";\nlet colors = {\n\tprimary: \"blue\",\n\tsecondary: \"red\"\n};\n((__devupValue0) => <div className=\"a-a\" style={{ \"--a\": __devupValue0 }} />)(colors[variant]);\n",
 }

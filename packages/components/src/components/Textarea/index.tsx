@@ -43,6 +43,35 @@ export function Textarea({
       w="100%"
     >
       <Box
+        aria-invalid={error || undefined}
+        aria-label="textarea"
+        as="textarea"
+        bg="var(--background, light-dark(#FFFFFF, #2E2E2E))"
+        borderColor="var(--border, light-dark(#E4E4E4, #434343))"
+        borderRadius="8px"
+        borderStyle="solid"
+        borderWidth="1px"
+        className={`${className || ''} ${classNames?.textarea || ''}`.trim()}
+        color="var(--text, light-dark(#272727, #F6F6F6))"
+        disabled={disabled}
+        fontSize={['16px', null, null, null, '14px']}
+        lineHeight="1.5"
+        minH="80px"
+        p="12px"
+        rows={rows}
+        styleOrder={1}
+        styleVars={{
+          primary: colors?.primary,
+          error: colors?.error,
+          text: colors?.text,
+          border: colors?.border,
+          background: colors?.background,
+          placeholder: colors?.placeholder,
+          focusRing: colors?.focusRing,
+        }}
+        transition="border-color 0.15s ease-in-out, box-shadow 0.15s ease-in-out"
+        w="100%"
+        {...props}
         _disabled={{
           _placeholder: {
             color: 'var(--disabledText, light-dark(#D6D7DE, #373737))',
@@ -67,22 +96,6 @@ export function Textarea({
         _placeholder={{
           color: 'var(--placeholder, light-dark(#A9A8AB, #CBCBCB))',
         }}
-        aria-invalid={error || undefined}
-        aria-label="textarea"
-        as="textarea"
-        bg="var(--background, light-dark(#FFFFFF, #2E2E2E))"
-        borderColor="var(--border, light-dark(#E4E4E4, #434343))"
-        borderRadius="8px"
-        borderStyle="solid"
-        borderWidth="1px"
-        className={`${className || ''} ${classNames?.textarea || ''}`.trim()}
-        color="var(--text, light-dark(#272727, #F6F6F6))"
-        disabled={disabled}
-        fontSize={['16px', null, null, null, '14px']}
-        lineHeight="1.5"
-        minH="80px"
-        p="12px"
-        rows={rows}
         selectors={{
           '&[aria-invalid="true"]': {
             borderColor: 'var(--error, light-dark(#D52B2E, #FF5B5E))',
@@ -93,20 +106,7 @@ export function Textarea({
               '0 0 0 3px var(--focusRing, light-dark(rgba(213, 43, 46, 0.2), rgba(255, 91, 94, 0.4)))',
           },
         }}
-        styleOrder={1}
-        styleVars={{
-          primary: colors?.primary,
-          error: colors?.error,
-          text: colors?.text,
-          border: colors?.border,
-          background: colors?.background,
-          placeholder: colors?.placeholder,
-          focusRing: colors?.focusRing,
-        }}
-        transition="border-color 0.15s ease-in-out, box-shadow 0.15s ease-in-out"
         typography={typography}
-        w="100%"
-        {...props}
       />
       {error && errorMessage && (
         <Text

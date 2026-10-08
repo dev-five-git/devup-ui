@@ -1,0 +1,9 @@
+{
+  "changes": {
+    "bindings/devup-ui-wasm/package.json": "Patch",
+    "packages/components/package.json": "Patch",
+    "packages/reset-css/package.json": "Patch"
+  },
+  "note": "Preserve JavaScript semantics for exact imported enum and Math values including negative zero, lexical constants, binding-aware CommonJS require, React createElement calls, type-only imports, and source-ordered props evaluation with native spread snapshots and CSS-variable fallbacks without a styling runtime. Migrate UI-kit style defaults by pure reordering and test reset CSS through compiled output. Report located build errors for runtime styleOrder values, unknowable whole-object style overrides, opaque selector literals, genuinely unmovable lazy logical suspension, Devup UI namespaces passed whole to runtime code, and immediate style reads in the temporal dead zone of lexical bindings; deferred initialized reads keep folding and pre-assignment var reads remain dynamic.",
+  "date": "2026-10-01T00:00:00.000Z"
+}

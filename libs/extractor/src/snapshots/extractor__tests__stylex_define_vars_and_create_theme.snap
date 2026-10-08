@@ -7,7 +7,7 @@ ToBTreeSet {
         Static(
             ExtractStaticStyle {
                 property: "background-color",
-                value: "var(--b)",
+                value: "var(--sxvar-746573742e747378-7365636f6e64617279-)",
                 level: 0,
                 selector: None,
                 style_order: None,
@@ -17,7 +17,7 @@ ToBTreeSet {
         Static(
             ExtractStaticStyle {
                 property: "color",
-                value: "var(--a)",
+                value: "var(--sxvar-746573742e747378-7072696d617279-)",
                 level: 0,
                 selector: None,
                 style_order: None,
@@ -26,16 +26,16 @@ ToBTreeSet {
         ),
         Css(
             ExtractCss {
-                css: ".c{--a:navy;}",
+                css: ".a{--sxvar-746573742e747378-7072696d617279-:navy;}",
                 file: "test.tsx",
             },
         ),
         Css(
             ExtractCss {
-                css: ":root{--a:blue;--b:grey;}",
+                css: ":root{--sxvar-746573742e747378-7072696d617279-:blue;--sxvar-746573742e747378-7365636f6e64617279-:grey;}",
                 file: "test.tsx",
             },
         ),
     },
-    code: "import \"@devup-ui/react/devup-ui.css\";\nimport stylex from \"@stylexjs/stylex\";\nconst colors = {\n\t\"primary\": \"var(--a)\",\n\t\"secondary\": \"var(--b)\"\n};\nconst dark = \"c\";\nconst styles = { \"box\": \"d e\" };\nconst el = <div {...{ className: \"c d e\" }} />;\n",
+    code: "import \"@devup-ui/react/devup-ui.css\";\nconst colors = {\n\t\"primary\": \"var(--sxvar-746573742e747378-7072696d617279-)\",\n\t\"secondary\": \"var(--sxvar-746573742e747378-7365636f6e64617279-)\"\n};\nconst dark = \"a\";\nconst styles = { \"box\": \"b c\" };\nconst el = <div {...{ className: \"a b c\" }} />;\n",
 }

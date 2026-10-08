@@ -1,18 +1,18 @@
 use crate::ExtractStyleProp;
-use crate::extract_style::extract_dynamic_style::ExtractDynamicStyle;
 use crate::extract_style::extract_static_style::ExtractStaticStyle;
 use crate::extract_style::extract_style_value::ExtractStyleValue;
+use crate::stylex::assignments::is_final_assignment;
 use crate::stylex::{
-    DecomposedStyle, SelectorPart, StylexIncludeRef, decompose_value_conditions,
-    dynamic_number_suffix, is_include_call_static, normalize_stylex_property, stylex_value,
+    DecomposedStyle, DynamicNamespace, SelectorPart, StylexIncludeRef, StylexResolver,
+    decompose_value_conditions, is_first_that_works_call, is_include_call_static, is_types_call,
+    normalize_stylex_property, stylex_value,
 };
-use css::optimize_value::optimize_value;
-use css::sheet_to_variable_name;
 use css::style_selector::StyleSelector;
 use oxc_ast::ast::{
-    Argument, ArrowFunctionExpression, BindingPattern, Expression, ObjectExpression,
-    ObjectPropertyKind, SpreadElement,
+    Argument, Expression, ObjectExpression, ObjectPropertyKind, PropertyKind, SpreadElement,
 };
+
+mod dynamic;
 use oxc_span::GetSpan;
 use rustc_hash::FxHashMap;
 
@@ -23,14 +23,15 @@ use crate::utils::{
 
 /// Construct a static style directly — bypass `convert_value()` to avoid devup-ui
 /// spacing transformations. `StyleX` values are raw CSS, only `optimize_value()`.
-fn raw_static_style<'a>(
+pub(crate) fn raw_static_style<'a>(
     property: String,
     value: &str,
     selector: Option<StyleSelector>,
 ) -> ExtractStyleProp<'a> {
+    let value = crate::stylex::transitions::css_value(&property, value).into_owned();
     ExtractStyleProp::Static(ExtractStyleValue::Static(ExtractStaticStyle {
         property,
-        value: optimize_value(value).into_owned(),
+        value,
         level: 0,
         selector,
         style_order: None,
@@ -39,36 +40,28 @@ fn raw_static_style<'a>(
     }))
 }
 
-/// Flatten an object literal of literal-valued properties into kebab-cased CSS
-/// declarations, the shape `positionTry` and `viewTransitionClass` bodies take.
-pub fn extract_stylex_declarations(
+/// Why `value` is no declaration value: a genuine `StyleX` helper is read only
+/// inside the API that takes it
+pub(crate) fn declaration_error(
     api: &str,
-    object: &ObjectExpression<'_>,
-    errors: &mut Vec<(u32, String)>,
-) -> Vec<(String, String)> {
-    let mut declarations = vec![];
-    for property in &object.properties {
-        let property = match property {
-            ObjectPropertyKind::ObjectProperty(property) => property,
-            ObjectPropertyKind::SpreadProperty(spread) => {
-                errors.push(spread_error(api, spread));
-                continue;
-            }
-        };
-        let Some(name) = get_str_by_property_key(&property.key) else {
-            errors.push(key_error(api, &property.key));
-            continue;
-        };
-        let name = normalize_stylex_property(name.as_ref());
-        match stylex_value(&name, &property.value) {
-            Some(value) => declarations.push((name, optimize_value(&value).into_owned())),
-            None => errors.push((
-                property.value.span().start,
-                runtime_value_error(api, &readable_code(&property.value)),
-            )),
+    value: &Expression<'_>,
+    resolver: StylexResolver<'_>,
+) -> String {
+    let code = readable_code(value);
+    match value {
+        Expression::CallExpression(call)
+            if is_first_that_works_call(&call.callee, resolver)
+                || is_include_call_static(&call.callee, resolver)
+                || is_types_call(&call.callee, resolver) =>
+        {
+            build_time_error(
+                api,
+                &code,
+                "its values must be literals; `firstThatWorks()`, `include()` and `types` are read only inside `stylex.create()` and `stylex.defineVars()`",
+            )
         }
+        _ => runtime_value_error(api, &code),
     }
-    declarations
 }
 
 /// Resolve a `vars.key` member access against the contracts `stylex.defineVars()`
@@ -119,7 +112,9 @@ type Leaf<'l> = dyn Fn(&str, &Expression<'_>) -> Option<String> + 'l;
 /// Handles static string/number values (Phase 1) and value-level conditions (Phase 2);
 /// what cannot be read at build time is reported in `errors`.
 ///
-/// Returns a Vec of `(namespace_name, style_props, css_vars, include_refs)` tuples. Each namespace
+/// Returns a Vec of `(namespace_name, style_props, css_vars, include_refs, key_groups)` tuples,
+/// `key_groups` giving each top-level key of a static namespace and how many of its
+/// styles it gives. Each namespace
 /// corresponds to a top-level key in the `stylex.create({...})` argument.
 #[allow(clippy::type_complexity)]
 pub fn extract_stylex_namespace_styles<'a>(
@@ -127,11 +122,13 @@ pub fn extract_stylex_namespace_styles<'a>(
     keyframe_names: &FxHashMap<String, String>,
     var_refs: &FxHashMap<String, String>,
     errors: &mut Vec<(u32, String)>,
+    resolver: StylexResolver<'_>,
 ) -> Vec<(
     String,
     Vec<ExtractStyleProp<'a>>,
-    Option<Vec<(usize, String, &'static str)>>,
+    Option<DynamicNamespace>,
     Vec<StylexIncludeRef>,
+    Vec<(String, usize)>,
 )> {
     // A keyframes name or a `defineVars` member reads as the value it stands for
     let leaf = |property: &str, value: &Expression<'_>| {
@@ -158,28 +155,44 @@ pub fn extract_stylex_namespace_styles<'a>(
             errors.push(key_error("stylex.create", &prop.key));
             continue;
         };
+        if prop.method || prop.kind != PropertyKind::Init {
+            errors.push((
+                prop.span.start,
+                build_time_error(
+                    "stylex.create",
+                    "method/getter/setter namespace",
+                    "use a plain namespace object or a synchronous expression-bodied arrow",
+                ),
+            ));
+            continue;
+        }
         match &prop.value {
             Expression::ArrowFunctionExpression(arrow) => {
-                let Some((styles, css_vars)) =
-                    extract_stylex_dynamic_namespace(arrow, &leaf, errors)
-                else {
-                    errors.push((
-                        prop.value.span().start,
-                        build_time_error(
-                            "stylex.create",
-                            &readable_code(&prop.value),
-                            "a dynamic style is an arrow function with plain parameters returning an object literal",
-                        ),
-                    ));
+                let Some((styles, css_vars)) = dynamic::extract(arrow, &leaf, errors) else {
                     continue;
                 };
-                result.push((ns_name, styles, Some(css_vars), vec![]));
+                result.push((ns_name, styles, Some(css_vars), vec![], vec![]));
             }
             Expression::ObjectExpression(ns_obj) => {
-                let (styles, include_refs) = extract_stylex_namespace(ns_obj, &leaf, errors);
-                result.push((ns_name, styles, None, include_refs));
+                let (styles, include_refs, groups) =
+                    extract_stylex_namespace(ns_obj, &leaf, errors, resolver);
+                result.push((ns_name, styles, None, include_refs, groups));
             }
-            Expression::NullLiteral(_) => result.push((ns_name, vec![], None, vec![])),
+            Expression::NullLiteral(_) => result.push((ns_name, vec![], None, vec![], vec![])),
+            Expression::FunctionExpression(function) => errors.push((
+                function.span.start,
+                build_time_error(
+                    "stylex.create",
+                    if function.generator {
+                        "generator function expression"
+                    } else if function.r#async {
+                        "async function expression"
+                    } else {
+                        "function expression"
+                    },
+                    "use a synchronous expression-bodied arrow with plain scalar parameters",
+                ),
+            )),
             value => errors.push((
                 value.span().start,
                 build_time_error(
@@ -193,20 +206,31 @@ pub fn extract_stylex_namespace_styles<'a>(
     result
 }
 
-/// The styles and `include()` references of one static namespace
+/// The styles and `include()` references of one static namespace, with each
+/// top-level key and how many of the styles it gives
+#[allow(clippy::type_complexity)]
 fn extract_stylex_namespace<'a>(
     namespace: &ObjectExpression<'_>,
     leaf: &Leaf<'_>,
     errors: &mut Vec<(u32, String)>,
-) -> (Vec<ExtractStyleProp<'a>>, Vec<StylexIncludeRef>) {
+    resolver: StylexResolver<'_>,
+) -> (
+    Vec<ExtractStyleProp<'a>>,
+    Vec<StylexIncludeRef>,
+    Vec<(String, usize)>,
+) {
     let mut styles = vec![];
     let mut include_refs = vec![];
-    for style_prop in &namespace.properties {
+    let mut groups = vec![];
+    for (index, style_prop) in namespace.properties.iter().enumerate() {
         let style_prop = match style_prop {
             ObjectPropertyKind::ObjectProperty(style_prop) => style_prop,
             ObjectPropertyKind::SpreadProperty(spread) => {
-                match include(spread) {
-                    Some(Ok(include_ref)) => include_refs.push(include_ref),
+                match include(spread, resolver) {
+                    Some(Ok(mut include_ref)) => {
+                        include_ref.before_group = groups.len();
+                        include_refs.push(include_ref);
+                    }
                     Some(Err(error)) => errors.push(error),
                     None => errors.push(spread_error("stylex.create", spread)),
                 }
@@ -217,6 +241,7 @@ fn extract_stylex_namespace<'a>(
             errors.push(key_error("stylex.create", &style_prop.key));
             continue;
         };
+        let final_assignment = is_final_assignment(&prop_name, &namespace.properties[index + 1..]);
 
         // Phase 2: pseudo-element / pseudo-class top-level keys
         if prop_name.starts_with(':') {
@@ -232,7 +257,9 @@ fn extract_stylex_namespace<'a>(
                 continue;
             };
             let parent_selectors = [SelectorPart::Pseudo(prop_name.to_string())];
-            for inner_prop in &inner_obj.properties {
+            let before = styles.len();
+            let mut has_entries = false;
+            for (inner_index, inner_prop) in inner_obj.properties.iter().enumerate() {
                 let inner_prop = match inner_prop {
                     ObjectPropertyKind::ObjectProperty(inner_prop) => inner_prop,
                     ObjectPropertyKind::SpreadProperty(spread) => {
@@ -244,16 +271,23 @@ fn extract_stylex_namespace<'a>(
                     errors.push(key_error("stylex.create", &inner_prop.key));
                     continue;
                 };
-                push_decomposed(
-                    &mut styles,
-                    decompose_value_conditions(
-                        &normalize_stylex_property(inner_name.as_ref()),
-                        &inner_prop.value,
-                        &parent_selectors,
-                        leaf,
-                        errors,
-                    ),
+                let decomposed = decompose_value_conditions(
+                    &normalize_stylex_property(inner_name.as_ref()),
+                    &inner_prop.value,
+                    &parent_selectors,
+                    leaf,
+                    errors,
+                    resolver,
                 );
+                if final_assignment
+                    && is_final_assignment(&inner_name, &inner_obj.properties[inner_index + 1..])
+                {
+                    has_entries |= !decomposed.is_empty();
+                    push_decomposed(&mut styles, decomposed);
+                }
+            }
+            if has_entries {
+                groups.push((prop_name.to_string(), styles.len() - before));
             }
             continue;
         }
@@ -264,12 +298,21 @@ fn extract_stylex_namespace<'a>(
                 "[stylex] WARNING: Shorthand property '{css_property}' may cause unexpected specificity issues. Consider using longhand properties (e.g., 'marginTop', 'paddingLeft')."
             );
         }
-        push_decomposed(
-            &mut styles,
-            decompose_value_conditions(&css_property, &style_prop.value, &[], leaf, errors),
+        let before = styles.len();
+        let decomposed = decompose_value_conditions(
+            &css_property,
+            &style_prop.value,
+            &[],
+            leaf,
+            errors,
+            resolver,
         );
+        if final_assignment && !decomposed.is_empty() {
+            push_decomposed(&mut styles, decomposed);
+            groups.push((prop_name.to_string(), styles.len() - before));
+        }
     }
-    (styles, include_refs)
+    (styles, include_refs, groups)
 }
 
 fn push_decomposed(styles: &mut Vec<ExtractStyleProp<'_>>, decomposed: Vec<DecomposedStyle>) {
@@ -282,12 +325,18 @@ fn push_decomposed(styles: &mut Vec<ExtractStyleProp<'_>>, decomposed: Vec<Decom
 
 /// `...stylex.include(base.member)`: `None` when the spread is not an
 /// `include()` call
-fn include(spread: &SpreadElement<'_>) -> Option<Result<StylexIncludeRef, (u32, String)>> {
+fn include(
+    spread: &SpreadElement<'_>,
+    resolver: StylexResolver<'_>,
+) -> Option<Result<StylexIncludeRef, (u32, String)>> {
     let Expression::CallExpression(call) = &spread.argument else {
         return None;
     };
-    if !is_include_call_static(&call.callee) {
+    if !is_include_call_static(&call.callee, resolver) {
         return None;
+    }
+    if let Err(error) = crate::stylex::validation::validate_helper_call(call, resolver) {
+        return Some(Err(error));
     }
     if let Some(Expression::StaticMemberExpression(member)) =
         call.arguments.first().and_then(Argument::as_expression)
@@ -296,7 +345,8 @@ fn include(spread: &SpreadElement<'_>) -> Option<Result<StylexIncludeRef, (u32, 
         return Some(Ok(StylexIncludeRef {
             var_name: ident.name.to_string(),
             member_name: member.property.name.to_string(),
-            offset: spread.span.start,
+            offset: call.span.start,
+            before_group: 0,
         }));
     }
     Some(Err((
@@ -307,86 +357,4 @@ fn include(spread: &SpreadElement<'_>) -> Option<Result<StylexIncludeRef, (u32, 
             "it takes a namespace such as `styles.base`",
         ),
     )))
-}
-
-/// Extract styles from a dynamic `StyleX` namespace (arrow function).
-/// Returns (`styles_for_css`, `css_vars`) where `css_vars` maps `param_index` to a CSS variable
-/// name and the unit a number passed for it gets; `None` when the function is
-/// not an arrow with plain parameters returning an object literal.
-#[allow(clippy::type_complexity)]
-fn extract_stylex_dynamic_namespace<'a>(
-    arrow: &ArrowFunctionExpression<'_>,
-    leaf: &Leaf<'_>,
-    errors: &mut Vec<(u32, String)>,
-) -> Option<(
-    Vec<ExtractStyleProp<'a>>,
-    Vec<(usize, String, &'static str)>,
-)> {
-    // 1. Extract parameter names
-    let mut param_names = vec![];
-    for param in &arrow.params.items {
-        let BindingPattern::BindingIdentifier(ident) = &param.pattern else {
-            return None;
-        };
-        param_names.push(ident.name.to_string());
-    }
-
-    // 2. Get body ObjectExpression from expression body: (x) => ({ ... })
-    let Expression::ObjectExpression(body_obj) = arrow.body.as_expression()?.without_parentheses()
-    else {
-        return None;
-    };
-
-    // 3. Process each property
-    let mut styles = vec![];
-    let mut css_vars = vec![];
-
-    for prop in &body_obj.properties {
-        let prop = match prop {
-            ObjectPropertyKind::ObjectProperty(prop) => prop,
-            ObjectPropertyKind::SpreadProperty(spread) => {
-                errors.push(spread_error("stylex.create", spread));
-                continue;
-            }
-        };
-        let Some(prop_name) = get_string_by_property_key(&prop.key) else {
-            errors.push(key_error("stylex.create", &prop.key));
-            continue;
-        };
-        let css_property = normalize_stylex_property(&prop_name);
-
-        // Check if value references a parameter (dynamic)
-        let is_dynamic = if prop.shorthand {
-            // Shorthand: { height } is equivalent to { height: height }
-            param_names.iter().position(|p| p == &prop_name)
-        } else if let Expression::Identifier(ident) = &prop.value {
-            param_names.iter().position(|p| p == ident.name.as_str())
-        } else {
-            None
-        };
-
-        if let Some(param_idx) = is_dynamic {
-            // Dynamic property: generate CSS variable
-            let var_name = sheet_to_variable_name(&css_property, 0, None);
-            css_vars.push((param_idx, var_name, dynamic_number_suffix(&css_property)));
-            let param_name = &param_names[param_idx];
-            styles.push(ExtractStyleProp::Static(ExtractStyleValue::Dynamic(
-                ExtractDynamicStyle::new(&css_property, 0, param_name, None),
-            )));
-            continue;
-        }
-        match leaf(&css_property, &prop.value) {
-            Some(value) => styles.push(raw_static_style(css_property, &value, None)),
-            None => errors.push((
-                prop.value.span().start,
-                build_time_error(
-                    "stylex.create",
-                    &readable_code(&prop.value),
-                    "a dynamic style's value is one of its parameters or a static value; compute it before passing it",
-                ),
-            )),
-        }
-    }
-
-    Some((styles, css_vars))
 }

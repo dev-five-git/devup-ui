@@ -6,6 +6,7 @@ import {
 } from '@typescript-eslint/utils'
 
 import { ImportStorage } from '../../utils/import-storage'
+import { StylexBindings } from './stylex-bindings'
 
 const createRule = ESLintUtils.RuleCreator(
   (name) =>
@@ -94,17 +95,6 @@ const DEVUP_APIS = new Map<string, Api>([
   ['createGlobalStyle', 'rules'],
 ])
 
-const STYLEX_APIS = new Set([
-  'create',
-  'keyframes',
-  'defineVars',
-  'defineConsts',
-  'createTheme',
-  'createThemeContract',
-  'positionTry',
-  'viewTransitionClass',
-])
-
 /** Whether `member` is a `toString` called at once without a radix */
 function callsToString(member: TSESTree.MemberExpression) {
   return (
@@ -113,13 +103,6 @@ function callsToString(member: TSESTree.MemberExpression) {
     member.parent.callee === member &&
     member.parent.arguments.length === 0
   )
-}
-
-/** The identifier a chain of members starts from */
-function rootOf(node: TSESTree.Node): TSESTree.Node {
-  return node.type === AST_NODE_TYPES.MemberExpression
-    ? rootOf(node.object)
-    : node
 }
 
 /** Whether the end of `path`, which leads down from an argument of a style API, is in a value the build reads: in a rule object or CSS text, rather than a part `css()` composes as a class or what chooses between parts */
@@ -399,7 +382,7 @@ class Changes {
   constructor(
     private readonly importStorage: ImportStorage,
     private readonly scopeOf: (node: TSESTree.Node) => Scope,
-    private readonly stylex: (name: string) => boolean,
+    private readonly stylex: (callee: TSESTree.Node) => boolean,
   ) {}
 
   /** Whether the file changes what `variable` holds, or hands it to code that may, which the build then does not read as a constant */
@@ -537,9 +520,7 @@ class Changes {
     for (let current: TSESTree.Node | undefined = node; current;) {
       if (this.importStorage.checkContextType(current)) return true
       if (current.type === AST_NODE_TYPES.CallExpression) {
-        const root = rootOf(current.callee)
-        if (root.type === AST_NODE_TYPES.Identifier && this.stylex(root.name))
-          return true
+        if (this.stylex(current.callee)) return true
       }
       current = current.parent
     }
@@ -622,8 +603,8 @@ class Values {
   constructor(
     private readonly changes: Changes,
     private readonly scopeOf: (node: TSESTree.Node) => Scope,
-    /** Whether a name binds a StyleX import, whose functions give what the build reads where they are called */
-    private readonly stylex: (name: string) => boolean,
+    /** Whether a callee resolves to a StyleX API the build reads */
+    private readonly stylex: (callee: TSESTree.Node) => boolean,
     /** Whether calling `callee` gives the class of `css()` or the name of `keyframes()`, which the build writes in its place */
     private readonly givesStyleName: (callee: TSESTree.Node) => boolean,
   ) {}
@@ -723,12 +704,7 @@ class Values {
     seen: Set<string>,
   ): boolean {
     const callee = call.callee
-    const root = rootOf(callee)
-    if (
-      (root.type === AST_NODE_TYPES.Identifier && this.stylex(root.name)) ||
-      this.givesStyleName(callee)
-    )
-      return true
+    if (this.stylex(callee) || this.givesStyleName(callee)) return true
     if (callee.type === AST_NODE_TYPES.MemberExpression) {
       const key = memberKey(callee)
       if (
@@ -963,11 +939,9 @@ export const cssUtilsLiteralOnly = createRule({
   },
   create(context) {
     const importStorage = new ImportStorage()
-    const stylexNamespaces = new Set<string>()
-    const stylexNames = new Map<string, string>()
     const scopeOf = (node: TSESTree.Node) => context.sourceCode.getScope(node)
-    const isStylex = (name: string) =>
-      stylexNamespaces.has(name) || stylexNames.has(name)
+    const stylex = new StylexBindings(scopeOf)
+    const isStylex = (callee: TSESTree.Node) => stylex.isCallee(callee)
     const changes = new Changes(importStorage, scopeOf, isStylex)
     const givesStyleName = (callee: TSESTree.Node) => {
       const name =
@@ -987,12 +961,10 @@ export const cssUtilsLiteralOnly = createRule({
       takes: Api
     } | null = null
     const apiOf = (callee: TSESTree.Node): Api | undefined => {
+      if (stylex.apiOf(callee)) return 'rules'
       if (callee.type === AST_NODE_TYPES.Identifier) {
         const devup = importStorage.importedName(callee.name)
-        if (devup !== undefined) return DEVUP_APIS.get(devup)
-        return STYLEX_APIS.has(stylexNames.get(callee.name) ?? '')
-          ? 'rules'
-          : undefined
+        return devup === undefined ? undefined : DEVUP_APIS.get(devup)
       }
       if (
         callee.type !== AST_NODE_TYPES.MemberExpression ||
@@ -1002,9 +974,7 @@ export const cssUtilsLiteralOnly = createRule({
       const name = memberKey(callee) ?? ''
       if (importStorage.isImportObject(callee.object.name))
         return DEVUP_APIS.get(name)
-      return stylexNamespaces.has(callee.object.name) && STYLEX_APIS.has(name)
-        ? 'rules'
-        : undefined
+      return undefined
     }
     const enter = (
       node: TSESTree.CallExpression | TSESTree.TaggedTemplateExpression,
@@ -1018,18 +988,16 @@ export const cssUtilsLiteralOnly = createRule({
     }
     return {
       ImportDeclaration(node) {
-        importStorage.addImportByDeclaration(node)
-        if (node.source.value !== '@stylexjs/stylex') return
-        for (const specifier of node.specifiers) {
-          if (specifier.type === AST_NODE_TYPES.ImportSpecifier)
-            stylexNames.set(
-              specifier.local.name,
-              specifier.imported.type === AST_NODE_TYPES.Identifier
+        importStorage.addImportByDeclaration({
+          ...node,
+          specifiers: node.specifiers.filter(
+            (specifier) =>
+              specifier.type !== AST_NODE_TYPES.ImportSpecifier ||
+              (specifier.imported.type === AST_NODE_TYPES.Identifier
                 ? specifier.imported.name
-                : specifier.imported.value,
-            )
-          else stylexNamespaces.add(specifier.local.name)
-        }
+                : specifier.imported.value) !== 'stylex',
+          ),
+        })
       },
       CallExpression(node) {
         enter(node, node.callee)

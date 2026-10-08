@@ -1,21 +1,21 @@
 ---
 source: libs/extractor/src/lib.rs
-expression: "ToBTreeSet::from(extract_tsx(r\"import stylex from '@stylexjs/stylex';\nconst fallback = stylex.positionTry({ top: '0', insetBlockEnd: 'auto' });\nconst transition = stylex.viewTransitionClass({ animationDuration: '300ms' });\"))"
+expression: "ToBTreeSet::from(extract_tsx(r\"import stylex from '@stylexjs/stylex';\nconst fallback = stylex.positionTry({ top: '0', insetBlockEnd: 'auto' });\nconst transition = stylex.viewTransitionClass({ group: { animationDuration: '300ms' } });\"))"
 ---
 ToBTreeSet {
     styles: {
         Css(
             ExtractCss {
-                css: ".b{animation-duration:300ms;}",
+                css: "::view-transition-group(*.sxv-746573742e747378-3a3a766965772d7472616e736974696f6e2d67726f75703a616e696d6174696f6e2d6475726174696f6e3a3330306d733b3b-){animation-duration:300ms;}",
                 file: "test.tsx",
             },
         ),
         Css(
             ExtractCss {
-                css: "@position-try --a{top:0;inset-block-end:auto;}",
+                css: "@position-try --sxp-746573742e747378-696e7365742d626c6f636b2d656e643a6175746f3b746f703a303b-{inset-block-end:auto;top:0;}",
                 file: "test.tsx",
             },
         ),
     },
-    code: "import \"@devup-ui/react/devup-ui.css\";\nimport stylex from \"@stylexjs/stylex\";\nconst fallback = \"--a\";\nconst transition = \"b\";\n",
+    code: "import \"@devup-ui/react/devup-ui.css\";\nconst fallback = \"--sxp-746573742e747378-696e7365742d626c6f636b2d656e643a6175746f3b746f703a303b-\";\nconst transition = \"sxv-746573742e747378-3a3a766965772d7472616e736974696f6e2d67726f75703a616e696d6174696f6e2d6475726174696f6e3a3330306d733b3b-\";\n",
 }

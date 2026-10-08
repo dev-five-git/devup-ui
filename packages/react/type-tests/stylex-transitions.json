@@ -1,0 +1,22 @@
+{
+  "compilerOptions": {
+    "noEmit": true,
+    "strict": true,
+    "exactOptionalPropertyTypes": true,
+    "noUncheckedIndexedAccess": true,
+    "verbatimModuleSyntax": true,
+    "moduleResolution": "bundler",
+    "module": "esnext",
+    "target": "esnext",
+    "jsx": "react-jsx",
+    "types": ["bun"],
+    "typeRoots": ["../../../node_modules/@types"],
+    "skipLibCheck": true,
+    "paths": {
+      "@devup-ui/react": ["../src/index.ts"],
+      "@devup-ui/react/stylex": ["../src/utils/stylex.ts"],
+      "@devup-ui/react/compat/stylex": ["../src/compat/stylex.d.ts"]
+    }
+  },
+  "files": ["../src/compat/stylex.d.ts", "stylex-transitions.ts"]
+}

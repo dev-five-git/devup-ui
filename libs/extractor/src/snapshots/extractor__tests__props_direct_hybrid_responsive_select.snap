@@ -1,6 +1,6 @@
 ---
 source: libs/extractor/src/lib.rs
-expression: "ToBTreeSet::from(extract(\"test.jsx\",\nr#\"import {Flex} from '@devup-ui/core'\n;<Flex gap={[[a, 1, c], [d, e, 2]][idx]} />\n        \"#,\nExtractOption\n{\n    package: \"@devup-ui/core\".to_string(), css_dir:\n    \"@devup-ui/core\".to_string(), single_css: true, import_main_css: false\n}).unwrap())"
+expression: "ToBTreeSet::from(extract(\"test.jsx\",\nr\"import {Flex} from '@devup-ui/core'\n;<Flex gap={[[a, 1, c], [d, e, 2]][idx]} />\n        \",\nExtractOption\n{\n    package: \"@devup-ui/core\".to_string(), css_dir:\n    \"@devup-ui/core\".to_string(), single_css: true, import_main_css: false,\n    import_aliases: HashMap::new()\n}).unwrap())"
 ---
 ToBTreeSet {
     styles: {
@@ -40,16 +40,7 @@ ToBTreeSet {
             ExtractDynamicStyle {
                 property: "gap",
                 level: 0,
-                identifier: "a",
-                selector: None,
-                style_order: None,
-            },
-        ),
-        Dynamic(
-            ExtractDynamicStyle {
-                property: "gap",
-                level: 0,
-                identifier: "d",
+                identifier: "__devupChoice0[`1`]",
                 selector: None,
                 style_order: None,
             },
@@ -58,7 +49,7 @@ ToBTreeSet {
             ExtractDynamicStyle {
                 property: "gap",
                 level: 1,
-                identifier: "e",
+                identifier: "__devupChoice0[`2`]",
                 selector: None,
                 style_order: None,
             },
@@ -67,11 +58,11 @@ ToBTreeSet {
             ExtractDynamicStyle {
                 property: "gap",
                 level: 2,
-                identifier: "c",
+                identifier: "__devupChoice0[`2`]",
                 selector: None,
                 style_order: None,
             },
         ),
     },
-    code: "import \"@devup-ui/core/devup-ui.css\";\n<div className={`a ${{\n\t\"0\": \"b d e\",\n\t\"1\": \"b g i\"\n}[idx] || \"\"}`} style={{\n\t\"--c\": {\n\t\t0: a,\n\t\t1: d\n\t}[idx],\n\t\"--f\": c,\n\t\"--h\": e\n}} />;\n",
+    code: "import \"@devup-ui/core/devup-ui.css\";\n((__devupChoice0) => <div className={`a ${{\n\t\"0\": \"b d e\",\n\t\"1\": \"b g i\"\n}[__devupChoice0?.[\"0\"]] || \"\"}`} style={{\n\t\"--c\": {\n\t\t0: __devupChoice0[`1`],\n\t\t1: __devupChoice0[`1`]\n\t}[__devupChoice0?.[\"0\"]],\n\t\"--f\": __devupChoice0[`2`],\n\t\"--h\": __devupChoice0[`2`]\n}} />)([[\n\t\"0\",\n\ta,\n\tc\n], [\n\t\"1\",\n\td,\n\te\n]][idx]);\n",
 }

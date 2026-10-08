@@ -7,7 +7,7 @@ ToBTreeSet {
         Static(
             ExtractStaticStyle {
                 property: "border-color",
-                value: "var(--c)",
+                value: "var(--sxvar-746573742e747378-616363656e74-)",
                 level: 0,
                 selector: None,
                 style_order: None,
@@ -17,7 +17,7 @@ ToBTreeSet {
         Static(
             ExtractStaticStyle {
                 property: "color",
-                value: "var(--b)",
+                value: "var(--sxvar-746573742e747378-74657874-)",
                 level: 0,
                 selector: None,
                 style_order: None,
@@ -26,16 +26,16 @@ ToBTreeSet {
         ),
         Css(
             ExtractCss {
-                css: ".f{--b:purple;--c:red;}@media(prefers-color-scheme:dark){.f{--b:pink;}}",
+                css: ".a{--sxvar-746573742e747378-74657874-:purple;--sxvar-746573742e747378-616363656e74-:red;}@media(prefers-color-scheme:dark){.a{--sxvar-746573742e747378-74657874-:pink;}}",
                 file: "test.tsx",
             },
         ),
         Css(
             ExtractCss {
-                css: ":root{--a:white;--b:black;--c:blue;--e:4px;}@media(prefers-color-scheme:dark){:root{--a:teal;--b:white;--c:lightblue;--d:gray;}}@supports(color:oklch(0 0 0)){:root{--c:oklch(0.6 0.2 250);}}@supports(display:grid){@media(prefers-color-scheme:dark){:root{--a:navy;}}}@supports(color:oklch(0 0 0)){@media(prefers-color-scheme:dark){:root{--c:oklch(0.8 0.1 250);}}}",
+                css: ":root{--sxvar-746573742e747378-6c617965726564-:white;--sxvar-746573742e747378-74657874-:black;--sxvar-746573742e747378-616363656e74-:blue;--sxvar-746573742e747378-73697a65-:4px;}@media(prefers-color-scheme:dark){:root{--sxvar-746573742e747378-6c617965726564-:teal;--sxvar-746573742e747378-74657874-:white;--sxvar-746573742e747378-616363656e74-:lightblue;--sxvar-746573742e747378-6f6e6c794461726b-:gray;}}@supports(color:oklch(0 0 0)){:root{--sxvar-746573742e747378-616363656e74-:oklch(0.6 0.2 250);}}@supports(display:grid){@media(prefers-color-scheme:dark){:root{--sxvar-746573742e747378-6c617965726564-:navy;}}}@supports(color:oklch(0 0 0)){@media(prefers-color-scheme:dark){:root{--sxvar-746573742e747378-616363656e74-:oklch(0.8 0.1 250);}}}",
                 file: "test.tsx",
             },
         ),
     },
-    code: "import \"@devup-ui/react/devup-ui.css\";\nimport * as stylex from \"@stylexjs/stylex\";\nconst DARK = \"@media (prefers-color-scheme: dark)\";\nconst colors = {\n\t\"layered\": \"var(--a)\",\n\t\"text\": \"var(--b)\",\n\t\"accent\": \"var(--c)\",\n\t\"onlyDark\": \"var(--d)\",\n\t\"size\": \"var(--e)\"\n};\nconst dracula = \"f\";\nconst styles = { \"box\": \"g h\" };\nexport const A = () => <div {...{ className: \"f g h\" }} />;\n",
+    code: "import \"@devup-ui/react/devup-ui.css\";\nconst DARK = \"@media (prefers-color-scheme: dark)\";\nconst colors = {\n\t\"layered\": \"var(--sxvar-746573742e747378-6c617965726564-)\",\n\t\"text\": \"var(--sxvar-746573742e747378-74657874-)\",\n\t\"accent\": \"var(--sxvar-746573742e747378-616363656e74-)\",\n\t\"onlyDark\": \"var(--sxvar-746573742e747378-6f6e6c794461726b-)\",\n\t\"size\": \"var(--sxvar-746573742e747378-73697a65-)\"\n};\nconst dracula = \"a\";\nconst styles = { \"box\": \"b c\" };\nexport const A = () => <div {...{ className: \"a b c\" }} />;\n",
 }

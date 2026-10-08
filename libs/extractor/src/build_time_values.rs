@@ -21,7 +21,8 @@ use oxc_syntax::reference::ReferenceId;
 use oxc_syntax::symbol::SymbolId;
 use rustc_hash::{FxHashMap, FxHashSet};
 
-use crate::stylex::StylexFunction;
+use crate::scope::stylex_bindings::{StylexBindings, symbol as stylex_symbol};
+use crate::scope::stylex_sources::StylexSource;
 use crate::utils::{binding_root, get_string_by_literal_expression, unwrap_syntax_only};
 use crate::{ExtractOption, ModuleResolver};
 
@@ -57,14 +58,14 @@ pub(crate) fn has_build_time_values(
     option: &ExtractOption,
     resolver: Option<&ModuleResolver>,
 ) -> bool {
-    let (code, _) = crate::import_alias_visit::transform_import_aliases_with_edits(
+    let aliased = crate::import_alias_visit::transform_import_aliases_with_edits(
         code,
         filename,
         &option.package,
         &option.import_aliases,
     );
     let allocator = Allocator::default();
-    let Some(mut program) = parse(&allocator, filename, &code) else {
+    let Some(mut program) = parse(&allocator, filename, &aliased.code) else {
         return false;
     };
     let inlined = crate::imported_constants::inline_constants(
@@ -73,11 +74,12 @@ pub(crate) fn has_build_time_values(
         filename,
         option,
         resolver,
+        aliased.css_prop,
     );
     let changes = crate::imported_constants::ChangeCheck::new(&program, filename, option, resolver);
     !find(
         &program,
-        &|source| source.starts_with(option.package.as_str()),
+        option,
         &inlined.unknown,
         &|name| changes.is_changed(name),
         &|name| changes.known(name),
@@ -110,10 +112,13 @@ const GLOBALS: [&str; 18] = [
 
 /// The members of `Math` every engine gives exactly; the others are
 /// approximations that may differ in their last digits
-const EXACT_MATH: [&str; 20] = [
-    "abs", "ceil", "floor", "round", "trunc", "sign", "max", "min", "sqrt", "fround", "imul",
-    "clz32", "PI", "E", "LN2", "LN10", "LOG2E", "LOG10E", "SQRT2", "SQRT1_2",
-];
+pub(crate) mod exact_math;
+#[cfg(test)]
+mod stylex_entrypoint_tests;
+mod stylex_entrypoints;
+#[cfg(test)]
+mod w22_tests;
+use exact_math::EXACT_MATH;
 
 /// Members giving what the locale, the Unicode data of the engine or chance
 /// make them, and `toString`, which engines only approximate with a radix:
@@ -138,7 +143,7 @@ fn parse<'a>(allocator: &'a Allocator, filename: &str, code: &'a str) -> Option<
 
 fn find(
     program: &Program<'_>,
-    is_style: &dyn Fn(&str) -> bool,
+    option: &ExtractOption,
     unknown: &crate::imported_constants::Unknown,
     is_changed: &dyn Fn(&str) -> bool,
     known: &dyn Fn(&str) -> Option<String>,
@@ -147,7 +152,7 @@ fn find(
         .build(program)
         .semantic
         .into_scoping();
-    let mut finder = Finder::new(program, &scoping, is_style, unknown, is_changed, known);
+    let mut finder = Finder::new(program, &scoping, option, unknown, is_changed, known);
     finder.visit_program(program);
     finder.found
 }
@@ -161,12 +166,13 @@ struct Binding {
 
 struct Finder<'s, 'a> {
     scoping: &'s Scoping,
+    package: &'s str,
     statements: &'s [Statement<'a>],
     bindings: FxHashMap<SymbolId, Binding>,
     /// Style APIs imported by name, and the namespaces holding them
     apis: FxHashSet<SymbolId>,
     namespaces: FxHashSet<SymbolId>,
-    stylex_namespaces: FxHashSet<SymbolId>,
+    stylex: StylexBindings,
     /// `css` and `styled` imported by name, which compose their arguments
     css: FxHashSet<SymbolId>,
     styled: FxHashSet<SymbolId>,
@@ -184,26 +190,23 @@ struct Finder<'s, 'a> {
     found: Vec<Found>,
 }
 
-fn is_evaluated_stylex(name: &str) -> bool {
-    StylexFunction::from_export_name(name).is_some_and(|function| function.requirement().is_some())
-}
-
 impl<'s, 'a> Finder<'s, 'a> {
     fn new(
         program: &'s Program<'a>,
         scoping: &'s Scoping,
-        is_style: &dyn Fn(&str) -> bool,
+        option: &'s ExtractOption,
         unknown: &'s crate::imported_constants::Unknown,
         is_changed: &'s dyn Fn(&str) -> bool,
         known: &'s dyn Fn(&str) -> Option<String>,
     ) -> Self {
         let mut finder = Self {
             scoping,
+            package: &option.package,
             statements: &program.body,
             bindings: FxHashMap::default(),
             apis: FxHashSet::default(),
             namespaces: FxHashSet::default(),
-            stylex_namespaces: FxHashSet::default(),
+            stylex: StylexBindings::collect(program, scoping, &option.package),
             css: FxHashSet::default(),
             styled: FxHashSet::default(),
             components: FxHashSet::default(),
@@ -213,8 +216,13 @@ impl<'s, 'a> Finder<'s, 'a> {
             closures: FxHashMap::default(),
             found: Vec::new(),
         };
+        let is_style = |source: &str| {
+            StylexSource::classify(source, &option.package) != StylexSource::Other
+                || source.strip_prefix(option.package.as_str()) == Some("/compat")
+                || option.import_aliases.contains_key(source)
+        };
         for (index, statement) in program.body.iter().enumerate() {
-            finder.bind(index, statement, is_style);
+            finder.bind(index, statement, &is_style);
         }
         finder
     }
@@ -228,7 +236,7 @@ impl<'s, 'a> Finder<'s, 'a> {
         let declaration = match node {
             Statement::ImportDeclaration(import) => {
                 let source = import.source.value.as_str();
-                let stylex = source == crate::STYLEX_PACKAGE;
+                let stylex = StylexSource::classify(source, self.package).is_api_module();
                 let style = stylex || is_style(source);
                 for specifier in import.specifiers.iter().flatten() {
                     let symbol = specifier.local().symbol_id.get();
@@ -237,11 +245,7 @@ impl<'s, 'a> Finder<'s, 'a> {
                             let name = specifier.imported.name();
                             (
                                 !specifier.import_kind.is_type(),
-                                if stylex {
-                                    is_evaluated_stylex(&name)
-                                } else {
-                                    UTILS.contains(&name.as_str())
-                                },
+                                !stylex && UTILS.contains(&name.as_str()),
                                 false,
                             )
                         }
@@ -251,9 +255,7 @@ impl<'s, 'a> Finder<'s, 'a> {
                     if let Some(symbol) = symbol.filter(|_| style) {
                         if api {
                             self.apis.insert(symbol);
-                        } else if namespace && stylex {
-                            self.stylex_namespaces.insert(symbol);
-                        } else if namespace {
+                        } else if namespace && !stylex {
                             self.namespaces.insert(symbol);
                         }
                         if let ImportDeclarationSpecifier::ImportSpecifier(specifier) = specifier
@@ -298,7 +300,11 @@ impl<'s, 'a> Finder<'s, 'a> {
                     for identifier in declarator.id.get_binding_identifiers() {
                         declare(
                             identifier.symbol_id.get(),
-                            declaration.kind == VariableDeclarationKind::Const,
+                            declaration.kind == VariableDeclarationKind::Const
+                                && identifier
+                                    .symbol_id
+                                    .get()
+                                    .is_none_or(|symbol| self.stylex.binding(symbol).is_none()),
                         );
                     }
                 }
@@ -325,26 +331,12 @@ impl<'s, 'a> Finder<'s, 'a> {
             .symbol_id()
     }
 
-    /// Whether `callee` is a style API with no element to set a runtime value on
-    fn is_api(&self, callee: &Expression<'_>) -> bool {
-        match callee {
-            Expression::Identifier(_) => {
-                self.symbol(callee).is_some_and(|s| self.apis.contains(&s))
-            }
-            Expression::StaticMemberExpression(member) => {
-                self.symbol(&member.object).is_some_and(|symbol| {
-                    let name = member.property.name.as_str();
-                    (self.namespaces.contains(&symbol) && UTILS.contains(&name))
-                        || (self.stylex_namespaces.contains(&symbol) && is_evaluated_stylex(name))
-                })
-            }
-            _ => false,
-        }
-    }
-
     fn is_css(&self, callee: &Expression<'_>) -> bool {
         if let Expression::StaticMemberExpression(member) = callee {
-            return member.property.name == "css";
+            return member.property.name == "css"
+                && self
+                    .symbol(&member.object)
+                    .is_some_and(|symbol| self.namespaces.contains(&symbol));
         }
         self.symbol(callee)
             .is_some_and(|symbol| self.css.contains(&symbol))
@@ -975,13 +967,10 @@ fn compute(
 
     let allocator = Allocator::default();
     let program = parse(&allocator, filename, code)?;
-    let is_style = |source: &str| {
-        source.starts_with(option.package.as_str()) || option.import_aliases.contains_key(source)
-    };
     let changes = crate::imported_constants::ChangeCheck::new(&program, filename, option, resolver);
     let found = find(
         &program,
-        &is_style,
+        option,
         unknown,
         &|name| changes.is_changed(name),
         &|name| changes.known(name),
@@ -1092,3 +1081,6 @@ fn compute(
     }
     (!computed.is_empty()).then_some((computed, changes.dependencies()))
 }
+
+#[cfg(test)]
+mod scope_tests;
