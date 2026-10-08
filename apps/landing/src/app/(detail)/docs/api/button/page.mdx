@@ -24,28 +24,22 @@ function App() {
 }
 ```
 
-The Button component defined above will render like this:
+With the build plugin configured, the Button component is transformed into a native
+`button`. The React event handler remains a function expression, not a string
+attribute. This is the extracted code and CSS from an isolated run with an empty
+theme and the default prefix; generated names depend on extraction state and prefix.
 
-```tsx
+```text
+import "@devup-ui/react/devup-ui.css";
 function App() {
-  return (
-    <button className="a b c" onClick="alert('clicked!!')">
+	return <button onClick={() => alert("clicked!!")} className="a b c">
       click me
-    </button>
-  )
+    </button>;
 }
 ```
 
-```css
-.a {
-  background: red;
-}
-.b {
-  width: 100px;
-}
-.c {
-  height: 100px;
-}
+```text
+/*! devup-ui v1.0.82, | Apache License 2.0 | https://devup-ui.com */.a{background:red}.b{height:100px}.c{width:100px}
 ```
 
 If you pass a number without a unit to a style property, it will be automatically scaled by 4.

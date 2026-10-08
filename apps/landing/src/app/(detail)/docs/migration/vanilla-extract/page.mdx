@@ -15,14 +15,23 @@ Inside `.css.ts` / `.css.js` — the only place vanilla-extract allows its APIs 
 // theme.css.ts
 import { createTheme, createThemeContract, style } from '@vanilla-extract/css'
 
-const vars = createThemeContract({ colors: { bg: null } })
-export const light = createTheme(vars, { colors: { bg: 'white' } })
+export const vars = createThemeContract({ colors: { bg: null }, space: null })
+export const light = createTheme(vars, {
+  colors: { bg: 'white' },
+  space: '8px',
+})
 export const box = style({ background: vars.colors.bg })
+export const base = style({ padding: 8 })
 ```
 
 Numbers keep vanilla-extract's meaning, here and in ordinary modules: `padding: 8` is `8px`, and unitless properties such as `lineHeight` or `zIndex` stay as written. As in vanilla-extract, a number for a time gets `px` too (`transitionDuration: 300` is `300px`, which browsers ignore), so write times with their unit: `transitionDuration: '300ms'`.
 
 A stylesheet can import other stylesheets and ordinary modules — ES modules or CommonJS — resolved like the bundler resolves them (relative paths, `tsconfig` `paths` and packages). An imported stylesheet is extracted the way the bundler extracts it, so the class names and custom properties it exports are the ones its own CSS uses, and the importer keeps importing it so that CSS is loaded:
+
+```ts
+// tokens.ts
+export const PRIMARY = 'blue'
+```
 
 ```ts
 // button.css.ts
@@ -40,7 +49,9 @@ A stylesheet that throws while it is evaluated — an import that does not resol
 
 ## Ordinary modules
 
-`style`, `globalStyle` and `keyframes` also resolve in `.ts` / `.tsx`, mapped onto their Devup UI counterparts, and `style([base, { ... }])` keeps composing `base`:
+Named imports of `style`, `globalStyle` and `keyframes` also resolve in `.ts` /
+`.tsx`, mapped onto their Devup UI counterparts. Literal rule objects compile
+there without evaluating the whole module:
 
 ```tsx
 import { globalStyle, style } from '@vanilla-extract/css'
@@ -49,28 +60,107 @@ export const a = style({ color: 'red' })
 globalStyle('body', { margin: 0 })
 ```
 
-```tsx
-// output — no import left
-export const a = 'a'
+```text
+import "@devup-ui/react/devup-ui.css";
+export const a = "a";
+;
 ```
+
+With an empty theme, the same probe emits:
+
+```text
+/*! devup-ui v1.0.82, | Apache License 2.0 | https://devup-ui.com */@layer b;@layer b{body{margin:0}}.a{color:red}
+```
+
+Generated names depend on the class prefix and extraction state. The
+vanilla-extract API import is removed, but the generated CSS import remains.
 
 `globalStyle(selector, rules)` keeps vanilla-extract's two-argument shape; the extractor folds the selector back into the object `globalCss` takes.
 
-The remaining APIs stay on `@vanilla-extract/css` outside a stylesheet file, because evaluating a module that also contains React components is not possible. A build warning names them:
+When the build knows the composed styles, `style([base, { ... }])` keeps
+non-conflicting declarations and lets the later part win per property,
+selector, breakpoint, and layer, as described in
+[Supported Syntax & Limitations](/docs/limitations). For example:
 
+```ts
+import { style } from '@vanilla-extract/css'
+
+const base = style({ color: 'red', padding: 8 })
+export const button = style([base, { color: 'blue' }])
 ```
-[devup-ui] WARNING: '@vanilla-extract/css' keeps styleVariants, createVar because
-devup-ui has no equivalent export, so the package stays a runtime dependency.
+
+Extracted code:
+
+```text
+import "@devup-ui/react/devup-ui.css";
+const base = "a b";
+export const button = "b c";
 ```
+
+Generated CSS:
+
+```text
+/*! devup-ui v1.0.82, | Apache License 2.0 | https://devup-ui.com */.c{color:blue}.a{color:red}.b{padding:8px}
+```
+
+`button` does not include the conflicting red class. Unknown external classes
+still follow the CSS cascade; class-name string order is not an override rule.
+
+Ordinary-module extraction does **not** execute a vanilla-extract theme contract
+to discover its generated custom properties. Keep contracts and their consuming
+styles together in `.css.ts` / `.css.js`. For example, the stylesheet example
+at the top of this page is not valid if saved as an ordinary `theme.ts` module:
+
+```ts
+// theme.ts (not a stylesheet file)
+import { createTheme, createThemeContract, style } from '@vanilla-extract/css'
+
+const vars = createThemeContract({ colors: { bg: null } })
+export const light = createTheme(vars, { colors: { bg: 'white' } })
+export const box = style({ background: vars.colors.bg })
+```
+
+The probe locates the call at line 6, column 20 and reports this message:
+
+```text
+`css()` cannot use `vars.colors.bg` at build time: its values must be literals, theme tokens or constants, or be computed from them
+```
+
+The two-file stylesheet example above likewise does not promise that the same
+imports work in an ordinary `.ts` module:
+
+```ts
+// button.ts (not a stylesheet file)
+import { style } from '@vanilla-extract/css'
+
+import { base, vars } from './theme.css'
+import { PRIMARY } from './tokens'
+
+export const button = style([base, { color: PRIMARY, margin: vars.space }])
+```
+
+Even when `theme.css.ts` and `tokens.ts` resolve, the probe locates the
+theme-variable read at line 7, column 23 and reports:
+
+```text
+`css()` cannot use `vars.space` at build time: its values must be literals, theme tokens or constants, or be computed from them
+```
+
+Move that consuming module to `button.css.ts` and export the styles and theme
+values from valid stylesheet modules. Ordinary modules can read resolvable
+literal constants, but that does not make a generated theme object an ordinary
+literal constant. A build-time-known composition must not be confused with a
+theme-variable read the ordinary-module path cannot resolve.
+
+The remaining APIs stay imported from `@vanilla-extract/css` outside a
+stylesheet file. For example, `createVar()` and `styleVariants()` remain calls
+to that package even when a `style()` call in the same module is transformed.
+They are not evaluated by the ordinary-module extraction path.
 
 Moving those calls into a `.css.ts` file — where vanilla-extract wants them anyway — removes the dependency.
 
 ## Namespace imports
 
 A namespace stands for many named exports whose Devup UI counterparts are renamed (`style` → `css`), which a namespace access cannot express, so it is left alone:
-
-```ts
-// unchanged
-```
 
 Use named imports to get the rewrite.

@@ -4,7 +4,7 @@ Enforce that CSS utility functions only use values known at build time in devup-
 
 ## Rule Details
 
-This rule ensures that CSS utility functions (`css`, `globalCss`, `keyframes`, `createGlobalStyle`) from devup-ui, and the StyleX functions devup-ui compiles (`create`, `keyframes`, `defineVars`, `defineConsts`, `createTheme`, `createThemeContract`, `positionTry`, `viewTransitionClass`), only receive values the build knows. They have no element to set a CSS variable on, so a value known only at runtime is a build error.
+This rule ensures that CSS utility functions (`css`, `globalCss`, `keyframes`, `createGlobalStyle`) from devup-ui, and the StyleX functions devup-ui compiles (`create`, `keyframes`, `defineVars`, `defineConsts`, `createTheme`, `createThemeContract`, `positionTry`, `viewTransitionClass`), only receive values the build knows. They have no element to set a CSS variable on, so a value known only at runtime is a [build error](https://devup-ui.com/docs/build-errors).
 
 It checks the values of every rule object they take, in any argument, and the interpolations of CSS text, written as a template argument or a tagged template (`` css`color: ${color};` ``). A part `css()` composes as a class (`css(base, { m: 1 })`), and a condition choosing between parts, are read at runtime and not checked. `styled()` sets a CSS variable on the element it renders, so its values are not checked either.
 

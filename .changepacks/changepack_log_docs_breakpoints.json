@@ -1,0 +1,8 @@
+{
+  "changes": {
+    "bindings/devup-ui-wasm/package.json": "Patch",
+    "apps/landing/package.json": "Patch"
+  },
+  "note": "Typography documents the emitted default breakpoints, and source-backed integration tests keep the public breakpoint lists and range bounds synchronized with the production defaults. No runtime changes or new build errors.",
+  "date": "2026-10-01T00:00:00.000Z"
+}
