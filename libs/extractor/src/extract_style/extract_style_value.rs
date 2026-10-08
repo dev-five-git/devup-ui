@@ -1,8 +1,8 @@
 use crate::extract_style::{
     ExtractStyleProperty, extract_css::ExtractCss, extract_dynamic_style::ExtractDynamicStyle,
     extract_font_face::ExtractFontFace, extract_import::ExtractImport,
-    extract_keyframes::ExtractKeyframes, extract_static_style::ExtractStaticStyle,
-    style_property::StyleProperty,
+    extract_keyframes::ExtractKeyframes, extract_layer_order::ExtractLayerOrder,
+    extract_static_style::ExtractStaticStyle, style_property::StyleProperty,
 };
 
 #[derive(Debug, PartialEq, Clone, Eq, Hash, Ord, PartialOrd)]
@@ -14,6 +14,7 @@ pub enum ExtractStyleValue {
     Import(ExtractImport),
     FontFace(ExtractFontFace),
     Keyframes(ExtractKeyframes),
+    LayerOrder(ExtractLayerOrder),
 }
 
 impl ExtractStyleValue {
@@ -31,7 +32,8 @@ impl ExtractStyleValue {
             }
             ExtractStyleValue::Css(_)
             | ExtractStyleValue::Import(_)
-            | ExtractStyleValue::FontFace(_) => None,
+            | ExtractStyleValue::FontFace(_)
+            | ExtractStyleValue::LayerOrder(_) => None,
         }
     }
     pub const fn set_style_order(&mut self, order: u8) {
@@ -90,14 +92,22 @@ mod tests {
         assert!(matches!(extracted, Some(StyleProperty::ClassName(_))));
 
         let value = ExtractStyleValue::Css(ExtractCss {
-            css: String::new(),
             file: String::new(),
+            order: 0,
+            css: String::new(),
         });
         assert!(value.extract(None).is_none());
 
         let value = ExtractStyleValue::Import(ExtractImport {
-            url: String::new(),
             file: String::new(),
+            order: 0,
+            url: String::new(),
+        });
+        assert!(value.extract(None).is_none());
+
+        let value = ExtractStyleValue::LayerOrder(ExtractLayerOrder {
+            file: String::new(),
+            layers: vec![],
         });
         assert!(value.extract(None).is_none());
     }

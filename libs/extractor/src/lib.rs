@@ -12,6 +12,7 @@ mod module_loader;
 mod mutations;
 mod prop_modify_utils;
 mod source_map;
+mod style_collector;
 mod style_values;
 mod stylex;
 mod tailwind;
@@ -502,7 +503,7 @@ fn extract_source(
     });
 
     Ok(ExtractOutput {
-        styles: visitor.styles,
+        styles: visitor.styles.into_styles(filename),
         code: result.code,
         map,
         css_file: Some(css_file),

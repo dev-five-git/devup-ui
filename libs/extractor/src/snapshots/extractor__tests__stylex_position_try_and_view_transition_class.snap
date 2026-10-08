@@ -6,14 +6,16 @@ ToBTreeSet {
     styles: {
         Css(
             ExtractCss {
-                css: ".b{animation-duration:300ms;}",
                 file: "test.tsx",
+                order: 1,
+                css: "@position-try --a{top:0;inset-block-end:auto;}",
             },
         ),
         Css(
             ExtractCss {
-                css: "@position-try --a{top:0;inset-block-end:auto;}",
                 file: "test.tsx",
+                order: 2,
+                css: ".b{animation-duration:300ms;}",
             },
         ),
     },

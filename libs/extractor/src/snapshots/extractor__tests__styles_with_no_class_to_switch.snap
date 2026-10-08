@@ -144,8 +144,9 @@ ToBTreeSet {
         ),
         Css(
             ExtractCss {
-                css: "body{color:red}",
                 file: "test.tsx",
+                order: 4,
+                css: "body{color:red}",
             },
         ),
         Keyframes(
