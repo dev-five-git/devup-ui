@@ -469,11 +469,11 @@
     },
     "bindings/devup-ui-wasm": {
       "name": "@devup-ui/wasm",
-      "version": "1.0.80",
+      "version": "1.0.82",
     },
     "packages/bun-plugin": {
       "name": "@devup-ui/bun-plugin",
-      "version": "1.0.19",
+      "version": "1.0.21",
       "dependencies": {
         "@devup-ui/plugin-utils": "workspace:^",
         "@devup-ui/wasm": "workspace:^",
@@ -488,7 +488,7 @@
     },
     "packages/components": {
       "name": "@devup-ui/components",
-      "version": "0.1.57",
+      "version": "0.1.59",
       "dependencies": {
         "@devup-ui/react": "workspace:^",
         "clsx": "^2.1",
@@ -515,7 +515,7 @@
     },
     "packages/eslint-plugin": {
       "name": "@devup-ui/eslint-plugin",
-      "version": "1.0.20",
+      "version": "1.0.21",
       "dependencies": {
         "@typescript-eslint/utils": "^8.70",
         "typescript-eslint": "^8.70",
@@ -532,7 +532,7 @@
     },
     "packages/next-plugin": {
       "name": "@devup-ui/next-plugin",
-      "version": "1.0.87",
+      "version": "1.0.89",
       "dependencies": {
         "@devup-ui/plugin-utils": "workspace:^",
         "@devup-ui/wasm": "workspace:^",
@@ -550,14 +550,14 @@
     },
     "packages/plugin-utils": {
       "name": "@devup-ui/plugin-utils",
-      "version": "1.0.15",
+      "version": "1.0.16",
       "devDependencies": {
         "typescript": "^7.0.2",
       },
     },
     "packages/react": {
       "name": "@devup-ui/react",
-      "version": "1.0.43",
+      "version": "1.0.44",
       "dependencies": {
         "csstype-extra": "latest",
         "react": "^19.3",
@@ -578,7 +578,7 @@
     },
     "packages/reset-css": {
       "name": "@devup-ui/reset-css",
-      "version": "1.0.30",
+      "version": "1.0.31",
       "dependencies": {
         "@devup-ui/react": "workspace:^",
       },
@@ -591,7 +591,7 @@
     },
     "packages/rsbuild-plugin": {
       "name": "@devup-ui/rsbuild-plugin",
-      "version": "1.0.64",
+      "version": "1.0.66",
       "dependencies": {
         "@devup-ui/plugin-utils": "workspace:^",
         "@devup-ui/wasm": "workspace:^",
@@ -607,7 +607,7 @@
     },
     "packages/vite-plugin": {
       "name": "@devup-ui/vite-plugin",
-      "version": "1.0.70",
+      "version": "1.0.72",
       "dependencies": {
         "@devup-ui/plugin-utils": "workspace:^",
         "@devup-ui/wasm": "workspace:^",
@@ -622,7 +622,7 @@
     },
     "packages/webpack-plugin": {
       "name": "@devup-ui/webpack-plugin",
-      "version": "1.0.68",
+      "version": "1.0.70",
       "dependencies": {
         "@devup-ui/plugin-utils": "workspace:^",
         "@devup-ui/wasm": "workspace:^",
@@ -3093,7 +3093,7 @@
 
     "vinext-devup-ui-benchmark": ["vinext-devup-ui-benchmark@workspace:benchmark/vinext-devup-ui"],
 
-    "vite": ["vite@8.3.0", "", { "dependencies": { "lightningcss": "^1.33.0", "picomatch": "^4.0.7", "postcss": "^8.5.28", "rolldown": "~1.2.6", "tinyglobby": "^0.2.17" }, "optionalDependencies": { "fsevents": "~2.3.3" }, "peerDependencies": { "@types/node": "^20.19.0 || >=22.12.0", "@vitejs/devtools": "^0.7.1", "esbuild": "^0.27.0 || ^0.28.0", "jiti": ">=1.21.0", "less": "^4.0.0", "sass": "^1.70.0", "sass-embedded": "^1.70.0", "stylus": ">=0.54.8", "sugarss": "^5.0.0", "terser": "^5.16.0", "tsx": "^4.8.1", "yaml": "^2.4.2" }, "optionalPeers": ["@types/node", "@vitejs/devtools", "esbuild", "jiti", "less", "sass", "sass-embedded", "stylus", "sugarss", "terser", "tsx", "yaml"], "bin": { "vite": "bin/vite.js" } }, "sha512-lhZBVvEHefgE+HQZC9O7EBJgCU/nVzFNl7vkS4RE0APtWLP02/8QVIkQtzBxPquh7lq5/78NHipTj7ODQ6XuyQ=="],
+    "vite": ["vite@8.3.1", "", { "dependencies": { "lightningcss": "^1.33.0", "picomatch": "^4.0.7", "postcss": "^8.5.28", "rolldown": "~1.2.9", "tinyglobby": "^0.2.17" }, "optionalDependencies": { "fsevents": "~2.3.3" }, "peerDependencies": { "@types/node": "^20.19.0 || >=22.12.0", "@vitejs/devtools": "^0.7.1", "esbuild": "^0.27.0 || ^0.28.0", "jiti": ">=1.21.0", "less": "^4.0.0", "sass": "^1.70.0", "sass-embedded": "^1.70.0", "stylus": ">=0.54.8", "sugarss": "^5.0.0", "terser": "^5.16.0", "tsx": "^4.8.1", "yaml": "^2.4.2" }, "optionalPeers": ["@types/node", "@vitejs/devtools", "esbuild", "jiti", "less", "sass", "sass-embedded", "stylus", "sugarss", "terser", "tsx", "yaml"], "bin": { "vite": "bin/vite.js" } }, "sha512-/bvH9E9tmCXRGp2uXY3WbOldqpTwFkbha/8ANaEQ6VkxhH60KyqLwgZq6lG2y+4uT55x9+9eUHMpQ7uGnOCKjA=="],
 
     "vite-example": ["vite-example@workspace:apps/vite"],
 
