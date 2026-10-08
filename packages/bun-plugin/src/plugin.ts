@@ -15,6 +15,7 @@ import {
   codeExtract,
   getCss,
   getThemeInterface,
+  hasDevupUI,
   registerShorthands,
   registerTheme,
   setDebug,
@@ -118,7 +119,10 @@ async function loadSourceFile(filePath: string, bundling: boolean) {
         : 'js'
   const contents = await Bun.file(filePath).text()
 
-  if (importsCompiledPackage(contents, loader)) {
+  if (
+    importsCompiledPackage(contents, loader) ||
+    hasDevupUI(filePath, contents, libPackage)
+  ) {
     const code = codeExtract(
       filePath,
       contents,
