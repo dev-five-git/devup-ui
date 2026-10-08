@@ -8,12 +8,13 @@ use super::{
 };
 
 pub(super) enum Input<'a> {
-    Stylesheet(Stylesheet<'a>),
+    Stylesheet(Stylesheet<'a>, bool),
     Selected(capture::Selected<'a>),
     Readback(capture::Selected<'a>, &'a [oxc_span::Span]),
 }
 
 pub(crate) struct Executed {
+    pub compiled: crate::stylesheet_compile::Compiled,
     pub collected: CollectedStyles,
     pub imports: StylesheetImports,
     pub captures: Vec<String>,
@@ -36,17 +37,17 @@ pub(super) fn execute(
     resolver: Option<&crate::ModuleResolver>,
 ) -> Result<Executed, String> {
     let stylesheet = match &input {
-        Input::Stylesheet(stylesheet) => *stylesheet,
+        Input::Stylesheet(stylesheet, _) => *stylesheet,
         Input::Selected(selected) | Input::Readback(selected, _) => selected.stylesheet,
     };
     let mut loader = ModuleLoader::new(resolver, option);
-    loader.select_demands(stylesheet, !matches!(&input, Input::Stylesheet(_)))?;
+    loader.select_demands(stylesheet, !matches!(&input, Input::Stylesheet(_, _)))?;
     run(input, loader)
 }
 
 pub(super) fn run(input: Input<'_>, mut loader: ModuleLoader<'_>) -> Result<Executed, String> {
     let stylesheet = match &input {
-        Input::Stylesheet(stylesheet) => *stylesheet,
+        Input::Stylesheet(stylesheet, _) => *stylesheet,
         Input::Selected(selected) | Input::Readback(selected, _) => selected.stylesheet,
     };
     let Stylesheet {
@@ -57,22 +58,38 @@ pub(super) fn run(input: Input<'_>, mut loader: ModuleLoader<'_>) -> Result<Exec
     } = stylesheet;
     let _evaluating = Evaluating::enter(filename);
     let unit = match &input {
-        Input::Stylesheet(_) => Unit::written(filename, code, source, edits)?,
+        Input::Stylesheet(_, _) => Unit::written(filename, code, source, edits)?,
         Input::Selected(selected) | Input::Readback(selected, _) => {
             Unit::selected(stylesheet, selected.mapped)?
         }
     };
-    let entry = module_script(&unit, &mut loader, true)?;
+    let mut entry = module_script(&unit, &mut loader, true)?;
     let file_num = get_file_num_by_filename(filename);
+    let compiled = match &input {
+        Input::Stylesheet(_, true) => {
+            crate::stylesheet_compile::compile(stylesheet, loader.option(), loader.resolver())?
+        }
+        Input::Stylesheet(_, false) | Input::Selected(_) | Input::Readback(_, _) => {
+            crate::stylesheet_compile::Compiled::default()
+        }
+    };
+    if let Some(code) = compiled.code.as_deref() {
+        let layers: Vec<_> = std::iter::once(compiled.edits.as_slice())
+            .chain(edits.iter().copied())
+            .collect();
+        let unit = Unit::written(filename, code, source, &layers)?;
+        entry = module_script(&unit, &mut loader, true)?;
+    }
     let run = loader.script(&entry);
     let mut imports = StylesheetImports {
+        artifacts: std::mem::take(&mut loader.artifacts),
         dependencies: std::mem::take(&mut loader.dependencies),
         kept_imports: std::mem::take(&mut loader.kept_imports),
         atoms: loader.imported_atoms.clone(),
         references: loader.imported_references.clone(),
     };
     let imported =
-        crate::module_loader::evaluating_import() && matches!(&input, Input::Stylesheet(_));
+        crate::module_loader::evaluating_import() && matches!(&input, Input::Stylesheet(_, _));
     if imported
         && loader.producers().is_empty()
         && let Some((collected, exports)) = IMPORTED_RUNS.with_borrow(|runs| {
@@ -84,6 +101,7 @@ pub(super) fn run(input: Input<'_>, mut loader: ModuleLoader<'_>) -> Result<Exec
         })
     {
         return Ok(Executed {
+            compiled,
             collected,
             imports,
             captures: Vec::new(),
@@ -118,7 +136,7 @@ pub(super) fn run(input: Input<'_>, mut loader: ModuleLoader<'_>) -> Result<Exec
             },
         )
         .map_err(|error| run.explain(&error.to_string(), filename))?,
-        Input::Stylesheet(_) => {}
+        Input::Stylesheet(_, _) => {}
     }
     let instrumented = crate::evaluation_sandbox::instrument(&operations.code, SCRIPT_PATH);
     sandbox
@@ -161,7 +179,7 @@ pub(super) fn run(input: Input<'_>, mut loader: ModuleLoader<'_>) -> Result<Exec
     let mut collected = std::mem::take(&mut collector.borrow_mut().styles);
     let mut exports = Vec::new();
     let named = match &input {
-        Input::Stylesheet(_) => {
+        Input::Stylesheet(_, _) => {
             let reserved = super::naming::reserved(stylesheet);
             top_level_bindings(code, &entry, &mut context)
                 .and_then(|bindings| {
@@ -220,6 +238,7 @@ pub(super) fn run(input: Input<'_>, mut loader: ModuleLoader<'_>) -> Result<Exec
         });
     }
     Ok(Executed {
+        compiled,
         collected,
         imports,
         captures: finished.captures,

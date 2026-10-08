@@ -15,6 +15,8 @@ mod extractor;
 mod fresh_name;
 mod gen_class_name;
 mod gen_style;
+mod graph;
+pub use graph::{ExtractGraphOutput, StylesheetArtifact, extract_graph};
 mod import_alias_visit;
 mod imported_constants;
 mod module_loader;
@@ -28,6 +30,7 @@ mod scope;
 mod source_map;
 mod style_values;
 mod styled_reads;
+mod stylesheet_compile;
 #[cfg(test)]
 mod stylesheet_fallback_regression_tests;
 mod stylesheet_policy;
@@ -307,6 +310,7 @@ fn extract_with_source_map(
 
 struct ExtractedProducer {
     output: ExtractOutput,
+    artifacts: graph::Artifacts,
     atoms: vanilla_extract::producer_atoms::ProducerAtoms,
     references: vanilla_extract::style_references::StyleReferences,
 }
@@ -334,6 +338,10 @@ fn extract_source(
     let native = evaluation.and_then(|stage| stage.native);
     let readback = evaluation.and_then(|stage| stage.readback);
     let evaluated = evaluation.map(|stage| (stage.source, stage.edits));
+    let mut artifacts = graph::Artifacts::default();
+    if let Some(prepared) = native.or(readback) {
+        artifacts.merge(prepared.imports.artifacts.clone())?;
+    }
     if evaluated.is_none() {
         match barrel::rewrite(code, filename, &option.package, resolver) {
             barrel::Barreled::Unchanged => {}
@@ -426,7 +434,7 @@ fn extract_source(
         || readback.is_some()
         || transformed_code.contains(option.package.as_str())
         || transformed_code.contains(STYLEX_PACKAGE);
-    let unchanged = || ExtractedProducer {
+    let unchanged = |artifacts| ExtractedProducer {
         output: ExtractOutput {
             styles: FxHashSet::default(),
             code: code.to_string(),
@@ -436,11 +444,12 @@ fn extract_source(
         },
         atoms: Default::default(),
         references: Default::default(),
+        artifacts,
     };
 
     if !has_relevant_import && css_prop == css_prop::CssProp::Off && alias_edits.is_empty() {
         // skip if not using package
-        return Ok(unchanged());
+        return Ok(unchanged(artifacts));
     }
 
     let mut dependencies = native.map_or_else(Default::default, |prepared| {
@@ -452,6 +461,7 @@ fn extract_source(
         native.map_or_else(Default::default, |prepared| prepared.references.clone());
     let mut reference_bindings =
         native.map_or_else(Default::default, |prepared| prepared.bindings.clone());
+    let mut compiled_styles = FxHashSet::default();
     if native.is_none()
         && readback.is_none()
         && utils::is_vanilla_extract_file(filename)
@@ -536,6 +546,8 @@ fn extract_source(
             resolver,
         ) {
             Ok((collected, imports, mut authored)) => {
+                compiled_styles = std::mem::take(&mut authored.styles);
+                artifacts.merge(imports.artifacts)?;
                 dependencies = imports.dependencies;
                 producer_atoms = imports.atoms;
                 producer_references = imports.references;
@@ -601,10 +613,10 @@ fn extract_source(
         None
     };
     // For vanilla-extract files, if no styles were collected, return early
-    if processed_code.as_deref() == Some("") {
+    if processed_code.as_deref() == Some("") && compiled_styles.is_empty() {
         return Ok(ExtractedProducer {
             output: ExtractOutput {
-                styles: FxHashSet::default(),
+                styles: compiled_styles,
                 code: String::new(),
                 map: None,
                 css_file: None,
@@ -612,6 +624,7 @@ fn extract_source(
             },
             atoms: producer_atoms,
             references: producer_references,
+            artifacts,
         });
     }
 
@@ -722,10 +735,11 @@ fn extract_source(
     visitor.changed_bindings(inlined.changed.clone());
     visitor.takes_css_prop(css_prop);
     visitor.reuse_scoping(inlined.scoping.or(validated_scoping));
+    visitor.styles.extend(compiled_styles);
     visitor.visit_program(&mut program);
     if !has_relevant_import && alias_edits.is_empty() && !visitor.compiled_css_prop {
         // No element took the `css` prop the text seemed to give
-        return Ok(unchanged());
+        return Ok(unchanged(artifacts));
     }
     // Run the code a value computes, or tell rules the module computes from a
     // class it composes
@@ -833,6 +847,7 @@ fn extract_source(
         },
         atoms: producer_atoms,
         references: producer_references,
+        artifacts,
     })
 }
 

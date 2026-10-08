@@ -16,6 +16,7 @@ mod prepare;
 mod readback;
 mod rewrite;
 pub(crate) mod selection;
+mod standalone;
 pub(crate) use prepare::{Prepared, prepare};
 
 pub(crate) const APIS: [&str; 16] = [

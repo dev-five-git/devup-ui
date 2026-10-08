@@ -25,6 +25,7 @@ struct State {
     terminal: super::capture::terminal::Terminal,
     atoms: super::producer_atoms::ProducerAtoms,
     references: super::style_references::StyleReferences,
+    artifacts: crate::graph::Artifacts,
 }
 
 pub(super) fn prepare(
@@ -92,6 +93,7 @@ pub(super) fn prepare(
         terminal: Default::default(),
         atoms: loader.imported_atoms.clone(),
         references: loader.imported_references.clone(),
+        artifacts: Default::default(),
     });
     register_vanilla_extract_apis(context, entry)
 }
@@ -111,6 +113,7 @@ pub(super) fn finish(context: &mut Context, imports: &mut StylesheetImports) -> 
         .ok_or_else(|| "missing final demand session".to_string())?;
     imports.atoms.merge(state.atoms);
     imports.references.merge(state.references);
+    imports.artifacts.merge(state.artifacts)?;
     Ok(())
 }
 

@@ -10,6 +10,7 @@ use crate::{ExtractOption, ExtractOutput, ExtractStyleValue};
 
 mod effects;
 mod hygiene;
+mod native_terminal_controls;
 mod oracle;
 mod preservation;
 mod references;

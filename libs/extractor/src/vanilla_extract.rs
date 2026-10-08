@@ -247,6 +247,7 @@ fn style_to_json(value: &JsValue, context: &mut Context) -> JsResult<String> {
 
 /// What a stylesheet read besides its own source
 pub struct StylesheetImports {
+    pub(crate) artifacts: crate::graph::Artifacts,
     /// Every file read
     pub dependencies: BTreeSet<String>,
     /// Imports its output keeps: side-effect imports and the stylesheets it
@@ -306,8 +307,12 @@ pub(crate) fn execute_located(
     option: &crate::ExtractOption,
     resolver: Option<&crate::ModuleResolver>,
 ) -> Result<(CollectedStyles, StylesheetImports), String> {
-    execution::execute(execution::Input::Stylesheet(stylesheet), option, resolver)
-        .map(|result| (result.collected, result.imports))
+    execution::execute(
+        execution::Input::Stylesheet(stylesheet, false),
+        option,
+        resolver,
+    )
+    .map(|result| (result.collected, result.imports))
 }
 
 pub(crate) fn execute_authored(
@@ -315,9 +320,23 @@ pub(crate) fn execute_authored(
     option: &crate::ExtractOption,
     resolver: Option<&crate::ModuleResolver>,
 ) -> Result<(CollectedStyles, StylesheetImports, AuthoredOutput), String> {
-    let mut result =
-        execution::execute(execution::Input::Stylesheet(stylesheet), option, resolver)?;
-    let authored = authored::prepare(
+    let mut result = execution::execute(
+        execution::Input::Stylesheet(stylesheet, true),
+        option,
+        resolver,
+    )?;
+    let layers: Vec<_> = std::iter::once(result.compiled.edits.as_slice())
+        .chain(stylesheet.edits.iter().copied())
+        .collect();
+    let stylesheet = match result.compiled.code.as_deref() {
+        Some(code) => Stylesheet {
+            code,
+            edits: &layers,
+            ..stylesheet
+        },
+        None => stylesheet,
+    };
+    let mut authored = authored::prepare(
         (
             stylesheet,
             authored::Origin {
@@ -329,6 +348,7 @@ pub(crate) fn execute_authored(
         &mut result.collected,
         &result.exports,
     )?;
+    authored.styles = result.compiled.styles;
     Ok((result.collected, result.imports, authored))
 }
 

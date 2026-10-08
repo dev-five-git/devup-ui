@@ -56,7 +56,14 @@ pub(crate) fn prepare(
         (stylesheet.filename, "@vanilla-extract/css"),
         resolver,
     );
-    execution::policy::check(stylesheet, &selection)?;
+    super::standalone::check(stylesheet, &parsed.program, resolver)?;
+    execution::policy::check(stylesheet, &selection).map_err(|message| {
+        if message.contains("native styling") {
+            format!("{message}; {}", super::standalone::DIRECT_IMPORT)
+        } else {
+            message
+        }
+    })?;
     let native = selection
         .imports
         .iter()

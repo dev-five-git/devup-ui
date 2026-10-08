@@ -36,6 +36,8 @@ mod mixed_review;
 mod mixed_rewrite;
 mod mixed_selection;
 mod mixed_support;
+mod standalone_precedence;
+mod standalone_terminals;
 
 fn option() -> ExtractOption {
     ExtractOption {

@@ -1,7 +1,7 @@
 use super::{Facts, Shape, Walker};
 use crate::module_loader::demand::Demand;
-use oxc_ast::ast::{Program, Statement};
-use oxc_span::{GetSpan, Span};
+use oxc_ast::ast::Program;
+use oxc_span::Span;
 use rustc_hash::{FxHashMap, FxHashSet};
 use std::{collections::BTreeSet, rc::Rc};
 
@@ -45,27 +45,7 @@ impl Facts {
             };
             let terminal = walker.native_origin(&module, &name, &mut Vec::new());
             if let Some(shape) = walker.native_shape(terminal, &mut FxHashSet::default()) {
-                let site = program
-                    .body
-                    .iter()
-                    .find_map(|statement| match statement {
-                        Statement::ExportFromDeclaration(export) => export
-                            .specifiers
-                            .iter()
-                            .find(|specifier| specifier.exported.name().as_str() == name)
-                            .map(GetSpan::span),
-                        Statement::ExportAllDeclaration(export) => Some(export.source.span),
-                        Statement::ExportNamedDeclaration(export) => export
-                            .specifiers
-                            .iter()
-                            .find(|specifier| specifier.exported.name().as_str() == name)
-                            .map(GetSpan::span),
-                        Statement::ExportDefaultDeclaration(export) if name == "default" => {
-                            Some(export.declaration.span())
-                        }
-                        _ => None,
-                    })
-                    .unwrap_or_default();
+                let site = super::export_site(program, &name).unwrap_or_default();
                 proven |= self.requested_terminal(&shape, (child, site));
             }
         }

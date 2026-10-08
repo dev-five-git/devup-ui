@@ -60,6 +60,7 @@ impl State {
             .compile(
                 &collected,
                 StylesheetImports {
+                    artifacts: Default::default(),
                     dependencies: BTreeSet::new(),
                     kept_imports: Vec::new(),
                     atoms: self.atoms.clone(),
@@ -72,6 +73,9 @@ impl State {
             .map_err(|error| boa_engine::JsNativeError::typ().with_message(format!("{}:1:1: required terminal native data cannot be captured exactly: {error}. Fix: retain data-only values and lexical callables", owner.plan.filename)))?;
         self.atoms.merge(material.atoms);
         self.references.merge(material.references);
+        self.artifacts
+            .merge(material.artifacts)
+            .map_err(|error| boa_engine::JsNativeError::typ().with_message(error))?;
         self.owners[index].finalized = true;
         self.refresh();
         Ok(())

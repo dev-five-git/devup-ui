@@ -5,8 +5,10 @@ use super::{Exports, Link, Walker};
 
 pub(super) mod aliases;
 mod demand;
+mod exports;
 mod facts;
 mod shapes;
+pub(crate) use exports::{export_site, exported_terminals};
 pub(crate) use facts::Facts;
 
 #[cfg(test)]

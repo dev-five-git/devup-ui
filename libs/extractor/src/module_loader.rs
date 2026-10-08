@@ -141,6 +141,7 @@ pub(crate) struct ModuleLoader<'r> {
     pub kept_imports: Vec<String>,
     pub imported_atoms: crate::vanilla_extract::producer_atoms::ProducerAtoms,
     pub imported_references: crate::vanilla_extract::style_references::StyleReferences,
+    pub(crate) artifacts: crate::graph::Artifacts,
 }
 
 impl<'r> ModuleLoader<'r> {
@@ -178,6 +179,7 @@ impl<'r> ModuleLoader<'r> {
             kept_imports: Vec::new(),
             imported_atoms: Default::default(),
             imported_references: Default::default(),
+            artifacts: Default::default(),
         }
     }
 
@@ -247,6 +249,10 @@ impl<'r> ModuleLoader<'r> {
 
     pub(crate) const fn option(&self) -> &ExtractOption {
         self.option
+    }
+
+    pub(crate) const fn resolver(&self) -> Option<&'r ModuleResolver> {
+        self.resolver
     }
 
     pub(crate) fn namespaces(&self) -> Vec<String> {
@@ -455,9 +461,15 @@ impl<'r> ModuleLoader<'r> {
             .map_err(|error| error.to_string())?;
             let output = result.output;
             let unit = Unit::retained(&module.path, &output, &module.code)?;
-            self.dependencies.extend(output.dependencies);
+            self.dependencies
+                .extend(output.dependencies.iter().cloned());
             self.imported_atoms.merge(result.atoms);
             self.imported_references.merge(result.references);
+            self.artifacts.merge(result.artifacts)?;
+            self.artifacts.insert(Rc::new(crate::StylesheetArtifact {
+                filename: module.path.clone(),
+                output,
+            }))?;
             unit
         } else {
             Unit::written(&module.path, &module.code, &module.code, &[])?

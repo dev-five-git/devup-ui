@@ -11,6 +11,7 @@ pub(super) struct Materialized {
     pub atoms: crate::vanilla_extract::producer_atoms::ProducerAtoms,
     pub references: crate::vanilla_extract::style_references::StyleReferences,
     pub values: FxHashMap<String, String>,
+    pub artifacts: crate::graph::Artifacts,
 }
 
 impl Owner {
@@ -103,10 +104,16 @@ impl Owner {
             }
             values.insert(placeholder.clone(), value.clone());
         }
+        let mut artifacts = result.artifacts;
+        artifacts.insert(std::rc::Rc::new(crate::StylesheetArtifact {
+            filename: self.plan.filename.clone(),
+            output: result.output,
+        }))?;
         Ok(Materialized {
             atoms,
             references,
             values,
+            artifacts,
         })
     }
 }

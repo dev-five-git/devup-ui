@@ -1,12 +1,15 @@
 use css::class_map::{set_class_map, with_class_map};
-use css::file_map::{
-    canonical, is_global, set_canonical_map, set_file_map, with_canonical_map, with_file_map,
-};
+#[cfg(test)]
+use css::file_map::canonical;
+use css::file_map::{set_canonical_map, set_file_map, with_canonical_map, with_file_map};
+#[cfg(test)]
 use extractor::extract_style::extract_style_value::ExtractStyleValue;
 use extractor::{
-    ExtractOption, ImportAlias, ModuleResolver, ResolvedModule, extract, extract_with_modules,
-    extract_without_source_map, has_devup_ui_with,
+    ExtractOption, ImportAlias, ModuleResolver, ResolvedModule, extract_graph, has_devup_ui_with,
 };
+#[cfg(test)]
+use extractor::{extract, extract_with_modules};
+#[cfg(test)]
 use rustc_hash::FxHashSet;
 use sheet::StyleSheet;
 use std::cell::RefCell;
@@ -14,6 +17,9 @@ use std::collections::{BTreeMap, HashMap};
 use std::fmt::Display;
 use std::sync::{LazyLock, Mutex};
 use wasm_bindgen::prelude::*;
+mod graph_publication;
+#[cfg(test)]
+mod graph_publication_tests;
 mod resolver_state;
 use resolver_state::ResolverState;
 
@@ -67,6 +73,7 @@ pub struct Output {
 #[wasm_bindgen]
 impl Output {
     #[allow(clippy::too_many_arguments)]
+    #[cfg(test)]
     fn new(
         code: String,
         styles: FxHashSet<ExtractStyleValue>,
@@ -82,38 +89,20 @@ impl Output {
         // the extractor already baked into `code`. Identity when no map is loaded.
         // Global (shared-chunk) files are treated like single-css: emitted into the
         // global bucket (devup-ui.css) with prefix-less naming.
-        let canonical_filename = canonical(&filename);
-        let global = single_css || is_global(&filename);
-        with_style_sheet_mut(|sheet| {
-            // globalCss (@font-face / global selectors) is per-SOURCE-file, never
-            // collapsed. rm_global_css MUST use the RAW filename so a collapsed
-            // member (sharing the bucket-root's canonical) never wipes the root's
-            // globalCss. Atom property bucketing still uses canonical_filename.
-            let default_collected = sheet.rm_global_css(&filename, global);
-            let (collected, updated_base_style) =
-                sheet.update_styles(&styles, &canonical_filename, global);
-            Self {
-                code,
-                map,
-                css_file,
-                dependencies,
-                updated_base_style: updated_base_style || default_collected,
-                css: {
-                    if !collected && !default_collected {
-                        None
-                    } else {
-                        Some(sheet.create_css(
-                            if global {
-                                None
-                            } else {
-                                Some(&canonical_filename)
-                            },
-                            import_main_css,
-                        ))
-                    }
+        graph_publication::publish(
+            extractor::ExtractGraphOutput {
+                entry: extractor::ExtractOutput {
+                    code,
+                    styles,
+                    map,
+                    css_file,
+                    dependencies,
                 },
-            }
-        })
+                artifacts: Vec::new(),
+            },
+            &filename,
+            (single_css, import_main_css),
+        )
     }
 
     /// Get the code
@@ -439,31 +428,22 @@ fn code_extract_internal_impl(
         import_main_css: import_main_css_in_code,
         import_aliases,
     };
-    let extracted = match (resolver, source_map) {
-        (Some(resolver), mode) => extract_with_modules(
-            filename,
-            code,
-            option,
-            matches!(mode, SourceMapMode::Generate),
-            resolver,
-        ),
-        (None, SourceMapMode::Generate) => extract(filename, code, option),
-        (None, SourceMapMode::Skip) => extract_without_source_map(filename, code, option),
-    };
+    let extracted = extract_graph(
+        filename,
+        code,
+        option,
+        matches!(source_map, SourceMapMode::Generate),
+        resolver,
+    );
 
     if let Some(state) = resolver_state {
         state.borrow().check()?;
     }
     match extracted {
-        Ok(output) => Ok(Output::new(
-            output.code,
-            output.styles,
-            output.map,
-            single_css,
-            filename.to_string(),
-            output.css_file,
-            import_main_css_in_css,
-            output.dependencies,
+        Ok(graph) => Ok(graph_publication::publish(
+            graph,
+            filename,
+            (single_css, import_main_css_in_css),
         )),
         Err(error) => Err(error.to_string()),
     }

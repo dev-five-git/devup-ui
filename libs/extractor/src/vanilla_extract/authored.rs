@@ -27,6 +27,7 @@ pub(super) use compiled::Origin;
 pub(crate) struct Output {
     pub code: String,
     pub reserved: BTreeSet<String>,
+    pub styles: rustc_hash::FxHashSet<crate::ExtractStyleValue>,
 }
 
 struct Piece {
@@ -165,5 +166,6 @@ pub(super) fn prepare(
             .collect::<Vec<_>>()
             .join("\n"),
         reserved,
+        styles: Default::default(),
     })
 }
