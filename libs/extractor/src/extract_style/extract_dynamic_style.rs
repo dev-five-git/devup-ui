@@ -153,20 +153,34 @@ impl ExtractDynamicStyle {
 impl ExtractStyleProperty for ExtractDynamicStyle {
     fn extract(&self, filename: Option<&str>) -> StyleProperty {
         let selector = super::class_selector(self.selector.as_ref(), self.layer());
-        StyleProperty::Variable {
-            class_name: sheet_to_classname(
+        let ordinary_class = (!css::atom_hoist::is_atom_hoist()).then(|| {
+            sheet_to_classname(
                 self.property.as_str(),
                 self.level,
-                None,
+                self.important.then_some("!important"),
                 selector.as_deref(),
                 self.style_order,
                 filename,
-            ),
-            variable_name: sheet_to_variable_name(
-                self.property.as_str(),
-                self.level,
-                selector.as_deref(),
-            ),
+            )
+        });
+        let variable_name =
+            sheet_to_variable_name(self.property.as_str(), self.level, selector.as_deref());
+        let declaration = format!(
+            "var({variable_name}){}",
+            if self.important { " !important" } else { "" }
+        );
+        StyleProperty::Variable {
+            class_name: ordinary_class.unwrap_or_else(|| {
+                sheet_to_classname(
+                    self.property.as_str(),
+                    self.level,
+                    Some(&declaration),
+                    selector.as_deref(),
+                    self.style_order,
+                    filename,
+                )
+            }),
+            variable_name,
             identifier: self.identifier.clone(),
         }
     }

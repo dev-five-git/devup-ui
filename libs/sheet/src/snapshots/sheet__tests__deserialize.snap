@@ -3,6 +3,7 @@ source: libs/sheet/src/lib.rs
 expression: sheet
 ---
 StyleSheet {
+    atom_plan: None,
     properties: {
         "": {
             255: {
@@ -14,6 +15,7 @@ StyleSheet {
                         selector: None,
                         layer: None,
                         typography: false,
+                        hoisted: false,
                     },
                 },
             },

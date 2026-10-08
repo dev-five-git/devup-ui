@@ -295,6 +295,7 @@ fn extract_source(
     resolver: Option<&ModuleResolver>,
 ) -> Result<ExtractOutput, Box<dyn Error>> {
     // Step 1: Transform import aliases
+    css::atom_hoist::freeze_atom_plan();
     // e.g., `import styled from '@emotion/styled'` → `import { styled } from '@devup-ui/react'`
     // e.g., `import { style } from '@vanilla-extract/css'` → `import { style } from '@devup-ui/react'`
     let (transformed_code, alias_edits) = import_alias_visit::transform_import_aliases_with_edits(
@@ -13629,6 +13630,30 @@ globalCss({
         )
         .unwrap();
         assert!(!output.code.contains("css("), "{}", output.code);
+    }
+
+    #[test]
+    #[serial]
+    fn test_stylesheets_read_nothing_that_differs_between_builds() {
+        for (read, fails) in [
+            ("Math.random()", true),
+            ("Date.now()", true),
+            ("new Date()", true),
+            ("Date()", true),
+            ("new Date(0).getTime()", false),
+            ("Date.UTC(2020, 0, 1)", false),
+        ] {
+            reset_class_map();
+            reset_file_map();
+            let result = extract(
+                "when.css.ts",
+                &format!(
+                    "import {{ style }} from '@devup-ui/react';\nconst n = {read};\nexport const a = style({{ opacity: String(n) }});"
+                ),
+                ExtractOption::default(),
+            );
+            assert_eq!(result.is_err(), fails, "{read}");
+        }
     }
 
     #[test]

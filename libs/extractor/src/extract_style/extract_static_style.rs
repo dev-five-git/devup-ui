@@ -6,6 +6,7 @@ use css::{
     optimize_value::optimize_value,
     sheet_to_classname,
     style_selector::{StyleSelector, optimize_selector},
+    theme_tokens::get_first_theme_token_value,
 };
 
 use crate::{
@@ -188,18 +189,30 @@ impl ExtractStaticStyle {
     pub const fn theme_token_resolution(&self) -> ThemeTokenResolution {
         self.theme_token_resolution
     }
+
+    /// Effective value shared by generated class identity and emitted declaration.
+    pub fn resolved_value(&self) -> Cow<'_, str> {
+        match self.theme_token_resolution() {
+            ThemeTokenResolution::CssVariable => Cow::Borrowed(&self.value),
+            ThemeTokenResolution::FirstValue => {
+                get_first_theme_token_value(&self.property, &self.value)
+                    .map_or(Cow::Borrowed(&self.value), Cow::Owned)
+            }
+        }
+    }
 }
 
 impl ExtractStyleProperty for ExtractStaticStyle {
     fn extract(&self, filename: Option<&str>) -> StyleProperty {
         let s = self.class_selector();
+        let value = self.resolved_value();
         // `self.value` is already the result of `optimize_value(convert_value(..))`
         // (computed in the constructors), so re-running convert_value + optimize_value
         // here is redundant. Only the multi-css optimization is not applied at construction.
         let v = if check_multi_css_optimize(&self.property) {
-            optimize_multi_css_value(&self.value)
+            optimize_multi_css_value(&value)
         } else {
-            std::borrow::Cow::Borrowed(self.value.as_str())
+            Cow::Borrowed(value.as_ref())
         };
         StyleProperty::ClassName(sheet_to_classname(
             &self.property,
