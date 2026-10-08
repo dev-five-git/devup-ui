@@ -1,4 +1,12 @@
-export { beginBuild, type ResettableEngine } from './build-session'
+export { BuildGeneration, type GenerationEngine } from './build-generation'
+export {
+  beginBuild,
+  type BuildIntegration,
+  MixedBuildIntegrationError,
+  resetOwnedBuildState,
+  type ResettableEngine,
+  runBuildOperation,
+} from './build-session'
 export {
   type CompiledReference,
   createCompileTimeClassifier,

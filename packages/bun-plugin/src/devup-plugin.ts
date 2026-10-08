@@ -177,7 +177,13 @@ export function DevupUI(options: DevupUIBunPluginOptions = {}) {
       }
       // A build starts from its own options, not from what an earlier build in
       // this process left in the engine
-      const endBuild = beginBuild({ resetBuildState })
+      const endBuild = beginBuild(
+        { resetBuildState },
+        {
+          integration: 'Bun',
+          root,
+        },
+      )
       build.onEnd?.((result) => {
         try {
           if (result.success) ownership.validate()

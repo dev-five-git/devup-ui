@@ -298,14 +298,22 @@ export function DevupUI({
   // A build starts from its own options: whatever an earlier build in this
   // process left in the engine (prefix, hoisting, routes, buckets, numbers,
   // styles) is gone unless another build is still running.
-  const endBuild = beginBuild({ resetBuildState })
+  let projectRoot = process.cwd()
+  const endBuild = beginBuild(
+    { resetBuildState },
+    {
+      integration: 'Vite',
+      get root() {
+        return projectRoot
+      },
+    },
+  )
   registerShorthands(shorthands ?? {})
   setDebug(debug)
   setPrefix(prefix ?? null)
   const importAliases = mergeImportAliases(userImportAliases)
   const excludeModules = createNodeModulesExcludeRegex(include)
   const pathOptions = { devupFile, distDir, cssDir: configuredCssDir }
-  let projectRoot = process.cwd()
   let cssDir = configuredCssDir ?? join(distDir, 'devup-ui')
   let pathsResolved = false
   function resolveFallbackPaths() {

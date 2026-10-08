@@ -138,7 +138,6 @@ export const DevupUI = ({
   importAliases: userImportAliases,
   mdxExtensions: configuredMdxExtensions,
 }: Partial<DevupUIRsbuildPluginOptions> = {}): RsbuildPlugin => {
-  registerShorthands(shorthands ?? {})
   const importAliases = mergeImportAliases(userImportAliases)
   const mdxExtensions = normalizeMdxExtensions(configuredMdxExtensions)
   const excludeModules = createNodeModulesExcludeRegex(include)
@@ -162,7 +161,14 @@ export const DevupUI = ({
       })
       // A build starts from its own options, not from what an earlier build
       // in this process left in the engine
-      const endBuild = beginBuild({ resetBuildState })
+      const endBuild = beginBuild(
+        { resetBuildState },
+        {
+          integration: 'Rsbuild',
+          root,
+        },
+      )
+      registerShorthands(shorthands ?? {})
       api.onCloseBuild?.(endBuild)
       setDebug(debug)
       setPrefix(prefix ?? null)

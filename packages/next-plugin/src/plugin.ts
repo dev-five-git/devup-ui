@@ -39,6 +39,7 @@ import {
 import { collectProductionPrewarmFiles } from './prewarm'
 import { elapsedMs, profileStart, reportProfile } from './profile'
 import { loadWasm, loadWebpackPlugin } from './wasm'
+import { createWebpackGenerationThread } from './webpack-generation'
 
 /** Options accepted by the Next.js integration. */
 export type DevupUINextPluginOptions = Partial<DevupUIBasePluginOptions> & {
@@ -642,6 +643,7 @@ export function DevupUI(
   }
 
   const { webpack } = config
+  const generation = createWebpackGenerationThread()
   config.webpack = (config, _options) => {
     const { DevupUIWebpackPlugin } = loadWebpackPlugin()
     options.cssDir ??= resolve(
@@ -649,10 +651,13 @@ export function DevupUI(
       `devup-ui_${_options.buildId}`,
     )
     config.plugins.push(
-      new DevupUIWebpackPlugin({
-        ...options,
-        watch: _options.dev,
-      }),
+      new DevupUIWebpackPlugin(
+        {
+          ...options,
+          watch: _options.dev,
+        },
+        generation(_options),
+      ),
     )
     if (typeof webpack === 'function') return webpack(config, _options)
     return config

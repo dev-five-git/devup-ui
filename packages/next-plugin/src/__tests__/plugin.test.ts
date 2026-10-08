@@ -38,7 +38,11 @@ function createWebpackConfig(): NextWebpackConfig {
 function createWebpackContext(
   overrides: Partial<NextWebpackContext> = {},
 ): NextWebpackContext {
-  return { buildId: 'tmpBuildId', ...overrides } as NextWebpackContext
+  return {
+    buildId: 'tmpBuildId',
+    config: {},
+    ...overrides,
+  } as NextWebpackContext
 }
 
 function setNodeEnv(value: string): void {
@@ -187,9 +191,12 @@ describe('DevupUINextPlugin', () => {
 
       ret.webpack!(createWebpackConfig(), createWebpackContext())
 
-      expect(devupUIWebpackPluginSpy).toHaveBeenCalledWith({
-        cssDir: resolve('.next/cache', 'devup-ui_tmpBuildId'),
-      })
+      expect(devupUIWebpackPluginSpy).toHaveBeenCalledWith(
+        {
+          cssDir: resolve('.next/cache', 'devup-ui_tmpBuildId'),
+        },
+        expect.objectContaining({ complete: true }),
+      )
     })
 
     it('should apply webpack plugin with dev', async () => {
@@ -197,10 +204,13 @@ describe('DevupUINextPlugin', () => {
 
       ret.webpack!(createWebpackConfig(), createWebpackContext({ dev: true }))
 
-      expect(devupUIWebpackPluginSpy).toHaveBeenCalledWith({
-        cssDir: resolve('df', 'devup-ui_tmpBuildId'),
-        watch: true,
-      })
+      expect(devupUIWebpackPluginSpy).toHaveBeenCalledWith(
+        {
+          cssDir: resolve('df', 'devup-ui_tmpBuildId'),
+          watch: true,
+        },
+        expect.objectContaining({ complete: true }),
+      )
     })
 
     it('should apply webpack plugin with config', async () => {
@@ -213,10 +223,13 @@ describe('DevupUINextPlugin', () => {
 
       ret.webpack!(createWebpackConfig(), createWebpackContext())
 
-      expect(devupUIWebpackPluginSpy).toHaveBeenCalledWith({
-        package: 'new-package',
-        cssDir: resolve('.next/cache', 'devup-ui_tmpBuildId'),
-      })
+      expect(devupUIWebpackPluginSpy).toHaveBeenCalledWith(
+        {
+          package: 'new-package',
+          cssDir: resolve('.next/cache', 'devup-ui_tmpBuildId'),
+        },
+        expect.objectContaining({ complete: true }),
+      )
     })
 
     it('should apply webpack plugin with webpack obj', async () => {
@@ -232,10 +245,13 @@ describe('DevupUINextPlugin', () => {
 
       ret.webpack!(createWebpackConfig(), createWebpackContext())
 
-      expect(devupUIWebpackPluginSpy).toHaveBeenCalledWith({
-        package: 'new-package',
-        cssDir: resolve('.next/cache', 'devup-ui_tmpBuildId'),
-      })
+      expect(devupUIWebpackPluginSpy).toHaveBeenCalledWith(
+        {
+          package: 'new-package',
+          cssDir: resolve('.next/cache', 'devup-ui_tmpBuildId'),
+        },
+        expect.objectContaining({ complete: true }),
+      )
       expect(webpack).toHaveBeenCalled()
     })
   })
