@@ -138,6 +138,65 @@ jobs:
           path: playwright-report/
           retention-days: 1
 
+  # @devup-ui/vite-plugin must keep the CSS every server page needs when the
+  # build is vinext/RSC. The fixture shares one Devup UI header between server
+  # list pages and a client page, and the tests read the styles the browser
+  # actually applies when each route is entered directly, so a dropped
+  # stylesheet dependency fails here whatever the CSS files are called.
+  vinext-rsc-css-e2e:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+
+      - uses: actions-rust-lang/setup-rust-toolchain@v2
+
+      - name: Cache cargo registry + target
+        uses: actions/cache@v6
+        with:
+          path: |
+            ~/.cargo/registry/index/
+            ~/.cargo/registry/cache/
+            ~/.cargo/git/db/
+            target/
+          key: cargo-vinext-rsc-css-${{ runner.os }}-${{ hashFiles('**/Cargo.lock') }}
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: "1.4.0"
+        name: Install bun
+
+      - name: Cache bun dependencies
+        uses: actions/cache@v6
+        with:
+          path: ~/.bun/install/cache
+          key: bun-vinext-rsc-css-${{ runner.os }}-${{ hashFiles('**/bun.lock') }}
+      - uses: jetli/wasm-pack-action@v0.4.0
+        with:
+          version: "latest"
+      - name: Install Node.js
+        uses: actions/setup-node@v7
+        with:
+          node-version: 24
+      - run: bun install
+      - run: bun run build
+      - name: Cache Playwright Browsers
+        uses: actions/cache@v6
+        with:
+          path: ~/.cache/ms-playwright
+          key: playwright-vinext-rsc-css-${{ runner.os }}-${{ hashFiles('**/bun.lock') }}
+      - name: Install Playwright Browsers
+        run: bunx playwright install chromium --with-deps
+      - name: Build fixture (per-file CSS)
+        run: bun run --filter vinext-rsc-css-repro build
+      - name: Run E2E Tests (per-file CSS)
+        run: bun run test:e2e:rsc-css
+      - name: Build fixture (singleCss)
+        run: |
+          rm -rf apps/vinext-rsc-css-repro/dist apps/vinext-rsc-css-repro/.vinext apps/vinext-rsc-css-repro/df
+          DEVUP_SINGLE_CSS=1 bun run --filter vinext-rsc-css-repro build
+      - name: Run E2E Tests (singleCss)
+        run: bun run test:e2e:rsc-css
   publish:
     runs-on: ubuntu-latest
     permissions:
