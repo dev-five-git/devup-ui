@@ -1,3 +1,4 @@
+pub mod allocation_input;
 pub mod at_rule;
 pub mod atom_hoist;
 pub mod atom_name;
@@ -12,7 +13,17 @@ pub mod content_typography;
 mod content_typography_tests;
 pub mod content_value;
 mod counter_allocation;
+#[cfg(test)]
+mod counter_context_tests;
+pub mod counter_names;
+#[cfg(test)]
+mod counter_names_tests;
 mod counter_owner;
+#[cfg(test)]
+mod counter_proof_tests;
+mod counter_render;
+#[cfg(test)]
+mod counter_test_helpers;
 pub mod debug;
 pub mod file_map;
 pub mod file_routes;
