@@ -1,0 +1,7 @@
+{
+  "changes": {
+    "bindings/devup-ui-wasm/package.json": "Patch"
+  },
+  "note": "Order standalone nonresponsive hover-capability guards within their selector group so active, focus and disabled styles can override hover. Keep responsive Tailwind hover and Devup selector prop ordering unchanged. No new build errors.",
+  "date": "2026-10-09T00:00:00.000Z"
+}
