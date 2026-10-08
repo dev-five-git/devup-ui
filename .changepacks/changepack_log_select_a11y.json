@@ -1,0 +1,7 @@
+{
+  "changes": {
+    "packages/components/package.json": "Patch"
+  },
+  "note": "Select follows the listbox pattern: the trigger has aria-haspopup, aria-controls and opens with ArrowDown/ArrowUp; the popup is a listbox (aria-multiselectable for checkbox selects) whose options carry role=option, aria-selected and aria-disabled; opening focuses the selected or first option, arrows/Home/End move between enabled options, Enter/Space choose one, and Escape or choosing closes the popup and returns focus to the trigger. An outside click on a controlled select now calls onOpenChange(false) instead of changing hidden internal state",
+  "date": "2026-10-01T00:00:00.000Z"
+}

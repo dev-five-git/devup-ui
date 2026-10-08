@@ -3,7 +3,7 @@
 exports[`ThemeScript should apply ThemeScript 1`] = `
 "<div>
   <script>
-    (function (){document.documentElement.setAttribute('data-theme',localStorage.getItem('__DF_THEME_SELECTED__')||(true&&window.matchMedia('(prefers-color-scheme:dark)').matches?'dark':"default"));})()
+    (function (){var d=document.documentElement,k='__DF_THEME_SELECTED__',q='(prefers-color-scheme:dark)';function r(){var t=null;try{t=localStorage.getItem(k)}catch(e){}if(!t){try{if(true&&window.matchMedia(q).matches)t='dark'}catch(e){}}d.setAttribute('data-theme',t||"default")}r();try{window.addEventListener('storage',function(e){if(e.key===k||e.key===null)r()})}catch(e){}if(true)try{window.matchMedia(q).addEventListener('change',r)}catch(e){}})()
   </script>
 </div>"
 `;
@@ -19,7 +19,7 @@ exports[`ThemeScript should apply ThemeScript with theme 1`] = `
 exports[`ThemeScript should apply ThemeScript with not auto 1`] = `
 "<div>
   <script>
-    (function (){document.documentElement.setAttribute('data-theme',localStorage.getItem('__DF_THEME_SELECTED__')||(false&&window.matchMedia('(prefers-color-scheme:dark)').matches?'dark':"default"));})()
+    (function (){var d=document.documentElement,k='__DF_THEME_SELECTED__',q='(prefers-color-scheme:dark)';function r(){var t=null;try{t=localStorage.getItem(k)}catch(e){}if(!t){try{if(false&&window.matchMedia(q).matches)t='dark'}catch(e){}}d.setAttribute('data-theme',t||"default")}r();try{window.addEventListener('storage',function(e){if(e.key===k||e.key===null)r()})}catch(e){}if(false)try{window.matchMedia(q).addEventListener('change',r)}catch(e){}})()
   </script>
 </div>"
 `;

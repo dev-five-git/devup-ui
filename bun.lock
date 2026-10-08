@@ -512,7 +512,6 @@
       "dependencies": {
         "@devup-ui/react": "workspace:^",
         "clsx": "^2.1",
-        "react": "^19.3.0",
       },
       "devDependencies": {
         "@devup-ui/vite-plugin": "workspace:^",
@@ -522,6 +521,7 @@
         "@types/react": "^19.3",
         "@typescript/typescript6": "^6.0",
         "eslint-plugin-storybook": "^10.6",
+        "react": "^19.3.0",
         "rollup-plugin-preserve-directives": "^0.4",
         "storybook": "^10.6",
         "typescript": "^7.0.2",
@@ -530,7 +530,7 @@
       },
       "peerDependencies": {
         "@devup-ui/react": "workspace:^",
-        "react": "*",
+        "react": "^18 || ^19",
       },
     },
     "packages/eslint-plugin": {
@@ -580,12 +580,12 @@
       "version": "1.0.44",
       "dependencies": {
         "csstype-extra": "latest",
-        "react": "^19.3",
       },
       "devDependencies": {
         "@types/node": "^26.6",
         "@types/react": "^19.3",
         "@typescript/typescript6": "^6.0",
+        "react": "^19.3",
         "rollup-plugin-preserve-directives": "^0.4",
         "typescript": "^7.0.2",
         "vite": "^8.3",
@@ -593,7 +593,7 @@
       },
       "peerDependencies": {
         "csstype-extra": "*",
-        "react": "*",
+        "react": "^18 || ^19",
       },
     },
     "packages/reset-css": {

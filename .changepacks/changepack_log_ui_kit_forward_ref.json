@@ -1,0 +1,7 @@
+{
+  "changes": {
+    "packages/components/package.json": "Patch"
+  },
+  "note": "Button, Checkbox, Input, Radio and Textarea forward their ref to the button, input or textarea they render, so a ref reaches the form element on React 18 as well as React 19",
+  "date": "2026-10-01T00:00:00.000Z"
+}
