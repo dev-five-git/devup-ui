@@ -1,0 +1,10 @@
+---
+source: libs/extractor/src/imported_styled.rs
+expression: outputs
+---
+[
+    "import \"@devup-ui/react/devup-ui.css\";\n/** @jsxImportSource react */\nimport { Base, Dyn } from \"./base\";\nexport const C = () => <div className=\"a h a--a\" />;\n\n{\n    \"Static(ExtractStaticStyle { property: \\\"color\\\", value: \\\"blue\\\", level: 0, selector: None, style_order: None, layer: None })\",\n    \"Static(ExtractStaticStyle { property: \\\"padding\\\", value: \\\"4px\\\", level: 0, selector: None, style_order: None, layer: None })\",\n}\n[\"/src/base.ts\"]",
+    "/src/app.tsx:3:30: `css` on `<Base>` overrides styles `Base` sets, which the build orders only for a styled component rendering a tag with no attrs or props read, given no spread, `as` or `forwardedAs`: move these styles into `styled(Base)(...)`",
+    "import \"@devup-ui/react/devup-ui.css\";\n/** @jsxImportSource react */\nimport { Base, Dyn } from \"./base\";\nexport const C = () => <Dyn className=\"h\" />;\n\n{\n    \"Static(ExtractStaticStyle { property: \\\"color\\\", value: \\\"blue\\\", level: 0, selector: None, style_order: None, layer: None })\",\n}\n[\"/src/base.ts\"]",
+    "import \"@devup-ui/react/devup-ui.css\";\n/** @jsxImportSource react */\nimport { Base, Dyn } from \"./base\";\nexport const C = ({ rest }) => <Base {...rest} className={`${rest?.className || \"\"} g`} />;\n\n{\n    \"Static(ExtractStaticStyle { property: \\\"margin\\\", value: \\\"1px\\\", level: 0, selector: None, style_order: None, layer: None })\",\n}\n[\"/src/base.ts\"]",
+]
