@@ -215,6 +215,8 @@ fn devup_equivalent(source: &str, imported: &str) -> Option<DevupTarget<'static>
         (_, "isStyledComponent") => Some(DevupTarget::Compat("isStyledComponent")),
         (_, "withTheme") => Some(DevupTarget::Compat("withTheme")),
         (_, "useTheme") => Some(DevupTarget::Compat("useTheme")),
+        ("styled-components", "ThemeConsumer") => Some(DevupTarget::Compat("ThemeConsumer")),
+        ("styled-components", "createTheme") => Some(DevupTarget::Compat("createTheme")),
         _ => None,
     }
 }
@@ -726,6 +728,21 @@ mod tests {
             "@devup-ui/react",
             &styled_components_alias()
         ));
+    }
+
+    #[test]
+    fn test_styled_components_theme_apis_redirect_to_compat() {
+        let code = transform_import_aliases(
+            "import { ThemeConsumer, createTheme } from 'styled-components'",
+            "test.tsx",
+            "@devup-ui/react",
+            &styled_components_alias(),
+        );
+        assert!(
+            code.contains("import { ThemeConsumer, createTheme } from '@devup-ui/react/compat';"),
+            "{code}"
+        );
+        assert!(!code.contains("from 'styled-components'"), "{code}");
     }
 
     #[test]

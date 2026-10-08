@@ -1,10 +1,6 @@
 import { describe, expect, it } from 'bun:test'
 
-import {
-  createThemeAccessor,
-  themeToCssVariables,
-  themeVariableName,
-} from '../theme-vars'
+import { themeToCssVariables, themeVariableName } from '../theme-vars'
 
 describe('themeVariableName', () => {
   it('joins a path into a custom property', () => {
@@ -42,23 +38,5 @@ describe('themeToCssVariables', () => {
       display: 'contents',
       '--brand': null,
     })
-  })
-})
-
-describe('createThemeAccessor', () => {
-  it('resolves reads to css variable references', () => {
-    const theme = createThemeAccessor<{ colors: { brand: string } }>()
-    expect(`${theme.colors.brand}`).toBe('var(--colors-brand)')
-    expect(String(theme.colors.brand)).toBe('var(--colors-brand)')
-    expect(theme.colors.brand.valueOf()).toBe('var(--colors-brand)')
-    expect(theme.colors.brand.toString()).toBe('var(--colors-brand)')
-  })
-
-  it('has no reference at the root and ignores symbol keys', () => {
-    const theme = createThemeAccessor()
-    expect(`${theme}`).toBe('')
-    expect(
-      (theme as unknown as Record<symbol, unknown>)[Symbol.iterator],
-    ).toBeUndefined()
   })
 })
