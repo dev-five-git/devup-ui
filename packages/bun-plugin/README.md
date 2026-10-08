@@ -40,6 +40,26 @@ Add the zero-config entry to Bun's preload list:
 preload = ["@devup-ui/bun-plugin"]
 ```
 
+## Bundling with `Bun.build`
+
+```ts
+import { DevupUI } from '@devup-ui/bun-plugin/register'
+
+await Bun.build({
+  entrypoints: ['./src/index.tsx'],
+  outdir: './dist',
+  plugins: [DevupUI()],
+})
+```
+
+The build emits the stylesheet as a CSS output holding the styles of every
+module in the bundle. Imports of the packages Devup UI takes the place of
+(`@emotion/react`, `@emotion/styled`, `styled-components`,
+`@vanilla-extract/css`) and of `@stylexjs/stylex` are compiled too.
+
+Class names are short in `Bun.build` and readable under the runtime; pass
+`debug` to choose.
+
 ## Custom Shorthands
 
 To configure custom shorthands, preload a local module instead of the
