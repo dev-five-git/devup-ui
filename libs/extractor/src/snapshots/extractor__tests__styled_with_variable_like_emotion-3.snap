@@ -23,5 +23,5 @@ ToBTreeSet {
             },
         ),
     },
-    code: "import \"@devup-ui/core/devup-ui-0.css\";\nlet primaryColor = \"blue\";\nlet padding = \"16px\";\nconst StyledDiv = ({ style, className, ...rest }) => <div {...rest} className={[\"a-a a-b\", className].filter(Boolean).join(\" \")} style={{\n\t...{\n\t\t\"--a\": primaryColor,\n\t\t\"--b\": padding\n\t},\n\t...style\n}} />;\n",
+    code: "import \"@devup-ui/core/devup-ui-0.css\";\nlet primaryColor = \"blue\";\nlet padding = \"16px\";\nconst StyledDiv = ({ style, className, as: DevupAs = \"div\", forwardedAs, ...rest }) => <DevupAs {...(({ \"theme\": __devupOmit0, ...__devupDom }) => __devupDom)(rest)} as={forwardedAs} className={[\"a-a a-b\", className].filter(Boolean).join(\" \")} style={{\n\t...{\n\t\t\"--a\": primaryColor,\n\t\t\"--b\": padding\n\t},\n\t...style\n}} />;\n",
 }
