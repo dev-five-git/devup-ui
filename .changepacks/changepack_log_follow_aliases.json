@@ -1,0 +1,8 @@
+{
+  "changes": {
+    "bindings/devup-ui-wasm/package.json": "Patch",
+    "packages/bun-plugin/package.json": "Patch"
+  },
+  "note": "hasDevupUI takes the import aliases and is true for a file extraction changes: one importing a redirected package (@emotion/styled, ...), naming @emotion/react in a @jsxImportSource pragma, or in a project whose tsconfig jsxImportSource is @emotion/react, so the Bun plugin no longer skips files whose only Devup UI is Emotion's css prop or an aliased import. Aliases of Devup UI now compile like the original: `export const B = Box`, `const c = css; export { c as cc }`, `export const D = Devup` and `export const C = Devup.css` in a barrel (the barrel module exports them as re-exports of the package, and what imports them follows them), `export { Box }` after an import, `export default Box`, `const D = Devup` namespace aliases, and `const inner = css` declared inside a function. A css() or keyframes() const that a function reads before its declaration compiles. New build error: a css()/keyframes() const read before its declaration runs (outside a function) is located and says to move the declaration above its first read",
+  "date": "2026-10-01T00:00:00.000Z"
+}
