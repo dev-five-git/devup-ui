@@ -9,11 +9,13 @@ import {
   type CustomShorthands,
   loadDevupConfig,
   mergeImportAliases,
+  readJsxImportSource,
 } from '@devup-ui/plugin-utils'
 import {
   codeExtract,
   getCss,
   getThemeInterface,
+  hasDevupUI,
   registerShorthands,
   registerTheme,
   setDebug,
@@ -28,7 +30,7 @@ const devupFile = 'devup.json'
 const distDir = 'df'
 const cssDir = resolve(distDir, cssDirName)
 const singleCss = true
-const importAliases = mergeImportAliases()
+const importAliases = mergeImportAliases(undefined, readJsxImportSource())
 // The packages whose imports the extractor compiles: Devup UI, the packages it
 // takes the place of, and StyleX
 const compiledPackages = [
@@ -117,7 +119,10 @@ async function loadSourceFile(filePath: string, bundling: boolean) {
         : 'js'
   const contents = await Bun.file(filePath).text()
 
-  if (importsCompiledPackage(contents, loader)) {
+  if (
+    importsCompiledPackage(contents, loader) ||
+    hasDevupUI(filePath, contents, libPackage)
+  ) {
     const code = codeExtract(
       filePath,
       contents,

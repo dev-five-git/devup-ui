@@ -1,0 +1,46 @@
+---
+source: libs/extractor/src/import_alias_visit.rs
+expression: outputs
+---
+[
+    (
+        "export const a = <div css={{ padding: \"8px\", lineHeight: 2, '&:hover': { margin: \"4px\" } }} />;",
+        Elements,
+    ),
+    (
+        "export const a = <div css={[{ top: \"1px\" }, c ? { left: \"2px\" } : { right: \"3px\" }, c && { bottom: \"4px\" }, d || { width: \"5px\" }, ({ height: \"6px\" })]} />;",
+        Elements,
+    ),
+    (
+        "export const a = <div css={[t => ({ top: \"1px\" }), t => { return { left: \"2px\" }; }, t => { f(); return { right: 3 }; }, function (t) { return { bottom: \"4px\" }; }, function (t) { f(); }]} />;",
+        Elements,
+    ),
+    (
+        "import { Box } from '@devup-ui/react';\nexport const a = <><Box p={2} css={{ padding: \"2px\" }} /><Custom css={{ padding: 2 }} /></>;",
+        Elements,
+    ),
+    (
+        "import { styled } from '@devup-ui/react';\nexport const a = <Custom css={{ padding: \"2px\" }} />;",
+        Everywhere,
+    ),
+    (
+        "/** @jsxImportSource react */\nexport const a = <Custom css={{ padding: \"2px\" }} />;",
+        Everywhere,
+    ),
+    (
+        "import { jsx as _jsx } from \"react/jsx-runtime\";\nimport { jsxDEV } from \"react/jsx-dev-runtime\";\nexport const a = [_jsx('div', { css: { padding: \"2px\" }, id: 1, ['css']: { top: 1 } }), jsxDEV(Custom, { css: { top: \"3px\" } }), _jsx('div', props), f('div', { css: { top: 4 } })];",
+        Everywhere,
+    ),
+    (
+        "import { jsx, jsx as createElement } from '@devup-ui/react/compat';\nexport const a = [jsx('div', { css: { padding: \"2px\" } }), createElement('div', null)];",
+        Everywhere,
+    ),
+    (
+        "import { jsx as _jsx } from 'react/jsx-runtime';\nexport const a = [_jsx('div', { css: { padding: \"2px\" } }), _jsx(Custom, { css: { padding: 2 } })];",
+        Elements,
+    ),
+    (
+        "export const a = { css: 1 };",
+        Elements,
+    ),
+]
