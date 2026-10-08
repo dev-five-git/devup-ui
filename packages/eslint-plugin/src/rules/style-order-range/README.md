@@ -92,6 +92,19 @@ styled.div({ styleOrder: active && 2 })
 globalCss({ styleOrder: 1, body: { styleOrder: 2 } })
 ```
 
+## Where it applies
+
+The rule checks metadata at recognized style API sites, not every property named
+`styleOrder` in the file. This includes direct component style props, consumed
+style arguments and nested selector/at-rule style objects. Globals require static
+orders there; keyframes, font-face descriptors and native StyleX declarations
+reject metadata even in nested style scopes. Selector/layer record keys named
+`styleOrder` are not metadata, but metadata inside their style values is checked.
+Ordinary `data-*` props, pass-through `props` and `vars`, unrelated data objects
+and ordinary elements passed as props are ignored. A recognized styling call or
+component inside a prop expression is still checked independently at its own
+style site.
+
 ## When Not To Use It
 
 If you don't use `styleOrder` props or want to allow any value range, you can disable this rule.

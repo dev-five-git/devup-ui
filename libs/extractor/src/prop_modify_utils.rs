@@ -1,10 +1,9 @@
 use crate::extract_style::ExtractStyleProperty;
+use crate::extract_style::extract_css::ExtractCss;
 use crate::extract_style::style_property::StyleProperty;
 use crate::gen_class_name::gen_class_names;
 use crate::gen_style::gen_styles;
-use crate::tailwind::{
-    TailwindClass, has_tailwind_classes, parse_single_class, parse_tailwind_to_styles,
-};
+use crate::tailwind::{PROPERTY_RULES, PROPERTY_RULES_FILE, parse_class};
 use crate::utils::{get_str_by_property_key, merge_object_expressions};
 use crate::{ExtractStyleProp, ExtractStyleValue};
 use oxc_allocator::{CloneIn, FromIn, GetAllocator, TakeIn};
@@ -16,8 +15,6 @@ use oxc_ast::ast::{
 };
 use oxc_ast::builder::AstBuilder;
 use oxc_span::SPAN;
-use rustc_hash::FxHashMap;
-use std::borrow::Cow;
 
 mod order_forward;
 pub(crate) use order_forward::without_order_props;
@@ -527,26 +524,16 @@ pub fn get_class_name_expression<'a>(
     style_order: Option<u8>,
     filename: Option<&str>,
 ) -> (Option<Expression<'a>>, Vec<ExtractStyleValue>) {
-    // Extract Tailwind styles from static className strings and generate class names
-    let (tailwind_styles, tailwind_class_expr) =
-        extract_tailwind_from_class_name(ast_builder, class_name_prop, style_order, filename);
+    let (tailwind_styles, compiled) =
+        compile_tailwind_class_name(ast_builder, class_name_prop.as_ref(), style_order, filename);
+    // A rebuilt `cond && "a"` still evaluates to `false`, which React would
+    // render as `class="false"`, so it needs the same falsy guard as a passthrough.
+    let class_name_to_use = compiled
+        .as_ref()
+        .or(class_name_prop.as_ref())
+        .map(|class_name| convert_class_name(ast_builder, class_name));
 
-    // Determine the className expression to use:
-    // - If we extracted Tailwind styles, use generated class names (replace original)
-    // - Otherwise, preserve the original className
-    let class_name_to_use = if let Some(tailwind_class_expr) = tailwind_class_expr {
-        // Tailwind className → replaced with generated class names. A rebuilt
-        // `cond && "a"` still evaluates to `false`, which React would render as
-        // `class="false"`, so it needs the same falsy guard as a passthrough.
-        Some(convert_class_name(ast_builder, &tailwind_class_expr))
-    } else {
-        // Non-Tailwind className → keep original
-        class_name_prop
-            .as_ref()
-            .map(|class_name| convert_class_name(ast_builder, class_name))
-    };
-
-    // Merge class names: [tailwind/original class names] + [devup-ui component styles]
+    // Merge class names: [className] + [devup-ui component styles]
     let mut class_expressions = Vec::with_capacity(2);
     if let Some(class_name) = class_name_to_use {
         class_expressions.push(class_name);
@@ -559,291 +546,223 @@ pub fn get_class_name_expression<'a>(
     (expression, tailwind_styles)
 }
 
-/// Apply `style_order` to all `ExtractStyleValue` items
-fn apply_style_order_to_styles(styles: &mut [ExtractStyleValue], style_order: Option<u8>) {
-    if let Some(order) = style_order {
-        for style in styles.iter_mut() {
-            style.set_style_order(order);
-        }
-    }
-}
-
-/// Extract Tailwind CSS styles from a static className string and generate devup-ui class names
-/// Returns (extracted styles for CSS generation, generated class names expression)
-pub(crate) fn extract_tailwind_from_class_name<'a>(
+/// Returns extracted Tailwind styles and a replacement only when classes compiled.
+pub(crate) fn compile_tailwind_class_name<'a>(
     ast_builder: &AstBuilder<'a>,
-    class_name_prop: &Option<Expression<'a>>,
+    class_name: Option<&Expression<'a>>,
     style_order: Option<u8>,
     filename: Option<&str>,
 ) -> (Vec<ExtractStyleValue>, Option<Expression<'a>>) {
-    // Extract from static string literals
-    if let Some(Expression::StringLiteral(literal)) = class_name_prop {
-        let class_str = literal.value.as_str();
-        if has_tailwind_classes(class_str) {
-            let mut tailwind_styles = parse_tailwind_to_styles(class_str);
-            if !tailwind_styles.is_empty() {
-                // Apply style_order to all extracted Tailwind styles
-                apply_style_order_to_styles(&mut tailwind_styles, style_order);
+    let mut tailwind = TailwindClassName {
+        style_order,
+        filename,
+        styles: Vec::new(),
+        property_rules: false,
+    };
+    let compiled =
+        class_name.and_then(|class_name| tailwind.compile_expression(ast_builder, class_name));
+    (tailwind.into_styles(), compiled)
+}
 
-                // Move ExtractStyleValue into ExtractStyleProp::Static for gen_class_names,
-                // then recover the same values afterward without deep-cloning each style.
-                let mut tailwind_style_props: Vec<ExtractStyleProp> = tailwind_styles
-                    .into_iter()
-                    .map(ExtractStyleProp::Static)
-                    .collect();
+/// Compiles the Tailwind classes of a className: each becomes the classes of
+/// its styles, and every other class stays as written
+struct TailwindClassName<'f> {
+    style_order: Option<u8>,
+    filename: Option<&'f str>,
+    styles: Vec<ExtractStyleValue>,
+    /// Whether a compiled class uses the custom properties Tailwind registers
+    property_rules: bool,
+}
 
-                // Generate devup-ui class names for the Tailwind styles
-                let class_names_expr = gen_class_names(
-                    ast_builder,
-                    &mut tailwind_style_props,
-                    style_order,
-                    filename,
-                );
-
-                // Tailwind className styles are always `Static`, for which
-                // `into_extract` yields exactly `vec![style]`. Flattening through it
-                // keeps that hot path allocation-equivalent while staying total, so
-                // there is no unreachable arm to carve out of coverage.
-                let tailwind_styles = tailwind_style_props
-                    .into_iter()
-                    .flat_map(ExtractStyleProp::into_extract)
-                    .collect();
-
-                return (tailwind_styles, class_names_expr);
-            }
+impl TailwindClassName<'_> {
+    fn into_styles(self) -> Vec<ExtractStyleValue> {
+        let mut styles = self.styles;
+        if self.property_rules {
+            styles.push(ExtractStyleValue::Css(ExtractCss {
+                css: PROPERTY_RULES.to_string(),
+                file: PROPERTY_RULES_FILE.to_string(),
+            }));
         }
+        styles
     }
 
-    // Extract from any expression that can still carry static class strings:
-    // `` `${cond ? 'text-red' : 'text-blue'} p-4` ``, `cond ? 'p-4' : 'p-8'`, `cond && 'p-4'`.
-    if let Some(expression) = class_name_prop {
-        let mut all_classes = String::new();
-        extract_classes_from_expression(expression, &mut all_classes);
-        if has_tailwind_classes(&all_classes) {
-            // Single pass over every class: parse ONCE, then build both the
-            // `Tailwind class → generated class name` mapping and the styles vec for
-            // CSS generation together. The previous code called
-            // `build_tailwind_class_mapping` and then `parse_tailwind_to_styles`, which
-            // re-parsed (and re-allocated a `TailwindClass` + `ExtractStaticStyle` for)
-            // every class a second time. Merging them keeps the mapping, the collected
-            // styles, and the ordered `extract()` side effects byte-identical while
-            // halving the per-class parse/allocate work.
-            let mut class_mapping: FxHashMap<String, String> = FxHashMap::default();
-            // Upper bound: at most one style per whitespace-separated class (the same
-            // presize `parse_tailwind_to_styles` used), so the vec never grow-reallocs.
-            let mut tailwind_styles: Vec<ExtractStyleValue> =
-                Vec::with_capacity(all_classes.bytes().filter(u8::is_ascii_whitespace).count() + 1);
-            for class in all_classes.split_whitespace() {
-                if let Some(mut static_style) = parse_single_class(class)
-                    .as_ref()
-                    .and_then(TailwindClass::to_static_style)
-                {
-                    if let Some(order) = style_order {
-                        static_style.style_order = Some(order);
+    /// `text` with its Tailwind classes compiled, or `None` when it has none. A
+    /// class running into an end that continues in an interpolation is not
+    /// whole, so it stays as written.
+    fn compile_text(&mut self, text: &str, open_start: bool, open_end: bool) -> Option<String> {
+        let mut compiled = String::with_capacity(text.len());
+        let mut written = 0;
+        let mut start = 0;
+        // Class names are separated by ASCII whitespace, one byte each
+        for class in text.split(|c: char| c.is_ascii_whitespace()) {
+            let end = start + class.len();
+            let whole = (!open_start || start > 0) && (!open_end || end < text.len());
+            if let Some(tailwind) = whole.then(|| parse_class(class)).flatten() {
+                compiled.push_str(&text[written..start]);
+                self.property_rules |= tailwind.uses_properties();
+                let mut separator = "";
+                for mut style in tailwind.styles() {
+                    if let Some(order) = self.style_order {
+                        style.style_order = Some(order);
                     }
-                    // `ExtractStaticStyle::extract` always yields a `ClassName`, so this
-                    // records the exact mapping entry the two-pass version produced.
-                    if let StyleProperty::ClassName(generated) = static_style.extract(filename) {
-                        class_mapping.insert(class.to_string(), generated);
-                    }
-                    tailwind_styles.push(ExtractStyleValue::Static(static_style));
+                    let (StyleProperty::ClassName(name)
+                    | StyleProperty::Variable {
+                        class_name: name, ..
+                    }) = style.extract(self.filename);
+                    compiled.push_str(separator);
+                    compiled.push_str(&name);
+                    separator = " ";
+                    self.styles.push(ExtractStyleValue::Static(style));
                 }
+                written = end;
             }
+            start = end + 1;
+        }
+        (written > 0).then(|| {
+            compiled.push_str(&text[written..]);
+            compiled
+        })
+    }
 
-            if !class_mapping.is_empty() {
-                // Build the same expression back with replaced class names
-                let new_expression = rebuild_expression_with_mapping_unsorted(
+    /// `expression` with the Tailwind classes of its strings compiled, or
+    /// `None` when they have none
+    fn compile_expression<'a>(
+        &mut self,
+        ast_builder: &AstBuilder<'a>,
+        expression: &Expression<'a>,
+    ) -> Option<Expression<'a>> {
+        match expression {
+            Expression::StringLiteral(literal) => {
+                let compiled = self.compile_text(&literal.value, false, false)?;
+                Some(Expression::new_string_literal(
+                    SPAN,
+                    Str::from_in(&compiled, ast_builder.allocator()),
+                    None,
                     ast_builder,
-                    expression,
-                    &class_mapping,
-                );
-
-                return (tailwind_styles, Some(new_expression));
+                ))
             }
+            Expression::TemplateLiteral(template) => self.compile_template(ast_builder, template),
+            Expression::ConditionalExpression(conditional) => {
+                let consequent = self.compile_expression(ast_builder, &conditional.consequent);
+                let alternate = self.compile_expression(ast_builder, &conditional.alternate);
+                if consequent.is_none() && alternate.is_none() {
+                    return None;
+                }
+                Some(Expression::new_conditional_expression(
+                    conditional.span,
+                    conditional
+                        .test
+                        .clone_in_with_semantic_ids(ast_builder.allocator()),
+                    compiled_or(ast_builder, consequent, &conditional.consequent),
+                    compiled_or(ast_builder, alternate, &conditional.alternate),
+                    ast_builder,
+                ))
+            }
+            Expression::LogicalExpression(logical) => {
+                let left = self.compile_expression(ast_builder, &logical.left);
+                let right = self.compile_expression(ast_builder, &logical.right);
+                if left.is_none() && right.is_none() {
+                    return None;
+                }
+                Some(Expression::new_logical_expression(
+                    logical.span,
+                    compiled_or(ast_builder, left, &logical.left),
+                    logical.operator,
+                    compiled_or(ast_builder, right, &logical.right),
+                    ast_builder,
+                ))
+            }
+            Expression::ParenthesizedExpression(parenthesized) => {
+                let inner = self.compile_expression(ast_builder, &parenthesized.expression)?;
+                Some(Expression::new_parenthesized_expression(
+                    parenthesized.span,
+                    inner,
+                    ast_builder,
+                ))
+            }
+            // Variables, calls and the like only hold their classes at runtime
+            _ => None,
         }
     }
 
-    (Vec::new(), None)
-}
-
-/// Rebuild a template literal, replacing Tailwind classes with generated class names
-fn rebuild_expression_with_mapping_unsorted<'a>(
-    ast_builder: &AstBuilder<'a>,
-    expression: &Expression<'a>,
-    class_mapping: &FxHashMap<String, String>,
-) -> Expression<'a> {
-    // Sort the mapping ONCE by key length descending (avoids partial replacements,
-    // e.g. "text-3xl" before "text-3") and reuse the sorted slice for every quasi
-    // and nested expression instead of re-sorting per call.
-    let mut sorted_classes: Vec<(&String, &String)> = class_mapping.iter().collect();
-    sorted_classes.sort_by_key(|(k, _)| std::cmp::Reverse(k.len()));
-    rebuild_expression_with_mapping(ast_builder, expression, &sorted_classes)
-}
-
-/// Rebuild a template literal using a pre-sorted class mapping slice.
-fn rebuild_template_literal_with_sorted<'a>(
-    ast_builder: &AstBuilder<'a>,
-    template: &oxc_ast::ast::TemplateLiteral<'a>,
-    sorted_classes: &[(&String, &String)],
-) -> Expression<'a> {
-    // Rebuild quasis with replaced class names
-    let new_quasis = template.quasis.iter().map(|quasi| {
-        let raw = quasi.value.raw.as_str();
-        let replaced = replace_classes_in_string(raw, sorted_classes);
-        let cooked = quasi.value.cooked.as_ref().map(|c| {
-            let replaced_cooked = replace_classes_in_string(c.as_str(), sorted_classes);
-            Str::from_in(&replaced_cooked, ast_builder.allocator())
-        });
-        TemplateElement::new(
-            quasi.span,
-            TemplateElementValue {
-                raw: Str::from_in(&replaced, ast_builder.allocator()),
-                cooked,
-            },
-            quasi.tail,
+    fn compile_template<'a>(
+        &mut self,
+        ast_builder: &AstBuilder<'a>,
+        template: &TemplateLiteral<'a>,
+    ) -> Option<Expression<'a>> {
+        let last = template.quasis.len() - 1;
+        let quasis: Vec<Option<String>> = template
+            .quasis
+            .iter()
+            .enumerate()
+            .map(|(index, quasi)| {
+                // The text on each side of an interpolation runs into it
+                self.compile_text(quasi.value.cooked.as_ref()?, index > 0, index < last)
+            })
+            .collect();
+        let expressions: Vec<Option<Expression<'a>>> = template
+            .expressions
+            .iter()
+            .map(|expression| self.compile_expression(ast_builder, expression))
+            .collect();
+        if quasis.iter().all(Option::is_none) && expressions.iter().all(Option::is_none) {
+            return None;
+        }
+        let quasis = template
+            .quasis
+            .iter()
+            .zip(quasis)
+            .map(|(quasi, compiled)| match compiled {
+                Some(cooked) => TemplateElement::new(
+                    quasi.span,
+                    TemplateElementValue {
+                        raw: Str::from_in(&template_raw(&cooked), ast_builder.allocator()),
+                        cooked: Some(Str::from_in(&cooked, ast_builder.allocator())),
+                    },
+                    quasi.tail,
+                    ast_builder,
+                ),
+                None => quasi.clone_in(ast_builder.allocator()),
+            });
+        let expressions = template
+            .expressions
+            .iter()
+            .zip(expressions)
+            .map(|(expression, compiled)| compiled_or(ast_builder, compiled, expression));
+        Some(Expression::new_template_literal(
+            template.span,
+            oxc_allocator::Vec::from_iter_in(quasis, ast_builder),
+            oxc_allocator::Vec::from_iter_in(expressions, ast_builder),
             ast_builder,
-        )
-    });
-
-    // Rebuild expressions with replaced class names
-    let new_expressions = template
-        .expressions
-        .iter()
-        .map(|expr| rebuild_expression_with_mapping(ast_builder, expr, sorted_classes));
-
-    Expression::new_template_literal(
-        template.span,
-        oxc_allocator::Vec::from_iter_in(new_quasis, ast_builder),
-        oxc_allocator::Vec::from_iter_in(new_expressions, ast_builder),
-        ast_builder,
-    )
-}
-
-/// Replace Tailwind class names in a string with generated class names.
-///
-/// `sorted_classes` MUST already be sorted by key length descending so longer
-/// class names are replaced before their prefixes (e.g. "text-3xl" before "text-3").
-fn replace_classes_in_string(s: &str, sorted_classes: &[(&String, &String)]) -> String {
-    let mut result = Cow::Borrowed(s);
-    for (tailwind_class, generated_class) in sorted_classes {
-        // `str::replace` already scans the whole string internally and allocates a
-        // fresh `String` only on a match, so the previous standalone `contains`
-        // pre-scan was a redundant second scan of the same content. Compute the
-        // replacement once and only re-own the `Cow` when it actually changed
-        // (length differs, or same-length differing contents). Byte-identical.
-        let replaced = result.replace(tailwind_class.as_str(), generated_class);
-        if replaced.len() != result.len() || replaced != *result {
-            result = Cow::Owned(replaced);
-        }
+        ))
     }
-    result.into_owned()
 }
 
-/// Rebuild an expression, replacing Tailwind classes in string literals
-fn rebuild_expression_with_mapping<'a>(
+/// `compiled`, or a copy of `original` when nothing in it compiled
+fn compiled_or<'a>(
     ast_builder: &AstBuilder<'a>,
-    expr: &Expression<'a>,
-    sorted_classes: &[(&String, &String)],
+    compiled: Option<Expression<'a>>,
+    original: &Expression<'a>,
 ) -> Expression<'a> {
-    match expr {
-        Expression::StringLiteral(lit) => {
-            let replaced = replace_classes_in_string(lit.value.as_str(), sorted_classes);
-            Expression::new_string_literal(
-                SPAN,
-                Str::from_in(&replaced, ast_builder.allocator()),
-                None,
-                ast_builder,
-            )
-        }
-        Expression::ConditionalExpression(cond) => {
-            let consequent =
-                rebuild_expression_with_mapping(ast_builder, &cond.consequent, sorted_classes);
-            let alternate =
-                rebuild_expression_with_mapping(ast_builder, &cond.alternate, sorted_classes);
-            Expression::new_conditional_expression(
-                cond.span,
-                cond.test.clone_in(ast_builder.allocator()),
-                consequent,
-                alternate,
-                ast_builder,
-            )
-        }
-        Expression::LogicalExpression(logic) => {
-            let left = rebuild_expression_with_mapping(ast_builder, &logic.left, sorted_classes);
-            let right = rebuild_expression_with_mapping(ast_builder, &logic.right, sorted_classes);
-            Expression::new_logical_expression(logic.span, left, logic.operator, right, ast_builder)
-        }
-        Expression::ParenthesizedExpression(paren) => {
-            let inner =
-                rebuild_expression_with_mapping(ast_builder, &paren.expression, sorted_classes);
-            Expression::new_parenthesized_expression(paren.span, inner, ast_builder)
-        }
-        Expression::TemplateLiteral(inner_template) => {
-            rebuild_template_literal_with_sorted(ast_builder, inner_template, sorted_classes)
-        }
-        // For other expressions (variables, etc.), keep as-is
-        _ => expr.clone_in(ast_builder.allocator()),
-    }
+    compiled.unwrap_or_else(|| original.clone_in_with_semantic_ids(ast_builder.allocator()))
 }
 
-/// Extract all class name strings from a template literal, including from conditional expressions
-fn extract_all_classes_from_template_literal(template: &oxc_ast::ast::TemplateLiteral) -> String {
-    let mut classes = String::new();
-
-    // Extract from quasis (static parts of template literal)
-    for quasi in &template.quasis {
-        let raw = quasi.value.raw.as_str();
-        push_class_segment(&mut classes, raw.trim());
-    }
-
-    // Extract from expressions (dynamic parts)
-    for expr in &template.expressions {
-        extract_classes_from_expression(expr, &mut classes);
-    }
-
-    classes
-}
-
-fn push_class_segment(classes: &mut String, value: &str) {
-    if value.is_empty() {
-        return;
-    }
-    if !classes.is_empty() {
-        classes.push(' ');
-    }
-    classes.push_str(value);
-}
-
-/// Recursively extract class name strings from an expression
-fn extract_classes_from_expression(expr: &Expression, classes: &mut String) {
-    match expr {
-        // Direct string literal: 'text-red-500'
-        Expression::StringLiteral(lit) => {
-            let value = lit.value.as_str().trim();
-            push_class_segment(classes, value);
+/// The raw text of a template literal part whose value is `cooked`
+fn template_raw(cooked: &str) -> String {
+    let mut raw = String::with_capacity(cooked.len());
+    let mut chars = cooked.chars().peekable();
+    while let Some(c) = chars.next() {
+        match c {
+            '\\' | '`' => {
+                raw.push('\\');
+                raw.push(c);
+            }
+            '$' if chars.peek() == Some(&'{') => raw.push_str("\\$"),
+            '\r' => raw.push_str("\\r"),
+            c => raw.push(c),
         }
-        // Ternary/conditional: cond ? 'text-red' : 'text-blue'
-        Expression::ConditionalExpression(cond) => {
-            extract_classes_from_expression(&cond.consequent, classes);
-            extract_classes_from_expression(&cond.alternate, classes);
-        }
-        // Logical OR: value || 'fallback'
-        Expression::LogicalExpression(logic) => {
-            extract_classes_from_expression(&logic.left, classes);
-            extract_classes_from_expression(&logic.right, classes);
-        }
-        // Parenthesized expression: (expr)
-        Expression::ParenthesizedExpression(paren) => {
-            extract_classes_from_expression(&paren.expression, classes);
-        }
-        // Template literal inside expression
-        Expression::TemplateLiteral(inner_template) => {
-            let inner_classes = extract_all_classes_from_template_literal(inner_template);
-            push_class_segment(classes, &inner_classes);
-        }
-        // Other expressions (variables, function calls, etc.) - skip, can't extract statically
-        _ => {}
     }
+    raw
 }
 
 /// `className` or `style` written as a prop, or spread with other props
@@ -1011,107 +930,76 @@ fn merge_string_expressions<'a>(
         return Some(expression.clone_in(ast_builder.allocator()));
     }
 
-    let mut string_literals: std::vec::Vec<String> = vec![];
-    let mut other_expressions = vec![];
-    let mut prev_str = String::new();
-    for ex in expressions {
-        if let Expression::StringLiteral(literal) = ex {
-            // Reuse the `prev_str` buffer instead of allocating a fresh String via
-            // `format!` each iteration. `prev_str` is only ever built here from trimmed
-            // pieces, so it never carries leading whitespace; trim only its trailing end.
-            let trimmed_len = prev_str.trim_end().len();
-            prev_str.truncate(trimmed_len);
-            let target = literal.value.trim();
-            if !prev_str.is_empty() {
-                prev_str.push(' ');
-            }
-            prev_str.push_str(target);
-        } else if let Expression::TemplateLiteral(template) = ex {
-            for (idx, q) in template.quasis.iter().enumerate() {
-                let target_prev = prev_str.trim();
-                let target = q.value.raw.trim();
-                if idx < template.quasis.len() - 1 {
-                    string_literals.push(format!(
-                        "{}{}{}{}{}",
-                        if !other_expressions.is_empty() || idx > 0 {
-                            " "
-                        } else {
-                            ""
-                        },
-                        target_prev,
-                        if target_prev.is_empty() { "" } else { " " },
-                        target,
-                        if !target.is_empty() && !target.ends_with("typo-") {
-                            " "
-                        } else {
-                            ""
-                        }
-                    ));
-                } else {
-                    // Reuse the existing heap buffer instead of dropping it and
-                    // allocating a fresh String: one fewer allocation per template
-                    // quasi. Output stays byte-identical (same trimmed contents).
-                    prev_str.clear();
-                    prev_str.push_str(q.value.raw.trim());
+    let mut list = ClassList {
+        texts: vec![String::new()],
+        interpolations: Vec::new(),
+    };
+    for expression in expressions {
+        match expression {
+            Expression::StringLiteral(literal) => {
+                let classes = literal.value.trim();
+                if !classes.is_empty() {
+                    list.separate();
+                    list.text().push_str(classes);
                 }
             }
-            other_expressions.extend(template.expressions.clone_in(ast_builder.allocator()));
-        } else {
-            let target_prev = prev_str.trim();
-            string_literals.push(format!(
-                "{}{}{}",
-                if other_expressions.is_empty() {
-                    ""
-                } else {
-                    " "
-                },
-                target_prev,
-                if target_prev.is_empty() { "" } else { " " }
-            ));
-            other_expressions.push(ex.clone_in(ast_builder.allocator()));
-            // Reuse the backing capacity instead of allocating a fresh empty
-            // String; `clear()` keeps the buffer, byte-identical behavior.
-            prev_str.clear();
+            Expression::TemplateLiteral(template) => {
+                let last = template.quasis.len() - 1;
+                for (index, quasi) in template.quasis.iter().enumerate() {
+                    let text = quasi
+                        .value
+                        .cooked
+                        .as_ref()
+                        .map_or(quasi.value.raw.as_str(), |cooked| cooked.as_str());
+                    let classes = text.trim();
+                    if index == 0 {
+                        if !classes.is_empty() || last > 0 {
+                            list.separate();
+                        }
+                    } else if text.starts_with(|c: char| c.is_ascii_whitespace())
+                        && (!classes.is_empty() || index < last)
+                    {
+                        list.text().push(' ');
+                    }
+                    list.text().push_str(classes);
+                    if index < last {
+                        // Text running into an interpolation stays attached to
+                        // it, as in `icon-${name}`
+                        if !classes.is_empty() && text.ends_with(|c: char| c.is_ascii_whitespace())
+                        {
+                            list.text().push(' ');
+                        }
+                        list.interpolate(
+                            template.expressions[index].clone_in(ast_builder.allocator()),
+                        );
+                    }
+                }
+            }
+            _ => {
+                list.separate();
+                list.interpolate(expression.clone_in(ast_builder.allocator()));
+            }
         }
     }
-    {
-        let tail = prev_str.trim();
-        if tail.is_empty() {
-            string_literals.push(String::new());
-        } else {
-            let mut buf = String::with_capacity(tail.len() + 1);
-            buf.push(' ');
-            buf.push_str(tail);
-            string_literals.push(buf);
-        }
-    }
-    if other_expressions.is_empty() {
-        // Concatenate the already-owned fragments into one presized buffer instead
-        // of `join("")`, which allocates a fresh Vec-backed buffer internally after
-        // summing lengths. Same summed-capacity, same byte order, then `.trim()` —
-        // byte-identical to `string_literals.join("")`.
-        let mut merged = String::with_capacity(string_literals.iter().map(String::len).sum());
-        for frag in &string_literals {
-            merged.push_str(frag);
-        }
+
+    if list.interpolations.is_empty() {
         return Some(Expression::new_string_literal(
             SPAN,
-            Str::from_in(merged.trim(), ast_builder.allocator()),
+            Str::from_in(list.texts[0].trim(), ast_builder.allocator()),
             None,
             ast_builder,
         ));
     }
-
-    let q = oxc_allocator::Vec::from_iter_in(
-        string_literals.iter().enumerate().map(|(idx, s)| {
-            let tail = idx == string_literals.len() - 1;
+    let last = list.texts.len() - 1;
+    let quasis = oxc_allocator::Vec::from_iter_in(
+        list.texts.iter().enumerate().map(|(index, text)| {
             TemplateElement::new(
                 SPAN,
                 TemplateElementValue {
-                    raw: Str::from_in(s, ast_builder.allocator()),
-                    cooked: None,
+                    raw: Str::from_in(&template_raw(text), ast_builder.allocator()),
+                    cooked: Some(Str::from_in(text, ast_builder.allocator())),
                 },
-                tail,
+                index == last,
                 ast_builder,
             )
         }),
@@ -1119,15 +1007,38 @@ fn merge_string_expressions<'a>(
     );
     Some(Expression::new_template_literal(
         SPAN,
-        q,
-        oxc_allocator::Vec::from_iter_in(
-            other_expressions
-                .into_iter()
-                .map(|ex| ex.clone_in(ast_builder.allocator())),
-            ast_builder,
-        ),
+        quasis,
+        oxc_allocator::Vec::from_iter_in(list.interpolations, ast_builder),
         ast_builder,
     ))
+}
+
+/// A className merged from lists of classes, each separated from the next by
+/// a space
+struct ClassList<'a> {
+    /// The text before each interpolation, and after the last
+    texts: Vec<String>,
+    interpolations: Vec<Expression<'a>>,
+}
+
+impl<'a> ClassList<'a> {
+    fn text(&mut self) -> &mut String {
+        let last = self.texts.len() - 1;
+        &mut self.texts[last]
+    }
+
+    /// A space before the next list, when anything precedes it
+    fn separate(&mut self) {
+        let empty = self.interpolations.is_empty() && self.texts[0].is_empty();
+        if !empty && !self.text().ends_with(' ') {
+            self.text().push(' ');
+        }
+    }
+
+    fn interpolate(&mut self, expression: Expression<'a>) {
+        self.interpolations.push(expression);
+        self.texts.push(String::new());
+    }
 }
 
 pub fn convert_class_name<'a>(
@@ -1247,30 +1158,8 @@ pub fn convert_style_vars<'a>(
 #[allow(clippy::expect_used, clippy::unwrap_used)]
 mod tests {
     use super::*;
-    use crate::extract_style::{
-        extract_dynamic_style::ExtractDynamicStyle, extract_static_style::ExtractStaticStyle,
-    };
     use crate::utils::expression_to_code;
     use oxc_allocator::Allocator;
-
-    #[test]
-    fn test_apply_style_order_to_all_styles() {
-        let mut styles = [
-            ExtractStyleValue::Static(ExtractStaticStyle::new("color", "red", 0, None)),
-            ExtractStyleValue::Dynamic(ExtractDynamicStyle::new("padding", 0, "size", None)),
-        ];
-
-        apply_style_order_to_styles(&mut styles, Some(7));
-
-        let ExtractStyleValue::Static(static_style) = &styles[0] else {
-            panic!("expected static style");
-        };
-        let ExtractStyleValue::Dynamic(dynamic_style) = &styles[1] else {
-            panic!("expected dynamic style");
-        };
-        assert_eq!(static_style.style_order(), Some(7));
-        assert_eq!(dynamic_style.style_order(), Some(7));
-    }
 
     #[test]
     fn test_merge_string_expressions_builds_template() {

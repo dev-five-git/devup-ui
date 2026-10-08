@@ -15262,6 +15262,89 @@ export const d = css(ordered, danger, called);",
         }
     }
 
+    // Each Tailwind class becomes the classes of its styles; every other class,
+    // and every class that runs into an interpolation, stays as written
+    #[rstest]
+    #[case(
+        r#"<Box className="p-4 custom prose my-p-4-class" />"#,
+        r#"<div className="a custom prose my-p-4-class" />"#
+    )]
+    #[case(r#"<Box className="card hidden" />"#, r#"<div className="card a" />"#)]
+    #[case(
+        r#"<Box className="data-active:p-4 not-hover:m-4 [&>*]:p-4" />"#,
+        r#"<div className="a not-hover:m-4 b" />"#
+    )]
+    #[case(
+        "<Box className={`p-${size} mt-4 ${tone}-text`} />",
+        r"((__devupValue0, __devupValue1) => <div className={`p-${__devupValue0} a ${__devupValue1}-text`} />)(`${size}`, `${tone}`)"
+    )]
+    #[case(
+        r"<Box className={`p-4 \`q\` \${y} a\\b\rc ${x}`} />",
+        r"((__devupValue0) => <div className={`a \`q\` \${y} a\\b\rc ${__devupValue0}`} />)(`${x}`)"
+    )]
+    #[case(
+        "<Box className={`custom ${on ? 'p-4' : x}`} />",
+        r#"((__devupValue0) => <div className={`custom ${__devupValue0}`} />)(`${on ? "a" : x}`)"#
+    )]
+    #[case(
+        r#"<Box className={on ? "p-4" : "custom"} />"#,
+        r#"((__devupValue0) => <div className={(__devupValue0 ? "a" : "custom") || ""} />)(on)"#
+    )]
+    #[case(
+        r#"<Box className={on ? "custom" : "p-4"} />"#,
+        r#"((__devupValue0) => <div className={(__devupValue0 ? "custom" : "a") || ""} />)(on)"#
+    )]
+    #[case(
+        r#"<Box className={on && "p-4"} />"#,
+        r#"((__devupValue0) => <div className={__devupValue0 && "a" || ""} />)(on)"#
+    )]
+    #[case(r#"<Box className={"p-4" || x} />"#, r#"<div className="a" />"#)]
+    #[case(r#"<Box className={("p-4")} />"#, r#"<div className={"a" || ""} />"#)]
+    #[case(
+        "<Box className={`icon-${name} ${a}${b}`} />",
+        "-((__devupValue0, __devupValue1, __devupValue2) => <div className={`icon-${__devupValue0} ${__devupValue1}${__devupValue2}`} />)(`${name}`, `${a}`, `${b}`)"
+    )]
+    #[case(
+        r#"<Box className={("custom")} />"#,
+        r#"-<div className={"custom" || ""} />"#
+    )]
+    #[case(
+        r#"<Box className={on && "custom"} />"#,
+        r#"-((__devupValue0) => <div className={__devupValue0 && "custom" || ""} />)(on)"#
+    )]
+    #[case(
+        r#"<Box className={on ? "a1" : "b1"} />"#,
+        r#"-((__devupValue0) => <div className={(__devupValue0 ? "a1" : "b1") || ""} />)(on)"#
+    )]
+    #[case(
+        "<Box className={`custom ${x}`} />",
+        "-((__devupValue0) => <div className={`custom ${__devupValue0}`} />)(`${x}`)"
+    )]
+    #[case("<Box className={cls} />", "-<div className={cls || \"\"} />")]
+    #[serial]
+    fn test_tailwind_keeps_other_classes(#[case] jsx: &str, #[case] expected: &str) {
+        reset_class_map();
+        reset_file_map();
+        let output = extract(
+            "test.tsx",
+            &format!("import {{Box}} from '@devup-ui/core'\n{jsx}\n"),
+            ExtractOption {
+                package: "@devup-ui/core".to_string(),
+                css_dir: "@devup-ui/core".to_string(),
+                single_css: true,
+                import_main_css: false,
+                import_aliases: HashMap::new(),
+            },
+        )
+        .unwrap();
+        // A leading `-` marks code that needs no stylesheet
+        let expected = expected.strip_prefix('-').map_or_else(
+            || format!("import \"@devup-ui/core/devup-ui.css\";\n{expected};\n"),
+            |code| format!("{code};\n"),
+        );
+        assert_eq!(output.code, expected);
+    }
+
     #[test]
     #[serial]
     fn test_tailwind_classname_extraction() {

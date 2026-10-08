@@ -2,7 +2,7 @@ use super::DevupVisitor;
 use super::capture::Captured;
 use super::order::{Reach, reach};
 use crate::utils::unwrap_syntax_only_mut;
-use oxc_allocator::{CloneIn, GetAllocator, TakeIn};
+use oxc_allocator::TakeIn;
 use oxc_ast::ast::{Expression, TemplateElement, TemplateElementValue};
 use oxc_span::{GetSpan, SPAN};
 
@@ -13,9 +13,9 @@ impl<'a> DevupVisitor<'a> {
         captured: &mut Vec<Captured<'a>>,
         style_order: Option<u8>,
     ) {
-        let (styles, replacement) = crate::prop_modify_utils::extract_tailwind_from_class_name(
+        let (styles, replacement) = crate::prop_modify_utils::compile_tailwind_class_name(
             &self.ast,
-            &Some(value.clone_in_with_semantic_ids(self.ast.allocator())),
+            Some(value),
             style_order,
             self.split_filename.as_deref(),
         );
