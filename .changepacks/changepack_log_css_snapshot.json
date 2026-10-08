@@ -1,9 +1,0 @@
-{
-  "changes": {
-    "packages/webpack-plugin/package.json": "Patch",
-    "packages/rsbuild-plugin/package.json": "Patch",
-    "packages/plugin-utils/package.json": "Patch"
-  },
-  "note": "Webpack and Rsbuild builds hold every style in their stylesheets: a stylesheet module is built on its first import, so styles extracted later (the global styles of files webpack or Rsbuild reached late, often outside `src`) were missing from the output. The files the entries reach under `src` are now extracted before the build, the shared base on disk is kept current, and when a stylesheet still changed during the build it is compiled once more, writing only the complete result. Rsbuild serves each stylesheet from the current sheet instead of a module-wide string kept only when it grew, which left edits that shortened the CSS and later builds in the same process stale. plugin-utils adds computeReachableFiles",
-  "date": "2026-09-30T00:00:00.000Z"
-}
