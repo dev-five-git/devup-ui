@@ -57,7 +57,7 @@
   },
   "devDependencies": {
     "typescript": "^7.0.2",
-    "@types/webpack": "^5.28"
+    "@types/webpack": "^5.28.5"
   },
   "peerDependencies": {
     "@devup-ui/webpack-plugin": "*",
