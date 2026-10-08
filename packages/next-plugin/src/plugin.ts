@@ -29,6 +29,10 @@ import {
   startCoordinator,
   takeExtractOutput,
 } from './coordinator'
+import {
+  removeStalePortFile,
+  resolveCoordinatorPortFile,
+} from './coordinator-port'
 import { collectProductionPrewarmFiles } from './prewarm'
 import { elapsedMs, profileStart, reportProfile } from './profile'
 import { loadWasm, loadWebpackPlugin } from './wasm'
@@ -264,7 +268,7 @@ export function DevupUI(
     // disable turbo parallel
     const excludeRegex = createNodeModulesExcludeRegex(include, '.mdx.[tj]sx?$')
 
-    const coordinatorPortFile = join(distDir, 'coordinator.port')
+    const coordinatorPortFile = resolveCoordinatorPortFile(distDir)
 
     // Pre-pass: single-importer collapse ALWAYS runs (files with exactly one
     // importer merge into that importer's bucket, so their identical atoms share
@@ -462,11 +466,9 @@ export function DevupUI(
     // Delete stale port file from previous session so loaders don't connect
     // to a dead coordinator port. The new coordinator writes a fresh port file
     // once it starts listening.
-    try {
-      unlinkSync(coordinatorPortFile)
-    } catch {
-      // Port file doesn't exist (first run) — safe to ignore
-    }
+    // A live coordinator owned by another process is left alone (see
+    // resolveCoordinatorPortFile).
+    removeStalePortFile(coordinatorPortFile)
 
     const coordinator = startCoordinator({
       wasm,

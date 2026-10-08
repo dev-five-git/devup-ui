@@ -5,6 +5,12 @@ import { basename, dirname, join, relative, resolve } from 'node:path'
 
 import type { RawLoaderDefinitionFunction } from 'webpack'
 
+import {
+  isConnectionError,
+  missingPortFileError,
+  parsePortFile,
+  unreachableCoordinatorError,
+} from './coordinator-port'
 import { loadWasm } from './wasm'
 
 export interface DevupUILoaderOptions {
@@ -44,7 +50,7 @@ function readCoordinatorPort(portFile: string): number {
   const cachedPort = cachedPorts.get(portFile)
   if (cachedPort !== undefined) return cachedPort
 
-  const port = Number.parseInt(readFileSync(portFile, 'utf-8').trim(), 10)
+  const port = parsePortFile(readFileSync(portFile, 'utf-8')).port
   cachedPorts.set(portFile, port)
   return port
 }
@@ -153,7 +159,7 @@ const devupUILoader: RawLoaderDefinitionFunction<DevupUILoaderOptions> =
             return
           }
           // Port file never appeared — fall through to error
-          callback(new Error('Coordinator port file not found'))
+          callback(missingPortFileError(coordinatorPortFile))
           return
         }
         try {
@@ -174,7 +180,17 @@ const devupUILoader: RawLoaderDefinitionFunction<DevupUILoaderOptions> =
             port,
             body,
             (err, content, sourceMap, dependencies = []) => {
-              if (err) return callback(err)
+              if (err) {
+                if (isConnectionError(err)) {
+                  // Forget a port that no longer answers so the next file
+                  // re-reads the port file instead of repeating the timeout.
+                  cachedPorts.delete(coordinatorPortFile)
+                  return callback(
+                    unreachableCoordinatorError(coordinatorPortFile, err),
+                  )
+                }
+                return callback(err)
+              }
               for (const dependency of dependencies) {
                 this.addDependency(resolve(dependency))
               }

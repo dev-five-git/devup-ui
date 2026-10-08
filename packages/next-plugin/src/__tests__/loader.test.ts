@@ -856,7 +856,11 @@ describe('devupUILoader', () => {
       // Retries 20 times × 50ms = 1s max, then calls back with error
       await waitFor(() => {
         expect(asyncCallback).toHaveBeenCalledWith(
-          new Error('Coordinator port file not found'),
+          expect.objectContaining({
+            message: expect.stringContaining(
+              'Coordinator port file not found: nonexistent.port',
+            ),
+          }),
         )
       }, 3000)
 
@@ -1047,5 +1051,69 @@ describe('devupUILoader', () => {
 
       requestSpy.mockRestore()
     })
+  })
+})
+
+describe('devupUILoader connection diagnostics', () => {
+  it('reports the unreachable endpoint and port file on connection errors', async () => {
+    existsSyncSpy.mockReturnValue(true)
+    readFileSyncSpy.mockReturnValue('12346')
+
+    const requestSpy = spyOn(http, 'request').mockImplementation(() => {
+      const fakeReq = {
+        on: mock((event: string, handler: (...args: unknown[]) => void) => {
+          if (event === 'error') {
+            queueMicrotask(() =>
+              handler(
+                Object.assign(new Error('refused'), {
+                  code: 'ECONNREFUSED',
+                }),
+              ),
+            )
+          }
+          return fakeReq
+        }),
+        write: mock(),
+        end: mock(),
+      }
+      return asClientRequest(fakeReq)
+    })
+
+    try {
+      const asyncCallback = mock()
+      const t = {
+        getOptions: () => ({
+          package: 'package',
+          cssDir: 'cssDir',
+          sheetFile: 'sheetFile',
+          classMapFile: 'classMapFile',
+          fileMapFile: 'fileMapFile',
+          themeFile: 'themeFile',
+          watch: true,
+          singleCss: true,
+          coordinatorPortFile: 'coordinator.port',
+        }),
+        async: mock().mockReturnValue(asyncCallback),
+        resourcePath: join(process.cwd(), 'src', 'App.tsx'),
+        addDependency: mock(),
+      }
+
+      devupUILoader.bind(asLoaderContext(t))(
+        Buffer.from('source code'),
+        'src/App.tsx',
+      )
+
+      await waitFor(() => {
+        expect(asyncCallback).toHaveBeenCalledWith(
+          expect.objectContaining({
+            message: expect.stringContaining(
+              'Coordinator unreachable at 127.0.0.1:12346 (unknown owner, port file coordinator.port): refused.',
+            ),
+          }),
+        )
+      })
+    } finally {
+      requestSpy.mockRestore()
+    }
   })
 })
