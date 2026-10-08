@@ -44,3 +44,7 @@ harness = false
 [[bench]]
 name = "alloc_benchmark"
 harness = false
+
+[[bench]]
+name = "semantic_pass_benchmark"
+harness = false

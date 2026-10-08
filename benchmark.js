@@ -1,7 +1,29 @@
-import { existsSync, readdirSync, rmSync, statSync } from 'node:fs'
+// Cold-build benchmark of every fixture in benchmark-manifest.json.
+//
+// Sampling policy: every target gets the same number of cold samples
+// (`samples` in the manifest). Samples run in rounds, and each round starts the
+// list at a different place, so no target always runs first (when the runner is
+// coolest) or last. A row is reported as the median of its samples with its
+// spread (min and max); the median is what gets compared and published.
+//
+// The machine-readable run goes to benchmark-run.json: `benchmark-check.js`
+// compares it with the checked baseline, and the README tables are written from
+// the checked results (benchmark-results.json, render-benchmark-readme.js).
+import {
+  existsSync,
+  readdirSync,
+  readFileSync,
+  rmSync,
+  statSync,
+  writeFileSync,
+} from 'node:fs'
 import { join } from 'node:path'
 
 import { execSync } from 'child_process'
+
+import { median, roundOrder } from './benchmark-gate.js'
+
+const manifest = JSON.parse(readFileSync('benchmark-manifest.json', 'utf8'))
 
 function clearBuildFile(dir) {
   const base = join('./benchmark', dir)
@@ -19,10 +41,9 @@ function checkDirSize(path, filter) {
     for (const entry of entries) {
       const entryPath = join(directory, entry)
       if (statSync(entryPath).isDirectory()) {
-        calculateSize(entryPath) // 재귀적으로 하위 폴더 크기 계산
+        calculateSize(entryPath)
       } else if (!filter || filter(entryPath)) {
-        const stats = statSync(entryPath)
-        totalSize += stats.size // 파일 크기 합산
+        totalSize += statSync(entryPath).size
       }
     }
   }
@@ -64,76 +85,66 @@ function benchmark(target) {
   // exists; fall back to `.next` for pure Next.js apps (which never emit dist).
   const distDir = join(benchmarkDir, 'dist')
   const outputDir = existsSync(distDir) ? distDir : join(benchmarkDir, '.next')
-  const duration = performance.getEntriesByName(run)[0].duration / 1000
   return {
-    duration,
-    result: `${target} ${duration.toFixed(2)}s ${checkDirSize(outputDir).toLocaleString()} bytes (css ${checkCssSize(outputDir).toLocaleString()} bytes)`,
+    seconds: performance.getEntriesByName(run)[0].duration / 1000,
+    bytes: checkDirSize(outputDir),
+    cssBytes: checkCssSize(outputDir),
   }
 }
 
-let result = []
-const turboSamples = new Map([
-  ['tailwind-turbo', []],
-  ['devup-ui-single-turbo', []],
-  ['vanilla-extract-devup-ui', []],
-])
+const names = manifest.targets.map((target) => target.name)
+const samples = new Map(
+  names.map((name) => [name, { seconds: [], bytes: [], cssBytes: [] }]),
+)
 
-function record(target) {
-  const sample = benchmark(target)
-  result.push(sample.result)
-}
-
-record('tailwind')
-record('stylex')
-record('stylex-turbo')
-record('stylex-turbo-devup-ui')
-record('vanilla-extract')
-record('kuma-ui')
-record('panda-css')
-record('chakra-ui')
-record('mui')
-record('devup-ui')
-record('devup-ui-single')
-record('tailwind-turbo')
-record('devup-ui-single-turbo')
-record('devup-ui-turbo')
-record('vanilla-extract-devup-ui')
-record('tailwind-turbo-devup-ui')
-record('vinext-devup-ui')
-// Multi-component app exercising single-importer collapse (atom dedup).
-record('devup-ui-collapse')
-
-// A single fixed-order result on a shared CI runner is too noisy for direct
-// comparisons. Run six cold samples in a repeated Latin-square order so each
-// target occupies each position twice, then report their medians. The vanilla
-// target contains a static `.css.ts` module; the single target uses Devup APIs.
-const turboTargets = [
-  'tailwind-turbo',
-  'devup-ui-single-turbo',
-  'vanilla-extract-devup-ui',
-]
-for (let sample = 0; sample < 6; sample++) {
-  const offset = sample % turboTargets.length
-  const order = [
-    ...turboTargets.slice(offset),
-    ...turboTargets.slice(0, offset),
-  ]
-  for (const target of order) {
-    turboSamples.get(target).push(benchmark(target).duration)
+for (let round = 0; round < manifest.samples; round++) {
+  for (const name of roundOrder(names, round, manifest.samples)) {
+    const sample = benchmark(name)
+    const row = samples.get(name)
+    row.seconds.push(sample.seconds)
+    row.bytes.push(sample.bytes)
+    row.cssBytes.push(sample.cssBytes)
   }
 }
 
-function median(samples) {
-  const sorted = samples.toSorted((a, b) => a - b)
-  const middle = sorted.length / 2
-  return (sorted[middle - 1] + sorted[middle]) / 2
-}
+const rows = Object.fromEntries(
+  names.map((name) => {
+    const { seconds, bytes, cssBytes } = samples.get(name)
+    return [
+      name,
+      {
+        samples: seconds,
+        median: median(seconds),
+        min: Math.min(...seconds),
+        max: Math.max(...seconds),
+        bytes: median(bytes),
+        cssBytes: median(cssBytes),
+      },
+    ]
+  }),
+)
 
-for (const target of turboTargets) {
-  const samples = turboSamples.get(target)
-  result.push(
-    `${target} median ${median(samples).toFixed(2)}s (${samples.length} cold samples: ${samples.map((sample) => sample.toFixed(2) + 's').join(', ')})`,
-  )
-}
+console.info(
+  names
+    .map((name) => {
+      const row = rows[name]
+      return `${name} median ${row.median.toFixed(2)}s (${row.samples.length} cold samples: ${row.samples.map((sample) => sample.toFixed(2) + 's').join(', ')}) ${row.bytes.toLocaleString()} bytes (css ${row.cssBytes.toLocaleString()} bytes)`
+    })
+    .join('\n'),
+)
 
-console.info(result.join('\n'))
+writeFileSync(
+  'benchmark-run.json',
+  JSON.stringify(
+    {
+      run: {
+        id: process.env.GITHUB_RUN_ID ?? null,
+        commit: process.env.GITHUB_SHA ?? null,
+      },
+      samples: manifest.samples,
+      rows,
+    },
+    null,
+    2,
+  ),
+)

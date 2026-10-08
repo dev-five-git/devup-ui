@@ -79,31 +79,35 @@ npm install @devup-ui/webpack-plugin
 
 ## Comparison Benchmarks
 
-[Latest CI benchmark](https://github.com/dev-five-git/devup-ui/actions/runs/33254030962) on `ubuntu-latest` with Next.js 16.3.3. All Next.js builds use the native TypeScript 7 CLI for type checking.
+<!-- benchmark:start -->
+[Latest CI benchmark](https://github.com/dev-five-git/devup-ui/actions/runs/37758611477) (commit `467a379a`, Devup UI 1.0.44) on `ubuntu-24.04` with Next.js 16.3.3. Every row is the median of 3 cold builds that ran in rotating order, shown with the range of the samples. All Next.js builds use the native TypeScript 7 CLI for type checking. The English and Korean tables are generated from the same checked result file, `benchmark-results.json`.
 
-Webpack values are one cold build:
+Build Size is every byte of the build output directory (`.next`, or `dist` for vinext); CSS Size is the emitted `.css` files alone, measured separately.
 
-| Library                     | Version | Build Time | Build Size        |
-| --------------------------- | ------- | ---------- | ----------------- |
-| tailwindcss                 | 4.3.3   | 12.81s     | 66,453,190 bytes  |
-| styleX                      | 0.19.0  | 27.61s     | 95,413,403 bytes  |
-| vanilla-extract             | 1.21.2  | 11.96s     | 67,689,923 bytes  |
-| kuma-ui                     | 1.6.4   | 13.07s     | 74,747,637 bytes  |
-| panda-css                   | 1.12.0  | 13.20s     | 70,970,208 bytes  |
-| chakra-ui                   | 3.37.0  | 19.98s     | 206,589,898 bytes |
-| mui                         | 9.4.0   | 13.78s     | 100,603,186 bytes |
-| **devup-ui (per-file CSS)** | 1.0.40  | **10.73s** | 66,535,095 bytes  |
-| **devup-ui (single CSS)**   | 1.0.40  | **10.81s** | 66,535,321 bytes  |
+Webpack:
 
-Turbopack values are medians of six cold builds in alternating order:
+| Library                     | Version | Median Build Time | Range           | Build Size        | CSS Size     |
+| --------------------------- | ------- | ----------------- | --------------- | ----------------- | ------------ |
+| tailwindcss                 | 4.3.3   | 13.02s            | 12.91s - 13.20s | 67,339,250 bytes  | 5,852 bytes  |
+| styleX                      | 0.19.0  | 29.01s            | 28.72s - 29.50s | 96,290,533 bytes  | 425 bytes    |
+| vanilla-extract             | 1.21.2  | 12.34s            | 12.22s - 12.35s | 68,565,511 bytes  | 294 bytes    |
+| kuma-ui                     | 1.6.4   | 13.55s            | 13.49s - 13.57s | 75,627,429 bytes  | 340 bytes    |
+| panda-css                   | 1.12.0  | 13.44s            | 13.29s - 13.58s | 71,849,243 bytes  | 15,615 bytes |
+| chakra-ui                   | 3.37.0  | 20.29s            | 19.95s - 21.06s | 207,425,028 bytes | 0 bytes      |
+| mui                         | 9.4.0   | 14.12s            | 13.78s - 14.26s | 101,476,098 bytes | 0 bytes      |
+| **devup-ui (per-file CSS)** | 1.0.44  | **10.95s**        | 10.87s - 11.09s | 67,427,695 bytes  | 562 bytes    |
+| **devup-ui (single CSS)**   | 1.0.44  | **11.04s**        | 10.88s - 11.40s | 67,436,336 bytes  | 790 bytes    |
 
-| Library                                | Version | Median Build Time | Build Size           |
-| -------------------------------------- | ------- | ----------------- | -------------------- |
-| tailwindcss                            | 4.3.3   | 5.52s             | 38,425,132 bytes     |
-| **devup-ui (direct APIs, single CSS)** | 1.0.40  | **5.46s**         | **36,507,782 bytes** |
-| **devup-ui (static `.css.ts`)**        | 1.0.40  | **5.41s**         | 36,586,883 bytes     |
+Turbopack:
 
-The Turbopack ranges overlap, so the direct-API median is 0.06s (1.1%) ahead but still effectively parity with Tailwind on this fixture. The six cold samples were Tailwind `5.42, 5.56, 5.70, 5.53, 5.41, 5.52s`, direct Devup UI `5.64, 5.40, 5.42, 5.46, 5.54, 5.46s`, and static `.css.ts` `5.42, 5.38, 5.42, 5.47, 5.40, 5.38s`. The fixtures have comparable app shapes, not pixel-identical styling: Tailwind styles the leading paragraph and button more heavily, while Devup UI exercises typed component/style props. Treat these as build-pipeline results rather than a per-rule microbenchmark. The static `.css.ts` row was measured with the former `lite` fast path for static modules; every `.css.ts` module now runs on the full Boa evaluator, which adds about 20 ms for the first module and under 1 ms for each further one.
+| Library                                | Version | Median Build Time | Range         | Build Size       | CSS Size    |
+| -------------------------------------- | ------- | ----------------- | ------------- | ---------------- | ----------- |
+| tailwindcss                            | 4.3.3   | 5.68s             | 5.51s - 5.73s | 38,440,013 bytes | 6,197 bytes |
+| **devup-ui (direct APIs, single CSS)** | 1.0.44  | **5.79s**         | 5.77s - 5.87s | 36,538,765 bytes | 327 bytes   |
+| **devup-ui (static `.css.ts`)**        | 1.0.44  | **5.71s**         | 5.67s - 5.99s | 36,580,207 bytes | 268 bytes   |
+
+The Turbopack ranges do not overlap, so the direct-API median is 0.12s (2.1%) behind Tailwind on this fixture. The 3 cold samples were Tailwind `5.68s, 5.73s, 5.51s`, direct Devup UI `5.77s, 5.79s, 5.87s`, and static `.css.ts` `5.71s, 5.99s, 5.67s`. The fixtures have comparable app shapes, not pixel-identical styling: Tailwind styles the leading paragraph and button more heavily, while Devup UI exercises typed component/style props. Treat these as build-pipeline results rather than a per-rule microbenchmark. Every `.css.ts` module runs on the full Boa evaluator, which adds about 20 ms for the first module and under 1 ms for each further one. CI compares the Devup UI rows with a checked baseline (see `benchmark-gate.js` for the rule) and fails on a regression beyond the measured noise.
+<!-- benchmark:end -->
 
 ## How it works
 

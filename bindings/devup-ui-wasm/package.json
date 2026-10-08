@@ -19,7 +19,7 @@
   ],
   "version": "1.0.83",
   "scripts": {
-    "build": "wasm-pack build --target nodejs --out-dir ./pkg --out-name index && node script.js",
+    "build": "node -e \"require('node:fs').rmSync('pkg', { recursive: true, force: true })\" && wasm-pack build --target nodejs --out-dir ./pkg --out-name index && node script.js",
     "test": "wasm-pack test --node"
   },
   "publishConfig": {

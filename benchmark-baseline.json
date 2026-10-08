@@ -1,0 +1,104 @@
+{
+  "samples": 3,
+  "rows": {
+    "stylex-turbo-devup-ui": {
+      "control": "tailwind-turbo",
+      "ratio": 1.3509,
+      "calibration": [
+        1.3509, 1.3471, 1.2939, 1.3096, 1.4427, 1.417800722121156,
+        1.4176477939108723
+      ],
+      "timeTolerance": 0.22029757939151684,
+      "bytes": 31230251,
+      "cssBytes": 321
+    },
+    "devup-ui": {
+      "control": "tailwind",
+      "ratio": 0.856,
+      "calibration": [
+        0.856, 0.8538, 0.9013, 0.8735, 0.8515, 0.8731578676559654,
+        0.8408134770157684
+      ],
+      "timeTolerance": 0.14132365183231688,
+      "bytes": 67427695,
+      "cssBytes": 562
+    },
+    "devup-ui-single": {
+      "control": "tailwind",
+      "ratio": 0.8704,
+      "calibration": [
+        0.85, 0.8727, 0.9024, 0.8704, 0.859, 0.874014974821355,
+        0.848021750757629
+      ],
+      "timeTolerance": 0.12495002123706572,
+      "bytes": 67436336,
+      "cssBytes": 790
+    },
+    "devup-ui-single-turbo": {
+      "control": "tailwind-turbo",
+      "ratio": 0.9794,
+      "calibration": [
+        0.9702, 0.9794, 0.9701, 1.003, 0.9981, 0.9713218261211682,
+        1.0209678104409452
+      ],
+      "timeTolerance": 0.10387545526025166,
+      "bytes": 36538765,
+      "cssBytes": 327
+    },
+    "devup-ui-turbo": {
+      "control": "tailwind-turbo",
+      "ratio": 0.9901,
+      "calibration": [
+        0.9901, 1, 0.9753, 1.0089, 0.9885, 0.9761607019540564,
+        1.0183680359603602
+      ],
+      "timeTolerance": 0.1,
+      "bytes": 36541732,
+      "cssBytes": 358
+    },
+    "vanilla-extract-devup-ui": {
+      "control": "tailwind-turbo",
+      "ratio": 0.9882,
+      "calibration": [
+        0.9929, 0.9882, 0.9428, 0.9867, 1.0439, 0.9471234772686924,
+        1.0068141946392295
+      ],
+      "timeTolerance": 0.20461445051609004,
+      "bytes": 36580207,
+      "cssBytes": 268
+    },
+    "tailwind-turbo-devup-ui": {
+      "control": "tailwind-turbo",
+      "ratio": 0.9986,
+      "calibration": [
+        0.9986, 1.0059, 0.9532, 0.997, 1.0115, 0.9732950875989826,
+        1.0262587718287204
+      ],
+      "timeTolerance": 0.1463223950104553,
+      "bytes": 36593833,
+      "cssBytes": 1491
+    },
+    "vinext-devup-ui": {
+      "control": "tailwind",
+      "ratio": 0.1962,
+      "calibration": [
+        0.1962, 0.2066, 0.2104, 0.1995, 0.1868, 0.1894402619634694,
+        0.1880300744715731
+      ],
+      "timeTolerance": 0.2405708460754333,
+      "bytes": 1198750,
+      "cssBytes": 29746
+    },
+    "devup-ui-collapse": {
+      "control": "tailwind-turbo",
+      "ratio": 1.0118,
+      "calibration": [
+        1.0384, 1.0118, 0.9519, 1.0015, 1.021, 0.9659282187960732,
+        1.0242688078238835
+      ],
+      "timeTolerance": 0.17098240759043293,
+      "bytes": 31849350,
+      "cssBytes": 1286
+    }
+  }
+}

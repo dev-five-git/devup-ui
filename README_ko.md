@@ -79,31 +79,35 @@ npm install @devup-ui/webpack-plugin
 
 ## 비교 벤치마크
 
-[최신 CI 벤치마크](https://github.com/dev-five-git/devup-ui/actions/runs/33239265133)는 `ubuntu-latest`에서 실행했습니다. 모든 Next.js 빌드는 네이티브 TypeScript 7 CLI로 타입 검사를 수행합니다.
+<!-- benchmark:start -->
+[최신 CI 벤치마크](https://github.com/dev-five-git/devup-ui/actions/runs/37758611477) (커밋 `467a379a`, Devup UI 1.0.44)는 `ubuntu-24.04`에서 Next.js 16.3.3로 실행했습니다. 모든 행은 순서를 돌려 가며 측정한 cold build 3회의 중앙값이며 샘플의 범위를 함께 보여줍니다. 모든 Next.js 빌드는 네이티브 TypeScript 7 CLI로 타입 검사를 수행합니다. 영어와 한국어 표는 같은 결과 파일 `benchmark-results.json`에서 생성합니다.
 
-Webpack 값은 cold build 1회 결과입니다.
+빌드 사이즈는 빌드 출력 디렉터리(`.next`, vinext는 `dist`)의 모든 바이트이고, CSS 사이즈는 출력된 `.css` 파일만 따로 잰 값입니다.
 
-| 라이브러리                  | 버전   | 빌드 시간  | 빌드 사이즈          |
-| --------------------------- | ------ | ---------- | -------------------- |
-| tailwindcss                 | 4.3.3  | 15.55s     | 66,479,450 bytes     |
-| styleX                      | 0.19.0 | 34.27s     | 95,417,163 bytes     |
-| vanilla-extract             | 1.21.2 | 14.91s     | 67,711,539 bytes     |
-| kuma-ui                     | 1.6.4  | 16.43s     | 74,774,187 bytes     |
-| panda-css                   | 1.12.0 | 16.82s     | 70,983,831 bytes     |
-| chakra-ui                   | 3.37.0 | 24.79s     | 206,598,161 bytes    |
-| mui                         | 9.4.0  | 17.12s     | 100,621,370 bytes    |
-| **devup-ui (per-file CSS)** | 1.0.40 | **13.43s** | 66,577,087 bytes     |
-| **devup-ui (single CSS)**   | 1.0.40 | **13.37s** | **66,564,796 bytes** |
+Webpack:
 
-Turbopack 값은 실행 순서를 번갈아 측정한 cold build 6회의 중앙값입니다.
+| 라이브러리                       | 버전     | 빌드 시간 중앙값  | 범위              | 빌드 사이즈            | CSS 사이즈      |
+| --------------------------- | ------ | ---------- | --------------- | ----------------- | ------------ |
+| tailwindcss                 | 4.3.3  | 13.02s     | 12.91s - 13.20s | 67,339,250 bytes  | 5,852 bytes  |
+| styleX                      | 0.19.0 | 29.01s     | 28.72s - 29.50s | 96,290,533 bytes  | 425 bytes    |
+| vanilla-extract             | 1.21.2 | 12.34s     | 12.22s - 12.35s | 68,565,511 bytes  | 294 bytes    |
+| kuma-ui                     | 1.6.4  | 13.55s     | 13.49s - 13.57s | 75,627,429 bytes  | 340 bytes    |
+| panda-css                   | 1.12.0 | 13.44s     | 13.29s - 13.58s | 71,849,243 bytes  | 15,615 bytes |
+| chakra-ui                   | 3.37.0 | 20.29s     | 19.95s - 21.06s | 207,425,028 bytes | 0 bytes      |
+| mui                         | 9.4.0  | 14.12s     | 13.78s - 14.26s | 101,476,098 bytes | 0 bytes      |
+| **devup-ui (per-file CSS)** | 1.0.44 | **10.95s** | 10.87s - 11.09s | 67,427,695 bytes  | 562 bytes    |
+| **devup-ui (single CSS)**   | 1.0.44 | **11.04s** | 10.88s - 11.40s | 67,436,336 bytes  | 790 bytes    |
 
-| 라이브러리                             | 버전   | 빌드 시간 중앙값 | 빌드 사이즈          |
-| -------------------------------------- | ------ | ---------------- | -------------------- |
-| tailwindcss                            | 4.3.3  | 6.55s            | 38,386,955 bytes     |
-| **devup-ui (direct APIs, single CSS)** | 1.0.40 | **6.54s**        | **36,519,234 bytes** |
-| **devup-ui (static `.css.ts`)**        | 1.0.40 | **6.47s**        | 36,550,197 bytes     |
+Turbopack:
 
-Turbopack 측정 범위는 서로 겹치므로 direct API 결과는 이 fixture에서 Tailwind와 사실상 동률입니다. static `.css.ts` 행은 정적 모듈용 `lite` 빠른 경로가 있던 때에 측정한 값입니다. 지금은 모든 `.css.ts`를 full Boa evaluator로 처리하며, 첫 모듈에 약 20ms, 이후 모듈마다 1ms 미만이 더 듭니다.
+| 라이브러리                                  | 버전     | 빌드 시간 중앙값 | 범위            | 빌드 사이즈           | CSS 사이즈     |
+| -------------------------------------- | ------ | --------- | ------------- | ---------------- | ----------- |
+| tailwindcss                            | 4.3.3  | 5.68s     | 5.51s - 5.73s | 38,440,013 bytes | 6,197 bytes |
+| **devup-ui (direct APIs, single CSS)** | 1.0.44 | **5.79s** | 5.77s - 5.87s | 36,538,765 bytes | 327 bytes   |
+| **devup-ui (static `.css.ts`)**        | 1.0.44 | **5.71s** | 5.67s - 5.99s | 36,580,207 bytes | 268 bytes   |
+
+Turbopack 측정 범위는 겹치지 않으므로 direct API 중앙값은 이 fixture에서 Tailwind보다 0.12s(2.1%) 느리며. cold 샘플 3개는 Tailwind `5.68s, 5.73s, 5.51s`, direct Devup UI `5.77s, 5.79s, 5.87s`, static `.css.ts` `5.71s, 5.99s, 5.67s`입니다. fixture는 앱 구조만 비슷하고 스타일이 픽셀 단위로 같지는 않습니다. Tailwind는 첫 문단과 버튼에 더 많은 스타일을 주고, Devup UI는 타입이 있는 컴포넌트/스타일 props를 사용합니다. 규칙 단위 마이크로벤치마크가 아니라 빌드 파이프라인 결과로 보세요. 모든 `.css.ts`는 full Boa evaluator로 처리하며, 첫 모듈에 약 20ms, 이후 모듈마다 1ms 미만이 더 듭니다. CI는 Devup UI 행을 체크인된 기준값과 비교해 측정된 노이즈를 넘는 회귀에서 실패합니다(규칙은 `benchmark-gate.js`).
+<!-- benchmark:end -->
 
 ## 작동 원리
 
