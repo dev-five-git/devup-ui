@@ -3,7 +3,11 @@ use rustc_hash::FxHashSet;
 use std::{collections::BTreeMap, rc::Rc};
 
 impl Walker<'_, '_> {
-    fn native_names(&mut self, module: &Exports, seen: &mut FxHashSet<String>) -> Vec<String> {
+    pub(in crate::barrel::native) fn native_names(
+        &mut self,
+        module: &Exports,
+        seen: &mut FxHashSet<String>,
+    ) -> Vec<String> {
         if !seen.insert(module.path.clone()) {
             return Vec::new();
         }
@@ -44,12 +48,16 @@ impl Walker<'_, '_> {
             Terminal::Failed(message) => Some(Rc::new(Shape::Failed(message))),
             Terminal::OriginalFailure(message) => Some(Rc::new(Shape::OriginalFailure(message))),
             Terminal::Namespace { source, .. } if source == self.package => {
-                Some(Rc::new(Shape::PackageNamespace(
-                    crate::ordinary_ve::APIS
-                        .iter()
-                        .map(|api| ((*api).to_string(), Rc::new(Shape::Api(api))))
-                        .collect(),
-                )))
+                let members = crate::ordinary_ve::APIS
+                    .iter()
+                    .map(|api| ((*api).to_string(), Rc::new(Shape::Api(api))))
+                    .collect();
+                // Only the native package is closed; Devup also exports non-native APIs.
+                Some(Rc::new(if self.package == "@vanilla-extract/css" {
+                    Shape::PackageNamespace(members)
+                } else {
+                    Shape::Namespace(members)
+                }))
             }
             Terminal::Namespace { source, .. } => {
                 if !seen.insert(source.clone()) {

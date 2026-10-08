@@ -201,7 +201,7 @@ fn analyze_mode(module: &ResolvedModule, package: &str, native: bool) -> Exports
                         .insert(specifier.exported.name().to_string(), link);
                 }
             }
-            Statement::VariableDeclaration(declaration) => {
+            Statement::VariableDeclaration(declaration) if !native => {
                 for (id, link) in alias_links(declaration, &imports, &semantic) {
                     imports.extend(id.symbol_id.get().map(|symbol| (symbol, link)));
                 }

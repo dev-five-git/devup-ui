@@ -6,6 +6,7 @@ use oxc_span::{SourceType, Span};
 use super::{Selection, plan::Unit};
 
 mod helpers;
+mod namespace_audit;
 mod owners;
 mod provenance;
 

@@ -47,7 +47,7 @@ pub(super) fn errors(program: &Program<'_>, apis: &Apis<'_, '_>) -> Checked {
                             let data = scoping.get_reference(*reference);
                             apis.semantic.nodes().kind(data.node_id()).span().start == at
                                 && super::api_usage::classify(apis, data.node_id(), *binding)
-                                    .is_none()
+                                    .is_permitted()
                         })
                     {
                         continue;

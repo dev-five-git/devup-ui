@@ -141,18 +141,26 @@ pub(super) fn audit(index: &Index<'_, '_>, apis: &Apis<'_, '_>, graph: &Graph) -
             graph.selected.contains(&owner) || audit.consumed.contains(&owner)
         });
         let kind = api_usage::classify(apis, node.id(), *binding);
+        if matches!(kind, api_usage::Usage::Ordinary) {
+            continue;
+        }
         if allowed
-            && (kind.is_none()
+            && (kind.is_permitted()
                 || !index
                     .callable_context(node.id())
                     .is_none_or(|context| graph.active.contains(&context)))
         {
             continue;
         }
+        let kind = match kind {
+            api_usage::Usage::Ordinary => continue,
+            api_usage::Usage::NativeAllowed => EscapeKind::NativeValue,
+            api_usage::Usage::Escape(kind) => kind,
+        };
         let escape = Escape {
             span: identifier.span,
             symbol,
-            kind: kind.unwrap_or(EscapeKind::NativeValue),
+            kind,
         };
         if allowed {
             audit.checks.push(escape);

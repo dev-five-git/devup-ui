@@ -88,7 +88,7 @@ fn select_with_apis<'a>(
                             !graph.roots.contains(&owner) && !audit.consumed.contains(&owner)
                         })
                         && api_usage::classify(apis, data.node_id(), plan::NativeBinding::Namespace)
-                            .is_none()
+                            .is_permitted()
                 });
         }
     }
@@ -103,10 +103,9 @@ fn select_with_apis<'a>(
         .map(|symbol| semantic.scoping().symbol_name(*symbol))
         .collect();
     let mut mutations: Vec<_> =
-        crate::mutations::uses(program, &|name| native_names.contains(name), None)
+        crate::mutations::resolved_uses(semantic, &|name| native_names.contains(name))
             .into_iter()
-            .filter_map(|(name, uses)| {
-                let symbol = semantic.scoping().get_root_binding(name.as_str().into())?;
+            .filter_map(|(symbol, uses)| {
                 selected_symbols.contains(&symbol).then_some((symbol, uses))
             })
             .flat_map(|(symbol, uses)| {

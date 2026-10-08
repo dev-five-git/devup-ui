@@ -58,7 +58,11 @@ impl Frozen {
             if commonjs && consumer.is_none() {
                 continue;
             }
-            if consumer.is_none() && crate::utils::is_vanilla_extract_file(&filename) && !native {
+            if consumer.is_none()
+                && crate::utils::is_vanilla_extract_file(&filename)
+                && !native
+                && !view.native_carrier
+            {
                 continue;
             }
             let mut rendered = view.render(stylesheet, loader.option)?;

@@ -4,9 +4,13 @@ use std::{collections::BTreeMap, rc::Rc};
 use super::{Exports, Link, Walker};
 
 pub(super) mod aliases;
+mod demand;
 mod facts;
 mod shapes;
 pub(crate) use facts::Facts;
+
+#[cfg(test)]
+mod tests;
 
 #[derive(Debug, Clone)]
 pub(crate) enum Shape {

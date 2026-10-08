@@ -7,11 +7,22 @@ use super::{
     plan::{EscapeKind, NativeBinding},
 };
 
-pub(super) fn classify(
-    apis: &Apis<'_, '_>,
-    node: NodeId,
-    binding: NativeBinding,
-) -> Option<EscapeKind> {
+pub(super) enum Usage {
+    Ordinary,
+    NativeAllowed,
+    Escape(EscapeKind),
+}
+
+impl Usage {
+    pub(super) const fn is_permitted(&self) -> bool {
+        match self {
+            Self::Ordinary | Self::NativeAllowed => true,
+            Self::Escape(_) => false,
+        }
+    }
+}
+
+pub(super) fn classify(apis: &Apis<'_, '_>, node: NodeId, binding: NativeBinding) -> Usage {
     let nodes = apis.semantic.nodes();
     let mut span = nodes.kind(node).span();
     let mut binding = binding;
@@ -29,34 +40,41 @@ pub(super) fn classify(
                 let Some(member_binding) =
                     apis.member(&member.object, member.property.name.as_str())
                 else {
-                    return (binding != NativeBinding::Namespace
-                        || matches!(
+                    return if binding != NativeBinding::Namespace
+                        || !matches!(
                             apis.shape(&member.object).as_deref(),
-                            Some(crate::barrel::native::Shape::PackageNamespace(_))
-                        ))
-                    .then_some(EscapeKind::NativeValue);
+                            Some(crate::barrel::native::Shape::Namespace(members))
+                                if !members.contains_key(member.property.name.as_str())
+                        ) {
+                        Usage::Escape(EscapeKind::NativeValue)
+                    } else {
+                        Usage::Ordinary
+                    };
                 };
                 binding = member_binding;
             }
             AstKind::ComputedMemberExpression(member) if member.object.span() == span => {
-                if apis.key(&member.expression).is_none() {
-                    return Some(EscapeKind::DynamicNamespace);
-                }
-                let key = apis.key(&member.expression)?;
+                let Some(key) = apis.key(&member.expression) else {
+                    return Usage::Escape(EscapeKind::DynamicNamespace);
+                };
                 let Some(member_binding) = apis.member(&member.object, &key) else {
-                    return (binding != NativeBinding::Namespace
-                        || matches!(
+                    return if binding != NativeBinding::Namespace
+                        || !matches!(
                             apis.shape(&member.object).as_deref(),
-                            Some(crate::barrel::native::Shape::PackageNamespace(_))
-                        ))
-                    .then_some(EscapeKind::NativeValue);
+                            Some(crate::barrel::native::Shape::Namespace(members))
+                                if !members.contains_key(&key)
+                        ) {
+                        Usage::Escape(EscapeKind::NativeValue)
+                    } else {
+                        Usage::Ordinary
+                    };
                 };
                 binding = member_binding;
             }
             AstKind::CallExpression(call) if call.callee.span() == span => {
                 return match binding {
-                    NativeBinding::Named { .. } => None,
-                    NativeBinding::Namespace => Some(EscapeKind::NativeValue),
+                    NativeBinding::Named { .. } => Usage::NativeAllowed,
+                    NativeBinding::Namespace => Usage::Escape(EscapeKind::NativeValue),
                 };
             }
             AstKind::VariableDeclarator(declarator)
@@ -65,16 +83,19 @@ pub(super) fn classify(
                     .as_ref()
                     .is_some_and(|init| init.span() == span) =>
             {
-                return (!declarator.id.get_binding_identifiers().iter().all(|id| {
+                return if declarator.id.get_binding_identifiers().iter().all(|id| {
                     id.symbol_id
                         .get()
                         .is_some_and(|symbol| apis.bindings.contains_key(&symbol))
-                }))
-                .then_some(EscapeKind::NativeValue);
+                }) {
+                    Usage::NativeAllowed
+                } else {
+                    Usage::Escape(EscapeKind::NativeValue)
+                };
             }
-            _ => return Some(EscapeKind::NativeValue),
+            _ => return Usage::Escape(EscapeKind::NativeValue),
         }
         span = kind.span();
     }
-    Some(EscapeKind::NativeValue)
+    Usage::Escape(EscapeKind::NativeValue)
 }

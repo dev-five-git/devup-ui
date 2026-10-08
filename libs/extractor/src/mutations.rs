@@ -19,7 +19,9 @@ use crate::css_prop::{CssProp, CssTakers, binding_of};
 use crate::imported_constants::jsx_root_identifier;
 
 mod commonjs;
+mod resolved;
 pub(crate) use commonjs::uses as commonjs_uses;
+pub(crate) use resolved::resolved_uses;
 
 /// How code uses a top-level binding
 #[derive(Debug)]
