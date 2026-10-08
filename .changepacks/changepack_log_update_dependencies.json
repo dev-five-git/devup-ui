@@ -1,0 +1,14 @@
+{
+  "changes": {
+    "bindings/devup-ui-wasm/package.json": "Patch",
+    "packages/bun-plugin/package.json": "Patch",
+    "packages/components/package.json": "Patch",
+    "packages/eslint-plugin/package.json": "Patch",
+    "packages/next-plugin/package.json": "Patch",
+    "packages/react/package.json": "Patch",
+    "packages/rsbuild-plugin/package.json": "Patch",
+    "packages/webpack-plugin/package.json": "Patch"
+  },
+  "note": "Update direct dependencies to their latest published versions and refresh compatible Rust dependencies while retaining React 18 and 19 peer support. Next 16.4.0 no longer reproduces the plain Turbopack worker-off exit hang; the upstream webpack MDX metadata error remains. No new Devup UI build-time errors.",
+  "date": "2026-10-07T00:00:00.000Z"
+}
