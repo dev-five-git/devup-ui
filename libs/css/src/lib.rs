@@ -9,8 +9,10 @@ pub mod is_special_property;
 mod num_to_nm_base;
 pub mod optimize_multi_css_value;
 pub mod optimize_value;
+mod property_names;
 pub mod rm_css_comment;
 mod selector_separator;
+pub mod shorthand;
 pub mod style_selector;
 pub mod theme_tokens;
 pub mod utils;
@@ -257,26 +259,18 @@ static CUSTOM_SHORTHANDS: LazyLock<RwLock<BTreeMap<String, Vec<String>>>> =
 static HAS_CUSTOM_SHORTHANDS: AtomicBool = AtomicBool::new(false);
 
 /// Replace the custom shorthand registry used by style extraction.
-pub fn set_custom_shorthands(shorthands: BTreeMap<String, Vec<String>>) {
-    if let Ok(mut registry) = CUSTOM_SHORTHANDS.write() {
-        let shorthands: BTreeMap<String, Vec<String>> = shorthands
-            .into_iter()
-            .map(|(name, properties)| {
-                let properties = properties
-                    .into_iter()
-                    .flat_map(|property| {
-                        GLOBAL_STYLE_PROPERTY.get(property.as_str()).map_or_else(
-                            || vec![to_kebab_case(&property).into_owned()],
-                            |mapped| mapped.iter().map(|value| (*value).to_string()).collect(),
-                        )
-                    })
-                    .collect();
-                (name, properties)
-            })
-            .collect();
-        HAS_CUSTOM_SHORTHANDS.store(!shorthands.is_empty(), Ordering::Relaxed);
-        *registry = shorthands;
-    }
+pub fn set_custom_shorthands(
+    shorthands: BTreeMap<String, Vec<String>>,
+) -> Result<(), shorthand::InvalidShorthandTarget> {
+    let shorthands = shorthand::normalize_shorthands(shorthands)?;
+    let mut registry = CUSTOM_SHORTHANDS.write().unwrap_or_else(|poisoned| {
+        CUSTOM_SHORTHANDS.clear_poison();
+        poisoned.into_inner()
+    });
+    HAS_CUSTOM_SHORTHANDS.store(!shorthands.is_empty(), Ordering::Relaxed);
+    *registry = shorthands;
+    drop(registry);
+    Ok(())
 }
 
 #[must_use]
@@ -425,6 +419,25 @@ pub fn keyframes_to_keyframes_name(keyframes: &str, filename: Option<&str>) -> S
                 result.push_str(&class_num);
                 result
             }
+        }
+    })
+}
+
+/// The class marking the component `name` defined in `filename`, which other
+/// styles select it by
+#[must_use]
+pub fn component_marker(name: &str, filename: &str) -> String {
+    with_prefix(|prefix| {
+        if is_debug() {
+            format!("{prefix}c-{name}")
+        } else {
+            let class_num = class_num_for_key("", |key| {
+                key.push_str("c-");
+                key.push_str(filename);
+                key.push('-');
+                key.push_str(name);
+            });
+            format!("{prefix}{class_num}")
         }
     })
 }
@@ -751,6 +764,25 @@ mod tests {
             sheet_to_variable_name("background", 1, Some("hover")),
             "--background-1-hover"
         );
+    }
+
+    #[test]
+    #[serial]
+    fn test_component_marker() {
+        set_debug(false);
+        reset_class_map();
+        let child = component_marker("Child", "a.tsx");
+        assert_eq!(child, "a");
+        assert_eq!(component_marker("Child", "a.tsx"), child);
+        assert_eq!(component_marker("Child", "b.tsx"), "b");
+        assert_eq!(component_marker("Other", "a.tsx"), "c");
+        assert_eq!(
+            sheet_to_classname("color", 0, Some("red"), None, None, None),
+            "d"
+        );
+        set_debug(true);
+        assert_eq!(component_marker("Child", "a.tsx"), "c-Child");
+        set_debug(false);
     }
 
     #[test]
@@ -1359,7 +1391,7 @@ mod tests {
 
     #[test]
     #[serial]
-    fn test_custom_shorthand() {
+    fn test_custom_shorthand() -> Result<(), shorthand::InvalidShorthandTarget> {
         set_custom_shorthands(BTreeMap::from([(
             "insetX".to_string(),
             vec![
@@ -1367,17 +1399,18 @@ mod tests {
                 "marginRight".to_string(),
                 "py".to_string(),
             ],
-        )]));
+        )]))?;
 
         assert_eq!(
             disassemble_property("insetX").collect::<Vec<_>>(),
             ["left", "margin-right", "padding-top", "padding-bottom"]
         );
 
-        set_custom_shorthands(BTreeMap::new());
+        set_custom_shorthands(BTreeMap::new())?;
         assert_eq!(
             disassemble_property("insetX").collect::<Vec<_>>(),
             ["inset-x"]
         );
+        Ok(())
     }
 }

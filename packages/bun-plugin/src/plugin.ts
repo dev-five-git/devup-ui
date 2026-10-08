@@ -9,6 +9,8 @@ import {
   type CustomShorthands,
   loadDevupConfig,
   mergeImportAliases,
+  normalizeShorthands,
+  readJsxImportSource,
 } from '@devup-ui/plugin-utils'
 import {
   codeExtract,
@@ -28,7 +30,7 @@ const devupFile = 'devup.json'
 const distDir = 'df'
 const cssDir = resolve(distDir, cssDirName)
 const singleCss = true
-const importAliases = mergeImportAliases()
+const importAliases = mergeImportAliases(undefined, readJsxImportSource())
 // The packages whose imports the extractor compiles: Devup UI, the packages it
 // takes the place of, and StyleX
 const compiledPackages = [
@@ -71,8 +73,8 @@ async function writeDataFiles() {
   await writeFile(join(cssDir, 'devup-ui.css'), getCss(null, false), 'utf-8')
 }
 
-async function initialize({ shorthands }: DevupUIBunPluginOptions = {}) {
-  registerShorthands(shorthands ?? {})
+async function initialize(shorthands: Record<string, readonly string[]>) {
+  registerShorthands(shorthands)
   setModuleResolver(createModuleResolver())
   if (!existsSync(distDir)) await mkdir(distDir, { recursive: true })
   await writeFile(join(distDir, '.gitignore'), '*', 'utf-8')
@@ -143,13 +145,14 @@ async function loadSourceFile(filePath: string, bundling: boolean) {
  * Bun runtime ({@link register}).
  */
 function DevupUI(options: DevupUIBunPluginOptions = {}) {
+  const shorthands = normalizeShorthands(options.shorthands ?? {})
   return {
     name: 'devup-ui',
 
     async setup(build: PluginBuilder) {
       // `Bun.build` hands its config to plugins; the runtime has none
       const bundling = build.config !== undefined
-      await initialize(options)
+      await initialize(shorthands)
       setDebug(options.debug ?? !bundling)
 
       // Resolve devup-ui CSS files onto a path-free virtual id, so nothing

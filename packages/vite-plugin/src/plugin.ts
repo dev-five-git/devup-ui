@@ -15,7 +15,9 @@ import {
   listSourceFiles,
   loadDevupConfig,
   mergeImportAliases,
+  normalizeShorthands,
   planAtomHoist,
+  readJsxImportSource,
 } from '@devup-ui/plugin-utils'
 import {
   codeExtract,
@@ -337,12 +339,15 @@ export function DevupUI({
   atomHoist,
   importAliases: userImportAliases,
 }: Partial<DevupUIPluginOptions> = {}): PluginOption {
-  registerShorthands(shorthands ?? {})
+  registerShorthands(normalizeShorthands(shorthands ?? {}))
   setDebug(debug)
   if (prefix) {
     setPrefix(prefix)
   }
-  const importAliases = mergeImportAliases(userImportAliases)
+  const importAliases = mergeImportAliases(
+    userImportAliases,
+    readJsxImportSource(),
+  )
   const cssMap = new Map()
   let resolvedConfig: ResolvedConfig | undefined
   // Set by the client `generateBundle`, run by the late hook of the sibling

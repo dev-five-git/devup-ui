@@ -15,7 +15,9 @@ import {
   type ImportAliases,
   loadDevupConfig,
   mergeImportAliases,
+  normalizeShorthands,
   planAtomHoist,
+  readJsxImportSource,
 } from '@devup-ui/plugin-utils'
 import {
   codeExtract,
@@ -128,8 +130,11 @@ export const DevupUI = ({
   atomHoist,
   importAliases: userImportAliases,
 }: Partial<DevupUIRsbuildPluginOptions> = {}): RsbuildPlugin => {
-  registerShorthands(shorthands ?? {})
-  const importAliases = mergeImportAliases(userImportAliases)
+  registerShorthands(normalizeShorthands(shorthands ?? {}))
+  const importAliases = mergeImportAliases(
+    userImportAliases,
+    readJsxImportSource(),
+  )
 
   return {
     name: PLUGIN_NAME,

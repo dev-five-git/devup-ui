@@ -2,6 +2,7 @@ import * as fs from 'node:fs'
 import * as fsPromises from 'node:fs/promises'
 import { join } from 'node:path'
 
+import { ShorthandConfigError } from '@devup-ui/plugin-utils'
 import * as wasm from '@devup-ui/wasm'
 import {
   afterEach,
@@ -12,6 +13,46 @@ import {
   mock,
   spyOn,
 } from 'bun:test'
+
+import { register } from '../plugin'
+
+describe('shorthand creation boundary', () => {
+  it('registers canonical targets when the plugin is registered', async () => {
+    const registration = spyOn(wasm, 'registerShorthands').mockReturnValue(
+      undefined,
+    )
+    try {
+      await register({
+        shorthands: { bgx: ['backgroundColor', 'py', '--Gap'] },
+      })
+      expect(registration.mock.calls).toEqual([
+        [
+          {
+            bgx: ['background-color', 'padding-top', 'padding-bottom', '--Gap'],
+          },
+        ],
+      ])
+    } finally {
+      registration.mockRestore()
+    }
+  })
+
+  it('rejects a typo before registration when runtime options bypass types', () => {
+    const registration = spyOn(wasm, 'registerShorthands').mockReturnValue(
+      undefined,
+    )
+    try {
+      expect(() =>
+        Reflect.apply(register, undefined, [
+          { shorthands: { bgx: ['backgroundColour'] } },
+        ]),
+      ).toThrow(ShorthandConfigError)
+      expect(registration).not.toHaveBeenCalled()
+    } finally {
+      registration.mockRestore()
+    }
+  })
+})
 
 let getDefaultThemeSpy: ReturnType<typeof spyOn>
 let existsSyncSpy: ReturnType<typeof spyOn>

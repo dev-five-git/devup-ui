@@ -16,7 +16,9 @@ import {
   type ImportAliases,
   loadDevupConfigSync,
   mergeImportAliases,
+  normalizeShorthands,
   planAtomHoist,
+  readJsxImportSource,
   type WasmImportAliases,
 } from '@devup-ui/plugin-utils'
 import {
@@ -97,8 +99,11 @@ export class DevupUIWebpackPlugin {
     atomHoist,
     importAliases: userImportAliases,
   }: Partial<DevupUIWebpackPluginOptions> = {}) {
-    registerShorthands(shorthands ?? {})
-    this.importAliases = mergeImportAliases(userImportAliases)
+    registerShorthands(normalizeShorthands(shorthands ?? {}))
+    this.importAliases = mergeImportAliases(
+      userImportAliases,
+      readJsxImportSource(),
+    )
 
     this.options = {
       package: libPackage,

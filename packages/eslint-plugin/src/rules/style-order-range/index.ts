@@ -5,67 +5,101 @@ import {
 } from '@typescript-eslint/utils'
 import type { RuleContext } from '@typescript-eslint/utils/ts-eslint'
 
-import { ImportStorage } from '../../utils/import-storage'
+import { ImportStorage, STYLE_COMPONENTS } from '../../utils/import-storage'
+import { componentName, styleArguments } from '../../utils/style-position'
 
 const createRule = ESLintUtils.RuleCreator(
   (name) =>
     `https://github.com/dev-five-git/devup-ui/tree/main/packages/eslint-plugin/src/rules/${name}`,
 )
 
+function isStyleOrder(value: number | string): boolean {
+  const number = Number(value)
+  return (
+    Number.isInteger(number) &&
+    number >= 1 &&
+    number <= 254 &&
+    (typeof value === 'number' || value === String(number))
+  )
+}
+
+function numericValue(expression: TSESTree.Expression): number | null {
+  switch (expression.type) {
+    case AST_NODE_TYPES.Literal:
+      return typeof expression.value === 'number'
+        ? expression.value
+        : typeof expression.value === 'string' ||
+            typeof expression.value === 'boolean' ||
+            expression.value === null
+          ? Number(expression.value)
+          : null
+    case AST_NODE_TYPES.TemplateLiteral:
+      return expression.expressions.length === 0 &&
+        expression.quasis[0].value.cooked !== null
+        ? Number(expression.quasis[0].value.cooked)
+        : null
+    case AST_NODE_TYPES.UnaryExpression: {
+      if (expression.operator !== '+' && expression.operator !== '-')
+        return null
+      const value = numericValue(expression.argument)
+      return value === null
+        ? null
+        : expression.operator === '-'
+          ? -value
+          : value
+    }
+    case AST_NODE_TYPES.TSAsExpression:
+    case AST_NODE_TYPES.TSSatisfiesExpression:
+    case AST_NODE_TYPES.TSNonNullExpression:
+    case AST_NODE_TYPES.TSTypeAssertion:
+      return numericValue(expression.expression)
+    default:
+      return null
+  }
+}
+
+function isStyleOrderExpression(expression: TSESTree.Expression): boolean {
+  switch (expression.type) {
+    case AST_NODE_TYPES.Literal:
+      return (
+        (typeof expression.value === 'number' ||
+          typeof expression.value === 'string') &&
+        isStyleOrder(expression.value)
+      )
+    case AST_NODE_TYPES.UnaryExpression: {
+      const value = numericValue(expression)
+      return value !== null && isStyleOrder(value)
+    }
+    case AST_NODE_TYPES.TemplateLiteral:
+      return (
+        expression.expressions.length === 0 &&
+        expression.quasis[0].value.cooked !== null &&
+        isStyleOrder(expression.quasis[0].value.cooked)
+      )
+    case AST_NODE_TYPES.ConditionalExpression:
+      return (
+        isStyleOrderExpression(expression.consequent) &&
+        isStyleOrderExpression(expression.alternate)
+      )
+    case AST_NODE_TYPES.LogicalExpression:
+      return (
+        expression.operator === '&&' && isStyleOrderExpression(expression.right)
+      )
+    case AST_NODE_TYPES.TSAsExpression:
+    case AST_NODE_TYPES.TSSatisfiesExpression:
+    case AST_NODE_TYPES.TSNonNullExpression:
+    case AST_NODE_TYPES.TSTypeAssertion:
+      return isStyleOrderExpression(expression.expression)
+    default:
+      return false
+  }
+}
+
 function checkStyleOrderRange<T extends RuleContext<string, []>>(
   expression: TSESTree.Expression,
   context: T,
 ) {
-  let value: number | null = null
-
-  if (expression.type === AST_NODE_TYPES.Literal) {
-    if (typeof expression.value === 'number') {
-      value = expression.value
-    } else if (typeof expression.value === 'string') {
-      const parsed = parseInt(expression.value, 10)
-      if (!Number.isNaN(parsed)) {
-        value = parsed
-      }
-    }
-  } else if (expression.type === AST_NODE_TYPES.UnaryExpression) {
-    if (
-      expression.argument.type === AST_NODE_TYPES.Literal &&
-      typeof expression.argument.value === 'number' &&
-      (expression.operator === '-' || expression.operator === '+')
-    ) {
-      value =
-        expression.operator === '-'
-          ? -expression.argument.value
-          : expression.argument.value
-    } else {
-      context.report({
-        node: expression,
-        messageId: 'styleOrderRange',
-      })
-      return
-    }
-  } else if (expression.type === AST_NODE_TYPES.TemplateLiteral) {
-    if (expression.expressions.length > 0) {
-      // error report
-      context.report({
-        node: expression,
-        messageId: 'styleOrderRange',
-      })
-      return
-    } else {
-      value = parseInt(expression.quasis[0].value.raw, 10)
-      if (Number.isNaN(value)) {
-        // error report
-        context.report({
-          node: expression,
-          messageId: 'styleOrderRange',
-        })
-        return
-      }
-    }
-  }
-
-  if (value === null || value < 1 || value > 254) {
+  if (!isStyleOrderExpression(expression)) {
     context.report({
       node: expression,
       messageId: 'styleOrderRange',
@@ -80,7 +114,7 @@ export const styleOrderRange = createRule({
     schema: [],
     messages: {
       styleOrderRange:
-        'styleOrder prop must be a number greater than 0 and less than 255.',
+        'styleOrder must be an integer from 1 to 254 or its decimal digit string, with no signs, spaces or leading zeros.',
       wrongType:
         'styleOrder prop must be a number or a string representing a number.',
     },
@@ -91,7 +125,7 @@ export const styleOrderRange = createRule({
     },
   },
   create(context) {
-    const importStorage = new ImportStorage()
+    const importStorage = new ImportStorage(context)
 
     return {
       ImportDeclaration(node) {
@@ -102,15 +136,17 @@ export const styleOrderRange = createRule({
         const object = node.parent
         const call = object.parent
         if (
-          node.key.type === AST_NODE_TYPES.Identifier &&
           !node.computed &&
-          node.key.name === 'styleOrder' &&
+          ((node.key.type === AST_NODE_TYPES.Identifier &&
+            node.key.name === 'styleOrder') ||
+            (node.key.type === AST_NODE_TYPES.Literal &&
+              node.key.value === 'styleOrder')) &&
           node.value.type !== AST_NODE_TYPES.AssignmentPattern &&
           node.value.type !== AST_NODE_TYPES.TSEmptyBodyFunctionExpression &&
           object.type === AST_NODE_TYPES.ObjectExpression &&
           call?.type === AST_NODE_TYPES.CallExpression &&
           call.arguments.includes(object) &&
-          importStorage.checkContextType(call) === 'UTIL'
+          styleArguments(call, importStorage)?.includes(object)
         ) {
           checkStyleOrderRange(node.value, context)
         }
@@ -119,9 +155,15 @@ export const styleOrderRange = createRule({
         if (
           node.name.type !== AST_NODE_TYPES.JSXIdentifier ||
           node.name.name !== 'styleOrder' ||
-          !node.value ||
-          importStorage.checkContextType(node.parent) !== 'COMPONENT'
+          !STYLE_COMPONENTS.has(
+            componentName(node.parent.name, importStorage) ?? '',
+          )
         ) {
+          return
+        }
+
+        if (!node.value) {
+          context.report({ node, messageId: 'styleOrderRange' })
           return
         }
 

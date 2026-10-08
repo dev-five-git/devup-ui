@@ -1,84 +1,118 @@
-type StyleValue = string | number | null | undefined
+import type { DevupCommonProps } from '../types/props'
+import type {
+  StyleXAttrs,
+  StyleXCheckedNamespaces,
+  StyleXCheckedVariables,
+  StyleXCompiledNamespaces,
+  StyleXCompiledStyle,
+  StyleXConstants,
+  StyleXInclude,
+  StyleXNamespace,
+  StyleXProps,
+  StyleXStyleInput,
+  StyleXThemeOverrides,
+  StyleXVarGroup,
+} from '../types/stylex'
+import type {
+  StyleXFlatDeclarations,
+  StyleXScalar,
+  StyleXTypes,
+  StyleXVariableValue,
+} from '../types/stylex-values'
 
-type StyleProperties = Record<string, StyleValue | Record<string, StyleValue>>
+export type {
+  StyleXAttrs,
+  StyleXCompiledStyle,
+  StyleXInclude,
+  StyleXInlineStyle,
+  StyleXProps,
+  StyleXRawStyles,
+  StyleXStyleInput,
+  StyleXStyles,
+  StyleXThemeOverrides,
+  StyleXVarGroup,
+} from '../types/stylex'
+export type {
+  StyleXDeclarations,
+  StyleXDynamicDeclarations,
+  StyleXFlatDeclarations,
+  StyleXTypes,
+  StyleXValue,
+  StyleXVariableValue,
+} from '../types/stylex-values'
 
-interface StyleXTypes {
-  angle<T extends string | number>(value: T): T
-  color<T extends string>(value: T): T
-  image<T extends string>(value: T): T
-  integer<T extends number>(value: T): T
-  length<T extends string | number>(value: T): T
-  lengthPercentage<T extends string | number>(value: T): T
-  number<T extends number>(value: T): T
-  percentage<T extends string | number>(value: T): T
-  resolution<T extends string>(value: T): T
-  time<T extends string>(value: T): T
-  transformFunction<T extends string>(value: T): T
-  transformList<T extends string>(value: T): T
-  url<T extends string>(value: T): T
-}
-
-export function create<S extends Record<string, StyleProperties>>(
-  _styles: S,
-): { readonly [K in keyof S]: S[K] } {
+export function create<
+  const S extends Readonly<Record<string, StyleXNamespace>>,
+>(_styles: S & StyleXCheckedNamespaces<S>): StyleXCompiledNamespaces<S> {
   throw new Error('Cannot run on the runtime')
 }
 
-export function props(
-  ..._styles: ReadonlyArray<StyleProperties | false | null | undefined>
-): { className?: string; style?: Record<string, string> } {
+export function props(..._styles: readonly StyleXStyleInput[]): StyleXProps {
   throw new Error('Cannot run on the runtime')
 }
 
-export function attrs(
-  ..._styles: ReadonlyArray<StyleProperties | false | null | undefined>
-): { class?: string; style?: Record<string, string> } {
+export function attrs(..._styles: readonly StyleXStyleInput[]): StyleXAttrs {
   throw new Error('Cannot run on the runtime')
 }
 
-export function keyframes(_frames: Record<string, StyleProperties>): string {
+export function keyframes(
+  _frames: Readonly<Record<string, DevupCommonProps>>,
+): string {
   throw new Error('Cannot run on the runtime')
 }
 
-export function firstThatWorks<T extends StyleValue>(..._values: T[]): T {
+export function firstThatWorks<const V extends readonly StyleXScalar[]>(
+  ..._values: V
+): V[number] {
   throw new Error('Cannot run on the runtime')
 }
 
-export function include<S extends StyleProperties>(_style: S): S {
+export function include<P>(_style: StyleXCompiledStyle<P>): StyleXInclude<P> {
   throw new Error('Cannot run on the runtime')
 }
 
-export function defineVars<V extends Record<string, StyleValue>>(
-  _vars: V,
-): { readonly [K in keyof V]: string } {
+export function defineVars<
+  const V extends Readonly<Record<string, StyleXVariableValue>>,
+>(
+  _vars: V & StyleXCheckedVariables<V>,
+): StyleXVarGroup<Extract<keyof V, string>> {
   throw new Error('Cannot run on the runtime')
 }
 
-export function createTheme<V extends Record<string, string>>(
-  _vars: V,
-
-  _overrides: { readonly [K in keyof V]: StyleValue },
-): Record<string, StyleValue> {
+export function createTheme<
+  K extends string,
+  const O extends Readonly<Record<string, StyleXVariableValue>>,
+>(
+  _vars: StyleXVarGroup<K>,
+  _overrides: O &
+    StyleXCheckedVariables<O> &
+    StyleXThemeOverrides<NoInfer<K>> &
+    Record<Exclude<keyof O, NoInfer<K>>, never>,
+): StyleXCompiledStyle {
   throw new Error('Cannot run on the runtime')
 }
 
-export function createThemeContract<V extends Record<string, StyleValue>>(
-  _vars: V,
-): { readonly [K in keyof V]: string } {
+export function createThemeContract<
+  const V extends Readonly<Record<string, string | null>>,
+>(_vars: V): StyleXVarGroup<Extract<keyof V, string>> {
   throw new Error('Cannot run on the runtime')
 }
 
-export function defineConsts<V extends Record<string, StyleValue>>(
-  _consts: V,
-): { readonly [K in keyof V]: V[K] } {
+export function defineConsts<
+  const V extends Readonly<Record<string, string | number | boolean>>,
+>(_consts: V): StyleXConstants<V> {
   throw new Error('Cannot run on the runtime')
 }
 
-export function positionTry(_fallback: StyleProperties): string {
+export function positionTry<const D extends StyleXFlatDeclarations>(
+  _fallback: D & Record<Exclude<keyof D, keyof StyleXFlatDeclarations>, never>,
+): string {
   throw new Error('Cannot run on the runtime')
 }
 
-export function viewTransitionClass(_styles: StyleProperties): string {
+export function viewTransitionClass<const D extends StyleXFlatDeclarations>(
+  _styles: D & Record<Exclude<keyof D, keyof StyleXFlatDeclarations>, never>,
+): string {
   throw new Error('Cannot run on the runtime')
 }
 
