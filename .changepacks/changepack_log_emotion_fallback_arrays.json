@@ -1,0 +1,7 @@
+{
+  "changes": {
+    "bindings/devup-ui-wasm/package.json": "Patch"
+  },
+  "note": "In rule objects written against Emotion, styled-components or vanilla-extract, a property whose value is an array of literals (`background: ['red', 'linear-gradient(...)']`) declares each value in order as a browser fallback, as those libraries do, instead of being read as Devup UI breakpoints; numbers get px as the library gives them. Arrays holding runtime values stay as written",
+  "date": "2026-10-01T00:00:00.000Z"
+}
