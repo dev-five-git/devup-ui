@@ -1,4 +1,24 @@
 pub mod cache_snapshot;
+#[cfg(test)]
+pub mod counter_evidence;
+#[cfg(test)]
+mod counter_evidence_allocation_tests;
+#[cfg(test)]
+mod counter_evidence_identity_tests;
+#[cfg(test)]
+mod counter_evidence_storage_tests;
+#[cfg(test)]
+mod counter_evidence_tests;
+#[cfg(test)]
+pub mod emission_seed;
+#[cfg(test)]
+mod emission_seed_capture_tests;
+#[cfg(test)]
+mod emission_seed_keyframe_tests;
+#[cfg(test)]
+mod emission_seed_test_helpers;
+#[cfg(test)]
+mod emission_seed_tests;
 pub mod name_registry;
 #[cfg(test)]
 mod name_registry_tests;
