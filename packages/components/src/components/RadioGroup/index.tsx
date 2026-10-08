@@ -1,21 +1,27 @@
 'use client'
 import { Flex } from '@devup-ui/react'
-import { useState } from 'react'
+import { useId, useState } from 'react'
 
 import { Radio } from '../Radio'
 
-interface RadioGroupProps {
+type RadioValue = string | number | boolean
+
+interface RadioGroupProps<T extends RadioValue> {
   options: {
-    value: string | number | boolean
+    value: T
     label: React.ReactNode
   }[]
   disabled?: boolean
   direction?: 'row' | 'column'
   variant?: 'default' | 'button'
   style?: React.CSSProperties
-  value?: string | number | boolean
-  onChange?: (value: string | number | boolean) => void
-  defaultValue?: string | number | boolean
+  value?: T
+  onChange?: (value: T) => void
+  defaultValue?: T
+  /** The name the radios share, generated when not given */
+  name?: string
+  /** The accessible name of the group */
+  label?: string
   className?: string
   colors?: {
     primary?: string
@@ -40,7 +46,7 @@ interface RadioGroupProps {
     container?: React.CSSProperties
   }
 }
-export function RadioGroup({
+export function RadioGroup<T extends RadioValue>({
   disabled,
   options,
   direction = 'row',
@@ -53,30 +59,36 @@ export function RadioGroup({
   className,
   classNames,
   styles,
-}: RadioGroupProps) {
-  const [innerValue, setInnerValue] = useState(
-    value ? String(value) : defaultValue ? String(defaultValue) : undefined,
-  )
-  const resultValue = value ? String(value) : (innerValue ?? '')
+  name,
+  label,
+}: RadioGroupProps<T>) {
+  const generatedName = useId()
+  const [innerValue, setInnerValue] = useState<T | undefined>(defaultValue)
+  const resultValue = value !== undefined ? value : innerValue
 
-  function handleChange(_value: string) {
-    onChange?.(_value)
-    setInnerValue(_value)
+  function handleChange(next: T) {
+    onChange?.(next)
+    setInnerValue(next)
   }
 
   return (
     <Flex
+      aria-disabled={disabled}
+      aria-label={label}
       className={classNames?.container}
       flexDir={variant === 'button' ? 'row' : direction}
       gap={variant === 'button' ? 0 : direction === 'row' ? '30px' : '16px'}
+      role="radiogroup"
       style={styles?.container}
     >
       {options.map(({ value: optionValue, label }, idx) => {
         const stringValue = String(optionValue)
         const props = {
-          checked: resultValue === stringValue,
+          checked: resultValue === optionValue,
           disabled,
-          onChange: () => !disabled && handleChange(stringValue),
+          name: name ?? generatedName,
+          value: stringValue,
+          onChange: () => !disabled && handleChange(optionValue),
           className,
           classNames,
           styles,
