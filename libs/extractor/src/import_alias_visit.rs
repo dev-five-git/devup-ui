@@ -229,6 +229,45 @@ pub fn transform_import_aliases<'a>(
     transform_import_aliases_with_edits(code, filename, package, import_aliases).0
 }
 
+/// Packages generating CSS on top of vanilla-extract's, which Devup UI does not
+/// compile
+const VANILLA_EXTRACT_COMPANIONS: [&str; 2] =
+    ["@vanilla-extract/recipes", "@vanilla-extract/sprinkles"];
+
+/// The value imports of vanilla-extract's companion packages, as errors at
+/// their offsets: while `@vanilla-extract/css` compiles to Devup UI, the
+/// rules they generate would never reach the stylesheet
+pub fn companion_errors(code: &str, filename: &str) -> Vec<(u32, String)> {
+    if !VANILLA_EXTRACT_COMPANIONS
+        .iter()
+        .any(|package| code.contains(package))
+    {
+        return Vec::new();
+    }
+    let allocator = Allocator::default();
+    let source_type = SourceType::from_path(filename).unwrap_or_default();
+    let program = Parser::new(&allocator, code, source_type).parse().program;
+    program
+        .body
+        .iter()
+        .filter_map(|statement| match statement {
+            Statement::ImportDeclaration(import)
+                if !import.import_kind.is_type()
+                    && VANILLA_EXTRACT_COMPANIONS.contains(&import.source.value.as_str()) =>
+            {
+                Some((
+                    import.span.start,
+                    format!(
+                        "`{}` generates CSS that Devup UI does not compile, so with the `@vanilla-extract/css` alias its rules would never reach the stylesheet. Fix: write the styles with `css()`, or set `importAliases: {{ '@vanilla-extract/css': false }}` and build with the vanilla-extract plugin",
+                        import.source.value
+                    ),
+                ))
+            }
+            _ => None,
+        })
+        .collect()
+}
+
 /// A replacement of `code[start..end]` by text of `length` bytes
 pub type Edit = (usize, usize, usize);
 
@@ -726,6 +765,32 @@ mod tests {
             "@devup-ui/react",
             &styled_components_alias()
         ));
+    }
+
+    #[test]
+    fn test_vanilla_extract_companions_are_reported() {
+        let errors = companion_errors(
+            "import type { RecipeVariants } from '@vanilla-extract/recipes'
+import { recipe } from '@vanilla-extract/recipes'
+import { style } from '@vanilla-extract/css'
+import { createSprinkles } from '@vanilla-extract/sprinkles'",
+            "a.css.ts",
+        );
+        assert_eq!(errors.len(), 2, "{errors:?}");
+        assert!(
+            errors[0]
+                .1
+                .starts_with("`@vanilla-extract/recipes` generates CSS")
+        );
+        assert!(
+            errors[1]
+                .1
+                .starts_with("`@vanilla-extract/sprinkles` generates CSS")
+        );
+        assert_eq!(
+            companion_errors("import { style } from '@vanilla-extract/css'", "a.css.ts"),
+            vec![]
+        );
     }
 
     #[test]
