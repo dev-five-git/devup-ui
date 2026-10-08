@@ -1,5 +1,10 @@
 use crate::as_visit::As;
 use crate::component::ExportVariableKind;
+use crate::composition::{KnownPart, KnownSide, KnownStyles, overlaps, set_prop_order};
+use crate::css_prop::{
+    ClassNamesParams, CssProp, THEME_READ, ThemeRoot, class_names_params, read_theme,
+    render_function, template_parts, theme_rules_of,
+};
 use crate::css_utils::{
     TemplateStyles, css_to_style_template, keyframes_to_keyframes_style, optimize_css_block,
     template_css_text,
@@ -20,10 +25,19 @@ use crate::extractor::{
         LiteralHandling, extract_style_from_expression, flatten_spreads,
     },
     extract_style_from_jsx::extract_style_from_jsx,
-    extract_style_from_styled::{extract_style_from_styled, take_styled_modifiers},
+    extract_style_from_styled::{
+        FORWARD_REF, Naming, StyledDefinition, StyledExtraction, extended,
+        extract_style_from_styled, forward_ref, read_forward, take_styled_modifiers,
+        with_component,
+    },
 };
 use crate::gen_class_name::{gen_class_names, merge_expression_for_class_name};
-use crate::prop_modify_utils::{convert_class_name, modify_prop_object, modify_props};
+use crate::gen_style::gen_styles;
+use crate::prop_modify_utils::{
+    add_class_and_style, add_class_and_style_to_object, convert_class_name, modify_prop_object,
+    modify_props, written_class_name, written_object_class_name,
+};
+use crate::scope::{Bindings, ClassNamesSymbols, NAMESPACE_STYLED};
 use crate::stylex::{
     StylexDynamicInfo, StylexFunction, StylexNamespaceValue, create_theme_class,
     css_variable_block, css_variable_rules, define_vars_variable, variable_values,
@@ -33,74 +47,106 @@ use crate::{ExtractStyleProp, ExtractStyleValue};
 use css::disassemble_property;
 use css::is_special_property::is_special_property;
 use css::keyframes_to_keyframes_name;
-use oxc_allocator::{Allocator, CloneIn, FromIn, GetAllocator};
+use oxc_allocator::{Allocator, CloneIn, FromIn, GetAllocator, TakeIn};
 use oxc_ast::ast::ImportDeclarationSpecifier::{self, ImportSpecifier};
 use oxc_ast::ast::JSXAttributeItem::Attribute;
 use oxc_ast::ast::JSXAttributeName::Identifier;
 use oxc_ast::ast::{
-    Argument, BinaryOperator, BindingPattern, CallExpression, ChainElement,
+    Argument, ArrayExpressionElement, BinaryOperator, BindingPattern, CallExpression, ChainElement,
     ComputedMemberExpression, Expression, ExpressionStatement, FormalParameter,
     FormalParameterKind, FormalParameters, IdentifierName, ImportDeclaration, ImportOrExportKind,
     JSXAttributeItem, JSXAttributeValue, JSXChild, JSXElement, JSXElementName,
-    JSXExpressionContainer, ObjectProperty, ObjectPropertyKind, Program, PropertyKey, PropertyKind,
-    Statement, StaticMemberExpression, Str, StringLiteral, UnaryOperator, VariableDeclarator,
+    JSXExpressionContainer, ObjectExpression, ObjectProperty, ObjectPropertyKind, Program,
+    PropertyKey, PropertyKind, Statement, StaticMemberExpression, Str, StringLiteral,
+    UnaryOperator, VariableDeclarator,
 };
 use oxc_ast_visit::VisitMut;
+use oxc_ast_visit::walk_mut;
 use oxc_ast_visit::walk_mut::{
     walk_call_expression, walk_expression, walk_expression_statement, walk_import_declaration,
     walk_jsx_attribute_value, walk_jsx_child, walk_jsx_element, walk_program,
     walk_variable_declarator, walk_variable_declarators,
 };
 use oxc_syntax::number::NumberBase;
-use strum::IntoEnumIterator;
+use oxc_syntax::operator::LogicalOperator;
+use oxc_syntax::symbol::SymbolId;
 
 use crate::utils::{
-    ParsedStyleOrder, RUNTIME_VALUE, STYLE_OBJECT, StyleArguments, Suspends, build_time_error,
-    call_with_values, element_error, expression_to_style_order, fixed_value,
-    get_str_by_property_key, get_string_by_literal_expression, get_string_by_property_key, is_pure,
-    jsx_expression_to_style_order, key_error, readable_argument, readable_code, reads_directly,
-    reads_spreads_once, reads_unknown, runtime_classes, runtime_value, runtime_value_error,
-    spread_error, stays_attribute, style_arguments, uncomposable_error, unplaced_error,
-    unreadable_styles, unwrap_syntax_only, unwrap_syntax_only_mut,
+    CLASS_NAMES_CALL, CLASS_NAMES_CHILD, CLASS_NAMES_CLASS_MAP, CLASS_NAMES_PART, CSS_PROP_SPREAD,
+    CSS_PROP_VALUE, LOCAL_STYLES, ParsedStyleOrder, RUNTIME_VALUE, STYLE_OBJECT, StyleArguments,
+    build_time_error, call_with_values, css_prop_error, css_prop_override_error, element_error,
+    fixed_value, get_string_by_literal_expression, get_string_by_property_key, key_error,
+    readable_argument, readable_code, reads_directly, reads_unknown, runtime_classes,
+    runtime_value, runtime_value_error, spread_error, string_class, style_arguments,
+    uncomposable_error, unplaced_error, unreadable_styles, unwrap_syntax_only,
+    unwrap_syntax_only_mut,
 };
 use oxc_ast::builder::AstBuilder;
 use oxc_span::{GetSpan, SPAN};
 use rustc_hash::{FxHashMap, FxHashSet};
-use std::borrow::Cow;
 use std::rc::Rc;
 
-fn property_stays(property: &ObjectProperty<'_>) -> bool {
-    property
-        .key
-        .static_name()
-        .is_some_and(|name| stays_attribute(&name))
+mod branch_capture;
+mod call_order;
+mod call_target;
+mod capture;
+mod class_capture;
+mod element_calls;
+mod imports;
+mod jsx_order;
+mod names;
+mod order;
+#[cfg(test)]
+mod order_tests;
+mod selected_capture;
+#[cfg(test)]
+mod semantics_helpers_tests;
+mod spread_slots;
+mod style_order;
+mod stylex_conditions;
+mod stylex_dynamic;
+mod stylex_includes;
+
+use spread_slots::{Overridden, is_unknown_spread, take_known_overridden};
+
+/// What text among composed parts holds
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum Text {
+    /// Classes, as `css()` takes them
+    Classes,
+    /// CSS text, as Emotion's `css` prop takes it
+    Rules,
 }
 
-/// The value of a JSX attribute that stays an attribute of the element built
-fn attribute_value<'b, 'a>(
-    attribute: &'b oxc_ast::ast::JSXAttribute<'a>,
-) -> Option<&'b Expression<'a>> {
-    match (&attribute.name, &attribute.value) {
-        (Identifier(name), Some(JSXAttributeValue::ExpressionContainer(container)))
-            if stays_attribute(&name.name) =>
-        {
-            container.expression.as_expression()
-        }
-        _ => None,
-    }
+/// Emotion's `css` prop taken off an element: what it composes, the parts
+/// written as `css_prop_value` writes them, and where it was written
+struct CssValue<'a> {
+    value: Expression<'a>,
+    offset: u32,
 }
 
-fn attribute_value_mut<'b, 'a>(
-    attribute: &'b mut oxc_ast::ast::JSXAttribute<'a>,
-) -> Option<&'b mut Expression<'a>> {
-    match (&attribute.name, &mut attribute.value) {
-        (Identifier(name), Some(JSXAttributeValue::ExpressionContainer(container)))
-            if stays_attribute(&name.name) =>
-        {
-            container.expression.as_expression_mut()
-        }
-        _ => None,
-    }
+/// Emotion's `css` prop taken off the props a `jsx()` call gives, with what
+/// compiling it reads of the call
+struct JsxCss<'a> {
+    css: CssValue<'a>,
+    /// The element the call builds, as messages name it
+    element: String,
+    /// The binding the element's type reads
+    symbol: Option<oxc_syntax::symbol::SymbolId>,
+    /// The `className` the props end up with
+    class_name: Option<Expression<'a>>,
+    /// Whether the props keep the type the call gives: no spread, `as` or
+    /// `forwardedAs` can change it
+    renders: bool,
+}
+
+/// `false ?? right` is `false`, which composes nothing
+fn coalesce_keeps_left(logical: &oxc_ast::ast::LogicalExpression<'_>) -> bool {
+    logical.operator == LogicalOperator::Coalesce
+        && matches!(
+            unwrap_syntax_only(&logical.left),
+            Expression::BooleanLiteral(_)
+        )
 }
 
 fn style_property_into_string(style_property: StyleProperty) -> String {
@@ -119,11 +165,8 @@ fn style_property_into_string(style_property: StyleProperty) -> String {
 pub struct DevupVisitor<'a> {
     pub ast: AstBuilder<'a>,
     filename: String,
-    imports: FxHashMap<String, ExportVariableKind>,
-    import_object: Option<String>,
-    jsx_imports: FxHashMap<String, String>,
-    util_imports: FxHashMap<String, Rc<UtilType>>,
-    jsx_object: Option<String>,
+    /// The bindings the file declares for the APIs the build compiles
+    bindings: Bindings,
     package: String,
     /// Entry the rewritten imports of absorbed third-party APIs land on. Its specifiers
     /// register exactly like the main package's so those calls still compile away.
@@ -134,29 +177,35 @@ pub struct DevupVisitor<'a> {
     /// Styles the file writes that cannot be extracted at build time, by the
     /// offset of the code each is about
     pub errors: Vec<(u32, String)>,
-    styled_imports: FxHashSet<String>,
-    /// Tracked `StyleX` default/namespace import names (e.g., `stylex` from `import stylex from '...'`)
-    stylex_imports: FxHashSet<String>,
-    /// Tracked `StyleX` named imports (e.g., `create` from `import { create } from '...'`)
-    stylex_named_imports: FxHashMap<String, StylexFunction>,
     /// Pending `StyleX` namespace map from the most recent `stylex.create()` call.
     /// Set in `visit_expression`, consumed in `visit_variable_declarator`.
     stylex_pending_create: Option<FxHashMap<String, StylexNamespaceValue>>,
-    /// Maps variable names to their namespace→className mappings from `stylex.create()`.
-    /// e.g., "styles" → { "base" → "a b", "active" → "c" }
-    stylex_namespaces: FxHashMap<String, FxHashMap<String, StylexNamespaceValue>>,
-    /// Local names bound to the `Global` component, whose `styles` prop declares
-    /// global CSS instead of rendering markup.
-    global_style_components: FxHashSet<String>,
+    /// Maps bindings to their namespace→className mappings from `stylex.create()`.
+    /// e.g., `styles` → { "base" → "a b", "active" → "c" }
+    stylex_namespaces: FxHashMap<SymbolId, FxHashMap<String, StylexNamespaceValue>>,
+    /// What the `<ClassNames>` child functions being compiled take
+    class_names_scope: Vec<ClassNamesSymbols>,
+    /// The classes each top-level key of a static namespace gives, by binding
+    /// and namespace, so `props()` lets a later namespace's key replace an
+    /// earlier one's as `StyleX` merges them
+    stylex_keys: FxHashMap<SymbolId, FxHashMap<String, Vec<(String, String)>>>,
+    stylex_pending_keys: Option<FxHashMap<String, Vec<(String, String)>>>,
 
-    /// `defineVars` members flattened to `"vars.key"` -> `"var(--x)"`, so a
-    /// `stylex.create()` value referencing one resolves to a static CSS value.
-    stylex_var_refs: FxHashMap<String, String>,
+    /// `defineVars` and `defineConsts` members of a binding as `key` ->
+    /// `"var(--x)"`, so a `stylex.create()` value referencing one resolves to
+    /// a static CSS value.
+    stylex_var_refs: FxHashMap<SymbolId, FxHashMap<String, String>>,
     /// `defineVars` bindings as `vars` -> (`key` -> `--x`), the contract
     /// `createTheme` reassigns.
-    stylex_var_names: FxHashMap<String, FxHashMap<String, String>>,
+    stylex_var_names: FxHashMap<SymbolId, FxHashMap<String, String>>,
     /// `createTheme` bindings as `theme` -> `class`, so `stylex.props(theme)` resolves.
-    stylex_theme_classes: FxHashMap<String, String>,
+    stylex_theme_classes: FxHashMap<SymbolId, String>,
+    /// `StyleX` variables and themes the program imports from other modules,
+    /// by the name it binds them to
+    imported_stylex: (
+        FxHashMap<String, FxHashMap<String, String>>,
+        FxHashMap<String, String>,
+    ),
     /// Pending `defineVars` contract awaiting its variable declarator.
     stylex_pending_vars: Option<FxHashMap<String, String>>,
     /// Pending `createTheme` class awaiting its variable declarator.
@@ -165,23 +214,41 @@ pub struct DevupVisitor<'a> {
     stylex_pending_consts: Option<FxHashMap<String, String>>,
     /// Pending keyframe animation name from most recent `stylex.keyframes()` call.
     stylex_pending_keyframe_name: Option<String>,
-    /// Maps variable names to their keyframe animation names.
-    /// e.g., "fadeIn" → "a-a"
-    stylex_keyframe_names: FxHashMap<String, String>,
+    /// Maps bindings to their keyframe animation names.
+    /// e.g., `fadeIn` → "a-a"
+    stylex_keyframe_names: FxHashMap<SymbolId, String>,
     /// What the element just visited becomes when it is not an element any
     /// more (a dynamic `as`, a spread evaluated once): set in
     /// `visit_jsx_element`, written where the element stands by the visit of
     /// the expression, child or attribute value holding it
     pending_replacement: Option<Expression<'a>>,
-    spreads_read_once: usize,
-    /// Elements whose type only the runtime gives, which each bind it to a
-    /// name of their own
-    runtime_types: usize,
+    names: names::Names,
+    /// The semantic analysis of the program, when built before the visit
+    scoping: Option<Rc<oxc_semantic::Scoping>>,
     /// The classes and keyframes names the file binds to a `const`
     style_values: crate::style_values::StyleValues,
-    /// What the build compiles away: the imports of the package it removes,
-    /// and the bindings aliasing them, which only its calls and elements read
-    compiled_names: FxHashSet<String>,
+    /// The styles of the last `css()` call giving a class, by where it starts,
+    /// for the `const` it initializes
+    css_styles: Option<(u32, Vec<ExtractStyleValue>)>,
+    /// The styles behind `css()` classes the file imports, by binding
+    imported_css: FxHashMap<String, Vec<ExtractStyleValue>>,
+    /// The styled component just built, by where it starts, for the `const`
+    /// it initializes
+    pending_styled: Option<(u32, StyledDefinition<'a>, bool)>,
+    /// The styled components that render a Devup UI component, whose props
+    /// are the style props it takes
+    devup_styled: FxHashSet<oxc_syntax::symbol::SymbolId>,
+    /// The styled bindings other styles select
+    selected_components: FxHashSet<oxc_syntax::symbol::SymbolId>,
+    /// The marker class of the selected styled component the declaration
+    /// being visited defines, with where its definition starts
+    pending_marker: Option<(u32, String)>,
+    /// Whether a generated styled component forwards refs through React's
+    /// `forwardRef`, which the program then imports
+    forwards_refs: bool,
+    /// The styled components the file binds to a `const`, which a component
+    /// extending one renders in its place
+    styled_definitions: FxHashMap<oxc_syntax::symbol::SymbolId, StyledDefinition<'a>>,
     unknown_bindings: crate::imported_constants::Unknown,
     /// Whether `css()` or `styled()` joined as a class, or an element took
     /// through a spread, a binding that may hold rules only running the module
@@ -193,62 +260,77 @@ pub struct DevupVisitor<'a> {
     pub unknown_parts: Vec<(u32, String)>,
     /// Objects and arrays code changes, which styles cannot take whole
     changed_bindings: crate::imported_constants::Changed,
+    /// Which elements take Emotion's `css` prop
+    css_prop: CssProp,
+    /// Whether the visit compiled the `css` prop of an element
+    pub compiled_css_prop: bool,
+    /// Bindings declared to an object, an array, a function or text, which a
+    /// `css` prop cannot compose as a class, besides the top-level constants
+    /// the build reads in its place
+    local_styles: FxHashSet<oxc_syntax::symbol::SymbolId>,
 }
 
-/// Whether `declarator` only aliases what the build compiles away
-/// (`const newCss = css`)
-fn is_alias(declarator: &VariableDeclarator<'_>, compiled: &FxHashSet<String>) -> bool {
-    matches!(&declarator.init, Some(Expression::Identifier(init)) if compiled.contains(init.name.as_str()))
-        && declarator
-            .id
-            .get_binding_identifier()
-            .is_some_and(|id| compiled.contains(id.name.as_str()))
+/// A part of `stylex.props(...)`: the classes of each key a namespace sets,
+/// or of the namespaces a condition chooses between
+enum StylexPart<'a> {
+    Keys(Vec<(String, String)>),
+    Conditional {
+        test: Expression<'a>,
+        consequent: Vec<(String, String)>,
+        alternate: Vec<(String, String)>,
+    },
 }
 
-/// The reads of `names` a program keeps outside the types it erases; with
-/// `scoping`, only those no binding of the program declares
-struct CompiledReads<'s> {
-    names: &'s FxHashSet<String>,
-    scoping: Option<&'s oxc_semantic::Scoping>,
-    found: Vec<(u32, String)>,
+/// The class a key ends up with once `stylex.props(...)` merges the parts;
+/// an empty class when none sets it or `null` removes it
+enum StylexChoice<'a> {
+    Class(String),
+    Conditional {
+        test: Expression<'a>,
+        consequent: Box<StylexChoice<'a>>,
+        alternate: Box<StylexChoice<'a>>,
+    },
 }
 
-impl<'a> oxc_ast_visit::Visit<'a> for CompiledReads<'_> {
-    fn visit_identifier_reference(&mut self, it: &oxc_ast::ast::IdentifierReference<'a>) {
-        if self.names.contains(it.name.as_str())
-            && self.scoping.is_none_or(|scoping| {
-                it.reference_id
-                    .get()
-                    .is_none_or(|reference| scoping.get_reference(reference).symbol_id().is_none())
-            })
-        {
-            self.found.push((it.span.start, it.name.to_string()));
+impl<'a> StylexChoice<'a> {
+    fn copy(&self, ast: &AstBuilder<'a>) -> Self {
+        match self {
+            StylexChoice::Class(class) => StylexChoice::Class(class.clone()),
+            StylexChoice::Conditional {
+                test,
+                consequent,
+                alternate,
+            } => StylexChoice::Conditional {
+                test: test.clone_in(ast.allocator()),
+                consequent: Box::new(consequent.copy(ast)),
+                alternate: Box::new(alternate.copy(ast)),
+            },
         }
     }
-
-    fn visit_ts_type(&mut self, _: &oxc_ast::ast::TSType<'a>) {}
 }
 
 /// Whether `expression`, or a value it chooses, reads an object or array code
-/// changes
+/// changes, through the identifiers `reads` accepts
 fn reads_binding(
     expression: &Expression<'_>,
     changed: &crate::imported_constants::Changed,
+    reads: &dyn Fn(&oxc_ast::ast::IdentifierReference<'_>) -> bool,
 ) -> bool {
     match unwrap_syntax_only(expression) {
         Expression::ArrayExpression(array) => array.elements.iter().any(|element| {
             element
                 .as_expression()
-                .is_some_and(|element| reads_binding(element, changed))
+                .is_some_and(|element| reads_binding(element, changed, reads))
         }),
         Expression::LogicalExpression(logical) => {
-            reads_binding(&logical.left, changed) || reads_binding(&logical.right, changed)
+            reads_binding(&logical.left, changed, reads)
+                || reads_binding(&logical.right, changed, reads)
         }
         Expression::ConditionalExpression(conditional) => {
-            reads_binding(&conditional.consequent, changed)
-                || reads_binding(&conditional.alternate, changed)
+            reads_binding(&conditional.consequent, changed, reads)
+                || reads_binding(&conditional.alternate, changed, reads)
         }
-        expression => changed.read_by(expression),
+        expression => changed.read_by_in(expression, reads),
     }
 }
 
@@ -268,7 +350,11 @@ impl<'a> DevupVisitor<'a> {
                 Argument::SpreadElement(spread) => &spread.argument,
                 argument => argument.to_expression(),
             };
-            if reads_unknown(expression, &self.unknown_bindings) {
+            if self.bindings.kind(expression).is_none()
+                && reads_unknown(expression, &self.unknown_bindings, &|identifier| {
+                    self.bindings.reads_module(identifier)
+                })
+            {
                 self.composes_unknown = true;
                 self.unknown_parts.push((
                     argument.span().start,
@@ -288,13 +374,353 @@ impl<'a> DevupVisitor<'a> {
                 Argument::SpreadElement(spread) => &spread.argument,
                 argument => argument.to_expression(),
             };
-            if reads_binding(expression, &self.changed_bindings) {
+            if self.bindings.kind(expression).is_none()
+                && reads_binding(expression, &self.changed_bindings, &|identifier| {
+                    self.bindings.reads_module(identifier)
+                })
+            {
                 self.errors.push((
                     argument.span().start,
                     build_time_error(api, &readable_argument(argument), STYLE_OBJECT),
                 ));
             }
         }
+    }
+
+    /// `css(...)` composing a class whose styles the build knows: the parts'
+    /// styles merge, a later declaration replacing an earlier one. `None` when
+    /// no part is such a class, or a part is one composing does not read.
+    fn compose_known_styles(&mut self, call: &CallExpression<'a>) -> Option<Expression<'a>> {
+        let arguments: Vec<&Expression<'a>> = call
+            .arguments
+            .iter()
+            .map(|argument| match argument {
+                Argument::SpreadElement(spread) => &spread.argument,
+                argument => argument.to_expression(),
+            })
+            .collect();
+        if !arguments
+            .iter()
+            .any(|argument| self.reads_known_styles(argument))
+        {
+            return None;
+        }
+        let mut parts = Vec::new();
+        for argument in &arguments {
+            self.known_parts(argument, &mut parts, Text::Classes)?;
+        }
+        self.unknown_arguments("css", &call.arguments);
+        self.changed_arguments("css", &call.arguments);
+        let (result, known) = self.composed_class(call.span.start, parts);
+        if let Some(known) = known {
+            self.css_styles = Some((call.span.start, known));
+        }
+        Some(result)
+    }
+
+    /// The classes `parts`, composed at `offset`, give, with the styles they
+    /// always set when no class the build does not know joins them
+    fn composed_class(
+        &mut self,
+        offset: u32,
+        parts: Vec<KnownPart<'a>>,
+    ) -> (Expression<'a>, Option<Vec<ExtractStyleValue>>) {
+        let mut composition = crate::composition::Composition::default();
+        let mut classes = Vec::new();
+        for part in parts {
+            match part {
+                KnownPart::Styles(side) => {
+                    let props = self.part_props(offset, side, None);
+                    composition.apply(&self.ast, props);
+                }
+                KnownPart::Conditional {
+                    test,
+                    consequent,
+                    alternate,
+                } => {
+                    let consequent = self.part_props(offset, consequent, None);
+                    let alternate = self.part_props(offset, alternate, None);
+                    composition.apply_conditional(&self.ast, &test, consequent, alternate);
+                }
+                KnownPart::Class(mut class) => {
+                    self.style_values.read_in(&self.ast, &mut class);
+                    classes.push(class);
+                }
+            }
+        }
+        let known = composition.unconditional().filter(|_| classes.is_empty());
+        let mut props = composition.into_props();
+        // Class names come out in reverse, so they read in composing order
+        props.reverse();
+        let class_name =
+            gen_class_names(&self.ast, &mut props, None, self.split_filename.as_deref());
+        self.styles
+            .extend(props.into_iter().flat_map(ExtractStyleProp::into_extract));
+        let result =
+            merge_expression_for_class_name(&self.ast, classes.into_iter().chain(class_name))
+                .unwrap_or_else(|| Expression::new_string_literal(SPAN, "", None, &self.ast));
+        (result, known)
+    }
+
+    /// Whether `expression`, or a part of it, is a class whose styles the
+    /// build knows
+    fn reads_known_styles(&self, expression: &Expression<'a>) -> bool {
+        match unwrap_syntax_only(expression) {
+            Expression::ArrayExpression(array) => array.elements.iter().any(|element| {
+                element
+                    .as_expression()
+                    .is_some_and(|element| self.reads_known_styles(element))
+            }),
+            Expression::LogicalExpression(logical) => self.reads_known_styles(&logical.right),
+            Expression::ConditionalExpression(conditional) => {
+                self.reads_known_styles(&conditional.consequent)
+                    || self.reads_known_styles(&conditional.alternate)
+            }
+            expression => self.style_values.styles(expression).is_some(),
+        }
+    }
+
+    /// The parts `expression` composes, in order, reading text as `text`;
+    /// `None` for a shape this path does not read, which the general one then
+    /// reads
+    fn known_parts(
+        &self,
+        expression: &Expression<'a>,
+        parts: &mut Vec<KnownPart<'a>>,
+        text: Text,
+    ) -> Option<()> {
+        let clone = |expression: &Expression<'a>| {
+            expression.clone_in_with_semantic_ids(self.ast.allocator())
+        };
+        let (test, consequent, alternate) = match unwrap_syntax_only(expression) {
+            Expression::ArrayExpression(array) => {
+                for element in &array.elements {
+                    self.known_parts(element.as_expression()?, parts, text)?;
+                }
+                return Some(());
+            }
+            Expression::LogicalExpression(logical) if logical.operator == LogicalOperator::And => {
+                (&logical.left, &logical.right, None)
+            }
+            // `left || right` and `left ?? right`: `left` while it applies, `right`
+            // otherwise
+            Expression::LogicalExpression(logical) => {
+                return match self.known_side(&logical.left, text)? {
+                    KnownSide::Styles(side) => {
+                        parts.push(KnownPart::Styles(side));
+                        Some(())
+                    }
+                    KnownSide::Empty if coalesce_keeps_left(logical) => Some(()),
+                    KnownSide::Empty => self.known_parts(&logical.right, parts, text),
+                    KnownSide::Class(left) => {
+                        let test = if logical.operator == LogicalOperator::Or {
+                            clone(&left)
+                        } else {
+                            Expression::new_binary_expression(
+                                SPAN,
+                                clone(&left),
+                                BinaryOperator::Inequality,
+                                Expression::new_null_literal(SPAN, &self.ast),
+                                &self.ast,
+                            )
+                        };
+                        let right = self.known_side(&logical.right, text)?;
+                        self.push_choice(
+                            parts,
+                            &test,
+                            KnownSide::Class(string_class(&self.ast, &left)),
+                            right,
+                        );
+                        Some(())
+                    }
+                };
+            }
+            Expression::ConditionalExpression(conditional) => (
+                &conditional.test,
+                &conditional.consequent,
+                Some(&conditional.alternate),
+            ),
+            Expression::CallExpression(call) if self.class_names_text(&call.callee).is_some() => {
+                let text = self.class_names_text(&call.callee)?;
+                for argument in &call.arguments {
+                    self.known_parts(argument.as_expression()?, parts, text)?;
+                }
+                return Some(());
+            }
+            expression => {
+                match self.known_side(expression, text)? {
+                    KnownSide::Styles(side) => parts.push(KnownPart::Styles(side)),
+                    KnownSide::Class(class) => parts.push(KnownPart::Class(class)),
+                    KnownSide::Empty => {}
+                }
+                return Some(());
+            }
+        };
+        let consequent = self.known_side(consequent, text)?;
+        let alternate = alternate.map_or(Some(KnownSide::Empty), |alternate| {
+            self.known_side(alternate, text)
+        })?;
+        self.push_choice(parts, test, consequent, alternate);
+        Some(())
+    }
+
+    /// `test ? consequent : alternate` among the parts, its classes and its
+    /// styles each choosing on their own
+    fn push_choice(
+        &self,
+        parts: &mut Vec<KnownPart<'a>>,
+        test: &Expression<'a>,
+        consequent: KnownSide<'a>,
+        alternate: KnownSide<'a>,
+    ) {
+        let clone = |expression: &Expression<'a>| {
+            expression.clone_in_with_semantic_ids(self.ast.allocator())
+        };
+        let mut classes = [None, None];
+        let mut styles = [None, None];
+        for (index, side) in [consequent, alternate].into_iter().enumerate() {
+            match side {
+                KnownSide::Styles(side) => styles[index] = Some(side),
+                KnownSide::Class(class) => classes[index] = Some(class),
+                KnownSide::Empty => {}
+            }
+        }
+        if classes.iter().any(Option::is_some) {
+            let [consequent, alternate] = classes.map(|class| {
+                class.unwrap_or_else(|| Expression::new_string_literal(SPAN, "", None, &self.ast))
+            });
+            parts.push(KnownPart::Class(Expression::new_conditional_expression(
+                SPAN,
+                clone(test),
+                consequent,
+                alternate,
+                &self.ast,
+            )));
+        }
+        if styles.iter().any(Option::is_some) {
+            let [consequent, alternate] = styles.map(Option::unwrap_or_default);
+            parts.push(KnownPart::Conditional {
+                test: clone(test),
+                consequent,
+                alternate,
+            });
+        }
+    }
+
+    /// A side of a condition among composed parts. Its code keeps the bindings
+    /// it reads, so the values the file binds them to are read in it.
+    fn known_side(&self, expression: &Expression<'a>, text: Text) -> Option<KnownSide<'a>> {
+        let expression = unwrap_syntax_only(expression);
+        if let Some(styles) = self.style_values.styles(expression) {
+            return Some(KnownSide::Styles(vec![KnownStyles::Known(styles.to_vec())]));
+        }
+        let code = || expression.clone_in_with_semantic_ids(self.ast.allocator());
+        match expression {
+            Expression::StringLiteral(literal)
+                if text == Text::Rules && literal.value.trim().is_empty() =>
+            {
+                Some(KnownSide::Empty)
+            }
+            Expression::ObjectExpression(_)
+            | Expression::StringLiteral(_)
+            | Expression::TemplateLiteral(_)
+                if text == Text::Rules || matches!(expression, Expression::ObjectExpression(_)) =>
+            {
+                Some(KnownSide::Styles(vec![KnownStyles::Rules(code())]))
+            }
+            Expression::NullLiteral(_) | Expression::BooleanLiteral(_) => Some(KnownSide::Empty),
+            Expression::Identifier(identifier) if identifier.name == "undefined" => {
+                Some(KnownSide::Empty)
+            }
+            Expression::Identifier(_)
+            | Expression::StaticMemberExpression(_)
+            | Expression::ComputedMemberExpression(_)
+            | Expression::StringLiteral(_)
+            | Expression::TemplateLiteral(_) => Some(KnownSide::Class(code())),
+            Expression::CallExpression(call) if self.class_names_text(&call.callee).is_some() => {
+                self.folded_side(expression, text)
+            }
+            Expression::ArrayExpression(_) if !self.class_names_scope.is_empty() => {
+                self.folded_side(expression, text)
+            }
+            _ => None,
+        }
+    }
+
+    /// The parts `expression` composes as one side of a condition: only
+    /// styles, or only classes, which join
+    fn folded_side(&self, expression: &Expression<'a>, text: Text) -> Option<KnownSide<'a>> {
+        let mut parts = Vec::new();
+        self.known_parts(expression, &mut parts, text)?;
+        let mut styles = Vec::new();
+        let mut classes = Vec::new();
+        for part in parts {
+            match part {
+                KnownPart::Styles(side) => styles.extend(side),
+                KnownPart::Class(class) => classes.push(class),
+                KnownPart::Conditional { .. } => return None,
+            }
+        }
+        match (styles.is_empty(), classes.is_empty()) {
+            (true, true) => Some(KnownSide::Empty),
+            (false, true) => Some(KnownSide::Styles(styles)),
+            (true, false) => {
+                merge_expression_for_class_name(&self.ast, classes).map(KnownSide::Class)
+            }
+            (false, false) => None,
+        }
+    }
+
+    /// The styles of a part, each at the order the part gives it; `element`
+    /// names the element taking them as its `css` prop, which sets a value
+    /// only the runtime gives as a CSS variable
+    fn part_props(
+        &mut self,
+        offset: u32,
+        styles: Vec<KnownStyles<'a>>,
+        element: Option<&str>,
+    ) -> Vec<ExtractStyleProp<'a>> {
+        let mut props = Vec::new();
+        for styles in styles {
+            match styles {
+                KnownStyles::Known(values) => {
+                    props.extend(values.into_iter().map(ExtractStyleProp::Static));
+                }
+                KnownStyles::Rules(mut rules) => {
+                    self.style_values.read_in(&self.ast, &mut rules);
+                    let ExtractResult {
+                        mut styles,
+                        style_order,
+                        ..
+                    } = extract_style_from_expression(
+                        &self.ast,
+                        None,
+                        &mut rules,
+                        0,
+                        &None,
+                        LiteralHandling::ExpandResponsiveThemeToken,
+                    );
+                    if let Some(element) = element {
+                        let mut unreadable = Vec::new();
+                        unreadable_styles(&styles, true, &mut unreadable);
+                        for (at, code) in unreadable {
+                            self.errors
+                                .push((at, css_prop_error(element, &code, STYLE_OBJECT)));
+                        }
+                    } else if let Some(value) = runtime_value(&styles) {
+                        self.errors
+                            .push((offset, runtime_value_error("css", &value)));
+                    }
+                    if let Some(order) = style_order {
+                        for prop in &mut styles {
+                            set_prop_order(prop, order);
+                        }
+                    }
+                    props.extend(styles);
+                }
+            }
+        }
+        props
     }
     pub fn new(
         allocator: &'a Allocator,
@@ -306,41 +732,51 @@ impl<'a> DevupVisitor<'a> {
         Self {
             ast: AstBuilder::new(allocator),
             filename: filename.to_string(),
-            imports: FxHashMap::default(),
-            jsx_imports: FxHashMap::default(),
+            bindings: Bindings::default(),
             package: package.to_string(),
             compat_package: format!("{package}/compat"),
             css_files,
             styles: FxHashSet::default(),
             errors: Vec::new(),
-            import_object: None,
-            jsx_object: None,
-            util_imports: FxHashMap::default(),
             split_filename,
-            styled_imports: FxHashSet::default(),
-            stylex_imports: FxHashSet::default(),
-            stylex_named_imports: FxHashMap::default(),
-            global_style_components: FxHashSet::default(),
+            class_names_scope: Vec::new(),
             stylex_var_refs: FxHashMap::default(),
             stylex_var_names: FxHashMap::default(),
             stylex_theme_classes: FxHashMap::default(),
+            imported_stylex: (FxHashMap::default(), FxHashMap::default()),
             stylex_pending_vars: None,
             stylex_pending_theme_class: None,
             stylex_pending_consts: None,
             stylex_pending_create: None,
+            stylex_keys: FxHashMap::default(),
+            stylex_pending_keys: None,
             stylex_namespaces: FxHashMap::default(),
             stylex_pending_keyframe_name: None,
             stylex_keyframe_names: FxHashMap::default(),
             pending_replacement: None,
-            spreads_read_once: 0,
-            runtime_types: 0,
+            names: names::Names::default(),
+            scoping: None,
             style_values: crate::style_values::StyleValues::default(),
-            compiled_names: FxHashSet::default(),
+            css_styles: None,
+            pending_styled: None,
+            devup_styled: FxHashSet::default(),
+            selected_components: FxHashSet::default(),
+            pending_marker: None,
+            forwards_refs: false,
+            styled_definitions: FxHashMap::default(),
+            imported_css: FxHashMap::default(),
             unknown_bindings: crate::imported_constants::Unknown::default(),
             composes_unknown: false,
             unknown_parts: Vec::new(),
             changed_bindings: crate::imported_constants::Changed::default(),
+            css_prop: CssProp::Off,
+            compiled_css_prop: false,
+            local_styles: FxHashSet::default(),
         }
+    }
+
+    pub const fn takes_css_prop(&mut self, css_prop: CssProp) {
+        self.css_prop = css_prop;
     }
 
     pub fn unknown_bindings(&mut self, unknown: &crate::imported_constants::Unknown) {
@@ -349,60 +785,19 @@ impl<'a> DevupVisitor<'a> {
 
     /// The style function `callee` names: `css`, `Devup.keyframes`, ...
     fn util_type(&self, callee: &Expression<'a>) -> Option<Rc<UtilType>> {
-        match callee {
-            Expression::Identifier(ident) => self.util_imports.get(ident.name.as_str()),
-            Expression::StaticMemberExpression(member) if !self.util_imports.is_empty() => {
-                let Expression::Identifier(ident) = &member.object else {
-                    return None;
-                };
-                let obj = ident.name.as_str();
-                let prop = member.property.name.as_str();
-                let mut key = String::with_capacity(obj.len() + 1 + prop.len());
-                key.push_str(obj);
-                key.push('.');
-                key.push_str(prop);
-                self.util_imports.get(key.as_str())
-            }
-            _ => None,
-        }
-        .cloned()
-    }
-
-    /// Register what the package imported whole as `local` gives: its
-    /// components, style functions, `styled` and `Global` as members
-    fn import_whole(&mut self, local: &str) {
-        for kind in ExportVariableKind::iter() {
-            self.imports.insert(format!("{local}.{kind}"), kind);
-        }
-        for (name, kind) in [
-            ("css", UtilType::Css),
-            ("globalCss", UtilType::GlobalCss),
-            ("keyframes", UtilType::Keyframes),
-            ("createGlobalStyle", UtilType::GlobalCssComponent),
-        ] {
-            self.util_imports
-                .insert(format!("{local}.{name}"), Rc::new(kind));
-        }
-        self.styled_imports.insert(format!("{local}.styled"));
-        self.global_style_components
-            .insert(format!("{local}.Global"));
+        self.bindings.util(callee)
     }
 
     /// `node` with a `styled` read as a member of the package imported whole
-    /// (`Devup.styled.div`) written as a binding of the same text, which the
-    /// extraction of `styled` reads like the named import
+    /// (`Devup.styled.div`) written as a binding no source can name, which
+    /// the extraction of `styled` reads like the named import
     fn plain_styled(&self, node: &mut Expression<'a>) {
         if let Expression::StaticMemberExpression(member) = unwrap_syntax_only(node)
             && member.property.name == "styled"
             && let Expression::Identifier(object) = &member.object
         {
-            let name = format!("{}.styled", object.name);
-            if self.styled_imports.contains(&name) {
-                *node = Expression::new_identifier(
-                    SPAN,
-                    Str::from_in(name.as_str(), self.ast.allocator()),
-                    &self.ast,
-                );
+            if self.bindings.is_namespace(object) {
+                *node = Expression::new_identifier(SPAN, NAMESPACE_STYLED, &self.ast);
             }
             return;
         }
@@ -416,27 +811,13 @@ impl<'a> DevupVisitor<'a> {
     /// Report where `program` still reads what the build compiled away: its
     /// import is gone, so that code would throw at runtime
     fn report_compiled_reads(&mut self, program: &Program<'a>) {
-        let mut reads = CompiledReads {
-            names: &self.compiled_names,
-            scoping: None,
-            found: Vec::new(),
-        };
-        oxc_ast_visit::Visit::visit_program(&mut reads, program);
-        if reads.found.is_empty() {
-            return;
-        }
-        // A binding the code declares may share the name
-        let scoping = oxc_semantic::SemanticBuilder::new()
-            .build(program)
-            .semantic
-            .into_scoping();
-        let mut reads = CompiledReads {
-            names: &self.compiled_names,
-            scoping: Some(&scoping),
-            found: Vec::new(),
-        };
-        oxc_ast_visit::Visit::visit_program(&mut reads, program);
-        for (offset, name) in reads.found {
+        let reads = self.bindings.compiled_reads(program);
+        self.report_reads(reads);
+    }
+
+    /// Report the reads `reads` tells of what the build compiled away
+    fn report_reads(&mut self, reads: Vec<(u32, String)>) {
+        for (offset, name) in reads {
             if !self.errors.iter().any(|(at, _)| *at == offset) {
                 self.errors.push((
                     offset,
@@ -448,6 +829,51 @@ impl<'a> DevupVisitor<'a> {
         }
     }
 
+    /// Report what `it`, a call or template the build compiles, reads of
+    /// what the build compiled away: its styles are written from the code
+    /// read, which the reads would leave as the names of nothing
+    fn report_lowered_reads(&mut self, it: &Expression<'a>) {
+        let callee = match it {
+            Expression::CallExpression(call) => &call.callee,
+            Expression::TaggedTemplateExpression(tag) => &tag.tag,
+            _ => return,
+        };
+        if self.bindings.compiles(callee) {
+            let reads = self.bindings.lowered_reads(it);
+            self.report_reads(reads);
+        }
+    }
+
+    /// Reuse the semantic analysis of the program as parsed, which constants
+    /// inlined since then leave valid
+    pub fn reuse_scoping(&mut self, scoping: Option<Rc<oxc_semantic::Scoping>>) {
+        self.scoping = scoping;
+    }
+
+    /// The bindings of `program`: the analysis given, or one built when the
+    /// program may bind what the build compiles
+    fn scoping_of(&mut self, program: &Program<'a>) -> Option<Rc<oxc_semantic::Scoping>> {
+        self.scoping.take().or_else(|| {
+            let imports_api = program.body.iter().any(|statement| {
+                matches!(statement, Statement::ImportDeclaration(import)
+                    if import.source.value == self.package
+                        || import.source.value == self.compat_package.as_str()
+                        || import.source.value == "@stylexjs/stylex")
+            });
+            (imports_api
+                || self.css_prop != CssProp::Off
+                || crate::scope::requires(program, &self.package))
+            .then(|| {
+                Rc::new(
+                    oxc_semantic::SemanticBuilder::new()
+                        .build(program)
+                        .semantic
+                        .into_scoping(),
+                )
+            })
+        })
+    }
+
     /// Whether `program` imports a style function whose result it may bind:
     /// `css()` gives a class, `keyframes()` a name
     fn binds_style_results(&self, program: &Program<'a>) -> bool {
@@ -457,74 +883,897 @@ impl<'a> DevupVisitor<'a> {
                 || import.source.value == self.compat_package.as_str())
                 && import.specifiers.iter().flatten().any(|specifier| match specifier {
                     ImportSpecifier(specifier) => {
-                        matches!(specifier.imported.name().as_str(), "css" | "keyframes")
+                        matches!(
+                            specifier.imported.name().as_str(),
+                            "css" | "keyframes" | "styled"
+                        )
                     }
                     _ => true,
                 }))
         })
     }
 
-    /// Put the spreads of `props` that may change when read again, and the
-    /// props written before them, in names read in their place, returning the
-    /// names and what they read: the element reads a spread's `className` and
-    /// `style` beside the spread
-    fn read_spreads_once(&mut self, props: &mut Expression<'a>) -> Vec<(String, Expression<'a>)> {
-        let mut read_once = Vec::new();
-        let Expression::ObjectExpression(object) = props else {
-            return read_once;
+    /// The attributes of an element of the styled Devup UI component `symbol`
+    /// that stay attributes when `takes_styles`: the ones the component reads,
+    /// and the ones that configure it rather than style it
+    fn styled_attributes(
+        &self,
+        symbol: Option<SymbolId>,
+        attributes: &[JSXAttributeItem<'a>],
+        takes_styles: bool,
+    ) -> FxHashSet<String> {
+        let Some(definition) = symbol
+            .filter(|_| takes_styles)
+            .and_then(|symbol| self.styled_definitions.get(&symbol))
+        else {
+            return FxHashSet::default();
         };
-        let suspends = |value: &Expression<'a>| {
-            let mut suspends = Suspends::default();
-            oxc_ast_visit::Visit::visit_expression(&mut suspends, value);
-            suspends.found
-        };
-        let moves = |property: &ObjectPropertyKind<'a>| match property {
-            ObjectPropertyKind::SpreadProperty(spread) => !is_pure(&spread.argument),
-            ObjectPropertyKind::ObjectProperty(property) => {
-                property_stays(property) && suspends(&property.value)
-            }
-        };
-        let stuck = object.properties.iter().any(|property| {
-            matches!(property, ObjectPropertyKind::ObjectProperty(property)
-                if (property.computed || !property_stays(property)) && suspends(&property.value))
-        });
-        let Some(last) = object.properties.iter().rposition(moves) else {
-            return read_once;
-        };
-        if stuck
-            || !object.properties.iter().any(|property| {
-                matches!(property, ObjectPropertyKind::SpreadProperty(spread)
-                    if !is_pure(&spread.argument))
+        attributes
+            .iter()
+            .filter_map(|attribute| match attribute {
+                Attribute(attribute) => match &attribute.name {
+                    Identifier(name)
+                        if matches!(name.name.as_str(), "as" | "forwardedAs" | "theme")
+                            || definition.reads_prop(&name.name) =>
+                    {
+                        Some(name.name.to_string())
+                    }
+                    _ => None,
+                },
+                JSXAttributeItem::SpreadAttribute(_) => None,
             })
-        {
-            return read_once;
-        }
-        for property in object.properties.iter_mut().take(last + 1) {
-            let value = match property {
-                ObjectPropertyKind::SpreadProperty(spread) => &mut spread.argument,
-                ObjectPropertyKind::ObjectProperty(property)
-                    if !property.computed && property_stays(property) =>
-                {
-                    &mut property.value
-                }
-                ObjectPropertyKind::ObjectProperty(_) => continue,
-            };
-            if !is_pure(value) {
-                read_once.push(self.read_once(value));
-            }
-        }
-        read_once
+            .collect()
     }
 
-    fn read_once(&mut self, value: &mut Expression<'a>) -> (String, Expression<'a>) {
-        let name = format!("__devupSpread{}", self.spreads_read_once);
-        self.spreads_read_once += 1;
-        let read = Expression::new_identifier(
-            SPAN,
-            Str::from_in(name.as_str(), self.ast.allocator()),
+    /// Whether the element `name` takes Emotion's `css` prop
+    fn takes_css(&self, name: &JSXElementName<'a>) -> bool {
+        self.css_prop
+            .takes(name, |_| self.bindings.element(name).is_some())
+    }
+
+    /// Take the `css` prop off `element` when it takes one
+    fn take_css_prop(&mut self, element: &mut JSXElement<'a>) -> Option<CssValue<'a>> {
+        if !self.takes_css(&element.opening_element.name) {
+            return None;
+        }
+        let attributes = &element.opening_element.attributes;
+        let written_css = attributes.iter().rposition(|attribute| {
+            matches!(attribute, Attribute(attribute)
+                if matches!(&attribute.name, Identifier(name) if name.name == "css"))
+        });
+        if let Some(spread) = written_css.and_then(|css| {
+            attributes
+                .iter()
+                .skip(css + 1)
+                .find_map(|attribute| match attribute {
+                    JSXAttributeItem::SpreadAttribute(spread)
+                        if is_unknown_spread(&spread.argument) =>
+                    {
+                        Some(spread)
+                    }
+                    _ => None,
+                })
+        }) {
+            self.errors.push((
+                spread.span.start,
+                css_prop_error(
+                    &element.opening_element.name.to_string(),
+                    &format!("...{}", readable_code(&spread.argument)),
+                    CSS_PROP_SPREAD,
+                ),
+            ));
+        }
+        let mut written = None;
+        element.opening_element.attributes.retain_mut(|attribute| {
+            let JSXAttributeItem::Attribute(attribute) = attribute else {
+                return true;
+            };
+            if !matches!(&attribute.name, Identifier(name) if name.name == "css") {
+                return true;
+            }
+            written = Some((attribute.span.start, attribute.value.take()));
+            false
+        });
+        let (offset, value) = written?;
+        let value = match value {
+            None => Expression::new_boolean_literal(SPAN, true, &self.ast),
+            Some(JSXAttributeValue::StringLiteral(literal)) => Expression::StringLiteral(literal),
+            Some(JSXAttributeValue::ExpressionContainer(mut container)) => {
+                container.expression.as_expression_mut().map_or_else(
+                    || Expression::new_identifier(SPAN, "undefined", &self.ast),
+                    |value| value.take_in(&self.ast),
+                )
+            }
+            Some(JSXAttributeValue::Element(element)) => Expression::JSXElement(element),
+            Some(JSXAttributeValue::Fragment(fragment)) => Expression::JSXFragment(fragment),
+        };
+        Some(self.css_value(&element.opening_element.name.to_string(), value, offset))
+    }
+
+    /// The `css` prop `value` of `element`, written at `offset`, with what it
+    /// composes written as parts, then visited
+    fn css_value(&mut self, element: &str, mut value: Expression<'a>, offset: u32) -> CssValue<'a> {
+        self.bindings.remember(&value);
+        let reads = self.bindings.lowered_reads(&value);
+        self.report_reads(reads);
+        self.css_prop_value(element, &mut value);
+        self.visit_expression(&mut value);
+        self.compiled_css_prop = true;
+        CssValue { value, offset }
+    }
+
+    /// `value`, a `css` prop of `element`, with what it composes written as
+    /// parts: a `css()` call as the array of what it composes, CSS text a mixin
+    /// stands in as the parts around the mixin, and a function of the theme as
+    /// the rules it gives
+    fn css_prop_value(&mut self, element: &str, value: &mut Expression<'a>) {
+        let parts = match unwrap_syntax_only_mut(value) {
+            Expression::ArrayExpression(array) => {
+                for part in &mut array.elements {
+                    if let Some(part) = part.as_expression_mut() {
+                        self.css_prop_value(element, part);
+                    }
+                }
+                return;
+            }
+            Expression::ConditionalExpression(conditional) => {
+                self.css_prop_value(element, &mut conditional.consequent);
+                self.css_prop_value(element, &mut conditional.alternate);
+                return;
+            }
+            Expression::LogicalExpression(logical) => {
+                if logical.operator != LogicalOperator::And {
+                    self.css_prop_value(element, &mut logical.left);
+                }
+                self.css_prop_value(element, &mut logical.right);
+                return;
+            }
+            Expression::CallExpression(call)
+                if self
+                    .util_type(&call.callee)
+                    .is_some_and(|util| matches!(util.as_ref(), UtilType::Css)) =>
+            {
+                let elements = call.arguments.drain(..).map(|argument| match argument {
+                    Argument::SpreadElement(spread) => {
+                        ArrayExpressionElement::SpreadElement(spread)
+                    }
+                    argument => argument.into_expression().into(),
+                });
+                Expression::new_array_expression(
+                    SPAN,
+                    oxc_allocator::Vec::from_iter_in(elements, &self.ast),
+                    &self.ast,
+                )
+            }
+            Expression::TaggedTemplateExpression(tag)
+                if self
+                    .util_type(&tag.tag)
+                    .is_some_and(|util| matches!(util.as_ref(), UtilType::Css)) =>
+            {
+                match template_parts(&self.ast, &tag.quasi, true) {
+                    Ok(parts) => Expression::new_array_expression(
+                        SPAN,
+                        oxc_allocator::Vec::from_iter_in(
+                            parts.into_iter().map(Into::into),
+                            &self.ast,
+                        ),
+                        &self.ast,
+                    ),
+                    Err(unplaced) => self.css_prop_failure(element, unplaced),
+                }
+            }
+            Expression::TemplateLiteral(template) => {
+                match template_parts(&self.ast, template, false) {
+                    Ok(_) => return,
+                    Err(unplaced) => self.css_prop_failure(element, unplaced),
+                }
+            }
+            function @ (Expression::ArrowFunctionExpression(_)
+            | Expression::FunctionExpression(_)) => {
+                match theme_rules_of(&self.ast, function, &|identifier| {
+                    self.bindings.symbol(identifier)
+                }) {
+                    Ok(rules) => rules,
+                    Err(unread) => self.css_prop_failure(element, unread),
+                }
+            }
+            _ => return,
+        };
+        *value = parts;
+        self.css_prop_value(element, value);
+    }
+
+    /// Report `code` of the `css` prop of `element`, which cannot be compiled
+    /// for `requirement`, leaving nothing in its place
+    fn css_prop_failure(
+        &mut self,
+        element: &str,
+        (code, requirement): (Expression<'a>, &str),
+    ) -> Expression<'a> {
+        self.errors.push((
+            code.span().start,
+            css_prop_error(element, &readable_code(&code), requirement),
+        ));
+        Expression::new_identifier(SPAN, "undefined", &self.ast)
+    }
+
+    /// The first part a `css` prop `value` composes for which `test` holds
+    fn css_part<'b>(
+        &self,
+        value: &'b Expression<'a>,
+        test: &impl Fn(&Self, &Expression<'a>) -> bool,
+    ) -> Option<&'b Expression<'a>> {
+        match unwrap_syntax_only(value) {
+            Expression::ArrayExpression(array) => array
+                .elements
+                .iter()
+                .filter_map(ArrayExpressionElement::as_expression)
+                .find_map(|part| self.css_part(part, test)),
+            Expression::ConditionalExpression(conditional) => self
+                .css_part(&conditional.consequent, test)
+                .or_else(|| self.css_part(&conditional.alternate, test)),
+            Expression::LogicalExpression(logical) => (logical.operator != LogicalOperator::And)
+                .then(|| self.css_part(&logical.left, test))
+                .flatten()
+                .or_else(|| self.css_part(&logical.right, test)),
+            part => test(self, part).then_some(part),
+        }
+    }
+
+    /// Whether `part` reads a binding `local_styles` holds
+    fn reads_local_styles(&self, part: &Expression<'a>) -> bool {
+        let mut root = part;
+        while let Expression::StaticMemberExpression(member) = root {
+            root = &member.object;
+        }
+        if let Expression::ComputedMemberExpression(member) = root {
+            root = &member.object;
+        }
+        self.style_values
+            .symbol(root)
+            .is_some_and(|symbol| self.local_styles.contains(&symbol))
+    }
+
+    /// The styles `earlier` and the `css` prop of `element` compose, the
+    /// prop's replacing what `earlier` sets, then what the classes
+    /// `class_name` always holds set replacing both
+    fn compose_css_prop(
+        &mut self,
+        element: &str,
+        css: CssValue<'a>,
+        earlier: Vec<ExtractStyleProp<'a>>,
+        class_name: Option<&Expression<'a>>,
+    ) -> Vec<ExtractStyleProp<'a>> {
+        let CssValue { value, offset } = css;
+        let mut parts = Vec::new();
+        let unusable = if let Some(part) = self.css_part(&value, &Self::reads_local_styles) {
+            Some((part, LOCAL_STYLES))
+        } else if self.known_parts(&value, &mut parts, Text::Rules).is_none() {
+            Some((
+                self.css_part(&value, &|visitor, part| {
+                    visitor.known_side(part, Text::Rules).is_none()
+                })
+                .unwrap_or(&value),
+                CSS_PROP_VALUE,
+            ))
+        } else {
+            None
+        };
+        if let Some((part, requirement)) = unusable {
+            let at = if part.span().is_unspanned() {
+                offset
+            } else {
+                part.span().start
+            };
+            self.errors.push((
+                at,
+                css_prop_error(element, &readable_code(part), requirement),
+            ));
+            return earlier;
+        }
+        let unknown = self.css_part(&value, &|visitor, part| {
+            visitor.unknown_bindings.read_by_in(part, &|identifier| {
+                visitor.bindings.reads_module(identifier)
+            })
+        });
+        if let Some(part) = unknown {
+            self.composes_unknown = true;
+            self.unknown_parts.push((
+                part.span().start,
+                css_prop_error(element, &readable_code(part), STYLE_OBJECT),
+            ));
+        }
+        let changed = self.css_part(&value, &|visitor, part| {
+            visitor.changed_bindings.read_by_in(part, &|identifier| {
+                visitor.bindings.reads_module(identifier)
+            })
+        });
+        if let Some(part) = changed {
+            self.errors.push((
+                part.span().start,
+                css_prop_error(element, &readable_code(part), STYLE_OBJECT),
+            ));
+        }
+
+        let mut composition = crate::composition::Composition::default();
+        composition.apply(&self.ast, earlier);
+        let mut classes = Vec::new();
+        for part in parts {
+            match part {
+                KnownPart::Styles(side) => {
+                    let props = self.part_props(offset, side, Some(element));
+                    composition.apply(&self.ast, props);
+                }
+                KnownPart::Conditional {
+                    test,
+                    consequent,
+                    alternate,
+                } => {
+                    let consequent = self.part_props(offset, consequent, Some(element));
+                    let alternate = self.part_props(offset, alternate, Some(element));
+                    composition.apply_conditional(&self.ast, &test, consequent, alternate);
+                }
+                KnownPart::Class(mut class) => {
+                    self.style_values.read_in(&self.ast, &mut class);
+                    classes.push(ExtractStyleProp::Expression {
+                        expression: class,
+                        styles: vec![],
+                    });
+                }
+            }
+        }
+        if let Some(class_name) = class_name {
+            composition.cover(&self.class_styles(class_name));
+        }
+        let mut props = composition.into_props();
+        props.extend(classes);
+        props
+    }
+
+    /// The styles of the classes the file knows that `class_name` always holds
+    fn class_styles(&self, class_name: &Expression<'a>) -> Vec<ExtractStyleValue> {
+        match unwrap_syntax_only(class_name) {
+            Expression::BinaryExpression(binary) if binary.operator == BinaryOperator::Addition => {
+                let mut styles = self.class_styles(&binary.left);
+                styles.extend(self.class_styles(&binary.right));
+                styles
+            }
+            Expression::TemplateLiteral(template) => template
+                .expressions
+                .iter()
+                .flat_map(|class| self.class_styles(class))
+                .collect(),
+            class => self
+                .style_values
+                .styles(class)
+                .map(<[ExtractStyleValue]>::to_vec)
+                .unwrap_or_default(),
+        }
+    }
+
+    /// The classes and CSS variables `props` compile to, which an element
+    /// outside Devup UI takes as its `className` and `style`
+    fn css_class_and_style(
+        &mut self,
+        mut props: Vec<ExtractStyleProp<'a>>,
+    ) -> (Option<Expression<'a>>, Option<Expression<'a>>) {
+        // Class names come out in reverse, so they read in composing order
+        props.reverse();
+        let filename = self.split_filename.as_deref();
+        let class_name = gen_class_names(&self.ast, &mut props, None, filename);
+        let style = gen_styles(&self.ast, &props, filename);
+        self.styles
+            .extend(props.into_iter().flat_map(ExtractStyleProp::into_extract));
+        (class_name, style)
+    }
+
+    /// The styles the `css` prop of `element` gives it. When the element is a
+    /// styled component the file binds to `symbol`, it renders the tag it
+    /// renders in its place if `renders`, which comes with them, its styles
+    /// composed under the prop's; `None` when the build cannot order them.
+    fn css_prop_styles(
+        &mut self,
+        element: &str,
+        css: CssValue<'a>,
+        symbol: Option<oxc_syntax::symbol::SymbolId>,
+        renders: bool,
+        class_name: Option<&Expression<'a>>,
+    ) -> Option<(Option<String>, Vec<ExtractStyleProp<'a>>)> {
+        let allocator = self.ast.allocator();
+        let clone = |styles: &[ExtractStyleProp<'a>]| -> Vec<ExtractStyleProp<'a>> {
+            styles
+                .iter()
+                .map(|style| style.clone_in(allocator))
+                .collect()
+        };
+        let definition = symbol.and_then(|symbol| self.styled_definitions.get(&symbol));
+        let inline = definition
+            .filter(|_| renders)
+            .and_then(StyledDefinition::inline)
+            .map(|(tag, styles)| (tag.to_string(), clone(styles)));
+        let marker = definition.and_then(StyledDefinition::marker).map(|marker| {
+            ExtractStyleProp::Expression {
+                expression: Expression::new_string_literal(
+                    SPAN,
+                    Str::from_in(marker, allocator),
+                    None,
+                    &self.ast,
+                ),
+                styles: vec![],
+            }
+        });
+        let own = definition.map(|definition| clone(definition.styles()));
+        if let Some((tag, styles)) = inline {
+            let mut props = self.compose_css_prop(element, css, styles, class_name);
+            props.extend(marker);
+            return Some((Some(tag), props));
+        }
+        let offset = css.offset;
+        let props = self.compose_css_prop(element, css, vec![], class_name);
+        if own.is_some_and(|own| overlaps(&own, &props)) {
+            self.errors.push((offset, css_prop_override_error(element)));
+            return None;
+        }
+        Some((None, props))
+    }
+
+    /// Compile the `css` prop of `element`, an element outside Devup UI
+    fn lower_css_prop(&mut self, element: &mut JSXElement<'a>, css: CssValue<'a>) {
+        let name = element.opening_element.name.to_string();
+        let attributes = &element.opening_element.attributes;
+        let class_name = written_class_name(&self.ast, attributes);
+        let renders = attributes.iter().all(|attribute| match attribute {
+            JSXAttributeItem::Attribute(attribute) => !matches!(&attribute.name,
+                Identifier(name) if name.name == "as" || name.name == "forwardedAs"),
+            JSXAttributeItem::SpreadAttribute(_) => false,
+        });
+        let symbol = match &element.opening_element.name {
+            JSXElementName::IdentifierReference(reference) => {
+                self.style_values.reference_symbol(reference)
+            }
+            _ => None,
+        };
+        let Some((tag, props)) =
+            self.css_prop_styles(&name, css, symbol, renders, class_name.as_ref())
+        else {
+            return;
+        };
+        if let Some(tag) = tag {
+            crate::as_visit::rename(
+                &self.ast,
+                element,
+                JSXElementName::new_identifier(
+                    SPAN,
+                    Str::from_in(tag.as_str(), self.ast.allocator()),
+                    &self.ast,
+                ),
+            );
+        }
+        let (class_name, style) = self.css_class_and_style(props);
+        add_class_and_style(
             &self.ast,
+            &mut element.opening_element.attributes,
+            class_name,
+            style,
         );
-        (name, std::mem::replace(value, read))
+    }
+
+    /// Take the `css` prop off the props a `jsx()` call gives when the element
+    /// it builds takes one; `devup` tells a Devup UI component
+    fn take_jsx_css_prop(
+        &mut self,
+        call: &mut CallExpression<'a>,
+        devup: bool,
+    ) -> Option<JsxCss<'a>> {
+        let element = call.arguments.first()?.as_expression()?;
+        let takes = match self.css_prop {
+            CssProp::Off => false,
+            css_prop => devup || css_prop.takes_type(element, |_| false),
+        };
+        if !takes {
+            return None;
+        }
+        let name = match unwrap_syntax_only(element) {
+            Expression::StringLiteral(literal) => literal.value.to_string(),
+            element => readable_code(element),
+        };
+        let symbol = self.style_values.symbol(unwrap_syntax_only(element));
+        let Some(Argument::ObjectExpression(props)) = call.arguments.get_mut(1) else {
+            return None;
+        };
+        let written_css = props.properties.iter().rposition(|property| {
+            matches!(property, ObjectPropertyKind::ObjectProperty(property)
+                if !property.computed && property.key.static_name().is_some_and(|key| key == "css"))
+        });
+        let unknown_spread = written_css.and_then(|css| {
+            props
+                .properties
+                .iter()
+                .skip(css + 1)
+                .find_map(|property| match property {
+                    ObjectPropertyKind::SpreadProperty(spread)
+                        if is_unknown_spread(&spread.argument) =>
+                    {
+                        Some(spread)
+                    }
+                    _ => None,
+                })
+        });
+        if let Some(spread) = unknown_spread {
+            self.errors.push((
+                spread.span.start,
+                css_prop_error(
+                    &name,
+                    &format!("...{}", readable_code(&spread.argument)),
+                    CSS_PROP_SPREAD,
+                ),
+            ));
+        }
+        let mut written = None;
+        let ast = &self.ast;
+        props.properties.retain_mut(|property| {
+            let ObjectPropertyKind::ObjectProperty(property) = property else {
+                return true;
+            };
+            if property.computed || property.key.static_name().is_none_or(|key| key != "css") {
+                return true;
+            }
+            written = Some((property.span.start, property.value.take_in(ast)));
+            false
+        });
+        let (offset, value) = written?;
+        let class_name = written_object_class_name(&self.ast, &props.properties);
+        let renders = props.properties.iter().all(|property| match property {
+            ObjectPropertyKind::ObjectProperty(property) => {
+                !property.computed
+                    && property
+                        .key
+                        .static_name()
+                        .is_none_or(|key| key != "as" && key != "forwardedAs")
+            }
+            ObjectPropertyKind::SpreadProperty(_) => false,
+        });
+        let css = self.css_value(&name, value, offset);
+        Some(JsxCss {
+            css,
+            element: name,
+            symbol,
+            class_name,
+            renders,
+        })
+    }
+
+    /// Compile the `css` prop a `jsx()` call building an element outside
+    /// Devup UI gives
+    fn lower_jsx_css_prop(&mut self, call: &mut CallExpression<'a>, jsx: JsxCss<'a>) {
+        let JsxCss {
+            css,
+            element,
+            symbol,
+            class_name,
+            renders,
+        } = jsx;
+        let Some((tag, props)) =
+            self.css_prop_styles(&element, css, symbol, renders, class_name.as_ref())
+        else {
+            return;
+        };
+        if let Some(tag) = tag {
+            call.arguments[0] = Argument::from(Expression::new_string_literal(
+                SPAN,
+                Str::from_in(tag.as_str(), self.ast.allocator()),
+                None,
+                &self.ast,
+            ));
+        }
+        let (class_name, style) = self.css_class_and_style(props);
+        if let Some(Argument::ObjectExpression(props)) = call.arguments.get_mut(1) {
+            add_class_and_style_to_object(&self.ast, &mut props.properties, class_name, style);
+        }
+    }
+
+    /// What Emotion's `<ClassNames>` element renders, its classes compiled;
+    /// `None` for any other element
+    fn class_names(&mut self, element: &mut JSXElement<'a>) -> Option<Expression<'a>> {
+        let JSXElementName::IdentifierReference(name) = &element.opening_element.name else {
+            return None;
+        };
+        if !self.bindings.is_class_names(name) {
+            return None;
+        }
+        Some(
+            self.compile_class_names(element)
+                .unwrap_or_else(|(at, code)| {
+                    self.errors
+                        .push((at, element_error("ClassNames", &code, CLASS_NAMES_CHILD)));
+                    Expression::new_null_literal(SPAN, &self.ast)
+                }),
+        )
+    }
+
+    /// `<ClassNames>{({ css, cx, theme }) => rendered}</ClassNames>` as
+    /// `rendered`: its `css` and `cx` calls compile as `css()`, and the theme
+    /// they read becomes the CSS variables the `ThemeProvider` sets. `Err`
+    /// holds where and what the build cannot compile.
+    fn compile_class_names(
+        &mut self,
+        element: &mut JSXElement<'a>,
+    ) -> Result<Expression<'a>, (u32, String)> {
+        if let Some(attribute) = element.opening_element.attributes.first() {
+            return Err((attribute.span().start, "an attribute".to_string()));
+        }
+        let span = element.span;
+        let mut children = element
+            .children
+            .iter_mut()
+            .filter(|child| !matches!(child, JSXChild::Text(text) if text.value.trim().is_empty()));
+        let (Some(JSXChild::ExpressionContainer(container)), None) =
+            (children.next(), children.next())
+        else {
+            return Err((span.start, "children".to_string()));
+        };
+        let Some(function) = container.expression.as_expression_mut() else {
+            return Err((container.span.start, "{}".to_string()));
+        };
+        let function_at = function.span().start;
+        let function_code = readable_code(function);
+        let Some((names, symbols, body)) = render_function(function).and_then(|(params, body)| {
+            Some((
+                class_names_params(params)?,
+                ClassNamesSymbols::of(params),
+                body,
+            ))
+        }) else {
+            return Err((function_at, function_code));
+        };
+        let mut rendered = body.take_in(&self.ast);
+        let mut calls = ClassNamesCalls {
+            ast: &self.ast,
+            bindings: &self.bindings,
+            names,
+            symbols,
+            unread: None,
+        };
+        calls.visit_expression(&mut rendered);
+        if let Some((unread, requirement)) = calls.unread {
+            self.errors.push((
+                unread.span().start,
+                element_error("ClassNames", &readable_code(&unread), requirement),
+            ));
+        }
+        self.class_names_scope.push(symbols);
+        self.visit_expression(&mut rendered);
+        self.class_names_scope.pop();
+        Ok(rendered)
+    }
+
+    /// What a call of the `css` or `cx` a `<ClassNames>` child function
+    /// takes composes: `css` reads text as CSS, `cx` as classes
+    fn class_names_text(&self, callee: &Expression<'a>) -> Option<Text> {
+        let Expression::Identifier(callee) = callee else {
+            return None;
+        };
+        let symbol = self.bindings.symbol(callee);
+        self.class_names_scope.iter().rev().find_map(|names| {
+            if ClassNamesSymbols::is(names.css, symbol) {
+                Some(Text::Rules)
+            } else if ClassNamesSymbols::is(names.cx, symbol) {
+                Some(Text::Classes)
+            } else {
+                None
+            }
+        })
+    }
+
+    /// Replace `it`, when a call of the `css` or `cx` a `<ClassNames>` child
+    /// function takes, with the classes it composes
+    fn compile_class_names_call(&mut self, it: &mut Expression<'a>) -> bool {
+        let Expression::CallExpression(call) = it else {
+            return false;
+        };
+        if self.class_names_text(&call.callee).is_none() {
+            return false;
+        }
+        let offset = call.span.start;
+        self.unknown_arguments("css", &call.arguments);
+        self.changed_arguments("css", &call.arguments);
+        let mut parts = Vec::new();
+        *it = if self.known_parts(it, &mut parts, Text::Classes).is_some() {
+            self.composed_class(offset, parts).0
+        } else {
+            self.errors.push((
+                offset,
+                element_error("ClassNames", &readable_code(it), CLASS_NAMES_PART),
+            ));
+            Expression::new_string_literal(SPAN, "", None, &self.ast)
+        };
+        true
+    }
+}
+
+/// The calls of the `css` and `cx` a `<ClassNames>` child function takes,
+/// readied to compose: the theme their rules read becomes the CSS variables
+/// the `ThemeProvider` sets, an object `cx` takes the conditions of its
+/// classes, and CSS text `css` tags the parts around its mixins. The first
+/// code the build cannot ready so is kept.
+struct ClassNamesCalls<'r, 'a> {
+    ast: &'r AstBuilder<'a>,
+    bindings: &'r Bindings,
+    names: ClassNamesParams<'a>,
+    symbols: ClassNamesSymbols,
+    unread: Option<(Expression<'a>, &'static str)>,
+}
+
+impl<'a> ClassNamesCalls<'_, 'a> {
+    fn calls(&self, callee: &Expression<'a>, slot: Option<SymbolId>) -> bool {
+        matches!(callee, Expression::Identifier(callee)
+            if ClassNamesSymbols::is(slot, self.bindings.symbol(callee)))
+    }
+
+    fn read_theme(&mut self, expression: &mut Expression<'a>, value: bool) {
+        let Some(name) = self.names.theme else {
+            return;
+        };
+        let theme = ThemeRoot {
+            name,
+            symbol: self.symbols.theme,
+            key: None,
+        };
+        let bindings = self.bindings;
+        if let Err(unread) = read_theme(self.ast, expression, theme, value, &|identifier| {
+            bindings.symbol(identifier)
+        }) {
+            self.unread.get_or_insert((unread, THEME_READ));
+        }
+    }
+
+    /// `part` of what `cx` composes with each object in it written as the
+    /// conditions of the classes it names
+    fn class_maps(&mut self, part: &mut Expression<'a>) {
+        let classes = match unwrap_syntax_only_mut(part) {
+            Expression::ArrayExpression(array) => {
+                for part in &mut array.elements {
+                    if let Some(part) = part.as_expression_mut() {
+                        self.class_maps(part);
+                    }
+                }
+                return;
+            }
+            Expression::ConditionalExpression(conditional) => {
+                self.class_maps(&mut conditional.consequent);
+                self.class_maps(&mut conditional.alternate);
+                return;
+            }
+            Expression::LogicalExpression(logical) => {
+                if logical.operator != LogicalOperator::And {
+                    self.class_maps(&mut logical.left);
+                }
+                self.class_maps(&mut logical.right);
+                return;
+            }
+            Expression::ObjectExpression(object) => self.class_map(object),
+            _ => return,
+        };
+        *part = classes;
+    }
+
+    /// `{ name: condition }` as `[condition && 'name']`
+    fn class_map(&mut self, object: &mut ObjectExpression<'a>) -> Expression<'a> {
+        let mut classes = oxc_allocator::Vec::new_in(self.ast);
+        for property in object.properties.drain(..) {
+            let mut property = match property {
+                ObjectPropertyKind::ObjectProperty(property)
+                    if property.kind == PropertyKind::Init && !property.method =>
+                {
+                    property
+                }
+                ObjectPropertyKind::ObjectProperty(mut property) => {
+                    let value = property.value.take_in(self.ast);
+                    self.unread.get_or_insert((value, CLASS_NAMES_CLASS_MAP));
+                    continue;
+                }
+                ObjectPropertyKind::SpreadProperty(mut spread) => {
+                    let argument = spread.argument.take_in(self.ast);
+                    self.unread.get_or_insert((argument, CLASS_NAMES_CLASS_MAP));
+                    continue;
+                }
+            };
+            let class = if property.computed
+                && let Some(key) = property.key.as_expression_mut()
+            {
+                key.take_in(self.ast)
+            } else {
+                let name = property.key.static_name().unwrap_or_default();
+                Expression::new_string_literal(
+                    SPAN,
+                    Str::from_in(name.as_ref(), self.ast.allocator()),
+                    None,
+                    self.ast,
+                )
+            };
+            let condition = property.value.take_in(self.ast);
+            classes.push(
+                Expression::new_logical_expression(
+                    SPAN,
+                    condition,
+                    LogicalOperator::And,
+                    class,
+                    self.ast,
+                )
+                .into(),
+            );
+        }
+        Expression::new_array_expression(SPAN, classes, self.ast)
+    }
+}
+
+impl<'a> VisitMut<'a> for ClassNamesCalls<'_, 'a> {
+    fn visit_expression(&mut self, it: &mut Expression<'a>) {
+        let Expression::TaggedTemplateExpression(tagged) = it else {
+            walk_mut::walk_expression(self, it);
+            return;
+        };
+        if !self.calls(&tagged.tag, self.symbols.css) {
+            walk_mut::walk_expression(self, it);
+            return;
+        }
+        for expression in &mut tagged.quasi.expressions {
+            self.read_theme(expression, true);
+            self.visit_expression(expression);
+        }
+        *it = match template_parts(self.ast, &tagged.quasi, true) {
+            Ok(parts) => Expression::new_call_expression(
+                SPAN,
+                tagged.tag.take_in(self.ast),
+                None::<oxc_allocator::Box<'_, oxc_ast::ast::TSTypeParameterInstantiation<'_>>>,
+                oxc_allocator::Vec::from_iter_in(parts.into_iter().map(Argument::from), self.ast),
+                false,
+                self.ast,
+            ),
+            Err(unplaced) => {
+                self.unread.get_or_insert(unplaced);
+                Expression::new_identifier(SPAN, "undefined", self.ast)
+            }
+        };
+    }
+
+    fn visit_call_expression(&mut self, call: &mut CallExpression<'a>) {
+        let cx = self.calls(&call.callee, self.symbols.cx);
+        if !cx && !self.calls(&call.callee, self.symbols.css) {
+            walk_call_expression(self, call);
+            return;
+        }
+        for argument in &mut call.arguments {
+            let part = match argument {
+                Argument::SpreadElement(spread) => &mut spread.argument,
+                argument => argument.to_expression_mut(),
+            };
+            if cx {
+                self.class_maps(part);
+            }
+            self.read_theme(part, false);
+            self.visit_expression(part);
+        }
+    }
+
+    /// A read of the theme or of `css` and `cx` the calls do not take
+    fn visit_identifier_reference(&mut self, it: &mut oxc_ast::ast::IdentifierReference<'a>) {
+        let symbol = self.bindings.symbol(it);
+        let requirement = if ClassNamesSymbols::is(self.symbols.theme, symbol) {
+            THEME_READ
+        } else if ClassNamesSymbols::is(self.symbols.css, symbol)
+            || ClassNamesSymbols::is(self.symbols.cx, symbol)
+        {
+            CLASS_NAMES_CALL
+        } else {
+            return;
+        };
+        self.unread.get_or_insert_with(|| {
+            (
+                Expression::new_identifier(it.span, it.name, self.ast),
+                requirement,
+            )
+        });
     }
 }
 
@@ -533,26 +1782,17 @@ impl<'a> DevupVisitor<'a> {
     /// it produces. `props()` targets React (`className`), `attrs()` targets raw HTML
     /// (`class`); everything else about the two calls is identical.
     fn stylex_class_attribute(&self, callee: &Expression) -> Option<&'static str> {
-        // Check namespace/default call: stylex.props(...)
-        if let Expression::StaticMemberExpression(member) = callee
-            && let Expression::Identifier(ident) = &member.object
-            && self.stylex_imports.contains(ident.name.as_str())
-        {
-            return match member.property.name.as_str() {
-                "props" => Some("className"),
-                "attrs" => Some("class"),
-                _ => None,
-            };
+        match self.bindings.stylex_function(callee) {
+            Some(StylexFunction::Props) => Some("className"),
+            Some(StylexFunction::Attrs) => Some("class"),
+            _ => None,
         }
-        // Check named import call: props(...)
-        if let Expression::Identifier(ident) = callee {
-            return match self.stylex_named_imports.get(ident.name.as_str()) {
-                Some(StylexFunction::Props) => Some("className"),
-                Some(StylexFunction::Attrs) => Some("class"),
-                _ => None,
-            };
-        }
-        None
+    }
+
+    /// The styles behind the `css()` classes the program imports from other
+    /// modules, by the name it binds them to
+    pub fn import_css(&mut self, styles: FxHashMap<String, Vec<ExtractStyleValue>>) {
+        self.imported_css = styles;
     }
 
     /// `StyleX` variables and themes the program imports from other modules,
@@ -562,14 +1802,66 @@ impl<'a> DevupVisitor<'a> {
         vars: FxHashMap<String, FxHashMap<String, String>>,
         themes: FxHashMap<String, String>,
     ) {
+        self.imported_stylex = (vars, themes);
+    }
+
+    /// Read the `StyleX` variables and themes the program imports as the
+    /// bindings that hold them
+    fn bind_imported_stylex(&mut self) {
+        let (vars, themes) = std::mem::take(&mut self.imported_stylex);
         for (name, contract) in vars {
-            for (key, variable) in &contract {
-                self.stylex_var_refs
-                    .insert(format!("{name}.{key}"), format!("var({variable})"));
+            if let Some(symbol) = self.bindings.imported(&name) {
+                self.stylex_var_refs.entry(symbol).or_default().extend(
+                    contract
+                        .iter()
+                        .map(|(key, variable)| (key.clone(), format!("var({variable})"))),
+                );
+                self.stylex_var_names.insert(symbol, contract.clone());
             }
-            self.stylex_var_names.insert(name, contract);
         }
-        self.stylex_theme_classes.extend(themes);
+        for (name, class) in themes {
+            if let Some(symbol) = self.bindings.imported(&name) {
+                self.stylex_theme_classes.insert(symbol, class);
+            }
+        }
+    }
+
+    /// The keyframe names and `defineVars` members, as `vars.key`, that the
+    /// bindings `visible` to a `stylex.create()` call stand for
+    fn stylex_names(
+        &self,
+        visible: &FxHashMap<String, SymbolId>,
+    ) -> (FxHashMap<String, String>, FxHashMap<String, String>) {
+        let keyframes = visible
+            .iter()
+            .filter_map(|(name, symbol)| {
+                Some((
+                    name.clone(),
+                    self.stylex_keyframe_names.get(symbol)?.clone(),
+                ))
+            })
+            .collect();
+        let vars = visible
+            .iter()
+            .filter_map(|(name, symbol)| Some((name, self.stylex_var_refs.get(symbol)?)))
+            .flat_map(|(name, members)| {
+                members
+                    .iter()
+                    .map(move |(key, value)| (format!("{name}.{key}"), value.clone()))
+            })
+            .collect();
+        (keyframes, vars)
+    }
+
+    /// The namespaces of the `stylex.create()` binding `object` reads
+    fn stylex_namespace(
+        &self,
+        object: &Expression<'a>,
+    ) -> Option<&FxHashMap<String, StylexNamespaceValue>> {
+        let Expression::Identifier(object) = object else {
+            return None;
+        };
+        self.stylex_namespaces.get(&self.bindings.symbol(object)?)
     }
 
     /// The key of an entry of a `StyleX` object, or `None` after reporting a
@@ -616,49 +1908,280 @@ impl<'a> DevupVisitor<'a> {
         )
     }
 
-    /// The `StyleX` API a callee names, through either the namespace form
-    /// (`stylex.defineVars`) or a named import.
-    fn stylex_function(&self, callee: &Expression) -> Option<StylexFunction> {
-        match callee {
-            Expression::StaticMemberExpression(member)
-                if matches!(&member.object, Expression::Identifier(ident)
-                    if self.stylex_imports.contains(ident.name.as_str())) =>
-            {
-                StylexFunction::from_export_name(member.property.name.as_str())
-            }
-            Expression::Identifier(ident) => {
-                self.stylex_named_imports.get(ident.name.as_str()).cloned()
-            }
-            _ => None,
-        }
+    fn is_stylex_call(&self, callee: &Expression, function: &StylexFunction) -> bool {
+        self.bindings.stylex_function(callee).as_ref() == Some(function)
     }
 
-    fn is_stylex_call(&self, callee: &Expression, function: &StylexFunction) -> bool {
-        self.stylex_function(callee).as_ref() == Some(function)
+    /// `"--a:" + a + ";--b:" + b`: the variables `props` sets, as the text of a
+    /// `style` attribute
+    fn style_text(&self, props: Vec<ObjectPropertyKind<'a>>) -> Expression<'a> {
+        if let [ObjectPropertyKind::SpreadProperty(spread)] = props.as_slice() {
+            return spread
+                .argument
+                .clone_in_with_semantic_ids(self.ast.allocator());
+        }
+        let mut text: Option<Expression<'a>> = None;
+        let props = props.into_iter().filter_map(|prop| {
+            if let ObjectPropertyKind::ObjectProperty(prop) = prop {
+                Some(prop.unbox())
+            } else {
+                None
+            }
+        });
+        for (index, prop) in props.enumerate() {
+            let name = get_string_by_property_key(&prop.key).unwrap_or_default();
+            let prefix = format!("{}{name}:", if index == 0 { "" } else { ";" });
+            let head = Expression::new_string_literal(
+                SPAN,
+                Str::from_in(prefix.as_str(), self.ast.allocator()),
+                None,
+                &self.ast,
+            );
+            let head = match text {
+                Some(text) => Expression::new_binary_expression(
+                    SPAN,
+                    text,
+                    BinaryOperator::Addition,
+                    head,
+                    &self.ast,
+                ),
+                None => head,
+            };
+            text = Some(Expression::new_binary_expression(
+                SPAN,
+                head,
+                BinaryOperator::Addition,
+                Expression::new_parenthesized_expression(SPAN, prop.value, &self.ast),
+                &self.ast,
+            ));
+        }
+        text.unwrap_or_else(|| Expression::new_string_literal(SPAN, "", None, &self.ast))
+    }
+
+    /// `stylex.props(...)` merging namespaces whose keys the build knows: a
+    /// later namespace's key replaces an earlier one's, and `null` removes it,
+    /// as `StyleX` merges them. `None` when an argument is anything else.
+    fn compose_stylex_props(
+        &mut self,
+        arguments: &oxc_allocator::Vec<'a, Argument<'a>>,
+    ) -> Option<Expression<'a>> {
+        let mut parts = Vec::new();
+        for argument in arguments {
+            self.stylex_parts(argument.as_expression()?, &mut parts)?;
+        }
+        let mut entries: Vec<(String, StylexChoice<'a>)> = Vec::new();
+        let mut values = Vec::new();
+        for part in parts {
+            match part {
+                StylexPart::Keys(keys) => {
+                    for (key, class) in keys {
+                        entries.retain(|(existing, _)| *existing != key);
+                        entries.push((key, StylexChoice::Class(class)));
+                    }
+                }
+                StylexPart::Conditional {
+                    test,
+                    consequent,
+                    alternate,
+                } => {
+                    let name = self.names.fresh("__devupStylexTest");
+                    values.push((name.clone(), test));
+                    let test = Expression::new_identifier(
+                        SPAN,
+                        Str::from_in(name.as_str(), self.ast.allocator()),
+                        &self.ast,
+                    );
+                    let mut keys: Vec<&String> = Vec::new();
+                    for (key, _) in consequent.iter().chain(&alternate) {
+                        if !keys.contains(&key) {
+                            keys.push(key);
+                        }
+                    }
+                    for key in keys {
+                        let previous = entries
+                            .iter()
+                            .position(|(existing, _)| existing == key)
+                            .map_or(StylexChoice::Class(String::new()), |index| {
+                                entries.remove(index).1
+                            });
+                        let copy = previous.copy(&self.ast);
+                        let pick = |side: &[(String, String)], previous| {
+                            side.iter()
+                                .find(|(existing, _)| existing == key)
+                                .map_or(previous, |(_, class)| StylexChoice::Class(class.clone()))
+                        };
+                        entries.push((
+                            key.clone(),
+                            StylexChoice::Conditional {
+                                test: test.clone_in(self.ast.allocator()),
+                                consequent: Box::new(pick(&consequent, previous)),
+                                alternate: Box::new(pick(&alternate, copy)),
+                            },
+                        ));
+                    }
+                }
+            }
+        }
+        let body = merge_expression_for_class_name(
+            &self.ast,
+            entries
+                .into_iter()
+                .filter_map(|(_, choice)| self.render_stylex_choice(choice)),
+        )
+        .unwrap_or_else(|| Expression::new_string_literal(SPAN, "", None, &self.ast));
+        Some(self.capture_stylex_conditions(values, body))
+    }
+
+    /// The parts of a `stylex.props()` argument, in order
+    fn stylex_parts(&self, expr: &Expression<'a>, parts: &mut Vec<StylexPart<'a>>) -> Option<()> {
+        match unwrap_syntax_only(expr) {
+            Expression::ArrayExpression(array) => {
+                for element in &array.elements {
+                    self.stylex_parts(element.as_expression()?, parts)?;
+                }
+            }
+            Expression::LogicalExpression(logical)
+                if logical.operator == oxc_ast::ast::LogicalOperator::And =>
+            {
+                parts.push(StylexPart::Conditional {
+                    test: logical
+                        .left
+                        .clone_in_with_semantic_ids(self.ast.allocator()),
+                    consequent: self.stylex_keyed(&logical.right)?,
+                    alternate: Vec::new(),
+                });
+            }
+            Expression::ConditionalExpression(conditional) => {
+                parts.push(StylexPart::Conditional {
+                    test: conditional
+                        .test
+                        .clone_in_with_semantic_ids(self.ast.allocator()),
+                    consequent: self.stylex_keyed(&conditional.consequent)?,
+                    alternate: self.stylex_keyed(&conditional.alternate)?,
+                });
+            }
+            expr => parts.push(StylexPart::Keys(self.stylex_keyed(expr)?)),
+        }
+        Some(())
+    }
+
+    /// The classes each key of the namespace `expr` reads gives; none for a
+    /// value `StyleX` skips
+    fn stylex_keyed(&self, expr: &Expression<'a>) -> Option<Vec<(String, String)>> {
+        let (object, name) = match unwrap_syntax_only(expr) {
+            Expression::BooleanLiteral(literal) if !literal.value => return Some(Vec::new()),
+            Expression::NullLiteral(_) => return Some(Vec::new()),
+            Expression::Identifier(ident)
+                if ident.name == "undefined" && self.bindings.symbol(ident).is_none() =>
+            {
+                return Some(Vec::new());
+            }
+            Expression::StaticMemberExpression(member) => {
+                (&member.object, member.property.name.to_string())
+            }
+            Expression::ComputedMemberExpression(member) => (
+                &member.object,
+                get_string_by_literal_expression(&member.expression)?.to_string(),
+            ),
+            _ => return None,
+        };
+        let Expression::Identifier(object) = object else {
+            return None;
+        };
+        if matches!(
+            self.stylex_namespaces
+                .get(&self.bindings.symbol(object)?)?
+                .get(&name),
+            Some(StylexNamespaceValue::Dynamic(_))
+        ) {
+            return None;
+        }
+        self.stylex_keys
+            .get(&self.bindings.symbol(object)?)?
+            .get(&name)
+            .cloned()
+    }
+
+    fn render_stylex_choice(&self, choice: StylexChoice<'a>) -> Option<Expression<'a>> {
+        match choice {
+            StylexChoice::Class(class) => self.stylex_class_literal(&class),
+            StylexChoice::Conditional {
+                test,
+                consequent,
+                alternate,
+            } => {
+                let empty = || Expression::new_string_literal(SPAN, "", None, &self.ast);
+                match (
+                    self.render_stylex_choice(*consequent),
+                    self.render_stylex_choice(*alternate),
+                ) {
+                    (None, None) => None,
+                    (Some(consequent), Some(alternate))
+                        if crate::utils::is_same_expression(&consequent, &alternate) =>
+                    {
+                        Some(consequent)
+                    }
+                    (consequent, alternate) => Some(Expression::new_conditional_expression(
+                        SPAN,
+                        test,
+                        consequent.unwrap_or_else(empty),
+                        alternate.unwrap_or_else(empty),
+                        &self.ast,
+                    )),
+                }
+            }
+        }
     }
 
     /// Resolve `stylex.props()` arguments to className expressions and style properties.
     /// Returns (`class_exprs`, `style_props`) where `style_props` are CSS variable assignments
     /// from dynamic namespace calls like `styles.bar(h)`.
     fn resolve_stylex_props_args(
-        &self,
+        &mut self,
         arguments: &oxc_allocator::Vec<'a, Argument<'a>>,
+        attrs: bool,
     ) -> (Vec<Expression<'a>>, Vec<ObjectPropertyKind<'a>>) {
         let mut class_exprs: Vec<Expression<'a>> = vec![];
         let mut style_props: Vec<ObjectPropertyKind<'a>> = vec![];
+        let captures = self.has_runtime_stylex_call(arguments);
+
+        if arguments.len() > 1
+            && let Some(call) = arguments.iter().filter_map(Argument::as_expression).find_map(|expr| {
+                match unwrap_syntax_only(expr) {
+                    Expression::CallExpression(call) if self.stylex_dynamic_info(&call.callee).is_some() => Some(call),
+                    _ => None,
+                }
+            })
+            && !arguments.iter().filter_map(Argument::as_expression).all(|expr| {
+                matches!(unwrap_syntax_only(expr), Expression::CallExpression(other) if other.span == call.span)
+                    || self.stylex_keyed(expr).is_some_and(|keys| keys.iter().all(|(key, _)| {
+                        self.stylex_dynamic_info(&call.callee).is_some_and(|info| !info.namespace.properties.contains(&crate::stylex::normalize_stylex_property(key)))
+                    }))
+            })
+        {
+            self.errors.push((call.span.start, build_time_error("stylex.props", &readable_code(&call.callee), "dynamic namespace call combinations cannot be compiled exactly with keyed precedence here; use one direct scalar call, or compose plain static namespaces")));
+            return (class_exprs, style_props);
+        }
 
         for arg in arguments {
             // `...spread` carries no statically resolvable namespace reference,
             // so its values join at runtime
             let Some(expr) = arg.as_expression() else {
                 if let Argument::SpreadElement(spread) = arg {
+                    if captures {
+                        self.errors.push((spread.span.start, build_time_error("stylex.props", "spread alongside dynamic calls", "argument evaluation order cannot be preserved here; pass explicit static namespaces alongside direct scalar calls")));
+                        continue;
+                    }
                     class_exprs.push(runtime_classes(&self.ast, &spread.argument));
                 }
                 continue;
             };
+            if self.reject_nested_stylex_calls(expr) {
+                continue;
+            }
             // Check for dynamic namespace call first: styles.bar(h)
-            if let Expression::CallExpression(call) = expr
-                && let Some((class_expr, props)) = self.resolve_stylex_dynamic_call(call)
+            if let Expression::CallExpression(call) = unwrap_syntax_only(expr)
+                && let Some((class_expr, props)) = self.resolve_stylex_dynamic_call(call, attrs)
             {
                 class_exprs.push(class_expr);
                 style_props.extend(props);
@@ -737,55 +2260,6 @@ impl<'a> DevupVisitor<'a> {
             &self.ast,
         )
     }
-    /// Resolve a dynamic namespace call like `styles.bar(h)` to (className, `style_props`).
-    fn resolve_stylex_dynamic_call(
-        &self,
-        call: &CallExpression<'a>,
-    ) -> Option<(Expression<'a>, Vec<ObjectPropertyKind<'a>>)> {
-        if let Expression::StaticMemberExpression(member) = &call.callee
-            && let Expression::Identifier(obj) = &member.object
-            && let Some(ns_map) = self.stylex_namespaces.get(obj.name.as_str())
-            && let Some(StylexNamespaceValue::Dynamic(info)) =
-                ns_map.get(member.property.name.as_str())
-        {
-            let class_expr = Expression::new_string_literal(
-                SPAN,
-                Str::from_in(&info.class_name, self.ast.allocator()),
-                None,
-                &self.ast,
-            );
-
-            let mut props = Vec::with_capacity(info.css_vars.len());
-            for (param_idx, var_name, unit) in &info.css_vars {
-                if let Some(arg) = call.arguments.get(*param_idx)
-                    && let Some(arg_expr) = arg.as_expression()
-                {
-                    let arg_expr =
-                        self.with_number_unit(arg_expr.clone_in(self.ast.allocator()), unit);
-                    props.push(ObjectPropertyKind::new_object_property(
-                        SPAN,
-                        PropertyKind::Init,
-                        PropertyKey::StringLiteral(StringLiteral::boxed(
-                            SPAN,
-                            Str::from_in(var_name, self.ast.allocator()),
-                            None,
-                            &self.ast,
-                        )),
-                        arg_expr,
-                        false,
-                        false,
-                        false,
-                        &self.ast,
-                    ));
-                }
-            }
-
-            Some((class_expr, props))
-        } else {
-            None
-        }
-    }
-
     /// What a global-CSS call collapses to once its rules are extracted: `createGlobalStyle`
     /// callers render the result (`<GlobalStyle />`), so it must stay a component, while
     /// `globalCss` is a bare statement and leaves nothing behind.
@@ -834,8 +2308,7 @@ impl<'a> DevupVisitor<'a> {
         &self,
         member: &StaticMemberExpression<'a>,
     ) -> Option<Expression<'a>> {
-        if let Expression::Identifier(obj) = &member.object
-            && let Some(ns_map) = self.stylex_namespaces.get(obj.name.as_str())
+        if let Some(ns_map) = self.stylex_namespace(&member.object)
             && let Some(StylexNamespaceValue::Static(cn)) =
                 ns_map.get(member.property.name.as_str())
         {
@@ -855,10 +2328,7 @@ impl<'a> DevupVisitor<'a> {
         &self,
         member: &ComputedMemberExpression<'a>,
     ) -> Option<Expression<'a>> {
-        let Expression::Identifier(obj) = &member.object else {
-            return None;
-        };
-        let ns_map = self.stylex_namespaces.get(obj.name.as_str())?;
+        let ns_map = self.stylex_namespace(&member.object)?;
 
         if let Some(key) = get_string_by_literal_expression(&member.expression) {
             return match ns_map.get(key.as_ref()) {
@@ -882,8 +2352,12 @@ impl<'a> DevupVisitor<'a> {
             &self.ast,
             &Expression::ComputedMemberExpression(ComputedMemberExpression::boxed(
                 SPAN,
-                member.object.clone_in(self.ast.allocator()),
-                member.expression.clone_in(self.ast.allocator()),
+                member
+                    .object
+                    .clone_in_with_semantic_ids(self.ast.allocator()),
+                member
+                    .expression
+                    .clone_in_with_semantic_ids(self.ast.allocator()),
                 member.optional,
                 &self.ast,
             )),
@@ -902,8 +2376,9 @@ impl<'a> DevupVisitor<'a> {
             }
             // darkTheme → Identifier bound to a stylex.createTheme() class
             Expression::Identifier(ident) if ident.name != "undefined" => self
-                .stylex_theme_classes
-                .get(ident.name.as_str())
+                .bindings
+                .symbol(ident)
+                .and_then(|symbol| self.stylex_theme_classes.get(&symbol))
                 .and_then(|class_name| self.stylex_class_literal(class_name)),
             Expression::ChainExpression(chain) => match &chain.expression {
                 ChainElement::StaticMemberExpression(member) => {
@@ -936,8 +2411,7 @@ impl<'a> DevupVisitor<'a> {
             },
             _ => expr,
         };
-        matches!(object, Expression::Identifier(ident)
-            if self.stylex_namespaces.contains_key(ident.name.as_str()))
+        self.stylex_namespace(object).is_some()
     }
 
     fn resolve_stylex_composed_arg(&self, expr: &Expression<'a>) -> Option<Expression<'a>> {
@@ -956,9 +2430,14 @@ impl<'a> DevupVisitor<'a> {
                 if logical.operator == oxc_ast::ast::LogicalOperator::And =>
             {
                 // The right side should be the namespace reference
-                if let Some(class_expr) = self.resolve_stylex_arg(&logical.right) {
+                {
+                    let class_expr = self.resolve_stylex_arg(&logical.right).unwrap_or_else(|| {
+                        Expression::new_string_literal(SPAN, "", None, &self.ast)
+                    });
                     // Build: condition ? " className" : ""
-                    let condition = logical.left.clone_in(self.ast.allocator());
+                    let condition = logical
+                        .left
+                        .clone_in_with_semantic_ids(self.ast.allocator());
                     Some(Expression::new_conditional_expression(
                         SPAN,
                         condition,
@@ -966,8 +2445,6 @@ impl<'a> DevupVisitor<'a> {
                         Expression::new_string_literal(SPAN, "", None, &self.ast),
                         &self.ast,
                     ))
-                } else {
-                    None
                 }
             }
             // cond ? styles.a : styles.b → ConditionalExpression
@@ -976,13 +2453,13 @@ impl<'a> DevupVisitor<'a> {
                 let alternate = self.resolve_stylex_arg(&cond.alternate);
                 match (consequent, alternate) {
                     (Some(cons), Some(alt)) => {
-                        let test = cond.test.clone_in(self.ast.allocator());
+                        let test = cond.test.clone_in_with_semantic_ids(self.ast.allocator());
                         Some(Expression::new_conditional_expression(
                             SPAN, test, cons, alt, &self.ast,
                         ))
                     }
                     (Some(cons), None) => {
-                        let test = cond.test.clone_in(self.ast.allocator());
+                        let test = cond.test.clone_in_with_semantic_ids(self.ast.allocator());
                         Some(Expression::new_conditional_expression(
                             SPAN,
                             test,
@@ -992,7 +2469,7 @@ impl<'a> DevupVisitor<'a> {
                         ))
                     }
                     (None, Some(alt)) => {
-                        let test = cond.test.clone_in(self.ast.allocator());
+                        let test = cond.test.clone_in_with_semantic_ids(self.ast.allocator());
                         Some(Expression::new_conditional_expression(
                             SPAN,
                             Expression::new_unary_expression(
@@ -1006,13 +2483,23 @@ impl<'a> DevupVisitor<'a> {
                             &self.ast,
                         ))
                     }
-                    (None, None) => None,
+                    (None, None) => Some(Expression::new_conditional_expression(
+                        SPAN,
+                        cond.test.clone_in_with_semantic_ids(self.ast.allocator()),
+                        Expression::new_string_literal(SPAN, "", None, &self.ast),
+                        Expression::new_string_literal(SPAN, "", None, &self.ast),
+                        &self.ast,
+                    )),
                 }
             }
             // false, null, undefined, 0, "" → falsy, skip
             Expression::BooleanLiteral(b) if !b.value => None,
             Expression::NullLiteral(_) => None,
-            Expression::Identifier(ident) if ident.name == "undefined" => None,
+            Expression::Identifier(ident)
+                if ident.name == "undefined" && self.bindings.symbol(ident).is_none() =>
+            {
+                None
+            }
             Expression::NumericLiteral(n) if n.value == 0.0 => None,
             Expression::StringLiteral(s) if s.value.is_empty() => None,
             _ => Some(runtime_classes(&self.ast, expr)),
@@ -1035,54 +2522,45 @@ impl<'a> VisitMut<'a> for DevupVisitor<'a> {
         &mut self,
         it: &mut oxc_allocator::Vec<'a, VariableDeclarator<'a>>,
     ) {
-        for v in it.iter() {
-            if let VariableDeclarator {
-                id,
-                init: Some(Expression::Identifier(ident)),
-                ..
-            } = v
-                && let Some(name) = id.get_binding_identifier().map(|id| id.name.to_string())
-            {
-                let original = ident.name.as_str();
-                if let Some(util) = self.util_imports.get(original).cloned() {
-                    self.util_imports.insert(name.clone(), util);
-                } else if self.styled_imports.contains(original) {
-                    self.styled_imports.insert(name.clone());
-                } else if let Some(kind) = self.imports.get(original).cloned() {
-                    self.imports.insert(name.clone(), kind);
-                } else {
-                    continue;
-                }
-                self.compiled_names.insert(name);
-            }
+        for declarator in it.iter() {
+            self.bindings.require(declarator, &self.package);
+            self.bindings.alias(declarator);
         }
         walk_variable_declarators(self, it);
     }
 
     fn visit_program(&mut self, it: &mut Program<'a>) {
-        if self.binds_style_results(it) {
-            self.style_values = crate::style_values::StyleValues::new(
-                oxc_semantic::SemanticBuilder::new()
-                    .build(it)
-                    .semantic
-                    .into_scoping(),
-            );
+        if let Some(scoping) = self.scoping_of(it) {
+            self.names.reserve(&scoping);
+            self.bindings.scope(Rc::clone(&scoping));
+            self.bind_imported_stylex();
+            self.style_values = crate::style_values::StyleValues::new(scoping);
+            self.style_values
+                .import(std::mem::take(&mut self.imported_css));
+            if self.binds_style_results(it) || self.css_prop != CssProp::Off {
+                self.selected_components = crate::style_values::selected(it, &self.style_values);
+            }
         }
         walk_program(self, it);
-        if !self.compiled_names.is_empty() {
-            // Aliases only the calls and elements the build compiled read; at
-            // the top level nothing can shadow what they alias
-            let compiled = &self.compiled_names;
-            it.body.retain_mut(|statement| {
-                let Statement::VariableDeclaration(declaration) = statement else {
-                    return true;
-                };
-                declaration
-                    .declarations
-                    .retain(|declarator| !is_alias(declarator, compiled));
-                !declaration.declarations.is_empty()
-            });
+        self.reject_remaining_stylex_calls(it);
+        for (_, message) in &mut self.errors {
+            *message = self.names.restore(message);
+        }
+        if self.bindings.is_compiled() {
+            self.bindings.remove_aliases(it);
             self.report_compiled_reads(it);
+        }
+        if self.forwards_refs {
+            let source = self.ast.allocator().alloc_str(&format!(
+                "import {{ forwardRef as {FORWARD_REF} }} from 'react';"
+            ));
+            let program =
+                oxc_parser::Parser::new(self.ast.allocator(), source, oxc_span::SourceType::mjs())
+                    .parse()
+                    .program;
+            for statement in program.body.into_iter().rev() {
+                it.body.insert(0, statement);
+            }
         }
         if !self.styles.is_empty() {
             for css_file in self.css_files.iter().rev() {
@@ -1117,7 +2595,10 @@ impl<'a> VisitMut<'a> for DevupVisitor<'a> {
         }
     }
     fn visit_expression(&mut self, it: &mut Expression<'a>) {
-        if !self.styled_imports.is_empty() {
+        if !self.class_names_scope.is_empty() && self.compile_class_names_call(it) {
+            return;
+        }
+        if self.bindings.may_style() {
             match it {
                 Expression::CallExpression(call) => self.plain_styled(&mut call.callee),
                 Expression::TaggedTemplateExpression(tag) => self.plain_styled(&mut tag.tag),
@@ -1131,10 +2612,15 @@ impl<'a> VisitMut<'a> for DevupVisitor<'a> {
             Expression::TaggedTemplateExpression(tag) => Some(&mut tag.tag),
             _ => None,
         };
-        let styled_imports = &self.styled_imports;
-        let attrs = factory.map_or_else(Vec::new, |factory| {
-            take_styled_modifiers(&self.ast, factory, |name| styled_imports.contains(name))
-        });
+        let bindings = &self.bindings;
+        let (mut attrs, mut configs) = factory.map_or_else(
+            || (Vec::new(), Vec::new()),
+            |factory| {
+                take_styled_modifiers(&self.ast, factory, |expression| {
+                    bindings.is_styled(expression)
+                })
+            },
+        );
         let factory = match it {
             Expression::CallExpression(call) => Some(&mut call.callee),
             Expression::TaggedTemplateExpression(tag) => Some(&mut tag.tag),
@@ -1146,45 +2632,48 @@ impl<'a> VisitMut<'a> for DevupVisitor<'a> {
             && call.arguments[1].as_expression().is_some_and(|options| {
                 matches!(unwrap_syntax_only(options), Expression::ObjectExpression(_))
             })
-            && matches!(&call.callee, Expression::Identifier(ident) if self.styled_imports.contains(ident.name.as_str()))
+            && matches!(&call.callee, callee @ Expression::Identifier(_) if self.bindings.is_styled(callee))
+            && let Some(options) = call.arguments.pop()
         {
-            call.arguments.truncate(1);
+            configs.insert(0, options.into_expression());
+        }
+        let (forward, forward_error) = read_forward(&configs.iter().collect::<Vec<_>>());
+        if let Some(error) = forward_error {
+            self.errors.push(error);
+        }
+        for attr in &mut attrs {
+            let reads = self.bindings.lowered_reads(attr);
+            self.report_reads(reads);
+            self.bindings.remember(attr);
+            self.visit_expression(attr);
         }
         walk_expression(self, it);
+        self.report_lowered_reads(it);
 
         // Handle styled function calls
-        if !self.styled_imports.is_empty() {
+        if self.bindings.may_style() {
             let (tag_or_call, argument_count) = match it {
                 Expression::TaggedTemplateExpression(tag) => (Some(&tag.tag), 0),
                 Expression::CallExpression(call) => (Some(&call.callee), call.arguments.len()),
                 _ => (None, 0),
             };
-            let is_styled_name = |name: &str| self.styled_imports.contains(name);
+            let bindings = &self.bindings;
 
-            let is_styled = if let Some(tag_or_call) = tag_or_call.map(unwrap_syntax_only) {
-                if let Expression::StaticMemberExpression(member) = tag_or_call {
-                    if let Expression::Identifier(ident) = &member.object {
-                        is_styled_name(ident.name.as_str())
-                    } else {
-                        false
+            let is_styled = tag_or_call
+                .map(unwrap_syntax_only)
+                .is_some_and(|tag_or_call| match tag_or_call {
+                    Expression::StaticMemberExpression(member) => {
+                        bindings.is_styled(&member.object)
                     }
-                } else if let Expression::CallExpression(call) = tag_or_call {
-                    if let Expression::Identifier(ident) = &call.callee {
-                        is_styled_name(ident.name.as_str())
-                    } else {
-                        false
-                    }
-                } else if let Expression::Identifier(ident) = tag_or_call {
+                    Expression::CallExpression(call) => bindings.is_styled(&call.callee),
                     // styled("div", { ... }) puts the tag in the arguments, so the callee is
                     // the bare identifier. One argument is the curried creator `styled("div")`,
                     // which only becomes a component once its result is called.
-                    is_styled_name(ident.name.as_str()) && argument_count == 2
-                } else {
-                    false
-                }
-            } else {
-                false
-            };
+                    Expression::Identifier(_) => {
+                        bindings.is_styled(tag_or_call) && argument_count == 2
+                    }
+                    _ => false,
+                });
 
             if is_styled {
                 self.style_values.read_in(&self.ast, it);
@@ -1192,12 +2681,38 @@ impl<'a> VisitMut<'a> for DevupVisitor<'a> {
                     self.unknown_arguments("styled", &call.arguments);
                     self.changed_arguments("styled", &call.arguments);
                 }
-                let (result, new_expr, errors) = extract_style_from_styled(
+                let inherited = extended(it)
+                    .and_then(|base| self.style_values.symbol(base))
+                    .and_then(|symbol| self.styled_definitions.get(&symbol))
+                    .filter(|definition| definition.extendable());
+                let takes_styles = extended(it).is_some_and(|base| {
+                    self.bindings.kind(base).is_some()
+                        || self
+                            .style_values
+                            .symbol(base)
+                            .is_some_and(|symbol| self.devup_styled.contains(&symbol))
+                });
+                let start = it.span().start;
+                let marker = self
+                    .pending_marker
+                    .take_if(|(at, _)| *at == start)
+                    .map(|(_, marker)| marker);
+                let StyledExtraction {
+                    result,
+                    expression,
+                    errors,
+                    definition,
+                } = extract_style_from_styled(
                     &self.ast,
                     it,
-                    self.split_filename.as_deref(),
-                    &self.imports,
+                    Naming {
+                        split_filename: self.split_filename.as_deref(),
+                        marker: marker.as_deref(),
+                    },
+                    &|expression| self.bindings.kind(expression),
                     &attrs,
+                    inherited,
+                    forward,
                 );
                 self.errors.extend(errors);
                 self.styles.extend(
@@ -1206,8 +2721,42 @@ impl<'a> VisitMut<'a> for DevupVisitor<'a> {
                         .into_iter()
                         .flat_map(ExtractStyleProp::into_extract),
                 );
-                *it = new_expr;
+                *it = if definition.is_some() {
+                    self.forwards_refs = true;
+                    forward_ref(&self.ast, expression)
+                } else {
+                    expression
+                };
+                self.pending_styled =
+                    definition.map(|definition| (start, definition, takes_styles));
             }
+        }
+
+        // `Component.withComponent(target)` on a styled component the file
+        // defines renders its styles as `target`
+        if let Expression::CallExpression(call) = it
+            && let [
+                Argument::StringLiteral(_)
+                | Argument::Identifier(_)
+                | Argument::StaticMemberExpression(_),
+            ] = call.arguments.as_slice()
+            && let Expression::StaticMemberExpression(member) = &call.callee
+            && member.property.name == "withComponent"
+            && let Some(definition) = self
+                .style_values
+                .symbol(&member.object)
+                .and_then(|symbol| self.styled_definitions.get(&symbol))
+            && let Some((component, definition)) = with_component(
+                &self.ast,
+                definition,
+                call.arguments[0].to_expression(),
+                self.split_filename.as_deref(),
+            )
+        {
+            let start = call.span.start;
+            self.forwards_refs = true;
+            *it = forward_ref(&self.ast, component);
+            self.pending_styled = Some((start, definition, false));
         }
 
         // Handle StyleX: stylex.create({...}) calls
@@ -1215,82 +2764,88 @@ impl<'a> VisitMut<'a> for DevupVisitor<'a> {
             && self.is_stylex_call(&call.callee, &StylexFunction::Create)
             && let [Argument::ObjectExpression(arg)] = call.arguments.as_slice()
         {
+            let visible = self.bindings.visible(arg);
+            let (keyframe_names, var_refs) = self.stylex_names(&visible);
             let namespaces = extract_stylex_namespace_styles(
                 arg,
-                &self.stylex_keyframe_names,
-                &self.stylex_var_refs,
+                &keyframe_names,
+                &var_refs,
                 &mut self.errors,
+                &|callee| self.bindings.stylex_function(callee),
             );
 
             let mut namespace_map: FxHashMap<String, StylexNamespaceValue> = FxHashMap::default();
             let mut properties = oxc_allocator::Vec::new_in(&self.ast);
-            for (ns_name, mut styles, css_vars, include_refs) in namespaces {
+            let mut key_map: FxHashMap<String, Vec<(String, String)>> = FxHashMap::default();
+            for (ns_name, mut styles, css_vars, include_refs, groups) in namespaces {
+                let dynamic_styles = css_vars
+                    .as_ref()
+                    .map(|_| styles.iter().flat_map(ExtractStyleProp::extract).collect());
                 let class_name =
                     gen_class_names(&self.ast, &mut styles, None, self.split_filename.as_deref());
+                if css_vars.is_none() {
+                    let mut offset = 0;
+                    let mut keys = Vec::with_capacity(groups.len());
+                    for (key, count) in groups {
+                        let class = gen_class_names(
+                            &self.ast,
+                            &mut styles[offset..offset + count],
+                            None,
+                            self.split_filename.as_deref(),
+                        );
+                        offset += count;
+                        let class = match class {
+                            Some(Expression::StringLiteral(class)) => class.value.to_string(),
+                            _ => String::new(),
+                        };
+                        keys.push((key, class));
+                    }
+                    let keys = self.merge_stylex_includes(keys, &include_refs, &visible);
+                    key_map.insert(ns_name.clone(), keys);
+                }
                 self.styles
                     .extend(styles.into_iter().flat_map(ExtractStyleProp::into_extract));
 
                 // Extract className string for props() resolution
-                let mut class_name_str = class_name.as_ref().map_or(String::new(), |expr| {
-                    if let Expression::StringLiteral(s) = expr {
-                        s.value.to_string()
-                    } else {
-                        String::new()
-                    }
-                });
-
-                // Resolve include() references — prepend included classNames
-                for inc_ref in &include_refs {
-                    let Some(ns_value) = self
-                        .stylex_namespaces
-                        .get(&inc_ref.var_name)
-                        .and_then(|ns| ns.get(&inc_ref.member_name))
-                    else {
-                        self.errors.push((
-                            inc_ref.offset,
-                            build_time_error(
-                                "stylex.include",
-                                &format!("{}.{}", inc_ref.var_name, inc_ref.member_name),
-                                "it takes a namespace `stylex.create()` defines earlier in this file",
-                            ),
-                        ));
-                        continue;
-                    };
-                    let included_class = match ns_value {
-                        StylexNamespaceValue::Static(s) => s.clone(),
-                        StylexNamespaceValue::Dynamic(info) => info.class_name.clone(),
-                    };
-                    if !included_class.is_empty() {
-                        if class_name_str.is_empty() {
-                            class_name_str = included_class;
+                let class_name_str = if let Some(keys) = key_map.get(&ns_name)
+                    && !include_refs.is_empty()
+                {
+                    keys.iter()
+                        .filter_map(|(_, class)| (!class.is_empty()).then_some(class.as_str()))
+                        .collect::<Vec<_>>()
+                        .join(" ")
+                } else {
+                    class_name.as_ref().map_or(String::new(), |expr| {
+                        if let Expression::StringLiteral(s) = expr {
+                            s.value.to_string()
                         } else {
-                            class_name_str = format!("{included_class} {class_name_str}");
+                            String::new()
                         }
-                    }
-                }
+                    })
+                };
 
                 let ns_value = if let Some(vars) = css_vars {
                     StylexNamespaceValue::Dynamic(StylexDynamicInfo {
                         class_name: class_name_str.clone(),
-                        css_vars: vars,
+                        namespace: vars,
+                        styles: dynamic_styles.unwrap_or_default(),
                     })
                 } else {
                     StylexNamespaceValue::Static(class_name_str.clone())
                 };
                 namespace_map.insert(ns_name.clone(), ns_value);
 
-                // If include refs changed the className, use the combined string
-                let value = if !include_refs.is_empty() && !class_name_str.is_empty() {
+                let value = if include_refs.is_empty() {
+                    class_name.unwrap_or_else(|| {
+                        Expression::new_string_literal(SPAN, "", None, &self.ast)
+                    })
+                } else {
                     Expression::new_string_literal(
                         SPAN,
                         Str::from_in(&class_name_str, self.ast.allocator()),
                         None,
                         &self.ast,
                     )
-                } else {
-                    class_name.unwrap_or_else(|| {
-                        Expression::new_string_literal(SPAN, "", None, &self.ast)
-                    })
                 };
 
                 properties.push(ObjectPropertyKind::new_object_property(
@@ -1311,6 +2866,7 @@ impl<'a> VisitMut<'a> for DevupVisitor<'a> {
             }
 
             self.stylex_pending_create = Some(namespace_map);
+            self.stylex_pending_keys = Some(key_map);
             *it = Expression::new_object_expression(SPAN, properties, &self.ast);
         }
 
@@ -1370,15 +2926,24 @@ impl<'a> VisitMut<'a> for DevupVisitor<'a> {
                     continue;
                 };
                 let values = if publishes_values {
-                    let Some(values) = variable_values(&prop.value) else {
-                        self.errors.push((
-                            prop.value.span().start,
-                            runtime_value_error("stylex.defineVars", &readable_code(&prop.value)),
-                        ));
-                        continue;
-                    };
-                    values
+                    match variable_values(
+                        &prop.value,
+                        &|callee| self.bindings.stylex_function(callee),
+                        api,
+                    ) {
+                        Ok(values) => values,
+                        Err(error) => {
+                            self.errors.push(error);
+                            continue;
+                        }
+                    }
                 } else {
+                    if let Err(error) =
+                        crate::stylex::validation::validate_contract_placeholder(&key, &prop.value)
+                    {
+                        self.errors.push(error);
+                        continue;
+                    }
                     vec![]
                 };
                 let variable =
@@ -1403,7 +2968,10 @@ impl<'a> VisitMut<'a> for DevupVisitor<'a> {
             && self.is_stylex_call(&call.callee, &StylexFunction::CreateTheme)
             && let [contract_arg, values_arg] = call.arguments.as_slice()
             && let Some(Expression::Identifier(contract_ident)) = contract_arg.as_expression()
-            && let Some(contract) = self.stylex_var_names.get(contract_ident.name.as_str())
+            && let Some(contract) = self
+                .bindings
+                .symbol(contract_ident)
+                .and_then(|symbol| self.stylex_var_names.get(&symbol))
             && let Some(Expression::ObjectExpression(obj)) = values_arg.as_expression()
         {
             let mut variables = vec![];
@@ -1430,12 +2998,13 @@ impl<'a> VisitMut<'a> for DevupVisitor<'a> {
                     ));
                     continue;
                 };
-                match variable_values(&prop.value) {
-                    Some(values) => variables.push((variable.clone(), values)),
-                    None => self.errors.push((
-                        prop.value.span().start,
-                        runtime_value_error("stylex.createTheme", &readable_code(&prop.value)),
-                    )),
+                match variable_values(
+                    &prop.value,
+                    &|callee| self.bindings.stylex_function(callee),
+                    "stylex.createTheme",
+                ) {
+                    Ok(values) => variables.push((variable.clone(), values)),
+                    Err(error) => self.errors.push(error),
                 }
             }
             let class_name = create_theme_class(
@@ -1488,7 +3057,9 @@ impl<'a> VisitMut<'a> for DevupVisitor<'a> {
             } else {
                 "stylex.viewTransitionClass"
             };
-            let declarations = extract_stylex_declarations(api, arg, &mut self.errors);
+            let declarations = extract_stylex_declarations(api, arg, &mut self.errors, &|callee| {
+                self.bindings.stylex_function(callee)
+            });
             if !declarations.is_empty() {
                 let css = if is_position_try {
                     css_variable_block(&format!("@position-try {name}"), &declarations)
@@ -1540,7 +3111,10 @@ impl<'a> VisitMut<'a> for DevupVisitor<'a> {
         if let Expression::CallExpression(call) = it
             && let Some(class_attribute) = self.stylex_class_attribute(&call.callee)
         {
-            let (class_exprs, style_props) = self.resolve_stylex_props_args(&call.arguments);
+            let (class_exprs, style_props) = match self.compose_stylex_props(&call.arguments) {
+                Some(class_name) => (vec![class_name], Vec::new()),
+                None => self.resolve_stylex_props_args(&call.arguments, class_attribute == "class"),
+            };
 
             // Build className expression using existing merge utility
             let class_name_expr = merge_expression_for_class_name(&self.ast, class_exprs)
@@ -1565,11 +3139,16 @@ impl<'a> VisitMut<'a> for DevupVisitor<'a> {
 
             // Add style property for dynamic CSS variables
             if !style_props.is_empty() {
-                let style_obj = Expression::new_object_expression(
-                    SPAN,
-                    oxc_allocator::Vec::from_iter_in(style_props, &self.ast),
-                    &self.ast,
-                );
+                // `attrs()` gives the `style` attribute as text, `props()` an object
+                let style_obj = if class_attribute == "class" {
+                    self.style_text(style_props)
+                } else {
+                    Expression::new_object_expression(
+                        SPAN,
+                        oxc_allocator::Vec::from_iter_in(style_props, &self.ast),
+                        &self.ast,
+                    )
+                };
                 props.push(ObjectPropertyKind::new_object_property(
                     SPAN,
                     PropertyKind::Init,
@@ -1588,7 +3167,7 @@ impl<'a> VisitMut<'a> for DevupVisitor<'a> {
         // Reached only when none of the blocks above replaced the call, so a surviving
         // compile-time call is one whose arguments could not be read statically.
         if let Expression::CallExpression(call) = it
-            && let Some(function) = self.stylex_function(&call.callee)
+            && let Some(function) = self.bindings.stylex_function(&call.callee)
             && let Some(requirement) = function.requirement()
         {
             let arguments: Vec<String> = call.arguments.iter().map(readable_argument).collect();
@@ -1602,7 +3181,14 @@ impl<'a> VisitMut<'a> for DevupVisitor<'a> {
             ));
         }
 
-        if let Expression::CallExpression(call) = it {
+        if let Expression::CallExpression(call) = it
+            && self
+                .util_type(&call.callee)
+                .is_some_and(|util| matches!(util.as_ref(), UtilType::Css))
+            && let Some(composed) = self.compose_known_styles(call)
+        {
+            *it = composed;
+        } else if let Expression::CallExpression(call) = it {
             if let Some(util_type) = self.util_type(&call.callee) {
                 for argument in &mut call.arguments {
                     let expression = match argument {
@@ -1659,6 +3245,20 @@ impl<'a> VisitMut<'a> for DevupVisitor<'a> {
                         if styles.is_empty() {
                             Expression::new_string_literal(SPAN, "", None, &self.ast)
                         } else {
+                            let known = composed_classes.is_empty().then(|| {
+                                let mut known = crate::composition::Composition::default();
+                                let mut props: Vec<ExtractStyleProp<'a>> = styles
+                                    .iter()
+                                    .map(|prop| prop.clone_in(self.ast.allocator()))
+                                    .collect();
+                                if let Some(order) = style_order {
+                                    for prop in &mut props {
+                                        set_prop_order(prop, order);
+                                    }
+                                }
+                                known.apply(&self.ast, props);
+                                known.unconditional()
+                            });
                             // css can not reachable
                             let class_name = gen_class_names(
                                 &self.ast,
@@ -1671,6 +3271,11 @@ impl<'a> VisitMut<'a> for DevupVisitor<'a> {
                             self.styles.extend(
                                 styles.into_iter().flat_map(ExtractStyleProp::into_extract),
                             );
+                            if let Some(Some(known)) = known
+                                && matches!(class_name, Some(Expression::StringLiteral(_)))
+                            {
+                                self.css_styles = Some((offset, known));
+                            }
                             if let Some(cls) = class_name {
                                 cls
                             } else {
@@ -1756,7 +3361,7 @@ impl<'a> VisitMut<'a> for DevupVisitor<'a> {
                                     None,
                                     &self.ast,
                                 )),
-                                rules.clone_in(self.ast.allocator()),
+                                rules.clone_in_with_semantic_ids(self.ast.allocator()),
                                 false,
                                 false,
                                 false,
@@ -1857,9 +3462,9 @@ impl<'a> VisitMut<'a> for DevupVisitor<'a> {
                         self.styles.insert(v);
                     }
                 }
-                let mixins = statements
-                    .iter()
-                    .map(|index| tag.quasi.expressions[*index].clone_in(self.ast.allocator()));
+                let mixins = statements.iter().map(|index| {
+                    tag.quasi.expressions[*index].clone_in_with_semantic_ids(self.ast.allocator())
+                });
                 merge_expression_for_class_name(&self.ast, mixins.chain(class_name))
                     .unwrap_or_else(|| Expression::new_string_literal(SPAN, "", None, &self.ast))
                 // already set style order
@@ -1919,37 +3524,35 @@ impl<'a> VisitMut<'a> for DevupVisitor<'a> {
         }
     }
     fn visit_call_expression(&mut self, it: &mut CallExpression<'a>) {
-        let jsx = if let Expression::Identifier(ident) = &it.callee {
-            self.jsx_imports.get(ident.name.as_str()).cloned()
-        } else if let Some(name) = &self.jsx_object
-            && let Expression::StaticMemberExpression(member) = &it.callee
-            && let Expression::Identifier(ident) = &member.object
-            && name == ident.name.as_str()
-        {
-            Some(member.property.name.to_string())
-        } else {
-            None
-        };
-        if let Some(j) = jsx
-            && (j == "jsx" || j == "jsxs")
+        if let Some(j) = self.bindings.jsx_function(&it.callee)
+            && (matches!(j.as_str(), "jsx" | "jsxs" | "jsxDEV")
+                || (j == "createElement" && self.lower_create_element(it)))
             && let Some(expr) = it.arguments.first().and_then(|arg| arg.as_expression())
         {
-            let element_kind = if let Expression::Identifier(ident) = expr {
-                self.imports.get(ident.name.as_str()).cloned()
-            } else if let Expression::StaticMemberExpression(member) = expr
-                && let Expression::Identifier(ident) = &member.object
-                && self.import_object.as_deref() == Some(ident.name.as_str())
+            let element_kind = self.bindings.kind(expr);
+            if let Some(props) = it.arguments.get(1).and_then(Argument::as_expression) {
+                self.bindings.remember(props);
+            }
+            if element_kind.is_some()
+                && let Some(props) = it.arguments.get(1).and_then(Argument::as_expression)
             {
-                member
-                    .property
-                    .name
-                    .as_str()
-                    .parse::<ExportVariableKind>()
-                    .ok()
+                let reads = self.bindings.lowered_reads(props);
+                self.report_reads(reads);
+            }
+            let order = if element_kind.is_some() {
+                it.arguments
+                    .get_mut(1)
+                    .and_then(Argument::as_expression_mut)
+                    .map(|props| self.order_call_props(props))
             } else {
                 None
             };
-            if let Some(kind) = element_kind
+            let css = self.take_jsx_css_prop(it, element_kind.is_some());
+            if element_kind.is_none()
+                && let Some(css) = css
+            {
+                self.lower_jsx_css_prop(it, css);
+            } else if let Some(kind) = element_kind
                 && it
                     .arguments
                     .get(1)
@@ -1958,21 +3561,13 @@ impl<'a> VisitMut<'a> for DevupVisitor<'a> {
                 // Pre-scan: detect conditional styleOrder before extract_style_from_expression
                 // consumes the property (which only handles static values)
                 let parsed_style_order =
-                    if let Expression::ObjectExpression(obj) = it.arguments[1].to_expression() {
-                        obj.properties.iter().find_map(|prop| {
-                            if let ObjectPropertyKind::ObjectProperty(p) = prop
-                                && let Some(name) = get_str_by_property_key(&p.key)
-                                && name == "styleOrder"
-                            {
-                                Some(expression_to_style_order(&p.value, self.ast.allocator()))
-                            } else {
-                                None
-                            }
-                        })
-                    } else {
-                        None
+                    self.prescan_style_order(&kind.to_string(), it.arguments[1].to_expression());
+                let mut overridden = match it.arguments[1].to_expression_mut() {
+                    Expression::ObjectExpression(object) => {
+                        spread_slots::take_overridden(&self.ast, object, 0)
                     }
-                    .unwrap_or(ParsedStyleOrder::None);
+                    _ => Vec::new(),
+                };
 
                 let mut tag = Expression::new_string_literal(
                     SPAN,
@@ -2007,6 +3602,18 @@ impl<'a> VisitMut<'a> for DevupVisitor<'a> {
                         .rev()
                         .map(ExtractStyleProp::Static),
                 );
+                if let Some(JsxCss {
+                    css,
+                    element,
+                    class_name,
+                    ..
+                }) = css
+                {
+                    props_styles.reverse();
+                    props_styles =
+                        self.compose_css_prop(&element, css, props_styles, class_name.as_ref());
+                    props_styles.reverse();
+                }
 
                 // Use pre-scanned ParsedStyleOrder, falling back to extract_style_from_expression's
                 // static result for backward compat.
@@ -2019,7 +3626,19 @@ impl<'a> VisitMut<'a> for DevupVisitor<'a> {
                     other => other,
                 };
 
-                let read_once = self.read_spreads_once(it.arguments[1].to_expression_mut());
+                let read_once = order.map_or_else(Vec::new, |order| {
+                    self.finish_call_props(order, it.arguments[1].to_expression_mut())
+                });
+                if !overridden.is_empty()
+                    && let Expression::ObjectExpression(object) = it.arguments[1].to_expression()
+                {
+                    let bound = self.bind_object_overridden(
+                        &kind.to_string(),
+                        std::mem::take(&mut overridden),
+                        object,
+                    );
+                    props_styles.extend(bound);
+                }
 
                 if let ParsedStyleOrder::Conditional {
                     condition,
@@ -2097,64 +3716,13 @@ impl<'a> VisitMut<'a> for DevupVisitor<'a> {
                 }
 
                 it.arguments[0] = Argument::from(tag);
-                if !read_once.is_empty() {
-                    let call = Expression::CallExpression(oxc_allocator::Box::new_in(
-                        it.clone_in(self.ast.allocator()),
-                        &self.ast,
-                    ));
-                    if let Expression::CallExpression(reading_once) =
-                        call_with_values(&self.ast, read_once, call)
-                    {
-                        *it = reading_once.unbox();
-                    }
-                }
+                self.finish_element_call(it, read_once, kind.to_tag());
             }
         }
         walk_call_expression(self, it);
     }
 
     fn visit_variable_declarator(&mut self, it: &mut VariableDeclarator<'a>) {
-        if let Some(Expression::CallExpression(call)) = &it.init
-            && call.arguments.len() == 1
-            && let (Expression::Identifier(ident), Argument::StringLiteral(arg)) =
-                (&call.callee, &call.arguments[0])
-            && ident.name == "require"
-        {
-            if arg.value == "react/jsx-runtime" {
-                if let BindingPattern::BindingIdentifier(ident) = &it.id {
-                    self.jsx_object = Some(ident.name.to_string());
-                } else if let BindingPattern::ObjectPattern(object) = &it.id {
-                    for prop in &object.properties {
-                        if let Some(name) = get_string_by_property_key(&prop.key)
-                            && let Some(k) = prop
-                                .value
-                                .get_binding_identifier()
-                                .map(|id| id.name.to_string())
-                        {
-                            self.jsx_imports.insert(k, name);
-                        }
-                    }
-                }
-            } else if arg.value == self.package {
-                if let BindingPattern::BindingIdentifier(ident) = &it.id {
-                    self.import_object = Some(ident.name.to_string());
-                } else if let BindingPattern::ObjectPattern(object) = &it.id {
-                    for prop in &object.properties {
-                        if let Some(name) = get_string_by_property_key(&prop.key)
-                            && let Ok(kind) = ExportVariableKind::try_from(
-                                prop.value
-                                    .get_binding_identifier()
-                                    .map(|id| id.name.to_string())
-                                    .unwrap_or_default(),
-                            )
-                        {
-                            self.imports.insert(name, kind);
-                        }
-                    }
-                }
-            }
-        }
-
         let style_result = match &it.init {
             Some(Expression::CallExpression(call)) => self.util_type(&call.callee),
             Some(Expression::TaggedTemplateExpression(tag)) => self.util_type(&tag.tag),
@@ -2162,17 +3730,77 @@ impl<'a> VisitMut<'a> for DevupVisitor<'a> {
         }
         .filter(|util| matches!(util.as_ref(), UtilType::Css | UtilType::Keyframes))
         .and_then(|util| Some((util, self.style_values.constant(&it.id)?)));
+        let start = it.init.as_ref().map(|init| init.span().start);
+        let styled_binding = self.style_values.constant(&it.id);
+        if self.css_prop != CssProp::Off
+            && matches!(
+                it.init.as_ref().map(unwrap_syntax_only),
+                Some(
+                    Expression::ObjectExpression(_)
+                        | Expression::ArrayExpression(_)
+                        | Expression::ArrowFunctionExpression(_)
+                        | Expression::FunctionExpression(_)
+                        | Expression::StringLiteral(_)
+                        | Expression::TemplateLiteral(_)
+                )
+            )
+            && let Some(symbol) = it
+                .id
+                .get_binding_identifier()
+                .and_then(|id| id.symbol_id.get())
+                .filter(|symbol| {
+                    self.style_values.constant(&it.id).is_none()
+                        || self.style_values.is_local(*symbol)
+                })
+        {
+            self.local_styles.insert(symbol);
+        }
+
+        let marked = styled_binding
+            .filter(|symbol| self.selected_components.contains(symbol))
+            .zip(start)
+            .zip(it.id.get_binding_identifier().map(|id| id.name.to_string()));
+        if let Some(((symbol, start), name)) = &marked {
+            let (symbol, start) = (*symbol, *start);
+            let marker = css::component_marker(name, &self.filename);
+            self.style_values.insert(
+                symbol,
+                crate::style_values::StyleValue::Component(format!(".{marker}")),
+            );
+            self.pending_marker = Some((start, marker));
+        }
 
         walk_variable_declarator(self, it);
+
+        // A binding selected but not to a styled component stays unread
+        if let Some(((symbol, _), _)) = marked
+            && self.pending_marker.take().is_some()
+        {
+            self.style_values.remove(symbol);
+        }
+
+        if let Some((at, definition, takes_styles)) = self.pending_styled.take()
+            && Some(at) == start
+            && let Some(symbol) = styled_binding
+        {
+            self.styled_definitions.insert(symbol, definition);
+            if takes_styles {
+                self.devup_styled.insert(symbol);
+            }
+        }
 
         if let Some((util, symbol)) = style_result
             && let Some(Expression::StringLiteral(value)) = &it.init
         {
             let value = value.value.to_string();
+            let styles = self
+                .css_styles
+                .take()
+                .and_then(|(at, styles)| (Some(at) == start).then_some(styles));
             self.style_values.insert(
                 symbol,
                 if matches!(util.as_ref(), UtilType::Css) {
-                    crate::style_values::StyleValue::Class(value)
+                    crate::style_values::StyleValue::Class(value, styles)
                 } else {
                     crate::style_values::StyleValue::Keyframes(value)
                 },
@@ -2188,93 +3816,129 @@ impl<'a> VisitMut<'a> for DevupVisitor<'a> {
             self.stylex_pending_create.take();
         }
 
+        let bound = it
+            .id
+            .get_binding_identifier()
+            .and_then(|ident| ident.symbol_id.get());
+
+        if let (Some(symbol), Some(Expression::Identifier(from))) = (bound, &it.init) {
+            self.bind_stylex_namespace_alias(symbol, from);
+        }
+
         // After walking, capture stylex.create() variable binding
+        let pending_keys = self.stylex_pending_keys.take();
         if let Some(pending) = self.stylex_pending_create.take()
-            && let Some(ident) = it.id.get_binding_identifier()
+            && let Some(identifier) = it.id.get_binding_identifier()
+            && let Some(symbol) = identifier.symbol_id.get()
         {
-            self.stylex_namespaces
-                .insert(ident.name.to_string(), pending);
+            if !self.bindings.unchanged(symbol) {
+                self.errors.push((
+                    identifier.span.start,
+                    build_time_error(
+                        "stylex.create",
+                        identifier.name.as_str(),
+                        "a reassigned namespace or written member makes its metadata unknowable; use unchanged namespace bindings and members instead of modifying them",
+                    ),
+                ));
+            }
+            self.stylex_namespaces.insert(symbol, pending);
+            if let Some(keys) = pending_keys {
+                self.stylex_keys.insert(symbol, keys);
+            }
         }
 
         // Capture stylex.keyframes() variable binding
         if let Some(name) = self.stylex_pending_keyframe_name.take()
-            && let Some(ident) = it.id.get_binding_identifier()
+            && let Some(symbol) = bound
         {
-            self.stylex_keyframe_names
-                .insert(ident.name.to_string(), name);
+            self.stylex_keyframe_names.insert(symbol, name);
         }
 
         // Capture stylex.defineVars() variable binding
         if let Some(contract) = self.stylex_pending_vars.take()
-            && let Some(ident) = it.id.get_binding_identifier()
+            && let Some(symbol) = bound
         {
-            for (key, variable) in &contract {
-                self.stylex_var_refs
-                    .insert(format!("{}.{key}", ident.name), format!("var({variable})"));
-            }
-            self.stylex_var_names
-                .insert(ident.name.to_string(), contract);
+            self.stylex_var_refs.entry(symbol).or_default().extend(
+                contract
+                    .iter()
+                    .map(|(key, variable)| (key.clone(), format!("var({variable})"))),
+            );
+            self.stylex_var_names.insert(symbol, contract);
         }
 
         // Capture stylex.createTheme() variable binding
         if let Some(class_name) = self.stylex_pending_theme_class.take()
-            && let Some(ident) = it.id.get_binding_identifier()
+            && let Some(symbol) = bound
         {
-            self.stylex_theme_classes
-                .insert(ident.name.to_string(), class_name);
+            self.stylex_theme_classes.insert(symbol, class_name);
         }
 
         // Capture stylex.defineConsts() variable binding
         if let Some(constants) = self.stylex_pending_consts.take()
-            && let Some(ident) = it.id.get_binding_identifier()
+            && let Some(symbol) = bound
         {
-            for (key, value) in constants {
-                self.stylex_var_refs
-                    .insert(format!("{}.{key}", ident.name), value);
-            }
+            self.stylex_var_refs
+                .entry(symbol)
+                .or_default()
+                .extend(constants);
         }
     }
     fn visit_import_declaration(&mut self, it: &mut ImportDeclaration<'a>) {
-        if it.source.value != self.package
-            && it.source.value == "react/jsx-runtime"
+        if it.import_kind.is_type() {
+            walk_import_declaration(self, it);
+        } else if it.source.value != self.package
+            && matches!(
+                it.source.value.as_str(),
+                "react/jsx-runtime" | "react/jsx-dev-runtime"
+            )
             && let Some(specifiers) = &it.specifiers
         {
             for specifier in specifiers {
-                if let ImportSpecifier(import) = specifier {
-                    self.jsx_imports
-                        .insert(import.local.to_string(), import.imported.to_string());
+                if let ImportSpecifier(import) = specifier
+                    && !import.import_kind.is_type()
+                {
+                    self.bindings
+                        .jsx_import(&import.local, import.imported.to_string());
                 }
             }
         } else if (it.source.value == self.package
             || it.source.value == self.compat_package.as_str())
             && let Some(specifiers) = &mut it.specifiers
         {
+            let compat = it.source.value == self.compat_package.as_str();
             for i in (0..specifiers.len()).rev() {
                 match &specifiers[i] {
+                    ImportSpecifier(import) if import.import_kind.is_type() => {}
                     ImportSpecifier(import) => {
                         let imported_str = import.imported.to_string();
-                        let local = import.local.to_string();
-                        if let Ok(kind) = imported_str.parse::<ExportVariableKind>() {
-                            self.imports.insert(local.clone(), kind);
-                        } else if let Some(kind) = UtilType::from_str_opt(&imported_str) {
-                            self.util_imports.insert(local.clone(), Rc::new(kind));
-                        } else if imported_str == "styled" {
-                            self.styled_imports.insert(local.clone());
-                        } else {
+                        let local = import.local.symbol_id.get();
+                        // Emotion's `jsx`, which builds elements as React does once
+                        // their `css` props are compiled
+                        if compat && imported_str == "jsx" {
+                            self.bindings.jsx_import(&import.local, imported_str);
+                            continue;
+                        }
+                        if compat && imported_str == "ClassNames" {
+                            self.bindings.class_names_component(local);
+                            self.bindings.compile(local);
+                            specifiers.remove(i);
+                            continue;
+                        }
+                        if !self.bindings.export(local, &imported_str) {
                             // `Global` stays, rendering nothing, so its binding does too
                             if imported_str == "Global" {
-                                self.global_style_components.insert(local);
+                                self.bindings.global_component(local);
                             }
                             continue;
                         }
-                        self.compiled_names.insert(local);
+                        self.bindings.compile(local);
                         specifiers.remove(i);
                     }
                     ImportDeclarationSpecifier::ImportDefaultSpecifier(specifier) => {
-                        self.import_whole(&specifier.local.name);
+                        self.bindings.namespace(specifier.local.symbol_id.get());
                     }
                     ImportDeclarationSpecifier::ImportNamespaceSpecifier(specifier) => {
-                        self.import_whole(&specifier.local.name);
+                        self.bindings.namespace(specifier.local.symbol_id.get());
                     }
                 }
             }
@@ -2283,44 +3947,93 @@ impl<'a> VisitMut<'a> for DevupVisitor<'a> {
                 for specifier in specifiers {
                     match specifier {
                         ImportDeclarationSpecifier::ImportDefaultSpecifier(default_spec) => {
-                            self.stylex_imports
-                                .insert(default_spec.local.name.to_string());
+                            self.bindings
+                                .stylex_namespace(default_spec.local.symbol_id.get());
                         }
                         ImportDeclarationSpecifier::ImportNamespaceSpecifier(ns_spec) => {
-                            self.stylex_imports.insert(ns_spec.local.name.to_string());
+                            self.bindings
+                                .stylex_namespace(ns_spec.local.symbol_id.get());
                         }
-                        ImportSpecifier(named_spec) => {
+                        ImportSpecifier(named_spec) if !named_spec.import_kind.is_type() => {
                             let imported = named_spec.imported.to_string();
-                            let local = named_spec.local.name.to_string();
                             if let Some(func) = StylexFunction::from_export_name(&imported) {
-                                self.stylex_named_imports.insert(local, func);
+                                self.bindings
+                                    .stylex_import(named_spec.local.symbol_id.get(), func);
                             }
                         }
+                        ImportSpecifier(_) => {}
                     }
                 }
             }
         } else {
+            if it.source.value == "react" {
+                self.react_import(it);
+            }
             walk_import_declaration(self, it);
         }
     }
     #[allow(clippy::set_contains_or_insert)]
     fn visit_jsx_element(&mut self, elem: &mut JSXElement<'a>) {
+        if let Some(rendered) = self.class_names(elem) {
+            self.pending_replacement = Some(rendered);
+            return;
+        }
+        let styled_symbol = match &elem.opening_element.name {
+            JSXElementName::IdentifierReference(name) => self.style_values.reference_symbol(name),
+            _ => None,
+        };
+        // The style props of a styled Devup UI component are compiled in the
+        // element as they are for the component, where only what the
+        // component reads and passes on stays an attribute
+        let has_css = self.takes_css(&elem.opening_element.name) && elem.opening_element.attributes.iter().any(|attribute| matches!(attribute, Attribute(attribute) if matches!(&attribute.name, Identifier(name) if name.name == "css")));
+        let takes_styles =
+            !has_css && styled_symbol.is_some_and(|symbol| self.devup_styled.contains(&symbol));
+        let kind = self.bindings.element(&elem.opening_element.name);
+        let attributes_kept = self.styled_attributes(
+            styled_symbol,
+            &elem.opening_element.attributes,
+            takes_styles,
+        );
+        if kind.is_some() || takes_styles {
+            self.reject_stylex_dynamic_jsx_combination(elem, &attributes_kept);
+        }
+        let mut order = if kind.is_some() || takes_styles {
+            self.order_attributes(elem, &attributes_kept)
+        } else {
+            jsx_order::AttributeOrder::default()
+        };
+        let css = self.take_css_prop(elem);
+        for (_, value) in &mut order.values {
+            if let Some(value) = value {
+                self.visit_expression(value);
+            }
+        }
         walk_jsx_element(self, elem);
+        // A styled component the file defines drops the props it neither reads
+        // nor passes on, as styled-components and Emotion do at runtime
+        if !takes_styles
+            && let Some(definition) =
+                styled_symbol.and_then(|symbol| self.styled_definitions.get(&symbol))
+        {
+            elem.opening_element
+                .attributes
+                .retain(|attribute| match attribute {
+                    Attribute(attribute) => match &attribute.name {
+                        Identifier(name) => definition.takes(&name.name),
+                        oxc_ast::ast::JSXAttributeName::NamespacedName(_) => true,
+                    },
+                    JSXAttributeItem::SpreadAttribute(_) => true,
+                });
+        }
 
         // `<Global styles={...} />` is Emotion's spelling of a global stylesheet.
         // Lift the rules out and strip every attribute, leaving a component that
         // renders nothing — the same shape `createGlobalStyle` collapses to.
-        if let Some(name) = match &elem.opening_element.name {
-            JSXElementName::Identifier(id) => Some(Cow::Borrowed(id.name.as_str())),
-            JSXElementName::IdentifierReference(id) => Some(Cow::Borrowed(id.name.as_str())),
-            JSXElementName::MemberExpression(member)
-                if !self.global_style_components.is_empty() =>
-            {
-                Some(Cow::Owned(member.to_string()))
-            }
-            _ => None,
-        } && self.global_style_components.contains(name.as_ref())
+        if self
+            .bindings
+            .is_global_component(&elem.opening_element.name)
         {
+            let name = elem.opening_element.name.to_string();
             for i in (0..elem.opening_element.attributes.len()).rev() {
                 let Attribute(attr) = &mut elem.opening_element.attributes[i] else {
                     continue;
@@ -2357,18 +4070,17 @@ impl<'a> VisitMut<'a> for DevupVisitor<'a> {
         }
 
         // after run to convert css literal
-        let kind = match &elem.opening_element.name {
-            // Fast path: probe with `&str` directly, no allocation
-            JSXElementName::Identifier(id) => self.imports.get(id.name.as_str()),
-            JSXElementName::IdentifierReference(id) => self.imports.get(id.name.as_str()),
-            name => self.imports.get(name.to_string().as_str()),
-        };
-        if let Some(kind) = kind {
-            // A spread whose value may change when read again is read once, as
-            // its `className` and `style` are read beside it
-            let reads_once = reads_spreads_once(elem);
+        if kind.is_some() || takes_styles {
+            let reads = self
+                .bindings
+                .lowered_attribute_reads(&elem.opening_element.attributes);
+            self.report_reads(reads);
+            let element_name = elem.opening_element.name.to_string();
+            let label = kind
+                .as_ref()
+                .map_or_else(|| element_name.clone(), ToString::to_string);
             let attrs = &mut elem.opening_element.attributes;
-            let default_tag = kind.to_tag();
+            let default_tag = kind.as_ref().map_or("div", ExportVariableKind::to_tag);
             let mut tag_name = Expression::new_string_literal(
                 SPAN,
                 Str::from_in(default_tag, self.ast.allocator()),
@@ -2382,13 +4094,19 @@ impl<'a> VisitMut<'a> for DevupVisitor<'a> {
             let mut parsed_style_order = ParsedStyleOrder::None;
             let mut style_vars = None;
             let mut props = None;
+            // Where the spreads the build cannot read stand, counted from the
+            // last attribute, the first found being the last written
+            let mut unknown_spreads: Vec<usize> = Vec::new();
+            let mut overridden: Vec<Overridden<'a>> = Vec::new();
             for i in (0..attrs.len()).rev() {
                 let mut attr = attrs.remove(i);
                 if let Attribute(attr) = &mut attr
                     && let Identifier(name) = &attr.name
                     && !is_special_property(&name.name)
+                    && !attributes_kept.contains(name.name.as_str())
                 {
                     let property_name = name.name.as_str();
+                    let offset = attr.span.start;
                     for disassembled in disassemble_property(property_name) {
                         // Probe with `contains`, run the body borrowing `&disassembled`
                         // (it has no early exits), then MOVE the value into the set at
@@ -2402,21 +4120,25 @@ impl<'a> VisitMut<'a> for DevupVisitor<'a> {
                             if property_name == "styleOrder" {
                                 if let Some(value) = attr.value.as_ref() {
                                     parsed_style_order =
-                                        jsx_expression_to_style_order(value, self.ast.allocator());
+                                        self.style_order_attribute(&element_name, value);
                                 }
                             } else if property_name == "props" {
                                 if let Some(value) = attr.value.as_ref()
                                     && let JSXAttributeValue::ExpressionContainer(expr) = value
                                     && let Some(expression) = expr.expression.as_expression()
                                 {
-                                    props = Some(expression.clone_in(self.ast.allocator()));
+                                    props = Some(
+                                        expression.clone_in_with_semantic_ids(self.ast.allocator()),
+                                    );
                                 }
                             } else if property_name == "styleVars" {
                                 if let Some(value) = attr.value.as_ref()
                                     && let JSXAttributeValue::ExpressionContainer(expr) = value
                                     && let Some(expression) = expr.expression.as_expression()
                                 {
-                                    style_vars = Some(expression.clone_in(self.ast.allocator()));
+                                    style_vars = Some(
+                                        expression.clone_in_with_semantic_ids(self.ast.allocator()),
+                                    );
                                 }
                             } else if let Some(at) = &mut attr.value {
                                 if let JSXAttributeValue::ExpressionContainer(container) = at
@@ -2427,7 +4149,16 @@ impl<'a> VisitMut<'a> for DevupVisitor<'a> {
                                 }
                                 let ExtractResult { styles, tag, .. } =
                                     extract_style_from_jsx(&self.ast, &disassembled, at);
-                                props_styles.extend(styles.into_iter().rev());
+                                if unknown_spreads.is_empty() {
+                                    props_styles.extend(styles.into_iter().rev());
+                                } else {
+                                    overridden.push(Overridden {
+                                        key: property_name.to_string(),
+                                        offset,
+                                        spreads: unknown_spreads.len(),
+                                        styles: styles.into_iter().rev().collect(),
+                                    });
+                                }
                                 tag_name = tag.unwrap_or(tag_name);
                             }
                             duplicate_set.insert(disassembled);
@@ -2437,30 +4168,18 @@ impl<'a> VisitMut<'a> for DevupVisitor<'a> {
                     self.style_values.read_in(&self.ast, &mut spread.argument);
                     // A later attribute wins over what the spread gives, and the
                     // spread over earlier ones, as props are assigned in order
+                    let mut given_before_unknown = Vec::new();
                     if let Expression::ObjectExpression(object) =
                         unwrap_syntax_only_mut(&mut spread.argument)
                     {
                         flatten_spreads(&self.ast, object);
-                        let mut given = Vec::new();
-                        object.properties.retain(|property| {
-                            let ObjectPropertyKind::ObjectProperty(property) = property else {
-                                return true;
-                            };
-                            let Some(key) = get_str_by_property_key(&property.key) else {
-                                return true;
-                            };
-                            if is_special_property(&key) {
-                                return true;
-                            }
-                            let names: Vec<_> =
-                                disassemble_property(&key).map(Cow::into_owned).collect();
-                            let overridden = names
-                                .iter()
-                                .all(|name| duplicate_set.contains(name.as_str()));
-                            given.extend(names);
-                            !overridden
-                        });
-                        duplicate_set.extend(given.into_iter().map(Cow::Owned));
+                        jsx_order::prune_shadowed(object, &mut duplicate_set);
+                        // What a literal gives before spreads the build cannot
+                        // read gives way to them as an attribute does
+                        if !unknown_spreads.is_empty() {
+                            given_before_unknown =
+                                take_known_overridden(&self.ast, object, unknown_spreads.len());
+                        }
                     }
                     // Extract styles from spread attributes (e.g., {...{"@media": {...}}})
                     let ExtractResult { styles, .. } = extract_style_from_expression(
@@ -2473,29 +4192,39 @@ impl<'a> VisitMut<'a> for DevupVisitor<'a> {
                     );
                     // A spread the build cannot read passes its props at runtime,
                     // and an object literal keeps the props that are not styles
-                    let runtime = styles
-                        .iter()
-                        .all(|style| matches!(style, ExtractStyleProp::Unreadable { .. }));
+                    let runtime = given_before_unknown.is_empty()
+                        && styles
+                            .iter()
+                            .all(|style| matches!(style, ExtractStyleProp::Unreadable { .. }));
+                    overridden.extend(given_before_unknown);
                     self.composes_unknown |= runtime
                         && (matches!(
                             unwrap_syntax_only(&spread.argument),
                             Expression::CallExpression(_)
-                        ) || reads_unknown(&spread.argument, &self.unknown_bindings));
-                    if runtime && reads_binding(&spread.argument, &self.changed_bindings) {
+                        ) || reads_unknown(
+                            &spread.argument,
+                            &self.unknown_bindings,
+                            &|identifier| self.bindings.reads_module(identifier),
+                        ));
+                    if runtime
+                        && reads_binding(&spread.argument, &self.changed_bindings, &|identifier| {
+                            self.bindings.reads_module(identifier)
+                        })
+                    {
                         self.errors.push((
                             spread.span.start,
-                            element_error(
-                                &kind.to_string(),
-                                &readable_code(&spread.argument),
-                                STYLE_OBJECT,
-                            ),
+                            element_error(&label, &readable_code(&spread.argument), STYLE_OBJECT),
                         ));
                     }
+                    let unknown = is_unknown_spread(&spread.argument);
                     if runtime
                         || matches!(unwrap_syntax_only(&spread.argument),
                             Expression::ObjectExpression(object) if !object.properties.is_empty())
                     {
                         attrs.insert(i, attr);
+                        if unknown {
+                            unknown_spreads.push(attrs.len() - 1 - i);
+                        }
                     }
                     if !runtime {
                         props_styles.extend(styles.into_iter().rev());
@@ -2505,87 +4234,55 @@ impl<'a> VisitMut<'a> for DevupVisitor<'a> {
                 }
             }
 
-            kind.extract()
+            kind.as_ref()
+                .map(ExportVariableKind::extract)
                 .into_iter()
+                .flatten()
                 .rev()
                 .for_each(|ex| props_styles.push(ExtractStyleProp::Static(ex)));
 
             let mut unreadable = Vec::new();
             unreadable_styles(&props_styles, false, &mut unreadable);
 
-            let mut read_once = Vec::new();
-            if reads_once {
-                // What comes before the last value moved out moves out too, so
-                // everything is evaluated in the order it is written
-                let last_attribute = attrs.iter().rposition(|attribute| match attribute {
-                    JSXAttributeItem::SpreadAttribute(spread) => !is_pure(&spread.argument),
-                    JSXAttributeItem::Attribute(attribute) => attribute_value(attribute)
-                        .is_some_and(|value| {
-                            let mut suspends = Suspends::default();
-                            oxc_ast_visit::Visit::visit_expression(&mut suspends, value);
-                            suspends.found
-                        }),
-                });
-                let last_child = elem.children.iter().rposition(|child| {
-                    let mut suspends = Suspends::default();
-                    oxc_ast_visit::Visit::visit_jsx_child(&mut suspends, child);
-                    suspends.found
-                });
-                let attributes_moved = if last_child.is_some() {
-                    attrs.len()
-                } else {
-                    last_attribute.map_or(0, |last| last + 1)
-                };
-                for attribute in attrs.iter_mut().take(attributes_moved) {
-                    let value = match attribute {
-                        JSXAttributeItem::SpreadAttribute(spread) => Some(&mut spread.argument),
-                        JSXAttributeItem::Attribute(attribute) => attribute_value_mut(attribute),
-                    };
-                    if let Some(value) = value.filter(|value| !is_pure(value)) {
-                        read_once.push(self.read_once(value));
-                    }
-                }
-                for child in elem
-                    .children
-                    .iter_mut()
-                    .take(last_child.map_or(0, |last| last + 1))
+            // The `css` prop applies over the component's own styles, which
+            // read in reverse
+            if let Some(css) = css {
+                let class_name = written_class_name(&self.ast, attrs);
+                props_styles.reverse();
+                props_styles =
+                    self.compose_css_prop(&element_name, css, props_styles, class_name.as_ref());
+                props_styles.reverse();
+            }
+
+            // The spreads the build reads from again are copied once, where
+            // they are written
+            for attribute in attrs.iter_mut() {
+                if let JSXAttributeItem::SpreadAttribute(spread) = attribute
+                    && let Some(slot) = order.spreads.get(&spread.span.start)
                 {
-                    match child {
-                        JSXChild::ExpressionContainer(container) => {
-                            if let Some(value) = container.expression.as_expression_mut()
-                                && !is_pure(value)
-                            {
-                                read_once.push(self.read_once(value));
-                            }
-                        }
-                        JSXChild::Spread(spread) => {
-                            if !is_pure(&spread.expression) {
-                                read_once.push(self.read_once(&mut spread.expression));
-                            }
-                        }
-                        JSXChild::Element(element) => {
-                            let mut value =
-                                Expression::JSXElement(element.clone_in(self.ast.allocator()));
-                            read_once.push(self.read_once(&mut value));
-                            *child = JSXChild::ExpressionContainer(JSXExpressionContainer::boxed(
-                                SPAN,
-                                value.into(),
-                                &self.ast,
-                            ));
-                        }
-                        JSXChild::Fragment(fragment) => {
-                            let mut value =
-                                Expression::JSXFragment(fragment.clone_in(self.ast.allocator()));
-                            read_once.push(self.read_once(&mut value));
-                            *child = JSXChild::ExpressionContainer(JSXExpressionContainer::boxed(
-                                SPAN,
-                                value.into(),
-                                &self.ast,
-                            ));
-                        }
-                        JSXChild::Text(_) => {}
-                    }
+                    let name = order.values[*slot].0.clone();
+                    order.values[*slot].1 = Some(self.snapshot_as(name, &mut spread.argument).1);
                 }
+            }
+            let children = if order.values.is_empty() {
+                Vec::new()
+            } else {
+                self.capture_children(&mut elem.children)
+            };
+
+            if !overridden.is_empty() {
+                let spreads: Vec<_> = unknown_spreads
+                    .iter()
+                    .rev()
+                    .filter_map(|from_end| attrs.iter().rev().nth(*from_end))
+                    .filter_map(jsx_order::spread_attribute)
+                    .collect();
+                for style in &overridden {
+                    unreadable_styles(&style.styles, false, &mut unreadable);
+                }
+                let sources = spread_slots::sources(spreads.iter().map(|spread| &spread.argument));
+                let bound = self.bind_overridden(&element_name, overridden, &sources);
+                props_styles.extend(bound);
             }
 
             if let ParsedStyleOrder::Conditional {
@@ -2663,15 +4360,26 @@ impl<'a> VisitMut<'a> for DevupVisitor<'a> {
                 ));
             }
 
-            // A type only the runtime gives is read once, before what the
-            // element reads once
-            let mut values = Vec::with_capacity(read_once.len() + 1);
-            match crate::as_visit::resolve(&self.ast, elem, tag_name, default_tag) {
-                As::Name(name) => crate::as_visit::rename(&self.ast, elem, name),
-                As::Choice(choice) => self.pending_replacement = Some(choice),
-                As::Runtime(value) => {
-                    let name = format!("DevupAs{}", self.runtime_types);
-                    self.runtime_types += 1;
+            // A type only the runtime gives is read once too, where it is
+            // written when other values are read once as well
+            let mut values: Vec<_> = order
+                .values
+                .into_iter()
+                .filter_map(|(name, value)| Some((name, value?)))
+                .collect();
+            let resolved = kind
+                .is_some()
+                .then(|| crate::as_visit::resolve(&self.ast, elem, tag_name, default_tag));
+            match resolved {
+                None => {}
+                Some(As::Name(name)) => crate::as_visit::rename(&self.ast, elem, name),
+                Some(As::Choice(choice)) => self.pending_replacement = Some(choice),
+                Some(As::Runtime(value)) => {
+                    let name = order.as_name.unwrap_or_else(|| {
+                        let name = self.names.fresh("DevupAs");
+                        values.insert(0, (name.clone(), value));
+                        name
+                    });
                     crate::as_visit::rename(
                         &self.ast,
                         elem,
@@ -2681,20 +4389,21 @@ impl<'a> VisitMut<'a> for DevupVisitor<'a> {
                             &self.ast,
                         ),
                     );
-                    values.push((name, value));
                 }
             }
-            values.extend(read_once);
+            values.extend(children);
 
             if !values.is_empty() {
                 let element = self.pending_replacement.take().unwrap_or_else(|| {
                     Expression::JSXElement(oxc_allocator::Box::new_in(
-                        elem.clone_in(self.ast.allocator()),
+                        elem.clone_in_with_semantic_ids(self.ast.allocator()),
                         &self.ast,
                     ))
                 });
                 self.pending_replacement = Some(call_with_values(&self.ast, values, element));
             }
+        } else if let Some(css) = css {
+            self.lower_css_prop(elem, css);
         }
     }
 }
@@ -2720,28 +4429,105 @@ mod tests {
     }
 
     #[test]
+    #[serial]
     fn test_stylex_named_and_unrelated_imports() {
+        reset_class_map();
+        reset_file_map();
         let allocator = Allocator::default();
         let source_type = SourceType::from_path("test.ts").unwrap();
-        let mut program = Parser::new(&allocator, "import { create, props as sxProps, keyframes, unknown } from '@stylexjs/stylex'; import value from 'other';", source_type).parse().program;
+        let mut program = Parser::new(&allocator, "import { create, props as sxProps, keyframes, unknown } from '@stylexjs/stylex'; import value from 'other'; const styles = create({ base: { color: 'red' } }); export const a = sxProps(styles.base); export const b = unknown(styles.base); export const animation = keyframes({ from: { opacity: 0 } });", source_type).parse().program;
         let mut visitor =
             DevupVisitor::new(&allocator, "test.ts", "@devup-ui/react", Vec::new(), None);
 
         visitor.visit_program(&mut program);
 
-        assert_eq!(
-            visitor.stylex_named_imports.get("create"),
-            Some(&StylexFunction::Create)
+        let code = oxc_codegen::Codegen::new().build(&program).code;
+        assert!(
+            code.contains("const styles = { \"base\": \"a\" };"),
+            "{code}"
         );
-        assert_eq!(
-            visitor.stylex_named_imports.get("sxProps"),
-            Some(&StylexFunction::Props)
+        assert!(
+            code.contains("export const a = { className: styles.base };")
+                || code.contains("export const a = { className: \"a\" };"),
+            "{code}"
         );
-        assert_eq!(
-            visitor.stylex_named_imports.get("keyframes"),
-            Some(&StylexFunction::Keyframes)
+        assert!(
+            code.contains("export const b = unknown(styles.base);"),
+            "{code}"
         );
-        assert!(!visitor.stylex_named_imports.contains_key("unknown"));
+        assert!(code.contains("export const animation = \""), "{code}");
+        assert!(code.contains("import value from \"other\";"), "{code}");
+    }
+
+    #[test]
+    #[serial]
+    fn stylex_composition_uses_scoped_namespace_bindings() {
+        // Given distinct namespace bindings with the same local name.
+        reset_class_map();
+        reset_file_map();
+        let allocator = Allocator::default();
+        let source_type = SourceType::from_path("test.ts").unwrap();
+        let mut program = Parser::new(
+            &allocator,
+            "import stylex from '@stylexjs/stylex';
+const s = stylex.create({ base: { color: 'red' }, reset: { color: null } });
+function inner() {
+  const s = stylex.create({ base: { color: 'blue' }, reset: { opacity: null } });
+  return stylex.attrs(s.base, s.reset);
+}
+export const outer = stylex.props(s.base, s.reset);",
+            source_type,
+        )
+        .parse()
+        .program;
+        let mut visitor =
+            DevupVisitor::new(&allocator, "test.ts", "@devup-ui/react", Vec::new(), None);
+
+        // When keyed composition visits the inner binding before the outer read.
+        visitor.visit_program(&mut program);
+
+        // Then each reset removes only the key belonging to its own binding.
+        let code = oxc_codegen::Codegen::new().build(&program).code;
+        assert!(code.contains("return { class: \"b\" };"), "{code}");
+        assert!(
+            code.contains("export const outer = { className: \"\" };"),
+            "{code}"
+        );
+        assert_eq!(visitor.errors, vec![]);
+    }
+
+    #[test]
+    #[serial]
+    fn stylex_composition_keeps_shadowing_parameter_reads() {
+        // Given a parameter shadowing a compiled namespace.
+        reset_class_map();
+        reset_file_map();
+        let allocator = Allocator::default();
+        let source_type = SourceType::from_path("test.ts").unwrap();
+        let mut program = Parser::new(
+            &allocator,
+            "import stylex from '@stylexjs/stylex';
+const s = stylex.create({ base: { color: 'red' } });
+export function local(s) { return stylex.props(s.base); }",
+            source_type,
+        )
+        .parse()
+        .program;
+        let mut visitor =
+            DevupVisitor::new(&allocator, "test.ts", "@devup-ui/react", Vec::new(), None);
+
+        // When props resolves the parameter's member.
+        visitor.visit_program(&mut program);
+
+        // Then it preserves the runtime class instead of substituting the outer one.
+        let code = oxc_codegen::Codegen::new().build(&program).code;
+        assert!(
+            code.contains(
+                "return { className: [s.base].flat(Infinity).filter(Boolean).join(\" \") };"
+            ),
+            "{code}"
+        );
+        assert_eq!(visitor.errors, vec![]);
     }
 
     #[test]

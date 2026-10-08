@@ -451,7 +451,7 @@ fn export_name(name: &ModuleExportName<'_>) -> String {
     name.name().to_string()
 }
 
-fn declared_names(declaration: &Declaration<'_>) -> Vec<String> {
+pub(crate) fn declared_names(declaration: &Declaration<'_>) -> Vec<String> {
     match declaration {
         Declaration::VariableDeclaration(declaration) => declaration
             .declarations

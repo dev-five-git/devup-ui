@@ -1,0 +1,7 @@
+{
+  "changes": {
+    "bindings/devup-ui-wasm/package.json": "Patch"
+  },
+  "note": "Preserve exact JavaScript defaults, numeric arguments, source-order evaluation and final duplicate assignments in StyleX dynamic functions, static composition and variable conditions, with no styling runtime. Empty firstThatWorks omits its property, statically readable types helper extra arguments are evaluated and ignored, ordered static includes retain keyed precedence and null resets, shadowed undefined remains a real binding, and attrs returns serialized style text. Report located build errors with repairs for unsupported function forms, nested or overlapping dynamic calls, incompatible JSX/spread compositions, uncalled dynamic includes or function aliases, unconsumed helper calls and value escapes, runtime helper extra arguments, malformed at-rule conditions, non-flat or runtime theme-contract placeholders, and written namespace bindings, aliases or members whose metadata cannot be known exactly.",
+  "date": "2026-10-01T00:00:00.000Z"
+}
