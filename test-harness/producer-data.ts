@@ -1,5 +1,14 @@
 import { CoverageError } from './lcov'
 
+const qualifiedRevisions: ReadonlyMap<string, string> = new Map([
+  ['1.4.0', '34cbb9a40b4bd1bd767d134a7065e66c2432a676'],
+  ['1.4.2', '744846f844374847c902b5e7fd59b4342a51ef99'],
+])
+const runtimeIdentity = Object.freeze({
+  bun: Bun.version,
+  revision: Bun.revision,
+})
+
 export interface ProfileRange {
   readonly startOffset: number
   readonly endOffset: number
@@ -43,8 +52,9 @@ export function parseProducerIdentity(
   const bun = text(record['bun'])
   const revision = text(record['revision'])
   if (
-    bun !== '1.4.2' ||
-    revision !== '744846f844374847c902b5e7fd59b4342a51ef99' ||
+    qualifiedRevisions.get(bun) !== revision ||
+    bun !== runtimeIdentity.bun ||
+    revision !== runtimeIdentity.revision ||
     config !== expected.config ||
     pid !== expected.pid
   )
