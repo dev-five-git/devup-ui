@@ -11,6 +11,7 @@ pub mod content_typography;
 #[cfg(test)]
 mod content_typography_tests;
 pub mod content_value;
+mod counter_allocation;
 mod counter_owner;
 pub mod debug;
 pub mod file_map;
@@ -43,6 +44,7 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{LazyLock, RwLock};
 
 use crate::constant::{GLOBAL_ENUM_STYLE_PROPERTY, GLOBAL_STYLE_PROPERTY};
+pub use crate::counter_allocation::CounterSlot;
 pub use crate::counter_owner::CounterOwner;
 use crate::debug::is_debug;
 
@@ -378,46 +380,24 @@ thread_local! {
     static KEY_BUF: std::cell::RefCell<String> = const { std::cell::RefCell::new(String::new()) };
 }
 
-/// Get-or-insert a key in the per-file class map and return its base-37 name.
+/// Get-or-insert a key in the per-file class map and return its numeric slot.
 /// `build_key` fills the supplied reusable buffer with the key bytes; the buffer
 /// is borrowed for the probe so the common already-present path allocates
 /// nothing, and only a real insert clones the key into an owned `String`.
 /// Single home for the class naming algorithm shared by keyframes, classname
 /// and variable-name generation.
-fn class_num_for_key(filename_key: &str, build_key: impl FnOnce(&mut String)) -> String {
+fn class_slot_for_key(filename_key: &str, build_key: impl FnOnce(&mut String)) -> CounterSlot {
     KEY_BUF.with(|buf| {
         let mut key = buf.borrow_mut();
         key.clear();
         build_key(&mut key);
-        class_map::with_class_map_mut(|map| {
-            // Probe first so the owned filename key is only allocated on the
-            // first style for a file, not on every generated name.
-            if let Some(file_entry) = map.get_mut(filename_key) {
-                // Borrow-probe the common already-present-key path so the owned
-                // `String` is only materialized on a genuine insert, never on
-                // the hot repeat-property path.
-                if let Some(&num) = file_entry.get(key.as_str()) {
-                    num_to_nm_base(num)
-                } else {
-                    let len = file_entry.len();
-                    file_entry.insert(key.clone(), len);
-                    class_map::record_insert(filename_key, &key);
-                    num_to_nm_base(len)
-                }
-            } else {
-                // First style seen for this file: build the inner map presized to
-                // exactly the one entry we insert, so the initial insert never starts
-                // from a zero-capacity map (which would rehash/grow on the first few
-                // inserts). Output/behavior is byte-identical ??same single entry,
-                // same `0` numbering ??this only fixes the allocation shape.
-                let mut inner = std::collections::HashMap::with_capacity(1);
-                inner.insert(key.clone(), 0);
-                map.insert(filename_key.to_string(), inner);
-                class_map::record_insert(filename_key, &key);
-                num_to_nm_base(0)
-            }
-        })
+        counter_allocation::reserve_counter(filename_key, key.as_str())
     })
+}
+
+/// Render the existing name from the slot returned by the single allocation request.
+fn class_num_for_key(filename_key: &str, build_key: impl FnOnce(&mut String)) -> String {
+    class_slot_for_key(filename_key, build_key).name()
 }
 
 /// An animation's name from its escaped content: equal animations share one
