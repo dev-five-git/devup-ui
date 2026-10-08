@@ -214,6 +214,35 @@ schedules its loaders in. In development, files that appear later are numbered
 after the existing ones, and the names of the last session are kept across
 restarts.
 
+### MDX Plugin Determinism
+
+MDX preparation executes the project's configured compiler chain one additional
+time per file before native compilation. Remark, rehype, and recma plugins must
+produce output from that file's input and options, not from invocation counts or
+other mutable state shared between files. Next.js also runs the chain for
+different compiler layers and development rebuilds, so those stateful plugins
+are not deterministic per file even without Devup UI.
+
+For example, this plugin changes its output each time it runs:
+
+```js
+let calls = 0
+
+function countSensitivePlugin() {
+  return (tree) => {
+    calls += 1
+    tree.children.push({
+      type: 'paragraph',
+      children: [{ type: 'text', value: `transform-${calls}` }],
+    })
+  }
+}
+```
+
+A cold native compilation emits `transform-1`, while native compilation after
+preparation emits `transform-2`. Native byte equivalence applies to pure plugins,
+not this pattern. Devup UI does not clone, reset, or serialize plugin state.
+
 Files nothing compiles are not extracted (they add no CSS and cannot fail the
 build). Set `prewarmAll: true` to extract the whole source tree instead, for
 sources the import graph cannot connect.
