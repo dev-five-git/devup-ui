@@ -4,16 +4,25 @@
 
 use oxc_ast::AstKind;
 use oxc_ast::ast::{
-    Expression, JSXAttributeName, JSXElementName, ObjectPropertyKind, Program,
+    Expression, IdentifierReference, JSXAttributeName, JSXElementName, ObjectPropertyKind, Program,
     VariableDeclarationKind,
 };
 use oxc_ast_visit::{Visit, walk};
-use oxc_semantic::{AstNodes, SemanticBuilder};
+use oxc_semantic::{AstNodes, Scoping, SemanticBuilder};
 use oxc_span::GetSpan;
 use oxc_syntax::node::NodeId;
 use oxc_syntax::operator::UnaryOperator;
 use oxc_syntax::scope::ScopeFlags;
 use rustc_hash::FxHashMap;
+
+use crate::css_prop::{CssProp, CssTakers, binding_of};
+use crate::imported_constants::jsx_root_identifier;
+use crate::imported_constants::provenance::Proof;
+
+pub(crate) mod callees;
+mod compiled;
+mod readonly_helpers;
+mod receiver;
 
 /// How code uses a top-level binding
 #[derive(Debug)]
@@ -76,38 +85,15 @@ const ELEMENT_METHODS: [&str; 23] = [
     "get",
 ];
 
-/// Methods that only read what they are called on
-const READING_METHODS: [&str; 10] = [
-    "join",
-    "includes",
-    "indexOf",
-    "lastIndexOf",
-    "keys",
-    "has",
-    "toString",
-    "valueOf",
-    "hasOwnProperty",
-    "propertyIsEnumerable",
-];
-
-/// Global functions that only read their arguments
-const READING_FUNCTIONS: [&str; 8] = [
-    "String",
-    "Number",
-    "Boolean",
-    "parseInt",
-    "parseFloat",
-    "isNaN",
-    "isFinite",
-    "structuredClone",
-];
-
 /// The uses of each top-level binding of `program` that may change what it
 /// holds; `style` tells the names of the style APIs, whose arguments the
-/// build reads and which never run
+/// build reads and which never run, and `css` the `css` props the build reads
+/// and the entry absorbing Emotion's own `jsx`. A name only counts for a
+/// reference to the binding of the module, never to a local of the same name.
 pub(crate) fn uses(
     program: &Program<'_>,
     style: &dyn Fn(&str) -> bool,
+    css: Option<(CssProp, &str)>,
 ) -> FxHashMap<String, Vec<Use>> {
     let semantic = SemanticBuilder::new()
         .with_build_nodes(true)
@@ -115,7 +101,7 @@ pub(crate) fn uses(
         .semantic;
     let scoping = semantic.scoping();
     let nodes = semantic.nodes();
-    let is_global = |name: &str| scoping.get_root_binding(name.into()).is_none();
+    let takers = css.map(|(css_prop, compat)| CssTakers::new(program, scoping, css_prop, compat));
     let mut uses: FxHashMap<String, Vec<Use>> = FxHashMap::default();
     for (name, symbol) in scoping.get_bindings(scoping.root_scope_id()) {
         let init = match nodes.kind(scoping.symbol_declaration(*symbol)) {
@@ -124,8 +110,9 @@ pub(crate) fn uses(
         };
         let context = Context {
             nodes,
+            scoping,
             style,
-            is_global: &is_global,
+            css: takers.as_ref(),
             init,
         };
         let found: Vec<Use> = scoping
@@ -144,8 +131,9 @@ pub(crate) fn uses(
 
 struct Context<'s, 'a> {
     nodes: &'s AstNodes<'a>,
+    scoping: &'s Scoping,
     style: &'s dyn Fn(&str) -> bool,
-    is_global: &'s dyn Fn(&str) -> bool,
+    css: Option<&'s CssTakers<'s>>,
     /// What the binding is declared as, when a `const` or `let` gives it
     init: Option<&'s Expression<'a>>,
 }
@@ -230,7 +218,7 @@ impl Context<'_, '_> {
                 changes(&path)
             }
             AstKind::CallExpression(call) if call.callee.span() == span => {
-                self.method_call(parent, at, path)
+                self.method_call(receiver::CallSite { node: parent, expression: call }, at, path)
             }
             AstKind::CallExpression(call) => {
                 let function = self.global_function(&call.callee);
@@ -248,21 +236,27 @@ impl Context<'_, '_> {
                     });
                 }
                 match function {
+                    Some(("Object", "freeze")) if call.arguments.len() == 1 => {
+                        let found = self.classify(parent)?;
+                        match found {
+                            Use::Escapes { path: returned, into, .. } => {
+                                path.extend(returned);
+                                Some(Use::Escapes { at, path, into })
+                            }
+                            Use::Changes { depth, .. } => Some(Use::Changes { at, depth: path.len() + depth }),
+                            Use::Calls { path: returned, .. } => {
+                                path.extend(returned);
+                                Some(Use::Calls { at, path })
+                            }
+                        }
+                    }
                     Some(
                         ("Object", "assign" | "values" | "entries") | ("Array", "from" | "of"),
                     ) => {
                         path.push(None);
                         self.escapes(parent, at, path)
                     }
-                    Some(
-                        (
-                            "Object",
-                            "keys" | "freeze" | "seal" | "preventExtensions" | "isFrozen"
-                            | "isSealed" | "getOwnPropertyNames" | "hasOwn",
-                        )
-                        | ("JSON" | "Math" | "console" | "", _)
-                        | ("Array", "isArray"),
-                    ) => None,
+                    _ if callees::reads_arguments(&Proof { nodes: self.nodes, scoping: self.scoping }, call) => None,
                     _ => self.escapes(parent, at, path),
                 }
             }
@@ -299,28 +293,6 @@ impl Context<'_, '_> {
             }
             _ => None,
         }
-    }
-
-    /// `path` read as a method called on what comes before its last key
-    fn method_call(&self, call: NodeId, at: u32, mut path: Vec<Option<String>>) -> Option<Use> {
-        // Calling the binding itself hands it nothing
-        let method = path.pop()?;
-        if let Some(method) = method.as_deref() {
-            if MUTATING_METHODS.contains(&method) {
-                return Some(Use::Changes {
-                    at,
-                    depth: path.len() + 1,
-                });
-            }
-            if ELEMENT_METHODS.contains(&method) {
-                path.push(None);
-                return self.escapes(call, at, path);
-            }
-            if READING_METHODS.contains(&method) || !self.uses_this(&path, method) {
-                return None;
-            }
-        }
-        (!self.in_style(call)).then_some(Use::Calls { at, path })
     }
 
     /// Whether the method `method` of what `path` leads to in the binding's
@@ -362,36 +334,91 @@ impl Context<'_, '_> {
         }
     }
 
-    /// `(object, member)` when `callee` is a global function, `("", name)` for
-    /// one that only reads its arguments
+    /// The unmodified semantic global and its member, empty for a direct call.
     fn global_function<'e>(&self, callee: &'e Expression<'_>) -> Option<(&'e str, &'e str)> {
-        match callee {
-            Expression::Identifier(identifier)
-                if READING_FUNCTIONS.contains(&identifier.name.as_str())
-                    && (self.is_global)(&identifier.name) =>
-            {
-                Some(("", identifier.name.as_str()))
-            }
-            Expression::StaticMemberExpression(member) => match &member.object {
-                Expression::Identifier(object) if (self.is_global)(&object.name) => {
-                    Some((object.name.as_str(), member.property.name.as_str()))
-                }
-                _ => None,
+        callees::global(
+            &Proof {
+                nodes: self.nodes,
+                scoping: self.scoping,
             },
-            _ => None,
-        }
+            callee,
+        )
     }
 
     /// Whether code at `node` is read by a style API, which never runs it
     fn in_style(&self, node: NodeId) -> bool {
+        let mut runtime_call = false;
         std::iter::once(node)
             .chain(self.nodes.ancestor_ids(node))
-            .any(|id| match self.nodes.kind(id) {
-                AstKind::CallExpression(call) => self.is_style(&call.callee),
-                AstKind::TaggedTemplateExpression(tagged) => self.is_style(&tagged.tag),
-                AstKind::JSXOpeningElement(element) => self.is_style_element(&element.name),
-                _ => false,
+            .find_map(|id| match self.nodes.kind(id) {
+                AstKind::CallExpression(call) => {
+                    if self.compiled_call(&call.callee)
+                        || self.is_class_names_call(id, &call.callee)
+                    {
+                        Some(true)
+                    } else {
+                        runtime_call = true;
+                        None
+                    }
+                }
+                AstKind::TaggedTemplateExpression(tagged) => {
+                    if self.compiled_call(&tagged.tag) || self.is_class_names_call(id, &tagged.tag)
+                    {
+                        Some(true)
+                    } else {
+                        runtime_call = true;
+                        None
+                    }
+                }
+                AstKind::JSXOpeningElement(element) => {
+                    Some(!runtime_call && self.is_style_element(&element.name))
+                }
+                AstKind::JSXAttribute(attribute) if self.is_css_attribute(id, attribute) => {
+                    Some(true)
+                }
+                AstKind::ObjectProperty(property) if self.is_css_property(id, property) => {
+                    Some(true)
+                }
+                _ => None,
             })
+            .unwrap_or(false)
+    }
+
+    /// Whether `callee`, called at `id`, is the `css` or `cx` a `<ClassNames>`
+    /// child function around takes, whose calls the build compiles
+    fn is_class_names_call(&self, id: NodeId, callee: &Expression<'_>) -> bool {
+        let Some(css) = self.css else {
+            return false;
+        };
+        self.nodes.ancestor_ids(id).any(|ancestor| {
+            matches!(self.nodes.kind(ancestor), AstKind::JSXElement(element)
+                if css.calls_class_names(&css.class_names_calls(element), callee))
+        })
+    }
+
+    /// Whether the attribute `attribute` at `id` is a `css` prop the build
+    /// compiles
+    fn is_css_attribute(&self, id: NodeId, attribute: &oxc_ast::ast::JSXAttribute<'_>) -> bool {
+        self.css.is_some_and(|css| {
+            attribute
+                .name
+                .as_identifier()
+                .is_some_and(|name| name.name == "css")
+                && matches!(self.nodes.parent_kind(id), AstKind::JSXOpeningElement(element)
+                    if css.takes(&element.name, |identifier| self.is_style_reference(identifier)))
+        })
+    }
+
+    /// Whether the property `property` at `id` is the `css` prop among the
+    /// props a `jsx()` call gives, which the build compiles
+    fn is_css_property(&self, id: NodeId, property: &oxc_ast::ast::ObjectProperty<'_>) -> bool {
+        self.css.is_some_and(|css| {
+            matches!(self.nodes.parent_kind(self.nodes.parent_id(id)), AstKind::CallExpression(call)
+                if matches!(call.arguments.get(1), Some(oxc_ast::ast::Argument::ObjectExpression(props))
+                    if css.property(call, |identifier| self.is_style_reference(identifier))
+                        .and_then(|at| props.properties.get(at))
+                        .is_some_and(|css| css.span() == property.span)))
+        })
     }
 
     /// A value handed on at `node`: read where the style APIs read it, kept
@@ -412,10 +439,17 @@ impl Context<'_, '_> {
                 | AstKind::SpreadElement(_)
                 | AstKind::ParenthesizedExpression(_)
                 | AstKind::TSAsExpression(_)
-                | AstKind::TSSatisfiesExpression(_) => false,
+                | AstKind::TSSatisfiesExpression(_)
+                | AstKind::ArrowFunctionExpression(_)
+                | AstKind::FunctionBody(_)
+                | AstKind::ReturnStatement(_) => false,
                 AstKind::CallExpression(call) => !matches!(
                     self.global_function(&call.callee),
                     Some(("Object", "freeze" | "seal" | "preventExtensions"))
+                ),
+                AstKind::Function(_) => matches!(
+                    self.nodes.parent_kind(*id),
+                    AstKind::Program(_) | AstKind::ExportDeclaration(_)
                 ),
                 _ => true,
             });
@@ -445,6 +479,14 @@ impl Context<'_, '_> {
                     .map(|name| name.to_string())
             }
             AstKind::ExportDefaultDeclaration(_) => Some(String::new()),
+            AstKind::Function(function)
+                if matches!(
+                    self.nodes.parent_kind(id),
+                    AstKind::Program(_) | AstKind::ExportDeclaration(_)
+                ) =>
+            {
+                function.id.as_ref().map(|id| id.name.to_string())
+            }
             AstKind::AssignmentExpression(assignment)
                 if top_level(id)
                     && assignment
@@ -463,7 +505,7 @@ impl Context<'_, '_> {
     fn is_commonjs_export(&self, member: &oxc_ast::ast::MemberExpression<'_>) -> bool {
         let is_global = |expression: &Expression<'_>, name: &str| {
             matches!(expression, Expression::Identifier(identifier)
-                if identifier.name == name && (self.is_global)(name))
+                if identifier.name == name && self.is_global(identifier))
         };
         match member.object() {
             Expression::StaticMemberExpression(inner) => {
@@ -477,20 +519,25 @@ impl Context<'_, '_> {
         }
     }
 
-    fn is_style(&self, callee: &Expression<'_>) -> bool {
-        let mut expression = callee;
-        loop {
-            match crate::utils::unwrap_syntax_only(expression) {
-                Expression::Identifier(identifier) => return (self.style)(&identifier.name),
-                Expression::StaticMemberExpression(member) => expression = &member.object,
-                Expression::CallExpression(call) => expression = &call.callee,
-                _ => return false,
-            }
-        }
+    /// Whether `identifier` reads a global, and not a local or an import of
+    /// the module that shares the name
+    fn is_global(&self, identifier: &IdentifierReference<'_>) -> bool {
+        binding_of(self.scoping, identifier).is_none()
+    }
+
+    /// Whether `identifier` reads the top-level binding the style predicate
+    /// names: not a local of the same name, and not a global
+    fn is_style_reference(&self, identifier: &IdentifierReference<'_>) -> bool {
+        (self.style)(&identifier.name)
+            && binding_of(self.scoping, identifier).is_some_and(|symbol| {
+                self.scoping
+                    .get_root_binding(identifier.name.as_str().into())
+                    == Some(symbol)
+            })
     }
 
     fn is_style_element(&self, name: &JSXElementName<'_>) -> bool {
-        crate::imported_constants::jsx_root(name).is_some_and(|root| (self.style)(root))
+        jsx_root_identifier(name).is_some_and(|identifier| self.is_style_reference(identifier))
     }
 }
 
@@ -499,6 +546,27 @@ impl Context<'_, '_> {
 struct ReadsThis {
     found: bool,
     depth: usize,
+}
+
+struct ReturnedCapture<'s, 'a> {
+    proof: &'s Proof<'s, 'a>,
+    found: bool,
+}
+
+impl<'a> Visit<'a> for ReturnedCapture<'_, 'a> {
+    fn visit_identifier_reference(&mut self, identifier: &IdentifierReference<'a>) {
+        if let Some(symbol) = binding_of(self.proof.scoping, identifier)
+            && self.proof.scoping.symbol_scope_id(symbol) == self.proof.scoping.root_scope_id()
+            && matches!(
+                self.proof.binding(symbol),
+                crate::imported_constants::provenance::Shape::Record(_)
+                    | crate::imported_constants::provenance::Shape::Array(_)
+                    | crate::imported_constants::provenance::Shape::Unknown
+            )
+        {
+            self.found = true;
+        }
+    }
 }
 
 impl<'a> Visit<'a> for ReadsThis {
@@ -533,21 +601,24 @@ mod tests {
                 .unwrap_or_default()
                 .to_string()
         };
-        let mut found: Vec<String> =
-            uses(&program, &|name| matches!(name, "css" | "Box" | "Devup"))
-                .into_iter()
-                .flat_map(|(name, uses)| {
-                    uses.into_iter().map(move |found| match found {
-                        Use::Changes { at, depth } => {
-                            format!("{name} changes {depth}: {}", line(at))
-                        }
-                        Use::Escapes { at, path, into } => {
-                            format!("{name} escapes {path:?} into {into:?}: {}", line(at))
-                        }
-                        Use::Calls { at, path } => format!("{name} calls {path:?}: {}", line(at)),
-                    })
-                })
-                .collect();
+        let mut found: Vec<String> = uses(
+            &program,
+            &|name| matches!(name, "css" | "Box" | "Devup"),
+            None,
+        )
+        .into_iter()
+        .flat_map(|(name, uses)| {
+            uses.into_iter().map(move |found| match found {
+                Use::Changes { at, depth } => {
+                    format!("{name} changes {depth}: {}", line(at))
+                }
+                Use::Escapes { at, path, into } => {
+                    format!("{name} escapes {path:?} into {into:?}: {}", line(at))
+                }
+                Use::Calls { at, path } => format!("{name} calls {path:?}: {}", line(at)),
+            })
+        })
+        .collect();
         found.sort();
         found
     }
@@ -619,7 +690,8 @@ await a;"
     #[test]
     fn reads() {
         insta::assert_debug_snapshot!(describe(
-            "const a = { x: 1, arrow: () => 1, plain() { return 1; }, nested() { return function () { return this; }; }, self() { return this; } };
+            "import { css, Box } from '@devup-ui/react'; import * as Devup from '@devup-ui/react';
+const a = { x: 1, arrow: () => 1, plain() { return 1; }, nested() { return function () { return this; }; }, self() { return this; } };
 String(a.x); parseInt(a.x); structuredClone(a); Object.keys(a); Object.freeze(a); Object.hasOwn(a, 'x'); Object.getOwnPropertyNames(a); JSON.stringify(a); Math.max(a.x); console.log(a); Array.isArray(a);
 css(a); css({ ...a, color: f(a) }); Devup.css(a); css.x`${a}`; css(1)(a); css({ w: a.self() });
 <Box {...a} p={f(a)} />; <Devup.Box>{a}</Devup.Box>; <Other value={a} />; <Other {...a} />; <Other>{a}</Other>;
@@ -669,3 +741,9 @@ function inner() { const kept = { a }; }"
         ));
     }
 }
+
+#[cfg(test)]
+mod scope_tests;
+
+#[cfg(test)]
+mod freeze_return_tests;

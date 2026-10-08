@@ -21,6 +21,13 @@ use oxc_syntax::reference::ReferenceId;
 use oxc_syntax::symbol::SymbolId;
 use rustc_hash::{FxHashMap, FxHashSet};
 
+#[path = "build_time_values_execute.rs"]
+mod execute;
+#[path = "build_time_values_mapping.rs"]
+mod mapping;
+use execute::compute;
+use mapping::Generated;
+
 use crate::stylex::StylexFunction;
 use crate::utils::{binding_root, get_string_by_literal_expression, unwrap_syntax_only};
 use crate::{ExtractOption, ModuleResolver};
@@ -57,14 +64,14 @@ pub(crate) fn has_build_time_values(
     option: &ExtractOption,
     resolver: Option<&ModuleResolver>,
 ) -> bool {
-    let (code, _) = crate::import_alias_visit::transform_import_aliases_with_edits(
+    let aliased = crate::import_alias_visit::transform_import_aliases_with_edits(
         code,
         filename,
         &option.package,
         &option.import_aliases,
     );
     let allocator = Allocator::default();
-    let Some(mut program) = parse(&allocator, filename, &code) else {
+    let Some(mut program) = parse(&allocator, filename, &aliased.code) else {
         return false;
     };
     let inlined = crate::imported_constants::inline_constants(
@@ -73,11 +80,12 @@ pub(crate) fn has_build_time_values(
         filename,
         option,
         resolver,
+        aliased.css_prop,
     );
     let changes = crate::imported_constants::ChangeCheck::new(&program, filename, option, resolver);
     !find(
         &program,
-        &|source| source.starts_with(option.package.as_str()),
+        &|source| crate::package_specifier::is_package(source, &option.package),
         &inlined.unknown,
         &|name| changes.is_changed(name),
         &|name| changes.known(name),
@@ -110,10 +118,10 @@ const GLOBALS: [&str; 18] = [
 
 /// The members of `Math` every engine gives exactly; the others are
 /// approximations that may differ in their last digits
-const EXACT_MATH: [&str; 20] = [
-    "abs", "ceil", "floor", "round", "trunc", "sign", "max", "min", "sqrt", "fround", "imul",
-    "clz32", "PI", "E", "LN2", "LN10", "LOG2E", "LOG10E", "SQRT2", "SQRT1_2",
-];
+pub(crate) mod exact_math;
+#[cfg(test)]
+mod w22_tests;
+use exact_math::EXACT_MATH;
 
 /// Members giving what the locale, the Unicode data of the engine or chance
 /// make them, and `toString`, which engines only approximate with a radix:
@@ -160,6 +168,7 @@ struct Binding {
 }
 
 struct Finder<'s, 'a> {
+    eval: crate::imported_constants::eval_barriers::EvalBarriers,
     scoping: &'s Scoping,
     statements: &'s [Statement<'a>],
     bindings: FxHashMap<SymbolId, Binding>,
@@ -198,6 +207,7 @@ impl<'s, 'a> Finder<'s, 'a> {
         known: &'s dyn Fn(&str) -> Option<String>,
     ) -> Self {
         let mut finder = Self {
+            eval: crate::imported_constants::eval_barriers::EvalBarriers::new(program),
             scoping,
             statements: &program.body,
             bindings: FxHashMap::default(),
@@ -222,6 +232,12 @@ impl<'s, 'a> Finder<'s, 'a> {
     fn bind(&mut self, statement: usize, node: &Statement<'a>, is_style: &dyn Fn(&str) -> bool) {
         let mut declare = |symbol: Option<SymbolId>, usable: bool| {
             if let Some(symbol) = symbol {
+                let usable = usable
+                    && !self
+                        .scoping
+                        .get_resolved_reference_ids(symbol)
+                        .iter()
+                        .any(|reference| self.scoping.get_reference(*reference).is_write());
                 self.bindings.insert(symbol, Binding { statement, usable });
             }
         };
@@ -278,7 +294,10 @@ impl<'s, 'a> Finder<'s, 'a> {
             Statement::ExportDefaultDeclaration(export) => {
                 match &export.declaration {
                     ExportDefaultDeclarationKind::FunctionDeclaration(function) => {
-                        declare(function.id.as_ref().and_then(|id| id.symbol_id.get()), true);
+                        declare(
+                            function.id.as_ref().and_then(|id| id.symbol_id.get()),
+                            function.body.is_some(),
+                        );
                     }
                     ExportDefaultDeclarationKind::ClassDeclaration(class) => {
                         declare(class.id.as_ref().and_then(|id| id.symbol_id.get()), false);
@@ -298,13 +317,18 @@ impl<'s, 'a> Finder<'s, 'a> {
                     for identifier in declarator.id.get_binding_identifiers() {
                         declare(
                             identifier.symbol_id.get(),
-                            declaration.kind == VariableDeclarationKind::Const,
+                            declaration.kind == VariableDeclarationKind::Const
+                                && !declaration.declare
+                                && declarator.init.is_some(),
                         );
                     }
                 }
             }
             Declaration::FunctionDeclaration(function) => {
-                declare(function.id.as_ref().and_then(|id| id.symbol_id.get()), true);
+                declare(
+                    function.id.as_ref().and_then(|id| id.symbol_id.get()),
+                    function.body.is_some(),
+                );
             }
             Declaration::ClassDeclaration(class) => {
                 declare(class.id.as_ref().and_then(|id| id.symbol_id.get()), false);
@@ -344,7 +368,10 @@ impl<'s, 'a> Finder<'s, 'a> {
 
     fn is_css(&self, callee: &Expression<'_>) -> bool {
         if let Expression::StaticMemberExpression(member) = callee {
-            return member.property.name == "css";
+            return member.property.name == "css"
+                && self
+                    .symbol(&member.object)
+                    .is_some_and(|symbol| self.namespaces.contains(&symbol));
         }
         self.symbol(callee)
             .is_some_and(|symbol| self.css.contains(&symbol))
@@ -550,6 +577,9 @@ impl<'s, 'a> Finder<'s, 'a> {
         rules_only: bool,
     ) -> bool {
         let span = expression.span();
+        if self.eval.expression(self.scoping, expression).is_some() {
+            return false;
+        }
         let mut reads = Reads::new(self.scoping);
         reads.visit_expression(expression);
         if reads.impure {
@@ -611,7 +641,7 @@ impl<'s, 'a> Finder<'s, 'a> {
         let statement = &self.statements[index];
         let mut reads = Reads::new(self.scoping);
         reads.visit_statement(statement);
-        let closure = if reads.impure {
+        let closure = if reads.impure || self.eval.statement(self.scoping, statement).is_some() {
             None
         } else {
             self.closure(statement.span(), &reads.references)
@@ -906,22 +936,36 @@ impl<'a> Visit<'a> for Reads<'_> {
     fn visit_ts_type(&mut self, _: &oxc_ast::ast::TSType<'a>) {}
 }
 
+/// What evaluating computed: the code with the values written in their place,
+/// the replacements made, and the files read
+pub(crate) type Evaluated = (
+    String,
+    Vec<crate::import_alias_visit::Edit>,
+    BTreeSet<String>,
+);
+
+/// An error the build reports: the offset in the code evaluated that it names,
+/// and what it tells
+pub(crate) type Located = (usize, String);
+
 /// `code` with what its style values compute written in their place, the
 /// replacements made, and the files read; `None` when running the code it
 /// reads computes none of them as a string, a finite number, or a plain
-/// object or array of those
-pub(crate) fn evaluate(
+/// object or array of those. Code that reads what differs between builds or
+/// pages (the clock, chance, the environment, the locale) is an error naming
+/// the style value it computes, whether or not the code caught what the read
+/// threw.
+pub(crate) fn evaluate_located(
     code: &str,
     filename: &str,
     option: &ExtractOption,
     resolver: Option<&ModuleResolver>,
     unknown: &crate::imported_constants::Unknown,
-) -> Option<(
-    String,
-    Vec<crate::import_alias_visit::Edit>,
-    BTreeSet<String>,
-)> {
-    let (mut values, dependencies) = compute(code, filename, option, resolver, unknown)?;
+) -> Result<Option<Evaluated>, Vec<Located>> {
+    let Some((mut values, dependencies)) = compute(code, filename, option, resolver, unknown)?
+    else {
+        return Ok(None);
+    };
     values.sort_unstable_by_key(|(span, _)| span.start);
     let mut result = String::with_capacity(code.len());
     let mut edits = Vec::with_capacity(values.len());
@@ -934,61 +978,17 @@ pub(crate) fn evaluate(
         copied = end;
     }
     result.push_str(&code[copied..]);
-    Some((result, edits, dependencies))
+    Ok(Some((result, edits, dependencies)))
 }
 
 /// A value's source text by the span of the code computing it
 type Replacement = (Span, String);
 
-/// Run before the values: the code checked to read nothing that differs
-/// between builds or pages, nothing does even if the check missed it
-/// (reading `Date`, `Math.random`, the environment or the locale throws), and
-/// the source text of a value the build can read. A statement that throws is
-/// recorded, and a value reading it is not computed
-const PRELUDE: &str = r#"delete globalThis.Date;
-Math.random = undefined;
-for (const name of ["window", "self", "document", "navigator", "location", "history", "localStorage", "sessionStorage", "matchMedia", "screen", "innerWidth", "innerHeight", "devicePixelRatio", "process", "global", "Deno", "Bun", "Intl"]) Object.defineProperty(globalThis, name, { get() { throw new ReferenceError(`${name} is only known at runtime`); }, configurable: true });
-for (const [prototype, names] of [[Object.prototype, ["toLocaleString"]], [Number.prototype, ["toLocaleString"]], [BigInt.prototype, ["toLocaleString"]], [Array.prototype, ["toLocaleString"]], [String.prototype, ["localeCompare", "toLocaleUpperCase", "toLocaleLowerCase", "normalize"]]]) for (const name of names) Object.defineProperty(prototype, name, { value() { throw new ReferenceError(`${name} depends on the locale`); }, configurable: true, writable: true });
-Object.setPrototypeOf(globalThis, new Proxy(Object.getPrototypeOf(globalThis), { get(target, key, receiver) { if (typeof key === "string" && !(key in target)) throw new ReferenceError(`${key} is only known at runtime`); return Reflect.get(target, key, receiver); } }));
-const __failed__ = (() => { const fail = () => { throw new ReferenceError("its value threw"); }; return new Proxy(function () {}, { get: fail, apply: fail, construct: fail, getPrototypeOf: fail }); })();
-const __failed_statements__ = new Set();
-const __try__ = (compute, statement) => { try { return compute(); } catch { __failed_statements__.add(statement); return __failed__; } };
-const __literal__ = (value) => {
-  const plain = (item) => item === undefined || item === null || typeof item === "string" || typeof item === "boolean" || (typeof item === "number" && Number.isFinite(item))
-    || (Array.isArray(item) && item.every(plain))
-    || (typeof item === "object" && Object.getPrototypeOf(item) === Object.prototype && Object.getOwnPropertySymbols(item).length === 0 && !Object.prototype.hasOwnProperty.call(item, "__proto__") && Object.values(item).every(plain));
-  if (typeof value === "number") return Number.isFinite(value) ? String(value) : undefined;
-  return value !== undefined && plain(value) ? JSON.stringify(value) : undefined;
-};
-"#;
-
-fn compute(
-    code: &str,
-    filename: &str,
-    option: &ExtractOption,
-    resolver: Option<&ModuleResolver>,
-    unknown: &crate::imported_constants::Unknown,
-) -> Option<(Vec<Replacement>, BTreeSet<String>)> {
+/// The statements the values read, run as they are written, and the imports
+/// they read as the build knows them: the modules those come from never run
+fn definitions(program: &Program<'_>, code: &str, found: &[Found]) -> Generated {
     use std::fmt::Write;
 
-    use boa_engine::{Context, JsObject, Source};
-
-    let allocator = Allocator::default();
-    let program = parse(&allocator, filename, code)?;
-    let is_style = |source: &str| {
-        source.starts_with(option.package.as_str()) || option.import_aliases.contains_key(source)
-    };
-    let changes = crate::imported_constants::ChangeCheck::new(&program, filename, option, resolver);
-    let found = find(
-        &program,
-        &is_style,
-        unknown,
-        &|name| changes.is_changed(name),
-        &|name| changes.known(name),
-    );
-    if found.is_empty() {
-        return None;
-    }
     let statements: BTreeSet<usize> = found
         .iter()
         .flat_map(|found| found.closure.statements.iter().copied())
@@ -998,11 +998,9 @@ fn compute(
         .flat_map(|found| &found.closure.imports)
         .map(|(name, value)| (name.as_str(), value.as_str()))
         .collect();
-    // The modules imports come from never run: their values are written as
-    // the build knows them
-    let mut module = String::new();
+    let mut module = Generated::default();
     for (name, value) in imports {
-        let _ = writeln!(module, "const {name} = {value};");
+        let _ = writeln!(module.text, "const {name} = {value};");
     }
     for index in statements {
         let statement = &program.body[index];
@@ -1017,17 +1015,21 @@ fn compute(
         if let Some(declaration) = declaration {
             // A binding whose value throws is one reading it throws for,
             // leaving the others
-            for declarator in &declaration.declarations {
-                let Some(init) = &declarator.init else {
-                    continue;
-                };
-                let _ = writeln!(
-                    module,
-                    "{} {}__try__(() => ({}), {index});",
-                    declaration.kind.as_str(),
-                    &code[declarator.span.start as usize..init.span().start as usize],
-                    &code[init.span().start as usize..init.span().end as usize],
+            for (declarator, init) in declaration
+                .declarations
+                .iter()
+                .filter_map(|declarator| declarator.init.as_ref().map(|init| (declarator, init)))
+            {
+                module.text.push_str(declaration.kind.as_str());
+                module.text.push(' ');
+                module.copy(
+                    code,
+                    declarator.span.start as usize,
+                    init.span().start as usize,
                 );
+                module.text.push_str("__try__(() => (");
+                module.copy(code, init.span().start as usize, init.span().end as usize);
+                let _ = writeln!(module.text, "), {index});");
             }
             continue;
         }
@@ -1036,59 +1038,36 @@ fn compute(
             Statement::ExportDefaultDeclaration(export) => export.declaration.span(),
             statement => statement.span(),
         };
-        module.push_str(&code[span.start as usize..span.end as usize]);
-        module.push('\n');
+        module.copy(code, span.start as usize, span.end as usize);
+        module.text.push('\n');
     }
-    // Each runs apart, so one that throws leaves the others
-    for (index, found) in found.iter().enumerate() {
-        let statements: Vec<String> = found
-            .closure
-            .statements
-            .iter()
-            .map(ToString::to_string)
-            .collect();
-        let _ = writeln!(
-            module,
-            "const __value_{index}__ = (() => {{ if ([{}].some((statement) => __failed_statements__.has(statement))) return undefined; try {{ return __literal__(({})); }} catch {{ return undefined; }} }})();",
-            statements.join(", "),
-            &code[found.span.start as usize..found.span.end as usize]
-        );
-    }
-    let names: Vec<String> = (0..found.len())
-        .map(|index| format!("__value_{index}__"))
-        .collect();
-    let _ = writeln!(module, "[{}];", names.join(", "));
-
-    let script = crate::vanilla_extract::strip_typescript(&module, filename);
-    let mut context = Context::default();
-    context
-        .runtime_limits_mut()
-        .set_loop_iteration_limit(crate::module_loader::LOOP_ITERATION_LIMIT);
-    let values = context
-        .eval(Source::from_bytes(format!("{PRELUDE}{script}").as_bytes()))
-        .ok()?;
-    let values = values.as_object().filter(JsObject::is_array)?;
-    let mut computed = Vec::new();
-    for (index, found) in found.into_iter().enumerate() {
-        let Some(literal) = values
-            .get(index, &mut context)
-            .ok()?
-            .as_string()
-            .map(|literal| literal.to_std_string_escaped())
-        else {
-            continue;
-        };
-        // A part joined gives rules, or a class as a string
-        if found.rules_only && !literal.starts_with(['{', '[', '"']) {
-            continue;
-        }
-        computed.push((
-            found.span,
-            match found.shorthand {
-                Some(key) => format!("{key}: {literal}"),
-                None => literal,
-            },
-        ));
-    }
-    (!computed.is_empty()).then_some((computed, changes.dependencies()))
+    module
 }
+
+/// The source text of what `found` computes, or nothing when a statement it
+/// reads threw. Each value runs apart, so one that throws leaves the others.
+fn value_script(code: &str, found: &Found) -> Generated {
+    let statements: Vec<String> = found
+        .closure
+        .statements
+        .iter()
+        .map(ToString::to_string)
+        .collect();
+    let mut generated = Generated::default();
+    generated.text = format!(
+        "(() => {{ if ([{}].some((statement) => __failed_statements__.has(statement))) return undefined; try {{ return __literal__((",
+        statements.join(", ")
+    );
+    generated.copy(code, found.span.start as usize, found.span.end as usize);
+    generated
+        .text
+        .push_str(")); } catch { return undefined; } })();");
+    generated
+}
+
+#[cfg(test)]
+mod scope_tests;
+
+#[cfg(test)]
+#[path = "build_time_values_sandbox_tests.rs"]
+mod sandbox_tests;

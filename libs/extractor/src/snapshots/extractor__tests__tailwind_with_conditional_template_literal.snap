@@ -61,5 +61,5 @@ ToBTreeSet {
             },
         ),
     },
-    code: "import \"@devup-ui/core/devup-ui.css\";\n<div className={`${enabled ? \"d\" : \"e\"} a b c`}>\n  hello\n</div>;\n",
+    code: "import \"@devup-ui/core/devup-ui.css\";\n((__devupValue0) => <div className={`${__devupValue0 ? \"d\" : \"e\"} a b c`}>\n  hello\n</div>)(enabled);\n",
 }

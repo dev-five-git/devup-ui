@@ -5,7 +5,17 @@ use css::{
     style_selector::{StyleSelector, optimize_selector},
 };
 
-use crate::extract_style::{ExtractStyleProperty, style_property::StyleProperty};
+use crate::extract_style::{
+    ExtractStyleProperty, extract_static_style::ExtractStaticStyle, style_property::StyleProperty,
+};
+
+/// The variable an element sets to override a style it writes before a spread
+/// the build cannot read, and the value the style keeps while it is unset
+#[derive(PartialEq, Clone, Eq, Hash, Ord, PartialOrd, Debug)]
+struct Override {
+    variable: String,
+    fallback: String,
+}
 
 #[derive(PartialEq, Clone, Eq, Hash, Ord, PartialOrd)]
 pub struct ExtractDynamicStyle {
@@ -24,6 +34,9 @@ pub struct ExtractDynamicStyle {
     important: bool,
 
     pub(crate) layer: Option<String>,
+
+    /// Set when the style is a static value a runtime spread may override
+    overridable: Option<Override>,
 }
 
 impl Debug for ExtractDynamicStyle {
@@ -39,6 +52,9 @@ impl Debug for ExtractDynamicStyle {
         }
         if let Some(layer) = &self.layer {
             s.field("layer", layer);
+        }
+        if let Some(overridable) = &self.overridable {
+            s.field("overridable", overridable);
         }
         s.finish()
     }
@@ -99,6 +115,19 @@ fn runtime_code(identifier: &str) -> String {
     }
 }
 
+/// `key` as the characters of a variable name, each other character by its code
+fn escaped(key: &str) -> String {
+    key.chars()
+        .map(|c| {
+            if c.is_ascii_alphanumeric() || c == '-' {
+                c.to_string()
+            } else {
+                format!("_u{:04x}_", u32::from(c))
+            }
+        })
+        .collect()
+}
+
 impl ExtractDynamicStyle {
     /// create a new `ExtractDynamicStyle`
     pub fn new(
@@ -118,7 +147,46 @@ impl ExtractDynamicStyle {
             style_order: None,
             important,
             layer: None,
+            overridable: None,
         }
+    }
+
+    /// `style` as a stylesheet rule that gives way to `identifier`, the code
+    /// an element sets on a variable only the prop `key` it is written as
+    /// reads, so every breakpoint of that prop shares it and no other prop
+    /// setting the same property can reach it
+    pub fn overridable(style: &ExtractStaticStyle, identifier: &str, key: &str) -> Self {
+        let (fallback, important) = strip_important(style.value.clone());
+        Self {
+            property: style.property.clone(),
+            level: style.level,
+            identifier: identifier.to_string(),
+            selector: None,
+            style_order: style.style_order,
+            important,
+            layer: style.layer.clone(),
+            overridable: Some(Override {
+                variable: sheet_to_variable_name(
+                    &format!("{}-spread-{}", style.property, escaped(key)),
+                    0,
+                    None,
+                ),
+                fallback,
+            }),
+        }
+    }
+
+    /// Give way to what `read` reads over the value set now, as a spread
+    /// written after it replaces it: `read` is given that value
+    pub fn overridden_by(&mut self, read: impl FnOnce(&str) -> String) {
+        self.identifier = read(&self.identifier);
+    }
+
+    /// The value `var()` falls back to while no override is set
+    pub fn fallback(&self) -> Option<&str> {
+        self.overridable
+            .as_ref()
+            .map(|overridable| overridable.fallback.as_str())
     }
 
     pub const fn property(&self) -> &str {
@@ -153,19 +221,27 @@ impl ExtractDynamicStyle {
 impl ExtractStyleProperty for ExtractDynamicStyle {
     fn extract(&self, filename: Option<&str>) -> StyleProperty {
         let selector = super::class_selector(self.selector.as_ref(), self.layer());
+        // What the rule falls back to is part of the class, as another
+        // fallback is another rule
+        let rule = self.overridable.as_ref().map(|overridable| {
+            let important = if self.important { " !important" } else { "" };
+            format!(
+                "var({},{}){important}",
+                overridable.variable, overridable.fallback
+            )
+        });
         StyleProperty::Variable {
             class_name: sheet_to_classname(
                 self.property.as_str(),
                 self.level,
-                None,
+                rule.as_deref(),
                 selector.as_deref(),
                 self.style_order,
                 filename,
             ),
-            variable_name: sheet_to_variable_name(
-                self.property.as_str(),
-                self.level,
-                selector.as_deref(),
+            variable_name: self.overridable.as_ref().map_or_else(
+                || sheet_to_variable_name(self.property.as_str(), self.level, selector.as_deref()),
+                |overridable| overridable.variable.clone(),
             ),
             identifier: self.identifier.clone(),
         }
@@ -185,6 +261,12 @@ mod tests {
         assert_eq!(style.identifier(), "primary");
         assert_eq!(style.style_order(), None);
         assert!(!style.important());
+    }
+
+    #[test]
+    fn test_escaped_keeps_names_and_codes_every_other_character() {
+        assert_eq!(escaped("background-color"), "background-color");
+        assert_eq!(escaped("a_b c"), "a_u005f_b_u0020_c");
     }
 
     #[test]
@@ -247,5 +329,12 @@ mod tests {
         assert_eq!(style.property(), "background");
         assert_eq!(style.identifier(), "`${color}`");
         assert!(style.important());
+    }
+
+    #[test]
+    fn runtime_template_when_css_ends_in_a_semicolon_keeps_valid_javascript() {
+        let style = ExtractDynamicStyle::new("color", 0, " `${color};`; ", None);
+        assert_eq!(style.identifier(), "`${color}`");
+        assert!(!style.important());
     }
 }

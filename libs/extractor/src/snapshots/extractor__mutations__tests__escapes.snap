@@ -3,18 +3,18 @@ source: libs/extractor/src/mutations.rs
 expression: "describe(\"const a = { x: {} };\nf(a.x);\nnew F(a);\nObject.defineProperty(o, 'k', a);\nObject.assign({}, a);\nObject.values(a); Object.entries(a); Array.from(a); Array.of(a);\ng(...a.list);\nconst copy = { ...a };\nexport const whole = { a, list: [a.x] };\nconst frozen = Object.freeze({ a });\nconst nested = f({ a });\nlet later = a;\nlater = a;\n[later = a] = [];\nfunction get() { return a; }\nfunction* all() { yield a; }\nfunction p(q = a) {}\nconst arrow = () => a.x;\nconst block = () => { a; };\nconst tagged = tag`${a}`;\nfor (const item of a) {}\na.forEach(f); a.map(f);\nexport default { a };\nmodule.exports = { a };\nexports.b = a;\nmodule.exports.c = a;\nother.exports = a;\n<div ref={a} />;\nx ? a : a;\nx && a;\n(x, a);\nawait a;\")"
 ---
 [
+    "a calls []: a.forEach(f); a.map(f);",
+    "a calls []: a.map(f);",
     "a escapes [None] into None: a) {}",
     "a escapes [None] into None: a);",
     "a escapes [None] into None: a);",
     "a escapes [None] into None: a); Array.from(a); Array.of(a);",
     "a escapes [None] into None: a); Array.of(a);",
     "a escapes [None] into None: a); Object.entries(a); Array.from(a); Array.of(a);",
-    "a escapes [None] into None: a.forEach(f); a.map(f);",
-    "a escapes [None] into None: a.map(f);",
     "a escapes [None] into Some(\"copy\"): a };",
     "a escapes [Some(\"list\"), None] into None: a.list);",
     "a escapes [Some(\"x\")] into None: a.x);",
-    "a escapes [Some(\"x\")] into None: a.x;",
+    "a escapes [Some(\"x\")] into Some(\"arrow\"): a.x;",
     "a escapes [Some(\"x\")] into Some(\"whole\"): a.x] };",
     "a escapes [] into None: a });",
     "a escapes [] into None: a) {}",
@@ -24,7 +24,6 @@ expression: "describe(\"const a = { x: {} };\nf(a.x);\nnew F(a);\nObject.defineP
     "a escapes [] into None: a;",
     "a escapes [] into None: a;",
     "a escapes [] into None: a; }",
-    "a escapes [] into None: a; }",
     "a escapes [] into None: a] = [];",
     "a escapes [] into None: a} />;",
     "a escapes [] into None: a}`;",
@@ -33,5 +32,6 @@ expression: "describe(\"const a = { x: {} };\nf(a.x);\nnew F(a);\nObject.defineP
     "a escapes [] into Some(\"\"): a;",
     "a escapes [] into Some(\"\"): a;",
     "a escapes [] into Some(\"frozen\"): a });",
+    "a escapes [] into Some(\"get\"): a; }",
     "a escapes [] into Some(\"whole\"): a, list: [a.x] };",
 ]

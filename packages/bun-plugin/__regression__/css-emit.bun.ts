@@ -160,6 +160,46 @@ for (const width of [201, 203]) expect(css).toContain('width:' + width + 'px')
   }
 })
 
+it('compiles Box and css when the runtime consumer imports a local barrel', () => {
+  const cwd = mkdtempSync(join(tmpdir(), 'devup-css-emit-'))
+  try {
+    writeFileSync(
+      join(cwd, 'ui.ts'),
+      `export { Box, css } from '@devup-ui/react'\n`,
+    )
+    writeFileSync(
+      join(cwd, 'consumer.tsx'),
+      `/** @jsxRuntime classic */
+/** @jsx createElement */
+import { Box, css } from './ui'
+
+function createElement(type: string, props: { readonly className: string }) {
+  return { type, props }
+}
+export const cls = css({ width: '401px' })
+export const box = <Box w="403px" />
+`,
+    )
+    run(
+      cwd,
+      `import { readFileSync } from 'node:fs'
+import { expect } from 'bun:test'
+
+await import(${JSON.stringify(pluginEntry.replaceAll('\\', '/'))})
+const { cls, box } = await import('./consumer.tsx')
+expect(typeof cls).toBe('string')
+expect(cls.length).toBeGreaterThan(0)
+expect(box.type).toBe('div')
+expect(box.props.className.length).toBeGreaterThan(0)
+const css = readFileSync('./df/devup-ui/devup-ui.css', 'utf-8')
+for (const width of [401, 403]) expect(css).toContain('width:' + width + 'px')
+`,
+    )
+  } finally {
+    rmSync(cwd, { recursive: true, force: true })
+  }
+})
+
 it('emits vanilla-extract styles through the WASM engine', () => {
   const cwd = mkdtempSync(join(tmpdir(), 'devup-css-emit-'))
   try {
