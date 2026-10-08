@@ -823,7 +823,10 @@ fn branch<'b, 'a>(expression: &'b Expression<'a>) -> Option<Branch<'b, 'a>> {
 
 /// `value` as a class: itself when it is a string, nothing otherwise, as the
 /// libraries skip `true` and other non-class values
-fn string_class<'a>(ast_builder: &AstBuilder<'a>, value: &Expression<'a>) -> Expression<'a> {
+pub(super) fn string_class<'a>(
+    ast_builder: &AstBuilder<'a>,
+    value: &Expression<'a>,
+) -> Expression<'a> {
     if matches!(
         value,
         Expression::StringLiteral(_) | Expression::TemplateLiteral(_)
@@ -951,6 +954,23 @@ pub(super) fn runtime_value_error(api: &str, value: &str) -> String {
 
 pub(super) fn element_error(component: &str, code: &str, requirement: &str) -> String {
     format!("`<{component}>` cannot use `{code}` at build time: {requirement}")
+}
+
+/// The `css` prop of `element` holds `code`, which the build cannot compile
+pub(super) fn css_prop_error(element: &str, code: &str, requirement: &str) -> String {
+    format!("`css` on `<{element}>` cannot use `{code}` at build time: {requirement}")
+}
+
+pub(super) const CSS_PROP_VALUE: &str = "it must be a style object, CSS text, a class `css()` gives, or a function of the theme giving one, or an array or condition of them";
+
+pub(super) const LOCAL_STYLES: &str = "a style object it composes must be written in it, or declared with `const` at the top level of the module, where the build reads it";
+
+/// The `css` prop of the styled component `element` sets what its own styles
+/// set, which the build cannot order there
+pub(super) fn css_prop_override_error(element: &str) -> String {
+    format!(
+        "`css` on `<{element}>` overrides styles `{element}` sets, which the build orders only for a styled component rendering a tag with no attrs or props read, given no spread, `as` or `forwardedAs`: move these styles into `styled({element})(...)`"
+    )
 }
 
 pub(super) fn spread_error(api: &str, spread: &oxc_ast::ast::SpreadElement<'_>) -> (u32, String) {
