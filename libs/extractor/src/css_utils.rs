@@ -21,6 +21,18 @@ use oxc_ast::ast::Expression;
 use oxc_ast::ast::{TemplateElement, TemplateLiteral};
 use oxc_ast::builder::AstBuilder;
 
+mod component_layer_objects;
+#[cfg(test)]
+mod component_layer_policy_tests;
+#[cfg(test)]
+mod component_layer_tests;
+mod component_layers;
+mod layer_blocks;
+mod layer_names;
+pub(crate) use component_layer_objects::object_layer_errors;
+pub(crate) use component_layers::{expression_layer_errors, nest_layer, template_layer_errors};
+pub(crate) use layer_names::parse as parse_layer_name;
+
 use crate::extract_style::{
     extract_dynamic_style::ExtractDynamicStyle, extract_static_style::ExtractStaticStyle,
     extract_style_value::ExtractStyleValue,
@@ -74,7 +86,16 @@ pub(crate) fn theme_var_reference(expr: &Expression<'_>) -> Option<String> {
     loop {
         match cursor {
             Expression::StaticMemberExpression(member) => {
-                path.push(member.property.name.as_str());
+                path.push(member.property.name.to_string());
+                cursor = &member.object;
+            }
+            Expression::ComputedMemberExpression(member) => {
+                path.push(match &member.expression {
+                    Expression::StringLiteral(key) => key.value.to_string(),
+                    key => {
+                        crate::utils::js_number_literal(key).map(crate::utils::js_number_string)?
+                    }
+                });
                 cursor = &member.object;
             }
             Expression::Identifier(ident) => {
@@ -146,14 +167,14 @@ pub struct TemplateStyles {
     pub unplaced: Vec<usize>,
 }
 
-enum Place {
+pub(crate) enum Place {
     Value,
     Statement,
     Other,
 }
 
 /// Where an interpolation stands, from the CSS written before and after it
-fn interpolation_place(before: &str, after: &[TemplateElement<'_>]) -> Place {
+pub(crate) fn interpolation_place(before: &str, after: &[TemplateElement<'_>]) -> Place {
     let head = &before[before.rfind([';', '{', '}']).map_or(0, |index| index + 1)..];
     let rest: String = after.iter().map(|quasi| quasi.value.raw.as_str()).collect();
     let end = rest.find([';', '{', '}']);
@@ -411,12 +432,15 @@ pub fn css_to_style_template(
                 }
                 static_value.push_str(&value[cursor..]);
                 // Create a new static style with the evaluated value
-                styles.push(CssToStyleResult::Static(ExtractStaticStyle::new(
-                    style.property(),
-                    &static_value,
-                    style.level(),
-                    style.selector().cloned(),
-                )));
+                styles.push(CssToStyleResult::Static(
+                    ExtractStaticStyle::new_with_layer(
+                        style.property(),
+                        &static_value,
+                        style.level(),
+                        style.selector().cloned(),
+                        style.layer.clone(),
+                    ),
+                ));
             } else {
                 // Not all expressions are literals - need to create dynamic style
                 // Check if value is just a placeholder (no surrounding text)
@@ -428,12 +452,7 @@ pub fn css_to_style_template(
                     // Value is just the expression - use expression code directly
                     let identifier = dynamic_expr_code(&css.expressions[*idx], &shared_allocator);
 
-                    styles.push(CssToStyleResult::Dynamic(ExtractDynamicStyle::new(
-                        style.property(),
-                        style.level(),
-                        &identifier,
-                        style.selector().cloned(),
-                    )));
+                    styles.push(component_layers::dynamic_from(&style, &identifier));
                 } else {
                     // Value has surrounding text - need to create template literal
                     // Reconstruct the template literal by replacing placeholders with ${expr} syntax
@@ -502,12 +521,7 @@ pub fn css_to_style_template(
                     // Wrap in template literal backticks
                     let final_identifier = format!("`{template_literal}`");
 
-                    styles.push(CssToStyleResult::Dynamic(ExtractDynamicStyle::new(
-                        style.property(),
-                        style.level(),
-                        &final_identifier,
-                        style.selector().cloned(),
-                    )));
+                    styles.push(component_layers::dynamic_from(&style, &final_identifier));
                 }
             }
         }
@@ -526,7 +540,7 @@ pub fn css_to_style(
     selector: &Option<StyleSelector>,
 ) -> Vec<ExtractStaticStyle> {
     let mut styles = vec![];
-    collect_css_block(&rm_css_comment(css), level, selector, &mut styles);
+    collect_css_block(css, level, selector, &mut styles);
 
     // A single declaration (or none) is trivially ordered, so skip the comparison
     // sort's setup entirely for the very common single-property case. The multi-source
@@ -548,15 +562,19 @@ fn collect_css_block(
     styles: &mut Vec<ExtractStaticStyle>,
 ) {
     let mut rest = css;
-    while let Some(open) = rest.find('{') {
+    while let Some((open, _)) =
+        layer_blocks::boundaries(rest).find(|(_, character)| *character == '{')
+    {
         let head = &rest[..open];
-        let (declarations, prelude) = head.rsplit_once(';').unwrap_or(("", head));
+        let (declarations, prelude) = layer_blocks::boundaries(head)
+            .filter(|(_, character)| *character == ';')
+            .last()
+            .map_or(("", head), |(at, _)| (&head[..at], &head[at + 1..]));
         styles.extend(css_to_style_block(declarations, level, selector));
 
         let body_start = open + 1;
         let mut depth = 1usize;
-        let body_end = rest[body_start..]
-            .char_indices()
+        let body_end = layer_blocks::boundaries(&rest[body_start..])
             .find_map(|(index, c)| {
                 match c {
                     '{' => depth += 1,
@@ -567,10 +585,16 @@ fn collect_css_block(
             })
             .unwrap_or(rest.len());
         let body = &rest[body_start..body_end];
-        let prelude = prelude.trim();
+        let prelude = component_layers::trim_trivia(prelude).trim_end();
         if prelude.is_empty() || prelude == "&" {
             collect_css_block(body, level, selector, styles);
-        } else if let Some(nested) = nest_prelude(selector.as_ref(), prelude) {
+        } else if let Some(layer) = component_layers::named_layer(prelude) {
+            let from = styles.len();
+            collect_css_block(body, level, selector, styles);
+            for style in &mut styles[from..] {
+                nest_layer(&layer, &mut style.layer);
+            }
+        } else if let Some(nested) = nest_prelude(selector.as_ref(), &rm_css_comment(prelude)) {
             collect_css_block(body, level, &Some(nested), styles);
         }
         rest = rest.get(body_end + 1..).unwrap_or_default();
@@ -587,19 +611,41 @@ fn nest_prelude(parent: Option<&StyleSelector>, prelude: &str) -> Option<StyleSe
         let (kind, query) = split_at_rule_key(prelude)?;
         return StyleSelector::nest_at_rule(parent, kind, query);
     }
-    let parent_selector = match parent {
-        Some(StyleSelector::Selector(selector) | StyleSelector::Global(selector, _)) => {
-            Some(selector)
+    Some(StyleSelector::nest_selector(parent, &descendants(prelude)))
+}
+
+/// Each selector of the list `selectors` written without `&` as a descendant
+/// of it, as stylis nests one
+pub(crate) fn descendants(selectors: &str) -> String {
+    let mut depth = 0usize;
+    let mut from = 0;
+    let mut parts = Vec::new();
+    for (index, c) in selectors.char_indices() {
+        match c {
+            '(' | '[' => depth += 1,
+            ')' | ']' => depth = depth.saturating_sub(1),
+            ',' if depth == 0 => {
+                parts.push(&selectors[from..index]);
+                from = index + 1;
+            }
+            _ => {}
         }
-        Some(StyleSelector::At { selector, .. }) => selector.as_ref(),
-        None => None,
-    };
-    let template = if prelude.contains('&') || parent_selector.is_none() {
-        Cow::Borrowed(prelude)
-    } else {
-        Cow::Owned(format!("& {prelude}"))
-    };
-    Some(StyleSelector::nest_selector(parent, &template))
+    }
+    parts.push(&selectors[from..]);
+    parts
+        .iter()
+        .map(|part| {
+            let part = part.trim();
+            if part.contains('&') {
+                part.to_string()
+            } else if part.starts_with(':') {
+                format!("&{part}")
+            } else {
+                format!("& {part}")
+            }
+        })
+        .collect::<Vec<_>>()
+        .join(",")
 }
 
 /// Optimize a declaration's value only when its property warrants multi-value
@@ -1171,7 +1217,7 @@ mod tests {
     #[case(
         "`ul { font-family: 'Roboto Hello',       sans-serif; }`",
         vec![
-            ("font-family", "\"Roboto Hello\",sans-serif", Some(StyleSelector::Selector("ul".to_string()))),
+            ("font-family", "\"Roboto Hello\",sans-serif", Some(StyleSelector::Selector("& ul".to_string()))),
         ]
     )]
     #[case(
@@ -1610,14 +1656,23 @@ mod tests {
     #[case(
         "ul { font-family: 'Roboto Hello',       sans-serif; }",
         vec![
-            ("font-family", "\"Roboto Hello\",sans-serif", Some(StyleSelector::Selector("ul".to_string()))),
+            ("font-family", "\"Roboto Hello\",sans-serif", Some(StyleSelector::Selector("& ul".to_string()))),
         ]
     )]
     #[case(
         "div { color: red; ; { background: blue; } }",
         vec![
-            ("color", "red", Some(StyleSelector::Selector("div".to_string()))),
-            ("background", "blue", Some(StyleSelector::Selector("div".to_string()))),
+            ("color", "red", Some(StyleSelector::Selector("& div".to_string()))),
+            ("background", "blue", Some(StyleSelector::Selector("& div".to_string()))),
+        ]
+    )]
+    // A selector written without `&` selects within the element, each one of
+    // a list on its own, and a pseudo-class applies to the element itself
+    #[case(
+        "a, :is(b, c) d { color: red; } :hover { color: blue; }",
+        vec![
+            ("color", "red", Some(StyleSelector::Selector("& a,&:is(b,c) d".to_string()))),
+            ("color", "blue", Some(StyleSelector::Selector("&:hover".to_string()))),
         ]
     )]
     // As in CSS nesting, only the text after the last `;` is the nested rule's
@@ -1626,7 +1681,7 @@ mod tests {
         "color:red;background:blue { width: 1px; }",
         vec![
             ("color", "red", None),
-            ("width", "1px", Some(StyleSelector::Selector("background:blue".to_string()))),
+            ("width", "1px", Some(StyleSelector::Selector("& background:blue".to_string()))),
         ]
     )]
     #[case(
@@ -1634,16 +1689,14 @@ mod tests {
         vec![(
             "width",
             "1px",
-            Some(StyleSelector::Selector("color:red".to_string()))
+            Some(StyleSelector::Selector("& color:red".to_string()))
         )]
     )]
     #[case(
         "color: red;;invalid;display: block;",
         vec![("color", "red", None), ("display", "block", None)]
     )]
-    // Blocks that can never apply produce nothing: unknown at-rules and
-    // mutually exclusive media types.
-    #[case("@layer base { color: red; } @media print { @media screen { color: red; } }", vec![])]
+    #[case("@layer base { color: red; } @media print { @media screen { color: red; } }", vec![("color", "red", None)])]
     fn test_css_to_style(
         #[case] input: &str,
         #[case] expected: Vec<(&str, &str, Option<StyleSelector>)>,

@@ -1,0 +1,26 @@
+---
+source: libs/extractor/src/lib.rs
+expression: "library_outputs(&[\"import { css } from '@emotion/react';\\nimport { SIZE, ZERO, LINE, RULES, NAME } from './sizes';\\nexport const a = css({ padding: SIZE, margin: ZERO, lineHeight: LINE, p: SIZE, content: NAME });\\nexport const b = css(RULES);\\nexport const c = css({ ...RULES, margin: SIZE });\",\n\"import styled from '@emotion/styled';\\nimport { SIZE } from './sizes';\\nexport const A = styled.div({ margin: SIZE });\",\n\"import { Global } from '@emotion/react';\\nimport { SIZE } from './sizes';\\nexport const App = () => <Global styles={{ body: { margin: SIZE } }} />;\",\n\"import { style } from '@vanilla-extract/css';\\nimport { SIZE } from './sizes';\\nexport const a = style({ margin: SIZE });\",\n\"import { css } from '@devup-ui/react';\\nimport { SIZE } from './sizes';\\nexport const a = css({ padding: SIZE });\",],\nSIZE_MODULES)"
+---
+[
+    (
+        "import { css } from '@emotion/react';\nimport { SIZE, ZERO, LINE, RULES, NAME } from './sizes';\nexport const a = css({ padding: SIZE, margin: ZERO, lineHeight: LINE, p: SIZE, content: NAME });\nexport const b = css(RULES);\nexport const c = css({ ...RULES, margin: SIZE });",
+        "ToBTreeSet { styles: {Static(ExtractStaticStyle { property: \"content\", value: \"big\", level: 0, selector: None, style_order: None, layer: None }), Static(ExtractStaticStyle { property: \"gap\", value: \"12px\", level: 0, selector: None, style_order: None, layer: None }), Static(ExtractStaticStyle { property: \"line-height\", value: \"2\", level: 0, selector: None, style_order: None, layer: None }), Static(ExtractStaticStyle { property: \"margin\", value: \"0\", level: 0, selector: None, style_order: None, layer: None }), Static(ExtractStaticStyle { property: \"margin\", value: \"12px\", level: 0, selector: None, style_order: None, layer: None }), Static(ExtractStaticStyle { property: \"padding\", value: \"12px\", level: 0, selector: None, style_order: None, layer: None }), Static(ExtractStaticStyle { property: \"padding\", value: \"48px\", level: 0, selector: None, style_order: None, layer: None }), Static(ExtractStaticStyle { property: \"padding\", value: \"5px\", level: 0, selector: None, style_order: None, layer: None })}, code: \"import \\\"@devup-ui/react/devup-ui.css\\\";\\nimport { SIZE, ZERO, LINE, RULES, NAME } from \\\"./sizes\\\";\\nexport const a = \\\"a b c d e\\\";\\nexport const b = \\\"f c g\\\";\\nexport const c = \\\"f c g h\\\";\\n\" }",
+    ),
+    (
+        "import styled from '@emotion/styled';\nimport { SIZE } from './sizes';\nexport const A = styled.div({ margin: SIZE });",
+        "ToBTreeSet { styles: {Static(ExtractStaticStyle { property: \"margin\", value: \"12px\", level: 0, selector: None, style_order: None, layer: None })}, code: \"import \\\"@devup-ui/react/devup-ui.css\\\";\\nimport { forwardRef as __devupForwardRef } from \\\"react\\\";\\nimport { SIZE } from \\\"./sizes\\\";\\nexport const A = __devupForwardRef((__devupRefProps, __devupRef) => (({ style, className, as: DevupAs = \\\"div\\\", forwardedAs, ...rest }) => <DevupAs {...(({ \\\"theme\\\": __devupOmit0, ...__devupDom }) => __devupDom)(rest)} as={forwardedAs} className={[\\\"a--a a\\\", className].filter(Boolean).join(\\\" \\\")} style={style} />)({\\n\\t...__devupRefProps,\\n\\tref: __devupRef\\n}));\\n\" }",
+    ),
+    (
+        "import { Global } from '@emotion/react';\nimport { SIZE } from './sizes';\nexport const App = () => <Global styles={{ body: { margin: SIZE } }} />;",
+        "ToBTreeSet { styles: {Static(ExtractStaticStyle { property: \"margin\", value: \"12px\", level: 0, selector: Some(Global(\"body\", \"/src/App.tsx\")), style_order: Some(0), layer: None })}, code: \"import \\\"@devup-ui/react/devup-ui.css\\\";\\nimport { Global } from \\\"@devup-ui/react/compat\\\";\\nimport { SIZE } from \\\"./sizes\\\";\\nexport const App = () => <Global />;\\n\" }",
+    ),
+    (
+        "import { style } from '@vanilla-extract/css';\nimport { SIZE } from './sizes';\nexport const a = style({ margin: SIZE });",
+        "ToBTreeSet { styles: {Static(ExtractStaticStyle { property: \"margin\", value: \"12px\", level: 0, selector: None, style_order: None, layer: None })}, code: \"import \\\"@devup-ui/react/devup-ui.css\\\";\\nimport { SIZE } from \\\"./sizes\\\";\\nexport const a = \\\"a\\\";\\n\" }",
+    ),
+    (
+        "import { css } from '@devup-ui/react';\nimport { SIZE } from './sizes';\nexport const a = css({ padding: SIZE });",
+        "ToBTreeSet { styles: {Static(ExtractStaticStyle { property: \"padding\", value: \"48px\", level: 0, selector: None, style_order: None, layer: None })}, code: \"import \\\"@devup-ui/react/devup-ui.css\\\";\\nimport { SIZE } from \\\"./sizes\\\";\\nexport const a = \\\"a\\\";\\n\" }",
+    ),
+]

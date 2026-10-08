@@ -429,6 +429,29 @@ pub fn keyframes_to_keyframes_name(keyframes: &str, filename: Option<&str>) -> S
     })
 }
 
+/// The class marking the component `name` that `filename` defines.
+///
+/// Other styles, in this file or another, select the component by it. It is
+/// `index` among the components of the file, so it comes from the file and the
+/// component alone: every file that selects the component computes the same
+/// class, in any process. Two dashes keep it apart from every class styles are
+/// named by.
+#[must_use]
+pub fn component_marker(name: &str, index: usize, filename: &str) -> String {
+    with_prefix(|prefix| {
+        let file = get_file_num_by_filename(filename);
+        if is_debug() {
+            format!("{prefix}c-{file}-{name}")
+        } else {
+            format!(
+                "{prefix}{}--{}",
+                num_to_nm_base(file),
+                num_to_nm_base(index)
+            )
+        }
+    })
+}
+
 /// ASCII lookup table for selector encoding. `None` means pass through (alphanumeric, `-`, `_`)
 /// or fall through to the Unicode escape path.
 const SELECTOR_ENCODE: [Option<&str>; 128] = {
@@ -751,6 +774,26 @@ mod tests {
             sheet_to_variable_name("background", 1, Some("hover")),
             "--background-1-hover"
         );
+    }
+
+    #[test]
+    #[serial]
+    fn test_component_marker() {
+        set_debug(false);
+        reset_class_map();
+        crate::file_map::reset_file_map();
+        let child = component_marker("Child", 0, "a.tsx");
+        assert_eq!(child, "a--a");
+        assert_eq!(component_marker("Child", 0, "a.tsx"), child);
+        assert_eq!(component_marker("Child", 0, "b.tsx"), "b--a");
+        assert_eq!(component_marker("Other", 2, "a.tsx"), "a--c");
+        assert_eq!(
+            sheet_to_classname("color", 0, Some("red"), None, None, None),
+            "a"
+        );
+        set_debug(true);
+        assert_eq!(component_marker("Child", 0, "a.tsx"), "c-0-Child");
+        set_debug(false);
     }
 
     #[test]

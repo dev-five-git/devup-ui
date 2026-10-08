@@ -1,0 +1,42 @@
+---
+source: libs/extractor/src/lib.rs
+expression: "library_outputs(&[\"import { css } from '@emotion/react';\\nconst mixin = css`color: red; margin: 1px;`;\\nexport const a = css`${mixin}; color: blue;`;\",\n\"import { css } from '@emotion/react';\\nconst mixin = css({ color: 'red', margin: 1 });\\nexport const a = css`color: green; ${mixin}; padding: 2px;`;\",\n\"import { css } from '@emotion/react';\\nconst mixin = css`color: red;`;\\nconst more = css`${mixin}; margin: 2px;`;\\nexport const a = css`${more}; color: blue;`;\\nexport const b = css(more, { color: 'green' });\",\n\"import { css } from '@emotion/react';\\nexport const a = ({ mixin }) => css`${mixin}; color: blue;`;\",\n\"import { css } from '@emotion/react';\\nconst mixin = css`color: red;`;\\nexport const a = ({ other }) => css`${mixin}; ${other}; color: blue;`;\",\n\"import { css } from '@emotion/react';\\nexport const a = css`${css({ color: 'red' })}; color: blue;`;\",\n\"import { css } from '@emotion/react';\\nexport const a = ({ on }) => css`${on && css({ color: 'red', margin: 1 })}; color: blue;`;\",\n\"import { css } from '@emotion/react';\\nexport const a = css`${css`color: red;`}; color: blue;`;\",\n\"import { css } from '@emotion/react';\\nexport const a = ({ on }) => css`${on ? css`color: red;` : css({ margin: 1 })}; color: blue;`;\",],\nSIZE_MODULES)"
+---
+[
+    (
+        "import { css } from '@emotion/react';\nconst mixin = css`color: red; margin: 1px;`;\nexport const a = css`${mixin}; color: blue;`;",
+        "ToBTreeSet { styles: {Static(ExtractStaticStyle { property: \"color\", value: \"blue\", level: 0, selector: None, style_order: None, layer: None }), Static(ExtractStaticStyle { property: \"color\", value: \"red\", level: 0, selector: None, style_order: None, layer: None }), Static(ExtractStaticStyle { property: \"margin\", value: \"1px\", level: 0, selector: None, style_order: None, layer: None })}, code: \"import \\\"@devup-ui/react/devup-ui.css\\\";\\nconst mixin = \\\"a b\\\";\\nexport const a = \\\"a c\\\";\\n\" }",
+    ),
+    (
+        "import { css } from '@emotion/react';\nconst mixin = css({ color: 'red', margin: 1 });\nexport const a = css`color: green; ${mixin}; padding: 2px;`;",
+        "ToBTreeSet { styles: {Static(ExtractStaticStyle { property: \"color\", value: \"red\", level: 0, selector: None, style_order: None, layer: None }), Static(ExtractStaticStyle { property: \"margin\", value: \"1px\", level: 0, selector: None, style_order: None, layer: None }), Static(ExtractStaticStyle { property: \"padding\", value: \"2px\", level: 0, selector: None, style_order: None, layer: None })}, code: \"import \\\"@devup-ui/react/devup-ui.css\\\";\\nconst mixin = \\\"a b\\\";\\nexport const a = \\\"b a c\\\";\\n\" }",
+    ),
+    (
+        "import { css } from '@emotion/react';\nconst mixin = css`color: red;`;\nconst more = css`${mixin}; margin: 2px;`;\nexport const a = css`${more}; color: blue;`;\nexport const b = css(more, { color: 'green' });",
+        "ToBTreeSet { styles: {Static(ExtractStaticStyle { property: \"color\", value: \"blue\", level: 0, selector: None, style_order: None, layer: None }), Static(ExtractStaticStyle { property: \"color\", value: \"green\", level: 0, selector: None, style_order: None, layer: None }), Static(ExtractStaticStyle { property: \"color\", value: \"red\", level: 0, selector: None, style_order: None, layer: None }), Static(ExtractStaticStyle { property: \"margin\", value: \"2px\", level: 0, selector: None, style_order: None, layer: None })}, code: \"import \\\"@devup-ui/react/devup-ui.css\\\";\\nconst mixin = \\\"a\\\";\\nconst more = \\\"a b\\\";\\nexport const a = \\\"b c\\\";\\nexport const b = \\\"b d\\\";\\n\" }",
+    ),
+    (
+        "import { css } from '@emotion/react';\nexport const a = ({ mixin }) => css`${mixin}; color: blue;`;",
+        "ToBTreeSet { styles: {Static(ExtractStaticStyle { property: \"color\", value: \"blue\", level: 0, selector: None, style_order: None, layer: None })}, code: \"import \\\"@devup-ui/react/devup-ui.css\\\";\\nexport const a = ({ mixin }) => `a ${mixin}`;\\n\" }",
+    ),
+    (
+        "import { css } from '@emotion/react';\nconst mixin = css`color: red;`;\nexport const a = ({ other }) => css`${mixin}; ${other}; color: blue;`;",
+        "ToBTreeSet { styles: {Static(ExtractStaticStyle { property: \"color\", value: \"blue\", level: 0, selector: None, style_order: None, layer: None }), Static(ExtractStaticStyle { property: \"color\", value: \"red\", level: 0, selector: None, style_order: None, layer: None })}, code: \"import \\\"@devup-ui/react/devup-ui.css\\\";\\nconst mixin = \\\"a\\\";\\nexport const a = ({ other }) => `b ${other}`;\\n\" }",
+    ),
+    (
+        "import { css } from '@emotion/react';\nexport const a = css`${css({ color: 'red' })}; color: blue;`;",
+        "ToBTreeSet { styles: {Static(ExtractStaticStyle { property: \"color\", value: \"blue\", level: 0, selector: None, style_order: None, layer: None })}, code: \"import \\\"@devup-ui/react/devup-ui.css\\\";\\nexport const a = \\\"a\\\";\\n\" }",
+    ),
+    (
+        "import { css } from '@emotion/react';\nexport const a = ({ on }) => css`${on && css({ color: 'red', margin: 1 })}; color: blue;`;",
+        "ToBTreeSet { styles: {Static(ExtractStaticStyle { property: \"color\", value: \"blue\", level: 0, selector: None, style_order: None, layer: None }), Static(ExtractStaticStyle { property: \"margin\", value: \"1px\", level: 0, selector: None, style_order: None, layer: None })}, code: \"import \\\"@devup-ui/react/devup-ui.css\\\";\\nexport const a = ({ on }) => `b ${on ? \\\"a\\\" : \\\"\\\"}`;\\n\" }",
+    ),
+    (
+        "import { css } from '@emotion/react';\nexport const a = css`${css`color: red;`}; color: blue;`;",
+        "ToBTreeSet { styles: {Static(ExtractStaticStyle { property: \"color\", value: \"blue\", level: 0, selector: None, style_order: None, layer: None }), Static(ExtractStaticStyle { property: \"color\", value: \"red\", level: 0, selector: None, style_order: None, layer: None })}, code: \"import \\\"@devup-ui/react/devup-ui.css\\\";\\nexport const a = \\\"b\\\";\\n\" }",
+    ),
+    (
+        "import { css } from '@emotion/react';\nexport const a = ({ on }) => css`${on ? css`color: red;` : css({ margin: 1 })}; color: blue;`;",
+        "ToBTreeSet { styles: {Static(ExtractStaticStyle { property: \"color\", value: \"blue\", level: 0, selector: None, style_order: None, layer: None }), Static(ExtractStaticStyle { property: \"color\", value: \"red\", level: 0, selector: None, style_order: None, layer: None }), Static(ExtractStaticStyle { property: \"margin\", value: \"1px\", level: 0, selector: None, style_order: None, layer: None })}, code: \"import \\\"@devup-ui/react/devup-ui.css\\\";\\nexport const a = ({ on }) => `c ${on ? \\\"\\\" : \\\"b\\\"}`;\\n\" }",
+    ),
+]

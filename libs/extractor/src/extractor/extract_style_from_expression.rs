@@ -435,6 +435,7 @@ pub fn extract_style_from_expression<'a>(
                         literal_handling,
                     )
                     .styles;
+                    let layer = crate::css_utils::parse_layer_name(&layer).unwrap_or(layer);
                     place_in_layer(&mut styles, &layer);
                     props.extend(styles);
                 }
@@ -1046,12 +1047,7 @@ pub fn extract_style_from_expression<'a>(
 /// Put every static declaration of `props` in `layer`, nesting the layer one
 /// already sits in
 pub(crate) fn place_in_layer(props: &mut [ExtractStyleProp<'_>], layer: &str) {
-    let nest = |inner: &mut Option<String>| {
-        *inner = Some(match inner.take() {
-            Some(inner) => format!("{layer}.{inner}"),
-            None => layer.to_string(),
-        });
-    };
+    let nest = |inner: &mut Option<String>| crate::css_utils::nest_layer(layer, inner);
     for prop in props {
         match prop {
             ExtractStyleProp::Static(ExtractStyleValue::Static(style)) => nest(&mut style.layer),
@@ -1257,9 +1253,10 @@ fn nest_underscore_name(parent: Option<&StyleSelector>, name: &str) -> Option<St
 }
 
 /// Emotion/styled-components style object keys that are nested selectors
-/// (`'&:hover'`, `':hover'`, `'.parent &'`) rather than CSS properties.
+/// (`'&:hover'`, `':hover'`, `'.parent &'`, `'.child'`, `'> li'`) rather
+/// than CSS properties.
 fn is_nested_selector_key(key: &str) -> bool {
-    key.starts_with(':') || key.contains('&')
+    key.starts_with([':', '.', '#', '[', '*', '>', '+', '~']) || key.contains('&')
 }
 
 fn nest_selectors_key(parent: Option<&StyleSelector>, key: &str) -> Option<StyleSelector> {

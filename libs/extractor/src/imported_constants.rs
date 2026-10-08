@@ -6,7 +6,7 @@ use std::cell::Cell;
 use std::collections::BTreeSet;
 use std::rc::Rc;
 
-use oxc_allocator::{Allocator, FromIn, GetAllocator};
+use oxc_allocator::{Address, Allocator, CloneIn, FromIn, GetAddress, GetAllocator};
 use oxc_ast::ast::{
     Argument, ArrayExpressionElement, Expression, ImportDeclarationSpecifier, JSXAttributeItem,
     JSXElementName, ObjectPropertyKind, Program, Statement, Str, VariableDeclarationKind,
@@ -15,14 +15,24 @@ use oxc_ast::builder::AstBuilder;
 use oxc_ast_visit::{Visit, VisitMut, walk, walk_mut};
 use oxc_parser::Parser;
 use oxc_semantic::{Scoping, SemanticBuilder};
-use oxc_span::{SPAN, SourceType};
+use oxc_span::{GetSpan, SPAN, SourceType};
 use oxc_syntax::number::NumberBase;
 use oxc_syntax::operator::BinaryOperator;
 use oxc_syntax::symbol::SymbolId;
 use rustc_hash::{FxHashMap, FxHashSet};
 
+use crate::composition::{Composition, set_prop_order};
+use crate::css_prop::{CssProp, CssTakers};
+use crate::extractor::ExtractResult;
+use crate::extractor::extract_style_from_expression::{
+    LiteralHandling, extract_style_from_expression,
+};
 use crate::stylex::StylexFunction;
-use crate::{ExtractOption, ModuleResolver};
+use crate::{ExtractOption, ExtractStyleValue, ModuleResolver};
+
+#[cfg(test)]
+#[path = "local_capture_coverage_tests.rs"]
+mod local_capture_coverage_tests;
 
 #[derive(Clone, Debug)]
 enum Constant {
@@ -44,8 +54,9 @@ enum Constant {
     /// The class a `StyleX` theme applies
     Theme(String),
     /// What another style API gives: a class, a component or a keyframes
-    /// name, never rules
-    Style,
+    /// name, never rules; for a `css()` class, the styles behind it when
+    /// they are known
+    Style(Option<Rc<Vec<ExtractStyleValue>>>),
     /// An object or array code changes, or a value read from one
     Changed(Rc<Change>),
 }
@@ -154,8 +165,157 @@ pub(crate) struct Inlined {
     pub dependencies: BTreeSet<String>,
     pub stylex_vars: FxHashMap<String, FxHashMap<String, String>>,
     pub stylex_themes: FxHashMap<String, String>,
+    /// The styles behind imported `css()` classes
+    pub css_styles: FxHashMap<String, Vec<ExtractStyleValue>>,
     pub unknown: Unknown,
     pub changed: Changed,
+    /// Style objects declared below the top level that styles read, which
+    /// code elsewhere reads too, so the build cannot tell they are unchanged
+    pub errors: Vec<(u32, String)>,
+}
+
+/// A `const` below the top level of the module holding an object or array
+/// literal that is all written out, which styles read as they read top-level
+/// constants when nothing else reads it
+struct LocalConstant {
+    name: String,
+    /// Where its binding is written
+    binding: u32,
+    end: u32,
+    value: Option<Constant>,
+}
+
+/// All simple `const` declarations, in declaration order, evaluated only after
+/// semantic scoping has resolved their dependencies.
+#[derive(Default)]
+struct LocalConstants {
+    bindings: FxHashMap<u32, u32>,
+}
+
+/// `expression` as the value it writes out, when every part of it is written
+/// out as a literal
+fn written_out(expression: &Expression<'_>) -> Option<Constant> {
+    match expression {
+        Expression::StringLiteral(literal) => Some(Constant::String(literal.value.to_string())),
+        Expression::BooleanLiteral(literal) => Some(Constant::Bool(literal.value)),
+        Expression::NullLiteral(_) => Some(Constant::Null),
+        Expression::ParenthesizedExpression(inner) => written_out(&inner.expression),
+        Expression::ArrayExpression(array) => array
+            .elements
+            .iter()
+            .map(|element| written_out(element.as_expression()?))
+            .collect::<Option<Vec<_>>>()
+            .map(|values| Constant::Array(Rc::new(values))),
+        Expression::ObjectExpression(object) => object
+            .properties
+            .iter()
+            .map(|property| {
+                let ObjectPropertyKind::ObjectProperty(property) = property else {
+                    return None;
+                };
+                if property.computed
+                    || property.method
+                    || property.kind != oxc_ast::ast::PropertyKind::Init
+                {
+                    return None;
+                }
+                let key = crate::utils::get_str_by_property_key(&property.key)?;
+                Some((key.to_string(), written_out(&property.value)?))
+            })
+            .collect::<Option<Vec<_>>>()
+            .map(|entries| Constant::Record(Rc::new(entries))),
+        expression => crate::utils::js_number_literal(expression).map(Constant::Number),
+    }
+}
+
+impl<'a> Visit<'a> for LocalConstants {
+    fn visit_variable_declaration(&mut self, declaration: &oxc_ast::ast::VariableDeclaration<'a>) {
+        if declaration.kind == VariableDeclarationKind::Const {
+            for declarator in &declaration.declarations {
+                if let oxc_ast::ast::BindingPattern::BindingIdentifier(binding) = &declarator.id
+                    && let Some(init) = &declarator.init
+                {
+                    self.bindings.insert(binding.span.start, init.span().end);
+                }
+            }
+        }
+        walk::walk_variable_declaration(self, declaration);
+    }
+}
+
+struct ScopedLocals<'s, 'p, 'a, 'r> {
+    scope: &'s mut ModuleScope<'p, 'a>,
+    modules: &'s mut Modules<'r>,
+    scoping: &'s Scoping,
+    found: &'s mut Vec<LocalConstant>,
+    builder: &'s AstBuilder<'a>,
+    shapes: &'s mut FxHashMap<SymbolId, Expression<'a>>,
+    ends: &'s FxHashMap<u32, u32>,
+    invalid: &'s mut FxHashSet<SymbolId>,
+}
+
+impl<'a> Visit<'a> for ScopedLocals<'_, '_, 'a, '_> {
+    fn visit_variable_declaration(&mut self, declaration: &oxc_ast::ast::VariableDeclaration<'a>) {
+        if declaration.kind == VariableDeclarationKind::Const {
+            for declarator in &declaration.declarations {
+                if let oxc_ast::ast::BindingPattern::BindingIdentifier(binding) = &declarator.id
+                    && let Some(init) = &declarator.init
+                    && let Some(symbol) = binding.symbol_id.get()
+                {
+                    let written = self
+                        .scoping
+                        .get_resolved_reference_ids(symbol)
+                        .iter()
+                        .any(|reference| self.scoping.get_reference(*reference).is_write());
+                    let value =
+                        written_out(init).or_else(|| self.scope.evaluate(self.modules, init));
+                    if let Some(value) = &value
+                        && !written
+                        && !value.is_mutable()
+                        && value.js_literal().is_some()
+                    {
+                        self.scope
+                            .exact
+                            .insert(symbol, (init.span().end, value.clone()));
+                    }
+                    let exact = value.filter(|value| {
+                        matches!(value, Constant::Record(_) | Constant::Array(_))
+                            && value.js_literal().is_some()
+                    });
+                    let shape = if exact.is_none()
+                        && matches!(
+                            crate::utils::unwrap_syntax_only(init),
+                            Expression::ObjectExpression(_) | Expression::ArrayExpression(_)
+                        ) {
+                        local_rule_shapes::prepare(self.builder, init, &mut |expression| {
+                            constant_literal(
+                                self.builder,
+                                &self.scope.evaluate(self.modules, expression)?,
+                                true,
+                            )
+                        })
+                    } else {
+                        None
+                    };
+                    if exact.is_some() || shape.is_some() {
+                        let tdz = local_rule_shapes::has_tdz(init, self.scoping, self.ends);
+                        if tdz {
+                            self.invalid.insert(symbol);
+                        } else if let Some(shape) = shape {
+                            self.shapes.insert(symbol, shape);
+                        }
+                        self.found.push(LocalConstant {
+                            name: binding.name.to_string(),
+                            binding: binding.span.start,
+                            end: init.span().end,
+                            value: exact.filter(|_| !tdz),
+                        });
+                    }
+                }
+            }
+        }
+        walk::walk_variable_declaration(self, declaration);
+    }
 }
 
 /// Bindings styles read that hold an object or array code changes, whole or
@@ -312,11 +472,14 @@ pub(crate) fn inline_constants<'a>(
     filename: &str,
     option: &ExtractOption,
     resolver: Option<&ModuleResolver>,
+    css_prop: CssProp,
+    px: &crate::import_alias_visit::PxMarks,
 ) -> Inlined {
     let is_style_package =
         |source: &str| source.starts_with(&option.package) || source == crate::STYLEX_PACKAGE;
     let mut style_roots = FxHashSet::default();
     let mut apis = StyleApis::default();
+    let css_props = CssTakers::new(program, css_prop, &format!("{}/compat", option.package));
     for statement in &program.body {
         if let Statement::ImportDeclaration(import) = statement
             && is_style_package(&import.source.value)
@@ -338,18 +501,25 @@ pub(crate) fn inline_constants<'a>(
             }
         }
     }
-    if style_roots.is_empty() {
+    if style_roots.is_empty() && css_prop == CssProp::Off {
         return Inlined::default();
     }
     let mut read = StyleReads {
         style_roots: &style_roots,
+        css_props: &css_props,
         names: FxHashSet::default(),
         depth: 0,
+        class_names: Vec::new(),
     };
     read.visit_program(program);
-    if read.names.is_empty() {
+    if read.names.is_empty() && px.is_empty() {
         return Inlined::default();
     }
+    let mut locals = LocalConstants::default();
+    locals.visit_program(program);
+    let mut found = Vec::new();
+    let mut shapes = FxHashMap::default();
+    let mut invalid = FxHashSet::default();
     let mut modules = Modules {
         resolver,
         option,
@@ -358,11 +528,16 @@ pub(crate) fn inline_constants<'a>(
     };
     let mut symbols: FxHashMap<SymbolId, Constant> = FxHashMap::default();
     let mut inlined = Inlined::default();
-    let (scoping, reads_math) = {
+    let scoping = SemanticBuilder::new()
+        .build(program)
+        .semantic
+        .into_scoping();
+    let reads_math = {
         let mut scope = ModuleScope::new(filename, program, None);
         scope
             .style_names
             .extend(style_roots.iter().map(ToString::to_string));
+        scope.css_props = Some(&css_props);
         let mut bindings: FxHashMap<&str, Vec<&Cell<Option<SymbolId>>>> = FxHashMap::default();
         for statement in &program.body {
             let declaration = match statement {
@@ -424,13 +599,13 @@ pub(crate) fn inline_constants<'a>(
         // Scoping is only worth building when a style reads a name that may
         // hold a constant
         let reads_math = read.names.contains("Math") && !scope.binds("Math");
-        if !reads_math && !read.names.iter().any(|name| scope.binds(name)) {
+        if !reads_math
+            && px.is_empty()
+            && locals.bindings.is_empty()
+            && !read.names.iter().any(|name| scope.binds(name))
+        {
             return Inlined::default();
         }
-        let scoping = SemanticBuilder::new()
-            .build(program)
-            .semantic
-            .into_scoping();
         for name in &read.names {
             let bound = scope.binds(name);
             let constant = scope.lookup(&mut modules, name);
@@ -471,24 +646,112 @@ pub(crate) fn inline_constants<'a>(
                 Constant::Theme(class) => {
                     inlined.stylex_themes.insert(name.clone(), class.clone());
                 }
+                Constant::Style(Some(styles)) => {
+                    inlined
+                        .css_styles
+                        .insert(name.clone(), styles.as_ref().clone());
+                }
                 _ => {}
             }
             for symbol in bindings.get(name.as_str()).into_iter().flatten() {
                 symbols.extend(symbol.get().map(|symbol| (symbol, constant.clone())));
             }
         }
-        (scoping, reads_math)
+        scope.scoped = Some(&scoping);
+        ScopedLocals {
+            scope: &mut scope,
+            modules: &mut modules,
+            scoping: &scoping,
+            found: &mut found,
+            builder: ast_builder,
+            shapes: &mut shapes,
+            ends: &locals.bindings,
+            invalid: &mut invalid,
+        }
+        .visit_program(program);
+        reads_math
     };
     inlined.dependencies = modules.exports.into_keys().collect();
-    if !symbols.is_empty() || reads_math {
-        Inline {
+    let callbacks = bound_style_callbacks::rewrite(ast_builder, program, &scoping, &option.package);
+    inlined.errors.extend(callbacks.errors);
+    let mut captures = callbacks.captures;
+    shapes.retain(|symbol, shape| {
+        if let Some(captured) = local_rule_shapes::collect_captures(shape, &scoping) {
+            captures.extend(captured);
+            true
+        } else {
+            invalid.insert(*symbol);
+            false
+        }
+    });
+    let pixel_callbacks = callbacks
+        .sites
+        .into_iter()
+        .filter_map(|(span, address)| px.contains(&(span.start, span.end)).then_some(address))
+        .collect();
+    let mut declared = Vec::new();
+    for symbol in scoping.symbol_ids() {
+        if scoping.symbol_scope_id(symbol) != scoping.root_scope_id()
+            && scoping.symbol_flags(symbol).is_const_variable()
+            && let Some(local) = found
+                .iter()
+                .find(|local| local.binding == scoping.symbol_span(symbol).start)
+        {
+            if let Some(value) = &local.value {
+                symbols.insert(symbol, value.clone());
+            }
+            declared.push((symbol, local));
+        }
+    }
+    if !symbols.is_empty()
+        || !shapes.is_empty()
+        || !invalid.is_empty()
+        || reads_math
+        || !px.is_empty()
+        || !captures.is_empty()
+    {
+        let aliases = local_capture_reads::aliases(program, &scoping, &shapes, &captures);
+        let deferred = local_capture_reads::deferred_reads(program, &scoping);
+        let mut inline = Inline {
             ast_builder,
             scoping: &scoping,
             symbols: &symbols,
+            shapes: &shapes,
+            aliases: &aliases,
+            deferred: &deferred,
+            local_ends: declared
+                .iter()
+                .map(|(symbol, local)| (*symbol, local.end))
+                .collect(),
+            invalid: &invalid,
             style_roots: &style_roots,
+            css_props: &css_props,
             apis: &apis,
             objects: false,
             styles: false,
+            px: false,
+            numeric_role: NumericRole::Other,
+            marks: px,
+            pixel_callbacks,
+            replaced: FxHashMap::default(),
+            rejected: FxHashSet::default(),
+            class_names: Vec::new(),
+        };
+        inline.visit_program(program);
+        for (symbol, local) in declared {
+            let read = inline.replaced.get(&symbol).copied().unwrap_or(0);
+            if inline.rejected.contains(&symbol)
+                || (read > 0 && read < scoping.get_resolved_reference_ids(symbol).len())
+            {
+                inlined
+                    .errors
+                    .push((local.binding, crate::utils::local_style_error(&local.name)));
+            }
+        }
+        local_capture_reads::Rename {
+            builder: ast_builder,
+            scoping: &scoping,
+            aliases: &aliases,
         }
         .visit_program(program);
     }
@@ -620,8 +883,12 @@ impl StyleApis<'_> {
 /// of its functions
 struct StyleReads<'s> {
     style_roots: &'s FxHashSet<&'s str>,
+    css_props: &'s CssTakers<'s>,
     names: FxHashSet<String>,
     depth: usize,
+    /// The names the `<ClassNames>` child functions around take `css` and
+    /// `cx` by
+    class_names: Vec<String>,
 }
 
 /// Whether `expression` is a style API: a root the package gives, or a member
@@ -655,12 +922,33 @@ impl<'a> Visit<'a> for StyleReads<'_> {
         }
     }
 
+    fn visit_jsx_element(&mut self, element: &oxc_ast::ast::JSXElement<'a>) {
+        let calls = self.css_props.class_names_calls(element);
+        let taken = calls.len();
+        self.class_names.extend(calls);
+        oxc_ast_visit::walk::walk_jsx_element(self, element);
+        self.class_names.truncate(self.class_names.len() - taken);
+    }
+
     fn visit_call_expression(&mut self, call: &oxc_ast::ast::CallExpression<'a>) {
         self.visit_expression(&call.callee);
-        let style = self.is_style_root(&call.callee);
+        let style =
+            self.is_style_root(&call.callee) || calls_one_of(&self.class_names, &call.callee);
+        let css = self
+            .css_props
+            .property(call, |root| self.style_roots.contains(root));
         self.reading(style, |reads| {
-            for argument in &call.arguments {
-                reads.visit_argument(argument);
+            for (index, argument) in call.arguments.iter().enumerate() {
+                match (css, argument) {
+                    (Some(css), Argument::ObjectExpression(props)) if index == 1 => {
+                        for (at, property) in props.properties.iter().enumerate() {
+                            reads.reading(at == css, |reads| {
+                                reads.visit_object_property_kind(property);
+                            });
+                        }
+                    }
+                    _ => reads.visit_argument(argument),
+                }
             }
         });
     }
@@ -670,27 +958,34 @@ impl<'a> Visit<'a> for StyleReads<'_> {
         tagged: &oxc_ast::ast::TaggedTemplateExpression<'a>,
     ) {
         self.visit_expression(&tagged.tag);
-        let style = self.is_style_root(&tagged.tag);
+        let style = self.is_style_root(&tagged.tag) || calls_one_of(&self.class_names, &tagged.tag);
         self.reading(style, |reads| reads.visit_template_literal(&tagged.quasi));
     }
 
     fn visit_jsx_opening_element(&mut self, element: &oxc_ast::ast::JSXOpeningElement<'a>) {
         let style = jsx_root(&element.name).is_some_and(|root| self.style_roots.contains(root));
-        self.reading(style, |reads| {
-            for attribute in &element.attributes {
-                match attribute {
-                    JSXAttributeItem::Attribute(attribute) => {
-                        if let Some(value) = &attribute.value {
-                            reads.visit_jsx_attribute_value(value);
-                        }
-                    }
-                    JSXAttributeItem::SpreadAttribute(spread) => {
-                        reads.visit_expression(&spread.argument);
+        for attribute in &element.attributes {
+            let style = style
+                || self.css_props.attribute(&element.name, attribute, |root| {
+                    self.style_roots.contains(root)
+                });
+            self.reading(style, |reads| match attribute {
+                JSXAttributeItem::Attribute(attribute) => {
+                    if let Some(value) = &attribute.value {
+                        reads.visit_jsx_attribute_value(value);
                     }
                 }
-            }
-        });
+                JSXAttributeItem::SpreadAttribute(spread) => {
+                    reads.visit_expression(&spread.argument);
+                }
+            });
+        }
     }
+}
+
+/// Whether `callee` is one of `names`
+fn calls_one_of(names: &[String], callee: &Expression<'_>) -> bool {
+    matches!(callee, Expression::Identifier(callee) if names.iter().any(|name| name == callee.name.as_str()))
 }
 
 /// The name `<Box>` or `<Devup.Box>` starts with
@@ -994,8 +1289,13 @@ struct ModuleScope<'p, 'a> {
     style_imports: FxHashSet<String>,
     /// Style APIs besides the imports, which never run what they are given
     style_names: FxHashSet<String>,
+    /// The `css` props of the file extracted, which never run what they hold
+    css_props: Option<&'p CssTakers<'p>>,
     uses: Option<Rc<FxHashMap<String, Vec<crate::mutations::Use>>>>,
     changes: FxHashMap<String, Option<Rc<Change>>>,
+    /// Local rule evaluation resolves dependencies by symbol, never by name.
+    scoped: Option<&'p Scoping>,
+    exact: FxHashMap<SymbolId, (u32, Constant)>,
 }
 
 impl<'p, 'a> ModuleScope<'p, 'a> {
@@ -1009,8 +1309,11 @@ impl<'p, 'a> ModuleScope<'p, 'a> {
             imports: FxHashMap::default(),
             style_imports: FxHashSet::default(),
             style_names: FxHashSet::default(),
+            css_props: None,
             uses: None,
             changes: FxHashMap::default(),
+            scoped: None,
+            exact: FxHashMap::default(),
         }
     }
 
@@ -1030,6 +1333,55 @@ impl<'p, 'a> ModuleScope<'p, 'a> {
                     && (source.starts_with(modules.option.package.as_str())
                         || modules.option.import_aliases.contains_key(source))
             })
+    }
+
+    /// The styles behind `css(rules)`, the package's own `css` given one
+    /// rule object every value of which is known, as the module's class names
+    /// do not tell them
+    fn css_styles(
+        &mut self,
+        modules: &mut Modules<'_>,
+        call: &oxc_ast::ast::CallExpression<'_>,
+    ) -> Option<Rc<Vec<ExtractStyleValue>>> {
+        let Expression::Identifier(callee) = &call.callee else {
+            return None;
+        };
+        let (source, Imported::Named(export)) = self.imports.get(callee.name.as_str())? else {
+            return None;
+        };
+        if export != "css" || !source.starts_with(modules.option.package.as_str()) {
+            return None;
+        }
+        let [argument] = call.arguments.as_slice() else {
+            return None;
+        };
+        let rules = self.evaluate(modules, argument.as_expression()?)?;
+        let allocator = Allocator::default();
+        let builder = AstBuilder::new(&allocator);
+        let mut rules = match constant_literal(&builder, &rules, true)? {
+            rules @ Expression::ObjectExpression(_) => rules,
+            _ => return None,
+        };
+        let ExtractResult {
+            mut styles,
+            style_order,
+            ..
+        } = extract_style_from_expression(
+            &builder,
+            None,
+            &mut rules,
+            0,
+            &None,
+            LiteralHandling::ExpandResponsiveThemeToken,
+        );
+        if let Some(order) = style_order {
+            for prop in &mut styles {
+                set_prop_order(prop, order);
+            }
+        }
+        let mut composition = Composition::default();
+        composition.apply(&builder, styles);
+        composition.unconditional().map(Rc::new)
     }
 
     fn is_style_import(&self, option: &ExtractOption, name: &str) -> bool {
@@ -1066,9 +1418,11 @@ impl<'p, 'a> ModuleScope<'p, 'a> {
             uses.clone()
         } else {
             let option = modules.option;
-            let uses = Rc::new(crate::mutations::uses(self.program, &|name| {
-                self.is_style_import(option, name)
-            }));
+            let uses = Rc::new(crate::mutations::uses(
+                self.program,
+                &|name| self.is_style_import(option, name),
+                self.css_props,
+            ));
             self.uses = Some(uses.clone());
             uses
         };
@@ -1118,7 +1472,17 @@ impl<'p, 'a> ModuleScope<'p, 'a> {
 
     fn is_global_math(&self, expression: &Expression<'_>) -> bool {
         matches!(expression, Expression::Identifier(identifier)
-            if identifier.name == "Math" && !self.binds("Math"))
+            if identifier.name == "Math" && self.is_global(identifier))
+    }
+
+    fn is_global(&self, identifier: &oxc_ast::ast::IdentifierReference<'_>) -> bool {
+        match self.scoped {
+            Some(scoping) => identifier
+                .reference_id
+                .get()
+                .is_some_and(|reference| scoping.get_reference(reference).symbol_id().is_none()),
+            None => !self.binds(&identifier.name),
+        }
     }
 
     /// Record the members of an enum whose values are literals, up to the
@@ -1421,7 +1785,7 @@ impl<'p, 'a> ModuleScope<'p, 'a> {
             Expression::NullLiteral(_) => Some(Constant::Null),
             Expression::BooleanLiteral(literal) => Some(Constant::Bool(literal.value)),
             Expression::Identifier(identifier)
-                if identifier.name == "undefined" && !self.binds("undefined") =>
+                if identifier.name == "undefined" && self.is_global(identifier) =>
             {
                 Some(Constant::Undefined)
             }
@@ -1447,7 +1811,14 @@ impl<'p, 'a> ModuleScope<'p, 'a> {
                 let key = js_string(&self.evaluate(modules, &member.expression)?)?;
                 member_of(&self.evaluate(modules, &member.object)?, &key)
             }
-            Expression::Identifier(identifier) => self.lookup(modules, &identifier.name),
+            Expression::Identifier(identifier) => match self.scoped {
+                Some(scoping) => {
+                    let reference = scoping.get_reference(identifier.reference_id.get()?);
+                    let (end, value) = self.exact.get(&reference.symbol_id()?)?;
+                    (identifier.span.start >= *end).then(|| value.clone())
+                }
+                None => self.lookup(modules, &identifier.name),
+            },
             Expression::StaticMemberExpression(member) if self.is_global_math(&member.object) => {
                 math_constant(member.property.name.as_str())
             }
@@ -1465,13 +1836,16 @@ impl<'p, 'a> ModuleScope<'p, 'a> {
                     }
                     fold_math(callee.property.name.as_str(), &arguments)
                 }
-                callee if self.is_style_api(modules, callee) => Some(Constant::Style),
+                _ if self.scoped.is_some() => None,
+                callee if self.is_style_api(modules, callee) => {
+                    Some(Constant::Style(self.css_styles(modules, call)))
+                }
                 _ => self.evaluate_stylex(modules, call),
             },
             Expression::TaggedTemplateExpression(tagged)
-                if self.is_style_api(modules, &tagged.tag) =>
+                if self.scoped.is_none() && self.is_style_api(modules, &tagged.tag) =>
             {
-                Some(Constant::Style)
+                Some(Constant::Style(None))
             }
             Expression::TSAsExpression(inner) => self.evaluate(modules, &inner.expression),
             Expression::TSSatisfiesExpression(inner) => self.evaluate(modules, &inner.expression),
@@ -1543,6 +1917,30 @@ impl<'p, 'a> ModuleScope<'p, 'a> {
         }
     }
 }
+
+#[cfg(test)]
+#[path = "local_exact_constants_w27_tests.rs"]
+mod local_exact_constants_w27_tests;
+
+#[path = "local_rule_shapes_w27.rs"]
+mod local_rule_shapes;
+
+#[path = "local_capture_reads_w27.rs"]
+mod local_capture_reads;
+
+#[path = "bound_style_callbacks.rs"]
+mod bound_style_callbacks;
+
+#[path = "bound_callback_captures.rs"]
+mod bound_callback_captures;
+
+#[cfg(test)]
+#[path = "bound_style_callbacks_tests.rs"]
+mod bound_style_callbacks_tests;
+
+#[cfg(test)]
+#[path = "bound_callback_alias_tests.rs"]
+mod bound_callback_alias_tests;
 
 fn set_entry(entries: &mut Vec<(String, Constant)>, key: String, value: Constant) {
     match entries.iter_mut().find(|(existing, _)| *existing == key) {
@@ -1685,6 +2083,12 @@ fn fold_binary(operator: BinaryOperator, left: &Constant, right: &Constant) -> O
     };
     number.is_finite().then_some(Constant::Number(number))
 }
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum NumericRole {
+    ElementCssProp,
+    Other,
+}
+
 /// Replaces reads of constants where styles read them: primitives in the
 /// arguments of style APIs and in style props, objects and arrays where they
 /// are read as style objects, as a copy elsewhere would change their identity.
@@ -1693,12 +2097,33 @@ struct Inline<'s, 'a> {
     ast_builder: &'s AstBuilder<'a>,
     scoping: &'s Scoping,
     symbols: &'s FxHashMap<SymbolId, Constant>,
+    shapes: &'s FxHashMap<SymbolId, Expression<'a>>,
+    aliases: &'s FxHashMap<SymbolId, String>,
+    deferred: &'s FxHashSet<oxc_syntax::reference::ReferenceId>,
+    local_ends: FxHashMap<SymbolId, u32>,
+    invalid: &'s FxHashSet<SymbolId>,
     style_roots: &'s FxHashSet<&'s str>,
+    css_props: &'s CssTakers<'s>,
     apis: &'s StyleApis<'s>,
     /// Inside what the build reads as style objects
     objects: bool,
     /// Inside the arguments of a style API or a style prop
     styles: bool,
+    /// Inside a `css` prop, whose numbers Emotion reads as `px` lengths
+    px: bool,
+    numeric_role: NumericRole,
+    /// Where a constant stands as a value or rules of a library reading
+    /// numbers as `px` lengths
+    marks: &'s crate::import_alias_visit::PxMarks,
+    /// Clone identities retain per-use pixel context without changing source spans.
+    pixel_callbacks: FxHashSet<Address>,
+    /// How often a style read each binding below the top level, by what it
+    /// held
+    replaced: FxHashMap<SymbolId, usize>,
+    rejected: FxHashSet<SymbolId>,
+    /// The names the `<ClassNames>` child functions around take `css` and
+    /// `cx` by
+    class_names: Vec<String>,
 }
 
 impl<'a> Inline<'_, 'a> {
@@ -1707,6 +2132,11 @@ impl<'a> Inline<'_, 'a> {
             Expression::Identifier(identifier) => {
                 let reference = identifier.reference_id.get()?;
                 let symbol = self.scoping.get_reference(reference).symbol_id()?;
+                if self.local_ends.get(&symbol).is_some_and(|end| {
+                    identifier.span.start < *end && !self.deferred.contains(&reference)
+                }) {
+                    return None;
+                }
                 self.symbols.get(&symbol).cloned()
             }
             Expression::StaticMemberExpression(member) if self.is_global_math(&member.object) => {
@@ -1837,55 +2267,7 @@ impl<'a> Inline<'_, 'a> {
     }
 
     fn literal(&self, constant: &Constant) -> Option<Expression<'a>> {
-        let builder = self.ast_builder;
-        match constant {
-            Constant::String(value) => Some(Expression::new_string_literal(
-                SPAN,
-                Str::from_in(value.as_str(), builder.allocator()),
-                None,
-                builder,
-            )),
-            Constant::Number(value) => Some(Expression::new_numeric_literal(
-                SPAN,
-                *value,
-                None,
-                NumberBase::Decimal,
-                builder,
-            )),
-            Constant::Null => Some(Expression::new_null_literal(SPAN, builder)),
-            Constant::Bool(value) => Some(Expression::new_boolean_literal(SPAN, *value, builder)),
-            Constant::Record(entries) if self.objects => {
-                let mut properties = oxc_allocator::Vec::with_capacity_in(entries.len(), builder);
-                for (key, value) in entries.iter() {
-                    properties.push(ObjectPropertyKind::new_object_property(
-                        SPAN,
-                        oxc_ast::ast::PropertyKind::Init,
-                        oxc_ast::ast::PropertyKey::StringLiteral(
-                            oxc_ast::ast::StringLiteral::boxed(
-                                SPAN,
-                                Str::from_in(key.as_str(), builder.allocator()),
-                                None,
-                                builder,
-                            ),
-                        ),
-                        self.literal(value)?,
-                        false,
-                        false,
-                        false,
-                        builder,
-                    ));
-                }
-                Some(Expression::new_object_expression(SPAN, properties, builder))
-            }
-            Constant::Array(values) if self.objects => {
-                let mut elements = oxc_allocator::Vec::with_capacity_in(values.len(), builder);
-                for value in values.iter() {
-                    elements.push(self.literal(value)?.into());
-                }
-                Some(Expression::new_array_expression(SPAN, elements, builder))
-            }
-            _ => None,
-        }
+        constant_literal(self.ast_builder, constant, self.objects)
     }
 
     fn reading_objects<T>(&mut self, objects: bool, visit: impl FnOnce(&mut Self) -> T) -> T {
@@ -1902,16 +2284,202 @@ impl<'a> Inline<'_, 'a> {
         self.styles = outer;
         result
     }
+
+    /// `visit` reading a `css` prop when `css`
+    fn reading_css<T>(&mut self, css: bool, visit: impl FnOnce(&mut Self) -> T) -> T {
+        let outer = std::mem::replace(&mut self.px, css);
+        let result = self.reading_styles(css, |inline| inline.reading_objects(css, visit));
+        self.px = outer;
+        result
+    }
+}
+
+/// `value` as the `px` length Emotion reads it as when it is a number
+fn px_number<'a>(ast_builder: &AstBuilder<'a>, value: &mut Expression<'a>) {
+    if let Some(number) = crate::utils::js_number_literal(value)
+        && number != 0.0
+    {
+        *value = Expression::new_string_literal(
+            SPAN,
+            Str::from_in(format!("{number}px").as_str(), ast_builder.allocator()),
+            None,
+            ast_builder,
+        );
+    }
+}
+
+/// `property` holding a number as the `px` length Emotion reads it as
+fn px_value<'a>(ast_builder: &AstBuilder<'a>, property: &mut oxc_ast::ast::ObjectProperty<'a>) {
+    if property
+        .key
+        .static_name()
+        .is_some_and(|key| !crate::utils::keeps_bare_number(&key))
+    {
+        px_number(ast_builder, &mut property.value);
+    }
+}
+
+/// The rules `rules` with their numbers as the `px` lengths Emotion reads them
+/// as, nested rules included
+fn px_rules<'a>(ast_builder: &AstBuilder<'a>, rules: &mut Expression<'a>) {
+    if let Expression::ObjectExpression(object) = rules {
+        for property in &mut object.properties {
+            if let ObjectPropertyKind::ObjectProperty(property) = property
+                && property.key.static_name().is_none_or(|key| key != "vars")
+            {
+                px_value(ast_builder, property);
+                px_rules(ast_builder, &mut property.value);
+            }
+        }
+    }
+    if let Expression::ArrayExpression(array) = rules {
+        for element in &mut array.elements {
+            if let Some(expression) = element.as_expression_mut() {
+                px_rules(ast_builder, expression);
+            }
+        }
+    }
+}
+
+/// `constant` written as a literal, objects and arrays too when `objects`
+fn constant_literal<'a>(
+    builder: &AstBuilder<'a>,
+    constant: &Constant,
+    objects: bool,
+) -> Option<Expression<'a>> {
+    match constant {
+        Constant::String(value) => Some(Expression::new_string_literal(
+            SPAN,
+            Str::from_in(value.as_str(), builder.allocator()),
+            None,
+            builder,
+        )),
+        Constant::Number(value) => Some(Expression::new_numeric_literal(
+            SPAN,
+            *value,
+            None,
+            NumberBase::Decimal,
+            builder,
+        )),
+        Constant::Null => Some(Expression::new_null_literal(SPAN, builder)),
+        Constant::Bool(value) => Some(Expression::new_boolean_literal(SPAN, *value, builder)),
+        Constant::Record(entries) if objects => {
+            let mut properties = oxc_allocator::Vec::with_capacity_in(entries.len(), builder);
+            for (key, value) in entries.iter() {
+                properties.push(ObjectPropertyKind::new_object_property(
+                    SPAN,
+                    oxc_ast::ast::PropertyKind::Init,
+                    oxc_ast::ast::PropertyKey::StringLiteral(oxc_ast::ast::StringLiteral::boxed(
+                        SPAN,
+                        Str::from_in(key.as_str(), builder.allocator()),
+                        None,
+                        builder,
+                    )),
+                    constant_literal(builder, value, objects)?,
+                    false,
+                    false,
+                    false,
+                    builder,
+                ));
+            }
+            Some(Expression::new_object_expression(SPAN, properties, builder))
+        }
+        Constant::Array(values) if objects => {
+            let mut elements = oxc_allocator::Vec::with_capacity_in(values.len(), builder);
+            for value in values.iter() {
+                elements.push(constant_literal(builder, value, objects)?.into());
+            }
+            Some(Expression::new_array_expression(SPAN, elements, builder))
+        }
+        _ => None,
+    }
 }
 
 impl<'a> VisitMut<'a> for Inline<'_, 'a> {
+    fn visit_formal_parameters(&mut self, parameters: &mut oxc_ast::ast::FormalParameters<'a>) {
+        let outer_px = std::mem::replace(&mut self.px, false);
+        walk_mut::walk_formal_parameters(self, parameters);
+        self.px = outer_px;
+    }
+
+    fn visit_arrow_function_expression(
+        &mut self,
+        arrow: &mut oxc_ast::ast::ArrowFunctionExpression<'a>,
+    ) {
+        let outer = std::mem::replace(&mut self.numeric_role, NumericRole::Other);
+        walk_mut::walk_arrow_function_expression(self, arrow);
+        self.numeric_role = outer;
+    }
+
+    fn visit_function(
+        &mut self,
+        function: &mut oxc_ast::ast::Function<'a>,
+        flags: oxc_syntax::scope::ScopeFlags,
+    ) {
+        let outer = std::mem::replace(&mut self.numeric_role, NumericRole::Other);
+        walk_mut::walk_function(self, function, flags);
+        self.numeric_role = outer;
+    }
+
     fn visit_expression(&mut self, expression: &mut Expression<'a>) {
         if self.styles {
+            if let Expression::Identifier(identifier) = &*expression
+                && let Some(reference) = identifier.reference_id.get()
+                && let Some(symbol) = self.scoping.get_reference(reference).symbol_id()
+                && (self.invalid.contains(&symbol)
+                    || self.local_ends.get(&symbol).is_some_and(|end| {
+                        identifier.span.start < *end && !self.deferred.contains(&reference)
+                    }))
+            {
+                self.rejected.insert(symbol);
+            }
+            if self.objects
+                && let Expression::Identifier(identifier) = &*expression
+                && let Some(reference) = identifier.reference_id.get()
+                && let Some(symbol) = self.scoping.get_reference(reference).symbol_id()
+                && self.local_ends.get(&symbol).is_some_and(|end| {
+                    identifier.span.start >= *end || self.deferred.contains(&reference)
+                })
+                && let Some(shape) = self.shapes.get(&symbol)
+            {
+                let root = match self.aliases.get(&symbol) {
+                    Some(alias) => Expression::new_identifier(
+                        identifier.span,
+                        self.ast_builder.allocator().alloc_str(alias),
+                        self.ast_builder,
+                    ),
+                    None => expression.clone_in_with_semantic_ids(self.ast_builder.allocator()),
+                };
+                *expression = local_rule_shapes::expand(self.ast_builder, shape, &root);
+                *self.replaced.entry(symbol).or_default() += 1;
+                let outer = self.px;
+                self.px |= self.marks.contains(&(root.span().start, root.span().end));
+                if self.px {
+                    px_rules(self.ast_builder, expression);
+                }
+                self.visit_expression(expression);
+                self.px = outer;
+                return;
+            }
             if let Some(literal) = self
                 .constant(expression)
                 .and_then(|constant| self.literal(&constant))
             {
+                let span = expression.span();
+                let marked = self.marks.contains(&(span.start, span.end));
+                if let Expression::Identifier(identifier) = &*expression
+                    && let Some(reference) = identifier.reference_id.get()
+                    && let Some(symbol) = self.scoping.get_reference(reference).symbol_id()
+                {
+                    *self.replaced.entry(symbol).or_default() += 1;
+                }
                 *expression = literal;
+                if marked {
+                    px_number(self.ast_builder, expression);
+                }
+                if self.px || marked {
+                    px_rules(self.ast_builder, expression);
+                }
                 return;
             }
             if let Some(chosen) = self.chosen(expression) {
@@ -1920,7 +2488,15 @@ impl<'a> VisitMut<'a> for Inline<'_, 'a> {
                 return;
             }
         }
+        let outer_px = self.px;
+        if matches!(
+            expression,
+            Expression::ArrowFunctionExpression(_) | Expression::FunctionExpression(_)
+        ) {
+            self.px |= self.pixel_callbacks.contains(&expression.address());
+        }
         walk_mut::walk_expression(self, expression);
+        self.px = outer_px;
     }
 
     fn visit_tagged_template_expression(
@@ -1928,6 +2504,12 @@ impl<'a> VisitMut<'a> for Inline<'_, 'a> {
         tagged: &mut oxc_ast::ast::TaggedTemplateExpression<'a>,
     ) {
         self.visit_expression(&mut tagged.tag);
+        if calls_one_of(&self.class_names, &tagged.tag) {
+            self.reading_css(true, |inline| {
+                inline.visit_template_literal(&mut tagged.quasi);
+            });
+            return;
+        }
         let styles = is_style_root(self.style_roots, &tagged.tag);
         self.reading_styles(styles, |inline| {
             inline.visit_template_literal(&mut tagged.quasi);
@@ -1940,22 +2522,80 @@ impl<'a> VisitMut<'a> for Inline<'_, 'a> {
         });
     }
 
+    fn visit_jsx_element(&mut self, element: &mut oxc_ast::ast::JSXElement<'a>) {
+        let calls = self.css_props.class_names_calls(element);
+        let taken = calls.len();
+        self.class_names.extend(calls);
+        walk_mut::walk_jsx_element(self, element);
+        self.class_names.truncate(self.class_names.len() - taken);
+    }
+
     fn visit_call_expression(&mut self, call: &mut oxc_ast::ast::CallExpression<'a>) {
-        self.visit_expression(&mut call.callee);
-        let objects = self.apis.reads(&call.callee);
-        let styles = is_style_root(self.style_roots, &call.callee);
-        self.reading_styles(styles, |inline| {
-            inline.reading_objects(objects, |inline| {
+        // Calls consume application inputs; only explicit style APIs read rules.
+        let outer_px = std::mem::replace(&mut self.px, false);
+        let outer_role = std::mem::replace(&mut self.numeric_role, NumericRole::Other);
+        self.reading_objects(false, |inline| inline.visit_expression(&mut call.callee));
+        if calls_one_of(&self.class_names, &call.callee) {
+            self.reading_css(true, |inline| {
                 for argument in &mut call.arguments {
                     inline.visit_argument(argument);
                 }
             });
+            self.px = outer_px;
+            self.numeric_role = outer_role;
+            return;
+        }
+        let objects = self.apis.reads(&call.callee);
+        let styles = is_style_root(self.style_roots, &call.callee);
+        let css = self
+            .css_props
+            .property(call, |root| self.style_roots.contains(root));
+        self.reading_styles(styles, |inline| {
+            inline.reading_objects(objects, |inline| {
+                for (index, argument) in call.arguments.iter_mut().enumerate() {
+                    match (css, argument) {
+                        (Some(css), Argument::ObjectExpression(props)) if index == 1 => {
+                            for (at, property) in props.properties.iter_mut().enumerate() {
+                                let outer = inline.numeric_role;
+                                inline.numeric_role = if at == css {
+                                    NumericRole::ElementCssProp
+                                } else {
+                                    NumericRole::Other
+                                };
+                                inline.reading_css(at == css, |inline| {
+                                    inline.visit_object_property_kind(property);
+                                });
+                                inline.numeric_role = outer;
+                            }
+                        }
+                        (_, argument) => inline.visit_argument(argument),
+                    }
+                }
+            });
         });
+        self.px = outer_px;
+        self.numeric_role = outer_role;
+    }
+
+    fn visit_new_expression(&mut self, call: &mut oxc_ast::ast::NewExpression<'a>) {
+        let outer = std::mem::replace(&mut self.numeric_role, NumericRole::Other);
+        self.reading_css(false, |inline| walk_mut::walk_new_expression(inline, call));
+        self.numeric_role = outer;
     }
 
     fn visit_jsx_opening_element(&mut self, element: &mut oxc_ast::ast::JSXOpeningElement<'a>) {
         let styled = jsx_root(&element.name).is_some_and(|root| self.style_roots.contains(root));
+        let element_name = &element.name;
         for attribute in &mut element.attributes {
+            if self.css_props.attribute(element_name, attribute, |root| {
+                self.style_roots.contains(root)
+            }) {
+                let outer = self.numeric_role;
+                self.numeric_role = NumericRole::ElementCssProp;
+                self.reading_css(true, |inline| inline.visit_jsx_attribute_item(attribute));
+                self.numeric_role = outer;
+                continue;
+            }
             let objects = styled
                 && match attribute {
                     JSXAttributeItem::Attribute(attribute) => {
@@ -1973,9 +2613,38 @@ impl<'a> VisitMut<'a> for Inline<'_, 'a> {
     }
 
     fn visit_object_property(&mut self, property: &mut oxc_ast::ast::ObjectProperty<'a>) {
+        let span = property.value.span();
+        let px = self.styles && (self.px || self.marks.contains(&(span.start, span.end)));
+        let outer = self.px;
+        if property.key.static_name().is_some_and(|key| key == "vars") {
+            self.px = false;
+        }
         walk_mut::walk_object_property(self, property);
+        self.px = outer;
         if property.shorthand && !matches!(property.value, Expression::Identifier(_)) {
             property.shorthand = false;
+        }
+        if px && property.key.static_name().is_none_or(|key| key != "vars") {
+            px_value(self.ast_builder, property);
+            if self.numeric_role == NumericRole::ElementCssProp
+                && self.px
+                && property
+                    .key
+                    .static_name()
+                    .is_some_and(|key| !crate::utils::keeps_bare_number(&key))
+                && !matches!(
+                    property.value,
+                    Expression::ObjectExpression(_)
+                        | Expression::ArrayExpression(_)
+                        | Expression::ArrowFunctionExpression(_)
+                        | Expression::FunctionExpression(_)
+                )
+                && written_out(&property.value).is_none()
+            {
+                use oxc_allocator::TakeIn;
+                let value = property.value.take_in(self.ast_builder);
+                property.value = local_rule_shapes::number_length(self.ast_builder, value);
+            }
         }
     }
 }
