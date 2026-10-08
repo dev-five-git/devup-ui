@@ -4,16 +4,19 @@
 
 use oxc_ast::AstKind;
 use oxc_ast::ast::{
-    Expression, JSXAttributeName, JSXElementName, ObjectPropertyKind, Program,
+    Expression, IdentifierReference, JSXAttributeName, JSXElementName, ObjectPropertyKind, Program,
     VariableDeclarationKind,
 };
 use oxc_ast_visit::{Visit, walk};
-use oxc_semantic::{AstNodes, SemanticBuilder};
+use oxc_semantic::{AstNodes, Scoping, SemanticBuilder};
 use oxc_span::GetSpan;
 use oxc_syntax::node::NodeId;
 use oxc_syntax::operator::UnaryOperator;
 use oxc_syntax::scope::ScopeFlags;
 use rustc_hash::FxHashMap;
+
+use crate::css_prop::{CssProp, CssTakers, binding_of};
+use crate::imported_constants::jsx_root_identifier;
 
 /// How code uses a top-level binding
 #[derive(Debug)]
@@ -104,10 +107,13 @@ const READING_FUNCTIONS: [&str; 8] = [
 
 /// The uses of each top-level binding of `program` that may change what it
 /// holds; `style` tells the names of the style APIs, whose arguments the
-/// build reads and which never run
+/// build reads and which never run, and `css` the `css` props the build reads
+/// and the entry absorbing Emotion's own `jsx`. A name only counts for a
+/// reference to the binding of the module, never to a local of the same name.
 pub(crate) fn uses(
     program: &Program<'_>,
     style: &dyn Fn(&str) -> bool,
+    css: Option<(CssProp, &str)>,
 ) -> FxHashMap<String, Vec<Use>> {
     let semantic = SemanticBuilder::new()
         .with_build_nodes(true)
@@ -115,7 +121,7 @@ pub(crate) fn uses(
         .semantic;
     let scoping = semantic.scoping();
     let nodes = semantic.nodes();
-    let is_global = |name: &str| scoping.get_root_binding(name.into()).is_none();
+    let takers = css.map(|(css_prop, compat)| CssTakers::new(program, scoping, css_prop, compat));
     let mut uses: FxHashMap<String, Vec<Use>> = FxHashMap::default();
     for (name, symbol) in scoping.get_bindings(scoping.root_scope_id()) {
         let init = match nodes.kind(scoping.symbol_declaration(*symbol)) {
@@ -124,8 +130,9 @@ pub(crate) fn uses(
         };
         let context = Context {
             nodes,
+            scoping,
             style,
-            is_global: &is_global,
+            css: takers.as_ref(),
             init,
         };
         let found: Vec<Use> = scoping
@@ -144,8 +151,9 @@ pub(crate) fn uses(
 
 struct Context<'s, 'a> {
     nodes: &'s AstNodes<'a>,
+    scoping: &'s Scoping,
     style: &'s dyn Fn(&str) -> bool,
-    is_global: &'s dyn Fn(&str) -> bool,
+    css: Option<&'s CssTakers<'s>>,
     /// What the binding is declared as, when a `const` or `let` gives it
     init: Option<&'s Expression<'a>>,
 }
@@ -368,12 +376,12 @@ impl Context<'_, '_> {
         match callee {
             Expression::Identifier(identifier)
                 if READING_FUNCTIONS.contains(&identifier.name.as_str())
-                    && (self.is_global)(&identifier.name) =>
+                    && self.is_global(identifier) =>
             {
                 Some(("", identifier.name.as_str()))
             }
             Expression::StaticMemberExpression(member) => match &member.object {
-                Expression::Identifier(object) if (self.is_global)(&object.name) => {
+                Expression::Identifier(object) if self.is_global(object) => {
                     Some((object.name.as_str(), member.property.name.as_str()))
                 }
                 _ => None,
@@ -387,11 +395,54 @@ impl Context<'_, '_> {
         std::iter::once(node)
             .chain(self.nodes.ancestor_ids(node))
             .any(|id| match self.nodes.kind(id) {
-                AstKind::CallExpression(call) => self.is_style(&call.callee),
-                AstKind::TaggedTemplateExpression(tagged) => self.is_style(&tagged.tag),
+                AstKind::CallExpression(call) => {
+                    self.is_style(&call.callee) || self.is_class_names_call(id, &call.callee)
+                }
+                AstKind::TaggedTemplateExpression(tagged) => {
+                    self.is_style(&tagged.tag) || self.is_class_names_call(id, &tagged.tag)
+                }
                 AstKind::JSXOpeningElement(element) => self.is_style_element(&element.name),
+                AstKind::JSXAttribute(attribute) => self.is_css_attribute(id, attribute),
+                AstKind::ObjectProperty(property) => self.is_css_property(id, property),
                 _ => false,
             })
+    }
+
+    /// Whether `callee`, called at `id`, is the `css` or `cx` a `<ClassNames>`
+    /// child function around takes, whose calls the build compiles
+    fn is_class_names_call(&self, id: NodeId, callee: &Expression<'_>) -> bool {
+        let Some(css) = self.css else {
+            return false;
+        };
+        self.nodes.ancestor_ids(id).any(|ancestor| {
+            matches!(self.nodes.kind(ancestor), AstKind::JSXElement(element)
+                if css.calls_class_names(&css.class_names_calls(element), callee))
+        })
+    }
+
+    /// Whether the attribute `attribute` at `id` is a `css` prop the build
+    /// compiles
+    fn is_css_attribute(&self, id: NodeId, attribute: &oxc_ast::ast::JSXAttribute<'_>) -> bool {
+        self.css.is_some_and(|css| {
+            attribute
+                .name
+                .as_identifier()
+                .is_some_and(|name| name.name == "css")
+                && matches!(self.nodes.parent_kind(id), AstKind::JSXOpeningElement(element)
+                    if css.takes(&element.name, |identifier| self.is_style_reference(identifier)))
+        })
+    }
+
+    /// Whether the property `property` at `id` is the `css` prop among the
+    /// props a `jsx()` call gives, which the build compiles
+    fn is_css_property(&self, id: NodeId, property: &oxc_ast::ast::ObjectProperty<'_>) -> bool {
+        self.css.is_some_and(|css| {
+            matches!(self.nodes.parent_kind(self.nodes.parent_id(id)), AstKind::CallExpression(call)
+                if matches!(call.arguments.get(1), Some(oxc_ast::ast::Argument::ObjectExpression(props))
+                    if css.property(call, |identifier| self.is_style_reference(identifier))
+                        .and_then(|at| props.properties.get(at))
+                        .is_some_and(|css| css.span() == property.span)))
+        })
     }
 
     /// A value handed on at `node`: read where the style APIs read it, kept
@@ -463,7 +514,7 @@ impl Context<'_, '_> {
     fn is_commonjs_export(&self, member: &oxc_ast::ast::MemberExpression<'_>) -> bool {
         let is_global = |expression: &Expression<'_>, name: &str| {
             matches!(expression, Expression::Identifier(identifier)
-                if identifier.name == name && (self.is_global)(name))
+                if identifier.name == name && self.is_global(identifier))
         };
         match member.object() {
             Expression::StaticMemberExpression(inner) => {
@@ -477,11 +528,28 @@ impl Context<'_, '_> {
         }
     }
 
+    /// Whether `identifier` reads a global, and not a local or an import of
+    /// the module that shares the name
+    fn is_global(&self, identifier: &IdentifierReference<'_>) -> bool {
+        binding_of(self.scoping, identifier).is_none()
+    }
+
+    /// Whether `identifier` reads the top-level binding the style predicate
+    /// names: not a local of the same name, and not a global
+    fn is_style_reference(&self, identifier: &IdentifierReference<'_>) -> bool {
+        (self.style)(&identifier.name)
+            && binding_of(self.scoping, identifier).is_some_and(|symbol| {
+                self.scoping
+                    .get_root_binding(identifier.name.as_str().into())
+                    == Some(symbol)
+            })
+    }
+
     fn is_style(&self, callee: &Expression<'_>) -> bool {
         let mut expression = callee;
         loop {
             match crate::utils::unwrap_syntax_only(expression) {
-                Expression::Identifier(identifier) => return (self.style)(&identifier.name),
+                Expression::Identifier(identifier) => return self.is_style_reference(identifier),
                 Expression::StaticMemberExpression(member) => expression = &member.object,
                 Expression::CallExpression(call) => expression = &call.callee,
                 _ => return false,
@@ -490,7 +558,7 @@ impl Context<'_, '_> {
     }
 
     fn is_style_element(&self, name: &JSXElementName<'_>) -> bool {
-        crate::imported_constants::jsx_root(name).is_some_and(|root| (self.style)(root))
+        jsx_root_identifier(name).is_some_and(|identifier| self.is_style_reference(identifier))
     }
 }
 
@@ -533,21 +601,24 @@ mod tests {
                 .unwrap_or_default()
                 .to_string()
         };
-        let mut found: Vec<String> =
-            uses(&program, &|name| matches!(name, "css" | "Box" | "Devup"))
-                .into_iter()
-                .flat_map(|(name, uses)| {
-                    uses.into_iter().map(move |found| match found {
-                        Use::Changes { at, depth } => {
-                            format!("{name} changes {depth}: {}", line(at))
-                        }
-                        Use::Escapes { at, path, into } => {
-                            format!("{name} escapes {path:?} into {into:?}: {}", line(at))
-                        }
-                        Use::Calls { at, path } => format!("{name} calls {path:?}: {}", line(at)),
-                    })
-                })
-                .collect();
+        let mut found: Vec<String> = uses(
+            &program,
+            &|name| matches!(name, "css" | "Box" | "Devup"),
+            None,
+        )
+        .into_iter()
+        .flat_map(|(name, uses)| {
+            uses.into_iter().map(move |found| match found {
+                Use::Changes { at, depth } => {
+                    format!("{name} changes {depth}: {}", line(at))
+                }
+                Use::Escapes { at, path, into } => {
+                    format!("{name} escapes {path:?} into {into:?}: {}", line(at))
+                }
+                Use::Calls { at, path } => format!("{name} calls {path:?}: {}", line(at)),
+            })
+        })
+        .collect();
         found.sort();
         found
     }
@@ -619,7 +690,8 @@ await a;"
     #[test]
     fn reads() {
         insta::assert_debug_snapshot!(describe(
-            "const a = { x: 1, arrow: () => 1, plain() { return 1; }, nested() { return function () { return this; }; }, self() { return this; } };
+            "import { css, Box } from '@devup-ui/react'; import * as Devup from '@devup-ui/react';
+const a = { x: 1, arrow: () => 1, plain() { return 1; }, nested() { return function () { return this; }; }, self() { return this; } };
 String(a.x); parseInt(a.x); structuredClone(a); Object.keys(a); Object.freeze(a); Object.hasOwn(a, 'x'); Object.getOwnPropertyNames(a); JSON.stringify(a); Math.max(a.x); console.log(a); Array.isArray(a);
 css(a); css({ ...a, color: f(a) }); Devup.css(a); css.x`${a}`; css(1)(a); css({ w: a.self() });
 <Box {...a} p={f(a)} />; <Devup.Box>{a}</Devup.Box>; <Other value={a} />; <Other {...a} />; <Other>{a}</Other>;
@@ -669,3 +741,6 @@ function inner() { const kept = { a }; }"
         ));
     }
 }
+
+#[cfg(test)]
+mod scope_tests;

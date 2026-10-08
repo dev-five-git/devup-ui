@@ -57,14 +57,14 @@ pub(crate) fn has_build_time_values(
     option: &ExtractOption,
     resolver: Option<&ModuleResolver>,
 ) -> bool {
-    let (code, _) = crate::import_alias_visit::transform_import_aliases_with_edits(
+    let aliased = crate::import_alias_visit::transform_import_aliases_with_edits(
         code,
         filename,
         &option.package,
         &option.import_aliases,
     );
     let allocator = Allocator::default();
-    let Some(mut program) = parse(&allocator, filename, &code) else {
+    let Some(mut program) = parse(&allocator, filename, &aliased.code) else {
         return false;
     };
     let inlined = crate::imported_constants::inline_constants(
@@ -73,6 +73,7 @@ pub(crate) fn has_build_time_values(
         filename,
         option,
         resolver,
+        aliased.css_prop,
     );
     let changes = crate::imported_constants::ChangeCheck::new(&program, filename, option, resolver);
     !find(
@@ -110,10 +111,10 @@ const GLOBALS: [&str; 18] = [
 
 /// The members of `Math` every engine gives exactly; the others are
 /// approximations that may differ in their last digits
-const EXACT_MATH: [&str; 20] = [
-    "abs", "ceil", "floor", "round", "trunc", "sign", "max", "min", "sqrt", "fround", "imul",
-    "clz32", "PI", "E", "LN2", "LN10", "LOG2E", "LOG10E", "SQRT2", "SQRT1_2",
-];
+pub(crate) mod exact_math;
+#[cfg(test)]
+mod w22_tests;
+use exact_math::EXACT_MATH;
 
 /// Members giving what the locale, the Unicode data of the engine or chance
 /// make them, and `toString`, which engines only approximate with a radix:
@@ -344,7 +345,10 @@ impl<'s, 'a> Finder<'s, 'a> {
 
     fn is_css(&self, callee: &Expression<'_>) -> bool {
         if let Expression::StaticMemberExpression(member) = callee {
-            return member.property.name == "css";
+            return member.property.name == "css"
+                && self
+                    .symbol(&member.object)
+                    .is_some_and(|symbol| self.namespaces.contains(&symbol));
         }
         self.symbol(callee)
             .is_some_and(|symbol| self.css.contains(&symbol))
@@ -1092,3 +1096,6 @@ fn compute(
     }
     (!computed.is_empty()).then_some((computed, changes.dependencies()))
 }
+
+#[cfg(test)]
+mod scope_tests;

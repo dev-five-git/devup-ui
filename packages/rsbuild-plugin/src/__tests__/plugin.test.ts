@@ -324,6 +324,65 @@ const App = () => <Box></Box>`,
 const App = () => <Box></Box>`,
     )
   })
+  it('transforms a file that reaches Devup UI only through a project module', async () => {
+    const source = `import { Box } from './ui'
+export const a = <Box bg="red" />`
+    const plugin = DevupUI()
+    const transform = mock()
+    await plugin.setup(
+      createSetupContext({
+        transform,
+        modifyRsbuildConfig: mock(),
+      }),
+    )
+    codeExtractSpy.mockReturnValue(
+      createCodeExtractResult({
+        code: '<div className="a" />',
+        css: '',
+        cssFile: 'devup-ui.css',
+      }),
+    )
+    await expect(
+      transform.mock.calls[1][1]({
+        code: source,
+        resourcePath: 'src/App.tsx',
+      }),
+    ).resolves.toEqual({
+      code: '<div className="a" />',
+      map: undefined,
+    })
+    expect(codeExtractSpy.mock.calls.at(-1)?.[1]).toBe(source)
+  })
+
+  it('transforms a file that only the Emotion css prop compiles (pragma, no Devup UI import)', async () => {
+    const source = `/** @jsxImportSource @emotion/react */
+export const a = <div css={{ color: 'red' }} />`
+    const plugin = DevupUI()
+    const transform = mock()
+    await plugin.setup(
+      createSetupContext({
+        transform,
+        modifyRsbuildConfig: mock(),
+      }),
+    )
+    codeExtractSpy.mockReturnValue(
+      createCodeExtractResult({
+        code: '<div className="a" />',
+        css: '',
+        cssFile: 'devup-ui.css',
+      }),
+    )
+    await expect(
+      transform.mock.calls[1][1]({
+        code: source,
+        resourcePath: 'src/App.tsx',
+      }),
+    ).resolves.toEqual({
+      code: '<div className="a" />',
+      map: undefined,
+    })
+    expect(codeExtractSpy.mock.calls.at(-1)?.[1]).toBe(source)
+  })
   it.each(
     createTestMatrix({
       updatedBaseStyle: [true, false],
