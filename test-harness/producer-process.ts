@@ -1,4 +1,3 @@
-import { spawn } from 'node:child_process'
 import { randomUUID } from 'node:crypto'
 import { existsSync, readFileSync, writeFileSync } from 'node:fs'
 import { isAbsolute, join, resolve } from 'node:path'
@@ -6,6 +5,7 @@ import { fileURLToPath } from 'node:url'
 
 import type { TestGroup } from './groups'
 import { CoverageError } from './lcov'
+import { ProducerChild } from './producer-child'
 import {
   object,
   parseBlocks,
@@ -69,39 +69,12 @@ export class ProducerResult {
     const preload = fileURLToPath(
       new URL('./producer-preload.ts', import.meta.url),
     )
-    const child = spawn(
-      run.executable,
-      [
-        '--inspect-wait=127.0.0.1:0/producer',
-        `--config=${run.config}`,
-        'test',
-        `--preload=${preload}`,
-        `--coverage-dir=${run.coverage}`,
-        ...run.files.map((file) => `./${file}`),
-      ],
-      {
-        cwd: run.root,
-        stdio: ['pipe', 'pipe', 'pipe'],
-        env: {
-          ...process.env,
-          DEVUP_TEST_GROUP: run.group,
-          DEVUP_PRODUCER_TOKEN: token,
-          DEVUP_PRODUCER_CONFIG: run.config,
-        },
-      },
-    )
-    let output = ''
+    const producer = new ProducerChild(run, { token, preload })
+    const { child, exit } = producer
     let protocol: ProducerProtocol | undefined
-    let notify: (() => void) | undefined
     const records: Record<string, unknown>[] = []
     let remainder = ''
-    const exit = new Promise<number | null>((done, reject) => {
-      child.once('error', reject)
-      child.once('exit', done)
-    })
-    const deadline = setTimeout(child.kill.bind(child), 600000)
-    child.stdout.on('data', (chunk: Buffer) => {
-      output += chunk.toString()
+    child.stdout.prependListener('data', (chunk: Buffer) => {
       remainder += chunk.toString()
       const lines = remainder.split('\n')
       remainder = lines.pop() ?? ''
@@ -109,44 +82,15 @@ export class ProducerResult {
         if (line.startsWith(`${token} `))
           records.push(object(JSON.parse(line.slice(token.length + 1))))
       }
-      notify?.()
     })
-    child.stderr.on('data', (chunk: Buffer) => {
-      output += chunk.toString()
-      notify?.()
-    })
-    async function wait(condition: () => boolean): Promise<void> {
-      if (condition()) return
-      await new Promise<void>((done, reject) => {
-        const timeout = setTimeout(
-          reject.bind(
-            undefined,
-            new CoverageError('producer observation timeout'),
-          ),
-          600000,
-        )
-        notify = () => {
-          if (condition()) {
-            clearTimeout(timeout)
-            done()
-          }
-        }
-        exit.then(() => {
-          clearTimeout(timeout)
-          if (!condition())
-            reject(
-              new CoverageError(`producer exited before evidence: ${output}`),
-            )
-        }, reject)
-      })
-    }
     try {
-      await wait(() => /ws:\/\/[^\s]+/.test(output))
-      const url = /ws:\/\/[^\s]+/.exec(output)?.[0]
+      await producer.wait(() => /ws:\/\/[^\s]+/.test(producer.output))
+      const url = /ws:\/\/[^\s]+/.exec(producer.output)?.[0]
       if (!url) throw new CoverageError('missing producer inspector URL')
       protocol = await connectProducer(url)
+      protocol.onFailure = producer.observeFailure.bind(producer)
       await protocol.request('Inspector.initialized')
-      await wait(() =>
+      await producer.wait(() =>
         records.some((record) => record['phase'] === 'bootstrap'),
       )
       const bootstrap = records.find(
@@ -154,7 +98,9 @@ export class ProducerResult {
       )
       parseProducerIdentity(bootstrap, { pid: child.pid, config })
       child.stdin.write('bootstrap accepted\n')
-      await wait(() => records.some((record) => record['phase'] === 'final'))
+      await producer.wait(() =>
+        records.some((record) => record['phase'] === 'final'),
+      )
       const record = records.find((record) => record['phase'] === 'final')
       const { profiles, ...identity } = parseProducerIdentity(record, {
         pid: child.pid,
@@ -170,7 +116,7 @@ export class ProducerResult {
             event['method'] === 'Debugger.scriptParsed'
           ) {
             lateObserved = true
-            child.kill()
+            producer.terminate()
             done()
           }
         }
@@ -215,6 +161,7 @@ export class ProducerResult {
         )
       }
       await protocol.armEndFence(captures, preload)
+      producer.assertObservation()
       child.stdin.write('final evidence collected\n')
       await Promise.race([exit, late])
       if (lateObserved)
@@ -222,6 +169,7 @@ export class ProducerResult {
           'late producer code/inventory after final capture',
         )
       const status = await exit
+      await producer.finish()
       if (
         records.filter((record) => record['phase'] === 'bootstrap').length !==
           1 ||
@@ -236,7 +184,7 @@ export class ProducerResult {
         )
       const result = {
         ...identity,
-        output: output
+        output: producer.output
           .split('\n')
           .filter((line) => !line.startsWith(`${token} `))
           .join('\n'),
@@ -246,11 +194,13 @@ export class ProducerResult {
       }
       writeFileSync(join(run.coverage, 'producer.json'), JSON.stringify(result))
       return new ProducerResult(issuance, result)
-    } finally {
-      clearTimeout(deadline)
+    } catch (error) {
       protocol?.close()
-      if (child.exitCode === null) child.kill()
-      await exit
+      await producer.finish()
+      if (!(error instanceof Error)) throw error
+      throw producer.failure(error)
+    } finally {
+      protocol?.close()
     }
   }
 }

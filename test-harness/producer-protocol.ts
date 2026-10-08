@@ -20,6 +20,7 @@ export class ProducerProtocol {
   private readonly pending = new Map<number, PendingRequest>()
   readonly events: Record<string, unknown>[] = []
   onEvent: ((event: Record<string, unknown>) => void) | undefined
+  onFailure: ((error: CoverageError) => void) | undefined
 
   constructor(private readonly socket: WebSocket) {
     socket.addEventListener('message', (event) => {
@@ -56,6 +57,7 @@ export class ProducerProtocol {
   }
 
   private fail(error: CoverageError): void {
+    this.onFailure?.(error)
     for (const request of this.pending.values()) {
       clearTimeout(request.timeout)
       request.reject(error)
