@@ -39,9 +39,15 @@ expression: sort_styles(styles)
             value: "0 10px 15px -3px rgb(0 0 0 / .1),0 4px 6px -4px rgb(0 0 0 / .1)",
             level: 0,
             selector: Some(
-                Selector(
-                    "&:hover",
-                ),
+                At {
+                    kind: Media,
+                    query: "(hover:hover)",
+                    selector: Some(
+                        "&:hover",
+                    ),
+                    outer: [],
+                    file: None,
+                },
             ),
             style_order: None,
             layer: None,
