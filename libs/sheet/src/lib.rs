@@ -3511,6 +3511,45 @@ mod tests {
     #[test]
     #[serial]
     #[allow(clippy::literal_string_with_formatting_args)]
+    fn test_nested_selector_pipeline() {
+        for (source, expected) in [
+            // Without `&`, a nested rule selects descendants; a pseudo-class or
+            // pseudo-element selects the component itself.
+            (
+                "const X = styled.div`.child { color: red; } > p { color: blue; &:hover { color: green; } } :hover { color: black; } ::before { content: 'x'; } html.test & { display: none; } & + & { margin: 0; }`",
+                ".c0 + .c0{margin:0}.c1:hover{color:black}.c2 .c3{color:red}.c4 > p{color:blue}.c5 > p:hover{color:green}.c6::before{content:'x'}html.c7 .c8{display:none}",
+            ),
+            // Each selector of a list is relative on its own, and a rule nested
+            // in a list applies under every selector of it.
+            (
+                "const X = styled.div`h1, &:after { color: red; } h2, h3 { span { color: blue; } }`",
+                ".c0 h1,.c0:after{color:red}.c1 h2 span,.c1 h3 span{color:blue}",
+            ),
+            // `content` keeps its strings as written.
+            (
+                r#"const X = styled.div`&::before { content: 'hello world'; } &::after { content: "x"; } &.empty::after { content: ""; } &.escaped::after { content: "a\"b"; } &.attr::after { content: attr(data-x); }`"#,
+                r#".c0.c1::after{content:attr(data-x)}.c2.c3::after{content:""}.c4.c5::after{content:"a\"b"}.c6::after{content:"x"}.c7::before{content:'hello world'}"#,
+            ),
+            // `params` go on the pseudo-class that takes them, wherever nesting
+            // put it.
+            (
+                "<Box _groupNthChild={{ params: ['2n'], color: 'red' }} _hover={{ _groupNthChild: { params: ['3n'], color: 'blue' } }} _not={{ params: ['.x'], _nthChild: { params: ['2n'], color: 'green' } }} />",
+                ":is([role=group],[data-group]):nth-child(3n) .c0:hover{color:blue}.c1:not(.c2):nth-child(2n){color:green}:is([role=group],[data-group]):nth-child(2n) .c3{color:red}",
+            ),
+            // A bare `selectors` key is a pseudo-class name, an attribute of the
+            // element, or a selector of its descendants, under a parent too.
+            (
+                "<Box selectors={{ hover: { color: 'red' }, groupHover: { color: 'blue' }, '.child': { m: 1 }, '[aria-busy]': { p: 1 }, '> p': { m: 2 }, _focus: { selectors: { focusVisible: { color: 'green' }, '[data-x]': { color: 'black' }, 'b i': { color: 'white' } } } }} _hover=\"color: pink\" _active={false} _focusWithin={[false, null, true]} />",
+                ".c0:hover{color:pink}.c1:hover{color:red}:is([role=group],[data-group]):hover .c2{color:blue}.c3 .c4{margin:4px}.c5 > p{margin:8px}.c6:focus b i{color:white}.c7:focus:focus-visible{color:green}.c8:focus[data-x]{color:black}.c9[aria-busy]{padding:4px}",
+            ),
+        ] {
+            assert_eq!(pipeline_css(Theme::default(), source), expected, "{source}");
+        }
+    }
+
+    #[test]
+    #[serial]
+    #[allow(clippy::literal_string_with_formatting_args)]
     fn test_conditional_typography_pipeline() {
         for (source, expected) in [
             (

@@ -61,7 +61,7 @@ use crate::utils::{
     jsx_expression_to_style_order, key_error, readable_argument, readable_code, reads_directly,
     reads_spreads_once, reads_unknown, runtime_classes, runtime_value, runtime_value_error,
     spread_error, stays_attribute, style_arguments, uncomposable_error, unplaced_error,
-    unreadable_styles, unwrap_syntax_only, unwrap_syntax_only_mut,
+    unreadable_styles, unused_error, unwrap_syntax_only, unwrap_syntax_only_mut,
 };
 use oxc_ast::builder::AstBuilder;
 use oxc_span::{GetSpan, SPAN};
@@ -1519,10 +1519,8 @@ impl<'a> VisitMut<'a> for DevupVisitor<'a> {
                 runtime_value,
             } = extract_keyframes_from_expression(&self.ast, arg);
             if let Some(value) = runtime_value {
-                self.errors.push((
-                    call.span.start,
-                    runtime_value_error("stylex.keyframes", &value),
-                ));
+                self.errors
+                    .push((call.span.start, unused_error("stylex.keyframes", &value)));
             }
             let name =
                 style_property_into_string(keyframes.extract(self.split_filename.as_deref()));
@@ -1652,8 +1650,7 @@ impl<'a> VisitMut<'a> for DevupVisitor<'a> {
                             LiteralHandling::ExpandResponsiveThemeToken,
                         );
                         if let Some(value) = runtime_value(&styles) {
-                            self.errors
-                                .push((offset, runtime_value_error("css", &value)));
+                            self.errors.push((offset, unused_error("css", &value)));
                         }
 
                         if styles.is_empty() {
@@ -1691,7 +1688,7 @@ impl<'a> VisitMut<'a> for DevupVisitor<'a> {
                         );
                         if let Some(value) = runtime_value {
                             self.errors
-                                .push((offset, runtime_value_error("keyframes", &value)));
+                                .push((offset, unused_error("keyframes", &value)));
                         }
 
                         let name = style_property_into_string(
@@ -1720,7 +1717,7 @@ impl<'a> VisitMut<'a> for DevupVisitor<'a> {
                         );
                         if let Some(value) = fixed_value(&styles) {
                             self.errors
-                                .push((offset, runtime_value_error("globalCss", &value)));
+                                .push((offset, unused_error("globalCss", &value)));
                         }
                         // already set style order
                         let style_order = style_order.unwrap_or(0);
@@ -1776,7 +1773,7 @@ impl<'a> VisitMut<'a> for DevupVisitor<'a> {
                     );
                     if let Some(value) = fixed_value(&styles) {
                         self.errors
-                            .push((offset, runtime_value_error("globalCss", &value)));
+                            .push((offset, unused_error("globalCss", &value)));
                     }
                     let style_order = style_order.unwrap_or(0);
                     self.styles.extend(
@@ -1837,7 +1834,7 @@ impl<'a> VisitMut<'a> for DevupVisitor<'a> {
                     .collect::<Vec<_>>();
                 if let Some(value) = runtime_value(&style_props) {
                     self.errors
-                        .push((tag.span.start, runtime_value_error(api, &value)));
+                        .push((tag.span.start, unused_error(api, &value)));
                 }
                 for index in unplaced {
                     let expression = &tag.quasi.expressions[index];
@@ -2337,8 +2334,10 @@ impl<'a> VisitMut<'a> for DevupVisitor<'a> {
                         style_order,
                     } = extract_global_style_from_expression(&self.ast, expression, &self.filename);
                     if let Some(value) = fixed_value(&styles) {
-                        self.errors
-                            .push((offset, element_error(&name, &value, RUNTIME_VALUE)));
+                        self.errors.push((
+                            offset,
+                            element_error(&name, &value.0, value.1.unwrap_or(RUNTIME_VALUE)),
+                        ));
                     }
                     let style_order = style_order.unwrap_or(0);
                     self.styles.extend(
@@ -2656,10 +2655,14 @@ impl<'a> VisitMut<'a> for DevupVisitor<'a> {
                     .for_each(|style| self.styles.extend(style.into_extract()));
             }
 
-            for (offset, code) in unreadable {
+            for (offset, code, requirement) in unreadable {
                 self.errors.push((
                     offset,
-                    element_error(&elem.opening_element.name.to_string(), &code, STYLE_OBJECT),
+                    element_error(
+                        &elem.opening_element.name.to_string(),
+                        &code,
+                        requirement.unwrap_or(STYLE_OBJECT),
+                    ),
                 ));
             }
 

@@ -319,11 +319,12 @@ pub fn extract_style_from_styled<'a>(
         );
         let mut unreadable = Vec::new();
         unreadable_styles(&styles, true, &mut unreadable);
-        errors.extend(
-            unreadable
-                .into_iter()
-                .map(|(offset, code)| (offset, build_time_error("styled", &code, STYLE_OBJECT))),
-        );
+        errors.extend(unreadable.into_iter().map(|(offset, code, requirement)| {
+            (
+                offset,
+                build_time_error("styled", &code, requirement.unwrap_or(STYLE_OBJECT)),
+            )
+        }));
         if let Some(default_class_name) = base.styles.take() {
             styles.extend(default_class_name.into_iter().map(ExtractStyleProp::Static));
         }

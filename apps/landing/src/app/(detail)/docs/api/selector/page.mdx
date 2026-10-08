@@ -183,6 +183,49 @@ The attributes defined in Pseudo-Class correspond to those defined in Selector, 
   </tbody>
 </table>
 
+Any other pseudo-class or pseudo-element works the same way, as `_nthChild` for `:nth-child` or `_placeholder` for `::placeholder`. A name that selects nothing, such as `_notASelector`, is a build error rather than CSS that matches nothing.
+
+Pseudo-classes that take arguments get them from `params`, also in their group form:
+
+```tsx
+const example = (
+  <Box
+    _groupNthChild={{ params: ['odd'], color: 'red' }}
+    _nthChild={{ params: ['2n'], bg: 'gray' }}
+  />
+)
+// :is([role=group],[data-group]):nth-child(odd) .a{color:red}
+// .b:nth-child(2n){background:gray}
+```
+
+A selector takes styles: an object, or CSS text such as `_hover="color: red"`. Any other string, such as a class name, is a build error.
+
+## `selectors`
+
+`selectors` takes any selector. A key with `&` says where the element goes; a key without `&` is relative to the element:
+
+- a pseudo-class name, as `hover` or `focusVisible`, is that pseudo-class of the element; a name that selects nothing, such as `div`, is a build error
+- a key starting with `:`, `::` or `[` applies to the element itself, as `':hover'` or `'[aria-busy]'`
+- any other selector selects descendants, as `'.child'`, `'> p'` or `'div p'`
+
+```tsx
+const example = (
+  <Box
+    selectors={{
+      '&:hover, .parent &': { color: 'red' },
+      '[aria-busy]': { opacity: 0.5 },
+      '> p': { m: 0 },
+    }}
+  />
+)
+// .a:hover{color:red}
+// .parent .b{color:red}
+// .c[aria-busy]{opacity:.5}
+// .d > p{margin:0}
+```
+
+Nested rules in `styled` and `css` templates follow styled-components and Emotion: `.child { }` and `> p { }` select descendants, `:hover { }` and `::before { }` apply to the component, and a rule nested in a selector list applies under each of its selectors.
+
 ## Media Shorthands
 
 These props wrap their styles in a fixed media query. They accept responsive arrays and nest in either direction with selectors and other at-rules.
