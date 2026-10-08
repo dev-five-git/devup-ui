@@ -10,7 +10,7 @@ use css::{
     at_rule::split_at_rule_key,
     optimize_multi_css_value::{check_multi_css_optimize, optimize_multi_css_value},
     rm_css_comment::rm_css_comment,
-    style_selector::StyleSelector,
+    style_selector::{StyleSelector, split_selector_list},
 };
 use oxc_allocator::Allocator;
 use oxc_span::{GetSpan, SPAN};
@@ -579,27 +579,34 @@ fn collect_css_block(
 }
 
 /// The selector a nested block applies to: at-rule preludes wrap `parent`,
-/// `&`-selectors substitute it, and a bare selector under a selector nests as
-/// a descendant. `None` drops the block (an unknown at-rule, or conditions
-/// that can never match together).
+/// `&`-selectors substitute it, and a bare selector is made relative to it
+/// (the component's own class at the top). `None` drops the block (an unknown
+/// at-rule, or conditions that can never match together).
 fn nest_prelude(parent: Option<&StyleSelector>, prelude: &str) -> Option<StyleSelector> {
     if prelude.starts_with('@') {
         let (kind, query) = split_at_rule_key(prelude)?;
         return StyleSelector::nest_at_rule(parent, kind, query);
     }
-    let parent_selector = match parent {
-        Some(StyleSelector::Selector(selector) | StyleSelector::Global(selector, _)) => {
-            Some(selector)
-        }
-        Some(StyleSelector::At { selector, .. }) => selector.as_ref(),
-        None => None,
-    };
-    let template = if prelude.contains('&') || parent_selector.is_none() {
-        Cow::Borrowed(prelude)
-    } else {
-        Cow::Owned(format!("& {prelude}"))
-    };
+    let template = split_selector_list(prelude)
+        .into_iter()
+        .map(relative_selector)
+        .collect::<Vec<_>>()
+        .join(",");
     Some(StyleSelector::nest_selector(parent, &template))
+}
+
+/// A selector of a nested rule made relative to the rule it is in, as
+/// styled-components and Emotion read it: one with `&` says where that rule
+/// goes, a pseudo-class or pseudo-element applies to that rule's element, and
+/// any other selector to its descendants (`> p` to its children)
+fn relative_selector(part: &str) -> Cow<'_, str> {
+    if part.contains('&') {
+        Cow::Borrowed(part)
+    } else if part.starts_with(':') {
+        Cow::Owned(format!("&{part}"))
+    } else {
+        Cow::Owned(format!("& {part}"))
+    }
 }
 
 /// Optimize a declaration's value only when its property warrants multi-value
@@ -1171,7 +1178,7 @@ mod tests {
     #[case(
         "`ul { font-family: 'Roboto Hello',       sans-serif; }`",
         vec![
-            ("font-family", "\"Roboto Hello\",sans-serif", Some(StyleSelector::Selector("ul".to_string()))),
+            ("font-family", "\"Roboto Hello\",sans-serif", Some(StyleSelector::Selector("& ul".to_string()))),
         ]
     )]
     #[case(
@@ -1610,14 +1617,14 @@ mod tests {
     #[case(
         "ul { font-family: 'Roboto Hello',       sans-serif; }",
         vec![
-            ("font-family", "\"Roboto Hello\",sans-serif", Some(StyleSelector::Selector("ul".to_string()))),
+            ("font-family", "\"Roboto Hello\",sans-serif", Some(StyleSelector::Selector("& ul".to_string()))),
         ]
     )]
     #[case(
         "div { color: red; ; { background: blue; } }",
         vec![
-            ("color", "red", Some(StyleSelector::Selector("div".to_string()))),
-            ("background", "blue", Some(StyleSelector::Selector("div".to_string()))),
+            ("color", "red", Some(StyleSelector::Selector("& div".to_string()))),
+            ("background", "blue", Some(StyleSelector::Selector("& div".to_string()))),
         ]
     )]
     // As in CSS nesting, only the text after the last `;` is the nested rule's
@@ -1626,7 +1633,7 @@ mod tests {
         "color:red;background:blue { width: 1px; }",
         vec![
             ("color", "red", None),
-            ("width", "1px", Some(StyleSelector::Selector("background:blue".to_string()))),
+            ("width", "1px", Some(StyleSelector::Selector("& background:blue".to_string()))),
         ]
     )]
     #[case(
@@ -1634,7 +1641,7 @@ mod tests {
         vec![(
             "width",
             "1px",
-            Some(StyleSelector::Selector("color:red".to_string()))
+            Some(StyleSelector::Selector("& color:red".to_string()))
         )]
     )]
     #[case(

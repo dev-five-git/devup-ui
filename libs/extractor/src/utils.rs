@@ -1,6 +1,6 @@
 use std::borrow::Cow;
 
-use crate::extract_style::constant::MAINTAIN_VALUE_PROPERTIES;
+use crate::extract_style::constant::is_maintain_value_property;
 use css::utils::to_kebab_case;
 use oxc_allocator::{Allocator, CloneIn, GetAllocator};
 use oxc_ast::{
@@ -29,7 +29,7 @@ pub(super) fn is_unitless_key(key: &str) -> bool {
     key.starts_with("--")
         || key.starts_with("var(")
         || key.bytes().all(|byte| byte.is_ascii_digit())
-        || MAINTAIN_VALUE_PROPERTIES.contains(to_kebab_case(key).as_ref())
+        || is_maintain_value_property(to_kebab_case(key).as_ref())
 }
 
 /// Whether a number on `key` stays bare in a library whose numbers mean pixels:
@@ -851,21 +851,25 @@ fn string_class<'a>(ast_builder: &AstBuilder<'a>, value: &Expression<'a>) -> Exp
     )
 }
 
+/// Code the build cannot use where it is written, with what the place takes
+/// when that is not the usual requirement
+pub(super) type Unused = (String, Option<&'static str>);
+
 /// The first value in `props` that is only known at runtime
-pub(super) fn runtime_value(props: &[crate::ExtractStyleProp<'_>]) -> Option<String> {
+pub(super) fn runtime_value(props: &[crate::ExtractStyleProp<'_>]) -> Option<Unused> {
     let mut unreadable = Vec::new();
     unreadable_styles(props, true, &mut unreadable);
     unreadable
         .into_iter()
         .next()
-        .map(|(_, code)| code)
+        .map(|(_, code, requirement)| (code, requirement))
         .or_else(|| {
             props
                 .iter()
                 .flat_map(crate::ExtractStyleProp::extract)
                 .find_map(|value| match value {
                     crate::ExtractStyleValue::Dynamic(style) => {
-                        Some(style.identifier().to_string())
+                        Some((style.identifier().to_string(), None))
                     }
                     _ => None,
                 })
@@ -875,14 +879,14 @@ pub(super) fn runtime_value(props: &[crate::ExtractStyleProp<'_>]) -> Option<Str
 /// The first value in `props` only known at runtime, a runtime condition
 /// choosing between values included: what styles with no class to switch
 /// between, global styles and keyframes, cannot hold
-pub(super) fn fixed_value(props: &[crate::ExtractStyleProp<'_>]) -> Option<String> {
-    fn condition(prop: &crate::ExtractStyleProp<'_>) -> Option<String> {
+pub(super) fn fixed_value(props: &[crate::ExtractStyleProp<'_>]) -> Option<Unused> {
+    fn condition(prop: &crate::ExtractStyleProp<'_>) -> Option<Unused> {
         use crate::ExtractStyleProp;
         match prop {
             ExtractStyleProp::Conditional { condition, .. }
-            | ExtractStyleProp::Enum { condition, .. } => Some(readable_code(condition)),
+            | ExtractStyleProp::Enum { condition, .. } => Some((readable_code(condition), None)),
             ExtractStyleProp::MemberExpression { expression, .. } => {
-                Some(readable_code(expression))
+                Some((readable_code(expression), None))
             }
             ExtractStyleProp::StaticArray(props) => props.iter().find_map(condition),
             _ => None,
@@ -891,19 +895,24 @@ pub(super) fn fixed_value(props: &[crate::ExtractStyleProp<'_>]) -> Option<Strin
     runtime_value(props).or_else(|| props.iter().find_map(condition))
 }
 
-/// Where `props` holds styles the build cannot read, with their code; with
-/// `keys`, computed keys among an element's props too
+/// Where `props` holds styles the build cannot read, with their code and what
+/// their place takes; with `keys`, computed keys among an element's props too
 pub(super) fn unreadable_styles(
     props: &[crate::ExtractStyleProp<'_>],
     keys: bool,
-    found: &mut Vec<(u32, String)>,
+    found: &mut Vec<(u32, String, Option<&'static str>)>,
 ) {
     use crate::ExtractStyleProp;
     for prop in props {
         match prop {
-            ExtractStyleProp::Unreadable { offset, code, prop } => {
+            ExtractStyleProp::Unreadable {
+                offset,
+                code,
+                prop,
+                requirement,
+            } => {
                 if keys || !prop {
-                    found.push((*offset, code.clone()));
+                    found.push((*offset, code.clone(), *requirement));
                 }
             }
             ExtractStyleProp::StaticArray(props) => unreadable_styles(props, keys, found),
@@ -948,6 +957,17 @@ const COMPUTED_VALUE: &str =
 pub(super) fn runtime_value_error(api: &str, value: &str) -> String {
     build_time_error(api, value, COMPUTED_VALUE)
 }
+
+/// [`runtime_value_error`] for what [`runtime_value`] finds
+pub(super) fn unused_error(api: &str, (code, requirement): &Unused) -> String {
+    build_time_error(api, code, requirement.unwrap_or(COMPUTED_VALUE))
+}
+
+pub(super) const SELECTOR_NAME: &str = "a selector key names a pseudo-class or pseudo-element, as `_hover` or `hover`, or is a selector, as `&:hover`, `& > p` or `.parent &`";
+
+pub(super) const RESPONSIVE_ARRAY: &str = "responsive arrays must be flat; each entry supplies one breakpoint value or selector style object, not another array";
+
+pub(super) const CSS_TEXT: &str = "a selector takes styles, an object such as `{ color: 'red' }` or CSS text such as `color: red`";
 
 pub(super) fn element_error(component: &str, code: &str, requirement: &str) -> String {
     format!("`<{component}>` cannot use `{code}` at build time: {requirement}")
@@ -1389,6 +1409,46 @@ mod tests {
         assert!(!keeps_bare_number("padding"));
         assert!(!keeps_bare_number("backgroundColor"));
         assert!(!keeps_bare_number("WebkitTextStrokeWidth"));
+    }
+
+    #[rstest::rstest]
+    #[case("msFlex")]
+    #[case("msFlexOrder")]
+    #[case("msFlexPositive")]
+    #[case("msFlexNegative")]
+    #[case("WebkitBoxFlex")]
+    #[case("WebkitBoxOrdinalGroup")]
+    #[case("msGridColumnSpan")]
+    #[case("msGridRowSpan")]
+    #[case("MozTabSize")]
+    #[case("WebkitLineClamp")]
+    fn numeric_css_08_shared_callers_keep_vendor_numbers(#[case] key: &str) {
+        let kebab = to_kebab_case(key);
+        for spelling in [key, kebab.as_ref(), &format!("-{kebab}")] {
+            assert!(is_unitless_key(spelling), "{spelling}");
+            assert!(keeps_bare_number(spelling), "{spelling}");
+        }
+    }
+
+    #[rstest::rstest]
+    #[case("flex", true, true)]
+    #[case("flexGrow", true, true)]
+    #[case("flexShrink", true, true)]
+    #[case("flexBasis", false, false)]
+    #[case("WebkitFlexBasis", false, false)]
+    #[case("WebkitTextStrokeWidth", false, false)]
+    #[case("unknown-flex", false, false)]
+    #[case("--ms-flex", true, true)]
+    #[case("p", false, true)]
+    #[case("mx", false, true)]
+    #[case("padding", false, false)]
+    fn numeric_css_08_shared_callers_preserve_existing_units(
+        #[case] key: &str,
+        #[case] unitless: bool,
+        #[case] bare: bool,
+    ) {
+        assert_eq!(is_unitless_key(key), unitless);
+        assert_eq!(keeps_bare_number(key), bare);
     }
 
     #[test]

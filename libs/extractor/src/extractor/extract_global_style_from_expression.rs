@@ -10,25 +10,27 @@ use crate::{
     extractor::{
         GlobalExtractResult,
         extract_style_from_expression::{
-            LiteralHandling, at_rule_record_kind, extract_style_from_expression, place_in_layer,
-            unreadable, unreadable_key, yield_typography,
+            LiteralHandling, at_rule_record_kind, extract_style_from_expression, misplaced,
+            place_in_layer, unreadable, unreadable_key, yield_typography,
         },
     },
     utils::{
-        get_str_by_property_key, get_string_by_literal_expression, get_string_by_property_key,
-        unwrap_syntax_only_mut,
+        SELECTOR_NAME, get_str_by_property_key, get_string_by_literal_expression,
+        get_string_by_property_key, unwrap_syntax_only_mut,
     },
 };
 use css::{
     at_rule::{media_shorthand_query, split_at_rule_key},
     disassemble_property,
     optimize_multi_css_value::{check_multi_css_optimize, optimize_multi_css_value, wrap_url},
-    style_selector::{AtRule, AtRuleKind, StyleSelector},
+    style_selector::{AtRule, AtRuleKind, StyleSelector, is_selector_name},
+    utils::to_kebab_case,
 };
 use oxc_ast::{
     ast::{ArrayExpressionElement, Expression, ObjectPropertyKind},
     builder::AstBuilder,
 };
+use oxc_span::GetSpan;
 
 pub fn extract_global_style_from_expression<'a>(
     ast_builder: &AstBuilder<'a>,
@@ -66,6 +68,11 @@ fn collect_global_styles<'a>(
     styles: &mut Vec<ExtractStyleProp<'a>>,
 ) {
     let expression = unwrap_syntax_only_mut(expression);
+    let invalid = crate::dead_properties::expression_errors(expression);
+    if !invalid.is_empty() {
+        styles.extend(invalid);
+        return;
+    }
 
     if let Expression::ObjectExpression(obj) = expression {
         for p in &mut obj.properties {
@@ -181,6 +188,23 @@ fn collect_global_styles<'a>(
                             if let Expression::ArrayExpression(arr) = &o.value {
                                 for p in &arr.elements {
                                     if let ArrayExpressionElement::ObjectExpression(o) = p {
+                                        let invalid: Vec<_> = o
+                                            .properties
+                                            .iter()
+                                            .filter_map(|property| match property {
+                                                ObjectPropertyKind::ObjectProperty(property) => {
+                                                    crate::dead_properties::authored_declaration_error(
+                                                        &get_str_by_property_key(&property.key)?,
+                                                        property.key.span().start,
+                                                    )
+                                                }
+                                                ObjectPropertyKind::SpreadProperty(_) => None,
+                                            })
+                                            .collect();
+                                        if !invalid.is_empty() {
+                                            styles.extend(invalid);
+                                            continue;
+                                        }
                                         styles.push(ExtractStyleProp::Static(ExtractStyleValue::FontFace(ExtractFontFace {
                                             properties: o
                                                 .properties
@@ -204,6 +228,11 @@ fn collect_global_styles<'a>(
                                             file: file.to_string(),
                                         })));
                                     } else if let ArrayExpressionElement::TemplateLiteral(t) = p {
+                                        let invalid = crate::dead_properties::template_errors(t);
+                                        if !invalid.is_empty() {
+                                            styles.extend(invalid);
+                                            continue;
+                                        }
                                         let css_styles = css_to_style_literal(t, 0, &None)
                                             .into_iter()
                                             .filter_map(|ex| {
@@ -247,8 +276,19 @@ fn collect_global_styles<'a>(
                             };
 
                             let global = StyleSelector::Global(
-                                if let Some(name) = name.strip_prefix("_") {
-                                    StyleSelector::from(name).to_string().replace('&', "*")
+                                if let Some(pseudo) = name.strip_prefix('_') {
+                                    let pseudo = to_kebab_case(pseudo);
+                                    if !is_selector_name(&pseudo) {
+                                        styles.push(misplaced(
+                                            o.key.span().start,
+                                            name,
+                                            SELECTOR_NAME,
+                                        ));
+                                        continue;
+                                    }
+                                    StyleSelector::from(pseudo.as_ref())
+                                        .to_string()
+                                        .replace('&', "*")
                                 } else {
                                     name
                                 },

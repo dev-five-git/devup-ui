@@ -1,0 +1,8 @@
+{
+  "changes": {
+    "bindings/devup-ui-wasm/package.json": "Patch",
+    "apps/landing/package.json": "Patch"
+  },
+  "note": "Preserve unitless legacy vendor numbers, classify vendor time values as milliseconds and emit the Opera vendor prefix correctly; reject nested responsive arrays and known dead unprefixed CSS property names with source-located build errors, while preserving supported experimental CSS, unknown properties and documented shorthands.",
+  "date": "2026-10-01T00:00:00.000Z"
+}

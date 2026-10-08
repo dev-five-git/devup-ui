@@ -185,7 +185,10 @@ impl<'r> ModuleLoader<'r> {
         } else {
             module.code
         };
-        let script = crate::vanilla_extract::strip_typescript(&code, &module.path);
+        let instrumented =
+            crate::dead_properties::instrument(&code, &module.path, &self.option.package)
+                .map_err(|error| format!("{}{error}", crate::dead_properties::ERROR_CHANNEL))?;
+        let script = crate::vanilla_extract::strip_typescript(&instrumented.code, &module.path);
         let module_script = module_script(&script, &module.path, self, false)?;
         // Live bindings: a read before the binding is initialized fails as it
         // does in an ES module
@@ -267,7 +270,7 @@ pub(crate) fn module_script(
             }
             continue;
         }
-        let module = if source == package {
+        let module = if source == package || source == "@vanilla-extract/css" {
             PACKAGE_BINDING.to_string()
         } else {
             loader.load(source, filename, entry)?

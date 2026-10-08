@@ -20,7 +20,7 @@ use std::collections::BTreeMap;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{LazyLock, RwLock};
 
-use crate::constant::{GLOBAL_ENUM_STYLE_PROPERTY, GLOBAL_STYLE_PROPERTY};
+use crate::constant::{FUNCTIONAL_PSEUDOS, GLOBAL_ENUM_STYLE_PROPERTY, GLOBAL_STYLE_PROPERTY};
 use crate::debug::is_debug;
 use crate::file_map::get_file_num_by_filename;
 use crate::num_to_nm_base::num_to_nm_base;
@@ -187,9 +187,9 @@ impl ExactSizeIterator for DisassembleProperty {}
 
 #[must_use]
 pub fn disassemble_property(property: &str) -> DisassembleProperty {
-    // Nested selector keys (`&:hover`, `:focus`, `.parent &`) are not properties;
-    // keep them verbatim so class names and case survive.
-    if property.starts_with(':') || property.contains('&') {
+    // Nested selector keys (`&:hover`, `:focus`, `.parent &`, `_hover`) are not
+    // properties; keep them verbatim so class names and case survive.
+    if property.starts_with([':', '_']) || property.contains('&') {
         return DisassembleProperty::Fallback(Some(property.to_string()));
     }
     if let Some(properties) = HAS_CUSTOM_SHORTHANDS
@@ -208,10 +208,9 @@ pub fn disassemble_property(property: &str) -> DisassembleProperty {
     GLOBAL_STYLE_PROPERTY.get(property).map_or_else(
         || {
             DisassembleProperty::Fallback(Some(
-                // Gate the three vendor-prefix `starts_with` scans behind a
-                // single first-byte check: only `W`/`M`/`m` can begin
-                // `Webkit`/`Moz`/`ms`, so every other property skips all three.
-                if matches!(property.as_bytes().first(), Some(b'W' | b'M' | b'm'))
+                // Gate vendor-prefix scans behind a single first-byte check:
+                // only `W`/`M`/`m`/`O` can begin `Webkit`/`Moz`/`ms`/`O`.
+                if matches!(property.as_bytes().first(), Some(b'W' | b'M' | b'm' | b'O'))
                     && ((property.starts_with("Webkit")
                         && property.len() > 6
                         && property.as_bytes()[6].is_ascii_uppercase())
@@ -220,7 +219,10 @@ pub fn disassemble_property(property: &str) -> DisassembleProperty {
                             && property.as_bytes()[3].is_ascii_uppercase())
                         || (property.starts_with("ms")
                             && property.len() > 2
-                            && property.as_bytes()[2].is_ascii_uppercase()))
+                            && property.as_bytes()[2].is_ascii_uppercase())
+                        || (property.starts_with('O')
+                            && property.len() > 1
+                            && property.as_bytes()[1].is_ascii_uppercase()))
                 {
                     // Build `-<kebab>` directly into ONE buffer instead of allocating
                     // a `to_kebab_case(property)` String and copying it into a second
@@ -228,8 +230,8 @@ pub fn disassemble_property(property: &str) -> DisassembleProperty {
                     // (ASCII-uppercase char → `-` before it when not first, then its
                     // lowercase; other chars copied verbatim) after the leading `-`.
                     // The `i != 0` guard matches `to_kebab_case`, so the vendor
-                    // prefix's uppercase first char (`W`/`M`/`m`→lowercase) gets no
-                    // extra `-`. Output byte-identical, one fewer allocation.
+                    // prefix's first char (`W`/`M`/`m`/`O`→lowercase) gets no
+                    // extra `-`, keeping the conversion in one allocation.
                     let mut s = String::with_capacity(property.len() + 5);
                     s.push('-');
                     for (i, c) in property.chars().enumerate() {
@@ -287,12 +289,49 @@ pub fn get_custom_shorthand_names() -> Vec<String> {
     )
 }
 
+/// `selector` with `params` on the last pseudo-class or pseudo-element that
+/// takes them and has none yet, wherever nesting put it: a group form reads
+/// `:is(...):nth-child(2n) &`, and a parent's selector may follow it
+fn with_params(selector: &str, params: &str) -> String {
+    let at = params_position(selector).unwrap_or(selector.len());
+    format!("{}({params}){}", &selector[..at], &selector[at..])
+}
+
+fn params_position(selector: &str) -> Option<usize> {
+    let bytes = selector.as_bytes();
+    let mut depth = 0usize;
+    let mut found = None;
+    let mut index = 0;
+    while let Some(&byte) = bytes.get(index) {
+        match byte {
+            b'(' | b'[' => depth += 1,
+            b')' | b']' => depth = depth.saturating_sub(1),
+            b':' if depth == 0 => {
+                let start = index + 1 + usize::from(bytes.get(index + 1) == Some(&b':'));
+                let end = selector[start..]
+                    .find(|c: char| !(c.is_ascii_alphanumeric() || c == '-'))
+                    .map_or(selector.len(), |length| start + length);
+                if FUNCTIONAL_PSEUDOS.contains(&selector[start..end])
+                    && bytes.get(end) != Some(&b'(')
+                {
+                    found = Some(end);
+                }
+                index = end;
+                continue;
+            }
+            _ => {}
+        }
+        index += 1;
+    }
+    found
+}
+
 #[must_use]
 pub fn add_selector_params(selector: StyleSelector, params: &str) -> StyleSelector {
     match selector {
-        StyleSelector::Selector(value) => StyleSelector::Selector(format!("{value}({params})")),
+        StyleSelector::Selector(value) => StyleSelector::Selector(with_params(&value, params)),
         StyleSelector::Global(value, file) => {
-            StyleSelector::Global(format!("{value}({params})"), file)
+            StyleSelector::Global(with_params(&value, params), file)
         }
         StyleSelector::At {
             kind,
@@ -303,7 +342,7 @@ pub fn add_selector_params(selector: StyleSelector, params: &str) -> StyleSelect
         } => StyleSelector::At {
             kind,
             query,
-            selector: selector.map(|s| format!("{s}({params})")),
+            selector: selector.map(|s| with_params(&s, params)),
             outer,
             file,
         },
@@ -1199,6 +1238,25 @@ mod tests {
             add_selector_params(StyleSelector::Selector("hover:is".to_string()), "test"),
             StyleSelector::Selector("hover:is(test)".to_string())
         );
+        for (selector, expected) in [
+            (
+                ":is([role=group],[data-group]):nth-child &",
+                ":is([role=group],[data-group]):nth-child(2n) &",
+            ),
+            (
+                ":is([role=group],[data-group]):nth-child &:hover",
+                ":is([role=group],[data-group]):nth-child(2n) &:hover",
+            ),
+            ("&:not(.x):nth-child", "&:not(.x):nth-child(2n)"),
+            ("&[title=\":not\"]::part", "&[title=\":not\"]::part(2n)"),
+            ("&:hover", "&:hover(2n)"),
+        ] {
+            assert_eq!(
+                add_selector_params(StyleSelector::Selector(selector.to_string()), "2n"),
+                StyleSelector::Selector(expected.to_string()),
+                "{selector}"
+            );
+        }
         assert_eq!(
             add_selector_params(
                 StyleSelector::Global("&:is".to_string(), "file.ts".to_string()),
@@ -1340,6 +1398,28 @@ mod tests {
         let class3 =
             sheet_to_classname("background", 0, Some("red"), None, None, Some("other.tsx"));
         assert_ne!(class1, class3);
+    }
+
+    #[rstest]
+    #[case("OAnimationDuration", "-o-animation-duration")]
+    #[case("OTransitionDelay", "-o-transition-delay")]
+    #[case("OTransform", "-o-transform")]
+    #[case("Order", "order")]
+    #[case("ObjectFit", "object-fit")]
+    #[case("O", "o")]
+    #[case("order", "order")]
+    #[case("objectFit", "object-fit")]
+    #[case("WebkitAnimationDuration", "-webkit-animation-duration")]
+    #[case("MozTransitionDelay", "-moz-transition-delay")]
+    #[case("msTransform", "-ms-transform")]
+    #[serial]
+    fn disassemble_property_when_vendor_or_ordinary_name(
+        #[case] property: &str,
+        #[case] expected: &str,
+    ) {
+        let properties = disassemble_property(property).collect::<Vec<_>>();
+
+        assert_eq!(properties, [expected]);
     }
 
     #[test]

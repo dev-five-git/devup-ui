@@ -60,6 +60,13 @@ pub fn extract_stylex_declarations(
             continue;
         };
         let name = normalize_stylex_property(name.as_ref());
+        if let Some(requirement) = crate::dead_properties::requirement(&name) {
+            errors.push((
+                property.key.span().start,
+                build_time_error(api, &name, requirement),
+            ));
+            continue;
+        }
         match stylex_value(&name, &property.value) {
             Some(value) => declarations.push((name, optimize_value(&value).into_owned())),
             None => errors.push((
@@ -244,10 +251,18 @@ fn extract_stylex_namespace<'a>(
                     errors.push(key_error("stylex.create", &inner_prop.key));
                     continue;
                 };
+                let property = normalize_stylex_property(inner_name.as_ref());
+                if let Some(requirement) = crate::dead_properties::requirement(&property) {
+                    errors.push((
+                        inner_prop.key.span().start,
+                        build_time_error("stylex.create", &property, requirement),
+                    ));
+                    continue;
+                }
                 push_decomposed(
                     &mut styles,
                     decompose_value_conditions(
-                        &normalize_stylex_property(inner_name.as_ref()),
+                        &property,
                         &inner_prop.value,
                         &parent_selectors,
                         leaf,
@@ -259,6 +274,13 @@ fn extract_stylex_namespace<'a>(
         }
 
         let css_property = normalize_stylex_property(prop_name.as_ref());
+        if let Some(requirement) = crate::dead_properties::requirement(&css_property) {
+            errors.push((
+                style_prop.key.span().start,
+                build_time_error("stylex.create", &css_property, requirement),
+            ));
+            continue;
+        }
         if SHORTHAND_PROPERTIES.contains(css_property.as_str()) {
             eprintln!(
                 "[stylex] WARNING: Shorthand property '{css_property}' may cause unexpected specificity issues. Consider using longhand properties (e.g., 'marginTop', 'paddingLeft')."
@@ -354,6 +376,13 @@ fn extract_stylex_dynamic_namespace<'a>(
             continue;
         };
         let css_property = normalize_stylex_property(&prop_name);
+        if let Some(requirement) = crate::dead_properties::requirement(&css_property) {
+            errors.push((
+                prop.key.span().start,
+                build_time_error("stylex.create", &css_property, requirement),
+            ));
+            continue;
+        }
 
         // Check if value references a parameter (dynamic)
         let is_dynamic = if prop.shorthand {

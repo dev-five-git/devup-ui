@@ -21,19 +21,21 @@ pub(crate) static MAINTAIN_VALUE_PROPERTIES: phf::Set<&str> = phf_set! {
     "aspect-ratio",
     "flex-grow",
     "flex-shrink",
+    "flex-order",
+    "flex-positive",
+    "flex-negative",
     "order",
     "grid-area",
     "grid-column",
     "grid-column-start",
     "grid-column-end",
+    "grid-column-span",
     "grid-row",
     "grid-row-start",
     "grid-row-end",
+    "grid-row-span",
     "animation-iteration-count",
     "tab-size",
-    "moz-tab-size",
-    "-webkit-line-clamp",
-    "webkit-line-clamp",
     "border-image",
     "border-image-outset",
     "border-image-slice",
@@ -61,6 +63,21 @@ pub(crate) static MAINTAIN_VALUE_PROPERTIES: phf::Set<&str> = phf_set! {
     "stroke-opacity",
     "stroke-width"
 };
+
+/// Strip one known vendor prefix for classification, preserving unknown names.
+pub(crate) fn strip_vendor_prefix(property: &str) -> &str {
+    let prefixed = property.strip_prefix('-').unwrap_or(property);
+    ["webkit-", "moz-", "ms-", "o-"]
+        .into_iter()
+        .find_map(|prefix| prefixed.strip_prefix(prefix))
+        .unwrap_or(property)
+}
+
+/// Classify numeric values independently of vendor spelling, without changing
+/// the property name emitted in CSS or deciding whether that name is valid.
+pub(crate) fn is_maintain_value_property(property: &str) -> bool {
+    MAINTAIN_VALUE_PROPERTIES.contains(strip_vendor_prefix(property))
+}
 
 /// Properties taking a time, whose numbers are milliseconds
 pub(crate) static TIME_PROPERTIES: phf::Set<&str> = phf_set! {

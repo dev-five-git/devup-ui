@@ -9,7 +9,7 @@ use crate::extract_style::extract_css::ExtractCss;
 use crate::extract_style::extract_keyframes::ExtractKeyframes;
 use crate::extract_style::style_property::StyleProperty;
 use crate::extractor::KeyframesExtractResult;
-use crate::extractor::extract_keyframes_from_expression::extract_keyframes_from_expression;
+use crate::extractor::extract_keyframes_from_expression::extract_keyframes_with_location;
 use crate::extractor::extract_style_from_stylex::{
     extract_stylex_declarations, extract_stylex_namespace_styles,
 };
@@ -61,7 +61,7 @@ use crate::utils::{
     jsx_expression_to_style_order, key_error, readable_argument, readable_code, reads_directly,
     reads_spreads_once, reads_unknown, runtime_classes, runtime_value, runtime_value_error,
     spread_error, stays_attribute, style_arguments, uncomposable_error, unplaced_error,
-    unreadable_styles, unwrap_syntax_only, unwrap_syntax_only_mut,
+    unreadable_styles, unused_error, unwrap_syntax_only, unwrap_syntax_only_mut,
 };
 use oxc_ast::builder::AstBuilder;
 use oxc_span::{GetSpan, SPAN};
@@ -1514,14 +1514,19 @@ impl<'a> VisitMut<'a> for DevupVisitor<'a> {
             && let [arg] = call.arguments.as_mut_slice()
             && let Some(arg @ Expression::ObjectExpression(_)) = arg.as_expression_mut()
         {
-            let KeyframesExtractResult {
-                keyframes,
-                runtime_value,
-            } = extract_keyframes_from_expression(&self.ast, arg);
+            let (
+                KeyframesExtractResult {
+                    keyframes,
+                    runtime_value,
+                },
+                runtime_offset,
+            ) = extract_keyframes_with_location(&self.ast, arg);
             if let Some(value) = runtime_value {
                 self.errors.push((
-                    call.span.start,
-                    runtime_value_error("stylex.keyframes", &value),
+                    runtime_offset
+                        .filter(|offset| *offset != 0)
+                        .unwrap_or(call.span.start),
+                    unused_error("stylex.keyframes", &value),
                 ));
             }
             let name =
@@ -1651,9 +1656,10 @@ impl<'a> VisitMut<'a> for DevupVisitor<'a> {
                             &None,
                             LiteralHandling::ExpandResponsiveThemeToken,
                         );
-                        if let Some(value) = runtime_value(&styles) {
-                            self.errors
-                                .push((offset, runtime_value_error("css", &value)));
+                        if let Some((offset, value)) =
+                            crate::dead_properties::located_value(&styles, offset, false)
+                        {
+                            self.errors.push((offset, unused_error("css", &value)));
                         }
 
                         if styles.is_empty() {
@@ -1678,10 +1684,10 @@ impl<'a> VisitMut<'a> for DevupVisitor<'a> {
                             }
                         }
                     } else if matches!(r, UtilType::Keyframes) {
-                        let KeyframesExtractResult {
+                        let (KeyframesExtractResult {
                             keyframes,
                             runtime_value,
-                        } = extract_keyframes_from_expression(
+                        }, runtime_offset) = crate::extractor::extract_keyframes_from_expression::extract_keyframes_with_location(
                             &self.ast,
                             if let Argument::SpreadElement(spread) = &mut call.arguments[0] {
                                 &mut spread.argument
@@ -1690,8 +1696,12 @@ impl<'a> VisitMut<'a> for DevupVisitor<'a> {
                             },
                         );
                         if let Some(value) = runtime_value {
-                            self.errors
-                                .push((offset, runtime_value_error("keyframes", &value)));
+                            self.errors.push((
+                                runtime_offset
+                                    .filter(|offset| *offset != 0)
+                                    .unwrap_or(offset),
+                                unused_error("keyframes", &value),
+                            ));
                         }
 
                         let name = style_property_into_string(
@@ -1718,9 +1728,11 @@ impl<'a> VisitMut<'a> for DevupVisitor<'a> {
                             },
                             &self.filename,
                         );
-                        if let Some(value) = fixed_value(&styles) {
+                        if let Some((offset, value)) =
+                            crate::dead_properties::located_value(&styles, offset, true)
+                        {
                             self.errors
-                                .push((offset, runtime_value_error("globalCss", &value)));
+                                .push((offset, unused_error("globalCss", &value)));
                         }
                         // already set style order
                         let style_order = style_order.unwrap_or(0);
@@ -1774,9 +1786,11 @@ impl<'a> VisitMut<'a> for DevupVisitor<'a> {
                         &mut folded,
                         &self.filename,
                     );
-                    if let Some(value) = fixed_value(&styles) {
+                    if let Some((offset, value)) =
+                        crate::dead_properties::located_value(&styles, offset, true)
+                    {
                         self.errors
-                            .push((offset, runtime_value_error("globalCss", &value)));
+                            .push((offset, unused_error("globalCss", &value)));
                     }
                     let style_order = style_order.unwrap_or(0);
                     self.styles.extend(
@@ -1819,6 +1833,23 @@ impl<'a> VisitMut<'a> for DevupVisitor<'a> {
                 UtilType::Keyframes => "keyframes",
                 UtilType::GlobalCss | UtilType::GlobalCssComponent => "globalCss",
             };
+            let mut invalid = Vec::new();
+            unreadable_styles(
+                &crate::dead_properties::template_errors(&tag.quasi),
+                true,
+                &mut invalid,
+            );
+            if !invalid.is_empty() {
+                self.errors
+                    .extend(invalid.into_iter().map(|(offset, code, requirement)| {
+                        (
+                            offset,
+                            build_time_error(api, &code, requirement.unwrap_or(STYLE_OBJECT)),
+                        )
+                    }));
+                *it = Expression::new_string_literal(SPAN, "", None, &self.ast);
+                return;
+            }
             let mut build_css_str = || {
                 template_css_text(&tag.quasi, api).unwrap_or_else(|error| {
                     self.errors.push(error);
@@ -1837,7 +1868,7 @@ impl<'a> VisitMut<'a> for DevupVisitor<'a> {
                     .collect::<Vec<_>>();
                 if let Some(value) = runtime_value(&style_props) {
                     self.errors
-                        .push((tag.span.start, runtime_value_error(api, &value)));
+                        .push((tag.span.start, unused_error(api, &value)));
                 }
                 for index in unplaced {
                     let expression = &tag.quasi.expressions[index];
@@ -2337,8 +2368,10 @@ impl<'a> VisitMut<'a> for DevupVisitor<'a> {
                         style_order,
                     } = extract_global_style_from_expression(&self.ast, expression, &self.filename);
                     if let Some(value) = fixed_value(&styles) {
-                        self.errors
-                            .push((offset, element_error(&name, &value, RUNTIME_VALUE)));
+                        self.errors.push((
+                            offset,
+                            element_error(&name, &value.0, value.1.unwrap_or(RUNTIME_VALUE)),
+                        ));
                     }
                     let style_order = style_order.unwrap_or(0);
                     self.styles.extend(
@@ -2389,6 +2422,13 @@ impl<'a> VisitMut<'a> for DevupVisitor<'a> {
                     && !is_special_property(&name.name)
                 {
                     let property_name = name.name.as_str();
+                    if let Some(error) = crate::dead_properties::authored_declaration_error(
+                        property_name,
+                        name.span.start,
+                    ) {
+                        props_styles.push(error);
+                        continue;
+                    }
                     for disassembled in disassemble_property(property_name) {
                         // Probe with `contains`, run the body borrowing `&disassembled`
                         // (it has no early exits), then MOVE the value into the set at
@@ -2656,10 +2696,14 @@ impl<'a> VisitMut<'a> for DevupVisitor<'a> {
                     .for_each(|style| self.styles.extend(style.into_extract()));
             }
 
-            for (offset, code) in unreadable {
+            for (offset, code, requirement) in unreadable {
                 self.errors.push((
-                    offset,
-                    element_error(&elem.opening_element.name.to_string(), &code, STYLE_OBJECT),
+                    if offset == 0 { elem.span.start } else { offset },
+                    element_error(
+                        &elem.opening_element.name.to_string(),
+                        &code,
+                        requirement.unwrap_or(STYLE_OBJECT),
+                    ),
                 ));
             }
 

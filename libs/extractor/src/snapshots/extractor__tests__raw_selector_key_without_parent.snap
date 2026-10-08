@@ -1,6 +1,6 @@
 ---
 source: libs/extractor/src/lib.rs
-expression: "ToBTreeSet::from(extract_tsx(r\"import { Box } from '@devup-ui/react';\nconst e = <Box selectors={{ 'div p': { color: 'red' }, 'a > b, i': { color: 'blue' } }} />;\"))"
+expression: "ToBTreeSet::from(extract_tsx(r\"import { Box } from '@devup-ui/react';\nconst e = <Box selectors={{ 'div p': { color: 'red' }, 'a > b, > i': { color: 'blue' } }} />;\"))"
 ---
 ToBTreeSet {
     styles: {
@@ -11,7 +11,7 @@ ToBTreeSet {
                 level: 0,
                 selector: Some(
                     Selector(
-                        "&:a > b",
+                        "& > i",
                     ),
                 ),
                 style_order: None,
@@ -25,7 +25,7 @@ ToBTreeSet {
                 level: 0,
                 selector: Some(
                     Selector(
-                        "&:i",
+                        "& a > b",
                     ),
                 ),
                 style_order: None,
@@ -39,7 +39,7 @@ ToBTreeSet {
                 level: 0,
                 selector: Some(
                     Selector(
-                        "&:div p",
+                        "& div p",
                     ),
                 ),
                 style_order: None,
