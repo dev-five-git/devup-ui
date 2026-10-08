@@ -367,13 +367,6 @@ const App = () => <Box></Box>`,
       map: undefined,
     })
 
-    if (options.updatedBaseStyle) {
-      expect(writeFileSpy).toHaveBeenCalledWith(
-        resolve('df', 'devup-ui', 'devup-ui.css'),
-        expect.stringMatching(/\/\* src\/App\.tsx \d+ \*\//),
-        'utf-8',
-      )
-    }
     expect(writeFileSpy).toHaveBeenCalledWith(
       resolve('df', 'devup-ui', 'devup-ui.css'),
       expect.stringMatching(/\/\* src\/App\.tsx \d+ \*\//),
@@ -485,6 +478,47 @@ const App = () => <Box></Box>`,
     expect(setPrefixSpy).toHaveBeenCalledWith('my-prefix')
   })
 
+  describe('deterministic file numbering', () => {
+    it.each([
+      ['relative', false],
+      ['posix', true],
+    ])('numbers the files the scan finds (%s ids)', async (_name, atomMode) => {
+      const collectSpy = spyOn(pluginUtils, 'collectNumberedFiles')
+      const seedSpy = spyOn(wasm, 'seedFileMap').mockReturnValue(undefined)
+      const closeBuild = mock()
+      try {
+        collectSpy.mockImplementation((options: any) => {
+          expect(options.toId('C:\\p\\a.tsx')).toBe(
+            atomMode ? 'C:/p/a.tsx' : 'C:\\p\\a.tsx',
+          )
+          return ['/p/a.tsx']
+        })
+        await DevupUI({
+          include: ['@acme/ui'],
+          atomHoist: atomMode ? 2 : undefined,
+        }).setup(createSetupContext({ onCloseBuild: closeBuild }))
+        expect(seedSpy).toHaveBeenCalledWith(['/p/a.tsx'])
+        expect(collectSpy.mock.calls[0][0]).toMatchObject({
+          roots: [resolve('src')],
+          include: ['@acme/ui'],
+        })
+        closeBuild.mock.calls[0][0]()
+        collectSpy.mockImplementation(() => {
+          throw new Error('scan boom')
+        })
+        await DevupUI().setup(createSetupContext())
+      } finally {
+        collectSpy.mockRestore()
+        seedSpy.mockRestore()
+      }
+    })
+
+    it('sets the prefix every time, even without one', async () => {
+      setPrefixSpy.mockClear()
+      await DevupUI().setup(createSetupContext())
+      expect(setPrefixSpy).toHaveBeenCalledWith(null)
+    })
+  })
   describe('atomHoist pre-pass', () => {
     let buildCanonicalMapSpy: ReturnType<typeof spyOn>
     let computeFileReachSpy: ReturnType<typeof spyOn>

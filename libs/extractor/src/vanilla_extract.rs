@@ -276,6 +276,9 @@ pub fn execute_stylesheet(
     context
         .eval(Source::from_bytes(crate::module_loader::CONSOLE))
         .map_err(|e| format!("JS execution error: {e}"))?;
+    context
+        .eval(Source::from_bytes(crate::module_loader::DETERMINISM))
+        .map_err(|e| format!("JS execution error: {e}"))?;
 
     context
         .eval(Source::from_bytes(run.as_bytes()))

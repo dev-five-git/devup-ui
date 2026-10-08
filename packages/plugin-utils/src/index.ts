@@ -1,3 +1,4 @@
+export { beginBuild, type ResettableEngine } from './build-session'
 export {
   type AtomHoistPlan,
   buildCanonicalMap,
@@ -20,6 +21,13 @@ export {
 } from './import-graph'
 export { deepMerge, loadDevupConfig, loadDevupConfigSync } from './load-config'
 export {
+  collectNumberedFiles,
+  type CollectNumberedFilesOptions,
+  extractedNeedles,
+  type FileNumbering,
+  seedFileNumbers,
+} from './numbering'
+export {
   createNodeModulesExcludeRegex,
   createThemeInterfaceArgs,
   DEFAULT_THEME_INTERFACE_NAMES,
@@ -27,6 +35,11 @@ export {
   type DevupUIBasePluginOptions,
   getFileNumByFilename,
 } from './shared'
+export {
+  createStateWriter,
+  type StateWriter,
+  writeFileAtomically,
+} from './state-writer'
 export type {
   CustomShorthands,
   DevupConfig,

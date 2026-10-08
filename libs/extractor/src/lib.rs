@@ -13633,6 +13633,30 @@ globalCss({
 
     #[test]
     #[serial]
+    fn test_stylesheets_read_nothing_that_differs_between_builds() {
+        for (read, fails) in [
+            ("Math.random()", true),
+            ("Date.now()", true),
+            ("new Date()", true),
+            ("Date()", true),
+            ("new Date(0).getTime()", false),
+            ("Date.UTC(2020, 0, 1)", false),
+        ] {
+            reset_class_map();
+            reset_file_map();
+            let result = extract(
+                "when.css.ts",
+                &format!(
+                    "import {{ style }} from '@devup-ui/react';\nconst n = {read};\nexport const a = style({{ opacity: String(n) }});"
+                ),
+                ExtractOption::default(),
+            );
+            assert_eq!(result.is_err(), fails, "{read}");
+        }
+    }
+
+    #[test]
+    #[serial]
     fn test_vanilla_extract_execution_fallback() {
         // Test vanilla-extract file with execution error (covers line 116 fallback)
         reset_class_map();
