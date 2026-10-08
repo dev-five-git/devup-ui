@@ -8,7 +8,7 @@ import {
   Input as DevupInput,
   Text,
 } from '@devup-ui/react'
-import { ComponentProps, useState } from 'react'
+import { ComponentProps, forwardRef, useState } from 'react'
 
 interface InputProps extends Omit<ComponentProps<'input'>, 'type'> {
   type?: Exclude<ComponentProps<'input'>['type'], 'file'>
@@ -37,23 +37,26 @@ interface InputProps extends Omit<ComponentProps<'input'>, 'type'> {
   icon?: React.ReactNode
 }
 
-export function Input({
-  defaultValue = '',
-  value: valueProp,
-  onChange: onChangeProp,
-  typography,
-  error = false,
-  errorMessage,
-  allowClear = true,
-  icon,
-  colors,
-  disabled,
-  className,
-  classNames,
-  readOnly,
-  onClear,
-  ...props
-}: InputProps) {
+export const Input = forwardRef<HTMLInputElement, InputProps>(function Input(
+  {
+    defaultValue = '',
+    value: valueProp,
+    onChange: onChangeProp,
+    typography,
+    error = false,
+    errorMessage,
+    allowClear = true,
+    icon,
+    colors,
+    disabled,
+    className,
+    classNames,
+    readOnly,
+    onClear,
+    ...props
+  },
+  ref,
+) {
   const [value, setValue] = useState(defaultValue)
 
   const handleChange = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -101,6 +104,7 @@ export function Input({
         </Center>
       )}
       <DevupInput
+        ref={ref}
         _disabled={{
           _placeholder: {
             color: 'var(--inputDisabledText, light-dark(#D6D7DE, #373737))',
@@ -171,7 +175,7 @@ export function Input({
       )}
     </Box>
   )
-}
+})
 
 export function ClearButton(props: ComponentProps<'button'>) {
   return (
