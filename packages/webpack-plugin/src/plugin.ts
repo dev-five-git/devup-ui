@@ -573,10 +573,13 @@ export class DevupUIWebpackPlugin {
     }
 
     const exclude = this.excludeModules
+    // CJS bundles must resolve from their installed module, not a baked source URL.
+    const resolveLoader =
+      typeof require === 'function'
+        ? require.resolve
+        : createRequire(import.meta.url).resolve
     const sourceLoader = {
-      loader: createRequire(import.meta.url).resolve(
-        '@devup-ui/webpack-plugin/loader',
-      ),
+      loader: resolveLoader('@devup-ui/webpack-plugin/loader'),
       options: {
         package: this.options.package,
         cssDir: this.options.cssDir,
@@ -611,9 +614,7 @@ export class DevupUIWebpackPlugin {
         enforce: 'pre',
         use: [
           {
-            loader: createRequire(import.meta.url).resolve(
-              '@devup-ui/webpack-plugin/css-loader',
-            ),
+            loader: resolveLoader('@devup-ui/webpack-plugin/css-loader'),
             options: {
               watch: this.options.watch,
             },
