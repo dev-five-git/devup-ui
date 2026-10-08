@@ -501,6 +501,14 @@ pub(super) fn call_with_values<'a>(
     values: Vec<(String, Expression<'a>)>,
     body: Expression<'a>,
 ) -> Expression<'a> {
+    Expression::CallExpression(call_with_values_box(builder, values, body))
+}
+
+pub(super) fn call_with_values_box<'a>(
+    builder: &AstBuilder<'a>,
+    values: Vec<(String, Expression<'a>)>,
+    body: Expression<'a>,
+) -> oxc_allocator::Box<'a, CallExpression<'a>> {
     use oxc_ast::ast::{BindingPattern, FormalParameter, FormalParameterKind, FormalParameters};
     let mut parameters = oxc_allocator::Vec::with_capacity_in(values.len(), builder);
     let mut arguments = oxc_allocator::Vec::with_capacity_in(values.len(), builder);
@@ -541,7 +549,7 @@ pub(super) fn call_with_values<'a>(
         body.into(),
         builder,
     );
-    Expression::new_call_expression(
+    CallExpression::boxed(
         SPAN,
         Expression::new_parenthesized_expression(SPAN, arrow, builder),
         None::<oxc_allocator::Box<'_, oxc_ast::ast::TSTypeParameterInstantiation<'_>>>,

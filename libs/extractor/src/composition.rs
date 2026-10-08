@@ -11,6 +11,9 @@ use oxc_ast::builder::AstBuilder;
 
 use crate::{ExtractStyleProp, ExtractStyleValue};
 
+pub(super) mod normalised;
+use normalised::NormalisedProp;
+
 /// What a declaration competes on: property, selector, breakpoint and layer
 #[derive(Clone, PartialEq, Eq)]
 struct CascadeKey {
@@ -78,16 +81,31 @@ enum Overlay<'a> {
 
 /// The parts composed so far, in source order: a key a later part sets moves
 /// to the end, as when merging objects
-#[derive(Default)]
-pub struct Composition<'a> {
+pub struct Composition<'a, E = Expression<'a>> {
     entries: Vec<(CascadeKey, Choice<'a>)>,
     /// Styles whose properties the build cannot pair up, kept as they are
-    unkeyed: Vec<ExtractStyleProp<'a>>,
+    unkeyed: Vec<NormalisedProp<'a, E>>,
 }
 
-impl<'a> Composition<'a> {
+impl<E> Default for Composition<'_, E> {
+    fn default() -> Self {
+        Self {
+            entries: Vec::new(),
+            unkeyed: Vec::new(),
+        }
+    }
+}
+
+impl Composition<'_> {
+    /// Anchor payload-free callers to the default Expression carrier.
+    pub(crate) fn default() -> Self {
+        <Self as Default>::default()
+    }
+}
+
+impl<'a, E> Composition<'a, E> {
     /// A part the build knows completely
-    pub fn apply(&mut self, ast_builder: &AstBuilder<'a>, props: Vec<ExtractStyleProp<'a>>) {
+    pub fn apply(&mut self, ast_builder: &AstBuilder<'a>, props: Vec<ExtractStyleProp<'a, E>>) {
         let mut overlays: Vec<(CascadeKey, Overlay<'a>)> = Vec::new();
         for prop in props {
             self.overlays(ast_builder, prop, &mut overlays);
@@ -102,8 +120,8 @@ impl<'a> Composition<'a> {
         &mut self,
         ast_builder: &AstBuilder<'a>,
         test: &Expression<'a>,
-        consequent: Vec<ExtractStyleProp<'a>>,
-        alternate: Vec<ExtractStyleProp<'a>>,
+        consequent: Vec<ExtractStyleProp<'a, E>>,
+        alternate: Vec<ExtractStyleProp<'a, E>>,
     ) {
         let prop = ExtractStyleProp::Conditional {
             condition: test.clone_in(ast_builder.allocator()),
@@ -117,7 +135,7 @@ impl<'a> Composition<'a> {
     fn overlays(
         &mut self,
         ast_builder: &AstBuilder<'a>,
-        prop: ExtractStyleProp<'a>,
+        prop: ExtractStyleProp<'a, E>,
         overlays: &mut Vec<(CascadeKey, Overlay<'a>)>,
     ) {
         match prop {
@@ -184,7 +202,36 @@ impl<'a> Composition<'a> {
                     );
                 }
             }
-            prop => self.unkeyed.push(prop),
+            ExtractStyleProp::Conditional {
+                condition,
+                consequent,
+                alternate,
+            } => {
+                self.unkeyed.push(NormalisedProp::Conditional {
+                    condition,
+                    consequent,
+                    alternate,
+                });
+            }
+            ExtractStyleProp::Expression { styles, expression } => {
+                self.unkeyed
+                    .push(NormalisedProp::Supplied { styles, expression });
+            }
+            ExtractStyleProp::Diagnostic {
+                offset,
+                message,
+                disposition,
+            } => {
+                self.unkeyed.push(NormalisedProp::Diagnostic {
+                    offset,
+                    message,
+                    disposition,
+                });
+            }
+            ExtractStyleProp::Unreadable { offset, code, prop } => {
+                self.unkeyed
+                    .push(NormalisedProp::Unreadable { offset, code, prop });
+            }
         }
     }
 
@@ -207,10 +254,17 @@ impl<'a> Composition<'a> {
 
     /// The composed styles, for class names and the stylesheet
     #[must_use]
-    pub fn into_props(self) -> Vec<ExtractStyleProp<'a>> {
+    pub fn into_props(self) -> Vec<ExtractStyleProp<'a, E>> {
+        self.into_normalised()
+            .into_iter()
+            .map(NormalisedProp::into_prop)
+            .collect()
+    }
+
+    pub(crate) fn into_normalised(self) -> Vec<NormalisedProp<'a, E>> {
         self.entries
             .into_iter()
-            .filter_map(|(_, choice)| into_prop(choice))
+            .filter_map(|(_, choice)| into_normalised(choice))
             .chain(self.unkeyed)
             .collect()
     }
@@ -229,11 +283,11 @@ impl<'a> Composition<'a> {
     }
 }
 
-fn key_choice<'a>(
+fn key_choice<'a, E>(
     ast: &AstBuilder<'a>,
     condition: &Expression<'a>,
-    mut entries: Vec<(String, ExtractStyleProp<'a>)>,
-) -> ExtractStyleProp<'a> {
+    mut entries: Vec<(String, ExtractStyleProp<'a, E>)>,
+) -> ExtractStyleProp<'a, E> {
     use oxc_allocator::FromIn;
     use oxc_ast::ast::{BinaryOperator, Str};
     use oxc_span::SPAN;
@@ -305,7 +359,7 @@ pub enum KnownPart<'a> {
 }
 
 /// `prop`'s styles at `order`, unless one sets its own
-pub fn set_prop_order(prop: &mut ExtractStyleProp<'_>, order: u8) {
+pub fn set_prop_order<E>(prop: &mut ExtractStyleProp<'_, E>, order: u8) {
     match prop {
         ExtractStyleProp::Static(value) => value.set_style_order(order),
         ExtractStyleProp::StaticArray(props) => {
@@ -381,7 +435,7 @@ fn keys(props: &[ExtractStyleProp<'_>]) -> Vec<CascadeKey> {
 
 /// Whether every style `prop` holds has a key, so a condition around it can be
 /// applied key by key
-fn keyed(prop: &ExtractStyleProp<'_>) -> bool {
+fn keyed<E>(prop: &ExtractStyleProp<'_, E>) -> bool {
     match prop {
         ExtractStyleProp::Static(_) => true,
         ExtractStyleProp::StaticArray(props) => props.iter().all(keyed),
@@ -462,17 +516,21 @@ fn copy_choice<'a>(ast_builder: &AstBuilder<'a>, choice: &Choice<'a>) -> Choice<
     }
 }
 
-fn into_prop(choice: Choice<'_>) -> Option<ExtractStyleProp<'_>> {
+fn into_prop<E>(choice: Choice<'_>) -> Option<ExtractStyleProp<'_, E>> {
+    into_normalised(choice).map(NormalisedProp::into_prop)
+}
+
+fn into_normalised<E>(choice: Choice<'_>) -> Option<NormalisedProp<'_, E>> {
     match choice {
         Choice::Empty => None,
-        Choice::Atom(value) => Some(ExtractStyleProp::Static(value)),
+        Choice::Atom(value) => Some(NormalisedProp::Static(value)),
         Choice::Conditional {
             test,
             consequent,
             alternate,
         } => {
             let (consequent, alternate) = (into_prop(*consequent), into_prop(*alternate));
-            (consequent.is_some() || alternate.is_some()).then(|| ExtractStyleProp::Conditional {
+            (consequent.is_some() || alternate.is_some()).then(|| NormalisedProp::Conditional {
                 condition: test,
                 consequent: consequent.map(Box::new),
                 alternate: alternate.map(Box::new),

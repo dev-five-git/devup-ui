@@ -31,6 +31,7 @@ use crate::extractor::{
         with_component,
     },
 };
+use crate::gen_class_name::roots::{ClassPayload, FinishedClass};
 use crate::gen_class_name::{gen_class_names, merge_expression_for_class_name};
 use crate::gen_style::gen_styles;
 use crate::prop_modify_utils::{
@@ -92,6 +93,9 @@ mod call_order;
 mod call_target;
 mod capture;
 mod class_capture;
+mod class_names_emission;
+mod class_names_parts;
+mod class_names_rules;
 mod css_capture;
 mod element_calls;
 mod finite_callbacks;
@@ -1696,7 +1700,6 @@ impl<'a> DevupVisitor<'a> {
             return false;
         }
         let span = call.span;
-        let offset = span.start;
         let text = self.class_names_text(&call.callee).unwrap_or(Text::Classes);
         self.unknown_arguments("css", &call.arguments);
         self.changed_arguments("css", &call.arguments);
@@ -1722,26 +1725,14 @@ impl<'a> DevupVisitor<'a> {
                 }
             }
         }
-        let mut parts = Vec::new();
-        *it = if self.known_parts(it, &mut parts, Text::Classes).is_some() {
-            self.composed_class(span, parts).0
-        } else {
-            self.errors.push((
-                offset,
-                element_error("ClassNames", &readable_code(it), CLASS_NAMES_PART),
-            ));
-            Expression::new_string_literal(SPAN, "", None, &self.ast)
-        };
-        if !captured.is_empty() {
-            *it = call_with_values(&self.ast, captured, it.clone_in(self.ast.allocator()));
+        let mut finished = self.finish_class_names_local(it, captured, span);
+        match &mut finished {
+            FinishedClass::String(value) => value.span = span,
+            FinishedClass::Template(value) => value.span = span,
+            FinishedClass::Call(value) => value.span = span,
+            FinishedClass::Conditional(value) => value.span = span,
         }
-        match it {
-            Expression::StringLiteral(value) => value.span = span,
-            Expression::TemplateLiteral(value) => value.span = span,
-            Expression::CallExpression(value) => value.span = span,
-            Expression::ConditionalExpression(value) => value.span = span,
-            _ => {}
-        }
+        *it = finished.into_expression();
         true
     }
 }

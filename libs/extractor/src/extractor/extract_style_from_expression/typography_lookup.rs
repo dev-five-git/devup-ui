@@ -1,4 +1,4 @@
-use crate::{ExtractStyleProp, utils::call_with_values};
+use crate::{ExtractStyleProp, extractor::rule_payload::RuleClass, utils::call_with_values_box};
 use css::style_selector::StyleSelector;
 use oxc_allocator::{CloneIn, GetAllocator};
 use oxc_ast::{
@@ -29,9 +29,9 @@ pub(super) fn dynamic<'a>(
     ast: &AstBuilder<'a>,
     value: &Expression<'a>,
     placement: (u8, &Option<StyleSelector>),
-) -> ExtractStyleProp<'a> {
+) -> ExtractStyleProp<'a, RuleClass<'a>> {
     let (level, selector) = placement;
-    if let Some(style) = super::conditional_typography(ast, value, level, selector) {
+    if let Some(style) = super::conditional_typography_payload(ast, value, level, selector) {
         return style;
     }
     let saved = Expression::new_identifier(SPAN, "__devupTypography", ast);
@@ -60,14 +60,14 @@ pub(super) fn dynamic<'a>(
         ast,
     );
     ExtractStyleProp::Expression {
-        expression: call_with_values(
+        expression: RuleClass::Call(call_with_values_box(
             ast,
             vec![(
                 "__devupTypography".to_string(),
                 value.clone_in_with_semantic_ids(ast.allocator()),
             )],
             selected,
-        ),
+        )),
         styles: vec![],
     }
 }

@@ -3,6 +3,7 @@ use oxc_span::SourceType;
 use rstest::rstest;
 use serial_test::serial;
 
+mod f195;
 mod finite_origins;
 
 fn local<'a>(allocator: &'a Allocator, source: &'a str) -> (DevupVisitor<'a>, Expression<'a>) {

@@ -89,29 +89,29 @@ impl ErrorDisposition {
 }
 
 #[derive(Debug)]
-pub enum ExtractStyleProp<'a> {
+pub enum ExtractStyleProp<'a, E = Expression<'a>> {
     Diagnostic {
         offset: u32,
         message: String,
         disposition: ErrorDisposition,
     },
     Static(ExtractStyleValue),
-    StaticArray(Vec<ExtractStyleProp<'a>>),
+    StaticArray(Vec<ExtractStyleProp<'a, E>>),
     Conditional {
         condition: Expression<'a>,
-        consequent: Option<Box<ExtractStyleProp<'a>>>,
-        alternate: Option<Box<ExtractStyleProp<'a>>>,
+        consequent: Option<Box<ExtractStyleProp<'a, E>>>,
+        alternate: Option<Box<ExtractStyleProp<'a, E>>>,
     },
     Enum {
         condition: Expression<'a>,
-        map: BTreeMap<String, Vec<ExtractStyleProp<'a>>>,
+        map: BTreeMap<String, Vec<ExtractStyleProp<'a, E>>>,
     },
     Expression {
         styles: Vec<ExtractStyleValue>,
-        expression: Expression<'a>,
+        expression: E,
     },
     MemberExpression {
-        map: BTreeMap<String, Box<ExtractStyleProp<'a>>>,
+        map: BTreeMap<String, Box<ExtractStyleProp<'a, E>>>,
         expression: Expression<'a>,
     },
     /// Styles written where the build cannot read them, reported as an error;
@@ -126,6 +126,36 @@ pub enum ExtractStyleProp<'a> {
 
 impl<'a> ExtractStyleProp<'a> {
     pub fn clone_in(&self, alloc: &'a Allocator) -> Self {
+        self.clone_payload_in(alloc, CloneIn::clone_in)
+    }
+
+    pub fn extract(&self) -> Vec<ExtractStyleValue> {
+        self.extract_payload()
+    }
+
+    /// Owning variant of [`extract`](Self::extract): consumes `self` and moves
+    /// every collected [`ExtractStyleValue`] out instead of cloning it. Use at
+    /// call sites that discard the `ExtractStyleProp` right after extraction.
+    pub fn into_extract(self) -> Vec<ExtractStyleValue> {
+        self.into_extract_payload()
+    }
+}
+
+impl<'a, E> ExtractStyleProp<'a, E> {
+    /// Clone the carrier while retaining the payload constructor supplied by its caller.
+    pub(crate) fn clone_payload_in<Q>(
+        &self,
+        alloc: &'a Allocator,
+        clone_payload: impl Fn(&E, &'a Allocator) -> Q,
+    ) -> ExtractStyleProp<'a, Q> {
+        self.clone_payload_with(alloc, &clone_payload)
+    }
+
+    fn clone_payload_with<Q>(
+        &self,
+        alloc: &'a Allocator,
+        clone_payload: &impl Fn(&E, &'a Allocator) -> Q,
+    ) -> ExtractStyleProp<'a, Q> {
         match self {
             ExtractStyleProp::Diagnostic {
                 offset,
@@ -137,34 +167,52 @@ impl<'a> ExtractStyleProp<'a> {
                 disposition: *disposition,
             },
             ExtractStyleProp::Static(v) => ExtractStyleProp::Static(v.clone()),
-            ExtractStyleProp::StaticArray(arr) => {
-                ExtractStyleProp::StaticArray(arr.iter().map(|s| s.clone_in(alloc)).collect())
-            }
+            ExtractStyleProp::StaticArray(arr) => ExtractStyleProp::StaticArray(
+                arr.iter()
+                    .map(|s| s.clone_payload_with(alloc, clone_payload))
+                    .collect(),
+            ),
             ExtractStyleProp::Conditional {
                 condition,
                 consequent,
                 alternate,
             } => ExtractStyleProp::Conditional {
                 condition: condition.clone_in(alloc),
-                consequent: consequent.as_ref().map(|c| Box::new(c.clone_in(alloc))),
-                alternate: alternate.as_ref().map(|a| Box::new(a.clone_in(alloc))),
+                consequent: consequent
+                    .as_ref()
+                    .map(|c| Box::new(c.clone_payload_with(alloc, clone_payload))),
+                alternate: alternate
+                    .as_ref()
+                    .map(|a| Box::new(a.clone_payload_with(alloc, clone_payload))),
             },
             ExtractStyleProp::Enum { condition, map } => ExtractStyleProp::Enum {
                 condition: condition.clone_in(alloc),
                 map: map
                     .iter()
-                    .map(|(k, v)| (k.clone(), v.iter().map(|s| s.clone_in(alloc)).collect()))
+                    .map(|(k, v)| {
+                        (
+                            k.clone(),
+                            v.iter()
+                                .map(|s| s.clone_payload_with(alloc, clone_payload))
+                                .collect(),
+                        )
+                    })
                     .collect(),
             },
             ExtractStyleProp::Expression { styles, expression } => ExtractStyleProp::Expression {
                 styles: styles.clone(),
-                expression: expression.clone_in(alloc),
+                expression: clone_payload(expression, alloc),
             },
             ExtractStyleProp::MemberExpression { map, expression } => {
                 ExtractStyleProp::MemberExpression {
                     map: map
                         .iter()
-                        .map(|(k, v)| (k.clone(), Box::new(v.clone_in(alloc))))
+                        .map(|(k, v)| {
+                            (
+                                k.clone(),
+                                Box::new(v.clone_payload_with(alloc, clone_payload)),
+                            )
+                        })
                         .collect(),
                     expression: expression.clone_in(alloc),
                 }
@@ -177,7 +225,73 @@ impl<'a> ExtractStyleProp<'a> {
         }
     }
 
-    pub fn extract(&self) -> Vec<ExtractStyleValue> {
+    /// Move every supplied payload through the carrier without changing its other fields.
+    pub(crate) fn map_payload<Q>(self, map: impl Fn(E) -> Q) -> ExtractStyleProp<'a, Q> {
+        self.map_payload_with(&map)
+    }
+
+    fn map_payload_with<Q>(self, map_payload: &impl Fn(E) -> Q) -> ExtractStyleProp<'a, Q> {
+        match self {
+            ExtractStyleProp::Diagnostic {
+                offset,
+                message,
+                disposition,
+            } => ExtractStyleProp::Diagnostic {
+                offset,
+                message,
+                disposition,
+            },
+            ExtractStyleProp::Static(value) => ExtractStyleProp::Static(value),
+            ExtractStyleProp::StaticArray(props) => ExtractStyleProp::StaticArray(
+                props
+                    .into_iter()
+                    .map(|prop| prop.map_payload_with(map_payload))
+                    .collect(),
+            ),
+            ExtractStyleProp::Conditional {
+                condition,
+                consequent,
+                alternate,
+            } => ExtractStyleProp::Conditional {
+                condition,
+                consequent: consequent.map(|prop| Box::new(prop.map_payload_with(map_payload))),
+                alternate: alternate.map(|prop| Box::new(prop.map_payload_with(map_payload))),
+            },
+            ExtractStyleProp::Enum { condition, map } => ExtractStyleProp::Enum {
+                condition,
+                map: map
+                    .into_iter()
+                    .map(|(key, props)| {
+                        (
+                            key,
+                            props
+                                .into_iter()
+                                .map(|prop| prop.map_payload_with(map_payload))
+                                .collect(),
+                        )
+                    })
+                    .collect(),
+            },
+            ExtractStyleProp::Expression { styles, expression } => ExtractStyleProp::Expression {
+                styles,
+                expression: map_payload(expression),
+            },
+            ExtractStyleProp::MemberExpression { map, expression } => {
+                ExtractStyleProp::MemberExpression {
+                    map: map
+                        .into_iter()
+                        .map(|(key, prop)| (key, Box::new(prop.map_payload_with(map_payload))))
+                        .collect(),
+                    expression,
+                }
+            }
+            ExtractStyleProp::Unreadable { offset, code, prop } => {
+                ExtractStyleProp::Unreadable { offset, code, prop }
+            }
+        }
+    }
+
+    pub(crate) fn extract_payload(&self) -> Vec<ExtractStyleValue> {
         match self {
             ExtractStyleProp::Static(style) => vec![style.clone()],
             ExtractStyleProp::Conditional {
@@ -185,39 +299,37 @@ impl<'a> ExtractStyleProp<'a> {
                 alternate,
                 ..
             } => match (consequent, alternate) {
-                // Exactly one branch: return its `extract()` directly, skipping
+                // Exactly one branch: return its `extract_payload()` directly, skipping
                 // the throwaway accumulator `Vec` and the drain-into-it copy.
-                (Some(branch), None) | (None, Some(branch)) => branch.extract(),
+                (Some(branch), None) | (None, Some(branch)) => branch.extract_payload(),
                 // Both branches present: preserve consequent-then-alternate
                 // order, presizing the accumulator to hold both results.
                 (Some(consequent), Some(alternate)) => {
-                    let mut consequent = consequent.extract();
-                    let mut alternate = alternate.extract();
+                    let mut consequent = consequent.extract_payload();
+                    let mut alternate = alternate.extract_payload();
                     consequent.reserve(alternate.len());
                     consequent.append(&mut alternate);
                     consequent
                 }
                 (None, None) => vec![],
             },
-            ExtractStyleProp::StaticArray(array) => {
-                array.iter().flat_map(ExtractStyleProp::extract).collect()
-            }
+            ExtractStyleProp::StaticArray(array) => array
+                .iter()
+                .flat_map(ExtractStyleProp::extract_payload)
+                .collect(),
             ExtractStyleProp::Expression { styles, .. } => styles.clone(),
             ExtractStyleProp::MemberExpression { map, .. } => {
-                map.values().flat_map(|s| s.extract()).collect()
+                map.values().flat_map(|s| s.extract_payload()).collect()
             }
             ExtractStyleProp::Enum { map, .. } => map
                 .values()
-                .flat_map(|s| s.iter().flat_map(ExtractStyleProp::extract))
+                .flat_map(|s| s.iter().flat_map(ExtractStyleProp::extract_payload))
                 .collect(),
             ExtractStyleProp::Unreadable { .. } | ExtractStyleProp::Diagnostic { .. } => vec![],
         }
     }
 
-    /// Owning variant of [`extract`](Self::extract): consumes `self` and moves
-    /// every collected [`ExtractStyleValue`] out instead of cloning it. Use at
-    /// call sites that discard the `ExtractStyleProp` right after extraction.
-    pub fn into_extract(self) -> Vec<ExtractStyleValue> {
+    pub(crate) fn into_extract_payload(self) -> Vec<ExtractStyleValue> {
         match self {
             ExtractStyleProp::Static(style) => vec![style],
             ExtractStyleProp::Conditional {
@@ -225,14 +337,14 @@ impl<'a> ExtractStyleProp<'a> {
                 alternate,
                 ..
             } => match (consequent, alternate) {
-                // Exactly one branch: return its `into_extract()` directly,
+                // Exactly one branch: return its `into_extract_payload()` directly,
                 // skipping the throwaway accumulator `Vec`.
-                (Some(branch), None) | (None, Some(branch)) => branch.into_extract(),
+                (Some(branch), None) | (None, Some(branch)) => branch.into_extract_payload(),
                 // Both branches present: preserve consequent-then-alternate
                 // order, presizing the accumulator to hold both results.
                 (Some(consequent), Some(alternate)) => {
-                    let mut consequent = consequent.into_extract();
-                    let mut alternate = alternate.into_extract();
+                    let mut consequent = consequent.into_extract_payload();
+                    let mut alternate = alternate.into_extract_payload();
                     consequent.reserve(alternate.len());
                     consequent.append(&mut alternate);
                     consequent
@@ -241,15 +353,19 @@ impl<'a> ExtractStyleProp<'a> {
             },
             ExtractStyleProp::StaticArray(array) => array
                 .into_iter()
-                .flat_map(ExtractStyleProp::into_extract)
+                .flat_map(ExtractStyleProp::into_extract_payload)
                 .collect(),
             ExtractStyleProp::Expression { styles, .. } => styles,
-            ExtractStyleProp::MemberExpression { map, .. } => {
-                map.into_values().flat_map(|s| s.into_extract()).collect()
-            }
+            ExtractStyleProp::MemberExpression { map, .. } => map
+                .into_values()
+                .flat_map(|s| s.into_extract_payload())
+                .collect(),
             ExtractStyleProp::Enum { map, .. } => map
                 .into_values()
-                .flat_map(|s| s.into_iter().flat_map(ExtractStyleProp::into_extract))
+                .flat_map(|s| {
+                    s.into_iter()
+                        .flat_map(ExtractStyleProp::into_extract_payload)
+                })
                 .collect(),
             ExtractStyleProp::Unreadable { .. } | ExtractStyleProp::Diagnostic { .. } => vec![],
         }

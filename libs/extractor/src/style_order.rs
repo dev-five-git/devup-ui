@@ -1,7 +1,7 @@
 //! Reserved cascade metadata shared by JSX and declaration objects.
 
 use boa_engine::{Context, JsString, Source};
-use oxc_allocator::Allocator;
+use oxc_allocator::{Allocator, CloneIn};
 use oxc_ast::ast::{Expression, ObjectExpression, ObjectPropertyKind};
 use oxc_syntax::operator::UnaryOperator;
 
@@ -203,9 +203,29 @@ pub(crate) fn take<'a>(
 /// Lower metadata into existing style branches; inner explicit orders have already been applied.
 pub(crate) fn apply<'a>(
     order: Order<'a>,
-    mut styles: Vec<ExtractStyleProp<'a>>,
+    styles: Vec<ExtractStyleProp<'a>>,
     allocator: &'a Allocator,
 ) -> Vec<ExtractStyleProp<'a>> {
+    apply_with_payload(order, styles, allocator, |expression, allocator| {
+        expression.clone_in(allocator)
+    })
+}
+
+pub(crate) fn apply_with_payload<'a, E>(
+    order: Order<'a>,
+    styles: Vec<ExtractStyleProp<'a, E>>,
+    allocator: &'a Allocator,
+    clone_payload: impl Fn(&E, &'a Allocator) -> E,
+) -> Vec<ExtractStyleProp<'a, E>> {
+    apply_payload(order, styles, allocator, &clone_payload)
+}
+
+fn apply_payload<'a, E, F: Fn(&E, &'a Allocator) -> E>(
+    order: Order<'a>,
+    mut styles: Vec<ExtractStyleProp<'a, E>>,
+    allocator: &'a Allocator,
+    clone_payload: &F,
+) -> Vec<ExtractStyleProp<'a, E>> {
     match order {
         Order::Absent => styles,
         Order::Static(order) => {
@@ -217,15 +237,21 @@ pub(crate) fn apply<'a>(
         Order::Conditional { test, yes, no } => {
             let alternate = styles
                 .iter()
-                .map(|style| style.clone_in(allocator))
+                .map(|style| style.clone_payload_in(allocator, clone_payload))
                 .collect();
             vec![ExtractStyleProp::Conditional {
                 condition: test,
-                consequent: Some(Box::new(ExtractStyleProp::StaticArray(apply(
-                    *yes, styles, allocator,
+                consequent: Some(Box::new(ExtractStyleProp::StaticArray(apply_payload(
+                    *yes,
+                    styles,
+                    allocator,
+                    clone_payload,
                 )))),
-                alternate: Some(Box::new(ExtractStyleProp::StaticArray(apply(
-                    *no, alternate, allocator,
+                alternate: Some(Box::new(ExtractStyleProp::StaticArray(apply_payload(
+                    *no,
+                    alternate,
+                    allocator,
+                    clone_payload,
                 )))),
             }]
         }
@@ -233,7 +259,7 @@ pub(crate) fn apply<'a>(
 }
 
 /// Inherit an outer order without replacing inner metadata, for static and dynamic atoms alike.
-fn fill(prop: &mut ExtractStyleProp<'_>, order: u8) {
+fn fill<E>(prop: &mut ExtractStyleProp<'_, E>, order: u8) {
     match prop {
         ExtractStyleProp::Static(value) => value.set_style_order(order),
         ExtractStyleProp::StaticArray(styles) => {
