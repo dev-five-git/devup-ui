@@ -10,9 +10,15 @@ ToBTreeSet {
                 value: "#3B82F6",
                 level: 0,
                 selector: Some(
-                    Selector(
-                        "&:hover",
-                    ),
+                    At {
+                        kind: Media,
+                        query: "(hover:hover)",
+                        selector: Some(
+                            "&:hover",
+                        ),
+                        outer: [],
+                        file: None,
+                    },
                 ),
                 style_order: None,
                 layer: None,
