@@ -1,0 +1,75 @@
+---
+source: libs/extractor/src/import_alias_visit.rs
+expression: outputs
+---
+[
+    (
+        "/** @jsxImportSource react */\nexport const a = <Custom css={{ padding: \"2px\" }} />;",
+        Everywhere,
+        [
+            (
+                0,
+                0,
+                30,
+            ),
+            (
+                41,
+                42,
+                5,
+            ),
+        ],
+    ),
+    (
+        "/** @jsxImportSource react */\nimport { styled } from '@devup-ui/react';\nexport const a = <div />;",
+        Off,
+        [
+            (
+                0,
+                0,
+                30,
+            ),
+            (
+                0,
+                37,
+                41,
+            ),
+        ],
+    ),
+    (
+        "/** @jsxImportSource react */\nexport const a = <div />;",
+        Off,
+        [
+            (
+                21,
+                35,
+                5,
+            ),
+        ],
+    ),
+    (
+        "/** @jsx h */\nexport const a = <div />;",
+        Off,
+        [],
+    ),
+    (
+        "export const a = 1;",
+        Off,
+        [],
+    ),
+    (
+        "import { jsx as _jsx } from \"react/jsx-runtime\";\nexport const a = _jsx(Custom, { css: { top: \"1px\" } });",
+        Everywhere,
+        [
+            (
+                28,
+                56,
+                19,
+            ),
+            (
+                102,
+                103,
+                5,
+            ),
+        ],
+    ),
+]

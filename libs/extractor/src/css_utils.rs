@@ -146,14 +146,14 @@ pub struct TemplateStyles {
     pub unplaced: Vec<usize>,
 }
 
-enum Place {
+pub(crate) enum Place {
     Value,
     Statement,
     Other,
 }
 
 /// Where an interpolation stands, from the CSS written before and after it
-fn interpolation_place(before: &str, after: &[TemplateElement<'_>]) -> Place {
+pub(crate) fn interpolation_place(before: &str, after: &[TemplateElement<'_>]) -> Place {
     let head = &before[before.rfind([';', '{', '}']).map_or(0, |index| index + 1)..];
     let rest: String = after.iter().map(|quasi| quasi.value.raw.as_str()).collect();
     let end = rest.find([';', '{', '}']);

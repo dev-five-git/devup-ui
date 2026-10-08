@@ -1,6 +1,8 @@
 mod as_visit;
 mod build_time_values;
 mod component;
+mod composition;
+mod css_prop;
 mod css_utils;
 pub mod extract_style;
 mod extractor;
@@ -11,8 +13,10 @@ mod imported_constants;
 mod module_loader;
 mod mutations;
 mod prop_modify_utils;
+mod prop_valid;
 mod source_map;
 mod style_values;
+mod styled_reads;
 mod stylex;
 mod tailwind;
 mod util_type;
@@ -297,26 +301,32 @@ fn extract_source(
     // Step 1: Transform import aliases
     // e.g., `import styled from '@emotion/styled'` → `import { styled } from '@devup-ui/react'`
     // e.g., `import { style } from '@vanilla-extract/css'` → `import { style } from '@devup-ui/react'`
-    let (transformed_code, alias_edits) = import_alias_visit::transform_import_aliases_with_edits(
+    let import_alias_visit::Aliased {
+        code: transformed_code,
+        edits: alias_edits,
+        css_prop,
+    } = import_alias_visit::transform_import_aliases_with_edits(
         code,
         filename,
         &option.package,
         &option.import_aliases,
     );
 
-    // Step 2: Check if code contains the target package (after transformation)
+    // Step 2: Check if code contains the target package (after transformation),
+    // gives an element a `css` prop, or had an import rewritten
     let has_relevant_import = transformed_code.contains(option.package.as_str())
         || transformed_code.contains(STYLEX_PACKAGE);
+    let unchanged = || ExtractOutput {
+        styles: FxHashSet::default(),
+        code: code.to_string(),
+        map: None,
+        css_file: None,
+        dependencies: Vec::new(),
+    };
 
-    if !has_relevant_import {
+    if !has_relevant_import && css_prop == css_prop::CssProp::Off && alias_edits.is_empty() {
         // skip if not using package
-        return Ok(ExtractOutput {
-            styles: FxHashSet::default(),
-            code: code.to_string(),
-            map: None,
-            css_file: None,
-            dependencies: Vec::new(),
-        });
+        return Ok(unchanged());
     }
 
     let mut dependencies = std::collections::BTreeSet::new();
@@ -424,6 +434,7 @@ fn extract_source(
             filename,
             &option,
             resolver,
+            css_prop,
         )
     } else {
         imported_constants::Inlined::default()
@@ -437,9 +448,15 @@ fn extract_source(
         if global { None } else { Some(bucket) },
     );
     visitor.import_stylex(inlined.stylex_vars, inlined.stylex_themes);
+    visitor.import_css(inlined.css_styles);
     visitor.unknown_bindings(&inlined.unknown);
     visitor.changed_bindings(inlined.changed.clone());
+    visitor.takes_css_prop(css_prop);
     visitor.visit_program(&mut program);
+    if !has_relevant_import && alias_edits.is_empty() && !visitor.compiled_css_prop {
+        // No element took the `css` prop the text seemed to give
+        return Ok(unchanged());
+    }
     if let Some(error) = evaluation_error
         && imports_uncompiled(&program, &option.package)
     {
@@ -14553,6 +14570,449 @@ const Button = styled.button({ bg: 'red' })
         ));
     }
 
+    /// `code` extracted with readable class names
+    fn readable_code(code: &str) -> String {
+        reset_class_map();
+        reset_file_map();
+        css::debug::set_debug(true);
+        let output = extract(
+            "test.tsx",
+            code,
+            ExtractOption {
+                package: "@devup-ui/core".to_string(),
+                css_dir: "@devup-ui/core".to_string(),
+                single_css: true,
+                import_main_css: false,
+                import_aliases: HashMap::new(),
+            },
+        );
+        css::debug::set_debug(false);
+        match output {
+            Ok(output) => output.code,
+            Err(error) => error.to_string(),
+        }
+    }
+
+    // A later part of `css(...)` replaces an earlier part's declaration of the
+    // same property, selector, breakpoint and layer, whatever the stylesheet
+    // order of their classes
+    #[rstest]
+    #[case(
+        "css(yellow, azure)",
+        r#""color-0-red-_a__c_hover-255 background-0-black--255 color-0-azure--255""#
+    )]
+    #[case(
+        "css(azure, yellow)",
+        r#""background-0-black--255 color-0-red-_a__c_hover-255 color-0-yellow--255""#
+    )]
+    #[case(
+        "css({ color: 'green' }, yellow)",
+        r#""color-0-red-_a__c_hover-255 color-0-yellow--255""#
+    )]
+    #[case(
+        "css(yellow, { color: 'green' })",
+        r#""color-0-red-_a__c_hover-255 color-0-green--255""#
+    )]
+    #[case(
+        "css([yellow, azure])",
+        r#""color-0-red-_a__c_hover-255 background-0-black--255 color-0-azure--255""#
+    )]
+    #[case(
+        "css(...[yellow, azure])",
+        r#""color-0-red-_a__c_hover-255 background-0-black--255 color-0-azure--255""#
+    )]
+    #[case(
+        "css(yellow, null, undefined, false, azure)",
+        r#""color-0-red-_a__c_hover-255 background-0-black--255 color-0-azure--255""#
+    )]
+    #[case(
+        "css(yellow, on && azure)",
+        r#"`color-0-red-_a__c_hover-255 ${on ? "background-0-black--255" : ""} ${on ? "color-0-azure--255" : "color-0-yellow--255"}`"#
+    )]
+    #[case(
+        "css(on ? yellow : azure)",
+        r#"`${on ? "color-0-red-_a__c_hover-255" : ""} ${on ? "color-0-yellow--255" : "color-0-azure--255"} ${on ? "" : "background-0-black--255"}`"#
+    )]
+    #[case(
+        "css(yellow, on ? { color: 'pink' } : null)",
+        r#"`color-0-red-_a__c_hover-255 ${on ? "color-0-pink--255" : "color-0-yellow--255"}`"#
+    )]
+    #[case(
+        "css(yellow, { color: on ? 'pink' : 'teal' })",
+        r#"`color-0-red-_a__c_hover-255 ${on ? "color-0-pink--255" : "color-0-teal--255"}`"#
+    )]
+    #[case(
+        "css(yellow, ext, azure)",
+        r"`color-0-red-_a__c_hover-255 background-0-black--255 color-0-azure--255 ${ext}`"
+    )]
+    #[case(
+        "css(yellow, on ? 'plain' : azure)",
+        r#"`${on ? "plain" : ""} ${`color-0-red-_a__c_hover-255 ${on ? "" : "background-0-black--255"} ${on ? "color-0-yellow--255" : "color-0-azure--255"}`}`"#
+    )]
+    #[case(
+        "css(azure, wide)",
+        r#""background-0-black--255 color-0-a1--255 color-1-b1--255""#
+    )]
+    #[case(
+        "css(wide, { color: [null, 'x2'] })",
+        r#""color-0-a1--255 color-1-x2--255""#
+    )]
+    #[case(
+        "css(yellow, ordered)",
+        r#""color-0-red-_a__c_hover-255 color-0-navy--3""#
+    )]
+    #[case("css(heading, body)", r#""typo-body""#)]
+    #[case(
+        "css(chained, { color: 'gold' })",
+        r#""color-0-red-_a__c_hover-255 background-0-black--255 color-0-gold--255""#
+    )]
+    #[case(
+        "css(yellow, { color: { a: 'red', b: 'blue' }[size] })",
+        r"`color-0-red-_a__c_hover-255 color-0-yellow--255 ${{"
+    )]
+    #[case(
+        "css(yellow, on ? { color: { a: 'red' }[size] } : null)",
+        r#"`color-0-red-_a__c_hover-255 color-0-yellow--255 ${on ? { "a": "color-0-red--255" }[size] || "" : ""}`"#
+    )]
+    #[case(
+        "css(yellow, on || azure)",
+        r#"`${on ? typeof on === "string" ? on : "" : ""} ${`color-0-red-_a__c_hover-255 ${on ? "" : "background-0-black--255"} ${on ? "color-0-yellow--255" : "color-0-azure--255"}`}`"#
+    )]
+    #[case(
+        "css(yellow, ext ?? azure)",
+        r#"`${ext != null ? typeof ext === "string" ? ext : "" : ""} ${`color-0-red-_a__c_hover-255 ${ext != null ? "" : "background-0-black--255"} ${ext != null ? "color-0-yellow--255" : "color-0-azure--255"}`}`"#
+    )]
+    #[case(
+        "css(yellow, null ?? azure)",
+        r#""color-0-red-_a__c_hover-255 background-0-black--255 color-0-azure--255""#
+    )]
+    #[case(
+        "css(yellow, false ?? azure)",
+        r#""color-0-red-_a__c_hover-255 color-0-yellow--255""#
+    )]
+    #[case(
+        "css(azure || yellow)",
+        r#""background-0-black--255 color-0-azure--255""#
+    )]
+    #[case(
+        "css(yellow, on || 'plain')",
+        r#"`color-0-red-_a__c_hover-255 color-0-yellow--255 ${on ? typeof on === "string" ? on : "" : "plain"}`"#
+    )]
+    #[case(
+        "css(yellow, { color: on ? 'a' : 'b', m: [1, 2], styleOrder: 2 })",
+        r#"`color-0-red-_a__c_hover-255 margin-0-4px--2 margin-1-8px--2 ${on ? "color-0-a--2" : "color-0-b--2"}`"#
+    )]
+    #[case(
+        "css(yellow, { color: { a: 'x' }[size], styleOrder: 2 })",
+        r#"`color-0-red-_a__c_hover-255 color-0-yellow--255 ${{ "a": "color-0-x--2" }[size] || ""}`"#
+    )]
+    #[case(
+        "css(yellow, on ? { color: other ? 'a' : 'b' } : null)",
+        r#"`color-0-red-_a__c_hover-255 ${on ? other ? "color-0-a--255" : "color-0-b--255" : "color-0-yellow--255"}`"#
+    )]
+    #[case(
+        "css(yellow, fade)",
+        r#""k-525370705245237976 color-0-red-_a__c_hover-255 color-0-yellow--255""#
+    )]
+    #[case(
+        "css(yellow, { color: ['x', 'y'][idx], styleOrder: 2 })",
+        "`color-0-red-_a__c_hover-255 color-0-yellow--255 ${{\n\t\"0\": \"color-0-x--2\",\n\t\"1\": \"color-0-y--2\"\n}[idx] || \"\"}`"
+    )]
+    #[case(
+        "css(yellow, { color: 'pink' } || azure)",
+        r#""color-0-red-_a__c_hover-255 color-0-pink--255""#
+    )]
+    #[case(
+        "css(yellow, undefined ?? azure)",
+        r#""color-0-red-_a__c_hover-255 background-0-black--255 color-0-azure--255""#
+    )]
+    #[case(
+        "css(yellow, false ?? azure)",
+        r#""color-0-red-_a__c_hover-255 color-0-yellow--255""#
+    )]
+    #[serial]
+    fn test_css_composes_known_classes(#[case] call: &str, #[case] expected: &str) {
+        let code = readable_code(&format!(
+            "import {{css, keyframes}} from '@devup-ui/core'
+const yellow = css({{ color: 'yellow', _hover: {{ color: 'red' }} }})
+const azure = css({{ color: 'azure', bg: 'black' }})
+const wide = css({{ color: ['a1', 'b1'] }})
+const ordered = css({{ color: 'navy', styleOrder: 3 }})
+const heading = css({{ typography: 'heading' }})
+const body = css({{ typography: 'body' }})
+const chained = css(yellow, azure)
+const fade = keyframes({{ from: {{ opacity: 0 }} }})
+export const result = {call}
+"
+        ));
+        assert!(
+            code.contains(&format!("export const result = {expected}")),
+            "{code}"
+        );
+    }
+
+    #[test]
+    #[serial]
+    fn test_styled_extension_composes_base() {
+        let code = readable_code(
+            "import {styled} from '@devup-ui/core'
+const Base = styled.button`color: red; background: white; &:hover { color: red; }`
+const Ext = styled(Base)`color: blue; &:hover { color: blue; }`
+const Obj = styled.div({ color: 'red', p: 2 })
+const ObjExt = styled(Obj)({ color: 'blue' })
+const Twice = styled(ObjExt, { m: 1 })
+const Runtime = styled(make())({ color: 'red' })
+const FromRuntime = styled(Runtime)({ color: 'blue' })
+let Changing = styled.div({ color: 'red' })
+const FromChanging = styled(Changing)({ color: 'blue' })
+const Ordered = styled.div({ color: 'red', styleOrder: 3 })",
+        );
+        for expected in [
+            "const Ext = __devupForwardRef((__devupRefProps, __devupRef) => (({ style, className, as: DevupAs = \"button\", forwardedAs, ...rest }) => <DevupAs {...(({ \"theme\": __devupOmit0, ...__devupDom }) => __devupDom)(rest)} as={forwardedAs} className={[\"color-0-blue-_a__c_hover-255 color-0-blue--255 background-0-white--255\", className]",
+            "const ObjExt = __devupForwardRef((__devupRefProps, __devupRef) => (({ style, className, as: DevupAs = \"div\", forwardedAs, ...rest }) => <DevupAs {...(({ \"theme\": __devupOmit0, ...__devupDom }) => __devupDom)(rest)} as={forwardedAs} className={[\"color-0-blue--255 padding-0-8px--255\", className]",
+            "const Twice = __devupForwardRef((__devupRefProps, __devupRef) => (({ style, className, as: DevupAs = \"div\", forwardedAs, ...rest }) => <DevupAs {...(({ \"theme\": __devupOmit0, ...__devupDom }) => __devupDom)(rest)} as={forwardedAs} className={[\"margin-0-4px--255 color-0-blue--255 padding-0-8px--255\", className]",
+            "const FromRuntime = __devupForwardRef((__devupRefProps, __devupRef) => (({ style, className, as: DevupAs = Runtime, forwardedAs, ...rest }) => <DevupAs {...rest}",
+            "const FromChanging = __devupForwardRef((__devupRefProps, __devupRef) => (({ style, className, as: DevupAs = Changing, forwardedAs, ...rest }) => <DevupAs {...rest}",
+            "const Ordered = __devupForwardRef((__devupRefProps, __devupRef) => (({ style, className, as: DevupAs = \"div\", forwardedAs, ...rest }) => <DevupAs {...(({ \"theme\": __devupOmit0, ...__devupDom }) => __devupDom)(rest)} as={forwardedAs} className={[\"color-0-red--3\", className]",
+        ] {
+            assert!(code.contains(expected), "{expected}\n{code}");
+        }
+    }
+
+    // `withComponent` renders the same styles as another tag or component, and
+    // `as` changes what a styled component renders while `forwardedAs` passes on
+    #[test]
+    #[serial]
+    fn test_styled_with_component_and_as() {
+        let code = readable_code(
+            "import {styled} from '@devup-ui/core'
+const Section = styled.section.attrs({ role: 'region' })({ color: 'red' })
+export const Aside = Section.withComponent('aside')
+export const Linked = Section.withComponent(Link)
+export const Nested = Section.withComponent(motion.div)
+export const Again = Aside.withComponent('nav')
+export const Kept = Section.withComponent(make())
+export const Other = other.withComponent('aside')
+export const a = <Section as=\"a\" forwardedAs=\"b\" />",
+        );
+        for expected in [
+            "export const Aside = __devupForwardRef((__devupRefProps, __devupRef) => ((__devupProps) => (({ style, className, as: DevupAs = \"aside\", forwardedAs, ...rest }) => <DevupAs {...(({ \"theme\": __devupOmit0, ...__devupDom }) => __devupDom)(rest)} as={forwardedAs} className={[\"color-0-red--255\", className]",
+            "as: DevupAs = Link,",
+            "as: DevupAs = motion.div,",
+            "export const Again = __devupForwardRef((__devupRefProps, __devupRef) => ((__devupProps) => (({ style, className, as: DevupAs = \"nav\",",
+            "export const Kept = Section.withComponent(make());",
+            "export const Other = other.withComponent(\"aside\");",
+            "...{ role: \"region\" }",
+            "<Section as=\"a\" forwardedAs=\"b\" />",
+        ] {
+            assert!(code.contains(expected), "{expected}\n{code}");
+        }
+    }
+
+    // A styled component keeps the props its styles read, `$` props and `theme`
+    // away from the tag, follows `shouldForwardProp` as the build evaluates it,
+    // and an element using it drops what it neither reads nor passes on
+    #[test]
+    #[serial]
+    fn test_styled_prop_forwarding() {
+        let code = readable_code(
+            "import {styled} from '@devup-ui/core'
+import isPropValid from '@emotion/is-prop-valid'
+const A = styled('h1', { shouldForwardProp: (prop) => prop !== 'tone' })({ color: 'red' })
+const B = styled.div`color: ${(p) => p.$c}; background: ${(p) => p.tone};`
+const C = styled.div.withConfig({ shouldForwardProp: (prop, valid) => valid(prop) && !['x', 'y'].includes(prop) })({ color: 'red' })
+const D = styled('p', { shouldForwardProp: (prop) => isPropValid(prop) || prop.startsWith('data-') })({ color: 'red' })
+const E = styled('p', { shouldForwardProp: () => true })({ color: 'red' })
+const F = styled(Link)`color: ${(p) => p.$c};`
+const G = styled('p', { shouldForwardProp: function (prop) { return prop === 'id' } })({ color: 'red' })
+const H = styled.div`color: ${function (p) { return p.c }};`
+const I = styled.div`color: ${({ tone, ...more }) => tone};`
+const J = styled.div`color: ${(p) => p[key]}; margin: ${([a]) => a}; padding: ${() => 1};`
+const K = styled(A, { shouldForwardProp: (prop) => 'id' === prop || prop === 'title' })({ color: 'blue' })
+const L = styled.div.withConfig(config)`color: ${(p) => { return p.level }}; margin: ${({ [k]: v }) => v};`
+const M = styled('p', { shouldForwardProp: (prop) => { return prop === 'id' } })({ color: 'red' })
+export const a = <A tone=\"loud\" invalidThing=\"x\" data-ok=\"yes\" />
+export const b = <B tone=\"x\" $c=\"red\" theme={{}} aria-label=\"ok\" junk=\"j\" {...rest} />
+export const j = <J junk=\"j\" />
+export const f = <F junk=\"j\" xlink:href=\"#a\" />
+export const k = <K title=\"t\" tone=\"x\" />",
+        );
+        for expected in [
+            "{...(({ \"tone\": __devupOmit0, ...__devupDom }) => __devupDom)(rest)}",
+            "{...(({ \"$c\": __devupOmit0, \"tone\": __devupOmit1, \"theme\": __devupOmit2, ...__devupDom }) => __devupDom)(rest)}",
+            "{...(({ \"x\": __devupOmit0, \"y\": __devupOmit1, \"theme\": __devupOmit2, ...__devupDom }) => __devupDom)(rest)}",
+            "{...(({ \"$c\": __devupOmit0, ...__devupDom }) => __devupDom)(rest)}",
+            "export const a = <A invalidThing=\"x\" data-ok=\"yes\" />",
+            "export const b = <B tone=\"x\" $c=\"red\" aria-label=\"ok\" {...rest} />",
+            "export const j = <J junk=\"j\" />",
+            "export const f = <F junk=\"j\" xlink:href=\"#a\" />",
+            "export const k = <K title=\"t\" />",
+            "{...(({ \"level\": __devupOmit0, \"theme\": __devupOmit1, ...__devupDom }) => __devupDom)(rest)}",
+        ] {
+            assert!(code.contains(expected), "{expected}\n{code}");
+        }
+        let error = readable_code(
+            "import {styled} from '@devup-ui/core'
+const A = styled('h1', { shouldForwardProp: (prop) => allowed.has(prop) })({ color: 'red' })
+const B = styled('h1', { shouldForwardProp: (prop) => prop === other })({ color: 'red' })
+const C = styled('h1', { shouldForwardProp: (prop) => prop > 'a' })({ color: 'red' })
+const D = styled('h1', { shouldForwardProp: (prop) => prop ?? 'a' })({ color: 'red' })
+const E = styled('h1', { shouldForwardProp: (prop) => { const x = 1; return x } })({ color: 'red' })
+const F = styled('h1', { shouldForwardProp: check })({ color: 'red' })
+const G = styled('h1', { shouldForwardProp: ({ a }) => a })({ color: 'red' })
+const H = styled('h1', { shouldForwardProp: (prop) => [x].includes(prop) })({ color: 'red' })
+const I = styled('h1', { shouldForwardProp: (prop) => list.includes(prop) })({ color: 'red' })
+const J = styled('h1', { shouldForwardProp: (prop) => prop.endsWith('a') })({ color: 'red' })
+const K = styled('h1', { [k]: 1, ...o, shouldForwardProp: (prop) => valid(prop, 1) })({ color: 'red' })
+const L = styled('h1', { shouldForwardProp: (prop) => prop === 'a' ?? prop === 'b' })({ color: 'red' })
+const M = styled('h1', { shouldForwardProp: (prop) => x === y })({ color: 'red' })
+const N = styled('h1', { shouldForwardProp: (prop) => { prop === 'a' } })({ color: 'red' })",
+        );
+        assert!(
+            error.contains("`shouldForwardProp` must be a function"),
+            "{error}"
+        );
+        assert!(error.contains("allowed.has(prop)"), "{error}");
+    }
+
+    #[test]
+    #[serial]
+    fn test_styled_attrs_merge_in_order() {
+        let code = readable_code(
+            "import {styled} from '@devup-ui/core'
+const Base = styled.input.attrs({ type: 'text', title: 'base' })({ color: 'red' })
+const Ext = styled(Base).attrs({ type: 'password' })({ color: 'blue' })
+const X = styled.div.attrs({ className: 'from-attrs', style: { color: 'green' } })({ color: 'red' })
+const F = styled.div.attrs((p) => ({ id: p.id }))({ color: 'red' })
+const V = styled.div.attrs(extra)({ color: 'red' })",
+        );
+        for expected in [
+            "...{\n\t\t...__devupProps,\n\t\t...{\n\t\t\ttype: \"text\",\n\t\t\ttitle: \"base\"\n\t\t}\n\t},\n\t...{ type: \"password\" }",
+            "className: [__devupContext.className, __devupAttrs.className].filter(Boolean).join(\" \") || undefined",
+            "className: [__devupContext.className, __devupProps.className].filter(Boolean).join(\" \") || undefined",
+            "...__devupContext.style,\n\t\t...__devupAttrs.style",
+            "((p) => ({ id: p.id }))(__devupContext)",
+            "typeof extra === \"function\" ? extra(__devupContext) : extra",
+        ] {
+            assert!(code.contains(expected), "{expected}\n{code}");
+        }
+    }
+
+    #[rstest]
+    #[case(
+        "<Box className=\"direct\" style={{ opacity: 1 }} {...{ className: 'spread', style: { opacity: 2 } }} />",
+        "className=\"spread\" style={{ opacity: 2 }}"
+    )]
+    #[case(
+        "<Box {...{ className: 'spread', style: { opacity: 2 } }} className=\"direct\" style={{ opacity: 1 }} />",
+        "className=\"direct\" style={{ opacity: 1 }}"
+    )]
+    #[case(
+        "<Box className=\"direct\" style={{ opacity: 1 }} {...rest} />",
+        "className={(\"className\" in Object(rest) ? rest.className : \"direct\") || \"\"} style={\"style\" in Object(rest) ? rest.style : { opacity: 1 }}"
+    )]
+    #[case(
+        "<Box className=\"direct\" {...{ title: 'x' }} {...{ ...rest, className: 'last' }} />",
+        "className=\"last\""
+    )]
+    #[case(
+        "<Box className=\"direct\" {...{ className: 'first', ...rest }} />",
+        "className={{\n\tclassName: \"first\",\n\t...rest\n}.className || \"\"}"
+    )]
+    #[case(
+        "<Box className=<i /> color=\"red\" />",
+        "<div className=\"color-0-red--255\" />"
+    )]
+    #[case(
+        "<Box {...rest} {...more} />",
+        "className={(\"className\" in Object(more) ? more.className : rest?.className) || \"\"}"
+    )]
+    #[serial]
+    fn test_jsx_props_written_later_win(#[case] element: &str, #[case] expected: &str) {
+        let code = readable_code(&format!(
+            "import {{Box}} from '@devup-ui/core'
+export const a = {element}"
+        ));
+        assert!(code.contains(expected), "{expected}\n{code}");
+    }
+
+    #[test]
+    #[serial]
+    fn test_css_composing_reports_runtime_values() {
+        let code = readable_code(
+            "import {css} from '@devup-ui/core'
+const base = css({ color: 'red' })
+export const a = css(base, { color: tone })
+export const b = css(base, { [key]: 'x', styleOrder: 2 })
+export const c = css(base, getStyles())
+export const d = css(base, { positioning: side, styleOrder: 2 })",
+        );
+        assert!(!code.contains("test.tsx:6:"), "{code}");
+        assert!(code.contains("`css()` cannot use `tone`"), "{code}");
+        assert!(
+            code.contains("Cannot compose `\"color-0-red--255\", getStyles()`"),
+            "{code}"
+        );
+    }
+
+    // The styles of a `css()` class another module exports compose as well
+    #[test]
+    #[serial]
+    fn test_css_composes_imported_classes() {
+        reset_class_map();
+        reset_file_map();
+        let modules: &[(&str, &str)] = &[(
+            "/src/styles.ts",
+            "import { css, keyframes } from '@devup-ui/react';
+import * as Devup from '@devup-ui/react';
+const brand = 'teal';
+export const base = css({ color: brand, _hover: { color: 'red' } });
+export const danger = css({ color: 'crimson' });
+export const twice = css({ color: 'a' }, { m: 1 });
+export const text = css`color: blue;`;
+export const runtime = css({ color: globalThis.tone });
+export const listed = css([{ color: 'b' }]);
+export const spaced = Devup.css({ color: 'c' });
+export const fade = keyframes({ from: { opacity: 0 } });
+export const called = Devup({ color: 'e' });
+export const ordered = css({ color: 'f', m: 2, styleOrder: 2 });",
+        )];
+        let resolver = memory_resolver(modules);
+        css::debug::set_debug(true);
+        let output = extract_with_modules(
+            "/src/App.tsx",
+            "import { css } from '@devup-ui/react';
+import { base, danger, twice, text, runtime, listed, spaced, fade, called, ordered } from './styles';
+export const a = css(base, danger);
+export const b = css(danger, base, { m: 1 });
+export const c = css(twice, text, runtime, listed, spaced, fade);
+export const d = css(ordered, danger, called);",
+            ExtractOption {
+                import_aliases: HashMap::from([(
+                    "@emotion/css".to_string(),
+                    ImportAlias::NamedToNamed,
+                )]),
+                ..ExtractOption::default()
+            },
+            false,
+            &resolver,
+        )
+        .unwrap();
+        css::debug::set_debug(false);
+        for expected in [
+            r#"export const a = "color-0-red-_a__c_hover-255-a color-0-crimson--255-a";"#,
+            r#"export const b = "color-0-red-_a__c_hover-255-a color-0-teal--255-a margin-0-4px--255-a";"#,
+            "export const c = `${twice} ${text} ${runtime} ${listed} ${spaced} ${fade}`;",
+            "export const d = `margin-0-8px--2-a color-0-crimson--255-a ${called}`;",
+        ] {
+            assert!(
+                output.code.contains(expected),
+                "{expected} in {}",
+                output.code
+            );
+        }
+    }
+
     // Each Tailwind class becomes the classes of its styles; every other class,
     // and every class that runs into an interpolation, stays as written
     #[rstest]
@@ -20835,5 +21295,321 @@ export const App = () => <Global {...rest} styles={{ body: { margin: '0px' } }} 
             )
             .unwrap()
         ));
+    }
+
+    fn emotion_option() -> ExtractOption {
+        ExtractOption {
+            package: "@devup-ui/react".to_string(),
+            css_dir: "@devup-ui/react".to_string(),
+            single_css: true,
+            import_main_css: false,
+            import_aliases: HashMap::from([
+                ("@emotion/react".to_string(), ImportAlias::NamedToNamed),
+                (
+                    "@emotion/styled".to_string(),
+                    ImportAlias::DefaultToNamed("styled".to_string()),
+                ),
+            ]),
+        }
+    }
+
+    fn emotion_outputs(files: &[(&str, &str)]) -> Vec<(String, ToBTreeSet)> {
+        files
+            .iter()
+            .map(|(filename, code)| {
+                reset_class_map();
+                reset_file_map();
+                (
+                    (*code).to_string(),
+                    ToBTreeSet::from(extract(filename, code, emotion_option()).unwrap()),
+                )
+            })
+            .collect()
+    }
+
+    #[test]
+    #[serial]
+    fn test_emotion_css_prop_in_every_form() {
+        assert_debug_snapshot!(emotion_outputs(&[
+            (
+                "test.tsx",
+                "export const App = () => <div css={{ color: 'red', padding: 8 }} />;"
+            ),
+            (
+                "test.tsx",
+                "export const App = ({ danger }) => <div css={[{ color: 'green' }, danger && { color: 'red' }]} />;"
+            ),
+            (
+                "test.tsx",
+                "export const App = ({ active }) => <div css={active ? { color: 'red' } : { color: 'blue' }} />;"
+            ),
+            (
+                "test.tsx",
+                "import { css } from '@emotion/react';\nconst style = css`color: red;`;\nexport const App = () => <div css={style} />;"
+            ),
+            (
+                "test.tsx",
+                "/** @jsxImportSource @emotion/react */\nexport const App = () => <div css={{ color: 'red' }} />;"
+            ),
+            (
+                "test.ts",
+                "import { jsx } from '@emotion/react';\nexport const App = () => jsx('div', { css: { color: 'red' } });"
+            ),
+            (
+                "test.ts",
+                "import { jsx as _jsx } from '@emotion/react/jsx-runtime';\nexport const App = () => _jsx('div', { css: { color: 'red' } });"
+            ),
+            (
+                "test.ts",
+                "import { jsxs as _jsxs } from '@emotion/react/jsx-runtime';\nexport const App = () => _jsxs('div', { css: { color: 'red' }, children: ['a', 'b'] });"
+            ),
+            (
+                "test.ts",
+                "import { jsxDEV as _jsxDEV } from '@emotion/react/jsx-dev-runtime';\nexport const App = () => _jsxDEV('div', { css: { padding: 4 } }, void 0, false);"
+            ),
+            (
+                "test.tsx",
+                "/** @jsx jsx */\nimport { jsx } from '@emotion/react';\nexport const App = () => <div css={{ color: 'red' }} />;"
+            ),
+            (
+                "test.tsx",
+                "export const App = () => <div css={(theme) => ({ color: theme.colors.primary, padding: 8 })} />;"
+            ),
+            (
+                "test.tsx",
+                "export const App = () => <div css={({ colors }) => { return { color: colors.text }; }} />;"
+            ),
+            (
+                "test.tsx",
+                "import { css } from '@emotion/react';\nconst override = css({ color: 'blue' });\nexport const App = () => <div css={{ color: 'red', margin: 0 }} className={override + ' external'} />;"
+            ),
+            (
+                "test.tsx",
+                "import { css } from '@emotion/react';\nconst override = css({ color: 'blue' });\nexport const App = () => <div css={{ color: 'red', margin: 0 }} className={`${override} external`} />;"
+            ),
+            (
+                "test.tsx",
+                "import { css } from '@emotion/react';\nconst base = css({ color: 'blue', margin: 0 });\nexport const App = ({ cls }) => <><div css={[base, { color: 'red' }]} /><div css={css`${base}; color: red;`} /><div css={css({ color: 'red' }, cond && { color: 'blue' })} /><div css={[cls, { color: 'red' }]} /></>;"
+            ),
+            (
+                "test.tsx",
+                "export const App = ({ c, w }) => <div css={{ color: c, width: w }} style={{ opacity: 1 }} className=\"x\" />;"
+            ),
+            (
+                "test.tsx",
+                "export const App = ({ c }) => <><div css=\"color: red; padding: 4px\" /><div css={`color: ${c};`} /><div css /><div css={null} /><div css={undefined} /><div css={{}} /><div css={''} /><div css={} /></>;"
+            ),
+            (
+                "test.tsx",
+                "const base = { color: 'red', padding: 4 };\nexport const App = () => <div css={base} />;"
+            ),
+            (
+                "test.tsx",
+                "const SPACE = 4;\nconst base = { padding: 4, lineHeight: 1.5, '&:hover': { margin: 2 } };\nexport const App = () => <div css={[base, { margin: SPACE, width: f({ size: 4 }) }]} />;"
+            ),
+            (
+                "test.tsx",
+                "export const App = ({ cls, s }) => <><div css={cls || { color: 'red' }} /><div css={s ?? { color: 'blue' }} /><div className=<b /> css={{ color: 'red' }} /><div className css={{ margin: 1 }} /></>;"
+            ),
+            (
+                "test.ts",
+                "import { jsx as _jsx } from '@emotion/react/jsx-runtime';\nconst base = { padding: 2 };\nconst SPACE = 3;\nexport const App = ({ c, s }) => [_jsx('div', { id: 1 }), _jsx('div', { style: s, css: [base, { margin: SPACE, color: c }] })];"
+            ),
+        ]));
+    }
+
+    #[test]
+    #[serial]
+    fn test_emotion_css_prop_on_every_element() {
+        assert_debug_snapshot!(emotion_outputs(&[
+            (
+                "test.tsx",
+                "const Custom = ({ className }) => <div className={className} />;\nexport const App = () => <Custom css={{ color: 'red' }} />;"
+            ),
+            ("test.tsx", "export const a = { css: 1 };"),
+            (
+                "test.tsx",
+                "import styled from '@emotion/styled';\nconst Custom = ({ className }) => <div className={className} />;\nexport const App = () => <><Custom css={{ color: 'red', padding: 8 }} className=\"x\" /><a.b css={{ margin: 1 }} /><svg:use css={{ margin: 2 }} /></>;"
+            ),
+            (
+                "test.tsx",
+                "import { Box } from '@devup-ui/react';\nexport const App = () => <><Box color=\"blue\" p={2} css={{ color: 'red', padding: 8 }} /><Custom css={{ color: 'red' }} /></>;"
+            ),
+            (
+                "test.tsx",
+                "import styled from '@emotion/styled';\nconst Button = styled.button({ color: 'blue', margin: 1 });\nexport const App = ({ f, rest, cls }) => <><Button css={{ color: 'red' }} onClick={f} /><Button {...rest} css={{ padding: 2 }} /><Button {...rest} css={[cls, { top: 1 }]} /></>;"
+            ),
+            (
+                "test.tsx",
+                "import styled from '@emotion/styled';\nconst Wide = styled.div({ margin: [1, 2] });\nconst Toggle = styled.div({ color: on ? 'red' : 'blue' });\nexport const App = ({ rest, c }) => <><Wide css={{ color: 'red' }} /><Toggle css={{ margin: 3 }} /><Wide {...rest} css={[c && { top: 1 }]} /></>;"
+            ),
+            (
+                "test.tsx",
+                "import { Global } from '@emotion/react';\nexport const App = () => <Global css={{ color: 'red' }} styles={{ body: { margin: 0 } }} />;"
+            ),
+            (
+                "test.tsx",
+                "export const App = ({ rest, cls }) => <><div {...rest} css={{ color: 'red' }} /><div className={cls} {...rest} css={{ color: 'red' }} style={{ opacity: 1 }} /></>;"
+            ),
+            (
+                "test.ts",
+                "import { jsx as _jsx } from 'react/jsx-runtime';\nexport const App = () => [_jsx('div', { css: { color: 'red' } }), _jsx(Custom, { css: { color: 'red' } })];"
+            ),
+            (
+                "test.ts",
+                "import styled from '@emotion/styled';\nimport { Box } from '@devup-ui/react';\nimport { jsx as _jsx } from '@emotion/react/jsx-runtime';\nconst Button = styled.button({ color: 'blue' });\nexport const App = (props) => [_jsx(Custom, { className: 'x', css: { color: 'red' } }), _jsx(Box, { p: 1, css: { padding: 4 } }), _jsx(Button, { css: { color: 'red' } }), _jsx(Button, { ...props, css: { margin: 1 } }), _jsx(Button, { as: 'a', css: { margin: 2 } }), _jsx(Button, { [k]: 1, css: { padding: 3 } }), _jsx('div', props), _jsx('div', { ['css']: { color: 'red' }, id: 'x' })];"
+            ),
+        ]));
+    }
+
+    #[test]
+    #[serial]
+    fn test_emotion_css_prop_where_the_project_builds_jsx_with_emotion() {
+        let mut option = emotion_option();
+        option.import_aliases.insert(
+            "@emotion/react/jsx-runtime".to_string(),
+            ImportAlias::NamedToNamed,
+        );
+        reset_class_map();
+        reset_file_map();
+        let output = extract(
+            "test.tsx",
+            "const Custom = ({ className }) => <div className={className} />;\nexport const App = () => <Custom css={{ color: 'red', padding: 2 }} />;",
+            option.clone(),
+        )
+        .unwrap();
+        assert_debug_snapshot!(ToBTreeSet::from(output));
+
+        reset_class_map();
+        reset_file_map();
+        let plain = extract(
+            "test.tsx",
+            "export const App = () => <div />;",
+            option.clone(),
+        )
+        .unwrap();
+        assert_eq!(
+            plain.code,
+            "/** @jsxImportSource react */\nexport const App = () => <div />;\n"
+        );
+
+        reset_class_map();
+        reset_file_map();
+        let error = extract(
+            "test.tsx",
+            "import { css } from '@emotion/react';\nexport const App = () => <div css={getStyles()} />;",
+            option,
+        )
+        .err()
+        .map(|error| error.to_string())
+        .unwrap_or_default();
+        assert!(error.starts_with("test.tsx:2:36: "), "{error}");
+    }
+
+    #[test]
+    #[serial]
+    fn test_emotion_css_prop_reports_what_it_cannot_compile() {
+        let errors: Vec<String> = [
+            "export const App = () => { const s = { color: 'red' }; return <div css={[s.a]} />; };",
+            "export const App = () => <div css={getStyles()} />;",
+            "export const App = () => <div css={(t) => ({ margin: t.spacing(2) })} />;",
+            "export const App = () => <div css={(t) => { const a = 1; return {}; }} />;",
+            "import { css } from '@emotion/react';\nconst base = css({ color: 'red' });\nexport const App = () => <div css={css`&:hover { ${base}; }`} />;",
+            "export const App = ({ base }) => <div css={`${base}; color: red;`} />;",
+            "import styled from '@emotion/styled';\nconst Button = styled.button({ color: 'blue' });\nexport const App = (p) => <Button {...p} css={{ color: 'red' }} />;",
+            "import { jsx as _jsx } from '@emotion/react/jsx-runtime';\nimport styled from '@emotion/styled';\nconst Button = styled.button({ color: 'blue' });\nexport const App = (p) => _jsx(Button, { ...p, css: { color: 'red' } });",
+            "export const App = ({ key }) => <div css={{ [key]: 'red' }} />;",
+            "let s = { color: 'red' };\ns = { color: 'blue' };\nexport const App = () => <div css={s} />;",
+            "export const App = () => <><div css={<a />} /><div css=<b /> /><div css=<></> /></>;",
+            "import { css } from '@emotion/react';\nexport const App = ({ parts }) => <div css={css(...parts)} />;",
+            "export const App = () => { const s = { color: 'red' }; return <div css={s[0]} />; };",
+            "import { s } from './x';\nexport const App = () => <div css={s} />;",
+            "const s = { color: 'red' };\ns.color = 'blue';\nexport const App = () => <div css={[s]} />;",
+            "import styled from '@emotion/styled';\nconst Button = styled.button({ color: 'blue' });\nexport const App = ({ rest, k }) => <Button {...rest} css={{ top: { a: 1, b: 2 }[k] }} />;",
+        ]
+        .iter()
+        .map(|code| {
+            reset_class_map();
+            reset_file_map();
+            extract("test.tsx", code, emotion_option())
+                .err()
+                .map(|error| error.to_string())
+                .unwrap_or_default()
+        })
+        .collect();
+        assert_debug_snapshot!(errors);
+    }
+
+    #[test]
+    #[serial]
+    fn test_emotion_class_names_in_every_form() {
+        let import = "import { ClassNames } from '@emotion/react';\n";
+        let codes = [
+            "export const App = () => <ClassNames>{({ css, cx, theme }) => <div className={cx(css({ color: theme.color, padding: 8 }), 'external')} />}</ClassNames>;",
+            "export const App = ({ on }) => <ClassNames>{({ css, cx }) => <div className={cx(css({ color: 'red' }), on && css`color: blue;`, { picked: on, [on]: true }, [null, 'b'])} />}</ClassNames>;",
+            "export const App = ({ on }) => <ClassNames>{function ({ css: c }) { return <a className={c('color: red;', on ? { color: 'blue' } : c({ color: 'green' }))} />; }}</ClassNames>;",
+            "const mixin = { margin: 4 };\nexport const App = () => <section><ClassNames>{({ css }) => <p className={css`${mixin}; color: red;`} />}</ClassNames></section>;",
+            "export const App = () => <ClassNames>{() => <hr />}</ClassNames>;",
+            "export const App = (p) => <ClassNames>{({ cx }) => <b onClick={() => p.on()} title={String.raw`t`} id={String(1)} className={cx(p.className, cx('a'), p.on ? { x: p.on } : 'y', p.a || { z: p.b }, p.c ? cx('k') : null, p.d && cx())} />}</ClassNames>;",
+            "const tone = 'red';\nconst gap = 3;\nexport const App = () => <ClassNames>{({ css }) => <i className={css({ color: tone, padding: gap, margin: 2 })} />}</ClassNames>;",
+        ];
+        let outputs: Vec<String> = codes
+            .iter()
+            .map(|code| {
+                reset_class_map();
+                reset_file_map();
+                let output =
+                    extract("test.tsx", &format!("{import}{code}"), emotion_option()).unwrap();
+                format!("{}\n{:?}", output.code, output.styles)
+            })
+            .collect();
+        assert_debug_snapshot!(outputs);
+    }
+
+    #[test]
+    #[serial]
+    fn test_emotion_class_names_reports_what_it_cannot_compile() {
+        let import = "import { ClassNames } from '@emotion/react';\n";
+        let errors: Vec<String> = [
+            "export const App = () => <ClassNames>{render}</ClassNames>;",
+            "export const App = () => <ClassNames>{() => <a />}{() => <b />}</ClassNames>;",
+            "export const App = () => <ClassNames />;",
+            "export const App = () => <ClassNames>{}</ClassNames>;",
+            "export const App = () => <ClassNames>text</ClassNames>;",
+            "export const App = () => <ClassNames key=\"a\">{() => <a />}</ClassNames>;",
+            "export const App = () => <ClassNames>{(content) => <a />}</ClassNames>;",
+            "export const App = () => <ClassNames>{({ css, ...rest }) => <a />}</ClassNames>;",
+            "export const App = () => <ClassNames>{({ css = f }) => <a />}</ClassNames>;",
+            "export const App = () => <ClassNames>{({ other }) => <a />}</ClassNames>;",
+            "export const App = () => <ClassNames>{({ [k]: css }) => <a />}</ClassNames>;",
+            "export const App = () => <ClassNames>{({ css }, more) => <a />}</ClassNames>;",
+            "export const App = () => <ClassNames>{(...content) => <a />}</ClassNames>;",
+            "export const App = () => <ClassNames>{({ css: { a } }) => <a />}</ClassNames>;",
+            "export const App = () => <ClassNames>{async ({ css }) => <a />}</ClassNames>;",
+            "export const App = () => <ClassNames>{function* ({ css }) { yield <a />; }}</ClassNames>;",
+            "export const App = () => <ClassNames>{({ css }) => { const a = 1; return <a />; }}</ClassNames>;",
+            "export const App = () => <ClassNames>{({ theme }) => <a title={theme.name} />}</ClassNames>;",
+            "export const App = () => <ClassNames>{({ css, theme }) => <a className={css({ margin: theme.space(2) })} />}</ClassNames>;",
+            "export const App = () => <ClassNames>{({ css }) => <a ref={css} />}</ClassNames>;",
+            "export const App = () => <ClassNames>{({ cx }) => <a className={cx(getClass())} />}</ClassNames>;",
+            "export const App = ({ s }) => <ClassNames>{({ cx }) => <a className={cx({ ...s })} />}</ClassNames>;",
+            "export const App = () => <ClassNames>{({ cx }) => <a className={cx({ get a() { return true; } })} />}</ClassNames>;",
+            "export const App = ({ s }) => <ClassNames>{({ css }) => <a className={css(...s)} />}</ClassNames>;",
+            "export const App = ({ v }) => <ClassNames>{({ css }) => <a className={css`&:hover { ${v}; }`} />}</ClassNames>;",
+            "export const App = ({ v }) => <ClassNames>{({ css }) => <a className={css({ color: v })} />}</ClassNames>;",
+            "export const App = ({ on }) => <ClassNames>{({ css, cx }) => <a className={cx(on && cx(css({ color: 'red' }), 'x'))} />}</ClassNames>;",
+            "export const App = ({ on, off }) => <ClassNames>{({ css, cx }) => <a className={cx(on && cx(off ? css({ color: 'red' }) : null))} />}</ClassNames>;",
+        ]
+        .iter()
+        .map(|code| {
+            reset_class_map();
+            reset_file_map();
+            extract("test.tsx", &format!("{import}{code}"), emotion_option())
+                .err()
+                .map(|error| error.to_string())
+                .unwrap_or_default()
+        })
+        .collect();
+        assert_debug_snapshot!(errors);
     }
 }

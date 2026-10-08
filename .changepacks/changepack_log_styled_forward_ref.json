@@ -1,0 +1,7 @@
+{
+  "changes": {
+    "bindings/devup-ui-wasm/package.json": "Patch"
+  },
+  "note": "Styled components the build generates are wrapped in React's forwardRef, so a ref passed to them reaches the element they render on React 18 as well as React 19; the file imports forwardRef from react when it defines one",
+  "date": "2026-10-01T00:00:00.000Z"
+}
