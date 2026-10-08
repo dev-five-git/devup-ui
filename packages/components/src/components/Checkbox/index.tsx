@@ -29,7 +29,8 @@ export function Checkbox({
   onChange,
   ...props
 }: CheckboxProps) {
-  const generateId = useId()
+  const generatedId = useId()
+  const generateId = props.id ?? generatedId
   const [innerChecked, setInnerChecked] = useState(defaultChecked)
   const finalChecked = checked ?? innerChecked
 

@@ -24,7 +24,7 @@ const children = (
       <SelectOption disabled value="Option 4">
         Option 4
       </SelectOption>
-      <Select type="radio">
+      <Select id="nested" type="radio">
         <SelectTrigger asChild>
           <SelectOption>
             <Flex alignItems="center" justifyContent="space-between" w="100%">
@@ -49,7 +49,7 @@ const children = (
 
 describe('Select', () => {
   it('should render', () => {
-    const { container } = render(<Select>{children}</Select>)
+    const { container } = render(<Select id="select">{children}</Select>)
     expect(container).toMatchSnapshot()
   })
 
@@ -62,7 +62,7 @@ describe('Select', () => {
   it('should require one element when SelectTrigger uses asChild', () => {
     expect(() => {
       render(
-        <Select>
+        <Select id="select">
           <SelectTrigger asChild>Text</SelectTrigger>
         </Select>,
       )
@@ -72,7 +72,7 @@ describe('Select', () => {
   it('should close select when clicking outside', () => {
     const { container } = render(
       <div data-testid="container">
-        <Select>{children}</Select>
+        <Select id="select">{children}</Select>
       </div>,
     )
     const selectToggle = container.querySelector('[aria-label="Select toggle"]')
@@ -88,7 +88,7 @@ describe('Select', () => {
   it('should call onOpenChange function when it is provided', () => {
     const onOpenChange = mock()
     const { container } = render(
-      <Select onOpenChange={onOpenChange} type="radio">
+      <Select id="select" onOpenChange={onOpenChange} type="radio">
         {children}
       </Select>,
     )
@@ -100,7 +100,7 @@ describe('Select', () => {
   it('should call onValueChange function when it is provided', () => {
     const onValueChange = mock()
     const { container } = render(
-      <Select onChange={onValueChange} type="radio">
+      <Select id="select" onChange={onValueChange} type="radio">
         {children}
       </Select>,
     )
@@ -113,7 +113,11 @@ describe('Select', () => {
   })
 
   it('should do nothing when onValueChange is not provided and type is default', () => {
-    const { container } = render(<Select type="default">{children}</Select>)
+    const { container } = render(
+      <Select id="select" type="default">
+        {children}
+      </Select>,
+    )
     const selectToggle = container.querySelector('[aria-label="Select toggle"]')
     fireEvent.click(selectToggle!)
     const option2 = container.querySelector('[data-value="Option 2"]')
@@ -125,7 +129,11 @@ describe('Select', () => {
   })
 
   it('should select option when type is radio and the option should have a check', () => {
-    const { container } = render(<Select type="radio">{children}</Select>)
+    const { container } = render(
+      <Select id="select" type="radio">
+        {children}
+      </Select>,
+    )
     const selectToggle = container.querySelector('[aria-label="Select toggle"]')
     fireEvent.click(selectToggle!)
     const option2 = container.querySelector('[data-value="Option 2"]')
@@ -137,7 +145,11 @@ describe('Select', () => {
   })
 
   it('should have multiple check marks when type is checkbox and multiple options are selected', () => {
-    const { container } = render(<Select type="checkbox">{children}</Select>)
+    const { container } = render(
+      <Select id="select" type="checkbox">
+        {children}
+      </Select>,
+    )
     const selectToggle = container.querySelector('[aria-label="Select toggle"]')
     fireEvent.click(selectToggle!)
     const option2 = container.querySelector('[data-value="Option 2"]')
@@ -151,7 +163,11 @@ describe('Select', () => {
   })
 
   it('should not have a check mark when type is checkbox and the option is not selected', () => {
-    const { container } = render(<Select type="checkbox">{children}</Select>)
+    const { container } = render(
+      <Select id="select" type="checkbox">
+        {children}
+      </Select>,
+    )
     const selectToggle = container.querySelector('[aria-label="Select toggle"]')
     fireEvent.click(selectToggle!)
     const option2 = container.querySelector('[data-value="Option 2"]')
@@ -164,7 +180,7 @@ describe('Select', () => {
   it('should call onClick function when it is provided to SelectOption', () => {
     const onClick = mock()
     const { container } = render(
-      <Select>
+      <Select id="select">
         <SelectTrigger>Select</SelectTrigger>
         <SelectContainer>
           <SelectOption onClick={onClick} value="Option 1">
@@ -186,7 +202,7 @@ describe('Select', () => {
 
   it('should have a check mark when type is radio and defaultValue is provided', () => {
     const { container } = render(
-      <Select defaultValue="Option 2" type="radio">
+      <Select defaultValue="Option 2" id="select" type="radio">
         {children}
       </Select>,
     )
@@ -198,7 +214,11 @@ describe('Select', () => {
   })
 
   it('should not have a check mark when type is radio and defaultValue is not provided', () => {
-    const { container } = render(<Select type="radio">{children}</Select>)
+    const { container } = render(
+      <Select id="select" type="radio">
+        {children}
+      </Select>,
+    )
     const selectToggle = container.querySelector('[aria-label="Select toggle"]')
     fireEvent.click(selectToggle!)
     const selectContainer = container.querySelector(
@@ -209,7 +229,11 @@ describe('Select', () => {
   })
 
   it('should have 10px gap in an option when type is checkbox', () => {
-    const { container } = render(<Select type="checkbox">{children}</Select>)
+    const { container } = render(
+      <Select id="select" type="checkbox">
+        {children}
+      </Select>,
+    )
     const selectToggle = container.querySelector('[aria-label="Select toggle"]')
     fireEvent.click(selectToggle!)
     const option2 = container.querySelector('[data-value="Option 2"]')
@@ -217,7 +241,11 @@ describe('Select', () => {
   })
 
   it('should have 6px gap in an option when type is radio', () => {
-    const { container } = render(<Select type="radio">{children}</Select>)
+    const { container } = render(
+      <Select id="select" type="radio">
+        {children}
+      </Select>,
+    )
     const selectToggle = container.querySelector('[aria-label="Select toggle"]')
     fireEvent.click(selectToggle!)
     const option2 = container.querySelector('[data-value="Option 2"]')
@@ -225,7 +253,11 @@ describe('Select', () => {
   })
 
   it('should have 0 gap in an option when type is default', () => {
-    const { container } = render(<Select type="default">{children}</Select>)
+    const { container } = render(
+      <Select id="select" type="default">
+        {children}
+      </Select>,
+    )
     const selectToggle = container.querySelector('[aria-label="Select toggle"]')
     fireEvent.click(selectToggle!)
     const option2 = container.querySelector('[data-value="Option 2"]')
@@ -237,7 +269,7 @@ describe('Select', () => {
       type: 'no-type',
       children,
     } as unknown as React.ComponentProps<typeof Select>
-    const { container } = render(<Select {...invalidTypeProps} />)
+    const { container } = render(<Select id="select" {...invalidTypeProps} />)
     const selectToggle = container.querySelector('[aria-label="Select toggle"]')
     fireEvent.click(selectToggle!)
     const option2 = container.querySelector('[data-value="Option 2"]')
@@ -255,6 +287,7 @@ describe('Select', () => {
           title: 'purple',
         }}
         data-testid="select"
+        id="select"
       >
         {children}
       </Select>,
@@ -271,7 +304,7 @@ describe('Select', () => {
 
   it('should have disabled check color when type is checkbox and the option is disabled', () => {
     const { container } = render(
-      <Select defaultValue={['Option 1']} type="checkbox">
+      <Select defaultValue={['Option 1']} id="select" type="checkbox">
         <SelectTrigger>Select</SelectTrigger>
         <SelectContainer>
           <SelectOption disabled value="Option 1">
@@ -290,7 +323,7 @@ describe('Select', () => {
 
   it('should show confirm button when type is checkbox and showConfirmButton is true', () => {
     const { container } = render(
-      <Select type="checkbox">
+      <Select id="select" type="checkbox">
         <SelectTrigger>Select</SelectTrigger>
         <SelectContainer showConfirmButton>
           <SelectOption disabled value="Option 1">
@@ -312,7 +345,7 @@ describe('Select', () => {
 
   it('should close select when clicking confirm button', () => {
     const { container } = render(
-      <Select type="checkbox">
+      <Select id="select" type="checkbox">
         <SelectTrigger>Select</SelectTrigger>
         <SelectContainer showConfirmButton>
           <SelectOption value="Option 1">Option 1</SelectOption>
@@ -331,7 +364,7 @@ describe('Select', () => {
 
   it('should not show confirm button when type is checkbox and showConfirmButton is false', () => {
     const { container } = render(
-      <Select type="checkbox">
+      <Select id="select" type="checkbox">
         <SelectTrigger>Select</SelectTrigger>
         <SelectContainer showConfirmButton={false}>
           <SelectOption disabled value="Option 1">
@@ -353,7 +386,7 @@ describe('Select', () => {
 
   it('should render IconCheck when type is checkbox and the option is selected', () => {
     const { container } = render(
-      <Select defaultValue={['Option 2']} type="checkbox">
+      <Select defaultValue={['Option 2']} id="select" type="checkbox">
         {children}
       </Select>,
     )
@@ -365,7 +398,7 @@ describe('Select', () => {
 
   it('should not check the option when type is checkbox and the option is not selected', () => {
     const { container } = render(
-      <Select defaultOpen type="checkbox">
+      <Select defaultOpen id="select" type="checkbox">
         <SelectTrigger>Select</SelectTrigger>
         <SelectContainer showConfirmButton={false}>
           <SelectOption disabled value="Option 1">
@@ -384,6 +417,7 @@ describe('Select', () => {
   it('should render with options properties', () => {
     const { container } = render(
       <Select
+        id="select"
         options={[
           { label: 'Option 1', value: 'Option 1' },
           { value: 'Option 2' },
@@ -402,6 +436,7 @@ describe('Select', () => {
     const onValueChange = mock()
     const { container } = render(
       <Select
+        id="select"
         onChange={onValueChange}
         options={[
           { label: 'Option 1', value: 'Option 1' },
@@ -421,7 +456,7 @@ describe('Select', () => {
 
   it('should render with x and y properties', () => {
     const { container } = render(
-      <Select aria-label="Select">
+      <Select aria-label="Select" id="select">
         <SelectTrigger>Select</SelectTrigger>
         <SelectContainer x={10} y={10}>
           <SelectOption value="Option 1">Option 1</SelectOption>
@@ -433,7 +468,9 @@ describe('Select', () => {
   })
 
   it('should render with overflow screen', () => {
-    const { container, rerender } = render(<Select>{children}</Select>)
+    const { container, rerender } = render(
+      <Select id="select">{children}</Select>,
+    )
 
     // open selectContainer
     const selectToggle = container.querySelector('[aria-label="Select toggle"]')
@@ -450,7 +487,7 @@ describe('Select', () => {
     Object.defineProperty(selectContainer, 'offsetWidth', { value: 1100 })
 
     // rerender
-    rerender(<Select>{children}</Select>)
+    rerender(<Select id="select">{children}</Select>)
 
     expect(container).toMatchSnapshot()
   })
@@ -458,7 +495,7 @@ describe('Select', () => {
   it('should change value when clicking on SelectOption without value prop', () => {
     const onChange = mock()
     const { container } = render(
-      <Select className="test" onChange={onChange}>
+      <Select className="test" id="select" onChange={onChange}>
         <SelectTrigger>Select</SelectTrigger>
         <SelectContainer>
           <SelectOption>Option 1</SelectOption>
@@ -476,7 +513,7 @@ describe('Select', () => {
   it('should render with typography prop', () => {
     const onChange = mock()
     const { container } = render(
-      <Select onChange={onChange} typography="body1">
+      <Select id="select" onChange={onChange} typography="body1">
         <SelectTrigger>Select</SelectTrigger>
         <SelectContainer>
           <SelectOption>Option 1</SelectOption>
@@ -484,5 +521,104 @@ describe('Select', () => {
       </Select>,
     )
     expect(container).toMatchSnapshot()
+  })
+  it('is a listbox operated by keyboard', () => {
+    const onChange = mock()
+    const { container, getByRole, getAllByRole } = render(
+      <Select id="kbd" onChange={onChange} type="radio">
+        <SelectTrigger>Select</SelectTrigger>
+        <SelectContainer>
+          <SelectOption value="a">a</SelectOption>
+          <SelectOption disabled value="b">
+            b
+          </SelectOption>
+          <SelectOption value="c">c</SelectOption>
+        </SelectContainer>
+      </Select>,
+    )
+    const trigger = container.querySelector<HTMLElement>(
+      '[aria-haspopup=listbox]',
+    )!
+    expect(trigger).toHaveAttribute('aria-controls', 'kbd-listbox')
+    fireEvent.keyDown(trigger, { key: 'Tab' })
+    expect(trigger).toHaveAttribute('aria-expanded', 'false')
+    fireEvent.keyDown(trigger, { key: 'ArrowDown' })
+    expect(getByRole('listbox')).toHaveAttribute('id', 'kbd-listbox')
+    fireEvent.keyDown(trigger, { key: 'ArrowDown' })
+    const [a, b, c] = getAllByRole('option')
+    expect(document.activeElement).toBe(a)
+    expect(b).toHaveAttribute('aria-disabled', 'true')
+    const listbox = getByRole('listbox')
+    fireEvent.keyDown(listbox, { key: 'ArrowDown' })
+    expect(document.activeElement).toBe(c)
+    fireEvent.keyDown(listbox, { key: 'ArrowDown' })
+    expect(document.activeElement).toBe(a)
+    fireEvent.keyDown(listbox, { key: 'ArrowUp' })
+    expect(document.activeElement).toBe(c)
+    fireEvent.keyDown(listbox, { key: 'Home' })
+    expect(document.activeElement).toBe(a)
+    fireEvent.keyDown(listbox, { key: 'End' })
+    expect(document.activeElement).toBe(c)
+    fireEvent.keyDown(listbox, { key: 'x' })
+    fireEvent.keyDown(c, { key: 'x' })
+    fireEvent.keyDown(b, { key: 'Enter' })
+    expect(onChange).not.toHaveBeenCalled()
+    fireEvent.keyDown(c, { key: 'Enter' })
+    expect(onChange).toHaveBeenCalledWith('c')
+    expect(document.activeElement).toBe(trigger)
+    expect(container.querySelector('[role=listbox]')).toBeNull()
+    fireEvent.keyDown(trigger, { key: 'ArrowUp' })
+    expect(document.activeElement).toBe(getAllByRole('option')[2])
+    expect(getAllByRole('option')[2]).toHaveAttribute('aria-selected', 'true')
+    fireEvent.keyDown(getByRole('listbox'), { key: 'Escape' })
+    expect(container.querySelector('[role=listbox]')).toBeNull()
+    expect(document.activeElement).toBe(trigger)
+  })
+
+  it('opens with ArrowDown on an asChild trigger and marks checkbox lists', () => {
+    const { container, getByRole } = render(
+      <Select type="checkbox">
+        <SelectTrigger asChild>
+          <button type="button">t</button>
+        </SelectTrigger>
+        <SelectContainer>
+          <SelectOption value="a">a</SelectOption>
+        </SelectContainer>
+      </Select>,
+    )
+    fireEvent.keyDown(container.querySelector('button')!, { key: 'ArrowDown' })
+    expect(getByRole('listbox')).toHaveAttribute('aria-multiselectable', 'true')
+    fireEvent.keyDown(getByRole('option'), { key: ' ' })
+    expect(getByRole('option')).toHaveAttribute('aria-selected', 'true')
+  })
+
+  it('asks a controlled owner to close on an outside click', () => {
+    const onOpenChange = mock()
+    const { container } = render(
+      <Select onOpenChange={onOpenChange} open>
+        <SelectTrigger>t</SelectTrigger>
+        <SelectContainer>
+          <SelectOption value="a">a</SelectOption>
+        </SelectContainer>
+      </Select>,
+    )
+    fireEvent.click(document.body)
+    expect(onOpenChange).toHaveBeenCalledWith(false)
+    expect(container.querySelector('[role=listbox]')).not.toBeNull()
+  })
+
+  it('closes an uncontrolled select on an outside click', () => {
+    const { container } = render(
+      <Select defaultOpen>
+        <SelectTrigger>t</SelectTrigger>
+        <SelectContainer>
+          <SelectOption value="a">a</SelectOption>
+        </SelectContainer>
+      </Select>,
+    )
+    fireEvent.click(container.querySelector('[role=option]')!.parentElement!)
+    expect(container.querySelector('[role=listbox]')).not.toBeNull()
+    fireEvent.click(document.body)
+    expect(container.querySelector('[role=listbox]')).toBeNull()
   })
 })
