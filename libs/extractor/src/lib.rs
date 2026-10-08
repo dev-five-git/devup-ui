@@ -20630,11 +20630,10 @@ const Nested = styled.span`color: ${p => p.theme.colors.brand};`;
 const Destructured = styled.p`color: ${({ theme }) => theme.colors.accent};`;
 const Surrounded = styled.b`border: 1px solid ${p => p.theme.line};`;
 const NotTheme = styled.i`color: ${p => p.color};`;
-const BareTheme = styled.u`color: ${p => p.theme};`;
 const OtherRoot = styled.s`color: ${p => q.theme.brand};`;
 const ArrayParam = styled.q`color: ${([p]) => p.theme.brand};`;
 const NoParam = styled.em`color: ${() => 'red'};`;
-const CallBody = styled.strong`color: ${p => p.theme.brand()};`;",
+const Indexed = styled.u`margin: ${p => p.theme.space[2]} ${({ theme }) => theme.colors['brand']};`;",
                 ExtractOption {
                     package: "@devup-ui/react".to_string(),
                     css_dir: "@devup-ui/react".to_string(),
@@ -20648,6 +20647,49 @@ const CallBody = styled.strong`color: ${p => p.theme.brand()};`;",
             )
             .unwrap()
         ));
+    }
+
+    // A theme read the build cannot turn into a CSS variable has no theme
+    // object to read at runtime
+    #[test]
+    #[serial]
+    fn test_styled_components_unmapped_theme_reads_are_errors() {
+        reset_class_map();
+        reset_file_map();
+        let code = match extract(
+            "test.tsx",
+            "import {styled} from '@devup-ui/core'
+const A = styled.u`color: ${p => p.theme};`
+const B = styled.b`color: ${p => p.theme.brand()};`
+const C = styled.i`color: ${({ theme }) => theme.space[i]};`
+const D = styled.s`color: ${({ theme }) => { return theme.a + 1 }};`
+const E = styled.em`color: ${p => p.color};`
+const F = styled.q`color: ${({ tone }) => tone};`
+const G = styled.p`color: ${([p]) => p};`
+const H = styled.a`color: ${(a, b) => a};`
+const I = styled.dd`color: ${function (p) { return p.theme }};`",
+            ExtractOption {
+                package: "@devup-ui/core".to_string(),
+                css_dir: "@devup-ui/core".to_string(),
+                single_css: true,
+                import_main_css: false,
+                import_aliases: HashMap::new(),
+            },
+        ) {
+            Ok(output) => output.code,
+            Err(error) => error.to_string(),
+        };
+        for expected in [
+            "test.tsx:2:29: `styled()` cannot use `(p) => p.theme` at build time: a theme read must be a path of names or literal keys",
+            "`(p) => p.theme.brand()`",
+            "`({ theme }) => theme.space[i]`",
+            "theme.a + 1",
+        ] {
+            assert!(code.contains(expected), "{expected}\n{code}");
+        }
+        for unexpected in ["p.color", "tone", "([p])", "(a, b)", "function (p)"] {
+            assert!(!code.contains(unexpected), "{unexpected}\n{code}");
+        }
     }
 
     #[test]

@@ -1,0 +1,7 @@
+{
+  "changes": {
+    "bindings/devup-ui-wasm/package.json": "Patch"
+  },
+  "note": "A styled-components or Emotion style function reading the theme by literal keys, such as `p => p.theme.space[2]` or `({ theme }) => theme.colors['brand']`, now reads the CSS variable ThemeProvider declares (`var(--space-2)`). A theme read the build cannot turn into a CSS variable, such as `p => p.theme`, `p => p.theme.brand()` or `theme.space[i]`, is a build error naming the file, line, column and code, where it used to read a theme object that does not exist at runtime and give undefined or throw",
+  "date": "2026-10-01T00:00:00.000Z"
+}
