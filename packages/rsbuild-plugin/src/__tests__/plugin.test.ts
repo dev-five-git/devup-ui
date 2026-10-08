@@ -390,6 +390,23 @@ const App = () => <Box></Box>`,
       map: undefined,
     })
   })
+  it('registers the text of the Tailwind CSS with the theme', async () => {
+    const readFileSyncSpy = spyOn(fs, 'readFileSync').mockReturnValue(
+      '@theme { --color-brand: #0af; }',
+    )
+    readFileSpy.mockResolvedValue(
+      JSON.stringify({ tailwind: { css: 'tailwind.css' } }),
+    )
+    existsSyncSpy.mockImplementation((path: string) => path === 'devup.json')
+
+    await DevupUI({}).setup(createSetupContext())
+
+    expect(registerThemeSpy).toHaveBeenCalledWith({
+      tailwindCss: '@theme { --color-brand: #0af; }',
+    })
+    readFileSyncSpy.mockRestore()
+    readFileSpy.mockResolvedValue('{}')
+  })
   it.each(
     createTestMatrix({
       watch: [true, false],

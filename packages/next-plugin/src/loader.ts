@@ -3,6 +3,7 @@ import { writeFile } from 'node:fs/promises'
 import { Agent, request } from 'node:http'
 import { basename, dirname, join, relative, resolve } from 'node:path'
 
+import { tailwindCssFiles, withTailwindCss } from '@devup-ui/plugin-utils'
 import type { RawLoaderDefinitionFunction } from 'webpack'
 
 import { loadWasm } from './wasm'
@@ -221,10 +222,11 @@ const devupUILoader: RawLoaderDefinitionFunction<DevupUILoaderOptions> =
           importClassMap(JSON.parse(readFileSync(classMapFile, 'utf-8')))
         if (existsSync(fileMapFile))
           importFileMap(JSON.parse(readFileSync(fileMapFile, 'utf-8')))
-        if (existsSync(themeFile))
-          registerTheme(
-            JSON.parse(readFileSync(themeFile, 'utf-8'))?.theme ?? {},
-          )
+        if (existsSync(themeFile)) {
+          const config = JSON.parse(readFileSync(themeFile, 'utf-8')) ?? {}
+          registerTheme(withTailwindCss(config.theme ?? {}, config))
+          for (const file of tailwindCssFiles(config)) this.addDependency(file)
+        }
       } else {
         importFileMap(defaultFileMap)
         importClassMap(defaultClassMap)
