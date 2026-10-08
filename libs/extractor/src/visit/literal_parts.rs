@@ -64,11 +64,11 @@ impl<'a> DevupVisitor<'a> {
                         crate::utils::unplaced_error(&property.value),
                     ));
                 }
-                let mut nested = Vec::new();
+                let mut nested = Composition::default();
                 for part in parts {
-                    match part {
+                    let props = match part {
                         KnownPart::Styles(styles) => {
-                            nested.extend(self.part_props(property.span.start, styles, element));
+                            self.part_props(property.span.start, styles, element)
                         }
                         KnownPart::Conditional {
                             test,
@@ -77,19 +77,20 @@ impl<'a> DevupVisitor<'a> {
                         } => {
                             let yes = self.part_props(property.span.start, consequent, element);
                             let no = self.part_props(property.span.start, alternate, element);
-                            nested.push(ExtractStyleProp::Conditional {
+                            vec![ExtractStyleProp::Conditional {
                                 condition: test,
                                 consequent: Some(Box::new(ExtractStyleProp::StaticArray(yes))),
                                 alternate: Some(Box::new(ExtractStyleProp::StaticArray(no))),
-                            });
+                            }]
                         }
-                        KnownPart::Class(expression) => nested.push(ExtractStyleProp::Expression {
+                        KnownPart::Class(expression) => vec![ExtractStyleProp::Expression {
                             expression,
                             styles: Vec::new(),
-                        }),
-                    }
+                        }],
+                    };
+                    nested.apply(&self.ast, props);
                 }
-                nested
+                nested.into_props()
             } else {
                 let expression = Expression::new_object_expression(
                     property.span,
@@ -117,5 +118,86 @@ impl<'a> DevupVisitor<'a> {
             }
             None => props,
         })
+    }
+}
+
+#[cfg(test)]
+mod literal_w38b_sources {
+    use super::*;
+    use oxc_ast::ast::Statement;
+    use serial_test::serial;
+
+    #[test]
+    #[serial]
+    fn mixin_scope_when_public_preflight_bypasses_invalid_order_keeps_typed_diagnostic() {
+        // Given: the actual scoped producer supplies invalid metadata and an external mixin.
+        let source = "tag`background:blue;${base};style-order:255`;";
+        let allocator = oxc_allocator::Allocator::default();
+        let parsed =
+            oxc_parser::Parser::new(&allocator, source, oxc_span::SourceType::tsx()).parse();
+        assert_eq!(parsed.diagnostics.len(), 0);
+        let Statement::ExpressionStatement(statement) = &parsed.program.body[0] else {
+            panic!("expression fixture")
+        };
+        let Expression::TaggedTemplateExpression(tag) = &statement.expression else {
+            panic!("tag fixture")
+        };
+        let mut visitor = DevupVisitor::new(&allocator, "a.tsx", "@devup-ui/react", vec![], None);
+        let text = crate::css_utils::literal::CssText::from_template(
+            &visitor.ast,
+            &tag.quasi,
+            Some(source),
+        );
+        let object = text.scoped_object(&visitor.ast, 0..text.text.len(), false);
+        // When: the real literal mixin operation sees the production-generated object.
+        let actual = visitor
+            .literal_scope(&object, None)
+            .unwrap_or_else(|| panic!("mixin envelope"));
+        // Then: the typed error retains the authored token and forbids evaluator retry.
+        assert_eq!(
+            visitor.error_disposition,
+            crate::ErrorDisposition::Definitive
+        );
+        assert_eq!(visitor.errors.len(), 1);
+        assert_eq!(
+            usize::try_from(visitor.errors[0].0)
+                .unwrap_or_else(|error| panic!("source offset: {error}")),
+            source
+                .find("255")
+                .unwrap_or_else(|| panic!("authored order"))
+        );
+        assert!(actual.iter().flat_map(ExtractStyleProp::extract).any(|style| matches!(style, crate::extract_style::extract_style_value::ExtractStyleValue::Static(style) if style.value()=="blue" && style.style_order().is_none())));
+    }
+
+    #[test]
+    #[serial]
+    fn source_marker_when_spread_is_present_still_reports_authored_invalid_order() {
+        // Given: source can spell the marker and supply a spread, disproving a generated-only root.
+        let source = "({__devupLiteralMixin:base,...{backgroundColor:'blue'},styleOrder:255});";
+        let allocator = oxc_allocator::Allocator::default();
+        let mut parsed =
+            oxc_parser::Parser::new(&allocator, source, oxc_span::SourceType::tsx()).parse();
+        assert_eq!(parsed.diagnostics.len(), 0);
+        let Statement::ExpressionStatement(statement) = &mut parsed.program.body[0] else {
+            panic!("expression fixture")
+        };
+        let value = crate::utils::unwrap_syntax_only_mut(&mut statement.expression);
+        let mut visitor = DevupVisitor::new(&allocator, "a.tsx", "@devup-ui/react", vec![], None);
+        // When: the actual source object reaches literal recognition and its spread guard.
+        let actual = visitor.literal_scope(value, None);
+        // Then: the guard remains live and metadata stays definitive; lost styling is not canonized.
+        assert!(actual.is_some());
+        assert_eq!(
+            visitor.error_disposition,
+            crate::ErrorDisposition::Definitive
+        );
+        assert_eq!(visitor.errors.len(), 1);
+        assert_eq!(
+            usize::try_from(visitor.errors[0].0)
+                .unwrap_or_else(|error| panic!("source offset: {error}")),
+            source
+                .find("255")
+                .unwrap_or_else(|| panic!("authored order"))
+        );
     }
 }

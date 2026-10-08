@@ -101,6 +101,8 @@ mod literal_callback_order;
 mod literal_callbacks;
 mod literal_globals;
 mod literal_parts;
+#[cfg(test)]
+mod literal_w38b_restoration;
 mod names;
 mod order;
 #[cfg(test)]
@@ -1183,14 +1185,9 @@ impl<'a> DevupVisitor<'a> {
                 }
             }
             Expression::TemplateLiteral(template) => {
-                match template_parts(&self.ast, template, false) {
-                    Ok(_) => {
-                        self.css_texts
-                            .insert((template.span.start, template.span.end));
-                        return;
-                    }
-                    Err(unplaced) => self.css_prop_failure(element, unplaced),
-                }
+                self.css_texts
+                    .insert((template.span.start, template.span.end));
+                return;
             }
             function @ (Expression::ArrowFunctionExpression(_)
             | Expression::FunctionExpression(_)) => {

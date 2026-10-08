@@ -195,11 +195,11 @@ impl<'a> CssText<'a> {
             true,
             ast,
         ));
-        let value = Expression::new_template_literal(span, quasis, expressions, ast);
+        let value = TemplateLiteral::boxed(span, quasis, expressions, ast);
         if order {
             super::literal_values::finite_text(ast, value)
         } else {
-            value
+            Expression::TemplateLiteral(value)
         }
     }
 }

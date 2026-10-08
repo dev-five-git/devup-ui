@@ -1,8 +1,10 @@
 use super::branch_capture::BranchReads;
 use super::capture::Captured;
+use super::literal_callback_order::OrderStep;
+use super::styled_callbacks::OrderBody;
 use super::{DevupVisitor, Text};
 use crate::composition::KnownPart;
-use oxc_allocator::GetAllocator;
+use oxc_allocator::{GetAllocator, TakeIn};
 use oxc_ast::ast::{ArrowFunctionBody, Expression, FunctionBody, ReturnStatement};
 use oxc_ast_visit::{VisitMut, walk_mut};
 use oxc_span::SPAN;
@@ -12,8 +14,18 @@ struct Returns<'v, 'a> {
     visitor: &'v mut DevupVisitor<'a>,
     render: String,
     parts: Vec<KnownPart<'a>>,
+    orders: Option<&'v mut Vec<OrderStep<'a>>>,
     count: usize,
     complete: bool,
+}
+
+enum ReturnOrder<'r, 'a> {
+    Styles,
+    Order {
+        body: OrderBody<'a>,
+        values: Vec<Captured<'a>>,
+        orders: &'r mut Vec<OrderStep<'a>>,
+    },
 }
 
 impl<'a> VisitMut<'a> for Returns<'_, 'a> {
@@ -26,25 +38,49 @@ impl<'a> VisitMut<'a> for Returns<'_, 'a> {
             ));
             return;
         };
-        crate::css_utils::literal_tree::lower(
-            &self.visitor.ast,
-            body,
-            crate::css_utils::literal_tree::Scope {
-                source: self.visitor.source,
-                global: false,
-            },
-        );
-        if self
-            .visitor
-            .known_parts(body, &mut Vec::new(), Text::Classes)
-            .is_none()
-        {
-            self.complete = false;
-            return;
+        let mut prepared = match &mut self.orders {
+            Some(orders) => {
+                let (body, values) = self
+                    .visitor
+                    .prepare_order_body(body.take_in(&self.visitor.ast));
+                ReturnOrder::Order {
+                    body,
+                    values,
+                    orders,
+                }
+            }
+            None => ReturnOrder::Styles,
+        };
+        match &prepared {
+            ReturnOrder::Order { .. } => {}
+            ReturnOrder::Styles => {
+                crate::css_utils::literal_tree::lower(
+                    &self.visitor.ast,
+                    body,
+                    crate::css_utils::literal_tree::Scope {
+                        source: self.visitor.source,
+                        global: false,
+                    },
+                );
+                if self
+                    .visitor
+                    .known_parts(body, &mut Vec::new(), Text::Classes)
+                    .is_none()
+                {
+                    self.complete = false;
+                    return;
+                }
+                self.visitor.check_style_orders(body, false);
+            }
         }
-        self.visitor.check_style_orders(body, false);
-        let mut values = Vec::new();
-        self.visitor.capture_shape(body, &mut values);
+        let values = match &mut prepared {
+            ReturnOrder::Order { values, .. } => std::mem::take(values),
+            ReturnOrder::Styles => {
+                let mut values = Vec::new();
+                self.visitor.capture_shape(body, &mut values);
+                values
+            }
+        };
         let mut reads = BranchReads {
             ast: &self.visitor.ast,
             reads: FxHashMap::default(),
@@ -68,16 +104,25 @@ impl<'a> VisitMut<'a> for Returns<'_, 'a> {
                 .insert(name, saved_slot(&self.visitor.ast, &self.render, index + 1));
             elements.push(value.into());
         }
-        reads.visit_expression(body);
-        let mut parts = Vec::new();
-        if self
-            .visitor
-            .known_parts(body, &mut parts, Text::Classes)
-            .is_none()
-        {
-            self.complete = false;
-            return;
-        }
+        let parts = match &mut prepared {
+            ReturnOrder::Order { body, .. } => {
+                body.read(&mut reads);
+                Vec::new()
+            }
+            ReturnOrder::Styles => {
+                reads.visit_expression(body);
+                let mut parts = Vec::new();
+                if self
+                    .visitor
+                    .known_parts(body, &mut parts, Text::Classes)
+                    .is_none()
+                {
+                    self.complete = false;
+                    return;
+                }
+                parts
+            }
+        };
         let test = Expression::new_binary_expression(
             SPAN,
             saved_slot(&self.visitor.ast, &self.render, 0),
@@ -93,7 +138,14 @@ impl<'a> VisitMut<'a> for Returns<'_, 'a> {
             ),
             &self.visitor.ast,
         );
-        self.parts.extend(self.visitor.guarded_parts(&test, parts));
+        match prepared {
+            ReturnOrder::Order { body, orders, .. } => orders.push(OrderStep::Guarded {
+                test,
+                yes: body.candidate(self.visitor),
+                no: None,
+            }),
+            ReturnOrder::Styles => self.parts.extend(self.visitor.guarded_parts(&test, parts)),
+        }
         *body = Expression::new_array_expression(SPAN, elements, &self.visitor.ast);
         self.count += 1;
     }
@@ -133,6 +185,7 @@ impl<'a> DevupVisitor<'a> {
             visitor: self,
             render: render.clone(),
             parts: vec![],
+            orders: None,
             count: 0,
             complete: true,
         };
@@ -141,18 +194,36 @@ impl<'a> DevupVisitor<'a> {
             return None;
         }
         let parts = returns.parts;
-        let name = self.names.fresh("__devupCallback");
-        captures.push(self.capture_as(name, expression));
-        let invocation = crate::utils::wrap_direct_call(
-            &self.ast,
-            expression,
-            &[Expression::new_identifier(
-                SPAN,
-                "__devupStyleProps",
-                &self.ast,
-            )],
-        );
+        let invocation = self.capture_prepared_callback(expression, captures);
         Some((parts, (render, invocation)))
+    }
+
+    pub(super) fn prepare_order_block_callback(
+        &mut self,
+        expression: &mut Expression<'a>,
+        captures: &mut Vec<Captured<'a>>,
+    ) -> Option<(Vec<OrderStep<'a>>, Captured<'a>)> {
+        let body = match expression {
+            Expression::ArrowFunctionExpression(arrow) => match &mut arrow.body {
+                ArrowFunctionBody::FunctionBody(body) => body,
+                _ => return None,
+            },
+            Expression::FunctionExpression(function) => function.body.as_mut()?,
+            _ => return None,
+        };
+        let render = self.names.fresh("__devupRenderValues");
+        let mut orders = Vec::new();
+        let mut returns = Returns {
+            visitor: self,
+            render: render.clone(),
+            parts: vec![],
+            orders: Some(&mut orders),
+            count: 0,
+            complete: true,
+        };
+        walk_mut::walk_function_body(&mut returns, body);
+        let invocation = self.capture_prepared_callback(expression, captures);
+        Some((orders, (render, invocation)))
     }
 }
 

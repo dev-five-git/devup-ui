@@ -1,4 +1,3 @@
-use crate::composition::{KnownPart, KnownStyles};
 use oxc_allocator::{CloneIn, GetAllocator};
 use oxc_ast::ast::{
     ArrowFunctionBody, Expression, ObjectPropertyKind, PropertyKey, PropertyKind, ReturnStatement,
@@ -6,7 +5,67 @@ use oxc_ast::ast::{
 };
 use oxc_ast::builder::AstBuilder;
 use oxc_ast_visit::{VisitMut, walk_mut};
-use oxc_span::{GetSpan, SPAN};
+use oxc_span::{GetSpan, SPAN, Span};
+
+pub(super) struct WrappedCallback<'a> {
+    pub(super) original: Expression<'a>,
+}
+
+pub(super) struct OrderEnvelope<'a> {
+    span: Span,
+    pub(super) candidate: Expression<'a>,
+}
+
+impl<'a> OrderEnvelope<'a> {
+    pub(super) fn new(candidate: Expression<'a>) -> Self {
+        Self {
+            span: candidate.span(),
+            candidate,
+        }
+    }
+
+    pub(super) fn expression(&self, ast: &AstBuilder<'a>) -> Expression<'a> {
+        Expression::new_object_expression(
+            self.span,
+            oxc_allocator::Vec::from_array_in(
+                [ObjectPropertyKind::new_object_property(
+                    self.span,
+                    PropertyKind::Init,
+                    PropertyKey::StringLiteral(StringLiteral::boxed(
+                        self.span,
+                        "styleOrder",
+                        None,
+                        ast,
+                    )),
+                    self.candidate.clone_in_with_semantic_ids(ast.allocator()),
+                    false,
+                    false,
+                    false,
+                    ast,
+                )],
+                ast,
+            ),
+            ast,
+        )
+    }
+}
+
+pub(super) enum OrderStep<'a> {
+    Value(Option<Expression<'a>>),
+    Guarded {
+        test: Expression<'a>,
+        yes: Option<Expression<'a>>,
+        no: Option<Expression<'a>>,
+    },
+}
+
+pub(super) fn wrapped<'a>(
+    ast: &AstBuilder<'a>,
+    function: &mut Expression<'a>,
+) -> Option<WrappedCallback<'a>> {
+    let original = function.clone_in_with_semantic_ids(ast.allocator());
+    wrap(ast, function).then_some(WrappedCallback { original })
+}
 
 struct Returns<'s, 'a> {
     ast: &'s AstBuilder<'a>,
@@ -18,7 +77,8 @@ impl<'a> VisitMut<'a> for Returns<'_, 'a> {
             *value = order_object(
                 self.ast,
                 value.clone_in_with_semantic_ids(self.ast.allocator()),
-            );
+            )
+            .expression(self.ast);
         }
     }
     fn visit_function(
@@ -39,19 +99,21 @@ pub(super) fn wrap<'a>(ast: &AstBuilder<'a>, function: &mut Expression<'a>) -> b
         Expression::ArrowFunctionExpression(arrow) if !arrow.r#async => match &mut arrow.body {
             ArrowFunctionBody::FunctionBody(body) => body,
             body => {
-                let Some(value) = body.as_expression_mut() else {
-                    return false;
-                };
-                *value = order_object(ast, value.clone_in_with_semantic_ids(ast.allocator()));
+                let value = body.to_expression_mut();
+                *value = order_object(ast, value.clone_in_with_semantic_ids(ast.allocator()))
+                    .expression(ast);
                 return true;
             }
         },
-        Expression::FunctionExpression(function) if !function.r#async && !function.generator => {
-            let Some(body) = &mut function.body else {
-                return false;
-            };
-            body
-        }
+        Expression::FunctionExpression(function) => match &mut **function {
+            oxc_ast::ast::Function {
+                body: Some(body),
+                r#async: false,
+                generator: false,
+                ..
+            } => body,
+            _ => return false,
+        },
         _ => return false,
     };
     if !body.statements.last().is_some_and(terminal) {
@@ -72,61 +134,23 @@ fn terminal(statement: &Statement<'_>) -> bool {
     }
 }
 
-fn order_object<'a>(ast: &AstBuilder<'a>, value: Expression<'a>) -> Expression<'a> {
-    Expression::new_object_expression(
-        value.span(),
-        oxc_allocator::Vec::from_array_in(
-            [ObjectPropertyKind::new_object_property(
-                value.span(),
-                PropertyKind::Init,
-                PropertyKey::StringLiteral(StringLiteral::boxed(
-                    value.span(),
-                    "styleOrder",
-                    None,
-                    ast,
-                )),
-                value,
-                false,
-                false,
-                false,
-                ast,
-            )],
-            ast,
-        ),
-        ast,
-    )
+fn order_object<'a>(_: &AstBuilder<'a>, candidate: Expression<'a>) -> OrderEnvelope<'a> {
+    OrderEnvelope::new(candidate)
 }
 
-fn styles_order<'a>(ast: &AstBuilder<'a>, styles: &[KnownStyles<'a>]) -> Option<Expression<'a>> {
-    styles.iter().find_map(|style| {
-        let KnownStyles::Rules(Expression::ObjectExpression(object)) = style else {
-            return None;
-        };
-        object.properties.iter().find_map(|property| {
-            let ObjectPropertyKind::ObjectProperty(property) = property else {
-                return None;
-            };
-            property
-                .key
-                .static_name()
-                .is_some_and(|key| crate::style_order::reserved(&key))
-                .then(|| property.value.clone_in_with_semantic_ids(ast.allocator()))
-        })
-    })
-}
-
-pub(super) fn value<'a>(ast: &AstBuilder<'a>, parts: &[KnownPart<'a>]) -> Option<Expression<'a>> {
+pub(super) fn value<'a>(ast: &AstBuilder<'a>, parts: &[OrderStep<'a>]) -> Option<Expression<'a>> {
     let mut selected = None;
     for part in parts {
         match part {
-            KnownPart::Styles(styles) => selected = styles_order(ast, styles).or(selected),
-            KnownPart::Conditional {
-                test,
-                consequent,
-                alternate,
-            } => {
-                let yes = styles_order(ast, consequent)?;
-                let no = styles_order(ast, alternate)
+            OrderStep::Value(candidate) => {
+                selected = candidate
+                    .clone_in_with_semantic_ids(ast.allocator())
+                    .or(selected);
+            }
+            OrderStep::Guarded { test, yes, no } => {
+                let yes = yes.as_ref()?.clone_in_with_semantic_ids(ast.allocator());
+                let no = no
+                    .clone_in_with_semantic_ids(ast.allocator())
                     .or_else(|| selected.take())
                     .unwrap_or_else(|| yes.clone_in_with_semantic_ids(ast.allocator()));
                 selected = Some(Expression::new_conditional_expression(
@@ -137,7 +161,6 @@ pub(super) fn value<'a>(ast: &AstBuilder<'a>, parts: &[KnownPart<'a>]) -> Option
                     ast,
                 ));
             }
-            KnownPart::Class(_) => return None,
         }
     }
     selected

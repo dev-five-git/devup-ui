@@ -1,5 +1,5 @@
 use oxc_allocator::{CloneIn, GetAllocator};
-use oxc_ast::ast::Expression;
+use oxc_ast::ast::{Expression, TemplateLiteral};
 use oxc_ast::builder::AstBuilder;
 use oxc_span::{GetSpan, Span};
 
@@ -64,10 +64,10 @@ pub(super) fn canonical_key(value: &str) -> String {
     }
 }
 
-pub(super) fn finite_text<'a>(ast: &AstBuilder<'a>, value: Expression<'a>) -> Expression<'a> {
-    let Expression::TemplateLiteral(template) = &value else {
-        return value;
-    };
+pub(super) fn finite_text<'a>(
+    ast: &AstBuilder<'a>,
+    template: oxc_allocator::Box<'a, TemplateLiteral<'a>>,
+) -> Expression<'a> {
     for (index, expression) in template.expressions.iter().enumerate() {
         if let Expression::ConditionalExpression(condition) =
             crate::utils::unwrap_syntax_only(expression)
@@ -81,10 +81,10 @@ pub(super) fn finite_text<'a>(ast: &AstBuilder<'a>, value: Expression<'a>) -> Ex
                 .alternate
                 .clone_in_with_semantic_ids(ast.allocator());
             return Expression::new_conditional_expression(
-                value.span(),
+                template.span(),
                 condition.test.clone_in_with_semantic_ids(ast.allocator()),
-                finite_text(ast, Expression::TemplateLiteral(yes)),
-                finite_text(ast, Expression::TemplateLiteral(no)),
+                finite_text(ast, yes),
+                finite_text(ast, no),
                 ast,
             );
         }
@@ -94,11 +94,16 @@ pub(super) fn finite_text<'a>(ast: &AstBuilder<'a>, value: Expression<'a>) -> Ex
         result.push_str(&quasi.value.raw);
         if let Some(expression) = template.expressions.get(index) {
             let Some(text) = crate::utils::get_string_by_literal_expression(expression) else {
-                return value;
+                return Expression::TemplateLiteral(template);
             };
             result.push_str(&text);
         }
     }
     let result = decode(&result).unwrap_or(result);
-    Expression::new_string_literal(value.span(), ast.allocator().alloc_str(&result), None, ast)
+    Expression::new_string_literal(
+        template.span(),
+        ast.allocator().alloc_str(&result),
+        None,
+        ast,
+    )
 }

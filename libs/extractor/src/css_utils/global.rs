@@ -10,6 +10,9 @@ use oxc_ast::ast::Expression;
 use oxc_ast::builder::AstBuilder;
 use std::ops::Range;
 
+#[cfg(test)]
+mod literal_w38b_retention;
+
 pub(crate) fn reject(text: &CssText<'_>, range: Range<usize>, api: &str) -> Vec<(u32, String)> {
     let mut errors = Vec::new();
     for item in cursor::items(&text.text[range.clone()]) {
@@ -112,12 +115,7 @@ fn remove_opaque(expression: &mut Expression<'_>, raw: &mut Vec<String>, wrapper
         let Some(key) = property.key.static_name() else {
             return true;
         };
-        if key.starts_with('@')
-            && !matches!(
-                key.split_whitespace().next(),
-                Some("@media" | "@supports" | "@container" | "@layer")
-            )
-        {
+        if key.starts_with('@') && !is_grouping(&key) {
             let mut css = format!("{}{{{}}}", key, serialize(&property.value));
             for wrapper in wrappers.iter().rev() {
                 css = format!("{wrapper}{{{css}}}");
@@ -146,12 +144,7 @@ fn statements(text: &str, raw: &mut Vec<String>, wrappers: &[String]) {
                 }
                 raw.push(css);
             }
-            Item::Block { prelude, body }
-                if matches!(
-                    text[prelude.clone()].split_whitespace().next(),
-                    Some("@media" | "@supports" | "@container" | "@layer")
-                ) =>
-            {
+            Item::Block { prelude, body } if is_grouping(&text[prelude.clone()]) => {
                 let mut nested = wrappers.to_vec();
                 nested.push(text[prelude].trim().to_string());
                 statements(&text[body], raw, &nested);
@@ -163,6 +156,11 @@ fn statements(text: &str, raw: &mut Vec<String>, wrappers: &[String]) {
 
 fn serialize(expression: &Expression<'_>) -> String {
     serialize_scope(expression, false)
+}
+
+fn is_grouping(key: &str) -> bool {
+    css::at_rule::split_at_rule_key(key).is_some()
+        || key.split_whitespace().next() == Some("@layer")
 }
 
 fn serialize_scope(expression: &Expression<'_>, record: bool) -> String {

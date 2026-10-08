@@ -571,8 +571,8 @@ fn collect_css_block(
     for item in cursor::items(css) {
         match item {
             cursor::Item::Declaration { key, value } => {
-                styles.extend(css_to_style_block(
-                    &css[key.start..value.end],
+                styles.extend(css_to_style_declaration(
+                    (&css[key], &css[value]),
                     level,
                     selector,
                 ));
@@ -649,39 +649,24 @@ fn optimize_decl_value<'a>(property: &str, value: &'a str) -> Cow<'a, str> {
     }
 }
 
-fn css_to_style_block(
-    css: &str,
+fn css_to_style_declaration(
+    (key, value): (&str, &str),
     level: u8,
     selector: &Option<StyleSelector>,
-) -> Vec<ExtractStaticStyle> {
-    let cleaned = cursor::clean(css);
-    // Presize to an upper bound (`;`-count + 1 = max declarations). A single byte
-    // fold computes the count in one pass: for the dominant single-declaration
-    // block (template/styled, no `;`) it returns 0 so `+1` still presizes to 1,
-    // and multi-declaration blocks presize exactly — without the prior
-    // `contains(';')` pre-scan that traversed `cleaned` a second time when `;` was
-    // present.
-    let cap = cleaned.bytes().filter(|&b| b == b';').count() + 1;
-    let mut styles = Vec::with_capacity(cap);
-    for item in cursor::items(&cleaned) {
-        let cursor::Item::Declaration { key, value } = item else {
-            continue;
-        };
-        let property_name = literal_values::canonical_key(cleaned[key].trim());
-        let property = property_name.as_str();
-        if crate::style_order::reserved(property) {
-            continue;
-        }
-        let value = cleaned[value].trim();
-        let value: Cow<str> = optimize_decl_value(property, value);
-        styles.push(ExtractStaticStyle::new(
-            property,
-            value.as_ref(),
-            level,
-            selector.clone(),
-        ));
+) -> Option<ExtractStaticStyle> {
+    let property_name = literal_values::canonical_key(cursor::clean(key).trim());
+    let property = property_name.as_str();
+    if crate::style_order::reserved(property) {
+        return None;
     }
-    styles
+    let cleaned = cursor::clean(value);
+    let value = optimize_decl_value(property, cleaned.trim());
+    Some(ExtractStaticStyle::new(
+        property,
+        value.as_ref(),
+        level,
+        selector.clone(),
+    ))
 }
 
 pub fn keyframes_to_keyframes_style(keyframes: &str) -> BTreeMap<String, Vec<ExtractStaticStyle>> {
