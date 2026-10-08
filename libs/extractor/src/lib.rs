@@ -28,6 +28,8 @@ mod scope;
 mod source_map;
 mod style_values;
 mod styled_reads;
+#[cfg(test)]
+mod stylesheet_fallback_regression_tests;
 mod stylesheet_policy;
 #[cfg(test)]
 mod stylesheet_regression_tests;
@@ -523,7 +525,7 @@ fn extract_source(
             .chain(earlier_edits.iter().copied())
             .collect();
         // Use transformed code (with imports already pointing to @devup-ui/react)
-        match vanilla_extract::execute_located(
+        match vanilla_extract::execute_authored(
             vanilla_extract::Stylesheet {
                 filename,
                 code: &transformed_code,
@@ -533,7 +535,7 @@ fn extract_source(
             &option,
             resolver,
         ) {
-            Ok((collected, imports)) => {
+            Ok((collected, imports, mut authored)) => {
                 dependencies = imports.dependencies;
                 producer_atoms = imports.atoms;
                 producer_references = imports.references;
@@ -570,6 +572,18 @@ fn extract_source(
                     &option.package,
                     &keyframes_names,
                 );
+                let code = if authored.code.is_empty() {
+                    code
+                } else {
+                    let lowered = ordinary_ve::lowering::hygienic(
+                        ordinary_ve::lowering::Lowered { code, css: None },
+                        &mut authored.reserved,
+                    )
+                    .map_err(|message| {
+                        located_errors(filename, source, &layers, vec![(0, message)])
+                    })?;
+                    format!("{}\n{}", lowered.code, authored.code)
+                };
                 Some({
                     imports
                         .kept_imports

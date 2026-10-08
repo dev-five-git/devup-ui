@@ -34,10 +34,12 @@ use serialization::value_to_code;
 mod contracts;
 mod operands;
 pub(crate) use operands::StyleOperandMode;
+mod authored;
 pub(crate) mod capture;
 mod demand_runtime;
 mod execution;
 mod naming;
+pub(crate) use authored::Output as AuthoredOutput;
 pub(crate) mod producer_atoms;
 mod selector_rules;
 pub(crate) mod style_references;
@@ -298,6 +300,7 @@ pub fn execute_stylesheet(
 }
 
 /// [`execute_stylesheet`] that tells every error where the code as written is
+#[cfg(test)]
 pub(crate) fn execute_located(
     stylesheet: Stylesheet<'_>,
     option: &crate::ExtractOption,
@@ -305,6 +308,28 @@ pub(crate) fn execute_located(
 ) -> Result<(CollectedStyles, StylesheetImports), String> {
     execution::execute(execution::Input::Stylesheet(stylesheet), option, resolver)
         .map(|result| (result.collected, result.imports))
+}
+
+pub(crate) fn execute_authored(
+    stylesheet: Stylesheet<'_>,
+    option: &crate::ExtractOption,
+    resolver: Option<&crate::ModuleResolver>,
+) -> Result<(CollectedStyles, StylesheetImports, AuthoredOutput), String> {
+    let mut result =
+        execution::execute(execution::Input::Stylesheet(stylesheet), option, resolver)?;
+    let authored = authored::prepare(
+        (
+            stylesheet,
+            authored::Origin {
+                filename: stylesheet.filename,
+                package: &option.package,
+                resolver,
+            },
+        ),
+        &mut result.collected,
+        &result.exports,
+    )?;
+    Ok((result.collected, result.imports, authored))
 }
 
 /// Formats sandbox failures through the same original-source trace as execution errors.
@@ -349,7 +374,7 @@ thread_local! {
     /// What running each stylesheet other evaluations import last collected,
     /// with its file number, source and the script run: every module importing
     /// it reuses one run of the same script
-    static IMPORTED_RUNS: RefCell<FxHashMap<String, (usize, String, String, CollectedStyles)>> =
+    static IMPORTED_RUNS: RefCell<FxHashMap<String, execution::ImportedRun>> =
         RefCell::default();
     /// The TypeScript each file last had stripped, with its source
     static STRIPPED: RefCell<FxHashMap<String, (String, Rc<Stripped>)>> = RefCell::default();

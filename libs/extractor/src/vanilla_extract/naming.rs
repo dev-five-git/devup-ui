@@ -8,13 +8,55 @@ pub(super) struct NameScope<'a> {
     pub reserved: &'a BTreeSet<String>,
 }
 
+pub(super) fn reserved(stylesheet: super::Stylesheet<'_>) -> BTreeSet<String> {
+    let allocator = oxc_allocator::Allocator::default();
+    let program = oxc_parser::Parser::new(
+        &allocator,
+        stylesheet.code,
+        oxc_span::SourceType::from_path(stylesheet.filename).unwrap_or_default(),
+    )
+    .parse()
+    .program;
+    let semantic = oxc_semantic::SemanticBuilder::new()
+        .build(&program)
+        .semantic;
+    reserved_names(semantic.scoping())
+}
+
+pub(super) fn reserved_names(scoping: &oxc_semantic::Scoping) -> BTreeSet<String> {
+    scoping
+        .symbol_ids()
+        .filter(|symbol| scoping.symbol_scope_id(*symbol) == scoping.root_scope_id())
+        .map(|symbol| scoping.symbol_name(symbol).to_string())
+        .chain(
+            scoping
+                .root_unresolved_references()
+                .keys()
+                .map(ToString::to_string),
+        )
+        .collect()
+}
+
+#[derive(Debug, Clone, Copy)]
+pub(super) enum Representation {
+    Generated,
+    Serialized,
+    Authored,
+}
+
+#[derive(Debug, Clone)]
+pub(super) struct ExportValue {
+    pub name: String,
+    pub representation: Representation,
+}
+
 impl NameScope<'_> {
     pub(super) fn name_entries(
         self,
         collected: &mut CollectedStyles,
         bindings: &[Binding],
         context: &mut Context,
-    ) -> JsResult<()> {
+    ) -> JsResult<Vec<ExportValue>> {
         let values: Vec<(&Binding, JsValue)> = bindings
             .iter()
             .map(|binding| {
@@ -24,9 +66,18 @@ impl NameScope<'_> {
             })
             .collect::<JsResult<_>>()?;
         let names = name_values(collected, &values, self);
+        let mut exports = Vec::new();
         for (binding, value) in &values {
             if let Some(alias) = &binding.alias {
-                if let Some(code) = value_to_code(value, context, &names, &mut Vec::new())? {
+                let code = value_to_code(value, context, &names, &mut Vec::new())?;
+                exports.push(ExportValue {
+                    name: alias.clone(),
+                    representation: match &code {
+                        Some(_) => Representation::Serialized,
+                        None => Representation::Authored,
+                    },
+                });
+                if let Some(code) = code {
                     collected
                         .export_aliases
                         .push((binding.name.clone(), alias.clone(), code));
@@ -34,17 +85,31 @@ impl NameScope<'_> {
                 continue;
             }
             let names_entry = js_str(value).is_some_and(|id| names.get(&id) == Some(&binding.name));
-            if binding.exported
-                && !names_entry
-                && let Some(code) = value_to_code(value, context, &names, &mut Vec::new())?
-                    .or_else(|| binding.init.clone())
-            {
+            if !binding.exported {
+                continue;
+            }
+            if names_entry {
+                exports.push(ExportValue {
+                    name: binding.name.clone(),
+                    representation: Representation::Generated,
+                });
+                continue;
+            }
+            let code = value_to_code(value, context, &names, &mut Vec::new())?;
+            exports.push(ExportValue {
+                name: binding.name.clone(),
+                representation: match &code {
+                    Some(_) => Representation::Serialized,
+                    None => Representation::Authored,
+                },
+            });
+            if let Some(code) = code.or_else(|| binding.init.clone()) {
                 collected
                     .constant_exports
                     .push((binding.name.clone(), code));
             }
         }
-        Ok(())
+        Ok(exports)
     }
 }
 

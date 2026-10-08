@@ -41,7 +41,7 @@ pub(crate) fn lower(
     })
 }
 
-pub(super) fn hygienic(
+pub(crate) fn hygienic(
     lowered: Lowered,
     reserved: &mut BTreeSet<String>,
 ) -> Result<Lowered, String> {

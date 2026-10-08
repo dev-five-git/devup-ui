@@ -1,10 +1,10 @@
 //! Both input modes share one loader, sandbox and native allocation transaction.
 
 use super::{
-    BTreeSet, CollectedStyles, Collector, Context, Evaluating, IMPORTED_RUNS, ModuleLoader,
-    NameScope, Path, Rc, RefCell, SCRIPT_PATH, Script, Source, StyleCollector, Stylesheet,
-    StylesheetImports, Unit, capture, get_file_num_by_filename, module_script,
-    register_vanilla_extract_apis, sandbox_error, top_level_bindings,
+    CollectedStyles, Collector, Context, Evaluating, IMPORTED_RUNS, ModuleLoader, NameScope, Path,
+    Rc, RefCell, SCRIPT_PATH, Script, Source, StyleCollector, Stylesheet, StylesheetImports, Unit,
+    capture, get_file_num_by_filename, module_script, register_vanilla_extract_apis, sandbox_error,
+    top_level_bindings,
 };
 
 pub(super) enum Input<'a> {
@@ -19,6 +19,15 @@ pub(crate) struct Executed {
     pub captures: Vec<String>,
     pub emission: capture::Emission,
     pub readback: Vec<(oxc_span::Span, String)>,
+    pub(super) exports: Vec<super::naming::ExportValue>,
+}
+
+pub(super) struct ImportedRun {
+    pub file_num: usize,
+    pub code: String,
+    pub script: String,
+    pub collected: CollectedStyles,
+    pub exports: Vec<super::naming::ExportValue>,
 }
 
 pub(super) fn execute(
@@ -66,12 +75,12 @@ pub(super) fn run(input: Input<'_>, mut loader: ModuleLoader<'_>) -> Result<Exec
         crate::module_loader::evaluating_import() && matches!(&input, Input::Stylesheet(_));
     if imported
         && loader.producers().is_empty()
-        && let Some(collected) = IMPORTED_RUNS.with_borrow(|runs| {
+        && let Some((collected, exports)) = IMPORTED_RUNS.with_borrow(|runs| {
             runs.get(filename)
-                .filter(|(num, cached, text, _)| {
-                    *num == file_num && cached == code && *text == run.text
+                .filter(|cached| {
+                    cached.file_num == file_num && cached.code == code && cached.script == run.text
                 })
-                .map(|(.., collected)| collected.clone())
+                .map(|cached| (cached.collected.clone(), cached.exports.clone()))
         })
     {
         return Ok(Executed {
@@ -80,6 +89,7 @@ pub(super) fn run(input: Input<'_>, mut loader: ModuleLoader<'_>) -> Result<Exec
             captures: Vec::new(),
             emission: capture::Emission::default(),
             readback: Vec::new(),
+            exports,
         });
     }
     let collector: StyleCollector = Rc::new(RefCell::new(Collector {
@@ -149,17 +159,24 @@ pub(super) fn run(input: Input<'_>, mut loader: ModuleLoader<'_>) -> Result<Exec
         super::demand_runtime::validate(&context)?;
     }
     let mut collected = std::mem::take(&mut collector.borrow_mut().styles);
+    let mut exports = Vec::new();
     let named = match &input {
-        Input::Stylesheet(_) => top_level_bindings(code, &entry, &mut context)
-            .and_then(|bindings| {
-                NameScope {
-                    file_num,
-                    reserved: &BTreeSet::new(),
-                }
-                .name_entries(&mut collected, &bindings, &mut context)
-            })
-            .map(|()| capture::Finished::default())
-            .map_err(capture::FinalizeError::Js),
+        Input::Stylesheet(_) => {
+            let reserved = super::naming::reserved(stylesheet);
+            top_level_bindings(code, &entry, &mut context)
+                .and_then(|bindings| {
+                    NameScope {
+                        file_num,
+                        reserved: &reserved,
+                    }
+                    .name_entries(&mut collected, &bindings, &mut context)
+                })
+                .map(|values| {
+                    exports = values;
+                    capture::Finished::default()
+                })
+                .map_err(capture::FinalizeError::Js)
+        }
         Input::Selected(selected) => capture::finish((selected, &[]), &mut collected, &mut context),
         Input::Readback(selected, reads) => {
             capture::finish((selected, reads), &mut collected, &mut context)
@@ -192,7 +209,13 @@ pub(super) fn run(input: Input<'_>, mut loader: ModuleLoader<'_>) -> Result<Exec
         IMPORTED_RUNS.with_borrow_mut(|runs| {
             runs.insert(
                 filename.to_string(),
-                (file_num, code.to_string(), run.text, collected.clone()),
+                ImportedRun {
+                    file_num,
+                    code: code.to_string(),
+                    script: run.text,
+                    collected: collected.clone(),
+                    exports: exports.clone(),
+                },
             );
         });
     }
@@ -202,5 +225,6 @@ pub(super) fn run(input: Input<'_>, mut loader: ModuleLoader<'_>) -> Result<Exec
         captures: finished.captures,
         emission: finished.emission,
         readback: finished.readback,
+        exports,
     })
 }
