@@ -6,6 +6,16 @@ ToBTreeSet {
     styles: {
         Static(
             ExtractStaticStyle {
+                property: "--tw-translate-x",
+                value: "-50%",
+                level: 0,
+                selector: None,
+                style_order: None,
+                layer: None,
+            },
+        ),
+        Static(
+            ExtractStaticStyle {
                 property: "margin",
                 value: "-1rem",
                 level: 0,
@@ -16,14 +26,20 @@ ToBTreeSet {
         ),
         Static(
             ExtractStaticStyle {
-                property: "transform",
-                value: "translateX(-50%)",
+                property: "translate",
+                value: "var(--tw-translate-x) var(--tw-translate-y)",
                 level: 0,
                 selector: None,
                 style_order: None,
                 layer: None,
             },
         ),
+        Css(
+            ExtractCss {
+                css: "@property --tw-translate-x{syntax:\"*\";inherits:false;initial-value:0}@property --tw-translate-y{syntax:\"*\";inherits:false;initial-value:0}@property --tw-scale-x{syntax:\"*\";inherits:false;initial-value:1}@property --tw-scale-y{syntax:\"*\";inherits:false;initial-value:1}@property --tw-scale-z{syntax:\"*\";inherits:false;initial-value:1}@property --tw-rotate-x{syntax:\"*\";inherits:false}@property --tw-rotate-y{syntax:\"*\";inherits:false}@property --tw-rotate-z{syntax:\"*\";inherits:false}@property --tw-skew-x{syntax:\"*\";inherits:false}@property --tw-skew-y{syntax:\"*\";inherits:false}@property --tw-leading{syntax:\"*\";inherits:false}@property --tw-content{syntax:\"*\";inherits:false;initial-value:\"\"}@property --tw-scroll-snap-strictness{syntax:\"*\";inherits:false;initial-value:proximity}",
+                file: "@devup-ui/tailwind",
+            },
+        ),
     },
-    code: "import \"@devup-ui/core/devup-ui.css\";\n<div className=\"a b\" />;\n",
+    code: "import \"@devup-ui/core/devup-ui.css\";\n<div className=\"a b c\" />;\n",
 }
