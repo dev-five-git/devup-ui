@@ -1,0 +1,7 @@
+{
+  "changes": {
+    "bindings/devup-ui-wasm/package.json": "Patch"
+  },
+  "note": "A class from css() written as the value of a nested rule (`css({ '&:hover': hotpink })`) is a build error naming the file, line, column and binding, with the fix of spreading the rule object instead; the nested rule used to be silently dropped, leaving an empty class",
+  "date": "2026-10-01T00:00:00.000Z"
+}

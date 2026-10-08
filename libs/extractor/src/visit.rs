@@ -1609,6 +1609,16 @@ impl<'a> VisitMut<'a> for DevupVisitor<'a> {
                         Argument::SpreadElement(spread) => &mut spread.argument,
                         argument => argument.to_expression_mut(),
                     };
+                    for (offset, name) in self.style_values.nested_classes(expression) {
+                        self.errors.push((
+                            offset,
+                            build_time_error(
+                                "css",
+                                &name,
+                                "a class from `css()` cannot be the value of a nested rule; spread the rule object it was made from instead, such as `'&:hover': { ...hotpinkRules }`",
+                            ),
+                        ));
+                    }
                     self.style_values.read_in(&self.ast, expression);
                 }
                 let offset = call.span.start;

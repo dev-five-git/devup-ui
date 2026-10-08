@@ -62,6 +62,22 @@ impl StyleValues {
         }
     }
 
+    /// The `css()` classes `expression` writes as the value of a rule object's
+    /// property, such as `{ '&:hover': hotpink }`, by offset and name: a class
+    /// is not rules, so the nested selector would get nothing
+    pub fn nested_classes(&self, expression: &Expression<'_>) -> Vec<(u32, String)> {
+        let Some(scoping) = self.scoping.as_ref() else {
+            return Vec::new();
+        };
+        let mut nested = NestedClasses {
+            scoping,
+            values: &self.values,
+            found: Vec::new(),
+        };
+        oxc_ast_visit::Visit::visit_expression(&mut nested, expression);
+        nested.found
+    }
+
     fn reads<'s, 'a>(&'s self, ast: &'s AstBuilder<'a>) -> Option<Reads<'s, 'a>> {
         let scoping = self.scoping.as_ref()?;
         (!self.values.is_empty()).then_some(Reads {
@@ -71,6 +87,30 @@ impl StyleValues {
             in_text: false,
             in_rules: false,
         })
+    }
+}
+
+struct NestedClasses<'s> {
+    scoping: &'s Scoping,
+    values: &'s FxHashMap<SymbolId, StyleValue>,
+    found: Vec<(u32, String)>,
+}
+
+impl<'a> oxc_ast_visit::Visit<'a> for NestedClasses<'_> {
+    fn visit_object_property(&mut self, it: &oxc_ast::ast::ObjectProperty<'a>) {
+        if let Expression::Identifier(identifier) = &it.value
+            && let Some(StyleValue::Class(_)) = identifier
+                .reference_id
+                .get()
+                .and_then(|reference| self.scoping.get_reference(reference).symbol_id())
+                .and_then(|symbol| self.values.get(&symbol))
+        {
+            self.found.push((
+                oxc_span::GetSpan::span(&it.value).start,
+                identifier.name.to_string(),
+            ));
+        }
+        oxc_ast_visit::walk::walk_object_property(self, it);
     }
 }
 
