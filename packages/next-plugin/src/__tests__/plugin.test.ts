@@ -2,6 +2,7 @@ import { existsSync, readFileSync, writeFileSync } from 'node:fs'
 import { join, resolve } from 'node:path'
 
 import {
+  BuildGeneration,
   createCompatTypes,
   createNodeModulesExcludeRegex,
   mergeImportAliases,
@@ -40,59 +41,192 @@ function development(): void {
 }
 
 describe('webpack', () => {
+  type ContextOverrides = Readonly<
+    Partial<Omit<NextWebpackContext, 'config'>>
+  > & { readonly config?: object }
+
   function run(
     options: Parameters<typeof DevupUI>[1],
-    context: Partial<NextWebpackContext>,
+    contexts: readonly ContextOverrides[],
     userWebpack?: ReturnType<typeof mock>,
   ) {
     delete process.env.TURBOPACK
-    const spy = spyOn(
-      webpackPluginModule,
-      'DevupUIWebpackPlugin',
-    ).mockImplementation(mock() as never)
-    setWebpackPluginForTesting(webpackPluginModule)
+    type PluginArguments = ConstructorParameters<
+      typeof webpackPluginModule.DevupUIWebpackPlugin
+    >
+    const spy = mock((..._args: PluginArguments) => {})
+    class CapturingPlugin extends webpackPluginModule.DevupUIWebpackPlugin {
+      constructor(...args: PluginArguments) {
+        super(...args)
+        spy(...args)
+      }
+    }
+    setWebpackPluginForTesting({
+      ...webpackPluginModule,
+      DevupUIWebpackPlugin: CapturingPlugin,
+    })
+    const configs: NextWebpackConfig[] = []
+    const inputs: NextWebpackContext[] = []
+    const results: NextWebpackConfig[] = []
     try {
       const ret = DevupUI({ webpack: userWebpack }, options)
-      ret.webpack!(
-        { plugins: [] } as unknown as NextWebpackConfig,
-        { buildId: 'tmpBuildId', ...context } as NextWebpackContext,
-      )
-      return spy
+      for (const context of contexts) {
+        const config = { plugins: [] } as unknown as NextWebpackConfig
+        const input = {
+          buildId: 'tmpBuildId',
+          config: {},
+          ...context,
+        } as NextWebpackContext
+        configs.push(config)
+        inputs.push(input)
+        results.push(ret.webpack!(config, input))
+      }
+      return { spy, configs, inputs, results }
     } finally {
       setWebpackPluginForTesting(undefined)
     }
   }
 
   it('applies the webpack plugin with the production cache directory', () => {
-    const spy = run({}, {})
+    const { spy } = run({}, [{}])
 
-    expect(spy).toHaveBeenCalledWith({
-      cssDir: resolve('.next/cache', 'devup-ui_tmpBuildId'),
-    })
+    expect(spy).toHaveBeenCalledWith(
+      {
+        cssDir: resolve('.next/cache', 'devup-ui_tmpBuildId'),
+      },
+      expect.objectContaining({ complete: true }),
+    )
     spy.mockRestore()
   })
 
   it('applies the webpack plugin in dev', () => {
-    const spy = run({}, { dev: true })
+    const { spy } = run({}, [{ dev: true }])
 
-    expect(spy).toHaveBeenCalledWith({
-      cssDir: resolve('df', 'devup-ui_tmpBuildId'),
-      watch: true,
-    })
+    expect(spy).toHaveBeenCalledWith(
+      {
+        cssDir: resolve('df', 'devup-ui_tmpBuildId'),
+        watch: true,
+      },
+      expect.objectContaining({ complete: true }),
+    )
     spy.mockRestore()
   })
 
-  it('forwards the options and calls an existing webpack function', () => {
-    const webpack = mock()
+  it('forwards the options when no caller webpack function is configured', () => {
+    // Given
+    const options = { package: 'new-package' }
+    // When
+    const { spy, configs, results } = run(options, [{}])
+    try {
+      // Then
+      expect(spy).toHaveBeenCalledWith(
+        {
+          package: 'new-package',
+          cssDir: resolve('.next/cache', 'devup-ui_tmpBuildId'),
+        },
+        expect.objectContaining({ complete: true }),
+      )
+      expect(results[0]).toBe(configs[0])
+    } finally {
+      spy.mockRestore()
+    }
+  })
 
-    const spy = run({ package: 'new-package' }, {}, webpack)
+  it('forwards options and preserves order, arguments and return when a caller webpack function is configured', () => {
+    // Given
+    const returned = { plugins: [], name: 'caller-result' }
+    const pluginCounts: number[] = []
+    const webpack = mock(
+      (config: NextWebpackConfig, _context: NextWebpackContext) => {
+        pluginCounts.push(config.plugins.length)
+        return returned
+      },
+    )
+    // When
+    const { spy, configs, inputs, results } = run(
+      { package: 'new-package' },
+      [{}],
+      webpack,
+    )
+    try {
+      // Then
+      expect(spy).toHaveBeenCalledWith(
+        {
+          package: 'new-package',
+          cssDir: resolve('.next/cache', 'devup-ui_tmpBuildId'),
+        },
+        expect.objectContaining({ complete: true }),
+      )
+      expect(pluginCounts).toEqual([1])
+      expect(webpack).toHaveBeenCalledTimes(1)
+      expect(webpack.mock.calls[0]?.[0]).toBe(configs[0])
+      expect(webpack.mock.calls[0]?.[1]).toBe(inputs[0])
+      expect(results[0]).toBe(returned)
+    } finally {
+      spy.mockRestore()
+    }
+  })
 
-    expect(spy).toHaveBeenCalledWith({
-      package: 'new-package',
-      cssDir: resolve('.next/cache', 'devup-ui_tmpBuildId'),
-    })
-    expect(webpack).toHaveBeenCalled()
-    spy.mockRestore()
+  it('shares a real owner when one wrapper constructs production server and client configs', () => {
+    // Given
+    const config = {}
+    // When
+    const { spy } = run({}, [
+      { config, dev: false, isServer: true },
+      { config, dev: false, isServer: false },
+    ])
+    try {
+      // Then
+      expect(spy).toHaveBeenCalledTimes(2)
+      const server = spy.mock.calls[0]?.[1]
+      const client = spy.mock.calls[1]?.[1]
+      expect(server?.owner).toBeInstanceOf(BuildGeneration)
+      expect(client?.owner).toBe(server?.owner)
+      expect(server?.complete).toBe(false)
+      expect(client?.complete).toBe(true)
+    } finally {
+      spy.mockRestore()
+    }
+  })
+
+  it('marks a real owner complete when a wrapper constructs a development server config', () => {
+    // Given
+    const context = { config: {}, dev: true, isServer: true }
+    // When
+    const { spy } = run({}, [context])
+    try {
+      // Then
+      expect(spy).toHaveBeenCalledTimes(1)
+      const binding = spy.mock.calls[0]?.[1]
+      expect(binding?.owner).toBeInstanceOf(BuildGeneration)
+      expect(binding?.complete).toBe(true)
+    } finally {
+      spy.mockRestore()
+    }
+  })
+
+  it('isolates real owners when independent wrappers receive the same public context', () => {
+    // Given
+    const context = {
+      config: {},
+      dev: false,
+      isServer: true,
+      buildId: 'fixed',
+    }
+    const first = run({}, [context])
+    const firstOwner = first.spy.mock.calls[0]?.[1]?.owner
+    first.spy.mockRestore()
+    // When
+    const { spy } = run({}, [context])
+    try {
+      // Then
+      const secondOwner = spy.mock.calls[0]?.[1]?.owner
+      expect(firstOwner).toBeInstanceOf(BuildGeneration)
+      expect(secondOwner).toBeInstanceOf(BuildGeneration)
+      expect(secondOwner).not.toBe(firstOwner)
+    } finally {
+      spy.mockRestore()
+    }
   })
 })
 

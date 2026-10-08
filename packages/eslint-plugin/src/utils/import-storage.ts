@@ -82,7 +82,7 @@ export class ImportStorage {
   private checkDevupUIUtil(node: TSESTree.CallExpression): boolean {
     return (
       (node.callee.type === AST_NODE_TYPES.Identifier &&
-        node.callee.name in this.imports) ||
+        this.importedName(node.callee.name) !== undefined) ||
       (node.callee.type === AST_NODE_TYPES.MemberExpression &&
         node.callee.object.type === AST_NODE_TYPES.Identifier &&
         this.importObject.has(node.callee.object.name) &&
@@ -94,7 +94,7 @@ export class ImportStorage {
   private checkDevupUIComponent(node: TSESTree.JSXTagNameExpression): boolean {
     return (
       (node.type === AST_NODE_TYPES.JSXIdentifier &&
-        node.name in this.imports) ||
+        this.importedName(node.name) !== undefined) ||
       (node.type === AST_NODE_TYPES.JSXMemberExpression &&
         node.object.type === AST_NODE_TYPES.JSXIdentifier &&
         this.importObject.has(node.object.name) &&

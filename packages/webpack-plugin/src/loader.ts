@@ -20,6 +20,8 @@ import {
 } from '@devup-ui/wasm'
 import type { RawLoaderDefinitionFunction } from 'webpack'
 
+import { withCompilerScope } from './build-scope'
+
 export interface DevupUILoaderOptions {
   package: string
   cssDir: string
@@ -98,83 +100,86 @@ const devupUILoader: RawLoaderDefinitionFunction<DevupUILoaderOptions> =
     }
 
     try {
-      let relCssDir = relative(dirname(id), cssDir).replaceAll('\\', '/')
+      withCompilerScope(this._compiler, () => {
+        let relCssDir = relative(dirname(id), cssDir).replaceAll('\\', '/')
 
-      // POSIX-normalize so the engine's bucket key matches the canonical map /
-      // FILE_ROUTES keys (built with forward slashes by plugin-utils). Without
-      // this, single-importer collapse and atom hoisting silently no-op on
-      // Windows. No-op on POSIX.
-      const relativePath = relative(rootDir, id).replaceAll('\\', '/')
+        // POSIX-normalize so the engine's bucket key matches the canonical map /
+        // FILE_ROUTES keys (built with forward slashes by plugin-utils). Without
+        // this, single-importer collapse and atom hoisting silently no-op on
+        // Windows. No-op on POSIX.
+        const relativePath = relative(rootDir, id).replaceAll('\\', '/')
 
-      if (!relCssDir.startsWith('./')) relCssDir = `./${relCssDir}`
-      setCwdModuleResolver({
-        rootDir,
-        conditions,
-        mdxExtensions,
-        alias,
-        onResolutionInputs: (inputs) => {
-          for (const file of inputs.fileDependencies)
-            this.addDependency(resolutionWatchPath(file, !symlinks))
-          for (const path of inputs.missingDependencies)
-            this.addMissingDependency(resolutionWatchPath(path, !symlinks))
-        },
-      })
-      const {
-        code,
-        css = '',
-        map,
-        cssFile,
-        updatedBaseStyle,
-        dependencies = [],
-      } = codeExtract(
-        relativePath,
-        source.toString(),
-        libPackage,
-        relCssDir,
-        singleCss,
-        false,
-        true,
-        importAliases,
-        ...(isMdxSource(id, mdxExtensions)
-          ? (['compiled-mdx'] as const)
-          : ([] as const)),
-      )
-      for (const dependency of dependencies) {
-        this.addDependency(resolve(rootDir, dependency))
-      }
-      const sourceMap = parseSourceMap(map)
-      const promises: Promise<void>[] = []
-      if (updatedBaseStyle) {
-        // update base style
-        promises.push(
-          stateWriter.write(
-            join(cssDir, 'devup-ui.css'),
-            getCss(null, false),
-            'utf-8',
-          ),
+        if (!relCssDir.startsWith('./')) relCssDir = `./${relCssDir}`
+        setCwdModuleResolver({
+          rootDir,
+          conditions,
+          mdxExtensions,
+          alias,
+          onResolutionInputs: (inputs) => {
+            for (const file of inputs.fileDependencies)
+              this.addDependency(resolutionWatchPath(file, !symlinks))
+            for (const path of inputs.missingDependencies)
+              this.addMissingDependency(resolutionWatchPath(path, !symlinks))
+          },
+        })
+        const {
+          code,
+          css = '',
+          map,
+          cssFile,
+          updatedBaseStyle,
+          dependencies = [],
+        } = codeExtract(
+          relativePath,
+          source.toString(),
+          libPackage,
+          relCssDir,
+          singleCss,
+          false,
+          true,
+          importAliases,
+          ...(isMdxSource(id, mdxExtensions)
+            ? (['compiled-mdx'] as const)
+            : ([] as const)),
         )
-      }
-      if (cssFile) {
-        const content = `${this.resourcePath} ${Date.now()}`
-        // should be reset css
-        promises.push(
-          stateWriter.write(
-            join(cssDir, basename(cssFile)),
-            watch ? `/* ${content} */` : css,
-          ),
-        )
-        if (watch) {
+        for (const dependency of dependencies) {
+          this.addDependency(resolve(rootDir, dependency))
+        }
+        const sourceMap = parseSourceMap(map)
+        const promises: Promise<void>[] = []
+        if (updatedBaseStyle) {
+          // update base style
           promises.push(
-            stateWriter.write(sheetFile, exportSheet()),
-            stateWriter.write(classMapFile, exportClassMap()),
-            stateWriter.write(fileMapFile, exportFileMap()),
+            stateWriter.write(
+              join(cssDir, 'devup-ui.css'),
+              getCss(null, false),
+              'utf-8',
+            ),
           )
         }
-      }
-      Promise.all(promises).then(
-        () => callback(null, code, sourceMap as Parameters<typeof callback>[2]),
-        (error) => callback(toLoaderError(error)),
-      )
+        if (cssFile) {
+          const content = `${this.resourcePath} ${Date.now()}`
+          // should be reset css
+          promises.push(
+            stateWriter.write(
+              join(cssDir, basename(cssFile)),
+              watch ? `/* ${content} */` : css,
+            ),
+          )
+          if (watch) {
+            promises.push(
+              stateWriter.write(sheetFile, exportSheet()),
+              stateWriter.write(classMapFile, exportClassMap()),
+              stateWriter.write(fileMapFile, exportFileMap()),
+            )
+          }
+        }
+        Promise.all(promises).then(
+          () =>
+            callback(null, code, sourceMap as Parameters<typeof callback>[2]),
+          (error) => callback(toLoaderError(error)),
+        )
+      })
     } catch (error) {
       callback(
         isMdxSource(id, mdxExtensions)

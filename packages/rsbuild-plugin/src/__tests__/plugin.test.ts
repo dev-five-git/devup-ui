@@ -114,6 +114,21 @@ afterAll(() => {
 })
 
 describe('DevupUIRsbuildPlugin', () => {
+  it('does not mutate shorthands when only creating a configuration', () => {
+    // Given
+    const register = spyOn(wasm, 'registerShorthands').mockReturnValue(
+      undefined,
+    )
+    try {
+      // When
+      DevupUI({ shorthands: { insetX: ['left', 'right'] } })
+      // Then
+      expect(register).not.toHaveBeenCalled()
+    } finally {
+      register.mockRestore()
+    }
+  })
+
   it('should export DevupUIRsbuildPlugin', () => {
     expect(DevupUI).toBeDefined()
   })

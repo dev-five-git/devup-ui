@@ -352,7 +352,7 @@ describe('devupUIWebpackPlugin', () => {
     expect(setDebugSpy).toHaveBeenCalledWith(options.debug)
   })
 
-  it('should reset data files when load error', async () => {
+  it('starts a fresh watch owner without reading previous-session state', async () => {
     const plugin = new DevupUIWebpackPlugin({
       watch: true,
     })
@@ -365,9 +365,16 @@ describe('devupUIWebpackPlugin', () => {
     existsSyncSpy.mockReturnValue(true)
     plugin.apply(asCompiler(compiler))
     await compiler.hooks.watchRun.tapPromise.mock.calls[0][1]()
-    expect(importSheetSpy).toHaveBeenCalledWith({})
-    expect(importClassMapSpy).toHaveBeenCalledWith({})
-    expect(importFileMapSpy).toHaveBeenCalledWith({})
+    expect(
+      readFileSyncSpy.mock.calls.some(([path]) =>
+        [plugin.sheetFile, plugin.classMapFile, plugin.fileMapFile].includes(
+          String(path),
+        ),
+      ),
+    ).toBe(false)
+    expect(importSheetSpy).not.toHaveBeenCalled()
+    expect(importClassMapSpy).not.toHaveBeenCalled()
+    expect(importFileMapSpy).not.toHaveBeenCalled()
   })
 
   it.each(
@@ -435,29 +442,26 @@ describe('devupUIWebpackPlugin', () => {
       '*',
       'utf-8',
     )
+    expect(importSheetSpy).not.toHaveBeenCalledWith({ sheet: 'sheet' })
+    expect(importClassMapSpy).not.toHaveBeenCalledWith({ classMap: 'classMap' })
+    expect(importFileMapSpy).not.toHaveBeenCalledWith({ fileMap: 'fileMap' })
     if (options.watch) {
-      if (options.existsSheetFile)
-        expect(importSheetSpy).toHaveBeenCalledWith(
-          JSON.parse('{"sheet": "sheet"}'),
-        )
-      if (options.existsClassMapFile)
-        expect(importClassMapSpy).toHaveBeenCalledWith(
-          JSON.parse('{"classMap": "classMap"}'),
-        )
-      if (options.existsFileMapFile)
-        expect(importFileMapSpy).toHaveBeenCalledWith(
-          JSON.parse('{"fileMap": "fileMap"}'),
-        )
       expect(compiler.hooks.watchRun.tapPromise).toHaveBeenCalled()
 
-      await compiler.hooks.watchRun.tapPromise.mock.calls[0][1]()
+      const watch = compiler.hooks.watchRun.tapPromise.mock.calls.find(
+        ([name]) => name === 'DevupUIWebpackPlugin',
+      )
+      await watch?.[1]()
       if (options.existsDevupFile) {
         expect(statSpy).toHaveBeenCalledWith(plugin.options.devupFile)
-        await compiler.hooks.watchRun.tapPromise.mock.calls[0][1]()
+        await watch?.[1]()
       } else {
         expect(statSpy).not.toHaveBeenCalled()
       }
-    } else expect(compiler.hooks.watchRun.tapPromise).not.toHaveBeenCalled()
+    } else
+      expect(
+        compiler.hooks.watchRun.tapPromise.mock.calls.map(([name]) => name),
+      ).toEqual(['DevupUIBuildGeneration'])
     const resolutionTap = compiler.hooks.afterCompile.tap.mock.calls.find(
       ([name]) => name === 'DevupUIResolutionInputs',
     )
@@ -499,16 +503,8 @@ describe('devupUIWebpackPlugin', () => {
     })
 
     if (!options.watch) {
+      await compiler.hooks.beforeRun.tapPromise.mock.calls[0][1]()
       expect(compiler.hooks.done.tapPromise).toHaveBeenCalled()
-      compiler.hooks.done.tapPromise.mock.calls[0][1]({
-        hasErrors: () => true,
-      })
-      expect(writeFileSpy).not.toHaveBeenCalledWith(
-        join(plugin.options.cssDir, 'devup-ui.css'),
-        getCssSpy.mock.results[0]?.value,
-        'utf-8',
-      )
-
       await compiler.hooks.done.tapPromise.mock.calls[0][1]({
         hasErrors: () => false,
       })
@@ -517,6 +513,11 @@ describe('devupUIWebpackPlugin', () => {
         getCssSpy.mock.results[0]?.value,
         'utf-8',
       )
+      writeFileSpy.mockClear()
+      await compiler.hooks.done.tapPromise.mock.calls[0][1]({
+        hasErrors: () => true,
+      })
+      expect(writeFileSpy).not.toHaveBeenCalled()
     } else {
       expect(compiler.hooks.done.tapPromise).not.toHaveBeenCalled()
     }
