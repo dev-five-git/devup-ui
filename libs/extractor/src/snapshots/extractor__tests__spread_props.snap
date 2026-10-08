@@ -15,5 +15,5 @@ ToBTreeSet {
             },
         ),
     },
-    code: "import \"@devup-ui/core/devup-ui-0.css\";\nconst Component = (props) => {\n\treturn <div {...props} className={`${props?.className || \"\"} a-a`} style={props?.style} />;\n};\n",
+    code: "import \"@devup-ui/core/devup-ui-0.css\";\nconst Component = (props) => {\n\treturn ((__devupSpread0) => <div {...__devupSpread0} className={`${__devupSpread0?.className || \"\"} a-a`} style={__devupSpread0?.style} />)({\n\t\t__proto__: null,\n\t\t...props\n\t});\n};\n",
 }

@@ -68,7 +68,7 @@ ToBTreeSet {
             ExtractDynamicStyle {
                 property: "background",
                 level: 0,
-                identifier: "theme.colors[key]",
+                identifier: "__devupValue0",
                 selector: None,
                 style_order: None,
             },
@@ -77,7 +77,7 @@ ToBTreeSet {
             ExtractDynamicStyle {
                 property: "color",
                 level: 0,
-                identifier: "({a:`red`,...theme.more})[`b`]",
+                identifier: "__devupValue1",
                 selector: None,
                 style_order: None,
             },
@@ -99,5 +99,5 @@ ToBTreeSet {
             },
         ),
     },
-    code: "import \"@devup-ui/react/devup-ui-0.css\";\nimport { forwardRef as __devupForwardRef } from \"react\";\nexport const a = (base) => base;\nexport const b = (on) => on ? \"a-a\" : \"\";\nexport const c = \"a-b a-c\";\nexport const d = (on, base) => `${on ? base : \"\"} ${on ? \"\" : \"a-d\"}`;\nexport const e = \"a-e\";\nexport const f = (rest, handler, k) => <div {...rest} {...{\n\tonClick: handler,\n\t[k]: 1\n}} className={`${(\"className\" in Object({\n\tonClick: handler,\n\t[k]: 1\n}) ? {\n\tonClick: handler,\n\t[k]: 1\n}.className : rest?.className) || \"\"} a-e`} style={\"style\" in Object({\n\tonClick: handler,\n\t[k]: 1\n}) ? {\n\tonClick: handler,\n\t[k]: 1\n}.style : rest?.style} />;\nexport const g = (theme, key) => <div className=\"a-f a-g\" style={{\n\t\"--a\": theme.colors[key],\n\t\"--b\": ({a:`red`,...theme.more})[`b`]\n}} />;\nexport const h = (Base) => __devupForwardRef((__devupRefProps, __devupRef) => (({ style, className, as: DevupAs = \"div\", forwardedAs, ...rest }) => <DevupAs {...(({ \"theme\": __devupOmit0, ...__devupDom }) => __devupDom)(rest)} as={forwardedAs} className={[Base, className].filter(Boolean).join(\" \")} style={style} />)({\n\t...__devupRefProps,\n\tref: __devupRef\n}));\nexport const i = \"a-h\";\nexport const j = \"a-i\";\n",
+    code: "import \"@devup-ui/react/devup-ui-0.css\";\nimport { forwardRef as __devupForwardRef } from \"react\";\nexport const a = (base) => base;\nexport const b = (on) => on ? \"a-a\" : \"\";\nexport const c = \"a-b a-c\";\nexport const d = (on, base) => `${on ? base : \"\"} ${on ? \"\" : \"a-d\"}`;\nexport const e = \"a-e\";\nexport const f = (rest, handler, k) => ((__devupSpread0, __devupSpread1) => <div {...__devupSpread0} {...__devupSpread1} className={(\"className\" in __devupSpread1 ? __devupSpread1.className : __devupSpread0?.className) || \"\"} style={\"style\" in __devupSpread1 ? __devupSpread1.style : __devupSpread0?.style} />)({\n\t__proto__: null,\n\t...rest\n}, {\n\t__proto__: null,\n\t...{\n\t\tp: 1,\n\t\tonClick: handler,\n\t\t[k]: 1\n\t}\n});\nexport const g = (theme, key) => ((__devupValue0, __devupValue1) => <div className=\"a-f a-g\" style={{\n\t\"--a\": __devupValue0,\n\t\"--b\": __devupValue1\n}} />)(theme.colors[key], {\n\ta: \"red\",\n\t...theme.more\n}[\"b\"]);\nexport const h = (Base) => __devupForwardRef((__devupRefProps, __devupRef) => (({ style, className, as: DevupAs = \"div\", forwardedAs, ...rest }) => <DevupAs {...(({ \"theme\": __devupOmit0, ...__devupDom }) => __devupDom)(rest)} as={forwardedAs} className={[Base, className].filter(Boolean).join(\" \")} style={style} />)({\n\t...__devupRefProps,\n\tref: __devupRef\n}));\nexport const i = \"a-h\";\nexport const j = \"a-i\";\n",
 }

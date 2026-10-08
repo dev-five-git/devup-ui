@@ -59,6 +59,7 @@ interface ViteTestPlugin {
   configResolved: (config?: {
     command?: 'serve' | 'build'
     root?: string
+    plugins?: object[]
   }) => Promise<void>
   watchChange: (id: string) => Promise<void>
   hotUpdate: (
@@ -113,6 +114,16 @@ interface ViteTestPlugin {
   resolveId: (source: string, importer?: string) => string | undefined
 }
 
+interface ViteTestRestorePlugin {
+  name: string
+  sharedDuringBuild: true
+  apply: 'build'
+  generateBundle: {
+    order: 'post'
+    handler: (options: object, bundle: Record<string, object>) => void
+  }
+}
+
 function createCodeExtractResult(
   overrides: Partial<CodeExtractResult> = {},
 ): CodeExtractResult {
@@ -128,8 +139,14 @@ function createCodeExtractResult(
   } as unknown as CodeExtractResult
 }
 
+function createPlugins(
+  options?: Parameters<typeof DevupUI>[0],
+): [ViteTestPlugin, ViteTestRestorePlugin] {
+  return DevupUI(options) as unknown as [ViteTestPlugin, ViteTestRestorePlugin]
+}
+
 function createPlugin(options?: Parameters<typeof DevupUI>[0]): ViteTestPlugin {
-  return DevupUI(options) as unknown as ViteTestPlugin
+  return createPlugins(options)[0]
 }
 
 const ROLLUP_META: ConfigHookMeta = {
@@ -613,115 +630,270 @@ describe('devupUIVitePlugin', () => {
       expect(bundle['base.css'].source).toEqual('final complete sheet')
     })
 
-    it('does not forward server css that the client already emits', async () => {
-      const plugin = createPlugin({})
-      getCssSpy.mockImplementation((fileNum: number | null) =>
-        fileNum === null ? 'base sheet' : 'file sheet',
-      )
-      const serverBundle = {
-        'base.css': { source: 'stale', name: 'devup-ui.css' },
-        'file.css': { source: 'stale', name: 'devup-ui-3.css' },
-        'entry.js': {
-          name: 'entry',
-          viteMetadata: {
-            importedCss: new Set(['base.css', 'file.css', 'server-only.css']),
-          },
+    describe('css forwarded from the server bundle by @vitejs/plugin-rsc', () => {
+      interface Asset {
+        type: 'asset'
+        fileName: string
+        source: string
+        name: string
+      }
+      interface Chunk {
+        type: 'chunk'
+        fileName: string
+        name: string
+        viteMetadata?: { importedCss?: Set<string> }
+      }
+      type Output = Asset | Chunk
+      type Bundle = Record<string, Output>
+
+      const asset = (fileName: string, name: string): Asset => ({
+        type: 'asset',
+        fileName,
+        source: 'stale',
+        name,
+      })
+      const chunk = (fileName: string, css: string[]): Chunk => ({
+        type: 'chunk',
+        fileName,
+        name: fileName,
+        viteMetadata: { importedCss: new Set(css) },
+      })
+      const serverEnv = {
+        environment: { name: 'rsc', config: { consumer: 'server' as const } },
+      }
+      const clientEnv = {
+        environment: {
+          name: 'client',
+          config: { consumer: 'client' as const },
         },
       }
-      const clientBundle = {
-        'base.css': { source: 'stale', name: 'devup-ui.css' },
-        'file.css': { source: 'stale', name: 'devup-ui-3.css' },
+      const rscConfig = (bundles: Record<string, Bundle>) => ({
+        plugins: [{ name: 'rsc:minimal', api: { manager: { bundles } } }],
+      })
+
+      /**
+       * What plugin-rsc does in the client `generateBundle`: emit every CSS file
+       * the server chunks import (under the asset's own fileName), then read the
+       * very same imports as the server pages' CSS dependencies.
+       */
+      function forwardLikePluginRsc(rscBundle: Bundle) {
+        const imported = Object.values(rscBundle).flatMap((output) =>
+          output.type === 'chunk'
+            ? [...(output.viteMetadata?.importedCss ?? [])]
+            : [],
+        )
+        const emitted = [...new Set(imported)].map(
+          (file) => rscBundle[file].fileName,
+        )
+        const dependencies = Object.fromEntries(
+          Object.values(rscBundle).flatMap((output) =>
+            output.type === 'chunk'
+              ? [
+                  [
+                    output.fileName,
+                    [...(output.viteMetadata?.importedCss ?? [])],
+                  ],
+                ]
+              : [],
+          ),
+        )
+        return { emitted, dependencies }
       }
 
-      await plugin.generateBundle.call(
-        { environment: { name: 'rsc', config: { consumer: 'server' } } },
-        {},
-        serverBundle,
-      )
-      await plugin.generateBundle.call(
-        { environment: { name: 'client', config: { consumer: 'client' } } },
-        {},
-        clientBundle,
-      )
+      beforeEach(() => {
+        getCssSpy.mockImplementation((fileNum: number | null) =>
+          fileNum === null ? 'base sheet' : 'file sheet',
+        )
+      })
 
-      expect(serverBundle['base.css'].source).toEqual('base sheet')
-      expect(serverBundle['file.css'].source).toEqual('file sheet')
-      expect(clientBundle['base.css'].source).toEqual('base sheet')
-      expect(clientBundle['file.css'].source).toEqual('file sheet')
-      expect(serverBundle['entry.js'].viteMetadata.importedCss).toEqual(
-        new Set(['server-only.css']),
-      )
-    })
-
-    it('ignores no-write analysis bundles when tracking server css', async () => {
-      const plugin = createPlugin({})
-      const serverBundle = {
-        'file.css': { source: 'stale', name: 'devup-ui-3.css' },
-        'entry.js': {
-          name: 'entry',
-          viteMetadata: { importedCss: new Set(['file.css']) },
-        },
-      }
-      await plugin.generateBundle.call(
+      it.each([
         {
-          environment: {
-            name: 'rsc',
-            config: { consumer: 'server', build: { write: false } },
+          label: 'per-file css',
+          singleCss: false,
+          shared: ['base.css', 'file.css'],
+        },
+        { label: 'single css', singleCss: true, shared: ['base.css'] },
+      ])(
+        'keeps the server css dependencies and emits each file once ($label)',
+        async ({ singleCss, shared }) => {
+          const [plugin, restore] = createPlugins({ singleCss })
+          const names: Record<string, string> = {
+            'base.css': 'devup-ui.css',
+            'file.css': 'devup-ui-3.css',
+          }
+          const serverBundle: Bundle = {
+            'base.css': asset('base.css', names['base.css']),
+            'file.css': asset('file.css', names['file.css']),
+            'server-only.css': asset('server-only.css', 'server-only.css'),
+            'page.js': chunk('page.js', [...shared, 'server-only.css']),
+          }
+          const clientBundle: Bundle = Object.fromEntries(
+            shared.map((file) => [file, asset(file, names[file])]),
+          )
+          await plugin.configResolved(
+            rscConfig({ rsc: serverBundle, client: clientBundle }),
+          )
+
+          await plugin.generateBundle.call(serverEnv, {}, serverBundle)
+          await plugin.generateBundle.call(clientEnv, {}, clientBundle)
+          const { emitted, dependencies } = forwardLikePluginRsc(serverBundle)
+
+          expect(dependencies['page.js']).toEqual([
+            ...shared,
+            'server-only.css',
+          ])
+          expect(emitted).toHaveLength(new Set(emitted).size)
+          expect(emitted.filter((name) => name in clientBundle)).toEqual([])
+          expect(emitted).toContain('server-only.css')
+
+          for (const name of emitted) clientBundle[name] = asset(name, name)
+          restore.generateBundle.handler({}, clientBundle)
+
+          expect(Object.keys(clientBundle).sort()).toEqual(
+            [...shared, 'server-only.css'].sort(),
+          )
+          for (const file of shared) {
+            expect(serverBundle[file].fileName).toBe(file)
+          }
+          expect(dependencies['page.js']).toEqual([
+            ...(serverBundle['page.js'] as Chunk).viteMetadata!.importedCss!,
+          ])
+          expect(clientBundle['base.css']).toHaveProperty(
+            'source',
+            'base sheet',
+          )
+        },
+      )
+
+      it('undoes the stand-ins only once', async () => {
+        const [plugin, restore] = createPlugins()
+        const serverBundle: Bundle = {
+          'base.css': asset('base.css', 'devup-ui.css'),
+          'page.js': chunk('page.js', ['base.css']),
+        }
+        const clientBundle: Bundle = {
+          'base.css': asset('base.css', 'devup-ui.css'),
+        }
+        await plugin.configResolved(rscConfig({ rsc: serverBundle }))
+        await plugin.generateBundle.call(clientEnv, {}, clientBundle)
+        expect(serverBundle['base.css'].fileName).not.toBe('base.css')
+
+        restore.generateBundle.handler({}, clientBundle)
+        expect(serverBundle['base.css'].fileName).toBe('base.css')
+
+        serverBundle['base.css'].fileName = 'changed.css'
+        restore.generateBundle.handler({}, clientBundle)
+        expect(serverBundle['base.css'].fileName).toBe('changed.css')
+      })
+
+      it('leaves css the client does not emit to plugin-rsc as it is', async () => {
+        const [plugin] = createPlugins()
+        const serverBundle: Bundle = {
+          'devup-ui-3.server.css': asset(
+            'devup-ui-3.server.css',
+            'devup-ui-3.css',
+          ),
+          'page.js': chunk('page.js', ['devup-ui-3.server.css']),
+        }
+        const clientBundle: Bundle = {
+          'devup-ui-3.client.css': asset(
+            'devup-ui-3.client.css',
+            'devup-ui-3.css',
+          ),
+        }
+        await plugin.configResolved(rscConfig({ rsc: serverBundle }))
+
+        await plugin.generateBundle.call(clientEnv, {}, clientBundle)
+
+        expect(forwardLikePluginRsc(serverBundle).emitted).toEqual([
+          'devup-ui-3.server.css',
+        ])
+      })
+
+      it('does not park a server entry that is not an asset', async () => {
+        const [plugin] = createPlugins()
+        const serverBundle: Bundle = {
+          'shared.css': chunk('shared.css', []),
+          'page.js': chunk('page.js', ['shared.css']),
+          'plain.js': { type: 'chunk', fileName: 'plain.js', name: 'plain' },
+        }
+        const clientBundle: Bundle = {
+          'shared.css': asset('shared.css', 'shared.css'),
+        }
+        await plugin.configResolved(rscConfig({ rsc: serverBundle }))
+
+        await plugin.generateBundle.call(clientEnv, {}, clientBundle)
+
+        expect(serverBundle['shared.css'].fileName).toBe('shared.css')
+      })
+
+      it('does not touch the client bundle the rsc plugin tracks', async () => {
+        const [plugin] = createPlugins()
+        const trackedClient: Bundle = {
+          'base.css': asset('base.css', 'devup-ui.css'),
+          'page.js': chunk('page.js', ['base.css']),
+        }
+        const clientBundle: Bundle = {
+          'base.css': asset('base.css', 'devup-ui.css'),
+        }
+        await plugin.configResolved(rscConfig({ client: trackedClient }))
+
+        await plugin.generateBundle.call(clientEnv, {}, clientBundle)
+
+        expect(trackedClient['base.css'].fileName).toBe('base.css')
+      })
+
+      it.each([
+        { label: 'no config', config: undefined },
+        { label: 'no rsc plugin', config: { plugins: [{ name: 'other' }] } },
+        {
+          label: 'no api',
+          config: { plugins: [{ name: 'rsc:minimal' }] },
+        },
+        {
+          label: 'no manager bundles',
+          config: { plugins: [{ name: 'rsc:minimal', api: { manager: {} } }] },
+        },
+      ])(
+        'does nothing when plugin-rsc exposes no bundles ($label)',
+        async ({ config }) => {
+          const [plugin, restore] = createPlugins()
+          const clientBundle: Bundle = {
+            'base.css': asset('base.css', 'devup-ui.css'),
+          }
+          await plugin.configResolved(config)
+
+          await plugin.generateBundle.call(clientEnv, {}, clientBundle)
+          restore.generateBundle.handler({}, clientBundle)
+
+          expect(Object.keys(clientBundle)).toEqual(['base.css'])
+        },
+      )
+
+      it('ignores no-write analysis bundles', async () => {
+        const [plugin] = createPlugins()
+        const serverBundle: Bundle = {
+          'base.css': asset('base.css', 'devup-ui.css'),
+          'page.js': chunk('page.js', ['base.css']),
+        }
+        const clientBundle: Bundle = {
+          'base.css': asset('base.css', 'devup-ui.css'),
+        }
+        await plugin.configResolved(rscConfig({ rsc: serverBundle }))
+
+        await plugin.generateBundle.call(
+          {
+            environment: {
+              name: 'client',
+              config: { consumer: 'client', build: { write: false } },
+            },
           },
-        },
-        {},
-        serverBundle,
-      )
-      const clientBundle = {
-        'file.css': { source: 'stale', name: 'devup-ui-3.css' },
-      }
+          {},
+          clientBundle,
+        )
 
-      await plugin.generateBundle.call(
-        { environment: { name: 'client', config: { consumer: 'client' } } },
-        {},
-        clientBundle,
-      )
-
-      expect(serverBundle['entry.js'].viteMetadata.importedCss).toEqual(
-        new Set(['file.css']),
-      )
-    })
-
-    it('keeps server forwarding for a different output file name', async () => {
-      const plugin = createPlugin({})
-      const serverBundle = {
-        'devup-ui-3.server.css': {
-          source: 'stale',
-          name: 'devup-ui-3.css',
-        },
-        'entry.js': {
-          name: 'entry',
-          viteMetadata: {
-            importedCss: new Set(['devup-ui-3.server.css']),
-          },
-        },
-      }
-      await plugin.generateBundle.call(
-        { environment: { name: 'rsc', config: { consumer: 'server' } } },
-        {},
-        serverBundle,
-      )
-      const clientBundle = {
-        'devup-ui-3.client.css': {
-          source: 'stale',
-          name: 'devup-ui-3.css',
-        },
-      }
-
-      await plugin.generateBundle.call(
-        { environment: { name: 'client', config: { consumer: 'client' } } },
-        {},
-        clientBundle,
-      )
-
-      expect(serverBundle['entry.js'].viteMetadata.importedCss).toEqual(
-        new Set(['devup-ui-3.server.css']),
-      )
+        expect(serverBundle['base.css'].fileName).toBe('base.css')
+      })
     })
 
     it('resolves a stable id during build', async () => {
@@ -1354,9 +1526,9 @@ describe('devupUIVitePlugin atom hoisting', () => {
     options: Parameters<typeof DevupUI>[0],
     config: unknown,
   ) => {
-    const plugin = DevupUI(options) as unknown as {
-      configResolved: ConfigResolved
-    }
+    const [plugin] = DevupUI(options) as unknown as [
+      { configResolved: ConfigResolved },
+    ]
     await plugin.configResolved(config)
   }
 

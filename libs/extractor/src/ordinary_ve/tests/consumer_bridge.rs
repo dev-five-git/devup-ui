@@ -78,8 +78,7 @@ fn devup_box_inlines_known_native_vars_when_handlers_children_and_runtime_values
         assert!(output.code.contains(runtime), "{}", output.code);
     }
     assert!(output.code.contains("style="), "{}", output.code);
-    assert!(output.styles.iter().any(|value| matches!(value, crate::ExtractStyleValue::Dynamic(style) if style.property() == "background" && style.identifier().contains("props.bg"))));
-    assert!(output.styles.iter().any(|value| matches!(value, crate::ExtractStyleValue::Dynamic(style) if style.property() == "width" && style.identifier().contains("props.suffix"))));
+    super::consumer_capture::box_values(&output, &expected.margin)?;
     edges(&output, &["/producer.ts", "/tokens.ts", "/reset.css"]);
     Ok(())
 }

@@ -28,6 +28,6 @@ fn consumer_native_leaf_is_static_when_an_unrelated_box_helper_needs_the_page(
     assert!(!output.code.contains("vars.space"), "{}", output.code);
     assert!(output.code.contains("window.name"), "{}", output.code);
     assert!(output.code.contains("color()"), "{}", output.code);
-    assert!(output.styles.iter().any(|value| matches!(value, crate::ExtractStyleValue::Dynamic(style) if style.property() == "color" && style.identifier().contains("color()"))));
+    super::consumer_capture::helper_value(&output)?;
     Ok(())
 }

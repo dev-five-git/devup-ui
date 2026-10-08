@@ -336,6 +336,43 @@ export function computeCompiledFiles(
   return [...compiled].map((file) => toPosixRelative(cwd, file)).sort()
 }
 
+export interface ComputeReachableFilesOptions {
+  srcDir: string
+  tsconfigPath?: string
+  /** The bundler's entry modules, as absolute paths with or without extension. */
+  entries: string[]
+  /** pre-built graph from `buildStaticImportGraph` to skip the file scan. */
+  graph?: StaticImportGraph
+}
+
+/**
+ * The source files under `srcDir` a bundler compiles from `entries`: their
+ * closure over static and dynamic `import()` edges, as absolute paths in the
+ * graph's order. Extracting them before bundling fills the shared stylesheet
+ * without the styles of files no entry imports.
+ */
+export function computeReachableFiles(
+  opts: ComputeReachableFilesOptions,
+): string[] {
+  const { files, fileSet, staticImports, dynamicImports } =
+    opts.graph ?? buildStaticImportGraph(opts.srcDir, opts.tsconfigPath)
+  const queue = opts.entries
+    .map((entry) => resolveSourceFile(resolve(entry)))
+    .filter(
+      (entry): entry is string => entry !== undefined && fileSet.has(entry),
+    )
+  const reached = new Set<string>()
+  for (let index = 0; index < queue.length; index += 1) {
+    const file = queue[index]
+    if (reached.has(file)) continue
+    reached.add(file)
+    for (const imports of [staticImports, dynamicImports]) {
+      for (const target of imports.get(file) ?? []) queue.push(target)
+    }
+  }
+  return files.filter((file) => reached.has(file))
+}
+
 export interface ComputeFileReachOptions {
   srcDir: string
   tsconfigPath?: string

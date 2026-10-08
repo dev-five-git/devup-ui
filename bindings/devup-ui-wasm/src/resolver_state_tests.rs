@@ -125,13 +125,18 @@ fn clean_extraction_state_when_another_extraction_failed() -> Result<(), String>
 
 #[test]
 #[serial_test::serial]
-fn diagnostic_when_imported_constant_exploration_uses_shadowed_require_retains_ingress()
+fn extraction_when_imported_constant_uses_shadowed_require_never_requests_that_module()
 -> Result<(), String> {
     // Given
     let source = "import { Box } from '@devup-ui/react';\nimport { color } from './helper';\nconst x = <Box bg={color} />;";
     let state = Rc::new(RefCell::new(ResolverState::new("entry.tsx", source)));
     let recorded = Rc::clone(&state);
+    let requested = Rc::new(RefCell::new(Vec::new()));
+    let requests = Rc::clone(&requested);
     let resolver = move |specifier: &str, importer: &str| {
+        requests
+            .borrow_mut()
+            .push((importer.to_string(), specifier.to_string()));
         let request = recorded.borrow().request(specifier, importer)?;
         match (request.importer(), request.specifier()) {
             ("entry.tsx", "./helper") => {
@@ -142,10 +147,71 @@ fn diagnostic_when_imported_constant_exploration_uses_shadowed_require_retains_i
                 recorded.borrow_mut().cache(&module, &request);
                 Some(module)
             }
-            ("helper.ts", "./shadowed") => {
+            other => panic!("unexpected module reference: {other:?}"),
+        }
+    };
+    // When
+    let result = code_extract_internal_impl(
+        "entry.tsx",
+        source,
+        "@devup-ui/react",
+        "df".to_string(),
+        true,
+        false,
+        false,
+        HashMap::new(),
+        SourceMapMode::Generate,
+        Some(&resolver),
+        Some(&state),
+    );
+    // Then
+    result?;
+    assert_eq!(state.borrow().check(), Ok(()));
+    assert!(
+        requested
+            .borrow()
+            .iter()
+            .any(|(importer, specifier)| importer == "entry.tsx" && specifier == "./helper")
+    );
+    assert!(
+        !requested
+            .borrow()
+            .iter()
+            .any(|(_, specifier)| specifier == "./shadowed")
+    );
+    Ok(())
+}
+
+#[test]
+#[serial_test::serial]
+fn publication_when_imported_constant_uses_failing_unbound_require_retains_ingress()
+-> Result<(), String> {
+    // Given
+    let source = "import { Box } from '@devup-ui/react';\nimport { color } from './helper';\nconst x = <Box bg={color} />;";
+    let state = Rc::new(RefCell::new(ResolverState::new("entry.tsx", source)));
+    let recorded = Rc::clone(&state);
+    let requested = Rc::new(RefCell::new(Vec::new()));
+    let requests = Rc::clone(&requested);
+    let resolver = move |specifier: &str, importer: &str| {
+        let request = recorded.borrow().request(specifier, importer)?;
+        requests.borrow_mut().push((
+            request.importer().to_string(),
+            request.specifier().to_string(),
+        ));
+        match (request.importer(), request.specifier()) {
+            ("entry.tsx", "./helper") => {
+                let module = ResolvedModule {
+                    path: "helper.ts".to_string(),
+                    code: "const {color} = require('./unbound'); exports.color = color;"
+                        .to_string(),
+                };
+                recorded.borrow_mut().cache(&module, &request);
+                Some(module)
+            }
+            ("helper.ts", "./unbound") => {
                 recorded
                     .borrow_mut()
-                    .record(&request, "shadowed resolver failure");
+                    .record(&request, "unbound resolver failure");
                 None
             }
             other => panic!("unexpected module reference: {other:?}"),
@@ -167,8 +233,45 @@ fn diagnostic_when_imported_constant_exploration_uses_shadowed_require_retains_i
         Some(&state),
     );
     // Then
-    let error = result.err().unwrap_or_default();
-    assert!(error.starts_with("entry.tsx:2:23: module resolver failed for `./shadowed` from `helper.ts`: shadowed resolver failure"));
+    let error = result
+        .err()
+        .ok_or("unbound require unexpectedly succeeded")?;
+    assert!(
+        requested
+            .borrow()
+            .iter()
+            .any(|(importer, specifier)| importer == "helper.ts" && specifier == "./unbound")
+    );
+    assert!(error.starts_with("helper.ts:1:25: module resolver failed for `./unbound` from `helper.ts`: unbound resolver failure"), "{error}");
+    assert!(error.contains("Fix: repair the module resolver"), "{error}");
     assert_eq!(export_sheet_internal()?, before);
+    Ok(())
+}
+
+#[test]
+fn diagnostic_when_exploration_has_no_semantic_reference_retains_original_ingress()
+-> Result<(), String> {
+    // Given
+    let source = "import { Box } from '@devup-ui/react';\nimport { color } from './helper';\nconst x = <Box bg={color} />;";
+    let mut state = ResolverState::new("entry.tsx", source);
+    let ingress = state
+        .request("./helper", "entry.tsx")
+        .ok_or("missing helper ingress")?;
+    state.cache(
+        &ResolvedModule {
+            path: "helper.ts".to_string(),
+            code: "exports.color = 'red';".to_string(),
+        },
+        &ingress,
+    );
+    let request = state
+        .request("./exploratory", "helper.ts")
+        .ok_or("missing exploratory ingress")?;
+    // When
+    state.record(&request, "reference-free exploration failed");
+    // Then
+    let error = state.check().err().ok_or("exploration failure was lost")?;
+    assert!(error.starts_with("entry.tsx:2:23: module resolver failed for `./exploratory` from `helper.ts`: reference-free exploration failed"), "{error}");
+    assert!(error.contains("Fix: repair the module resolver"), "{error}");
     Ok(())
 }

@@ -549,6 +549,7 @@ impl Generated {
 
 mod aliases;
 mod gate;
+mod namespace_aliases;
 pub(crate) mod native;
 use aliases::{Reach, declarator_removal, export_edits, is_assigned_from};
 
@@ -839,7 +840,17 @@ impl Rewriter<'_, '_, '_, '_> {
                 self.replace(namespace, appended, member_span, &name, origin);
             }
             (None, AstKind::VariableDeclarator(declarator))
-                if matches!(declarator.id, BindingPattern::BindingIdentifier(_)) => {}
+                if matches!(declarator.id, BindingPattern::BindingIdentifier(_))
+                    && declarator
+                        .init
+                        .as_ref()
+                        .is_some_and(|init| init.span() == span)
+                    && nodes
+                        .parent_kind(nodes.parent_id(node))
+                        .as_variable_declaration()
+                        .is_some_and(|declaration| {
+                            declaration.kind == VariableDeclarationKind::Const
+                        }) => {}
             (None, AstKind::VariableDeclarator(declarator))
                 if declarator
                     .init
@@ -851,7 +862,11 @@ impl Rewriter<'_, '_, '_, '_> {
             (None, AstKind::ComputedMemberExpression(member)) if member.object.span() == span => {
                 self.whole_error(local, member.span.start, member.span.end);
             }
-            (None, _) => {}
+            (None, AstKind::ExportSpecifier(_))
+                if self.edits.iter().any(|(start, end, _)| {
+                    *start <= span.start as usize && *end >= span.end as usize
+                }) => {}
+            (None, _) => self.whole_error(local, span.start, span.end),
         }
     }
 
@@ -1070,6 +1085,7 @@ pub(crate) fn rewrite(
         }
     }
     let wants_semantic = !found.namespaces.is_empty()
+        || found.bound.iter().any(|bound| bound.devup.1.is_none())
         || !found.opaque.is_empty()
         || (found
             .bound
@@ -1090,7 +1106,7 @@ pub(crate) fn rewrite(
         let locals: FxHashMap<SymbolId, Reach> = found
             .bound
             .iter()
-            .filter(|bound| bound.devup.1.as_deref().is_some_and(compiled_export))
+            .filter(|bound| bound.devup.1.as_deref().is_none_or(compiled_export))
             .filter_map(|bound| {
                 Some((
                     bound.binding.symbol_id.get()?,
@@ -1133,6 +1149,19 @@ pub(crate) fn rewrite(
                 module: declared.module.clone(),
                 source: declared.source.clone(),
             })
+            .chain(
+                found
+                    .bound
+                    .iter()
+                    .filter(|bound| bound.devup.1.is_none())
+                    .map(|bound| Namespace {
+                        local: bound.binding.name.to_string(),
+                        symbol: bound.binding.symbol_id.get(),
+                        after: bound.after,
+                        module: None,
+                        source: bound.devup.0.clone(),
+                    }),
+            )
             .collect();
         for namespace in &spaces {
             rewriter.read_namespace(namespace);

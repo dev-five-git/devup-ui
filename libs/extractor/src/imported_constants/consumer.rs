@@ -62,6 +62,8 @@ pub(crate) fn plan(
         style: &style,
         css_props: &css_props,
         names: Default::default(),
+        symbols: Default::default(),
+        references: Default::default(),
         depth: 0,
         class_names: Vec::new(),
         slots: Vec::new(),

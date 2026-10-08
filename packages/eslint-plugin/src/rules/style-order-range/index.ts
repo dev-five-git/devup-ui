@@ -92,55 +92,35 @@ export const styleOrderRange = createRule({
   },
   create(context) {
     const importStorage = new ImportStorage()
-    let devupContext:
-      TSESTree.CallExpression | TSESTree.JSXOpeningElement | null = null
 
     return {
       ImportDeclaration(node) {
         importStorage.addImportByDeclaration(node)
       },
-      CallExpression(node) {
-        if (
-          importStorage.checkContextType(node) === 'UTIL' &&
-          node.arguments.length === 1 &&
-          node.arguments[0].type === AST_NODE_TYPES.ObjectExpression
-        ) {
-          devupContext = node
-        }
-      },
-      'CallExpression:exit'(node) {
-        if (devupContext === node) {
-          devupContext = null
-        }
-      },
       Property(node) {
+        // The build reads `styleOrder` only as a key of a style object handed to the utility itself
+        const object = node.parent
+        const call = object.parent
         if (
-          devupContext &&
           node.key.type === AST_NODE_TYPES.Identifier &&
+          !node.computed &&
           node.key.name === 'styleOrder' &&
           node.value.type !== AST_NODE_TYPES.AssignmentPattern &&
-          node.value.type !== AST_NODE_TYPES.TSEmptyBodyFunctionExpression
+          node.value.type !== AST_NODE_TYPES.TSEmptyBodyFunctionExpression &&
+          object.type === AST_NODE_TYPES.ObjectExpression &&
+          call?.type === AST_NODE_TYPES.CallExpression &&
+          call.arguments.includes(object) &&
+          importStorage.checkContextType(call) === 'UTIL'
         ) {
           checkStyleOrderRange(node.value, context)
         }
       },
-      JSXOpeningElement(node) {
-        if (importStorage.checkContextType(node) === 'COMPONENT') {
-          devupContext = node
-        }
-      },
-      'JSXOpeningElement:exit'(node) {
-        if (devupContext === node) {
-          devupContext = null
-        }
-      },
       JSXAttribute(node) {
-        if (!devupContext) return
-        // styleOrder prop만 체크
         if (
           node.name.type !== AST_NODE_TYPES.JSXIdentifier ||
           node.name.name !== 'styleOrder' ||
-          !node.value
+          !node.value ||
+          importStorage.checkContextType(node.parent) !== 'COMPONENT'
         ) {
           return
         }

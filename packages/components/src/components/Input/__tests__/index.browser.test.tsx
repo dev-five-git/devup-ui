@@ -21,7 +21,7 @@ describe('Input', () => {
     const { container } = render(<Input allowClear />)
     expect(container).toMatchSnapshot()
     expect(container.querySelector('[aria-label="input"]')).toHaveClass(
-      'padding-right-0-36px--1',
+      'padding-right-0-var_lp_--padding-right-spread-pr-0-_cm_36px_rp_--1',
     )
   })
 
@@ -61,7 +61,7 @@ describe('Input', () => {
     const { container } = render(<Input error />)
     expect(container).toMatchSnapshot()
     expect(container.querySelector('[aria-label="input"]')).toHaveClass(
-      'border-color-0-var_lp_--error_cm_light-dark_lp__h_D52B2E_cm__h_FF5B5E_rp__rp_--1',
+      'border-color-0-var_lp_--border-color-spread-borderColor-0-_cm_var_lp_--error_cm_light-dark_lp__h_D52B2E_cm__h_FF5B5E_rp__rp__rp_--1',
     )
   })
 
