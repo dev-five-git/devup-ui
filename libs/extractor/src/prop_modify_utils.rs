@@ -59,20 +59,13 @@ fn resolve_class_name_expression<'a>(
     class_name_prop: &Option<Expression<'a>>,
     styles: &mut [ExtractStyleProp<'a>],
     style_order: Option<u8>,
-    spread_props: &[Expression<'a>],
     filename: Option<&str>,
     conditional_branch: Option<(Expression<'a>, &mut [ExtractStyleProp<'a>], Option<u8>)>,
 ) -> (Option<Expression<'a>>, Vec<ExtractStyleValue>) {
     if let Some((condition, alt_styles, alt_style_order)) = conditional_branch {
         // Conditional styleOrder: generate className for both branches
-        let (con_expr, con_tailwind) = get_class_name_expression(
-            ast_builder,
-            class_name_prop,
-            styles,
-            style_order,
-            spread_props,
-            filename,
-        );
+        let (con_expr, con_tailwind) =
+            get_class_name_expression(ast_builder, class_name_prop, styles, style_order, filename);
         let alt_class_name_prop = class_name_prop
             .as_ref()
             .map(|c| c.clone_in(ast_builder.allocator()));
@@ -81,7 +74,6 @@ fn resolve_class_name_expression<'a>(
             &alt_class_name_prop,
             alt_styles,
             alt_style_order,
-            spread_props,
             filename,
         );
 
@@ -92,14 +84,7 @@ fn resolve_class_name_expression<'a>(
         all_tailwind.extend(alt_tailwind);
         (combined_expr, all_tailwind)
     } else {
-        get_class_name_expression(
-            ast_builder,
-            class_name_prop,
-            styles,
-            style_order,
-            spread_props,
-            filename,
-        )
+        get_class_name_expression(ast_builder, class_name_prop, styles, style_order, filename)
     }
 }
 
@@ -118,38 +103,44 @@ pub fn modify_prop_object<'a>(
     filename: Option<&str>,
     conditional_branch: Option<(Expression<'a>, &mut [ExtractStyleProp<'a>], Option<u8>)>,
 ) -> Vec<ExtractStyleValue> {
-    let mut class_name_prop = None;
-    let mut style_prop = None;
-    let mut spread_props = vec![];
-    for idx in (0..props.len()).rev() {
-        let prop = props.remove(idx);
+    let mut class_names = Vec::new();
+    let mut style_values = Vec::new();
+    let written = std::mem::replace(props, oxc_allocator::Vec::new_in(ast_builder));
+    for prop in written {
         match prop {
-            ObjectPropertyKind::ObjectProperty(attr) => {
-                if let Some(name) = get_str_by_property_key(&attr.key) {
-                    if name == "className" {
-                        class_name_prop = Some(attr.value.clone_in(ast_builder.allocator()));
-                    } else if name == "style" {
-                        style_prop = Some(attr.value.clone_in(ast_builder.allocator()));
-                    } else {
-                        props.insert(idx, ObjectPropertyKind::ObjectProperty(attr));
-                    }
+            ObjectPropertyKind::ObjectProperty(attr)
+                if matches!(
+                    get_str_by_property_key(&attr.key).as_deref(),
+                    Some("className" | "style")
+                ) =>
+            {
+                let value = Written::Prop(attr.value.clone_in(ast_builder.allocator()));
+                if get_str_by_property_key(&attr.key).as_deref() == Some("className") {
+                    class_names.push(value);
                 } else {
-                    props.insert(idx, ObjectPropertyKind::ObjectProperty(attr));
+                    style_values.push(value);
                 }
             }
             ObjectPropertyKind::SpreadProperty(spread) => {
-                spread_props.push(spread.argument.clone_in(ast_builder.allocator()));
-                props.insert(idx, ObjectPropertyKind::SpreadProperty(spread));
+                class_names.push(Written::Spread(
+                    spread.argument.clone_in(ast_builder.allocator()),
+                ));
+                style_values.push(Written::Spread(
+                    spread.argument.clone_in(ast_builder.allocator()),
+                ));
+                props.push(ObjectPropertyKind::SpreadProperty(spread));
             }
+            prop @ ObjectPropertyKind::ObjectProperty(_) => props.push(prop),
         }
     }
+    let class_name_prop = last_written(ast_builder, &class_names, "className");
+    let style_prop = last_written(ast_builder, &style_values, "style");
 
     let (class_name_expr, tailwind_styles) = resolve_class_name_expression(
         ast_builder,
         &class_name_prop,
         styles,
         style_order,
-        &spread_props,
         filename,
         conditional_branch,
     );
@@ -166,14 +157,8 @@ pub fn modify_prop_object<'a>(
             ast_builder,
         ));
     }
-    if let Some(ex) = get_style_expression(
-        ast_builder,
-        &style_prop,
-        styles,
-        &style_vars,
-        &spread_props,
-        filename,
-    ) {
+    if let Some(ex) = get_style_expression(ast_builder, &style_prop, styles, &style_vars, filename)
+    {
         props.push(ObjectPropertyKind::new_object_property(
             SPAN,
             PropertyKind::Init,
@@ -209,54 +194,54 @@ pub fn modify_props<'a>(
     filename: Option<&str>,
     conditional_branch: Option<(Expression<'a>, &mut [ExtractStyleProp<'a>], Option<u8>)>,
 ) -> Vec<ExtractStyleValue> {
-    let mut class_name_prop = None;
-    let mut style_prop = None;
-    let mut spread_props = vec![];
-    for idx in (0..props.len()).rev() {
-        let prop = props.remove(idx);
+    let mut class_names = Vec::new();
+    let mut style_values = Vec::new();
+    let written = std::mem::replace(props, oxc_allocator::Vec::new_in(ast_builder));
+    for prop in written {
         match prop {
-            JSXAttributeItem::Attribute(attr) => {
-                if let Identifier(ident) = &attr.name
-                    && let Some(value) = &attr.value
-                    && (ident.name == "className" || ident.name == "style")
-                {
-                    let mut res = None;
-
-                    if let JSXAttributeValue::ExpressionContainer(container) = &value {
-                        res = container
-                            .expression
-                            .as_expression()
-                            .map(|expression| expression.clone_in(ast_builder.allocator()));
-                    } else if let JSXAttributeValue::StringLiteral(literal) = &value {
-                        res = Some(Expression::new_string_literal(
-                            SPAN,
-                            literal.value,
-                            None,
-                            ast_builder,
-                        ));
-                    }
-                    let name = ident.name.as_str();
-                    if name == "className" {
-                        class_name_prop = res;
-                    } else if name == "style" {
-                        style_prop = res;
-                    }
+            JSXAttributeItem::Attribute(attr)
+                if matches!(&attr.name, Identifier(ident)
+                    if ident.name == "className" || ident.name == "style")
+                    && attr.value.is_some() =>
+            {
+                let value = match &attr.value {
+                    Some(JSXAttributeValue::ExpressionContainer(container)) => container
+                        .expression
+                        .as_expression()
+                        .map(|expression| expression.clone_in(ast_builder.allocator())),
+                    Some(JSXAttributeValue::StringLiteral(literal)) => Some(
+                        Expression::new_string_literal(SPAN, literal.value, None, ast_builder),
+                    ),
+                    _ => None,
+                };
+                let Some(value) = value else {
+                    continue;
+                };
+                if matches!(&attr.name, Identifier(ident) if ident.name == "className") {
+                    class_names.push(Written::Prop(value));
                 } else {
-                    props.insert(idx, JSXAttributeItem::Attribute(attr));
+                    style_values.push(Written::Prop(value));
                 }
             }
             JSXAttributeItem::SpreadAttribute(spread) => {
-                spread_props.push(spread.argument.clone_in(ast_builder.allocator()));
-                props.insert(idx, JSXAttributeItem::SpreadAttribute(spread));
+                class_names.push(Written::Spread(
+                    spread.argument.clone_in(ast_builder.allocator()),
+                ));
+                style_values.push(Written::Spread(
+                    spread.argument.clone_in(ast_builder.allocator()),
+                ));
+                props.push(JSXAttributeItem::SpreadAttribute(spread));
             }
+            prop @ JSXAttributeItem::Attribute(_) => props.push(prop),
         }
     }
+    let class_name_prop = last_written(ast_builder, &class_names, "className");
+    let style_prop = last_written(ast_builder, &style_values, "style");
     let (class_name_expr, tailwind_styles) = resolve_class_name_expression(
         ast_builder,
         &class_name_prop,
         styles,
         style_order,
-        &spread_props,
         filename,
         conditional_branch,
     );
@@ -272,14 +257,8 @@ pub fn modify_props<'a>(
             ast_builder,
         ));
     }
-    if let Some(ex) = get_style_expression(
-        ast_builder,
-        &style_prop,
-        styles,
-        &style_vars,
-        &spread_props,
-        filename,
-    ) {
+    if let Some(ex) = get_style_expression(ast_builder, &style_prop, styles, &style_vars, filename)
+    {
         props.push(JSXAttributeItem::new_attribute(
             SPAN,
             JSXAttributeName::new_identifier(SPAN, "style", ast_builder),
@@ -307,7 +286,6 @@ pub fn get_class_name_expression<'a>(
     class_name_prop: &Option<Expression<'a>>,
     styles: &mut [ExtractStyleProp<'a>],
     style_order: Option<u8>,
-    spread_props: &[Expression<'a>],
     filename: Option<&str>,
 ) -> (Option<Expression<'a>>, Vec<ExtractStyleValue>) {
     let mut tailwind = TailwindClassName {
@@ -327,31 +305,12 @@ pub fn get_class_name_expression<'a>(
         .map(|class_name| convert_class_name(ast_builder, class_name));
 
     // Merge class names: [className] + [devup-ui component styles]
-    let mut class_expressions = Vec::with_capacity(2 + spread_props.len());
+    let mut class_expressions = Vec::with_capacity(2);
     if let Some(class_name) = class_name_to_use {
         class_expressions.push(class_name);
     }
     if let Some(class_name) = gen_class_names(ast_builder, styles, style_order, filename) {
         class_expressions.push(class_name);
-    }
-    if class_name_prop.is_none() {
-        class_expressions.extend(
-            spread_props
-                .iter()
-                .filter(|ex| may_hold(ex, "className"))
-                .map(|ex| {
-                    convert_class_name(
-                        ast_builder,
-                        &Expression::StaticMemberExpression(StaticMemberExpression::boxed(
-                            SPAN,
-                            ex.clone_in(ast_builder.allocator()),
-                            IdentifierName::new(SPAN, "className", ast_builder),
-                            true,
-                            ast_builder,
-                        )),
-                    )
-                }),
-        );
     }
     let expression = merge_string_expressions(ast_builder, &class_expressions);
 
@@ -557,6 +516,107 @@ fn template_raw(cooked: &str) -> String {
     raw
 }
 
+/// `className` or `style` written as a prop, or spread with other props
+pub(crate) enum Written<'a> {
+    Prop(Expression<'a>),
+    Spread(Expression<'a>),
+}
+
+/// The value `key` ends up with as the props are written in order: a later
+/// prop or spread holding `key` replaces an earlier one. Whether a spread holds
+/// it only the runtime tells, unless it is an object literal.
+fn last_written<'a>(
+    ast_builder: &AstBuilder<'a>,
+    written: &[Written<'a>],
+    key: &'static str,
+) -> Option<Expression<'a>> {
+    let mut value: Option<Expression<'a>> = None;
+    for written in written {
+        let spread = match written {
+            Written::Prop(prop) => {
+                value = Some(prop.clone_in(ast_builder.allocator()));
+                continue;
+            }
+            Written::Spread(spread) if may_hold(spread, key) => spread,
+            Written::Spread(_) => continue,
+        };
+        let member = |optional| {
+            Expression::StaticMemberExpression(StaticMemberExpression::boxed(
+                SPAN,
+                spread.clone_in(ast_builder.allocator()),
+                IdentifierName::new(SPAN, key, ast_builder),
+                optional,
+                ast_builder,
+            ))
+        };
+        if let Some(written) = written_value(spread, key) {
+            value = Some(written.clone_in(ast_builder.allocator()));
+            continue;
+        }
+        value = Some(match value {
+            Some(earlier) if !names(spread, key) => {
+                let holds = Expression::new_binary_expression(
+                    SPAN,
+                    Expression::new_string_literal(SPAN, key, None, ast_builder),
+                    oxc_syntax::operator::BinaryOperator::In,
+                    crate::utils::wrap_direct_call(
+                        ast_builder,
+                        &Expression::new_identifier(SPAN, "Object", ast_builder),
+                        &[spread.clone_in(ast_builder.allocator())],
+                    ),
+                    ast_builder,
+                );
+                Expression::new_conditional_expression(
+                    SPAN,
+                    holds,
+                    member(false),
+                    earlier,
+                    ast_builder,
+                )
+            }
+            _ => member(!names(spread, key)),
+        });
+    }
+    value
+}
+
+/// Whether the object literal `spread` names `key`, so it always holds it
+fn names(spread: &Expression<'_>, key: &str) -> bool {
+    let Expression::ObjectExpression(object) = crate::utils::unwrap_syntax_only(spread) else {
+        return false;
+    };
+    object.properties.iter().any(|property| {
+        matches!(property, ObjectPropertyKind::ObjectProperty(property)
+            if !property.computed
+                && get_str_by_property_key(&property.key).as_deref() == Some(key))
+    })
+}
+
+/// What the object literal `spread` sets `key` to, when it writes it by name
+/// after anything that may also hold it
+fn written_value<'b, 'a>(spread: &'b Expression<'a>, key: &str) -> Option<&'b Expression<'a>> {
+    let Expression::ObjectExpression(object) = crate::utils::unwrap_syntax_only(spread) else {
+        return None;
+    };
+    object
+        .properties
+        .iter()
+        .rev()
+        .find_map(|property| match property {
+            ObjectPropertyKind::ObjectProperty(property)
+                if !property.computed
+                    && get_str_by_property_key(&property.key).as_deref() != Some(key) =>
+            {
+                None
+            }
+            ObjectPropertyKind::ObjectProperty(property) if !property.computed => {
+                Some(Some(&property.value))
+            }
+            _ => Some(None),
+        })
+        .flatten()
+}
+
 /// Whether the object `spread` gives may hold `key`: an object literal holds
 /// only the keys it writes
 fn may_hold(spread: &Expression<'_>, key: &str) -> bool {
@@ -576,10 +636,9 @@ pub fn get_style_expression<'a>(
     style_prop: &Option<Expression<'a>>,
     styles: &[ExtractStyleProp<'a>],
     style_vars: &Option<Expression<'a>>,
-    spread_props: &[Expression<'a>],
     filename: Option<&str>,
 ) -> Option<Expression<'a>> {
-    let mut style_expressions = Vec::with_capacity(3 + spread_props.len());
+    let mut style_expressions = Vec::with_capacity(3);
     if let Some(style) = gen_styles(ast_builder, styles, filename) {
         style_expressions.push(style);
     }
@@ -592,20 +651,6 @@ pub fn get_style_expression<'a>(
     if let Some(style_prop) = style_prop.clone_in(ast_builder.allocator()) {
         style_expressions.push(style_prop);
     }
-    if style_prop.is_none() {
-        style_expressions.extend(spread_props.iter().filter(|ex| may_hold(ex, "style")).map(
-            |ex| {
-                Expression::StaticMemberExpression(StaticMemberExpression::boxed(
-                    SPAN,
-                    ex.clone_in(ast_builder.allocator()),
-                    IdentifierName::new(SPAN, "style", ast_builder),
-                    true,
-                    ast_builder,
-                ))
-            },
-        ));
-    }
-
     merge_object_expressions(ast_builder, &style_expressions)
 }
 

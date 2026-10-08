@@ -15,5 +15,5 @@ ToBTreeSet {
             },
         ),
     },
-    code: "import \"@devup-ui/react/devup-ui.css\";\nimport { ThemeProvider, useTheme, withTheme, ServerStyleSheet, StyleSheetManager, isStyledComponent } from \"@devup-ui/react/compat\";\nconst S = ({ style, className, ...rest }) => <div {...rest} className={[\"a\", className].filter(Boolean).join(\" \")} style={style} />;\n",
+    code: "import \"@devup-ui/react/devup-ui.css\";\nimport { ThemeProvider, useTheme, withTheme, ServerStyleSheet, StyleSheetManager, isStyledComponent } from \"@devup-ui/react/compat\";\nconst S = ({ style, className, as: DevupAs = \"div\", forwardedAs, ...rest }) => <DevupAs {...rest} as={forwardedAs} className={[\"a\", className].filter(Boolean).join(\" \")} style={style} />;\n",
 }
