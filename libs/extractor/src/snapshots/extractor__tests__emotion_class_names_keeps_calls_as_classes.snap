@@ -1,0 +1,9 @@
+---
+source: libs/extractor/src/lib.rs
+expression: outputs
+---
+[
+    "ToBTreeSet { styles: {}, code: \"export const App = () => <a className={getClass()} />;\\n\" }",
+    "ToBTreeSet { styles: {Static(ExtractStaticStyle { property: \"color\", value: \"blue\", level: 0, selector: None, style_order: None, layer: None })}, code: \"import \\\"@devup-ui/react/devup-ui.css\\\";\\nexport const App = ({ on }) => <a className={`a ${on ? getClass() : \\\"\\\"}`} />;\\n\" }",
+    "ToBTreeSet { styles: {}, code: \"export const App = ({ o }) => <a className={`x ${o.getClass()} ${make(1)}`} />;\\n\" }",
+]

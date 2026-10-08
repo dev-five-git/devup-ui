@@ -1,0 +1,7 @@
+{
+  "changes": {
+    "bindings/devup-ui-wasm/package.json": "Patch"
+  },
+  "note": "A style object declared with const inside a function and passed to css(), styled(), globalCss(), keyframes(), a style prop or a spread (also through the Emotion, styled-components and vanilla-extract aliases) now compiles when every entry is written out and the object is only read as styles, instead of leaving the object where the class belongs; the build errors, at the binding, when the object is also read elsewhere (where code may change it), and at the call when it holds values only the runtime gives. Emotion's ClassNames cx keeps a function call's result as a class that stays as written, as @emotion/css cx does. css() and styled() compose an array of rule objects under a condition. A style function of the props (styled.div((props) => ({ ... })), and as a later argument) compiles: each value reading the props becomes a CSS variable the component sets (a number is a px length unless the property is unitless), theme reads (including theme.a[2]) become var(--a-2), and a condition chooses per value. New build errors: styled(...).attrs(...) chained after the styles (chain .attrs before them), a style function of the props that does not give one rule object at once with every entry written out, and a style object declared in a function that is also read elsewhere",
+  "date": "2026-10-01T00:00:00.000Z"
+}
