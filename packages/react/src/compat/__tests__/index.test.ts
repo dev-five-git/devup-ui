@@ -9,6 +9,8 @@ describe('compat entry', () => {
       ThemeProvider: expect.any(Function),
 
       createGlobalStyle: expect.any(Function),
+      cx: expect.any(Function),
+      merge: expect.any(Function),
       useTheme: expect.any(Function),
       withTheme: expect.any(Function),
 

@@ -204,7 +204,12 @@ fn devup_equivalent(source: &str, imported: &str) -> Option<DevupTarget<'static>
         // `style({...})` and `css({...})` both hand back a class name for a style object,
         // and `globalStyle(selector, rules)` is `globalCss` with the selector split out.
         ("@vanilla-extract/css", "style") | (_, "css") => Some(DevupTarget::Main("css")),
-        ("@vanilla-extract/css", "globalStyle") => Some(DevupTarget::Main("globalCss")),
+        // `cx` and `merge` take class names rather than styles, so they are no `css`
+        ("@emotion/css", "cx") => Some(DevupTarget::Compat("cx")),
+        ("@emotion/css", "merge") => Some(DevupTarget::Compat("merge")),
+        ("@vanilla-extract/css", "globalStyle") | ("@emotion/css", "injectGlobal") => {
+            Some(DevupTarget::Main("globalCss"))
+        }
         (_, "keyframes") => Some(DevupTarget::Main("keyframes")),
         (_, "styled") => Some(DevupTarget::Main("styled")),
         (_, "createGlobalStyle") => Some(DevupTarget::Compat("createGlobalStyle")),
@@ -282,7 +287,7 @@ pub fn transform_import_aliases_with_edits<'a>(
                         match specifier {
                             ImportDeclarationSpecifier::ImportSpecifier(spec) => {
                                 let local = spec.local.name.as_str();
-                                match (source_value, imported_name(&spec.imported).as_ref()) {
+                                match (source_value, imported_name(&spec.imported)) {
                                     ("@vanilla-extract/css", "style" | "keyframes") => {
                                         numbers.calls.push((local, RulesAt::Argument(0)));
                                     }
@@ -292,7 +297,10 @@ pub fn transform_import_aliases_with_edits<'a>(
                                     (
                                         "@emotion/react" | "styled-components",
                                         "css" | "keyframes",
-                                    ) => numbers.calls.push((local, RulesAt::EveryArgument)),
+                                    )
+                                    | ("@emotion/css", "css" | "keyframes" | "injectGlobal") => {
+                                        numbers.calls.push((local, RulesAt::EveryArgument));
+                                    }
                                     ("@emotion/react", "Global") => numbers.components.push(local),
                                     _ => {}
                                 }
@@ -341,6 +349,54 @@ pub fn transform_import_aliases_with_edits<'a>(
     }
 
     (Cow::Owned(result), edits)
+}
+
+/// Reapply Emotion units to literals produced after the initial alias pass.
+pub(super) fn pixelify_emotion_values<'a>(
+    code: &'a str,
+    filename: &str,
+    original: &str,
+) -> (Cow<'a, str>, Vec<Edit>) {
+    let allocator = Allocator::default();
+    let source_type = SourceType::from_path(filename).unwrap_or_default();
+    let original_program = Parser::new(&allocator, original, source_type)
+        .parse()
+        .program;
+    let mut numbers = LibraryNumbers::default();
+    for statement in &original_program.body {
+        if let Statement::ImportDeclaration(import) = statement
+            && import.source.value == "@emotion/css"
+        {
+            for specifier in import.specifiers.iter().flatten() {
+                if let ImportDeclarationSpecifier::ImportSpecifier(named) = specifier
+                    && matches!(
+                        named.imported.name().as_str(),
+                        "css" | "keyframes" | "injectGlobal"
+                    )
+                {
+                    numbers
+                        .calls
+                        .push((named.local.name.as_str(), RulesAt::EveryArgument));
+                }
+            }
+        }
+    }
+    let program = Parser::new(&allocator, code, source_type).parse().program;
+    numbers.visit_program(&program);
+    numbers.replacements.sort_by_key(|(start, ..)| *start);
+    let edits = numbers
+        .replacements
+        .iter()
+        .map(|(start, end, replacement)| (*start, *end, replacement.len()))
+        .collect();
+    if numbers.replacements.is_empty() {
+        return (Cow::Borrowed(code), edits);
+    }
+    let mut output = code.to_string();
+    for (start, end, replacement) in numbers.replacements.into_iter().rev() {
+        output.replace_range(start..end, &replacement);
+    }
+    (Cow::Owned(output), edits)
 }
 
 /// The source offset of `offset` in code `edits` made; an offset inside a
@@ -407,14 +463,25 @@ fn push_specifier(parts: &mut String, imported: &str, local: &str) {
     }
 }
 
-/// Borrow the exported name for the common identifier cases to avoid a per-specifier
-/// heap allocation. Only the rare string-literal export name (`import { "x" as y }`)
-/// needs an owned `String`, and its `Display` output is quoted.
-fn imported_name<'a>(imported: &'a ModuleExportName) -> Cow<'a, str> {
+/// The logical exported name: `import { 'css' as c }` and `import { css as c }` both
+/// export `css`, so the mapping tables match on this.
+fn imported_name<'a>(imported: &'a ModuleExportName) -> &'a str {
     match imported {
-        ModuleExportName::IdentifierName(id) => Cow::Borrowed(id.name.as_str()),
-        ModuleExportName::IdentifierReference(id) => Cow::Borrowed(id.name.as_str()),
+        ModuleExportName::IdentifierName(id) => id.name.as_str(),
+        ModuleExportName::IdentifierReference(id) => id.name.as_str(),
+        ModuleExportName::StringLiteral(literal) => literal.value.as_str(),
+    }
+}
+
+/// The exported name as it must be written back into an import clause; only the
+/// rare string-literal export name (`import { "x" as y }`) needs an owned, quoted
+/// `String`.
+fn exported_text<'a>(imported: &'a ModuleExportName) -> Cow<'a, str> {
+    match imported {
         ModuleExportName::StringLiteral(_) => Cow::Owned(imported.to_string()),
+        ModuleExportName::IdentifierName(_) | ModuleExportName::IdentifierReference(_) => {
+            Cow::Borrowed(imported_name(imported))
+        }
     }
 }
 
@@ -509,10 +576,16 @@ fn generate_transformed_import(
     for specifier in specifiers {
         if let ImportDeclarationSpecifier::ImportSpecifier(spec) = specifier {
             let local = spec.local.name.as_str();
-            let imported = imported_name(&spec.imported);
-            match redirect_target(source, &imported, redirect_every_name) {
+            let written = exported_text(&spec.imported);
+            // A stylesheet passes every export through as written
+            let name = if redirect_every_name {
+                written.as_ref()
+            } else {
+                imported_name(&spec.imported)
+            };
+            match redirect_target(source, name, redirect_every_name) {
                 Some(target) => push_redirect(&mut redirected, &mut compat, target, local),
-                None => push_specifier(&mut retained, &imported, local),
+                None => push_specifier(&mut retained, &written, local),
             }
         }
     }
@@ -726,6 +799,30 @@ mod tests {
             "@devup-ui/react",
             &styled_components_alias()
         ));
+    }
+
+    #[test]
+    fn test_emotion_css_maps_onto_devup_equivalents() {
+        let code = transform_import_aliases(
+            "import { css, cx, keyframes, injectGlobal, merge, flush } from '@emotion/css'",
+            "test.tsx",
+            "@devup-ui/react",
+            &HashMap::from([("@emotion/css".to_string(), ImportAlias::NamedToNamed)]),
+        );
+        assert!(
+            code.contains(
+                "import { css, keyframes, globalCss as injectGlobal } from '@devup-ui/react';"
+            ),
+            "{code}"
+        );
+        assert!(
+            code.contains("import { cx, merge } from '@devup-ui/react/compat';"),
+            "{code}"
+        );
+        assert!(
+            code.contains("import { flush } from '@emotion/css';"),
+            "{code}"
+        );
     }
 
     #[test]

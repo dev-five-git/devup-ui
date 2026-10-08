@@ -11,6 +11,8 @@ export { Global } from '../components/Global'
 export { ThemeProvider } from '../components/ThemeProvider'
 export { useStyledTheme as useTheme } from '../hooks/use-styled-theme'
 export { createGlobalStyle } from '../utils/create-global-style'
+export type { ClassNamesArg } from '../utils/emotion-classes'
+export { cx, merge } from '../utils/emotion-classes'
 export {
   isStyledComponent,
   ServerStyleSheet,

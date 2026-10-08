@@ -1,4 +1,5 @@
 use crate::as_visit::As;
+use crate::class_arguments::{class_arguments, flatten_classes};
 use crate::component::ExportVariableKind;
 use crate::css_utils::{
     TemplateStyles, css_to_style_template, keyframes_to_keyframes_style, optimize_css_block,
@@ -376,6 +377,8 @@ impl<'a> DevupVisitor<'a> {
         }
         for (name, kind) in [
             ("css", UtilType::Css),
+            ("cx", UtilType::Cx),
+            ("merge", UtilType::Merge),
             ("globalCss", UtilType::GlobalCss),
             ("keyframes", UtilType::Keyframes),
             ("createGlobalStyle", UtilType::GlobalCssComponent),
@@ -1609,13 +1612,28 @@ impl<'a> VisitMut<'a> for DevupVisitor<'a> {
                         Argument::SpreadElement(spread) => &mut spread.argument,
                         argument => argument.to_expression_mut(),
                     };
-                    self.style_values.read_in(&self.ast, expression);
+                    if util_type.class_call().is_some() {
+                        self.style_values.read_in_class_names(&self.ast, expression);
+                    } else {
+                        self.style_values.read_in(&self.ast, expression);
+                    }
                 }
                 let offset = call.span.start;
-                let is_css = matches!(util_type.as_ref(), UtilType::Css);
+                let is_css = util_type.is_css();
                 if is_css {
-                    self.unknown_arguments("css", &call.arguments);
-                    self.changed_arguments("css", &call.arguments);
+                    self.unknown_arguments(util_type.api(), &call.arguments);
+                    self.changed_arguments(util_type.api(), &call.arguments);
+                }
+                if let Some(class_call) = util_type.class_call() {
+                    let classes = class_arguments(
+                        &self.ast,
+                        class_call,
+                        offset,
+                        &call.arguments,
+                        &mut self.errors,
+                    );
+                    call.arguments =
+                        oxc_allocator::Vec::from_array_in([Argument::from(classes)], &self.ast);
                 }
                 let composed_classes = if is_css
                     && let Some(StyleArguments { classes, rules }) =
@@ -1634,7 +1652,7 @@ impl<'a> VisitMut<'a> for DevupVisitor<'a> {
                 };
                 if call.arguments.len() == 1 {
                     let r = util_type.as_ref();
-                    *it = if matches!(r, UtilType::Css) {
+                    *it = if r.is_css() {
                         let ExtractResult {
                             mut styles,
                             style_order,
@@ -1653,7 +1671,7 @@ impl<'a> VisitMut<'a> for DevupVisitor<'a> {
                         );
                         if let Some(value) = runtime_value(&styles) {
                             self.errors
-                                .push((offset, runtime_value_error("css", &value)));
+                                .push((offset, runtime_value_error(r.api(), &value)));
                         }
 
                         if styles.is_empty() {
@@ -1791,7 +1809,7 @@ impl<'a> VisitMut<'a> for DevupVisitor<'a> {
                     *it = self.global_css_result(util_type.is_component());
                 } else {
                     *it = match util_type.as_ref() {
-                        UtilType::Css | UtilType::Keyframes => {
+                        UtilType::Css | UtilType::Cx | UtilType::Merge | UtilType::Keyframes => {
                             Expression::new_string_literal(SPAN, "", None, &self.ast)
                         }
                         global => self.global_css_result(global.is_component()),
@@ -1808,17 +1826,33 @@ impl<'a> VisitMut<'a> for DevupVisitor<'a> {
                     )
                     .unwrap_or_else(|| Expression::new_string_literal(SPAN, "", None, &self.ast));
                 }
+                if util_type.class_call().is_some() {
+                    let classes = std::mem::replace(
+                        it,
+                        Expression::new_string_literal(SPAN, "", None, &self.ast),
+                    );
+                    *it = flatten_classes(&self.ast, classes);
+                }
             }
+        } else if let Expression::TaggedTemplateExpression(tag) = it
+            && let Some(class_type) = self.util_type(&tag.tag)
+            && class_type.class_call().is_some()
+        {
+            self.errors.push((
+                tag.span.start,
+                build_time_error(
+                    class_type.api(),
+                    &readable_code(it),
+                    "call it with class names, as in `cx('a', 'b')`",
+                ),
+            ));
+            *it = Expression::new_string_literal(SPAN, "", None, &self.ast);
         } else if let Expression::TaggedTemplateExpression(tag) = it
             && let Some(css_type) = self.util_type(&tag.tag)
         {
             self.style_values.read_in_text(&self.ast, &mut tag.quasi);
             let r = css_type.as_ref();
-            let api = match r {
-                UtilType::Css => "css",
-                UtilType::Keyframes => "keyframes",
-                UtilType::GlobalCss | UtilType::GlobalCssComponent => "globalCss",
-            };
+            let api = r.api();
             let mut build_css_str = || {
                 template_css_text(&tag.quasi, api).unwrap_or_else(|error| {
                     self.errors.push(error);
@@ -2160,7 +2194,7 @@ impl<'a> VisitMut<'a> for DevupVisitor<'a> {
             Some(Expression::TaggedTemplateExpression(tag)) => self.util_type(&tag.tag),
             _ => None,
         }
-        .filter(|util| matches!(util.as_ref(), UtilType::Css | UtilType::Keyframes))
+        .filter(|util| util.is_css() || matches!(util.as_ref(), UtilType::Keyframes))
         .and_then(|util| Some((util, self.style_values.constant(&it.id)?)));
 
         walk_variable_declarator(self, it);
@@ -2171,7 +2205,7 @@ impl<'a> VisitMut<'a> for DevupVisitor<'a> {
             let value = value.value.to_string();
             self.style_values.insert(
                 symbol,
-                if matches!(util.as_ref(), UtilType::Css) {
+                if util.is_css() {
                     crate::style_values::StyleValue::Class(value)
                 } else {
                     crate::style_values::StyleValue::Keyframes(value)

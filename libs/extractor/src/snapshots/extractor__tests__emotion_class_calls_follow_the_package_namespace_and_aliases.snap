@@ -1,0 +1,5 @@
+---
+source: libs/extractor/src/lib.rs
+expression: output.code
+---
+"import * as compat from \"@devup-ui/react/compat\";\nexport const a = \"a b\";\nexport const b = \"c d\";\nexport const c = \"e\";\nexport const d = \"f\";\nexport const e = \"g h\";\n"
