@@ -28,12 +28,12 @@ thread_local! {
     static SITES: RefCell<Option<SiteContext>> = const { RefCell::new(None) };
 }
 
-pub(crate) fn counter_owner() -> css::naming::CounterOwner {
+pub(crate) fn counter_owner() -> css::CounterOwner {
     SITES.with_borrow(|context| {
         context
             .as_ref()
-            .map_or(css::naming::CounterOwner::Inactive, |context| {
-                css::naming::CounterOwner::from_source(&context.file)
+            .map_or(css::CounterOwner::Inactive, |context| {
+                css::CounterOwner::from_source(&context.file)
             })
     })
 }

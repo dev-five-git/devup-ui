@@ -3,7 +3,7 @@ use std::{
     hash::{Hash, Hasher},
 };
 
-use css::{Naming, naming::CounterOwner, style_selector::StyleSelector};
+use css::{CounterOwner, Naming, style_selector::StyleSelector};
 
 use super::extract_static_style::{ExtractStaticStyle, ThemeTokenResolution};
 

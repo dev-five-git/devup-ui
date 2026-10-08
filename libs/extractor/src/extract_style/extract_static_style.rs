@@ -48,7 +48,7 @@ pub struct ExtractStaticStyle {
     /// again the same way.
     pub naming: Naming,
     /// Captured original allocation identity, retained for deferred sheet emission.
-    pub counter_owner: css::naming::CounterOwner,
+    pub counter_owner: css::CounterOwner,
     pub origin: Origin,
 }
 

@@ -204,11 +204,11 @@ impl ExtractDynamicStyle {
     }
 
     /// Original allocation identity already carried by the dynamic source site.
-    pub fn counter_owner(&self) -> css::naming::CounterOwner {
+    pub fn counter_owner(&self) -> css::CounterOwner {
         self.site
             .as_ref()
-            .map_or(css::naming::CounterOwner::Inactive, |site| {
-                css::naming::CounterOwner::from_source(&site.file)
+            .map_or(css::CounterOwner::Inactive, |site| {
+                css::CounterOwner::from_source(&site.file)
             })
     }
 

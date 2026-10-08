@@ -11,6 +11,7 @@ pub mod content_typography;
 #[cfg(test)]
 mod content_typography_tests;
 pub mod content_value;
+mod counter_owner;
 pub mod debug;
 pub mod file_map;
 pub mod file_routes;
@@ -42,6 +43,7 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{LazyLock, RwLock};
 
 use crate::constant::{GLOBAL_ENUM_STYLE_PROPERTY, GLOBAL_STYLE_PROPERTY};
+pub use crate::counter_owner::CounterOwner;
 use crate::debug::is_debug;
 
 pub use crate::naming::{Naming, Site};
@@ -489,7 +491,7 @@ pub fn sheet_to_classname_content(
     content: &content_name::AtomContent<'_>,
     filename: Option<&str>,
 ) -> String {
-    sheet_to_classname_owned(content, filename, naming::CounterOwner::Inactive)
+    sheet_to_classname_owned(content, filename, CounterOwner::Inactive)
 }
 
 /// Keep original counter ownership separate from canonical content and delivery scope.
@@ -497,7 +499,7 @@ pub fn sheet_to_classname_content(
 pub fn sheet_to_classname_owned(
     content: &content_name::AtomContent<'_>,
     filename: Option<&str>,
-    owner: naming::CounterOwner,
+    owner: CounterOwner,
 ) -> String {
     let descriptor = content.content();
     match naming::owned_private_counter(owner, (filename, content.order), content.naming) {
