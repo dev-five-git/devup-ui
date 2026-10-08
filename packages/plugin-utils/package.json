@@ -15,7 +15,7 @@
     "utils"
   ],
   "type": "module",
-  "version": "1.0.16",
+  "version": "1.0.17",
   "scripts": {
     "lint": "eslint",
     "test:types": "bun ../../node_modules/@typescript/native/bin/tsc --ignoreConfig --noEmit --strict --skipLibCheck --moduleResolution bundler --module esnext --target esnext --types bun src/__tests__/shorthands.test.ts",

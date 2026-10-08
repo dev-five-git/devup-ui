@@ -469,11 +469,11 @@
     },
     "bindings/devup-ui-wasm": {
       "name": "@devup-ui/wasm",
-      "version": "1.0.82",
+      "version": "1.0.83",
     },
     "packages/bun-plugin": {
       "name": "@devup-ui/bun-plugin",
-      "version": "1.0.21",
+      "version": "1.0.22",
       "dependencies": {
         "@devup-ui/plugin-utils": "workspace:^",
         "@devup-ui/wasm": "workspace:^",
@@ -488,7 +488,7 @@
     },
     "packages/components": {
       "name": "@devup-ui/components",
-      "version": "0.1.59",
+      "version": "0.1.60",
       "dependencies": {
         "@devup-ui/react": "workspace:^",
         "clsx": "^2.1",
@@ -515,7 +515,7 @@
     },
     "packages/eslint-plugin": {
       "name": "@devup-ui/eslint-plugin",
-      "version": "1.0.21",
+      "version": "1.0.22",
       "dependencies": {
         "@typescript-eslint/utils": "^8.70",
         "typescript-eslint": "^8.70",
@@ -532,7 +532,7 @@
     },
     "packages/next-plugin": {
       "name": "@devup-ui/next-plugin",
-      "version": "1.0.89",
+      "version": "1.0.90",
       "dependencies": {
         "@devup-ui/plugin-utils": "workspace:^",
         "@devup-ui/wasm": "workspace:^",
@@ -550,7 +550,7 @@
     },
     "packages/plugin-utils": {
       "name": "@devup-ui/plugin-utils",
-      "version": "1.0.16",
+      "version": "1.0.17",
       "devDependencies": {
         "typescript": "^7.0.2",
       },
@@ -591,7 +591,7 @@
     },
     "packages/rsbuild-plugin": {
       "name": "@devup-ui/rsbuild-plugin",
-      "version": "1.0.66",
+      "version": "1.0.67",
       "dependencies": {
         "@devup-ui/plugin-utils": "workspace:^",
         "@devup-ui/wasm": "workspace:^",
@@ -607,7 +607,7 @@
     },
     "packages/vite-plugin": {
       "name": "@devup-ui/vite-plugin",
-      "version": "1.0.72",
+      "version": "1.0.73",
       "dependencies": {
         "@devup-ui/plugin-utils": "workspace:^",
         "@devup-ui/wasm": "workspace:^",
@@ -622,7 +622,7 @@
     },
     "packages/webpack-plugin": {
       "name": "@devup-ui/webpack-plugin",
-      "version": "1.0.70",
+      "version": "1.0.71",
       "dependencies": {
         "@devup-ui/plugin-utils": "workspace:^",
         "@devup-ui/wasm": "workspace:^",
