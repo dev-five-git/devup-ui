@@ -1,0 +1,7 @@
+{
+    "changes":  {
+                    "packages/eslint-plugin/package.json":  "Patch"
+                },
+    "note":  "ESLint rules now check exactly what the build reads. The array, typography, media and styleOrder rules and css-utils-literal-only follow the import aliases the build compiles by default (@emotion/react, @emotion/styled, styled-components, @vanilla-extract/css) and the rules of styled (styled.div({...}), styled(\"div\", {...}), styled(Base)({...}, {...}); not .attrs()), createGlobalStyle({...}) and the styles of Emotion Global, and check and fix a module-level const object that only styles read. Vanilla-extract stylesheets (.css.ts/.css.js) are no longer read as Devup UI. New rule no-runtime-read reports css/keyframes/styled/Box read as a value (\"`X` is read at runtime, where it does not exist\"), and css-utils-literal-only reports globals that do not exist where a .css.ts is evaluated (window, document, process, ...). No new build errors.",
+    "date":  "2026-10-01T00:00:00.000Z"
+}
