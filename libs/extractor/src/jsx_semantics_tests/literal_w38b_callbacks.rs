@@ -39,9 +39,6 @@ fn order_callback_when_terminal_preserves_render_and_nested_returns(
 #[rstest]
 #[case("async p=>2")]
 #[case("function*(p){return 2}")]
-#[case("p=>{return;}")]
-#[case("p=>{trace.push('tail')}")]
-#[case("p=>{if(p.active)return 2}")]
 #[serial]
 fn order_callback_when_unsupported_rejects_before_execution(#[case] callback: &str) {
     // Given: parser-valid callbacks which cannot produce a synchronous total order.
@@ -63,6 +60,69 @@ fn order_callback_when_unsupported_rejects_before_execution(#[case] callback: &s
         "{actual}"
     );
     assert!(actual.contains("styleOrder"), "{actual}");
+}
+
+#[rstest]
+#[case("p=>{return;}", (vec![None], [None, None]), serde_json::json!(["built"]))]
+#[case("p=>{trace.push('tail')}", (vec![None], [None, None]), serde_json::json!(["built", "tail", "tail"]))]
+#[case("p=>{if(p.active)return 2}", (vec![None, Some(2)], [Some(2), None]), serde_json::json!(["built"]))]
+#[serial]
+fn order_callback_when_bare_or_falloff_reconciles_obsolete_rejections(
+    #[case] callback: &str,
+    #[case] expected: (Vec<Option<u8>>, [Option<u8>; 2]),
+    #[case] trace: serde_json::Value,
+) {
+    // Given: the exact three formerly rejected callbacks now have approved normal exits.
+    let source = format!(
+        "import {{styled}} from '@devup-ui/react';const __devupForwardRef=(render)=>render;const Card=styled.div`style-order:${{{callback}}};color:red`;trace.push('built');const a=Card({{active:true}},null);const b=Card({{active:false}},null);"
+    );
+    // When: public extraction and both emitted component renders execute.
+    let compiled = output(&source);
+    let actual = whole::evaluate_code(&compiled.code, "[a.props.className,b.props.className]");
+    // Then: the full red/order vector and selected classes preserve the trace exactly once.
+    let mut styles = compiled
+        .styles
+        .iter()
+        .map(|style| match style {
+            ExtractStyleValue::Static(style) => {
+                (style.property(), style.value(), style.style_order)
+            }
+            other => panic!("unexpected declaration: {other:?}"),
+        })
+        .collect::<Vec<_>>();
+    styles.sort_unstable();
+    assert_eq!(
+        styles,
+        expected
+            .0
+            .iter()
+            .map(|order| ("color", "red", *order))
+            .collect::<Vec<_>>()
+    );
+    let classes = actual
+        .element
+        .as_array()
+        .required("classes")
+        .iter()
+        .map(|class| {
+            class
+                .as_str()
+                .required("selected class")
+                .split_whitespace()
+                .collect::<Vec<_>>()
+        })
+        .collect::<Vec<_>>();
+    let selected = expected
+        .1
+        .map(|order| format!("color-0-red--{}-a", order.unwrap_or(255)));
+    assert_eq!(
+        classes,
+        selected
+            .iter()
+            .map(|class| vec![class.as_str()])
+            .collect::<Vec<_>>()
+    );
+    assert_eq!(actual.trace, trace);
 }
 
 #[test]

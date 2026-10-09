@@ -11,6 +11,35 @@ use std::path::Path;
 #[path = "literal_w38j_c1.rs"]
 mod literal_w38j_c1;
 
+#[path = "literal_w38k_baselines.rs"]
+mod literal_w38k_baselines;
+#[path = "literal_w38k_completion.rs"]
+mod literal_w38k_completion;
+#[path = "literal_w38k_defaults.rs"]
+mod literal_w38k_defaults;
+#[path = "literal_w38k_destructured.rs"]
+mod literal_w38k_destructured;
+#[path = "literal_w38k_generic.rs"]
+mod literal_w38k_generic;
+#[path = "literal_w38k_mixin_current.rs"]
+mod literal_w38k_mixin_current;
+#[path = "literal_w38k_normalization.rs"]
+mod literal_w38k_normalization;
+#[path = "literal_w38k_scopes.rs"]
+mod literal_w38k_scopes;
+#[path = "literal_w38k_spread.rs"]
+mod literal_w38k_spread;
+#[path = "literal_w38k_suppliers.rs"]
+mod literal_w38k_suppliers;
+#[path = "literal_w38k_support.rs"]
+mod literal_w38k_support;
+#[path = "literal_w38k_terminal.rs"]
+mod literal_w38k_terminal;
+#[path = "literal_w38k_throws.rs"]
+mod literal_w38k_throws;
+#[path = "literal_w38k_validation.rs"]
+mod literal_w38k_validation;
+
 fn compile(source: &str) -> Result<crate::ExtractOutput, String> {
     css::class_map::reset_class_map();
     css::file_map::reset_file_map();

@@ -1,5 +1,5 @@
 use super::{DevupVisitor, capture::Captured};
-use oxc_allocator::GetAllocator;
+use oxc_allocator::{CloneIn, GetAllocator};
 use oxc_ast::ast::{Expression, ObjectPropertyKind, PropertyKey};
 use oxc_span::GetSpan;
 
@@ -17,7 +17,11 @@ impl<'a> DevupVisitor<'a> {
         if !has_callback {
             return false;
         }
-        for property in &mut object.properties {
+        let original = object
+            .properties
+            .clone_in_with_semantic_ids(self.ast.allocator());
+        let mut absent_boundary = None;
+        for (position, property) in object.properties.iter_mut().enumerate() {
             let ObjectPropertyKind::ObjectProperty(property) = property else {
                 continue;
             };
@@ -61,7 +65,11 @@ impl<'a> DevupVisitor<'a> {
                 if let Some((parts, render)) =
                     self.prepare_order_callback(&mut property.value, captures, wrapped)
                 {
-                    if let Some(value) = super::literal_callback_order::value(&self.ast, &parts) {
+                    if parts.is_empty() {
+                        absent_boundary = Some(position);
+                    } else if let Some(value) =
+                        super::literal_callback_order::value(&self.ast, &parts)
+                    {
                         property.value = value;
                     }
                     renders.push(render);
@@ -100,7 +108,42 @@ impl<'a> DevupVisitor<'a> {
                 }
             }
         }
+        if let Some(boundary) = absent_boundary {
+            for property in original.iter().take(boundary + 1) {
+                if order_property(property)
+                    && let ObjectPropertyKind::ObjectProperty(metadata) = property
+                    && !literal_callback(metadata)
+                {
+                    let expression = Expression::new_object_expression(
+                        metadata.span,
+                        oxc_allocator::Vec::from_array_in(
+                            [property.clone_in_with_semantic_ids(self.ast.allocator())],
+                            &self.ast,
+                        ),
+                        &self.ast,
+                    );
+                    self.check_style_orders(&expression, false);
+                }
+            }
+            let mut position = 0;
+            object.properties.retain(|property| {
+                let keep = position > boundary || !order_property(property);
+                position += 1;
+                keep
+            });
+        }
         true
+    }
+}
+
+fn order_property(property: &ObjectPropertyKind<'_>) -> bool {
+    match property {
+        ObjectPropertyKind::ObjectProperty(property) => property
+            .key
+            .static_name()
+            .or_else(|| crate::utils::get_str_by_property_key(&property.key))
+            .is_some_and(|name| crate::style_order::reserved(&name)),
+        ObjectPropertyKind::SpreadProperty(_) => false,
     }
 }
 

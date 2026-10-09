@@ -116,7 +116,7 @@ pub(super) fn wrap<'a>(ast: &AstBuilder<'a>, function: &mut Expression<'a>) -> b
         },
         _ => return false,
     };
-    if !body.statements.last().is_some_and(terminal) {
+    if !body.statements.last().is_some_and(terminal) && !body.statements.iter().all(normal_exit) {
         return false;
     }
     walk_mut::walk_function_body(&mut Returns { ast }, body);
@@ -129,6 +129,23 @@ fn terminal(statement: &Statement<'_>) -> bool {
         Statement::BlockStatement(block) => block.body.last().is_some_and(terminal),
         Statement::IfStatement(statement) => {
             terminal(&statement.consequent) && statement.alternate.as_ref().is_some_and(terminal)
+        }
+        _ => false,
+    }
+}
+
+/// Recognize the supported normal-exit skeleton without inspecting opaque operations.
+fn normal_exit(statement: &Statement<'_>) -> bool {
+    match statement {
+        Statement::EmptyStatement(_)
+        | Statement::ExpressionStatement(_)
+        | Statement::VariableDeclaration(_)
+        | Statement::FunctionDeclaration(_)
+        | Statement::ReturnStatement(_) => true,
+        Statement::BlockStatement(block) => block.body.iter().all(normal_exit),
+        Statement::IfStatement(statement) => {
+            normal_exit(&statement.consequent)
+                && statement.alternate.as_ref().is_none_or(normal_exit)
         }
         _ => false,
     }
