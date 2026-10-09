@@ -87,6 +87,13 @@ export {
   type ProductionManifestFile,
 } from './production-file-manifest'
 export {
+  type ProductionExtractionInput,
+  ProductionNumbering,
+  type ProductionNumberingEngine,
+  ProductionNumberingError,
+  type ProductionNumberingPlan,
+} from './production-numbering'
+export {
   type ResolutionInputObserver,
   type ResolutionInputs,
 } from './resolution-inputs'

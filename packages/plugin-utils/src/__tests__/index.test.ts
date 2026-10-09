@@ -4,6 +4,7 @@ import { join } from 'node:path'
 
 import { expect, it } from 'bun:test'
 
+import * as wasm from '../../../../bindings/devup-ui-wasm/pkg'
 import { enumerateProductionSourceFiles } from '../production-source-files'
 
 it('exposes dormant closure when the package entrypoint is used', async () => {
@@ -38,5 +39,49 @@ it('exposes dormant closure when the package entrypoint is used', async () => {
     ])
   } finally {
     rmSync(root, { recursive: true, force: true })
+  }
+})
+
+it('exposes dormant physical reservation when the public entrypoint is used', async () => {
+  // Given public exports and an independently specified physical plan.
+  const { BuildGeneration, ProductionNumbering, ProductionNumberingError } =
+    await import('../index')
+  const file = {
+    context: 'public',
+    id: 'original',
+    path: '/file',
+    realPath: '/file',
+  }
+  const numbering = new ProductionNumbering(new BuildGeneration(), [
+    {
+      context: 'public',
+      files: [file],
+      canonical: { original: 'bucket' },
+      nonphysical: [],
+    },
+  ])
+  const input = {
+    context: 'public',
+    id: 'original',
+    source: { kind: 'physical' as const, path: '/file', realPath: '/file' },
+    location: { filename: '/file' },
+  }
+  // When the public primitive seeds its direct engine and admits a physical source.
+  const debug = wasm.isDebug()
+  try {
+    wasm.resetBuildState()
+    numbering.seed(wasm, 'public')
+    numbering.assertReserved(input)
+    // Then real allocation through the public contract reserves originals/buckets and exposes the typed miss.
+    expect(wasm.exportFileMap()).toBe('{"bucket":0,"original":1}')
+    expect(() => numbering.assertReserved({ ...input, id: 'missing' })).toThrow(
+      ProductionNumberingError,
+    )
+  } finally {
+    wasm.resetBuildState()
+    wasm.setModuleResolver(undefined)
+    wasm.registerTheme({})
+    wasm.registerShorthands({})
+    wasm.setDebug(debug)
   }
 })
