@@ -19,6 +19,9 @@ mod collect;
 mod exports;
 #[path = "source_value_type_graph.rs"]
 mod graph;
+#[cfg(test)]
+#[path = "source_value_type_linux_gap_tests.rs"]
+mod linux_gap_tests;
 #[path = "source_value_type_model.rs"]
 mod model;
 #[path = "source_value_type_resolve.rs"]
