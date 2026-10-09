@@ -1,6 +1,10 @@
 use super::{BatchPhase, Candidate, Cleanup, LinkedBatch, records};
 use crate::counter_evidence::{CounterEvidence, ReplayError};
 
+#[cfg(test)]
+#[path = "counter_kernel_gate_regression_tests.rs"]
+mod gate_regression_tests;
+
 pub(super) struct StagedState {
     pub(super) evidence: CounterEvidence,
     pub(super) candidates: Vec<Candidate>,
@@ -10,9 +14,10 @@ pub(super) struct StagedState {
 
 pub(super) fn stage(
     base: &LinkedBatch,
-    incoming: &LinkedBatch,
+    request: &super::scratch::ScratchRequest<'_>,
     cleanup: Option<&Cleanup>,
 ) -> Result<StagedState, ReplayError> {
+    let incoming = request.incoming;
     let mut candidates = Vec::new();
     for candidate in &base.candidates {
         let emission = match cleanup {
@@ -28,7 +33,6 @@ pub(super) fn stage(
             candidates.push(candidate);
         }
     }
-    candidates.extend(incoming.candidates.iter().cloned());
     let mut authored: Vec<_> = base
         .evidence
         .authored
@@ -38,7 +42,19 @@ pub(super) fn stage(
         })
         .cloned()
         .collect();
+    if let Some(operations) = request.operations {
+        for record in operations {
+            retire(&mut candidates, &mut authored, record);
+        }
+    }
+    for candidate in &incoming.candidates {
+        for record in candidate.proof.materialized()? {
+            retire(&mut candidates, &mut authored, record);
+        }
+        candidates.push(candidate.clone());
+    }
     for record in &incoming.evidence.authored {
+        retire(&mut candidates, &mut authored, record);
         if !authored.contains(record) {
             authored.push(record.clone());
         }
@@ -80,4 +96,30 @@ pub(super) fn stage(
         cleanups,
         phase,
     })
+}
+
+/// Keyed replacement retires payload authority, never allocator reservations.
+pub(super) fn retire(
+    candidates: &mut Vec<Candidate>,
+    authored: &mut Vec<crate::counter_evidence::RecordFootprint>,
+    replacement: &crate::counter_evidence::RecordFootprint,
+) {
+    use crate::counter_evidence::{Expansion, RecordFootprint};
+    if let RecordFootprint::Keyframes {
+        bucket,
+        name,
+        steps,
+    } = replacement
+    {
+        let superseded = |record: &RecordFootprint| {
+            matches!(record,
+            RecordFootprint::Keyframes { bucket: b, name: n, steps: s }
+            if b == bucket && n == name && s != steps)
+        };
+        candidates.retain(|candidate| match &candidate.proof.emission.expansion {
+            Expansion::Keyframes { record, .. } => !superseded(record),
+            Expansion::Static(_) | Expansion::Dynamic { .. } | Expansion::Typography { .. } => true,
+        });
+        authored.retain(|record| !superseded(record));
+    }
 }

@@ -29,9 +29,17 @@ pub(super) fn clone_sheet(sheet: &StyleSheet) -> StyleSheet {
 }
 
 pub(super) fn apply(sheet: &mut StyleSheet, incoming: &LinkedBatch) -> (bool, bool) {
+    apply_ordered(sheet, &incoming.records, incoming.config.mode)
+}
+
+pub(super) fn apply_ordered(
+    sheet: &mut StyleSheet,
+    operations: &[RecordFootprint],
+    mode: NameMode,
+) -> (bool, bool) {
     let mut collected = false;
     let mut base = false;
-    for footprint in &incoming.records {
+    for footprint in operations {
         let added = insert(sheet, footprint);
         match footprint {
             RecordFootprint::Property {
@@ -43,16 +51,16 @@ pub(super) fn apply(sheet: &mut StyleSheet, incoming: &LinkedBatch) -> (bool, bo
                 collected |= added;
                 base |= added
                     && (*order == 0
-                        || (incoming.config.mode == NameMode::AtomHoist
+                        || (mode == NameMode::AtomHoist
                             && (record.hoisted || bucket.is_empty() || *order != 255)));
             }
             RecordFootprint::Keyframes { bucket, .. } => {
                 collected |= added;
-                base |= added && incoming.config.mode == NameMode::AtomHoist && bucket.is_empty();
+                base |= added && mode == NameMode::AtomHoist && bucket.is_empty();
             }
             RecordFootprint::Css { .. } => base |= added,
             RecordFootprint::Import { .. } | RecordFootprint::FontFace { .. } => {
-                base |= added && incoming.config.mode == NameMode::AtomHoist;
+                base |= added && mode == NameMode::AtomHoist;
             }
             RecordFootprint::GlobalCssOwner { .. } => {}
         }

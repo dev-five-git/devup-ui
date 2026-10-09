@@ -1,6 +1,5 @@
 pub mod cache_snapshot;
-#[cfg(test)]
-pub mod counter_evidence;
+mod counter_evidence;
 #[cfg(test)]
 mod counter_evidence_allocation_tests;
 #[cfg(test)]
@@ -23,10 +22,9 @@ mod counter_fixture_replay_tests;
 mod counter_fixture_static_tests;
 #[cfg(test)]
 mod counter_fixture_support;
-#[cfg(test)]
-mod counter_kernel;
-#[cfg(test)]
-pub mod emission_seed;
+#[doc(hidden)]
+pub mod counter_kernel;
+mod emission_seed;
 #[cfg(test)]
 mod emission_seed_capture_tests;
 #[cfg(test)]

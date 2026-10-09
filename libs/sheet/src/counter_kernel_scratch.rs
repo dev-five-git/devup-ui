@@ -6,19 +6,32 @@ use crate::{
 use std::collections::{BTreeMap, BTreeSet};
 
 pub(super) struct ScratchRequest<'a> {
-    incoming: &'a LinkedBatch,
+    pub(super) incoming: &'a LinkedBatch,
     cleanup: Option<&'a Cleanup>,
+    pub(super) operations: Option<&'a [crate::counter_evidence::RecordFootprint]>,
 }
 
 impl<'a> ScratchRequest<'a> {
-    pub(super) fn new(
+    pub(super) const fn new(
         incoming: &'a LinkedBatch,
         cleanup: Option<&'a Cleanup>,
     ) -> Result<Self, ReplayError> {
         match &incoming.phase {
-            BatchPhase::Fresh => Ok(Self { incoming, cleanup }),
+            BatchPhase::Fresh => Ok(Self {
+                incoming,
+                cleanup,
+                operations: None,
+            }),
             BatchPhase::Retained(_) => Err(ReplayError::Cleanup),
         }
+    }
+
+    pub(super) const fn ordered(
+        mut self,
+        operations: &'a [crate::counter_evidence::RecordFootprint],
+    ) -> Self {
+        self.operations = Some(operations);
+        self
     }
 }
 
@@ -59,14 +72,17 @@ pub(super) fn apply_scratch(
             return Err(ReplayError::Cleanup);
         }
     }
-    let untouched = phase::stage(base, request.incoming, None)?;
-    let projected = phase::stage(base, request.incoming, request.cleanup)?;
     let mut scratch = emission::clone_sheet(sheet);
     let cleaned = request
         .cleanup
         .is_some_and(|cleanup| scratch.rm_global_css(&cleanup.source, cleanup.single_css));
-    let state = if cleaned { projected } else { untouched };
-    let (collected, updated_base_style) = emission::apply(&mut scratch, request.incoming);
+    let state = phase::stage(base, &request, request.cleanup.filter(|_| cleaned))?;
+    let (collected, updated_base_style) = match request.operations {
+        Some(operations) => {
+            emission::apply_ordered(&mut scratch, operations, request.incoming.config.mode)
+        }
+        None => emission::apply(&mut scratch, request.incoming),
+    };
     Ok(ScratchUpdate {
         properties: scratch.properties,
         css: scratch.css,
