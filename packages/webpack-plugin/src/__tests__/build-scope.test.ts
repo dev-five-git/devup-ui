@@ -18,16 +18,18 @@ it('starts fresh when a standalone compiler runs after another owner', () => {
   // Given
   const first = bindCompilerScope({})
   first.run(() =>
-    wasm.codeExtract(
-      'page.tsx',
-      "import {Box} from '@devup-ui/react';export const x=<Box bg='red'/>",
-      '@devup-ui/react',
-      'df',
-      true,
-      false,
-      false,
-      {},
-    ),
+    wasm
+      .codeExtract(
+        'page.tsx',
+        "import {Box} from '@devup-ui/react';export const x=<Box bg='red'/>",
+        '@devup-ui/react',
+        'df',
+        true,
+        false,
+        false,
+        {},
+      )
+      .free(),
   )
   // When
   const css = bindCompilerScope({}).run(() => wasm.getCss(null, false))
@@ -40,16 +42,18 @@ it('serves the shared handoff when a CSS-only compiler follows server shutdown',
   const owner = createWebpackGeneration()
   const server = bindCompilerScope({}, { owner, complete: false })
   server.run(() =>
-    wasm.codeExtract(
-      'page.tsx',
-      "import {Box} from '@devup-ui/react';export const x=<Box bg='red'/>",
-      '@devup-ui/react',
-      'df',
-      true,
-      false,
-      false,
-      {},
-    ),
+    wasm
+      .codeExtract(
+        'page.tsx',
+        "import {Box} from '@devup-ui/react';export const x=<Box bg='red'/>",
+        '@devup-ui/react',
+        'df',
+        true,
+        false,
+        false,
+        {},
+      )
+      .free(),
   )
   server.start()
   server.close()
@@ -74,28 +78,32 @@ it('replays compiler options when live siblings interleave operations', () => {
     wasm.registerTheme({ colors: { default: { own: 'blue' } } })
   })
   first.run(() =>
-    wasm.codeExtract(
-      'page.tsx',
-      "import {Box} from '@devup-ui/react';export const x=<Box bg='red'/>",
-      '@devup-ui/react',
-      'df',
-      true,
-      false,
-      false,
-      {},
-    ),
+    wasm
+      .codeExtract(
+        'page.tsx',
+        "import {Box} from '@devup-ui/react';export const x=<Box bg='red'/>",
+        '@devup-ui/react',
+        'df',
+        true,
+        false,
+        false,
+        {},
+      )
+      .free(),
   )
   second.run(() =>
-    wasm.codeExtract(
-      'page.tsx',
-      "import {Box} from '@devup-ui/react';export const x=<Box bg='blue'/>",
-      '@devup-ui/react',
-      'df',
-      true,
-      false,
-      false,
-      {},
-    ),
+    wasm
+      .codeExtract(
+        'page.tsx',
+        "import {Box} from '@devup-ui/react';export const x=<Box bg='blue'/>",
+        '@devup-ui/react',
+        'df',
+        true,
+        false,
+        false,
+        {},
+      )
+      .free(),
   )
   // When
   const css = first.run(() => wasm.getCss(null, false))

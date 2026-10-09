@@ -52,7 +52,7 @@ export async function loadSourceFile(filePath: string, project: SourceProject) {
     setDebug(project.debug)
     setModuleResolver(project.resolver)
     try {
-      const code = codeExtract(
+      const output = codeExtract(
         filePath,
         contents,
         libPackage,
@@ -63,8 +63,15 @@ export async function loadSourceFile(filePath: string, project: SourceProject) {
         importAliases,
         ...(mdx ? (['compiled-mdx'] as const) : ([] as const)),
       )
+      const { code, dependencies } = (() => {
+        try {
+          return { code: output.code, dependencies: output.dependencies }
+        } finally {
+          output.free()
+        }
+      })()
       return {
-        contents: preserveDependencies(code.code, filePath, code.dependencies),
+        contents: preserveDependencies(code, filePath, dependencies),
         loader,
       }
     } catch (cause) {

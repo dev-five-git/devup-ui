@@ -47,16 +47,22 @@ function createCodeExtractResult(
   contents: string,
   overrides: Partial<CodeExtractResult> = {},
 ): CodeExtractResult {
+  let live = true
+  const free = mock(() => {
+    expect(live).toBe(true)
+    live = false
+  })
   return {
     css: '',
     code: contents,
     cssFile: '',
     map: undefined,
     updatedBaseStyle: false,
-    free: mock(),
-    [Symbol.dispose]: mock(),
+    dependencies: [],
     ...overrides,
-  } as unknown as CodeExtractResult
+    free,
+    [Symbol.dispose]: free,
+  }
 }
 
 function createStats(mtimeMs: number): Stats {
@@ -601,6 +607,25 @@ describe('devupUIWebpackPlugin', () => {
         resolve(process.cwd(), 'src', 'parent.tsx'),
         resolve(process.cwd(), 'src', 'child.tsx'),
       ])
+      const discarded: CodeExtractResult[] = []
+      codeExtractSpy.mockImplementation((_path: string, contents: string) => {
+        const output = createCodeExtractResult(contents)
+        for (const field of [
+          'code',
+          'css',
+          'map',
+          'cssFile',
+          'updatedBaseStyle',
+          'dependencies',
+        ])
+          Object.defineProperty(output, field, {
+            get() {
+              throw new Error(`discarded prewarm read ${field}`)
+            },
+          })
+        discarded.push(output)
+        return output
+      })
       readFileSyncSpy.mockReturnValue('source')
       const setModuleResolverSpy = spyOn(
         wasm,
@@ -641,6 +666,9 @@ describe('devupUIWebpackPlugin', () => {
       )
       setModuleResolverSpy.mockRestore()
       expect(codeExtractSpy).toHaveBeenCalledTimes(2)
+      expect(discarded).toHaveLength(2)
+      for (const output of discarded)
+        expect(output.free).toHaveBeenCalledTimes(1)
       expect(codeExtractSpy).toHaveBeenCalledWith(
         relative('/project', resolve('src/parent.tsx')).replaceAll('\\', '/'),
         'source',

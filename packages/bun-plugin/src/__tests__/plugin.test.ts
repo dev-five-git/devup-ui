@@ -1,11 +1,90 @@
 import { readFileSync, statSync, utimesSync } from 'node:fs'
 import { join } from 'node:path'
 
+import * as wasm from '@devup-ui/wasm'
 import { getCss, setDebug, setModuleResolver } from '@devup-ui/wasm'
-import { expect, it, spyOn } from 'bun:test'
+import { expect, it, mock, spyOn } from 'bun:test'
 
 import { cssNamespace } from '../css-id'
 import { fixture, sourceContents } from './callback-fixture.test'
+
+it.each([undefined, 'code', 'dependencies', 'acquire'])(
+  'releases Bun Output after needed getters when fault %s occurs',
+  async (fault) => {
+    const f = fixture()
+    const path = f.write(
+      'src/style.ts',
+      "import {css} from '@devup-ui/react'; export const cls=css({bg:'red'})",
+    )
+    const dependency = f.write('src/token.ts', 'export const token=1')
+    const events: string[] = []
+    const error = new Error('ownership fault')
+    let live = true
+    const free = mock(() => {
+      expect(live).toBe(true)
+      live = false
+      events.push('free')
+    })
+    const output = {
+      get code() {
+        expect(live).toBe(true)
+        events.push('code')
+        if (fault === 'code') throw error
+        return 'export const cls="copied"'
+      },
+      get dependencies() {
+        expect(live).toBe(true)
+        events.push('dependencies')
+        if (fault === 'dependencies') throw error
+        return [dependency]
+      },
+      get css(): never {
+        throw new Error('unneeded css getter')
+      },
+      get map(): never {
+        throw new Error('unneeded map getter')
+      },
+      get cssFile(): never {
+        throw new Error('unneeded cssFile getter')
+      },
+      get updatedBaseStyle(): never {
+        throw new Error('unneeded updatedBaseStyle getter')
+      },
+      free,
+      [Symbol.dispose]: free,
+    }
+    await f.setup()
+    const extract = spyOn(wasm, 'codeExtract').mockImplementation(() => {
+      if (fault === 'acquire') throw error
+      return output
+    })
+    try {
+      const run = f.load(path)
+      if (fault) await expect(run).rejects.toMatchObject({ cause: error })
+      else {
+        const code = sourceContents(await run)
+        expect(code).toContain('copied')
+        expect(code).toContain('token.ts')
+      }
+      const fields = ['code', 'dependencies']
+      expect(events).toEqual(
+        fault === 'acquire'
+          ? []
+          : [
+              ...fields.slice(
+                0,
+                fault ? fields.indexOf(fault) + 1 : fields.length,
+              ),
+              'free',
+            ],
+      )
+      expect(free).toHaveBeenCalledTimes(fault === 'acquire' ? 0 : 1)
+    } finally {
+      extract.mockRestore()
+      await f.cleanup()
+    }
+  },
+)
 
 it('writes theme declarations and CSS when setup creates project directories', async () => {
   const f = fixture()

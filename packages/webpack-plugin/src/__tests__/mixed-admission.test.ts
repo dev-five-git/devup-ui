@@ -5,16 +5,18 @@ import { expect, it } from 'bun:test'
 import { bindCompilerScope, createWebpackGeneration } from '../build-scope'
 
 function extract(color: string) {
-  return wasm.codeExtract(
-    'legacy.tsx',
-    `import {Box} from '@devup-ui/react';export const x=<Box bg='${color}'/>`,
-    '@devup-ui/react',
-    'df',
-    true,
-    false,
-    false,
-    {},
-  )
+  return wasm
+    .codeExtract(
+      'legacy.tsx',
+      `import {Box} from '@devup-ui/react';export const x=<Box bg='${color}'/>`,
+      '@devup-ui/react',
+      'df',
+      true,
+      false,
+      false,
+      {},
+    )
+    .free()
 }
 
 it('refuses an owned operation before configuration when legacy is live', () => {

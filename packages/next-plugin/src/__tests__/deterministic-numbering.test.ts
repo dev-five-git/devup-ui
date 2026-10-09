@@ -74,7 +74,11 @@ describe('class and file numbers do not depend on the order files are seen', () 
         true,
         {},
       )
-      return { file, code: output.code, cssFile: output.cssFile }
+      try {
+        return { file, code: output.code, cssFile: output.cssFile }
+      } finally {
+        output.free()
+      }
     }
     const outputs = parallel
       ? Promise.all(order.map(async (file) => extract(file)))

@@ -264,13 +264,7 @@ const devupUILoader: RawLoaderDefinitionFunction<DevupUILoaderOptions> =
       const relativePath = relative(process.cwd(), id).replaceAll('\\', '/')
 
       if (!relCssDir.startsWith('./')) relCssDir = `./${relCssDir}`
-      const {
-        code,
-        map,
-        cssFile,
-        updatedBaseStyle,
-        dependencies = [],
-      } = codeExtract(
+      const output = codeExtract(
         relativePath,
         source.toString(),
         libPackage,
@@ -280,6 +274,25 @@ const devupUILoader: RawLoaderDefinitionFunction<DevupUILoaderOptions> =
         true,
         importAliases,
       )
+      const {
+        code,
+        map,
+        cssFile,
+        updatedBaseStyle,
+        dependencies = [],
+      } = (() => {
+        try {
+          return {
+            code: output.code,
+            map: output.map,
+            cssFile: output.cssFile,
+            updatedBaseStyle: output.updatedBaseStyle,
+            dependencies: output.dependencies,
+          }
+        } finally {
+          output.free()
+        }
+      })()
       for (const dependency of dependencies) {
         this.addDependency(resolve(dependency))
       }

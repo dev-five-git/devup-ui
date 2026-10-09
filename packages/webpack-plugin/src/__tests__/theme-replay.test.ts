@@ -31,7 +31,13 @@ function extractTokens(compiler: Compiler) {
       false,
       {},
     )
-    return { code: result.code, css: wasm.getCss(null, false) }
+    let code: string
+    try {
+      code = result.code
+    } finally {
+      result.free()
+    }
+    return { code, css: wasm.getCss(null, false) }
   })
 }
 

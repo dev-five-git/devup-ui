@@ -422,14 +422,7 @@ export function DevupUI({
       )
       let rel = relative(dirname(id), cssDir).replaceAll('\\', '/')
       if (!rel.startsWith('./')) rel = `./${rel}`
-      const {
-        code: extractedCode,
-        css = '',
-        map,
-        cssFile,
-        updatedBaseStyle,
-        dependencies = [],
-      } = (() => {
+      const output = (() => {
         try {
           return codeExtract(
             fileName,
@@ -448,6 +441,27 @@ export function DevupUI({
           if (isMdxSource(fileName, mdxExtensions))
             throw remapMdxError(error, fileName, this.getCombinedSourcemap())
           throw error
+        }
+      })()
+      const {
+        code: extractedCode,
+        css = '',
+        map,
+        cssFile,
+        updatedBaseStyle,
+        dependencies = [],
+      } = (() => {
+        try {
+          return {
+            code: output.code,
+            css: output.css,
+            map: output.map,
+            cssFile: output.cssFile,
+            updatedBaseStyle: output.updatedBaseStyle,
+            dependencies: output.dependencies,
+          }
+        } finally {
+          output.free()
         }
       })()
       for (const dependency of dependencies) this.addWatchFile(dependency)

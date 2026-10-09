@@ -27,17 +27,57 @@ afterEach(() => {
 
 function createCodeExtractResult(
   overrides: Partial<CodeExtractResult> = {},
+  events: string[] = [],
 ): CodeExtractResult {
-  return {
+  const values = {
     code: '<div></div>',
     css: '',
     cssFile: 'devup-ui.css',
     map: undefined,
     updatedBaseStyle: false,
-    free: mock(),
-    [Symbol.dispose]: mock(),
+    dependencies: [],
     ...overrides,
-  } as unknown as CodeExtractResult
+  }
+  let live = true
+  const free = mock(() => {
+    expect(live).toBe(true)
+    live = false
+    events.push('free')
+  })
+  return {
+    get code() {
+      expect(live).toBe(true)
+      events.push('code')
+      return values.code
+    },
+    get css() {
+      expect(live).toBe(true)
+      events.push('css')
+      return values.css
+    },
+    get map() {
+      expect(live).toBe(true)
+      events.push('map')
+      return values.map
+    },
+    get cssFile() {
+      expect(live).toBe(true)
+      events.push('cssFile')
+      return values.cssFile
+    },
+    get updatedBaseStyle() {
+      expect(live).toBe(true)
+      events.push('updatedBaseStyle')
+      return values.updatedBaseStyle
+    },
+    get dependencies() {
+      expect(live).toBe(true)
+      events.push('dependencies')
+      return values.dependencies
+    },
+    free,
+    [Symbol.dispose]: free,
+  }
 }
 
 function createSetupContext(
@@ -114,6 +154,70 @@ afterAll(() => {
 })
 
 describe('DevupUIRsbuildPlugin', () => {
+  it.each([
+    undefined,
+    'code',
+    'map',
+    'cssFile',
+    'updatedBaseStyle',
+    'dependencies',
+    'acquire',
+    'consumer',
+  ])(
+    'releases Rsbuild Output before consumers when fault %s occurs',
+    async (fault) => {
+      const events: string[] = []
+      const output = createCodeExtractResult(
+        { cssFile: undefined, dependencies: ['dependency.ts'] },
+        events,
+      )
+      const error = new Error('ownership fault')
+      if (fault && fault !== 'acquire' && fault !== 'consumer')
+        Object.defineProperty(output, fault, {
+          get() {
+            events.push(fault)
+            throw error
+          },
+        })
+      codeExtractSpy.mockImplementation(() => {
+        if (fault === 'acquire') throw error
+        return output
+      })
+      const transform = mock()
+      await DevupUI().setup(createSetupContext({ transform }))
+      const run = transform.mock.calls[1][1]({
+        code: 'source',
+        resourcePath: '/src/output.tsx',
+        addDependency() {
+          expect(output.free).toHaveBeenCalledTimes(1)
+          if (fault === 'consumer') throw error
+        },
+      })
+      if (fault) await expect(run).rejects.toBe(error)
+      else expect(await run).toEqual({ code: '<div></div>', map: undefined })
+      const fields = [
+        'code',
+        'map',
+        'cssFile',
+        'updatedBaseStyle',
+        'dependencies',
+      ]
+      expect(events).toEqual(
+        fault === 'acquire'
+          ? []
+          : [
+              ...fields.slice(
+                0,
+                fault && fields.includes(fault)
+                  ? fields.indexOf(fault) + 1
+                  : fields.length,
+              ),
+              'free',
+            ],
+      )
+      expect(output.free).toHaveBeenCalledTimes(fault === 'acquire' ? 0 : 1)
+    },
+  )
   it('does not mutate shorthands when only creating a configuration', () => {
     // Given
     const register = spyOn(wasm, 'registerShorthands').mockReturnValue(
@@ -152,7 +256,7 @@ describe('DevupUIRsbuildPlugin', () => {
     expect(resolveModule('./plugin.test', import.meta.path)?.path).toBe(
       import.meta.path,
     )
-    codeExtractSpy.mockReturnValue(
+    codeExtractSpy.mockImplementation(() =>
       createCodeExtractResult({ dependencies: ['/src/tokens.ts'] }),
     )
     const addDependency = mock()
@@ -326,7 +430,7 @@ describe('DevupUIRsbuildPlugin', () => {
       expect.any(Function),
     )
 
-    codeExtractSpy.mockReturnValue(
+    codeExtractSpy.mockImplementation(() =>
       createCodeExtractResult({
         code: '<div></div>',
         css: '',
@@ -378,7 +482,7 @@ const App = () => <Box></Box>`,
       },
       expect.any(Function),
     )
-    codeExtractSpy.mockReturnValue(
+    codeExtractSpy.mockImplementation(() =>
       createCodeExtractResult({
         code: '<div></div>',
         css: '.devup-ui-1 { color: red; }',
@@ -696,7 +800,7 @@ const App = () => <Box></Box>`,
         '/p/src/a.tsx': [0],
         '/p/src/b.tsx': [1],
       })
-      codeExtractSpy.mockReturnValue(
+      codeExtractSpy.mockImplementation(() =>
         createCodeExtractResult({ code: '<div></div>', cssFile: '' }),
       )
       const transform = mock()
@@ -807,7 +911,7 @@ const App = () => <Box></Box>`,
         pluginUtils,
         'computeReachableFiles',
       ).mockReturnValue([resolve('src', 'App.tsx')])
-      codeExtractSpy.mockReturnValue(createCodeExtractResult())
+      codeExtractSpy.mockImplementation(() => createCodeExtractResult())
       const transform = mock()
       const onBeforeBuild = mock()
       const modifyRspackConfig = mock()
@@ -856,6 +960,13 @@ const App = () => <Box></Box>`,
 
     it('extracts the files the entries reach before building', async () => {
       const { onBeforeBuild } = await setup({ atomHoist: undefined })
+      const discarded: { events: string[]; output: CodeExtractResult }[] = []
+      codeExtractSpy.mockImplementation(() => {
+        const events: string[] = []
+        const output = createCodeExtractResult({}, events)
+        discarded.push({ events, output })
+        return output
+      })
       codeExtractSpy.mockClear()
       onBeforeBuild.mock.calls[0][0]({
         environments: {
@@ -886,6 +997,11 @@ const App = () => <Box></Box>`,
         true,
         expect.anything(),
       )
+      expect(discarded.length).toBeGreaterThan(0)
+      for (const { events, output } of discarded) {
+        expect(events).toEqual(['free'])
+        expect(output.free).toHaveBeenCalledTimes(1)
+      }
 
       // an extraction error is reported by the transform of that file
       codeExtractSpy.mockImplementation(() => {

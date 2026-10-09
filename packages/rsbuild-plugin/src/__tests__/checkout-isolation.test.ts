@@ -15,7 +15,6 @@ import {
 
 import { DevupUI } from '../plugin'
 
-type CodeExtractResult = ReturnType<typeof wasm.codeExtract>
 type RsbuildPlugin = ReturnType<typeof DevupUI>
 type RsbuildSetupContext = Parameters<RsbuildPlugin['setup']>[0]
 
@@ -41,15 +40,23 @@ beforeAll(() => {
   spyOn(wasm, 'getDefaultTheme').mockReturnValue(undefined)
   spyOn(wasm, 'getCss').mockReturnValue('')
   spyOn(wasm, 'setDebug').mockReturnValue(undefined)
-  codeExtractSpy = spyOn(wasm, 'codeExtract').mockReturnValue({
-    code: '<div></div>',
-    css: '',
-    cssFile: 'devup-ui-0.css',
-    map: undefined,
-    updatedBaseStyle: false,
-    free: mock(),
-    [Symbol.dispose]: mock(),
-  } as unknown as CodeExtractResult)
+  codeExtractSpy = spyOn(wasm, 'codeExtract').mockImplementation(() => {
+    let live = true
+    const free = mock(() => {
+      expect(live).toBe(true)
+      live = false
+    })
+    return {
+      code: '<div></div>',
+      css: '',
+      cssFile: 'devup-ui-0.css',
+      map: undefined,
+      updatedBaseStyle: false,
+      dependencies: [],
+      free,
+      [Symbol.dispose]: free,
+    }
+  })
 })
 
 afterAll(() => {

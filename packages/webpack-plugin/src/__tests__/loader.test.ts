@@ -34,17 +34,57 @@ interface TestLoaderContext extends Pick<
 
 function createCodeExtractResult(
   overrides: Partial<CodeExtractResult> = {},
+  events: string[] = [],
 ): CodeExtractResult {
-  return {
+  const values = {
     code: '',
     css: '',
     cssFile: undefined,
     updatedBaseStyle: false,
     map: undefined,
-    free: () => {},
-    [Symbol.dispose]: () => {},
+    dependencies: [],
     ...overrides,
-  } as unknown as CodeExtractResult
+  }
+  let live = true
+  const free = mock(() => {
+    expect(live).toBe(true)
+    live = false
+    events.push('free')
+  })
+  return {
+    get code() {
+      expect(live).toBe(true)
+      events.push('code')
+      return values.code
+    },
+    get css() {
+      expect(live).toBe(true)
+      events.push('css')
+      return values.css
+    },
+    get map() {
+      expect(live).toBe(true)
+      events.push('map')
+      return values.map
+    },
+    get cssFile() {
+      expect(live).toBe(true)
+      events.push('cssFile')
+      return values.cssFile
+    },
+    get updatedBaseStyle() {
+      expect(live).toBe(true)
+      events.push('updatedBaseStyle')
+      return values.updatedBaseStyle
+    },
+    get dependencies() {
+      expect(live).toBe(true)
+      events.push('dependencies')
+      return values.dependencies
+    },
+    free,
+    [Symbol.dispose]: free,
+  }
 }
 
 function createLoaderContext(
@@ -80,7 +120,7 @@ let writeFileSpy: ReturnType<typeof spyOn>
 let dateNowSpy: ReturnType<typeof spyOn>
 
 beforeEach(() => {
-  codeExtractSpy = spyOn(wasm, 'codeExtract').mockReturnValue(
+  codeExtractSpy = spyOn(wasm, 'codeExtract').mockImplementation(() =>
     createCodeExtractResult(),
   )
   exportClassMapSpy = spyOn(wasm, 'exportClassMap').mockReturnValue('{}')
@@ -131,6 +171,82 @@ const waitFor = async (fn: () => void, timeout = 1000) => {
 }
 
 describe('devupUILoader', () => {
+  it.each([
+    undefined,
+    'code',
+    'css',
+    'map',
+    'cssFile',
+    'updatedBaseStyle',
+    'dependencies',
+    'acquire',
+    'consumer',
+  ])(
+    'releases webpack Output before consumers when fault %s occurs',
+    async (fault) => {
+      const events: string[] = []
+      const output = createCodeExtractResult(
+        { code: 'copied', dependencies: ['dependency.ts'] },
+        events,
+      )
+      const error = new Error('ownership fault')
+      if (fault && fault !== 'acquire' && fault !== 'consumer')
+        Object.defineProperty(output, fault, {
+          get() {
+            events.push(fault)
+            throw error
+          },
+        })
+      codeExtractSpy.mockImplementation(() => {
+        if (fault === 'acquire') throw error
+        return output
+      })
+      const result = await new Promise<{
+        error: Error | null | undefined
+        code: Parameters<LoaderCallback>[1]
+      }>((done) => {
+        const context = createLoaderContext(
+          { cssDir: 'df', package: '@devup-ui/react' },
+          (error, code) => done({ error, code }),
+          'output.tsx',
+          {
+            addDependency(path) {
+              if (path === nodePath.resolve('dependency.ts')) {
+                expect(output.free).toHaveBeenCalledTimes(1)
+                if (fault === 'consumer') throw error
+              }
+            },
+          },
+        )
+        devupUILoader.call(context, Buffer.from('source'))
+      })
+      expect(result).toEqual(
+        fault ? { error, code: undefined } : { error: null, code: 'copied' },
+      )
+      const fields = [
+        'code',
+        'css',
+        'map',
+        'cssFile',
+        'updatedBaseStyle',
+        'dependencies',
+      ]
+      expect(events).toEqual(
+        fault === 'acquire'
+          ? []
+          : [
+              ...fields.slice(
+                0,
+                fault && fields.includes(fault)
+                  ? fields.indexOf(fault) + 1
+                  : fields.length,
+              ),
+              'free',
+            ],
+      )
+      expect(output.free).toHaveBeenCalledTimes(fault === 'acquire' ? 0 : 1)
+    },
+  )
   it('refreshes same-root configuration and isolates watches when successive loaders evaluate imports', async () => {
     // Given unchanged loader options and separately owned dependency subscriptions.
     const rootDir = mkdtempSync(join(tmpdir(), 'loader-inputs-'))
@@ -354,7 +470,7 @@ describe('devupUILoader', () => {
       wasm,
       'setModuleResolver',
     ).mockReturnValue(undefined)
-    codeExtractSpy.mockReturnValue(
+    codeExtractSpy.mockImplementation(() =>
       createCodeExtractResult({ dependencies: ['src/tokens.ts'] }),
     )
     const callback = mock()
@@ -411,7 +527,7 @@ describe('devupUILoader', () => {
     exportClassMapSpy.mockReturnValue('classMap')
     exportFileMapSpy.mockReturnValue('fileMap')
     getCssSpy.mockReturnValue('css')
-    codeExtractSpy.mockReturnValue(
+    codeExtractSpy.mockImplementation(() =>
       createCodeExtractResult({
         code: 'code',
         css: 'css',
@@ -469,7 +585,7 @@ describe('devupUILoader', () => {
       },
       asyncCallback,
     )
-    codeExtractSpy.mockReturnValue(
+    codeExtractSpy.mockImplementation(() =>
       createCodeExtractResult({
         code: 'code',
         css: undefined,
@@ -535,7 +651,7 @@ describe('devupUILoader', () => {
       asyncCallback,
     )
     writeFileSpy.mockRejectedValueOnce(writeError)
-    codeExtractSpy.mockReturnValue(
+    codeExtractSpy.mockImplementation(() =>
       createCodeExtractResult({
         code: 'code',
         css: 'css',
@@ -564,7 +680,7 @@ describe('devupUILoader', () => {
       },
       asyncCallback,
     )
-    codeExtractSpy.mockReturnValue(
+    codeExtractSpy.mockImplementation(() =>
       createCodeExtractResult({
         code: 'code',
         css: 'css',
@@ -600,7 +716,7 @@ describe('devupUILoader', () => {
       asyncCallback,
       './foo/index.tsx',
     )
-    codeExtractSpy.mockReturnValue(
+    codeExtractSpy.mockImplementation(() =>
       createCodeExtractResult({
         code: 'code',
         css: 'css',
@@ -628,7 +744,7 @@ describe('devupUILoader', () => {
       asyncCallback,
     )
     registerThemeSpy.mockReturnValueOnce(undefined)
-    codeExtractSpy.mockReturnValue(
+    codeExtractSpy.mockImplementation(() =>
       createCodeExtractResult({
         code: 'code',
         css: 'css',

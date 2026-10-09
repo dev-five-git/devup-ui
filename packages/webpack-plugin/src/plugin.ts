@@ -202,7 +202,7 @@ export class DevupUIWebpackPlugin {
           false,
           true,
           this.importAliases,
-        )
+        ).free()
       } catch (cause) {
         throw new Error(
           `[devup-ui] prewarm failed at ${file} (root ${cwd}): ${cause instanceof Error ? cause.message : String(cause)}`,
