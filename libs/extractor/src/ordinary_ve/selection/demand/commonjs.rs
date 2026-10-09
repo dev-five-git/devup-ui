@@ -3,6 +3,19 @@ use oxc_span::GetSpan;
 
 use super::{Apis, Demand, Graph, Index, MemberDemand, View, closure, targets};
 
+#[cfg(test)]
+#[path = "commonjs_prefix_tests.rs"]
+mod prefix_tests;
+#[cfg(test)]
+#[path = "commonjs_request_tests.rs"]
+mod request_tests;
+#[cfg(test)]
+#[path = "commonjs_seed_tests.rs"]
+mod seed_tests;
+#[cfg(test)]
+#[path = "commonjs_test_support.rs"]
+mod test_support;
+
 pub(super) fn activate<'a>(
     index: &Index<'_, 'a>,
     view: &View,
@@ -77,7 +90,7 @@ pub(super) fn seed(index: &Index<'_, '_>, demand: &Demand, view: &mut View) {
         }
         let Some(mut path) = member
             .static_property_name()
-            .map(|key| vec![key.to_string()])
+            .map(|key| vec![Some(key.to_string())])
         else {
             view.selection.provenance_errors.push((
                 assignment.span,
@@ -86,21 +99,17 @@ pub(super) fn seed(index: &Index<'_, '_>, demand: &Demand, view: &mut View) {
             continue;
         };
         let mut object = member.object();
-        let mut exact = true;
         loop {
             match object {
                 Expression::StaticMemberExpression(member) => {
-                    path.push(member.property.name.to_string());
+                    path.push(Some(member.property.name.to_string()));
                     object = &member.object;
                 }
                 Expression::ComputedMemberExpression(member) => {
-                    let Some(key) =
-                        super::super::static_key::resolve(&member.expression, index.semantic)
-                    else {
-                        exact = false;
-                        break;
-                    };
-                    path.push(key);
+                    path.push(super::super::static_key::resolve(
+                        &member.expression,
+                        index.semantic,
+                    ));
                     object = &member.object;
                 }
                 _ => break,
@@ -108,18 +117,18 @@ pub(super) fn seed(index: &Index<'_, '_>, demand: &Demand, view: &mut View) {
         }
         path.reverse();
         if root.name == "module" {
-            if path.first().is_none_or(|key| key != "exports") {
+            if path.first().and_then(|key| key.as_deref()) != Some("exports") {
                 continue;
             }
             path.remove(0);
         }
-        if !exact {
+        let Some(path) = path.into_iter().collect::<Option<Vec<_>>>() else {
             view.selection.provenance_errors.push((
                 assignment.span,
                 "required CommonJS export needs an exact static path".to_string(),
             ));
             continue;
-        }
+        };
         let mut selected = Some(demand);
         for key in &path {
             selected = selected.and_then(|selected| selected.child(key));

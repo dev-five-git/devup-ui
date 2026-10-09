@@ -9,6 +9,7 @@ mod carrier_boundaries;
 mod carrier_dependencies;
 mod carrier_fallback;
 mod carrier_roots;
+mod commonjs_path_diagnostics;
 mod consumer_bridge;
 mod consumer_capture;
 mod consumer_cjs_review;

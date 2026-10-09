@@ -3,6 +3,10 @@ use oxc_semantic::Semantic;
 
 use super::{Context, Use};
 
+#[cfg(test)]
+#[path = "commonjs_tests.rs"]
+mod tests;
+
 pub(crate) fn uses<'a>(program: &Program<'a>, semantic: &Semantic<'a>) -> Vec<(String, Use)> {
     if program
         .body
