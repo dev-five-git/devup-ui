@@ -1,7 +1,5 @@
 {
-  "changes": {
-    "bindings/devup-ui-wasm/package.json": "Patch"
-  },
-  "note": "Qualify private test-only counter allocation linkage and scratch emission/cleanup proofs against frozen authority, without allocator publication or production activation. Current production naming, generated output and cache behavior remain unchanged. No new build errors.",
+  "changes": { "bindings/devup-ui-wasm/package.json": "Patch" },
+  "note": "Add a dormant Rust-only scoped prepared/live Counter kernel with independent retained evidence and exact rollback. Production Current extraction, cache4 and JavaScript output remain unchanged; no new activated JavaScript build errors.",
   "date": "2026-10-09T00:00:00.000Z"
 }

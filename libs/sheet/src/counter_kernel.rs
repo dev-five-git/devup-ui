@@ -10,60 +10,129 @@ use crate::{
 };
 
 #[path = "counter_kernel_canonical_tests.rs"]
+#[cfg(test)]
 mod canonical_tests;
 #[path = "counter_kernel_cleanup_receipt_tests.rs"]
+#[cfg(test)]
 mod cleanup_receipt_tests;
 #[path = "counter_kernel_cleanup_tests.rs"]
+#[cfg(test)]
 mod cleanup_tests;
 #[path = "counter_kernel_dynamic_fixture.rs"]
+#[cfg(test)]
 mod dynamic_fixture;
 #[path = "counter_kernel_dynamic_tests.rs"]
+#[cfg(test)]
 mod dynamic_tests;
 #[path = "counter_kernel_emission.rs"]
 mod emission;
 #[path = "counter_kernel_envelope.rs"]
 mod envelope;
 #[path = "counter_kernel_fixtures.rs"]
+#[cfg(test)]
 mod fixtures;
 #[path = "counter_kernel_frame_tests.rs"]
+#[cfg(test)]
 mod frame_tests;
 #[path = "counter_kernel_legacy.rs"]
 mod legacy;
 #[path = "counter_kernel_link.rs"]
 mod link;
 #[path = "counter_kernel_link_damage_tests.rs"]
+#[cfg(test)]
 mod link_damage_tests;
 #[path = "counter_kernel_link_tests.rs"]
+#[cfg(test)]
 mod link_tests;
 #[path = "counter_kernel_phase.rs"]
 mod phase;
 #[path = "counter_kernel_phase_boundary_tests.rs"]
+#[cfg(test)]
 mod phase_boundary_tests;
 #[path = "counter_kernel_phase_fixtures.rs"]
+#[cfg(test)]
 mod phase_fixtures;
 #[path = "counter_kernel_placement_tests.rs"]
+#[cfg(test)]
 mod placement_tests;
 #[path = "counter_kernel_record_tests.rs"]
+#[cfg(test)]
 mod record_tests;
 #[path = "counter_kernel_records.rs"]
 mod records;
 #[path = "counter_kernel_replacement_tests.rs"]
+#[cfg(test)]
 mod replacement_tests;
 #[path = "counter_kernel_reset_tests.rs"]
+#[cfg(test)]
 mod reset_tests;
 #[path = "counter_kernel_scratch.rs"]
 mod scratch;
 #[path = "counter_kernel_scratch_tests.rs"]
+#[cfg(test)]
 mod scratch_tests;
 #[path = "counter_kernel_value_regression_tests.rs"]
+#[cfg(test)]
 mod value_regression_tests;
 #[path = "counter_kernel_value_tests.rs"]
+#[cfg(test)]
 mod value_tests;
 #[path = "counter_kernel_variable_tests.rs"]
+#[cfg(test)]
 mod variable_tests;
 
+#[path = "counter_kernel_authority.rs"]
+mod authority;
+#[path = "counter_kernel_capture.rs"]
+mod capture;
+#[path = "counter_kernel_error.rs"]
+mod error;
+#[path = "counter_kernel_live.rs"]
+mod live;
+#[path = "counter_kernel_prepare.rs"]
+mod prepare;
+#[path = "counter_kernel_production.rs"]
+mod production;
+#[path = "counter_kernel_publication.rs"]
+mod publication;
+pub use error::{KernelError, UpdateError};
+pub use live::{
+    CompletedUpdate, CounterSheet, KernelAttempt, KernelEvidence, PreparedUpdate, UpdateEffects,
+    UpdateRequest,
+};
+#[cfg(test)]
+#[path = "counter_kernel_authentic_damage_tests.rs"]
+mod authentic_damage_tests;
+#[cfg(test)]
+#[path = "counter_kernel_authentic_support.rs"]
+mod authentic_support;
+#[cfg(test)]
+#[path = "counter_kernel_keyframe_order_tests.rs"]
+mod keyframe_order_tests;
+#[cfg(test)]
+#[path = "counter_kernel_live_cleanup_tests.rs"]
+mod live_cleanup_tests;
+#[cfg(test)]
+#[path = "counter_kernel_live_tests.rs"]
+mod live_tests;
+#[cfg(test)]
+#[path = "counter_kernel_lookup_tests.rs"]
+mod lookup_tests;
+#[cfg(test)]
+#[path = "counter_kernel_prepare_tests.rs"]
+mod prepare_tests;
+#[cfg(test)]
+#[path = "counter_kernel_rejection_tests.rs"]
+mod rejection_tests;
+#[cfg(test)]
+#[path = "counter_kernel_retention_tests.rs"]
+mod retention_tests;
+#[cfg(test)]
+#[path = "counter_kernel_transaction_tests.rs"]
+mod transaction_tests;
+
 /// Explicit immutable build authority, never captured from allocator globals.
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, PartialEq, Eq)]
 struct FrozenAuthority {
     config: CapturedNameConfig,
     originals: BTreeMap<String, u32>,

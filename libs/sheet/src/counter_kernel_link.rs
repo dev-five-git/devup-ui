@@ -29,8 +29,7 @@ pub(super) fn check(candidate: &Candidate, authority: &FrozenAuthority) -> Resul
         None
     } else {
         let delivery = authority
-            .deliveries
-            .get(&placement.source_file)
+            .delivery(placement)
             .ok_or(ReplayError::Allocation)?;
         if !authority.files.contains_key(&delivery.canonical) {
             return Err(ReplayError::Allocation);
@@ -45,8 +44,7 @@ pub(super) fn check(candidate: &Candidate, authority: &FrozenAuthority) -> Resul
         ""
     } else {
         authority
-            .deliveries
-            .get(&placement.source_file)
+            .delivery(placement)
             .ok_or(ReplayError::Allocation)?
             .canonical
             .as_str()
@@ -56,8 +54,7 @@ pub(super) fn check(candidate: &Candidate, authority: &FrozenAuthority) -> Resul
         && matches!(&input, LegacyInput::Declaration(_))
         && !matches!(&input, LegacyInput::Declaration(declaration) if declaration.order == Some(0))
         && authority
-            .deliveries
-            .get(&placement.source_file)
+            .delivery(placement)
             .is_some_and(|delivery| delivery.hoisted);
     if placement.bucket != expected_bucket || placement.hoisted != expected_hoisted {
         return Err(ReplayError::Allocation);
