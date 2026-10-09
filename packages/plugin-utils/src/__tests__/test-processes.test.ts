@@ -6,7 +6,7 @@ import {
   writeFileSync,
 } from 'node:fs'
 import { tmpdir } from 'node:os'
-import { join } from 'node:path'
+import { join, resolve } from 'node:path'
 
 import { afterEach, beforeEach, expect, it, spyOn } from 'bun:test'
 
@@ -69,7 +69,24 @@ it('runs both real groups separately when the root harness is invoked', async ()
     expect(
       files.some((file) => file.endsWith('test-harness/producer-preload.ts')),
     ).toBe(true)
-    expect(files.length).toBe(2)
+    expect(
+      files.map((file) => resolve(run.root, file).replaceAll('\\', '/')).sort(),
+    ).toEqual(
+      [
+        join(run.root, 'source.ts'),
+        resolve(
+          import.meta.dir,
+          '../../../../test-harness/producer-preload.ts',
+        ),
+        resolve(
+          import.meta.dir,
+          '../../../../test-harness/producer-timeout.ts',
+        ),
+      ]
+        .map((file) => file.replaceAll('\\', '/'))
+        .sort(),
+    )
+    expect(files.length).toBe(3)
   } finally {
     rmSync(run.root, { recursive: true, force: true })
   }

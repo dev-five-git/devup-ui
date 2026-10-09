@@ -4,6 +4,7 @@ import { setImmediate } from 'node:timers/promises'
 import type { TestGroup } from './groups'
 import { CoverageError } from './lcov'
 import type { ProducerRun } from './producer-process'
+import { PRODUCER_TIMEOUT_MS } from './producer-timeout'
 
 interface ExitStatus {
   readonly code: number | null
@@ -83,7 +84,7 @@ export class ProducerChild {
         this.exitBeforeCleanup = this.naturalExit = this.finalExit
     })
     this.exit = new Promise((done) => this.child.once('close', done))
-    this.deadline = setTimeout(this.terminate.bind(this), 600000)
+    this.deadline = setTimeout(this.terminate.bind(this), PRODUCER_TIMEOUT_MS)
     this.child.stdout.on('data', (chunk: Buffer) => {
       this.output += chunk.toString()
       this.stdoutTail = Buffer.from(
@@ -109,7 +110,7 @@ export class ProducerChild {
           undefined,
           new CoverageError('producer observation timeout'),
         ),
-        600000,
+        PRODUCER_TIMEOUT_MS,
       )
       this.notify = () => {
         if (this.observationError || condition()) {
