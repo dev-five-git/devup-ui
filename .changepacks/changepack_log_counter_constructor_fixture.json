@@ -1,0 +1,7 @@
+{
+  "changes": {
+    "bindings/devup-ui-wasm/package.json": "Patch"
+  },
+  "note": "Qualify authentic original-numbered counter constructors across Rust test crates through non-default dev-only fixture support. Normal extraction, generated JavaScript, CSS naming and cache format remain unchanged; no new build errors or runtime helpers.",
+  "date": "2026-10-09T00:00:00.000Z"
+}

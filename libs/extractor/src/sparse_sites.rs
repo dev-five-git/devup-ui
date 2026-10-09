@@ -72,7 +72,7 @@ impl SiteScope {
         )
     }
 
-    #[cfg(test)]
+    #[cfg(any(test, feature = "counter-fixtures"))]
     pub(crate) fn enter_counter_numbered(original: u32, source: &str, edits: &[&[Edit]]) -> Self {
         Self::initialize(
             (

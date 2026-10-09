@@ -20,6 +20,15 @@ mod assignment_value;
 mod build_time_values;
 mod class_evaluation;
 mod component;
+#[cfg(all(test, feature = "counter-fixtures"))]
+mod counter_fixture_capture_tests;
+#[cfg(all(test, feature = "counter-fixtures"))]
+mod counter_fixture_current_tests;
+#[cfg(all(test, feature = "counter-fixtures"))]
+mod counter_fixture_scope_tests;
+#[cfg(feature = "counter-fixtures")]
+#[doc(hidden)]
+pub mod counter_test_support;
 #[cfg(test)]
 mod coverage_tests;
 mod css_utils;
