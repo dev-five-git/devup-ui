@@ -62,6 +62,8 @@ const generated = <div className="a" style={{ '--a': colorVariable }} />
 // .a { background-color: var(--a); }
 ```
 
+Dynamic numbers follow the static scale when the resulting CSS is valid for the property. Invalid numeric declarations are an exception: with an earlier `padding: 7px` rule, static `p={-0.5}` emits invalid `padding: -2px`, so the browser keeps 7px, whereas the dynamic variable path computes 0px. Proven-number `calc()` also clamps negative width to 0 and overflow to the browser's maximum; an invalid substituted value instead uses the property's initial or inherited value, not an earlier declaration. Valid negative values such as margin retain literal parity. Devup UI does not add a numeric-validity class policy or runtime validity check.
+
 A value imported from another module stays static when that module declares it with `const` — a string or number literal, a member of an object literal (`as const` included), an alias of another constant, a re-export or a default export:
 
 ```tsx
