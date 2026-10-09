@@ -1655,6 +1655,7 @@ impl<'a> DevupVisitor<'a> {
         let mut calls = ClassNamesCalls {
             ast: &self.ast,
             bindings: &self.bindings,
+            source: self.source,
             names,
             symbols,
             unread: None,
@@ -1745,6 +1746,7 @@ impl<'a> DevupVisitor<'a> {
 struct ClassNamesCalls<'r, 'a> {
     ast: &'r AstBuilder<'a>,
     bindings: &'r Bindings,
+    source: Option<&'a str>,
     names: ClassNamesParams<'a>,
     symbols: ClassNamesSymbols,
     unread: Option<(Expression<'a>, &'static str)>,
@@ -1867,7 +1869,20 @@ impl<'a> VisitMut<'a> for ClassNamesCalls<'_, 'a> {
             self.read_theme(expression, true);
             self.visit_expression(expression);
         }
-        *it = match template_parts(self.ast, &tagged.quasi, true) {
+        let parts = template_parts(self.ast, &tagged.quasi, true).map(|parts| {
+            let mut literal = Expression::TemplateLiteral(oxc_allocator::Box::new_in(
+                tagged
+                    .quasi
+                    .clone_in_with_semantic_ids(self.ast.allocator()),
+                self.ast,
+            ));
+            if crate::css_utils::literal::lower_with_source(self.ast, &mut literal, self.source) {
+                vec![literal]
+            } else {
+                parts
+            }
+        });
+        *it = match parts {
             Ok(parts) => Expression::new_call_expression(
                 SPAN,
                 tagged.tag.take_in(self.ast),

@@ -63,6 +63,7 @@ fn local<'a>(allocator: &'a Allocator, source: &'a str) -> (DevupVisitor<'a>, Ex
     let mut calls = ClassNamesCalls {
         ast: &visitor.ast,
         bindings: &visitor.bindings,
+        source: visitor.source,
         names,
         symbols,
         unread: None,
