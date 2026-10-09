@@ -8,6 +8,8 @@ use rustc_hash::FxHashSet;
 use super::super::{StyleSymbols, binding_of, reads_top_level};
 
 mod callable;
+#[cfg(test)]
+mod tests;
 
 pub(in crate::imported_constants) fn closed(
     expression: &Expression<'_>,

@@ -11,6 +11,8 @@ use oxc_span::{GetSpan, Span};
 use super::{StyleReads, StyleSymbols};
 
 mod proof;
+#[cfg(test)]
+mod tests;
 use proof::Closed;
 pub(super) use proof::{call, closed, member, template};
 

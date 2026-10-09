@@ -4,6 +4,9 @@ use super::{SelectedModule, policy, source::Source};
 use crate::imported_constants::consumer::ReadPlan;
 use crate::vanilla_extract::capture::Capture;
 
+#[cfg(test)]
+mod tests;
+
 pub(super) struct Slots<'a> {
     plan: Option<&'a ReadPlan>,
     cursor: usize,

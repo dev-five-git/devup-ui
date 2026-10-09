@@ -5,6 +5,9 @@ use oxc_span::{GetSpan, Span};
 
 use super::{Closed, binding_of};
 
+#[cfg(test)]
+mod tests;
+
 pub(super) fn closed<'a>(
     kind: AstKind<'a>,
     proof: &mut Closed<'_>,
