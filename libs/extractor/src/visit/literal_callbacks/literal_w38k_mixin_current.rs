@@ -25,7 +25,7 @@ fn static_css_mixin_when_order_returns_bare_selects_exact_unlayered_red() {
 
 #[test]
 #[serial]
-fn static_css_mixin_when_style_order_is_omitted_current_behavior_has_undefined_class_name() {
+fn static_css_mixin_when_style_order_is_omitted_corrected_behavior_has_string_class_name() {
     // Given: the no-order baseline observes typeof on actual render results.
     let renders = concat!(
         "trace.push('built');",
@@ -39,8 +39,8 @@ fn static_css_mixin_when_style_order_is_omitted_current_behavior_has_undefined_c
     // When: public extraction and actual generated components produce observations.
     let output = compile(&source).unwrap_or_else(|error| panic!("{error}"));
     let (observation, trace) = evaluate(&output.code);
-    // Then: the known baseline bug emits red but leaves className undefined.
-    assert_eq!(observation, vec!["undefined", "undefined"]);
+    // Then: the corrected no-order result has a string className and still emits red.
+    assert_eq!(observation, vec!["string", "string"]);
     assert_eq!(trace, vec!["built", "get", "get"]);
     assert_eq!(declarations(&output), red(&[None]));
 }

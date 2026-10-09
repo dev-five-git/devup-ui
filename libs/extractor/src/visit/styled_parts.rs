@@ -67,7 +67,7 @@ impl<'a> DevupVisitor<'a> {
             ) {
                 vec![literal]
             } else if let Ok(segments) =
-                crate::css_prop::template_parts(&self.ast, &tag.quasi, true)
+                crate::css_prop::styled_template_parts(&self.ast, &tag.quasi, &self.style_values)
             {
                 segments
             } else {

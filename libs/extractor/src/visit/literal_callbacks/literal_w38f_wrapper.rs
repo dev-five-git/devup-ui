@@ -13,6 +13,8 @@ mod literal_w38j_c1;
 
 #[path = "literal_w38k_baselines.rs"]
 mod literal_w38k_baselines;
+#[path = "literal_w38k_c1c_pending.rs"]
+mod literal_w38k_c1c_pending;
 #[path = "literal_w38k_completion.rs"]
 mod literal_w38k_completion;
 #[path = "literal_w38k_defaults.rs"]
@@ -39,6 +41,19 @@ mod literal_w38k_terminal;
 mod literal_w38k_throws;
 #[path = "literal_w38k_validation.rs"]
 mod literal_w38k_validation;
+
+#[path = "literal_w38l_c1c_controls.rs"]
+mod literal_w38l_c1c_controls;
+#[path = "literal_w38l_c1c_default.rs"]
+mod literal_w38l_c1c_default;
+#[path = "literal_w38l_c1c_diagnostics.rs"]
+mod literal_w38l_c1c_diagnostics;
+#[path = "literal_w38l_c1c_runtime.rs"]
+mod literal_w38l_c1c_runtime;
+#[path = "literal_w38l_c1c_source.rs"]
+mod literal_w38l_c1c_source;
+#[path = "literal_w38l_c1c_supplier.rs"]
+mod literal_w38l_c1c_supplier;
 
 fn compile(source: &str) -> Result<crate::ExtractOutput, String> {
     css::class_map::reset_class_map();
