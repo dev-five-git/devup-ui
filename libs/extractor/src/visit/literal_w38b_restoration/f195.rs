@@ -1,6 +1,7 @@
 use super::*;
 
 mod classes;
+mod finite_outcomes;
 mod generic;
 mod merging;
 mod typography;

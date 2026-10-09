@@ -1,5 +1,6 @@
 use super::*;
 
+mod finite_outcomes;
 mod w38i_d;
 
 struct TypographyKeys(Vec<String>);
