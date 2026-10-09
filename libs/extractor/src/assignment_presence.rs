@@ -1,6 +1,10 @@
 use crate::extract_style::extract_dynamic_style::ExtractDynamicStyle;
 use crate::{ExtractStyleProp, ExtractStyleValue};
 
+#[cfg(test)]
+#[path = "coverage_tests/assignment_expression_presence.rs"]
+mod expression_tests;
+
 pub(super) fn reference(style: &ExtractDynamicStyle, responsive: bool) -> String {
     if responsive {
         format!("__devupValue?.[{}]", style.level())
