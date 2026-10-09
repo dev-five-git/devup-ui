@@ -151,15 +151,18 @@ pub(super) fn value<'a>(ast: &AstBuilder<'a>, parts: &[OrderStep<'a>]) -> Option
                 let yes = yes.as_ref()?.clone_in_with_semantic_ids(ast.allocator());
                 let no = no
                     .clone_in_with_semantic_ids(ast.allocator())
-                    .or_else(|| selected.take())
-                    .unwrap_or_else(|| yes.clone_in_with_semantic_ids(ast.allocator()));
-                selected = Some(Expression::new_conditional_expression(
-                    SPAN,
-                    test.clone_in_with_semantic_ids(ast.allocator()),
-                    yes,
-                    no,
-                    ast,
-                ));
+                    .or_else(|| selected.take());
+                let test = test.clone_in_with_semantic_ids(ast.allocator());
+                selected = Some(match no {
+                    Some(no) => Expression::new_conditional_expression(SPAN, test, yes, no, ast),
+                    None => Expression::new_logical_expression(
+                        SPAN,
+                        test,
+                        oxc_ast::ast::LogicalOperator::And,
+                        yes,
+                        ast,
+                    ),
+                });
             }
         }
     }

@@ -8,6 +8,9 @@ use rstest::rstest;
 use serial_test::serial;
 use std::path::Path;
 
+#[path = "literal_w38j_c1.rs"]
+mod literal_w38j_c1;
+
 fn compile(source: &str) -> Result<crate::ExtractOutput, String> {
     css::class_map::reset_class_map();
     css::file_map::reset_file_map();
