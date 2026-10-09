@@ -6,8 +6,15 @@ use crate::{
 };
 use css::{allocation_input::CapturedDelivery, sparse_site::SourceFile};
 use extractor::extract_style::{
-    ProducedAllocation, ProducerPolicy, extract_style_value::ExtractStyleValue,
+    ExtractDynamicStyle, ExtractKeyframes, ProducedAllocation, ProducerPolicy,
+    extract_static_style::ExtractStaticStyle,
 };
+
+pub(super) enum Generated<'a> {
+    Static(&'a ExtractStaticStyle),
+    Dynamic(&'a ExtractDynamicStyle),
+    Keyframes(&'a ExtractKeyframes),
+}
 
 pub(super) fn allocation(receipt: ProducedAllocation) -> AllocationEvidence {
     AllocationEvidence {
@@ -18,13 +25,13 @@ pub(super) fn allocation(receipt: ProducedAllocation) -> AllocationEvidence {
 }
 
 pub(super) fn candidate(
-    style: &ExtractStyleValue,
+    style: Generated<'_>,
     theme: &Theme,
     placement: &EmissionContext,
-) -> Result<Option<(Candidate, CapturedDelivery)>, KernelError> {
+) -> Result<(Candidate, CapturedDelivery), KernelError> {
     let filename = (!placement.single_css).then_some(placement.source_file.as_str());
     let (body, receipt, children, variable) = match style {
-        ExtractStyleValue::Static(style) => {
+        Generated::Static(style) => {
             let declaration = capture::declaration(style, theme)?;
             let body = if style.property == "typography" {
                 EmissionInput::Typography(declaration)
@@ -33,20 +40,30 @@ pub(super) fn candidate(
             };
             (body, style.counter_produce(filename)?, Vec::new(), None)
         }
-        ExtractStyleValue::Dynamic(style) => {
+        Generated::Dynamic(style) => {
             let declaration = capture::dynamic(style);
-            let receipt = style.counter_produce(filename)?;
-            let site = receipt
-                .site
+            match style.producer_policy() {
+                ProducerPolicy::CounterOriginal(_) => {}
+                ProducerPolicy::Current => {
+                    return Err(KernelError::Producer(
+                        extractor::extract_style::CounterProducerError::WrongPolicy,
+                    ));
+                }
+            }
+            let site = style
+                .site()
                 .map(|site| match site.file {
                     SourceFile::D9(source) => Ok(NumericSite {
                         source,
                         at: site.at,
                         role: site.role,
                     }),
-                    SourceFile::Unnumbered(_) => Err(KernelError::Authority),
+                    SourceFile::Unnumbered(_) => Err(KernelError::Producer(
+                        extractor::extract_style::CounterProducerError::UnnumberedSite,
+                    )),
                 })
                 .transpose()?;
+            let receipt = style.counter_produce(filename)?;
             let variable = receipt.variable_allocation.map(|receipt| VariableLineage {
                 original: receipt.original,
                 evidence: allocation(receipt),
@@ -63,7 +80,7 @@ pub(super) fn candidate(
                 variable,
             )
         }
-        ExtractStyleValue::Keyframes(frames) => {
+        Generated::Keyframes(frames) => {
             let mut children = Vec::new();
             let steps = frames
                 .keyframes
@@ -92,10 +109,6 @@ pub(super) fn candidate(
                 None,
             )
         }
-        ExtractStyleValue::Css(_)
-        | ExtractStyleValue::Import(_)
-        | ExtractStyleValue::FontFace(_)
-        | ExtractStyleValue::Typography(_) => return Ok(None),
     };
     let parent = receipt.original;
     let mut placement = placement.clone();
@@ -121,7 +134,7 @@ pub(super) fn candidate(
             materialization: Materialization::Complete,
         },
     )?;
-    Ok(Some((
+    Ok((
         Candidate {
             proof,
             lineage: Lineage {
@@ -131,5 +144,5 @@ pub(super) fn candidate(
             },
         },
         delivery,
-    )))
+    ))
 }

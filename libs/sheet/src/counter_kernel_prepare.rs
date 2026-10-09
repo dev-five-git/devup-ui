@@ -3,103 +3,13 @@ use super::{
     authority::{self, Retained},
     error::KernelError,
     live::{KernelEvidence, UpdateEffects, UpdateRequest},
-    phase, production, publication, records,
+    publication, records,
     scratch::{self, ScratchRequest},
+    traversal::Traversal,
 };
-use crate::{
-    StyleSheet,
-    counter_evidence::{CounterEvidence, RecordFootprint},
-    emission_seed::EmissionContext,
-};
+use crate::{StyleSheet, emission_seed::EmissionContext};
 use extractor::extract_style::extract_style_value::ExtractStyleValue;
 use rustc_hash::FxHashSet;
-
-struct Traversal {
-    candidates: Vec<super::Candidate>,
-    authority: FrozenAuthority,
-    operations: Vec<RecordFootprint>,
-}
-
-impl Traversal {
-    fn run(
-        sheet: &StyleSheet,
-        styles: &FxHashSet<ExtractStyleValue>,
-        placement: &EmissionContext,
-    ) -> Result<Self, KernelError> {
-        let mut result = Self {
-            candidates: Vec::new(),
-            authority: FrozenAuthority::live(),
-            operations: Vec::new(),
-        };
-        let mut ordered: Vec<_> = styles.iter().collect();
-        ordered.sort_unstable();
-        for style in ordered {
-            let Some((candidate, delivery)) =
-                production::candidate(style, &sheet.theme, placement)?
-            else {
-                let authored = match style {
-                    ExtractStyleValue::Css(style) => Some(RecordFootprint::Css {
-                        source: style.file.clone(),
-                        css: style.css.clone(),
-                    }),
-                    ExtractStyleValue::Import(style) => Some(RecordFootprint::Import {
-                        source: style.file.clone(),
-                        url: style.url.clone(),
-                    }),
-                    ExtractStyleValue::FontFace(style) => Some(RecordFootprint::FontFace {
-                        source: style.file.clone(),
-                        properties: style.properties.clone(),
-                    }),
-                    ExtractStyleValue::Typography(_) => None,
-                    ExtractStyleValue::Static(_)
-                    | ExtractStyleValue::Dynamic(_)
-                    | ExtractStyleValue::Keyframes(_) => return Err(KernelError::Coverage),
-                };
-                if let Some(record) = authored {
-                    result.operations.push(record.clone());
-                    if !result.authority.authored.contains(&record) {
-                        result.authority.authored.push(record);
-                    }
-                }
-                continue;
-            };
-            result.authority.capture(&candidate, delivery)?;
-            for record in candidate.proof.materialized()? {
-                phase::retire(
-                    &mut result.candidates,
-                    &mut result.authority.authored,
-                    record,
-                );
-                result.operations.push(record.clone());
-            }
-            if !result.candidates.contains(&candidate) {
-                result.candidates.push(candidate);
-            }
-        }
-        result.operations.extend(
-            records::registrations(&result.operations)
-                .into_iter()
-                .map(|source| RecordFootprint::GlobalCssOwner { source }),
-        );
-        result.authority.classes = authority::classes();
-        Ok(result)
-    }
-
-    fn linked(&self) -> Result<LinkedBatch, KernelError> {
-        let mut evidence = CounterEvidence {
-            authored: self.authority.authored.clone(),
-            ..CounterEvidence::default()
-        };
-        for candidate in &self.candidates {
-            evidence.insert(candidate.proof.clone())?;
-        }
-        Ok(LinkedBatch::link_captured_batch(
-            &self.candidates,
-            &evidence,
-            &self.authority,
-        )?)
-    }
-}
 
 pub(super) struct Preparation<'a> {
     pub(super) base: &'a LinkedBatch,

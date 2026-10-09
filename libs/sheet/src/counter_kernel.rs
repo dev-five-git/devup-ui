@@ -95,6 +95,8 @@ mod prepare;
 mod production;
 #[path = "counter_kernel_publication.rs"]
 mod publication;
+#[path = "counter_kernel_traversal.rs"]
+mod traversal;
 pub use error::{KernelError, UpdateError};
 pub use live::{
     CompletedUpdate, CounterSheet, KernelAttempt, KernelEvidence, PreparedUpdate, UpdateEffects,
@@ -106,6 +108,12 @@ mod authentic_damage_tests;
 #[cfg(test)]
 #[path = "counter_kernel_authentic_support.rs"]
 mod authentic_support;
+#[cfg(test)]
+#[path = "counter_kernel_coverage_boundary_tests.rs"]
+mod coverage_boundary_tests;
+#[cfg(test)]
+#[path = "counter_kernel_coverage_support_tests.rs"]
+mod coverage_support_tests;
 #[cfg(test)]
 #[path = "counter_kernel_keyframe_order_tests.rs"]
 mod keyframe_order_tests;
