@@ -11,6 +11,8 @@ import {
 import { scanImportRequests } from './import-scanner'
 import { remapMdxError } from './mdx-errors'
 import { PreparedSourceTypeError, readPreparedSource } from './prepared-source'
+import type { ManifestJob } from './production-manifest-certificates'
+import { ManifestWorklist } from './production-manifest-worklist'
 import { createProductionPackageRoots } from './production-package-roots'
 import {
   enumerateProductionSourceFiles,
@@ -33,13 +35,6 @@ export interface ProductionFileManifestOptions {
 export interface ProductionManifestFile extends ProductionSourceFile {
   readonly context: string
   readonly id: string
-}
-interface Ancestry {
-  readonly files: ReadonlySet<string>
-  readonly packages: ReadonlySet<string>
-}
-interface Job extends ProductionSourceFile, Ancestry {
-  readonly kind: 'file' | 'package'
 }
 class ManifestSourceError extends Error {
   readonly name = 'ManifestSourceError'
@@ -156,92 +151,58 @@ export async function collectProductionFileManifest({
       return result
     }
 
-    const jobs: Job[] = []
-    const retained = new Map<string, readonly Job[]>()
-    const covers = (a: Ancestry, b: Ancestry) =>
-      [...a.files].every((path) => b.files.has(path)) &&
-      [...a.packages].every((path) => b.packages.has(path))
-    function enqueue(
-      file: ProductionSourceFile,
-      ancestry: Ancestry,
-      kind: Job['kind'],
+    function distributions(
+      start: string,
+      request: (job: ManifestJob) => void,
     ): void {
-      if (excluded(file.path) || excluded(file.realPath)) return
-      switch (kind) {
-        case 'file': {
-          const record = Object.freeze({
-            ...file,
-            context: context.key,
-            id: context.toId(file.path),
-          })
-          const membership = [record.context, record.path, record.id]
-          memberships.set(JSON.stringify(membership), record)
-          if (ancestry.files.has(file.realPath)) return
-          break
-        }
-        case 'package':
-          if (ancestry.packages.has(file.realPath)) return
-          break
-      }
-      const key = JSON.stringify([kind, file.path])
-      const previous = retained.get(key) ?? []
-      if (previous.some((job) => covers(job, ancestry))) return
-      const job = { ...file, ...ancestry, kind }
-      retained.set(
-        key,
-        previous.filter((other) => !covers(job, other)).concat(job),
-      )
-      jobs.push(job)
-    }
-    function distributions(start: string, ancestry: Ancestry): void {
       for (const path of packageRoots(start)) {
         if (excluded(path)) continue
-        enqueue(
-          { path, realPath: realpathSync.native(path) },
-          ancestry,
-          'package',
-        )
+        request({ path, realPath: realpathSync.native(path), kind: 'package' })
       }
     }
-    const ancestry = { files: new Set<string>(), packages: new Set<string>() }
+    const worklist = new ManifestWorklist({
+      admit: (file) => !excluded(file.path) && !excluded(file.realPath),
+      record: (file) => {
+        const record = Object.freeze({
+          ...file,
+          context: context.key,
+          id: context.toId(file.path),
+        })
+        const membership = [record.context, record.path, record.id]
+        memberships.set(JSON.stringify(membership), record)
+      },
+      expand: async (job, request) => {
+        switch (job.kind) {
+          case 'file': {
+            for (const file of await targets(job.path))
+              request({ ...file, kind: 'file' })
+            distributions(dirname(job.path), request)
+            break
+          }
+          case 'package': {
+            const files =
+              inventories.get(job.path) ??
+              enumerateProductionSourceFiles({
+                roots: [job.path],
+                cwd,
+                ...(exclude === undefined ? {} : { exclude }),
+                ...(includeMdx === undefined ? {} : { includeMdx }),
+              })
+            inventories.set(job.path, files)
+            for (const file of files) request({ ...file, kind: 'file' })
+            break
+          }
+          default:
+            job.kind satisfies never
+        }
+      },
+    })
     for (const file of context.files.toSorted((a, b) =>
       compareCodePoints(a.path, b.path),
     ))
-      enqueue(file, ancestry, 'file')
-    distributions(cwd, ancestry)
-    for (const job of jobs) {
-      if (!retained.get(JSON.stringify([job.kind, job.path]))?.includes(job))
-        continue
-      switch (job.kind) {
-        case 'file': {
-          const next = {
-            files: new Set(job.files).add(job.realPath),
-            packages: job.packages,
-          }
-          for (const file of await targets(job.path))
-            enqueue(file, next, 'file')
-          distributions(dirname(job.path), next)
-          break
-        }
-        case 'package': {
-          const files =
-            inventories.get(job.path) ??
-            enumerateProductionSourceFiles({
-              roots: [job.path],
-              cwd,
-              ...(exclude === undefined ? {} : { exclude }),
-              ...(includeMdx === undefined ? {} : { includeMdx }),
-            })
-          inventories.set(job.path, files)
-          const next = {
-            files: job.files,
-            packages: new Set(job.packages).add(job.realPath),
-          }
-          for (const file of files) enqueue(file, next, 'file')
-          break
-        }
-      }
-    }
+      worklist.seed({ ...file, kind: 'file' })
+    distributions(cwd, (job) => worklist.seed(job))
+    await worklist.run()
   }
   return Object.freeze(
     [...memberships.values()].sort(
