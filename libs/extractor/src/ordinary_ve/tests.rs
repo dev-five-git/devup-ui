@@ -32,6 +32,7 @@ mod demand_producers;
 mod demand_prototype;
 mod demand_support;
 mod demand_views;
+mod known_key_demands;
 mod mixed_aliases;
 mod mixed_apis;
 mod mixed_canonical;

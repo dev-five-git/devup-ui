@@ -8,6 +8,10 @@ use oxc_span::{GetSpan, Span};
 use super::Demand;
 use crate::ordinary_ve::selection::plan::{ImportName, MemberDemand};
 
+#[cfg(test)]
+#[path = "request_key_tests.rs"]
+mod request_key_tests;
+
 pub(super) fn entry<'a>(
     parsed: (&Program<'a>, &Semantic<'a>),
     selected: bool,
@@ -95,12 +99,13 @@ fn read_path(semantic: &Semantic<'_>, node: oxc_syntax::node::NodeId) -> Vec<Str
                 path.push(member.property.name.to_string());
             }
             AstKind::ComputedMemberExpression(member) if member.object.span() == span => {
-                let Some(key) = crate::utils::get_string_by_literal_expression(
-                    crate::utils::unwrap_syntax_only(&member.expression),
+                let Some(key) = crate::ordinary_ve::selection::static_key::resolve(
+                    &member.expression,
+                    semantic,
                 ) else {
                     return Vec::new();
                 };
-                path.push(key.into_owned());
+                path.push(key);
             }
             AstKind::ParenthesizedExpression(_)
             | AstKind::TSAsExpression(_)
