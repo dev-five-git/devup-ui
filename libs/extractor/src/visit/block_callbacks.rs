@@ -200,17 +200,8 @@ impl<'a> DevupVisitor<'a> {
 
     pub(super) fn prepare_order_block_callback(
         &mut self,
-        expression: &mut Expression<'a>,
-        captures: &mut Vec<Captured<'a>>,
-    ) -> Option<(Vec<OrderStep<'a>>, Captured<'a>)> {
-        let body = match expression {
-            Expression::ArrowFunctionExpression(arrow) => match &mut arrow.body {
-                ArrowFunctionBody::FunctionBody(body) => body,
-                _ => return None,
-            },
-            Expression::FunctionExpression(function) => function.body.as_mut()?,
-            _ => return None,
-        };
+        body: &mut FunctionBody<'a>,
+    ) -> (Vec<OrderStep<'a>>, String) {
         let render = self.names.fresh("__devupRenderValues");
         let mut orders = Vec::new();
         let mut returns = Returns {
@@ -222,8 +213,7 @@ impl<'a> DevupVisitor<'a> {
             complete: true,
         };
         walk_mut::walk_function_body(&mut returns, body);
-        let invocation = self.capture_prepared_callback(expression, captures);
-        Some((orders, (render, invocation)))
+        (orders, render)
     }
 }
 

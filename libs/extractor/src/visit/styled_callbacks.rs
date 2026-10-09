@@ -5,7 +5,7 @@ use super::{DevupVisitor, Text};
 use crate::composition::{KnownPart, KnownStyles};
 use oxc_allocator::{FromIn, GetAllocator, TakeIn};
 use oxc_ast::{
-    ast::{Expression, Str},
+    ast::{ArrowFunctionBody, Expression, Str},
     builder::AstBuilder,
 };
 use oxc_ast_visit::VisitMut;
@@ -71,10 +71,21 @@ impl<'a> DevupVisitor<'a> {
             return Some((vec![OrderStep::Value(None)], render));
         }
         *expression = wrapped.original;
-        if matches!(expression, Expression::FunctionExpression(_))
-            || matches!(expression, Expression::ArrowFunctionExpression(arrow) if matches!(arrow.body, oxc_ast::ast::ArrowFunctionBody::FunctionBody(_)))
-        {
-            return self.prepare_order_block_callback(expression, captures);
+        let block = match expression {
+            Expression::FunctionExpression(function) => {
+                Some(self.prepare_order_block_callback(function.body.as_mut()?))
+            }
+            Expression::ArrowFunctionExpression(arrow) => match &mut arrow.body {
+                ArrowFunctionBody::FunctionBody(body) => {
+                    Some(self.prepare_order_block_callback(body))
+                }
+                _ => None,
+            },
+            _ => None,
+        };
+        if let Some((orders, render)) = block {
+            let invocation = self.capture_prepared_callback(expression, captures);
+            return Some((orders, (render, invocation)));
         }
         let candidate = callback_result(expression)?.take_in(&self.ast);
         let (mut body, values) = self.prepare_order_body(candidate);
