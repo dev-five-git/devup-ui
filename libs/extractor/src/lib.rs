@@ -430,6 +430,12 @@ fn extract_source(
         imported_constants::Inlined::default()
     };
     dependencies.extend(inlined.dependencies);
+    if !inlined.css_failures.is_empty() {
+        let mut failures = inlined.css_failures;
+        failures.sort_unstable();
+        failures.dedup();
+        return Err(failures.join("\n").into());
+    }
     let mut visitor = DevupVisitor::new(
         &allocator,
         filename,
@@ -14782,10 +14788,10 @@ export const ordered = css({ color: 'f', m: 2, styleOrder: 2 });",
         let output = extract_with_modules(
             "/src/App.tsx",
             "import { css } from '@devup-ui/react';
-import { base, danger, twice, text, runtime, listed, spaced, fade, called, ordered } from './styles';
+import { base, danger, twice, text, listed, spaced, fade, called, ordered } from './styles';
 export const a = css(base, danger);
 export const b = css(danger, base, { m: 1 });
-export const c = css(twice, text, runtime, listed, spaced, fade);
+export const c = css(twice, text, listed, spaced, fade);
 export const d = css(ordered, danger, called);",
             ExtractOption {
                 import_aliases: HashMap::from([(
@@ -14802,7 +14808,7 @@ export const d = css(ordered, danger, called);",
         for expected in [
             r#"export const a = "color-0-red-_a__c_hover-255-a color-0-crimson--255-a";"#,
             r#"export const b = "color-0-red-_a__c_hover-255-a color-0-teal--255-a margin-0-4px--255-a";"#,
-            "export const c = `${twice} ${text} ${runtime} ${listed} ${spaced} ${fade}`;",
+            "export const c = `color-0-a--255-a margin-0-4px--255-a ${text} ${listed} ${spaced} ${fade}`;",
             "export const d = `margin-0-8px--2-a color-0-crimson--255-a ${called}`;",
         ] {
             assert!(
@@ -14811,6 +14817,34 @@ export const d = css(ordered, danger, called);",
                 output.code
             );
         }
+    }
+
+    #[rstest]
+    #[serial]
+    fn test_css_composes_imported_runtime_refusal(#[values(false, true)] single_css: bool) {
+        reset_class_map();
+        reset_file_map();
+        let resolver = memory_resolver(&[(
+            "/src/styles.ts",
+            "import { css } from '@devup-ui/react';\nexport const runtime = css({ color: globalThis.tone });",
+        )]);
+        let output = extract_with_modules(
+            "/src/App.tsx",
+            "import { css } from '@devup-ui/react'; import { runtime } from './styles'; export const base = css(runtime, { color: 'blue' });",
+            ExtractOption {
+                single_css,
+                ..ExtractOption::default()
+            },
+            false,
+            &resolver,
+        );
+        let error = output.unwrap_err().to_string();
+        assert!(error.starts_with("/src/styles.ts:2:28: "), "{error}");
+        assert!(
+            error.contains("`css()` cannot use `{ color: globalThis.tone }` at build time: "),
+            "{error}"
+        );
+        assert!(error.contains("constant"), "{error}");
     }
 
     fn assert_composed_export_atoms(code: &str, export: &str, expected: &[&str]) {
@@ -14934,6 +14968,505 @@ export const base = css(middle, { color: ['cyan', null, null, null, 'pink'], _ho
                 "color-1-red-_a__c_hover-3",
                 "color-2-green-_a__c_hover-255",
             ],
+        );
+    }
+
+    #[rstest]
+    #[case::three_modules(
+        "import { css } from '@devup-ui/react'; import { base as child } from './b'; export const base = css(child, { color: 'blue' });",
+        (&["color-0-blue--255", "padding-0-8px--255", "margin-0-12px--255"][..],
+        &["/src/a.ts", "/src/b.ts"][..])
+    )]
+    #[case::four_modules(
+        "import { css } from '@devup-ui/react'; import { base as child } from './c'; export const base = css(child, { color: 'purple', bg: 'yellow' });",
+        (&["color-0-purple--255", "background-0-yellow--255", "padding-0-8px--255", "margin-0-12px--255"][..],
+        &["/src/a.ts", "/src/b.ts", "/src/c.ts"][..])
+    )]
+    #[serial]
+    fn test_css_imported_native_chain_winners(
+        #[case] source: &str,
+        #[case] expected: (&[&str], &[&str]),
+        #[values(false, true)] single_css: bool,
+    ) {
+        reset_class_map();
+        reset_file_map();
+        let resolver = memory_resolver(&[
+            (
+                "/src/a.ts",
+                "import { css } from '@devup-ui/react'; export const base = css({ color: 'red', p: 2 });",
+            ),
+            (
+                "/src/b.ts",
+                "import { css } from '@devup-ui/react'; import { base as child } from './a'; export const base = css(child, { color: 'orange', margin: 3 });",
+            ),
+            (
+                "/src/c.ts",
+                "import { css } from '@devup-ui/react'; import { base as child } from './b'; export const base = css(child, { color: 'blue' });",
+            ),
+        ]);
+        css::debug::set_debug(true);
+        let output = extract_with_modules(
+            "/src/terminal.ts",
+            source,
+            ExtractOption {
+                single_css,
+                ..ExtractOption::default()
+            },
+            false,
+            &resolver,
+        );
+        css::debug::set_debug(false);
+        let output = output.unwrap();
+        let (atoms, dependencies) = expected;
+        assert_composed_export_atoms(&output.code, "base", atoms);
+        let mut actual: Vec<_> = output.dependencies.iter().map(String::as_str).collect();
+        actual.sort_unstable();
+        assert_eq!(actual, dependencies);
+    }
+
+    #[rstest]
+    #[serial]
+    fn test_css_imported_native_chain_mixed_cached_levels(#[values(false, true)] single_css: bool) {
+        reset_class_map();
+        reset_file_map();
+        let resolver = memory_resolver(&[
+            (
+                "/src/a.ts",
+                "import { css } from '@devup-ui/react'; const leaf = css({ color: ['orange', 'red', 'purple'], p: 2, _hover: { color: ['orange', 'red', 'purple'] }, styleOrder: 3 }); export { leaf as seed };",
+            ),
+            (
+                "/src/b.ts",
+                "import { css } from '@devup-ui/react'; import { seed as first } from './a'; const alias = first; const local = css(alias, { color: ['blue', null, 'green'], _hover: { color: ['blue', null, 'green'] } }); const middle = css(first, local, { margin: 3 }); export { middle as renamed };",
+            ),
+        ]);
+        css::debug::set_debug(true);
+        let output = extract_with_modules(
+            "/src/c.ts",
+            "import { css } from '@devup-ui/react';
+import { seed } from './a';
+import { renamed as child } from './b';
+const alias = child;
+const local = css(seed, alias, seed, child, { color: ['cyan', null, null, null, 'pink'], _hover: { color: 'cyan' } });
+export const base = css(local, { bg: 'white' });",
+            ExtractOption { single_css, ..ExtractOption::default() },
+            false,
+            &resolver,
+        );
+        css::debug::set_debug(false);
+        let output = output.unwrap();
+        assert_composed_export_atoms(
+            &output.code,
+            "base",
+            &[
+                "color-0-cyan--255",
+                "color-1-red--3",
+                "color-2-green--255",
+                "color-4-pink--255",
+                "padding-0-8px--3",
+                "margin-0-12px--255",
+                "color-0-cyan-_a__c_hover-255",
+                "color-1-red-_a__c_hover-3",
+                "color-2-green-_a__c_hover-255",
+                "background-0-white--255",
+            ],
+        );
+        let mut dependencies: Vec<_> = output.dependencies.iter().map(String::as_str).collect();
+        dependencies.sort_unstable();
+        assert_eq!(dependencies, ["/src/a.ts", "/src/b.ts"]);
+    }
+
+    #[rstest]
+    #[serial]
+    fn test_css_imported_native_chain_root_alias(#[values(false, true)] single_css: bool) {
+        // Given a root const alias of a known imported class.
+        reset_class_map();
+        reset_file_map();
+        let resolver = memory_resolver(&[(
+            "/src/a.ts",
+            "import { css } from '@devup-ui/react'; export const seed = css({ color: 'red', p: 2 });",
+        )]);
+        css::debug::set_debug(true);
+        // When a later local composition reads the alias.
+        let output = extract_with_modules(
+            "/src/terminal.ts",
+            "import { css } from '@devup-ui/react'; import { seed as child } from './a'; const alias = child; export const base = css(alias, { color: 'blue' });",
+            ExtractOption {
+                single_css,
+                ..ExtractOption::default()
+            },
+            false,
+            &resolver,
+        );
+        css::debug::set_debug(false);
+        // Then declarations merge into a literal, without the losing color.
+        assert_composed_export_atoms(
+            &output.unwrap().code,
+            "base",
+            &["color-0-blue--255", "padding-0-8px--255"],
+        );
+    }
+
+    #[rstest]
+    #[serial]
+    fn test_css_imported_native_chain_alias_shadow(#[values(false, true)] single_css: bool) {
+        // Given an unrelated nested const with the same name as a root alias.
+        reset_class_map();
+        reset_file_map();
+        let resolver = memory_resolver(&[(
+            "/src/a.ts",
+            "import { css } from '@devup-ui/react'; export const seed = css({ color: 'red', p: 2 });",
+        )]);
+        css::debug::set_debug(true);
+        // When both bindings are read by compositions.
+        let output = extract_with_modules(
+            "/src/terminal.ts",
+            "import { css } from '@devup-ui/react'; import { seed as child } from './a'; const alias = child; export const base = css(alias, { color: 'blue' }); export function compose() { const alias = 'external-card'; return css(child, alias, { color: 'green' }); }",
+            ExtractOption {
+                single_css,
+                ..ExtractOption::default()
+            },
+            false,
+            &resolver,
+        );
+        css::debug::set_debug(false);
+        let output = output.unwrap();
+        // Then the nested external class stays opaque, not root style metadata.
+        assert!(output.code.contains("${alias}"), "{}", output.code);
+        assert_composed_export_atoms(
+            &output.code,
+            "base",
+            &["color-0-blue--255", "padding-0-8px--255"],
+        );
+    }
+
+    #[rstest]
+    #[case::absent_parts(
+        &[
+            ("/src/a.ts", "import { css } from '@devup-ui/react'; export const seed = css({ color: 'red', p: 2 });"),
+            ("/src/b.ts", "import { css } from '@devup-ui/react'; import { seed as importedbase } from './a'; export const base = css(importedbase, null, undefined, false, { color: 'blue' });"),
+        ],
+        &["color-0-blue--255", "padding-0-8px--255", "background-0-white--255"]
+    )]
+    #[case::zero_arguments(
+        &[("/src/b.ts", "import { css } from '@devup-ui/react'; export const base = css();")],
+        &["background-0-white--255"]
+    )]
+    #[serial]
+    fn test_css_imported_native_chain_known_absent_parts(
+        #[case] modules: &'static [(&'static str, &'static str)],
+        #[case] expected: &[&str],
+        #[values(false, true)] single_css: bool,
+    ) {
+        // Given a native imported definition containing only known parts.
+        reset_class_map();
+        reset_file_map();
+        let resolver = memory_resolver(modules);
+        css::debug::set_debug(true);
+        // When the terminal composes the imported definition.
+        let output = extract_with_modules(
+            "/src/terminal.ts",
+            "import { css } from '@devup-ui/react'; import { base as child } from './b'; export const base = css(child, { bg: 'white' });",
+            ExtractOption {
+                single_css,
+                ..ExtractOption::default()
+            },
+            false,
+            &resolver,
+        );
+        css::debug::set_debug(false);
+        // Then absent parts contribute no declarations or refusal.
+        assert_composed_export_atoms(&output.unwrap().code, "base", expected);
+    }
+
+    #[rstest]
+    #[case::cross_module_cycle(
+        &[
+            ("/src/a.ts", "import { css } from '@devup-ui/react';\nimport { base as child } from './b';\nexport const base = css(\nchild, { color: 'red', p: 2 });"),
+            ("/src/b.ts", "import { css } from '@devup-ui/react';\nimport { base as child } from './a';\nexport const base = css(\nchild, { color: 'orange', margin: 3 });"),
+        ],
+        (&["/src/a.ts:4:1: ", "/src/b.ts:4:1: "][..], "child", &["cycl"][..])
+    )]
+    #[case::self_local_cycle(
+        &[("/src/b.ts", "import { css } from '@devup-ui/react';\nexport const base = css(\nbase, { color: 'orange' });")],
+        (&["/src/b.ts:3:1: "][..], "base", &["cycl"][..])
+    )]
+    #[case::mutual_local_cycle(
+        &[("/src/b.ts", "import { css } from '@devup-ui/react';\nexport const base = css(\nother, { color: 'orange' });\nconst other = css(\nbase, { p: 2 });")],
+        (&["/src/b.ts:3:1: ", "/src/b.ts:5:1: "][..], "base", &["cycl"][..])
+    )]
+    #[case::dynamic_rule(
+        &[("/src/b.ts", "import { css } from '@devup-ui/react';\nexport const base = css(\n{ color:\nglobalThis.tone\n});")],
+        (&["/src/b.ts:3:1: ", "/src/b.ts:4:1: "][..], "globalThis.tone", &["constant"][..])
+    )]
+    #[case::dynamic_argument(
+        &[("/src/b.ts", "import { css } from '@devup-ui/react';\nexport const base = css(\nglobalThis.rules, { color: 'orange' });")],
+        (&["/src/b.ts:3:1: "][..], "globalThis.rules", &["constant"][..])
+    )]
+    #[case::nested_missing_module(
+        &[
+            ("/src/a.ts", "import { css } from '@devup-ui/react';\nimport { base as child } from './missing';\nexport const base = css(\nchild, { color: 'red' });"),
+            ("/src/b.ts", "import { css } from '@devup-ui/react'; import { base as child } from './a'; export const base = css(child, { color: 'orange' });"),
+        ],
+        (&["/src/a.ts:4:1: "][..], "child", &["module", "./missing"][..])
+    )]
+    #[case::nested_missing_export(
+        &[
+            ("/src/present.ts", "export const other = 'external-card';"),
+            ("/src/a.ts", "import { css } from '@devup-ui/react';\nimport { absent as child } from './present';\nexport const base = css(\nchild, { color: 'red' });"),
+            ("/src/b.ts", "import { css } from '@devup-ui/react'; import { base as child } from './a'; export const base = css(child, { color: 'orange' });"),
+        ],
+        (&["/src/a.ts:4:1: "][..], "child", &["export", "absent"][..])
+    )]
+    #[case::opaque_inside_native_chain(
+        &[
+            ("/src/external.ts", "export const external = 'external-card';"),
+            ("/src/b.ts", "import { css } from '@devup-ui/react';\nimport { external } from './external';\nexport const base = css(\nexternal, { color: 'orange' });"),
+        ],
+        (&["/src/b.ts:4:1: "][..], "external", &["static"][..])
+    )]
+    #[serial]
+    fn test_css_imported_native_chain_refuses_incomplete_metadata(
+        #[case] modules: &'static [(&'static str, &'static str)],
+        #[case] expected: (&[&str], &str, &[&str]),
+        #[values(false, true)] single_css: bool,
+    ) {
+        reset_class_map();
+        reset_file_map();
+        let resolver = memory_resolver(modules);
+        css::debug::set_debug(true);
+        let output = extract_with_modules(
+            "/src/terminal.ts",
+            "import { css } from '@devup-ui/react'; import { base as child } from './b'; export const base = css(child, { color: 'blue' });",
+            ExtractOption {
+                single_css,
+                ..ExtractOption::default()
+            },
+            false,
+            &resolver,
+        );
+        css::debug::set_debug(false);
+        let error = match output {
+            Err(error) => error.to_string(),
+            Ok(output) => panic!(
+                "incomplete native metadata must be refused, got {}",
+                output.code
+            ),
+        };
+        let (sites, expression, reasons) = expected;
+        assert!(sites.iter().any(|site| error.starts_with(site)), "{error}");
+        let failed = error
+            .split_once("`css()` cannot use `")
+            .expect("located native css error")
+            .1;
+        let (failed_expression, reason) = failed
+            .split_once("` at build time: ")
+            .expect("build-time refusal shape");
+        assert!(failed_expression.contains(expression), "{error}");
+        for expected_reason in reasons {
+            assert!(reason.contains(expected_reason), "{error}");
+        }
+    }
+
+    #[rstest]
+    #[case::unused_dynamic(&[("/src/b.ts", "import { css } from '@devup-ui/react'; export const base = css({ color: 'orange', p: 2 }); export const broken = css({ color: globalThis.tone });")])]
+    #[case::unused_self_cycle(&[("/src/b.ts", "import { css } from '@devup-ui/react'; export const base = css({ color: 'orange', p: 2 }); export const broken = css(broken, { color: 'red' });")])]
+    #[case::unused_mutual_cycle(&[("/src/b.ts", "import { css } from '@devup-ui/react'; export const base = css({ color: 'orange', p: 2 }); const first = css(second, { color: 'red' }); const second = css(first, { p: 2 }); export { first as broken };")])]
+    #[case::unused_missing_module(&[("/src/b.ts", "import { css } from '@devup-ui/react'; import { missing } from './missing'; export const base = css({ color: 'orange', p: 2 }); export const broken = css(missing, { color: 'red' });")])]
+    #[case::unused_missing_export(&[
+        ("/src/present.ts", "export const other = 'external-card';"),
+        ("/src/b.ts", "import { css } from '@devup-ui/react'; import { absent } from './present'; export const base = css({ color: 'orange', p: 2 }); export const broken = css(absent, { color: 'red' });"),
+    ])]
+    #[serial]
+    fn test_css_imported_native_chain_ignores_unused_failed_export(
+        #[case] modules: &'static [(&'static str, &'static str)],
+        #[values(false, true)] single_css: bool,
+    ) {
+        reset_class_map();
+        reset_file_map();
+        let resolver = memory_resolver(modules);
+        css::debug::set_debug(true);
+        let output = extract_with_modules(
+            "/src/terminal.ts",
+            "import { css } from '@devup-ui/react'; import { base as child } from './b'; export const base = css(child, { color: 'blue' });",
+            ExtractOption {
+                single_css,
+                ..ExtractOption::default()
+            },
+            false,
+            &resolver,
+        );
+        css::debug::set_debug(false);
+        let output = output.unwrap();
+        assert_composed_export_atoms(
+            &output.code,
+            "base",
+            &["color-0-blue--255", "padding-0-8px--255"],
+        );
+    }
+
+    #[rstest]
+    #[serial]
+    fn test_css_imported_native_chain_preserves_unrelated_opaque_inputs(
+        #[values(false, true)] single_css: bool,
+    ) {
+        reset_class_map();
+        reset_file_map();
+        let resolver = memory_resolver(&[
+            (
+                "/src/external.ts",
+                "export const external = 'external-card';",
+            ),
+            (
+                "/src/animation.ts",
+                "import { keyframes } from '@devup-ui/react'; export const fade = keyframes({ from: { opacity: 0 }, to: { opacity: 1 } });",
+            ),
+        ]);
+        css::debug::set_debug(true);
+        let output = extract_with_modules(
+            "/src/terminal.ts",
+            "import { css } from '@devup-ui/react'; import { external } from './external'; import { fade } from './animation'; export const base = css(external, fade, { color: 'blue' });",
+            ExtractOption {
+                single_css,
+                ..ExtractOption::default()
+            },
+            false,
+            &resolver,
+        );
+        css::debug::set_debug(false);
+        let output = output.unwrap();
+        assert!(output.code.contains("external-card"), "{}", output.code);
+        assert!(output.code.contains("${fade}"), "{}", output.code);
+        let class = if single_css {
+            "color-0-blue--255"
+        } else {
+            "color-0-blue--255-a"
+        };
+        assert!(output.code.contains(class), "{}", output.code);
+    }
+
+    #[rstest]
+    #[serial]
+    fn test_css_imported_native_chain_failed_import_shadow(
+        #[values(false, true)] single_css: bool,
+    ) {
+        // Given an unused failed import shadowed by a nested external class.
+        reset_class_map();
+        reset_file_map();
+        let resolver = memory_resolver(&[(
+            "/src/a.ts",
+            "import { css } from '@devup-ui/react'; export const seed = css({ color: 'red', p: 2 }); export const broken = css({ color: globalThis.tone });",
+        )]);
+        css::debug::set_debug(true);
+        // When styles consume only the nested binding and the independent seed.
+        let output = extract_with_modules(
+            "/src/terminal.ts",
+            "import { css } from '@devup-ui/react'; import { seed, broken as alias } from './a'; export function compose() { const alias = 'external-card'; return css(seed, alias, { color: 'green' }); }",
+            ExtractOption {
+                single_css,
+                ..ExtractOption::default()
+            },
+            false,
+            &resolver,
+        );
+        css::debug::set_debug(false);
+        // Then the shadow stays opaque and the failed root import is nonfatal.
+        let output = output.unwrap();
+        assert!(output.code.contains("${alias}"), "{}", output.code);
+        let suffix = if single_css { "" } else { "-a" };
+        assert!(
+            output.code.contains(&format!(
+                "return `padding-0-8px--255{suffix} color-0-green--255{suffix} ${{alias}}`;"
+            )),
+            "{}",
+            output.code
+        );
+    }
+
+    #[rstest]
+    #[case::static_member("const holder = { broken };", "holder.broken")]
+    #[case::computed_member("const holder = { broken };", "holder['broken']")]
+    #[case::nested_static_member("const holder = { nested: { broken } };", "holder.nested.broken")]
+    #[case::nested_computed_member(
+        "const holder = { nested: { broken } };",
+        "holder['nested']['broken']"
+    )]
+    #[serial]
+    fn test_css_imported_native_chain_refuses_selected_failed_member(
+        #[case] declaration: &str,
+        #[case] selected: &str,
+        #[values(false, true)] single_css: bool,
+    ) {
+        // Given a holder retaining the native definition's located failure.
+        reset_class_map();
+        reset_file_map();
+        let resolver = memory_resolver(&[(
+            "/src/a.ts",
+            "import { css } from '@devup-ui/react';\nexport const seed = css({ color: 'red', p: 2 });\nexport const broken = css(\n{ color: globalThis.tone });",
+        )]);
+        // When the selected static or computed member is consumed by styles.
+        let output = extract_with_modules(
+            "/src/terminal.ts",
+            &format!(
+                "import {{ css }} from '@devup-ui/react'; import {{ seed, broken }} from './a'; {declaration} export const base = css(seed, {selected}, {{ color: 'blue' }});"
+            ),
+            ExtractOption {
+                single_css,
+                ..ExtractOption::default()
+            },
+            false,
+            &resolver,
+        );
+        // Then refusal retains the defining file, argument site and expression.
+        assert_eq!(
+            output.unwrap_err().to_string(),
+            "/src/a.ts:4:1: `css()` cannot use `{ color: globalThis.tone }` at build time: native css rules must be constant at build time"
+        );
+    }
+
+    #[rstest]
+    #[case::static_sibling("const holder = { broken, safe: 'external-card' };", "holder.safe")]
+    #[case::computed_sibling("const holder = { broken, safe: 'external-card' };", "holder['safe']")]
+    #[case::nested_sibling(
+        "const holder = { nested: { broken, safe: 'external-card' } };",
+        "holder.nested.safe"
+    )]
+    #[case::nested_computed_sibling(
+        "const holder = { nested: { broken, safe: 'external-card' } };",
+        "holder['nested']['safe']"
+    )]
+    #[serial]
+    fn test_css_imported_native_chain_ignores_unread_failed_member(
+        #[case] declaration: &str,
+        #[case] selected: &str,
+        #[values(false, true)] single_css: bool,
+    ) {
+        // Given a safe external class alongside a retained failed member.
+        reset_class_map();
+        reset_file_map();
+        let resolver = memory_resolver(&[(
+            "/src/a.ts",
+            "import { css } from '@devup-ui/react'; export const seed = css({ color: 'red', p: 2 }); export const broken = css({ color: globalThis.tone });",
+        )]);
+        css::debug::set_debug(true);
+        // When styles select only the safe sibling.
+        let output = extract_with_modules(
+            "/src/terminal.ts",
+            &format!(
+                "import {{ css }} from '@devup-ui/react'; import {{ seed, broken }} from './a'; {declaration} export const base = css(seed, {selected}, {{ color: 'blue' }});"
+            ),
+            ExtractOption {
+                single_css,
+                ..ExtractOption::default()
+            },
+            false,
+            &resolver,
+        );
+        css::debug::set_debug(false);
+        // Then the unread failure is nonfatal and composition stays literal.
+        assert_composed_export_atoms(
+            &output.unwrap().code,
+            "base",
+            &["external-card", "color-0-blue--255", "padding-0-8px--255"],
         );
     }
 

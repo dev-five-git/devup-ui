@@ -28,7 +28,7 @@ pub enum StyleValue {
 pub struct StyleValues {
     scoping: Option<Scoping>,
     values: FxHashMap<SymbolId, StyleValue>,
-    /// The styles behind `css()` classes the file imports, by binding
+    /// Known imported styles, including top-level constant aliases, by binding
     imported: FxHashMap<String, Vec<ExtractStyleValue>>,
 }
 
@@ -73,12 +73,15 @@ impl StyleValues {
         match self.values.get(&symbol) {
             Some(StyleValue::Class(_, Some(styles))) => Some(styles),
             Some(_) => None,
-            None => scoping
-                .symbol_flags(symbol)
-                .is_import()
+            None => {
+                let flags = scoping.symbol_flags(symbol);
+                (flags.is_import()
+                    || (flags.is_const_variable()
+                        && scoping.symbol_scope_id(symbol) == scoping.root_scope_id()))
                 .then(|| self.imported.get(scoping.symbol_name(symbol)))
                 .flatten()
-                .map(Vec::as_slice),
+                .map(Vec::as_slice)
+            }
         }
     }
 
