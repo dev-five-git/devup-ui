@@ -8,7 +8,7 @@ ToBTreeSet {
             ExtractDynamicStyle {
                 property: "background",
                 level: 0,
-                identifier: "__devupSpread2",
+                identifier: "color",
                 selector: None,
                 style_order: None,
             },
@@ -17,7 +17,7 @@ ToBTreeSet {
             ExtractDynamicStyle {
                 property: "margin",
                 level: 0,
-                identifier: "__devupSpread0",
+                identifier: "margin",
                 selector: None,
                 style_order: None,
             },
@@ -26,11 +26,11 @@ ToBTreeSet {
             ExtractDynamicStyle {
                 property: "padding",
                 level: 0,
-                identifier: "__devupSpread1",
+                identifier: "padding",
                 selector: None,
                 style_order: None,
             },
         ),
     },
-    code: "import \"@devup-ui/core/devup-ui-0.css\";\nlet color = \"red\";\nlet padding = 10;\nlet margin = 5;\n((__devupSpread2, __devupSpread1, __devupSpread0) => <div className=\"FLtest_ptsx-OHbgvou_pnmo7fdz0j FLtest_ptsx-OHaok68lgwctf1ql4a FLtest_ptsx-OHb7r20b11qhxmqqc2\" style={{\n\t\"---SUHavfku33z22acb2ko-b7\": __devupSpread2,\n\t\"---SUHavfku33z22acb2ko-cg\": __devupSpread1,\n\t\"---SUHavfku33z22acb2ko-cs\": __devupSpread0\n}} />)(color, padding, margin);\n",
+    code: "import \"@devup-ui/core/devup-ui-0.css\";\nlet color = \"red\";\nlet padding = 10;\nlet margin = 5;\n((__devupAssignment97, __devupAssignment107, __devupAssignment119) => <div className={`${__devupAssignment97?.[0] ?? \"\"} ${__devupAssignment107?.[0] ?? \"\"} ${__devupAssignment119?.[0] ?? \"\"}`} style={{\n\t...__devupAssignment97?.[1],\n\t...__devupAssignment107?.[1],\n\t...__devupAssignment119?.[1]\n}} />)(((__devupValue) => [\n\t__devupValue !== null && __devupValue !== void 0 && typeof __devupValue !== \"boolean\" && __devupValue !== \"\" && (typeof __devupValue !== \"number\" || __devupValue === __devupValue && __devupValue !== 1 / 0 && __devupValue !== -(1 / 0)) ? \"FLtest_ptsx-OHbgvou_pnmo7fdz0j\" : \"\",\n\t{ \"---SUHavfku33z22acb2ko-b7\": ((__devupNumber)=>typeof __devupNumber===\"number\"?+__devupNumber*4+\"px\":typeof __devupNumber===\"string\"&&/^(?:[+-]?(?:(?:[0-9]+(?:\\.[0-9]*)?|\\.[0-9]+)(?:[eE][+-]?[0-9]+)?|inf(?:inity)?|nan))$(?![\\s\\S])/i.test(__devupNumber)?+__devupNumber*4+\"px\":__devupNumber)(__devupValue) },\n\t__devupValue\n])(color), ((__devupValue) => [\n\t__devupValue !== null && __devupValue !== void 0 && typeof __devupValue !== \"boolean\" && __devupValue !== \"\" && (typeof __devupValue !== \"number\" || __devupValue === __devupValue && __devupValue !== 1 / 0 && __devupValue !== -(1 / 0)) ? \"FLtest_ptsx-OHaok68lgwctf1ql4a\" : \"\",\n\t{ \"---SUHavfku33z22acb2ko-cg\": ((__devupNumber)=>typeof __devupNumber===\"number\"?+__devupNumber*4+\"px\":typeof __devupNumber===\"string\"&&/^(?:[+-]?(?:(?:[0-9]+(?:\\.[0-9]*)?|\\.[0-9]+)(?:[eE][+-]?[0-9]+)?|inf(?:inity)?|nan))$(?![\\s\\S])/i.test(__devupNumber)?+__devupNumber*4+\"px\":__devupNumber)(__devupValue) },\n\t__devupValue\n])(padding), ((__devupValue) => [\n\t__devupValue !== null && __devupValue !== void 0 && typeof __devupValue !== \"boolean\" && __devupValue !== \"\" && (typeof __devupValue !== \"number\" || __devupValue === __devupValue && __devupValue !== 1 / 0 && __devupValue !== -(1 / 0)) ? \"FLtest_ptsx-OHb7r20b11qhxmqqc2\" : \"\",\n\t{ \"---SUHavfku33z22acb2ko-cs\": ((__devupNumber)=>typeof __devupNumber===\"number\"?+__devupNumber*4+\"px\":typeof __devupNumber===\"string\"&&/^(?:[+-]?(?:(?:[0-9]+(?:\\.[0-9]*)?|\\.[0-9]+)(?:[eE][+-]?[0-9]+)?|inf(?:inity)?|nan))$(?![\\s\\S])/i.test(__devupNumber)?+__devupNumber*4+\"px\":__devupNumber)(__devupValue) },\n\t__devupValue\n])(margin));\n",
 }

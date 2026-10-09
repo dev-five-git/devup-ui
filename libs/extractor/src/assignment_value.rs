@@ -14,6 +14,9 @@ use crate::{
 #[path = "assignment_class_reference.rs"]
 mod assignment_class_reference;
 
+#[path = "assignment_presence.rs"]
+mod assignment_presence;
+
 impl<'a> Lowering<'_, 'a> {
     pub(super) fn array(
         &self,
@@ -82,56 +85,35 @@ impl<'a> Lowering<'_, 'a> {
             .iter()
             .flat_map(ExtractStyleProp::extract)
             .collect::<Vec<_>>();
-        let input = values
-            .iter()
-            .find_map(|value| match value {
-                ExtractStyleValue::Dynamic(style)
-                    if matches!(source, Expression::TemplateLiteral(_)) || style.important() =>
-                {
-                    Some(Expression::new_identifier(
-                        source.span(),
-                        Str::from_in(style.identifier(), ast.allocator()),
-                        ast,
-                    ))
-                }
-                _ => None,
-            })
-            .unwrap_or_else(|| source.clone_in(ast.allocator()));
-        let important = values
-            .iter()
-            .any(|value| matches!(value, ExtractStyleValue::Dynamic(style) if style.important()));
-        let normalized = values.iter().any(|value| matches!(value, ExtractStyleValue::Dynamic(_) if matches!(source, Expression::TemplateLiteral(_)))) || important;
-        let suffix = match source {
-            Expression::TemplateLiteral(template) if normalized => {
-                template.quasis.last().map_or("", |quasi| {
-                    let original = quasi.value.raw.as_str();
-                    let trimmed = original.trim_end_matches(';');
-                    let cleaned = if important {
-                        trimmed.strip_suffix(" !important").unwrap_or(trimmed)
-                    } else {
-                        trimmed
-                    };
-                    original.strip_prefix(cleaned).unwrap_or("")
+        let normalization = values.iter().find_map(|value| match value {
+            ExtractStyleValue::Dynamic(style) => {
+                crate::source_normalization::suffix(ast, source, style).map(|suffix| {
+                    (
+                        Expression::new_identifier(
+                            source.span(),
+                            Str::from_in(style.identifier(), ast.allocator()),
+                            ast,
+                        ),
+                        suffix,
+                    )
                 })
             }
-            _ if important => " !important",
-            _ => "",
-        };
+            _ => None,
+        });
+        let (input, suffix) =
+            normalization.unwrap_or_else(|| (source.clone_in(ast.allocator()), String::new()));
         let responsive = selected_array(source);
-        for value in &mut values {
-            if let ExtractStyleValue::Dynamic(style) = value {
-                style.replace_identifier(&if responsive {
-                    format!("__devupValue?.[{}]", style.level())
-                } else {
-                    "__devupValue".to_string()
-                });
-            }
-        }
-        let mut props: Vec<_> = values.into_iter().map(ExtractStyleProp::Static).collect();
         let mut class_props = styles
             .iter()
             .map(|style| style.clone_in(ast.allocator()))
             .collect::<Vec<_>>();
+        assignment_presence::rewrite(&mut class_props, &values, responsive);
+        for value in &mut values {
+            if let ExtractStyleValue::Dynamic(style) = value {
+                style.replace_identifier(&assignment_presence::reference(style, responsive));
+            }
+        }
+        let mut props: Vec<_> = values.into_iter().map(ExtractStyleProp::Static).collect();
         let class_alternatives = self.alternate_order.map(|_| {
             class_props
                 .iter()
@@ -161,7 +143,7 @@ impl<'a> Lowering<'_, 'a> {
                 BinaryOperator::Addition,
                 Expression::new_string_literal(
                     SPAN,
-                    Str::from_in(suffix, ast.allocator()),
+                    Str::from_in(suffix.as_str(), ast.allocator()),
                     None,
                     ast,
                 ),

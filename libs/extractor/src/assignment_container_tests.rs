@@ -52,22 +52,29 @@ fn selector_container_keeps_variable_associations_when_properties_are_distinct(
 }
 
 #[rstest]
-#[case("0")]
-#[case("false")]
-#[case("null")]
-#[case("undefined")]
-#[case("''")]
-#[case("NaN")]
+#[case("0", "[\"padding:0:0\"]")]
+#[case("-0", "[\"padding:0:0\"]")]
+#[case("false", "[]")]
+#[case("null", "[]")]
+#[case("undefined", "[]")]
+#[case("''", "[]")]
+#[case("NaN", "[]")]
 #[serial]
-fn and_zero_is_no_style_when_controller_is_falsy(#[case] controller: &str) {
-    // Given: main/#751's AND style guard with observable left and right getters.
+fn and_literal_value_is_selected_when_controller_is_falsy(
+    #[case] controller: &str,
+    #[case] expected: &str,
+) {
+    // Given: an AND value with observable left and right getters.
     let source = format!(
-        "import {{Box}}from '@devup-ui/react';function render(state){{return <Box p={{state.a&&state.b}} id={{state.id}}/>}}let trace=[];const state={{get a(){{trace.push('a');return {controller}}},get b(){{trace.push('b');return '16px'}},get id(){{trace.push('id');return 'target'}}}};const node=render(state);JSON.stringify([trace,String(node.className??'').trim(),Object.values(node.style??{{}})]);"
+        "import {{Box}}from '@devup-ui/react';function render(state){{return <Box p={{state.a&&state.b}} id={{state.id}}/>}}let trace=[];const state={{get a(){{trace.push('a');return {controller}}},get b(){{trace.push('b');return '16px'}},get id(){{trace.push('id');return 'target'}}}};const node=render(state);"
     );
-    // When: the compiled guard selects its no-style branch.
-    let actual = evaluate(&compiled_jsx(&source));
-    // Then: even zero supplies no class/value, a runs once and b never runs.
-    assert_eq!(actual, "[[\"a\",\"id\"],\"\",[]]");
+    // When: the compiled value selects the controller's own literal style.
+    let actual = selected(
+        &source,
+        "JSON.stringify([trace,assigned(node),Object.values(node.style??{})]);",
+    );
+    // Then: zero applies padding zero, absent values apply nothing, and b is unread.
+    assert_eq!(actual, format!("[[\"a\",\"id\"],{expected},[]]"));
 }
 
 #[test]
@@ -126,20 +133,45 @@ fn selector_container_keeps_source_sites_when_repeated_getters_return_different_
 }
 
 #[rstest]
-#[case("0")]
-#[case("false")]
-#[case("null")]
-#[case("undefined")]
-#[case("''")]
-#[case("NaN")]
+#[case("0", "[\"padding:0:0\"]")]
+#[case("-0", "[\"padding:0:0\"]")]
+#[case("false", "[]")]
+#[case("null", "[]")]
+#[case("undefined", "[]")]
+#[case("''", "[]")]
+#[case("NaN", "[]")]
 #[serial]
-fn css_and_zero_is_no_style_when_controller_is_falsy(#[case] controller: &str) {
-    // Given: the same style-guard convention on the css() caller path.
+fn css_and_literal_value_is_selected_when_controller_is_falsy(
+    #[case] controller: &str,
+    #[case] expected: &str,
+) {
+    // Given: the same authored logical value on the css() caller path.
     let source = format!(
-        "import {{css}}from '@devup-ui/react';function render(state){{return css({{bg:state.a&&'white'}})}}let reads=0;const state={{get a(){{reads++;return {controller}}}}};const node=render(state);JSON.stringify([reads,node]);"
+        "import {{css}}from '@devup-ui/react';function render(state){{return css({{p:state.a&&'16px'}})}}let reads=0;const state={{get a(){{reads++;return {controller}}}}};const node={{className:render(state)}};"
     );
-    // When: the falsy controller selects no CSS class.
-    let actual = evaluate(&compiled_jsx(&source));
-    // Then: all falsy controllers, including zero, are read once and yield no style.
-    assert_eq!(actual, "[1,\"\"]");
+    // When: the logical value is compiled into its static class selection.
+    let actual = selected(&source, "JSON.stringify([reads,assigned(node)]);");
+    // Then: zero selects padding zero and other absent literals select no class.
+    assert_eq!(actual, format!("[1,{expected}]"));
+}
+
+#[rstest]
+#[case("<Box p={state.a&&state.b} id={state.id}/>")]
+#[case("jsx(Box,{p:state.a&&state.b,id:state.id})")]
+#[case("<Box _hover={{p:[state.a&&state.b,null,'8px']}} id={state.id}/>")]
+#[case("jsx(Box,{_hover:{p:[state.a&&state.b,null,'8px']},id:state.id})")]
+#[serial]
+fn zero_controller_keeps_source_order_when_jsx_runtime_and_selectors_are_used(
+    #[case] expression: &str,
+) {
+    let source = format!(
+        "import {{Box}}from '@devup-ui/react';import {{jsx}}from 'react/jsx-runtime';function render(state){{return {expression}}}let trace=[];const state={{get a(){{trace.push('a');return 0}},get b(){{trace.push('b');return '16px'}},get id(){{trace.push('id');return 'target'}}}};const jsx=(tag,props)=>props;const node=render(state);"
+    );
+    let actual = selected(&source, "JSON.stringify([trace,assigned(node)]);");
+    let styles = if expression.contains("_hover") {
+        "[\"padding:0:0\",\"padding:8px:2\"]"
+    } else {
+        "[\"padding:0:0\"]"
+    };
+    assert_eq!(actual, format!("[[\"a\",\"id\"],{styles}]"));
 }

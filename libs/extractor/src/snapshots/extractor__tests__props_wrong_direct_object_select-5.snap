@@ -26,5 +26,5 @@ ToBTreeSet {
             },
         ),
     },
-    code: "import \"@devup-ui/core/devup-ui.css\";\n((__devupAssignment59) => <div className={`OLdisplay-vflex-o0 ${__devupAssignment59?.[0] ?? \"\"}`} style={{ ...__devupAssignment59?.[1] }} />)(((__devupValue) => [\n\t\"OHdo1q_88e5vmeakz6\",\n\t{ \"---SUHdlu82mngh23j5d4a-a6\": __devupValue },\n\t__devupValue\n])({\n\t...rest,\n\ta: 1,\n\tb: .5\n}[\"nonexistent\"]));\n",
+    code: "import \"@devup-ui/core/devup-ui.css\";\n((__devupAssignment59) => <div className={`OLdisplay-vflex-o0 ${__devupAssignment59?.[0] ?? \"\"}`} style={{ ...__devupAssignment59?.[1] }} />)(((__devupValue) => [\n\t__devupValue !== null && __devupValue !== void 0 && typeof __devupValue !== \"boolean\" && __devupValue !== \"\" && (typeof __devupValue !== \"number\" || __devupValue === __devupValue && __devupValue !== 1 / 0 && __devupValue !== -(1 / 0)) ? \"OHdo1q_88e5vmeakz6\" : \"\",\n\t{ \"---SUHdlu82mngh23j5d4a-a6\": __devupValue },\n\t__devupValue\n])({\n\t...rest,\n\ta: 1,\n\tb: .5\n}[\"nonexistent\"]));\n",
 }

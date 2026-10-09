@@ -26,5 +26,5 @@ ToBTreeSet {
             },
         ),
     },
-    code: "import \"@devup-ui/core/devup-ui.css\";\n<div className=\"OLdisplay-vflex-o0 OHbu__5h9uzwyrsudr\" style={{ \"---SUHdbw8lu670j3q316h-a6\": [1,.5,...some][a] }} />;\n",
+    code: "import \"@devup-ui/core/devup-ui.css\";\n((__devupAssignment59) => <div className={`OLdisplay-vflex-o0 ${__devupAssignment59?.[0] ?? \"\"}`} style={{ ...__devupAssignment59?.[1] }} />)(((__devupValue) => [\n\t__devupValue !== null && __devupValue !== void 0 && typeof __devupValue !== \"boolean\" && __devupValue !== \"\" && (typeof __devupValue !== \"number\" || __devupValue === __devupValue && __devupValue !== 1 / 0 && __devupValue !== -(1 / 0)) ? \"OHbu__5h9uzwyrsudr\" : \"\",\n\t{ \"---SUHdbw8lu670j3q316h-a6\": __devupValue },\n\t__devupValue\n])([\n\t1,\n\t.5,\n\t...some\n][a]));\n",
 }

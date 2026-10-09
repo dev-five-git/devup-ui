@@ -8,11 +8,11 @@ ToBTreeSet {
             ExtractDynamicStyle {
                 property: "margin",
                 level: 0,
-                identifier: "__devupSpread1",
+                identifier: "a",
                 selector: None,
                 style_order: None,
             },
         ),
     },
-    code: "import \"@devup-ui/core/devup-ui.css\";\n((__devupSpread1, __devupSpread0) => <div className=\"OHbfrcfvxjq_a2vvoh\" style={{\n\t...{ \"---SUHcgj9txiz2lpjfzkx-ay\": __devupSpread1 },\n\t...__devupSpread0\n}} />)(a, styles);\n",
+    code: "import \"@devup-ui/core/devup-ui.css\";\n((__devupAssignment51, __devupSpread0) => <div className={__devupAssignment51?.[0] ?? \"\"} style={{\n\t...{ ...__devupAssignment51?.[1] },\n\t...__devupSpread0\n}} />)(((__devupValue) => [\n\t__devupValue !== null && __devupValue !== void 0 && typeof __devupValue !== \"boolean\" && __devupValue !== \"\" && (typeof __devupValue !== \"number\" || __devupValue === __devupValue && __devupValue !== 1 / 0 && __devupValue !== -(1 / 0)) ? \"OHbfrcfvxjq_a2vvoh\" : \"\",\n\t{ \"---SUHcgj9txiz2lpjfzkx-ay\": ((__devupNumber)=>typeof __devupNumber===\"number\"?+__devupNumber*4+\"px\":typeof __devupNumber===\"string\"&&/^(?:[+-]?(?:(?:[0-9]+(?:\\.[0-9]*)?|\\.[0-9]+)(?:[eE][+-]?[0-9]+)?|inf(?:inity)?|nan))$(?![\\s\\S])/i.test(__devupNumber)?+__devupNumber*4+\"px\":__devupNumber)(__devupValue) },\n\t__devupValue\n])(a), styles);\n",
 }

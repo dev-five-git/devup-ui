@@ -14,5 +14,5 @@ ToBTreeSet {
             },
         ),
     },
-    code: "import \"@devup-ui/core/devup-ui-0.css\";\nlet variant = \"primary\";\nlet colors = {\n\tprimary: \"blue\",\n\tsecondary: \"red\"\n};\n<div className=\"FLtest_ptsx-OHaaem0qd7_uj42ncv\" style={{ \"---SUHcimyw9tcbyo6fcn0-cu\": colors[variant] }} />;\n",
+    code: "import \"@devup-ui/core/devup-ui-0.css\";\nlet variant = \"primary\";\nlet colors = {\n\tprimary: \"blue\",\n\tsecondary: \"red\"\n};\n((__devupAssignment121) => <div className={__devupAssignment121?.[0] ?? \"\"} style={{ ...__devupAssignment121?.[1] }} />)(((__devupValue) => [\n\t__devupValue !== null && __devupValue !== void 0 && typeof __devupValue !== \"boolean\" && __devupValue !== \"\" && (typeof __devupValue !== \"number\" || __devupValue === __devupValue && __devupValue !== 1 / 0 && __devupValue !== -(1 / 0)) ? \"FLtest_ptsx-OHaaem0qd7_uj42ncv\" : \"\",\n\t{ \"---SUHcimyw9tcbyo6fcn0-cu\": ((__devupNumber)=>typeof __devupNumber===\"number\"?+__devupNumber*4+\"px\":typeof __devupNumber===\"string\"&&/^(?:[+-]?(?:(?:[0-9]+(?:\\.[0-9]*)?|\\.[0-9]+)(?:[eE][+-]?[0-9]+)?|inf(?:inity)?|nan))$(?![\\s\\S])/i.test(__devupNumber)?+__devupNumber*4+\"px\":__devupNumber)(__devupValue) },\n\t__devupValue\n])(colors[variant]));\n",
 }

@@ -14,5 +14,5 @@ ToBTreeSet {
             },
         ),
     },
-    code: "import \"@devup-ui/core/devup-ui.css\";\n<div className=\"OHavhbtv72wjwco9h5\" style={{ \"---SUHdasmieg0h_l6xf3_-a3\": -(1+a) }} />;\n",
+    code: "import \"@devup-ui/core/devup-ui.css\";\n((__devupAssignment56) => <div className={__devupAssignment56?.[0] ?? \"\"} style={{ ...__devupAssignment56?.[1] }} />)(((__devupValue) => [\n\t__devupValue !== null && __devupValue !== void 0 && typeof __devupValue !== \"boolean\" && __devupValue !== \"\" && (typeof __devupValue !== \"number\" || __devupValue === __devupValue && __devupValue !== 1 / 0 && __devupValue !== -(1 / 0)) ? \"OHavhbtv72wjwco9h5\" : \"\",\n\t{ \"---SUHdasmieg0h_l6xf3_-a3\": __devupValue },\n\t__devupValue\n])(-(1 + a)));\n",
 }

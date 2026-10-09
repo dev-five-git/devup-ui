@@ -26,7 +26,12 @@ impl<'a> Lowering<'_, 'a> {
         }
         let map = match styles {
             [ExtractStyleProp::MemberExpression { map, .. }] => Some(map),
-            _ => None,
+            _ => {
+                return self.leaf(
+                    &Expression::ComputedMemberExpression(oxc_allocator::Box::new_in(member, ast)),
+                    styles,
+                );
+            }
         };
         match unwrap_syntax_only(&source.object) {
             Expression::ObjectExpression(object) => {

@@ -164,7 +164,7 @@ fn important_and_plain_dynamic_values_emit_distinct_rules_in_every_mode() {
             3
         );
         let assignments = css::utils::compile_regex(
-            r#"["'](---(?:du-)?S[a-z0-9_U-]+)["']\s*:\s*(tone\b|differentCode\b|`\$\{tone\}`)"#,
+            r#"(?s)["'](---(?:du-)?S[a-z0-9_U-]+)["']\s*:\s*.*?\]\)\((tone\b|differentCode\b|`\$\{tone\}`)\)"#,
         );
         let sites: Vec<_> = assignments.captures_iter(&output.code).collect();
         assert_eq!(sites.len(), 3, "{}", output.code);

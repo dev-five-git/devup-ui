@@ -8,7 +8,7 @@ ToBTreeSet {
             ExtractDynamicStyle {
                 property: "background",
                 level: 0,
-                identifier: "__devupSpread7",
+                identifier: "new X",
                 selector: None,
                 style_order: None,
             },
@@ -17,7 +17,7 @@ ToBTreeSet {
             ExtractDynamicStyle {
                 property: "color",
                 level: 0,
-                identifier: "__devupSpread6",
+                identifier: "tag`x`",
                 selector: None,
                 style_order: None,
             },
@@ -26,7 +26,7 @@ ToBTreeSet {
             ExtractDynamicStyle {
                 property: "height",
                 level: 0,
-                identifier: "__devupSpread8",
+                identifier: "(f(),2)",
                 selector: None,
                 style_order: None,
             },
@@ -35,7 +35,7 @@ ToBTreeSet {
             ExtractDynamicStyle {
                 property: "margin",
                 level: 0,
-                identifier: "__devupSpread4",
+                identifier: "f.n++",
                 selector: None,
                 style_order: None,
             },
@@ -44,7 +44,7 @@ ToBTreeSet {
             ExtractDynamicStyle {
                 property: "padding",
                 level: 0,
-                identifier: "__devupSpread3",
+                identifier: "f.v=3",
                 selector: None,
                 style_order: None,
             },
@@ -53,7 +53,7 @@ ToBTreeSet {
             ExtractDynamicStyle {
                 property: "width",
                 level: 0,
-                identifier: "__devupSpread0",
+                identifier: "await f()",
                 selector: None,
                 style_order: None,
             },
@@ -62,7 +62,7 @@ ToBTreeSet {
             ExtractDynamicStyle {
                 property: "width",
                 level: 0,
-                identifier: "__devupSpread9",
+                identifier: "this.#w",
                 selector: None,
                 style_order: None,
             },
@@ -71,11 +71,11 @@ ToBTreeSet {
             ExtractDynamicStyle {
                 property: "z-index",
                 level: 0,
-                identifier: "__devupSpread5",
+                identifier: "10n",
                 selector: None,
                 style_order: None,
             },
         ),
     },
-    code: "import \"@devup-ui/react/devup-ui-0.css\";\nclass A {\n\t#w = 1;\n\trender(f) {\n\t\treturn ((__devupSpread0, __devupSpread1, __devupSpread2) => <div {...__devupSpread1} {...__devupSpread2} className={`FLtest_ptsx-OHaytne9g88rgua2yt ${__devupSpread2?.className || \"\"} ${__devupSpread1?.className || \"\"}`} style={{\n\t\t\t...{ \"---SUHcp4uvrns_1lzaw3u-bu\": __devupSpread0 },\n\t\t\t...__devupSpread2?.style,\n\t\t\t...__devupSpread1?.style\n\t\t}} />)(this.#w, ((__devupSpreadValue) => ({ ...__devupSpreadValue }))(this.#w), ((__devupSpreadValue) => ({ ...__devupSpreadValue }))(f()));\n\t}\n}\nexport const a = async (f, X, tag) => ((__devupSpread9, __devupSpread8, __devupSpread7, __devupSpread6, __devupSpread5, __devupSpread4, __devupSpread3) => <div className=\"FLtest_ptsx-OHccknh696183br0e0 FLtest_ptsx-OHau9vmefov6jv9cfi FLtest_ptsx-OHa1ubut9qc2_mc8z_ FLtest_ptsx-OHaobmmpag36_gc7tc FLtest_ptsx-OHcsobo5ufhve58x_s FLtest_ptsx-OHbxfub0pnbw2tgy2o FLtest_ptsx-OHaakquv3crnh1w7h8\" style={{\n\t\"---SUHcp4uvrns_1lzaw3u-d5\": __devupSpread9,\n\t\"---SUHcp4uvrns_1lzaw3u-ej\": __devupSpread8,\n\t\"---SUHcp4uvrns_1lzaw3u-ew\": __devupSpread7,\n\t\"---SUHcp4uvrns_1lzaw3u-fb\": __devupSpread6,\n\t\"---SUHcp4uvrns_1lzaw3u-fr\": __devupSpread5,\n\t\"---SUHcp4uvrns_1lzaw3u-fz\": __devupSpread4,\n\t\"---SUHcp4uvrns_1lzaw3u-f_\": __devupSpread3\n}} />)(await f(), (f(), 2), new X(), tag`x`, 10n, f.n++, f.v = 3);\n",
+    code: "import \"@devup-ui/react/devup-ui-0.css\";\nclass A {\n\t#w = 1;\n\trender(f) {\n\t\treturn ((__devupAssignment84, __devupSpread0, __devupSpread1) => <div {...__devupSpread0} {...__devupSpread1} className={`${__devupAssignment84?.[0] ?? \"\"} ${__devupSpread1?.className || \"\"} ${__devupSpread0?.className || \"\"}`} style={{\n\t\t\t...{ ...__devupAssignment84?.[1] },\n\t\t\t...__devupSpread1?.style,\n\t\t\t...__devupSpread0?.style\n\t\t}} />)(((__devupValue) => [\n\t\t\t__devupValue !== null && __devupValue !== void 0 && typeof __devupValue !== \"boolean\" && __devupValue !== \"\" && (typeof __devupValue !== \"number\" || __devupValue === __devupValue && __devupValue !== 1 / 0 && __devupValue !== -(1 / 0)) ? \"FLtest_ptsx-OHaytne9g88rgua2yt\" : \"\",\n\t\t\t{ \"---SUHcp4uvrns_1lzaw3u-bu\": ((__devupNumber)=>typeof __devupNumber===\"number\"?+__devupNumber*4+\"px\":typeof __devupNumber===\"string\"&&/^(?:[+-]?(?:(?:[0-9]+(?:\\.[0-9]*)?|\\.[0-9]+)(?:[eE][+-]?[0-9]+)?|inf(?:inity)?|nan))$(?![\\s\\S])/i.test(__devupNumber)?+__devupNumber*4+\"px\":__devupNumber)(__devupValue) },\n\t\t\t__devupValue\n\t\t])(this.#w), ((__devupSpreadValue) => ({ ...__devupSpreadValue }))(this.#w), ((__devupSpreadValue) => ({ ...__devupSpreadValue }))(f()));\n\t}\n}\nexport const a = async (f, X, tag) => ((__devupAssignment169, __devupAssignment183, __devupAssignment197, __devupAssignment213, __devupAssignment229, __devupAssignment237, __devupAssignment247) => <div className={`${__devupAssignment169?.[0] ?? \"\"} ${__devupAssignment183?.[0] ?? \"\"} ${__devupAssignment197?.[0] ?? \"\"} ${__devupAssignment213?.[0] ?? \"\"} ${__devupAssignment229?.[0] ?? \"\"} ${__devupAssignment237?.[0] ?? \"\"} ${__devupAssignment247?.[0] ?? \"\"}`} style={{\n\t...__devupAssignment169?.[1],\n\t...__devupAssignment183?.[1],\n\t...__devupAssignment197?.[1],\n\t...__devupAssignment213?.[1],\n\t...__devupAssignment229?.[1],\n\t...__devupAssignment237?.[1],\n\t...__devupAssignment247?.[1]\n}} />)(((__devupValue) => [\n\t__devupValue !== null && __devupValue !== void 0 && typeof __devupValue !== \"boolean\" && __devupValue !== \"\" && (typeof __devupValue !== \"number\" || __devupValue === __devupValue && __devupValue !== 1 / 0 && __devupValue !== -(1 / 0)) ? \"FLtest_ptsx-OHccknh696183br0e0\" : \"\",\n\t{ \"---SUHcp4uvrns_1lzaw3u-d5\": ((__devupNumber)=>typeof __devupNumber===\"number\"?+__devupNumber*4+\"px\":typeof __devupNumber===\"string\"&&/^(?:[+-]?(?:(?:[0-9]+(?:\\.[0-9]*)?|\\.[0-9]+)(?:[eE][+-]?[0-9]+)?|inf(?:inity)?|nan))$(?![\\s\\S])/i.test(__devupNumber)?+__devupNumber*4+\"px\":__devupNumber)(__devupValue) },\n\t__devupValue\n])(await f()), ((__devupValue) => [\n\t__devupValue !== null && __devupValue !== void 0 && typeof __devupValue !== \"boolean\" && __devupValue !== \"\" && (typeof __devupValue !== \"number\" || __devupValue === __devupValue && __devupValue !== 1 / 0 && __devupValue !== -(1 / 0)) ? \"FLtest_ptsx-OHc4qxicnn2vb7yovi\" : \"\",\n\t{ \"---SUHcp4uvrns_1lzaw3u-ei\": __devupValue },\n\t__devupValue\n])((f(), 2)), ((__devupValue) => [\n\t__devupValue !== null && __devupValue !== void 0 && typeof __devupValue !== \"boolean\" && __devupValue !== \"\" && (typeof __devupValue !== \"number\" || __devupValue === __devupValue && __devupValue !== 1 / 0 && __devupValue !== -(1 / 0)) ? \"FLtest_ptsx-OHa1ubut9qc2_mc8z_\" : \"\",\n\t{ \"---SUHcp4uvrns_1lzaw3u-ew\": ((__devupNumber)=>typeof __devupNumber===\"number\"?+__devupNumber*4+\"px\":typeof __devupNumber===\"string\"&&/^(?:[+-]?(?:(?:[0-9]+(?:\\.[0-9]*)?|\\.[0-9]+)(?:[eE][+-]?[0-9]+)?|inf(?:inity)?|nan))$(?![\\s\\S])/i.test(__devupNumber)?+__devupNumber*4+\"px\":__devupNumber)(__devupValue) },\n\t__devupValue\n])(new X()), ((__devupValue) => [\n\t__devupValue !== null && __devupValue !== void 0 && typeof __devupValue !== \"boolean\" && __devupValue !== \"\" && (typeof __devupValue !== \"number\" || __devupValue === __devupValue && __devupValue !== 1 / 0 && __devupValue !== -(1 / 0)) ? \"FLtest_ptsx-OHaobmmpag36_gc7tc\" : \"\",\n\t{ \"---SUHcp4uvrns_1lzaw3u-fb\": ((__devupNumber)=>typeof __devupNumber===\"number\"?+__devupNumber*4+\"px\":typeof __devupNumber===\"string\"&&/^(?:[+-]?(?:(?:[0-9]+(?:\\.[0-9]*)?|\\.[0-9]+)(?:[eE][+-]?[0-9]+)?|inf(?:inity)?|nan))$(?![\\s\\S])/i.test(__devupNumber)?+__devupNumber*4+\"px\":__devupNumber)(__devupValue) },\n\t__devupValue\n])(tag`x`), ((__devupValue) => [\n\t__devupValue !== null && __devupValue !== void 0 && typeof __devupValue !== \"boolean\" && __devupValue !== \"\" && (typeof __devupValue !== \"number\" || __devupValue === __devupValue && __devupValue !== 1 / 0 && __devupValue !== -(1 / 0)) ? \"FLtest_ptsx-OHcsobo5ufhve58x_s\" : \"\",\n\t{ \"---SUHcp4uvrns_1lzaw3u-fr\": __devupValue },\n\t__devupValue\n])(10n), ((__devupValue) => [\n\t__devupValue !== null && __devupValue !== void 0 && typeof __devupValue !== \"boolean\" && __devupValue !== \"\" && (typeof __devupValue !== \"number\" || __devupValue === __devupValue && __devupValue !== 1 / 0 && __devupValue !== -(1 / 0)) ? \"FLtest_ptsx-OHbxfub0pnbw2tgy2o\" : \"\",\n\t{ \"---SUHcp4uvrns_1lzaw3u-fz\": ((__devupNumber)=>typeof __devupNumber===\"number\"?+__devupNumber*4+\"px\":typeof __devupNumber===\"string\"&&/^(?:[+-]?(?:(?:[0-9]+(?:\\.[0-9]*)?|\\.[0-9]+)(?:[eE][+-]?[0-9]+)?|inf(?:inity)?|nan))$(?![\\s\\S])/i.test(__devupNumber)?+__devupNumber*4+\"px\":__devupNumber)(__devupValue) },\n\t__devupValue\n])(f.n++), ((__devupValue) => [\n\t__devupValue !== null && __devupValue !== void 0 && typeof __devupValue !== \"boolean\" && __devupValue !== \"\" && (typeof __devupValue !== \"number\" || __devupValue === __devupValue && __devupValue !== 1 / 0 && __devupValue !== -(1 / 0)) ? \"FLtest_ptsx-OHc_n6ts1jfz4dsgo6\" : \"\",\n\t{ \"---SUHcp4uvrns_1lzaw3u-f9\": ((__devupNumber)=>typeof __devupNumber===\"number\"?+__devupNumber*4+\"px\":typeof __devupNumber===\"string\"&&/^(?:[+-]?(?:(?:[0-9]+(?:\\.[0-9]*)?|\\.[0-9]+)(?:[eE][+-]?[0-9]+)?|inf(?:inity)?|nan))$(?![\\s\\S])/i.test(__devupNumber)?+__devupNumber*4+\"px\":__devupNumber)(__devupValue) },\n\t__devupValue\n])(f.v = 3));\n",
 }

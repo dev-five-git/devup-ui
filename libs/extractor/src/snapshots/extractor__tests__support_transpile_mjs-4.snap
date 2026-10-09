@@ -8,11 +8,11 @@ ToBTreeSet {
             ExtractDynamicStyle {
                 property: "background",
                 level: 0,
-                identifier: "__devupSpread1",
+                identifier: "variable",
                 selector: None,
                 style_order: None,
             },
         ),
     },
-    code: "import \"@devup-ui/core/devup-ui.css\";\nimport { jsx as e } from \"react/jsx-runtime\";\n((__devupSpread1, __devupSpread0) => e(\"div\", {\n\tclassName: \"a OHdv5cbmdfbahbbji5\",\n\tstyle: {\n\t\t...{ \"---SUHc7fzpjppbel5610v-cp\": __devupSpread1 },\n\t\t...__devupSpread0\n\t}\n}))(variable, { color: \"blue\" });\n",
+    code: "import \"@devup-ui/core/devup-ui.css\";\nimport { jsx as e } from \"react/jsx-runtime\";\n((__devupAssignment116, __devupSpread0) => e(\"div\", {\n\tclassName: `a ${__devupAssignment116?.[0] ?? \"\"}`,\n\tstyle: {\n\t\t...{ ...__devupAssignment116?.[1] },\n\t\t...__devupSpread0\n\t}\n}))(((__devupValue) => [\n\t__devupValue !== null && __devupValue !== void 0 && typeof __devupValue !== \"boolean\" && __devupValue !== \"\" && (typeof __devupValue !== \"number\" || __devupValue === __devupValue && __devupValue !== 1 / 0 && __devupValue !== -(1 / 0)) ? \"OHdv5cbmdfbahbbji5\" : \"\",\n\t{ \"---SUHc7fzpjppbel5610v-cp\": ((__devupNumber)=>typeof __devupNumber===\"number\"?+__devupNumber*4+\"px\":typeof __devupNumber===\"string\"&&/^(?:[+-]?(?:(?:[0-9]+(?:\\.[0-9]*)?|\\.[0-9]+)(?:[eE][+-]?[0-9]+)?|inf(?:inity)?|nan))$(?![\\s\\S])/i.test(__devupNumber)?+__devupNumber*4+\"px\":__devupNumber)(__devupValue) },\n\t__devupValue\n])(variable), { color: \"blue\" });\n",
 }

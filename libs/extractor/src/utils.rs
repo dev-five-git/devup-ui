@@ -99,9 +99,16 @@ pub(super) fn unwrap_syntax_only_mut<'a, 'b>(
 /// straight into `optimize_value` without an intermediate heap copy. Only the
 /// numeric branch (`4` → `16px`) allocates, exactly as before.
 pub(super) fn convert_value(value: &str) -> Cow<'_, str> {
-    value.parse::<f64>().map_or_else(
-        |_| Cow::Borrowed(value),
-        |num| Cow::Owned(format!("{}px", num * 4.0)),
+    let unit = crate::extract_style::numeric_conversion::NumericUnit::Length;
+    css::numeric_value::parse(value).map_or_else(
+        || Cow::Borrowed(value),
+        |num| {
+            Cow::Owned(format!(
+                "{}{}",
+                num * f64::from(unit.scale()),
+                unit.suffix()
+            ))
+        },
     )
 }
 
@@ -281,7 +288,7 @@ pub(super) fn get_number_by_literal_expression(expr: &Expression) -> Option<f64>
             get_number_by_literal_expression(&parenthesized.expression)
         }
         Expression::StringLiteral(sl) => sl.value.parse::<f64>().ok(),
-        Expression::TemplateLiteral(tmp) => {
+        Expression::TemplateLiteral(tmp) if tmp.expressions.is_empty() => {
             // `f64::from_str` succeeds only when every byte belongs to the
             // float grammar: ASCII digits, sign/exponent punctuation, or the
             // letters of the `inf`/`infinity`/`nan` keywords. An allocation-free
@@ -292,33 +299,38 @@ pub(super) fn get_number_by_literal_expression(expr: &Expression) -> Option<f64>
             // have returned `Some`, every byte passes this scan, so the result
             // stays byte-identical.
             let can_be_float = tmp.quasis.iter().all(|q| {
-                q.value.raw.bytes().all(|b| {
-                    b.is_ascii_digit()
-                        || matches!(
-                            b,
-                            b'.' | b'+'
-                                | b'-'
-                                | b'e'
-                                | b'E'
-                                | b'i'
-                                | b'I'
-                                | b'n'
-                                | b'N'
-                                | b'f'
-                                | b'F'
-                                | b'a'
-                                | b'A'
-                                | b't'
-                                | b'T'
-                                | b'y'
-                                | b'Y'
-                        )
-                })
+                q.value
+                    .cooked
+                    .as_ref()
+                    .unwrap_or(&q.value.raw)
+                    .bytes()
+                    .all(|b| {
+                        b.is_ascii_digit()
+                            || matches!(
+                                b,
+                                b'.' | b'+'
+                                    | b'-'
+                                    | b'e'
+                                    | b'E'
+                                    | b'i'
+                                    | b'I'
+                                    | b'n'
+                                    | b'N'
+                                    | b'f'
+                                    | b'F'
+                                    | b'a'
+                                    | b'A'
+                                    | b't'
+                                    | b'T'
+                                    | b'y'
+                                    | b'Y'
+                            )
+                    })
             });
             if can_be_float {
                 tmp.quasis
                     .iter()
-                    .map(|q| q.value.raw.as_str())
+                    .map(|q| q.value.cooked.as_ref().unwrap_or(&q.value.raw).as_str())
                     .collect::<String>()
                     .parse::<f64>()
                     .ok()
@@ -385,7 +397,7 @@ pub(super) fn get_string_by_literal_expression<'a>(expr: &Expression<'a>) -> Opt
             Expression::TemplateLiteral(tmp) => {
                 let mut collect = String::new();
                 for (idx, q) in tmp.quasis.iter().enumerate() {
-                    collect.push_str(q.value.raw.as_str());
+                    collect.push_str(q.value.cooked.as_ref().unwrap_or(&q.value.raw).as_str());
                     if idx < tmp.expressions.len() {
                         let value = get_string_by_literal_expression(&tmp.expressions[idx])?;
                         collect.push_str(&value);

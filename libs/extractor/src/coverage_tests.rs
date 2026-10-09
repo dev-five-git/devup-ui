@@ -1,10 +1,12 @@
 mod capture;
+mod capture_edges;
 mod elements;
 mod generation;
 mod naming;
 mod normalization;
 mod operands;
 mod origins;
+mod presence_edges;
 mod residual_operands;
 
 use oxc_allocator::{Allocator, CloneIn};

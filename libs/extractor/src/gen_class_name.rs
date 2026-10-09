@@ -1,5 +1,4 @@
 use crate::ExtractStyleProp;
-use crate::extract_style::style_property::StyleProperty;
 use crate::extractor::extract_style_from_expression::yield_typography;
 use crate::prop_modify_utils::convert_class_name;
 use crate::utils::is_same_expression;
@@ -10,6 +9,13 @@ use oxc_ast::ast::{
 };
 use oxc_ast::builder::AstBuilder;
 use oxc_span::{GetSpan, GetSpanMut, SPAN};
+
+#[path = "dynamic_presence.rs"]
+mod dynamic_presence;
+
+#[cfg(test)]
+#[path = "dynamic_absence_tests.rs"]
+mod dynamic_absence_tests;
 
 pub fn gen_class_names<'a>(
     ast_builder: &AstBuilder<'a>,
@@ -106,16 +112,7 @@ fn gen_class_name<'a>(
             if let Some(style_order) = style_order {
                 st.set_style_order(style_order);
             }
-            st.extract(filename).map(|style| {
-                let v = Str::from_in(
-                    &match style {
-                        StyleProperty::ClassName(cls) => cls,
-                        StyleProperty::Variable { class_name, .. } => class_name,
-                    },
-                    ast_builder.allocator(),
-                );
-                Expression::new_string_literal(SPAN, v, None, ast_builder)
-            })
+            dynamic_presence::class(ast_builder, st, filename)
         }
         ExtractStyleProp::StaticArray(res) => merge_expression_for_class_name(
             ast_builder,

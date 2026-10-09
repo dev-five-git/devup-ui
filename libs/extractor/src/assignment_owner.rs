@@ -10,7 +10,7 @@ use crate::{ExtractStyleProp, ExtractStyleValue};
 struct Owner {
     start: u32,
     assignment: String,
-    sites: BTreeMap<u8, Option<Site>>,
+    sites: BTreeMap<usize, Option<Site>>,
 }
 
 thread_local! {
@@ -42,16 +42,31 @@ impl Drop for AssignmentOwner {
 }
 
 /// A complete selected assignment registers once; atoms only consume its site.
-pub(crate) fn site(start: u32, level: u8, assignment: &str) -> Option<Site> {
+pub(crate) fn site(
+    start: u32,
+    style: &crate::extract_style::extract_dynamic_style::ExtractDynamicStyle,
+) -> Option<Site> {
     OWNER.with_borrow_mut(|owner| match owner {
         Some(owner) => owner
             .sites
-            .entry(level)
+            .entry(crate::sparse_sites::numeric_role(
+                owner.start,
+                style.level(),
+                style.property(),
+            ))
             .or_insert_with(|| {
-                crate::provenance::site_at(owner.start, usize::from(level), &owner.assignment)
+                crate::provenance::site_at(
+                    owner.start,
+                    crate::sparse_sites::numeric_role(owner.start, style.level(), style.property()),
+                    &owner.assignment,
+                )
             })
             .clone(),
-        None => crate::provenance::site_at(start, 0, assignment),
+        None => crate::provenance::site_at(
+            start,
+            crate::sparse_sites::numeric_role(start, 0, style.property()),
+            style.identifier(),
+        ),
     })
 }
 
@@ -68,7 +83,8 @@ pub(crate) fn scalar(
             matches!(value, ExtractStyleValue::Dynamic(style)
         if style.property() == first.property() && style.level() == first.level()
         && style.selector() == first.selector() && style.layer() == first.layer()
-        && style.naming() == first.naming() && !style.important())
+        && style.naming() == first.naming() && style.conversion() == first.conversion()
+        && !style.important())
         })
         && scalar_shape(source)
         && !expression_to_code(source).contains('`')
@@ -133,7 +149,7 @@ pub(crate) fn take_consumers<'a>(
 
 fn always_present(style: &ExtractStyleProp<'_>) -> bool {
     match style {
-        ExtractStyleProp::Static(ExtractStyleValue::Dynamic(_)) => true,
+        ExtractStyleProp::Static(ExtractStyleValue::Dynamic(style)) => !style.presence(),
         ExtractStyleProp::StaticArray(styles) => {
             !styles.is_empty() && styles.iter().all(always_present)
         }

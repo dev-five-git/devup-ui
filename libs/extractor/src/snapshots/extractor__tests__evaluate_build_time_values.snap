@@ -7,6 +7,16 @@ ToBTreeSet {
         Static(
             ExtractStaticStyle {
                 property: "background",
+                value: "0",
+                level: 0,
+                selector: None,
+                style_order: None,
+                layer: None,
+            },
+        ),
+        Static(
+            ExtractStaticStyle {
+                property: "background",
                 value: "darker(.2)",
                 level: 0,
                 selector: None,
@@ -230,7 +240,7 @@ ToBTreeSet {
             ExtractDynamicStyle {
                 property: "color",
                 level: 0,
-                identifier: "__devupSpread0",
+                identifier: "darken(.4,`#336699`)",
                 selector: None,
                 style_order: None,
                 naming: Risky,
@@ -253,5 +263,5 @@ ToBTreeSet {
             },
         ),
     },
-    code: "import \"@devup-ui/react/devup-ui-0.css\";\nimport * as stylex from \"@stylexjs/stylex\";\nimport { PRIMARY, SPACE } from \"./color\";\nimport { card } from \"./styles\";\nimport { BEFORE } from \"./fails\";\nexport const SIZE = 4;\nexport default function twice(n: number) {\n\treturn n * 2;\n}\nenum Level {\n\tLow = 1,\n\tHigh = twice(2)\n}\nfunction darken(amount: number, color: string): string {\n\treturn color === PRIMARY ? `darker(${amount})` : color;\n}\nconst LIGHT = darken(.2, PRIMARY);\nconst color = darken(.3, PRIMARY);\nconst make = (size: number) => ({\n\tp: size,\n\t_hover: { color: LIGHT }\n});\nconst label = (text: string) => text.toUpperCase().padStart(4, \"-\");\nexport const a = \"FHdobik66ovxjafl1i-RHanbl4b93amneip7j FHdobik66ovxjafl1i-OLwidth-v32px FHdobik66ovxjafl1i-OLheight-v16px FHdobik66ovxjafl1i-OLtop-v_d8px FHdobik66ovxjafl1i-RLmargin-v64px FHdobik66ovxjafl1i-OHalq_haehgkrmcymc\";\nexport const b = \"KHai31p1nymgxx16_9\";\n;\nconst styles = { \"base\": \"FHdobik66ovxjafl1i-OHc7ygra87_hqae7l2\" };\nexport const c = ((__devupSpread1, __devupSpread0) => <div {...__devupSpread1} className={`FHdobik66ovxjafl1i-RHcpzr5rtuwaykifvx ${__devupSpread1?.className || \"\"}`} style={{\n\t...{ \"---SUHaztjsf9buejlks67-aan\": __devupSpread0 },\n\t...__devupSpread1?.style\n}} />)(((__devupSpreadValue) => ({ ...__devupSpreadValue }))({ className: \"FHdobik66ovxjafl1i-OHc7ygra87_hqae7l2\" }), darken(.4, \"#336699\"));\nexport const d = \"FHdobik66ovxjafl1i-RHb4ew0p5llkscujw8 FHdobik66ovxjafl1i-RLpadding-v8px FHdobik66ovxjafl1i-RHcm5p9yiemgmb4nfe FHdobik66ovxjafl1i-RHbl6i08dv0bq6ps50 FHdobik66ovxjafl1i-RLz_dindex-v4 FHdobik66ovxjafl1i-RHa8g2xumhojij01zy\";\nexport const e = (dark: boolean) => ((__devupAssignment1251, __devupAssignment1289) => `FHdobik66ovxjafl1i-RLfill-v_h369 ${__devupAssignment1251?.[0] ?? \"\"} ${__devupAssignment1289?.[0] ?? \"\"}`)(dark ? ((__devupValue) => [\n\t\"FHdobik66ovxjafl1i-RHdp55ot733c552pkh\",\n\t{},\n\t__devupValue\n])(\"darker(0.2)\") : ((__devupValue) => [\n\t\"FHdobik66ovxjafl1i-RLcolor-v_h369\",\n\t{},\n\t__devupValue\n])(\"#336699\"), ((__devupLeft) => !__devupLeft?.[2] ? __devupLeft : null)(((__devupValue) => [\n\t\"\",\n\t{},\n\t__devupValue\n])(dark)) ?? ((__devupValue) => [\n\t\"FHdobik66ovxjafl1i-RHc5i2lpwvf6bjtpg7\",\n\t{},\n\t__devupValue\n])(\"darker(0.2)\"));\nexport const f = ((__devupCompose0) => `FHdobik66ovxjafl1i-OLpadding-v4px ${__devupCompose0}`)(card);\n",
+    code: "import \"@devup-ui/react/devup-ui-0.css\";\nimport * as stylex from \"@stylexjs/stylex\";\nimport { PRIMARY, SPACE } from \"./color\";\nimport { card } from \"./styles\";\nimport { BEFORE } from \"./fails\";\nexport const SIZE = 4;\nexport default function twice(n: number) {\n\treturn n * 2;\n}\nenum Level {\n\tLow = 1,\n\tHigh = twice(2)\n}\nfunction darken(amount: number, color: string): string {\n\treturn color === PRIMARY ? `darker(${amount})` : color;\n}\nconst LIGHT = darken(.2, PRIMARY);\nconst color = darken(.3, PRIMARY);\nconst make = (size: number) => ({\n\tp: size,\n\t_hover: { color: LIGHT }\n});\nconst label = (text: string) => text.toUpperCase().padStart(4, \"-\");\nexport const a = \"FHdobik66ovxjafl1i-RHanbl4b93amneip7j FHdobik66ovxjafl1i-OLwidth-v32px FHdobik66ovxjafl1i-OLheight-v16px FHdobik66ovxjafl1i-OLtop-v_d8px FHdobik66ovxjafl1i-RLmargin-v64px FHdobik66ovxjafl1i-OHalq_haehgkrmcymc\";\nexport const b = \"KHai31p1nymgxx16_9\";\n;\nconst styles = { \"base\": \"FHdobik66ovxjafl1i-OHc7ygra87_hqae7l2\" };\nexport const c = ((__devupSpread0, __devupAssignment978) => <div {...__devupSpread0} className={`${__devupAssignment978?.[0] ?? \"\"} ${__devupSpread0?.className || \"\"}`} style={{\n\t...{ ...__devupAssignment978?.[1] },\n\t...__devupSpread0?.style\n}} />)(((__devupSpreadValue) => ({ ...__devupSpreadValue }))({ className: \"FHdobik66ovxjafl1i-OHc7ygra87_hqae7l2\" }), ((__devupValue) => [\n\t__devupValue !== null && __devupValue !== void 0 && typeof __devupValue !== \"boolean\" && __devupValue !== \"\" && (typeof __devupValue !== \"number\" || __devupValue === __devupValue && __devupValue !== 1 / 0 && __devupValue !== -(1 / 0)) ? \"FHdobik66ovxjafl1i-RHcpzr5rtuwaykifvx\" : \"\",\n\t{ \"---SUHaztjsf9buejlks67-aan\": ((__devupNumber)=>typeof __devupNumber===\"string\"&&/^(?:[+-]?(?:(?:[0-9]+(?:\\.[0-9]*)?|\\.[0-9]+)(?:[eE][+-]?[0-9]+)?|inf(?:inity)?|nan))$(?![\\s\\S])/i.test(__devupNumber)?+__devupNumber*4+\"px\":__devupNumber)(__devupValue) },\n\t__devupValue\n])(darken(.4, \"#336699\")));\nexport const d = \"FHdobik66ovxjafl1i-RHb4ew0p5llkscujw8 FHdobik66ovxjafl1i-RLpadding-v8px FHdobik66ovxjafl1i-RHcm5p9yiemgmb4nfe FHdobik66ovxjafl1i-RHbl6i08dv0bq6ps50 FHdobik66ovxjafl1i-RLz_dindex-v4 FHdobik66ovxjafl1i-RHa8g2xumhojij01zy\";\nexport const e = (dark: boolean) => ((__devupAssignment1251, __devupAssignment1289) => `FHdobik66ovxjafl1i-RLfill-v_h369 ${__devupAssignment1251?.[0] ?? \"\"} ${__devupAssignment1289?.[0] ?? \"\"}`)(dark ? ((__devupValue) => [\n\t\"FHdobik66ovxjafl1i-RHdp55ot733c552pkh\",\n\t{},\n\t__devupValue\n])(\"darker(0.2)\") : ((__devupValue) => [\n\t\"FHdobik66ovxjafl1i-RLcolor-v_h369\",\n\t{},\n\t__devupValue\n])(\"#336699\"), ((__devupLeft) => !__devupLeft?.[2] ? __devupLeft : null)(((__devupValue) => [\n\t__devupValue === 0 ? \"FHdobik66ovxjafl1i-OLbackground-v0\" : \"\",\n\t{},\n\t__devupValue\n])(dark)) ?? ((__devupValue) => [\n\t\"FHdobik66ovxjafl1i-RHc5i2lpwvf6bjtpg7\",\n\t{},\n\t__devupValue\n])(\"darker(0.2)\"));\nexport const f = ((__devupCompose0) => `FHdobik66ovxjafl1i-OLpadding-v4px ${__devupCompose0}`)(card);\n",
 }

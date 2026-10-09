@@ -147,7 +147,7 @@ pub(crate) fn styled_creation<'a>(
                         crate::sparse_sites::contains_site(site_span, site)
                     }) =>
                 {
-                    Some(style.variable_name())
+                    Some((style.variable_name(), style.conversion()))
                 }
                 _ => None,
             })
@@ -210,7 +210,10 @@ struct CreationReference {
     name: String,
     span: oxc_span::Span,
     typography: bool,
-    variables: Vec<String>,
+    variables: Vec<(
+        String,
+        crate::extract_style::numeric_conversion::NumericConversion,
+    )>,
 }
 
 struct CreationReferences<'b, 'a> {
@@ -242,17 +245,18 @@ impl<'a> VisitMut<'a> for CreationReferences<'_, 'a> {
     }
 
     fn visit_object_property(&mut self, property: &mut ObjectProperty<'a>) {
-        if let Some(reference) = self.replacements.iter().find(|reference| {
-            property.key.name().is_some_and(|key| {
+        if let Some((reference, conversion)) = self.replacements.iter().find_map(|reference| {
+            property.key.name().and_then(|key| {
                 reference
                     .variables
                     .iter()
-                    .any(|variable| variable == key.as_ref())
+                    .find(|(variable, _)| variable == key.as_ref())
+                    .map(|(_, conversion)| (reference, *conversion))
             })
         }) {
             property.value = Expression::new_identifier(
                 property.value.span(),
-                Str::from_in(reference.name.as_str(), self.ast.allocator()),
+                Str::from_in(&conversion.inline(&reference.name), self.ast.allocator()),
                 self.ast,
             );
         } else {

@@ -8,7 +8,7 @@ ToBTreeSet {
             ExtractDynamicStyle {
                 property: "margin",
                 level: 0,
-                identifier: "__devupSpread0",
+                identifier: "someStyleVar2",
                 selector: None,
                 style_order: None,
             },
@@ -17,11 +17,11 @@ ToBTreeSet {
             ExtractDynamicStyle {
                 property: "padding",
                 level: 0,
-                identifier: "__devupSpread1",
+                identifier: "someStyleVar",
                 selector: None,
                 style_order: None,
             },
         ),
     },
-    code: "import \"@devup-ui/core/devup-ui.css\";\n((__devupSpread1, __devupSpread0) => <div className=\"OHa_rprl97atut6n4_ OHcgeztw3fey5cnmin\" style={{\n\t\"---SUHdi6rtaah8w66vnsi-az\": __devupSpread1,\n\t\"---SUHdi6rtaah8w66vnsi-bk\": __devupSpread0\n}} />)(someStyleVar, someStyleVar2);\n",
+    code: "import \"@devup-ui/core/devup-ui.css\";\n((__devupAssignment52, __devupAssignment74) => <div className={`${__devupAssignment52?.[0] ?? \"\"} ${__devupAssignment74?.[0] ?? \"\"}`} style={{\n\t...__devupAssignment52?.[1],\n\t...__devupAssignment74?.[1]\n}} />)(((__devupValue) => [\n\t__devupValue !== null && __devupValue !== void 0 && typeof __devupValue !== \"boolean\" && __devupValue !== \"\" && (typeof __devupValue !== \"number\" || __devupValue === __devupValue && __devupValue !== 1 / 0 && __devupValue !== -(1 / 0)) ? \"OHa_rprl97atut6n4_\" : \"\",\n\t{ \"---SUHdi6rtaah8w66vnsi-az\": ((__devupNumber)=>typeof __devupNumber===\"number\"?+__devupNumber*4+\"px\":typeof __devupNumber===\"string\"&&/^(?:[+-]?(?:(?:[0-9]+(?:\\.[0-9]*)?|\\.[0-9]+)(?:[eE][+-]?[0-9]+)?|inf(?:inity)?|nan))$(?![\\s\\S])/i.test(__devupNumber)?+__devupNumber*4+\"px\":__devupNumber)(__devupValue) },\n\t__devupValue\n])(someStyleVar), ((__devupValue) => [\n\t__devupValue !== null && __devupValue !== void 0 && typeof __devupValue !== \"boolean\" && __devupValue !== \"\" && (typeof __devupValue !== \"number\" || __devupValue === __devupValue && __devupValue !== 1 / 0 && __devupValue !== -(1 / 0)) ? \"OHcgeztw3fey5cnmin\" : \"\",\n\t{ \"---SUHdi6rtaah8w66vnsi-bk\": ((__devupNumber)=>typeof __devupNumber===\"number\"?+__devupNumber*4+\"px\":typeof __devupNumber===\"string\"&&/^(?:[+-]?(?:(?:[0-9]+(?:\\.[0-9]*)?|\\.[0-9]+)(?:[eE][+-]?[0-9]+)?|inf(?:inity)?|nan))$(?![\\s\\S])/i.test(__devupNumber)?+__devupNumber*4+\"px\":__devupNumber)(__devupValue) },\n\t__devupValue\n])(someStyleVar2));\n",
 }

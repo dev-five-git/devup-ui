@@ -63,7 +63,8 @@ fn assert_references_resolve(code: &str, css: &str) {
             continue;
         }
         let quoted = literal.as_str();
-        let property_key = code[literal.end()..].trim_start().starts_with(':');
+        let property_key = matches!(before.chars().last(), Some('{' | ','))
+            && code[literal.end()..].trim_start().starts_with(':');
         for token in quoted[1..quoted.len() - 1].split_whitespace() {
             if variable.is_match(token) {
                 assert!(
@@ -102,6 +103,8 @@ fn assert_references_resolve(code: &str, css: &str) {
 #[case(r#"const fade="KHaaaaaaaaaaaaaaaa"; const cls="OLcolor-vred";"#)]
 #[case(r#"const fade="du-KLsfrom-e-"; const cls="OLcolor-vred";"#)]
 #[case(r#"<div className="OLcolor-vred" style={{"---du-Sa-b-c":tone}}/>"#)]
+#[case(r#"const cls="OLcolor-vred"; const conditional=rawPresent ? "c-a" : "";"#)]
+#[case(r#"const cls="OLcolor-vred"; const conditional=rawPresent ? "" : "c-a";"#)]
 #[should_panic(expected = "unemitted")]
 fn reference_checker_rejects_dangling_payloads_when_another_class_resolves(#[case] code: &str) {
     // Given / When / Then: a valid class cannot hide another unresolved reference.
@@ -109,10 +112,18 @@ fn reference_checker_rejects_dangling_payloads_when_another_class_resolves(#[cas
 }
 
 #[test]
+fn reference_checker_resolves_classes_when_only_a_conditional_payload_is_present() {
+    // Given
+    let code = r#"const cls=rawPresent ? "c-a" : "";"#;
+    // When / Then
+    assert_references_resolve(code, &format!(".{}{{color:red}}", "c-a"));
+}
+
+#[test]
 fn reference_checker_ignores_nonpayload_names_when_valid_classes_are_present() {
     // Given
     let code = r#"import "devup-ui"; import "df/devup-ui/a.css";
-        const OLmissing=()=>({"font-family":"Arial"});
+        const OLmissing=()=>({"font-family":"Arial", "c-missing":"Arial"});
         export const cls="du-c-a du-OLcolor-vred";"#;
     // When / Then
     assert_references_resolve(

@@ -46,6 +46,10 @@ mod prop_modify_utils;
 mod provenance;
 mod source_map;
 mod source_naming;
+mod source_normalization;
+#[cfg(test)]
+mod source_normalization_tests;
+mod source_value_type;
 mod sparse_sites;
 mod static_assignment;
 #[cfg(test)]
@@ -503,6 +507,9 @@ fn extract_source(
     if fatal_error {
         return Err("Parser panicked".into());
     }
+    let (_value_types, type_dependencies) =
+        source_value_type::Scope::enter(&program, filename, resolver, &option.package);
+    dependencies.extend(type_dependencies);
     let (source, earlier_edits) = evaluated.map_or((code, &[][..]), |evaluated| {
         (evaluated.source, evaluated.edits)
     });
@@ -578,6 +585,7 @@ fn extract_source(
         )?;
         let mut files: std::collections::BTreeSet<String> =
             output.dependencies.into_iter().collect();
+        files.extend(dependencies);
         files.extend(read);
         output.dependencies = files.into_iter().collect();
         return Ok(output);

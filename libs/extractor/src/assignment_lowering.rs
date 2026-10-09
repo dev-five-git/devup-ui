@@ -132,7 +132,15 @@ impl<'a> Lowering<'_, 'a> {
                     LogicalOperator::And => (alternate, consequent),
                     LogicalOperator::Or | LogicalOperator::Coalesce => (consequent, alternate),
                 };
-                let selected = self.branch(&source.left, left);
+                let selected = if source.operator == LogicalOperator::And {
+                    self.leaf(
+                        &source.left,
+                        left.as_ref()
+                            .map_or(&[], |style| std::slice::from_ref(style.as_ref())),
+                    )
+                } else {
+                    self.branch(&source.left, left)
+                };
                 let value = projection(ast, "__devupLeft", 2);
                 let test = match source.operator {
                     LogicalOperator::And => Expression::new_unary_expression(

@@ -40,10 +40,16 @@ mod boolean_expression;
 #[cfg(test)]
 mod boolean_or_tests;
 mod class_only_expression;
+mod falsy_controller;
 #[cfg(test)]
 mod typography_class_tests;
 
 const IGNORED_IDENTIFIERS: [&str; 3] = ["undefined", "NaN", "Infinity"];
+
+fn ignored_global(identifier: &oxc_ast::ast::IdentifierReference<'_>) -> bool {
+    IGNORED_IDENTIFIERS.contains(&identifier.name.as_str())
+        && !crate::source_value_type::is_bound(identifier)
+}
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum LiteralHandling {
@@ -56,9 +62,7 @@ pub enum LiteralHandling {
 pub(crate) fn unreadable<'a>(expression: &Expression<'a>) -> ExtractResult<'a> {
     let holds_nothing = match unwrap_syntax_only(expression) {
         Expression::NullLiteral(_) | Expression::BooleanLiteral(_) => true,
-        Expression::Identifier(identifier) => {
-            IGNORED_IDENTIFIERS.contains(&identifier.name.as_str())
-        }
+        Expression::Identifier(identifier) => ignored_global(identifier),
         Expression::UnaryExpression(unary) => unary.operator == UnaryOperator::Void,
         _ => false,
     };
@@ -86,7 +90,11 @@ fn literal_truthiness(expression: &Expression<'_>) -> Option<bool> {
             Some(literal.value != 0.0 && !literal.value.is_nan())
         }
         Expression::StringLiteral(literal) => Some(!literal.value.is_empty()),
-        Expression::Identifier(identifier) if identifier.name == "undefined" => Some(false),
+        Expression::Identifier(identifier)
+            if identifier.name == "undefined" && ignored_global(identifier) =>
+        {
+            Some(false)
+        }
         _ => None,
     }
 }
@@ -234,13 +242,15 @@ pub fn extract_style_from_expression<'a>(
             !matches!(name, "as" | "typography" | "selectors")
                 && get_enum_property_map(name).is_none()
         })
-        && matches!(
-            unwrap_syntax_only(expression),
-            Expression::ConditionalExpression(_)
-                | Expression::LogicalExpression(_)
-                | Expression::ArrayExpression(_)
-                | Expression::ComputedMemberExpression(_)
-        );
+        && (name
+            .is_some_and(|name| !name.starts_with(['_', '@']) && !is_nested_selector_key(name))
+            || matches!(
+                unwrap_syntax_only(expression),
+                Expression::ConditionalExpression(_)
+                    | Expression::LogicalExpression(_)
+                    | Expression::ArrayExpression(_)
+                    | Expression::ComputedMemberExpression(_)
+            ));
     let source = owns_assignment.then(|| expression.clone_in(ast_builder.allocator()));
     let _assignment = (owns_assignment
         && name.is_some_and(|name| !name.starts_with(['_', '@']) && !is_nested_selector_key(name)))
@@ -258,9 +268,6 @@ pub fn extract_style_from_expression<'a>(
     }
     crate::style_origin::fill(&mut result.styles, &origin);
     if let Some(source) = source {
-        if result.styles.is_empty() {
-            return result;
-        }
         if crate::static_assignment::literal_source(&source)
             && result
                 .styles
@@ -306,7 +313,7 @@ fn extract_style_values<'a>(
             expression,
             Expression::BooleanLiteral(_) | Expression::NullLiteral(_)
         )
-        && !matches!(expression, Expression::Identifier(value) if IGNORED_IDENTIFIERS.contains(&value.name.as_str()))
+        && !matches!(expression, Expression::Identifier(value) if ignored_global(value))
     {
         return ExtractResult {
             styles: vec![dynamic_style(
@@ -342,7 +349,13 @@ fn extract_style_values<'a>(
                             if let Some(name) = get_str_by_property_key(&prop.key)
                                 && !is_special_property(&name)
                             {
-                                for disassembled in disassemble_property(&name) {
+                                let disassembled_properties =
+                                    disassemble_property(&name).collect::<Vec<_>>();
+                                crate::sparse_sites::plan_numeric_roles(
+                                    &prop.value,
+                                    &disassembled_properties,
+                                );
+                                for disassembled in disassembled_properties {
                                     let disassembled: &str = &disassembled;
                                     if name == "styleOrder" {
                                         style_order = get_number_by_literal_expression(&prop.value)
@@ -603,8 +616,30 @@ fn extract_style_values<'a>(
     if matches!(expression, Expression::BooleanLiteral(_)) {
         return ExtractResult::default();
     }
+    if name.is_some_and(|name| name != "typography" && get_enum_property_map(name).is_none())
+        && matches!(
+            expression,
+            Expression::NumericLiteral(_) | Expression::UnaryExpression(_)
+        )
+        && get_number_by_literal_expression(expression).is_some_and(|number| !number.is_finite())
+    {
+        return ExtractResult::default();
+    }
     if let Some(value) = get_string_by_literal_expression(expression) {
         if let Some(name) = name {
+            let normalized = if matches!(expression, Expression::TemplateLiteral(_)) {
+                value.trim_end_matches(';')
+            } else {
+                value.as_ref()
+            };
+            let normalized = normalized.strip_suffix(" !important").unwrap_or(normalized);
+            if !typo
+                && get_enum_property_map(name).is_none()
+                && !name.starts_with("--")
+                && normalized.is_empty()
+            {
+                return ExtractResult::default();
+            }
             ExtractResult {
                 styles: if typo {
                     vec![typography_style(value.into_owned(), level, selector)]
@@ -764,7 +799,7 @@ fn extract_style_values<'a>(
                 let Some(name) = name else {
                     return unreadable(expression);
                 };
-                if IGNORED_IDENTIFIERS.contains(&identifier.name.as_str()) {
+                if ignored_global(identifier) {
                     ExtractResult::default()
                 } else {
                     ExtractResult {
@@ -785,7 +820,7 @@ fn extract_style_values<'a>(
                 let nullish = matches!(
                     unwrap_syntax_only(&logical.left),
                     Expression::NullLiteral(_)
-                ) || matches!(unwrap_syntax_only(&logical.left), Expression::Identifier(identifier) if identifier.name == "undefined");
+                ) || matches!(unwrap_syntax_only(&logical.left), Expression::Identifier(identifier) if identifier.name == "undefined" && ignored_global(identifier));
                 let takes_right = match logical.operator {
                     LogicalOperator::And => literal_truthiness(&logical.left) == Some(true),
                     LogicalOperator::Or => literal_truthiness(&logical.left) == Some(false),
@@ -860,7 +895,21 @@ fn extract_style_values<'a>(
                         styles: vec![ExtractStyleProp::Conditional {
                             condition: logical.left.clone_in(ast_builder.allocator()),
                             consequent: res,
-                            alternate: None,
+                            alternate: name
+                                .filter(|name| {
+                                    !name.starts_with(['_', '@'])
+                                        && !is_nested_selector_key(name)
+                                        && !boolean_expression::is_boolean(&logical.left)
+                                })
+                                .and_then(|name| {
+                                    falsy_controller::zero(
+                                        ast_builder,
+                                        name,
+                                        &logical.left,
+                                        level,
+                                        selector,
+                                    )
+                                }),
                         }],
                         ..ExtractResult::default()
                     },
@@ -1040,7 +1089,10 @@ fn extract_style_values<'a>(
                     if key_name == "params" {
                         continue;
                     }
-                    for name in disassemble_property(&key_name) {
+                    let disassembled_properties =
+                        disassemble_property(&key_name).collect::<Vec<_>>();
+                    crate::sparse_sites::plan_numeric_roles(&o.value, &disassembled_properties);
+                    for name in disassembled_properties {
                         let name: &str = &name;
                         props.extend(
                             extract_style_from_expression(
@@ -1085,6 +1137,8 @@ fn extract_style_values<'a>(
                                 &format!("({})", code.trim_end().trim_end_matches(';')),
                                 selector.clone(),
                             )
+                            .with_presence()
+                            .with_conversion(crate::extract_style::numeric_conversion::NumericConversion::for_expression(name, expression))
                             .with_assignment_site(expression.span().start),
                         ))],
                         ..ExtractResult::default()
@@ -1436,6 +1490,12 @@ pub fn dynamic_style<'a>(
                 level,
                 &expression_to_code(expression),
                 selector.clone(),
+            )
+            .with_presence()
+            .with_conversion(
+                crate::extract_style::numeric_conversion::NumericConversion::for_expression(
+                    name, expression,
+                ),
             )
             .with_assignment_site(expression.span().start),
         ))

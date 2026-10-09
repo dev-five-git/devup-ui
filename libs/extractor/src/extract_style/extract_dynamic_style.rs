@@ -8,6 +8,7 @@ use css::{
     style_selector::{StyleSelector, optimize_selector},
 };
 
+use super::numeric_conversion::NumericConversion;
 use crate::extract_style::{ExtractStyleProperty, style_property::StyleProperty};
 
 #[derive(PartialEq, Clone, Eq, Hash, Ord, PartialOrd)]
@@ -17,6 +18,8 @@ pub struct ExtractDynamicStyle {
     /// responsive
     level: u8,
     identifier: String,
+    conversion: NumericConversion,
+    presence: bool,
 
     /// selector
     selector: Option<StyleSelector>,
@@ -126,6 +129,8 @@ impl ExtractDynamicStyle {
             property: property.to_string(),
             level,
             identifier,
+            conversion: NumericConversion::Keep,
+            presence: false,
             selector: selector.map(optimize_selector),
             style_order: None,
             important,
@@ -143,7 +148,7 @@ impl ExtractDynamicStyle {
     }
 
     pub(crate) fn with_assignment_site(mut self, start: u32) -> Self {
-        self.site = crate::assignment_owner::site(start, self.level, &self.identifier);
+        self.site = crate::assignment_owner::site(start, &self);
         self
     }
 
@@ -186,6 +191,25 @@ impl ExtractDynamicStyle {
         self.identifier = identifier.to_string();
     }
 
+    pub(crate) const fn with_conversion(mut self, conversion: NumericConversion) -> Self {
+        self.conversion = conversion;
+        self
+    }
+
+    pub(crate) const fn conversion(&self) -> NumericConversion {
+        self.conversion
+    }
+
+    /// Ordinary property values select their class from the captured raw value.
+    pub(crate) const fn with_presence(mut self) -> Self {
+        self.presence = true;
+        self
+    }
+
+    pub(crate) const fn presence(&self) -> bool {
+        self.presence
+    }
+
     pub const fn style_order(&self) -> Option<u8> {
         self.style_order
     }
@@ -219,8 +243,8 @@ impl ExtractDynamicStyle {
     #[must_use]
     pub fn effective_value(&self) -> String {
         format!(
-            "var({}){}",
-            self.variable_name(),
+            "{}{}",
+            self.conversion.declaration(&self.variable_name()),
             if self.important { " !important" } else { "" }
         )
     }
@@ -247,10 +271,7 @@ impl ExtractDynamicStyle {
 impl ExtractStyleProperty for ExtractDynamicStyle {
     fn extract(&self, filename: Option<&str>) -> StyleProperty {
         let variable_name = self.variable_name();
-        let declaration = format!(
-            "var({variable_name}){}",
-            if self.important { " !important" } else { "" }
-        );
+        let declaration = self.effective_value();
         StyleProperty::Variable {
             class_name: sheet_to_classname_owned(
                 &self.atom_content(&declaration),
@@ -258,7 +279,7 @@ impl ExtractStyleProperty for ExtractDynamicStyle {
                 self.counter_owner(),
             ),
             variable_name,
-            identifier: self.identifier.clone(),
+            identifier: self.conversion.inline(&self.identifier),
         }
     }
 }

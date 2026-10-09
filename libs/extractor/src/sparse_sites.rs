@@ -21,12 +21,18 @@ struct SiteContext {
     removed: Vec<usize>,
     folded_owners: BTreeMap<u32, u32>,
     assignments: BTreeMap<(usize, usize), String>,
+    numeric_units:
+        BTreeMap<u32, Vec<Option<crate::extract_style::numeric_conversion::NumericUnit>>>,
     errors: Vec<(u32, String)>,
 }
 
 thread_local! {
     static SITES: RefCell<Option<SiteContext>> = const { RefCell::new(None) };
 }
+
+#[cfg(test)]
+#[path = "numeric_site_tests.rs"]
+mod numeric_site_tests;
 
 pub(crate) fn counter_owner() -> css::naming::CounterOwner {
     SITES.with_borrow(|context| {
@@ -58,6 +64,7 @@ impl SiteScope {
             removed,
             folded_owners: BTreeMap::new(),
             assignments: BTreeMap::new(),
+            numeric_units: BTreeMap::new(),
             errors: Vec::new(),
         };
         Self(SITES.with(|sites| sites.borrow_mut().replace(context)))
@@ -83,6 +90,57 @@ impl Drop for SiteScope {
     fn drop(&mut self) {
         SITES.with(|sites| *sites.borrow_mut() = self.0.take());
     }
+}
+
+pub(crate) fn plan_numeric_roles(
+    source: &oxc_ast::ast::Expression<'_>,
+    properties: &[impl AsRef<str>],
+) {
+    use crate::extract_style::numeric_conversion::NumericUnit;
+    use oxc_span::GetSpan;
+    let mut units = Vec::new();
+    for property in properties {
+        let unit = NumericUnit::for_property(property.as_ref());
+        if !units.contains(&unit) {
+            units.push(unit);
+        }
+    }
+    if units.len() < 2 {
+        return;
+    }
+    SITES.with_borrow_mut(|context| {
+        if let Some(context) = context {
+            for start in [
+                source.span().start,
+                crate::utils::unwrap_syntax_only(source).span().start,
+            ] {
+                let start = crate::provenance::source_offset(start);
+                let owner = context.folded_owners.get(&start).copied().unwrap_or(start);
+                context
+                    .numeric_units
+                    .entry(owner)
+                    .or_insert_with(|| units.clone());
+            }
+        }
+    });
+}
+
+pub(crate) fn numeric_role(start: u32, level: u8, property: &str) -> usize {
+    let unit = crate::extract_style::numeric_conversion::NumericUnit::for_property(property);
+    let group = SITES.with_borrow(|context| {
+        context
+            .as_ref()
+            .and_then(|context| {
+                let start = crate::provenance::source_offset(start);
+                let owner = context.folded_owners.get(&start).copied().unwrap_or(start);
+                context
+                    .numeric_units
+                    .get(&owner)
+                    .and_then(|units| units.iter().position(|candidate| *candidate == unit))
+            })
+            .unwrap_or(0)
+    });
+    group * (usize::from(u8::MAX) + 1) + usize::from(level)
 }
 
 /// Keep naming ownership in raw AST coordinates, separate from value/error spans.

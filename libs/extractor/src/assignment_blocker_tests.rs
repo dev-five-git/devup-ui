@@ -95,6 +95,53 @@ fn spread_array_selects_raw_value_when_index_is_dynamic(
 }
 
 #[rstest]
+#[case("0.25", 1, "[2,[0.25]]")]
+#[case("null", 1, "[1,[null]]")]
+#[case("undefined", 1, "[1,[null]]")]
+#[case("false", 1, "[1,[false]]")]
+#[case("0.25", 4, "[1,[null]]")]
+#[serial]
+fn spread_member_preserves_reads_when_selected_value_is_present_or_absent(
+    #[case] value: &str,
+    #[case] key: u8,
+    #[case] expected: &str,
+) {
+    // Given: neighboring getters distinguish duplication and reordering of the raw member.
+    let source = format!(
+        "import {{Box}} from '@devup-ui/react';function render(state){{return <Box title={{state.before}} opacity={{[1,...state.values][state.key]}} id={{state.after}} color=\"red\"/>}}let trace=[];const state={{get before(){{trace.push('before');return 'title'}},get values(){{trace.push('values');return [{value}]}},get key(){{trace.push('key');return {key}}},get after(){{trace.push('after');return 'id'}}}};const node=render(state);JSON.stringify([trace,[String(node.className??'').split(/\\s+/).filter(Boolean).length,Object.values(node.style??{{}})]]);"
+    );
+    // When: the selected spread value and both neighbors execute in generated code.
+    let actual = evaluate(&compiled_jsx(&source));
+    // Then: only the absent dynamic class drops; the static class and read order remain.
+    assert_eq!(
+        actual,
+        format!("[[\"before\",\"values\",\"key\",\"after\"],{expected}]")
+    );
+}
+
+#[test]
+#[serial]
+fn binary_template_keeps_clean_style_value_when_authored_suffix_is_a_semicolon() {
+    // Given: the existing binary-template normalization case with an observable read.
+    let source = "import {Box} from '@devup-ui/react';function render(state){return <Box bg={`${state.color}` + \";\"}/>}let reads=0;const state={get color(){reads++;return 'red'}};const node=render(state);JSON.stringify([reads,Object.values(node.style)]);";
+    // When: the generated capture and inline assignment execute together.
+    let actual = evaluate(&compiled_jsx(source));
+    // Then: source evaluation stays once while the CSS payload strips the authored suffix.
+    assert_eq!(actual, "[1,[\"red\"]]");
+}
+
+#[test]
+#[serial]
+fn mapped_array_preserves_selection_when_member_lowering_has_a_class_map() {
+    // Given: a known array map with distinct opacity declarations.
+    let source = "import {Box} from '@devup-ui/react';function render(state){return <Box opacity={[0.25,0.75][state.key]}/>}let trace=[];const state={get key(){trace.push('key');return 1}};const node=render(state);";
+    // When: generated classes execute and resolve against the emitted sheet.
+    let actual = selected(source, "JSON.stringify([trace,selected(node)]);");
+    // Then: the mapped branch selects 0.75 and reads its key once.
+    assert_eq!(actual, "[[\"key\"],[\"opacity:.75:0\"]]");
+}
+
+#[rstest]
 #[case(
     "<Box {...f()} title={<Box as={state.tag||'b'}/>}>{state.child}</Box>",
     "[\"f\",\"tag\",\"child\"]"

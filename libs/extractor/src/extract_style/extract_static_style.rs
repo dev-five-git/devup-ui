@@ -14,8 +14,7 @@ use css::{
 
 use crate::{
     extract_style::{
-        ExtractStyleProperty,
-        constant::{MAINTAIN_VALUE_PROPERTIES, TIME_PROPERTIES},
+        ExtractStyleProperty, constant::MAINTAIN_VALUE_PROPERTIES, numeric_conversion::NumericUnit,
         style_property::StyleProperty,
     },
     utils::{convert_value, gcd},
@@ -94,10 +93,14 @@ impl ExtractStaticStyle {
                 } else {
                     Cow::Borrowed(value)
                 }
-            } else if TIME_PROPERTIES.contains(property) {
+            } else if NumericUnit::for_property(property) == Some(NumericUnit::Time) {
                 // A time is written in `ms`, never on the spacing scale
-                value.parse::<f64>().map_or(Cow::Borrowed(value), |number| {
-                    Cow::Owned(format!("{}ms", crate::utils::js_number_string(number)))
+                css::numeric_value::parse(value).map_or(Cow::Borrowed(value), |number| {
+                    Cow::Owned(format!(
+                        "{}{}",
+                        crate::utils::js_number_string(number),
+                        NumericUnit::Time.suffix()
+                    ))
                 })
             } else {
                 convert_value(value)

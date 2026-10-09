@@ -145,7 +145,7 @@ ToBTreeSet {
             ExtractDynamicStyle {
                 property: "bottom",
                 level: 0,
-                identifier: "__devupSpread1",
+                identifier: "mutable",
                 selector: None,
                 style_order: None,
             },
@@ -154,7 +154,7 @@ ToBTreeSet {
             ExtractDynamicStyle {
                 property: "margin",
                 level: 0,
-                identifier: "__devupSpread3",
+                identifier: "`px`-1",
                 selector: None,
                 style_order: None,
             },
@@ -163,7 +163,7 @@ ToBTreeSet {
             ExtractDynamicStyle {
                 property: "padding",
                 level: 0,
-                identifier: "__devupSpread4",
+                identifier: "4/0",
                 selector: None,
                 style_order: None,
             },
@@ -172,7 +172,7 @@ ToBTreeSet {
             ExtractDynamicStyle {
                 property: "width",
                 level: 0,
-                identifier: "__devupSpread2",
+                identifier: "`${`px`}${other}`",
                 selector: None,
                 style_order: None,
             },
@@ -181,7 +181,7 @@ ToBTreeSet {
             ExtractDynamicStyle {
                 property: "z-index",
                 level: 0,
-                identifier: "__devupSpread0",
+                identifier: "SELF",
                 selector: None,
                 style_order: None,
             },
@@ -203,5 +203,5 @@ ToBTreeSet {
             },
         ),
     },
-    code: "import \"@devup-ui/react/devup-ui-0.css\";\nconst SIZE = 4;\nconst UNIT = `${SIZE}px`;\nconst DOUBLE = SIZE * 2;\nconst HALF = SIZE / 2 - 1;\nconst LABEL = \"a\" + SIZE;\nconst TINY = 1e-7;\nconst HUGE = 1e21;\nconst ZERO = -0;\nconst PX = \"px\";\nconst SELF = SELF;\nlet mutable = 1;\nexport const a = ((__devupSpread1, __devupSpread0) => <div className=\"FLtest_ptsx-OLpadding-v32px FLtest_ptsx-OLmargin-v4px FLtest_ptsx-OLwidth-v20px FLtest_ptsx-OLheight-v4px FLtest_ptsx-OLcontent-va4 FLtest_ptsx-OLtop-v1e_d7px FLtest_ptsx-OHcbk5rwk3nree1rtv FLtest_ptsx-OLright-v0 FLtest_ptsx-OHcgmz4axyop3geabu FLtest_ptsx-OHdbei_bz0nvd8ag42\" style={{\n\t\"---SUHaskxhmhd0pnl776k-li\": __devupSpread1,\n\t\"---SUHaskxhmhd0pnl776k-lz\": __devupSpread0\n}} />)(mutable, SELF);\nexport const b = \"FLtest_ptsx-OLpadding-v8px FLtest_ptsx-OLmargin-v12px FLtest_ptsx-OLwidth-v64px FLtest_ptsx-OLheight-v16px\";\nexport const k = \"KHai31p1nymgxx16_9\";\n;\nexport const c = ((__devupSpread4, __devupSpread3, __devupSpread2) => <div className=\"FLtest_ptsx-OHcp_n7kkx0rh4ufs4 FLtest_ptsx-OHbj4gq377lfgi_0i4 FLtest_ptsx-OHbzeiu4pt3o0qlxv_ FLtest_ptsx-OLheight-v4px\" style={{\n\t\"---SUHaskxhmhd0pnl776k-si\": __devupSpread4,\n\t\"---SUHaskxhmhd0pnl776k-sv\": __devupSpread3,\n\t\"---SUHaskxhmhd0pnl776k-s6\": __devupSpread2\n}} />)(4 / 0, \"px\" - 1, `${`px`}${other}`);\n",
+    code: "import \"@devup-ui/react/devup-ui-0.css\";\nconst SIZE = 4;\nconst UNIT = `${SIZE}px`;\nconst DOUBLE = SIZE * 2;\nconst HALF = SIZE / 2 - 1;\nconst LABEL = \"a\" + SIZE;\nconst TINY = 1e-7;\nconst HUGE = 1e21;\nconst ZERO = -0;\nconst PX = \"px\";\nconst SELF = SELF;\nlet mutable = 1;\nexport const a = ((__devupAssignment442, __devupAssignment459) => <div className={`FLtest_ptsx-OLpadding-v32px FLtest_ptsx-OLmargin-v4px FLtest_ptsx-OLwidth-v20px FLtest_ptsx-OLheight-v4px FLtest_ptsx-OLcontent-va4 FLtest_ptsx-OLtop-v1e_d7px FLtest_ptsx-OHcbk5rwk3nree1rtv FLtest_ptsx-OLright-v0 ${__devupAssignment442?.[0] ?? \"\"} ${__devupAssignment459?.[0] ?? \"\"}`} style={{\n\t...__devupAssignment442?.[1],\n\t...__devupAssignment459?.[1]\n}} />)(((__devupValue) => [\n\t__devupValue !== null && __devupValue !== void 0 && typeof __devupValue !== \"boolean\" && __devupValue !== \"\" && (typeof __devupValue !== \"number\" || __devupValue === __devupValue && __devupValue !== 1 / 0 && __devupValue !== -(1 / 0)) ? \"FLtest_ptsx-OHcgmz4axyop3geabu\" : \"\",\n\t{ \"---SUHaskxhmhd0pnl776k-li\": ((__devupNumber)=>typeof __devupNumber===\"number\"?+__devupNumber*4+\"px\":typeof __devupNumber===\"string\"&&/^(?:[+-]?(?:(?:[0-9]+(?:\\.[0-9]*)?|\\.[0-9]+)(?:[eE][+-]?[0-9]+)?|inf(?:inity)?|nan))$(?![\\s\\S])/i.test(__devupNumber)?+__devupNumber*4+\"px\":__devupNumber)(__devupValue) },\n\t__devupValue\n])(mutable), ((__devupValue) => [\n\t__devupValue !== null && __devupValue !== void 0 && typeof __devupValue !== \"boolean\" && __devupValue !== \"\" && (typeof __devupValue !== \"number\" || __devupValue === __devupValue && __devupValue !== 1 / 0 && __devupValue !== -(1 / 0)) ? \"FLtest_ptsx-OHdbei_bz0nvd8ag42\" : \"\",\n\t{ \"---SUHaskxhmhd0pnl776k-lz\": __devupValue },\n\t__devupValue\n])(SELF));\nexport const b = \"FLtest_ptsx-OLpadding-v8px FLtest_ptsx-OLmargin-v12px FLtest_ptsx-OLwidth-v64px FLtest_ptsx-OLheight-v16px\";\nexport const k = \"KHai31p1nymgxx16_9\";\n;\nexport const c = ((__devupAssignment701, __devupAssignment714, __devupAssignment725) => <div className={`FLtest_ptsx-OLheight-v4px ${__devupAssignment701?.[0] ?? \"\"} ${__devupAssignment714?.[0] ?? \"\"} ${__devupAssignment725?.[0] ?? \"\"}`} style={{\n\t...__devupAssignment701?.[1],\n\t...__devupAssignment714?.[1],\n\t...__devupAssignment725?.[1]\n}} />)(((__devupValue) => [\n\t__devupValue !== null && __devupValue !== void 0 && typeof __devupValue !== \"boolean\" && __devupValue !== \"\" && (typeof __devupValue !== \"number\" || __devupValue === __devupValue && __devupValue !== 1 / 0 && __devupValue !== -(1 / 0)) ? \"FLtest_ptsx-OHdetr0646cggnb345\" : \"\",\n\t{ \"---SUHaskxhmhd0pnl776k-si\": __devupValue },\n\t__devupValue\n])(4 / 0), ((__devupValue) => [\n\t__devupValue !== null && __devupValue !== void 0 && typeof __devupValue !== \"boolean\" && __devupValue !== \"\" && (typeof __devupValue !== \"number\" || __devupValue === __devupValue && __devupValue !== 1 / 0 && __devupValue !== -(1 / 0)) ? \"FLtest_ptsx-OHbjo37c6d634nibcq\" : \"\",\n\t{ \"---SUHaskxhmhd0pnl776k-sv\": __devupValue },\n\t__devupValue\n])(\"px\" - 1), ((__devupValue) => [\n\t__devupValue !== null && __devupValue !== void 0 && typeof __devupValue !== \"boolean\" && __devupValue !== \"\" && (typeof __devupValue !== \"number\" || __devupValue === __devupValue && __devupValue !== 1 / 0 && __devupValue !== -(1 / 0)) ? \"FLtest_ptsx-OHbzeiu4pt3o0qlxv_\" : \"\",\n\t{ \"---SUHaskxhmhd0pnl776k-s6\": ((__devupNumber)=>typeof __devupNumber===\"string\"&&/^(?:[+-]?(?:(?:[0-9]+(?:\\.[0-9]*)?|\\.[0-9]+)(?:[eE][+-]?[0-9]+)?|inf(?:inity)?|nan))$(?![\\s\\S])/i.test(__devupNumber)?+__devupNumber*4+\"px\":__devupNumber)(__devupValue) },\n\t__devupValue\n])(`${`px`}${other}`));\n",
 }

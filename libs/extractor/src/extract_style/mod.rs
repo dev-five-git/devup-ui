@@ -6,6 +6,7 @@ pub(super) mod extract_import;
 pub(super) mod extract_keyframes;
 pub mod extract_static_style;
 pub mod extract_style_value;
+pub(crate) mod numeric_conversion;
 #[cfg(test)]
 mod original_owner_tests;
 mod static_identity;

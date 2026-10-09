@@ -22,6 +22,7 @@ mod naming_coverage_tests;
 pub mod naming_root;
 pub mod naming_scope;
 mod num_to_nm_base;
+pub mod numeric_value;
 pub mod optimize_multi_css_value;
 pub mod optimize_value;
 pub mod rm_css_comment;

@@ -14,6 +14,9 @@ mod theme_declaration_coverage_tests;
 mod owner_reset_tests;
 
 #[cfg(test)]
+mod dynamic_scaled_tests;
+
+#[cfg(test)]
 mod sheet_test_code;
 
 use crate::theme::Theme;
@@ -623,28 +626,10 @@ impl StyleSheet {
                     }
                 }
                 ExtractStyleValue::Dynamic(dy) => {
-                    if let Some(StyleProperty::Variable {
-                        class_name,
-                        variable_name,
-                        ..
-                    }) = style.extract(name_scope)
+                    if let Some(StyleProperty::Variable { class_name, .. }) =
+                        style.extract(name_scope)
                         && {
-                            // Build `var(<name>)` / `var(<name>) !important` without the
-                            // `format!` `Arguments` machinery + its grow path: presize once and
-                            // `push_str`. Byte-identical to the two `format!` calls it replaces.
-                            let important = dy.important();
-                            let mut dynamic_value = String::with_capacity(
-                                "var(".len()
-                                    + variable_name.len()
-                                    + 1
-                                    + if important { " !important".len() } else { 0 },
-                            );
-                            dynamic_value.push_str("var(");
-                            dynamic_value.push_str(&variable_name);
-                            dynamic_value.push(')');
-                            if important {
-                                dynamic_value.push_str(" !important");
-                            }
+                            let dynamic_value = dy.effective_value();
                             self.add_property_with_layer(
                                 &class_name,
                                 dy.property(),
@@ -3648,13 +3633,35 @@ mod tests {
             let (code, css) = pipeline_css(Theme::default(), source);
             assert_eq!(css, expected, "{source}");
             if source.starts_with("const A") {
+                assert!(
+                    code.contains("`c1 c3 ${__capture0?.[0] ?? \"\"} ${__capture1?.[0] ?? \"\"}`"),
+                    "{code}"
+                );
+                assert!(code.contains("...__capture0?.[1]"), "{code}");
+                assert!(code.contains("...__capture1?.[1]"), "{code}");
+                let payloads = compile_regex(r#"(?s)\(\(__devupValue\) => \[\s*(.*?)\s*,\s*\{ \"(---v[01])\": (.*?) \},\s*__devupValue\s*\]\)\(([wv])\)"#)
+                    .captures_iter(&code)
+                    .map(|capture| {
+                        assert!(capture[1].contains("__devupValue !== null"), "{code}");
+                        assert!(capture[3].ends_with("(__devupValue)"), "{code}");
+                        (capture[1].split(" ? ").last().unwrap().to_string(), capture[2].to_string(), capture[4].to_string())
+                    })
+                    .collect::<Vec<_>>();
                 assert_eq!(
-                    code,
-                    concat!(
-                        "import \"@devup-ui/core/devup-ui.css\";\n",
-                        "const A = ((__capture0, __capture1) => ({ style, className, ...rest }) => <div {...rest} className={[\"c1 c2 c3 c0\", className].filter(Boolean).join(\" \")} style={{\n",
-                        "\t...{\n\t\t\"---v1\": __capture0,\n\t\t\"---v0\": __capture1\n\t},\n\t...style\n}} />)(w, v);\n",
-                    )
+                    payloads,
+                    vec![
+                        (
+                            "\"c2\" : \"\"".to_string(),
+                            "---v1".to_string(),
+                            "w".to_string()
+                        ),
+                        (
+                            "\"c0\" : \"\"".to_string(),
+                            "---v0".to_string(),
+                            "v".to_string()
+                        )
+                    ],
+                    "{code}"
                 );
             }
         }
@@ -3773,7 +3780,16 @@ mod tests {
                     "<div className={{\n\t\"small\": \"c3\",\n\t\"title\": \"c2\"\n}[`${size}`] || \"\"} />;\n",
                 ),
                 "<Box _hover={{ typography: 'title', fontSize: size }} />" => {
-                    Some("<div className=\"c3 c2\" style={{ \"---v0\": size }} />;\n")
+                    assert!(
+                        code.contains("className={`c3 ${__capture0?.[0] ?? \"\"}`}"),
+                        "{code}"
+                    );
+                    assert!(code.contains("style={{ ...__capture0?.[1] }}"), "{code}");
+                    let payload = compile_regex(r#"(?s)\(\(__devupValue\) => \[\s*(.*?)\s*,\s*\{ \"---v0\": (.*?) \},\s*__devupValue\s*\]\)\(size\)"#).captures(&code).unwrap();
+                    assert!(payload[1].contains("__devupValue !== null"), "{code}");
+                    assert!(payload[1].ends_with("? \"c2\" : \"\""), "{code}");
+                    assert!(payload[2].ends_with("(__devupValue)"), "{code}");
+                    None
                 }
                 "<Box _hover={{ typography: 'title', fontSize: cond ? '11px' : [null, null, '12px'] }} />" => {
                     Some(concat!(
@@ -3939,11 +3955,13 @@ let color = "red";
             css_body.contains("!important"),
             "CSS output should contain !important for dynamic styles. Got: {css_body}",
         );
-        // Verify the code has clean style value (no !important in the variable)
+        // The normalized capture feeds the inline variable; only raw slot two retains the suffix.
+        let payload = compile_regex(r#"(?s)\(\(__devupValue\) => \[\s*(.*?)\s*,\s*\{ \"(---S[\w-]+)\": (.*?) \},\s*__devupValue \+ \" !important\"\s*\]\)\(`\$\{color\}`\)"#).captures(&output.code).unwrap();
+        assert!(payload[3].ends_with("(__devupValue)"), "{}", output.code);
+        assert!(!payload[3].contains("!important"), "{}", output.code);
         assert!(
-            !output.code.contains("!important"),
-            "Generated code should NOT contain !important in style vars. Got: {}",
-            output.code,
+            css_body.contains(&format!("background:var({}) !important", &payload[2])),
+            "{css_body}"
         );
     }
 }

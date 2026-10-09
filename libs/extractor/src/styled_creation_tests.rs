@@ -4,6 +4,9 @@ mod support;
 #[path = "styled_creation_argument_tests.rs"]
 mod whole_arguments;
 
+#[path = "styled_numeric_creation_tests.rs"]
+mod numeric_values;
+
 use crate::assignment_test_support::{compiled_jsx, evaluate};
 use rstest::rstest;
 use serial_test::serial;

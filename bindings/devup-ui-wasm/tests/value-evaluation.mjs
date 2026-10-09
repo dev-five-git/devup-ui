@@ -263,23 +263,20 @@ for (const [index, scenario] of scenarios.entries()) {
   // When: execute public-WASM output with exactly the same runtime bindings.
   const compiled = evaluate(programs[1], scenario)
   const value = authored.element?.props[prop]
-  // Devup's AND controller is a style guard, including JavaScript's numeric zero.
-  const guarded = name === 'logical_and' && scenario.nullish && !scenario.left
-  const expected = (
-    guarded ? [] : Array.isArray(value) ? Array.from(value) : [value]
-  ).flatMap((entry, level) =>
-    entry == null || entry === false || entry === ''
-      ? []
-      : [
-          [
-            level,
-            prop === 'gap' && typeof entry === 'number' && entry !== 0
-              ? `${entry * 4}px`
-              : String(entry) === '0px'
-                ? '0'
-                : String(entry),
+  const expected = (Array.isArray(value) ? Array.from(value) : [value]).flatMap(
+    (entry, level) =>
+      entry == null || entry === false || entry === ''
+        ? []
+        : [
+            [
+              level,
+              prop === 'gap' && typeof entry === 'number' && entry !== 0
+                ? `${entry * 4}px`
+                : String(entry) === '0px'
+                  ? '0'
+                  : String(entry),
+            ],
           ],
-        ],
   )
   const actual = compiled.element ? selectedValues(compiled.element) : []
   const evidence = {

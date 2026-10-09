@@ -2503,7 +2503,14 @@ impl<'a> VisitMut<'a> for DevupVisitor<'a> {
                 {
                     let property_name = name.name.as_str();
                     let mut attribute_styles = Vec::new();
-                    for disassembled in disassemble_property(property_name) {
+                    let disassembled_properties =
+                        disassemble_property(property_name).collect::<Vec<_>>();
+                    if let Some(JSXAttributeValue::ExpressionContainer(container)) = &attr.value
+                        && let Some(source) = container.expression.as_expression()
+                    {
+                        crate::sparse_sites::plan_numeric_roles(source, &disassembled_properties);
+                    }
+                    for disassembled in disassembled_properties {
                         // Probe with `contains`, run the body borrowing `&disassembled`
                         // (it has no early exits), then MOVE the value into the set at
                         // the end — instead of `insert(disassembled.clone())`, which

@@ -8,11 +8,11 @@ ToBTreeSet {
             ExtractDynamicStyle {
                 property: "padding",
                 level: 0,
-                identifier: "data[d as A]as B",
+                identifier: "data[d as A]",
                 selector: None,
                 style_order: None,
             },
         ),
     },
-    code: "import \"@devup-ui/core/devup-ui.css\";\n<div className=\"OHapii7di620a3wozw\" style={{ \"---SUHasqsvad4x54nglqb-az\": data[d as A]as B }} />;\n",
+    code: "import \"@devup-ui/core/devup-ui.css\";\n((__devupAssignment52) => <div className={__devupAssignment52?.[0] ?? \"\"} style={{ ...__devupAssignment52?.[1] }} />)(((__devupValue) => [\n\t__devupValue !== null && __devupValue !== void 0 && typeof __devupValue !== \"boolean\" && __devupValue !== \"\" && (typeof __devupValue !== \"number\" || __devupValue === __devupValue && __devupValue !== 1 / 0 && __devupValue !== -(1 / 0)) ? \"OHapii7di620a3wozw\" : \"\",\n\t{ \"---SUHasqsvad4x54nglqb-az\": ((__devupNumber)=>typeof __devupNumber===\"number\"?+__devupNumber*4+\"px\":typeof __devupNumber===\"string\"&&/^(?:[+-]?(?:(?:[0-9]+(?:\\.[0-9]*)?|\\.[0-9]+)(?:[eE][+-]?[0-9]+)?|inf(?:inity)?|nan))$(?![\\s\\S])/i.test(__devupNumber)?+__devupNumber*4+\"px\":__devupNumber)(__devupValue) },\n\t__devupValue\n])(data[d as A]));\n",
 }

@@ -158,11 +158,7 @@ pub(crate) fn scalar<'a>(
         .iter()
         .find_map(|style| match style {
             ExtractStyleProp::Static(ExtractStyleValue::Dynamic(style))
-                if style.important()
-                    || matches!(
-                        crate::utils::unwrap_syntax_only(source),
-                        Expression::TemplateLiteral(_)
-                    ) =>
+                if crate::source_normalization::suffix(ast, source, style).is_some() =>
             {
                 Some(Expression::new_identifier(
                     source.span(),
