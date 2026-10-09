@@ -15077,6 +15077,61 @@ export const base = css(local, { bg: 'white' });",
 
     #[rstest]
     #[serial]
+    fn test_css_imported_native_chain_refuses_function_record(
+        #[values(false, true)] single_css: bool,
+    ) {
+        reset_class_map();
+        reset_file_map();
+        let resolver = memory_resolver(&[(
+            "/src/styles.ts",
+            "import { css } from '@devup-ui/react';\nexport const base = css(\n{ color: () => 'orange' });",
+        )]);
+        let error = extract_with_modules(
+            "/src/terminal.ts",
+            "import { css } from '@devup-ui/react'; import { base } from './styles'; export const result = css(base, { color: 'blue' });",
+            ExtractOption { single_css, ..ExtractOption::default() },
+            false,
+            &resolver,
+        ).unwrap_err().to_string();
+        assert!(
+            error.starts_with(
+                "/src/styles.ts:3:1: `css()` cannot use `{ color: () => 'orange' }` at build time: "
+            ),
+            "{error}"
+        );
+        assert!(error.contains("constant"), "{error}");
+    }
+
+    #[rstest]
+    #[serial]
+    fn test_css_imported_native_chain_keeps_constant_array_opaque(
+        #[values(false, true)] single_css: bool,
+    ) {
+        reset_class_map();
+        reset_file_map();
+        let resolver = memory_resolver(&[(
+            "/src/styles.ts",
+            "import { css } from '@devup-ui/react'; const parts = [{ color: 'orange' }]; export const base = css(parts);",
+        )]);
+        css::debug::set_debug(true);
+        let output = extract_with_modules(
+            "/src/terminal.ts",
+            "import { css } from '@devup-ui/react'; import { base } from './styles'; export const result = css(base, { color: 'blue' });",
+            ExtractOption {
+                single_css,
+                ..ExtractOption::default()
+            },
+            false,
+            &resolver,
+        );
+        css::debug::set_debug(false);
+        let output = output.unwrap();
+        assert!(output.code.contains("${base}"), "{}", output.code);
+        assert!(output.code.contains("color-0-blue--255"), "{}", output.code);
+    }
+
+    #[rstest]
+    #[serial]
     fn test_css_imported_native_chain_root_alias(#[values(false, true)] single_css: bool) {
         // Given a root const alias of a known imported class.
         reset_class_map();
