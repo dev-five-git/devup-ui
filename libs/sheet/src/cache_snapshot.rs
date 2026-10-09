@@ -79,6 +79,7 @@ impl<'de> Deserialize<'de> for StyleSheet {
             return Ok(rejected());
         }
         Ok(Self {
+            counter_state: None,
             cache_restore: CacheRestore::Serialized {
                 classes: snapshot.classes,
                 files: snapshot.files,

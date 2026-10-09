@@ -88,7 +88,7 @@ pub(super) fn insert(sheet: &mut StyleSheet, footprint: &RecordFootprint) -> boo
             bucket,
             name,
             steps,
-        } => sheet.add_keyframes(name, steps.iter().cloned().collect(), Some(bucket)),
+        } => sheet.add_keyframes_raw(name, steps.iter().cloned().collect(), Some(bucket)),
         RecordFootprint::Css { source, css } => sheet
             .css
             .entry(source.clone())

@@ -1,0 +1,7 @@
+{
+  "changes": {
+    "bindings/devup-ui-wasm/package.json": "Patch"
+  },
+  "note": "Keep dormant Rust counter state owned by the sheet with pure linkage checks and explicit literal ownership. The doc-hidden CounterSheet constructor now takes only the sheet. Production Current naming and cache4 remain unchanged; no new JavaScript build errors.",
+  "date": "2026-10-10T00:00:00.000Z"
+}

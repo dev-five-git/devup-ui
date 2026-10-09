@@ -13,12 +13,12 @@ fn capture_rejects_when_source_or_parent_is_absent_from_actual_originals(#[case]
             "color", "red", 0, None,
         ))])
     });
-    let (mut sheet, mut evidence) = (StyleSheet::default(), KernelEvidence::default());
-    update(&mut sheet, &mut evidence, &items).required("genuine candidate");
-    let retained = evidence.retained.as_ref().required("retained");
-    let candidate = &retained.candidates[0];
-    let delivery = retained
-        .authority
+    let mut sheet = StyleSheet::default();
+    update(&mut sheet, &items).required("genuine candidate");
+    let retained = sheet.counter_state.as_ref().required("retained");
+    let candidate = retained.candidates().next().required("candidate");
+    let projection = retained.projection(&super::authority::classes());
+    let delivery = projection
         .delivery(&candidate.proof.emission.seed.placement)
         .required("delivery")
         .clone();
@@ -40,19 +40,18 @@ fn capture_rejects_when_source_or_parent_is_absent_from_actual_originals(#[case]
 
 #[test]
 #[serial_test::serial]
-fn empty_sidecar_rejects_when_sheet_plan_disagrees_before_build() {
+fn manual_sheet_rejects_when_sheet_plan_disagrees_before_build() {
     // Given
     let _state = state();
     let mut sheet = StyleSheet {
         atom_plan: Some(BTreeSet::new()),
         ..StyleSheet::default()
     };
-    let mut evidence = KernelEvidence::default();
-    let before = capture(&sheet, &evidence);
+    let before = capture(&sheet);
     let mut called = false;
     // When
-    let result: Result<(), UpdateError<std::convert::Infallible>> =
-        CounterSheet::new(&mut sheet, &mut evidence).with_attempt(|attempt| {
+    let result: Result<(), UpdateError<std::convert::Infallible>> = CounterSheet::new(&mut sheet)
+        .with_attempt(|attempt| {
             called = true;
             attempt
                 .prepare(
@@ -71,29 +70,29 @@ fn empty_sidecar_rejects_when_sheet_plan_disagrees_before_build() {
         "dormant counter kernel: Authority"
     );
     assert!(!called);
-    assert_eq!(capture(&sheet, &evidence), before);
+    assert_eq!(capture(&sheet), before);
 }
 
 #[rstest::rstest]
 #[case(false)]
 #[case(true)]
 #[serial_test::serial]
-fn retained_sidecar_rejects_when_sheet_or_global_plan_changes(#[case] global: bool) {
+fn retained_sheet_rejects_when_sheet_or_global_plan_changes(#[case] global: bool) {
     // Given
     let _state = state();
-    let (mut sheet, mut evidence) = (StyleSheet::default(), KernelEvidence::default());
-    update(&mut sheet, &mut evidence, &styles([])).required("empty retained attempt");
+    let mut sheet = StyleSheet::default();
+    update(&mut sheet, &styles([])).required("empty retained attempt");
     if global {
         css::atom_hoist::restore_atom_plan(Some(BTreeSet::new()));
     } else {
         sheet.atom_plan = Some(BTreeSet::new());
     }
-    let before = capture(&sheet, &evidence);
+    let before = capture(&sheet);
     // When
-    let result = update(&mut sheet, &mut evidence, &styles([]));
+    let result = update(&mut sheet, &styles([]));
     // Then
     assert_eq!(result, Err(UpdateError::Kernel(KernelError::Authority)));
-    assert_eq!(capture(&sheet, &evidence), before);
+    assert_eq!(capture(&sheet), before);
 }
 
 #[test]
@@ -101,17 +100,16 @@ fn retained_sidecar_rejects_when_sheet_or_global_plan_changes(#[case] global: bo
 fn preparation_rejects_when_sheet_plan_disagrees_with_frozen_plan() {
     // Given
     let _state = state();
-    let (mut sheet, evidence) = (StyleSheet::default(), KernelEvidence::default());
-    let base = evidence.validate(&sheet).required("valid base");
+    let mut sheet = StyleSheet::default();
+    let base = super::state_live::validate(&sheet).required("valid base");
     sheet.atom_plan = Some(BTreeSet::new());
     let items = styles([]);
-    let before = capture(&sheet, &evidence);
+    let before = capture(&sheet);
     // When
     let result = super::prepare::prepare(
         &mut sheet,
         super::prepare::Preparation {
             base: &base,
-            evidence: &evidence,
             styles: &items,
             request: UpdateRequest {
                 raw_source: "a",
@@ -121,7 +119,7 @@ fn preparation_rejects_when_sheet_plan_disagrees_with_frozen_plan() {
     );
     // Then
     assert!(matches!(result, Err(KernelError::Authority)));
-    assert_eq!(capture(&sheet, &evidence), before);
+    assert_eq!(capture(&sheet), before);
 }
 
 #[test]
@@ -134,10 +132,10 @@ fn output_error_preserves_diagnostic_and_rolls_back_real_reservations() {
             "color", 0, "tone", None,
         ))])
     });
-    let (mut sheet, mut evidence) = (StyleSheet::default(), KernelEvidence::default());
-    let before = capture(&sheet, &evidence);
+    let mut sheet = StyleSheet::default();
+    let before = capture(&sheet);
     // When
-    let result = CounterSheet::new(&mut sheet, &mut evidence).with_attempt(|attempt| {
+    let result = CounterSheet::new(&mut sheet).with_attempt(|attempt| {
         attempt
             .prepare(
                 &items,
@@ -154,5 +152,5 @@ fn output_error_preserves_diagnostic_and_rolls_back_real_reservations() {
     assert!(
         matches!(error, UpdateError::Output(cause) if cause.kind() == std::io::ErrorKind::Other)
     );
-    assert_eq!(capture(&sheet, &evidence), before);
+    assert_eq!(capture(&sheet), before);
 }

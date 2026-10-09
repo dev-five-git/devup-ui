@@ -97,10 +97,8 @@ fn sheet_import_merges_exact_claims_and_rejects_unequal_claims_atomically() {
     let before = export_sheet_internal().unwrap_or_else(|error| panic!("{error}"));
     let original: StyleSheet =
         serde_json::from_str(&before).unwrap_or_else(|error| panic!("{error}"));
-    let mut incoming = StyleSheet {
-        names: original.names,
-        ..StyleSheet::default()
-    };
+    let mut incoming = StyleSheet::default();
+    incoming.names = original.names;
     incoming
         .names
         .get_mut("OLcolor-vred")

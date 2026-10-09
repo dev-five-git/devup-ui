@@ -68,28 +68,31 @@ fn base_witness_retires_when_intermediate_payload_is_restored_by_distinct_final_
         "D9-0".into(),
         keys.into_iter().map(|key| (key, 7)).collect(),
     )]));
-    let (mut sheet, mut evidence) = (StyleSheet::default(), KernelEvidence::default());
-    update(&mut sheet, &mut evidence, &styles([base])).required("initial BASE");
-    let old = evidence.retained.as_ref().required("BASE").candidates[0].clone();
+    let mut sheet = StyleSheet::default();
+    update(&mut sheet, &styles([base])).required("initial BASE");
+    let old = sheet
+        .counter_state
+        .as_ref()
+        .required("BASE")
+        .candidates()
+        .next()
+        .required("candidate")
+        .clone();
     let original = sheet.keyframes.clone();
     let reservations = css::class_map::get_class_map();
     // When
-    let effects = update(
-        &mut sheet,
-        &mut evidence,
-        &styles([final_item, intermediate]),
-    )
-    .required("ordered restoration");
+    let effects =
+        update(&mut sheet, &styles([final_item, intermediate])).required("ordered restoration");
     // Then
     assert!(effects.collected);
     assert_eq!(sheet.keyframes, original);
-    let retained = evidence.retained.as_ref().required("retained");
+    let retained = sheet.counter_state.as_ref().required("retained");
     assert!(
-        !retained.candidates.contains(&old),
+        !retained.candidates().any(|candidate| candidate == &old),
         "superseded BASE witness survived"
     );
-    assert_eq!(retained.candidates.len(), 1);
-    assert_eq!(retained.evidence.counters["D9-0"][&7].len(), 1);
+    assert_eq!(retained.candidates().count(), 1);
+    assert_eq!(retained.counters["D9-0"][&7].len(), 1);
     assert_eq!(css::class_map::get_class_map(), reservations);
 }
 
@@ -109,25 +112,25 @@ fn unused_delivery_binding_is_released_when_guarded_cleanup_removes_last_candida
             )),
         ))])
     });
-    let (mut sheet, mut evidence) = (StyleSheet::default(), KernelEvidence::default());
-    update(&mut sheet, &mut evidence, &items).required("private global static");
+    let mut sheet = StyleSheet::default();
+    update(&mut sheet, &items).required("private global static");
     let reservations = css::class_map::get_class_map();
-    let effects = update(&mut sheet, &mut evidence, &styles([])).required("guarded cleanup");
+    let effects = update(&mut sheet, &styles([])).required("guarded cleanup");
     assert!(effects.default_collected);
     assert_eq!(
-        evidence
-            .retained
+        sheet
+            .counter_state
             .as_ref()
             .required("removed")
-            .candidates
-            .len(),
+            .candidates()
+            .count(),
         0
     );
     let mut files = css::file_map::get_file_map();
     files.insert("a".into(), 7);
     css::file_map::set_file_map(files);
     // When
-    let result = update(&mut sheet, &mut evidence, &styles([]));
+    let result = update(&mut sheet, &styles([]));
     // Then
     assert_eq!(
         result,
@@ -137,10 +140,10 @@ fn unused_delivery_binding_is_released_when_guarded_cleanup_removes_last_candida
             default_collected: false,
         })
     );
-    let retained = evidence.retained.as_ref().required("empty retained");
-    assert_eq!(retained.authority.originals, BTreeMap::new());
-    assert_eq!(retained.authority.files, BTreeMap::new());
-    assert_eq!(retained.authority.placements, vec![]);
-    assert_eq!(retained.authority.deliveries, BTreeMap::new());
+    let retained = sheet.counter_state.as_ref().required("empty retained");
+    assert_eq!(retained.originals, BTreeMap::new());
+    assert_eq!(retained.files, BTreeMap::new());
+    assert_eq!(retained.placements, vec![]);
+    assert_eq!(retained.deliveries, BTreeMap::new());
     assert_eq!(css::class_map::get_class_map(), reservations);
 }

@@ -1,4 +1,4 @@
-pub(super) use super::{CounterSheet, KernelEvidence, UpdateEffects, UpdateError, UpdateRequest};
+pub(super) use super::{CounterSheet, UpdateEffects, UpdateError, UpdateRequest};
 use crate::StyleSheet;
 pub(super) use crate::counter_fixture_support::{fixture, state};
 pub(super) use extractor::extract_style::{
@@ -16,10 +16,9 @@ pub(super) fn styles(
 
 pub(super) fn update(
     sheet: &mut StyleSheet,
-    evidence: &mut KernelEvidence,
     items: &FxHashSet<ExtractStyleValue>,
 ) -> Result<UpdateEffects, UpdateError<()>> {
-    CounterSheet::new(sheet, evidence).with_attempt(|attempt| {
+    CounterSheet::new(sheet).with_attempt(|attempt| {
         attempt
             .prepare(
                 items,
@@ -41,9 +40,9 @@ pub(super) struct State {
     sheet: serde_json::Value,
     theme: String,
     cache_restore: String,
-    sidecar: Option<super::authority::Retained>,
+    owned: Option<super::state::CounterState>,
 }
-pub(super) fn capture(sheet: &StyleSheet, evidence: &KernelEvidence) -> State {
+pub(super) fn capture(sheet: &StyleSheet) -> State {
     State {
         classes: css::class_map::get_class_map(),
         files: css::file_map::get_file_map().into_iter().collect(),
@@ -52,7 +51,7 @@ pub(super) fn capture(sheet: &StyleSheet, evidence: &KernelEvidence) -> State {
         sheet: serde_json::to_value(sheet).required("sheet serialization"),
         theme: format!("{:?}", sheet.theme),
         cache_restore: format!("{:?}", sheet.cache_restore),
-        sidecar: evidence.retained.clone(),
+        owned: sheet.counter_state.clone(),
     }
 }
 

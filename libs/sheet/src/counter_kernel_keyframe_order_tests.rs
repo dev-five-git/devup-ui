@@ -55,13 +55,12 @@ fn sequential_operations_preserve_flags_when_intermediate_replacement_restores_b
         "D9-0".into(),
         HashMap::from([(key("0", None), 7), (key("1", None), 7)]),
     )]));
-    let (mut sheet, mut evidence) = (StyleSheet::default(), KernelEvidence::default());
-    update(&mut sheet, &mut evidence, &styles([last.clone()])).required("initial");
+    let mut sheet = StyleSheet::default();
+    update(&mut sheet, &styles([last.clone()])).required("initial");
     let original = sheet.keyframes.clone();
     let reservations = css::class_map::get_class_map();
     // When
-    let effects =
-        update(&mut sheet, &mut evidence, &styles([last, first])).required("ordered replacements");
+    let effects = update(&mut sheet, &styles([last, first])).required("ordered replacements");
     // Then
     assert!(effects.collected);
     assert_eq!(sheet.keyframes, original);
@@ -70,12 +69,12 @@ fn sequential_operations_preserve_flags_when_intermediate_replacement_restores_b
         vec![("opacity".into(), "1".into())]
     );
     assert_eq!(
-        evidence
-            .retained
+        sheet
+            .counter_state
             .as_ref()
             .required("retained")
-            .candidates
-            .len(),
+            .candidates()
+            .count(),
         1
     );
     assert_eq!(css::class_map::get_class_map(), reservations);
@@ -93,15 +92,15 @@ fn distinct_witnesses_remain_when_keyframe_payloads_match_at_same_address() {
         "D9-0".into(),
         HashMap::from([(key("0", Some("a")), 7), (key("0", Some("b")), 7)]),
     )]));
-    let (mut sheet, mut evidence) = (StyleSheet::default(), KernelEvidence::default());
+    let mut sheet = StyleSheet::default();
     // When
-    update(&mut sheet, &mut evidence, &items).required("same payload");
+    update(&mut sheet, &items).required("same payload");
     // Then
     assert_eq!(
         sheet.keyframes["a"]["pa-h"]["from"],
         vec![("opacity".into(), "0".into())]
     );
-    let retained = evidence.retained.as_ref().required("retained");
-    assert_eq!(retained.candidates.len(), 2);
-    assert_eq!(retained.evidence.counters["D9-0"][&7].len(), 2);
+    let retained = sheet.counter_state.as_ref().required("retained");
+    assert_eq!(retained.candidates().count(), 2);
+    assert_eq!(retained.counters["D9-0"][&7].len(), 2);
 }

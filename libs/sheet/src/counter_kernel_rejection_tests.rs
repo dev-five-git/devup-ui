@@ -12,8 +12,8 @@ fn current_dynamic_is_rejected_when_ordinary_no_site_ir_reaches_retained_sheet()
             "color", "red", 0, None,
         ))])
     });
-    let (mut sheet, mut evidence) = (StyleSheet::default(), KernelEvidence::default());
-    update(&mut sheet, &mut evidence, &base).required("retained base");
+    let mut sheet = StyleSheet::default();
+    update(&mut sheet, &base).required("retained base");
     sheet.cache_restore = crate::cache_snapshot::CacheRestore::Rejected;
     sheet.source_ids.insert("unrelated".into(), 17);
     let current = ExtractDynamicStyle::new("padding", 1, "spacing", None);
@@ -23,10 +23,10 @@ fn current_dynamic_is_rejected_when_ordinary_no_site_ir_reaches_retained_sheet()
     );
     assert_eq!(current.site(), None);
     let items = styles([ExtractStyleValue::Dynamic(current)]);
-    let before = capture(&sheet, &evidence);
+    let before = capture(&sheet);
     let mut called = false;
     // When
-    let result = CounterSheet::new(&mut sheet, &mut evidence).with_attempt(|attempt| {
+    let result = CounterSheet::new(&mut sheet).with_attempt(|attempt| {
         attempt
             .prepare(
                 &items,
@@ -48,7 +48,7 @@ fn current_dynamic_is_rejected_when_ordinary_no_site_ir_reaches_retained_sheet()
         )))
     );
     assert!(!called);
-    assert_eq!(capture(&sheet, &evidence), before);
+    assert_eq!(capture(&sheet), before);
 }
 
 #[test]
@@ -62,10 +62,10 @@ fn current_child_is_rejected_when_genuine_keyframe_parent_contains_current_membe
         frames.keyframes.insert("from".into(), vec![member]);
         styles([ExtractStyleValue::Keyframes(frames)])
     });
-    let (mut sheet, mut evidence) = (StyleSheet::default(), KernelEvidence::default());
-    let before = capture(&sheet, &evidence);
+    let mut sheet = StyleSheet::default();
+    let before = capture(&sheet);
     // When
-    let result = update(&mut sheet, &mut evidence, &items);
+    let result = update(&mut sheet, &items);
     // Then
     assert_eq!(
         result,
@@ -73,7 +73,7 @@ fn current_child_is_rejected_when_genuine_keyframe_parent_contains_current_membe
             extractor::extract_style::CounterProducerError::WrongPolicy
         )))
     );
-    assert_eq!(capture(&sheet, &evidence), before);
+    assert_eq!(capture(&sheet), before);
 }
 
 #[test]
@@ -100,10 +100,10 @@ fn unnumbered_site_is_rejected_when_genuine_parent_is_attached_outside_fixture()
     let items = styles([ExtractStyleValue::Dynamic(
         captured.borrow_mut().take().required("captured"),
     )]);
-    let (mut sheet, mut evidence) = (StyleSheet::default(), KernelEvidence::default());
-    let before = capture(&sheet, &evidence);
+    let mut sheet = StyleSheet::default();
+    let before = capture(&sheet);
     // When
-    let result = update(&mut sheet, &mut evidence, &items);
+    let result = update(&mut sheet, &items);
     // Then
     assert_eq!(
         result,
@@ -111,7 +111,7 @@ fn unnumbered_site_is_rejected_when_genuine_parent_is_attached_outside_fixture()
             extractor::extract_style::CounterProducerError::UnnumberedSite
         )))
     );
-    assert_eq!(capture(&sheet, &evidence), before);
+    assert_eq!(capture(&sheet), before);
 }
 
 #[test]
@@ -132,11 +132,11 @@ fn raw_preset_mismatch_is_rejected_when_live_theme_and_registry_disagree() {
         "heading".into(),
         vec![(0, "font-size".into(), "16px".into())],
     )]));
-    let (mut sheet, mut evidence) = (StyleSheet::default(), KernelEvidence::default());
-    let before = capture(&sheet, &evidence);
+    let mut sheet = StyleSheet::default();
+    let before = capture(&sheet);
     // When
-    let result = update(&mut sheet, &mut evidence, &items);
+    let result = update(&mut sheet, &items);
     // Then
     assert_eq!(result, Err(UpdateError::Kernel(KernelError::Preset)));
-    assert_eq!(capture(&sheet, &evidence), before);
+    assert_eq!(capture(&sheet), before);
 }

@@ -14,13 +14,15 @@ fn complete_state_rolls_back_when_output_fails_panics_abandons_or_outer_aborts(
     let _state = state();
     css::atom_hoist::restore_atom_plan(Some(BTreeSet::from(["old".into()])));
     css::class_map::set_class_map(HashMap::from([("empty".into(), HashMap::new())]));
-    let (mut sheet, mut evidence) = (StyleSheet::default(), KernelEvidence::default());
-    sheet.cache_restore = crate::cache_snapshot::CacheRestore::Rejected;
+    let mut sheet = StyleSheet {
+        cache_restore: crate::cache_snapshot::CacheRestore::Rejected,
+        ..StyleSheet::default()
+    };
     sheet.source_ids.insert("unrelated".into(), 17);
-    let before = capture(&sheet, &evidence);
+    let before = capture(&sheet);
     // When
     let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
-        CounterSheet::new(&mut sheet, &mut evidence).with_attempt(|attempt| {
+        CounterSheet::new(&mut sheet).with_attempt(|attempt| {
             fixture("a", || {
                 let items = styles([ExtractStyleValue::Dynamic(ExtractDynamicStyle::new(
                     "color", 0, "tone", None,
@@ -60,7 +62,7 @@ fn complete_state_rolls_back_when_output_fails_panics_abandons_or_outer_aborts(
         0 | 2 | 3 => assert!(result.required("no panic").is_err()),
         _ => unreachable!("case"),
     }
-    assert_eq!(capture(&sheet, &evidence), before);
+    assert_eq!(capture(&sheet), before);
 }
 
 #[rstest::rstest]
@@ -72,10 +74,10 @@ fn final_boundary_rejects_map_damage_when_output_or_post_finish_code_mutates_it(
 ) {
     // Given
     let _state = state();
-    let (mut sheet, mut evidence) = (StyleSheet::default(), KernelEvidence::default());
-    let before = capture(&sheet, &evidence);
+    let mut sheet = StyleSheet::default();
+    let before = capture(&sheet);
     // When
-    let result = CounterSheet::new(&mut sheet, &mut evidence).with_attempt(|attempt| {
+    let result = CounterSheet::new(&mut sheet).with_attempt(|attempt| {
         fixture("a", || {
             let items = styles([ExtractStyleValue::Dynamic(ExtractDynamicStyle::new(
                 "color", 0, "tone", None,
@@ -102,7 +104,7 @@ fn final_boundary_rejects_map_damage_when_output_or_post_finish_code_mutates_it(
     });
     // Then
     assert_eq!(result, Err(UpdateError::Kernel(KernelError::Authority)));
-    assert_eq!(capture(&sheet, &evidence), before);
+    assert_eq!(capture(&sheet), before);
 }
 
 #[test]
@@ -115,12 +117,12 @@ fn construction_damage_is_rejected_before_incoming_can_recreate_the_base_key() {
             "color", "red", 0, None,
         ))])
     });
-    let (mut sheet, mut evidence) = (StyleSheet::default(), KernelEvidence::default());
-    update(&mut sheet, &mut evidence, &items).required("initial update");
-    let before = capture(&sheet, &evidence);
+    let mut sheet = StyleSheet::default();
+    update(&mut sheet, &items).required("initial update");
+    let before = capture(&sheet);
     // When
-    let result: Result<(), UpdateError<()>> = CounterSheet::new(&mut sheet, &mut evidence)
-        .with_attempt(|attempt| {
+    let result: Result<(), UpdateError<()>> =
+        CounterSheet::new(&mut sheet).with_attempt(|attempt| {
             css::class_map::reset_class_map();
             attempt
                 .prepare(
@@ -134,7 +136,7 @@ fn construction_damage_is_rejected_before_incoming_can_recreate_the_base_key() {
         });
     // Then
     assert_eq!(result, Err(UpdateError::Kernel(KernelError::Authority)));
-    assert_eq!(capture(&sheet, &evidence), before);
+    assert_eq!(capture(&sheet), before);
 }
 
 #[test]
@@ -142,11 +144,11 @@ fn construction_damage_is_rejected_before_incoming_can_recreate_the_base_key() {
 fn producer_failure_rolls_back_both_reservations_when_current_keyframes_follow_dynamic() {
     // Given
     let _state = state();
-    let (mut sheet, mut evidence) = (StyleSheet::default(), KernelEvidence::default());
+    let mut sheet = StyleSheet::default();
     let current = ExtractKeyframes::default();
-    let before = capture(&sheet, &evidence);
+    let before = capture(&sheet);
     // When
-    let result = CounterSheet::new(&mut sheet, &mut evidence).with_attempt(|attempt| {
+    let result = CounterSheet::new(&mut sheet).with_attempt(|attempt| {
         fixture("a", || {
             let items = styles([
                 ExtractStyleValue::Dynamic(ExtractDynamicStyle::new("color", 0, "tone", None)),
@@ -170,15 +172,11 @@ fn producer_failure_rolls_back_both_reservations_when_current_keyframes_follow_d
             extractor::extract_style::CounterProducerError::WrongPolicy
         )))
     );
-    assert_eq!(capture(&sheet, &evidence), before);
+    assert_eq!(capture(&sheet), before);
     let retry = fixture("a", || {
         styles([ExtractStyleValue::Dynamic(ExtractDynamicStyle::new(
             "color", 0, "tone", None,
         ))])
     });
-    assert!(
-        update(&mut sheet, &mut evidence, &retry)
-            .required("retry")
-            .collected
-    );
+    assert!(update(&mut sheet, &retry).required("retry").collected);
 }
