@@ -10,6 +10,20 @@ mod counter_evidence_storage_tests;
 #[cfg(test)]
 mod counter_evidence_tests;
 #[cfg(test)]
+mod counter_fixture_baseline_tests;
+#[cfg(test)]
+mod counter_fixture_dynamic_tests;
+#[cfg(test)]
+mod counter_fixture_keyframe_tests;
+#[cfg(test)]
+mod counter_fixture_rejection_tests;
+#[cfg(test)]
+mod counter_fixture_replay_tests;
+#[cfg(test)]
+mod counter_fixture_static_tests;
+#[cfg(test)]
+mod counter_fixture_support;
+#[cfg(test)]
 mod counter_kernel;
 #[cfg(test)]
 pub mod emission_seed;
