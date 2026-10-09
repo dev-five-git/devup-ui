@@ -8,7 +8,9 @@ static FROZEN_PLAN: LazyLock<Mutex<Option<BTreeSet<String>>>> = LazyLock::new(||
 
 /// Freeze every eligible canonical bucket before any source is processed.
 pub fn freeze_atom_plan() {
+    let _admission = crate::admission::enter();
     if let Some(threshold) = atom_hoist_threshold() {
+        let _root = crate::root_held::RootHeld::enter("atom_plan");
         let mut plan = FROZEN_PLAN
             .lock()
             .unwrap_or_else(std::sync::PoisonError::into_inner);
@@ -32,6 +34,8 @@ pub fn freeze_atom_plan() {
 
 /// Snapshot the immutable build plan for sheet persistence.
 pub fn atom_plan() -> Option<BTreeSet<String>> {
+    let _admission = crate::admission::enter();
+    let _root = crate::root_held::RootHeld::enter("atom_plan");
     FROZEN_PLAN
         .lock()
         .unwrap_or_else(std::sync::PoisonError::into_inner)
@@ -40,14 +44,28 @@ pub fn atom_plan() -> Option<BTreeSet<String>> {
 
 /// Restore a cached plan, or clear it when starting a new build.
 pub fn restore_atom_plan(plan: Option<BTreeSet<String>>) {
+    let _admission = crate::admission::enter();
+    crate::admission::assert_administration_allowed("restore_atom_plan");
+    let _root = crate::root_held::RootHeld::enter("atom_plan");
     *FROZEN_PLAN
         .lock()
         .unwrap_or_else(std::sync::PoisonError::into_inner) = plan;
 }
 
+/// Restore only the frozen-plan snapshot owned by a private exact attempt.
+pub(crate) fn restore_atom_plan_snapshot(snapshot: Option<BTreeSet<String>>) {
+    let _admission = crate::admission::enter();
+    let _root = crate::root_held::RootHeld::enter("atom_plan");
+    *FROZEN_PLAN
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner) = snapshot;
+}
+
 /// Whether this bucket was eligible at the build's extraction boundary.
 pub fn is_hoisted_bucket(filename: &str) -> bool {
+    let _admission = crate::admission::enter();
     freeze_atom_plan();
+    let _root = crate::root_held::RootHeld::enter("atom_plan");
     FROZEN_PLAN
         .lock()
         .unwrap_or_else(std::sync::PoisonError::into_inner)
@@ -60,12 +78,15 @@ static ATOM_HOIST_THRESHOLD: AtomicUsize = AtomicUsize::new(0);
 
 #[inline(always)]
 pub fn set_atom_hoist(threshold: Option<usize>) {
+    let _admission = crate::admission::enter();
+    crate::admission::assert_administration_allowed("set_atom_hoist");
     ATOM_HOIST_THRESHOLD.store(threshold.unwrap_or(0), Ordering::Relaxed);
 }
 
 #[inline(always)]
 #[must_use]
 pub fn atom_hoist_threshold() -> Option<usize> {
+    let _admission = crate::admission::enter();
     match ATOM_HOIST_THRESHOLD.load(Ordering::Relaxed) {
         0 => None,
         v => Some(v),
@@ -75,6 +96,7 @@ pub fn atom_hoist_threshold() -> Option<usize> {
 #[inline(always)]
 #[must_use]
 pub fn is_atom_hoist() -> bool {
+    let _admission = crate::admission::enter();
     ATOM_HOIST_THRESHOLD.load(Ordering::Relaxed) != 0
 }
 

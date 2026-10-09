@@ -47,8 +47,9 @@ pub struct ExtractStaticStyle {
     /// again the same way.
     pub naming: Naming,
     /// Captured original allocation identity, retained for deferred sheet emission.
-    pub counter_owner: css::naming::CounterOwner,
+    pub counter_owner: css::CounterOwner,
     pub origin: Origin,
+    pub(crate) producer_policy: super::ProducerPolicy,
 }
 
 impl Debug for ExtractStaticStyle {
@@ -68,6 +69,23 @@ impl Debug for ExtractStaticStyle {
 }
 
 impl ExtractStaticStyle {
+    /// Produce a dormant counter allocation without changing production dispatch.
+    ///
+    /// # Errors
+    /// Returns `WrongPolicy` unless construction retained a counter original.
+    pub fn counter_produce(
+        &self,
+        filename: Option<&str>,
+    ) -> Result<super::ProducedAllocation, super::CounterProducerError> {
+        super::counter_producer::produce_static(self, filename)
+    }
+
+    /// The immutable identity policy selected when this record was constructed.
+    #[must_use]
+    pub const fn producer_policy(&self) -> super::ProducerPolicy {
+        self.producer_policy
+    }
+
     /// Normalize a static style value, shared by `new` and `new_basic`.
     ///
     /// When `apply_aspect_ratio` is `true`, the `aspect-ratio` value is reduced
@@ -124,6 +142,7 @@ impl ExtractStaticStyle {
             naming: Naming::Own,
             counter_owner: crate::sparse_sites::counter_owner(),
             origin: crate::style_origin::current(),
+            producer_policy: crate::sparse_sites::producer_policy(),
         }
     }
 
@@ -159,6 +178,7 @@ impl ExtractStaticStyle {
             naming: Naming::Own,
             counter_owner: crate::sparse_sites::counter_owner(),
             origin: crate::style_origin::current(),
+            producer_policy: crate::sparse_sites::producer_policy(),
         }
     }
 

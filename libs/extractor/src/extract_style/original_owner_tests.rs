@@ -1,4 +1,4 @@
-use css::{Naming, naming::CounterOwner};
+use css::{CounterOwner, Naming};
 use rustc_hash::FxHashSet;
 use serial_test::serial;
 

@@ -6,10 +6,24 @@ use crate::extract_style::{
     ExtractStyleProperty, extract_static_style::ExtractStaticStyle, style_property::StyleProperty,
 };
 
-#[derive(Default, PartialEq, Clone, Eq, Hash, Ord, PartialOrd)]
+#[path = "keyframe_identity.rs"]
+mod identity;
+
+#[derive(Clone)]
 pub struct ExtractKeyframes {
     pub keyframes: BTreeMap<String, Vec<ExtractStaticStyle>>,
     pub origin: Origin,
+    pub(crate) producer_policy: super::ProducerPolicy,
+}
+
+impl Default for ExtractKeyframes {
+    fn default() -> Self {
+        Self {
+            keyframes: BTreeMap::new(),
+            origin: Origin::default(),
+            producer_policy: crate::sparse_sites::producer_policy(),
+        }
+    }
 }
 
 impl std::fmt::Debug for ExtractKeyframes {
@@ -21,6 +35,23 @@ impl std::fmt::Debug for ExtractKeyframes {
 }
 
 impl ExtractKeyframes {
+    /// Produce one dormant keyframe allocation, never member allocations.
+    ///
+    /// # Errors
+    /// Rejects Current construction on the parent or any child before reservation.
+    pub fn counter_produce(
+        &self,
+        filename: Option<&str>,
+    ) -> Result<super::ProducedAllocation, super::CounterProducerError> {
+        super::counter_producer::produce_keyframes(self, filename)
+    }
+
+    /// The immutable identity policy selected when this record was constructed.
+    #[must_use]
+    pub const fn producer_policy(&self) -> super::ProducerPolicy {
+        self.producer_policy
+    }
+
     #[must_use]
     pub fn effective_steps(&self) -> Vec<(String, Vec<(String, String)>)> {
         self.keyframes

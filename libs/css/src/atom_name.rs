@@ -14,6 +14,7 @@ pub fn hex(value: &str) -> String {
 
 /// Names identify placement, never the order a source was encountered.
 pub fn scope(filename: Option<&str>) -> String {
+    let _admission = crate::admission::enter();
     match filename {
         None => "g".to_string(),
         Some(file) if is_hoisted_bucket(file) => "h".to_string(),

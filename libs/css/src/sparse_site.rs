@@ -97,6 +97,7 @@ pub fn sheet_to_variable_name_at(
     selector: Option<&str>,
     site: Option<Site>,
 ) -> String {
+    let _admission = crate::admission::enter();
     if let Some(site) = site {
         return with_prefix(|prefix| site.variable_name(prefix));
     }

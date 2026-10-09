@@ -50,9 +50,15 @@ ToBTreeSet {
                 value: "0 20px 25px -5px rgb(0 0 0 / .1),0 8px 10px -6px rgb(0 0 0 / .1)",
                 level: 0,
                 selector: Some(
-                    Selector(
-                        "&:hover",
-                    ),
+                    At {
+                        kind: Media,
+                        query: "(hover:hover)",
+                        selector: Some(
+                            "&:hover",
+                        ),
+                        outer: [],
+                        file: None,
+                    },
                 ),
                 style_order: None,
                 layer: None,
@@ -119,5 +125,5 @@ ToBTreeSet {
             },
         ),
     },
-    code: "import \"@devup-ui/core/devup-ui.css\";\n<div className=\"OHbwtwpnv9ii9mrobd OHc9gnal1bmpqvou03 OHbr3hxvk3k14ogtk3 OLpadding-v8px OLpadding-v16px-l1 OLpadding-v24px-l2 OLbackground-vred OHa9tclsres2poh73d OHbwabom2opiz4mx40 OLdisplay-vblock OLdisplay-vflex-l1\" />;\n",
+    code: "import \"@devup-ui/core/devup-ui.css\";\n<div className=\"OHbr3hxvk3k14ogtk3 OHc9gnal1bmpqvou03 OHc25lftmk8zmxz7a3 OLpadding-v8px OLpadding-v16px-l1 OLpadding-v24px-l2 OLbackground-vred OHa9tclsres2poh73d OHbwabom2opiz4mx40 OLdisplay-vblock OLdisplay-vflex-l1\" />;\n",
 }

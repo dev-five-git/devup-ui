@@ -42,6 +42,8 @@ mod named_capture_order_tests;
 mod named_capture_support;
 #[cfg(test)]
 mod named_capture_tests;
+#[cfg(test)]
+mod numbered_sites_tests;
 mod prop_modify_utils;
 mod provenance;
 mod source_map;
@@ -14706,6 +14708,101 @@ const Button = styled.button({ bg: 'red' })
             )
             .unwrap()
         ));
+    }
+
+    // Each Tailwind class becomes the classes of its styles; every other class,
+    // and every class that runs into an interpolation, stays as written
+    #[rstest]
+    #[case(
+        r#"<Box className="p-4 custom prose my-p-4-class" />"#,
+        r#"<div className="OLpadding-v1rem custom prose my-p-4-class" />"#
+    )]
+    #[case(
+        r#"<Box className="card hidden" />"#,
+        r#"<div className="card OLdisplay-vnone" />"#
+    )]
+    #[case(
+        r#"<Box className="data-active:p-4 not-hover:m-4 [&>*]:p-4" />"#,
+        r#"<div className="OHbqoqlduv1p5scp64 not-hover:m-4 OHbq7wtqy1vq9qg0dc" />"#
+    )]
+    #[case(
+        "<Box className={`p-${size} mt-4 ${tone}-text`} />",
+        "((__devupClass51) => <div className={__devupClass51 || \"\"} />)(`p-${size} OHdt14ba2xfy0fpkw6 ${tone}-text`)"
+    )]
+    #[case(
+        r"<Box className={`p-4 \`q\` \${y} a\\b\rc ${x}`} />",
+        r#"((__devupClass51) => <div className={__devupClass51 || ""} />)(`OLpadding-v1rem \`q\` \${y} a\\b\rc ${x}`)"#
+    )]
+    #[case(
+        "<Box className={`custom ${on ? 'p-4' : x}`} />",
+        r#"((__devupClass51) => <div className={__devupClass51 || ""} />)(`custom ${on ? "OLpadding-v1rem" : x}`)"#
+    )]
+    #[case(
+        r#"<Box className={on ? "p-4" : "custom"} />"#,
+        r#"((__devupClass51) => <div className={__devupClass51 || ""} />)(on ? "OLpadding-v1rem" : "custom")"#
+    )]
+    #[case(
+        r#"<Box className={on ? "custom" : "p-4"} />"#,
+        r#"((__devupClass51) => <div className={__devupClass51 || ""} />)(on ? "custom" : "OLpadding-v1rem")"#
+    )]
+    #[case(
+        r#"<Box className={on && "p-4"} />"#,
+        r#"((__devupClass51) => <div className={__devupClass51 || ""} />)(on && "OLpadding-v1rem")"#
+    )]
+    #[case(
+        r#"<Box className={"p-4" || x} />"#,
+        r#"((__devupClass51) => <div className={__devupClass51 || ""} />)("OLpadding-v1rem" || x)"#
+    )]
+    #[case(
+        r#"<Box className={("p-4")} />"#,
+        r#"<div className={"OLpadding-v1rem" || ""} />"#
+    )]
+    #[case(
+        "<Box className={`icon-${name} ${a}${b}`} />",
+        "-((__devupClass51) => <div className={__devupClass51 || \"\"} />)(`icon-${name} ${a}${b}`)"
+    )]
+    #[case(
+        r#"<Box className={("custom")} />"#,
+        r#"-<div className={"custom" || ""} />"#
+    )]
+    #[case(
+        r#"<Box className={on && "custom"} />"#,
+        r#"-((__devupClass51) => <div className={__devupClass51 || ""} />)(on && "custom")"#
+    )]
+    #[case(
+        r#"<Box className={on ? "a1" : "b1"} />"#,
+        r#"-((__devupClass51) => <div className={__devupClass51 || ""} />)(on ? "a1" : "b1")"#
+    )]
+    #[case(
+        "<Box className={`custom ${x}`} />",
+        "-((__devupClass51) => <div className={__devupClass51 || \"\"} />)(`custom ${x}`)"
+    )]
+    #[case(
+        "<Box className={cls} />",
+        "-((__devupClass51) => <div className={__devupClass51 || \"\"} />)(cls)"
+    )]
+    #[serial]
+    fn test_tailwind_keeps_other_classes(#[case] jsx: &str, #[case] expected: &str) {
+        reset_class_map();
+        reset_file_map();
+        let output = extract(
+            "test.tsx",
+            &format!("import {{Box}} from '@devup-ui/core'\n{jsx}\n"),
+            ExtractOption {
+                package: "@devup-ui/core".to_string(),
+                css_dir: "@devup-ui/core".to_string(),
+                single_css: true,
+                import_main_css: false,
+                import_aliases: HashMap::new(),
+            },
+        )
+        .unwrap();
+        // A leading `-` marks code that needs no stylesheet
+        let expected = expected.strip_prefix('-').map_or_else(
+            || format!("import \"@devup-ui/core/devup-ui.css\";\n{expected};\n"),
+            |code| format!("{code};\n"),
+        );
+        assert_eq!(output.code, expected);
     }
 
     #[test]

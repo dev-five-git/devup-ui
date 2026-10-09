@@ -42,6 +42,7 @@ getrandom = { version = "0.4", features = ["wasm_js"] }
 boa_engine = { version = "0.22", features = ["js"] }
 
 [dev-dependencies]
+css = { path = "../../libs/css", features = ["admission-observer"] }
 wasm-bindgen-test = "0.3.78"
 serial_test = "4.0.1"
 insta = "1.48.0"

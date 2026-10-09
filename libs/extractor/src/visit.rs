@@ -1872,6 +1872,7 @@ impl<'a> VisitMut<'a> for DevupVisitor<'a> {
                 let keyframes = ExtractKeyframes {
                     keyframes: keyframes_to_keyframes_style(&build_css_str()),
                     origin: crate::style_origin::at(tag.span.start),
+                    producer_policy: crate::sparse_sites::producer_policy(),
                 };
                 let name =
                     style_property_into_string(keyframes.extract(self.split_filename.as_deref()));

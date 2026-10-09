@@ -23,6 +23,7 @@ pub fn with_class_map<F, R>(f: F) -> R
 where
     F: FnOnce(&HashMap<String, HashMap<String, usize>>) -> R,
 {
+    let _admission = crate::admission::enter();
     #[cfg(target_arch = "wasm32")]
     #[cfg(not(tarpaulin_include))]
     {
@@ -30,6 +31,7 @@ where
     }
     #[cfg(not(target_arch = "wasm32"))]
     {
+        let _root = crate::root_held::RootHeld::enter("class_map");
         let guard = GLOBAL_CLASS_MAP
             .lock()
             .unwrap_or_else(std::sync::PoisonError::into_inner);
@@ -42,6 +44,7 @@ pub fn with_class_map_mut<F, R>(f: F) -> R
 where
     F: FnOnce(&mut HashMap<String, HashMap<String, usize>>) -> R,
 {
+    let _admission = crate::admission::enter();
     #[cfg(target_arch = "wasm32")]
     #[cfg(not(tarpaulin_include))]
     {
@@ -49,6 +52,7 @@ where
     }
     #[cfg(not(target_arch = "wasm32"))]
     {
+        let _root = crate::root_held::RootHeld::enter("class_map");
         let mut guard = GLOBAL_CLASS_MAP
             .lock()
             .unwrap_or_else(std::sync::PoisonError::into_inner);
@@ -82,7 +86,9 @@ thread_local! {
 /// Remember a name handed out while an [`Attempt`] runs, so dropping the
 /// attempt gives the slot back.
 pub(crate) fn record_insert(filename_key: &str, key: &str) {
+    let _admission = crate::admission::enter();
     JOURNAL.with(|journal| {
+        let _root = crate::root_held::RootHeld::enter("journal");
         let mut journal = journal.borrow_mut();
         if journal.attempts > 0 {
             journal
@@ -105,7 +111,9 @@ pub struct Attempt {
 impl Attempt {
     #[must_use]
     pub fn begin() -> Self {
+        let _admission = crate::admission::enter();
         JOURNAL.with(|journal| {
+            let _root = crate::root_held::RootHeld::enter("journal");
             let mut journal = journal.borrow_mut();
             journal.attempts += 1;
             Self {
@@ -116,13 +124,16 @@ impl Attempt {
     }
 
     pub fn commit(mut self) {
+        let _admission = crate::admission::enter();
         self.committed = true;
     }
 }
 
 impl Drop for Attempt {
     fn drop(&mut self) {
+        let _admission = crate::admission::enter();
         let undone = JOURNAL.with(|journal| {
+            let _root = crate::root_held::RootHeld::enter("journal");
             let mut journal = journal.borrow_mut();
             journal.attempts -= 1;
             let undone = if self.committed {

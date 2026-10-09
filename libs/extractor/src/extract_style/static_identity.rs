@@ -3,8 +3,10 @@ use std::{
     hash::{Hash, Hasher},
 };
 
-use css::{Naming, naming::CounterOwner, style_selector::StyleSelector};
+use css::{CounterOwner, Naming, style_selector::StyleSelector};
 
+use super::ProducerPolicy;
+use super::counter_selector::CounterSelector;
 use super::extract_static_style::{ExtractStaticStyle, ThemeTokenResolution};
 
 #[derive(PartialEq, Eq, Hash, PartialOrd, Ord)]
@@ -20,7 +22,32 @@ struct Identity<'a> {
     owner: CounterOwner,
 }
 
+#[derive(PartialEq, Eq, Hash, PartialOrd, Ord)]
+struct CounterIdentity<'a> {
+    property: &'a str,
+    value: &'a str,
+    level: u8,
+    selector: CounterSelector<'a>,
+    order: Option<u8>,
+    layer: &'a Option<String>,
+    resolution: ThemeTokenResolution,
+    owner: Option<u32>,
+}
+
 impl ExtractStaticStyle {
+    fn counter_identity(&self, original: u32) -> CounterIdentity<'_> {
+        CounterIdentity {
+            property: &self.property,
+            value: &self.value,
+            level: self.level,
+            selector: CounterSelector(&self.selector),
+            order: self.style_order,
+            layer: &self.layer,
+            resolution: self.theme_token_resolution,
+            owner: ProducerPolicy::declaration_owner(original, self.style_order),
+        }
+    }
+
     fn identity(&self) -> Identity<'_> {
         Identity {
             property: &self.property,
@@ -42,13 +69,28 @@ impl ExtractStaticStyle {
 
 impl PartialEq for ExtractStaticStyle {
     fn eq(&self, other: &Self) -> bool {
-        self.identity() == other.identity()
+        match (self.producer_policy(), other.producer_policy()) {
+            (ProducerPolicy::Current, ProducerPolicy::Current) => {
+                self.identity() == other.identity()
+            }
+            (ProducerPolicy::Current, ProducerPolicy::CounterOriginal(_))
+            | (ProducerPolicy::CounterOriginal(_), ProducerPolicy::Current) => false,
+            (ProducerPolicy::CounterOriginal(left), ProducerPolicy::CounterOriginal(right)) => {
+                self.counter_identity(left) == other.counter_identity(right)
+            }
+        }
     }
 }
 impl Eq for ExtractStaticStyle {}
 impl Hash for ExtractStaticStyle {
     fn hash<H: Hasher>(&self, state: &mut H) {
-        self.identity().hash(state);
+        match self.producer_policy() {
+            ProducerPolicy::Current => self.identity().hash(state),
+            ProducerPolicy::CounterOriginal(original) => {
+                1u8.hash(state);
+                self.counter_identity(original).hash(state);
+            }
+        }
     }
 }
 impl PartialOrd for ExtractStaticStyle {
@@ -58,6 +100,15 @@ impl PartialOrd for ExtractStaticStyle {
 }
 impl Ord for ExtractStaticStyle {
     fn cmp(&self, other: &Self) -> Ordering {
-        self.identity().cmp(&other.identity())
+        match (self.producer_policy(), other.producer_policy()) {
+            (ProducerPolicy::Current, ProducerPolicy::Current) => {
+                self.identity().cmp(&other.identity())
+            }
+            (ProducerPolicy::Current, ProducerPolicy::CounterOriginal(_)) => Ordering::Less,
+            (ProducerPolicy::CounterOriginal(_), ProducerPolicy::Current) => Ordering::Greater,
+            (ProducerPolicy::CounterOriginal(left), ProducerPolicy::CounterOriginal(right)) => self
+                .counter_identity(left)
+                .cmp(&other.counter_identity(right)),
+        }
     }
 }

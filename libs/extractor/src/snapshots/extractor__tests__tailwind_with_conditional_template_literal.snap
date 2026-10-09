@@ -36,6 +36,16 @@ ToBTreeSet {
         ),
         Static(
             ExtractStaticStyle {
+                property: "line-height",
+                value: "var(--tw-leading,calc(2.25 / 1.875))",
+                level: 0,
+                selector: None,
+                style_order: None,
+                layer: None,
+            },
+        ),
+        Static(
+            ExtractStaticStyle {
                 property: "padding-right",
                 value: "1.25rem",
                 level: 0,
@@ -44,6 +54,12 @@ ToBTreeSet {
                 layer: None,
             },
         ),
+        Css(
+            ExtractCss {
+                css: "@property --tw-translate-x{syntax:\"*\";inherits:false;initial-value:0}@property --tw-translate-y{syntax:\"*\";inherits:false;initial-value:0}@property --tw-scale-x{syntax:\"*\";inherits:false;initial-value:1}@property --tw-scale-y{syntax:\"*\";inherits:false;initial-value:1}@property --tw-scale-z{syntax:\"*\";inherits:false;initial-value:1}@property --tw-rotate-x{syntax:\"*\";inherits:false}@property --tw-rotate-y{syntax:\"*\";inherits:false}@property --tw-rotate-z{syntax:\"*\";inherits:false}@property --tw-skew-x{syntax:\"*\";inherits:false}@property --tw-skew-y{syntax:\"*\";inherits:false}@property --tw-leading{syntax:\"*\";inherits:false}@property --tw-content{syntax:\"*\";inherits:false;initial-value:\"\"}@property --tw-scroll-snap-strictness{syntax:\"*\";inherits:false;initial-value:proximity}",
+                file: "@devup-ui/tailwind",
+            },
+        ),
     },
-    code: "import \"@devup-ui/core/devup-ui.css\";\n((__devupClass51) => <div className={__devupClass51 || \"\"}>\n  hello\n</div>)(`${enabled ? \"OHdnrylfdyio5ggpo7\" : \"OHaon61_q2bfmpwnhu\"} OHbptb3ko_bmwl5g8h OHap3_4qv8kkps8sbb`);\n",
+    code: "import \"@devup-ui/core/devup-ui.css\";\n((__devupClass51) => <div className={__devupClass51 || \"\"}>\n  hello\n</div>)(`${enabled ? \"OHdnrylfdyio5ggpo7\" : \"OHaon61_q2bfmpwnhu\"} OHbptb3ko_bmwl5g8h OHaszyh1b7nhqt1k3m OHap3_4qv8kkps8sbb`);\n",
 }

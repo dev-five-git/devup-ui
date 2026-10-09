@@ -1,3 +1,13 @@
+pub mod admission;
+#[cfg(test)]
+mod admission_guard_tests;
+#[cfg(all(test, not(target_arch = "wasm32")))]
+mod admission_input_tests;
+#[cfg(all(test, not(target_arch = "wasm32")))]
+mod admission_interleaving_tests;
+#[cfg(all(test, not(target_arch = "wasm32")))]
+mod admission_root_tests;
+pub mod allocation_input;
 pub mod at_rule;
 pub mod atom_hoist;
 pub mod atom_name;
@@ -11,7 +21,22 @@ pub mod content_typography;
 #[cfg(test)]
 mod content_typography_tests;
 pub mod content_value;
+mod counter_allocation;
+#[cfg(test)]
+mod counter_context_tests;
+pub mod counter_names;
+#[cfg(test)]
+mod counter_names_tests;
+mod counter_owner;
+#[cfg(test)]
+mod counter_proof_tests;
+mod counter_render;
+#[cfg(test)]
+mod counter_test_helpers;
 pub mod debug;
+pub mod exact_attempt;
+#[cfg(test)]
+mod exact_attempt_tests;
 pub mod file_map;
 pub mod file_routes;
 pub mod is_special_property;
@@ -26,6 +51,7 @@ pub mod numeric_value;
 pub mod optimize_multi_css_value;
 pub mod optimize_value;
 pub mod rm_css_comment;
+mod root_held;
 #[cfg(test)]
 mod scoped_name_tests;
 mod selector_separator;
@@ -43,6 +69,8 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{LazyLock, RwLock};
 
 use crate::constant::{GLOBAL_ENUM_STYLE_PROPERTY, GLOBAL_STYLE_PROPERTY};
+pub use crate::counter_allocation::CounterSlot;
+pub use crate::counter_owner::CounterOwner;
 use crate::debug::is_debug;
 
 pub use crate::naming::{Naming, Site};
@@ -58,14 +86,18 @@ mod prefix_state {
         static GLOBAL_PREFIX: RefCell<Option<String>> = const { RefCell::new(None) };
     }
     pub fn set_prefix(prefix: Option<String>) {
+        let _admission = crate::admission::enter();
+        crate::admission::assert_administration_allowed("set_prefix");
         GLOBAL_PREFIX.with(|p| *p.borrow_mut() = prefix);
     }
     pub fn get_prefix() -> Option<String> {
+        let _admission = crate::admission::enter();
         GLOBAL_PREFIX.with(|p| p.borrow().clone())
     }
     /// Run `f` with the current prefix as `&str` (empty when unset) without cloning.
     #[cfg(not(tarpaulin_include))]
     pub(crate) fn with_prefix<R>(f: impl FnOnce(&str) -> R) -> R {
+        let _admission = crate::admission::enter();
         GLOBAL_PREFIX.with(|p| f(p.borrow().as_deref().unwrap_or_default()))
     }
 }
@@ -76,11 +108,16 @@ mod prefix_state {
     use std::sync::Mutex;
     static GLOBAL_PREFIX: LazyLock<Mutex<Option<String>>> = LazyLock::new(|| Mutex::new(None));
     pub fn set_prefix(prefix: Option<String>) {
+        let _admission = crate::admission::enter();
+        crate::admission::assert_administration_allowed("set_prefix");
+        let _root = crate::root_held::RootHeld::enter("prefix");
         *GLOBAL_PREFIX
             .lock()
             .unwrap_or_else(std::sync::PoisonError::into_inner) = prefix;
     }
     pub fn get_prefix() -> Option<String> {
+        let _admission = crate::admission::enter();
+        let _root = crate::root_held::RootHeld::enter("prefix");
         GLOBAL_PREFIX
             .lock()
             .unwrap_or_else(std::sync::PoisonError::into_inner)
@@ -88,6 +125,8 @@ mod prefix_state {
     }
     /// Run `f` with the current prefix as `&str` (empty when unset) without cloning.
     pub(crate) fn with_prefix<R>(f: impl FnOnce(&str) -> R) -> R {
+        let _admission = crate::admission::enter();
+        let _root = crate::root_held::RootHeld::enter("prefix");
         f(GLOBAL_PREFIX
             .lock()
             .unwrap_or_else(std::sync::PoisonError::into_inner)
@@ -210,6 +249,7 @@ impl ExactSizeIterator for DisassembleProperty {}
 
 #[must_use]
 pub fn disassemble_property(property: &str) -> DisassembleProperty {
+    let _admission = crate::admission::enter();
     // Nested selector keys (`&:hover`, `:focus`, `.parent &`) are not properties;
     // keep them verbatim so class names and case survive.
     if property.starts_with(':') || property.contains('&') {
@@ -218,6 +258,7 @@ pub fn disassemble_property(property: &str) -> DisassembleProperty {
     if let Some(properties) = HAS_CUSTOM_SHORTHANDS
         .load(Ordering::Relaxed)
         .then(|| {
+            let _root = crate::root_held::RootHeld::enter("shorthands");
             CUSTOM_SHORTHANDS
                 .read()
                 .ok()
@@ -281,6 +322,9 @@ static HAS_CUSTOM_SHORTHANDS: AtomicBool = AtomicBool::new(false);
 
 /// Replace the custom shorthand registry used by style extraction.
 pub fn set_custom_shorthands(shorthands: BTreeMap<String, Vec<String>>) {
+    let _admission = crate::admission::enter();
+    crate::admission::assert_administration_allowed("set_custom_shorthands");
+    let _root = crate::root_held::RootHeld::enter("shorthands");
     if let Ok(mut registry) = CUSTOM_SHORTHANDS.write() {
         let shorthands: BTreeMap<String, Vec<String>> = shorthands
             .into_iter()
@@ -304,6 +348,8 @@ pub fn set_custom_shorthands(shorthands: BTreeMap<String, Vec<String>>) {
 
 #[must_use]
 pub fn get_custom_shorthand_names() -> Vec<String> {
+    let _admission = crate::admission::enter();
+    let _root = crate::root_held::RootHeld::enter("shorthands");
     CUSTOM_SHORTHANDS.read().map_or_else(
         |_| Vec::new(),
         |registry| registry.keys().cloned().collect(),
@@ -377,57 +423,39 @@ thread_local! {
     static KEY_BUF: std::cell::RefCell<String> = const { std::cell::RefCell::new(String::new()) };
 }
 
-/// Get-or-insert a key in the per-file class map and return its base-37 name.
+/// Get-or-insert a key in the per-file class map and return its numeric slot.
 /// `build_key` fills the supplied reusable buffer with the key bytes; the buffer
 /// is borrowed for the probe so the common already-present path allocates
 /// nothing, and only a real insert clones the key into an owned `String`.
 /// Single home for the class naming algorithm shared by keyframes, classname
 /// and variable-name generation.
-fn class_num_for_key(filename_key: &str, build_key: impl FnOnce(&mut String)) -> String {
+fn class_slot_for_key(filename_key: &str, build_key: impl FnOnce(&mut String)) -> CounterSlot {
+    let _admission = crate::admission::enter();
     KEY_BUF.with(|buf| {
+        let _root = crate::root_held::RootHeld::enter("key_buf");
         let mut key = buf.borrow_mut();
         key.clear();
         build_key(&mut key);
-        class_map::with_class_map_mut(|map| {
-            // Probe first so the owned filename key is only allocated on the
-            // first style for a file, not on every generated name.
-            if let Some(file_entry) = map.get_mut(filename_key) {
-                // Borrow-probe the common already-present-key path so the owned
-                // `String` is only materialized on a genuine insert, never on
-                // the hot repeat-property path.
-                if let Some(&num) = file_entry.get(key.as_str()) {
-                    num_to_nm_base(num)
-                } else {
-                    let len = file_entry.len();
-                    file_entry.insert(key.clone(), len);
-                    class_map::record_insert(filename_key, &key);
-                    num_to_nm_base(len)
-                }
-            } else {
-                // First style seen for this file: build the inner map presized to
-                // exactly the one entry we insert, so the initial insert never starts
-                // from a zero-capacity map (which would rehash/grow on the first few
-                // inserts). Output/behavior is byte-identical ??same single entry,
-                // same `0` numbering ??this only fixes the allocation shape.
-                let mut inner = std::collections::HashMap::with_capacity(1);
-                inner.insert(key.clone(), 0);
-                map.insert(filename_key.to_string(), inner);
-                class_map::record_insert(filename_key, &key);
-                num_to_nm_base(0)
-            }
-        })
+        counter_allocation::reserve_counter(filename_key, key.as_str())
     })
+}
+
+/// Render the existing name from the slot returned by the single allocation request.
+fn class_num_for_key(filename_key: &str, build_key: impl FnOnce(&mut String)) -> String {
+    class_slot_for_key(filename_key, build_key).name()
 }
 
 /// An animation's name from its escaped content: equal animations share one
 /// name wherever they are met.
 #[must_use]
 pub fn keyframes_name_of_escaped(escaped: &str) -> String {
+    let _admission = crate::admission::enter();
     with_prefix(|prefix| format!("{prefix}{}{escaped}", if is_debug() { "k-" } else { "K" }))
 }
 
 #[must_use]
 pub fn keyframes_to_keyframes_name(keyframes: &str, filename: Option<&str>) -> String {
+    let _admission = crate::admission::enter();
     if atom_hoist::is_atom_hoist() {
         let scope = filename.map_or_else(
             || "g".to_string(),
@@ -490,7 +518,7 @@ pub fn sheet_to_classname_content(
     content: &content_name::AtomContent<'_>,
     filename: Option<&str>,
 ) -> String {
-    sheet_to_classname_owned(content, filename, naming::CounterOwner::Inactive)
+    sheet_to_classname_owned(content, filename, CounterOwner::Inactive)
 }
 
 /// Keep original counter ownership separate from canonical content and delivery scope.
@@ -498,8 +526,9 @@ pub fn sheet_to_classname_content(
 pub fn sheet_to_classname_owned(
     content: &content_name::AtomContent<'_>,
     filename: Option<&str>,
-    owner: naming::CounterOwner,
+    owner: CounterOwner,
 ) -> String {
+    let _admission = crate::admission::enter();
     let descriptor = content.content();
     match naming::owned_private_counter(owner, (filename, content.order), content.naming) {
         Some(id) => {

@@ -20,7 +20,11 @@ fn residual_rebuilt_tailwind_logical_class_keeps_padding_associations_and_falsy_
     // The full visitor normally pre-extracts this class; this is its typed property seam.
     let allocator = Allocator::default();
     let ast = AstBuilder::new(&allocator);
-    let padding = crate::tailwind::parse_tailwind_to_styles("p-2");
+    let padding: Vec<_> = crate::tailwind::parse_class("p-2")
+        .unwrap_or_else(|| panic!("valid padding utility"))
+        .styles()
+        .map(crate::ExtractStyleValue::Static)
+        .collect();
     assert_eq!(padding.len(), 1);
     let mut styles = [ExtractStyleProp::Conditional {
         condition: expression(&allocator, "state.enabled"),

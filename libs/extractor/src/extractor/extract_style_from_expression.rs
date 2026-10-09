@@ -1409,6 +1409,7 @@ fn typography_atom(name: &str, level: u8, selector: &Option<StyleSelector>) -> E
         naming: css::Naming::Own,
         counter_owner: crate::sparse_sites::counter_owner(),
         origin: crate::style_origin::current(),
+        producer_policy: crate::sparse_sites::producer_policy(),
     }
 }
 

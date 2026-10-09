@@ -14,6 +14,27 @@ use std::collections::{BTreeMap, HashMap};
 use std::fmt::Display;
 use std::sync::{LazyLock, Mutex};
 use wasm_bindgen::prelude::*;
+mod administration;
+#[cfg(test)]
+mod admission_contract_tests;
+#[cfg(all(test, not(target_arch = "wasm32")))]
+mod admission_exclusion_tests;
+#[cfg(test)]
+mod admission_guard_tests;
+#[cfg(test)]
+mod exact_class_tests;
+#[cfg(test)]
+mod exact_nested_tests;
+#[cfg(test)]
+mod exact_plan_tests;
+#[cfg(test)]
+mod exact_rollback_tests;
+#[cfg(test)]
+mod exact_test_support;
+mod extraction_rollback;
+mod sheet_entry;
+use administration::with_administration;
+use css::admission::with_admission;
 mod cache_atom_proof;
 mod cache_descriptor;
 mod cache_names;
@@ -58,20 +79,26 @@ fn with_style_sheet<F, R>(f: F) -> R
 where
     F: FnOnce(&StyleSheet) -> R,
 {
-    let guard = GLOBAL_STYLE_SHEET
-        .lock()
-        .unwrap_or_else(std::sync::PoisonError::into_inner);
-    f(&guard)
+    with_admission(|| {
+        let _entry = sheet_entry::SheetEntry::enter();
+        let guard = GLOBAL_STYLE_SHEET
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        f(&guard)
+    })
 }
 
 fn with_style_sheet_mut<F, R>(f: F) -> R
 where
     F: FnOnce(&mut StyleSheet) -> R,
 {
-    let mut guard = GLOBAL_STYLE_SHEET
-        .lock()
-        .unwrap_or_else(std::sync::PoisonError::into_inner);
-    f(&mut guard)
+    with_admission(|| {
+        let _entry = sheet_entry::SheetEntry::enter();
+        let mut guard = GLOBAL_STYLE_SHEET
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        f(&mut guard)
+    })
 }
 
 #[cfg(not(tarpaulin_include))]
@@ -191,7 +218,7 @@ impl Output {
 
 #[wasm_bindgen(js_name = "setDebug")]
 pub fn set_debug(debug: bool) {
-    css::debug::set_debug(debug);
+    with_administration("set_debug", || css::debug::set_debug(debug));
 }
 
 #[wasm_bindgen(js_name = "isDebug")]
@@ -242,7 +269,7 @@ pub fn is_debug() -> bool {
 /// ```
 #[wasm_bindgen(js_name = "setPrefix")]
 pub fn set_prefix(prefix: Option<String>) {
-    css::set_prefix(prefix);
+    with_administration("set_prefix", || css::set_prefix(prefix));
 }
 
 /// Set the build's names-only project root before extraction in every compiler.
@@ -251,7 +278,9 @@ pub fn set_prefix(prefix: Option<String>) {
 /// Supply the existing ID basis when relative extraction IDs are not root-relative.
 #[wasm_bindgen(js_name = "setNamingRoot")]
 pub fn set_naming_root(root: Option<String>, relative_base: Option<String>) {
-    css::naming_root::set_context(root, relative_base);
+    with_administration("set_naming_root", || {
+        css::naming_root::set_context(root, relative_base);
+    });
 }
 
 #[wasm_bindgen(js_name = "getPrefix")]
@@ -262,7 +291,7 @@ pub fn get_prefix() -> Option<String> {
 
 /// Internal function to import a `StyleSheet` (testable without `JsValue`)
 pub fn import_sheet_internal(sheet: StyleSheet) -> Result<(), String> {
-    cache_restore::import(sheet)
+    with_administration("import_sheet_internal", || cache_restore::import(sheet))
 }
 
 #[wasm_bindgen(js_name = "importSheet")]
@@ -334,7 +363,7 @@ pub fn export_file_map() -> Result<String, JsValue> {
 
 /// Internal function to import the canonical (bucket) map (testable without `JsValue`)
 pub fn import_canonical_map_internal(map: HashMap<String, String>) {
-    set_canonical_map(map);
+    with_administration("import_canonical_map_internal", || set_canonical_map(map));
 }
 
 /// Internal function to export the canonical map as JSON string (testable without `JsValue`)
@@ -349,7 +378,7 @@ pub fn export_canonical_map_internal() -> Result<String, String> {
 #[wasm_bindgen(js_name = "importCanonicalMap")]
 #[cfg(not(tarpaulin_include))]
 pub fn import_canonical_map(map_object: JsValue) -> Result<(), JsValue> {
-    set_canonical_map(serde_wasm_bindgen::from_value(map_object).map_err(js_error)?);
+    import_canonical_map_internal(serde_wasm_bindgen::from_value(map_object).map_err(js_error)?);
     Ok(())
 }
 
@@ -364,8 +393,10 @@ pub fn export_canonical_map() -> Result<String, JsValue> {
 /// workers reach files in.
 #[wasm_bindgen(js_name = "seedFileMap")]
 pub fn seed_file_map(files: Vec<String>) {
-    cache_restore::seeded(&files);
-    css::file_map::seed_file_numbers(&files);
+    with_administration("seed_file_map", || {
+        cache_restore::seeded(&files);
+        css::file_map::seed_file_numbers(&files);
+    });
 }
 
 /// Forget everything one build left in the engine.
@@ -374,18 +405,20 @@ pub fn seed_file_map(files: Vec<String>) {
 /// and the module resolver, so the next build starts from its own options
 /// alone. Theme, shorthands and debug mode are set by every build, and stay.
 pub fn reset_build_state_internal() {
-    cache_names::clear();
-    cache_restore::clear();
-    css::class_map::reset_class_map();
-    css::file_map::reset_file_map();
-    css::file_map::reset_canonical_map();
-    css::file_routes::set_file_routes(HashMap::new());
-    css::atom_hoist::set_atom_hoist(None);
-    css::atom_hoist::restore_atom_plan(None);
-    css::set_prefix(None);
-    css::naming_root::set_root(None);
-    with_style_sheet_mut(|sheet| *sheet = StyleSheet::default());
-    MODULE_RESOLVER.with_borrow_mut(|current| *current = None);
+    with_administration("reset_build_state_internal", || {
+        cache_names::clear();
+        cache_restore::clear();
+        css::class_map::reset_class_map();
+        css::file_map::reset_file_map();
+        css::file_map::reset_canonical_map();
+        css::file_routes::set_file_routes(HashMap::new());
+        css::atom_hoist::set_atom_hoist(None);
+        css::atom_hoist::restore_atom_plan(None);
+        css::set_prefix(None);
+        css::naming_root::set_root(None);
+        with_style_sheet_mut(|sheet| *sheet = StyleSheet::default());
+        set_module_resolver_internal(None);
+    });
 }
 
 #[wasm_bindgen(js_name = "resetBuildState")]
@@ -403,12 +436,16 @@ pub fn reset_build_state() {
 /// Pair with `importFileRoutes` to provide the file -> routes mapping.
 #[wasm_bindgen(js_name = "setAtomHoist")]
 pub fn set_atom_hoist(threshold: Option<usize>) {
-    css::atom_hoist::set_atom_hoist(threshold);
+    with_administration("set_atom_hoist", || {
+        css::atom_hoist::set_atom_hoist(threshold);
+    });
 }
 
 /// Internal function to import the file -> routes map (testable without `JsValue`)
 pub fn import_file_routes_internal(map: HashMap<String, std::collections::HashSet<u32>>) {
-    css::file_routes::set_file_routes(map);
+    with_administration("import_file_routes_internal", || {
+        css::file_routes::set_file_routes(map);
+    });
 }
 
 /// Import the file -> set-of-route-ids mapping used to decide atom hoisting.
@@ -419,9 +456,7 @@ pub fn import_file_routes_internal(map: HashMap<String, std::collections::HashSe
 #[wasm_bindgen(js_name = "importFileRoutes")]
 #[cfg(not(tarpaulin_include))]
 pub fn import_file_routes(map_object: JsValue) -> Result<(), JsValue> {
-    css::file_routes::set_file_routes(
-        serde_wasm_bindgen::from_value(map_object).map_err(js_error)?,
-    );
+    import_file_routes_internal(serde_wasm_bindgen::from_value(map_object).map_err(js_error)?);
     Ok(())
 }
 
@@ -517,39 +552,47 @@ fn code_extract_internal_impl(
     source_map: SourceMapMode,
     resolver: Option<&ModuleResolver>,
 ) -> Result<Output, String> {
-    cache_names::check()?;
-    let option = ExtractOption {
-        package: package.to_string(),
-        css_dir,
-        single_css,
-        import_main_css: import_main_css_in_code,
-        import_aliases,
-    };
-    let extracted = match (resolver, source_map) {
-        (Some(resolver), mode) => extract_with_modules(
-            filename,
-            code,
-            option,
-            matches!(mode, SourceMapMode::Generate),
-            resolver,
-        ),
-        (None, SourceMapMode::Generate) => extract(filename, code, option),
-        (None, SourceMapMode::Skip) => extract_without_source_map(filename, code, option),
-    };
-
-    match extracted {
-        Ok(output) => Output::new(
-            output.code,
-            output.styles,
-            output.map,
-            single_css,
-            filename.to_string(),
-            output.css_file,
-            import_main_css_in_css,
-            output.dependencies,
-        ),
-        Err(error) => Err(error.to_string()),
-    }
+    with_admission(|| {
+        cache_names::check()?;
+        let rollback = extraction_rollback::ExtractionRollback::capture();
+        let result = css::exact_attempt::with_exclusive_attempt(|| {
+            let option = ExtractOption {
+                package: package.to_string(),
+                css_dir,
+                single_css,
+                import_main_css: import_main_css_in_code,
+                import_aliases,
+            };
+            let extracted = match (resolver, source_map) {
+                (Some(resolver), mode) => extract_with_modules(
+                    filename,
+                    code,
+                    option,
+                    matches!(mode, SourceMapMode::Generate),
+                    resolver,
+                ),
+                (None, SourceMapMode::Generate) => extract(filename, code, option),
+                (None, SourceMapMode::Skip) => extract_without_source_map(filename, code, option),
+            };
+            match extracted {
+                Ok(output) => Output::new(
+                    output.code,
+                    output.styles,
+                    output.map,
+                    single_css,
+                    filename.to_string(),
+                    output.css_file,
+                    import_main_css_in_css,
+                    output.dependencies,
+                ),
+                Err(error) => Err(error.to_string()),
+            }
+        });
+        if result.is_ok() {
+            rollback.commit();
+        }
+        result
+    })
 }
 
 /// Set how the imports of the files being extracted are resolved.
@@ -559,7 +602,13 @@ fn code_extract_internal_impl(
 #[wasm_bindgen(js_name = "setModuleResolver")]
 #[cfg(not(tarpaulin_include))]
 pub fn set_module_resolver(resolver: Option<js_sys::Function>) {
-    MODULE_RESOLVER.with_borrow_mut(|current| *current = resolver);
+    set_module_resolver_internal(resolver);
+}
+
+fn set_module_resolver_internal(resolver: Option<js_sys::Function>) {
+    with_administration("set_module_resolver", || {
+        MODULE_RESOLVER.with_borrow_mut(|current| *current = resolver);
+    });
 }
 
 #[cfg(not(tarpaulin_include))]
@@ -596,25 +645,29 @@ fn code_extract_js(
     import_aliases: JsValue,
     source_map: SourceMapMode,
 ) -> Result<Output, JsValue> {
-    let import_aliases = import_aliases_from_js(import_aliases)?;
-    let resolver = MODULE_RESOLVER.with_borrow(Clone::clone).map(|resolver| {
-        move |specifier: &str, importer: &str| call_module_resolver(&resolver, specifier, importer)
-    });
-    code_extract_internal_impl(
-        filename,
-        code,
-        package,
-        css_dir,
-        single_css,
-        import_main_css_in_code,
-        import_main_css_in_css,
-        import_aliases,
-        source_map,
-        resolver
-            .as_ref()
-            .map(|resolver| resolver as &ModuleResolver),
-    )
-    .map_err(js_error)
+    with_admission(|| {
+        let import_aliases = import_aliases_from_js(import_aliases)?;
+        let resolver = MODULE_RESOLVER.with_borrow(Clone::clone).map(|resolver| {
+            move |specifier: &str, importer: &str| {
+                call_module_resolver(&resolver, specifier, importer)
+            }
+        });
+        code_extract_internal_impl(
+            filename,
+            code,
+            package,
+            css_dir,
+            single_css,
+            import_main_css_in_code,
+            import_main_css_in_css,
+            import_aliases,
+            source_map,
+            resolver
+                .as_ref()
+                .map(|resolver| resolver as &ModuleResolver),
+        )
+        .map_err(js_error)
+    })
 }
 
 #[cfg(not(tarpaulin_include))]
@@ -689,7 +742,9 @@ pub fn code_extract_without_source_map(
 
 /// Internal function to register theme (testable without `JsValue`)
 pub fn register_theme_internal(theme: sheet::theme::Theme) {
-    with_style_sheet_mut(|sheet| sheet.set_theme(theme));
+    with_administration("register_theme_internal", || {
+        with_style_sheet_mut(|sheet| sheet.set_theme(theme));
+    });
 }
 
 #[wasm_bindgen(js_name = "registerTheme")]
@@ -703,7 +758,9 @@ pub fn register_theme(theme_object: JsValue) -> Result<(), JsValue> {
 
 /// Internal function to register custom style-property shorthands.
 pub fn register_shorthands_internal(shorthands: BTreeMap<String, Vec<String>>) {
-    css::set_custom_shorthands(shorthands);
+    with_administration("register_shorthands_internal", || {
+        css::set_custom_shorthands(shorthands);
+    });
 }
 
 #[wasm_bindgen(js_name = "registerShorthands")]
@@ -728,19 +785,21 @@ pub fn get_css(file_num: Option<usize>, import_main_css: bool) -> Result<String,
 
 /// Internal CSS retrieval using the same sticky-error and file-selection contract as getCss.
 pub fn get_css_internal(file_num: Option<usize>, import_main_css: bool) -> Result<String, String> {
-    cache_names::check()?;
-    Ok(with_style_sheet(|sheet| {
-        if let Some(file_num) = file_num {
-            with_file_map(|map| {
-                sheet.create_css(
-                    map.get_by_right(&file_num).map(String::as_str),
-                    import_main_css,
-                )
-            })
-        } else {
-            sheet.create_css(None, import_main_css)
-        }
-    }))
+    with_admission(|| {
+        cache_names::check()?;
+        Ok(with_style_sheet(|sheet| {
+            if let Some(file_num) = file_num {
+                with_file_map(|map| {
+                    sheet.create_css(
+                        map.get_by_right(&file_num).map(String::as_str),
+                        import_main_css,
+                    )
+                })
+            } else {
+                sheet.create_css(None, import_main_css)
+            }
+        }))
+    })
 }
 
 #[wasm_bindgen(js_name = "getThemeInterface")]

@@ -10,11 +10,16 @@ static ROOT: LazyLock<Mutex<Option<NamingContext>>> = LazyLock::new(|| Mutex::ne
 
 /// Set the independent names-only root; resolver and delivery identities stay unchanged.
 pub fn set_root(root: Option<String>) {
+    let _admission = crate::admission::enter();
+    crate::admission::assert_administration_allowed("set_root");
     set_context(root, None);
 }
 
 /// A relative-ID basis is names-only too; raw resolver and sheet keys are never rewritten.
 pub fn set_context(root: Option<String>, relative_base: Option<String>) {
+    let _admission = crate::admission::enter();
+    crate::admission::assert_administration_allowed("set_context");
+    let _root = crate::root_held::RootHeld::enter("naming_root");
     *ROOT
         .lock()
         .unwrap_or_else(std::sync::PoisonError::into_inner) = root.map(|root| NamingContext {
@@ -51,10 +56,13 @@ fn parts(path: &str) -> (String, Vec<&str>) {
 /// Relativize only naming keys; outsiders keep `..`, incompatible roots keep absolute keys.
 #[must_use]
 pub fn key(filename: &str) -> String {
-    let root = ROOT
-        .lock()
-        .unwrap_or_else(std::sync::PoisonError::into_inner)
-        .clone();
+    let _admission = crate::admission::enter();
+    let root = {
+        let _root = crate::root_held::RootHeld::enter("naming_root");
+        ROOT.lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .clone()
+    };
     let Some(context) = root.as_ref() else {
         return filename.to_string();
     };

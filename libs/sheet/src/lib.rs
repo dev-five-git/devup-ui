@@ -1,4 +1,26 @@
 pub mod cache_snapshot;
+#[cfg(test)]
+pub mod counter_evidence;
+#[cfg(test)]
+mod counter_evidence_allocation_tests;
+#[cfg(test)]
+mod counter_evidence_identity_tests;
+#[cfg(test)]
+mod counter_evidence_storage_tests;
+#[cfg(test)]
+mod counter_evidence_tests;
+#[cfg(test)]
+mod counter_kernel;
+#[cfg(test)]
+pub mod emission_seed;
+#[cfg(test)]
+mod emission_seed_capture_tests;
+#[cfg(test)]
+mod emission_seed_keyframe_tests;
+#[cfg(test)]
+mod emission_seed_test_helpers;
+#[cfg(test)]
+mod emission_seed_tests;
 pub mod name_registry;
 #[cfg(test)]
 mod name_registry_tests;
@@ -496,44 +518,49 @@ impl StyleSheet {
     }
 
     pub fn set_theme(&mut self, theme: Theme) {
-        let length = theme.get_length_token_levels();
-        let shadow = theme.get_shadow_token_levels();
-        let first_length = length
-            .keys()
-            .filter_map(|token| {
-                theme
-                    .get_default_length_value(token)
-                    .map(|value| (token.clone(), value.to_string()))
-            })
-            .collect();
-        let first_shadow = shadow
-            .keys()
-            .filter_map(|token| {
-                theme
-                    .get_default_shadow_value(token)
-                    .map(|value| (token.clone(), value.to_string()))
-            })
-            .collect();
-        set_theme_token_levels(length, shadow);
-        set_theme_token_values(first_length, first_shadow);
-        set_typography_keys(theme.typography.keys().cloned().collect());
-        css::content_typography::set(
-            theme
-                .typography
+        css::admission::with_admission(|| {
+            css::admission::assert_administration_allowed("StyleSheet::set_theme");
+            let length = theme.get_length_token_levels();
+            let shadow = theme.get_shadow_token_levels();
+            let first_length = length
                 .keys()
-                .map(|preset| {
-                    (
-                        preset.clone(),
-                        theme
-                            .typography_declarations(preset, 0)
-                            .into_iter()
-                            .map(|(level, property, value)| (level, property.to_string(), value))
-                            .collect(),
-                    )
+                .filter_map(|token| {
+                    theme
+                        .get_default_length_value(token)
+                        .map(|value| (token.clone(), value.to_string()))
                 })
-                .collect(),
-        );
-        self.theme = theme;
+                .collect();
+            let first_shadow = shadow
+                .keys()
+                .filter_map(|token| {
+                    theme
+                        .get_default_shadow_value(token)
+                        .map(|value| (token.clone(), value.to_string()))
+                })
+                .collect();
+            set_theme_token_levels(length, shadow);
+            set_theme_token_values(first_length, first_shadow);
+            set_typography_keys(theme.typography.keys().cloned().collect());
+            css::content_typography::set(
+                theme
+                    .typography
+                    .keys()
+                    .map(|preset| {
+                        (
+                            preset.clone(),
+                            theme
+                                .typography_declarations(preset, 0)
+                                .into_iter()
+                                .map(|(level, property, value)| {
+                                    (level, property.to_string(), value)
+                                })
+                                .collect(),
+                        )
+                    })
+                    .collect(),
+            );
+            self.theme = theme;
+        });
     }
 
     pub fn update_styles(
@@ -3891,6 +3918,61 @@ mod tests {
         let css = sheet.create_css(None, false);
         assert!(!css.contains("transition:none"), "{css}");
         assert!(!css.contains("color:red"), "{css}");
+    }
+
+    #[test]
+    #[serial]
+    fn test_tailwind_classes_css() {
+        reset_class_map();
+        reset_file_map();
+        let mut sheet = StyleSheet::default();
+        for (file, code) in [
+            (
+                "a.tsx",
+                "import {Box} from '@devup-ui/core'\n<Box className=\"translate-x-4 hover:focus:mt-4 card\" />",
+            ),
+            (
+                "b.tsx",
+                "import {Box} from '@devup-ui/core'\n<Box className=\"translate-y-2 before:inline-block text-sm\" />",
+            ),
+        ] {
+            let output = extract(
+                file,
+                code,
+                ExtractOption {
+                    package: "@devup-ui/core".to_string(),
+                    css_dir: "@devup-ui/core".to_string(),
+                    single_css: true,
+                    import_main_css: false,
+                    import_aliases: std::collections::HashMap::new(),
+                },
+            )
+            .unwrap();
+            sheet.update_styles(&output.styles, file, true).unwrap();
+        }
+        let css = sheet.create_css(None, false);
+        // The registrations are written once however many files use them
+        assert_eq!(
+            css.matches("@property --tw-translate-x{").count(),
+            1,
+            "{css}"
+        );
+        assert!(
+            css.contains("@property --tw-content{syntax:\"*\";inherits:false;initial-value:\"\"}"),
+            "{css}"
+        );
+        for rule in [
+            ".OHa6rxgmn20xxa3xjy{--tw-translate-x:1rem}",
+            ".OHbthgbe54ph87kjzs{--tw-translate-y:.5rem}",
+            ".OHca1k0lv7u879ersf{translate:var(--tw-translate-x) var(--tw-translate-y)}",
+            ".OHcajqalo_p20xmjh8{font-size:.875rem}",
+            ".OHbkdbnvb9xhfqwzek{line-height:var(--tw-leading,calc(1.25 / .875))}",
+            ".OHb8o11h_bnuqguo2o::before{content:var(--tw-content)}",
+            ".OHbohq0bo7m9z_n4o6::before{display:inline-block}",
+            "@media(hover:hover){.OHa5ynunt1t3zk0t5h:hover:focus{margin-top:1rem}}",
+        ] {
+            assert!(css.contains(rule), "{rule} in {css}");
+        }
     }
 
     #[test]
