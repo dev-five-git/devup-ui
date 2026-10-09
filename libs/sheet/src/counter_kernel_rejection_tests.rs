@@ -3,6 +3,56 @@ use crate::StyleSheet;
 
 #[test]
 #[serial_test::serial]
+fn current_dynamic_is_rejected_when_ordinary_no_site_ir_reaches_retained_sheet() {
+    // Given
+    let _state = state();
+    css::class_map::set_class_map(HashMap::from([("empty".into(), HashMap::new())]));
+    let base = fixture("a", || {
+        styles([ExtractStyleValue::Static(ExtractStaticStyle::new(
+            "color", "red", 0, None,
+        ))])
+    });
+    let (mut sheet, mut evidence) = (StyleSheet::default(), KernelEvidence::default());
+    update(&mut sheet, &mut evidence, &base).required("retained base");
+    sheet.cache_restore = crate::cache_snapshot::CacheRestore::Rejected;
+    sheet.source_ids.insert("unrelated".into(), 17);
+    let current = ExtractDynamicStyle::new("padding", 1, "spacing", None);
+    assert_eq!(
+        current.producer_policy(),
+        extractor::extract_style::ProducerPolicy::Current
+    );
+    assert_eq!(current.site(), None);
+    let items = styles([ExtractStyleValue::Dynamic(current)]);
+    let before = capture(&sheet, &evidence);
+    let mut called = false;
+    // When
+    let result = CounterSheet::new(&mut sheet, &mut evidence).with_attempt(|attempt| {
+        attempt
+            .prepare(
+                &items,
+                UpdateRequest {
+                    raw_source: "current.tsx",
+                    single_css: false,
+                },
+            )?
+            .finish(|_, _| {
+                called = true;
+                Ok::<_, ()>(())
+            })
+    });
+    // Then
+    assert_eq!(
+        result,
+        Err(UpdateError::Kernel(KernelError::Producer(
+            extractor::extract_style::CounterProducerError::WrongPolicy
+        )))
+    );
+    assert!(!called);
+    assert_eq!(capture(&sheet, &evidence), before);
+}
+
+#[test]
+#[serial_test::serial]
 fn current_child_is_rejected_when_genuine_keyframe_parent_contains_current_member() {
     // Given
     let _state = state();
