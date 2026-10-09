@@ -10,6 +10,8 @@ mod counter_evidence_storage_tests;
 #[cfg(test)]
 mod counter_evidence_tests;
 #[cfg(test)]
+mod counter_kernel;
+#[cfg(test)]
 pub mod emission_seed;
 #[cfg(test)]
 mod emission_seed_capture_tests;
