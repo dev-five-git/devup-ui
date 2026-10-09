@@ -140,6 +140,9 @@ mod lookup_tests;
 #[path = "counter_kernel_mutation_tests.rs"]
 mod mutation_tests;
 #[cfg(test)]
+#[path = "counter_kernel_owned_coverage_tests.rs"]
+mod owned_coverage_tests;
+#[cfg(test)]
 #[path = "counter_kernel_owned_tests.rs"]
 mod owned_tests;
 #[cfg(test)]

@@ -64,8 +64,13 @@ pub(crate) fn cleanup(sheet: &mut StyleSheet, source: &str, single_css: bool) ->
 
 fn checked_base(sheet: &mut StyleSheet) -> Option<LinkedBatch> {
     sheet.counter_state.as_ref()?;
-    match state_live::validate(sheet) {
-        Ok(base) => Some(base),
+    let result = state_live::validate(sheet);
+    checked(sheet, result)
+}
+
+fn checked<T>(sheet: &mut StyleSheet, result: Result<T, super::KernelError>) -> Option<T> {
+    match result {
+        Ok(value) => Some(value),
         Err(error) => {
             if let Some(state) = &mut sheet.counter_state {
                 state.rejection.get_or_insert(Rejection(error));
@@ -76,20 +81,13 @@ fn checked_base(sheet: &mut StyleSheet) -> Option<LinkedBatch> {
 }
 
 fn publish(sheet: &mut StyleSheet, projected: Result<phase::StagedState, super::KernelError>) {
-    let Some(state) = &mut sheet.counter_state else {
-        return;
-    };
-    match projected {
-        Ok(projected) => {
-            let mut authority = state.projection(&state_live::maps().classes);
-            authority.authored = projected.evidence.authored;
-            authority.cleanups = projected.cleanups;
-            authority.phase = projected.phase;
-            authority.retain_references(&projected.candidates);
-            *state = CounterState::from_captured(projected.candidates, authority);
-        }
-        Err(error) => {
-            state.rejection.get_or_insert(Rejection(error));
-        }
+    let projected = checked(sheet, projected);
+    if let (Some(state), Some(projected)) = (&mut sheet.counter_state, projected) {
+        let mut authority = state.projection(&state_live::maps().classes);
+        authority.authored = projected.evidence.authored;
+        authority.cleanups = projected.cleanups;
+        authority.phase = projected.phase;
+        authority.retain_references(&projected.candidates);
+        *state = CounterState::from_captured(projected.candidates, authority);
     }
 }
