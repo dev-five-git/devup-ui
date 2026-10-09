@@ -1123,7 +1123,23 @@ export function createModuleResolver({
   )
 }
 
-function createModulePathResolver(
+export type ModulePathResolverOptions = Pick<
+  CreateModuleResolverOptions,
+  | 'cwd'
+  | 'tsconfigPath'
+  | 'conditions'
+  | 'alias'
+  | 'includeMdx'
+  | 'onResolutionInputs'
+>
+export type ModulePathResolution =
+  AliasResolution | IgnoredModule | false | undefined
+export type ModulePathResolver = (
+  specifier: string,
+  importer: string,
+) => ModulePathResolution
+
+export function createModulePathResolver(
   {
     cwd = process.cwd(),
     tsconfigPath = join(cwd, 'tsconfig.json'),
@@ -1131,14 +1147,11 @@ function createModulePathResolver(
     alias = {},
     includeMdx,
     onResolutionInputs,
-  }: CreateModuleResolverOptions = {},
+  }: ModulePathResolverOptions = {},
   excludedDirectory: (
     directory: string,
   ) => boolean = createDirectoryExclusion(),
-): (
-  specifier: string,
-  importer: string,
-) => AliasResolution | IgnoredModule | false | undefined {
+): ModulePathResolver {
   const setupInputs = createResolutionInputs()
   const config = (() => {
     try {

@@ -32,10 +32,14 @@ export {
   type ComputeFileRoutesOptions,
   computeReachableFiles,
   type ComputeReachableFilesOptions,
+  createModulePathResolver,
   createModuleResolver,
   type CreateModuleResolverOptions,
   type IgnoredModule,
   listSourceFiles,
+  type ModulePathResolution,
+  type ModulePathResolver,
+  type ModulePathResolverOptions,
   type ModuleResolution,
   planAtomHoist,
   type PreparedGraphOptions,
@@ -75,6 +79,12 @@ export {
 } from './numbering'
 export type { ModuleResolver } from './prepared-resolver'
 export type { SourceType } from './prepared-source'
+export {
+  collectProductionFileManifest,
+  type ProductionFileManifestOptions,
+  type ProductionManifestContext,
+  type ProductionManifestFile,
+} from './production-file-manifest'
 export {
   type ResolutionInputObserver,
   type ResolutionInputs,
