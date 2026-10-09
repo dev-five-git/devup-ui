@@ -127,3 +127,23 @@ fn baseline_rejects_when_address_copies_a_different_mode_even_if_name_is_unchang
     // Then
     assert_eq!(result.err(), Some(ReplayError::Allocation));
 }
+
+#[rstest]
+#[case(false)]
+#[case(true)]
+fn placement_rejects_when_registered_seed_disagrees_with_frozen_delivery(#[case] hoisted: bool) {
+    // Given
+    let (mut candidate, mut authority) = static_fixture(NameMode::Counter);
+    let evidence = evidence(std::slice::from_ref(&candidate), &authority);
+    let placement = &mut candidate.proof.emission.seed.placement;
+    if hoisted {
+        placement.hoisted = true;
+    } else {
+        placement.bucket = "other".into();
+    }
+    authority.placements = vec![placement.clone()];
+    // When
+    let result = LinkedBatch::link_captured_batch(&[candidate], &evidence, &authority);
+    // Then
+    assert_eq!(result.err(), Some(ReplayError::Allocation));
+}

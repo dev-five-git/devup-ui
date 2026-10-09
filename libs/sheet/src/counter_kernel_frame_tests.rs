@@ -173,3 +173,34 @@ fn scratch_rejects_coordinated_sheet_damage_when_frozen_keyframe_seed_is_unchang
     assert_eq!(result.err(), Some(ReplayError::Expansion));
     assert_eq!(input.keyframes, before);
 }
+
+#[rstest]
+#[case(NameMode::Counter)]
+#[case(NameMode::Debug)]
+fn frames_link_when_legacy_hash_retains_first_value_resolution_and_raw_values(
+    #[case] mode: NameMode,
+) {
+    // Given
+    let mut opacity = declaration("opacity", "0");
+    opacity.resolution = Resolution::FirstValue;
+    opacity.first_value = Some("0.5".into());
+    let mut typography = declaration("typography", "heading");
+    typography.preset = Some(preset());
+    let steps = BTreeMap::from([
+        ("from".into(), vec![opacity.clone(), opacity, typography]),
+        ("to".into(), vec![]),
+    ]);
+    let input = LegacyInput::Keyframes(old_input(&steps));
+    let (candidate, authority) = fixture(seed(EmissionInput::Keyframes { steps }), input, mode);
+    // When
+    let batch = linked(&[candidate], &authority);
+    // Then
+    let Expansion::Keyframes { steps, .. } = &batch.candidates[0].proof.emission.expansion else {
+        panic!("frames")
+    };
+    assert_eq!(steps[0].1.len(), 3);
+    assert_eq!(steps[0].1[0], ("opacity".into(), "0.5".into()));
+    assert_eq!(steps[0].1[0], steps[0].1[1]);
+    assert_eq!(steps[1].1, vec![]);
+    assert_ne!(steps[0].1[2].1, "heading");
+}

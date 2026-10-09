@@ -43,6 +43,8 @@ mod phase_boundary_tests;
 mod phase_fixtures;
 #[path = "counter_kernel_placement_tests.rs"]
 mod placement_tests;
+#[path = "counter_kernel_record_tests.rs"]
+mod record_tests;
 #[path = "counter_kernel_records.rs"]
 mod records;
 #[path = "counter_kernel_replacement_tests.rs"]

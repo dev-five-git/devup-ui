@@ -140,3 +140,44 @@ fn no_site_reuse_links_when_variable_slot_precedes_class_slot() {
         "--pc"
     );
 }
+
+#[test]
+fn dynamic_rejects_when_child_lineage_is_attached() {
+    // Given
+    let (mut candidate, authority) = dynamic(NameMode::Counter, true);
+    candidate.lineage.children.push(9);
+    let evidence = evidence(std::slice::from_ref(&candidate), &authority);
+    // When
+    let result = LinkedBatch::link_captured_batch(&[candidate], &evidence, &authority);
+    // Then
+    assert_eq!(result.err(), Some(ReplayError::Allocation));
+}
+
+#[test]
+fn no_site_rejects_when_valid_variable_envelope_names_a_different_variable() {
+    // Given
+    let (mut candidate, mut authority) = dynamic(NameMode::Counter, false);
+    let variable = candidate
+        .lineage
+        .variable
+        .as_mut()
+        .unwrap_or_else(|| panic!("variable"));
+    let input = variable.evidence.input.clone();
+    let context = variable.evidence.context.clone();
+    variable.evidence = envelope(input.clone(), context.clone(), 3);
+    retain_map(&mut authority, &variable.evidence);
+    assert_eq!(
+        authority.envelope(&variable.evidence, &input, &context),
+        Ok(())
+    );
+    assert_eq!(variable.evidence.allocation.name, "--pd");
+    let EmissionInput::Dynamic { variable, .. } = &candidate.proof.emission.seed.body else {
+        panic!("dynamic")
+    };
+    assert_eq!(variable, "--pc");
+    let evidence = evidence(std::slice::from_ref(&candidate), &authority);
+    // When
+    let result = LinkedBatch::link_captured_batch(&[candidate], &evidence, &authority);
+    // Then
+    assert_eq!(result.err(), Some(ReplayError::Allocation));
+}

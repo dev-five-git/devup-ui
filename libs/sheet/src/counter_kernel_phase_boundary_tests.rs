@@ -1,5 +1,5 @@
 use super::{
-    BatchPhase,
+    BatchPhase, LinkedBatch,
     cleanup_tests::{cleanup, global_dynamic},
     fixtures::*,
     phase_fixtures::*,
@@ -7,7 +7,7 @@ use super::{
 };
 use crate::{
     StyleSheet,
-    counter_evidence::{Materialization, ReplayError},
+    counter_evidence::{Materialization, RecordFootprint, ReplayError},
 };
 use css::allocation_input::NameMode;
 use serial_test::serial;
@@ -98,4 +98,31 @@ fn retained_batch_rejects_as_incoming_even_when_all_its_proofs_are_complete() {
     let result = scratch::ScratchRequest::new(&retained, None);
     // Then
     assert_eq!(result.err(), Some(ReplayError::Cleanup));
+}
+
+#[test]
+fn retained_owners_reject_when_registration_is_missing() {
+    // Given
+    let (_, mut authority) = static_fixture(NameMode::Counter);
+    authority.phase = BatchPhase::Retained(["missing.tsx".into()].into());
+    let evidence = evidence(&[], &authority);
+    // When
+    let result = LinkedBatch::link_captured_batch(&[], &evidence, &authority);
+    // Then
+    assert_eq!(result.err(), Some(ReplayError::Expansion));
+}
+
+#[test]
+fn retained_owners_reject_when_explicit_owner_is_excluded() {
+    // Given
+    let (_, mut authority) = static_fixture(NameMode::Counter);
+    authority.authored = vec![RecordFootprint::GlobalCssOwner {
+        source: "raw.tsx".into(),
+    }];
+    authority.phase = BatchPhase::Retained(Default::default());
+    let evidence = evidence(&[], &authority);
+    // When
+    let result = LinkedBatch::link_captured_batch(&[], &evidence, &authority);
+    // Then
+    assert_eq!(result.err(), Some(ReplayError::Expansion));
 }

@@ -37,6 +37,7 @@ pub(super) fn replacement() -> (Candidate, FrozenAuthority) {
 }
 
 pub(super) fn combine(base: &FrozenAuthority, incoming: &FrozenAuthority) -> FrozenAuthority {
+    assert_eq!(base.placements, incoming.placements);
     let mut authority = base.clone();
     for (namespace, keys) in &incoming.classes {
         authority
@@ -48,11 +49,6 @@ pub(super) fn combine(base: &FrozenAuthority, incoming: &FrozenAuthority) -> Fro
     authority.originals.extend(incoming.originals.clone());
     authority.files.extend(incoming.files.clone());
     authority.deliveries.extend(incoming.deliveries.clone());
-    for placement in &incoming.placements {
-        if !authority.placements.contains(placement) {
-            authority.placements.push(placement.clone());
-        }
-    }
     authority
 }
 
