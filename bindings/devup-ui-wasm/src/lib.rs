@@ -591,7 +591,7 @@ pub fn code_extract_without_source_map(
         import_main_css_in_code,
         import_main_css_in_css,
         import_aliases,
-        SourceMapMode::Generate,
+        SourceMapMode::Skip,
     )
 }
 
