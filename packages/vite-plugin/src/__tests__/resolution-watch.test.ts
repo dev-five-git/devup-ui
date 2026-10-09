@@ -29,6 +29,9 @@ it('refreshes the selected CSS class when linked workspace exports alone change'
   const manifest = join(palette, 'package.json')
   let server: ViteDevServer | undefined
   let ready: Promise<unknown> | undefined
+  const readiness = new AbortController()
+  let readyTimeout: ReturnType<typeof setTimeout> | undefined
+  let updateTimeout: ReturnType<typeof setTimeout> | undefined
   const observed = new Set<string>()
   let changed: (() => void) | undefined
   const update = new Promise<void>((done) => {
@@ -57,9 +60,14 @@ it('refreshes the selected CSS class when linked workspace exports alone change'
         {
           name: 'resolution-watch-observation',
           configureServer(current: ViteDevServer) {
+            readyTimeout = setTimeout(() => readiness.abort(), 10000)
             ready = once(current.watcher, 'ready', {
-              signal: AbortSignal.timeout(10000),
+              signal: readiness.signal,
             })
+            void ready.then(
+              () => clearTimeout(readyTimeout),
+              () => clearTimeout(readyTimeout),
+            )
           },
           hotUpdate({ file }: { readonly file: string }) {
             observed.add(file)
@@ -79,16 +87,20 @@ it('refreshes the selected CSS class when linked workspace exports alone change'
     const replacement = join(fixture, 'manifest-replacement.json')
     await writeFile(replacement, '{"name":"palette","exports":"./blue.js"}')
     await rename(replacement, manifest)
-    await Promise.race([
-      update,
-      new Promise<never>((_, reject) => {
-        const timeout = setTimeout(
-          () => reject(new Error('No manifest hotUpdate')),
-          10000,
-        )
-        timeout.unref()
-      }),
-    ])
+    try {
+      await Promise.race([
+        update,
+        new Promise<never>((_, reject) => {
+          updateTimeout = setTimeout(
+            () => reject(new Error('No manifest hotUpdate')),
+            10000,
+          )
+          updateTimeout.unref()
+        }),
+      ])
+    } finally {
+      clearTimeout(updateTimeout)
+    }
     const after = await server.transformRequest('/src/main.js')
     // Then the new class selects blue; retained earlier atoms do not define its effective style.
     expect(observed).toContain(manifest.replaceAll('\\', '/'))
@@ -111,6 +123,10 @@ it('refreshes the selected CSS class when linked workspace exports alone change'
     expect(cold.stdout.toString()).toMatch(/background:\s*blue/)
     expect(cold.stdout.toString()).not.toMatch(/background:\s*red/)
   } finally {
+    clearTimeout(readyTimeout)
+    clearTimeout(updateTimeout)
+    readiness.abort()
+    await Promise.allSettled([ready])
     await server?.close()
     await rm(fixture, { recursive: true, force: true })
   }
@@ -127,6 +143,9 @@ it('refreshes an importer when a missing earlier paths candidate outside the roo
   const candidate = join(outside, 'color.ts')
   let server: ViteDevServer | undefined
   let ready: Promise<unknown> | undefined
+  const readiness = new AbortController()
+  let readyTimeout: ReturnType<typeof setTimeout> | undefined
+  let updateTimeout: ReturnType<typeof setTimeout> | undefined
   let signal: (() => void) | undefined
   const added = new Promise<void>((done) => {
     signal = done
@@ -154,9 +173,14 @@ it('refreshes an importer when a missing earlier paths candidate outside the roo
         {
           name: 'missing-input-observation',
           configureServer(current) {
+            readyTimeout = setTimeout(() => readiness.abort(), 10000)
             ready = once(current.watcher, 'ready', {
-              signal: AbortSignal.timeout(10000),
+              signal: readiness.signal,
             })
+            void ready.then(
+              () => clearTimeout(readyTimeout),
+              () => clearTimeout(readyTimeout),
+            )
             current.watcher.on('add', (file) => {
               if (
                 file.replaceAll('\\', '/') === candidate.replaceAll('\\', '/')
@@ -177,16 +201,20 @@ it('refreshes an importer when a missing earlier paths candidate outside the roo
     const replacement = join(fixture, 'candidate-replacement.ts')
     await writeFile(replacement, "export const color='blue'")
     await rename(replacement, candidate)
-    await Promise.race([
-      added,
-      new Promise<never>((_, reject) => {
-        const timeout = setTimeout(
-          () => reject(new Error('Missing outside-root add event')),
-          10000,
-        )
-        timeout.unref()
-      }),
-    ])
+    try {
+      await Promise.race([
+        added,
+        new Promise<never>((_, reject) => {
+          updateTimeout = setTimeout(
+            () => reject(new Error('Missing outside-root add event')),
+            10000,
+          )
+          updateTimeout.unref()
+        }),
+      ])
+    } finally {
+      clearTimeout(updateTimeout)
+    }
     const after = await server.transformRequest('/src/main.js')
     // Then the cached importer is invalidated by public watch transport and selects blue.
     expect(after?.code).not.toBe(before?.code)
@@ -195,6 +223,10 @@ it('refreshes an importer when a missing earlier paths candidate outside the roo
       await readFile(join(root, 'df/devup-ui/devup-ui-0.css'), 'utf-8'),
     ).toContain(`.${selected}{background:blue}`)
   } finally {
+    clearTimeout(readyTimeout)
+    clearTimeout(updateTimeout)
+    readiness.abort()
+    await Promise.allSettled([ready])
     await server?.close()
     await rm(fixture, { recursive: true, force: true })
   }
