@@ -253,7 +253,7 @@ export const DevupUI = ({
               atomMode,
               !atomMode,
               importAliases,
-            )
+            ).free()
           } catch (cause) {
             throw new Error(
               `[devup-ui] prewarm failed at ${file} (root ${root}): ${cause instanceof Error ? cause.message : String(cause)}`,
@@ -611,13 +611,7 @@ export const DevupUI = ({
         const extractName = atomMode
           ? resourcePath.replaceAll('\\', '/')
           : resourcePath
-        const {
-          code: retCode,
-          map,
-          cssFile,
-          updatedBaseStyle,
-          dependencies = [],
-        } = (() => {
+        const output = (() => {
           try {
             return codeExtract(
               extractName,
@@ -636,6 +630,25 @@ export const DevupUI = ({
             if (isMdxSource(resourcePath, mdxExtensions))
               throw remapMdxError(error, resourcePath)
             throw error
+          }
+        })()
+        const {
+          code: retCode,
+          map,
+          cssFile,
+          updatedBaseStyle,
+          dependencies = [],
+        } = (() => {
+          try {
+            return {
+              code: output.code,
+              map: output.map,
+              cssFile: output.cssFile,
+              updatedBaseStyle: output.updatedBaseStyle,
+              dependencies: output.dependencies,
+            }
+          } finally {
+            output.free()
           }
         })()
         for (const dependency of dependencies) addDependency(dependency)

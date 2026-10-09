@@ -27,16 +27,18 @@ function seedSheet(compiler: Compiler): string {
   const scope = compilerScope(compiler)
   if (!scope) throw new Error('native compiler has no owner scope')
   return scope.run(() => {
-    wasm.codeExtract(
-      'previous.tsx',
-      "import {Box} from '@devup-ui/react';export const x=<Box bg='red'/>",
-      '@devup-ui/react',
-      'df',
-      true,
-      false,
-      false,
-      {},
-    )
+    wasm
+      .codeExtract(
+        'previous.tsx',
+        "import {Box} from '@devup-ui/react';export const x=<Box bg='red'/>",
+        '@devup-ui/react',
+        'df',
+        true,
+        false,
+        false,
+        {},
+      )
+      .free()
     return wasm.getCss(null, false)
   })
 }

@@ -1,3 +1,4 @@
+import * as fs from 'node:fs'
 import {
   mkdirSync,
   mkdtempSync,
@@ -8,7 +9,7 @@ import {
 import { tmpdir } from 'node:os'
 import { dirname, join } from 'node:path'
 
-import { afterEach, beforeEach, expect, it } from 'bun:test'
+import { afterEach, beforeEach, expect, it, spyOn } from 'bun:test'
 
 import {
   buildStaticImportGraph,
@@ -169,4 +170,24 @@ it('does not widen local graph roots merely because an empty alias table exists'
     alias: {},
   })
   expect(graph.files).toEqual([entry])
+})
+
+it('returns only a physical path when explicit Markdown has no preparation', async () => {
+  // Given raw Markdown that the evaluator cannot return without compilation.
+  const entry = file('src/main.ts')
+  const page = file('outside/page.mdx', '# Raw Markdown')
+  // When the path-only seam resolves the exact physical filename.
+  const { createModulePathResolver } = await import('../import-graph')
+  const read = spyOn(fs, 'readFileSync')
+  try {
+    const result = createModulePathResolver({ cwd: root })(
+      '../outside/page.mdx',
+      entry,
+    )
+    // Then discovery has no compiled source dependency and preserves resolver spelling.
+    expect(result).toEqual({ path: page, request: '../outside/page.mdx' })
+    expect(read.mock.calls.map(([path]) => path)).not.toContain(page)
+  } finally {
+    read.mockRestore()
+  }
 })

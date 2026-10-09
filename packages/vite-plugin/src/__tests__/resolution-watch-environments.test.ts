@@ -29,6 +29,9 @@ it('retains client missing-input watches when SSR transforms the same importer l
   const candidate = join(palette, 'browser/entry.ts')
   let server: ViteDevServer | undefined
   let ready: Promise<unknown> | undefined
+  const readiness = new AbortController()
+  let readyTimeout: ReturnType<typeof setTimeout> | undefined
+  let updateTimeout: ReturnType<typeof setTimeout> | undefined
   let signal: (() => void) | undefined
   const added = new Promise<void>((done) => {
     signal = done
@@ -66,9 +69,14 @@ it('retains client missing-input watches when SSR transforms the same importer l
         {
           name: 'environment-watch-observation',
           configureServer(current) {
+            readyTimeout = setTimeout(() => readiness.abort(), 10000)
             ready = once(current.watcher, 'ready', {
-              signal: AbortSignal.timeout(10000),
+              signal: readiness.signal,
             })
+            void ready.then(
+              () => clearTimeout(readyTimeout),
+              () => clearTimeout(readyTimeout),
+            )
             current.watcher.on('add', (file) => {
               if (
                 file.replaceAll('\\', '/') === candidate.replaceAll('\\', '/')
@@ -90,16 +98,20 @@ it('retains client missing-input watches when SSR transforms the same importer l
     const replacement = join(fixture, 'candidate-replacement.ts')
     await writeFile(replacement, "export const color='blue'")
     await rename(replacement, candidate)
-    await Promise.race([
-      added,
-      new Promise<never>((_, reject) => {
-        const timeout = setTimeout(
-          () => reject(new Error('No client candidate add event')),
-          10000,
-        )
-        timeout.unref()
-      }),
-    ])
+    try {
+      await Promise.race([
+        added,
+        new Promise<never>((_, reject) => {
+          updateTimeout = setTimeout(
+            () => reject(new Error('No client candidate add event')),
+            10000,
+          )
+          updateTimeout.unref()
+        }),
+      ])
+    } finally {
+      clearTimeout(updateTimeout)
+    }
     const after = await server.transformRequest('/src/main.js')
     // Then client cache invalidation survived the later SSR extraction.
     expect(after?.code).not.toBe(before?.code)
@@ -108,6 +120,10 @@ it('retains client missing-input watches when SSR transforms the same importer l
       await readFile(join(root, 'df/devup-ui/devup-ui-0.css'), 'utf-8'),
     ).toContain(`.${selected}{background:blue}`)
   } finally {
+    clearTimeout(readyTimeout)
+    clearTimeout(updateTimeout)
+    readiness.abort()
+    await Promise.allSettled([ready])
     await server?.close()
     await rm(fixture, { recursive: true, force: true })
   }

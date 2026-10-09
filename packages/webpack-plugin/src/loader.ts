@@ -122,14 +122,7 @@ const devupUILoader: RawLoaderDefinitionFunction<DevupUILoaderOptions> =
               this.addMissingDependency(resolutionWatchPath(path, !symlinks))
           },
         })
-        const {
-          code,
-          css = '',
-          map,
-          cssFile,
-          updatedBaseStyle,
-          dependencies = [],
-        } = codeExtract(
+        const output = codeExtract(
           relativePath,
           source.toString(),
           libPackage,
@@ -142,6 +135,27 @@ const devupUILoader: RawLoaderDefinitionFunction<DevupUILoaderOptions> =
             ? (['compiled-mdx'] as const)
             : ([] as const)),
         )
+        const {
+          code,
+          css = '',
+          map,
+          cssFile,
+          updatedBaseStyle,
+          dependencies = [],
+        } = (() => {
+          try {
+            return {
+              code: output.code,
+              css: output.css,
+              map: output.map,
+              cssFile: output.cssFile,
+              updatedBaseStyle: output.updatedBaseStyle,
+              dependencies: output.dependencies,
+            }
+          } finally {
+            output.free()
+          }
+        })()
         for (const dependency of dependencies) {
           this.addDependency(resolve(rootDir, dependency))
         }

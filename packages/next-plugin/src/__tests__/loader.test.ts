@@ -17,7 +17,11 @@ import {
 } from 'bun:test'
 
 import { formatPortFile } from '../coordinator-port'
-import { resetInit, setWasmForTesting } from '../loader'
+import {
+  type DevupUILoaderOptions,
+  resetInit,
+  setWasmForTesting,
+} from '../loader'
 import { invoke } from './loader-fixture'
 
 describe('local source extraction', () => {
@@ -62,6 +66,101 @@ describe('local source extraction', () => {
     for (const spy of spies) spy.mockRestore()
     setWasmForTesting(undefined)
   })
+  it.each([
+    undefined,
+    'code',
+    'css',
+    'cssFile',
+    'map',
+    'updatedBaseStyle',
+    'dependencies',
+    'acquire',
+    'consumer',
+  ])(
+    'releases legacy Next Output before consumers when fault %s occurs',
+    async (fault) => {
+      // Given an owned output whose getters and dependency consumer observe its lifetime.
+      const events: string[] = []
+      const error = new Error('ownership fault')
+      let live = true
+      const free = mock(() => {
+        expect(live).toBe(true)
+        live = false
+        events.push('free')
+      })
+      const dependencies = ['dependency.ts']
+      const iterator = dependencies[Symbol.iterator]
+      Object.defineProperty(dependencies, Symbol.iterator, {
+        value() {
+          expect(free).toHaveBeenCalledTimes(1)
+          expect(live).toBe(false)
+          if (fault === 'consumer') throw error
+          return iterator.call(dependencies)
+        },
+      })
+      const output = {
+        code: 'copied',
+        css: undefined,
+        cssFile: undefined,
+        map: undefined,
+        updatedBaseStyle: false,
+        dependencies,
+        free,
+        [Symbol.dispose]: free,
+      }
+      const fields = [
+        'code',
+        'css',
+        'cssFile',
+        'map',
+        'updatedBaseStyle',
+        'dependencies',
+      ] as const
+      for (const field of fields) {
+        const value = output[field]
+        Object.defineProperty(output, field, {
+          get() {
+            expect(live).toBe(true)
+            events.push(field)
+            if (fault === field) throw error
+            return value
+          },
+        })
+      }
+      extract.mockImplementation(() => {
+        if (fault === 'acquire') throw error
+        return output
+      })
+
+      // When the existing local loader captures and consumes the extraction.
+      const run = invoke({}, resolve('output.tsx'))
+
+      // Then faults preserve identity and every acquired output is freed exactly once.
+      if (fault) {
+        await expect(run.result).rejects.toBe(error)
+        expect(run.callback).toHaveBeenCalledWith(error)
+      } else {
+        expect(await run.result).toEqual({ code: 'copied', map: null })
+        expect(run.callback).toHaveBeenCalledWith(null, 'copied', null)
+        expect(run.addDependency).toHaveBeenCalledWith(resolve('dependency.ts'))
+      }
+      expect(run.callback).toHaveBeenCalledTimes(1)
+      const faultIndex = fields.findIndex((field) => field === fault)
+      expect(events).toEqual(
+        fault === 'acquire'
+          ? []
+          : [
+              ...fields.slice(
+                0,
+                faultIndex < 0 ? fields.length : faultIndex + 1,
+              ),
+              'free',
+            ],
+      )
+      expect(free).toHaveBeenCalledTimes(fault === 'acquire' ? 0 : 1)
+      expect(output[Symbol.dispose]).toBe(free)
+    },
+  )
   it('extracts with project-relative ids and dependency paths in build mode', async () => {
     const projectRoot = resolve('project')
     const run = invoke({ projectRoot }, join(projectRoot, 'App.tsx'))

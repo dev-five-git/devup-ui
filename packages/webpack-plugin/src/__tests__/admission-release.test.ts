@@ -31,16 +31,18 @@ it('retains the real sheet handoff when related owners follow an exception', () 
   const cause = new TypeError('post extraction failure')
   expect(() =>
     first.run(() => {
-      wasm.codeExtract(
-        'handoff.tsx',
-        "import {Box} from '@devup-ui/react';export const x=<Box bg='red'/>",
-        '@devup-ui/react',
-        'df',
-        true,
-        false,
-        false,
-        {},
-      )
+      wasm
+        .codeExtract(
+          'handoff.tsx',
+          "import {Box} from '@devup-ui/react';export const x=<Box bg='red'/>",
+          '@devup-ui/react',
+          'df',
+          true,
+          false,
+          false,
+          {},
+        )
+        .free()
       throw cause
     }),
   ).toThrow(cause)
