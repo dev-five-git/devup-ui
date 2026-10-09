@@ -2,6 +2,7 @@ use std::{borrow::Cow, cell::RefCell, collections::BTreeMap};
 
 use css::{Site, sparse_site::SourceFile};
 
+use crate::extract_style::ProducerPolicy;
 use crate::import_alias_visit::{Edit, source_offset as edited_offset};
 
 /// Normalize received source before Devup makes any alias or evaluation edits.
@@ -16,6 +17,7 @@ pub(crate) fn normalize_source(source: &str) -> Cow<'_, str> {
 
 struct SiteContext {
     file: SourceFile,
+    policy: ProducerPolicy,
     source: String,
     edits: Vec<Vec<Edit>>,
     removed: Vec<usize>,
@@ -38,20 +40,55 @@ pub(crate) fn counter_owner() -> css::CounterOwner {
     })
 }
 
+pub(crate) fn producer_policy() -> ProducerPolicy {
+    SITES.with_borrow(|context| {
+        context
+            .as_ref()
+            .map_or(ProducerPolicy::Current, |context| context.policy)
+    })
+}
+
 /// Own edit layers map positions back to received source; upstream maps never participate.
 pub(crate) struct SiteScope(Option<SiteContext>);
 
 impl SiteScope {
     pub(crate) fn enter(filename: &str, source: &str, edits: &[&[Edit]]) -> Self {
-        Self::initialize(SourceFile::from_source(filename, source), source, edits)
+        Self::initialize(
+            (
+                SourceFile::from_source(filename, source),
+                ProducerPolicy::Current,
+            ),
+            source,
+            edits,
+        )
     }
 
     #[cfg(test)]
     pub(crate) fn enter_numbered(original: u32, source: &str, edits: &[&[Edit]]) -> Self {
-        Self::initialize(SourceFile::D9(original), source, edits)
+        Self::initialize(
+            (SourceFile::D9(original), ProducerPolicy::Current),
+            source,
+            edits,
+        )
     }
 
-    fn initialize(file: SourceFile, source: &str, edits: &[&[Edit]]) -> Self {
+    #[cfg(test)]
+    pub(crate) fn enter_counter_numbered(original: u32, source: &str, edits: &[&[Edit]]) -> Self {
+        Self::initialize(
+            (
+                SourceFile::D9(original),
+                ProducerPolicy::CounterOriginal(original),
+            ),
+            source,
+            edits,
+        )
+    }
+
+    fn initialize(
+        (file, policy): (SourceFile, ProducerPolicy),
+        source: &str,
+        edits: &[&[Edit]],
+    ) -> Self {
         let mut removed: Vec<_> = source
             .bytes()
             .enumerate()
@@ -62,6 +99,7 @@ impl SiteScope {
         }
         let context = SiteContext {
             file,
+            policy,
             source: source.to_string(),
             edits: edits.iter().map(|edits| edits.to_vec()).collect(),
             removed,

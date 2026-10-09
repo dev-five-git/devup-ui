@@ -1,73 +1,43 @@
 use std::{
     cmp::Ordering,
+    collections::BTreeMap,
     hash::{Hash, Hasher},
 };
 
-use css::{CounterOwner, Naming, style_selector::StyleSelector};
+use css::style_origin::Origin;
 
-use super::ProducerPolicy;
-use super::counter_selector::CounterSelector;
-use super::extract_static_style::{ExtractStaticStyle, ThemeTokenResolution};
+use super::ExtractKeyframes;
+use crate::extract_style::{ProducerPolicy, extract_static_style::ExtractStaticStyle};
 
 #[derive(PartialEq, Eq, Hash, PartialOrd, Ord)]
 struct Identity<'a> {
-    property: &'a str,
-    value: &'a str,
-    level: u8,
-    selector: &'a Option<StyleSelector>,
-    order: Option<u8>,
-    layer: &'a Option<String>,
-    resolution: ThemeTokenResolution,
-    naming: Naming,
-    owner: CounterOwner,
+    keyframes: &'a BTreeMap<String, Vec<ExtractStaticStyle>>,
+    origin: &'a Origin,
 }
 
 #[derive(PartialEq, Eq, Hash, PartialOrd, Ord)]
 struct CounterIdentity<'a> {
-    property: &'a str,
-    value: &'a str,
-    level: u8,
-    selector: CounterSelector<'a>,
-    order: Option<u8>,
-    layer: &'a Option<String>,
-    resolution: ThemeTokenResolution,
-    owner: Option<u32>,
+    keyframes: &'a BTreeMap<String, Vec<ExtractStaticStyle>>,
+    original: u32,
 }
 
-impl ExtractStaticStyle {
-    fn counter_identity(&self, original: u32) -> CounterIdentity<'_> {
-        CounterIdentity {
-            property: &self.property,
-            value: &self.value,
-            level: self.level,
-            selector: CounterSelector(&self.selector),
-            order: self.style_order,
-            layer: &self.layer,
-            resolution: self.theme_token_resolution,
-            owner: ProducerPolicy::declaration_owner(original, self.style_order),
-        }
-    }
-
-    fn identity(&self) -> Identity<'_> {
+impl ExtractKeyframes {
+    const fn identity(&self) -> Identity<'_> {
         Identity {
-            property: &self.property,
-            value: &self.value,
-            level: self.level,
-            selector: &self.selector,
-            order: self.style_order,
-            layer: &self.layer,
-            resolution: self.theme_token_resolution,
-            naming: self.naming,
-            owner: if self.naming == Naming::Own && self.style_order != Some(0) {
-                self.counter_owner
-            } else {
-                CounterOwner::Inactive
-            },
+            keyframes: &self.keyframes,
+            origin: &self.origin,
+        }
+    }
+
+    const fn counter_identity(&self, original: u32) -> CounterIdentity<'_> {
+        CounterIdentity {
+            keyframes: &self.keyframes,
+            original,
         }
     }
 }
 
-impl PartialEq for ExtractStaticStyle {
+impl PartialEq for ExtractKeyframes {
     fn eq(&self, other: &Self) -> bool {
         match (self.producer_policy(), other.producer_policy()) {
             (ProducerPolicy::Current, ProducerPolicy::Current) => {
@@ -81,8 +51,8 @@ impl PartialEq for ExtractStaticStyle {
         }
     }
 }
-impl Eq for ExtractStaticStyle {}
-impl Hash for ExtractStaticStyle {
+impl Eq for ExtractKeyframes {}
+impl Hash for ExtractKeyframes {
     fn hash<H: Hasher>(&self, state: &mut H) {
         match self.producer_policy() {
             ProducerPolicy::Current => self.identity().hash(state),
@@ -93,12 +63,12 @@ impl Hash for ExtractStaticStyle {
         }
     }
 }
-impl PartialOrd for ExtractStaticStyle {
+impl PartialOrd for ExtractKeyframes {
     fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
         Some(self.cmp(other))
     }
 }
-impl Ord for ExtractStaticStyle {
+impl Ord for ExtractKeyframes {
     fn cmp(&self, other: &Self) -> Ordering {
         match (self.producer_policy(), other.producer_policy()) {
             (ProducerPolicy::Current, ProducerPolicy::Current) => {

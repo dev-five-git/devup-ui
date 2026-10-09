@@ -10,7 +10,10 @@ use css::{
 
 use crate::extract_style::{ExtractStyleProperty, style_property::StyleProperty};
 
-#[derive(PartialEq, Clone, Eq, Hash, Ord, PartialOrd)]
+#[path = "dynamic_identity.rs"]
+mod identity;
+
+#[derive(Clone)]
 pub struct ExtractDynamicStyle {
     /// property
     property: String,
@@ -33,6 +36,7 @@ pub struct ExtractDynamicStyle {
     /// Where in the original sources it was written; names its variable
     pub(crate) site: Option<Site>,
     pub origin: Origin,
+    producer_policy: super::ProducerPolicy,
 }
 
 impl Debug for ExtractDynamicStyle {
@@ -112,6 +116,12 @@ fn runtime_code(identifier: &str) -> String {
 }
 
 impl ExtractDynamicStyle {
+    /// The immutable identity policy selected when this record was constructed.
+    #[must_use]
+    pub const fn producer_policy(&self) -> super::ProducerPolicy {
+        self.producer_policy
+    }
+
     /// create a new `ExtractDynamicStyle`
     pub fn new(
         property: &str,
@@ -133,6 +143,7 @@ impl ExtractDynamicStyle {
             naming: Naming::Own,
             site: None,
             origin: crate::style_origin::current(),
+            producer_policy: crate::sparse_sites::producer_policy(),
         }
     }
 

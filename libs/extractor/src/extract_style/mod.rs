@@ -6,8 +6,23 @@ pub(super) mod extract_import;
 pub(super) mod extract_keyframes;
 pub mod extract_static_style;
 pub mod extract_style_value;
+mod producer_policy;
+pub use producer_policy::ProducerPolicy;
+#[cfg(test)]
+mod counter_identity_tests;
+mod counter_selector;
+#[cfg(test)]
+mod current_identity_tests;
 #[cfg(test)]
 mod original_owner_tests;
+#[cfg(test)]
+mod policy_capture_tests;
+#[cfg(test)]
+mod policy_deferred_tests;
+#[cfg(test)]
+mod policy_literal_tests;
+#[cfg(test)]
+mod policy_test_support;
 mod static_identity;
 pub mod style_property;
 
