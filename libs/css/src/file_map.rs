@@ -56,7 +56,9 @@ where
     }
 }
 
-pub use crate::sparse_site::source_ids::{get_original_ids, original_id, set_original_ids};
+pub use crate::sparse_site::source_ids::{
+    get_or_insert_original_id, get_original_ids, original_id, set_original_ids,
+};
 
 /// for test
 pub fn reset_file_map() {

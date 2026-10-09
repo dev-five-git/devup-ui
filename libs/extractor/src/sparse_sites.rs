@@ -43,6 +43,15 @@ pub(crate) struct SiteScope(Option<SiteContext>);
 
 impl SiteScope {
     pub(crate) fn enter(filename: &str, source: &str, edits: &[&[Edit]]) -> Self {
+        Self::initialize(SourceFile::from_source(filename, source), source, edits)
+    }
+
+    #[cfg(test)]
+    pub(crate) fn enter_numbered(original: u32, source: &str, edits: &[&[Edit]]) -> Self {
+        Self::initialize(SourceFile::D9(original), source, edits)
+    }
+
+    fn initialize(file: SourceFile, source: &str, edits: &[&[Edit]]) -> Self {
         let mut removed: Vec<_> = source
             .bytes()
             .enumerate()
@@ -52,7 +61,7 @@ impl SiteScope {
             drop(removed.splice(0..0, 0..3));
         }
         let context = SiteContext {
-            file: SourceFile::from_source(filename, source),
+            file,
             source: source.to_string(),
             edits: edits.iter().map(|edits| edits.to_vec()).collect(),
             removed,

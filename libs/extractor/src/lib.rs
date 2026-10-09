@@ -42,6 +42,8 @@ mod named_capture_order_tests;
 mod named_capture_support;
 #[cfg(test)]
 mod named_capture_tests;
+#[cfg(test)]
+mod numbered_sites_tests;
 mod prop_modify_utils;
 mod provenance;
 mod source_map;
