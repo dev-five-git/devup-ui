@@ -1,3 +1,12 @@
+pub mod admission;
+#[cfg(test)]
+mod admission_guard_tests;
+#[cfg(all(test, not(target_arch = "wasm32")))]
+mod admission_input_tests;
+#[cfg(all(test, not(target_arch = "wasm32")))]
+mod admission_interleaving_tests;
+#[cfg(all(test, not(target_arch = "wasm32")))]
+mod admission_root_tests;
 pub mod allocation_input;
 pub mod at_rule;
 pub mod atom_hoist;
@@ -25,6 +34,9 @@ mod counter_render;
 #[cfg(test)]
 mod counter_test_helpers;
 pub mod debug;
+pub mod exact_attempt;
+#[cfg(test)]
+mod exact_attempt_tests;
 pub mod file_map;
 pub mod file_routes;
 pub mod is_special_property;
@@ -38,6 +50,7 @@ mod num_to_nm_base;
 pub mod optimize_multi_css_value;
 pub mod optimize_value;
 pub mod rm_css_comment;
+mod root_held;
 #[cfg(test)]
 mod scoped_name_tests;
 mod selector_separator;
@@ -72,14 +85,18 @@ mod prefix_state {
         static GLOBAL_PREFIX: RefCell<Option<String>> = const { RefCell::new(None) };
     }
     pub fn set_prefix(prefix: Option<String>) {
+        let _admission = crate::admission::enter();
+        crate::admission::assert_administration_allowed("set_prefix");
         GLOBAL_PREFIX.with(|p| *p.borrow_mut() = prefix);
     }
     pub fn get_prefix() -> Option<String> {
+        let _admission = crate::admission::enter();
         GLOBAL_PREFIX.with(|p| p.borrow().clone())
     }
     /// Run `f` with the current prefix as `&str` (empty when unset) without cloning.
     #[cfg(not(tarpaulin_include))]
     pub(crate) fn with_prefix<R>(f: impl FnOnce(&str) -> R) -> R {
+        let _admission = crate::admission::enter();
         GLOBAL_PREFIX.with(|p| f(p.borrow().as_deref().unwrap_or_default()))
     }
 }
@@ -90,11 +107,16 @@ mod prefix_state {
     use std::sync::Mutex;
     static GLOBAL_PREFIX: LazyLock<Mutex<Option<String>>> = LazyLock::new(|| Mutex::new(None));
     pub fn set_prefix(prefix: Option<String>) {
+        let _admission = crate::admission::enter();
+        crate::admission::assert_administration_allowed("set_prefix");
+        let _root = crate::root_held::RootHeld::enter("prefix");
         *GLOBAL_PREFIX
             .lock()
             .unwrap_or_else(std::sync::PoisonError::into_inner) = prefix;
     }
     pub fn get_prefix() -> Option<String> {
+        let _admission = crate::admission::enter();
+        let _root = crate::root_held::RootHeld::enter("prefix");
         GLOBAL_PREFIX
             .lock()
             .unwrap_or_else(std::sync::PoisonError::into_inner)
@@ -102,6 +124,8 @@ mod prefix_state {
     }
     /// Run `f` with the current prefix as `&str` (empty when unset) without cloning.
     pub(crate) fn with_prefix<R>(f: impl FnOnce(&str) -> R) -> R {
+        let _admission = crate::admission::enter();
+        let _root = crate::root_held::RootHeld::enter("prefix");
         f(GLOBAL_PREFIX
             .lock()
             .unwrap_or_else(std::sync::PoisonError::into_inner)
@@ -224,6 +248,7 @@ impl ExactSizeIterator for DisassembleProperty {}
 
 #[must_use]
 pub fn disassemble_property(property: &str) -> DisassembleProperty {
+    let _admission = crate::admission::enter();
     // Nested selector keys (`&:hover`, `:focus`, `.parent &`) are not properties;
     // keep them verbatim so class names and case survive.
     if property.starts_with(':') || property.contains('&') {
@@ -232,6 +257,7 @@ pub fn disassemble_property(property: &str) -> DisassembleProperty {
     if let Some(properties) = HAS_CUSTOM_SHORTHANDS
         .load(Ordering::Relaxed)
         .then(|| {
+            let _root = crate::root_held::RootHeld::enter("shorthands");
             CUSTOM_SHORTHANDS
                 .read()
                 .ok()
@@ -295,6 +321,9 @@ static HAS_CUSTOM_SHORTHANDS: AtomicBool = AtomicBool::new(false);
 
 /// Replace the custom shorthand registry used by style extraction.
 pub fn set_custom_shorthands(shorthands: BTreeMap<String, Vec<String>>) {
+    let _admission = crate::admission::enter();
+    crate::admission::assert_administration_allowed("set_custom_shorthands");
+    let _root = crate::root_held::RootHeld::enter("shorthands");
     if let Ok(mut registry) = CUSTOM_SHORTHANDS.write() {
         let shorthands: BTreeMap<String, Vec<String>> = shorthands
             .into_iter()
@@ -318,6 +347,8 @@ pub fn set_custom_shorthands(shorthands: BTreeMap<String, Vec<String>>) {
 
 #[must_use]
 pub fn get_custom_shorthand_names() -> Vec<String> {
+    let _admission = crate::admission::enter();
+    let _root = crate::root_held::RootHeld::enter("shorthands");
     CUSTOM_SHORTHANDS.read().map_or_else(
         |_| Vec::new(),
         |registry| registry.keys().cloned().collect(),
@@ -398,7 +429,9 @@ thread_local! {
 /// Single home for the class naming algorithm shared by keyframes, classname
 /// and variable-name generation.
 fn class_slot_for_key(filename_key: &str, build_key: impl FnOnce(&mut String)) -> CounterSlot {
+    let _admission = crate::admission::enter();
     KEY_BUF.with(|buf| {
+        let _root = crate::root_held::RootHeld::enter("key_buf");
         let mut key = buf.borrow_mut();
         key.clear();
         build_key(&mut key);
@@ -415,11 +448,13 @@ fn class_num_for_key(filename_key: &str, build_key: impl FnOnce(&mut String)) ->
 /// name wherever they are met.
 #[must_use]
 pub fn keyframes_name_of_escaped(escaped: &str) -> String {
+    let _admission = crate::admission::enter();
     with_prefix(|prefix| format!("{prefix}{}{escaped}", if is_debug() { "k-" } else { "K" }))
 }
 
 #[must_use]
 pub fn keyframes_to_keyframes_name(keyframes: &str, filename: Option<&str>) -> String {
+    let _admission = crate::admission::enter();
     if atom_hoist::is_atom_hoist() {
         let scope = filename.map_or_else(
             || "g".to_string(),
@@ -492,6 +527,7 @@ pub fn sheet_to_classname_owned(
     filename: Option<&str>,
     owner: CounterOwner,
 ) -> String {
+    let _admission = crate::admission::enter();
     let descriptor = content.content();
     match naming::owned_private_counter(owner, (filename, content.order), content.naming) {
         Some(id) => {

@@ -8,6 +8,8 @@ static ORIGINAL_IDS: LazyLock<Mutex<BTreeMap<String, u32>>> =
     LazyLock::new(|| Mutex::new(BTreeMap::new()));
 
 fn with_original_ids<R>(f: impl FnOnce(&mut BTreeMap<String, u32>) -> R) -> R {
+    let _admission = crate::admission::enter();
+    let _root = crate::root_held::RootHeld::enter("original_ids");
     f(&mut ORIGINAL_IDS
         .lock()
         .unwrap_or_else(std::sync::PoisonError::into_inner))
@@ -44,10 +46,19 @@ pub fn get_original_ids() -> BTreeMap<String, u32> {
 }
 
 pub fn set_original_ids(new_ids: BTreeMap<String, u32>) {
+    let _admission = crate::admission::enter();
+    crate::admission::assert_administration_allowed("set_original_ids");
     with_original_ids(|ids| *ids = new_ids);
 }
 
+/// Restore only the original-ID snapshot owned by a private exact attempt.
+pub(crate) fn restore_original_ids_snapshot(snapshot: BTreeMap<String, u32>) {
+    with_original_ids(|ids| *ids = snapshot);
+}
+
 pub(crate) fn seed_original_ids(files: &[String]) {
+    let _admission = crate::admission::enter();
+    crate::admission::assert_administration_allowed("seed_original_ids");
     let mut originals: Vec<&String> = files.iter().collect();
     originals.sort_unstable();
     originals.dedup();

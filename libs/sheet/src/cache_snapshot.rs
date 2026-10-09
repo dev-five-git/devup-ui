@@ -129,7 +129,7 @@ pub(crate) fn export(sheet: &StyleSheet) -> impl Serialize + '_ {
         #[serde(rename = "fileMap")]
         files: FileMap,
     }
-    Export {
+    css::admission::with_admission(|| Export {
         sheet,
         version: 4,
         sources: css::file_map::get_original_ids(),
@@ -146,5 +146,5 @@ pub(crate) fn export(sheet: &StyleSheet) -> impl Serialize + '_ {
         files: css::file_map::with_file_map(|map| {
             map.iter().map(|(file, id)| (file.clone(), *id)).collect()
         }),
-    }
+    })
 }

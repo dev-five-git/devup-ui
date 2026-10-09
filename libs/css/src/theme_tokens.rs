@@ -17,6 +17,9 @@ pub fn set_theme_token_levels(
     length: BTreeMap<String, Vec<u8>>,
     shadow: BTreeMap<String, Vec<u8>>,
 ) {
+    let _admission = crate::admission::enter();
+    crate::admission::assert_administration_allowed("set_theme_token_levels");
+    let _root = crate::root_held::RootHeld::enter("theme_tokens");
     if let Ok(mut registry) = TOKEN_REGISTRY.write() {
         registry.length = length;
         registry.shadow = shadow;
@@ -27,6 +30,9 @@ pub fn set_theme_token_levels(
 
 /// Register effective default literals separately from responsive variable levels.
 pub fn set_theme_token_values(length: BTreeMap<String, String>, shadow: BTreeMap<String, String>) {
+    let _admission = crate::admission::enter();
+    crate::admission::assert_administration_allowed("set_theme_token_values");
+    let _root = crate::root_held::RootHeld::enter("theme_tokens");
     if let Ok(mut registry) = TOKEN_REGISTRY.write() {
         let normalize = |values: BTreeMap<String, String>| {
             values
@@ -46,7 +52,9 @@ pub fn set_theme_token_values(length: BTreeMap<String, String>, shadow: BTreeMap
 
 /// Resolve the first default literal in the property's token namespace.
 pub fn get_first_theme_token_value(property: &str, value: &str) -> Option<String> {
+    let _admission = crate::admission::enter();
     let token = value.strip_prefix('$')?;
+    let _root = crate::root_held::RootHeld::enter("theme_tokens");
     let registry = TOKEN_REGISTRY.read().ok()?;
     let values = if property == "box-shadow" {
         &registry.first_shadow
@@ -57,6 +65,9 @@ pub fn get_first_theme_token_value(property: &str, value: &str) -> Option<String
 }
 
 pub fn set_typography_keys(keys: Vec<String>) {
+    let _admission = crate::admission::enter();
+    crate::admission::assert_administration_allowed("set_typography_keys");
+    let _root = crate::root_held::RootHeld::enter("theme_tokens");
     if let Ok(mut registry) = TOKEN_REGISTRY.write() {
         registry.typography = keys;
     }
@@ -65,6 +76,8 @@ pub fn set_typography_keys(keys: Vec<String>) {
 /// Typography names defined by the registered theme, so a dynamic
 /// `typography` value under a selector can resolve to one class per name.
 pub fn get_typography_keys() -> Vec<String> {
+    let _admission = crate::admission::enter();
+    let _root = crate::root_held::RootHeld::enter("theme_tokens");
     TOKEN_REGISTRY
         .read()
         .map(|registry| registry.typography.clone())
@@ -75,7 +88,9 @@ pub fn get_typography_keys() -> Vec<String> {
 /// Returns the responsive breakpoint levels if the token is defined
 /// with more than one level, regardless of which CSS property it's used on.
 pub fn get_responsive_theme_token(value: &str) -> Option<Vec<u8>> {
+    let _admission = crate::admission::enter();
     let token = value.strip_prefix('$')?;
+    let _root = crate::root_held::RootHeld::enter("theme_tokens");
     let registry = TOKEN_REGISTRY.read().ok()?;
 
     registry
@@ -96,6 +111,7 @@ pub fn is_responsive_theme_token(value: &str) -> bool {
     // instead of each getting its own `return false;` statement.
     fn lookup(value: &str) -> Option<bool> {
         let token = value.strip_prefix('$')?;
+        let _root = crate::root_held::RootHeld::enter("theme_tokens");
         let registry = TOKEN_REGISTRY.read().ok()?;
 
         Some(
@@ -107,6 +123,7 @@ pub fn is_responsive_theme_token(value: &str) -> bool {
         )
     }
 
+    let _admission = crate::admission::enter();
     lookup(value).unwrap_or(false)
 }
 

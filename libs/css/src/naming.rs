@@ -41,6 +41,7 @@ pub fn owned_private_counter(
     delivery: (Option<&str>, u8),
     naming: Naming,
 ) -> Option<u32> {
+    let _admission = crate::admission::enter();
     let (filename, order) = delivery;
     if naming != Naming::Own || order == 0 {
         return None;
@@ -57,6 +58,9 @@ static COLLAPSED: LazyLock<Mutex<HashSet<String>>> = LazyLock::new(|| Mutex::new
 
 /// Remember which buckets hold more than one original file.
 pub fn set_collapsed_buckets(canonical: &HashMap<String, String>) {
+    let _admission = crate::admission::enter();
+    crate::admission::assert_administration_allowed("set_collapsed_buckets");
+    let _root = crate::root_held::RootHeld::enter("collapsed");
     *COLLAPSED
         .lock()
         .unwrap_or_else(std::sync::PoisonError::into_inner) = canonical
@@ -68,7 +72,9 @@ pub fn set_collapsed_buckets(canonical: &HashMap<String, String>) {
 
 /// Whether styles named in `filename`'s namespace are met from several files.
 pub fn is_shared_namespace(filename: Option<&str>) -> bool {
+    let _admission = crate::admission::enter();
     filename.is_none_or(|bucket| {
+        let _root = crate::root_held::RootHeld::enter("collapsed");
         COLLAPSED
             .lock()
             .unwrap_or_else(std::sync::PoisonError::into_inner)
@@ -135,6 +141,7 @@ pub fn content_class(
 /// Only a source numbered before extraction may consume its private counter.
 #[must_use]
 pub fn private_counter(filename: Option<&str>, naming: Naming, order: u8) -> Option<u32> {
+    let _admission = crate::admission::enter();
     if naming != Naming::Own || order == 0 || is_shared_namespace(filename) {
         return None;
     }

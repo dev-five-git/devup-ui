@@ -3,11 +3,13 @@ use crate::{content_hash::FingerprintBits, content_name::ContentName};
 /// A content atom is global only when #751 already delivers its rules in one shared sheet.
 #[must_use]
 pub fn local_file(filename: Option<&str>, order: u8) -> Option<&str> {
+    let _admission = crate::admission::enter();
     filename.filter(|file| order != 0 && !crate::atom_hoist::is_hoisted_bucket(file))
 }
 
 #[must_use]
 pub fn fallback(filename: Option<&str>, order: u8) -> Option<ContentName> {
+    let _admission = crate::admission::enter();
     local_file(filename, order)
         .filter(|file| crate::file_map::original_id(file).is_none())
         .map(|file| ContentName::scope(&crate::naming_root::key(&crate::file_map::canonical(file))))
@@ -16,6 +18,7 @@ pub fn fallback(filename: Option<&str>, order: u8) -> Option<ContentName> {
 /// Content names and exact claims use this same scope prefix and fingerprint width.
 #[must_use]
 pub fn name(content: &ContentName, source: (Option<&str>, u8), bits: FingerprintBits) -> String {
+    let _admission = crate::admission::enter();
     let prefix = crate::get_prefix().unwrap_or_default();
     let scope = match local_file(source.0, source.1) {
         None => String::new(),

@@ -515,44 +515,49 @@ impl StyleSheet {
     }
 
     pub fn set_theme(&mut self, theme: Theme) {
-        let length = theme.get_length_token_levels();
-        let shadow = theme.get_shadow_token_levels();
-        let first_length = length
-            .keys()
-            .filter_map(|token| {
-                theme
-                    .get_default_length_value(token)
-                    .map(|value| (token.clone(), value.to_string()))
-            })
-            .collect();
-        let first_shadow = shadow
-            .keys()
-            .filter_map(|token| {
-                theme
-                    .get_default_shadow_value(token)
-                    .map(|value| (token.clone(), value.to_string()))
-            })
-            .collect();
-        set_theme_token_levels(length, shadow);
-        set_theme_token_values(first_length, first_shadow);
-        set_typography_keys(theme.typography.keys().cloned().collect());
-        css::content_typography::set(
-            theme
-                .typography
+        css::admission::with_admission(|| {
+            css::admission::assert_administration_allowed("StyleSheet::set_theme");
+            let length = theme.get_length_token_levels();
+            let shadow = theme.get_shadow_token_levels();
+            let first_length = length
                 .keys()
-                .map(|preset| {
-                    (
-                        preset.clone(),
-                        theme
-                            .typography_declarations(preset, 0)
-                            .into_iter()
-                            .map(|(level, property, value)| (level, property.to_string(), value))
-                            .collect(),
-                    )
+                .filter_map(|token| {
+                    theme
+                        .get_default_length_value(token)
+                        .map(|value| (token.clone(), value.to_string()))
                 })
-                .collect(),
-        );
-        self.theme = theme;
+                .collect();
+            let first_shadow = shadow
+                .keys()
+                .filter_map(|token| {
+                    theme
+                        .get_default_shadow_value(token)
+                        .map(|value| (token.clone(), value.to_string()))
+                })
+                .collect();
+            set_theme_token_levels(length, shadow);
+            set_theme_token_values(first_length, first_shadow);
+            set_typography_keys(theme.typography.keys().cloned().collect());
+            css::content_typography::set(
+                theme
+                    .typography
+                    .keys()
+                    .map(|preset| {
+                        (
+                            preset.clone(),
+                            theme
+                                .typography_declarations(preset, 0)
+                                .into_iter()
+                                .map(|(level, property, value)| {
+                                    (level, property.to_string(), value)
+                                })
+                                .collect(),
+                        )
+                    })
+                    .collect(),
+            );
+            self.theme = theme;
+        });
     }
 
     pub fn update_styles(

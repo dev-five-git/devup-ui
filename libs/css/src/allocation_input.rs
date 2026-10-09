@@ -101,6 +101,7 @@ pub fn capture_context(
     filename: Option<&str>,
     owner: CounterOwner,
 ) -> AllocationContext {
+    let _admission = crate::admission::enter();
     let mode = if crate::atom_hoist::is_atom_hoist() {
         NameMode::AtomHoist
     } else if crate::debug::is_debug() {

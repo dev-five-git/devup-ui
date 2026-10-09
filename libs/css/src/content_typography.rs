@@ -8,6 +8,9 @@ static PRESETS: LazyLock<RwLock<BTreeMap<String, Declarations>>> =
     LazyLock::new(|| RwLock::new(BTreeMap::new()));
 
 pub fn set(presets: BTreeMap<String, Declarations>) {
+    let _admission = crate::admission::enter();
+    crate::admission::assert_administration_allowed("content_typography::set");
+    let _root = crate::root_held::RootHeld::enter("content_typography");
     *PRESETS
         .write()
         .unwrap_or_else(std::sync::PoisonError::into_inner) = presets;
@@ -15,6 +18,7 @@ pub fn set(presets: BTreeMap<String, Declarations>) {
 
 /// The effective declarations of one conditional typography atom.
 pub fn declarations(value: &str, level: u8) -> Declarations {
+    let _admission = crate::admission::enter();
     let (preset, yielded) = value.split_once('|').unwrap_or((value, ""));
     let yielded: Vec<_> = yielded
         .split(',')
@@ -23,6 +27,7 @@ pub fn declarations(value: &str, level: u8) -> Declarations {
             Some((property, level.parse::<u8>().ok()?))
         })
         .collect();
+    let root = crate::root_held::RootHeld::enter("content_typography");
     let presets = PRESETS
         .read()
         .unwrap_or_else(std::sync::PoisonError::into_inner);
@@ -38,6 +43,7 @@ pub fn declarations(value: &str, level: u8) -> Declarations {
         }
     }
     drop(presets);
+    drop(root);
     result.retain(|(level, property, _)| {
         !yielded
             .iter()
