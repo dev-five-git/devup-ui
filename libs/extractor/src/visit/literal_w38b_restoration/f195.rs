@@ -5,6 +5,7 @@ mod generic;
 mod merging;
 mod typography;
 mod w38i_a;
+mod w38i_b;
 
 fn parsed<'a>(allocator: &'a Allocator, source: &'a str) -> Expression<'a> {
     let mut parsed = oxc_parser::Parser::new(allocator, source, SourceType::tsx()).parse();

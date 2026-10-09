@@ -4,6 +4,8 @@ use super::{
     SPAN, StaticMemberExpression, StringLiteral, Text, UnaryOperator, coalesce_keeps_left,
     unwrap_syntax_only,
 };
+use crate::gen_class_name::roots::{ClassConstructors, ClassPayload};
+use oxc_ast::ast::{ConditionalExpression, ObjectPropertyKind, PropertyKind};
 
 mod choices;
 mod logical;
@@ -116,7 +118,55 @@ impl<'v, 's, 'a, S: LocalSource<'a>> LocalParts<'v, 's, 'a, S> {
             expression => {
                 match self.known_side_local(expression, text)? {
                     LocalKnownSide::Styles(side) => parts.push(LocalKnownPart::Styles(side)),
-                    LocalKnownSide::Class(class) => parts.push(LocalKnownPart::Class(class)),
+                    LocalKnownSide::Class(class) => {
+                        let class = match expression {
+                            Expression::ComputedMemberExpression(member)
+                                if text == Text::Classes
+                                    && matches!(
+                                        unwrap_syntax_only(&member.object),
+                                        Expression::ObjectExpression(object)
+                                            if object.properties.iter().all(|property| matches!(
+                                                property,
+                                                ObjectPropertyKind::ObjectProperty(property)
+                                                    if property.kind == PropertyKind::Init
+                                                        && !property.method
+                                                        && !property.computed
+                                                        && property.key.static_name().is_some_and(|key| key != "__proto__")
+                                                        && matches!(unwrap_syntax_only(&property.value), Expression::StringLiteral(_))
+                                            ))
+                                    ) =>
+                            {
+                                let has_tag = Expression::new_binary_expression(
+                                    SPAN,
+                                    Expression::new_unary_expression(
+                                        SPAN,
+                                        UnaryOperator::Typeof,
+                                        member
+                                            .expression
+                                            .clone_in_with_semantic_ids(visitor.ast.allocator()),
+                                        &visitor.ast,
+                                    ),
+                                    BinaryOperator::StrictEquality,
+                                    Expression::new_string_literal(
+                                        SPAN,
+                                        "string",
+                                        None,
+                                        &visitor.ast,
+                                    ),
+                                    &visitor.ast,
+                                );
+                                S::Class::from_conditional(ConditionalExpression::boxed(
+                                    SPAN,
+                                    has_tag,
+                                    class.string_class(&visitor.ast).into_expression(),
+                                    Expression::new_string_literal(SPAN, "", None, &visitor.ast),
+                                    &visitor.ast,
+                                ))
+                            }
+                            _ => class,
+                        };
+                        parts.push(LocalKnownPart::Class(class));
+                    }
                     LocalKnownSide::Empty => {}
                 }
                 Some(())
