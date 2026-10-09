@@ -3,6 +3,8 @@ import { Session } from 'node:inspector/promises'
 
 import { afterAll } from 'bun:test'
 
+import { PRODUCER_TIMEOUT_MS } from './producer-timeout'
+
 const session = new Session()
 session.connect()
 await session.post('Profiler.enable')
@@ -30,4 +32,4 @@ async function capture(phase: string): Promise<void> {
 }
 
 await capture('bootstrap')
-afterAll(() => capture('final'))
+afterAll(() => capture('final'), PRODUCER_TIMEOUT_MS)

@@ -25,6 +25,7 @@ export const requiredSources = [
   'test-harness/producer-coverage.ts',
   'test-harness/producer-process.ts',
   'test-harness/producer-child.ts',
+  'test-harness/producer-timeout.ts',
   'test-harness/producer-protocol.ts',
   'test-harness/producer-preload.ts',
   'packages/plugin-utils/src/build-admission.cts',
