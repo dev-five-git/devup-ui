@@ -7,6 +7,7 @@ use oxc_ast::{
 use oxc_ast_visit::Visit;
 use oxc_semantic::Semantic;
 use oxc_span::{GetSpan, Span};
+use oxc_syntax::node::NodeId;
 
 use super::{StyleReads, StyleSymbols};
 
@@ -75,16 +76,17 @@ pub(crate) fn plan(
     collector.visit_program(program);
     collector
         .slots
-        .sort_by_key(|span| (span.start, std::cmp::Reverse(span.end)));
-    let mut slots: Vec<Span> = Vec::new();
-    for span in collector.slots {
-        if !slots
+        .sort_by_key(|(span, _)| (span.start, std::cmp::Reverse(span.end)));
+    let mut candidates: Vec<(Span, NodeId)> = Vec::new();
+    for (span, node_id) in collector.slots {
+        if !candidates
             .last()
-            .is_some_and(|outer| outer.contains_inclusive(span))
+            .is_some_and(|(outer, _)| outer.contains_inclusive(span))
         {
-            slots.push(span);
+            candidates.push((span, node_id));
         }
     }
+    let slots: Vec<Span> = candidates.iter().map(|(span, _)| *span).collect();
     let mut reads = ReadReferences {
         slots: &slots,
         reads: Vec::new(),
@@ -93,16 +95,9 @@ pub(crate) fn plan(
     let mut reads = reads.reads;
     let mut guards = Vec::new();
     let mut failures = Vec::new();
-    for slot in &slots {
-        let Some(node) = semantic
-            .nodes()
-            .iter()
-            .find(|node| node.kind().span() == *slot)
-        else {
-            continue;
-        };
+    for (slot, node_id) in &candidates {
         let mut conditions = Vec::new();
-        for ancestor in semantic.nodes().ancestor_kinds(node.id()) {
+        for ancestor in semantic.nodes().ancestor_kinds(*node_id) {
             if matches!(ancestor, AstKind::ForStatement(_) | AstKind::ForInStatement(_) | AstKind::ForOfStatement(_) | AstKind::WhileStatement(_) | AstKind::DoWhileStatement(_))
                 && semantic.nodes().iter().any(|node| matches!(node.kind(), AstKind::CallExpression(call) if slot.contains_inclusive(call.span)))
             {

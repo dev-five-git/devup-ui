@@ -32,14 +32,14 @@ fn callable_when_enclosing_runtime_parameter_shadows_module_input_is_open() {
             semantic.scoping(),
             &crate::ExtractOption::default(),
         );
-        let kind = semantic
+        let function = semantic
             .nodes()
             .iter()
             .find_map(|node| match node.kind() {
                 oxc_ast::AstKind::Function(function)
                     if function.id.as_ref().is_some_and(|id| id.name == "read") =>
                 {
-                    Some(node.kind())
+                    Some(function)
                 }
                 _ => None,
             })
@@ -54,7 +54,7 @@ fn callable_when_enclosing_runtime_parameter_shadows_module_input_is_open() {
             input: false,
         };
         // When
-        let actual = super::closed(kind, &mut proof, semantic);
+        let actual = super::closed(super::Input::Function(function), &mut proof, semantic);
         // Then
         assert!(!actual);
     });

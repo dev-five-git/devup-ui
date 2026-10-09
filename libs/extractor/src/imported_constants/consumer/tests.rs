@@ -7,6 +7,7 @@ use oxc_span::SourceType;
 use super::ReadPlan;
 
 mod guards;
+mod invariants;
 mod slots;
 
 pub(super) fn parsed(source: &str, check: impl FnOnce(&Program<'_>, &Semantic<'_>)) {

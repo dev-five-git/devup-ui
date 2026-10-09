@@ -188,15 +188,15 @@ fn binding(
         input: false,
     };
     match declaration {
-        AstKind::Function(_) => callable::closed(declaration, &mut proof, semantic),
+        AstKind::Function(function) => {
+            callable::closed(callable::Input::Function(function), &mut proof, semantic)
+        }
         AstKind::VariableDeclarator(declarator) => match declarator.init.as_ref() {
-            Some(Expression::ArrowFunctionExpression(function)) => callable::closed(
-                AstKind::ArrowFunctionExpression(function),
-                &mut proof,
-                semantic,
-            ),
+            Some(Expression::ArrowFunctionExpression(function)) => {
+                callable::closed(callable::Input::Arrow(function), &mut proof, semantic)
+            }
             Some(Expression::FunctionExpression(function)) => {
-                callable::closed(AstKind::Function(function), &mut proof, semantic)
+                callable::closed(callable::Input::Function(function), &mut proof, semantic)
             }
             Some(initializer) => {
                 proof.visit_expression(initializer);

@@ -17,6 +17,7 @@ use oxc_ast_visit::{Visit, VisitMut, walk, walk_mut};
 use oxc_parser::Parser;
 use oxc_semantic::{Scoping, SemanticBuilder};
 use oxc_span::{GetSpan, SPAN, SourceType, Span};
+use oxc_syntax::node::NodeId;
 use oxc_syntax::number::NumberBase;
 use oxc_syntax::operator::BinaryOperator;
 use oxc_syntax::symbol::SymbolId;
@@ -846,7 +847,7 @@ struct StyleReads<'s> {
     /// The bindings the `<ClassNames>` child functions around take `css` and
     /// `cx` by
     class_names: Vec<SymbolId>,
-    slots: Vec<Span>,
+    slots: Vec<(Span, NodeId)>,
     callee: bool,
     known: Option<&'s dyn Fn(&IdentifierReference<'_>) -> bool>,
 }
@@ -868,7 +869,7 @@ impl<'a> Visit<'a> for StyleReads<'_> {
             && let Some(known) = self.known
             && consumer::closed(expression, self.style, known)
         {
-            self.slots.push(expression.span());
+            self.slots.push((expression.span(), expression.node_id()));
         }
         walk::walk_expression(self, expression);
     }
@@ -885,7 +886,7 @@ impl<'a> Visit<'a> for StyleReads<'_> {
                     && !self.style.has(identifier)
                     && self.known.is_some_and(|known| known(identifier))
                 {
-                    self.slots.push(identifier.span);
+                    self.slots.push((identifier.span, identifier.node_id()));
                 }
             }
         }
@@ -900,7 +901,7 @@ impl<'a> Visit<'a> for StyleReads<'_> {
             && let Some(known) = self.known
             && consumer::member((&member.object, None), self.style, known)
         {
-            self.slots.push(member.span);
+            self.slots.push((member.span, member.node_id()));
         }
         walk::walk_static_member_expression(self, member);
     }
@@ -918,7 +919,7 @@ impl<'a> Visit<'a> for StyleReads<'_> {
                 known,
             )
         {
-            self.slots.push(member.span);
+            self.slots.push((member.span, member.node_id()));
         }
         walk::walk_computed_member_expression(self, member);
     }
@@ -929,7 +930,7 @@ impl<'a> Visit<'a> for StyleReads<'_> {
             && let Some(known) = self.known
             && consumer::template(template, self.style, known)
         {
-            self.slots.push(template.span);
+            self.slots.push((template.span, template.node_id()));
         }
         walk::walk_template_literal(self, template);
     }
@@ -949,7 +950,7 @@ impl<'a> Visit<'a> for StyleReads<'_> {
             && let Some(known) = self.known
             && consumer::call(call, self.style, known)
         {
-            self.slots.push(call.span);
+            self.slots.push((call.span, call.node_id()));
         }
         let outer = std::mem::replace(&mut self.callee, true);
         self.visit_expression(&call.callee);

@@ -1,36 +1,43 @@
-use oxc_ast::{AstKind, ast::IdentifierReference};
+use oxc_ast::ast::{ArrowFunctionExpression, Function, IdentifierReference};
 use oxc_ast_visit::Visit;
 use oxc_semantic::Semantic;
-use oxc_span::{GetSpan, Span};
+use oxc_span::Span;
 
 use super::{Closed, binding_of};
 
 #[cfg(test)]
 mod tests;
 
+pub(super) enum Input<'a> {
+    Function(&'a Function<'a>),
+    Arrow(&'a ArrowFunctionExpression<'a>),
+}
+
 pub(super) fn closed<'a>(
-    kind: AstKind<'a>,
+    input: Input<'a>,
     proof: &mut Closed<'_>,
     semantic: &Semantic<'a>,
 ) -> bool {
     let mut callable = Callable {
         proof,
         semantic,
-        span: kind.span(),
+        span: match input {
+            Input::Function(function) => function.span,
+            Input::Arrow(function) => function.span,
+        },
     };
-    match kind {
-        AstKind::Function(function) => {
+    match input {
+        Input::Function(function) => {
             callable.visit_formal_parameters(&function.params);
             let Some(body) = &function.body else {
                 return false;
             };
             callable.visit_function_body(body);
         }
-        AstKind::ArrowFunctionExpression(function) => {
+        Input::Arrow(function) => {
             callable.visit_formal_parameters(&function.params);
             callable.visit_arrow_function_body(&function.body);
         }
-        _ => return false,
     }
     callable.proof.exact
 }
