@@ -116,6 +116,17 @@ fn runtime_code(identifier: &str) -> String {
 }
 
 impl ExtractDynamicStyle {
+    /// Produce retained class and assignment-variable allocations on the dormant path.
+    ///
+    /// # Errors
+    /// Rejects Current construction and unnumbered assignment sites before reservation.
+    pub fn counter_produce(
+        &self,
+        filename: Option<&str>,
+    ) -> Result<super::ProducedDynamic, super::CounterProducerError> {
+        super::counter_producer::produce_dynamic(self, filename)
+    }
+
     /// The immutable identity policy selected when this record was constructed.
     #[must_use]
     pub const fn producer_policy(&self) -> super::ProducerPolicy {

@@ -70,6 +70,17 @@ impl Debug for ExtractStaticStyle {
 }
 
 impl ExtractStaticStyle {
+    /// Produce a dormant counter allocation without changing production dispatch.
+    ///
+    /// # Errors
+    /// Returns `WrongPolicy` unless construction retained a counter original.
+    pub fn counter_produce(
+        &self,
+        filename: Option<&str>,
+    ) -> Result<super::ProducedAllocation, super::CounterProducerError> {
+        super::counter_producer::produce_static(self, filename)
+    }
+
     /// The immutable identity policy selected when this record was constructed.
     #[must_use]
     pub const fn producer_policy(&self) -> super::ProducerPolicy {

@@ -35,6 +35,17 @@ impl std::fmt::Debug for ExtractKeyframes {
 }
 
 impl ExtractKeyframes {
+    /// Produce one dormant keyframe allocation, never member allocations.
+    ///
+    /// # Errors
+    /// Rejects Current construction on the parent or any child before reservation.
+    pub fn counter_produce(
+        &self,
+        filename: Option<&str>,
+    ) -> Result<super::ProducedAllocation, super::CounterProducerError> {
+        super::counter_producer::produce_keyframes(self, filename)
+    }
+
     /// The immutable identity policy selected when this record was constructed.
     #[must_use]
     pub const fn producer_policy(&self) -> super::ProducerPolicy {

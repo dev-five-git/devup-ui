@@ -8,8 +8,24 @@ pub mod extract_static_style;
 pub mod extract_style_value;
 mod producer_policy;
 pub use producer_policy::ProducerPolicy;
+mod counter_keyframe_input;
+mod counter_producer;
+mod counter_producer_selector;
+pub use counter_producer::{CounterProducerError, ProducedAllocation, ProducedDynamic};
+pub use extract_dynamic_style::ExtractDynamicStyle;
+pub use extract_keyframes::ExtractKeyframes;
 #[cfg(test)]
 mod counter_identity_tests;
+#[cfg(test)]
+mod counter_producer_keyframe_tests;
+#[cfg(test)]
+mod counter_producer_order_tests;
+#[cfg(test)]
+mod counter_producer_site_tests;
+#[cfg(test)]
+mod counter_producer_test_support;
+#[cfg(test)]
+mod counter_producer_tests;
 mod counter_selector;
 #[cfg(test)]
 mod current_identity_tests;
