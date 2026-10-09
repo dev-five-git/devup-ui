@@ -158,12 +158,12 @@ for (const mode of dynamicModes) {
         ).toBe('16px')
       })
 
-      test(`${condition.name} missing value is reset on its own element outside the condition`, async ({
+      test(`${condition.name} missing value omits its site class and reset outside the condition`, async ({
         page,
       }) => {
         // Given: same-site recursion while neither conditional consumer is active.
         const html = renderDynamicSite(
-          `export function View${parameters} { return <Box ${condition.props} id={id}>{children}</Box>; }`,
+          `export function View${parameters} { return <Box ${condition.props} id={id}>{children}<Box id={id + '-omitted'} /></Box>; }`,
           nested,
           mode,
         )
@@ -171,7 +171,25 @@ for (const mode of dynamicModes) {
         await page.mouse.move(319, 899)
         // When: Chromium computes variables before media/hover rules can apply.
         await page.setContent(html)
-        // Then: every generated variable has exactly one unconditional OWN reset.
+        // Then: the absent owner behaves like an actual Box with the prop omitted.
+        expect(
+          await page
+            .locator('#child')
+            .evaluate((el) => Array.from(el.classList)),
+        ).toEqual([])
+        expect(
+          await page.locator('#child').evaluate((el) => Array.from(el.style)),
+        ).toEqual([])
+        expect(
+          await page
+            .locator('#child')
+            .evaluate((el) => getComputedStyle(el).padding),
+        ).toBe(
+          await page
+            .locator('#parent-omitted')
+            .evaluate((el) => getComputedStyle(el).padding),
+        )
+        // Present owners retain exactly one unconditional OWN reset; absent ones inherit.
         const resets = await page.locator('#parent').evaluate((parent) => {
           const child = document.querySelector('#child')
           if (
@@ -197,8 +215,59 @@ for (const mode of dynamicModes) {
         })
         expect(resets.length).toBeGreaterThan(0)
         for (const reset of resets)
-          expect(reset).toEqual({ present: '16px', missing: '', ownRules: 1 })
+          expect(reset).toEqual({
+            present: '16px',
+            missing: '16px',
+            ownRules: 1,
+          })
       })
     }
+
+    test('parent descendant padding crosses an absent same-site owner like static CSS', async ({
+      page,
+    }) => {
+      // Given: the same compiled selector site is rendered with present and absent values.
+      const html = renderDynamicSite(
+        `export function View${parameters} { return <Box selectors={{ '& .child': { p: pad } }} id={id}>{children}<span className="child" id={id + '-consumer'} /><Box id={id + '-omitted'} /></Box>; }`,
+        `React.createElement(React.Fragment, null, ${nested}, React.createElement('style', null, '.static-control .child { padding: 16px; }'), React.createElement('section', { className: 'static-control' }, React.createElement('section', { id: 'control-owner' }, React.createElement('span', { className: 'child', id: 'control-consumer' }))))`,
+        mode,
+      )
+      // When: Chromium applies the ancestor selector through the absent nested owner.
+      await page.setContent(html)
+      // Then: no site class or local reset may block the inherited selector variable.
+      const absent = await page.locator('#child').evaluate((el) => {
+        if (!(el instanceof HTMLElement))
+          throw new TypeError('Expected rendered element')
+        const parent = document.querySelector('#parent')
+        if (!(parent instanceof HTMLElement))
+          throw new TypeError('Expected rendered parent')
+        return {
+          classes: Array.from(el.classList),
+          inline: Array.from(el.style),
+          inherited: Array.from(parent.style)
+            .filter((name) => name.startsWith('--'))
+            .map((name) => getComputedStyle(el).getPropertyValue(name).trim()),
+          padding: getComputedStyle(el).padding,
+        }
+      })
+      expect(absent.classes).toEqual([])
+      expect(absent.inline).toEqual([])
+      expect(absent.inherited.length).toBeGreaterThan(0)
+      expect(absent.inherited.every((value) => value === '16px')).toBe(true)
+      expect(absent.padding).toBe(
+        await page
+          .locator('#parent-omitted')
+          .evaluate((el) => getComputedStyle(el).padding),
+      )
+      const control = await page
+        .locator('#control-consumer')
+        .evaluate((el) => getComputedStyle(el).padding)
+      expect(control).toBe('16px')
+      expect(
+        await page
+          .locator('#child-consumer')
+          .evaluate((el) => getComputedStyle(el).padding),
+      ).toBe(control)
+    })
   })
 }
