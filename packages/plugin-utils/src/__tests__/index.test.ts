@@ -7,6 +7,29 @@ import { expect, it } from 'bun:test'
 import * as wasm from '../../../../bindings/devup-ui-wasm/pkg'
 import { enumerateProductionSourceFiles } from '../production-source-files'
 
+it('round-trips dormant ID-only storage through the public entrypoint', async () => {
+  // Given the public factory and a unique physical output root.
+  const root = mkdtempSync(join(tmpdir(), 'devup-n1-public-'))
+  const { createNonphysicalIdStore } = await import('../index')
+  const scope = {
+    integration: 'public',
+    resolvedRoot: root,
+    contextKey: 'build',
+  }
+  try {
+    const store = createNonphysicalIdStore(scope)
+    // When writing actual extracted IDs minus scan reservations.
+    await store.rewrite(['virtual:current', 'physical:miss', 'scan'], ['scan'])
+    // Then an equivalent public owner reloads only the current scan-missed IDs.
+    expect(await createNonphysicalIdStore(scope).read()).toEqual({
+      kind: 'loaded',
+      ids: ['physical:miss', 'virtual:current'],
+    })
+  } finally {
+    rmSync(root, { recursive: true, force: true })
+  }
+})
+
 it('exposes dormant closure when the package entrypoint is used', async () => {
   // Given physical source and the package's public exports.
   const root = realpathSync.native(
