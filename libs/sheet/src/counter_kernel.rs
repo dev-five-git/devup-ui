@@ -1,5 +1,9 @@
 use std::collections::{BTreeMap, BTreeSet};
 
+#[doc(hidden)]
+#[path = "snapshot6.rs"]
+pub mod snapshot6;
+
 use css::allocation_input::{CapturedDelivery, CapturedNameConfig};
 
 use crate::{

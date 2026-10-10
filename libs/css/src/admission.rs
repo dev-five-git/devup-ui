@@ -70,6 +70,32 @@ pub fn assert_administration_allowed(operation: &str) {
     });
 }
 
+/// Administration would invalidate an active exact attempt.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct ActiveExactAttempt;
+
+impl std::fmt::Display for ActiveExactAttempt {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        formatter.write_str("an exact attempt is active")
+    }
+}
+impl std::error::Error for ActiveExactAttempt {}
+
+/// Check installation eligibility while the caller holds admission.
+/// # Errors
+/// Returns `ActiveExactAttempt` before mutation when any exact scope is active.
+#[doc(hidden)]
+pub fn check_administration_allowed() -> Result<(), ActiveExactAttempt> {
+    EXACT_DEPTH.with(|depth| match depth.get() {
+        0 => Ok(()),
+        _ => Err(ActiveExactAttempt),
+    })
+}
+
+#[cfg(test)]
+#[path = "admission_typed_tests.rs"]
+mod typed_tests;
+
 pub(crate) struct ExactScope(PhantomData<Rc<()>>);
 
 impl ExactScope {

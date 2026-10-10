@@ -24,6 +24,8 @@ mod counter_fixture_static_tests;
 mod counter_fixture_support;
 #[doc(hidden)]
 pub mod counter_kernel;
+#[doc(hidden)]
+pub use counter_kernel::snapshot6;
 mod emission_seed;
 #[cfg(test)]
 mod emission_seed_capture_tests;
