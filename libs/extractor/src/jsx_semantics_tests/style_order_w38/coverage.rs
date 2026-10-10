@@ -227,3 +227,19 @@ mod w38n_mixin_diagnostics;
 #[cfg(test)]
 #[path = "coverage_cases/w38n_mixin_source.rs"]
 mod w38n_mixin_source;
+
+#[cfg(test)]
+#[path = "coverage_cases/w38o_logical_controls.rs"]
+mod w38o_logical_controls;
+#[cfg(test)]
+#[path = "coverage_cases/w38o_logical_finite.rs"]
+mod w38o_logical_finite;
+#[cfg(test)]
+#[path = "coverage_cases/w38o_logical_guards.rs"]
+mod w38o_logical_guards;
+#[cfg(test)]
+#[path = "coverage_cases/w38o_logical_oracle.rs"]
+mod w38o_logical_oracle;
+#[cfg(test)]
+#[path = "coverage_cases/w38o_logical_source.rs"]
+mod w38o_logical_source;
