@@ -24,15 +24,35 @@ fn retained_damage_rejects_before_callback_when_independent_authority_is_changed
             dynamic
         })])
     });
-    let (mut sheet, mut evidence) = (StyleSheet::default(), KernelEvidence::default());
-    update(&mut sheet, &mut evidence, &items).required("initial");
-    let retained = evidence.retained.as_mut().required("retained");
+    let mut sheet = StyleSheet::default();
+    update(&mut sheet, &items).required("initial");
+    let retained = sheet.counter_state.as_mut().required("retained");
     match damage {
-        0 => retained.candidates[0].lineage.parent = 55,
-        1 => retained.authority.config.prefix = "wrong".into(),
-        2 => retained.candidates[0].proof.emission.seed.placement.bucket = "wrong".into(),
+        0 => {
+            retained
+                .candidates_mut()
+                .next()
+                .required("candidate")
+                .lineage
+                .parent = 55;
+        }
+        1 => retained.config.prefix = "wrong".into(),
+        2 => {
+            retained
+                .candidates_mut()
+                .next()
+                .required("candidate")
+                .proof
+                .emission
+                .seed
+                .placement
+                .bucket = "wrong".into();
+        }
         3 => {
-            retained.candidates[0]
+            retained
+                .candidates_mut()
+                .next()
+                .required("candidate")
                 .lineage
                 .variable
                 .as_mut()
@@ -40,24 +60,16 @@ fn retained_damage_rejects_before_callback_when_independent_authority_is_changed
                 .original = 55;
         }
         4 => {
-            retained.authority.phase =
-                super::BatchPhase::Retained(BTreeSet::from(["wrong".into()]));
+            retained.phase = super::BatchPhase::Retained(BTreeSet::from(["wrong".into()]));
         }
         5 => {
-            let proof = &mut retained.candidates[0].proof;
+            let proof = &mut retained.candidates_mut().next().required("candidate").proof;
             if let Expansion::Dynamic { consumer, .. } = &mut proof.emission.expansion
                 && let crate::counter_evidence::RecordFootprint::Property { record, .. } =
                     consumer.as_mut()
             {
                 record.value = "wrong".into();
             }
-            retained
-                .evidence
-                .counters
-                .get_mut("D9-0")
-                .required("namespace")
-                .get_mut(&0)
-                .required("slot")[0] = proof.clone();
             let records = sheet
                 .properties
                 .get_mut("a")
@@ -76,13 +88,25 @@ fn retained_damage_rejects_before_callback_when_independent_authority_is_changed
             records.insert(altered);
         }
         6 => {
-            retained.candidates[0].proof.allocation.input =
-                css::allocation_input::LegacyInput::Keyframes("wrong".into());
+            retained
+                .candidates_mut()
+                .next()
+                .required("candidate")
+                .proof
+                .allocation
+                .input = css::allocation_input::LegacyInput::Keyframes("wrong".into());
         }
         7 => {
             if let crate::emission_seed::EmissionInput::Dynamic {
                 site: Some(site), ..
-            } = &mut retained.candidates[0].proof.emission.seed.body
+            } = &mut retained
+                .candidates_mut()
+                .next()
+                .required("candidate")
+                .proof
+                .emission
+                .seed
+                .body
             {
                 site.role = 7;
             } else {
@@ -91,18 +115,17 @@ fn retained_damage_rejects_before_callback_when_independent_authority_is_changed
         }
         _ => unreachable!("case"),
     }
-    let before = capture(&sheet, &evidence);
+    let before = capture(&sheet);
     let mut called = false;
     // When
-    let result: Result<(), UpdateError<()>> = CounterSheet::new(&mut sheet, &mut evidence)
-        .with_attempt(|_| {
-            called = true;
-            Err(UpdateError::Output(()))
-        });
+    let result: Result<(), UpdateError<()>> = CounterSheet::new(&mut sheet).with_attempt(|_| {
+        called = true;
+        Err(UpdateError::Output(()))
+    });
     // Then
     assert!(matches!(result, Err(UpdateError::Kernel(_))));
     assert!(!called);
-    assert_eq!(capture(&sheet, &evidence), before);
+    assert_eq!(capture(&sheet), before);
 }
 
 #[rstest::rstest]
@@ -119,8 +142,8 @@ fn actual_binding_damage_rejects_when_referenced_file_or_original_ordinal_change
             "color", "red", 0, None,
         ))])
     });
-    let (mut sheet, mut evidence) = (StyleSheet::default(), KernelEvidence::default());
-    update(&mut sheet, &mut evidence, &items).required("initial");
+    let mut sheet = StyleSheet::default();
+    update(&mut sheet, &items).required("initial");
     if original {
         css::file_map::set_original_ids(BTreeMap::from([("a".into(), 7)]));
     } else {
@@ -128,12 +151,12 @@ fn actual_binding_damage_rejects_when_referenced_file_or_original_ordinal_change
         files.insert("a".into(), 7);
         css::file_map::set_file_map(files);
     }
-    let before = capture(&sheet, &evidence);
+    let before = capture(&sheet);
     // When
-    let result = update(&mut sheet, &mut evidence, &styles([]));
+    let result = update(&mut sheet, &styles([]));
     // Then
     assert_eq!(result, Err(UpdateError::Kernel(KernelError::Authority)));
-    assert_eq!(capture(&sheet, &evidence), before);
+    assert_eq!(capture(&sheet), before);
 }
 
 #[rstest::rstest]
@@ -156,19 +179,19 @@ fn cleanup_receipt_or_fresh_phase_damage_rejects_when_real_partial_survival_is_r
             )),
         ))])
     });
-    let (mut sheet, mut evidence) = (StyleSheet::default(), KernelEvidence::default());
-    update(&mut sheet, &mut evidence, &items).required("initial");
-    update(&mut sheet, &mut evidence, &styles([])).required("real partial cleanup");
-    let retained = evidence.retained.as_mut().required("retained");
+    let mut sheet = StyleSheet::default();
+    update(&mut sheet, &items).required("initial");
+    update(&mut sheet, &styles([])).required("real partial cleanup");
+    let retained = sheet.counter_state.as_mut().required("retained");
     if fresh {
-        retained.authority.phase = super::BatchPhase::Fresh;
+        retained.phase = super::BatchPhase::Fresh;
     } else {
-        retained.authority.cleanups[0].bucket = "wrong".into();
+        retained.cleanups[0].bucket = "wrong".into();
     }
-    let before = capture(&sheet, &evidence);
+    let before = capture(&sheet);
     // When
-    let result = update(&mut sheet, &mut evidence, &styles([]));
+    let result = update(&mut sheet, &styles([]));
     // Then
     assert_eq!(result, Err(UpdateError::Kernel(KernelError::Cleanup)));
-    assert_eq!(capture(&sheet, &evidence), before);
+    assert_eq!(capture(&sheet), before);
 }

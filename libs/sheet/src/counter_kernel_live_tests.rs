@@ -6,12 +6,12 @@ use crate::{StyleSheet, theme::Typographies};
 fn callback_renders_prospective_live_sheet_when_real_update_is_prepared() {
     // Given
     let _state = state();
-    let (mut sheet, mut evidence) = (StyleSheet::default(), KernelEvidence::default());
+    let mut sheet = StyleSheet::default();
     sheet.theme.breakpoints = vec![0, 600];
     sheet.source_ids.insert("untouched".into(), 19);
     sheet.cache_restore = crate::cache_snapshot::CacheRestore::Rejected;
     // When
-    let rendered = CounterSheet::new(&mut sheet, &mut evidence)
+    let rendered = CounterSheet::new(&mut sheet)
         .with_attempt(|attempt| {
             fixture("a", || {
                 let items = styles([ExtractStyleValue::Static(ExtractStaticStyle::new(
@@ -55,15 +55,15 @@ fn callback_renders_prospective_live_sheet_when_real_update_is_prepared() {
 fn insertion_effects_are_false_when_empty_or_identical_non_global_update_runs() {
     // Given
     let _state = state();
-    let (mut sheet, mut evidence) = (StyleSheet::default(), KernelEvidence::default());
+    let mut sheet = StyleSheet::default();
     let items = fixture("a", || {
         styles([ExtractStyleValue::Static(ExtractStaticStyle::new(
             "color", "red", 0, None,
         ))])
     });
-    update(&mut sheet, &mut evidence, &items).required("initial");
+    update(&mut sheet, &items).required("initial");
     // When
-    let duplicate = update(&mut sheet, &mut evidence, &items).required("duplicate");
+    let duplicate = update(&mut sheet, &items).required("duplicate");
     // Then
     assert_eq!(
         duplicate,
@@ -74,12 +74,12 @@ fn insertion_effects_are_false_when_empty_or_identical_non_global_update_runs() 
         }
     );
     assert_eq!(
-        evidence
-            .retained
+        sheet
+            .counter_state
             .as_ref()
             .required("retained")
-            .candidates
-            .len(),
+            .candidates()
+            .count(),
         1
     );
 }
@@ -94,14 +94,14 @@ fn literal_emission_has_real_flags_when_atom_mode_changes_import_and_font_signal
     // Given
     let _state = state();
     css::atom_hoist::set_atom_hoist(atom.then_some(3));
-    let (mut sheet, mut evidence) = (StyleSheet::default(), KernelEvidence::default());
+    let mut sheet = StyleSheet::default();
     let output = extractor::extract_without_source_map("owner.tsx",
         "import { globalCss } from '@devup-ui/react'; globalCss({imports:['https://example.test/a.css'],fontFaces:[{fontFamily:'Example'}]});",
         extractor::ExtractOption::default()).required("literal extraction");
     let mut items = output.styles;
     items.insert(ExtractStyleValue::Typography("standalone".into()));
     // When
-    let effects = update(&mut sheet, &mut evidence, &items).required("literals");
+    let effects = update(&mut sheet, &items).required("literals");
     // Then
     assert_eq!(
         effects,
@@ -125,12 +125,12 @@ fn literal_emission_has_real_flags_when_atom_mode_changes_import_and_font_signal
 fn raw_css_is_base_only_when_literal_ir_reaches_real_kernel() {
     // Given
     let _state = state();
-    let (mut sheet, mut evidence) = (StyleSheet::default(), KernelEvidence::default());
+    let mut sheet = StyleSheet::default();
     let items = styles(extractor::extract_without_source_map("a.tsx",
         "import * as stylex from '@stylexjs/stylex'; const vars = stylex.defineVars({tone:'red'});",
         extractor::ExtractOption::default()).required("literal extraction").styles);
     // When
-    let effects = update(&mut sheet, &mut evidence, &items).required("css");
+    let effects = update(&mut sheet, &items).required("css");
     // Then
     assert_eq!(
         effects,
@@ -152,7 +152,7 @@ fn sparse_preset_yields_are_frozen_when_real_typography_and_keyframe_children_ar
     // Given
     let _state = state();
     let _presets = Presets::save();
-    let (mut sheet, mut evidence) = (StyleSheet::default(), KernelEvidence::default());
+    let mut sheet = StyleSheet::default();
     sheet.theme.typography.insert(
         "heading".into(),
         Typographies(vec![
@@ -183,7 +183,7 @@ fn sparse_preset_yields_are_frozen_when_real_typography_and_keyframe_children_ar
         ])
     });
     // When
-    update(&mut sheet, &mut evidence, &items).required("typography");
+    update(&mut sheet, &items).required("typography");
     // Then
     assert_eq!(sheet.properties["a"][&255][&0].len(), 2);
     assert_eq!(sheet.properties["a"][&255].len(), 1);
@@ -199,7 +199,7 @@ fn sparse_preset_yields_are_frozen_when_real_typography_and_keyframe_children_ar
 fn missing_preset_and_first_value_are_empty_or_raw_when_genuine_lookup_is_missing() {
     // Given
     let _state = state();
-    let (mut sheet, mut evidence) = (StyleSheet::default(), KernelEvidence::default());
+    let mut sheet = StyleSheet::default();
     let items = fixture("a", || {
         styles([
         ExtractStyleValue::Static(ExtractStaticStyle::new("typography", "kernel-missing", 0, None)),
@@ -208,7 +208,7 @@ fn missing_preset_and_first_value_are_empty_or_raw_when_genuine_lookup_is_missin
     ])
     });
     // When
-    update(&mut sheet, &mut evidence, &items).required("missing lookups");
+    update(&mut sheet, &items).required("missing lookups");
     // Then
     assert_eq!(sheet.properties["a"][&255][&0].len(), 1);
     assert_eq!(
@@ -220,12 +220,12 @@ fn missing_preset_and_first_value_are_empty_or_raw_when_genuine_lookup_is_missin
         "'literal'"
     );
     assert_eq!(
-        evidence
-            .retained
+        sheet
+            .counter_state
             .as_ref()
-            .required("sidecar")
-            .candidates
-            .len(),
+            .required("owned state")
+            .candidates()
+            .count(),
         2
     );
 }

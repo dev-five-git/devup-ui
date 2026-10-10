@@ -29,14 +29,14 @@ fn first_value_is_frozen_for_static_and_keyframes_when_registry_later_changes() 
             ExtractStyleValue::Keyframes(frames),
         ])
     });
-    let (mut sheet, mut evidence) = (StyleSheet::default(), KernelEvidence::default());
-    update(&mut sheet, &mut evidence, &items).required("initial");
+    let mut sheet = StyleSheet::default();
+    update(&mut sheet, &items).required("initial");
     css::theme_tokens::set_theme_token_values(
         BTreeMap::from([("kernelToken".into(), "24px".into())]),
         BTreeMap::new(),
     );
     // When
-    update(&mut sheet, &mut evidence, &styles([])).required("historical frozen replay");
+    update(&mut sheet, &styles([])).required("historical frozen replay");
     // Then
     assert_eq!(
         sheet.properties["a"][&255][&0]
@@ -59,10 +59,10 @@ fn plan_and_sheet_restore_when_first_atom_freeze_is_followed_by_output_error() {
     // Given
     let _state = state();
     css::atom_hoist::set_atom_hoist(Some(usize::MAX));
-    let (mut sheet, mut evidence) = (StyleSheet::default(), KernelEvidence::default());
-    let before = capture(&sheet, &evidence);
+    let mut sheet = StyleSheet::default();
+    let before = capture(&sheet);
     // When
-    let result = CounterSheet::new(&mut sheet, &mut evidence).with_attempt(|attempt| {
+    let result = CounterSheet::new(&mut sheet).with_attempt(|attempt| {
         attempt
             .prepare(
                 &styles([]),
@@ -78,7 +78,7 @@ fn plan_and_sheet_restore_when_first_atom_freeze_is_followed_by_output_error() {
     });
     // Then
     assert_eq!(result, Err(UpdateError::Output(())));
-    assert_eq!(capture(&sheet, &evidence), before);
+    assert_eq!(capture(&sheet), before);
 }
 
 #[test]
@@ -86,22 +86,22 @@ fn plan_and_sheet_restore_when_first_atom_freeze_is_followed_by_output_error() {
 fn outer_typed_owner_restores_inner_success_when_enclosing_exact_scope_aborts() {
     // Given
     let _state = state();
-    let (mut sheet, mut evidence) = (StyleSheet::default(), KernelEvidence::default());
-    let before = capture(&sheet, &evidence);
+    let mut sheet = StyleSheet::default();
+    let before = capture(&sheet);
     // When
     let result = css::admission::with_admission(|| {
-        let publication = super::publication::Publication::new(&mut sheet, &mut evidence);
+        let publication = super::publication::Publication::new(&mut sheet);
         css::exact_attempt::with_exclusive_attempt(|| {
             let items = fixture("a", || {
                 styles([ExtractStyleValue::Dynamic(ExtractDynamicStyle::new(
                     "color", 0, "tone", None,
                 ))])
             });
-            update(publication.sheet, publication.evidence, &items).required("inner success");
+            update(publication.sheet, &items).required("inner success");
             Err::<(), _>("outer abort")
         })
     });
     // Then
     assert_eq!(result, Err("outer abort"));
-    assert_eq!(capture(&sheet, &evidence), before);
+    assert_eq!(capture(&sheet), before);
 }

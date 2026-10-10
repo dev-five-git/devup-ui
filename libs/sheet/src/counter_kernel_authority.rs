@@ -1,5 +1,5 @@
-use super::{BatchPhase, Candidate, FrozenAuthority, LinkedBatch, error::KernelError, records};
-use crate::{StyleSheet, counter_evidence::CounterEvidence, emission_seed::EmissionContext};
+use super::{BatchPhase, Candidate, FrozenAuthority, error::KernelError};
+use crate::emission_seed::EmissionContext;
 use css::allocation_input::{CapturedDelivery, CapturedNameConfig, NameMode};
 use std::collections::{BTreeMap, BTreeSet};
 
@@ -125,26 +125,6 @@ impl FrozenAuthority {
             .collect();
         self.files.retain(|path, _| files.contains(path));
     }
-
-    pub(super) fn refresh(&self) -> Result<Self, KernelError> {
-        let originals = css::file_map::get_original_ids();
-        let files = css::file_map::get_file_map();
-        if self.config != config()
-            || self
-                .originals
-                .iter()
-                .any(|(path, id)| originals.get(path) != Some(id))
-            || self
-                .files
-                .iter()
-                .any(|(path, id)| files.get_by_left(path) != Some(id))
-        {
-            return Err(KernelError::Authority);
-        }
-        let mut authority = self.clone();
-        authority.classes = classes();
-        Ok(authority)
-    }
 }
 
 pub(super) fn classes() -> BTreeMap<String, BTreeMap<String, usize>> {
@@ -152,25 +132,4 @@ pub(super) fn classes() -> BTreeMap<String, BTreeMap<String, usize>> {
         .into_iter()
         .map(|(namespace, map)| (namespace, map.into_iter().collect()))
         .collect()
-}
-
-#[derive(Clone, Debug, PartialEq, Eq)]
-pub(super) struct Retained {
-    pub(super) candidates: Vec<Candidate>,
-    pub(super) evidence: CounterEvidence,
-    pub(super) authority: FrozenAuthority,
-    pub(super) plan: Option<BTreeSet<String>>,
-}
-
-impl Retained {
-    pub(super) fn validate(&self, sheet: &StyleSheet) -> Result<LinkedBatch, KernelError> {
-        if sheet.atom_plan != self.plan || css::atom_hoist::atom_plan() != self.plan {
-            return Err(KernelError::Authority);
-        }
-        let authority = self.authority.refresh()?;
-        let linked =
-            LinkedBatch::link_captured_batch(&self.candidates, &self.evidence, &authority)?;
-        records::coverage(sheet, &linked.records)?;
-        Ok(linked)
-    }
 }

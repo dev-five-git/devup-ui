@@ -81,6 +81,8 @@ mod value_tests;
 #[cfg(test)]
 mod variable_tests;
 
+#[path = "counter_authored.rs"]
+pub(crate) mod authored;
 #[path = "counter_kernel_authority.rs"]
 mod authority;
 #[path = "counter_kernel_capture.rs"]
@@ -95,12 +97,17 @@ mod prepare;
 mod production;
 #[path = "counter_kernel_publication.rs"]
 mod publication;
+#[path = "counter_state.rs"]
+pub(crate) mod state;
+#[path = "counter_state_live.rs"]
+mod state_live;
 #[path = "counter_kernel_traversal.rs"]
 mod traversal;
+#[path = "counter_state_validation.rs"]
+pub(crate) mod validation;
 pub use error::{KernelError, UpdateError};
 pub use live::{
-    CompletedUpdate, CounterSheet, KernelAttempt, KernelEvidence, PreparedUpdate, UpdateEffects,
-    UpdateRequest,
+    CompletedUpdate, CounterSheet, KernelAttempt, PreparedUpdate, UpdateEffects, UpdateRequest,
 };
 #[cfg(test)]
 #[path = "counter_kernel_authentic_damage_tests.rs"]
@@ -115,6 +122,9 @@ mod coverage_boundary_tests;
 #[path = "counter_kernel_coverage_support_tests.rs"]
 mod coverage_support_tests;
 #[cfg(test)]
+#[path = "counter_kernel_generated_ownership_tests.rs"]
+mod generated_ownership_tests;
+#[cfg(test)]
 #[path = "counter_kernel_keyframe_order_tests.rs"]
 mod keyframe_order_tests;
 #[cfg(test)]
@@ -126,6 +136,15 @@ mod live_tests;
 #[cfg(test)]
 #[path = "counter_kernel_lookup_tests.rs"]
 mod lookup_tests;
+#[cfg(test)]
+#[path = "counter_kernel_mutation_tests.rs"]
+mod mutation_tests;
+#[cfg(test)]
+#[path = "counter_kernel_owned_coverage_tests.rs"]
+mod owned_coverage_tests;
+#[cfg(test)]
+#[path = "counter_kernel_owned_tests.rs"]
+mod owned_tests;
 #[cfg(test)]
 #[path = "counter_kernel_prepare_tests.rs"]
 mod prepare_tests;

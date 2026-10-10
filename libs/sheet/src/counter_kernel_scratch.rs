@@ -75,7 +75,7 @@ pub(super) fn apply_scratch(
     let mut scratch = emission::clone_sheet(sheet);
     let cleaned = request
         .cleanup
-        .is_some_and(|cleanup| scratch.rm_global_css(&cleanup.source, cleanup.single_css));
+        .is_some_and(|cleanup| scratch.rm_global_css_raw(&cleanup.source, cleanup.single_css));
     let state = phase::stage(base, &request, request.cleanup.filter(|_| cleaned))?;
     let (collected, updated_base_style) = match request.operations {
         Some(operations) => {

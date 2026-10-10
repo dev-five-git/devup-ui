@@ -28,11 +28,11 @@ fn cleanup_preserves_selector_free_reset_when_global_or_at_consumer_is_removed(#
             Some(selector),
         ))])
     });
-    let (mut sheet, mut evidence) = (StyleSheet::default(), KernelEvidence::default());
-    update(&mut sheet, &mut evidence, &items).required("initial");
+    let mut sheet = StyleSheet::default();
+    update(&mut sheet, &items).required("initial");
     let reservations = css::class_map::get_class_map();
     // When
-    let effects = update(&mut sheet, &mut evidence, &styles([])).required("cleanup");
+    let effects = update(&mut sheet, &styles([])).required("cleanup");
     // Then
     assert_eq!(
         effects,
@@ -49,18 +49,21 @@ fn cleanup_preserves_selector_free_reset_when_global_or_at_consumer_is_removed(#
             .iter()
             .all(|record| record.owner_reset && record.selector.is_none())
     );
-    let retained = evidence.retained.as_ref().required("retained");
+    let retained = sheet.counter_state.as_ref().required("retained");
     assert_eq!(
-        retained.candidates[0].proof.emission.materialization,
+        retained
+            .candidates()
+            .next()
+            .required("candidate")
+            .proof
+            .emission
+            .materialization,
         Materialization::AfterGlobalCleanup {
             source: "a".into(),
             bucket: "a".into()
         }
     );
-    assert_eq!(
-        retained.authority.phase,
-        super::BatchPhase::Retained(BTreeSet::new())
-    );
+    assert_eq!(retained.phase, super::BatchPhase::Retained(BTreeSet::new()));
     assert_eq!(css::class_map::get_class_map(), reservations);
 }
 
@@ -77,17 +80,16 @@ fn fresh_global_owner_cannot_create_base_guard_when_base_is_empty() {
             Some(StyleSelector::Global("body".into(), "a".into())),
         ))])
     });
-    let (mut sheet, mut evidence) = (StyleSheet::default(), KernelEvidence::default());
+    let mut sheet = StyleSheet::default();
     // When
-    let effects = update(&mut sheet, &mut evidence, &items).required("incoming");
+    let effects = update(&mut sheet, &items).required("incoming");
     // Then
     assert!(!effects.default_collected);
     assert_eq!(
-        evidence
-            .retained
+        sheet
+            .counter_state
             .as_ref()
             .required("retained")
-            .authority
             .cleanups
             .len(),
         0
@@ -100,7 +102,7 @@ fn fresh_global_owner_cannot_create_base_guard_when_base_is_empty() {
 fn true_base_cleanup_precedes_re_registration_when_distinct_replacement_is_inserted() {
     // Given
     let _state = state();
-    let (mut sheet, mut evidence) = (StyleSheet::default(), KernelEvidence::default());
+    let mut sheet = StyleSheet::default();
     let old = fixture("a", || {
         styles([ExtractStyleValue::Static(ExtractStaticStyle::new(
             "color",
@@ -109,7 +111,7 @@ fn true_base_cleanup_precedes_re_registration_when_distinct_replacement_is_inser
             Some(StyleSelector::Global("body".into(), "a".into())),
         ))])
     });
-    update(&mut sheet, &mut evidence, &old).required("initial");
+    update(&mut sheet, &old).required("initial");
     let new = fixture("a", || {
         styles([ExtractStyleValue::Static(ExtractStaticStyle::new(
             "color",
@@ -119,7 +121,7 @@ fn true_base_cleanup_precedes_re_registration_when_distinct_replacement_is_inser
         ))])
     });
     // When
-    let effects = update(&mut sheet, &mut evidence, &new).required("replace");
+    let effects = update(&mut sheet, &new).required("replace");
     // Then
     assert!(effects.default_collected && effects.collected);
     assert_eq!(sheet.global_css_files, BTreeSet::from(["a".into()]));
@@ -133,12 +135,12 @@ fn true_base_cleanup_precedes_re_registration_when_distinct_replacement_is_inser
         "blue"
     );
     assert_eq!(
-        evidence
-            .retained
+        sheet
+            .counter_state
             .as_ref()
             .required("retained")
-            .candidates
-            .len(),
+            .candidates()
+            .count(),
         1
     );
     assert_eq!(css::class_map::get_class_map()["D9-0"].len(), 2);
@@ -157,21 +159,21 @@ fn historical_buckets_coexist_when_resolver_changes_between_attempts() {
             Some(StyleSelector::Global("body".into(), "a".into())),
         ))])
     });
-    let (mut sheet, mut evidence) = (StyleSheet::default(), KernelEvidence::default());
+    let mut sheet = StyleSheet::default();
     css::file_map::set_canonical_map(HashMap::from([("a".into(), "old".into())]));
-    update(&mut sheet, &mut evidence, &items).required("old bucket");
+    update(&mut sheet, &items).required("old bucket");
     css::file_map::set_canonical_map(HashMap::from([("a".into(), "new".into())]));
     // When
-    let effects = update(&mut sheet, &mut evidence, &items).required("new bucket");
+    let effects = update(&mut sheet, &items).required("new bucket");
     // Then
     assert!(effects.default_collected);
     assert_eq!(sheet.properties["old"][&255][&0].len(), 2);
     assert_eq!(sheet.properties["new"][&255][&0].len(), 2);
-    let retained = evidence.retained.as_ref().required("retained");
-    assert_eq!(retained.authority.cleanups[0].bucket, "new");
-    assert_eq!(retained.authority.deliveries.len(), 2);
+    let retained = sheet.counter_state.as_ref().required("retained");
+    assert_eq!(retained.cleanups[0].bucket, "new");
+    assert_eq!(retained.deliveries.len(), 2);
     assert_eq!(
-        retained.authority.files,
+        retained.files,
         BTreeMap::from([("old".into(), 0), ("new".into(), 1)])
     );
 }
@@ -201,10 +203,10 @@ fn peer_owner_survives_when_cleanup_targets_raw_owner_in_collapsed_bucket() {
         ("a".into(), "root".into()),
         ("b".into(), "root".into()),
     ]));
-    let (mut sheet, mut evidence) = (StyleSheet::default(), KernelEvidence::default());
-    update(&mut sheet, &mut evidence, &styles([a, b])).required("initial");
+    let mut sheet = StyleSheet::default();
+    update(&mut sheet, &styles([a, b])).required("initial");
     // When
-    update(&mut sheet, &mut evidence, &styles([])).required("cleanup");
+    update(&mut sheet, &styles([])).required("cleanup");
     // Then
     assert_eq!(sheet.global_css_files, BTreeSet::from(["b".into()]));
     assert_eq!(sheet.properties["root"][&255][&0].len(), 1);

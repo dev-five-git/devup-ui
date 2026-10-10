@@ -60,10 +60,9 @@ thread_local! {
 }
 
 pub(crate) fn absent() -> StyleSheet {
-    StyleSheet {
-        cache_restore: CacheRestore::Rejected,
-        ..StyleSheet::default()
-    }
+    let mut sheet = StyleSheet::default();
+    sheet.cache_restore = CacheRestore::Rejected;
+    sheet
 }
 
 fn set_classes(classes: ClassMap) {

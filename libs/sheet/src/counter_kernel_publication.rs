@@ -1,24 +1,25 @@
-use super::{emission, live::KernelEvidence, scratch::ScratchUpdate};
+use super::{scratch::ScratchUpdate, state_live};
 use crate::StyleSheet;
-use std::collections::BTreeSet;
 
 /// This owner is outside CSS exact ownership and inside admission.
 pub(super) struct Publication<'a> {
     pub(super) sheet: &'a mut StyleSheet,
-    pub(super) evidence: &'a mut KernelEvidence,
-    before: Option<(StyleSheet, Option<BTreeSet<String>>, KernelEvidence)>,
+    before: Option<StyleSheet>,
 }
 impl<'a> Publication<'a> {
-    pub(super) fn new(sheet: &'a mut StyleSheet, evidence: &'a mut KernelEvidence) -> Self {
-        let before = Some((
-            emission::clone_sheet(sheet),
-            sheet.atom_plan.clone(),
-            evidence.snapshot(),
-        ));
+    pub(super) fn checked(sheet: &'a mut StyleSheet) -> Result<Self, super::KernelError> {
+        let before = Some(state_live::capture_owned(sheet)?);
+        Ok(Self { sheet, before })
+    }
+
+    #[cfg(test)]
+    pub(super) fn new(sheet: &'a mut StyleSheet) -> Self {
+        let mut before = super::emission::clone_sheet(sheet);
+        before.atom_plan.clone_from(&sheet.atom_plan);
+        before.counter_state.clone_from(&sheet.counter_state);
         Self {
             sheet,
-            evidence,
-            before,
+            before: Some(before),
         }
     }
     pub(super) fn commit(&mut self) {
@@ -27,15 +28,15 @@ impl<'a> Publication<'a> {
 }
 impl Drop for Publication<'_> {
     fn drop(&mut self) {
-        if let Some((before, plan, evidence)) = self.before.take() {
+        if let Some(before) = self.before.take() {
             self.sheet.properties = before.properties;
             self.sheet.css = before.css;
             self.sheet.keyframes = before.keyframes;
             self.sheet.global_css_files = before.global_css_files;
             self.sheet.imports = before.imports;
             self.sheet.font_faces = before.font_faces;
-            self.sheet.atom_plan = plan;
-            *self.evidence = evidence;
+            self.sheet.atom_plan = before.atom_plan;
+            self.sheet.counter_state = before.counter_state;
         }
     }
 }

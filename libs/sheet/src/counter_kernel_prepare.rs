@@ -1,10 +1,10 @@
 use super::{
-    Cleanup, FrozenAuthority, LinkedBatch,
-    authority::{self, Retained},
+    Cleanup, FrozenAuthority, LinkedBatch, authority,
     error::KernelError,
-    live::{KernelEvidence, UpdateEffects, UpdateRequest},
+    live::{UpdateEffects, UpdateRequest},
     publication, records,
     scratch::{self, ScratchRequest},
+    state::CounterState,
     traversal::Traversal,
 };
 use crate::{StyleSheet, emission_seed::EmissionContext};
@@ -13,7 +13,6 @@ use rustc_hash::FxHashSet;
 
 pub(super) struct Preparation<'a> {
     pub(super) base: &'a LinkedBatch,
-    pub(super) evidence: &'a KernelEvidence,
     pub(super) styles: &'a FxHashSet<ExtractStyleValue>,
     pub(super) request: UpdateRequest<'a>,
 }
@@ -21,7 +20,7 @@ pub(super) struct Preparation<'a> {
 pub(super) fn prepare(
     sheet: &mut StyleSheet,
     input: Preparation<'_>,
-) -> Result<(KernelEvidence, UpdateEffects), KernelError> {
+) -> Result<(CounterState, UpdateEffects), KernelError> {
     css::atom_hoist::freeze_atom_plan();
     let plan = css::atom_hoist::atom_plan();
     if sheet.atom_plan.is_some() && sheet.atom_plan != plan {
@@ -63,8 +62,8 @@ pub(super) fn prepare(
         }
     }
     scratch.candidates = distinct;
-    let mut authority = match &input.evidence.retained {
-        Some(retained) => retained.authority.refresh()?,
+    let mut authority = match &sheet.counter_state {
+        Some(state) => state.projection(&authority::classes()),
         None => FrozenAuthority::live(),
     };
     authority.originals.extend(traversal.authority.originals);
@@ -106,14 +105,7 @@ pub(super) fn prepare(
     prospective.imports = scratch.imports.clone();
     prospective.font_faces = scratch.font_faces.clone();
     records::coverage(&prospective, &linked.records)?;
-    let pending = KernelEvidence {
-        retained: Some(Retained {
-            candidates: scratch.candidates.clone(),
-            evidence: scratch.evidence.clone(),
-            authority,
-            plan: plan.clone(),
-        }),
-    };
+    let pending = CounterState::from_captured(scratch.candidates.clone(), authority);
     let effects = UpdateEffects {
         collected: scratch.collected,
         updated_base_style: scratch.updated_base_style,

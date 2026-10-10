@@ -288,6 +288,8 @@ where
 #[derive(Default, Serialize)]
 pub struct StyleSheet {
     #[serde(skip)]
+    counter_state: Option<counter_kernel::state::CounterState>,
+    #[serde(skip)]
     pub cache_restore: cache_snapshot::CacheRestore,
     #[serde(default)]
     pub names: name_registry::NameRegistry,
@@ -354,21 +356,23 @@ impl StyleSheet {
         filename: Option<&str>,
         layer: Option<&str>,
     ) -> bool {
-        self.insert_property(
-            level,
-            style_order,
-            filename,
-            StyleSheetProperty {
-                class_name: class_name.to_string(),
-                property: property.to_string(),
-                value: value.to_string(),
-                selector: selector.cloned(),
-                layer: layer.map(ToString::to_string),
-                typography: false,
-                hoisted: false,
-                owner_reset: false,
-            },
-        )
+        counter_kernel::authored::literal(self, |sheet| {
+            sheet.insert_property_capture(
+                level,
+                style_order,
+                filename,
+                StyleSheetProperty {
+                    class_name: class_name.into(),
+                    property: property.into(),
+                    value: value.into(),
+                    selector: selector.cloned(),
+                    layer: layer.map(ToString::to_string),
+                    typography: false,
+                    hoisted: false,
+                    owner_reset: false,
+                },
+            )
+        })
     }
 
     fn insert_property(
@@ -376,8 +380,19 @@ impl StyleSheet {
         level: u8,
         style_order: Option<u8>,
         filename: Option<&str>,
-        mut prop: StyleSheetProperty,
+        prop: StyleSheetProperty,
     ) -> bool {
+        self.insert_property_capture(level, style_order, filename, prop)
+            .0
+    }
+
+    fn insert_property_capture(
+        &mut self,
+        level: u8,
+        style_order: Option<u8>,
+        filename: Option<&str>,
+        mut prop: StyleSheetProperty,
+    ) -> (bool, Option<counter_evidence::RecordFootprint>) {
         freeze_atom_plan();
         if self.atom_plan.is_none() {
             self.atom_plan = atom_plan();
@@ -407,15 +422,38 @@ impl StyleSheet {
             Some(bucket) => bucket,
             None => self.properties.entry(filename_key.to_string()).or_default(),
         };
-        bucket
+        let footprint =
+            self.counter_state
+                .as_ref()
+                .map(|_| counter_evidence::RecordFootprint::Property {
+                    bucket: filename_key.into(),
+                    order: style_order.unwrap_or(255),
+                    level,
+                    record: prop.clone(),
+                });
+        let added = bucket
             .entry(style_order.unwrap_or(255))
             .or_default()
             .entry(level)
             .or_default()
-            .insert(prop)
+            .insert(prop);
+        (added, footprint)
     }
 
     pub fn add_import(&mut self, file: &str, import: &str) {
+        counter_kernel::authored::literal(self, |sheet| {
+            sheet.add_import_raw(file, import);
+            (
+                (),
+                Some(counter_evidence::RecordFootprint::Import {
+                    source: file.into(),
+                    url: import.into(),
+                }),
+            )
+        });
+    }
+
+    fn add_import_raw(&mut self, file: &str, import: &str) {
         // Probe with the borrowed `&str` first so the owned `String` is only
         // allocated on first registration, not on repeat (HMR/multi-property) calls.
         if !self.global_css_files.contains(file) {
@@ -429,6 +467,19 @@ impl StyleSheet {
     }
 
     pub fn add_font_face(&mut self, file: &str, properties: &BTreeMap<String, String>) {
+        counter_kernel::authored::literal(self, |sheet| {
+            sheet.add_font_face_raw(file, properties);
+            (
+                (),
+                Some(counter_evidence::RecordFootprint::FontFace {
+                    source: file.into(),
+                    properties: properties.clone(),
+                }),
+            )
+        });
+    }
+
+    fn add_font_face_raw(&mut self, file: &str, properties: &BTreeMap<String, String>) {
         // Probe with the borrowed `&str` first so the owned `String` is only
         // allocated on first registration, not on repeat (HMR/multi-property) calls.
         if !self.global_css_files.contains(file) {
@@ -442,6 +493,19 @@ impl StyleSheet {
     }
 
     pub fn add_css(&mut self, file: &str, css: &str) -> bool {
+        counter_kernel::authored::literal(self, |sheet| {
+            let added = sheet.add_css_raw(file, css);
+            (
+                added,
+                Some(counter_evidence::RecordFootprint::Css {
+                    source: file.into(),
+                    css: css.into(),
+                }),
+            )
+        })
+    }
+
+    fn add_css_raw(&mut self, file: &str, css: &str) -> bool {
         // Probe with the borrowed `&str` first so the owned `String` is only
         // allocated on first registration, not on repeat (HMR/multi-property) calls.
         if !self.global_css_files.contains(file) {
@@ -457,6 +521,28 @@ impl StyleSheet {
     }
 
     pub fn add_keyframes(
+        &mut self,
+        name: &str,
+        keyframes: BTreeMap<String, Vec<(String, String)>>,
+        filename: Option<&str>,
+    ) -> bool {
+        counter_kernel::authored::literal(self, |sheet| {
+            let record = counter_evidence::RecordFootprint::Keyframes {
+                bucket: filename.unwrap_or_default().into(),
+                name: name.into(),
+                steps: keyframes
+                    .iter()
+                    .map(|(step, members)| (step.clone(), members.clone()))
+                    .collect(),
+            };
+            (
+                sheet.add_keyframes_raw(name, keyframes, filename),
+                Some(record),
+            )
+        })
+    }
+
+    fn add_keyframes_raw(
         &mut self,
         name: &str,
         keyframes: BTreeMap<String, Vec<(String, String)>>,
@@ -482,9 +568,22 @@ impl StyleSheet {
     }
 
     pub fn rm_global_css(&mut self, file: &str, single_css: bool) -> bool {
+        counter_kernel::authored::cleanup(self, file, single_css)
+    }
+
+    fn rm_global_css_raw(&mut self, file: &str, single_css: bool) -> bool {
+        self.rm_global_css_capture(file, single_css).0
+    }
+
+    fn rm_global_css_capture(&mut self, file: &str, single_css: bool) -> (bool, Option<String>) {
         if !self.global_css_files.contains(file) {
-            return false;
+            return (false, None);
         }
+        let property_key = if single_css {
+            String::new()
+        } else {
+            canonical(file)
+        };
         self.global_css_files.remove(file);
         self.css.remove(file);
 
@@ -497,12 +596,6 @@ impl StyleSheet {
         // were bucketed by canonical(file) in update_styles, so global-selector
         // atom removal must read from the canonical bucket while still matching
         // the raw owner via `f == file` below.
-        let property_key = if single_css {
-            String::new()
-        } else {
-            canonical(file)
-        };
-
         let bucket_empty = if let Some(prop_map) = self.properties.get_mut(&property_key) {
             for map in prop_map.values_mut() {
                 for props in map.values_mut() {
@@ -526,7 +619,7 @@ impl StyleSheet {
         if bucket_empty {
             self.properties.remove(&property_key);
         }
-        true
+        (true, Some(property_key))
     }
 
     pub fn set_theme(&mut self, theme: Theme) {
@@ -648,15 +741,20 @@ impl StyleSheet {
                         } => cls,
                     };
 
-                    if self.add_property_with_layer(
-                        &class_name,
-                        st.property(),
+                    if self.insert_property(
                         st.level(),
-                        &resolved_value,
-                        st.selector(),
                         st.style_order(),
                         bucket_scope,
-                        st.layer(),
+                        StyleSheetProperty {
+                            class_name,
+                            property: st.property().into(),
+                            value: resolved_value,
+                            selector: st.selector().cloned(),
+                            layer: st.layer().map(ToString::to_string),
+                            typography: false,
+                            hoisted: false,
+                            owner_reset: false,
+                        },
                     ) {
                         collected = true;
                         if updates_shared(st.style_order()) {
@@ -669,15 +767,20 @@ impl StyleSheet {
                         style.extract(name_scope)
                         && {
                             let dynamic_value = dy.effective_value();
-                            self.add_property_with_layer(
-                                &class_name,
-                                dy.property(),
+                            self.insert_property(
                                 dy.level(),
-                                &dynamic_value,
-                                dy.selector(),
                                 dy.style_order(),
                                 bucket_scope,
-                                dy.layer(),
+                                StyleSheetProperty {
+                                    class_name,
+                                    property: dy.property().into(),
+                                    value: dynamic_value,
+                                    selector: dy.selector().cloned(),
+                                    layer: dy.layer().map(ToString::to_string),
+                                    typography: false,
+                                    hoisted: false,
+                                    owner_reset: false,
+                                },
                             )
                         }
                     {
@@ -724,7 +827,7 @@ impl StyleSheet {
                             class_name: cls, ..
                         } => cls,
                     };
-                    if self.add_keyframes(
+                    if self.add_keyframes_raw(
                         &name,
                         keyframes.effective_steps().into_iter().collect(),
                         bucket_scope,

@@ -1,23 +1,16 @@
 use super::{
-    FrozenAuthority, LinkedBatch,
-    authority::Retained,
     error::{KernelError, UpdateError},
     prepare,
     publication::Publication,
-    records,
+    state::CounterState,
+    state_live, validation,
 };
-use crate::{StyleSheet, counter_evidence::CounterEvidence};
+use crate::StyleSheet;
 use extractor::extract_style::extract_style_value::ExtractStyleValue;
 use rustc_hash::FxHashSet;
 use std::marker::PhantomData;
 
 type Brand<'id> = PhantomData<(fn(&'id mut ()) -> &'id mut (), std::rc::Rc<()>)>;
-
-/// Opaque local Rust sidecar. Default adopts only emission-empty sheets.
-#[derive(Default)]
-pub struct KernelEvidence {
-    pub(super) retained: Option<Retained>,
-}
 
 /// Existing Output inputs; routing and cleanup are derived internally.
 pub struct UpdateRequest<'a> {
@@ -33,14 +26,13 @@ pub struct UpdateEffects {
     pub default_collected: bool,
 }
 
-/// Exclusive borrowed sheet and sidecar; acquire admission before external locks.
+/// Exclusive borrowed sheet; acquire admission before external locks.
 ///
 /// Successful empty update:
 /// ```
-/// use sheet::{StyleSheet, counter_kernel::{CounterSheet, KernelEvidence, UpdateRequest}};
+/// use sheet::{StyleSheet, counter_kernel::{CounterSheet, UpdateRequest}};
 /// let mut sheet = StyleSheet::default();
-/// let mut evidence = KernelEvidence::default();
-/// let result = CounterSheet::new(&mut sheet, &mut evidence).with_attempt(|attempt| {
+/// let result = CounterSheet::new(&mut sheet).with_attempt(|attempt| {
 ///     attempt.prepare(&Default::default(), UpdateRequest { raw_source: "a", single_css: true })?
 ///         .finish(|_, _| Ok::<_, std::convert::Infallible>(17))
 /// });
@@ -48,34 +40,31 @@ pub struct UpdateEffects {
 /// ```
 /// Completion cannot be transferred between attempts:
 /// ```compile_fail
-/// use sheet::{StyleSheet, counter_kernel::{CounterSheet, KernelEvidence, UpdateRequest}};
+/// use sheet::{StyleSheet, counter_kernel::{CounterSheet, UpdateRequest}};
 /// let (mut a, mut b) = (StyleSheet::default(), StyleSheet::default());
-/// let (mut ea, mut eb) = (KernelEvidence::default(), KernelEvidence::default());
 /// let _: Result<(), sheet::counter_kernel::UpdateError<std::convert::Infallible>> =
-/// CounterSheet::new(&mut a, &mut ea).with_attempt(|outer| {
+/// CounterSheet::new(&mut a).with_attempt(|outer| {
 ///     let completed = outer.prepare(&Default::default(), UpdateRequest { raw_source: "a", single_css: true })?
 ///         .finish(|_, _| Ok::<_, std::convert::Infallible>(17))?;
-///     CounterSheet::new(&mut b, &mut eb).with_attempt(|_| Ok(completed))?;
+///     CounterSheet::new(&mut b).with_attempt(|_| Ok(completed))?;
 ///     unreachable!()
 /// });
 /// ```
 /// Prepared borrows cannot escape:
 /// ```compile_fail
-/// use sheet::{StyleSheet, counter_kernel::{CounterSheet, KernelEvidence, UpdateRequest, UpdateError, CompletedUpdate}};
+/// use sheet::{StyleSheet, counter_kernel::{CounterSheet, UpdateRequest, UpdateError, CompletedUpdate}};
 /// let mut sheet = StyleSheet::default();
-/// let mut evidence = KernelEvidence::default();
 /// let mut escaped = None;
-/// let _ = CounterSheet::new(&mut sheet, &mut evidence).with_attempt(|attempt| {
+/// let _ = CounterSheet::new(&mut sheet).with_attempt(|attempt| {
 ///     escaped = Some(attempt.prepare(&Default::default(), UpdateRequest { raw_source: "a", single_css: true })?);
 ///     Err::<CompletedUpdate<'_, ()>, _>(UpdateError::Output(()))
 /// });
 /// ```
 /// Prospective sheet borrows cannot escape through output:
 /// ```compile_fail
-/// use sheet::{StyleSheet, counter_kernel::{CounterSheet, KernelEvidence, UpdateRequest}};
+/// use sheet::{StyleSheet, counter_kernel::{CounterSheet, UpdateRequest}};
 /// let mut sheet = StyleSheet::default();
-/// let mut evidence = KernelEvidence::default();
-/// let _ = CounterSheet::new(&mut sheet, &mut evidence).with_attempt(|attempt| {
+/// let _ = CounterSheet::new(&mut sheet).with_attempt(|attempt| {
 ///     attempt.prepare(&Default::default(), UpdateRequest { raw_source: "a", single_css: true })?
 ///         .finish(|sheet, _| Ok::<_, std::convert::Infallible>(sheet))
 /// });
@@ -130,20 +119,18 @@ pub struct UpdateEffects {
 /// ```
 pub struct CounterSheet<'a> {
     sheet: &'a mut StyleSheet,
-    evidence: &'a mut KernelEvidence,
 }
 
 /// Invariant, generative, single-use construction capability.
 pub struct KernelAttempt<'id> {
     sheet: &'id mut StyleSheet,
-    evidence: &'id KernelEvidence,
     brand: Brand<'id>,
 }
 
 /// Prepared prospective live sheet, not yet committed.
 pub struct PreparedUpdate<'id> {
     sheet: &'id mut StyleSheet,
-    pending: KernelEvidence,
+    pending: CounterState,
     effects: UpdateEffects,
     brand: Brand<'id>,
 }
@@ -151,40 +138,15 @@ pub struct PreparedUpdate<'id> {
 /// Provisional output; only the outer callback boundary may commit it.
 pub struct CompletedUpdate<'id, O> {
     sheet: &'id mut StyleSheet,
-    pending: KernelEvidence,
+    pending: CounterState,
     output: O,
     brand: Brand<'id>,
 }
 
-impl KernelEvidence {
-    pub(super) fn snapshot(&self) -> Self {
-        Self {
-            retained: self.retained.clone(),
-        }
-    }
-    pub(super) fn validate(&self, sheet: &StyleSheet) -> Result<LinkedBatch, KernelError> {
-        self.retained.as_ref().map_or_else(
-            || {
-                records::coverage(sheet, &[])?;
-                if sheet.atom_plan.is_some() && sheet.atom_plan != css::atom_hoist::atom_plan() {
-                    return Err(KernelError::Authority);
-                }
-                LinkedBatch::link_captured_batch(
-                    &[],
-                    &CounterEvidence::default(),
-                    &FrozenAuthority::live(),
-                )
-                .map_err(KernelError::from)
-            },
-            |retained| retained.validate(sheet),
-        )
-    }
-}
-
 impl<'a> CounterSheet<'a> {
     #[must_use]
-    pub const fn new(sheet: &'a mut StyleSheet, evidence: &'a mut KernelEvidence) -> Self {
-        Self { sheet, evidence }
+    pub const fn new(sheet: &'a mut StyleSheet) -> Self {
+        Self { sheet }
     }
 
     /// Run one generative attempt. No capability or sheet borrow can escape as O.
@@ -200,8 +162,7 @@ impl<'a> CounterSheet<'a> {
         ) -> Result<CompletedUpdate<'id, O>, UpdateError<E>>,
     ) -> Result<O, UpdateError<E>> {
         css::admission::with_admission(|| {
-            let mut publication = Publication::new(self.sheet, self.evidence);
-            publication.evidence.validate(publication.sheet)?;
+            let mut publication = Publication::checked(self.sheet)?;
             let output = css::exact_attempt::with_exclusive_attempt(|| {
                 let (pending, output) = {
                     let CompletedUpdate {
@@ -211,13 +172,17 @@ impl<'a> CounterSheet<'a> {
                         brand: _,
                     } = build(KernelAttempt {
                         sheet: publication.sheet,
-                        evidence: publication.evidence,
                         brand: PhantomData,
                     })?;
-                    pending.validate(sheet)?;
+                    validation::validate(validation::ValidationInput {
+                        sheet,
+                        state: &pending,
+                        maps: &state_live::maps(),
+                        build: &state_live::build(),
+                    })?;
                     (pending, output)
                 };
-                *publication.evidence = pending;
+                publication.sheet.counter_state = Some(pending);
                 Ok::<O, UpdateError<E>>(output)
             })?;
             publication.commit();
@@ -235,12 +200,11 @@ impl<'id> KernelAttempt<'id> {
         styles: &FxHashSet<ExtractStyleValue>,
         request: UpdateRequest<'_>,
     ) -> Result<PreparedUpdate<'id>, KernelError> {
-        let base = self.evidence.validate(self.sheet)?;
+        let base = state_live::validate(self.sheet)?;
         let (pending, effects) = prepare::prepare(
             self.sheet,
             prepare::Preparation {
                 base: &base,
-                evidence: self.evidence,
                 styles,
                 request,
             },
