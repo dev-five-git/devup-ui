@@ -1,1635 +1,498 @@
-import * as fs from 'node:fs'
-import { request } from 'node:http'
+import { existsSync, readFileSync } from 'node:fs'
+import * as fsp from 'node:fs/promises'
+import { Server } from 'node:http'
 import { join } from 'node:path'
+import { setTimeout as delay } from 'node:timers/promises'
 
-import * as wasm from '@devup-ui/wasm'
-import {
-  afterEach,
-  beforeEach,
-  describe,
-  expect,
-  it,
-  mock,
-  spyOn,
-} from 'bun:test'
+import { afterEach, describe, expect, it, mock, spyOn } from 'bun:test'
 
 import {
-  type CoordinatorOptions,
   flushCoordinatorWrites,
   resetCoordinator,
   startCoordinator,
+  takeExtractOutput,
 } from '../coordinator'
+import { parsePortFile } from '../coordinator-port'
+import { readCoordinatorState } from '../state'
+import {
+  connect,
+  createTestApp,
+  eventually,
+  failure,
+  http,
+  instrument,
+  ownership,
+  removeTestApps,
+} from './coordinator-app'
 
-let codeExtractSpy: ReturnType<typeof spyOn>
-let codeExtractWithoutSourceMapSpy: ReturnType<typeof spyOn>
-let getCssSpy: ReturnType<typeof spyOn>
-let exportSheetSpy: ReturnType<typeof spyOn>
-let exportClassMapSpy: ReturnType<typeof spyOn>
-let exportFileMapSpy: ReturnType<typeof spyOn>
-let writeFileSpy: ReturnType<typeof spyOn>
-let writeFileSyncSpy: ReturnType<typeof spyOn>
+const box = (bg: string) =>
+  `import { Box } from '@devup-ui/react'\nexport const C = () => <Box bg="${bg}" p={4} />\n`
 
-const tmpDir = join(process.cwd(), '.tmp-coordinator-test')
-
-function makeOptions(
-  overrides: Partial<CoordinatorOptions> = {},
-): CoordinatorOptions {
-  return {
-    wasm,
-    package: '@devup-ui/react',
-    cssDir: join(tmpDir, 'css'),
-    singleCss: false,
-    sheetFile: join(tmpDir, 'sheet.json'),
-    classMapFile: join(tmpDir, 'classMap.json'),
-    fileMapFile: join(tmpDir, 'fileMap.json'),
-    importAliases: {},
-    coordinatorPortFile: join(tmpDir, 'coordinator.port'),
-    canonicalMap: {},
-    ...overrides,
-  }
-}
-
-function httpRequest(
-  port: number,
-  method: string,
-  path: string,
-  body?: string,
-): Promise<{ status: number; body: string }> {
-  return new Promise((resolve, reject) => {
-    const req = request(
-      {
-        hostname: '127.0.0.1',
-        port,
-        path,
-        method,
-        headers: body ? { 'Content-Type': 'application/json' } : undefined,
-      },
-      (res) => {
-        const chunks: Buffer[] = []
-        res.on('data', (chunk: Buffer) => chunks.push(chunk))
-        res.on('end', () => {
-          resolve({
-            status: res.statusCode ?? 0,
-            body: Buffer.concat(chunks).toString('utf-8'),
-          })
-        })
-      },
-    )
-    req.on('error', reject)
-    if (body) req.write(body)
-    req.end()
+it.each([
+  undefined,
+  'code',
+  'css',
+  'cssFile',
+  'map',
+  'updatedBaseStyle',
+  'dependencies',
+])('preserves modern Next snapshot cleanup when getter %s fails', (fault) => {
+  const events: string[] = []
+  const error = new Error('getter fault')
+  let live = true
+  const free = mock(() => {
+    expect(live).toBe(true)
+    live = false
+    events.push('free')
   })
-}
-
-beforeEach(() => {
-  codeExtractSpy = spyOn(wasm, 'codeExtract')
-  codeExtractWithoutSourceMapSpy = spyOn(wasm, 'codeExtractWithoutSourceMap')
-  getCssSpy = spyOn(wasm, 'getCss')
-  exportSheetSpy = spyOn(wasm, 'exportSheet')
-  exportClassMapSpy = spyOn(wasm, 'exportClassMap')
-  exportFileMapSpy = spyOn(wasm, 'exportFileMap')
-  writeFileSpy = spyOn(fs, 'writeFile').mockImplementation(
-    (_path: any, _data: any, _encOrCb: any, maybeCb?: any) => {
-      const cb = typeof _encOrCb === 'function' ? _encOrCb : maybeCb
-      if (cb) cb(null)
-    },
-  )
-  writeFileSyncSpy = spyOn(fs, 'writeFileSync').mockReturnValue(undefined)
+  const output = {
+    code: 'copied',
+    css: 'sheet',
+    cssFile: 'sheet.css',
+    map: 'map',
+    updatedBaseStyle: true,
+    dependencies: ['dep.ts'],
+    free,
+    [Symbol.dispose]: free,
+  }
+  const expected = {
+    code: 'copied',
+    css: 'sheet',
+    cssFile: 'sheet.css',
+    map: 'map',
+    updatedBaseStyle: true,
+    dependencies: ['dep.ts'],
+  }
+  const fields = [
+    'code',
+    'css',
+    'cssFile',
+    'map',
+    'updatedBaseStyle',
+    'dependencies',
+  ] as const
+  for (const field of fields) {
+    const value = output[field]
+    Object.defineProperty(output, field, {
+      get() {
+        expect(live).toBe(true)
+        events.push(field)
+        if (fault === field) throw error
+        return value
+      },
+    })
+  }
+  if (fault) expect(() => takeExtractOutput(output)).toThrow(error)
+  else expect(takeExtractOutput(output)).toEqual(expected)
+  expect(events).toEqual([
+    ...fields.slice(0, fault ? fields.indexOf(fault) + 1 : fields.length),
+    'free',
+  ])
+  expect(free).toHaveBeenCalledTimes(1)
 })
 
 afterEach(() => {
   resetCoordinator()
-  codeExtractSpy.mockRestore()
-  codeExtractWithoutSourceMapSpy.mockRestore()
-  getCssSpy.mockRestore()
-  exportSheetSpy.mockRestore()
-  exportClassMapSpy.mockRestore()
-  exportFileMapSpy.mockRestore()
-  writeFileSpy.mockRestore()
-  writeFileSyncSpy.mockRestore()
+  removeTestApps()
 })
 
-describe('coordinator', () => {
-  it('should start and respond to /health', async () => {
-    const options = makeOptions()
-    const coordinator = startCoordinator(options)
+describe('endpoint', () => {
+  it('publishes its identity and answers health with the same descriptor', async () => {
+    const app = createTestApp()
+    const handle = startCoordinator(app.options())
+    await handle.ready
 
-    // Wait for server to start and write port file
-    await new Promise((r) => setTimeout(r, 100))
+    const client = connect(app.portFile, app.identity)
+    const health = await client.get('/health')
 
-    const portStr = (writeFileSyncSpy.mock.calls[0] as [string, string])[1]
-    const port = parseInt(portStr)
-
-    const res = await httpRequest(port, 'GET', '/health')
-    expect(res.status).toBe(200)
-    expect(res.body).toBe('ok')
-
-    coordinator.close()
+    expect(health.status).toBe(200)
+    expect(parsePortFile(health.body)).toEqual(client.info)
+    expect(client.info).toMatchObject({ ...app.identity, pid: process.pid })
+    handle.close()
+    expect(existsSync(app.portFile)).toBe(false)
   })
 
-  it('should handle /extract endpoint', async () => {
-    const extractOutput = {
-      code: 'transformed code',
-      map: '{"version":3}',
-      cssFile: 'devup-ui-1.css',
-      updatedBaseStyle: true,
-      dependencies: ['src/tokens.ts'],
-      free: mock(),
-      [Symbol.dispose]: mock(),
-    }
-    codeExtractSpy.mockReturnValue(extractOutput)
-    getCssSpy.mockImplementation(
-      (fileNum: number | null, _importMainCss: boolean) => {
-        if (fileNum === null) return 'base-css'
-        return `file-css-${fileNum}`
+  it('extracts through its own engine and rewrites per-file CSS imports', async () => {
+    const app = createTestApp()
+    app.write('src/a.tsx', box('red'))
+    const handle = startCoordinator(app.options())
+    await handle.ready
+    const client = connect(app.portFile, app.identity)
+
+    const reply = await client.post('/extract', app.post('src/a.tsx'))
+
+    expect(reply.status).toBe(200)
+    const data = JSON.parse(reply.body)
+    expect(data.code).toContain('devup-ui.css?fileNum=0')
+    expect(data.cssFile).toEndWith('devup-ui-0.css')
+    expect(JSON.parse(data.map).version).toBe(3)
+    expect(data.dependencies).toEqual([])
+  })
+
+  it('leaves single-CSS imports alone and skips source maps when asked', async () => {
+    const app = createTestApp()
+    app.write('src/a.tsx', box('red'))
+    const { engine, extractions } = instrument(app.engine())
+    const handle = startCoordinator(
+      app.options({ wasm: engine, singleCss: true, sourceMap: false }),
+    )
+    await handle.ready
+    const client = connect(app.portFile, app.identity)
+
+    const data = JSON.parse(
+      (await client.post('/extract', app.post('src/a.tsx'))).body,
+    )
+
+    expect(data.code).not.toContain('fileNum')
+    expect(extractions).toEqual(['nomap:src/a.tsx'])
+  })
+
+  it('serves the current CSS in development and labels the policy', async () => {
+    const app = createTestApp()
+    app.write('src/a.tsx', box('red'))
+    const handle = startCoordinator(app.options({ watch: true }))
+    await handle.ready
+    const client = connect(app.portFile, app.identity)
+    await client.post('/extract', app.post('src/a.tsx'))
+
+    const bucket = await client.get('/css?fileNum=0&importMainCss=true')
+
+    expect(bucket.status).toBe(200)
+    expect(bucket.headers['content-type']).toBe('text/css')
+    expect(bucket.headers['x-devup-css-policy']).toBe('dev-current')
+    expect(bucket.body).toContain('background:red')
+    expect(bucket.body).toContain('@import')
+    expect((await client.get('/css')).body).not.toContain('background:red')
+  })
+
+  it('answers unknown routes with 404', async () => {
+    const app = createTestApp()
+    const handle = startCoordinator(app.options())
+    await handle.ready
+
+    const reply = await connect(app.portFile, app.identity).get('/nope')
+
+    expect(reply).toMatchObject({ status: 404, body: 'Not Found' })
+  })
+
+  it('rejects malformed requests with located errors', async () => {
+    const app = createTestApp()
+    const handle = startCoordinator(app.options())
+    await handle.ready
+    const client = connect(app.portFile, app.identity)
+
+    const notJson = await client.post('/extract', '{nope')
+    const wrongShape = await client.post('/extract', '{"filename":1}')
+    const badFileNum = await client.get('/css?fileNum=x1')
+
+    expect(notJson.status).toBe(400)
+    expect(JSON.parse(notJson.body).error).toStartWith('/extract:1:1:')
+    expect(wrongShape.status).toBe(400)
+    expect(JSON.parse(wrongShape.body).error).toContain(
+      'filename, code and resourcePath must all be strings',
+    )
+    expect(badFileNum.status).toBe(400)
+    expect(JSON.parse(badFileNum.body).error).toStartWith('/css:1:1:')
+  })
+
+  it('reports build errors with their position, adding one when the engine has none', async () => {
+    const app = createTestApp()
+    app.write(
+      'src/dyn.tsx',
+      "import { css } from '@devup-ui/react'\nexport const x = css(foo())\n",
+    )
+    app.write(
+      'src/broken.tsx',
+      'import { Box } from \'@devup-ui/react\'\nexport const A = () => <Box bg="red"',
+    )
+    const handle = startCoordinator(app.options())
+    await handle.ready
+    const client = connect(app.portFile, app.identity)
+
+    const positioned = await client.post('/extract', app.post('src/dyn.tsx'))
+    const unpositioned = await client.post(
+      '/extract',
+      app.post('src/broken.tsx'),
+    )
+
+    expect(positioned.status).toBe(500)
+    expect(JSON.parse(positioned.body).error).toStartWith(
+      'src/dyn.tsx:2:18: Cannot compose `foo()` at build time',
+    )
+    expect(unpositioned.status).toBe(500)
+    expect(JSON.parse(unpositioned.body).error).toMatch(
+      /^src\/broken\.tsx:1:1: devup-ui coordinator cannot extract styles: .+ Fix: /,
+    )
+  })
+})
+
+describe('ownership', () => {
+  it('requires matching project and token headers once an identity is given', async () => {
+    const app = createTestApp()
+    const handle = startCoordinator(app.options())
+    await handle.ready
+    const { info } = connect(app.portFile, app.identity)
+    const right = ownership(app.identity)
+
+    const none = await http(info.port, 'GET', '/health')
+    const onlyProject = await http(info.port, 'GET', '/health', {
+      headers: { 'x-devup-project': right['x-devup-project'] },
+    })
+    const wrongToken = await http(info.port, 'GET', '/health', {
+      headers: {
+        ...right,
+        'x-devup-token': '00000000-0000-4000-8000-000000000000',
       },
-    )
-    exportSheetSpy.mockReturnValue('sheet-json')
-    exportClassMapSpy.mockReturnValue('classmap-json')
-    exportFileMapSpy.mockReturnValue('filemap-json')
-
-    const options = makeOptions()
-    const coordinator = startCoordinator(options)
-
-    await new Promise((r) => setTimeout(r, 100))
-
-    const portStr = (writeFileSyncSpy.mock.calls[0] as [string, string])[1]
-    const port = parseInt(portStr)
-
-    const res = await httpRequest(
-      port,
-      'POST',
-      '/extract',
-      JSON.stringify({
-        filename: 'src/App.tsx',
-        code: 'const x = <Box bg="red" />',
-        resourcePath: join(process.cwd(), 'src', 'App.tsx'),
-      }),
-    )
-
-    expect(res.status).toBe(200)
-    const data = JSON.parse(res.body)
-    expect(data.code).toBe('transformed code')
-    expect(data.map).toBe('{"version":3}')
-    expect(data.cssFile).toBe('devup-ui-1.css')
-    expect(data.updatedBaseStyle).toBe(true)
-    expect(data.dependencies).toEqual(['src/tokens.ts'])
-
-    // Verify WASM was called
-    expect(codeExtractSpy).toHaveBeenCalledTimes(1)
-    expect(extractOutput.free).toHaveBeenCalledTimes(1)
-
-    // Verify files were written (base CSS + per-file CSS + sheet + classmap + filemap)
-    expect(writeFileSpy).toHaveBeenCalledTimes(5)
-
-    coordinator.close()
-  })
-
-  it('skips source-map generation when requested', async () => {
-    const extractOutput = {
-      code: 'transformed code',
-      map: undefined,
-      cssFile: undefined,
-      updatedBaseStyle: false,
-      free: mock(),
-      [Symbol.dispose]: mock(),
-    }
-    codeExtractWithoutSourceMapSpy.mockReturnValue(extractOutput)
-    const coordinator = startCoordinator(makeOptions({ sourceMap: false }))
-    await new Promise((r) => setTimeout(r, 100))
-    const portStr = (writeFileSyncSpy.mock.calls[0] as [string, string])[1]
-
-    const res = await httpRequest(
-      parseInt(portStr),
-      'POST',
-      '/extract',
-      JSON.stringify({
-        filename: 'src/App.tsx',
-        code: 'const x = <Box bg="red" />',
-        resourcePath: join(process.cwd(), 'src', 'App.tsx'),
-      }),
-    )
-
-    expect(res.status).toBe(200)
-    expect(codeExtractWithoutSourceMapSpy).toHaveBeenCalledTimes(1)
-    expect(codeExtractSpy).not.toHaveBeenCalled()
-    expect(extractOutput.free).toHaveBeenCalledTimes(1)
-    coordinator.close()
-  })
-
-  it('reuses byte-identical singleCss prewarm output', async () => {
-    const source = 'const x = <Box bg="red" />'
-    const options = makeOptions({
-      singleCss: true,
-      prewarmedOutputs: new Map([
-        [
-          'src/App.tsx',
-          {
-            code: 'transformed prewarm code',
-            cssFile: 'devup-ui.css',
-            map: '{"version":3}',
-            source,
-            updatedBaseStyle: true,
-          },
-        ],
-      ]),
     })
-    const coordinator = startCoordinator(options)
-
-    await new Promise((r) => setTimeout(r, 100))
-
-    const portStr = (writeFileSyncSpy.mock.calls[0] as [string, string])[1]
-    const port = parseInt(portStr)
-    const res = await httpRequest(
-      port,
-      'POST',
-      '/extract',
-      JSON.stringify({
-        filename: 'src/App.tsx',
-        code: source,
-        resourcePath: join(process.cwd(), 'src', 'App.tsx'),
-      }),
-    )
-
-    expect(res.status).toBe(200)
-    expect(JSON.parse(res.body)).toMatchObject({
-      code: 'transformed prewarm code',
-      map: '{"version":3}',
-      cssFile: 'devup-ui.css',
-      updatedBaseStyle: true,
+    const wrongProject = await http(info.port, 'POST', '/extract', {
+      headers: { ...right, 'x-devup-project': join(app.root, 'other') },
+      body: app.post('src/a.tsx', box('red')),
     })
-    expect(codeExtractSpy).not.toHaveBeenCalled()
-    expect(writeFileSpy).not.toHaveBeenCalled()
+    const accepted = await http(info.port, 'GET', '/health', { headers: right })
 
-    coordinator.close()
-  })
-
-  it('reuses and rewrites byte-identical per-file prewarm output', async () => {
-    const source = 'const x = <Box bg="red" />'
-    getCssSpy.mockReturnValue('prewarmed bucket css')
-    const coordinator = startCoordinator(
-      makeOptions({
-        prewarmedFiles: ['src/App.tsx'],
-        prewarmedOutputs: new Map([
-          [
-            'src/App.tsx',
-            {
-              code: 'import "./df/devup-ui-79.css";\nconst x = 1',
-              cssFile: 'devup-ui-79.css',
-              map: '{"version":3}',
-              source,
-              updatedBaseStyle: false,
-            },
-          ],
-        ]),
-      }),
-    )
-
-    await new Promise((resolve) => setTimeout(resolve, 100))
-    const port = parseInt(
-      (writeFileSyncSpy.mock.calls[0] as [string, string])[1],
-    )
-    const res = await httpRequest(
-      port,
-      'POST',
-      '/extract',
-      JSON.stringify({
-        filename: 'src/App.tsx',
-        code: source,
-        resourcePath: join(process.cwd(), 'src', 'App.tsx'),
-      }),
-    )
-
-    expect(res.status).toBe(200)
-    expect(JSON.parse(res.body)).toMatchObject({
-      code: 'import "./df/devup-ui.css?fileNum=79";\nconst x = 1',
-      cssFile: 'devup-ui-79.css',
-      map: '{"version":3}',
-      updatedBaseStyle: false,
-    })
-    expect(codeExtractSpy).not.toHaveBeenCalled()
-    expect(writeFileSpy).not.toHaveBeenCalled()
-
-    const css = await httpRequest(
-      port,
-      'GET',
-      '/css?fileNum=79&importMainCss=true&waitForIdle=true',
-    )
-    expect(css).toEqual({ status: 200, body: 'prewarmed bucket css' })
-    expect(getCssSpy).toHaveBeenCalledWith(79, true)
-
-    coordinator.close()
-  })
-
-  it('profiles both base CSS serialization paths separately from writes', async () => {
-    const originalProfile = process.env.DEVUP_UI_PROFILE
-    process.env.DEVUP_UI_PROFILE = '1'
-    const infoSpy = spyOn(console, 'info').mockImplementation(() => {})
-    codeExtractSpy.mockReturnValue({
-      code: 'transformed code',
-      map: undefined,
-      css: 'collected css',
-      cssFile: 'devup-ui-1.css',
-      updatedBaseStyle: false,
-      free: mock(),
-      [Symbol.dispose]: mock(),
-    })
-    getCssSpy.mockImplementation((fileNum: number | null) =>
-      fileNum === null ? 'base-css' : `file-css-${fileNum}`,
-    )
-    exportSheetSpy.mockReturnValue('sheet-json')
-    exportClassMapSpy.mockReturnValue('classmap-json')
-    exportFileMapSpy.mockReturnValue('filemap-json')
-
-    const coordinator = startCoordinator(makeOptions())
-    try {
-      await new Promise((resolve) => setTimeout(resolve, 100))
-      const port = parseInt(
-        (writeFileSyncSpy.mock.calls[0] as [string, string])[1],
+    for (const refused of [none, onlyProject, wrongToken, wrongProject]) {
+      expect(refused.status).toBe(403)
+      expect(JSON.parse(refused.body).error).toContain(
+        ':1:1: devup-ui coordinator',
       )
-
-      const res = await httpRequest(
-        port,
-        'POST',
-        '/extract',
-        JSON.stringify({
-          filename: 'src/profile.tsx',
-          code: 'const profile = true',
-          resourcePath: join(process.cwd(), 'src', 'profile.tsx'),
-        }),
-      )
-
-      expect(res.status).toBe(200)
-      const message = infoSpy.mock.calls
-        .map(([value]) => value)
-        .find(
-          (value): value is string =>
-            typeof value === 'string' &&
-            value.startsWith(
-              '[devup-ui:profile] {"phase":"coordinator.extract"',
-            ),
-        )
-      if (message === undefined) throw new Error('missing extract profile')
-      const profile = JSON.parse(
-        message.slice('[devup-ui:profile] '.length),
-      ) as Record<string, unknown>
-
-      expect(profile).toMatchObject({
-        cacheHit: false,
-        classMapSnapshotBytes: Buffer.byteLength('classmap-json'),
-        cssSnapshotBytes: expect.any(Number),
-        fileMapSnapshotBytes: Buffer.byteLength('filemap-json'),
-        phase: 'coordinator.extract',
-        scheduledWrites: 5,
-        sheetSnapshotBytes: Buffer.byteLength('sheet-json'),
-        sourceBytes: Buffer.byteLength('const profile = true'),
-      })
-      expect(profile.classMapSnapshotMs).toBeTypeOf('number')
-      expect(profile.cssSnapshotMs).toBeTypeOf('number')
-      expect(profile.fileMapSnapshotMs).toBeTypeOf('number')
-      expect(profile.sheetSnapshotMs).toBeTypeOf('number')
-
-      codeExtractSpy.mockReturnValue({
-        code: 'transformed base code',
-        map: undefined,
-        css: 'collected base css',
-        cssFile: 'devup-ui-2.css',
-        updatedBaseStyle: true,
-        free: mock(),
-        [Symbol.dispose]: mock(),
-      })
-      const baseRes = await httpRequest(
-        port,
-        'POST',
-        '/extract',
-        JSON.stringify({
-          filename: 'src/profile-base.tsx',
-          code: 'const profileBase = true',
-          resourcePath: join(process.cwd(), 'src', 'profile-base.tsx'),
-        }),
-      )
-
-      expect(baseRes.status).toBe(200)
-      const baseMessage = infoSpy.mock.calls
-        .map(([value]) => value)
-        .find(
-          (value): value is string =>
-            typeof value === 'string' &&
-            value.includes('"filename":"src/profile-base.tsx"'),
-        )
-      if (baseMessage === undefined) {
-        throw new Error('missing base CSS extract profile')
-      }
-      const baseProfile = JSON.parse(
-        baseMessage.slice('[devup-ui:profile] '.length),
-      ) as Record<string, unknown>
-
-      expect(baseProfile).toMatchObject({
-        cacheHit: false,
-        cssSnapshotBytes: expect.any(Number),
-        filename: 'src/profile-base.tsx',
-        phase: 'coordinator.extract',
-        scheduledWrites: 5,
-      })
-      expect(baseProfile.cssSnapshotMs).toBeTypeOf('number')
-    } finally {
-      coordinator.close()
-      infoSpy.mockRestore()
-      if (originalProfile === undefined) {
-        delete process.env.DEVUP_UI_PROFILE
-      } else {
-        process.env.DEVUP_UI_PROFILE = originalProfile
-      }
     }
+    expect(accepted.status).toBe(200)
   })
 
-  it('should rewrite per-file CSS imports when singleCss=false', async () => {
-    codeExtractSpy.mockReturnValue({
-      code: 'import "./../../df/devup-ui/devup-ui-79.css";\nimport "./../../df/devup-ui/devup-ui-3.css";\nconst x = 1;',
-      map: '{"version":3}',
-      cssFile: 'devup-ui-79.css',
-      updatedBaseStyle: false,
-      free: mock(),
-      [Symbol.dispose]: mock(),
-    })
-    getCssSpy.mockReturnValue('file-css')
-    exportSheetSpy.mockReturnValue('{}')
-    exportClassMapSpy.mockReturnValue('{}')
-    exportFileMapSpy.mockReturnValue('{}')
+  it('lets header-less direct callers in only when no identity was given', async () => {
+    const app = createTestApp()
+    const handle = startCoordinator(app.options({ identity: undefined }))
+    await handle.ready
+    const port = parsePortFile(readFileSync(app.portFile, 'utf-8')).port
 
-    const options = makeOptions({ singleCss: false })
-    const coordinator = startCoordinator(options)
-
-    await new Promise((r) => setTimeout(r, 100))
-
-    const portStr = (writeFileSyncSpy.mock.calls[0] as [string, string])[1]
-    const port = parseInt(portStr)
-
-    const res = await httpRequest(
-      port,
-      'POST',
-      '/extract',
-      JSON.stringify({
-        filename: 'src/App.tsx',
-        code: 'const x = <Box bg="red" />',
-        resourcePath: join(process.cwd(), 'src', 'App.tsx'),
-      }),
-    )
-
-    expect(res.status).toBe(200)
-    const data = JSON.parse(res.body)
-    // Verify imports were rewritten from devup-ui-N.css to devup-ui.css?fileNum=N
-    expect(data.code).toContain('devup-ui.css?fileNum=79')
-    expect(data.code).toContain('devup-ui.css?fileNum=3')
-    expect(data.code).not.toContain('devup-ui-79.css')
-    expect(data.code).not.toContain('devup-ui-3.css')
-
-    coordinator.close()
-  })
-
-  it('should NOT rewrite CSS imports when singleCss=true', async () => {
-    codeExtractSpy.mockReturnValue({
-      code: 'import "./../../df/devup-ui/devup-ui.css";\nconst x = 1;',
-      map: undefined,
-      cssFile: 'devup-ui.css',
-      updatedBaseStyle: false,
-      free: mock(),
-      [Symbol.dispose]: mock(),
-    })
-    getCssSpy.mockReturnValue('all-styles')
-    exportSheetSpy.mockReturnValue('{}')
-    exportClassMapSpy.mockReturnValue('{}')
-    exportFileMapSpy.mockReturnValue('{}')
-
-    const options = makeOptions({ singleCss: true })
-    const coordinator = startCoordinator(options)
-
-    await new Promise((r) => setTimeout(r, 100))
-
-    const portStr = (writeFileSyncSpy.mock.calls[0] as [string, string])[1]
-    const port = parseInt(portStr)
-
-    const res = await httpRequest(
-      port,
-      'POST',
-      '/extract',
-      JSON.stringify({
-        filename: 'src/App.tsx',
-        code: 'const x = <Box bg="red" />',
-        resourcePath: join(process.cwd(), 'src', 'App.tsx'),
-      }),
-    )
-
-    expect(res.status).toBe(200)
-    const data = JSON.parse(res.body)
-    // singleCss=true: no rewriting should happen, devup-ui.css stays as-is
-    expect(data.code).toContain('devup-ui.css')
-    expect(data.code).not.toContain('?fileNum=')
-
-    coordinator.close()
-  })
-
-  it('should handle /extract in singleCss mode (cssFile is devup-ui.css)', async () => {
-    codeExtractSpy.mockReturnValue({
-      code: 'single css code',
-      map: undefined,
-      cssFile: 'devup-ui.css',
-      updatedBaseStyle: false,
-      free: mock(),
-      [Symbol.dispose]: mock(),
-    })
-    getCssSpy.mockReturnValue('all-styles')
-    exportSheetSpy.mockReturnValue('sheet-json')
-    exportClassMapSpy.mockReturnValue('classmap-json')
-    exportFileMapSpy.mockReturnValue('filemap-json')
-
-    const options = makeOptions({ singleCss: true })
-    const coordinator = startCoordinator(options)
-
-    await new Promise((r) => setTimeout(r, 100))
-
-    const portStr = (writeFileSyncSpy.mock.calls[0] as [string, string])[1]
-    const port = parseInt(portStr)
-
-    const res = await httpRequest(
-      port,
-      'POST',
-      '/extract',
-      JSON.stringify({
-        filename: 'src/App.tsx',
-        code: 'const x = <Box bg="red" />',
-        resourcePath: join(process.cwd(), 'src', 'App.tsx'),
-      }),
-    )
-
-    expect(res.status).toBe(200)
-    const data = JSON.parse(res.body)
-    expect(data.code).toBe('single css code')
-    expect(data.cssFile).toBe('devup-ui.css')
-
-    // Verify getCss was called with (null, true) for the CSS file write
-    expect(getCssSpy).toHaveBeenCalledWith(null, true)
-
-    // Verify files were written (CSS + sheet + classmap + filemap, no base style update)
-    expect(writeFileSpy).toHaveBeenCalledTimes(4)
-
-    coordinator.close()
-  })
-
-  it('should handle /extract when no CSS file produced', async () => {
-    codeExtractSpy.mockReturnValue({
-      code: 'no style code',
-      map: undefined,
-      cssFile: undefined,
-      updatedBaseStyle: false,
-      free: mock(),
-      [Symbol.dispose]: mock(),
+    const plain = await http(port, 'GET', '/health')
+    const foreign = await http(port, 'GET', '/health', {
+      headers: ownership({ project: app.root, token: 'someone-else' }),
     })
 
-    const options = makeOptions()
-    const coordinator = startCoordinator(options)
+    expect(plain.status).toBe(200)
+    expect(foreign.status).toBe(403)
+  })
+})
 
-    await new Promise((r) => setTimeout(r, 100))
+describe('instances', () => {
+  it('lets two apps in one process run side by side with their own engines', async () => {
+    const first = createTestApp()
+    const second = createTestApp()
+    first.write('src/a.tsx', box('red'))
+    second.write('src/a.tsx', box('blue'))
+    const firstHandle = startCoordinator(first.options({ watch: true }))
+    const secondHandle = startCoordinator(second.options({ watch: true }))
+    await Promise.all([firstHandle.ready, secondHandle.ready])
+    const one = connect(first.portFile, first.identity)
+    const two = connect(second.portFile, second.identity)
+    await one.post('/extract', first.post('src/a.tsx'))
+    await two.post('/extract', second.post('src/a.tsx'))
 
-    const portStr = (writeFileSyncSpy.mock.calls[0] as [string, string])[1]
-    const port = parseInt(portStr)
+    secondHandle.close()
 
-    const res = await httpRequest(
-      port,
-      'POST',
-      '/extract',
-      JSON.stringify({
-        filename: 'src/plain.ts',
-        code: 'const x = 1',
-        resourcePath: join(process.cwd(), 'src', 'plain.ts'),
-      }),
-    )
-
-    expect(res.status).toBe(200)
-    const data = JSON.parse(res.body)
-    expect(data.code).toBe('no style code')
-    expect(data.cssFile).toBeUndefined()
-
-    // No file writes expected (no CSS, no updatedBaseStyle)
-    expect(writeFileSpy).not.toHaveBeenCalled()
-
-    coordinator.close()
+    expect(one.info.port).not.toBe(two.info.port)
+    expect((await one.get('/css?fileNum=0')).body).toContain('background:red')
+    expect((await one.get('/health')).status).toBe(200)
+    expect(existsSync(second.portFile)).toBe(false)
+    expect(await failure(two.get('/health'))).toBeInstanceOf(Error)
+    expect(existsSync(first.portFile)).toBe(true)
   })
 
-  it('should handle /extract errors', async () => {
-    codeExtractSpy.mockImplementation(() => {
-      throw new Error('extraction failed')
-    })
+  it('shares one instance between handles of the same identity until the last is released', async () => {
+    const app = createTestApp()
+    const first = startCoordinator(app.options())
+    const second = startCoordinator(app.options())
+    await first.ready
+    const client = connect(app.portFile, app.identity)
 
-    const options = makeOptions()
-    const coordinator = startCoordinator(options)
-
-    await new Promise((r) => setTimeout(r, 100))
-
-    const portStr = (writeFileSyncSpy.mock.calls[0] as [string, string])[1]
-    const port = parseInt(portStr)
-
-    const res = await httpRequest(
-      port,
-      'POST',
-      '/extract',
-      JSON.stringify({
-        filename: 'src/bad.tsx',
-        code: 'invalid',
-        resourcePath: join(process.cwd(), 'src', 'bad.tsx'),
-      }),
-    )
-
-    expect(res.status).toBe(500)
-    const data = JSON.parse(res.body)
-    expect(data.error).toBe('extraction failed')
-
-    coordinator.close()
-  })
-
-  it('should handle /css endpoint', async () => {
-    getCssSpy.mockReturnValue('css-content')
-
-    const options = makeOptions()
-    const coordinator = startCoordinator(options)
-
-    await new Promise((r) => setTimeout(r, 100))
-
-    const portStr = (writeFileSyncSpy.mock.calls[0] as [string, string])[1]
-    const port = parseInt(portStr)
-
-    const res = await httpRequest(
-      port,
-      'GET',
-      '/css?fileNum=3&importMainCss=true',
-    )
-
-    expect(res.status).toBe(200)
-    expect(res.body).toBe('css-content')
-    expect(getCssSpy).toHaveBeenCalledWith(3, true)
-
-    coordinator.close()
-  })
-
-  it('should handle /css endpoint without fileNum', async () => {
-    getCssSpy.mockReturnValue('base-css')
-
-    const options = makeOptions()
-    const coordinator = startCoordinator(options)
-
-    await new Promise((r) => setTimeout(r, 100))
-
-    const portStr = (writeFileSyncSpy.mock.calls[0] as [string, string])[1]
-    const port = parseInt(portStr)
-
-    const res = await httpRequest(port, 'GET', '/css?importMainCss=false')
-
-    expect(res.status).toBe(200)
-    expect(res.body).toBe('base-css')
-    expect(getCssSpy).toHaveBeenCalledWith(null, false)
-
-    coordinator.close()
-  })
-
-  it('should handle /css with waitForIdle after extractions complete', async () => {
-    codeExtractSpy.mockReturnValue({
-      code: 'code',
-      map: undefined,
-      cssFile: 'devup-ui.css',
-      updatedBaseStyle: false,
-      free: mock(),
-      [Symbol.dispose]: mock(),
-    })
-    getCssSpy.mockReturnValue('complete-css')
-    exportSheetSpy.mockReturnValue('{}')
-    exportClassMapSpy.mockReturnValue('{}')
-    exportFileMapSpy.mockReturnValue('{}')
-
-    const options = makeOptions()
-    const coordinator = startCoordinator(options)
-
-    await new Promise((r) => setTimeout(r, 100))
-
-    const portStr = (writeFileSyncSpy.mock.calls[0] as [string, string])[1]
-    const port = parseInt(portStr)
-
-    // Do an extraction first so totalExtractions > 0
-    await httpRequest(
-      port,
-      'POST',
-      '/extract',
-      JSON.stringify({
-        filename: 'src/A.tsx',
-        code: 'code',
-        resourcePath: join(process.cwd(), 'src', 'A.tsx'),
-      }),
-    )
-
-    // Now request CSS with waitForIdle — should resolve after idle threshold
-    const res = await httpRequest(
-      port,
-      'GET',
-      '/css?importMainCss=false&waitForIdle=true',
-    )
-
-    expect(res.status).toBe(200)
-    expect(res.body).toBe('complete-css')
-
-    coordinator.close()
-  })
-
-  it('should handle /css with waitForIdle timeout when no extractions happen', async () => {
-    getCssSpy.mockReturnValue('timeout-css')
-
-    const options = makeOptions()
-    const coordinator = startCoordinator(options)
-
-    await new Promise((r) => setTimeout(r, 100))
-
-    const portStr = (writeFileSyncSpy.mock.calls[0] as [string, string])[1]
-    const port = parseInt(portStr)
-
-    // Mock Date.now to simulate time passing beyond MAX_WAIT_MS (60s).
-    let callCount = 0
-    const dateNowSpy = spyOn(Date, 'now').mockImplementation(() => {
-      callCount++
-      // First call is `const start = Date.now()` — return 0
-      // Subsequent calls return past MAX_WAIT_MS threshold
-      if (callCount <= 1) return 0
-      return 61_000
-    })
-
-    // Request CSS with waitForIdle=true but no extractions ever happen
-    // (totalExtractions === 0), so it should timeout and return CSS anyway
-    const res = await httpRequest(
-      port,
-      'GET',
-      '/css?importMainCss=false&waitForIdle=true',
-    )
-
-    expect(res.status).toBe(200)
-    expect(res.body).toBe('timeout-css')
-
-    dateNowSpy.mockRestore()
-    coordinator.close()
-  })
-
-  it('should return 404 for unknown routes', async () => {
-    const options = makeOptions()
-    const coordinator = startCoordinator(options)
-
-    await new Promise((r) => setTimeout(r, 100))
-
-    const portStr = (writeFileSyncSpy.mock.calls[0] as [string, string])[1]
-    const port = parseInt(portStr)
-
-    const res = await httpRequest(port, 'GET', '/unknown')
-
-    expect(res.status).toBe(404)
-    expect(res.body).toBe('Not Found')
-
-    coordinator.close()
-  })
-
-  it('should write port file on startup', async () => {
-    const options = makeOptions()
-    const coordinator = startCoordinator(options)
-
-    await new Promise((r) => setTimeout(r, 100))
-
-    expect(writeFileSyncSpy).toHaveBeenCalledWith(
-      options.coordinatorPortFile,
-      expect.any(String),
-      'utf-8',
-    )
-
-    const portStr = (writeFileSyncSpy.mock.calls[0] as [string, string])[1]
-    const port = parseInt(portStr)
-    expect(port).toBeGreaterThan(0)
-
-    coordinator.close()
-  })
-
-  it('should close cleanly', async () => {
-    const options = makeOptions()
-    const coordinator = startCoordinator(options)
-
-    await new Promise((r) => setTimeout(r, 100))
-
-    coordinator.close()
-
-    // Server should be closed - double close should be safe
-    coordinator.close()
-  })
-
-  it('replaces an existing coordinator without retaining its server', async () => {
-    const options = makeOptions()
-    const first = startCoordinator(options)
-    await new Promise((resolve) => setTimeout(resolve, 100))
-    const firstPort = parseInt(
-      (writeFileSyncSpy.mock.calls.at(-1) as [string, string])[1],
-    )
-
-    const second = startCoordinator(options)
-    await new Promise((resolve) => setTimeout(resolve, 100))
-    const secondPort = parseInt(
-      (writeFileSyncSpy.mock.calls.at(-1) as [string, string])[1],
-    )
-
-    let firstClosed = false
-    try {
-      await httpRequest(firstPort, 'GET', '/health')
-    } catch {
-      firstClosed = true
-    }
-    expect(firstClosed).toBe(true)
-
-    // Closing the superseded handle must not close the replacement server.
     first.close()
-    const res = await httpRequest(secondPort, 'GET', '/health')
-    expect(res).toEqual({ status: 200, body: 'ok' })
+    first.close()
+    expect((await client.get('/health')).status).toBe(200)
+    await second.drain()
 
-    second.close()
+    expect(first.ready).toBe(second.ready)
+    expect(await failure(client.get('/health'))).toBeInstanceOf(Error)
+    expect(existsSync(app.portFile)).toBe(false)
   })
 
-  it('should touch devup-ui.css to invalidate Turbopack cache when singleCss=false and new CSS collected', async () => {
-    codeExtractSpy.mockReturnValue({
-      code: 'import "./../../df/devup-ui/devup-ui-5.css";\nconst x = 1;',
-      map: undefined,
-      cssFile: 'devup-ui-5.css',
-      updatedBaseStyle: false,
-      css: '.a{color:yellow}',
-      free: mock(),
-      [Symbol.dispose]: mock(),
-    })
-    getCssSpy.mockImplementation(
-      (fileNum: number | null, _importMainCss: boolean) => {
-        if (fileNum === null) return 'base-css'
-        return `file-css-${fileNum}`
-      },
+  it('refuses to share an endpoint with an unrelated app instead of closing it', async () => {
+    const app = createTestApp()
+    const owner = startCoordinator(app.options())
+    await owner.ready
+    const client = connect(app.portFile, app.identity)
+
+    const stranger = {
+      project: app.identity.project,
+      token: '11111111-1111-4111-8111-111111111111',
+    }
+
+    expect(() => startCoordinator(app.options({ identity: stranger }))).toThrow(
+      /coordinator\.port:1:1: devup-ui coordinator cannot start: another coordinator/,
     )
-    exportSheetSpy.mockReturnValue('{}')
-    exportClassMapSpy.mockReturnValue('{}')
-    exportFileMapSpy.mockReturnValue('{}')
-
-    const options = makeOptions({ singleCss: false })
-    const coordinator = startCoordinator(options)
-
-    await new Promise((r) => setTimeout(r, 100))
-
-    const portStr = (writeFileSyncSpy.mock.calls[0] as [string, string])[1]
-    const port = parseInt(portStr)
-
-    const res = await httpRequest(
-      port,
-      'POST',
-      '/extract',
-      JSON.stringify({
-        filename: 'src/App.tsx',
-        code: 'const x = <Box color="yellow" />',
-        resourcePath: join(process.cwd(), 'src', 'App.tsx'),
-      }),
-    )
-
-    expect(res.status).toBe(200)
-
-    // 5 writes: per-file CSS + sheet + classmap + filemap + devup-ui.css invalidation
-    expect(writeFileSpy).toHaveBeenCalledTimes(5)
-
-    // Verify devup-ui.css was written to trigger Turbopack invalidation
-    const devupUiCssWrite = writeFileSpy.mock.calls.find(
-      (call: unknown[]) =>
-        typeof call[0] === 'string' && call[0].endsWith('devup-ui.css'),
-    )
-    expect(devupUiCssWrite).toBeTruthy()
-    // Content should include base CSS + timestamp nonce
-    const content = devupUiCssWrite![1] as string
-    expect(content).toContain('base-css')
-    expect(content).toMatch(/\/\* \d+ \*\//)
-
-    coordinator.close()
+    expect(() =>
+      startCoordinator(app.options({ identity: undefined })),
+    ).toThrow('cannot start')
+    expect((await client.get('/health')).status).toBe(200)
   })
 
-  it('should NOT touch devup-ui.css when singleCss=false but no new CSS collected', async () => {
-    codeExtractSpy.mockReturnValue({
-      code: 'const x = 1;',
-      map: undefined,
-      cssFile: 'devup-ui-5.css',
-      updatedBaseStyle: false,
-      css: undefined, // no new CSS collected
-      free: mock(),
-      [Symbol.dispose]: mock(),
-    })
-    getCssSpy.mockReturnValue('file-css')
-    exportSheetSpy.mockReturnValue('{}')
-    exportClassMapSpy.mockReturnValue('{}')
-    exportFileMapSpy.mockReturnValue('{}')
-
-    const options = makeOptions({ singleCss: false })
-    const coordinator = startCoordinator(options)
-
-    await new Promise((r) => setTimeout(r, 100))
-
-    const portStr = (writeFileSyncSpy.mock.calls[0] as [string, string])[1]
-    const port = parseInt(portStr)
-
-    await httpRequest(
-      port,
-      'POST',
-      '/extract',
-      JSON.stringify({
-        filename: 'src/App.tsx',
-        code: 'const x = 1',
-        resourcePath: join(process.cwd(), 'src', 'App.tsx'),
+  it('does not let a closed coordinator delete the port file of its replacement', async () => {
+    const app = createTestApp()
+    const old = startCoordinator(app.options())
+    await old.ready
+    old.close()
+    const replacement = startCoordinator(
+      app.options({
+        identity: {
+          ...app.identity,
+          token: '22222222-2222-4222-8222-222222222222',
+        },
       }),
     )
+    await replacement.ready
 
-    // 4 writes: per-file CSS + sheet + classmap + filemap (NO devup-ui.css touch)
-    expect(writeFileSpy).toHaveBeenCalledTimes(4)
+    old.close()
 
-    // Verify NO devup-ui.css write
-    const devupUiCssWrite = writeFileSpy.mock.calls.find(
-      (call: unknown[]) =>
-        typeof call[0] === 'string' && call[0].endsWith('devup-ui.css'),
-    )
-    expect(devupUiCssWrite).toBeUndefined()
-
-    coordinator.close()
-  })
-
-  it('should NOT touch devup-ui.css for singleCss=true (not needed)', async () => {
-    codeExtractSpy.mockReturnValue({
-      code: 'const x = 1;',
-      map: undefined,
-      cssFile: 'devup-ui.css',
-      updatedBaseStyle: false,
-      css: '.a{color:yellow}',
-      free: mock(),
-      [Symbol.dispose]: mock(),
-    })
-    getCssSpy.mockReturnValue('all-styles')
-    exportSheetSpy.mockReturnValue('{}')
-    exportClassMapSpy.mockReturnValue('{}')
-    exportFileMapSpy.mockReturnValue('{}')
-
-    const options = makeOptions({ singleCss: true })
-    const coordinator = startCoordinator(options)
-
-    await new Promise((r) => setTimeout(r, 100))
-
-    const portStr = (writeFileSyncSpy.mock.calls[0] as [string, string])[1]
-    const port = parseInt(portStr)
-
-    await httpRequest(
-      port,
-      'POST',
-      '/extract',
-      JSON.stringify({
-        filename: 'src/App.tsx',
-        code: 'const x = <Box color="yellow" />',
-        resourcePath: join(process.cwd(), 'src', 'App.tsx'),
-      }),
-    )
-
-    // 4 writes: CSS file (devup-ui.css via cssFile) + sheet + classmap + filemap
-    // NO additional devup-ui.css invalidation write (singleCss=true doesn't need it)
-    expect(writeFileSpy).toHaveBeenCalledTimes(4)
-
-    coordinator.close()
-  })
-
-  it('should be reset via resetCoordinator while server is active', async () => {
-    const options = makeOptions()
-    startCoordinator(options)
-
-    await new Promise((r) => setTimeout(r, 100))
-
-    // resetCoordinator should close the active server
-    resetCoordinator()
-
-    // Calling again should be safe (server is already null)
-    resetCoordinator()
-  })
-
-  it('should coalesce duplicate writes to the same path within one /extract handler', async () => {
-    // When a single /extract invocation triggers multiple writes to the same
-    // path (singleCss + updatedBaseStyle=true → both the base-CSS write and
-    // the cssFile write target `devup-ui.css`), the second write must be
-    // collapsed by the latest-wins serializer: the first chained run sees the
-    // *latest* content and writes it once, the second chained run finds
-    // `latestContent` already consumed and resolves as a no-op.
-    codeExtractSpy.mockReturnValue({
-      code: 'single css code',
-      map: undefined,
-      cssFile: 'devup-ui.css',
-      updatedBaseStyle: true,
-      free: mock(),
-      [Symbol.dispose]: mock(),
-    })
-    getCssSpy.mockReturnValue('all-styles')
-    exportSheetSpy.mockReturnValue('sheet-json')
-    exportClassMapSpy.mockReturnValue('classmap-json')
-    exportFileMapSpy.mockReturnValue('filemap-json')
-
-    const options = makeOptions({ singleCss: true })
-    const coordinator = startCoordinator(options)
-
-    await new Promise((r) => setTimeout(r, 100))
-
-    const portStr = (writeFileSyncSpy.mock.calls[0] as [string, string])[1]
-    const port = parseInt(portStr)
-
-    const res = await httpRequest(
-      port,
-      'POST',
-      '/extract',
-      JSON.stringify({
-        filename: 'src/App.tsx',
-        code: 'const x = <Box bg="red" />',
-        resourcePath: join(process.cwd(), 'src', 'App.tsx'),
-      }),
-    )
-
-    expect(res.status).toBe(200)
-
-    // Both safeWrite calls target `devup-ui.css`. Coalescing means exactly
-    // one physical writeFile call is made for that path; the sheet/classMap/
-    // fileMap writes (3 more) all go to distinct paths.
-    const devupUiCssWrites = writeFileSpy.mock.calls.filter((call) =>
-      String(call[0]).endsWith('devup-ui.css'),
-    )
-    expect(devupUiCssWrites.length).toBe(1)
-
-    coordinator.close()
-  })
-
-  it('should expose flushCoordinatorWrites to drain queued writes', async () => {
-    // The exported helper must return a settled promise even when no writes
-    // are pending (idle coordinator), so build orchestration can safely await
-    // it without risk of hanging.
-    await expect(flushCoordinatorWrites()).resolves.toBeUndefined()
-
-    // After triggering a real /extract, awaiting the helper must wait for all
-    // queued writes (chained per path) to settle. We assert the spy has been
-    // invoked by the time the helper resolves.
-    codeExtractSpy.mockReturnValue({
-      code: 'code',
-      map: undefined,
-      cssFile: 'devup-ui-7.css',
-      updatedBaseStyle: false,
-      free: mock(),
-      [Symbol.dispose]: mock(),
-    })
-    getCssSpy.mockReturnValue('per-file-css')
-    exportSheetSpy.mockReturnValue('sheet-json')
-    exportClassMapSpy.mockReturnValue('classmap-json')
-    exportFileMapSpy.mockReturnValue('filemap-json')
-
-    const options = makeOptions()
-    const coordinator = startCoordinator(options)
-
-    await new Promise((r) => setTimeout(r, 100))
-
-    const portStr = (writeFileSyncSpy.mock.calls[0] as [string, string])[1]
-    const port = parseInt(portStr)
-
-    await httpRequest(
-      port,
-      'POST',
-      '/extract',
-      JSON.stringify({
-        filename: 'src/App.tsx',
-        code: 'const x = <Box bg="red" />',
-        resourcePath: join(process.cwd(), 'src', 'App.tsx'),
-      }),
-    )
-
-    await expect(flushCoordinatorWrites()).resolves.toBeUndefined()
-    expect(writeFileSpy.mock.calls.length).toBeGreaterThan(0)
-
-    coordinator.close()
-  })
-
-  it('should continue chained writes after a previous write fails (chain error recovery)', async () => {
-    // The serializer must not let one failed write poison every subsequent
-    // write for that path. We force the first writeFile to fail, then verify
-    // the second extraction's writes still happen for that same path.
-    codeExtractSpy.mockReturnValue({
-      code: 'code',
-      map: undefined,
-      cssFile: 'devup-ui.css',
-      updatedBaseStyle: false,
-      free: mock(),
-      [Symbol.dispose]: mock(),
-    })
-    getCssSpy.mockReturnValue('css-content')
-    exportSheetSpy.mockReturnValue('sheet-json')
-    exportClassMapSpy.mockReturnValue('classmap-json')
-    exportFileMapSpy.mockReturnValue('filemap-json')
-
-    // Re-install writeFile spy with controlled failure: any write to the
-    // devup-ui.css path errors out on the *first* invocation only.
-    writeFileSpy.mockRestore()
-    let devupCssCallCount = 0
-    writeFileSpy = spyOn(fs, 'writeFile').mockImplementation(
-      (_path: any, _data: any, _encOrCb: any, maybeCb?: any) => {
-        const cb = typeof _encOrCb === 'function' ? _encOrCb : maybeCb
-        if (cb) {
-          if (String(_path).endsWith('devup-ui.css')) {
-            devupCssCallCount++
-            if (devupCssCallCount === 1) {
-              cb(new Error('simulated disk error'))
-              return
-            }
-          }
-          cb(null)
-        }
-      },
-    )
-
-    const options = makeOptions({ singleCss: true })
-    const coordinator = startCoordinator(options)
-
-    await new Promise((r) => setTimeout(r, 100))
-
-    const portStr = (writeFileSyncSpy.mock.calls[0] as [string, string])[1]
-    const port = parseInt(portStr)
-
-    // First /extract: triggers a write to devup-ui.css that we make fail.
-    // The coordinator will respond with 500 (await Promise.all([..., failingWrite])
-    // rejects), but the chain itself must NOT be poisoned.
-    const firstRes = await httpRequest(
-      port,
-      'POST',
-      '/extract',
-      JSON.stringify({
-        filename: 'src/A.tsx',
-        code: 'const x = <Box bg="red" />',
-        resourcePath: join(process.cwd(), 'src', 'A.tsx'),
-      }),
-    )
-    expect(firstRes.status).toBe(500)
-
-    // Second /extract for the same path must SUCCEED — the `.catch(() => {})`
-    // chain-survival branch is what makes this work.
-    const secondRes = await httpRequest(
-      port,
-      'POST',
-      '/extract',
-      JSON.stringify({
-        filename: 'src/B.tsx',
-        code: 'const y = <Box bg="blue" />',
-        resourcePath: join(process.cwd(), 'src', 'B.tsx'),
-      }),
-    )
-    expect(secondRes.status).toBe(200)
-
-    // We must have observed at least 2 attempts on the devup-ui.css path:
-    // the first (failed) and the second (succeeded).
-    expect(devupCssCallCount).toBeGreaterThanOrEqual(2)
-
-    coordinator.close()
-  })
-
-  it('should release the pending-extract slot when readBody throws before promotion', async () => {
-    // If JSON.parse on the request body throws, the handler must still tear
-    // down its `pendingExtractStarts` reservation (rather than the active
-    // counter) so waitForIdle is not left waiting forever for a phantom
-    // extraction. We verify by sending a malformed body, then proving the
-    // coordinator still processes a follow-up extraction normally.
-    codeExtractSpy.mockReturnValue({
-      code: 'code',
-      map: undefined,
-      cssFile: 'devup-ui-1.css',
-      updatedBaseStyle: false,
-      free: mock(),
-      [Symbol.dispose]: mock(),
-    })
-    getCssSpy.mockReturnValue('per-file-css')
-    exportSheetSpy.mockReturnValue('sheet-json')
-    exportClassMapSpy.mockReturnValue('classmap-json')
-    exportFileMapSpy.mockReturnValue('filemap-json')
-
-    const options = makeOptions()
-    const coordinator = startCoordinator(options)
-
-    await new Promise((r) => setTimeout(r, 100))
-
-    const portStr = (writeFileSyncSpy.mock.calls[0] as [string, string])[1]
-    const port = parseInt(portStr)
-
-    // Send an invalid body so JSON.parse throws BEFORE activeExtractions is
-    // incremented. The handler must still respond 500 cleanly.
-    const badRes = await httpRequest(port, 'POST', '/extract', 'not-json')
-    expect(badRes.status).toBe(500)
-    const errorPayload = JSON.parse(badRes.body) as { error: string }
-    expect(typeof errorPayload.error).toBe('string')
-
-    // A subsequent well-formed extraction must succeed. If the pending-slot
-    // bookkeeping was wrong (decrementing activeExtractions instead of
-    // pendingExtractStarts in finally), internal counters would drift negative
-    // — that would not crash this request but is asserted by the next test
-    // case via waitForIdle behaviour.
-    const goodRes = await httpRequest(
-      port,
-      'POST',
-      '/extract',
-      JSON.stringify({
-        filename: 'src/App.tsx',
-        code: 'const x = <Box bg="red" />',
-        resourcePath: join(process.cwd(), 'src', 'App.tsx'),
-      }),
-    )
-    expect(goodRes.status).toBe(200)
-    const okPayload = JSON.parse(goodRes.body) as { code: string }
-    expect(okPayload.code).toBe('code')
-
-    coordinator.close()
+    expect(existsSync(app.portFile)).toBe(true)
+    expect(readFileSync(app.portFile, 'utf-8')).toContain('22222222')
   })
 })
 
-describe('coordinator per-bucket completion', () => {
-  function extractResult(cssFile: string) {
-    return {
-      code: 'code',
-      map: undefined,
-      cssFile,
-      updatedBaseStyle: false,
-      free: mock(),
-      [Symbol.dispose]: mock(),
-    }
-  }
+describe('lifecycle', () => {
+  it('does not publish an endpoint when closed before it listens', async () => {
+    const app = createTestApp()
+    const handle = startCoordinator(app.options())
 
-  async function startAndGetPort(options: CoordinatorOptions) {
-    const coordinator = startCoordinator(options)
-    await new Promise((r) => setTimeout(r, 100))
-    const port = parseInt(
-      (writeFileSyncSpy.mock.calls[0] as [string, string])[1],
-    )
-    return { coordinator, port }
-  }
+    handle.close()
+    await handle.ready
+    await delay(50)
 
-  function extract(port: number, filename: string) {
-    return httpRequest(
-      port,
-      'POST',
-      '/extract',
-      JSON.stringify({
-        filename,
-        code: 'c',
-        resourcePath: join(process.cwd(), filename),
-      }),
-    )
-  }
-
-  // T0: idleThresholdMs option is honored by the base-css idle wait.
-  it('honors idleThresholdMs for the base-css idle wait (fast when small)', async () => {
-    codeExtractSpy.mockReturnValue(extractResult('devup-ui.css'))
-    getCssSpy.mockReturnValue('base-css')
-    const { coordinator, port } = await startAndGetPort(
-      makeOptions({ idleThresholdMs: 50 }),
-    )
-    await extract(port, 'src/A.tsx')
-
-    const t0 = Date.now()
-    const res = await httpRequest(
-      port,
-      'GET',
-      '/css?importMainCss=false&waitForIdle=true',
-    )
-    const elapsed = Date.now() - t0
-
-    expect(res.status).toBe(200)
-    // 50ms threshold -> resolves fast; the previous hardcoded 2500ms idle
-    // would push elapsed past 1500ms.
-    expect(elapsed).toBeLessThan(1500)
-
-    coordinator.close()
+    expect(existsSync(app.portFile)).toBe(false)
   })
 
-  // T1: a collapsed bucket's CSS is not served until ALL its members are
-  // extracted (the race that flaked landing e2e on slow CI).
-  it('waits for all bucket members before serving a collapsed chunk', async () => {
-    codeExtractSpy.mockReturnValue(extractResult('devup-ui-1.css'))
-    getCssSpy.mockReturnValue('bucket-css')
-    // m1, m2 collapse into bucket.tsx; g is @global (must NOT be awaited).
-    const canonicalMap = {
-      'src/m1.tsx': 'src/bucket.tsx',
-      'src/m2.tsx': 'src/bucket.tsx',
-      'src/g.tsx': '@global',
-    }
-    const { coordinator, port } = await startAndGetPort(
-      makeOptions({ canonicalMap, idleThresholdMs: 100 }),
-    )
-    // Extract ONLY the bucket root; m1, m2 still pending.
-    await extract(port, 'src/bucket.tsx')
-    getCssSpy.mockClear()
-
-    // Request the bucket chunk; it must NOT resolve while m1/m2 are missing,
-    // even though the (small) idle threshold has elapsed.
-    let resolved = false
-    const cssPromise = httpRequest(
-      port,
-      'GET',
-      '/css?fileNum=1&importMainCss=true&waitForIdle=true',
-    ).then((r) => {
-      resolved = true
-      return r
+  it('does not publish an endpoint when closed while the socket opens', async () => {
+    const app = createTestApp()
+    const handle = startCoordinator(app.options())
+    const listen = Server.prototype.listen
+    const spy = spyOn(Server.prototype, 'listen').mockImplementation(function (
+      this: Server,
+      ...args: unknown[]
+    ) {
+      const result: Server = Reflect.apply(listen, this, args)
+      handle.close()
+      return result
     })
-    await new Promise((r) => setTimeout(r, 300))
-    expect(resolved).toBe(false)
-    expect(getCssSpy).not.toHaveBeenCalled()
 
-    // Extract the remaining members -> the bucket is now complete.
-    await extract(port, 'src/m1.tsx')
-    await extract(port, 'src/m2.tsx')
-    const res = await cssPromise
-    expect(res.status).toBe(200)
-    expect(getCssSpy).toHaveBeenCalledWith(1, true)
+    await handle.ready
+    const listens = spy.mock.calls.length
+    spy.mockRestore()
+    await delay(50)
 
-    coordinator.close()
+    expect(listens).toBe(1)
+    expect(existsSync(app.portFile)).toBe(false)
   })
 
-  // T2: a non-collapsed (singleton) bucket serves as soon as its own file is
-  // extracted, without waiting out the idle threshold.
-  it('serves a singleton bucket promptly without an idle wait', async () => {
-    codeExtractSpy.mockReturnValue(extractResult('devup-ui-1.css'))
-    getCssSpy.mockReturnValue('css')
-    const { coordinator, port } = await startAndGetPort(
-      makeOptions({ canonicalMap: {}, idleThresholdMs: 2000 }),
-    )
-    await extract(port, 'src/f.tsx')
-
-    const t0 = Date.now()
-    const res = await httpRequest(
-      port,
-      'GET',
-      '/css?fileNum=1&importMainCss=true&waitForIdle=true',
-    )
-    const elapsed = Date.now() - t0
-
-    expect(res.status).toBe(200)
-    // Members = {f} (already extracted) -> immediate; the 2000ms idle threshold
-    // would otherwise dominate on the old idle-only path.
-    expect(elapsed).toBeLessThan(1000)
-    expect(getCssSpy).toHaveBeenCalledWith(1, true)
-
-    coordinator.close()
-  })
-
-  // T3: a bucket member that never arrives -> the per-bucket wait fails open
-  // after maxWaitMs (serves whatever exists) instead of hanging the build.
-  it('fails open and serves partial CSS when a bucket member never extracts', async () => {
-    codeExtractSpy.mockReturnValue(extractResult('devup-ui-1.css'))
-    getCssSpy.mockReturnValue('partial-css')
-    const warnSpy = spyOn(console, 'warn').mockReturnValue(undefined)
-    // m1 is a member of the bucket but is never POSTed to /extract.
-    const canonicalMap = { 'src/m1.tsx': 'src/bucket.tsx' }
-    const { coordinator, port } = await startAndGetPort(
-      makeOptions({ canonicalMap, idleThresholdMs: 100, maxWaitMs: 150 }),
-    )
-    // Extract only the bucket root; src/m1.tsx stays missing forever.
-    await extract(port, 'src/bucket.tsx')
-
-    const t0 = Date.now()
-    const res = await httpRequest(
-      port,
-      'GET',
-      '/css?fileNum=1&importMainCss=true&waitForIdle=true',
-    )
-    const elapsed = Date.now() - t0
-
-    // Resolves via the hard timeout (fail open) rather than hanging.
-    expect(res.status).toBe(200)
-    expect(res.body).toBe('partial-css')
-    expect(elapsed).toBeGreaterThanOrEqual(150)
-    expect(warnSpy).toHaveBeenCalled()
-    expect(getCssSpy).toHaveBeenCalledWith(1, true)
-
-    warnSpy.mockRestore()
-    coordinator.close()
-  })
-
-  // T4: base css resolves DETERMINISTICALLY once every route-reachable runtime
-  // file (expectedBaseFiles) is extracted — NOT after an idle gap. Proven by a
-  // large idleThresholdMs that would dominate if the idle path were taken.
-  it('serves base css as soon as all expectedBaseFiles are extracted (no idle wait)', async () => {
-    codeExtractSpy.mockReturnValue(extractResult('devup-ui.css'))
-    getCssSpy.mockReturnValue('base-css')
-    const { coordinator, port } = await startAndGetPort(
-      makeOptions({
-        expectedBaseFiles: ['src/a.tsx', 'src/b.tsx'],
-        idleThresholdMs: 5000,
-      }),
-    )
-    await extract(port, 'src/a.tsx')
-    await extract(port, 'src/b.tsx')
-
-    const t0 = Date.now()
-    const res = await httpRequest(
-      port,
-      'GET',
-      '/css?importMainCss=false&waitForIdle=true',
-    )
-    const elapsed = Date.now() - t0
-
-    expect(res.status).toBe(200)
-    expect(res.body).toBe('base-css')
-    // Both expected files extracted -> immediate; the 5000ms idle threshold is
-    // never consulted on the deterministic path.
-    expect(elapsed).toBeLessThan(1000)
-
-    coordinator.close()
-  })
-
-  it('serves complete production CSS from the prewarmed sheet before late loaders run', async () => {
-    codeExtractSpy.mockReturnValue(extractResult('devup-ui-1.css'))
-    getCssSpy.mockReturnValue('prewarmed-css')
-    const canonicalMap = { 'src/late.tsx': 'src/page.tsx' }
-    const { coordinator, port } = await startAndGetPort(
-      makeOptions({
-        canonicalMap,
-        expectedBaseFiles: ['src/page.tsx', 'src/late.tsx'],
-        prewarmedFiles: ['src/page.tsx', 'src/late.tsx'],
-        quietMs: 5000,
+  it('fails ready, and drain, when the engine cannot be rebuilt at startup', async () => {
+    const app = createTestApp()
+    const stateFile = join(app.root, 'df', 'state.json')
+    const first = startCoordinator(app.options({ watch: true, stateFile }))
+    await first.drain()
+    const second = startCoordinator(
+      app.options({
+        watch: true,
+        stateFile,
+        createEngine: () => {
+          throw new Error('engine unavailable')
+        },
       }),
     )
 
-    // The first loader POST establishes the file-number -> bucket mapping.
-    // The late member has not POSTed, but its atoms already exist because the
-    // plugin synchronously prewarmed it before starting the coordinator.
-    await extract(port, 'src/page.tsx')
-    expect(codeExtractSpy).toHaveBeenCalledTimes(1)
+    expect(String(await failure(second.ready))).toContain('engine unavailable')
+    expect(String(await failure(second.drain()))).toContain(
+      'engine unavailable',
+    )
+    expect(existsSync(app.portFile)).toBe(false)
+  })
 
-    const t0 = Date.now()
-    const [bucketCss, baseCss] = await Promise.all([
-      httpRequest(
-        port,
-        'GET',
-        '/css?fileNum=1&importMainCss=true&waitForIdle=true',
+  it('drain waits for an accepted write, refuses new requests, then closes', async () => {
+    const app = createTestApp()
+    app.write('src/a.tsx', box('red'))
+    const stateFile = join(app.root, 'df', 'state.json')
+    const handle = startCoordinator(app.options({ stateFile }))
+    await handle.ready
+    const client = connect(app.portFile, app.identity)
+    const original = fsp.rename
+    let renaming = 0
+    const spy = spyOn(fsp, 'rename').mockImplementation(async (...args) => {
+      renaming += 1
+      await delay(300)
+      return original(...args)
+    })
+
+    try {
+      const extract = client.post('/extract', app.post('src/a.tsx'))
+      await eventually(() => (renaming > 0 ? true : undefined))
+      let drained = false
+      const drain = handle.drain().then(() => {
+        drained = true
+      })
+      const refused = await client.get('/health')
+
+      await delay(50)
+      expect(drained).toBe(false)
+      expect(refused.status).toBe(503)
+      expect(JSON.parse(refused.body).error).toContain('shutting down')
+      await drain
+      expect((await extract).status).toBe(200)
+    } finally {
+      spy.mockRestore()
+    }
+    expect(
+      readCoordinatorState(stateFile, '')?.inputs.map(
+        (input) => input.filename,
       ),
-      httpRequest(port, 'GET', '/css?waitForIdle=true'),
-    ])
-    const elapsed = Date.now() - t0
-
-    expect(bucketCss.body).toBe('prewarmed-css')
-    expect(baseCss.body).toBe('prewarmed-css')
-    expect(elapsed).toBeLessThan(1000)
-    // If the prewarmed files did not seed completion, both requests would wait
-    // for src/late.tsx (or the five-second quiet fallback).
-    expect(codeExtractSpy).toHaveBeenCalledTimes(1)
-
-    coordinator.close()
+    ).toEqual(['src/a.tsx'])
+    expect(existsSync(app.portFile)).toBe(false)
   })
 
-  it('serves prewarmed singleCss before any source loader runs', async () => {
-    getCssSpy.mockReturnValue('prewarmed-single-css')
-    const { coordinator, port } = await startAndGetPort(
-      makeOptions({
-        singleCss: true,
-        expectedBaseFiles: ['src/page.tsx', 'src/late.tsx'],
-        prewarmedFiles: ['src/page.tsx', 'src/late.tsx'],
-        quietMs: 5000,
-      }),
+  it('flushCoordinatorWrites waits for every live coordinator', async () => {
+    const apps = [createTestApp(), createTestApp()]
+    const states = apps.map((app) => join(app.root, 'df', 'state.json'))
+    for (const app of apps) app.write('src/a.tsx', box('red'))
+    const handles = apps.map((app, i) =>
+      startCoordinator(app.options({ stateFile: states[i] })),
     )
-
-    const t0 = Date.now()
-    const res = await httpRequest(port, 'GET', '/css?waitForIdle=true')
-
-    expect(res.status).toBe(200)
-    expect(res.body).toBe('prewarmed-single-css')
-    expect(Date.now() - t0).toBeLessThan(1000)
-    expect(codeExtractSpy).not.toHaveBeenCalled()
-
-    coordinator.close()
-  })
-
-  // T5: the deterministic wait blocks base css until a still-missing
-  // expectedBaseFile arrives — even after the idle threshold elapses with
-  // nothing in flight. This is exactly the gap-between-waves case the old idle
-  // heuristic resolved too early (dropping late files' styles).
-  it('blocks base css until a missing expectedBaseFile is extracted', async () => {
-    codeExtractSpy.mockReturnValue(extractResult('devup-ui.css'))
-    getCssSpy.mockReturnValue('base-css')
-    const { coordinator, port } = await startAndGetPort(
-      makeOptions({
-        expectedBaseFiles: ['src/a.tsx', 'src/late.tsx'],
-        idleThresholdMs: 50,
-      }),
-    )
-    await extract(port, 'src/a.tsx')
-
-    let resolved = false
-    const cssPromise = httpRequest(
-      port,
-      'GET',
-      '/css?importMainCss=false&waitForIdle=true',
-    ).then((r) => {
-      resolved = true
-      return r
+    await Promise.all(handles.map((handle) => handle.ready))
+    const original = fsp.rename
+    const spy = spyOn(fsp, 'rename').mockImplementation(async (...args) => {
+      await delay(200)
+      return original(...args)
     })
-    // Idle threshold (50ms) elapses and nothing is in flight, yet src/late.tsx
-    // is still missing -> must NOT resolve.
-    await new Promise((r) => setTimeout(r, 300))
-    expect(resolved).toBe(false)
 
-    await extract(port, 'src/late.tsx')
-    const res = await cssPromise
-    expect(res.status).toBe(200)
-    expect(res.body).toBe('base-css')
-
-    coordinator.close()
+    try {
+      const posts = apps.map((app) =>
+        connect(app.portFile, app.identity).post(
+          '/extract',
+          app.post('src/a.tsx'),
+        ),
+      )
+      await delay(50)
+      await flushCoordinatorWrites()
+      expect(await Promise.all(posts)).toHaveLength(2)
+    } finally {
+      spy.mockRestore()
+    }
+    for (const state of states) {
+      expect(readCoordinatorState(state, '')?.inputs).toHaveLength(1)
+    }
   })
 
-  // T7: legacy callers that do not prewarm still fail open after the quiet
-  // window when a graph member never reports, rather than hanging forever.
-  // Production plugin builds take the deterministic prewarmed path instead.
-  it('serves a bucket via the quiet exit when a member is never compiled', async () => {
-    codeExtractSpy.mockReturnValue(extractResult('devup-ui-1.css'))
-    getCssSpy.mockReturnValue('bucket-css')
-    const infoSpy = spyOn(console, 'info').mockReturnValue(undefined)
-    const warnSpy = spyOn(console, 'warn').mockReturnValue(undefined)
-    const canonicalMap = { 'src/phantom.tsx': 'src/bucket.tsx' }
-    const { coordinator, port } = await startAndGetPort(
-      makeOptions({ canonicalMap, quietMs: 100, maxWaitMs: 10_000 }),
-    )
-    await extract(port, 'src/bucket.tsx')
+  it('resetCoordinator stops every live coordinator', async () => {
+    const apps = [createTestApp(), createTestApp()]
+    await Promise.all(apps.map((app) => startCoordinator(app.options()).ready))
 
-    const t0 = Date.now()
-    const res = await httpRequest(
-      port,
-      'GET',
-      '/css?fileNum=1&importMainCss=true&waitForIdle=true',
-    )
-    const elapsed = Date.now() - t0
+    resetCoordinator()
 
-    expect(res.status).toBe(200)
-    expect(res.body).toBe('bucket-css')
-    // Resolved by the quiet exit (~100ms), NOT the 10s wall-clock backstop.
-    expect(elapsed).toBeLessThan(5000)
-    expect(infoSpy).toHaveBeenCalled()
-    expect(warnSpy).not.toHaveBeenCalled()
-
-    infoSpy.mockRestore()
-    warnSpy.mockRestore()
-    coordinator.close()
-  })
-
-  // T8: the same legacy quiet fallback applies to an expected base file when
-  // the caller did not seed prewarmed completion state.
-  it('serves base css via the quiet exit when an expectedBaseFile is never compiled', async () => {
-    codeExtractSpy.mockReturnValue(extractResult('devup-ui.css'))
-    getCssSpy.mockReturnValue('base-css')
-    const { coordinator, port } = await startAndGetPort(
-      makeOptions({
-        expectedBaseFiles: ['src/a.tsx', 'src/phantom.tsx'],
-        quietMs: 100,
-        maxWaitMs: 10_000,
-      }),
-    )
-    await extract(port, 'src/a.tsx')
-
-    const t0 = Date.now()
-    const res = await httpRequest(
-      port,
-      'GET',
-      '/css?importMainCss=false&waitForIdle=true',
-    )
-    const elapsed = Date.now() - t0
-
-    expect(res.status).toBe(200)
-    expect(res.body).toBe('base-css')
-    // Quiet exit (~100ms), not the 10s backstop.
-    expect(elapsed).toBeLessThan(5000)
-
-    coordinator.close()
-  })
-
-  // T6: a phantom expectedBaseFile that never extracts fails open via the
-  // dormant maxWaitMs backstop instead of hanging the build forever.
-  it('fails open on a phantom expectedBaseFile via maxWaitMs', async () => {
-    codeExtractSpy.mockReturnValue(extractResult('devup-ui.css'))
-    getCssSpy.mockReturnValue('base-css')
-    const { coordinator, port } = await startAndGetPort(
-      makeOptions({
-        expectedBaseFiles: ['src/a.tsx', 'src/phantom.tsx'],
-        maxWaitMs: 150,
-      }),
-    )
-    await extract(port, 'src/a.tsx')
-
-    const t0 = Date.now()
-    const res = await httpRequest(
-      port,
-      'GET',
-      '/css?importMainCss=false&waitForIdle=true',
-    )
-    const elapsed = Date.now() - t0
-
-    expect(res.status).toBe(200)
-    expect(res.body).toBe('base-css')
-    expect(elapsed).toBeGreaterThanOrEqual(150)
-
-    coordinator.close()
+    for (const app of apps) expect(existsSync(app.portFile)).toBe(false)
   })
 })

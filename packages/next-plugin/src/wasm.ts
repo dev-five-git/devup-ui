@@ -1,11 +1,39 @@
-import { existsSync, realpathSync } from 'node:fs'
+import { existsSync, readFileSync, realpathSync } from 'node:fs'
 import { createRequire } from 'node:module'
-import { join, relative } from 'node:path'
+import { dirname, join, relative, resolve } from 'node:path'
+import { compileFunction } from 'node:vm'
 
-import { createModuleResolver } from '@devup-ui/plugin-utils'
+import {
+  createModuleResolver,
+  type ModuleAliasOptions,
+  type PrepareSource,
+  type ResolutionInputObserver,
+} from '@devup-ui/plugin-utils'
+
+import {
+  createEngineResolutionProof,
+  withExtractionResolutionProof,
+} from './wasm-resolution-proof'
 
 export type DevupWasm = typeof import('@devup-ui/wasm')
 export type DevupWebpackPlugin = typeof import('@devup-ui/webpack-plugin')
+
+export interface ModuleResolverSettings {
+  readonly prepareSource?: PrepareSource
+  readonly alias?: ModuleAliasOptions
+  readonly includeMdx?: boolean | readonly string[]
+  readonly conditions?: readonly string[]
+  readonly onResolutionInputs?: ResolutionInputObserver
+}
+
+const engineResolvers = new WeakMap<
+  DevupWasm,
+  {
+    readonly root: string
+    readonly settings: ModuleResolverSettings | undefined
+    readonly resolver: ReturnType<typeof createModuleResolver>
+  }
+>()
 
 let wasmForTesting: DevupWasm | undefined
 let webpackPluginForTesting: DevupWebpackPlugin | undefined
@@ -14,35 +42,115 @@ let webpackPlugin: DevupWebpackPlugin | undefined
 
 /** @internal Resolve dependencies from the plugin's physical install location. */
 export function requireFromPlugin<T>(specifier: string): T {
+  return createPluginRequire(process.cwd())(specifier) as T
+}
+
+function createPluginRequire(projectRoot: string): NodeRequire {
   const installedPackage = join(
-    process.cwd(),
+    projectRoot,
     'node_modules/@devup-ui/next-plugin/package.json',
   )
   const workspacePackage = join(
-    process.cwd(),
+    projectRoot,
     'packages/next-plugin/package.json',
   )
   const requireBase = existsSync(installedPackage)
     ? installedPackage
     : existsSync(workspacePackage)
       ? workspacePackage
-      : join(process.cwd(), 'package.json')
-  return createRequire(realpathSync(requireBase))(specifier) as T
+      : join(projectRoot, 'package.json')
+  return createRequire(realpathSync(requireBase))
 }
 
 /**
- * Resolve the imports of extracted files to the cwd-relative ids every Next
+ * Resolve the imports of extracted files to the root-relative ids every Next
  * extraction path passes, on engines new enough to load modules.
  */
-export function withModuleResolver(wasm: DevupWasm): DevupWasm {
+export function withModuleResolver(
+  wasm: DevupWasm,
+  projectRoot = process.cwd(),
+  settings?: ModuleResolverSettings,
+): DevupWasm {
+  const root = resolve(projectRoot)
   if ('setModuleResolver' in wasm) {
-    wasm.setModuleResolver(
-      createModuleResolver({
-        toId: (path) => relative(process.cwd(), path).replaceAll('\\', '/'),
-      }),
+    const previous = engineResolvers.get(wasm)
+    if (
+      settings !== undefined &&
+      previous?.root === root &&
+      previous.settings === settings
     )
+      return wasm
+    const proof = createEngineResolutionProof(
+      wasm,
+      root,
+      settings?.onResolutionInputs,
+    )
+    const resolver = createModuleResolver({
+      ...settings,
+      onResolutionInputs: proof.observe,
+      cwd: root,
+      toId: (path) => relative(root, path).replaceAll('\\', '/'),
+    })
+    wasm.setModuleResolver(resolver)
+    engineResolvers.set(wasm, { root, settings, resolver })
+    proof.install()
   }
   return wasm
+}
+
+/** Shared by requests, replay, sealed candidates, prewarm and legacy loaders. */
+export function extractWithModuleResolver(
+  wasm: DevupWasm,
+  sourceMap: boolean,
+  args: Parameters<DevupWasm['codeExtract']>,
+): ReturnType<DevupWasm['codeExtract']> {
+  const configured = engineResolvers.get(wasm)
+  try {
+    return withExtractionResolutionProof(
+      wasm,
+      resolve(configured?.root ?? process.cwd(), args[0]),
+      () => {
+        // Register the request's own compiler map, not just imported module maps.
+        const prepared = configured?.settings?.prepareSource
+          ? configured.resolver(resolve(configured.root, args[0]), args[0])
+          : undefined
+        const extract = sourceMap
+          ? wasm.codeExtract
+          : wasm.codeExtractWithoutSourceMap
+        const sourceType = args[8] ?? prepared?.sourceType
+        const extractionArgs: Parameters<DevupWasm['codeExtract']> = [...args]
+        if (sourceType !== undefined) extractionArgs[8] = sourceType
+        return extract(...extractionArgs)
+      },
+    )
+  } catch (error) {
+    throw configured?.settings?.prepareSource
+      ? configured.resolver.remapError(error)
+      : error
+  }
+}
+
+/** Evaluate a fresh bridge and WASM instance for one app, in the caller's realm. */
+export function createWasm(projectRoot = process.cwd()): DevupWasm {
+  if (wasmForTesting) return wasmForTesting
+  const root = resolve(projectRoot)
+  const filename = createPluginRequire(root).resolve('@devup-ui/wasm')
+  // Only the entry is private: its closure owns the bridge heap and Rust state.
+  const namespace: DevupWasm = Object.create(null)
+  const module = { exports: namespace }
+  compileFunction(
+    readFileSync(filename, 'utf8'),
+    ['exports', 'require', 'module', '__filename', '__dirname'],
+    { filename },
+  ).call(
+    namespace,
+    namespace,
+    createRequire(filename),
+    module,
+    filename,
+    dirname(filename),
+  )
+  return withModuleResolver(module.exports, root)
 }
 
 /** Load the extraction engine once for the lifetime of a Next config. */

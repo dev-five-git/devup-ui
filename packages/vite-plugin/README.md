@@ -177,6 +177,91 @@ const box = <Box _hover={{ bg: ['red', 'blue'] }} />
 const box = <Box _hover={[{ bg: 'red' }, { bg: 'blue' }]} />
 ```
 
+## Publishing Component Libraries
+
+Choose one of these build-time contracts. Neither mode permits Devup UI's
+compile-time component placeholders to run in a consuming application.
+
+1. Precompiled library: keep `extractCss: true` (the default), publish the
+   transformed JavaScript and emitted CSS, and expose a stylesheet that consumers
+   import. Consumers do not need to transform the already compiled library.
+2. Uncompiled library: use `DevupUI({ extractCss: false })` intentionally, as in
+   `apps/vite-lib`. Every consuming application must install a Devup UI build
+   plugin and include the library's exact package name so its modules are
+   transformed during the application's build.
+
+```ts
+// The consuming application's vite.config.ts
+export default defineConfig({
+  plugins: [DevupUI({ include: ['@acme/components'] })],
+})
+```
+
+An uncompiled library is not standalone browser JavaScript. Using it without
+the consumer transformation runs placeholders and throws
+`Cannot run on the runtime`. Do not publish it as precompiled output.
+
+### Aggregated Library CSS
+
+Library builds and applications using `build.cssCodeSplit: false` prepare the
+actual resolved build inputs and their static/dynamic dependencies before any
+generated stylesheet is loaded. MDX still runs after the configured compiler.
+Unreachable source files contribute no CSS, and complete styles pass through
+Vite's normal CSS processing and optimizer in their original import positions.
+Ordinary split application builds and development behavior are unchanged.
+
+If a public bundler hook cannot expose a complete transformed graph, the build
+fails with the responsible source/stylesheet and a supported alternative instead
+of emitting incomplete CSS. Remaining computed imports must use literal imports
+or `import.meta.glob`; plugins must expose additional inputs before the first
+generated stylesheet loads. A source transform that awaits generated CSS can
+form a circular wait, so unsettled public loads fail after 30 seconds; an
+exceptionally slow healthy transform can also reach that limit.
+
+Some split libraries with plugin-emitted entries produce a standalone generated
+stylesheet that cannot retain optimizer output under the shared-sheet contract.
+These builds fail with the final asset name. Use `build.cssCodeSplit: false` for
+that library, or publish separately imported, precompiled CSS. The real-build
+matrix is qualified with Vite 8.3.1 / Rolldown 1.2.10; no private adapter or
+bundler version pin is required.
+
+## MDX Selection And Compiled-Source Guards
+
+`mdxExtensions` defaults to `['.mdx']`. Add literal extensions such as
+`['.mdx', '.md', '.mdown']` only when your project compiler handles them as MDX.
+The same list controls post-compiler extraction, graph discovery and numbering.
+Compiled output is JavaScript with JSX under its real filename, never renamed
+to a JavaScript extension. Configure the MDX compiler separately; Devup runs
+after it. Ordinary JavaScript/TypeScript extensions keep their existing handling.
+
+`DevupUI()` returns the main `devup-ui` plugin, the unchanged
+`devup-ui:restore-forwarded-css` plugin, and three independent companions:
+`devup-ui:mdx`, `devup-ui:aggregate-css-guard`, and
+`devup-ui:compiled-source-guard`. The main plugin remains `enforce: 'pre'`;
+the MDX companion is `enforce: 'post'` and only transforms source.
+
+During builds with extraction enabled, the compiled-source guard inspects final
+code through Vite's public parser and resolved module graph. An extension outside
+the JavaScript/TypeScript and MDX lists fails with its module, used import and
+`mdxExtensions` remedy when a compile-time export is definitely referenced by
+name, static namespace/member access or destructuring. Runtime helpers such as
+`getTheme`, `setTheme`, `initTheme`, `useTheme` and `ThemeScript`, and unused
+imports, are allowed. An active compatibility alias can be disabled with
+`importAliases[package] = false` when runtime use is intended.
+
+Whole namespace/require-result objects and dynamic imports are opaque and are
+not rejected; compile-time exports reached only that way may still throw
+`Cannot run on the runtime` when rendered. Let Devup transform the extension
+instead. Ordinary JS/TS excluded by `include`, and intentional
+`extractCss: false` publishing, are not broadened by this guard.
+
+The complete forwarding graph is finalized by build hooks, not available as an
+equivalent completed graph in the dev server. This guard is build-only, including
+build-watch compilations; unselected extensions in dev may therefore retain
+placeholders and throw when rendered. Add the extension to `mdxExtensions` and
+configure its compiler for both dev and build. Vite's native alias format has
+no `false` target.
+
 ## Custom Shorthands
 
 Custom shorthands are build-plugin options, not theme tokens. Every target

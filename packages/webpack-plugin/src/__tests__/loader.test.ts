@@ -1,7 +1,12 @@
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
 import * as fsPromises from 'node:fs/promises'
+import { createRequire } from 'node:module'
+import { tmpdir } from 'node:os'
 import * as nodePath from 'node:path'
 import { join } from 'node:path'
+import { pathToFileURL } from 'node:url'
 
+import { createModuleResolver } from '@devup-ui/plugin-utils'
 import * as wasm from '@devup-ui/wasm'
 import {
   afterEach,
@@ -21,7 +26,7 @@ type LoaderThis = ThisParameterType<typeof devupUILoader>
 type LoaderCallback = ReturnType<LoaderThis['async']>
 interface TestLoaderContext extends Pick<
   LoaderThis,
-  'async' | 'resourcePath' | 'addDependency'
+  'async' | 'resourcePath' | 'addDependency' | 'addMissingDependency'
 > {
   getOptions: () => Partial<DevupUILoaderOptions>
   _compiler?: { __DEVUP_CACHE: string }
@@ -29,17 +34,57 @@ interface TestLoaderContext extends Pick<
 
 function createCodeExtractResult(
   overrides: Partial<CodeExtractResult> = {},
+  events: string[] = [],
 ): CodeExtractResult {
-  return {
+  const values = {
     code: '',
     css: '',
     cssFile: undefined,
     updatedBaseStyle: false,
     map: undefined,
-    free: () => {},
-    [Symbol.dispose]: () => {},
+    dependencies: [],
     ...overrides,
-  } as unknown as CodeExtractResult
+  }
+  let live = true
+  const free = mock(() => {
+    expect(live).toBe(true)
+    live = false
+    events.push('free')
+  })
+  return {
+    get code() {
+      expect(live).toBe(true)
+      events.push('code')
+      return values.code
+    },
+    get css() {
+      expect(live).toBe(true)
+      events.push('css')
+      return values.css
+    },
+    get map() {
+      expect(live).toBe(true)
+      events.push('map')
+      return values.map
+    },
+    get cssFile() {
+      expect(live).toBe(true)
+      events.push('cssFile')
+      return values.cssFile
+    },
+    get updatedBaseStyle() {
+      expect(live).toBe(true)
+      events.push('updatedBaseStyle')
+      return values.updatedBaseStyle
+    },
+    get dependencies() {
+      expect(live).toBe(true)
+      events.push('dependencies')
+      return values.dependencies
+    },
+    free,
+    [Symbol.dispose]: free,
+  }
 }
 
 function createLoaderContext(
@@ -53,6 +98,7 @@ function createLoaderContext(
     async: mock().mockReturnValue(callback),
     resourcePath,
     addDependency: mock(),
+    addMissingDependency: mock(),
     ...overrides,
   } as unknown as LoaderThis
 }
@@ -74,7 +120,7 @@ let writeFileSpy: ReturnType<typeof spyOn>
 let dateNowSpy: ReturnType<typeof spyOn>
 
 beforeEach(() => {
-  codeExtractSpy = spyOn(wasm, 'codeExtract').mockReturnValue(
+  codeExtractSpy = spyOn(wasm, 'codeExtract').mockImplementation(() =>
     createCodeExtractResult(),
   )
   exportClassMapSpy = spyOn(wasm, 'exportClassMap').mockReturnValue('{}')
@@ -125,12 +171,306 @@ const waitFor = async (fn: () => void, timeout = 1000) => {
 }
 
 describe('devupUILoader', () => {
+  it.each([
+    undefined,
+    'code',
+    'css',
+    'map',
+    'cssFile',
+    'updatedBaseStyle',
+    'dependencies',
+    'acquire',
+    'consumer',
+  ])(
+    'releases webpack Output before consumers when fault %s occurs',
+    async (fault) => {
+      const events: string[] = []
+      const output = createCodeExtractResult(
+        { code: 'copied', dependencies: ['dependency.ts'] },
+        events,
+      )
+      const error = new Error('ownership fault')
+      if (fault && fault !== 'acquire' && fault !== 'consumer')
+        Object.defineProperty(output, fault, {
+          get() {
+            events.push(fault)
+            throw error
+          },
+        })
+      codeExtractSpy.mockImplementation(() => {
+        if (fault === 'acquire') throw error
+        return output
+      })
+      const result = await new Promise<{
+        error: Error | null | undefined
+        code: Parameters<LoaderCallback>[1]
+      }>((done) => {
+        const context = createLoaderContext(
+          { cssDir: 'df', package: '@devup-ui/react' },
+          (error, code) => done({ error, code }),
+          'output.tsx',
+          {
+            addDependency(path) {
+              if (path === nodePath.resolve('dependency.ts')) {
+                expect(output.free).toHaveBeenCalledTimes(1)
+                if (fault === 'consumer') throw error
+              }
+            },
+          },
+        )
+        devupUILoader.call(context, Buffer.from('source'))
+      })
+      expect(result).toEqual(
+        fault ? { error, code: undefined } : { error: null, code: 'copied' },
+      )
+      const fields = [
+        'code',
+        'css',
+        'map',
+        'cssFile',
+        'updatedBaseStyle',
+        'dependencies',
+      ]
+      expect(events).toEqual(
+        fault === 'acquire'
+          ? []
+          : [
+              ...fields.slice(
+                0,
+                fault && fields.includes(fault)
+                  ? fields.indexOf(fault) + 1
+                  : fields.length,
+              ),
+              'free',
+            ],
+      )
+      expect(output.free).toHaveBeenCalledTimes(fault === 'acquire' ? 0 : 1)
+    },
+  )
+  it('refreshes same-root configuration and isolates watches when successive loaders evaluate imports', async () => {
+    // Given unchanged loader options and separately owned dependency subscriptions.
+    const rootDir = mkdtempSync(join(tmpdir(), 'loader-inputs-'))
+    writeFileSync(join(rootDir, 'red.ts'), "export const color='red'")
+    writeFileSync(join(rootDir, 'blue.ts'), "export const color='blue'")
+    const selected: (string | undefined)[] = []
+    const observed = [mock(), mock(), mock()]
+    const missing = [mock(), mock(), mock()]
+    const register = spyOn(wasm, 'setModuleResolver').mockImplementation(
+      (resolver: ReturnType<typeof createModuleResolver>) => {
+        selected.push(resolver('color', 'main.ts')?.code)
+      },
+    )
+    try {
+      // When a missing config is created and its inherited target changes at the same root.
+      for (const index of [0, 1, 2]) {
+        if (index === 1)
+          writeFileSync(
+            join(rootDir, 'tsconfig.json'),
+            '{"extends":"./base.json"}',
+          )
+        if (index > 0)
+          writeFileSync(
+            join(rootDir, 'base.json'),
+            JSON.stringify({
+              compilerOptions: {
+                paths: { color: [index === 1 ? 'red.ts' : 'blue.ts'] },
+              },
+            }),
+          )
+        await new Promise<void>((done) => {
+          const context = createLoaderContext(
+            { rootDir, cssDir: join(rootDir, 'df') },
+            () => done(),
+            join(rootDir, 'main.ts'),
+            {
+              addDependency: observed[index],
+              addMissingDependency: missing[index],
+            },
+          )
+          devupUILoader.call(context, Buffer.from('export {}'))
+        })
+      }
+      // Then each invocation sees current config and watches only through its own context.
+      expect(selected).toEqual([
+        undefined,
+        "export const color='red'",
+        "export const color='blue'",
+      ])
+      expect(missing[0]?.mock.calls).toContainEqual([
+        join(rootDir, 'tsconfig.json'),
+      ])
+      expect(observed[1]?.mock.calls).toContainEqual([join(rootDir, 'red.ts')])
+      expect(observed[2]?.mock.calls).toContainEqual([join(rootDir, 'blue.ts')])
+      expect(observed[0]?.mock.calls).not.toContainEqual([
+        join(rootDir, 'blue.ts'),
+      ])
+      expect(observed[1]?.mock.calls).not.toContainEqual([
+        join(rootDir, 'blue.ts'),
+      ])
+    } finally {
+      register.mockRestore()
+      rmSync(rootDir, { recursive: true, force: true })
+    }
+  })
+  it('selects a fresh native alias resolver when ordered entries change at the same root', async () => {
+    const root = mkdtempSync(join(tmpdir(), 'loader-alias-'))
+    const target = join(root, 'chosen.js')
+    writeFileSync(target, 'export const value="blue"')
+    const selected: unknown[] = []
+    const register = spyOn(wasm, 'setModuleResolver').mockImplementation(
+      (resolver: ReturnType<typeof createModuleResolver>) => {
+        selected.push(resolver('provider', 'src/main.ts'))
+      },
+    )
+    try {
+      for (const alias of [
+        [{ name: 'provider', alias: false }],
+        [
+          { name: 'provider', alias: target },
+          { name: 'provider', alias: false },
+        ],
+        [{ name: 'provider', alias: false }],
+      ] as const) {
+        await new Promise<void>((done) => {
+          const context = createLoaderContext(
+            { rootDir: root, alias, cssDir: join(root, 'df') },
+            () => done(),
+          )
+          devupUILoader.call(context, Buffer.from('export {}'))
+        })
+      }
+      expect(selected).toEqual([
+        { ignored: true },
+        { path: 'chosen.js', code: 'export const value="blue"' },
+        { ignored: true },
+      ])
+    } finally {
+      register.mockRestore()
+      rmSync(root, { recursive: true, force: true })
+    }
+  })
+  it('keys resolver reuse by the explicit project root and active conditions', async () => {
+    const root = mkdtempSync(
+      join(process.env.DEVUP_PLUGIN_TEST_TMP ?? tmpdir(), 'loader-'),
+    )
+    for (const project of ['first', 'second']) {
+      const library = join(root, project, 'node_modules', 'conditional')
+      mkdirSync(library, { recursive: true })
+      writeFileSync(
+        join(library, 'package.json'),
+        JSON.stringify({
+          exports: { browser: './browser.js', node: './node.js' },
+        }),
+      )
+      writeFileSync(join(library, 'browser.js'), project + '-browser')
+      writeFileSync(join(library, 'node.js'), project + '-node')
+    }
+    const selected: (string | undefined)[] = []
+    const register = spyOn(wasm, 'setModuleResolver').mockImplementation(
+      (resolver: ReturnType<typeof createModuleResolver>) => {
+        selected.push(resolver('conditional', 'src/main.ts')?.code)
+      },
+    )
+    try {
+      for (const [project, condition] of [
+        ['first', 'browser'],
+        ['first', 'node'],
+        ['second', 'node'],
+      ]) {
+        const rootDir = join(root, project)
+        await new Promise<void>((done) => {
+          const context = createLoaderContext(
+            {
+              rootDir,
+              conditions: [condition],
+              cssDir: join(rootDir, 'df/devup-ui'),
+            },
+            () => done(),
+            join(rootDir, 'src/main.ts'),
+          )
+          devupUILoader.bind(context)(Buffer.from('code'))
+        })
+      }
+      expect(selected).toEqual(['first-browser', 'first-node', 'second-node'])
+    } finally {
+      register.mockRestore()
+      rmSync(root, { recursive: true, force: true })
+    }
+  })
+  it('extracts actual compiled MDX while retaining the original resource filename', async () => {
+    const landing = createRequire(
+      nodePath.resolve(
+        import.meta.dir,
+        '../../../../apps/landing/package.json',
+      ),
+    )
+    const mdx = await import(
+      pathToFileURL(
+        createRequire(landing.resolve('@mdx-js/loader')).resolve('@mdx-js/mdx'),
+      ).href
+    )
+    const rootDir = process.cwd()
+    const filename = nodePath.resolve(rootDir, 'src/page.mdx')
+    const compiled = await mdx.compile({
+      value:
+        'import {Box} from \'@devup-ui/react\'\n\n# Heading\n\n<Box bg="red" />',
+      path: filename,
+    })
+    codeExtractSpy.mockRestore()
+    wasm.resetBuildState()
+    const callback = mock()
+    const context = createLoaderContext(
+      {
+        package: '@devup-ui/react',
+        cssDir: nodePath.resolve('df/devup-ui'),
+        rootDir,
+        singleCss: true,
+      },
+      callback,
+      filename,
+    )
+
+    await new Promise<void>((done) => {
+      callback.mockImplementation(() => done())
+      devupUILoader.bind(context)(Buffer.from(String(compiled)))
+    })
+
+    expect(callback.mock.calls[0][0]).toBeNull()
+    expect(callback.mock.calls[0][1]).not.toContain('bg: "red"')
+    expect(callback.mock.calls[0][1]).toContain('devup-ui.css')
+  })
+
+  it.each([
+    undefined,
+    { version: 3, sources: ['authored.mdx'], names: [], mappings: 'AAGE' },
+  ])(
+    'locates MDX errors with the supplied compiler map %j',
+    async (inputMap) => {
+      const callback = mock()
+      const rootDir = nodePath.resolve('/project')
+      const filename = nodePath.join(rootDir, 'page.mdx')
+      codeExtractSpy.mockImplementation(() => {
+        throw new Error('page.mdx:1:1: cannot extract')
+      })
+      const context = createLoaderContext(
+        { rootDir, cssDir: nodePath.join(rootDir, 'df/devup-ui') },
+        callback,
+        filename,
+      )
+
+      devupUILoader.bind(context)(Buffer.from('compiled'), inputMap)
+
+      expect(callback.mock.calls[0][0].message).toContain(
+        inputMap ? 'authored.mdx:4:3' : 'page.mdx:1:1 (in compiled MDX)',
+      )
+    },
+  )
   it('resolves imports to cwd-relative ids and depends on the modules read', async () => {
     const setModuleResolverSpy = spyOn(
       wasm,
       'setModuleResolver',
     ).mockReturnValue(undefined)
-    codeExtractSpy.mockReturnValue(
+    codeExtractSpy.mockImplementation(() =>
       createCodeExtractResult({ dependencies: ['src/tokens.ts'] }),
     )
     const callback = mock()
@@ -187,7 +527,7 @@ describe('devupUILoader', () => {
     exportClassMapSpy.mockReturnValue('classMap')
     exportFileMapSpy.mockReturnValue('fileMap')
     getCssSpy.mockReturnValue('css')
-    codeExtractSpy.mockReturnValue(
+    codeExtractSpy.mockImplementation(() =>
       createCodeExtractResult({
         code: 'code',
         css: 'css',
@@ -245,7 +585,7 @@ describe('devupUILoader', () => {
       },
       asyncCallback,
     )
-    codeExtractSpy.mockReturnValue(
+    codeExtractSpy.mockImplementation(() =>
       createCodeExtractResult({
         code: 'code',
         css: undefined,
@@ -311,7 +651,7 @@ describe('devupUILoader', () => {
       asyncCallback,
     )
     writeFileSpy.mockRejectedValueOnce(writeError)
-    codeExtractSpy.mockReturnValue(
+    codeExtractSpy.mockImplementation(() =>
       createCodeExtractResult({
         code: 'code',
         css: 'css',
@@ -340,7 +680,7 @@ describe('devupUILoader', () => {
       },
       asyncCallback,
     )
-    codeExtractSpy.mockReturnValue(
+    codeExtractSpy.mockImplementation(() =>
       createCodeExtractResult({
         code: 'code',
         css: 'css',
@@ -376,7 +716,7 @@ describe('devupUILoader', () => {
       asyncCallback,
       './foo/index.tsx',
     )
-    codeExtractSpy.mockReturnValue(
+    codeExtractSpy.mockImplementation(() =>
       createCodeExtractResult({
         code: 'code',
         css: 'css',
@@ -404,7 +744,7 @@ describe('devupUILoader', () => {
       asyncCallback,
     )
     registerThemeSpy.mockReturnValueOnce(undefined)
-    codeExtractSpy.mockReturnValue(
+    codeExtractSpy.mockImplementation(() =>
       createCodeExtractResult({
         code: 'code',
         css: 'css',

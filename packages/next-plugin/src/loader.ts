@@ -1,11 +1,30 @@
 import { existsSync, readFileSync } from 'node:fs'
 import { writeFile } from 'node:fs/promises'
-import { Agent, request } from 'node:http'
 import { basename, dirname, join, relative, resolve } from 'node:path'
 
+import {
+  collectDevupConfigFiles,
+  createStateWriter,
+  type SourceType,
+} from '@devup-ui/plugin-utils'
 import type { RawLoaderDefinitionFunction } from 'webpack'
 
-import { loadWasm } from './wasm'
+import {
+  CoordinatorRequestError,
+  requestCoordinator,
+} from './coordinator-client'
+import { takeExtractOutput } from './coordinator-engine'
+import type { CoordinatorIdentity } from './coordinator-port'
+import {
+  loaderResolutionWatchPath,
+  registerLoaderMissingDependencies,
+} from './loader-resolution-watch'
+import { parseCoordinatorResponse, parseSourceMap } from './loader-response'
+import { extractWithModuleResolver, loadWasm } from './wasm'
+
+const stateWriter = createStateWriter((path, content, encoding) =>
+  encoding ? writeFile(path, content, encoding) : writeFile(path, content),
+)
 
 export interface DevupUILoaderOptions {
   package: string
@@ -17,110 +36,22 @@ export interface DevupUILoaderOptions {
   watch: boolean
   singleCss: boolean
   coordinatorPortFile?: string
-  // turbo
+  coordinatorIdentity?: CoordinatorIdentity
+  projectRoot?: string
+  revisionFile?: string
+  themeFiles?: string[]
+  requestTimeoutMs?: number
   theme?: object
   defaultSheet: object
   defaultClassMap: object
   defaultFileMap: object
   importAliases?: Record<string, string | null>
+  readonly sourceType?: SourceType
 }
 let init = false
 
-const cachedPorts = new Map<string, number>()
-const keepAliveAgent = new Agent({ keepAlive: true })
-
-interface CoordinatorResponse {
-  code?: string
-  error?: string
-  map?: string
-  dependencies: string[]
-}
-
 function toLoaderError(error: unknown): Error {
   return error instanceof Error ? error : new Error(String(error))
-}
-
-function readCoordinatorPort(portFile: string): number {
-  const cachedPort = cachedPorts.get(portFile)
-  if (cachedPort !== undefined) return cachedPort
-
-  const port = Number.parseInt(readFileSync(portFile, 'utf-8').trim(), 10)
-  cachedPorts.set(portFile, port)
-  return port
-}
-
-function parseCoordinatorResponse(content: string): CoordinatorResponse {
-  const data: unknown = JSON.parse(content)
-  if (typeof data !== 'object' || data === null) {
-    return { dependencies: [] }
-  }
-
-  const record = data as Record<string, unknown>
-  return {
-    code: typeof record.code === 'string' ? record.code : undefined,
-    error: typeof record.error === 'string' ? record.error : undefined,
-    map: typeof record.map === 'string' ? record.map : undefined,
-    dependencies: Array.isArray(record.dependencies)
-      ? record.dependencies.filter(
-          (dependency): dependency is string => typeof dependency === 'string',
-        )
-      : [],
-  }
-}
-
-function parseSourceMap(sourceMap: string | undefined): string | null {
-  if (!sourceMap) return null
-
-  JSON.parse(sourceMap)
-  return sourceMap
-}
-
-function coordinatorExtract(
-  port: number,
-  body: string,
-  callback: (
-    err: Error | null,
-    content?: string,
-    sourceMap?: string | null,
-    dependencies?: string[],
-  ) => void,
-): void {
-  const req = request(
-    {
-      hostname: '127.0.0.1',
-      port,
-      path: '/extract',
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      agent: keepAliveAgent,
-    },
-    (res) => {
-      const chunks: Buffer[] = []
-      res.on('data', (chunk: Buffer) => chunks.push(chunk))
-      res.on('end', () => {
-        try {
-          const data = parseCoordinatorResponse(
-            Buffer.concat(chunks).toString('utf-8'),
-          )
-          if (res.statusCode !== 200) {
-            callback(new Error(data.error ?? 'Coordinator error'))
-            return
-          }
-          if (data.code === undefined) {
-            callback(new Error('Coordinator response missing code'))
-            return
-          }
-          const sourceMap = parseSourceMap(data.map)
-          callback(null, data.code, sourceMap, data.dependencies)
-        } catch (e) {
-          callback(toLoaderError(e))
-        }
-      })
-    },
-  )
-  req.on('error', (err) => callback(err))
-  req.write(body)
-  req.end()
 }
 
 const devupUILoader: RawLoaderDefinitionFunction<DevupUILoaderOptions> =
@@ -135,67 +66,82 @@ const devupUILoader: RawLoaderDefinitionFunction<DevupUILoaderOptions> =
       themeFile,
       singleCss,
       coordinatorPortFile,
+      coordinatorIdentity,
+      projectRoot = process.cwd(),
+      revisionFile,
+      themeFiles,
+      requestTimeoutMs,
       theme,
       defaultClassMap,
       defaultFileMap,
       defaultSheet,
       importAliases = {},
+      sourceType,
     } = this.getOptions()
-
-    // Coordinator mode: delegate to HTTP server
+    const callback = this.async()
     if (coordinatorPortFile) {
-      this.addDependency(coordinatorPortFile)
-      const callback = this.async()
-      const tryCoordinator = (retries: number) => {
-        if (!existsSync(coordinatorPortFile)) {
-          if (retries > 0) {
-            setTimeout(() => tryCoordinator(retries - 1), 50)
-            return
-          }
-          // Port file never appeared — fall through to error
-          callback(new Error('Coordinator port file not found'))
-          return
-        }
-        try {
-          const port = readCoordinatorPort(coordinatorPortFile)
-          // POSIX-normalize so the engine's bucket key matches the canonical map
-          // and FILE_ROUTES keys (both built with forward slashes). Without this,
-          // canonical collapse and atom hoisting silently no-op on Windows.
-          const relativePath = relative(
-            process.cwd(),
-            this.resourcePath,
-          ).replaceAll('\\', '/')
-          const body = JSON.stringify({
-            filename: relativePath,
-            code: source.toString(),
-            resourcePath: this.resourcePath,
-          })
-          coordinatorExtract(
-            port,
-            body,
-            (err, content, sourceMap, dependencies = []) => {
-              if (err) return callback(err)
-              for (const dependency of dependencies) {
-                this.addDependency(resolve(dependency))
-              }
-              callback(
-                null,
-                content,
-                sourceMap as Parameters<typeof callback>[2],
-              )
-            },
-          )
-        } catch (error) {
-          callback(toLoaderError(error))
-        }
+      const operation = {
+        portFile: coordinatorPortFile,
+        identity: coordinatorIdentity,
+        resourcePath: this.resourcePath,
+        path: '/extract',
+        method: 'POST' as const,
+        timeoutMs: requestTimeoutMs,
+        body: JSON.stringify({
+          filename: relative(projectRoot, this.resourcePath).replaceAll(
+            '\\',
+            '/',
+          ),
+          code: source.toString(),
+          resourcePath: this.resourcePath,
+          ...(sourceType === undefined ? {} : { sourceType }),
+        }),
       }
-      tryCoordinator(20) // 20 retries × 50ms = 1s max wait
+      try {
+        this.addDependency(coordinatorPortFile)
+        if (revisionFile) this.addDependency(resolve(projectRoot, revisionFile))
+        for (const file of themeFiles ??
+          collectDevupConfigFiles(resolve(projectRoot, themeFile))) {
+          this.addDependency(resolve(projectRoot, file))
+        }
+      } catch (error) {
+        callback(new CoordinatorRequestError(operation, error))
+        return
+      }
+      requestCoordinator(operation)
+        .then(async (content) => {
+          const data = parseCoordinatorResponse(content)
+          for (const dependency of data.dependencies)
+            this.addDependency(resolve(projectRoot, dependency))
+          for (const dependency of data.fileDependencies)
+            this.addDependency(
+              loaderResolutionWatchPath(
+                resolve(projectRoot, dependency),
+                this._compiler,
+              ),
+            )
+          await registerLoaderMissingDependencies(
+            this,
+            data.missingDependencies.map((dependency) =>
+              resolve(projectRoot, dependency),
+            ),
+          )
+          return data
+        })
+        .then(
+          (data) => callback(null, data.code, data.map),
+          (error: unknown) =>
+            callback(
+              error instanceof CoordinatorRequestError
+                ? error
+                : new CoordinatorRequestError(operation, error),
+            ),
+        )
       return
     }
 
-    // Non-coordinator mode: local WASM extraction
+    const engine = loadWasm()
     const {
-      codeExtract,
       exportClassMap,
       exportFileMap,
       exportSheet,
@@ -204,44 +150,42 @@ const devupUILoader: RawLoaderDefinitionFunction<DevupUILoaderOptions> =
       importFileMap,
       importSheet,
       registerTheme,
-    } = loadWasm()
+    } = engine
     const promises: Promise<void>[] = []
-    if (!init) {
-      init = true
-      if (watch) {
-        this.addDependency(sheetFile)
-        this.addDependency(classMapFile)
-        this.addDependency(fileMapFile)
-        this.addDependency(themeFile)
-        // restart loader issue
-        // loader should read files when they exist in watch mode
-        if (existsSync(sheetFile))
-          importSheet(JSON.parse(readFileSync(sheetFile, 'utf-8')))
-        if (existsSync(classMapFile))
-          importClassMap(JSON.parse(readFileSync(classMapFile, 'utf-8')))
-        if (existsSync(fileMapFile))
-          importFileMap(JSON.parse(readFileSync(fileMapFile, 'utf-8')))
-        if (existsSync(themeFile))
-          registerTheme(
-            JSON.parse(readFileSync(themeFile, 'utf-8'))?.theme ?? {},
-          )
-      } else {
-        importFileMap(defaultFileMap)
-        importClassMap(defaultClassMap)
-        importSheet(defaultSheet)
-        registerTheme(theme)
-      }
-    }
-
-    const callback = this.async()
     try {
+      if (!init) {
+        if (watch) {
+          this.addDependency(sheetFile)
+          this.addDependency(classMapFile)
+          this.addDependency(fileMapFile)
+          this.addDependency(themeFile)
+          const sheet = existsSync(sheetFile)
+            ? JSON.parse(readFileSync(sheetFile, 'utf-8'))
+            : undefined
+          const classes = existsSync(classMapFile)
+            ? JSON.parse(readFileSync(classMapFile, 'utf-8'))
+            : undefined
+          const files = existsSync(fileMapFile)
+            ? JSON.parse(readFileSync(fileMapFile, 'utf-8'))
+            : undefined
+          const config = existsSync(themeFile)
+            ? JSON.parse(readFileSync(themeFile, 'utf-8'))
+            : undefined
+          if (sheet !== undefined) importSheet(sheet)
+          if (classes !== undefined) importClassMap(classes)
+          if (files !== undefined) importFileMap(files)
+          if (config !== undefined) registerTheme(config?.theme ?? {})
+        } else {
+          importFileMap(defaultFileMap)
+          importClassMap(defaultClassMap)
+          importSheet(defaultSheet)
+          registerTheme(theme)
+        }
+        init = true
+      }
       const id = this.resourcePath
       let relCssDir = relative(dirname(id), cssDir).replaceAll('\\', '/')
-
-      // POSIX-normalize (see coordinator-mode note above) so bucket keys match
-      // the canonical map / FILE_ROUTES on Windows.
-      const relativePath = relative(process.cwd(), id).replaceAll('\\', '/')
-
+      const relativePath = relative(projectRoot, id).replaceAll('\\', '/')
       if (!relCssDir.startsWith('./')) relCssDir = `./${relCssDir}`
       const {
         code,
@@ -249,53 +193,53 @@ const devupUILoader: RawLoaderDefinitionFunction<DevupUILoaderOptions> =
         cssFile,
         updatedBaseStyle,
         dependencies = [],
-      } = codeExtract(
-        relativePath,
-        source.toString(),
-        libPackage,
-        relCssDir,
-        singleCss,
-        false,
-        true,
-        importAliases,
+      } = takeExtractOutput(
+        extractWithModuleResolver(engine, true, [
+          relativePath,
+          source.toString(),
+          libPackage,
+          relCssDir,
+          singleCss,
+          false,
+          true,
+          importAliases,
+          ...(sourceType ? ([sourceType] as const) : ([] as const)),
+        ]),
       )
-      for (const dependency of dependencies) {
-        this.addDependency(resolve(dependency))
-      }
+      for (const dependency of dependencies)
+        this.addDependency(resolve(projectRoot, dependency))
       const sourceMap = parseSourceMap(map)
       if (updatedBaseStyle && watch) {
-        // update base style
         promises.push(
-          writeFile(join(cssDir, 'devup-ui.css'), getCss(null, false), 'utf-8'),
+          stateWriter.write(
+            join(cssDir, 'devup-ui.css'),
+            getCss(null, false),
+            'utf-8',
+          ),
         )
       }
       if (cssFile && watch) {
-        // don't write file when build
         promises.push(
-          writeFile(
+          stateWriter.write(
             join(cssDir, basename(cssFile)),
             `/* ${this.resourcePath} ${Date.now()} */`,
           ),
-          writeFile(sheetFile, exportSheet()),
-          writeFile(classMapFile, exportClassMap()),
-          writeFile(fileMapFile, exportFileMap()),
+          stateWriter.write(sheetFile, exportSheet()),
+          stateWriter.write(classMapFile, exportClassMap()),
+          stateWriter.write(fileMapFile, exportFileMap()),
         )
       }
       Promise.all(promises).then(
         () => callback(null, code, sourceMap),
-        (error) => callback(toLoaderError(error)),
+        (error: unknown) => callback(toLoaderError(error)),
       )
     } catch (error) {
       callback(toLoaderError(error))
     }
-    return
   }
 export default devupUILoader
 
-/** @internal Reset init state for testing purposes only */
 export const resetInit = () => {
   init = false
-  cachedPorts.clear()
 }
-
 export { setWasmForTesting } from './wasm'

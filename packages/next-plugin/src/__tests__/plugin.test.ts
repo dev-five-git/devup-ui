@@ -1,29 +1,25 @@
-import * as fs from 'node:fs'
+import { existsSync, readFileSync, writeFileSync } from 'node:fs'
 import { join, resolve } from 'node:path'
 
-import type { StaticImportGraph } from '@devup-ui/plugin-utils'
-import * as importGraphModule from '@devup-ui/plugin-utils'
-import * as wasm from '@devup-ui/wasm'
+import {
+  BuildGeneration,
+  createCompatTypes,
+  createNodeModulesExcludeRegex,
+  mergeImportAliases,
+} from '@devup-ui/plugin-utils'
 import * as webpackPluginModule from '@devup-ui/webpack-plugin'
-import {
-  afterEach,
-  beforeEach,
-  describe,
-  expect,
-  it,
-  mock,
-  spyOn,
-} from 'bun:test'
+import { describe, expect, it, mock, spyOn } from 'bun:test'
+import type { NextConfig } from 'next'
 
-import * as coordinatorModule from '../coordinator'
-import {
-  DevupUI,
-  reloadTurboSetupModuleForTesting,
-  resetTurboSetupCacheForTesting,
-} from '../plugin'
-import { setWasmForTesting, setWebpackPluginForTesting } from '../wasm'
+import { DevupUI, reloadTurboSetupModuleForTesting } from '../plugin'
+import { readCoordinatorState } from '../state'
+import { setWebpackPluginForTesting } from '../wasm'
+import { box, installProjectHooks, makeProject } from './project'
+import { installTurboHarness } from './turbo-harness'
 
-type CodeExtractResult = ReturnType<typeof wasm.codeExtract>
+installProjectHooks()
+const harness = installTurboHarness()
+
 type NextWebpackConfig = Parameters<
   NonNullable<ReturnType<typeof DevupUI>['webpack']>
 >[0]
@@ -31,1198 +27,875 @@ type NextWebpackContext = Parameters<
   NonNullable<ReturnType<typeof DevupUI>['webpack']>
 >[1]
 
-function createWebpackConfig(): NextWebpackConfig {
-  return { plugins: [] } as unknown as NextWebpackConfig
+const SOURCE_RULE = '*.{tsx,ts,jsx,js,mjs,mts,cts,cjs}'
+const page = box('bg="red"')
+
+function project(extra: Record<string, string> = {}): string {
+  const root = makeProject({ 'src/app/page.tsx': page, ...extra })
+  process.chdir(root)
+  return root
 }
 
-function createWebpackContext(
-  overrides: Partial<NextWebpackContext> = {},
-): NextWebpackContext {
-  return { buildId: 'tmpBuildId', ...overrides } as NextWebpackContext
+function development(): void {
+  process.env.NODE_ENV = 'development'
 }
 
-function setNodeEnv(value: string): void {
-  process.env.NODE_ENV = value
-}
+describe('webpack', () => {
+  type ContextOverrides = Readonly<
+    Partial<Omit<NextWebpackContext, 'config'>>
+  > & { readonly config?: object }
 
-function createCodeExtractResult(contents: string): CodeExtractResult {
-  return {
-    css: '',
-    code: contents,
-    cssFile: '',
-    map: undefined,
-    updatedBaseStyle: false,
-    free: mock(),
-    [Symbol.dispose]: mock(),
-  } as unknown as CodeExtractResult
-}
-
-function createSingleFileGraph(filename: string): StaticImportGraph {
-  return {
-    files: [filename],
-    fileSet: new Set([filename]),
-    staticImports: new Map([[filename, new Set<string>()]]),
-    staticImporters: new Map([[filename, new Set<string>()]]),
-    dynamicTargets: new Set(),
-    dynamicImports: new Map([[filename, new Set<string>()]]),
-    externalImports: new Map([[filename, new Set<string>()]]),
-  }
-}
-
-let existsSyncSpy: ReturnType<typeof spyOn>
-let mkdirSyncSpy: ReturnType<typeof spyOn>
-let readFileSyncSpy: ReturnType<typeof spyOn>
-let writeFileSyncSpy: ReturnType<typeof spyOn>
-let unlinkSyncSpy: ReturnType<typeof spyOn>
-let getDefaultThemeSpy: ReturnType<typeof spyOn>
-let getThemeInterfaceSpy: ReturnType<typeof spyOn>
-let setPrefixSpy: ReturnType<typeof spyOn>
-let registerThemeSpy: ReturnType<typeof spyOn>
-let getCssSpy: ReturnType<typeof spyOn>
-let importSheetSpy: ReturnType<typeof spyOn>
-let importClassMapSpy: ReturnType<typeof spyOn>
-let importFileMapSpy: ReturnType<typeof spyOn>
-let exportSheetSpy: ReturnType<typeof spyOn>
-let exportClassMapSpy: ReturnType<typeof spyOn>
-let exportFileMapSpy: ReturnType<typeof spyOn>
-let codeExtractSpy: ReturnType<typeof spyOn>
-let codeExtractWithoutSourceMapSpy: ReturnType<typeof spyOn>
-let devupUIWebpackPluginSpy: ReturnType<typeof spyOn>
-let startCoordinatorSpy: ReturnType<typeof spyOn>
-
-let originalEnv: NodeJS.ProcessEnv
-let originalFetch: typeof global.fetch
-let originalDebugPort: number
-
-beforeEach(() => {
-  resetTurboSetupCacheForTesting()
-  existsSyncSpy = spyOn(fs, 'existsSync').mockReturnValue(false)
-  mkdirSyncSpy = spyOn(fs, 'mkdirSync').mockReturnValue(undefined)
-  readFileSyncSpy = spyOn(fs, 'readFileSync').mockReturnValue('{}')
-  writeFileSyncSpy = spyOn(fs, 'writeFileSync').mockReturnValue(undefined)
-  unlinkSyncSpy = spyOn(fs, 'unlinkSync').mockReturnValue(undefined)
-  getDefaultThemeSpy = spyOn(wasm, 'getDefaultTheme').mockReturnValue(undefined)
-  getThemeInterfaceSpy = spyOn(wasm, 'getThemeInterface').mockReturnValue('')
-  setPrefixSpy = spyOn(wasm, 'setPrefix').mockReturnValue(undefined)
-  registerThemeSpy = spyOn(wasm, 'registerTheme').mockReturnValue(undefined)
-  getCssSpy = spyOn(wasm, 'getCss').mockReturnValue('')
-  importSheetSpy = spyOn(wasm, 'importSheet').mockReturnValue(undefined)
-  importClassMapSpy = spyOn(wasm, 'importClassMap').mockReturnValue(undefined)
-  importFileMapSpy = spyOn(wasm, 'importFileMap').mockReturnValue(undefined)
-  exportSheetSpy = spyOn(wasm, 'exportSheet').mockReturnValue(
-    JSON.stringify({
-      css: {},
-      font_faces: {},
-      global_css_files: [],
-      imports: {},
-      keyframes: {},
-      properties: {},
-    }),
-  )
-  exportClassMapSpy = spyOn(wasm, 'exportClassMap').mockReturnValue(
-    JSON.stringify({}),
-  )
-  exportFileMapSpy = spyOn(wasm, 'exportFileMap').mockReturnValue(
-    JSON.stringify({}),
-  )
-  codeExtractSpy = spyOn(wasm, 'codeExtract').mockImplementation(
-    (_path: string, contents: string) => createCodeExtractResult(contents),
-  )
-  codeExtractWithoutSourceMapSpy = spyOn(
-    wasm,
-    'codeExtractWithoutSourceMap',
-  ).mockImplementation((_path: string, contents: string) =>
-    createCodeExtractResult(contents),
-  )
-  devupUIWebpackPluginSpy = spyOn(
-    webpackPluginModule,
-    'DevupUIWebpackPlugin',
-  ).mockImplementation(mock() as never)
-  startCoordinatorSpy = spyOn(
-    coordinatorModule,
-    'startCoordinator',
-  ).mockReturnValue({ close: mock() as () => void })
-  setWasmForTesting(wasm)
-  setWebpackPluginForTesting(webpackPluginModule)
-
-  originalEnv = { ...process.env }
-  originalFetch = global.fetch
-  originalDebugPort = process.debugPort
-  global.fetch = mock(() => Promise.resolve({} as Response))
-})
-
-afterEach(() => {
-  resetTurboSetupCacheForTesting()
-  setWasmForTesting(undefined)
-  setWebpackPluginForTesting(undefined)
-  process.env = originalEnv
-  global.fetch = originalFetch
-  process.debugPort = originalDebugPort
-  existsSyncSpy.mockRestore()
-  mkdirSyncSpy.mockRestore()
-  readFileSyncSpy.mockRestore()
-  writeFileSyncSpy.mockRestore()
-  unlinkSyncSpy.mockRestore()
-  getDefaultThemeSpy.mockRestore()
-  getThemeInterfaceSpy.mockRestore()
-  setPrefixSpy.mockRestore()
-  registerThemeSpy.mockRestore()
-  getCssSpy.mockRestore()
-  importSheetSpy.mockRestore()
-  importClassMapSpy.mockRestore()
-  importFileMapSpy.mockRestore()
-  exportSheetSpy.mockRestore()
-  exportClassMapSpy.mockRestore()
-  exportFileMapSpy.mockRestore()
-  codeExtractSpy.mockRestore()
-  codeExtractWithoutSourceMapSpy.mockRestore()
-  devupUIWebpackPluginSpy.mockRestore()
-  startCoordinatorSpy.mockRestore()
-})
-
-describe('DevupUINextPlugin', () => {
-  describe('webpack', () => {
-    it('should apply webpack plugin', async () => {
-      const ret = DevupUI({})
-
-      ret.webpack!(createWebpackConfig(), createWebpackContext())
-
-      expect(devupUIWebpackPluginSpy).toHaveBeenCalledWith({
-        cssDir: resolve('.next/cache', 'devup-ui_tmpBuildId'),
-      })
+  function run(
+    options: Parameters<typeof DevupUI>[1],
+    contexts: readonly ContextOverrides[],
+    userWebpack?: ReturnType<typeof mock>,
+  ) {
+    delete process.env.TURBOPACK
+    type PluginArguments = ConstructorParameters<
+      typeof webpackPluginModule.DevupUIWebpackPlugin
+    >
+    const spy = mock((..._args: PluginArguments) => {})
+    class CapturingPlugin extends webpackPluginModule.DevupUIWebpackPlugin {
+      constructor(...args: PluginArguments) {
+        super(...args)
+        spy(...args)
+      }
+    }
+    setWebpackPluginForTesting({
+      ...webpackPluginModule,
+      DevupUIWebpackPlugin: CapturingPlugin,
     })
+    const configs: NextWebpackConfig[] = []
+    const inputs: NextWebpackContext[] = []
+    const results: NextWebpackConfig[] = []
+    try {
+      const ret = DevupUI({ webpack: userWebpack }, options)
+      for (const context of contexts) {
+        const config = { plugins: [] } as unknown as NextWebpackConfig
+        const input = {
+          buildId: 'tmpBuildId',
+          config: {},
+          ...context,
+        } as NextWebpackContext
+        configs.push(config)
+        inputs.push(input)
+        results.push(ret.webpack!(config, input))
+      }
+      return { spy, configs, inputs, results }
+    } finally {
+      setWebpackPluginForTesting(undefined)
+    }
+  }
 
-    it('should apply webpack plugin with dev', async () => {
-      const ret = DevupUI({})
+  it('applies the webpack plugin with the production cache directory', () => {
+    const { spy } = run({}, [{}])
 
-      ret.webpack!(createWebpackConfig(), createWebpackContext({ dev: true }))
+    expect(spy).toHaveBeenCalledWith(
+      {
+        cssDir: resolve('.next/cache', 'devup-ui_tmpBuildId'),
+      },
+      expect.objectContaining({ complete: true }),
+    )
+    spy.mockRestore()
+  })
 
-      expect(devupUIWebpackPluginSpy).toHaveBeenCalledWith({
+  it('applies the webpack plugin in dev', () => {
+    const { spy } = run({}, [{ dev: true }])
+
+    expect(spy).toHaveBeenCalledWith(
+      {
         cssDir: resolve('df', 'devup-ui_tmpBuildId'),
         watch: true,
-      })
-    })
+      },
+      expect.objectContaining({ complete: true }),
+    )
+    spy.mockRestore()
+  })
 
-    it('should apply webpack plugin with config', async () => {
-      const ret = DevupUI(
-        {},
+  it('forwards the options when no caller webpack function is configured', () => {
+    // Given
+    const options = { package: 'new-package' }
+    // When
+    const { spy, configs, results } = run(options, [{}])
+    try {
+      // Then
+      expect(spy).toHaveBeenCalledWith(
         {
           package: 'new-package',
+          cssDir: resolve('.next/cache', 'devup-ui_tmpBuildId'),
         },
+        expect.objectContaining({ complete: true }),
       )
+      expect(results[0]).toBe(configs[0])
+    } finally {
+      spy.mockRestore()
+    }
+  })
 
-      ret.webpack!(createWebpackConfig(), createWebpackContext())
-
-      expect(devupUIWebpackPluginSpy).toHaveBeenCalledWith({
-        package: 'new-package',
-        cssDir: resolve('.next/cache', 'devup-ui_tmpBuildId'),
-      })
-    })
-
-    it('should apply webpack plugin with webpack obj', async () => {
-      const webpack = mock()
-      const ret = DevupUI(
-        {
-          webpack,
-        },
+  it('forwards options and preserves order, arguments and return when a caller webpack function is configured', () => {
+    // Given
+    const returned = { plugins: [], name: 'caller-result' }
+    const pluginCounts: number[] = []
+    const webpack = mock(
+      (config: NextWebpackConfig, _context: NextWebpackContext) => {
+        pluginCounts.push(config.plugins.length)
+        return returned
+      },
+    )
+    // When
+    const { spy, configs, inputs, results } = run(
+      { package: 'new-package' },
+      [{}],
+      webpack,
+    )
+    try {
+      // Then
+      expect(spy).toHaveBeenCalledWith(
         {
           package: 'new-package',
+          cssDir: resolve('.next/cache', 'devup-ui_tmpBuildId'),
         },
+        expect.objectContaining({ complete: true }),
       )
+      expect(pluginCounts).toEqual([1])
+      expect(webpack).toHaveBeenCalledTimes(1)
+      expect(webpack.mock.calls[0]?.[0]).toBe(configs[0])
+      expect(webpack.mock.calls[0]?.[1]).toBe(inputs[0])
+      expect(results[0]).toBe(returned)
+    } finally {
+      spy.mockRestore()
+    }
+  })
 
-      ret.webpack!(createWebpackConfig(), createWebpackContext())
+  it('shares a real owner when one wrapper constructs production server and client configs', () => {
+    // Given
+    const config = {}
+    // When
+    const { spy } = run({}, [
+      { config, dev: false, isServer: true },
+      { config, dev: false, isServer: false },
+    ])
+    try {
+      // Then
+      expect(spy).toHaveBeenCalledTimes(2)
+      const server = spy.mock.calls[0]?.[1]
+      const client = spy.mock.calls[1]?.[1]
+      expect(server?.owner).toBeInstanceOf(BuildGeneration)
+      expect(client?.owner).toBe(server?.owner)
+      expect(server?.complete).toBe(false)
+      expect(client?.complete).toBe(true)
+    } finally {
+      spy.mockRestore()
+    }
+  })
 
-      expect(devupUIWebpackPluginSpy).toHaveBeenCalledWith({
-        package: 'new-package',
-        cssDir: resolve('.next/cache', 'devup-ui_tmpBuildId'),
+  it('marks a real owner complete when a wrapper constructs a development server config', () => {
+    // Given
+    const context = { config: {}, dev: true, isServer: true }
+    // When
+    const { spy } = run({}, [context])
+    try {
+      // Then
+      expect(spy).toHaveBeenCalledTimes(1)
+      const binding = spy.mock.calls[0]?.[1]
+      expect(binding?.owner).toBeInstanceOf(BuildGeneration)
+      expect(binding?.complete).toBe(true)
+    } finally {
+      spy.mockRestore()
+    }
+  })
+
+  it('isolates real owners when independent wrappers receive the same public context', () => {
+    // Given
+    const context = {
+      config: {},
+      dev: false,
+      isServer: true,
+      buildId: 'fixed',
+    }
+    const first = run({}, [context])
+    const firstOwner = first.spy.mock.calls[0]?.[1]?.owner
+    first.spy.mockRestore()
+    // When
+    const { spy } = run({}, [context])
+    try {
+      // Then
+      const secondOwner = spy.mock.calls[0]?.[1]?.owner
+      expect(firstOwner).toBeInstanceOf(BuildGeneration)
+      expect(secondOwner).toBeInstanceOf(BuildGeneration)
+      expect(secondOwner).not.toBe(firstOwner)
+    } finally {
+      spy.mockRestore()
+    }
+  })
+})
+
+describe('turbopack setup', () => {
+  it('applies every option explicitly, with absolute paths and one identity', () => {
+    const root = project({
+      'cfg/devup.json': JSON.stringify({
+        extends: ['./base.json'],
+        theme: { colors: { dark: { primary: '#000' } } },
+      }),
+      'cfg/base.json': JSON.stringify({
+        theme: { colors: { light: { primary: '#fff' } } },
+      }),
+    })
+    const config: NextConfig = { env: { EXISTING: 'value' } }
+
+    const result = DevupUI(config, {
+      package: '@devup-ui/react',
+      distDir: 'out',
+      cssDir: 'out/styles',
+      singleCss: true,
+      devupFile: 'cfg/devup.json',
+      include: ['@acme/ui'],
+      prefix: 'du-',
+      shorthands: { insetX: ['left', 'right'] },
+      atomHoist: 2,
+      debug: true,
+      importAliases: { 'styled-components': false },
+    })
+
+    expect(result).toBe(config)
+    const [start] = harness.starts
+    expect(start).toMatchObject({
+      package: '@devup-ui/react',
+      cssDir: join(root, 'out', 'styles'),
+      singleCss: true,
+      projectRoot: root,
+      watch: false,
+      devupFile: join(root, 'cfg', 'devup.json'),
+      sourceRoots: ['src', 'app', 'pages'].map((dir) => join(root, dir)),
+      sourceMap: false,
+      importAliases: {
+        '@emotion/react': null,
+        '@emotion/styled': 'styled',
+        '@vanilla-extract/css': null,
+      },
+      expectedBaseFiles: ['src/app/page.tsx'],
+      prewarmedFiles: ['src/app/page.tsx'],
+    })
+    expect(start!.wasm.isDebug()).toBe(true)
+    expect(start!.wasm.getPrefix()).toBe('du-')
+    expect(start!.identity?.project).toBe(root)
+    expect(start!.coordinatorPortFile).toBe(
+      join(
+        root,
+        'out',
+        '.devup',
+        start!.optionsKey!,
+        'sessions',
+        `${process.pid}-${start!.identity?.token}`,
+        'endpoint.json',
+      ),
+    )
+    expect(result.env).toEqual({
+      EXISTING: 'value',
+      DEVUP_UI_DEFAULT_THEME: 'light',
+    })
+    expect(existsSync(join(root, 'out', 'styles', 'devup-ui.css'))).toBe(true)
+  })
+
+  it('applies the defaults explicitly too', () => {
+    project()
+
+    DevupUI({})
+
+    const [start] = harness.starts
+    expect(start!.wasm.isDebug()).toBe(false)
+    expect(start!.wasm.getPrefix()).toBeUndefined()
+    expect(start).toMatchObject({
+      package: '@devup-ui/react',
+      singleCss: false,
+      watch: false,
+      sourceMap: false,
+      canonicalMap: {},
+      expectedBaseFiles: ['src/app/page.tsx'],
+    })
+    expect(start!.stateFile).toBeUndefined()
+    expect(start!.revisionFile).toBeUndefined()
+    expect(start!.configureWasm).toBeFunction()
+    expect(start!.createEngine).toBeFunction()
+    expect(start!.createEngine!()).not.toBe(start!.wasm)
+  })
+
+  it('configures every engine it builds, including the rebuilds', () => {
+    project()
+    DevupUI({}, { debug: true, prefix: 'du-' })
+    const [start] = harness.starts
+
+    const fresh = start!.createEngine!()
+    start!.configureWasm!(fresh)
+
+    expect(fresh.isDebug()).toBe(true)
+    expect(fresh.getPrefix()).toBe('du-')
+  })
+
+  it('hands the loaders one identity, endpoint and the config files', () => {
+    const root = project({
+      'devup.json': JSON.stringify({ extends: ['./base.json'] }),
+      'base.json': JSON.stringify({
+        theme: { colors: { default: { primary: '#fff' } } },
+      }),
+    })
+
+    const result = DevupUI({}, { include: ['@acme/ui'] })
+
+    const [start] = harness.starts
+    const common = {
+      coordinatorPortFile: start!.coordinatorPortFile,
+      coordinatorIdentity: start!.identity,
+      projectRoot: root,
+      themeFiles: [join(root, 'devup.json'), join(root, 'base.json')],
+      requestTimeoutMs: 120_000,
+      watch: false,
+      themeFile: join(root, 'devup.json'),
+      theme: { colors: { default: { primary: '#fff' } } },
+      defaultSheet: {},
+      defaultClassMap: {},
+      defaultFileMap: {},
+    }
+    expect(result.turbopack?.rules).toEqual({
+      './df/devup-ui/*.css': [
+        {
+          loader: '@devup-ui/next-plugin/css-loader',
+          options: expect.objectContaining(common),
+        },
+      ],
+      [SOURCE_RULE]: {
+        loaders: [
+          {
+            loader: '@devup-ui/next-plugin/loader',
+            options: expect.objectContaining({
+              ...common,
+              package: '@devup-ui/react',
+              cssDir: join(root, 'df', 'devup-ui'),
+              singleCss: false,
+              importAliases: {
+                '@emotion/react': null,
+                '@emotion/styled': 'styled',
+                '@vanilla-extract/css': null,
+                'styled-components': 'styled',
+              },
+            }),
+          },
+        ],
+        condition: {
+          not: {
+            path: createNodeModulesExcludeRegex(['@acme/ui']),
+          },
+        },
+      },
+    })
+    expect(result.turbopack?.rules?.[SOURCE_RULE]).not.toHaveProperty(
+      'loaders.0.options.revisionFile',
+    )
+  })
+
+  it('keeps existing Turbopack rules', () => {
+    project()
+
+    const result = DevupUI({ turbopack: { rules: { '*.svg': ['svgr'] } } })
+
+    expect(result.turbopack?.rules).toHaveProperty(['*.svg'])
+    expect(result.turbopack?.rules).toHaveProperty([SOURCE_RULE])
+  })
+
+  it('matches every module extension Turbopack compiles', () => {
+    project()
+    const rule = Object.keys(DevupUI({}).turbopack?.rules ?? {}).find((key) =>
+      key.startsWith('*.'),
+    )
+
+    expect(rule).toBe('*.{tsx,ts,jsx,js,mjs,mts,cts,cjs}')
+  })
+
+  it('starts development with a state file and a revision file', () => {
+    development()
+    const root = project()
+    const seen: { state: boolean; revision: boolean }[] = []
+    harness.onStart = (options) =>
+      seen.push({
+        state: existsSync(options.stateFile!),
+        revision: existsSync(options.revisionFile!),
       })
-      expect(webpack).toHaveBeenCalled()
+
+    const result = DevupUI({})
+
+    const [start] = harness.starts
+    expect(start).toMatchObject({
+      watch: true,
+      sourceMap: true,
+      stateFile: join(
+        root,
+        'df',
+        '.devup',
+        start!.optionsKey!,
+        'snapshot.json',
+      ),
+      revisionFile: join(
+        root,
+        'df',
+        '.devup',
+        start!.optionsKey!,
+        'sessions',
+        `${process.pid}-${start!.identity?.token}`,
+        'revision',
+      ),
+    })
+    expect(seen).toEqual([{ state: true, revision: false }])
+    const loader = JSON.stringify(result.turbopack?.rules)
+    expect(loader).toContain('"watch":true')
+    expect(loader).toContain(JSON.stringify(start!.revisionFile).slice(1, -1))
+    expect(result.compiler).toBeUndefined()
+  })
+
+  it('commits the initial development state before the coordinator can publish', () => {
+    development()
+    project({ 'src/app/b/page.tsx': box('bg="blue"') })
+    let committed: ReturnType<typeof readCoordinatorState>
+    harness.onStart = (options) => {
+      committed = readCoordinatorState(options.stateFile!, options.optionsKey!)
+    }
+
+    DevupUI({})
+
+    expect(committed).toMatchObject({
+      version: 1,
+      revision: 0,
+      fileMap: { 'src/app/b/page.tsx': 0, 'src/app/page.tsx': 1 },
+    })
+    expect(committed?.inputs.map((input) => input.filename)).toEqual([
+      'src/app/b/page.tsx',
+      'src/app/page.tsx',
+    ])
+  })
+
+  it('writes the generated files once and keeps the CSS placeholder content stable', () => {
+    const root = project({
+      'devup.json': JSON.stringify({
+        theme: { colors: { default: { primary: '#fff' } } },
+      }),
+    })
+
+    DevupUI({})
+    DevupUI({})
+
+    const dist = join(root, 'df')
+    expect(readFileSync(join(dist, '.gitignore'), 'utf-8')).toBe('*')
+    expect(readFileSync(join(dist, 'compat.d.ts'), 'utf-8')).toBe(
+      createCompatTypes(mergeImportAliases()),
+    )
+    expect(readFileSync(join(dist, 'theme.d.ts'), 'utf-8')).toContain('primary')
+    expect(readFileSync(join(dist, 'devup-ui', 'devup-ui.css'), 'utf-8')).toBe(
+      '',
+    )
+  })
+
+  it('does not rewrite the CSS placeholder that Turbopack already tracks', () => {
+    const root = project()
+    DevupUI({})
+    const placeholder = join(root, 'df', 'devup-ui', 'devup-ui.css')
+    writeFileSync(placeholder, '/* kept */')
+
+    DevupUI({})
+
+    expect(readFileSync(placeholder, 'utf-8')).toBe('/* kept */')
+  })
+
+  it('writes no theme declaration for an app without a theme', () => {
+    const root = project()
+
+    DevupUI({})
+
+    expect(existsSync(join(root, 'df', 'theme.d.ts'))).toBe(false)
+  })
+
+  it('names the file when the devup config cannot be read', () => {
+    const root = project({ 'devup.json': '{ not json' })
+
+    expect(() => DevupUI({})).toThrow(
+      `${join(root, 'devup.json')}:1:1: devup config cannot use \`JSON\` at build time`,
+    )
+    expect(harness.starts).toHaveLength(0)
+  })
+
+  it('takes source maps from Next in production', () => {
+    project()
+
+    DevupUI({ productionBrowserSourceMaps: true })
+    DevupUI({})
+
+    expect(harness.starts.map((start) => start.sourceMap)).toEqual([
+      true,
+      false,
+    ])
+  })
+
+  it('registers the exit hooks that drain and close the coordinator', async () => {
+    project()
+
+    DevupUI({})
+
+    expect(Object.keys(harness.handlers).sort()).toEqual(['beforeExit', 'exit'])
+    await harness.handlers.beforeExit![0]!()
+    expect(harness.handles[0]!.drain).toHaveBeenCalledTimes(1)
+    expect(harness.handles[0]!.close).toHaveBeenCalledTimes(1)
+  })
+
+  it('reports the setup profile when asked', () => {
+    project()
+    process.env.DEVUP_UI_PROFILE = '1'
+    const info = spyOn(console, 'info').mockImplementation(() => {})
+
+    try {
+      DevupUI({}, { singleCss: true })
+
+      const phases = info.mock.calls
+        .map(([line]) => String(line).replace('[devup-ui:profile] ', ''))
+        .map((line) => JSON.parse(line))
+      expect(phases.map((entry) => entry.phase)).toEqual([
+        'next.graph',
+        'next.prewarm',
+        'next.setup',
+      ])
+      expect(phases[2]).toMatchObject({
+        cacheHit: false,
+        pid: process.pid,
+        prewarmedFiles: 1,
+        singleCss: true,
+        watch: false,
+      })
+    } finally {
+      info.mockRestore()
+    }
+  })
+})
+
+describe('turbopack apps in one process', () => {
+  it('gives an app without a theme the default theme, never another app’s', () => {
+    project({
+      'devup.json': JSON.stringify({
+        theme: {
+          colors: { light: { primary: '#fff' }, dark: { primary: '#000' } },
+        },
+      }),
+    })
+    const themed = DevupUI({})
+    project()
+    const plain = DevupUI({})
+
+    expect(themed.env).toEqual({ DEVUP_UI_DEFAULT_THEME: 'light' })
+    expect(plain.env).toEqual({ DEVUP_UI_DEFAULT_THEME: 'default' })
+    expect(process.env.DEVUP_UI_DEFAULT_THEME).toBeUndefined()
+  })
+
+  it('keeps the prefix, theme, debug mode and state of two apps apart', () => {
+    project({
+      'devup.json': JSON.stringify({
+        theme: { colors: { default: { primary: 'red' } } },
+      }),
+    })
+    DevupUI({}, { prefix: 'a-', debug: true })
+    const rootB = project({ 'src/app/b/page.tsx': box('bg="blue"') })
+    DevupUI({})
+
+    const [a, b] = harness.starts
+    expect(a!.wasm).not.toBe(b!.wasm)
+    expect(a!.wasm.getPrefix()).toBe('a-')
+    expect(b!.wasm.getPrefix()).toBeUndefined()
+    expect(a!.wasm.isDebug()).toBe(true)
+    expect(b!.wasm.isDebug()).toBe(false)
+    expect(a!.wasm.getCss(undefined, false)).toContain('--primary:red')
+    expect(b!.wasm.getCss(undefined, false)).not.toContain('--primary')
+    expect(JSON.parse(a!.wasm.exportFileMap())).toEqual({
+      'src/app/page.tsx': 0,
+    })
+    expect(JSON.parse(b!.wasm.exportFileMap())).toEqual({
+      'src/app/b/page.tsx': 0,
+      'src/app/page.tsx': 1,
+    })
+    expect(a!.coordinatorPortFile).not.toBe(b!.coordinatorPortFile)
+    expect(a!.identity?.project).not.toBe(rootB)
+  })
+
+  it('resolves everything against the root the app was set up in', () => {
+    const rootA = project()
+    const rootB = project()
+    process.chdir(rootA)
+
+    const result = DevupUI({}, { distDir: 'out', devupFile: 'config.json' })
+    process.chdir(rootB)
+
+    const [start] = harness.starts
+    expect(start).toMatchObject({
+      cssDir: join(rootA, 'out', 'devup-ui'),
+      projectRoot: rootA,
+      devupFile: join(rootA, 'config.json'),
+    })
+    expect(start!.coordinatorPortFile.startsWith(join(rootA, 'out'))).toBe(true)
+    expect(Object.keys(result.turbopack?.rules ?? {})[0]).toBe(
+      './out/devup-ui/*.css',
+    )
+    expect(JSON.stringify(result.turbopack?.rules)).not.toContain(
+      JSON.stringify(rootB).slice(1, -1),
+    )
+  })
+
+  it('gives every call of the same app its own session', () => {
+    project()
+
+    DevupUI({})
+    DevupUI({})
+
+    const [first, second] = harness.starts
+    expect(first!.coordinatorPortFile).not.toBe(second!.coordinatorPortFile)
+    expect(first!.identity?.token).not.toBe(second!.identity?.token)
+    expect(first!.optionsKey).toBe(second!.optionsKey)
+    expect(harness.handlers.exit).toHaveLength(2)
+  })
+
+  it('continues the names of the last development session and appends new files', () => {
+    development()
+    const root = project({ 'src/app/b/page.tsx': box('bg="blue"') })
+    DevupUI({})
+    writeFileSync(join(root, 'src/aaa.tsx'), box('bg="green"'))
+
+    DevupUI({})
+
+    const [first, second] = harness.starts
+    expect(JSON.parse(first!.wasm.exportFileMap())).toEqual({
+      'src/app/b/page.tsx': 0,
+      'src/app/page.tsx': 1,
+    })
+    expect(JSON.parse(second!.wasm.exportFileMap())).toEqual({
+      'src/app/b/page.tsx': 0,
+      'src/app/page.tsx': 1,
+      'src/aaa.tsx': 2,
     })
   })
-  describe('turbo', () => {
-    it('reuses production setup across Next config module reloads', () => {
-      setNodeEnv('production')
-      process.env.TURBOPACK = '1'
-      process.env.DEVUP_UI_PROFILE = '1'
-      getDefaultThemeSpy.mockReturnValue('dark')
-      const filename = resolve('src/app/page.tsx')
-      const graphSpy = spyOn(
-        importGraphModule,
-        'buildStaticImportGraph',
-      ).mockReturnValue(createSingleFileGraph(filename))
-      const compiledSpy = spyOn(
-        importGraphModule,
-        'computeCompiledFiles',
-      ).mockReturnValue(['src/app/page.tsx'])
-      const profileSpy = spyOn(console, 'info').mockImplementation(() => {})
-      const handoffFile = join('df', 'setup.bin')
-      let handoff: Parameters<typeof fs.writeFileSync>[1] | undefined
-      writeFileSyncSpy.mockImplementation((path, data) => {
-        if (String(path) === handoffFile) handoff = data
-      })
-      readFileSyncSpy.mockImplementation((path) => {
-        if (String(path) === handoffFile && handoff !== undefined) {
-          return handoff as never
-        }
-        return '{}' as never
-      })
-      unlinkSyncSpy.mockImplementation((path) => {
-        if (String(path) === handoffFile) throw new Error('cleanup failed')
-      })
+})
 
-      try {
-        const first = DevupUI({}, { singleCss: true })
-        reloadTurboSetupModuleForTesting()
-        const second = DevupUI(
-          { env: { EXISTING: 'value' } },
-          { singleCss: true },
-        )
-
-        expect(second.turbopack?.rules).toEqual(first.turbopack?.rules)
-        expect(second.env).toEqual({
-          DEVUP_UI_DEFAULT_THEME: 'dark',
-          EXISTING: 'value',
-        })
-        expect(graphSpy).toHaveBeenCalledTimes(1)
-        expect(codeExtractWithoutSourceMapSpy).toHaveBeenCalledTimes(1)
-        expect(startCoordinatorSpy).toHaveBeenCalledTimes(1)
-        expect(unlinkSyncSpy).toHaveBeenCalledWith(handoffFile)
-        expect(profileSpy).toHaveBeenCalledWith(
-          expect.stringContaining('"cacheHit":true'),
-        )
-      } finally {
-        profileSpy.mockRestore()
-        compiledSpy.mockRestore()
-        graphSpy.mockRestore()
-      }
+describe('turbopack production setup handoff', () => {
+  it('hands one setup to the second evaluation of the config', () => {
+    const root = project({
+      'devup.json': JSON.stringify({
+        theme: { colors: { light: { primary: '#fff' } } },
+      }),
     })
+    process.env.DEVUP_UI_PROFILE = '1'
+    const info = spyOn(console, 'info').mockImplementation(() => {})
 
-    it('falls back when a production setup handoff is not reusable', () => {
-      setNodeEnv('production')
-      process.env.TURBOPACK = '1'
-      const filename = resolve('src/app/page.tsx')
-      const graphSpy = spyOn(
-        importGraphModule,
-        'buildStaticImportGraph',
-      ).mockReturnValue(createSingleFileGraph(filename))
-      const compiledSpy = spyOn(
-        importGraphModule,
-        'computeCompiledFiles',
-      ).mockReturnValue(['src/app/page.tsx'])
-      const handoffFile = join('df', 'setup.bin')
-      let failHandoffWrite = false
-      let handoff: Parameters<typeof fs.writeFileSync>[1] | undefined
-      writeFileSyncSpy.mockImplementation((path, data) => {
-        if (String(path) !== handoffFile) return
-        if (failHandoffWrite) throw new Error('write failed')
-        handoff = data
-      })
-      readFileSyncSpy.mockImplementation((path) => {
-        if (String(path) === handoffFile && handoff !== undefined) {
-          return handoff as never
-        }
-        return '{}' as never
-      })
-
-      try {
-        DevupUI({})
-        // The same module instance must not consume its own handoff.
-        DevupUI({})
-        reloadTurboSetupModuleForTesting()
-        handoff = Buffer.from('invalid handoff')
-        failHandoffWrite = true
-
-        // A corrupt read and a failed replacement write both fall back to the
-        // complete setup without leaking a token into another config load.
-        expect(() => DevupUI({})).not.toThrow()
-        expect(graphSpy).toHaveBeenCalledTimes(3)
-        expect(process.env.DEVUP_UI_TURBO_SETUP_TOKEN).toBeUndefined()
-      } finally {
-        compiledSpy.mockRestore()
-        graphSpy.mockRestore()
-      }
-    })
-
-    it('should apply turbo config', async () => {
-      process.env.TURBOPACK = '1'
-      existsSyncSpy
-        .mockReturnValueOnce(true)
-        .mockReturnValueOnce(true)
-        .mockReturnValueOnce(true)
-        .mockReturnValueOnce(false)
-      const ret = DevupUI({})
-
-      expect(ret).toEqual({
-        turbopack: {
-          rules: {
-            './df/devup-ui/*.css': [
-              {
-                loader: '@devup-ui/next-plugin/css-loader',
-                options: {
-                  watch: false,
-                  coordinatorPortFile: join('df', 'coordinator.port'),
-                  sheetFile: join('df', 'sheet.json'),
-                  classMapFile: join('df', 'classMap.json'),
-                  fileMapFile: join('df', 'fileMap.json'),
-                  themeFile: 'devup.json',
-                  theme: {},
-                  defaultClassMap: {},
-                  defaultFileMap: {},
-                  defaultSheet: {
-                    css: {},
-                    font_faces: {},
-                    global_css_files: [],
-                    imports: {},
-                    keyframes: {},
-                    properties: {},
-                  },
-                },
-              },
-            ],
-            '*.{tsx,ts,jsx,js,mjs}': {
-              loaders: [
-                {
-                  loader: '@devup-ui/next-plugin/loader',
-                  options: {
-                    package: '@devup-ui/react',
-                    cssDir: resolve('df', 'devup-ui'),
-                    coordinatorPortFile: join('df', 'coordinator.port'),
-                    sheetFile: join('df', 'sheet.json'),
-                    classMapFile: join('df', 'classMap.json'),
-                    fileMapFile: join('df', 'fileMap.json'),
-                    themeFile: 'devup.json',
-                    watch: false,
-                    singleCss: false,
-                    theme: {},
-                    defaultClassMap: {},
-                    defaultFileMap: {},
-                    importAliases: {
-                      '@emotion/react': null,
-                      '@emotion/styled': 'styled',
-                      '@vanilla-extract/css': null,
-                      'styled-components': 'styled',
-                    },
-                    defaultSheet: {
-                      css: {},
-                      font_faces: {},
-                      global_css_files: [],
-                      imports: {},
-                      keyframes: {},
-                      properties: {},
-                    },
-                  },
-                },
-              ],
-              condition: {
-                not: {
-                  path: new RegExp(
-                    `(node_modules(?!.*(${['@devup-ui', '@devup-editor']
-                      .join('|')
-                      .replaceAll(
-                        '/',
-                        '[\\/\\\\_]',
-                      )})([\\/\\\\.]|$)))|(.mdx.[tj]sx?$)`,
-                  ),
-                },
-              },
-            },
-          },
-        },
-      })
-    })
-    it('should apply turbo config with create df', async () => {
-      process.env.TURBOPACK = '1'
-      existsSyncSpy.mockReturnValue(false)
-      mkdirSyncSpy.mockReturnValue('')
-      writeFileSyncSpy.mockReturnValue(undefined)
-      const ret = DevupUI({})
-
-      expect(ret).toEqual({
-        turbopack: {
-          rules: {
-            './df/devup-ui/*.css': [
-              {
-                loader: '@devup-ui/next-plugin/css-loader',
-                options: {
-                  watch: false,
-                  coordinatorPortFile: join('df', 'coordinator.port'),
-                  sheetFile: join('df', 'sheet.json'),
-                  classMapFile: join('df', 'classMap.json'),
-                  fileMapFile: join('df', 'fileMap.json'),
-                  themeFile: 'devup.json',
-                  theme: {},
-                  defaultClassMap: {},
-                  defaultFileMap: {},
-                  defaultSheet: {
-                    css: {},
-                    font_faces: {},
-                    global_css_files: [],
-                    imports: {},
-                    keyframes: {},
-                    properties: {},
-                  },
-                },
-              },
-            ],
-            '*.{tsx,ts,jsx,js,mjs}': {
-              condition: {
-                not: {
-                  path: new RegExp(
-                    `(node_modules(?!.*(${['@devup-ui', '@devup-editor']
-                      .join('|')
-                      .replaceAll(
-                        '/',
-                        '[\\/\\\\_]',
-                      )})([\\/\\\\.]|$)))|(.mdx.[tj]sx?$)`,
-                  ),
-                },
-              },
-              loaders: [
-                {
-                  loader: '@devup-ui/next-plugin/loader',
-                  options: {
-                    package: '@devup-ui/react',
-                    cssDir: resolve('df', 'devup-ui'),
-                    coordinatorPortFile: join('df', 'coordinator.port'),
-                    sheetFile: join('df', 'sheet.json'),
-                    classMapFile: join('df', 'classMap.json'),
-                    fileMapFile: join('df', 'fileMap.json'),
-                    importAliases: {
-                      '@emotion/react': null,
-                      '@emotion/styled': 'styled',
-                      '@vanilla-extract/css': null,
-                      'styled-components': 'styled',
-                    },
-                    watch: false,
-                    singleCss: false,
-                    theme: {},
-                    defaultClassMap: {},
-                    defaultFileMap: {},
-                    defaultSheet: {
-                      css: {},
-                      font_faces: {},
-                      global_css_files: [],
-                      imports: {},
-                      keyframes: {},
-                      properties: {},
-                    },
-                    themeFile: 'devup.json',
-                  },
-                },
-              ],
-            },
-          },
-        },
-      })
-      expect(mkdirSyncSpy).toHaveBeenCalledWith('df', {
-        recursive: true,
-      })
-      expect(writeFileSyncSpy).toHaveBeenCalledWith(
-        join('df', '.gitignore'),
-        '*',
-      )
-    })
-    it('should apply turbo config with exists df and devup.json', async () => {
-      process.env.TURBOPACK = '1'
-      existsSyncSpy.mockReturnValue(true)
-      readFileSyncSpy.mockReturnValue(JSON.stringify({ theme: 'theme' }))
-      mkdirSyncSpy.mockReturnValue('')
-      writeFileSyncSpy.mockReturnValue(undefined)
-      const ret = DevupUI({})
-
-      expect(ret).toEqual({
-        turbopack: {
-          rules: {
-            './df/devup-ui/*.css': [
-              {
-                loader: '@devup-ui/next-plugin/css-loader',
-                options: {
-                  watch: false,
-                  coordinatorPortFile: join('df', 'coordinator.port'),
-                  sheetFile: join('df', 'sheet.json'),
-                  classMapFile: join('df', 'classMap.json'),
-                  fileMapFile: join('df', 'fileMap.json'),
-                  themeFile: 'devup.json',
-                  theme: 'theme',
-                  defaultClassMap: {},
-                  defaultFileMap: {},
-                  defaultSheet: {
-                    css: {},
-                    font_faces: {},
-                    global_css_files: [],
-                    imports: {},
-                    keyframes: {},
-                    properties: {},
-                  },
-                },
-              },
-            ],
-            '*.{tsx,ts,jsx,js,mjs}': {
-              condition: {
-                not: {
-                  path: new RegExp(
-                    `(node_modules(?!.*(${['@devup-ui', '@devup-editor']
-                      .join('|')
-                      .replaceAll(
-                        '/',
-                        '[\\/\\\\_]',
-                      )})([\\/\\\\.]|$)))|(.mdx.[tj]sx?$)`,
-                  ),
-                },
-              },
-              loaders: [
-                {
-                  loader: '@devup-ui/next-plugin/loader',
-                  options: {
-                    package: '@devup-ui/react',
-                    cssDir: resolve('df', 'devup-ui'),
-                    coordinatorPortFile: join('df', 'coordinator.port'),
-                    sheetFile: join('df', 'sheet.json'),
-                    classMapFile: join('df', 'classMap.json'),
-                    fileMapFile: join('df', 'fileMap.json'),
-                    watch: false,
-                    singleCss: false,
-                    theme: 'theme',
-                    defaultClassMap: {},
-                    defaultFileMap: {},
-                    importAliases: {
-                      '@emotion/react': null,
-                      '@emotion/styled': 'styled',
-                      '@vanilla-extract/css': null,
-                      'styled-components': 'styled',
-                    },
-                    defaultSheet: {
-                      css: {},
-                      font_faces: {},
-                      global_css_files: [],
-                      imports: {},
-                      keyframes: {},
-                      properties: {},
-                    },
-                    themeFile: 'devup.json',
-                  },
-                },
-              ],
-            },
-          },
-        },
-      })
-      // mkdirSync is NOT called when existsSync returns true
-      expect(mkdirSyncSpy).not.toHaveBeenCalled()
-      // gitignore is also NOT written when it exists
-      expect(writeFileSyncSpy).not.toHaveBeenCalledWith(
-        join('df', '.gitignore'),
-        '*',
-      )
-    })
-    it('should start coordinator even in production mode', () => {
-      setNodeEnv('production')
-      process.env.TURBOPACK = '1'
-      existsSyncSpy
-        .mockReturnValueOnce(true)
-        .mockReturnValueOnce(true)
-        .mockReturnValueOnce(true)
-        .mockReturnValueOnce(false)
-      const ret = DevupUI({})
-      expect(ret).toEqual({
-        turbopack: {
-          rules: expect.any(Object),
-        },
-      })
-      expect(startCoordinatorSpy).toHaveBeenCalledWith({
-        wasm,
-        package: '@devup-ui/react',
-        cssDir: resolve('df', 'devup-ui'),
-        singleCss: false,
-        sheetFile: join('df', 'sheet.json'),
-        classMapFile: join('df', 'classMap.json'),
-        fileMapFile: join('df', 'fileMap.json'),
-        importAliases: {
-          '@emotion/react': null,
-          '@emotion/styled': 'styled',
-          '@vanilla-extract/css': null,
-          'styled-components': 'styled',
-        },
-        coordinatorPortFile: join('df', 'coordinator.port'),
-        canonicalMap: expect.any(Object),
-        expectedBaseFiles: expect.any(Array),
-        prewarmedFiles: expect.any(Array),
-        prewarmedOutputs: expect.any(Map),
-        sourceMap: false,
-      })
-    })
-    it('extracts vanilla-extract modules as written', () => {
-      setNodeEnv('production')
-      process.env.TURBOPACK = '1'
-      const filename = resolve('src/styles.css.ts')
-      const source = `import { style } from '@vanilla-extract/css'
-export const box = style({ color: 'red' })`
-      const graphSpy = spyOn(
-        importGraphModule,
-        'buildStaticImportGraph',
-      ).mockReturnValue(createSingleFileGraph(filename))
-      const compiledSpy = spyOn(
-        importGraphModule,
-        'computeCompiledFiles',
-      ).mockReturnValue(['src/styles.css.ts'])
-      readFileSyncSpy.mockImplementation((path: fs.PathOrFileDescriptor) =>
-        String(path).endsWith('styles.css.ts') ? source : '{}',
+    try {
+      const first = DevupUI({}, { singleCss: true })
+      reloadTurboSetupModuleForTesting()
+      const second = DevupUI(
+        { env: { EXISTING: 'value' } },
+        { singleCss: true },
       )
 
-      try {
-        DevupUI({})
-
-        expect(codeExtractWithoutSourceMapSpy).toHaveBeenCalledWith(
-          'src/styles.css.ts',
-          source,
-          '@devup-ui/react',
-          expect.any(String),
-          false,
-          false,
-          true,
-          expect.anything(),
-        )
-      } finally {
-        graphSpy.mockRestore()
-        compiledSpy.mockRestore()
-      }
-    })
-    it('keeps source maps when Next production browser source maps are enabled', () => {
-      setNodeEnv('production')
-      process.env.TURBOPACK = '1'
-
-      DevupUI({ productionBrowserSourceMaps: true })
-
-      expect(startCoordinatorSpy).toHaveBeenCalledWith(
-        expect.objectContaining({ sourceMap: true }),
-      )
-    })
-    it('should create theme.d.ts file', async () => {
-      process.env.TURBOPACK = '1'
-      existsSyncSpy.mockReturnValue(true)
-      getThemeInterfaceSpy.mockReturnValue('interface code')
-      readFileSyncSpy.mockReturnValue(JSON.stringify({ theme: 'theme' }))
-      mkdirSyncSpy.mockReturnValue('')
-      writeFileSyncSpy.mockReturnValue(undefined)
-      DevupUI({})
-      expect(writeFileSyncSpy).toHaveBeenCalledWith(
-        join('df', 'theme.d.ts'),
-        'interface code',
-      )
-      // mkdirSync is NOT called when existsSync returns true
-      expect(mkdirSyncSpy).not.toHaveBeenCalled()
-    })
-    it('should set DEVUP_UI_DEFAULT_THEME when getDefaultTheme returns a value', async () => {
-      process.env.TURBOPACK = '1'
-      process.env.DEVUP_UI_DEFAULT_THEME = ''
-      existsSyncSpy
-        .mockReturnValueOnce(true)
-        .mockReturnValueOnce(true)
-        .mockReturnValueOnce(true)
-        .mockReturnValueOnce(false)
-      getDefaultThemeSpy.mockReturnValue('dark')
-      const config: any = {}
-      const ret = DevupUI(config)
-
-      expect(process.env.DEVUP_UI_DEFAULT_THEME).toBe('dark')
-      expect(ret.env).toEqual({
-        DEVUP_UI_DEFAULT_THEME: 'dark',
-      })
-      expect(config.env).toEqual({
-        DEVUP_UI_DEFAULT_THEME: 'dark',
-      })
-    })
-    it('should not set DEVUP_UI_DEFAULT_THEME when getDefaultTheme returns undefined', async () => {
-      process.env.TURBOPACK = '1'
-      process.env.DEVUP_UI_DEFAULT_THEME = ''
-      existsSyncSpy
-        .mockReturnValueOnce(true)
-        .mockReturnValueOnce(true)
-        .mockReturnValueOnce(true)
-        .mockReturnValueOnce(false)
-      getDefaultThemeSpy.mockReturnValue(undefined)
-      const config: any = {}
-      const ret = DevupUI(config)
-
-      expect(process.env.DEVUP_UI_DEFAULT_THEME).toBe('')
-      expect(ret.env).toBeUndefined()
-      expect(config.env).toBeUndefined()
-    })
-    it('should set DEVUP_UI_DEFAULT_THEME and preserve existing env vars', async () => {
-      process.env.TURBOPACK = '1'
-      process.env.DEVUP_UI_DEFAULT_THEME = ''
-      existsSyncSpy
-        .mockReturnValueOnce(true)
-        .mockReturnValueOnce(true)
-        .mockReturnValueOnce(true)
-        .mockReturnValueOnce(false)
-      getDefaultThemeSpy.mockReturnValue('light')
-      const config: any = {
-        env: {
-          CUSTOM_VAR: 'value',
-        },
-      }
-      const ret = DevupUI(config)
-
-      expect(process.env.DEVUP_UI_DEFAULT_THEME).toBe('light')
-      expect(ret.env).toEqual({
-        CUSTOM_VAR: 'value',
+      expect(harness.starts).toHaveLength(1)
+      expect(second.turbopack?.rules).toEqual(first.turbopack?.rules)
+      expect(second.env).toEqual({
         DEVUP_UI_DEFAULT_THEME: 'light',
+        EXISTING: 'value',
       })
-      expect(config.env).toEqual({
-        CUSTOM_VAR: 'value',
-        DEVUP_UI_DEFAULT_THEME: 'light',
-      })
-    })
-    it('should call setPrefix when prefix option is provided', async () => {
-      process.env.TURBOPACK = '1'
-      existsSyncSpy
-        .mockReturnValueOnce(true)
-        .mockReturnValueOnce(true)
-        .mockReturnValueOnce(true)
-        .mockReturnValueOnce(false)
-      DevupUI({}, { prefix: 'my-prefix' })
-      expect(setPrefixSpy).toHaveBeenCalledWith('my-prefix')
-    })
-    it('should import previous session state on restart', () => {
-      process.env.TURBOPACK = '1'
-      existsSyncSpy
-        .mockReturnValueOnce(true) // distDir
-        .mockReturnValueOnce(true) // cssDir
-        .mockReturnValueOnce(true) // gitignoreFile
-        .mockReturnValueOnce(false) // devupFile in loadDevupConfigSync
-
-      // Simulate previous session state files on disk
-      const prevSheet = {
-        css: { a: 'color:red' },
-        font_faces: {},
-        global_css_files: [],
-        imports: {},
-        keyframes: {},
-        properties: {},
-      }
-      const prevClassMap = { a: 0 }
-      const prevFileMap = { 'src/App.tsx': 0 }
-
-      readFileSyncSpy
-        .mockReturnValueOnce(JSON.stringify(prevSheet)) // sheetFile
-        .mockReturnValueOnce(JSON.stringify(prevClassMap)) // classMapFile
-        .mockReturnValueOnce(JSON.stringify(prevFileMap)) // fileMapFile
-
-      DevupUI({})
-
-      // Verify previous state was imported before registerTheme
-      expect(importSheetSpy).toHaveBeenCalledWith(prevSheet)
-      expect(importClassMapSpy).toHaveBeenCalledWith(prevClassMap)
-      expect(importFileMapSpy).toHaveBeenCalledWith(prevFileMap)
-      expect(registerThemeSpy).toHaveBeenCalledWith({})
-
-      // Verify stale port file was deleted before starting coordinator
-      expect(unlinkSyncSpy).toHaveBeenCalledWith(join('df', 'coordinator.port'))
-    })
-    it('should handle missing state files gracefully on first run', () => {
-      process.env.TURBOPACK = '1'
-      existsSyncSpy
-        .mockReturnValueOnce(false) // distDir — doesn't exist
-        .mockReturnValueOnce(false) // cssDir
-        .mockReturnValueOnce(false) // gitignoreFile
-        .mockReturnValueOnce(false) // devupFile
-
-      // readFileSync throws for state files (they don't exist)
-      readFileSyncSpy.mockImplementation((path: string) => {
-        throw new Error(`ENOENT: no such file or directory, open '${path}'`)
-      })
-
-      // Should not throw — try-catch handles missing files
-      DevupUI({})
-
-      // importSheet should NOT have been called (readFileSync threw)
-      expect(importSheetSpy).not.toHaveBeenCalled()
-      expect(importClassMapSpy).not.toHaveBeenCalled()
-      expect(importFileMapSpy).not.toHaveBeenCalled()
-
-      // registerTheme should still be called with empty theme
-      expect(registerThemeSpy).toHaveBeenCalledWith({})
-    })
-    it('should start coordinator in development mode', async () => {
-      process.env.TURBOPACK = '1'
-      setNodeEnv('development')
-      existsSyncSpy
-        .mockReturnValueOnce(true)
-        .mockReturnValueOnce(true)
-        .mockReturnValueOnce(true)
-        .mockReturnValueOnce(false)
-      writeFileSyncSpy.mockReturnValue(undefined)
-
-      const closeMock = mock() as () => void
-      startCoordinatorSpy.mockReturnValue({ close: closeMock })
-
-      const exitHandlers: (() => void)[] = []
-      const processOnSpy = spyOn(process, 'on').mockImplementation(
-        (event: string, handler: (...args: unknown[]) => void) => {
-          if (event === 'exit') exitHandlers.push(handler as () => void)
-          return process
-        },
+      expect(JSON.stringify(second.turbopack?.rules)).toContain(
+        harness.starts[0]!.identity!.token,
       )
+      expect(JSON.stringify(second.turbopack?.rules)).toContain(
+        JSON.stringify(root).slice(1, -1),
+      )
+      expect(info).toHaveBeenCalledWith(
+        expect.stringContaining('"cacheHit":true'),
+      )
+    } finally {
+      info.mockRestore()
+    }
+  })
 
+  it('does not reuse a setup for other options, config contents or its own module', () => {
+    const root = project({ 'devup.json': '{}' })
+    DevupUI({}, { singleCss: true })
+
+    DevupUI({}, { singleCss: true })
+    expect(harness.starts).toHaveLength(2)
+
+    reloadTurboSetupModuleForTesting()
+    DevupUI({}, { singleCss: false })
+    expect(harness.starts).toHaveLength(3)
+
+    reloadTurboSetupModuleForTesting()
+    writeFileSync(join(root, 'devup.json'), '{ "theme": {} }')
+    DevupUI({}, { singleCss: true })
+    expect(harness.starts).toHaveLength(4)
+
+    reloadTurboSetupModuleForTesting()
+    DevupUI({}, { singleCss: true, debug: true })
+    expect(harness.starts).toHaveLength(5)
+  })
+
+  it('does not reuse a setup across projects', () => {
+    project()
+    DevupUI({})
+    reloadTurboSetupModuleForTesting()
+    project()
+
+    DevupUI({})
+
+    expect(harness.starts).toHaveLength(2)
+  })
+
+  it('never hands a setup over in development', () => {
+    development()
+    project()
+    DevupUI({})
+    reloadTurboSetupModuleForTesting()
+
+    DevupUI({})
+
+    expect(harness.starts).toHaveLength(2)
+  })
+
+  it('drains the first evaluation’s coordinator from either config', async () => {
+    project()
+    const user = mock(async () => {})
+    const first = DevupUI({ compiler: { runAfterProductionCompile: user } })
+    reloadTurboSetupModuleForTesting()
+    const second = DevupUI({})
+    const metadata = { projectDir: '/p', distDir: '.next' }
+
+    await second.compiler?.runAfterProductionCompile?.(metadata)
+    expect(harness.handles).toHaveLength(1)
+    expect(harness.handles[0]!.drain).toHaveBeenCalledTimes(1)
+    expect(harness.handles[0]!.close).not.toHaveBeenCalled()
+
+    await first.compiler?.runAfterProductionCompile?.(metadata)
+    expect(harness.handles[0]!.drain).toHaveBeenCalledTimes(2)
+    expect(user).toHaveBeenCalledWith(metadata)
+  })
+})
+
+describe('turbopack prewarm scope', () => {
+  const dynamic = `import { css } from '@devup-ui/react'\nconst v = Math.random()\nexport const c = css({ bg: v })`
+
+  it('does not extract or fail on a dead file nothing compiles', () => {
+    project({ 'src/dead/broken.tsx': dynamic })
+
+    expect(() => DevupUI({})).not.toThrow()
+
+    expect(harness.starts[0]!.prewarmedFiles).toEqual(['src/app/page.tsx'])
+    expect(harness.starts[0]!.expectedBaseFiles).toEqual(['src/app/page.tsx'])
+  })
+
+  it('fails a production build on a reachable file with its location', () => {
+    project({
+      'src/app/page.tsx': `import './broken'\n${page}`,
+      'src/app/broken.tsx': dynamic,
+    })
+
+    expect(() => DevupUI({})).toThrow(
+      'src/app/broken.tsx:3:18: `css()` cannot use `v` at build time',
+    )
+    expect(harness.starts).toHaveLength(0)
+  })
+
+  it('prewarms the whole tree only on request', () => {
+    project({ 'src/dead/broken.tsx': dynamic })
+
+    expect(() => DevupUI({}, { prewarmAll: true })).toThrow(
+      'src/dead/broken.tsx:3:18: `css()` cannot use `v` at build time',
+    )
+  })
+
+  it('prewarms the packages the reached files import', () => {
+    project({
+      'src/app/page.tsx': `import 'design-system'\n${page}`,
+      'node_modules/design-system/package.json': JSON.stringify({
+        name: 'design-system',
+        main: './index.js',
+      }),
+      'node_modules/design-system/index.js': 'export const x = 1',
+    })
+
+    DevupUI({}, { include: ['design-system'] })
+
+    expect(harness.starts[0]!.prewarmedFiles).toEqual([
+      'node_modules/design-system/index.js',
+      'src/app/page.tsx',
+    ])
+  })
+
+  it('is a finished, empty plan when the project has no compiled source', () => {
+    process.chdir(makeProject())
+
+    DevupUI({})
+
+    const [start] = harness.starts
+    expect(start!.prewarmedFiles).toEqual([])
+    expect(start!.expectedBaseFiles).toEqual([])
+    expect(start!.prewarmedOutputs?.size).toBe(0)
+  })
+
+  it('fails a production build with the location of a graph failure', () => {
+    const root = makeProject({ src: 'not a directory' })
+    process.chdir(root)
+
+    expect(() => DevupUI({})).toThrow(
+      `${join(root, 'src')}:1:1: devup-ui import graph cannot use \`buildStaticImportGraph\` at build time`,
+    )
+    expect(harness.starts).toHaveLength(0)
+  })
+
+  it('warns in development, names the lost guarantee and still starts', () => {
+    development()
+    const warn = spyOn(console, 'warn').mockImplementation(() => {})
+    const root = makeProject({ src: 'not a directory' })
+    process.chdir(root)
+
+    try {
       DevupUI({})
 
-      // Verify coordinator was started with correct options
-      expect(startCoordinatorSpy).toHaveBeenCalledWith({
-        wasm,
-        package: '@devup-ui/react',
-        cssDir: resolve('df', 'devup-ui'),
-        singleCss: false,
-        sheetFile: join('df', 'sheet.json'),
-        classMapFile: join('df', 'classMap.json'),
-        fileMapFile: join('df', 'fileMap.json'),
-        importAliases: {
-          '@emotion/react': null,
-          '@emotion/styled': 'styled',
-          '@vanilla-extract/css': null,
-          'styled-components': 'styled',
-        },
-        coordinatorPortFile: join('df', 'coordinator.port'),
-        canonicalMap: expect.any(Object),
-        expectedBaseFiles: expect.any(Array),
+      expect(harness.starts).toHaveLength(1)
+      expect(warn.mock.calls.map(([line]) => String(line))).toEqual([
+        expect.stringContaining(
+          'Not guaranteed for this session: single-importer',
+        ),
+        expect.stringContaining(
+          'Not guaranteed for this session: path-ordered',
+        ),
+      ])
+      expect(harness.starts[0]).toMatchObject({
+        expectedBaseFiles: [],
         prewarmedFiles: [],
-        prewarmedOutputs: expect.any(Map),
-        sourceMap: true,
       })
-      expect(codeExtractSpy).not.toHaveBeenCalled()
-      expect(codeExtractWithoutSourceMapSpy).not.toHaveBeenCalled()
+    } finally {
+      warn.mockRestore()
+    }
+  })
 
-      // Verify initial CSS file is written
-      expect(writeFileSyncSpy).toHaveBeenCalledWith(
-        join(resolve('df', 'devup-ui'), 'devup-ui.css'),
-        '',
+  it('reports the lost graph guarantees for an unreadable included package in development', () => {
+    development()
+    const warn = spyOn(console, 'warn').mockImplementation(() => {})
+    const root = project({
+      'src/app/page.tsx': `import 'design-system'\n${page}`,
+      'node_modules/design-system/package.json': '{ not json',
+    })
+
+    try {
+      DevupUI({}, { include: ['design-system'] })
+
+      expect(harness.starts[0]!.prewarmedFiles).toEqual([])
+      expect(harness.starts[0]!.expectedBaseFiles).toEqual([])
+      expect(String(warn.mock.calls[0]?.[0])).toContain(
+        `${join(root, 'node_modules/design-system/package.json')}:1:1: Cannot load configuration:`,
       )
-
-      // Verify exit handler was registered and calls coordinator.close()
-      expect(exitHandlers.length).toBeGreaterThan(0)
-      exitHandlers[0]!()
-      expect(closeMock).toHaveBeenCalledTimes(1)
-
-      // Verify --inspect-brk env vars are NOT set
-      expect(process.env.TURBOPACK_DEBUG_JS).toBeUndefined()
-      expect(process.env.NODE_OPTIONS ?? '').not.toContain('--inspect-brk')
-
-      processOnSpy.mockRestore()
-    })
-
-    it('hands the coordinator the full compiled-file set, not the static-only route map', () => {
-      process.env.TURBOPACK = '1'
-      process.env.DEVUP_UI_PROFILE = '1'
-      const profileSpy = spyOn(console, 'info').mockImplementation(() => {})
-      // The base sheet must wait for lazily-loaded modules too, so
-      // expectedBaseFiles comes from computeCompiledFiles (static + dynamic
-      // edges) rather than computeFileRoutes (static edges only). Using the
-      // route map here served the sheet before any dynamic() module extracted.
-      const compiledSpy = spyOn(
-        importGraphModule,
-        'computeCompiledFiles',
-      ).mockReturnValue(['src/app/page.tsx', 'src/lazy/panel.tsx'])
-      const routesSpy = spyOn(
-        importGraphModule,
-        'computeFileRoutes',
-      ).mockReturnValue({ 'src/app/page.tsx': [0] })
-      const events: string[] = []
-      codeExtractWithoutSourceMapSpy.mockImplementation(
-        (filename: string, contents: string) => {
-          events.push(`extract:${filename}`)
-          return Object.assign(createCodeExtractResult(contents), {
-            dependencies: [`${filename}.tokens.ts`],
-          })
-        },
+      expect(String(warn.mock.calls[0]?.[0])).toContain(
+        'Not guaranteed for this session: single-importer collapse, atom hoisting and the deterministic completion set',
       )
-      startCoordinatorSpy.mockImplementation(() => {
-        events.push('startCoordinator')
-        return { close: mock() as () => void }
-      })
-      try {
-        DevupUI({})
-
-        expect(startCoordinatorSpy).toHaveBeenCalledWith(
-          expect.objectContaining({
-            expectedBaseFiles: ['src/app/page.tsx', 'src/lazy/panel.tsx'],
-            prewarmedFiles: ['src/app/page.tsx', 'src/lazy/panel.tsx'],
-          }),
-        )
-        expect(codeExtractWithoutSourceMapSpy).toHaveBeenCalledTimes(2)
-        expect(codeExtractWithoutSourceMapSpy).toHaveBeenCalledWith(
-          'src/app/page.tsx',
-          '{}',
-          '@devup-ui/react',
-          expect.any(String),
-          false,
-          false,
-          true,
-          expect.anything(),
-        )
-        expect(codeExtractWithoutSourceMapSpy).toHaveBeenCalledWith(
-          'src/lazy/panel.tsx',
-          '{}',
-          '@devup-ui/react',
-          expect.any(String),
-          false,
-          false,
-          true,
-          expect.anything(),
-        )
-        expect(events).toEqual([
-          'extract:src/app/page.tsx',
-          'extract:src/lazy/panel.tsx',
-          'startCoordinator',
-        ])
-        const coordinatorOptions = startCoordinatorSpy.mock.calls[0]?.[0]
-        expect(coordinatorOptions?.prewarmedOutputs).toEqual(
-          new Map([
-            [
-              'src/app/page.tsx',
-              expect.objectContaining({
-                code: '{}',
-                source: '{}',
-                dependencies: ['src/app/page.tsx.tokens.ts'],
-              }),
-            ],
-            [
-              'src/lazy/panel.tsx',
-              expect.objectContaining({
-                code: '{}',
-                source: '{}',
-                dependencies: ['src/lazy/panel.tsx.tokens.ts'],
-              }),
-            ],
-          ]),
-        )
-        const profiles: Record<string, unknown>[] = profileSpy.mock.calls
-          .map(([value]) => value)
-          .filter(
-            (value): value is string =>
-              typeof value === 'string' &&
-              value.startsWith('[devup-ui:profile] '),
-          )
-          .map((value) => JSON.parse(value.slice('[devup-ui:profile] '.length)))
-        const prewarmProfile = profiles.find(
-          ({ phase }) => phase === 'next.prewarm',
-        )
-        expect(prewarmProfile).toMatchObject({
-          collectMs: expect.any(Number),
-          extractMs: expect.any(Number),
-          files: 2,
-          phase: 'next.prewarm',
-          readMs: expect.any(Number),
-          sourceBytes: Buffer.byteLength('{}') * 2,
-        })
-        expect(profiles).toEqual(
-          expect.arrayContaining([
-            expect.objectContaining({ phase: 'next.initialCss' }),
-            expect.objectContaining({ phase: 'next.stateSnapshot' }),
-            expect.objectContaining({ phase: 'next.setup' }),
-          ]),
-        )
-        // the static-only route map is not consulted outside atom-hoist mode
-        expect(routesSpy).not.toHaveBeenCalled()
-      } finally {
-        profileSpy.mockRestore()
-        compiledSpy.mockRestore()
-        routesSpy.mockRestore()
-      }
-    })
-
-    it('prewarms source candidates hidden from the route closure', () => {
-      process.env.TURBOPACK = '1'
-      const page = resolve('src/app/page.tsx')
-      const templateTarget = resolve('src/demos/template-target.tsx')
-      const graphSpy = spyOn(
-        importGraphModule,
-        'buildStaticImportGraph',
-      ).mockReturnValue({
-        files: [page, templateTarget],
-        fileSet: new Set([page, templateTarget]),
-        staticImports: new Map([
-          [page, new Set<string>()],
-          [templateTarget, new Set<string>()],
-        ]),
-        staticImporters: new Map([
-          [page, new Set<string>()],
-          [templateTarget, new Set<string>()],
-        ]),
-        dynamicTargets: new Set(),
-        dynamicImports: new Map([
-          [page, new Set<string>()],
-          [templateTarget, new Set<string>()],
-        ]),
-        externalImports: new Map([
-          [page, new Set<string>()],
-          [templateTarget, new Set<string>()],
-        ]),
-      })
-      const compiledSpy = spyOn(
-        importGraphModule,
-        'computeCompiledFiles',
-      ).mockReturnValue(['src/app/page.tsx'])
-      try {
-        DevupUI({})
-
-        expect(startCoordinatorSpy).toHaveBeenCalledWith(
-          expect.objectContaining({
-            expectedBaseFiles: ['src/app/page.tsx'],
-            prewarmedFiles: [
-              'src/app/page.tsx',
-              'src/demos/template-target.tsx',
-            ],
-          }),
-        )
-        expect(codeExtractWithoutSourceMapSpy).toHaveBeenCalledTimes(2)
-      } finally {
-        graphSpy.mockRestore()
-        compiledSpy.mockRestore()
-      }
-    })
-
-    it('prewarms the same complete file set in singleCss mode', () => {
-      process.env.TURBOPACK = '1'
-      const compiledSpy = spyOn(
-        importGraphModule,
-        'computeCompiledFiles',
-      ).mockReturnValue(['src/app/page.tsx', 'src/app/card.tsx'])
-      try {
-        DevupUI({}, { singleCss: true })
-
-        expect(codeExtractWithoutSourceMapSpy).toHaveBeenCalledTimes(2)
-        expect(codeExtractWithoutSourceMapSpy).toHaveBeenCalledWith(
-          'src/app/card.tsx',
-          '{}',
-          '@devup-ui/react',
-          expect.any(String),
-          true,
-          false,
-          true,
-          expect.anything(),
-        )
-        expect(startCoordinatorSpy).toHaveBeenCalledWith(
-          expect.objectContaining({
-            singleCss: true,
-            prewarmedFiles: ['src/app/card.tsx', 'src/app/page.tsx'],
-          }),
-        )
-      } finally {
-        compiledSpy.mockRestore()
-      }
-    })
-
-    it('does not enable atom hoisting when atomHoist option is unset', () => {
-      process.env.TURBOPACK = '1'
-      const setAtomHoistSpy = spyOn(wasm, 'setAtomHoist').mockReturnValue(
-        undefined,
-      )
-      const importFileRoutesSpy = spyOn(
-        wasm,
-        'importFileRoutes',
-      ).mockReturnValue(undefined)
-      const importCanonicalMapSpy = spyOn(
-        wasm,
-        'importCanonicalMap',
-      ).mockReturnValue(undefined)
-      try {
-        DevupUI({})
-        expect(setAtomHoistSpy).not.toHaveBeenCalled()
-        expect(importFileRoutesSpy).not.toHaveBeenCalled()
-        // single-importer collapse still runs (it is the always-on default)
-        expect(importCanonicalMapSpy).toHaveBeenCalled()
-      } finally {
-        setAtomHoistSpy.mockRestore()
-        importFileRoutesSpy.mockRestore()
-        importCanonicalMapSpy.mockRestore()
-      }
-    })
-
-    it('composes atom hoisting WITH single-importer collapse when atomHoist is set', () => {
-      process.env.TURBOPACK = '1'
-      // 4 distinct leaf routes (ids 0..3); layout shared by all four.
-      const computeSpy = spyOn(
-        importGraphModule,
-        'computeFileRoutes',
-      ).mockReturnValue({
-        'src/app/layout.tsx': [0, 1, 2, 3],
-        'src/app/a/page.tsx': [0],
-        'src/app/b/page.tsx': [1],
-        'src/app/c/page.tsx': [2],
-        'src/app/d/page.tsx': [3],
-      })
-      const importFileRoutesSpy = spyOn(
-        wasm,
-        'importFileRoutes',
-      ).mockReturnValue(undefined)
-      const setAtomHoistSpy = spyOn(wasm, 'setAtomHoist').mockReturnValue(
-        undefined,
-      )
-      // Collapse and atom hoisting COMPOSE: importCanonicalMap must STILL run.
-      const importCanonicalMapSpy = spyOn(
-        wasm,
-        'importCanonicalMap',
-      ).mockReturnValue(undefined)
-      try {
-        DevupUI({}, { atomHoist: 2 })
-        // reach folded by bucket; mocked FS => empty canonical map => bucket==file
-        expect(importFileRoutesSpy).toHaveBeenCalledWith({
-          'src/app/layout.tsx': [0, 1, 2, 3],
-          'src/app/a/page.tsx': [0],
-          'src/app/b/page.tsx': [1],
-          'src/app/c/page.tsx': [2],
-          'src/app/d/page.tsx': [3],
-        })
-        // direct threshold, clamped to >= 2
-        expect(setAtomHoistSpy).toHaveBeenCalledWith(2)
-        // composition: collapse pre-pass also ran
-        expect(importCanonicalMapSpy).toHaveBeenCalled()
-      } finally {
-        computeSpy.mockRestore()
-        importFileRoutesSpy.mockRestore()
-        setAtomHoistSpy.mockRestore()
-        importCanonicalMapSpy.mockRestore()
-      }
-    })
-
-    it('clamps the atomHoist threshold to a minimum of 2', () => {
-      process.env.TURBOPACK = '1'
-      const computeSpy = spyOn(
-        importGraphModule,
-        'computeFileRoutes',
-      ).mockReturnValue({
-        'src/app/a/page.tsx': [0],
-        'src/app/b/page.tsx': [1],
-      })
-      const setAtomHoistSpy = spyOn(wasm, 'setAtomHoist').mockReturnValue(
-        undefined,
-      )
-      try {
-        DevupUI({}, { atomHoist: 1 })
-        // max(2, 1) === 2
-        expect(setAtomHoistSpy).toHaveBeenCalledWith(2)
-      } finally {
-        computeSpy.mockRestore()
-        setAtomHoistSpy.mockRestore()
-      }
-    })
-
-    it('keeps atom hoisting off when fewer than two routes exist', () => {
-      process.env.TURBOPACK = '1'
-      const computeSpy = spyOn(
-        importGraphModule,
-        'computeFileRoutes',
-      ).mockReturnValue({ 'src/app/a/page.tsx': [0] })
-      const setAtomHoistSpy = spyOn(wasm, 'setAtomHoist').mockReturnValue(
-        undefined,
-      )
-      try {
-        DevupUI({}, { atomHoist: 2 })
-        expect(setAtomHoistSpy).not.toHaveBeenCalled()
-      } finally {
-        computeSpy.mockRestore()
-        setAtomHoistSpy.mockRestore()
-      }
-    })
+    } finally {
+      warn.mockRestore()
+    }
   })
 })

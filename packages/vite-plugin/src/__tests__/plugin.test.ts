@@ -14,7 +14,85 @@ import {
   spyOn,
 } from 'bun:test'
 
-import { DevupUI } from '../plugin'
+import { DevupUI as createDevupUI } from '../plugin'
+
+const pluginInstances = new Set<ReturnType<typeof createDevupUI>[0]>()
+it.each([
+  undefined,
+  'code',
+  'css',
+  'map',
+  'cssFile',
+  'updatedBaseStyle',
+  'dependencies',
+  'acquire',
+  'consumer',
+])(
+  'releases Vite Output after needed copies when getter %s is selected',
+  async (fault) => {
+    const events: string[] = []
+    const output = createCodeExtractResult(
+      {
+        cssFile: undefined,
+        dependencies: fault === 'consumer' ? ['dep.ts'] : [],
+      },
+      events,
+    )
+    const error = new Error('getter fault')
+    if (fault && fault !== 'acquire' && fault !== 'consumer')
+      Object.defineProperty(output, fault, {
+        get() {
+          events.push(fault)
+          throw error
+        },
+      })
+    codeExtractSpy.mockImplementation(() => {
+      if (fault === 'acquire') throw error
+      return output
+    })
+    const plugin = createPlugin()
+    const run = plugin.transform.call(
+      {
+        addWatchFile() {
+          expect(output.free).toHaveBeenCalledTimes(1)
+          throw error
+        },
+      },
+      'source',
+      '/src/output.tsx',
+    )
+    if (fault) await expect(run).rejects.toBe(error)
+    else expect(await run).toEqual({ code: 'code', map: undefined })
+    const fields = [
+      'code',
+      'css',
+      'map',
+      'cssFile',
+      'updatedBaseStyle',
+      'dependencies',
+    ]
+    expect(events).toEqual(
+      fault === 'acquire'
+        ? []
+        : [
+            ...fields.slice(
+              0,
+              fault && fields.includes(fault)
+                ? fields.indexOf(fault) + 1
+                : fields.length,
+            ),
+            'free',
+          ],
+    )
+    expect(output.free).toHaveBeenCalledTimes(fault === 'acquire' ? 0 : 1)
+    expect(output[Symbol.dispose]).toBe(output.free)
+  },
+)
+function DevupUI(options?: Parameters<typeof createDevupUI>[0]) {
+  const plugin = createDevupUI(options)
+  pluginInstances.add(plugin[0])
+  return plugin
+}
 
 type CodeExtractResult = ReturnType<typeof wasm.codeExtract>
 interface ConfigHookMeta {
@@ -48,10 +126,18 @@ interface HotUpdateEnvironment {
 }
 
 interface ViteTestPlugin {
+  environment?: {
+    name: string
+    config: {
+      consumer: 'client' | 'server'
+      build?: { write?: boolean }
+    }
+  }
   name: string
   sharedDuringBuild: true
   enforce: 'pre'
   apply: () => boolean
+  closeBundle: () => void
   config: (
     this: { meta?: ConfigHookMeta } | void,
     userConfig?: ViteConfig,
@@ -59,7 +145,7 @@ interface ViteTestPlugin {
   configResolved: (config?: {
     command?: 'serve' | 'build'
     root?: string
-    plugins?: object[]
+    plugins?: readonly object[]
   }) => Promise<void>
   watchChange: (id: string) => Promise<void>
   hotUpdate: (
@@ -80,6 +166,13 @@ interface ViteTestPlugin {
   load: (id: string) => string | undefined
   transform: (
     this: {
+      addWatchFile?: (dependency: string) => void
+      getCombinedSourcemap?: () => {
+        version: number
+        sources: string[]
+        names: string[]
+        mappings: string
+      }
       environment?: {
         name: string
         config: {
@@ -90,7 +183,7 @@ interface ViteTestPlugin {
     },
     code: string,
     id: string,
-  ) => Promise<{ code: string } | undefined>
+  ) => Promise<{ code: string; map?: string } | undefined>
   generateBundle: (
     this: {
       environment?: {
@@ -126,17 +219,57 @@ interface ViteTestRestorePlugin {
 
 function createCodeExtractResult(
   overrides: Partial<CodeExtractResult> = {},
+  events: string[] = [],
 ): CodeExtractResult {
-  return {
+  const values = {
     css: 'css code',
     code: 'code',
     cssFile: 'devup-ui.css',
     map: undefined,
     updatedBaseStyle: false,
-    free: mock(),
-    [Symbol.dispose]: mock(),
+    dependencies: [],
     ...overrides,
-  } as unknown as CodeExtractResult
+  }
+  let live = true
+  const free = mock(() => {
+    expect(live).toBe(true)
+    live = false
+    events.push('free')
+  })
+  return {
+    get code() {
+      expect(live).toBe(true)
+      events.push('code')
+      return values.code
+    },
+    get css() {
+      expect(live).toBe(true)
+      events.push('css')
+      return values.css
+    },
+    get map() {
+      expect(live).toBe(true)
+      events.push('map')
+      return values.map
+    },
+    get cssFile() {
+      expect(live).toBe(true)
+      events.push('cssFile')
+      return values.cssFile
+    },
+    get updatedBaseStyle() {
+      expect(live).toBe(true)
+      events.push('updatedBaseStyle')
+      return values.updatedBaseStyle
+    },
+    get dependencies() {
+      expect(live).toBe(true)
+      events.push('dependencies')
+      return values.dependencies
+    },
+    free,
+    [Symbol.dispose]: free,
+  }
 }
 
 function createPlugins(
@@ -146,7 +279,10 @@ function createPlugins(
 }
 
 function createPlugin(options?: Parameters<typeof DevupUI>[0]): ViteTestPlugin {
-  return createPlugins(options)[0]
+  const plugin = createPlugins(options)[0] as unknown as ViteTestPlugin & {
+    transform: { handler: ViteTestPlugin['transform'] }
+  }
+  return { ...plugin, transform: plugin.transform.handler }
 }
 
 const ROLLUP_META: ConfigHookMeta = {
@@ -186,6 +322,8 @@ let getThemeInterfaceSpy: ReturnType<typeof spyOn>
 let registerThemeSpy: ReturnType<typeof spyOn>
 let setDebugSpy: ReturnType<typeof spyOn>
 let setPrefixSpy: ReturnType<typeof spyOn>
+let loadConfigSpy: ReturnType<typeof spyOn>
+let graphSpy: ReturnType<typeof spyOn>
 
 beforeEach(() => {
   existsSyncSpy = spyOn(fs, 'existsSync').mockReturnValue(false)
@@ -195,7 +333,7 @@ beforeEach(() => {
   relativeSpy = spyOn(nodePath, 'relative').mockImplementation(
     (from: string, to: string) => originalRelative(from, to),
   )
-  codeExtractSpy = spyOn(wasm, 'codeExtract').mockReturnValue(
+  codeExtractSpy = spyOn(wasm, 'codeExtract').mockImplementation(() =>
     createCodeExtractResult(),
   )
   getCssSpy = spyOn(wasm, 'getCss').mockReturnValue('css code')
@@ -206,9 +344,25 @@ beforeEach(() => {
   registerThemeSpy = spyOn(wasm, 'registerTheme').mockReturnValue(undefined)
   setDebugSpy = spyOn(wasm, 'setDebug').mockReturnValue(undefined)
   setPrefixSpy = spyOn(wasm, 'setPrefix').mockReturnValue(undefined)
+  loadConfigSpy = spyOn(pluginUtils, 'loadDevupConfig').mockImplementation(
+    async (file: string) => {
+      if (!fs.existsSync(file)) return {}
+      return JSON.parse(await fsPromises.readFile(file, 'utf-8'))
+    },
+  )
+  graphSpy = spyOn(pluginUtils, 'buildStaticImportGraph').mockReturnValue({
+    files: [],
+    fileSet: new Set(),
+    staticImports: new Map(),
+    staticImporters: new Map(),
+    dynamicImports: new Map(),
+    dynamicTargets: new Set(),
+  })
 })
 
 afterEach(() => {
+  for (const plugin of pluginInstances) plugin.closeBundle()
+  pluginInstances.clear()
   existsSyncSpy.mockRestore()
   mkdirSpy.mockRestore()
   readFileSpy.mockRestore()
@@ -221,16 +375,51 @@ afterEach(() => {
   registerThemeSpy.mockRestore()
   setDebugSpy.mockRestore()
   setPrefixSpy.mockRestore()
+  loadConfigSpy.mockRestore()
+  graphSpy.mockRestore()
 })
 
 describe('devupUIVitePlugin', () => {
   console.error = mock()
+  it('remaps compiled MDX extraction failures using the compiler map', async () => {
+    codeExtractSpy.mockImplementation(() => {
+      throw new Error('page.mdx:1:1: cannot extract')
+    })
+    const plugin = DevupUI()[2] as unknown as Pick<ViteTestPlugin, 'transform'>
+
+    await expect(
+      plugin.transform.call(
+        {
+          getCombinedSourcemap: () => ({
+            version: 3,
+            sources: ['authored.mdx'],
+            names: [],
+            mappings: 'AAGE',
+          }),
+        },
+        'compiled',
+        'page.mdx',
+      ),
+    ).rejects.toThrow('authored.mdx:4:3')
+  })
+
+  it('propagates non-MDX extraction failures without remapping', async () => {
+    codeExtractSpy.mockImplementation(() => {
+      throw new Error('source failure')
+    })
+
+    await expect(createPlugin().transform('code', 'page.ts')).rejects.toThrow(
+      'source failure',
+    )
+  })
 
   it('should apply default options', () => {
     const plugin = createPlugin({})
     expect(plugin).toEqual({
       name: 'devup-ui',
       sharedDuringBuild: true,
+      closeBundle: expect.any(Function),
+      buildStart: expect.any(Function),
       config: expect.any(Function),
       load: expect.any(Function),
       watchChange: expect.any(Function),
@@ -241,6 +430,7 @@ describe('devupUIVitePlugin', () => {
       apply: expect.any(Function),
       generateBundle: expect.any(Function),
       configResolved: expect.any(Function),
+      configureServer: expect.any(Function),
       resolveId: expect.any(Function),
     })
     expect(plugin.apply()).toBe(true)
@@ -451,20 +641,19 @@ describe('devupUIVitePlugin', () => {
   })
 
   describe('deterministic file numbering', () => {
-    let listSourceFilesSpy: ReturnType<typeof spyOn>
-    let importFileMapSpy: ReturnType<typeof spyOn>
-    let exportFileMapSpy: ReturnType<typeof spyOn>
+    const collectNumberedFiles = pluginUtils.collectNumberedFiles
+    const seedFileMap = wasm.seedFileMap
+    let collectSpy: ReturnType<typeof spyOn>
+    let seedFileMapSpy: ReturnType<typeof spyOn>
 
     beforeEach(() => {
-      listSourceFilesSpy = spyOn(pluginUtils, 'listSourceFiles')
-      importFileMapSpy = spyOn(wasm, 'importFileMap').mockReturnValue(undefined)
-      exportFileMapSpy = spyOn(wasm, 'exportFileMap').mockReturnValue('{}')
+      collectSpy = spyOn(pluginUtils, 'collectNumberedFiles')
+      seedFileMapSpy = spyOn(wasm, 'seedFileMap').mockReturnValue(undefined)
     })
 
     afterEach(() => {
-      listSourceFilesSpy.mockRestore()
-      importFileMapSpy.mockRestore()
-      exportFileMapSpy.mockRestore()
+      collectSpy.mockRestore()
+      seedFileMapSpy.mockRestore()
     })
 
     function onlyDirs(...dirs: string[]) {
@@ -472,90 +661,181 @@ describe('devupUIVitePlugin', () => {
       existsSyncSpy.mockImplementation((path: string) => wanted.has(path))
     }
 
-    it('numbers files by sorted path, not by transform arrival order', async () => {
-      onlyDirs('src')
-      // returned out of order on purpose: arrival order must not leak through
-      listSourceFilesSpy.mockReturnValue([
-        '/p/src/z.tsx',
-        '/p/src/a.tsx',
-        '/p/src/m.tsx',
-      ])
-
-      await createPlugin({}).configResolved({ root: '/p' })
-
-      expect(importFileMapSpy).toHaveBeenCalledWith({
-        '/p/src/a.tsx': 0,
-        '/p/src/m.tsx': 1,
-        '/p/src/z.tsx': 2,
-      })
-    })
-
-    it('normalizes windows separators to match vite module ids', async () => {
-      onlyDirs('src')
-      listSourceFilesSpy.mockReturnValue(['C:\\p\\src\\a.tsx'])
-
-      await createPlugin({}).configResolved({ root: '/p' })
-
-      expect(importFileMapSpy).toHaveBeenCalledWith({ 'C:/p/src/a.tsx': 0 })
-    })
-
-    // A framework plugin resolves the config once per environment. Re-seeding
-    // drops the numbers already given to files outside src/ and app/, and since
-    // the sheet does not reset with the map, the next such file reuses a live
-    // number and its atoms overwrite the previous owner's.
-    it('leaves an already-populated map alone on a second configResolved', async () => {
-      onlyDirs('src')
-      listSourceFilesSpy.mockReturnValue(['/p/src/a.tsx'])
-      exportFileMapSpy.mockReturnValue(
-        '{"/p/src/a.tsx":0,"/monorepo/packages/ui/X.tsx":1}',
-      )
-
-      await createPlugin({}).configResolved({ root: '/p' })
-
-      expect(importFileMapSpy).not.toHaveBeenCalled()
-    })
-
-    it('scans app/ for App Router projects and dedupes across roots', async () => {
+    it('numbers the files the scan finds, in the order it returns them', async () => {
       onlyDirs('src', 'app')
-      listSourceFilesSpy.mockImplementation((dir: string) =>
-        dir === resolve('/p', 'app')
-          ? ['/p/app/page.tsx', '/p/shared.tsx']
-          : ['/p/src/b.tsx', '/p/shared.tsx'],
-      )
+      collectSpy.mockReturnValue(['/p/app/page.tsx', '/p/src/b.tsx'])
 
-      await createPlugin({}).configResolved({ root: '/p' })
-
-      expect(importFileMapSpy).toHaveBeenCalledWith({
-        '/p/app/page.tsx': 0,
-        '/p/shared.tsx': 1,
-        '/p/src/b.tsx': 2,
+      await createPlugin({ include: ['@acme/ui'] }).configResolved({
+        root: '/p',
       })
+
+      expect(collectSpy).toHaveBeenCalledWith({
+        roots: [resolve('/p', 'src'), resolve('/p', 'app')],
+        includeMdx: ['.mdx'],
+        include: ['@acme/ui'],
+        cwd: '/p',
+        needles: expect.arrayContaining([
+          '@devup-ui/react',
+          '@stylexjs/stylex',
+        ]),
+      })
+      expect(seedFileMapSpy).toHaveBeenCalledWith([
+        '/p/app/page.tsx',
+        '/p/src/b.tsx',
+      ])
     })
 
-    it.each([
-      ['no conventional source dir exists', () => onlyDirs()],
-      [
-        'the source dir is empty',
-        () => {
-          onlyDirs('src')
-          listSourceFilesSpy.mockReturnValue([])
-        },
-      ],
-    ])('leaves numbering alone when %s', async (_name, setup) => {
-      setup()
+    // A framework plugin resolves the config once per environment. Seeding
+    // keeps the numbers files hold, so a second pass numbers only new files.
+    it('seeds again on a second configResolved', async () => {
+      onlyDirs('src')
+      collectSpy.mockReturnValue(['/p/src/a.tsx'])
+      const plugin = createPlugin({})
+
+      await plugin.configResolved({ root: '/p' })
+      await plugin.configResolved({ root: '/p' })
+
+      expect(seedFileMapSpy).toHaveBeenCalledTimes(2)
+    })
+
+    it('leaves numbering alone when there is nothing to number', async () => {
+      onlyDirs()
+      collectSpy.mockReturnValue([])
       await createPlugin({}).configResolved({ root: '/p' })
-      expect(importFileMapSpy).not.toHaveBeenCalled()
+      expect(seedFileMapSpy).not.toHaveBeenCalled()
     })
 
     it('keeps building when the scan fails', async () => {
       onlyDirs('src')
-      listSourceFilesSpy.mockImplementation(() => {
+      collectSpy.mockImplementation(() => {
         throw new Error('scan boom')
       })
 
-      await createPlugin({}).configResolved({ root: '/p' })
+      const warning = spyOn(console, 'warn').mockImplementation(() => {})
+      try {
+        const plugin = createPlugin({})
+        await plugin.configResolved({ root: '/p' })
+        await plugin.configResolved({ root: '/p' })
+        expect(seedFileMapSpy).not.toHaveBeenCalled()
+        expect(warning).toHaveBeenCalledTimes(1)
+        expect(warning.mock.calls[0]?.[1]).toMatchObject({
+          phase: 'seed',
+          root: '/p',
+          cause: expect.any(Error),
+        })
+      } finally {
+        warning.mockRestore()
+      }
+    })
 
-      expect(importFileMapSpy).not.toHaveBeenCalled()
+    describe('source collection before seeding', () => {
+      let listSourceFilesSpy: ReturnType<typeof spyOn>
+      let readFileSyncSpy: ReturnType<typeof spyOn>
+
+      beforeEach(() => {
+        collectSpy.mockImplementation(collectNumberedFiles)
+        listSourceFilesSpy = spyOn(pluginUtils, 'listSourceFiles')
+        readFileSyncSpy = spyOn(fs, 'readFileSync').mockReturnValue(
+          "import { Box } from '@devup-ui/react'",
+        )
+      })
+
+      afterEach(() => {
+        listSourceFilesSpy.mockRestore()
+        readFileSyncSpy.mockRestore()
+      })
+
+      it('numbers files by sorted path, not by transform arrival order', async () => {
+        onlyDirs('src')
+        listSourceFilesSpy.mockReturnValue([
+          '/p/src/z.tsx',
+          '/p/src/a.tsx',
+          '/p/src/m.tsx',
+        ])
+
+        await createPlugin({}).configResolved({ root: '/p' })
+
+        expect(seedFileMapSpy).toHaveBeenCalledWith([
+          '/p/src/a.tsx',
+          '/p/src/m.tsx',
+          '/p/src/z.tsx',
+        ])
+      })
+
+      it('normalizes windows separators to match vite module ids', async () => {
+        onlyDirs('src')
+        listSourceFilesSpy.mockReturnValue(['C:\\p\\src\\a.tsx'])
+
+        await createPlugin({}).configResolved({ root: '/p' })
+
+        expect(seedFileMapSpy).toHaveBeenCalledWith(['C:/p/src/a.tsx'])
+      })
+
+      it('leaves an already-populated map alone on a second configResolved', async () => {
+        onlyDirs('src')
+        listSourceFilesSpy.mockReturnValue(['/p/src/a.tsx'])
+        const previousMap = wasm.exportFileMap()
+        const existingMap = {
+          '/p/src/a.tsx': 0,
+          '/monorepo/packages/ui/X.tsx': 1,
+        }
+        seedFileMapSpy.mockImplementation(seedFileMap)
+        const plugin = createPlugin({})
+        wasm.importFileMap(existingMap)
+        try {
+          await plugin.configResolved({ root: '/p' })
+          await plugin.configResolved({ root: '/p' })
+
+          expect(seedFileMapSpy).toHaveBeenCalledTimes(2)
+          expect(JSON.parse(wasm.exportFileMap())).toEqual(existingMap)
+        } finally {
+          wasm.importFileMap(JSON.parse(previousMap))
+        }
+      })
+
+      it('scans app/ for App Router projects and dedupes across roots', async () => {
+        onlyDirs('src', 'app')
+        listSourceFilesSpy.mockImplementation((dir: string) =>
+          dir === resolve('/p', 'app')
+            ? ['/p/app/page.tsx', '/p/shared.tsx']
+            : ['/p/src/b.tsx', '/p/shared.tsx'],
+        )
+
+        await createPlugin({}).configResolved({ root: '/p' })
+
+        expect(listSourceFilesSpy).toHaveBeenCalledWith(
+          resolve('/p', 'src'),
+          undefined,
+          { includeMdx: ['.mdx'] },
+        )
+        expect(listSourceFilesSpy).toHaveBeenCalledWith(
+          resolve('/p', 'app'),
+          undefined,
+          { includeMdx: ['.mdx'] },
+        )
+        expect(seedFileMapSpy).toHaveBeenCalledWith([
+          '/p/app/page.tsx',
+          '/p/shared.tsx',
+          '/p/src/b.tsx',
+        ])
+      })
+
+      it.each([
+        ['no conventional source dir exists', () => onlyDirs()],
+        [
+          'the source dir is empty',
+          () => {
+            onlyDirs('src')
+            listSourceFilesSpy.mockReturnValue([])
+          },
+        ],
+      ])('leaves numbering alone when %s', async (_name, setup) => {
+        setup()
+
+        await createPlugin({}).configResolved({ root: '/p' })
+
+        expect(seedFileMapSpy).not.toHaveBeenCalled()
+      })
     })
   })
 
@@ -706,6 +986,23 @@ describe('devupUIVitePlugin', () => {
         )
       })
 
+      it('starts a build from its own options and ends it at closeBundle', async () => {
+        const resetSpy = spyOn(wasm, 'resetBuildState').mockReturnValue(
+          undefined,
+        )
+        try {
+          const first = createPlugin({})
+          resetSpy.mockClear()
+          createPlugin({})
+          expect(resetSpy).not.toHaveBeenCalled()
+          first.closeBundle()
+          first.closeBundle()
+          createPlugin({})
+          expect(resetSpy).not.toHaveBeenCalled()
+        } finally {
+          resetSpy.mockRestore()
+        }
+      })
       it.each([
         {
           label: 'per-file css',
@@ -894,6 +1191,146 @@ describe('devupUIVitePlugin', () => {
 
         expect(serverBundle['base.css'].fileName).toBe('base.css')
       })
+
+      it('does not forward server css that the client already emits', async () => {
+        const [plugin, restore] = createPlugins({})
+        const base = asset('base.css', 'devup-ui.css')
+        const file = asset('file.css', 'devup-ui-3.css')
+        const entry = chunk('entry.js', [
+          'base.css',
+          'file.css',
+          'server-only.css',
+        ])
+        const serverBundle: Bundle = {
+          'base.css': base,
+          'file.css': file,
+          'server-only.css': asset('server-only.css', 'server-only.css'),
+          'entry.js': entry,
+        }
+        const clientBase = asset('base.css', 'devup-ui.css')
+        const clientFile = asset('file.css', 'devup-ui-3.css')
+        const clientBundle: Bundle = {
+          'base.css': clientBase,
+          'file.css': clientFile,
+        }
+        await plugin.configResolved(rscConfig({ rsc: serverBundle }))
+
+        await plugin.generateBundle.call(serverEnv, {}, serverBundle)
+        await plugin.generateBundle.call(clientEnv, {}, clientBundle)
+        const forwarded = forwardLikePluginRsc(serverBundle)
+
+        expect(base.source).toEqual('base sheet')
+        expect(file.source).toEqual('file sheet')
+        expect(clientBase.source).toEqual('base sheet')
+        expect(clientFile.source).toEqual('file sheet')
+        expect(entry.viteMetadata?.importedCss).toEqual(
+          new Set(['base.css', 'file.css', 'server-only.css']),
+        )
+        expect(forwarded.emitted).toEqual([
+          'base.css.devup-forwarded',
+          'file.css.devup-forwarded',
+          'server-only.css',
+        ])
+        for (const name of forwarded.emitted) {
+          clientBundle[name] = asset(name, name)
+        }
+        restore.generateBundle.handler({}, clientBundle)
+
+        expect(base.fileName).toBe('base.css')
+        expect(file.fileName).toBe('file.css')
+        expect(clientBundle['base.css']).toBe(clientBase)
+        expect(clientBundle['file.css']).toBe(clientFile)
+        expect(Object.keys(clientBundle).sort()).toEqual([
+          'base.css',
+          'file.css',
+          'server-only.css',
+        ])
+        expect(entry.viteMetadata?.importedCss).toEqual(
+          new Set(['base.css', 'file.css', 'server-only.css']),
+        )
+      })
+
+      it('ignores no-write analysis bundles when tracking server css', async () => {
+        const [plugin, restore] = createPlugins({})
+        const file = asset('file.css', 'devup-ui-3.css')
+        const entry = chunk('entry.js', ['file.css'])
+        const serverBundle: Bundle = {
+          'file.css': file,
+          'entry.js': entry,
+        }
+        await plugin.configResolved(rscConfig({}))
+        await plugin.generateBundle.call(
+          {
+            environment: {
+              name: 'rsc',
+              config: { consumer: 'server', build: { write: false } },
+            },
+          },
+          {},
+          serverBundle,
+        )
+        const clientBundle: Bundle = {
+          'file.css': asset('file.css', 'devup-ui-3.css'),
+        }
+
+        await plugin.generateBundle.call(clientEnv, {}, clientBundle)
+        restore.generateBundle.handler({}, clientBundle)
+
+        expect(entry.viteMetadata?.importedCss).toEqual(new Set(['file.css']))
+        expect(file.fileName).toBe('file.css')
+        expect(file.source).toBe('file sheet')
+        expect(Object.keys(clientBundle)).toEqual(['file.css'])
+      })
+
+      it('keeps server forwarding for a different output file name', async () => {
+        const [plugin, restore] = createPlugins({})
+        const file = asset('devup-ui-3.server.css', 'devup-ui-3.css')
+        const entry = chunk('entry.js', ['devup-ui-3.server.css'])
+        const serverBundle: Bundle = {
+          'devup-ui-3.server.css': file,
+          'entry.js': entry,
+        }
+        const clientBundle: Bundle = {
+          'devup-ui-3.client.css': asset(
+            'devup-ui-3.client.css',
+            'devup-ui-3.css',
+          ),
+        }
+        await plugin.configResolved(rscConfig({ rsc: serverBundle }))
+        await plugin.generateBundle.call(serverEnv, {}, serverBundle)
+
+        await plugin.generateBundle.call(clientEnv, {}, clientBundle)
+        const forwarded = forwardLikePluginRsc(serverBundle)
+        for (const name of forwarded.emitted) clientBundle[name] = file
+        restore.generateBundle.handler({}, clientBundle)
+
+        expect(entry.viteMetadata?.importedCss).toEqual(
+          new Set(['devup-ui-3.server.css']),
+        )
+        expect(forwarded.emitted).toEqual(['devup-ui-3.server.css'])
+        expect(file.fileName).toBe('devup-ui-3.server.css')
+        expect(file.source).toBe('file sheet')
+        expect(Object.keys(clientBundle).sort()).toEqual([
+          'devup-ui-3.client.css',
+          'devup-ui-3.server.css',
+        ])
+      })
+    })
+
+    it('starts a build from its own options and ends it at closeBundle', async () => {
+      const resetSpy = spyOn(wasm, 'resetBuildState').mockReturnValue(undefined)
+      try {
+        const first = createPlugin({})
+        resetSpy.mockClear()
+        createPlugin({})
+        expect(resetSpy).not.toHaveBeenCalled()
+        first.closeBundle()
+        first.closeBundle()
+        createPlugin({})
+        expect(resetSpy).not.toHaveBeenCalled()
+      } finally {
+        resetSpy.mockRestore()
+      }
     })
 
     it('resolves a stable id during build', async () => {
@@ -951,8 +1388,8 @@ describe('devupUIVitePlugin', () => {
     getThemeInterfaceSpy.mockReturnValue('interface code')
     getDefaultThemeSpy.mockReturnValue(options.getDefaultTheme)
     existsSyncSpy.mockImplementation((path: string) => {
-      if (path === 'devup.json') return options.existsDevupFile
-      if (path === 'df') return options.existsDistDir
+      if (path === resolve('devup.json')) return options.existsDevupFile
+      if (path === resolve('df')) return options.existsDistDir
       if (path === resolve('df', 'devup-ui')) return options.existsCssDir
       if (path === join('df', 'sheet.json')) return options.existsSheetFile
       if (path === join('df', 'classMap.json'))
@@ -963,7 +1400,7 @@ describe('devupUIVitePlugin', () => {
     const plugin = createPlugin({ singleCss: options.singleCss })
     await plugin.configResolved()
     if (options.existsDevupFile) {
-      expect(readFileSpy).toHaveBeenCalledWith('devup.json', 'utf-8')
+      expect(readFileSpy).toHaveBeenCalledWith(resolve('devup.json'), 'utf-8')
       expect(registerThemeSpy).toHaveBeenCalledWith({})
       expect(getThemeInterfaceSpy).toHaveBeenCalledWith(
         '@devup-ui/react',
@@ -974,7 +1411,7 @@ describe('devupUIVitePlugin', () => {
         'DevupTheme',
       )
       expect(writeFileSpy).toHaveBeenCalledWith(
-        join('df', 'theme.d.ts'),
+        resolve('df', 'theme.d.ts'),
         'interface code',
         'utf-8',
       )
@@ -994,7 +1431,7 @@ describe('devupUIVitePlugin', () => {
     }
   })
 
-  it('should reset data files when load error', async () => {
+  it('propagates config load errors without clearing the registered theme', async () => {
     writeFileSpy.mockResolvedValueOnce(undefined)
     getThemeInterfaceSpy.mockReturnValue('interface code')
     existsSyncSpy.mockReturnValue(true)
@@ -1002,10 +1439,10 @@ describe('devupUIVitePlugin', () => {
       throw new Error('error')
     })
     const plugin = createPlugin({})
-    await plugin.configResolved()
-    expect(registerThemeSpy).toHaveBeenCalledWith({})
+    await expect(plugin.configResolved()).rejects.toThrow('error')
+    expect(registerThemeSpy).not.toHaveBeenCalled()
     expect(writeFileSpy).toHaveBeenCalledWith(
-      join('df', '.gitignore'),
+      resolve('df', '.gitignore'),
       '*',
       'utf-8',
     )
@@ -1019,7 +1456,7 @@ describe('devupUIVitePlugin', () => {
     const plugin = createPlugin({})
     await plugin.watchChange('devup.json')
     expect(writeFileSpy).toHaveBeenCalledWith(
-      join('df', 'theme.d.ts'),
+      resolve('df', 'theme.d.ts'),
       'interface code',
       'utf-8',
     )
@@ -1048,7 +1485,7 @@ describe('devupUIVitePlugin', () => {
     })
 
     expect(writeFileSpy).toHaveBeenCalledWith(
-      join('df', 'theme.d.ts'),
+      resolve('df', 'theme.d.ts'),
       'interface code',
       'utf-8',
     )
@@ -1080,7 +1517,7 @@ describe('devupUIVitePlugin', () => {
 
     expect(result).toBeUndefined()
     expect(writeFileSpy).not.toHaveBeenCalledWith(
-      join('df', 'theme.d.ts'),
+      resolve('df', 'theme.d.ts'),
       expect.any(String),
       'utf-8',
     )
@@ -1111,7 +1548,7 @@ describe('devupUIVitePlugin', () => {
     )
 
     expect(writeFileSpy).toHaveBeenCalledWith(
-      join('df', 'theme.d.ts'),
+      resolve('df', 'theme.d.ts'),
       'interface code',
       'utf-8',
     )
@@ -1201,7 +1638,10 @@ describe('devupUIVitePlugin', () => {
     })
     const plugin = createPlugin({})
     await plugin.watchChange('devup.json')
-    expect(console.error).toHaveBeenCalledWith(expect.any(Error))
+    expect(console.error).toHaveBeenCalledWith(
+      expect.stringContaining(resolve('devup.json')),
+      expect.any(Error),
+    )
   })
 
   it('should load', () => {
@@ -1218,7 +1658,7 @@ describe('devupUIVitePlugin', () => {
     }),
   )('should transform', async (options) => {
     getCssSpy.mockReturnValue('css code')
-    codeExtractSpy.mockReturnValue(
+    codeExtractSpy.mockImplementation(() =>
       createCodeExtractResult({
         css: 'css code',
         code: 'code',
@@ -1252,7 +1692,7 @@ describe('devupUIVitePlugin', () => {
         ),
       ).toEqual({ code: 'code' })
 
-      codeExtractSpy.mockReturnValue(
+      codeExtractSpy.mockImplementation(() =>
         createCodeExtractResult({
           css: 'css code test next',
           code: 'code',
@@ -1275,7 +1715,7 @@ describe('devupUIVitePlugin', () => {
     }
     expect(await plugin.load('devup-ui.css')).toEqual(expect.any(String))
 
-    codeExtractSpy.mockReturnValue(
+    codeExtractSpy.mockImplementation(() =>
       createCodeExtractResult({
         css: 'long css code',
         code: 'long code',
@@ -1326,7 +1766,7 @@ describe('devupUIVitePlugin', () => {
 
     {
       const plugin = createPlugin({
-        cssDir: '',
+        cssDir: '.',
       })
       expect(plugin.resolveId('devup-ui.css')).toEqual(expect.any(String))
     }
@@ -1358,7 +1798,7 @@ describe('devupUIVitePlugin', () => {
 
   it('sholud add relative path to css file', async () => {
     getCssSpy.mockReturnValue('css code')
-    codeExtractSpy.mockReturnValue(
+    codeExtractSpy.mockImplementation(() =>
       createCodeExtractResult({
         css: 'css code',
         code: 'code',
@@ -1408,7 +1848,7 @@ describe('devupUIVitePlugin', () => {
 
   it('should not create css file when cssFile is empty', async () => {
     getCssSpy.mockReturnValue('css code')
-    codeExtractSpy.mockReturnValue(
+    codeExtractSpy.mockImplementation(() =>
       createCodeExtractResult({
         css: 'css code',
         code: 'code',
@@ -1429,7 +1869,7 @@ describe('devupUIVitePlugin', () => {
     const plugin = createPlugin({})
     const sheet = join(resolve('df', 'devup-ui'), 'devup-ui-3.css')
     const transformWith = (css: string | undefined) => {
-      codeExtractSpy.mockReturnValue(
+      codeExtractSpy.mockImplementation(() =>
         createCodeExtractResult({ css, cssFile: 'devup-ui-3.css' }),
       )
       return plugin.transform('code', 'foo.tsx')
@@ -1451,7 +1891,7 @@ describe('devupUIVitePlugin', () => {
   it('writes the base sheet only when it changes', async () => {
     const plugin = createPlugin({})
     const baseSheet = join(resolve('df', 'devup-ui'), 'devup-ui.css')
-    codeExtractSpy.mockReturnValue(
+    codeExtractSpy.mockImplementation(() =>
       createCodeExtractResult({ cssFile: '', updatedBaseStyle: true }),
     )
 
@@ -1573,7 +2013,7 @@ describe('devupUIVitePlugin atom hoisting', () => {
     await runConfigResolved({ atomHoist: 2 }, { root: '/p' })
 
     expect(computeFileReachSpy).toHaveBeenCalledWith(
-      expect.objectContaining({ srcDir: resolve('/p', dir) }),
+      expect.objectContaining({ srcDir: [resolve('/p', dir)] }),
     )
   })
 
@@ -1587,7 +2027,7 @@ describe('devupUIVitePlugin atom hoisting', () => {
     await runConfigResolved({ atomHoist: 2 }, { root: '/p' })
 
     expect(computeFileReachSpy).toHaveBeenCalledWith(
-      expect.objectContaining({ srcDir: resolve('/p', 'src') }),
+      expect.objectContaining({ srcDir: [] }),
     )
   })
 
@@ -1639,11 +2079,13 @@ describe('devupUIVitePlugin atom hoisting', () => {
     expect(setAtomHoistSpy).toHaveBeenCalledWith(2)
   })
 
-  it('swallows pre-pass errors (atom hoisting stays off)', async () => {
+  it('fails requested atom setup with root and cause', async () => {
     buildCanonicalMapSpy.mockImplementation(() => {
       throw new Error('boom')
     })
-    await runConfigResolved({ atomHoist: 2 }, { root: '/p' })
+    await expect(
+      runConfigResolved({ atomHoist: 2 }, { root: '/p' }),
+    ).rejects.toThrow(/atom graph setup failed.*boom/)
     expect(setAtomHoistSpy).not.toHaveBeenCalled()
   })
 
@@ -1663,7 +2105,7 @@ describe('module resolver', () => {
       wasm,
       'setModuleResolver',
     ).mockReturnValue(undefined)
-    codeExtractSpy.mockReturnValue(
+    codeExtractSpy.mockImplementation(() =>
       createCodeExtractResult({ dependencies: ['/p/src/tokens.ts'] }),
     )
     const plugin = createPlugin({})

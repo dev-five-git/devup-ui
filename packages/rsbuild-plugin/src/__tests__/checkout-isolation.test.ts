@@ -15,7 +15,6 @@ import {
 
 import { DevupUI } from '../plugin'
 
-type CodeExtractResult = ReturnType<typeof wasm.codeExtract>
 type RsbuildPlugin = ReturnType<typeof DevupUI>
 type RsbuildSetupContext = Parameters<RsbuildPlugin['setup']>[0]
 
@@ -29,6 +28,7 @@ const source = `import { Box } from '@devup-ui/react'
 const App = () => <Box bg="red" />`
 
 let codeExtractSpy: ReturnType<typeof spyOn>
+const closeCallbacks: (() => void)[] = []
 
 beforeAll(() => {
   spyOn(fs, 'existsSync').mockReturnValue(true)
@@ -40,18 +40,27 @@ beforeAll(() => {
   spyOn(wasm, 'getDefaultTheme').mockReturnValue(undefined)
   spyOn(wasm, 'getCss').mockReturnValue('')
   spyOn(wasm, 'setDebug').mockReturnValue(undefined)
-  codeExtractSpy = spyOn(wasm, 'codeExtract').mockReturnValue({
-    code: '<div></div>',
-    css: '',
-    cssFile: 'devup-ui-0.css',
-    map: undefined,
-    updatedBaseStyle: false,
-    free: mock(),
-    [Symbol.dispose]: mock(),
-  } as unknown as CodeExtractResult)
+  codeExtractSpy = spyOn(wasm, 'codeExtract').mockImplementation(() => {
+    let live = true
+    const free = mock(() => {
+      expect(live).toBe(true)
+      live = false
+    })
+    return {
+      code: '<div></div>',
+      css: '',
+      cssFile: 'devup-ui-0.css',
+      map: undefined,
+      updatedBaseStyle: false,
+      dependencies: [],
+      free,
+      [Symbol.dispose]: free,
+    }
+  })
 })
 
 afterAll(() => {
+  for (const close of closeCallbacks) close()
   mock.restore()
 })
 
@@ -67,6 +76,8 @@ async function extractedCssDirIn(checkout: string) {
     cssDir: join(checkout, 'df', 'devup-ui'),
   })
   await plugin.setup({
+    context: { rootPath: checkout },
+    onCloseBuild: mock((close) => closeCallbacks.push(close)),
     transform,
     modifyRsbuildConfig: mock(),
     modifyRspackConfig: mock(),

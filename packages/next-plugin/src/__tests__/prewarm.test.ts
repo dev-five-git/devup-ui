@@ -1,61 +1,119 @@
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
-import { tmpdir } from 'node:os'
+import { mkdirSync, writeFileSync } from 'node:fs'
 import { dirname, join } from 'node:path'
 
 import type { StaticImportGraph } from '@devup-ui/plugin-utils'
-import { afterEach, beforeEach, describe, expect, it } from 'bun:test'
+import { beforeEach, describe, expect, it } from 'bun:test'
 
-import { collectProductionPrewarmFiles } from '../prewarm'
+import {
+  collectPrewarmFiles,
+  type CollectPrewarmFilesOptions,
+  EXTRACTABLE_EXTENSION,
+} from '../prewarm'
+import { installProjectHooks, makeProject } from './project'
 
-describe('collectProductionPrewarmFiles', () => {
-  let cwd: string
+installProjectHooks()
 
-  beforeEach(() => {
-    cwd = mkdtempSync(join(tmpdir(), 'devup-ui-next-prewarm-'))
-    writeFileSync(join(cwd, 'package.json'), '{"private":true}')
+let root: string
+
+beforeEach(() => {
+  root = makeProject()
+})
+
+function write(path: string, contents = ''): void {
+  mkdirSync(dirname(join(root, path)), { recursive: true })
+  writeFileSync(join(root, path), contents)
+}
+
+function writePackage(
+  name: string,
+  exports: Record<string, unknown> | string,
+  files: Record<string, string>,
+): void {
+  write(`node_modules/${name}/package.json`, JSON.stringify({ name, exports }))
+  for (const [filename, contents] of Object.entries(files)) {
+    write(`node_modules/${name}/${filename}`, contents)
+  }
+}
+
+function makeGraph(
+  imports: Record<string, string[]>,
+  extra: string[] = [],
+): StaticImportGraph {
+  const files = [...Object.keys(imports), ...extra].map((file) =>
+    join(root, file),
+  )
+  return {
+    files,
+    fileSet: new Set(files),
+    staticImports: new Map(files.map((file) => [file, new Set()])),
+    staticImporters: new Map(files.map((file) => [file, new Set()])),
+    dynamicTargets: new Set(),
+    dynamicImports: new Map(files.map((file) => [file, new Set()])),
+    externalImports: new Map(
+      Object.entries(imports).map(([file, specifiers]) => [
+        join(root, file),
+        new Set(specifiers),
+      ]),
+    ),
+  }
+}
+
+function collect(
+  graph: StaticImportGraph,
+  overrides: Partial<CollectPrewarmFilesOptions> = {},
+): string[] {
+  return collectPrewarmFiles({
+    root,
+    graph,
+    expectedBaseFiles: ['src/app/page.tsx'],
+    libPackage: '@devup-ui/react',
+    include: [],
+    prewarmAll: false,
+    ...overrides,
+  })
+}
+
+describe('collectPrewarmFiles', () => {
+  it('extracts the proven compiled closure and not the files nothing compiled', () => {
+    const graph = makeGraph({}, ['src/app/page.tsx', 'src/dead/broken.tsx'])
+
+    expect(collect(graph)).toEqual(['src/app/page.tsx'])
   })
 
-  afterEach(() => {
-    rmSync(cwd, { recursive: true, force: true })
+  it('follows only the packages the reached files import', () => {
+    writePackage('@acme/ui', './index.js', { 'index.js': '' })
+    writePackage('@acme/dead', './index.js', { 'index.js': '' })
+    const graph = makeGraph({
+      'src/app/page.tsx': ['@acme/ui'],
+      'src/dead/broken.tsx': ['@acme/dead'],
+    })
+
+    expect(collect(graph, { include: ['@acme/ui', '@acme/dead'] })).toEqual([
+      'node_modules/@acme/ui/index.js',
+      'src/app/page.tsx',
+    ])
   })
 
-  function writePackage(
-    name: string,
-    exports: Record<string, unknown> | string,
-    files: Record<string, string>,
-  ): void {
-    const packageDir = join(cwd, 'node_modules', ...name.split('/'))
-    mkdirSync(packageDir, { recursive: true })
-    writeFileSync(
-      join(packageDir, 'package.json'),
-      JSON.stringify({ name, exports }),
-    )
-    for (const [filename, contents] of Object.entries(files)) {
-      const path = join(packageDir, filename)
-      mkdirSync(dirname(path), { recursive: true })
-      writeFileSync(path, contents)
-    }
-  }
+  it('opts into the whole tree with prewarmAll', () => {
+    writePackage('@acme/dead', './index.js', { 'index.js': '' })
+    const graph = makeGraph({
+      'src/app/page.tsx': [],
+      'src/dead/broken.tsx': ['@acme/dead'],
+    })
 
-  function makeGraph(files: string[], specifiers: string[]): StaticImportGraph {
-    const source = files[0] ?? join(cwd, 'src/app/page.tsx')
-    return {
-      files,
-      fileSet: new Set(files),
-      staticImports: new Map(files.map((file) => [file, new Set()])),
-      staticImporters: new Map(files.map((file) => [file, new Set()])),
-      dynamicTargets: new Set(),
-      dynamicImports: new Map(files.map((file) => [file, new Set()])),
-      externalImports: new Map([[source, new Set(specifiers)]]),
-    }
-  }
+    expect(
+      collect(graph, { prewarmAll: true, include: ['@acme/dead'] }),
+    ).toEqual([
+      'node_modules/@acme/dead/index.js',
+      'src/app/page.tsx',
+      'src/dead/broken.tsx',
+    ])
+  })
 
-  it('includes all source candidates and ESM entries accepted by the loader', () => {
+  it('accepts the packages the loader would extract, with their ESM entries', () => {
     writePackage(
       '@devup-ui/reset-css',
-      {
-        '.': { import: './dist/index.mjs', require: './dist/index.cjs' },
-      },
+      { '.': { import: './dist/index.mjs', require: './dist/index.cjs' } },
       { 'dist/index.cjs': '', 'dist/index.mjs': '' },
     )
     writePackage('@devup-editor/editor', './index.js', { 'index.js': '' })
@@ -66,15 +124,13 @@ describe('collectProductionPrewarmFiles', () => {
     )
     writePackage('design-system', './index.js', { 'index.js': '' })
     writePackage('@devup-ui/cjs-only', './index.cjs', { 'index.cjs': '' })
+    writePackage('@devup-ui/types-only', './index.d.ts', { 'index.d.ts': '' })
     writePackage('@devup-ui/data', './data.json', { 'data.json': '{}' })
+    writePackage('react', './index.js', { 'index.js': '' })
 
-    const page = join(cwd, 'src/app/page.tsx')
-    const templateTarget = join(cwd, 'src/demos/template-target.tsx')
-    const files = collectProductionPrewarmFiles({
-      cwd,
-      graph: makeGraph(
-        [page, templateTarget],
-        [
+    const files = collect(
+      makeGraph({
+        'src/app/page.tsx': [
           '',
           '@broken',
           '#internal',
@@ -85,38 +141,120 @@ describe('collectProductionPrewarmFiles', () => {
           '@acme/ui',
           'design-system',
           '@devup-ui/cjs-only',
+          '@devup-ui/types-only',
           '@devup-ui/data',
           '@devup-ui/missing',
         ],
-      ),
-      expectedBaseFiles: ['src/app/page.tsx'],
-      libPackage: '@acme/ui',
-      include: ['design-system'],
-    })
-
-    expect(files).toEqual(
-      [
-        'node_modules/@acme/ui/index.mjs',
-        'node_modules/@devup-editor/editor/index.js',
-        'node_modules/@devup-ui/reset-css/dist/index.mjs',
-        'node_modules/design-system/index.js',
-        'src/app/page.tsx',
-        'src/demos/template-target.tsx',
-      ].sort(),
+      }),
+      { libPackage: '@acme/ui', include: ['design-system'] },
     )
+
+    expect(files).toEqual([
+      'node_modules/@acme/ui/index.mjs',
+      'node_modules/@devup-editor/editor/index.js',
+      'node_modules/@devup-ui/cjs-only/index.cjs',
+      'node_modules/@devup-ui/reset-css/dist/index.mjs',
+      'node_modules/design-system/index.js',
+      'src/app/page.tsx',
+    ])
   })
 
-  it('normalizes an absolute expected file without source or package imports', () => {
-    const page = join(cwd, 'src/app/page.tsx')
+  it('prefers the ESM sibling of a CommonJS entry', () => {
+    writePackage('@devup-ui/dual', './index.cjs', {
+      'index.cjs': '',
+      'index.mjs': '',
+    })
 
     expect(
-      collectProductionPrewarmFiles({
-        cwd,
-        graph: makeGraph([], []),
-        expectedBaseFiles: [page],
+      collect(makeGraph({ 'src/app/page.tsx': ['@devup-ui/dual'] })),
+    ).toEqual(['node_modules/@devup-ui/dual/index.mjs', 'src/app/page.tsx'])
+  })
+
+  it('follows a package through its own imports, once each', () => {
+    writePackage('@acme/ui', './index.mjs', {
+      'index.mjs': [
+        "import './button.mjs'",
+        "export * from './nested'",
+        "import { x } from '@acme/shared'",
+        "import { y } from '@devup-ui/reset-css'",
+        "import react from 'react'",
+        "import data from './data.json'",
+        "const lazy = () => import('./lazy.mts')",
+        "const cjs = require('./legacy.cjs')",
+        "import './missing'",
+      ].join('\n'),
+      'button.mjs': "import './index.mjs'\nimport './nested'",
+      'nested/index.js': "export * from '../button.mjs'",
+      'lazy.mts': '',
+      'legacy.cjs': '',
+      'data.json': '{}',
+    })
+    writePackage('@acme/shared', './index.js', { 'index.js': '' })
+    writePackage('@devup-ui/reset-css', './index.js', { 'index.js': '' })
+    writePackage('react', './index.js', { 'index.js': '' })
+
+    expect(
+      collect(makeGraph({ 'src/app/page.tsx': ['@acme/ui'] }), {
+        include: ['@acme/ui', '@acme/shared'],
+      }),
+    ).toEqual([
+      'node_modules/@acme/shared/index.js',
+      'node_modules/@acme/ui/button.mjs',
+      'node_modules/@acme/ui/index.mjs',
+      'node_modules/@acme/ui/lazy.mts',
+      'node_modules/@acme/ui/legacy.cjs',
+      'node_modules/@acme/ui/nested/index.js',
+      'node_modules/@devup-ui/reset-css/index.js',
+      'src/app/page.tsx',
+    ])
+  })
+
+  it('preserves the manifest location when a package cannot be resolved', () => {
+    write('node_modules/@acme/ui/package.json', '{ not json')
+    const manifest = join(root, 'node_modules/@acme/ui/package.json')
+
+    expect(() =>
+      collect(makeGraph({ 'src/app/page.tsx': ['@acme/ui'] }), {
+        include: ['@acme/ui'],
+      }),
+    ).toThrow(`${manifest}:1:1: Cannot load configuration:`)
+  })
+
+  it('normalizes an absolute expected file and tolerates a graph without externals', () => {
+    const graph = makeGraph({})
+    delete graph.externalImports
+
+    expect(
+      collect(graph, {
+        expectedBaseFiles: [join(root, 'src/app/page.tsx')],
         libPackage: '@',
-        include: [],
       }),
     ).toEqual(['src/app/page.tsx'])
   })
+
+  it('is the same whatever order the closure is given in', () => {
+    const graph = makeGraph({}, ['src/b.tsx', 'src/a.tsx'])
+
+    expect(
+      collect(graph, { expectedBaseFiles: ['src/b.tsx', 'src/a.tsx'] }),
+    ).toEqual(['src/a.tsx', 'src/b.tsx'])
+  })
+})
+
+describe('EXTRACTABLE_EXTENSION', () => {
+  it.each([
+    'a.ts',
+    'a.tsx',
+    'a.js',
+    'a.jsx',
+    'a.mjs',
+    'a.cjs',
+    'a.mts',
+    'a.cts',
+  ])('accepts %s', (name) =>
+    expect(EXTRACTABLE_EXTENSION.test(name)).toBe(true),
+  )
+  it.each(['a.json', 'a.css', 'a.mdx', 'a.node', 'a'])('rejects %s', (name) =>
+    expect(EXTRACTABLE_EXTENSION.test(name)).toBe(false),
+  )
 })

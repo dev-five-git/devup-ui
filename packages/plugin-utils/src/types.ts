@@ -63,6 +63,21 @@ export interface DevupTheme {
 /** Custom style prop aliases mapped to one or more CSS property names. */
 export type CustomShorthands = Record<string, readonly string[]>
 
+/** Ordered alias candidates; a reached false explicitly ignores the module. */
+export type ModuleAliases = Readonly<
+  Record<string, string | false | readonly (string | false)[]>
+>
+
+/** Native ordered entries preserve duplicate names and literal dollar suffixes. */
+export interface ModuleAliasDescriptor {
+  readonly name: string
+  readonly alias: string | false | readonly (string | false)[]
+  readonly onlyModule?: boolean
+}
+
+export type ModuleAliasOptions =
+  ModuleAliases | readonly ModuleAliasDescriptor[] | false
+
 /**
  * Devup configuration file structure (devup.json)
  */

@@ -1,10 +1,23 @@
-import { existsSync } from 'node:fs'
-import { createRequire } from 'node:module'
-import { extname, join, relative, resolve } from 'node:path'
+import { existsSync, readFileSync } from 'node:fs'
+import { extname, relative, resolve } from 'node:path'
 
-import type { StaticImportGraph } from '@devup-ui/plugin-utils'
+import {
+  createModuleResolver,
+  type ModuleAliasOptions,
+  type ModuleResolution,
+  type PrepareSource,
+  type ResolutionInputObserver,
+  type ResolvedModule,
+  type StaticImportGraph,
+} from '@devup-ui/plugin-utils'
 
-const EXTRACTABLE_EXTENSION = /\.(?:tsx?|jsx?|mjs)$/
+import { locatedError } from './build-error'
+
+/** Every extension the Turbopack source rule and the prewarm accept. */
+export const EXTRACTABLE_EXTENSION = /\.[cm]?[jt]sx?$/
+const DECLARATION_FILE = /\.d\.[cm]?ts$/
+const IMPORT_SPECIFIER =
+  /(?:\bfrom\s*|\bimport\s*\(?\s*|\brequire\s*\(\s*)(['"])([^'"\n]+)\1/g
 
 function packageNameFromSpecifier(specifier: string): string | undefined {
   if (specifier.startsWith('#') || specifier.startsWith('node:')) {
@@ -20,7 +33,7 @@ function packageNameFromSpecifier(specifier: string): string | undefined {
 function isPrewarmPackage(
   packageName: string,
   libPackage: string,
-  include: string[],
+  include: readonly string[],
 ): boolean {
   const configuredPackage = packageNameFromSpecifier(libPackage)
   return (
@@ -39,65 +52,133 @@ function preferEsmFile(filename: string): string {
   return existsSync(esmFilename) ? esmFilename : filename
 }
 
-function toKey(cwd: string, filename: string): string {
-  return relative(cwd, resolve(cwd, filename)).replaceAll('\\', '/')
+function toKey(root: string, filename: string): string {
+  return relative(root, resolve(root, filename)).replaceAll('\\', '/')
 }
 
-export interface CollectProductionPrewarmFilesOptions {
-  cwd: string
+function isExtractable(filename: string): boolean {
+  return (
+    EXTRACTABLE_EXTENSION.test(filename) && !DECLARATION_FILE.test(filename)
+  )
+}
+
+interface PackageWalk {
+  readonly root: string
+  readonly libPackage: string
+  readonly include: readonly string[]
+  readonly resolveModule: (
+    specifier: string,
+    importer: string,
+  ) => ModuleResolution | undefined
+  readonly files: Set<string>
+  readonly seen: Set<string>
+}
+
+function resolveLocated(
+  walk: PackageWalk,
+  specifier: string,
+  importer: string,
+): ResolvedModule | undefined {
+  try {
+    const resolved = walk.resolveModule(specifier, importer)
+    if (resolved?.ignored === true) return undefined
+    return resolved
+  } catch (cause) {
+    throw locatedError({
+      file: importer,
+      what: 'devup-ui prewarm',
+      code: specifier,
+      needs: 'a resolvable package with a readable manifest and entry',
+      cause,
+    })
+  }
+}
+
+function followSpecifier(
+  walk: PackageWalk,
+  specifier: string,
+  importer: string,
+): void {
+  if (!specifier.startsWith('.')) {
+    const name = packageNameFromSpecifier(specifier)
+    if (!name || !isPrewarmPackage(name, walk.libPackage, walk.include)) return
+  }
+  const resolved = resolveLocated(walk, specifier, importer)
+  if (resolved) addPackageFile(walk, resolved)
+}
+
+/** Add a package file and, through the resolver, what it imports in turn. */
+function addPackageFile(walk: PackageWalk, entry: ResolvedModule): void {
+  const filename = preferEsmFile(entry.path)
+  if (!isExtractable(filename) || walk.seen.has(filename)) return
+  const resolved =
+    filename === entry.path ? entry : walk.resolveModule(filename, filename)
+  if (resolved?.ignored === true) return
+  walk.seen.add(filename)
+  walk.files.add(toKey(walk.root, filename))
+  const source = resolved?.code ?? readFileSync(filename, 'utf-8')
+  for (const [, , specifier] of source.matchAll(IMPORT_SPECIFIER)) {
+    followSpecifier(walk, specifier, filename)
+  }
+}
+
+export interface CollectPrewarmFilesOptions {
+  root: string
   graph: StaticImportGraph
-  expectedBaseFiles: string[]
+  expectedBaseFiles: readonly string[]
   libPackage: string
-  include: string[]
+  include: readonly string[]
+  /** Also prewarm every source file of the graph, reachable or not */
+  prewarmAll: boolean
+  readonly resolver?: {
+    readonly prepareSource?: PrepareSource
+    readonly alias?: ModuleAliasOptions
+    readonly conditions?: readonly string[]
+    readonly includeMdx?: readonly string[]
+    readonly onResolutionInputs?: ResolutionInputObserver
+  }
 }
 
 /**
- * Build the deterministic production extraction set used before Turbopack can
- * request its first CSS module.
+ * The deterministic extraction set that runs before the bundler can request
+ * its first stylesheet: the proven compiled closure, plus the packages that
+ * closure imports and that the loader would extract (`@devup-ui/*`, the
+ * configured package, `include`), followed through their own imports.
  *
- * `computeCompiledFiles` is intentionally route-aware, but a bundler can also
- * compile files hidden behind template imports / MDX and package entries that
- * live outside `srcDir`. Prewarming every extractable source file plus the
- * external package entries accepted by the loader makes the first snapshot
- * independent of Turbopack scheduling. Per-file mode still only imports chunks
- * that the bundler reaches; single-CSS mode intentionally contains the whole
- * application stylesheet.
+ * A source file nothing compiled imports is not extracted: it adds no CSS and
+ * cannot fail the build. `prewarmAll` opts into the whole tree instead, for
+ * files the graph cannot connect (template imports, MDX).
  */
-export function collectProductionPrewarmFiles({
-  cwd,
+export function collectPrewarmFiles({
+  root,
   graph,
   expectedBaseFiles,
   libPackage,
   include,
-}: CollectProductionPrewarmFilesOptions): string[] {
-  const resolvedCwd = resolve(cwd)
+  prewarmAll,
+  resolver,
+}: CollectPrewarmFilesOptions): string[] {
+  const resolvedRoot = resolve(root)
   const files = new Set(
-    expectedBaseFiles.map((filename) => toKey(resolvedCwd, filename)),
+    (prewarmAll
+      ? [...expectedBaseFiles, ...graph.files]
+      : expectedBaseFiles
+    ).map((filename) => toKey(resolvedRoot, filename)),
   )
-
-  for (const filename of graph.files) {
-    files.add(toKey(resolvedCwd, filename))
+  const reached = new Set([...files].map((key) => resolve(resolvedRoot, key)))
+  const walk: PackageWalk = {
+    root: resolvedRoot,
+    libPackage,
+    include,
+    resolveModule: createModuleResolver({ cwd: resolvedRoot, ...resolver }),
+    files,
+    seen: new Set(),
   }
 
-  const externalSpecifiers = new Set<string>()
-  for (const specifiers of graph.externalImports?.values() ?? []) {
-    for (const specifier of specifiers) externalSpecifiers.add(specifier)
-  }
-
-  const requireFromProject = createRequire(join(resolvedCwd, 'package.json'))
-  for (const specifier of [...externalSpecifiers].sort()) {
-    const packageName = packageNameFromSpecifier(specifier)
-    if (!packageName || !isPrewarmPackage(packageName, libPackage, include)) {
-      continue
-    }
-
-    try {
-      const filename = preferEsmFile(requireFromProject.resolve(specifier))
-      if (!EXTRACTABLE_EXTENSION.test(filename)) continue
-      files.add(toKey(resolvedCwd, filename))
-    } catch {
-      // Resolution is best-effort, matching the static graph pre-pass. The
-      // loader remains the fallback for packages resolved only by Turbopack.
+  for (const [importer, specifiers] of graph.externalImports ?? []) {
+    if (!reached.has(importer)) continue
+    for (const specifier of [...specifiers].sort()) {
+      followSpecifier(walk, specifier, importer)
     }
   }
 

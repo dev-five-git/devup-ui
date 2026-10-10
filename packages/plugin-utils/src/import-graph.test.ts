@@ -22,6 +22,7 @@ import {
   planAtomHoist,
   runImportGraphCli,
 } from './import-graph'
+import { ConfigLoadError } from './load-config'
 
 describe('computeReachableFiles', () => {
   let tempRoot: string
@@ -603,18 +604,25 @@ describe('buildCanonicalMap', () => {
     ).toEqual({})
   })
 
-  it('ignores a malformed tsconfig (JSON parse error)', () => {
+  it('reports a located error with cause when tsconfig is malformed', () => {
     writeFixture('tsconfig.json', '{ this is not json')
     writeFixture('src/a.tsx', "import './b'\n")
     writeFixture('src/b.tsx', 'export const b = 1\n')
 
-    expect(
+    let caught: unknown
+    try {
       buildCanonicalMap({
         cwd,
         srcDir,
         tsconfigPath: join(cwd, 'tsconfig.json'),
-      }),
-    ).toEqual({ 'src/b.tsx': 'src/a.tsx' })
+      })
+    } catch (error) {
+      caught = error
+    }
+    expect(caught).toBeInstanceOf(ConfigLoadError)
+    if (!(caught instanceof ConfigLoadError)) throw caught
+    expect(caught.message).toContain(`${join(cwd, 'tsconfig.json')}:1:1:`)
+    expect(caught.cause).toBeInstanceOf(SyntaxError)
   })
 
   it('prefers the longest-prefix alias when multiple tsconfig paths overlap', () => {
@@ -1066,11 +1074,7 @@ describe('planAtomHoist', () => {
   })
 })
 
-// The oxc AST path is the fast parser used when `oxc-parser` is installed in
-// the host project. It is absent in this repo, so we inject a fake parser to
-// exercise the AST walk (module state is shared across test files, so this is
-// reset after each test back to the regex fallback).
-describe('oxc AST parsing path', () => {
+describe('optional oxc diagnostic path', () => {
   let tempRoot: string
   let cwd: string
   let srcDir: string
@@ -1093,115 +1097,91 @@ describe('oxc AST parsing path', () => {
     writeFileSync(filePath, code)
   }
 
-  it('collects every import/export node kind from the AST (type-only excluded)', () => {
-    const circular: Record<string, unknown> = { type: 'SelfRef' }
-    circular.self = circular // self-reference -> exercises the `seen` guard
+  it('ignores every AST edge kind and derives canonical members from real source', () => {
     const richProgram = {
       type: 'Program',
       body: [
-        // value import -> static edge (getStringLiteralValue via `.value`)
         {
           type: 'ImportDeclaration',
           importKind: 'value',
           source: { value: './val' },
         },
-        // `import type` -> skipped (importKind 'type')
         {
           type: 'ImportDeclaration',
           importKind: 'type',
           source: { value: './t1' },
         },
-        // value re-export -> static edge
         {
           type: 'ExportNamedDeclaration',
           exportKind: 'value',
           source: { value: './exp' },
         },
-        // `export type` -> skipped (exportKind 'type')
         {
           type: 'ExportNamedDeclaration',
           exportKind: 'type',
           source: { value: './t2' },
         },
-        // export-all -> static edge
         { type: 'ExportAllDeclaration', source: { value: './all' } },
-        // dynamic import expression with `.source`
         { type: 'ImportExpression', source: { value: './dyn1' } },
-        // dynamic import expression falling back to `.argument`
         { type: 'ImportExpression', argument: { value: './dyn2' } },
-        // import() call via callee.type === 'Import', specifier via `.raw`
         {
           type: 'CallExpression',
           callee: { type: 'Import' },
           arguments: [{ raw: "'./dyn3'" }],
         },
-        // import() call via callee.name === 'import'
         {
           type: 'CallExpression',
           callee: { name: 'import' },
           arguments: [{ value: './dyn4' }],
         },
-        // import() with non-array arguments -> first arg undefined -> no push
         {
           type: 'CallExpression',
           callee: { type: 'Import' },
           arguments: 'not-an-array',
         },
-        // non-import call (isImportCallee false via name) -> falls through
         { type: 'CallExpression', callee: { name: 'other' }, arguments: [] },
-        // non-record callee -> isImportCallee returns false
         { type: 'CallExpression', callee: null, arguments: [] },
-        // source literal with neither `.value` nor `.raw` -> no push
         {
           type: 'ImportDeclaration',
           importKind: 'value',
           source: { kind: 'no-literal' },
         },
-        circular,
         'primitive-child',
         7,
         null,
-      ] as unknown[],
+      ],
     }
     __setOxcParserForTest({
       parseSync: (filename: string) =>
         filename.endsWith('a.tsx')
           ? { program: richProgram }
-          : { program: { type: 'Program', body: [] as unknown[] } },
+          : { program: { type: 'Program', body: [] } },
     })
 
-    writeFixture('src/a.tsx', 'parsed by the fake oxc parser, content ignored')
-    writeFixture(
-      'src/val.tsx',
-      'parsed by the fake oxc parser, content ignored',
-    )
-
-    // Proof the AST path ran: `a` statically imports `./val` -> val collapses
-    // into a. The regex fallback would parse the literal content -> no imports.
+    writeFixture('src/a.tsx', "import './real'")
+    writeFixture('src/val.tsx', 'export {}')
+    writeFixture('src/real.tsx', 'export {}')
     expect(buildCanonicalMap({ cwd, srcDir })).toEqual({
-      'src/val.tsx': 'src/a.tsx',
+      'src/real.tsx': 'src/a.tsx',
     })
   })
 
-  it('skips AST import/export nodes whose specifiers are all inline-type', () => {
+  it('elides source type-only imports even when AST import kinds disagree', () => {
     const program = {
       type: 'Program',
       body: [
-        // all-inline-type import -> erased by the bundler -> no edge
         {
           type: 'ImportDeclaration',
           importKind: 'value',
-          specifiers: [{ type: 'ImportSpecifier', importKind: 'type' }],
+          specifiers: [{ type: 'ImportSpecifier', importKind: 'value' }],
           source: { value: './phantom' },
         },
-        // all-inline-type re-export -> erased -> no edge
         {
           type: 'ExportNamedDeclaration',
           exportKind: 'value',
-          specifiers: [{ type: 'ExportSpecifier', exportKind: 'type' }],
+          specifiers: [{ type: 'ExportSpecifier', exportKind: 'value' }],
           source: { value: './phantom2' },
         },
-        // mixed inline types -> module still imported -> edge kept
         {
           type: 'ImportDeclaration',
           importKind: 'value',
@@ -1211,7 +1191,6 @@ describe('oxc AST parsing path', () => {
           ],
           source: { value: './mixed' },
         },
-        // default specifier (no importKind) alongside an inline type -> kept
         {
           type: 'ImportDeclaration',
           importKind: 'value',
@@ -1221,38 +1200,47 @@ describe('oxc AST parsing path', () => {
           ],
           source: { value: './withdefault' },
         },
-        // non-record specifier entry -> not type-only -> kept
         {
           type: 'ImportDeclaration',
           importKind: 'value',
           specifiers: ['bogus'],
           source: { value: './bogus' },
         },
-        // empty specifier list (`import {} from`) -> kept (side-effect import)
         {
           type: 'ImportDeclaration',
           importKind: 'value',
-          specifiers: [] as unknown[],
+          specifiers: [],
           source: { value: './empty' },
         },
-      ] as unknown[],
+      ],
     }
     __setOxcParserForTest({
       parseSync: (filename: string) =>
         filename.endsWith('a.tsx')
           ? { program }
-          : { program: { type: 'Program', body: [] as unknown[] } },
+          : { program: { type: 'Program', body: [] } },
     })
 
-    writeFixture('src/a.tsx', 'fake parser input')
-    writeFixture('src/phantom.tsx', 'fake parser input')
-    writeFixture('src/phantom2.tsx', 'fake parser input')
-    writeFixture('src/mixed.tsx', 'fake parser input')
-    writeFixture('src/withdefault.tsx', 'fake parser input')
-    writeFixture('src/bogus.tsx', 'fake parser input')
-    writeFixture('src/empty.tsx', 'fake parser input')
-
-    // phantom/phantom2 gain no importer (edges dropped) -> roots, not members.
+    writeFixture(
+      'src/a.tsx',
+      [
+        "import { type A } from './phantom'",
+        "export { type B } from './phantom2'",
+        "import { type A, b } from './mixed'",
+        "import Default, { type A } from './withdefault'",
+        "import { value } from './bogus'",
+        "import {} from './empty'",
+      ].join('\n'),
+    )
+    for (const name of [
+      'phantom',
+      'phantom2',
+      'mixed',
+      'withdefault',
+      'bogus',
+      'empty',
+    ])
+      writeFixture(`src/${name}.tsx`, 'export {}')
     expect(buildCanonicalMap({ cwd, srcDir })).toEqual({
       'src/bogus.tsx': 'src/a.tsx',
       'src/empty.tsx': 'src/a.tsx',
@@ -1261,20 +1249,19 @@ describe('oxc AST parsing path', () => {
     })
   })
 
-  it('falls back to the regex scan when the oxc parser throws', () => {
+  it('reports an optional parser fault rather than silently changing edge authority', () => {
     __setOxcParserForTest({
       parseSync: () => {
-        throw new Error('boom')
+        throw Object.assign(new Error('boom'), { line: 2, column: 3 })
       },
     })
 
     writeFixture('src/a.tsx', "import './b'\n")
     writeFixture('src/b.tsx', 'export const b = 1\n')
 
-    // parseSync throws -> parseImportsWithOxc returns undefined -> scanImports.
-    expect(buildCanonicalMap({ cwd, srcDir })).toEqual({
-      'src/b.tsx': 'src/a.tsx',
-    })
+    expect(() => buildCanonicalMap({ cwd, srcDir })).toThrow(
+      `${join(srcDir, 'a.tsx')}:2:3`,
+    )
   })
 })
 
@@ -1393,7 +1380,10 @@ describe('createModuleResolver', () => {
     expect(resolveModule(join(root, 'src/tokens'), 'src/App.tsx')?.path).toBe(
       posix('src/tokens.ts'),
     )
-    expect(resolveModule('./style.css', 'src/App.tsx')).toBeUndefined()
+    expect(resolveModule('./style.css', 'src/App.tsx')).toEqual({
+      path: posix('src/style.css'),
+      code: 'body {}',
+    })
     expect(resolveModule('./missing.ts', 'src/App.tsx')).toBeUndefined()
     expect(resolveModule('not-installed', 'src/App.tsx')).toBeUndefined()
   })

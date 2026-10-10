@@ -1,0 +1,8 @@
+{
+  "changes": {
+    "packages/next-plugin/package.json": "Patch",
+    "packages/plugin-utils/package.json": "Patch"
+  },
+  "note": "Isolate Next.js extraction engines and coordinator sessions, deterministically plan root and src App/Pages routes with modern source extensions and absolute output exclusions, watch inherited themes and removals, and persist atomic checkpoints. Prepare reached MDX source generations with the installed compiler, shared prepared resolution, immutable plans and complete reported dependency evidence. Refresh affected sources, validate inputs before CSS finalization and keep private restart proofs. Adopt ordinary inputs, completion plans and watch paths in one durable transaction with synchronous publication, exact predecessor compensation and quarantine on failed restoration; preserve legacy callers and cancellation. Capture dev CSS inside the mutation queue and validate production inputs at every publication. Unsupported extensions, pending or conflicting input ownership, stale bytes, failed compensation and unproven bindings fail located. Production re-extraction still accepts only identical rendered CSS; full MDX lifecycle and native receipt wiring remain integration requirements.",
+  "date": "2026-10-01T00:00:00.000Z"
+}

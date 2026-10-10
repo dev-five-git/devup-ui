@@ -1,4 +1,55 @@
+import { existsSync } from 'node:fs'
+import { resolve } from 'node:path'
+
 import type { CustomShorthands, ImportAliases } from './types'
+
+export const SOURCE_EXTENSIONS = [
+  '.ts',
+  '.tsx',
+  '.mts',
+  '.cts',
+  '.js',
+  '.jsx',
+  '.mjs',
+  '.cjs',
+] as const
+export const SOURCE_FILE_RE = /\.(?:[mc]?[jt]s|[jt]sx)$/i
+export const MDX_FILE_RE = /\.mdx$/i
+export const POST_COMPILED_MDX_RE = /\.mdx\.(?:[mc]?[jt]s|[jt]sx)$/i
+export const GRAPH_SOURCE_FILE_RE = /\.(?:[mc]?[jt]s|[jt]sx|mdx)$/i
+
+export function resolveProjectPaths(
+  root: string,
+  options: {
+    readonly devupFile?: string
+    readonly distDir?: string
+    readonly cssDir?: string
+  } = {},
+): { devupFile: string; distDir: string; cssDir: string } {
+  const distDir = resolve(root, options.distDir ?? 'df')
+  return {
+    devupFile: resolve(root, options.devupFile ?? 'devup.json'),
+    distDir,
+    cssDir: options.cssDir
+      ? resolve(root, options.cssDir)
+      : resolve(distDir, 'devup-ui'),
+  }
+}
+
+export function resolveSourceDirs(
+  root: string,
+  configured?: string | string[],
+): string[] {
+  const dirs =
+    configured === undefined
+      ? ['src', 'app']
+      : typeof configured === 'string'
+        ? [configured]
+        : configured
+  return [...new Set(dirs.map((dir) => resolve(root, dir)))].filter(
+    (dir) => configured !== undefined || existsSync(dir),
+  )
+}
 
 /**
  * Extract file number from a devup-ui CSS filename.
@@ -51,12 +102,19 @@ export function getFileNumByFilename(filename: string): number | null {
  * @returns A RegExp for use in bundler exclude/condition rules
  */
 export function createNodeModulesExcludeRegex(
-  include: string[],
+  include: readonly string[],
   extraExcludes?: string,
 ): RegExp {
-  const base = `node_modules(?!.*(${['@devup-ui', '@devup-editor', ...include]
+  const separator = '[\\/\\\\]'
+  const names = include.map((name) =>
+    name.replace(/[.*+?^${}()|[\]\\]/g, '\\$&').replaceAll('/', separator),
+  )
+  const allowed = ['@devup-ui', '@devup-editor']
+    .map((scope) => `${scope}${separator}[^\\/\\\\]+`)
+    .concat(names)
     .join('|')
-    .replaceAll('/', '[\\/\\\\_]')})([\\/\\\\.]|$))`
+  // Only the innermost node_modules owns the package (including pnpm stores).
+  const base = `(?:^|${separator})node_modules${separator}(?!.*${separator}node_modules${separator})(?!(?:${allowed})(?:${separator}|$))`
   return new RegExp(extraExcludes ? `(${base})|(${extraExcludes})` : base)
 }
 
