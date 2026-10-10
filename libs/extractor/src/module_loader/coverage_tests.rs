@@ -63,3 +63,6 @@ fn module_script_rejects_generated_parse_and_semantic_errors_with_file_fallback(
     );
     Ok(())
 }
+
+#[path = "loader_script_coverage_tests.rs"]
+mod loader_script_coverage_tests;

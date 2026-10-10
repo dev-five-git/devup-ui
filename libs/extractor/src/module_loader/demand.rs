@@ -228,3 +228,8 @@ impl Frozen {
         Ok(frozen)
     }
 }
+
+#[cfg(test)]
+mod loader_coverage_tests;
+#[cfg(test)]
+mod request_read_coverage_tests;

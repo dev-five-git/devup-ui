@@ -96,3 +96,6 @@ fn retained_initializers_keep_original_sites_while_extracted_glue_has_only_file_
     );
     Ok(())
 }
+
+#[path = "selected_validation_tests.rs"]
+mod selected_validation_tests;
