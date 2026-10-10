@@ -115,3 +115,7 @@ impl Rejection<'_> {
         }
     }
 }
+
+#[cfg(test)]
+#[path = "rejection_w38m_arrow.rs"]
+mod rejection_w38m_arrow;

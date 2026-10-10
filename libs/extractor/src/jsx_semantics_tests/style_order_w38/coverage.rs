@@ -12,6 +12,8 @@ mod preflight;
 mod producers;
 #[path = "coverage_cases/siblings.rs"]
 mod siblings;
+#[path = "coverage_cases/w38m_arrow.rs"]
+mod w38m_arrow;
 
 #[test]
 #[serial]
