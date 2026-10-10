@@ -184,6 +184,7 @@ pub fn extract_style_from_styled<'a>(
     imports: &FxHashMap<String, ExportVariableKind>,
     attrs: &[Expression<'a>],
 ) -> (ExtractResult<'a>, Expression<'a>, Vec<(u32, String)>) {
+    let _scope = crate::extract_style::compiler_projection::ConsumerScope::enter(split_filename);
     let mut composed_classes = Vec::new();
     let mut composition_reads = Vec::new();
     let mut errors = Vec::new();

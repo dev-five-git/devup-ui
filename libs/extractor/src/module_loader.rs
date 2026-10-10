@@ -188,13 +188,13 @@ impl<'r> ModuleLoader<'r> {
         let code = if stylesheet {
             // Extracted the way the bundler extracts it, so the names it
             // exports are the ones its own CSS uses
-            let output = crate::extract_with_source_map(
-                &module.path,
-                &module.code,
-                self.option.clone(),
-                false,
-                Some(resolver),
-            )
+            let output = crate::compiler_policy::inherited(crate::compiler_policy::CompilerInput {
+                filename: &module.path,
+                code: &module.code,
+                option: self.option.clone(),
+                source_map: false,
+                resolver: Some(resolver),
+            })
             .map_err(|error| error.to_string())?;
             self.dependencies.extend(output.dependencies);
             output.code

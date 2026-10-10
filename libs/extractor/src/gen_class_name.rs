@@ -1,15 +1,73 @@
-use crate::ExtractStyleProp;
-use crate::extract_style::style_property::StyleProperty;
+use crate::extract_style::compiler_associations as associations;
+use crate::extract_style::compiler_projection;
 use crate::extractor::extract_style_from_expression::yield_typography;
-use crate::prop_modify_utils::convert_class_name;
-use crate::utils::is_same_expression;
+use crate::{ExtractStyleProp, ExtractStyleValue as Value};
 use oxc_allocator::{CloneIn, FromIn, GetAllocator};
-use oxc_ast::ast::{
-    ComputedMemberExpression, Expression, ObjectPropertyKind, PropertyKey, PropertyKind, Str,
-    StringLiteral, TemplateElement, TemplateElementValue,
-};
+use oxc_ast::ast::{Expression, Str, TemplateElement, TemplateElementValue};
 use oxc_ast::builder::AstBuilder;
 use oxc_span::{GetSpan, GetSpanMut, SPAN};
+
+#[path = "gen_class_name_branches.rs"]
+mod branches;
+
+#[derive(Clone, Debug)]
+pub struct OrderEdge {
+    pub before: Value,
+    pub after: Value,
+    pub receipt: crate::extract_style::compiler_receipts::ReceiptId,
+    pub invocation: crate::extract_style::compiler_associations::InvocationId,
+    pub scope: Option<crate::extract_style::compiler_associations::ScopeId>,
+}
+pub(crate) fn class_name(value: &Value, filename: Option<&str>) -> Option<String> {
+    projected_class(value, filename, None)
+}
+fn projected_class(
+    value: &Value,
+    filename: Option<&str>,
+    before: Option<&Value>,
+) -> Option<String> {
+    use crate::extract_style::compiler_receipts as receipts;
+    use crate::extract_style::style_property::StyleProperty;
+    if !crate::compiler_policy::active() {
+        return value.extract(filename).map(|value| match value {
+            StyleProperty::ClassName(name)
+            | StyleProperty::Variable {
+                class_name: name, ..
+            } => name,
+        });
+    }
+    match value {
+        Value::Typography(name) => Some(format!("typo-{name}")),
+        Value::Css(_) | Value::Import(_) | Value::FontFace(_) => None,
+        Value::Static(_) | Value::Dynamic(_) | Value::Keyframes(_) => {
+            let result = compiler_projection::context(value, filename)
+                .and_then(|context| receipts::acquire(value, filename, context));
+            receipts::collect_operand(result, value).map(|(receipt, produced)| {
+                associations::ordered(before.unwrap_or(value), value, receipt);
+                produced.class().allocation.name.clone()
+            })
+        }
+    }
+}
+
+pub(crate) fn keyframe_name(
+    frames: &crate::extract_style::ExtractKeyframes,
+    filename: Option<&str>,
+) -> Option<String> {
+    use crate::extract_style::ExtractStyleProperty;
+    if !crate::compiler_policy::active() {
+        return Some(crate::visit::style_property_into_string(
+            frames.extract(filename),
+        ));
+    }
+    class_name(&Value::Keyframes(frames.clone()), filename)
+}
+pub(crate) fn static_name(
+    style: &crate::extract_style::extract_static_style::ExtractStaticStyle,
+    filename: Option<&str>,
+) -> Option<String> {
+    class_name(&Value::Static(style.clone()), filename)
+}
 
 pub fn gen_class_names<'a>(
     ast_builder: &AstBuilder<'a>,
@@ -34,6 +92,11 @@ fn gen_class_name<'a>(
     style_order: Option<u8>,
     filename: Option<&str>,
 ) -> Option<Expression<'a>> {
+    let projection = branches::ClassProjection {
+        ast: ast_builder,
+        order: style_order,
+        filename,
+    };
     match style_prop {
         ExtractStyleProp::Evaluated {
             source,
@@ -60,60 +123,14 @@ fn gen_class_name<'a>(
                 if *alternate_class { 3 } else { 0 },
             ))
         }
-        ExtractStyleProp::Enum { map, condition } => {
-            let properties = map.iter_mut().filter_map(|(key, value)| {
-                merge_expression_for_class_name(
-                    ast_builder,
-                    value
-                        .iter_mut()
-                        .filter_map(|v| gen_class_name(ast_builder, v, style_order, filename)),
-                )
-                .map(|class_name| {
-                    ObjectPropertyKind::new_object_property(
-                        SPAN,
-                        PropertyKind::Init,
-                        PropertyKey::StringLiteral(StringLiteral::boxed(
-                            SPAN,
-                            Str::from_in(key, ast_builder.allocator()),
-                            None,
-                            ast_builder,
-                        )),
-                        class_name,
-                        false,
-                        false,
-                        false,
-                        ast_builder,
-                    )
-                })
-            });
-            let obj = Expression::new_object_expression(
-                SPAN,
-                oxc_allocator::Vec::from_iter_in(properties, ast_builder),
-                ast_builder,
-            );
-            Some(convert_class_name(
-                ast_builder,
-                &Expression::ComputedMemberExpression(ComputedMemberExpression::boxed(
-                    SPAN,
-                    obj,
-                    condition.clone_in(ast_builder.allocator()),
-                    false,
-                    ast_builder,
-                )),
-            ))
-        }
+        ExtractStyleProp::Enum { map, condition } => Some(projection.enum_class(map, condition)),
         ExtractStyleProp::Static(st) => {
+            let before = crate::compiler_policy::active().then(|| st.clone());
             if let Some(style_order) = style_order {
                 st.set_style_order(style_order);
             }
-            st.extract(filename).map(|style| {
-                let v = Str::from_in(
-                    &match style {
-                        StyleProperty::ClassName(cls) => cls,
-                        StyleProperty::Variable { class_name, .. } => class_name,
-                    },
-                    ast_builder.allocator(),
-                );
+            projected_class(st, filename, before.as_ref()).map(|name| {
+                let v = Str::from_in(&name, ast_builder.allocator());
                 Expression::new_string_literal(SPAN, v, None, ast_builder)
             })
         }
@@ -127,75 +144,14 @@ fn gen_class_name<'a>(
             consequent,
             alternate,
             ..
-        } => {
-            let consequent = consequent
-                .as_mut()
-                .and_then(|ref mut con| {
-                    gen_class_name(ast_builder, con.as_mut(), style_order, filename)
-                })
-                .unwrap_or_else(|| Expression::new_string_literal(SPAN, "", None, ast_builder));
-
-            let alternate = alternate
-                .as_mut()
-                .and_then(|ref mut alt| gen_class_name(ast_builder, alt, style_order, filename))
-                .unwrap_or_else(|| Expression::new_string_literal(SPAN, "", None, ast_builder));
-            if is_same_expression(&consequent, &alternate) {
-                Some(consequent)
-            } else {
-                Some(Expression::new_conditional_expression(
-                    SPAN,
-                    condition.clone_in(ast_builder.allocator()),
-                    consequent,
-                    alternate,
-                    ast_builder,
-                ))
-            }
-        }
+        } => Some(projection.conditional_class(condition, (consequent, alternate))),
         ExtractStyleProp::Expression { expression, .. } => {
             Some(expression.clone_in(ast_builder.allocator()))
         }
         ExtractStyleProp::Unreadable { .. } => None,
         // direct select
         ExtractStyleProp::MemberExpression { map, expression } => {
-            let exp = Expression::ComputedMemberExpression(ComputedMemberExpression::boxed(
-                SPAN,
-                Expression::new_object_expression(
-                    SPAN,
-                    oxc_allocator::Vec::from_iter_in(
-                        map.iter_mut().filter_map(|(key, value)| {
-                            gen_class_name(ast_builder, value.as_mut(), style_order, filename).map(
-                                |expr| {
-                                    ObjectPropertyKind::new_object_property(
-                                        SPAN,
-                                        PropertyKind::Init,
-                                        PropertyKey::StringLiteral(StringLiteral::boxed(
-                                            SPAN,
-                                            Str::from_in(key, ast_builder.allocator()),
-                                            None,
-                                            ast_builder,
-                                        )),
-                                        expr,
-                                        false,
-                                        false,
-                                        false,
-                                        ast_builder,
-                                    )
-                                },
-                            )
-                        }),
-                        ast_builder,
-                    ),
-                    ast_builder,
-                ),
-                expression.clone_in(ast_builder.allocator()),
-                false,
-                ast_builder,
-            ));
-            if let Expression::Identifier(_) = &expression {
-                Some(convert_class_name(ast_builder, &exp))
-            } else {
-                Some(exp)
-            }
+            Some(projection.member_class(map, expression))
         }
     }
 }

@@ -14,6 +14,30 @@ use crate::{
 #[path = "assignment_class_reference.rs"]
 mod assignment_class_reference;
 
+#[derive(Clone, Debug)]
+pub struct RewriteEdge {
+    pub before: crate::extract_style::ExtractDynamicStyle,
+    pub after: crate::extract_style::ExtractDynamicStyle,
+    pub invocation: crate::extract_style::compiler_associations::InvocationId,
+    pub scope: Option<crate::extract_style::compiler_associations::ScopeId>,
+}
+pub(crate) fn rewrite(style: &mut crate::extract_style::ExtractDynamicStyle, consumer: &str) {
+    let before = style.clone();
+    style.replace_identifier(consumer);
+    crate::extract_style::compiler_receipts::JOURNAL.with_borrow_mut(|journal| {
+        if let Some(journal) = journal
+            && let Some(invocation) = journal.graph.invocation
+        {
+            journal.graph.rewrites.push(RewriteEdge {
+                before,
+                after: style.clone(),
+                invocation,
+                scope: journal.graph.scope,
+            });
+        }
+    });
+}
+
 impl<'a> Lowering<'_, 'a> {
     pub(super) fn array(
         &self,
@@ -118,13 +142,15 @@ impl<'a> Lowering<'_, 'a> {
             _ => "",
         };
         let responsive = selected_array(source);
+        let _scope = crate::extract_style::compiler_projection::ConsumerScope::enter(self.filename);
         for value in &mut values {
             if let ExtractStyleValue::Dynamic(style) = value {
-                style.replace_identifier(&if responsive {
+                let consumer = if responsive {
                     format!("__devupValue?.[{}]", style.level())
                 } else {
                     "__devupValue".to_string()
-                });
+                };
+                rewrite(style, &consumer);
             }
         }
         let mut props: Vec<_> = values.into_iter().map(ExtractStyleProp::Static).collect();

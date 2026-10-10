@@ -19,6 +19,8 @@ mod assignment_test_support;
 mod assignment_value;
 mod build_time_values;
 mod class_evaluation;
+#[doc(hidden)]
+pub mod compiler_policy;
 mod component;
 #[cfg(all(test, feature = "counter-fixtures"))]
 mod counter_fixture_capture_tests;
@@ -72,6 +74,7 @@ mod util_type;
 mod utils;
 mod vanilla_extract;
 mod visit;
+use crate::extract_style::compiler_projection;
 use crate::extract_style::extract_style_value::ExtractStyleValue;
 use crate::visit::DevupVisitor;
 use css::file_map::{canonical, get_file_num_by_filename, is_global};
@@ -359,8 +362,13 @@ fn extract_with_source_map(
     source_map: bool,
     resolver: Option<&ModuleResolver>,
 ) -> Result<ExtractOutput, Box<dyn Error>> {
-    let source = provenance::normalize_source(code);
-    extract_source(filename, &source, None, option, source_map, resolver)
+    compiler_policy::current(compiler_policy::CompilerInput {
+        filename,
+        code,
+        option,
+        source_map,
+        resolver,
+    })
 }
 
 /// The source `code` was computed from, with the layers of edits, last made
@@ -531,7 +539,7 @@ fn extract_source(
     if processed_code.is_some() && stylesheet_naming == css::Naming::Risky {
         provenance::MarkRanges(&[(0, code_to_parse.len())]).visit_program(&mut program);
     }
-    let _sites = provenance::SiteScope::enter(filename, source, &edits);
+    let _sites = compiler_policy::sites((filename, source, processed_code.is_some()), &edits);
     let inlined = if processed_code.is_none() {
         imported_constants::inline_constants(
             &oxc_ast::builder::AstBuilder::new(&allocator),
@@ -556,6 +564,9 @@ fn extract_source(
     visitor.changed_bindings(inlined.changed.clone());
     let attempt = css::class_map::Attempt::begin();
     visitor.visit_program(&mut program);
+    #[cfg(test)]
+    compiler_policy::tests::observe(false);
+    compiler_projection::check_terminal(filename, source, &edits)?;
     if let Some(error) = evaluation_error
         && imports_uncompiled(&program, &option.package)
     {
@@ -574,6 +585,13 @@ fn extract_source(
             &inlined.unknown,
         )
     {
+        compiler_projection::check_terminal(filename, source, &edits)?;
+        if compiler_policy::active() {
+            return Err(compiler_policy::retry(
+                (computed, value_edits, read, risky),
+                &alias_edits,
+            ));
+        }
         drop(attempt);
         let mut output = extract_source(
             filename,
@@ -593,6 +611,7 @@ fn extract_source(
         output.dependencies = files.into_iter().collect();
         return Ok(output);
     }
+    compiler_projection::check_terminal(filename, source, &edits)?;
     visitor.errors.extend(provenance::site_errors());
     visitor.errors.append(&mut visitor.unknown_parts);
     if !visitor.errors.is_empty() {
@@ -600,6 +619,8 @@ fn extract_source(
         message += &changed_notes(&message, filename, source, &edits, &inlined.changed);
         return Err(message.into());
     }
+    compiler_projection::complete(filename, &option, &visitor.styles);
+    compiler_projection::check_terminal(filename, source, &edits)?;
     let codegen_options = if source_map {
         CodegenOptions {
             source_map_path: Some(PathBuf::from(filename)),
@@ -627,7 +648,7 @@ fn extract_source(
 
     attempt.commit();
     Ok(ExtractOutput {
-        styles: visitor.styles,
+        styles: visitor.styles.into_set(),
         code: result.code,
         map,
         css_file: Some(css_file),
@@ -770,6 +791,8 @@ fn extract_class_map_from_code(
     style_names: &FxHashSet<String>,
     naming: css::Naming,
 ) -> Result<FxHashMap<String, String>, Box<dyn Error>> {
+    let source = sparse_sites::source().unwrap_or_else(|| partial_code.to_string());
+    let _reservation = compiler_projection::auxiliary(&source, filename);
     let source_type = SourceType::from_path(filename)?;
     let (bucket, global, css_file) = resolve_css_target(filename, option);
     let css_files = vec![css_file];
@@ -781,6 +804,11 @@ fn extract_class_map_from_code(
         ..
     } = Parser::new(&allocator, partial_code, source_type).parse();
     if fatal_error {
+        compiler_projection::check_aux(
+            filename,
+            &source,
+            vec![(0, "auxiliary parser failed".into())],
+        )?;
         Ok(FxHashMap::default())
     } else {
         let _origins = style_origin::OriginScope::generated(&mut program);
@@ -795,6 +823,8 @@ fn extract_class_map_from_code(
             if global { None } else { Some(bucket) },
         );
         visitor.visit_program(&mut program);
+        visitor.errors.extend(visitor.unknown_parts);
+        compiler_projection::check_aux(filename, &source, visitor.errors)?;
 
         let result = Codegen::new().build(&program);
 

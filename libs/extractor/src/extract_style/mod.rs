@@ -1,3 +1,15 @@
+#[doc(hidden)]
+#[path = "../compiler_associations.rs"]
+pub mod compiler_associations;
+#[path = "../compiler_diagnostics.rs"]
+pub(crate) mod compiler_diagnostics;
+#[path = "../compiler_projection.rs"]
+pub(crate) mod compiler_projection;
+#[doc(hidden)]
+#[path = "../compiler_receipts.rs"]
+pub mod compiler_receipts;
+#[path = "../compiler_request.rs"]
+pub(crate) mod compiler_request;
 pub(super) mod constant;
 pub(super) mod extract_css;
 pub(super) mod extract_dynamic_style;

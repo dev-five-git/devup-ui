@@ -4,7 +4,7 @@ use crate::css_utils::{
     TemplateStyles, css_to_style_template, keyframes_to_keyframes_style, optimize_css_block,
     template_css_text,
 };
-use crate::extract_style::ExtractStyleProperty;
+use crate::extract_style::compiler_projection;
 use crate::extract_style::extract_css::ExtractCss;
 use crate::extract_style::extract_keyframes::ExtractKeyframes;
 use crate::extract_style::style_property::StyleProperty;
@@ -91,7 +91,7 @@ pub(super) fn attribute_value_mut<'b, 'a>(
     }
 }
 
-fn style_property_into_string(style_property: StyleProperty) -> String {
+pub(crate) fn style_property_into_string(style_property: StyleProperty) -> String {
     match style_property {
         StyleProperty::ClassName(name) => name,
         StyleProperty::Variable { variable_name, .. } => {
@@ -118,7 +118,7 @@ pub struct DevupVisitor<'a> {
     compat_package: String,
     split_filename: Option<String>,
     pub css_files: Vec<String>,
-    pub styles: FxHashSet<ExtractStyleValue>,
+    pub(crate) styles: compiler_projection::CollectedStyles,
     /// Styles the file writes that cannot be extracted at build time, by the
     /// offset of the code each is about
     pub errors: Vec<(u32, String)>,
@@ -299,7 +299,7 @@ impl<'a> DevupVisitor<'a> {
             package: package.to_string(),
             compat_package: format!("{package}/compat"),
             css_files,
-            styles: FxHashSet::default(),
+            styles: compiler_projection::CollectedStyles::default(),
             errors: Vec::new(),
             import_object: None,
             jsx_object: None,
@@ -1105,6 +1105,7 @@ impl<'a> VisitMut<'a> for DevupVisitor<'a> {
         }
     }
     fn visit_expression(&mut self, it: &mut Expression<'a>) {
+        let _demand = compiler_projection::DemandScope::enter(it.span().start);
         let _origin = crate::style_origin::CurrentOrigin::enter(it.span());
         if !self.styled_imports.is_empty() {
             match it {
@@ -1513,8 +1514,11 @@ impl<'a> VisitMut<'a> for DevupVisitor<'a> {
                     runtime_value_error("stylex.keyframes", &value),
                 ));
             }
-            let name =
-                style_property_into_string(keyframes.extract(self.split_filename.as_deref()));
+            let Some(name) =
+                compiler_projection::keyframe_name(&keyframes, self.split_filename.as_deref())
+            else {
+                return;
+            };
             self.styles.insert(ExtractStyleValue::Keyframes(keyframes));
             self.stylex_pending_keyframe_name = Some(name.clone());
             *it = Expression::new_string_literal(
@@ -1694,9 +1698,12 @@ impl<'a> VisitMut<'a> for DevupVisitor<'a> {
                                 .push((offset, runtime_value_error("keyframes", &value)));
                         }
 
-                        let name = style_property_into_string(
-                            keyframes.extract(self.split_filename.as_deref()),
-                        );
+                        let Some(name) = compiler_projection::keyframe_name(
+                            &keyframes,
+                            self.split_filename.as_deref(),
+                        ) else {
+                            return;
+                        };
                         self.styles.insert(ExtractStyleValue::Keyframes(keyframes));
                         Expression::new_string_literal(
                             SPAN,
@@ -1874,8 +1881,11 @@ impl<'a> VisitMut<'a> for DevupVisitor<'a> {
                     origin: crate::style_origin::at(tag.span.start),
                     producer_policy: crate::sparse_sites::producer_policy(),
                 };
-                let name =
-                    style_property_into_string(keyframes.extract(self.split_filename.as_deref()));
+                let Some(name) =
+                    compiler_projection::keyframe_name(&keyframes, self.split_filename.as_deref())
+                else {
+                    return;
+                };
 
                 self.styles.insert(ExtractStyleValue::Keyframes(keyframes));
                 Expression::new_string_literal(
@@ -1931,6 +1941,7 @@ impl<'a> VisitMut<'a> for DevupVisitor<'a> {
         }
     }
     fn visit_call_expression(&mut self, it: &mut CallExpression<'a>) {
+        let _demand = compiler_projection::DemandScope::enter(it.span.start);
         let jsx = if let Expression::Identifier(ident) = &it.callee {
             self.jsx_imports.get(ident.name.as_str()).cloned()
         } else if let Some(name) = &self.jsx_object
@@ -2411,6 +2422,7 @@ impl<'a> VisitMut<'a> for DevupVisitor<'a> {
     }
     #[allow(clippy::set_contains_or_insert)]
     fn visit_jsx_element(&mut self, elem: &mut JSXElement<'a>) {
+        let _demand = compiler_projection::DemandScope::enter(elem.span.start);
         walk_jsx_element(self, elem);
 
         // `<Global styles={...} />` is Emotion's spelling of a global stylesheet.
