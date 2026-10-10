@@ -5,6 +5,10 @@ use oxc_syntax::node::NodeId;
 
 use crate::utils::unwrap_syntax_only;
 
+#[cfg(test)]
+#[path = "regions_tests.rs"]
+mod regions_tests;
+
 pub(super) fn eager(semantic: &Semantic<'_>, node: NodeId, regions: &[Span]) -> bool {
     let span = semantic.nodes().kind(node).span();
     if !regions.iter().any(|region| region.contains_inclusive(span)) {
