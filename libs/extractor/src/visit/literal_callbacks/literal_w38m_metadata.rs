@@ -1,6 +1,7 @@
 use super::literal_w38k_support::{declarations, tokens};
-use super::literal_w38m_support::{GETTERS, class_tokens, color, fixture, located};
+use super::literal_w38m_support::{GETTERS, class_tokens, fixture, located, static_color};
 use super::{compile, evaluate};
+use crate::ExtractStyleValue;
 use rstest::rstest;
 use serial_test::serial;
 
@@ -46,15 +47,22 @@ fn mixed_metadata_when_valid_later_or_inner_order_survives_keeps_exact_declarati
     // Given: later7 and independently nested3 are distinct from the omitted order.
     let source = fixture(&format!("...rest,_hover:`{body}`"), GETTERS);
     let mut expected = vec![
-        color("red", None, None),
-        color("blue", Some(selector), Some(order)),
+        static_color("red", None, None),
+        static_color("blue", Some(selector), Some(order)),
     ];
     expected.sort_unstable();
     // When: real extraction and two component renders execute.
     let output = compile(&source).unwrap_or_else(|error| panic!("{error}"));
     let (classes, trace) = evaluate(&output.code);
     // Then: omission never consumes the later or inner metadata boundary.
-    assert_eq!(declarations(&output), expected);
+    assert_eq!(
+        declarations(&output),
+        expected
+            .iter()
+            .cloned()
+            .map(ExtractStyleValue::Static)
+            .collect::<Vec<_>>()
+    );
     assert_eq!(trace, vec!["built", "get", "get"]);
     let mut expected_tokens = class_tokens(&expected);
     expected_tokens.sort_unstable();

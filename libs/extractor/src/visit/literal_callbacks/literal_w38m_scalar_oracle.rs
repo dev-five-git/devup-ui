@@ -1,6 +1,5 @@
-use super::literal_w38m_support::color;
+use super::literal_w38m_support::{class_tokens, static_color};
 use crate::ExtractStyleValue;
-use crate::extract_style::style_property::StyleProperty;
 use std::collections::BTreeMap;
 
 pub(super) struct Expected {
@@ -14,18 +13,17 @@ pub(super) fn inventory(
     values: &[(&str, i32)],
 ) -> Expected {
     let mut expected_static = vec![
-        color(root, None, None),
-        color("green", Some("&:focus"), None),
-        color("yellow", Some("&:active"), None),
-        color("gray", Some("&:disabled"), None),
-        color("blue", Some("&:hover"), None),
+        static_color(root, None, None),
+        static_color("green", Some("&:focus"), None),
+        static_color("yellow", Some("&:active"), None),
+        static_color("gray", Some("&:disabled"), None),
+        static_color("blue", Some("&:hover"), None),
     ];
     expected_static.sort_unstable();
     let mut actual_static = Vec::new();
     let mut actual_dynamic = Vec::new();
     for style in &output.styles {
         match style {
-            ExtractStyleValue::Static(_) => actual_static.push(style.clone()),
             ExtractStyleValue::Dynamic(style) => {
                 actual_dynamic.push(style.property());
                 assert_eq!(style.level(), 0);
@@ -35,17 +33,23 @@ pub(super) fn inventory(
                 assert!(!style.important());
                 assert_eq!(style.fallback(), None);
             }
-            ExtractStyleValue::Typography(_)
+            ExtractStyleValue::Static(_)
+            | ExtractStyleValue::Typography(_)
             | ExtractStyleValue::Css(_)
             | ExtractStyleValue::Import(_)
             | ExtractStyleValue::FontFace(_)
-            | ExtractStyleValue::Keyframes(_) => {
-                panic!("unexpected scalar fixture rule: {style:?}")
-            }
+            | ExtractStyleValue::Keyframes(_) => actual_static.push(style.clone()),
         }
     }
     actual_static.sort_unstable();
-    assert_eq!(actual_static, expected_static);
+    assert_eq!(
+        actual_static,
+        expected_static
+            .iter()
+            .cloned()
+            .map(ExtractStyleValue::Static)
+            .collect::<Vec<_>>()
+    );
     actual_dynamic.sort_unstable();
     let mut expected_dynamic = values
         .iter()
@@ -53,14 +57,8 @@ pub(super) fn inventory(
         .collect::<Vec<_>>();
     expected_dynamic.sort_unstable();
     assert_eq!(actual_dynamic, expected_dynamic);
+    let mut tokens = class_tokens(&expected_static);
     css::debug::set_debug(true);
-    let mut tokens = expected_static
-        .iter()
-        .map(|style| match style.extract(Some("a.tsx")) {
-            Some(StyleProperty::ClassName(token)) => token,
-            Some(StyleProperty::Variable { .. }) | None => panic!("static input token"),
-        })
-        .collect::<Vec<_>>();
     tokens.extend(values.iter().map(|(property, _)| {
         css::sheet_to_classname(property, 0, None, None, None, Some("a.tsx"))
     }));
