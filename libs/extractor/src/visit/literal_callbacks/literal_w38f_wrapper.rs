@@ -55,6 +55,40 @@ mod literal_w38l_c1c_source;
 #[path = "literal_w38l_c1c_supplier.rs"]
 mod literal_w38l_c1c_supplier;
 
+#[path = "literal_w38m_abrupt.rs"]
+mod literal_w38m_abrupt;
+#[path = "literal_w38m_effects.rs"]
+mod literal_w38m_effects;
+#[path = "literal_w38m_metadata.rs"]
+mod literal_w38m_metadata;
+#[path = "literal_w38m_precedence.rs"]
+mod literal_w38m_precedence;
+#[path = "literal_w38m_preservation.rs"]
+mod literal_w38m_preservation;
+#[path = "literal_w38m_rejections.rs"]
+mod literal_w38m_rejections;
+#[path = "literal_w38m_runtime.rs"]
+mod literal_w38m_runtime;
+#[path = "literal_w38m_source.rs"]
+mod literal_w38m_source;
+#[path = "literal_w38m_supplier.rs"]
+mod literal_w38m_supplier;
+#[path = "literal_w38m_support.rs"]
+mod literal_w38m_support;
+
+#[path = "literal_w38m_scalar_effects.rs"]
+mod literal_w38m_scalar_effects;
+#[path = "literal_w38m_scalar_observe.rs"]
+mod literal_w38m_scalar_observe;
+#[path = "literal_w38m_scalar_oracle.rs"]
+mod literal_w38m_scalar_oracle;
+#[path = "literal_w38m_scalar_precedence.rs"]
+mod literal_w38m_scalar_precedence;
+#[path = "literal_w38m_scalar_source.rs"]
+mod literal_w38m_scalar_source;
+#[path = "literal_w38m_scalar_throw.rs"]
+mod literal_w38m_scalar_throw;
+
 fn compile(source: &str) -> Result<crate::ExtractOutput, String> {
     css::class_map::reset_class_map();
     css::file_map::reset_file_map();

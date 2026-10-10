@@ -171,8 +171,15 @@ impl<'a> DevupVisitor<'a> {
             ) {
                 Some(self.prepare_callback(value, captures)?)
             } else {
-                crate::css_utils::literal::lower_with_source(&self.ast, value, self.source);
-                if self.capture_literal_styled(value, captures, &mut renders) {
+                crate::css_utils::literal_tree::lower(
+                    &self.ast,
+                    value,
+                    crate::css_utils::literal_tree::Scope {
+                        source: self.source,
+                        global: false,
+                    },
+                );
+                if self.capture_literal_styled_construction(value, captures, &mut renders) {
                     self.check_style_orders(value, false);
                 } else if let Expression::TemplateLiteral(template) = value {
                     for interpolation in &mut template.expressions {

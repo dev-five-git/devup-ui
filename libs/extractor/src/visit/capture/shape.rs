@@ -9,6 +9,28 @@ use oxc_ast::ast::{ArrayExpressionElement, Expression, ObjectPropertyKind, Prope
 use oxc_span::SPAN;
 
 impl<'a> DevupVisitor<'a> {
+    /// Capture an actual source spread using the existing shape or snapshot policy.
+    pub(in crate::visit) fn capture_source_spread(
+        &mut self,
+        argument: &mut Expression<'a>,
+        captured: &mut Vec<Captured<'a>>,
+    ) {
+        if (reach(&self.bindings, argument) == Reach::Constant
+            || matches!(
+                unwrap_syntax_only(argument),
+                Expression::ObjectExpression(_)
+                    | Expression::ConditionalExpression(_)
+                    | Expression::LogicalExpression(_)
+            ))
+            && !call_order::unsafe_to_extract(argument)
+        {
+            self.capture_shape(argument, captured);
+            return;
+        }
+        let name = self.names.fresh("__devupSpread");
+        captured.push(self.snapshot_as(name, argument));
+    }
+
     pub(in crate::visit) fn capture_order_shape(
         &mut self,
         value: &mut Expression<'a>,
@@ -130,20 +152,7 @@ impl<'a> DevupVisitor<'a> {
                 for property in &mut object.properties {
                     match property {
                         ObjectPropertyKind::SpreadProperty(spread) => {
-                            if (reach(&self.bindings, &spread.argument) == Reach::Constant
-                                || matches!(
-                                    unwrap_syntax_only(&spread.argument),
-                                    Expression::ObjectExpression(_)
-                                        | Expression::ConditionalExpression(_)
-                                        | Expression::LogicalExpression(_)
-                                ))
-                                && !call_order::unsafe_to_extract(&spread.argument)
-                            {
-                                self.capture_shape(&mut spread.argument, captured);
-                                continue;
-                            }
-                            let name = self.names.fresh("__devupSpread");
-                            captured.push(self.snapshot_as(name, &mut spread.argument));
+                            self.capture_source_spread(&mut spread.argument, captured);
                         }
                         ObjectPropertyKind::ObjectProperty(property) => {
                             if property.computed
