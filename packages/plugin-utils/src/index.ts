@@ -71,6 +71,12 @@ export {
   normalizeMdxExtensions,
   selectedSourceFilter,
 } from './mdx-selection'
+export type { NonphysicalIdListOutcome } from './nonphysical-id-list'
+export {
+  createNonphysicalIdStore,
+  type NonphysicalIdStore,
+  type NonphysicalIdStoreScope,
+} from './nonphysical-id-store'
 export {
   collectNumberedFiles,
   type CollectNumberedFilesOptions,
