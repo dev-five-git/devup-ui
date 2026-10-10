@@ -35,6 +35,25 @@ mod extraction_rollback;
 mod sheet_entry;
 use administration::with_administration;
 use css::admission::with_admission;
+#[cfg(test)]
+mod cache6_adoption_tests;
+#[cfg(test)]
+mod cache6_configuration_tests;
+#[cfg(test)]
+mod cache6_damage_tests;
+#[cfg(test)]
+mod cache6_nested_tests;
+#[cfg(test)]
+mod cache6_protocol_tests;
+#[doc(hidden)]
+pub mod cache6_restore;
+#[cfg(test)]
+mod cache6_rollback_tests;
+#[cfg(test)]
+mod cache6_seed_tests;
+mod cache6_session;
+#[cfg(test)]
+mod cache6_test_support;
 mod cache_atom_proof;
 mod cache_descriptor;
 mod cache_names;
@@ -55,6 +74,10 @@ mod naming_root_tests;
 mod original_counter_tests;
 #[cfg(test)]
 mod prefix_cache_tests;
+#[doc(hidden)]
+pub mod prospective_output;
+#[cfg(test)]
+mod prospective_output_tests;
 #[cfg(test)]
 mod scoped_cache_tests;
 #[cfg(test)]
@@ -395,6 +418,7 @@ pub fn export_canonical_map() -> Result<String, JsValue> {
 pub fn seed_file_map(files: Vec<String>) {
     with_administration("seed_file_map", || {
         cache_restore::seeded(&files);
+        cache6_restore::record_seed(&files);
         css::file_map::seed_file_numbers(&files);
     });
 }
@@ -408,6 +432,7 @@ pub fn reset_build_state_internal() {
     with_administration("reset_build_state_internal", || {
         cache_names::clear();
         cache_restore::clear();
+        cache6_restore::forget();
         css::class_map::reset_class_map();
         css::file_map::reset_file_map();
         css::file_map::reset_canonical_map();

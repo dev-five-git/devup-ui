@@ -1,6 +1,23 @@
 use super::{EvidenceError, ValidatedSnapshot, admission};
 use crate::{StyleSheet, cache_snapshot::CacheRestore};
 
+/// Check exact ownership and the target's irreversible rejection before retirement.
+/// # Errors
+/// Returns active-exact first, then the target's original latched kernel cause.
+pub fn check_install_target(target: &StyleSheet) -> Result<(), EvidenceError> {
+    css::admission::with_admission(|| {
+        css::admission::check_administration_allowed().map_err(EvidenceError::ActiveExact)?;
+        match target
+            .counter_state
+            .as_ref()
+            .and_then(|state| state.rejection)
+        {
+            Some(rejection) => Err(EvidenceError::Kernel(rejection.0)),
+            None => Ok(()),
+        }
+    })
+}
+
 impl ValidatedSnapshot {
     /// Consume the certificate and adopt its complete state before compilation.
     /// # Errors
@@ -27,14 +44,7 @@ impl ValidatedSnapshot {
             .map(|(path, ordinal)| (path.clone(), *ordinal))
             .collect();
         css::admission::with_admission(|| {
-            css::admission::check_administration_allowed().map_err(EvidenceError::ActiveExact)?;
-            if let Some(rejection) = target
-                .counter_state
-                .as_ref()
-                .and_then(|state| state.rejection)
-            {
-                return Err(EvidenceError::Kernel(rejection.0));
-            }
+            check_install_target(target)?;
             admission::check(&self.authority)?;
             let incoming = self.authority.sheet;
             css::class_map::set_class_map(classes);

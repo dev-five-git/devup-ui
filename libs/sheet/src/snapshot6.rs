@@ -14,6 +14,7 @@ mod allocation;
 mod evidence;
 #[path = "snapshot6_install.rs"]
 mod install;
+pub use install::check_install_target;
 #[path = "snapshot6_raw.rs"]
 mod raw;
 #[path = "snapshot6_records.rs"]

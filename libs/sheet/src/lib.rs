@@ -35,6 +35,8 @@ mod emission_seed_keyframe_tests;
 mod emission_seed_test_helpers;
 #[cfg(test)]
 mod emission_seed_tests;
+#[doc(hidden)]
+pub mod live_checkpoint;
 pub mod name_registry;
 #[cfg(test)]
 mod name_registry_tests;
