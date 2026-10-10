@@ -15,5 +15,5 @@ ToBTreeSet {
             },
         ),
     },
-    code: "import \"@devup-ui/core/devup-ui.css\";\n<p className=\"a\">text</p>;\n",
+    code: "import \"@devup-ui/core/devup-ui.css\";\n<p className=\"OLcolor-v_h111827\">text</p>;\n",
 }

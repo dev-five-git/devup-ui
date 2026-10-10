@@ -1,5 +1,4 @@
 use crate::ExtractStyleProp;
-use crate::extract_style::style_property::StyleProperty;
 use crate::extractor::extract_style_from_expression::yield_typography;
 use crate::prop_modify_utils::convert_class_name;
 use crate::utils::is_same_expression;
@@ -9,7 +8,14 @@ use oxc_ast::ast::{
     StringLiteral, TemplateElement, TemplateElementValue,
 };
 use oxc_ast::builder::AstBuilder;
-use oxc_span::SPAN;
+use oxc_span::{GetSpan, GetSpanMut, SPAN};
+
+#[path = "dynamic_presence.rs"]
+mod dynamic_presence;
+
+#[cfg(test)]
+#[path = "dynamic_absence_tests.rs"]
+mod dynamic_absence_tests;
 
 pub fn gen_class_names<'a>(
     ast_builder: &AstBuilder<'a>,
@@ -18,6 +24,7 @@ pub fn gen_class_names<'a>(
     filename: Option<&str>,
 ) -> Option<Expression<'a>> {
     yield_typography(style_props);
+    crate::assignment_lowering::coalesce(style_props);
     merge_expression_for_class_name(
         ast_builder,
         style_props
@@ -34,6 +41,31 @@ fn gen_class_name<'a>(
     filename: Option<&str>,
 ) -> Option<Expression<'a>> {
     match style_prop {
+        ExtractStyleProp::Evaluated {
+            source,
+            styles,
+            binding,
+            evaluation,
+            alternate_order,
+            alternate_class,
+        } => {
+            crate::assignment_consumers::merge(styles);
+            let mut value = crate::assignment_lowering::Lowering {
+                ast: ast_builder,
+                order: style_order,
+                filename,
+                alternate_order: *alternate_order,
+            }
+            .lower(source, styles);
+            let _ = gen_class_names(ast_builder, styles, style_order, filename);
+            *value.span_mut() = source.span();
+            *evaluation = Some(value);
+            Some(crate::assignment_lowering::projection(
+                ast_builder,
+                binding,
+                if *alternate_class { 3 } else { 0 },
+            ))
+        }
         ExtractStyleProp::Enum { map, condition } => {
             let properties = map.iter_mut().filter_map(|(key, value)| {
                 merge_expression_for_class_name(
@@ -80,16 +112,7 @@ fn gen_class_name<'a>(
             if let Some(style_order) = style_order {
                 st.set_style_order(style_order);
             }
-            st.extract(filename).map(|style| {
-                let v = Str::from_in(
-                    &match style {
-                        StyleProperty::ClassName(cls) => cls,
-                        StyleProperty::Variable { class_name, .. } => class_name,
-                    },
-                    ast_builder.allocator(),
-                );
-                Expression::new_string_literal(SPAN, v, None, ast_builder)
-            })
+            dynamic_presence::class(ast_builder, st, filename)
         }
         ExtractStyleProp::StaticArray(res) => merge_expression_for_class_name(
             ast_builder,

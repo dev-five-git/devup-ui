@@ -55,16 +55,16 @@ use oxc_syntax::number::NumberBase;
 use strum::IntoEnumIterator;
 
 use crate::utils::{
-    ParsedStyleOrder, RUNTIME_VALUE, STYLE_OBJECT, StyleArguments, Suspends, build_time_error,
+    ParsedStyleOrder, RUNTIME_VALUE, STYLE_OBJECT, StyleArguments, build_time_error,
     call_with_values, element_error, expression_to_style_order, fixed_value,
-    get_str_by_property_key, get_string_by_literal_expression, get_string_by_property_key, is_pure,
+    get_str_by_property_key, get_string_by_literal_expression, get_string_by_property_key,
     jsx_expression_to_style_order, key_error, readable_argument, readable_code, reads_directly,
-    reads_spreads_once, reads_unknown, runtime_classes, runtime_value, runtime_value_error,
-    spread_error, stays_attribute, style_arguments, uncomposable_error, unplaced_error,
-    unreadable_styles, unwrap_syntax_only, unwrap_syntax_only_mut,
+    reads_unknown, runtime_classes, runtime_value, runtime_value_error, spread_error,
+    stays_attribute, style_arguments, uncomposable_error, unplaced_error, unreadable_styles,
+    unwrap_syntax_only, unwrap_syntax_only_mut,
 };
 use oxc_ast::builder::AstBuilder;
-use oxc_span::{GetSpan, SPAN};
+use oxc_span::{GetSpan, GetSpanMut, SPAN};
 use rustc_hash::{FxHashMap, FxHashSet};
 use std::borrow::Cow;
 use std::rc::Rc;
@@ -76,27 +76,15 @@ fn property_stays(property: &ObjectProperty<'_>) -> bool {
         .is_some_and(|name| stays_attribute(&name))
 }
 
-/// The value of a JSX attribute that stays an attribute of the element built
-fn attribute_value<'b, 'a>(
-    attribute: &'b oxc_ast::ast::JSXAttribute<'a>,
-) -> Option<&'b Expression<'a>> {
-    match (&attribute.name, &attribute.value) {
-        (Identifier(name), Some(JSXAttributeValue::ExpressionContainer(container)))
-            if stays_attribute(&name.name) =>
-        {
-            container.expression.as_expression()
-        }
-        _ => None,
-    }
-}
-
-fn attribute_value_mut<'b, 'a>(
+pub(super) fn attribute_value_mut<'b, 'a>(
     attribute: &'b mut oxc_ast::ast::JSXAttribute<'a>,
 ) -> Option<&'b mut Expression<'a>> {
-    match (&attribute.name, &mut attribute.value) {
-        (Identifier(name), Some(JSXAttributeValue::ExpressionContainer(container)))
-            if stays_attribute(&name.name) =>
-        {
+    let retained = match &attribute.name {
+        Identifier(name) => is_special_property(&name.name),
+        oxc_ast::ast::JSXAttributeName::NamespacedName(_) => true,
+    };
+    match &mut attribute.value {
+        Some(JSXAttributeValue::ExpressionContainer(container)) if retained => {
             container.expression.as_expression_mut()
         }
         _ => None,
@@ -473,45 +461,45 @@ impl<'a> DevupVisitor<'a> {
         let Expression::ObjectExpression(object) = props else {
             return read_once;
         };
-        let suspends = |value: &Expression<'a>| {
-            let mut suspends = Suspends::default();
-            oxc_ast_visit::Visit::visit_expression(&mut suspends, value);
-            suspends.found
-        };
-        let moves = |property: &ObjectPropertyKind<'a>| match property {
-            ObjectPropertyKind::SpreadProperty(spread) => !is_pure(&spread.argument),
-            ObjectPropertyKind::ObjectProperty(property) => {
-                property_stays(property) && suspends(&property.value)
+        for property in &mut object.properties {
+            if matches!(property, ObjectPropertyKind::ObjectProperty(property) if property.computed)
+            {
+                let span = property.span();
+                let original = property.clone_in(self.ast.allocator());
+                let mut value = Expression::new_object_expression(
+                    span,
+                    oxc_allocator::Vec::from_array_in([original], &self.ast),
+                    &self.ast,
+                );
+                read_once.push(self.read_once(&mut value));
+                *property = ObjectPropertyKind::new_spread_property(span, value, &self.ast);
+                continue;
             }
-        };
-        let stuck = object.properties.iter().any(|property| {
-            matches!(property, ObjectPropertyKind::ObjectProperty(property)
-                if (property.computed || !property_stays(property)) && suspends(&property.value))
-        });
-        let Some(last) = object.properties.iter().rposition(moves) else {
-            return read_once;
-        };
-        if stuck
-            || !object.properties.iter().any(|property| {
-                matches!(property, ObjectPropertyKind::SpreadProperty(spread)
-                    if !is_pure(&spread.argument))
-            })
-        {
-            return read_once;
-        }
-        for property in object.properties.iter_mut().take(last + 1) {
             let value = match property {
-                ObjectPropertyKind::SpreadProperty(spread) => &mut spread.argument,
+                ObjectPropertyKind::SpreadProperty(spread) => {
+                    spread.argument =
+                        crate::element_evaluation::snapshot(&self.ast, &spread.argument);
+                    &mut spread.argument
+                }
                 ObjectPropertyKind::ObjectProperty(property)
-                    if !property.computed && property_stays(property) =>
+                    if property_stays(property)
+                        || property
+                            .key
+                            .static_name()
+                            .is_some_and(|name| matches!(name.as_ref(), "className" | "style")) =>
                 {
+                    if property
+                        .key
+                        .static_name()
+                        .is_some_and(|name| name == "className")
+                    {
+                        continue;
+                    }
                     &mut property.value
                 }
                 ObjectPropertyKind::ObjectProperty(_) => continue,
             };
-            if !is_pure(value) {
-                read_once.push(self.read_once(value));
-            }
+            read_once.push(self.read_once(value));
         }
         read_once
     }
@@ -520,7 +508,7 @@ impl<'a> DevupVisitor<'a> {
         let name = format!("__devupSpread{}", self.spreads_read_once);
         self.spreads_read_once += 1;
         let read = Expression::new_identifier(
-            SPAN,
+            value.span(),
             Str::from_in(name.as_str(), self.ast.allocator()),
             &self.ast,
         );
@@ -1117,6 +1105,7 @@ impl<'a> VisitMut<'a> for DevupVisitor<'a> {
         }
     }
     fn visit_expression(&mut self, it: &mut Expression<'a>) {
+        let _origin = crate::style_origin::CurrentOrigin::enter(it.span());
         if !self.styled_imports.is_empty() {
             match it {
                 Expression::CallExpression(call) => self.plain_styled(&mut call.callee),
@@ -1617,6 +1606,12 @@ impl<'a> VisitMut<'a> for DevupVisitor<'a> {
                     self.unknown_arguments("css", &call.arguments);
                     self.changed_arguments("css", &call.arguments);
                 }
+                let composition_reads =
+                    if is_css && style_arguments(&self.ast, &call.arguments).is_some() {
+                        crate::assignment_composition::capture(&self.ast, &mut call.arguments)
+                    } else {
+                        vec![]
+                    };
                 let composed_classes = if is_css
                     && let Some(StyleArguments { classes, rules }) =
                         style_arguments(&self.ast, &call.arguments)
@@ -1665,6 +1660,11 @@ impl<'a> VisitMut<'a> for DevupVisitor<'a> {
                                 &mut styles,
                                 style_order,
                                 self.split_filename.as_deref(),
+                            );
+                            let class_name = crate::assignment_lowering::class_expression(
+                                &self.ast,
+                                &mut styles,
+                                class_name,
                             );
 
                             // already set style order
@@ -1808,6 +1808,11 @@ impl<'a> VisitMut<'a> for DevupVisitor<'a> {
                     )
                     .unwrap_or_else(|| Expression::new_string_literal(SPAN, "", None, &self.ast));
                 }
+                if !composition_reads.is_empty() {
+                    let result =
+                        std::mem::replace(it, Expression::new_null_literal(SPAN, &self.ast));
+                    *it = call_with_values(&self.ast, composition_reads, result);
+                }
             }
         } else if let Expression::TaggedTemplateExpression(tag) = it
             && let Some(css_type) = self.util_type(&tag.tag)
@@ -1866,6 +1871,8 @@ impl<'a> VisitMut<'a> for DevupVisitor<'a> {
             } else if matches!(r, UtilType::Keyframes) {
                 let keyframes = ExtractKeyframes {
                     keyframes: keyframes_to_keyframes_style(&build_css_str()),
+                    origin: crate::style_origin::at(tag.span.start),
+                    producer_policy: crate::sparse_sites::producer_policy(),
                 };
                 let name =
                     style_property_into_string(keyframes.extract(self.split_filename.as_deref()));
@@ -1891,19 +1898,22 @@ impl<'a> VisitMut<'a> for DevupVisitor<'a> {
         }
 
         if let Expression::JSXElement(_) = it
-            && let Some(replacement) = self.pending_replacement.take()
+            && let Some(mut replacement) = self.pending_replacement.take()
         {
+            *replacement.span_mut() = it.span();
             *it = replacement;
         }
     }
 
     fn visit_jsx_child(&mut self, it: &mut JSXChild<'a>) {
         walk_jsx_child(self, it);
-        if let JSXChild::Element(_) = it
-            && let Some(replacement) = self.pending_replacement.take()
+        if let JSXChild::Element(element) = it
+            && let Some(mut replacement) = self.pending_replacement.take()
         {
+            let span = element.span;
+            *replacement.span_mut() = span;
             *it = JSXChild::ExpressionContainer(JSXExpressionContainer::boxed(
-                SPAN,
+                span,
                 replacement.into(),
                 &self.ast,
             ));
@@ -1912,10 +1922,12 @@ impl<'a> VisitMut<'a> for DevupVisitor<'a> {
 
     fn visit_jsx_attribute_value(&mut self, it: &mut JSXAttributeValue<'a>) {
         walk_jsx_attribute_value(self, it);
-        if let JSXAttributeValue::Element(_) = it
-            && let Some(replacement) = self.pending_replacement.take()
+        if let JSXAttributeValue::Element(element) = it
+            && let Some(mut replacement) = self.pending_replacement.take()
         {
-            *it = JSXAttributeValue::new_expression_container(SPAN, replacement.into(), &self.ast);
+            let span = element.span;
+            *replacement.span_mut() = span;
+            *it = JSXAttributeValue::new_expression_container(span, replacement.into(), &self.ast);
         }
     }
     fn visit_call_expression(&mut self, it: &mut CallExpression<'a>) {
@@ -1957,7 +1969,7 @@ impl<'a> VisitMut<'a> for DevupVisitor<'a> {
             {
                 // Pre-scan: detect conditional styleOrder before extract_style_from_expression
                 // consumes the property (which only handles static values)
-                let parsed_style_order =
+                let mut parsed_style_order =
                     if let Expression::ObjectExpression(obj) = it.arguments[1].to_expression() {
                         obj.properties.iter().find_map(|prop| {
                             if let ObjectPropertyKind::ObjectProperty(p) = prop
@@ -1981,6 +1993,9 @@ impl<'a> VisitMut<'a> for DevupVisitor<'a> {
                     &self.ast,
                 );
                 let mut props_styles = vec![];
+                let authored_props = it.arguments[1]
+                    .to_expression()
+                    .clone_in(self.ast.allocator());
                 let ExtractResult {
                     styles,
                     tag: _tag,
@@ -2012,14 +2027,90 @@ impl<'a> VisitMut<'a> for DevupVisitor<'a> {
                 // static result for backward compat.
                 // Note: pre-scan and extract_style_from_expression both use get_number_by_literal_expression
                 // on the same value, so style_order is always None when parsed_style_order is None.
-                let parsed_style_order = match parsed_style_order {
+                parsed_style_order = match parsed_style_order {
                     ParsedStyleOrder::None => {
                         style_order.map_or(ParsedStyleOrder::None, ParsedStyleOrder::Static)
                     }
                     other => other,
                 };
 
-                let read_once = self.read_spreads_once(it.arguments[1].to_expression_mut());
+                let mut read_once = self.read_spreads_once(it.arguments[1].to_expression_mut());
+                tag = crate::element_evaluation::default_type(&self.ast, tag, kind.to_tag());
+                if get_string_by_literal_expression(&tag).is_none() {
+                    read_once.push(self.read_once(&mut tag));
+                }
+                if let ParsedStyleOrder::Conditional { condition, .. } = &mut parsed_style_order {
+                    read_once.push(self.read_once(condition));
+                }
+                if let Expression::ObjectExpression(object) = &authored_props {
+                    for property in &object.properties {
+                        let ObjectPropertyKind::ObjectProperty(property) = property else {
+                            continue;
+                        };
+                        let Some(key) = get_str_by_property_key(&property.key) else {
+                            continue;
+                        };
+                        let names = disassemble_property(&key)
+                            .map(|name| css::utils::to_kebab_case(&name).into_owned())
+                            .collect::<Vec<_>>();
+                        let indices = props_styles
+                            .iter()
+                            .enumerate()
+                            .filter_map(|(index, style)| {
+                                (crate::assignment_owner::contains_consumer(
+                                    property.value.span(),
+                                    style,
+                                ) || style.extract().iter().any(|value| {
+                                    matches!(value, ExtractStyleValue::Dynamic(style)
+                                         if names.iter().any(|name| name == style.property()))
+                                        || key == "typography"
+                                            && matches!(value, ExtractStyleValue::Typography(_))
+                                }))
+                                .then_some(index)
+                            })
+                            .collect::<Vec<_>>();
+                        let mut selected = indices
+                            .iter()
+                            .map(|index| props_styles[*index].clone_in(self.ast.allocator()))
+                            .collect::<Vec<_>>();
+                        if (key == "typography"
+                            || css::get_enum_property_map(&key).is_some()
+                                && object
+                                    .properties
+                                    .iter()
+                                    .any(|later| later.span().start > property.span.start))
+                            && (key == "typography"
+                                && !crate::static_assignment::literal_source(&property.value)
+                                || !matches!(
+                                    unwrap_syntax_only(&property.value),
+                                    Expression::ArrayExpression(_)
+                                        | Expression::ObjectExpression(_)
+                                ))
+                            && let Some(value) = crate::element_evaluation::typography(
+                                &self.ast,
+                                &mut selected,
+                                &property.value,
+                                &mut self.spreads_read_once,
+                            )
+                        {
+                            read_once.push(value);
+                            for index in indices {
+                                props_styles[index] = ExtractStyleProp::StaticArray(vec![]);
+                            }
+                            props_styles.extend(selected);
+                            continue;
+                        }
+                        read_once.extend(crate::element_evaluation::scalar(
+                            &self.ast,
+                            &mut selected,
+                            &property.value,
+                            &mut self.spreads_read_once,
+                        ));
+                        for (index, style) in indices.into_iter().zip(selected) {
+                            props_styles[index] = style;
+                        }
+                    }
+                }
 
                 if let ParsedStyleOrder::Conditional {
                     condition,
@@ -2034,7 +2125,7 @@ impl<'a> VisitMut<'a> for DevupVisitor<'a> {
                         .collect();
 
                     if let Expression::ObjectExpression(obj) = it.arguments[1].to_expression_mut() {
-                        let tailwind_styles = modify_prop_object(
+                        let (tailwind_styles, capture) = modify_prop_object(
                             &self.ast,
                             &mut obj.properties,
                             &mut props_styles,
@@ -2049,9 +2140,13 @@ impl<'a> VisitMut<'a> for DevupVisitor<'a> {
                             )),
                         );
                         self.styles.extend(tailwind_styles);
+                        read_once.extend(capture);
                     }
 
                     // Collect styles from both branches for CSS output
+                    read_once.extend(crate::assignment_lowering::take_evaluations(
+                        &mut props_styles,
+                    ));
                     props_styles.into_iter().rev().for_each(|style| {
                         self.styles
                             .extend(style.into_extract().into_iter().map(|mut s| {
@@ -2082,7 +2177,7 @@ impl<'a> VisitMut<'a> for DevupVisitor<'a> {
                     });
 
                     if let Expression::ObjectExpression(obj) = it.arguments[1].to_expression_mut() {
-                        let tailwind_styles = modify_prop_object(
+                        let (tailwind_styles, capture) = modify_prop_object(
                             &self.ast,
                             &mut obj.properties,
                             &mut props_styles,
@@ -2093,11 +2188,18 @@ impl<'a> VisitMut<'a> for DevupVisitor<'a> {
                             None,
                         );
                         self.styles.extend(tailwind_styles);
+                        read_once.extend(capture);
                     }
+                    read_once.extend(crate::assignment_lowering::take_evaluations(
+                        &mut props_styles,
+                    ));
                 }
 
                 it.arguments[0] = Argument::from(tag);
                 if !read_once.is_empty() {
+                    read_once.sort_by_key(|(_, value)| {
+                        crate::provenance::source_offset(value.span().start)
+                    });
                     let call = Expression::CallExpression(oxc_allocator::Box::new_in(
                         it.clone_in(self.ast.allocator()),
                         &self.ast,
@@ -2105,7 +2207,9 @@ impl<'a> VisitMut<'a> for DevupVisitor<'a> {
                     if let Expression::CallExpression(reading_once) =
                         call_with_values(&self.ast, read_once, call)
                     {
+                        let span = it.span;
                         *it = reading_once.unbox();
+                        it.span = span;
                     }
                 }
             }
@@ -2366,7 +2470,15 @@ impl<'a> VisitMut<'a> for DevupVisitor<'a> {
         if let Some(kind) = kind {
             // A spread whose value may change when read again is read once, as
             // its `className` and `style` are read beside it
-            let reads_once = reads_spreads_once(elem);
+            let captures_assignments = crate::element_evaluation::needed(elem);
+            let last_attribute = elem
+                .opening_element
+                .attributes
+                .last()
+                .map_or(0, |attribute| attribute.span().start);
+            let has_children = !elem.children.is_empty();
+            let mut assignment_reads =
+                crate::element_evaluation::capture(&self.ast, elem, &mut self.spreads_read_once);
             let attrs = &mut elem.opening_element.attributes;
             let default_tag = kind.to_tag();
             let mut tag_name = Expression::new_string_literal(
@@ -2389,7 +2501,15 @@ impl<'a> VisitMut<'a> for DevupVisitor<'a> {
                     && !is_special_property(&name.name)
                 {
                     let property_name = name.name.as_str();
-                    for disassembled in disassemble_property(property_name) {
+                    let mut attribute_styles = Vec::new();
+                    let disassembled_properties =
+                        disassemble_property(property_name).collect::<Vec<_>>();
+                    if let Some(JSXAttributeValue::ExpressionContainer(container)) = &attr.value
+                        && let Some(source) = container.expression.as_expression()
+                    {
+                        crate::sparse_sites::plan_numeric_roles(source, &disassembled_properties);
+                    }
+                    for disassembled in disassembled_properties {
                         // Probe with `contains`, run the body borrowing `&disassembled`
                         // (it has no early exits), then MOVE the value into the set at
                         // the end — instead of `insert(disassembled.clone())`, which
@@ -2427,12 +2547,79 @@ impl<'a> VisitMut<'a> for DevupVisitor<'a> {
                                 }
                                 let ExtractResult { styles, tag, .. } =
                                     extract_style_from_jsx(&self.ast, &disassembled, at);
-                                props_styles.extend(styles.into_iter().rev());
+                                attribute_styles.extend(styles.into_iter().rev());
                                 tag_name = tag.unwrap_or(tag_name);
                             }
                             duplicate_set.insert(disassembled);
                         }
                     }
+                    if captures_assignments
+                        && property_name == "as"
+                        && get_string_by_literal_expression(&tag_name).is_none()
+                    {
+                        let name = format!("DevupAs{}", self.runtime_types);
+                        self.runtime_types += 1;
+                        tag_name = crate::element_evaluation::default_type(
+                            &self.ast,
+                            tag_name,
+                            default_tag,
+                        );
+                        let reference = Expression::new_identifier(
+                            tag_name.span(),
+                            Str::from_in(name.as_str(), self.ast.allocator()),
+                            &self.ast,
+                        );
+                        assignment_reads.push((name, std::mem::replace(&mut tag_name, reference)));
+                    }
+                    if captures_assignments
+                        && (property_name == "typography"
+                            || css::get_enum_property_map(property_name).is_some())
+                        && (property_name == "typography"
+                            || attr.span.start < last_attribute
+                            || has_children)
+                        && let Some(JSXAttributeValue::ExpressionContainer(container)) = &attr.value
+                        && let Some(source) = container.expression.as_expression()
+                        && (property_name == "typography"
+                            && !crate::static_assignment::literal_source(source)
+                            || !matches!(
+                                unwrap_syntax_only(source),
+                                Expression::ArrayExpression(_) | Expression::ObjectExpression(_)
+                            ))
+                        && let Some(value) = crate::element_evaluation::typography(
+                            &self.ast,
+                            &mut attribute_styles,
+                            source,
+                            &mut self.spreads_read_once,
+                        )
+                    {
+                        assignment_reads.push(value);
+                    }
+                    if captures_assignments
+                        && let Some(JSXAttributeValue::ExpressionContainer(container)) = &attr.value
+                        && let Some(source) = container.expression.as_expression()
+                    {
+                        assignment_reads.extend(crate::element_evaluation::scalar(
+                            &self.ast,
+                            &mut attribute_styles,
+                            source,
+                            &mut self.spreads_read_once,
+                        ));
+                    }
+                    if captures_assignments
+                        && property_name == "styleOrder"
+                        && let ParsedStyleOrder::Conditional { condition, .. } =
+                            &mut parsed_style_order
+                    {
+                        let name = format!("__devupSpread{}", self.spreads_read_once);
+                        self.spreads_read_once += 1;
+                        let reference = Expression::new_identifier(
+                            condition.span(),
+                            Str::from_in(name.as_str(), self.ast.allocator()),
+                            &self.ast,
+                        );
+                        assignment_reads.push((name, std::mem::replace(condition, reference)));
+                    }
+                    props_styles.extend(attribute_styles);
                 } else if let JSXAttributeItem::SpreadAttribute(spread) = &mut attr {
                     self.style_values.read_in(&self.ast, &mut spread.argument);
                     // A later attribute wins over what the spread gives, and the
@@ -2514,76 +2701,15 @@ impl<'a> VisitMut<'a> for DevupVisitor<'a> {
             unreadable_styles(&props_styles, false, &mut unreadable);
 
             let mut read_once = Vec::new();
-            if reads_once {
+            read_once.extend(assignment_reads);
+            if captures_assignments {
                 // What comes before the last value moved out moves out too, so
                 // everything is evaluated in the order it is written
-                let last_attribute = attrs.iter().rposition(|attribute| match attribute {
-                    JSXAttributeItem::SpreadAttribute(spread) => !is_pure(&spread.argument),
-                    JSXAttributeItem::Attribute(attribute) => attribute_value(attribute)
-                        .is_some_and(|value| {
-                            let mut suspends = Suspends::default();
-                            oxc_ast_visit::Visit::visit_expression(&mut suspends, value);
-                            suspends.found
-                        }),
-                });
-                let last_child = elem.children.iter().rposition(|child| {
-                    let mut suspends = Suspends::default();
-                    oxc_ast_visit::Visit::visit_jsx_child(&mut suspends, child);
-                    suspends.found
-                });
-                let attributes_moved = if last_child.is_some() {
-                    attrs.len()
-                } else {
-                    last_attribute.map_or(0, |last| last + 1)
-                };
-                for attribute in attrs.iter_mut().take(attributes_moved) {
-                    let value = match attribute {
-                        JSXAttributeItem::SpreadAttribute(spread) => Some(&mut spread.argument),
-                        JSXAttributeItem::Attribute(attribute) => attribute_value_mut(attribute),
-                    };
-                    if let Some(value) = value.filter(|value| !is_pure(value)) {
-                        read_once.push(self.read_once(value));
-                    }
-                }
-                for child in elem
-                    .children
-                    .iter_mut()
-                    .take(last_child.map_or(0, |last| last + 1))
-                {
-                    match child {
-                        JSXChild::ExpressionContainer(container) => {
-                            if let Some(value) = container.expression.as_expression_mut()
-                                && !is_pure(value)
-                            {
-                                read_once.push(self.read_once(value));
-                            }
-                        }
-                        JSXChild::Spread(spread) => {
-                            if !is_pure(&spread.expression) {
-                                read_once.push(self.read_once(&mut spread.expression));
-                            }
-                        }
-                        JSXChild::Element(element) => {
-                            let mut value =
-                                Expression::JSXElement(element.clone_in(self.ast.allocator()));
-                            read_once.push(self.read_once(&mut value));
-                            *child = JSXChild::ExpressionContainer(JSXExpressionContainer::boxed(
-                                SPAN,
-                                value.into(),
-                                &self.ast,
-                            ));
-                        }
-                        JSXChild::Fragment(fragment) => {
-                            let mut value =
-                                Expression::JSXFragment(fragment.clone_in(self.ast.allocator()));
-                            read_once.push(self.read_once(&mut value));
-                            *child = JSXChild::ExpressionContainer(JSXExpressionContainer::boxed(
-                                SPAN,
-                                value.into(),
-                                &self.ast,
-                            ));
-                        }
-                        JSXChild::Text(_) => {}
+                for attribute in attrs.iter_mut() {
+                    if let JSXAttributeItem::SpreadAttribute(spread) = attribute {
+                        spread.argument =
+                            crate::element_evaluation::snapshot(&self.ast, &spread.argument);
+                        read_once.push(self.read_once(&mut spread.argument));
                     }
                 }
             }
@@ -2601,7 +2727,7 @@ impl<'a> VisitMut<'a> for DevupVisitor<'a> {
                     .collect();
 
                 // Process consequent branch
-                let tailwind_styles_con = modify_props(
+                let (tailwind_styles_con, capture) = modify_props(
                     &self.ast,
                     attrs,
                     &mut props_styles,
@@ -2616,8 +2742,12 @@ impl<'a> VisitMut<'a> for DevupVisitor<'a> {
                     )),
                 );
                 self.styles.extend(tailwind_styles_con);
+                read_once.extend(capture);
 
                 // Collect styles from both branches for CSS output
+                read_once.extend(crate::assignment_lowering::take_evaluations(
+                    &mut props_styles,
+                ));
                 props_styles.into_iter().rev().for_each(|style| {
                     self.styles
                         .extend(style.into_extract().into_iter().map(|mut s| {
@@ -2638,7 +2768,7 @@ impl<'a> VisitMut<'a> for DevupVisitor<'a> {
                 });
             } else {
                 let style_order = parsed_style_order.as_static();
-                let tailwind_styles = modify_props(
+                let (tailwind_styles, capture) = modify_props(
                     &self.ast,
                     attrs,
                     &mut props_styles,
@@ -2649,7 +2779,11 @@ impl<'a> VisitMut<'a> for DevupVisitor<'a> {
                     None,
                 );
                 self.styles.extend(tailwind_styles);
+                read_once.extend(capture);
 
+                read_once.extend(crate::assignment_lowering::take_evaluations(
+                    &mut props_styles,
+                ));
                 props_styles
                     .into_iter()
                     .rev()
@@ -2663,13 +2797,14 @@ impl<'a> VisitMut<'a> for DevupVisitor<'a> {
                 ));
             }
 
-            // A type only the runtime gives is read once, before what the
-            // element reads once
+            // Schedule every captured operand by its authored source position.
             let mut values = Vec::with_capacity(read_once.len() + 1);
+            let tag_span = tag_name.span();
             match crate::as_visit::resolve(&self.ast, elem, tag_name, default_tag) {
                 As::Name(name) => crate::as_visit::rename(&self.ast, elem, name),
                 As::Choice(choice) => self.pending_replacement = Some(choice),
-                As::Runtime(value) => {
+                As::Runtime(mut value) => {
+                    *value.span_mut() = tag_span;
                     let name = format!("DevupAs{}", self.runtime_types);
                     self.runtime_types += 1;
                     crate::as_visit::rename(
@@ -2685,6 +2820,7 @@ impl<'a> VisitMut<'a> for DevupVisitor<'a> {
                 }
             }
             values.extend(read_once);
+            values.sort_by_key(|(_, value)| crate::provenance::source_offset(value.span().start));
 
             if !values.is_empty() {
                 let element = self.pending_replacement.take().unwrap_or_else(|| {
@@ -2693,11 +2829,17 @@ impl<'a> VisitMut<'a> for DevupVisitor<'a> {
                         &self.ast,
                     ))
                 });
-                self.pending_replacement = Some(call_with_values(&self.ast, values, element));
+                let mut captured = call_with_values(&self.ast, values, element);
+                *captured.span_mut() = elem.span;
+                self.pending_replacement = Some(captured);
             }
         }
     }
 }
+
+#[cfg(test)]
+#[path = "visit_capture_coverage_tests.rs"]
+mod capture_coverage_tests;
 
 #[cfg(test)]
 #[allow(clippy::expect_used, clippy::unwrap_used)]

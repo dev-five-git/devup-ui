@@ -11,15 +11,18 @@ import { deserialize, serialize } from 'node:v8'
 import {
   buildCanonicalMap,
   buildStaticImportGraph,
+  collectNumberedFiles,
   computeCompiledFiles,
   computeFileRoutes,
   createCompatTypes,
   createNodeModulesExcludeRegex,
   createThemeInterfaceArgs,
   type DevupUIBasePluginOptions,
+  extractedNeedles,
   loadDevupConfigSync,
   mergeImportAliases,
   planAtomHoist,
+  seedFileNumbers,
   type StaticImportGraph,
 } from '@devup-ui/plugin-utils'
 import { type NextConfig } from 'next'
@@ -29,13 +32,20 @@ import {
   startCoordinator,
   takeExtractOutput,
 } from './coordinator'
+import {
+  removeStalePortFile,
+  resolveCoordinatorPortFile,
+} from './coordinator-port'
 import { collectProductionPrewarmFiles } from './prewarm'
 import { elapsedMs, profileStart, reportProfile } from './profile'
 import { loadWasm, loadWebpackPlugin } from './wasm'
 
 /** Options accepted by the Next.js integration. */
 export type DevupUINextPluginOptions = Partial<DevupUIBasePluginOptions> & {
-  /** Share atoms reached by at least this many routes. */
+  /**
+   * Share atoms of canonical buckets whose predeclared route reach is at least
+   * this many routes (clamped to >= 2). Other buckets keep per-file names.
+   */
   atomHoist?: number
 }
 
@@ -225,13 +235,13 @@ export function DevupUI(
       registerTheme,
       setAtomHoist,
       setPrefix,
+      setNamingRoot,
     } = wasm
 
     registerShorthands(shorthands ?? {})
 
-    if (prefix) {
-      setPrefix(prefix)
-    }
+    setPrefix(prefix ?? null)
+    setNamingRoot(process.cwd())
 
     writeFileSync(
       join(distDir, 'compat.d.ts'),
@@ -246,7 +256,7 @@ export function DevupUI(
       importClassMap(JSON.parse(readFileSync(classMapFile, 'utf-8')))
       importFileMap(JSON.parse(readFileSync(fileMapFile, 'utf-8')))
     } catch {
-      // No previous session state (first run) or corrupt files — start fresh
+      // No previous session state (first run) or corrupt files, start fresh
     }
 
     const devupConfig = loadDevupConfigSync(devupFile)
@@ -264,19 +274,21 @@ export function DevupUI(
     // disable turbo parallel
     const excludeRegex = createNodeModulesExcludeRegex(include, '.mdx.[tj]sx?$')
 
-    const coordinatorPortFile = join(distDir, 'coordinator.port')
+    const coordinatorPortFile = resolveCoordinatorPortFile(distDir)
 
     // Pre-pass: single-importer collapse ALWAYS runs (files with exactly one
     // importer merge into that importer's bucket, so their identical atoms share
-    // one class). Atom-level hoisting COMPOSES on top: an atom reached by
-    // >= atomHoist distinct routes is emitted once into the shared devup-ui.css.
+    // one class). Atom-level hoisting COMPOSES on top: a canonical bucket whose
+    // predeclared route reach is >= atomHoist is eligible, and only its atoms
+    // get shared content names and land in the shared devup-ui.css.
     //
     // The two compose because both are keyed by the canonical bucket: the engine
     // keys property buckets by canonical(filename), and the route-reach map below
-    // is folded onto the SAME canonical bucket — so route_count_for_files() looks
-    // atoms up by bucket and the lookup hits. `atomHoist` must be configured
-    // BEFORE any extraction so atoms receive global (shared) class names; the
-    // coordinator shares this WASM instance, so it applies to every /extract.
+    // is folded onto the SAME canonical bucket. Import routes, then set the
+    // threshold, BEFORE any extraction: eligibility freezes there. Private or
+    // unmapped buckets keep per-file names, and reach seen later cannot promote
+    // or rename them until resetBuildState. The coordinator shares this WASM
+    // instance, so it applies to every /extract.
     const atomMode =
       atomHoist !== undefined && Number.isFinite(atomHoist) && atomHoist > 0
     const extract = sourceMap ? codeExtract : codeExtractWithoutSourceMap
@@ -358,6 +370,24 @@ export function DevupUI(
       })
     }
 
+    // Number every file the build can extract in path order, so class prefixes
+    // do not depend on the order modules reach a loader. Numbers restored above
+    // stay; files that appear later get the numbers after them.
+    try {
+      const cwd = process.cwd()
+      seedFileNumbers(
+        { seedFileMap: wasm.seedFileMap },
+        collectNumberedFiles({
+          roots: ['src', 'app', 'pages'].map((dir) => resolve(cwd, dir)),
+          include,
+          cwd,
+          needles: extractedNeedles(libPackage, importAliases),
+          toId: (path) => relative(cwd, path).replaceAll('\\', '/'),
+        }),
+      )
+    } catch {
+      // Best-effort; numbering falls back to arrival order.
+    }
     // Turbopack can request a CSS module before it has scheduled every source
     // loader. Waiting for a quiet window is not a compilation-complete signal:
     // a CSS request can itself hold up the next extraction wave. In one-shot
@@ -462,11 +492,9 @@ export function DevupUI(
     // Delete stale port file from previous session so loaders don't connect
     // to a dead coordinator port. The new coordinator writes a fresh port file
     // once it starts listening.
-    try {
-      unlinkSync(coordinatorPortFile)
-    } catch {
-      // Port file doesn't exist (first run) — safe to ignore
-    }
+    // A live coordinator owned by another process is left alone (see
+    // resolveCoordinatorPortFile).
+    removeStalePortFile(coordinatorPortFile)
 
     const coordinator = startCoordinator({
       wasm,

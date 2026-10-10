@@ -25,5 +25,5 @@ ToBTreeSet {
             },
         ),
     },
-    code: "import \"@devup-ui/core/devup-ui.css\";\nb === 1 ? <section className=\"a b\" /> : <div className=\"a b\" />;\n",
+    code: "import \"@devup-ui/core/devup-ui.css\";\nb === 1 ? <section className=\"OLwidth-v100_c OLheight-v100_c\" /> : <div className=\"OLwidth-v100_c OLheight-v100_c\" />;\n",
 }

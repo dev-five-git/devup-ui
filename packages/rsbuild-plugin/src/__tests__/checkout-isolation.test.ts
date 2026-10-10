@@ -67,6 +67,7 @@ async function extractedCssDirIn(checkout: string) {
     cssDir: join(checkout, 'df', 'devup-ui'),
   })
   await plugin.setup({
+    context: { rootPath: checkout },
     transform,
     modifyRsbuildConfig: mock(),
     modifyRspackConfig: mock(),

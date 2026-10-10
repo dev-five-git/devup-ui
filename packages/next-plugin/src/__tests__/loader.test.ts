@@ -603,6 +603,67 @@ describe('devupUILoader', () => {
       requestSpy.mockRestore()
     })
 
+    it('should report a coordinator that no longer answers', async () => {
+      existsSyncSpy.mockReturnValue(true)
+      readFileSyncSpy.mockReturnValue('12346')
+
+      const requestSpy = spyOn(http, 'request').mockImplementation(
+        (_options: any, _callback?: any) => {
+          const fakeReq = {
+            on: mock((event: string, handler: (...args: unknown[]) => void) => {
+              if (event === 'error') {
+                setTimeout(
+                  () =>
+                    handler(
+                      Object.assign(new Error('refused'), {
+                        code: 'ECONNREFUSED',
+                      }),
+                    ),
+                  0,
+                )
+              }
+              return fakeReq
+            }),
+            write: mock(),
+            end: mock(),
+          }
+          return asClientRequest(fakeReq)
+        },
+      )
+
+      const asyncCallback = mock()
+      const t = {
+        getOptions: () => ({
+          package: 'package',
+          cssDir: 'cssDir',
+          sheetFile: 'sheetFile',
+          classMapFile: 'classMapFile',
+          fileMapFile: 'fileMapFile',
+          themeFile: 'themeFile',
+          watch: true,
+          singleCss: true,
+          coordinatorPortFile: 'coordinator.port',
+        }),
+        async: mock().mockReturnValue(asyncCallback),
+        resourcePath: join(process.cwd(), 'src', 'App.tsx'),
+        addDependency: mock(),
+      }
+
+      devupUILoader.bind(asLoaderContext(t))(
+        Buffer.from('source code'),
+        'src/App.tsx',
+      )
+
+      await waitFor(() => {
+        expect(asyncCallback).toHaveBeenCalledWith(
+          expect.objectContaining({
+            message: expect.stringContaining('coordinator.port'),
+          }),
+        )
+      })
+
+      requestSpy.mockRestore()
+    })
     it('should handle coordinator non-200 response', async () => {
       existsSyncSpy.mockReturnValue(true)
       readFileSyncSpy.mockReturnValue('12345')
@@ -856,7 +917,11 @@ describe('devupUILoader', () => {
       // Retries 20 times × 50ms = 1s max, then calls back with error
       await waitFor(() => {
         expect(asyncCallback).toHaveBeenCalledWith(
-          new Error('Coordinator port file not found'),
+          expect.objectContaining({
+            message: expect.stringContaining(
+              'Coordinator port file not found: nonexistent.port',
+            ),
+          }),
         )
       }, 3000)
 

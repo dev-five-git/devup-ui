@@ -38,7 +38,7 @@ test.describe('Landing Page - Zero Runtime Validation', () => {
 
   test('no runtime CSS-in-JS globals are present', async ({ page }) => {
     const runtimeGlobals = await page.evaluate(() => {
-      const win = window as Record<string, unknown>
+      const win = window
       return {
         // Common CSS-in-JS runtime indicators
         __devup__: '__devup__' in win,
@@ -147,17 +147,31 @@ test.describe('Landing Page - Zero Runtime Validation', () => {
       .evaluate((element) => Array.from(element.classList))
 
     expect(headingClasses.length).toBeGreaterThan(1)
-    const atomicClasses = headingClasses.filter((className) =>
-      /^(?:[a-z]-)?[a-z0-9_]{1,3}$/i.test(className),
+    const contentAtom =
+      /^[OR](?:H[a-z0-9_]{16}|L(?=[a-z0-9_-]{1,16}$)(?:d-)?[a-z0-9_]{1,16}(?:-[vlosgay0-3][a-z0-9_]{0,14}){0,7})$/
+    const privateCounterAtom =
+      /^(?:(?![a-z0-9_]{0,5}ad-)[a-z_][a-z0-9_]{0,6}|[a-z_][a-z0-9_]{0,4}a-d|a-d)-(?:(?![a-z0-9_]{0,11}ad$)[a-z_][a-z0-9_]{0,12}|[a-z_][a-z0-9_]{0,10}a-d|a-d)$/
+    // Landing has no project prefix. D9 retains its existing anti-ad splice.
+    const d9Scope =
+      '(?:(?![a-z0-9_]{0,5}ad-)[a-z_][a-z0-9_]{0,6}|[a-z_][a-z0-9_]{0,4}a-d|a-d)'
+    const fallbackScope =
+      'F(?:H[a-z0-9_]{16}|L(?=[a-z0-9_]{1,16}-)(?:[a-z0-9]|_(?:[dupchoemslnaq]|x[0-9a-f]+_)){1,16})'
+    const scopedContentAtom = new RegExp(
+      `^(?:${d9Scope}|${fallbackScope})-${contentAtom.source.slice(1, -1)}$`,
     )
+    const isCompiledAtom = (className: string) =>
+      contentAtom.test(className) ||
+      (className.length <= (className.startsWith('F') ? 37 : 27) &&
+        scopedContentAtom.test(className)) ||
+      privateCounterAtom.test(className)
+    const atomicClasses = headingClasses.filter(isCompiledAtom)
     expect(atomicClasses.length).toBeGreaterThan(1)
     expect(
       headingClasses.every(
         (className) =>
-          /^(?:[a-z]-)?[a-z0-9_]{1,3}$/i.test(className) ||
-          /^typo-[a-z0-9]+$/i.test(className),
+          isCompiledAtom(className) || /^typo-[a-z0-9]{1,59}$/i.test(className),
       ),
-      `Expected compact base-37 classes, received: ${headingClasses.join(' ')}`,
+      `Expected compiled content, private base-37 or typography classes, received: ${headingClasses.join(' ')}`,
     ).toBe(true)
 
     const generatedRuntimeClasses = await page.evaluate(() =>

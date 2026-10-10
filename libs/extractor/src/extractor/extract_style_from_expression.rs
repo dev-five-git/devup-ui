@@ -9,6 +9,7 @@ use crate::{
     extractor::{
         ExtractResult, extract_style_from_member_expression::extract_style_from_member_expression,
     },
+    provenance::{join_naming, mark, provenance_of},
     utils::{
         expression_to_code, get_number_by_literal_expression, get_str_by_property_key,
         get_string_by_literal_expression, get_string_by_property_key, is_same_expression,
@@ -16,7 +17,7 @@ use crate::{
     },
 };
 use css::{
-    add_selector_params,
+    Naming, add_selector_params,
     at_rule::{media_shorthand_query, split_at_rule_key},
     disassemble_property, get_enum_property_map, get_enum_property_value, is_enum_property,
     is_special_property::is_special_property,
@@ -35,7 +36,20 @@ use oxc_ast::{
 use oxc_span::{GetSpan, SPAN};
 use std::collections::BTreeMap;
 
+mod boolean_expression;
+#[cfg(test)]
+mod boolean_or_tests;
+mod class_only_expression;
+mod falsy_controller;
+#[cfg(test)]
+mod typography_class_tests;
+
 const IGNORED_IDENTIFIERS: [&str; 3] = ["undefined", "NaN", "Infinity"];
+
+fn ignored_global(identifier: &oxc_ast::ast::IdentifierReference<'_>) -> bool {
+    IGNORED_IDENTIFIERS.contains(&identifier.name.as_str())
+        && !crate::source_value_type::is_bound(identifier)
+}
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum LiteralHandling {
@@ -48,9 +62,7 @@ pub enum LiteralHandling {
 pub(crate) fn unreadable<'a>(expression: &Expression<'a>) -> ExtractResult<'a> {
     let holds_nothing = match unwrap_syntax_only(expression) {
         Expression::NullLiteral(_) | Expression::BooleanLiteral(_) => true,
-        Expression::Identifier(identifier) => {
-            IGNORED_IDENTIFIERS.contains(&identifier.name.as_str())
-        }
+        Expression::Identifier(identifier) => ignored_global(identifier),
         Expression::UnaryExpression(unary) => unary.operator == UnaryOperator::Void,
         _ => false,
     };
@@ -78,7 +90,11 @@ fn literal_truthiness(expression: &Expression<'_>) -> Option<bool> {
             Some(literal.value != 0.0 && !literal.value.is_nan())
         }
         Expression::StringLiteral(literal) => Some(!literal.value.is_empty()),
-        Expression::Identifier(identifier) if identifier.name == "undefined" => Some(false),
+        Expression::Identifier(identifier)
+            if identifier.name == "undefined" && ignored_global(identifier) =>
+        {
+            Some(false)
+        }
         _ => None,
     }
 }
@@ -107,7 +123,11 @@ pub(crate) fn flatten_spreads<'a>(ast_builder: &AstBuilder<'a>, object: &mut Obj
                         &mut inner.properties,
                         oxc_allocator::Vec::new_in(ast_builder),
                     );
-                    for property in spread_properties {
+                    let naming = provenance_of(unwrap_syntax_only(&spread.argument));
+                    for mut property in spread_properties {
+                        if let ObjectPropertyKind::ObjectProperty(property) = &mut property {
+                            mark(&mut property.value, naming);
+                        }
                         push_replacing(&mut object.properties, property);
                     }
                 } else {
@@ -203,7 +223,65 @@ fn create_static_styles<'a>(
     styles
 }
 
+/// The styles `expression` gives, each carrying what its value depends on so
+/// production class names stay the same wherever an import resolves
+/// differently.
 pub fn extract_style_from_expression<'a>(
+    ast_builder: &AstBuilder<'a>,
+    name: Option<&str>,
+    expression: &mut Expression<'a>,
+    level: u8,
+    selector: &Option<StyleSelector>,
+    literal_handling: LiteralHandling,
+) -> ExtractResult<'a> {
+    let naming = provenance_of(expression);
+    let origin = crate::style_origin::for_span(expression.span());
+    let _origin = crate::style_origin::CurrentOrigin::enter(expression.span());
+    let owns_assignment = !crate::assignment_owner::AssignmentOwner::active()
+        && name.is_some_and(|name| {
+            !matches!(name, "as" | "typography" | "selectors")
+                && get_enum_property_map(name).is_none()
+        })
+        && (name
+            .is_some_and(|name| !name.starts_with(['_', '@']) && !is_nested_selector_key(name))
+            || matches!(
+                unwrap_syntax_only(expression),
+                Expression::ConditionalExpression(_)
+                    | Expression::LogicalExpression(_)
+                    | Expression::ArrayExpression(_)
+                    | Expression::ComputedMemberExpression(_)
+            ));
+    let source = owns_assignment.then(|| expression.clone_in(ast_builder.allocator()));
+    let _assignment = (owns_assignment
+        && name.is_some_and(|name| !name.starts_with(['_', '@']) && !is_nested_selector_key(name)))
+    .then(|| crate::assignment_owner::AssignmentOwner::enter(expression));
+    let mut result = extract_style_values(
+        ast_builder,
+        name,
+        expression,
+        level,
+        selector,
+        literal_handling,
+    );
+    if naming != Naming::Own {
+        join_naming(&mut result.styles, naming);
+    }
+    crate::style_origin::fill(&mut result.styles, &origin);
+    if let Some(source) = source {
+        if crate::static_assignment::literal_source(&source)
+            && result
+                .styles
+                .iter()
+                .all(crate::static_assignment::class_only)
+        {
+            return result;
+        }
+        result.styles = crate::assignment_owner::capture_styles(source, result.styles);
+    }
+    result
+}
+
+fn extract_style_values<'a>(
     ast_builder: &AstBuilder<'a>,
     name: Option<&str>,
     expression: &mut Expression<'a>,
@@ -213,6 +291,28 @@ pub fn extract_style_from_expression<'a>(
 ) -> ExtractResult<'a> {
     let mut typo = false;
     let expression = unwrap_syntax_only_mut(expression);
+
+    if let Some(name) = name
+        && (name == "typography" || get_enum_property_map(name).is_some())
+        && class_only_expression::runtime_scalar(expression)
+        && get_string_by_literal_expression(expression).is_none()
+        && !matches!(
+            expression,
+            Expression::BooleanLiteral(_) | Expression::NullLiteral(_)
+        )
+        && !matches!(expression, Expression::Identifier(value) if ignored_global(value))
+    {
+        return ExtractResult {
+            styles: vec![dynamic_style(
+                ast_builder,
+                name,
+                expression,
+                level,
+                selector,
+            )],
+            ..ExtractResult::default()
+        };
+    }
 
     if name.is_none() && selector.is_none() {
         let mut style_order = None;
@@ -236,7 +336,13 @@ pub fn extract_style_from_expression<'a>(
                             if let Some(name) = get_str_by_property_key(&prop.key)
                                 && !is_special_property(&name)
                             {
-                                for disassembled in disassemble_property(&name) {
+                                let disassembled_properties =
+                                    disassemble_property(&name).collect::<Vec<_>>();
+                                crate::sparse_sites::plan_numeric_roles(
+                                    &prop.value,
+                                    &disassembled_properties,
+                                );
+                                for disassembled in disassembled_properties {
                                     let disassembled: &str = &disassembled;
                                     if name == "styleOrder" {
                                         style_order = get_number_by_literal_expression(&prop.value)
@@ -494,8 +600,33 @@ pub fn extract_style_from_expression<'a>(
         }
         typo = name == "typography";
     }
+    if matches!(expression, Expression::BooleanLiteral(_)) {
+        return ExtractResult::default();
+    }
+    if name.is_some_and(|name| name != "typography" && get_enum_property_map(name).is_none())
+        && matches!(
+            expression,
+            Expression::NumericLiteral(_) | Expression::UnaryExpression(_)
+        )
+        && get_number_by_literal_expression(expression).is_some_and(|number| !number.is_finite())
+    {
+        return ExtractResult::default();
+    }
     if let Some(value) = get_string_by_literal_expression(expression) {
         if let Some(name) = name {
+            let normalized = if matches!(expression, Expression::TemplateLiteral(_)) {
+                value.trim_end_matches(';')
+            } else {
+                value.as_ref()
+            };
+            let normalized = normalized.strip_suffix(" !important").unwrap_or(normalized);
+            if !typo
+                && get_enum_property_map(name).is_none()
+                && !name.starts_with("--")
+                && normalized.is_empty()
+            {
+                return ExtractResult::default();
+            }
             ExtractResult {
                 styles: if typo {
                     vec![typography_style(value.into_owned(), level, selector)]
@@ -607,7 +738,7 @@ pub fn extract_style_from_expression<'a>(
                     } else if typo {
                         vec![ExtractStyleProp::Expression {
                             expression: Expression::new_template_literal(
-                                SPAN,
+                                expression.span(),
                                 oxc_allocator::Vec::from_array_in(
                                     [
                                         TemplateElement::new(
@@ -655,68 +786,8 @@ pub fn extract_style_from_expression<'a>(
                 let Some(name) = name else {
                     return unreadable(expression);
                 };
-                if IGNORED_IDENTIFIERS.contains(&identifier.name.as_str()) {
+                if ignored_global(identifier) {
                     ExtractResult::default()
-                } else if typo
-                    && let Some(style) = conditional_typography(
-                        ast_builder,
-                        &Expression::new_identifier(SPAN, identifier.name.as_str(), ast_builder),
-                        level,
-                        selector,
-                    )
-                {
-                    ExtractResult {
-                        styles: vec![style],
-                        ..ExtractResult::default()
-                    }
-                } else if typo {
-                    ExtractResult {
-                        styles: vec![ExtractStyleProp::Expression {
-                            expression: Expression::new_conditional_expression(
-                                SPAN,
-                                Expression::new_identifier(
-                                    SPAN,
-                                    identifier.name.as_str(),
-                                    ast_builder,
-                                ),
-                                Expression::new_template_literal(
-                                    SPAN,
-                                    oxc_allocator::Vec::from_array_in(
-                                        [
-                                            TemplateElement::new(
-                                                SPAN,
-                                                TemplateElementValue {
-                                                    raw: Str::from("typo-"),
-                                                    cooked: None,
-                                                },
-                                                false,
-                                                ast_builder,
-                                            ),
-                                            TemplateElement::new(
-                                                SPAN,
-                                                TemplateElementValue {
-                                                    raw: Str::from(""),
-                                                    cooked: None,
-                                                },
-                                                true,
-                                                ast_builder,
-                                            ),
-                                        ],
-                                        ast_builder,
-                                    ),
-                                    oxc_allocator::Vec::from_array_in(
-                                        [expression.clone_in(ast_builder.allocator())],
-                                        ast_builder,
-                                    ),
-                                    ast_builder,
-                                ),
-                                Expression::new_string_literal(SPAN, "", None, ast_builder),
-                                ast_builder,
-                            ),
-                            styles: vec![],
-                        }],
-                        ..ExtractResult::default()
-                    }
                 } else {
                     ExtractResult {
                         styles: vec![dynamic_style(
@@ -736,7 +807,7 @@ pub fn extract_style_from_expression<'a>(
                 let nullish = matches!(
                     unwrap_syntax_only(&logical.left),
                     Expression::NullLiteral(_)
-                ) || matches!(unwrap_syntax_only(&logical.left), Expression::Identifier(identifier) if identifier.name == "undefined");
+                ) || matches!(unwrap_syntax_only(&logical.left), Expression::Identifier(identifier) if identifier.name == "undefined" && ignored_global(identifier));
                 let takes_right = match logical.operator {
                     LogicalOperator::And => literal_truthiness(&logical.left) == Some(true),
                     LogicalOperator::Or => literal_truthiness(&logical.left) == Some(false),
@@ -788,7 +859,21 @@ pub fn extract_style_from_expression<'a>(
                     LogicalOperator::Or => ExtractResult {
                         styles: vec![ExtractStyleProp::Conditional {
                             condition: logical.left.clone_in(ast_builder.allocator()),
-                            consequent: None,
+                            consequent: name
+                                .filter(|_| !boolean_expression::is_boolean(&logical.left))
+                                .map(|_| {
+                                    Box::new(ExtractStyleProp::StaticArray(
+                                        extract_style_from_expression(
+                                            ast_builder,
+                                            name,
+                                            &mut logical.left,
+                                            level,
+                                            selector,
+                                            literal_handling,
+                                        )
+                                        .styles,
+                                    ))
+                                }),
                             alternate: res,
                         }],
                         ..ExtractResult::default()
@@ -797,7 +882,21 @@ pub fn extract_style_from_expression<'a>(
                         styles: vec![ExtractStyleProp::Conditional {
                             condition: logical.left.clone_in(ast_builder.allocator()),
                             consequent: res,
-                            alternate: None,
+                            alternate: name
+                                .filter(|name| {
+                                    !name.starts_with(['_', '@'])
+                                        && !is_nested_selector_key(name)
+                                        && !boolean_expression::is_boolean(&logical.left)
+                                })
+                                .and_then(|name| {
+                                    falsy_controller::zero(
+                                        ast_builder,
+                                        name,
+                                        &logical.left,
+                                        level,
+                                        selector,
+                                    )
+                                }),
                         }],
                         ..ExtractResult::default()
                     },
@@ -977,7 +1076,10 @@ pub fn extract_style_from_expression<'a>(
                     if key_name == "params" {
                         continue;
                     }
-                    for name in disassemble_property(&key_name) {
+                    let disassembled_properties =
+                        disassemble_property(&key_name).collect::<Vec<_>>();
+                    crate::sparse_sites::plan_numeric_roles(&o.value, &disassembled_properties);
+                    for name in disassembled_properties {
                         let name: &str = &name;
                         props.extend(
                             extract_style_from_expression(
@@ -1021,7 +1123,10 @@ pub fn extract_style_from_expression<'a>(
                                 level,
                                 &format!("({})", code.trim_end().trim_end_matches(';')),
                                 selector.clone(),
-                            ),
+                            )
+                            .with_presence()
+                            .with_conversion(crate::extract_style::numeric_conversion::NumericConversion::for_expression(name, expression))
+                            .with_assignment_site(expression.span().start),
                         ))],
                         ..ExtractResult::default()
                     }
@@ -1056,7 +1161,8 @@ pub(crate) fn place_in_layer(props: &mut [ExtractStyleProp<'_>], layer: &str) {
         match prop {
             ExtractStyleProp::Static(ExtractStyleValue::Static(style)) => nest(&mut style.layer),
             ExtractStyleProp::Static(ExtractStyleValue::Dynamic(style)) => nest(&mut style.layer),
-            ExtractStyleProp::StaticArray(props) => place_in_layer(props, layer),
+            ExtractStyleProp::StaticArray(props)
+            | ExtractStyleProp::Evaluated { styles: props, .. } => place_in_layer(props, layer),
             ExtractStyleProp::Conditional {
                 consequent,
                 alternate,
@@ -1116,7 +1222,8 @@ fn declared_from(props: &[ExtractStyleProp<'_>]) -> Declared {
                 };
                 Declared::from([((selector.cloned(), property), level)])
             }
-            ExtractStyleProp::StaticArray(props) => declared_from(props),
+            ExtractStyleProp::StaticArray(props)
+            | ExtractStyleProp::Evaluated { styles: props, .. } => declared_from(props),
             ExtractStyleProp::Conditional {
                 consequent,
                 alternate,
@@ -1185,7 +1292,8 @@ fn skip_declared(props: &mut [ExtractStyleProp<'_>], declared: &Declared) {
                     style.value = format!("{}|{}", style.value, skipped.join(","));
                 }
             }
-            ExtractStyleProp::StaticArray(props) => skip_declared(props, declared),
+            ExtractStyleProp::StaticArray(props)
+            | ExtractStyleProp::Evaluated { styles: props, .. } => skip_declared(props, declared),
             ExtractStyleProp::Conditional {
                 consequent,
                 alternate,
@@ -1285,6 +1393,10 @@ fn typography_atom(name: &str, level: u8, selector: &Option<StyleSelector>) -> E
         style_order: None,
         layer: None,
         theme_token_resolution: ThemeTokenResolution::default(),
+        naming: css::Naming::Own,
+        counter_owner: crate::sparse_sites::counter_owner(),
+        origin: crate::style_origin::current(),
+        producer_policy: crate::sparse_sites::producer_policy(),
     }
 }
 
@@ -1333,7 +1445,14 @@ pub fn dynamic_style<'a>(
     level: u8,
     selector: &Option<StyleSelector>,
 ) -> ExtractStyleProp<'a> {
-    if let Some(map) = get_enum_property_map(name) {
+    if name == "typography" {
+        conditional_typography(ast_builder, expression, level, selector).unwrap_or_else(|| {
+            ExtractStyleProp::Expression {
+                expression: crate::element_evaluation::raw_typography(ast_builder, expression),
+                styles: vec![],
+            }
+        })
+    } else if let Some(map) = get_enum_property_map(name) {
         ExtractStyleProp::Enum {
             condition: expression.clone_in(ast_builder.allocator()),
             map: map
@@ -1353,12 +1472,21 @@ pub fn dynamic_style<'a>(
                 .collect(),
         }
     } else {
-        ExtractStyleProp::Static(ExtractStyleValue::Dynamic(ExtractDynamicStyle::new(
-            name,
-            level,
-            &expression_to_code(expression),
-            selector.clone(),
-        )))
+        ExtractStyleProp::Static(ExtractStyleValue::Dynamic(
+            ExtractDynamicStyle::new(
+                name,
+                level,
+                &expression_to_code(expression),
+                selector.clone(),
+            )
+            .with_presence()
+            .with_conversion(
+                crate::extract_style::numeric_conversion::NumericConversion::for_expression(
+                    name, expression,
+                ),
+            )
+            .with_assignment_site(expression.span().start),
+        ))
     }
 }
 

@@ -35,5 +35,5 @@ ToBTreeSet {
             },
         ),
     },
-    code: "import \"@devup-ui/react/devup-ui.css\";\nconst ternary = <div className={(on ? \"a\" : \"b\") || \"\"} />;\nconst logical = <div className={on && \"c\" || \"\"} />;\n",
+    code: "import \"@devup-ui/react/devup-ui.css\";\nconst ternary = ((__devupClass71) => <div className={__devupClass71 || \"\"} />)(on ? \"OLpadding-v1rem\" : \"OLpadding-v2rem\");\nconst logical = ((__devupClass127) => <div className={__devupClass127 || \"\"} />)(on && \"OHch__cvx9oho86ber\");\n",
 }

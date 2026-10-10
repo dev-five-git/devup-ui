@@ -1,19 +1,28 @@
 use std::fmt::{Debug, Formatter};
 
 use css::{
-    sheet_to_classname, sheet_to_variable_name,
+    Naming, Site,
+    content_name::{AtomContent, ContentName},
+    sheet_to_classname_owned, sheet_to_variable_name_at,
+    style_origin::Origin,
     style_selector::{StyleSelector, optimize_selector},
 };
 
+use super::numeric_conversion::NumericConversion;
 use crate::extract_style::{ExtractStyleProperty, style_property::StyleProperty};
 
-#[derive(PartialEq, Clone, Eq, Hash, Ord, PartialOrd)]
+#[path = "dynamic_identity.rs"]
+mod identity;
+
+#[derive(Clone)]
 pub struct ExtractDynamicStyle {
     /// property
     property: String,
     /// responsive
     level: u8,
     identifier: String,
+    conversion: NumericConversion,
+    presence: bool,
 
     /// selector
     selector: Option<StyleSelector>,
@@ -24,6 +33,13 @@ pub struct ExtractDynamicStyle {
     important: bool,
 
     pub(crate) layer: Option<String>,
+
+    pub(crate) naming: Naming,
+
+    /// Where in the original sources it was written; names its variable
+    pub(crate) site: Option<Site>,
+    pub origin: Origin,
+    producer_policy: super::ProducerPolicy,
 }
 
 impl Debug for ExtractDynamicStyle {
@@ -39,6 +55,9 @@ impl Debug for ExtractDynamicStyle {
         }
         if let Some(layer) = &self.layer {
             s.field("layer", layer);
+        }
+        if self.naming != Naming::Own {
+            s.field("naming", &self.naming);
         }
         s.finish()
     }
@@ -100,6 +119,23 @@ fn runtime_code(identifier: &str) -> String {
 }
 
 impl ExtractDynamicStyle {
+    /// Produce retained class and assignment-variable allocations on the dormant path.
+    ///
+    /// # Errors
+    /// Rejects Current construction and unnumbered assignment sites before reservation.
+    pub fn counter_produce(
+        &self,
+        filename: Option<&str>,
+    ) -> Result<super::ProducedDynamic, super::CounterProducerError> {
+        super::counter_producer::produce_dynamic(self, filename)
+    }
+
+    /// The immutable identity policy selected when this record was constructed.
+    #[must_use]
+    pub const fn producer_policy(&self) -> super::ProducerPolicy {
+        self.producer_policy
+    }
+
     /// create a new `ExtractDynamicStyle`
     pub fn new(
         property: &str,
@@ -114,11 +150,47 @@ impl ExtractDynamicStyle {
             property: property.to_string(),
             level,
             identifier,
+            conversion: NumericConversion::Keep,
+            presence: false,
             selector: selector.map(optimize_selector),
             style_order: None,
             important,
             layer: None,
+            naming: Naming::Own,
+            site: None,
+            origin: crate::style_origin::current(),
+            producer_policy: crate::sparse_sites::producer_policy(),
         }
+    }
+
+    /// Place it where the code being read has it at `start`.
+    #[must_use]
+    pub fn at(self, start: u32) -> Self {
+        self.at_role(start, 0)
+    }
+
+    pub(crate) fn with_assignment_site(mut self, start: u32) -> Self {
+        self.site = crate::assignment_owner::site(start, &self);
+        self
+    }
+
+    /// Select a sub-role by source syntax order, not dynamic extraction order.
+    #[must_use]
+    pub fn at_role(mut self, start: u32, role: usize) -> Self {
+        self.site = crate::provenance::site_at(start, role, &self.identifier);
+        self
+    }
+
+    /// The CSS variable that carries its value.
+    #[must_use]
+    pub fn variable_name(&self) -> String {
+        let selector = super::class_selector(self.selector.as_ref(), self.layer());
+        sheet_to_variable_name_at(
+            self.property.as_str(),
+            self.level,
+            selector.as_deref(),
+            self.site.clone(),
+        )
     }
 
     pub const fn property(&self) -> &str {
@@ -137,6 +209,29 @@ impl ExtractDynamicStyle {
         self.identifier.as_str()
     }
 
+    pub(crate) fn replace_identifier(&mut self, identifier: &str) {
+        self.identifier = identifier.to_string();
+    }
+
+    pub(crate) const fn with_conversion(mut self, conversion: NumericConversion) -> Self {
+        self.conversion = conversion;
+        self
+    }
+
+    pub(crate) const fn conversion(&self) -> NumericConversion {
+        self.conversion
+    }
+
+    /// Ordinary property values select their class from the captured raw value.
+    pub(crate) const fn with_presence(mut self) -> Self {
+        self.presence = true;
+        self
+    }
+
+    pub(crate) const fn presence(&self) -> bool {
+        self.presence
+    }
+
     pub const fn style_order(&self) -> Option<u8> {
         self.style_order
     }
@@ -145,29 +240,68 @@ impl ExtractDynamicStyle {
         self.important
     }
 
+    pub const fn naming(&self) -> Naming {
+        self.naming
+    }
+
+    /// Read source identity without changing its position or syntax role.
+    pub const fn site(&self) -> Option<&Site> {
+        self.site.as_ref()
+    }
+
+    /// Original allocation identity already carried by the dynamic source site.
+    pub fn counter_owner(&self) -> css::CounterOwner {
+        self.site
+            .as_ref()
+            .map_or(css::CounterOwner::Inactive, |site| {
+                css::CounterOwner::from_source(&site.file)
+            })
+    }
+
     pub fn layer(&self) -> Option<&str> {
         self.layer.as_deref()
+    }
+
+    #[must_use]
+    pub fn effective_value(&self) -> String {
+        format!(
+            "{}{}",
+            self.conversion.declaration(&self.variable_name()),
+            if self.important { " !important" } else { "" }
+        )
+    }
+
+    fn atom_content<'a>(&'a self, value: &'a str) -> AtomContent<'a> {
+        AtomContent {
+            property: &self.property,
+            value: Some(value),
+            naming: self.naming,
+            level: self.level,
+            order: self.style_order.unwrap_or(255),
+            selector: self.selector.as_ref(),
+            layer: self.layer.as_deref(),
+            dynamic: true,
+        }
+    }
+
+    #[must_use]
+    pub fn content_name(&self) -> ContentName {
+        self.atom_content(&self.effective_value()).content()
     }
 }
 
 impl ExtractStyleProperty for ExtractDynamicStyle {
     fn extract(&self, filename: Option<&str>) -> StyleProperty {
-        let selector = super::class_selector(self.selector.as_ref(), self.layer());
+        let variable_name = self.variable_name();
+        let declaration = self.effective_value();
         StyleProperty::Variable {
-            class_name: sheet_to_classname(
-                self.property.as_str(),
-                self.level,
-                None,
-                selector.as_deref(),
-                self.style_order,
+            class_name: sheet_to_classname_owned(
+                &self.atom_content(&declaration),
                 filename,
+                self.counter_owner(),
             ),
-            variable_name: sheet_to_variable_name(
-                self.property.as_str(),
-                self.level,
-                selector.as_deref(),
-            ),
-            identifier: self.identifier.clone(),
+            variable_name,
+            identifier: self.conversion.inline(&self.identifier),
         }
     }
 }

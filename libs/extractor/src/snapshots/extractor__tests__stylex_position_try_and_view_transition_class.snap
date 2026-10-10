@@ -6,16 +6,16 @@ ToBTreeSet {
     styles: {
         Css(
             ExtractCss {
-                css: ".b{animation-duration:300ms;}",
+                css: ".Ksxp_dtest_ptsx_d0{animation-duration:300ms;}",
                 file: "test.tsx",
             },
         ),
         Css(
             ExtractCss {
-                css: "@position-try --a{top:0;inset-block-end:auto;}",
+                css: "@position-try --Ksxp_dtest_ptsx_d1{top:0;inset-block-end:auto;}",
                 file: "test.tsx",
             },
         ),
     },
-    code: "import \"@devup-ui/react/devup-ui.css\";\nimport stylex from \"@stylexjs/stylex\";\nconst fallback = \"--a\";\nconst transition = \"b\";\n",
+    code: "import \"@devup-ui/react/devup-ui.css\";\nimport stylex from \"@stylexjs/stylex\";\nconst fallback = \"--Ksxp_dtest_ptsx_d1\";\nconst transition = \"Ksxp_dtest_ptsx_d0\";\n",
 }

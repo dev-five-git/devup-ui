@@ -15,5 +15,5 @@ ToBTreeSet {
             },
         ),
     },
-    code: "import \"@devup-ui/react/devup-ui.css\";\nconst Themed = ({ style, className, ...rest }) => <div {...rest} className={[\"a\", className].filter(Boolean).join(\" \")} style={style} />;\n",
+    code: "import \"@devup-ui/react/devup-ui.css\";\nconst Themed = ((__devupAssignment80) => ({ style, className, ...rest }) => <div {...rest} className={[__devupAssignment80?.[0] ?? \"\", className].filter(Boolean).join(\" \")} style={{\n\t...{ ...__devupAssignment80?.[1] },\n\t...style\n}} />)(((__devupValue) => [\n\t\"OHdbzppj8a40nm462g\",\n\t{},\n\t__devupValue\n])((p) => p.theme.brand));\n",
 }

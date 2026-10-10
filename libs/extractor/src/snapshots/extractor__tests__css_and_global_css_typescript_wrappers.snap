@@ -58,5 +58,5 @@ ToBTreeSet {
             },
         ),
     },
-    code: "import \"@devup-ui/react/devup-ui.css\";\nconst a = \"a\";\nconst b = \"b\";\n;\nconst k = \"c\";\n",
+    code: "import \"@devup-ui/react/devup-ui.css\";\nconst a = \"OLbackground-vred\";\nconst b = \"OLcolor-vblue\";\n;\nconst k = \"KHch95dk0jofy9eoyu\";\n",
 }

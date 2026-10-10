@@ -1,7 +1,7 @@
-use css::class_map::{set_class_map, with_class_map};
-use css::file_map::{
-    canonical, is_global, set_canonical_map, set_file_map, with_canonical_map, with_file_map,
-};
+use css::class_map::with_class_map;
+use css::file_map::{canonical, is_global, set_canonical_map, with_canonical_map, with_file_map};
+#[cfg(test)]
+use css::{class_map::set_class_map, file_map::set_file_map};
 use extractor::extract_style::extract_style_value::ExtractStyleValue;
 use extractor::{
     ExtractOption, ImportAlias, ModuleResolver, ResolvedModule, extract, extract_with_modules,
@@ -14,6 +14,76 @@ use std::collections::{BTreeMap, HashMap};
 use std::fmt::Display;
 use std::sync::{LazyLock, Mutex};
 use wasm_bindgen::prelude::*;
+mod administration;
+#[cfg(test)]
+mod admission_contract_tests;
+#[cfg(all(test, not(target_arch = "wasm32")))]
+mod admission_exclusion_tests;
+#[cfg(test)]
+mod admission_guard_tests;
+#[cfg(test)]
+mod exact_class_tests;
+#[cfg(test)]
+mod exact_nested_tests;
+#[cfg(test)]
+mod exact_plan_tests;
+#[cfg(test)]
+mod exact_rollback_tests;
+#[cfg(test)]
+mod exact_test_support;
+mod extraction_rollback;
+mod sheet_entry;
+use administration::with_administration;
+use css::admission::with_admission;
+#[cfg(test)]
+mod cache6_adoption_tests;
+#[cfg(test)]
+mod cache6_configuration_tests;
+#[cfg(test)]
+mod cache6_damage_tests;
+#[cfg(test)]
+mod cache6_nested_tests;
+#[cfg(test)]
+mod cache6_protocol_tests;
+#[doc(hidden)]
+pub mod cache6_restore;
+#[cfg(test)]
+mod cache6_rollback_tests;
+#[cfg(test)]
+mod cache6_seed_tests;
+mod cache6_session;
+#[cfg(test)]
+mod cache6_test_support;
+mod cache_atom_proof;
+mod cache_descriptor;
+mod cache_names;
+mod cache_restore;
+mod cache_source_names;
+mod cache_special_proof;
+#[cfg(test)]
+mod cache_v4_tests;
+#[cfg(test)]
+mod compact_source_tests;
+#[cfg(test)]
+mod content_location_contract_tests;
+#[cfg(test)]
+mod content_name_tests;
+#[cfg(test)]
+mod naming_root_tests;
+#[cfg(test)]
+mod original_counter_tests;
+#[cfg(test)]
+mod prefix_cache_tests;
+#[doc(hidden)]
+pub mod prospective_output;
+#[cfg(test)]
+mod prospective_output_tests;
+#[cfg(test)]
+mod scoped_cache_tests;
+#[cfg(test)]
+mod scoped_cascade_tests;
+#[cfg(test)]
+mod static_theme_tests;
 
 static GLOBAL_STYLE_SHEET: LazyLock<Mutex<StyleSheet>> =
     LazyLock::new(|| Mutex::new(StyleSheet::default()));
@@ -32,20 +102,26 @@ fn with_style_sheet<F, R>(f: F) -> R
 where
     F: FnOnce(&StyleSheet) -> R,
 {
-    let guard = GLOBAL_STYLE_SHEET
-        .lock()
-        .unwrap_or_else(std::sync::PoisonError::into_inner);
-    f(&guard)
+    with_admission(|| {
+        let _entry = sheet_entry::SheetEntry::enter();
+        let guard = GLOBAL_STYLE_SHEET
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        f(&guard)
+    })
 }
 
 fn with_style_sheet_mut<F, R>(f: F) -> R
 where
     F: FnOnce(&mut StyleSheet) -> R,
 {
-    let mut guard = GLOBAL_STYLE_SHEET
-        .lock()
-        .unwrap_or_else(std::sync::PoisonError::into_inner);
-    f(&mut guard)
+    with_admission(|| {
+        let _entry = sheet_entry::SheetEntry::enter();
+        let mut guard = GLOBAL_STYLE_SHEET
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        f(&mut guard)
+    })
 }
 
 #[cfg(not(tarpaulin_include))]
@@ -74,7 +150,7 @@ impl Output {
         css_file: Option<String>,
         import_main_css: bool,
         dependencies: Vec<String>,
-    ) -> Self {
+    ) -> Result<Self, String> {
         // Use the bucket identity (single-importer collapse) so the sheet's CSS
         // naming + property bucket + emitted chunk match the canonical class names
         // the extractor already baked into `code`. Identity when no map is loaded.
@@ -83,14 +159,22 @@ impl Output {
         let canonical_filename = canonical(&filename);
         let global = single_css || is_global(&filename);
         with_style_sheet_mut(|sheet| {
+            sheet
+                .preflight_styles(&styles, &canonical_filename, global)
+                .map_err(|error| {
+                    let message = error.to_string();
+                    cache_names::record(&Err(message.clone()));
+                    message
+                })?;
             // globalCss (@font-face / global selectors) is per-SOURCE-file, never
             // collapsed. rm_global_css MUST use the RAW filename so a collapsed
             // member (sharing the bucket-root's canonical) never wipes the root's
             // globalCss. Atom property bucketing still uses canonical_filename.
             let default_collected = sheet.rm_global_css(&filename, global);
-            let (collected, updated_base_style) =
-                sheet.update_styles(&styles, &canonical_filename, global);
-            Self {
+            let (collected, updated_base_style) = sheet
+                .update_styles(&styles, &canonical_filename, global)
+                .map_err(|error| error.to_string())?;
+            Ok(Self {
                 code,
                 map,
                 css_file,
@@ -110,7 +194,7 @@ impl Output {
                         ))
                     }
                 },
-            }
+            })
         })
     }
 
@@ -157,7 +241,7 @@ impl Output {
 
 #[wasm_bindgen(js_name = "setDebug")]
 pub fn set_debug(debug: bool) {
-    css::debug::set_debug(debug);
+    with_administration("set_debug", || css::debug::set_debug(debug));
 }
 
 #[wasm_bindgen(js_name = "isDebug")]
@@ -208,7 +292,18 @@ pub fn is_debug() -> bool {
 /// ```
 #[wasm_bindgen(js_name = "setPrefix")]
 pub fn set_prefix(prefix: Option<String>) {
-    css::set_prefix(prefix);
+    with_administration("set_prefix", || css::set_prefix(prefix));
+}
+
+/// Set the build's names-only project root before extraction in every compiler.
+/// This never changes resolver IDs, extraction keys, buckets or D9 numbering.
+///
+/// Supply the existing ID basis when relative extraction IDs are not root-relative.
+#[wasm_bindgen(js_name = "setNamingRoot")]
+pub fn set_naming_root(root: Option<String>, relative_base: Option<String>) {
+    with_administration("set_naming_root", || {
+        css::naming_root::set_context(root, relative_base);
+    });
 }
 
 #[wasm_bindgen(js_name = "getPrefix")]
@@ -218,21 +313,22 @@ pub fn get_prefix() -> Option<String> {
 }
 
 /// Internal function to import a `StyleSheet` (testable without `JsValue`)
-pub fn import_sheet_internal(sheet: StyleSheet) {
-    with_style_sheet_mut(|global_sheet| *global_sheet = sheet);
+pub fn import_sheet_internal(sheet: StyleSheet) -> Result<(), String> {
+    with_administration("import_sheet_internal", || cache_restore::import(sheet))
 }
 
 #[wasm_bindgen(js_name = "importSheet")]
 #[cfg(not(tarpaulin_include))]
 pub fn import_sheet(sheet_object: JsValue) -> Result<(), JsValue> {
-    let sheet: StyleSheet = serde_wasm_bindgen::from_value(sheet_object).map_err(js_error)?;
-    import_sheet_internal(sheet);
-    Ok(())
+    let sheet: StyleSheet =
+        serde_wasm_bindgen::from_value(sheet_object).unwrap_or_else(|_| cache_restore::absent());
+    import_sheet_internal(sheet).map_err(js_error)
 }
 
 /// Internal function to export `StyleSheet` as JSON string (testable without `JsValue`)
 pub fn export_sheet_internal() -> Result<String, String> {
-    with_style_sheet(serde_json::to_string).map_err(|e| e.to_string())
+    with_style_sheet(|sheet| serde_json::to_string(&sheet.export_snapshot()))
+        .map_err(|e| e.to_string())
 }
 
 #[wasm_bindgen(js_name = "exportSheet")]
@@ -243,13 +339,20 @@ pub fn export_sheet() -> Result<String, JsValue> {
 
 /// Internal function to export class map as JSON string (testable without `JsValue`)
 pub fn export_class_map_internal() -> Result<String, String> {
-    with_class_map(serde_json::to_string).map_err(|e| e.to_string())
+    with_class_map(|map| {
+        let sorted: BTreeMap<&String, BTreeMap<&String, &usize>> = map
+            .iter()
+            .map(|(file, classes)| (file, classes.iter().collect()))
+            .collect();
+        serde_json::to_string(&sorted)
+    })
+    .map_err(|e| e.to_string())
 }
 
 #[wasm_bindgen(js_name = "importClassMap")]
 #[cfg(not(tarpaulin_include))]
 pub fn import_class_map(sheet_object: JsValue) -> Result<(), JsValue> {
-    set_class_map(serde_wasm_bindgen::from_value(sheet_object).map_err(js_error)?);
+    cache_restore::classes(serde_wasm_bindgen::from_value(sheet_object).ok());
     Ok(())
 }
 
@@ -261,13 +364,17 @@ pub fn export_class_map() -> Result<String, JsValue> {
 
 /// Internal function to export file map as JSON string (testable without `JsValue`)
 pub fn export_file_map_internal() -> Result<String, String> {
-    with_file_map(serde_json::to_string).map_err(|e| e.to_string())
+    with_file_map(|map| {
+        let sorted: BTreeMap<&String, &usize> = map.iter().collect();
+        serde_json::to_string(&sorted)
+    })
+    .map_err(|e| e.to_string())
 }
 
 #[wasm_bindgen(js_name = "importFileMap")]
 #[cfg(not(tarpaulin_include))]
 pub fn import_file_map(sheet_object: JsValue) -> Result<(), JsValue> {
-    set_file_map(serde_wasm_bindgen::from_value(sheet_object).map_err(js_error)?);
+    cache_restore::files(serde_wasm_bindgen::from_value(sheet_object).ok());
     Ok(())
 }
 
@@ -279,18 +386,22 @@ pub fn export_file_map() -> Result<String, JsValue> {
 
 /// Internal function to import the canonical (bucket) map (testable without `JsValue`)
 pub fn import_canonical_map_internal(map: HashMap<String, String>) {
-    set_canonical_map(map);
+    with_administration("import_canonical_map_internal", || set_canonical_map(map));
 }
 
 /// Internal function to export the canonical map as JSON string (testable without `JsValue`)
 pub fn export_canonical_map_internal() -> Result<String, String> {
-    with_canonical_map(serde_json::to_string).map_err(|e| e.to_string())
+    with_canonical_map(|map| {
+        let sorted: BTreeMap<&String, &String> = map.iter().collect();
+        serde_json::to_string(&sorted)
+    })
+    .map_err(|e| e.to_string())
 }
 
 #[wasm_bindgen(js_name = "importCanonicalMap")]
 #[cfg(not(tarpaulin_include))]
 pub fn import_canonical_map(map_object: JsValue) -> Result<(), JsValue> {
-    set_canonical_map(serde_wasm_bindgen::from_value(map_object).map_err(js_error)?);
+    import_canonical_map_internal(serde_wasm_bindgen::from_value(map_object).map_err(js_error)?);
     Ok(())
 }
 
@@ -300,24 +411,66 @@ pub fn export_canonical_map() -> Result<String, JsValue> {
     export_canonical_map_internal().map_err(js_error)
 }
 
+/// Number every file in `files` now, in path order, keeping numbers files
+/// already hold, so class prefixes depend on the paths and not on the order
+/// workers reach files in.
+#[wasm_bindgen(js_name = "seedFileMap")]
+pub fn seed_file_map(files: Vec<String>) {
+    with_administration("seed_file_map", || {
+        cache_restore::seeded(&files);
+        cache6_restore::record_seed(&files);
+        css::file_map::seed_file_numbers(&files);
+    });
+}
+
+/// Forget everything one build left in the engine.
+///
+/// That is names, numbers, styles, buckets, routes, the prefix, atom hoisting
+/// and the module resolver, so the next build starts from its own options
+/// alone. Theme, shorthands and debug mode are set by every build, and stay.
+pub fn reset_build_state_internal() {
+    with_administration("reset_build_state_internal", || {
+        cache_names::clear();
+        cache_restore::clear();
+        cache6_restore::forget();
+        css::class_map::reset_class_map();
+        css::file_map::reset_file_map();
+        css::file_map::reset_canonical_map();
+        css::file_routes::set_file_routes(HashMap::new());
+        css::atom_hoist::set_atom_hoist(None);
+        css::atom_hoist::restore_atom_plan(None);
+        css::set_prefix(None);
+        css::naming_root::set_root(None);
+        with_style_sheet_mut(|sheet| *sheet = StyleSheet::default());
+        set_module_resolver_internal(None);
+    });
+}
+
+#[wasm_bindgen(js_name = "resetBuildState")]
+pub fn reset_build_state() {
+    reset_build_state_internal();
+}
 /// Set the atom-level hoist threshold.
 ///
-/// When set to `Some(n)`, a style atom whose content is used by `>= n` distinct
-/// routes is emitted into the shared global `devup-ui.css` (shipped once) instead
-/// of duplicated into each per-route chunk. `None` (the default) disables atom
-/// hoisting entirely (identity behavior).
+/// When set to `Some(n)`, buckets with predeclared reach of `>= n` routes emit
+/// their atoms into shared CSS. Eligibility freezes before the first source;
+/// unknown or late reach stays local until `resetBuildState`.
+/// `None` (the default) preserves ordinary per-file naming and placement.
 ///
-/// MUST be called BEFORE `codeExtract` so atoms receive global (shared) class
-/// names; enabling it afterwards leaves per-file names and nothing hoists.
+/// Set this before `codeExtract` so extraction and emission share one plan.
 /// Pair with `importFileRoutes` to provide the file -> routes mapping.
 #[wasm_bindgen(js_name = "setAtomHoist")]
 pub fn set_atom_hoist(threshold: Option<usize>) {
-    css::atom_hoist::set_atom_hoist(threshold);
+    with_administration("set_atom_hoist", || {
+        css::atom_hoist::set_atom_hoist(threshold);
+    });
 }
 
 /// Internal function to import the file -> routes map (testable without `JsValue`)
 pub fn import_file_routes_internal(map: HashMap<String, std::collections::HashSet<u32>>) {
-    css::file_routes::set_file_routes(map);
+    with_administration("import_file_routes_internal", || {
+        css::file_routes::set_file_routes(map);
+    });
 }
 
 /// Import the file -> set-of-route-ids mapping used to decide atom hoisting.
@@ -328,9 +481,7 @@ pub fn import_file_routes_internal(map: HashMap<String, std::collections::HashSe
 #[wasm_bindgen(js_name = "importFileRoutes")]
 #[cfg(not(tarpaulin_include))]
 pub fn import_file_routes(map_object: JsValue) -> Result<(), JsValue> {
-    css::file_routes::set_file_routes(
-        serde_wasm_bindgen::from_value(map_object).map_err(js_error)?,
-    );
+    import_file_routes_internal(serde_wasm_bindgen::from_value(map_object).map_err(js_error)?);
     Ok(())
 }
 
@@ -426,38 +577,47 @@ fn code_extract_internal_impl(
     source_map: SourceMapMode,
     resolver: Option<&ModuleResolver>,
 ) -> Result<Output, String> {
-    let option = ExtractOption {
-        package: package.to_string(),
-        css_dir,
-        single_css,
-        import_main_css: import_main_css_in_code,
-        import_aliases,
-    };
-    let extracted = match (resolver, source_map) {
-        (Some(resolver), mode) => extract_with_modules(
-            filename,
-            code,
-            option,
-            matches!(mode, SourceMapMode::Generate),
-            resolver,
-        ),
-        (None, SourceMapMode::Generate) => extract(filename, code, option),
-        (None, SourceMapMode::Skip) => extract_without_source_map(filename, code, option),
-    };
-
-    match extracted {
-        Ok(output) => Ok(Output::new(
-            output.code,
-            output.styles,
-            output.map,
-            single_css,
-            filename.to_string(),
-            output.css_file,
-            import_main_css_in_css,
-            output.dependencies,
-        )),
-        Err(error) => Err(error.to_string()),
-    }
+    with_admission(|| {
+        cache_names::check()?;
+        let rollback = extraction_rollback::ExtractionRollback::capture();
+        let result = css::exact_attempt::with_exclusive_attempt(|| {
+            let option = ExtractOption {
+                package: package.to_string(),
+                css_dir,
+                single_css,
+                import_main_css: import_main_css_in_code,
+                import_aliases,
+            };
+            let extracted = match (resolver, source_map) {
+                (Some(resolver), mode) => extract_with_modules(
+                    filename,
+                    code,
+                    option,
+                    matches!(mode, SourceMapMode::Generate),
+                    resolver,
+                ),
+                (None, SourceMapMode::Generate) => extract(filename, code, option),
+                (None, SourceMapMode::Skip) => extract_without_source_map(filename, code, option),
+            };
+            match extracted {
+                Ok(output) => Output::new(
+                    output.code,
+                    output.styles,
+                    output.map,
+                    single_css,
+                    filename.to_string(),
+                    output.css_file,
+                    import_main_css_in_css,
+                    output.dependencies,
+                ),
+                Err(error) => Err(error.to_string()),
+            }
+        });
+        if result.is_ok() {
+            rollback.commit();
+        }
+        result
+    })
 }
 
 /// Set how the imports of the files being extracted are resolved.
@@ -467,7 +627,13 @@ fn code_extract_internal_impl(
 #[wasm_bindgen(js_name = "setModuleResolver")]
 #[cfg(not(tarpaulin_include))]
 pub fn set_module_resolver(resolver: Option<js_sys::Function>) {
-    MODULE_RESOLVER.with_borrow_mut(|current| *current = resolver);
+    set_module_resolver_internal(resolver);
+}
+
+fn set_module_resolver_internal(resolver: Option<js_sys::Function>) {
+    with_administration("set_module_resolver", || {
+        MODULE_RESOLVER.with_borrow_mut(|current| *current = resolver);
+    });
 }
 
 #[cfg(not(tarpaulin_include))]
@@ -504,25 +670,29 @@ fn code_extract_js(
     import_aliases: JsValue,
     source_map: SourceMapMode,
 ) -> Result<Output, JsValue> {
-    let import_aliases = import_aliases_from_js(import_aliases)?;
-    let resolver = MODULE_RESOLVER.with_borrow(Clone::clone).map(|resolver| {
-        move |specifier: &str, importer: &str| call_module_resolver(&resolver, specifier, importer)
-    });
-    code_extract_internal_impl(
-        filename,
-        code,
-        package,
-        css_dir,
-        single_css,
-        import_main_css_in_code,
-        import_main_css_in_css,
-        import_aliases,
-        source_map,
-        resolver
-            .as_ref()
-            .map(|resolver| resolver as &ModuleResolver),
-    )
-    .map_err(js_error)
+    with_admission(|| {
+        let import_aliases = import_aliases_from_js(import_aliases)?;
+        let resolver = MODULE_RESOLVER.with_borrow(Clone::clone).map(|resolver| {
+            move |specifier: &str, importer: &str| {
+                call_module_resolver(&resolver, specifier, importer)
+            }
+        });
+        code_extract_internal_impl(
+            filename,
+            code,
+            package,
+            css_dir,
+            single_css,
+            import_main_css_in_code,
+            import_main_css_in_css,
+            import_aliases,
+            source_map,
+            resolver
+                .as_ref()
+                .map(|resolver| resolver as &ModuleResolver),
+        )
+        .map_err(js_error)
+    })
 }
 
 #[cfg(not(tarpaulin_include))]
@@ -597,7 +767,9 @@ pub fn code_extract_without_source_map(
 
 /// Internal function to register theme (testable without `JsValue`)
 pub fn register_theme_internal(theme: sheet::theme::Theme) {
-    with_style_sheet_mut(|sheet| sheet.set_theme(theme));
+    with_administration("register_theme_internal", || {
+        with_style_sheet_mut(|sheet| sheet.set_theme(theme));
+    });
 }
 
 #[wasm_bindgen(js_name = "registerTheme")]
@@ -611,7 +783,9 @@ pub fn register_theme(theme_object: JsValue) -> Result<(), JsValue> {
 
 /// Internal function to register custom style-property shorthands.
 pub fn register_shorthands_internal(shorthands: BTreeMap<String, Vec<String>>) {
-    css::set_custom_shorthands(shorthands);
+    with_administration("register_shorthands_internal", || {
+        css::set_custom_shorthands(shorthands);
+    });
 }
 
 #[wasm_bindgen(js_name = "registerShorthands")]
@@ -631,18 +805,26 @@ pub fn get_default_theme() -> Result<Option<String>, JsValue> {
 #[wasm_bindgen(js_name = "getCss")]
 #[cfg(not(tarpaulin_include))]
 pub fn get_css(file_num: Option<usize>, import_main_css: bool) -> Result<String, JsValue> {
-    Ok(with_style_sheet(|sheet| {
-        if let Some(file_num) = file_num {
-            with_file_map(|map| {
-                sheet.create_css(
-                    map.get_by_right(&file_num).map(String::as_str),
-                    import_main_css,
-                )
-            })
-        } else {
-            sheet.create_css(None, import_main_css)
-        }
-    }))
+    get_css_internal(file_num, import_main_css).map_err(js_error)
+}
+
+/// Internal CSS retrieval using the same sticky-error and file-selection contract as getCss.
+pub fn get_css_internal(file_num: Option<usize>, import_main_css: bool) -> Result<String, String> {
+    with_admission(|| {
+        cache_names::check()?;
+        Ok(with_style_sheet(|sheet| {
+            if let Some(file_num) = file_num {
+                with_file_map(|map| {
+                    sheet.create_css(
+                        map.get_by_right(&file_num).map(String::as_str),
+                        import_main_css,
+                    )
+                })
+            } else {
+                sheet.create_css(None, import_main_css)
+            }
+        }))
+    })
 }
 
 #[wasm_bindgen(js_name = "getThemeInterface")]
@@ -673,6 +855,15 @@ pub fn get_theme_interface(
 pub fn has_devup_ui_wasm(filename: &str, code: &str, package: &str) -> bool {
     has_devup_ui(filename, code, package)
 }
+
+#[cfg(test)]
+mod atom_tests;
+
+#[cfg(test)]
+mod cache_protocol_tests;
+
+#[cfg(test)]
+mod atom_hoist_measurement;
 
 #[cfg(test)]
 #[allow(clippy::expect_used, clippy::unwrap_used)]
@@ -707,16 +898,30 @@ mod tests {
         reset_file_routes();
         register_theme_internal(sheet::theme::Theme::default());
 
-        // a.tsx -> route 0, b.tsx -> route 1. bg:red is in BOTH (routes {0,1}, count 2 => HOIST).
-        // width:11px only in a (route {0}, private). width:22px only in b (private).
+        css::atom_hoist::restore_atom_plan(None);
         let mut fr = HashMap::new();
         fr.insert("a.tsx".to_string(), HashSet::from([0u32]));
         fr.insert("b.tsx".to_string(), HashSet::from([1u32]));
+        fr.insert("shared-a.tsx".to_string(), HashSet::from([0u32, 1]));
+        fr.insert("shared-b.tsx".to_string(), HashSet::from([0u32, 1]));
         set_file_routes(fr);
         set_atom_hoist(Some(2));
 
-        let srca = r#"import { Box } from "@devup-ui/react"; const x = <Box bg="red" w="11px" />;"#;
-        let srcb = r#"import { Box } from "@devup-ui/react"; const x = <Box bg="red" w="22px" />;"#;
+        for file in ["shared-a.tsx", "shared-b.tsx"] {
+            code_extract_internal(
+                file,
+                r#"import { Box } from "@devup-ui/react"; const x = <Box bg="red" />;"#,
+                "@devup-ui/react",
+                "df".to_string(),
+                false,
+                false,
+                false,
+                HashMap::new(),
+            )
+            .unwrap();
+        }
+        let srca = r#"import { Box } from "@devup-ui/react"; const x = <Box w="11px" />;"#;
+        let srcb = r#"import { Box } from "@devup-ui/react"; const x = <Box w="22px" />;"#;
         code_extract_internal(
             "a.tsx",
             srca,
@@ -771,337 +976,28 @@ mod tests {
 
         set_atom_hoist(None);
         reset_file_routes();
+        css::atom_hoist::restore_atom_plan(None);
     }
 
-    /// Env-gated artifact emitter for split-native measurement. Writes REAL
-    /// devup CSS output (header, `@layer`, naming, dedup all authentic) for three
-    /// delivery models across several workloads, so an external script can
-    /// measure gzip/brotli + multi-route session + incremental-invalidation
-    /// bytes. Set `DEVUP_EMIT_MEASURE=1` to run; no-op (and zero cost) otherwise
-    /// so the normal test suite stays clean.
+    /// Export real before/after sheets and code for external gzip measurement.
+    /// `DEVUP_EMIT_MEASURE=1` enables structured stdout without shared temp files.
     #[test]
     #[serial]
-    #[allow(clippy::items_after_statements, clippy::format_push_string)]
     fn emit_split_measurement_artifacts() {
-        use css::atom_hoist::set_atom_hoist;
-        use css::class_map::reset_class_map;
-        use css::file_map::reset_file_map;
-        use css::file_routes::{reset_file_routes, set_file_routes};
-        use std::collections::{HashMap, HashSet};
-        use std::fs;
-
-        if std::env::var("DEVUP_EMIT_MEASURE").is_err() {
-            return;
+        if std::env::var_os("DEVUP_EMIT_MEASURE").is_some() {
+            let artifacts =
+                super::atom_hoist_measurement::build_predeclared_measurement_artifacts()
+                    .unwrap_or_else(|error| panic!("{error}"));
+            println!("{artifacts}");
         }
-
-        let props = [
-            "w",
-            "h",
-            "p",
-            "m",
-            "minW",
-            "minH",
-            "maxW",
-            "maxH",
-            "fontSize",
-            "lineHeight",
-            "borderRadius",
-            "gap",
-        ];
-        let atom = |key: &str, px: usize| format!("<Box {key}=\"{px}px\" />");
-        let build = |els: &[String]| {
-            format!(
-                "import {{ Box }} from \"@devup-ui/react\"; const x = <>{}</>;",
-                els.join("")
-            )
-        };
-        let reset = || {
-            {
-                let mut s = GLOBAL_STYLE_SHEET.lock().unwrap();
-                *s = StyleSheet::default();
-            }
-            reset_class_map();
-            reset_file_map();
-            reset_file_routes();
-            register_theme_internal(sheet::theme::Theme::default());
-        };
-
-        let out = std::env::temp_dir().join("devup-split-measure");
-        let _ = fs::remove_dir_all(&out);
-        fs::create_dir_all(&out).unwrap();
-
-        // (name, routes, universal atoms, private atoms/route)
-        let workloads = [
-            ("shared_heavy", 8usize, 80usize, 25usize),
-            ("balanced", 8usize, 50usize, 50usize),
-            ("disjoint", 8usize, 20usize, 60usize),
-        ];
-        let mut manifest = String::from("[");
-        for (wi, (name, n, u, p)) in workloads.iter().enumerate() {
-            let (n, u, p) = (*n, *u, *p);
-            let universal: Vec<String> = (0..u)
-                .map(|i| atom(props[i % props.len()], 100_000 + i))
-                .collect();
-            let make_priv = |r: usize| -> Vec<String> {
-                (0..p)
-                    .map(|i| {
-                        atom(
-                            props[i % props.len()],
-                            1_000_000 + wi * 1_000_000 + r * p + i,
-                        )
-                    })
-                    .collect()
-            };
-            let sources: Vec<String> = (0..n)
-                .map(|r| {
-                    let mut e = universal.clone();
-                    e.extend(make_priv(r));
-                    build(&e)
-                })
-                .collect();
-            let run = |single: bool| {
-                reset();
-                for (r, src) in sources.iter().enumerate() {
-                    code_extract_internal(
-                        &format!("r{r}.tsx"),
-                        src,
-                        "@devup-ui/react",
-                        "df".to_string(),
-                        single,
-                        false,
-                        false,
-                        HashMap::new(),
-                    )
-                    .unwrap();
-                }
-            };
-
-            // single-css: one shared file with every atom.
-            run(true);
-            fs::write(
-                out.join(format!("{name}_single.css")),
-                with_style_sheet(|s| s.create_css(None, false)),
-            )
-            .unwrap();
-
-            // per-file: shared base (theme/base only) + one full chunk per route.
-            run(false);
-            fs::write(
-                out.join(format!("{name}_perfile_base.css")),
-                with_style_sheet(|s| s.create_css(None, false)),
-            )
-            .unwrap();
-            for r in 0..n {
-                fs::write(
-                    out.join(format!("{name}_perfile_r{r}.css")),
-                    with_style_sheet(|s| s.create_css(Some(&format!("r{r}.tsx")), false)),
-                )
-                .unwrap();
-            }
-
-            // atom-B: hoisted shared base (universal atoms) + per-route delta.
-            // CRITICAL: atom_hoist must be enabled BEFORE extraction so atoms get
-            // GLOBAL names (shared identity across files). Enabling it only at
-            // create_css time leaves per-file names, so the same universal atom
-            // looks like N distinct atoms (one per file) and never hoists.
-            reset();
-            let mut fr = HashMap::new();
-            for r in 0..n {
-                fr.insert(format!("r{r}.tsx"), HashSet::from([r as u32]));
-            }
-            set_file_routes(fr);
-            set_atom_hoist(Some(n));
-            for (r, src) in sources.iter().enumerate() {
-                code_extract_internal(
-                    &format!("r{r}.tsx"),
-                    src,
-                    "@devup-ui/react",
-                    "df".to_string(),
-                    false,
-                    false,
-                    false,
-                    HashMap::new(),
-                )
-                .unwrap();
-            }
-            fs::write(
-                out.join(format!("{name}_atomb_base.css")),
-                with_style_sheet(|s| s.create_css(None, false)),
-            )
-            .unwrap();
-            for r in 0..n {
-                fs::write(
-                    out.join(format!("{name}_atomb_r{r}.css")),
-                    with_style_sheet(|s| s.create_css(Some(&format!("r{r}.tsx")), false)),
-                )
-                .unwrap();
-            }
-            set_atom_hoist(None);
-            reset_file_routes();
-
-            manifest.push_str(&format!(
-                "{}{{\"name\":\"{name}\",\"n\":{n},\"u\":{u},\"p\":{p}}}",
-                if wi > 0 { "," } else { "" }
-            ));
-        }
-        manifest.push(']');
-        fs::write(out.join("manifest.json"), manifest).unwrap();
-        reset();
-        set_atom_hoist(None);
-        println!("[EMIT] artifacts -> {}", out.display());
     }
 
-    /// SPLIT-NATIVE LOCK: atom-level route-aware hoisting (global-named
-    /// shared-base + per-route delta) is a STRICT upgrade over the per-file mode
-    /// on the metrics that split actually competes on -- multi-route SESSION
-    /// bytes and incremental-deploy INVALIDATION bytes -- NOT on fresh-single-
-    /// route bytes (where per-file already hits the theoretical floor).
-    ///
-    /// This test supersedes an earlier "no win" lock that was built on a
-    /// measurement bug: enabling atom_hoist AFTER extraction left per-file class
-    /// names, so the same universal atom looked like N distinct atoms and never
-    /// hoisted -- making atom-B byte-identical to per-file (a no-op, not a
-    /// truth). The fix, asserted here, is that atom_hoist MUST be enabled BEFORE
-    /// extraction so atoms get GLOBAL (shared) names.
+    /// Compare usable sheets with predeclared shared-module reach and count
+    /// deployment invalidations after changing a common upstream declaration.
     #[test]
     #[serial]
-    // byte sizes are tiny so ratios are exact; doc prose names models literally
-    #[allow(clippy::cast_precision_loss, clippy::doc_markdown)]
     fn atom_b_beats_per_file_on_session_and_invalidation() {
-        use css::atom_hoist::set_atom_hoist;
-        use css::class_map::reset_class_map;
-        use css::file_map::reset_file_map;
-        use css::file_routes::{reset_file_routes, set_file_routes};
-        use std::collections::{HashMap, HashSet};
-
-        // Realistic design-system workload: many shared primitives, fewer
-        // route-private atoms. Routes are disjoint on private atoms.
-        const ROUTES: usize = 8;
-        const UNIVERSAL: usize = 80;
-        const PRIVATE: usize = 25;
-
-        let props = ["w", "h", "p", "m", "minW", "minH", "maxW", "maxH"];
-        let atom = |key: &str, px: usize| format!("<Box {key}=\"{px}px\" />");
-        let build_source = |elements: &[String]| -> String {
-            let body = elements.join("");
-            format!("import {{ Box }} from \"@devup-ui/react\"; const x = <>{body}</>;")
-        };
-        let reset_engine = || {
-            {
-                let mut s = GLOBAL_STYLE_SHEET.lock().unwrap();
-                *s = StyleSheet::default();
-            }
-            reset_class_map();
-            reset_file_map();
-            reset_file_routes();
-            register_theme_internal(sheet::theme::Theme::default());
-        };
-
-        let universal_atoms: Vec<String> = (0..UNIVERSAL)
-            .map(|i| atom(props[i % props.len()], 100_000 + i))
-            .collect();
-        let make_private = |route: usize| -> Vec<String> {
-            (0..PRIVATE)
-                .map(|i| atom(props[i % props.len()], 1_000_000 + route * PRIVATE + i))
-                .collect()
-        };
-        let sources: Vec<String> = (0..ROUTES)
-            .map(|r| {
-                let mut e = universal_atoms.clone();
-                e.extend(make_private(r));
-                build_source(&e)
-            })
-            .collect();
-        let extract_all = |single_css: bool| {
-            for (r, src) in sources.iter().enumerate() {
-                code_extract_internal(
-                    &format!("r{r}.tsx"),
-                    src,
-                    "@devup-ui/react",
-                    "df".to_string(),
-                    single_css,
-                    false,
-                    false,
-                    HashMap::new(),
-                )
-                .unwrap();
-            }
-        };
-
-        // ---- per-file: atom_hoist OFF, multi-css. Each chunk carries all of
-        // its route's atoms (universals duplicated into every chunk). ----
-        reset_engine();
-        extract_all(false);
-        let pf_base = with_style_sheet(|s| s.create_css(None, false)).len();
-        let pf_chunks: Vec<usize> = (0..ROUTES)
-            .map(|r| with_style_sheet(|s| s.create_css(Some(&format!("r{r}.tsx")), false)).len())
-            .collect();
-
-        // ---- atom-B: enable hoist + routes BEFORE extraction so atoms get
-        // GLOBAL names; universals (used by all ROUTES) hoist into the base,
-        // privates stay in their per-route delta. ----
-        reset_engine();
-        let mut fr = HashMap::new();
-        for r in 0..ROUTES {
-            fr.insert(format!("r{r}.tsx"), HashSet::from([r as u32]));
-        }
-        set_file_routes(fr);
-        set_atom_hoist(Some(ROUTES));
-        extract_all(false);
-        let ab_base = with_style_sheet(|s| s.create_css(None, false)).len();
-        let ab_deltas: Vec<usize> = (0..ROUTES)
-            .map(|r| with_style_sheet(|s| s.create_css(Some(&format!("r{r}.tsx")), false)).len())
-            .collect();
-        set_atom_hoist(None);
-        reset_file_routes();
-        reset_engine();
-
-        // Session = visit every route once (base cached after the first route).
-        let pf_session = pf_base + pf_chunks.iter().sum::<usize>();
-        let ab_session = ab_base + ab_deltas.iter().sum::<usize>();
-        // Invalidation = one route's styles change; returning user re-downloads
-        // only the file(s) whose hash changed.
-        let pf_invalidation = pf_chunks[0];
-        let ab_invalidation = ab_deltas[0];
-
-        let session_margin = (pf_session as f64 - ab_session as f64) / pf_session as f64 * 100.0;
-        let invalidation_margin =
-            (pf_invalidation as f64 - ab_invalidation as f64) / pf_invalidation as f64 * 100.0;
-        println!(
-            "[SPLIT] base: per-file={pf_base}B atom-B={ab_base}B | chunk: per-file={}B atom-B-delta={}B",
-            pf_chunks[0], ab_deltas[0]
-        );
-        println!(
-            "[SPLIT] session: per-file={pf_session}B atom-B={ab_session}B ({session_margin:.1}% smaller) | invalidation: per-file={pf_invalidation}B atom-B={ab_invalidation}B ({invalidation_margin:.1}% smaller)"
-        );
-
-        // Regression guard against the no-op-hoist bug: hoisting MUST have moved
-        // the universal atoms into the base, so the base is large and the delta
-        // is much smaller than a full per-file chunk.
-        assert!(
-            ab_base > pf_base + 500,
-            "hoist no-op: atom-B base ({ab_base}B) should hold the universal atoms, \
-             but is barely larger than the empty per-file base ({pf_base}B). \
-             atom_hoist was likely enabled AFTER extraction."
-        );
-        assert!(
-            (ab_deltas[0] as f64) < (pf_chunks[0] as f64) * 0.6,
-            "hoist no-op: atom-B delta ({}B) should be far smaller than the full \
-             per-file chunk ({}B) once universals are hoisted out",
-            ab_deltas[0],
-            pf_chunks[0]
-        );
-        // The split-native wins this whole investigation hinges on.
-        assert!(
-            session_margin >= 15.0,
-            "atom-B should beat per-file on multi-route session bytes by >=15% \
-             (got {session_margin:.1}%)"
-        );
-        assert!(
-            invalidation_margin >= 30.0,
-            "atom-B should beat per-file on incremental-deploy invalidation by \
-             >=30% (got {invalidation_margin:.1}%)"
-        );
+        super::atom_hoist_measurement::assert_predeclared_shared_savings().unwrap();
     }
 
     #[test]
@@ -1548,7 +1444,8 @@ mod tests {
             Some("devup-ui-0.css".to_string()),
             false,
             Vec::new(),
-        );
+        )
+        .unwrap_or_else(|error| panic!("{error}"));
 
         // Test getters
         assert_ne!(output.code(), "");
@@ -1575,7 +1472,8 @@ mod tests {
             None,
             false,
             Vec::new(),
-        );
+        )
+        .unwrap_or_else(|error| panic!("{error}"));
 
         // Test updated_base_style getter
         let _ = output.updated_base_style();
@@ -1638,7 +1536,8 @@ mod tests {
             Some("devup-ui.css".to_string()),
             true, // import_main_css = true
             Vec::new(),
-        );
+        )
+        .unwrap_or_else(|error| panic!("{error}"));
 
         assert!(output.css().is_some());
     }
@@ -1677,7 +1576,8 @@ mod tests {
             None,
             false,
             Vec::new(),
-        );
+        )
+        .unwrap_or_else(|error| panic!("{error}"));
 
         // The updated_base_style should be true because global CSS was removed
         assert!(output.updated_base_style());
@@ -1873,7 +1773,7 @@ mod tests {
         custom_sheet.add_property("custom.tsx", "color", 0, "red", None, Some(0), None);
 
         // Import the custom sheet
-        import_sheet_internal(custom_sheet);
+        import_sheet_internal(custom_sheet).unwrap_or_else(|error| panic!("{error}"));
 
         // Verify the sheet was imported by exporting it
         let result = export_sheet_internal();
@@ -1929,6 +1829,60 @@ mod tests {
         assert!(json_str.starts_with('{') || json_str.starts_with("[]"));
     }
 
+    #[test]
+    #[serial]
+    fn test_exported_maps_are_canonical_json() {
+        css::class_map::reset_class_map();
+        css::file_map::reset_file_map();
+        css::file_map::reset_canonical_map();
+        css::class_map::set_class_map(HashMap::from([
+            (
+                "b.tsx".to_string(),
+                HashMap::from([("z".to_string(), 1), ("a".to_string(), 0)]),
+            ),
+            ("a.tsx".to_string(), HashMap::from([("k".to_string(), 0)])),
+        ]));
+        assert_eq!(
+            export_class_map_internal().unwrap(),
+            r#"{"a.tsx":{"k":0},"b.tsx":{"a":0,"z":1}}"#
+        );
+        seed_file_map(vec!["b.tsx".to_string(), "a.tsx".to_string()]);
+        assert_eq!(
+            export_file_map_internal().unwrap(),
+            r#"{"a.tsx":0,"b.tsx":1}"#
+        );
+        import_canonical_map_internal(HashMap::from([
+            ("y".to_string(), "b".to_string()),
+            ("x".to_string(), "a".to_string()),
+        ]));
+        assert_eq!(
+            export_canonical_map_internal().unwrap(),
+            r#"{"x":"a","y":"b"}"#
+        );
+        reset_build_state();
+        assert_eq!(export_class_map_internal().unwrap(), "{}");
+        assert_eq!(export_file_map_internal().unwrap(), "{}");
+        assert_eq!(export_canonical_map_internal().unwrap(), "{}");
+        assert_eq!(get_prefix(), None);
+    }
+
+    #[test]
+    #[serial]
+    fn test_numbers_do_not_depend_on_the_order_files_are_seen() {
+        let files = ["src/b.tsx", "src/a.tsx", "src/c.tsx"];
+        let mut maps = Vec::new();
+        for order in [[0, 1, 2], [2, 1, 0], [1, 2, 0]] {
+            reset_build_state_internal();
+            seed_file_map(files.iter().map(ToString::to_string).collect());
+            for index in order {
+                let _ = css::file_map::get_file_num_by_filename(files[index]);
+            }
+            maps.push(export_file_map_internal().unwrap());
+        }
+        assert_eq!(maps[0], r#"{"src/a.tsx":0,"src/b.tsx":1,"src/c.tsx":2}"#);
+        assert_eq!(maps[0], maps[1]);
+        assert_eq!(maps[0], maps[2]);
+    }
     #[test]
     #[serial]
     fn test_code_extract_internal_success() {

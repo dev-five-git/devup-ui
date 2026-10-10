@@ -11,6 +11,10 @@ use oxc_syntax::operator::LogicalOperator;
 
 use crate::utils::unwrap_syntax_only;
 
+#[cfg(test)]
+#[path = "as_member_boundary_tests.rs"]
+mod member_boundary_tests;
+
 /// What an element with an `as` becomes
 pub enum As<'a> {
     /// The element renamed

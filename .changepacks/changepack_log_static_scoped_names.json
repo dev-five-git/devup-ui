@@ -1,0 +1,13 @@
+{
+  "changes": {
+    "bindings/devup-ui-wasm/package.json": "Patch",
+    "packages/vite-plugin/package.json": "Patch",
+    "packages/webpack-plugin/package.json": "Patch",
+    "packages/rsbuild-plugin/package.json": "Patch",
+    "packages/next-plugin/package.json": "Patch",
+    "packages/bun-plugin/package.json": "Patch",
+    "packages/components/package.json": "Patch"
+  },
+  "note": "Compile proven static responsive arrays directly to classes and isolate content-named atoms by their existing delivered sheet identity. Safe original sources keep independent D9 counter namespaces even when their CSS shares a collapsed bucket. Build adapters supply an independent names-only project root; resolver IDs, D9 numbering and stylesheet placement stay unchanged. Versioned self-contained naming snapshots ignore and rebuild obsolete or invalid cache data that reaches WASM; cache build errors are reserved for real exact name collisions with located diagnostics. Static Textarea font-size arrays retain their declarations and DOM while compiling directly to classes.",
+  "date": "2026-10-06T00:00:00.000Z"
+}

@@ -34,6 +34,18 @@ impl ExtractStyleValue {
             | ExtractStyleValue::FontFace(_) => None,
         }
     }
+    pub const fn join_naming(&mut self, naming: css::Naming) {
+        match self {
+            ExtractStyleValue::Static(style) => style.naming = style.naming.join(naming),
+            ExtractStyleValue::Dynamic(style) => style.naming = style.naming.join(naming),
+            ExtractStyleValue::Keyframes(_)
+            | ExtractStyleValue::Typography(_)
+            | ExtractStyleValue::Css(_)
+            | ExtractStyleValue::Import(_)
+            | ExtractStyleValue::FontFace(_) => {}
+        }
+    }
+
     pub const fn set_style_order(&mut self, order: u8) {
         match self {
             ExtractStyleValue::Static(style) if style.style_order.is_none() => {

@@ -65,5 +65,5 @@ ToBTreeSet {
             },
         ),
     },
-    code: "import \"@devup-ui/react/devup-ui.css\";\nimport stylex from \"@stylexjs/stylex\";\nconst styles = { \"base\": \"a b\" };\nconst colorStyles = {\n\t\"red\": \"c\",\n\t\"blue\": \"d\"\n};\nconst sizeStyles = {\n\t\"sm\": \"e\",\n\t\"lg\": \"f\"\n};\nconst el = <div {...{ className: `a b ${colorStyles[color] || \"\"} ${sizeStyles[size] || \"\"}` }} />;\n",
+    code: "import \"@devup-ui/react/devup-ui.css\";\nimport stylex from \"@stylexjs/stylex\";\nconst styles = { \"base\": \"OHdp1ck6rgdym7_631 OHaiu_a11ys07ctz7a\" };\nconst colorStyles = {\n\t\"red\": \"OLcolor-vred\",\n\t\"blue\": \"OLcolor-vblue\"\n};\nconst sizeStyles = {\n\t\"sm\": \"OLfont_dsize-v12px\",\n\t\"lg\": \"OLfont_dsize-v20px\"\n};\nconst el = <div {...{ className: `OHdp1ck6rgdym7_631 OHaiu_a11ys07ctz7a ${colorStyles[color] || \"\"} ${sizeStyles[size] || \"\"}` }} />;\n",
 }

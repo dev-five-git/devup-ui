@@ -79,9 +79,7 @@ describe('Stepper', () => {
       '[aria-label="Decrease button"] svg',
     )
     // Initial value is 0 (min), so decrease button should be disabled
-    expect(decreaseButton).toHaveClass(
-      'color-0-var_lp_--base10_cm_light-dark_lp__h_0000001A_cm__h_FFFFFF1A_rp__rp_--255',
-    )
+    expect(decreaseButton).toHaveClass('RHdabh_8a8c3ae3dhc')
   })
 
   it('should have disabled increase button when value is at max', async () => {
@@ -97,9 +95,7 @@ describe('Stepper', () => {
     )
     const input = container.querySelector('[aria-label="Stepper value"]')!
     await userEvent.type(input, '100')
-    expect(increaseButton).toHaveClass(
-      'color-0-var_lp_--base10_cm_light-dark_lp__h_0000001A_cm__h_FFFFFF1A_rp__rp_--255',
-    )
+    expect(increaseButton).toHaveClass('RHdabh_8a8c3ae3dhc')
   })
 
   it('should export components', async () => {

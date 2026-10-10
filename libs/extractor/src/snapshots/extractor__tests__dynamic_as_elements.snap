@@ -13,11 +13,11 @@ expression: outputs
     ),
     (
         "<Box as={motion.div} p={1} />",
-        "<motion.div className=\"a-a\" />;",
+        "((DevupAs0) => <DevupAs0 className=\"FLtest_ptsx-OLpadding-v4px\" />)(motion.div || \"div\");",
     ),
     (
         "<Box as={(Motion as any).Form.Field}>x</Box>",
-        "<Motion.Form.Field>x</Motion.Form.Field>;",
+        "((DevupAs0) => <DevupAs0>x</DevupAs0>)((Motion as any).Form.Field || \"div\");",
     ),
     (
         "<Box as={_Local} />",
@@ -29,7 +29,7 @@ expression: outputs
     ),
     (
         "<List>{items.map((i) => <Box key={i.id} as={i.href ? 'a' : Link} p={1} />)}</List>",
-        "<List>{items.map((i) => i.href ? <a key={i.id} className=\"a-a\" /> : <Link key={i.id} className=\"a-a\" />)}</List>;",
+        "<List>{items.map((i) => ((__devupSpread0, DevupAs0) => <DevupAs0 key={__devupSpread0} className=\"FLtest_ptsx-OLpadding-v4px\" />)(i.id, (i.href ? \"a\" : Link) || \"div\"))}</List>;",
     ),
     (
         "<Box as={isLink && 'a'} />",
@@ -69,11 +69,11 @@ expression: outputs
     ),
     (
         "<Box as={{ a: 'a', b: 'button' }[kind]} onClick={track()} p={1}>{render()}</Box>",
-        "((DevupAs0) => <DevupAs0 onClick={track()} className=\"a-a\">{render()}</DevupAs0>)({\n\ta: \"a\",\n\tb: \"button\"\n}[kind] || \"div\");",
+        "((DevupAs0, __devupSpread0, __devupSpread1) => <DevupAs0 onClick={__devupSpread0} className=\"FLtest_ptsx-OLpadding-v4px\">{__devupSpread1}</DevupAs0>)({\n\ta: \"a\",\n\tb: \"button\"\n}[kind] || \"div\", track(), render());",
     ),
     (
         "<Box as={['div', 'a'][i]} {...register('x')} p={1} />",
-        "((DevupAs0, __devupSpread0) => <DevupAs0 {...__devupSpread0} className={`a-a ${__devupSpread0?.className || \"\"}`} style={__devupSpread0?.style} />)([\"div\", \"a\"][i] || \"div\", register(\"x\"));",
+        "((DevupAs0, __devupSpread0) => <DevupAs0 {...__devupSpread0} className={`FLtest_ptsx-OLpadding-v4px ${__devupSpread0?.className || \"\"}`} style={__devupSpread0?.style} />)([\"div\", \"a\"][i] || \"div\", ((__devupSpreadValue) => ({ ...__devupSpreadValue }))(register(\"x\")));",
     ),
     (
         "<Text as={b ? 'h1' : undefined} />",
@@ -81,6 +81,6 @@ expression: outputs
     ),
     (
         "<Box as={x}><Box as={y} p={1} /></Box>",
-        "((DevupAs1) => <DevupAs1>{((DevupAs0) => <DevupAs0 className=\"a-a\" />)(y || \"div\")}</DevupAs1>)(x || \"div\");",
+        "((DevupAs1, __devupSpread0) => <DevupAs1>{__devupSpread0}</DevupAs1>)(x || \"div\", ((DevupAs0) => <DevupAs0 className=\"FLtest_ptsx-OLpadding-v4px\" />)(y || \"div\"));",
     ),
 ]

@@ -2,4 +2,4 @@
 source: libs/sheet/src/lib.rs
 expression: "sheet.create_css(None, true).split(\"*/\").nth(1).unwrap()"
 ---
-"@import \"https://test.com/a.css\";@layer b;@font-face{font-family:Roboto;src:url(/fonts/Roboto-Regular.ttf)}div{color:red}@layer b{div{display:flex}.a{display:flex}}@keyframes b{from{opacity:0}to{opacity:1}}.d{height:var(--e)}.c{width:4px}"
+"@import \"https://test.com/a.css\";@layer b;@font-face{font-family:Roboto;src:url(/fonts/Roboto-Regular.ttf)}div{color:red}@layer b{div{display:flex}.OLdisplay-vflex-o0{display:flex}}@keyframes KHdpcoq80gd1v1w6jq{from{opacity:0}to{opacity:1}}.OHb1blgd2zgtdvucuc{---SUHdes7q9cxoxq7n28l-c0:initial;height:var(---SUHdes7q9cxoxq7n28l-c0)}.OLwidth-v4px{width:4px}"

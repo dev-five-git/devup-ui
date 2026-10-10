@@ -1,0 +1,8 @@
+{
+  "changes": {
+    "bindings/devup-ui-wasm/package.json": "Patch",
+    "apps/landing/package.json": "Patch"
+  },
+  "note": "Preserve zero-valued logical controllers like static literals, scale proven dynamic numbers in CSS, and inline-convert ambiguous numeric values and numeric strings using the static numeric grammar. Omit dynamic declaration classes for absent values through single-evaluation captures, including selectors and responsive values. Keep source evaluation order and sparse variable sites; separate mixed-unit shorthand consumers by canonical target-ordered roles, leaving single-unit names unchanged and additional groups disjoint from responsive levels. No new build errors.",
+  "date": "2026-10-08T00:00:00.000Z"
+}

@@ -15,14 +15,16 @@ use oxc_ast::builder::AstBuilder;
 use oxc_ast_visit::{Visit, VisitMut, walk, walk_mut};
 use oxc_parser::Parser;
 use oxc_semantic::{Scoping, SemanticBuilder};
-use oxc_span::{SPAN, SourceType};
+use oxc_span::{GetSpan, SPAN, SourceType};
 use oxc_syntax::number::NumberBase;
 use oxc_syntax::operator::BinaryOperator;
 use oxc_syntax::symbol::SymbolId;
 use rustc_hash::{FxHashMap, FxHashSet};
 
+use crate::provenance::mark;
 use crate::stylex::StylexFunction;
 use crate::{ExtractOption, ModuleResolver};
+use css::Naming;
 
 #[derive(Clone, Debug)]
 enum Constant {
@@ -350,15 +352,10 @@ pub(crate) fn inline_constants<'a>(
     if read.names.is_empty() {
         return Inlined::default();
     }
-    let mut modules = Modules {
-        resolver,
-        option,
-        exports: FxHashMap::default(),
-        loading: Vec::new(),
-    };
+    let mut modules = Modules::new(resolver, option);
     let mut symbols: FxHashMap<SymbolId, Constant> = FxHashMap::default();
     let mut inlined = Inlined::default();
-    let (scoping, reads_math) = {
+    let (scoping, reads_math, namings) = {
         let mut scope = ModuleScope::new(filename, program, None);
         scope
             .style_names
@@ -424,13 +421,11 @@ pub(crate) fn inline_constants<'a>(
         // Scoping is only worth building when a style reads a name that may
         // hold a constant
         let reads_math = read.names.contains("Math") && !scope.binds("Math");
-        if !reads_math && !read.names.iter().any(|name| scope.binds(name)) {
-            return Inlined::default();
-        }
         let scoping = SemanticBuilder::new()
             .build(program)
             .semantic
             .into_scoping();
+        let namings = crate::source_naming::symbols(program, &scoping, option);
         for name in &read.names {
             let bound = scope.binds(name);
             let constant = scope.lookup(&mut modules, name);
@@ -477,14 +472,16 @@ pub(crate) fn inline_constants<'a>(
                 symbols.extend(symbol.get().map(|symbol| (symbol, constant.clone())));
             }
         }
-        (scoping, reads_math)
+        (scoping, reads_math, namings)
     };
     inlined.dependencies = modules.exports.into_keys().collect();
-    if !symbols.is_empty() || reads_math {
+    if !symbols.is_empty() || !namings.is_empty() || reads_math {
         Inline {
             ast_builder,
             scoping: &scoping,
             symbols: &symbols,
+            namings: &namings,
+            ambient: Naming::Own,
             style_roots: &style_roots,
             apis: &apis,
             objects: false,
@@ -533,12 +530,7 @@ impl<'p, 'a, 'r> ChangeCheck<'p, 'a, 'r> {
         }
         Self {
             scope: std::cell::RefCell::new(scope),
-            modules: std::cell::RefCell::new(Modules {
-                resolver,
-                option,
-                exports: FxHashMap::default(),
-                loading: Vec::new(),
-            }),
+            modules: std::cell::RefCell::new(Modules::new(resolver, option)),
         }
     }
 
@@ -721,7 +713,16 @@ struct Modules<'r> {
     loading: Vec<String>,
 }
 
-impl Modules<'_> {
+impl<'r> Modules<'r> {
+    fn new(resolver: Option<&'r ModuleResolver>, option: &'r ExtractOption) -> Self {
+        Self {
+            resolver,
+            option,
+            exports: FxHashMap::default(),
+            loading: Vec::new(),
+        }
+    }
+
     fn exports(
         &mut self,
         specifier: &str,
@@ -1165,10 +1166,9 @@ impl<'p, 'a> ModuleScope<'p, 'a> {
                 }
                 ImportDeclarationSpecifier::ImportNamespaceSpecifier(_) => Imported::Namespace,
             };
-            self.imports.insert(
-                specifier.local().name.to_string(),
-                (import.source.value.to_string(), imported),
-            );
+            let local = specifier.local().name.to_string();
+            self.imports
+                .insert(local, (import.source.value.to_string(), imported));
         }
     }
     /// `const x = require('m')` and `const { a, b: c } = require('m')`
@@ -1693,6 +1693,10 @@ struct Inline<'s, 'a> {
     ast_builder: &'s AstBuilder<'a>,
     scoping: &'s Scoping,
     symbols: &'s FxHashMap<SymbolId, Constant>,
+    /// What each import, or constant reading one, depends on
+    namings: &'s FxHashMap<SymbolId, Naming>,
+    /// What the condition choosing the code being visited depends on
+    ambient: Naming,
     style_roots: &'s FxHashSet<&'s str>,
     apis: &'s StyleApis<'s>,
     /// Inside what the build reads as style objects
@@ -1701,7 +1705,54 @@ struct Inline<'s, 'a> {
     styles: bool,
 }
 
+/// What the bindings an expression reads depend on
+struct Dependencies<'s> {
+    scoping: &'s Scoping,
+    namings: &'s FxHashMap<SymbolId, Naming>,
+    naming: Naming,
+}
+
+#[cfg(test)]
+#[path = "dependency_coverage_tests.rs"]
+mod dependency_coverage_tests;
+
+impl<'a> Visit<'a> for Dependencies<'_> {
+    fn visit_call_expression(&mut self, call: &oxc_ast::ast::CallExpression<'a>) {
+        if matches!(&call.callee, Expression::Identifier(id) if id.name == "require") {
+            self.naming = Naming::Risky;
+        }
+        walk::walk_call_expression(self, call);
+    }
+
+    fn visit_import_expression(&mut self, import: &oxc_ast::ast::ImportExpression<'a>) {
+        self.naming = Naming::Risky;
+        walk::walk_import_expression(self, import);
+    }
+    fn visit_identifier_reference(&mut self, identifier: &oxc_ast::ast::IdentifierReference<'a>) {
+        if let Some(naming) = identifier
+            .reference_id
+            .get()
+            .and_then(|reference| self.scoping.get_reference(reference).symbol_id())
+            .and_then(|symbol| self.namings.get(&symbol))
+        {
+            self.naming = self.naming.join(*naming);
+        }
+    }
+}
+
 impl<'a> Inline<'_, 'a> {
+    fn naming_of(&self, expression: &Expression<'a>) -> Naming {
+        let mut dependencies = Dependencies {
+            scoping: self.scoping,
+            namings: self.namings,
+            naming: self
+                .ambient
+                .join(crate::provenance::provenance_of(expression)),
+        };
+        dependencies.visit_expression(expression);
+        dependencies.naming
+    }
+
     fn constant(&self, expression: &Expression<'a>) -> Option<Constant> {
         match expression {
             Expression::Identifier(identifier) => {
@@ -1795,17 +1846,21 @@ impl<'a> Inline<'_, 'a> {
 
     /// The side of a condition or of `&&`, `||` or `??` a constant or literal
     /// chooses, taken out of `expression`
-    fn chosen(&self, expression: &mut Expression<'a>) -> Option<Expression<'a>> {
+    fn chosen(&self, expression: &mut Expression<'a>) -> Option<(Expression<'a>, Naming)> {
         use oxc_allocator::TakeIn;
 
         let allocator = self.ast_builder;
         match expression {
             Expression::ConditionalExpression(conditional) => {
-                Some(if self.holds(&conditional.test)? {
-                    conditional.consequent.take_in(allocator)
-                } else {
-                    conditional.alternate.take_in(allocator)
-                })
+                let naming = self.naming_of(&conditional.test);
+                Some((
+                    if self.holds(&conditional.test)? {
+                        conditional.consequent.take_in(allocator)
+                    } else {
+                        conditional.alternate.take_in(allocator)
+                    },
+                    naming,
+                ))
             }
             Expression::LogicalExpression(logical) => {
                 let left = self.operand(&logical.left)?;
@@ -1816,11 +1871,15 @@ impl<'a> Inline<'_, 'a> {
                         !matches!(left, Constant::Null | Constant::Undefined)
                     }
                 };
-                Some(if keep_left {
-                    logical.left.take_in(allocator)
-                } else {
-                    logical.right.take_in(allocator)
-                })
+                let naming = self.naming_of(&logical.left);
+                Some((
+                    if keep_left {
+                        logical.left.take_in(allocator)
+                    } else {
+                        logical.right.take_in(allocator)
+                    },
+                    naming,
+                ))
             }
             _ => None,
         }
@@ -1836,24 +1895,24 @@ impl<'a> Inline<'_, 'a> {
                     .is_none())
     }
 
-    fn literal(&self, constant: &Constant) -> Option<Expression<'a>> {
+    fn literal(&self, constant: &Constant, span: oxc_span::Span) -> Option<Expression<'a>> {
         let builder = self.ast_builder;
         match constant {
             Constant::String(value) => Some(Expression::new_string_literal(
-                SPAN,
+                span,
                 Str::from_in(value.as_str(), builder.allocator()),
                 None,
                 builder,
             )),
             Constant::Number(value) => Some(Expression::new_numeric_literal(
-                SPAN,
+                span,
                 *value,
                 None,
                 NumberBase::Decimal,
                 builder,
             )),
-            Constant::Null => Some(Expression::new_null_literal(SPAN, builder)),
-            Constant::Bool(value) => Some(Expression::new_boolean_literal(SPAN, *value, builder)),
+            Constant::Null => Some(Expression::new_null_literal(span, builder)),
+            Constant::Bool(value) => Some(Expression::new_boolean_literal(span, *value, builder)),
             Constant::Record(entries) if self.objects => {
                 let mut properties = oxc_allocator::Vec::with_capacity_in(entries.len(), builder);
                 for (key, value) in entries.iter() {
@@ -1868,21 +1927,21 @@ impl<'a> Inline<'_, 'a> {
                                 builder,
                             ),
                         ),
-                        self.literal(value)?,
+                        self.literal(value, span)?,
                         false,
                         false,
                         false,
                         builder,
                     ));
                 }
-                Some(Expression::new_object_expression(SPAN, properties, builder))
+                Some(Expression::new_object_expression(span, properties, builder))
             }
             Constant::Array(values) if self.objects => {
                 let mut elements = oxc_allocator::Vec::with_capacity_in(values.len(), builder);
                 for value in values.iter() {
-                    elements.push(self.literal(value)?.into());
+                    elements.push(self.literal(value, span)?.into());
                 }
-                Some(Expression::new_array_expression(SPAN, elements, builder))
+                Some(Expression::new_array_expression(span, elements, builder))
             }
             _ => None,
         }
@@ -1907,17 +1966,73 @@ impl<'a> Inline<'_, 'a> {
 impl<'a> VisitMut<'a> for Inline<'_, 'a> {
     fn visit_expression(&mut self, expression: &mut Expression<'a>) {
         if self.styles {
-            if let Some(literal) = self
+            let structural = match &*expression {
+                Expression::ObjectExpression(object) => {
+                    object
+                        .properties
+                        .iter()
+                        .fold(Naming::Own, |naming, property| {
+                            naming.join(match property {
+                                ObjectPropertyKind::SpreadProperty(spread) => {
+                                    self.naming_of(&spread.argument)
+                                }
+                                ObjectPropertyKind::ObjectProperty(property)
+                                    if property.computed =>
+                                {
+                                    property
+                                        .key
+                                        .as_expression()
+                                        .map_or(Naming::Own, |key| self.naming_of(key))
+                                }
+                                ObjectPropertyKind::ObjectProperty(_) => Naming::Own,
+                            })
+                        })
+                }
+                Expression::ArrayExpression(array) => {
+                    array.elements.iter().fold(Naming::Own, |naming, element| {
+                        naming.join(match element {
+                            ArrayExpressionElement::SpreadElement(spread) => {
+                                self.naming_of(&spread.argument)
+                            }
+                            _ => Naming::Own,
+                        })
+                    })
+                }
+                _ => Naming::Own,
+            };
+            mark(expression, structural);
+            if let Some(mut literal) = self
                 .constant(expression)
-                .and_then(|constant| self.literal(&constant))
+                .and_then(|constant| self.literal(&constant, expression.span()))
             {
+                mark(&mut literal, self.naming_of(expression));
                 *expression = literal;
                 return;
             }
-            if let Some(chosen) = self.chosen(expression) {
+            let owner_start = expression.span().start;
+            if let Some((mut chosen, naming)) = self.chosen(expression) {
+                crate::sparse_sites::retain_folded_owner(chosen.span().start, owner_start);
+                crate::sparse_sites::retain_folded_owner(
+                    crate::utils::unwrap_syntax_only(&chosen).span().start,
+                    owner_start,
+                );
+                let outer = self.ambient;
+                self.ambient = outer.join(naming);
+                mark(&mut chosen, self.ambient);
                 *expression = chosen;
                 self.visit_expression(expression);
+                self.ambient = outer;
                 return;
+            }
+            if let Expression::Identifier(identifier) = &*expression
+                && let Some(naming) = identifier
+                    .reference_id
+                    .get()
+                    .and_then(|reference| self.scoping.get_reference(reference).symbol_id())
+                    .and_then(|symbol| self.namings.get(&symbol))
+                    .copied()
+            {
+                mark(expression, naming);
             }
         }
         walk_mut::walk_expression(self, expression);

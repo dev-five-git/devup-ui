@@ -7,7 +7,6 @@ use crate::stylex::{
     dynamic_number_suffix, is_include_call_static, normalize_stylex_property, stylex_value,
 };
 use css::optimize_value::optimize_value;
-use css::sheet_to_variable_name;
 use css::style_selector::StyleSelector;
 use oxc_ast::ast::{
     Argument, ArrowFunctionExpression, BindingPattern, Expression, ObjectExpression,
@@ -36,6 +35,10 @@ fn raw_static_style<'a>(
         style_order: None,
         layer: None,
         theme_token_resolution: Default::default(),
+        naming: css::Naming::Own,
+        counter_owner: crate::sparse_sites::counter_owner(),
+        origin: crate::style_origin::current(),
+        producer_policy: crate::sparse_sites::producer_policy(),
     }))
 }
 
@@ -367,12 +370,15 @@ fn extract_stylex_dynamic_namespace<'a>(
 
         if let Some(param_idx) = is_dynamic {
             // Dynamic property: generate CSS variable
-            let var_name = sheet_to_variable_name(&css_property, 0, None);
-            css_vars.push((param_idx, var_name, dynamic_number_suffix(&css_property)));
             let param_name = &param_names[param_idx];
-            styles.push(ExtractStyleProp::Static(ExtractStyleValue::Dynamic(
-                ExtractDynamicStyle::new(&css_property, 0, param_name, None),
-            )));
+            let style = ExtractDynamicStyle::new(&css_property, 0, param_name, None)
+                .at(prop.value.span().start);
+            css_vars.push((
+                param_idx,
+                style.variable_name(),
+                dynamic_number_suffix(&css_property),
+            ));
+            styles.push(ExtractStyleProp::Static(ExtractStyleValue::Dynamic(style)));
             continue;
         }
         match leaf(&css_property, &prop.value) {
