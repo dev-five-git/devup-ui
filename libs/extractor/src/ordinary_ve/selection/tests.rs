@@ -5,6 +5,7 @@ use oxc_span::{SourceType, Span};
 
 use super::{Selection, plan::Unit};
 
+mod callable_shapes;
 mod helpers;
 mod namespace_audit;
 mod native_policy;
