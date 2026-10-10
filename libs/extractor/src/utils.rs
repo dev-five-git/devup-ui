@@ -14,6 +14,9 @@ use oxc_ast::{
 
 use oxc_codegen::{Codegen, CodegenOptions};
 #[cfg(test)]
+#[path = "utils/syntax_only_tests.rs"]
+mod syntax_only_tests;
+#[cfg(test)]
 mod w22_tests;
 
 #[cfg(test)]
@@ -72,6 +75,7 @@ pub(super) fn js_number_literal(value: &Expression) -> Option<f64> {
 /// otherwise a plain `as const` silently turns styling off.
 pub(super) fn unwrap_syntax_only<'a, 'b>(expression: &'b Expression<'a>) -> &'b Expression<'a> {
     match expression {
+        Expression::TSTypeAssertion(e) => unwrap_syntax_only(&e.expression),
         Expression::TSAsExpression(e) => unwrap_syntax_only(&e.expression),
         Expression::TSSatisfiesExpression(e) => unwrap_syntax_only(&e.expression),
         Expression::TSNonNullExpression(e) => unwrap_syntax_only(&e.expression),
@@ -86,6 +90,7 @@ pub(super) fn unwrap_syntax_only_mut<'a, 'b>(
     expression: &'b mut Expression<'a>,
 ) -> &'b mut Expression<'a> {
     match expression {
+        Expression::TSTypeAssertion(e) => unwrap_syntax_only_mut(&mut e.expression),
         Expression::TSAsExpression(e) => unwrap_syntax_only_mut(&mut e.expression),
         Expression::TSSatisfiesExpression(e) => unwrap_syntax_only_mut(&mut e.expression),
         Expression::TSNonNullExpression(e) => unwrap_syntax_only_mut(&mut e.expression),

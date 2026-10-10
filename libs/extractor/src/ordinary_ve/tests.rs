@@ -50,6 +50,8 @@ mod mixed_support;
 mod native_member_provenance;
 mod standalone_precedence;
 mod standalone_terminals;
+mod wrapper_assertions;
+mod wrapper_runtime;
 
 fn option() -> ExtractOption {
     ExtractOption {
