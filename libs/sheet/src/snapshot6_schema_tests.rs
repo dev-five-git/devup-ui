@@ -25,25 +25,30 @@ pub(super) fn object_paths(value: &Value, path: &str, result: &mut Vec<String>) 
 }
 
 pub(super) fn duplicate_at(raw: &mut Raw, pointer: &str) {
-    let mut current = raw;
-    for token in pointer.split('/').skip(1) {
-        let token = token.replace("~1", "/").replace("~0", "~");
-        current = match current {
+    fn walk(raw: &mut Raw, path: &str, pointer: &str) {
+        match raw {
             Raw::Object(Object(entries)) => {
-                &mut entries
-                    .iter_mut()
-                    .find(|(key, _)| key == &token)
-                    .required("key")
-                    .1
+                if path == pointer {
+                    entries.push(entries[0].clone());
+                } else {
+                    for (key, value) in entries {
+                        walk(
+                            value,
+                            &format!("{path}/{}", key.replace('~', "~0").replace('/', "~1")),
+                            pointer,
+                        );
+                    }
+                }
             }
-            Raw::Array(items) => &mut items[token.parse::<usize>().required("index")],
-            _ => panic!("object path"),
-        };
+            Raw::Array(items) => {
+                for (index, value) in items.iter_mut().enumerate() {
+                    walk(value, &format!("{path}/{index}"), pointer);
+                }
+            }
+            Raw::Null | Raw::Bool(_) | Raw::Integer(_) | Raw::String(_) => {}
+        }
     }
-    let Raw::Object(Object(entries)) = current else {
-        panic!("object")
-    };
-    entries.push(entries[0].clone());
+    walk(raw, "", pointer);
 }
 
 #[rstest::rstest]

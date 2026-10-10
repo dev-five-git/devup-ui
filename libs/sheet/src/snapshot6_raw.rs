@@ -53,9 +53,6 @@ impl<'de> Visitor<'de> for RawVisitor {
     fn visit_str<E: serde::de::Error>(self, value: &str) -> Result<Raw, E> {
         Ok(Raw::String(value.into()))
     }
-    fn visit_string<E: serde::de::Error>(self, value: String) -> Result<Raw, E> {
-        Ok(Raw::String(value))
-    }
     fn visit_seq<A: SeqAccess<'de>>(self, mut seq: A) -> Result<Raw, A::Error> {
         let mut items = Vec::new();
         while let Some(item) = seq.next_element()? {

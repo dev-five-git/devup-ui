@@ -47,8 +47,14 @@ mod boundary_tests;
 #[path = "snapshot6_cleanup_tests.rs"]
 mod cleanup_tests;
 #[cfg(test)]
+#[path = "snapshot6_codec_tests.rs"]
+mod codec_tests;
+#[cfg(test)]
 #[path = "snapshot6_coordinate_tests.rs"]
 mod coordinate_tests;
+#[cfg(test)]
+#[path = "snapshot6_coverage_tests.rs"]
+mod coverage_tests;
 #[cfg(test)]
 #[path = "snapshot6_damage_tests.rs"]
 mod damage_tests;

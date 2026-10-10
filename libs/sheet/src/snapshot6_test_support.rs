@@ -23,34 +23,40 @@ pub(super) fn family_sheet(kind: u8) -> StyleSheet {
             .keyframes
             .insert("from".into(), vec![member.clone(), member]);
         frames.keyframes.insert("to".into(), vec![]);
-        styles([match kind {
-            0 => ExtractStyleValue::Static(ExtractStaticStyle::new("color", "red", 0, None)),
-            1 => ExtractStyleValue::Dynamic(
-                ExtractDynamicStyle::new("color", 0, "tone", None).at_role(2, 1),
-            ),
-            2 => ExtractStyleValue::Dynamic(ExtractDynamicStyle::new(
-                "color",
-                0,
-                "tone !important",
-                None,
-            )),
-            3 => ExtractStyleValue::Static(ExtractStaticStyle::new(
-                "typography",
-                "heading|font-weight:2",
-                0,
-                None,
-            )),
-            4 => ExtractStyleValue::Keyframes(frames),
-            5 => {
+        let families: [fn(&mut ExtractKeyframes) -> ExtractStyleValue; 6] = [
+            |_| ExtractStyleValue::Static(ExtractStaticStyle::new("color", "red", 0, None)),
+            |_| {
+                ExtractStyleValue::Dynamic(
+                    ExtractDynamicStyle::new("color", 0, "tone", None).at_role(2, 1),
+                )
+            },
+            |_| {
+                ExtractStyleValue::Dynamic(ExtractDynamicStyle::new(
+                    "color",
+                    0,
+                    "tone !important",
+                    None,
+                ))
+            },
+            |_| {
+                ExtractStyleValue::Static(ExtractStaticStyle::new(
+                    "typography",
+                    "heading|font-weight:2",
+                    0,
+                    None,
+                ))
+            },
+            |frames| ExtractStyleValue::Keyframes(frames.clone()),
+            |frames| {
                 frames
                     .keyframes
                     .get_mut("from")
                     .required("frame")
                     .push(ExtractStaticStyle::new("typography", "heading", 0, None));
-                ExtractStyleValue::Keyframes(frames)
-            }
-            _ => panic!("family"),
-        }])
+                ExtractStyleValue::Keyframes(frames.clone())
+            },
+        ];
+        styles([families[usize::from(kind)](&mut frames)])
     });
     update(&mut sheet, &items).required("genuine update");
     sheet
