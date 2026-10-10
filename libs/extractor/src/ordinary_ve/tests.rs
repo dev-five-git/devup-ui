@@ -34,6 +34,8 @@ mod demand_prototype;
 mod demand_receiver_shapes;
 mod demand_support;
 mod demand_views;
+mod initializer_key_demands;
+mod initializer_key_support;
 mod known_key_demands;
 mod mixed_aliases;
 mod mixed_apis;

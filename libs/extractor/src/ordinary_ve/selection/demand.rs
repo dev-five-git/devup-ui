@@ -117,7 +117,7 @@ fn select_with_apis<'a>(
         for (owner, demanded) in &view.units {
             graph.active.extend(graph.reachable(*owner));
             if let Some(init) = commonjs::initializer(semantic.nodes().kind(*owner))
-                && let Some(properties) = properties::Properties::select(init, demanded)
+                && let Some(properties) = properties::Properties::select(init, demanded, semantic)
             {
                 view.properties.insert(*owner, properties);
             }

@@ -1,4 +1,5 @@
 use oxc_ast::ast::{Expression, ObjectProperty, ObjectPropertyKind, PropertyKind};
+use oxc_semantic::Semantic;
 use oxc_span::Span;
 
 use crate::module_loader::{Mapped, demand::Demand};
@@ -12,7 +13,11 @@ pub(super) struct Properties {
 }
 
 impl Properties {
-    pub fn select(expression: &Expression<'_>, demand: &Demand) -> Option<Self> {
+    pub fn select(
+        expression: &Expression<'_>,
+        demand: &Demand,
+        semantic: &Semantic<'_>,
+    ) -> Option<Self> {
         if demand.whole {
             return None;
         }
@@ -20,7 +25,7 @@ impl Properties {
             return None;
         };
         if object.properties.iter().any(|property| match property {
-            ObjectPropertyKind::ObjectProperty(property) => name(property).is_none(),
+            ObjectPropertyKind::ObjectProperty(property) => name(property, semantic).is_none(),
             ObjectPropertyKind::SpreadProperty(_) => true,
         }) {
             return None;
@@ -29,7 +34,7 @@ impl Properties {
         for property in &object.properties {
             if let ObjectPropertyKind::ObjectProperty(property) = property
                 && !prototype(property)
-                && let Some(name) = name(property)
+                && let Some(name) = name(property, semantic)
             {
                 inherited.members.remove(&name);
             }
@@ -41,7 +46,7 @@ impl Properties {
             let ObjectPropertyKind::ObjectProperty(property) = property else {
                 continue;
             };
-            let Some(name) = name(property) else {
+            let Some(name) = name(property, semantic) else {
                 continue;
             };
             let child = if prototype(property) {
@@ -51,7 +56,7 @@ impl Properties {
             };
             match child {
                 Some(child) => {
-                    let nested = Self::select(&property.value, child);
+                    let nested = Self::select(&property.value, child, semantic);
                     if let Some(nested) = &nested {
                         omitted.extend_from_slice(&nested.omitted);
                         forwarded.extend_from_slice(&nested.forwarded);
@@ -124,10 +129,9 @@ impl Properties {
     }
 }
 
-fn name(property: &ObjectProperty<'_>) -> Option<String> {
+fn name(property: &ObjectProperty<'_>, semantic: &Semantic<'_>) -> Option<String> {
     if property.computed {
-        get_string_by_literal_expression(unwrap_syntax_only(property.key.as_expression()?))
-            .map(std::borrow::Cow::into_owned)
+        super::super::static_key::resolve(property.key.as_expression()?, semantic)
     } else {
         property.key.static_name().map(std::borrow::Cow::into_owned)
     }
