@@ -217,3 +217,13 @@ fn jsx_factory_when_finite_literal_spread_precedes_order_keeps_source_reads() {
         serde_json::json!(["spread", "id", "color-0-red--3-a"])
     );
 }
+
+#[cfg(test)]
+#[path = "coverage_cases/w38n_mixin_controls.rs"]
+mod w38n_mixin_controls;
+#[cfg(test)]
+#[path = "coverage_cases/w38n_mixin_diagnostics.rs"]
+mod w38n_mixin_diagnostics;
+#[cfg(test)]
+#[path = "coverage_cases/w38n_mixin_source.rs"]
+mod w38n_mixin_source;

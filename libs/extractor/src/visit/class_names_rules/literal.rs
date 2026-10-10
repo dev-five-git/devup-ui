@@ -100,3 +100,22 @@ impl<'a, S: LocalSource<'a>> LocalRules<'_, '_, 'a, S> {
         })
     }
 }
+
+#[cfg(test)]
+#[path = "literal_w38n_conditional.rs"]
+mod literal_w38n_conditional;
+#[cfg(test)]
+#[path = "literal_w38n_controls.rs"]
+mod literal_w38n_controls;
+#[cfg(test)]
+#[path = "literal_w38n_diagnostics.rs"]
+mod literal_w38n_diagnostics;
+#[cfg(test)]
+#[path = "literal_w38n_inventory.rs"]
+mod literal_w38n_inventory;
+#[cfg(test)]
+#[path = "literal_w38n_selection.rs"]
+mod literal_w38n_selection;
+#[cfg(test)]
+#[path = "literal_w38n_source.rs"]
+mod literal_w38n_source;
