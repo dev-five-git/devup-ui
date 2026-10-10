@@ -6,6 +6,8 @@ use boa_engine::{
 
 mod scalar;
 mod shape;
+#[cfg(test)]
+mod tests;
 pub(super) use scalar::Scalar;
 pub(super) use shape::{Kind, Property, Shape};
 
