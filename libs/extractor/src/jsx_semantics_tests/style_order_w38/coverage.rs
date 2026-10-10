@@ -243,3 +243,12 @@ mod w38o_logical_oracle;
 #[cfg(test)]
 #[path = "coverage_cases/w38o_logical_source.rs"]
 mod w38o_logical_source;
+#[cfg(test)]
+#[path = "coverage_cases/w38p_saved_choices.rs"]
+mod w38p_saved_choices;
+#[cfg(test)]
+#[path = "coverage_cases/w38p_saved_oracle.rs"]
+mod w38p_saved_oracle;
+#[cfg(test)]
+#[path = "coverage_cases/w38p_saved_source.rs"]
+mod w38p_saved_source;
