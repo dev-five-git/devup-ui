@@ -144,6 +144,15 @@ pub struct CompletedUpdate<'id, O> {
 }
 
 impl<'a> CounterSheet<'a> {
+    /// Capture wholly owned dormant strict6 data under admission.
+    /// # Errors
+    /// Rejects absent/latching Counter state, invalid linkage or strict registry shape.
+    pub fn export_snapshot6(
+        &self,
+    ) -> Result<super::snapshot6::OwnedSnapshot6, super::snapshot6::EvidenceError> {
+        super::snapshot6::export(self.sheet)
+    }
+
     #[must_use]
     pub const fn new(sheet: &'a mut StyleSheet) -> Self {
         Self { sheet }
