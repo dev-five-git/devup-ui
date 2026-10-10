@@ -12,14 +12,7 @@ pub(super) enum Companion<T> {
     Invalid,
     Supplied(T),
 }
-impl<T: PartialEq> Companion<T> {
-    pub(super) fn matches(&self, expected: &T) -> bool {
-        match self {
-            Self::Unseen => true,
-            Self::Invalid => false,
-            Self::Supplied(value) => value == expected,
-        }
-    }
+impl<T> Companion<T> {
     pub(super) const fn supplied(&self) -> Result<Option<&T>, sheet::snapshot6::EvidenceError> {
         match self {
             Self::Unseen => Ok(None),

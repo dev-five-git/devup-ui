@@ -20,29 +20,15 @@ fn admitted<T>(build: impl FnOnce() -> Result<T, EvidenceError>) -> Result<T, Ev
     })
 }
 
-const fn cold(result: Result<(), EvidenceError>) -> Result<(), EvidenceError> {
-    match result {
-        Err(error @ EvidenceError::ActiveExact(_)) => Err(error),
-        Ok(())
-        | Err(
-            EvidenceError::Schema
-            | EvidenceError::Map
-            | EvidenceError::State
-            | EvidenceError::Configuration
-            | EvidenceError::Cleanup
-            | EvidenceError::Companion
-            | EvidenceError::Kernel(_),
-        ) => Ok(()),
-    }
-}
-
 /// Adopt only strict admitted raw6; malformed candidates remain silent cold.
 /// # Errors
 /// Returns typed active-exact rejection before any session or live mutation.
 pub fn import(bytes: &[u8]) -> Result<(), EvidenceError> {
     admitted(|| {
-        if let Err(error) = with_style_sheet(snapshot6::check_install_target) {
-            return cold(Err(error));
+        // Admission stays held with exact inactive through validation, retirement and install;
+        // none of these operations invokes user code or enters an exact scope.
+        if with_style_sheet(snapshot6::check_install_target).is_err() {
+            return Ok(());
         }
         RESTORE.with_borrow_mut(|state| {
             let candidate = snapshot6::parse(bytes)
@@ -53,9 +39,9 @@ pub fn import(bytes: &[u8]) -> Result<(), EvidenceError> {
                     Ok(candidate)
                 });
             match candidate {
-                Err(error) => {
+                Err(_) => {
                     state.retire();
-                    cold(Err(error))
+                    Ok(())
                 }
                 Ok(candidate) => {
                     state.retire();
@@ -67,7 +53,7 @@ pub fn import(bytes: &[u8]) -> Result<(), EvidenceError> {
                             state.files = Companion::Unseen;
                             Ok(())
                         }
-                        Err(error) => cold(Err(error)),
+                        Err(_) => Ok(()),
                     }
                 }
             }
@@ -80,20 +66,19 @@ pub fn import(bytes: &[u8]) -> Result<(), EvidenceError> {
 /// Returns typed active-exact rejection before companion or session mutation.
 pub fn classes(incoming: Option<ClassMap>) -> Result<(), EvidenceError> {
     admitted(|| {
-        if let Err(error) = with_style_sheet(snapshot6::check_install_target) {
-            return cold(Err(error));
+        if with_style_sheet(snapshot6::check_install_target).is_err() {
+            return Ok(());
         }
         RESTORE.with_borrow_mut(|state| {
-            let incoming = Companion::from(incoming);
             match &state.session {
-                Some(session) if incoming.matches(&session.classes) => {
+                Some(session) if incoming.as_ref() == Some(&session.classes) => {
                     state.classes = Companion::Unseen;
                 }
                 Some(_) => {
                     state.retire();
-                    state.classes = incoming;
+                    state.classes = Companion::from(incoming);
                 }
-                None => state.classes = incoming,
+                None => state.classes = Companion::from(incoming),
             }
             Ok(())
         })
@@ -105,20 +90,19 @@ pub fn classes(incoming: Option<ClassMap>) -> Result<(), EvidenceError> {
 /// Returns typed active-exact rejection before companion or session mutation.
 pub fn files(incoming: Option<FileMap>) -> Result<(), EvidenceError> {
     admitted(|| {
-        if let Err(error) = with_style_sheet(snapshot6::check_install_target) {
-            return cold(Err(error));
+        if with_style_sheet(snapshot6::check_install_target).is_err() {
+            return Ok(());
         }
         RESTORE.with_borrow_mut(|state| {
-            let incoming = Companion::from(incoming);
             match &state.session {
-                Some(session) if incoming.matches(&session.files) => {
+                Some(session) if incoming.as_ref() == Some(&session.files) => {
                     state.files = Companion::Unseen;
                 }
                 Some(_) => {
                     state.retire();
-                    state.files = incoming;
+                    state.files = Companion::from(incoming);
                 }
-                None => state.files = incoming,
+                None => state.files = Companion::from(incoming),
             }
             Ok(())
         })

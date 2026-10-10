@@ -162,3 +162,28 @@ fn reset_forgets_session_when_another_build_begins() {
         LiveCheckpoint::capture(&StyleSheet::default())
     );
 }
+
+#[test]
+#[serial]
+fn clear_forgets_only_protocol_when_an_inactive_genuine_session_has_fresh_work() {
+    // Given: prior state differs from installed and subsequently extended live state.
+    let _guard = Guard::new();
+    output("cached", 1);
+    let bytes = encoded();
+    fresh();
+    output("prior", 0);
+    let prior = authority();
+    assert_eq!(cache6_restore::import(&bytes), Ok(()));
+    output("fresh", 2);
+    seed_file_map(vec!["journal".into(), "journal".into()]);
+    let live = authority();
+    assert_ne!(live, prior);
+    cache6_restore::RESTORE.with_borrow(|state| assert!(state.session.is_some()));
+    // When
+    let result = cache6_restore::clear();
+    // Then: forgetting must not retire/replay or restore the before-checkpoint/maps.
+    assert_eq!(result, Ok(()));
+    assert_eq!(authority(), live);
+    cache6_restore::RESTORE
+        .with_borrow(|state| assert_eq!(state, &cache6_session::Restore::default()));
+}
