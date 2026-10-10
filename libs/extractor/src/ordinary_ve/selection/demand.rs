@@ -19,7 +19,15 @@ mod audit;
 mod commonjs;
 mod exports;
 mod properties;
+#[cfg(test)]
+mod property_projection_tests;
 mod provenance;
+#[cfg(test)]
+pub(crate) mod receiver_fixtures;
+#[cfg(test)]
+mod receiver_projection_tests;
+#[cfg(test)]
+mod receiver_test_support;
 mod render;
 pub(crate) use provenance::select_consumer;
 pub(crate) use provenance::{select_reads, select_resolved};

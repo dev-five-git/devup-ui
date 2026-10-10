@@ -30,6 +30,7 @@ mod decision10_variants;
 mod demand_lifecycle;
 mod demand_producers;
 mod demand_prototype;
+mod demand_receiver_shapes;
 mod demand_support;
 mod demand_views;
 mod known_key_demands;
