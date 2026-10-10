@@ -2100,14 +2100,12 @@ impl<'a> VisitMut<'a> for DevupVisitor<'a> {
                             props_styles.extend(selected);
                             continue;
                         }
-                        if let Some(value) = crate::element_evaluation::scalar(
+                        read_once.extend(crate::element_evaluation::scalar(
                             &self.ast,
                             &mut selected,
                             &property.value,
                             &mut self.spreads_read_once,
-                        ) {
-                            read_once.push(value);
-                        }
+                        ));
                         for (index, style) in indices.into_iter().zip(selected) {
                             props_styles[index] = style;
                         }
@@ -2599,14 +2597,13 @@ impl<'a> VisitMut<'a> for DevupVisitor<'a> {
                     if captures_assignments
                         && let Some(JSXAttributeValue::ExpressionContainer(container)) = &attr.value
                         && let Some(source) = container.expression.as_expression()
-                        && let Some(value) = crate::element_evaluation::scalar(
+                    {
+                        assignment_reads.extend(crate::element_evaluation::scalar(
                             &self.ast,
                             &mut attribute_styles,
                             source,
                             &mut self.spreads_read_once,
-                        )
-                    {
-                        assignment_reads.push(value);
+                        ));
                     }
                     if captures_assignments
                         && property_name == "styleOrder"

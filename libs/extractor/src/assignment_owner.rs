@@ -4,8 +4,12 @@ use css::Site;
 use oxc_ast::ast::Expression;
 use oxc_span::GetSpan;
 
-use crate::utils::expression_to_code;
+use crate::utils::{expression_to_code, unwrap_syntax_only};
 use crate::{ExtractStyleProp, ExtractStyleValue};
+
+#[cfg(test)]
+#[path = "assignment_owner_tests.rs"]
+mod tests;
 
 struct Owner {
     start: u32,
@@ -68,6 +72,25 @@ pub(crate) fn site(
             style.identifier(),
         ),
     })
+}
+
+pub(crate) fn capture_styles<'a>(
+    source: Expression<'a>,
+    styles: Vec<ExtractStyleProp<'a>>,
+) -> Vec<ExtractStyleProp<'a>> {
+    if !matches!(unwrap_syntax_only(&source), Expression::ArrayExpression(_))
+        && let Some(scalar) = crate::assignment_owner::scalar(&source, &styles)
+    {
+        return vec![ExtractStyleProp::Static(scalar)];
+    }
+    vec![ExtractStyleProp::Evaluated {
+        binding: crate::sparse_sites::binding_name(source.span().start),
+        styles,
+        source,
+        evaluation: None,
+        alternate_order: None,
+        alternate_class: false,
+    }]
 }
 
 pub(crate) fn scalar(

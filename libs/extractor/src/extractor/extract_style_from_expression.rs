@@ -276,20 +276,7 @@ pub fn extract_style_from_expression<'a>(
         {
             return result;
         }
-        if !matches!(unwrap_syntax_only(&source), Expression::ArrayExpression(_))
-            && let Some(scalar) = crate::assignment_owner::scalar(&source, &result.styles)
-        {
-            result.styles = vec![ExtractStyleProp::Static(scalar)];
-            return result;
-        }
-        result.styles = vec![ExtractStyleProp::Evaluated {
-            binding: crate::sparse_sites::binding_name(source.span().start),
-            styles: result.styles,
-            source,
-            evaluation: None,
-            alternate_order: None,
-            alternate_class: false,
-        }];
+        result.styles = crate::assignment_owner::capture_styles(source, result.styles);
     }
     result
 }
