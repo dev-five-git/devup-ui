@@ -6,6 +6,10 @@ use oxc_span::{GetSpan, Span};
 use oxc_syntax::symbol::SymbolId;
 use rustc_hash::FxHashMap;
 
+#[cfg(test)]
+#[path = "analysis_index_tests.rs"]
+mod analysis_index_tests;
+
 #[derive(Clone)]
 pub(super) struct Unit {
     pub span: Span,
