@@ -80,14 +80,14 @@ fn set_files(files: FileMap) {
 
 fn rollback(state: &mut Restore) {
     if let Some(mut authority) = state.authority.take() {
-        with_style_sheet_mut(|current| {
-            authority.before.theme = std::mem::take(&mut current.theme);
-            *current = authority.before;
-        });
         set_classes(authority.before_classes);
         set_files(authority.before_files);
         css::file_map::set_original_ids(authority.before_sources);
         css::atom_hoist::restore_atom_plan(authority.before_plan);
+        with_style_sheet_mut(|current| {
+            authority.before.theme = std::mem::take(&mut current.theme);
+            *current = authority.before;
+        });
         for files in authority.fresh_seeds {
             css::file_map::seed_file_numbers(&files);
         }
