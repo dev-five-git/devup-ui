@@ -5,6 +5,10 @@ use oxc_span::Span;
 use crate::module_loader::{Mapped, demand::Demand};
 use crate::utils::{get_string_by_literal_expression, unwrap_syntax_only};
 
+#[cfg(test)]
+#[path = "properties_invariant_tests.rs"]
+mod invariant_tests;
+
 pub(super) struct Properties {
     span: Span,
     kept: Vec<(Span, Option<Self>)>,
@@ -24,31 +28,26 @@ impl Properties {
         let Expression::ObjectExpression(object) = unwrap_syntax_only(expression) else {
             return None;
         };
-        if object.properties.iter().any(|property| match property {
-            ObjectPropertyKind::ObjectProperty(property) => name(property, semantic).is_none(),
-            ObjectPropertyKind::SpreadProperty(_) => true,
-        }) {
-            return None;
-        }
+        let properties: Vec<(String, &ObjectProperty<'_>)> = object
+            .properties
+            .iter()
+            .map(|property| match property {
+                ObjectPropertyKind::ObjectProperty(property) => {
+                    name(property, semantic).map(|name| (name, property.as_ref()))
+                }
+                ObjectPropertyKind::SpreadProperty(_) => None,
+            })
+            .collect::<Option<Vec<_>>>()?;
         let mut inherited = demand.clone();
-        for property in &object.properties {
-            if let ObjectPropertyKind::ObjectProperty(property) = property
-                && !prototype(property)
-                && let Some(name) = name(property, semantic)
-            {
-                inherited.members.remove(&name);
+        for (name, property) in &properties {
+            if !prototype(property) {
+                inherited.members.remove(name);
             }
         }
         let mut kept = Vec::new();
         let mut omitted = Vec::new();
         let mut forwarded = Vec::new();
-        for property in &object.properties {
-            let ObjectPropertyKind::ObjectProperty(property) = property else {
-                continue;
-            };
-            let Some(name) = name(property, semantic) else {
-                continue;
-            };
+        for (name, property) in properties {
             let child = if prototype(property) {
                 (!inherited.members.is_empty()).then_some(&inherited)
             } else {
