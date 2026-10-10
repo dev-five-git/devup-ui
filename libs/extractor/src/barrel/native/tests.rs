@@ -9,6 +9,7 @@ use super::{Facts, Shape, Terminal, Walker};
 use crate::{ModuleResolver, ResolvedModule};
 
 mod aliases;
+mod carrier_provenance;
 mod facts;
 mod terminals;
 

@@ -43,6 +43,7 @@ mod mixed_review;
 mod mixed_rewrite;
 mod mixed_selection;
 mod mixed_support;
+mod native_member_provenance;
 mod standalone_precedence;
 mod standalone_terminals;
 

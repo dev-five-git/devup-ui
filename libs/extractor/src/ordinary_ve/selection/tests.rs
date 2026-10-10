@@ -7,6 +7,7 @@ use super::{Selection, plan::Unit};
 
 mod helpers;
 mod namespace_audit;
+mod native_policy;
 mod owners;
 mod provenance;
 
