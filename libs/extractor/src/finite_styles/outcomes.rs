@@ -1,6 +1,7 @@
 use crate::utils::{readable_code, unwrap_syntax_only};
 use crate::{ExtractStyleProp, ExtractStyleValue};
-use oxc_ast::ast::{Expression, LogicalOperator, UnaryOperator};
+use oxc_ast::AstKind;
+use oxc_ast::ast::{Expression, LogicalOperator, ObjectPropertyKind, UnaryOperator};
 use std::collections::BTreeMap;
 
 /// One way the generated conditions and lookups can come out, with the
@@ -147,51 +148,75 @@ fn truth(expression: &Expression<'_>, row: &Row) -> Option<bool> {
     }
 }
 
+/// The text a generated class expression evaluates to in `row`.
+///
+/// Each shape is read by its own function that answers `None` for every other
+/// shape, so the shapes are tried in turn and an expression that is none of
+/// them is declined by the end of the chain.
 pub(super) fn text(expression: &Expression<'_>, row: &Row) -> Option<String> {
-    match unwrap_syntax_only(expression) {
-        Expression::StringLiteral(value) => Some(value.value.to_string()),
-        Expression::TemplateLiteral(template) => {
-            let mut result = String::new();
-            for (index, quasi) in template.quasis.iter().enumerate() {
-                result.push_str(quasi.value.cooked.as_ref().unwrap_or(&quasi.value.raw));
-                if let Some(value) = template.expressions.get(index) {
-                    result.push_str(&text(value, row)?);
-                }
-            }
-            Some(result)
+    let node = AstKind::from_expression(unwrap_syntax_only(expression));
+    literal(node)
+        .or_else(|| template(node, row))
+        .or_else(|| conditional(node, row))
+        .or_else(|| either(node, row))
+        .or_else(|| lookup(node, row))
+}
+
+fn literal(node: AstKind<'_>) -> Option<String> {
+    Some(node.as_string_literal()?.value.to_string())
+}
+
+fn template(node: AstKind<'_>, row: &Row) -> Option<String> {
+    let template = node.as_template_literal()?;
+    let mut result = String::new();
+    for (index, quasi) in template.quasis.iter().enumerate() {
+        result.push_str(quasi.value.cooked.as_ref().unwrap_or(&quasi.value.raw));
+        if let Some(value) = template.expressions.get(index) {
+            result.push_str(&text(value, row)?);
         }
-        Expression::ConditionalExpression(conditional) => text(
-            if truth(&conditional.test, row)? {
-                &conditional.consequent
-            } else {
-                &conditional.alternate
-            },
-            row,
-        ),
-        Expression::LogicalExpression(logical) if logical.operator == LogicalOperator::Or => {
-            let left = text(&logical.left, row)?;
-            if left.is_empty() {
-                text(&logical.right, row)
-            } else {
-                Some(left)
-            }
-        }
-        Expression::ComputedMemberExpression(member) => {
-            let Some(key) = row.keys.get(&readable_code(&member.expression))? else {
-                return Some(String::new());
-            };
-            let Expression::ObjectExpression(object) = unwrap_syntax_only(&member.object) else {
-                return None;
-            };
-            for property in &object.properties {
-                if let oxc_ast::ast::ObjectPropertyKind::ObjectProperty(property) = property
-                    && property.key.static_name().as_deref() == Some(key.as_str())
-                {
-                    return text(&property.value, row);
-                }
-            }
-            Some(String::new())
-        }
-        _ => None,
     }
+    Some(result)
+}
+
+fn conditional(node: AstKind<'_>, row: &Row) -> Option<String> {
+    let conditional = node.as_conditional_expression()?;
+    text(
+        if truth(&conditional.test, row)? {
+            &conditional.consequent
+        } else {
+            &conditional.alternate
+        },
+        row,
+    )
+}
+
+/// `left || right`: the right side stands in for an empty left side.
+fn either(node: AstKind<'_>, row: &Row) -> Option<String> {
+    let logical = node
+        .as_logical_expression()
+        .filter(|logical| logical.operator == LogicalOperator::Or)?;
+    let left = text(&logical.left, row)?;
+    if left.is_empty() {
+        text(&logical.right, row)
+    } else {
+        Some(left)
+    }
+}
+
+/// `({ key: value })[name]`: the value of the key the row selects for `name`.
+fn lookup(node: AstKind<'_>, row: &Row) -> Option<String> {
+    let member = node.as_computed_member_expression()?;
+    let Some(key) = row.keys.get(&readable_code(&member.expression))? else {
+        return Some(String::new());
+    };
+    let object =
+        AstKind::from_expression(unwrap_syntax_only(&member.object)).as_object_expression()?;
+    for property in &object.properties {
+        if let ObjectPropertyKind::ObjectProperty(property) = property
+            && property.key.static_name().as_deref() == Some(key.as_str())
+        {
+            return text(&property.value, row);
+        }
+    }
+    Some(String::new())
 }
