@@ -8,6 +8,8 @@ mod consumer;
 #[cfg(test)]
 mod coverage_aliases;
 #[cfg(test)]
+mod coverage_imports;
+#[cfg(test)]
 mod coverage_policy;
 pub(crate) mod diagnostics;
 pub(crate) mod imports;

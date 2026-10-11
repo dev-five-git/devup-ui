@@ -30,6 +30,7 @@ mod coverage_edits;
 mod coverage_lowering;
 mod coverage_native;
 mod coverage_prepare;
+mod coverage_source;
 mod decision10_contracts;
 mod decision10_enumeration;
 mod decision10_fonts;

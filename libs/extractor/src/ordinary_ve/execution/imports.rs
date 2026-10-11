@@ -69,12 +69,11 @@ pub(crate) fn copy(module: SelectedModule<'_>, span: oxc_span::Span, mapped: &mu
     }
     edits.sort_by_key(|(span, _)| span.start);
     for (edit, text) in edits {
-        if edit.start < start {
-            continue;
+        if edit.start >= start {
+            mapped.copy(source, oxc_span::Span::new(start, edit.start));
+            mapped.synthesize(edit.start, &text);
+            start = edit.end;
         }
-        mapped.copy(source, oxc_span::Span::new(start, edit.start));
-        mapped.synthesize(edit.start, &text);
-        start = edit.end;
     }
     mapped.copy(source, oxc_span::Span::new(start, span.end));
 }
