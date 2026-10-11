@@ -262,3 +262,10 @@ mod w38q_leaf_oracle;
 #[cfg(test)]
 #[path = "coverage_cases/w38q_leaf_source.rs"]
 mod w38q_leaf_source;
+
+#[cfg(test)]
+#[path = "coverage_cases/w38r_u2_attrs.rs"]
+mod w38r_u2_attrs;
+#[cfg(test)]
+#[path = "coverage_cases/w38r_u2_fallback.rs"]
+mod w38r_u2_fallback;
