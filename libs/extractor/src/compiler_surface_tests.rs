@@ -3,7 +3,8 @@ use crate::ExtractStyleValue as Value;
 use crate::assignment_test_support::{evaluate, jsx_js};
 use crate::compiler_policy::tests::{associated, failed, input, offset};
 use crate::extract_style::ProducerPolicy as Policy;
-use crate::extract_style::compiler_receipts::ReceiptWitness;
+use crate::extract_style::compiler_receipts::coverage_tests::maps;
+use crate::extract_style::compiler_receipts::{PRODUCTIONS, ReceiptWitness};
 use serial_test::serial;
 pub(crate) fn names(receipts: &[ReceiptWitness]) -> Vec<String> {
     receipts
@@ -29,10 +30,7 @@ fn lazy_reversed_demands_precede_sorted_materialization() {
         })
         .collect();
     assert_eq!(properties, ["color", "background"]);
-    assert_eq!(
-        crate::extract_style::compiler_receipts::PRODUCTIONS.get(),
-        2
-    );
+    assert_eq!(PRODUCTIONS.get(), 2);
 }
 
 #[test]
@@ -61,10 +59,7 @@ fn preunion_global_aliases_complete_one_missing_root_demand_with_exact_receipt()
     assert_eq!(graph.operands.len(), 2);
     assert_eq!(graph.emissions.len(), 1);
     assert_eq!(graph.naming.len(), 1);
-    assert_eq!(
-        crate::extract_style::compiler_receipts::PRODUCTIONS.get(),
-        1
-    );
+    assert_eq!(PRODUCTIONS.get(), 1);
     assert_eq!(graph.emissions[0].receipt, receipts[0].id);
     assert!(
         graph
@@ -183,15 +178,9 @@ fn keyframes_keep_one_parent_receipt_without_member_demands() {
         "import {keyframes} from '@devup-ui/react'; const k=keyframes({from:{opacity:0},to:{opacity:1}});",
     );
     assert_eq!(styles.len(), 1);
-    assert_eq!(
-        crate::extract_style::compiler_receipts::PRODUCTIONS.get(),
-        1
-    );
-    assert!(
-        metadata
-            .code
-            .contains(&witnesses[0].produced.class().allocation.name)
-    );
+    assert_eq!(PRODUCTIONS.get(), 1);
+    let name = &witnesses[0].produced.class().allocation.name;
+    assert!(metadata.code.contains(name));
 }
 
 #[test]
@@ -199,8 +188,9 @@ fn keyframes_keep_one_parent_receipt_without_member_demands() {
 fn auxiliary_generated_operands_report_real_markers_or_unavailable_positions() {
     use crate::compiler_policy::tests::ObserveScope;
     use crate::extract_style::{compiler_projection, compiler_receipts};
-    for mapped in [true, false] {
+    for (mapped, visitor_error) in [(true, false), (false, false), (false, true)] {
         reset();
+        let before = maps();
         let source = "import {Box} from '@devup-ui/react';\nconst a=<Box color={value}/>;";
         let at = offset(source, "value");
         let origin = crate::style_origin::actual("A.tsx", source, oxc_span::Span::new(at, at + 5))
@@ -214,9 +204,13 @@ fn auxiliary_generated_operands_report_real_markers_or_unavailable_positions() {
         };
         let _observer = ObserveScope::enter(move |retry| {
             assert!(!retry);
-            let partial = format!(
-                "import {{Box}} from '@devup-ui/react'; const a=<Box color={{{operand}}}/>;"
-            );
+            let partial = if visitor_error {
+                "import * as stylex from '@stylexjs/stylex'; const s=stylex.create({base:{...stylex.include(missing.base)}});".into()
+            } else {
+                format!(
+                    "import {{Box}} from '@devup-ui/react'; const a=<Box color={{{operand}}}/>;"
+                )
+            };
             let Err(error) = crate::extract_class_map_from_code(
                 "A.tsx",
                 &partial,
@@ -227,6 +221,9 @@ fn auxiliary_generated_operands_report_real_markers_or_unavailable_positions() {
                 panic!("auxiliary terminal")
             };
             assert!(error.is::<compiler_projection::ProjectionError>());
+            if visitor_error {
+                assert!(error.to_string().contains("stylex.include"), "{error}");
+            }
             if mapped {
                 assert!(error.to_string().contains(&expected), "{error}");
             } else {
@@ -240,5 +237,6 @@ fn auxiliary_generated_operands_report_real_markers_or_unavailable_positions() {
         });
         let error = failed(input("A.tsx", source));
         assert!(error.is::<compiler_projection::ProjectionError>());
+        assert_eq!(maps(), before);
     }
 }

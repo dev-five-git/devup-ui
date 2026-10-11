@@ -1,6 +1,22 @@
 use super::*;
+use crate::extract_style::CounterProducerError::UnnumberedSite;
 use crate::extract_style::compiler_associations::Graph;
-pub(crate) use crate::extract_style::compiler_receipts::coverage_tests::failed;
+pub(crate) fn one<T>(values: impl IntoIterator<Item = T>) -> T {
+    let mut values = Vec::from_iter(values);
+    assert_eq!(values.len(), 1);
+    values.remove(0)
+}
+fn retain_unnumbered(at: Option<u32>) {
+    let error = projection::ProjectionError::Producer(UnnumberedSite);
+    receipts::collect::<()>(Err(error), at);
+}
+pub(crate) fn failed(input: CompilerInput<'_>) -> Box<dyn std::error::Error> {
+    let result = with_counter_extract(input, |_, _| Ok::<_, std::convert::Infallible>(()));
+    match one(result.err()) {
+        CounterCompileError::Compile(error) => error,
+        CounterCompileError::Consumer(error) => match error {},
+    }
+}
 use crate::extract_style::compiler_receipts::{PRODUCTIONS, ReceiptWitness};
 use crate::extract_style::extract_style_value::ExtractStyleValue;
 use serial_test::serial;
@@ -155,12 +171,7 @@ fn module_terminal_survives_parent_early_error_and_string_transport() {
     let _observer = ObserveScope::enter(move |retry| {
         if !retry && !injected {
             injected = true;
-            receipts::collect::<()>(
-                Err(projection::ProjectionError::Producer(
-                    crate::extract_style::CounterProducerError::UnnumberedSite,
-                )),
-                Some(0),
-            );
+            retain_unnumbered(Some(0));
         }
     });
     let resolver = |specifier: &str, _: &str| {
@@ -195,12 +206,7 @@ fn module_terminal_survives_parent_early_error_and_string_transport() {
 fn successful_no_style_invoke_drains_pending_typed_terminal() {
     reset();
     let resolver = |_: &str, _: &str| {
-        receipts::collect::<()>(
-            Err(projection::ProjectionError::Producer(
-                crate::extract_style::CounterProducerError::UnnumberedSite,
-            )),
-            None,
-        );
+        retain_unnumbered(None);
         Some(crate::ResolvedModule {
             path: "constant.ts".into(),
             code: "export const v=1;".into(),

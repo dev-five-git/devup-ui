@@ -1,9 +1,10 @@
-use crate::compiler_policy::tests::{ObserveScope, associated, input, reset};
+use crate::compiler_policy::tests::{ObserveScope, associated, failed, input, one, reset};
 use crate::compiler_policy::{CounterCompileError, with_counter_extract};
 use crate::extract_style::{
     compiler_associations as associations, compiler_projection as projection,
     compiler_receipts as receipts, extract_style_value::ExtractStyleValue as Value,
 };
+use projection::ProjectionError as Fault;
 use rstest::rstest;
 use serial_test::serial;
 use std::{
@@ -12,42 +13,33 @@ use std::{
     convert::Infallible,
 };
 
-pub(crate) fn failed(
-    input: crate::compiler_policy::CompilerInput<'_>,
-) -> Box<dyn std::error::Error> {
-    let mut errors =
-        Vec::from_iter(with_counter_extract(input, |_, _| Ok::<_, Infallible>(())).err());
-    assert_eq!(errors.len(), 1);
-    match errors.remove(0) {
-        CounterCompileError::Compile(error) => error,
-        CounterCompileError::Consumer(error) => match error {},
-    }
+fn journal<T>(action: impl FnOnce(&mut receipts::Journal) -> T) -> T {
+    receipts::JOURNAL.with_borrow_mut(|journal| {
+        let journals = journal.as_mut_slice();
+        assert_eq!(journals.len(), 1);
+        action(&mut journals[0])
+    })
 }
 
 #[derive(Debug, PartialEq, Eq)]
-struct Maps {
+pub(crate) struct Maps {
     classes: HashMap<String, HashMap<String, usize>>,
-    files: Vec<(String, usize)>,
+    files: BTreeMap<String, usize>,
     originals: BTreeMap<String, u32>,
     canonical: HashMap<String, String>,
 }
-fn maps() -> Maps {
-    let mut files: Vec<_> = css::file_map::get_file_map().into_iter().collect();
-    files.sort();
+pub(crate) fn maps() -> Maps {
     Maps {
         classes: css::class_map::get_class_map(),
-        files,
+        files: css::file_map::get_file_map().into_iter().collect(),
         originals: css::file_map::get_original_ids(),
         canonical: css::file_map::get_canonical_map(),
     }
 }
 fn operands() -> Vec<Value> {
-    receipts::JOURNAL.with_borrow(|journal| {
-        journal
-            .iter()
-            .flat_map(|journal| &journal.graph.operands)
-            .map(|row| row.operand.clone())
-            .collect()
+    journal(|journal| {
+        let rows = &journal.graph.operands;
+        rows.iter().map(|row| row.operand.clone()).collect()
     })
 }
 
@@ -66,11 +58,7 @@ fn parser_rejects_configuration_corruption_when_projection_demands_a_name(#[case
     reset();
     let before = maps();
     let resolver = |_: &str, _: &str| {
-        receipts::JOURNAL.with_borrow_mut(|journal| {
-            journal.iter_mut().for_each(|journal| {
-                journal.config.prefix.push_str("corrupt");
-            });
-        });
+        journal(|journal| journal.config.prefix.push_str("corrupt"));
         Some(crate::ResolvedModule {
             path: "constant.ts".into(),
             code: "export const v=1;".into(),
@@ -99,14 +87,19 @@ fn sealing_rejects_a_real_variable_when_its_finalized_association_is_lost() {
     let before = maps();
     let _observer = ObserveScope::enter(|retry| {
         assert!(!retry);
-        receipts::JOURNAL.with_borrow_mut(|journal| {
-            assert!(journal.is_some());
-            journal.iter_mut().for_each(|journal| {
-                let graph = &mut journal.graph;
-                assert_eq!(graph.variables.len(), 1);
-                assert_eq!(graph.variables[0].receipts.len(), 1);
-                graph.variables[0].receipts.clear();
-            });
+        let operand = operands().remove(0);
+        let expected = journal(|journal| {
+            journal.graph.variables[0].receipts.clear();
+            let produced = &journal.witnesses[0].produced;
+            produced.class().allocation.name.clone()
+        });
+        let class = crate::gen_class_name::class_name(&operand, Some("coverage.tsx"));
+        assert_eq!(class, Some(expected));
+        journal(|journal| {
+            let graph = &mut journal.graph;
+            assert_eq!(graph.variables.len(), 1);
+            assert_eq!(graph.variables[0].receipts.len(), 1);
+            graph.variables[0].receipts.clear();
         });
     });
     let published = Cell::new(false);
@@ -118,14 +111,52 @@ fn sealing_rejects_a_real_variable_when_its_finalized_association_is_lost() {
         ),
         |_, batch| {
             published.set(true);
-            batch.consume(|_| Ok::<_, ()>(()))
+            batch.consume(|_| Ok::<_, Infallible>(()))
         },
     );
     // Then: conversion preserves the Variable variant and the consumer never runs.
-    assert!(
-        matches!(result, Err(CounterCompileError::Compile(ref error)) if matches!(error.downcast_ref::<projection::ProjectionError>(), Some(projection::ProjectionError::Variable)))
-    );
     assert!(!published.get());
+    let error = match one(result.err()) {
+        CounterCompileError::Compile(error) => error,
+        CounterCompileError::Consumer(error) => match error {},
+    };
+    assert!(matches!(error.downcast_ref(), Some(Fault::Variable)));
+    assert_eq!(
+        error.to_string(),
+        "counter variable requires an unambiguous finalized receipt"
+    );
+    assert_eq!(maps(), before);
+}
+
+#[test]
+#[serial]
+fn acquired_context_failure_keeps_real_demand_when_origin_scope_has_ended() {
+    // Given: an actual parsed dynamic use whose expression scope has ended.
+    reset();
+    let before = maps();
+    let _observer = ObserveScope::enter(|retry| {
+        assert!(!retry);
+        let operand = operands().remove(0);
+        let original = journal(|journal| journal.graph.variables[0].original.clone());
+        let site = one(original.site());
+        let at = one(u32::try_from(site.at));
+        let _demand = projection::DemandScope::enter(at);
+        let context = one(projection::context(&operand, Some("other.tsx")));
+        // When: acquisition produces for the real route, not the requested context.
+        let result = receipts::acquire(&operand, Some("coverage.tsx"), context);
+        assert!(matches!(result, Err(Fault::Context)));
+        assert!(receipts::collect(result, None).is_none());
+    });
+    let error = failed(input(
+        "coverage.tsx",
+        "import {Box} from '@devup-ui/react';\nconst a=<Box color={value}/>;",
+    ));
+    // Then: the typed transport uses the real demand, not a fabricated 1:1.
+    assert!(error.is::<projection::ProjectionError>());
+    assert_eq!(
+        error.to_string(),
+        "coverage.tsx:2:21: counter naming configuration changed within compilation"
+    );
     assert_eq!(maps(), before);
 }
 
@@ -148,11 +179,8 @@ fn consumed_parser_batch_preserves_consumer_error_and_rolls_back_all_maps() {
                 assert_eq!(view.associations.emissions.len(), 2);
                 assert!(view.styles.windows(2).all(|pair| pair[0] <= pair[1]));
                 for witness in view.witnesses {
-                    assert!(
-                        metadata
-                            .code
-                            .contains(&witness.produced.class().allocation.name)
-                    );
+                    let name = &witness.produced.class().allocation.name;
+                    assert!(metadata.code.contains(name));
                 }
                 Err::<(), _>(37)
             })
@@ -177,14 +205,11 @@ fn collection_retains_real_parser_operands_when_duplicates_collapse() {
         collected.extend(operands);
         // Then: one survivor retains both original occurrence associations.
         assert_eq!(collected.len(), 1);
-        receipts::JOURNAL.with_borrow(|journal| {
-            assert!(journal.is_some());
-            journal.iter().for_each(|journal| {
-                let rows = &journal.graph.operands;
-                assert_eq!(rows.len(), 4);
-                assert_eq!(rows[2].survivor, rows[3].survivor);
-                assert_eq!(rows[2].invocation, rows[0].invocation);
-            });
+        journal(|journal| {
+            let rows = &journal.graph.operands;
+            assert_eq!(rows.len(), 4);
+            assert_eq!(rows[2].survivor, rows[3].survivor);
+            assert_eq!(rows[2].invocation, rows[0].invocation);
         });
     });
     let (_, styles, _, _) = associated(input(
@@ -212,20 +237,13 @@ fn operand_diagnostics_keep_location_when_real_parser_operands_are_transport_err
                 Value::Css(_) | Value::Import(_) | Value::FontFace(_)
             ) {
                 let before = maps();
-                assert_eq!(
-                    crate::gen_class_name::class_name(&operand, Some("coverage.tsx")),
-                    None
-                );
+                let class = crate::gen_class_name::class_name(&operand, Some("coverage.tsx"));
+                assert_eq!(class, None);
                 assert_eq!(maps(), before);
             }
             assert_eq!(receipts::collect_operand(Ok(17), &operand), Some(17));
-            assert_eq!(
-                receipts::collect_operand::<()>(
-                    Err(projection::ProjectionError::Context),
-                    &operand
-                ),
-                None
-            );
+            let rejected = Err::<(), _>(projection::ProjectionError::Context);
+            assert_eq!(receipts::collect_operand(rejected, &operand), None);
         }
     });
     let error = failed(input(
@@ -236,14 +254,8 @@ fn operand_diagnostics_keep_location_when_real_parser_operands_are_transport_err
     let message = error.to_string();
     assert_eq!(message.lines().count(), 6);
     assert_eq!(message.matches("coverage.tsx:").count(), 6, "{message}");
-    assert_eq!(
-        message
-            .lines()
-            .collect::<std::collections::BTreeSet<_>>()
-            .len(),
-        4,
-        "{message}"
-    );
+    let distinct: std::collections::BTreeSet<_> = message.lines().collect();
+    assert_eq!(distinct.len(), 4, "{message}");
     assert_eq!(maps(), before);
 }
 
@@ -257,13 +269,11 @@ fn retry_error_formats_as_a_continuation_when_erased_for_transport() {
         None,
         &Default::default(),
     );
-    assert!(values.is_some());
-    values.into_iter().for_each(|values| {
-        assert_ne!(values.1.len(), 0);
-        let error = crate::compiler_policy::retry(values, &[]);
-        // When: an error consumer renders the erased diagnostic.
-        let diagnostic = error.to_string();
-        // Then: transport describes deferred evaluation, not a terminal naming failure.
-        assert_eq!(diagnostic, "deferred Counter evaluation continuation");
-    });
+    let values = one(values);
+    assert_ne!(values.1.len(), 0);
+    let error = crate::compiler_policy::retry(values, &[]);
+    // When: an error consumer renders the erased diagnostic.
+    let diagnostic = error.to_string();
+    // Then: transport describes deferred evaluation, not a terminal naming failure.
+    assert_eq!(diagnostic, "deferred Counter evaluation continuation");
 }
