@@ -74,3 +74,7 @@ fn w38r_u2_async_expression_callback_when_not_build_readable_reports_located_err
         "a.tsx:2:12: Cannot compose `async (p) => ({ color: p.color })` at build time: each style must be a rule object, a class, or a condition choosing between them"
     );
 }
+
+#[cfg(test)]
+#[path = "w38r_u3_public.rs"]
+mod w38r_u3_public;

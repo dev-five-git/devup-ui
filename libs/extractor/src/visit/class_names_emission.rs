@@ -183,3 +183,7 @@ fn collect<'a, S: LocalSource<'a>>(
 #[cfg(test)]
 #[path = "class_names_emission/w38q_leaf_replay.rs"]
 mod w38q_leaf_replay;
+
+#[cfg(test)]
+#[path = "class_names_emission/w38r_u3_computed.rs"]
+mod w38r_u3_computed;
