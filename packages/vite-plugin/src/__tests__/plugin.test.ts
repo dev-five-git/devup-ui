@@ -16,7 +16,7 @@ import {
 
 import { DevupUI as createDevupUI } from '../plugin'
 
-const pluginInstances = new Set<ReturnType<typeof createDevupUI>[0]>()
+const pluginInstances = new Set<ViteTestPlugin>()
 it.each([
   undefined,
   'code',
@@ -89,7 +89,13 @@ it.each([
   },
 )
 function DevupUI(options?: Parameters<typeof createDevupUI>[0]) {
-  const plugin = createDevupUI(options)
+  const plugin = createDevupUI(options) as unknown as [
+    ViteTestPlugin,
+    ViteTestRestorePlugin,
+    unknown,
+    unknown,
+    unknown,
+  ]
   pluginInstances.add(plugin[0])
   return plugin
 }
@@ -420,6 +426,9 @@ describe('devupUIVitePlugin', () => {
       sharedDuringBuild: true,
       closeBundle: expect.any(Function),
       buildStart: expect.any(Function),
+      buildApp: { order: 'pre', handler: expect.any(Function) },
+      buildEnd: { order: 'post', handler: expect.any(Function) },
+      closeWatcher: expect.any(Function),
       config: expect.any(Function),
       load: expect.any(Function),
       watchChange: expect.any(Function),

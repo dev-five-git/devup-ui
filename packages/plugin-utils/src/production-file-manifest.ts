@@ -26,6 +26,7 @@ export interface ProductionManifestContext {
   readonly resolverOptions: ModulePathResolverOptions
   readonly toId: (path: string) => string
   readonly prepareSource?: PrepareSource
+  readonly unpreparedMarkdown?: 'reserve-only'
 }
 export interface ProductionFileManifestOptions {
   readonly contexts: readonly ProductionManifestContext[]
@@ -97,6 +98,15 @@ export async function collectProductionFileManifest({
       let source: string
       try {
         prepared = readPreparedSource(await prepareSource?.(path))
+        if (
+          prepared === undefined &&
+          markdown.has(extname(path).toLowerCase()) &&
+          context.unpreparedMarkdown === 'reserve-only'
+        ) {
+          inputs.file(path)
+          adjacency.set(path, [])
+          return []
+        }
         if (prepared === undefined && markdown.has(extname(path).toLowerCase()))
           throw Object.assign(
             new TypeError('Markdown source has no prepared JavaScript'),

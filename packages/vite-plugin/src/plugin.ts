@@ -33,7 +33,7 @@ import {
 } from '@devup-ui/plugin-utils'
 import {
   codeExtract,
-  getCss,
+  getCss as getEngineCss,
   getDefaultTheme,
   getThemeInterface,
   importCanonicalMap,
@@ -51,12 +51,14 @@ import type {
   EnvironmentModuleNode,
   ModuleNode,
   Plugin,
+  PluginOption,
   ResolvedConfig,
   UserConfig,
 } from 'vite'
 
 import { createAggregateCssPreparation } from './aggregate-css'
 import { createCompiledGuard } from './compiled-guard'
+import { ProductionActivation } from './production-numbering'
 import { createMissingInputWatch } from './resolution-watch'
 
 /**
@@ -274,7 +276,10 @@ async function writeDataFiles(
     await mkdir(options.cssDir, { recursive: true })
   }
   if (!options.singleCss) {
-    await writeFile(join(options.cssDir, 'devup-ui.css'), getCss(null, false))
+    await writeFile(
+      join(options.cssDir, 'devup-ui.css'),
+      getEngineCss(null, false),
+    )
   }
 }
 
@@ -293,7 +298,7 @@ export function DevupUI({
   atomHoist,
   importAliases: userImportAliases,
   mdxExtensions: configuredMdxExtensions,
-}: Partial<DevupUIPluginOptions> = {}) {
+}: Partial<DevupUIPluginOptions> = {}): PluginOption {
   const mdxExtensions = normalizeMdxExtensions(configuredMdxExtensions)
   // A build starts from its own options: whatever an earlier build in this
   // process left in the engine (prefix, hoisting, routes, buckets, numbers,
@@ -312,6 +317,27 @@ export function DevupUI({
   setDebug(debug)
   setPrefix(prefix ?? null)
   const importAliases = mergeImportAliases(userImportAliases)
+  const production = new ProductionActivation(
+    {
+      package: libPackage,
+      devupFile,
+      distDir,
+      cssDir: configuredCssDir,
+      extractCss,
+      debug,
+      include,
+      singleCss,
+      prefix,
+      shorthands,
+      sourceDirs: configuredSourceDirs,
+      mdxExtensions,
+      atomHoist,
+      importAliases,
+    },
+    endBuild,
+  )
+  const getCss = (file: number | null | undefined, main: boolean) =>
+    production.active ? production.css(file, main) : getEngineCss(file, main)
   const excludeModules = createNodeModulesExcludeRegex(include)
   const pathOptions = { devupFile, distDir, cssDir: configuredCssDir }
   let cssDir = configuredCssDir ?? join(distDir, 'devup-ui')
@@ -354,6 +380,7 @@ export function DevupUI({
   function moduleResolver(
     conditions: readonly string[],
     onResolutionInputs: ResolutionInputObserver = observeSetup,
+    context?: string,
   ) {
     return createModuleResolver({
       cwd: projectRoot,
@@ -361,6 +388,12 @@ export function DevupUI({
       conditions,
       onResolutionInputs,
       toId: (path) => path.replaceAll('\\', '/'),
+      ...(context === undefined
+        ? {}
+        : {
+            prepareSource: (path: string) =>
+              production.modules(context).source(path),
+          }),
     })
   }
   // The dev server watches cssDir, so every write is an update signal. A
@@ -379,63 +412,86 @@ export function DevupUI({
     async transform(code, id) {
       if (!extractCss) return
       resolveFallbackPaths()
-      const fileName = id.split('?')[0]
+      const fileName = id.replace(/\?.*$/s, '')
       if (excludeModules.test(fileName)) return
       const environment = this.environment ?? plugin
+      if (production.active) await production.prepare(observeSetup)
+      const context = production.active
+        ? (this.environment?.name ?? production.context)
+        : undefined
       const preserveSymlinks =
         this.environment?.config.resolve.preserveSymlinks ??
         resolvedConfig?.resolve?.preserveSymlinks
       missingInputWatch.start(fileName, environment)
       aggregateCss.observe(this.environment ?? plugin, id)
       const environmentConditions = this.environment?.config.resolve.conditions
-      setModuleResolver(
-        moduleResolver(
-          (environmentConditions
-            ? ['import', ...environmentConditions]
-            : fallbackConditions
-          ).map((condition) =>
-            condition === 'development|production'
-              ? isProduction
-                ? 'production'
-                : 'development'
-              : condition,
-          ),
-          (inputs) => {
-            for (const path of inputs.fileDependencies)
-              this.addWatchFile(
-                resolutionWatchPath(path, preserveSymlinks).replaceAll(
-                  '\\',
-                  '/',
-                ),
-              )
-            for (const path of inputs.missingDependencies) {
-              const watched = resolutionWatchPath(
-                path,
-                preserveSymlinks,
-              ).replaceAll('\\', '/')
-              setupWatchFiles.add(path)
-              missingInputWatch.observe(fileName, watched, environment)
-              missingWatchContexts.get(this.environment ?? plugin)?.(watched)
-            }
-          },
+      const resolver = moduleResolver(
+        (environmentConditions
+          ? ['import', ...environmentConditions]
+          : fallbackConditions
+        ).map((condition) =>
+          condition === 'development|production'
+            ? isProduction
+              ? 'production'
+              : 'development'
+            : condition,
         ),
+        (inputs) => {
+          for (const path of inputs.fileDependencies)
+            this.addWatchFile(
+              resolutionWatchPath(path, preserveSymlinks).replaceAll('\\', '/'),
+            )
+          for (const path of inputs.missingDependencies) {
+            const watched = resolutionWatchPath(
+              path,
+              preserveSymlinks,
+            ).replaceAll('\\', '/')
+            setupWatchFiles.add(path)
+            missingInputWatch.observe(fileName, watched, environment)
+            missingWatchContexts.get(this.environment ?? plugin)?.(watched)
+          }
+        },
+        context,
       )
+      if (!production.active) setModuleResolver(resolver)
       let rel = relative(dirname(id), cssDir).replaceAll('\\', '/')
       if (!rel.startsWith('./')) rel = `./${rel}`
       const output = (() => {
         try {
-          return codeExtract(
-            fileName,
-            code,
-            libPackage,
-            rel,
-            singleCss,
-            true,
-            false,
-            importAliases,
-            ...(isMdxSource(fileName, mdxExtensions)
-              ? (['compiled-mdx'] as const)
-              : ([] as const)),
+          const extract = () =>
+            codeExtract(
+              fileName,
+              code,
+              libPackage,
+              rel,
+              singleCss,
+              true,
+              false,
+              importAliases,
+              ...(isMdxSource(fileName, mdxExtensions)
+                ? (['compiled-mdx'] as const)
+                : ([] as const)),
+            )
+          if (!production.active) return extract()
+          const key = context ?? production.context
+          return production.run(key, () =>
+            production.modules(key).extract(
+              {
+                nativeId: id,
+                id: fileName,
+                source: {
+                  code,
+                  ...(isMdxSource(fileName, mdxExtensions)
+                    ? {
+                        sourceType: 'compiled-mdx' as const,
+                        map: this.getCombinedSourcemap(),
+                      }
+                    : {}),
+                },
+              },
+              resolver,
+              extract,
+            ),
           )
         } catch (error) {
           if (isMdxSource(fileName, mdxExtensions))
@@ -461,7 +517,7 @@ export function DevupUI({
             dependencies: output.dependencies,
           }
         } finally {
-          output.free()
+          if ('free' in output) output.free()
         }
       })()
       for (const dependency of dependencies) this.addWatchFile(dependency)
@@ -520,6 +576,8 @@ export function DevupUI({
         )
         // Vite ids are POSIX absolute paths
         fallbackConditions = conditions
+        if (production.configure(config)) writtenCss.clear()
+        if (production.active) return
         setModuleResolver(moduleResolver(conditions))
         const sourceDirs = resolveSourceDirs(projectRoot, configuredSourceDirs)
         const input =
@@ -675,15 +733,27 @@ export function DevupUI({
       }
       return ret
     },
-    apply() {
+    apply(_config?: UserConfig, environment?: { command: 'build' | 'serve' }) {
+      if (environment?.command === 'build' && extractCss) endBuild()
       return true
     },
-    closeBundle(this: void) {
-      missingInputWatch.close()
-      missingWatchContexts.clear()
+    closeBundle(this: (object & { environment?: { name: string } }) | void) {
+      if (production.active)
+        production.close(this ? this.environment?.name : undefined)
+      else {
+        missingInputWatch.close()
+        missingWatchContexts.clear()
+      }
       endBuild()
     },
-    buildStart(options) {
+    async buildStart(options) {
+      if (production.active) {
+        await production.prepare(observeSetup, () => {
+          writtenCss.clear()
+          cssMap.clear()
+        })
+        production.start(this.environment?.name ?? production.context)
+      }
       missingWatchContexts.set(this.environment ?? plugin, (path) =>
         this.addWatchFile(path),
       )
@@ -703,9 +773,14 @@ export function DevupUI({
       )
     },
     async watchChange(this: void, id) {
+      if (production.active) production.invalidate(id.replaceAll('\\', '/'))
       resolveFallbackPaths()
       if (resolve(id) === resolve(devupFile) && existsSync(devupFile)) {
         try {
+          if (production.active) {
+            await production.updateTheme()
+            return
+          }
           await writeDataFiles({
             package: libPackage,
             cssDir,
@@ -717,6 +792,31 @@ export function DevupUI({
           console.error(`[devup-ui] theme update failed at ${devupFile}`, error)
         }
       }
+    },
+    buildApp: {
+      order: 'pre',
+      async handler(builder) {
+        if (!production.active) return
+        production.refine(builder.environments)
+        await production.prepare(observeSetup)
+      },
+    },
+    buildEnd: {
+      order: 'post',
+      async handler(error) {
+        if (production.active)
+          await production.finish(
+            this.environment?.name ?? production.context,
+            this,
+            error,
+          )
+      },
+    },
+    closeWatcher() {
+      if (production.active) production.dispose()
+      missingInputWatch.close()
+      missingWatchContexts.clear()
+      endBuild()
     },
     // Runs once per environment. Vite 6+ ignores `handleHotUpdate` on a plugin
     // that defines this hook, so the devup.json reload lives here as well.

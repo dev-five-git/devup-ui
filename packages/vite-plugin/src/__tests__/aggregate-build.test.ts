@@ -6,9 +6,17 @@ import { pathToFileURL } from 'node:url'
 
 import { resetBuildState } from '@devup-ui/wasm'
 import { expect, it } from 'bun:test'
-import { build } from 'vite'
+import { build, type HookHandler, type Plugin } from 'vite'
 
 import { DevupUI } from '../plugin'
+
+type NativeLoad = Extract<
+  HookHandler<NonNullable<Plugin['load']>>,
+  (...args: never[]) => unknown
+>
+type TestPlugin = Omit<Plugin, 'load'> & {
+  load(this: ThisParameterType<NativeLoad>, id: string): ReturnType<NativeLoad>
+}
 
 const landing = createRequire(
   resolve(import.meta.dir, '../../../../apps/landing/package.json'),
@@ -66,7 +74,7 @@ for (const singleCss of [false, true]) {
         }
         const transformed = new Set<string>()
         const snapshots: string[] = []
-        const plugins = DevupUI({ singleCss })
+        const plugins = DevupUI({ singleCss }) as unknown as [TestPlugin]
         const originalLoad = plugins[0].load
         plugins[0].load = async function (id) {
           const result = await originalLoad.call(this, id)
