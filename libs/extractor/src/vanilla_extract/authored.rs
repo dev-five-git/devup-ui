@@ -108,18 +108,8 @@ pub(super) fn prepare(
                         export: fallback.name.clone(),
                     });
             }
-        } else if !index.stars.is_empty() {
-            for span in &index.stars {
-                pieces
-                    .entry((span.start, span.end))
-                    .or_insert_with(|| Piece {
-                        span: *span,
-                        text: span.source_text(stylesheet.code).to_string(),
-                        export: fallback.name.clone(),
-                    });
-            }
         } else {
-            return Err(crate::located_errors(
+            let missing_site = crate::located_errors(
                 stylesheet.filename,
                 stylesheet.source,
                 stylesheet.edits,
@@ -130,7 +120,19 @@ pub(super) fn prepare(
                         fallback.name
                     ),
                 )],
-            ));
+            );
+            let stars = (!index.stars.is_empty())
+                .then_some(&index.stars)
+                .ok_or(missing_site)?;
+            for span in stars {
+                pieces
+                    .entry((span.start, span.end))
+                    .or_insert_with(|| Piece {
+                        span: *span,
+                        text: span.source_text(stylesheet.code).to_string(),
+                        export: fallback.name.clone(),
+                    });
+            }
         }
     }
     let related = aliases::related(&index, &dispositions);

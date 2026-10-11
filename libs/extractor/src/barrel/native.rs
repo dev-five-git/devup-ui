@@ -144,10 +144,13 @@ impl Walker<'_, '_> {
                     Terminal::Namespace { source } => {
                         if source == self.package {
                             self.native_import(&source, "", Some(name))
-                        } else if let Some(next) = self.modules.get(&source).cloned() {
-                            self.native_origin(&next, name, reading)
                         } else {
-                            Terminal::Absent
+                            self.modules
+                                .get(&source)
+                                .cloned()
+                                .map_or(Terminal::Absent, |next| {
+                                    self.native_origin(&next, name, reading)
+                                })
                         }
                     }
                     Terminal::Binding { .. } | Terminal::Absent => Terminal::Absent,

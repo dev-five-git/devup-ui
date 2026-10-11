@@ -13,6 +13,15 @@ pub(super) enum Input<'a> {
     Readback(capture::Selected<'a>, &'a [oxc_span::Span]),
 }
 
+impl Input<'_> {
+    const fn stylesheet(&self) -> Stylesheet<'_> {
+        match self {
+            Self::Stylesheet(stylesheet, _) => *stylesheet,
+            Self::Selected(selected) | Self::Readback(selected, _) => selected.stylesheet,
+        }
+    }
+}
+
 pub(crate) struct Executed {
     pub compiled: crate::stylesheet_compile::Compiled,
     pub collected: CollectedStyles,
@@ -36,20 +45,14 @@ pub(super) fn execute(
     option: &crate::ExtractOption,
     resolver: Option<&crate::ModuleResolver>,
 ) -> Result<Executed, String> {
-    let stylesheet = match &input {
-        Input::Stylesheet(stylesheet, _) => *stylesheet,
-        Input::Selected(selected) | Input::Readback(selected, _) => selected.stylesheet,
-    };
+    let stylesheet = input.stylesheet();
     let mut loader = ModuleLoader::new(resolver, option);
     loader.select_demands(stylesheet, !matches!(&input, Input::Stylesheet(_, _)))?;
     run(input, loader)
 }
 
 pub(super) fn run(input: Input<'_>, mut loader: ModuleLoader<'_>) -> Result<Executed, String> {
-    let stylesheet = match &input {
-        Input::Stylesheet(stylesheet, _) => *stylesheet,
-        Input::Selected(selected) | Input::Readback(selected, _) => selected.stylesheet,
-    };
+    let stylesheet = input.stylesheet();
     let Stylesheet {
         filename,
         code,

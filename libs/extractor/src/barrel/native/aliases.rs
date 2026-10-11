@@ -100,10 +100,14 @@ pub(in crate::barrel) fn changes(
         .keys()
         .map(|symbol| scoping.symbol_name(*symbol))
         .collect();
-    for (name, uses) in crate::mutations::uses(program, &|name| names.contains(name), None) {
-        let Some(symbol) = scoping.get_root_binding(name.as_str().into()) else {
-            continue;
-        };
+    for (symbol, uses) in crate::mutations::uses(program, &|name| names.contains(name), None)
+        .into_iter()
+        .filter_map(|(name, uses)| {
+            scoping
+                .get_root_binding(name.as_str().into())
+                .map(|symbol| (symbol, uses))
+        })
+    {
         let Some(at) = uses
             .into_iter()
             .filter_map(|usage| match usage {
