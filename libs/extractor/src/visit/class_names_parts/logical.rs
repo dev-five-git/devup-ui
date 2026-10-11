@@ -12,7 +12,7 @@ impl<'a, S: LocalSource<'a>> LocalParts<'_, '_, 'a, S> {
     pub(super) fn logical_parts(
         &self,
         logical: &oxc_ast::ast::LogicalExpression<'a>,
-        parts: &mut Vec<LocalKnownPart<'a, S::Class>>,
+        parts: &mut Vec<LocalKnownPart<'a, S::Source>>,
         text: Text,
     ) -> Option<()> {
         let visitor = self.visitor;

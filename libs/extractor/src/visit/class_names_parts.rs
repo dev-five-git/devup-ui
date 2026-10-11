@@ -1,8 +1,7 @@
 use super::{
-    Allocator, Argument, AstBuilder, BinaryOperator, CallExpression, CloneIn,
-    ComputedMemberExpression, DevupVisitor, Expression, GetAllocator, KnownStyles, LogicalOperator,
-    SPAN, StaticMemberExpression, StringLiteral, Text, UnaryOperator, coalesce_keeps_left,
-    unwrap_syntax_only,
+    Allocator, AstBuilder, BinaryOperator, CloneIn, ComputedMemberExpression, DevupVisitor,
+    Expression, GetAllocator, KnownStyles, LogicalOperator, SPAN, StaticMemberExpression,
+    StringLiteral, Text, UnaryOperator, coalesce_keeps_left, unwrap_syntax_only,
 };
 use crate::gen_class_name::roots::{ClassConditional, ClassPayload};
 use oxc_ast::ast::{ConditionalExpression, ObjectPropertyKind, PropertyKind};
@@ -14,7 +13,7 @@ mod source;
 mod source_roots;
 
 pub(super) use source::{CapturedSource, LocalSource, UncapturedSource};
-pub(super) use source_roots::LocalClass;
+pub(super) use source_roots::{LocalClass, LocalOutput};
 
 pub(super) enum LocalKnownPart<'a, C> {
     Styles(Vec<KnownStyles<'a>>),
@@ -45,7 +44,7 @@ impl<'v, 's, 'a, S: LocalSource<'a>> LocalParts<'v, 's, 'a, S> {
     pub(super) fn known_parts_local(
         &self,
         expression: &Expression<'a>,
-        parts: &mut Vec<LocalKnownPart<'a, S::Class>>,
+        parts: &mut Vec<LocalKnownPart<'a, S::Source>>,
         text: Text,
     ) -> Option<()> {
         let visitor = self.visitor;
@@ -155,7 +154,7 @@ impl<'v, 's, 'a, S: LocalSource<'a>> LocalParts<'v, 's, 'a, S> {
                                     ),
                                     &visitor.ast,
                                 );
-                                S::Class::from_conditional(ConditionalExpression::boxed(
+                                S::Source::from_conditional(ConditionalExpression::boxed(
                                     SPAN,
                                     has_tag,
                                     class.string_class(&visitor.ast).into_expression(),

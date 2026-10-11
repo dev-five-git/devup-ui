@@ -98,3 +98,7 @@ mod w38r_u6_order;
 #[cfg(test)]
 #[path = "w38r_u6_nested.rs"]
 mod w38r_u6_nested;
+
+#[cfg(test)]
+#[path = "w38r_u7_outcomes.rs"]
+mod w38r_u7_outcomes;

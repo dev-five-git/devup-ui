@@ -1,4 +1,4 @@
-use super::class_names_parts::{LocalClass, LocalSource};
+use super::class_names_parts::{LocalOutput, LocalSource};
 use super::{
     AstBuilder, BinaryOperator, CloneIn, DevupVisitor, Expression, ExtractResult, ExtractStyleProp,
     FromIn, GetAllocator, GetSpan, KnownStyles, LiteralHandling, ObjectPropertyKind, SPAN, Str,

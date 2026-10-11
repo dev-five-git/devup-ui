@@ -25,6 +25,25 @@ pub(crate) enum CapturedClassBody<'a> {
     ComputedMember(Box<'a, ComputedMemberExpression<'a>>),
 }
 
+/// A class read from the authored call without captures. Only the emitted
+/// payloads of the finished result can be calls, never a class read from the
+/// call itself.
+pub(crate) enum UncapturedSourceClass<'a> {
+    String(Box<'a, StringLiteral<'a>>),
+    Template(Box<'a, TemplateLiteral<'a>>),
+    Conditional(Box<'a, ConditionalExpression<'a>>),
+}
+
+/// A class read from the authored call whose leaves read the actual captures.
+pub(crate) enum CapturedSourceClass<'a> {
+    String(Box<'a, StringLiteral<'a>>),
+    Template(Box<'a, TemplateLiteral<'a>>),
+    Conditional(Box<'a, ConditionalExpression<'a>>),
+    Identifier(Box<'a, IdentifierReference<'a>>),
+    StaticMember(Box<'a, StaticMemberExpression<'a>>),
+    ComputedMember(Box<'a, ComputedMemberExpression<'a>>),
+}
+
 pub(crate) trait ClassPayload<'a>: Sized {
     fn clone_payload(&self, alloc: &'a Allocator) -> Self;
     fn clone_expression(&self, alloc: &'a Allocator) -> Expression<'a>;
@@ -134,6 +153,18 @@ local_payload!(FinishedClass,
 local_payload!(CapturedClassBody,
     Template => TemplateLiteral,
     Call => CallExpression,
+    Conditional => ConditionalExpression,
+    Identifier => Identifier,
+    StaticMember => StaticMemberExpression,
+    ComputedMember => ComputedMemberExpression,
+);
+
+local_payload!(UncapturedSourceClass,
+    Template => TemplateLiteral,
+    Conditional => ConditionalExpression,
+);
+local_payload!(CapturedSourceClass,
+    Template => TemplateLiteral,
     Conditional => ConditionalExpression,
     Identifier => Identifier,
     StaticMember => StaticMemberExpression,

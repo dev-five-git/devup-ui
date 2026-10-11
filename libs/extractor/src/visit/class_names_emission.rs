@@ -10,7 +10,7 @@ use super::{
 use crate::composition::Composition;
 use crate::gen_class_name::emission::{ClassPlacement, gen_normalised, merge_roots};
 use crate::gen_class_name::roots::{
-    CapturedClassBody, ClassConstructors, ClassPayload, FinishedClass,
+    CapturedSourceClass, ClassConstructors, ClassPayload, FinishedClass, UncapturedSourceClass,
 };
 
 /// Only the unchanged capture pass supplies the owned first element and ordered remainder.
@@ -36,11 +36,11 @@ impl<'a> NonemptyCaptures<'a> {
 
 enum PreparedClassNames<'a> {
     Uncaptured {
-        parts: Option<Vec<LocalKnownPart<'a, FinishedClass<'a>>>>,
+        parts: Option<Vec<LocalKnownPart<'a, UncapturedSourceClass<'a>>>>,
     },
     Captured {
         captures: NonemptyCaptures<'a>,
-        parts: Option<Vec<LocalKnownPart<'a, CapturedClassBody<'a>>>>,
+        parts: Option<Vec<LocalKnownPart<'a, CapturedSourceClass<'a>>>>,
     },
 }
 
@@ -83,7 +83,7 @@ impl<'a> DevupVisitor<'a> {
         &mut self,
         value: &Expression<'a>,
         span: oxc_span::Span,
-        parts: Option<Vec<LocalKnownPart<'a, S::Class>>>,
+        parts: Option<Vec<LocalKnownPart<'a, S::Source>>>,
         source: &S,
     ) -> S::Class {
         match parts {
@@ -107,7 +107,7 @@ impl<'a> DevupVisitor<'a> {
     fn composed_class_local<S: LocalSource<'a>>(
         &mut self,
         span: oxc_span::Span,
-        parts: Vec<LocalKnownPart<'a, S::Class>>,
+        parts: Vec<LocalKnownPart<'a, S::Source>>,
         source: &S,
     ) -> (S::Class, Option<Vec<ExtractStyleValue>>) {
         let offset = span.start;
@@ -148,10 +148,14 @@ impl<'a> DevupVisitor<'a> {
                 filename: self.split_filename.as_deref(),
             },
         );
-        let result =
-            merge_roots(&self.ast, classes.into_iter().chain(class_name)).unwrap_or_else(|| {
-                S::Class::from_string(StringLiteral::boxed(SPAN, "", None, &self.ast))
-            });
+        let result = merge_roots(
+            &self.ast,
+            classes
+                .into_iter()
+                .map(S::Source::into_output)
+                .chain(class_name),
+        )
+        .unwrap_or_else(|| S::Class::from_string(StringLiteral::boxed(SPAN, "", None, &self.ast)));
         if closed {
             let observation: Vec<ExtractStyleProp<'a>> = props
                 .iter()
@@ -183,7 +187,7 @@ fn collect<'a, S: LocalSource<'a>>(
     visitor: &DevupVisitor<'a>,
     value: &Expression<'a>,
     source: &S,
-) -> Option<Vec<LocalKnownPart<'a, S::Class>>> {
+) -> Option<Vec<LocalKnownPart<'a, S::Source>>> {
     let mut parts = Vec::new();
     LocalParts::new(visitor, source).known_parts_local(value, &mut parts, Text::Classes)?;
     Some(parts)

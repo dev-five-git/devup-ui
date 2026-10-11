@@ -1,4 +1,4 @@
-use super::super::class_names_parts::{LocalKnownPart, LocalParts};
+use super::super::class_names_parts::{LocalClass, LocalKnownPart, LocalParts};
 use super::{
     ClassPayload, CloneIn, Expression, ExtractStyleProp, GetAllocator, GetSpan, KnownStyles,
     LocalRules, LocalSource, ObjectPropertyKind, Text, unplaced_error,
@@ -57,7 +57,7 @@ impl<'a, S: LocalSource<'a>> LocalRules<'_, '_, 'a, S> {
                             }]
                         }
                         LocalKnownPart::Class(expression) => vec![ExtractStyleProp::Expression {
-                            expression,
+                            expression: expression.into_output(),
                             styles: Vec::new(),
                         }],
                     };

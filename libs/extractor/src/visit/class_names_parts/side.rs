@@ -9,7 +9,7 @@ impl<'a, S: LocalSource<'a>> LocalParts<'_, '_, 'a, S> {
         &self,
         expression: &Expression<'a>,
         text: Text,
-    ) -> Option<LocalKnownSide<'a, S::Class>> {
+    ) -> Option<LocalKnownSide<'a, S::Source>> {
         let visitor = self.visitor;
         if let Some(styles) = visitor.known_style_side(expression) {
             return Some(LocalKnownSide::Styles(styles));
@@ -64,7 +64,7 @@ impl<'a, S: LocalSource<'a>> LocalParts<'_, '_, 'a, S> {
         &self,
         expression: &Expression<'a>,
         text: Text,
-    ) -> Option<LocalKnownSide<'a, S::Class>> {
+    ) -> Option<LocalKnownSide<'a, S::Source>> {
         let mut parts = Vec::new();
         self.known_parts_local(expression, &mut parts, text)?;
         let mut styles = Vec::new();
