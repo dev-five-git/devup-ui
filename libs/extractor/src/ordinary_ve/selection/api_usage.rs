@@ -31,6 +31,7 @@ pub(super) fn classify(apis: &Apis<'_, '_>, node: NodeId, binding: NativeBinding
         match kind {
             AstKind::ParenthesizedExpression(_)
             | AstKind::TSAsExpression(_)
+            | AstKind::TSTypeAssertion(_)
             | AstKind::TSSatisfiesExpression(_)
             | AstKind::TSNonNullExpression(_)
             | AstKind::TSInstantiationExpression(_)

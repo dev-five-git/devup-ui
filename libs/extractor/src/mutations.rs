@@ -468,6 +468,7 @@ impl Context<'_, '_> {
                 | AstKind::SpreadElement(_)
                 | AstKind::ParenthesizedExpression(_)
                 | AstKind::TSAsExpression(_)
+                | AstKind::TSTypeAssertion(_)
                 | AstKind::TSSatisfiesExpression(_) => false,
                 AstKind::CallExpression(call) => !matches!(
                     self.global_function(&call.callee),

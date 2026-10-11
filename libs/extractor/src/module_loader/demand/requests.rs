@@ -109,6 +109,7 @@ fn read_path(semantic: &Semantic<'_>, node: oxc_syntax::node::NodeId) -> Vec<Str
             }
             AstKind::ParenthesizedExpression(_)
             | AstKind::TSAsExpression(_)
+            | AstKind::TSTypeAssertion(_)
             | AstKind::TSSatisfiesExpression(_)
             | AstKind::TSNonNullExpression(_)
             | AstKind::TSInstantiationExpression(_) => {}

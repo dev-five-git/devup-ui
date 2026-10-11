@@ -118,6 +118,7 @@ pub(super) fn demand(index: &Index<'_, '_>, node: NodeId) -> MemberDemand {
             }
             AstKind::ParenthesizedExpression(_)
             | AstKind::TSAsExpression(_)
+            | AstKind::TSTypeAssertion(_)
             | AstKind::TSSatisfiesExpression(_)
             | AstKind::TSNonNullExpression(_)
             | AstKind::TSInstantiationExpression(_) => {}

@@ -5,6 +5,7 @@ use serial_test::serial;
 mod api_asi;
 mod api_provenance;
 mod api_provenance_policy;
+mod assertion_parity;
 mod capture_graph_roundtrip;
 mod carrier_boundaries;
 mod carrier_dependencies;

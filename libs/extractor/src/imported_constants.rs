@@ -1948,6 +1948,7 @@ impl<'p, 'a> ModuleScope<'p, 'a> {
                 Some(Constant::Style(None))
             }
             Expression::TSAsExpression(inner) => self.evaluate(modules, &inner.expression),
+            Expression::TSTypeAssertion(inner) => self.evaluate(modules, &inner.expression),
             Expression::TSSatisfiesExpression(inner) => self.evaluate(modules, &inner.expression),
             Expression::ParenthesizedExpression(inner) => self.evaluate(modules, &inner.expression),
             _ => None,
@@ -2228,6 +2229,7 @@ impl<'a> Inline<'_, 'a> {
             }
             Expression::ParenthesizedExpression(inner) => self.constant(&inner.expression),
             Expression::TSAsExpression(inner) => self.operand(&inner.expression),
+            Expression::TSTypeAssertion(inner) => self.operand(&inner.expression),
             Expression::TSSatisfiesExpression(inner) => self.operand(&inner.expression),
             _ => None,
         }
