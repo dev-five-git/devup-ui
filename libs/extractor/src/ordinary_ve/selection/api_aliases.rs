@@ -23,12 +23,10 @@ impl Apis<'_, '_> {
                 let AstKind::VariableDeclarator(declarator) = node.kind() else {
                     continue;
                 };
-                let AstKind::VariableDeclaration(declaration) =
+                if let AstKind::VariableDeclaration(declaration) =
                     semantic.nodes().parent_kind(node.id())
-                else {
-                    continue;
-                };
-                if declaration.declare {
+                    && declaration.declare
+                {
                     continue;
                 }
                 let Some(init) = &declarator.init else {

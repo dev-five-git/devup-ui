@@ -45,11 +45,14 @@ impl<'s, 'a> Apis<'s, 'a> {
             let Statement::ImportDeclaration(import) = statement else {
                 continue;
             };
-            for specifier in import.specifiers.iter().flatten() {
+            for (specifier, symbol) in import.specifiers.iter().flatten().filter_map(|specifier| {
+                specifier
+                    .local()
+                    .symbol_id
+                    .get()
+                    .map(|symbol| (specifier, symbol))
+            }) {
                 let local = specifier.local();
-                let Some(symbol) = local.symbol_id.get() else {
-                    continue;
-                };
                 let (imported, erased) = match specifier {
                     ImportDeclarationSpecifier::ImportSpecifier(specifier) => {
                         let name = specifier.imported.name();
