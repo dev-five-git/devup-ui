@@ -123,7 +123,7 @@ pub struct DevupVisitor<'a> {
     import_object: Option<String>,
     jsx_imports: FxHashMap<String, String>,
     util_imports: FxHashMap<String, Rc<UtilType>>,
-    jsx_object: Option<String>,
+    jsx_objects: FxHashSet<String>,
     package: String,
     /// Entry the rewritten imports of absorbed third-party APIs land on. Its specifiers
     /// register exactly like the main package's so those calls still compile away.
@@ -314,7 +314,7 @@ impl<'a> DevupVisitor<'a> {
             styles: FxHashSet::default(),
             errors: Vec::new(),
             import_object: None,
-            jsx_object: None,
+            jsx_objects: FxHashSet::default(),
             util_imports: FxHashMap::default(),
             split_filename,
             styled_imports: FxHashSet::default(),
@@ -1921,31 +1921,38 @@ impl<'a> VisitMut<'a> for DevupVisitor<'a> {
     fn visit_call_expression(&mut self, it: &mut CallExpression<'a>) {
         let jsx = if let Expression::Identifier(ident) = &it.callee {
             self.jsx_imports.get(ident.name.as_str()).cloned()
-        } else if let Some(name) = &self.jsx_object
-            && let Expression::StaticMemberExpression(member) = &it.callee
+        } else if let Expression::StaticMemberExpression(member) = &it.callee
             && let Expression::Identifier(ident) = &member.object
-            && name == ident.name.as_str()
+            && self.jsx_objects.contains(ident.name.as_str())
         {
             Some(member.property.name.to_string())
         } else {
             None
         };
         if let Some(j) = jsx
-            && (j == "jsx" || j == "jsxs")
+            && (j == "jsx" || j == "jsxs" || j == "jsxDEV")
             && let Some(expr) = it.arguments.first().and_then(|arg| arg.as_expression())
         {
             let element_kind = if let Expression::Identifier(ident) = expr {
                 self.imports.get(ident.name.as_str()).cloned()
             } else if let Expression::StaticMemberExpression(member) = expr
                 && let Expression::Identifier(ident) = &member.object
-                && self.import_object.as_deref() == Some(ident.name.as_str())
             {
-                member
-                    .property
-                    .name
-                    .as_str()
-                    .parse::<ExportVariableKind>()
-                    .ok()
+                self.imports
+                    .get(&format!("{}.{}", ident.name, member.property.name))
+                    .cloned()
+                    .or_else(|| {
+                        (self.import_object.as_deref() == Some(ident.name.as_str()))
+                            .then(|| {
+                                member
+                                    .property
+                                    .name
+                                    .as_str()
+                                    .parse::<ExportVariableKind>()
+                                    .ok()
+                            })
+                            .flatten()
+                    })
             } else {
                 None
             };
@@ -2120,9 +2127,9 @@ impl<'a> VisitMut<'a> for DevupVisitor<'a> {
                 (&call.callee, &call.arguments[0])
             && ident.name == "require"
         {
-            if arg.value == "react/jsx-runtime" {
+            if arg.value == "react/jsx-runtime" || arg.value == "react/jsx-dev-runtime" {
                 if let BindingPattern::BindingIdentifier(ident) = &it.id {
-                    self.jsx_object = Some(ident.name.to_string());
+                    self.jsx_objects.insert(ident.name.to_string());
                 } else if let BindingPattern::ObjectPattern(object) = &it.id {
                     for prop in &object.properties {
                         if let Some(name) = get_string_by_property_key(&prop.key)
@@ -2236,13 +2243,20 @@ impl<'a> VisitMut<'a> for DevupVisitor<'a> {
     }
     fn visit_import_declaration(&mut self, it: &mut ImportDeclaration<'a>) {
         if it.source.value != self.package
-            && it.source.value == "react/jsx-runtime"
+            && (it.source.value == "react/jsx-runtime"
+                || it.source.value == "react/jsx-dev-runtime")
             && let Some(specifiers) = &it.specifiers
         {
             for specifier in specifiers {
-                if let ImportSpecifier(import) = specifier {
-                    self.jsx_imports
-                        .insert(import.local.to_string(), import.imported.to_string());
+                match specifier {
+                    ImportSpecifier(import) => {
+                        self.jsx_imports
+                            .insert(import.local.to_string(), import.imported.to_string());
+                    }
+                    ImportDeclarationSpecifier::ImportNamespaceSpecifier(import) => {
+                        self.jsx_objects.insert(import.local.name.to_string());
+                    }
+                    ImportDeclarationSpecifier::ImportDefaultSpecifier(_) => {}
                 }
             }
         } else if (it.source.value == self.package

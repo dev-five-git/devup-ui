@@ -18,6 +18,7 @@ import {
   flushCoordinatorWrites,
   resetCoordinator,
   startCoordinator,
+  takeExtractOutput,
 } from '../coordinator'
 
 let codeExtractSpy: ReturnType<typeof spyOn>
@@ -30,6 +31,69 @@ let writeFileSpy: ReturnType<typeof spyOn>
 let writeFileSyncSpy: ReturnType<typeof spyOn>
 
 const tmpDir = join(process.cwd(), '.tmp-coordinator-test')
+
+it.each([
+  undefined,
+  'code',
+  'css',
+  'cssFile',
+  'map',
+  'updatedBaseStyle',
+  'dependencies',
+])('preserves modern Next snapshot cleanup when getter %s fails', (fault) => {
+  const events: string[] = []
+  const error = new Error('getter fault')
+  let live = true
+  const free = mock(() => {
+    expect(live).toBe(true)
+    live = false
+    events.push('free')
+  })
+  const output = {
+    code: 'copied',
+    css: 'sheet',
+    cssFile: 'sheet.css',
+    map: 'map',
+    updatedBaseStyle: true,
+    dependencies: ['dep.ts'],
+    free,
+    [Symbol.dispose]: free,
+  }
+  const expected = {
+    code: 'copied',
+    css: 'sheet',
+    cssFile: 'sheet.css',
+    map: 'map',
+    updatedBaseStyle: true,
+    dependencies: ['dep.ts'],
+  }
+  const fields = [
+    'code',
+    'css',
+    'cssFile',
+    'map',
+    'updatedBaseStyle',
+    'dependencies',
+  ] as const
+  for (const field of fields) {
+    const value = output[field]
+    Object.defineProperty(output, field, {
+      get() {
+        expect(live).toBe(true)
+        events.push(field)
+        if (fault === field) throw error
+        return value
+      },
+    })
+  }
+  if (fault) expect(() => takeExtractOutput(output)).toThrow(error)
+  else expect(takeExtractOutput(output)).toEqual(expected)
+  expect(events).toEqual([
+    ...fields.slice(0, fault ? fields.indexOf(fault) + 1 : fields.length),
+    'free',
+  ])
+  expect(free).toHaveBeenCalledTimes(1)
+})
 
 function makeOptions(
   overrides: Partial<CoordinatorOptions> = {},

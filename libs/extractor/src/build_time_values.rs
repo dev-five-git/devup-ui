@@ -15,7 +15,7 @@ use oxc_ast::ast::{
 use oxc_ast_visit::{Visit, walk};
 use oxc_parser::Parser;
 use oxc_semantic::{Scoping, SemanticBuilder};
-use oxc_span::{GetSpan, SourceType, Span};
+use oxc_span::{GetSpan, Span};
 use oxc_syntax::operator::LogicalOperator;
 use oxc_syntax::reference::ReferenceId;
 use oxc_syntax::symbol::SymbolId;
@@ -62,9 +62,10 @@ pub(crate) fn has_build_time_values(
         filename,
         &option.package,
         &option.import_aliases,
+        crate::parser_source_type(filename).unwrap_or_default(),
     );
     let allocator = Allocator::default();
-    let Some(mut program) = parse(&allocator, filename, &code) else {
+    let Some(mut program) = parse(&allocator, filename, &code, None) else {
         return false;
     };
     let inlined = crate::imported_constants::inline_constants(
@@ -130,8 +131,13 @@ const UNCERTAIN_MEMBERS: [&str; 9] = [
     "toString",
 ];
 
-fn parse<'a>(allocator: &'a Allocator, filename: &str, code: &'a str) -> Option<Program<'a>> {
-    let source_type = SourceType::from_path(filename).ok()?;
+fn parse<'a>(
+    allocator: &'a Allocator,
+    filename: &str,
+    code: &'a str,
+    mode: Option<crate::ExtractSourceType>,
+) -> Option<Program<'a>> {
+    let source_type = crate::source_type::parser_type(filename, mode).ok()?;
     let parsed = Parser::new(allocator, code, source_type).parse();
     (!parsed.fatal_error).then_some(parsed.program)
 }
@@ -916,12 +922,13 @@ pub(crate) fn evaluate(
     option: &ExtractOption,
     resolver: Option<&ModuleResolver>,
     unknown: &crate::imported_constants::Unknown,
+    mode: Option<crate::ExtractSourceType>,
 ) -> Option<(
     String,
     Vec<crate::import_alias_visit::Edit>,
     BTreeSet<String>,
 )> {
-    let (mut values, dependencies) = compute(code, filename, option, resolver, unknown)?;
+    let (mut values, dependencies) = compute(code, filename, option, resolver, unknown, mode)?;
     values.sort_unstable_by_key(|(span, _)| span.start);
     let mut result = String::with_capacity(code.len());
     let mut edits = Vec::with_capacity(values.len());
@@ -968,13 +975,14 @@ fn compute(
     option: &ExtractOption,
     resolver: Option<&ModuleResolver>,
     unknown: &crate::imported_constants::Unknown,
+    mode: Option<crate::ExtractSourceType>,
 ) -> Option<(Vec<Replacement>, BTreeSet<String>)> {
     use std::fmt::Write;
 
     use boa_engine::{Context, JsObject, Source};
 
     let allocator = Allocator::default();
-    let program = parse(&allocator, filename, code)?;
+    let program = parse(&allocator, filename, code, mode)?;
     let is_style = |source: &str| {
         source.starts_with(option.package.as_str()) || option.import_aliases.contains_key(source)
     };
@@ -1059,7 +1067,8 @@ fn compute(
         .collect();
     let _ = writeln!(module, "[{}];", names.join(", "));
 
-    let script = crate::vanilla_extract::strip_typescript(&module, filename);
+    let script =
+        crate::vanilla_extract::strip_typescript_with_type(&module, filename, mode).ok()?;
     let mut context = Context::default();
     context
         .runtime_limits_mut()

@@ -38,7 +38,11 @@ function createWebpackConfig(): NextWebpackConfig {
 function createWebpackContext(
   overrides: Partial<NextWebpackContext> = {},
 ): NextWebpackContext {
-  return { buildId: 'tmpBuildId', ...overrides } as NextWebpackContext
+  return {
+    buildId: 'tmpBuildId',
+    config: {},
+    ...overrides,
+  } as NextWebpackContext
 }
 
 function setNodeEnv(value: string): void {
@@ -187,9 +191,12 @@ describe('DevupUINextPlugin', () => {
 
       ret.webpack!(createWebpackConfig(), createWebpackContext())
 
-      expect(devupUIWebpackPluginSpy).toHaveBeenCalledWith({
-        cssDir: resolve('.next/cache', 'devup-ui_tmpBuildId'),
-      })
+      expect(devupUIWebpackPluginSpy).toHaveBeenCalledWith(
+        {
+          cssDir: resolve('.next/cache', 'devup-ui_tmpBuildId'),
+        },
+        expect.objectContaining({ complete: true }),
+      )
     })
 
     it('should apply webpack plugin with dev', async () => {
@@ -197,10 +204,13 @@ describe('DevupUINextPlugin', () => {
 
       ret.webpack!(createWebpackConfig(), createWebpackContext({ dev: true }))
 
-      expect(devupUIWebpackPluginSpy).toHaveBeenCalledWith({
-        cssDir: resolve('df', 'devup-ui_tmpBuildId'),
-        watch: true,
-      })
+      expect(devupUIWebpackPluginSpy).toHaveBeenCalledWith(
+        {
+          cssDir: resolve('df', 'devup-ui_tmpBuildId'),
+          watch: true,
+        },
+        expect.objectContaining({ complete: true }),
+      )
     })
 
     it('should apply webpack plugin with config', async () => {
@@ -213,10 +223,13 @@ describe('DevupUINextPlugin', () => {
 
       ret.webpack!(createWebpackConfig(), createWebpackContext())
 
-      expect(devupUIWebpackPluginSpy).toHaveBeenCalledWith({
-        package: 'new-package',
-        cssDir: resolve('.next/cache', 'devup-ui_tmpBuildId'),
-      })
+      expect(devupUIWebpackPluginSpy).toHaveBeenCalledWith(
+        {
+          package: 'new-package',
+          cssDir: resolve('.next/cache', 'devup-ui_tmpBuildId'),
+        },
+        expect.objectContaining({ complete: true }),
+      )
     })
 
     it('should apply webpack plugin with webpack obj', async () => {
@@ -232,10 +245,13 @@ describe('DevupUINextPlugin', () => {
 
       ret.webpack!(createWebpackConfig(), createWebpackContext())
 
-      expect(devupUIWebpackPluginSpy).toHaveBeenCalledWith({
-        package: 'new-package',
-        cssDir: resolve('.next/cache', 'devup-ui_tmpBuildId'),
-      })
+      expect(devupUIWebpackPluginSpy).toHaveBeenCalledWith(
+        {
+          package: 'new-package',
+          cssDir: resolve('.next/cache', 'devup-ui_tmpBuildId'),
+        },
+        expect.objectContaining({ complete: true }),
+      )
       expect(webpack).toHaveBeenCalled()
     })
   })
@@ -415,13 +431,9 @@ describe('DevupUINextPlugin', () => {
               ],
               condition: {
                 not: {
-                  path: new RegExp(
-                    `(node_modules(?!.*(${['@devup-ui', '@devup-editor']
-                      .join('|')
-                      .replaceAll(
-                        '/',
-                        '[\\/\\\\_]',
-                      )})([\\/\\\\.]|$)))|(.mdx.[tj]sx?$)`,
+                  path: importGraphModule.createNodeModulesExcludeRegex(
+                    [],
+                    '.mdx.[tj]sx?$',
                   ),
                 },
               },
@@ -467,13 +479,9 @@ describe('DevupUINextPlugin', () => {
             '*.{tsx,ts,jsx,js,mjs}': {
               condition: {
                 not: {
-                  path: new RegExp(
-                    `(node_modules(?!.*(${['@devup-ui', '@devup-editor']
-                      .join('|')
-                      .replaceAll(
-                        '/',
-                        '[\\/\\\\_]',
-                      )})([\\/\\\\.]|$)))|(.mdx.[tj]sx?$)`,
+                  path: importGraphModule.createNodeModulesExcludeRegex(
+                    [],
+                    '.mdx.[tj]sx?$',
                   ),
                 },
               },
@@ -528,7 +536,15 @@ describe('DevupUINextPlugin', () => {
       readFileSyncSpy.mockReturnValue(JSON.stringify({ theme: 'theme' }))
       mkdirSyncSpy.mockReturnValue('')
       writeFileSyncSpy.mockReturnValue(undefined)
-      const ret = DevupUI({})
+      const realpathSpy = spyOn(fs, 'realpathSync').mockImplementation((path) =>
+        resolve(String(path)),
+      )
+      let ret: ReturnType<typeof DevupUI>
+      try {
+        ret = DevupUI({})
+      } finally {
+        realpathSpy.mockRestore()
+      }
 
       expect(ret).toEqual({
         turbopack: {
@@ -560,13 +576,9 @@ describe('DevupUINextPlugin', () => {
             '*.{tsx,ts,jsx,js,mjs}': {
               condition: {
                 not: {
-                  path: new RegExp(
-                    `(node_modules(?!.*(${['@devup-ui', '@devup-editor']
-                      .join('|')
-                      .replaceAll(
-                        '/',
-                        '[\\/\\\\_]',
-                      )})([\\/\\\\.]|$)))|(.mdx.[tj]sx?$)`,
+                  path: importGraphModule.createNodeModulesExcludeRegex(
+                    [],
+                    '.mdx.[tj]sx?$',
                   ),
                 },
               },
@@ -783,6 +795,32 @@ export const box = style({ color: 'red' })`
         .mockReturnValueOnce(false)
       DevupUI({}, { prefix: 'my-prefix' })
       expect(setPrefixSpy).toHaveBeenCalledWith('my-prefix')
+    })
+    it('numbers the files the scan finds, and survives a failing scan', () => {
+      process.env.TURBOPACK = '1'
+      const collectSpy = spyOn(importGraphModule, 'collectNumberedFiles')
+      const seedSpy = spyOn(wasm, 'seedFileMap').mockReturnValue(undefined)
+      try {
+        collectSpy.mockImplementation((options: any) => {
+          expect(options.roots).toEqual(
+            ['src', 'app', 'pages'].map((dir) => resolve(dir)),
+          )
+          expect(options.toId(resolve('src', 'a.tsx'))).toBe('src/a.tsx')
+          return ['src/a.tsx']
+        })
+        DevupUI({}, { include: ['@acme/ui'] })
+        expect(seedSpy).toHaveBeenCalledWith(['src/a.tsx'])
+        expect(collectSpy.mock.calls[0][0]).toMatchObject({
+          include: ['@acme/ui'],
+        })
+        collectSpy.mockImplementation(() => {
+          throw new Error('scan boom')
+        })
+        DevupUI({}, {})
+      } finally {
+        collectSpy.mockRestore()
+        seedSpy.mockRestore()
+      }
     })
     it('should import previous session state on restart', () => {
       process.env.TURBOPACK = '1'

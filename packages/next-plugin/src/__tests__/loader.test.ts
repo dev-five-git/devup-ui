@@ -102,6 +102,105 @@ const waitFor = async (fn: () => void, timeout = 1000) => {
 }
 
 describe('devupUILoader', () => {
+  it.each([
+    undefined,
+    'code',
+    'map',
+    'cssFile',
+    'updatedBaseStyle',
+    'dependencies',
+    'acquire',
+    'consumer',
+  ])(
+    'releases legacy Next Output before consumers when fault %s occurs',
+    async (fault) => {
+      const events: string[] = []
+      const error = new Error('ownership fault')
+      let live = true
+      const free = mock(() => {
+        expect(live).toBe(true)
+        live = false
+        events.push('free')
+      })
+      const output = {
+        code: 'copied',
+        css: undefined,
+        map: undefined,
+        cssFile: undefined,
+        updatedBaseStyle: false,
+        dependencies: ['dependency.ts'],
+        free,
+        [Symbol.dispose]: free,
+      }
+      for (const field of [
+        'code',
+        'map',
+        'cssFile',
+        'updatedBaseStyle',
+        'dependencies',
+      ] as const) {
+        const value = output[field]
+        Object.defineProperty(output, field, {
+          get() {
+            expect(live).toBe(true)
+            events.push(field)
+            if (fault === field) throw error
+            return value
+          },
+        })
+      }
+      codeExtractSpy.mockImplementation(() => {
+        if (fault === 'acquire') throw error
+        return output
+      })
+      const result = await new Promise<{
+        error: Error | null | undefined
+        code: string | undefined
+      }>((done) => {
+        const context = asLoaderContext({
+          resourcePath: 'output.tsx',
+          getOptions: () => ({
+            watch: false,
+            cssDir: 'df',
+            package: '@devup-ui/react',
+          }),
+          async: mock(
+            () => (error: Error | null | undefined, code?: string) =>
+              done({ error, code }),
+          ),
+          addDependency: mock(() => {
+            expect(free).toHaveBeenCalledTimes(1)
+            if (fault === 'consumer') throw error
+          }),
+        })
+        devupUILoader.call(context, Buffer.from('source'))
+      })
+      expect(result).toEqual(
+        fault ? { error, code: undefined } : { error: null, code: 'copied' },
+      )
+      const fields = [
+        'code',
+        'map',
+        'cssFile',
+        'updatedBaseStyle',
+        'dependencies',
+      ]
+      expect(events).toEqual(
+        fault === 'acquire'
+          ? []
+          : [
+              ...fields.slice(
+                0,
+                fault && fields.includes(fault)
+                  ? fields.indexOf(fault) + 1
+                  : fields.length,
+              ),
+              'free',
+            ],
+      )
+      expect(free).toHaveBeenCalledTimes(fault === 'acquire' ? 0 : 1)
+    },
+  )
   // Test BUILD mode init (lines 68-73)
   it('should use default maps in non-watch mode on init', async () => {
     const asyncCallback = mock()
@@ -125,15 +224,18 @@ describe('devupUILoader', () => {
       addDependency: mock(),
     }
 
-    codeExtractSpy.mockReturnValue({
-      code: 'code',
-      css: undefined,
-      free: mock(),
-      map: undefined,
-      cssFile: undefined,
-      updatedBaseStyle: false,
-      dependencies: ['src/tokens.ts'],
-      [Symbol.dispose]: mock(),
+    codeExtractSpy.mockImplementation(() => {
+      const free = mock()
+      return {
+        code: 'code',
+        css: undefined,
+        free,
+        map: undefined,
+        cssFile: undefined,
+        updatedBaseStyle: false,
+        dependencies: ['src/tokens.ts'],
+        [Symbol.dispose]: free,
+      }
     })
 
     devupUILoader.bind(asLoaderContext(t))(
@@ -181,14 +283,18 @@ describe('devupUILoader', () => {
       addDependency: mock(),
     }
 
-    codeExtractSpy.mockReturnValue({
-      code: 'code',
-      css: 'css',
-      free: mock(),
-      map: '{}',
-      cssFile: 'devup-ui-1.css',
-      updatedBaseStyle: true,
-      [Symbol.dispose]: mock(),
+    codeExtractSpy.mockImplementation(() => {
+      const free = mock()
+      return {
+        code: 'code',
+        css: 'css',
+        free,
+        map: '{}',
+        cssFile: 'devup-ui-1.css',
+        updatedBaseStyle: true,
+        dependencies: [],
+        [Symbol.dispose]: free,
+      }
     })
 
     devupUILoader.bind(asLoaderContext(t))(
@@ -243,14 +349,18 @@ describe('devupUILoader', () => {
       resourcePath: 'index.tsx',
       addDependency: mock(),
     }
-    codeExtractSpy.mockReturnValue({
-      code: 'code',
-      css: undefined,
-      free: mock(),
-      map: undefined,
-      cssFile: undefined,
-      updatedBaseStyle: false,
-      [Symbol.dispose]: mock(),
+    codeExtractSpy.mockImplementation(() => {
+      const free = mock()
+      return {
+        code: 'code',
+        css: undefined,
+        free,
+        map: undefined,
+        cssFile: undefined,
+        updatedBaseStyle: false,
+        dependencies: [],
+        [Symbol.dispose]: free,
+      }
     })
     devupUILoader.bind(asLoaderContext(t))(Buffer.from('code'), 'index.tsx')
 
@@ -275,14 +385,18 @@ describe('devupUILoader', () => {
       resourcePath: 'index.tsx',
       addDependency: mock(),
     }
-    codeExtractSpy.mockReturnValue({
-      code: 'code',
-      css: undefined,
-      free: mock(),
-      map: undefined,
-      cssFile: undefined,
-      updatedBaseStyle: false,
-      [Symbol.dispose]: mock(),
+    codeExtractSpy.mockImplementation(() => {
+      const free = mock()
+      return {
+        code: 'code',
+        css: undefined,
+        free,
+        map: undefined,
+        cssFile: undefined,
+        updatedBaseStyle: false,
+        dependencies: [],
+        [Symbol.dispose]: free,
+      }
     })
     devupUILoader.bind(asLoaderContext(t))(Buffer.from('code'), 'index.tsx')
 
@@ -378,14 +492,18 @@ describe('devupUILoader', () => {
       addDependency: mock(),
     }
     writeFileSpy.mockRejectedValueOnce(writeError)
-    codeExtractSpy.mockReturnValue({
-      code: 'code',
-      css: 'css',
-      free: mock(),
-      map: '{}',
-      cssFile: 'devup-ui-1.css',
-      updatedBaseStyle: false,
-      [Symbol.dispose]: mock(),
+    codeExtractSpy.mockImplementation(() => {
+      const free = mock()
+      return {
+        code: 'code',
+        css: 'css',
+        free,
+        map: '{}',
+        cssFile: 'devup-ui-1.css',
+        updatedBaseStyle: false,
+        dependencies: [],
+        [Symbol.dispose]: free,
+      }
     })
 
     devupUILoader.bind(asLoaderContext(t))(
@@ -415,14 +533,18 @@ describe('devupUILoader', () => {
       resourcePath: './foo/index.tsx',
       addDependency: mock(),
     }
-    codeExtractSpy.mockReturnValue({
-      code: 'code',
-      css: 'css',
-      free: mock(),
-      map: undefined,
-      cssFile: 'cssFile',
-      updatedBaseStyle: false,
-      [Symbol.dispose]: mock(),
+    codeExtractSpy.mockImplementation(() => {
+      const free = mock()
+      return {
+        code: 'code',
+        css: 'css',
+        free,
+        map: undefined,
+        cssFile: 'cssFile',
+        updatedBaseStyle: false,
+        dependencies: [],
+        [Symbol.dispose]: free,
+      }
     })
     devupUILoader.bind(asLoaderContext(t))(
       Buffer.from('code'),
@@ -449,14 +571,18 @@ describe('devupUILoader', () => {
       resourcePath: 'index.tsx',
       addDependency: mock(),
     }
-    codeExtractSpy.mockReturnValue({
-      code: 'code',
-      css: 'css',
-      free: mock(),
-      map: '{}',
-      cssFile: 'cssFile',
-      updatedBaseStyle: true,
-      [Symbol.dispose]: mock(),
+    codeExtractSpy.mockImplementation(() => {
+      const free = mock()
+      return {
+        code: 'code',
+        css: 'css',
+        free,
+        map: '{}',
+        cssFile: 'cssFile',
+        updatedBaseStyle: true,
+        dependencies: [],
+        [Symbol.dispose]: free,
+      }
     })
     devupUILoader.bind(asLoaderContext(t))(Buffer.from('code'), 'index.tsx')
 
@@ -603,6 +729,67 @@ describe('devupUILoader', () => {
       requestSpy.mockRestore()
     })
 
+    it('should report a coordinator that no longer answers', async () => {
+      existsSyncSpy.mockReturnValue(true)
+      readFileSyncSpy.mockReturnValue('12346')
+
+      const requestSpy = spyOn(http, 'request').mockImplementation(
+        (_options: any, _callback?: any) => {
+          const fakeReq = {
+            on: mock((event: string, handler: (...args: unknown[]) => void) => {
+              if (event === 'error') {
+                setTimeout(
+                  () =>
+                    handler(
+                      Object.assign(new Error('refused'), {
+                        code: 'ECONNREFUSED',
+                      }),
+                    ),
+                  0,
+                )
+              }
+              return fakeReq
+            }),
+            write: mock(),
+            end: mock(),
+          }
+          return asClientRequest(fakeReq)
+        },
+      )
+
+      const asyncCallback = mock()
+      const t = {
+        getOptions: () => ({
+          package: 'package',
+          cssDir: 'cssDir',
+          sheetFile: 'sheetFile',
+          classMapFile: 'classMapFile',
+          fileMapFile: 'fileMapFile',
+          themeFile: 'themeFile',
+          watch: true,
+          singleCss: true,
+          coordinatorPortFile: 'coordinator.port',
+        }),
+        async: mock().mockReturnValue(asyncCallback),
+        resourcePath: join(process.cwd(), 'src', 'App.tsx'),
+        addDependency: mock(),
+      }
+
+      devupUILoader.bind(asLoaderContext(t))(
+        Buffer.from('source code'),
+        'src/App.tsx',
+      )
+
+      await waitFor(() => {
+        expect(asyncCallback).toHaveBeenCalledWith(
+          expect.objectContaining({
+            message: expect.stringContaining('coordinator.port'),
+          }),
+        )
+      })
+
+      requestSpy.mockRestore()
+    })
     it('should handle coordinator non-200 response', async () => {
       existsSyncSpy.mockReturnValue(true)
       readFileSyncSpy.mockReturnValue('12345')
@@ -856,7 +1043,11 @@ describe('devupUILoader', () => {
       // Retries 20 times × 50ms = 1s max, then calls back with error
       await waitFor(() => {
         expect(asyncCallback).toHaveBeenCalledWith(
-          new Error('Coordinator port file not found'),
+          expect.objectContaining({
+            message: expect.stringContaining(
+              'Coordinator port file not found: nonexistent.port',
+            ),
+          }),
         )
       }, 3000)
 
