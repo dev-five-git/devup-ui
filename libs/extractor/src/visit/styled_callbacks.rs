@@ -204,19 +204,10 @@ impl<'a> DevupVisitor<'a> {
 }
 
 fn callback_result<'r, 'a>(expression: &'r mut Expression<'a>) -> Option<&'r mut Expression<'a>> {
-    use oxc_ast::ast::{ArrowFunctionBody, Statement};
-    let statements = match expression {
-        Expression::ArrowFunctionExpression(arrow) if !arrow.r#async => match &mut arrow.body {
-            ArrowFunctionBody::FunctionBody(body) => &mut body.statements,
-            body => return body.as_expression_mut(),
-        },
-        Expression::FunctionExpression(function) if !function.r#async && !function.generator => {
-            &mut function.body.as_mut()?.statements
+    match expression {
+        Expression::ArrowFunctionExpression(arrow) if !arrow.r#async => {
+            arrow.body.as_expression_mut()
         }
-        _ => return None,
-    };
-    match statements.last_mut()? {
-        Statement::ReturnStatement(statement) => statement.argument.as_mut(),
         _ => None,
     }
 }

@@ -2831,13 +2831,13 @@ impl<'a> VisitMut<'a> for DevupVisitor<'a> {
                 .style_values
                 .symbol(&member.object)
                 .and_then(|symbol| self.styled_definitions.get(&symbol))
-            && let Some((component, mut definition)) = with_component(
+        {
+            let (component, mut definition) = with_component(
                 &self.ast,
                 definition,
                 call.arguments[0].to_expression(),
                 self.split_filename.as_deref(),
-            )
-        {
+            );
             let start = call.span.start;
             let parent_environment = definition.environment().cloned();
             let receiver = member.object.clone_in(self.ast.allocator());
@@ -4636,14 +4636,6 @@ impl<'a> VisitMut<'a> for DevupVisitor<'a> {
         } else if let Some(css) = css {
             self.snapshot_css_attributes(&mut elem.opening_element.attributes, &mut order);
             self.lower_css_prop(elem, css);
-            for attribute in &mut elem.opening_element.attributes {
-                if let JSXAttributeItem::SpreadAttribute(spread) = attribute
-                    && let Some(slot) = order.spreads.get(&spread.span.start)
-                {
-                    let name = order.values[*slot].0.clone();
-                    order.values[*slot].1 = Some(self.snapshot_as(name, &mut spread.argument).1);
-                }
-            }
             let values: Vec<_> = order
                 .values
                 .into_iter()

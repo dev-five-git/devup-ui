@@ -35,6 +35,9 @@ pub(crate) trait ClassPayload<'a>: Sized {
 pub(crate) trait ClassConstructors<'a>: ClassPayload<'a> {
     fn from_string(value: Box<'a, StringLiteral<'a>>) -> Self;
     fn from_template(value: Box<'a, TemplateLiteral<'a>>) -> Self;
+}
+
+pub(crate) trait ClassConditional<'a>: ClassConstructors<'a> {
     fn from_conditional(value: Box<'a, ConditionalExpression<'a>>) -> Self;
 }
 
@@ -73,10 +76,6 @@ impl<'a> ClassConstructors<'a> for Expression<'a> {
 
     fn from_template(value: Box<'a, TemplateLiteral<'a>>) -> Self {
         Self::TemplateLiteral(value)
-    }
-
-    fn from_conditional(value: Box<'a, ConditionalExpression<'a>>) -> Self {
-        Self::ConditionalExpression(value)
     }
 }
 
@@ -117,7 +116,9 @@ macro_rules! local_payload {
             fn from_template(value: Box<'a, TemplateLiteral<'a>>) -> Self {
                 Self::Template(value)
             }
+        }
 
+        impl<'a> ClassConditional<'a> for $name<'a> {
             fn from_conditional(value: Box<'a, ConditionalExpression<'a>>) -> Self {
                 Self::Conditional(value)
             }

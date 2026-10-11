@@ -32,8 +32,6 @@ use crate::stylex::StylexFunction;
 use crate::{ExtractOption, ExtractStyleValue, ModuleResolver};
 use oxc_span::GetSpan;
 
-mod literal_locations;
-
 mod finite_producers;
 mod initialization;
 mod lexical;
@@ -2255,8 +2253,8 @@ impl<'a> Inline<'_, 'a> {
                     .is_none())
     }
 
-    fn literal(&self, constant: &Constant) -> Option<Expression<'a>> {
-        constant_literal(self.ast_builder, constant, self.objects)
+    fn literal(&self, constant: &Constant, span: oxc_span::Span) -> Option<Expression<'a>> {
+        constant_literal_at(self.ast_builder, constant, self.objects, span)
     }
 
     fn reading_objects<T>(&mut self, objects: bool, visit: impl FnOnce(&mut Self) -> T) -> T {
@@ -2319,49 +2317,58 @@ fn constant_literal<'a>(
     constant: &Constant,
     objects: bool,
 ) -> Option<Expression<'a>> {
+    constant_literal_at(builder, constant, objects, SPAN)
+}
+
+fn constant_literal_at<'a>(
+    builder: &AstBuilder<'a>,
+    constant: &Constant,
+    objects: bool,
+    span: oxc_span::Span,
+) -> Option<Expression<'a>> {
     match constant {
         Constant::String(value) => Some(Expression::new_string_literal(
-            SPAN,
+            span,
             Str::from_in(value.as_str(), builder.allocator()),
             None,
             builder,
         )),
         Constant::Number(value) if value.is_finite() => Some(Expression::new_numeric_literal(
-            SPAN,
+            span,
             *value,
             None,
             NumberBase::Decimal,
             builder,
         )),
-        Constant::Null => Some(Expression::new_null_literal(SPAN, builder)),
-        Constant::Bool(value) => Some(Expression::new_boolean_literal(SPAN, *value, builder)),
+        Constant::Null => Some(Expression::new_null_literal(span, builder)),
+        Constant::Bool(value) => Some(Expression::new_boolean_literal(span, *value, builder)),
         Constant::Record(entries) if objects => {
             let mut properties = oxc_allocator::Vec::with_capacity_in(entries.len(), builder);
             for (key, value) in entries.iter() {
                 properties.push(ObjectPropertyKind::new_object_property(
-                    SPAN,
+                    span,
                     oxc_ast::ast::PropertyKind::Init,
                     oxc_ast::ast::PropertyKey::StringLiteral(oxc_ast::ast::StringLiteral::boxed(
-                        SPAN,
+                        span,
                         Str::from_in(key.as_str(), builder.allocator()),
                         None,
                         builder,
                     )),
-                    constant_literal(builder, value, objects)?,
+                    constant_literal_at(builder, value, objects, span)?,
                     false,
                     false,
                     false,
                     builder,
                 ));
             }
-            Some(Expression::new_object_expression(SPAN, properties, builder))
+            Some(Expression::new_object_expression(span, properties, builder))
         }
         Constant::Array(values) if objects => {
             let mut elements = oxc_allocator::Vec::with_capacity_in(values.len(), builder);
             for value in values.iter() {
-                elements.push(constant_literal(builder, value, objects)?.into());
+                elements.push(constant_literal_at(builder, value, objects, span)?.into());
             }
-            Some(Expression::new_array_expression(SPAN, elements, builder))
+            Some(Expression::new_array_expression(span, elements, builder))
         }
         _ => None,
     }
@@ -2388,11 +2395,10 @@ impl<'a> VisitMut<'a> for Inline<'_, 'a> {
 
     fn visit_expression(&mut self, expression: &mut Expression<'a>) {
         if self.styles {
-            if let Some(mut literal) = self
+            if let Some(literal) = self
                 .constant(expression)
-                .and_then(|constant| self.literal(&constant))
+                .and_then(|constant| self.literal(&constant, expression.span()))
             {
-                literal_locations::place(&mut literal, expression.span());
                 *expression = literal;
                 if self.px {
                     px_rules(self.ast_builder, expression);

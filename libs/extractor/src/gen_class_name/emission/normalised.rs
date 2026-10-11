@@ -1,10 +1,10 @@
-use super::super::roots::ClassConstructors;
+use super::super::roots::ClassConditional;
 use super::{ClassPlacement, emit_branches, normalize_conditional, static_class};
 use crate::composition::normalised::NormalisedProp;
 use oxc_allocator::GetAllocator;
 use oxc_ast::builder::AstBuilder;
 
-pub(crate) fn emit_normalised<'a, E: ClassConstructors<'a>>(
+pub(crate) fn emit_normalised<'a, E: ClassConditional<'a>>(
     ast: &AstBuilder<'a>,
     prop: &mut NormalisedProp<'a, E>,
     placement: ClassPlacement<'_>,

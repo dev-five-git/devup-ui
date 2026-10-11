@@ -2,7 +2,7 @@ use super::{
     CloneIn, Expression, GetAllocator, LocalKnownPart, LocalKnownSide, LocalParts, LocalSource,
     LogicalOperator, SPAN, StringLiteral, UnaryOperator,
 };
-use crate::gen_class_name::roots::{ClassConstructors, ClassPayload};
+use crate::gen_class_name::roots::{ClassConditional, ClassConstructors, ClassPayload};
 use oxc_ast::ast::ConditionalExpression;
 
 impl<'a, S: LocalSource<'a>> LocalParts<'_, '_, 'a, S> {

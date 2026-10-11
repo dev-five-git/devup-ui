@@ -52,10 +52,6 @@ impl<'a> DevupVisitor<'a> {
     }
     pub(super) fn prepare_styled_template(&self, expression: &mut Expression<'a>) {
         if let Expression::TaggedTemplateExpression(tag) = expression {
-            if matches!(unwrap_syntax_only(&tag.tag), Expression::CallExpression(factory) if factory.arguments.len() != 1)
-            {
-                return;
-            }
             let mut literal = Expression::TemplateLiteral(oxc_allocator::Box::new_in(
                 tag.quasi.clone_in_with_semantic_ids(self.ast.allocator()),
                 &self.ast,
@@ -120,21 +116,6 @@ impl<'a> DevupVisitor<'a> {
         };
         let direct = matches!(unwrap_syntax_only(&call.callee), Expression::Identifier(_));
         let index = usize::from(direct && call.arguments.len() == 2);
-        if direct
-            && (call.arguments.len() != 2
-                || !call.arguments[1].as_expression().is_some_and(|value| {
-                    matches!(
-                        unwrap_syntax_only(value),
-                        Expression::ObjectExpression(_)
-                            | Expression::ConditionalExpression(_)
-                            | Expression::LogicalExpression(_)
-                            | Expression::ArrowFunctionExpression(_)
-                            | Expression::FunctionExpression(_)
-                    ) || crate::css_utils::literal::is_rule_text(value)
-                }))
-        {
-            return None;
-        }
         let mut reads = Reads::default();
         for attr in attrs.iter() {
             reads.read_in(attr);

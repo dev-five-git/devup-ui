@@ -9,7 +9,6 @@ impl<'a, S: LocalSource<'a>> LocalRules<'_, '_, 'a, S> {
     pub(in crate::visit) fn literal_scope(
         &mut self,
         rules: &Expression<'a>,
-        element: Option<&str>,
     ) -> Option<Vec<ExtractStyleProp<'a, S::Class>>> {
         let Expression::ObjectExpression(object) = rules else {
             return None;
@@ -42,16 +41,15 @@ impl<'a, S: LocalSource<'a>> LocalRules<'_, '_, 'a, S> {
                 for part in parts {
                     let props = match part {
                         LocalKnownPart::Styles(styles) => {
-                            self.part_props_local(property.span.start, styles, element)
+                            self.part_props_local(property.span.start, styles)
                         }
                         LocalKnownPart::Conditional {
                             test,
                             consequent,
                             alternate,
                         } => {
-                            let yes =
-                                self.part_props_local(property.span.start, consequent, element);
-                            let no = self.part_props_local(property.span.start, alternate, element);
+                            let yes = self.part_props_local(property.span.start, consequent);
+                            let no = self.part_props_local(property.span.start, alternate);
                             vec![ExtractStyleProp::Conditional {
                                 condition: test,
                                 consequent: Some(Box::new(ExtractStyleProp::StaticArray(yes))),
@@ -78,7 +76,6 @@ impl<'a, S: LocalSource<'a>> LocalRules<'_, '_, 'a, S> {
                 self.part_props_local(
                     expression.span().start,
                     vec![KnownStyles::Rules(expression)],
-                    element,
                 )
             };
             composition.apply(&self.visitor.ast, props);

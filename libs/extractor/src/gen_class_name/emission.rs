@@ -10,7 +10,7 @@ use oxc_ast::builder::AstBuilder;
 use oxc_span::SPAN;
 
 use super::roots::products::Generated;
-use super::roots::{ClassConstructors, ClassPayload};
+use super::roots::{ClassConditional, ClassPayload};
 
 mod conditional;
 mod merge;
@@ -26,7 +26,7 @@ pub(crate) struct ClassPlacement<'s> {
     pub(crate) filename: Option<&'s str>,
 }
 
-pub(crate) fn gen_normalised<'a, E: ClassConstructors<'a>>(
+pub(crate) fn gen_normalised<'a, E: ClassConditional<'a>>(
     ast: &AstBuilder<'a>,
     props: &mut [NormalisedProp<'a, E>],
     placement: ClassPlacement<'_>,

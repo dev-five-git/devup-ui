@@ -123,10 +123,9 @@ impl<'a> DevupVisitor<'a> {
     pub(super) fn literal_scope_local<S: super::class_names_parts::LocalSource<'a>>(
         &mut self,
         rules: &Expression<'a>,
-        element: Option<&str>,
         source: &S,
     ) -> Option<Vec<ExtractStyleProp<'a, S::Class>>> {
-        super::class_names_rules::LocalRules::new(self, source).literal_scope(rules, element)
+        super::class_names_rules::LocalRules::new(self, source).literal_scope(rules)
     }
 }
 

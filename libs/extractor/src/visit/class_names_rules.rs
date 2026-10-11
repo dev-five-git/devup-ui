@@ -1,9 +1,8 @@
 use super::class_names_parts::{LocalClass, LocalSource};
 use super::{
     AstBuilder, BinaryOperator, CloneIn, DevupVisitor, Expression, ExtractResult, ExtractStyleProp,
-    FromIn, GetAllocator, GetSpan, KnownStyles, LiteralHandling, ObjectPropertyKind, SPAN,
-    STYLE_OBJECT, Str, Text, build_time_error, css_prop_error, runtime_value, runtime_value_error,
-    set_prop_order, unplaced_error, unreadable_styles,
+    FromIn, GetAllocator, GetSpan, KnownStyles, LiteralHandling, ObjectPropertyKind, SPAN, Str,
+    Text, runtime_value, runtime_value_error, set_prop_order, unplaced_error,
 };
 use crate::extractor::extract_style_from_expression::extract_rule_styles;
 use crate::gen_class_name::roots::ClassPayload;
@@ -25,7 +24,6 @@ impl<'v, 's, 'a, S: LocalSource<'a>> LocalRules<'v, 's, 'a, S> {
         &mut self,
         offset: u32,
         styles: Vec<KnownStyles<'a>>,
-        element: Option<&str>,
     ) -> Vec<ExtractStyleProp<'a, S::Class>> {
         let mut props: Vec<ExtractStyleProp<'a, S::Class>> = Vec::new();
         for styles in styles {
@@ -42,10 +40,7 @@ impl<'v, 's, 'a, S: LocalSource<'a>> LocalRules<'v, 's, 'a, S> {
                         &mut rules,
                         self.visitor.source,
                     );
-                    if let Some(styles) =
-                        self.visitor
-                            .literal_scope_local(&rules, element, self.source)
-                    {
+                    if let Some(styles) = self.visitor.literal_scope_local(&rules, self.source) {
                         props.extend(styles);
                         continue;
                     }
@@ -83,20 +78,7 @@ impl<'v, 's, 'a, S: LocalSource<'a>> LocalRules<'v, 's, 'a, S> {
                             &observation,
                             &mut self.visitor.errors,
                         ));
-                    if let Some(element) = element {
-                        let mut unreadable = Vec::new();
-                        unreadable_styles(&observation, true, &mut unreadable);
-                        for (at, code) in unreadable {
-                            self.visitor.errors.push((
-                                at,
-                                if element == "styled" {
-                                    build_time_error("styled", &code, STYLE_OBJECT)
-                                } else {
-                                    css_prop_error(element, &code, STYLE_OBJECT)
-                                },
-                            ));
-                        }
-                    } else if let Some(value) = runtime_value(&observation) {
+                    if let Some(value) = runtime_value(&observation) {
                         self.visitor
                             .errors
                             .push((offset, runtime_value_error("css", &value)));

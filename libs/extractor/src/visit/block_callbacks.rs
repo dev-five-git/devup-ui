@@ -5,7 +5,7 @@ use super::styled_callbacks::OrderBody;
 use super::{DevupVisitor, Text};
 use crate::composition::KnownPart;
 use oxc_allocator::{GetAllocator, TakeIn};
-use oxc_ast::ast::{ArrowFunctionBody, Expression, FunctionBody, ReturnStatement};
+use oxc_ast::ast::{Expression, FunctionBody, ReturnStatement};
 use oxc_ast_visit::{VisitMut, walk_mut};
 use oxc_span::SPAN;
 use rustc_hash::FxHashMap;
@@ -169,10 +169,9 @@ impl<'a> DevupVisitor<'a> {
         captures: &mut Vec<Captured<'a>>,
     ) -> Option<(Vec<KnownPart<'a>>, Captured<'a>)> {
         let body: &mut FunctionBody<'a> = match expression {
-            Expression::ArrowFunctionExpression(arrow) if !arrow.r#async => match &mut arrow.body {
-                ArrowFunctionBody::FunctionBody(body) => body,
-                _ => return None,
-            },
+            Expression::ArrowFunctionExpression(arrow) if !arrow.r#async => {
+                arrow.body.as_function_body_mut()?
+            }
             Expression::FunctionExpression(function)
                 if !function.r#async && !function.generator =>
             {

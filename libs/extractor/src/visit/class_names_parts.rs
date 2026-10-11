@@ -4,7 +4,7 @@ use super::{
     SPAN, StaticMemberExpression, StringLiteral, Text, UnaryOperator, coalesce_keeps_left,
     unwrap_syntax_only,
 };
-use crate::gen_class_name::roots::{ClassConstructors, ClassPayload};
+use crate::gen_class_name::roots::{ClassConditional, ClassPayload};
 use oxc_ast::ast::{ConditionalExpression, ObjectPropertyKind, PropertyKind};
 
 mod choices;

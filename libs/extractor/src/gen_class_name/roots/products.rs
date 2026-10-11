@@ -1,4 +1,4 @@
-use super::{ClassConstructors, ClassMergeRoot, ClassPayload};
+use super::{ClassConditional, ClassMergeRoot, ClassPayload};
 use oxc_allocator::{Allocator, Box, CloneIn};
 use oxc_ast::ast::{
     ConditionalExpression, Expression, LogicalExpression, StringLiteral, TemplateLiteral,
@@ -54,18 +54,7 @@ impl<'a, E> ConditionalEmission<'a, E> {
     }
 }
 
-impl<'a, E: ClassPayload<'a>> ConditionalEmission<'a, E> {
-    pub(crate) fn clone_expression(&self, alloc: &'a Allocator) -> Expression<'a> {
-        match self {
-            Self::String(value) => Expression::StringLiteral(value.clone_in(alloc)),
-            Self::Template(value) => Expression::TemplateLiteral(value.clone_in(alloc)),
-            Self::Supplied(value) => value.clone_expression(alloc),
-            Self::Conditional(value) => Expression::ConditionalExpression(value.clone_in(alloc)),
-        }
-    }
-}
-
-impl<'a, E: ClassConstructors<'a>> ConditionalEmission<'a, E> {
+impl<'a, E: ClassConditional<'a>> ConditionalEmission<'a, E> {
     pub(crate) fn into_payload(self) -> E {
         match self {
             Self::String(value) => E::from_string(value),

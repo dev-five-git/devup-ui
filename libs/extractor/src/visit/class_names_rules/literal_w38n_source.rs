@@ -50,7 +50,7 @@ pub(super) fn observe(source: &str) -> TestResult<Observation> {
         crate::css_utils::literal::CssText::from_template(&visitor.ast, &tag.quasi, Some(source));
     let object = text.scoped_object(&visitor.ast, 0..text.text.len(), false);
     let props = visitor
-        .literal_scope_local(&object, None, &UncapturedSource)
+        .literal_scope_local(&object, &UncapturedSource)
         .ok_or("source-fed mixin envelope")?;
     let mut props: Vec<ExtractStyleProp<'_>> = props
         .iter()

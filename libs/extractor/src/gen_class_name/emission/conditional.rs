@@ -16,13 +16,31 @@ pub(crate) fn normalize_conditional<'a, E: ClassPayload<'a>>(
 ) -> ConditionalEmission<'a, E> {
     match sides.0 {
         Generated::String(value) => {
-            choose(ast, test, (ConditionalEmission::String(value), sides.1))
+            let first = Expression::StringLiteral(value.clone_in(ast.allocator()));
+            choose(
+                ast,
+                test,
+                (ConditionalEmission::String(value), first),
+                sides.1,
+            )
         }
         Generated::Template(value) => {
-            choose(ast, test, (ConditionalEmission::Template(value), sides.1))
+            let first = Expression::TemplateLiteral(value.clone_in(ast.allocator()));
+            choose(
+                ast,
+                test,
+                (ConditionalEmission::Template(value), first),
+                sides.1,
+            )
         }
         Generated::Supplied(value) => {
-            choose(ast, test, (ConditionalEmission::Supplied(value), sides.1))
+            let first = value.clone_expression(ast.allocator());
+            choose(
+                ast,
+                test,
+                (ConditionalEmission::Supplied(value), first),
+                sides.1,
+            )
         }
         Generated::Conditional(value) => construct(
             ast,
@@ -46,20 +64,18 @@ pub(crate) fn normalize_conditional<'a, E: ClassPayload<'a>>(
 fn choose<'a, E: ClassPayload<'a>>(
     ast: &AstBuilder<'a>,
     test: &Expression<'a>,
-    sides: (ConditionalEmission<'a, E>, Generated<'a, E>),
+    first: (ConditionalEmission<'a, E>, Expression<'a>),
+    second: Generated<'a, E>,
 ) -> ConditionalEmission<'a, E> {
-    if is_same_expression(
-        &sides.0.clone_expression(ast.allocator()),
-        &sides.1.clone_expression(ast.allocator()),
-    ) {
-        sides.0
+    if is_same_expression(&first.1, &second.clone_expression(ast.allocator())) {
+        first.0
     } else {
         construct(
             ast,
             test,
             (
-                sides.0.into_generated().into_expression(),
-                sides.1.into_expression(),
+                first.0.into_generated().into_expression(),
+                second.into_expression(),
             ),
         )
     }

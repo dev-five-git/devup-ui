@@ -107,7 +107,7 @@ impl<'a> DevupVisitor<'a> {
         for part in parts {
             match part {
                 LocalKnownPart::Styles(side) => {
-                    let props = LocalRules::new(self, source).part_props_local(offset, side, None);
+                    let props = LocalRules::new(self, source).part_props_local(offset, side);
                     composition.apply(&self.ast, props);
                 }
                 LocalKnownPart::Conditional {
@@ -116,9 +116,9 @@ impl<'a> DevupVisitor<'a> {
                     alternate,
                 } => {
                     let consequent =
-                        LocalRules::new(self, source).part_props_local(offset, consequent, None);
+                        LocalRules::new(self, source).part_props_local(offset, consequent);
                     let alternate =
-                        LocalRules::new(self, source).part_props_local(offset, alternate, None);
+                        LocalRules::new(self, source).part_props_local(offset, alternate);
                     composition.apply_conditional(&self.ast, &test, consequent, alternate);
                 }
                 LocalKnownPart::Class(mut class) => {

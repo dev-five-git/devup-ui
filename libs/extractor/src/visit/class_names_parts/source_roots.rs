@@ -5,12 +5,12 @@ use super::{
 };
 use crate::extractor::rule_payload::RuleClass;
 use crate::gen_class_name::roots::{
-    CapturedClassBody, ClassConstructors, ClassPayload, FinishedClass,
+    CapturedClassBody, ClassConditional, ClassPayload, FinishedClass,
 };
 use crate::style_values::StyleValues;
 use oxc_ast::ast::ConditionalExpression;
 
-pub(in crate::visit) trait LocalClass<'a>: ClassConstructors<'a> {
+pub(in crate::visit) trait LocalClass<'a>: ClassConditional<'a> {
     fn from_rule(value: RuleClass<'a>) -> Self;
     fn clone_source_expression(&self, allocator: &'a Allocator) -> Expression<'a>;
     fn read_in(&mut self, values: &StyleValues, ast: &AstBuilder<'a>);
@@ -68,7 +68,7 @@ local_root!(CapturedClassBody,
     ComputedMember => ComputedMemberExpression,
 );
 
-fn string_guard<'a, C: ClassConstructors<'a>>(ast: &AstBuilder<'a>, value: &C) -> C {
+fn string_guard<'a, C: ClassConditional<'a>>(ast: &AstBuilder<'a>, value: &C) -> C {
     let is_string = Expression::new_binary_expression(
         SPAN,
         Expression::new_unary_expression(

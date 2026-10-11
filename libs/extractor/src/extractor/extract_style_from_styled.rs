@@ -268,20 +268,17 @@ fn fixed(prop: &ExtractStyleProp<'_>) -> bool {
 }
 
 /// `Component.withComponent(target)`: the styles and attrs of `definition`
-/// rendering `target`, a tag name or a component JSX can name; `None` for any
-/// other target
+/// rendering `target`, a tag name or a component JSX can name
 pub fn with_component<'a>(
     ast_builder: &AstBuilder<'a>,
     definition: &StyledDefinition<'a>,
     target: &Expression<'a>,
     split_filename: Option<&str>,
-) -> Option<(Expression<'a>, StyledDefinition<'a>)> {
-    let name = match unwrap_syntax_only(target) {
-        Expression::StringLiteral(literal) => literal.value.to_string(),
-        Expression::NullLiteral(_)
-        | Expression::BooleanLiteral(_)
-        | Expression::NumericLiteral(_) => return None,
-        _ => STYLED_BASE.to_string(),
+) -> (Expression<'a>, StyledDefinition<'a>) {
+    let name = if let Expression::StringLiteral(literal) = unwrap_syntax_only(target) {
+        literal.value.to_string()
+    } else {
+        STYLED_BASE.to_string()
     };
     let base = if matches!(unwrap_syntax_only(target), Expression::StringLiteral(_)) {
         Base::named(name)
@@ -336,13 +333,13 @@ pub fn with_component<'a>(
         .iter()
         .map(|(name, value)| (name.clone(), value.clone_in(allocator)))
         .collect();
-    Some((
+    (
         base.render(
             ast_builder,
             apply_attrs(ast_builder, component, &definition.attrs),
         ),
         new_definition,
-    ))
+    )
 }
 
 /// What extracting a styled component gives
@@ -619,28 +616,32 @@ pub(crate) fn prepares_styled<'a>(
     expression: &Expression<'a>,
     imports: Kinds<'_>,
 ) -> bool {
-    match expression {
-        Expression::TaggedTemplateExpression(tag) => {
-            extract_base_tag_and_class_name(ast, &tag.tag, imports).is_some()
-        }
-        Expression::CallExpression(call) => {
-            extract_base_tag_and_class_name(ast, &call.callee, imports).is_some()
-                || (call.arguments.len() == 2
-                    && matches!(unwrap_syntax_only(&call.callee), Expression::Identifier(_))
-                    && tag_from_argument(ast, &call.arguments[0], imports).is_some()
-                    && call.arguments[1].as_expression().is_some_and(|value| {
-                        matches!(
-                            unwrap_syntax_only(value),
-                            Expression::ObjectExpression(_)
-                                | Expression::ConditionalExpression(_)
-                                | Expression::LogicalExpression(_)
-                                | Expression::ArrowFunctionExpression(_)
-                                | Expression::FunctionExpression(_)
-                        ) || crate::css_utils::literal::is_rule_text(value)
-                    }))
-        }
-        _ => false,
-    }
+    let call = if let Expression::CallExpression(call) = expression {
+        Some(call)
+    } else {
+        None
+    };
+    let callee = if let Expression::TaggedTemplateExpression(tag) = expression {
+        Some(&tag.tag)
+    } else {
+        call.map(|call| &call.callee)
+    };
+    callee.is_some_and(|callee| extract_base_tag_and_class_name(ast, callee, imports).is_some())
+        || call.is_some_and(|call| {
+            call.arguments.len() == 2
+                && matches!(unwrap_syntax_only(&call.callee), Expression::Identifier(_))
+                && tag_from_argument(ast, &call.arguments[0], imports).is_some()
+                && call.arguments[1].as_expression().is_some_and(|value| {
+                    matches!(
+                        unwrap_syntax_only(value),
+                        Expression::ObjectExpression(_)
+                            | Expression::ConditionalExpression(_)
+                            | Expression::LogicalExpression(_)
+                            | Expression::ArrowFunctionExpression(_)
+                            | Expression::FunctionExpression(_)
+                    ) || crate::css_utils::literal::is_rule_text(value)
+                })
+        })
 }
 
 /// Extract styles from styled function calls
