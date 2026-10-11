@@ -16,6 +16,7 @@ mod forwarded;
 mod gate_edges;
 mod ordered;
 mod repeated;
+mod selected_tables;
 mod slots;
 mod style_order;
 mod styled;

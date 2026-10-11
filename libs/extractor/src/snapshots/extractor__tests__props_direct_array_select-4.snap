@@ -30,11 +30,11 @@ ToBTreeSet {
             ExtractDynamicStyle {
                 property: "background",
                 level: 0,
-                identifier: "__devupChoice0[`1`]",
+                identifier: "__devupChoice0?.[`1`]",
                 selector: None,
                 style_order: None,
             },
         ),
     },
-    code: "import \"@devup-ui/core/devup-ui.css\";\n((__devupChoice0) => <div className={`a ${{\n\t\"0\": \"b\",\n\t\"1\": \"c\"\n}[__devupChoice0?.[\"0\"]] || \"\"}`} style={{ \"--d\": __devupChoice0[`1`] }} />)([[\"0\"], [\"1\", `${variable}`]][idx]);\n",
+    code: "import \"@devup-ui/core/devup-ui.css\";\n((__devupChoice0) => <div className={`a ${{\n\t\"0\": \"b\",\n\t\"1\": \"c\"\n}[__devupChoice0?.[\"0\"]] || \"\"}`} style={{ \"--d\": __devupChoice0?.[`1`] }} />)([[\"0\"], [\"1\", `${variable}`]][idx]);\n",
 }
