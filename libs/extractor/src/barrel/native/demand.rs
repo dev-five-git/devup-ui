@@ -33,16 +33,21 @@ impl Facts {
             true,
         ));
         walker.modules.insert(filename.to_string(), module.clone());
-        let names = if demand.whole {
-            walker.native_names(&module, &mut FxHashSet::default())
+        let requested: Vec<(String, &Demand)> = if demand.whole {
+            walker
+                .native_names(&module, &mut FxHashSet::default())
+                .into_iter()
+                .map(|name| (name, demand))
+                .collect()
         } else {
-            demand.members.keys().cloned().collect()
+            demand
+                .members
+                .iter()
+                .map(|(name, child)| (name.clone(), child))
+                .collect()
         };
         let mut proven = false;
-        for name in names {
-            let Some(child) = demand.child(&name) else {
-                continue;
-            };
+        for (name, child) in requested {
             let terminal = walker.native_origin(&module, &name, &mut Vec::new());
             if let Some(shape) = walker.native_shape(terminal, &mut FxHashSet::default()) {
                 let site = super::export_site(program, &name).unwrap_or_default();

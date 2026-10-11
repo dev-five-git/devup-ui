@@ -33,7 +33,13 @@ impl Facts {
             let Statement::ImportDeclaration(import) = statement else {
                 continue;
             };
-            for specifier in import.specifiers.iter().flatten() {
+            for (specifier, symbol) in import.specifiers.iter().flatten().filter_map(|specifier| {
+                specifier
+                    .local()
+                    .symbol_id
+                    .get()
+                    .map(|symbol| (specifier, symbol))
+            }) {
                 let name = match specifier {
                     ImportDeclarationSpecifier::ImportSpecifier(specifier) => {
                         Some(specifier.imported.name().to_string())
@@ -42,9 +48,6 @@ impl Facts {
                         Some("default".to_string())
                     }
                     ImportDeclarationSpecifier::ImportNamespaceSpecifier(_) => None,
-                };
-                let Some(symbol) = specifier.local().symbol_id.get() else {
-                    continue;
                 };
                 let terminal =
                     walker.native_import(import.source.value.as_str(), filename, name.as_deref());

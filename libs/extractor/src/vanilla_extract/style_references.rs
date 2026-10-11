@@ -89,10 +89,7 @@ impl StyleReferences {
         let mut position = 0;
         let mut quote = None;
         let mut escaped = false;
-        while position < selector.len() {
-            let Some(character) = selector[position..].chars().next() else {
-                break;
-            };
+        while let Some(character) = selector[position..].chars().next() {
             if escaped {
                 escaped = false;
             } else if character == '\\' {

@@ -94,13 +94,7 @@ fn run(
             option,
             (view, plan),
         )?,
-        (Some(_), None) => {
-            return Err(format!(
-                "{}:1:1: missing consumer demand view. Fix: report this extraction error",
-                stylesheet.filename
-            ));
-        }
-        (None, _) => source::build(stylesheet, selection, option)?,
+        _ => source::build(stylesheet, selection, option)?,
     };
     let captured = capture::Selected {
         stylesheet,

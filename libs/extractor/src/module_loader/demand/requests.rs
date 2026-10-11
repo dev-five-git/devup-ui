@@ -54,10 +54,13 @@ pub(super) fn entry<'a>(
             continue;
         };
         let mut request = Demand::default();
-        for specifier in import.specifiers.iter().flatten() {
-            let Some(symbol) = specifier.local().symbol_id.get() else {
-                continue;
-            };
+        for (specifier, symbol) in import.specifiers.iter().flatten().filter_map(|specifier| {
+            specifier
+                .local()
+                .symbol_id
+                .get()
+                .map(|symbol| (specifier, symbol))
+        }) {
             for reference in semantic.scoping().get_resolved_reference_ids(symbol) {
                 let reference = semantic.scoping().get_reference(*reference);
                 if !reference.is_value() {

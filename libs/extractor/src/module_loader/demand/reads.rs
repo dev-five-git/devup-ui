@@ -7,13 +7,12 @@ pub(super) fn rewrite(
     producer: &super::Producer,
 ) -> Vec<(u32, u32, String)> {
     let mut replacements = Vec::new();
-    for binding in &producer.bindings {
-        let Some(symbol) = semantic
+    for (binding, symbol) in producer.bindings.iter().filter_map(|binding| {
+        semantic
             .scoping()
             .get_root_binding(binding.name.as_str().into())
-        else {
-            continue;
-        };
+            .map(|symbol| (binding, symbol))
+    }) {
         for reference in semantic.scoping().get_resolved_reference_ids(symbol) {
             let reference = semantic.scoping().get_reference(*reference);
             if !reference.is_read() || reference.is_write() {
