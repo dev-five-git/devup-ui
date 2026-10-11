@@ -20,6 +20,8 @@ pub(crate) fn failed(input: CompilerInput<'_>) -> Box<dyn std::error::Error> {
 use crate::extract_style::compiler_receipts::{PRODUCTIONS, ReceiptWitness};
 use crate::extract_style::extract_style_value::ExtractStyleValue;
 use serial_test::serial;
+#[path = "compiler_boundary_tests.rs"]
+mod boundaries;
 #[path = "compiler_surface_tests.rs"]
 mod surface_tests;
 pub(crate) use surface_tests::names;
