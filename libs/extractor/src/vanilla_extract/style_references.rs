@@ -156,4 +156,6 @@ pub(crate) fn record_bindings(
 }
 
 #[cfg(test)]
+mod coverage_tests;
+#[cfg(test)]
 mod tests;

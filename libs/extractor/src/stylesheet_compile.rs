@@ -101,6 +101,9 @@ fn expressions(program: &Program<'_>) -> FxHashMap<u32, (Span, String)> {
     expressions.0
 }
 
+#[cfg(test)]
+mod coverage_tests;
+
 struct Expressions(FxHashMap<u32, (Span, String)>);
 
 impl Expressions {

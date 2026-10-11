@@ -24,6 +24,9 @@ pub(super) fn rewrite(json: &str, references: &StyleReferences) -> String {
     result
 }
 
+#[cfg(test)]
+mod coverage_tests;
+
 fn rules(
     expression: &Expression<'_>,
     references: &StyleReferences,

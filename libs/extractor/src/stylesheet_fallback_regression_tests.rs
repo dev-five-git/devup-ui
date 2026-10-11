@@ -45,6 +45,13 @@ fn observe(output: &ExtractOutput, predicate: &str) -> TestResult {
     let mut script = String::new();
     let mut exports = Vec::new();
     for statement in &parsed.program.body {
+        assert!(
+            !matches!(
+                statement,
+                Statement::ExportFromDeclaration(_) | Statement::ExportAllDeclaration(_)
+            ),
+            "fixture output unexpectedly requires a runtime module"
+        );
         let mut codegen = Codegen::new();
         match statement {
             Statement::ImportDeclaration(import) => {
@@ -82,9 +89,6 @@ fn observe(output: &ExtractOutput, predicate: &str) -> TestResult {
                 );
                 exports.push("\"default\":__fallback_test_default__".into());
             }
-            Statement::ExportFromDeclaration(_) | Statement::ExportAllDeclaration(_) => {
-                return Err("fixture output unexpectedly requires a runtime module".into());
-            }
             statement => statement.print(&mut codegen, CodegenContext::default()),
         }
         script.push_str(&codegen.into_source_text());
@@ -117,15 +121,10 @@ fn observe(output: &ExtractOutput, predicate: &str) -> TestResult {
             let ExtractStyleValue::Static(style) = value else {
                 return None;
             };
-            let Some(crate::extract_style::style_property::StyleProperty::ClassName(token)) =
-                value.extract(None)
-            else {
-                return None;
-            };
-            class
-                .split_whitespace()
-                .any(|class| class == token)
-                .then(|| (style.property().to_string(), style.value().to_string()))
+            value.extract(None).filter(|property| {
+                matches!(property, crate::extract_style::style_property::StyleProperty::ClassName(token)
+                    if class.split_whitespace().any(|class| class == token))
+            }).map(|_| (style.property().to_string(), style.value().to_string()))
         })
         .collect();
     values.sort();

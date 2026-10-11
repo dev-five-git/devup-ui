@@ -24,6 +24,7 @@ mod consumer_schedule_failures;
 mod consumer_scheduling;
 mod consumer_spreads;
 mod consumer_support;
+mod coverage_detection;
 mod coverage_diagnostics;
 mod coverage_dispatch;
 mod coverage_edits;
