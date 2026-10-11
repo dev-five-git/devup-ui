@@ -26,8 +26,13 @@ impl Terminal {
         let mut graph = Graph::default();
         match graph.value(&value, context) {
             Ok(_) => {}
-            Err(GraphError::Unsupported(_)) => return Ok(value),
-            Err(GraphError::Engine(error)) => return Err(error),
+            Err(cause) => {
+                return if let GraphError::Engine(error) = cause {
+                    Err(error)
+                } else {
+                    Ok(value)
+                };
+            }
         }
         let requires = graph
             .nodes
