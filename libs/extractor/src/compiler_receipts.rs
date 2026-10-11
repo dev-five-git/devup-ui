@@ -93,6 +93,19 @@ impl Journal {
             config: configuration(),
         }
     }
+    pub(crate) fn find(
+        &self,
+        operand: &ExtractStyleValue,
+        context: &AllocationContext,
+    ) -> Option<ReceiptId> {
+        self.witnesses
+            .iter()
+            .find(|witness| {
+                witness.produced.class().context == *context
+                    && super::compiler_projection::same(&witness.operand, operand)
+            })
+            .map(|witness| witness.id)
+    }
 }
 pub(crate) struct JournalScope(Option<Journal>, bool);
 impl JournalScope {
@@ -172,29 +185,11 @@ pub(crate) fn acquire(
         Ok((id, journal.witnesses[id.0].produced.clone()))
     })
 }
-impl Journal {
-    pub(crate) fn find(
-        &self,
-        operand: &ExtractStyleValue,
-        context: &AllocationContext,
-    ) -> Option<ReceiptId> {
-        self.witnesses
-            .iter()
-            .find(|witness| {
-                witness.produced.class().context == *context
-                    && super::compiler_projection::same(&witness.operand, operand)
-            })
-            .map(|witness| witness.id)
-    }
-}
 pub(crate) fn reservation() -> bool {
     RESERVATION.get()
 }
-pub(crate) fn collect_operand<T>(
-    result: Result<T, ProjectionError>,
-    operand: &ExtractStyleValue,
-) -> Option<T> {
-    let origin = match operand {
+fn operand_origin(operand: &ExtractStyleValue) -> Option<RealLocation> {
+    match operand {
         ExtractStyleValue::Static(style) => style.origin.location(),
         ExtractStyleValue::Dynamic(style) => style.origin.location(),
         ExtractStyleValue::Keyframes(style) => style.origin.location(),
@@ -202,8 +197,13 @@ pub(crate) fn collect_operand<T>(
         | ExtractStyleValue::Css(_)
         | ExtractStyleValue::Import(_)
         | ExtractStyleValue::FontFace(_) => None,
-    };
-    match (result, origin) {
+    }
+}
+pub(crate) fn collect_operand<T>(
+    result: Result<T, ProjectionError>,
+    operand: &ExtractStyleValue,
+) -> Option<T> {
+    match (result, operand_origin(operand)) {
         (Ok(value), _) => Some(value),
         (Err(error), None) => collect(Err(error), None),
         (Err(error), Some(origin)) => collect(
