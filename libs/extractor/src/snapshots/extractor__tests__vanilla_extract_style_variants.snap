@@ -1,6 +1,6 @@
 ---
 source: libs/extractor/src/lib.rs
-expression: "ToBTreeSet::from(extract(\"variants.css.ts\",\nr#\"import { styleVariants } from '@devup-ui/react'\nexport const background = styleVariants({\n  primary: { background: 'blue' },\n  secondary: { background: 'gray' },\n  danger: { background: 'red' }\n})\n\"#,\nExtractOption\n{\n    package: \"@devup-ui/react\".to_string(), css_dir:\n    \"@devup-ui/react\".to_string(), single_css: true, import_main_css: false\n}).unwrap())"
+expression: "ToBTreeSet::from(extract(\"variants.css.ts\",\nr\"import { styleVariants } from '@devup-ui/react'\nexport const background = styleVariants({\n  primary: { background: 'blue' },\n  secondary: { background: 'gray' },\n  danger: { background: 'red' }\n})\n\",\nExtractOption\n{\n    package: \"@devup-ui/react\".to_string(), css_dir:\n    \"@devup-ui/react\".to_string(), single_css: true, import_main_css: false,\n    import_aliases: HashMap::new()\n}).unwrap())"
 ---
 ToBTreeSet {
     styles: {
@@ -35,5 +35,5 @@ ToBTreeSet {
             },
         ),
     },
-    code: "import \"@devup-ui/react/devup-ui.css\";\nconst _ve0 = \"a\";\nconst _ve1 = \"b\";\nconst _ve2 = \"c\";\nexport const background = {\n\t\"primary\": _ve0,\n\t\"secondary\": _ve1,\n\t\"danger\": _ve2\n};\n",
+    code: "import \"@devup-ui/react/devup-ui.css\";\nconst _ve0 = \"f0_0 a\";\nconst _ve1 = \"f0_1 b\";\nconst _ve2 = \"f0_2 c\";\nexport const background = {\n\t\"primary\": _ve0,\n\t\"secondary\": _ve1,\n\t\"danger\": _ve2\n};\n",
 }
