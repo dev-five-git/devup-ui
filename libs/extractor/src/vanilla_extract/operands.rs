@@ -108,9 +108,8 @@ impl<'a> Expansion<'a> {
 
     pub(super) fn css(mut self, name: &'a str, entry: &'a StyleEntry) -> String {
         self.expand(name, entry);
-        if self.arguments.is_empty() {
-            self.arguments.push("{}".into());
-        }
+        let default = self.arguments.is_empty().then(|| "{}".to_string());
+        self.arguments.extend(default);
         format!("css({})", self.arguments.join(", "))
     }
 }

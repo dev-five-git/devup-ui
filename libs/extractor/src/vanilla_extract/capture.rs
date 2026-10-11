@@ -35,6 +35,21 @@ pub(super) enum FinalizeError {
     Located(String),
 }
 
+impl FinalizeError {
+    /// The JavaScript error a native callback reports for this failure.
+    pub(super) fn into_js(self) -> boa_engine::JsError {
+        match self {
+            Self::Js(error) => error,
+            Self::Located(message) => boa_engine::JsNativeError::typ()
+                .with_message(message)
+                .into(),
+        }
+    }
+}
+
+#[cfg(test)]
+mod conversion_tests;
+
 impl From<boa_engine::JsError> for FinalizeError {
     fn from(error: boa_engine::JsError) -> Self {
         Self::Js(error)

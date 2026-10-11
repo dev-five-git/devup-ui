@@ -67,17 +67,7 @@ impl State {
             })
             .collect();
         let values: Vec<_> = bindings.iter().zip(values).collect();
-        check_mutations(&audit.plan.checks, &values, context).map_err(|error| {
-            if let FinalizeError::Js(error) = error {
-                error
-            } else if let FinalizeError::Located(message) = error {
-                boa_engine::JsNativeError::typ()
-                    .with_message(message)
-                    .into()
-            } else {
-                boa_engine::JsNativeError::typ().into()
-            }
-        })?;
+        check_mutations(&audit.plan.checks, &values, context).map_err(FinalizeError::into_js)?;
         audit.checked = true;
         Ok(())
     }

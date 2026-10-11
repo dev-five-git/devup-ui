@@ -1,5 +1,5 @@
 use oxc_allocator::Allocator;
-use oxc_ast::ast::{Declaration, Expression, Statement};
+use oxc_ast::ast::{Declaration, Expression, Statement, VariableDeclarator};
 use oxc_parser::Parser;
 use oxc_span::SourceType;
 use rustc_hash::FxHashMap;
@@ -13,6 +13,24 @@ pub(super) struct Materialized {
     pub values: FxHashMap<String, String>,
     pub artifacts: crate::graph::Artifacts,
 }
+
+/// The declarators of a top-level or exported `const`/`let`; no other statement
+/// declares a styling binding.
+fn declarators<'a, 'b>(
+    statement: &'b Statement<'a>,
+) -> Option<&'b oxc_allocator::Vec<'a, VariableDeclarator<'a>>> {
+    match statement {
+        Statement::VariableDeclaration(declaration) => Some(&declaration.declarations),
+        Statement::ExportDeclaration(export) => match &export.declaration {
+            Declaration::VariableDeclaration(declaration) => Some(&declaration.declarations),
+            _ => None,
+        },
+        _ => None,
+    }
+}
+
+#[cfg(test)]
+mod declarator_tests;
 
 impl Owner {
     pub(super) fn compile(
@@ -72,18 +90,7 @@ impl Owner {
         .parse();
         let mut bindings = FxHashMap::default();
         for statement in &parsed.program.body {
-            let declarations = match statement {
-                Statement::VariableDeclaration(declaration) => Some(&declaration.declarations),
-                Statement::ExportDeclaration(export) => {
-                    if let Declaration::VariableDeclaration(declaration) = &export.declaration {
-                        Some(&declaration.declarations)
-                    } else {
-                        None
-                    }
-                }
-                _ => None,
-            };
-            for declaration in declarations.into_iter().flatten() {
+            for declaration in declarators(statement).into_iter().flatten() {
                 if let Some(identifier) = declaration.id.get_binding_identifier()
                     && let Some(Expression::StringLiteral(value)) = &declaration.init
                 {
