@@ -52,9 +52,11 @@ impl Renderer<'_> {
                         .iter()
                         .any(|next| next.name == property.name)
                 {
-                    if !property.attributes.configurable() {
-                        return Err(EmitError::ImmutableOrder);
-                    }
+                    property
+                        .attributes
+                        .configurable()
+                        .then_some(())
+                        .ok_or(EmitError::ImmutableOrder)?;
                     code.push(format!("delete {name}[{}];", json_string(&property.name)));
                 }
             }

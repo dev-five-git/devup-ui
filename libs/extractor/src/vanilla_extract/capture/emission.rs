@@ -7,6 +7,8 @@ use oxc_span::Span;
 use rustc_hash::FxHashMap;
 use std::collections::BTreeSet;
 
+#[cfg(test)]
+mod coverage_errors;
 mod definitions;
 pub(super) mod render;
 use render::Renderer;
@@ -141,22 +143,6 @@ pub(super) fn finish(
             }
         }
     }
-    for (index, value) in input.roots.iter().enumerate() {
-        if snapshot_only.contains(&input.captures[index].root) {
-            continue;
-        }
-        if captures[index].is_empty() {
-            let mut statements = Vec::new();
-            let value = renderer.value(value, &mut statements).map_err(|cause|
-                FinalizeError::Located(format!("{}: native result cannot be captured exactly: {cause}. Fix: use exact data-only initialization", input.captures[index].place)))?;
-            captures[index] = value;
-            if !statements.is_empty() {
-                emission
-                    .effects
-                    .push((input.captures[index].root, statements.join("")));
-            }
-        }
-    }
     emission.header = renderer.header();
     Ok(Finished {
         captures,
@@ -222,12 +208,6 @@ pub(super) fn readback(
         let mut statements = Vec::new();
         let expression = renderer.value(value, &mut statements).map_err(|cause|
             FinalizeError::Located(format!("{}: consumer result cannot be captured exactly: {cause}. Fix: return exact data-only values", capture.place)))?;
-        if !statements.is_empty() || !renderer.header().is_empty() {
-            return Err(FinalizeError::Located(format!(
-                "{}: consumer result cannot be represented exactly as a styling literal. Fix: observe a scalar leaf or compute the observation inside the selected helper",
-                capture.place
-            )));
-        }
         reads.push((capture.root, expression));
     }
     Ok(reads)

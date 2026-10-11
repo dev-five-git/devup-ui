@@ -28,6 +28,7 @@ mod coverage_detection;
 mod coverage_diagnostics;
 mod coverage_dispatch;
 mod coverage_edits;
+mod coverage_emission;
 mod coverage_lowering;
 mod coverage_native;
 mod coverage_prepare;
