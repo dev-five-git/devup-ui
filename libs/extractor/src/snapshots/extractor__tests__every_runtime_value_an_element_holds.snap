@@ -4,21 +4,11 @@ expression: "ToBTreeSet::from(extract(\"test.tsx\",\n\"import { Box } from '@dev
 ---
 ToBTreeSet {
     styles: {
-        Static(
-            ExtractStaticStyle {
-                property: "flex",
-                value: "false",
-                level: 0,
-                selector: None,
-                style_order: None,
-                layer: None,
-            },
-        ),
         Dynamic(
             ExtractDynamicStyle {
                 property: "background",
                 level: 0,
-                identifier: "new X",
+                identifier: "__devupSpread7",
                 selector: None,
                 style_order: None,
             },
@@ -27,7 +17,7 @@ ToBTreeSet {
             ExtractDynamicStyle {
                 property: "color",
                 level: 0,
-                identifier: "tag`x`",
+                identifier: "__devupSpread6",
                 selector: None,
                 style_order: None,
             },
@@ -36,7 +26,7 @@ ToBTreeSet {
             ExtractDynamicStyle {
                 property: "height",
                 level: 0,
-                identifier: "(f(),2)",
+                identifier: "__devupSpread8",
                 selector: None,
                 style_order: None,
             },
@@ -45,7 +35,7 @@ ToBTreeSet {
             ExtractDynamicStyle {
                 property: "margin",
                 level: 0,
-                identifier: "f.n++",
+                identifier: "__devupSpread4",
                 selector: None,
                 style_order: None,
             },
@@ -54,7 +44,7 @@ ToBTreeSet {
             ExtractDynamicStyle {
                 property: "padding",
                 level: 0,
-                identifier: "f.v=3",
+                identifier: "__devupSpread3",
                 selector: None,
                 style_order: None,
             },
@@ -63,7 +53,7 @@ ToBTreeSet {
             ExtractDynamicStyle {
                 property: "width",
                 level: 0,
-                identifier: "await f()",
+                identifier: "__devupSpread0",
                 selector: None,
                 style_order: None,
             },
@@ -72,7 +62,7 @@ ToBTreeSet {
             ExtractDynamicStyle {
                 property: "width",
                 level: 0,
-                identifier: "this.#w",
+                identifier: "__devupSpread9",
                 selector: None,
                 style_order: None,
             },
@@ -81,11 +71,11 @@ ToBTreeSet {
             ExtractDynamicStyle {
                 property: "z-index",
                 level: 0,
-                identifier: "10n",
+                identifier: "__devupSpread5",
                 selector: None,
                 style_order: None,
             },
         ),
     },
-    code: "import \"@devup-ui/react/devup-ui-0.css\";\nclass A {\n\t#w = 1;\n\trender(f) {\n\t\treturn ((__devupSpread0) => <div {...this.#w} {...__devupSpread0} className={`a-a ${__devupSpread0?.className || \"\"} ${this.#w?.className || \"\"}`} style={{\n\t\t\t...{ \"--a\": this.#w },\n\t\t\t...__devupSpread0?.style,\n\t\t\t...this.#w?.style\n\t\t}} />)(f());\n\t}\n}\nexport const a = async (f, X, tag) => <div className=\"a-a a-b a-c a-d a-e a-f a-g a-h\" style={{\n\t\"--a\": await f(),\n\t\"--b\": (f(),2),\n\t\"--c\": new X,\n\t\"--d\": tag`x`,\n\t\"--e\": 10n,\n\t\"--f\": f.n++,\n\t\"--g\": f.v=3\n}} />;\n",
+    code: "import \"@devup-ui/react/devup-ui-0.css\";\nclass A {\n\t#w = 1;\n\trender(f) {\n\t\treturn ((__devupSpread0, __devupSpread1, __devupSpread2) => <div {...__devupSpread1} {...__devupSpread2} className={`FLtest_ptsx-OHaytne9g88rgua2yt ${__devupSpread2?.className || \"\"} ${__devupSpread1?.className || \"\"}`} style={{\n\t\t\t...{ \"---SUHcp4uvrns_1lzaw3u-bu\": __devupSpread0 },\n\t\t\t...__devupSpread2?.style,\n\t\t\t...__devupSpread1?.style\n\t\t}} />)(this.#w, ((__devupSpreadValue) => ({ ...__devupSpreadValue }))(this.#w), ((__devupSpreadValue) => ({ ...__devupSpreadValue }))(f()));\n\t}\n}\nexport const a = async (f, X, tag) => ((__devupSpread9, __devupSpread8, __devupSpread7, __devupSpread6, __devupSpread5, __devupSpread4, __devupSpread3) => <div className=\"FLtest_ptsx-OHccknh696183br0e0 FLtest_ptsx-OHau9vmefov6jv9cfi FLtest_ptsx-OHa1ubut9qc2_mc8z_ FLtest_ptsx-OHaobmmpag36_gc7tc FLtest_ptsx-OHcsobo5ufhve58x_s FLtest_ptsx-OHbxfub0pnbw2tgy2o FLtest_ptsx-OHaakquv3crnh1w7h8\" style={{\n\t\"---SUHcp4uvrns_1lzaw3u-d5\": __devupSpread9,\n\t\"---SUHcp4uvrns_1lzaw3u-ej\": __devupSpread8,\n\t\"---SUHcp4uvrns_1lzaw3u-ew\": __devupSpread7,\n\t\"---SUHcp4uvrns_1lzaw3u-fb\": __devupSpread6,\n\t\"---SUHcp4uvrns_1lzaw3u-fr\": __devupSpread5,\n\t\"---SUHcp4uvrns_1lzaw3u-fz\": __devupSpread4,\n\t\"---SUHcp4uvrns_1lzaw3u-f_\": __devupSpread3\n}} />)(await f(), (f(), 2), new X(), tag`x`, 10n, f.n++, f.v = 3);\n",
 }

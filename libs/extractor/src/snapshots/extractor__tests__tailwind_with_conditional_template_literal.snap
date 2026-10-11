@@ -61,5 +61,5 @@ ToBTreeSet {
             },
         ),
     },
-    code: "import \"@devup-ui/core/devup-ui.css\";\n<div className={`${enabled ? \"d\" : \"e\"} a b c`}>\n  hello\n</div>;\n",
+    code: "import \"@devup-ui/core/devup-ui.css\";\n((__devupClass51) => <div className={__devupClass51 || \"\"}>\n  hello\n</div>)(`${enabled ? \"OHdnrylfdyio5ggpo7\" : \"OHaon61_q2bfmpwnhu\"} OHbptb3ko_bmwl5g8h OHaszyh1b7nhqt1k3m OHap3_4qv8kkps8sbb`);\n",
 }

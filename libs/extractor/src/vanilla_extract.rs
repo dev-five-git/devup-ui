@@ -12,11 +12,8 @@ use boa_engine::{
 };
 use css::file_map::get_file_num_by_filename;
 use oxc_allocator::Allocator;
-use oxc_codegen::Codegen;
 use oxc_parser::Parser;
-use oxc_semantic::SemanticBuilder;
 use oxc_span::{GetSpan, SourceType};
-use oxc_transformer::{TransformOptions, Transformer};
 use rustc_hash::{FxHashMap, FxHashSet};
 use smallvec::SmallVec;
 use std::cell::RefCell;
@@ -35,6 +32,8 @@ pub struct StyleEntry {
     pub bases: SmallVec<[String; 2]>,
     /// Class names composed as they are
     pub classes: SmallVec<[String; 1]>,
+    pub origin: Option<css::style_origin::StyleOrigin>,
+    pub location: Option<css::style_origin::RealLocation>,
 }
 
 /// What a vanilla-extract stylesheet defines
@@ -76,6 +75,9 @@ struct Collector {
     file_num: usize,
     placeholders: usize,
     identifiers: usize,
+    origin: Option<css::style_origin::StyleOrigin>,
+    location: Option<css::style_origin::RealLocation>,
+    lookup: Option<crate::evaluation_location::EvaluationLookup>,
 }
 
 type StyleCollector = Rc<RefCell<Collector>>;
@@ -241,14 +243,14 @@ pub fn execute_stylesheet(
 ) -> Result<(CollectedStyles, StylesheetImports), String> {
     let _evaluating = Evaluating::enter(filename);
     let mut loader = ModuleLoader::new(resolver, option);
-    let script = module_script(
-        &strip_typescript(code, filename),
-        filename,
-        &mut loader,
-        true,
-    )?;
+    let (instrumented, edits) =
+        crate::evaluation_origin::instrument_with_edits(code, filename, option);
+    let stripped = stripped_source(&instrumented, filename);
+    let calls = stripped.authored_calls((filename, code), &edits);
+    let script = module_script(&stripped.code, filename, &mut loader, true)?;
     let file_num = get_file_num_by_filename(filename);
-    let run = format!("{}{}", loader.prelude(), script.body);
+    let prelude = loader.prelude();
+    let run = format!("{prelude}{}", script.body);
     let imports = StylesheetImports {
         dependencies: loader.dependencies,
         kept_imports: loader.kept_imports,
@@ -265,6 +267,13 @@ pub fn execute_stylesheet(
     }
     let collector: StyleCollector = Rc::new(RefCell::new(Collector {
         file_num,
+        lookup: Some(crate::evaluation_location::EvaluationLookup {
+            file: filename.into(),
+            run: run.clone(),
+            prefix: prelude.len(),
+            copies: script.copies,
+            calls,
+        }),
         ..Collector::default()
     }));
     let mut context = Context::default();
@@ -276,18 +285,37 @@ pub fn execute_stylesheet(
     context
         .eval(Source::from_bytes(crate::module_loader::CONSOLE))
         .map_err(|e| format!("JS execution error: {e}"))?;
+    context
+        .eval(Source::from_bytes(crate::module_loader::DETERMINISM))
+        .map_err(|e| format!("JS execution error: {e}"))?;
 
     context
-        .eval(Source::from_bytes(run.as_bytes()))
+        .eval(Source::from_bytes(run.as_bytes()).with_path(Path::new(filename)))
         .map_err(|e| format!("JS execution error: {e}"))?;
 
     let mut collected = std::mem::take(&mut collector.borrow_mut().styles);
-    name_entries(
+    let mut exports = name_entries(
         &mut collected,
         &top_level_bindings(code),
         &mut context,
-        file_num,
+        (file_num, &script.exports),
     );
+    for (binding, local) in &script.exports {
+        if binding == "default"
+            && local == "__default__"
+            && let Ok(value) = context.eval(Source::from_bytes(local.as_bytes()))
+        {
+            for id in crate::style_export_locations::references(&value) {
+                if let Some(reference) = collected.references.get(&id) {
+                    let name = match reference {
+                        Reference::Style { name, .. } | Reference::Keyframes(name) => name,
+                    };
+                    exports.push((binding.clone(), name.clone()));
+                }
+            }
+        }
+    }
+    crate::style_export_locations::associate(&mut collected, &exports, filename);
     if imported {
         IMPORTED_RUNS.with_borrow_mut(|runs| {
             runs.insert(
@@ -306,7 +334,7 @@ thread_local! {
     static IMPORTED_RUNS: RefCell<FxHashMap<String, (usize, String, String, CollectedStyles)>> =
         RefCell::default();
     /// The TypeScript each file last had stripped, with its source
-    static STRIPPED: RefCell<FxHashMap<String, (String, String)>> = RefCell::default();
+    static STRIPPED: RefCell<FxHashMap<String, (String, crate::evaluation_location::StrippedSource)>> = RefCell::default();
 }
 
 /// A name a top-level variable declaration of the stylesheet binds
@@ -366,8 +394,9 @@ fn name_entries(
     collected: &mut CollectedStyles,
     bindings: &[Binding],
     context: &mut Context,
-    file_num: usize,
-) {
+    source: (usize, &[(String, String)]),
+) -> Vec<(String, String)> {
+    let (file_num, exports) = source;
     let values: Vec<(&Binding, JsValue)> = bindings
         .iter()
         .filter_map(|binding| {
@@ -377,6 +406,18 @@ fn name_entries(
                 .map(|value| (binding, value))
         })
         .collect();
+
+    let exported_references = exports.iter().filter_map(|(exported, local)| {
+        values
+            .iter()
+            .find(|(binding, _)| binding.name == *local)
+            .map(|(_, value)| {
+                (
+                    exported.clone(),
+                    crate::style_export_locations::references(value),
+                )
+            })
+    });
 
     let mut names: FxHashMap<String, String> = FxHashMap::default();
     for (binding, value) in &values {
@@ -445,6 +486,13 @@ fn name_entries(
         };
         collected.references.insert(id.clone(), reference);
     }
+    exported_references
+        .flat_map(|(binding, ids)| {
+            ids.into_iter()
+                .filter_map(|id| names.get(&id).map(|name| (binding.clone(), name.clone())))
+                .collect::<Vec<_>>()
+        })
+        .collect()
 }
 
 fn is_plain_object(object: &JsObject, context: &Context) -> bool {
@@ -558,6 +606,19 @@ fn replace_placeholders(
 /// `code` without its TypeScript, stripped once for as long as the file holds
 /// it: the modules evaluations import are stripped once, not per evaluation
 pub(crate) fn strip_typescript(code: &str, filename: &str) -> String {
+    stripped_source(code, filename).code
+}
+
+impl StyleEntry {
+    fn real_location(&self) -> Option<css::style_origin::RealLocation> {
+        self.origin
+            .clone()
+            .map(css::style_origin::RealLocation::Exact)
+            .or_else(|| self.location.clone())
+    }
+}
+
+fn stripped_source(code: &str, filename: &str) -> crate::evaluation_location::StrippedSource {
     if let Some(stripped) = STRIPPED.with_borrow(|stripped| {
         stripped
             .get(filename)
@@ -566,26 +627,11 @@ pub(crate) fn strip_typescript(code: &str, filename: &str) -> String {
     }) {
         return stripped;
     }
-    let stripped = strip(code, filename);
+    let stripped = crate::evaluation_location::StrippedSource::new(code, filename);
     STRIPPED.with_borrow_mut(|entries| {
         entries.insert(filename.to_string(), (code.to_string(), stripped.clone()));
     });
     stripped
-}
-
-fn strip(code: &str, filename: &str) -> String {
-    let allocator = Allocator::default();
-    let source_type = SourceType::from_path(filename).unwrap_or_else(|_| SourceType::ts());
-    let mut program = Parser::new(&allocator, code, source_type).parse().program;
-    let scoping = SemanticBuilder::new()
-        .with_enum_eval(true)
-        .build(&program)
-        .semantic
-        .into_scoping();
-    let options = TransformOptions::default();
-    let path = Path::new("input.css.ts");
-    let _ = Transformer::new(&allocator, path, &options).build_with_scoping(scoping, &mut program);
-    Codegen::new().build(&program).code
 }
 
 type Api = fn(&StyleCollector, &[JsValue], &mut Context) -> JsResult<JsValue>;
@@ -665,8 +711,46 @@ fn register_vanilla_extract_apis(
 }
 
 fn style(collector: &StyleCollector, args: &[JsValue], context: &mut Context) -> JsResult<JsValue> {
+    let _origin = ApiOrigin::enter(collector, args, context);
     let id = register_style(collector, args.get_or_undefined(0), context)?;
     Ok(js_string!(id).into())
+}
+
+struct ApiOrigin<'a> {
+    collector: &'a StyleCollector,
+    previous: (
+        Option<css::style_origin::StyleOrigin>,
+        Option<css::style_origin::RealLocation>,
+    ),
+}
+impl<'a> ApiOrigin<'a> {
+    fn enter(collector: &'a StyleCollector, args: &[JsValue], context: &Context) -> Self {
+        let origin = args.split_last().and_then(|(origin, before)| {
+            (before.last().and_then(js_str).as_deref() == Some(crate::evaluation_origin::PACKET))
+                .then(|| js_str(origin).and_then(|text| serde_json::from_str(&text).ok()))
+                .flatten()
+        });
+        let location = collector
+            .borrow()
+            .lookup
+            .as_ref()
+            .and_then(|lookup| lookup.produced_by(context));
+        let mut state = collector.borrow_mut();
+        let previous = (
+            std::mem::replace(&mut state.origin, origin),
+            std::mem::replace(&mut state.location, location),
+        );
+        Self {
+            collector,
+            previous,
+        }
+    }
+}
+impl Drop for ApiOrigin<'_> {
+    fn drop(&mut self) {
+        let mut state = self.collector.borrow_mut();
+        (state.origin, state.location) = std::mem::take(&mut self.previous);
+    }
 }
 
 fn register_style(
@@ -674,7 +758,11 @@ fn register_style(
     rule: &JsValue,
     context: &mut Context,
 ) -> JsResult<String> {
-    let mut entry = StyleEntry::default();
+    let mut entry = StyleEntry {
+        origin: collector.borrow().origin.clone(),
+        location: collector.borrow().location.clone(),
+        ..StyleEntry::default()
+    };
     let mut rules = Vec::new();
     compose(rule, &mut entry, &mut rules, context)?;
     entry.json = format!("{{{}}}", rules.join(","));
@@ -740,6 +828,7 @@ fn style_variants(
     args: &[JsValue],
     context: &mut Context,
 ) -> JsResult<JsValue> {
+    let _origin = ApiOrigin::enter(collector, args, context);
     let variants = ObjectInitializer::new(context).build();
     let map = args.get_or_undefined(1).as_callable();
     if let Some(data) = args.get_or_undefined(0).as_object() {
@@ -761,13 +850,18 @@ fn style_variants(
 }
 
 fn keyframes(collector: &StyleCollector, args: &[JsValue], context: &mut Context) -> JsValue {
+    let _origin = ApiOrigin::enter(collector, args, context);
     let json = style_to_json(args.get_or_undefined(0), context);
     let mut collector = collector.borrow_mut();
     let id = collector.placeholder();
+    let origin = collector.origin.clone();
+    let location = collector.location.clone();
     collector.styles.keyframes.insert(
         id.clone(),
         StyleEntry {
             json,
+            origin,
+            location,
             ..StyleEntry::default()
         },
     );
@@ -1269,9 +1363,14 @@ pub fn keyframes_to_code(
     for (name, entry) in keyframes {
         output.push_str("\nconst ");
         output.push_str(name);
-        output.push_str(" = keyframes(");
-        output.push_str(&collected.resolve_json(&entry.json, &FxHashMap::default()));
-        output.push(')');
+        output.push_str(" = ");
+        output.push_str(&crate::evaluation_origin::mark_location(
+            format!(
+                "keyframes({})",
+                collected.resolve_json(&entry.json, &FxHashMap::default())
+            ),
+            entry.real_location().as_ref(),
+        ));
     }
     output
 }
@@ -1340,6 +1439,7 @@ fn composed_css(
         }
         format!("css({{{}}})", rules.join(","))
     };
+    let css = crate::evaluation_origin::mark_location(css, entry.real_location().as_ref());
     if classes.is_empty() {
         css
     } else {
@@ -1403,9 +1503,15 @@ pub fn collected_styles_to_code_with_keyframes(
 
     for (name, entry) in sorted(&collected.keyframes) {
         code.push(format!(
-            "{}const {name} = keyframes({})",
+            "{}const {name} = {}",
             export_prefix(entry.exported),
-            collected.resolve_json(&entry.json, keyframes_names)
+            crate::evaluation_origin::mark_location(
+                format!(
+                    "keyframes({})",
+                    collected.resolve_json(&entry.json, keyframes_names)
+                ),
+                entry.real_location().as_ref()
+            )
         ));
     }
 
@@ -1588,25 +1694,25 @@ export const animated = style({ animationName: spin })",
                 &[("spin", "k")]
             ),
             r#"import { css, keyframes } from '@devup-ui/react'
-const spin = keyframes({"to":{"opacity":1}})
-const _ve0 = css({"padding":"1px"})
-const _ve1 = css({"padding":"2px"})
-export const animated = css({"animationName":"k"})
-export const box = css({"color":"red"})
+const spin = __devup_style_origin("{\"Exact\":{\"file\":\"test.css.ts\",\"line\":4,\"col\":14,\"originalExpression\":\"keyframes({ to: { opacity: 1 } })\"}}", keyframes({"to":{"opacity":1}}))
+const _ve0 = __devup_style_origin("{\"Exact\":{\"file\":\"test.css.ts\",\"line\":2,\"col\":28,\"originalExpression\":\"style({ padding: 1 })\"}}", css({"padding":"1px"}))
+const _ve1 = __devup_style_origin("{\"Exact\":{\"file\":\"test.css.ts\",\"line\":2,\"col\":55,\"originalExpression\":\"style({ padding: 2 })\"}}", css({"padding":"2px"}))
+export const animated = __devup_style_origin("{\"Exact\":{\"file\":\"test.css.ts\",\"line\":6,\"col\":25,\"originalExpression\":\"style({ animationName: spin })\"}}", css({"animationName":"k"}))
+export const box = __devup_style_origin("{\"Exact\":{\"file\":\"test.css.ts\",\"line\":3,\"col\":20,\"originalExpression\":\"style({ color: 'red' })\"}}", css({"color":"red"}))
 export const sizes = { "sm": _ve0, "lg": _ve1 }
 export const alias = box"#
         );
         assert_eq!(
             generate("const _ve0 = 1\nexport const list = [style({ color: 'red' })]"),
             r#"import { css } from '@devup-ui/react'
-const _ve0_ = css({"color":"red"})
+const _ve0_ = __devup_style_origin("{\"Exact\":{\"file\":\"test.css.ts\",\"line\":3,\"col\":22,\"originalExpression\":\"style({ color: 'red' })\"}}", css({"color":"red"}))
 export const list = [_ve0_]"#
         );
         assert_eq!(
             generate("export const animated = style({ animationName: keyframes({}) })"),
             r#"import { css, keyframes } from '@devup-ui/react'
-const _ve0 = keyframes({})
-export const animated = css({"animationName":"__style_0__"})"#
+const _ve0 = __devup_style_origin("{\"Exact\":{\"file\":\"test.css.ts\",\"line\":2,\"col\":48,\"originalExpression\":\"keyframes({})\"}}", keyframes({}))
+export const animated = __devup_style_origin("{\"Exact\":{\"file\":\"test.css.ts\",\"line\":2,\"col\":25,\"originalExpression\":\"style({ animationName: keyframes({}) })\"}}", css({"animationName":"__style_0__"}))"#
         );
     }
 
@@ -1636,7 +1742,7 @@ export type Box = string
 export const symbol = Symbol('x')"
             ),
             r#"import { css } from '@devup-ui/react'
-const box = css({"color":"red"})
+const box = __devup_style_origin("{\"Exact\":{\"file\":\"test.css.ts\",\"line\":2,\"col\":13,\"originalExpression\":\"style({ color: 'red' })\"}}", css({"color":"red"}))
 export const text = "plain \"quoted\""
 export const template = `${box} extra \`tick\` \${x} back\\slash __open`
 export const nothing = undefined
@@ -1666,10 +1772,10 @@ export const combined = style([tone.primary, 'external', [{ margin: 1 }]])
 globalStyle(`${tone.primary} > span`, { fontWeight: 700 })"
             ),
             r#"import { css, globalCss } from '@devup-ui/react'
-const _ve0 = css({"color":"blue"})
-const _ve1 = css({"color":"red"}) + " f0__ve1"
-const _ve2 = css({"padding":"4px","content":"sm"})
-export const combined = css({"color":"red","margin":"1px"}) + " f0__ve1 external"
+const _ve0 = __devup_style_origin("{\"Exact\":{\"file\":\"test.css.ts\",\"line\":2,\"col\":21,\"originalExpression\":\"styleVariants({ primary: { color: 'red' }, 0: { color: 'blue' }, [Symbol('s')]: { color: 'green' } })\"}}", css({"color":"blue"}))
+const _ve1 = __devup_style_origin("{\"Exact\":{\"file\":\"test.css.ts\",\"line\":2,\"col\":21,\"originalExpression\":\"styleVariants({ primary: { color: 'red' }, 0: { color: 'blue' }, [Symbol('s')]: { color: 'green' } })\"}}", css({"color":"red"})) + " f0__ve1"
+const _ve2 = __devup_style_origin("{\"Exact\":{\"file\":\"test.css.ts\",\"line\":3,\"col\":22,\"originalExpression\":\"styleVariants({ sm: 4 }, (padding, key) => ({ padding, content: key }))\"}}", css({"padding":"4px","content":"sm"}))
+export const combined = __devup_style_origin("{\"Exact\":{\"file\":\"test.css.ts\",\"line\":5,\"col\":25,\"originalExpression\":\"style([tone.primary, 'external', [{ margin: 1 }]])\"}}", css({"color":"red","margin":"1px"})) + " f0__ve1 external"
 globalCss({ ".f0__ve1 > span": {"fontWeight":700} })
 export const tone = { "0": _ve0, "primary": _ve1 }
 export const space = { "sm": _ve2 }
@@ -1693,14 +1799,14 @@ export const h = style(o)
 export const hover = style({ selectors: { [`${a}:hover &`]: { color: 'blue' } } })"
             ),
             r#"import { css } from '@devup-ui/react'
-const a = css({"color":"red"}) + " f0_a"
-const b = css({"color":"red","margin":"2px"}) + " f0_a"
-export const c = css({"color":"red","margin":"2px","padding":"3px"}) + " f0_a"
-const e = css({})
-export const f = css({"color":"red"}) + " f0_a"
-export const g = css({})
-export const h = css({})
-export const hover = css({"selectors":{".f0_a:hover &":{"color":"blue"}}})"#
+const a = __devup_style_origin("{\"Exact\":{\"file\":\"test.css.ts\",\"line\":2,\"col\":11,\"originalExpression\":\"style({ color: 'red' })\"}}", css({"color":"red"})) + " f0_a"
+const b = __devup_style_origin("{\"Exact\":{\"file\":\"test.css.ts\",\"line\":3,\"col\":11,\"originalExpression\":\"style([a, { margin: 2 }])\"}}", css({"color":"red","margin":"2px"})) + " f0_a"
+export const c = __devup_style_origin("{\"Exact\":{\"file\":\"test.css.ts\",\"line\":4,\"col\":18,\"originalExpression\":\"style([b, { padding: 3 }])\"}}", css({"color":"red","margin":"2px","padding":"3px"})) + " f0_a"
+const e = __devup_style_origin("{\"Exact\":{\"file\":\"test.css.ts\",\"line\":5,\"col\":11,\"originalExpression\":\"style({})\"}}", css({}))
+export const f = __devup_style_origin("{\"Exact\":{\"file\":\"test.css.ts\",\"line\":6,\"col\":18,\"originalExpression\":\"style([e, a, '__style_99__'])\"}}", css({"color":"red"})) + " f0_a"
+export const g = __devup_style_origin("{\"Exact\":{\"file\":\"test.css.ts\",\"line\":7,\"col\":18,\"originalExpression\":\"style(5)\"}}", css({}))
+export const h = __devup_style_origin("{\"Exact\":{\"file\":\"test.css.ts\",\"line\":9,\"col\":18,\"originalExpression\":\"style(o)\"}}", css({}))
+export const hover = __devup_style_origin("{\"Exact\":{\"file\":\"test.css.ts\",\"line\":10,\"col\":22,\"originalExpression\":\"style({ selectors: { [`${a}:hover &`]: { color: 'blue' } } })\"}}", css({"selectors":{".f0_a:hover &":{"color":"blue"}}}))"#
         );
     }
 
@@ -1741,7 +1847,7 @@ export const box = style({ vars: { [plain]: '1px', '--raw': 2 }, width: plain, p
             r#"import { css, globalCss } from '@devup-ui/react'
 globalCss`@property --size-0-2{syntax:"<length>";inherits:false;initial-value:0px}`
 globalCss`@property --var-0-3{syntax:"<length> | <percentage>";inherits:true}`
-export const box = css({"vars":{"--var-0-0":"1px","--raw":2},"width":"var(--var-0-0)","padding":0,"zIndex":2,"margin":[1,2]})
+export const box = __devup_style_origin("{\"Exact\":{\"file\":\"test.css.ts\",\"line\":10,\"col\":20,\"originalExpression\":\"style({ vars: { [plain]: '1px', '--raw': 2 }, width: plain, padding: 0, zIndex: 2, margin: [1, 2] })\"}}", css({"vars":{"--var-0-0":"1px","--raw":2},"width":"var(--var-0-0)","padding":0,"zIndex":2,"margin":[1,2]}))
 export const plain = "var(--var-0-0)"
 export const named = "var(--_9_lives-0-1)"
 export const typed = "var(--size-0-2)"
@@ -1802,7 +1908,7 @@ export const box = style({ vars: assigned })
 export const notObject = createTheme('tokens')"
             ),
             r#"import { css, globalCss } from '@devup-ui/react'
-export const box = css({"vars":{"--color-brand-0-0":"red"}})
+export const box = __devup_style_origin("{\"Exact\":{\"file\":\"test.css.ts\",\"line\":13,\"col\":20,\"originalExpression\":\"style({ vars: assigned })\"}}", css({"vars":{"--color-brand-0-0":"red"}}))
 globalCss({ ".theme-0-2": {"@layer":"theme","--color-brand-0-3":"blue","--size-0-4":"4"} })
 globalCss({ ".dark-0-5": {"--color-brand-0-0":"black","--color-text-0-1":"white"} })
 globalCss({ ".theme-0-6": {"--color-brand-0-0":"x"} })
@@ -1869,21 +1975,25 @@ export const notObject = ["theme-0-9", {}]"#
     #[serial]
     fn test_referenced_keyframes() {
         reset_file_map();
-        let collected = execute_vanilla_extract(
-            "import { style, keyframes } from '@devup-ui/react'
+        let source = "import { style, keyframes } from '@devup-ui/react'
 const fade = keyframes({ from: { opacity: 0 } })
 const unused = keyframes({ to: { opacity: 1 } })
-export const box = style({ animationName: fade })",
-            PACKAGE,
-            "test.css.ts",
-        )
-        .unwrap();
+export const box = style({ animationName: fade })";
+        let collected = execute_vanilla_extract(source, PACKAGE, "test.css.ts").unwrap();
         let names = referenced_keyframes(&collected);
         assert_eq!(names, FxHashSet::from_iter(["fade".to_string()]));
         assert_eq!(
             keyframes_to_code(&collected, PACKAGE, &names),
             r#"import { keyframes } from '@devup-ui/react'
-const fade = keyframes({"from":{"opacity":0}})"#
+const fade = __devup_style_origin("{\"Exact\":{\"file\":\"test.css.ts\",\"line\":2,\"col\":14,\"originalExpression\":\"keyframes({ from: { opacity: 0 } })\"}}", keyframes({"from":{"opacity":0}}))"#
+        );
+        css::class_map::reset_class_map();
+        let output =
+            crate::extract("test.css.ts", source, crate::ExtractOption::default()).unwrap();
+        assert!(
+            !output.code.contains(crate::style_origin::MARKER),
+            "{}",
+            output.code
         );
     }
 

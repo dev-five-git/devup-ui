@@ -1,6 +1,6 @@
 ---
 source: libs/extractor/src/lib.rs
-expression: "ToBTreeSet::from(extract(\"test.tsx\",\nr#\"import stylex from '@stylexjs/stylex';\nconst styles = stylex.create({\n  bar: (height) => ({\n    height,\n    width: '100%',\n  }),\n});\nconst result = stylex.props(styles.bar(h));\"#,\nExtractOption\n{\n    package: \"@devup-ui/react\".to_string(), css_dir:\n    \"@devup-ui/react\".to_string(), single_css: true, import_main_css: false,\n    import_aliases: HashMap::new()\n},).unwrap())"
+expression: "ToBTreeSet::from(extract(\"test.tsx\",\nr\"import stylex from '@stylexjs/stylex';\nconst styles = stylex.create({\n  bar: (height) => ({\n    height,\n    width: '100%',\n  }),\n});\nconst result = stylex.props(styles.bar(h));\",\nExtractOption\n{\n    package: \"@devup-ui/react\".to_string(), css_dir:\n    \"@devup-ui/react\".to_string(), single_css: true, import_main_css: false,\n    import_aliases: HashMap::new()\n},).unwrap())"
 ---
 ToBTreeSet {
     styles: {
@@ -24,5 +24,5 @@ ToBTreeSet {
             },
         ),
     },
-    code: "import \"@devup-ui/react/devup-ui.css\";\nimport stylex from \"@stylexjs/stylex\";\nconst styles = { \"bar\": \"b c\" };\nconst result = {\n\tclassName: \"b c\",\n\tstyle: { \"--a\": ((v) => typeof v === \"number\" ? v + \"px\" : v)(h) }\n};\n",
+    code: "import \"@devup-ui/react/devup-ui.css\";\nimport stylex from \"@stylexjs/stylex\";\nconst styles = { \"bar\": \"OLwidth-v100_c OHazyflpgbui_vdf6v\" };\nconst result = {\n\tclassName: \"OLwidth-v100_c OHazyflpgbui_vdf6v\",\n\tstyle: { \"---SUHa4_ugfm6w7fioar3-b6\": ((v) => typeof v === \"number\" ? v + \"px\" : v)(h) }\n};\n",
 }

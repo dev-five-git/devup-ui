@@ -11,6 +11,9 @@ categories = ["development-tools", "wasm", "web-programming"]
 [lints]
 workspace = true
 
+[features]
+counter-fixtures = []
+
 [dependencies]
 oxc_parser = "0.151.0"
 oxc_syntax = "0.151.0"

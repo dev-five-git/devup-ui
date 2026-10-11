@@ -184,11 +184,17 @@ pub fn extract_style_from_styled<'a>(
     imports: &FxHashMap<String, ExportVariableKind>,
     attrs: &[Expression<'a>],
 ) -> (ExtractResult<'a>, Expression<'a>, Vec<(u32, String)>) {
+    let _scope = crate::extract_style::compiler_projection::ConsumerScope::enter(split_filename);
     let mut composed_classes = Vec::new();
+    let mut composition_reads = Vec::new();
     let mut errors = Vec::new();
     if let Expression::CallExpression(call) = expression
         && extract_base_tag_and_class_name(ast_builder, &call.callee, imports).is_some()
     {
+        if style_arguments(ast_builder, &call.arguments).is_some() {
+            composition_reads =
+                crate::assignment_composition::capture(ast_builder, &mut call.arguments);
+        }
         match style_arguments(ast_builder, &call.arguments) {
             Some(StyleArguments { classes, rules }) => {
                 call.arguments =
@@ -274,12 +280,13 @@ pub fn extract_style_from_styled<'a>(
             None,
             ast_builder,
         ));
-        let component = create_styled_component(
+        let mut component = create_styled_component(
             ast_builder,
             &base.name,
             &class_name,
             &gen_styles(ast_builder, &props_styles, None),
         );
+        crate::assignment_lowering::component(ast_builder, &mut component, &mut props_styles);
         let styled_component = base.render(ast_builder, apply_attrs(ast_builder, component, attrs));
 
         let result = ExtractResult {
@@ -298,6 +305,10 @@ pub fn extract_style_from_styled<'a>(
         // Case 2: styled.div({ bg: "red" }), styled("div")({ bg: "red" }),
         // or styled("div", { bg: "red" })
 
+        // Retain authored fields before extraction rewrites conditional/member values.
+        let creation_source = call.arguments[style_index]
+            .to_expression()
+            .clone_in(ast_builder.allocator());
         // Extract styles from object expression
         let ExtractResult {
             mut styles,
@@ -308,11 +319,7 @@ pub fn extract_style_from_styled<'a>(
         } = extract_style_from_expression(
             ast_builder,
             None,
-            if let Argument::SpreadElement(spread) = &mut call.arguments[style_index] {
-                &mut spread.argument
-            } else {
-                call.arguments[style_index].to_expression_mut()
-            },
+            call.arguments[style_index].to_expression_mut(),
             0,
             &None,
             LiteralHandling::ExpandResponsiveThemeToken,
@@ -324,6 +331,7 @@ pub fn extract_style_from_styled<'a>(
                 .into_iter()
                 .map(|(offset, code)| (offset, build_time_error("styled", &code, STYLE_OBJECT))),
         );
+        crate::assignment_lowering::styled_argument(ast_builder, &creation_source, &mut styles);
         if let Some(default_class_name) = base.styles.take() {
             styles.extend(default_class_name.into_iter().map(ExtractStyleProp::Static));
         }
@@ -337,13 +345,22 @@ pub fn extract_style_from_styled<'a>(
                 split_filename,
             )),
         );
-        let component = create_styled_component(
+        let mut component = create_styled_component(
             ast_builder,
             &base.name,
             &class_name,
             &gen_styles(ast_builder, &styles, None),
         );
-        let styled_component = base.render(ast_builder, apply_attrs(ast_builder, component, attrs));
+        component = apply_attrs(ast_builder, component, attrs);
+        crate::assignment_capture::styled_creation(
+            ast_builder,
+            &mut component,
+            crate::assignment_capture::StyledCreation {
+                source: &creation_source,
+                styles: &mut styles,
+            },
+        );
+        let styled_component = base.render(ast_builder, component);
 
         let result = ExtractResult {
             styles,
@@ -368,7 +385,16 @@ pub fn extract_style_from_styled<'a>(
     };
     (
         result.unwrap_or_else(ExtractResult::default),
-        new_expr.unwrap_or_else(|| expression.clone_in(ast_builder.allocator())),
+        new_expr.map_or_else(
+            || expression.clone_in(ast_builder.allocator()),
+            |value| {
+                if composition_reads.is_empty() {
+                    value
+                } else {
+                    call_with_values(ast_builder, composition_reads, value)
+                }
+            },
+        ),
         errors,
     )
 }

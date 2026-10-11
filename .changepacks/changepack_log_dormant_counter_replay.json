@@ -1,0 +1,7 @@
+{
+  "changes": {
+    "bindings/devup-ui-wasm/package.json": "Patch"
+  },
+  "note": "Prepare dormant frozen-input declaration replay and complete counter expansion witnesses for the authoritative cache transition. The test-driven path preserves reset, typography, keyframe and cleanup evidence without changing current CSS, JavaScript or cache behavior. No new build errors.",
+  "date": "2026-10-09T00:00:00.000Z"
+}

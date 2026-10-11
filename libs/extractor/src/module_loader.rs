@@ -14,6 +14,7 @@ use oxc_span::{GetSpan, SourceType};
 use oxc_syntax::symbol::SymbolId;
 use rustc_hash::{FxHashMap, FxHashSet};
 
+use crate::evaluation_location::{CopiedSource, append_mapped};
 use crate::{ExtractOption, ModuleResolver, utils::is_vanilla_extract_file};
 
 /// The object the package's API is bound to while a stylesheet runs
@@ -21,6 +22,21 @@ pub(crate) const PACKAGE_BINDING: &str = "__vanilla_extract__";
 
 /// A console whose calls do nothing, as what a module logs while it runs
 /// changes no value
+/// Run before a stylesheet: what differs between builds fails the evaluation,
+/// so a stylesheet never gives different rules for the same source. `new
+/// Date(0)` and other fixed dates stay.
+pub(crate) const DETERMINISM: &str = r#"(() => {
+  const refuse = (name) => () => { throw new Error(`${name} gives a different value each build: a stylesheet cannot read it`); };
+  Math.random = refuse("Math.random");
+  const RealDate = Date;
+  globalThis.Date = new Proxy(RealDate, {
+    construct: (target, args, newTarget) => args.length === 0 ? refuse("new Date()")() : Reflect.construct(target, args, newTarget),
+    apply: refuse("Date()"),
+    get: (target, key, receiver) => key === "now" ? refuse("Date.now") : Reflect.get(target, key, receiver),
+  });
+})();
+"#;
+
 pub(crate) const CONSOLE: &str = "if (typeof console === \"undefined\") globalThis.console = new Proxy({}, { get: () => () => undefined });\n";
 
 /// Loop iterations an evaluation may run before it fails instead of hanging
@@ -172,20 +188,25 @@ impl<'r> ModuleLoader<'r> {
         let code = if stylesheet {
             // Extracted the way the bundler extracts it, so the names it
             // exports are the ones its own CSS uses
-            let output = crate::extract_with_source_map(
-                &module.path,
-                &module.code,
-                self.option.clone(),
-                false,
-                Some(resolver),
-            )
+            let output = crate::compiler_policy::inherited(crate::compiler_policy::CompilerInput {
+                filename: &module.path,
+                code: &module.code,
+                option: self.option.clone(),
+                source_map: false,
+                resolver: Some(resolver),
+            })
             .map_err(|error| error.to_string())?;
             self.dependencies.extend(output.dependencies);
             output.code
         } else {
             module.code
         };
-        let script = crate::vanilla_extract::strip_typescript(&code, &module.path);
+        let instrumented = (!stylesheet && loading_for_stylesheet())
+            .then(|| crate::evaluation_origin::instrument(&code, &module.path, self.option));
+        let script = crate::vanilla_extract::strip_typescript(
+            instrumented.as_deref().unwrap_or(&code),
+            &module.path,
+        );
         let module_script = module_script(&script, &module.path, self, false)?;
         // Live bindings: a read before the binding is initialized fails as it
         // does in an ES module
@@ -227,7 +248,8 @@ impl<'r> ModuleLoader<'r> {
 pub(crate) struct ModuleScript {
     pub body: String,
     /// `(exported name, expression)`
-    exports: Vec<(String, String)>,
+    pub(crate) exports: Vec<(String, String)>,
+    pub(crate) copies: Vec<CopiedSource>,
     /// Modules re-exported whole
     spreads: Vec<String>,
     /// Written with `module.exports` rather than `export`
@@ -341,19 +363,31 @@ pub(crate) fn module_script(
     replacements.sort_by_key(|(start, ..)| *start);
     let text = |span: oxc_span::Span| {
         let mut code = String::new();
+        let mut copies = Vec::new();
         let mut copied = span.start;
         for (start, end, replacement) in &replacements {
             if *start >= span.start && *end <= span.end {
+                let length = usize::try_from(*start - copied).unwrap_or_default();
+                copies.push(CopiedSource {
+                    generated: code.len()..code.len() + length,
+                    original: usize::try_from(copied).unwrap_or_default(),
+                });
                 code.push_str(&script[copied as usize..*start as usize]);
                 code.push_str(replacement);
                 copied = *end;
             }
         }
+        let length = usize::try_from(span.end - copied).unwrap_or_default();
+        copies.push(CopiedSource {
+            generated: code.len()..code.len() + length,
+            original: usize::try_from(copied).unwrap_or_default(),
+        });
         code.push_str(&script[copied as usize..span.end as usize]);
-        code
+        (code, copies)
     };
 
     let mut body = String::with_capacity(script.len());
+    let mut copies = Vec::new();
     let mut exports = Vec::new();
     let mut spreads = Vec::new();
     for statement in &program.body {
@@ -384,7 +418,7 @@ pub(crate) fn module_script(
                 }
             }
             Statement::ExportDeclaration(export) => {
-                body.push_str(&text(export.declaration.span()));
+                append_mapped(&mut body, &mut copies, text(export.declaration.span()));
                 body.push('\n');
                 for name in declared_names(&export.declaration) {
                     exports.push((name.clone(), name));
@@ -418,10 +452,12 @@ pub(crate) fn module_script(
                 };
                 let declaration = text(export.declaration.span());
                 let local = if let Some(id) = id {
-                    body.push_str(&declaration);
+                    append_mapped(&mut body, &mut copies, declaration);
                     id.name.to_string()
                 } else {
-                    let _ = write!(body, "const __default__ = ({declaration});");
+                    body.push_str("const __default__ = (");
+                    append_mapped(&mut body, &mut copies, declaration);
+                    body.push_str(");");
                     "__default__".to_string()
                 };
                 body.push('\n');
@@ -435,7 +471,7 @@ pub(crate) fn module_script(
                 }
             }
             statement => {
-                body.push_str(&text(statement.span()));
+                append_mapped(&mut body, &mut copies, text(statement.span()));
                 body.push('\n');
             }
         }
@@ -443,6 +479,7 @@ pub(crate) fn module_script(
     Ok(ModuleScript {
         body,
         exports,
+        copies,
         spreads,
         commonjs,
     })

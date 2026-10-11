@@ -4,5 +4,5 @@ expression: "ToBTreeSet::from(extract(\"test.mjs\",\nr#\"import { jsx as e } fro
 ---
 ToBTreeSet {
     styles: {},
-    code: "import { jsx as e } from \"react/jsx-runtime\";\nfunction c() {\n\treturn e(\"div\", {});\n}\nexport { c as Lib };\n",
+    code: "import { jsx as e } from \"react/jsx-runtime\";\nfunction c() {\n\treturn ((__devupSpread0) => e(\"div\", {}))(isActive);\n}\nexport { c as Lib };\n",
 }

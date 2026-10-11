@@ -45,5 +45,5 @@ ToBTreeSet {
             },
         ),
     },
-    code: "import \"@devup-ui/react/devup-ui.css\";\nimport stylex from \"@stylexjs/stylex\";\nconst styles = { \"base\": \"a b\" };\nconst el = <div>\n  <div className=\"c d\" />\n  <div {...{ className: \"a b\" }} />\n</div>;\n",
+    code: "import \"@devup-ui/react/devup-ui.css\";\nimport stylex from \"@stylexjs/stylex\";\nconst styles = { \"base\": \"OLfont_dsize-v14px OLcolor-vblue\" };\nconst el = <div>\n  <div className=\"OLbackground-vred OLpadding-v8px\" />\n  <div {...{ className: \"OLfont_dsize-v14px OLcolor-vblue\" }} />\n</div>;\n",
 }

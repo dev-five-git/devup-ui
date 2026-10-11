@@ -1,6 +1,6 @@
 ---
 source: libs/extractor/src/lib.rs
-expression: "ToBTreeSet::from(extract(\"test.tsx\",\nr#\"import { create, include } from '@stylexjs/stylex';\nconst base = create({\n    root: { color: 'red' },\n});\nconst composed = create({\n    fancy: { ...include(base.root), padding: '8px' },\n});\"#,\nExtractOption\n{\n    package: \"@devup-ui/react\".to_string(), css_dir:\n    \"@devup-ui/react\".to_string(), single_css: true, import_main_css: false,\n    import_aliases: HashMap::new()\n},).unwrap())"
+expression: "ToBTreeSet::from(extract(\"test.tsx\",\nr\"import { create, include } from '@stylexjs/stylex';\nconst base = create({\n    root: { color: 'red' },\n});\nconst composed = create({\n    fancy: { ...include(base.root), padding: '8px' },\n});\",\nExtractOption\n{\n    package: \"@devup-ui/react\".to_string(), css_dir:\n    \"@devup-ui/react\".to_string(), single_css: true, import_main_css: false,\n    import_aliases: HashMap::new()\n},).unwrap())"
 ---
 ToBTreeSet {
     styles: {
@@ -25,5 +25,5 @@ ToBTreeSet {
             },
         ),
     },
-    code: "import \"@devup-ui/react/devup-ui.css\";\nimport { create, include } from \"@stylexjs/stylex\";\nconst base = { \"root\": \"a\" };\nconst composed = { \"fancy\": \"a b\" };\n",
+    code: "import \"@devup-ui/react/devup-ui.css\";\nimport { create, include } from \"@stylexjs/stylex\";\nconst base = { \"root\": \"OLcolor-vred\" };\nconst composed = { \"fancy\": \"OLcolor-vred OLpadding-v8px\" };\n",
 }

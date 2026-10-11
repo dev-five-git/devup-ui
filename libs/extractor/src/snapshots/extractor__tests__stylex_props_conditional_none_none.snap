@@ -15,5 +15,5 @@ ToBTreeSet {
             },
         ),
     },
-    code: "import \"@devup-ui/react/devup-ui.css\";\nimport stylex from \"@stylexjs/stylex\";\nconst styles = { \"base\": \"a\" };\nconst el = <div {...{ className: isActive ? [unknownA].flat(Infinity).filter(Boolean).join(\" \") : [unknownB].flat(Infinity).filter(Boolean).join(\" \") }} />;\n",
+    code: "import \"@devup-ui/react/devup-ui.css\";\nimport stylex from \"@stylexjs/stylex\";\nconst styles = { \"base\": \"OLcolor-vred\" };\nconst el = <div {...{ className: isActive ? [unknownA].flat(Infinity).filter(Boolean).join(\" \") : [unknownB].flat(Infinity).filter(Boolean).join(\" \") }} />;\n",
 }

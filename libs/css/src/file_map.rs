@@ -23,6 +23,7 @@ pub fn with_file_map<F, R>(f: F) -> R
 where
     F: FnOnce(&BiHashMap<String, usize>) -> R,
 {
+    let _admission = crate::admission::enter();
     #[cfg(target_arch = "wasm32")]
     #[cfg(not(tarpaulin_include))]
     {
@@ -30,6 +31,7 @@ where
     }
     #[cfg(not(target_arch = "wasm32"))]
     {
+        let _root = crate::root_held::RootHeld::enter("file_map");
         let guard = GLOBAL_FILE_MAP
             .lock()
             .unwrap_or_else(std::sync::PoisonError::into_inner);
@@ -42,6 +44,7 @@ fn with_file_map_mut<F, R>(f: F) -> R
 where
     F: FnOnce(&mut BiHashMap<String, usize>) -> R,
 {
+    let _admission = crate::admission::enter();
     #[cfg(target_arch = "wasm32")]
     #[cfg(not(tarpaulin_include))]
     {
@@ -49,6 +52,7 @@ where
     }
     #[cfg(not(target_arch = "wasm32"))]
     {
+        let _root = crate::root_held::RootHeld::enter("file_map");
         let mut guard = GLOBAL_FILE_MAP
             .lock()
             .unwrap_or_else(std::sync::PoisonError::into_inner);
@@ -56,17 +60,31 @@ where
     }
 }
 
+pub use crate::sparse_site::source_ids::{
+    get_or_insert_original_id, get_original_ids, original_id, set_original_ids,
+};
+
 /// for test
 pub fn reset_file_map() {
+    let _admission = crate::admission::enter();
+    crate::admission::assert_administration_allowed("reset_file_map");
     with_file_map_mut(BiHashMap::clear);
+    set_original_ids(std::collections::BTreeMap::new());
 }
 
 pub fn set_file_map(new_map: BiHashMap<String, usize>) {
+    let _admission = crate::admission::enter();
+    crate::admission::assert_administration_allowed("set_file_map");
     with_file_map_mut(|map| *map = new_map);
 }
 
 pub fn get_file_map() -> BiHashMap<String, usize> {
     with_file_map(Clone::clone)
+}
+
+/// Restore only the delivery snapshot owned by a private exact attempt.
+pub(crate) fn restore_file_map_snapshot(snapshot: BiHashMap<String, usize>) {
+    with_file_map_mut(|map| *map = snapshot);
 }
 
 #[inline]
@@ -93,6 +111,22 @@ pub fn get_file_num_by_filename(filename: &str) -> usize {
     })
 }
 
+/// Give every file in `files` a number now, in path order.
+///
+/// Numbers files already hold are kept, and a file collapsed into a bucket is numbered as the bucket. The numbers files get then depend on the paths alone,
+/// not on which file a worker reaches first; files that appear later (in
+/// development) are numbered after the existing ones.
+pub fn seed_file_numbers(files: &[String]) {
+    let _admission = crate::admission::enter();
+    crate::admission::assert_administration_allowed("seed_file_numbers");
+    crate::sparse_site::source_ids::seed_original_ids(files);
+    let mut sorted: Vec<String> = files.iter().map(|file| canonical(file)).collect();
+    sorted.sort_unstable();
+    sorted.dedup();
+    for file in sorted {
+        let _ = get_file_num_by_filename(&file);
+    }
+}
 #[must_use]
 pub fn get_filename_by_file_num(file_num: usize) -> String {
     with_file_map(|map| {
@@ -121,6 +155,7 @@ pub fn with_canonical_map<F, R>(f: F) -> R
 where
     F: FnOnce(&std::collections::HashMap<String, String>) -> R,
 {
+    let _admission = crate::admission::enter();
     #[cfg(target_arch = "wasm32")]
     #[cfg(not(tarpaulin_include))]
     {
@@ -128,6 +163,7 @@ where
     }
     #[cfg(not(target_arch = "wasm32"))]
     {
+        let _root = crate::root_held::RootHeld::enter("canonical_map");
         let guard = GLOBAL_CANONICAL_MAP
             .lock()
             .unwrap_or_else(std::sync::PoisonError::into_inner);
@@ -140,6 +176,7 @@ fn with_canonical_map_mut<F, R>(f: F) -> R
 where
     F: FnOnce(&mut std::collections::HashMap<String, String>) -> R,
 {
+    let _admission = crate::admission::enter();
     #[cfg(target_arch = "wasm32")]
     #[cfg(not(tarpaulin_include))]
     {
@@ -147,6 +184,7 @@ where
     }
     #[cfg(not(target_arch = "wasm32"))]
     {
+        let _root = crate::root_held::RootHeld::enter("canonical_map");
         let mut guard = GLOBAL_CANONICAL_MAP
             .lock()
             .unwrap_or_else(std::sync::PoisonError::into_inner);
@@ -156,10 +194,16 @@ where
 
 /// for test
 pub fn reset_canonical_map() {
+    let _admission = crate::admission::enter();
+    crate::admission::assert_administration_allowed("reset_canonical_map");
     with_canonical_map_mut(std::collections::HashMap::clear);
+    crate::naming::set_collapsed_buckets(&std::collections::HashMap::new());
 }
 
 pub fn set_canonical_map(new_map: std::collections::HashMap<String, String>) {
+    let _admission = crate::admission::enter();
+    crate::admission::assert_administration_allowed("set_canonical_map");
+    crate::naming::set_collapsed_buckets(&new_map);
     with_canonical_map_mut(|map| *map = new_map);
 }
 
@@ -196,6 +240,47 @@ mod tests {
 
     use super::*;
 
+    #[test]
+    #[serial]
+    fn test_seed_file_numbers_numbers_buckets_not_their_members() {
+        reset_file_map();
+        set_canonical_map(std::collections::HashMap::from([(
+            "x.tsx".to_string(),
+            "a.tsx".to_string(),
+        )]));
+        seed_file_numbers(&[
+            "x.tsx".to_string(),
+            "b.tsx".to_string(),
+            "a.tsx".to_string(),
+        ]);
+        assert_eq!(get_file_num_by_filename("a.tsx"), 0);
+        assert_eq!(get_file_num_by_filename("b.tsx"), 1);
+        assert_eq!(get_file_map().len(), 2);
+        reset_canonical_map();
+        reset_file_map();
+    }
+
+    #[test]
+    #[serial]
+    fn test_seed_file_numbers_is_independent_of_order() {
+        reset_file_map();
+        seed_file_numbers(&[
+            "b.tsx".to_string(),
+            "a.tsx".to_string(),
+            "b.tsx".to_string(),
+        ]);
+        assert_eq!(get_file_num_by_filename("a.tsx"), 0);
+        assert_eq!(get_file_num_by_filename("b.tsx"), 1);
+        seed_file_numbers(&[
+            "c.tsx".to_string(),
+            "0.tsx".to_string(),
+            "a.tsx".to_string(),
+        ]);
+        assert_eq!(get_file_num_by_filename("a.tsx"), 0);
+        assert_eq!(get_file_num_by_filename("0.tsx"), 2);
+        assert_eq!(get_file_num_by_filename("c.tsx"), 3);
+        reset_file_map();
+    }
     #[test]
     #[serial]
     fn test_set_and_get_file_map() {

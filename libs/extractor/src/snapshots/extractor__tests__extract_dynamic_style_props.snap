@@ -1,6 +1,6 @@
 ---
 source: libs/extractor/src/lib.rs
-expression: "ToBTreeSet::from(extract(\"test.tsx\",\nr#\"import { Box } from \"@devup-ui/core\";\n<Box padding={someStyleVar} margin={someStyleVar2} />;\n\"#,\nExtractOption\n{\n    package: \"@devup-ui/core\".to_string(), css_dir:\n    \"@devup-ui/core\".to_string(), single_css: true, import_main_css: false\n}).unwrap())"
+expression: "ToBTreeSet::from(extract(\"test.tsx\",\nr#\"import { Box } from \"@devup-ui/core\";\n<Box padding={someStyleVar} margin={someStyleVar2} />;\n\"#,\nExtractOption\n{\n    package: \"@devup-ui/core\".to_string(), css_dir:\n    \"@devup-ui/core\".to_string(), single_css: true, import_main_css: false,\n    import_aliases: HashMap::new()\n}).unwrap())"
 ---
 ToBTreeSet {
     styles: {
@@ -8,7 +8,7 @@ ToBTreeSet {
             ExtractDynamicStyle {
                 property: "margin",
                 level: 0,
-                identifier: "someStyleVar2",
+                identifier: "__devupSpread0",
                 selector: None,
                 style_order: None,
             },
@@ -17,11 +17,11 @@ ToBTreeSet {
             ExtractDynamicStyle {
                 property: "padding",
                 level: 0,
-                identifier: "someStyleVar",
+                identifier: "__devupSpread1",
                 selector: None,
                 style_order: None,
             },
         ),
     },
-    code: "import \"@devup-ui/core/devup-ui.css\";\n<div className=\"a c\" style={{\n\t\"--b\": someStyleVar,\n\t\"--d\": someStyleVar2\n}} />;\n",
+    code: "import \"@devup-ui/core/devup-ui.css\";\n((__devupSpread1, __devupSpread0) => <div className=\"OHa_rprl97atut6n4_ OHcgeztw3fey5cnmin\" style={{\n\t\"---SUHdi6rtaah8w66vnsi-az\": __devupSpread1,\n\t\"---SUHdi6rtaah8w66vnsi-bk\": __devupSpread0\n}} />)(someStyleVar, someStyleVar2);\n",
 }

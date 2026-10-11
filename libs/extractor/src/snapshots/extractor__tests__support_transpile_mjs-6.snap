@@ -1,6 +1,6 @@
 ---
 source: libs/extractor/src/lib.rs
-expression: "ToBTreeSet::from(extract(\"test.js\",\nr#\"import { jsx as e } from \"react/jsx-runtime\";\n        import { Box as o } from \"@devup-ui/core\";\n        e(o, { as: b ? \"div\" : \"section\", className: \"a\", bg: variable, style: { color: \"blue\" }, props: { animate: { duration: 1 } } })\n        \"#,\nExtractOption\n{\n    package: \"@devup-ui/core\".to_string(), css_dir:\n    \"@devup-ui/core\".to_string(), single_css: true, import_main_css: false\n}).unwrap())"
+expression: "ToBTreeSet::from(extract(\"test.js\",\nr#\"import { jsx as e } from \"react/jsx-runtime\";\n        import { Box as o } from \"@devup-ui/core\";\n        e(o, { as: b ? \"div\" : \"section\", className: \"a\", bg: variable, style: { color: \"blue\" }, props: { animate: { duration: 1 } } })\n        \"#,\nExtractOption\n{\n    package: \"@devup-ui/core\".to_string(), css_dir:\n    \"@devup-ui/core\".to_string(), single_css: true, import_main_css: false,\n    import_aliases: HashMap::new()\n}).unwrap())"
 ---
 ToBTreeSet {
     styles: {
@@ -8,11 +8,11 @@ ToBTreeSet {
             ExtractDynamicStyle {
                 property: "background",
                 level: 0,
-                identifier: "variable",
+                identifier: "__devupSpread2",
                 selector: None,
                 style_order: None,
             },
         ),
     },
-    code: "import \"@devup-ui/core/devup-ui.css\";\nimport { jsx as e } from \"react/jsx-runtime\";\ne(b ? \"div\" : \"section\", {\n\tclassName: \"a a\",\n\tstyle: {\n\t\t...{ \"--b\": variable },\n\t\t...{ color: \"blue\" }\n\t},\n\t...{ animate: { duration: 1 } }\n});\n",
+    code: "import \"@devup-ui/core/devup-ui.css\";\nimport { jsx as e } from \"react/jsx-runtime\";\n((__devupSpread1, __devupSpread2, __devupSpread0) => e(__devupSpread1, {\n\tclassName: \"a OHag37y_d13ozrwlxg\",\n\tstyle: {\n\t\t...{ \"---SUHa4mew2tk4bm_kiwq-dv\": __devupSpread2 },\n\t\t...__devupSpread0\n\t},\n\t...{ animate: { duration: 1 } }\n}))((b ? \"div\" : \"section\") || \"div\", variable, { color: \"blue\" });\n",
 }

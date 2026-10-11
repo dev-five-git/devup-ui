@@ -20,6 +20,7 @@ extractor = { path = "../extractor" }
 rustc-hash = "2"
 
 [dev-dependencies]
+extractor = { path = "../extractor", features = ["counter-fixtures"] }
 insta = "1.48.0"
 criterion = { version = "0.8", features = ["html_reports"] }
 rstest = "0.27.0"

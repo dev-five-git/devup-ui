@@ -21,6 +21,8 @@ use oxc_syntax::reference::ReferenceId;
 use oxc_syntax::symbol::SymbolId;
 use rustc_hash::{FxHashMap, FxHashSet};
 
+use css::Naming;
+
 use crate::stylex::StylexFunction;
 use crate::utils::{binding_root, get_string_by_literal_expression, unwrap_syntax_only};
 use crate::{ExtractOption, ModuleResolver};
@@ -910,35 +912,43 @@ impl<'a> Visit<'a> for Reads<'_> {
 /// replacements made, and the files read; `None` when running the code it
 /// reads computes none of them as a string, a finite number, or a plain
 /// object or array of those
+type Evaluation = (
+    String,
+    Vec<crate::import_alias_visit::Edit>,
+    BTreeSet<String>,
+    Vec<(usize, usize)>,
+);
+
 pub(crate) fn evaluate(
     code: &str,
     filename: &str,
     option: &ExtractOption,
     resolver: Option<&ModuleResolver>,
     unknown: &crate::imported_constants::Unknown,
-) -> Option<(
-    String,
-    Vec<crate::import_alias_visit::Edit>,
-    BTreeSet<String>,
-)> {
+) -> Option<Evaluation> {
     let (mut values, dependencies) = compute(code, filename, option, resolver, unknown)?;
-    values.sort_unstable_by_key(|(span, _)| span.start);
+    values.sort_unstable_by_key(|(span, ..)| span.start);
     let mut result = String::with_capacity(code.len());
     let mut edits = Vec::with_capacity(values.len());
+    let mut risky = Vec::new();
     let mut copied = 0;
-    for (span, literal) in values {
+    for (span, literal, naming) in values {
         let (start, end) = (span.start as usize, span.end as usize);
         result.push_str(&code[copied..start]);
+        if naming == Naming::Risky {
+            risky.push((result.len(), result.len() + literal.len()));
+        }
         result.push_str(&literal);
         edits.push((start, end, literal.len()));
         copied = end;
     }
     result.push_str(&code[copied..]);
-    Some((result, edits, dependencies))
+    Some((result, edits, dependencies, risky))
 }
 
-/// A value's source text by the span of the code computing it
-type Replacement = (Span, String);
+/// A value's source text by the span of the code computing it, and whether it
+/// depends on an import that may resolve differently between environments
+type Replacement = (Span, String, Naming);
 
 /// Run before the values: the code checked to read nothing that differs
 /// between builds or pages, nothing does even if the check missed it
@@ -1082,12 +1092,18 @@ fn compute(
         if found.rules_only && !literal.starts_with(['{', '[', '"']) {
             continue;
         }
+        let naming = if found.closure.imports.is_empty() {
+            Naming::Own
+        } else {
+            Naming::Risky
+        };
         computed.push((
             found.span,
             match found.shorthand {
                 Some(key) => format!("{key}: {literal}"),
                 None => literal,
             },
+            naming,
         ));
     }
     (!computed.is_empty()).then_some((computed, changes.dependencies()))

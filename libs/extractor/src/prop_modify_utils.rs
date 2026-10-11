@@ -1,6 +1,4 @@
-use crate::extract_style::ExtractStyleProperty;
 use crate::extract_style::extract_css::ExtractCss;
-use crate::extract_style::style_property::StyleProperty;
 use crate::gen_class_name::gen_class_names;
 use crate::gen_style::gen_styles;
 use crate::tailwind::{PROPERTY_RULES, PROPERTY_RULES_FILE, parse_class};
@@ -15,6 +13,14 @@ use oxc_ast::ast::{
 };
 use oxc_ast::builder::AstBuilder;
 use oxc_span::SPAN;
+
+#[cfg(test)]
+#[path = "prop_coverage_tests.rs"]
+mod coverage_tests;
+
+#[cfg(test)]
+#[path = "tailwind_logical_ir_tests.rs"]
+mod tailwind_logical_ir_tests;
 
 /// Combine two optional className expressions into a conditional expression.
 /// `condition ? con_expr : alt_expr`, falling back to `""` for the missing branch.
@@ -62,23 +68,42 @@ fn resolve_class_name_expression<'a>(
     spread_props: &[Expression<'a>],
     filename: Option<&str>,
     conditional_branch: Option<(Expression<'a>, &mut [ExtractStyleProp<'a>], Option<u8>)>,
-) -> (Option<Expression<'a>>, Vec<ExtractStyleValue>) {
+) -> (
+    Option<Expression<'a>>,
+    Vec<ExtractStyleValue>,
+    Option<(String, Expression<'a>)>,
+) {
+    let (mut tailwind, primary) =
+        extract_tailwind_from_class_name(ast_builder, class_name_prop, style_order, filename);
+    let primary = primary.or_else(|| class_name_prop.clone_in(ast_builder.allocator()));
     if let Some((condition, alt_styles, alt_style_order)) = conditional_branch {
-        // Conditional styleOrder: generate className for both branches
-        let (con_expr, con_tailwind) = get_class_name_expression(
+        crate::assignment_lowering::orders(styles, alt_style_order, false);
+        crate::assignment_lowering::orders(alt_styles, alt_style_order, true);
+        let (alternate_tailwind, alternate) = extract_tailwind_from_class_name(
             ast_builder,
             class_name_prop,
+            alt_style_order,
+            filename,
+        );
+        tailwind.extend(alternate_tailwind);
+        let mut prepared = [
+            primary,
+            alternate.or_else(|| class_name_prop.clone_in(ast_builder.allocator())),
+        ];
+        let capture = class_name_prop.as_ref().and_then(|source| {
+            crate::class_evaluation::capture(ast_builder, source, &mut prepared)
+        });
+        let (con_expr, _) = get_class_name_expression(
+            ast_builder,
+            &prepared[0],
             styles,
             style_order,
             spread_props,
             filename,
         );
-        let alt_class_name_prop = class_name_prop
-            .as_ref()
-            .map(|c| c.clone_in(ast_builder.allocator()));
-        let (alt_expr, alt_tailwind) = get_class_name_expression(
+        let (alt_expr, _) = get_class_name_expression(
             ast_builder,
-            &alt_class_name_prop,
+            &prepared[1],
             alt_styles,
             alt_style_order,
             spread_props,
@@ -88,18 +113,21 @@ fn resolve_class_name_expression<'a>(
         let combined_expr =
             combine_conditional_class_name(ast_builder, condition, con_expr, alt_expr);
 
-        let mut all_tailwind = con_tailwind;
-        all_tailwind.extend(alt_tailwind);
-        (combined_expr, all_tailwind)
+        (combined_expr, tailwind, capture)
     } else {
-        get_class_name_expression(
+        let mut prepared = [primary];
+        let capture = class_name_prop.as_ref().and_then(|source| {
+            crate::class_evaluation::capture(ast_builder, source, &mut prepared)
+        });
+        let (expression, _) = get_class_name_expression(
             ast_builder,
-            class_name_prop,
+            &prepared[0],
             styles,
             style_order,
             spread_props,
             filename,
-        )
+        );
+        (expression, tailwind, capture)
     }
 }
 
@@ -117,7 +145,7 @@ pub fn modify_prop_object<'a>(
     props_prop: Option<Expression<'a>>,
     filename: Option<&str>,
     conditional_branch: Option<(Expression<'a>, &mut [ExtractStyleProp<'a>], Option<u8>)>,
-) -> Vec<ExtractStyleValue> {
+) -> (Vec<ExtractStyleValue>, Option<(String, Expression<'a>)>) {
     let mut class_name_prop = None;
     let mut style_prop = None;
     let mut spread_props = vec![];
@@ -144,7 +172,7 @@ pub fn modify_prop_object<'a>(
         }
     }
 
-    let (class_name_expr, tailwind_styles) = resolve_class_name_expression(
+    let (class_name_expr, tailwind_styles, capture) = resolve_class_name_expression(
         ast_builder,
         &class_name_prop,
         styles,
@@ -192,7 +220,7 @@ pub fn modify_prop_object<'a>(
             ast_builder,
         ));
     }
-    tailwind_styles
+    (tailwind_styles, capture)
 }
 /// modify JSX props
 /// Returns extracted Tailwind styles from static className strings
@@ -208,7 +236,7 @@ pub fn modify_props<'a>(
     props_prop: Option<Expression<'a>>,
     filename: Option<&str>,
     conditional_branch: Option<(Expression<'a>, &mut [ExtractStyleProp<'a>], Option<u8>)>,
-) -> Vec<ExtractStyleValue> {
+) -> (Vec<ExtractStyleValue>, Option<(String, Expression<'a>)>) {
     let mut class_name_prop = None;
     let mut style_prop = None;
     let mut spread_props = vec![];
@@ -251,7 +279,7 @@ pub fn modify_props<'a>(
             }
         }
     }
-    let (class_name_expr, tailwind_styles) = resolve_class_name_expression(
+    let (class_name_expr, tailwind_styles, capture) = resolve_class_name_expression(
         ast_builder,
         &class_name_prop,
         styles,
@@ -298,7 +326,7 @@ pub fn modify_props<'a>(
             ast_builder,
         ));
     }
-    tailwind_styles
+    (tailwind_styles, capture)
 }
 
 /// Returns (className expression, extracted Tailwind styles)
@@ -310,15 +338,8 @@ pub fn get_class_name_expression<'a>(
     spread_props: &[Expression<'a>],
     filename: Option<&str>,
 ) -> (Option<Expression<'a>>, Vec<ExtractStyleValue>) {
-    let mut tailwind = TailwindClassName {
-        style_order,
-        filename,
-        styles: Vec::new(),
-        property_rules: false,
-    };
-    let compiled = class_name_prop
-        .as_ref()
-        .and_then(|class_name| tailwind.compile_expression(ast_builder, class_name));
+    let (tailwind_styles, compiled) =
+        extract_tailwind_from_class_name(ast_builder, class_name_prop, style_order, filename);
     // A rebuilt `cond && "a"` still evaluates to `false`, which React would
     // render as `class="false"`, so it needs the same falsy guard as a passthrough.
     let class_name_to_use = compiled
@@ -355,7 +376,35 @@ pub fn get_class_name_expression<'a>(
     }
     let expression = merge_string_expressions(ast_builder, &class_expressions);
 
-    (expression, tailwind.into_styles())
+    (expression, tailwind_styles)
+}
+
+/// Compile authored Tailwind classes before their shared evaluation is captured.
+fn extract_tailwind_from_class_name<'a>(
+    ast_builder: &AstBuilder<'a>,
+    class_name_prop: &Option<Expression<'a>>,
+    style_order: Option<u8>,
+    filename: Option<&str>,
+) -> (Vec<ExtractStyleValue>, Option<Expression<'a>>) {
+    let mut tailwind = TailwindClassName {
+        style_order,
+        filename,
+        styles: Vec::new(),
+        property_rules: false,
+    };
+    let compiled = class_name_prop
+        .as_ref()
+        .and_then(|class_name| tailwind.compile_expression(ast_builder, class_name));
+    (tailwind.into_styles(), compiled)
+}
+
+#[cfg(test)]
+fn apply_style_order_to_styles(styles: &mut [ExtractStyleValue], style_order: Option<u8>) {
+    if let Some(order) = style_order {
+        for style in styles.iter_mut() {
+            style.set_style_order(order);
+        }
+    }
 }
 
 /// Compiles the Tailwind classes of a className: each becomes the classes of
@@ -399,10 +448,10 @@ impl TailwindClassName<'_> {
                     if let Some(order) = self.style_order {
                         style.style_order = Some(order);
                     }
-                    let (StyleProperty::ClassName(name)
-                    | StyleProperty::Variable {
-                        class_name: name, ..
-                    }) = style.extract(self.filename);
+                    let name = crate::extract_style::compiler_projection::static_name(
+                        &style,
+                        self.filename,
+                    )?;
                     compiled.push_str(separator);
                     compiled.push_str(&name);
                     separator = " ";
@@ -853,8 +902,30 @@ pub fn convert_style_vars<'a>(
 #[allow(clippy::expect_used, clippy::unwrap_used)]
 mod tests {
     use super::*;
+    use crate::extract_style::{
+        extract_dynamic_style::ExtractDynamicStyle, extract_static_style::ExtractStaticStyle,
+    };
     use crate::utils::expression_to_code;
     use oxc_allocator::Allocator;
+
+    #[test]
+    fn test_apply_style_order_to_all_styles() {
+        let mut styles = [
+            ExtractStyleValue::Static(ExtractStaticStyle::new("color", "red", 0, None)),
+            ExtractStyleValue::Dynamic(ExtractDynamicStyle::new("padding", 0, "size", None)),
+        ];
+
+        apply_style_order_to_styles(&mut styles, Some(7));
+
+        let ExtractStyleValue::Static(static_style) = &styles[0] else {
+            panic!("expected static style");
+        };
+        let ExtractStyleValue::Dynamic(dynamic_style) = &styles[1] else {
+            panic!("expected dynamic style");
+        };
+        assert_eq!(static_style.style_order(), Some(7));
+        assert_eq!(dynamic_style.style_order(), Some(7));
+    }
 
     #[test]
     fn test_merge_string_expressions_builds_template() {

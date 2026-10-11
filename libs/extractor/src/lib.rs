@@ -1,7 +1,44 @@
 mod as_visit;
+#[cfg(test)]
+mod assignment_blocker_support;
+#[cfg(test)]
+mod assignment_blocker_tests;
+mod assignment_capture;
+mod assignment_composition;
+mod assignment_consumers;
+mod assignment_lowering;
+#[cfg(test)]
+mod assignment_lowering_tests;
+mod assignment_member;
+mod assignment_object;
+mod assignment_owner;
+#[cfg(test)]
+mod assignment_residual_tests;
+#[cfg(test)]
+mod assignment_test_support;
+mod assignment_value;
 mod build_time_values;
+mod class_evaluation;
+#[doc(hidden)]
+pub mod compiler_policy;
 mod component;
+#[cfg(all(test, feature = "counter-fixtures"))]
+mod counter_fixture_capture_tests;
+#[cfg(all(test, feature = "counter-fixtures"))]
+mod counter_fixture_current_tests;
+#[cfg(all(test, feature = "counter-fixtures"))]
+mod counter_fixture_scope_tests;
+#[cfg(feature = "counter-fixtures")]
+#[doc(hidden)]
+pub mod counter_test_support;
+#[cfg(test)]
+mod coverage_tests;
 mod css_utils;
+mod element_evaluation;
+mod evaluation_location;
+#[cfg(test)]
+mod evaluation_location_tests;
+mod evaluation_origin;
 pub mod extract_style;
 mod extractor;
 mod gen_class_name;
@@ -10,8 +47,26 @@ mod import_alias_visit;
 mod imported_constants;
 mod module_loader;
 mod mutations;
+#[cfg(test)]
+mod named_capture_order_tests;
+#[cfg(test)]
+mod named_capture_support;
+#[cfg(test)]
+mod named_capture_tests;
+#[cfg(test)]
+mod numbered_sites_tests;
 mod prop_modify_utils;
+mod provenance;
 mod source_map;
+mod source_naming;
+mod sparse_sites;
+mod static_assignment;
+#[cfg(test)]
+mod static_assignment_tests;
+mod style_export_locations;
+mod style_origin;
+#[cfg(test)]
+mod style_origin_tests;
 mod style_values;
 mod stylex;
 mod tailwind;
@@ -19,6 +74,7 @@ mod util_type;
 mod utils;
 mod vanilla_extract;
 mod visit;
+use crate::extract_style::compiler_projection;
 use crate::extract_style::extract_style_value::ExtractStyleValue;
 use crate::visit::DevupVisitor;
 use css::file_map::{canonical, get_file_num_by_filename, is_global};
@@ -50,6 +106,14 @@ pub enum ImportAlias {
 pub enum ExtractStyleProp<'a> {
     Static(ExtractStyleValue),
     StaticArray(Vec<ExtractStyleProp<'a>>),
+    Evaluated {
+        styles: Vec<ExtractStyleProp<'a>>,
+        source: Expression<'a>,
+        binding: String,
+        evaluation: Option<Expression<'a>>,
+        alternate_order: Option<assignment_lowering::AlternateOrder>,
+        alternate_class: bool,
+    },
     Conditional {
         condition: Expression<'a>,
         consequent: Option<Box<ExtractStyleProp<'a>>>,
@@ -84,6 +148,21 @@ impl<'a> ExtractStyleProp<'a> {
             ExtractStyleProp::StaticArray(arr) => {
                 ExtractStyleProp::StaticArray(arr.iter().map(|s| s.clone_in(alloc)).collect())
             }
+            ExtractStyleProp::Evaluated {
+                styles,
+                source,
+                binding,
+                evaluation,
+                alternate_order,
+                alternate_class,
+            } => Self::Evaluated {
+                styles: styles.iter().map(|style| style.clone_in(alloc)).collect(),
+                source: source.clone_in(alloc),
+                binding: binding.clone(),
+                evaluation: evaluation.as_ref().map(|value| value.clone_in(alloc)),
+                alternate_order: *alternate_order,
+                alternate_class: *alternate_class,
+            },
             ExtractStyleProp::Conditional {
                 condition,
                 consequent,
@@ -143,7 +222,8 @@ impl<'a> ExtractStyleProp<'a> {
                 }
                 (None, None) => vec![],
             },
-            ExtractStyleProp::StaticArray(array) => {
+            ExtractStyleProp::StaticArray(array)
+            | ExtractStyleProp::Evaluated { styles: array, .. } => {
                 array.iter().flat_map(ExtractStyleProp::extract).collect()
             }
             ExtractStyleProp::Expression { styles, .. } => styles.clone(),
@@ -183,7 +263,8 @@ impl<'a> ExtractStyleProp<'a> {
                 }
                 (None, None) => vec![],
             },
-            ExtractStyleProp::StaticArray(array) => array
+            ExtractStyleProp::StaticArray(array)
+            | ExtractStyleProp::Evaluated { styles: array, .. } => array
                 .into_iter()
                 .flat_map(ExtractStyleProp::into_extract)
                 .collect(),
@@ -281,20 +362,36 @@ fn extract_with_source_map(
     source_map: bool,
     resolver: Option<&ModuleResolver>,
 ) -> Result<ExtractOutput, Box<dyn Error>> {
-    extract_source(filename, code, None, option, source_map, resolver)
+    compiler_policy::current(compiler_policy::CompilerInput {
+        filename,
+        code,
+        option,
+        source_map,
+        resolver,
+    })
 }
 
-/// `evaluated` is the source `code` was computed from, with the layers of
-/// edits, last made first, that map `code` back to it
+/// The source `code` was computed from, with the layers of edits, last made
+/// first, that map `code` back to it, and where values that depend on an
+/// import that may differ between environments were written
+#[derive(Clone, Copy)]
+struct Evaluated<'a> {
+    source: &'a str,
+    edits: &'a [&'a [import_alias_visit::Edit]],
+    risky: &'a [(usize, usize)],
+}
+
+/// `evaluated` is what `code` was computed from, when it was
 fn extract_source(
     filename: &str,
     code: &str,
-    evaluated: Option<(&str, &[&[import_alias_visit::Edit]])>,
+    evaluated: Option<Evaluated<'_>>,
     option: ExtractOption,
     source_map: bool,
     resolver: Option<&ModuleResolver>,
 ) -> Result<ExtractOutput, Box<dyn Error>> {
     // Step 1: Transform import aliases
+    css::atom_hoist::freeze_atom_plan();
     // e.g., `import styled from '@emotion/styled'` → `import { styled } from '@devup-ui/react'`
     // e.g., `import { style } from '@vanilla-extract/css'` → `import { style } from '@devup-ui/react'`
     let (transformed_code, alias_edits) = import_alias_visit::transform_import_aliases_with_edits(
@@ -319,8 +416,15 @@ fn extract_source(
         });
     }
 
+    let stylesheet_naming = if utils::is_vanilla_extract_file(filename) {
+        source_naming::stylesheet(code, filename, &option)
+    } else {
+        css::Naming::Own
+    };
     let mut dependencies = std::collections::BTreeSet::new();
     let mut evaluation_error = None;
+    let _evaluation_origins = utils::is_vanilla_extract_file(filename)
+        .then(|| style_origin::EvaluationScope::enter(filename, code, &alias_edits));
     // Step 3: Handle vanilla-extract style files (.css.ts, .css.js)
     // `processed_code` is Some only when vanilla-extract generation succeeded;
     // otherwise the untouched `transformed_code` is parsed directly (no copy).
@@ -344,6 +448,7 @@ fn extract_source(
                         ),
                         &option,
                         &referenced,
+                        stylesheet_naming,
                     )?
                 };
                 let code = vanilla_extract::collected_styles_to_code_with_keyframes(
@@ -417,6 +522,24 @@ fn extract_source(
     if fatal_error {
         return Err("Parser panicked".into());
     }
+    let (source, earlier_edits) = evaluated.map_or((code, &[][..]), |evaluated| {
+        (evaluated.source, evaluated.edits)
+    });
+    let edits: Vec<&[import_alias_visit::Edit]> = std::iter::once(alias_edits.as_slice())
+        .chain(earlier_edits.iter().copied())
+        .collect();
+    let _origins = if processed_code.is_some() {
+        style_origin::OriginScope::generated(&mut program)
+    } else {
+        style_origin::OriginScope::enter((filename, source), &edits, &program)
+    };
+    if let Some(evaluated) = evaluated {
+        provenance::MarkRanges(evaluated.risky).visit_program(&mut program);
+    }
+    if processed_code.is_some() && stylesheet_naming == css::Naming::Risky {
+        provenance::MarkRanges(&[(0, code_to_parse.len())]).visit_program(&mut program);
+    }
+    let _sites = compiler_policy::sites((filename, source, processed_code.is_some()), &edits);
     let inlined = if processed_code.is_none() {
         imported_constants::inline_constants(
             &oxc_ast::builder::AstBuilder::new(&allocator),
@@ -439,7 +562,11 @@ fn extract_source(
     visitor.import_stylex(inlined.stylex_vars, inlined.stylex_themes);
     visitor.unknown_bindings(&inlined.unknown);
     visitor.changed_bindings(inlined.changed.clone());
+    let attempt = css::class_map::Attempt::begin();
     visitor.visit_program(&mut program);
+    #[cfg(test)]
+    compiler_policy::tests::observe(false);
+    compiler_projection::check_terminal(filename, source, &edits)?;
     if let Some(error) = evaluation_error
         && imports_uncompiled(&program, &option.package)
     {
@@ -450,7 +577,7 @@ fn extract_source(
     if (!visitor.errors.is_empty() || visitor.composes_unknown)
         && evaluated.is_none()
         && !utils::is_vanilla_extract_file(filename)
-        && let Some((computed, value_edits, read)) = build_time_values::evaluate(
+        && let Some((computed, value_edits, read, risky)) = build_time_values::evaluate(
             &transformed_code,
             filename,
             &option,
@@ -458,10 +585,22 @@ fn extract_source(
             &inlined.unknown,
         )
     {
+        compiler_projection::check_terminal(filename, source, &edits)?;
+        if compiler_policy::active() {
+            return Err(compiler_policy::retry(
+                (computed, value_edits, read, risky),
+                &alias_edits,
+            ));
+        }
+        drop(attempt);
         let mut output = extract_source(
             filename,
             &computed,
-            Some((code, &[value_edits.as_slice(), alias_edits.as_slice()])),
+            Some(Evaluated {
+                source: code,
+                edits: &[value_edits.as_slice(), alias_edits.as_slice()],
+                risky: &risky,
+            }),
             option,
             source_map,
             resolver,
@@ -472,16 +611,16 @@ fn extract_source(
         output.dependencies = files.into_iter().collect();
         return Ok(output);
     }
-    let (source, earlier_edits) = evaluated.unwrap_or((code, &[]));
-    let edits: Vec<&[import_alias_visit::Edit]> = std::iter::once(alias_edits.as_slice())
-        .chain(earlier_edits.iter().copied())
-        .collect();
+    compiler_projection::check_terminal(filename, source, &edits)?;
+    visitor.errors.extend(provenance::site_errors());
     visitor.errors.append(&mut visitor.unknown_parts);
     if !visitor.errors.is_empty() {
         let mut message = located_errors(filename, source, &edits, visitor.errors);
         message += &changed_notes(&message, filename, source, &edits, &inlined.changed);
         return Err(message.into());
     }
+    compiler_projection::complete(filename, &option, &visitor.styles);
+    compiler_projection::check_terminal(filename, source, &edits)?;
     let codegen_options = if source_map {
         CodegenOptions {
             source_map_path: Some(PathBuf::from(filename)),
@@ -491,9 +630,15 @@ fn extract_source(
         CodegenOptions::default()
     };
     let result = Codegen::new().with_options(codegen_options).build(&program);
-    // A stylesheet's output is generated, so its map stays on that code
     let map = result.map.map(|map| {
-        if processed_code.is_some() || edits.iter().all(|edits| edits.is_empty()) {
+        if processed_code.is_some() {
+            source_map::remap(
+                map,
+                code_to_parse,
+                source,
+                &[&[(0, source.len(), code_to_parse.len())]],
+            )
+        } else if edits.iter().all(|edits| edits.is_empty()) {
             map
         } else {
             source_map::remap(map, code_to_parse, source, &edits)
@@ -501,8 +646,9 @@ fn extract_source(
         .to_json_string()
     });
 
+    attempt.commit();
     Ok(ExtractOutput {
-        styles: visitor.styles,
+        styles: visitor.styles.into_set(),
         code: result.code,
         map,
         css_file: Some(css_file),
@@ -552,6 +698,9 @@ fn located_errors(
     edits: &[&[import_alias_visit::Edit]],
     mut errors: Vec<(u32, String)>,
 ) -> String {
+    for (offset, _) in &mut errors {
+        *offset = provenance::source_offset(*offset);
+    }
     errors.sort_unstable();
     errors.dedup();
     errors
@@ -640,7 +789,10 @@ fn extract_class_map_from_code(
     partial_code: &str,
     option: &ExtractOption,
     style_names: &FxHashSet<String>,
+    naming: css::Naming,
 ) -> Result<FxHashMap<String, String>, Box<dyn Error>> {
+    let source = sparse_sites::source().unwrap_or_else(|| partial_code.to_string());
+    let _reservation = compiler_projection::auxiliary(&source, filename);
     let source_type = SourceType::from_path(filename)?;
     let (bucket, global, css_file) = resolve_css_target(filename, option);
     let css_files = vec![css_file];
@@ -652,8 +804,17 @@ fn extract_class_map_from_code(
         ..
     } = Parser::new(&allocator, partial_code, source_type).parse();
     if fatal_error {
+        compiler_projection::check_aux(
+            filename,
+            &source,
+            vec![(0, "auxiliary parser failed".into())],
+        )?;
         Ok(FxHashMap::default())
     } else {
+        let _origins = style_origin::OriginScope::generated(&mut program);
+        if naming == css::Naming::Risky {
+            provenance::MarkRanges(&[(0, partial_code.len())]).visit_program(&mut program);
+        }
         let mut visitor = DevupVisitor::new(
             &allocator,
             filename,
@@ -662,6 +823,8 @@ fn extract_class_map_from_code(
             if global { None } else { Some(bucket) },
         );
         visitor.visit_program(&mut program);
+        visitor.errors.extend(visitor.unknown_parts);
+        compiler_projection::check_aux(filename, &source, visitor.errors)?;
 
         let result = Codegen::new().build(&program);
 
@@ -4365,7 +4528,7 @@ import clsx from 'clsx'
             extract(
                 "test.tsx",
                 r#"import { css } from "@devup-ui/core";
-<Box className={css(...{bg: "red"})}/>;
+<Box className={css(...[{bg: "red"}])}/>;
 "#,
                 ExtractOption {
                     package: "@devup-ui/core".to_string(),
@@ -4384,7 +4547,7 @@ import clsx from 'clsx'
             extract(
                 "test.tsx",
                 r#"import { css } from "@devup-ui/core";
-<Box className={css(...{})}/>;
+<Box className={css(...[{}])}/>;
 "#,
                 ExtractOption {
                     package: "@devup-ui/core".to_string(),
@@ -4403,7 +4566,7 @@ import clsx from 'clsx'
             extract(
                 "test.tsx",
                 r#"import { css } from "@devup-ui/core";
-<Box className={css(...{...{bg: "red"}})}/>;
+<Box className={css(...[{...{bg: "red"}}])}/>;
 "#,
                 ExtractOption {
                     package: "@devup-ui/core".to_string(),
@@ -13633,6 +13796,30 @@ globalCss({
 
     #[test]
     #[serial]
+    fn test_stylesheets_read_nothing_that_differs_between_builds() {
+        for (read, fails) in [
+            ("Math.random()", true),
+            ("Date.now()", true),
+            ("new Date()", true),
+            ("Date()", true),
+            ("new Date(0).getTime()", false),
+            ("Date.UTC(2020, 0, 1)", false),
+        ] {
+            reset_class_map();
+            reset_file_map();
+            let result = extract(
+                "when.css.ts",
+                &format!(
+                    "import {{ style }} from '@devup-ui/react';\nconst n = {read};\nexport const a = style({{ opacity: String(n) }});"
+                ),
+                ExtractOption::default(),
+            );
+            assert_eq!(result.is_err(), fails, "{read}");
+        }
+    }
+
+    #[test]
+    #[serial]
     fn test_vanilla_extract_execution_fallback() {
         // Test vanilla-extract file with execution error (covers line 116 fallback)
         reset_class_map();
@@ -14355,6 +14542,7 @@ export const card = style({
                 import_aliases: HashMap::new(),
             },
             &style_names,
+            css::Naming::Own,
         )
         .unwrap();
 
@@ -14558,45 +14746,51 @@ const Button = styled.button({ bg: 'red' })
     #[rstest]
     #[case(
         r#"<Box className="p-4 custom prose my-p-4-class" />"#,
-        r#"<div className="a custom prose my-p-4-class" />"#
+        r#"<div className="OLpadding-v1rem custom prose my-p-4-class" />"#
     )]
-    #[case(r#"<Box className="card hidden" />"#, r#"<div className="card a" />"#)]
+    #[case(
+        r#"<Box className="card hidden" />"#,
+        r#"<div className="card OLdisplay-vnone" />"#
+    )]
     #[case(
         r#"<Box className="data-active:p-4 not-hover:m-4 [&>*]:p-4" />"#,
-        r#"<div className="a not-hover:m-4 b" />"#
+        r#"<div className="OHbqoqlduv1p5scp64 not-hover:m-4 OHbq7wtqy1vq9qg0dc" />"#
     )]
     #[case(
         "<Box className={`p-${size} mt-4 ${tone}-text`} />",
-        "<div className={`p-${size} a ${tone}-text`} />"
+        "((__devupClass51) => <div className={__devupClass51 || \"\"} />)(`p-${size} OHdt14ba2xfy0fpkw6 ${tone}-text`)"
     )]
     #[case(
         r"<Box className={`p-4 \`q\` \${y} a\\b\rc ${x}`} />",
-        r"<div className={`a \`q\` \${y} a\\b\rc ${x}`} />"
+        r#"((__devupClass51) => <div className={__devupClass51 || ""} />)(`OLpadding-v1rem \`q\` \${y} a\\b\rc ${x}`)"#
     )]
     #[case(
         "<Box className={`custom ${on ? 'p-4' : x}`} />",
-        r#"<div className={`custom ${on ? "a" : x}`} />"#
+        r#"((__devupClass51) => <div className={__devupClass51 || ""} />)(`custom ${on ? "OLpadding-v1rem" : x}`)"#
     )]
     #[case(
         r#"<Box className={on ? "p-4" : "custom"} />"#,
-        r#"<div className={(on ? "a" : "custom") || ""} />"#
+        r#"((__devupClass51) => <div className={__devupClass51 || ""} />)(on ? "OLpadding-v1rem" : "custom")"#
     )]
     #[case(
         r#"<Box className={on ? "custom" : "p-4"} />"#,
-        r#"<div className={(on ? "custom" : "a") || ""} />"#
+        r#"((__devupClass51) => <div className={__devupClass51 || ""} />)(on ? "custom" : "OLpadding-v1rem")"#
     )]
     #[case(
         r#"<Box className={on && "p-4"} />"#,
-        r#"<div className={on && "a" || ""} />"#
+        r#"((__devupClass51) => <div className={__devupClass51 || ""} />)(on && "OLpadding-v1rem")"#
     )]
     #[case(
         r#"<Box className={"p-4" || x} />"#,
-        r#"<div className={"a" || x || ""} />"#
+        r#"((__devupClass51) => <div className={__devupClass51 || ""} />)("OLpadding-v1rem" || x)"#
     )]
-    #[case(r#"<Box className={("p-4")} />"#, r#"<div className={"a" || ""} />"#)]
+    #[case(
+        r#"<Box className={("p-4")} />"#,
+        r#"<div className={"OLpadding-v1rem" || ""} />"#
+    )]
     #[case(
         "<Box className={`icon-${name} ${a}${b}`} />",
-        "-<div className={`icon-${name} ${a}${b}`} />"
+        "-((__devupClass51) => <div className={__devupClass51 || \"\"} />)(`icon-${name} ${a}${b}`)"
     )]
     #[case(
         r#"<Box className={("custom")} />"#,
@@ -14604,17 +14798,20 @@ const Button = styled.button({ bg: 'red' })
     )]
     #[case(
         r#"<Box className={on && "custom"} />"#,
-        r#"-<div className={on && "custom" || ""} />"#
+        r#"-((__devupClass51) => <div className={__devupClass51 || ""} />)(on && "custom")"#
     )]
     #[case(
         r#"<Box className={on ? "a1" : "b1"} />"#,
-        r#"-<div className={(on ? "a1" : "b1") || ""} />"#
+        r#"-((__devupClass51) => <div className={__devupClass51 || ""} />)(on ? "a1" : "b1")"#
     )]
     #[case(
         "<Box className={`custom ${x}`} />",
-        "-<div className={`custom ${x}`} />"
+        "-((__devupClass51) => <div className={__devupClass51 || \"\"} />)(`custom ${x}`)"
     )]
-    #[case("<Box className={cls} />", "-<div className={cls || \"\"} />")]
+    #[case(
+        "<Box className={cls} />",
+        "-((__devupClass51) => <div className={__devupClass51 || \"\"} />)(cls)"
+    )]
     #[serial]
     fn test_tailwind_keeps_other_classes(#[case] jsx: &str, #[case] expected: &str) {
         reset_class_map();
@@ -15445,9 +15642,7 @@ globalStyle('body', { margin: 2 })
     fn test_stylex_numbers_follow_stylex_units() {
         reset_class_map();
         reset_file_map();
-        let output = extract(
-            "test.tsx",
-            r"import stylex from '@stylexjs/stylex';
+        let source = r"import stylex from '@stylexjs/stylex';
 const styles = stylex.create({
   base: {
     fontSize: 16,
@@ -15463,10 +15658,8 @@ const styles = stylex.create({
   },
   dynamic: (opacity, delay) => ({ opacity, transitionDelay: delay, bottom: 3 }),
 });
-const result = stylex.props(styles.dynamic(o, d));",
-            ExtractOption::default(),
-        )
-        .unwrap();
+const result = stylex.props(styles.dynamic(o, d));";
+        let output = extract("test.tsx", source, ExtractOption::default()).unwrap();
         let values = static_values(&output);
         for (property, value) in [
             ("font-size", "16px"),
@@ -15487,14 +15680,37 @@ const result = stylex.props(styles.dynamic(o, d));",
                 "{property}: {value} not in {values:?}"
             );
         }
-        assert!(output.code.contains(r#""--a": o"#), "{}", output.code);
-        assert!(
+        let opacity_site = css::Site {
+            file: css::sparse_site::SourceFile::Unnumbered(source.into()),
+            at: source.find("opacity, transitionDelay").unwrap(),
+            role: 0,
+        };
+        let delay_site = css::Site {
+            file: css::sparse_site::SourceFile::Unnumbered(source.into()),
+            at: source.find("transitionDelay: delay").unwrap() + "transitionDelay: ".len(),
+            role: 0,
+        };
+        assert_eq!(
             output
-                .code
-                .contains(r#"((v) => typeof v === "number" ? v + "ms" : v)(d)"#),
-            "{}",
-            output.code
+                .styles
+                .iter()
+                .filter_map(|style| match style {
+                    ExtractStyleValue::Dynamic(style) => Some(style.site.clone()),
+                    _ => None,
+                })
+                .collect::<std::collections::HashSet<_>>(),
+            std::collections::HashSet::from([Some(opacity_site.clone()), Some(delay_site.clone())])
         );
+        for (site, value) in [
+            (opacity_site, "o"),
+            (
+                delay_site,
+                r#"((v) => typeof v === "number" ? v + "ms" : v)(d)"#,
+            ),
+        ] {
+            let assignment = format!(r#""{}": {value}"#, site.variable_name(""));
+            assert!(output.code.contains(&assignment), "{}", output.code);
+        }
     }
 
     #[test]
@@ -19076,7 +19292,7 @@ export const f = (rest, handler, k) => <Box {...rest} {...{ p: 1, onClick: handl
 export const g = (theme, key) => <Box bg={theme.colors[key]} color={{ a: 'red', ...theme.more }['b']} />;
 export const h = (Base) => styled.div(Base);
 export const i = keyframes({ from: { opacity: 0 } } as const);
-export const j = css(...{ bg: 'red' });",
+export const j = css(...[{ bg: 'red' }]);",
                 ExtractOption::default(),
             )
             .unwrap()
@@ -20489,7 +20705,7 @@ export const K = styled.div(base, cond && { color: 'blue' }, { margin: 1 });",
             ),
             (
                 "import { css } from '@devup-ui/react';\ncss({ color: 'red' }, ...rest);",
-                "Cannot compose `{ color: \"red\" }, ...rest` at build time: each style must be a rule object, a class, or a condition choosing between them",
+                "Cannot compose `{ color: \"red\" }, ...rest` at build time: each style must be a rule object, a class, or a condition choosing between them; pass the value itself instead of spreading it",
             ),
             (
                 "import { styled } from '@devup-ui/react';\nstyled.div({ color: 'red' }, getStyles());",

@@ -8,7 +8,7 @@ ToBTreeSet {
             ExtractDynamicStyle {
                 property: "background",
                 level: 0,
-                identifier: "color",
+                identifier: "__devupSpread2",
                 selector: None,
                 style_order: None,
             },
@@ -17,7 +17,7 @@ ToBTreeSet {
             ExtractDynamicStyle {
                 property: "margin",
                 level: 0,
-                identifier: "margin",
+                identifier: "__devupSpread0",
                 selector: None,
                 style_order: None,
             },
@@ -26,11 +26,11 @@ ToBTreeSet {
             ExtractDynamicStyle {
                 property: "padding",
                 level: 0,
-                identifier: "padding",
+                identifier: "__devupSpread1",
                 selector: None,
                 style_order: None,
             },
         ),
     },
-    code: "import \"@devup-ui/core/devup-ui-0.css\";\nlet color = \"red\";\nlet padding = 10;\nlet margin = 5;\n<div className=\"a-a a-b a-c\" style={{\n\t\"--a\": color,\n\t\"--b\": padding,\n\t\"--c\": margin\n}} />;\n",
+    code: "import \"@devup-ui/core/devup-ui-0.css\";\nlet color = \"red\";\nlet padding = 10;\nlet margin = 5;\n((__devupSpread2, __devupSpread1, __devupSpread0) => <div className=\"FLtest_ptsx-OHbgvou_pnmo7fdz0j FLtest_ptsx-OHaok68lgwctf1ql4a FLtest_ptsx-OHb7r20b11qhxmqqc2\" style={{\n\t\"---SUHavfku33z22acb2ko-b7\": __devupSpread2,\n\t\"---SUHavfku33z22acb2ko-cg\": __devupSpread1,\n\t\"---SUHavfku33z22acb2ko-cs\": __devupSpread0\n}} />)(color, padding, margin);\n",
 }

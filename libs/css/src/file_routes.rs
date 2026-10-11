@@ -27,6 +27,7 @@ pub fn with_file_routes<F, R>(f: F) -> R
 where
     F: FnOnce(&HashMap<String, HashSet<u32>>) -> R,
 {
+    let _admission = crate::admission::enter();
     #[cfg(target_arch = "wasm32")]
     #[cfg(not(tarpaulin_include))]
     {
@@ -34,6 +35,7 @@ where
     }
     #[cfg(not(target_arch = "wasm32"))]
     {
+        let _root = crate::root_held::RootHeld::enter("file_routes");
         let guard = GLOBAL_FILE_ROUTES
             .lock()
             .unwrap_or_else(std::sync::PoisonError::into_inner);
@@ -46,6 +48,7 @@ fn with_file_routes_mut<F, R>(f: F) -> R
 where
     F: FnOnce(&mut HashMap<String, HashSet<u32>>) -> R,
 {
+    let _admission = crate::admission::enter();
     #[cfg(target_arch = "wasm32")]
     #[cfg(not(tarpaulin_include))]
     {
@@ -53,6 +56,7 @@ where
     }
     #[cfg(not(target_arch = "wasm32"))]
     {
+        let _root = crate::root_held::RootHeld::enter("file_routes");
         let mut guard = GLOBAL_FILE_ROUTES
             .lock()
             .unwrap_or_else(std::sync::PoisonError::into_inner);
@@ -62,10 +66,14 @@ where
 
 /// for test
 pub fn reset_file_routes() {
+    let _admission = crate::admission::enter();
+    crate::admission::assert_administration_allowed("reset_file_routes");
     with_file_routes_mut(HashMap::clear);
 }
 
 pub fn set_file_routes(new_map: HashMap<String, HashSet<u32>>) {
+    let _admission = crate::admission::enter();
+    crate::admission::assert_administration_allowed("set_file_routes");
     with_file_routes_mut(|map| *map = new_map);
 }
 
@@ -132,6 +140,27 @@ mod tests {
         assert_eq!(route_count_for_files(["c.tsx"]), 1);
         // unknown file contributes nothing
         assert_eq!(route_count_for_files(["a.tsx", "zzz.tsx"]), 2);
+        reset_file_routes();
+    }
+
+    #[test]
+    #[serial]
+    fn route_count_includes_remaining_sets_when_three_registered_files_overlap() {
+        // Given
+        set_file_routes(HashMap::from([
+            ("a.tsx".to_string(), HashSet::from([0, 1])),
+            ("b.tsx".to_string(), HashSet::from([1, 2])),
+            ("c.tsx".to_string(), HashSet::from([2, 3])),
+        ]));
+
+        // When / Then
+        for files in [
+            ["a.tsx", "b.tsx", "c.tsx", "unknown.tsx"],
+            ["unknown.tsx", "c.tsx", "b.tsx", "a.tsx"],
+        ] {
+            assert_eq!(route_count_for_files(files), 4);
+        }
+
         reset_file_routes();
     }
 

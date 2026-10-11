@@ -1,13 +1,13 @@
 ---
 source: libs/extractor/src/lib.rs
-expression: "ToBTreeSet::from(extract(\"keyframes-export.css.ts\",\nr#\"import { keyframes, style } from '@devup-ui/react'\nexport const spin = keyframes({\n  from: { transform: 'rotate(0deg)' },\n  to: { transform: 'rotate(360deg)' }\n})\nconst internal = keyframes({\n  '0%': { opacity: 0 },\n  '100%': { opacity: 1 }\n})\nexport const spinner = style({ animation: spin })\n\"#,\nExtractOption\n{\n    package: \"@devup-ui/react\".to_string(), css_dir:\n    \"@devup-ui/react\".to_string(), single_css: true, import_main_css: false\n}).unwrap())"
+expression: "ToBTreeSet::from(extract(\"keyframes-export.css.ts\",\nr\"import { keyframes, style } from '@devup-ui/react'\nexport const spin = keyframes({\n  from: { transform: 'rotate(0deg)' },\n  to: { transform: 'rotate(360deg)' }\n})\nconst internal = keyframes({\n  '0%': { opacity: 0 },\n  '100%': { opacity: 1 }\n})\nexport const spinner = style({ animation: spin })\n\",\nExtractOption\n{\n    package: \"@devup-ui/react\".to_string(), css_dir:\n    \"@devup-ui/react\".to_string(), single_css: true, import_main_css: false,\n    import_aliases: HashMap::new()\n}).unwrap())"
 ---
 ToBTreeSet {
     styles: {
         Static(
             ExtractStaticStyle {
                 property: "animation",
-                value: "a",
+                value: "KHbhantbrpiob82c5b",
                 level: 0,
                 selector: None,
                 style_order: None,
@@ -67,5 +67,5 @@ ToBTreeSet {
             },
         ),
     },
-    code: "import \"@devup-ui/react/devup-ui.css\";\nconst internal = \"b\";\nexport const spin = \"a\";\nexport const spinner = \"c\";\n",
+    code: "import \"@devup-ui/react/devup-ui.css\";\nconst internal = \"KHa9kvysr928khxze_\";\nexport const spin = \"KHbhantbrpiob82c5b\";\nexport const spinner = \"OHcy1r_yw_wm23hbjj\";\n",
 }
