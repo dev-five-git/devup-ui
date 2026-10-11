@@ -220,26 +220,6 @@ impl ParsedStyleOrder<'_> {
     }
 }
 
-/// Parse styleOrder from a JSX attribute value, supporting conditionals
-pub(super) fn jsx_expression_to_style_order<'a>(
-    expr: &JSXAttributeValue<'a>,
-    allocator: &'a Allocator,
-) -> ParsedStyleOrder<'a> {
-    match expr {
-        JSXAttributeValue::ExpressionContainer(ec) => ec
-            .expression
-            .as_expression()
-            .map_or(ParsedStyleOrder::None, |e| {
-                expression_to_style_order(e, allocator)
-            }),
-        JSXAttributeValue::StringLiteral(literal) => {
-            crate::style_order::string_order(literal.value.as_str())
-                .map_or(ParsedStyleOrder::Unsupported, ParsedStyleOrder::Static)
-        }
-        _ => ParsedStyleOrder::Unsupported,
-    }
-}
-
 /// Parse styleOrder from an Expression (for call expression / object path), supporting conditionals
 pub(super) fn expression_to_style_order<'a>(
     expr: &Expression<'a>,

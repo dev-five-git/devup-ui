@@ -4,7 +4,7 @@
 use super::DevupVisitor;
 use crate::utils::{
     ParsedStyleOrder, element_error, expression_to_style_order, get_str_by_property_key,
-    jsx_expression_to_style_order, lowered_style_order, readable_code,
+    lowered_style_order, readable_code,
 };
 use oxc_allocator::GetAllocator;
 use oxc_ast::ast::{Expression, JSXAttributeValue, ObjectPropertyKind};
@@ -80,9 +80,8 @@ impl<'a> DevupVisitor<'a> {
                     });
             }
             JSXAttributeValue::StringLiteral(literal) => {
-                let parsed = jsx_expression_to_style_order(value, self.ast.allocator());
-                if !matches!(parsed, ParsedStyleOrder::Unsupported) {
-                    return parsed;
+                if let Some(order) = crate::style_order::string_order(literal.value.as_str()) {
+                    return ParsedStyleOrder::Static(order);
                 }
                 self.error_disposition
                     .include(crate::ErrorDisposition::Definitive);

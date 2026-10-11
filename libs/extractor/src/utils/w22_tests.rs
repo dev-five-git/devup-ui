@@ -69,19 +69,13 @@ fn generic_style_order_when_a_jsx_container_holds_a_value_is_classified(
     #[case] expected: Option<u8>,
 ) {
     let allocator = Allocator::default();
-    let builder = AstBuilder::new(&allocator);
     let source = format!("({code});");
     let mut parsed = Parser::new(&allocator, &source, SourceType::ts()).parse();
     let Statement::ExpressionStatement(statement) = parsed.program.body.remove(0) else {
         panic!("expression")
     };
-    let value = JSXAttributeValue::new_expression_container(
-        SPAN,
-        statement.unbox().expression.into(),
-        &builder,
-    );
     assert_eq!(
-        jsx_expression_to_style_order(&value, &allocator).as_static(),
+        expression_to_style_order(&statement.unbox().expression, &allocator).as_static(),
         expected
     );
 }
