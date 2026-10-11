@@ -55,9 +55,7 @@ impl State {
             .collect();
         names.sort();
         names.dedup();
-        if values.len() != names.len() {
-            return Err(boa_engine::JsNativeError::typ().with_message(format!("{}:1:1: required mutation audit has missing binding values. Fix: report this extraction error", audit.plan.filename)).into());
-        }
+        (values.len() == names.len()).then_some(()).ok_or_else(|| boa_engine::JsNativeError::typ().with_message(format!("{}:1:1: required mutation audit has missing binding values. Fix: report this extraction error", audit.plan.filename)))?;
         let bindings: Vec<_> = names
             .into_iter()
             .map(|name| Binding {
@@ -69,11 +67,16 @@ impl State {
             })
             .collect();
         let values: Vec<_> = bindings.iter().zip(values).collect();
-        check_mutations(&audit.plan.checks, &values, context).map_err(|error| match error {
-            FinalizeError::Js(error) => error,
-            FinalizeError::Located(message) => boa_engine::JsNativeError::typ()
-                .with_message(message)
-                .into(),
+        check_mutations(&audit.plan.checks, &values, context).map_err(|error| {
+            if let FinalizeError::Js(error) = error {
+                error
+            } else if let FinalizeError::Located(message) = error {
+                boa_engine::JsNativeError::typ()
+                    .with_message(message)
+                    .into()
+            } else {
+                boa_engine::JsNativeError::typ().into()
+            }
         })?;
         audit.checked = true;
         Ok(())

@@ -74,12 +74,13 @@ impl Owner {
         for statement in &parsed.program.body {
             let declarations = match statement {
                 Statement::VariableDeclaration(declaration) => Some(&declaration.declarations),
-                Statement::ExportDeclaration(export) => match &export.declaration {
-                    Declaration::VariableDeclaration(declaration) => {
+                Statement::ExportDeclaration(export) => {
+                    if let Declaration::VariableDeclaration(declaration) = &export.declaration {
                         Some(&declaration.declarations)
+                    } else {
+                        None
                     }
-                    _ => None,
-                },
+                }
                 _ => None,
             };
             for declaration in declarations.into_iter().flatten() {

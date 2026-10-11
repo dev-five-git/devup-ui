@@ -25,6 +25,7 @@ mod consumer_scheduling;
 mod consumer_spreads;
 mod consumer_support;
 mod coverage_capture;
+mod coverage_demand_runtime;
 mod coverage_detection;
 mod coverage_diagnostics;
 mod coverage_dispatch;

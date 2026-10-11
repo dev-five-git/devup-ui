@@ -121,18 +121,8 @@ pub(super) fn validate(context: &Context) -> Result<(), String> {
     let state = context
         .get_data::<State>()
         .ok_or_else(|| "missing final demand session".to_string())?;
-    if let Some(owner) = state.owners.iter().find(|owner| !owner.finalized) {
-        return Err(format!(
-            "{}:1:1: native producer did not initialize. Fix: retain its original initialization schedule",
-            owner.plan.filename
-        ));
-    }
-    if let Some(audit) = state.audits.iter().find(|audit| !audit.checked) {
-        return Err(format!(
-            "{}:1:1: required selected-data mutation audit did not initialize. Fix: retain its exact module schedule",
-            audit.plan.filename
-        ));
-    }
+    state.owners.iter().find(|owner| !owner.finalized).map_or(Ok(()), |owner| Err(format!("{}:1:1: native producer did not initialize. Fix: retain its original initialization schedule", owner.plan.filename)))?;
+    state.audits.iter().find(|audit| !audit.checked).map_or(Ok(()), |audit| Err(format!("{}:1:1: required selected-data mutation audit did not initialize. Fix: retain its exact module schedule", audit.plan.filename)))?;
     Ok(())
 }
 

@@ -11,11 +11,9 @@ impl State {
         let owner = self.owners.get(index).ok_or_else(|| {
             boa_engine::JsNativeError::range().with_message("unknown native owner")
         })?;
-        if owner.finalized {
-            return Err(boa_engine::JsNativeError::typ()
-                .with_message("native owner initialized twice")
-                .into());
-        }
+        (!owner.finalized).then_some(()).ok_or_else(|| {
+            boa_engine::JsNativeError::typ().with_message("native owner initialized twice")
+        })?;
         let values = crate::vanilla_extract::array_items(array, context)?.ok_or_else(|| {
             boa_engine::JsNativeError::typ()
                 .with_message("native terminal bindings must be an array")
