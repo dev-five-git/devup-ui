@@ -78,3 +78,7 @@ fn w38r_u2_async_expression_callback_when_not_build_readable_reports_located_err
 #[cfg(test)]
 #[path = "w38r_u3_public.rs"]
 mod w38r_u3_public;
+
+#[cfg(test)]
+#[path = "w38r_u4_public.rs"]
+mod w38r_u4_public;
