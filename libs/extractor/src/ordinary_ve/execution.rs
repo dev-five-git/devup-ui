@@ -5,6 +5,10 @@ use crate::vanilla_extract::{CollectedStyles, Stylesheet, StylesheetImports, cap
 
 mod aliases;
 mod consumer;
+#[cfg(test)]
+mod coverage_aliases;
+#[cfg(test)]
+mod coverage_policy;
 pub(crate) mod diagnostics;
 pub(crate) mod imports;
 mod observe;

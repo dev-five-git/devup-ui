@@ -100,10 +100,16 @@ pub(super) fn writes(
     semantic: &oxc_semantic::Semantic<'_>,
 ) -> Result<(), String> {
     let scoping = semantic.scoping();
-    for binding in selection.units.iter().flat_map(|unit| &unit.bindings) {
-        let Some(symbol) = scoping.get_root_binding(binding.name.as_str().into()) else {
-            continue;
-        };
+    for (binding, symbol) in selection
+        .units
+        .iter()
+        .flat_map(|unit| &unit.bindings)
+        .filter_map(|binding| {
+            scoping
+                .get_root_binding(binding.name.as_str().into())
+                .map(|symbol| (binding, symbol))
+        })
+    {
         for reference in scoping.get_resolved_reference_ids(symbol) {
             let data = scoping.get_reference(*reference);
             let span = semantic.nodes().kind(data.node_id()).span();

@@ -41,11 +41,8 @@ impl Aliases {
             .nodes()
             .iter()
             .filter_map(|node| {
-                let AstKind::VariableDeclarator(declarator) = node.kind() else {
-                    return None;
-                };
-                let AstKind::VariableDeclaration(declaration) =
-                    semantic.nodes().parent_kind(node.id())
+                let (AstKind::VariableDeclarator(declarator), AstKind::VariableDeclaration(declaration)) =
+                    (node.kind(), semantic.nodes().parent_kind(node.id()))
                 else {
                     return None;
                 };
@@ -77,10 +74,8 @@ impl Aliases {
                 }
                 let source_symbol = scoping
                     .get_reference(source.reference_id.get()?)
-                    .symbol_id()?;
-                if scoping.symbol_scope_id(source_symbol) != scoping.root_scope_id() {
-                    return None;
-                }
+                    .symbol_id()
+                    .filter(|symbol| scoping.symbol_scope_id(*symbol) == scoping.root_scope_id())?;
                 Some((
                     identifier.name.to_string(),
                     scoping.symbol_name(source_symbol).to_string(),
@@ -115,10 +110,13 @@ impl Aliases {
     }
 
     fn mutable(&self, alias: &str, seen: &mut FxHashSet<String>) -> Option<u32> {
-        if !seen.insert(alias.to_string()) {
-            return None;
-        }
-        for usage in self.uses.get(alias).into_iter().flatten() {
+        for usage in seen
+            .insert(alias.to_string())
+            .then(|| self.uses.get(alias))
+            .flatten()
+            .into_iter()
+            .flatten()
+        {
             let at = match usage {
                 Use::Changes { at, .. } | Use::Calls { at, .. } | Use::Escapes { at, .. } => *at,
             };
