@@ -33,15 +33,18 @@ fn constant(
         return None;
     }
     let node = scoping.symbol_declaration(symbol);
-    let (node, declarator) = std::iter::once(node)
+    let (declaration, declarator) = std::iter::once(node)
         .chain(semantic.nodes().ancestor_ids(node))
-        .find_map(|node| match semantic.nodes().kind(node) {
-            AstKind::VariableDeclarator(declarator) => Some((node, declarator)),
-            _ => None,
+        .find_map(|node| {
+            if let AstKind::VariableDeclarator(declarator) = semantic.nodes().kind(node)
+                && let AstKind::VariableDeclaration(declaration) =
+                    semantic.nodes().parent_kind(node)
+            {
+                Some((declaration, declarator))
+            } else {
+                None
+            }
         })?;
-    let AstKind::VariableDeclaration(declaration) = semantic.nodes().parent_kind(node) else {
-        return None;
-    };
     if declaration.kind != VariableDeclarationKind::Const
         || declaration.declare
         || declarator.span.end > expression.span().start

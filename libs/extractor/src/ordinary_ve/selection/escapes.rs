@@ -122,13 +122,13 @@ pub(super) fn audit(index: &Index<'_, '_>, apis: &Apis<'_, '_>, graph: &Graph) -
             });
         }
     }
-    for node in nodes.iter() {
-        let AstKind::IdentifierReference(identifier) = node.kind() else {
-            continue;
-        };
-        let Some(reference) = identifier.reference_id.get() else {
-            continue;
-        };
+    for (node, identifier, reference) in nodes.iter().filter_map(|node| match node.kind() {
+        AstKind::IdentifierReference(identifier) => identifier
+            .reference_id
+            .get()
+            .map(|reference| (node, identifier, reference)),
+        _ => None,
+    }) {
         let data = scoping.get_reference(reference);
         let Some(symbol) = data.symbol_id().filter(|_| data.is_value()) else {
             continue;
@@ -141,9 +141,6 @@ pub(super) fn audit(index: &Index<'_, '_>, apis: &Apis<'_, '_>, graph: &Graph) -
             graph.selected.contains(&owner) || audit.consumed.contains(&owner)
         });
         let kind = api_usage::classify(apis, node.id(), *binding);
-        if matches!(kind, api_usage::Usage::Ordinary) {
-            continue;
-        }
         if allowed
             && (kind.is_permitted()
                 || !index

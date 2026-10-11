@@ -158,68 +158,60 @@ fn select_with_apis<'a>(
                 }
                 view.units.entry(owner).or_default().merge(&receiver);
             }
-            let AstKind::IdentifierReference(identifier) = node.kind() else {
-                continue;
-            };
-            let Some(owner) = index
-                .owner(node.id())
-                .filter(|owner| selected.contains(owner))
-            else {
-                continue;
-            };
-            if view.properties.get(&owner).is_some_and(|properties| {
-                properties
-                    .omitted
-                    .iter()
-                    .any(|span| span.contains_inclusive(identifier.span))
-            }) {
-                continue;
-            }
-            if index
-                .callable_context(node.id())
-                .is_some_and(|context| !graph.active.contains(&context))
+            if let AstKind::IdentifierReference(identifier) = node.kind()
+                && let Some(reference) = identifier.reference_id.get()
+                && let Some(owner) = index
+                    .owner(node.id())
+                    .filter(|owner| selected.contains(owner))
             {
-                continue;
-            }
-            let Some(reference) = identifier.reference_id.get() else {
-                continue;
-            };
-            let data = semantic.scoping().get_reference(reference);
-            if !data.is_value() {
-                continue;
-            }
-            let Some(symbol) = data.symbol_id() else {
-                continue;
-            };
-            let unit = &index.units[&owner];
-            let local = unit
-                .span
-                .contains_inclusive(semantic.scoping().symbol_span(symbol));
-            if local && !unit.bindings.iter().any(|binding| binding.symbol == symbol) {
-                continue;
-            }
-            let member = closure::demand(&index, node.id());
-            let projected = view
-                .properties
-                .get(&owner)
-                .and_then(|properties| properties.dependency(identifier.span))
-                .cloned();
-            let alias = commonjs::initializer(semantic.nodes().kind(owner))
-                .and_then(|init| properties::forward(init, &view.units[&owner]))
-                .and_then(|(span, demand)| (span == identifier.span).then_some(demand));
-            let dependency = if let Some(demand) = projected.or(alias) {
-                demand
-            } else {
-                match member {
-                    MemberDemand::Whole => Demand::whole(),
-                    MemberDemand::Path(path) => {
-                        let mut result = Demand::default();
-                        result.insert(&path);
-                        result
-                    }
+                if view.properties.get(&owner).is_some_and(|properties| {
+                    properties
+                        .omitted
+                        .iter()
+                        .any(|span| span.contains_inclusive(identifier.span))
+                }) {
+                    continue;
                 }
-            };
-            view.symbols.entry(symbol).or_default().merge(&dependency);
+                if index
+                    .callable_context(node.id())
+                    .is_some_and(|context| !graph.active.contains(&context))
+                {
+                    continue;
+                }
+                let data = semantic.scoping().get_reference(reference);
+                let Some(symbol) = data.symbol_id().filter(|_| data.is_value()) else {
+                    continue;
+                };
+                let unit = &index.units[&owner];
+                let local = unit
+                    .span
+                    .contains_inclusive(semantic.scoping().symbol_span(symbol));
+                if local && !unit.bindings.iter().any(|binding| binding.symbol == symbol) {
+                    continue;
+                }
+                let member = closure::demand(&index, node.id());
+                let projected = view
+                    .properties
+                    .get(&owner)
+                    .and_then(|properties| properties.dependency(identifier.span))
+                    .cloned();
+                let alias = commonjs::initializer(semantic.nodes().kind(owner))
+                    .and_then(|init| properties::forward(init, &view.units[&owner]))
+                    .and_then(|(span, demand)| (span == identifier.span).then_some(demand));
+                let dependency = if let Some(demand) = projected.or(alias) {
+                    demand
+                } else {
+                    match member {
+                        MemberDemand::Whole => Demand::whole(),
+                        MemberDemand::Path(path) => {
+                            let mut result = Demand::default();
+                            result.insert(&path);
+                            result
+                        }
+                    }
+                };
+                view.symbols.entry(symbol).or_default().merge(&dependency);
+            }
         }
         if view.symbols == before_symbols && view.units == before_units {
             break;

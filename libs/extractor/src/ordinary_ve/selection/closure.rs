@@ -22,21 +22,24 @@ pub(super) fn collect(index: &Index<'_, '_>, apis: &Apis<'_, '_>, graph: &mut Gr
     let mut pending: Vec<_> = graph.roots.iter().copied().collect();
     let nodes = index.semantic.nodes();
     let scoping = index.semantic.scoping();
-    while let Some(owner) = pending.pop() {
+    while let Some((owner, unit)) = pending
+        .pop()
+        .and_then(|owner| index.units.get(&owner).map(|unit| (owner, unit)))
+    {
         if !graph.selected.insert(owner) {
             continue;
         }
-        let Some(unit) = index.units.get(&owner) else {
-            continue;
-        };
         if !matches!(unit.kind, super::plan::UnitKind::Function { .. }) {
             let active = graph.reachable(owner);
             graph.active.extend(active);
         }
-        for node in nodes.iter() {
-            let AstKind::IdentifierReference(identifier) = node.kind() else {
-                continue;
-            };
+        for (node, identifier, reference) in nodes.iter().filter_map(|node| match node.kind() {
+            AstKind::IdentifierReference(identifier) => identifier
+                .reference_id
+                .get()
+                .map(|reference| (node, identifier, reference)),
+            _ => None,
+        }) {
             if index.owner(node.id()) != Some(owner) {
                 continue;
             }
@@ -46,9 +49,6 @@ pub(super) fn collect(index: &Index<'_, '_>, apis: &Apis<'_, '_>, graph: &mut Gr
             {
                 continue;
             }
-            let Some(reference) = identifier.reference_id.get() else {
-                continue;
-            };
             let data = scoping.get_reference(reference);
             if !data.is_value() {
                 continue;

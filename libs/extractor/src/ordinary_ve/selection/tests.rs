@@ -7,6 +7,8 @@ use super::{Selection, plan::Unit};
 
 mod callable_shapes;
 mod coverage_apis;
+mod coverage_d_graph;
+mod coverage_d_render;
 mod coverage_targets;
 mod helpers;
 mod namespace_audit;
