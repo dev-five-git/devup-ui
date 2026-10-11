@@ -245,11 +245,18 @@ pub(super) fn expression_to_style_order<'a>(
     expr: &Expression<'a>,
     allocator: &'a Allocator,
 ) -> ParsedStyleOrder<'a> {
-    use crate::style_order::Order;
     match crate::style_order::parse(expr, allocator) {
-        Ok(Order::Static(order)) => ParsedStyleOrder::Static(order),
-        Ok(Order::Absent) => ParsedStyleOrder::None,
-        Ok(Order::Conditional { test, yes, no }) => {
+        Ok(order) => lowered_style_order(order),
+        Err(_) => ParsedStyleOrder::Unsupported,
+    }
+}
+
+pub(super) fn lowered_style_order(order: crate::style_order::Order<'_>) -> ParsedStyleOrder<'_> {
+    use crate::style_order::Order;
+    match order {
+        Order::Static(order) => ParsedStyleOrder::Static(order),
+        Order::Absent => ParsedStyleOrder::None,
+        Order::Conditional { test, yes, no } => {
             let leaf = |order: &Order<'_>| match order {
                 Order::Static(order) => Some(Some(*order)),
                 Order::Absent => Some(None),
@@ -264,7 +271,6 @@ pub(super) fn expression_to_style_order<'a>(
                 _ => ParsedStyleOrder::Tree(Order::Conditional { test, yes, no }),
             }
         }
-        Err(_) => ParsedStyleOrder::Unsupported,
     }
 }
 

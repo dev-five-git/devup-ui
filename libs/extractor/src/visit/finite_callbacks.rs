@@ -48,23 +48,13 @@ impl<'a> DevupVisitor<'a> {
         if !returns.complete || returns.finite.is_empty() {
             return None;
         }
-        let mut results = Vec::new();
-        for finite in returns.finite {
-            for entry in finite.results {
-                if results
-                    .iter()
-                    .any(|(text, values)| *text == entry.0 && *values != entry.1)
-                {
-                    return None;
-                }
-                if !results.contains(&entry) {
-                    results.push(entry);
-                }
-            }
+        let mut finite = returns
+            .finite
+            .into_iter()
+            .try_fold(FiniteStyles { results: vec![] }, FiniteStyles::union)?;
+        if !finite.results.iter().any(|(text, _)| text.is_empty()) {
+            finite.results.push((String::new(), vec![]));
         }
-        if !results.iter().any(|(text, _)| text.is_empty()) {
-            results.push((String::new(), vec![]));
-        }
-        Some(FiniteStyles { results })
+        Some(finite)
     }
 }

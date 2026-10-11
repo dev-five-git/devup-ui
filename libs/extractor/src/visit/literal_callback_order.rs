@@ -1,14 +1,15 @@
 use oxc_allocator::{CloneIn, GetAllocator};
 use oxc_ast::ast::{
-    ArrowFunctionBody, Expression, ObjectPropertyKind, PropertyKey, PropertyKind, ReturnStatement,
-    Statement, StringLiteral,
+    ArrowFunctionBody, ArrowFunctionExpression, Expression, Function, ObjectPropertyKind,
+    PropertyKey, PropertyKind, ReturnStatement, Statement, StringLiteral,
 };
 use oxc_ast::builder::AstBuilder;
 use oxc_ast_visit::{VisitMut, walk_mut};
 use oxc_span::{GetSpan, SPAN, Span};
 
-pub(super) struct WrappedCallback<'a> {
-    pub(super) original: Expression<'a>,
+pub(super) enum WrappedCallback<'a> {
+    Arrow(oxc_allocator::Box<'a, ArrowFunctionExpression<'a>>),
+    Function(oxc_allocator::Box<'a, Function<'a>>),
 }
 
 pub(super) struct OrderEnvelope<'a> {
@@ -59,12 +60,13 @@ pub(super) enum OrderStep<'a> {
     },
 }
 
-pub(super) fn wrapped<'a>(
-    ast: &AstBuilder<'a>,
-    function: &mut Expression<'a>,
-) -> Option<WrappedCallback<'a>> {
-    let original = function.clone_in_with_semantic_ids(ast.allocator());
-    wrap(ast, function).then_some(WrappedCallback { original })
+impl<'a> WrappedCallback<'a> {
+    pub(super) const fn into_expression(self) -> Expression<'a> {
+        match self {
+            Self::Arrow(arrow) => Expression::ArrowFunctionExpression(arrow),
+            Self::Function(function) => Expression::FunctionExpression(function),
+        }
+    }
 }
 
 struct Returns<'s, 'a> {
@@ -94,33 +96,44 @@ impl<'a> VisitMut<'a> for Returns<'_, 'a> {
     }
 }
 
-pub(super) fn wrap<'a>(ast: &AstBuilder<'a>, function: &mut Expression<'a>) -> bool {
-    let body = match function {
-        Expression::ArrowFunctionExpression(arrow) if !arrow.r#async => match &mut arrow.body {
-            ArrowFunctionBody::FunctionBody(body) => body,
-            body => {
-                let value = body.to_expression_mut();
-                *value = order_object(ast, value.clone_in_with_semantic_ids(ast.allocator()))
-                    .expression(ast);
-                return true;
+pub(super) fn wrapped<'a>(
+    ast: &AstBuilder<'a>,
+    function: &mut Expression<'a>,
+) -> Option<WrappedCallback<'a>> {
+    let (original, body) = match function {
+        Expression::ArrowFunctionExpression(arrow) if !arrow.r#async => {
+            let original =
+                WrappedCallback::Arrow(arrow.clone_in_with_semantic_ids(ast.allocator()));
+            match &mut arrow.body {
+                ArrowFunctionBody::FunctionBody(body) => (original, body),
+                body => {
+                    let value = body.to_expression_mut();
+                    *value = order_object(ast, value.clone_in_with_semantic_ids(ast.allocator()))
+                        .expression(ast);
+                    return Some(original);
+                }
             }
-        },
-        Expression::FunctionExpression(function) => match &mut **function {
-            oxc_ast::ast::Function {
-                body: Some(body),
-                r#async: false,
-                generator: false,
-                ..
-            } => body,
-            _ => return false,
-        },
-        _ => return false,
+        }
+        Expression::FunctionExpression(function) => {
+            let original =
+                WrappedCallback::Function(function.clone_in_with_semantic_ids(ast.allocator()));
+            match &mut **function {
+                Function {
+                    body: Some(body),
+                    r#async: false,
+                    generator: false,
+                    ..
+                } => (original, body),
+                _ => return None,
+            }
+        }
+        _ => return None,
     };
     if !body.statements.last().is_some_and(terminal) && !body.statements.iter().all(normal_exit) {
-        return false;
+        return None;
     }
     walk_mut::walk_function_body(&mut Returns { ast }, body);
-    true
+    Some(original)
 }
 
 fn terminal(statement: &Statement<'_>) -> bool {

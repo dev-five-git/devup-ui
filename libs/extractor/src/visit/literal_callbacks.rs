@@ -79,10 +79,10 @@ mod literal_w38b_sources {
         let mut order_callback = statement
             .expression
             .clone_in_with_semantic_ids(visitor.ast.allocator());
-        assert!(super::super::literal_callback_order::wrap(
-            &visitor.ast,
-            &mut statement.expression
-        ));
+        assert!(
+            super::super::literal_callback_order::wrapped(&visitor.ast, &mut statement.expression)
+                .is_some()
+        );
         let mut captures = Vec::new();
         // When: the actual wrapped callback passes through the production preparer.
         let (parts, _) = visitor

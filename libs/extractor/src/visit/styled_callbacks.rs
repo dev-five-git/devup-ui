@@ -70,19 +70,19 @@ impl<'a> DevupVisitor<'a> {
             let (_, render) = self.prepare_callback(expression, captures)?;
             return Some((vec![OrderStep::Value(None)], render));
         }
-        *expression = wrapped.original;
-        let block = match expression {
-            Expression::FunctionExpression(function) => {
+        let mut original = wrapped;
+        let block = match &mut original {
+            WrappedCallback::Function(function) => {
                 Some(self.prepare_order_block_callback(function.body.as_mut()?))
             }
-            Expression::ArrowFunctionExpression(arrow) => match &mut arrow.body {
+            WrappedCallback::Arrow(arrow) => match &mut arrow.body {
                 ArrowFunctionBody::FunctionBody(body) => {
                     Some(self.prepare_order_block_callback(body))
                 }
                 _ => None,
             },
-            _ => None,
         };
+        *expression = original.into_expression();
         if let Some((orders, render)) = block {
             let invocation = self.capture_prepared_callback(expression, captures);
             return Some((orders, (render, invocation)));

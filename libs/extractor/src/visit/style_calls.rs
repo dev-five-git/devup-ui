@@ -2,7 +2,7 @@ use super::DevupVisitor;
 use super::capture::Captured;
 use crate::utils::unwrap_syntax_only;
 use oxc_allocator::GetAllocator;
-use oxc_ast::ast::{Expression, ObjectPropertyKind, PropertyKind};
+use oxc_ast::ast::{Expression, ObjectPropertyKind};
 use oxc_span::GetSpan;
 
 #[derive(Clone, Copy)]
@@ -107,21 +107,6 @@ impl<'a> DevupVisitor<'a> {
                                     Err(error) => {
                                         self.error_disposition.include(error.disposition);
                                         Some(error.diagnostic)
-                                    }
-                                    Ok(_)
-                                        if property.kind != PropertyKind::Init
-                                            || property.method =>
-                                    {
-                                        self.error_disposition
-                                            .include(crate::ErrorDisposition::Definitive);
-                                        Some((
-                                            property.span.start,
-                                            crate::utils::build_time_error(
-                                                "styleOrder",
-                                                "styleOrder",
-                                                "a plain value, not an accessor or method",
-                                            ),
-                                        ))
                                     }
                                     Ok(crate::style_order::Order::Conditional { .. })
                                         if static_only =>

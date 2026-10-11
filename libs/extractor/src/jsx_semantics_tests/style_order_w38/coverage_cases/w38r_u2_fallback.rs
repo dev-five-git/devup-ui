@@ -102,3 +102,7 @@ mod w38r_u6_nested;
 #[cfg(test)]
 #[path = "w38r_u7_outcomes.rs"]
 mod w38r_u7_outcomes;
+
+#[cfg(test)]
+#[path = "w38r_u8_collisions.rs"]
+mod w38r_u8_collisions;
