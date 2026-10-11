@@ -68,3 +68,6 @@ pub(super) fn check(
     }
     Ok(())
 }
+
+#[cfg(test)]
+mod coverage_tests;

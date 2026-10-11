@@ -57,11 +57,10 @@ pub(crate) fn hygienic(
         let Statement::ImportDeclaration(import) = statement else {
             continue;
         };
-        for specifier in import.specifiers.iter().flatten() {
+        for (local, symbol) in import.specifiers.iter().flatten().filter_map(|specifier| {
             let local = specifier.local();
-            let Some(symbol) = local.symbol_id.get() else {
-                continue;
-            };
+            local.symbol_id.get().map(|symbol| (local, symbol))
+        }) {
             let mut name = format!("__ve_{}__", local.name);
             while reserved.contains(&name) {
                 name.push('_');
