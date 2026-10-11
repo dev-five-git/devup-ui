@@ -1,6 +1,6 @@
 ---
 source: libs/extractor/src/lib.rs
-expression: "ToBTreeSet::from(extract(\"theme-exports.css.ts\",\nr#\"import { createTheme, createThemeContract, style } from '@devup-ui/react'\nconst contract = createThemeContract({\n  colors: { bg: null, text: null }\n})\nexport const lightTheme = createTheme(contract, {\n  colors: { bg: 'white', text: 'black' }\n})\nconst internalTheme = createTheme(contract, {\n  colors: { bg: 'gray', text: 'darkgray' }\n})\nexport const box = style({ padding: 8 })\n\"#,\nExtractOption\n{\n    package: \"@devup-ui/react\".to_string(), css_dir:\n    \"@devup-ui/react\".to_string(), single_css: true, import_main_css: false\n}).unwrap())"
+expression: "ToBTreeSet::from(extract(\"theme-exports.css.ts\",\nr\"import { createTheme, createThemeContract, style } from '@devup-ui/react'\nconst contract = createThemeContract({\n  colors: { bg: null, text: null }\n})\nexport const lightTheme = createTheme(contract, {\n  colors: { bg: 'white', text: 'black' }\n})\nconst internalTheme = createTheme(contract, {\n  colors: { bg: 'gray', text: 'darkgray' }\n})\nexport const box = style({ padding: 8 })\n\",\nExtractOption\n{\n    package: \"@devup-ui/react\".to_string(), css_dir:\n    \"@devup-ui/react\".to_string(), single_css: true, import_main_css: false,\n    import_aliases: HashMap::new()\n}).unwrap())"
 ---
 ToBTreeSet {
     styles: {
@@ -83,5 +83,5 @@ ToBTreeSet {
             },
         ),
     },
-    code: "import \"@devup-ui/react/devup-ui.css\";\nexport const box = \"a\";\n;\n;\nexport const lightTheme = \"theme-0-2\";\n",
+    code: "import \"@devup-ui/react/devup-ui.css\";\nexport const box = \"f0_0 a\";\n;\n;\nexport const lightTheme = \"theme-0-2\";\n",
 }

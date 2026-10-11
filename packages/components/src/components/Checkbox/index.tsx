@@ -53,30 +53,6 @@ export function Checkbox({
         htmlFor={generateId}
       >
         <Input
-          _active={
-            !disabled && {
-              bg: 'light-dark(color-mix(in srgb, var(--primary, #6159D4) 20%, #FFF 80%), color-mix(in srgb, var(--primary, #6670F9) 30%, #000 70%))',
-            }
-          }
-          _checked={{
-            bg: 'var(--primary, light-dark(#6159D4, #6670F9))',
-            border: 'none',
-            _hover: !disabled && {
-              bg: 'light-dark(color-mix(in srgb, var(--primary, #6159D4) 100%, #000 15%), color-mix(in srgb, var(--primary, #6670F9) 100%, #FFF 15%))',
-            },
-            _disabled: {
-              bg: 'light-dark(#F0F0F3, #47474A)',
-            },
-          }}
-          _disabled={{
-            bg: 'light-dark( #F0F0F3, #47474A)',
-          }}
-          _hover={
-            !disabled && {
-              bg: 'light-dark(color-mix(in srgb, var(--primary, #6159D4) 10%, #FFF 90%), color-mix(in srgb, var(--primary, #6670F9) 20%, #000 80%))',
-              border: '1px solid var(--primary, light-dark(#6159D4, #6670F9))',
-            }
-          }
           accentColor="var(--primary, light-dark(#6159D4, #6670F9))"
           appearance="none"
           bg="var(--inputBg, light-dark(#FFF, #2E2E2E))"
@@ -107,6 +83,30 @@ export function Checkbox({
           width="100%"
           zIndex={0}
           {...props}
+          _active={
+            !disabled && {
+              bg: 'light-dark(color-mix(in srgb, var(--primary, #6159D4) 20%, #FFF 80%), color-mix(in srgb, var(--primary, #6670F9) 30%, #000 70%))',
+            }
+          }
+          _checked={{
+            bg: 'var(--primary, light-dark(#6159D4, #6670F9))',
+            border: 'none',
+            _hover: !disabled && {
+              bg: 'light-dark(color-mix(in srgb, var(--primary, #6159D4) 100%, #000 15%), color-mix(in srgb, var(--primary, #6670F9) 100%, #FFF 15%))',
+            },
+            _disabled: {
+              bg: 'light-dark(#F0F0F3, #47474A)',
+            },
+          }}
+          _disabled={{
+            bg: 'light-dark( #F0F0F3, #47474A)',
+          }}
+          _hover={
+            !disabled && {
+              bg: 'light-dark(color-mix(in srgb, var(--primary, #6159D4) 10%, #FFF 90%), color-mix(in srgb, var(--primary, #6670F9) 20%, #000 80%))',
+              border: '1px solid var(--primary, light-dark(#6159D4, #6670F9))',
+            }
+          }
         />
         {finalChecked && (
           <Box

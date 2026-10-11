@@ -35,6 +35,9 @@ pub(super) fn extract_style_from_member_expression<'a>(
         Expression::TSAsExpression(ts_as) => {
             Some(ts_as.expression.clone_in(ast_builder.allocator()))
         }
+        Expression::TSTypeAssertion(assertion) => {
+            Some(assertion.expression.clone_in(ast_builder.allocator()))
+        }
         Expression::ParenthesizedExpression(p) => {
             Some(p.expression.clone_in(ast_builder.allocator()))
         }

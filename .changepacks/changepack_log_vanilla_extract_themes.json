@@ -1,0 +1,9 @@
+{
+  "changes": {
+    "bindings/devup-ui-wasm/package.json": "Patch",
+    "packages/plugin-utils/package.json": "Patch",
+    "packages/react/package.json": "Patch"
+  },
+  "note": "Compile vanilla-extract static styling-data modules independently of their script suffix, sharing theme contracts, native API values, deterministic variable references and later-wins static composition. Preserve registered selector identities independently of declaration atoms, and capture default, aliased and forwarded module exports without replaying initializers. Align theme.css source resolution between evaluation and the import graph, and map consumer contract leaves and theme overloads to their real values. Report located build errors for unknown static inputs, non-object theme tokens, mismatched theme contracts, invalid non-final fallback variables, and invalid global theme variable names instead of emitting incomplete or malformed CSS.",
+  "date": "2026-10-01T00:00:00.000Z"
+}

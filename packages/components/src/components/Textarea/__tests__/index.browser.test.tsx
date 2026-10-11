@@ -147,7 +147,7 @@ describe('Textarea', () => {
   it('should render full width by default', () => {
     const { container } = render(<Textarea />)
     expect(container.querySelector('[aria-label="textarea"]')).toHaveClass(
-      'width-0-100_pc_--1',
+      'width-0-var_lp_--width-spread-w-0-_cm_100_pc__rp_--1',
     )
   })
 })

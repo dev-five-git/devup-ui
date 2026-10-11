@@ -275,6 +275,74 @@ describe('devupUILoader', () => {
     })
   })
 
+  it('extracts a file that reaches Devup UI only through a project module', async () => {
+    const source = `import { Box } from './ui'
+export const a = <Box bg="red" />`
+    const asyncCallback = mock()
+    const t = createLoaderContext(
+      {
+        package: 'package',
+        cssDir: 'cssFile',
+        watch: false,
+        singleCss: true,
+      },
+      asyncCallback,
+    )
+    codeExtractSpy.mockReturnValue(
+      createCodeExtractResult({
+        code: '<div className="a" />',
+        css: undefined,
+        map: undefined,
+        cssFile: undefined,
+        updatedBaseStyle: false,
+      }),
+    )
+    devupUILoader.bind(t)(Buffer.from(source), 'index.tsx')
+
+    expect(codeExtractSpy.mock.calls.at(-1)?.[1]).toBe(source)
+    await waitFor(() => {
+      expect(asyncCallback).toHaveBeenCalledWith(
+        null,
+        '<div className="a" />',
+        null,
+      )
+    })
+  })
+
+  it('extracts a file that only the Emotion css prop compiles (pragma, no Devup UI import)', async () => {
+    const source = `/** @jsxImportSource @emotion/react */
+export const a = <div css={{ color: 'red' }} />`
+    const asyncCallback = mock()
+    const t = createLoaderContext(
+      {
+        package: 'package',
+        cssDir: 'cssFile',
+        watch: false,
+        singleCss: true,
+      },
+      asyncCallback,
+    )
+    codeExtractSpy.mockReturnValue(
+      createCodeExtractResult({
+        code: '<div className="a" />',
+        css: undefined,
+        map: undefined,
+        cssFile: undefined,
+        updatedBaseStyle: false,
+      }),
+    )
+    devupUILoader.bind(t)(Buffer.from(source), 'index.tsx')
+
+    expect(codeExtractSpy.mock.calls.at(-1)?.[1]).toBe(source)
+    await waitFor(() => {
+      expect(asyncCallback).toHaveBeenCalledWith(
+        null,
+        '<div className="a" />',
+        null,
+      )
+    })
+  })
+
   it('should handle error', async () => {
     const asyncCallback = mock()
     const t = createLoaderContext(
