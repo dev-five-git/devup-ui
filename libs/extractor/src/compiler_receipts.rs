@@ -230,5 +230,8 @@ pub(crate) fn with_sealed<O, E>(
     .map_err(CompileError::Consumer)
 }
 #[cfg(test)]
+#[path = "compiler_coverage_tests.rs"]
+pub(crate) mod coverage_tests;
+#[cfg(test)]
 #[path = "compiler_receipt_tests.rs"]
 pub(crate) mod tests;

@@ -1,5 +1,6 @@
 use super::*;
 use crate::extract_style::compiler_associations::Graph;
+pub(crate) use crate::extract_style::compiler_receipts::coverage_tests::failed;
 use crate::extract_style::compiler_receipts::{PRODUCTIONS, ReceiptWitness};
 use crate::extract_style::extract_style_value::ExtractStyleValue;
 use serial_test::serial;
@@ -36,14 +37,6 @@ pub(crate) fn associated(
         })
     })
     .unwrap_or_else(|error| panic!("{error:?}"))
-}
-pub(crate) fn failed(input: CompilerInput<'_>) -> Box<dyn Error> {
-    match with_counter_extract(input, |_, batch| batch.consume(|_| Ok::<_, ()>(()))) {
-        Err(CounterCompileError::Compile(error)) => error,
-        Err(CounterCompileError::Consumer(())) | Ok(()) => {
-            panic!("terminal compile error required")
-        }
-    }
 }
 pub(crate) fn offset(source: &str, token: &str) -> u32 {
     u32::try_from(

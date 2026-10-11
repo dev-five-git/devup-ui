@@ -184,3 +184,44 @@ impl<'a> InlineProjection<'_, 'a> {
         properties
     }
 }
+
+#[cfg(test)]
+mod tests {
+    #[test]
+    #[serial_test::serial]
+    fn inline_protocol_emits_no_variables_when_both_conditional_branches_are_absent() {
+        // Given: an actual parsed condition and the public compiler IR's absent branches.
+        crate::compiler_policy::tests::reset();
+        let before = (
+            css::class_map::get_class_map(),
+            css::file_map::get_file_map(),
+            css::file_map::get_original_ids(),
+            css::file_map::get_canonical_map(),
+        );
+        let allocator = oxc_allocator::Allocator::default();
+        let condition = oxc_parser::Parser::new(&allocator, "flag", oxc_span::SourceType::tsx())
+            .parse_expression();
+        assert!(condition.is_ok());
+        condition.into_iter().for_each(|condition| {
+            let styles = [crate::ExtractStyleProp::Conditional {
+                condition,
+                consequent: None,
+                alternate: None,
+            }];
+            let ast = oxc_ast::builder::AstBuilder::new(&allocator);
+            // When: the real inline compiler projects the typed empty conditional.
+            let generated = crate::gen_style::gen_styles(&ast, &styles, Some("coverage.tsx"));
+            // Then: neither an empty style object nor a variable/name allocation is invented.
+            assert!(generated.is_none());
+            assert_eq!(
+                (
+                    css::class_map::get_class_map(),
+                    css::file_map::get_file_map(),
+                    css::file_map::get_original_ids(),
+                    css::file_map::get_canonical_map()
+                ),
+                before
+            );
+        });
+    }
+}
