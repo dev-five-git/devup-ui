@@ -1,0 +1,7 @@
+{
+  "changes": {
+    "bindings/devup-ui-wasm/package.json": "Patch"
+  },
+  "note": "css(a, b) composing classes whose styles the build knows (a const bound to css() in the file, or a css() result another module exports with a rule object every value of which is known) merges their styles: a later part's declaration replaces an earlier one's for the same property, selector, breakpoint and layer, also under conditions (css(base, cond && danger)) and for ||/?? parts, where the classes used to be joined and the stylesheet order picked the winner. vanilla-extract style([a, b]) passes each composed style as its own argument, so the later one wins, and a style composed again later (style([a, b, a])) is kept. Classes the build does not know (strings, props, CSS Modules) are kept as they are",
+  "date": "2026-10-01T00:00:00.000Z"
+}

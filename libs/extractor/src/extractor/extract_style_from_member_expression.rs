@@ -3,8 +3,9 @@ use crate::{
     extractor::{
         ExtractResult,
         extract_style_from_expression::{
-            LiteralHandling, dynamic_style, extract_style_from_expression,
+            LiteralHandling, dynamic_style_payload, extract_rule_styles,
         },
+        rule_payload::RuleClass,
     },
     utils::{
         get_number_by_literal_expression, get_str_by_property_key,
@@ -20,15 +21,15 @@ use oxc_ast::{
 use oxc_span::SPAN;
 use std::collections::BTreeMap;
 
-pub(super) fn extract_style_from_member_expression<'a>(
+pub(crate) fn extract_rule_member_styles<'a>(
     ast_builder: &AstBuilder<'a>,
     name: Option<&str>,
     mem: &mut ComputedMemberExpression<'a>,
     level: u8,
     selector: &Option<StyleSelector>,
-) -> ExtractResult<'a> {
+) -> ExtractResult<'a, RuleClass<'a>> {
     let mem_expression = &mem.expression.clone_in(ast_builder.allocator());
-    let mut ret: Vec<ExtractStyleProp> = vec![];
+    let mut ret: Vec<ExtractStyleProp<'a, RuleClass<'a>>> = vec![];
 
     // Unwrap type assertions and parenthesized expressions (e.g., `({...} as const)[key]`)
     while let Some(inner) = match &mem.object {
@@ -85,7 +86,7 @@ pub(super) fn extract_style_from_member_expression<'a>(
                 if Some(idx) == selected_index
                     && let Some(p) = p.as_expression_mut()
                 {
-                    return extract_style_from_expression(
+                    return extract_rule_styles(
                         ast_builder,
                         name,
                         p,
@@ -114,7 +115,7 @@ pub(super) fn extract_style_from_member_expression<'a>(
                 map.insert(
                     idx.to_string(),
                     Box::new(ExtractStyleProp::StaticArray(
-                        extract_style_from_expression(
+                        extract_rule_styles(
                             ast_builder,
                             name,
                             p,
@@ -157,7 +158,7 @@ pub(super) fn extract_style_from_member_expression<'a>(
                     && get_str_by_property_key(&o.key).as_deref() == Some(k.as_ref())
                 {
                     return ExtractResult {
-                        styles: extract_style_from_expression(
+                        styles: extract_rule_styles(
                             ast_builder,
                             name,
                             &mut o.value,
@@ -180,7 +181,7 @@ pub(super) fn extract_style_from_member_expression<'a>(
                 map.insert(
                     property_name,
                     Box::new(ExtractStyleProp::StaticArray(
-                        extract_style_from_expression(
+                        extract_rule_styles(
                             ast_builder,
                             name,
                             &mut o.value,
@@ -228,7 +229,7 @@ fn runtime_member<'a>(
     offset: u32,
     level: u8,
     selector: &Option<StyleSelector>,
-) -> ExtractStyleProp<'a> {
+) -> ExtractStyleProp<'a, RuleClass<'a>> {
     let member = Expression::ComputedMemberExpression(ComputedMemberExpression::boxed(
         SPAN,
         object,
@@ -237,7 +238,7 @@ fn runtime_member<'a>(
         ast_builder,
     ));
     match name {
-        Some(name) => dynamic_style(ast_builder, name, &member, level, selector),
+        Some(name) => dynamic_style_payload(ast_builder, name, &member, level, selector),
         None => ExtractStyleProp::Unreadable {
             offset,
             code: readable_code(&member),

@@ -74,19 +74,44 @@ describe('style-order-range rule', () => {
         filename: 'src/app/page.tsx',
       },
       {
-        code: 'import { Box, css } from "@devup-ui/react";\n<Box data-x={{ styleOrder: 0 }} icon={<div styleOrder={0} />} props={{ styleOrder: 300 }} />;\ncss({ _hover: { styleOrder: 0 }, w: [{ styleOrder: 0 }] })',
-        filename: 'src/app/page.tsx',
-      },
-      {
-        code: 'import { css } from "@devup-ui/react";\nconst other = { styleOrder: 0 };\nfoo({ styleOrder: 0 });\ncss({ [`styleOrder`]: 0, "styleOrder": 1 });\ncss({ w: css({ styleOrder: 1 }), styleOrder: 2 })',
-        filename: 'src/app/page.tsx',
-      },
-      {
         code: 'import { css } from "@devup-ui/react";\nconst { styleOrder = 0 } = css({});\ntoString({ styleOrder: 0 });\nnew Foo({ styleOrder: 0 });',
         filename: 'src/app/page.tsx',
       },
     ],
     invalid: [
+      {
+        code: 'import { Box, css } from "@devup-ui/react";\n<Box data-x={{ styleOrder: 0 }} icon={<div styleOrder={0} />} props={{ styleOrder: 300 }} />;\ncss({ _hover: { styleOrder: 0 }, w: [{ styleOrder: 0 }] })',
+        filename: 'src/app/page.tsx',
+        errors: [
+          {
+            messageId: 'styleOrderRange',
+            line: 3,
+            column: 29,
+            endLine: 3,
+            endColumn: 30,
+          },
+          {
+            messageId: 'styleOrderRange',
+            line: 3,
+            column: 52,
+            endLine: 3,
+            endColumn: 53,
+          },
+        ],
+      },
+      {
+        code: 'import { css } from "@devup-ui/react";\nconst other = { styleOrder: 0 };\nfoo({ styleOrder: 0 });\ncss({ [`styleOrder`]: 0, "styleOrder": 1 });\ncss({ w: css({ styleOrder: 1 }), styleOrder: 2 })',
+        filename: 'src/app/page.tsx',
+        errors: [
+          {
+            messageId: 'styleOrderRange',
+            line: 4,
+            column: 23,
+            endLine: 4,
+            endColumn: 24,
+          },
+        ],
+      },
       {
         code: 'import { css } from "@devup-ui/react";\ncss(base, { styleOrder: 300 })',
         filename: 'src/app/page.tsx',

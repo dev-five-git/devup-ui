@@ -5,22 +5,22 @@ expression: outputs
 [
     (
         "export const A = styled(motion.div)`color: red;`;",
-        "export const A = ({ style, className, ...rest }) => <motion.div {...rest} className={[\"a-a\", className].filter(Boolean).join(\" \")} style={style} />;",
+        "export const A = ((__devupBase0) => ((__devupEnvironment0Component) => (__devupEnvironment0Component[\"__devupEnvironment0\"] = (__devupEnvironment0Continue) => __devupEnvironment0Continue(__devupBase0), __devupEnvironment0Component))(__devupForwardRef((__devupRefProps, __devupRef) => ((__devupStyleProps) => (({ style, className, as: DevupAs = __devupBase0, forwardedAs, ...rest }) => <DevupAs {...rest} as={forwardedAs} className={[\"a-a\", className].filter(Boolean).join(\" \")} style={style} />)(__devupStyleProps))({\n\t...__devupRefProps,\n\tref: __devupRef\n}))))(motion.div);",
     ),
     (
         "export const B = styled((Motion as any).Div.Inner)({ color: 'red' });",
-        "export const B = ({ style, className, ...rest }) => <Motion.Div.Inner {...rest} className={[\"a-a\", className].filter(Boolean).join(\" \")} style={style} />;",
+        "export const B = ((__devupBase0) => ((__devupEnvironment0Component) => (__devupEnvironment0Component[\"__devupEnvironment0\"] = (__devupEnvironment0Continue) => __devupEnvironment0Continue(__devupBase0), __devupEnvironment0Component))(__devupForwardRef((__devupRefProps, __devupRef) => ((__devupStyleProps) => (({ style, className, as: DevupAs = __devupBase0, forwardedAs, ...rest }) => <DevupAs {...rest} as={forwardedAs} className={[\"a-a\", className].filter(Boolean).join(\" \")} style={style} />)(__devupStyleProps))({\n\t...__devupRefProps,\n\tref: __devupRef\n}))))((Motion as any).Div.Inner);",
     ),
     (
         "export const C = styled(forwardRef((p, r) => <div ref={r} {...p} />)).attrs({ role: 'x' })`color: red;`;",
-        "export const C = ((DevupStyled) => (__devupProps) => (({ style, className, ...rest }) => <DevupStyled {...rest} className={[\"a-a\", className].filter(Boolean).join(\" \")} style={style} />)({\n\t...__devupProps,\n\t...{ role: \"x\" }\n}))(forwardRef((p, r) => <div ref={r} {...p} />));",
+        "export const C = ((__devupBase0, __devupAttrs0) => ((__devupEnvironment0Component) => (__devupEnvironment0Component[\"__devupEnvironment0\"] = (__devupEnvironment0Continue) => __devupEnvironment0Continue(__devupBase0, __devupAttrs0), __devupEnvironment0Component))(__devupForwardRef((__devupRefProps, __devupRef) => ((__devupProps) => ((__devupStyleProps) => (({ style, className, as: DevupAs = __devupBase0, forwardedAs, ...rest }) => <DevupAs {...rest} as={forwardedAs} className={[\"a-a\", className].filter(Boolean).join(\" \")} style={style} />)(__devupStyleProps))(((__devupContext) => ({\n\t...__devupContext,\n\tclassName: [__devupContext.className, __devupProps.className].filter(Boolean).join(\" \") || undefined\n}))(((__devupContext) => ((__devupAttrs) => ({\n\t...__devupContext,\n\t...__devupAttrs,\n\tclassName: [__devupContext.className, __devupAttrs.className].filter(Boolean).join(\" \") || undefined,\n\tstyle: {\n\t\t...__devupContext.style,\n\t\t...__devupAttrs.style\n\t}\n}))({\n\t...{},\n\t...typeof __devupAttrs0 === \"function\" ? __devupAttrs0(__devupContext) : __devupAttrs0\n}))({\n\t...__devupProps,\n\tclassName: undefined\n}))))({\n\t...__devupRefProps,\n\tref: __devupRef\n}))))(forwardRef((p, r) => <div ref={r} {...p} />), { role: \"x\" });",
     ),
     (
         "export const D = (tag) => styled(tag, { color: 'red' });",
-        "export const D = (tag) => ((DevupStyled) => ({ style, className, ...rest }) => <DevupStyled {...rest} className={[\"a-a\", className].filter(Boolean).join(\" \")} style={style} />)(tag);",
+        "export const D = (tag) => ((__devupBase0) => ((__devupEnvironment0Component) => (__devupEnvironment0Component[\"__devupEnvironment0\"] = (__devupEnvironment0Continue) => __devupEnvironment0Continue(__devupBase0), __devupEnvironment0Component))(__devupForwardRef((__devupRefProps, __devupRef) => ((__devupStyleProps) => (({ style, className, as: DevupAs = __devupBase0, forwardedAs, ...rest }) => <DevupAs {...rest} as={forwardedAs} className={[\"a-a\", className].filter(Boolean).join(\" \")} style={style} />)(__devupStyleProps))({\n\t...__devupRefProps,\n\tref: __devupRef\n}))))(tag);",
     ),
     (
         "export const E = styled(getThing().div)`color: red;`;",
-        "export const E = ((DevupStyled) => ({ style, className, ...rest }) => <DevupStyled {...rest} className={[\"a-a\", className].filter(Boolean).join(\" \")} style={style} />)(getThing().div);",
+        "export const E = ((__devupBase0) => ((__devupEnvironment0Component) => (__devupEnvironment0Component[\"__devupEnvironment0\"] = (__devupEnvironment0Continue) => __devupEnvironment0Continue(__devupBase0), __devupEnvironment0Component))(__devupForwardRef((__devupRefProps, __devupRef) => ((__devupStyleProps) => (({ style, className, as: DevupAs = __devupBase0, forwardedAs, ...rest }) => <DevupAs {...rest} as={forwardedAs} className={[\"a-a\", className].filter(Boolean).join(\" \")} style={style} />)(__devupStyleProps))({\n\t...__devupRefProps,\n\tref: __devupRef\n}))))(getThing().div);",
     ),
 ]

@@ -112,12 +112,14 @@ exports[`recommended export recommended config 1`] = `
             "defaultOptions": [],
             "meta": {
               "docs": {
-                "description": "Ensures styleOrder prop is within valid range (0 < value < 255).",
+                "description": "Enforces build-time styleOrder values and supported API contexts.",
                 "url": "https://github.com/dev-five-git/devup-ui/tree/main/packages/eslint-plugin/src/rules/style-order-range",
               },
               "messages": {
-                "styleOrderRange": "styleOrder prop must be a number greater than 0 and less than 255.",
-                "wrongType": "styleOrder prop must be a number or a string representing a number.",
+                "globalOrder": "{{api}} cannot use conditional styleOrder: global styles require one order known at build time.",
+                "styleOrderRange": "styleOrder must be an integer Number or a canonical decimal string from 1 through 254, known at build time; class styles may choose valid orders with a conditional or &&.",
+                "unsupportedOrder": "{{api}} cannot use styleOrder: order metadata has no effect in keyframes, font-face descriptors or native StyleX declarations.",
+                "wrongType": "styleOrder must have an explicit value.",
               },
               "schema": [],
               "type": "problem",

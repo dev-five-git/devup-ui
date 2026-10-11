@@ -5,9 +5,7 @@ import { css } from '../css'
 describe('css', () => {
   it('should return className', () => {
     expect(() => css`virtual-css`).toThrowError('Cannot run on the runtime')
-    expect(() =>
-      css('class name' as unknown as Parameters<typeof css>[0]),
-    ).toThrowError('Cannot run on the runtime')
+    expect(() => css('class name')).toThrowError('Cannot run on the runtime')
     expect(() =>
       css({
         selectors: {

@@ -1,6 +1,6 @@
 ---
 source: libs/extractor/src/lib.rs
-expression: "ToBTreeSet::from(extract(\"test.tsx\",\nr#\"import styled from 'styled-components'\nconst Card = styled(\"div\")({ bg: 'blue', m: 2 })\n\"#,\nExtractOption\n{\n    package: \"@devup-ui/react\".to_string(), css_dir:\n    \"@devup-ui/react\".to_string(), single_css: true, import_main_css: false,\n    import_aliases: aliases,\n},).unwrap())"
+expression: "ToBTreeSet::from(extract(\"test.tsx\",\nr#\"import styled from 'styled-components'\nconst Card = styled(\"div\")({ bg: 'blue', m: 2 })\n\"#,\nExtractOption\n{\n    package: \"@devup-ui/react\".to_string(), css_dir:\n    \"@devup-ui/react\".to_string(), single_css: true, import_main_css: false,\n    import_aliases: aliases\n},).unwrap())"
 ---
 ToBTreeSet {
     styles: {
@@ -25,5 +25,5 @@ ToBTreeSet {
             },
         ),
     },
-    code: "import \"@devup-ui/react/devup-ui.css\";\nconst Card = ({ style, className, ...rest }) => <div {...rest} className={[\"a b\", className].filter(Boolean).join(\" \")} style={style} />;\n",
+    code: "import \"@devup-ui/react/devup-ui.css\";\nimport { forwardRef as __devupForwardRef } from \"react\";\nconst Card = __devupForwardRef((__devupRefProps, __devupRef) => ((__devupStyleProps) => (({ style, className, as: DevupAs = \"div\", forwardedAs, ...rest }) => <DevupAs {...(({ \"theme\": __devupOmit0, ...__devupDom }) => __devupDom)(rest)} as={forwardedAs} className={[\"a b\", className].filter(Boolean).join(\" \")} style={style} />)(__devupStyleProps))({\n\t...__devupRefProps,\n\tref: __devupRef\n}));\n",
 }

@@ -1,6 +1,6 @@
 ---
 source: libs/extractor/src/lib.rs
-expression: "ToBTreeSet::from(extract(\"test.tsx\",\nr#\"import {styled} from '@devup-ui/core'\n        const StyledDiv = styled.div({ bg: obj.bg, padding: func(), color: obj.color() })\n        \"#,\nExtractOption\n{\n    package: \"@devup-ui/core\".to_string(), css_dir:\n    \"@devup-ui/core\".to_string(), single_css: false, import_main_css: false\n}).unwrap())"
+expression: "ToBTreeSet::from(extract(\"test.tsx\",\nr\"import {styled} from '@devup-ui/core'\n        const StyledDiv = styled.div({ bg: obj.bg, padding: func(), color: obj.color() })\n        \",\nExtractOption\n{\n    package: \"@devup-ui/core\".to_string(), css_dir:\n    \"@devup-ui/core\".to_string(), single_css: false, import_main_css: false,\n    import_aliases: HashMap::new()\n}).unwrap())"
 ---
 ToBTreeSet {
     styles: {
@@ -8,7 +8,7 @@ ToBTreeSet {
             ExtractDynamicStyle {
                 property: "background",
                 level: 0,
-                identifier: "obj.bg",
+                identifier: "__devupValue0",
                 selector: None,
                 style_order: None,
             },
@@ -17,7 +17,7 @@ ToBTreeSet {
             ExtractDynamicStyle {
                 property: "color",
                 level: 0,
-                identifier: "obj.color()",
+                identifier: "__devupValue2",
                 selector: None,
                 style_order: None,
             },
@@ -26,11 +26,11 @@ ToBTreeSet {
             ExtractDynamicStyle {
                 property: "padding",
                 level: 0,
-                identifier: "func()",
+                identifier: "__devupValue1",
                 selector: None,
                 style_order: None,
             },
         ),
     },
-    code: "import \"@devup-ui/core/devup-ui-0.css\";\nconst StyledDiv = ({ style, className, ...rest }) => <div {...rest} className={[\"a-a a-b a-c\", className].filter(Boolean).join(\" \")} style={{\n\t...{\n\t\t\"--a\": obj.bg,\n\t\t\"--b\": func(),\n\t\t\"--c\": obj.color()\n\t},\n\t...style\n}} />;\n",
+    code: "import \"@devup-ui/core/devup-ui-0.css\";\nimport { forwardRef as __devupForwardRef } from \"react\";\nconst StyledDiv = ((__devupValue0, __devupValue1, __devupValue2) => ((__devupEnvironment0Component) => (__devupEnvironment0Component[\"__devupEnvironment0\"] = (__devupEnvironment0Continue) => __devupEnvironment0Continue(__devupValue0, __devupValue1, __devupValue2), __devupEnvironment0Component))(__devupForwardRef((__devupRefProps, __devupRef) => ((__devupStyleProps) => (({ style, className, as: DevupAs = \"div\", forwardedAs, ...rest }) => <DevupAs {...(({ \"theme\": __devupOmit0, ...__devupDom }) => __devupDom)(rest)} as={forwardedAs} className={[\"a-a a-b a-c\", className].filter(Boolean).join(\" \")} style={{\n\t...{\n\t\t\"--a\": __devupValue0,\n\t\t\"--b\": __devupValue1,\n\t\t\"--c\": __devupValue2\n\t},\n\t...style\n}} />)(__devupStyleProps))({\n\t...__devupRefProps,\n\tref: __devupRef\n}))))(obj.bg, func(), obj.color());\n",
 }

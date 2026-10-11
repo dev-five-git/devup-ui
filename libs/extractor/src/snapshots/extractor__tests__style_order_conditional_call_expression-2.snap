@@ -53,5 +53,5 @@ ToBTreeSet {
             },
         ),
     },
-    code: "import \"@devup-ui/react/devup-ui.css\";\nimport { jsx as e } from \"react/jsx-runtime\";\nfunction c() {\n\treturn e(\"div\", { className: isActive ? isActive ? \"a\" : \"b\" : isActive ? \"c\" : \"d\" });\n}\nexport { c as Lib };\n",
+    code: "import \"@devup-ui/react/devup-ui.css\";\nimport { jsx as e } from \"react/jsx-runtime\";\nfunction c() {\n\treturn e(\"div\", ((__devupValue0, __devupValue1) => ({ className: __devupValue0 ? __devupValue1 ? \"a\" : \"b\" : __devupValue1 ? \"c\" : \"d\" }))(isActive, isActive));\n}\nexport { c as Lib };\n",
 }

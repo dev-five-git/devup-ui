@@ -623,14 +623,20 @@ impl StyleSheet {
                             // `format!` `Arguments` machinery + its grow path: presize once and
                             // `push_str`. Byte-identical to the two `format!` calls it replaces.
                             let important = dy.important();
+                            let fallback = dy.fallback();
                             let mut dynamic_value = String::with_capacity(
                                 "var(".len()
                                     + variable_name.len()
+                                    + fallback.map_or(0, |fallback| 1 + fallback.len())
                                     + 1
                                     + if important { " !important".len() } else { 0 },
                             );
                             dynamic_value.push_str("var(");
                             dynamic_value.push_str(&variable_name);
+                            if let Some(fallback) = fallback {
+                                dynamic_value.push(',');
+                                dynamic_value.push_str(fallback);
+                            }
                             dynamic_value.push(')');
                             if important {
                                 dynamic_value.push_str(" !important");
@@ -3372,6 +3378,20 @@ mod tests {
 
     #[test]
     #[serial]
+    fn test_override_rules_keep_the_written_value_as_their_fallback() {
+        let css = pipeline_css(
+            Theme::default(),
+            "export const a = (rest) => <Box bg={['red', null, '$primary']} color=\"blue !important\" {...rest} />;",
+        );
+
+        assert_eq!(
+            css,
+            ".c0{background:var(--b,red)}.c1{color:var(--a,blue) !important}@media(min-width:768px){.c2{background:var(--b,var(--primary))}}"
+        );
+    }
+
+    #[test]
+    #[serial]
     #[allow(clippy::literal_string_with_formatting_args)]
     fn test_at_rule_pipeline() {
         for (source, expected) in [
@@ -3743,7 +3763,7 @@ mod tests {
         let mut sheet = StyleSheet::default();
         let output = extract(
             "test.tsx",
-            "import {Box} from '@devup-ui/core'\n<Box styleOrder={0} bg={color} />",
+            "import {Box} from '@devup-ui/core'\n<Box bg={color} />",
             ExtractOption {
                 package: "@devup-ui/core".to_string(),
                 css_dir: "@devup-ui/core".to_string(),
@@ -3753,10 +3773,15 @@ mod tests {
             },
         )
         .unwrap();
-        assert_eq!(
-            sheet.update_styles(&output.styles, "test.tsx", true),
-            (true, true)
-        );
+        let styles = output
+            .styles
+            .into_iter()
+            .map(|mut style| {
+                style.set_style_order(0);
+                style
+            })
+            .collect();
+        assert_eq!(sheet.update_styles(&styles, "test.tsx", true), (true, true));
     }
 
     #[test]
