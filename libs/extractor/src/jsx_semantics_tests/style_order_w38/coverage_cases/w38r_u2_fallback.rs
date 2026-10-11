@@ -82,3 +82,11 @@ mod w38r_u3_public;
 #[cfg(test)]
 #[path = "w38r_u4_public.rs"]
 mod w38r_u4_public;
+
+#[cfg(test)]
+#[path = "w38r_u5_public.rs"]
+mod w38r_u5_public;
+
+#[cfg(test)]
+#[path = "w38r_u5_imports.rs"]
+mod w38r_u5_imports;
