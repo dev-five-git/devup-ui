@@ -1,5 +1,6 @@
 import { execFileSync } from 'node:child_process'
-import { chmod, unlink, writeFile } from 'node:fs/promises'
+import { chmod, mkdir, readFile, unlink, writeFile } from 'node:fs/promises'
+import { dirname } from 'node:path'
 
 import { createNonphysicalIdStore } from '@devup-ui/plugin-utils'
 import { exportFileMap } from '@devup-ui/wasm'
@@ -108,10 +109,33 @@ it('propagates genuine numbering-store IO failure before native extraction', asy
   await fixture.file('app/src/main.js', 'export const value=1;')
   await fixture.file('app/df/numbering', 'not a directory')
   try {
+    const { filePath } = createNonphysicalIdStore({
+      integration: 'Vite',
+      resolvedRoot: fixture.root,
+      contextKey: 'client',
+      distDir: `${fixture.root}/df`,
+    })
+    let expectedCode: string | undefined
+    // Independently follow the store's read and missing-only write boundary.
+    try {
+      try {
+        await readFile(filePath, 'utf-8')
+      } catch (error) {
+        if (!(error instanceof Error) || !('code' in error)) throw error
+        if (error.code !== 'ENOENT') throw error
+        await mkdir(dirname(filePath), { recursive: true })
+      }
+    } catch (error) {
+      if (!(error instanceof Error) || !('code' in error)) throw error
+      if (typeof error.code !== 'string') throw error
+      expectedCode = error.code
+    }
+    if (expectedCode === undefined)
+      throw new TypeError('Expected independent numbering-store IO failure')
     // When ordinary native preparation materializes its scoped store.
     const operation = fixture.run(false)
-    // Then the real native mkdir fault is propagated, not corrupt/missing history.
-    await expect(operation).rejects.toThrow('EEXIST')
+    // Then the native failure message carries the OS errno, not corrupt/missing history.
+    await expect(operation).rejects.toThrow(`${expectedCode}:`)
   } finally {
     await fixture.close()
   }
