@@ -90,3 +90,11 @@ mod w38r_u5_public;
 #[cfg(test)]
 #[path = "w38r_u5_imports.rs"]
 mod w38r_u5_imports;
+
+#[cfg(test)]
+#[path = "w38r_u6_order.rs"]
+mod w38r_u6_order;
+
+#[cfg(test)]
+#[path = "w38r_u6_nested.rs"]
+mod w38r_u6_nested;

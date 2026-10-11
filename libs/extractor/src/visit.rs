@@ -675,11 +675,8 @@ impl<'a> DevupVisitor<'a> {
     /// A side of a condition among composed parts. Its code keeps the bindings
     /// it reads, so the values the file binds them to are read in it.
     fn known_side(&self, expression: &Expression<'a>, text: Text) -> Option<KnownSide<'a>> {
-        if let Some(finite) = self.style_values.finite(expression) {
-            return Some(KnownSide::Styles(vec![KnownStyles::Finite(
-                finite.clone(),
-                expression.clone_in_with_semantic_ids(self.ast.allocator()),
-            )]));
+        if let Some(styles) = self.known_style_side(expression) {
+            return Some(KnownSide::Styles(styles));
         }
         let expression = unwrap_syntax_only(expression);
         let text = if text == Text::Arguments && crate::css_utils::literal::is_rule_text(expression)
@@ -688,9 +685,6 @@ impl<'a> DevupVisitor<'a> {
         } else {
             text
         };
-        if let Some(styles) = self.style_values.styles(expression) {
-            return Some(KnownSide::Styles(vec![KnownStyles::Known(styles.to_vec())]));
-        }
         let code = || expression.clone_in_with_semantic_ids(self.ast.allocator());
         match expression {
             Expression::StringLiteral(literal)
@@ -725,6 +719,24 @@ impl<'a> DevupVisitor<'a> {
             }
             _ => None,
         }
+    }
+
+    /// The styles a side stands for when the build knows them: the finite
+    /// results of a binding while it has them, the styles behind it otherwise
+    fn known_style_side(&self, expression: &Expression<'a>) -> Option<Vec<KnownStyles<'a>>> {
+        self.style_values
+            .finite(expression)
+            .map(|finite| {
+                vec![KnownStyles::Finite(
+                    finite.clone(),
+                    expression.clone_in_with_semantic_ids(self.ast.allocator()),
+                )]
+            })
+            .or_else(|| {
+                self.style_values
+                    .styles(unwrap_syntax_only(expression))
+                    .map(|styles| vec![KnownStyles::Known(styles.to_vec())])
+            })
     }
 
     /// The parts `expression` composes as one side of a condition: only

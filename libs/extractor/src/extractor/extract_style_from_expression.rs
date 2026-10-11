@@ -267,17 +267,6 @@ pub(crate) fn extract_rule_styles<'a>(
         crate::css_utils::literal::lower(ast_builder, expression);
     }
 
-    if matches!(name, Some("__devupLiteralUnplaced" | "__devupLiteralMixin")) {
-        return ExtractResult {
-            styles: vec![ExtractStyleProp::Diagnostic {
-                offset: expression.span().start,
-                message: crate::utils::unplaced_error(expression),
-                disposition: crate::ErrorDisposition::NeedsEvaluation,
-            }],
-            ..ExtractResult::default()
-        };
-    }
-
     if name.is_some_and(crate::style_order::reserved) {
         return ExtractResult {
             styles: vec![ExtractStyleProp::Diagnostic {

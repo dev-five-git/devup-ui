@@ -178,14 +178,11 @@ impl<'a> DevupVisitor<'a> {
 }
 
 fn order_property(property: &ObjectPropertyKind<'_>) -> bool {
-    match property {
-        ObjectPropertyKind::ObjectProperty(property) => property
-            .key
-            .static_name()
-            .or_else(|| crate::utils::get_str_by_property_key(&property.key))
-            .is_some_and(|name| crate::style_order::reserved(&name)),
-        ObjectPropertyKind::SpreadProperty(_) => false,
-    }
+    matches!(property, ObjectPropertyKind::ObjectProperty(property) if property
+        .key
+        .static_name()
+        .or_else(|| crate::utils::get_str_by_property_key(&property.key))
+        .is_some_and(|name| crate::style_order::reserved(&name)))
 }
 
 fn literal_callback(property: &oxc_ast::ast::ObjectProperty<'_>) -> bool {

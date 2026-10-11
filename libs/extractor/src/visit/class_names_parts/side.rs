@@ -11,11 +11,8 @@ impl<'a, S: LocalSource<'a>> LocalParts<'_, '_, 'a, S> {
         text: Text,
     ) -> Option<LocalKnownSide<'a, S::Class>> {
         let visitor = self.visitor;
-        if let Some(finite) = visitor.style_values.finite(expression) {
-            return Some(LocalKnownSide::Styles(vec![KnownStyles::Finite(
-                finite.clone(),
-                expression.clone_in_with_semantic_ids(visitor.ast.allocator()),
-            )]));
+        if let Some(styles) = visitor.known_style_side(expression) {
+            return Some(LocalKnownSide::Styles(styles));
         }
         let expression = unwrap_syntax_only(expression);
         let text = if text == Text::Arguments && crate::css_utils::literal::is_rule_text(expression)
@@ -24,11 +21,6 @@ impl<'a, S: LocalSource<'a>> LocalParts<'_, '_, 'a, S> {
         } else {
             text
         };
-        if let Some(styles) = visitor.style_values.styles(expression) {
-            return Some(LocalKnownSide::Styles(vec![KnownStyles::Known(
-                styles.to_vec(),
-            )]));
-        }
         match expression {
             Expression::StringLiteral(literal)
                 if text == Text::Rules && literal.value.trim().is_empty() =>

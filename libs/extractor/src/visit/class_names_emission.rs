@@ -62,24 +62,33 @@ impl<'a> DevupVisitor<'a> {
             }
         };
         match prepared {
-            PreparedClassNames::Uncaptured { parts } => match parts {
-                Some(parts) => self.composed_class_local(span, parts, &UncapturedSource).0,
-                None => self.unsupported_class_names(value, span.start),
-            },
+            PreparedClassNames::Uncaptured { parts } => {
+                self.local_body(value, span, parts, &UncapturedSource)
+            }
             PreparedClassNames::Captured { captures, parts } => {
                 let source: CapturedSource<'_, 'a> = &captures;
-                let body = match parts {
-                    Some(parts) => self.composed_class_local(span, parts, &source).0,
-                    None => {
-                        self.unsupported_class_names::<CapturedClassBody<'a>>(value, span.start)
-                    }
-                };
+                let body = self.local_body(value, span, parts, &source);
                 FinishedClass::Call(crate::utils::call_with_values_box(
                     &self.ast,
                     captures.into_values(),
                     body.clone_expression(self.ast.allocator()),
                 ))
             }
+        }
+    }
+
+    /// The class the collected `parts` compose, or the located error when the
+    /// call holds something this path does not read
+    fn local_body<S: LocalSource<'a>>(
+        &mut self,
+        value: &Expression<'a>,
+        span: oxc_span::Span,
+        parts: Option<Vec<LocalKnownPart<'a, S::Class>>>,
+        source: &S,
+    ) -> S::Class {
+        match parts {
+            Some(parts) => self.composed_class_local(span, parts, source).0,
+            None => self.unsupported_class_names(value, span.start),
         }
     }
 

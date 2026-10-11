@@ -40,7 +40,7 @@ impl FiniteStyles {
         let rows = outcomes::styles(props)?;
         let mut results: Vec<(String, Vec<ExtractStyleValue>)> = Vec::new();
         for row in rows {
-            let text = outcomes::text(result, &row.choices)?;
+            let text = outcomes::text(result, &row)?;
             let mut composition = crate::composition::Composition::default();
             composition.apply(
                 ast,
