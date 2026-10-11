@@ -15,6 +15,7 @@ use crate::css_prop::{
 };
 use crate::utils::{
     get_str_by_property_key, is_vanilla_extract_file, js_number_literal, keeps_bare_number,
+    unwrap_syntax_only,
 };
 use oxc_allocator::Allocator;
 use oxc_ast::ast::{
@@ -97,6 +98,9 @@ impl LibraryNumbers {
     }
 
     fn pixelify(&mut self, rules: &Expression) {
+        if let Some(inner) = typed_operand(rules) {
+            return self.pixelify(inner);
+        }
         match rules {
             Expression::ArrayExpression(array) => {
                 for element in &array.elements {
@@ -126,6 +130,9 @@ impl LibraryNumbers {
 
     /// The rules a `css` prop composes: a function of the theme gives them
     fn pixelify_css(&mut self, value: &Expression) {
+        if let Some(inner) = typed_operand(value) {
+            return self.pixelify_css(inner);
+        }
         match value {
             Expression::ArrayExpression(array) => {
                 for element in &array.elements {
@@ -185,6 +192,9 @@ impl LibraryNumbers {
     }
 
     fn pixelify_value(&mut self, key: &str, value: &Expression) {
+        if let Some(inner) = typed_operand(value) {
+            return self.pixelify_value(key, inner);
+        }
         if let Some(number) = js_number_literal(value) {
             if number != 0.0 && !keeps_bare_number(key) {
                 let span = value.span();
@@ -213,6 +223,20 @@ impl LibraryNumbers {
             _ => {}
         }
     }
+}
+
+/// What a TypeScript-only wrapper (`as`, `satisfies`, `!`, `<T>x`, `f<T>`) hides, which
+/// is the operand the number conversion must see.
+fn typed_operand<'a, 'b>(expression: &'b Expression<'a>) -> Option<&'b Expression<'a>> {
+    matches!(
+        expression,
+        Expression::TSAsExpression(_)
+            | Expression::TSSatisfiesExpression(_)
+            | Expression::TSNonNullExpression(_)
+            | Expression::TSTypeAssertion(_)
+            | Expression::TSInstantiationExpression(_)
+    )
+    .then(|| unwrap_syntax_only(expression))
 }
 
 impl<'a> Visit<'a> for LibraryNumbers {
@@ -1346,6 +1370,62 @@ const x = 1;",
         );
         assert_eq!(without_css_prop.css_prop, CssProp::Off);
         assert!(matches!(without_css_prop.code, Cow::Borrowed(_)));
+    }
+
+    #[test]
+    fn test_numbers_become_px_through_type_assertions() {
+        let mut aliases = emotion_alias();
+        aliases.insert(EMOTION_REACT.to_string(), ImportAlias::NamedToNamed);
+        for (filename, code, expected) in [
+            (
+                "test.tsx",
+                "export const a = <div css={{ padding: 8 } as object} />;",
+                "padding: \"8px\"",
+            ),
+            (
+                "test.tsx",
+                "export const a = <div css={{ padding: 8 } satisfies object} />;",
+                "padding: \"8px\"",
+            ),
+            (
+                "test.tsx",
+                "export const a = <div css={{ padding: 8 }!} />;",
+                "padding: \"8px\"",
+            ),
+            (
+                "test.tsx",
+                "export const a = <div css={{ padding: (8 as number) }} />;",
+                "padding: (\"8px\" as number)",
+            ),
+            (
+                "test.tsx",
+                "export const a = <div css={[{ top: 1 } as object, c ? ({ left: 2 }) as object : { right: 3 }]} />;",
+                "left: \"2px\"",
+            ),
+            (
+                "test.tsx",
+                "export const a = <div css={{ padding: 8 as number }} />;",
+                "padding: \"8px\" as number",
+            ),
+            (
+                "test.tsx",
+                "export const a = <div css={((t: object) => ({ top: 1 })) as Rules} />;",
+                "top: \"1px\"",
+            ),
+            (
+                "test.ts",
+                "import { jsx } from '@emotion/react';\nexport const a = jsx('div', { css: <object>{ padding: 8 } });",
+                "padding: \"8px\"",
+            ),
+            (
+                "test.tsx",
+                "import styled from '@emotion/styled';\nstyled.div({ top: 1 } as const);",
+                "top: \"1px\"",
+            ),
+        ] {
+            let aliased = transform_import_aliases(code, filename, "@devup-ui/react", &aliases);
+            assert!(aliased.contains(expected), "{code} -> {aliased}");
+        }
     }
 
     #[test]
