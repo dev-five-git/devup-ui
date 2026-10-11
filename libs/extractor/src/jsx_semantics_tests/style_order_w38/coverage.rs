@@ -252,3 +252,13 @@ mod w38p_saved_oracle;
 #[cfg(test)]
 #[path = "coverage_cases/w38p_saved_source.rs"]
 mod w38p_saved_source;
+
+#[cfg(test)]
+#[path = "coverage_cases/w38q_leaf_cases.rs"]
+mod w38q_leaf_cases;
+#[cfg(test)]
+#[path = "coverage_cases/w38q_leaf_oracle.rs"]
+mod w38q_leaf_oracle;
+#[cfg(test)]
+#[path = "coverage_cases/w38q_leaf_source.rs"]
+mod w38q_leaf_source;

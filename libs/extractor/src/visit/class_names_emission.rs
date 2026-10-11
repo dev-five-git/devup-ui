@@ -179,3 +179,7 @@ fn collect<'a, S: LocalSource<'a>>(
     LocalParts::new(visitor, source).known_parts_local(value, &mut parts, Text::Classes)?;
     Some(parts)
 }
+
+#[cfg(test)]
+#[path = "class_names_emission/w38q_leaf_replay.rs"]
+mod w38q_leaf_replay;
