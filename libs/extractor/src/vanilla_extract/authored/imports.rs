@@ -1,3 +1,7 @@
+#[cfg(test)]
+#[path = "imports_coverage_tests.rs"]
+mod coverage_authored_imports;
+
 use oxc_ast::ast::{ImportDeclarationSpecifier, Program, Statement};
 use oxc_span::{GetSpan, Span};
 use oxc_syntax::symbol::SymbolId;
@@ -27,10 +31,13 @@ pub(super) fn retain(
         }
         let mut named = Vec::new();
         let mut standalone = Vec::new();
-        for specifier in import.specifiers.iter().flatten() {
-            let Some(symbol) = specifier.local().symbol_id.get() else {
-                continue;
-            };
+        for (specifier, symbol) in import.specifiers.iter().flatten().filter_map(|specifier| {
+            specifier
+                .local()
+                .symbol_id
+                .get()
+                .map(|symbol| (specifier, symbol))
+        }) {
             if !index
                 .semantic
                 .scoping()

@@ -1,3 +1,7 @@
+#[cfg(test)]
+#[path = "safety_coverage_tests.rs"]
+mod coverage_authored_safety;
+
 use oxc_span::GetSpan;
 use oxc_syntax::symbol::SymbolId;
 use rustc_hash::FxHashMap;

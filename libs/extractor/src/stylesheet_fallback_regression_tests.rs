@@ -8,6 +8,7 @@ use oxc_syntax::precedence::Precedence;
 
 use crate::{ExtractOption, ExtractOutput, ExtractStyleValue};
 
+mod coverage_authored;
 mod effects;
 mod hygiene;
 mod native_terminal_controls;

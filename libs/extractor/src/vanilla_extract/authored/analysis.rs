@@ -1,6 +1,4 @@
-use oxc_ast::ast::{
-    Declaration, ExportDefaultDeclarationKind, ModuleExportName, Program, Statement,
-};
+use oxc_ast::ast::{Declaration, ExportDefaultDeclarationKind, Program, Statement};
 use oxc_semantic::Semantic;
 use oxc_span::{GetSpan, Span};
 use oxc_syntax::symbol::SymbolId;
@@ -50,13 +48,16 @@ impl<'s, 'a> Index<'s, 'a> {
                         if specifier.export_kind.is_type() {
                             continue;
                         }
-                        let target = match &specifier.local {
-                            ModuleExportName::IdentifierReference(identifier) => identifier
-                                .reference_id
-                                .get()
-                                .and_then(|id| semantic.scoping().get_reference(id).symbol_id()),
-                            _ => None,
-                        };
+                        let target = specifier
+                            .local
+                            .identifier_name()
+                            .filter(|_| {
+                                matches!(
+                                    &specifier.local,
+                                    oxc_ast::ast::ModuleExportName::IdentifierReference(_)
+                                )
+                            })
+                            .and_then(|name| semantic.scoping().get_root_binding(name));
                         index.exports.insert(
                             specifier.exported.name().to_string(),
                             Export {
