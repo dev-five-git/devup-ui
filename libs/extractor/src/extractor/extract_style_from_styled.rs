@@ -1267,7 +1267,10 @@ fn create_styled_component<'a>(
                 vec![
                     JSXAttributeItem::new_spread_attribute(
                         SPAN,
-                        without_props(ast_builder, withheld),
+                        super::styled_transient::filter(
+                            ast_builder,
+                            without_props(ast_builder, withheld),
+                        ),
                         ast_builder,
                     ),
                     JSXAttributeItem::new_attribute(
