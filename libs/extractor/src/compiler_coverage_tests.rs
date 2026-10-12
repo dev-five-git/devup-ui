@@ -227,41 +227,43 @@ fn collection_retains_real_parser_operands_when_duplicates_collapse() {
 #[test]
 #[serial]
 fn operand_diagnostics_keep_location_when_real_parser_operands_are_transport_errors() {
-    // Given: static, dynamic, keyframe and raw-CSS operands from the real visitor.
-    reset();
-    let before = maps();
-    let _observer = ObserveScope::enter(|retry| {
-        assert!(!retry);
-        let operands = operands();
-        assert_eq!(operands.len(), 6);
-        assert_eq!(receipts::collect(Ok(operands.len()), None), Some(6));
-        // When: the projection protocol transports a failure for each actual operand.
-        for operand in operands {
-            if matches!(
-                operand,
-                Value::Css(_) | Value::Import(_) | Value::FontFace(_)
-            ) {
-                let before = maps();
-                let class = crate::gen_class_name::class_name(&operand, Some("coverage.tsx"));
-                assert_eq!(class, None);
-                assert_eq!(maps(), before);
+    css::admission::with_admission(|| {
+        // Given: static, dynamic, keyframe and raw-CSS operands from the real visitor.
+        reset();
+        let before = maps();
+        let _observer = ObserveScope::enter(|retry| {
+            assert!(!retry);
+            let operands = operands();
+            assert_eq!(operands.len(), 6);
+            assert_eq!(receipts::collect(Ok(operands.len()), None), Some(6));
+            // When: the projection protocol transports a failure for each actual operand.
+            for operand in operands {
+                if matches!(
+                    operand,
+                    Value::Css(_) | Value::Import(_) | Value::FontFace(_)
+                ) {
+                    let before = maps();
+                    let class = crate::gen_class_name::class_name(&operand, Some("coverage.tsx"));
+                    assert_eq!(class, None);
+                    assert_eq!(maps(), before);
+                }
+                assert_eq!(receipts::collect_operand(Ok(17), &operand), Some(17));
+                let rejected = Err::<(), _>(projection::ProjectionError::Context);
+                assert_eq!(receipts::collect_operand(rejected, &operand), None);
             }
-            assert_eq!(receipts::collect_operand(Ok(17), &operand), Some(17));
-            let rejected = Err::<(), _>(projection::ProjectionError::Context);
-            assert_eq!(receipts::collect_operand(rejected, &operand), None);
-        }
+        });
+        let error = failed(input(
+            "coverage.tsx",
+            "import {Box,keyframes,globalCss} from '@devup-ui/react'; const a=<Box color='red' bg={value}/>; const k=keyframes({from:{opacity:0}}); globalCss`body{margin:0;}`; globalCss({imports:['a.css'],fontFaces:[{fontFamily:'X',src:'x.woff'}]});",
+        ));
+        // Then: three source-located operands and truthful demand transport survive erasure.
+        let message = error.to_string();
+        assert_eq!(message.lines().count(), 6);
+        assert_eq!(message.matches("coverage.tsx:").count(), 6, "{message}");
+        let distinct: std::collections::BTreeSet<_> = message.lines().collect();
+        assert_eq!(distinct.len(), 4, "{message}");
+        assert_eq!(maps(), before);
     });
-    let error = failed(input(
-        "coverage.tsx",
-        "import {Box,keyframes,globalCss} from '@devup-ui/react'; const a=<Box color='red' bg={value}/>; const k=keyframes({from:{opacity:0}}); globalCss`body{margin:0;}`; globalCss({imports:['a.css'],fontFaces:[{fontFamily:'X',src:'x.woff'}]});",
-    ));
-    // Then: three source-located operands and truthful demand transport survive erasure.
-    let message = error.to_string();
-    assert_eq!(message.lines().count(), 6);
-    assert_eq!(message.matches("coverage.tsx:").count(), 6, "{message}");
-    let distinct: std::collections::BTreeSet<_> = message.lines().collect();
-    assert_eq!(distinct.len(), 4, "{message}");
-    assert_eq!(maps(), before);
 }
 
 #[test]
