@@ -188,7 +188,7 @@ impl<'a> DevupVisitor<'a> {
         props: &mut Expression<'a>,
     ) -> Vec<Captured<'a>> {
         let mut values = order.values;
-        if let Expression::ObjectExpression(object) = props {
+        if let Expression::ObjectExpression(object) = unwrap_syntax_only_mut(props) {
             for property in &mut object.properties {
                 if let ObjectPropertyKind::SpreadProperty(spread) = property
                     && let Some(index) = order.spreads.get(&spread.span.start)

@@ -3282,14 +3282,17 @@ impl<'a> VisitMut<'a> for DevupVisitor<'a> {
             {
                 // Pre-scan: detect conditional styleOrder before extract_style_from_expression
                 // consumes the property (which only handles static values)
-                let parsed_style_order =
-                    self.prescan_style_order(&kind.to_string(), it.arguments[1].to_expression());
-                let mut overridden = match it.arguments[1].to_expression_mut() {
-                    Expression::ObjectExpression(object) => {
-                        spread_slots::take_overridden(&self.ast, object, 0)
-                    }
-                    _ => Vec::new(),
-                };
+                let parsed_style_order = self.prescan_style_order(
+                    &kind.to_string(),
+                    unwrap_syntax_only(it.arguments[1].to_expression()),
+                );
+                let mut overridden =
+                    match unwrap_syntax_only_mut(it.arguments[1].to_expression_mut()) {
+                        Expression::ObjectExpression(object) => {
+                            spread_slots::take_overridden(&self.ast, object, 0)
+                        }
+                        _ => Vec::new(),
+                    };
 
                 let mut tag = Expression::new_string_literal(
                     SPAN,
@@ -3352,7 +3355,8 @@ impl<'a> VisitMut<'a> for DevupVisitor<'a> {
                     self.finish_call_props(order, it.arguments[1].to_expression_mut())
                 });
                 if !overridden.is_empty()
-                    && let Expression::ObjectExpression(object) = it.arguments[1].to_expression()
+                    && let Expression::ObjectExpression(object) =
+                        unwrap_syntax_only(it.arguments[1].to_expression())
                 {
                     let bound = self.bind_object_overridden(
                         &kind.to_string(),
@@ -3374,7 +3378,9 @@ impl<'a> VisitMut<'a> for DevupVisitor<'a> {
                         .map(|s| s.clone_in(self.ast.allocator()))
                         .collect();
 
-                    if let Expression::ObjectExpression(obj) = it.arguments[1].to_expression_mut() {
+                    if let Expression::ObjectExpression(obj) =
+                        unwrap_syntax_only_mut(it.arguments[1].to_expression_mut())
+                    {
                         let tailwind_styles = modify_prop_object(
                             &self.ast,
                             &mut obj.properties,
@@ -3422,7 +3428,9 @@ impl<'a> VisitMut<'a> for DevupVisitor<'a> {
                         }));
                     });
 
-                    if let Expression::ObjectExpression(obj) = it.arguments[1].to_expression_mut() {
+                    if let Expression::ObjectExpression(obj) =
+                        unwrap_syntax_only_mut(it.arguments[1].to_expression_mut())
+                    {
                         let tailwind_styles = modify_prop_object(
                             &self.ast,
                             &mut obj.properties,

@@ -1,0 +1,7 @@
+{
+  "changes": {
+    "bindings/devup-ui-wasm/package.json": "Patch"
+  },
+  "note": "Preserve extracted classes, CSS variables, evaluation order and JSX spread precedence in jsx, jsxs and jsxDEV calls with syntax-wrapped props objects. Existing JSX spread diagnostics now also apply to wrapped call props.",
+  "date": "2026-10-12T00:00:00.000Z"
+}
