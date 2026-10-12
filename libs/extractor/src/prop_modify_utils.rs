@@ -1,6 +1,4 @@
-use crate::extract_style::ExtractStyleProperty;
 use crate::extract_style::extract_css::ExtractCss;
-use crate::extract_style::style_property::StyleProperty;
 use crate::gen_class_name::gen_class_names;
 use crate::gen_style::gen_styles;
 use crate::tailwind::{PROPERTY_RULES, PROPERTY_RULES_FILE, parse_class};
@@ -450,10 +448,10 @@ impl TailwindClassName<'_> {
                     if let Some(order) = self.style_order {
                         style.style_order = Some(order);
                     }
-                    let (StyleProperty::ClassName(name)
-                    | StyleProperty::Variable {
-                        class_name: name, ..
-                    }) = style.extract(self.filename);
+                    let name = crate::extract_style::compiler_projection::static_name(
+                        &style,
+                        self.filename,
+                    )?;
                     compiled.push_str(separator);
                     compiled.push_str(&name);
                     separator = " ";

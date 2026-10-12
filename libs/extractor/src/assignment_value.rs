@@ -17,6 +17,30 @@ mod assignment_class_reference;
 #[path = "assignment_presence.rs"]
 mod assignment_presence;
 
+#[derive(Clone, Debug)]
+pub struct RewriteEdge {
+    pub before: crate::extract_style::ExtractDynamicStyle,
+    pub after: crate::extract_style::ExtractDynamicStyle,
+    pub invocation: crate::extract_style::compiler_associations::InvocationId,
+    pub scope: Option<crate::extract_style::compiler_associations::ScopeId>,
+}
+pub(crate) fn rewrite(style: &mut crate::extract_style::ExtractDynamicStyle, consumer: &str) {
+    let before = style.clone();
+    style.replace_identifier(consumer);
+    crate::extract_style::compiler_receipts::JOURNAL.with_borrow_mut(|journal| {
+        if let Some(journal) = journal
+            && let Some(invocation) = journal.graph.invocation
+        {
+            journal.graph.rewrites.push(RewriteEdge {
+                before,
+                after: style.clone(),
+                invocation,
+                scope: journal.graph.scope,
+            });
+        }
+    });
+}
+
 impl<'a> Lowering<'_, 'a> {
     pub(super) fn array(
         &self,
@@ -103,6 +127,7 @@ impl<'a> Lowering<'_, 'a> {
         let (input, suffix) =
             normalization.unwrap_or_else(|| (source.clone_in(ast.allocator()), String::new()));
         let responsive = selected_array(source);
+        let _scope = crate::extract_style::compiler_projection::ConsumerScope::enter(self.filename);
         let mut class_props = styles
             .iter()
             .map(|style| style.clone_in(ast.allocator()))
@@ -110,7 +135,7 @@ impl<'a> Lowering<'_, 'a> {
         assignment_presence::rewrite(&mut class_props, &values, responsive);
         for value in &mut values {
             if let ExtractStyleValue::Dynamic(style) = value {
-                style.replace_identifier(&assignment_presence::reference(style, responsive));
+                rewrite(style, &assignment_presence::reference(style, responsive));
             }
         }
         let mut props: Vec<_> = values.into_iter().map(ExtractStyleProp::Static).collect();

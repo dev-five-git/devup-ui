@@ -1,3 +1,35 @@
+#[doc(hidden)]
+pub mod compiler_associations {
+    include!(concat!(
+        env!("CARGO_MANIFEST_DIR"),
+        "/src/compiler_associations.rs"
+    ));
+}
+pub(crate) mod compiler_diagnostics {
+    include!(concat!(
+        env!("CARGO_MANIFEST_DIR"),
+        "/src/compiler_diagnostics.rs"
+    ));
+}
+pub(crate) mod compiler_projection {
+    include!(concat!(
+        env!("CARGO_MANIFEST_DIR"),
+        "/src/compiler_projection.rs"
+    ));
+}
+#[doc(hidden)]
+pub mod compiler_receipts {
+    include!(concat!(
+        env!("CARGO_MANIFEST_DIR"),
+        "/src/compiler_receipts.rs"
+    ));
+}
+pub(crate) mod compiler_request {
+    include!(concat!(
+        env!("CARGO_MANIFEST_DIR"),
+        "/src/compiler_request.rs"
+    ));
+}
 pub(super) mod constant;
 pub(super) mod extract_css;
 pub(super) mod extract_dynamic_style;

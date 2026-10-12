@@ -61,6 +61,6 @@ fn rewrite_value(value: &mut ExtractStyleValue, values: &[ExtractStyleValue], re
             .iter()
             .any(|value| matches!(value, ExtractStyleValue::Dynamic(original) if original == style))
     {
-        style.replace_identifier(&reference(style, responsive));
+        crate::assignment_value::rewrite(style, &reference(style, responsive));
     }
 }

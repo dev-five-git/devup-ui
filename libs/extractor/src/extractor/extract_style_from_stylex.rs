@@ -373,11 +373,14 @@ fn extract_stylex_dynamic_namespace<'a>(
             let param_name = &param_names[param_idx];
             let style = ExtractDynamicStyle::new(&css_property, 0, param_name, None)
                 .at(prop.value.span().start);
-            css_vars.push((
-                param_idx,
-                style.variable_name(),
-                dynamic_number_suffix(&css_property),
-            ));
+            let Some(variable) = crate::extract_style::compiler_projection::variable_for(
+                &style,
+                prop.value.span().start,
+                param_name,
+            ) else {
+                continue;
+            };
+            css_vars.push((param_idx, variable, dynamic_number_suffix(&css_property)));
             styles.push(ExtractStyleProp::Static(ExtractStyleValue::Dynamic(style)));
             continue;
         }

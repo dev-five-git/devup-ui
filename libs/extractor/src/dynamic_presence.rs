@@ -6,25 +6,16 @@ use oxc_ast::{
 use oxc_span::SPAN;
 use oxc_syntax::number::NumberBase;
 
-use crate::{
-    ExtractStyleValue,
-    extract_style::{extract_dynamic_style::ExtractDynamicStyle, style_property::StyleProperty},
-};
+use crate::{ExtractStyleValue, extract_style::extract_dynamic_style::ExtractDynamicStyle};
 
 pub(super) fn class<'a>(
     ast: &AstBuilder<'a>,
     style: &ExtractStyleValue,
-    filename: Option<&str>,
-) -> Option<Expression<'a>> {
-    let name = match style.extract(filename)? {
-        StyleProperty::ClassName(name)
-        | StyleProperty::Variable {
-            class_name: name, ..
-        } => name,
-    };
+    name: &str,
+) -> Expression<'a> {
     let class =
-        Expression::new_string_literal(SPAN, Str::from_in(&name, ast.allocator()), None, ast);
-    Some(match style {
+        Expression::new_string_literal(SPAN, Str::from_in(name, ast.allocator()), None, ast);
+    match style {
         ExtractStyleValue::Dynamic(style) => {
             if style.presence() {
                 Expression::new_conditional_expression(
@@ -44,7 +35,7 @@ pub(super) fn class<'a>(
         | ExtractStyleValue::Import(_)
         | ExtractStyleValue::FontFace(_)
         | ExtractStyleValue::Keyframes(_) => class,
-    })
+    }
 }
 
 fn present<'a>(ast: &AstBuilder<'a>, style: &ExtractDynamicStyle) -> Expression<'a> {
