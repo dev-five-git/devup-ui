@@ -36,6 +36,8 @@ mod style_values;
 mod styled_reads;
 mod stylesheet_compile;
 #[cfg(test)]
+mod stylesheet_css_macro_tests;
+#[cfg(test)]
 mod stylesheet_fallback_regression_tests;
 mod stylesheet_policy;
 #[cfg(test)]
@@ -526,6 +528,8 @@ fn extract_source(
     // Step 3: Handle vanilla-extract style files (.css.ts, .css.js)
     // `processed_code` is Some only when vanilla-extract generation succeeded;
     // otherwise the untouched `transformed_code` is parsed directly (no copy).
+    let mut rendering_scaffolding = Vec::new();
+    let mut authored_provenance = None;
     let processed_code: Option<String> = if native.is_none()
         && readback.is_none()
         && (utils::is_vanilla_extract_file(filename)
@@ -551,6 +555,7 @@ fn extract_source(
         ) {
             Ok((collected, imports, mut authored)) => {
                 compiled_styles = std::mem::take(&mut authored.styles);
+                rendering_scaffolding = std::mem::take(&mut authored.scaffolding);
                 artifacts.merge(imports.artifacts)?;
                 dependencies = imports.dependencies;
                 producer_atoms = imports.atoms;
@@ -598,9 +603,22 @@ fn extract_source(
                     .map_err(|message| {
                         located_errors(filename, source, &layers, vec![(0, message)])
                     })?;
+                    authored_provenance = authored
+                        .provenance
+                        .map(|provenance| (provenance, lowered.code.len() + 1));
                     format!("{}\n{}", lowered.code, authored.code)
                 };
                 Some({
+                    if let Some((_, start)) = &mut authored_provenance {
+                        *start += imports
+                            .kept_imports
+                            .iter()
+                            .map(|specifier| {
+                                format!("import {};\n", vanilla_extract::json_string(specifier))
+                                    .len()
+                            })
+                            .sum::<usize>();
+                    }
                     imports
                         .kept_imports
                         .iter()
@@ -832,10 +850,13 @@ fn extract_source(
         &reference_bindings,
         &mut producer_references,
     );
+    stylesheet_compile::emit_scaffolding(&mut program, &rendering_scaffolding, &allocator);
     let result = Codegen::new().with_options(codegen_options).build(&program);
     // A stylesheet's output is generated, so its map stays on that code
     let map = result.map.map(|map| {
-        if processed_code.is_some() || edits.iter().all(|edits| edits.is_empty()) {
+        if let Some((provenance, start)) = authored_provenance {
+            provenance.remap(map, (code_to_parse, source, start))
+        } else if processed_code.is_some() || edits.iter().all(|edits| edits.is_empty()) {
             map
         } else {
             source_map::remap(map, code_to_parse, source, &edits)

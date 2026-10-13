@@ -2536,7 +2536,8 @@ impl<'a> VisitMut<'a> for DevupVisitor<'a> {
                             .symbol(base)
                             .is_some_and(|symbol| self.devup_styled.contains(&symbol))
                 });
-                let start = it.span().start;
+                let site = it.span();
+                let start = site.start;
                 let marker = self
                     .pending_marker
                     .take_if(|(at, _)| *at == start)
@@ -2567,7 +2568,7 @@ impl<'a> VisitMut<'a> for DevupVisitor<'a> {
                 );
                 *it = if definition.is_some() {
                     self.forwards_refs = true;
-                    forward_ref(&self.ast, expression)
+                    forward_ref(&self.ast, expression, site)
                 } else {
                     expression
                 };
@@ -2597,9 +2598,10 @@ impl<'a> VisitMut<'a> for DevupVisitor<'a> {
                 self.split_filename.as_deref(),
             )
         {
-            let start = call.span.start;
+            let site = call.span;
+            let start = site.start;
             self.forwards_refs = true;
-            *it = forward_ref(&self.ast, component);
+            *it = forward_ref(&self.ast, component, site);
             self.pending_styled = Some((start, definition, false));
         }
 

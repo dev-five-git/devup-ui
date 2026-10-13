@@ -1153,7 +1153,11 @@ pub const FORWARD_REF: &str = "__devupForwardRef";
 /// `__devupForwardRef((p, ref) => component({ ...p, ref }))`: React 18 gives a
 /// function component no `ref` prop, so the component takes it as one and
 /// passes it to what it renders with the rest of its props
-pub fn forward_ref<'a>(ast_builder: &AstBuilder<'a>, component: Expression<'a>) -> Expression<'a> {
+pub fn forward_ref<'a>(
+    ast_builder: &AstBuilder<'a>,
+    component: Expression<'a>,
+    site: oxc_span::Span,
+) -> Expression<'a> {
     let parameter = |name: &'static str| {
         FormalParameter::new(
             SPAN,
@@ -1199,7 +1203,7 @@ pub fn forward_ref<'a>(ast_builder: &AstBuilder<'a>, component: Expression<'a>) 
     );
     wrap_direct_call(
         ast_builder,
-        &identifier(ast_builder, FORWARD_REF),
+        &Expression::new_identifier(site, FORWARD_REF, ast_builder),
         &[render],
     )
 }

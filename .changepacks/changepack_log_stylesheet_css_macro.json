@@ -1,0 +1,7 @@
+{
+  "changes": {
+    "bindings/devup-ui-wasm/package.json": "Patch"
+  },
+  "note": "Compile own Devup style macros before fallback stylesheet evaluation using their exact extracted values instead of a missing sandbox API. Preserve native facade units and authored error locations; stylesheet reads requiring compiler-generated rendering fail with located rendering-scaffold diagnostics rather than synthetic component values.",
+  "date": "2026-10-13T00:00:00.000Z"
+}

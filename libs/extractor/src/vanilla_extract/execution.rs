@@ -3,9 +3,12 @@
 use super::{
     CollectedStyles, Collector, Context, Evaluating, IMPORTED_RUNS, ModuleLoader, NameScope, Path,
     Rc, RefCell, SCRIPT_PATH, Script, Source, StyleCollector, Stylesheet, StylesheetImports, Unit,
-    capture, get_file_num_by_filename, module_script, register_vanilla_extract_apis, sandbox_error,
+    capture, get_file_num_by_filename, module_script, register_vanilla_extract_apis,
     top_level_bindings,
 };
+
+mod compiled;
+mod diagnostics;
 
 pub(super) enum Input<'a> {
     Stylesheet(Stylesheet<'a>, bool),
@@ -76,12 +79,8 @@ pub(super) fn run(input: Input<'_>, mut loader: ModuleLoader<'_>) -> Result<Exec
             crate::stylesheet_compile::Compiled::default()
         }
     };
-    if let Some(code) = compiled.code.as_deref() {
-        let layers: Vec<_> = std::iter::once(compiled.edits.as_slice())
-            .chain(edits.iter().copied())
-            .collect();
-        let unit = Unit::written(filename, code, source, &layers)?;
-        entry = module_script(&unit, &mut loader, true)?;
+    if let Some(replacement) = compiled::entry(stylesheet, &compiled, &mut loader)? {
+        entry = replacement;
     }
     let run = loader.script(&entry);
     let mut imports = StylesheetImports {
@@ -91,6 +90,12 @@ pub(super) fn run(input: Input<'_>, mut loader: ModuleLoader<'_>) -> Result<Exec
         atoms: loader.imported_atoms.clone(),
         references: loader.imported_references.clone(),
     };
+    let (bucket, global, _) = crate::resolve_css_target(filename, loader.option());
+    compiled::seed(
+        &compiled,
+        &mut imports,
+        if global { None } else { Some(bucket.as_str()) },
+    );
     let imported =
         crate::module_loader::evaluating_import() && matches!(&input, Input::Stylesheet(_, _));
     if imported
@@ -122,6 +127,10 @@ pub(super) fn run(input: Input<'_>, mut loader: ModuleLoader<'_>) -> Result<Exec
     let mut context = Context::default();
     let sandbox = crate::evaluation_sandbox::Sandbox::new(&mut context)
         .map_err(|error| run.explain(&error.to_string(), filename))?;
+    if let Some(evaluation) = &compiled.evaluation {
+        crate::evaluation_sandbox::defer_rendering(&mut context, evaluation)
+            .map_err(|error| run.explain(&error.to_string(), filename))?;
+    }
     loader
         .prepare_css(&mut context)
         .map_err(|error| run.explain(&error.to_string(), filename))?;
@@ -152,30 +161,19 @@ pub(super) fn run(input: Input<'_>, mut loader: ModuleLoader<'_>) -> Result<Exec
         register_vanilla_extract_apis(&mut context, &collector)
             .map_err(|error| Script::default().explain(&error, filename))?;
     }
-    let explain = |failure: crate::evaluation_sandbox::Failure, context: &Context| {
-        let required = loader
-            .has_demands()
-            .then(|| {
-                crate::ordinary_ve::execution::diagnostics::required(&failure, &run, &operations)
-            })
-            .flatten();
-        let message = sandbox_error(
-            failure,
-            &run,
-            |error| operations.explain(&instrumented.explain(error), context),
-            filename,
-        );
-        match required {
-            Some(required) => format!("{message}\n{required}"),
-            None => message,
-        }
+    let diagnostics = diagnostics::Diagnostics {
+        run: &run,
+        operations: &operations,
+        instrumented: &instrumented,
+        filename,
+        required: loader.has_demands(),
     };
     sandbox
         .run_source(
             &mut context,
             Source::from_bytes(instrumented.code.as_bytes()).with_path(Path::new(SCRIPT_PATH)),
         )
-        .map_err(|failure| explain(failure, &context))?;
+        .map_err(|failure| diagnostics.explain(failure, &context))?;
     if loader.has_demands() {
         super::demand_runtime::validate(&context)?;
     }
@@ -184,19 +182,26 @@ pub(super) fn run(input: Input<'_>, mut loader: ModuleLoader<'_>) -> Result<Exec
     let named = match &input {
         Input::Stylesheet(_, _) => {
             let reserved = super::naming::reserved(stylesheet);
-            top_level_bindings(code, &entry, &mut context)
-                .and_then(|bindings| {
-                    NameScope {
-                        file_num,
-                        reserved: &reserved,
-                    }
-                    .name_entries(&mut collected, &bindings, &mut context)
-                })
-                .map(|values| {
-                    exports = values;
-                    capture::Finished::default()
-                })
-                .map_err(capture::FinalizeError::Js)
+            top_level_bindings(
+                compiled
+                    .evaluation
+                    .as_ref()
+                    .map_or(code, |evaluation| evaluation.code.as_str()),
+                &entry,
+                &mut context,
+            )
+            .and_then(|bindings| {
+                NameScope {
+                    file_num,
+                    reserved: &reserved,
+                }
+                .name_entries(&mut collected, &bindings, &mut context)
+            })
+            .map(|values| {
+                exports = values;
+                capture::Finished::default()
+            })
+            .map_err(capture::FinalizeError::Js)
         }
         Input::Selected(selected) => capture::finish((selected, &[]), &mut collected, &mut context),
         Input::Readback(selected, reads) => {
@@ -215,7 +220,7 @@ pub(super) fn run(input: Input<'_>, mut loader: ModuleLoader<'_>) -> Result<Exec
                 .into_iter()
                 .collect::<Vec<_>>(),
         )
-        .map_err(|failure| explain(failure, &context))?;
+        .map_err(|failure| diagnostics.explain(failure, &context))?;
     let finished = named.map_err(|error| match error {
         capture::FinalizeError::Located(message) => message,
         capture::FinalizeError::Js(error) => run.explain(
@@ -223,6 +228,7 @@ pub(super) fn run(input: Input<'_>, mut loader: ModuleLoader<'_>) -> Result<Exec
             filename,
         ),
     })?;
+    compiled::exports(&compiled, &mut exports);
     if loader.has_demands() {
         super::demand_runtime::finish(&mut context, &mut imports)?;
     }

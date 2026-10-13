@@ -7,7 +7,7 @@ use oxc_sourcemap::SourceMap;
 use oxc_span::{GetSpan, SourceType};
 
 use super::{Unit, Written};
-use crate::source_map::{Trace, marks};
+use crate::source_map::{Lines, Trace, marks};
 use crate::vanilla_extract::{Stylesheet, strip_typescript_marked};
 
 fn initializers(code: &str) -> Vec<(String, usize, usize)> {
@@ -74,10 +74,47 @@ impl Unit {
             })
             .collect();
         let trace = Trace::new(&marks(&map, code, parsed), &[]);
+        let (output_lines, original_lines) = (Lines::new(code), Lines::new(source));
+        let original_tokens: Vec<_> = map
+            .get_tokens()
+            .filter(|token| token.get_source_id() == Some(1))
+            .map(|token| {
+                (
+                    output_lines.offset(token.get_dst_line(), token.get_dst_col()),
+                    original_lines.offset(token.get_src_line(), token.get_src_col()),
+                )
+            })
+            .collect();
+        let original_trace = Trace::new(&original_tokens, &[]);
+        let map_tokens: Vec<_> = map.get_tokens().collect();
+        let authored_ranges: Vec<_> = map_tokens
+            .iter()
+            .enumerate()
+            .filter(|(_, token)| token.get_source_id() == Some(1))
+            .map(|(index, token)| {
+                (
+                    output_lines.offset(token.get_dst_line(), token.get_dst_col()),
+                    map_tokens.get(index + 1).map_or(code.len(), |next| {
+                        output_lines.offset(next.get_dst_line(), next.get_dst_col())
+                    }),
+                )
+            })
+            .collect();
         let mut mapped = Vec::new();
         let mut ranges = Vec::new();
         let mut tokens = generated.marks.iter().peekable();
         while let Some(&(start, at)) = tokens.next() {
+            if authored_ranges
+                .iter()
+                .any(|(from, to)| (*from..*to).contains(&at))
+            {
+                let end = tokens
+                    .peek()
+                    .map_or(generated.code.len(), |(next, _)| *next);
+                mapped.push((start, original_trace.resolve(code, source, at)));
+                ranges.push((start, end));
+                continue;
+            }
             let parsed_at = trace.resolve(code, parsed, at);
             if let Some(&(from, _, original)) = copied
                 .iter()

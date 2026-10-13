@@ -349,6 +349,10 @@ pub(crate) fn execute_authored(
         &result.exports,
     )?;
     authored.styles = result.compiled.styles;
+    if result.compiled.code.is_none() {
+        authored.provenance = None;
+    }
+    authored.scaffolding = result.compiled.scaffolding;
     Ok((result.collected, result.imports, authored))
 }
 

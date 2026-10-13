@@ -1,9 +1,9 @@
 use oxc_ast::ast::{Declaration, Expression, Program, Statement};
-use rustc_hash::FxHashMap;
+use rustc_hash::{FxHashMap, FxHashSet};
 
 /// Final producer values and their declaration-free selector identities.
 #[derive(Debug, Default, Clone)]
-pub(crate) struct StyleReferences(FxHashMap<String, String>);
+pub(crate) struct StyleReferences(FxHashMap<String, String>, FxHashSet<String>);
 
 impl StyleReferences {
     pub(crate) fn register(&mut self, value: String, reference: String) {
@@ -12,6 +12,11 @@ impl StyleReferences {
 
     pub(crate) fn merge(&mut self, other: Self) {
         self.0.extend(other.0);
+        self.1.extend(other.1);
+    }
+
+    pub(crate) fn register_composition(&mut self, value: String) {
+        self.1.insert(value);
     }
 
     fn ordered(&self) -> Vec<(&str, &str)> {
@@ -31,7 +36,7 @@ impl StyleReferences {
     }
 
     pub(crate) fn contains_class_list(&self, value: &str) -> bool {
-        self.ordered().iter().any(|(classes, _)| {
+        self.0.keys().chain(self.1.iter()).any(|classes| {
             value.match_indices(classes).any(|(start, _)| {
                 token_boundary(value, start) && token_boundary(value, start + classes.len())
             })
@@ -39,9 +44,8 @@ impl StyleReferences {
     }
 
     pub(crate) fn tokens(&self, value: &str) -> Option<Vec<(String, bool)>> {
-        let entries = self.ordered();
         let mut ranges = Vec::new();
-        for (classes, _) in entries {
+        for classes in self.0.keys().chain(self.1.iter()) {
             for (start, _) in value.match_indices(classes) {
                 let end = start + classes.len();
                 if token_boundary(value, start) && token_boundary(value, end) {

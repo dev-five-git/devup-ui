@@ -7,7 +7,9 @@ use oxc_sourcemap::{SourceMap, Token};
 
 use crate::import_alias_visit::{Edit, source_offset};
 
+mod authored;
 mod trace;
+pub(crate) use authored::Authored;
 
 pub(crate) use trace::{Trace, complete_marks, marks};
 

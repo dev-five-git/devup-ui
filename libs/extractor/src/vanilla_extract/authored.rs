@@ -28,6 +28,8 @@ pub(crate) struct Output {
     pub code: String,
     pub reserved: BTreeSet<String>,
     pub styles: rustc_hash::FxHashSet<crate::ExtractStyleValue>,
+    pub scaffolding: Vec<String>,
+    pub provenance: Option<crate::source_map::Authored>,
 }
 
 struct Piece {
@@ -161,13 +163,20 @@ pub(super) fn prepare(
     collected.export_aliases.retain(|(_, alias, _)| {
         !restored.contains(alias) && !fallbacks.iter().any(|fallback| fallback.name == *alias)
     });
+    let mut provenance = crate::source_map::Authored::new(stylesheet);
+    let mut code = String::new();
+    for piece in pieces {
+        if !code.is_empty() {
+            code.push('\n');
+        }
+        provenance.record(code.len(), (&piece.text, piece.span), stylesheet.code);
+        code.push_str(&piece.text);
+    }
     Ok(Output {
-        code: pieces
-            .into_iter()
-            .map(|piece| piece.text)
-            .collect::<Vec<_>>()
-            .join("\n"),
+        code,
         reserved,
         styles: Default::default(),
+        scaffolding: Vec::new(),
+        provenance: Some(provenance),
     })
 }

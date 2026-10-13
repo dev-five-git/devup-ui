@@ -45,6 +45,33 @@ pub(crate) struct Unit {
 }
 
 impl Unit {
+    pub(crate) fn deferred(
+        stylesheet: crate::vanilla_extract::Stylesheet<'_>,
+        evaluation: &crate::stylesheet_compile::Evaluation,
+    ) -> Result<Rc<Self>, String> {
+        super::validate(crate::vanilla_extract::Stylesheet {
+            code: &evaluation.code,
+            edits: &[],
+            ..stylesheet
+        })?;
+        let stripped = strip_typescript_marked(&evaluation.code, stylesheet.filename);
+        let trace = Trace::new(&evaluation.marks, &[]);
+        let mapped = stripped
+            .marks
+            .iter()
+            .map(|&(start, at)| (start, trace.resolve(&evaluation.code, stylesheet.code, at)))
+            .collect::<Vec<_>>();
+        Ok(Rc::new(Self {
+            filename: stylesheet.filename.to_string(),
+            script: stripped.code.clone(),
+            written: Some(Written {
+                source: stylesheet.source.to_string(),
+                trace: Trace::new(&mapped, stylesheet.edits),
+                retained: None,
+            }),
+        }))
+    }
+
     /// The script of `code`, the `source` of `filename` after the layers of
     /// `edits`, last made first
     pub(crate) fn written(
