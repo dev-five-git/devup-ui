@@ -15,6 +15,16 @@ use std::fmt::Display;
 use std::sync::{LazyLock, Mutex};
 use wasm_bindgen::prelude::*;
 mod administration;
+mod counter_compiler;
+#[cfg(test)]
+mod counter_compiler_cache_tests;
+#[cfg(test)]
+mod counter_compiler_rollback_tests;
+#[cfg(test)]
+mod counter_compiler_tests;
+// Pins the dormant bridge signature until activation; does not invoke it.
+const _: for<'a> fn(extractor::compiler_policy::CompilerInput<'a>, bool) -> Result<Output, String> =
+    counter_compiler::code_extract_counter;
 #[cfg(test)]
 mod admission_contract_tests;
 #[cfg(all(test, not(target_arch = "wasm32")))]

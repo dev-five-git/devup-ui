@@ -10,6 +10,10 @@ use extractor::extract_style::extract_style_value::ExtractStyleValue;
 use rustc_hash::FxHashSet;
 use std::marker::PhantomData;
 
+#[path = "counter_kernel_receipts.rs"]
+pub(in crate::counter_kernel) mod receipts;
+use receipts::AttemptCheck;
+
 type Brand<'id> = PhantomData<(fn(&'id mut ()) -> &'id mut (), std::rc::Rc<()>)>;
 
 /// Existing Output inputs; routing and cleanup are derived internally.
@@ -132,6 +136,7 @@ pub struct PreparedUpdate<'id> {
     sheet: &'id mut StyleSheet,
     pending: CounterState,
     effects: UpdateEffects,
+    check: Option<AttemptCheck>,
     brand: Brand<'id>,
 }
 
@@ -140,6 +145,7 @@ pub struct CompletedUpdate<'id, O> {
     sheet: &'id mut StyleSheet,
     pending: CounterState,
     output: O,
+    check: Option<AttemptCheck>,
     brand: Brand<'id>,
 }
 
@@ -178,11 +184,15 @@ impl<'a> CounterSheet<'a> {
                         sheet,
                         pending,
                         output,
+                        check,
                         brand: _,
                     } = build(KernelAttempt {
                         sheet: publication.sheet,
                         brand: PhantomData,
                     })?;
+                    if let Some(check) = check {
+                        check.finish(sheet)?;
+                    }
                     validation::validate(validation::ValidationInput {
                         sheet,
                         state: &pending,
@@ -209,8 +219,16 @@ impl<'id> KernelAttempt<'id> {
         styles: &FxHashSet<ExtractStyleValue>,
         request: UpdateRequest<'_>,
     ) -> Result<PreparedUpdate<'id>, KernelError> {
+        self.prepare_input(styles.into(), request)
+    }
+
+    fn prepare_input(
+        self,
+        styles: prepare::Input<'_>,
+        request: UpdateRequest<'_>,
+    ) -> Result<PreparedUpdate<'id>, KernelError> {
         let base = state_live::validate(self.sheet)?;
-        let (pending, effects) = prepare::prepare(
+        let (pending, effects, check) = prepare::prepare(
             self.sheet,
             prepare::Preparation {
                 base: &base,
@@ -222,6 +240,7 @@ impl<'id> KernelAttempt<'id> {
             sheet: self.sheet,
             pending,
             effects,
+            check,
             brand: self.brand,
         })
     }
@@ -240,7 +259,44 @@ impl<'id> PreparedUpdate<'id> {
             sheet: self.sheet,
             pending: self.pending,
             output,
+            check: self.check,
             brand: self.brand,
         })
+    }
+}
+
+impl AttemptCheck {
+    fn finish(self, sheet: &StyleSheet) -> Result<(), KernelError> {
+        let maps = state_live::maps();
+        let build = state_live::build();
+        let a = &self.authority;
+        let expected = &self.build;
+        super::production::require(
+            expected.config == build.config
+                && expected.threshold == build.threshold
+                && expected.atom_plan == build.atom_plan
+                && sheet.atom_plan == expected.atom_plan
+                && a.originals
+                    .iter()
+                    .all(|(raw, id)| maps.originals.get(raw) == Some(id))
+                && a.files
+                    .iter()
+                    .all(|(raw, id)| maps.files.get(raw) == Some(id))
+                && self
+                    .routes
+                    .iter()
+                    .all(|(raw, route)| prepare::route(raw) == *route),
+        )?;
+        let mut a = self.authority;
+        a.classes = maps.classes;
+        for o in self.observations {
+            let (candidate, _) = o.replay(&sheet.theme)?;
+            super::production::require(candidate == o.expected)?;
+            super::link::check(&candidate, &a)?;
+        }
+        for (usage, data) in self.variables {
+            receipts::variable(&usage, &data)?;
+        }
+        Ok(())
     }
 }
