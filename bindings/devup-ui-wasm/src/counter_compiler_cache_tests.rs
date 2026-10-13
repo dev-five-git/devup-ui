@@ -193,6 +193,20 @@ fn genuine_raw_cache_is_silent_cold_when_version_shape_or_record_is_damaged(
         assert_eq!(authority(), cold);
         cache6_restore::RESTORE.with_borrow(|s| assert_eq!(s, &cache6_session::Restore::default()));
         assert_eq!(cache_names::check(), Ok(()));
+        // Given: the rejected cache leaves cold authority before a genuine compile error.
+        let broken = input(
+            "broken.tsx",
+            "import {css} from '@devup-ui/react';\ncss`color: ${x};`;",
+        );
+        // When
+        let error = code_extract_counter(broken, false)
+            .err()
+            .unwrap_or_else(|| panic!("runtime interpolation must fail"));
+        // Then: error transport keeps the authored location and rolls back original registration.
+        assert!(error.starts_with("broken.tsx:2:1:"), "{error}");
+        assert!(error.contains("`css()` cannot use `x` at build time"));
+        assert_eq!(authority(), cold);
+        cache6_restore::RESTORE.with_borrow(|s| assert_eq!(s, &Default::default()));
         assert_eq!(compile("a.css.ts", source), clean);
         assert_eq!(cache6_session::Maps::capture(), clean_maps);
     });

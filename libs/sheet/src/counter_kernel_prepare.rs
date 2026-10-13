@@ -1,6 +1,6 @@
 use super::production::{application::placement, original, require};
 use super::{
-    Cleanup, FrozenAuthority, LinkedBatch, authority,
+    Cleanup, FrozenAuthority, LinkedBatch, authority, capture,
     error::KernelError,
     live::{UpdateEffects, UpdateRequest, receipts::AttemptCheck},
     publication, records,
@@ -9,10 +9,8 @@ use super::{
     traversal::Traversal,
 };
 use crate::StyleSheet;
-use css::sparse_site::SourceFile;
 use extractor::extract_style::extract_style_value::ExtractStyleValue as Value;
 use extractor::extract_style::{
-    CounterProducerError,
     compiler_associations::{Graph, InvocationId, ScopeId},
     compiler_receipts::ReceiptBatchView,
 };
@@ -143,11 +141,7 @@ pub(super) fn references(
         V::Static(s) => retain(original(s.producer_policy())?),
         V::Dynamic(s) => {
             retain(original(s.producer_policy())?)?;
-            match s.site().map(|site| &site.file) {
-                Some(SourceFile::D9(id)) => retain(*id),
-                Some(SourceFile::Unnumbered(_)) => Err(CounterProducerError::UnnumberedSite.into()),
-                None => Ok(()),
-            }
+            capture::numeric_site(s.site())?.map_or(Ok(()), |site| retain(site.source))
         }
         V::Keyframes(s) => {
             retain(original(s.producer_policy())?)?;

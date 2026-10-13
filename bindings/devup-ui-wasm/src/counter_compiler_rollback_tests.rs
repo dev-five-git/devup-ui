@@ -4,6 +4,26 @@ use extractor::extract_style::compiler_receipts::WitnessDisposition;
 use sheet::counter_kernel::KernelError;
 use std::panic::{AssertUnwindSafe, catch_unwind};
 
+#[test]
+#[serial]
+fn consumer_error_is_transported_when_genuine_prior_records_are_missing() {
+    with_admission(|| {
+        // Given: retain genuine compiler authority but remove its materialized records.
+        let _guard = Guard::new();
+        required(code_extract_counter(reserved_input(), false));
+        with_style_sheet_mut(|s| s.properties.clear());
+        let before = authority();
+        // When: real compilation precedes checked publication of the invalid BASE.
+        let error = code_extract_counter(reserved_input(), false)
+            .err()
+            .unwrap_or_else(|| panic!("missing prior records must fail"));
+        // Then: preserve the actual kernel category and complete pre-attempt state.
+        assert_eq!(error, "dormant counter kernel: Coverage");
+        assert_eq!(authority(), before);
+        cache6_restore::RESTORE.with_borrow(|s| assert_eq!(s, &Default::default()));
+    });
+}
+
 #[rstest]
 #[serial]
 fn installed_session_is_restored_when_real_resolver_reentry_then_outer_fails(

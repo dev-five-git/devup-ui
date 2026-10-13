@@ -80,7 +80,7 @@ impl AttemptCheck {
         Ok((candidate, delivery))
     }
 }
-pub(super) fn variable(u: &VariableUse, receipts: &[ProducedData]) -> Checked<()> {
+pub(in super::super) fn variable(u: &VariableUse, receipts: &[ProducedData]) -> Checked<()> {
     let prefix = &u.config.prefix;
     let mut name = u.original.site().map(|s| s.variable_name(prefix));
     for data in receipts {

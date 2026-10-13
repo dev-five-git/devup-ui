@@ -2,13 +2,12 @@ use super::{allocation, original, require};
 use crate::counter_kernel::{Candidate, Lineage, VariableLineage, capture, error::KernelError};
 use crate::{
     counter_evidence::{EmissionWitness, ExpansionProof, Materialization},
-    emission_seed::{EmissionContext, EmissionInput, EmissionSeed, NumericSite},
+    emission_seed::{EmissionContext, EmissionInput, EmissionSeed},
     theme::Theme,
 };
-use css::{allocation_input::CapturedDelivery, sparse_site::SourceFile};
+use css::allocation_input::CapturedDelivery;
 use extractor::extract_style::{
-    CounterProducerError, ExtractDynamicStyle, ExtractKeyframes, ProducedAllocation,
-    ProducedDynamic, ProducerPolicy,
+    ExtractDynamicStyle, ExtractKeyframes, ProducedAllocation, ProducedDynamic, ProducerPolicy,
     compiler_receipts::{ProducedData, ReceiptBatchView as View, ReceiptId, ReceiptWitness},
     extract_static_style::ExtractStaticStyle,
     extract_style_value::ExtractStyleValue as Value,
@@ -150,19 +149,7 @@ pub(in crate::counter_kernel) fn apply(
             require(
                 acquired.site.as_ref() == style.site() && acquired.important == style.important(),
             )?;
-            let site = style
-                .site()
-                .map(|site| match site.file {
-                    SourceFile::D9(source) => Ok(NumericSite {
-                        source,
-                        at: site.at,
-                        role: site.role,
-                    }),
-                    SourceFile::Unnumbered(_) => {
-                        Err(KernelError::Producer(CounterProducerError::UnnumberedSite))
-                    }
-                })
-                .transpose()?;
+            let site = capture::numeric_site(style.site())?;
             let variable = match (&site, &acquired.variable_allocation) {
                 (Some(_), None) => None,
                 (None, Some(variable)) => Some(VariableLineage {
