@@ -65,8 +65,8 @@ pub(super) fn install(
     restore
 }
 
-pub(super) fn reservation() -> NameAddress {
-    let observed = with_counter_extract(reserved_input(), |_, batch| {
+pub(super) fn reservation(source: CompilerInput<'_>) -> NameAddress {
+    let observed = with_counter_extract(source, |_, batch| {
         batch.consume(|v| {
             let child = v
                 .associations
@@ -102,15 +102,16 @@ pub(super) fn reservation() -> NameAddress {
                             ) => namespace != other || legacy_key != key,
                             _ => false,
                         }
-                    )
+                    ),
+                "Counter address pair"
             );
-            Err::<(), _>(Box::new(address.clone()))
+            Err::<std::convert::Infallible, _>(Box::new(address.clone()))
         })
     });
     match observed {
         Err(CounterCompileError::Consumer(address)) => *address,
         Err(CounterCompileError::Compile(error)) => panic!("{error}"),
-        Ok(()) => panic!("probe must abort"),
+        Ok(value) => match value {},
     }
 }
 

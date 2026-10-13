@@ -29,7 +29,7 @@ fn final_rejects_when_only_reservation_key_or_slot_is_damaged_after_finish(#[cas
     with_admission(|| {
         // Given: independent genuine parser observation aborts without granting batch authority.
         let _guard = Guard::new();
-        let address = reservation();
+        let address = reservation(reserved_input());
         let before = authority();
         let restore = cache6_session::Restore::default();
         // When
@@ -61,5 +61,48 @@ fn final_rejects_when_only_reservation_key_or_slot_is_damaged_after_finish(#[cas
                     .contains("magenta")
             );
         });
+    });
+}
+
+#[test]
+#[serial]
+#[should_panic(expected = "broken.tsx:2:1:")]
+fn reservation_rejects_when_compilation_fails() {
+    with_admission(|| {
+        let _guard = Guard::new();
+        let source = input(
+            "broken.tsx",
+            "import {css} from '@devup-ui/react';\ncss`color: ${x};`",
+        );
+        reservation(source);
+    });
+}
+
+#[test]
+#[serial]
+#[should_panic(expected = "Counter address pair")]
+fn reservation_rejects_when_allocations_are_baseline() {
+    with_admission(|| {
+        let _guard = Guard::new();
+        super::set_atom_hoist(Some(1));
+        reservation(reserved_input());
+    });
+}
+
+#[test]
+#[serial]
+#[should_panic(expected = "Counter address")]
+fn damage_reservation_rejects_when_allocation_is_baseline() {
+    with_admission(|| {
+        let _guard = Guard::new();
+        super::set_atom_hoist(Some(1));
+        let produced = required(required(with_original(
+            FixtureRequest {
+                filename: "a.css.ts",
+                source: "a\nbcd",
+            },
+            || ExtractStaticStyle::new("color", "red", 0, None).counter_produce(Some("a.css.ts")),
+        )));
+        damage_reservation(&produced.allocation.address, false);
     });
 }
