@@ -43,6 +43,14 @@ pub(super) fn reserved_input() -> CompilerInput<'static> {
     source
 }
 
+pub(super) const FAMILY_SOURCES: [&str; 5] = [
+    "import {css} from '@devup-ui/react';const a=css({color:'red'});",
+    "import {Box} from '@devup-ui/react';const a=<Box color={tone}/>;",
+    "import {styled} from '@devup-ui/react';const A=styled.div({width:state.size});",
+    "import {keyframes} from '@devup-ui/react';const a=keyframes({from:{opacity:0,opacity:1,color:'red'},to:{opacity:1}});",
+    "import {Box} from '@devup-ui/react';const a=<Box _hover={{typography:'heading'}}/>;",
+];
+
 pub(super) fn exported() -> (Vec<u8>, cache6_session::Maps, LiveCheckpoint) {
     let bytes = encoded();
     let maps = cache6_session::Maps::capture();
@@ -82,6 +90,13 @@ pub(super) fn reservation(source: CompilerInput<'_>) -> NameAddress {
                 })
                 .unwrap_or_else(|| panic!("reservation"));
             let address = &witness.produced.class().allocation.address;
+            assert_ne!(
+                v.witnesses
+                    .iter()
+                    .filter(|w| w.disposition == WitnessDisposition::Emission)
+                    .count(),
+                0
+            );
             assert!(
                 v.witnesses
                     .iter()

@@ -179,3 +179,52 @@ fn real_surfaces_agree_when_compiled_with_admitted_routes(
         }
     });
 }
+
+#[test]
+#[serial]
+fn ordered_duplicate_members_survive_when_real_keyframes_are_compiled() {
+    with_admission(|| {
+        // Given
+        let _guard = Guard::new();
+        let source = FAMILY_SOURCES[3];
+        let observed = with_counter_extract(input("a.tsx", source), |_, batch| {
+            batch.consume(|v| {
+                let witness = v.witnesses.first().unwrap_or_else(|| panic!("keyframes"));
+                let ExtractStyleValue::Keyframes(frames) = &witness.operand else {
+                    panic!("keyframes")
+                };
+                let members = frames
+                    .keyframes
+                    .get("from")
+                    .unwrap_or_else(|| panic!("from"));
+                assert_eq!(
+                    members
+                        .iter()
+                        .map(|m| (m.property(), m.value()))
+                        .collect::<Vec<_>>(),
+                    vec![("color", "red"), ("opacity", "1"), ("opacity", "0")]
+                );
+                Err::<(), _>(Box::new(witness.produced.class().allocation.name.clone()))
+            })
+        });
+        let name = match observed {
+            Err(CounterCompileError::Consumer(name)) => *name,
+            Err(CounterCompileError::Compile(e)) => panic!("{e}"),
+            Ok(()) => panic!("abort"),
+        };
+        // When
+        let output = required(code_extract_counter(input("a.tsx", source), false));
+        // Then
+        assert!(output.code().contains(&name));
+        let expected =
+            format!("@keyframes {name}{{from{{color:red;opacity:1;opacity:0}}to{{opacity:1}}}}");
+        assert!(with_style_sheet(|s| s.create_css(Some("a.tsx"), false)).contains(&expected));
+        assert_eq!(
+            css::class_map::get_class_map()
+                .values()
+                .map(HashMap::len)
+                .sum::<usize>(),
+            1
+        );
+    });
+}
