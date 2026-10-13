@@ -17,11 +17,11 @@ ToBTreeSet {
             ExtractDynamicStyle {
                 property: "font-size",
                 level: 0,
-                identifier: "fontSize",
+                identifier: "__devupValue0",
                 selector: None,
                 style_order: None,
             },
         ),
     },
-    code: "import \"@devup-ui/core/devup-ui-0.css\";\nlet fontSize = \"18px\";\nconst StyledComponent = ({ style, className, ...rest }) => <div {...rest} className={[\"a-a a-b\", className].filter(Boolean).join(\" \")} style={{\n\t...{\n\t\t\"--a\": fontSize,\n\t\t\"--b\": (props=>props.color||`black`)(rest)\n\t},\n\t...style\n}} />;\n",
+    code: "import \"@devup-ui/core/devup-ui-0.css\";\nimport { forwardRef as __devupForwardRef } from \"react\";\nlet fontSize = \"18px\";\nconst StyledComponent = ((__devupValue0) => ((__devupEnvironment0Component) => (__devupEnvironment0Component[\"__devupEnvironment0\"] = (__devupEnvironment0Continue) => __devupEnvironment0Continue(__devupValue0), __devupEnvironment0Component))(__devupForwardRef((__devupRefProps, __devupRef) => ((__devupStyleProps) => (({ style, className, as: DevupAs = \"div\", forwardedAs, ...rest }) => <DevupAs {...(({ \"theme\": __devupOmit0, ...__devupDom }) => __devupDom)(rest)} as={forwardedAs} className={[\"a-a a-b\", className].filter(Boolean).join(\" \")} style={{\n\t...{\n\t\t\"--a\": __devupValue0,\n\t\t\"--b\": (props=>props.color||`black`)(rest)\n\t},\n\t...style\n}} />)(__devupStyleProps))({\n\t...__devupRefProps,\n\tref: __devupRef\n}))))(fontSize);\n",
 }

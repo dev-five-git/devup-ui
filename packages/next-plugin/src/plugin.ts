@@ -20,6 +20,7 @@ import {
   loadDevupConfigSync,
   mergeImportAliases,
   planAtomHoist,
+  readJsxImportSource,
   type StaticImportGraph,
 } from '@devup-ui/plugin-utils'
 import { type NextConfig } from 'next'
@@ -144,7 +145,10 @@ export function DevupUI(
       importAliases: userImportAliases,
     } = options
 
-    const importAliases = mergeImportAliases(userImportAliases)
+    const importAliases = mergeImportAliases(
+      userImportAliases,
+      readJsxImportSource(),
+    )
     const watch = process.env.NODE_ENV === 'development'
     const sourceMap = watch || config.productionBrowserSourceMaps === true
     const sheetFile = join(distDir, 'sheet.json')

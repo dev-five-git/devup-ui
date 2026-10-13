@@ -35,5 +35,5 @@ ToBTreeSet {
             },
         ),
     },
-    code: "import \"@devup-ui/react/devup-ui.css\";\nconst base = \"a\";\nexport const a = \"a b\";\nexport const b = \"a extra c\";\nexport const c = \"a\";\nexport const d = cond ? \"a\" : \"\";\n",
+    code: "import \"@devup-ui/react/devup-ui.css\";\nconst base = \"a\";\nexport const a = \"a b\";\nexport const b = \"extra a c\";\nexport const c = \"a\";\nexport const d = ((__devupValue0) => __devupValue0 ? \"a\" : \"\")(cond);\n",
 }

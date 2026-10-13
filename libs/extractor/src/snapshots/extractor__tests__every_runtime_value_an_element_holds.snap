@@ -18,7 +18,7 @@ ToBTreeSet {
             ExtractDynamicStyle {
                 property: "background",
                 level: 0,
-                identifier: "new X",
+                identifier: "__devupValue3",
                 selector: None,
                 style_order: None,
             },
@@ -27,7 +27,7 @@ ToBTreeSet {
             ExtractDynamicStyle {
                 property: "color",
                 level: 0,
-                identifier: "tag`x`",
+                identifier: "__devupValue4",
                 selector: None,
                 style_order: None,
             },
@@ -36,7 +36,7 @@ ToBTreeSet {
             ExtractDynamicStyle {
                 property: "height",
                 level: 0,
-                identifier: "(f(),2)",
+                identifier: "__devupValue2",
                 selector: None,
                 style_order: None,
             },
@@ -45,7 +45,7 @@ ToBTreeSet {
             ExtractDynamicStyle {
                 property: "margin",
                 level: 0,
-                identifier: "f.n++",
+                identifier: "__devupValue5",
                 selector: None,
                 style_order: None,
             },
@@ -54,7 +54,7 @@ ToBTreeSet {
             ExtractDynamicStyle {
                 property: "padding",
                 level: 0,
-                identifier: "f.v=3",
+                identifier: "__devupValue6",
                 selector: None,
                 style_order: None,
             },
@@ -63,7 +63,7 @@ ToBTreeSet {
             ExtractDynamicStyle {
                 property: "width",
                 level: 0,
-                identifier: "await f()",
+                identifier: "\"w\" in __devupSpread1 ? __devupSpread1.w : \"w\" in __devupSpread0 ? __devupSpread0.w : (__devupValue0)",
                 selector: None,
                 style_order: None,
             },
@@ -72,7 +72,7 @@ ToBTreeSet {
             ExtractDynamicStyle {
                 property: "width",
                 level: 0,
-                identifier: "this.#w",
+                identifier: "__devupValue1",
                 selector: None,
                 style_order: None,
             },
@@ -87,5 +87,5 @@ ToBTreeSet {
             },
         ),
     },
-    code: "import \"@devup-ui/react/devup-ui-0.css\";\nclass A {\n\t#w = 1;\n\trender(f) {\n\t\treturn ((__devupSpread0) => <div {...this.#w} {...__devupSpread0} className={`a-a ${__devupSpread0?.className || \"\"} ${this.#w?.className || \"\"}`} style={{\n\t\t\t...{ \"--a\": this.#w },\n\t\t\t...__devupSpread0?.style,\n\t\t\t...this.#w?.style\n\t\t}} />)(f());\n\t}\n}\nexport const a = async (f, X, tag) => <div className=\"a-a a-b a-c a-d a-e a-f a-g a-h\" style={{\n\t\"--a\": await f(),\n\t\"--b\": (f(),2),\n\t\"--c\": new X,\n\t\"--d\": tag`x`,\n\t\"--e\": 10n,\n\t\"--f\": f.n++,\n\t\"--g\": f.v=3\n}} />;\n",
+    code: "import \"@devup-ui/react/devup-ui-0.css\";\nclass A {\n\t#w = 1;\n\trender(f) {\n\t\treturn ((__devupValue0, __devupSpread0, __devupSpread1) => <div {...(({ \"styleOrder\": __devupOrder, \"style-order\": __devupKebabOrder, ...__devupProps }) => __devupProps)({\n\t\t\t__proto__: null,\n\t\t\t...__devupSpread0\n\t\t})} {...(({ \"styleOrder\": __devupOrder, \"style-order\": __devupKebabOrder, ...__devupProps }) => __devupProps)({\n\t\t\t__proto__: null,\n\t\t\t...__devupSpread1\n\t\t})} className={`${(\"className\" in __devupSpread1 ? __devupSpread1.className : __devupSpread0?.className) || \"\"} a-a`} style={{\n\t\t\t...{ \"--a\": \"w\" in __devupSpread1 ? __devupSpread1.w : \"w\" in __devupSpread0 ? __devupSpread0.w : (__devupValue0) },\n\t\t\t...\"style\" in __devupSpread1 ? __devupSpread1.style : __devupSpread0?.style\n\t\t}} />)(this.#w, {\n\t\t\t__proto__: null,\n\t\t\t...this.#w\n\t\t}, {\n\t\t\t__proto__: null,\n\t\t\t...f()\n\t\t});\n\t}\n}\nexport const a = async (f, X, tag) => ((__devupValue1, __devupValue2, __devupValue3, __devupValue4, __devupValue5, __devupValue6) => <div className=\"a-a a-b a-c a-d a-e a-f a-g a-h\" style={{\n\t\"--a\": __devupValue1,\n\t\"--b\": __devupValue2,\n\t\"--c\": __devupValue3,\n\t\"--d\": __devupValue4,\n\t\"--e\": 10n,\n\t\"--f\": __devupValue5,\n\t\"--g\": __devupValue6\n}} />)(await f(), (f(), 2), new X(), tag`x`, f.n++, f.v = 3);\n",
 }

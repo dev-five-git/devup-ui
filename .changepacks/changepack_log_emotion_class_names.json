@@ -1,0 +1,8 @@
+{
+  "changes": {
+    "bindings/devup-ui-wasm/package.json": "Patch",
+    "packages/react/package.json": "Patch"
+  },
+  "note": "Emotion's <ClassNames> now compiles at build time with no runtime: the element becomes what its child function ({ css, cx, theme }) => ... renders, each css and cx call becomes the classes it composes (later styles replace earlier ones; css reads strings as CSS text and its tagged templates split around mixins; cx keeps unknown classes, reads { name: condition } objects as conditional classes and composes nested css and cx calls), and theme.a.b in their values becomes var(--a-b). Numbers in css rules are px lengths, as Emotion reads them, and top-level constants are inlined. New build errors, each at file:line:col: a <ClassNames> without exactly one child function taking { css, cx, theme } that gives what it renders at once (attributes, other children, rest or default parameters, async or generator functions, several statements); reading the theme other than as theme.a.b in a css value; using css or cx other than by calling them; a cx object with a spread, getter or method; parts css and cx cannot compose (runtime calls, spreads, a condition choosing between styles and classes). @devup-ui/react/compat exports ClassNames with the ClassNamesContent and ClassNamesArg types, and the @emotion/react declarations include them",
+  "date": "2026-10-01T00:00:00.000Z"
+}

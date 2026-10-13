@@ -1,0 +1,603 @@
+---
+source: libs/extractor/src/lib.rs
+expression: "emotion_outputs(&[(\"test.tsx\",\n\"export const App = () => <div css={{ color: 'red', padding: 8 }} />;\"),\n(\"test.tsx\",\n\"export const App = ({ danger }) => <div css={[{ color: 'green' }, danger && { color: 'red' }]} />;\"),\n(\"test.tsx\",\n\"export const App = ({ active }) => <div css={active ? { color: 'red' } : { color: 'blue' }} />;\"),\n(\"test.tsx\",\n\"import { css } from '@emotion/react';\\nconst style = css`color: red;`;\\nexport const App = () => <div css={style} />;\"),\n(\"test.tsx\",\n\"/** @jsxImportSource @emotion/react */\\nexport const App = () => <div css={{ color: 'red' }} />;\"),\n(\"test.ts\",\n\"import { jsx } from '@emotion/react';\\nexport const App = () => jsx('div', { css: { color: 'red' } });\"),\n(\"test.ts\",\n\"import { jsx as _jsx } from '@emotion/react/jsx-runtime';\\nexport const App = () => _jsx('div', { css: { color: 'red' } });\"),\n(\"test.ts\",\n\"import { jsxs as _jsxs } from '@emotion/react/jsx-runtime';\\nexport const App = () => _jsxs('div', { css: { color: 'red' }, children: ['a', 'b'] });\"),\n(\"test.ts\",\n\"import { jsxDEV as _jsxDEV } from '@emotion/react/jsx-dev-runtime';\\nexport const App = () => _jsxDEV('div', { css: { padding: 4 } }, void 0, false);\"),\n(\"test.tsx\",\n\"/** @jsx jsx */\\nimport { jsx } from '@emotion/react';\\nexport const App = () => <div css={{ color: 'red' }} />;\"),\n(\"test.tsx\",\n\"export const App = () => <div css={(theme) => ({ color: theme.colors.primary, padding: 8 })} />;\"),\n(\"test.tsx\",\n\"export const App = () => <div css={({ colors }) => { return { color: colors.text }; }} />;\"),\n(\"test.tsx\",\n\"import { css } from '@emotion/react';\\nconst override = css({ color: 'blue' });\\nexport const App = () => <div css={{ color: 'red', margin: 0 }} className={override + ' external'} />;\"),\n(\"test.tsx\",\n\"import { css } from '@emotion/react';\\nconst override = css({ color: 'blue' });\\nexport const App = () => <div css={{ color: 'red', margin: 0 }} className={`${override} external`} />;\"),\n(\"test.tsx\",\n\"import { css } from '@emotion/react';\\nconst base = css({ color: 'blue', margin: 0 });\\nexport const App = ({ cls }) => <><div css={[base, { color: 'red' }]} /><div css={css`${base}; color: red;`} /><div css={css({ color: 'red' }, cond && { color: 'blue' })} /><div css={[cls, { color: 'red' }]} /></>;\"),\n(\"test.tsx\",\n\"export const App = ({ c, w }) => <div css={{ color: c, width: w }} style={{ opacity: 1 }} className=\\\"x\\\" />;\"),\n(\"test.tsx\",\n\"export const App = ({ c }) => <><div css=\\\"color: red; padding: 4px\\\" /><div css={`color: ${c};`} /><div css /><div css={null} /><div css={undefined} /><div css={{}} /><div css={''} /><div css={null} /></>;\"),\n(\"test.tsx\",\n\"const base = { color: 'red', padding: 4 };\\nexport const App = () => <div css={base} />;\"),\n(\"test.tsx\",\n\"const SPACE = 4;\\nconst base = { padding: 4, lineHeight: 1.5, '&:hover': { margin: 2 } };\\nexport const App = () => <div css={[base, { margin: SPACE, width: f({ size: 4 }) }]} />;\"),\n(\"test.tsx\",\n\"export const App = ({ cls, s }) => <><div css={cls || { color: 'red' }} /><div css={s ?? { color: 'blue' }} /><div className=<b /> css={{ color: 'red' }} /><div className css={{ margin: 1 }} /></>;\"),\n(\"test.ts\",\n\"import { jsx as _jsx } from '@emotion/react/jsx-runtime';\\nconst base = { padding: 2 };\\nconst SPACE = 3;\\nexport const App = ({ c, s }) => [_jsx('div', { id: 1 }), _jsx('div', { style: s, css: [base, { margin: SPACE, color: c }] })];\"),])"
+---
+[
+    (
+        "export const App = () => <div css={{ color: 'red', padding: 8 }} />;",
+        ToBTreeSet {
+            styles: {
+                Static(
+                    ExtractStaticStyle {
+                        property: "color",
+                        value: "red",
+                        level: 0,
+                        selector: None,
+                        style_order: None,
+                        layer: None,
+                    },
+                ),
+                Static(
+                    ExtractStaticStyle {
+                        property: "padding",
+                        value: "8px",
+                        level: 0,
+                        selector: None,
+                        style_order: None,
+                        layer: None,
+                    },
+                ),
+            },
+            code: "import \"@devup-ui/react/devup-ui.css\";\nexport const App = () => <div className=\"a b\" />;\n",
+        },
+    ),
+    (
+        "export const App = ({ danger }) => <div css={[{ color: 'green' }, danger && { color: 'red' }]} />;",
+        ToBTreeSet {
+            styles: {
+                Static(
+                    ExtractStaticStyle {
+                        property: "color",
+                        value: "green",
+                        level: 0,
+                        selector: None,
+                        style_order: None,
+                        layer: None,
+                    },
+                ),
+                Static(
+                    ExtractStaticStyle {
+                        property: "color",
+                        value: "red",
+                        level: 0,
+                        selector: None,
+                        style_order: None,
+                        layer: None,
+                    },
+                ),
+            },
+            code: "import \"@devup-ui/react/devup-ui.css\";\nexport const App = ({ danger }) => ((__devupValue0) => <div className={__devupValue0 ? \"a\" : \"b\"} />)(danger);\n",
+        },
+    ),
+    (
+        "export const App = ({ active }) => <div css={active ? { color: 'red' } : { color: 'blue' }} />;",
+        ToBTreeSet {
+            styles: {
+                Static(
+                    ExtractStaticStyle {
+                        property: "color",
+                        value: "blue",
+                        level: 0,
+                        selector: None,
+                        style_order: None,
+                        layer: None,
+                    },
+                ),
+                Static(
+                    ExtractStaticStyle {
+                        property: "color",
+                        value: "red",
+                        level: 0,
+                        selector: None,
+                        style_order: None,
+                        layer: None,
+                    },
+                ),
+            },
+            code: "import \"@devup-ui/react/devup-ui.css\";\nexport const App = ({ active }) => ((__devupValue0) => <div className={!__devupValue0 ? \"a\" : __devupValue0 ? \"b\" : \"\"} />)(active);\n",
+        },
+    ),
+    (
+        "import { css } from '@emotion/react';\nconst style = css`color: red;`;\nexport const App = () => <div css={style} />;",
+        ToBTreeSet {
+            styles: {
+                Static(
+                    ExtractStaticStyle {
+                        property: "color",
+                        value: "red",
+                        level: 0,
+                        selector: None,
+                        style_order: None,
+                        layer: None,
+                    },
+                ),
+            },
+            code: "import \"@devup-ui/react/devup-ui.css\";\nconst style = \"a\";\nexport const App = () => <div className=\"a\" />;\n",
+        },
+    ),
+    (
+        "/** @jsxImportSource @emotion/react */\nexport const App = () => <div css={{ color: 'red' }} />;",
+        ToBTreeSet {
+            styles: {
+                Static(
+                    ExtractStaticStyle {
+                        property: "color",
+                        value: "red",
+                        level: 0,
+                        selector: None,
+                        style_order: None,
+                        layer: None,
+                    },
+                ),
+            },
+            code: "import \"@devup-ui/react/devup-ui.css\";\n/** @jsxImportSource react */\nexport const App = () => <div className=\"a\" />;\n",
+        },
+    ),
+    (
+        "import { jsx } from '@emotion/react';\nexport const App = () => jsx('div', { css: { color: 'red' } });",
+        ToBTreeSet {
+            styles: {
+                Static(
+                    ExtractStaticStyle {
+                        property: "color",
+                        value: "red",
+                        level: 0,
+                        selector: None,
+                        style_order: None,
+                        layer: None,
+                    },
+                ),
+            },
+            code: "import \"@devup-ui/react/devup-ui.css\";\nimport { jsx } from \"@devup-ui/react/compat\";\nexport const App = () => jsx(\"div\", { className: \"a\" });\n",
+        },
+    ),
+    (
+        "import { jsx as _jsx } from '@emotion/react/jsx-runtime';\nexport const App = () => _jsx('div', { css: { color: 'red' } });",
+        ToBTreeSet {
+            styles: {
+                Static(
+                    ExtractStaticStyle {
+                        property: "color",
+                        value: "red",
+                        level: 0,
+                        selector: None,
+                        style_order: None,
+                        layer: None,
+                    },
+                ),
+            },
+            code: "import \"@devup-ui/react/devup-ui.css\";\nimport { jsx as _jsx } from \"react/jsx-runtime\";\nexport const App = () => _jsx(\"div\", { className: \"a\" });\n",
+        },
+    ),
+    (
+        "import { jsxs as _jsxs } from '@emotion/react/jsx-runtime';\nexport const App = () => _jsxs('div', { css: { color: 'red' }, children: ['a', 'b'] });",
+        ToBTreeSet {
+            styles: {
+                Static(
+                    ExtractStaticStyle {
+                        property: "color",
+                        value: "red",
+                        level: 0,
+                        selector: None,
+                        style_order: None,
+                        layer: None,
+                    },
+                ),
+            },
+            code: "import \"@devup-ui/react/devup-ui.css\";\nimport { jsxs as _jsxs } from \"react/jsx-runtime\";\nexport const App = () => _jsxs(\"div\", {\n\tchildren: [\"a\", \"b\"],\n\tclassName: \"a\"\n});\n",
+        },
+    ),
+    (
+        "import { jsxDEV as _jsxDEV } from '@emotion/react/jsx-dev-runtime';\nexport const App = () => _jsxDEV('div', { css: { padding: 4 } }, void 0, false);",
+        ToBTreeSet {
+            styles: {
+                Static(
+                    ExtractStaticStyle {
+                        property: "padding",
+                        value: "4px",
+                        level: 0,
+                        selector: None,
+                        style_order: None,
+                        layer: None,
+                    },
+                ),
+            },
+            code: "import \"@devup-ui/react/devup-ui.css\";\nimport { jsxDEV as _jsxDEV } from \"react/jsx-dev-runtime\";\nexport const App = () => _jsxDEV(\"div\", { className: \"a\" }, void 0, false);\n",
+        },
+    ),
+    (
+        "/** @jsx jsx */\nimport { jsx } from '@emotion/react';\nexport const App = () => <div css={{ color: 'red' }} />;",
+        ToBTreeSet {
+            styles: {
+                Static(
+                    ExtractStaticStyle {
+                        property: "color",
+                        value: "red",
+                        level: 0,
+                        selector: None,
+                        style_order: None,
+                        layer: None,
+                    },
+                ),
+            },
+            code: "import \"@devup-ui/react/devup-ui.css\";\n/** @jsx jsx */\nimport { jsx } from \"@devup-ui/react/compat\";\nexport const App = () => <div className=\"a\" />;\n",
+        },
+    ),
+    (
+        "export const App = () => <div css={(theme) => ({ color: theme.colors.primary, padding: 8 })} />;",
+        ToBTreeSet {
+            styles: {
+                Static(
+                    ExtractStaticStyle {
+                        property: "color",
+                        value: "var(--colors-primary)",
+                        level: 0,
+                        selector: None,
+                        style_order: None,
+                        layer: None,
+                    },
+                ),
+                Static(
+                    ExtractStaticStyle {
+                        property: "padding",
+                        value: "8px",
+                        level: 0,
+                        selector: None,
+                        style_order: None,
+                        layer: None,
+                    },
+                ),
+            },
+            code: "import \"@devup-ui/react/devup-ui.css\";\nexport const App = () => <div className=\"a b\" />;\n",
+        },
+    ),
+    (
+        "export const App = () => <div css={({ colors }) => { return { color: colors.text }; }} />;",
+        ToBTreeSet {
+            styles: {
+                Static(
+                    ExtractStaticStyle {
+                        property: "color",
+                        value: "var(--colors-text)",
+                        level: 0,
+                        selector: None,
+                        style_order: None,
+                        layer: None,
+                    },
+                ),
+            },
+            code: "import \"@devup-ui/react/devup-ui.css\";\nexport const App = () => <div className=\"a\" />;\n",
+        },
+    ),
+    (
+        "import { css } from '@emotion/react';\nconst override = css({ color: 'blue' });\nexport const App = () => <div css={{ color: 'red', margin: 0 }} className={override + ' external'} />;",
+        ToBTreeSet {
+            styles: {
+                Static(
+                    ExtractStaticStyle {
+                        property: "color",
+                        value: "blue",
+                        level: 0,
+                        selector: None,
+                        style_order: None,
+                        layer: None,
+                    },
+                ),
+                Static(
+                    ExtractStaticStyle {
+                        property: "color",
+                        value: "red",
+                        level: 0,
+                        selector: None,
+                        style_order: None,
+                        layer: None,
+                    },
+                ),
+                Static(
+                    ExtractStaticStyle {
+                        property: "margin",
+                        value: "0",
+                        level: 0,
+                        selector: None,
+                        style_order: None,
+                        layer: None,
+                    },
+                ),
+            },
+            code: "import \"@devup-ui/react/devup-ui.css\";\nconst override = \"a\";\nexport const App = () => <div className={`${\"a\" + \" external\" || \"\"} b c`} />;\n",
+        },
+    ),
+    (
+        "import { css } from '@emotion/react';\nconst override = css({ color: 'blue' });\nexport const App = () => <div css={{ color: 'red', margin: 0 }} className={`${override} external`} />;",
+        ToBTreeSet {
+            styles: {
+                Static(
+                    ExtractStaticStyle {
+                        property: "color",
+                        value: "blue",
+                        level: 0,
+                        selector: None,
+                        style_order: None,
+                        layer: None,
+                    },
+                ),
+                Static(
+                    ExtractStaticStyle {
+                        property: "color",
+                        value: "red",
+                        level: 0,
+                        selector: None,
+                        style_order: None,
+                        layer: None,
+                    },
+                ),
+                Static(
+                    ExtractStaticStyle {
+                        property: "margin",
+                        value: "0",
+                        level: 0,
+                        selector: None,
+                        style_order: None,
+                        layer: None,
+                    },
+                ),
+            },
+            code: "import \"@devup-ui/react/devup-ui.css\";\nconst override = \"a\";\nexport const App = () => ((__devupValue0) => <div className={`${__devupValue0} external b c`} />)(`${override}`);\n",
+        },
+    ),
+    (
+        "import { css } from '@emotion/react';\nconst base = css({ color: 'blue', margin: 0 });\nexport const App = ({ cls }) => <><div css={[base, { color: 'red' }]} /><div css={css`${base}; color: red;`} /><div css={css({ color: 'red' }, cond && { color: 'blue' })} /><div css={[cls, { color: 'red' }]} /></>;",
+        ToBTreeSet {
+            styles: {
+                Static(
+                    ExtractStaticStyle {
+                        property: "color",
+                        value: "blue",
+                        level: 0,
+                        selector: None,
+                        style_order: None,
+                        layer: None,
+                    },
+                ),
+                Static(
+                    ExtractStaticStyle {
+                        property: "color",
+                        value: "red",
+                        level: 0,
+                        selector: None,
+                        style_order: None,
+                        layer: None,
+                    },
+                ),
+                Static(
+                    ExtractStaticStyle {
+                        property: "margin",
+                        value: "0",
+                        level: 0,
+                        selector: None,
+                        style_order: None,
+                        layer: None,
+                    },
+                ),
+            },
+            code: "import \"@devup-ui/react/devup-ui.css\";\nconst base = \"a b\";\nexport const App = ({ cls }) => <><div className=\"a c\" /><div className=\"a c\" /><div className={cond ? \"b\" : \"c\"} /><div className={`c ${cls}`} /></>;\n",
+        },
+    ),
+    (
+        "export const App = ({ c, w }) => <div css={{ color: c, width: w }} style={{ opacity: 1 }} className=\"x\" />;",
+        ToBTreeSet {
+            styles: {
+                Dynamic(
+                    ExtractDynamicStyle {
+                        property: "color",
+                        level: 0,
+                        identifier: "c",
+                        selector: None,
+                        style_order: None,
+                    },
+                ),
+                Dynamic(
+                    ExtractDynamicStyle {
+                        property: "width",
+                        level: 0,
+                        identifier: "w",
+                        selector: None,
+                        style_order: None,
+                    },
+                ),
+            },
+            code: "import \"@devup-ui/react/devup-ui.css\";\nexport const App = ({ c, w }) => <div className=\"x a c\" style={{\n\t...{\n\t\t\"--b\": w,\n\t\t\"--d\": c\n\t},\n\t...{ opacity: 1 }\n}} />;\n",
+        },
+    ),
+    (
+        "export const App = ({ c }) => <><div css=\"color: red; padding: 4px\" /><div css={`color: ${c};`} /><div css /><div css={null} /><div css={undefined} /><div css={{}} /><div css={''} /><div css={null} /></>;",
+        ToBTreeSet {
+            styles: {
+                Static(
+                    ExtractStaticStyle {
+                        property: "color",
+                        value: "red",
+                        level: 0,
+                        selector: None,
+                        style_order: None,
+                        layer: None,
+                    },
+                ),
+                Static(
+                    ExtractStaticStyle {
+                        property: "padding",
+                        value: "4px",
+                        level: 0,
+                        selector: None,
+                        style_order: None,
+                        layer: None,
+                    },
+                ),
+                Dynamic(
+                    ExtractDynamicStyle {
+                        property: "color",
+                        level: 0,
+                        identifier: "__devupValue0",
+                        selector: None,
+                        style_order: None,
+                    },
+                ),
+            },
+            code: "import \"@devup-ui/react/devup-ui.css\";\nexport const App = ({ c }) => <><div className=\"a b\" />{((__devupValue0) => <div className=\"c\" style={{ \"--d\": __devupValue0 }} />)(c)}<div /><div /><div /><div /><div /><div /></>;\n",
+        },
+    ),
+    (
+        "const base = { color: 'red', padding: 4 };\nexport const App = () => <div css={base} />;",
+        ToBTreeSet {
+            styles: {
+                Static(
+                    ExtractStaticStyle {
+                        property: "color",
+                        value: "red",
+                        level: 0,
+                        selector: None,
+                        style_order: None,
+                        layer: None,
+                    },
+                ),
+                Static(
+                    ExtractStaticStyle {
+                        property: "padding",
+                        value: "4px",
+                        level: 0,
+                        selector: None,
+                        style_order: None,
+                        layer: None,
+                    },
+                ),
+            },
+            code: "import \"@devup-ui/react/devup-ui.css\";\nconst base = {\n\tcolor: \"red\",\n\tpadding: 4\n};\nexport const App = () => <div className=\"a b\" />;\n",
+        },
+    ),
+    (
+        "const SPACE = 4;\nconst base = { padding: 4, lineHeight: 1.5, '&:hover': { margin: 2 } };\nexport const App = () => <div css={[base, { margin: SPACE, width: f({ size: 4 }) }]} />;",
+        ToBTreeSet {
+            styles: {
+                Static(
+                    ExtractStaticStyle {
+                        property: "line-height",
+                        value: "1.5",
+                        level: 0,
+                        selector: None,
+                        style_order: None,
+                        layer: None,
+                    },
+                ),
+                Static(
+                    ExtractStaticStyle {
+                        property: "margin",
+                        value: "2px",
+                        level: 0,
+                        selector: Some(
+                            Selector(
+                                "&:hover",
+                            ),
+                        ),
+                        style_order: None,
+                        layer: None,
+                    },
+                ),
+                Static(
+                    ExtractStaticStyle {
+                        property: "margin",
+                        value: "4px",
+                        level: 0,
+                        selector: None,
+                        style_order: None,
+                        layer: None,
+                    },
+                ),
+                Static(
+                    ExtractStaticStyle {
+                        property: "padding",
+                        value: "4px",
+                        level: 0,
+                        selector: None,
+                        style_order: None,
+                        layer: None,
+                    },
+                ),
+                Dynamic(
+                    ExtractDynamicStyle {
+                        property: "width",
+                        level: 0,
+                        identifier: "__devupValue0",
+                        selector: None,
+                        style_order: None,
+                    },
+                ),
+            },
+            code: "import \"@devup-ui/react/devup-ui.css\";\nconst SPACE = 4;\nconst base = {\n\tpadding: 4,\n\tlineHeight: 1.5,\n\t\"&:hover\": { margin: 2 }\n};\nexport const App = () => ((__devupValue0) => <div className=\"a b c d f\" style={{ \"--e\": __devupValue0 }} />)(f({ size: 4 }));\n",
+        },
+    ),
+    (
+        "export const App = ({ cls, s }) => <><div css={cls || { color: 'red' }} /><div css={s ?? { color: 'blue' }} /><div className=<b /> css={{ color: 'red' }} /><div className css={{ margin: 1 }} /></>;",
+        ToBTreeSet {
+            styles: {
+                Static(
+                    ExtractStaticStyle {
+                        property: "color",
+                        value: "blue",
+                        level: 0,
+                        selector: None,
+                        style_order: None,
+                        layer: None,
+                    },
+                ),
+                Static(
+                    ExtractStaticStyle {
+                        property: "color",
+                        value: "red",
+                        level: 0,
+                        selector: None,
+                        style_order: None,
+                        layer: None,
+                    },
+                ),
+                Static(
+                    ExtractStaticStyle {
+                        property: "margin",
+                        value: "1px",
+                        level: 0,
+                        selector: None,
+                        style_order: None,
+                        layer: None,
+                    },
+                ),
+            },
+            code: "import \"@devup-ui/react/devup-ui.css\";\nexport const App = ({ cls, s }) => <>{((__devupValue0) => <div className={`${__devupValue0 ? \"\" : \"a\"} ${__devupValue0 ? typeof __devupValue0 === \"string\" ? __devupValue0 : \"\" : \"\"}`} />)(cls)}{((__devupValue1) => <div className={`${__devupValue1 != null ? \"\" : \"b\"} ${__devupValue1 != null ? typeof __devupValue1 === \"string\" ? __devupValue1 : \"\" : \"\"}`} />)(s)}<div className=\"a\" /><div className className=\"c\" /></>;\n",
+        },
+    ),
+    (
+        "import { jsx as _jsx } from '@emotion/react/jsx-runtime';\nconst base = { padding: 2 };\nconst SPACE = 3;\nexport const App = ({ c, s }) => [_jsx('div', { id: 1 }), _jsx('div', { style: s, css: [base, { margin: SPACE, color: c }] })];",
+        ToBTreeSet {
+            styles: {
+                Static(
+                    ExtractStaticStyle {
+                        property: "margin",
+                        value: "3px",
+                        level: 0,
+                        selector: None,
+                        style_order: None,
+                        layer: None,
+                    },
+                ),
+                Static(
+                    ExtractStaticStyle {
+                        property: "padding",
+                        value: "2px",
+                        level: 0,
+                        selector: None,
+                        style_order: None,
+                        layer: None,
+                    },
+                ),
+                Dynamic(
+                    ExtractDynamicStyle {
+                        property: "color",
+                        level: 0,
+                        identifier: "c",
+                        selector: None,
+                        style_order: None,
+                    },
+                ),
+            },
+            code: "import \"@devup-ui/react/devup-ui.css\";\nimport { jsx as _jsx } from \"react/jsx-runtime\";\nconst base = { padding: 2 };\nconst SPACE = 3;\nexport const App = ({ c, s }) => [_jsx(\"div\", { id: 1 }), _jsx(\"div\", {\n\tclassName: \"a b d\",\n\tstyle: {\n\t\t...{ \"--c\": c },\n\t\t...s\n\t}\n})];\n",
+        },
+    ),
+]

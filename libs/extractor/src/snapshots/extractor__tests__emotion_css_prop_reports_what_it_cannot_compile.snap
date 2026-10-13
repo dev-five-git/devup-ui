@@ -1,0 +1,22 @@
+---
+source: libs/extractor/src/lib.rs
+expression: errors
+---
+[
+    "test.tsx:1:74: `css` on `<div>` cannot use `s.a` at build time: a style object it composes must be written in it, or declared with `const` at the top level of the module, where the build reads it",
+    "test.tsx:1:36: `css` on `<div>` cannot use `getStyles()` at build time: it must be a style object, CSS text, a class `css()` gives, or a function of the theme giving one, or an array or condition of them",
+    "test.tsx:1:54: `css` on `<div>` cannot use `t.spacing(2)` at build time: it may read the theme only as `theme.a.b` in a value, which becomes the CSS variable `var(--a-b)` the `ThemeProvider` sets",
+    "test.tsx:1:36: `css` on `<div>` cannot use `(t) => { const a = 1; return {}; }` at build time: a function of the theme must give its rules at once, as `theme => ({ ... })`",
+    "test.tsx:3:52: `css` on `<div>` cannot use `base` at build time: a mixin must stand outside nested rules, where the parts it composes with can be split",
+    "test.tsx:1:47: `css` on `<div>` cannot use `base` at build time: an interpolation in CSS text must be a value, or a mixin standing where a declaration would",
+    "test.tsx:3:42: `css` on `<Button>` overrides styles `Button` sets, which the build orders only for a styled component rendering a tag with no attrs or props read, given no spread, `as` or `forwardedAs`: move these styles into `styled(Button)(...)`",
+    "test.tsx:4:48: `css` on `<Button>` overrides styles `Button` sets, which the build orders only for a styled component rendering a tag with no attrs or props read, given no spread, `as` or `forwardedAs`: move these styles into `styled(Button)(...)`",
+    "test.tsx:1:46: `css` on `<div>` cannot use `[key]` at build time: its styles must be an object literal or a constant object, or be computed from constants",
+    "test.tsx:3:36: `css` on `<div>` cannot use `s` at build time: a style object it composes must be written in it, or declared with `const` at the top level of the module, where the build reads it",
+    "test.tsx:1:38: `css` on `<div>` cannot use `<a />` at build time: it must be a style object, CSS text, a class `css()` gives, or a function of the theme giving one, or an array or condition of them\ntest.tsx:1:56: `css` on `<div>` cannot use `<b />` at build time: it must be a style object, CSS text, a class `css()` gives, or a function of the theme giving one, or an array or condition of them\ntest.tsx:1:73: `css` on `<div>` cannot use `<></>` at build time: it must be a style object, CSS text, a class `css()` gives, or a function of the theme giving one, or an array or condition of them",
+    "test.tsx:2:40: `css` on `<div>` cannot use `[...parts]` at build time: it must be a style object, CSS text, a class `css()` gives, or a function of the theme giving one, or an array or condition of them",
+    "test.tsx:1:73: `css` on `<div>` cannot use `s[0]` at build time: a style object it composes must be written in it, or declared with `const` at the top level of the module, where the build reads it",
+    "test.tsx:2:36: `css` on `<div>` cannot use `s` at build time: its styles must be an object literal or a constant object, or be computed from constants",
+    "test.tsx:3:37: `css` on `<div>` cannot use `s` at build time: its styles must be an object literal or a constant object, or be computed from constants\ntest.tsx:2:1: `s` is changed here, so the build cannot read it as a constant",
+    "",
+]

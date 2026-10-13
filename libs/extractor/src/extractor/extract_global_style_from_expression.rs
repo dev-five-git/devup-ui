@@ -25,10 +25,30 @@ use css::{
     optimize_multi_css_value::{check_multi_css_optimize, optimize_multi_css_value, wrap_url},
     style_selector::{AtRule, AtRuleKind, StyleSelector},
 };
+use oxc_allocator::GetAllocator;
 use oxc_ast::{
     ast::{ArrayExpressionElement, Expression, ObjectPropertyKind},
     builder::AstBuilder,
 };
+use oxc_span::GetSpan;
+
+mod selector_record;
+
+#[derive(Clone, Copy)]
+enum ScopeRole {
+    Object,
+    Literal,
+}
+
+pub(crate) fn extract_literal_global_styles<'a>(
+    ast: &AstBuilder<'a>,
+    expression: &mut Expression<'a>,
+    file: &str,
+) -> Vec<ExtractStyleProp<'a>> {
+    let mut styles = vec![];
+    collect_global_styles(ast, expression, file, &[], &mut styles, ScopeRole::Literal);
+    styles
+}
 
 pub fn extract_global_style_from_expression<'a>(
     ast_builder: &AstBuilder<'a>,
@@ -36,7 +56,14 @@ pub fn extract_global_style_from_expression<'a>(
     file: &str,
 ) -> GlobalExtractResult<'a> {
     let mut styles = vec![];
-    collect_global_styles(ast_builder, expression, file, &[], &mut styles);
+    collect_global_styles(
+        ast_builder,
+        expression,
+        file,
+        &[],
+        &mut styles,
+        ScopeRole::Object,
+    );
     GlobalExtractResult {
         styles,
         style_order: None,
@@ -64,14 +91,49 @@ fn collect_global_styles<'a>(
     file: &str,
     at_rules: &[AtRule],
     styles: &mut Vec<ExtractStyleProp<'a>>,
+    role: ScopeRole,
 ) {
     let expression = unwrap_syntax_only_mut(expression);
 
+    if let Some(text) = crate::css_utils::global::extract(ast_builder, expression, file) {
+        styles.extend(text);
+        return;
+    }
+
     if let Expression::ObjectExpression(obj) = expression {
+        if let Some(order) = crate::style_order::take(obj, ast_builder.allocator()) {
+            let mut nested = Vec::new();
+            collect_global_styles(ast_builder, expression, file, at_rules, &mut nested, role);
+            match order {
+                Ok(order @ (crate::style_order::Order::Static(_) | crate::style_order::Order::Absent)) => styles.extend(crate::style_order::apply(order, nested, ast_builder.allocator())),
+                Ok(crate::style_order::Order::Conditional { test, .. }) => styles.push(ExtractStyleProp::Diagnostic {
+                    offset: test.span().start,
+                    message: crate::utils::build_time_error("styleOrder", &crate::utils::readable_code(&test), "global styles require a static order; they have no runtime class selection"),
+                    disposition: crate::ErrorDisposition::NeedsEvaluation,
+                }),
+                Err(error) => styles.push(ExtractStyleProp::Diagnostic { offset: error.diagnostic.0, message: error.diagnostic.1, disposition: error.disposition }),
+            }
+            return;
+        }
         for p in &mut obj.properties {
             match p {
                 ObjectPropertyKind::ObjectProperty(o) => {
                     if let Some(name) = get_string_by_property_key(&o.key) {
+                        if matches!(role, ScopeRole::Literal)
+                            && name == "selectors"
+                            && let Expression::ObjectExpression(record) = &mut o.value
+                        {
+                            for entry in &mut record.properties {
+                                if let ObjectPropertyKind::ObjectProperty(entry) = entry {
+                                    styles.extend(selector_record::extract(
+                                        ast_builder,
+                                        entry,
+                                        selector_record::Context { file, at_rules },
+                                    ));
+                                }
+                            }
+                            continue;
+                        }
                         if let Some(kind) = at_rule_record_kind(&name)
                             && let Expression::ObjectExpression(record) = &mut o.value
                         {
@@ -87,6 +149,7 @@ fn collect_global_styles<'a>(
                                         file,
                                         &nested,
                                         styles,
+                                        role,
                                     );
                                 }
                             }
@@ -111,13 +174,21 @@ fn collect_global_styles<'a>(
                                 file,
                                 at_rules,
                                 &mut layered,
+                                role,
                             );
                             place_in_layer(&mut layered, layer);
                             styles.extend(layered);
                         } else if let Some(at_rule) = global_at_rule_key(&name) {
                             let mut nested = at_rules.to_vec();
                             nested.push(at_rule);
-                            collect_global_styles(ast_builder, &mut o.value, file, &nested, styles);
+                            collect_global_styles(
+                                ast_builder,
+                                &mut o.value,
+                                file,
+                                &nested,
+                                styles,
+                                role,
+                            );
                         } else if name == "imports" {
                             if let Expression::ArrayExpression(arr) = &o.value {
                                 for p in &arr.elements {
@@ -178,6 +249,15 @@ fn collect_global_styles<'a>(
                                 }
                             }
                         } else if name == "fontFaces" {
+                            let mut errors = Vec::new();
+                            crate::style_order::reject(&o.value, "fontFaces", &mut errors);
+                            styles.extend(errors.into_iter().map(|(offset, message)| {
+                                ExtractStyleProp::Diagnostic {
+                                    offset,
+                                    message,
+                                    disposition: crate::ErrorDisposition::Definitive,
+                                }
+                            }));
                             if let Expression::ArrayExpression(arr) = &o.value {
                                 for p in &arr.elements {
                                     if let ArrayExpressionElement::ObjectExpression(o) = p {
@@ -188,6 +268,7 @@ fn collect_global_styles<'a>(
                                                 .filter_map(|p| {
                                                         if let ObjectPropertyKind::ObjectProperty(o) = p
                                                             && let Some(property_name) = get_str_by_property_key(&o.key)
+                                                            && !crate::style_order::reserved(&property_name)
                                                             && let Some(s) = get_string_by_literal_expression(&o.value)
                                                         {
                                                             let it = disassemble_property(&property_name).map(|p| {
@@ -236,52 +317,11 @@ fn collect_global_styles<'a>(
                                 }
                             }
                         } else {
-                            // Handle @layer property in globalStyle
-                            // Extract the layer name if present in the style object
-                            let layer_name = if let Expression::ObjectExpression(style_obj) = &o.value
-                                && let Some(ObjectPropertyKind::ObjectProperty(sp)) = style_obj.properties.iter().find(|style_prop| matches!(style_prop, ObjectPropertyKind::ObjectProperty(s) if get_str_by_property_key(&s.key).as_deref() == Some("@layer")))
-                            {
-                                get_string_by_literal_expression(&sp.value)
-                            } else {
-                                None
-                            };
-
-                            let global = StyleSelector::Global(
-                                if let Some(name) = name.strip_prefix("_") {
-                                    StyleSelector::from(name).to_string().replace('&', "*")
-                                } else {
-                                    name
-                                },
-                                file.to_string(),
-                            );
-                            // `None` when the enclosing at-rules can never match together.
-                            let selector = at_rules.iter().try_fold(global, |selector, rule| {
-                                StyleSelector::nest_at_rule(Some(&selector), rule.kind, &rule.query)
-                            });
-                            let extracted = selector
-                                .map(|selector| {
-                                    extract_style_from_expression(
-                                        ast_builder,
-                                        None,
-                                        &mut o.value,
-                                        0,
-                                        &Some(selector),
-                                        LiteralHandling::ExpandResponsiveThemeToken,
-                                    )
-                                })
-                                .unwrap_or_default();
-
-                            // `@layer` names the layer of every other declaration,
-                            // responsive and nested ones included
-                            let mut extracted = extracted.styles;
-                            extracted.retain(|style| {
-                                !matches!(style, ExtractStyleProp::Static(ExtractStyleValue::Static(st)) if st.property() == "@layer")
-                            });
-                            if let Some(layer) = layer_name {
-                                place_in_layer(&mut extracted, &layer);
-                            }
-                            yield_typography(&mut extracted);
-                            styles.extend(extracted);
+                            styles.extend(selector_record::extract(
+                                ast_builder,
+                                o,
+                                selector_record::Context { file, at_rules },
+                            ));
                         }
                     } else {
                         styles.push(unreadable_key(&o.key, false));
@@ -294,6 +334,7 @@ fn collect_global_styles<'a>(
                         file,
                         at_rules,
                         styles,
+                        role,
                     );
                 }
             }

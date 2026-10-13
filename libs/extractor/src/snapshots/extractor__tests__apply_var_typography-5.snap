@@ -17,5 +17,5 @@ ToBTreeSet {
             "tag",
         ),
     },
-    code: "import \"@devup-ui/core/devup-ui.css\";\n<span className={{\n\t\"lg\": \"typo-buttonLg\",\n\t\"md\": \"typo-button\",\n\t\"sm\": \"typo-buttonSm\",\n\t\"tag\": \"typo-tag\"\n}[size] || \"\"}>\n            {children}\n        </span>;\n",
+    code: "import \"@devup-ui/core/devup-ui.css\";\n((__devupChoice0) => <span className={{\n\t\"lg\": \"typo-buttonLg\",\n\t\"md\": \"typo-button\",\n\t\"sm\": \"typo-buttonSm\",\n\t\"tag\": \"typo-tag\"\n}[__devupChoice0?.[\"0\"]] || \"\"}>\n            {children}\n        </span>)({\n\tlg: [\"lg\"],\n\tmd: [\"md\"],\n\tsm: [\"sm\"],\n\ttag: [\"tag\"]\n}[size]);\n",
 }

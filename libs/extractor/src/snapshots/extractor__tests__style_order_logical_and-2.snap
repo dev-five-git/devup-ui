@@ -49,5 +49,5 @@ ToBTreeSet {
             },
         ),
     },
-    code: "import \"@devup-ui/core/devup-ui.css\";\n<div className={a === 1 ? isActive ? \"a\" : \"b\" : isActive ? \"c\" : \"d\"} />;\n",
+    code: "import \"@devup-ui/core/devup-ui.css\";\n((__devupValue0, __devupValue1) => <div className={__devupValue0 ? __devupValue1 ? \"a\" : \"b\" : __devupValue1 ? \"c\" : \"d\"} />)(a === 1, isActive);\n",
 }

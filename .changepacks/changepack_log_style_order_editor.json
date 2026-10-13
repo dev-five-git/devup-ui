@@ -1,0 +1,7 @@
+{
+  "changes": {
+    "packages/eslint-plugin/package.json": "Patch"
+  },
+  "note": "Align style-order-range editor diagnostics with exact integer Number orders from 1 to 254 and canonical decimal strings, support finite class-order choices and lexical API aliases, and flag conditional global orders or no-effect keyframe, font-face and StyleX declaration metadata. Unknown imported static proof remains deferred to the build; no styling runtime is added.",
+  "date": "2026-10-01T00:00:00.000Z"
+}

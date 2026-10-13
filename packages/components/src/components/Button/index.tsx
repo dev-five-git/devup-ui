@@ -45,6 +45,27 @@ export function Button({
 }: ButtonProps): React.ReactElement {
   return (
     <DevupButton
+      aria-disabled={disabled}
+      aria-label="button"
+      boxSizing="border-box"
+      className={className}
+      cursor="pointer"
+      disabled={disabled}
+      fontWeight={700}
+      outlineOffset="2px"
+      pos="relative"
+      styleOrder={1}
+      styleVars={{
+        primary: colors?.primary,
+        error: colors?.error,
+        text: colors?.text,
+        border: colors?.border,
+        inputBackground: colors?.inputBackground,
+        primaryFocus: colors?.primaryFocus,
+      }}
+      transition=".25s"
+      type={type}
+      {...props}
       _active={
         {
           primary: {
@@ -158,8 +179,6 @@ export function Button({
           default: 'var(--inputBackground, #2E2E2E)',
         }[variant],
       }}
-      aria-disabled={disabled}
-      aria-label="button"
       bg={
         {
           primary: 'var(--primary, #8163E1)',
@@ -178,8 +197,6 @@ export function Button({
           default: '10px',
         }[variant]
       }
-      boxSizing="border-box"
-      className={className}
       color={
         {
           primary: '#FFF',
@@ -189,23 +206,18 @@ export function Button({
           }[danger.toString()],
         }[variant]
       }
-      cursor="pointer"
-      disabled={disabled}
       fontSize={
         {
           default: ['14px', null, null, null, '15px'],
           primary: ['15px', null, null, null, '16px'],
         }[variant]
       }
-      fontWeight={700}
       letterSpacing={
         {
           default: ['-0.02em', null, null, null, '-0.03em'],
           primary: ['0px', null, null, null, '-0.01em'],
         }[variant]
       }
-      outlineOffset="2px"
-      pos="relative"
       px={
         {
           false: { sm: '12px', md: '16px', lg: '20px' }[size],
@@ -213,19 +225,7 @@ export function Button({
         }[(!!(icon || loading)).toString()]
       }
       py={{ sm: '8px', md: '10px', lg: '12px' }[size]}
-      styleOrder={1}
-      styleVars={{
-        primary: colors?.primary,
-        error: colors?.error,
-        text: colors?.text,
-        border: colors?.border,
-        inputBackground: colors?.inputBackground,
-        primaryFocus: colors?.primaryFocus,
-      }}
-      transition=".25s"
-      type={type}
       typography={typography}
-      {...props}
     >
       <Box maxW="100%" mx="auto" pos="relative" w="fit-content">
         {(icon || loading) && (

@@ -1,6 +1,6 @@
 ---
 source: libs/extractor/src/lib.rs
-expression: "ToBTreeSet::from(extract(\"test.tsx\",\nr#\"import { Box } from \"@devup-ui/core\";\n<Box margin={a === b ? [d, e, f, x === y ? \"4px\" : \"2px\"] : [\"1px\", \"2px\", \"3px\"]} />;\n\"#,\nExtractOption\n{\n    package: \"@devup-ui/core\".to_string(), css_dir:\n    \"@devup-ui/core\".to_string(), single_css: true, import_main_css: false\n}).unwrap())"
+expression: "ToBTreeSet::from(extract(\"test.tsx\",\nr#\"import { Box } from \"@devup-ui/core\";\n<Box margin={a === b ? [d, e, f, x === y ? \"4px\" : \"2px\"] : [\"1px\", \"2px\", \"3px\"]} />;\n\"#,\nExtractOption\n{\n    package: \"@devup-ui/core\".to_string(), css_dir:\n    \"@devup-ui/core\".to_string(), single_css: true, import_main_css: false,\n    import_aliases: HashMap::new()\n}).unwrap())"
 ---
 ToBTreeSet {
     styles: {
@@ -58,7 +58,7 @@ ToBTreeSet {
             ExtractDynamicStyle {
                 property: "margin",
                 level: 0,
-                identifier: "d",
+                identifier: "__devupBranch0[`1`]",
                 selector: None,
                 style_order: None,
             },
@@ -67,7 +67,7 @@ ToBTreeSet {
             ExtractDynamicStyle {
                 property: "margin",
                 level: 1,
-                identifier: "e",
+                identifier: "__devupBranch0[`2`]",
                 selector: None,
                 style_order: None,
             },
@@ -76,11 +76,11 @@ ToBTreeSet {
             ExtractDynamicStyle {
                 property: "margin",
                 level: 2,
-                identifier: "f",
+                identifier: "__devupBranch0[`3`]",
                 selector: None,
                 style_order: None,
             },
         ),
     },
-    code: "import \"@devup-ui/core/devup-ui.css\";\n<div className={a === b ? `a c e ${x === y ? \"g\" : \"h\"}` : \"i j k\"} style={{\n\t\"--b\": d,\n\t\"--d\": e,\n\t\"--f\": f\n}} />;\n",
+    code: "import \"@devup-ui/core/devup-ui.css\";\n((__devupBranch0) => <div className={__devupBranch0[\"0\"] ? `a c e ${__devupBranch0[\"4\"] ? \"g\" : \"h\"}` : \"i j k\"} style={{\n\t\"--b\": __devupBranch0[`1`],\n\t\"--d\": __devupBranch0[`2`],\n\t\"--f\": __devupBranch0[`3`]\n}} />)(a === b ? [\n\ttrue,\n\td,\n\te,\n\tf,\n\tx === y\n] : [false]);\n",
 }

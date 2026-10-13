@@ -49,6 +49,9 @@ pub fn extract_keyframes_from_expression<'a>(
             });
             continue;
         };
+        if crate::style_order::reserved(&name) {
+            continue;
+        }
         let ExtractResult { styles, .. } = extract_style_from_expression(
             ast_builder,
             None,
@@ -61,8 +64,9 @@ pub fn extract_keyframes_from_expression<'a>(
 
         let mut styles = styles
             .into_iter()
+            .flat_map(ExtractStyleProp::into_extract)
             .filter_map(|s| match s {
-                ExtractStyleProp::Static(ExtractStyleValue::Static(s)) => Some(s),
+                ExtractStyleValue::Static(s) => Some(s),
                 _ => None,
             })
             .collect::<Vec<_>>();

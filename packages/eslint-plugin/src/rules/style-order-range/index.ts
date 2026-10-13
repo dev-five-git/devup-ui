@@ -3,75 +3,27 @@ import {
   ESLintUtils,
   type TSESTree,
 } from '@typescript-eslint/utils'
-import type { RuleContext } from '@typescript-eslint/utils/ts-eslint'
 
-import { ImportStorage } from '../../utils/import-storage'
+import {
+  argumentsOf,
+  component,
+  imported,
+  jsxApi,
+  jsxName,
+  modeOf,
+  styleComponent,
+  styledFactory,
+  textAllowed,
+} from './api-context'
+import { deferredValue } from './deferred-value'
+import { factorySettings } from './factory-settings'
+import { staticValue, unwrap, validOrder } from './static-value'
+import { createStyleTree, type Site } from './style-tree'
 
 const createRule = ESLintUtils.RuleCreator(
   (name) =>
     `https://github.com/dev-five-git/devup-ui/tree/main/packages/eslint-plugin/src/rules/${name}`,
 )
-
-function checkStyleOrderRange<T extends RuleContext<string, []>>(
-  expression: TSESTree.Expression,
-  context: T,
-) {
-  let value: number | null = null
-
-  if (expression.type === AST_NODE_TYPES.Literal) {
-    if (typeof expression.value === 'number') {
-      value = expression.value
-    } else if (typeof expression.value === 'string') {
-      const parsed = parseInt(expression.value, 10)
-      if (!Number.isNaN(parsed)) {
-        value = parsed
-      }
-    }
-  } else if (expression.type === AST_NODE_TYPES.UnaryExpression) {
-    if (
-      expression.argument.type === AST_NODE_TYPES.Literal &&
-      typeof expression.argument.value === 'number' &&
-      (expression.operator === '-' || expression.operator === '+')
-    ) {
-      value =
-        expression.operator === '-'
-          ? -expression.argument.value
-          : expression.argument.value
-    } else {
-      context.report({
-        node: expression,
-        messageId: 'styleOrderRange',
-      })
-      return
-    }
-  } else if (expression.type === AST_NODE_TYPES.TemplateLiteral) {
-    if (expression.expressions.length > 0) {
-      // error report
-      context.report({
-        node: expression,
-        messageId: 'styleOrderRange',
-      })
-      return
-    } else {
-      value = parseInt(expression.quasis[0].value.raw, 10)
-      if (Number.isNaN(value)) {
-        // error report
-        context.report({
-          node: expression,
-          messageId: 'styleOrderRange',
-        })
-        return
-      }
-    }
-  }
-
-  if (value === null || value < 1 || value > 254) {
-    context.report({
-      node: expression,
-      messageId: 'styleOrderRange',
-    })
-  }
-}
 
 export const styleOrderRange = createRule({
   name: 'style-order-range',
@@ -80,63 +32,211 @@ export const styleOrderRange = createRule({
     schema: [],
     messages: {
       styleOrderRange:
-        'styleOrder prop must be a number greater than 0 and less than 255.',
-      wrongType:
-        'styleOrder prop must be a number or a string representing a number.',
+        'styleOrder must be an integer Number or a canonical decimal string from 1 through 254, known at build time; class styles may choose valid orders with a conditional or &&.',
+      wrongType: 'styleOrder must have an explicit value.',
+      unsupportedOrder:
+        '{{api}} cannot use styleOrder: order metadata has no effect in keyframes, font-face descriptors or native StyleX declarations.',
+      globalOrder:
+        '{{api}} cannot use conditional styleOrder: global styles require one order known at build time.',
     },
     type: 'problem',
     docs: {
       description:
-        'Ensures styleOrder prop is within valid range (0 < value < 255).',
+        'Enforces build-time styleOrder values and supported API contexts.',
     },
   },
   create(context) {
-    const importStorage = new ImportStorage()
-
+    const scopeOf = (node: TSESTree.Node) => context.sourceCode.getScope(node)
+    const reported = new Set<TSESTree.Node>()
+    let emotionCss = false
+    const check = (input: TSESTree.Node, site: Site) => {
+      if (reported.has(input)) return
+      const { mode, api } = site
+      const node = unwrap(input)
+      const value = staticValue(node, scopeOf)
+      if (mode === 'keyframes' || mode === 'stylex' || mode === 'fontface') {
+        reported.add(input)
+        context.report({
+          node: input,
+          messageId: 'unsupportedOrder',
+          data: { api },
+        })
+        return
+      }
+      const branches = (expression: TSESTree.Node): boolean => {
+        const branch = unwrap(expression)
+        const result = staticValue(branch, scopeOf)
+        if (result) return validOrder(result.value)
+        if (branch.type === AST_NODE_TYPES.ConditionalExpression)
+          return branches(branch.consequent) && branches(branch.alternate)
+        if (branch.type === AST_NODE_TYPES.LogicalExpression)
+          return (
+            (branch.operator === '&&' && branches(branch.right)) ||
+            deferredValue(branch, scopeOf)
+          )
+        return deferredValue(branch, scopeOf)
+      }
+      if (
+        !site.conditional &&
+        (value
+          ? validOrder(value.value)
+          : mode === 'class'
+            ? branches(node)
+            : deferredValue(node, scopeOf))
+      )
+        return
+      reported.add(input)
+      context.report({
+        node: input,
+        messageId:
+          mode === 'global' &&
+          (site.conditional ||
+            (!value &&
+              (node.type === AST_NODE_TYPES.ConditionalExpression ||
+                node.type === AST_NODE_TYPES.LogicalExpression)))
+            ? 'globalOrder'
+            : 'styleOrderRange',
+        data: { api },
+      })
+    }
+    const textReports = new Set<string>()
+    const { walk, props } = createStyleTree(scopeOf, check, (diagnostic) => {
+      const key = `${diagnostic.start}:${diagnostic.messageId}`
+      if (textReports.has(key)) return
+      textReports.add(key)
+      context.report({
+        loc: {
+          start: context.sourceCode.getLocFromIndex(diagnostic.start),
+          end: context.sourceCode.getLocFromIndex(diagnostic.end),
+        },
+        messageId: diagnostic.messageId,
+        data: { api: diagnostic.site.api },
+      })
+    })
     return {
       ImportDeclaration(node) {
-        importStorage.addImportByDeclaration(node)
+        if (node.source.value === '@emotion/react') emotionCss = true
       },
-      Property(node) {
-        // The build reads `styleOrder` only as a key of a style object handed to the utility itself
-        const object = node.parent
-        const call = object.parent
-        if (
-          node.key.type === AST_NODE_TYPES.Identifier &&
-          !node.computed &&
-          node.key.name === 'styleOrder' &&
-          node.value.type !== AST_NODE_TYPES.AssignmentPattern &&
-          node.value.type !== AST_NODE_TYPES.TSEmptyBodyFunctionExpression &&
-          object.type === AST_NODE_TYPES.ObjectExpression &&
-          call?.type === AST_NODE_TYPES.CallExpression &&
-          call.arguments.includes(object) &&
-          importStorage.checkContextType(call) === 'UTIL'
-        ) {
-          checkStyleOrderRange(node.value, context)
-        }
-      },
-      JSXAttribute(node) {
-        if (
-          node.name.type !== AST_NODE_TYPES.JSXIdentifier ||
-          node.name.name !== 'styleOrder' ||
-          !node.value ||
-          importStorage.checkContextType(node.parent) !== 'COMPONENT'
-        ) {
-          return
-        }
-
-        if (
-          node.value.type === AST_NODE_TYPES.JSXExpressionContainer &&
-          node.value.expression.type !== AST_NODE_TYPES.JSXEmptyExpression
-        ) {
-          checkStyleOrderRange(node.value.expression, context)
-        } else if (node.value.type === AST_NODE_TYPES.Literal) {
-          checkStyleOrderRange(node.value, context)
-        } else {
-          context.report({
-            node: node,
-            messageId: 'wrongType',
+      TaggedTemplateExpression(node) {
+        const api = imported(node.tag, scopeOf)
+        const mode = modeOf(api)
+        if (mode)
+          walk(node.quasi, {
+            mode,
+            api: `${api?.source}.${api?.name}`,
+            allowText: textAllowed(api, context.filename),
           })
+        else if (styledFactory(node.tag, scopeOf))
+          walk(node.quasi, { mode: 'class', api: 'styled', callbacks: true })
+      },
+      CallExpression(node) {
+        const args = argumentsOf(node.arguments, scopeOf)
+        const api = imported(node.callee, scopeOf)
+        const mode = modeOf(api)
+        if (mode) {
+          const label = `${api?.source}.${api?.name}`
+          for (const argument of args.slice(
+            api?.name === 'globalStyle' ? 1 : 0,
+          ))
+            walk(argument, {
+              mode,
+              api: label,
+              allowText: textAllowed(api, context.filename),
+            })
+        } else if (
+          api?.source === '@vanilla-extract/css' &&
+          api.name === 'styleVariants'
+        ) {
+          if (args[0])
+            walk(args[0], {
+              mode: 'namespaces',
+              api: 'vanilla-extract.styleVariants',
+              namespaceMode: 'class',
+            })
+          if (args[1])
+            walk(args[1], {
+              mode: 'class',
+              api: 'vanilla-extract.styleVariants',
+              returnsRules: true,
+            })
+        } else if (jsxApi(api) && args.length >= 2) {
+          const devup = styleComponent(args[0], scopeOf)
+          const owner = imported(args[0], scopeOf)
+          props(args[1], {
+            devup,
+            api: api?.name ?? 'jsx',
+            takesCss:
+              devup || api?.source.startsWith('@emotion/react') === true,
+            global:
+              owner?.name === 'Global' &&
+              ['@emotion/react', '@devup-ui/react/compat'].includes(
+                owner.source,
+              ),
+          })
+        } else if (styledFactory(node.callee, scopeOf)) {
+          const callee = unwrap(node.callee)
+          if (factorySettings(callee, scopeOf)) return
+          const start = imported(callee, scopeOf)?.name === 'styled' ? 1 : 0
+          for (const argument of args.slice(start))
+            walk(argument, {
+              mode: 'class',
+              api: 'styled',
+              returnsRules: true,
+              callbacks: true,
+            })
+        }
+      },
+      JSXOpeningElement(node) {
+        const api = jsxName(node.name, scopeOf)
+        const devup =
+          component(api) ||
+          (node.name.type === AST_NODE_TYPES.JSXIdentifier &&
+            styleComponent(node.name, scopeOf))
+        const global =
+          api?.name === 'Global' &&
+          ['@emotion/react', '@devup-ui/react/compat'].includes(api.source)
+        for (const attribute of node.attributes) {
+          if (attribute.type === AST_NODE_TYPES.JSXSpreadAttribute) {
+            if (devup || global)
+              props(attribute.argument, {
+                devup,
+                takesCss: devup,
+                global,
+                api: 'JSX',
+              })
+            continue
+          }
+          if (attribute.name.type !== AST_NODE_TYPES.JSXIdentifier) continue
+          const key = attribute.name.name
+          const value =
+            attribute.value?.type === AST_NODE_TYPES.JSXExpressionContainer
+              ? attribute.value.expression
+              : attribute.value
+          if (devup && key === 'styleOrder') {
+            if (
+              value?.type === AST_NODE_TYPES.JSXElement ||
+              value?.type === AST_NODE_TYPES.JSXFragment
+            )
+              context.report({ node: attribute, messageId: 'wrongType' })
+            else if (value) check(value, { mode: 'class', api: 'JSX' })
+            else context.report({ node: attribute, messageId: 'wrongType' })
+          } else if (value && global && key === 'styles')
+            walk(value, { mode: 'global', api: 'Global' })
+          else if (
+            value &&
+            key === 'css' &&
+            (devup ||
+              (emotionCss &&
+                node.name.type === AST_NODE_TYPES.JSXIdentifier &&
+                /^[a-z]/.test(node.name.name)))
+          )
+            walk(value, { mode: 'class', api: 'css prop', returnsRules: true })
+          else if (
+            value &&
+            devup &&
+            (key.startsWith('_') || key.startsWith('@') || key === 'selectors')
+          )
+            walk(value, { mode: 'class', api: 'JSX' })
         }
       },
     }
