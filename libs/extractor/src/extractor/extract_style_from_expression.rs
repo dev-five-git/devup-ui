@@ -37,6 +37,9 @@ use std::collections::BTreeMap;
 
 const IGNORED_IDENTIFIERS: [&str; 3] = ["undefined", "NaN", "Infinity"];
 
+#[cfg(test)]
+mod direct_tests;
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum LiteralHandling {
     ExpandResponsiveThemeToken,
@@ -1257,9 +1260,10 @@ fn nest_underscore_name(parent: Option<&StyleSelector>, name: &str) -> Option<St
 }
 
 /// Emotion/styled-components style object keys that are nested selectors
-/// (`'&:hover'`, `':hover'`, `'.parent &'`) rather than CSS properties.
+/// (`'&:hover'`, `':hover'`, `'.parent &'`, `'.child'`, `'> li'`) rather
+/// than CSS properties.
 fn is_nested_selector_key(key: &str) -> bool {
-    key.starts_with(':') || key.contains('&')
+    key.starts_with([':', '.', '#', '[', '*', '>', '+', '~']) || key.contains('&')
 }
 
 fn nest_selectors_key(parent: Option<&StyleSelector>, key: &str) -> Option<StyleSelector> {

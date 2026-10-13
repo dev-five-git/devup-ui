@@ -14,6 +14,12 @@ use oxc_ast::{
 
 use oxc_codegen::{Codegen, CodegenOptions};
 #[cfg(test)]
+#[path = "utils/syntax_only_tests.rs"]
+mod syntax_only_tests;
+#[cfg(test)]
+mod w22_tests;
+
+#[cfg(test)]
 use oxc_parser::Parser;
 use oxc_span::{SPAN, SourceType};
 use oxc_syntax::operator::{BinaryOperator, LogicalOperator, UnaryOperator};
@@ -69,6 +75,7 @@ pub(super) fn js_number_literal(value: &Expression) -> Option<f64> {
 /// otherwise a plain `as const` silently turns styling off.
 pub(super) fn unwrap_syntax_only<'a, 'b>(expression: &'b Expression<'a>) -> &'b Expression<'a> {
     match expression {
+        Expression::TSTypeAssertion(e) => unwrap_syntax_only(&e.expression),
         Expression::TSAsExpression(e) => unwrap_syntax_only(&e.expression),
         Expression::TSSatisfiesExpression(e) => unwrap_syntax_only(&e.expression),
         Expression::TSNonNullExpression(e) => unwrap_syntax_only(&e.expression),
@@ -83,6 +90,7 @@ pub(super) fn unwrap_syntax_only_mut<'a, 'b>(
     expression: &'b mut Expression<'a>,
 ) -> &'b mut Expression<'a> {
     match expression {
+        Expression::TSTypeAssertion(e) => unwrap_syntax_only_mut(&mut e.expression),
         Expression::TSAsExpression(e) => unwrap_syntax_only_mut(&mut e.expression),
         Expression::TSSatisfiesExpression(e) => unwrap_syntax_only_mut(&mut e.expression),
         Expression::TSNonNullExpression(e) => unwrap_syntax_only_mut(&mut e.expression),
@@ -198,6 +206,8 @@ pub(super) enum ParsedStyleOrder<'a> {
         consequent: Option<u8>,
         alternate: Option<u8>,
     },
+    /// A value that is neither of these, which the stylesheet cannot order by
+    Unsupported,
 }
 
 impl ParsedStyleOrder<'_> {
@@ -222,9 +232,36 @@ pub(super) fn jsx_expression_to_style_order<'a>(
             .map_or(ParsedStyleOrder::None, |e| {
                 expression_to_style_order(e, allocator)
             }),
-        _ => jsx_expression_to_number(expr).map_or(ParsedStyleOrder::None, |n| {
+        _ => jsx_expression_to_number(expr).map_or(ParsedStyleOrder::Unsupported, |n| {
             ParsedStyleOrder::Static(n as u8)
         }),
+    }
+}
+
+/// What a branch of a `styleOrder` gives the build
+enum OrderBranch {
+    Number(u8),
+    Nothing,
+}
+
+/// What a `styleOrder` branch gives: a number, nothing, or neither
+fn style_order_branch(
+    expr: &Expression<'_>,
+    nothing: &impl Fn(&Expression<'_>) -> bool,
+) -> Option<OrderBranch> {
+    let expr = unwrap_syntax_only(expr);
+    if let Some(number) = get_number_by_literal_expression(expr) {
+        return Some(OrderBranch::Number(number as u8));
+    }
+    nothing(expr).then_some(OrderBranch::Nothing)
+}
+
+impl OrderBranch {
+    const fn order(&self) -> Option<u8> {
+        match self {
+            OrderBranch::Number(number) => Some(*number),
+            OrderBranch::Nothing => None,
+        }
     }
 }
 
@@ -233,34 +270,58 @@ pub(super) fn expression_to_style_order<'a>(
     expr: &Expression<'a>,
     allocator: &'a Allocator,
 ) -> ParsedStyleOrder<'a> {
+    expression_to_style_order_with(expr, allocator, &|value| match value {
+        Expression::NullLiteral(_) | Expression::BooleanLiteral(_) => true,
+        Expression::Identifier(identifier) => identifier.name == "undefined",
+        Expression::UnaryExpression(unary) => {
+            unary.operator == UnaryOperator::Void && is_pure(&unary.argument)
+        }
+        _ => false,
+    })
+}
+
+/// Parse order branches using the caller's lexical meaning of an empty value.
+pub(super) fn expression_to_style_order_with<'a>(
+    expr: &Expression<'a>,
+    allocator: &'a Allocator,
+    nothing: &impl Fn(&Expression<'_>) -> bool,
+) -> ParsedStyleOrder<'a> {
     // Inspect `expr` ONCE. A numeric-literal probe (`get_number_by_literal_expression`)
     // never matches a conditional/logical node, so folding it into the default arm is
     // behavior-identical to the former "static probe first, then re-match" flow while
     // avoiding the redundant second inspection of `expr`.
-    match expr {
+    match unwrap_syntax_only(expr) {
         // Conditional: `cond ? a : b` → Conditional with both branches probed.
         Expression::ConditionalExpression(cond) => {
-            let consequent = get_number_by_literal_expression(&cond.consequent).map(|n| n as u8);
-            let alternate = get_number_by_literal_expression(&cond.alternate).map(|n| n as u8);
-            ParsedStyleOrder::Conditional {
-                condition: cond.test.clone_in(allocator),
-                consequent,
-                alternate,
+            match (
+                style_order_branch(&cond.consequent, nothing),
+                style_order_branch(&cond.alternate, nothing),
+            ) {
+                (Some(consequent), Some(alternate)) => ParsedStyleOrder::Conditional {
+                    condition: cond.test.clone_in(allocator),
+                    consequent: consequent.order(),
+                    alternate: alternate.order(),
+                },
+                _ => ParsedStyleOrder::Unsupported,
             }
         }
         // Logical &&: `a === 1 && 5` → truthy → right side (number), falsy → None.
         Expression::LogicalExpression(logical) if logical.operator == LogicalOperator::And => {
-            let consequent = get_number_by_literal_expression(&logical.right).map(|n| n as u8);
-            ParsedStyleOrder::Conditional {
-                condition: logical.left.clone_in(allocator),
-                consequent,
-                alternate: None,
-            }
+            style_order_branch(&logical.right, nothing).map_or(
+                ParsedStyleOrder::Unsupported,
+                |consequent| ParsedStyleOrder::Conditional {
+                    condition: logical.left.clone_in(allocator),
+                    consequent: consequent.order(),
+                    alternate: None,
+                },
+            )
         }
-        // Otherwise fall back to static numeric-literal resolution.
-        _ => get_number_by_literal_expression(expr).map_or(ParsedStyleOrder::None, |n| {
-            ParsedStyleOrder::Static(n as u8)
-        }),
+        // Otherwise a number, or nothing at all.
+        expr => match style_order_branch(expr, nothing) {
+            Some(OrderBranch::Number(number)) => ParsedStyleOrder::Static(number),
+            Some(OrderBranch::Nothing) => ParsedStyleOrder::None,
+            None => ParsedStyleOrder::Unsupported,
+        },
     }
 }
 
@@ -542,37 +603,8 @@ impl<'a> oxc_ast_visit::Visit<'a> for Suspends {
     fn visit_class(&mut self, _: &oxc_ast::ast::Class<'a>) {}
 }
 
-/// Whether an element can read its impure spreads once through a function
-/// wrapped around it: what stays in that function (style props, `className`
-/// and `style`) neither waits nor yields, as the spreads and the other
-/// attributes and children before the last of them move out of it
-pub(super) fn reads_spreads_once(element: &oxc_ast::ast::JSXElement<'_>) -> bool {
-    use oxc_ast::ast::{JSXAttributeItem, JSXAttributeName};
-    use oxc_ast_visit::Visit;
-    let mut impure = false;
-    let mut suspends = Suspends::default();
-    for attribute in &element.opening_element.attributes {
-        match attribute {
-            JSXAttributeItem::SpreadAttribute(spread) => impure |= !is_pure(&spread.argument),
-            JSXAttributeItem::Attribute(attribute) => {
-                if !matches!(&attribute.name, JSXAttributeName::Identifier(name)
-                    if stays_attribute(&name.name))
-                    && let Some(value) = &attribute.value
-                {
-                    suspends.visit_jsx_attribute_value(value);
-                }
-            }
-        }
-    }
-    impure && !suspends.found
-}
-
 /// Whether the prop `name` stays an attribute of the element built, rather
 /// than becoming its classes or style
-pub(super) fn stays_attribute(name: &str) -> bool {
-    css::is_special_property::is_special_property(name) && !matches!(name, "className" | "style")
-}
-
 /// `((name, ...) => body)(value, ...)`: each value is evaluated once, where
 /// `body` reads it as often as it needs
 pub(super) fn call_with_values<'a>(
@@ -738,22 +770,24 @@ pub(super) fn style_arguments<'a>(
 pub(super) fn reads_unknown(
     expression: &Expression<'_>,
     unknown: &crate::imported_constants::Unknown,
+    reads: &dyn Fn(&oxc_ast::ast::IdentifierReference<'_>) -> bool,
 ) -> bool {
     match unwrap_syntax_only(expression) {
         Expression::ArrayExpression(array) => array.elements.iter().any(|element| {
             element
                 .as_expression()
-                .is_some_and(|element| reads_unknown(element, unknown))
+                .is_some_and(|element| reads_unknown(element, unknown, reads))
         }),
         Expression::LogicalExpression(logical) => {
-            (logical.operator != LogicalOperator::And && reads_unknown(&logical.left, unknown))
-                || reads_unknown(&logical.right, unknown)
+            (logical.operator != LogicalOperator::And
+                && reads_unknown(&logical.left, unknown, reads))
+                || reads_unknown(&logical.right, unknown, reads)
         }
         Expression::ConditionalExpression(conditional) => {
-            reads_unknown(&conditional.consequent, unknown)
-                || reads_unknown(&conditional.alternate, unknown)
+            reads_unknown(&conditional.consequent, unknown, reads)
+                || reads_unknown(&conditional.alternate, unknown, reads)
         }
-        expression => unknown.read_by(expression),
+        expression => unknown.read_by_in(expression, reads),
     }
 }
 
@@ -823,7 +857,10 @@ fn branch<'b, 'a>(expression: &'b Expression<'a>) -> Option<Branch<'b, 'a>> {
 
 /// `value` as a class: itself when it is a string, nothing otherwise, as the
 /// libraries skip `true` and other non-class values
-fn string_class<'a>(ast_builder: &AstBuilder<'a>, value: &Expression<'a>) -> Expression<'a> {
+pub(super) fn string_class<'a>(
+    ast_builder: &AstBuilder<'a>,
+    value: &Expression<'a>,
+) -> Expression<'a> {
     if matches!(
         value,
         Expression::StringLiteral(_) | Expression::TemplateLiteral(_)
@@ -951,6 +988,35 @@ pub(super) fn runtime_value_error(api: &str, value: &str) -> String {
 
 pub(super) fn element_error(component: &str, code: &str, requirement: &str) -> String {
     format!("`<{component}>` cannot use `{code}` at build time: {requirement}")
+}
+
+/// The `css` prop of `element` holds `code`, which the build cannot compile
+pub(super) fn css_prop_error(element: &str, code: &str, requirement: &str) -> String {
+    format!("`css` on `<{element}>` cannot use `{code}` at build time: {requirement}")
+}
+
+pub(super) const CSS_PROP_SPREAD: &str = "a spread after the `css` prop may carry a `css` of its own, which replaces it whole where only the runtime could tell: write the spread before `css`";
+
+pub(super) const CSS_PROP_VALUE: &str = "it must be a style object, CSS text, a class `css()` gives, or a function of the theme giving one, or an array or condition of them";
+
+pub(super) const LOCAL_STYLES: &str = "a style object it composes must be written in it, or declared with `const` at the top level of the module, where the build reads it";
+
+pub(super) const CLASS_NAMES_CHILD: &str =
+    "it takes only a child function of `{ css, cx, theme }` giving what it renders at once";
+
+pub(super) const CLASS_NAMES_CALL: &str = "the `css` and `cx` its child function takes can only be called, as the build compiles each call";
+
+pub(super) const CLASS_NAMES_PART: &str = "`css` and `cx` compose only style objects, CSS text, classes, calls of them, or arrays or conditions of these";
+
+pub(super) const CLASS_NAMES_CLASS_MAP: &str =
+    "an object `cx` takes must give each class a condition, as `{ name: condition }`";
+
+/// The `css` prop of the styled component `element` sets what its own styles
+/// set, which the build cannot order there
+pub(super) fn css_prop_override_error(element: &str) -> String {
+    format!(
+        "`css` on `<{element}>` overrides styles `{element}` sets, which the build orders only for a styled component rendering a tag with no attrs or props read, given no spread, `as` or `forwardedAs`: move these styles into `styled({element})(...)`"
+    )
 }
 
 pub(super) fn spread_error(api: &str, spread: &oxc_ast::ast::SpreadElement<'_>) -> (u32, String) {

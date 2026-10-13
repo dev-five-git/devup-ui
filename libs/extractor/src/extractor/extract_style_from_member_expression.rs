@@ -28,12 +28,16 @@ pub(super) fn extract_style_from_member_expression<'a>(
     selector: &Option<StyleSelector>,
 ) -> ExtractResult<'a> {
     let mem_expression = &mem.expression.clone_in(ast_builder.allocator());
+    let optional = mem.optional;
     let mut ret: Vec<ExtractStyleProp> = vec![];
 
     // Unwrap type assertions and parenthesized expressions (e.g., `({...} as const)[key]`)
     while let Some(inner) = match &mem.object {
         Expression::TSAsExpression(ts_as) => {
             Some(ts_as.expression.clone_in(ast_builder.allocator()))
+        }
+        Expression::TSTypeAssertion(assertion) => {
+            Some(assertion.expression.clone_in(ast_builder.allocator()))
         }
         Expression::ParenthesizedExpression(p) => {
             Some(p.expression.clone_in(ast_builder.allocator()))
@@ -62,7 +66,7 @@ pub(super) fn extract_style_from_member_expression<'a>(
             ast_builder,
             name,
             whole.clone_in(ast_builder.allocator()),
-            mem_expression,
+            (mem_expression, optional),
             offset,
             level,
             selector,
@@ -205,7 +209,7 @@ pub(super) fn extract_style_from_member_expression<'a>(
             ast_builder,
             name,
             mem.object.clone_in(ast_builder.allocator()),
-            mem_expression,
+            (mem_expression, optional),
             mem.span.start,
             level,
             selector,
@@ -219,21 +223,23 @@ pub(super) fn extract_style_from_member_expression<'a>(
 }
 
 /// `object[key]` known only at runtime: a CSS variable for a property, and
-/// under a selector, which takes styles, what the build cannot read
+/// under a selector, which takes styles, what the build cannot read. An
+/// access written `object?.[key]` stays optional.
 fn runtime_member<'a>(
     ast_builder: &AstBuilder<'a>,
     name: Option<&str>,
     object: Expression<'a>,
-    key: &Expression<'a>,
+    access: (&Expression<'a>, bool),
     offset: u32,
     level: u8,
     selector: &Option<StyleSelector>,
 ) -> ExtractStyleProp<'a> {
+    let (key, optional) = access;
     let member = Expression::ComputedMemberExpression(ComputedMemberExpression::boxed(
         SPAN,
         object,
         key.clone_in(ast_builder.allocator()),
-        false,
+        optional,
         ast_builder,
     ));
     match name {

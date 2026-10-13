@@ -21,7 +21,7 @@
   "scripts": {
     "lint": "eslint && bun ../../node_modules/@typescript/native/bin/tsc --noEmit && bun run test:types",
     "build": "bun run test:types && bun ../../node_modules/@typescript/native/bin/tsc && vite build",
-    "test:types": "bun ../../node_modules/@typescript/native/bin/tsc --ignoreConfig --noEmit --strict --jsx react-jsx --moduleResolution bundler --module esnext --target esnext --types bun --skipLibCheck type-tests/custom-shorthand.ts"
+    "test:types": "bun ../../node_modules/@typescript/native/bin/tsc --ignoreConfig --noEmit --strict --jsx react-jsx --moduleResolution bundler --module esnext --target esnext --types bun --skipLibCheck type-tests/custom-shorthand.ts type-tests/vanilla-extract.ts"
   },
   "publishConfig": {
     "access": "public"
@@ -48,6 +48,12 @@
     },
     "./compat/emotion": {
       "types": "./dist/compat/emotion.d.ts"
+    },
+    "./compat/css-prop": {
+      "types": "./dist/compat/css-prop.d.ts"
+    },
+    "./compat/emotion-jsx-runtime": {
+      "types": "./dist/compat/emotion-jsx-runtime.d.ts"
     },
     "./compat/stylex": {
       "types": "./dist/compat/stylex.d.ts"
