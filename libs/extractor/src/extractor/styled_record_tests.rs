@@ -415,12 +415,12 @@ fn template_key_precedence_when_public_component_renders(
 }
 
 #[rstest]
-#[serial_test::serial]
 #[case::padding(("p", "+2", "padding", "8px"))]
 #[case::margin(("m", "-2", "margin", "-8px"))]
 #[case::quoted_padding(("p", "+'2'", "padding", "8px"))]
 #[case::template_margin(("m", "-`2`", "margin", "-8px"))]
 #[case::interpolated_padding(("p", "`${2}`", "padding", "8px"))]
+#[serial_test::serial]
 fn signed_shorthand_when_public_record_is_prepared(
     #[case] shorthand: (&str, &str, &str, &str),
     #[values(false, true)] single_css: bool,

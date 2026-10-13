@@ -20544,7 +20544,6 @@ export const K = styled.div(base, cond && { color: 'blue' }, { margin: 1 });",
     }
 
     #[rstest]
-    #[serial]
     #[case::both_branches(
         "{ ...(on ? { color: 'red' } : { color: 'purple' }), color: 'orange' }",
         None
@@ -20585,6 +20584,7 @@ export const K = styled.div(base, cond && { color: 'blue' }, { margin: 1 });",
         "{ ...((on ? { color: 'red' } : {}) satisfies object), color: 'orange' }",
         None
     )]
+    #[serial]
     fn test_styled_conditional_spread_final_scalar_wins(
         #[case] rules: &str,
         #[case] selector: Option<&str>,
@@ -20613,9 +20613,9 @@ export const K = styled.div(base, cond && { color: 'blue' }, { margin: 1 });",
     }
 
     #[rstest]
-    #[serial]
     #[case::per_file(false)]
     #[case::single_css(true)]
+    #[serial]
     fn test_styled_conditional_spread_exact_w38m(#[case] single_css: bool) {
         reset_class_map();
         reset_file_map();
@@ -20653,9 +20653,9 @@ export const K = styled.div(base, cond && { color: 'blue' }, { margin: 1 });",
     }
 
     #[rstest]
-    #[serial]
     #[case::per_file(false)]
     #[case::single_css(true)]
+    #[serial]
     fn test_styled_conditional_spread_runtime_class_callback_rejected(#[case] single_css: bool) {
         reset_class_map();
         reset_file_map();
@@ -20675,10 +20675,10 @@ export const K = styled.div(base, cond && { color: 'blue' }, { margin: 1 });",
     }
 
     #[rstest]
-    #[serial]
     #[case::member("styled.div")]
     #[case::curried("styled('div')")]
     #[case::two_argument("styled")]
+    #[serial]
     fn test_styled_conditional_spread_call_forms(
         #[case] factory: &str,
         #[values(false, true)] single_css: bool,
