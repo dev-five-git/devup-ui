@@ -1,6 +1,4 @@
 use super::counter_compiler_tests::*;
-use css::counter_names::NameAddress;
-use extractor::extract_style::compiler_receipts::WitnessDisposition;
 use sheet::counter_kernel::KernelError;
 
 #[test]
@@ -31,90 +29,12 @@ fn final_rejects_when_only_reservation_key_or_slot_is_damaged_after_finish(#[cas
     with_admission(|| {
         // Given: independent genuine parser observation aborts without granting batch authority.
         let _guard = Guard::new();
-        let observed = with_counter_extract(reserved_input(), |_, batch| {
-            batch.consume(|v| {
-                let child = v
-                    .associations
-                    .invocations
-                    .iter()
-                    .find(|i| i.raw == "child.css.ts")
-                    .unwrap_or_else(|| panic!("real child invocation"));
-                let w = v
-                    .witnesses
-                    .iter()
-                    .find(|w| {
-                        w.invocation == child.id
-                            && w.disposition == WitnessDisposition::ReservationOnly
-                    })
-                    .unwrap_or_else(|| panic!("real child reservation"));
-                let NameAddress::Counter {
-                    namespace,
-                    legacy_key,
-                    ..
-                } = &w.produced.class().allocation.address
-                else {
-                    panic!("Counter reservation")
-                };
-                assert!(
-                    v.witnesses
-                        .iter()
-                        .filter(|w| w.disposition == WitnessDisposition::Emission)
-                        .all(|w| match &w.produced.class().allocation.address {
-                            NameAddress::Counter {
-                                namespace: n,
-                                legacy_key: k,
-                                ..
-                            } => n != namespace || k != legacy_key,
-                            NameAddress::Baseline { .. } => false,
-                        })
-                );
-                Err::<(), _>(Box::new(w.produced.class().allocation.address.clone()))
-            })
-        });
-        let observed = match observed {
-            Err(CounterCompileError::Consumer(observed)) => observed,
-            Err(CounterCompileError::Compile(e)) => panic!("{e}"),
-            Ok(()) => panic!("observation must abort allocator mutations"),
-        };
-        let css::counter_names::NameAddress::Counter {
-            namespace,
-            legacy_key: key,
-            slot,
-        } = *observed
-        else {
-            panic!("real Counter reservation")
-        };
+        let address = reservation();
         let before = authority();
         let restore = cache6_session::Restore::default();
         // When
         let result = after_finish(reserved_input(), || {
-            css::class_map::with_class_map_mut(|maps| {
-                let mut expected = maps.clone();
-                let slots = maps
-                    .get_mut(&namespace)
-                    .unwrap_or_else(|| panic!("acquired namespace"));
-                assert_eq!(slots.get(&key), Some(&slot));
-                let next = slot
-                    .checked_add(1)
-                    .unwrap_or_else(|| panic!("slot overflow"));
-                if remove {
-                    slots.remove(&key);
-                    expected
-                        .get_mut(&namespace)
-                        .unwrap_or_else(|| panic!("expected namespace"))
-                        .remove(&key);
-                } else {
-                    *slots
-                        .get_mut(&key)
-                        .unwrap_or_else(|| panic!("acquired key")) = next;
-                    *expected
-                        .get_mut(&namespace)
-                        .unwrap_or_else(|| panic!("expected namespace"))
-                        .get_mut(&key)
-                        .unwrap_or_else(|| panic!("expected key")) = next;
-                }
-                assert_eq!(*maps, expected);
-            });
+            damage_reservation(&address, remove);
             Ok::<_, String>(())
         });
         // Then

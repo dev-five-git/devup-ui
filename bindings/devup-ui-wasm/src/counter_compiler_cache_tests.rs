@@ -13,11 +13,8 @@ fn genuine_companions_preserve_or_retire_when_supplied_before_and_after_work(
         let _guard = Guard::new();
         let cached = required(code_extract_counter(reserved_input(), false));
         assert!(cached.code().contains("root"));
-        let bytes = encoded();
-        let expected_maps = cache6_session::Maps::capture();
+        let proof = exported();
         let expected_companions = maps();
-        with_style_sheet_mut(|s| s.source_ids = css::file_map::get_original_ids());
-        let expected_sheet = with_style_sheet(LiveCheckpoint::capture);
         fresh();
         let cold = authority();
         let send = || {
@@ -45,7 +42,7 @@ fn genuine_companions_preserve_or_retire_when_supplied_before_and_after_work(
         }
         let (prior_maps, prior_sheet) = cache6_session::Restore::before();
         // When
-        assert_eq!(cache6_restore::import(&bytes), Ok(()));
+        assert_eq!(cache6_restore::import(&proof.0), Ok(()));
         if !before {
             send();
         }
@@ -54,8 +51,8 @@ fn genuine_companions_preserve_or_retire_when_supplied_before_and_after_work(
             assert_eq!(authority(), cold);
             cache6_restore::RESTORE.with_borrow(|s| assert!(s.session.is_none()));
         } else {
-            assert_eq!(cache6_session::Maps::capture(), expected_maps);
-            assert_eq!(with_style_sheet(LiveCheckpoint::capture), expected_sheet);
+            assert_eq!(cache6_session::Maps::capture(), proof.1);
+            assert_eq!(with_style_sheet(LiveCheckpoint::capture), proof.2);
             let expected = cache6_session::Restore {
                 session: Some(cache6_session::Session::installed(prior_maps, prior_sheet)),
                 ..Default::default()
@@ -148,26 +145,10 @@ fn nonempty_real_js6_is_adopted_when_import_precedes_recompile() {
         let clean = compile("a.tsx", source);
         assert_ne!(with_style_sheet(|s| s.properties.len()), 0);
         assert_ne!(with_style_sheet(|s| s.keyframes.len()), 0);
-        let bytes = encoded();
-        let expected_maps = cache6_session::Maps::capture();
-        with_style_sheet_mut(|s| s.source_ids = css::file_map::get_original_ids());
-        let expected_sheet = with_style_sheet(LiveCheckpoint::capture);
+        let proof = exported();
         fresh();
         configure_typography();
-        let (before_maps, before_sheet) = cache6_session::Restore::before();
-        // When
-        assert_eq!(cache6_restore::import(&bytes), Ok(()));
-        // Then: equality precedes any recompile.
-        assert_eq!(cache6_session::Maps::capture(), expected_maps);
-        assert_eq!(with_style_sheet(LiveCheckpoint::capture), expected_sheet);
-        let expected = cache6_session::Restore {
-            session: Some(cache6_session::Session::installed(
-                before_maps,
-                before_sheet,
-            )),
-            ..Default::default()
-        };
-        cache6_restore::RESTORE.with_borrow(|state| assert_eq!(state, &expected));
+        install(&proof);
         let replay = compile("a.tsx", source);
         fresh();
         configure_typography();
