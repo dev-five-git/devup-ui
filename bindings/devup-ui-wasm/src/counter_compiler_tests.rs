@@ -15,7 +15,18 @@ mod dynamic;
 #[cfg(test)]
 mod nested;
 #[cfg(test)]
+mod output;
+#[cfg(test)]
 mod surfaces;
+
+#[derive(Clone, Copy, Debug)]
+enum Action {
+    Insert,
+    Noop,
+    Hmr,
+    Cleanup,
+    Keyframes,
+}
 
 pub(super) fn required<T, E: std::fmt::Debug>(result: Result<T, E>) -> T {
     result.unwrap_or_else(|error| panic!("{error:?}"))
