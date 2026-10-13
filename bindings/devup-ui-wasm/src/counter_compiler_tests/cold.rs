@@ -74,3 +74,111 @@ fn genuine_raw_cache_is_silent_cold_when_version_shape_or_record_is_damaged(
         assert_eq!(cache6_session::Maps::capture(), clean_maps);
     });
 }
+
+#[rstest]
+#[serial]
+fn family_cache_is_cold_when_record_footprint_or_coordinated_expansion_is_damaged(
+    #[values(0, 1, 3, 4)] family: usize,
+    #[values(Damage::Record, Damage::Footprint, Damage::Coordinated)] damage: Damage,
+) {
+    with_admission(|| {
+        // Given
+        let _guard = Guard::new();
+        configure_typography();
+        let source = FAMILY_SOURCES[family];
+        if family == 2 {
+            let observed = with_counter_extract(input("a.tsx", source), |_, batch| {
+                batch.consume(|v| {
+                    let witness = v.witnesses.first().unwrap_or_else(|| panic!("dynamic"));
+                    let extractor::extract_style::compiler_receipts::ProducedData::Dynamic(d) =
+                        &witness.produced
+                    else {
+                        panic!("dynamic")
+                    };
+                    assert_eq!(d.site, None);
+                    assert!(d.variable_allocation.is_some());
+                    Err::<(), _>(())
+                })
+            });
+            assert!(matches!(observed, Err(CounterCompileError::Consumer(()))));
+        }
+        let clean = compile("a.tsx", source);
+        let clean_maps = cache6_session::Maps::capture();
+        let mut value: Value = required(serde_json::from_slice(&encoded()));
+        let original_evidence = value["evidence"].clone();
+        match damage {
+            Damage::Footprint => {
+                let expansion = &mut value["evidence"]["counters"]["D9-0"]["0"][0]["proof"]["emission"]
+                    ["expansion"];
+                match family {
+                    0 => expansion["Static"][0]["Property"]["bucket"] = json!("other.tsx"),
+                    1 | 2 => {
+                        expansion["Dynamic"]["consumer"]["Property"]["bucket"] = json!("other.tsx");
+                    }
+                    3 => {
+                        expansion["Keyframes"]["record"]["Keyframes"]["bucket"] =
+                            json!("other.tsx");
+                    }
+                    4 => {
+                        expansion["Typography"]["members"][0]["Property"]["bucket"] =
+                            json!("other.tsx");
+                    }
+                    _ => panic!("family"),
+                }
+            }
+            Damage::Record | Damage::Coordinated => {
+                if family == 3 {
+                    let frames = value["keyframes"]["a.tsx"]
+                        .as_object_mut()
+                        .unwrap_or_else(|| panic!("frames"));
+                    let record = frames
+                        .values_mut()
+                        .next()
+                        .unwrap_or_else(|| panic!("keyframe"));
+                    record["from"][0][1] = json!("damaged");
+                } else {
+                    property_record(&mut value)["v"] = json!("damaged");
+                }
+                if matches!(damage, Damage::Coordinated) {
+                    let expansion = &mut value["evidence"]["counters"]["D9-0"]["0"][0]["proof"]["emission"]
+                        ["expansion"];
+                    match family {
+                        0 => expansion["Static"][0]["Property"]["record"]["v"] = json!("damaged"),
+                        1 | 2 => {
+                            expansion["Dynamic"]["consumer"]["Property"]["record"]["v"] =
+                                json!("damaged");
+                        }
+                        3 => {
+                            expansion["Keyframes"]["steps"][0][1][0][1] = json!("damaged");
+                            expansion["Keyframes"]["record"]["Keyframes"]["steps"][0][1][0][1] =
+                                json!("damaged");
+                        }
+                        4 => {
+                            expansion["Typography"]["members"][0]["Property"]["record"]["v"] =
+                                json!("damaged");
+                        }
+                        _ => panic!("family"),
+                    }
+                }
+            }
+        }
+        let seed = &value["evidence"]["counters"]["D9-0"]["0"][0]["proof"]["emission"]["seed"];
+        assert!(!seed.is_null());
+        assert_eq!(
+            seed,
+            &original_evidence["counters"]["D9-0"]["0"][0]["proof"]["emission"]["seed"]
+        );
+        let bytes = required(serde_json::to_vec(&value));
+        fresh();
+        configure_typography();
+        let cold = authority();
+        // When
+        assert_eq!(cache6_restore::import(&bytes), Ok(()));
+        // Then
+        assert_eq!(authority(), cold);
+        cache6_restore::RESTORE.with_borrow(|s| assert_eq!(s, &cache6_session::Restore::default()));
+        assert_eq!(cache_names::check(), Ok(()));
+        assert_eq!(compile("a.tsx", source), clean);
+        assert_eq!(cache6_session::Maps::capture(), clean_maps);
+    });
+}

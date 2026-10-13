@@ -6,6 +6,7 @@ pub(super) use extractor::compiler_policy::{
     CompilerInput, CounterCompileError, with_counter_extract,
 };
 use extractor::extract_style::compiler_receipts::WitnessDisposition;
+use serde_json::{Value, json};
 pub(super) use std::panic::{AssertUnwindSafe, catch_unwind};
 
 #[cfg(test)]
@@ -26,6 +27,13 @@ enum Action {
     Hmr,
     Cleanup,
     Keyframes,
+}
+
+#[derive(Clone, Copy, Debug)]
+enum Damage {
+    Record,
+    Footprint,
+    Coordinated,
 }
 
 pub(super) fn required<T, E: std::fmt::Debug>(result: Result<T, E>) -> T {
@@ -170,4 +178,13 @@ pub(super) fn damage_reservation(address: &NameAddress, remove: bool) {
         }
         NameAddress::Baseline { .. } => panic!("Counter address"),
     }
+}
+
+pub(super) fn property_record(value: &mut serde_json::Value) -> &mut serde_json::Value {
+    value["properties"]["a.tsx"]["255"]["0"]
+        .as_array_mut()
+        .unwrap_or_else(|| panic!("records"))
+        .iter_mut()
+        .find(|r| r["r"] == false)
+        .unwrap_or_else(|| panic!("consumer"))
 }
