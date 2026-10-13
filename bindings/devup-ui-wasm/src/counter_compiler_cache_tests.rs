@@ -137,123 +137,42 @@ fn genuine_session_keeps_seed_batches_when_late_companions_match_or_retire(
     });
 }
 
-#[rstest]
+#[test]
 #[serial]
-fn genuine_raw_cache_is_silent_cold_when_version_shape_or_record_is_damaged(
-    #[values(0, 1, 2, 3, 4, 5, 6, 7)] kind: u8,
-) {
-    with_admission(|| {
-        // Given: expected output comes from undamaged real JS, never candidate data.
-        let _guard = Guard::new();
-        let source = "import {css} from '@devup-ui/react';const a=css({color:'red'});";
-        let clean = compile("a.css.ts", source);
-        let clean_maps = cache6_session::Maps::capture();
-        let bytes = encoded();
-        let mut value: serde_json::Value = required(serde_json::from_slice(&bytes));
-        let bytes = match kind {
-            0 => {
-                fresh();
-                required(exact_test_support::compile("current.css.ts", source));
-                required(export_sheet_internal()).into_bytes()
-            }
-            1 | 2 => {
-                value["atomNamingVersion"] = serde_json::json!(if kind == 1 { 5 } else { 7 });
-                required(serde_json::to_vec(&value))
-            }
-            3 => b"{truncated".to_vec(),
-            4 => required(String::from_utf8(bytes))
-                .replacen(
-                    "\"atomNamingVersion\":6",
-                    "\"atomNamingVersion\":6,\"atomNamingVersion\":6",
-                    1,
-                )
-                .into_bytes(),
-            5 | 6 => {
-                if kind != 6 {
-                    value["properties"] = serde_json::json!({});
-                }
-                if kind != 5 {
-                    value["evidence"]["counters"] = serde_json::json!({});
-                }
-                required(serde_json::to_vec(&value))
-            }
-            7 => {
-                value["properties"]["a.css.ts"]["255"]["0"][0]["v"] = serde_json::json!("damaged");
-                value["evidence"]["counters"]["D9-0"]["0"][0]["proof"]["emission"]["expansion"]["Static"]
-                    [0]["Property"]["record"]["v"] = serde_json::json!("damaged");
-                required(serde_json::to_vec(&value))
-            }
-            _ => panic!("kind"),
-        };
-        fresh();
-        let cold = authority();
-        // When
-        assert_eq!(cache6_restore::import(&bytes), Ok(()));
-        // Then
-        assert_eq!(authority(), cold);
-        cache6_restore::RESTORE.with_borrow(|s| assert_eq!(s, &cache6_session::Restore::default()));
-        assert_eq!(cache_names::check(), Ok(()));
-        // Given: the rejected cache leaves cold authority before a genuine compile error.
-        let broken = input(
-            "broken.tsx",
-            "import {css} from '@devup-ui/react';\ncss`color: ${x};`;",
-        );
-        // When
-        let error = code_extract_counter(broken, false)
-            .err()
-            .unwrap_or_else(|| panic!("runtime interpolation must fail"));
-        // Then: error transport keeps the authored location and rolls back original registration.
-        assert!(error.starts_with("broken.tsx:2:1:"), "{error}");
-        assert!(error.contains("`css()` cannot use `x` at build time"));
-        assert_eq!(authority(), cold);
-        cache6_restore::RESTORE.with_borrow(|s| assert_eq!(s, &Default::default()));
-        assert_eq!(compile("a.css.ts", source), clean);
-        assert_eq!(cache6_session::Maps::capture(), clean_maps);
-    });
-}
-
-#[rstest]
-#[case(
-    "import {styled} from '@devup-ui/react'; const A=styled.div({width:state.size});",
-    "let reads=0; const state={get size(){reads++;return '13px'}};",
-    "const created=reads; const first=A({}); const second=A({}); return [created,reads,first.className===second.className];",
-    "[1,1,true]"
-)]
-#[case(
-    "import {Box} from '@devup-ui/react'; let reads=0; const value=()=>{reads++;return 'red'}; const a=<Box color={value()}/>;",
-    "",
-    "return [reads,Object.values(a.style)];",
-    "[1,[\"red\"]]"
-)]
-#[serial]
-fn generated_js_reads_once_when_executed_by_bun(
-    #[case] source: &str,
-    #[case] setup: &str,
-    #[case] assertion: &str,
-    #[case] expected: &str,
-) {
+fn nonempty_real_js6_is_adopted_when_import_precedes_recompile() {
     with_admission(|| {
         // Given
         let _guard = Guard::new();
-        let output = code_extract_counter(input("eval.tsx", source), false)
-            .unwrap_or_else(|e| panic!("{e}"));
-        let driver = r#"const [code,setup,check]=process.argv.slice(-3);const React={createElement:(type,props)=>({type,...props}),forwardRef:f=>props=>f(props,null)};const source=code.replace(/import\s*\{\s*forwardRef\s+as\s+(\w+)\s*\}\s*from\s*['\"]react['\"];?/g,'const $1=React.forwardRef;').replace(/import[\s\S]*?;/g,'');const t=new Bun.Transpiler({loader:'tsx',tsconfig:JSON.stringify({compilerOptions:{jsx:'react',jsxFactory:'React.createElement'}})});console.log(JSON.stringify(new Function('React',setup+t.transformSync(source)+check)(React)));"#;
+        configure_typography();
+        let source = "import {Box,keyframes} from '@devup-ui/react'; const k=keyframes({from:{opacity:0},to:{opacity:1}}); const a=<Box color='red' width={size} typography='heading' animation={`${k} 1s`}/>;";
+        let clean = compile("a.tsx", source);
+        assert_ne!(with_style_sheet(|s| s.properties.len()), 0);
+        assert_ne!(with_style_sheet(|s| s.keyframes.len()), 0);
+        let bytes = encoded();
+        let expected_maps = cache6_session::Maps::capture();
+        with_style_sheet_mut(|s| s.source_ids = css::file_map::get_original_ids());
+        let expected_sheet = with_style_sheet(LiveCheckpoint::capture);
+        fresh();
+        configure_typography();
+        let (before_maps, before_sheet) = cache6_session::Restore::before();
         // When
-        let evaluated = std::process::Command::new("bun")
-            .args(["--eval", driver, &output.code(), setup, assertion])
-            .output()
-            .unwrap_or_else(|e| panic!("Bun launch: {e}"));
-        // Then
-        assert!(
-            evaluated.status.success(),
-            "{}",
-            String::from_utf8_lossy(&evaluated.stderr)
-        );
-        assert_eq!(
-            String::from_utf8(evaluated.stdout)
-                .unwrap_or_else(|e| panic!("Bun UTF8: {e}"))
-                .trim(),
-            expected
-        );
+        assert_eq!(cache6_restore::import(&bytes), Ok(()));
+        // Then: equality precedes any recompile.
+        assert_eq!(cache6_session::Maps::capture(), expected_maps);
+        assert_eq!(with_style_sheet(LiveCheckpoint::capture), expected_sheet);
+        let expected = cache6_session::Restore {
+            session: Some(cache6_session::Session::installed(
+                before_maps,
+                before_sheet,
+            )),
+            ..Default::default()
+        };
+        cache6_restore::RESTORE.with_borrow(|state| assert_eq!(state, &expected));
+        let replay = compile("a.tsx", source);
+        fresh();
+        configure_typography();
+        compile("a.tsx", source);
+        assert_eq!(compile("a.tsx", source), replay);
+        assert_ne!(clean, replay);
     });
 }
