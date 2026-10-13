@@ -1,12 +1,26 @@
 use super::error::KernelError;
 use crate::{
-    emission_seed::{DeclarationSeed, FrozenPreset, FrozenTypography, preset_key},
+    emission_seed::{DeclarationSeed, FrozenPreset, FrozenTypography, NumericSite, preset_key},
     theme::Theme,
 };
 use extractor::extract_style::{
-    ExtractDynamicStyle,
+    CounterProducerError, ExtractDynamicStyle,
     extract_static_style::{ExtractStaticStyle, ThemeTokenResolution},
 };
+
+pub(super) fn numeric_site(site: Option<&css::Site>) -> Result<Option<NumericSite>, KernelError> {
+    site.map(|site| match &site.file {
+        css::sparse_site::SourceFile::D9(source) => Ok(NumericSite {
+            source: *source,
+            at: site.at,
+            role: site.role,
+        }),
+        css::sparse_site::SourceFile::Unnumbered(_) => {
+            Err(KernelError::Producer(CounterProducerError::UnnumberedSite))
+        }
+    })
+    .transpose()
+}
 
 pub(super) fn declaration(
     style: &ExtractStaticStyle,

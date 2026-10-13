@@ -3,6 +3,7 @@ use css::style_origin::RealLocation;
 use crate::{ExtractOption, vanilla_extract::execute_stylesheet};
 
 #[test]
+#[serial_test::serial]
 fn opaque_calls_use_authored_outermost_producers_when_boa_returns_parent_positions() {
     // Given
     let cases = [
@@ -62,6 +63,7 @@ fn opaque_calls_use_authored_outermost_producers_when_boa_returns_parent_positio
 }
 
 #[test]
+#[serial_test::serial]
 fn nested_opaque_native_entry_clears_enclosing_factory_witness_when_no_packet_exists() {
     // Given
     let source = "import {style,styleVariants} from '@devup-ui/react';const identity=f=>f;export const classes=styleVariants({one:1},()=>identity(style)({color:'red'}));";
@@ -89,6 +91,7 @@ fn nested_opaque_native_entry_clears_enclosing_factory_witness_when_no_packet_ex
 }
 
 #[test]
+#[serial_test::serial]
 fn eval_uses_the_actual_nested_export_binding_when_source_path_has_no_file_linkage() {
     // Given
     let source = "import {style} from '@devup-ui/react';const native=style;const result={nested:[eval(\"native({color:'red'})\"),eval(\"native({color:'blue'})\")],get untouched(){throw new Error('metadata invoked a getter');}};result.self=result;export {result as actualExport};";
@@ -110,6 +113,7 @@ fn eval_uses_the_actual_nested_export_binding_when_source_path_has_no_file_linka
 }
 
 #[test]
+#[serial_test::serial]
 fn eval_default_export_uses_default_binding_when_generated_local_name_is_not_authored() {
     // Given
     let source = "import {style} from '@devup-ui/react';const native=style;export default eval(\"native({color:'red'})\");";
