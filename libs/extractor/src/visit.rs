@@ -21,6 +21,7 @@ use crate::extractor::{
     },
     extract_style_from_jsx::extract_style_from_jsx,
     extract_style_from_styled::{extract_style_from_styled, take_styled_modifiers},
+    styled_jsx::StyledJsx,
 };
 use crate::gen_class_name::{gen_class_names, merge_expression_for_class_name};
 use crate::prop_modify_utils::{convert_class_name, modify_prop_object, modify_props};
@@ -135,6 +136,7 @@ pub struct DevupVisitor<'a> {
     /// offset of the code each is about
     pub errors: Vec<(u32, String)>,
     styled_imports: FxHashSet<String>,
+    styled_jsx: Option<StyledJsx>,
     /// Tracked `StyleX` default/namespace import names (e.g., `stylex` from `import stylex from '...'`)
     stylex_imports: FxHashSet<String>,
     /// Tracked `StyleX` named imports (e.g., `create` from `import { create } from '...'`)
@@ -318,6 +320,7 @@ impl<'a> DevupVisitor<'a> {
             util_imports: FxHashMap::default(),
             split_filename,
             styled_imports: FxHashSet::default(),
+            styled_jsx: None,
             stylex_imports: FxHashSet::default(),
             stylex_named_imports: FxHashMap::default(),
             global_style_components: FxHashSet::default(),
@@ -1060,6 +1063,7 @@ impl<'a> VisitMut<'a> for DevupVisitor<'a> {
     }
 
     fn visit_program(&mut self, it: &mut Program<'a>) {
+        self.styled_jsx = StyledJsx::reserve(it);
         if self.binds_style_results(it) {
             self.style_values = crate::style_values::StyleValues::new(
                 oxc_semantic::SemanticBuilder::new()
@@ -1083,6 +1087,11 @@ impl<'a> VisitMut<'a> for DevupVisitor<'a> {
                 !declaration.declarations.is_empty()
             });
             self.report_compiled_reads(it);
+        }
+        if let Some(helper) = &self.styled_jsx
+            && let Some(binding) = helper.binding(&self.ast, it.source_type.is_commonjs())
+        {
+            it.body.insert(0, binding);
         }
         if !self.styles.is_empty() {
             for css_file in self.css_files.iter().rev() {
@@ -1198,6 +1207,7 @@ impl<'a> VisitMut<'a> for DevupVisitor<'a> {
                     self.split_filename.as_deref(),
                     &self.imports,
                     &attrs,
+                    &mut self.styled_jsx,
                 );
                 self.errors.extend(errors);
                 self.styles.extend(
