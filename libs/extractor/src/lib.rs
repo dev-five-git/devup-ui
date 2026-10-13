@@ -21421,6 +21421,52 @@ const member = styled.p({ pt: '2px' });"
         }
     }
 
+    #[rstest]
+    #[case::forward_ref(
+        "import { forwardRef } from 'react';",
+        "forwardRef((props, ref) => <div {...props} ref={ref} />)"
+    )]
+    #[case::imported("import { ImportedBase } from './base';", "ImportedBase")]
+    #[case::memo("import { memo } from 'react';", "memo((props) => <div {...props} />)")]
+    #[case::local(
+        "function LocalBase(props) { return <div {...props} />; }",
+        "LocalBase"
+    )]
+    #[case::computed(
+        "import { ImportedBase } from './base';\nconst bases = { selected: ImportedBase };\nconst select = () => 'selected';",
+        "bases[select()]"
+    )]
+    #[serial]
+    fn test_styled_component_bases_match_both_call_forms(#[case] setup: &str, #[case] base: &str) {
+        use crate::extract_style::extract_static_style::ExtractStaticStyle;
+        use css::style_selector::StyleSelector;
+
+        let styles = "{ color: 'teal', p: 2, _hover: { color: 'red' } }";
+        let prefix = format!("import {{ styled }} from '@devup-ui/react';\n{setup}\n");
+        let two_arg = extract_tsx(&format!(
+            "{prefix}export const Styled = styled({base}, {styles});"
+        ));
+        let curried = extract_tsx(&format!(
+            "{prefix}export const Styled = styled({base})({styles});"
+        ));
+
+        assert_eq!(two_arg.code, curried.code);
+        assert_eq!(two_arg.styles, curried.styles);
+        assert_eq!(
+            two_arg.styles,
+            FxHashSet::from_iter([
+                ExtractStyleValue::Static(ExtractStaticStyle::new("color", "teal", 0, None)),
+                ExtractStyleValue::Static(ExtractStaticStyle::new("padding", "8px", 0, None)),
+                ExtractStyleValue::Static(ExtractStaticStyle::new(
+                    "color",
+                    "red",
+                    0,
+                    Some(StyleSelector::Selector("&:hover".to_string())),
+                )),
+            ])
+        );
+    }
+
     #[test]
     #[serial]
     fn test_create_global_style_collapses_to_a_null_component() {
