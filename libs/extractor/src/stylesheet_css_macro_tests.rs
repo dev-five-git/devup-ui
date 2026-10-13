@@ -2,8 +2,8 @@ use std::path::Path;
 
 use boa_engine::{Context, Source};
 use oxc_allocator::Allocator;
-use oxc_ast::ast::{Declaration, Statement};
-use oxc_codegen::{Codegen, Gen, GenExpr};
+use oxc_ast::ast::Statement;
+use oxc_codegen::{Codegen, Gen};
 use oxc_parser::Parser;
 use oxc_semantic::SemanticBuilder;
 use oxc_span::SourceType;
@@ -15,6 +15,8 @@ use crate::{ExtractOption, ExtractOutput, ExtractStyleValue, extract_without_sou
 
 mod components;
 mod extended;
+mod followup;
+mod hygiene;
 
 type TestResult = Result<(), Box<dyn std::error::Error>>;
 type Fixture = (
@@ -94,12 +96,10 @@ fn observe(output: &ExtractOutput, predicate: &str) -> Result<String, Box<dyn st
                 for name in crate::module_loader::declared_names(&export.declaration) {
                     exports.push(format!("{}:{name}", serde_json::to_string(&name)?));
                 }
-                match &export.declaration {
-                    Declaration::VariableDeclaration(declaration) => {
-                        declaration.print(&mut codegen, oxc_codegen::Context::default());
-                    }
-                    _ => panic!("unexpected exported declaration: {}", output.code),
-                }
+                export.print(&mut codegen, oxc_codegen::Context::default());
+                script.push_str(codegen.into_source_text().trim_start_matches("export "));
+                script.push('\n');
+                continue;
             }
             Statement::ExportNamedDeclaration(export) => {
                 for specifier in &export.specifiers {
@@ -110,25 +110,6 @@ fn observe(output: &ExtractOutput, predicate: &str) -> Result<String, Box<dyn st
                     ));
                 }
                 continue;
-            }
-            Statement::ExportDefaultDeclaration(export) => {
-                let expression = export
-                    .declaration
-                    .as_expression()
-                    .ok_or("expression default export")?;
-                script.push_str("const __macro_default__ = ");
-                expression.print_expr(
-                    &mut codegen,
-                    oxc_syntax::precedence::Precedence::Assign,
-                    oxc_codegen::Context::default(),
-                );
-                exports.push("default:__macro_default__".to_string());
-                script.push_str(&codegen.into_source_text());
-                script.push_str(";\n");
-                continue;
-            }
-            Statement::ExportFromDeclaration(_) | Statement::ExportAllDeclaration(_) => {
-                panic!("unexpected export form: {}", output.code);
             }
             statement => statement.print(&mut codegen, oxc_codegen::Context::default()),
         }

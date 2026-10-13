@@ -26,9 +26,8 @@ use crate::extractor::{
     },
     extract_style_from_jsx::extract_style_from_jsx,
     extract_style_from_styled::{
-        FORWARD_REF, Naming, StyledDefinition, StyledExtraction, extended,
-        extract_style_from_styled, forward_ref, read_forward, take_styled_modifiers,
-        with_component,
+        Naming, StyledDefinition, StyledExtraction, extended, extract_style_from_styled,
+        forward_ref, read_forward, take_styled_modifiers, with_component,
     },
 };
 use crate::gen_class_name::{gen_class_names, merge_expression_for_class_name};
@@ -93,6 +92,7 @@ mod capture;
 mod class_capture;
 mod element_calls;
 mod global_styles;
+mod hygiene;
 mod imports;
 mod jsx_order;
 mod names;
@@ -2395,8 +2395,9 @@ impl<'a> VisitMut<'a> for DevupVisitor<'a> {
             self.report_compiled_reads(it);
         }
         if self.forwards_refs {
+            let forward_ref = hygiene::forward_ref(&self.ast, it);
             let source = self.ast.allocator().alloc_str(&format!(
-                "import {{ forwardRef as {FORWARD_REF} }} from 'react';"
+                "import {{ forwardRef as {forward_ref} }} from 'react';"
             ));
             let program =
                 oxc_parser::Parser::new(self.ast.allocator(), source, oxc_span::SourceType::mjs())

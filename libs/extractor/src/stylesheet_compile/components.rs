@@ -9,14 +9,15 @@ use oxc_semantic::SemanticBuilder;
 use oxc_span::{SPAN, SourceType};
 use oxc_transformer::{JsxRuntime, TransformOptions, Transformer};
 
-pub(super) fn lower(expression: &str, pragma: &str) -> Result<Option<String>, String> {
+mod error;
+use error::Failure;
+
+pub(super) fn lower(expression: &str, pragma: &str) -> Result<Option<String>, Failure> {
     let allocator = Allocator::default();
     let source = format!("({expression})");
     let expression = Parser::new(&allocator, &source, SourceType::tsx())
         .parse_expression()
-        .map_err(|errors| {
-            format!("Cannot compile component: {errors:?}. Fix: correct its expression")
-        })?;
+        .map_err(|errors| Failure::new(format!("{errors:?}")))?;
     let ast = oxc_ast::builder::AstBuilder::new(&allocator);
     let mut program = Program::new(
         SPAN,
@@ -50,11 +51,7 @@ pub(super) fn lower(expression: &str, pragma: &str) -> Result<Option<String>, St
     options.jsx.pragma = Some(pragma.to_string());
     let result = Transformer::new(&allocator, std::path::Path::new("component.tsx"), &options)
         .build_with_scoping(semantic.into_scoping(), &mut program);
-    if let Some(error) = result.diagnostics.first() {
-        return Err(format!(
-            "Cannot compile component: {error}. Fix: correct its expression"
-        ));
-    }
+    Failure::check(result.diagnostics)?;
     // Classic JSX transforms the expression in place; no import or binding container exists.
     Ok(Some(
         Codegen::new()

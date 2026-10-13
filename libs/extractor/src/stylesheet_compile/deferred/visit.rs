@@ -11,6 +11,7 @@ pub(super) struct Deferred<'a, 's> {
     pub(super) scoping: &'s Scoping,
     pub(super) calls: &'s FxHashMap<NodeId, oxc_span::Span>,
     pub(super) bindings: &'s FxHashMap<SymbolId, String>,
+    pub(super) generated: &'s FxHashSet<String>,
     pub(super) namespace: &'s str,
     pub(super) keys: FxHashSet<String>,
     pub(super) exports: Vec<String>,
@@ -58,8 +59,7 @@ impl<'a> VisitMut<'a> for Deferred<'a, '_> {
             Statement::ImportDeclaration(import) if import.source.value == "react" => {
                 if let Some(specifiers) = &mut import.specifiers {
                     specifiers.retain(|specifier| {
-                        specifier.local().name
-                            != crate::extractor::extract_style_from_styled::FORWARD_REF
+                        !self.generated.contains(specifier.local().name.as_str())
                     });
                 }
                 if import
@@ -114,19 +114,12 @@ impl<'a> VisitMut<'a> for Deferred<'a, '_> {
             }
             Statement::ExportNamedDeclaration(export) => {
                 export.specifiers.retain(|specifier| {
-                    let oxc_ast::ast::ModuleExportName::IdentifierReference(identifier) =
-                        &specifier.local
-                    else {
-                        return true;
-                    };
-                    let Some(symbol) = identifier
-                        .reference_id
-                        .get()
-                        .and_then(|id| self.scoping.get_reference(id).symbol_id())
-                    else {
-                        return true;
-                    };
-                    if self.bindings.contains_key(&symbol) {
+                    // Local exports name module-scope bindings, never an inner scope.
+                    if self
+                        .scoping
+                        .get_root_binding(specifier.local.name().into())
+                        .is_some_and(|symbol| self.bindings.contains_key(&symbol))
+                    {
                         self.exports.push(specifier.exported.name().to_string());
                         false
                     } else {

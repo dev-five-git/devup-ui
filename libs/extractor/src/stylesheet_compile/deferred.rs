@@ -46,7 +46,6 @@ pub(super) fn prepare<'a>(
                 .get_reference(callee.reference_id.get()?)
                 .symbol_id()?;
             (call.span == SPAN
-                && callee.name == crate::extractor::extract_style_from_styled::FORWARD_REF
                 && scoping.symbol_scope_id(symbol) == scoping.root_scope_id()
                 && generated.contains(callee.name.as_str()))
             .then_some((call.node_id.get(), callee.span))
@@ -82,6 +81,7 @@ pub(super) fn prepare<'a>(
         scoping: &scoping,
         calls: &calls,
         bindings: &bindings,
+        generated,
         namespace: &namespace,
         keys: FxHashSet::default(),
         exports: Vec::new(),

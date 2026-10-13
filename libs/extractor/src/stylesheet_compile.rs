@@ -113,14 +113,9 @@ pub(crate) fn compile(
         let pragma = crate::fresh_name::fresh_name("__devupCreateElement", stylesheet.code);
         let mut renders = false;
         for (span, expression) in &mut replacements {
-            if let Some(lowered) = components::lower(expression, &pragma).map_err(|message| {
-                crate::located_errors(
-                    stylesheet.filename,
-                    stylesheet.source,
-                    stylesheet.edits,
-                    vec![(span.start, message)],
-                )
-            })? {
+            if let Some(lowered) = components::lower(expression, &pragma)
+                .map_err(|error| error.located(stylesheet, *span))?
+            {
                 *expression = lowered;
                 renders = true;
             }
@@ -132,21 +127,6 @@ pub(crate) fn compile(
         }
     }
     generated_imports.sort();
-    if !generated_imports.is_empty() && evaluation.is_none() {
-        let insertion = program.directives.last().map_or_else(
-            || {
-                program
-                    .hashbang
-                    .as_ref()
-                    .map_or(0, |hashbang| hashbang.span.end)
-            },
-            |directive| directive.span.end,
-        );
-        replacements.push((
-            Span::new(insertion, insertion),
-            format!("\n{}\n", generated_imports.join("\n")),
-        ));
-    }
     replacements.sort_by_key(|(span, _)| span.start);
     if replacements.is_empty() {
         return Ok(Compiled::default());
@@ -167,17 +147,12 @@ pub(crate) fn compile(
         let to = usize::try_from(span.end).map_err(|error| error.to_string())?;
         code.replace_range(from..to, &text);
     }
-    let scaffolding = if evaluation.is_some() {
-        generated_imports
-    } else {
-        Vec::new()
-    };
     Ok(Compiled {
         code: Some(code),
         edits,
         styles: visitor.styles,
         evaluation,
-        scaffolding,
+        scaffolding: generated_imports,
     })
 }
 
