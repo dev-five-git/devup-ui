@@ -45,3 +45,124 @@ fn generated_js_reads_once_when_executed_by_bun(
         );
     });
 }
+
+#[rstest]
+#[serial]
+fn numeric_roles_and_importance_are_exact_when_responsive_assignments_are_compiled(
+    #[values(false, true)] important: bool,
+    #[values(0, 1, 2)] mode: u8,
+) {
+    with_admission(|| {
+        // Given
+        let _guard = Guard::new();
+        set_prefix(Some("role".into()));
+        set_debug(mode == 1);
+        set_atom_hoist((mode == 2).then_some(2));
+        let value = if important {
+            "`${tone} !important`"
+        } else {
+            "tone"
+        };
+        let source = format!(
+            "import {{Box}} from '@devup-ui/react';const a=<Box color={{[{value},{value}]}}/>;"
+        );
+        let observed = with_counter_extract(input("roles.tsx", &source), |_, batch| {
+            batch.consume(|v| {
+                let mut variables = Vec::new();
+                for witness in v.witnesses {
+                    let extractor::extract_style::compiler_receipts::ProducedData::Dynamic(d) =
+                        &witness.produced
+                    else {
+                        panic!("dynamic")
+                    };
+                    let site = d.site.as_ref().unwrap_or_else(|| panic!("numeric site"));
+                    assert_eq!(site.file, SourceFile::D9(0));
+                    assert_eq!(d.important, important);
+                    assert_eq!(d.variable_allocation, None);
+                    let at = source
+                        .find(&format!("[{value}"))
+                        .unwrap_or_else(|| panic!("input offset"));
+                    assert_eq!(site.at, at);
+                    variables.push((
+                        site.role,
+                        d.variable.clone(),
+                        d.class.allocation.name.clone(),
+                    ));
+                }
+                assert_eq!(
+                    variables.iter().map(|v| v.0).collect::<Vec<_>>(),
+                    vec![0, 1]
+                );
+                Err::<(), _>(variables)
+            })
+        });
+        let expected = match observed {
+            Err(CounterCompileError::Consumer(v)) => v,
+            Err(CounterCompileError::Compile(e)) => panic!("{e}"),
+            Ok(()) => panic!("abort"),
+        };
+        // When
+        let output = required(code_extract_counter(input("roles.tsx", &source), false));
+        // Then
+        let css = with_style_sheet(|s| s.create_css(Some("roles.tsx"), false));
+        for (_, variable, class) in expected {
+            assert!(output.code().contains(&variable) && output.code().contains(&class));
+            assert!(css.contains(&format!(
+                "color:var({variable}){}",
+                if important { " !important" } else { "" }
+            )));
+        }
+    });
+}
+
+#[test]
+#[serial]
+fn insertion_uses_length_slot_when_real_seeded_namespace_has_an_existing_record() {
+    with_admission(|| {
+        // Given
+        let _guard = Guard::new();
+        let red = FAMILY_SOURCES[0];
+        let blue = "import {css} from '@devup-ui/react';const a=css({color:'blue'});";
+        compile("a.tsx", red);
+        let before = css::class_map::get_class_map();
+        let observed = with_counter_extract(input("a.tsx", blue), |_, batch| {
+            batch.consume(|v| {
+                let witness = v
+                    .witnesses
+                    .first()
+                    .unwrap_or_else(|| panic!("inserted class"));
+                Err::<(), _>(Box::new(
+                    witness.produced.class().allocation.address.clone(),
+                ))
+            })
+        });
+        let address = match observed {
+            Err(CounterCompileError::Consumer(a)) => *a,
+            Err(CounterCompileError::Compile(e)) => panic!("{e}"),
+            Ok(()) => panic!("abort"),
+        };
+        // When
+        let output = required(code_extract_counter(input("a.tsx", blue), false));
+        // Then
+        match address {
+            NameAddress::Counter {
+                namespace,
+                legacy_key,
+                slot,
+            } => {
+                let prior = before
+                    .get(&namespace)
+                    .unwrap_or_else(|| panic!("namespace"));
+                assert_eq!(slot, prior.len());
+                let mut expected = before;
+                expected
+                    .get_mut(&namespace)
+                    .unwrap_or_else(|| panic!("namespace"))
+                    .insert(legacy_key, slot);
+                assert_eq!(css::class_map::get_class_map(), expected);
+            }
+            NameAddress::Baseline { .. } => panic!("Counter"),
+        }
+        assert!(output.css().unwrap_or_default().contains("color:blue"));
+    });
+}

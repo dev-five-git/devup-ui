@@ -1,6 +1,7 @@
 pub(super) use super::cache6_test_support::*;
 pub(super) use super::counter_compiler::{after_finish, code_extract_counter};
 use css::counter_names::NameAddress;
+use css::sparse_site::SourceFile;
 pub(super) use extractor::compiler_policy::{
     CompilerInput, CounterCompileError, with_counter_extract,
 };
