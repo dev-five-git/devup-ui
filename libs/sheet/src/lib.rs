@@ -3412,23 +3412,23 @@ mod tests {
     #[rstest]
     #[case(
         "hover:bg-red-500 active:bg-blue-500",
-        "@media(hover:hover){.c0:hover{background-color:#EF4444}}.c1:active{background-color:#3B82F6}"
+        "@media(hover:hover){.c0:hover{background-color:oklch(63.7% .237 25.331)}}.c1:active{background-color:oklch(62.3% .214 259.815)}"
     )]
     #[case(
         "md:hover:bg-red-500 active:bg-blue-500",
-        ".c0:active{background-color:#3B82F6}@media(min-width:768px)and (hover:hover){.c1:hover{background-color:#EF4444}}"
+        ".c0:active{background-color:oklch(62.3% .214 259.815)}@media(min-width:768px)and (hover:hover){.c1:hover{background-color:oklch(63.7% .237 25.331)}}"
     )]
     #[case(
         "hover:bg-red-500 focus:bg-green-500 active:bg-blue-500",
-        "@media(hover:hover){.c0:hover{background-color:#EF4444}}.c1:focus{background-color:#22C55E}.c2:active{background-color:#3B82F6}"
+        "@media(hover:hover){.c0:hover{background-color:oklch(63.7% .237 25.331)}}.c1:focus{background-color:oklch(72.3% .219 149.579)}.c2:active{background-color:oklch(62.3% .214 259.815)}"
     )]
     #[case(
         "hover:bg-red-500 disabled:bg-gray-500",
-        "@media(hover:hover){.c0:hover{background-color:#EF4444}}.c1:disabled{background-color:#6B7280}"
+        "@media(hover:hover){.c0:hover{background-color:oklch(63.7% .237 25.331)}}.c1:disabled{background-color:oklch(55.1% .027 264.364)}"
     )]
     #[case(
         "dark:hover:bg-red-500 active:bg-blue-500",
-        "@media(hover:hover){:root[data-theme=dark] .c0:hover{background-color:#EF4444}}.c1:active{background-color:#3B82F6}"
+        "@media(hover:hover){:root[data-theme=dark] .c0:hover{background-color:oklch(63.7% .237 25.331)}}.c1:active{background-color:oklch(62.3% .214 259.815)}"
     )]
     #[serial]
     fn tailwind_states_keep_css_order_when_hover_is_guarded(
