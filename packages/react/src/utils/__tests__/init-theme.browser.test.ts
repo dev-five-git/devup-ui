@@ -1,13 +1,4 @@
-import {
-  afterAll,
-  afterEach,
-  beforeEach,
-  describe,
-  expect,
-  it,
-  mock,
-  spyOn,
-} from 'bun:test'
+import { afterEach, beforeEach, describe, expect, it, spyOn } from 'bun:test'
 
 import { initTheme as init } from '../init-theme'
 
@@ -18,23 +9,44 @@ function initTheme(...args: Parameters<typeof init>) {
   return stop
 }
 
-afterAll(() => {
-  mock.restore()
-})
+let originalTheme: string | null
+let originalSelection: string | null
+
 beforeEach(() => {
+  originalTheme = document.documentElement.getAttribute('data-theme')
+  originalSelection = localStorage.getItem('__DF_THEME_SELECTED__')
   localStorage.removeItem('__DF_THEME_SELECTED__')
 })
 afterEach(() => {
   running.splice(0).forEach((stop) => stop())
 })
 
+afterEach(() => {
+  if (originalTheme === null) {
+    document.documentElement.removeAttribute('data-theme')
+  } else {
+    document.documentElement.setAttribute('data-theme', originalTheme)
+  }
+  if (originalSelection === null) {
+    localStorage.removeItem('__DF_THEME_SELECTED__')
+  } else {
+    localStorage.setItem('__DF_THEME_SELECTED__', originalSelection)
+  }
+})
+
 describe('initTheme', () => {
   it('should initialize the theme', () => {
-    spyOn(window, 'matchMedia').mockReturnValue({
+    const matchMediaSpy = spyOn(window, 'matchMedia').mockReturnValue({
       matches: false,
     } as MediaQueryList)
-    initTheme()
-    expect(document.documentElement.getAttribute('data-theme')).toBe('default')
+    try {
+      initTheme()
+      expect(document.documentElement.getAttribute('data-theme')).toBe(
+        'default',
+      )
+    } finally {
+      matchMediaSpy.mockRestore()
+    }
   })
   it('should initialize the theme with the given theme', () => {
     initTheme(false, 'light')
@@ -42,11 +54,14 @@ describe('initTheme', () => {
   })
 
   it('should initialize the theme with the default theme', () => {
-    spyOn(window, 'matchMedia').mockReturnValue({
+    const matchMediaSpy = spyOn(window, 'matchMedia').mockReturnValue({
       matches: true,
     } as MediaQueryList)
-
-    initTheme(true)
-    expect(document.documentElement.getAttribute('data-theme')).toBe('dark')
+    try {
+      initTheme(true)
+      expect(document.documentElement.getAttribute('data-theme')).toBe('dark')
+    } finally {
+      matchMediaSpy.mockRestore()
+    }
   })
 })
