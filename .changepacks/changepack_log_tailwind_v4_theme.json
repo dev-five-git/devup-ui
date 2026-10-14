@@ -1,0 +1,7 @@
+{
+  "changes": {
+    "bindings/devup-ui-wasm/package.json": "Patch"
+  },
+  "note": "Tailwind classes in a className follow Tailwind CSS v4: colors are the v4 default palette (oklch) and the colors and shadows of devup.json theme are usable as Tailwind theme values (bg-primary, text-text, shadow-card, as var(--token)); the opacity modifier (bg-red-500/50, /[71.37%], /(--alpha)) mixes with color-mix as v4 does; a trailing or leading ! makes every declaration important; blur, brightness, contrast, grayscale, hue-rotate, invert, saturate, sepia and their backdrop-* forms compose through Tailwind's custom properties instead of overwriting filter and backdrop-filter; gradients use bg-linear-*, bg-conic-* and bg-radial-* with from-*, via-* and to-* composing through the gradient variables (bg-gradient-to-* is not defined by v4 and stays as written); animate-* brings the @keyframes it names and transition, duration, delay and ease follow v4; space-* and divide-* apply to the children like v4 (:where(& > :not(:last-child))); @property rules are emitted only for the custom properties a class uses. Anything the build cannot reproduce exactly (drop-shadow-*) stays as written in the className. No new build errors",
+  "date": "2026-10-01T00:00:00.000Z"
+}
