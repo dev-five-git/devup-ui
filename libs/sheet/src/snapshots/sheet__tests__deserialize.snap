@@ -38,5 +38,6 @@ StyleSheet {
         typography: {},
         length: {},
         shadows: {},
+        tailwind_css: "",
     },
 }
