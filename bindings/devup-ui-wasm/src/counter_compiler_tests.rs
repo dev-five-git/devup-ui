@@ -246,3 +246,5 @@ pub(super) fn request_for_parent(resolver: &ModuleResolver) -> CompilerInput<'_>
     request.resolver = Some(resolver);
     request
 }
+
+pub(super) use sheet::counter_kernel::KernelError;

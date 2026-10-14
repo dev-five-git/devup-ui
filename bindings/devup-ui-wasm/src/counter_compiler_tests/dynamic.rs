@@ -166,3 +166,32 @@ fn insertion_uses_length_slot_when_real_seeded_namespace_has_an_existing_record(
         assert!(output.css().unwrap_or_default().contains("color:blue"));
     });
 }
+
+#[test]
+#[serial]
+#[should_panic(expected = "Counter address pair")]
+fn reservation_rejects_when_allocations_are_baseline() {
+    with_admission(|| {
+        let _guard = Guard::new();
+        super::set_atom_hoist(Some(1));
+        reservation(reserved_input());
+    });
+}
+
+#[test]
+#[serial]
+#[should_panic(expected = "Counter address")]
+fn damage_reservation_rejects_when_allocation_is_baseline() {
+    with_admission(|| {
+        let _guard = Guard::new();
+        super::set_atom_hoist(Some(1));
+        let produced = required(required(with_original(
+            FixtureRequest {
+                filename: "a.css.ts",
+                source: "a\nbcd",
+            },
+            || ExtractStaticStyle::new("color", "red", 0, None).counter_produce(Some("a.css.ts")),
+        )));
+        damage_reservation(&produced.allocation.address, false);
+    });
+}

@@ -1,5 +1,4 @@
 use super::counter_compiler_tests::*;
-use sheet::counter_kernel::KernelError;
 
 #[test]
 #[serial]
@@ -64,45 +63,173 @@ fn final_rejects_when_only_reservation_key_or_slot_is_damaged_after_finish(#[cas
     });
 }
 
+#[rstest]
+#[serial]
+fn installed_session_rolls_back_when_auxiliary_damage_occurs_within_or_after_finish(
+    #[values(false, true)] within: bool,
+    #[values(false, true)] remove: bool,
+) {
+    with_admission(|| {
+        // Given
+        let _guard = Guard::new();
+        compile("cached.tsx", FAMILY_SOURCES[0]);
+        let proof = exported();
+        fresh();
+        let restore = install(&proof);
+        let address = reservation(reserved_input());
+        let before = authority();
+        // When
+        let result = if within {
+            let rollback = extraction_rollback::ExtractionRollback::capture();
+            let result = css::exact_attempt::with_exclusive_attempt(|| {
+                with_counter_extract(reserved_input(), |metadata, batch| {
+                    with_style_sheet_mut(|s| {
+                        CounterSheet::new(s).with_attempt(|attempt| {
+                            attempt
+                                .prepare_compiled(
+                                    batch,
+                                    UpdateRequest {
+                                        raw_source: "parent.css.ts",
+                                        single_css: false,
+                                    },
+                                )?
+                                .finish(|sheet, effects| {
+                                    let output = Output::from_prospective(
+                                        OutputMetadata {
+                                            code: metadata.code,
+                                            map: metadata.map,
+                                            css_file: metadata.css_file,
+                                            dependencies: metadata.dependencies,
+                                        },
+                                        ProspectiveSheet { sheet, effects },
+                                        OutputRoute {
+                                            raw_source: "parent.css.ts",
+                                            single_css: false,
+                                            import_main_css: false,
+                                        },
+                                    );
+                                    damage_reservation(&address, remove);
+                                    Ok::<_, String>(output)
+                                })
+                        })
+                    })
+                })
+            });
+            drop(rollback);
+            result
+        } else {
+            after_finish(reserved_input(), || {
+                damage_reservation(&address, remove);
+                Ok::<_, String>(())
+            })
+        };
+        // Then
+        assert!(matches!(
+            result,
+            Err(CounterCompileError::Consumer(UpdateError::Kernel(
+                KernelError::Authority
+            )))
+        ));
+        assert_eq!(authority(), before);
+        cache6_restore::RESTORE.with_borrow(|s| assert_eq!(s, &restore));
+        let replay = required(code_extract_counter(reserved_input(), false));
+        let replay = ObservedOutput::capture(&replay, "parent.css.ts");
+        let replay_maps = cache6_session::Maps::capture();
+        fresh();
+        compile("cached.tsx", FAMILY_SOURCES[0]);
+        let clean = required(code_extract_counter(reserved_input(), false));
+        assert_eq!(ObservedOutput::capture(&clean, "parent.css.ts"), replay);
+        assert_eq!(cache6_session::Maps::capture(), replay_maps);
+    });
+}
+
 #[test]
 #[serial]
-#[should_panic(expected = "broken.tsx:2:1:")]
-fn reservation_rejects_when_compilation_fails() {
+fn located_error_restores_session_when_raw_registration_precedes_failure() {
     with_admission(|| {
+        // Given
         let _guard = Guard::new();
-        let source = input(
+        compile("cached.tsx", FAMILY_SOURCES[0]);
+        let proof = exported();
+        fresh();
+        let restore = install(&proof);
+        let before = authority();
+        let registered = std::rc::Rc::new(std::cell::Cell::new(false));
+        let observed_registration = registered.clone();
+        let resolver = move |_: &str, _: &str| {
+            registered.set(css::file_map::original_id("broken.tsx").is_some());
+            Some(ResolvedModule {
+                path: "values.ts".into(),
+                code: "export const tone='red';".into(),
+            })
+        };
+        let mut request = input(
             "broken.tsx",
-            "import {css} from '@devup-ui/react';\ncss`color: ${x};`",
+            concat!(
+                "import {tone} from './values';import {globalCss} from '@devup-ui/react';\nglobalCss(",
+                "{",
+                "'.good':",
+                "{",
+                "color:tone",
+                "}",
+                "}",
+                ");\nglobalCss({'.bad':{color:runtime()}});"
+            ),
         );
-        reservation(source);
+        request.resolver = Some(&resolver);
+        // When
+        let result = code_extract_counter(request, false);
+        // Then
+        let error = result.err().unwrap_or_else(|| panic!("located error"));
+        println!("located={error}");
+        assert!(observed_registration.get());
+        assert!(error.contains("broken.tsx:3:"));
+        assert_eq!(authority(), before);
+        cache6_restore::RESTORE.with_borrow(|s| assert_eq!(s, &restore));
+        let retry = compile("retry.tsx", FAMILY_SOURCES[0]);
+        let retry_maps = cache6_session::Maps::capture();
+        fresh();
+        compile("cached.tsx", FAMILY_SOURCES[0]);
+        assert_eq!(compile("retry.tsx", FAMILY_SOURCES[0]), retry);
+        assert_eq!(cache6_session::Maps::capture(), retry_maps);
     });
 }
 
-#[test]
+#[rstest]
 #[serial]
-#[should_panic(expected = "Counter address pair")]
-fn reservation_rejects_when_allocations_are_baseline() {
+fn raw_css_cleanup_rolls_back_once_when_outer_errors_or_unwinds(
+    #[values(false, true)] unwind: bool,
+) {
     with_admission(|| {
+        // Given
         let _guard = Guard::new();
-        super::set_atom_hoist(Some(1));
-        reservation(reserved_input());
-    });
-}
-
-#[test]
-#[serial]
-#[should_panic(expected = "Counter address")]
-fn damage_reservation_rejects_when_allocation_is_baseline() {
-    with_admission(|| {
-        let _guard = Guard::new();
-        super::set_atom_hoist(Some(1));
-        let produced = required(required(with_original(
-            FixtureRequest {
-                filename: "a.css.ts",
-                source: "a\nbcd",
-            },
-            || ExtractStaticStyle::new("color", "red", 0, None).counter_produce(Some("a.css.ts")),
-        )));
-        damage_reservation(&produced.allocation.address, false);
+        let source =
+            "import {globalStyle} from '@devup-ui/react';globalStyle('.root',{color:'red'});";
+        compile("root.css.ts", source);
+        let before = authority();
+        // When
+        let result = catch_unwind(AssertUnwindSafe(|| {
+            after_finish(input("root.css.ts", source), || {
+                assert!(!unwind, "cleanup unwind");
+                Err("cleanup error")
+            })
+        }));
+        // Then
+        match result {
+            Ok(result) => assert!(matches!(
+                result,
+                Err(CounterCompileError::Consumer(UpdateError::Output(
+                    "cleanup error"
+                )))
+            )),
+            Err(payload) => assert_eq!(payload.downcast_ref::<&str>(), Some(&"cleanup unwind")),
+        }
+        assert_eq!(authority(), before);
+        let retry = compile("root.css.ts", source);
+        let retry_maps = cache6_session::Maps::capture();
+        fresh();
+        compile("root.css.ts", source);
+        assert_eq!(compile("root.css.ts", source), retry);
+        assert_eq!(cache6_session::Maps::capture(), retry_maps);
     });
 }

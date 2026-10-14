@@ -167,3 +167,17 @@ fn family_cache_is_cold_when_record_footprint_or_coordinated_expansion_is_damage
         assert_eq!(cache6_session::Maps::capture(), clean_maps);
     });
 }
+
+#[test]
+#[serial]
+#[should_panic(expected = "broken.tsx:2:1:")]
+fn reservation_rejects_when_compilation_fails() {
+    with_admission(|| {
+        let _guard = Guard::new();
+        let source = input(
+            "broken.tsx",
+            "import {css} from '@devup-ui/react';\ncss`color: ${x};`",
+        );
+        reservation(source);
+    });
+}
