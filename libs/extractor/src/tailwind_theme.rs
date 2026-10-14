@@ -434,6 +434,7 @@ mod tests {
     }
 
     #[test]
+    #[serial]
     fn merge_drops_what_a_later_class_sets_again() {
         use crate::tailwind::merge_classes;
         assert_eq!(merge_classes("p-4 m-2 p-2"), "m-2 p-2");

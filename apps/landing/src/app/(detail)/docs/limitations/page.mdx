@@ -1,0 +1,108 @@
+export const metadata = {
+  title: 'Supported Syntax & Limitations',
+  alternates: {
+    canonical: '/docs/limitations',
+  },
+}
+
+# Supported Syntax & Limitations
+
+Devup UI compiles styles at build time and ships no styling runtime. Whatever the build can know is compiled; whatever it cannot know is either kept as a CSS variable on an element or reported as a build error with the file, line, column, the code and what it needs instead. Nothing is silently dropped, and the output is the same on every build.
+
+This page lists what compiles, what stays as written, and where the limits are.
+
+## Supported at build time
+
+| Pattern                                                         | Result                                                                   |
+| --------------------------------------------------------------- | ------------------------------------------------------------------------ |
+| Style props with literals, theme tokens and constants           | Static classes                                                           |
+| Style props with runtime values (props, state)                  | A class reading a CSS variable set in `style`                            |
+| Responsive arrays, `_hover` and other selectors, both combined  | Classes per breakpoint and selector                                      |
+| Conditions (`a ? b : c`, `a && b`, `a \|\| b`, `a ?? b`)        | One class per branch, chosen at runtime                                  |
+| Constants declared with `const`, in the file or imported        | Read as written, including objects, arrays, enums and computed constants |
+| `css()`, `globalCss()`, `keyframes()`                           | Static CSS; values must be known at build time                           |
+| `styled()` in every spelling, `.attrs()`, `as`, `withComponent` | A component rendering its tag with static classes                        |
+| styled-components / Emotion theme reads (`p.theme.a.b`)         | `var(--a-b)`, set by `ThemeProvider`                                     |
+| Emotion `css` prop, `<ClassNames>`, `jsx`, JSX runtime pragmas  | Compiled to `className` and `style`                                      |
+| Component selectors (`${Child} { ... }`, `[Child]`)             | A short marker class on the selected component                           |
+| vanilla-extract `style`, `globalStyle`, `keyframes`             | Static CSS                                                               |
+| StyleX `create`, `props`, `attrs`, `defineVars`, `createTheme`  | Static CSS, merged key by key                                            |
+| Tailwind v4 classes in `className`                              | Static classes; unknown classes stay as written                          |
+
+## Style override rules
+
+When styles the build knows are composed, a later part replaces an earlier one for the same property, selector, breakpoint and layer, as it would at runtime in the original library. This holds for:
+
+- `css(a, b)` and Emotion's `cx(a, b)` with classes the file binds to `css()`
+- `styled(Base)` extending a styled component the file defines, and `.attrs()`
+- vanilla-extract `style([a, b])`, StyleX `props(a, b)`
+- JSX spreads followed by explicit props, and the Emotion `css` prop with a `className`
+
+Responsive values are always written after non-responsive ones, so a breakpoint value overrides the base value regardless of where the classes land in the stylesheet.
+
+### Where the cascade decides
+
+Some composition only happens at runtime, so the build cannot merge it. There the result follows CSS specificity and stylesheet order, not the order the code wrote the parts in:
+
+- a `className` passed in through props, an external class (CSS Modules, a design system) or a class string built at runtime, joined with Devup UI classes
+- a `styled()` base the build cannot read (a `let`, a function result, a component from another package), which keeps wrapping it
+- `withComponent(make())` and other targets only the runtime knows
+- unknown spread props, which pass through as written
+- StyleX arguments the build cannot read key by key (namespaces from other modules, `include()`)
+
+When the winner matters, pass the variation as a prop, a variant (`cond ? a : b`) or a `styled()` extension the file defines, so the build sees both sides.
+
+## Browser support
+
+The generated CSS targets [Baseline 2024](https://web.dev/baseline): it uses `light-dark()` for color themes, `@layer` for cascade layers and `:is()` for group selectors. Older browsers that lack these features are not supported.
+
+## The `css` prop on your own components
+
+The Emotion `css` prop compiles to `className` and `style`. A component of your own that takes the prop receives those two props instead, so it must pass both on to the element it renders:
+
+```tsx
+function Card({ className, style, children }) {
+  return (
+    <div className={className} style={style}>
+      {children}
+    </div>
+  )
+}
+
+const example = <Card css={{ color: 'red', padding: width }} />
+```
+
+A dynamic value such as `width` becomes a CSS variable set in `style`, so a component that drops `style` loses it.
+
+## Runtime-only APIs
+
+| API                                                             | Behavior                                                                                             |
+| --------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------- |
+| `ServerStyleSheet`, `StyleSheetManager`, `CacheProvider`        | Accepted and inert; Devup UI writes a real stylesheet at build time. `CacheProvider` ignores `value` |
+| stylis plugins (`stylisPlugins`)                                | Not applied; there is no stylis pass at build time                                                   |
+| `@emotion/css` `cache`, `flush`, `hydrate`, `merge`, `sheet`    | Stay on `@emotion/css`; they work on styles inserted at runtime                                      |
+| `ThemeProvider`                                                 | Renders a `display: contents` wrapper that sets the theme's CSS variables                            |
+| `jest-styled-components`, `@emotion/jest`, React Native targets | Not supported                                                                                        |
+| vanilla-extract `recipes`, `sprinkles`                          | A build error while `@vanilla-extract/css` is aliased; use `css()` or the vanilla-extract plugin     |
+
+## Known limitations
+
+- A class, `keyframes` name or styled component defined in another module is not read as a build-time value: its name is only known once that file is built. Declare it in the file that uses it, or read it from a style prop.
+- `css()`, `globalCss()` and `keyframes()` have no element to set a CSS variable on, so a runtime value there is a build error. Move it to a style prop.
+- A styled-components or Emotion style function may read the theme only as `theme.a.b` (or `theme.a[2]`). Calls, whole-theme reads and runtime keys are build errors.
+- Inside `<ClassNames>`, `cx(getClass())` is a build error; put the result in a variable first, which then joins as a class.
+- The plugins read `jsxImportSource` from the `tsconfig.json` (or `jsconfig.json`) in the working directory. Opt out with `importAliases: { '@emotion/react/jsx-runtime': false }`.
+- Code that only the runtime can compute — other globals, `Date`, `Math.random`, `new`, classes, async code — is never run by the build; on an element it stays a CSS variable, elsewhere it is a build error.
+
+## Build errors
+
+Every build error names where it is and what the build needs:
+
+```
+src/App.tsx:6:18: `css()` cannot use `width` at build time: its values must be literals, theme tokens or constants, or be computed from them
+src/Card.tsx:3:36: `css` on `<div>` cannot use `getStyles()` at build time: it must be a style object, CSS text, a class `css()` gives, or a function of the theme giving one, or an array or condition of them
+```
+
+A file with several problems reports them all at once, in source order.
+
+See [Build Errors](/docs/build-errors) for the build errors, grouped by API.

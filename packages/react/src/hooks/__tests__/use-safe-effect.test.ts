@@ -1,11 +1,22 @@
-import { afterAll, describe, expect, it } from 'bun:test'
+import { afterEach, beforeEach, describe, expect, it } from 'bun:test'
 import { useEffect, useLayoutEffect } from 'react'
 
 describe('useSafeEffect', () => {
-  const originalWindow = globalThis.window
+  let originalWindowDescriptor: PropertyDescriptor | undefined
 
-  afterAll(() => {
-    globalThis.window = originalWindow
+  beforeEach(() => {
+    originalWindowDescriptor = Object.getOwnPropertyDescriptor(
+      globalThis,
+      'window',
+    )
+  })
+
+  afterEach(() => {
+    if (originalWindowDescriptor) {
+      Object.defineProperty(globalThis, 'window', originalWindowDescriptor)
+    } else {
+      Reflect.deleteProperty(globalThis, 'window')
+    }
   })
 
   // The module picks its effect at evaluation time, so each case needs a fresh

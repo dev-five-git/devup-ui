@@ -788,6 +788,7 @@ mod tests {
     #[case("blur-none", " ")]
     #[case("blur-[2px]", "blur(2px)")]
     #[case("blur-(--radius)", "blur(var(--radius))")]
+    #[serial]
     fn blur_composes_through_its_variable(#[case] class: &str, #[case] value: &str) {
         assert_eq!(written(class), filter("--tw-blur", value));
     }
@@ -812,6 +813,7 @@ mod tests {
     #[case("saturate-150", "--tw-saturate", "saturate(150%)")]
     #[case("sepia", "--tw-sepia", "sepia(100%)")]
     #[case("sepia-50", "--tw-sepia", "sepia(50%)")]
+    #[serial]
     fn filter_functions_set_their_own_variable(
         #[case] class: &str,
         #[case] variable: &str,
@@ -847,6 +849,7 @@ mod tests {
     #[case("backdrop-opacity-12.5", "--tw-backdrop-opacity", "opacity(12.5%)")]
     #[case("backdrop-saturate-200", "--tw-backdrop-saturate", "saturate(200%)")]
     #[case("backdrop-sepia", "--tw-backdrop-sepia", "sepia(100%)")]
+    #[serial]
     fn backdrop_filter_functions_compose_too(
         #[case] class: &str,
         #[case] variable: &str,
@@ -856,6 +859,7 @@ mod tests {
     }
 
     #[test]
+    #[serial]
     fn filter_and_backdrop_filter_read_every_function() {
         expect("filter", &[("filter", FILTER)]);
         expect("filter-none", &[("filter", "none")]);
@@ -887,6 +891,7 @@ mod tests {
     }
 
     #[test]
+    #[serial]
     fn two_filters_add_up_instead_of_overwriting() {
         let blur = written("blur-sm");
         let grayscale = written("grayscale");
@@ -935,6 +940,7 @@ mod tests {
     #[case("-filter-none")]
     #[case("backdrop-")]
     #[case("blurry")]
+    #[serial]
     fn unknown_filters_stay_as_written(#[case] class: &str) {
         assert_eq!(declarations_of(class), None, "{class}");
     }
@@ -967,6 +973,7 @@ mod tests {
         "0 25px 50px -12px var(--tw-shadow-color, rgb(0 0 0 / 0.25))"
     )]
     #[case("shadow-none", "0 0 #0000")]
+    #[serial]
     fn shadow_sizes_follow_the_default_theme(#[case] class: &str, #[case] shadow: &str) {
         expect(
             class,
@@ -1010,11 +1017,13 @@ mod tests {
         "shadow-current",
         "color-mix(in oklab, currentcolor var(--tw-shadow-alpha), transparent)"
     )]
+    #[serial]
     fn shadow_colors_set_the_color_the_shadows_read(#[case] class: &str, #[case] color: &str) {
         expect(class, &[("--tw-shadow-color", color)]);
     }
 
     #[test]
+    #[serial]
     fn shadow_inherit_and_unknown_shadows() {
         expect("shadow-inherit", &[("--tw-shadow-color", "inherit")]);
         for class in [
@@ -1067,6 +1076,7 @@ mod tests {
     #[case("bg-linear-to-r/increasing", "to right in oklch increasing hue")]
     #[case("bg-linear-to-r/decreasing", "to right in oklch decreasing hue")]
     #[case("bg-linear-90/[in_hsl_longer_hue]", "90deg in hsl longer hue")]
+    #[serial]
     fn linear_gradients_use_the_syntax_of_v4(#[case] class: &str, #[case] position: &str) {
         expect(
             class,
@@ -1081,6 +1091,7 @@ mod tests {
     }
 
     #[test]
+    #[serial]
     fn conic_and_radial_gradients() {
         for (class, position, image) in [
             (
@@ -1130,6 +1141,7 @@ mod tests {
     }
 
     #[test]
+    #[serial]
     fn arbitrary_gradients_carry_their_own_stops() {
         expect(
             "bg-linear-[25deg,red_5%,yellow_60%,lime_90%,teal]",
@@ -1185,6 +1197,7 @@ mod tests {
     #[case("bg-radial-45")]
     #[case("bg-conic-x")]
     #[case("bg-sweep-45")]
+    #[serial]
     fn gradients_v4_does_not_define_stay_as_written(#[case] class: &str) {
         assert_eq!(declarations_of(class), None, "{class}");
     }
@@ -1193,6 +1206,7 @@ mod tests {
     const VIA_STOPS: &str = "var(--tw-gradient-position), var(--tw-gradient-from) var(--tw-gradient-from-position), var(--tw-gradient-via) var(--tw-gradient-via-position), var(--tw-gradient-to) var(--tw-gradient-to-position)";
 
     #[test]
+    #[serial]
     fn gradient_stops_compose_through_variables() {
         expect(
             "from-red-500",
@@ -1240,6 +1254,7 @@ mod tests {
     }
 
     #[test]
+    #[serial]
     fn gradient_stop_positions() {
         expect("from-10%", &[("--tw-gradient-from-position", "10%")]);
         expect("via-30%", &[("--tw-gradient-via-position", "30%")]);
@@ -1261,11 +1276,13 @@ mod tests {
     #[case("-from-red-500")]
     #[case("via-none/50")]
     #[case("up-red-500")]
+    #[serial]
     fn unknown_gradient_stops_stay_as_written(#[case] class: &str) {
         assert_eq!(declarations_of(class), None, "{class}");
     }
 
     #[test]
+    #[serial]
     fn gradient_rules_register_the_stop_variables() {
         let rules = parse_class("from-red-500").unwrap().rules();
         for name in [
@@ -1294,6 +1311,7 @@ mod tests {
     }
 
     #[test]
+    #[serial]
     fn modifiers_and_variants_apply_to_composed_utilities() {
         let class = parse_class("hover:blur-sm").unwrap();
         assert_eq!(class.declarations, written_pairs("blur-sm"));
@@ -1320,6 +1338,7 @@ mod tests {
     #[case("ring-2", "2px")]
     #[case("ring-8", "8px")]
     #[case("ring-[3px]", "3px")]
+    #[serial]
     fn ring_widths_draw_the_ring_composed_with_the_shadows(
         #[case] class: &str,
         #[case] width: &str,
@@ -1339,6 +1358,7 @@ mod tests {
     }
 
     #[test]
+    #[serial]
     fn ring_colors_inset_rings_and_offsets() {
         expect("ring-inset", &[("--tw-ring-inset", "inset")]);
         expect(
@@ -1410,6 +1430,7 @@ mod tests {
     #[case("ring-offset-nothing")]
     #[case("inset-ring-nothing")]
     #[case("-ring-2")]
+    #[serial]
     fn unknown_rings_stay_as_written(#[case] class: &str) {
         assert_eq!(declarations_of(class), None, "{class}");
     }
@@ -1421,6 +1442,7 @@ mod tests {
     #[case("drop-shadow-lg", "0 4px 4px", "rgb(0 0 0 / 0.15)")]
     #[case("drop-shadow-xl", "0 9px 7px", "rgb(0 0 0 / 0.1)")]
     #[case("drop-shadow-2xl", "0 25px 25px", "rgb(0 0 0 / 0.15)")]
+    #[serial]
     fn drop_shadow_sizes_compose_into_filter(
         #[case] class: &str,
         #[case] offsets: &str,
@@ -1442,6 +1464,7 @@ mod tests {
         );
     }
     #[test]
+    #[serial]
     fn drop_shadow_without_a_size_none_colors_and_arbitrary_values() {
         expect(
             "drop-shadow",
@@ -1531,11 +1554,13 @@ mod tests {
         "0px 1px 2px var(--tw-text-shadow-color, rgb(0 0 0 / 0.1)), 0px 3px 2px var(--tw-text-shadow-color, rgb(0 0 0 / 0.1)), 0px 4px 8px var(--tw-text-shadow-color, rgb(0 0 0 / 0.1))"
     )]
     #[case("text-shadow-none", "none")]
+    #[serial]
     fn text_shadows_are_the_property_itself(#[case] class: &str, #[case] shadow: &str) {
         expect(class, &[("text-shadow", shadow)]);
     }
 
     #[test]
+    #[serial]
     fn text_shadow_colors() {
         expect(
             "text-shadow-red-500",
@@ -1570,6 +1595,7 @@ mod tests {
         "inset 0 2px 4px var(--tw-inset-shadow-color, rgb(0 0 0 / 0.05))"
     )]
     #[case("inset-shadow-none", "0 0 #0000")]
+    #[serial]
     fn inset_shadows_compose_with_the_other_shadows(#[case] class: &str, #[case] shadow: &str) {
         expect(
             class,
@@ -1578,6 +1604,7 @@ mod tests {
     }
 
     #[test]
+    #[serial]
     fn inset_shadow_colors_and_initial() {
         expect(
             "inset-shadow-blue-500",

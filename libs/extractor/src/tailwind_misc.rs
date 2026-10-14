@@ -620,6 +620,7 @@ fn plain(name: &str) -> Option<Vec<Declaration>> {
 #[allow(clippy::expect_used, clippy::unwrap_used)]
 mod tests {
     use rstest::rstest;
+    use serial_test::serial;
 
     use crate::tailwind::declarations_of;
 
@@ -670,6 +671,7 @@ mod tests {
     #[case("outline-double", &[("--tw-outline-style", "double"), ("outline-style", "double")])]
     #[case("outline-none", &[("--tw-outline-style", "none"), ("outline-style", "none")])]
     #[case("line-clamp-none", &[("overflow", "visible"), ("display", "block"), ("-webkit-box-orient", "horizontal"), ("-webkit-line-clamp", "unset")])]
+    #[serial]
     fn fixed_utilities(#[case] class: &str, #[case] expected: &[(&str, &str)]) {
         expect(class, expected);
     }
@@ -678,6 +680,7 @@ mod tests {
     #[case("line-clamp-3", "3")]
     #[case("line-clamp-(--lines)", "var(--lines)")]
     #[case("line-clamp-[calc(1+1)]", "calc(1 + 1)")]
+    #[serial]
     fn line_clamp_clamps_to_a_number_of_lines(#[case] class: &str, #[case] lines: &str) {
         expect(
             class,
@@ -691,6 +694,7 @@ mod tests {
     }
 
     #[test]
+    #[serial]
     fn text_decoration_offsets_and_outlines() {
         expect("underline-offset-4", &[("text-underline-offset", "4px")]);
         expect(
@@ -756,6 +760,7 @@ mod tests {
     #[case("border-r-8", "border-right-style", "border-right-width", "8px")]
     #[case("border-b-[2px]", "border-bottom-style", "border-bottom-width", "2px")]
     #[case("border-l-2", "border-left-style", "border-left-width", "2px")]
+    #[serial]
     fn border_widths_draw_in_the_border_style(
         #[case] class: &str,
         #[case] style: &str,
@@ -769,6 +774,7 @@ mod tests {
     }
 
     #[test]
+    #[serial]
     fn border_styles_set_the_style_the_widths_draw_in() {
         for style in ["solid", "dashed", "dotted", "double", "hidden", "none"] {
             expect(
@@ -779,6 +785,7 @@ mod tests {
     }
 
     #[test]
+    #[serial]
     fn border_spacing_sets_both_axes_unless_one_is_named() {
         expect(
             "border-spacing-2",
@@ -814,6 +821,7 @@ mod tests {
     }
 
     #[test]
+    #[serial]
     fn logical_sides_scroll_spacing_and_indent() {
         expect("start-4", &[("inset-inline-start", "1rem")]);
         expect("end-0", &[("inset-inline-end", "0px")]);
@@ -883,6 +891,7 @@ mod tests {
     #[case("rotate-x")]
     #[case("rotate-w-45")]
     #[case("rotate-x")]
+    #[serial]
     fn unknown_utilities_stay_as_written(#[case] class: &str) {
         assert_eq!(declarations_of(class), None, "{class}");
     }
@@ -899,6 +908,7 @@ mod tests {
     #[case("@[30rem]:p-4", "@container(width>=30rem)")]
     #[case("@sm/main:p-4", "@container main (width>=24rem)")]
     #[case("@max-md/sidebar:p-4", "@container sidebar (width<28rem)")]
+    #[serial]
     fn container_queries_style_by_the_width_of_the_container(
         #[case] class: &str,
         #[case] condition: &str,
@@ -915,11 +925,13 @@ mod tests {
     #[case("@[]:p-4")]
     #[case("@[var(--w)]:p-4")]
     #[case("@max-[calc(var(--w))]:p-4")]
+    #[serial]
     fn unknown_container_queries_stay_as_written(#[case] class: &str) {
         assert_eq!(crate::tailwind::parse_class(class), None, "{class}");
     }
 
     #[test]
+    #[serial]
     fn container_queries_nest_with_other_variants() {
         assert_eq!(
             conditions("hover:@md:p-4"),
@@ -938,6 +950,7 @@ mod tests {
     #[case("@container-[inline-size_layout]", &[("container-type", "inline-size layout")])]
     #[case("@container/main", &[("container-type", "inline-size"), ("container-name", "main")])]
     #[case("@container-normal/main", &[("container-type", "normal"), ("container-name", "main")])]
+    #[serial]
     fn container_utilities_make_the_element_a_container(
         #[case] class: &str,
         #[case] expected: &[(&str, &str)],
@@ -951,11 +964,13 @@ mod tests {
     #[case("@container/")]
     #[case("@container/a/b")]
     #[case("@containers")]
+    #[serial]
     fn unknown_containers_stay_as_written(#[case] class: &str) {
         assert_eq!(declarations_of(class), None, "{class}");
     }
 
     #[test]
+    #[serial]
     fn outline_hidden_has_a_forced_colors_fallback() {
         let class = crate::tailwind::parse_class("outline-hidden").unwrap();
         assert_eq!(
@@ -1014,6 +1029,7 @@ mod tests {
     #[case("tabular-nums", "--tw-numeric-spacing", "tabular-nums")]
     #[case("diagonal-fractions", "--tw-numeric-fraction", "diagonal-fractions")]
     #[case("stacked-fractions", "--tw-numeric-fraction", "stacked-fractions")]
+    #[serial]
     fn numeric_figures_compose_through_their_variables(
         #[case] class: &str,
         #[case] variable: &str,
@@ -1038,6 +1054,7 @@ mod tests {
     #[case("contain-layout", "--tw-contain-layout", "layout")]
     #[case("contain-paint", "--tw-contain-paint", "paint")]
     #[case("contain-style", "--tw-contain-style", "style")]
+    #[serial]
     fn contain_composes_through_its_variables(
         #[case] class: &str,
         #[case] variable: &str,
@@ -1056,6 +1073,7 @@ mod tests {
     }
 
     #[test]
+    #[serial]
     fn contain_keywords() {
         expect("contain-none", &[("contain", "none")]);
         expect("contain-content", &[("contain", "content")]);
@@ -1077,6 +1095,7 @@ mod tests {
     }
 
     #[test]
+    #[serial]
     fn three_d_transforms_compose_with_the_others() {
         let transform = "var(--tw-rotate-x,) var(--tw-rotate-y,) var(--tw-rotate-z,) var(--tw-skew-x,) var(--tw-skew-y,)";
         expect(
@@ -1139,6 +1158,7 @@ mod tests {
     }
 
     #[test]
+    #[serial]
     fn perspective_and_its_origin() {
         expect("perspective-dramatic", &[("perspective", "100px")]);
         expect("perspective-near", &[("perspective", "300px")]);
@@ -1171,6 +1191,7 @@ mod tests {
     }
 
     #[test]
+    #[serial]
     fn masks() {
         expect("mask-none", &[("mask-image", "none")]);
         expect("mask-add", &[("mask-composite", "add")]);

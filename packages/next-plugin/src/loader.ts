@@ -3,10 +3,24 @@ import { writeFile } from 'node:fs/promises'
 import { Agent, request } from 'node:http'
 import { basename, dirname, join, relative, resolve } from 'node:path'
 
-import { tailwindCssFiles, withTailwindCss } from '@devup-ui/plugin-utils'
+import {
+  createStateWriter,
+  tailwindCssFiles,
+  withTailwindCss,
+} from '@devup-ui/plugin-utils'
 import type { RawLoaderDefinitionFunction } from 'webpack'
 
+import {
+  isConnectionError,
+  missingPortFileError,
+  parsePortFile,
+  unreachableCoordinatorError,
+} from './coordinator-port'
 import { loadWasm } from './wasm'
+
+const stateWriter = createStateWriter((path, content, encoding) =>
+  encoding ? writeFile(path, content, encoding) : writeFile(path, content),
+)
 
 export interface DevupUILoaderOptions {
   package: string
@@ -45,7 +59,7 @@ function readCoordinatorPort(portFile: string): number {
   const cachedPort = cachedPorts.get(portFile)
   if (cachedPort !== undefined) return cachedPort
 
-  const port = Number.parseInt(readFileSync(portFile, 'utf-8').trim(), 10)
+  const port = parsePortFile(readFileSync(portFile, 'utf-8')).port
   cachedPorts.set(portFile, port)
   return port
 }
@@ -154,7 +168,7 @@ const devupUILoader: RawLoaderDefinitionFunction<DevupUILoaderOptions> =
             return
           }
           // Port file never appeared — fall through to error
-          callback(new Error('Coordinator port file not found'))
+          callback(missingPortFileError(coordinatorPortFile))
           return
         }
         try {
@@ -175,7 +189,17 @@ const devupUILoader: RawLoaderDefinitionFunction<DevupUILoaderOptions> =
             port,
             body,
             (err, content, sourceMap, dependencies = []) => {
-              if (err) return callback(err)
+              if (err) {
+                if (isConnectionError(err)) {
+                  // Forget a port that no longer answers so the next file
+                  // re-reads the port file instead of repeating the timeout.
+                  cachedPorts.delete(coordinatorPortFile)
+                  return callback(
+                    unreachableCoordinatorError(coordinatorPortFile, err),
+                  )
+                }
+                return callback(err)
+              }
               for (const dependency of dependencies) {
                 this.addDependency(resolve(dependency))
               }
@@ -268,19 +292,23 @@ const devupUILoader: RawLoaderDefinitionFunction<DevupUILoaderOptions> =
       if (updatedBaseStyle && watch) {
         // update base style
         promises.push(
-          writeFile(join(cssDir, 'devup-ui.css'), getCss(null, false), 'utf-8'),
+          stateWriter.write(
+            join(cssDir, 'devup-ui.css'),
+            getCss(null, false),
+            'utf-8',
+          ),
         )
       }
       if (cssFile && watch) {
         // don't write file when build
         promises.push(
-          writeFile(
+          stateWriter.write(
             join(cssDir, basename(cssFile)),
             `/* ${this.resourcePath} ${Date.now()} */`,
           ),
-          writeFile(sheetFile, exportSheet()),
-          writeFile(classMapFile, exportClassMap()),
-          writeFile(fileMapFile, exportFileMap()),
+          stateWriter.write(sheetFile, exportSheet()),
+          stateWriter.write(classMapFile, exportClassMap()),
+          stateWriter.write(fileMapFile, exportFileMap()),
         )
       }
       Promise.all(promises).then(

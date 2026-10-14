@@ -1,0 +1,8 @@
+{
+  "changes": {
+    "bindings/devup-ui-wasm/package.json": "Patch",
+    "packages/next-plugin/package.json": "Patch"
+  },
+  "note": "Skip source-map generation in the codeExtractWithoutSourceMap WASM export while preserving extracted code, CSS and dependencies. Add real WASM and Next loader regressions for map-enabled and map-disabled extraction. No new build errors.",
+  "date": "2026-10-09T00:00:00.000Z"
+}

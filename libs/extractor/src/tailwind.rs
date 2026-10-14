@@ -4738,6 +4738,7 @@ mod tests {
     }
 
     #[test]
+    #[serial]
     fn test_rotate_unknown_value_returns_none() {
         assert!(parse_single_class("rotate-unknown").is_none());
         // 3D rotation is not compiled
@@ -5267,6 +5268,7 @@ mod tests {
     #[case("translate-x")]
     #[case("scale-1.5")]
     #[case("skew-x")]
+    #[serial]
     fn test_preserved_classes(#[case] class: &str) {
         assert_eq!(parse_class(class), None, "{class}");
     }
