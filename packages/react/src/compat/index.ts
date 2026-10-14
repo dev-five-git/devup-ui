@@ -11,6 +11,7 @@ export { Global } from '../components/Global'
 export { ThemeProvider } from '../components/ThemeProvider'
 export { useStyledTheme as useTheme } from '../hooks/use-styled-theme'
 export { createGlobalStyle } from '../utils/create-global-style'
+export { createTheme } from '../utils/create-theme'
 export type { ClassNamesArg } from '../utils/emotion-classes'
 export { cx, merge } from '../utils/emotion-classes'
 export {
@@ -19,4 +20,4 @@ export {
   StyleSheetManager,
 } from '../utils/styled-compat'
 export type { StyledTheme } from '../utils/theme-vars'
-export { withTheme } from '../utils/with-theme'
+export { ThemeConsumer, withTheme } from '../utils/with-theme'

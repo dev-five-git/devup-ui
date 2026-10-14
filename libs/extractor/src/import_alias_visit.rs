@@ -220,6 +220,8 @@ fn devup_equivalent(source: &str, imported: &str) -> Option<DevupTarget<'static>
         (_, "isStyledComponent") => Some(DevupTarget::Compat("isStyledComponent")),
         (_, "withTheme") => Some(DevupTarget::Compat("withTheme")),
         (_, "useTheme") => Some(DevupTarget::Compat("useTheme")),
+        ("styled-components", "ThemeConsumer") => Some(DevupTarget::Compat("ThemeConsumer")),
+        ("styled-components", "createTheme") => Some(DevupTarget::Compat("createTheme")),
         _ => None,
     }
 }
@@ -232,6 +234,45 @@ pub fn transform_import_aliases<'a>(
     import_aliases: &HashMap<String, ImportAlias>,
 ) -> Cow<'a, str> {
     transform_import_aliases_with_edits(code, filename, package, import_aliases).0
+}
+
+/// Packages generating CSS on top of vanilla-extract's, which Devup UI does not
+/// compile
+const VANILLA_EXTRACT_COMPANIONS: [&str; 2] =
+    ["@vanilla-extract/recipes", "@vanilla-extract/sprinkles"];
+
+/// The value imports of vanilla-extract's companion packages, as errors at
+/// their offsets: while `@vanilla-extract/css` compiles to Devup UI, the
+/// rules they generate would never reach the stylesheet
+pub fn companion_errors(code: &str, filename: &str) -> Vec<(u32, String)> {
+    if !VANILLA_EXTRACT_COMPANIONS
+        .iter()
+        .any(|package| code.contains(package))
+    {
+        return Vec::new();
+    }
+    let allocator = Allocator::default();
+    let source_type = SourceType::from_path(filename).unwrap_or_default();
+    let program = Parser::new(&allocator, code, source_type).parse().program;
+    program
+        .body
+        .iter()
+        .filter_map(|statement| match statement {
+            Statement::ImportDeclaration(import)
+                if !import.import_kind.is_type()
+                    && VANILLA_EXTRACT_COMPANIONS.contains(&import.source.value.as_str()) =>
+            {
+                Some((
+                    import.span.start,
+                    format!(
+                        "`{}` generates CSS that Devup UI does not compile, so with the `@vanilla-extract/css` alias its rules would never reach the stylesheet. Fix: write the styles with `css()`, or set `importAliases: {{ '@vanilla-extract/css': false }}` and build with the vanilla-extract plugin",
+                        import.source.value
+                    ),
+                ))
+            }
+            _ => None,
+        })
+        .collect()
 }
 
 /// A replacement of `code[start..end]` by text of `length` bytes
@@ -277,7 +318,9 @@ pub fn transform_import_aliases_with_edits<'a>(
         if let Statement::ImportDeclaration(import_decl) = stmt {
             let source_value = import_decl.source.value.as_str();
 
-            if let Some(alias) = import_aliases.get(source_value) {
+            if let Some(alias) = import_aliases.get(source_value)
+                && !import_decl.import_kind.is_type()
+            {
                 let span = import_decl.span;
                 let new_import =
                     generate_transformed_import(import_decl, alias, package, redirect_every_name);
@@ -542,6 +585,7 @@ fn generate_transformed_import(
     let mut redirected = String::new();
     let mut compat = String::new();
     let mut retained = String::new();
+    let mut types = String::new();
     let mut retained_default = None;
 
     // Handle default specifier first (at most one in valid JS); only its
@@ -577,6 +621,12 @@ fn generate_transformed_import(
         if let ImportDeclarationSpecifier::ImportSpecifier(spec) = specifier {
             let local = spec.local.name.as_str();
             let written = exported_text(&spec.imported);
+            // Types are erased, so they stay on the package without making it a
+            // runtime dependency
+            if spec.import_kind.is_type() {
+                push_specifier(&mut types, &written, local);
+                continue;
+            }
             // A stylesheet passes every export through as written
             let name = if redirect_every_name {
                 written.as_ref()
@@ -628,6 +678,16 @@ fn generate_transformed_import(
             result.push_str(" }");
         }
         result.push_str(" from '");
+        result.push_str(source);
+        result.push_str("';");
+    }
+    if !types.is_empty() {
+        if !result.is_empty() {
+            result.push(' ');
+        }
+        result.push_str("import type { ");
+        result.push_str(&types);
+        result.push_str(" } from '");
         result.push_str(source);
         result.push_str("';");
     }
@@ -799,6 +859,66 @@ mod tests {
             "@devup-ui/react",
             &styled_components_alias()
         ));
+    }
+
+    // Types are erased, so a type-only import never becomes a runtime import
+    #[test]
+    fn test_type_only_imports_stay_type_only() {
+        let code = transform_import_aliases(
+            "import styled, { type DefaultTheme, ThemeProvider, type CSSObject as O } from 'styled-components'\nimport type { CSSProperties } from 'styled-components'",
+            "test.tsx",
+            "@devup-ui/react",
+            &styled_components_alias(),
+        );
+        for expected in [
+            "import type { DefaultTheme, CSSObject as O } from 'styled-components';",
+            "import type { CSSProperties } from 'styled-components'",
+            "import { ThemeProvider } from '@devup-ui/react/compat';",
+        ] {
+            assert!(code.contains(expected), "{expected}\n{code}");
+        }
+        assert!(!code.contains("import { DefaultTheme"), "{code}");
+    }
+
+    #[test]
+    fn test_styled_components_theme_apis_redirect_to_compat() {
+        let code = transform_import_aliases(
+            "import { ThemeConsumer, createTheme } from 'styled-components'",
+            "test.tsx",
+            "@devup-ui/react",
+            &styled_components_alias(),
+        );
+        assert!(
+            code.contains("import { ThemeConsumer, createTheme } from '@devup-ui/react/compat';"),
+            "{code}"
+        );
+        assert!(!code.contains("from 'styled-components'"), "{code}");
+    }
+
+    #[test]
+    fn test_vanilla_extract_companions_are_reported() {
+        let errors = companion_errors(
+            "import type { RecipeVariants } from '@vanilla-extract/recipes'
+import { recipe } from '@vanilla-extract/recipes'
+import { style } from '@vanilla-extract/css'
+import { createSprinkles } from '@vanilla-extract/sprinkles'",
+            "a.css.ts",
+        );
+        assert_eq!(errors.len(), 2, "{errors:?}");
+        assert!(
+            errors[0]
+                .1
+                .starts_with("`@vanilla-extract/recipes` generates CSS")
+        );
+        assert!(
+            errors[1]
+                .1
+                .starts_with("`@vanilla-extract/sprinkles` generates CSS")
+        );
+        assert_eq!(
+            companion_errors("import { style } from '@vanilla-extract/css'", "a.css.ts"),
+            vec![]
+        );
     }
 
     #[test]

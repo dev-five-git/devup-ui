@@ -91,6 +91,7 @@ let devupUIWebpackPluginSpy: ReturnType<typeof spyOn>
 let startCoordinatorSpy: ReturnType<typeof spyOn>
 
 let originalEnv: NodeJS.ProcessEnv
+let originalEnvValues: NodeJS.ProcessEnv
 let originalFetch: typeof global.fetch
 let originalDebugPort: number
 
@@ -145,7 +146,8 @@ beforeEach(() => {
   setWasmForTesting(wasm)
   setWebpackPluginForTesting(webpackPluginModule)
 
-  originalEnv = { ...process.env }
+  originalEnv = process.env
+  originalEnvValues = { ...originalEnv }
   originalFetch = global.fetch
   originalDebugPort = process.debugPort
   global.fetch = mock(() => Promise.resolve({} as Response))
@@ -155,6 +157,10 @@ afterEach(() => {
   resetTurboSetupCacheForTesting()
   setWasmForTesting(undefined)
   setWebpackPluginForTesting(undefined)
+  for (const key of Object.keys(originalEnv)) {
+    if (!Object.hasOwn(originalEnvValues, key)) delete originalEnv[key]
+  }
+  Object.assign(originalEnv, originalEnvValues)
   process.env = originalEnv
   global.fetch = originalFetch
   process.debugPort = originalDebugPort
@@ -869,50 +875,52 @@ export const box = style({ color: 'red' })`
         },
       )
 
-      DevupUI({})
+      try {
+        DevupUI({})
 
-      // Verify coordinator was started with correct options
-      expect(startCoordinatorSpy).toHaveBeenCalledWith({
-        wasm,
-        package: '@devup-ui/react',
-        cssDir: resolve('df', 'devup-ui'),
-        singleCss: false,
-        sheetFile: join('df', 'sheet.json'),
-        classMapFile: join('df', 'classMap.json'),
-        fileMapFile: join('df', 'fileMap.json'),
-        importAliases: {
-          '@emotion/react': null,
-          '@emotion/styled': 'styled',
-          '@emotion/css': null,
-          '@vanilla-extract/css': null,
-          'styled-components': 'styled',
-        },
-        coordinatorPortFile: join('df', 'coordinator.port'),
-        canonicalMap: expect.any(Object),
-        expectedBaseFiles: expect.any(Array),
-        prewarmedFiles: [],
-        prewarmedOutputs: expect.any(Map),
-        sourceMap: true,
-      })
-      expect(codeExtractSpy).not.toHaveBeenCalled()
-      expect(codeExtractWithoutSourceMapSpy).not.toHaveBeenCalled()
+        // Verify coordinator was started with correct options
+        expect(startCoordinatorSpy).toHaveBeenCalledWith({
+          wasm,
+          package: '@devup-ui/react',
+          cssDir: resolve('df', 'devup-ui'),
+          singleCss: false,
+          sheetFile: join('df', 'sheet.json'),
+          classMapFile: join('df', 'classMap.json'),
+          fileMapFile: join('df', 'fileMap.json'),
+          importAliases: {
+            '@emotion/react': null,
+            '@emotion/styled': 'styled',
+            '@emotion/css': null,
+            '@vanilla-extract/css': null,
+            'styled-components': 'styled',
+          },
+          coordinatorPortFile: join('df', 'coordinator.port'),
+          canonicalMap: expect.any(Object),
+          expectedBaseFiles: expect.any(Array),
+          prewarmedFiles: [],
+          prewarmedOutputs: expect.any(Map),
+          sourceMap: true,
+        })
+        expect(codeExtractSpy).not.toHaveBeenCalled()
+        expect(codeExtractWithoutSourceMapSpy).not.toHaveBeenCalled()
 
-      // Verify initial CSS file is written
-      expect(writeFileSyncSpy).toHaveBeenCalledWith(
-        join(resolve('df', 'devup-ui'), 'devup-ui.css'),
-        '',
-      )
+        // Verify initial CSS file is written
+        expect(writeFileSyncSpy).toHaveBeenCalledWith(
+          join(resolve('df', 'devup-ui'), 'devup-ui.css'),
+          '',
+        )
 
-      // Verify exit handler was registered and calls coordinator.close()
-      expect(exitHandlers.length).toBeGreaterThan(0)
-      exitHandlers[0]!()
-      expect(closeMock).toHaveBeenCalledTimes(1)
+        // Verify exit handler was registered and calls coordinator.close()
+        expect(exitHandlers.length).toBeGreaterThan(0)
+        exitHandlers[0]!()
+        expect(closeMock).toHaveBeenCalledTimes(1)
 
-      // Verify --inspect-brk env vars are NOT set
-      expect(process.env.TURBOPACK_DEBUG_JS).toBeUndefined()
-      expect(process.env.NODE_OPTIONS ?? '').not.toContain('--inspect-brk')
-
-      processOnSpy.mockRestore()
+        // Verify --inspect-brk env vars are NOT set
+        expect(process.env.TURBOPACK_DEBUG_JS).toBeUndefined()
+        expect(process.env.NODE_OPTIONS ?? '').not.toContain('--inspect-brk')
+      } finally {
+        processOnSpy.mockRestore()
+      }
     })
 
     it('hands the coordinator the full compiled-file set, not the static-only route map', () => {

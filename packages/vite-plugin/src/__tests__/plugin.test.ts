@@ -1,5 +1,6 @@
 import * as fs from 'node:fs'
 import * as fsPromises from 'node:fs/promises'
+import * as os from 'node:os'
 import * as nodePath from 'node:path'
 
 import * as pluginUtils from '@devup-ui/plugin-utils'
@@ -186,6 +187,7 @@ let getThemeInterfaceSpy: ReturnType<typeof spyOn>
 let registerThemeSpy: ReturnType<typeof spyOn>
 let setDebugSpy: ReturnType<typeof spyOn>
 let setPrefixSpy: ReturnType<typeof spyOn>
+let consoleErrorSpy: ReturnType<typeof spyOn>
 
 beforeEach(() => {
   existsSyncSpy = spyOn(fs, 'existsSync').mockReturnValue(false)
@@ -206,6 +208,7 @@ beforeEach(() => {
   registerThemeSpy = spyOn(wasm, 'registerTheme').mockReturnValue(undefined)
   setDebugSpy = spyOn(wasm, 'setDebug').mockReturnValue(undefined)
   setPrefixSpy = spyOn(wasm, 'setPrefix').mockReturnValue(undefined)
+  consoleErrorSpy = spyOn(console, 'error').mockReturnValue(undefined)
 })
 
 afterEach(() => {
@@ -221,11 +224,10 @@ afterEach(() => {
   registerThemeSpy.mockRestore()
   setDebugSpy.mockRestore()
   setPrefixSpy.mockRestore()
+  consoleErrorSpy.mockRestore()
 })
 
 describe('devupUIVitePlugin', () => {
-  console.error = mock()
-
   it('should apply default options', () => {
     const plugin = createPlugin({})
     expect(plugin).toEqual({
@@ -1088,6 +1090,118 @@ describe('devupUIVitePlugin', () => {
     expect(send).not.toHaveBeenCalled()
   })
 
+  describe('Tailwind CSS definitions', () => {
+    let directory: string
+    let tailwindFile: string
+
+    beforeEach(() => {
+      directory = fs.mkdtempSync(join(os.tmpdir(), 'devup-vite-tailwind-'))
+      tailwindFile = join(directory, 'tailwind.css')
+      fs.writeFileSync(tailwindFile, '@theme { --color-brand: #0af; }')
+      existsSyncSpy.mockReturnValue(true)
+      readFileSpy.mockResolvedValue(
+        JSON.stringify({ tailwind: { css: tailwindFile } }),
+      )
+    })
+
+    afterEach(() => {
+      fs.rmSync(directory, { recursive: true, force: true })
+    })
+
+    it('registers the text of the Tailwind CSS with the theme', async () => {
+      const plugin = createPlugin({})
+      await plugin.configResolved()
+      expect(registerThemeSpy).toHaveBeenCalledWith({
+        tailwindCss: '@theme { --color-brand: #0af; }',
+      })
+    })
+
+    it('reads it again when the Tailwind CSS changes', async () => {
+      const plugin = createPlugin({})
+      await plugin.configResolved()
+      registerThemeSpy.mockClear()
+      fs.writeFileSync(tailwindFile, '@theme { --color-brand: #f00; }')
+
+      await plugin.watchChange(tailwindFile)
+
+      expect(registerThemeSpy).toHaveBeenCalledWith({
+        tailwindCss: '@theme { --color-brand: #f00; }',
+      })
+    })
+
+    it('compiles every module again when the Tailwind CSS changes', async () => {
+      const plugin = createPlugin({})
+      await plugin.configResolved()
+      const first = {}
+      const second = {}
+      const environment = {
+        ...createHotUpdateEnvironment('client'),
+        moduleGraph: {
+          invalidateModule: mock(),
+          idToModuleMap: new Map([
+            ['a', first],
+            ['b', second],
+          ]),
+        },
+      }
+
+      const result = await plugin.hotUpdate.call(
+        { environment },
+        { file: tailwindFile, modules: [{}], timestamp: 1 },
+      )
+
+      expect(environment.moduleGraph.invalidateModule).toHaveBeenCalledTimes(2)
+      expect(environment.moduleGraph.invalidateModule).toHaveBeenCalledWith(
+        first,
+        expect.any(Set),
+        1,
+        true,
+      )
+      expect(environment.hot.send).toHaveBeenCalledWith({ type: 'full-reload' })
+      expect(result).toEqual([])
+    })
+
+    it('compiles every module again on a Vite 5 hot update', async () => {
+      const plugin = createPlugin({})
+      await plugin.configResolved()
+      const invalidateModule = mock()
+      const send = mock()
+      const module = {}
+
+      const result = await plugin.handleHotUpdate({
+        file: tailwindFile,
+        server: {
+          moduleGraph: {
+            invalidateModule,
+            idToModuleMap: new Map([['a', module]]),
+          },
+          ws: { send },
+        },
+        modules: [],
+        timestamp: 2,
+      })
+
+      expect(invalidateModule).toHaveBeenCalledWith(
+        module,
+        expect.any(Set),
+        2,
+        true,
+      )
+      expect(send).toHaveBeenCalledWith({ type: 'full-reload' })
+      expect(result).toEqual([])
+    })
+
+    it('leaves a Tailwind CSS that is gone alone', async () => {
+      const plugin = createPlugin({})
+      await plugin.configResolved()
+      registerThemeSpy.mockClear()
+      existsSyncSpy.mockReturnValue(false)
+
+      await plugin.watchChange(tailwindFile)
+
+      expect(registerThemeSpy).not.toHaveBeenCalled()
+    })
+  })
   function createHotUpdateEnvironment(consumer: 'client' | 'server') {
     return {
       config: { consumer },
@@ -1665,25 +1779,28 @@ describe('module resolver', () => {
       wasm,
       'setModuleResolver',
     ).mockReturnValue(undefined)
-    codeExtractSpy.mockReturnValue(
-      createCodeExtractResult({ dependencies: ['/p/src/tokens.ts'] }),
-    )
-    const plugin = createPlugin({})
-    await plugin.configResolved({ root: '/p' })
-    const resolveModule = setModuleResolverSpy.mock.calls[0][0] as (
-      specifier: string,
-      importer: string,
-    ) => { path: string } | undefined
-    expect(resolveModule('./plugin.test', import.meta.path)?.path).toBe(
-      import.meta.path.replaceAll('\\', '/'),
-    )
-    const addWatchFile = mock()
-    await plugin.transform.call(
-      { addWatchFile } as never,
-      'code',
-      '/p/src/App.tsx',
-    )
-    expect(addWatchFile).toHaveBeenCalledWith('/p/src/tokens.ts')
-    setModuleResolverSpy.mockRestore()
+    try {
+      codeExtractSpy.mockReturnValue(
+        createCodeExtractResult({ dependencies: ['/p/src/tokens.ts'] }),
+      )
+      const plugin = createPlugin({})
+      await plugin.configResolved({ root: '/p' })
+      const resolveModule = setModuleResolverSpy.mock.calls[0][0] as (
+        specifier: string,
+        importer: string,
+      ) => { path: string } | undefined
+      expect(resolveModule('./plugin.test', import.meta.path)?.path).toBe(
+        import.meta.path.replaceAll('\\', '/'),
+      )
+      const addWatchFile = mock()
+      await plugin.transform.call(
+        { addWatchFile } as never,
+        'code',
+        '/p/src/App.tsx',
+      )
+      expect(addWatchFile).toHaveBeenCalledWith('/p/src/tokens.ts')
+    } finally {
+      setModuleResolverSpy.mockRestore()
+    }
   })
 })
