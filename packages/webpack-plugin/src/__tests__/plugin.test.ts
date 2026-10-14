@@ -26,6 +26,7 @@ interface MockCompiler {
     plugins: unknown[]
     entry?: unknown
     context?: string
+    target?: string
   }
   watchMode?: boolean
   webpack: {
@@ -39,6 +40,7 @@ interface MockCompiler {
     afterCompile: { tap: ReturnType<typeof mock> }
     run: { tap: ReturnType<typeof mock> }
     thisCompilation: { tap: ReturnType<typeof mock> }
+    shutdown: { tap: ReturnType<typeof mock> }
   }
 }
 
@@ -76,6 +78,7 @@ let importSheetSpy: ReturnType<typeof spyOn>
 let registerThemeSpy: ReturnType<typeof spyOn>
 let setDebugSpy: ReturnType<typeof spyOn>
 let setPrefixSpy: ReturnType<typeof spyOn>
+let setNamingRootSpy: ReturnType<typeof spyOn>
 let loadDevupConfigSyncSpy: ReturnType<typeof spyOn>
 let existsSyncSpy: ReturnType<typeof spyOn>
 let mkdirSyncSpy: ReturnType<typeof spyOn>
@@ -99,6 +102,7 @@ beforeEach(() => {
   registerThemeSpy = spyOn(wasm, 'registerTheme').mockReturnValue(undefined)
   setDebugSpy = spyOn(wasm, 'setDebug').mockReturnValue(undefined)
   setPrefixSpy = spyOn(wasm, 'setPrefix').mockReturnValue(undefined)
+  setNamingRootSpy = spyOn(wasm, 'setNamingRoot').mockReturnValue(undefined)
   loadDevupConfigSyncSpy = spyOn(
     pluginUtils,
     'loadDevupConfigSync',
@@ -124,6 +128,7 @@ afterEach(() => {
   registerThemeSpy.mockRestore()
   setDebugSpy.mockRestore()
   setPrefixSpy.mockRestore()
+  setNamingRootSpy.mockRestore()
   loadDevupConfigSyncSpy.mockRestore()
   existsSyncSpy.mockRestore()
   mkdirSyncSpy.mockRestore()
@@ -166,13 +171,60 @@ function createCompiler(): MockCompiler {
       thisCompilation: {
         tap: mock(),
       },
+      shutdown: {
+        tap: mock(),
+      },
     },
   }
 }
 
 describe('devupUIWebpackPlugin', () => {
+  it('sets the same context naming root once in every compiler', () => {
+    for (const target of ['web', 'node']) {
+      const compiler = createCompiler()
+      compiler.options.context = '/naming-project'
+      compiler.options.target = target
+      new DevupUIWebpackPlugin({}).apply(asCompiler(compiler))
+    }
+    expect(setNamingRootSpy.mock.calls).toEqual([
+      ['/naming-project', process.cwd()],
+      ['/naming-project', process.cwd()],
+    ])
+  })
   console.error = mock()
 
+  describe('deterministic file numbering', () => {
+    it('numbers the files the scan finds and ends the build at shutdown', () => {
+      const collectSpy = spyOn(pluginUtils, 'collectNumberedFiles')
+      const seedSpy = spyOn(wasm, 'seedFileMap').mockReturnValue(undefined)
+      const resetSpy = spyOn(wasm, 'resetBuildState').mockReturnValue(undefined)
+      try {
+        collectSpy.mockImplementation((options: any) => {
+          expect(options.toId(resolve('src', 'a.tsx'))).toBe('src/a.tsx')
+          return ['src/a.tsx', 'src/b.tsx']
+        })
+        const compiler = createCompiler()
+        new DevupUIWebpackPlugin({ include: ['@acme/ui'] }).apply(
+          asCompiler(compiler),
+        )
+        expect(seedSpy).toHaveBeenCalledWith(['src/a.tsx', 'src/b.tsx'])
+        expect(collectSpy.mock.calls[0][0]).toMatchObject({
+          roots: [resolve('src')],
+          include: ['@acme/ui'],
+        })
+        compiler.hooks.shutdown.tap.mock.calls[0][1]()
+        compiler.hooks.shutdown.tap.mock.calls[0][1]()
+        collectSpy.mockImplementation(() => {
+          throw new Error('scan boom')
+        })
+        new DevupUIWebpackPlugin({}).apply(asCompiler(createCompiler()))
+      } finally {
+        collectSpy.mockRestore()
+        seedSpy.mockRestore()
+        resetSpy.mockRestore()
+      }
+    })
+  })
   it('should apply default options', () => {
     expect(new DevupUIWebpackPlugin({}).options).toEqual({
       include: [],

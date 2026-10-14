@@ -1,0 +1,7 @@
+{
+  "changes": {
+    "bindings/devup-ui-wasm/package.json": "Patch"
+  },
+  "note": "Evaluate supported conditional styled rule arguments once when the component is created, preserving branch laziness, authored field order, static selectors and layers, typography and runtime value associations. Keep rule capture outside attrs wrappers while authored attrs callbacks remain render-time. Responsive typography retains its shared base class and order-aware class selection without introducing empty styles for proven inert base-preset lookups. This scheduling repair adds no build errors or styling runtime.",
+  "date": "2026-10-07T00:00:00.000Z"
+}

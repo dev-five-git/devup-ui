@@ -1,0 +1,7 @@
+{
+  "changes": {
+    "bindings/devup-ui-wasm/package.json": "Patch"
+  },
+  "note": "Prepare dormant construction-time producer policy so original counter ownership survives deferred style unions, including dynamic and keyframe producers. Current production naming, generated output and cache behavior remain unchanged. No new build errors.",
+  "date": "2026-10-09T00:00:00.000Z"
+}

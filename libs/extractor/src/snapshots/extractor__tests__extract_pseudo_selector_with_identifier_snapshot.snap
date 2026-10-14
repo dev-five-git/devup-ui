@@ -29,5 +29,5 @@ ToBTreeSet {
             },
         ),
     },
-    code: "import \"@devup-ui/react/devup-ui.css\";\nconst hoverStyle = { opacity: 1 };\nexport const A = () => <div className=\"a b\" />;\n",
+    code: "import \"@devup-ui/react/devup-ui.css\";\nconst hoverStyle = { opacity: 1 };\nexport const A = () => <div className=\"OHah8flub7bbubrr_p OLbackground-vred\" />;\n",
 }

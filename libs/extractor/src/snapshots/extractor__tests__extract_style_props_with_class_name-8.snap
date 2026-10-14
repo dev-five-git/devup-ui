@@ -29,5 +29,5 @@ ToBTreeSet {
             },
         ),
     },
-    code: "import \"@devup-ui/core/devup-ui.css\";\n<div className={`${variable || \"\"} a b`} />;\n",
+    code: "import \"@devup-ui/core/devup-ui.css\";\n((__devupAssignment78, __devupClass142) => <div className={`${__devupClass142 || \"\"} OLpadding-v4px ${__devupAssignment78?.[0] ?? \"\"}`} style={{ ...__devupAssignment78?.[1] }} />)(((__devupField0) => [\n\t__devupField0?.[0] ?? \"\",\n\t__devupField0?.[1],\n\t{ borderColor: __devupField0?.[2] }\n])(((__devupValue) => [\n\t\"OHbve0s_btthepl3x8\",\n\t{},\n\t__devupValue\n])(true ? \"blue\" : ``)), variable);\n",
 }

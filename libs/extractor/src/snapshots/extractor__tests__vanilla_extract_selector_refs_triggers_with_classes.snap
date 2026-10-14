@@ -1,6 +1,6 @@
 ---
 source: libs/extractor/src/lib.rs
-expression: "ToBTreeSet::from(extract(\"refs.css.ts\",\nr#\"import { style, globalStyle, keyframes, createVar, fontFace, createContainer, layer } from '@devup-ui/react'\nexport const colorVar = createVar()\nexport const myContainer = createContainer()\nexport const myLayer = layer('ui')\nexport const myFont = fontFace({ src: 'local(Arial)' })\nexport const fade = keyframes({ from: { opacity: 0 }, to: { opacity: 1 } })\nexport const parent = style({ display: 'flex' })\nexport const child = style({\n  selectors: {\n    [`${parent}:hover &`]: { color: 'red' }\n  }\n})\nglobalStyle('body', { margin: 0 })\n\"#,\nExtractOption\n{\n    package: \"@devup-ui/react\".to_string(), css_dir:\n    \"@devup-ui/react\".to_string(), single_css: true, import_main_css: false\n}).unwrap())"
+expression: "ToBTreeSet::from(extract(\"refs.css.ts\",\nr\"import { style, globalStyle, keyframes, createVar, fontFace, createContainer, layer } from '@devup-ui/react'\nexport const colorVar = createVar()\nexport const myContainer = createContainer()\nexport const myLayer = layer('ui')\nexport const myFont = fontFace({ src: 'local(Arial)' })\nexport const fade = keyframes({ from: { opacity: 0 }, to: { opacity: 1 } })\nexport const parent = style({ display: 'flex' })\nexport const child = style({\n  selectors: {\n    [`${parent}:hover &`]: { color: 'red' }\n  }\n})\nglobalStyle('body', { margin: 0 })\n\",\nExtractOption\n{\n    package: \"@devup-ui/react\".to_string(), css_dir:\n    \"@devup-ui/react\".to_string(), single_css: true, import_main_css: false,\n    import_aliases: HashMap::new()\n}).unwrap())"
 ---
 ToBTreeSet {
     styles: {
@@ -87,5 +87,5 @@ ToBTreeSet {
             },
         ),
     },
-    code: "import \"@devup-ui/react/devup-ui.css\";\n;\nexport const fade = \"a\";\nexport const child = \"b\";\nexport const parent = \"c\" + \" f0_parent\";\n;\n;\nexport const colorVar = \"var(--var-0-0)\";\nexport const myContainer = \"container-0-1\";\nexport const myLayer = \"ui-0-2\";\nexport const myFont = \"font-0-3\";\n",
+    code: "import \"@devup-ui/react/devup-ui.css\";\n;\nexport const fade = \"KHdpcoq80gd1v1w6jq\";\nexport const child = \"OHag14rhiwsxfgpctb\";\nexport const parent = \"OLdisplay-vflex\" + \" f0_parent\";\n;\n;\nexport const colorVar = \"var(--var-0-0)\";\nexport const myContainer = \"container-0-1\";\nexport const myLayer = \"ui-0-2\";\nexport const myFont = \"font-0-3\";\n",
 }

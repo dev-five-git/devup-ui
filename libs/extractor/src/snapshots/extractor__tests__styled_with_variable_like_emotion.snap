@@ -24,5 +24,5 @@ ToBTreeSet {
             },
         ),
     },
-    code: "import \"@devup-ui/core/devup-ui-0.css\";\nlet color = \"red\";\nconst StyledDiv = ({ style, className, ...rest }) => <div {...rest} className={[\"a-a a-b\", className].filter(Boolean).join(\" \")} style={{\n\t...{ \"--a\": color },\n\t...style\n}} />;\n",
+    code: "import \"@devup-ui/core/devup-ui-0.css\";\nlet color = \"red\";\nconst StyledDiv = ({ style, className, ...rest }) => <div {...rest} className={[\"FLtest_ptsx-OHcytyx33sgqci_8o0 FLtest_ptsx-OLbackground-vblue\", className].filter(Boolean).join(\" \")} style={{\n\t...{ \"---SUHal97ci4vh7md87ec-cv\": color },\n\t...style\n}} />;\n",
 }

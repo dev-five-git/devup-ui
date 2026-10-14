@@ -1,0 +1,7 @@
+{
+  "changes": {
+    "bindings/devup-ui-wasm/package.json": "Patch"
+  },
+  "note": "Enforce build-time exclusive ownership of naming state and exact rollback when extraction or output construction fails, without changing production naming or cache format. Native lock-held recursive callbacks and same-owner configuration administration during an active exact attempt fail synchronously as programmer-contract violations; normal compilation gains no new build errors.",
+  "date": "2026-10-09T00:00:00.000Z"
+}

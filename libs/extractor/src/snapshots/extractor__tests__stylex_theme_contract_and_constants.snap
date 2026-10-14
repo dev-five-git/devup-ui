@@ -7,7 +7,7 @@ ToBTreeSet {
         Static(
             ExtractStaticStyle {
                 property: "color",
-                value: "var(--a)",
+                value: "var(--Ksxv_dtest_ptsx_dprimary)",
                 level: 0,
                 selector: None,
                 style_order: None,
@@ -26,10 +26,10 @@ ToBTreeSet {
         ),
         Css(
             ExtractCss {
-                css: ".b{--a:navy;}",
+                css: ".Ksxt_dtest_ptsx_dvars{--Ksxv_dtest_ptsx_dprimary:navy;}",
                 file: "test.tsx",
             },
         ),
     },
-    code: "import \"@devup-ui/react/devup-ui.css\";\nimport stylex from \"@stylexjs/stylex\";\nimport { defineConsts } from \"@stylexjs/stylex\";\nconst vars = { \"primary\": \"var(--a)\" };\nconst consts = { \"gap\": \"8px\" };\nconst dark = \"b\";\nconst styles = { \"box\": \"c d\" };\nconst el = <div {...{ className: \"b c d\" }} />;\n",
+    code: "import \"@devup-ui/react/devup-ui.css\";\nimport stylex from \"@stylexjs/stylex\";\nimport { defineConsts } from \"@stylexjs/stylex\";\nconst vars = { \"primary\": \"var(--Ksxv_dtest_ptsx_dprimary)\" };\nconst consts = { \"gap\": \"8px\" };\nconst dark = \"Ksxt_dtest_ptsx_dvars\";\nconst styles = { \"box\": \"OLmargin_dtop-v8px OHdqw18zy8qw_cd09w\" };\nconst el = <div {...{ className: \"Ksxt_dtest_ptsx_dvars OLmargin_dtop-v8px OHdqw18zy8qw_cd09w\" }} />;\n",
 }

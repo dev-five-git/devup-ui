@@ -4,7 +4,9 @@ import { createRequire } from 'node:module'
 import { dirname, join, relative, resolve } from 'node:path'
 
 import {
+  beginBuild,
   buildCanonicalMap,
+  collectNumberedFiles,
   computeFileReach,
   computeReachableFiles,
   createCompatTypes,
@@ -12,11 +14,13 @@ import {
   createNodeModulesExcludeRegex,
   createThemeInterfaceArgs,
   type CustomShorthands,
+  extractedNeedles,
   getFileNumByFilename,
   type ImportAliases,
   loadDevupConfigSync,
   mergeImportAliases,
   planAtomHoist,
+  seedFileNumbers,
   type WasmImportAliases,
 } from '@devup-ui/plugin-utils'
 import {
@@ -31,9 +35,12 @@ import {
   importSheet,
   registerShorthands,
   registerTheme,
+  resetBuildState,
+  seedFileMap,
   setAtomHoist,
   setDebug,
   setModuleResolver,
+  setNamingRoot,
   setPrefix,
 } from '@devup-ui/wasm'
 import { type Compiler } from 'webpack'
@@ -195,10 +202,13 @@ export class DevupUIWebpackPlugin {
   }
 
   apply(compiler: Compiler) {
+    // A build starts from its own options, not from what an earlier build in
+    // this process left in the engine
+    const endBuild = beginBuild({ resetBuildState })
+    compiler.hooks.shutdown?.tap('DevupUIWebpackPlugin', endBuild)
     setDebug(this.options.debug)
-    if (this.options.prefix) {
-      setPrefix(this.options.prefix)
-    }
+    setPrefix(this.options.prefix ?? null)
+    setNamingRoot(compiler.options.context ?? process.cwd(), process.cwd())
     const existsDevup = existsSync(this.options.devupFile)
     // read devup.json
     if (!existsSync(this.options.distDir))
@@ -276,6 +286,24 @@ export class DevupUIWebpackPlugin {
       // hoisting stays off.
     }
 
+    // Number every file the build can extract in path order, so class
+    // prefixes do not depend on which file a worker reaches first. Numbers
+    // already handed out (a restored map in watch mode) stay.
+    try {
+      const cwd = process.cwd()
+      seedFileNumbers(
+        { seedFileMap },
+        collectNumberedFiles({
+          roots: [resolve(cwd, 'src')],
+          include: this.options.include,
+          cwd,
+          needles: extractedNeedles(this.options.package, this.importAliases),
+          toId: (path) => relative(cwd, path).replaceAll('\\', '/'),
+        }),
+      )
+    } catch {
+      // Best-effort; numbering falls back to arrival order.
+    }
     // Pre-warm the extractor so the css-loader serves COMPLETE CSS.
     //
     // Webpack builds a stylesheet module ONCE, at its FIRST import: the shared

@@ -1,0 +1,10 @@
+{
+  "changes": {
+    "bindings/devup-ui-wasm/package.json": "Patch",
+    "packages/next-plugin/package.json": "Patch",
+    "packages/rsbuild-plugin/package.json": "Patch",
+    "packages/vite-plugin/package.json": "Patch"
+  },
+  "note": "Make atomHoist class names deterministic and match generated references to emitted CSS, freeze hoisting from predeclared route reach, and preserve dynamic !important, keyframes, and first-value responsive-token identities. No new build errors.",
+  "date": "2026-10-01T00:00:00.000Z"
+}

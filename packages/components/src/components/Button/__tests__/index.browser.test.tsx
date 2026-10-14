@@ -14,9 +14,7 @@ describe('Button', () => {
   it('should render default style when variant is default', () => {
     const { container } = render(<Button variant="default">Click me</Button>)
     expect(container).toMatchSnapshot()
-    expect(container.querySelector('button')).toHaveClass(
-      'color-0-var_lp_--text_cm__h_272727_rp_--1',
-    )
+    expect(container.querySelector('button')).toHaveClass('OHdsoizdtbkuep7e97')
   })
 
   it('should disable', () => {
@@ -28,9 +26,7 @@ describe('Button', () => {
   it('should render error style when danger is true and variant is default', () => {
     const { container } = render(<Button danger>Click me</Button>)
     expect(container).toMatchSnapshot()
-    expect(container.querySelector('button')).toHaveClass(
-      'color-0-var_lp_--error_cm__h_D52B2E_rp_--1',
-    )
+    expect(container.querySelector('button')).toHaveClass('OHak4bikju8xji8lqu')
   })
 
   it('should render primary background color when danger is true and variant is primary', () => {
@@ -40,15 +36,13 @@ describe('Button', () => {
       </Button>,
     )
     expect(container).toMatchSnapshot()
-    expect(container.querySelector('button')).toHaveClass(
-      'background-0-var_lp_--primary_cm__h_8163E1_rp_--1',
-    )
+    expect(container.querySelector('button')).toHaveClass('OHbdbo4lswv91x4s_w')
   })
 
   it('should not render error color when danger is false and variant is default', async () => {
     const { container } = render(<Button data-testid="button">Click me</Button>)
     const button = container.querySelector('button')
-    expect(button).toHaveClass('color-0-var_lp_--text_cm__h_272727_rp_--1')
+    expect(button).toHaveClass('OHdsoizdtbkuep7e97')
     expect(button).toMatchSnapshot()
   })
 
@@ -65,7 +59,12 @@ describe('Button', () => {
     } as unknown as React.ComponentProps<typeof Button>
     const { container } = render(<Button {...invalidSizeProps} />)
     expect(container).toMatchSnapshot()
-    expect(container.querySelector('button')).not.toHaveClass('px-0-16px--1')
+    expect(container.querySelector('button')).not.toHaveClass(
+      'OHbewltw4cxn92mp84',
+    )
+    expect(container.querySelector('button')).not.toHaveClass(
+      'OHacknwm8vum9meqqw',
+    )
   })
 
   it('should not have bg when a wrong size variable is provided', () => {
@@ -76,7 +75,7 @@ describe('Button', () => {
     const { container } = render(<Button {...invalidVariantProps} />)
     expect(container).toMatchSnapshot()
     expect(container.querySelector('button')).not.toHaveClass(
-      'bg-0-color-mix(in srgb,var(--primary,#8163E1) 10%,#FFF 90%)-8380715471663921674-1',
+      'OHaoil1186wj07jmgn',
     )
   })
 
@@ -91,7 +90,7 @@ describe('Button', () => {
     )
     expect(container).toMatchSnapshot()
     const button = container.querySelector('button>div>div')
-    expect(button).toHaveClass('text-overflow-0-ellipsis--255')
+    expect(button).toHaveClass('OHdh5v6zp70eablg9k')
   })
 
   it('should have font size 15px when size is md and variant is primary', () => {
@@ -101,7 +100,7 @@ describe('Button', () => {
       </Button>,
     )
     expect(container).toMatchSnapshot()
-    expect(container.querySelector('button')).toHaveClass('font-size-0-15px--1')
+    expect(container.querySelector('button')).toHaveClass('OHbl76x2rm_e09_q_o')
   })
 
   it('should have font size 15px when size is sm and variant is primary', () => {
@@ -111,7 +110,7 @@ describe('Button', () => {
       </Button>,
     )
     expect(container).toMatchSnapshot()
-    expect(container.querySelector('button')).toHaveClass('font-size-0-15px--1')
+    expect(container.querySelector('button')).toHaveClass('OHbl76x2rm_e09_q_o')
   })
 
   it('should have font size 14px when size is sm and variant is default', () => {
@@ -121,7 +120,7 @@ describe('Button', () => {
       </Button>,
     )
     expect(container).toMatchSnapshot()
-    expect(container.querySelector('button')).toHaveClass('font-size-0-14px--1')
+    expect(container.querySelector('button')).toHaveClass('OHayncw4cji61v_2tv')
   })
 
   it('should render icon when icon is provided', () => {
@@ -168,9 +167,7 @@ describe('Button', () => {
       </Button>,
     )
     expect(container).toMatchSnapshot()
-    expect(container.querySelector('button')).toHaveClass(
-      'color-0-var_lp_--text_cm__h_272727_rp_--1',
-    )
+    expect(container.querySelector('button')).toHaveClass('OHdsoizdtbkuep7e97')
   })
 
   it('should have typography when typography is provided', () => {

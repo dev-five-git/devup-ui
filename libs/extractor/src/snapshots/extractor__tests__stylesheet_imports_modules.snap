@@ -12,6 +12,7 @@ ToBTreeSet {
                 selector: None,
                 style_order: None,
                 layer: None,
+                naming: Risky,
             },
         ),
         Static(
@@ -22,6 +23,7 @@ ToBTreeSet {
                 selector: None,
                 style_order: None,
                 layer: None,
+                naming: Risky,
             },
         ),
         Static(
@@ -31,11 +33,12 @@ ToBTreeSet {
                 level: 0,
                 selector: Some(
                     Selector(
-                        "a:hover &",
+                        "OHcz9cym47ss7jcx8j:hover &",
                     ),
                 ),
                 style_order: None,
                 layer: None,
+                naming: Risky,
             },
         ),
         Static(
@@ -46,6 +49,7 @@ ToBTreeSet {
                 selector: None,
                 style_order: None,
                 layer: None,
+                naming: Risky,
             },
         ),
         Static(
@@ -56,6 +60,7 @@ ToBTreeSet {
                 selector: None,
                 style_order: None,
                 layer: None,
+                naming: Risky,
             },
         ),
         Static(
@@ -66,6 +71,7 @@ ToBTreeSet {
                 selector: None,
                 style_order: None,
                 layer: None,
+                naming: Risky,
             },
         ),
         Static(
@@ -76,8 +82,9 @@ ToBTreeSet {
                 selector: None,
                 style_order: None,
                 layer: None,
+                naming: Risky,
             },
         ),
     },
-    code: "import \"@devup-ui/react/devup-ui.css\";\nimport \"./theme.css\";\nimport \"./global.css\";\nexport const button = \"b c d e f g\" + \" a\";\nexport const hover = \"h\";\n",
+    code: "import \"@devup-ui/react/devup-ui.css\";\nimport \"./theme.css\";\nimport \"./global.css\";\nexport const button = \"RHa7xsszyz2d6y5ecy RLbackground-vblue RLmargin-v16px RLpadding-v19px RLz_dindex-v1 RHc2n9m5lugidw82xt\" + \" OHcz9cym47ss7jcx8j\";\nexport const hover = \"RHay39d893ec8xwh48\";\n",
 }

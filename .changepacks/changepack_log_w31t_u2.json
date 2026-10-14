@@ -1,0 +1,5 @@
+{
+  "changes": { "bindings/devup-ui-wasm/package.json": "Patch" },
+  "note": "Add dormant Rust strict snapshot6 export and consuming admission APIs without changing production cache4 or JavaScript extraction. Invalid candidates and stale installation authority return typed Rust rejections; no new ordinary JavaScript build errors.",
+  "date": "2026-10-10T00:00:00.000Z"
+}

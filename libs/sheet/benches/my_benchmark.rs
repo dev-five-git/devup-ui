@@ -276,7 +276,11 @@ fn criterion_benchmark(c: &mut Criterion) {
             |mut sheet| {
                 reset_class_map();
                 reset_file_map();
-                black_box(sheet.update_styles(black_box(&styles), black_box("app.tsx"), true));
+                black_box(
+                    sheet
+                        .update_styles(black_box(&styles), black_box("app.tsx"), true)
+                        .unwrap_or_else(|error| panic!("{error}")),
+                );
             },
             BatchSize::SmallInput,
         );
@@ -292,7 +296,11 @@ fn criterion_benchmark(c: &mut Criterion) {
             |mut sheet| {
                 reset_class_map();
                 reset_file_map();
-                black_box(sheet.update_styles(black_box(&styles), black_box("app.tsx"), false));
+                black_box(
+                    sheet
+                        .update_styles(black_box(&styles), black_box("app.tsx"), false)
+                        .unwrap_or_else(|error| panic!("{error}")),
+                );
             },
             BatchSize::SmallInput,
         );

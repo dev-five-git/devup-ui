@@ -38,13 +38,14 @@ function createCodeExtractResult(
 
 function createSetupContext(
   overrides: Partial<RsbuildSetupContext> = {},
+  rootPath = process.cwd(),
 ): RsbuildSetupContext {
   return {
     transform: mock(),
     modifyRsbuildConfig: mock(),
     modifyRspackConfig: mock(),
     onBeforeBuild: mock(),
-    context: { rootPath: process.cwd() },
+    context: { rootPath },
     renderChunk: mock(),
     generateBundle: mock(),
     closeBundle: mock(),
@@ -67,6 +68,7 @@ let getThemeInterfaceSpy: ReturnType<typeof spyOn>
 let registerThemeSpy: ReturnType<typeof spyOn>
 let setDebugSpy: ReturnType<typeof spyOn>
 let setPrefixSpy: ReturnType<typeof spyOn>
+let setNamingRootSpy: ReturnType<typeof spyOn>
 
 beforeAll(() => {
   existsSyncSpy = spyOn(fs, 'existsSync').mockReturnValue(false)
@@ -80,6 +82,7 @@ beforeAll(() => {
   registerThemeSpy = spyOn(wasm, 'registerTheme').mockReturnValue(undefined)
   setDebugSpy = spyOn(wasm, 'setDebug').mockReturnValue(undefined)
   setPrefixSpy = spyOn(wasm, 'setPrefix').mockReturnValue(undefined)
+  setNamingRootSpy = spyOn(wasm, 'setNamingRoot').mockReturnValue(undefined)
 })
 
 afterAll(() => {
@@ -94,9 +97,15 @@ afterAll(() => {
   registerThemeSpy.mockRestore()
   setDebugSpy.mockRestore()
   setPrefixSpy.mockRestore()
+  setNamingRootSpy.mockRestore()
 })
 
 describe('DevupUIRsbuildPlugin', () => {
+  it('sets the Rsbuild naming root once before registering extraction', async () => {
+    setNamingRootSpy.mockClear()
+    await DevupUI().setup(createSetupContext({}, '/naming-project'))
+    expect(setNamingRootSpy.mock.calls).toEqual([['/naming-project']])
+  })
   it('should export DevupUIRsbuildPlugin', () => {
     expect(DevupUI).toBeDefined()
   })
@@ -367,13 +376,6 @@ const App = () => <Box></Box>`,
       map: undefined,
     })
 
-    if (options.updatedBaseStyle) {
-      expect(writeFileSpy).toHaveBeenCalledWith(
-        resolve('df', 'devup-ui', 'devup-ui.css'),
-        expect.stringMatching(/\/\* src\/App\.tsx \d+ \*\//),
-        'utf-8',
-      )
-    }
     expect(writeFileSpy).toHaveBeenCalledWith(
       resolve('df', 'devup-ui', 'devup-ui.css'),
       expect.stringMatching(/\/\* src\/App\.tsx \d+ \*\//),
@@ -485,6 +487,47 @@ const App = () => <Box></Box>`,
     expect(setPrefixSpy).toHaveBeenCalledWith('my-prefix')
   })
 
+  describe('deterministic file numbering', () => {
+    it.each([
+      ['relative', false],
+      ['posix', true],
+    ])('numbers the files the scan finds (%s ids)', async (_name, atomMode) => {
+      const collectSpy = spyOn(pluginUtils, 'collectNumberedFiles')
+      const seedSpy = spyOn(wasm, 'seedFileMap').mockReturnValue(undefined)
+      const closeBuild = mock()
+      try {
+        collectSpy.mockImplementation((options: any) => {
+          expect(options.toId('C:\\p\\a.tsx')).toBe(
+            atomMode ? 'C:/p/a.tsx' : 'C:\\p\\a.tsx',
+          )
+          return ['/p/a.tsx']
+        })
+        await DevupUI({
+          include: ['@acme/ui'],
+          atomHoist: atomMode ? 2 : undefined,
+        }).setup(createSetupContext({ onCloseBuild: closeBuild }))
+        expect(seedSpy).toHaveBeenCalledWith(['/p/a.tsx'])
+        expect(collectSpy.mock.calls[0][0]).toMatchObject({
+          roots: [resolve('src')],
+          include: ['@acme/ui'],
+        })
+        closeBuild.mock.calls[0][0]()
+        collectSpy.mockImplementation(() => {
+          throw new Error('scan boom')
+        })
+        await DevupUI().setup(createSetupContext())
+      } finally {
+        collectSpy.mockRestore()
+        seedSpy.mockRestore()
+      }
+    })
+
+    it('sets the prefix every time, even without one', async () => {
+      setPrefixSpy.mockClear()
+      await DevupUI().setup(createSetupContext())
+      expect(setPrefixSpy).toHaveBeenCalledWith(null)
+    })
+  })
   describe('atomHoist pre-pass', () => {
     let buildCanonicalMapSpy: ReturnType<typeof spyOn>
     let computeFileReachSpy: ReturnType<typeof spyOn>

@@ -4,11 +4,14 @@ static DEBUG: AtomicBool = AtomicBool::new(false);
 
 #[inline(always)]
 pub fn set_debug(value: bool) {
+    let _admission = crate::admission::enter();
+    crate::admission::assert_administration_allowed("set_debug");
     DEBUG.store(value, Ordering::Relaxed);
 }
 
 #[inline(always)]
 pub fn is_debug() -> bool {
+    let _admission = crate::admission::enter();
     DEBUG.load(Ordering::Relaxed)
 }
 

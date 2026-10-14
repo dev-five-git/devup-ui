@@ -1,45 +1,82 @@
-use std::{
-    collections::BTreeMap,
-    hash::{DefaultHasher, Hash, Hasher},
-};
+use std::collections::BTreeMap;
 
-use css::keyframes_to_keyframes_name;
+use css::{content_name::ContentName, style_origin::Origin};
 
 use crate::extract_style::{
     ExtractStyleProperty, extract_static_style::ExtractStaticStyle, style_property::StyleProperty,
 };
 
-#[derive(Debug, Default, PartialEq, Clone, Eq, Hash, Ord, PartialOrd)]
+#[path = "keyframe_identity.rs"]
+mod identity;
+
+#[derive(Clone)]
 pub struct ExtractKeyframes {
     pub keyframes: BTreeMap<String, Vec<ExtractStaticStyle>>,
+    pub origin: Origin,
+    pub(crate) producer_policy: super::ProducerPolicy,
+}
+
+impl Default for ExtractKeyframes {
+    fn default() -> Self {
+        Self {
+            keyframes: BTreeMap::new(),
+            origin: Origin::default(),
+            producer_policy: crate::sparse_sites::producer_policy(),
+        }
+    }
+}
+
+impl std::fmt::Debug for ExtractKeyframes {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("ExtractKeyframes")
+            .field("keyframes", &self.keyframes)
+            .finish()
+    }
+}
+
+impl ExtractKeyframes {
+    /// Produce one dormant keyframe allocation, never member allocations.
+    ///
+    /// # Errors
+    /// Rejects Current construction on the parent or any child before reservation.
+    pub fn counter_produce(
+        &self,
+        filename: Option<&str>,
+    ) -> Result<super::ProducedAllocation, super::CounterProducerError> {
+        super::counter_producer::produce_keyframes(self, filename)
+    }
+
+    /// The immutable identity policy selected when this record was constructed.
+    #[must_use]
+    pub const fn producer_policy(&self) -> super::ProducerPolicy {
+        self.producer_policy
+    }
+
+    #[must_use]
+    pub fn effective_steps(&self) -> Vec<(String, Vec<(String, String)>)> {
+        self.keyframes
+            .iter()
+            .map(|(step, styles)| {
+                (
+                    step.clone(),
+                    styles
+                        .iter()
+                        .map(|style| (style.property().to_string(), style.effective_value()))
+                        .collect(),
+                )
+            })
+            .collect()
+    }
+
+    #[must_use]
+    pub fn content_name(&self) -> ContentName {
+        ContentName::keyframes(&self.effective_steps())
+    }
 }
 
 impl ExtractStyleProperty for ExtractKeyframes {
-    fn extract(&self, filename: Option<&str>) -> StyleProperty {
-        let mut hasher = DefaultHasher::new();
-        self.keyframes.hash(&mut hasher);
-        // Format the u64 hash into a stack buffer instead of a throwaway heap
-        // `String`; `keyframes_to_keyframes_name` only reads it as `&str` and
-        // copies it into its own key, so the owned allocation was pure waste.
-        let mut buf = [0u8; 20];
-        let hash_key = write_u64(&mut buf, hasher.finish());
-        StyleProperty::ClassName(keyframes_to_keyframes_name(hash_key, filename))
+    fn extract(&self, _filename: Option<&str>) -> StyleProperty {
+        let content = self.content_name();
+        StyleProperty::ClassName(content.name(css::get_prefix().as_deref().unwrap_or_default()))
     }
-}
-
-/// Writes `value`'s decimal digits into the tail of `buf` and returns the
-/// written slice as `&str`. A `u64` is at most 20 decimal digits, so `buf`
-/// never overflows.
-fn write_u64(buf: &mut [u8; 20], mut value: u64) -> &str {
-    let mut pos = buf.len();
-    loop {
-        pos -= 1;
-        buf[pos] = b'0' + (value % 10) as u8;
-        value /= 10;
-        if value == 0 {
-            break;
-        }
-    }
-    // Only ASCII digits were written, so this slice is valid UTF-8.
-    str::from_utf8(&buf[pos..]).unwrap_or("0")
 }

@@ -428,12 +428,15 @@ pub fn css_to_style_template(
                     // Value is just the expression - use expression code directly
                     let identifier = dynamic_expr_code(&css.expressions[*idx], &shared_allocator);
 
-                    styles.push(CssToStyleResult::Dynamic(ExtractDynamicStyle::new(
-                        style.property(),
-                        style.level(),
-                        &identifier,
-                        style.selector().cloned(),
-                    )));
+                    styles.push(CssToStyleResult::Dynamic(
+                        ExtractDynamicStyle::new(
+                            style.property(),
+                            style.level(),
+                            &identifier,
+                            style.selector().cloned(),
+                        )
+                        .at(css.expressions[*idx].span().start),
+                    ));
                 } else {
                     // Value has surrounding text - need to create template literal
                     // Reconstruct the template literal by replacing placeholders with ${expr} syntax
@@ -502,12 +505,22 @@ pub fn css_to_style_template(
                     // Wrap in template literal backticks
                     let final_identifier = format!("`{template_literal}`");
 
-                    styles.push(CssToStyleResult::Dynamic(ExtractDynamicStyle::new(
-                        style.property(),
-                        style.level(),
-                        &final_identifier,
-                        style.selector().cloned(),
-                    )));
+                    styles.push(CssToStyleResult::Dynamic(
+                        ExtractDynamicStyle::new(
+                            style.property(),
+                            style.level(),
+                            &final_identifier,
+                            style.selector().cloned(),
+                        )
+                        .at_role(
+                            css.span.start,
+                            found_placeholders
+                                .iter()
+                                .map(|(_, index)| *index)
+                                .min()
+                                .map_or(0, |index| index + 1),
+                        ),
+                    ));
                 }
             }
         }

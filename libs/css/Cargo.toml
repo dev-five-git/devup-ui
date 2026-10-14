@@ -17,6 +17,10 @@ serde = { version = "1.0.229", features = ["derive"] }
 regex-lite = "0.1"
 bimap = { version = "0.6.3" }
 
+[features]
+# Test witness only; enabled by the binding dev-dependency, never by default.
+admission-observer = []
+
 [dev-dependencies]
 rstest = "0.27.0"
 serial_test = "4.0.1"

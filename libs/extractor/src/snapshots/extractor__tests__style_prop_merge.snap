@@ -14,5 +14,5 @@ ToBTreeSet {
             },
         ),
     },
-    code: "import \"@devup-ui/core/devup-ui-0.css\";\nlet color = \"red\";\n<div className=\"a-a\" style={{\n\t...{ \"--a\": color },\n\t...{ padding: 10 }\n}} />;\n",
+    code: "import \"@devup-ui/core/devup-ui-0.css\";\nlet color = \"red\";\n((__devupSpread0, __devupAssignment87) => <div className={__devupAssignment87?.[0] ?? \"\"} style={{\n\t...{ ...__devupAssignment87?.[1] },\n\t...__devupSpread0\n}} />)({ padding: 10 }, ((__devupValue) => [\n\t__devupValue !== null && __devupValue !== void 0 && typeof __devupValue !== \"boolean\" && __devupValue !== \"\" && (typeof __devupValue !== \"number\" || __devupValue === __devupValue && __devupValue !== 1 / 0 && __devupValue !== -(1 / 0)) ? \"FLtest_ptsx-OHcs8svt43gl_2l3at\" : \"\",\n\t{ \"---SUHadr7e43kia0ncome-bx\": ((__devupNumber)=>typeof __devupNumber===\"number\"?+__devupNumber*4+\"px\":typeof __devupNumber===\"string\"&&/^(?:[+-]?(?:(?:[0-9]+(?:\\.[0-9]*)?|\\.[0-9]+)(?:[eE][+-]?[0-9]+)?|inf(?:inity)?|nan))$(?![\\s\\S])/i.test(__devupNumber)?+__devupNumber*4+\"px\":__devupNumber)(__devupValue) },\n\t__devupValue\n])(color));\n",
 }

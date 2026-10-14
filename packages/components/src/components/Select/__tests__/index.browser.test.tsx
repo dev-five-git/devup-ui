@@ -213,7 +213,7 @@ describe('Select', () => {
     const selectToggle = container.querySelector('[aria-label="Select toggle"]')
     fireEvent.click(selectToggle!)
     const option2 = container.querySelector('[data-value="Option 2"]')
-    expect(option2).toHaveClass('gap-0-10px--1')
+    expect(option2).toHaveClass('RLgap-v10px-o1')
   })
 
   it('should have 6px gap in an option when type is radio', () => {
@@ -221,7 +221,7 @@ describe('Select', () => {
     const selectToggle = container.querySelector('[aria-label="Select toggle"]')
     fireEvent.click(selectToggle!)
     const option2 = container.querySelector('[data-value="Option 2"]')
-    expect(option2).toHaveClass('gap-0-6px--1')
+    expect(option2).toHaveClass('RLgap-v6px-o1')
   })
 
   it('should have 0 gap in an option when type is default', () => {
@@ -229,7 +229,7 @@ describe('Select', () => {
     const selectToggle = container.querySelector('[aria-label="Select toggle"]')
     fireEvent.click(selectToggle!)
     const option2 = container.querySelector('[data-value="Option 2"]')
-    expect(option2).toHaveClass('gap-0-0--1')
+    expect(option2).toHaveClass('RLgap-v0-o1')
   })
 
   it('should have undefined gap when type is not right', () => {
@@ -241,7 +241,7 @@ describe('Select', () => {
     const selectToggle = container.querySelector('[aria-label="Select toggle"]')
     fireEvent.click(selectToggle!)
     const option2 = container.querySelector('[data-value="Option 2"]')
-    expect(option2).not.toHaveClass('gap-0-0--1')
+    expect(option2).not.toHaveClass('RLgap-v0-o1')
   })
 
   it('should add styleVars to the container when colors are provided', () => {
@@ -283,9 +283,7 @@ describe('Select', () => {
     const selectToggle = container.querySelector('[aria-label="Select toggle"]')
     fireEvent.click(selectToggle!)
     const option1 = container.querySelector('[data-value="Option 1"]')
-    expect(option1?.querySelector('svg')).toHaveClass(
-      'color-0-var_lp_--inputDisabledText_cm_light-dark_lp__h_E5E5E5_cm__h_373737_rp__rp_--255',
-    )
+    expect(option1?.querySelector('svg')).toHaveClass('OHdrio86njn_z2bh6b')
   })
 
   it('should show confirm button when type is checkbox and showConfirmButton is true', () => {

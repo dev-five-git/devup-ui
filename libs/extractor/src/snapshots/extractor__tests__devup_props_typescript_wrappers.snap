@@ -44,5 +44,5 @@ ToBTreeSet {
             },
         ),
     },
-    code: "import \"@devup-ui/react/devup-ui.css\";\nconst cast = <div className=\"a\" />;\nconst satisfied = <div className=\"b\" />;\nconst nonNull = <div className=\"c\" style={{ \"--d\": v }} />;\nconst parens = <div className=\"e\" />;\n",
+    code: "import \"@devup-ui/react/devup-ui.css\";\nconst cast = <div className=\"OLbackground-vred\" />;\nconst satisfied = <div className=\"OLcolor-vblue\" />;\nconst nonNull = ((__devupAssignment163) => <div className={__devupAssignment163?.[0] ?? \"\"} style={{ ...__devupAssignment163?.[1] }} />)(((__devupValue) => [\n\t__devupValue !== null && __devupValue !== void 0 && typeof __devupValue !== \"boolean\" && __devupValue !== \"\" && (typeof __devupValue !== \"number\" || __devupValue === __devupValue && __devupValue !== 1 / 0 && __devupValue !== -(1 / 0)) ? \"OHa87b332l3l57w4cn\" : \"\",\n\t{ \"---SUHdji0hb7al871nng7-dz\": ((__devupNumber)=>typeof __devupNumber===\"number\"?+__devupNumber*4+\"px\":typeof __devupNumber===\"string\"&&/^(?:[+-]?(?:(?:[0-9]+(?:\\.[0-9]*)?|\\.[0-9]+)(?:[eE][+-]?[0-9]+)?|inf(?:inity)?|nan))$(?![\\s\\S])/i.test(__devupNumber)?+__devupNumber*4+\"px\":__devupNumber)(__devupValue) },\n\t__devupValue\n])(v));\nconst parens = <div className=\"OHb69ee9ffyalykqlt\" />;\n",
 }

@@ -1,6 +1,6 @@
 ---
 source: libs/extractor/src/lib.rs
-expression: "ToBTreeSet::from(extract(\"test.jsx\",\nr#\"import {Flex} from '@devup-ui/core'\n        <Flex opacity={1} zIndex={2} fontWeight={900} scale={2} flex={1} lineHeight={1} tabSize={4} MozTabSize={4} WebkitLineClamp={4} />\n        \"#,\nExtractOption\n{\n    package: \"@devup-ui/core\".to_string(), css_dir:\n    \"@devup-ui/core\".to_string(), single_css: true, import_main_css: false\n}).unwrap())"
+expression: "ToBTreeSet::from(extract(\"test.jsx\",\nr\"import {Flex} from '@devup-ui/core'\n        <Flex opacity={1} zIndex={2} fontWeight={900} scale={2} flex={1} lineHeight={1} tabSize={4} MozTabSize={4} WebkitLineClamp={4} />\n        \",\nExtractOption\n{\n    package: \"@devup-ui/core\".to_string(), css_dir:\n    \"@devup-ui/core\".to_string(), single_css: true, import_main_css: false,\n    import_aliases: HashMap::new()\n}).unwrap())"
 ---
 ToBTreeSet {
     styles: {
@@ -107,5 +107,5 @@ ToBTreeSet {
             },
         ),
     },
-    code: "import \"@devup-ui/core/devup-ui.css\";\n<div className=\"a b c d e f g h i j\" />;\n",
+    code: "import \"@devup-ui/core/devup-ui.css\";\n<div className=\"OLdisplay-vflex-o0 OLopacity-v1 OLz_dindex-v2 OHb00mdgxvpapp6lt8 OLscale-v2 OLflex-v1 OLline_dheight-v1 OLtab_dsize-v4 OHdxa75rwwipbykqor OHbbsqvgklzw14v_68\" />;\n",
 }
