@@ -1,5 +1,6 @@
 mod compatibility;
 mod execution;
+mod forward_ref_captures;
 mod lowering;
 
 use crate::{ExtractOption, extract, utils::readable_code};
