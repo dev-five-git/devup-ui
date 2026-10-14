@@ -154,6 +154,7 @@ for (const singleCss of [true, false]) {
   for (const fixture of cases) {
     for (const [index, width] of [640, 1024].entries()) {
       const label = 'props' in fixture ? 'explicit Devup guard: ' : ''
+      const devupColorIndex = 'props' in fixture ? 1 : 0
       test(`${label}${fixture.classes}, ${width}px, singleCss=${singleCss}`, async ({
         page,
       }, testInfo) => {
@@ -191,7 +192,7 @@ for (const singleCss of [true, false]) {
           const observed = []
           for (const [name, classes, css, color] of [
             ['Tailwind', fixture.classes, oracleCss, expected[0]],
-            ['Devup', matched?.[1], devupCss, expected[1]],
+            ['Devup', matched?.[1], devupCss, expected[devupColorIndex]],
           ]) {
             await page.setContent(
               `<!doctype html><html data-theme="dark"><head><style>${css}</style></head><body><button id="target" class="${classes}" ${disabled ? 'disabled' : ''} style="width:160px;height:80px">probe</button></body></html>`,
@@ -207,14 +208,14 @@ for (const singleCss of [true, false]) {
             } else if (!disabled) {
               await expect(target).toHaveCSS(
                 'background-color',
-                colors.red[name === 'Tailwind' ? 0 : 1],
+                colors.red[name === 'Tailwind' ? 0 : devupColorIndex],
               )
             }
             if (fixture.classes.includes('focus:')) {
               await target.focus()
               await expect(target).toHaveCSS(
                 'background-color',
-                colors.green[name === 'Tailwind' ? 0 : 1],
+                colors.green[name === 'Tailwind' ? 0 : devupColorIndex],
               )
             }
             await page.mouse.down()
