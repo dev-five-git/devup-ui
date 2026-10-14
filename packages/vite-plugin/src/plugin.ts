@@ -300,22 +300,19 @@ export function DevupUI({
   mdxExtensions: configuredMdxExtensions,
 }: Partial<DevupUIPluginOptions> = {}): PluginOption {
   const mdxExtensions = normalizeMdxExtensions(configuredMdxExtensions)
-  // A build starts from its own options: whatever an earlier build in this
-  // process left in the engine (prefix, hoisting, routes, buckets, numbers,
-  // styles) is gone unless another build is still running.
   let projectRoot = process.cwd()
-  const endBuild = beginBuild(
-    { resetBuildState },
-    {
-      integration: 'Vite',
-      get root() {
-        return projectRoot
-      },
+  let initialized = false
+  let releaseLegacy: (() => void) | undefined
+  const integration = {
+    integration: 'Vite',
+    get root() {
+      return projectRoot
     },
-  )
-  registerShorthands(shorthands ?? {})
-  setDebug(debug)
-  setPrefix(prefix ?? null)
+  }
+  const endBuild = () => {
+    releaseLegacy?.()
+    releaseLegacy = undefined
+  }
   const importAliases = mergeImportAliases(userImportAliases)
   const production = new ProductionActivation(
     {
@@ -577,7 +574,21 @@ export function DevupUI({
         // Vite ids are POSIX absolute paths
         fallbackConditions = conditions
         if (production.configure(config)) writtenCss.clear()
-        if (production.active) return
+        if (production.active) {
+          endBuild()
+          initialized = true
+          return
+        }
+        if (!releaseLegacy) {
+          releaseLegacy = beginBuild(
+            initialized ? {} : { resetBuildState },
+            integration,
+          )
+          initialized = true
+        }
+        registerShorthands(shorthands ?? {})
+        setDebug(debug)
+        setPrefix(prefix ?? null)
         setModuleResolver(moduleResolver(conditions))
         const sourceDirs = resolveSourceDirs(projectRoot, configuredSourceDirs)
         const input =
@@ -705,7 +716,17 @@ export function DevupUI({
       }
     },
     config(this: { meta?: ConfigHookMeta } | void, userConfig: UserConfig) {
-      const theme = getDefaultTheme()
+      const release = beginBuild(
+        initialized ? {} : { resetBuildState },
+        integration,
+      )
+      initialized = true
+      let theme: ReturnType<typeof getDefaultTheme>
+      try {
+        theme = getDefaultTheme()
+      } finally {
+        release()
+      }
       const define: Record<string, string> = {}
       if (theme) {
         define['process.env.DEVUP_UI_DEFAULT_THEME'] = JSON.stringify(theme)
@@ -733,8 +754,7 @@ export function DevupUI({
       }
       return ret
     },
-    apply(_config?: UserConfig, environment?: { command: 'build' | 'serve' }) {
-      if (environment?.command === 'build' && extractCss) endBuild()
+    apply() {
       return true
     },
     closeBundle(this: (object & { environment?: { name: string } }) | void) {

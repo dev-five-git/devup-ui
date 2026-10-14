@@ -25,7 +25,7 @@ it('updates admission metadata when Vite resolves a root after factory creation'
   )
   const plugins = DevupUI() as unknown as [TestPlugin]
   try {
-    expect(context?.root).toBe(process.cwd())
+    expect(context).toBeUndefined()
     await vite.resolveConfig({ configFile: false, root, plugins }, 'serve')
     expect(context?.root.replaceAll('\\', '/')).toBe(root.replaceAll('\\', '/'))
     expect(context?.integration).toBe('Vite')

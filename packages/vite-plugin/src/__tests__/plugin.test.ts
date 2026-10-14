@@ -452,6 +452,7 @@ describe('devupUIVitePlugin', () => {
     }),
   )('should apply options', async (options) => {
     const plugin = createPlugin(options)
+    await plugin.configResolved({ command: 'serve' })
     expect(setDebugSpy).toHaveBeenCalledWith(options.debug)
     if (options.extractCss) {
       expect(
@@ -790,6 +791,8 @@ describe('devupUIVitePlugin', () => {
         }
         seedFileMapSpy.mockImplementation(seedFileMap)
         const plugin = createPlugin({})
+        await plugin.configResolved({ root: '/p' })
+        seedFileMapSpy.mockClear()
         wasm.importFileMap(existingMap)
         try {
           await plugin.configResolved({ root: '/p' })
@@ -1923,8 +1926,10 @@ describe('devupUIVitePlugin', () => {
     expect(bundle).toEqual({})
   })
 
-  it('should call setPrefix when prefix option is provided', () => {
-    DevupUI({ prefix: 'my-prefix' })
+  it('should call setPrefix when prefix option is provided', async () => {
+    await createPlugin({ prefix: 'my-prefix' }).configResolved({
+      command: 'serve',
+    })
     expect(setPrefixSpy).toHaveBeenCalledWith('my-prefix')
   })
 })
