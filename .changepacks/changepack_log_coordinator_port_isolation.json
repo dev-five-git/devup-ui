@@ -1,0 +1,7 @@
+{
+  "changes": {
+    "packages/next-plugin/package.json": "Patch"
+  },
+  "note": "Isolate the coordinator port file per owning process when another live next dev/build holds it, record the owner pid, and report port, pid and recovery when the coordinator is missing or unreachable",
+  "date": "2026-10-02T12:41:12.3693972Z"
+}
