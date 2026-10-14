@@ -102,3 +102,87 @@ fn installed_session_is_restored_when_real_resolver_reentry_then_outer_fails(
         assert_eq!(cache6_session::Maps::capture(), retry_maps);
     });
 }
+
+#[rstest]
+#[serial]
+fn parent_continues_when_real_depth_two_bridge_errors_or_succeeds(
+    #[values(false, true)] inner_error: bool,
+    #[values(false, true)] shadow: bool,
+) {
+    with_admission(|| {
+        // Given
+        let _guard = Guard::new();
+        compile("cached.tsx", FAMILY_SOURCES[0]);
+        let proof = exported();
+        fresh();
+        let restore = std::rc::Rc::new(install(&proof));
+        let observed_restore = restore.clone();
+        let calls = std::rc::Rc::new(std::cell::Cell::new(0_u32));
+        let observed_calls = calls.clone();
+        let resolver = move |_: &str, _: &str| {
+            calls.set(
+                calls
+                    .get()
+                    .checked_add(1)
+                    .unwrap_or_else(|| panic!("overflow")),
+            );
+            let depth_one = authority();
+            if inner_error {
+                assert!(matches!(
+                    after_finish(input("nested.tsx", FAMILY_SOURCES[0]), || Err("inner")),
+                    Err(CounterCompileError::Consumer(UpdateError::Output("inner")))
+                ));
+                assert_eq!(authority(), depth_one);
+            } else if shadow {
+                required(extractor::extract(
+                    "shadow.tsx",
+                    FAMILY_SOURCES[0],
+                    ExtractOption::default(),
+                ));
+                assert_eq!(css::file_map::original_id("shadow.tsx"), None);
+            } else {
+                compile("nested.tsx", FAMILY_SOURCES[0]);
+            }
+            cache6_restore::RESTORE.with_borrow(|s| assert_eq!(s, restore.as_ref()));
+            Some(ResolvedModule {
+                path: "values.ts".into(),
+                code: "export const tone='red';".into(),
+            })
+        };
+        // When
+        let actual = required(code_extract_counter(request_for_parent(&resolver), false));
+        // Then
+        assert_ne!(observed_calls.get(), 0);
+        assert!(actual.css().unwrap_or_default().contains("color:red"));
+        cache6_restore::RESTORE.with_borrow(|s| assert_eq!(s, observed_restore.as_ref()));
+        let replay = ObservedOutput::capture(&actual, "outer.css.ts");
+        let replay_maps = cache6_session::Maps::capture();
+        fresh();
+        compile("cached.tsx", FAMILY_SOURCES[0]);
+        let clean_resolver = move |_: &str, _: &str| {
+            if inner_error {
+                assert!(
+                    after_finish(input("nested.tsx", FAMILY_SOURCES[0]), || Err("inner")).is_err()
+                );
+            } else if shadow {
+                required(extractor::extract(
+                    "shadow.tsx",
+                    FAMILY_SOURCES[0],
+                    ExtractOption::default(),
+                ));
+            } else {
+                compile("nested.tsx", FAMILY_SOURCES[0]);
+            }
+            Some(ResolvedModule {
+                path: "values.ts".into(),
+                code: "export const tone='red';".into(),
+            })
+        };
+        let clean = required(code_extract_counter(
+            request_for_parent(&clean_resolver),
+            false,
+        ));
+        assert_eq!(ObservedOutput::capture(&clean, "outer.css.ts"), replay);
+        assert_eq!(cache6_session::Maps::capture(), replay_maps);
+    });
+}

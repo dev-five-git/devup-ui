@@ -231,3 +231,18 @@ pub(super) fn changed(change: Change) {
         )])),
     }
 }
+
+pub(super) fn request_for_parent(resolver: &ModuleResolver) -> CompilerInput<'_> {
+    let mut request = input(
+        "outer.css.ts",
+        concat!(
+            "import {tone} from './values';import {style} from '@devup-ui/react';const a=style(",
+            "{",
+            "color:tone",
+            "}",
+            ");"
+        ),
+    );
+    request.resolver = Some(resolver);
+    request
+}
