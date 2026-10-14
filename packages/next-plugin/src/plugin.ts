@@ -24,6 +24,7 @@ import {
   planAtomHoist,
   seedFileNumbers,
   type StaticImportGraph,
+  withTailwindCss,
 } from '@devup-ui/plugin-utils'
 import { type NextConfig } from 'next'
 
@@ -256,7 +257,7 @@ export function DevupUI(
 
     const devupConfig = loadDevupConfigSync(devupFile)
 
-    const theme: any = devupConfig.theme ?? {}
+    const theme: any = withTailwindCss(devupConfig.theme ?? {}, devupConfig)
     // Register current theme after importing previous state,
     // since importSheet replaces the entire sheet including its theme.
     registerTheme(theme)

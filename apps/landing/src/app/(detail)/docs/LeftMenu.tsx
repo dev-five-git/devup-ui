@@ -36,6 +36,8 @@ export function LeftMenu() {
         Core Concepts
       </MenuItem>
       <MenuItem to="/docs/features">Features</MenuItem>
+      <MenuItem to="/docs/limitations">Supported Syntax & Limitations</MenuItem>
+      <MenuItem to="/docs/build-errors">Build Errors</MenuItem>
       <MenuItem
         subMenu={[
           {
@@ -53,6 +55,10 @@ export function LeftMenu() {
           {
             to: '/docs/migration/stylex',
             children: 'StyleX',
+          },
+          {
+            to: '/docs/migration/tailwind',
+            children: 'Tailwind CSS',
           },
         ]}
       >
