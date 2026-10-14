@@ -9,6 +9,8 @@ import {
   ProductionNumberingError,
   type ResolutionInputObserver,
   runBuildOperation,
+  tailwindCssFiles,
+  withTailwindCss,
 } from '@devup-ui/plugin-utils'
 import {
   getCss,
@@ -179,10 +181,18 @@ export class ProductionActivation {
     const generation = this.generation
     const manifest = generation.manifest
     if (manifest === undefined) throw new ProductionNumberingError('unseeded')
-    const theme = (await loadDevupConfig(manifest.paths.devupFile)).theme ?? {}
+    const devup = await loadDevupConfig(manifest.paths.devupFile)
+    const theme = withTailwindCss(devup.theme ?? {}, devup, manifest.root)
+    const tailwindFiles = tailwindCssFiles(devup, manifest.root)
     generation.assertOpen()
-    generation.manifest = { ...manifest, theme }
+    generation.manifest = { ...manifest, theme, tailwindFiles }
+    for (const runtime of generation.contexts.values())
+      runtime.modules.invalidatePreparation()
     await this.writeData(this.context, generation)
+  }
+
+  get tailwindFiles(): readonly string[] {
+    return this.generation.manifest?.tailwindFiles ?? []
   }
 
   run<T>(key: string, action: () => T, generation = this.generation): T {

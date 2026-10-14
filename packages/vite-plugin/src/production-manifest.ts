@@ -18,6 +18,8 @@ import {
   type ResolutionInputObserver,
   resolveProjectPaths,
   resolveSourceDirs,
+  tailwindCssFiles,
+  withTailwindCss,
 } from '@devup-ui/plugin-utils'
 import type { ResolvedConfig } from 'vite'
 
@@ -62,6 +64,11 @@ export function createExtractionGate(
       isSelectedSource(filename, options.mdxExtensions) &&
       !exclude.test(filename),
     relevant: (code: string) => needles.some((needle) => code.includes(needle)),
+    admission: (code: string) =>
+      '@vanilla-extract/css' in options.importAliases &&
+      ['@vanilla-extract/recipes', '@vanilla-extract/sprinkles'].some(
+        (packageName) => code.includes(packageName),
+      ),
   }
 }
 
@@ -88,7 +95,9 @@ export async function prepareProductionManifest(
     distDir: options.distDir,
     ...(options.cssDir === undefined ? {} : { cssDir: options.cssDir }),
   })
-  const theme = (await loadDevupConfig(paths.devupFile)).theme ?? {}
+  const devup = await loadDevupConfig(paths.devupFile)
+  const theme = withTailwindCss(devup.theme ?? {}, devup, config.root)
+  const tailwindFiles = tailwindCssFiles(devup, config.root)
   const roots = resolveSourceDirs(config.root, options.sourceDirs)
   const configured = Object.entries(config.environments)
   const contexts: ProductionContext[] = []
@@ -210,5 +219,11 @@ export async function prepareProductionManifest(
       }),
     )
   }
-  return { paths, theme, contexts: Object.freeze(contexts) }
+  return {
+    paths,
+    root: config.root,
+    theme,
+    tailwindFiles,
+    contexts: Object.freeze(contexts),
+  }
 }

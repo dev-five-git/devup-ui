@@ -1,5 +1,6 @@
 import * as fs from 'node:fs'
 import * as fsPromises from 'node:fs/promises'
+import * as os from 'node:os'
 import * as nodePath from 'node:path'
 
 import * as pluginUtils from '@devup-ui/plugin-utils'
@@ -171,6 +172,7 @@ interface ViteTestPlugin {
     server: {
       moduleGraph: {
         invalidateModule: (...args: unknown[]) => void
+        idToModuleMap?: ReadonlyMap<string, object>
       }
       ws: { send: (...args: unknown[]) => void }
     }
@@ -338,6 +340,7 @@ let setDebugSpy: ReturnType<typeof spyOn>
 let setPrefixSpy: ReturnType<typeof spyOn>
 let loadConfigSpy: ReturnType<typeof spyOn>
 let graphSpy: ReturnType<typeof spyOn>
+let consoleErrorSpy: ReturnType<typeof spyOn>
 
 beforeEach(() => {
   existsSyncSpy = spyOn(fs, 'existsSync').mockReturnValue(false)
@@ -373,6 +376,7 @@ beforeEach(() => {
     dynamicImports: new Map(),
     dynamicTargets: new Set(),
   })
+  consoleErrorSpy = spyOn(console, 'error').mockReturnValue(undefined)
 })
 
 afterEach(() => {
@@ -392,10 +396,10 @@ afterEach(() => {
   setPrefixSpy.mockRestore()
   loadConfigSpy.mockRestore()
   graphSpy.mockRestore()
+  consoleErrorSpy.mockRestore()
 })
 
 describe('devupUIVitePlugin', () => {
-  console.error = mock()
   it('keeps numbering and raw output stable across two unchanged zero-needle MDX builds', async () => {
     // Given real plain MDX, a styled sibling, and the unchanged native build scaffold.
     mock.restore()
@@ -1623,6 +1627,132 @@ describe('devupUIVitePlugin', () => {
     expect(send).not.toHaveBeenCalled()
   })
 
+  describe('Tailwind CSS definitions', () => {
+    let directory: string
+    let tailwindFile: string
+
+    beforeEach(() => {
+      directory = fs.mkdtempSync(join(os.tmpdir(), 'devup-vite-tailwind-'))
+      tailwindFile = join(directory, 'tailwind.css')
+      fs.writeFileSync(tailwindFile, '@theme { --color-brand: #0af; }')
+      existsSyncSpy.mockReturnValue(true)
+      readFileSpy.mockResolvedValue(
+        JSON.stringify({ tailwind: { css: tailwindFile } }),
+      )
+    })
+
+    afterEach(() => {
+      fs.rmSync(directory, { recursive: true, force: true })
+    })
+
+    it('registers the text of the Tailwind CSS with the theme', async () => {
+      const plugin = createPlugin({})
+      await plugin.configResolved()
+      expect(registerThemeSpy).toHaveBeenCalledWith({
+        tailwindCss: '@theme { --color-brand: #0af; }',
+      })
+    })
+
+    it('resolves legacy Tailwind CSS from the project root, not the nested config directory', async () => {
+      fs.writeFileSync(join(directory, 'tsconfig.json'), '{}')
+      readFileSpy.mockResolvedValue(
+        JSON.stringify({ tailwind: { css: 'tailwind.css' } }),
+      )
+      const plugin = createPlugin({ devupFile: 'config/devup.json' })
+
+      await plugin.configResolved({ root: directory, command: 'serve' })
+
+      expect(registerThemeSpy).toHaveBeenCalledWith({
+        tailwindCss: '@theme { --color-brand: #0af; }',
+      })
+    })
+
+    it('reads it again when the Tailwind CSS changes', async () => {
+      const plugin = createPlugin({})
+      await plugin.configResolved()
+      registerThemeSpy.mockClear()
+      fs.writeFileSync(tailwindFile, '@theme { --color-brand: #f00; }')
+
+      await plugin.watchChange(tailwindFile)
+
+      expect(registerThemeSpy).toHaveBeenCalledWith({
+        tailwindCss: '@theme { --color-brand: #f00; }',
+      })
+    })
+
+    it('compiles every module again when the Tailwind CSS changes', async () => {
+      const plugin = createPlugin({})
+      await plugin.configResolved()
+      const first = {}
+      const second = {}
+      const environment = {
+        ...createHotUpdateEnvironment('client'),
+        moduleGraph: {
+          invalidateModule: mock(),
+          idToModuleMap: new Map([
+            ['a', first],
+            ['b', second],
+          ]),
+        },
+      }
+
+      const result = await plugin.hotUpdate.call(
+        { environment },
+        { file: tailwindFile, modules: [{}], timestamp: 1 },
+      )
+
+      expect(environment.moduleGraph.invalidateModule).toHaveBeenCalledTimes(2)
+      expect(environment.moduleGraph.invalidateModule).toHaveBeenCalledWith(
+        first,
+        expect.any(Set),
+        1,
+        true,
+      )
+      expect(environment.hot.send).toHaveBeenCalledWith({ type: 'full-reload' })
+      expect(result).toEqual([])
+    })
+
+    it('compiles every module again on a Vite 5 hot update', async () => {
+      const plugin = createPlugin({})
+      await plugin.configResolved()
+      const invalidateModule = mock()
+      const send = mock()
+      const module = {}
+
+      const result = await plugin.handleHotUpdate({
+        file: tailwindFile,
+        server: {
+          moduleGraph: {
+            invalidateModule,
+            idToModuleMap: new Map([['a', module]]),
+          },
+          ws: { send },
+        },
+        modules: [],
+        timestamp: 2,
+      })
+
+      expect(invalidateModule).toHaveBeenCalledWith(
+        module,
+        expect.any(Set),
+        2,
+        true,
+      )
+      expect(send).toHaveBeenCalledWith({ type: 'full-reload' })
+      expect(result).toEqual([])
+    })
+
+    it('leaves a Tailwind CSS that is gone alone', async () => {
+      const plugin = createPlugin({})
+      await plugin.configResolved()
+      registerThemeSpy.mockClear()
+      existsSyncSpy.mockReturnValue(false)
+
+      await plugin.watchChange(tailwindFile)
+
+      expect(registerThemeSpy).not.toHaveBeenCalled()
+    })
+  })
   function createHotUpdateEnvironment(consumer: 'client' | 'server') {
     return {
       config: { consumer },
@@ -2205,25 +2335,28 @@ describe('module resolver', () => {
       wasm,
       'setModuleResolver',
     ).mockReturnValue(undefined)
-    codeExtractSpy.mockImplementation(() =>
-      createCodeExtractResult({ dependencies: ['/p/src/tokens.ts'] }),
-    )
-    const plugin = createPlugin({})
-    await plugin.configResolved({ root: '/p' })
-    const resolveModule = setModuleResolverSpy.mock.calls[0][0] as (
-      specifier: string,
-      importer: string,
-    ) => { path: string } | undefined
-    expect(resolveModule('./plugin.test', import.meta.path)?.path).toBe(
-      import.meta.path.replaceAll('\\', '/'),
-    )
-    const addWatchFile = mock()
-    await plugin.transform.call(
-      { addWatchFile } as never,
-      'code',
-      '/p/src/App.tsx',
-    )
-    expect(addWatchFile).toHaveBeenCalledWith('/p/src/tokens.ts')
-    setModuleResolverSpy.mockRestore()
+    try {
+      codeExtractSpy.mockImplementation(() =>
+        createCodeExtractResult({ dependencies: ['/p/src/tokens.ts'] }),
+      )
+      const plugin = createPlugin({})
+      await plugin.configResolved({ root: '/p' })
+      const resolveModule = setModuleResolverSpy.mock.calls[0][0] as (
+        specifier: string,
+        importer: string,
+      ) => { path: string } | undefined
+      expect(resolveModule('./plugin.test', import.meta.path)?.path).toBe(
+        import.meta.path.replaceAll('\\', '/'),
+      )
+      const addWatchFile = mock()
+      await plugin.transform.call(
+        { addWatchFile } as never,
+        'code',
+        '/p/src/App.tsx',
+      )
+      expect(addWatchFile).toHaveBeenCalledWith('/p/src/tokens.ts')
+    } finally {
+      setModuleResolverSpy.mockRestore()
+    }
   })
 })

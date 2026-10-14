@@ -7,7 +7,7 @@
 </h3>
 
 <p align="center">
-    <strong>Zero Config · Zero FOUC · Zero Runtime · 모든 CSS-in-JS 문법 완벽 지원</strong>
+    <strong>Zero Config · Zero FOUC · Zero Runtime · 빌드 타임 CSS-in-JS</strong>
 </p>
 
 ---
@@ -41,7 +41,7 @@
 
 기존 CSS-in-JS 솔루션들은 개발자 경험과 성능 사이에서 타협을 강요했습니다. Devup UI는 Rust 기반 전처리기를 통해 모든 스타일을 빌드 타임에 처리함으로써 이 트레이드오프를 완전히 제거합니다.
 
-- **완전한 문법 지원**: 변수, 조건문, 반응형 배열, 가상 선택자 등 모든 CSS-in-JS 패턴을 완벽하게 지원
+- **폭넓은 문법 지원**: 변수, 조건문, 반응형 배열, 가상 선택자, `styled()`, Emotion `css` prop 등을 빌드 타임에 컴파일합니다. 빌드가 알 수 없는 것은 조용히 빠지지 않고 [위치가 표시된 빌드 오류](https://devup-ui.com/docs/build-errors)가 됩니다 ([지원 문법과 한계](https://devup-ui.com/docs/limitations))
 - **익숙한 API**: styled-components, Emotion과 호환되는 `styled()` API 제공
 - **진정한 제로 런타임**: 런타임에서 스타일링을 위한 JavaScript 실행이 전혀 없습니다
 - **가장 작은 번들 크기**: 최적화된 클래스명(`a`, `b`, ... `aa`, `ab`)으로 CSS 출력 최소화
@@ -111,47 +111,73 @@ Devup UI는 빌드 타임에 컴포넌트를 변환합니다. 클래스명은 CS
 
 **기본 변환:**
 
+생성된 클래스명과 CSS 변수명은 버전, 빌드 상태, 접두사 설정에 따라 달라질 수 있으므로 직접 재사용하지 마세요.
+
+개발자가 작성:
+
 ```tsx
-// 개발자가 작성:
+import { Box } from '@devup-ui/react'
+
 const example = <Box _hover={{ bg: 'blue' }} bg="red" p={4} />
+```
 
-// Devup UI가 생성:
-const generated = <div className="a b c" />
+Devup UI가 생성:
 
-// CSS:
-// .a { background-color: red; }
-// .b { padding: 1rem; }
-// .c:hover { background-color: blue; }
+```tsx
+import "@devup-ui/react/devup-ui.css";
+const example = <div className="a b c" />;
+```
+
+CSS:
+
+```css
+/*! devup-ui v1.0.82, | Apache License 2.0 | https://devup-ui.com */.b{background:red}.c{padding:16px}.a:hover{background:blue}
 ```
 
 **동적 값은 CSS 변수로 변환:**
 
+개발자가 작성:
+
 ```tsx
-// 개발자가 작성:
+import { Box } from '@devup-ui/react'
+
 const example = <Box bg={colorVariable} />
-
-// Devup UI가 생성:
-const generated = <div className="a" style={{ '--a': colorVariable }} />
-
-// CSS:
-// .a { background-color: var(--a); }
 ```
 
-**복잡한 표현식과 반응형 배열 — 완벽 지원:**
+Devup UI가 생성:
 
 ```tsx
-// 개발자가 작성:
+import "@devup-ui/react/devup-ui.css";
+const example = <div className="a" style={{ "--b": colorVariable }} />;
+```
+
+CSS:
+
+```css
+/*! devup-ui v1.0.82, | Apache License 2.0 | https://devup-ui.com */.a{background:var(--b)}
+```
+
+**복잡한 표현식과 반응형 배열:**
+
+개발자가 작성:
+
+```tsx
+import { Box } from '@devup-ui/react'
+
 const example = <Box bg={['red', 'blue', isActive ? 'green' : dynamicColor]} />
+```
 
-// Devup UI가 생성:
-const generated = (
-  <div
-    className={`a b ${isActive ? 'c' : 'd'}`}
-    style={{ '--d': dynamicColor }}
-  />
-)
+Devup UI가 생성:
 
-// 각 브레이크포인트에 대한 반응형 CSS 생성
+```tsx
+import "@devup-ui/react/devup-ui.css";
+const example = <div className={`a b ${isActive ? "c" : "d"}`} style={{ "--e": dynamicColor }} />;
+```
+
+각 브레이크포인트에 대한 반응형 CSS:
+
+```css
+/*! devup-ui v1.0.82, | Apache License 2.0 | https://devup-ui.com */.a{background:red}@media(min-width:480px){.b{background:blue}}@media(min-width:768px){.c{background:green}.d{background:var(--e)}}
 ```
 
 **타입 세이프 테마:**

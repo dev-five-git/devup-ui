@@ -73,6 +73,11 @@ export class NonphysicalModules {
     return [...this.observed]
   }
 
+  invalidatePreparation(): void {
+    this.pending.clear()
+    this.completed = new Map()
+  }
+
   extract(
     root: ExtractionRoot,
     resolver: import('@devup-ui/plugin-utils').ModuleResolver,

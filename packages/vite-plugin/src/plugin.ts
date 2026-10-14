@@ -29,6 +29,8 @@ import {
   resolveSourceDirs,
   seedFileNumbers,
   SOURCE_FILE_RE,
+  tailwindCssFiles,
+  withTailwindCss,
 } from '@devup-ui/plugin-utils'
 import {
   codeExtract,
@@ -260,11 +262,13 @@ export interface DevupUIPluginOptions {
 
 async function writeDataFiles(
   options: Omit<DevupUIPluginOptions, 'extractCss' | 'debug' | 'include'>,
-) {
+  root: string,
+): Promise<string[]> {
   const config = await loadDevupConfig(options.devupFile)
   const theme = config.theme ?? {}
 
-  registerTheme(theme)
+  registerTheme(withTailwindCss(theme, config, root))
+  const tailwindFiles = tailwindCssFiles(config, root)
   const interfaceCode = getThemeInterface(
     ...createThemeInterfaceArgs(options.package),
   )
@@ -281,6 +285,7 @@ async function writeDataFiles(
       getEngineCss(null, false),
     )
   }
+  return tailwindFiles
 }
 
 export function DevupUI({
@@ -406,6 +411,13 @@ export function DevupUI({
   const stateWriter = createStateWriter((path, content, encoding) =>
     encoding ? writeFile(path, content, encoding) : writeFile(path, content),
   )
+  // The files the project's Tailwind CSS is read from, which change what a
+  // Tailwind class compiles to
+  let tailwindFiles: readonly string[] = []
+  const isTailwindFile = (file: string) =>
+    tailwindFiles.some(
+      (tailwindFile) => resolve(tailwindFile) === resolve(file),
+    )
   function writeCssFile(fileName: string, css: string): Promise<void> {
     if (writtenCss.get(fileName) === css) return Promise.resolve()
     writtenCss.set(fileName, css)
@@ -418,7 +430,12 @@ export function DevupUI({
       const fileName = id.replace(/\?.*$/s, '')
       if (!extractionGate.selected(fileName)) return
       const environment = this.environment ?? plugin
-      if (production.active) await production.prepare(observeSetup)
+      if (production.active) {
+        await production.prepare(observeSetup)
+        tailwindFiles = production.tailwindFiles
+        for (const path of tailwindFiles)
+          this.addWatchFile(path.replaceAll('\\', '/'))
+      }
       const context = production.active
         ? (this.environment?.name ?? production.context)
         : undefined
@@ -431,7 +448,8 @@ export function DevupUI({
         production.active &&
         !isMdxSource(fileName, mdxExtensions) &&
         !extracted.has(fileName) &&
-        !extractionGate.relevant(code)
+        !extractionGate.relevant(code) &&
+        !extractionGate.admission(code)
       )
         return
       const environmentConditions = this.environment?.config.resolve.conditions
@@ -638,13 +656,10 @@ export function DevupUI({
           createCompatTypes(importAliases),
           'utf-8',
         )
-        await writeDataFiles({
-          package: libPackage,
-          cssDir,
-          devupFile,
-          distDir,
-          singleCss,
-        })
+        tailwindFiles = await writeDataFiles(
+          { package: libPackage, cssDir, devupFile, distDir, singleCss },
+          projectRoot,
+        )
 
         // Atom-level hoisting (opt-in via `atomHoist`). Configured BEFORE any
         // transform so atoms receive global (shared) class names. Composes with
@@ -791,6 +806,7 @@ export function DevupUI({
           cssMap.clear()
         })
         production.start(this.environment?.name ?? production.context)
+        tailwindFiles = production.tailwindFiles
       }
       missingWatchContexts.set(this.environment ?? plugin, (path) =>
         this.addWatchFile(path),
@@ -803,6 +819,8 @@ export function DevupUI({
               resolvedConfig?.resolve?.preserveSymlinks,
           ).replaceAll('\\', '/'),
         )
+      for (const path of tailwindFiles)
+        this.addWatchFile(path.replaceAll('\\', '/'))
       if (isServe || !extractCss) return
       aggregateCss.start(
         this.environment ?? plugin,
@@ -813,20 +831,22 @@ export function DevupUI({
     async watchChange(this: void, id) {
       if (production.active) production.invalidate(id.replaceAll('\\', '/'))
       resolveFallbackPaths()
-      if (resolve(id) === resolve(devupFile) && existsSync(devupFile)) {
+      if (
+        (resolve(id) === resolve(devupFile) && existsSync(devupFile)) ||
+        (isTailwindFile(id) && existsSync(id))
+      ) {
         try {
           if (production.active) {
             await production.updateTheme()
+            tailwindFiles = production.tailwindFiles
             return
           }
-          await writeDataFiles({
-            package: libPackage,
-            cssDir,
-            devupFile,
-            distDir,
-            singleCss,
-          })
+          tailwindFiles = await writeDataFiles(
+            { package: libPackage, cssDir, devupFile, distDir, singleCss },
+            projectRoot,
+          )
         } catch (error) {
+          if (production.active) throw error
           console.error(`[devup-ui] theme update failed at ${devupFile}`, error)
         }
       }
@@ -872,20 +892,26 @@ export function DevupUI({
           ? []
           : undefined
       }
-      if (resolve(file) !== resolve(devupFile) || !existsSync(devupFile)) {
+      const isDevupFile =
+        resolve(file) === resolve(devupFile) && existsSync(devupFile)
+      const isTailwind = isTailwindFile(file) && existsSync(file)
+      if (!isDevupFile && !isTailwind) {
         return
       }
 
-      await writeDataFiles({
-        package: libPackage,
-        cssDir,
-        devupFile,
-        distDir,
-        singleCss,
-      })
+      if (production.active) await production.updateTheme()
+      else
+        tailwindFiles = await writeDataFiles(
+          { package: libPackage, cssDir, devupFile, distDir, singleCss },
+          projectRoot,
+        )
 
       const invalidatedModules = new Set<EnvironmentModuleNode>()
-      for (const mod of modules) {
+      // A Tailwind class compiles from the definitions of the Tailwind CSS, so
+      // every module is compiled again
+      for (const mod of isTailwind
+        ? environment.moduleGraph.idToModuleMap.values()
+        : modules) {
         environment.moduleGraph.invalidateModule(
           mod,
           invalidatedModules,
@@ -899,20 +925,24 @@ export function DevupUI({
     // Vite 5 fallback: Vite 6+ does not call this hook when `hotUpdate` exists.
     async handleHotUpdate({ file, server, modules, timestamp }) {
       resolveFallbackPaths()
-      if (resolve(file) !== resolve(devupFile) || !existsSync(devupFile)) {
+      const isDevupFile =
+        resolve(file) === resolve(devupFile) && existsSync(devupFile)
+      const isTailwind = isTailwindFile(file) && existsSync(file)
+      if (!isDevupFile && !isTailwind) {
         return
       }
 
-      await writeDataFiles({
-        package: libPackage,
-        cssDir,
-        devupFile,
-        distDir,
-        singleCss,
-      })
+      if (production.active) await production.updateTheme()
+      else
+        tailwindFiles = await writeDataFiles(
+          { package: libPackage, cssDir, devupFile, distDir, singleCss },
+          projectRoot,
+        )
 
       const invalidatedModules = new Set<ModuleNode>()
-      for (const mod of modules) {
+      for (const mod of isTailwind
+        ? server.moduleGraph.idToModuleMap.values()
+        : modules) {
         server.moduleGraph.invalidateModule(
           mod,
           invalidatedModules,

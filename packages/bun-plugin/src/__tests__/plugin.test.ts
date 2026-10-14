@@ -133,6 +133,94 @@ it('overwrites stale declarations when configuration has no theme and directorie
   }
 })
 
+it.each([false, true])(
+  'registers root-relative Tailwind under the actual Bun owner when bundling is %s',
+  async (bundling) => {
+    const f = fixture()
+    f.write(
+      'config/devup.json',
+      JSON.stringify({
+        theme: { colors: { default: { primary: '#abcdef' } } },
+        tailwind: { css: 'styles/tailwind.css' },
+      }),
+    )
+    f.write('styles/tailwind.css', '@import "./tokens.css";')
+    f.write('styles/tokens.css', '@theme { --color-brand: #0af; }')
+    const register = spyOn(wasm, 'registerTheme')
+    try {
+      await f.setup(
+        { devupFile: 'config/devup.json' },
+        bundling ? { root: f.root, entrypoints: [], plugins: [] } : undefined,
+      )
+      expect(register).toHaveBeenCalledWith({
+        colors: { default: { primary: '#abcdef' } },
+        tailwindCss: '@theme { --color-brand: #0af; }',
+      })
+    } finally {
+      register.mockRestore()
+      await f.cleanup()
+    }
+  },
+)
+
+it.each([
+  ['@vanilla-extract/recipes', 'recipe', false],
+  ['@vanilla-extract/recipes', 'recipe', true],
+  ['@vanilla-extract/sprinkles', 'createSprinkles', false],
+  ['@vanilla-extract/sprinkles', 'createSprinkles', true],
+] as const)(
+  'routes %s-only %s source to extractor diagnostics when bundling is %s',
+  async (name, binding, bundling) => {
+    const f = fixture()
+    const code = `import { ${binding} } from '${name}'; export const value = ${binding}({})`
+    const path = f.write('src/companion.ts', code)
+    const diagnostic = new Error(`${path}:1:1: unsupported companion ${name}`)
+    try {
+      await f.setup(
+        {},
+        bundling
+          ? { root: f.root, entrypoints: [path], plugins: [] }
+          : undefined,
+      )
+      const extract = spyOn(wasm, 'codeExtract').mockImplementation(() => {
+        throw diagnostic
+      })
+      try {
+        await expect(f.load(path)).rejects.toMatchObject({
+          message: diagnostic.message,
+          cause: diagnostic,
+        })
+        expect(extract).toHaveBeenCalledTimes(1)
+      } finally {
+        extract.mockRestore()
+      }
+    } finally {
+      await f.cleanup()
+    }
+  },
+)
+
+it.each(['@vanilla-extract/recipes', '@vanilla-extract/sprinkles'])(
+  'passes type-only %s through without invoking native diagnostics',
+  async (name) => {
+    const f = fixture()
+    const code = `import type { Options } from '${name}'; export type Value = Options`
+    const path = f.write('src/companion-types.ts', code)
+    try {
+      await f.setup({}, { root: f.root, entrypoints: [path], plugins: [] })
+      const extract = spyOn(wasm, 'codeExtract')
+      try {
+        expect(sourceContents(await f.load(path))).toBe(code)
+        expect(extract).not.toHaveBeenCalled()
+      } finally {
+        extract.mockRestore()
+      }
+    } finally {
+      await f.cleanup()
+    }
+  },
+)
+
 it('publishes changed CSS synchronously but leaves identical revisions untouched', async () => {
   const f = fixture()
   const path = f.write(

@@ -44,6 +44,42 @@ it.each(['js', 'jsx', 'ts', 'tsx'] as const)(
   },
 )
 
+it.each(['@vanilla-extract/recipes', '@vanilla-extract/sprinkles'])(
+  'admits diagnostic-only value imports when the companion is %s',
+  (name) => {
+    const source = `import { create } from '${name}'; export const value = create({})`
+    const found = importsCompiledPackage(source, 'ts')
+    expect(found).toBe(true)
+  },
+)
+
+it.each(['@vanilla-extract/recipes', '@vanilla-extract/sprinkles'])(
+  'selects runtime diagnostic candidates when only %s is mentioned',
+  (name) => {
+    const source = `import { create } from '${name}'; export const value = create({})`
+    const found = mentionsCompiledPackage(source)
+    expect(found).toBe(true)
+  },
+)
+
+it.each(['@vanilla-extract/recipes', '@vanilla-extract/sprinkles'])(
+  'skips diagnostic extraction when %s is imported only as a type',
+  (name) => {
+    const source = `import type { Options } from '${name}'; export type Value = Options`
+    const found = importsCompiledPackage(source, 'ts')
+    expect(found).toBe(false)
+  },
+)
+
+it.each(['@vanilla-extract/recipes', '@vanilla-extract/sprinkles'])(
+  'ignores text and similarly named packages when the companion is %s',
+  (name) => {
+    const source = `// ${name}\nimport { create } from '${name}-other'; export const value = '${name}'`
+    const found = importsCompiledPackage(source, 'ts')
+    expect(found).toBe(false)
+  },
+)
+
 it('leaves syntax errors to Bun when the scanner rejects source', () => {
   const found = importsCompiledPackage('import {', 'ts')
   expect(found).toBe(false)

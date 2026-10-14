@@ -122,8 +122,23 @@ let setPrefixSpy: ReturnType<typeof spyOn>
 let realpathSpy: ReturnType<typeof spyOn>
 
 beforeAll(() => {
-  realpathSpy = spyOn(fs, 'realpathSync').mockImplementation((path) =>
-    resolve(String(path)),
+  function realpath(path: fs.PathLike, options?: fs.EncodingOption): string
+  function realpath(
+    path: fs.PathLike,
+    options: fs.BufferEncodingOption,
+  ): NonSharedBuffer
+  function realpath(
+    path: fs.PathLike,
+    options?: fs.EncodingOption | fs.BufferEncodingOption,
+  ): string | NonSharedBuffer {
+    const resolved = resolve(String(path))
+    return (typeof options === 'object' ? options?.encoding : options) ===
+      'buffer'
+      ? Buffer.from(resolved)
+      : resolved
+  }
+  realpathSpy = spyOn(fs, 'realpathSync').mockImplementation(
+    Object.assign(realpath, { native: realpath }),
   )
   existsSyncSpy = spyOn(fs, 'existsSync').mockReturnValue(false)
   writeFileSyncSpy = spyOn(fs, 'writeFileSync').mockReturnValue(undefined)
@@ -246,27 +261,30 @@ describe('DevupUIRsbuildPlugin', () => {
       wasm,
       'setModuleResolver',
     ).mockReturnValue(undefined)
-    const plugin = DevupUI()
-    const transform = mock()
-    await plugin.setup(createSetupContext({ transform }))
-    const resolveModule = setModuleResolverSpy.mock.calls.at(-1)?.[0] as (
-      specifier: string,
-      importer: string,
-    ) => { path: string } | undefined
-    expect(resolveModule('./plugin.test', import.meta.path)?.path).toBe(
-      import.meta.path,
-    )
-    codeExtractSpy.mockImplementation(() =>
-      createCodeExtractResult({ dependencies: ['/src/tokens.ts'] }),
-    )
-    const addDependency = mock()
-    await transform.mock.calls[1][1]({
-      code: "import { Box } from '@devup-ui/react'",
-      resourcePath: 'src/App.tsx',
-      addDependency,
-    })
-    expect(addDependency).toHaveBeenCalledWith('/src/tokens.ts')
-    setModuleResolverSpy.mockRestore()
+    try {
+      const plugin = DevupUI()
+      const transform = mock()
+      await plugin.setup(createSetupContext({ transform }))
+      const resolveModule = setModuleResolverSpy.mock.calls.at(-1)?.[0] as (
+        specifier: string,
+        importer: string,
+      ) => { path: string } | undefined
+      expect(resolveModule('./plugin.test', import.meta.path)?.path).toBe(
+        import.meta.path,
+      )
+      codeExtractSpy.mockImplementation(() =>
+        createCodeExtractResult({ dependencies: ['/src/tokens.ts'] }),
+      )
+      const addDependency = mock()
+      await transform.mock.calls[1][1]({
+        code: "import { Box } from '@devup-ui/react'",
+        resourcePath: 'src/App.tsx',
+        addDependency,
+      })
+      expect(addDependency).toHaveBeenCalledWith('/src/tokens.ts')
+    } finally {
+      setModuleResolverSpy.mockRestore()
+    }
   })
 
   it('should return a plugin object with correct name', async () => {
@@ -399,16 +417,19 @@ describe('DevupUIRsbuildPlugin', () => {
     )
 
     const getCssSpy = spyOn(wasm, 'getCss').mockReturnValue('file css')
-    expect(
-      transform.mock.calls[0][1]({
-        code: '/* placeholder */',
-        resourcePath: resolve('df', 'devup-ui', 'devup-ui-1.css'),
-        environment: { name: 'web' },
-      }),
-    ).toBe('file css')
-    // A file's stylesheet imports the shared base
-    expect(getCssSpy).toHaveBeenCalledWith(1, true)
-    getCssSpy.mockRestore()
+    try {
+      expect(
+        transform.mock.calls[0][1]({
+          code: '/* placeholder */',
+          resourcePath: resolve('df', 'devup-ui', 'devup-ui-1.css'),
+          environment: { name: 'web' },
+        }),
+      ).toBe('file css')
+      // A file's stylesheet imports the shared base
+      expect(getCssSpy).toHaveBeenCalledWith(1, true)
+    } finally {
+      getCssSpy.mockRestore()
+    }
   })
   it('should transform code', async () => {
     const plugin = DevupUI()
@@ -516,6 +537,43 @@ const App = () => <Box></Box>`,
       code: `<div></div>`,
       map: undefined,
     })
+  })
+  it('registers the text of the Tailwind CSS with the theme', async () => {
+    const root = resolve('tailwind-project')
+    const configFile = resolve(root, 'config', 'devup.json')
+    const cssFile = resolve(root, 'tailwind.css')
+    const readFileSyncSpy = spyOn(fs, 'readFileSync').mockReturnValue(
+      '@theme { --color-brand: #0af; }',
+    )
+    readFileSpy.mockResolvedValue(
+      JSON.stringify({ tailwind: { css: 'tailwind.css' } }),
+    )
+    existsSyncSpy.mockImplementation(
+      (path: string) => path === configFile || path === cssFile,
+    )
+    try {
+      await DevupUI({ devupFile: 'config/devup.json' }).setup(
+        createSetupContext({
+          context: {
+            rootPath: root,
+            version: '2.2.9',
+            configFileDependencies: [],
+            distPath: resolve(root, 'dist'),
+            cachePath: resolve(root, 'node_modules/.cache'),
+            bundlerType: 'rspack',
+            callerName: 'rsbuild',
+          },
+        }),
+      )
+      expect(registerThemeSpy).toHaveBeenCalledWith({
+        tailwindCss: '@theme { --color-brand: #0af; }',
+      })
+      expect(readFileSyncSpy).toHaveBeenCalledWith(cssFile, 'utf-8')
+    } finally {
+      readFileSyncSpy.mockRestore()
+      readFileSpy.mockResolvedValue('{}')
+      existsSyncSpy.mockReturnValue(false)
+    }
   })
   it.each(
     createTestMatrix({

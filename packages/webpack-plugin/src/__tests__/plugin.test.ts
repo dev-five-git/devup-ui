@@ -22,7 +22,7 @@ import { servedCss } from '../served-css'
 type CodeExtractResult = ReturnType<typeof wasm.codeExtract>
 interface MockCompiler {
   options: {
-    module: { rules: unknown[] }
+    module: { rules: { exclude?: RegExp }[] }
     plugins: unknown[]
     entry?: unknown
     context?: string
@@ -93,9 +93,11 @@ let readFileSpy: ReturnType<typeof spyOn>
 let statSpy: ReturnType<typeof spyOn>
 let writeFileSpy: ReturnType<typeof spyOn>
 let graphSpy: ReturnType<typeof spyOn>
+let consoleErrorSpy: ReturnType<typeof spyOn>
 const closeBuilds = new Set<() => void>()
 
 beforeEach(() => {
+  consoleErrorSpy = spyOn(console, 'error').mockReturnValue(undefined)
   codeExtractSpy = spyOn(wasm, 'codeExtract').mockImplementation(
     (_path: string, contents: string) => createCodeExtractResult(contents),
   )
@@ -121,6 +123,7 @@ beforeEach(() => {
   statSpy = spyOn(fsPromises, 'stat').mockResolvedValue(createStats(0))
   writeFileSpy = spyOn(fsPromises, 'writeFile').mockResolvedValue(undefined)
   graphSpy = spyOn(pluginUtils, 'buildStaticImportGraph').mockReturnValue({
+    requests: [],
     files: [],
     fileSet: new Set(),
     staticImports: new Map(),
@@ -153,6 +156,7 @@ afterEach(() => {
   statSpy.mockRestore()
   writeFileSpy.mockRestore()
   graphSpy.mockRestore()
+  consoleErrorSpy.mockRestore()
 })
 
 function createCompiler(): MockCompiler {
@@ -196,8 +200,6 @@ function createCompiler(): MockCompiler {
 }
 
 describe('devupUIWebpackPlugin', () => {
-  console.error = mock()
-
   describe('deterministic file numbering', () => {
     it('numbers the files the scan finds and ends the build at shutdown', () => {
       const collectSpy = spyOn(pluginUtils, 'collectNumberedFiles')
@@ -372,7 +374,7 @@ describe('devupUIWebpackPlugin', () => {
     plugin.apply(asCompiler(compiler))
     await compiler.hooks.watchRun.tapPromise.mock.calls[0][1]()
     expect(
-      readFileSyncSpy.mock.calls.some(([path]) =>
+      readFileSyncSpy.mock.calls.some(([path]: readonly unknown[]) =>
         [plugin.sheetFile, plugin.classMapFile, plugin.fileMapFile].includes(
           String(path),
         ),
@@ -383,6 +385,118 @@ describe('devupUIWebpackPlugin', () => {
     expect(importFileMapSpy).not.toHaveBeenCalled()
   })
 
+  describe('Tailwind CSS definitions', () => {
+    const root = resolve('tailwind-project')
+    const configFile = resolve(root, 'config/devup.json')
+    const tailwindFile = resolve(root, 'styles/tailwind.css')
+
+    function mockTailwindCss() {
+      existsSyncSpy.mockImplementation(
+        (path: string) => path === configFile || path === tailwindFile,
+      )
+      loadDevupConfigSyncSpy.mockReturnValue({
+        tailwind: { css: 'styles/tailwind.css' },
+      })
+      readFileSyncSpy.mockImplementation((path: string) =>
+        path === tailwindFile ? '@theme { --color-brand: #0af; }' : '{}',
+      )
+    }
+
+    it('registers the text of the Tailwind CSS and depends on its files', () => {
+      mockTailwindCss()
+      const plugin = new DevupUIWebpackPlugin({
+        devupFile: 'config/devup.json',
+      })
+      const compiler = createCompiler()
+      compiler.options.context = root
+
+      plugin.apply(asCompiler(compiler))
+
+      expect(registerThemeSpy).toHaveBeenCalledWith({
+        tailwindCss: '@theme { --color-brand: #0af; }',
+      })
+      const add = mock()
+      const dependencies = compiler.hooks.afterCompile.tap.mock.calls.find(
+        ([name]) => name === 'DevupUIWebpackPlugin',
+      )
+      if (!dependencies) throw new Error('missing Tailwind dependency hook')
+      dependencies[1]({
+        fileDependencies: { add },
+      })
+      expect(add).toHaveBeenCalledWith(configFile)
+      expect(add).toHaveBeenCalledWith(tailwindFile)
+      expect(readFileSyncSpy).toHaveBeenCalledWith(tailwindFile, 'utf-8')
+      registerThemeSpy.mockClear()
+      const compilation = compiler.hooks.thisCompilation.tap.mock.calls.find(
+        ([name]) => name === 'DevupUIWebpackPlugin',
+      )
+      if (!compilation) throw new Error('missing stylesheet compilation hook')
+      compilation[1]({
+        hooks: {
+          finishModules: { tap: mock() },
+          processAssets: { tap: mock() },
+          needAdditionalPass: { tap: mock() },
+        },
+      })
+      expect(registerThemeSpy).toHaveBeenLastCalledWith({
+        tailwindCss: '@theme { --color-brand: #0af; }',
+      })
+    })
+
+    it('reads it again when a file changes', async () => {
+      mockTailwindCss()
+      const plugin = new DevupUIWebpackPlugin({
+        watch: true,
+        devupFile: 'config/devup.json',
+      })
+      const compiler = createCompiler()
+      compiler.options.context = root
+      statSpy.mockResolvedValueOnce(createStats(1))
+      statSpy.mockResolvedValueOnce(createStats(1))
+      statSpy.mockResolvedValueOnce(createStats(1))
+      statSpy.mockResolvedValueOnce(createStats(2))
+      plugin.apply(asCompiler(compiler))
+      registerThemeSpy.mockClear()
+
+      const watch = compiler.hooks.watchRun.tapPromise.mock.calls.find(
+        ([name]) => name === 'DevupUIWebpackPlugin',
+      )
+      if (!watch) throw new Error('missing Tailwind watch hook')
+      await watch[1]()
+      await watch[1]()
+
+      expect(registerThemeSpy).toHaveBeenCalledWith({
+        tailwindCss: '@theme { --color-brand: #0af; }',
+      })
+      expect(loadDevupConfigSyncSpy).toHaveBeenCalledTimes(2)
+    })
+
+    it('takes a Tailwind CSS that is gone as unchanged', async () => {
+      existsSyncSpy.mockImplementation((path: string) => path === tailwindFile)
+      loadDevupConfigSyncSpy.mockReturnValue({
+        tailwind: { css: 'styles/tailwind.css' },
+      })
+      readFileSyncSpy.mockImplementation((path: string) =>
+        path === tailwindFile ? '@import "tailwindcss";' : '{}',
+      )
+      const plugin = new DevupUIWebpackPlugin({
+        watch: true,
+        devupFile: 'missing.json',
+      })
+      const compiler = createCompiler()
+      compiler.options.context = root
+      statSpy.mockRejectedValue(new Error('gone'))
+      plugin.apply(asCompiler(compiler))
+
+      const watch = compiler.hooks.watchRun.tapPromise.mock.calls.find(
+        ([name]) => name === 'DevupUIWebpackPlugin',
+      )
+      if (!watch) throw new Error('missing Tailwind watch hook')
+      await watch[1]()
+
+      expect(plugin.tailwindFiles).toEqual([tailwindFile])
+    })
+  })
   it.each(
     createTestMatrix({
       watch: [true, false],
@@ -631,64 +745,67 @@ describe('devupUIWebpackPlugin', () => {
         wasm,
         'setModuleResolver',
       ).mockReturnValue(undefined)
-      const plugin = new DevupUIWebpackPlugin({
-        package: '@devup-ui/react',
-        singleCss: true,
-      })
-      const compiler = createCompiler()
-      compiler.options.entry = {
-        main: { import: ['./src/parent', './src/other'] },
-        worker: {},
+      try {
+        const plugin = new DevupUIWebpackPlugin({
+          package: '@devup-ui/react',
+          singleCss: true,
+        })
+        const compiler = createCompiler()
+        compiler.options.entry = {
+          main: { import: ['./src/parent', './src/other'] },
+          worker: {},
+        }
+        compiler.options.context = '/project'
+        plugin.apply(asCompiler(compiler))
+        expect(computeReachableFilesSpy).toHaveBeenCalledWith(
+          expect.objectContaining({
+            srcDir: [],
+            tsconfigPath: resolve('/project', 'tsconfig.json'),
+            entries: [
+              resolve('/project', './src/parent'),
+              resolve('/project', './src/other'),
+            ],
+          }),
+        )
+        // The loader's resolver is registered before the first extraction, so
+        // imported constants inline as they do in the loader
+        expect(setModuleResolverSpy.mock.invocationCallOrder[0]).toBeLessThan(
+          codeExtractSpy.mock.invocationCallOrder[0]!,
+        )
+        const resolveModule = setModuleResolverSpy.mock.calls[0]![0] as (
+          specifier: string,
+          importer: string,
+        ) => { path: string } | undefined
+        expect(resolveModule('./plugin.test', import.meta.path)?.path).toBe(
+          relative('/project', import.meta.path).replaceAll('\\', '/'),
+        )
+        expect(codeExtractSpy).toHaveBeenCalledTimes(2)
+        expect(discarded).toHaveLength(2)
+        for (const output of discarded)
+          expect(output.free).toHaveBeenCalledTimes(1)
+        expect(codeExtractSpy).toHaveBeenCalledWith(
+          relative('/project', resolve('src/parent.tsx')).replaceAll('\\', '/'),
+          'source',
+          '@devup-ui/react',
+          expect.any(String),
+          true,
+          false,
+          true,
+          expect.anything(),
+        )
+        expect(codeExtractSpy).toHaveBeenCalledWith(
+          relative('/project', resolve('src/child.tsx')).replaceAll('\\', '/'),
+          'source',
+          '@devup-ui/react',
+          expect.any(String),
+          true,
+          false,
+          true,
+          expect.anything(),
+        )
+      } finally {
+        setModuleResolverSpy.mockRestore()
       }
-      compiler.options.context = '/project'
-      plugin.apply(asCompiler(compiler))
-      expect(computeReachableFilesSpy).toHaveBeenCalledWith(
-        expect.objectContaining({
-          srcDir: [],
-          tsconfigPath: resolve('/project', 'tsconfig.json'),
-          entries: [
-            resolve('/project', './src/parent'),
-            resolve('/project', './src/other'),
-          ],
-        }),
-      )
-      // The loader's resolver is registered before the first extraction, so
-      // imported constants inline as they do in the loader
-      expect(setModuleResolverSpy.mock.invocationCallOrder[0]).toBeLessThan(
-        codeExtractSpy.mock.invocationCallOrder[0]!,
-      )
-      const resolveModule = setModuleResolverSpy.mock.calls[0]![0] as (
-        specifier: string,
-        importer: string,
-      ) => { path: string } | undefined
-      expect(resolveModule('./plugin.test', import.meta.path)?.path).toBe(
-        relative('/project', import.meta.path).replaceAll('\\', '/'),
-      )
-      setModuleResolverSpy.mockRestore()
-      expect(codeExtractSpy).toHaveBeenCalledTimes(2)
-      expect(discarded).toHaveLength(2)
-      for (const output of discarded)
-        expect(output.free).toHaveBeenCalledTimes(1)
-      expect(codeExtractSpy).toHaveBeenCalledWith(
-        relative('/project', resolve('src/parent.tsx')).replaceAll('\\', '/'),
-        'source',
-        '@devup-ui/react',
-        expect.any(String),
-        true,
-        false,
-        true,
-        expect.anything(),
-      )
-      expect(codeExtractSpy).toHaveBeenCalledWith(
-        relative('/project', resolve('src/child.tsx')).replaceAll('\\', '/'),
-        'source',
-        '@devup-ui/react',
-        expect.any(String),
-        true,
-        false,
-        true,
-        expect.anything(),
-      )
     })
 
     it('pre-warms without collapse, from no entries when they are a function', () => {
