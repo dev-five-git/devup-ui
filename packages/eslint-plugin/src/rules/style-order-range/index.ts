@@ -5,7 +5,8 @@ import {
 } from '@typescript-eslint/utils'
 import type { RuleContext } from '@typescript-eslint/utils/ts-eslint'
 
-import { ImportStorage } from '../../utils/import-storage'
+import { ImportStorage, STYLE_COMPONENTS } from '../../utils/import-storage'
+import { componentName, styleArguments } from '../../utils/style-position'
 
 const createRule = ESLintUtils.RuleCreator(
   (name) =>
@@ -91,7 +92,7 @@ export const styleOrderRange = createRule({
     },
   },
   create(context) {
-    const importStorage = new ImportStorage()
+    const importStorage = new ImportStorage(context)
 
     return {
       ImportDeclaration(node) {
@@ -110,7 +111,7 @@ export const styleOrderRange = createRule({
           object.type === AST_NODE_TYPES.ObjectExpression &&
           call?.type === AST_NODE_TYPES.CallExpression &&
           call.arguments.includes(object) &&
-          importStorage.checkContextType(call) === 'UTIL'
+          styleArguments(call, importStorage)?.includes(object)
         ) {
           checkStyleOrderRange(node.value, context)
         }
@@ -120,7 +121,9 @@ export const styleOrderRange = createRule({
           node.name.type !== AST_NODE_TYPES.JSXIdentifier ||
           node.name.name !== 'styleOrder' ||
           !node.value ||
-          importStorage.checkContextType(node.parent) !== 'COMPONENT'
+          !STYLE_COMPONENTS.has(
+            componentName(node.parent.name, importStorage) ?? '',
+          )
         ) {
           return
         }
