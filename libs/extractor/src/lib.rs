@@ -20854,6 +20854,205 @@ export const K = styled.div(base, cond && { color: 'blue' }, { margin: 1 });",
         }
     }
 
+    type StyledSpreadColor<'a> = (
+        &'a str,
+        &'a str,
+        Option<css::style_selector::StyleSelector>,
+        u8,
+    );
+
+    fn styled_conditional_spread_color_styles<'a>(
+        output: &'a ExtractOutput,
+        selector: Option<&css::style_selector::StyleSelector>,
+    ) -> Vec<StyledSpreadColor<'a>> {
+        let mut colors: Vec<_> = output
+            .styles
+            .iter()
+            .filter_map(|value| match value {
+                ExtractStyleValue::Static(style)
+                    if style.property() == "color" && style.selector() == selector =>
+                {
+                    Some((
+                        style.value(),
+                        style.property(),
+                        style.selector().cloned(),
+                        style.level(),
+                    ))
+                }
+                ExtractStyleValue::Static(_)
+                | ExtractStyleValue::Dynamic(_)
+                | ExtractStyleValue::Typography(_)
+                | ExtractStyleValue::Css(_)
+                | ExtractStyleValue::Import(_)
+                | ExtractStyleValue::FontFace(_)
+                | ExtractStyleValue::Keyframes(_) => None,
+            })
+            .collect();
+        colors.sort_unstable();
+        colors
+    }
+
+    #[rstest]
+    #[case::both_branches(
+        "{ ...(on ? { color: 'red' } : { color: 'purple' }), color: 'orange' }",
+        None
+    )]
+    #[case::nested_hover(
+        "{ _hover: { ...(on ? { color: 'red' } : { color: 'purple' }), color: 'orange' } }",
+        Some("&:hover")
+    )]
+    #[case::independent_spreads(
+        "{ ...(on ? { color: 'red' } : { color: 'purple' }), color: 'blue', ...(other ? { color: 'green' } : { color: 'yellow' }), color: 'orange' }",
+        None
+    )]
+    #[case::unconditional_control("{ ...{ color: 'red' }, color: 'orange' }", None)]
+    #[case::missing_branches("{ ...(on ? { color: 'red' } : {}), color: 'orange' }", None)]
+    #[case::literal_computed_key("{ ...(on ? { ['color']: 'red' } : {}), color: 'orange' }", None)]
+    #[case::template_computed_key(
+        "{ ...(on ? { [`color`]: 'red' } : { color: 'purple' }), [`color`]: 'orange' }",
+        None
+    )]
+    #[case::literal_template_computed_key(
+        "{ ...(on ? { color: 'red' } : { color: 'purple' }), [`co${'lor'}`]: 'orange' }",
+        None
+    )]
+    #[case::logical_branch("{ ...(on && { color: 'red' }), color: 'orange' }", None)]
+    #[case::nested_branch(
+        "{ ...(on ? { ...(other ? { color: 'red' } : {}) } : {}), color: 'orange' }",
+        None
+    )]
+    #[case::responsive_replacement(
+        "{ ...(on ? { color: ['red', null, 'green'] } : { color: ['purple', 'blue'] }), color: 'orange' }",
+        None
+    )]
+    #[case::whole_selector(
+        "{ ...(on ? { _hover: { color: 'red', backgroundColor: 'yellow' } } : {}), _hover: { color: 'orange' } }",
+        Some("&:hover")
+    )]
+    #[case::syntax_wrappers(
+        "{ ...((on ? { color: 'red' } : {}) satisfies object), color: 'orange' }",
+        None
+    )]
+    #[serial]
+    fn test_styled_conditional_spread_final_scalar_wins(
+        #[case] rules: &str,
+        #[case] selector: Option<&str>,
+        #[values(false, true)] single_css: bool,
+    ) {
+        reset_class_map();
+        reset_file_map();
+        let code = format!(
+            "import {{ styled }} from '@devup-ui/react';\nconst Card = styled.div({rules});"
+        );
+        let selector =
+            selector.map(|value| css::style_selector::StyleSelector::Selector(value.to_string()));
+        let output = extract(
+            "test.tsx",
+            &code,
+            ExtractOption {
+                single_css,
+                ..ExtractOption::default()
+            },
+        )
+        .unwrap();
+        assert_eq!(
+            styled_conditional_spread_color_styles(&output, selector.as_ref()),
+            vec![("orange", "color", selector, 0)],
+        );
+    }
+
+    #[rstest]
+    #[case::per_file(false)]
+    #[case::single_css(true)]
+    #[serial]
+    fn test_styled_conditional_spread_exact_w38m(#[case] single_css: bool) {
+        reset_class_map();
+        reset_file_map();
+        let code = r"import {styled} from '@devup-ui/react';const __devupForwardRef=render=>render;const Card=styled('div',{_focus:{color:(trace.push('before'),true)?'green':'navy'},...((trace.push('spread'),true)?{color:'red',_active:{color:'yellow'}}:{color:'purple',_active:{color:'orange'}}),color:'purple',_visited:{color:(trace.push('between'),true)?'silver':'black'},...((trace.push('spread'),true)?{color:'red',_active:{color:'yellow'}}:{color:'purple',_active:{color:'orange'}}),color:'orange',_disabled:{color:(trace.push('after'),true)?'gray':'pink'},_hover:`color:blue`});trace.push('built');const a=Card({get stop(){trace.push('get');return true}},null);const b=Card({get stop(){trace.push('get');return false}},null);
+";
+        let output = extract(
+            "test.tsx",
+            code,
+            ExtractOption {
+                single_css,
+                ..ExtractOption::default()
+            },
+        )
+        .unwrap();
+        assert_eq!(
+            styled_conditional_spread_color_styles(&output, None),
+            vec![("orange", "color", None, 0)],
+        );
+        for (selector, values) in [
+            ("&:active", vec!["orange", "yellow"]),
+            ("&:focus", vec!["green", "navy"]),
+            ("&:visited", vec!["black", "silver"]),
+            ("&:disabled", vec!["gray", "pink"]),
+            ("&:hover", vec!["blue"]),
+        ] {
+            let selector = css::style_selector::StyleSelector::Selector(selector.to_string());
+            assert_eq!(
+                styled_conditional_spread_color_styles(&output, Some(&selector)),
+                values
+                    .into_iter()
+                    .map(|value| (value, "color", Some(selector.clone()), 0))
+                    .collect::<Vec<_>>(),
+            );
+        }
+    }
+
+    #[rstest]
+    #[case::per_file(false)]
+    #[case::single_css(true)]
+    #[serial]
+    fn test_styled_conditional_spread_runtime_class_callback_rejected(#[case] single_css: bool) {
+        reset_class_map();
+        reset_file_map();
+        let code = "import { styled } from '@devup-ui/react';\nstyled.div(p => { return p.cls; });";
+        let result = extract(
+            "test.tsx",
+            code,
+            ExtractOption {
+                single_css,
+                ..ExtractOption::default()
+            },
+        );
+        assert_eq!(
+            result.err().map(|error| error.to_string()),
+            Some("test.tsx:2:1: Cannot compose `(p) => { return p.cls; }` at build time: each style must be a rule object, a class, or a condition choosing between them".to_string()),
+        );
+    }
+
+    #[rstest]
+    #[case::member("styled.div")]
+    #[case::curried("styled('div')")]
+    #[case::two_argument("styled")]
+    #[serial]
+    fn test_styled_conditional_spread_call_forms(
+        #[case] factory: &str,
+        #[values(false, true)] single_css: bool,
+    ) {
+        reset_class_map();
+        reset_file_map();
+        let tag = if factory == "styled" { "'div', " } else { "" };
+        let code = format!(
+            "import {{ styled }} from '@devup-ui/react'; const Card = {factory}({tag}{{ ...(on ? {{ color: 'red' }} : {{ color: 'purple' }}), color: 'orange' }});"
+        );
+        let output = extract(
+            "test.tsx",
+            &code,
+            ExtractOption {
+                single_css,
+                ..ExtractOption::default()
+            },
+        )
+        .unwrap();
+        assert_eq!(
+            styled_conditional_spread_color_styles(&output, None),
+            vec![("orange", "color", None, 0)]
+        );
+    }
+
     #[test]
     #[serial]
     fn test_devup_props_typescript_wrappers() {

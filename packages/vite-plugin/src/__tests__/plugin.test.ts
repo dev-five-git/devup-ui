@@ -186,6 +186,7 @@ let getThemeInterfaceSpy: ReturnType<typeof spyOn>
 let registerThemeSpy: ReturnType<typeof spyOn>
 let setDebugSpy: ReturnType<typeof spyOn>
 let setPrefixSpy: ReturnType<typeof spyOn>
+let consoleErrorSpy: ReturnType<typeof spyOn>
 
 beforeEach(() => {
   existsSyncSpy = spyOn(fs, 'existsSync').mockReturnValue(false)
@@ -206,6 +207,7 @@ beforeEach(() => {
   registerThemeSpy = spyOn(wasm, 'registerTheme').mockReturnValue(undefined)
   setDebugSpy = spyOn(wasm, 'setDebug').mockReturnValue(undefined)
   setPrefixSpy = spyOn(wasm, 'setPrefix').mockReturnValue(undefined)
+  consoleErrorSpy = spyOn(console, 'error').mockReturnValue(undefined)
 })
 
 afterEach(() => {
@@ -221,11 +223,10 @@ afterEach(() => {
   registerThemeSpy.mockRestore()
   setDebugSpy.mockRestore()
   setPrefixSpy.mockRestore()
+  consoleErrorSpy.mockRestore()
 })
 
 describe('devupUIVitePlugin', () => {
-  console.error = mock()
-
   it('should apply default options', () => {
     const plugin = createPlugin({})
     expect(plugin).toEqual({
@@ -1663,25 +1664,28 @@ describe('module resolver', () => {
       wasm,
       'setModuleResolver',
     ).mockReturnValue(undefined)
-    codeExtractSpy.mockReturnValue(
-      createCodeExtractResult({ dependencies: ['/p/src/tokens.ts'] }),
-    )
-    const plugin = createPlugin({})
-    await plugin.configResolved({ root: '/p' })
-    const resolveModule = setModuleResolverSpy.mock.calls[0][0] as (
-      specifier: string,
-      importer: string,
-    ) => { path: string } | undefined
-    expect(resolveModule('./plugin.test', import.meta.path)?.path).toBe(
-      import.meta.path.replaceAll('\\', '/'),
-    )
-    const addWatchFile = mock()
-    await plugin.transform.call(
-      { addWatchFile } as never,
-      'code',
-      '/p/src/App.tsx',
-    )
-    expect(addWatchFile).toHaveBeenCalledWith('/p/src/tokens.ts')
-    setModuleResolverSpy.mockRestore()
+    try {
+      codeExtractSpy.mockReturnValue(
+        createCodeExtractResult({ dependencies: ['/p/src/tokens.ts'] }),
+      )
+      const plugin = createPlugin({})
+      await plugin.configResolved({ root: '/p' })
+      const resolveModule = setModuleResolverSpy.mock.calls[0][0] as (
+        specifier: string,
+        importer: string,
+      ) => { path: string } | undefined
+      expect(resolveModule('./plugin.test', import.meta.path)?.path).toBe(
+        import.meta.path.replaceAll('\\', '/'),
+      )
+      const addWatchFile = mock()
+      await plugin.transform.call(
+        { addWatchFile } as never,
+        'code',
+        '/p/src/App.tsx',
+      )
+      expect(addWatchFile).toHaveBeenCalledWith('/p/src/tokens.ts')
+    } finally {
+      setModuleResolverSpy.mockRestore()
+    }
   })
 })

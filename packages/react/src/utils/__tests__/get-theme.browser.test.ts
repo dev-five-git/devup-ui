@@ -4,7 +4,16 @@ import { getTheme } from '../get-theme'
 
 describe('getTheme', () => {
   it('should return theme', async () => {
-    document.documentElement.setAttribute('data-theme', 'dark')
-    expect(getTheme()).toBe('dark')
+    const originalTheme = document.documentElement.getAttribute('data-theme')
+    try {
+      document.documentElement.setAttribute('data-theme', 'dark')
+      expect(getTheme()).toBe('dark')
+    } finally {
+      if (originalTheme === null) {
+        document.documentElement.removeAttribute('data-theme')
+      } else {
+        document.documentElement.setAttribute('data-theme', originalTheme)
+      }
+    }
   })
 })
