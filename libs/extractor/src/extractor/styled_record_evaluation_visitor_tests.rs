@@ -200,6 +200,7 @@ fn metadata_is_unchanged_when_style_expressions_are_visited() {
             offset: 17,
             code: "__devupRecord0".to_string(),
             prop: true,
+            requirement: Some("a valid selector"),
         },
         ExtractStyleProp::Static(ExtractStyleValue::Dynamic(ExtractDynamicStyle::new(
             "color",
@@ -223,13 +224,20 @@ fn metadata_is_unchanged_when_style_expressions_are_visited() {
         panic!("static fixture");
     };
     assert_eq!(value, &static_value);
-    let ExtractStyleProp::Unreadable { offset, code, prop } = &styles[1] else {
+    let ExtractStyleProp::Unreadable {
+        offset,
+        code,
+        prop,
+        requirement,
+    } = &styles[1]
+    else {
         panic!("unreadable fixture");
     };
     assert_eq!(
         (*offset, code.as_str(), *prop),
         (17, "__devupRecord0", true)
     );
+    assert_eq!(*requirement, Some("a valid selector"));
     let ExtractStyleProp::Static(value) = &styles[2] else {
         panic!("dynamic fixture");
     };

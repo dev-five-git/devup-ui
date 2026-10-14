@@ -10,7 +10,8 @@ use css::{
     style_selector::{
         AtRule, AtRuleKind, StyleSelector, get_selector_order, global_selector_order, write_at_rule,
     },
-    theme_tokens::{set_theme_token_levels, set_typography_keys},
+    tailwind_definitions::set_tailwind_css,
+    theme_tokens::{set_color_tokens, set_theme_token_levels, set_typography_keys},
     utils::compile_regex,
     write_merge_selector,
 };
@@ -481,6 +482,8 @@ impl StyleSheet {
             theme.get_shadow_token_levels(),
         );
         set_typography_keys(theme.typography.keys().cloned().collect());
+        set_color_tokens(theme.get_color_token_names());
+        set_tailwind_css(&theme.tailwind_css);
         self.theme = theme;
     }
 
@@ -3409,23 +3412,23 @@ mod tests {
     #[rstest]
     #[case(
         "hover:bg-red-500 active:bg-blue-500",
-        "@media(hover:hover){.c0:hover{background-color:#EF4444}}.c1:active{background-color:#3B82F6}"
+        "@media(hover:hover){.c0:hover{background-color:oklch(63.7% .237 25.331)}}.c1:active{background-color:oklch(62.3% .214 259.815)}"
     )]
     #[case(
         "md:hover:bg-red-500 active:bg-blue-500",
-        ".c0:active{background-color:#3B82F6}@media(min-width:768px)and (hover:hover){.c1:hover{background-color:#EF4444}}"
+        ".c0:active{background-color:oklch(62.3% .214 259.815)}@media(min-width:768px)and (hover:hover){.c1:hover{background-color:oklch(63.7% .237 25.331)}}"
     )]
     #[case(
         "hover:bg-red-500 focus:bg-green-500 active:bg-blue-500",
-        "@media(hover:hover){.c0:hover{background-color:#EF4444}}.c1:focus{background-color:#22C55E}.c2:active{background-color:#3B82F6}"
+        "@media(hover:hover){.c0:hover{background-color:oklch(63.7% .237 25.331)}}.c1:focus{background-color:oklch(72.3% .219 149.579)}.c2:active{background-color:oklch(62.3% .214 259.815)}"
     )]
     #[case(
         "hover:bg-red-500 disabled:bg-gray-500",
-        "@media(hover:hover){.c0:hover{background-color:#EF4444}}.c1:disabled{background-color:#6B7280}"
+        "@media(hover:hover){.c0:hover{background-color:oklch(63.7% .237 25.331)}}.c1:disabled{background-color:oklch(55.1% .027 264.364)}"
     )]
     #[case(
         "dark:hover:bg-red-500 active:bg-blue-500",
-        "@media(hover:hover){:root[data-theme=dark] .c0:hover{background-color:#EF4444}}.c1:active{background-color:#3B82F6}"
+        "@media(hover:hover){:root[data-theme=dark] .c0:hover{background-color:oklch(63.7% .237 25.331)}}.c1:active{background-color:oklch(62.3% .214 259.815)}"
     )]
     #[serial]
     fn tailwind_states_keep_css_order_when_hover_is_guarded(
@@ -3797,6 +3800,45 @@ mod tests {
     #[test]
     #[serial]
     #[allow(clippy::literal_string_with_formatting_args)]
+    fn test_nested_selector_pipeline() {
+        for (source, expected) in [
+            // Without `&`, a nested rule selects descendants; a pseudo-class or
+            // pseudo-element selects the component itself.
+            (
+                "const X = styled.div`.child { color: red; } > p { color: blue; &:hover { color: green; } } :hover { color: black; } ::before { content: 'x'; } html.test & { display: none; } & + & { margin: 0; }`",
+                ".c0 + .c0{margin:0}.c1:hover{color:black}.c2 .c3{color:red}.c4 > p{color:blue}.c5 > p:hover{color:green}.c6::before{content:'x'}html.c7 .c8{display:none}",
+            ),
+            // Each selector of a list is relative on its own, and a rule nested
+            // in a list applies under every selector of it.
+            (
+                "const X = styled.div`h1, &:after { color: red; } h2, h3 { span { color: blue; } }`",
+                ".c0 h1,.c0:after{color:red}.c1 h2 span,.c1 h3 span{color:blue}",
+            ),
+            // `content` keeps its strings as written.
+            (
+                r#"const X = styled.div`&::before { content: 'hello world'; } &::after { content: "x"; } &.empty::after { content: ""; } &.escaped::after { content: "a\"b"; } &.attr::after { content: attr(data-x); }`"#,
+                r#".c0.c1::after{content:attr(data-x)}.c2.c3::after{content:""}.c4.c5::after{content:"a\"b"}.c6::after{content:"x"}.c7::before{content:'hello world'}"#,
+            ),
+            // `params` go on the pseudo-class that takes them, wherever nesting
+            // put it.
+            (
+                "<Box _groupNthChild={{ params: ['2n'], color: 'red' }} _hover={{ _groupNthChild: { params: ['3n'], color: 'blue' } }} _not={{ params: ['.x'], _nthChild: { params: ['2n'], color: 'green' } }} />",
+                ":is([role=group],[data-group]):nth-child(3n) .c0:hover{color:blue}.c1:not(.c2):nth-child(2n){color:green}:is([role=group],[data-group]):nth-child(2n) .c3{color:red}",
+            ),
+            // A bare `selectors` key is a pseudo-class name, an attribute of the
+            // element, or a selector of its descendants, under a parent too.
+            (
+                "<Box selectors={{ hover: { color: 'red' }, groupHover: { color: 'blue' }, '.child': { m: 1 }, '[aria-busy]': { p: 1 }, '> p': { m: 2 }, _focus: { selectors: { focusVisible: { color: 'green' }, '[data-x]': { color: 'black' }, 'b i': { color: 'white' } } } }} _hover=\"color: pink\" _active={false} _focusWithin={[false, null, true]} />",
+                ".c0:hover{color:pink}.c1:hover{color:red}:is([role=group],[data-group]):hover .c2{color:blue}.c3 .c4{margin:4px}.c5 > p{margin:8px}.c6:focus b i{color:white}.c7:focus:focus-visible{color:green}.c8:focus[data-x]{color:black}.c9[aria-busy]{padding:4px}",
+            ),
+        ] {
+            assert_eq!(pipeline_css(Theme::default(), source), expected, "{source}");
+        }
+    }
+
+    #[test]
+    #[serial]
+    #[allow(clippy::literal_string_with_formatting_args)]
     fn test_conditional_typography_pipeline() {
         for (source, expected) in [
             (
@@ -3917,6 +3959,25 @@ mod tests {
         }
     }
 
+    #[test]
+    #[serial]
+    fn test_set_theme_reads_the_tailwind_css() {
+        let theme: Theme =
+            serde_json::from_str(r#"{"tailwindCss": "@theme { --color-brand: #0af; }"}"#).unwrap();
+        let mut sheet = StyleSheet::default();
+
+        sheet.set_theme(theme);
+        assert_eq!(
+            css::tailwind_definitions::theme_value("color", "brand").as_deref(),
+            Some("#0af")
+        );
+
+        sheet.set_theme(Theme::default());
+        assert_eq!(
+            css::tailwind_definitions::theme_value("color", "brand"),
+            None
+        );
+    }
     #[test]
     #[serial]
     fn test_global_css_reads_theme_tokens() {
