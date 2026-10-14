@@ -1,6 +1,8 @@
+import { mergeImportAliases } from '@devup-ui/plugin-utils'
 import { expect, it } from 'bun:test'
 import { resolveConfig } from 'vite'
 
+import { NonphysicalModules } from '../nonphysical-modules'
 import {
   prepareProductionManifest,
   type ProductionOptions,
@@ -15,7 +17,7 @@ it.each([false, true])(
     const opaque = 'virtual:manifest.js?variant=1'
     const shared = await fixture.file(
       'app/src/shared.js',
-      'export const value=1;',
+      '/* @devup-ui/react */ export const value=1;',
     )
     const a = await fixture.file(
       'app/src/a.js',
@@ -29,13 +31,23 @@ it.each([false, true])(
       'app/node_modules/condition-branch/package.json',
       '{"name":"condition-branch","exports":{"browser":"./browser.js","node":"./node.js","default":"./node.js"}}',
     )
+    for (const branch of ['browser', 'node']) {
+      await fixture.file(
+        `app/node_modules/condition-branch/${branch}.js`,
+        `export {branch} from './${branch}/node_modules/condition-target/index.js';`,
+      )
+      await fixture.file(
+        `app/node_modules/condition-branch/${branch}/node_modules/condition-target/package.json`,
+        '{"name":"condition-target","main":"index.js"}',
+      )
+    }
     const browserFile = await fixture.file(
-      'app/node_modules/condition-branch/browser.js',
-      'export const branch="browser";',
+      'app/node_modules/condition-branch/browser/node_modules/condition-target/index.js',
+      '/* @devup-ui/react */ export const branch="browser";',
     )
     const nodeFile = await fixture.file(
-      'app/node_modules/condition-branch/node.js',
-      'export const branch="node";',
+      'app/node_modules/condition-branch/node/node_modules/condition-target/index.js',
+      '/* @devup-ui/react */ export const branch="node";',
     )
     const options: ProductionOptions = {
       package: '@devup-ui/react',
@@ -44,7 +56,7 @@ it.each([false, true])(
       cssDir: undefined,
       extractCss: true,
       debug: false,
-      include: [],
+      include: ['condition-target'],
       singleCss: false,
       prefix: undefined,
       shorthands: undefined,
@@ -114,21 +126,53 @@ it('reserves all configured contexts while keeping scan authority separate from 
     'app/src/docs.mdx',
     '# Reserved documentation',
   )
+  const accepted: string[] = []
+  const rejected = [entry, plain, markdown]
+  for (const name of ['included', 'excluded'])
+    await fixture.file(
+      `app/node_modules/${name}/package.json`,
+      JSON.stringify({ name, main: 'index.js' }),
+    )
+  await fixture.file(
+    'app/src/imports.js',
+    "import 'included'; import 'excluded';",
+  )
+  for (const [name, needle, included] of [
+    ['styled.js', 'custom-target', true],
+    ['stylex.js', '@stylexjs/stylex', true],
+    ['alias.js', 'custom-alias', true],
+    ['disabled.js', '@emotion/react', false],
+    ['default.js', '@devup-ui/react', false],
+    ['types.d.ts', 'custom-target', false],
+    ['types.d.mts', 'custom-target', false],
+    ['types.d.cts', 'custom-target', false],
+    ['../node_modules/included/index.js', 'custom-target', true],
+    ['../node_modules/excluded/index.js', 'custom-target', false],
+  ] as const) {
+    const path = await fixture.file(
+      `app/src/${name}`,
+      `/* ${needle} */ export {};`,
+    )
+    ;(included ? accepted : rejected).push(path)
+  }
   const options: ProductionOptions = {
-    package: '@devup-ui/react',
+    package: 'custom-target',
     devupFile: 'devup.json',
     distDir: 'df',
     cssDir: undefined,
     extractCss: true,
     debug: false,
-    include: [],
+    include: ['included'],
     singleCss: false,
     prefix: undefined,
     shorthands: undefined,
     sourceDirs: undefined,
     mdxExtensions: ['.mdx'],
     atomHoist: undefined,
-    importAliases: {},
+    importAliases: mergeImportAliases({
+      '@emotion/react': false,
+      'custom-alias': true,
+    }),
   }
   try {
     const config = await resolveConfig(
@@ -152,19 +196,17 @@ it('reserves all configured contexts while keeping scan authority separate from 
     )
     // When allocation-inert reservation closes every final context.
     const manifest = await prepareProductionManifest(config, options, () => {})
-    // Then plain/test/Markdown physical IDs are reserved in each named context with independent conditions.
+    // Then own raw source admits only eligible needles in every configured context.
     const browser = manifest.contexts.find(
       (context) => context.context === 'browser',
     )
     const server = manifest.contexts.find(
       (context) => context.context === 'server',
     )
-    expect(browser?.scan).toEqual(
-      expect.arrayContaining([entry, plain, markdown]),
-    )
-    expect(server?.scan).toEqual(
-      expect.arrayContaining([entry, plain, markdown]),
-    )
+    for (const context of manifest.contexts) {
+      for (const path of accepted) expect(context.scan).toContain(path)
+      for (const path of rejected) expect(context.scan).not.toContain(path)
+    }
     expect(browser?.conditions).toContain('browser')
     expect(server?.conditions).toContain('react-server')
     expect(browser?.learned).toEqual([])
@@ -174,3 +216,41 @@ it('reserves all configured contexts while keeping scan authority separate from 
     await fixture.close()
   }
 })
+
+it.each([false, true, undefined])(
+  'joins every source occurrence before learning and resets interval proof when later relevance=%s',
+  async (relevant) => {
+    // Given two native query occurrences sharing an existing normalized extraction ID.
+    const modules = new NonphysicalModules([])
+    const id = 'virtual:proof.js'
+    let reads = 0
+    const source = {
+      path: id,
+      get code() {
+        reads += 1
+        return 'export {};'
+      },
+    }
+    const graph = {
+      getModuleIds: () => [][Symbol.iterator](),
+      getModuleInfo: () => null,
+    }
+    modules.direct(`${id}?first`, id, source, () => false)
+    modules.resolved(
+      `${id}?first`,
+      source,
+      relevant === undefined ? undefined : () => relevant,
+    )
+    // When unchanged completion rules finish the observed interval.
+    const completed = await modules.finish(graph, [])
+    // Then relevant or unknown evidence wins without discarding O or ready attachments.
+    expect(completed.ids.includes(id)).toBe(relevant !== false)
+    expect(modules.observations()).toContain(id)
+    expect(modules.source(id)).toBeDefined()
+    expect(reads).toBe(1)
+    modules.start()
+    modules.direct(`${id}?next`, id, source, () => false)
+    expect((await modules.finish(graph, [])).ids).not.toContain(id)
+    expect(reads).toBe(1)
+  },
+)

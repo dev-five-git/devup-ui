@@ -128,7 +128,7 @@ it('keeps existing direct and recursive extraction filenames consistent across q
     await realpath(await mkdtemp(join(tmpdir(), 'devup-v1-current-id-')))
   ).replaceAll('\\', '/')
   const entry = join(root, 'src/main.ts')
-  const style = `${root}/src/style.ts`
+  const style = `${root}/a-style.ts`
   const constant = `${root}/src/constant.ts`
   const direct: {
     readonly id: string
@@ -183,24 +183,27 @@ it('keeps existing direct and recursive extraction filenames consistent across q
       '{"name":"devup-v1-current-id","type":"module"}',
     )
     await writeFile(join(root, 'tsconfig.json'), '{}')
-    await writeFile(constant, "export const color: string = 'red';")
+    await writeFile(
+      constant,
+      "/*@devup-ui/react*/ export const color: string = 'red';",
+    )
     await writeFile(
       style,
-      "import {css} from '@devup-ui/react'; import {color} from './constant'; export const cls=css({bg:color});",
+      "import {css} from '@devup-ui/react'; import {color} from './src/constant'; export const cls=css({bg:color});",
     )
     // When actual native builds resolve two queries through today's unmodified plugin.
     for (const query of ['learning', 'first', 'second']) {
       direct.push([])
       recursive.push([])
-      await writeFile(
-        entry,
-        `import {cls} from './style.ts?variant=${query}'; export {cls};`,
-      )
+      const request = `arrival?variant=${query}`
+      const target = `${style}?variant=${query}`
+      const resolveId = (id: string) => (id === request ? target : null)
+      await writeFile(entry, `import {cls} from '${request}'; export {cls};`)
       const result = await build({
         root,
         configFile: false,
         logLevel: 'silent',
-        plugins: [DevupUI()],
+        plugins: [DevupUI(), { name: 'native-arrival', resolveId }],
         build: { write: false, lib: { entry, formats: ['es'] } },
       })
       nativeCss.push(

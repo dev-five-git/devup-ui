@@ -15,7 +15,7 @@ import { productionFixture } from './production-fixture'
 it('leaves a configured but unbuilt context store untouched during native completion', async () => {
   // Given an actual scoped sibling store and an ordinary client entry.
   const fixture = await productionFixture()
-  const entry = await fixture.file('app/src/main.js', 'export const value=1;')
+  const entry = await fixture.file('app/src/main.js', "'@devup-ui/react';")
   const store = createNonphysicalIdStore({
     integration: 'Vite',
     resolvedRoot: fixture.root,

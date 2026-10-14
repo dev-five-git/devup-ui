@@ -1,3 +1,4 @@
+import { readFileSync } from 'node:fs'
 import { dirname, isAbsolute, resolve } from 'node:path'
 
 import {
@@ -5,8 +6,10 @@ import {
   buildStaticImportGraph,
   collectProductionFileManifest,
   computeFileReach,
+  createNodeModulesExcludeRegex,
   createNonphysicalIdStore,
   enumerateProductionSourceFiles,
+  extractedNeedles,
   isSelectedSource,
   loadDevupConfig,
   type NonphysicalIdStore,
@@ -46,6 +49,22 @@ export interface ProductionContext extends ProductionNumberingPlan {
 }
 
 type Environment = ResolvedConfig['environments'][string]
+export function createExtractionGate(
+  options: Pick<
+    ProductionOptions,
+    'package' | 'include' | 'mdxExtensions' | 'importAliases'
+  >,
+) {
+  const exclude = createNodeModulesExcludeRegex(options.include)
+  const needles = extractedNeedles(options.package, options.importAliases)
+  return {
+    selected: (filename: string) =>
+      isSelectedSource(filename, options.mdxExtensions) &&
+      !exclude.test(filename),
+    relevant: (code: string) => needles.some((needle) => code.includes(needle)),
+  }
+}
+
 function inputFor(root: string, environment: Environment): readonly string[] {
   const build = environment.build
   const native = build.rolldownOptions?.input ?? build.rollupOptions?.input
@@ -73,6 +92,7 @@ export async function prepareProductionManifest(
   const roots = resolveSourceDirs(config.root, options.sourceDirs)
   const configured = Object.entries(config.environments)
   const contexts: ProductionContext[] = []
+  const gate = createExtractionGate(options)
   for (const [key, environment] of configured) {
     const entries = inputFor(config.root, environment)
     const physicalEntries = entries.filter(
@@ -100,7 +120,7 @@ export async function prepareProductionManifest(
       paths.cssDir,
       resolve(config.root, environment.build.outDir),
     ]
-    const files = await collectProductionFileManifest({
+    const discovered = await collectProductionFileManifest({
       contexts: [
         {
           key,
@@ -124,6 +144,12 @@ export async function prepareProductionManifest(
       include: options.include,
       exclude,
     })
+    const files = discovered.filter(
+      (file) =>
+        gate.selected(file.path) &&
+        !/\.d\.[mc]?ts$/i.test(file.path) &&
+        gate.relevant(readFileSync(file.path, 'utf8')),
+    )
     let canonical: Readonly<Record<string, string>> = {}
     let routes: Readonly<Record<string, readonly number[]>> = {}
     let threshold: number | undefined

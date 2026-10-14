@@ -13,8 +13,11 @@ import {
   mock,
   spyOn,
 } from 'bun:test'
+import { type Plugin, resolveConfig } from 'vite'
 
+import { NonphysicalModules } from '../nonphysical-modules'
 import { DevupUI as createDevupUI } from '../plugin'
+import { productionFixture } from './production-fixture'
 
 const pluginInstances = new Set<ViteTestPlugin>()
 it.each([
@@ -132,6 +135,11 @@ interface HotUpdateEnvironment {
 }
 
 interface ViteTestPlugin {
+  buildStart: Plugin['buildStart']
+  buildApp: Plugin['buildApp']
+  buildEnd: Plugin['buildEnd']
+  closeWatcher: Plugin['closeWatcher']
+  configureServer: Plugin['configureServer']
   environment?: {
     name: string
     config: {
@@ -357,6 +365,7 @@ beforeEach(() => {
     },
   )
   graphSpy = spyOn(pluginUtils, 'buildStaticImportGraph').mockReturnValue({
+    requests: [],
     files: [],
     fileSet: new Set(),
     staticImports: new Map(),
@@ -387,6 +396,83 @@ afterEach(() => {
 
 describe('devupUIVitePlugin', () => {
   console.error = mock()
+  it('keeps numbering and raw output stable across two unchanged zero-needle MDX builds', async () => {
+    // Given real plain MDX, a styled sibling, and the unchanged native build scaffold.
+    mock.restore()
+    const fixture = await productionFixture()
+    const markdown = await fixture.file(
+      'app/src/docs.mdx',
+      '# Plain documentation',
+    )
+    const entry = await fixture.file(
+      'app/src/main.js',
+      "export {value} from './docs.mdx'; export {cls} from './style.js';",
+    )
+    await fixture.file(
+      'app/src/style.js',
+      "import {css} from '@devup-ui/react'; export const cls=css({color:'red'});",
+    )
+    const observation = spyOn(NonphysicalModules.prototype, 'direct')
+    const provider = {
+      name: 'plain-mdx-compiler',
+      transform(_code: string, id: string) {
+        if (id === markdown) return 'export const value=1;'
+      },
+    }
+    try {
+      // When two actual native builds consume exactly the same input and store.
+      const first = await fixture.run(false, [provider])
+      const numbers = wasm.exportFileMap()
+      const second = await fixture.run(false, [provider])
+      // Then validation remains observed, but neither plain ID takes a learned number.
+      expect(wasm.exportFileMap()).toBe(numbers)
+      expect(second).toEqual(first)
+      expect(observation.mock.calls.some(([, id]) => id === markdown)).toBe(
+        true,
+      )
+      expect(observation.mock.calls.some(([, id]) => id === entry)).toBe(false)
+      expect(await fixture.learned()).not.toContain(markdown)
+    } finally {
+      observation.mockRestore()
+      await fixture.close()
+    }
+  })
+
+  it('re-extracts the same production filename to remove earlier globalCss when its needles disappear', async () => {
+    // Given one real production instance with a previously extracted stylesheet.
+    mock.restore()
+    const fixture = await productionFixture()
+    const entry = await fixture.file('app/src/main.js', 'export {};')
+    const plugin = createPlugin({ singleCss: true })
+    try {
+      await plugin.configResolved(
+        await resolveConfig(
+          {
+            root: fixture.root,
+            configFile: false,
+            logLevel: 'silent',
+            build: { lib: { entry, formats: ['es'] } },
+          },
+          'build',
+        ),
+      )
+      const context = { addWatchFile() {} }
+      await plugin.transform.call(
+        context,
+        "import {globalCss} from '@devup-ui/react'; globalCss({body:{color:'red'}});",
+        entry,
+      )
+      expect(plugin.load('devup-ui.css')).toContain('color:red')
+      // When the same instance receives needle-free replacement source.
+      await plugin.transform.call(context, 'export {};', entry)
+      // Then the former per-file global rule has actually been removed.
+      expect(plugin.load('devup-ui.css')).not.toContain('color:red')
+    } finally {
+      plugin.closeBundle()
+      await fixture.close()
+    }
+  })
+
   it('remaps compiled MDX extraction failures using the compiler map', async () => {
     codeExtractSpy.mockImplementation(() => {
       throw new Error('page.mdx:1:1: cannot extract')

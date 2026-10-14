@@ -22,6 +22,7 @@ export interface ExtractionRoot {
   readonly nativeId: string
   readonly id: string
   readonly source: ReadySource
+  readonly classify?: (id: string, code?: string) => boolean
 }
 type Attachments = ReadonlyMap<string, ReadonlyMap<string, ReadySource>>
 interface Completion {
@@ -51,6 +52,7 @@ export class NonphysicalModules {
   private readonly paths = new Map<string, string>()
   private readonly realPaths = new Map<string, string>()
   private readonly observed = new Set<string>()
+  private readonly relevant = new Map<string, boolean>()
   private readonly pending = new Map<string, Map<string, ReadySource>>()
   private completed: Attachments = new Map()
 
@@ -63,6 +65,7 @@ export class NonphysicalModules {
 
   start(): void {
     this.observed.clear()
+    this.relevant.clear()
     this.pending.clear()
   }
 
@@ -75,8 +78,8 @@ export class NonphysicalModules {
     resolver: import('@devup-ui/plugin-utils').ModuleResolver,
     action: () => Output,
   ) {
-    this.direct(root.nativeId, root.id, root.source)
-    const observed = observeResolver(this, root.nativeId, resolver)
+    this.direct(root.nativeId, root.id, root.source, root.classify)
+    const observed = observeResolver(this, root, resolver)
     setModuleResolver(observed)
     let output: Output
     try {
@@ -98,24 +101,39 @@ export class NonphysicalModules {
     }
   }
 
-  direct(nativeId: string, id: string, source: ReadySource): void {
+  private observe(id: string, relevant: boolean | undefined): void {
     this.observed.add(id)
+    this.relevant.set(id, this.relevant.get(id) === true || relevant !== false)
+  }
+
+  direct(
+    nativeId: string,
+    id: string,
+    source: ReadySource,
+    classify?: ExtractionRoot['classify'],
+  ): void {
+    this.observe(id, classify?.(id))
     this.pending.set(nativeId, new Map([[id, source]]))
     const path = barePhysicalPath(id)
     if (path !== undefined) this.paths.set(id, path)
   }
 
-  resolved(nativeId: string, result: ModuleResolution | undefined): void {
+  resolved(
+    nativeId: string,
+    result: ModuleResolution | undefined,
+    classify?: ExtractionRoot['classify'],
+  ): void {
     if (result === undefined) return
     switch (result.ignored) {
       case true:
         return
       case undefined: {
-        this.observed.add(result.path)
         const path = barePhysicalPath(result.path)
         if (path !== undefined) this.paths.set(result.path, path)
+        const code = result.code
+        this.observe(result.path, classify?.(result.path, code))
         this.pending.get(nativeId)?.set(result.path, {
-          code: result.code,
+          code,
           ...(result.sourceType === undefined
             ? {}
             : { sourceType: result.sourceType }),
@@ -190,7 +208,10 @@ export class NonphysicalModules {
       const path = this.paths.get(id) ?? barePhysicalPath(id)
       if (path === undefined ? present.has(id) : await exists(path)) ids.add(id)
     }
-    return { ids: [...ids], attachments }
+    return {
+      ids: [...ids].filter((id) => this.relevant.get(id) !== false),
+      attachments,
+    }
   }
 
   publish(completion: Completion): void {
@@ -201,7 +222,7 @@ export class NonphysicalModules {
 
 export function observeResolver(
   modules: NonphysicalModules,
-  nativeId: string,
+  root: ExtractionRoot,
   resolver: import('@devup-ui/plugin-utils').ModuleResolver,
 ): import('@devup-ui/plugin-utils').ModuleResolver {
   return Object.assign(
@@ -210,7 +231,7 @@ export function observeResolver(
       importer: string,
     ): ResolvedModule | { readonly ignored: true } | undefined => {
       const result = resolver(specifier, importer)
-      modules.resolved(nativeId, result)
+      modules.resolved(root.nativeId, result, root.classify)
       return result
     },
     { remapError: resolver.remapError },

@@ -10,7 +10,6 @@ import {
   computeFileReach,
   createCompatTypes,
   createModuleResolver,
-  createNodeModulesExcludeRegex,
   createStateWriter,
   createThemeInterfaceArgs,
   type CustomShorthands,
@@ -58,6 +57,7 @@ import type {
 
 import { createAggregateCssPreparation } from './aggregate-css'
 import { createCompiledGuard } from './compiled-guard'
+import { createExtractionGate } from './production-manifest'
 import { ProductionActivation } from './production-numbering'
 import { createMissingInputWatch } from './resolution-watch'
 
@@ -335,7 +335,13 @@ export function DevupUI({
   )
   const getCss = (file: number | null | undefined, main: boolean) =>
     production.active ? production.css(file, main) : getEngineCss(file, main)
-  const excludeModules = createNodeModulesExcludeRegex(include)
+  const extractionGate = createExtractionGate({
+    package: libPackage,
+    include,
+    mdxExtensions,
+    importAliases,
+  })
+  const extracted = new Set<string>()
   const pathOptions = { devupFile, distDir, cssDir: configuredCssDir }
   let cssDir = configuredCssDir ?? join(distDir, 'devup-ui')
   let pathsResolved = false
@@ -410,7 +416,7 @@ export function DevupUI({
       if (!extractCss) return
       resolveFallbackPaths()
       const fileName = id.replace(/\?.*$/s, '')
-      if (excludeModules.test(fileName)) return
+      if (!extractionGate.selected(fileName)) return
       const environment = this.environment ?? plugin
       if (production.active) await production.prepare(observeSetup)
       const context = production.active
@@ -421,6 +427,13 @@ export function DevupUI({
         resolvedConfig?.resolve?.preserveSymlinks
       missingInputWatch.start(fileName, environment)
       aggregateCss.observe(this.environment ?? plugin, id)
+      if (
+        production.active &&
+        !isMdxSource(fileName, mdxExtensions) &&
+        !extracted.has(fileName) &&
+        !extractionGate.relevant(code)
+      )
+        return
       const environmentConditions = this.environment?.config.resolve.conditions
       const resolver = moduleResolver(
         (environmentConditions
@@ -453,6 +466,7 @@ export function DevupUI({
       if (!production.active) setModuleResolver(resolver)
       let rel = relative(dirname(id), cssDir).replaceAll('\\', '/')
       if (!rel.startsWith('./')) rel = `./${rel}`
+      extracted.add(fileName)
       const output = (() => {
         try {
           const extract = () =>
@@ -476,6 +490,10 @@ export function DevupUI({
               {
                 nativeId: id,
                 id: fileName,
+                classify: (id, source = code) => {
+                  extracted.add(id)
+                  return extractionGate.relevant(source)
+                },
                 source: {
                   code,
                   ...(isMdxSource(fileName, mdxExtensions)
