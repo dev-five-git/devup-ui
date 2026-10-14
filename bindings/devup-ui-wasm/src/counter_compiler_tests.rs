@@ -1,10 +1,12 @@
 pub(super) use super::cache6_test_support::*;
 pub(super) use super::counter_compiler::{after_finish, code_extract_counter};
 use css::counter_names::NameAddress;
+use css::sparse_site::SourceFile;
 pub(super) use extractor::compiler_policy::{
     CompilerInput, CounterCompileError, with_counter_extract,
 };
 use extractor::extract_style::compiler_receipts::WitnessDisposition;
+use serde_json::{Value, json};
 pub(super) use std::panic::{AssertUnwindSafe, catch_unwind};
 
 #[cfg(test)]
@@ -14,7 +16,25 @@ mod dynamic;
 #[cfg(test)]
 mod nested;
 #[cfg(test)]
+mod output;
+#[cfg(test)]
 mod surfaces;
+
+#[derive(Clone, Copy, Debug)]
+enum Action {
+    Insert,
+    Noop,
+    Hmr,
+    Cleanup,
+    Keyframes,
+}
+
+#[derive(Clone, Copy, Debug)]
+enum Damage {
+    Record,
+    Footprint,
+    Coordinated,
+}
 
 pub(super) fn required<T, E: std::fmt::Debug>(result: Result<T, E>) -> T {
     result.unwrap_or_else(|error| panic!("{error:?}"))
@@ -42,6 +62,14 @@ pub(super) fn reserved_input() -> CompilerInput<'static> {
     source.resolver = Some(RESERVED_CHILD);
     source
 }
+
+pub(super) const FAMILY_SOURCES: [&str; 5] = [
+    "import {css} from '@devup-ui/react';const a=css({color:'red'});",
+    "import {Box} from '@devup-ui/react';const a=<Box color={tone}/>;",
+    "import {styled} from '@devup-ui/react';const A=styled.div({width:state.size});",
+    "import {keyframes} from '@devup-ui/react';const a=keyframes({from:{opacity:0,opacity:1,color:'red'},to:{opacity:1}});",
+    "import {Box} from '@devup-ui/react';const a=<Box _hover={{typography:'heading'}}/>;",
+];
 
 pub(super) fn exported() -> (Vec<u8>, cache6_session::Maps, LiveCheckpoint) {
     let bytes = encoded();
@@ -82,6 +110,13 @@ pub(super) fn reservation(source: CompilerInput<'_>) -> NameAddress {
                 })
                 .unwrap_or_else(|| panic!("reservation"));
             let address = &witness.produced.class().allocation.address;
+            assert_ne!(
+                v.witnesses
+                    .iter()
+                    .filter(|w| w.disposition == WitnessDisposition::Emission)
+                    .count(),
+                0
+            );
             assert!(
                 v.witnesses
                     .iter()
@@ -143,4 +178,13 @@ pub(super) fn damage_reservation(address: &NameAddress, remove: bool) {
         }
         NameAddress::Baseline { .. } => panic!("Counter address"),
     }
+}
+
+pub(super) fn property_record(value: &mut serde_json::Value) -> &mut serde_json::Value {
+    value["properties"]["a.tsx"]["255"]["0"]
+        .as_array_mut()
+        .unwrap_or_else(|| panic!("records"))
+        .iter_mut()
+        .find(|r| r["r"] == false)
+        .unwrap_or_else(|| panic!("consumer"))
 }

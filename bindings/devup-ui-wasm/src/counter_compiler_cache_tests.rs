@@ -157,3 +157,66 @@ fn nonempty_real_js6_is_adopted_when_import_precedes_recompile() {
         assert_ne!(clean, replay);
     });
 }
+
+#[rstest]
+#[serial]
+fn genuine_unequal_maps_retire_when_companions_arrive_before_or_after(
+    #[values(false, true)] classes: bool,
+    #[values(false, true)] before: bool,
+    #[values(false, true)] reversed: bool,
+) {
+    with_admission(|| {
+        // Given
+        let _guard = Guard::new();
+        required(code_extract_counter(reserved_input(), false));
+        let proof = exported();
+        let expected = maps();
+        compile("other.tsx", FAMILY_SOURCES[0]);
+        let unequal = maps();
+        assert_ne!(expected.0, unequal.0);
+        assert_ne!(expected.1, unequal.1);
+        fresh();
+        let cold = authority();
+        let send = || {
+            let supplied = if classes {
+                (unequal.0.clone(), expected.1.clone())
+            } else {
+                (expected.0.clone(), unequal.1.clone())
+            };
+            companions(&supplied, reversed);
+        };
+        if before {
+            send();
+        }
+        // When
+        if before {
+            assert_eq!(cache6_restore::import(&proof.0), Ok(()));
+        } else {
+            install(&proof);
+            send();
+        }
+        // Then
+        assert_eq!(authority(), cold);
+        let restore = cache6_session::Restore {
+            classes: if !before && !classes && !reversed {
+                cache6_session::Companion::Unseen
+            } else {
+                cache6_session::Companion::Supplied(if classes { unequal.0 } else { expected.0 })
+            },
+            files: if !before && classes && reversed {
+                cache6_session::Companion::Unseen
+            } else {
+                cache6_session::Companion::Supplied(if classes { expected.1 } else { unequal.1 })
+            },
+            session: None,
+        };
+        cache6_restore::RESTORE.with_borrow(|s| assert_eq!(s, &restore));
+        let replay = required(code_extract_counter(reserved_input(), false));
+        let replay = ObservedOutput::capture(&replay, "parent.css.ts");
+        let replay_maps = cache6_session::Maps::capture();
+        fresh();
+        let clean = required(code_extract_counter(reserved_input(), false));
+        assert_eq!(ObservedOutput::capture(&clean, "parent.css.ts"), replay);
+        assert_eq!(cache6_session::Maps::capture(), replay_maps);
+    });
+}
