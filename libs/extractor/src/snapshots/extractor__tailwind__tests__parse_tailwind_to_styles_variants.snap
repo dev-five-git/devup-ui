@@ -5,6 +5,20 @@ expression: sort_styles(styles)
 {
     Static(
         ExtractStaticStyle {
+            property: "--tw-outline-style",
+            value: "none",
+            level: 0,
+            selector: Some(
+                Selector(
+                    "&:focus",
+                ),
+            ),
+            style_order: None,
+            layer: None,
+        },
+    ),
+    Static(
+        ExtractStaticStyle {
             property: "background-color",
             value: "oklch(62.3% .214 259.815)",
             level: 0,
@@ -39,8 +53,8 @@ expression: sort_styles(styles)
     ),
     Static(
         ExtractStaticStyle {
-            property: "outline",
-            value: "2px solid transparent",
+            property: "outline-style",
+            value: "none",
             level: 0,
             selector: Some(
                 Selector(

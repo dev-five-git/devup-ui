@@ -11,6 +11,7 @@ use crate::tailwind::{
     is_positive_integer, split_top_level, value_type,
 };
 use crate::tailwind_color::{color_value, with_modifier};
+use crate::tailwind_theme::themed;
 
 /// What `filter` holds: every function the filter utilities set
 const FILTER: &str = "var(--tw-blur,) var(--tw-brightness,) var(--tw-contrast,) var(--tw-grayscale,) var(--tw-hue-rotate,) var(--tw-invert,) var(--tw-saturate,) var(--tw-sepia,) var(--tw-drop-shadow,)";
@@ -114,7 +115,7 @@ fn bare_value(bare: Bare, value: &str) -> Option<String> {
         Bare::Percent if is_positive_integer(value) => Some(format!("{value}%")),
         Bare::Degrees if is_positive_integer(value) => Some(format!("{value}deg")),
         Bare::Opacity if is_opacity_number(value) => Some(format!("{value}%")),
-        Bare::Blur => blur_size(value).map(str::to_string),
+        Bare::Blur => themed("blur", value, blur_size).map(Cow::into_owned),
         _ => None,
     }
 }
@@ -134,6 +135,7 @@ fn function_value(
     negative: bool,
 ) -> Option<String> {
     let value = match argument {
+        None if function.root == "blur" => themed("blur", "", |_| Some("8px"))?.into_owned(),
         None => function.default?.to_string(),
         Some(argument) => {
             arbitrary_or_variable(argument).or_else(|| bare_value(function.bare, argument))?
@@ -216,7 +218,8 @@ fn shadow_size(name: &str) -> Option<&'static str> {
     Some(match name {
         "2xs" => "0 1px rgb(0 0 0 / 0.05)",
         "xs" => "0 1px 2px 0 rgb(0 0 0 / 0.05)",
-        "sm" => "0 1px 3px 0 rgb(0 0 0 / 0.1), 0 1px 2px -1px rgb(0 0 0 / 0.1)",
+        "inner" => "inset 0 2px 4px 0 rgb(0 0 0 / 0.05)",
+        "" | "sm" => "0 1px 3px 0 rgb(0 0 0 / 0.1), 0 1px 2px -1px rgb(0 0 0 / 0.1)",
         "md" => "0 4px 6px -1px rgb(0 0 0 / 0.1), 0 2px 4px -2px rgb(0 0 0 / 0.1)",
         "lg" => "0 10px 15px -3px rgb(0 0 0 / 0.1), 0 4px 6px -4px rgb(0 0 0 / 0.1)",
         "xl" => "0 20px 25px -5px rgb(0 0 0 / 0.1), 0 8px 10px -6px rgb(0 0 0 / 0.1)",
@@ -225,41 +228,59 @@ fn shadow_size(name: &str) -> Option<&'static str> {
     })
 }
 
+/// Whether `token` of a shadow layer is its color
+fn is_shadow_color(token: &str) -> bool {
+    const FUNCTIONS: [&str; 10] = [
+        "rgb(",
+        "rgba(",
+        "hsl(",
+        "hsla(",
+        "hwb(",
+        "lab(",
+        "lch(",
+        "oklab(",
+        "oklch(",
+        "color-mix(",
+    ];
+    token.starts_with('#')
+        || FUNCTIONS.iter().any(|function| token.starts_with(function))
+        || (token.bytes().all(|byte| byte.is_ascii_alphabetic()) && token != "inset")
+}
+
 /// `shadow` with the color of each of its layers taken from `--tw-shadow-color`
 /// when a `shadow-<color>` utility sets one
-fn recolored(shadow: &str) -> String {
+fn recolored(shadow: &str, variable: &str) -> String {
     split_top_level(shadow, ',')
         .into_iter()
         .map(|layer| {
-            let layer = layer.trim();
-            layer.find("rgb(").map_or_else(
-                || layer.to_string(),
-                |color| {
-                    format!(
-                        "{}var(--tw-shadow-color, {})",
-                        &layer[..color],
-                        &layer[color..]
-                    )
-                },
-            )
+            split_top_level(layer.trim(), ' ')
+                .into_iter()
+                .map(|token| {
+                    if is_shadow_color(token) {
+                        format!("var({variable}, {token})")
+                    } else {
+                        token.to_string()
+                    }
+                })
+                .collect::<Vec<_>>()
+                .join(" ")
         })
         .collect::<Vec<_>>()
         .join(", ")
 }
-
 /// The declarations of a `shadow` utility: a size, `none`, a theme shadow or
 /// a color
 fn shadow_utility(name: &str) -> Option<Vec<Declaration>> {
     let argument = if name == "shadow" {
-        "sm"
+        ""
     } else {
         name.strip_prefix("shadow-")
             .filter(|argument| !argument.is_empty())?
     };
     let composed =
         |shadow: String| vec![decl("--tw-shadow", shadow), decl("box-shadow", BOX_SHADOW)];
-    if let Some(shadow) = shadow_size(argument) {
-        return Some(composed(recolored(shadow)));
+    if let Some(shadow) = themed("shadow", argument, shadow_size) {
+        return Some(composed(recolored(&shadow, "--tw-shadow-color")));
     }
     match argument {
         "none" => return Some(composed(String::from("0 0 #0000"))),
@@ -315,6 +336,150 @@ fn arbitrary_color(argument: &str) -> Argument {
         _ => return Argument::Invalid,
     };
     with_modifier(&value, modifier).map_or(Argument::Invalid, Argument::Color)
+}
+/// The drop shadows of the default theme
+fn drop_shadow_size(name: &str) -> Option<&'static str> {
+    Some(match name {
+        "xs" => "0 1px 1px rgb(0 0 0 / 0.05)",
+        "sm" => "0 1px 2px rgb(0 0 0 / 0.15)",
+        "md" => "0 3px 3px rgb(0 0 0 / 0.12)",
+        "lg" => "0 4px 4px rgb(0 0 0 / 0.15)",
+        "xl" => "0 9px 7px rgb(0 0 0 / 0.1)",
+        "2xl" => "0 25px 25px rgb(0 0 0 / 0.15)",
+        "" => "0 1px 2px rgb(0 0 0 / 0.1), 0 1px 1px rgb(0 0 0 / 0.06)",
+        _ => return None,
+    })
+}
+
+/// `shadow`, a list of shadows, as the `drop-shadow()` functions of `filter`
+fn drop_shadows(shadow: &str) -> String {
+    split_top_level(shadow, ',')
+        .into_iter()
+        .map(|layer| format!("drop-shadow({})", layer.trim()))
+        .collect::<Vec<_>>()
+        .join(" ")
+}
+
+/// The declarations of a `drop-shadow` utility: composed into `filter` with
+/// the other filters, its color apart from its size
+fn drop_shadow_utility(name: &str) -> Option<Vec<Declaration>> {
+    let argument = if name == "drop-shadow" {
+        ""
+    } else {
+        name.strip_prefix("drop-shadow-")
+            .filter(|argument| !argument.is_empty())?
+    };
+    let sized = |size: String, shadow: String| {
+        vec![
+            decl(
+                "--tw-drop-shadow-size",
+                drop_shadows(&recolored(&size, "--tw-drop-shadow-color")),
+            ),
+            decl("--tw-drop-shadow", shadow),
+            decl("filter", FILTER),
+        ]
+    };
+    if argument == "none" {
+        return Some(vec![decl("--tw-drop-shadow", " "), decl("filter", FILTER)]);
+    }
+    if argument == "inherit" {
+        return Some(vec![
+            decl("--tw-drop-shadow-color", "inherit"),
+            decl("--tw-drop-shadow", "var(--tw-drop-shadow-size)"),
+        ]);
+    }
+    if let Some(size) = themed("drop-shadow", argument, drop_shadow_size) {
+        return Some(sized(size.to_string(), drop_shadows(&size)));
+    }
+    if let Some(value) = arbitrary_or_variable(argument)
+        .filter(|_| argument.starts_with('['))
+        .filter(|value| {
+            value_type(None, value) != Some(ValueType::Color)
+                || split_top_level(value, ' ').len() > 1
+        })
+    {
+        return Some(sized(value, String::from("var(--tw-drop-shadow-size)")));
+    }
+    let color = shadow_color(argument)?;
+    Some(vec![
+        decl(
+            "--tw-drop-shadow-color",
+            format!("color-mix(in oklab, {color} var(--tw-drop-shadow-alpha), transparent)"),
+        ),
+        decl("--tw-drop-shadow", "var(--tw-drop-shadow-size)"),
+    ])
+}
+
+/// The color of a ring when no `ring-<color>` sets one
+const RING_COLOR: &str = "currentcolor";
+
+/// The declarations of `ring`, `inset-ring` and `ring-offset` utilities: a
+/// width, which draws the ring, or a color, which the ring reads
+fn ring_utility(name: &str) -> Option<Vec<Declaration>> {
+    if name == "ring-inset" {
+        return Some(vec![decl("--tw-ring-inset", "inset")]);
+    }
+    let (root, argument) = if let Some(argument) = name.strip_prefix("ring-offset") {
+        ("ring-offset", argument)
+    } else if let Some(argument) = name.strip_prefix("inset-ring") {
+        ("inset-ring", argument)
+    } else {
+        ("ring", name.strip_prefix("ring")?)
+    };
+    let argument = if argument.is_empty() {
+        None
+    } else {
+        Some(
+            argument
+                .strip_prefix('-')
+                .filter(|argument| !argument.is_empty())?,
+        )
+    };
+    let width = argument.and_then(|argument| {
+        if is_positive_integer(argument) {
+            Some(format!("{argument}px"))
+        } else {
+            arbitrary_or_variable(argument)
+                .filter(|_| argument.starts_with('['))
+                .filter(|value| value_type(None, value) == Some(ValueType::Length))
+        }
+    });
+    let default_width = argument.is_none().then(|| String::from("1px"));
+    match (width.or(default_width), root) {
+        (Some(width), "ring") => Some(vec![
+            decl(
+                "--tw-ring-shadow",
+                format!(
+                    "var(--tw-ring-inset, ) 0 0 0 calc({width} + var(--tw-ring-offset-width)) var(--tw-ring-color, {RING_COLOR})"
+                ),
+            ),
+            decl("box-shadow", BOX_SHADOW),
+        ]),
+        (Some(width), "inset-ring") => Some(vec![
+            decl(
+                "--tw-inset-ring-shadow",
+                format!("inset 0 0 0 {width} var(--tw-inset-ring-color, currentcolor)"),
+            ),
+            decl("box-shadow", BOX_SHADOW),
+        ]),
+        (Some(width), _) if argument.is_some() => Some(vec![
+            decl("--tw-ring-offset-width", width),
+            decl(
+                "--tw-ring-offset-shadow",
+                "var(--tw-ring-inset, ) 0 0 0 var(--tw-ring-offset-width) var(--tw-ring-offset-color)",
+            ),
+        ]),
+        (Some(_), _) => None,
+        (None, _) => {
+            let color = shadow_color(argument?)?;
+            let property = match root {
+                "ring" => "--tw-ring-color",
+                "inset-ring" => "--tw-inset-ring-color",
+                _ => "--tw-ring-offset-color",
+            };
+            Some(vec![decl(property, color)])
+        }
+    }
 }
 /// The directions of `bg-linear-*`
 fn linear_direction(name: &str) -> Option<&'static str> {
@@ -480,7 +645,10 @@ pub fn effect_utility(name: &str, negative: bool) -> Option<Vec<Declaration>> {
     if negative {
         return None;
     }
-    shadow_utility(name).or_else(|| stop_utility(name))
+    shadow_utility(name)
+        .or_else(|| ring_utility(name))
+        .or_else(|| drop_shadow_utility(name))
+        .or_else(|| stop_utility(name))
 }
 
 #[cfg(test)]
@@ -649,8 +817,16 @@ mod tests {
         .iter()
         .flat_map(TailwindClass::rules)
         .collect::<Vec<_>>();
-        assert!(rules.contains(&"@property --tw-blur{syntax:\"*\";inherits:false}"));
-        assert!(rules.contains(&"@property --tw-grayscale{syntax:\"*\";inherits:false}"));
+        assert!(
+            rules
+                .iter()
+                .any(|rule| rule == "@property --tw-blur{syntax:\"*\";inherits:false}")
+        );
+        assert!(
+            rules
+                .iter()
+                .any(|rule| rule == "@property --tw-grayscale{syntax:\"*\";inherits:false}")
+        );
     }
 
     #[rstest]
@@ -676,7 +852,6 @@ mod tests {
     #[case("-filter-none")]
     #[case("backdrop-")]
     #[case("blurry")]
-    #[case("drop-shadow-md")]
     fn unknown_filters_stay_as_written(#[case] class: &str) {
         assert_eq!(declarations_of(class), None, "{class}");
     }
@@ -772,10 +947,19 @@ mod tests {
 
     #[test]
     fn shadow_recoloring_keeps_what_has_no_color() {
-        assert_eq!(recolored("0 0 #0000"), "0 0 #0000");
+        assert_eq!(recolored("0 0", "--tw-shadow-color"), "0 0");
+        assert_eq!(recolored("inset 0 1px", "--tw-shadow-color"), "inset 0 1px");
         assert_eq!(
-            recolored("0 1px rgb(0 0 0 / 0.05), 0 0 #0000"),
-            "0 1px var(--tw-shadow-color, rgb(0 0 0 / 0.05)), 0 0 #0000"
+            recolored("0 0 #0000", "--tw-shadow-color"),
+            "0 0 var(--tw-shadow-color, #0000)"
+        );
+        assert_eq!(
+            recolored("1px 1px red", "--tw-shadow-color"),
+            "1px 1px var(--tw-shadow-color, red)"
+        );
+        assert_eq!(
+            recolored("0 1px rgb(0 0 0 / 0.05), 0 0 #0000", "--tw-shadow-color"),
+            "0 1px var(--tw-shadow-color, rgb(0 0 0 / 0.05)), 0 0 var(--tw-shadow-color, #0000)"
         );
     }
 
@@ -1045,5 +1229,200 @@ mod tests {
             .into_iter()
             .map(|(property, value)| (property.into(), value.into()))
             .collect()
+    }
+
+    #[rstest]
+    #[case("ring", "1px")]
+    #[case("ring-0", "0px")]
+    #[case("ring-2", "2px")]
+    #[case("ring-8", "8px")]
+    #[case("ring-[3px]", "3px")]
+    fn ring_widths_draw_the_ring_composed_with_the_shadows(
+        #[case] class: &str,
+        #[case] width: &str,
+    ) {
+        expect(
+            class,
+            &[
+                (
+                    "--tw-ring-shadow",
+                    &format!(
+                        "var(--tw-ring-inset, ) 0 0 0 calc({width} + var(--tw-ring-offset-width)) var(--tw-ring-color, currentcolor)"
+                    ),
+                ),
+                ("box-shadow", BOX_SHADOW),
+            ],
+        );
+    }
+
+    #[test]
+    fn ring_colors_inset_rings_and_offsets() {
+        expect("ring-inset", &[("--tw-ring-inset", "inset")]);
+        expect(
+            "ring-red-500",
+            &[("--tw-ring-color", "oklch(63.7% 0.237 25.331)")],
+        );
+        expect(
+            "ring-red-500/50",
+            &[(
+                "--tw-ring-color",
+                "color-mix(in oklab, oklch(63.7% 0.237 25.331) 50%, transparent)",
+            )],
+        );
+        expect("ring-[#f00]", &[("--tw-ring-color", "#f00")]);
+        expect(
+            "inset-ring",
+            &[
+                (
+                    "--tw-inset-ring-shadow",
+                    "inset 0 0 0 1px var(--tw-inset-ring-color, currentcolor)",
+                ),
+                ("box-shadow", BOX_SHADOW),
+            ],
+        );
+        expect(
+            "inset-ring-4",
+            &[
+                (
+                    "--tw-inset-ring-shadow",
+                    "inset 0 0 0 4px var(--tw-inset-ring-color, currentcolor)",
+                ),
+                ("box-shadow", BOX_SHADOW),
+            ],
+        );
+        expect("inset-ring-white", &[("--tw-inset-ring-color", "#fff")]);
+        expect(
+            "ring-offset-2",
+            &[
+                ("--tw-ring-offset-width", "2px"),
+                (
+                    "--tw-ring-offset-shadow",
+                    "var(--tw-ring-inset, ) 0 0 0 var(--tw-ring-offset-width) var(--tw-ring-offset-color)",
+                ),
+            ],
+        );
+        expect(
+            "ring-offset-[3px]",
+            &[
+                ("--tw-ring-offset-width", "3px"),
+                (
+                    "--tw-ring-offset-shadow",
+                    "var(--tw-ring-inset, ) 0 0 0 var(--tw-ring-offset-width) var(--tw-ring-offset-color)",
+                ),
+            ],
+        );
+        expect("ring-offset-black", &[("--tw-ring-offset-color", "#000")]);
+    }
+
+    #[rstest]
+    #[case("ring-")]
+    #[case("ringo")]
+    #[case("ring-1.5")]
+    #[case("ring-02")]
+    #[case("ring-nothing")]
+    #[case("ring-[red]/50/1")]
+    #[case("ring-offset")]
+    #[case("ring-offset-")]
+    #[case("ring-offsetx")]
+    #[case("ring-offset-nothing")]
+    #[case("inset-ring-nothing")]
+    #[case("-ring-2")]
+    fn unknown_rings_stay_as_written(#[case] class: &str) {
+        assert_eq!(declarations_of(class), None, "{class}");
+    }
+
+    #[rstest]
+    #[case("drop-shadow-xs", "0 1px 1px", "rgb(0 0 0 / 0.05)")]
+    #[case("drop-shadow-sm", "0 1px 2px", "rgb(0 0 0 / 0.15)")]
+    #[case("drop-shadow-md", "0 3px 3px", "rgb(0 0 0 / 0.12)")]
+    #[case("drop-shadow-lg", "0 4px 4px", "rgb(0 0 0 / 0.15)")]
+    #[case("drop-shadow-xl", "0 9px 7px", "rgb(0 0 0 / 0.1)")]
+    #[case("drop-shadow-2xl", "0 25px 25px", "rgb(0 0 0 / 0.15)")]
+    fn drop_shadow_sizes_compose_into_filter(
+        #[case] class: &str,
+        #[case] offsets: &str,
+        #[case] color: &str,
+    ) {
+        expect(
+            class,
+            &[
+                (
+                    "--tw-drop-shadow-size",
+                    &format!("drop-shadow({offsets} var(--tw-drop-shadow-color, {color}))"),
+                ),
+                (
+                    "--tw-drop-shadow",
+                    &format!("drop-shadow({offsets} {color})"),
+                ),
+                ("filter", FILTER),
+            ],
+        );
+    }
+    #[test]
+    fn drop_shadow_without_a_size_none_colors_and_arbitrary_values() {
+        expect(
+            "drop-shadow",
+            &[
+                (
+                    "--tw-drop-shadow-size",
+                    "drop-shadow(0 1px 2px var(--tw-drop-shadow-color, rgb(0 0 0 / 0.1))) drop-shadow(0 1px 1px var(--tw-drop-shadow-color, rgb(0 0 0 / 0.06)))",
+                ),
+                (
+                    "--tw-drop-shadow",
+                    "drop-shadow(0 1px 2px rgb(0 0 0 / 0.1)) drop-shadow(0 1px 1px rgb(0 0 0 / 0.06))",
+                ),
+                ("filter", FILTER),
+            ],
+        );
+        expect(
+            "drop-shadow-none",
+            &[("--tw-drop-shadow", " "), ("filter", FILTER)],
+        );
+        expect(
+            "drop-shadow-inherit",
+            &[
+                ("--tw-drop-shadow-color", "inherit"),
+                ("--tw-drop-shadow", "var(--tw-drop-shadow-size)"),
+            ],
+        );
+        expect(
+            "drop-shadow-red-500",
+            &[
+                (
+                    "--tw-drop-shadow-color",
+                    "color-mix(in oklab, oklch(63.7% 0.237 25.331) var(--tw-drop-shadow-alpha), transparent)",
+                ),
+                ("--tw-drop-shadow", "var(--tw-drop-shadow-size)"),
+            ],
+        );
+        expect(
+            "drop-shadow-[#0003]",
+            &[
+                (
+                    "--tw-drop-shadow-color",
+                    "color-mix(in oklab, #0003 var(--tw-drop-shadow-alpha), transparent)",
+                ),
+                ("--tw-drop-shadow", "var(--tw-drop-shadow-size)"),
+            ],
+        );
+        expect(
+            "drop-shadow-[0_0_4px_#000]",
+            &[
+                (
+                    "--tw-drop-shadow-size",
+                    "drop-shadow(0 0 4px var(--tw-drop-shadow-color, #000))",
+                ),
+                ("--tw-drop-shadow", "var(--tw-drop-shadow-size)"),
+                ("filter", FILTER),
+            ],
+        );
+        for class in [
+            "drop-shadow-",
+            "drop-shadow-huge",
+            "drop-shadow-md/50",
+            "drop-shadow-[]",
+        ] {
+            assert_eq!(declarations_of(class), None, "{class}");
+        }
     }
 }

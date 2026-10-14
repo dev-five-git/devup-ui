@@ -12,6 +12,7 @@ pub mod optimize_value;
 pub mod rm_css_comment;
 mod selector_separator;
 pub mod style_selector;
+pub mod tailwind_definitions;
 pub mod theme_tokens;
 pub mod utils;
 

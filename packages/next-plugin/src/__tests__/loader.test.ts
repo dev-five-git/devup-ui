@@ -156,8 +156,10 @@ describe('devupUILoader', () => {
   // Test WATCH mode init (lines 55-67) + CSS writing (lines 94-111)
   it('should initialize watch mode and write css files', async () => {
     existsSyncSpy.mockReturnValue(true)
-    readFileSyncSpy.mockReturnValue(
-      '{"theme": {"colors": {"primary": "#fff"}}}',
+    readFileSyncSpy.mockImplementation((path: unknown) =>
+      String(path).endsWith('tw.css')
+        ? '@theme { --color-brand: #0af; }'
+        : '{"theme": {"colors": {"primary": "#fff"}}, "tailwind": {"css": "tw.css"}}',
     )
     exportSheetSpy.mockReturnValue('sheet')
     exportClassMapSpy.mockReturnValue('classMap')
@@ -207,7 +209,9 @@ describe('devupUILoader', () => {
     expect(existsSyncSpy).toHaveBeenCalledWith('themeFile')
     expect(registerThemeSpy).toHaveBeenCalledWith({
       colors: { primary: '#fff' },
+      tailwindCss: '@theme { --color-brand: #0af; }',
     })
+    expect(t.addDependency).toHaveBeenCalledWith(resolve('tw.css'))
 
     // Verify updatedBaseStyle && watch branch (lines 94-99)
     expect(writeFileSpy).toHaveBeenCalledWith(

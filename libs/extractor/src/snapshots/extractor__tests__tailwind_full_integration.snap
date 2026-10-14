@@ -135,7 +135,27 @@ ToBTreeSet {
         Static(
             ExtractStaticStyle {
                 property: "border-radius",
-                value: "9999px",
+                value: "calc(infinity * 1px)",
+                level: 0,
+                selector: None,
+                style_order: None,
+                layer: None,
+            },
+        ),
+        Static(
+            ExtractStaticStyle {
+                property: "border-top-style",
+                value: "var(--tw-border-style)",
+                level: 0,
+                selector: None,
+                style_order: None,
+                layer: None,
+            },
+        ),
+        Static(
+            ExtractStaticStyle {
+                property: "border-top-width",
+                value: "1px",
                 level: 0,
                 selector: None,
                 style_order: None,
@@ -508,6 +528,12 @@ ToBTreeSet {
         ),
         Css(
             ExtractCss {
+                css: "@property --tw-border-style{syntax:\"*\";inherits:false;initial-value:solid}",
+                file: "@devup-ui/tailwind",
+            },
+        ),
+        Css(
+            ExtractCss {
                 css: "@property --tw-duration{syntax:\"*\";inherits:false}",
                 file: "@devup-ui/tailwind",
             },
@@ -538,6 +564,12 @@ ToBTreeSet {
         ),
         Css(
             ExtractCss {
+                css: "@property --tw-ring-offset-shadow{syntax:\"*\";inherits:false;initial-value:0 0 #0000}",
+                file: "@devup-ui/tailwind",
+            },
+        ),
+        Css(
+            ExtractCss {
                 css: "@property --tw-ring-shadow{syntax:\"*\";inherits:false;initial-value:0 0 #0000}",
                 file: "@devup-ui/tailwind",
             },
@@ -555,5 +587,5 @@ ToBTreeSet {
             },
         ),
     },
-    code: "import \"@devup-ui/core/devup-ui.css\";\n// Card component with comprehensive Tailwind usage\nexport const Card = () => <div className=\"ai aj ak al am an ao ap aq ar as\">\n    <div className=\"w x y z _\">\n      <div className=\"e f g h i j k\">\n        <span className=\"a b c d\">A</span>\n      </div>\n      <div className=\"v\">\n        <span className=\"l m n o p\">Title</span>\n        <span className=\"q r s t u\">Subtitle</span>\n      </div>\n    </div>\n    <div className=\"ae af border-t ag ah\">\n      <span className=\"aa ab ac a-d\">\n        Content goes here with multiple Tailwind utilities combined.\n      </span>\n    </div>\n  </div>;\n",
+    code: "import \"@devup-ui/core/devup-ui.css\";\n// Card component with comprehensive Tailwind usage\nexport const Card = () => <div className=\"ak al am an ao ap aq ar as at au\">\n    <div className=\"w x y z _\">\n      <div className=\"e f g h i j k\">\n        <span className=\"a b c d\">A</span>\n      </div>\n      <div className=\"v\">\n        <span className=\"l m n o p\">Title</span>\n        <span className=\"q r s t u\">Subtitle</span>\n      </div>\n    </div>\n    <div className=\"ae af ag ah ai aj\">\n      <span className=\"aa ab ac a-d\">\n        Content goes here with multiple Tailwind utilities combined.\n      </span>\n    </div>\n  </div>;\n",
 }

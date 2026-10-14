@@ -56,6 +56,10 @@ export function LeftMenu() {
             to: '/docs/migration/stylex',
             children: 'StyleX',
           },
+          {
+            to: '/docs/migration/tailwind',
+            children: 'Tailwind CSS',
+          },
         ]}
       >
         Migration
