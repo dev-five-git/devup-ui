@@ -13,6 +13,8 @@ mod mutations;
 mod prop_modify_utils;
 mod source_map;
 mod style_values;
+#[cfg(test)]
+mod styled_source_tests;
 mod stylex;
 mod tailwind;
 mod tailwind_children;
