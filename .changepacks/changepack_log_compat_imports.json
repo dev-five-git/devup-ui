@@ -1,0 +1,7 @@
+{
+  "changes": {
+    "bindings/devup-ui-wasm/package.json": "Patch"
+  },
+  "note": "Rewriting styled-components, Emotion and vanilla-extract imports keeps type-only imports type-only: `import { type DefaultTheme, ThemeProvider }` now leaves `import type { DefaultTheme }` on the package instead of a value import that made it a runtime dependency, and an `import type` declaration is left as written. `spin.getName()` on a `keyframes()` binding becomes the generated keyframes name instead of a call on a string that threw at runtime",
+  "date": "2026-10-01T00:00:00.000Z"
+}

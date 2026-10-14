@@ -33,18 +33,21 @@ pub fn extract_keyframes_from_expression<'a>(
         let o = match p {
             ObjectPropertyKind::ObjectProperty(o) => o,
             ObjectPropertyKind::SpreadProperty(spread) => {
-                runtime =
-                    runtime.or_else(|| Some(format!("...{}", readable_code(&spread.argument))));
+                runtime = runtime
+                    .or_else(|| Some((format!("...{}", readable_code(&spread.argument)), None)));
                 continue;
             }
         };
         let Some(name) = get_string_by_property_key(&o.key) else {
             runtime = runtime.or_else(|| {
-                Some(format!(
-                    "[{}]",
-                    o.key
-                        .as_expression()
-                        .map_or_else(String::new, readable_code)
+                Some((
+                    format!(
+                        "[{}]",
+                        o.key
+                            .as_expression()
+                            .map_or_else(String::new, readable_code)
+                    ),
+                    None,
                 ))
             });
             continue;

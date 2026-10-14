@@ -32,7 +32,7 @@ export function props(
 
 export function attrs(
   ..._styles: ReadonlyArray<StyleProperties | false | null | undefined>
-): { class?: string; style?: Record<string, string> } {
+): { class?: string; style?: string } {
   throw new Error('Cannot run on the runtime')
 }
 
