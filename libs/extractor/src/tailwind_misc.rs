@@ -328,6 +328,7 @@ fn plain(name: &str) -> Option<Vec<Declaration>> {
 #[allow(clippy::expect_used, clippy::unwrap_used)]
 mod tests {
     use rstest::rstest;
+    use serial_test::serial;
 
     use crate::tailwind::declarations_of;
 
@@ -365,6 +366,7 @@ mod tests {
     #[case("outline-double", &[("--tw-outline-style", "double"), ("outline-style", "double")])]
     #[case("outline-none", &[("--tw-outline-style", "none"), ("outline-style", "none")])]
     #[case("line-clamp-none", &[("overflow", "visible"), ("display", "block"), ("-webkit-box-orient", "horizontal"), ("-webkit-line-clamp", "unset")])]
+    #[serial]
     fn fixed_utilities(#[case] class: &str, #[case] expected: &[(&str, &str)]) {
         expect(class, expected);
     }
@@ -373,6 +375,7 @@ mod tests {
     #[case("line-clamp-3", "3")]
     #[case("line-clamp-(--lines)", "var(--lines)")]
     #[case("line-clamp-[calc(1+1)]", "calc(1 + 1)")]
+    #[serial]
     fn line_clamp_clamps_to_a_number_of_lines(#[case] class: &str, #[case] lines: &str) {
         expect(
             class,
@@ -386,6 +389,7 @@ mod tests {
     }
 
     #[test]
+    #[serial]
     fn text_decoration_offsets_and_outlines() {
         expect("underline-offset-4", &[("text-underline-offset", "4px")]);
         expect(
@@ -451,6 +455,7 @@ mod tests {
     #[case("border-r-8", "border-right-style", "border-right-width", "8px")]
     #[case("border-b-[2px]", "border-bottom-style", "border-bottom-width", "2px")]
     #[case("border-l-2", "border-left-style", "border-left-width", "2px")]
+    #[serial]
     fn border_widths_draw_in_the_border_style(
         #[case] class: &str,
         #[case] style: &str,
@@ -464,6 +469,7 @@ mod tests {
     }
 
     #[test]
+    #[serial]
     fn border_styles_set_the_style_the_widths_draw_in() {
         for style in ["solid", "dashed", "dotted", "double", "hidden", "none"] {
             expect(
@@ -474,6 +480,7 @@ mod tests {
     }
 
     #[test]
+    #[serial]
     fn border_spacing_sets_both_axes_unless_one_is_named() {
         expect(
             "border-spacing-2",
@@ -509,6 +516,7 @@ mod tests {
     }
 
     #[test]
+    #[serial]
     fn logical_sides_scroll_spacing_and_indent() {
         expect("start-4", &[("inset-inline-start", "1rem")]);
         expect("end-0", &[("inset-inline-end", "0px")]);
@@ -574,6 +582,7 @@ mod tests {
     #[case("-indent")]
     #[case("-table-auto")]
     #[case("antialiased-")]
+    #[serial]
     fn unknown_utilities_stay_as_written(#[case] class: &str) {
         assert_eq!(declarations_of(class), None, "{class}");
     }

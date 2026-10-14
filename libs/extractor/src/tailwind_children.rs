@@ -124,6 +124,7 @@ pub fn children_utility(name: &str) -> Option<Vec<Declaration>> {
 #[allow(clippy::expect_used, clippy::unwrap_used)]
 mod tests {
     use rstest::rstest;
+    use serial_test::serial;
 
     use super::*;
     use crate::tailwind::{declarations_of, parse_class};
@@ -177,6 +178,7 @@ mod tests {
     ])]
     #[case("space-x-reverse", &[("--tw-space-x-reverse", "1")])]
     #[case("space-y-reverse", &[("--tw-space-y-reverse", "1")])]
+    #[serial]
     fn space_adds_margins_between_the_children(
         #[case] class: &str,
         #[case] expected: &[(&str, &str)],
@@ -229,6 +231,7 @@ mod tests {
     }
 
     #[test]
+    #[serial]
     fn divide_reverse_style_and_color() {
         expect("divide-x-reverse", &[("--tw-divide-x-reverse", "1")]);
         expect("divide-y-reverse", &[("--tw-divide-y-reverse", "1")]);
@@ -268,11 +271,13 @@ mod tests {
     #[case("space-x-huge")]
     #[case("-space-x-reverse")]
     #[case("space-z-4")]
+    #[serial]
     fn unknown_children_utilities_stay_as_written(#[case] class: &str) {
         assert_eq!(declarations_of(class), None, "{class}");
     }
 
     #[test]
+    #[serial]
     fn children_utilities_apply_under_variants_to_the_children() {
         let class = parse_class("space-x-4").unwrap();
         assert_eq!(class.conditions.len(), 1);
@@ -310,6 +315,7 @@ mod tests {
     }
 
     #[test]
+    #[serial]
     fn children_rules_register_their_variables() {
         assert_eq!(
             parse_class("space-x-4").unwrap().rules(),

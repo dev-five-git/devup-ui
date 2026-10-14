@@ -1902,15 +1902,14 @@ export function f() { const c = css; c = () => 1; return c({ color: "red" }); }
 
 **Why:** A followed alias cannot be reassigned after the rewrite removes its declaration.
 
-**Fix:** Keep the const alias unchanged and call it.
+**Fix:** Call the imported css directly instead of creating a local runtime alias.
 
 {/* probe: mutated-const-alias after */}
 
 ```tsx
 import { css } from '@devup-ui/react'
 export function f() {
-  const c = css
-  return c({ color: 'red' })
+  return css({ color: 'red' })
 }
 ```
 
@@ -3926,7 +3925,7 @@ The `devup/no-runtime-read` rule reports compile-time bindings read outside supp
 `<binding>` is read at runtime, where it does not exist: the build compiles it only where it is called or rendered.
 ```
 
-```tsx
+```tsx-error
 import { css } from '@devup-ui/react'
 consume(css)
 ```
