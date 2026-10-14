@@ -8,6 +8,8 @@ use crate::{
     extractor::{
         ExtractResult,
         extract_style_from_expression::{LiteralHandling, extract_style_from_expression},
+        styled_record::prepare,
+        styled_record_evaluation::{Evaluations, bind_render, visit_style_expressions},
     },
     gen_class_name::{gen_class_names, merge_expression_for_class_name},
     gen_style::gen_styles,
@@ -55,6 +57,117 @@ pub struct StyledDefinition<'a> {
     classes: Vec<Expression<'a>>,
     styles: Vec<ExtractStyleProp<'a>>,
     attrs: Vec<Expression<'a>>,
+    bindings: Vec<(String, Expression<'a>)>,
+}
+
+impl<'a> StyledDefinition<'a> {
+    fn visit_expressions(
+        &mut self,
+        builder: &AstBuilder<'a>,
+        mut visit: impl FnMut(&mut Expression<'a>),
+    ) {
+        for expression in self
+            .bound
+            .iter_mut()
+            .chain(&mut self.classes)
+            .chain(&mut self.attrs)
+        {
+            visit(expression);
+        }
+        for (_, value) in &mut self.bindings {
+            visit(value);
+        }
+        for style in &mut self.styles {
+            visit_style_expressions(builder, style, &mut visit);
+        }
+    }
+
+    fn rebind(&self, builder: &AstBuilder<'a>, scope: &mut Expression<'a>) -> Self {
+        use oxc_ast_visit::VisitMut;
+        struct Rename<'b, 'a> {
+            builder: &'b AstBuilder<'a>,
+            names: FxHashMap<String, String>,
+        }
+        impl<'a> VisitMut<'a> for Rename<'_, 'a> {
+            fn visit_identifier_reference(
+                &mut self,
+                identifier: &mut oxc_ast::ast::IdentifierReference<'a>,
+            ) {
+                let mut code = String::new();
+                // Dynamic identifiers can hold emitted JS code. Captured names
+                // were excluded from authored source, so only whole tokens change.
+                let separator = |ch: char| !ch.is_alphanumeric() && ch != '_' && ch != '$';
+                for chunk in identifier.name.split_inclusive(separator) {
+                    let token = chunk.trim_end_matches(separator);
+                    code.push_str(self.names.get(token).map_or(token, String::as_str));
+                    code.push_str(&chunk[token.len()..]);
+                }
+                identifier.name =
+                    oxc_ast::ast::Ident::from_in(code.as_str(), self.builder.allocator());
+            }
+        }
+        let allocator = builder.allocator();
+        let mut inherited = Self {
+            name: self.name.clone(),
+            bound: self.bound.as_ref().map(|value| value.clone_in(allocator)),
+            classes: clone_all(builder, &self.classes).collect(),
+            styles: self
+                .styles
+                .iter()
+                .map(|style| style.clone_in(allocator))
+                .collect(),
+            attrs: clone_all(builder, &self.attrs).collect(),
+            bindings: self
+                .bindings
+                .iter()
+                .map(|(name, value)| (name.clone(), value.clone_in(allocator)))
+                .collect(),
+        };
+        let mut reserved = vec![scope.clone_in(allocator)];
+        inherited.visit_expressions(builder, |value| reserved.push(value.clone_in(allocator)));
+        reserved.extend(inherited.bindings.iter().map(|(name, _)| {
+            Expression::new_identifier(
+                SPAN,
+                oxc_ast::ast::Ident::from_in(name.as_str(), allocator),
+                builder,
+            )
+        }));
+        let reservation = Expression::new_array_expression(
+            SPAN,
+            oxc_allocator::Vec::from_iter_in(reserved.into_iter().map(Into::into), builder),
+            builder,
+        );
+        let mut reads = Evaluations::new(builder, readable_code(&reservation));
+        let mut rename = Rename {
+            builder,
+            names: FxHashMap::default(),
+        };
+        for (name, _) in &mut inherited.bindings {
+            let fresh = reads.fresh_name();
+            rename.names.insert(name.clone(), fresh.clone());
+            *name = fresh;
+        }
+        for (_, value) in &mut inherited.bindings {
+            rename.visit_expression(value);
+        }
+        for style in &mut inherited.styles {
+            visit_style_expressions(builder, style, &mut |value| rename.visit_expression(value));
+        }
+        let mut reserved = vec![reservation];
+        reserved.extend(inherited.bindings.iter().map(|(name, _)| {
+            Expression::new_identifier(
+                SPAN,
+                oxc_ast::ast::Ident::from_in(name.as_str(), allocator),
+                builder,
+            )
+        }));
+        *scope = Expression::new_array_expression(
+            SPAN,
+            oxc_allocator::Vec::from_iter_in(reserved.into_iter().map(Into::into), builder),
+            builder,
+        );
+        inherited
+    }
 }
 
 impl StyledDefinition<'_> {
@@ -156,6 +269,7 @@ impl<'a> Base<'a> {
         classes: Vec<Expression<'a>>,
         styles: &[ExtractStyleProp<'a>],
         attrs: &[Expression<'a>],
+        bindings: &[(String, Expression<'a>)],
     ) -> StyledDefinition<'a> {
         let allocator = ast_builder.allocator();
         StyledDefinition {
@@ -167,6 +281,10 @@ impl<'a> Base<'a> {
                 .map(|style| style.clone_in(allocator))
                 .collect(),
             attrs: attrs.iter().map(|attr| attr.clone_in(allocator)).collect(),
+            bindings: bindings
+                .iter()
+                .map(|(name, value)| (name.clone(), value.clone_in(allocator)))
+                .collect(),
         }
     }
 
@@ -331,6 +449,9 @@ pub fn extract_style_from_styled<'a>(
     attrs: &[Expression<'a>],
     inherited: Option<&StyledDefinition<'a>>,
 ) -> StyledExtraction<'a> {
+    let mut original_scope = expression.clone_in(ast_builder.allocator());
+    let inherited = inherited.map(|definition| definition.rebind(ast_builder, &mut original_scope));
+    let inherited = inherited.as_ref();
     let mut composed_classes = Vec::new();
     let mut errors = Vec::new();
     if let Expression::CallExpression(call) = expression
@@ -373,6 +494,13 @@ pub fn extract_style_from_styled<'a>(
             let expression = &tag.quasi.expressions[index];
             errors.push((expression.span().start, unplaced_error(expression)));
         }
+        errors.extend(
+            tag.quasi
+                .expressions
+                .iter()
+                .filter(|expression| crate::css_utils::reads_unmapped_theme(expression))
+                .map(|expression| crate::css_utils::unmapped_theme_error("styled", expression)),
+        );
         let own: Vec<ExtractStyleProp<'_>> = styles
             .into_iter()
             .map(|ex| ExtractStyleProp::Static(ex.into()))
@@ -419,13 +547,23 @@ pub fn extract_style_from_styled<'a>(
             None,
             ast_builder,
         ));
+        let bindings = inherited.map_or_else(Vec::new, |definition| {
+            definition
+                .bindings
+                .iter()
+                .map(|(name, value)| (name.clone(), value.clone_in(ast_builder.allocator())))
+                .collect()
+        });
+        let definition = base.definition(ast_builder, classes, &props_styles, &attrs, &bindings);
         let component = create_styled_component(
             ast_builder,
             &base.name,
-            &class_name,
-            &gen_styles(ast_builder, &props_styles, None),
+            StyledRender {
+                class_name: &class_name,
+                style_vars: &gen_styles(ast_builder, &props_styles, None),
+                bindings,
+            },
         );
-        let definition = base.definition(ast_builder, classes, &props_styles, &attrs);
         let styled_component =
             base.render(ast_builder, apply_attrs(ast_builder, component, &attrs));
 
@@ -445,6 +583,23 @@ pub fn extract_style_from_styled<'a>(
         // Case 2: styled.div({ bg: "red" }), styled("div")({ bg: "red" }),
         // or styled("div", { bg: "red" })
 
+        let prepared = call.arguments[style_index]
+            .as_expression()
+            .and_then(|rules| prepare(ast_builder, rules, &original_scope));
+        let mut bindings: Vec<_> = inherited.map_or_else(Vec::new, |definition| {
+            definition
+                .bindings
+                .iter()
+                .map(|(name, value)| (name.clone(), value.clone_in(ast_builder.allocator())))
+                .collect()
+        });
+        bindings.extend(match prepared {
+            Some(prepared) => {
+                call.arguments[style_index] = Argument::from(prepared.rules);
+                prepared.bindings
+            }
+            None => Vec::new(),
+        });
         // Extract styles from object expression
         let ExtractResult {
             mut styles,
@@ -466,11 +621,12 @@ pub fn extract_style_from_styled<'a>(
         );
         let mut unreadable = Vec::new();
         unreadable_styles(&styles, true, &mut unreadable);
-        errors.extend(
-            unreadable
-                .into_iter()
-                .map(|(offset, code)| (offset, build_time_error("styled", &code, STYLE_OBJECT))),
-        );
+        errors.extend(unreadable.into_iter().map(|(offset, code, requirement)| {
+            (
+                offset,
+                build_time_error("styled", &code, requirement.unwrap_or(STYLE_OBJECT)),
+            )
+        }));
         if let Some(order) = style_order {
             for style in &mut styles {
                 crate::composition::set_prop_order(style, order);
@@ -491,13 +647,16 @@ pub fn extract_style_from_styled<'a>(
                 split_filename,
             )),
         );
+        let definition = base.definition(ast_builder, classes, &styles, &attrs, &bindings);
         let component = create_styled_component(
             ast_builder,
             &base.name,
-            &class_name,
-            &gen_styles(ast_builder, &styles, None),
+            StyledRender {
+                class_name: &class_name,
+                style_vars: &gen_styles(ast_builder, &styles, None),
+                bindings,
+            },
         );
-        let definition = base.definition(ast_builder, classes, &styles, &attrs);
         let styled_component =
             base.render(ast_builder, apply_attrs(ast_builder, component, &attrs));
 
@@ -886,12 +1045,22 @@ fn named_arrow<'a>(
     )
 }
 
+struct StyledRender<'b, 'a> {
+    class_name: &'b Option<Expression<'a>>,
+    style_vars: &'b Option<Expression<'a>>,
+    bindings: Vec<(String, Expression<'a>)>,
+}
+
 fn create_styled_component<'a>(
     ast_builder: &AstBuilder<'a>,
     tag_name: &str,
-    class_name: &Option<Expression<'a>>,
-    style_vars: &Option<Expression<'a>>,
+    render: StyledRender<'_, 'a>,
 ) -> Expression<'a> {
+    let StyledRender {
+        class_name,
+        style_vars,
+        bindings,
+    } = render;
     let params = FormalParameters::boxed(
         SPAN,
         FormalParameterKind::ArrowFormalParameters,
@@ -1038,7 +1207,7 @@ fn create_styled_component<'a>(
         None::<oxc_allocator::Box<oxc_ast::ast::TSTypeParameterDeclaration<'a>>>,
         params,
         None::<oxc_allocator::Box<oxc_ast::ast::TSTypeAnnotation<'a>>>,
-        body.into(),
+        bind_render(ast_builder, bindings, body).into(),
         ast_builder,
     )
 }
