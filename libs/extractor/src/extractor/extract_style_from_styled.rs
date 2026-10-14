@@ -1,3 +1,4 @@
+use super::styled_jsx::StyledJsx;
 use rustc_hash::FxHashMap;
 
 use crate::{
@@ -29,6 +30,7 @@ use oxc_ast::{
     },
     builder::AstBuilder,
 };
+use oxc_ast_visit::VisitMut;
 use oxc_span::{GetSpan, SPAN};
 use oxc_syntax::operator::{BinaryOperator, LogicalOperator, UnaryOperator};
 
@@ -44,6 +46,7 @@ const STYLED_FACTORY: &str =
 /// only the runtime gives the component
 struct Base<'a> {
     name: String,
+    target: Option<Expression<'a>>,
     styles: Option<Vec<ExtractStyleValue>>,
     bound: Option<Expression<'a>>,
 }
@@ -53,11 +56,35 @@ struct Base<'a> {
 /// attrs, as the extension applies them before its own
 pub struct StyledDefinition<'a> {
     name: String,
+    target: Option<Expression<'a>>,
     bound: Option<Expression<'a>>,
     classes: Vec<Expression<'a>>,
     styles: Vec<ExtractStyleProp<'a>>,
     attrs: Vec<Expression<'a>>,
     bindings: Vec<(String, Expression<'a>)>,
+}
+
+struct Rename<'b, 'a> {
+    builder: &'b AstBuilder<'a>,
+    names: FxHashMap<String, String>,
+}
+
+impl<'a> VisitMut<'a> for Rename<'_, 'a> {
+    fn visit_identifier_reference(
+        &mut self,
+        identifier: &mut oxc_ast::ast::IdentifierReference<'a>,
+    ) {
+        let mut code = String::new();
+        // Dynamic identifiers can hold emitted JS code. Captured names
+        // were excluded from authored source, so only whole tokens change.
+        let separator = |ch: char| !ch.is_alphanumeric() && ch != '_' && ch != '$';
+        for chunk in identifier.name.split_inclusive(separator) {
+            let token = chunk.trim_end_matches(separator);
+            code.push_str(self.names.get(token).map_or(token, String::as_str));
+            code.push_str(&chunk[token.len()..]);
+        }
+        identifier.name = oxc_ast::ast::Ident::from_in(code.as_str(), self.builder.allocator());
+    }
 }
 
 impl<'a> StyledDefinition<'a> {
@@ -67,8 +94,9 @@ impl<'a> StyledDefinition<'a> {
         mut visit: impl FnMut(&mut Expression<'a>),
     ) {
         for expression in self
-            .bound
+            .target
             .iter_mut()
+            .chain(&mut self.bound)
             .chain(&mut self.classes)
             .chain(&mut self.attrs)
         {
@@ -83,32 +111,10 @@ impl<'a> StyledDefinition<'a> {
     }
 
     fn rebind(&self, builder: &AstBuilder<'a>, scope: &mut Expression<'a>) -> Self {
-        use oxc_ast_visit::VisitMut;
-        struct Rename<'b, 'a> {
-            builder: &'b AstBuilder<'a>,
-            names: FxHashMap<String, String>,
-        }
-        impl<'a> VisitMut<'a> for Rename<'_, 'a> {
-            fn visit_identifier_reference(
-                &mut self,
-                identifier: &mut oxc_ast::ast::IdentifierReference<'a>,
-            ) {
-                let mut code = String::new();
-                // Dynamic identifiers can hold emitted JS code. Captured names
-                // were excluded from authored source, so only whole tokens change.
-                let separator = |ch: char| !ch.is_alphanumeric() && ch != '_' && ch != '$';
-                for chunk in identifier.name.split_inclusive(separator) {
-                    let token = chunk.trim_end_matches(separator);
-                    code.push_str(self.names.get(token).map_or(token, String::as_str));
-                    code.push_str(&chunk[token.len()..]);
-                }
-                identifier.name =
-                    oxc_ast::ast::Ident::from_in(code.as_str(), self.builder.allocator());
-            }
-        }
         let allocator = builder.allocator();
         let mut inherited = Self {
             name: self.name.clone(),
+            target: self.target.as_ref().map(|value| value.clone_in(allocator)),
             bound: self.bound.as_ref().map(|value| value.clone_in(allocator)),
             classes: clone_all(builder, &self.classes).collect(),
             styles: self
@@ -252,6 +258,10 @@ impl<'a> Base<'a> {
         match inherited {
             Some(inherited) => Self {
                 name: inherited.name.clone(),
+                target: inherited
+                    .target
+                    .as_ref()
+                    .map(|target| target.clone_in(ast_builder.allocator())),
                 styles: None,
                 bound: inherited
                     .bound
@@ -274,6 +284,10 @@ impl<'a> Base<'a> {
         let allocator = ast_builder.allocator();
         StyledDefinition {
             name: self.name.clone(),
+            target: self
+                .target
+                .as_ref()
+                .map(|target| target.clone_in(allocator)),
             bound: self.bound.as_ref().map(|bound| bound.clone_in(allocator)),
             classes,
             styles: styles
@@ -291,6 +305,7 @@ impl<'a> Base<'a> {
     const fn named(name: String) -> Self {
         Self {
             name,
+            target: None,
             styles: None,
             bound: None,
         }
@@ -375,10 +390,14 @@ fn tag_from_argument<'a>(
     }
     Some(jsx_name(argument).map_or_else(
         || Base {
+            target: Some(Expression::new_identifier(SPAN, STYLED_BASE, ast_builder)),
             bound: Some(argument.clone_in(ast_builder.allocator())),
             ..Base::named(STYLED_BASE.to_string())
         },
-        Base::named,
+        |name| Base {
+            target: Some(argument.clone_in(ast_builder.allocator())),
+            ..Base::named(name)
+        },
     ))
 }
 
@@ -448,6 +467,7 @@ pub fn extract_style_from_styled<'a>(
     imports: &FxHashMap<String, ExportVariableKind>,
     attrs: &[Expression<'a>],
     inherited: Option<&StyledDefinition<'a>>,
+    helper: &mut Option<StyledJsx>,
 ) -> StyledExtraction<'a> {
     let mut original_scope = expression.clone_in(ast_builder.allocator());
     let inherited = inherited.map(|definition| definition.rebind(ast_builder, &mut original_scope));
@@ -557,12 +577,13 @@ pub fn extract_style_from_styled<'a>(
         let definition = base.definition(ast_builder, classes, &props_styles, &attrs, &bindings);
         let component = create_styled_component(
             ast_builder,
-            &base.name,
+            &base,
             StyledRender {
                 class_name: &class_name,
                 style_vars: &gen_styles(ast_builder, &props_styles, None),
                 bindings,
             },
+            helper,
         );
         let styled_component =
             base.render(ast_builder, apply_attrs(ast_builder, component, &attrs));
@@ -650,12 +671,13 @@ pub fn extract_style_from_styled<'a>(
         let definition = base.definition(ast_builder, classes, &styles, &attrs, &bindings);
         let component = create_styled_component(
             ast_builder,
-            &base.name,
+            &base,
             StyledRender {
                 class_name: &class_name,
                 style_vars: &gen_styles(ast_builder, &styles, None),
                 bindings,
             },
+            helper,
         );
         let styled_component =
             base.render(ast_builder, apply_attrs(ast_builder, component, &attrs));
@@ -1053,8 +1075,9 @@ struct StyledRender<'b, 'a> {
 
 fn create_styled_component<'a>(
     ast_builder: &AstBuilder<'a>,
-    tag_name: &str,
+    base: &Base<'a>,
     render: StyledRender<'_, 'a>,
+    helper: &mut Option<StyledJsx>,
 ) -> Expression<'a> {
     let StyledRender {
         class_name,
@@ -1115,92 +1138,93 @@ fn create_styled_component<'a>(
         None::<oxc_allocator::Box<oxc_ast::ast::FormalParameterRest<'a>>>,
         ast_builder,
     );
-    let body = Expression::new_jsx_element(
-        SPAN,
-        JSXOpeningElement::boxed(
-            SPAN,
-            JSXElementName::new_identifier(
-                SPAN,
-                Str::from_in(tag_name, ast_builder.allocator()),
+    let class_name = class_name.as_ref().map_or_else(
+        || Expression::new_identifier(SPAN, "className", ast_builder),
+        |name| {
+            wrap_array_filter(
                 ast_builder,
-            ),
-            None::<oxc_allocator::Box<oxc_ast::ast::TSTypeParameterInstantiation<'a>>>,
-            oxc_allocator::Vec::from_iter_in(
-                vec![
-                    JSXAttributeItem::new_spread_attribute(
-                        SPAN,
-                        Expression::new_identifier(SPAN, "rest", ast_builder),
-                        ast_builder,
-                    ),
-                    JSXAttributeItem::new_attribute(
-                        SPAN,
-                        JSXAttributeName::new_identifier(SPAN, "className", ast_builder),
-                        Some(JSXAttributeValue::new_expression_container(
-                            SPAN,
-                            class_name
-                                .as_ref()
-                                .map_or_else(
-                                    || Expression::new_identifier(SPAN, "className", ast_builder),
-                                    |name| {
-                                        wrap_array_filter(
-                                            ast_builder,
-                                            &[
-                                                name.clone_in(ast_builder.allocator()),
-                                                Expression::new_identifier(
-                                                    SPAN,
-                                                    "className",
-                                                    ast_builder,
-                                                ),
-                                            ],
-                                        )
-                                        .unwrap_or_else(|| name.clone_in(ast_builder.allocator()))
-                                    },
-                                )
-                                .into(),
-                            ast_builder,
-                        )),
-                        ast_builder,
-                    ),
-                    JSXAttributeItem::new_attribute(
-                        SPAN,
-                        JSXAttributeName::new_identifier(SPAN, "style", ast_builder),
-                        Some(JSXAttributeValue::new_expression_container(
-                            SPAN,
-                            style_vars
-                                .as_ref()
-                                .map_or_else(
-                                    || Expression::new_identifier(SPAN, "style", ast_builder),
-                                    |style_vars| {
-                                        merge_object_expressions(
-                                            ast_builder,
-                                            &[
-                                                style_vars.clone_in(ast_builder.allocator()),
-                                                Expression::new_identifier(
-                                                    SPAN,
-                                                    "style",
-                                                    ast_builder,
-                                                ),
-                                            ],
-                                        )
-                                        .unwrap_or_else(
-                                            || style_vars.clone_in(ast_builder.allocator()),
-                                        )
-                                    },
-                                )
-                                .into(),
-                            ast_builder,
-                        )),
-                        ast_builder,
-                    ),
+                &[
+                    name.clone_in(ast_builder.allocator()),
+                    Expression::new_identifier(SPAN, "className", ast_builder),
                 ],
+            )
+            .unwrap_or_else(|| name.clone_in(ast_builder.allocator()))
+        },
+    );
+    let style = style_vars.as_ref().map_or_else(
+        || Expression::new_identifier(SPAN, "style", ast_builder),
+        |style_vars| {
+            merge_object_expressions(
+                ast_builder,
+                &[
+                    style_vars.clone_in(ast_builder.allocator()),
+                    Expression::new_identifier(SPAN, "style", ast_builder),
+                ],
+            )
+            .unwrap_or_else(|| style_vars.clone_in(ast_builder.allocator()))
+        },
+    );
+    let body = if let Some(helper) = helper {
+        let target = base.target.as_ref().map_or_else(
+            || {
+                Expression::new_string_literal(
+                    SPAN,
+                    Str::from_in(&base.name, ast_builder.allocator()),
+                    None,
+                    ast_builder,
+                )
+            },
+            |target| target.clone_in(ast_builder.allocator()),
+        );
+        helper.render(ast_builder, target, (class_name, style))
+    } else {
+        Expression::new_jsx_element(
+            SPAN,
+            JSXOpeningElement::boxed(
+                SPAN,
+                JSXElementName::new_identifier(
+                    SPAN,
+                    Str::from_in(&base.name, ast_builder.allocator()),
+                    ast_builder,
+                ),
+                None::<oxc_allocator::Box<oxc_ast::ast::TSTypeParameterInstantiation<'a>>>,
+                oxc_allocator::Vec::from_iter_in(
+                    vec![
+                        JSXAttributeItem::new_spread_attribute(
+                            SPAN,
+                            Expression::new_identifier(SPAN, "rest", ast_builder),
+                            ast_builder,
+                        ),
+                        JSXAttributeItem::new_attribute(
+                            SPAN,
+                            JSXAttributeName::new_identifier(SPAN, "className", ast_builder),
+                            Some(JSXAttributeValue::new_expression_container(
+                                SPAN,
+                                class_name.into(),
+                                ast_builder,
+                            )),
+                            ast_builder,
+                        ),
+                        JSXAttributeItem::new_attribute(
+                            SPAN,
+                            JSXAttributeName::new_identifier(SPAN, "style", ast_builder),
+                            Some(JSXAttributeValue::new_expression_container(
+                                SPAN,
+                                style.into(),
+                                ast_builder,
+                            )),
+                            ast_builder,
+                        ),
+                    ],
+                    ast_builder,
+                ),
                 ast_builder,
             ),
+            oxc_allocator::Vec::new_in(ast_builder),
+            None::<oxc_allocator::Box<oxc_ast::ast::JSXClosingElement<'a>>>,
             ast_builder,
-        ),
-        oxc_allocator::Vec::new_in(ast_builder),
-        None::<oxc_allocator::Box<oxc_ast::ast::JSXClosingElement<'a>>>,
-        ast_builder,
-    );
+        )
+    };
     Expression::new_arrow_function_expression(
         SPAN,
         false,
