@@ -42,5 +42,5 @@ pub struct GlobalExtractResult<'a> {
 pub struct KeyframesExtractResult {
     pub keyframes: ExtractKeyframes,
     /// A value only known at runtime, which keyframes cannot hold
-    pub runtime_value: Option<String>,
+    pub runtime_value: Option<crate::utils::Unused>,
 }

@@ -3,8 +3,15 @@ import { writeFile } from 'node:fs/promises'
 import { Agent, request } from 'node:http'
 import { basename, dirname, join, relative, resolve } from 'node:path'
 
+import { tailwindCssFiles, withTailwindCss } from '@devup-ui/plugin-utils'
 import type { RawLoaderDefinitionFunction } from 'webpack'
 
+import {
+  isConnectionError,
+  missingPortFileError,
+  parsePortFile,
+  unreachableCoordinatorError,
+} from './coordinator-port'
 import { loadWasm } from './wasm'
 
 export interface DevupUILoaderOptions {
@@ -44,7 +51,7 @@ function readCoordinatorPort(portFile: string): number {
   const cachedPort = cachedPorts.get(portFile)
   if (cachedPort !== undefined) return cachedPort
 
-  const port = Number.parseInt(readFileSync(portFile, 'utf-8').trim(), 10)
+  const port = parsePortFile(readFileSync(portFile, 'utf-8')).port
   cachedPorts.set(portFile, port)
   return port
 }
@@ -153,7 +160,7 @@ const devupUILoader: RawLoaderDefinitionFunction<DevupUILoaderOptions> =
             return
           }
           // Port file never appeared — fall through to error
-          callback(new Error('Coordinator port file not found'))
+          callback(missingPortFileError(coordinatorPortFile))
           return
         }
         try {
@@ -174,7 +181,17 @@ const devupUILoader: RawLoaderDefinitionFunction<DevupUILoaderOptions> =
             port,
             body,
             (err, content, sourceMap, dependencies = []) => {
-              if (err) return callback(err)
+              if (err) {
+                if (isConnectionError(err)) {
+                  // Forget a port that no longer answers so the next file
+                  // re-reads the port file instead of repeating the timeout.
+                  cachedPorts.delete(coordinatorPortFile)
+                  return callback(
+                    unreachableCoordinatorError(coordinatorPortFile, err),
+                  )
+                }
+                return callback(err)
+              }
               for (const dependency of dependencies) {
                 this.addDependency(resolve(dependency))
               }
@@ -221,10 +238,11 @@ const devupUILoader: RawLoaderDefinitionFunction<DevupUILoaderOptions> =
           importClassMap(JSON.parse(readFileSync(classMapFile, 'utf-8')))
         if (existsSync(fileMapFile))
           importFileMap(JSON.parse(readFileSync(fileMapFile, 'utf-8')))
-        if (existsSync(themeFile))
-          registerTheme(
-            JSON.parse(readFileSync(themeFile, 'utf-8'))?.theme ?? {},
-          )
+        if (existsSync(themeFile)) {
+          const config = JSON.parse(readFileSync(themeFile, 'utf-8')) ?? {}
+          registerTheme(withTailwindCss(config.theme ?? {}, config))
+          for (const file of tailwindCssFiles(config)) this.addDependency(file)
+        }
       } else {
         importFileMap(defaultFileMap)
         importClassMap(defaultClassMap)
