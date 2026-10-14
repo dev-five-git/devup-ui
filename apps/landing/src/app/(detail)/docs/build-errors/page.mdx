@@ -1,0 +1,3964 @@
+export const metadata = {
+  title: 'Build Errors',
+  alternates: { canonical: '/docs/build-errors' },
+}
+
+# Build Errors
+
+Devup UI builds styles into CSS rather than shipping a styling runtime. This reference groups the diagnostics emitted by the reviewed extractor and plugin sources, with failing inputs and accepted repairs. See [Supported Syntax & Limitations](/docs/limitations) for the broader support and composition rules.
+
+A located style diagnostic has this shape:
+
+```text
+<file>:<line>:<column>: <API> cannot use `<code>` at build time: <requirement>
+```
+
+The placeholders vary with your source. The requirement text below is the real emitted wording, not a paraphrase. Diagnostics can also report `Cannot compose`, `Cannot place`, a removed runtime binding, or an invalid shape. Style diagnostics identify the original source location. Internal loader/setup messages are listed separately.
+
+Each example is a separate compiler input. Names such as `width`, `rules`, `value`, or `getStyles` denote values only the runtime supplies unless the snippet declares them. Dynamic values in known element declarations can become CSS variables; unknown rule keys or whole opaque style objects cannot.
+
+Message families shared by multiple spellings are reused by those APIs. The shown before/after pairs were verified on source-specific WASM builds; class names and generated variable names are not stable public identifiers.
+
+## Style props
+
+### Unknown selector style object
+
+**API:** Style props. **Message pattern:**
+
+```text
+`<Box>` cannot use `<code>` at build time: its styles must be an object literal or a constant object, or be computed from constants
+```
+
+**Trigger:**
+
+{/* probe: selector-object before */}
+
+```tsx-error
+import { Box } from '@devup-ui/react';
+export const App = ({ rules }) => <Box _hover={rules} />;
+```
+
+**Why:** A selector needs a known set of properties; an opaque runtime object gives the build no declarations to extract.
+
+**Fix:** Write the object structure explicitly. Its individual values can remain dynamic and become CSS variables.
+
+{/* probe: selector-object after */}
+
+```tsx
+import { Box } from '@devup-ui/react'
+export const App = ({ color }) => <Box _hover={{ color }} />
+```
+
+### Invalid selector spelling
+
+**API:** Style props. **Message pattern:**
+
+```text
+`<Box>` cannot use `<code>` at build time: a selector key names a pseudo-class or pseudo-element, as `_hover` or `hover`, or is a selector, as `&:hover`, `& > p` or `.parent &`
+```
+
+**Trigger:**
+
+{/* probe: selector-name before */}
+
+```tsx-error
+import { Box } from '@devup-ui/react';
+export const App = () => <Box _notASelector={{ color: 'red' }} />;
+```
+
+**Why:** An unknown pseudo-selector name is not a CSS selector the build can emit.
+
+**Fix:** Use a supported pseudo-selector or a full selector containing &, such as &:hover.
+
+{/* probe: selector-name after */}
+
+```tsx
+import { Box } from '@devup-ui/react'
+export const App = () => <Box _hover={{ color: 'red' }} />
+```
+
+### A class string is not selector CSS text
+
+**API:** Style props. **Message pattern:**
+
+```text
+`<Box>` cannot use `<code>` at build time: a selector takes styles, an object such as `{ color: 'red' }` or CSS text such as `color: red`
+```
+
+**Trigger:**
+
+{/* probe: selector-css-text before */}
+
+```tsx-error
+import { Box } from '@devup-ui/react';
+export const App = () => <Box _hover="external-class" />;
+```
+
+**Why:** A selector takes declarations, not an external class name.
+
+**Fix:** Supply a style object or valid CSS declaration text such as color: red.
+
+{/* probe: selector-css-text after */}
+
+```tsx
+import { Box } from '@devup-ui/react'
+export const App = () => <Box _hover={{ color: 'red' }} />
+```
+
+## css / globalCss / keyframes
+
+### Runtime value in css()
+
+**API:** css / globalCss / keyframes. **Message pattern:**
+
+```text
+`css()` cannot use `<code>` at build time: its values must be literals, theme tokens or constants, or be computed from them
+```
+
+**Trigger:**
+
+{/* probe: static-css before */}
+
+```tsx-error
+import { css } from '@devup-ui/react';
+export const card = css({ width });
+```
+
+**Why:** This API emits stylesheet rules and has no element on which to set a runtime CSS variable.
+
+**Fix:** Use a literal, theme token, constant, or deterministic computation from constants. For a runtime value, move the declaration to a style prop, for example &lt;Box w=\{width\} /&gt;.
+
+{/* probe: static-css after */}
+
+```tsx
+import { css } from '@devup-ui/react'
+export const card = css({ width: '20px' })
+```
+
+### Unknown global rule object
+
+**API:** css / globalCss / keyframes. **Message pattern:**
+
+```text
+`globalCss()` cannot use `<code>` at build time: its values must be literals, theme tokens or constants, or be computed from them
+```
+
+**Trigger:**
+
+{/* probe: global-object before */}
+
+```tsx-error
+import { globalCss } from '@devup-ui/react';
+globalCss(rules);
+```
+
+**Why:** A global stylesheet needs a known selector-to-rules structure.
+
+**Fix:** Pass a literal object or a constant object/computation the build can evaluate.
+
+{/* probe: global-object after */}
+
+```tsx
+import { globalCss } from '@devup-ui/react'
+globalCss({ body: { color: 'red' } })
+```
+
+### Unknown keyframe spread
+
+**API:** css / globalCss / keyframes. **Message pattern:**
+
+```text
+`keyframes()` cannot use `<code>` at build time: its values must be literals, theme tokens or constants, or be computed from them
+```
+
+**Trigger:**
+
+{/* probe: keyframes-spread before */}
+
+```tsx-error
+import { keyframes } from '@devup-ui/react';
+export const fade = keyframes({ ...frames });
+```
+
+**Why:** The build must know the names and declarations of every frame.
+
+**Fix:** Write the frames explicitly or resolve them from a constant object.
+
+{/* probe: keyframes-spread after */}
+
+```tsx
+import { keyframes } from '@devup-ui/react'
+export const fade = keyframes({ from: { opacity: 0 }, to: { opacity: 1 } })
+```
+
+### Uncompilable composition argument
+
+**API:** css / globalCss / keyframes. **Message pattern:**
+
+```text
+Cannot compose `<styles>` at build time: each style must be a rule object, a class, or a condition choosing between them
+```
+
+**Trigger:**
+
+{/* probe: css-compose before */}
+
+```tsx-error
+import { css } from '@devup-ui/react';
+export const card = css(getStyles());
+```
+
+**Why:** The build cannot discover the keys of an unknown function result.
+
+**Fix:** Compose known rule objects, classes, or conditions choosing between those forms. A helper that is deterministic and build-readable is allowed.
+
+{/* probe: css-compose after */}
+
+```tsx
+import { css } from '@devup-ui/react'
+export const card = css({ color: 'red' })
+```
+
+### Runtime selector or property-name interpolation
+
+**API:** css / globalCss / keyframes. **Message pattern:**
+
+```text
+Cannot place `<expression>` at build time: an interpolation in a selector or a property name must be a literal or a constant
+```
+
+**Trigger:**
+
+{/* probe: template-selector before */}
+
+```tsx-error
+import { css } from '@devup-ui/react';
+export const card = css`& ${selector} { color: red; }`;
+```
+
+**Why:** The build cannot put a dynamic expression into selector or property-name syntax.
+
+**Fix:** Use literal text or a build-readable constant. This also applies to styled templates.
+
+{/* probe: template-selector after */}
+
+```tsx
+import { css } from '@devup-ui/react'
+export const card = css`
+  & > p {
+    color: red;
+  }
+`
+```
+
+### Style object changed by other code
+
+**API:** css / globalCss / keyframes. **Message pattern:**
+
+```text
+`css()` cannot use `<code>` at build time: its styles must be an object literal or a constant object, or be computed from constants
+`<binding>` is changed here, so the build cannot read it as a constant
+```
+
+**Trigger:**
+
+{/* probe: changed-object before */}
+
+```tsx-error
+import { css } from '@devup-ui/react';
+const rules = { color: 'red' };
+rules.color = color;
+export const card = css(rules);
+```
+
+**Why:** A const binding does not make a mutated object a fixed stylesheet value; the error may include a note locating the mutation.
+
+**Fix:** Do not mutate the style object. Put the dynamic value on an element or build a new constant object from static values.
+
+{/* probe: changed-object after */}
+
+```tsx
+import { css } from '@devup-ui/react'
+const rules = { color: 'red' }
+export const card = css(rules)
+```
+
+### Runtime styles object in Global
+
+**API:** css / globalCss / keyframes. **Message pattern:**
+
+```text
+`<Global>` cannot use `<code>` at build time: its values must be literals, theme tokens or constants
+```
+
+**Trigger:**
+
+{/* probe: global-element-object before */}
+
+```tsx-error
+import { Global } from '@emotion/react';
+export const App = () => <Global styles={rules} />;
+```
+
+**Why:** Global cannot discover selectors or declarations in an opaque runtime object.
+
+**Fix:** Write a known rule object or resolve it from a module-level constant.
+
+{/* probe: global-element-object after */}
+
+```tsx
+import { Global } from '@emotion/react'
+export const App = () => <Global styles={{ body: { color: 'red' } }} />
+```
+
+### Invalid selector in css()
+
+**API:** css / globalCss / keyframes. **Message pattern:**
+
+```text
+`css()` cannot use `<code>` at build time: a selector takes styles, an object such as `{ color: 'red' }` or CSS text such as `color: red`
+```
+
+**Trigger:**
+
+{/* probe: selector-css-api before */}
+
+```tsx-error
+import { css } from '@devup-ui/react';
+export const card = css({ _focus: 'red' });
+```
+
+**Why:** A selector value must contain declarations, not an arbitrary string.
+
+**Fix:** Use a style object or valid CSS declaration text; the same selector checks apply inside css, styled, and globalCss.
+
+{/* probe: selector-css-api after */}
+
+```tsx
+import { css } from '@devup-ui/react'
+export const card = css({ _focus: { color: 'red' } })
+```
+
+### Invalid global selector spelling
+
+**API:** css / globalCss / keyframes. **Message pattern:**
+
+```text
+`globalCss()` cannot use `<code>` at build time: a selector key names a pseudo-class or pseudo-element, as `_hover` or `hover`, or is a selector, as `&:hover`, `& > p` or `.parent &`
+```
+
+**Trigger:**
+
+{/* probe: selector-global-api before */}
+
+```tsx-error
+import { globalCss } from '@devup-ui/react';
+globalCss({ _nope: { color: 'red' } });
+```
+
+**Why:** An unknown pseudo name cannot be emitted as a useful global selector.
+
+**Fix:** Use a valid global selector, or a supported pseudo selector in the appropriate rule object.
+
+{/* probe: selector-global-api after */}
+
+```tsx
+import { globalCss } from '@devup-ui/react'
+globalCss({ body: { color: 'red' } })
+```
+
+## styled
+
+### Invalid styled factory shape
+
+**API:** styled. **Message pattern:**
+
+```text
+`styled()` cannot use `<code>` at build time: it renders a tag, a component or a value naming one, with rule objects or CSS text
+```
+
+**Trigger:**
+
+{/* probe: styled-factory before */}
+
+```tsx-error
+import { styled } from '@devup-ui/react';
+export const Card = styled(123)({ color: 'red' });
+```
+
+**Why:** The styled factory must know what tag or component it renders and which arguments are rules.
+
+**Fix:** Provide a tag/component first, then rule objects or CSS text.
+
+{/* probe: styled-factory after */}
+
+```tsx
+import { styled } from '@devup-ui/react'
+export const Card = styled('div')({ color: 'red' })
+```
+
+### Runtime whole rule object
+
+**API:** styled. **Message pattern:**
+
+```text
+`styled()` cannot use `<code>` at build time: its styles must be an object literal or a constant object, or be computed from constants
+```
+
+**Trigger:**
+
+{/* probe: styled-object before */}
+
+```tsx-error
+import { styled } from '@devup-ui/react';
+export const Card = styled.div({ _hover: rules });
+```
+
+**Why:** A whole runtime rule object has unknown keys, unlike a runtime value of a known property.
+
+**Fix:** Keep the rule structure explicit. For runtime values, use a style prop such as &lt;Box \_hover=\{\{ color \}\} /&gt;.
+
+{/* probe: styled-object after */}
+
+```tsx
+import { styled } from '@devup-ui/react'
+export const Card = styled.div({ _hover: { color: 'red' } })
+```
+
+### Uncompilable styled composition
+
+**API:** styled. **Message pattern:**
+
+```text
+Cannot compose `<styles>` at build time: each style must be a rule object, a class, or a condition choosing between them
+```
+
+**Trigger:**
+
+{/* probe: styled-compose before */}
+
+```tsx-error
+import { styled } from '@devup-ui/react';
+export const Card = styled.div({ color: 'red' }, getStyles());
+```
+
+**Why:** An unknown function result cannot be split into stylesheet declarations.
+
+**Fix:** Compose known objects/classes or conditions selecting them; express runtime differences as props.
+
+{/* probe: styled-compose after */}
+
+```tsx
+import { styled } from '@devup-ui/react'
+export const Card = styled.div({ color: 'red' }, { padding: '4px' })
+```
+
+### Unsupported shouldForwardProp predicate
+
+**API:** styled. **Message pattern:**
+
+```text
+`styled()` cannot use `<code>` at build time: `shouldForwardProp` must be a function of the prop name that compares it with strings, `[...].includes(prop)`, `prop.startsWith(...)` or `isPropValid(prop)`, joined by `!`, `&&` and `||`
+```
+
+**Trigger:**
+
+{/* probe: styled-forward before */}
+
+```tsx-error
+import { styled } from '@devup-ui/react';
+export const Card = styled.div.withConfig({ shouldForwardProp: name => check(name) })({ color: 'red' });
+```
+
+**Why:** The build evaluates the filter, so arbitrary runtime predicates cannot decide which props pass to the element.
+
+**Fix:** Compare with strings, use includes, startsWith, or isPropValid, and combine them with !, &&, or ||.
+
+{/* probe: styled-forward after */}
+
+```tsx
+import { styled } from '@devup-ui/react'
+export const Card = styled.div.withConfig({
+  shouldForwardProp: (name) => name !== 'tone',
+})({ color: 'red' })
+```
+
+### Invalid selector in styled()
+
+**API:** styled. **Message pattern:**
+
+```text
+`styled()` cannot use `<code>` at build time: a selector key names a pseudo-class or pseudo-element, as `_hover` or `hover`, or is a selector, as `&:hover`, `& > p` or `.parent &`
+```
+
+**Trigger:**
+
+{/* probe: selector-styled-api before */}
+
+```tsx-error
+import { styled } from '@devup-ui/react';
+export const Card = styled.div({ selectors: { nope: { color: 'red' } } });
+```
+
+**Why:** The compiler cannot emit an unknown shorthand selector name.
+
+**Fix:** Use a supported pseudo name or a full selector containing &.
+
+{/* probe: selector-styled-api after */}
+
+```tsx
+import { styled } from '@devup-ui/react'
+export const Card = styled.div({ selectors: { '&:hover': { color: 'red' } } })
+```
+
+## Emotion css prop and ClassNames
+
+### Unsupported css prop value
+
+**API:** Emotion css prop and ClassNames. **Message pattern:**
+
+```text
+`css` on `<div>` cannot use `<code>` at build time: it must be a style object, CSS text, a class `css()` gives, or a function of the theme giving one, or an array or condition of them
+```
+
+**Trigger:**
+
+{/* probe: css-prop-value before */}
+
+```tsx-error
+import { css } from '@emotion/react';
+export const App = () => <div css={getStyles()} />;
+```
+
+**Why:** The css prop needs a known rule structure, CSS text, or class, not an opaque runtime computation.
+
+**Fix:** Use a style object, CSS text, a class from css(), a theme function giving one, or an array/condition of these.
+
+{/* probe: css-prop-value after */}
+
+```tsx
+export const App = () => <div css={{ color: 'red' }} />
+```
+
+### Local style object hidden behind a binding
+
+**API:** Emotion css prop and ClassNames. **Message pattern:**
+
+```text
+`css` on `<div>` cannot use `<code>` at build time: a style object it composes must be written in it, or declared with `const` at the top level of the module, where the build reads it
+```
+
+**Trigger:**
+
+{/* probe: css-prop-local before */}
+
+```tsx-error
+import { css } from '@emotion/react';
+export function App() { const rules = { color: 'red' }; return <div css={rules} />; }
+```
+
+**Why:** The composition path reads module-level const objects; a local object cannot be mistaken for a class string.
+
+**Fix:** Write the object directly in css, or declare it with const at the module top level.
+
+{/* probe: css-prop-local after */}
+
+```tsx
+const rules = { color: 'red' }
+export function App() {
+  return <div css={rules} />
+}
+```
+
+### css prop overrides an opaque styled component
+
+**API:** Emotion css prop and ClassNames. **Message pattern:**
+
+```text
+`css` on `<Card>` overrides styles `Card` sets, which the build orders only for a styled component rendering a tag with no attrs or props read, given no spread, `as` or `forwardedAs`: move these styles into `styled(Card)(...)`
+```
+
+**Trigger:**
+
+{/* probe: css-prop-override before */}
+
+```tsx-error
+import { css } from '@emotion/react';
+import styled from '@emotion/styled';
+const Card = styled.div.attrs({ title: 'card' })({ color: 'red' });
+export const App = () => <Card css={{ color: 'blue' }} />;
+```
+
+**Why:** Ordering is known only for a static styled tag with no attrs, props reads, spread, as, or forwardedAs.
+
+**Fix:** Move the override into styled(Card)(...). A non-overlapping css prop does not need this ordering.
+
+{/* probe: css-prop-override after */}
+
+```tsx
+import '@emotion/react'
+
+import styled from '@emotion/styled'
+const Card = styled.div.attrs({ title: 'card' })({ color: 'red' })
+const BlueCard = styled(Card)({ color: 'blue' })
+export const App = () => <BlueCard />
+```
+
+### ClassNames child cannot be compiled
+
+**API:** Emotion css prop and ClassNames. **Message pattern:**
+
+```text
+`<ClassNames>` cannot use `<code>` at build time: it takes only a child function of `{ css, cx, theme }` giving what it renders at once
+```
+
+**Trigger:**
+
+{/* probe: class-child before */}
+
+```tsx-error
+import { ClassNames } from '@emotion/react';
+export const App = () => <ClassNames>{render}</ClassNames>;
+```
+
+**Why:** ClassNames is erased by compiling a single immediate child function; arbitrary children, attributes, async callbacks, and statement blocks cannot be erased that way.
+
+**Fix:** Use one child function taking only \{ css, cx, theme \} and returning what it renders immediately; remove ClassNames attributes.
+
+{/* probe: class-child after */}
+
+```tsx
+import { ClassNames } from '@emotion/react'
+export const App = () => (
+  <ClassNames>
+    {({ css }) => <div className={css({ color: 'red' })} />}
+  </ClassNames>
+)
+```
+
+### ClassNames helper escapes its call
+
+**API:** Emotion css prop and ClassNames. **Message pattern:**
+
+```text
+`<ClassNames>` cannot use `<code>` at build time: the `css` and `cx` its child function takes can only be called, as the build compiles each call
+```
+
+**Trigger:**
+
+{/* probe: class-read before */}
+
+```tsx-error
+import { css, ClassNames } from '@emotion/react';
+export const App = () => <ClassNames>{({ css }) => <div ref={css} />}</ClassNames>;
+```
+
+**Why:** The child helpers exist only while the build compiles their direct calls.
+
+**Fix:** Call css/cx directly inside the child rather than passing, storing, or returning either helper.
+
+{/* probe: class-read after */}
+
+```tsx
+import { ClassNames } from '@emotion/react'
+export const App = () => (
+  <ClassNames>
+    {({ css }) => <div className={css({ color: 'red' })} />}
+  </ClassNames>
+)
+```
+
+### ClassNames composes an unknown call
+
+**API:** Emotion css prop and ClassNames. **Message pattern:**
+
+```text
+`<ClassNames>` cannot use `<code>` at build time: `css` and `cx` compose only style objects, CSS text, classes, calls of them, or arrays or conditions of these
+```
+
+**Trigger:**
+
+{/* probe: class-part before */}
+
+```tsx-error
+import { ClassNames } from '@emotion/react';
+export const App = () => <ClassNames>{({ cx }) => <div className={cx(getClass())} />}</ClassNames>;
+```
+
+**Why:** The ClassNames composition reader cannot classify an arbitrary call as a class or style object.
+
+**Fix:** Compute the class outside the child and pass its binding, or pass known objects/text/classes and direct css/cx calls.
+
+{/* probe: class-part after */}
+
+```tsx
+import { ClassNames } from '@emotion/react'
+export const App = () => (
+  <ClassNames>{({ cx }) => <div className={cx(className)} />}</ClassNames>
+)
+```
+
+### ClassNames class map is not a data map
+
+**API:** Emotion css prop and ClassNames. **Message pattern:**
+
+```text
+`<ClassNames>` cannot use `<code>` at build time: an object `cx` takes must give each class a condition, as `{ name: condition }`
+```
+
+**Trigger:**
+
+{/* probe: class-map before */}
+
+```tsx-error
+import { ClassNames } from '@emotion/react';
+export const App = ({ classes }) => <ClassNames>{({ cx }) => <div className={cx({ ...classes })} />}</ClassNames>;
+```
+
+**Why:** A ClassNames class map must expose every class and its condition; opaque spreads/getters/methods hide those entries.
+
+**Fix:** Use ordinary \{ name: condition \} entries. Computed class keys are allowed when written explicitly.
+
+{/* probe: class-map after */}
+
+```tsx
+import { ClassNames } from '@emotion/react'
+export const App = ({ active }) => (
+  <ClassNames>{({ cx }) => <div className={cx({ active })} />}</ClassNames>
+)
+```
+
+### CSS interpolation is neither value nor mixin
+
+**API:** Emotion css prop and ClassNames. **Message pattern:**
+
+```text
+`css` on `<div>` cannot use `<code>` at build time: an interpolation in CSS text must be a value, or a mixin standing where a declaration would
+```
+
+**Trigger:**
+
+{/* probe: mixin-placement before */}
+
+```tsx-error
+import { css } from '@emotion/react';
+export const App = ({ selector }) => <div css={`& ${selector} { color: red; }`} />;
+```
+
+**Why:** An expression in selector/property syntax cannot become a declaration value or a separable mixin.
+
+**Fix:** Keep selectors and property names literal or constant; place dynamic values after a property colon.
+
+{/* probe: mixin-placement after */}
+
+```tsx
+export const App = () => (
+  <div
+    css={`
+      & > p {
+        color: red;
+      }
+    `}
+  />
+)
+```
+
+### Mixin inside a nested rule
+
+**API:** Emotion css prop and ClassNames. **Message pattern:**
+
+```text
+`css` on `<div>` cannot use `<code>` at build time: a mixin must stand outside nested rules, where the parts it composes with can be split
+```
+
+**Trigger:**
+
+{/* probe: nested-mixin before */}
+
+```tsx-error
+import { css } from '@emotion/react';
+export const App = ({ rules }) => <div css={css`&:hover { ${rules}; }`} />;
+```
+
+**Why:** The compiler splits mixins into composition parts only outside nested rules.
+
+**Fix:** Write the nested rule structure explicitly, or move a known mixin to the top-level declaration position.
+
+{/* probe: nested-mixin after */}
+
+```tsx
+export const App = ({ color }) => <div css={{ '&:hover': { color } }} />
+```
+
+### Call cx instead of tagging a template
+
+**API:** Emotion css prop and ClassNames. **Message pattern:**
+
+```text
+`cx()` cannot use `<code>` at build time: call it with class names, as in `cx('a', 'b')`
+```
+
+**Trigger:**
+
+{/* probe: cx-template before */}
+
+```tsx-error
+import * as E from '@emotion/css';
+export const a = E.cx`a b`;
+```
+
+**Why:** cx takes class-name arguments, not tagged CSS or class templates.
+
+**Fix:** Use cx with explicit class string arguments.
+
+{/* probe: cx-template after */}
+
+```tsx
+import * as E from '@emotion/css'
+export const a = E.cx('a', 'b')
+```
+
+### Call merge instead of tagging a template
+
+**API:** Emotion css prop and ClassNames. **Message pattern:**
+
+```text
+`merge()` cannot use `<code>` at build time: call it with class names, as in `cx('a', 'b')`
+```
+
+**Trigger:**
+
+{/* probe: merge-template before */}
+
+```tsx-error
+import * as E from '@emotion/css';
+export const a = E.merge`a b`;
+```
+
+**Why:** merge takes one class string, not a tagged template.
+
+**Fix:** Pass the template contents as one ordinary string argument.
+
+{/* probe: merge-template after */}
+
+```tsx
+import * as E from '@emotion/css'
+export const a = E.merge('a b')
+```
+
+### Replace class-map setters with condition properties
+
+**API:** Emotion css prop and ClassNames. **Message pattern:**
+
+```text
+`cx()` cannot use `<code>` at build time: a class map entry must be written `name: condition`, not as a getter, setter or method
+```
+
+**Trigger:**
+
+{/* probe: map-setter before */}
+
+```tsx-error
+import {cx} from '@emotion/css';
+export const a = () => cx({set b(v){}});
+```
+
+**Why:** A cx class map describes class-name conditions; accessors and methods are not condition entries.
+
+**Fix:** Provide an explicit b: on condition instead of a setter.
+
+{/* probe: map-setter after */}
+
+```tsx
+import { cx } from '@emotion/css'
+export const a = (on) => cx({ b: on })
+```
+
+### Do not spread unresolved cx arguments
+
+**API:** Emotion css prop and ClassNames. **Message pattern:**
+
+```text
+`cx()` cannot use `<code>` at build time: write every entry out, as its keys must be known
+```
+
+**Trigger:**
+
+{/* probe: cx-spread before */}
+
+```tsx-error
+import {cx} from '@emotion/css';
+export const a = list => cx(...list);
+```
+
+**Why:** The build cannot enumerate entries of an unresolved runtime spread.
+
+**Fix:** For the illustrated fixed two-class shape, declare and pass each class argument explicitly; arbitrary runtime lists need a runtime class-string join.
+
+{/* probe: cx-spread after */}
+
+```tsx
+import { cx } from '@emotion/css'
+export const a = (first, second) => cx(first, second)
+```
+
+### Join runtime lists before calling merge
+
+**API:** Emotion css prop and ClassNames. **Message pattern:**
+
+```text
+`merge()` cannot use `<code>` at build time: write every entry out, as its keys must be known
+```
+
+**Trigger:**
+
+{/* probe: merge-spread before */}
+
+```tsx-error
+import {merge} from '@emotion/css';
+export const a = list => merge(...list);
+```
+
+**Why:** The build cannot enumerate entries of an unresolved runtime spread.
+
+**Fix:** Join the list into one class string, then pass that single string to merge.
+
+{/* probe: merge-spread after */}
+
+```tsx
+import { merge } from '@emotion/css'
+export const a = (list) => merge(list.join(' '))
+```
+
+### Give merge exactly one argument, even for no classes
+
+**API:** Emotion css prop and ClassNames. **Message pattern:**
+
+```text
+`merge()` cannot use `<code>` at build time: it takes one class string
+```
+
+**Trigger:**
+
+{/* probe: merge-zero before */}
+
+```tsx-error
+import {merge} from '@emotion/css';
+export const a = merge();
+```
+
+**Why:** merge has a one-class-string argument contract.
+
+**Fix:** Pass an empty string for an intentionally empty result.
+
+{/* probe: merge-zero after */}
+
+```tsx
+import { merge } from '@emotion/css'
+export const a = merge('')
+```
+
+### Use build-time values in css rules
+
+**API:** Emotion css prop and ClassNames. **Message pattern:**
+
+```text
+`css()` cannot use `<code>` at build time: its values must be literals, theme tokens or constants, or be computed from them
+```
+
+**Trigger:**
+
+{/* probe: css-runtime-value before */}
+
+```tsx-error
+import * as E from '@emotion/css';
+export const a = E.css({color:unknown});
+```
+
+**Why:** There is no rendered element on which this compile-time API can place a dynamic CSS variable.
+
+**Fix:** Replace the unresolved value with a literal, theme token or constant.
+
+{/* probe: css-runtime-value after */}
+
+```tsx
+import * as E from '@emotion/css'
+export const a = E.css({ color: 'red' })
+```
+
+### Use build-time values in keyframe rules
+
+**API:** Emotion css prop and ClassNames. **Message pattern:**
+
+```text
+`keyframes()` cannot use `<code>` at build time: its values must be literals, theme tokens or constants, or be computed from them
+```
+
+**Trigger:**
+
+{/* probe: keyframes-runtime-value before */}
+
+```tsx-error
+import * as E from '@emotion/css';
+export const a = E.keyframes({from:{opacity:unknown}});
+```
+
+**Why:** There is no rendered element on which this compile-time API can place a dynamic CSS variable.
+
+**Fix:** Use a literal opacity value in the keyframe.
+
+{/* probe: keyframes-runtime-value after */}
+
+```tsx
+import * as E from '@emotion/css'
+export const a = E.keyframes({ from: { opacity: 0 } })
+```
+
+### Use build-time values in injected global rules
+
+**API:** Emotion css prop and ClassNames. **Message pattern:**
+
+```text
+`globalCss()` cannot use `<code>` at build time: its values must be literals, theme tokens or constants, or be computed from them
+```
+
+**Trigger:**
+
+{/* probe: global-runtime-value before */}
+
+```tsx-error
+import * as E from '@emotion/css';
+E.injectGlobal({body:{color:unknown}});
+```
+
+**Why:** There is no rendered element on which this compile-time API can place a dynamic CSS variable.
+
+**Fix:** Use a literal global color value.
+
+{/* probe: global-runtime-value after */}
+
+```tsx
+import * as E from '@emotion/css'
+E.injectGlobal({ body: { color: 'red' } })
+```
+
+### Do not pass mutated rule objects to css
+
+**API:** Emotion css prop and ClassNames. **Message pattern:**
+
+```text
+`css()` cannot use `<code>` at build time: its styles must be an object literal or a constant object, or be computed from constants
+`<binding>` is changed here, so the build cannot read it as a constant
+```
+
+**Trigger:**
+
+{/* probe: css-mutated-object before */}
+
+```tsx-error
+import * as E from '@emotion/css';
+const rules = {color:'red'};
+rules.color = 'blue';
+export const a = E.css(rules);
+```
+
+**Why:** A rule object changed by running code is not a build-time constant.
+
+**Fix:** Construct the final rule object without mutations before the css call.
+
+{/* probe: css-mutated-object after */}
+
+```tsx
+import * as E from '@emotion/css'
+const rules = { color: 'blue' }
+export const a = E.css(rules)
+```
+
+### Compose known rule objects instead of spreading runtime styles
+
+**API:** Emotion css prop and ClassNames. **Message pattern:**
+
+```text
+Cannot compose `<styles>` at build time: each style must be a rule object, a class, or a condition choosing between them
+```
+
+**Trigger:**
+
+{/* probe: css-composition before */}
+
+```tsx-error
+import * as E from '@emotion/css';
+export const a = styles => E.css(...styles);
+```
+
+**Why:** Each composed style must have a build-time-readable rule or class shape.
+
+**Fix:** For a known composition, write each rule object out explicitly.
+
+{/* probe: css-composition after */}
+
+```tsx
+import * as E from '@emotion/css'
+export const a = E.css({ color: 'red' }, { padding: 8 })
+```
+
+### Keep template selector interpolations constant
+
+**API:** Emotion css prop and ClassNames. **Message pattern:**
+
+```text
+Cannot place `<expression>` at build time: an interpolation in a selector or a property name must be a literal or a constant
+```
+
+**Trigger:**
+
+{/* probe: css-selector-interpolation before */}
+
+```tsx-error
+import * as E from '@emotion/css';
+export const a = E.css`.${unknown}{color:red}`;
+```
+
+**Why:** A runtime selector interpolation cannot determine the CSS rule to emit.
+
+**Fix:** Write the selector as literal text, or interpolate a build-time constant.
+
+{/* probe: css-selector-interpolation after */}
+
+```tsx
+import * as E from '@emotion/css'
+export const a = E.css`.selected{color:red}`
+```
+
+## Theme reads
+
+### Whole-theme or computed theme read in styled
+
+**API:** Theme reads. **Message pattern:**
+
+```text
+`styled()` cannot use `<code>` at build time: a theme read must be a path of names or literal keys, such as `p => p.theme.colors.brand` or `({ theme }) => theme.space[2]`, which reads the CSS variable `ThemeProvider` declares; compute other values outside the style
+```
+
+**Trigger:**
+
+{/* probe: styled-theme-old before */}
+
+```tsx-error
+import styled from 'styled-components';
+export const Card = styled.div`color: ${props => props.theme};`;
+```
+
+**Why:** The compatibility theme is represented by CSS variables, not a runtime theme object available to style functions.
+
+**Fix:** Read a path of property names or literal keys, such as props.theme.colors.brand or theme.space[2]. Compute other values outside the style.
+
+{/* probe: styled-theme-old after */}
+
+```tsx
+import styled from 'styled-components'
+export const Card = styled.div`
+  color: ${(props) => props.theme.colors.brand};
+`
+```
+
+### Theme function does not immediately return rules
+
+**API:** Theme reads. **Message pattern:**
+
+```text
+`css` on `<div>` cannot use `<code>` at build time: a function of the theme must give its rules at once, as `theme => ({ ... })`
+```
+
+**Trigger:**
+
+{/* probe: theme-function before */}
+
+```tsx-error
+import { css } from '@emotion/react';
+export const App = () => <div css={theme => { const rules = { color: theme.color }; return rules; }} />;
+```
+
+**Why:** The build rewrites the function result and needs one immediate expression or a single return statement.
+
+**Fix:** Use theme =&gt; (\{ ... \}) or a non-async function with a single return. Keep other computations outside.
+
+{/* probe: theme-function after */}
+
+```tsx
+export const App = () => <div css={(theme) => ({ color: theme.color })} />
+```
+
+### Theme read outside a declaration value
+
+**API:** Theme reads. **Message pattern:**
+
+```text
+`css` on `<div>` cannot use `<code>` at build time: it may read the theme only as `theme.a.b` in a value, which becomes the CSS variable `var(--a-b)` the `ThemeProvider` sets
+```
+
+**Trigger:**
+
+{/* probe: theme-read before */}
+
+```tsx-error
+import { css } from '@emotion/react';
+export const App = () => <div css={theme => ({ color: theme.pick() })} />;
+```
+
+**Why:** Only a static path in a declaration value maps to a ThemeProvider CSS variable.
+
+**Fix:** Read theme.a.b or a literal index/key. Do not read the whole object, call it, use runtime keys, or use theme values as selector names.
+
+{/* probe: theme-read after */}
+
+```tsx
+export const App = () => (
+  <div css={(theme) => ({ color: theme.colors.brand })} />
+)
+```
+
+### ClassNames theme read outside CSS
+
+**API:** Theme reads. **Message pattern:**
+
+```text
+`<ClassNames>` cannot use `<code>` at build time: it may read the theme only as `theme.a.b` in a value, which becomes the CSS variable `var(--a-b)` the `ThemeProvider` sets
+```
+
+**Trigger:**
+
+{/* probe: class-theme-read before */}
+
+```tsx-error
+import { ClassNames } from '@emotion/react';
+export const App = () => <ClassNames>{({ theme }) => <div title={theme.name} />}</ClassNames>;
+```
+
+**Why:** The ClassNames theme binding only becomes a CSS variable when used as a style value, not as an ordinary HTML attribute.
+
+**Fix:** Use a static theme path inside css(), or pass non-style data from a real runtime binding outside ClassNames.
+
+{/* probe: class-theme-read after */}
+
+```tsx
+import { ClassNames } from '@emotion/react'
+export const App = () => (
+  <ClassNames>
+    {({ css, theme }) => <div className={css({ color: theme.colors.brand })} />}
+  </ClassNames>
+)
+```
+
+## Imports and barrels
+
+### Reading an API imported through a barrel as a runtime value
+
+**API:** Imports and barrels. **Message pattern:**
+
+```text
+`<binding>` is read at runtime, where it does not exist: the build compiles it only where it is called or rendered
+```
+
+**Trigger:**
+
+{/* probe: runtime-barrel-api before */}
+
+```tsx-error
+import { css } from './ui';
+export const a = [css];
+```
+
+**Companion-module fixture:** The imports above are resolved from these additional source modules. Before/after keys, where present, identify the failing and repaired resolver inputs.
+
+```json
+{
+  "ui.ts": "export { css } from '@devup-ui/react';\n"
+}
+```
+
+**Why:** Following a barrel does not make a compile-time API into a runtime value.
+
+**Fix:** Call the resolved API; the barrel import itself is supported.
+
+{/* probe: runtime-barrel-api after */}
+
+```tsx
+import { css } from './ui'
+export const a = css({ color: 'red' })
+```
+
+### Use a namespace instead of a root default import
+
+**API:** Imports and barrels. **Message pattern:**
+
+```text
+`@emotion/css()` cannot use `<code>` at build time: the root module has no default export; use named or namespace imports
+```
+
+**Trigger:**
+
+{/* probe: default-import before */}
+
+```tsx-error
+import E from '@emotion/css';
+```
+
+**Why:** The @emotion/css root module has no default export.
+
+**Fix:** Import the namespace and call its css member directly.
+
+{/* probe: default-import after */}
+
+```tsx
+import * as E from '@emotion/css'
+export const a = E.css({ color: 'red' })
+```
+
+### Do not import the named default export
+
+**API:** Imports and barrels. **Message pattern:**
+
+```text
+`@emotion/css()` cannot use `<code>` at build time: the root module has no default export
+```
+
+**Trigger:**
+
+{/* probe: named-default before */}
+
+```tsx-error
+import {default as E} from '@emotion/css';
+```
+
+**Why:** The root has no export named default either.
+
+**Fix:** Import the named css API and export its compiled result.
+
+{/* probe: named-default after */}
+
+```tsx
+import { css } from '@emotion/css'
+export const a = css({ color: 'red' })
+```
+
+### Do not forward every Emotion export
+
+**API:** Imports and barrels. **Message pattern:**
+
+```text
+`@emotion/css()` cannot use `<code>` at build time: a namespace containing styling functions cannot be re-exported
+```
+
+**Trigger:**
+
+{/* probe: star-reexport before */}
+
+```tsx-error
+export * from '@emotion/css';
+```
+
+**Why:** Styling functions are compiled away and cannot be provided as runtime exports.
+
+**Fix:** Explicitly re-export only runtime members such as flush and cache.
+
+{/* probe: star-reexport after */}
+
+```tsx
+export { cache, flush } from '@emotion/css'
+```
+
+### Export a compiled class, not the css function
+
+**API:** Imports and barrels. **Message pattern:**
+
+```text
+`@emotion/css()` cannot use `<code>` at build time: styling functions cannot be re-exported
+```
+
+**Trigger:**
+
+{/* probe: style-reexport before */}
+
+```tsx-error
+export {css} from '@emotion/css';
+```
+
+**Why:** Styling functions are compiled away and cannot be provided as runtime exports.
+
+**Fix:** Import css locally, call it, and export the resulting class string.
+
+{/* probe: style-reexport after */}
+
+```tsx
+import { css } from '@emotion/css'
+export const red = css({ color: 'red' })
+```
+
+### Do not export a require import-equals namespace
+
+**API:** Imports and barrels. **Message pattern:**
+
+```text
+`@emotion/css()` cannot use `<code>` at build time: a namespace containing styling functions cannot be exported
+```
+
+**Trigger:**
+
+{/* probe: export-import-equals before */}
+
+```tsx-error
+export import E = require('@emotion/css');
+```
+
+**Why:** The namespace contains compile-time styling functions, not a general-purpose runtime object.
+
+**Fix:** Replace the namespace export with explicit runtime-only ES re-exports.
+
+{/* probe: export-import-equals after */}
+
+```tsx
+export { cache, flush } from '@emotion/css'
+```
+
+### Keep namespace aliases local
+
+**API:** Imports and barrels. **Message pattern:**
+
+```text
+`@emotion/css()` cannot use `<code>` at build time: namespace and styling function bindings cannot be exported
+```
+
+**Trigger:**
+
+{/* probe: export-namespace-alias before */}
+
+```tsx-error
+import * as E from '@emotion/css';
+export const N = E;
+```
+
+**Why:** The namespace contains compile-time styling functions, not a general-purpose runtime object.
+
+**Fix:** Declare the namespace alias locally and export only a compiled class.
+
+{/* probe: export-namespace-alias after */}
+
+```tsx
+import * as E from '@emotion/css'
+const N = E
+export const red = N.css({ color: 'red' })
+```
+
+### Do not export an imported namespace binding
+
+**API:** Imports and barrels. **Message pattern:**
+
+```text
+`@emotion/css()` cannot use `<code>` at build time: a namespace may only be read through statically known members or const aliases
+```
+
+**Trigger:**
+
+{/* probe: export-namespace before */}
+
+```tsx-error
+import * as E from '@emotion/css';
+export {E};
+```
+
+**Why:** The namespace contains compile-time styling functions, not a general-purpose runtime object.
+
+**Fix:** Call a static member and export its compiled result.
+
+{/* probe: export-namespace after */}
+
+```tsx
+import * as E from '@emotion/css'
+export const red = E.css({ color: 'red' })
+```
+
+### Call styling functions without optional invocation
+
+**API:** Imports and barrels. **Message pattern:**
+
+```text
+`@emotion/css()` cannot use `<code>` at build time: styling functions must be called directly, not mutated, exported or passed as values
+```
+
+**Trigger:**
+
+{/* probe: optional-call before */}
+
+```tsx-error
+import * as E from '@emotion/css';
+E.css?.({});
+```
+
+**Why:** An optional call is not a direct compile-time invocation.
+
+**Fix:** Remove optional invocation and call the API directly.
+
+{/* probe: optional-call after */}
+
+```tsx
+import * as E from '@emotion/css'
+export const red = E.css({ color: 'red' })
+```
+
+### Use const for namespace aliases
+
+**API:** Imports and barrels. **Message pattern:**
+
+```text
+`@emotion/css()` cannot use `<code>` at build time: namespace and styling aliases must be simple const bindings
+`@emotion/css()` cannot use `<code>` at build time: a namespace may only be read through statically known members or const aliases
+```
+
+**Trigger:**
+
+{/* probe: let-namespace before */}
+
+```tsx-error
+import * as E from '@emotion/css';
+let N = E;
+```
+
+**Why:** The build follows and eliminates only simple const namespace or styling aliases.
+
+**Fix:** Replace let with const and access a known member.
+
+{/* probe: let-namespace after */}
+
+```tsx
+import * as E from '@emotion/css'
+const N = E
+export const red = N.css({ color: 'red' })
+```
+
+### Use const for styling aliases
+
+**API:** Imports and barrels. **Message pattern:**
+
+```text
+`@emotion/css()` cannot use `<code>` at build time: namespace and styling aliases must be simple const bindings
+`@emotion/css()` cannot use `<code>` at build time: styling functions must be called directly, not mutated, exported or passed as values
+```
+
+**Trigger:**
+
+{/* probe: let-style before */}
+
+```tsx-error
+import * as E from '@emotion/css';
+let c = E.css;
+```
+
+**Why:** The build follows and eliminates only simple const namespace or styling aliases.
+
+**Fix:** Bind the styling member with const and call it directly.
+
+{/* probe: let-style after */}
+
+```tsx
+import * as E from '@emotion/css'
+const c = E.css
+export const red = c({ color: 'red' })
+```
+
+### Name namespace members instead of using rest
+
+**API:** Imports and barrels. **Message pattern:**
+
+```text
+`@emotion/css()` cannot use `<code>` at build time: namespace rest destructuring can expose styling functions
+```
+
+**Trigger:**
+
+{/* probe: rest-destructure before */}
+
+```tsx-error
+import * as E from '@emotion/css';
+const {...rest} = E;
+```
+
+**Why:** Namespace rest can expose styling functions to runtime code.
+
+**Fix:** List only the required runtime-only members explicitly.
+
+{/* probe: rest-destructure after */}
+
+```tsx
+import * as E from '@emotion/css'
+const { flush, cache } = E
+flush()
+console.info(cache)
+```
+
+### Use constant strings for destructuring keys
+
+**API:** Imports and barrels. **Message pattern:**
+
+```text
+`@emotion/css()` cannot use `<code>` at build time: destructuring keys must be constant strings
+```
+
+**Trigger:**
+
+{/* probe: computed-destructure before */}
+
+```tsx-error
+import * as E from '@emotion/css';
+const {[key]: c} = E;
+```
+
+**Why:** The normalizer must determine which API a destructuring property names.
+
+**Fix:** Declare the string key as a const before the destructuring.
+
+{/* probe: computed-destructure after */}
+
+```tsx
+import * as E from '@emotion/css'
+const key = 'css'
+const { [key]: c } = E
+export const red = c({ color: 'red' })
+```
+
+### Do not default a destructured styling function
+
+**API:** Imports and barrels. **Message pattern:**
+
+```text
+`@emotion/css()` cannot use `<code>` at build time: use a plain binding without defaults or nested patterns
+```
+
+**Trigger:**
+
+{/* probe: default-destructure before */}
+
+```tsx-error
+import * as E from '@emotion/css';
+const {css = other} = E;
+```
+
+**Why:** A fallback would give an eliminated macro binding a runtime meaning.
+
+**Fix:** Use a plain binding without a default, then call it directly.
+
+{/* probe: default-destructure after */}
+
+```tsx
+import * as E from '@emotion/css'
+const { css } = E
+export const red = css({ color: 'red' })
+```
+
+### Read only recognized Emotion namespace members
+
+**API:** Imports and barrels. **Message pattern:**
+
+```text
+`@emotion/css()` cannot use `<code>` at build time: use a supported styling API or a runtime-only Emotion export
+```
+
+**Trigger:**
+
+{/* probe: unknown-member before */}
+
+```tsx-error
+import * as E from '@emotion/css';
+E.unknown({});
+```
+
+**Why:** The build recognizes css, cx, merge, keyframes, injectGlobal and the runtime members cache, flush, hydrate, sheet and getRegisteredStyles.
+
+**Fix:** Use a supported styling member such as css.
+
+{/* probe: unknown-member after */}
+
+```tsx
+import * as E from '@emotion/css'
+export const red = E.css({ color: 'red' })
+```
+
+### Initialize namespace aliases in dependency order
+
+**API:** Imports and barrels. **Message pattern:**
+
+```text
+`@emotion/css()` cannot use `<code>` at build time: an alias must be initialized before any read that can run first; declare it above the earliest code that can reach this read
+```
+
+**Trigger:**
+
+{/* probe: early-namespace before */}
+
+```tsx-error
+import * as E from '@emotion/css';
+const N = A;
+const A = E;
+```
+
+**Why:** Eliminating an alias must not hide a read that can occur in its temporal dead zone.
+
+**Fix:** Declare the source namespace alias before aliases derived from it.
+
+{/* probe: early-namespace after */}
+
+```tsx
+import * as E from '@emotion/css'
+const A = E
+const N = A
+export const red = N.css({ color: 'red' })
+```
+
+### Use a statically known namespace API key
+
+**API:** Imports and barrels. **Message pattern:**
+
+```text
+`@emotion/css()` cannot use `<code>` at build time: namespace member keys must be constant strings
+```
+
+**Trigger:**
+
+{/* probe: computed-member before */}
+
+```tsx-error
+import * as E from '@emotion/css';
+E[key]({color:'red'});
+```
+
+**Why:** A runtime key cannot determine which styling import must be generated.
+
+**Fix:** Use a const string key initialized before the read.
+
+{/* probe: computed-member after */}
+
+```tsx
+import * as E from '@emotion/css'
+const key = 'css'
+export const red = E[key]({ color: 'red' })
+```
+
+### Do not optional-chain a namespace styling read
+
+**API:** Imports and barrels. **Message pattern:**
+
+```text
+`@emotion/css()` cannot use `<code>` at build time: optional namespace reads cannot be compiled
+```
+
+**Trigger:**
+
+{/* probe: optional-member before */}
+
+```tsx-error
+import * as E from '@emotion/css';
+E?.css({});
+```
+
+**Why:** Optional namespace styling reads cannot be lowered to unconditional generated imports.
+
+**Fix:** Use a normal static member call.
+
+{/* probe: optional-member after */}
+
+```tsx
+import * as E from '@emotion/css'
+export const red = E.css({ color: 'red' })
+```
+
+### Do not load styling APIs through module.require
+
+**API:** Imports and barrels. **Message pattern:**
+
+```text
+`@emotion/css()` cannot use `<code>` at build time: styling APIs read through require(), import-equals or dynamic import cannot be compiled; use `import * as ns from '@emotion/css'`
+```
+
+**Trigger:**
+
+{/* probe: module-require before */}
+
+```tsx-error
+const E = module.require('@emotion/css');
+E.cx('a');
+```
+
+**Why:** A runtime loader does not provide the static ES imports needed for build-time styling extraction.
+
+**Fix:** Use a static namespace import before calling cx.
+
+{/* probe: module-require after */}
+
+```tsx
+import * as E from '@emotion/css'
+export const a = E.cx('a')
+```
+
+### Await dynamic imports directly for runtime-only use
+
+**API:** Imports and barrels. **Message pattern:**
+
+```text
+`@emotion/css()` cannot use `<code>` at build time: a dynamic import hands out a runtime namespace; `await` it directly for runtime-only members, or use `import * as ns from '@emotion/css'`
+```
+
+**Trigger:**
+
+{/* probe: unawaited-runtime before */}
+
+```tsx-error
+const p = import('@emotion/css');
+```
+
+**Why:** A stored import promise is rejected even if no styling member is visibly read.
+
+**Fix:** Await the import directly and read only a runtime-only member.
+
+{/* probe: unawaited-runtime after */}
+
+```tsx
+const E = await import('@emotion/css')
+E.flush()
+```
+
+### Repair malformed source when diagnostic restoration fails
+
+**API:** Imports and barrels. **Message pattern:**
+
+```text
+`@emotion/css()` cannot use `<code>` at build time: use a supported styling API or a runtime-only Emotion export
+Emotion diagnostic restoration failed: Diagnostics([OxcDiagnostic { inner: OxcDiagnosticInner { message: "Missing initializer in const declaration", labels: [LabeledSpan { label: None, span: Span { start: 61, end: 67 }, primary: false }], help: Some("Add an initializer (e.g. ` = undefined`) here"), note: None, severity: Error, code: OxcCode { scope: None, number: None }, url: None } }])
+```
+
+**Trigger:**
+
+{/* probe: restoration-suffix before */}
+
+```tsx-error
+import * as E from '@emotion/css';
+E.__emotion_user(); const broken;
+```
+
+**Why:** An error expression containing the generated-name prefix invokes original-source diagnostic restoration; malformed source prevents that restoration.
+
+**Fix:** Correct the malformed declaration and use a supported namespace member.
+
+{/* probe: restoration-suffix after */}
+
+```tsx
+import * as E from '@emotion/css'
+export const red = E.css({ color: 'red' })
+```
+
+### Array destructuring a namespace
+
+**API:** Imports and barrels. **Message pattern:**
+
+```text
+`Devup` cannot use `<code>` at build time: read its members by name, as `Devup.css`, `Devup['css']` or `const { css } = Devup`, or import them by name
+```
+
+**Trigger:**
+
+{/* probe: array-destructure before */}
+
+```tsx-error
+import * as Devup from '@devup-ui/react';
+const [a] = Devup;
+```
+
+**Why:** The namespace rewrite requires an exact member or a simple, unmixed object destructure; it cannot rewrite this shape.
+
+**Fix:** Read the desired API by name, rather than destructuring the namespace as an array.
+
+{/* probe: array-destructure after */}
+
+```tsx
+import * as Devup from '@devup-ui/react'
+export const a = Devup.css({ color: 'red' })
+```
+
+### Writing a followed const API alias in a function
+
+**API:** Imports and barrels. **Message pattern:**
+
+```text
+`c` cannot use `<code>` at build time: read its members by name, as `c.css`, `c['css']` or `const { css } = c`, or import them by name
+```
+
+**Trigger:**
+
+{/* probe: mutated-const-alias before */}
+
+```tsx-error
+import { css } from '@devup-ui/react';
+export function f() { const c = css; c = () => 1; return c({ color: "red" }); }
+```
+
+**Why:** A followed alias cannot be reassigned after the rewrite removes its declaration.
+
+**Fix:** Keep the const alias unchanged and call it.
+
+{/* probe: mutated-const-alias after */}
+
+```tsx
+import { css } from '@devup-ui/react'
+export function f() {
+  const c = css
+  return c({ color: 'red' })
+}
+```
+
+### Writing a member through a const namespace alias
+
+**API:** Imports and barrels. **Message pattern:**
+
+```text
+`D` cannot use `<code>` at build time: read its members by name, as `D.css`, `D['css']` or `const { css } = D`, or import them by name
+```
+
+**Trigger:**
+
+{/* probe: namespace-alias-write before */}
+
+```tsx-error
+import * as Devup from '@devup-ui/react';
+const D = Devup;
+D.css = () => 1;
+```
+
+**Why:** Const namespace aliases are followed, so member writes use the same unreadable-namespace diagnostic.
+
+**Fix:** Keep the namespace alias immutable and only read exact members.
+
+{/* probe: namespace-alias-write after */}
+
+```tsx
+import * as Devup from '@devup-ui/react'
+const D = Devup
+export const a = D.css({ color: 'red' })
+```
+
+### Reading a css result before its declaration executes
+
+**API:** Imports and barrels. **Message pattern:**
+
+```text
+`css()` cannot use `<code>` at build time: it is read before `const k = css(…)` runs, so move that declaration above where it is first read
+```
+
+**Trigger:**
+
+{/* probe: early-css-result before */}
+
+```tsx-error
+import { css } from '@devup-ui/react';
+export const a = k;
+const k = css({ color: 'red' });
+```
+
+**Why:** An eager top-level read precedes the const initializer; only deferred function reads of literal style constants may be hoisted.
+
+**Fix:** Move the initializer above the first eager read.
+
+{/* probe: early-css-result after */}
+
+```tsx
+import { css } from '@devup-ui/react'
+const k = css({ color: 'red' })
+export const a = k
+```
+
+### Reading a keyframes result before its declaration executes
+
+**API:** Imports and barrels. **Message pattern:**
+
+```text
+`keyframes()` cannot use `<code>` at build time: it is read before `const k = keyframes(…)` runs, so move that declaration above where it is first read
+```
+
+**Trigger:**
+
+{/* probe: early-keyframes-result before */}
+
+```tsx-error
+import { keyframes } from '@devup-ui/react';
+export const a = k;
+const k = keyframes({ from: { opacity: 0 } });
+```
+
+**Why:** An eager top-level read precedes the const initializer; only deferred function reads of literal style constants may be hoisted.
+
+**Fix:** Move the initializer above the first eager read.
+
+{/* probe: early-keyframes-result after */}
+
+```tsx
+import { keyframes } from '@devup-ui/react'
+const k = keyframes({ from: { opacity: 0 } })
+export const a = k
+```
+
+### Unresolved star re-export in a barrel that reaches Devup UI
+
+**API:** Imports and barrels. **Message pattern:**
+
+```text
+`Foo` cannot use `<code>` at build time: the build cannot follow its re-export of Devup UI (`./missing` cannot be read); import it from the package instead
+```
+
+**Trigger:**
+
+{/* probe: unreadable-star-barrel before */}
+
+```tsx-error
+import { Foo } from './ui';
+export const a = <Foo />;
+```
+
+**Companion-module fixture:** The imports above are resolved from these additional source modules. Before/after keys, where present, identify the failing and repaired resolver inputs.
+
+```json
+{
+  "ui.ts": "export * from './missing';\nexport { Box } from '@devup-ui/react';\n"
+}
+```
+
+**Why:** The barrel mentions the package but the missing re-export cannot be read by the resolver.
+
+**Fix:** Import the desired compile-time member directly from the package, or make the re-export resolvable.
+
+{/* probe: unreadable-star-barrel after */}
+
+```tsx
+import { Box } from '@devup-ui/react'
+export const a = <Box bg="red" />
+```
+
+### Unresolved default re-export reports every value use
+
+**API:** Imports and barrels. **Message pattern:**
+
+```text
+`Page` cannot use `<code>` at build time: the build cannot follow its re-export of Devup UI (`./missing` cannot be read); import it from the package instead
+`Page` cannot use `<code>` at build time: the build cannot follow its re-export of Devup UI (`./missing` cannot be read); import it from the package instead
+```
+
+**Trigger:**
+
+{/* probe: unreadable-default-barrel before */}
+
+```tsx-error
+import Page from './ui';
+export const a = [Page, Page];
+```
+
+**Companion-module fixture:** The imports above are resolved from these additional source modules. Before/after keys, where present, identify the failing and repaired resolver inputs.
+
+```json
+{
+  "ui.ts": "export { default } from './missing';\nexport { Box } from '@devup-ui/react';\n"
+}
+```
+
+**Why:** Each value reference of the opaque default import has its own source location.
+
+**Fix:** Replace the opaque default import with a known named package import.
+
+{/* probe: unreadable-default-barrel after */}
+
+```tsx
+import { Box } from '@devup-ui/react'
+export const a = <Box bg="red" />
+```
+
+### Unresolved member of a barrel namespace
+
+**API:** Imports and barrels. **Message pattern:**
+
+```text
+`UI.nothing` cannot use `<code>` at build time: the build cannot follow its re-export of Devup UI (`./missing` cannot be read); import it from the package instead
+```
+
+**Trigger:**
+
+{/* probe: unreadable-barrel-member before */}
+
+```tsx-error
+import * as UI from './ui';
+export const a = UI.nothing;
+```
+
+**Companion-module fixture:** The imports above are resolved from these additional source modules. Before/after keys, where present, identify the failing and repaired resolver inputs.
+
+```json
+{
+  "ui.ts": "export * from './missing';\nexport { Box } from '@devup-ui/react';\n"
+}
+```
+
+**Why:** The namespace member leads through an unreadable star re-export.
+
+**Fix:** Read a known package export directly rather than an unresolved barrel member.
+
+{/* probe: unreadable-barrel-member after */}
+
+```tsx
+import { Box } from '@devup-ui/react'
+export const a = <Box bg="red" />
+```
+
+### Destructuring an unresolved barrel member
+
+**API:** Imports and barrels. **Message pattern:**
+
+```text
+`{ nothing } = UI` cannot use `<code>` at build time: the build cannot follow its re-export of Devup UI (`./missing` cannot be read); import it from the package instead
+```
+
+**Trigger:**
+
+{/* probe: unreadable-barrel-destructure before */}
+
+```tsx-error
+import * as UI from './ui';
+const { nothing } = UI;
+export const a = nothing;
+```
+
+**Companion-module fixture:** The imports above are resolved from these additional source modules. Before/after keys, where present, identify the failing and repaired resolver inputs.
+
+```json
+{
+  "ui.ts": "export * from './missing';\nexport { Box } from '@devup-ui/react';\n"
+}
+```
+
+**Why:** Destructuring must resolve each compiled member to its package origin.
+
+**Fix:** Import a known member from the package or repair the barrel chain.
+
+{/* probe: unreadable-barrel-destructure after */}
+
+```tsx
+import { Box } from '@devup-ui/react'
+export const a = <Box bg="red" />
+```
+
+### Namespace re-export of a module that itself re-exports Devup UI
+
+**API:** Imports and barrels. **Message pattern:**
+
+```text
+`inner` cannot use `<code>` at build time: the build cannot follow its re-export of Devup UI (`./inner` is a namespace of modules re-exporting `@devup-ui/react`); import it from the package instead
+```
+
+**Trigger:**
+
+{/* probe: nested-barrel-namespace before */}
+
+```tsx-error
+import { inner } from './ui';
+export const a = <inner.Box />;
+```
+
+**Companion-module fixture:** The imports above are resolved from these additional source modules. Before/after keys, where present, identify the failing and repaired resolver inputs.
+
+```json
+{
+  "ui.ts": "export * as inner from './inner';\n",
+  "inner.ts": "export { Box } from '@devup-ui/react';\n"
+}
+```
+
+**Why:** A module namespace whose contents re-export the package is not a single exact package namespace.
+
+**Fix:** Import the component from the package instead of passing through a module namespace.
+
+{/* probe: nested-barrel-namespace after */}
+
+```tsx
+import { Box } from '@devup-ui/react'
+export const a = <Box bg="red" />
+```
+
+### Nested module namespace read through an outer namespace
+
+**API:** Imports and barrels. **Message pattern:**
+
+```text
+`UI.inner` cannot use `<code>` at build time: the build cannot follow its re-export of Devup UI (`./inner` is a namespace of modules re-exporting `@devup-ui/react`); import it from the package instead
+```
+
+**Trigger:**
+
+{/* probe: nested-barrel-member before */}
+
+```tsx-error
+import * as UI from './ui';
+export const a = UI.inner;
+```
+
+**Companion-module fixture:** The imports above are resolved from these additional source modules. Before/after keys, where present, identify the failing and repaired resolver inputs.
+
+```json
+{
+  "ui.ts": "export * as inner from './inner';\n",
+  "inner.ts": "export { Box } from '@devup-ui/react';\n"
+}
+```
+
+**Why:** The outer namespace member names a module namespace re-exporting the package.
+
+**Fix:** Import the exact package member directly.
+
+{/* probe: nested-barrel-member after */}
+
+```tsx
+import { Box } from '@devup-ui/react'
+export const a = <Box bg="red" />
+```
+
+### Destructuring a nested module namespace
+
+**API:** Imports and barrels. **Message pattern:**
+
+```text
+`{ inner } = UI` cannot use `<code>` at build time: the build cannot follow its re-export of Devup UI (`./inner` is a namespace of modules re-exporting `@devup-ui/react`); import it from the package instead
+```
+
+**Trigger:**
+
+{/* probe: nested-barrel-destructure before */}
+
+```tsx-error
+import * as UI from './ui';
+const { inner } = UI;
+export const a = inner;
+```
+
+**Companion-module fixture:** The imports above are resolved from these additional source modules. Before/after keys, where present, identify the failing and repaired resolver inputs.
+
+```json
+{
+  "ui.ts": "export * as inner from './inner';\n",
+  "inner.ts": "export { Box } from '@devup-ui/react';\n"
+}
+```
+
+**Why:** The destructured member is a namespace of modules, rather than a supported exact package origin.
+
+**Fix:** Import the exact package component directly.
+
+{/* probe: nested-barrel-destructure after */}
+
+```tsx
+import { Box } from '@devup-ui/react'
+export const a = <Box bg="red" />
+```
+
+### Mixed compiled and locally declared barrel members
+
+**API:** Imports and barrels. **Message pattern:**
+
+```text
+`UI` cannot use `<code>` at build time: read its members by name, as `UI.css`, `UI['css']` or `const { css } = UI`, or import them by name
+```
+
+**Trigger:**
+
+{/* probe: mixed-barrel-destructure before */}
+
+```tsx-error
+import * as UI from './ui';
+const { Box, own } = UI;
+export const a = <Box>{own}</Box>;
+```
+
+**Companion-module fixture:** The imports above are resolved from these additional source modules. Before/after keys, where present, identify the failing and repaired resolver inputs.
+
+```json
+{
+  "ui.ts": "export { Box } from '@devup-ui/react';\nexport const own = 1;\n"
+}
+```
+
+**Why:** A destructuring declaration containing both compiled imports and retained barrel values cannot be removed as a whole.
+
+**Fix:** Keep local/runtime members in their own destructure and read compiled members by name.
+
+{/* probe: mixed-barrel-destructure after */}
+
+```tsx
+import * as UI from './ui'
+const { own } = UI
+export const a = <UI.Box>{own}</UI.Box>
+```
+
+## vanilla-extract
+
+### Recipes value import
+
+**API:** vanilla-extract. **Message pattern:**
+
+```text
+`@vanilla-extract/recipes` generates CSS that Devup UI does not compile, so with the `@vanilla-extract/css` alias its rules would never reach the stylesheet. Fix: write the styles with `css()`, or set `importAliases: { '@vanilla-extract/css': false }` and build with the vanilla-extract plugin
+```
+
+**Trigger:**
+
+{/* probe: recipes before */}
+
+```tsx-error
+import { recipe } from '@vanilla-extract/recipes';
+export const button = recipe({ base: { color: 'red' }, variants: { size: { small: { padding: 4 }, large: { padding: 8 } } } });
+```
+
+**Why:** On the companion branch, a non-type recipes import while the vanilla CSS alias is active is rejected before stylesheet execution. The authored message includes original filename:line:column. This replaces silent pass-through on the scoped snapshot.
+
+**Fix:** Replace the companion-generated styles with css(); this example covers one selected variant, not recipe runtime behavior.
+
+{/* probe: recipes after */}
+
+```tsx
+import { css } from '@devup-ui/react'
+export const button = css({ color: 'red', padding: '4px' })
+```
+
+### Sprinkles value import
+
+**API:** vanilla-extract. **Message pattern:**
+
+```text
+`@vanilla-extract/sprinkles` generates CSS that Devup UI does not compile, so with the `@vanilla-extract/css` alias its rules would never reach the stylesheet. Fix: write the styles with `css()`, or set `importAliases: { '@vanilla-extract/css': false }` and build with the vanilla-extract plugin
+```
+
+**Trigger:**
+
+{/* probe: sprinkles before */}
+
+```tsx-error
+import { defineProperties, createSprinkles } from '@vanilla-extract/sprinkles';
+const properties = defineProperties({ properties: { color: ['red', 'blue'] } });
+export const sprinkles = createSprinkles(properties);
+export const red = sprinkles({ color: 'red' });
+```
+
+**Why:** On the companion branch, a non-type sprinkles import while the vanilla CSS alias is active is rejected before stylesheet execution. The authored message includes original filename:line:column. This replaces silent pass-through on the scoped snapshot.
+
+**Fix:** Replace the selected style with css(); this is not a full sprinkles runtime API replacement.
+
+{/* probe: sprinkles after */}
+
+```tsx
+import { css } from '@devup-ui/react'
+export const red = css({ color: 'red' })
+```
+
+## StyleX
+
+Static namespaces need known declarations. Dynamic namespaces expose direct parameters as CSS variables; compute a derived value before passing it to that namespace. `props()` and `attrs()` compose the extracted classes. Helpers are interpreted only in their supported contexts.
+
+### create(): array argument shape
+
+**API:** StyleX. **Message pattern:**
+
+```text
+`stylex.create()` cannot use `<code>` at build time: it takes one object literal
+```
+
+**Trigger:**
+
+{/* probe: stylex-create-argument-array before */}
+
+```tsx-error
+import * as stylex from '@stylexjs/stylex';
+export function example() {
+  const result = stylex.create([]);
+  return result;
+}
+```
+
+**Why:** The scoped extractor lowers this API only when its argument list has the exact object-literal shape. Runtime inputs cannot become an extracted declaration or namespace map.
+
+**Fix:** Pass the object literal directly with the required number of arguments, rather than a runtime value or argument spread.
+
+{/* probe: stylex-create-argument-array after */}
+
+```tsx
+import * as stylex from '@stylexjs/stylex'
+export function example() {
+  const result = stylex.create({ base: { color: 'red' } })
+  return result
+}
+```
+
+### defineVars(): array argument shape
+
+**API:** StyleX. **Message pattern:**
+
+```text
+`stylex.defineVars()` cannot use `<code>` at build time: it takes one object literal
+```
+
+**Trigger:**
+
+{/* probe: stylex-defineVars-argument-array before */}
+
+```tsx-error
+import * as stylex from '@stylexjs/stylex';
+export function example() {
+  const result = stylex.defineVars([]);
+  return result;
+}
+```
+
+**Why:** The scoped extractor lowers this API only when its argument list has the exact object-literal shape. Runtime inputs cannot become an extracted declaration or namespace map.
+
+**Fix:** Pass the object literal directly with the required number of arguments, rather than a runtime value or argument spread.
+
+{/* probe: stylex-defineVars-argument-array after */}
+
+```tsx
+import * as stylex from '@stylexjs/stylex'
+export function example() {
+  const result = stylex.defineVars({ color: 'red' })
+  return result
+}
+```
+
+### defineConsts(): array argument shape
+
+**API:** StyleX. **Message pattern:**
+
+```text
+`stylex.defineConsts()` cannot use `<code>` at build time: it takes one object literal
+```
+
+**Trigger:**
+
+{/* probe: stylex-defineConsts-argument-array before */}
+
+```tsx-error
+import * as stylex from '@stylexjs/stylex';
+export function example() {
+  const result = stylex.defineConsts([]);
+  return result;
+}
+```
+
+**Why:** The scoped extractor lowers this API only when its argument list has the exact object-literal shape. Runtime inputs cannot become an extracted declaration or namespace map.
+
+**Fix:** Pass the object literal directly with the required number of arguments, rather than a runtime value or argument spread.
+
+{/* probe: stylex-defineConsts-argument-array after */}
+
+```tsx
+import * as stylex from '@stylexjs/stylex'
+export function example() {
+  const result = stylex.defineConsts({ color: 'red' })
+  return result
+}
+```
+
+### createThemeContract(): array argument shape
+
+**API:** StyleX. **Message pattern:**
+
+```text
+`stylex.createThemeContract()` cannot use `<code>` at build time: it takes one object literal
+```
+
+**Trigger:**
+
+{/* probe: stylex-createThemeContract-argument-array before */}
+
+```tsx-error
+import * as stylex from '@stylexjs/stylex';
+export function example() {
+  const result = stylex.createThemeContract([]);
+  return result;
+}
+```
+
+**Why:** The scoped extractor lowers this API only when its argument list has the exact object-literal shape. Runtime inputs cannot become an extracted declaration or namespace map.
+
+**Fix:** Pass the object literal directly with the required number of arguments, rather than a runtime value or argument spread.
+
+{/* probe: stylex-createThemeContract-argument-array after */}
+
+```tsx
+import * as stylex from '@stylexjs/stylex'
+export function example() {
+  const result = stylex.createThemeContract({ color: null })
+  return result
+}
+```
+
+### positionTry(): array argument shape
+
+**API:** StyleX. **Message pattern:**
+
+```text
+`stylex.positionTry()` cannot use `<code>` at build time: it takes one object literal
+```
+
+**Trigger:**
+
+{/* probe: stylex-positionTry-argument-array before */}
+
+```tsx-error
+import * as stylex from '@stylexjs/stylex';
+export function example() {
+  const result = stylex.positionTry([]);
+  return result;
+}
+```
+
+**Why:** The scoped extractor lowers this API only when its argument list has the exact object-literal shape. Runtime inputs cannot become an extracted declaration or namespace map.
+
+**Fix:** Pass the object literal directly with the required number of arguments, rather than a runtime value or argument spread.
+
+{/* probe: stylex-positionTry-argument-array after */}
+
+```tsx
+import * as stylex from '@stylexjs/stylex'
+export function example() {
+  const result = stylex.positionTry({ top: 0 })
+  return result
+}
+```
+
+### viewTransitionClass(): array argument shape
+
+**API:** StyleX. **Message pattern:**
+
+```text
+`stylex.viewTransitionClass()` cannot use `<code>` at build time: it takes one object literal
+```
+
+**Trigger:**
+
+{/* probe: stylex-viewTransitionClass-argument-array before */}
+
+```tsx-error
+import * as stylex from '@stylexjs/stylex';
+export function example() {
+  const result = stylex.viewTransitionClass([]);
+  return result;
+}
+```
+
+**Why:** The scoped extractor lowers this API only when its argument list has the exact object-literal shape. Runtime inputs cannot become an extracted declaration or namespace map.
+
+**Fix:** Pass the object literal directly with the required number of arguments, rather than a runtime value or argument spread.
+
+{/* probe: stylex-viewTransitionClass-argument-array after */}
+
+```tsx
+import * as stylex from '@stylexjs/stylex'
+export function example() {
+  const result = stylex.viewTransitionClass({ color: 'red' })
+  return result
+}
+```
+
+### keyframes(): array argument shape
+
+**API:** StyleX. **Message pattern:**
+
+```text
+`stylex.keyframes()` cannot use `<code>` at build time: it takes one object literal
+```
+
+**Trigger:**
+
+{/* probe: stylex-keyframes-argument-array before */}
+
+```tsx-error
+import * as stylex from '@stylexjs/stylex';
+export function example() {
+  const result = stylex.keyframes([]);
+  return result;
+}
+```
+
+**Why:** The scoped extractor lowers this API only when its argument list has the exact object-literal shape. Runtime inputs cannot become an extracted declaration or namespace map.
+
+**Fix:** Pass the object literal directly with the required number of arguments, rather than a runtime value or argument spread.
+
+{/* probe: stylex-keyframes-argument-array after */}
+
+```tsx
+import * as stylex from '@stylexjs/stylex'
+export function example() {
+  const result = stylex.keyframes({ from: { opacity: 0 }, to: { opacity: 1 } })
+  return result
+}
+```
+
+### createTheme(): spread-argument argument shape
+
+**API:** StyleX. **Message pattern:**
+
+```text
+`stylex.createTheme()` cannot use `<code>` at build time: it takes a `defineVars()` group, of this file or imported, and an object literal
+```
+
+**Trigger:**
+
+{/* probe: stylex-createTheme-argument-spread-argument before */}
+
+```tsx-error
+import * as stylex from '@stylexjs/stylex';
+const vars = stylex.defineVars({ color: 'red' });
+export function example(args) {
+  const result = stylex.createTheme(...args);
+  return result;
+}
+```
+
+**Why:** createTheme needs an identifier bound to a defineVars/createThemeContract group known by the visitor, followed by an object literal of overrides. An arbitrary object or runtime reference is not a registered contract.
+
+**Fix:** Define the contract first, bind it to one identifier, and pass that identifier with one override object.
+
+{/* probe: stylex-createTheme-argument-spread-argument after */}
+
+```tsx
+import * as stylex from '@stylexjs/stylex'
+const vars = stylex.defineVars({ color: 'red' })
+export function example() {
+  const result = stylex.createTheme(vars, { color: 'blue' })
+  return result
+}
+```
+
+### Array destructuring cannot bind create() namespaces
+
+**API:** StyleX. **Message pattern:**
+
+```text
+`stylex.create()` cannot be destructured at build time: assign it to one variable, as `const styles = stylex.create({ ... })`
+```
+
+**Trigger:**
+
+{/* probe: stylex-create-destructure-array before */}
+
+```tsx-error
+import * as stylex from '@stylexjs/stylex';
+export const [base] = stylex.create({ base: { color: 'red' } });
+```
+
+**Why:** The extractor associates a namespace map with one variable binding. Destructuring the create result prevents that map from being registered for props/attrs and includes.
+
+**Fix:** Assign create() to styles and read styles.base instead of destructuring the declaration.
+
+{/* probe: stylex-create-destructure-array after */}
+
+```tsx
+import * as stylex from '@stylexjs/stylex'
+export const styles = stylex.create({ base: { color: 'red' } })
+```
+
+### create(): scalar namespace
+
+**API:** StyleX. **Message pattern:**
+
+```text
+`stylex.create()` cannot use `<code>` at build time: a namespace is an object of styles or an arrow function returning one
+```
+
+**Trigger:**
+
+{/* probe: stylex-namespace-scalar before */}
+
+```tsx-error
+import * as stylex from '@stylexjs/stylex';
+export function example() {
+  const result = stylex.create({ base: 'red' });
+  return result;
+}
+```
+
+**Why:** Every create() entry is a namespace, not an individual CSS value. The supported namespace forms are an object of styles, an object-returning arrow, or null (empty namespace).
+
+**Fix:** Put CSS declarations inside a namespace object, or use a supported dynamic arrow.
+
+{/* probe: stylex-namespace-scalar after */}
+
+```tsx
+import * as stylex from '@stylexjs/stylex'
+export function example() {
+  const result = stylex.create({ base: { color: 'red' } })
+  return result
+}
+```
+
+### Dynamic arrow: scalar-return
+
+**API:** StyleX. **Message pattern:**
+
+```text
+`stylex.create()` cannot use `<code>` at build time: a dynamic style is an arrow function with plain parameters returning an object literal
+```
+
+**Trigger:**
+
+{/* probe: stylex-dynamic-scalar-return before */}
+
+```tsx-error
+import * as stylex from '@stylexjs/stylex';
+export function example() {
+  const result = stylex.create({ base: (color) => color });
+  return result;
+}
+```
+
+**Why:** Dynamic namespace extraction reads plain parameter identifiers and an arrow expression whose body is an object literal. It does not execute a function body or destructuring pattern.
+
+**Fix:** Use (value) =&gt; (\{ color: value \}) with a plain identifier parameter and expression body.
+
+{/* probe: stylex-dynamic-scalar-return after */}
+
+```tsx
+import * as stylex from '@stylexjs/stylex'
+export function example() {
+  const result = stylex.create({ base: (color) => ({ color }) })
+  return result
+}
+```
+
+### Dynamic namespace value: runtime
+
+**API:** StyleX. **Message pattern:**
+
+```text
+`stylex.create()` cannot use `<code>` at build time: a dynamic style's value is one of its parameters or a static value; compute it before passing it
+```
+
+**Trigger:**
+
+{/* probe: stylex-dynamic-value-runtime before */}
+
+```tsx-error
+import * as stylex from '@stylexjs/stylex';
+export function example(value) {
+  const result = stylex.create({ base: (width) => ({ width: value }) });
+  return result;
+}
+```
+
+**Why:** A dynamic namespace value can directly name one of its parameters or be static. Arithmetic, member reads, conditions and helper calls inside that arrow are not evaluated as dynamic CSS expressions.
+
+**Fix:** Compute the desired value at the call site and pass it to a plain parameter referenced directly by the style property.
+
+{/* probe: stylex-dynamic-value-runtime after */}
+
+```tsx
+import * as stylex from '@stylexjs/stylex'
+export function example() {
+  const result = stylex.create({ base: (width) => ({ width }) })
+  return result
+}
+```
+
+### Static style value: identifier
+
+**API:** StyleX. **Message pattern:**
+
+```text
+`stylex.create()` cannot use `<code>` at build time: its values must be literals, theme tokens or constants, or be computed from them
+```
+
+**Trigger:**
+
+{/* probe: stylex-static-value-identifier before */}
+
+```tsx-error
+import * as stylex from '@stylexjs/stylex';
+export function example(value) {
+  const result = stylex.create({ base: { color: value } });
+  return result;
+}
+```
+
+**Why:** A static namespace has no runtime CSS variable assignment. Its leaf values must resolve at build time: literals, constants/computations the evaluator can fold, registered keyframe names or defineVars/defineConsts member references.
+
+**Fix:** Use a literal or resolvable constant; for genuinely runtime input, use a dynamic namespace parameter.
+
+{/* probe: stylex-static-value-identifier after */}
+
+```tsx
+import * as stylex from '@stylexjs/stylex'
+export function example() {
+  const result = stylex.create({ base: { color: 'red' } })
+  return result
+}
+```
+
+### Condition key: ordinary
+
+**API:** StyleX. **Message pattern:**
+
+```text
+`stylex.create()` cannot use `<code>` at build time: a condition is `default`, a pseudo-class, a pseudo-element or an `@media`, `@supports` or `@container` rule
+```
+
+**Trigger:**
+
+{/* probe: stylex-condition-ordinary before */}
+
+```tsx-error
+import * as stylex from '@stylexjs/stylex';
+export function example() {
+  const result = stylex.create({ base: { color: { 'hover': 'red' } } });
+  return result;
+}
+```
+
+**Why:** A value-level object is interpreted as conditions, not an arbitrary nested value. Its keys must be default, a colon-prefixed pseudo-class/element, or an @media/@supports/@container rule.
+
+**Fix:** Replace the invalid condition with default or a supported pseudo/at-rule condition.
+
+{/* probe: stylex-condition-ordinary after */}
+
+```tsx
+import * as stylex from '@stylexjs/stylex'
+export function example() {
+  const result = stylex.create({
+    base: { color: { default: 'red', ':hover': 'blue' } },
+  })
+  return result
+}
+```
+
+### Pseudo selector: element-array
+
+**API:** StyleX. **Message pattern:**
+
+```text
+`stylex.create()` cannot use `<code>` at build time: a pseudo-class or pseudo-element key takes an object of styles
+```
+
+**Trigger:**
+
+{/* probe: stylex-pseudo-element-array before */}
+
+```tsx-error
+import * as stylex from '@stylexjs/stylex';
+export function example() {
+  const result = stylex.create({ base: { '::before': [] } });
+  return result;
+}
+```
+
+**Why:** A top-level colon-prefixed namespace key denotes a pseudo selector whose value must be an object of CSS declarations. A scalar belongs under a property-level condition instead.
+
+**Fix:** Use \{ ":hover": \{ color: "red" \} \} or \{ color: \{ ":hover": "red" \} \}.
+
+{/* probe: stylex-pseudo-element-array after */}
+
+```tsx
+import * as stylex from '@stylexjs/stylex'
+export function example() {
+  const result = stylex.create({ base: { '::before': { color: 'red' } } })
+  return result
+}
+```
+
+### create(): spread in namespace-map
+
+**API:** StyleX. **Message pattern:**
+
+```text
+`stylex.create()` cannot use `<code>` at build time: write every entry out, as its keys must be known
+```
+
+**Trigger:**
+
+{/* probe: stylex-create-spread-namespace-map before */}
+
+```tsx-error
+import * as stylex from '@stylexjs/stylex';
+export function example(extra) {
+  const result = stylex.create({ ...extra });
+  return result;
+}
+```
+
+**Why:** This StyleX object layer does not accept unresolved object spreads: the build needs each key. The sole namespace-level exception is a recognized ...include(styles.base) reference to an earlier local create namespace.
+
+**Fix:** Write the entries explicitly; for namespace composition, spread include() with an earlier same-file namespace.
+
+{/* probe: stylex-create-spread-namespace-map after */}
+
+```tsx
+import * as stylex from '@stylexjs/stylex'
+export function example() {
+  const result = stylex.create({ base: { color: 'red' } })
+  return result
+}
+```
+
+### create(): computed key in namespace-map
+
+**API:** StyleX. **Message pattern:**
+
+```text
+`stylex.create()` cannot use `<code>` at build time: its keys must be known
+```
+
+**Trigger:**
+
+{/* probe: stylex-create-key-namespace-map before */}
+
+```tsx-error
+import * as stylex from '@stylexjs/stylex';
+export function example(key) {
+  const result = stylex.create({ [key]: {} });
+  return result;
+}
+```
+
+**Why:** The object-key reader accepts static identifiers and literal keys. A key computed from a runtime input has no statically extractable CSS property, namespace, condition or variable name.
+
+**Fix:** Use an explicit literal key (or a constant expression that the evaluator actually resolves).
+
+{/* probe: stylex-create-key-namespace-map after */}
+
+```tsx
+import * as stylex from '@stylexjs/stylex'
+export function example() {
+  const result = stylex.create({ base: { color: 'red' } })
+  return result
+}
+```
+
+### defineVars(): object spread
+
+**API:** StyleX. **Message pattern:**
+
+```text
+`stylex.defineVars()` cannot use `<code>` at build time: write every entry out, as its keys must be known
+```
+
+**Trigger:**
+
+{/* probe: stylex-defineVars-spread before */}
+
+```tsx-error
+import * as stylex from '@stylexjs/stylex';
+export function example(extra) {
+  const result = stylex.defineVars({ ...extra });
+  return result;
+}
+```
+
+**Why:** This StyleX object layer does not accept unresolved object spreads: the build needs each key. The sole namespace-level exception is a recognized ...include(styles.base) reference to an earlier local create namespace.
+
+**Fix:** Write the entries explicitly; for namespace composition, spread include() with an earlier same-file namespace.
+
+{/* probe: stylex-defineVars-spread after */}
+
+```tsx
+import * as stylex from '@stylexjs/stylex'
+export function example() {
+  const result = stylex.defineVars({ color: 'red' })
+  return result
+}
+```
+
+### defineVars(): computed key
+
+**API:** StyleX. **Message pattern:**
+
+```text
+`stylex.defineVars()` cannot use `<code>` at build time: its keys must be known
+```
+
+**Trigger:**
+
+{/* probe: stylex-defineVars-key before */}
+
+```tsx-error
+import * as stylex from '@stylexjs/stylex';
+export function example(key) {
+  const result = stylex.defineVars({ [key]: 'red' });
+  return result;
+}
+```
+
+**Why:** The object-key reader accepts static identifiers and literal keys. A key computed from a runtime input has no statically extractable CSS property, namespace, condition or variable name.
+
+**Fix:** Use an explicit literal key (or a constant expression that the evaluator actually resolves).
+
+{/* probe: stylex-defineVars-key after */}
+
+```tsx
+import * as stylex from '@stylexjs/stylex'
+export function example() {
+  const result = stylex.defineVars({ color: 'red' })
+  return result
+}
+```
+
+### defineConsts(): object spread
+
+**API:** StyleX. **Message pattern:**
+
+```text
+`stylex.defineConsts()` cannot use `<code>` at build time: write every entry out, as its keys must be known
+```
+
+**Trigger:**
+
+{/* probe: stylex-defineConsts-spread before */}
+
+```tsx-error
+import * as stylex from '@stylexjs/stylex';
+export function example(extra) {
+  const result = stylex.defineConsts({ ...extra });
+  return result;
+}
+```
+
+**Why:** This StyleX object layer does not accept unresolved object spreads: the build needs each key. The sole namespace-level exception is a recognized ...include(styles.base) reference to an earlier local create namespace.
+
+**Fix:** Write the entries explicitly; for namespace composition, spread include() with an earlier same-file namespace.
+
+{/* probe: stylex-defineConsts-spread after */}
+
+```tsx
+import * as stylex from '@stylexjs/stylex'
+export function example() {
+  const result = stylex.defineConsts({ color: 'red' })
+  return result
+}
+```
+
+### defineConsts(): computed key
+
+**API:** StyleX. **Message pattern:**
+
+```text
+`stylex.defineConsts()` cannot use `<code>` at build time: its keys must be known
+```
+
+**Trigger:**
+
+{/* probe: stylex-defineConsts-key before */}
+
+```tsx-error
+import * as stylex from '@stylexjs/stylex';
+export function example(key) {
+  const result = stylex.defineConsts({ [key]: 'red' });
+  return result;
+}
+```
+
+**Why:** The object-key reader accepts static identifiers and literal keys. A key computed from a runtime input has no statically extractable CSS property, namespace, condition or variable name.
+
+**Fix:** Use an explicit literal key (or a constant expression that the evaluator actually resolves).
+
+{/* probe: stylex-defineConsts-key after */}
+
+```tsx
+import * as stylex from '@stylexjs/stylex'
+export function example() {
+  const result = stylex.defineConsts({ color: 'red' })
+  return result
+}
+```
+
+### createThemeContract(): object spread
+
+**API:** StyleX. **Message pattern:**
+
+```text
+`stylex.createThemeContract()` cannot use `<code>` at build time: write every entry out, as its keys must be known
+```
+
+**Trigger:**
+
+{/* probe: stylex-createThemeContract-spread before */}
+
+```tsx-error
+import * as stylex from '@stylexjs/stylex';
+export function example(extra) {
+  const result = stylex.createThemeContract({ ...extra });
+  return result;
+}
+```
+
+**Why:** This StyleX object layer does not accept unresolved object spreads: the build needs each key. The sole namespace-level exception is a recognized ...include(styles.base) reference to an earlier local create namespace.
+
+**Fix:** Write the entries explicitly; for namespace composition, spread include() with an earlier same-file namespace.
+
+{/* probe: stylex-createThemeContract-spread after */}
+
+```tsx
+import * as stylex from '@stylexjs/stylex'
+export function example() {
+  const result = stylex.createThemeContract({ color: 'red' })
+  return result
+}
+```
+
+### createThemeContract(): computed key
+
+**API:** StyleX. **Message pattern:**
+
+```text
+`stylex.createThemeContract()` cannot use `<code>` at build time: its keys must be known
+```
+
+**Trigger:**
+
+{/* probe: stylex-createThemeContract-key before */}
+
+```tsx-error
+import * as stylex from '@stylexjs/stylex';
+export function example(key) {
+  const result = stylex.createThemeContract({ [key]: 'red' });
+  return result;
+}
+```
+
+**Why:** The object-key reader accepts static identifiers and literal keys. A key computed from a runtime input has no statically extractable CSS property, namespace, condition or variable name.
+
+**Fix:** Use an explicit literal key (or a constant expression that the evaluator actually resolves).
+
+{/* probe: stylex-createThemeContract-key after */}
+
+```tsx
+import * as stylex from '@stylexjs/stylex'
+export function example() {
+  const result = stylex.createThemeContract({ color: 'red' })
+  return result
+}
+```
+
+### positionTry(): object spread
+
+**API:** StyleX. **Message pattern:**
+
+```text
+`stylex.positionTry()` cannot use `<code>` at build time: write every entry out, as its keys must be known
+```
+
+**Trigger:**
+
+{/* probe: stylex-positionTry-spread before */}
+
+```tsx-error
+import * as stylex from '@stylexjs/stylex';
+export function example(extra) {
+  const result = stylex.positionTry({ ...extra });
+  return result;
+}
+```
+
+**Why:** This StyleX object layer does not accept unresolved object spreads: the build needs each key. The sole namespace-level exception is a recognized ...include(styles.base) reference to an earlier local create namespace.
+
+**Fix:** Write the entries explicitly; for namespace composition, spread include() with an earlier same-file namespace.
+
+{/* probe: stylex-positionTry-spread after */}
+
+```tsx
+import * as stylex from '@stylexjs/stylex'
+export function example() {
+  const result = stylex.positionTry({ color: 'red' })
+  return result
+}
+```
+
+### positionTry(): computed key
+
+**API:** StyleX. **Message pattern:**
+
+```text
+`stylex.positionTry()` cannot use `<code>` at build time: its keys must be known
+```
+
+**Trigger:**
+
+{/* probe: stylex-positionTry-key before */}
+
+```tsx-error
+import * as stylex from '@stylexjs/stylex';
+export function example(key) {
+  const result = stylex.positionTry({ [key]: 'red' });
+  return result;
+}
+```
+
+**Why:** The object-key reader accepts static identifiers and literal keys. A key computed from a runtime input has no statically extractable CSS property, namespace, condition or variable name.
+
+**Fix:** Use an explicit literal key (or a constant expression that the evaluator actually resolves).
+
+{/* probe: stylex-positionTry-key after */}
+
+```tsx
+import * as stylex from '@stylexjs/stylex'
+export function example() {
+  const result = stylex.positionTry({ color: 'red' })
+  return result
+}
+```
+
+### viewTransitionClass(): object spread
+
+**API:** StyleX. **Message pattern:**
+
+```text
+`stylex.viewTransitionClass()` cannot use `<code>` at build time: write every entry out, as its keys must be known
+```
+
+**Trigger:**
+
+{/* probe: stylex-viewTransitionClass-spread before */}
+
+```tsx-error
+import * as stylex from '@stylexjs/stylex';
+export function example(extra) {
+  const result = stylex.viewTransitionClass({ ...extra });
+  return result;
+}
+```
+
+**Why:** This StyleX object layer does not accept unresolved object spreads: the build needs each key. The sole namespace-level exception is a recognized ...include(styles.base) reference to an earlier local create namespace.
+
+**Fix:** Write the entries explicitly; for namespace composition, spread include() with an earlier same-file namespace.
+
+{/* probe: stylex-viewTransitionClass-spread after */}
+
+```tsx
+import * as stylex from '@stylexjs/stylex'
+export function example() {
+  const result = stylex.viewTransitionClass({ color: 'red' })
+  return result
+}
+```
+
+### viewTransitionClass(): computed key
+
+**API:** StyleX. **Message pattern:**
+
+```text
+`stylex.viewTransitionClass()` cannot use `<code>` at build time: its keys must be known
+```
+
+**Trigger:**
+
+{/* probe: stylex-viewTransitionClass-key before */}
+
+```tsx-error
+import * as stylex from '@stylexjs/stylex';
+export function example(key) {
+  const result = stylex.viewTransitionClass({ [key]: 'red' });
+  return result;
+}
+```
+
+**Why:** The object-key reader accepts static identifiers and literal keys. A key computed from a runtime input has no statically extractable CSS property, namespace, condition or variable name.
+
+**Fix:** Use an explicit literal key (or a constant expression that the evaluator actually resolves).
+
+{/* probe: stylex-viewTransitionClass-key after */}
+
+```tsx
+import * as stylex from '@stylexjs/stylex'
+export function example() {
+  const result = stylex.viewTransitionClass({ color: 'red' })
+  return result
+}
+```
+
+### createTheme(): override spread
+
+**API:** StyleX. **Message pattern:**
+
+```text
+`stylex.createTheme()` cannot use `<code>` at build time: write every entry out, as its keys must be known
+```
+
+**Trigger:**
+
+{/* probe: stylex-createTheme-spread before */}
+
+```tsx-error
+import * as stylex from '@stylexjs/stylex';
+const vars = stylex.defineVars({ color: 'red' });
+export function example(extra) {
+  const result = stylex.createTheme(vars, { ...extra });
+  return result;
+}
+```
+
+**Why:** This StyleX object layer does not accept unresolved object spreads: the build needs each key. The sole namespace-level exception is a recognized ...include(styles.base) reference to an earlier local create namespace.
+
+**Fix:** Write the entries explicitly; for namespace composition, spread include() with an earlier same-file namespace.
+
+{/* probe: stylex-createTheme-spread after */}
+
+```tsx
+import * as stylex from '@stylexjs/stylex'
+const vars = stylex.defineVars({ color: 'red' })
+export function example() {
+  const result = stylex.createTheme(vars, { color: 'blue' })
+  return result
+}
+```
+
+### createTheme(): computed override key
+
+**API:** StyleX. **Message pattern:**
+
+```text
+`stylex.createTheme()` cannot use `<code>` at build time: its keys must be known
+```
+
+**Trigger:**
+
+{/* probe: stylex-createTheme-key before */}
+
+```tsx-error
+import * as stylex from '@stylexjs/stylex';
+const vars = stylex.defineVars({ color: 'red' });
+export function example(key) {
+  const result = stylex.createTheme(vars, { [key]: 'blue' });
+  return result;
+}
+```
+
+**Why:** The object-key reader accepts static identifiers and literal keys. A key computed from a runtime input has no statically extractable CSS property, namespace, condition or variable name.
+
+**Fix:** Use an explicit literal key (or a constant expression that the evaluator actually resolves).
+
+{/* probe: stylex-createTheme-key after */}
+
+```tsx
+import * as stylex from '@stylexjs/stylex'
+const vars = stylex.defineVars({ color: 'red' })
+export function example() {
+  const result = stylex.createTheme(vars, { color: 'blue' })
+  return result
+}
+```
+
+### include(): malformed bare reference
+
+**API:** StyleX. **Message pattern:**
+
+```text
+`stylex.include()` cannot use `<code>` at build time: it takes a namespace such as `styles.base`
+```
+
+**Trigger:**
+
+{/* probe: stylex-include-malformed-bare before */}
+
+```tsx-error
+import * as stylex from '@stylexjs/stylex';
+const styles = stylex.create({ base: { color: 'red' } });
+export function example() {
+  const result = stylex.create({ derived: { ...stylex.include(styles) } });
+  return result;
+}
+```
+
+**Why:** A recognized include spread reads one static member on an identifier, such as styles.base. A bare identifier, nested member path, computed member or missing argument does not have that shape.
+
+**Fix:** Declare a local create() map and spread stylex.include(styles.base) inside a static namespace.
+
+{/* probe: stylex-include-malformed-bare after */}
+
+```tsx
+import * as stylex from '@stylexjs/stylex'
+const styles = stylex.create({ base: { color: 'red' } })
+export function example() {
+  const result = stylex.create({ derived: { ...stylex.include(styles.base) } })
+  return result
+}
+```
+
+### include(): same-call
+
+**API:** StyleX. **Message pattern:**
+
+```text
+`stylex.include()` cannot use `<code>` at build time: it takes a namespace `stylex.create()` defines earlier in this file
+```
+
+**Trigger:**
+
+{/* probe: stylex-include-same-call before */}
+
+```tsx-error
+import * as stylex from '@stylexjs/stylex';
+export const styles = stylex.create({ base: { color: 'red' }, derived: { ...stylex.include(styles.base) } });
+```
+
+**Why:** Having the syntax styles.base is insufficient: the visible binding and member must have been registered by an earlier create() in this file. Unknown, forward, imported or missing namespace references cannot be composed here.
+
+**Fix:** Define the namespace earlier in this file and reference an existing member from that binding.
+
+{/* probe: stylex-include-same-call after */}
+
+```tsx
+import * as stylex from '@stylexjs/stylex'
+const styles = stylex.create({ base: { color: 'red' } })
+export function example() {
+  const result = stylex.create({ derived: { ...stylex.include(styles.base) } })
+  return result
+}
+```
+
+### defineVars(): runtime variable value
+
+**API:** StyleX. **Message pattern:**
+
+```text
+`stylex.defineVars()` cannot use `<code>` at build time: its values must be literals, theme tokens or constants, or be computed from them
+```
+
+**Trigger:**
+
+{/* probe: stylex-defineVars-value-runtime before */}
+
+```tsx-error
+import * as stylex from '@stylexjs/stylex';
+export function example(value) {
+  const result = stylex.defineVars({ color: value });
+  return result;
+}
+```
+
+**Why:** defineVars/createTheme variable values are literal leaves or nested default/@media/@supports/@container condition objects, optionally wrapped by types.\*(). Null contributes no assignment. Runtime leaves, arrays and pseudo conditions are not variable values.
+
+**Fix:** Use a literal variable value, or a supported default/at-rule condition object with static leaves.
+
+{/* probe: stylex-defineVars-value-runtime after */}
+
+```tsx
+import * as stylex from '@stylexjs/stylex'
+export function example() {
+  const result = stylex.defineVars({ color: 'red' })
+  return result
+}
+```
+
+### createTheme(): runtime variable value
+
+**API:** StyleX. **Message pattern:**
+
+```text
+`stylex.createTheme()` cannot use `<code>` at build time: its values must be literals, theme tokens or constants, or be computed from them
+```
+
+**Trigger:**
+
+{/* probe: stylex-createTheme-value-runtime before */}
+
+```tsx-error
+import * as stylex from '@stylexjs/stylex';
+const vars = stylex.defineVars({ color: 'red' });
+export function example(value) {
+  const result = stylex.createTheme(vars, { color: value });
+  return result;
+}
+```
+
+**Why:** defineVars/createTheme variable values are literal leaves or nested default/@media/@supports/@container condition objects, optionally wrapped by types.\*(). Null contributes no assignment. Runtime leaves, arrays and pseudo conditions are not variable values.
+
+**Fix:** Use a literal variable value, or a supported default/at-rule condition object with static leaves.
+
+{/* probe: stylex-createTheme-value-runtime after */}
+
+```tsx
+import * as stylex from '@stylexjs/stylex'
+const vars = stylex.defineVars({ color: 'red' })
+export function example() {
+  const result = stylex.createTheme(vars, { color: 'blue' })
+  return result
+}
+```
+
+### Override only keys present in the theme contract
+
+**API:** StyleX. **Message pattern:**
+
+```text
+`stylex.createTheme()` cannot use `<code>` at build time: `vars` has no such variable
+```
+
+**Trigger:**
+
+{/* probe: stylex-createTheme-unknown-key before */}
+
+```tsx-error
+import * as stylex from '@stylexjs/stylex';
+const vars = stylex.defineVars({ color: 'red' });
+export function example() {
+  const result = stylex.createTheme(vars, { missing: 'blue' });
+  return result;
+}
+```
+
+**Why:** createTheme maps override keys to custom properties registered by its contract. A key absent from that contract has no CSS variable to assign.
+
+**Fix:** Use an existing contract key or add the intended key to the contract declaration first.
+
+{/* probe: stylex-createTheme-unknown-key after */}
+
+```tsx
+import * as stylex from '@stylexjs/stylex'
+const vars = stylex.defineVars({ color: 'red' })
+export function example() {
+  const result = stylex.createTheme(vars, { color: 'blue' })
+  return result
+}
+```
+
+### defineConsts(): null value is not a literal
+
+**API:** StyleX. **Message pattern:**
+
+```text
+`stylex.defineConsts()` cannot use `<code>` at build time: its values must be literals, theme tokens or constants, or be computed from them
+```
+
+**Trigger:**
+
+{/* probe: stylex-defineConsts-value-null before */}
+
+```tsx-error
+import * as stylex from '@stylexjs/stylex';
+export function example() {
+  const result = stylex.defineConsts({ color: null });
+  return result;
+}
+```
+
+**Why:** defineConsts uses the literal reader directly: it neither reads condition objects nor unwraps StyleX helper calls, and null is not a literal value that this reader publishes.
+
+**Fix:** Replace the value with a literal such as red.
+
+{/* probe: stylex-defineConsts-value-null after */}
+
+```tsx
+import * as stylex from '@stylexjs/stylex'
+export function example() {
+  const result = stylex.defineConsts({ color: 'red' })
+  return result
+}
+```
+
+### positionTry(): null declaration value
+
+**API:** StyleX. **Message pattern:**
+
+```text
+`stylex.positionTry()` cannot use `<code>` at build time: its values must be literals, theme tokens or constants, or be computed from them
+```
+
+**Trigger:**
+
+{/* probe: stylex-positionTry-value-null before */}
+
+```tsx-error
+import * as stylex from '@stylexjs/stylex';
+export function example() {
+  const result = stylex.positionTry({ color: null });
+  return result;
+}
+```
+
+**Why:** This named declaration-block API accepts literal CSS values, not runtime leaves, null, arrays or value-level condition objects. Its declaration reader normalizes property names and numeric units without dynamic variables.
+
+**Fix:** Supply a static literal CSS value for the declaration.
+
+{/* probe: stylex-positionTry-value-null after */}
+
+```tsx
+import * as stylex from '@stylexjs/stylex'
+export function example() {
+  const result = stylex.positionTry({ color: 'red' })
+  return result
+}
+```
+
+### positionTry(): types is outside its enclosing API context
+
+**API:** StyleX. **Message pattern:**
+
+```text
+`stylex.positionTry()` cannot use `<code>` at build time: its values must be literals; `firstThatWorks()`, `include()` and `types` are read only inside `stylex.create()` and `stylex.defineVars()`
+```
+
+**Trigger:**
+
+{/* probe: stylex-positionTry-helper-types before */}
+
+```tsx-error
+import * as stylex from '@stylexjs/stylex';
+export function example() {
+  const result = stylex.positionTry({ color: stylex.types.color('red') });
+  return result;
+}
+```
+
+**Why:** The declaration reader recognizes genuine StyleX helper calls but does not read them here. Its dedicated error explains that values are literals and helpers are read only by create()/defineVars(); each helper still has its own supported subcontext there.
+
+**Fix:** Replace the helper with a literal here. Use firstThatWorks in a static create property, include as a static namespace spread, and types as a supported value wrapper.
+
+{/* probe: stylex-positionTry-helper-types after */}
+
+```tsx
+import * as stylex from '@stylexjs/stylex'
+export function example() {
+  const result = stylex.positionTry({ color: 'red' })
+  return result
+}
+```
+
+### viewTransitionClass(): null declaration value
+
+**API:** StyleX. **Message pattern:**
+
+```text
+`stylex.viewTransitionClass()` cannot use `<code>` at build time: its values must be literals, theme tokens or constants, or be computed from them
+```
+
+**Trigger:**
+
+{/* probe: stylex-viewTransitionClass-value-null before */}
+
+```tsx-error
+import * as stylex from '@stylexjs/stylex';
+export function example() {
+  const result = stylex.viewTransitionClass({ color: null });
+  return result;
+}
+```
+
+**Why:** This named declaration-block API accepts literal CSS values, not runtime leaves, null, arrays or value-level condition objects. Its declaration reader normalizes property names and numeric units without dynamic variables.
+
+**Fix:** Supply a static literal CSS value for the declaration.
+
+{/* probe: stylex-viewTransitionClass-value-null after */}
+
+```tsx
+import * as stylex from '@stylexjs/stylex'
+export function example() {
+  const result = stylex.viewTransitionClass({ color: 'red' })
+  return result
+}
+```
+
+### viewTransitionClass(): types is outside its enclosing API context
+
+**API:** StyleX. **Message pattern:**
+
+```text
+`stylex.viewTransitionClass()` cannot use `<code>` at build time: its values must be literals; `firstThatWorks()`, `include()` and `types` are read only inside `stylex.create()` and `stylex.defineVars()`
+```
+
+**Trigger:**
+
+{/* probe: stylex-viewTransitionClass-helper-types before */}
+
+```tsx-error
+import * as stylex from '@stylexjs/stylex';
+export function example() {
+  const result = stylex.viewTransitionClass({ color: stylex.types.color('red') });
+  return result;
+}
+```
+
+**Why:** The declaration reader recognizes genuine StyleX helper calls but does not read them here. Its dedicated error explains that values are literals and helpers are read only by create()/defineVars(); each helper still has its own supported subcontext there.
+
+**Fix:** Replace the helper with a literal here. Use firstThatWorks in a static create property, include as a static namespace spread, and types as a supported value wrapper.
+
+{/* probe: stylex-viewTransitionClass-helper-types after */}
+
+```tsx
+import * as stylex from '@stylexjs/stylex'
+export function example() {
+  const result = stylex.viewTransitionClass({ color: 'red' })
+  return result
+}
+```
+
+### firstThatWorks(): null fallback value
+
+**API:** StyleX. **Message pattern:**
+
+```text
+`stylex.firstThatWorks()` cannot use `<code>` at build time: its values must be literals, theme tokens or constants, or be computed from them
+```
+
+**Trigger:**
+
+{/* probe: stylex-firstThatWorks-value-null before */}
+
+```tsx-error
+import * as stylex from '@stylexjs/stylex';
+export function example() {
+  const result = stylex.create({ base: { color: stylex.firstThatWorks('red', null) } });
+  return result;
+}
+```
+
+**Why:** firstThatWorks is read inside a static create() property and each fallback argument must independently resolve to a static leaf. A spread, null or condition object is not one fallback leaf.
+
+**Fix:** Pass individual static fallback values; retain condition objects outside the fallback helper if needed.
+
+{/* probe: stylex-firstThatWorks-value-null after */}
+
+```tsx
+import * as stylex from '@stylexjs/stylex'
+export function example() {
+  const result = stylex.create({
+    base: { color: stylex.firstThatWorks('red', 'blue') },
+  })
+  return result
+}
+```
+
+### keyframes(): frame-spread
+
+**API:** StyleX. **Message pattern:**
+
+```text
+`stylex.keyframes()` cannot use `<code>` at build time: its values must be literals, theme tokens or constants, or be computed from them
+```
+
+**Trigger:**
+
+{/* probe: stylex-keyframes-frame-spread before */}
+
+```tsx-error
+import * as stylex from '@stylexjs/stylex';
+export function example(extra) {
+  const result = stylex.keyframes({ ...extra });
+  return result;
+}
+```
+
+**Why:** Keyframes have no element on which to place a runtime value or conditional class. Frame keys and declarations must resolve to a fixed set of static CSS declarations; unreadable keys/spreads and runtime branches are reported through the keyframes value requirement.
+
+**Fix:** Write explicit frames and CSS declarations with literal/foldable values. Move runtime selection outside the keyframes definition.
+
+{/* probe: stylex-keyframes-frame-spread after */}
+
+```tsx
+import * as stylex from '@stylexjs/stylex'
+export function example() {
+  const result = stylex.keyframes({ from: { opacity: 0 }, to: { opacity: 1 } })
+  return result
+}
+```
+
+## Plugins and config
+
+These operational setup messages are distinct from style-syntax diagnostics. The build plugins forward extractor diagnostics; native filesystem or transport failures depend on the platform and underlying error.
+
+### Next coordinator and loader failures
+
+The Next plugin manages its coordinator and port-file options. The following internal setup/HTTP fixtures describe the failure contract, not options to hand-author in an application. Restart the Next build with a matching plugin/coordinator configuration and inspect its originating error when the transport fails.
+
+#### Coordinator port file not found
+
+**Message pattern:**
+
+```text
+Coordinator port file not found
+```
+
+**Trigger (internal protocol fixture):**
+
+```json
+{
+  "loader": "loader",
+  "portFileExists": false
+}
+```
+
+**Why:** Real port file is absent for all 20 loader retries (50ms each); loader reports the authored callback error. Both loaders share this error family.
+
+**Fix:** Create the configured port file containing the listening coordinator port before extraction.
+
+```json
+{
+  "loader": "loader",
+  "portFileExists": true,
+  "httpResponse": {
+    "status": 200,
+    "body": "{\"code\":\"export const answer = 42;\",\"dependencies\":[]}"
+  }
+}
+```
+
+#### Coordinator error
+
+**Message pattern:**
+
+```text
+Coordinator error
+```
+
+**Trigger (internal protocol fixture):**
+
+```json
+{
+  "loader": "loader",
+  "portFileExists": true,
+  "httpResponse": {
+    "status": 500,
+    "body": "{}"
+  }
+}
+```
+
+**Why:** HTTP status is non-200 and parsed JSON has no string error field; loader uses its authored fallback.
+
+**Fix:** Have POST /extract return HTTP 200 with a string code field and dependencies array.
+
+```json
+{
+  "loader": "loader",
+  "portFileExists": true,
+  "httpResponse": {
+    "status": 200,
+    "body": "{\"code\":\"export const answer = 42;\",\"dependencies\":[]}"
+  }
+}
+```
+
+#### Coordinator response missing code
+
+**Message pattern:**
+
+```text
+Coordinator response missing code
+```
+
+**Trigger (internal protocol fixture):**
+
+```json
+{
+  "loader": "loader",
+  "portFileExists": true,
+  "httpResponse": {
+    "status": 200,
+    "body": "{\"dependencies\":[]}"
+  }
+}
+```
+
+**Why:** HTTP 200 parsed JSON has no string code field; loader rejects the response contract.
+
+**Fix:** Include a string code field in the successful POST /extract JSON response.
+
+```json
+{
+  "loader": "loader",
+  "portFileExists": true,
+  "httpResponse": {
+    "status": 200,
+    "body": "{\"code\":\"export const answer = 42;\",\"dependencies\":[]}"
+  }
+}
+```
+
+#### Coordinator CSS error: 503
+
+**Message pattern:**
+
+```text
+Coordinator CSS error: <status>
+```
+
+**Trigger (internal protocol fixture):**
+
+```json
+{
+  "loader": "css-loader",
+  "portFileExists": true,
+  "httpResponse": {
+    "status": 503,
+    "body": "unavailable"
+  }
+}
+```
+
+**Why:** CSS loader rejects any non-200 status and inserts the actual numeric HTTP status into its authored error.
+
+**Fix:** Have GET /css return HTTP 200 and the CSS text, not a failure status.
+
+```json
+{
+  "loader": "css-loader",
+  "portFileExists": true,
+  "httpResponse": {
+    "status": 200,
+    "body": ".a{color:red}"
+  }
+}
+```
+
+### A build plugin is missing
+
+`Cannot run on the runtime` is a placeholder exception, not an extractor build diagnostic. It means a compile-time component or helper executed without being transformed. Configure the appropriate Devup UI build plugin and ensure the file is included in extraction. Do not fix it by adding a styling runtime.
+
+### Catch removed runtime reads with ESLint
+
+The `devup/no-runtime-read` rule reports compile-time bindings read outside supported calls/renders before the build. The lint message has a final period; the extractor message does not. The same direct call is the repair in both cases.
+
+```text
+`<binding>` is read at runtime, where it does not exist: the build compiles it only where it is called or rendered.
+```
+
+```tsx
+import { css } from '@devup-ui/react'
+consume(css)
+```
+
+```tsx
+import { css } from '@devup-ui/react'
+const card = css({ color: 'red' })
+```
+
+Other ESLint diagnostics, alias-retention warnings, and StyleX shorthand warnings are not extractor build errors. Tailwind classes the build does not recognise are preserved; they do not produce a new finite build-error family.
+
+## Verification sources
+
+The examples were checked against these source snapshots. The reference uses separately built branch binaries, not a claim that every open implementation PR has already merged or that their combined final binary was tested.
+
+- `origin/main` at `a935315c`
+- `origin/fix/selectors` at `d94ef3c6`
+- `origin/fix/compat-imports` at `4a6ee3a2`
+- `origin/fix/styled-props` at `e2cfa67b`
+- `origin/fix/theme-reads` at `53bdbc20`
+- `origin/fix/emotion-css` at `9b2a04a3`
+- `origin/fix/emotion-fallback-arrays` at `bb86b80d`
+- `origin/fix/vanilla-extract-companions` at `7866e4f3`
+- `origin/fix/nested-css-results` at `001a9816`
+- `origin/fix/emotion-component-selectors` at `d44950f7`
+- `origin/fix/imported-styled-definitions` at `7df41c06`
+- `origin/fix/barrel-and-namespace-imports` at `10ec6113`
+- `origin/fix/imports-follow-aliases` at `4830601d`
+- `origin/fix/emotion-rule-numbers-and-mixins` at `050c6862`
+- `origin/fix/local-style-objects` at `734fd16f`
+- `origin/fix/scoped-compiled-names` at `29812f37`
+- `origin/fix/tailwind-classes` at `c4a62b68`
+- `origin/feat/tailwind-v4-complete` at `8104fdec`
+- `origin/fix/types-match-build` at `d0028a89`
+- `origin/fix/eslint-alias-rules` at `32c30074`

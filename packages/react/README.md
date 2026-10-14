@@ -103,7 +103,7 @@ The Turbopack ranges overlap, so the direct-API result is effectively parity wit
 
 Devup UI is a CSS in JS preprocessor that does not require runtime.
 Devup UI eliminates the performance degradation of the browser through the CSS in JS preprocessor.
-What the build cannot know is kept as a CSS variable or reported as a located build error; see [supported syntax & limitations](https://devup-ui.com/docs/limitations).
+What the build cannot know is kept as a CSS variable or reported as a [located build error](https://devup-ui.com/docs/build-errors); see [supported syntax & limitations](https://devup-ui.com/docs/limitations).
 
 ```tsx
 const before = <Box bg="red" />

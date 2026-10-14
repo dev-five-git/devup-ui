@@ -41,7 +41,7 @@
 
 기존 CSS-in-JS 솔루션들은 개발자 경험과 성능 사이에서 타협을 강요했습니다. Devup UI는 Rust 기반 전처리기를 통해 모든 스타일을 빌드 타임에 처리함으로써 이 트레이드오프를 완전히 제거합니다.
 
-- **폭넓은 문법 지원**: 변수, 조건문, 반응형 배열, 가상 선택자, `styled()`, Emotion `css` prop 등을 빌드 타임에 컴파일합니다. 빌드가 알 수 없는 것은 조용히 빠지지 않고 위치가 표시된 빌드 오류가 됩니다 ([지원 문법과 한계](https://devup-ui.com/docs/limitations))
+- **폭넓은 문법 지원**: 변수, 조건문, 반응형 배열, 가상 선택자, `styled()`, Emotion `css` prop 등을 빌드 타임에 컴파일합니다. 빌드가 알 수 없는 것은 조용히 빠지지 않고 [위치가 표시된 빌드 오류](https://devup-ui.com/docs/build-errors)가 됩니다 ([지원 문법과 한계](https://devup-ui.com/docs/limitations))
 - **익숙한 API**: styled-components, Emotion과 호환되는 `styled()` API 제공
 - **진정한 제로 런타임**: 런타임에서 스타일링을 위한 JavaScript 실행이 전혀 없습니다
 - **가장 작은 번들 크기**: 최적화된 클래스명(`a`, `b`, ... `aa`, `ab`)으로 CSS 출력 최소화
