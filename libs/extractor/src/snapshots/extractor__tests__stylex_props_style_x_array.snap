@@ -25,5 +25,5 @@ ToBTreeSet {
             },
         ),
     },
-    code: "import \"@devup-ui/react/devup-ui.css\";\nimport stylex from \"@stylexjs/stylex\";\nconst s = {\n\t\"a\": \"a\",\n\t\"b\": \"b\"\n};\nconst flat = <div {...{ className: \"a b\" }} />;\nconst nested = <div {...{ className: \"a b\" }} />;\nconst conditional = <div {...{ className: `a ${on ? \"b\" : \"\"}` }} />;\n",
+    code: "import \"@devup-ui/react/devup-ui.css\";\nimport stylex from \"@stylexjs/stylex\";\nconst s = {\n\t\"a\": \"OLcolor-vred\",\n\t\"b\": \"OLmargin_dtop-v1px\"\n};\nconst flat = <div {...{ className: \"OLcolor-vred OLmargin_dtop-v1px\" }} />;\nconst nested = <div {...{ className: \"OLcolor-vred OLmargin_dtop-v1px\" }} />;\nconst conditional = <div {...{ className: `OLcolor-vred ${on ? \"OLmargin_dtop-v1px\" : \"\"}` }} />;\n",
 }

@@ -1,0 +1,7 @@
+{
+  "changes": {
+    "bindings/devup-ui-wasm/package.json": "Patch"
+  },
+  "note": "Prepare dormant original-owned static, dynamic and keyframe counter producers with exact legacy allocation inputs and request order, retaining source-site variable separation. Current production naming, generated output and cache behavior remain unchanged. No new build errors.",
+  "date": "2026-10-09T00:00:00.000Z"
+}

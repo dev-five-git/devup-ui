@@ -53,5 +53,5 @@ ToBTreeSet {
             },
         ),
     },
-    code: "import \"@devup-ui/core/devup-ui.css\";\n<div className={a ? {\n\t\"0\": \"a\",\n\t\"1\": \"b\"\n}[idx] || \"\" : {\n\t\"0\": \"c\",\n\t\"1\": \"d\"\n}[idx] || \"\"} />;\n",
+    code: "import \"@devup-ui/core/devup-ui.css\";\n((__devupSpread0, __devupAssignment67) => <div className={__devupSpread0 ? __devupAssignment67?.[0] ?? \"\" : __devupAssignment67?.[3] ?? \"\"} style={{ ...__devupAssignment67?.[1] }} />)(a, [((__devupValue) => [\n\t\"OHc3no9l20_b5qhwn3\",\n\t{},\n\t__devupValue,\n\t\"OHbnom_3kx5ldfs6oc\"\n])(\"red\"), ((__devupValue) => [\n\t\"OHb_xn4y9j4_slmxum\",\n\t{},\n\t__devupValue,\n\t\"OHdb_9p02g5z88jddm\"\n])(\"blue\")][idx]);\n",
 }

@@ -16,12 +16,16 @@ use oxc_ast::{
     ast::{Expression, ObjectPropertyKind},
     builder::AstBuilder,
 };
+use oxc_span::GetSpan;
 
 pub fn extract_keyframes_from_expression<'a>(
     ast_builder: &AstBuilder<'a>,
     expression: &mut Expression<'a>,
 ) -> KeyframesExtractResult {
-    let mut keyframes = ExtractKeyframes::default();
+    let mut keyframes = ExtractKeyframes {
+        origin: crate::style_origin::for_span(expression.span()),
+        ..ExtractKeyframes::default()
+    };
     let Expression::ObjectExpression(obj) = unwrap_syntax_only_mut(expression) else {
         return KeyframesExtractResult {
             keyframes,

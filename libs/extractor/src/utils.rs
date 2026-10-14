@@ -15,7 +15,7 @@ use oxc_ast::{
 use oxc_codegen::{Codegen, CodegenOptions};
 #[cfg(test)]
 use oxc_parser::Parser;
-use oxc_span::{SPAN, SourceType};
+use oxc_span::{GetSpan, SPAN, SourceType};
 use oxc_syntax::operator::{BinaryOperator, LogicalOperator, UnaryOperator};
 
 /// Check if a filename is a vanilla-extract style file.
@@ -470,6 +470,7 @@ pub(super) fn wrap_array_filter<'a>(
 
 /// Whether reading `expression` again gives the same value and changes
 /// nothing: literals, reads and functions, not calls, `new` or assignments
+#[cfg(test)]
 pub(super) fn is_pure(expression: &Expression<'_>) -> bool {
     use oxc_ast::ast::{ArrayExpressionElement, PropertyKind};
     match expression {
@@ -525,10 +526,12 @@ pub(super) fn is_pure(expression: &Expression<'_>) -> bool {
 /// Finds whether code waits (`await`) or yields outside the functions it
 /// holds, which no function wrapped around it could do in its place
 #[derive(Default)]
+#[cfg(test)]
 pub(super) struct Suspends {
     pub found: bool,
 }
 
+#[cfg(test)]
 impl<'a> oxc_ast_visit::Visit<'a> for Suspends {
     fn visit_await_expression(&mut self, _: &oxc_ast::ast::AwaitExpression<'a>) {
         self.found = true;
@@ -540,31 +543,6 @@ impl<'a> oxc_ast_visit::Visit<'a> for Suspends {
     }
     fn visit_arrow_function_expression(&mut self, _: &oxc_ast::ast::ArrowFunctionExpression<'a>) {}
     fn visit_class(&mut self, _: &oxc_ast::ast::Class<'a>) {}
-}
-
-/// Whether an element can read its impure spreads once through a function
-/// wrapped around it: what stays in that function (style props, `className`
-/// and `style`) neither waits nor yields, as the spreads and the other
-/// attributes and children before the last of them move out of it
-pub(super) fn reads_spreads_once(element: &oxc_ast::ast::JSXElement<'_>) -> bool {
-    use oxc_ast::ast::{JSXAttributeItem, JSXAttributeName};
-    use oxc_ast_visit::Visit;
-    let mut impure = false;
-    let mut suspends = Suspends::default();
-    for attribute in &element.opening_element.attributes {
-        match attribute {
-            JSXAttributeItem::SpreadAttribute(spread) => impure |= !is_pure(&spread.argument),
-            JSXAttributeItem::Attribute(attribute) => {
-                if !matches!(&attribute.name, JSXAttributeName::Identifier(name)
-                    if stays_attribute(&name.name))
-                    && let Some(value) = &attribute.value
-                {
-                    suspends.visit_jsx_attribute_value(value);
-                }
-            }
-        }
-    }
-    impure && !suspends.found
 }
 
 /// Whether the prop `name` stays an attribute of the element built, rather
@@ -772,10 +750,7 @@ pub(super) fn reads_directly(arguments: &[Argument<'_>]) -> bool {
     let [argument] = arguments else {
         return false;
     };
-    let expression = match argument {
-        Argument::SpreadElement(spread) => Some(&spread.argument),
-        argument => argument.as_expression(),
-    };
+    let expression = argument.as_expression();
     match expression.map(unwrap_syntax_only) {
         Some(
             Expression::ObjectExpression(_)
@@ -884,7 +859,8 @@ pub(super) fn fixed_value(props: &[crate::ExtractStyleProp<'_>]) -> Option<Strin
             ExtractStyleProp::MemberExpression { expression, .. } => {
                 Some(readable_code(expression))
             }
-            ExtractStyleProp::StaticArray(props) => props.iter().find_map(condition),
+            ExtractStyleProp::StaticArray(props)
+            | ExtractStyleProp::Evaluated { styles: props, .. } => props.iter().find_map(condition),
             _ => None,
         }
     }
@@ -906,7 +882,10 @@ pub(super) fn unreadable_styles(
                     found.push((*offset, code.clone()));
                 }
             }
-            ExtractStyleProp::StaticArray(props) => unreadable_styles(props, keys, found),
+            ExtractStyleProp::StaticArray(props)
+            | ExtractStyleProp::Evaluated { styles: props, .. } => {
+                unreadable_styles(props, keys, found);
+            }
             ExtractStyleProp::Conditional {
                 consequent,
                 alternate,
@@ -1033,9 +1012,17 @@ pub(super) fn unplaced_error(expression: &Expression<'_>) -> String {
 }
 
 pub(super) fn uncomposable_error(arguments: &[Argument<'_>]) -> String {
+    let fix = if arguments
+        .iter()
+        .any(|argument| matches!(argument, Argument::SpreadElement(_)))
+    {
+        "; pass the value itself instead of spreading it"
+    } else {
+        ""
+    };
     let arguments: Vec<String> = arguments.iter().map(readable_argument).collect();
     format!(
-        "Cannot compose `{}` at build time: each style must be a rule object, a class, or a condition choosing between them",
+        "Cannot compose `{}` at build time: each style must be a rule object, a class, or a condition choosing between them{fix}",
         arguments.join(", ")
     )
 }
@@ -1205,7 +1192,7 @@ fn merge_conditional_properties<'a>(
         } else {
             let (when_true, when_false) = (when_true.or(fallback), when_false.or(fallback));
             Expression::new_conditional_expression(
-                SPAN,
+                test.span(),
                 test.clone_in(ast_builder.allocator()),
                 value_or_undefined(ast_builder, when_true),
                 value_or_undefined(ast_builder, when_false),

@@ -15,5 +15,5 @@ ToBTreeSet {
             },
         ),
     },
-    code: "import \"@devup-ui/core/devup-ui.css\";\n<Variable className=\"a\" {...{ animate: { duration: 1 } }} />;\n",
+    code: "import \"@devup-ui/core/devup-ui.css\";\n((DevupAs0) => <DevupAs0 className=\"OLwidth-v100_c\" {...{ animate: { duration: 1 } }} />)(Variable || \"div\");\n",
 }

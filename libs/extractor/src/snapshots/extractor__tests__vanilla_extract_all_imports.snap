@@ -1,6 +1,6 @@
 ---
 source: libs/extractor/src/lib.rs
-expression: "ToBTreeSet::from(extract(\"all-imports.css.ts\",\nr#\"import { style, globalStyle, keyframes, createTheme } from '@devup-ui/react'\nexport const [theme, vars] = createTheme({\n  color: { primary: 'blue' }\n})\nexport const fadeIn = keyframes({\n  from: { opacity: 0 },\n  to: { opacity: 1 }\n})\nglobalStyle('body', {\n  margin: 0\n})\nexport const box = style({\n  animation: 'fadeIn 1s'\n})\n\"#,\nExtractOption\n{\n    package: \"@devup-ui/react\".to_string(), css_dir:\n    \"@devup-ui/react\".to_string(), single_css: true, import_main_css: false\n}).unwrap())"
+expression: "ToBTreeSet::from(extract(\"all-imports.css.ts\",\nr\"import { style, globalStyle, keyframes, createTheme } from '@devup-ui/react'\nexport const [theme, vars] = createTheme({\n  color: { primary: 'blue' }\n})\nexport const fadeIn = keyframes({\n  from: { opacity: 0 },\n  to: { opacity: 1 }\n})\nglobalStyle('body', {\n  margin: 0\n})\nexport const box = style({\n  animation: 'fadeIn 1s'\n})\n\",\nExtractOption\n{\n    package: \"@devup-ui/react\".to_string(), css_dir:\n    \"@devup-ui/react\".to_string(), single_css: true, import_main_css: false,\n    import_aliases: HashMap::new()\n}).unwrap())"
 ---
 ToBTreeSet {
     styles: {
@@ -75,5 +75,5 @@ ToBTreeSet {
             },
         ),
     },
-    code: "import \"@devup-ui/react/devup-ui.css\";\nexport const fadeIn = \"a\";\nexport const box = \"b\";\n;\n;\nexport const theme = \"theme-0-0\";\nexport const vars = { \"color\": { \"primary\": \"var(--color-primary-0-1)\" } };\n",
+    code: "import \"@devup-ui/react/devup-ui.css\";\nexport const fadeIn = \"KHdpcoq80gd1v1w6jq\";\nexport const box = \"OHatyiwixwu5c3awo5\";\n;\n;\nexport const theme = \"theme-0-0\";\nexport const vars = { \"color\": { \"primary\": \"var(--color-primary-0-1)\" } };\n",
 }

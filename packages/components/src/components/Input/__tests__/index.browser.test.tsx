@@ -21,7 +21,7 @@ describe('Input', () => {
     const { container } = render(<Input allowClear />)
     expect(container).toMatchSnapshot()
     expect(container.querySelector('[aria-label="input"]')).toHaveClass(
-      'padding-right-0-36px--1',
+      'OHa7d17bjl62fjktzk',
     )
   })
 
@@ -29,7 +29,7 @@ describe('Input', () => {
     const { container } = render(<Input allowClear={false} />)
     expect(container).toMatchSnapshot()
     expect(container.querySelector('[aria-label="input"]')).not.toHaveClass(
-      'padding-right-0-36px--1',
+      'OHa7d17bjl62fjktzk',
     )
   })
 
@@ -61,7 +61,7 @@ describe('Input', () => {
     const { container } = render(<Input error />)
     expect(container).toMatchSnapshot()
     expect(container.querySelector('[aria-label="input"]')).toHaveClass(
-      'border-color-0-var_lp_--error_cm_light-dark_lp__h_D52B2E_cm__h_FF5B5E_rp__rp_--1',
+      'OHceh4jiuz6cw_1f98',
     )
   })
 
@@ -138,7 +138,7 @@ describe('Input', () => {
     const { container } = render(<Input disabled icon={<GlassIcon />} />)
     expect(container).toMatchSnapshot()
     expect(container.querySelector('[aria-label="icon"]')).toHaveClass(
-      'color-0-var_lp_--inputDisabledText_cm_light-dark_lp__h_D6D7DE_cm__h_373737_rp__rp_--1',
+      'OHbiq56mj94yqjmap3',
     )
   })
 

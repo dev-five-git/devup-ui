@@ -1,6 +1,6 @@
 ---
 source: libs/extractor/src/lib.rs
-expression: "ToBTreeSet::from(extract(\"hover.css.ts\",\nr#\"import { style } from '@devup-ui/react'\nexport const hoverButton = style({ background: \"gray\", _hover: { background: \"blue\" } })\n\"#,\nExtractOption\n{\n    package: \"@devup-ui/react\".to_string(), css_dir:\n    \"@devup-ui/react\".to_string(), single_css: true, import_main_css: false\n}).unwrap())"
+expression: "ToBTreeSet::from(extract(\"hover.css.ts\",\nr#\"import { style } from '@devup-ui/react'\nexport const hoverButton = style({ background: \"gray\", _hover: { background: \"blue\" } })\n\"#,\nExtractOption\n{\n    package: \"@devup-ui/react\".to_string(), css_dir:\n    \"@devup-ui/react\".to_string(), single_css: true, import_main_css: false,\n    import_aliases: HashMap::new()\n}).unwrap())"
 ---
 ToBTreeSet {
     styles: {
@@ -29,5 +29,5 @@ ToBTreeSet {
             },
         ),
     },
-    code: "import \"@devup-ui/react/devup-ui.css\";\nexport const hoverButton = \"a b\";\n",
+    code: "import \"@devup-ui/react/devup-ui.css\";\nexport const hoverButton = \"OLbackground-vgray OHdbk4xhyc6_lbsv2t\";\n",
 }

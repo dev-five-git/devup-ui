@@ -14,5 +14,5 @@ ToBTreeSet {
             },
         ),
     },
-    code: "import \"@devup-ui/core/devup-ui-0.css\";\nlet variant = \"primary\";\nlet colors = {\n\tprimary: \"blue\",\n\tsecondary: \"red\"\n};\n<div className=\"a-a\" style={{ \"--a\": colors[variant] }} />;\n",
+    code: "import \"@devup-ui/core/devup-ui-0.css\";\nlet variant = \"primary\";\nlet colors = {\n\tprimary: \"blue\",\n\tsecondary: \"red\"\n};\n<div className=\"FLtest_ptsx-OHaaem0qd7_uj42ncv\" style={{ \"---SUHcimyw9tcbyo6fcn0-cu\": colors[variant] }} />;\n",
 }

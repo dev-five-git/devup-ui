@@ -15,5 +15,5 @@ ToBTreeSet {
             },
         ),
     },
-    code: "import \"@devup-ui/react/devup-ui.css\";\nconst e = <div className=\"a\" {...extraProps} />;\n",
+    code: "import \"@devup-ui/react/devup-ui.css\";\nconst e = <div className=\"OLbackground-vred\" {...extraProps} />;\n",
 }

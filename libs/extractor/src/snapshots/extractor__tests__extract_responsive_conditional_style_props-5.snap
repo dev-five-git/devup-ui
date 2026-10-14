@@ -1,6 +1,6 @@
 ---
 source: libs/extractor/src/lib.rs
-expression: "ToBTreeSet::from(extract(\"test.tsx\",\nr#\"import { Box } from \"@devup-ui/core\";\n<Box margin={a === b ? [d, e, f, x === y ? \"4px\" : \"2px\"] : c} />;\n\"#,\nExtractOption\n{\n    package: \"@devup-ui/core\".to_string(), css_dir:\n    \"@devup-ui/core\".to_string(), single_css: true, import_main_css: false\n}).unwrap())"
+expression: "ToBTreeSet::from(extract(\"test.tsx\",\nr#\"import { Box } from \"@devup-ui/core\";\n<Box margin={a === b ? [d, e, f, x === y ? \"4px\" : \"2px\"] : c} />;\n\"#,\nExtractOption\n{\n    package: \"@devup-ui/core\".to_string(), css_dir:\n    \"@devup-ui/core\".to_string(), single_css: true, import_main_css: false,\n    import_aliases: HashMap::new()\n}).unwrap())"
 ---
 ToBTreeSet {
     styles: {
@@ -61,5 +61,5 @@ ToBTreeSet {
             },
         ),
     },
-    code: "import \"@devup-ui/core/devup-ui.css\";\n<div className={a === b ? `a c e ${x === y ? \"g\" : \"h\"}` : \"a\"} style={{\n\t\"--b\": a === b ? d : c,\n\t\"--d\": e,\n\t\"--f\": f\n}} />;\n",
+    code: "import \"@devup-ui/core/devup-ui.css\";\n((__devupAssignment51) => <div className={__devupAssignment51?.[0] ?? \"\"} style={{ ...__devupAssignment51?.[1] }} />)(a === b ? ((__devupLevel0, __devupLevel1, __devupLevel2, __devupLevel3) => [\n\t`${__devupLevel0?.[0] ?? \"\"} ${__devupLevel1?.[0] ?? \"\"} ${__devupLevel2?.[0] ?? \"\"} ${__devupLevel3?.[0] ?? \"\"}`,\n\t{\n\t\t...__devupLevel0?.[1],\n\t\t...__devupLevel1?.[1],\n\t\t...__devupLevel2?.[1],\n\t\t...__devupLevel3?.[1]\n\t},\n\t[\n\t\t__devupLevel0?.[2],\n\t\t__devupLevel1?.[2],\n\t\t__devupLevel2?.[2],\n\t\t__devupLevel3?.[2]\n\t]\n])(((__devupValue) => [\n\t\"OHdptssdeozsj4oazi\",\n\t{ \"---SUHa7kv_s6pu9qljsqn-ay\": __devupValue },\n\t__devupValue\n])(d), ((__devupValue) => [\n\t\"OHbv9lzmhr4340hzyl\",\n\t{ \"---SUHa7kv_s6pu9qljsqn-ay-b\": __devupValue },\n\t__devupValue\n])(e), ((__devupValue) => [\n\t\"OHa9244ksz1cl4d1m_\",\n\t{ \"---SUHa7kv_s6pu9qljsqn-ay-c\": __devupValue },\n\t__devupValue\n])(f), x === y ? ((__devupValue) => [\n\t\"OLmargin-v4px-l3\",\n\t{},\n\t__devupValue\n])(\"4px\") : ((__devupValue) => [\n\t\"OLmargin-v2px-l3\",\n\t{},\n\t__devupValue\n])(\"2px\")) : ((__devupValue) => [\n\t\"OHdptssdeozsj4oazi\",\n\t{ \"---SUHa7kv_s6pu9qljsqn-ay\": __devupValue },\n\t__devupValue\n])(c));\n",
 }

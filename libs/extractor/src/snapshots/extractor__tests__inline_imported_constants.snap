@@ -12,6 +12,7 @@ ToBTreeSet {
                 selector: None,
                 style_order: None,
                 layer: None,
+                naming: Risky,
             },
         ),
         Static(
@@ -22,6 +23,7 @@ ToBTreeSet {
                 selector: None,
                 style_order: None,
                 layer: None,
+                naming: Risky,
             },
         ),
         Static(
@@ -32,6 +34,7 @@ ToBTreeSet {
                 selector: None,
                 style_order: None,
                 layer: None,
+                naming: Risky,
             },
         ),
         Static(
@@ -42,6 +45,7 @@ ToBTreeSet {
                 selector: None,
                 style_order: None,
                 layer: None,
+                naming: Risky,
             },
         ),
         Static(
@@ -52,6 +56,7 @@ ToBTreeSet {
                 selector: None,
                 style_order: None,
                 layer: None,
+                naming: Risky,
             },
         ),
         Static(
@@ -62,6 +67,7 @@ ToBTreeSet {
                 selector: None,
                 style_order: None,
                 layer: None,
+                naming: Risky,
             },
         ),
         Static(
@@ -72,6 +78,7 @@ ToBTreeSet {
                 selector: None,
                 style_order: None,
                 layer: None,
+                naming: Risky,
             },
         ),
         Static(
@@ -82,6 +89,7 @@ ToBTreeSet {
                 selector: None,
                 style_order: None,
                 layer: None,
+                naming: Risky,
             },
         ),
         Static(
@@ -92,6 +100,7 @@ ToBTreeSet {
                 selector: None,
                 style_order: None,
                 layer: None,
+                naming: Risky,
             },
         ),
         Static(
@@ -102,6 +111,7 @@ ToBTreeSet {
                 selector: None,
                 style_order: None,
                 layer: None,
+                naming: Risky,
             },
         ),
         Static(
@@ -116,12 +126,24 @@ ToBTreeSet {
         ),
         Static(
             ExtractStaticStyle {
+                property: "color",
+                value: "red",
+                level: 0,
+                selector: None,
+                style_order: None,
+                layer: None,
+                naming: Risky,
+            },
+        ),
+        Static(
+            ExtractStaticStyle {
                 property: "column-rule-color",
                 value: "purple",
                 level: 0,
                 selector: None,
                 style_order: None,
                 layer: None,
+                naming: Risky,
             },
         ),
         Static(
@@ -132,6 +154,7 @@ ToBTreeSet {
                 selector: None,
                 style_order: None,
                 layer: None,
+                naming: Risky,
             },
         ),
         Static(
@@ -142,6 +165,7 @@ ToBTreeSet {
                 selector: None,
                 style_order: None,
                 layer: None,
+                naming: Risky,
             },
         ),
         Static(
@@ -152,6 +176,7 @@ ToBTreeSet {
                 selector: None,
                 style_order: None,
                 layer: None,
+                naming: Risky,
             },
         ),
         Static(
@@ -162,6 +187,7 @@ ToBTreeSet {
                 selector: None,
                 style_order: None,
                 layer: None,
+                naming: Risky,
             },
         ),
         Static(
@@ -172,6 +198,7 @@ ToBTreeSet {
                 selector: None,
                 style_order: None,
                 layer: None,
+                naming: Risky,
             },
         ),
         Static(
@@ -182,6 +209,7 @@ ToBTreeSet {
                 selector: None,
                 style_order: None,
                 layer: None,
+                naming: Risky,
             },
         ),
         Static(
@@ -192,6 +220,7 @@ ToBTreeSet {
                 selector: None,
                 style_order: None,
                 layer: None,
+                naming: Risky,
             },
         ),
         Static(
@@ -202,6 +231,7 @@ ToBTreeSet {
                 selector: None,
                 style_order: None,
                 layer: None,
+                naming: Risky,
             },
         ),
         Static(
@@ -212,6 +242,7 @@ ToBTreeSet {
                 selector: None,
                 style_order: None,
                 layer: None,
+                naming: Risky,
             },
         ),
         Static(
@@ -222,6 +253,7 @@ ToBTreeSet {
                 selector: None,
                 style_order: None,
                 layer: None,
+                naming: Risky,
             },
         ),
         Static(
@@ -232,6 +264,7 @@ ToBTreeSet {
                 selector: None,
                 style_order: None,
                 layer: None,
+                naming: Risky,
             },
         ),
         Static(
@@ -242,6 +275,7 @@ ToBTreeSet {
                 selector: None,
                 style_order: None,
                 layer: None,
+                naming: Risky,
             },
         ),
         Static(
@@ -252,6 +286,7 @@ ToBTreeSet {
                 selector: None,
                 style_order: None,
                 layer: None,
+                naming: Risky,
             },
         ),
         Static(
@@ -262,6 +297,7 @@ ToBTreeSet {
                 selector: None,
                 style_order: None,
                 layer: None,
+                naming: Risky,
             },
         ),
         Static(
@@ -272,6 +308,7 @@ ToBTreeSet {
                 selector: None,
                 style_order: None,
                 layer: None,
+                naming: Risky,
             },
         ),
         Static(
@@ -282,6 +319,7 @@ ToBTreeSet {
                 selector: None,
                 style_order: None,
                 layer: None,
+                naming: Risky,
             },
         ),
         Static(
@@ -292,24 +330,27 @@ ToBTreeSet {
                 selector: None,
                 style_order: None,
                 layer: None,
+                naming: Risky,
             },
         ),
         Dynamic(
             ExtractDynamicStyle {
                 property: "accent-color",
                 level: 0,
-                identifier: "DYNAMIC",
+                identifier: "__devupSpread12",
                 selector: None,
                 style_order: None,
+                naming: Risky,
             },
         ),
         Dynamic(
             ExtractDynamicStyle {
                 property: "caret-color",
                 level: 0,
-                identifier: "MUTABLE",
+                identifier: "__devupSpread13",
                 selector: None,
                 style_order: None,
+                naming: Risky,
             },
         ),
         Dynamic(
@@ -325,90 +366,110 @@ ToBTreeSet {
             ExtractDynamicStyle {
                 property: "column-gap",
                 level: 0,
-                identifier: "colors[key]",
+                identifier: "__devupSpread6",
                 selector: None,
                 style_order: None,
+                naming: Risky,
             },
         ),
         Dynamic(
             ExtractDynamicStyle {
                 property: "column-rule-color",
                 level: 0,
-                identifier: "marker",
+                identifier: "__devupSpread15",
                 selector: None,
                 style_order: None,
+                naming: Risky,
             },
         ),
         Dynamic(
             ExtractDynamicStyle {
                 property: "flex",
                 level: 0,
-                identifier: "notThere",
+                identifier: "__devupSpread4",
                 selector: None,
                 style_order: None,
+                naming: Risky,
             },
         ),
         Dynamic(
             ExtractDynamicStyle {
                 property: "flex-basis",
                 level: 0,
-                identifier: "gone",
+                identifier: "__devupSpread3",
                 selector: None,
                 style_order: None,
+                naming: Risky,
             },
         ),
         Dynamic(
             ExtractDynamicStyle {
                 property: "flex-grow",
                 level: 0,
-                identifier: "helper",
+                identifier: "__devupSpread2",
                 selector: None,
                 style_order: None,
+                naming: Risky,
             },
         ),
         Dynamic(
             ExtractDynamicStyle {
                 property: "flex-shrink",
                 level: 0,
-                identifier: "looped",
+                identifier: "__devupSpread1",
                 selector: None,
                 style_order: None,
+                naming: Risky,
             },
         ),
         Dynamic(
             ExtractDynamicStyle {
                 property: "flood-color",
                 level: 0,
-                identifier: "twice.A",
+                identifier: "__devupSpread17",
                 selector: None,
                 style_order: None,
+                naming: Risky,
             },
         ),
         Dynamic(
             ExtractDynamicStyle {
                 property: "gap",
                 level: 0,
-                identifier: "colors.skip",
+                identifier: "__devupSpread8",
                 selector: None,
                 style_order: None,
+                naming: Risky,
             },
         ),
         Dynamic(
             ExtractDynamicStyle {
                 property: "left",
                 level: 0,
-                identifier: "NEG_STRING",
+                identifier: "__devupSpread10",
                 selector: None,
                 style_order: None,
+                naming: Risky,
             },
         ),
         Dynamic(
             ExtractDynamicStyle {
                 property: "lighting-color",
                 level: 0,
-                identifier: "DYNAMIC",
+                identifier: "__devupSpread16",
                 selector: None,
                 style_order: None,
+                naming: Risky,
+            },
+        ),
+        Dynamic(
+            ExtractDynamicStyle {
+                property: "order",
+                level: 0,
+                identifier: "__devupSpread5",
+                selector: None,
+                style_order: None,
+                naming: Risky,
             },
         ),
         Dynamic(
@@ -418,62 +479,59 @@ ToBTreeSet {
                 identifier: "`red`[`length`]",
                 selector: None,
                 style_order: None,
-            },
-        ),
-        Dynamic(
-            ExtractDynamicStyle {
-                property: "order",
-                level: 0,
-                identifier: "alsoMutable",
-                selector: None,
-                style_order: None,
+                naming: Risky,
             },
         ),
         Dynamic(
             ExtractDynamicStyle {
                 property: "outline-color",
                 level: 0,
-                identifier: "MUTATED",
+                identifier: "__devupSpread18",
                 selector: None,
                 style_order: None,
+                naming: Risky,
             },
         ),
         Dynamic(
             ExtractDynamicStyle {
                 property: "row-gap",
                 level: 0,
-                identifier: "colors.nope",
+                identifier: "__devupSpread7",
                 selector: None,
                 style_order: None,
+                naming: Risky,
             },
         ),
         Dynamic(
             ExtractDynamicStyle {
                 property: "top",
                 level: 0,
-                identifier: "missing",
+                identifier: "__devupSpread11",
                 selector: None,
                 style_order: None,
+                naming: Risky,
             },
         ),
         Dynamic(
             ExtractDynamicStyle {
                 property: "z-index",
                 level: 0,
-                identifier: "NOT_OBJECT",
+                identifier: "__devupSpread19",
                 selector: None,
                 style_order: None,
+                naming: Risky,
             },
         ),
         Dynamic(
             ExtractDynamicStyle {
                 property: "z-index",
                 level: 0,
-                identifier: "`red`.length",
+                identifier: "__devupSpread9",
                 selector: None,
                 style_order: None,
+                naming: Risky,
             },
         ),
     },
-    code: "import \"@devup-ui/react/devup-ui.css\";\nimport * as Devup from \"@devup-ui/react\";\nimport { PRIMARY, SIZE, NEG, TEMPLATE, colors, ALIAS, MUTABLE, DYNAMIC, renamed, alsoMutable, reBase, notThere, gone, value, ns, NEG_STRING, TEMPLATE_EXPRESSION, SPACED, NOT_OBJECT, helper, looped } from \"./tokens\";\nimport orange from \"./tokens\";\nimport * as tokens from \"./tokens\";\nimport named from \"./named\";\nimport { handler } from \"./handler\";\nimport cjs, { COMPILED, FROM_REQUIRE, DESTRUCTURED, MUTATED, DYNAMIC } from \"./cjs-tokens\";\nimport cjsObject, { OBJ, OVERRIDDEN, LATER } from \"./cjs-object\";\nimport twelve from \"./cjs-value\";\nimport twice from \"./cjs-twice\";\nimport marker, { named as markerNamed } from \"./cjs-marker\";\nimport { unused } from \"./unused\";\nimport missing from \"./missing\";\nexport const a = <div {...colors} onClick={handler} className={`a b c d e f g h i k m n o p q r s t v x y z aa ac ae ag ai ak am ao ${colors?.className || \"\"}`} style={{\n\t...{\n\t\t\"--j\": MUTABLE,\n\t\t\"--l\": DYNAMIC,\n\t\t\"--u\": missing,\n\t\t\"--w\": NEG_STRING,\n\t\t\"--_\": NOT_OBJECT,\n\t\t\"--ab\": colors.skip,\n\t\t\"--a-d\": colors.nope,\n\t\t\"--af\": colors[key],\n\t\t\"--ah\": alsoMutable,\n\t\t\"--aj\": notThere,\n\t\t\"--al\": gone,\n\t\t\"--an\": helper,\n\t\t\"--ap\": looped\n\t},\n\t...colors?.style\n}} />;\nexport const b = \"a\";\nexport const c = <div className=\"aq\" />;\nexport const d = ({ style, className, ...rest }) => <div {...rest} className={[\"a\", className].filter(Boolean).join(\" \")} style={style} />;\nexport const e = (PRIMARY) => <div className=\"ar\" style={{ \"--as\": PRIMARY }} />;\nexport const f = {\n\tPRIMARY,\n\tunused,\n\tSIZE: tokens.SIZE\n};\nexport const g = <div color={PRIMARY} />;\nexport const h = <Devup.Inner.Box color={4} />;\nexport const i = Devup[\"css\"]({ color: SIZE });\nexport const l = <div className=\"at au av aw ay az a0 a1 a2 a3 a4 a6 a8 a_\" style={{\n\t\"--ax\": MUTATED,\n\t\"--a5\": twice.A,\n\t\"--a7\": DYNAMIC,\n\t\"--a9\": marker\n}} />;\nexport const j = <div className=\"z ag\" style={{\n\t\"--_\": `red`.length,\n\t\"--ah\": `red`[`length`]\n}} />;\nexport const k = ({ style, className, ...rest }) => <div {...rest} className={[\"ba\", className].filter(Boolean).join(\" \")} style={style} />;\n",
+    code: "import \"@devup-ui/react/devup-ui.css\";\nimport * as Devup from \"@devup-ui/react\";\nimport { PRIMARY, SIZE, NEG, TEMPLATE, colors, ALIAS, MUTABLE, DYNAMIC, renamed, alsoMutable, reBase, notThere, gone, value, ns, NEG_STRING, TEMPLATE_EXPRESSION, SPACED, NOT_OBJECT, helper, looped } from \"./tokens\";\nimport orange from \"./tokens\";\nimport * as tokens from \"./tokens\";\nimport named from \"./named\";\nimport { handler } from \"./handler\";\nimport cjs, { COMPILED, FROM_REQUIRE, DESTRUCTURED, MUTATED, DYNAMIC } from \"./cjs-tokens\";\nimport cjsObject, { OBJ, OVERRIDDEN, LATER } from \"./cjs-object\";\nimport twelve from \"./cjs-value\";\nimport twice from \"./cjs-twice\";\nimport marker, { named as markerNamed } from \"./cjs-marker\";\nimport { unused } from \"./unused\";\nimport missing from \"./missing\";\nexport const a = ((__devupSpread13, __devupSpread12, __devupSpread11, __devupSpread10, __devupSpread9, __devupSpread8, __devupSpread7, __devupSpread6, __devupSpread5, __devupSpread4, __devupSpread3, __devupSpread2, __devupSpread1, __devupSpread14, __devupSpread0) => <div {...__devupSpread14} onClick={__devupSpread0} className={`RLcolor-vred RLpadding-v16px RLmargin-v_d8px RLwidth-v10px RLbackground-vblue RHb315hj_i1vcu4san RHa8g2xumhojij01zy RHb8x76u59hhxufrod RHdu77d5mxl1ndavpj RHcbd4n3y4ygv6wqbz RHdh6g231r9g97unro RLfill-vteal RLstroke-vnavy RHczdty_ocz1hl0mv3 RHc3r80zxb8ew4w9v0 RHcox823swlhbfxlng RLcontent-volive RHdh1zihfdz4v49gzq RHdvuxo38nc_uiiamw RLright-vred RLbottom-vnavy RHcbcn6bsnp8573nlt RHcw0vcga2ulypvqb_ RHbum35xu9sp8m4y9n RHc7ueiywg635w3tkg RHb4tvwk9hoy34dqyv RHby4rr3j5x1pdsu4i RHdqh66z69m7wqasmk RHcp4cushflh39hp9k RHb9gzomafqdqrticf ${__devupSpread14?.className || \"\"}`} style={{\n\t...{\n\t\t\"---SUHc6_h7p7p7zope6um-_d\": __devupSpread13,\n\t\t\"---SUHc6_h7p7p7zope6um-_z\": __devupSpread12,\n\t\t\"---SUHc6_h7p7p7zope6um-ad8\": __devupSpread11,\n\t\t\"---SUHc6_h7p7p7zope6um-aem\": __devupSpread10,\n\t\t\"---SUHc6_h7p7p7zope6um-agc\": __devupSpread9,\n\t\t\"---SUHc6_h7p7p7zope6um-agt\": __devupSpread8,\n\t\t\"---SUHc6_h7p7p7zope6um-ahd\": __devupSpread7,\n\t\t\"---SUHc6_h7p7p7zope6um-ah1\": __devupSpread6,\n\t\t\"---SUHc6_h7p7p7zope6um-aik\": __devupSpread5,\n\t\t\"---SUHc6_h7p7p7zope6um-ai3\": __devupSpread4,\n\t\t\"---SUHc6_h7p7p7zope6um-ajn\": __devupSpread3,\n\t\t\"---SUHc6_h7p7p7zope6um-aj3\": __devupSpread2,\n\t\t\"---SUHc6_h7p7p7zope6um-akm\": __devupSpread1\n\t},\n\t...__devupSpread14?.style\n}} />)(MUTABLE, DYNAMIC, missing, NEG_STRING, NOT_OBJECT, colors.skip, colors.nope, colors[key], alsoMutable, notThere, gone, helper, looped, ((__devupSpreadValue) => ({ ...__devupSpreadValue }))(colors), handler);\nexport const b = \"RLcolor-vred\";\nexport const c = <div className=\"RLcolor-vblue\" />;\nexport const d = ({ style, className, ...rest }) => <div {...rest} className={[\"OLcolor-vred\", className].filter(Boolean).join(\" \")} style={style} />;\nexport const e = (PRIMARY) => <div className=\"OHa9st4kt0yo6ai1s8\" style={{ \"---SUHc6_h7p7p7zope6um-aqu\": PRIMARY }} />;\nexport const f = {\n\tPRIMARY,\n\tunused,\n\tSIZE: tokens.SIZE\n};\nexport const g = <div color={PRIMARY} />;\nexport const h = <Devup.Inner.Box color={4} />;\nexport const i = Devup[\"css\"]({ color: SIZE });\nexport const l = ((__devupSpread18, __devupSpread17, __devupSpread16, __devupSpread15) => <div className=\"RLcolor-vmaroon RLbackground-vteal RHaj7kh7ka3qmi71v_ RHb43wxny3xztzm2z0 RLfill-vindigo RLstroke-vplum RLcaret_dcolor-vy RHchtpaxzuuhbmuwds RHbbfdjegwnd1523gf RLz_dindex-v12 RHawnxfezeg8mc5n9q RHazl7ej_y67ow45mn RHduljmofvzvv4aei9 RHcx0pym1_2xcwagoa\" style={{\n\t\"---SUHc6_h7p7p7zope6um-ay7\": __devupSpread18,\n\t\"---SUHc6_h7p7p7zope6um-a2q\": __devupSpread17,\n\t\"---SUHc6_h7p7p7zope6um-a3d\": __devupSpread16,\n\t\"---SUHc6_h7p7p7zope6um-a33\": __devupSpread15\n}} />)(MUTATED, twice.A, DYNAMIC, marker);\nexport const j = ((__devupSpread19, __devupAssignment2225) => <div className={`RHdf34lj6hc9p_uzwk ${__devupAssignment2225?.[0] ?? \"\"}`} style={{\n\t\"---SUHc6_h7p7p7zope6um-a55\": __devupSpread19,\n\t...__devupAssignment2225?.[1]\n}} />)(\"red\".length, ((__devupValue) => [\n\t\"RHbvdx6aic4z8aj1f_\",\n\t{ \"---SUHc6_h7p7p7zope6um-a6r\": __devupValue },\n\t__devupValue\n])(\"red\"[\"length\"]));\nexport const k = ({ style, className, ...rest }) => <div {...rest} className={[\"RLcolor-v16px\", className].filter(Boolean).join(\" \")} style={style} />;\n",
 }

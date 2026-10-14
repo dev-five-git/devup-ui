@@ -15,5 +15,5 @@ ToBTreeSet {
             },
         ),
     },
-    code: "import \"@devup-ui/core/devup-ui-0.css\";\nlet color = \"red\";\n<div className=\"a-a\" style={{ \"--a\": `${color}` }} />;\n",
+    code: "import \"@devup-ui/core/devup-ui-0.css\";\nlet color = \"red\";\n<div className=\"FLtest_ptsx-OHbaz_sz62w3bwfhxc\" style={{ \"---SUHcbytyroaa4xvtx16-a_\": `${color}` }} />;\n",
 }

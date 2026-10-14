@@ -3,19 +3,24 @@ import { mkdir, writeFile } from 'node:fs/promises'
 import { basename, dirname, join, relative, resolve } from 'node:path'
 
 import {
+  beginBuild,
   buildCanonicalMap,
+  collectNumberedFiles,
   computeFileReach,
   computeReachableFiles,
   createCompatTypes,
   createModuleResolver,
   createNodeModulesExcludeRegex,
+  createStateWriter,
   createThemeInterfaceArgs,
   type CustomShorthands,
+  extractedNeedles,
   getFileNumByFilename,
   type ImportAliases,
   loadDevupConfig,
   mergeImportAliases,
   planAtomHoist,
+  seedFileNumbers,
 } from '@devup-ui/plugin-utils'
 import {
   codeExtract,
@@ -26,9 +31,12 @@ import {
   importFileRoutes,
   registerShorthands,
   registerTheme,
+  resetBuildState,
+  seedFileMap,
   setAtomHoist,
   setDebug,
   setModuleResolver,
+  setNamingRoot,
   setPrefix,
 } from '@devup-ui/wasm'
 import type { RsbuildPlugin, Rspack } from '@rsbuild/core'
@@ -47,8 +55,10 @@ export interface DevupUIRsbuildPluginOptions {
   prefix?: string
   shorthands?: CustomShorthands
   /**
-   * Atom-level route-aware hoisting threshold (min routes sharing an atom for it
-   * to hoist into the shared devup-ui.css; clamped to >= 2; omit to disable).
+   * Atom-level route-aware hoisting threshold (min predeclared routes reaching a
+   * canonical bucket for its atoms to get shared names in the shared
+   * devup-ui.css; clamped to >= 2; omit to disable). Atoms of other buckets
+   * keep per-file names, even when identical atoms appear in several files.
    * Opt-in: when set, single-importer collapse + atom hoisting are enabled and
    * per-route CSS is served via getCss(fileNum). "Routes" are inferred from the
    * import graph (entry points and dynamic-import targets). For a single-entry
@@ -130,14 +140,20 @@ export const DevupUI = ({
 }: Partial<DevupUIRsbuildPluginOptions> = {}): RsbuildPlugin => {
   registerShorthands(shorthands ?? {})
   const importAliases = mergeImportAliases(userImportAliases)
+  const stateWriter = createStateWriter((path, content, encoding) =>
+    encoding ? writeFile(path, content, encoding) : writeFile(path, content),
+  )
 
   return {
     name: PLUGIN_NAME,
     async setup(api) {
+      // A build starts from its own options, not from what an earlier build
+      // in this process left in the engine
+      const endBuild = beginBuild({ resetBuildState })
+      api.onCloseBuild?.(endBuild)
       setDebug(debug)
-      if (prefix) {
-        setPrefix(prefix)
-      }
+      setPrefix(prefix ?? null)
+      setNamingRoot(api.context.rootPath)
 
       if (!existsSync(distDir)) await mkdir(distDir, { recursive: true })
       await writeFile(join(distDir, '.gitignore'), '*', 'utf-8')
@@ -157,7 +173,9 @@ export const DevupUI = ({
       if (!extractCss) return
 
       // Atom-level hoisting (opt-in via `atomHoist`). Configured BEFORE any
-      // transform so atoms receive global (shared) class names. Composes with
+      // transform: routes are imported, then the threshold is set, and bucket
+      // eligibility freezes at the first extraction. Late reach cannot promote
+      // or rename a bucket until resetBuildState. Composes with
       // single-importer collapse (both keyed by the canonical bucket). rsbuild
       // passes the ABSOLUTE resourcePath to codeExtract, so the graph maps use
       // absolute keys (keyBy: 'absolute') and the extraction filename is
@@ -201,6 +219,21 @@ export const DevupUI = ({
         }
       }
 
+      try {
+        // Number every file the build can extract in path order, so class
+        // prefixes do not depend on the order modules reach the transform
+        seedFileNumbers(
+          { seedFileMap },
+          collectNumberedFiles({
+            roots: [resolve(process.cwd(), 'src')],
+            include,
+            needles: extractedNeedles(libPackage, importAliases),
+            toId: (path) => (atomMode ? path.replaceAll('\\', '/') : path),
+          }),
+        )
+      } catch {
+        // Best-effort; numbering falls back to arrival order.
+      }
       // Extract the source files under `src` that the entries reach, in path
       // order, the same way the transform does, so that a stylesheet built on
       // its first import already holds the styles of every one. Best-effort:
@@ -413,7 +446,7 @@ export const DevupUI = ({
           if (updatedBaseStyle) {
             // update base style
             promises.push(
-              writeFile(
+              stateWriter.write(
                 join(cssDir, 'devup-ui.css'),
                 getCss(null, false),
                 'utf-8',
@@ -423,7 +456,7 @@ export const DevupUI = ({
 
           if (cssFile) {
             promises.push(
-              writeFile(
+              stateWriter.write(
                 join(cssDir, basename(cssFile)),
                 `/* ${resourcePath} ${Date.now()} */`,
                 'utf-8',

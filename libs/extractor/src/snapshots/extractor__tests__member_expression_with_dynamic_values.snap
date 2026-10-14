@@ -23,5 +23,5 @@ ToBTreeSet {
             },
         ),
     },
-    code: "import \"@devup-ui/react/devup-ui.css\";\nconst e = <div className={{\n\t\"a\": \"a\",\n\t\"b\": \"a\"\n}[key] || \"\"} style={{ \"--b\": {\n\ta: first,\n\tb: second\n}[key] }} />;\n",
+    code: "import \"@devup-ui/react/devup-ui.css\";\nconst e = ((__devupAssignment58) => <div className={__devupAssignment58?.[0] ?? \"\"} style={{ ...__devupAssignment58?.[1] }} />)({\n\ta: ((__devupValue) => [\n\t\t\"OHcl6f3e71_am9fzh0\",\n\t\t{ \"---SUHbxdy392cr5t1mi2e-a5\": __devupValue },\n\t\t__devupValue\n\t])(first),\n\tb: ((__devupValue) => [\n\t\t\"OHcl6f3e71_am9fzh0\",\n\t\t{ \"---SUHbxdy392cr5t1mi2e-a5\": __devupValue },\n\t\t__devupValue\n\t])(second)\n}[key]);\n",
 }

@@ -1,19 +1,66 @@
+pub mod admission;
+#[cfg(test)]
+mod admission_guard_tests;
+#[cfg(all(test, not(target_arch = "wasm32")))]
+mod admission_input_tests;
+#[cfg(all(test, not(target_arch = "wasm32")))]
+mod admission_interleaving_tests;
+#[cfg(all(test, not(target_arch = "wasm32")))]
+mod admission_root_tests;
+pub mod allocation_input;
 pub mod at_rule;
 pub mod atom_hoist;
+pub mod atom_name;
 pub mod class_map;
 mod constant;
+pub mod content_hash;
+pub mod content_name;
+#[cfg(test)]
+mod content_name_tests;
+pub mod content_typography;
+#[cfg(test)]
+mod content_typography_tests;
+pub mod content_value;
+mod counter_allocation;
+#[cfg(test)]
+mod counter_context_tests;
+pub mod counter_names;
+#[cfg(test)]
+mod counter_names_tests;
+mod counter_owner;
+#[cfg(test)]
+mod counter_proof_tests;
+mod counter_render;
+#[cfg(test)]
+mod counter_test_helpers;
 pub mod debug;
+pub mod exact_attempt;
+#[cfg(test)]
+mod exact_attempt_tests;
 pub mod file_map;
 pub mod file_routes;
 pub mod is_special_property;
+mod legacy_variable_names;
+pub mod naming;
+#[cfg(test)]
+mod naming_coverage_tests;
+pub mod naming_root;
+pub mod naming_scope;
 mod num_to_nm_base;
 pub mod optimize_multi_css_value;
 pub mod optimize_value;
 pub mod rm_css_comment;
+mod root_held;
+#[cfg(test)]
+mod scoped_name_tests;
 mod selector_separator;
+pub mod sparse_site;
+pub mod style_origin;
 pub mod style_selector;
 pub mod theme_tokens;
 pub mod utils;
+use legacy_variable_names::encode_selector;
+use legacy_variable_names::write_u8;
 
 use std::borrow::Cow;
 use std::collections::BTreeMap;
@@ -21,10 +68,13 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{LazyLock, RwLock};
 
 use crate::constant::{GLOBAL_ENUM_STYLE_PROPERTY, GLOBAL_STYLE_PROPERTY};
+pub use crate::counter_allocation::CounterSlot;
+pub use crate::counter_owner::CounterOwner;
 use crate::debug::is_debug;
-use crate::file_map::get_file_num_by_filename;
+
+pub use crate::naming::{Naming, Site};
 use crate::num_to_nm_base::num_to_nm_base;
-use crate::optimize_value::optimize_value;
+pub use crate::sparse_site::{sheet_to_variable_name, sheet_to_variable_name_at};
 use crate::style_selector::StyleSelector;
 use crate::utils::to_kebab_case;
 
@@ -35,14 +85,18 @@ mod prefix_state {
         static GLOBAL_PREFIX: RefCell<Option<String>> = const { RefCell::new(None) };
     }
     pub fn set_prefix(prefix: Option<String>) {
+        let _admission = crate::admission::enter();
+        crate::admission::assert_administration_allowed("set_prefix");
         GLOBAL_PREFIX.with(|p| *p.borrow_mut() = prefix);
     }
     pub fn get_prefix() -> Option<String> {
+        let _admission = crate::admission::enter();
         GLOBAL_PREFIX.with(|p| p.borrow().clone())
     }
     /// Run `f` with the current prefix as `&str` (empty when unset) without cloning.
     #[cfg(not(tarpaulin_include))]
     pub(crate) fn with_prefix<R>(f: impl FnOnce(&str) -> R) -> R {
+        let _admission = crate::admission::enter();
         GLOBAL_PREFIX.with(|p| f(p.borrow().as_deref().unwrap_or_default()))
     }
 }
@@ -53,11 +107,16 @@ mod prefix_state {
     use std::sync::Mutex;
     static GLOBAL_PREFIX: LazyLock<Mutex<Option<String>>> = LazyLock::new(|| Mutex::new(None));
     pub fn set_prefix(prefix: Option<String>) {
+        let _admission = crate::admission::enter();
+        crate::admission::assert_administration_allowed("set_prefix");
+        let _root = crate::root_held::RootHeld::enter("prefix");
         *GLOBAL_PREFIX
             .lock()
             .unwrap_or_else(std::sync::PoisonError::into_inner) = prefix;
     }
     pub fn get_prefix() -> Option<String> {
+        let _admission = crate::admission::enter();
+        let _root = crate::root_held::RootHeld::enter("prefix");
         GLOBAL_PREFIX
             .lock()
             .unwrap_or_else(std::sync::PoisonError::into_inner)
@@ -65,6 +124,8 @@ mod prefix_state {
     }
     /// Run `f` with the current prefix as `&str` (empty when unset) without cloning.
     pub(crate) fn with_prefix<R>(f: impl FnOnce(&str) -> R) -> R {
+        let _admission = crate::admission::enter();
+        let _root = crate::root_held::RootHeld::enter("prefix");
         f(GLOBAL_PREFIX
             .lock()
             .unwrap_or_else(std::sync::PoisonError::into_inner)
@@ -130,7 +191,7 @@ pub fn merge_selector(class_name: &str, selector: Option<&StyleSelector>) -> Str
     let sel = selector.map(StyleSelector::as_class_str);
     // `extra_amps` is `(&-count - 1)`, nonzero ONLY for the rare multi-`&` selector.
     // Locate the FIRST `&` with a `memchr`-backed `find` (bailing to 0 for the common
-    // zero/one-`&` selectors — `.a`, `.a:hover`, `theme-dark` — without spinning up the
+    // zero/one-`&` selectors ??`.a`, `.a:hover`, `theme-dark` ??without spinning up the
     // `filter(...).count()` iterator over the whole string), then count only the `&`s in
     // the tail AFTER it. That tail count already excludes the first `&`, so it equals
     // `count - 1` directly, dropping the `saturating_sub`. Byte-identical capacity.
@@ -187,6 +248,7 @@ impl ExactSizeIterator for DisassembleProperty {}
 
 #[must_use]
 pub fn disassemble_property(property: &str) -> DisassembleProperty {
+    let _admission = crate::admission::enter();
     // Nested selector keys (`&:hover`, `:focus`, `.parent &`) are not properties;
     // keep them verbatim so class names and case survive.
     if property.starts_with(':') || property.contains('&') {
@@ -195,6 +257,7 @@ pub fn disassemble_property(property: &str) -> DisassembleProperty {
     if let Some(properties) = HAS_CUSTOM_SHORTHANDS
         .load(Ordering::Relaxed)
         .then(|| {
+            let _root = crate::root_held::RootHeld::enter("shorthands");
             CUSTOM_SHORTHANDS
                 .read()
                 .ok()
@@ -225,7 +288,7 @@ pub fn disassemble_property(property: &str) -> DisassembleProperty {
                     // Build `-<kebab>` directly into ONE buffer instead of allocating
                     // a `to_kebab_case(property)` String and copying it into a second
                     // presized buffer. This inlines `to_kebab_case`'s exact conversion
-                    // (ASCII-uppercase char → `-` before it when not first, then its
+                    // (ASCII-uppercase char ??`-` before it when not first, then its
                     // lowercase; other chars copied verbatim) after the leading `-`.
                     // The `i != 0` guard matches `to_kebab_case`, so the vendor
                     // prefix's uppercase first char (`W`/`M`/`m`→lowercase) gets no
@@ -258,6 +321,9 @@ static HAS_CUSTOM_SHORTHANDS: AtomicBool = AtomicBool::new(false);
 
 /// Replace the custom shorthand registry used by style extraction.
 pub fn set_custom_shorthands(shorthands: BTreeMap<String, Vec<String>>) {
+    let _admission = crate::admission::enter();
+    crate::admission::assert_administration_allowed("set_custom_shorthands");
+    let _root = crate::root_held::RootHeld::enter("shorthands");
     if let Ok(mut registry) = CUSTOM_SHORTHANDS.write() {
         let shorthands: BTreeMap<String, Vec<String>> = shorthands
             .into_iter()
@@ -281,6 +347,8 @@ pub fn set_custom_shorthands(shorthands: BTreeMap<String, Vec<String>>) {
 
 #[must_use]
 pub fn get_custom_shorthand_names() -> Vec<String> {
+    let _admission = crate::admission::enter();
+    let _root = crate::root_held::RootHeld::enter("shorthands");
     CUSTOM_SHORTHANDS.read().map_or_else(
         |_| Vec::new(),
         |registry| registry.keys().cloned().collect(),
@@ -323,7 +391,7 @@ pub fn is_enum_property(property: &str) -> bool {
 /// Borrow the phf expansion map for `(property, value)` without materializing a `Vec`.
 ///
 /// The caller iterates `.entries()`/reads `.len()` directly off the static map, so the
-/// enum-property extract hot path (every `display`/`alignItems`/… prop per breakpoint
+/// enum-property extract hot path (every `display`/`alignItems`/??prop per breakpoint
 /// level) no longer allocates a throwaway `Vec` per call.
 #[must_use]
 pub fn get_enum_property_value(
@@ -347,144 +415,56 @@ pub fn get_enum_property_map(property: &str) -> Option<BTreeMap<&str, BTreeMap<&
 thread_local! {
     /// Reusable scratch buffer for building a class-map key. Because the common
     /// path only PROBES the map with a borrowed `&str`, the key never needs its
-    /// own heap allocation per call — it is built into this buffer, borrowed for
+    /// own heap allocation per call ??it is built into this buffer, borrowed for
     /// the probe, and only `.to_string()`-cloned on a genuine insert. Reusing
     /// one buffer removes the per-generated-name key `String` allocation on the
     /// hot repeat-property path.
     static KEY_BUF: std::cell::RefCell<String> = const { std::cell::RefCell::new(String::new()) };
 }
 
-/// Get-or-insert a key in the per-file class map and return its base-37 name.
+/// Get-or-insert a key in the per-file class map and return its numeric slot.
 /// `build_key` fills the supplied reusable buffer with the key bytes; the buffer
 /// is borrowed for the probe so the common already-present path allocates
 /// nothing, and only a real insert clones the key into an owned `String`.
 /// Single home for the class naming algorithm shared by keyframes, classname
 /// and variable-name generation.
-fn class_num_for_key(filename_key: &str, build_key: impl FnOnce(&mut String)) -> String {
+fn class_slot_for_key(filename_key: &str, build_key: impl FnOnce(&mut String)) -> CounterSlot {
+    let _admission = crate::admission::enter();
     KEY_BUF.with(|buf| {
+        let _root = crate::root_held::RootHeld::enter("key_buf");
         let mut key = buf.borrow_mut();
         key.clear();
         build_key(&mut key);
-        class_map::with_class_map_mut(|map| {
-            // Probe first so the owned filename key is only allocated on the
-            // first style for a file, not on every generated name.
-            if let Some(file_entry) = map.get_mut(filename_key) {
-                // Borrow-probe the common already-present-key path so the owned
-                // `String` is only materialized on a genuine insert, never on
-                // the hot repeat-property path.
-                if let Some(&num) = file_entry.get(key.as_str()) {
-                    num_to_nm_base(num)
-                } else {
-                    let len = file_entry.len();
-                    file_entry.insert(key.clone(), len);
-                    num_to_nm_base(len)
-                }
-            } else {
-                // First style seen for this file: build the inner map presized to
-                // exactly the one entry we insert, so the initial insert never starts
-                // from a zero-capacity map (which would rehash/grow on the first few
-                // inserts). Output/behavior is byte-identical — same single entry,
-                // same `0` numbering — this only fixes the allocation shape.
-                let mut inner = std::collections::HashMap::with_capacity(1);
-                inner.insert(key.clone(), 0);
-                map.insert(filename_key.to_string(), inner);
-                num_to_nm_base(0)
-            }
-        })
+        counter_allocation::reserve_counter(filename_key, key.as_str())
     })
+}
+
+/// Render the existing name from the slot returned by the single allocation request.
+fn class_num_for_key(filename_key: &str, build_key: impl FnOnce(&mut String)) -> String {
+    class_slot_for_key(filename_key, build_key).name()
+}
+
+/// An animation's name from its escaped content: equal animations share one
+/// name wherever they are met.
+#[must_use]
+pub fn keyframes_name_of_escaped(escaped: &str) -> String {
+    let _admission = crate::admission::enter();
+    with_prefix(|prefix| format!("{prefix}{}{escaped}", if is_debug() { "k-" } else { "K" }))
 }
 
 #[must_use]
 pub fn keyframes_to_keyframes_name(keyframes: &str, filename: Option<&str>) -> String {
-    with_prefix(|prefix| {
-        if is_debug() {
-            let mut result = String::with_capacity(prefix.len() + 2 + keyframes.len());
-            result.push_str(prefix);
-            result.push_str("k-");
-            result.push_str(keyframes);
-            result
-        } else {
-            let filename_key = filename.unwrap_or_default();
-            let class_num = class_num_for_key(filename_key, |key| {
-                key.reserve(2 + keyframes.len());
-                key.push_str("k-");
-                key.push_str(keyframes);
-            });
-            if let Some(fname) = filename {
-                let file_num = num_to_nm_base(get_file_num_by_filename(fname));
-                let mut result =
-                    String::with_capacity(prefix.len() + file_num.len() + 1 + class_num.len());
-                result.push_str(prefix);
-                result.push_str(&file_num);
-                result.push('-');
-                result.push_str(&class_num);
-                result
-            } else {
-                let mut result = String::with_capacity(prefix.len() + class_num.len());
-                result.push_str(prefix);
-                result.push_str(&class_num);
-                result
-            }
-        }
-    })
-}
-
-/// ASCII lookup table for selector encoding. `None` means pass through (alphanumeric, `-`, `_`)
-/// or fall through to the Unicode escape path.
-const SELECTOR_ENCODE: [Option<&str>; 128] = {
-    let mut table: [Option<&str>; 128] = [None; 128];
-    table[b'&' as usize] = Some("_a_");
-    table[b':' as usize] = Some("_c_");
-    table[b'(' as usize] = Some("_lp_");
-    table[b')' as usize] = Some("_rp_");
-    table[b'[' as usize] = Some("_lb_");
-    table[b']' as usize] = Some("_rb_");
-    table[b'=' as usize] = Some("_eq_");
-    table[b'>' as usize] = Some("_gt_");
-    table[b'<' as usize] = Some("_lt_");
-    table[b'~' as usize] = Some("_tl_");
-    table[b'+' as usize] = Some("_pl_");
-    table[b' ' as usize] = Some("_s_");
-    table[b'*' as usize] = Some("_st_");
-    table[b'.' as usize] = Some("_d_");
-    table[b'#' as usize] = Some("_h_");
-    table[b',' as usize] = Some("_cm_");
-    table[b'"' as usize] = Some("_dq_");
-    table[b'\'' as usize] = Some("_sq_");
-    table[b'/' as usize] = Some("_sl_");
-    table[b'\\' as usize] = Some("_bs_");
-    table[b'%' as usize] = Some("_pc_");
-    table[b'^' as usize] = Some("_cr_");
-    table[b'$' as usize] = Some("_dl_");
-    table[b'|' as usize] = Some("_pp_");
-    table[b'@' as usize] = Some("_at_");
-    table[b'!' as usize] = Some("_ex_");
-    table[b'?' as usize] = Some("_qm_");
-    table[b';' as usize] = Some("_sc_");
-    table[b'{' as usize] = Some("_lc_");
-    table[b'}' as usize] = Some("_rc_");
-    table
-};
-
-fn encode_selector(selector: &str) -> String {
-    use std::fmt::Write;
-    let mut result = String::with_capacity(selector.len() + 8);
-    for c in selector.chars() {
-        if c.is_ascii() {
-            let byte = c as u8;
-            if let Some(encoded) = SELECTOR_ENCODE[byte as usize] {
-                result.push_str(encoded);
-            } else if c.is_ascii_alphanumeric() || c == '-' || c == '_' {
-                result.push(c);
-            } else {
-                // ASCII but not in table and not alphanumeric/-/_
-                let _ = write!(result, "_u{:04x}_", c as u32);
-            }
-        } else {
-            let _ = write!(result, "_u{:04x}_", c as u32);
-        }
+    let _admission = crate::admission::enter();
+    if atom_hoist::is_atom_hoist() {
+        let scope = filename.map_or_else(
+            || "g".to_string(),
+            |file| format!("l-{}", atom_name::hex(&file_map::canonical(file))),
+        );
+        return with_prefix(|prefix| format!("{prefix}k1-{scope}-{}", atom_name::hex(keyframes)));
     }
-    result
+    let mut escaped = String::with_capacity(keyframes.len() + 8);
+    naming::escape_into(&mut escaped, keyframes);
+    keyframes_name_of_escaped(&escaped)
 }
 
 pub fn sheet_to_classname(
@@ -495,144 +475,74 @@ pub fn sheet_to_classname(
     style_order: Option<u8>,
     filename: Option<&str>,
 ) -> String {
-    // base style
-    let filename = if style_order == Some(0) {
-        None
-    } else {
-        filename
-    };
-    // `optimize_value` returns `Cow`: unmodifiable values (`red`, `14px`,
-    // `$primary`) borrow straight from `value` with zero allocation, and the
-    // key/result builders below only ever read `&optimized` as `&str`.
-    let optimized = value.map_or(Cow::Borrowed(""), optimize_value);
-    if is_debug() {
-        let selector = selector.unwrap_or_default().trim();
-        let encoded = if selector.is_empty() {
-            String::new()
-        } else {
-            encode_selector(selector)
-        };
-        // Encode the value like the selector: `.8`, `$text` or `#FFF` would break the
-        // CSS selector, and spaces would split the class attribute into several classes.
-        let value = encode_selector(&optimized);
-        let file_suffix = filename.map(get_file_num_by_filename);
-        let order = style_order.unwrap_or(255);
-        let prop = property.trim();
-        with_prefix(|prefix| {
-            // Estimate capacity: prefix + prop + separators + level(1-3) + value + encoded + order(1-3) + file
-            let mut result =
-                String::with_capacity(prefix.len() + prop.len() + value.len() + encoded.len() + 16);
-            result.push_str(prefix);
-            result.push_str(prop);
-            result.push('-');
-            write_u8(&mut result, level);
-            result.push('-');
-            result.push_str(&value);
-            result.push('-');
-            result.push_str(&encoded);
-            result.push('-');
-            write_u8(&mut result, order);
-            if let Some(fnum) = file_suffix {
-                result.push('-');
-                result.push_str(&num_to_nm_base(fnum));
-            }
-            result
-        })
-    } else {
-        let trimmed_selector = selector.unwrap_or_default().trim();
-        let order = style_order.unwrap_or(255);
-        let file_num_str = filename.map(|f| num_to_nm_base(get_file_num_by_filename(f)));
-        let trimmed_prop = property.trim();
-
-        let filename_key = filename.unwrap_or_default();
-        // Build key into the reusable buffer; probe borrows it, insert clones it.
-        let clas_num = class_num_for_key(filename_key, |key| {
-            key.reserve(trimmed_prop.len() + optimized.len() + trimmed_selector.len() + 16);
-            key.push_str(trimmed_prop);
-            key.push('-');
-            write_u8(key, level);
-            key.push('-');
-            key.push_str(&optimized);
-            key.push('-');
-            key.push_str(trimmed_selector);
-            key.push('-');
-            write_u8(key, order);
-            if let Some(fstr) = &file_num_str {
-                key.push('-');
-                key.push_str(fstr);
-            }
-        });
-        with_prefix(|prefix| {
-            if let Some(fstr) = &file_num_str {
-                let mut result = String::with_capacity(prefix.len() + 8 + clas_num.len());
-                result.push_str(prefix);
-                result.push_str(fstr);
-                result.push('-');
-                result.push_str(&clas_num);
-                result
-            } else {
-                let mut result = String::with_capacity(prefix.len() + clas_num.len());
-                result.push_str(prefix);
-                result.push_str(&clas_num);
-                result
-            }
-        })
-    }
+    sheet_to_classname_named(
+        property,
+        level,
+        value,
+        selector,
+        style_order,
+        filename,
+        Naming::Own,
+    )
 }
 
-/// Write a u8 value to a string without allocating via format!
-#[inline]
-fn write_u8(s: &mut String, v: u8) {
-    if v >= 100 {
-        s.push((b'0' + v / 100) as char);
-        s.push((b'0' + (v / 10) % 10) as char);
-        s.push((b'0' + v % 10) as char);
-    } else if v >= 10 {
-        s.push((b'0' + v / 10) as char);
-        s.push((b'0' + v % 10) as char);
-    } else {
-        s.push((b'0' + v) as char);
-    }
+pub fn sheet_to_classname_named(
+    property: &str,
+    level: u8,
+    value: Option<&str>,
+    selector: Option<&str>,
+    style_order: Option<u8>,
+    filename: Option<&str>,
+    naming: Naming,
+) -> String {
+    let selector = selector.map(|text| StyleSelector::Selector(text.trim().to_string()));
+    sheet_to_classname_content(
+        &content_name::AtomContent {
+            property: property.trim(),
+            value,
+            level,
+            order: style_order.unwrap_or(255),
+            naming,
+            selector: selector.as_ref(),
+            layer: None,
+            dynamic: false,
+        },
+        filename,
+    )
 }
 
+/// Name the same structured content that the sheet validates before insertion.
 #[must_use]
-pub fn sheet_to_variable_name(property: &str, level: u8, selector: Option<&str>) -> String {
-    if is_debug() {
-        let selector = selector.unwrap_or_default().trim();
-        let encoded = if selector.is_empty() {
-            String::new()
-        } else {
-            encode_selector(selector)
-        };
-        with_prefix(|prefix| {
-            let mut result =
-                String::with_capacity(2 + prefix.len() + property.len() + 4 + encoded.len());
-            result.push_str("--");
-            result.push_str(prefix);
-            result.push_str(property);
-            result.push('-');
-            write_u8(&mut result, level);
-            result.push('-');
-            result.push_str(&encoded);
-            result
-        })
-    } else {
-        let trimmed_selector = selector.unwrap_or_default().trim();
-        let base_name = class_num_for_key("", |key| {
-            key.reserve(property.len() + 4 + trimmed_selector.len());
-            key.push_str(property);
-            key.push('-');
-            write_u8(key, level);
-            key.push('-');
-            key.push_str(trimmed_selector);
-        });
-        with_prefix(|prefix| {
-            let mut result = String::with_capacity(2 + prefix.len() + base_name.len());
-            result.push_str("--");
-            result.push_str(prefix);
-            result.push_str(&base_name);
-            result
-        })
+pub fn sheet_to_classname_content(
+    content: &content_name::AtomContent<'_>,
+    filename: Option<&str>,
+) -> String {
+    sheet_to_classname_owned(content, filename, CounterOwner::Inactive)
+}
+
+/// Keep original counter ownership separate from canonical content and delivery scope.
+#[must_use]
+pub fn sheet_to_classname_owned(
+    content: &content_name::AtomContent<'_>,
+    filename: Option<&str>,
+    owner: CounterOwner,
+) -> String {
+    let _admission = crate::admission::enter();
+    let descriptor = content.content();
+    match naming::owned_private_counter(owner, (filename, content.order), content.naming) {
+        Some(id) => {
+            let scope = format!("D9-{id}");
+            let number = class_num_for_key(&scope, |key| {
+                key.push_str(&atom_name::hex(&descriptor.lossless));
+            });
+            let file = num_to_nm_base(usize::try_from(id).unwrap_or_default());
+            with_prefix(|prefix| format!("{prefix}{file}-{number}"))
+        }
+        None => naming_scope::name(
+            &descriptor,
+            (filename, content.order),
+            content_hash::FingerprintBits::PRODUCTION,
+        ),
     }
 }
 
@@ -760,20 +670,18 @@ mod tests {
         reset_class_map();
         assert_eq!(
             sheet_to_classname("background", 0, Some("red"), None, None, None),
-            "a"
+            "OLbackground-vred"
         );
-        assert_eq!(
-            sheet_to_classname("background", 0, Some("red"), Some("hover"), None, None),
-            "b"
-        );
+        let hover = sheet_to_classname("background", 0, Some("red"), Some("hover"), None, None);
+        assert_eq!(hover.len(), 18);
+        assert!(hover.starts_with("OH"));
         assert_eq!(
             sheet_to_classname("background", 1, None, None, None, None),
-            "c"
+            "OLbackground-l1"
         );
-        assert_eq!(
-            sheet_to_classname("background", 1, None, Some("hover"), None, None),
-            "d"
-        );
+        let responsive_hover = sheet_to_classname("background", 1, None, Some("hover"), None, None);
+        assert_eq!(responsive_hover.len(), 18);
+        assert_ne!(responsive_hover, hover);
 
         reset_class_map();
         assert_eq!(
@@ -828,13 +736,7 @@ mod tests {
             sheet_to_classname("background", 0, Some("#FF000080"), None, None, None),
         );
 
-        class_map::with_class_map(|map| {
-            assert_eq!(
-                map.get("")
-                    .and_then(|entry| entry.get("background-0-#FF000080--255")),
-                Some(&2)
-            );
-        });
+        assert_eq!(get_class_map().len(), 0, "the shared sheet has no counter");
         assert_eq!(
             sheet_to_classname("background", 0, Some("#fff"), None, None, None),
             sheet_to_classname("  background  ", 0, Some("#FFF"), None, None, None),
@@ -844,14 +746,6 @@ mod tests {
             sheet_to_classname("background", 0, Some("#ffffff"), None, None, None),
             sheet_to_classname("background", 0, Some("#FFF"), None, None, None),
         );
-
-        class_map::with_class_map(|map| {
-            assert_eq!(
-                map.get("")
-                    .and_then(|entry| entry.get("background-0-#FFF--255")),
-                Some(&3)
-            );
-        });
 
         assert_eq!(
             sheet_to_classname("background", 0, Some("#ffffff"), None, None, None),
@@ -863,13 +757,6 @@ mod tests {
             sheet_to_classname("background", 0, Some("#FFFFFFaa"), None, None, None),
         );
 
-        class_map::with_class_map(|map| {
-            assert_eq!(
-                map.get("")
-                    .and_then(|entry| entry.get("background-0-#FFFA--255")),
-                Some(&4)
-            );
-        });
         assert_eq!(
             sheet_to_classname(
                 "background",
@@ -892,118 +779,129 @@ mod tests {
         reset_class_map();
         assert_eq!(
             sheet_to_classname("background", 0, None, None, None, None),
-            "a"
+            "OLbackground"
         );
         assert_eq!(
             sheet_to_classname("background", 0, None, None, Some(1), None),
-            "b"
+            "OLbackground-o1"
         );
 
         reset_class_map();
         assert_eq!(
             sheet_to_classname("width", 0, Some("0px"), None, None, None),
-            "a"
+            "OLwidth-v0"
         );
         assert_eq!(
             sheet_to_classname("width", 0, Some("0em"), None, None, None),
-            "a"
+            "OLwidth-v0"
         );
         assert_eq!(
             sheet_to_classname("width", 0, Some("0rem"), None, None, None),
-            "a"
+            "OLwidth-v0"
         );
         assert_eq!(
             sheet_to_classname("width", 0, Some("0vh"), None, None, None),
-            "a"
+            "OLwidth-v0"
         );
         assert_eq!(
             sheet_to_classname("width", 0, Some("0%"), None, None, None),
-            "a"
+            "OLwidth-v0"
         );
         assert_eq!(
             sheet_to_classname("width", 0, Some("0dvh"), None, None, None),
-            "a"
+            "OLwidth-v0"
         );
         assert_eq!(
             sheet_to_classname("width", 0, Some("0dvw"), None, None, None),
-            "a"
+            "OLwidth-v0"
         );
         assert_eq!(
             sheet_to_classname("width", 0, Some("0vw"), None, None, None),
-            "a"
+            "OLwidth-v0"
         );
         assert_eq!(
             sheet_to_classname("width", 0, Some("0"), None, None, None),
-            "a"
+            "OLwidth-v0"
         );
+        let border = sheet_to_classname("border", 0, Some("solid 0 red"), None, None, None);
+        assert_eq!(border.len(), 18);
         assert_eq!(
             sheet_to_classname("border", 0, Some("solid 0px red"), None, None, None),
-            "b"
+            border
         );
         assert_eq!(
             sheet_to_classname("border", 0, Some("solid 0% red"), None, None, None),
-            "b"
+            border
         );
         assert_eq!(
             sheet_to_classname("border", 0, Some("solid 0em red"), None, None, None),
-            "b"
+            border
         );
         assert_eq!(
             sheet_to_classname("border", 0, Some("solid 0rem red"), None, None, None),
-            "b"
+            border
         );
         assert_eq!(
             sheet_to_classname("border", 0, Some("solid 0vh red"), None, None, None),
-            "b"
+            border
         );
         assert_eq!(
             sheet_to_classname("border", 0, Some("solid 0vw red"), None, None, None),
-            "b"
+            border
         );
         assert_eq!(
             sheet_to_classname("border", 0, Some("solid 0dvh red"), None, None, None),
-            "b"
+            border
         );
         assert_eq!(
             sheet_to_classname("border", 0, Some("solid 0dvw red"), None, None, None),
-            "b"
+            border
         );
 
         assert_eq!(
             sheet_to_classname("test", 0, Some("0px 0"), None, None, None),
-            "c"
+            "OLtest-v0_s0"
         );
         assert_eq!(
             sheet_to_classname("test", 0, Some("0em 0"), None, None, None),
-            "c"
+            "OLtest-v0_s0"
         );
         assert_eq!(
             sheet_to_classname("test", 0, Some("0rem 0"), None, None, None),
-            "c"
+            "OLtest-v0_s0"
         );
         assert_eq!(
             sheet_to_classname("test", 0, Some("0vh 0"), None, None, None),
-            "c"
+            "OLtest-v0_s0"
         );
         assert_eq!(
             sheet_to_classname("test", 0, Some("0vw 0"), None, None, None),
-            "c"
+            "OLtest-v0_s0"
         );
         assert_eq!(
             sheet_to_classname("test", 0, Some("0dvh 0"), None, None, None),
-            "c"
+            "OLtest-v0_s0"
         );
 
         assert_eq!(
             sheet_to_classname("test", 0, Some("0 0vh"), None, None, None),
-            "c"
+            "OLtest-v0_s0"
         );
         assert_eq!(
             sheet_to_classname("test", 0, Some("0 0vw"), None, None, None),
-            "c"
+            "OLtest-v0_s0"
         );
 
         reset_class_map();
+        let transition = sheet_to_classname(
+            "transition",
+            0,
+            Some("all .3s ease-in-out"),
+            None,
+            None,
+            None,
+        );
+        assert_eq!(transition.len(), 18);
         assert_eq!(
             sheet_to_classname(
                 "transition",
@@ -1013,7 +911,7 @@ mod tests {
                 None,
                 None
             ),
-            "a"
+            transition
         );
         assert_eq!(
             sheet_to_classname(
@@ -1024,7 +922,7 @@ mod tests {
                 None,
                 None
             ),
-            "a"
+            transition
         );
     }
 
@@ -1034,19 +932,18 @@ mod tests {
         set_debug(true);
         assert_eq!(
             sheet_to_classname("background", 0, None, None, None, None),
-            "background-0---255"
+            "OLbackground"
         );
-        assert_eq!(
-            sheet_to_classname("background", 0, Some("red"), Some("hover"), None, None),
-            "background-0-red-hover-255"
-        );
+        let hover = sheet_to_classname("background", 0, Some("red"), Some("hover"), None, None);
+        assert!(hover.starts_with("OH"));
+        assert_eq!(hover.len(), 18);
         assert_eq!(
             sheet_to_classname("background", 1, None, None, None, None),
-            "background-1---255"
+            "OLbackground-l1"
         );
-        assert_eq!(
+        assert_ne!(
             sheet_to_classname("background", 1, Some("red"), Some("hover"), None, None),
-            "background-1-red-hover-255"
+            hover
         );
     }
 
@@ -1054,20 +951,19 @@ mod tests {
     #[serial]
     fn test_debug_sheet_to_classname_encodes_value() {
         set_debug(true);
-        for (property, value, expected) in [
-            ("scale", "0.8", "scale-0-_d_8--255"),
-            ("background", "$text", "background-0-_dl_text--255"),
-            ("color", "#fff", "color-0-_h_FFF--255"),
-            ("height", "50%", "height-0-50_pc_--255"),
-            (
-                "transition",
-                "all .2s ease-in-out",
-                "transition-0-all_s__d_2s_s_ease-in-out--255",
-            ),
+        for (property, value) in [
+            ("scale", "0.8"),
+            ("background", "$text"),
+            ("color", "#fff"),
+            ("height", "50%"),
+            ("transition", "all .2s ease-in-out"),
         ] {
-            assert_eq!(
-                sheet_to_classname(property, 0, Some(value), None, None, None),
-                expected
+            let name = sheet_to_classname(property, 0, Some(value), None, None, None);
+            assert!(name.len() <= 18, "{name}");
+            assert!(
+                name.bytes()
+                    .all(|byte| byte.is_ascii_alphanumeric() || matches!(byte, b'_' | b'-')),
+                "{name}"
             );
         }
         set_debug(false);
@@ -1077,16 +973,11 @@ mod tests {
     #[serial]
     fn test_debug_sheet_to_classname_with_filename() {
         reset_class_map();
+        file_map::reset_file_map();
         set_debug(true);
-        // Debug mode + filename triggers the file_suffix branch (lines 234-235)
         let class_name =
             sheet_to_classname("background", 0, Some("red"), None, None, Some("test.tsx"));
-        assert!(class_name.contains("background-0-red--255-"));
-        // Should have a file number suffix
-        assert!(
-            class_name.split('-').count() >= 6,
-            "Expected file suffix in debug classname: {class_name}"
-        );
+        assert_eq!(class_name, "FLtest_ptsx-OLbackground-vred");
         set_debug(false);
     }
 
@@ -1181,13 +1072,15 @@ mod tests {
     fn test_keyframes_to_keyframes_name() {
         reset_class_map();
         set_debug(false);
-        assert_eq!(keyframes_to_keyframes_name("spin", None), num_to_nm_base(0));
-        assert_eq!(keyframes_to_keyframes_name("spin", None), num_to_nm_base(0));
+        assert_eq!(keyframes_to_keyframes_name("spin", None), "Kspin");
+        assert_eq!(keyframes_to_keyframes_name("spin", None), "Kspin");
+        assert_eq!(keyframes_to_keyframes_name("spin2", None), "Kspin2");
         assert_eq!(
-            keyframes_to_keyframes_name("spin2", None),
-            num_to_nm_base(1)
+            keyframes_to_keyframes_name("spin", Some("a.tsx")),
+            "Kspin",
+            "equal animations share one name in every file"
         );
-        reset_class_map();
+        assert_eq!(get_class_map().len(), 0, "no counter is used");
         set_debug(true);
         assert_eq!(keyframes_to_keyframes_name("spin", None), "k-spin");
         assert_eq!(keyframes_to_keyframes_name("spin1", None), "k-spin1");
@@ -1236,7 +1129,7 @@ mod tests {
 
         let class1 = sheet_to_classname("background", 0, Some("red"), None, None, None);
         assert!(class1.starts_with("app-"));
-        assert_eq!(class1, "app-a");
+        assert_eq!(class1, "app-OLbackground-vred");
 
         let class2 = sheet_to_classname("color", 0, Some("blue"), None, None, None);
         assert!(class2.starts_with("app-"));
@@ -1252,7 +1145,7 @@ mod tests {
         set_prefix(Some("my-".to_string()));
 
         let class_name = sheet_to_classname("background", 0, Some("red"), None, None, None);
-        assert_eq!(class_name, "my-background-0-red--255");
+        assert_eq!(class_name, "my-OLbackground-vred");
 
         let with_selector =
             sheet_to_classname("background", 0, Some("red"), Some("hover"), None, None);
@@ -1308,24 +1201,21 @@ mod tests {
     fn test_keyframes_to_keyframes_name_with_filename() {
         reset_class_map();
         set_debug(false);
-        // Test with filename to cover lines 148-151
         let name = keyframes_to_keyframes_name("spin", Some("test.tsx"));
-        // Should include file number prefix
-        assert!(name.contains('-'));
 
-        // Same keyframe in same file should return same name
         let name2 = keyframes_to_keyframes_name("spin", Some("test.tsx"));
         assert_eq!(name, name2);
 
-        // Different file should have different prefix
         let name3 = keyframes_to_keyframes_name("spin", Some("other.tsx"));
-        assert_ne!(name, name3);
+        assert_eq!(name, name3, "the name is the content, not the file");
+        assert_ne!(name, keyframes_to_keyframes_name("spin2", Some("test.tsx")));
     }
 
     #[test]
     #[serial]
     fn test_sheet_to_classname_with_filename() {
         reset_class_map();
+        file_map::reset_file_map();
         set_debug(false);
         // Test with filename to cover the filename branch
         let class1 = sheet_to_classname("background", 0, Some("red"), None, None, Some("test.tsx"));
@@ -1336,10 +1226,12 @@ mod tests {
         let class2 = sheet_to_classname("background", 0, Some("red"), None, None, Some("test.tsx"));
         assert_eq!(class1, class2);
 
-        // Different file should have different prefix
         let class3 =
             sheet_to_classname("background", 0, Some("red"), None, None, Some("other.tsx"));
-        assert_ne!(class1, class3);
+        assert_ne!(
+            class1, class3,
+            "independently delivered sheets must retain distinct identities without D9"
+        );
     }
 
     #[test]

@@ -1,0 +1,7 @@
+{
+  "changes": {
+    "bindings/devup-ui-wasm/package.json": "Patch"
+  },
+  "note": "Select dynamic typography and enum classes from the authored value exactly once in source order, without typography CSS variables or declarations. Preserve responsive and selector-scoped presets, conditional style order, template coercion and the existing spread contract. No new build errors or styling runtime are introduced.",
+  "date": "2026-10-07T00:00:00.000Z"
+}

@@ -1,6 +1,6 @@
 ---
 source: libs/extractor/src/lib.rs
-expression: "ToBTreeSet::from(extract(\"selectors.css.ts\",\nr#\"import { style } from '@devup-ui/react'\nexport const button = style({\n  background: 'blue',\n  selectors: {\n    '&:hover': {\n      background: 'darkblue'\n    },\n    '&:focus': {\n      outline: '2px solid blue'\n    },\n    '&:active': {\n      transform: 'scale(0.98)'\n    },\n    '&:disabled': {\n      opacity: 0.5,\n      cursor: 'not-allowed'\n    }\n  }\n})\n\"#,\nExtractOption\n{\n    package: \"@devup-ui/react\".to_string(), css_dir:\n    \"@devup-ui/react\".to_string(), single_css: true, import_main_css: false\n}).unwrap())"
+expression: "ToBTreeSet::from(extract(\"selectors.css.ts\",\nr\"import { style } from '@devup-ui/react'\nexport const button = style({\n  background: 'blue',\n  selectors: {\n    '&:hover': {\n      background: 'darkblue'\n    },\n    '&:focus': {\n      outline: '2px solid blue'\n    },\n    '&:active': {\n      transform: 'scale(0.98)'\n    },\n    '&:disabled': {\n      opacity: 0.5,\n      cursor: 'not-allowed'\n    }\n  }\n})\n\",\nExtractOption\n{\n    package: \"@devup-ui/react\".to_string(), css_dir:\n    \"@devup-ui/react\".to_string(), single_css: true, import_main_css: false,\n    import_aliases: HashMap::new()\n}).unwrap())"
 ---
 ToBTreeSet {
     styles: {
@@ -85,5 +85,5 @@ ToBTreeSet {
             },
         ),
     },
-    code: "import \"@devup-ui/react/devup-ui.css\";\nexport const button = \"a b c d e f\";\n",
+    code: "import \"@devup-ui/react/devup-ui.css\";\nexport const button = \"OLbackground-vblue OHcp7lhf0tt2e1gj35 OHc5zjyk9zs2ma4byx OHaiyj149ozuzzpcl4 OHb_asmf0yxnmplth8 OHdsk6t3xkxo8oxg51\";\n",
 }

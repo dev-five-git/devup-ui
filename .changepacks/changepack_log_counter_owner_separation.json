@@ -1,0 +1,7 @@
+{
+  "changes": {
+    "bindings/devup-ui-wasm/package.json": "Patch"
+  },
+  "note": "Separate original CSS allocation ownership from naming policy so the counter naming restoration can retain deferred original owners. Generated CSS, JavaScript and cache behavior are unchanged. No new build errors.",
+  "date": "2026-10-09T00:00:00.000Z"
+}
