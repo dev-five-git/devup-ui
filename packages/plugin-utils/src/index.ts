@@ -40,6 +40,13 @@ export {
   type StateWriter,
   writeFileAtomically,
 } from './state-writer'
+export {
+  findTailwindCss,
+  TAILWIND_CSS_CANDIDATES,
+  tailwindCssFiles,
+  type TailwindCssSource,
+  withTailwindCss,
+} from './tailwind-css'
 export type {
   CustomShorthands,
   DevupConfig,
