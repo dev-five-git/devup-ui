@@ -98,6 +98,54 @@ fn assert_payload(style: &ExtractStyleProp<'_>, expected: &str) {
     );
 }
 
+#[test]
+#[should_panic(expected = "visitor must preserve the identifier expression")]
+fn identifier_guard_rejects_when_expression_is_null() {
+    // Given: an AST expression with the wrong shape.
+    let allocator = Allocator::default();
+    let builder = AstBuilder::new(&allocator);
+    let expression = Expression::new_null_literal(SPAN, &builder);
+    // When/Then: the existing identifier assertion rejects it at its shape guard.
+    assert_identifier(&expression, "__devupRecord0");
+}
+
+#[test]
+#[should_panic(expected = "fixture payload must remain an Expression")]
+fn payload_guard_rejects_when_container_is_an_array() {
+    // Given: a non-Expression container.
+    let style = ExtractStyleProp::StaticArray(vec![]);
+    // When/Then: the existing payload assertion rejects the container shape.
+    assert_payload(&style, "__devupRecord0");
+}
+
+#[test]
+#[should_panic(expected = "first payload must remain dynamic")]
+fn payload_guard_rejects_when_first_declaration_is_static() {
+    // Given: a valid payload with only its first declaration's shape changed.
+    let allocator = Allocator::default();
+    let builder = AstBuilder::new(&allocator);
+    let mut style = payload(&builder, "__devupRecord0");
+    if let ExtractStyleProp::Expression { styles, .. } = &mut style {
+        styles[0] = styles[2].clone();
+    }
+    // When/Then: earlier identifier/length checks pass, then the first guard rejects.
+    assert_payload(&style, "__devupRecord0");
+}
+
+#[test]
+#[should_panic(expected = "second payload must remain dynamic code")]
+fn payload_guard_rejects_when_second_declaration_is_static() {
+    // Given: a valid payload with only its second declaration's shape changed.
+    let allocator = Allocator::default();
+    let builder = AstBuilder::new(&allocator);
+    let mut style = payload(&builder, "__devupRecord0");
+    if let ExtractStyleProp::Expression { styles, .. } = &mut style {
+        styles[1] = styles[2].clone();
+    }
+    // When/Then: the first declaration checks pass, then the second guard rejects.
+    assert_payload(&style, "__devupRecord0");
+}
+
 #[rstest]
 #[case::conditional(Container::Conditional)]
 #[case::static_array(Container::StaticArray)]

@@ -1,4 +1,5 @@
 use crate::as_visit::As;
+use crate::class_arguments::{class_arguments, flatten_classes};
 use crate::component::ExportVariableKind;
 use crate::composition::{KnownPart, KnownSide, KnownStyles, set_prop_order};
 use crate::css_utils::{
@@ -25,6 +26,7 @@ use crate::extractor::{
         StyledDefinition, StyledExtraction, extended, extract_style_from_styled,
         take_styled_modifiers,
     },
+    styled_jsx::StyledJsx,
 };
 use crate::gen_class_name::{gen_class_names, merge_expression_for_class_name};
 use crate::prop_modify_utils::{convert_class_name, modify_prop_object, modify_props};
@@ -149,6 +151,7 @@ pub struct DevupVisitor<'a> {
     /// offset of the code each is about
     pub errors: Vec<(u32, String)>,
     styled_imports: FxHashSet<String>,
+    styled_jsx: Option<StyledJsx>,
     /// Tracked `StyleX` default/namespace import names (e.g., `stylex` from `import stylex from '...'`)
     stylex_imports: FxHashSet<String>,
     /// Tracked `StyleX` named imports (e.g., `create` from `import { create } from '...'`)
@@ -606,6 +609,7 @@ impl<'a> DevupVisitor<'a> {
             util_imports: FxHashMap::default(),
             split_filename,
             styled_imports: FxHashSet::default(),
+            styled_jsx: None,
             stylex_imports: FxHashSet::default(),
             stylex_named_imports: FxHashMap::default(),
             global_style_components: FxHashSet::default(),
@@ -668,6 +672,8 @@ impl<'a> DevupVisitor<'a> {
         }
         for (name, kind) in [
             ("css", UtilType::Css),
+            ("cx", UtilType::Cx),
+            ("merge", UtilType::Merge),
             ("globalCss", UtilType::GlobalCss),
             ("keyframes", UtilType::Keyframes),
             ("createGlobalStyle", UtilType::GlobalCssComponent),
@@ -1400,6 +1406,7 @@ impl<'a> VisitMut<'a> for DevupVisitor<'a> {
     }
 
     fn visit_program(&mut self, it: &mut Program<'a>) {
+        self.styled_jsx = StyledJsx::reserve(it);
         if self.binds_style_results(it) {
             self.style_values = crate::style_values::StyleValues::new(
                 oxc_semantic::SemanticBuilder::new()
@@ -1426,6 +1433,11 @@ impl<'a> VisitMut<'a> for DevupVisitor<'a> {
                 !declaration.declarations.is_empty()
             });
             self.report_compiled_reads(it);
+        }
+        if let Some(helper) = &self.styled_jsx
+            && let Some(binding) = helper.binding(&self.ast, it.source_type.is_commonjs())
+        {
+            it.body.insert(0, binding);
         }
         if !self.styles.is_empty() {
             for css_file in self.css_files.iter().rev() {
@@ -1552,6 +1564,7 @@ impl<'a> VisitMut<'a> for DevupVisitor<'a> {
                     &self.imports,
                     &attrs,
                     inherited,
+                    &mut self.styled_jsx,
                 );
                 self.errors.extend(errors);
                 self.styles.extend(
@@ -1974,13 +1987,28 @@ impl<'a> VisitMut<'a> for DevupVisitor<'a> {
                         Argument::SpreadElement(spread) => &mut spread.argument,
                         argument => argument.to_expression_mut(),
                     };
-                    self.style_values.read_in(&self.ast, expression);
+                    if util_type.class_call().is_some() {
+                        self.style_values.read_in_class_names(&self.ast, expression);
+                    } else {
+                        self.style_values.read_in(&self.ast, expression);
+                    }
                 }
                 let offset = call.span.start;
-                let is_css = matches!(util_type.as_ref(), UtilType::Css);
+                let is_css = util_type.is_css();
                 if is_css {
-                    self.unknown_arguments("css", &call.arguments);
-                    self.changed_arguments("css", &call.arguments);
+                    self.unknown_arguments(util_type.api(), &call.arguments);
+                    self.changed_arguments(util_type.api(), &call.arguments);
+                }
+                if let Some(class_call) = util_type.class_call() {
+                    let classes = class_arguments(
+                        &self.ast,
+                        class_call,
+                        offset,
+                        &call.arguments,
+                        &mut self.errors,
+                    );
+                    call.arguments =
+                        oxc_allocator::Vec::from_array_in([Argument::from(classes)], &self.ast);
                 }
                 let composed_classes = if is_css
                     && let Some(StyleArguments { classes, rules }) =
@@ -1999,7 +2027,7 @@ impl<'a> VisitMut<'a> for DevupVisitor<'a> {
                 };
                 if call.arguments.len() == 1 {
                     let r = util_type.as_ref();
-                    *it = if matches!(r, UtilType::Css) {
+                    *it = if r.is_css() {
                         let ExtractResult {
                             mut styles,
                             style_order,
@@ -2017,7 +2045,7 @@ impl<'a> VisitMut<'a> for DevupVisitor<'a> {
                             LiteralHandling::ExpandResponsiveThemeToken,
                         );
                         if let Some(value) = runtime_value(&styles) {
-                            self.errors.push((offset, unused_error("css", &value)));
+                            self.errors.push((offset, unused_error(r.api(), &value)));
                         }
 
                         if styles.is_empty() {
@@ -2174,7 +2202,7 @@ impl<'a> VisitMut<'a> for DevupVisitor<'a> {
                     *it = self.global_css_result(util_type.is_component());
                 } else {
                     *it = match util_type.as_ref() {
-                        UtilType::Css | UtilType::Keyframes => {
+                        UtilType::Css | UtilType::Cx | UtilType::Merge | UtilType::Keyframes => {
                             Expression::new_string_literal(SPAN, "", None, &self.ast)
                         }
                         global => self.global_css_result(global.is_component()),
@@ -2191,17 +2219,33 @@ impl<'a> VisitMut<'a> for DevupVisitor<'a> {
                     )
                     .unwrap_or_else(|| Expression::new_string_literal(SPAN, "", None, &self.ast));
                 }
+                if util_type.class_call().is_some() {
+                    let classes = std::mem::replace(
+                        it,
+                        Expression::new_string_literal(SPAN, "", None, &self.ast),
+                    );
+                    *it = flatten_classes(&self.ast, classes);
+                }
             }
+        } else if let Expression::TaggedTemplateExpression(tag) = it
+            && let Some(class_type) = self.util_type(&tag.tag)
+            && class_type.class_call().is_some()
+        {
+            self.errors.push((
+                tag.span.start,
+                build_time_error(
+                    class_type.api(),
+                    &readable_code(it),
+                    "call it with class names, as in `cx('a', 'b')`",
+                ),
+            ));
+            *it = Expression::new_string_literal(SPAN, "", None, &self.ast);
         } else if let Expression::TaggedTemplateExpression(tag) = it
             && let Some(css_type) = self.util_type(&tag.tag)
         {
             self.style_values.read_in_text(&self.ast, &mut tag.quasi);
             let r = css_type.as_ref();
-            let api = match r {
-                UtilType::Css => "css",
-                UtilType::Keyframes => "keyframes",
-                UtilType::GlobalCss | UtilType::GlobalCssComponent => "globalCss",
-            };
+            let api = r.api();
             let mut build_css_str = || {
                 template_css_text(&tag.quasi, api).unwrap_or_else(|error| {
                     self.errors.push(error);
@@ -2543,7 +2587,7 @@ impl<'a> VisitMut<'a> for DevupVisitor<'a> {
             Some(Expression::TaggedTemplateExpression(tag)) => self.util_type(&tag.tag),
             _ => None,
         }
-        .filter(|util| matches!(util.as_ref(), UtilType::Css | UtilType::Keyframes))
+        .filter(|util| util.is_css() || matches!(util.as_ref(), UtilType::Keyframes))
         .and_then(|util| Some((util, self.style_values.constant(&it.id)?)));
         let start = it.init.as_ref().map(|init| init.span().start);
         let styled_binding = self.style_values.constant(&it.id);
@@ -2567,7 +2611,7 @@ impl<'a> VisitMut<'a> for DevupVisitor<'a> {
                 .and_then(|(at, styles)| (Some(at) == start).then_some(styles));
             self.style_values.insert(
                 symbol,
-                if matches!(util.as_ref(), UtilType::Css) {
+                if util.is_css() {
                     crate::style_values::StyleValue::Class(value, styles)
                 } else {
                     crate::style_values::StyleValue::Keyframes(value)

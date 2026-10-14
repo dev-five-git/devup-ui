@@ -1,0 +1,7 @@
+---
+source: libs/extractor/src/lib.rs
+expression: "emotion_class_call(r\"const red = css({ color: 'red' });\nexport const a = (cls) => merge(cls);\nexport const b = (cls) => merge(`${red}  external ${cls}`);\nexport const c = merge('a  b');\nexport const d = (on, cls) => merge(on ? 'a b' : cls);\nexport const e = (cls) => merge(cls || 'x');\nexport const f = (make) => merge(make());\nexport const g = (cls) => merge(`glued${cls}`);\nexport const h = (cls) => merge(cls.names);\nexport const i = merge(red);\nexport const j = (cls) => merge({ a: cls });\nexport const k = (cls) => merge([cls]);\")"
+---
+Ok(
+    "import \"@devup-ui/react/devup-ui-0.css\";\nconst red = \"a-a\";\nexport const a = (cls) => cls;\nexport const b = (cls) => `a-a external ${cls}`;\nexport const c = \"a b\";\nexport const d = (on, cls) => on ? \"a b\" : `${cls}`;\nexport const e = (cls) => `${cls || \"x\"}`;\nexport const f = (make) => `${make()}`;\nexport const g = (cls) => `glued${cls}`;\nexport const h = (cls) => cls.names;\nexport const i = \"a-a\";\nexport const j = (cls) => `${{ a: cls }}`;\nexport const k = (cls) => `${[cls]}`;\n",
+)

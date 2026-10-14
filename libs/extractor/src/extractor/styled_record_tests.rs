@@ -91,6 +91,63 @@ fn inherited_captures_when_native_extension_renders(
 
 #[rstest]
 #[serial_test::serial]
+fn inherited_captures_when_dynamic_native_base_renders(
+    #[values(false, true)] on: bool,
+    #[values(false, true)] single_css: bool,
+) {
+    // Given: a lowercase runtime target binding and an inherited captured guard.
+    reset_class_map();
+    reset_file_map();
+    let code = format!(
+        "import {{styled}} from '@devup-ui/react';const trace=[];function make(on,target){{const Base=styled(target)({{color:'red',...((trace.push('base'),on)?{{color:'blue'}}:{{}})}});const Ext=styled(Base)({{p:1}});return Ext({{id:'extension',className:'caller'}});}}const rendered=make({on},'div');"
+    );
+    let output = match crate::extract(
+        "test.tsx",
+        &code,
+        crate::ExtractOption {
+            single_css,
+            ..crate::ExtractOption::default()
+        },
+    ) {
+        Ok(output) => output,
+        Err(error) => panic!("dynamic base extension must extract: {error}"),
+    };
+    let mut declarations = Vec::new();
+    for style in &output.styles {
+        let crate::ExtractStyleValue::Static(value) = style else {
+            panic!("fixture declarations must be static");
+        };
+        let Some(crate::extract_style::style_property::StyleProperty::ClassName(name)) =
+            style.extract(if single_css { None } else { Some("test.tsx") })
+        else {
+            panic!("fixture declaration must have a class");
+        };
+        declarations.push(format!(
+            "['{name}','{}','{}']",
+            value.property(),
+            value.value()
+        ));
+    }
+    // When: execute the emitted extension with its actual runtime tag value.
+    let rendered = evaluate_native_render(
+        &output.code,
+        &format!(
+            "const names=rendered.props.className.split(' ');const styles=[{}].filter(([name])=>names.includes(name)).map(([,prop,value])=>[prop,value]).sort();JSON.stringify([rendered.type,rendered.props.id,styles,names.filter(name=>name==='caller'),trace]);",
+            declarations.join(",")
+        ),
+    );
+    // Then: the tag, selected color, extension padding and single read survive.
+    let color = if on { "blue" } else { "red" };
+    assert_eq!(
+        rendered,
+        format!(
+            r#"["div","extension",[["color","{color}"],["padding","4px"]],["caller"],["base"]]"#
+        )
+    );
+}
+
+#[rstest]
+#[serial_test::serial]
 fn inherited_dependent_reads_when_attrs_and_later_styles_compose(
     #[values(false, true)] outer: bool,
     #[values(false, true)] inner: bool,
@@ -420,7 +477,7 @@ fn original_record_when_unaffected_or_unreadable(#[case] rules: &str) {
     assert_eq!(readable_code(&statement.expression), original);
 }
 
-/// Evaluate the emitted render scope, lowering only its empty native JSX element.
+/// Evaluate the emitted render scope, lowering its empty native or bound JSX element.
 fn evaluate_native_render(code: &str, observation: &str) -> String {
     use oxc_ast::ast::{
         ImportDeclaration, JSXAttributeItem, JSXAttributeName, JSXAttributeValue, JSXElement,
@@ -439,10 +496,17 @@ fn evaluate_native_render(code: &str, observation: &str) -> String {
 
         fn visit_jsx_element(&mut self, element: &JSXElement<'a>) {
             assert_eq!(element.children.len(), 0);
-            let JSXElementName::Identifier(tag) = &element.opening_element.name else {
-                panic!("fixture must render a native element");
+            let tag = match &element.opening_element.name {
+                JSXElementName::Identifier(tag) => {
+                    assert_eq!(tag.name, "div");
+                    "'div'"
+                }
+                JSXElementName::IdentifierReference(tag) => {
+                    assert_eq!(tag.name, "DevupStyled");
+                    tag.name.as_str()
+                }
+                _ => panic!("fixture must render a native element"),
             };
-            assert_eq!(tag.name, "div");
             let props: Vec<_> = element
                 .opening_element
                 .attributes
@@ -469,7 +533,7 @@ fn evaluate_native_render(code: &str, observation: &str) -> String {
                 .collect();
             self.0.push((
                 element.span,
-                format!("({{type:'div',props:{{{}}}}})", props.join(",")),
+                format!("({{type:{tag},props:{{{}}}}})", props.join(",")),
             ));
         }
     }
