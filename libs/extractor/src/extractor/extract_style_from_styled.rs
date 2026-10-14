@@ -30,6 +30,7 @@ use oxc_ast::{
     },
     builder::AstBuilder,
 };
+use oxc_ast_visit::VisitMut;
 use oxc_span::{GetSpan, SPAN};
 use oxc_syntax::operator::{BinaryOperator, LogicalOperator, UnaryOperator};
 
@@ -63,6 +64,29 @@ pub struct StyledDefinition<'a> {
     bindings: Vec<(String, Expression<'a>)>,
 }
 
+struct Rename<'b, 'a> {
+    builder: &'b AstBuilder<'a>,
+    names: FxHashMap<String, String>,
+}
+
+impl<'a> VisitMut<'a> for Rename<'_, 'a> {
+    fn visit_identifier_reference(
+        &mut self,
+        identifier: &mut oxc_ast::ast::IdentifierReference<'a>,
+    ) {
+        let mut code = String::new();
+        // Dynamic identifiers can hold emitted JS code. Captured names
+        // were excluded from authored source, so only whole tokens change.
+        let separator = |ch: char| !ch.is_alphanumeric() && ch != '_' && ch != '$';
+        for chunk in identifier.name.split_inclusive(separator) {
+            let token = chunk.trim_end_matches(separator);
+            code.push_str(self.names.get(token).map_or(token, String::as_str));
+            code.push_str(&chunk[token.len()..]);
+        }
+        identifier.name = oxc_ast::ast::Ident::from_in(code.as_str(), self.builder.allocator());
+    }
+}
+
 impl<'a> StyledDefinition<'a> {
     fn visit_expressions(
         &mut self,
@@ -87,29 +111,6 @@ impl<'a> StyledDefinition<'a> {
     }
 
     fn rebind(&self, builder: &AstBuilder<'a>, scope: &mut Expression<'a>) -> Self {
-        use oxc_ast_visit::VisitMut;
-        struct Rename<'b, 'a> {
-            builder: &'b AstBuilder<'a>,
-            names: FxHashMap<String, String>,
-        }
-        impl<'a> VisitMut<'a> for Rename<'_, 'a> {
-            fn visit_identifier_reference(
-                &mut self,
-                identifier: &mut oxc_ast::ast::IdentifierReference<'a>,
-            ) {
-                let mut code = String::new();
-                // Dynamic identifiers can hold emitted JS code. Captured names
-                // were excluded from authored source, so only whole tokens change.
-                let separator = |ch: char| !ch.is_alphanumeric() && ch != '_' && ch != '$';
-                for chunk in identifier.name.split_inclusive(separator) {
-                    let token = chunk.trim_end_matches(separator);
-                    code.push_str(self.names.get(token).map_or(token, String::as_str));
-                    code.push_str(&chunk[token.len()..]);
-                }
-                identifier.name =
-                    oxc_ast::ast::Ident::from_in(code.as_str(), self.builder.allocator());
-            }
-        }
         let allocator = builder.allocator();
         let mut inherited = Self {
             name: self.name.clone(),
