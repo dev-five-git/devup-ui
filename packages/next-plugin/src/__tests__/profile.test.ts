@@ -8,12 +8,18 @@ import {
 } from '../profile'
 
 let originalEnv: NodeJS.ProcessEnv
+let originalEnvValues: NodeJS.ProcessEnv
 
 beforeEach(() => {
-  originalEnv = { ...process.env }
+  originalEnv = process.env
+  originalEnvValues = { ...originalEnv }
 })
 
 afterEach(() => {
+  for (const key of Object.keys(originalEnv)) {
+    if (!Object.hasOwn(originalEnvValues, key)) delete originalEnv[key]
+  }
+  Object.assign(originalEnv, originalEnvValues)
   process.env = originalEnv
 })
 
@@ -22,22 +28,28 @@ describe('profile', () => {
     delete process.env.DEVUP_UI_PROFILE
     const consoleSpy = spyOn(console, 'info').mockImplementation(() => {})
 
-    expect(isProfileEnabled()).toBe(false)
-    reportProfile('next.prewarm')
-    expect(consoleSpy).not.toHaveBeenCalled()
-    consoleSpy.mockRestore()
+    try {
+      expect(isProfileEnabled()).toBe(false)
+      reportProfile('next.prewarm')
+      expect(consoleSpy).not.toHaveBeenCalled()
+    } finally {
+      consoleSpy.mockRestore()
+    }
   })
 
   it('reports structured measurements when enabled', () => {
     process.env.DEVUP_UI_PROFILE = '1'
     const consoleSpy = spyOn(console, 'info').mockImplementation(() => {})
 
-    reportProfile('next.prewarm', { durationMs: 12.34, files: 2 })
+    try {
+      reportProfile('next.prewarm', { durationMs: 12.34, files: 2 })
 
-    expect(consoleSpy).toHaveBeenCalledWith(
-      '[devup-ui:profile] {"phase":"next.prewarm","durationMs":12.34,"files":2}',
-    )
-    consoleSpy.mockRestore()
+      expect(consoleSpy).toHaveBeenCalledWith(
+        '[devup-ui:profile] {"phase":"next.prewarm","durationMs":12.34,"files":2}',
+      )
+    } finally {
+      consoleSpy.mockRestore()
+    }
   })
 
   it('returns a non-negative elapsed duration', () => {

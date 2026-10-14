@@ -7,199 +7,177 @@ export const metadata = {
 
 # Optimize CSS
 
-Devup UI automatically optimizes CSS output through micro-unit optimization, duplicate removal, and intelligent value conversion to minimize bundle size and improve performance. This document explains the various CSS optimization techniques used by Devup UI, including micro-unit optimization, color optimization, and global CSS handling.
+Devup UI extracts styles at build time, normalizes supported values, and reuses
+identical atomic rules. It is not a general-purpose CSS minifier: do not assume
+that every decimal or shorthand will be reduced.
 
-## Micro-unit Optimization
+Each input below is a standalone source file. With the build plugin configured,
+the shown CSS was emitted by an isolated extraction with an empty theme (`{}`)
+and the default prefix. Generated class, keyframe, and layer names depend on
+extraction state and prefix; they are not stable identifiers to reference manually.
 
-### **Value Optimization**
-
-Devup UI optimizes CSS values by:
-
-- **Removing unnecessary zeros**: `0px` becomes `0`
-- **Shortening decimals**: `0.5000` becomes `0.5`
-- **Optimizing units**: `0px` becomes `0` when appropriate
-- **Converting to alternative units**: `0px` is converted to `0%` in CSS functions where unit-less zero is not allowed
-- **Removing redundant spaces**: `margin: 0 0 0 0` becomes `margin:0`
-
-```
-// Before optimization
-<Box
-  margin="0px 0px 0px 0px"
-  padding="16.0000px"
-  width="0px"
-/>
-
-// After optimization
-<Box
-  margin="0"
-  padding="16px"
-  width="0"
-/>
-```
-
-### **Aspect Ratio Optimization**
-
-Aspect ratios are simplified to their smallest equivalent ratio using the greatest common divisor (GCD).
-For example, 500/100 becomes 5/1, while 16/9 remains unchanged since GCD(16, 9) = 1.
+## Value and Unit Optimization
 
 ```tsx
-// Before: aspect-ratio: 500/100
-<Box aspectRatio="500/100" />
+import { Box } from '@devup-ui/react'
 
-// After: aspect-ratio: 5/1 (optimized)
-// The system calculates GCD(500, 100) = 100, simplifying the ratio to 5/1
+const values = <Box m="0px 0px 0px 0px" p="16.0000px" w="0px" />
+const ratios = (
+  <>
+    <Box aspectRatio="500/100" />
+    <Box aspectRatio="16/9" />
+  </>
+)
+const units = (
+  <>
+    <Box w={16} />
+    <Box w="16rem" />
+    <Box w="100%" />
+  </>
+)
 ```
+
+Generated CSS:
+
+```text
+/*! devup-ui v1.0.82, | Apache License 2.0 | https://devup-ui.com */.e{aspect-ratio:16/9}.d{aspect-ratio:5/1}.a{margin:0 0 0 0}.b{padding:16.0000px}.c{width:0}.h{width:100%}.g{width:16rem}.f{width:64px}
+```
+
+- Zero lengths lose their units here, but the four margin values remain
+  `0 0 0 0`; they are not collapsed into one value.
+- The explicit decimal string `16.0000px` is preserved, not shortened to `16px`.
+- The integer aspect ratio `500/100` reduces to `5/1`, while `16/9` is unchanged.
+- Numeric width uses Devup UI's scale: `16` becomes `64px`. Explicit `rem` and
+  percentage units are preserved. Unitless properties such as `opacity` and
+  `aspectRatio` do not use this four-times scale.
 
 ## Color Optimization
 
-### **RGB/RGBA to Hex Conversion**
-
-All RGB and RGBA color values are normalized and converted into compact hexadecimal form.
-
-```
-// Input
-<Box bg="rgb(255, 0, 0)" />
-<Box bg="rgba(255, 0, 0, 0.5)" />
-
-// Output
-<Box bg="#f00" /> // #ff0000 shortened to #f00
-<Box bg="#f000" /> // #ff000080 shortened to #f000
-```
-
-### **Hex Shortening**
-
-Hex shortening converts long hex codes into their shortest possible form.
-Six- or eight-digit values are reduced to three or four digits when safely equivalent.
+The following RGB, RGBA, and hex inputs show color normalization, hex shortening,
+and opaque-alpha removal. These observations do not promise conversion of every
+CSS color syntax.
 
 ```tsx
-// 6-digit hex to 3-digit
-// #ffffff → #fff
-// #000000 → #000
-// #ff0000 → #f00
+import { Box } from '@devup-ui/react'
 
-// 8-digit hex to 4-digit (when alpha is FF)
-// #ffffffff → #ffff
-// #000000ff → #000f
+const colors = (
+  <>
+    <Box bg="rgb(255, 0, 0)" />
+    <Box bg="rgba(255, 0, 0, 0.5)" />
+    <Box bg="#ffffff" />
+    <Box bg="#000000" />
+    <Box bg="#ff0000" />
+    <Box bg="#ffffffff" />
+    <Box bg="#000000ff" />
+    <Box bg="#ff0000ff" />
+    <Box bg="#ff000080" />
+  </>
+)
 ```
 
-### **Alpha Channel Optimization**
+Generated CSS:
 
-Alpha channel optimization removes unnecessary opacity information.
-Fully opaque colors (FF) are shortened, while partial transparency values are preserved for accuracy.
+```text
+/*! devup-ui v1.0.82, | Apache License 2.0 | https://devup-ui.com */.d{background:#000}.a{background:#F00}.b{background:#FF000080}.c{background:#FFF}
+```
+
+RGB red, six-digit red, and fully opaque eight-digit red share `#F00`. White and
+black likewise shorten to `#FFF` and `#000`, including their opaque-alpha forms.
+The RGBA input with alpha `0.5` emits `#FF000080`, as does the equivalent hex
+input in this fixture. Its alpha byte `80` cannot be shortened to a repeated
+single hex digit. In particular, `#f000` would mean fully transparent red, not
+half-transparent red.
+
+## Global CSS Extraction
+
+Use `globalCss()` to extract global rules. This example emits a compact rule
+inside a generated cascade layer; it does not demonstrate minification of an
+arbitrary CSS text block.
 
 ```tsx
-// Full opacity is removed and shortened to 3-digit hex
-// #ff0000ff → #f00
+import { globalCss } from '@devup-ui/react'
 
-// Partial opacity is preserved and shortened to 4-digit hex
-// #ff000080 → #f000
+globalCss({ div: { backgroundColor: 'red' } })
 ```
 
-## Global CSS Optimization
+Generated CSS:
 
-### **CSS Block Optimization**
-
-Global CSS blocks are optimized by:
-
-- **Minifying whitespace**: Multiple spaces become single spaces
-- **Removing semicolons**: Last property in a block doesn't need semicolon
-
-```css
-/* Before optimization */
-div {
-  /* comment */
-  background-color: red;
-  /* color: blue; */
-}
-
-/* After optimization */
-div {
-  background-color: red;
-}
+```text
+/*! devup-ui v1.0.82, | Apache License 2.0 | https://devup-ui.com */@layer b;@layer b{div{background-color:red}}
 ```
 
-### **Keyframes Optimization**
+## Keyframes Extraction
 
-Keyframes are optimized for minimal output:
+`keyframes()` returns the generated animation name. It is not derived from the
+JavaScript variable name `fadeIn`.
 
 ```tsx
-// Input
+import { Box, keyframes } from '@devup-ui/react'
+
 const fadeIn = keyframes({
   from: { opacity: 0 },
   to: { opacity: 1 },
 })
-
-// Output (optimized)
-// @keyframes k-fadeIn{from{opacity:0}to{opacity:1}}
+const animated = <Box animation={`${fadeIn} 1s linear`} />
 ```
 
-### **Font Face Optimization**
+Generated CSS:
 
-Font faces are automatically added and optimized:
+```text
+/*! devup-ui v1.0.82, | Apache License 2.0 | https://devup-ui.com */@keyframes a{from{opacity:0}to{opacity:1}}.b{animation:a 1s linear}
+```
+
+## Font Family Extraction
+
+Setting `fontFamily` emits a font-family declaration. It does not discover a
+font file or automatically create an `@font-face` rule. Load the font separately.
 
 ```tsx
-// Input
-<Box fontFamily="Inter" />
+import { Box } from '@devup-ui/react'
 
-// Output (optimized)
-// @font-face{font-family:Inter;src:url(./fonts/Inter.woff2)}
+const text = <Box fontFamily="Inter" />
 ```
 
-## Value Conversion
+Generated CSS:
 
-### **Unit Conversion**
-
-Values are converted to their most appropriate units:
-Numeric values are automatically interpreted as pixel units, while string-based values with explicit units (e.g., rem, %) are preserved for accurate rendering.
-
-```
-// Numbers without units are treated as pixels (multiplied by 4)
-<Box w={16} /> // width: 64px
-
-// Strings with units are preserved
-<Box w="16rem" /> // width: 16rem
-<Box w="100%" /> // width: 100%
+```text
+/*! devup-ui v1.0.82, | Apache License 2.0 | https://devup-ui.com */.a{font-family:Inter}
 ```
 
-### **Zero Value Optimization**
+## Style Deduplication
 
-Zero values are optimized:
-
-```
-// Before
-<Box margin="0px 0px 0px 0px" />
-
-// After
-<Box margin="0" />
-```
-
-## Duplicate Removal
-
-### **Style Deduplication**
-
-Identical style rules across multiple components are automatically merged into a single CSS rule, reducing redundancy and overall bundle size.
+Repeated identical declarations reuse atomic classes. Background and text color
+remain separate rules, not a fused `.red-white` rule.
 
 ```tsx
-// Multiple components with same styles
-<div>
-  <Box bg="red" color="white" />
-  <Box bg="red" color="white" />
-  <Box bg="red" color="white" />
-</div>
+import { Box } from '@devup-ui/react'
 
-// Output: Only one CSS rule generated
-// .red-white{background:red;color:white}
+const repeated = (
+  <div>
+    <Box bg="red" color="white" />
+    <Box bg="red" color="white" />
+    <Box bg="red" color="white" />
+  </div>
+)
 ```
 
-### **Advantages**
+Extracted code:
 
-Devup UI offers complete flexibility in how you implement and optimize styles — while maintaining measurable performance gains.
+```text
+import "@devup-ui/react/devup-ui.css";
+const repeated = <div>
+  <div className="a b" />
+  <div className="a b" />
+  <div className="a b" />
+</div>;
+```
 
-- **Flexible syntax support** – Use CSS utility objects, template literals, or prop-based expressions seamlessly in one system
-- **Smaller bundle size** – Reduced CSS output through color, value, and duplicate optimization
-- **Faster parsing** – Lightweight CSS loads and parses quickly in browsers
-- **Better caching** – Compact, consistent values improve cache efficiency
-- **Lower memory usage** – Reduced CSS footprint minimizes runtime memory consumption
+Generated CSS:
 
-This unified approach ensures both **maximum developer freedom** and **optimized performance**,
-allowing teams to write CSS their way without compromising efficiency.
+```text
+/*! devup-ui v1.0.82, | Apache License 2.0 | https://devup-ui.com */.a{background:red}.b{color:white}
+```
+
+These three elements share two rules. Reuse reduces repeated CSS without adding
+JavaScript for styling at runtime; the examples above describe observed output,
+not a guarantee of the shortest possible representation for every value.

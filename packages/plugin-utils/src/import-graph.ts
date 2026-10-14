@@ -257,7 +257,7 @@ export function computeFileRoutes(
   const leafRoutes = files
     .filter((file) => leafRouteFileRegex.test(toPosixRelative(srcDir, file)))
     .sort((a, b) =>
-      toPosixRelative(srcDir, a).localeCompare(toPosixRelative(srcDir, b)),
+      compareCodePoints(toPosixRelative(srcDir, a), toPosixRelative(srcDir, b)),
     )
   const routeShellFilesByDir = getRouteShellFilesByDir(files, srcDir)
 
@@ -426,7 +426,7 @@ export function computeFileReach(
     )
   }
   entries = [...new Set(entries)].sort((a, b) =>
-    toPosixRelative(srcDir, a).localeCompare(toPosixRelative(srcDir, b)),
+    compareCodePoints(toPosixRelative(srcDir, a), toPosixRelative(srcDir, b)),
   )
 
   const toKey = makeToKey(cwd, opts.keyBy ?? 'cwd-relative')
@@ -599,6 +599,11 @@ function getStaticClosure(
   return closure
 }
 
+/** Order that is the same on every machine, unlike localeCompare. */
+export function compareCodePoints(a: string, b: string): number {
+  return a < b ? -1 : a > b ? 1 : 0
+}
+
 /**
  * Enumerate every extractable source file under `srcDir`, sorted by POSIX path
  * (deterministic order). Skips `node_modules`, test/spec files, and non-JS/TS
@@ -612,7 +617,7 @@ export function listSourceFiles(srcDir: string): string[] {
   function visit(dir: string): void {
     if (!existsSync(dir)) return
     const entries = readdirSync(dir, { withFileTypes: true }).sort((a, b) =>
-      a.name.localeCompare(b.name),
+      compareCodePoints(a.name, b.name),
     )
     for (const entry of entries) {
       const entryPath = join(dir, entry.name)
@@ -630,7 +635,7 @@ export function listSourceFiles(srcDir: string): string[] {
 
   visit(srcDir)
   return files.sort((a, b) =>
-    toPosixRelative(srcDir, a).localeCompare(toPosixRelative(srcDir, b)),
+    compareCodePoints(toPosixRelative(srcDir, a), toPosixRelative(srcDir, b)),
   )
 }
 
