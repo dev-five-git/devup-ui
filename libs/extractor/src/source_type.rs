@@ -49,6 +49,7 @@ pub(crate) fn validate_module(module: &crate::ResolvedModule) -> Result<(), Stri
                     offset,
                     format!("source parser cannot use raw or invalid MDX at build time: {error}"),
                 )],
+                source_type,
             ));
         }
     }

@@ -17,6 +17,7 @@ import { expect, it } from 'bun:test'
 import { createServer, type ViteDevServer } from 'vite'
 
 import { DevupUI } from '../plugin'
+import { observeSubscription as observe } from './resolution-watch-subscription'
 
 it('refreshes the selected CSS class when linked workspace exports alone change', async () => {
   resetBuildState()
@@ -143,6 +144,7 @@ it('refreshes an importer when a missing earlier paths candidate outside the roo
   const candidate = join(outside, 'color.ts')
   let server: ViteDevServer | undefined
   let ready: Promise<unknown> | undefined
+  let subscription: ReturnType<typeof observe> | undefined
   const readiness = new AbortController()
   let readyTimeout: ReturnType<typeof setTimeout> | undefined
   let updateTimeout: ReturnType<typeof setTimeout> | undefined
@@ -174,9 +176,11 @@ it('refreshes an importer when a missing earlier paths candidate outside the roo
           name: 'missing-input-observation',
           configureServer(current) {
             readyTimeout = setTimeout(() => readiness.abort(), 10000)
-            ready = once(current.watcher, 'ready', {
-              signal: readiness.signal,
-            })
+            subscription = observe(current.watcher, outside, readiness.signal)
+            ready = Promise.all([
+              once(current.watcher, 'ready', { signal: readiness.signal }),
+              subscription.ready,
+            ]).then(([, receipt]) => console.info(JSON.stringify(receipt)))
             void ready.then(
               () => clearTimeout(readyTimeout),
               () => clearTimeout(readyTimeout),
@@ -193,6 +197,7 @@ it('refreshes an importer when a missing earlier paths candidate outside the roo
     })
     await server.listen()
     const before = await server.transformRequest('/src/main.js')
+    subscription?.arm()
     await ready
     expect(
       await readFile(join(root, 'df/devup-ui/devup-ui-0.css'), 'utf-8'),
@@ -226,6 +231,7 @@ it('refreshes an importer when a missing earlier paths candidate outside the roo
     clearTimeout(readyTimeout)
     clearTimeout(updateTimeout)
     readiness.abort()
+    subscription?.dispose()
     await Promise.allSettled([ready])
     await server?.close()
     await rm(fixture, { recursive: true, force: true })

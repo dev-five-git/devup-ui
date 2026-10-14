@@ -18,7 +18,7 @@ const rootExports = new Set([
   'keyframes',
   'styled',
 ])
-const compatExports = new Set(['Global', 'createGlobalStyle'])
+const compatExports = new Set(['Global', 'createGlobalStyle', 'cx', 'merge'])
 const stylexExports = new Set([
   'create',
   'props',
@@ -35,6 +35,7 @@ const stylexExports = new Set([
   'types',
 ])
 const compatPackages = new Set([
+  '@emotion/css',
   '@emotion/react',
   '@emotion/styled',
   'styled-components',
@@ -71,6 +72,11 @@ export function isCompileTimeAlias(
   if (!Object.hasOwn(aliases, request) || !ids.length) return false
   const name = ids[0] === 'default' ? aliases[request] : ids[0]
   if (!name) return false
+  if (
+    request === '@emotion/css' &&
+    ['cx', 'merge', 'injectGlobal'].includes(name)
+  )
+    return true
   if (
     request === '@vanilla-extract/css' &&
     ['style', 'globalStyle'].includes(name)

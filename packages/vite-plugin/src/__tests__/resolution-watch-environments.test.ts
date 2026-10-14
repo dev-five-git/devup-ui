@@ -17,6 +17,7 @@ import { expect, it } from 'bun:test'
 import { createServer, type ViteDevServer } from 'vite'
 
 import { DevupUI } from '../plugin'
+import { observeSubscription as observe } from './resolution-watch-subscription'
 
 it('retains client missing-input watches when SSR transforms the same importer later', async () => {
   // Given different condition branches for one importer in two real environments.
@@ -26,9 +27,11 @@ it('retains client missing-input watches when SSR transforms the same importer l
   )
   const root = join(fixture, 'apps/app')
   const palette = join(fixture, 'packages/palette')
+  const outside = join(palette, 'browser')
   const candidate = join(palette, 'browser/entry.ts')
   let server: ViteDevServer | undefined
   let ready: Promise<unknown> | undefined
+  let subscription: ReturnType<typeof observe> | undefined
   const readiness = new AbortController()
   let readyTimeout: ReturnType<typeof setTimeout> | undefined
   let updateTimeout: ReturnType<typeof setTimeout> | undefined
@@ -70,9 +73,11 @@ it('retains client missing-input watches when SSR transforms the same importer l
           name: 'environment-watch-observation',
           configureServer(current) {
             readyTimeout = setTimeout(() => readiness.abort(), 10000)
-            ready = once(current.watcher, 'ready', {
-              signal: readiness.signal,
-            })
+            subscription = observe(current.watcher, outside, readiness.signal)
+            ready = Promise.all([
+              once(current.watcher, 'ready', { signal: readiness.signal }),
+              subscription.ready,
+            ]).then(([, receipt]) => console.info(JSON.stringify(receipt)))
             void ready.then(
               () => clearTimeout(readyTimeout),
               () => clearTimeout(readyTimeout),
@@ -90,6 +95,7 @@ it('retains client missing-input watches when SSR transforms the same importer l
     await server.listen()
     const before = await server.transformRequest('/src/main.js')
     await server.environments.ssr.transformRequest('/src/main.js')
+    subscription?.arm()
     await ready
     expect(
       await readFile(join(root, 'df/devup-ui/devup-ui-0.css'), 'utf-8'),
@@ -123,6 +129,7 @@ it('retains client missing-input watches when SSR transforms the same importer l
     clearTimeout(readyTimeout)
     clearTimeout(updateTimeout)
     readiness.abort()
+    subscription?.dispose()
     await Promise.allSettled([ready])
     await server?.close()
     await rm(fixture, { recursive: true, force: true })

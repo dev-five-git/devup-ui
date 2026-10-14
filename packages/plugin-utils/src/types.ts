@@ -133,6 +133,7 @@ export type ImportAliases = Record<string, string | true | false>
 export const DEFAULT_IMPORT_ALIASES: ImportAliases = {
   '@emotion/react': true,
   '@emotion/styled': 'styled',
+  '@emotion/css': true,
   'styled-components': 'styled',
   '@vanilla-extract/css': true,
 }
@@ -174,6 +175,7 @@ export function mergeImportAliases(
 const COMPAT_TYPE_ENTRIES: Record<string, string> = {
   '@emotion/react': 'emotion',
   '@emotion/styled': 'emotion',
+  '@emotion/css': 'emotion',
   '@vanilla-extract/css': 'vanilla-extract',
   'styled-components': 'styled-components',
 }

@@ -1,0 +1,7 @@
+{
+  "changes": {
+    "bindings/devup-ui-wasm/package.json": "Patch"
+  },
+  "note": "Generate React JSX-runtime calls for styled components in non-JSX source modules while preserving JSX and TSX output. No new build errors.",
+  "date": "2026-10-13T00:00:00.000Z"
+}
