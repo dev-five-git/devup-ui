@@ -11201,6 +11201,43 @@ let color = "red";
         ));
     }
 
+    // styled-components' keyframes object gives its name through `getName()`
+    #[test]
+    #[serial]
+    fn test_keyframes_get_name() {
+        reset_class_map();
+        reset_file_map();
+        let code = extract(
+            "test.tsx",
+            "import {keyframes, css} from '@devup-ui/core'
+const spin = keyframes({ from: { opacity: 0 } })
+const box = css({ color: 'red' })
+export const a = spin.getName()
+export const b = spin.getName(1)
+export const c = box.getName()
+export const d = other.getName()
+export const e = spin.toString()",
+            ExtractOption {
+                package: "@devup-ui/core".to_string(),
+                css_dir: "@devup-ui/core".to_string(),
+                single_css: true,
+                import_main_css: false,
+                import_aliases: HashMap::new(),
+            },
+        )
+        .unwrap()
+        .code;
+        for expected in [
+            "export const a = \"a\";",
+            "export const b = spin.getName(1);",
+            "export const c = box.getName();",
+            "export const d = other.getName();",
+            "export const e = spin.toString();",
+        ] {
+            assert!(code.contains(expected), "{expected}\n{code}");
+        }
+    }
+
     #[test]
     #[serial]
     fn test_keyframes_no_args() {

@@ -1069,6 +1069,7 @@ impl<'a> VisitMut<'a> for DevupVisitor<'a> {
             );
         }
         walk_program(self, it);
+        self.style_values.read_names(&self.ast, it);
         if !self.compiled_names.is_empty() {
             // Aliases only the calls and elements the build compiled read; at
             // the top level nothing can shadow what they alias
