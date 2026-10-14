@@ -71,6 +71,8 @@ describe('@devup-ui/wasm exports', () => {
       'isDebug',
       'registerShorthands',
       'registerTheme',
+      'resetBuildState',
+      'seedFileMap',
       'setAtomHoist',
       'setDebug',
       'setModuleResolver',
@@ -182,6 +184,43 @@ describe('@devup-ui/wasm theme', () => {
 })
 
 describe('@devup-ui/wasm state', () => {
+  it('seeds deterministic file numbers when paths are unsorted and duplicated', () => {
+    wasm.resetBuildState()
+
+    wasm.seedFileMap(['src/c.tsx', 'src/b.tsx', 'src/a.tsx', 'src/b.tsx'])
+
+    expect(wasm.exportFileMap()).toBe(
+      '{"src/a.tsx":0,"src/b.tsx":1,"src/c.tsx":2}',
+    )
+  })
+
+  it('clears maps, styles and prefix when resetting a populated build', () => {
+    wasm.resetBuildState()
+    const emptyCss = wasm.getCss(null, false)
+    const emptySheet = wasm.exportSheet()
+    wasm.setDebug(false)
+    wasm.setPrefix('du-')
+    wasm.seedFileMap(['abi.tsx'])
+    wasm.importCanonicalMap({ 'child.tsx': 'abi.tsx' })
+    const output = extract(
+      `import { Box } from '${PACKAGE}'\nexport const a = <Box p={4} bg="red" />`,
+    )
+    expect(output.code).toMatch(/className="du-/)
+    expect(wasm.exportClassMap()).not.toBe('{}')
+    expect(wasm.exportFileMap()).toBe('{"abi.tsx":0}')
+    expect(wasm.exportCanonicalMap()).toBe('{"child.tsx":"abi.tsx"}')
+    expect(wasm.getCss(null, false)).toContain('background:red')
+
+    wasm.resetBuildState()
+
+    expect(wasm.exportClassMap()).toBe('{}')
+    expect(wasm.exportFileMap()).toBe('{}')
+    expect(wasm.exportCanonicalMap()).toBe('{}')
+    expect(wasm.exportSheet()).toBe(emptySheet)
+    expect(wasm.getCss(null, false)).toBe(emptyCss)
+    expect(wasm.getPrefix()).toBeUndefined()
+  })
+
   it('puts the process back as a test found it', () => {
     const before = saveState()
     wasm.setDebug(!before.debug)
