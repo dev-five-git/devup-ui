@@ -85,6 +85,7 @@ let mkdirSpy: ReturnType<typeof spyOn>
 let readFileSpy: ReturnType<typeof spyOn>
 let statSpy: ReturnType<typeof spyOn>
 let writeFileSpy: ReturnType<typeof spyOn>
+let consoleErrorSpy: ReturnType<typeof spyOn>
 
 beforeEach(() => {
   codeExtractSpy = spyOn(wasm, 'codeExtract').mockImplementation(
@@ -111,6 +112,7 @@ beforeEach(() => {
   readFileSpy = spyOn(fsPromises, 'readFile').mockResolvedValue('{}')
   statSpy = spyOn(fsPromises, 'stat').mockResolvedValue(createStats(0))
   writeFileSpy = spyOn(fsPromises, 'writeFile').mockResolvedValue(undefined)
+  consoleErrorSpy = spyOn(console, 'error').mockReturnValue(undefined)
 })
 
 afterEach(() => {
@@ -133,6 +135,7 @@ afterEach(() => {
   readFileSpy.mockRestore()
   statSpy.mockRestore()
   writeFileSpy.mockRestore()
+  consoleErrorSpy.mockRestore()
 })
 
 function createCompiler(): MockCompiler {
@@ -171,8 +174,6 @@ function createCompiler(): MockCompiler {
 }
 
 describe('devupUIWebpackPlugin', () => {
-  console.error = mock()
-
   it('should apply default options', () => {
     expect(new DevupUIWebpackPlugin({}).options).toEqual({
       include: [],
@@ -544,59 +545,62 @@ describe('devupUIWebpackPlugin', () => {
         wasm,
         'setModuleResolver',
       ).mockReturnValue(undefined)
-      const plugin = new DevupUIWebpackPlugin({
-        package: '@devup-ui/react',
-        singleCss: true,
-      })
-      const compiler = createCompiler()
-      compiler.options.entry = {
-        main: { import: ['./src/parent', './src/other'] },
-        worker: {},
+      try {
+        const plugin = new DevupUIWebpackPlugin({
+          package: '@devup-ui/react',
+          singleCss: true,
+        })
+        const compiler = createCompiler()
+        compiler.options.entry = {
+          main: { import: ['./src/parent', './src/other'] },
+          worker: {},
+        }
+        compiler.options.context = '/project'
+        plugin.apply(asCompiler(compiler))
+        expect(computeReachableFilesSpy).toHaveBeenCalledWith({
+          srcDir: resolve(process.cwd(), 'src'),
+          tsconfigPath: resolve(process.cwd(), 'tsconfig.json'),
+          entries: [
+            resolve('/project', './src/parent'),
+            resolve('/project', './src/other'),
+          ],
+        })
+        // The loader's resolver is registered before the first extraction, so
+        // imported constants inline as they do in the loader
+        expect(setModuleResolverSpy.mock.invocationCallOrder[0]).toBeLessThan(
+          codeExtractSpy.mock.invocationCallOrder[0]!,
+        )
+        const resolveModule = setModuleResolverSpy.mock.calls[0]![0] as (
+          specifier: string,
+          importer: string,
+        ) => { path: string } | undefined
+        expect(resolveModule('./plugin.test', import.meta.path)?.path).toBe(
+          relative(process.cwd(), import.meta.path).replaceAll('\\', '/'),
+        )
+        expect(codeExtractSpy).toHaveBeenCalledTimes(2)
+        expect(codeExtractSpy).toHaveBeenCalledWith(
+          'src/parent.tsx',
+          'source',
+          '@devup-ui/react',
+          expect.any(String),
+          true,
+          false,
+          true,
+          expect.anything(),
+        )
+        expect(codeExtractSpy).toHaveBeenCalledWith(
+          'src/child.tsx',
+          'source',
+          '@devup-ui/react',
+          expect.any(String),
+          true,
+          false,
+          true,
+          expect.anything(),
+        )
+      } finally {
+        setModuleResolverSpy.mockRestore()
       }
-      compiler.options.context = '/project'
-      plugin.apply(asCompiler(compiler))
-      expect(computeReachableFilesSpy).toHaveBeenCalledWith({
-        srcDir: resolve(process.cwd(), 'src'),
-        tsconfigPath: resolve(process.cwd(), 'tsconfig.json'),
-        entries: [
-          resolve('/project', './src/parent'),
-          resolve('/project', './src/other'),
-        ],
-      })
-      // The loader's resolver is registered before the first extraction, so
-      // imported constants inline as they do in the loader
-      expect(setModuleResolverSpy.mock.invocationCallOrder[0]).toBeLessThan(
-        codeExtractSpy.mock.invocationCallOrder[0]!,
-      )
-      const resolveModule = setModuleResolverSpy.mock.calls[0]![0] as (
-        specifier: string,
-        importer: string,
-      ) => { path: string } | undefined
-      expect(resolveModule('./plugin.test', import.meta.path)?.path).toBe(
-        relative(process.cwd(), import.meta.path).replaceAll('\\', '/'),
-      )
-      setModuleResolverSpy.mockRestore()
-      expect(codeExtractSpy).toHaveBeenCalledTimes(2)
-      expect(codeExtractSpy).toHaveBeenCalledWith(
-        'src/parent.tsx',
-        'source',
-        '@devup-ui/react',
-        expect.any(String),
-        true,
-        false,
-        true,
-        expect.anything(),
-      )
-      expect(codeExtractSpy).toHaveBeenCalledWith(
-        'src/child.tsx',
-        'source',
-        '@devup-ui/react',
-        expect.any(String),
-        true,
-        false,
-        true,
-        expect.anything(),
-      )
     })
 
     it('pre-warms without collapse, from no entries when they are a function', () => {

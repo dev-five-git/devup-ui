@@ -110,27 +110,30 @@ describe('DevupUIRsbuildPlugin', () => {
       wasm,
       'setModuleResolver',
     ).mockReturnValue(undefined)
-    const plugin = DevupUI()
-    const transform = mock()
-    await plugin.setup(createSetupContext({ transform }))
-    const resolveModule = setModuleResolverSpy.mock.calls.at(-1)?.[0] as (
-      specifier: string,
-      importer: string,
-    ) => { path: string } | undefined
-    expect(resolveModule('./plugin.test', import.meta.path)?.path).toBe(
-      import.meta.path,
-    )
-    codeExtractSpy.mockReturnValue(
-      createCodeExtractResult({ dependencies: ['/src/tokens.ts'] }),
-    )
-    const addDependency = mock()
-    await transform.mock.calls[1][1]({
-      code: "import { Box } from '@devup-ui/react'",
-      resourcePath: 'src/App.tsx',
-      addDependency,
-    })
-    expect(addDependency).toHaveBeenCalledWith('/src/tokens.ts')
-    setModuleResolverSpy.mockRestore()
+    try {
+      const plugin = DevupUI()
+      const transform = mock()
+      await plugin.setup(createSetupContext({ transform }))
+      const resolveModule = setModuleResolverSpy.mock.calls.at(-1)?.[0] as (
+        specifier: string,
+        importer: string,
+      ) => { path: string } | undefined
+      expect(resolveModule('./plugin.test', import.meta.path)?.path).toBe(
+        import.meta.path,
+      )
+      codeExtractSpy.mockReturnValue(
+        createCodeExtractResult({ dependencies: ['/src/tokens.ts'] }),
+      )
+      const addDependency = mock()
+      await transform.mock.calls[1][1]({
+        code: "import { Box } from '@devup-ui/react'",
+        resourcePath: 'src/App.tsx',
+        addDependency,
+      })
+      expect(addDependency).toHaveBeenCalledWith('/src/tokens.ts')
+    } finally {
+      setModuleResolverSpy.mockRestore()
+    }
   })
 
   it('should return a plugin object with correct name', async () => {
@@ -192,26 +195,28 @@ describe('DevupUIRsbuildPlugin', () => {
   })
 
   it('should error when write data files', async () => {
-    const originalConsoleError = console.error
-    console.error = mock()
-    readFileSpy.mockRejectedValueOnce('error')
-    existsSyncSpy.mockImplementation((path: string) => {
-      if (path === 'devup.json') return true
-      return false
-    })
-    const plugin = DevupUI()
-    expect(plugin).toBeDefined()
-    expect(plugin.setup).toBeDefined()
-    const transform = mock()
-    const modifyRsbuildConfig = mock()
-    await plugin.setup(
-      createSetupContext({
-        transform,
-        modifyRsbuildConfig,
-      }),
-    )
-    expect(console.error).toHaveBeenCalledWith('error')
-    console.error = originalConsoleError
+    const consoleErrorSpy = spyOn(console, 'error').mockReturnValue(undefined)
+    try {
+      readFileSpy.mockRejectedValueOnce('error')
+      existsSyncSpy.mockImplementation((path: string) => {
+        if (path === 'devup.json') return true
+        return false
+      })
+      const plugin = DevupUI()
+      expect(plugin).toBeDefined()
+      expect(plugin.setup).toBeDefined()
+      const transform = mock()
+      const modifyRsbuildConfig = mock()
+      await plugin.setup(
+        createSetupContext({
+          transform,
+          modifyRsbuildConfig,
+        }),
+      )
+      expect(console.error).toHaveBeenCalledWith('error')
+    } finally {
+      consoleErrorSpy.mockRestore()
+    }
   })
 
   it('should not register css transform', async () => {
@@ -265,16 +270,19 @@ describe('DevupUIRsbuildPlugin', () => {
     )
 
     const getCssSpy = spyOn(wasm, 'getCss').mockReturnValue('file css')
-    expect(
-      transform.mock.calls[0][1]({
-        code: '/* placeholder */',
-        resourcePath: resolve('df', 'devup-ui', 'devup-ui-1.css'),
-        environment: { name: 'web' },
-      }),
-    ).toBe('file css')
-    // A file's stylesheet imports the shared base
-    expect(getCssSpy).toHaveBeenCalledWith(1, true)
-    getCssSpy.mockRestore()
+    try {
+      expect(
+        transform.mock.calls[0][1]({
+          code: '/* placeholder */',
+          resourcePath: resolve('df', 'devup-ui', 'devup-ui-1.css'),
+          environment: { name: 'web' },
+        }),
+      ).toBe('file css')
+      // A file's stylesheet imports the shared base
+      expect(getCssSpy).toHaveBeenCalledWith(1, true)
+    } finally {
+      getCssSpy.mockRestore()
+    }
   })
   it('should transform code', async () => {
     const plugin = DevupUI()
