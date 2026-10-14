@@ -437,6 +437,7 @@ mod tests {
     #[case("caret-fuchsia-100", "oklch(95.2% 0.037 318.852)")]
     #[case("fill-zinc-900", "oklch(21% 0.006 285.885)")]
     #[case("stroke-stone-200", "oklch(92.3% 0.003 48.717)")]
+    #[serial]
     fn palette_is_the_default_theme_of_v4(#[case] class: &str, #[case] expected: &str) {
         assert_eq!(color(class).as_deref(), Some(expected));
     }
@@ -474,6 +475,7 @@ mod tests {
     )]
     #[case("bg-black/10", "color-mix(in oklab, #000 10%, transparent)")]
     #[case("text-white/75", "color-mix(in oklab, #fff 75%, transparent)")]
+    #[serial]
     fn opacity_modifier_mixes_with_transparent(#[case] class: &str, #[case] expected: &str) {
         assert_eq!(color(class).as_deref(), Some(expected));
     }
@@ -489,6 +491,7 @@ mod tests {
     #[case("bg-red-500/50/50")]
     #[case("bg-red-501")]
     #[case("bg-unknown")]
+    #[serial]
     fn invalid_color_stays_as_written(#[case] class: &str) {
         assert_eq!(declarations_of(class), None, "{class}");
     }
@@ -541,6 +544,7 @@ mod tests {
         ("--tw-blur", "blur(8px) !important"),
         ("filter", "var(--tw-blur,) var(--tw-brightness,) var(--tw-contrast,) var(--tw-grayscale,) var(--tw-hue-rotate,) var(--tw-invert,) var(--tw-saturate,) var(--tw-sepia,) var(--tw-drop-shadow,) !important"),
     ])]
+    #[serial]
     fn important_marks_every_declaration(#[case] class: &str, #[case] expected: &[(&str, &str)]) {
         let expected: Vec<(String, String)> = expected
             .iter()
@@ -550,6 +554,7 @@ mod tests {
     }
 
     #[test]
+    #[serial]
     fn important_applies_under_variants() {
         let class = crate::tailwind::parse_class("hover:p-4!").unwrap();
         assert_eq!(class.declarations, vec![decl("padding", "1rem !important")]);

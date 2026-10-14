@@ -160,6 +160,7 @@ pub fn keyframes_of(declarations: &[Declaration]) -> impl Iterator<Item = Cow<'s
 #[allow(clippy::expect_used, clippy::unwrap_used)]
 mod tests {
     use rstest::rstest;
+    use serial_test::serial;
 
     use super::*;
     use crate::tailwind::{declarations_of, parse_class};
@@ -185,6 +186,7 @@ mod tests {
     }
 
     #[test]
+    #[serial]
     fn transitions_read_the_easing_and_duration_utilities_set() {
         expect_owned("transition", transition(TRANSITION));
         expect_owned("transition-all", transition("all"));
@@ -235,6 +237,7 @@ mod tests {
     #[case("duration-1000", "1000ms")]
     #[case("duration-[2s]", "2s")]
     #[case("duration-(--speed)", "var(--speed)")]
+    #[serial]
     fn duration_sets_the_variable_a_transition_reads(#[case] class: &str, #[case] value: &str) {
         expect(
             class,
@@ -249,6 +252,7 @@ mod tests {
     #[case("ease-linear", "linear")]
     #[case("ease-[cubic-bezier(0.3,0,0,1)]", "cubic-bezier(0.3,0,0,1)")]
     #[case("ease-(--curve)", "var(--curve)")]
+    #[serial]
     fn ease_sets_the_variable_a_transition_reads(#[case] class: &str, #[case] value: &str) {
         expect(
             class,
@@ -257,6 +261,7 @@ mod tests {
     }
 
     #[test]
+    #[serial]
     fn initial_and_delay() {
         expect("duration-initial", &[("--tw-duration", "initial")]);
         expect("ease-initial", &[("--tw-ease", "initial")]);
@@ -285,6 +290,7 @@ mod tests {
     #[case("animate-wobble")]
     #[case("animate-")]
     #[case("-animate-spin")]
+    #[serial]
     fn unknown_motion_stays_as_written(#[case] class: &str) {
         assert_eq!(declarations_of(class), None, "{class}");
     }
@@ -298,6 +304,7 @@ mod tests {
         "pulse"
     )]
     #[case("animate-bounce", "bounce 1s infinite", "bounce")]
+    #[serial]
     fn animations_bring_their_keyframes(
         #[case] class: &str,
         #[case] animation: &str,
@@ -337,6 +344,7 @@ mod tests {
     }
 
     #[test]
+    #[serial]
     fn arbitrary_animations_bring_the_keyframes_they_name() {
         expect("animate-none", &[("animation", "none")]);
         expect(
