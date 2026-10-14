@@ -49,7 +49,7 @@ ToBTreeSet {
         Static(
             ExtractStaticStyle {
                 property: "background-color",
-                value: "#111827",
+                value: "oklch(21% .034 264.665)",
                 level: 0,
                 selector: Some(
                     Selector(
@@ -63,7 +63,7 @@ ToBTreeSet {
         Static(
             ExtractStaticStyle {
                 property: "background-color",
-                value: "#1F2937",
+                value: "oklch(27.8% .033 256.848)",
                 level: 0,
                 selector: Some(
                     At {
@@ -83,7 +83,7 @@ ToBTreeSet {
         Static(
             ExtractStaticStyle {
                 property: "background-color",
-                value: "#3B82F6",
+                value: "oklch(62.3% .214 259.815)",
                 level: 0,
                 selector: Some(
                     At {
@@ -204,7 +204,25 @@ ToBTreeSet {
         ),
         Css(
             ExtractCss {
-                css: "@property --tw-translate-x{syntax:\"*\";inherits:false;initial-value:0}@property --tw-translate-y{syntax:\"*\";inherits:false;initial-value:0}@property --tw-scale-x{syntax:\"*\";inherits:false;initial-value:1}@property --tw-scale-y{syntax:\"*\";inherits:false;initial-value:1}@property --tw-scale-z{syntax:\"*\";inherits:false;initial-value:1}@property --tw-rotate-x{syntax:\"*\";inherits:false}@property --tw-rotate-y{syntax:\"*\";inherits:false}@property --tw-rotate-z{syntax:\"*\";inherits:false}@property --tw-skew-x{syntax:\"*\";inherits:false}@property --tw-skew-y{syntax:\"*\";inherits:false}@property --tw-leading{syntax:\"*\";inherits:false}@property --tw-content{syntax:\"*\";inherits:false;initial-value:\"\"}@property --tw-scroll-snap-strictness{syntax:\"*\";inherits:false;initial-value:proximity}",
+                css: "@property --tw-ring-color{syntax:\"*\";inherits:false}",
+                file: "@devup-ui/tailwind",
+            },
+        ),
+        Css(
+            ExtractCss {
+                css: "@property --tw-scale-x{syntax:\"*\";inherits:false;initial-value:1}",
+                file: "@devup-ui/tailwind",
+            },
+        ),
+        Css(
+            ExtractCss {
+                css: "@property --tw-scale-y{syntax:\"*\";inherits:false;initial-value:1}",
+                file: "@devup-ui/tailwind",
+            },
+        ),
+        Css(
+            ExtractCss {
+                css: "@property --tw-scale-z{syntax:\"*\";inherits:false;initial-value:1}",
                 file: "@devup-ui/tailwind",
             },
         ),

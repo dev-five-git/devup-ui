@@ -3,7 +3,7 @@ use crate::extract_style::extract_css::ExtractCss;
 use crate::extract_style::style_property::StyleProperty;
 use crate::gen_class_name::gen_class_names;
 use crate::gen_style::gen_styles;
-use crate::tailwind::{PROPERTY_RULES, PROPERTY_RULES_FILE, parse_class};
+use crate::tailwind::{PROPERTY_RULES_FILE, parse_class};
 use crate::utils::{get_str_by_property_key, merge_object_expressions};
 use crate::{ExtractStyleProp, ExtractStyleValue};
 use oxc_allocator::{CloneIn, FromIn, GetAllocator};
@@ -15,6 +15,7 @@ use oxc_ast::ast::{
 };
 use oxc_ast::builder::AstBuilder;
 use oxc_span::SPAN;
+use std::collections::BTreeSet;
 
 /// Combine two optional className expressions into a conditional expression.
 /// `condition ? con_expr : alt_expr`, falling back to `""` for the missing branch.
@@ -314,7 +315,7 @@ pub fn get_class_name_expression<'a>(
         style_order,
         filename,
         styles: Vec::new(),
-        property_rules: false,
+        rules: BTreeSet::new(),
     };
     let compiled = class_name_prop
         .as_ref()
@@ -364,19 +365,19 @@ struct TailwindClassName<'f> {
     style_order: Option<u8>,
     filename: Option<&'f str>,
     styles: Vec<ExtractStyleValue>,
-    /// Whether a compiled class uses the custom properties Tailwind registers
-    property_rules: bool,
+    /// The global rules the compiled classes need, @property and @keyframes
+    rules: BTreeSet<&'static str>,
 }
 
 impl TailwindClassName<'_> {
     fn into_styles(self) -> Vec<ExtractStyleValue> {
         let mut styles = self.styles;
-        if self.property_rules {
-            styles.push(ExtractStyleValue::Css(ExtractCss {
-                css: PROPERTY_RULES.to_string(),
+        styles.extend(self.rules.into_iter().map(|rule| {
+            ExtractStyleValue::Css(ExtractCss {
+                css: rule.to_string(),
                 file: PROPERTY_RULES_FILE.to_string(),
-            }));
-        }
+            })
+        }));
         styles
     }
 
@@ -393,7 +394,7 @@ impl TailwindClassName<'_> {
             let whole = (!open_start || start > 0) && (!open_end || end < text.len());
             if let Some(tailwind) = whole.then(|| parse_class(class)).flatten() {
                 compiled.push_str(&text[written..start]);
-                self.property_rules |= tailwind.uses_properties();
+                self.rules.extend(tailwind.rules());
                 let mut separator = "";
                 for mut style in tailwind.styles() {
                     if let Some(order) = self.style_order {
