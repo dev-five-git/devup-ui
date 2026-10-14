@@ -9,7 +9,7 @@ expression: outputs
     ),
     (
         "export const B = styled((Motion as any).Div.Inner)({ color: 'red' });",
-        "export const B = ({ style, className, as: DevupAs = Motion.Div.Inner, forwardedAs, ...rest }) => <DevupAs {...rest} as={forwardedAs} className={[\"a-a\", className].filter(Boolean).join(\" \")} style={style} />;",
+        "export const B = ({ style, className, as: DevupAs = (Motion as any).Div.Inner, forwardedAs, ...rest }) => <DevupAs {...rest} as={forwardedAs} className={[\"a-a\", className].filter(Boolean).join(\" \")} style={style} />;",
     ),
     (
         "export const C = styled(forwardRef((p, r) => <div ref={r} {...p} />)).attrs({ role: 'x' })`color: red;`;",
