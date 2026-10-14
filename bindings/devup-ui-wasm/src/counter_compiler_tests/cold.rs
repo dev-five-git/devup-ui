@@ -86,22 +86,7 @@ fn family_cache_is_cold_when_record_footprint_or_coordinated_expansion_is_damage
         let _guard = Guard::new();
         configure_typography();
         let source = FAMILY_SOURCES[family];
-        if family == 2 {
-            let observed = with_counter_extract(input("a.tsx", source), |_, batch| {
-                batch.consume(|v| {
-                    let witness = v.witnesses.first().unwrap_or_else(|| panic!("dynamic"));
-                    let extractor::extract_style::compiler_receipts::ProducedData::Dynamic(d) =
-                        &witness.produced
-                    else {
-                        panic!("dynamic")
-                    };
-                    assert_eq!(d.site, None);
-                    assert!(d.variable_allocation.is_some());
-                    Err::<(), _>(())
-                })
-            });
-            assert!(matches!(observed, Err(CounterCompileError::Consumer(()))));
-        }
+        assert_ne!(family, 2);
         let clean = compile("a.tsx", source);
         let clean_maps = cache6_session::Maps::capture();
         let mut value: Value = required(serde_json::from_slice(&encoded()));

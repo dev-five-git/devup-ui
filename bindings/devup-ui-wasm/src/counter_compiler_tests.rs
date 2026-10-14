@@ -188,3 +188,46 @@ pub(super) fn property_record(value: &mut serde_json::Value) -> &mut serde_json:
         .find(|r| r["r"] == false)
         .unwrap_or_else(|| panic!("consumer"))
 }
+
+use std::cell::RefCell;
+
+#[cfg(test)]
+mod configuration;
+
+#[derive(Clone, Copy, Debug)]
+pub(super) enum Change {
+    Theme,
+    Prefix,
+    Debug,
+    Threshold,
+    Plan,
+    Canonical,
+    Routes,
+    Shorthand,
+}
+
+pub(super) fn changed(change: Change) {
+    match change {
+        Change::Theme => register_theme_internal(sheet::theme::Theme {
+            breakpoints: vec![19, 31],
+            ..Default::default()
+        }),
+        Change::Prefix => set_prefix(Some("fresh".into())),
+        Change::Debug => set_debug(true),
+        Change::Threshold => set_atom_hoist(Some(2)),
+        Change::Plan => {
+            css::atom_hoist::restore_atom_plan(Some(BTreeSet::from(["fresh.tsx".into()])));
+        }
+        Change::Canonical => {
+            import_canonical_map_internal(HashMap::from([("a.tsx".into(), "fresh.tsx".into())]));
+        }
+        Change::Routes => import_file_routes_internal(HashMap::from([(
+            "a.tsx".into(),
+            std::collections::HashSet::from([9]),
+        )])),
+        Change::Shorthand => register_shorthands_internal(BTreeMap::from([(
+            "freshInset".into(),
+            vec!["left".into()],
+        )])),
+    }
+}
