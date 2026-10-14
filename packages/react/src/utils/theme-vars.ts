@@ -33,27 +33,3 @@ export function themeToCssVariables(theme?: StyledTheme): CSSProperties {
   if (theme) walk(theme, [])
   return style as CSSProperties
 }
-
-/**
- * Theme accessor backed purely by CSS variables.
- *
- * Reading any path yields the `var(--path)` reference for it, so a value read in
- * JS and a value the extractor inlined at build time resolve to the same custom
- * property. Nesting works because each read returns another accessor.
- */
-export function createThemeAccessor<T extends StyledTheme = StyledTheme>(
-  path: readonly string[] = [],
-): T {
-  const reference = path.length ? `var(${themeVariableName(path)})` : ''
-  return new Proxy(
-    {},
-    {
-      get(_target, key) {
-        if (key === Symbol.toPrimitive) return () => reference
-        if (typeof key !== 'string') return undefined
-        if (key === 'toString' || key === 'valueOf') return () => reference
-        return createThemeAccessor([...path, key])
-      },
-    },
-  ) as T
-}

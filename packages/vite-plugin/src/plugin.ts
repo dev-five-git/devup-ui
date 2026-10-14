@@ -16,6 +16,8 @@ import {
   loadDevupConfig,
   mergeImportAliases,
   planAtomHoist,
+  tailwindCssFiles,
+  withTailwindCss,
 } from '@devup-ui/plugin-utils'
 import {
   codeExtract,
@@ -292,12 +294,14 @@ export interface DevupUIPluginOptions {
 
 async function writeDataFiles(
   options: Omit<DevupUIPluginOptions, 'extractCss' | 'debug' | 'include'>,
-) {
+): Promise<string[]> {
+  let tailwindFiles: string[] = []
   try {
     const config = await loadDevupConfig(options.devupFile)
     const theme = config.theme ?? {}
 
-    registerTheme(theme)
+    registerTheme(withTailwindCss(theme, config))
+    tailwindFiles = tailwindCssFiles(config)
     const interfaceCode = getThemeInterface(
       ...createThemeInterfaceArgs(options.package),
     )
@@ -321,6 +325,7 @@ async function writeDataFiles(
   if (!options.singleCss) {
     await writeFile(join(options.cssDir, 'devup-ui.css'), getCss(null, false))
   }
+  return tailwindFiles
 }
 
 export function DevupUI({
@@ -354,6 +359,13 @@ export function DevupUI({
   // module transformed again writes its sheet again, and the reload that
   // signal causes transforms it once more: signal only a changed sheet.
   const writtenCss = new Map<string, string>()
+  // The files the project's Tailwind CSS is read from, which change what a
+  // Tailwind class compiles to
+  let tailwindFiles: string[] = []
+  const isTailwindFile = (file: string) =>
+    tailwindFiles.some(
+      (tailwindFile) => resolve(tailwindFile) === resolve(file),
+    )
   function writeCssFile(fileName: string, css: string): Promise<void> {
     if (writtenCss.get(fileName) === css) return Promise.resolve()
     writtenCss.set(fileName, css)
@@ -389,7 +401,7 @@ export function DevupUI({
         createCompatTypes(importAliases),
         'utf-8',
       )
-      await writeDataFiles({
+      tailwindFiles = await writeDataFiles({
         package: libPackage,
         cssDir,
         devupFile,
@@ -485,9 +497,12 @@ export function DevupUI({
       return true
     },
     async watchChange(id) {
-      if (resolve(id) === resolve(devupFile) && existsSync(devupFile)) {
+      if (
+        (resolve(id) === resolve(devupFile) && existsSync(devupFile)) ||
+        (isTailwindFile(id) && existsSync(id))
+      ) {
         try {
-          await writeDataFiles({
+          tailwindFiles = await writeDataFiles({
             package: libPackage,
             cssDir,
             devupFile,
@@ -514,11 +529,14 @@ export function DevupUI({
           ? []
           : undefined
       }
-      if (resolve(file) !== resolve(devupFile) || !existsSync(devupFile)) {
+      const isDevupFile =
+        resolve(file) === resolve(devupFile) && existsSync(devupFile)
+      const isTailwind = isTailwindFile(file) && existsSync(file)
+      if (!isDevupFile && !isTailwind) {
         return
       }
 
-      await writeDataFiles({
+      tailwindFiles = await writeDataFiles({
         package: libPackage,
         cssDir,
         devupFile,
@@ -527,7 +545,11 @@ export function DevupUI({
       })
 
       const invalidatedModules = new Set<EnvironmentModuleNode>()
-      for (const mod of modules) {
+      // A Tailwind class compiles from the definitions of the Tailwind CSS, so
+      // every module is compiled again
+      for (const mod of isTailwind
+        ? environment.moduleGraph.idToModuleMap.values()
+        : modules) {
         environment.moduleGraph.invalidateModule(
           mod,
           invalidatedModules,
@@ -540,11 +562,14 @@ export function DevupUI({
     },
     // Vite 5 fallback: Vite 6+ does not call this hook when `hotUpdate` exists.
     async handleHotUpdate({ file, server, modules, timestamp }) {
-      if (resolve(file) !== resolve(devupFile) || !existsSync(devupFile)) {
+      const isDevupFile =
+        resolve(file) === resolve(devupFile) && existsSync(devupFile)
+      const isTailwind = isTailwindFile(file) && existsSync(file)
+      if (!isDevupFile && !isTailwind) {
         return
       }
 
-      await writeDataFiles({
+      tailwindFiles = await writeDataFiles({
         package: libPackage,
         cssDir,
         devupFile,
@@ -553,7 +578,9 @@ export function DevupUI({
       })
 
       const invalidatedModules = new Set<ModuleNode>()
-      for (const mod of modules) {
+      for (const mod of isTailwind
+        ? server.moduleGraph.idToModuleMap.values()
+        : modules) {
         server.moduleGraph.invalidateModule(
           mod,
           invalidatedModules,

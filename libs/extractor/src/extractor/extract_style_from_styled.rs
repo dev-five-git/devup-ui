@@ -8,6 +8,8 @@ use crate::{
     extractor::{
         ExtractResult,
         extract_style_from_expression::{LiteralHandling, extract_style_from_expression},
+        styled_record::prepare,
+        styled_record_evaluation::bind_render,
     },
     gen_class_name::{gen_class_names, merge_expression_for_class_name},
     gen_style::gen_styles,
@@ -184,6 +186,7 @@ pub fn extract_style_from_styled<'a>(
     imports: &FxHashMap<String, ExportVariableKind>,
     attrs: &[Expression<'a>],
 ) -> (ExtractResult<'a>, Expression<'a>, Vec<(u32, String)>) {
+    let original_scope = expression.clone_in(ast_builder.allocator());
     let mut composed_classes = Vec::new();
     let mut errors = Vec::new();
     if let Expression::CallExpression(call) = expression
@@ -225,6 +228,13 @@ pub fn extract_style_from_styled<'a>(
             let expression = &tag.quasi.expressions[index];
             errors.push((expression.span().start, unplaced_error(expression)));
         }
+        errors.extend(
+            tag.quasi
+                .expressions
+                .iter()
+                .filter(|expression| crate::css_utils::reads_unmapped_theme(expression))
+                .map(|expression| crate::css_utils::unmapped_theme_error("styled", expression)),
+        );
         let mut props_styles: Vec<ExtractStyleProp<'_>> = styles
             .into_iter()
             .map(|ex| ExtractStyleProp::Static(ex.into()))
@@ -277,8 +287,11 @@ pub fn extract_style_from_styled<'a>(
         let component = create_styled_component(
             ast_builder,
             &base.name,
-            &class_name,
-            &gen_styles(ast_builder, &props_styles, None),
+            StyledRender {
+                class_name: &class_name,
+                style_vars: &gen_styles(ast_builder, &props_styles, None),
+                bindings: Vec::new(),
+            },
         );
         let styled_component = base.render(ast_builder, apply_attrs(ast_builder, component, attrs));
 
@@ -298,6 +311,16 @@ pub fn extract_style_from_styled<'a>(
         // Case 2: styled.div({ bg: "red" }), styled("div")({ bg: "red" }),
         // or styled("div", { bg: "red" })
 
+        let prepared = call.arguments[style_index]
+            .as_expression()
+            .and_then(|rules| prepare(ast_builder, rules, &original_scope));
+        let bindings = match prepared {
+            Some(prepared) => {
+                call.arguments[style_index] = Argument::from(prepared.rules);
+                prepared.bindings
+            }
+            None => Vec::new(),
+        };
         // Extract styles from object expression
         let ExtractResult {
             mut styles,
@@ -319,11 +342,12 @@ pub fn extract_style_from_styled<'a>(
         );
         let mut unreadable = Vec::new();
         unreadable_styles(&styles, true, &mut unreadable);
-        errors.extend(
-            unreadable
-                .into_iter()
-                .map(|(offset, code)| (offset, build_time_error("styled", &code, STYLE_OBJECT))),
-        );
+        errors.extend(unreadable.into_iter().map(|(offset, code, requirement)| {
+            (
+                offset,
+                build_time_error("styled", &code, requirement.unwrap_or(STYLE_OBJECT)),
+            )
+        }));
         if let Some(default_class_name) = base.styles.take() {
             styles.extend(default_class_name.into_iter().map(ExtractStyleProp::Static));
         }
@@ -340,8 +364,11 @@ pub fn extract_style_from_styled<'a>(
         let component = create_styled_component(
             ast_builder,
             &base.name,
-            &class_name,
-            &gen_styles(ast_builder, &styles, None),
+            StyledRender {
+                class_name: &class_name,
+                style_vars: &gen_styles(ast_builder, &styles, None),
+                bindings,
+            },
         );
         let styled_component = base.render(ast_builder, apply_attrs(ast_builder, component, attrs));
 
@@ -540,12 +567,22 @@ fn props_arrow<'a>(ast_builder: &AstBuilder<'a>, body: Expression<'a>) -> Expres
     )
 }
 
+struct StyledRender<'b, 'a> {
+    class_name: &'b Option<Expression<'a>>,
+    style_vars: &'b Option<Expression<'a>>,
+    bindings: Vec<(String, Expression<'a>)>,
+}
+
 fn create_styled_component<'a>(
     ast_builder: &AstBuilder<'a>,
     tag_name: &str,
-    class_name: &Option<Expression<'a>>,
-    style_vars: &Option<Expression<'a>>,
+    render: StyledRender<'_, 'a>,
 ) -> Expression<'a> {
+    let StyledRender {
+        class_name,
+        style_vars,
+        bindings,
+    } = render;
     let params = FormalParameters::boxed(
         SPAN,
         FormalParameterKind::ArrowFormalParameters,
@@ -692,7 +729,7 @@ fn create_styled_component<'a>(
         None::<oxc_allocator::Box<oxc_ast::ast::TSTypeParameterDeclaration<'a>>>,
         params,
         None::<oxc_allocator::Box<oxc_ast::ast::TSTypeAnnotation<'a>>>,
-        body.into(),
+        bind_render(ast_builder, bindings, body).into(),
         ast_builder,
     )
 }
