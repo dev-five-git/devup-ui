@@ -5,7 +5,6 @@ import { basename, dirname, join, relative, resolve } from 'node:path'
 import {
   beginBuild,
   buildCanonicalMap,
-  collectNumberedFiles,
   computeFileReach,
   computeReachableFiles,
   createCompatTypes,
@@ -14,13 +13,11 @@ import {
   createStateWriter,
   createThemeInterfaceArgs,
   type CustomShorthands,
-  extractedNeedles,
   getFileNumByFilename,
   type ImportAliases,
   loadDevupConfig,
   mergeImportAliases,
   planAtomHoist,
-  seedFileNumbers,
   withTailwindCss,
 } from '@devup-ui/plugin-utils'
 import {
@@ -33,13 +30,14 @@ import {
   registerShorthands,
   registerTheme,
   resetBuildState,
-  seedFileMap,
   setAtomHoist,
   setDebug,
   setModuleResolver,
   setPrefix,
 } from '@devup-ui/wasm'
 import type { RsbuildPlugin, Rspack } from '@rsbuild/core'
+
+import { createReservation, staticEntries } from './reservation'
 
 const PLUGIN_NAME = 'devup-ui-rsbuild-plugin'
 
@@ -214,40 +212,27 @@ export const DevupUI = ({
         }
       }
 
-      try {
-        // Number every file the build can extract in path order, so class
-        // prefixes do not depend on the order modules reach the transform
-        seedFileNumbers(
-          { seedFileMap },
-          collectNumberedFiles({
-            roots: [resolve(process.cwd(), 'src')],
-            include,
-            needles: extractedNeedles(libPackage, importAliases),
-            toId: (path) => (atomMode ? path.replaceAll('\\', '/') : path),
-          }),
-        )
-      } catch {
-        // Best-effort; numbering falls back to arrival order.
-      }
+      const reservation = createReservation({
+        root: api.context.rootPath,
+        package: libPackage,
+        include,
+        cssDir,
+        singleCss,
+        atomMode,
+        importAliases,
+      })
+      const entryFiles = new Set<string>()
       // Extract the source files under `src` that the entries reach, in path
       // order, the same way the transform does, so that a stylesheet built on
       // its first import already holds the styles of every one. Best-effort:
       // a stylesheet still missing styles is rebuilt by another pass.
-      api.onBeforeBuild(({ environments }) => {
+      const prewarm = () => {
         try {
           const root = api.context.rootPath
-          const entries = Object.values(environments).flatMap(({ entry }) =>
-            Object.values(entry).flatMap((value) =>
-              (typeof value === 'object' && !Array.isArray(value)
-                ? [value.import].flat()
-                : [value].flat()
-              ).map((request) => resolve(root, request)),
-            ),
-          )
           for (const file of computeReachableFiles({
             srcDir: resolve(root, 'src'),
             tsconfigPath: resolve(root, 'tsconfig.json'),
-            entries,
+            entries: [...entryFiles],
           })) {
             let extractCssDir = relative(dirname(file), cssDir).replaceAll(
               '\\',
@@ -269,6 +254,15 @@ export const DevupUI = ({
         } catch {
           // The transform reports the error of the file it cannot extract
         }
+      }
+      api.onBeforeBuild(({ environments }) => {
+        for (const { entry } of Object.values(environments)) {
+          reservation.addEntries(entry)
+          for (const request of staticEntries(entry))
+            entryFiles.add(resolve(api.context.rootPath, request))
+        }
+        reservation.reserve()
+        prewarm()
       })
 
       const servedCss = new Map<string, Map<string, string>>()
@@ -295,12 +289,20 @@ export const DevupUI = ({
       // once more: every module is extracted by then. The dev server rebuilds it
       // through the stylesheet files the transforms write instead.
       api.modifyRspackConfig((config, { environment }) => {
+        reservation.addEntries(config.entry, config.context)
+        for (const request of staticEntries(environment.entry))
+          entryFiles.add(resolve(api.context.rootPath, request))
         config.plugins ??= []
         config.plugins.push({
           apply(compiler: Rspack.Compiler) {
             let passes = 0
             compiler.hooks.run.tap(PLUGIN_NAME, () => {
               passes = 0
+              reservation.reserve()
+            })
+            compiler.hooks.invalid.tap(PLUGIN_NAME, reservation.invalidate)
+            compiler.hooks.watchRun.tap(PLUGIN_NAME, () => {
+              reservation.reserve()
             })
             compiler.hooks.thisCompilation.tap(PLUGIN_NAME, (compilation) => {
               const served = new Map<string, string>()

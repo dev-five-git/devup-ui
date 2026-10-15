@@ -13,6 +13,7 @@ mod imported_constants;
 mod module_loader;
 mod mutations;
 mod prop_modify_utils;
+pub mod reservation_state;
 mod source_map;
 mod style_values;
 #[cfg(test)]
