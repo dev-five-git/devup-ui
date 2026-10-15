@@ -18,6 +18,7 @@ import {
 } from 'node:path'
 
 import { PackageManifestShapeError } from './package-manifest'
+import { decodeStringLiteral } from './string-literal'
 
 /**
  * How map keys (and bucket-root values) are stringified.
@@ -748,6 +749,22 @@ function collectAstImports(
       ? node.arguments[0]
       : undefined
     addAstImport(imports, 'dynamic', firstArgument)
+  } else if (
+    type === 'CallExpression' &&
+    node.optional !== true &&
+    isRecord(node.callee) &&
+    node.callee.type === 'Identifier' &&
+    node.callee.name === 'require' &&
+    Array.isArray(node.arguments) &&
+    node.arguments.length === 1
+  ) {
+    const argument: unknown = node.arguments[0]
+    if (
+      isRecord(argument) &&
+      (argument.type === 'Literal' || argument.type === 'StringLiteral') &&
+      typeof argument.value === 'string'
+    )
+      addAstImport(imports, 'static', argument)
   }
 
   for (const value of Object.values(node)) {
@@ -849,6 +866,10 @@ function scanImports(source: string): ImportReference[] {
     `${quotedLiteral}|${/\bimport\s*\(\s*(['"])([^'"]+)\1\s*\)/.source}`,
     'gm',
   )
+  const requireRegex = new RegExp(
+    `${quotedLiteral}|${/(?<![\w$.]|\.\s*|\bnew\s+)\brequire\s*\(\s*("(?:\\(?:\r\n|[\s\S])|[^"\\\r\n])*"|'(?:\\(?:\r\n|[\s\S])|[^'\\\r\n])*')\s*\)/.source}`,
+    'gm',
+  )
 
   for (const match of code.matchAll(staticImportRegex)) {
     if (!match[4] || match[1] || isAllInlineTypeSpecifiers(match[2])) continue
@@ -860,6 +881,10 @@ function scanImports(source: string): ImportReference[] {
   }
   for (const match of code.matchAll(dynamicImportRegex)) {
     if (match[2]) imports.push({ kind: 'dynamic', specifier: match[2] })
+  }
+  for (const match of code.matchAll(requireRegex)) {
+    const specifier = match[1] ? decodeStringLiteral(match[1]) : undefined
+    if (specifier) imports.push({ kind: 'static', specifier })
   }
 
   return imports
