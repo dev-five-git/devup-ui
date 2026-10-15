@@ -13,6 +13,8 @@ mod imported_constants;
 mod module_loader;
 mod mutations;
 mod prop_modify_utils;
+#[cfg(test)]
+mod responsive_selector_tests;
 mod source_map;
 mod style_values;
 #[cfg(test)]
@@ -29,6 +31,24 @@ mod util_type;
 mod utils;
 mod vanilla_extract;
 mod visit;
+
+mod dead_properties;
+#[cfg(test)]
+mod dead_properties_call_boundary_tests;
+#[cfg(test)]
+mod dead_properties_declaration_boundary_tests;
+#[cfg(test)]
+mod dead_properties_origin_tests;
+#[cfg(test)]
+mod dead_properties_responsive_origin_tests;
+#[cfg(test)]
+mod dead_properties_stylex_tests;
+#[cfg(test)]
+mod dead_properties_test_utils;
+#[cfg(test)]
+mod dead_properties_tests;
+#[cfg(test)]
+mod dead_properties_text_tests;
 use crate::extract_style::extract_style_value::ExtractStyleValue;
 use crate::visit::DevupVisitor;
 use css::file_map::{canonical, get_file_num_by_filename, is_global};
@@ -370,7 +390,7 @@ fn extract_source(
     // otherwise the untouched `transformed_code` is parsed directly (no copy).
     let processed_code: Option<String> = if utils::is_vanilla_extract_file(filename) {
         // Use transformed code (with imports already pointing to @devup-ui/react)
-        match vanilla_extract::execute_stylesheet(&transformed_code, filename, &option, resolver) {
+        match vanilla_extract::execute_stylesheet(code, filename, &option, resolver) {
             Ok((collected, imports)) => {
                 dependencies = imports.dependencies;
                 // Keyframes names are generated, so extract the referenced ones
@@ -411,6 +431,11 @@ fn extract_source(
             // A stylesheet another one imports must give its own values, and an
             // import cycle read too early fails as it does in ES modules, so both
             // are reported rather than hidden behind plain extraction
+            Err(error) if error.starts_with(dead_properties::ERROR_CHANNEL) => {
+                return Err(error
+                    .trim_start_matches(dead_properties::ERROR_CHANNEL)
+                    .into());
+            }
             Err(error)
                 if module_loader::loading_for_stylesheet()
                     || error.contains(module_loader::IMPORT_CYCLE) =>
@@ -495,6 +520,10 @@ fn extract_source(
     // Run the code a value computes, or tell rules the module computes from a
     // class it composes
     if (!visitor.errors.is_empty() || visitor.composes_unknown)
+        && !visitor
+            .errors
+            .iter()
+            .any(|(_, error)| dead_properties::terminal_error(error))
         && evaluated.is_none()
         && !utils::is_vanilla_extract_file(filename)
         && let Some((computed, value_edits, read)) = build_time_values::evaluate(
@@ -540,7 +569,15 @@ fn extract_source(
             .collect();
     visitor.errors.append(&mut visitor.unknown_parts);
     if !visitor.errors.is_empty() {
-        let mut message = located_errors(filename, source, &edits, visitor.errors);
+        let mut errors = visitor.errors;
+        let error_edits = if evaluated.is_some() {
+            let calls = dead_properties::evaluated_calls(source, filename, &option);
+            dead_properties::map_evaluated(&mut errors, &edits, &calls)?;
+            &[][..]
+        } else {
+            edits.as_slice()
+        };
+        let mut message = located_errors(filename, source, error_edits, errors);
         message += &changed_notes(&message, filename, source, &edits, &inlined.changed);
         return Err(message.into());
     }
@@ -8067,7 +8104,7 @@ globalCss()
             )
             .unwrap_err()
             .to_string(),
-            "test.tsx:2:1: `globalCss()` cannot use `1` at build time: its values must be literals, theme tokens or constants, or be computed from them"
+            "test.tsx:2:11: `globalCss()` cannot use `1` at build time: its values must be literals, theme tokens or constants, or be computed from them"
         );
     }
 
@@ -9337,7 +9374,7 @@ export const B = styled.div`${SEL} & { color: ${C}; }`;",
             [
                 "src/App.tsx:6:56: `css()` cannot use `x` at build time: its values must be literals, theme tokens or constants, or be computed from them",
                 "src/App.tsx:7:27: `globalCss()` cannot use `y` at build time: its values must be literals, theme tokens or constants, or be computed from them",
-                "src/App.tsx:8:18: `keyframes()` cannot use `z` at build time: its values must be literals, theme tokens or constants, or be computed from them",
+                "src/App.tsx:8:34: `keyframes()` cannot use `z` at build time: its values must be literals, theme tokens or constants, or be computed from them",
                 "src/App.tsx:9:18: `css()` cannot use `x` at build time: its values must be literals, theme tokens or constants, or be computed from them",
             ]
         );
@@ -21264,10 +21301,10 @@ const e = <Box selectors={{ 'div p': { color: 'red' }, 'a > b, > i': { color: 'b
                 ),
                 text("23", "`<Box>`", "\"external-class\""),
                 text("43", "`<Box>`", "\"external-class\""),
-                name("11", "`css()`", "_nope"),
-                text("11", "`css()`", "\"red\""),
+                name("43", "`css()`", "_nope"),
+                text("25", "`css()`", "\"red\""),
                 name("37", "`styled()`", "nope"),
-                name("1", "`globalCss()`", "_nope"),
+                name("13", "`globalCss()`", "_nope"),
             ]
         );
     }
