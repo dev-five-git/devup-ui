@@ -1,0 +1,9 @@
+{
+  "changes": {
+    "bindings/devup-ui-wasm/package.json": "Patch",
+    "packages/rsbuild-plugin/package.json": "Patch",
+    "packages/bun-plugin/package.json": "Patch"
+  },
+  "note": "More of Tailwind CSS v4 compiles: container queries (@sm:, @max-md:, @min-[400px]:, @sm/main:) and @container utilities, mask-* (all but the gradient masks), text-shadow-*, inset-shadow-*, font-variant-numeric utilities (tabular-nums and the like), 3D transforms (rotate-x/y/z, translate-z, scale-z, translate-3d, scale-3d, transform-3d, backface-*, perspective-*, perspective-origin-*), contain-* and outline-hidden (with its forced-colors fallback). The project's Tailwind CSS is read further: functional @utility with --value() and --modifier(), @apply in @utility, and theme(--name) in arbitrary values; classes of @plugin entries stay as written. A className now compiles the classes of cn()/twMerge() calls whose arguments are all static (merged as tailwind-merge does, the later class wins), of consts bound to class strings, and of cva() calls (base, variants, compound variants). The Rsbuild plugin reads the Tailwind CSS again and compiles every module again when it changes, and the Bun plugin reads it again. No new build errors",
+  "date": "2026-10-01T00:00:00.000Z"
+}
