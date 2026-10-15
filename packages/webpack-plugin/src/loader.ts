@@ -1,7 +1,7 @@
 import { writeFile } from 'node:fs/promises'
 import { basename, dirname, join, relative, resolve } from 'node:path'
 
-import { createModuleResolver } from '@devup-ui/plugin-utils'
+import { createModuleResolver, createStateWriter } from '@devup-ui/plugin-utils'
 import {
   codeExtract,
   exportClassMap,
@@ -34,6 +34,9 @@ function parseSourceMap(sourceMap: string | undefined): string | null {
   return sourceMap
 }
 
+const stateWriter = createStateWriter((path, content, encoding) =>
+  encoding ? writeFile(path, content, encoding) : writeFile(path, content),
+)
 let moduleResolver: ReturnType<typeof createModuleResolver> | undefined
 
 /** Resolve imports to the cwd-relative ids this loader extracts files under */
@@ -101,23 +104,27 @@ const devupUILoader: RawLoaderDefinitionFunction<DevupUILoaderOptions> =
       if (updatedBaseStyle) {
         // update base style
         promises.push(
-          writeFile(join(cssDir, 'devup-ui.css'), getCss(null, false), 'utf-8'),
+          stateWriter.write(
+            join(cssDir, 'devup-ui.css'),
+            getCss(null, false),
+            'utf-8',
+          ),
         )
       }
       if (cssFile) {
         const content = `${this.resourcePath} ${Date.now()}`
         // should be reset css
         promises.push(
-          writeFile(
+          stateWriter.write(
             join(cssDir, basename(cssFile)),
             watch ? `/* ${content} */` : css,
           ),
         )
         if (watch) {
           promises.push(
-            writeFile(sheetFile, exportSheet()),
-            writeFile(classMapFile, exportClassMap()),
-            writeFile(fileMapFile, exportFileMap()),
+            stateWriter.write(sheetFile, exportSheet()),
+            stateWriter.write(classMapFile, exportClassMap()),
+            stateWriter.write(fileMapFile, exportFileMap()),
           )
         }
       }

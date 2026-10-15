@@ -1291,29 +1291,34 @@ describe('runImportGraphCli', () => {
 
   it('prints usage and exits when the srcDir arg is missing', () => {
     const errorSpy = spyOn(console, 'error').mockReturnValue(undefined)
-    const exitSpy = spyOn(process, 'exit').mockImplementation(
-      (() => undefined) as never,
-    )
+    try {
+      const exitSpy = spyOn(process, 'exit').mockImplementation(
+        (() => undefined) as never,
+      )
+      try {
+        runImportGraphCli([])
 
-    runImportGraphCli([])
-
-    expect(errorSpy).toHaveBeenCalled()
-    expect(exitSpy).toHaveBeenCalledWith(1)
-
-    errorSpy.mockRestore()
-    exitSpy.mockRestore()
+        expect(errorSpy).toHaveBeenCalled()
+        expect(exitSpy).toHaveBeenCalledWith(1)
+      } finally {
+        exitSpy.mockRestore()
+      }
+    } finally {
+      errorSpy.mockRestore()
+    }
   })
 
   it('prints the canonical map JSON to stdout when no outFile is given', () => {
     const { root, cwd } = makeProject()
     const infoSpy = spyOn(console, 'info').mockReturnValue(undefined)
+    try {
+      runImportGraphCli(['src', cwd])
 
-    runImportGraphCli(['src', cwd])
-
-    const printed = (infoSpy.mock.calls[0] as [string])[0]
-    expect(printed).toContain('src/b.tsx')
-
-    infoSpy.mockRestore()
+      const printed = (infoSpy.mock.calls[0] as [string])[0]
+      expect(printed).toContain('src/b.tsx')
+    } finally {
+      infoSpy.mockRestore()
+    }
     rmSync(root, { recursive: true, force: true })
   })
 
@@ -1334,13 +1339,14 @@ describe('runImportGraphCli', () => {
 
   it('defaults cwd to process.cwd() when only srcDir is given', () => {
     const infoSpy = spyOn(console, 'info').mockReturnValue(undefined)
+    try {
+      // A non-existent srcDir -> empty map -> prints "{}" without touching files.
+      runImportGraphCli(['__devup_nonexistent_src__'])
 
-    // A non-existent srcDir -> empty map -> prints "{}" without touching files.
-    runImportGraphCli(['__devup_nonexistent_src__'])
-
-    expect(infoSpy).toHaveBeenCalledWith('{}')
-
-    infoSpy.mockRestore()
+      expect(infoSpy).toHaveBeenCalledWith('{}')
+    } finally {
+      infoSpy.mockRestore()
+    }
   })
 })
 describe('createModuleResolver', () => {
