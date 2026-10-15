@@ -220,6 +220,7 @@ fn devup_equivalent(source: &str, imported: &str) -> Option<DevupTarget<'static>
         (_, "isStyledComponent") => Some(DevupTarget::Compat("isStyledComponent")),
         (_, "withTheme") => Some(DevupTarget::Compat("withTheme")),
         (_, "useTheme") => Some(DevupTarget::Compat("useTheme")),
+        ("@emotion/react", "CacheProvider") => Some(DevupTarget::Compat("CacheProvider")),
         ("styled-components", "ThemeConsumer") => Some(DevupTarget::Compat("ThemeConsumer")),
         ("styled-components", "createTheme") => Some(DevupTarget::Compat("createTheme")),
         _ => None,
@@ -919,6 +920,21 @@ import { createSprinkles } from '@vanilla-extract/sprinkles'",
             companion_errors("import { style } from '@vanilla-extract/css'", "a.css.ts"),
             vec![]
         );
+    }
+
+    #[test]
+    fn test_emotion_cache_provider_redirects_to_compat() {
+        let code = transform_import_aliases(
+            "import { CacheProvider, Global } from '@emotion/react'",
+            "test.tsx",
+            "@devup-ui/react",
+            &HashMap::from([("@emotion/react".to_string(), ImportAlias::NamedToNamed)]),
+        );
+        assert!(
+            code.contains("import { CacheProvider, Global } from '@devup-ui/react/compat';"),
+            "{code}"
+        );
+        assert!(!code.contains("from '@emotion/react'"), "{code}");
     }
 
     #[test]
