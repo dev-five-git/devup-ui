@@ -5,9 +5,9 @@ use css::utils::to_kebab_case;
 use oxc_allocator::{Allocator, CloneIn, GetAllocator};
 use oxc_ast::{
     ast::{
-        Argument, CallExpression, Expression, ExpressionStatement, IdentifierName,
-        JSXAttributeValue, ObjectExpression, ObjectProperty, ObjectPropertyKind, Program,
-        PropertyKey, Statement, StaticMemberExpression,
+        Argument, ArrayExpressionElement, CallExpression, Expression, ExpressionStatement,
+        IdentifierName, JSXAttributeValue, ObjectExpression, ObjectProperty, ObjectPropertyKind,
+        Program, PropertyKey, Statement, StaticMemberExpression,
     },
     builder::AstBuilder,
 };
@@ -1079,7 +1079,16 @@ fn collect_style_parts<'b, 'a>(
         match unwrap_syntax_only(expression) {
             Expression::ArrayExpression(array) => {
                 for element in &array.elements {
-                    collect_style_parts(ast_builder, element.as_expression()?, parts, classes)?;
+                    let expression = match element {
+                        ArrayExpressionElement::SpreadElement(spread) => {
+                            match unwrap_syntax_only(&spread.argument) {
+                                array @ Expression::ArrayExpression(_) => array,
+                                _ => return None,
+                            }
+                        }
+                        element => element.as_expression()?,
+                    };
+                    collect_style_parts(ast_builder, expression, parts, classes)?;
                 }
                 return Some(());
             }

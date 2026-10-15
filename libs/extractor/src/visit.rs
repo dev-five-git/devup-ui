@@ -181,7 +181,7 @@ pub struct DevupVisitor<'a> {
     /// name of their own
     runtime_types: usize,
     /// The classes and keyframes names the file binds to a `const`
-    style_values: crate::style_values::StyleValues,
+    style_values: crate::style_values::StyleValues<'a>,
     /// What the build compiles away: the imports of the package it removes,
     /// and the bindings aliasing them, which only its calls and elements read
     compiled_names: FxHashSet<String>,
@@ -1694,6 +1694,11 @@ impl<'a> VisitMut<'a> for DevupVisitor<'a> {
 
         if let Expression::CallExpression(call) = it {
             if let Some(util_type) = self.util_type(&call.callee) {
+                let source_span = call.span;
+                if util_type.is_css() {
+                    self.style_values
+                        .record_rules(&self.ast, source_span.start, &call.arguments);
+                }
                 for argument in &mut call.arguments {
                     let expression = match argument {
                         Argument::SpreadElement(spread) => &mut spread.argument,
@@ -1702,16 +1707,6 @@ impl<'a> VisitMut<'a> for DevupVisitor<'a> {
                     if util_type.class_call().is_some() {
                         self.style_values.read_in_class_names(&self.ast, expression);
                     } else {
-                        for (offset, name) in self.style_values.nested_classes(expression) {
-                            self.errors.push((
-                                offset,
-                                build_time_error(
-                                    "css",
-                                    &name,
-                                    "a class from `css()` cannot be the value of a nested rule; spread the rule object it was made from instead, such as `'&:hover': { ...hotpinkRules }`",
-                                ),
-                            ));
-                        }
                         self.style_values.read_in(&self.ast, expression);
                     }
                 }
@@ -1938,6 +1933,11 @@ impl<'a> VisitMut<'a> for DevupVisitor<'a> {
                         Expression::new_string_literal(SPAN, "", None, &self.ast),
                     );
                     *it = flatten_classes(&self.ast, classes);
+                }
+                if util_type.is_css()
+                    && let Expression::StringLiteral(text) = it
+                {
+                    text.span = source_span;
                 }
             }
         } else if let Expression::TaggedTemplateExpression(tag) = it
@@ -2338,6 +2338,12 @@ impl<'a> VisitMut<'a> for DevupVisitor<'a> {
         .zip(self.style_values.constant(&it.id));
 
         walk_variable_declarator(self, it);
+
+        if let Some(symbol) = self.style_values.constant(&it.id)
+            && let Some(value) = &it.init
+        {
+            self.style_values.bind_rules(&self.ast, symbol, value);
+        }
 
         if let Some((text, symbol)) = class_text {
             self.style_values.insert_text(symbol, text);
