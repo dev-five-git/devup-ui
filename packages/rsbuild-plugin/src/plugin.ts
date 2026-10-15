@@ -3,20 +3,26 @@ import { mkdir, writeFile } from 'node:fs/promises'
 import { basename, dirname, join, relative, resolve } from 'node:path'
 
 import {
+  beginBuild,
   buildCanonicalMap,
+  collectNumberedFiles,
   computeFileReach,
   computeReachableFiles,
   createCompatTypes,
   createModuleResolver,
   createNodeModulesExcludeRegex,
+  createStateWriter,
   createThemeInterfaceArgs,
   type CustomShorthands,
+  extractedNeedles,
   getFileNumByFilename,
   type ImportAliases,
   loadDevupConfig,
   mergeImportAliases,
   planAtomHoist,
   readJsxImportSource,
+  seedFileNumbers,
+  withTailwindCss,
 } from '@devup-ui/plugin-utils'
 import {
   codeExtract,
@@ -27,6 +33,8 @@ import {
   importFileRoutes,
   registerShorthands,
   registerTheme,
+  resetBuildState,
+  seedFileMap,
   setAtomHoist,
   setDebug,
   setModuleResolver,
@@ -79,7 +87,7 @@ async function writeDataFiles(
     const config = await loadDevupConfig(options.devupFile)
     const theme = config.theme ?? {}
 
-    registerTheme(theme)
+    registerTheme(withTailwindCss(theme, config))
     const interfaceCode = getThemeInterface(
       ...createThemeInterfaceArgs(options.package),
     )
@@ -134,14 +142,19 @@ export const DevupUI = ({
     userImportAliases,
     readJsxImportSource(),
   )
+  const stateWriter = createStateWriter((path, content, encoding) =>
+    encoding ? writeFile(path, content, encoding) : writeFile(path, content),
+  )
 
   return {
     name: PLUGIN_NAME,
     async setup(api) {
+      // A build starts from its own options, not from what an earlier build
+      // in this process left in the engine
+      const endBuild = beginBuild({ resetBuildState })
+      api.onCloseBuild?.(endBuild)
       setDebug(debug)
-      if (prefix) {
-        setPrefix(prefix)
-      }
+      setPrefix(prefix ?? null)
 
       if (!existsSync(distDir)) await mkdir(distDir, { recursive: true })
       await writeFile(join(distDir, '.gitignore'), '*', 'utf-8')
@@ -205,6 +218,21 @@ export const DevupUI = ({
         }
       }
 
+      try {
+        // Number every file the build can extract in path order, so class
+        // prefixes do not depend on the order modules reach the transform
+        seedFileNumbers(
+          { seedFileMap },
+          collectNumberedFiles({
+            roots: [resolve(process.cwd(), 'src')],
+            include,
+            needles: extractedNeedles(libPackage, importAliases),
+            toId: (path) => (atomMode ? path.replaceAll('\\', '/') : path),
+          }),
+        )
+      } catch {
+        // Best-effort; numbering falls back to arrival order.
+      }
       // Extract the source files under `src` that the entries reach, in path
       // order, the same way the transform does, so that a stylesheet built on
       // its first import already holds the styles of every one. Best-effort:
@@ -417,7 +445,7 @@ export const DevupUI = ({
           if (updatedBaseStyle) {
             // update base style
             promises.push(
-              writeFile(
+              stateWriter.write(
                 join(cssDir, 'devup-ui.css'),
                 getCss(null, false),
                 'utf-8',
@@ -427,7 +455,7 @@ export const DevupUI = ({
 
           if (cssFile) {
             promises.push(
-              writeFile(
+              stateWriter.write(
                 join(cssDir, basename(cssFile)),
                 `/* ${resourcePath} ${Date.now()} */`,
                 'utf-8',

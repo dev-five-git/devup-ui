@@ -82,6 +82,18 @@ export interface DevupConfig {
    * Theme configuration
    */
   theme?: DevupTheme
+
+  /**
+   * The project's Tailwind CSS, which the build reads the definitions of
+   * `@theme`, `@utility` and `@custom-variant` from
+   */
+  tailwind?: {
+    /**
+     * The CSS file that imports `tailwindcss`. Found among the conventional
+     * files when omitted; `false` reads none
+     */
+    css?: string | false
+  }
 }
 
 /**
@@ -109,6 +121,7 @@ export type ImportAliases = Record<string, string | true | false>
 export const DEFAULT_IMPORT_ALIASES: ImportAliases = {
   '@emotion/react': true,
   '@emotion/styled': 'styled',
+  '@emotion/css': true,
   'styled-components': 'styled',
   '@vanilla-extract/css': true,
 }
@@ -167,6 +180,7 @@ const COMPAT_TYPE_ENTRIES: Record<string, string> = {
   '@emotion/react': 'emotion',
   [EMOTION_JSX_RUNTIME]: 'emotion-jsx-runtime',
   '@emotion/styled': 'emotion',
+  '@emotion/css': 'emotion',
   '@vanilla-extract/css': 'vanilla-extract',
   'styled-components': 'styled-components',
 }
