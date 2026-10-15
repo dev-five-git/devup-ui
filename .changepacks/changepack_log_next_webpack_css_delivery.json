@@ -1,0 +1,9 @@
+{
+  "changes": {
+    "packages/next-plugin/package.json": "Patch",
+    "packages/webpack-plugin/package.json": "Patch",
+    "packages/plugin-utils/package.json": "Patch"
+  },
+  "note": "Reconstruct the complete deterministic Next webpack stylesheet after each server, edge and client compiler reset, including accepted external package dependency closures, so delivered CSS matches rendered classes in per-file and single-CSS modes. Genuine production prewarm collection, read and extraction failures now fail the build instead of silently dropping styles; failed initialization releases its build session without leaking styles into unrelated builds.",
+  "date": "2026-10-16T00:00:00.000Z"
+}
