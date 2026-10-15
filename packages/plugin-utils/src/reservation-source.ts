@@ -1,3 +1,5 @@
+import { PackageManifestShapeError } from './package-manifest'
+
 const READ_FAILURES = new Set<string>([
   'ENOENT',
   'EACCES',
@@ -24,7 +26,9 @@ export function reservationSource<T>(
   } catch (error) {
     if (
       isReservationReadFailure(error) ||
-      (manifestBoundary && error instanceof SyntaxError)
+      (manifestBoundary &&
+        (error instanceof SyntaxError ||
+          error instanceof PackageManifestShapeError))
     ) {
       return undefined
     }

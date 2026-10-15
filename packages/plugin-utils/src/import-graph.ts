@@ -17,6 +17,8 @@ import {
   resolve,
 } from 'node:path'
 
+import { PackageManifestShapeError } from './package-manifest'
+
 /**
  * How map keys (and bucket-root values) are stringified.
  * - `cwd-relative` (default): POSIX path relative to `cwd` — matches plugins
@@ -1083,11 +1085,14 @@ function resolvePackage(
   const name = parts.slice(0, nameLength).join('/')
   const packageDir = findPackage(dirname(importer), name)
   if (!packageDir) return undefined
+  const manifestPath = join(packageDir, 'package.json')
+  const manifest: unknown = JSON.parse(readFileSync(manifestPath, 'utf-8'))
+  if (!isRecord(manifest) || Array.isArray(manifest)) {
+    throw new PackageManifestShapeError(manifestPath)
+  }
   const found = resolvePackageEntry(
     packageDir,
-    JSON.parse(
-      readFileSync(join(packageDir, 'package.json'), 'utf-8'),
-    ) as Record<string, unknown>,
+    manifest,
     ['.', ...parts.slice(nameLength)].join('/'),
   )
   return found && realpathSync(found)
