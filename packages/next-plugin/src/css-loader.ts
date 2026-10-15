@@ -4,6 +4,12 @@ import { Agent, request } from 'node:http'
 import { getFileNumByFilename } from '@devup-ui/plugin-utils'
 import type { RawLoaderDefinitionFunction } from 'webpack'
 
+import {
+  isConnectionError,
+  missingPortFileError,
+  parsePortFile,
+  unreachableCoordinatorError,
+} from './coordinator-port'
 import { loadWasm } from './wasm'
 
 export interface DevupUICssLoaderOptions {
@@ -26,7 +32,7 @@ const keepAliveAgent = new Agent({ keepAlive: true })
 
 function readCoordinatorPort(portFile: string): number {
   if (cachedPort !== null) return cachedPort
-  cachedPort = parseInt(readFileSync(portFile, 'utf-8').trim())
+  cachedPort = parsePortFile(readFileSync(portFile, 'utf-8')).port
   return cachedPort
 }
 
@@ -96,7 +102,7 @@ const devupUICssLoader: RawLoaderDefinitionFunction<DevupUICssLoaderOptions> =
             setTimeout(() => tryFetch(retries - 1), 50)
             return
           }
-          callback(new Error('Coordinator port file not found'))
+          callback(missingPortFileError(coordinatorPortFile))
           return
         }
         try {
@@ -107,7 +113,17 @@ const devupUICssLoader: RawLoaderDefinitionFunction<DevupUICssLoaderOptions> =
             importMainCss,
             !watch,
             (err, css) => {
-              if (err) return callback(err)
+              if (err) {
+                if (isConnectionError(err)) {
+                  // The port may belong to a coordinator that has since been
+                  // replaced; forget it so the next call re-reads the file.
+                  cachedPort = null
+                  return callback(
+                    unreachableCoordinatorError(coordinatorPortFile, err),
+                  )
+                }
+                return callback(err)
+              }
               callback(null, css)
             },
           )

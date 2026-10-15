@@ -3,6 +3,8 @@ import { mkdir, writeFile } from 'node:fs/promises'
 import { dirname, join, relative, resolve } from 'node:path'
 
 import {
+  beginBuild,
+  collectNumberedFiles,
   createCompatTypes,
   createModuleResolver,
   createThemeInterfaceArgs,
@@ -10,6 +12,8 @@ import {
   loadDevupConfig,
   mergeImportAliases,
   readJsxImportSource,
+  seedFileNumbers,
+  withTailwindCss,
 } from '@devup-ui/plugin-utils'
 import {
   codeExtract,
@@ -17,8 +21,11 @@ import {
   getThemeInterface,
   registerShorthands,
   registerTheme,
+  resetBuildState,
+  seedFileMap,
   setDebug,
   setModuleResolver,
+  setPrefix,
 } from '@devup-ui/wasm'
 import { type BunPlugin, plugin, type PluginBuilder } from 'bun'
 
@@ -53,7 +60,7 @@ async function writeDataFiles() {
   let theme = {}
   try {
     const config = await loadDevupConfig(devupFile)
-    theme = config.theme ?? {}
+    theme = withTailwindCss(config.theme ?? {}, config)
   } catch {
     // Error reading devup.json, use empty theme
   }
@@ -74,7 +81,22 @@ async function writeDataFiles() {
 
 async function initialize({ shorthands }: DevupUIBunPluginOptions = {}) {
   registerShorthands(shorthands ?? {})
+  setPrefix(null)
   setModuleResolver(createModuleResolver())
+  // Number every source file in path order, so class prefixes do not depend
+  // on the order Bun loads files in
+  try {
+    seedFileNumbers(
+      { seedFileMap },
+      collectNumberedFiles({
+        roots: [resolve('src')],
+        needles: compiledPackages,
+        toId: (path) => path,
+      }),
+    )
+  } catch {
+    // Best-effort; numbering falls back to arrival order.
+  }
   if (!existsSync(distDir)) await mkdir(distDir, { recursive: true })
   await writeFile(join(distDir, '.gitignore'), '*', 'utf-8')
   await writeFile(
@@ -150,6 +172,10 @@ function DevupUI(options: DevupUIBunPluginOptions = {}) {
     async setup(build: PluginBuilder) {
       // `Bun.build` hands its config to plugins; the runtime has none
       const bundling = build.config !== undefined
+      // A build starts from its own options, not from what an earlier build in
+      // this process left in the engine
+      const endBuild = beginBuild({ resetBuildState })
+      build.onEnd?.(endBuild)
       await initialize(options)
       setDebug(options.debug ?? !bundling)
 

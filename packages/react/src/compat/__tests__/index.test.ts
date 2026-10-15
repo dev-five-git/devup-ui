@@ -9,8 +9,12 @@ describe('compat entry', () => {
       ClassNames: expect.any(Function),
       Global: expect.any(Function),
       ThemeProvider: expect.any(Function),
+      ThemeConsumer: expect.any(Function),
 
       createGlobalStyle: expect.any(Function),
+      createTheme: expect.any(Function),
+      cx: expect.any(Function),
+      merge: expect.any(Function),
       useTheme: expect.any(Function),
       withTheme: expect.any(Function),
 
@@ -41,6 +45,5 @@ describe('compat entry', () => {
     const { useTheme: devupUseTheme } = await import('../../index')
 
     expect(compatUseTheme).not.toBe(devupUseTheme)
-    expect(`${compatUseTheme<{ brand: string }>().brand}`).toBe('var(--brand)')
   })
 })

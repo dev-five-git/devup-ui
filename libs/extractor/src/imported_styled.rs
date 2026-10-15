@@ -16,7 +16,7 @@ use oxc_parser::{Parser, ParserReturn};
 use oxc_span::SourceType;
 use rustc_hash::{FxHashMap, FxHashSet};
 
-use crate::css_prop::CssProp;
+use crate::css_prop::{CssProp, CssTakers};
 use crate::extractor::extract_style_from_styled::StyledDefinition;
 use crate::import_alias_visit::{Aliased, transform_import_aliases_with_edits};
 use crate::utils::{is_vanilla_extract_file, unwrap_syntax_only};
@@ -139,7 +139,8 @@ impl ImportedComponent<'_> {
         Self {
             definition: self
                 .definition
-                .filter(|definition| readable && definition.portable()),
+                .filter(|_| readable)
+                .and_then(StyledDefinition::shared),
             ..self
         }
     }
@@ -241,6 +242,8 @@ impl<'a> Reader<'_, 'a> {
             return None;
         }
         let ast_builder = AstBuilder::new(&sub);
+        let styled_capability =
+            crate::extractor::styled_capability::StyledCapability::reserve(&program);
         let inlined = crate::imported_constants::inline_constants(
             &ast_builder,
             &mut program,
@@ -266,6 +269,7 @@ impl<'a> Reader<'_, 'a> {
         visitor.changed_bindings(inlined.changed);
         visitor.takes_css_prop(css_prop);
         visitor.import_styled(imports);
+        visitor.reserve_styled(styled_capability);
         visitor.visit_program(&mut program);
         let readable = visitor.errors.is_empty()
             && visitor.unknown_parts.is_empty()
@@ -326,6 +330,11 @@ impl<'a> Reader<'_, 'a> {
         let mut used = Used {
             styled: imported.styled,
             css_prop: css_prop != CssProp::Off,
+            css: CssTakers::new(
+                program,
+                css_prop,
+                &format!("{}/compat", self.option.package),
+            ),
             names: FxHashSet::default(),
         };
         used.visit_program(program);
@@ -435,13 +444,14 @@ fn written_name(expression: &Expression<'_>) -> Option<String> {
 }
 
 /// The bindings a program composes, takes the `css` prop of, or selects
-struct Used {
+struct Used<'s> {
     styled: FxHashSet<String>,
     css_prop: bool,
+    css: CssTakers<'s>,
     names: FxHashSet<String>,
 }
 
-impl<'a> Visit<'a> for Used {
+impl<'a> Visit<'a> for Used<'_> {
     fn visit_call_expression(&mut self, call: &CallExpression<'a>) {
         let name = match unwrap_syntax_only(&call.callee) {
             Expression::Identifier(callee) if self.styled.contains(callee.name.as_str()) => call
@@ -454,6 +464,11 @@ impl<'a> Visit<'a> for Used {
             {
                 written_name(&member.object)
             }
+            _ if self.css.property(call, |_| true).is_some() => call
+                .arguments
+                .first()
+                .and_then(|argument| argument.as_expression())
+                .and_then(written_name),
             _ => None,
         };
         self.names.extend(name);
