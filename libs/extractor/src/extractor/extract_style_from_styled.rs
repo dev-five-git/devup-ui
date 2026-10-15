@@ -505,6 +505,27 @@ pub fn extract_style_from_styled<'a>(
         // Check if tag is styled.div or styled(...)
         // Extract CSS from template literal
 
+        let mut invalid = Vec::new();
+        unreadable_styles(
+            &crate::dead_properties::template_errors(&tag.quasi),
+            true,
+            &mut invalid,
+        );
+        errors.extend(invalid.into_iter().map(|(offset, code, requirement)| {
+            (
+                offset,
+                build_time_error("styled", &code, requirement.unwrap_or(STYLE_OBJECT)),
+            )
+        }));
+        if !errors.is_empty() {
+            return StyledExtraction {
+                result: ExtractResult::default(),
+                expression: Expression::new_string_literal(SPAN, "", None, ast_builder),
+                errors,
+                definition: None,
+            };
+        }
+
         let TemplateStyles {
             styles,
             statements,
@@ -644,7 +665,7 @@ pub fn extract_style_from_styled<'a>(
         unreadable_styles(&styles, true, &mut unreadable);
         errors.extend(unreadable.into_iter().map(|(offset, code, requirement)| {
             (
-                offset,
+                if offset == 0 { call.span.start } else { offset },
                 build_time_error("styled", &code, requirement.unwrap_or(STYLE_OBJECT)),
             )
         }));
