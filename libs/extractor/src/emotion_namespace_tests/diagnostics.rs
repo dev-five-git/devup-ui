@@ -15,6 +15,21 @@ fn syntax_errors_are_reported_before_namespace_normalization() {
 }
 
 #[test]
+fn restoration_preserves_the_diagnostic_when_its_source_is_malformed() {
+    // Given: an internal generated-name diagnostic and source the parser rejects.
+    let source = "import * as E from '@emotion/css';\nE.__emotion_user(); const broken;";
+    let message = utils::build_time_error("css", "__emotion_css_0()", "pass a static style object");
+
+    // When: diagnostic restoration cannot safely inspect the original AST.
+    let error = emotion_namespace::original_error_code(source, source.find("E.__emotion_user").unwrap(), message.clone(), SourceType::tsx());
+
+    // Then: the original diagnostic survives together with the parser failure.
+    assert_eq!(error.lines().next(), Some(message.as_str()));
+    assert!(error.contains("Emotion diagnostic restoration failed:"));
+    assert!(error.contains("Missing initializer in const declaration"));
+}
+
+#[test]
 #[serial]
 fn emotion_restoration_preserves_generic_runtime_read_errors_when_user_names_match_prefix() {
     // Given
