@@ -2,6 +2,7 @@ import type {
   ReservationDiscoveryOptions,
   ReservationInput,
   ReservationInventory,
+  ReservationResolutions,
 } from './reservation-discovery'
 import { collectReservationInputs } from './reservation-discovery'
 import type { WasmImportAliases } from './types'
@@ -70,6 +71,23 @@ function sameRows(
   )
 }
 
+function sameResolutions(
+  current: ReservationResolutions,
+  previous: ReservationResolutions,
+): boolean {
+  return (
+    current.entries.length === previous.entries.length &&
+    current.entries.every(
+      (target, index) => previous.entries[index] === target,
+    ) &&
+    current.imports.size === previous.imports.size &&
+    [...current.imports].every(([importer, targets]) => {
+      const prior = previous.imports.get(importer)
+      return prior !== undefined && sameSources(targets, prior)
+    })
+  )
+}
+
 function sameAliases(
   current: Readonly<WasmImportAliases>,
   previous: Readonly<WasmImportAliases>,
@@ -104,6 +122,10 @@ export function createSharedSlotReservation(
         committed.importMainCssInCode === options.importMainCssInCode &&
         committed.importMainCssInCss === options.importMainCssInCss &&
         sameAliases(discovery.importAliases, committed.aliases) &&
+        sameResolutions(
+          inventory.resolutions,
+          committed.inventory.resolutions,
+        ) &&
         sameSources(inventory.sources, committed.inventory.sources) &&
         sameRows(rows, committed.rows)
       )

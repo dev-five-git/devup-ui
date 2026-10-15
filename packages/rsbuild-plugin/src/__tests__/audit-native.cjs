@@ -3,6 +3,7 @@ const { basename } = require('node:path')
 /** @type {typeof import('@rsbuild/core')} */
 const { createRsbuild } = require('@rsbuild/core')
 const { batches, extracts, gate, state } = require('./audit-engine.cjs')
+const { manager, changeTarget } = require('./audit-manager.cjs')
 const [root = '', mode = '', order = '', receipt = ''] = process.argv.slice(2)
 process.chdir(root)
 
@@ -120,6 +121,10 @@ async function native() {
           })
         })
       await run()
+      if (mode === 'revision') {
+        changeTarget(root)
+        await run()
+      }
     }
     return {
       ok: true,
@@ -171,7 +176,7 @@ async function main() {
       throw error
     parser = null
   }
-  const result = await native()
+  const result = mode === 'manager' ? manager(root) : await native()
   writeFileSync(receipt, JSON.stringify({ parser, ...result }))
 }
 main().catch((error) => {

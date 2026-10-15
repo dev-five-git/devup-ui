@@ -42,6 +42,12 @@ export type ReservationInventory = {
   readonly inputs: readonly ReservationInput[]
   readonly dependencies: readonly string[]
   readonly sources: ReadonlyMap<string, string>
+  readonly resolutions: ReservationResolutions
+}
+
+export type ReservationResolutions = {
+  readonly entries: readonly string[]
+  readonly imports: ReadonlyMap<string, ReadonlyMap<string, string>>
 }
 
 export class PreparedInputConflictError extends Error {
@@ -109,6 +115,8 @@ export function collectReservationInputs(
   const needles = extractedNeedles(options.package, options.importAliases)
   const records = new Map<string, ReservationInput>()
   const sources = new Map<string, string>()
+  const entryTargets = new Set<string>()
+  const imports = new Map<string, Map<string, string>>()
   const edges = new Map<string, Set<string>>()
   const seeds = new Set(overlays.keys())
   const pending = [...initial, ...overlays.keys()]
@@ -120,6 +128,7 @@ export function collectReservationInputs(
         true,
       )
       if (!module || !isSourceFile(module.path)) continue
+      entryTargets.add(physicalKey(module.path))
       sources.set(physicalKey(module.path), module.code)
       pending.push(module.path)
     }
@@ -141,6 +150,8 @@ export function collectReservationInputs(
     })
     if (needles.some((needle) => code.includes(needle))) seeds.add(key)
     const targets = new Set<string>()
+    const resolutions = new Map<string, string>()
+    imports.set(key, resolutions)
     edges.set(key, targets)
     for (const specifier of importedSpecifiers(
       overlay?.filename ?? physicalPath,
@@ -153,6 +164,7 @@ export function collectReservationInputs(
       )
       if (!module || !isSourceFile(module.path)) continue
       const target = physicalKey(module.path)
+      resolutions.set(specifier, target)
       targets.add(target)
       if (allowed) seeds.add(target)
       if (!sources.has(target)) sources.set(target, module.code)
@@ -171,5 +183,10 @@ export function collectReservationInputs(
     .filter(([key]) => selected.has(key))
     .sort(([left], [right]) => (left < right ? -1 : left > right ? 1 : 0))
     .map(([, record]) => record)
-  return { inputs, dependencies, sources }
+  return {
+    inputs,
+    dependencies,
+    sources,
+    resolutions: { entries: [...entryTargets].sort(), imports },
+  }
 }
