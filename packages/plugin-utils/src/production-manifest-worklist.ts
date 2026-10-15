@@ -36,15 +36,30 @@ interface Frame {
 export class ManifestWorklist {
   readonly #certificates = new ManifestCertificates()
   readonly #retained = new Map<string, readonly ManifestObligation[]>()
+  // Append-only root groups retain every admission, including replaced and queued nodes.
+  readonly #rooted = new Map<ManifestObligation, ManifestObligation[]>()
   readonly #origins: ManifestObligation[] = []
   readonly #visits = new Map<ManifestObligation, Visit>()
   readonly #components: Visit[] = []
 
   constructor(private readonly owner: ManifestOwner) {}
 
+  information() {
+    return Object.freeze(
+      [...this.#rooted.keys()].map((node) =>
+        Object.freeze({
+          key: manifestJobKey(node.job),
+          files: Object.freeze([...node.ancestry.files]),
+          packages: Object.freeze([...node.ancestry.packages]),
+        }),
+      ),
+    )
+  }
+
   #enqueue(
     job: ManifestJob,
     ancestry: ManifestAncestry,
+    root?: ManifestObligation[],
   ): ManifestEvidence | undefined {
     if (!this.owner.admit(job)) return undefined
     switch (job.kind) {
@@ -66,11 +81,37 @@ export class ManifestWorklist {
       manifestCovers(node.ancestry, ancestry),
     )
     if (covering) return { kind: 'node', node: covering }
+    const candidates = new Set(
+      root?.filter((node) => {
+        if (manifestJobKey(node.job) !== key) return false
+        const state = node.state
+        switch (state.phase) {
+          case 'expanded':
+            return true
+          case 'pending':
+          case 'expanding':
+          case 'completed':
+            return false
+          default:
+            return state satisfies never
+        }
+      }),
+    )
+    if (root && candidates.size) {
+      const covered = [...this.#certificates.bound(root)].find(
+        ([node, frontier]) =>
+          candidates.has(node) && manifestCovers(frontier, ancestry),
+      )
+      if (covered) return { kind: 'node', node: covered[0] }
+    }
     const node: ManifestObligation = {
       job: Object.freeze({ ...job }),
       ancestry,
       state: { phase: 'pending' },
     }
+    const group = root ?? []
+    group.push(node)
+    this.#rooted.set(node, group)
     this.#retained.set(
       key,
       previous
@@ -117,7 +158,7 @@ export class ManifestWorklist {
     }
     const edges: ManifestEdge[] = []
     await this.owner.expand(node.job, (child) => {
-      const evidence = this.#enqueue(child, next)
+      const evidence = this.#enqueue(child, next, this.#rooted.get(node))
       if (evidence) edges.push({ delta: node.job, evidence })
     })
     node.state = { phase: 'expanded', edges: Object.freeze(edges) }
@@ -125,6 +166,7 @@ export class ManifestWorklist {
   }
 
   async run(): Promise<void> {
+    // First faults follow genuine-origin registration, then frozen child-batch traversal.
     for (const origin of this.#origins) {
       const first = await this.#enter(origin)
       if (!first) continue

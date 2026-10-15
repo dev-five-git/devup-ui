@@ -113,6 +113,7 @@ export class ManifestCertificates {
   #frontier(
     evidence: ManifestEvidence,
     internal: ReadonlyMap<ManifestObligation, ManifestAncestry>,
+    conditional: boolean,
   ): Frontier {
     switch (evidence.kind) {
       case 'cut': {
@@ -137,6 +138,7 @@ export class ManifestCertificates {
           case 'pending':
           case 'expanding':
           case 'expanded':
+            if (conditional) return evidence.node.ancestry
             throw new ManifestClosureError('dependency-open')
           default:
             return state satisfies never
@@ -147,9 +149,10 @@ export class ManifestCertificates {
     }
   }
 
-  seal(
+  #calculate(
     component: readonly ManifestObligation[],
-  ): ReadonlyMap<ManifestObligation, ManifestCertificate> {
+    conditional: boolean,
+  ): ReadonlyMap<ManifestObligation, ManifestAncestry> {
     const internal = new Map<
       ManifestObligation,
       {
@@ -171,7 +174,8 @@ export class ManifestCertificates {
         case 'pending':
         case 'expanding':
         case 'completed':
-          throw new ManifestClosureError('member-open')
+          if (!conditional) throw new ManifestClosureError('member-open')
+          break
         default:
           state satisfies never
       }
@@ -182,7 +186,7 @@ export class ManifestCertificates {
       changed = false
       for (const target of internal.values()) {
         for (const edge of target.edges) {
-          const child = this.#frontier(edge.evidence, internal)
+          const child = this.#frontier(edge.evidence, internal, conditional)
           const supplied = manifestNamespace(edge.delta.kind)
           for (const namespace of ['files', 'packages'] as const) {
             for (const path of child[namespace]) {
@@ -196,6 +200,18 @@ export class ManifestCertificates {
         }
       }
     }
+    return internal
+  }
+
+  bound(root: readonly ManifestObligation[]) {
+    // Unfinished boundaries retain actual ancestry; this map never issues certificates.
+    return this.#calculate(root, true)
+  }
+
+  seal(
+    component: readonly ManifestObligation[],
+  ): ReadonlyMap<ManifestObligation, ManifestCertificate> {
+    const internal = this.#calculate(component, false)
     const staged = new Map<ManifestObligation, ClosedClosure>()
     for (const [node, frontier] of internal)
       staged.set(node, new ClosedClosure(manifestJobKey(node.job), frontier))

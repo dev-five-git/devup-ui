@@ -851,21 +851,25 @@ fn string_class<'a>(ast_builder: &AstBuilder<'a>, value: &Expression<'a>) -> Exp
     )
 }
 
+/// Code the build cannot use where it is written, with what the place takes
+/// when that is not the usual requirement
+pub(super) type Unused = (String, Option<&'static str>);
+
 /// The first value in `props` that is only known at runtime
-pub(super) fn runtime_value(props: &[crate::ExtractStyleProp<'_>]) -> Option<String> {
+pub(super) fn runtime_value(props: &[crate::ExtractStyleProp<'_>]) -> Option<Unused> {
     let mut unreadable = Vec::new();
     unreadable_styles(props, true, &mut unreadable);
     unreadable
         .into_iter()
         .next()
-        .map(|(_, code)| code)
+        .map(|(_, code, requirement)| (code, requirement))
         .or_else(|| {
             props
                 .iter()
                 .flat_map(crate::ExtractStyleProp::extract)
                 .find_map(|value| match value {
                     crate::ExtractStyleValue::Dynamic(style) => {
-                        Some(style.identifier().to_string())
+                        Some((style.identifier().to_string(), None))
                     }
                     _ => None,
                 })
@@ -875,14 +879,14 @@ pub(super) fn runtime_value(props: &[crate::ExtractStyleProp<'_>]) -> Option<Str
 /// The first value in `props` only known at runtime, a runtime condition
 /// choosing between values included: what styles with no class to switch
 /// between, global styles and keyframes, cannot hold
-pub(super) fn fixed_value(props: &[crate::ExtractStyleProp<'_>]) -> Option<String> {
-    fn condition(prop: &crate::ExtractStyleProp<'_>) -> Option<String> {
+pub(super) fn fixed_value(props: &[crate::ExtractStyleProp<'_>]) -> Option<Unused> {
+    fn condition(prop: &crate::ExtractStyleProp<'_>) -> Option<Unused> {
         use crate::ExtractStyleProp;
         match prop {
             ExtractStyleProp::Conditional { condition, .. }
-            | ExtractStyleProp::Enum { condition, .. } => Some(readable_code(condition)),
+            | ExtractStyleProp::Enum { condition, .. } => Some((readable_code(condition), None)),
             ExtractStyleProp::MemberExpression { expression, .. } => {
-                Some(readable_code(expression))
+                Some((readable_code(expression), None))
             }
             ExtractStyleProp::StaticArray(props) => props.iter().find_map(condition),
             _ => None,
@@ -891,19 +895,24 @@ pub(super) fn fixed_value(props: &[crate::ExtractStyleProp<'_>]) -> Option<Strin
     runtime_value(props).or_else(|| props.iter().find_map(condition))
 }
 
-/// Where `props` holds styles the build cannot read, with their code; with
-/// `keys`, computed keys among an element's props too
+/// Where `props` holds styles the build cannot read, with their code and what
+/// their place takes; with `keys`, computed keys among an element's props too
 pub(super) fn unreadable_styles(
     props: &[crate::ExtractStyleProp<'_>],
     keys: bool,
-    found: &mut Vec<(u32, String)>,
+    found: &mut Vec<(u32, String, Option<&'static str>)>,
 ) {
     use crate::ExtractStyleProp;
     for prop in props {
         match prop {
-            ExtractStyleProp::Unreadable { offset, code, prop } => {
+            ExtractStyleProp::Unreadable {
+                offset,
+                code,
+                prop,
+                requirement,
+            } => {
                 if keys || !prop {
-                    found.push((*offset, code.clone()));
+                    found.push((*offset, code.clone(), *requirement));
                 }
             }
             ExtractStyleProp::StaticArray(props) => unreadable_styles(props, keys, found),
@@ -948,6 +957,15 @@ const COMPUTED_VALUE: &str =
 pub(super) fn runtime_value_error(api: &str, value: &str) -> String {
     build_time_error(api, value, COMPUTED_VALUE)
 }
+
+/// [`runtime_value_error`] for what [`runtime_value`] finds
+pub(super) fn unused_error(api: &str, (code, requirement): &Unused) -> String {
+    build_time_error(api, code, requirement.unwrap_or(COMPUTED_VALUE))
+}
+
+pub(super) const SELECTOR_NAME: &str = "a selector key names a pseudo-class or pseudo-element, as `_hover` or `hover`, or is a selector, as `&:hover`, `& > p` or `.parent &`";
+
+pub(super) const CSS_TEXT: &str = "a selector takes styles, an object such as `{ color: 'red' }` or CSS text such as `color: red`";
 
 pub(super) fn element_error(component: &str, code: &str, requirement: &str) -> String {
     format!("`<{component}>` cannot use `{code}` at build time: {requirement}")

@@ -271,6 +271,7 @@ describe('turbopack setup', () => {
       importAliases: {
         '@emotion/react': null,
         '@emotion/styled': 'styled',
+        '@emotion/css': null,
         '@vanilla-extract/css': null,
       },
       expectedBaseFiles: ['src/app/page.tsx'],
@@ -375,6 +376,7 @@ describe('turbopack setup', () => {
               importAliases: {
                 '@emotion/react': null,
                 '@emotion/styled': 'styled',
+                '@emotion/css': null,
                 '@vanilla-extract/css': null,
                 'styled-components': 'styled',
               },

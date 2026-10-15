@@ -75,6 +75,14 @@ it('classifies only actual public surfaces instead of names or directory members
       classify(join(root, 'dist/compat/index.js'), ['ThemeProvider']),
     ).toBe(false)
     expect(classify(join(root, 'dist/stylex.cjs'), ['props'])).toBe(true)
+    for (const name of ['cx', 'merge']) {
+      expect(classify(join(root, 'dist/compat/index.js'), [name])).toBe(true)
+      expect(classify(join(root, 'dist/index.js'), [name])).toBe(false)
+      expect(classify(join(root, 'dist/ordinary.js'), [name])).toBe(false)
+    }
+    for (const name of ['cache', 'flush', 'hydrate', 'sheet', 'unknown']) {
+      expect(classify(join(root, 'dist/compat/index.js'), [name])).toBe(false)
+    }
     expect(classify(join(root, 'dist/ordinary.js'), ['Box'])).toBe(false)
     expect(classify(join(tmpdir(), 'Box.js'), ['Box'])).toBe(false)
     mkdirSync(join(root, 'stylex'))
@@ -109,6 +117,27 @@ it.each([
   ['custom', ['default'], { custom: null }, false],
   ['disabled', ['css'], {}, false],
   ['@stylexjs/stylex', ['default', 'create'], {}, false],
+  ['@emotion/css', ['css'], { '@emotion/css': null }, true],
+  ['@emotion/css', ['cx'], { '@emotion/css': null }, true],
+  ['@emotion/css', ['merge'], { '@emotion/css': null }, true],
+  ['@emotion/css', ['injectGlobal'], { '@emotion/css': null }, true],
+  ['@emotion/css', ['css'], {}, false],
+  ['@emotion/css', ['cx'], {}, false],
+  ['@emotion/css', ['merge'], {}, false],
+  ['@emotion/css', ['injectGlobal'], {}, false],
+  ['@emotion/css', ['cache'], { '@emotion/css': null }, false],
+  ['@emotion/css', ['flush'], { '@emotion/css': null }, false],
+  ['@emotion/css', ['hydrate'], { '@emotion/css': null }, false],
+  ['@emotion/css', ['sheet'], { '@emotion/css': null }, false],
+  ['@emotion/css', ['unknown'], { '@emotion/css': null }, false],
+  ['custom', ['cx'], { custom: null }, false],
+  ['@emotion/react', ['merge'], { '@emotion/react': null }, false],
+  [
+    '@vanilla-extract/css',
+    ['injectGlobal'],
+    { '@vanilla-extract/css': null },
+    false,
+  ],
 ])(
   'uses extractor-compatible alias mapping for %s/%s',
   (request, ids, aliases, expected) => {
@@ -185,3 +214,35 @@ it('consumes public getIds and require-member names but ignores untyped or opaqu
     }),
   ).toHaveLength(2)
 })
+
+it.each(['css', 'cx', 'merge', 'injectGlobal'])(
+  'guards only the mapped Emotion macro %s at the shared dependency boundary',
+  (name) => {
+    const check = createDependencyGuard({
+      package: '@devup-ui/react',
+      mdxExtensions: [],
+      importAliases: { '@emotion/css': null },
+    })
+    const dependencies = [
+      [name],
+      ['cache'],
+      ['flush'],
+      ['hydrate'],
+      ['sheet'],
+      ['unknown'],
+      ['default'],
+      [],
+      [123],
+      undefined,
+    ].map((ids) => ({
+      type: 'esm import specifier',
+      request: '@emotion/css',
+      ids,
+    }))
+    const errors = check(
+      [{ type: 'javascript/auto', resource: '/page.mdown', dependencies }],
+      { graph: {}, target: () => undefined },
+    )
+    expect(errors.map((error) => error.reference.ids)).toEqual([[name]])
+  },
+)

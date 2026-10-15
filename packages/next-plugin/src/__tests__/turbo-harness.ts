@@ -39,10 +39,12 @@ export function installTurboHarness(): TurboHarness {
     startRealCoordinators: () => spies.start?.mockRestore(),
   }
   let originalEnv: NodeJS.ProcessEnv
+  let originalEnvValues: NodeJS.ProcessEnv
 
   beforeEach(() => {
     resetTurboSetupCacheForTesting()
-    originalEnv = { ...process.env }
+    originalEnv = process.env
+    originalEnvValues = { ...originalEnv }
     process.env.TURBOPACK = '1'
     process.env.NODE_ENV = 'production'
     harness.starts.length = 0
@@ -77,6 +79,10 @@ export function installTurboHarness(): TurboHarness {
     spies.start?.mockRestore()
     spies.once?.mockRestore()
     resetTurboSetupCacheForTesting()
+    for (const key of Object.keys(originalEnv)) {
+      if (!Object.hasOwn(originalEnvValues, key)) delete originalEnv[key]
+    }
+    Object.assign(originalEnv, originalEnvValues)
     process.env = originalEnv
   })
   return harness

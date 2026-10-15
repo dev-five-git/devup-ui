@@ -1,4 +1,4 @@
-import { mkdtempSync, rmSync } from 'node:fs'
+import { mkdtempSync, realpathSync, rmSync } from 'node:fs'
 import { createRequire } from 'node:module'
 import { tmpdir } from 'node:os'
 import { join, resolve } from 'node:path'
@@ -11,13 +11,16 @@ import { expect, it } from 'bun:test'
 
 import { DevupUI } from '../../../vite-plugin/src/plugin'
 
+type TestPlugin = { name: string; closeBundle(this: void): void }
+
 it('reports the actual Vite root when an owned operation is refused during its live interval', async () => {
-  const vite: typeof import('../../../vite-plugin/node_modules/vite') =
-    createRequire(
-      resolve(import.meta.dir, '../../../vite-plugin/package.json'),
-    )('vite')
-  const root = mkdtempSync(join(tmpdir(), 'devup-vite-admission-'))
-  const plugins = DevupUI()
+  const vite: typeof import('vite') = createRequire(
+    resolve(import.meta.dir, '../../../vite-plugin/package.json'),
+  )('vite')
+  const root = realpathSync.native(
+    mkdtempSync(join(tmpdir(), 'devup-vite-admission-')),
+  )
+  const plugins = DevupUI() as unknown as [TestPlugin]
   try {
     await vite.resolveConfig({ configFile: false, root, plugins }, 'serve')
     let active
@@ -33,7 +36,7 @@ it('reports the actual Vite root when an owned operation is refused during its l
     expect(active?.root.replaceAll('\\', '/')).toBe(root.replaceAll('\\', '/'))
     expect(active?.integration).toBe('Vite')
   } finally {
-    plugins[0].closeBundle()
+    plugins[0].closeBundle.call(undefined)
     rmSync(root, { recursive: true, force: true })
   }
 })

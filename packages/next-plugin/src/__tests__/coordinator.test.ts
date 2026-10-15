@@ -144,6 +144,7 @@ describe('endpoint', () => {
     )
 
     expect(data.code).not.toContain('fileNum')
+    expect(data.map).toBeUndefined()
     expect(extractions).toEqual(['nomap:src/a.tsx'])
   })
 
@@ -383,13 +384,16 @@ describe('lifecycle', () => {
       return result
     })
 
-    await handle.ready
-    const listens = spy.mock.calls.length
-    spy.mockRestore()
-    await delay(50)
+    try {
+      await handle.ready
+      const listens = spy.mock.calls.length
+      await delay(50)
 
-    expect(listens).toBe(1)
-    expect(existsSync(app.portFile)).toBe(false)
+      expect(listens).toBe(1)
+      expect(existsSync(app.portFile)).toBe(false)
+    } finally {
+      spy.mockRestore()
+    }
   })
 
   it('fails ready, and drain, when the engine cannot be rebuilt at startup', async () => {

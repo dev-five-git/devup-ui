@@ -1,5 +1,6 @@
 import * as fs from 'node:fs'
 import * as fsPromises from 'node:fs/promises'
+import * as os from 'node:os'
 import * as nodePath from 'node:path'
 
 import * as pluginUtils from '@devup-ui/plugin-utils'
@@ -13,10 +14,13 @@ import {
   mock,
   spyOn,
 } from 'bun:test'
+import { type Plugin, resolveConfig } from 'vite'
 
+import { NonphysicalModules } from '../nonphysical-modules'
 import { DevupUI as createDevupUI } from '../plugin'
+import { productionFixture } from './production-fixture'
 
-const pluginInstances = new Set<ReturnType<typeof createDevupUI>[0]>()
+const pluginInstances = new Set<ViteTestPlugin>()
 it.each([
   undefined,
   'code',
@@ -89,7 +93,13 @@ it.each([
   },
 )
 function DevupUI(options?: Parameters<typeof createDevupUI>[0]) {
-  const plugin = createDevupUI(options)
+  const plugin = createDevupUI(options) as unknown as [
+    ViteTestPlugin,
+    ViteTestRestorePlugin,
+    unknown,
+    unknown,
+    unknown,
+  ]
   pluginInstances.add(plugin[0])
   return plugin
 }
@@ -126,6 +136,11 @@ interface HotUpdateEnvironment {
 }
 
 interface ViteTestPlugin {
+  buildStart: Plugin['buildStart']
+  buildApp: Plugin['buildApp']
+  buildEnd: Plugin['buildEnd']
+  closeWatcher: Plugin['closeWatcher']
+  configureServer: Plugin['configureServer']
   environment?: {
     name: string
     config: {
@@ -157,6 +172,7 @@ interface ViteTestPlugin {
     server: {
       moduleGraph: {
         invalidateModule: (...args: unknown[]) => void
+        idToModuleMap?: ReadonlyMap<string, object>
       }
       ws: { send: (...args: unknown[]) => void }
     }
@@ -324,6 +340,7 @@ let setDebugSpy: ReturnType<typeof spyOn>
 let setPrefixSpy: ReturnType<typeof spyOn>
 let loadConfigSpy: ReturnType<typeof spyOn>
 let graphSpy: ReturnType<typeof spyOn>
+let consoleErrorSpy: ReturnType<typeof spyOn>
 
 beforeEach(() => {
   existsSyncSpy = spyOn(fs, 'existsSync').mockReturnValue(false)
@@ -351,6 +368,7 @@ beforeEach(() => {
     },
   )
   graphSpy = spyOn(pluginUtils, 'buildStaticImportGraph').mockReturnValue({
+    requests: [],
     files: [],
     fileSet: new Set(),
     staticImports: new Map(),
@@ -358,6 +376,7 @@ beforeEach(() => {
     dynamicImports: new Map(),
     dynamicTargets: new Set(),
   })
+  consoleErrorSpy = spyOn(console, 'error').mockReturnValue(undefined)
 })
 
 afterEach(() => {
@@ -377,10 +396,87 @@ afterEach(() => {
   setPrefixSpy.mockRestore()
   loadConfigSpy.mockRestore()
   graphSpy.mockRestore()
+  consoleErrorSpy.mockRestore()
 })
 
 describe('devupUIVitePlugin', () => {
-  console.error = mock()
+  it('keeps numbering and raw output stable across two unchanged zero-needle MDX builds', async () => {
+    // Given real plain MDX, a styled sibling, and the unchanged native build scaffold.
+    mock.restore()
+    const fixture = await productionFixture()
+    const markdown = await fixture.file(
+      'app/src/docs.mdx',
+      '# Plain documentation',
+    )
+    const entry = await fixture.file(
+      'app/src/main.js',
+      "export {value} from './docs.mdx'; export {cls} from './style.js';",
+    )
+    await fixture.file(
+      'app/src/style.js',
+      "import {css} from '@devup-ui/react'; export const cls=css({color:'red'});",
+    )
+    const observation = spyOn(NonphysicalModules.prototype, 'direct')
+    const provider = {
+      name: 'plain-mdx-compiler',
+      transform(_code: string, id: string) {
+        if (id === markdown) return 'export const value=1;'
+      },
+    }
+    try {
+      // When two actual native builds consume exactly the same input and store.
+      const first = await fixture.run(false, [provider])
+      const numbers = wasm.exportFileMap()
+      const second = await fixture.run(false, [provider])
+      // Then validation remains observed, but neither plain ID takes a learned number.
+      expect(wasm.exportFileMap()).toBe(numbers)
+      expect(second).toEqual(first)
+      expect(observation.mock.calls.some(([, id]) => id === markdown)).toBe(
+        true,
+      )
+      expect(observation.mock.calls.some(([, id]) => id === entry)).toBe(false)
+      expect(await fixture.learned()).not.toContain(markdown)
+    } finally {
+      observation.mockRestore()
+      await fixture.close()
+    }
+  })
+
+  it('re-extracts the same production filename to remove earlier globalCss when its needles disappear', async () => {
+    // Given one real production instance with a previously extracted stylesheet.
+    mock.restore()
+    const fixture = await productionFixture()
+    const entry = await fixture.file('app/src/main.js', 'export {};')
+    const plugin = createPlugin({ singleCss: true })
+    try {
+      await plugin.configResolved(
+        await resolveConfig(
+          {
+            root: fixture.root,
+            configFile: false,
+            logLevel: 'silent',
+            build: { lib: { entry, formats: ['es'] } },
+          },
+          'build',
+        ),
+      )
+      const context = { addWatchFile() {} }
+      await plugin.transform.call(
+        context,
+        "import {globalCss} from '@devup-ui/react'; globalCss({body:{color:'red'}});",
+        entry,
+      )
+      expect(plugin.load('devup-ui.css')).toContain('color:red')
+      // When the same instance receives needle-free replacement source.
+      await plugin.transform.call(context, 'export {};', entry)
+      // Then the former per-file global rule has actually been removed.
+      expect(plugin.load('devup-ui.css')).not.toContain('color:red')
+    } finally {
+      plugin.closeBundle()
+      await fixture.close()
+    }
+  })
+
   it('remaps compiled MDX extraction failures using the compiler map', async () => {
     codeExtractSpy.mockImplementation(() => {
       throw new Error('page.mdx:1:1: cannot extract')
@@ -420,6 +516,9 @@ describe('devupUIVitePlugin', () => {
       sharedDuringBuild: true,
       closeBundle: expect.any(Function),
       buildStart: expect.any(Function),
+      buildApp: { order: 'pre', handler: expect.any(Function) },
+      buildEnd: { order: 'post', handler: expect.any(Function) },
+      closeWatcher: expect.any(Function),
       config: expect.any(Function),
       load: expect.any(Function),
       watchChange: expect.any(Function),
@@ -443,6 +542,7 @@ describe('devupUIVitePlugin', () => {
     }),
   )('should apply options', async (options) => {
     const plugin = createPlugin(options)
+    await plugin.configResolved({ command: 'serve' })
     expect(setDebugSpy).toHaveBeenCalledWith(options.debug)
     if (options.extractCss) {
       expect(
@@ -781,6 +881,8 @@ describe('devupUIVitePlugin', () => {
         }
         seedFileMapSpy.mockImplementation(seedFileMap)
         const plugin = createPlugin({})
+        await plugin.configResolved({ root: '/p' })
+        seedFileMapSpy.mockClear()
         wasm.importFileMap(existingMap)
         try {
           await plugin.configResolved({ root: '/p' })
@@ -1525,6 +1627,132 @@ describe('devupUIVitePlugin', () => {
     expect(send).not.toHaveBeenCalled()
   })
 
+  describe('Tailwind CSS definitions', () => {
+    let directory: string
+    let tailwindFile: string
+
+    beforeEach(() => {
+      directory = fs.mkdtempSync(join(os.tmpdir(), 'devup-vite-tailwind-'))
+      tailwindFile = join(directory, 'tailwind.css')
+      fs.writeFileSync(tailwindFile, '@theme { --color-brand: #0af; }')
+      existsSyncSpy.mockReturnValue(true)
+      readFileSpy.mockResolvedValue(
+        JSON.stringify({ tailwind: { css: tailwindFile } }),
+      )
+    })
+
+    afterEach(() => {
+      fs.rmSync(directory, { recursive: true, force: true })
+    })
+
+    it('registers the text of the Tailwind CSS with the theme', async () => {
+      const plugin = createPlugin({})
+      await plugin.configResolved()
+      expect(registerThemeSpy).toHaveBeenCalledWith({
+        tailwindCss: '@theme { --color-brand: #0af; }',
+      })
+    })
+
+    it('resolves legacy Tailwind CSS from the project root, not the nested config directory', async () => {
+      fs.writeFileSync(join(directory, 'tsconfig.json'), '{}')
+      readFileSpy.mockResolvedValue(
+        JSON.stringify({ tailwind: { css: 'tailwind.css' } }),
+      )
+      const plugin = createPlugin({ devupFile: 'config/devup.json' })
+
+      await plugin.configResolved({ root: directory, command: 'serve' })
+
+      expect(registerThemeSpy).toHaveBeenCalledWith({
+        tailwindCss: '@theme { --color-brand: #0af; }',
+      })
+    })
+
+    it('reads it again when the Tailwind CSS changes', async () => {
+      const plugin = createPlugin({})
+      await plugin.configResolved()
+      registerThemeSpy.mockClear()
+      fs.writeFileSync(tailwindFile, '@theme { --color-brand: #f00; }')
+
+      await plugin.watchChange(tailwindFile)
+
+      expect(registerThemeSpy).toHaveBeenCalledWith({
+        tailwindCss: '@theme { --color-brand: #f00; }',
+      })
+    })
+
+    it('compiles every module again when the Tailwind CSS changes', async () => {
+      const plugin = createPlugin({})
+      await plugin.configResolved()
+      const first = {}
+      const second = {}
+      const environment = {
+        ...createHotUpdateEnvironment('client'),
+        moduleGraph: {
+          invalidateModule: mock(),
+          idToModuleMap: new Map([
+            ['a', first],
+            ['b', second],
+          ]),
+        },
+      }
+
+      const result = await plugin.hotUpdate.call(
+        { environment },
+        { file: tailwindFile, modules: [{}], timestamp: 1 },
+      )
+
+      expect(environment.moduleGraph.invalidateModule).toHaveBeenCalledTimes(2)
+      expect(environment.moduleGraph.invalidateModule).toHaveBeenCalledWith(
+        first,
+        expect.any(Set),
+        1,
+        true,
+      )
+      expect(environment.hot.send).toHaveBeenCalledWith({ type: 'full-reload' })
+      expect(result).toEqual([])
+    })
+
+    it('compiles every module again on a Vite 5 hot update', async () => {
+      const plugin = createPlugin({})
+      await plugin.configResolved()
+      const invalidateModule = mock()
+      const send = mock()
+      const module = {}
+
+      const result = await plugin.handleHotUpdate({
+        file: tailwindFile,
+        server: {
+          moduleGraph: {
+            invalidateModule,
+            idToModuleMap: new Map([['a', module]]),
+          },
+          ws: { send },
+        },
+        modules: [],
+        timestamp: 2,
+      })
+
+      expect(invalidateModule).toHaveBeenCalledWith(
+        module,
+        expect.any(Set),
+        2,
+        true,
+      )
+      expect(send).toHaveBeenCalledWith({ type: 'full-reload' })
+      expect(result).toEqual([])
+    })
+
+    it('leaves a Tailwind CSS that is gone alone', async () => {
+      const plugin = createPlugin({})
+      await plugin.configResolved()
+      registerThemeSpy.mockClear()
+      existsSyncSpy.mockReturnValue(false)
+
+      await plugin.watchChange(tailwindFile)
+
+      expect(registerThemeSpy).not.toHaveBeenCalled()
+    })
+  })
   function createHotUpdateEnvironment(consumer: 'client' | 'server') {
     return {
       config: { consumer },
@@ -1822,6 +2050,7 @@ describe('devupUIVitePlugin', () => {
       {
         '@emotion/react': null,
         '@emotion/styled': 'styled',
+        '@emotion/css': null,
         '@vanilla-extract/css': null,
         'styled-components': 'styled',
       },
@@ -1840,6 +2069,7 @@ describe('devupUIVitePlugin', () => {
       {
         '@emotion/react': null,
         '@emotion/styled': 'styled',
+        '@emotion/css': null,
         '@vanilla-extract/css': null,
         'styled-components': 'styled',
       },
@@ -1914,8 +2144,10 @@ describe('devupUIVitePlugin', () => {
     expect(bundle).toEqual({})
   })
 
-  it('should call setPrefix when prefix option is provided', () => {
-    DevupUI({ prefix: 'my-prefix' })
+  it('should call setPrefix when prefix option is provided', async () => {
+    await createPlugin({ prefix: 'my-prefix' }).configResolved({
+      command: 'serve',
+    })
     expect(setPrefixSpy).toHaveBeenCalledWith('my-prefix')
   })
 })
@@ -2105,25 +2337,28 @@ describe('module resolver', () => {
       wasm,
       'setModuleResolver',
     ).mockReturnValue(undefined)
-    codeExtractSpy.mockImplementation(() =>
-      createCodeExtractResult({ dependencies: ['/p/src/tokens.ts'] }),
-    )
-    const plugin = createPlugin({})
-    await plugin.configResolved({ root: '/p' })
-    const resolveModule = setModuleResolverSpy.mock.calls[0][0] as (
-      specifier: string,
-      importer: string,
-    ) => { path: string } | undefined
-    expect(resolveModule('./plugin.test', import.meta.path)?.path).toBe(
-      import.meta.path.replaceAll('\\', '/'),
-    )
-    const addWatchFile = mock()
-    await plugin.transform.call(
-      { addWatchFile } as never,
-      'code',
-      '/p/src/App.tsx',
-    )
-    expect(addWatchFile).toHaveBeenCalledWith('/p/src/tokens.ts')
-    setModuleResolverSpy.mockRestore()
+    try {
+      codeExtractSpy.mockImplementation(() =>
+        createCodeExtractResult({ dependencies: ['/p/src/tokens.ts'] }),
+      )
+      const plugin = createPlugin({})
+      await plugin.configResolved({ root: '/p' })
+      const resolveModule = setModuleResolverSpy.mock.calls[0][0] as (
+        specifier: string,
+        importer: string,
+      ) => { path: string } | undefined
+      expect(resolveModule('./plugin.test', import.meta.path)?.path).toBe(
+        import.meta.path.replaceAll('\\', '/'),
+      )
+      const addWatchFile = mock()
+      await plugin.transform.call(
+        { addWatchFile } as never,
+        'code',
+        '/p/src/App.tsx',
+      )
+      expect(addWatchFile).toHaveBeenCalledWith('/p/src/tokens.ts')
+    } finally {
+      setModuleResolverSpy.mockRestore()
+    }
   })
 })

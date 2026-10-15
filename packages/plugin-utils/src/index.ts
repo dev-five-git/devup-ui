@@ -71,12 +71,21 @@ export {
   normalizeMdxExtensions,
   selectedSourceFilter,
 } from './mdx-selection'
-export type { NonphysicalIdListOutcome } from './nonphysical-id-list'
+export {
+  nextNonphysicalIdList,
+  type NonphysicalIdListOutcome,
+} from './nonphysical-id-list'
 export {
   createNonphysicalIdStore,
   type NonphysicalIdStore,
   type NonphysicalIdStoreScope,
 } from './nonphysical-id-store'
+export {
+  type NonphysicalModuleId,
+  type NonphysicalRequest,
+  normalizeNonphysicalModuleId,
+  type PhysicalImporter,
+} from './nonphysical-module-id'
 export {
   collectNumberedFiles,
   type CollectNumberedFilesOptions,
@@ -99,6 +108,11 @@ export {
   ProductionNumberingError,
   type ProductionNumberingPlan,
 } from './production-numbering'
+export {
+  enumerateProductionSourceFiles,
+  type ProductionSourceFile,
+  type ProductionSourceFilesOptions,
+} from './production-source-files'
 export {
   type ResolutionInputObserver,
   type ResolutionInputs,
@@ -129,6 +143,13 @@ export {
   type StateWriter,
   writeFileAtomically,
 } from './state-writer'
+export {
+  findTailwindCss,
+  TAILWIND_CSS_CANDIDATES,
+  tailwindCssFiles,
+  type TailwindCssSource,
+  withTailwindCss,
+} from './tailwind-css'
 export type {
   CustomShorthands,
   DevupConfig,

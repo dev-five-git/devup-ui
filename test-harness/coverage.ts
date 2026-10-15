@@ -40,14 +40,30 @@ export function auditCoverage(
     if (!sources.some((source) => source.file === file))
       throw new CoverageError(`missing source ${file}`)
   }
+  const failures = []
   for (const source of sources) {
     if (
       source.hitFunctions !== source.foundFunctions ||
       [...source.lines.values()].some((hits) => hits === 0)
     ) {
-      throw new CoverageError(`below 100% lines/functions: ${source.file}`)
+      failures.push({
+        file: source.file,
+        zeroHitLines: [...source.lines]
+          .filter(([, hits]) => hits === 0)
+          .map(([line]) => line)
+          .sort((a, b) => a - b),
+        FNH: source.hitFunctions,
+        FNF: source.foundFunctions,
+        LH: [...source.lines.values()].filter((hits) => hits > 0).length,
+        LF: source.lines.size,
+        functionNames: 'unavailable from verified producer',
+      })
     }
   }
+  if (failures.length > 0)
+    throw new CoverageError(
+      `below 100% lines/functions: ${JSON.stringify(failures)}`,
+    )
 }
 
 export function writeLcov(sources: readonly SourceCoverage[]): string {

@@ -6,6 +6,8 @@ import {
   collectDevupConfigFiles,
   createStateWriter,
   type SourceType,
+  tailwindCssFiles,
+  withTailwindCss,
 } from '@devup-ui/plugin-utils'
 import type { RawLoaderDefinitionFunction } from 'webpack'
 
@@ -174,7 +176,13 @@ const devupUILoader: RawLoaderDefinitionFunction<DevupUILoaderOptions> =
           if (sheet !== undefined) importSheet(sheet)
           if (classes !== undefined) importClassMap(classes)
           if (files !== undefined) importFileMap(files)
-          if (config !== undefined) registerTheme(config?.theme ?? {})
+          if (config !== undefined) {
+            registerTheme(
+              withTailwindCss(config?.theme ?? {}, config ?? {}, projectRoot),
+            )
+            for (const file of tailwindCssFiles(config ?? {}, projectRoot))
+              this.addDependency(file)
+          }
         } else {
           importFileMap(defaultFileMap)
           importClassMap(defaultClassMap)

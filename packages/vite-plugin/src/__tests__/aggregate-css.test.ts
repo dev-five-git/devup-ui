@@ -1,8 +1,15 @@
 import { expect, it } from 'bun:test'
+import type { UserConfig } from 'vite'
 
 import { createAggregateCssPreparation } from '../aggregate-css'
 import { DevupUI } from '../plugin'
 import { fixture, module } from './aggregate-fixture'
+
+type TestPlugin = {
+  buildStart(options: { input: string }): void | Promise<void>
+  config(this: void, config: UserConfig): Omit<UserConfig, 'plugins'>
+  closeBundle(): void
+}
 
 it('shares one complete preparation when concurrent sheets use multiple cyclic entries', async () => {
   // Given: two roots, a static cycle, dynamic and extensionless virtual edges.
@@ -117,7 +124,7 @@ it('accepts literal and empty-template dynamic imports after transformation', as
 })
 
 it('keeps aggregation out of dev and disabled-extraction build hooks', () => {
-  const [plugin] = DevupUI({ extractCss: false })
+  const [plugin] = DevupUI({ extractCss: false }) as unknown as [TestPlugin]
   Reflect.apply(plugin.buildStart, {}, [{ input: 'entry' }])
   expect(
     plugin.config.call(undefined, { build: { lib: { entry: 'entry' } } }).build,
@@ -126,7 +133,7 @@ it('keeps aggregation out of dev and disabled-extraction build hooks', () => {
 })
 
 it('records fallback build inputs without preloading in buildStart', () => {
-  const [plugin] = DevupUI()
+  const [plugin] = DevupUI() as unknown as [TestPlugin]
   const f = fixture()
   Reflect.apply(plugin.buildStart, f.context, [{ input: 'entry' }])
   expect(f.loaded.size).toBe(0)

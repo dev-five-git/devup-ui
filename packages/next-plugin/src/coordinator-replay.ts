@@ -82,7 +82,8 @@ export function createReplay(
   const live = {
     engine: options.wasm,
     revision: prepared?.initial.revision ?? checkpoint?.revision ?? 0,
-    config: devupFile === undefined ? undefined : readConfigState(devupFile),
+    config:
+      devupFile === undefined ? undefined : readConfigState(devupFile, root),
     generation:
       prepared === undefined
         ? undefined
@@ -127,7 +128,7 @@ export function createReplay(
       live: live.engine,
       configure: generation?.configureWasm ?? fallbackConfigure,
       allocator: request.allocator ?? exportAllocatorState(live.engine),
-      theme: devupFile === undefined ? undefined : loadTheme(devupFile),
+      theme: devupFile === undefined ? undefined : loadTheme(devupFile, root),
       settings,
       inputs: request.survivors,
       outputs,
@@ -183,7 +184,8 @@ export function createReplay(
           createEngine,
           live: live.engine,
           allocator: exportAllocatorState(live.engine),
-          theme: devupFile === undefined ? undefined : loadTheme(devupFile),
+          theme:
+            devupFile === undefined ? undefined : loadTheme(devupFile, root),
           settings,
         },
       )
@@ -191,7 +193,7 @@ export function createReplay(
       if (next !== generation) generation = immutableGeneration(next)
     }
     const next =
-      devupFile === undefined ? undefined : readConfigState(devupFile)
+      devupFile === undefined ? undefined : readConfigState(devupFile, root)
     const configChanged = next?.signature !== live.config?.signature
     const generationChanged = generation !== live.generation
     const nextOwned = new Set(

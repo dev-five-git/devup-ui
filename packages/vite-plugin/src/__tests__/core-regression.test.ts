@@ -14,9 +14,13 @@ import { pathToFileURL } from 'node:url'
 import { ConfigLoadError } from '@devup-ui/plugin-utils'
 import * as wasm from '@devup-ui/wasm'
 import { afterEach, beforeEach, expect, it, spyOn } from 'bun:test'
-import { createServer, type ViteDevServer } from 'vite'
+import { createServer, type Plugin, type ViteDevServer } from 'vite'
 
 import { DevupUI } from '../plugin'
+
+type TestPlugin = Omit<Plugin, 'watchChange'> & {
+  watchChange(id: string): Promise<void>
+}
 
 let root: string
 let server: ViteDevServer | undefined
@@ -64,7 +68,7 @@ it('clears declarations when a real theme file becomes empty', async () => {
     join(root, 'devup.json'),
     JSON.stringify({ theme: { colors: { default: { removed: 'red' } } } }),
   )
-  const [plugin] = DevupUI()
+  const [plugin] = DevupUI() as unknown as [TestPlugin]
   server = await createServer({
     root,
     configFile: false,
@@ -90,7 +94,7 @@ it('preserves the prior theme on a malformed watched config', async () => {
     join(root, 'devup.json'),
     JSON.stringify({ theme: { colors: { default: { preserved: 'red' } } } }),
   )
-  const [plugin] = DevupUI()
+  const [plugin] = DevupUI() as unknown as [TestPlugin]
   server = await createServer({
     root,
     configFile: false,

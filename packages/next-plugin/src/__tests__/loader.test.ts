@@ -179,7 +179,11 @@ describe('local source extraction', () => {
   })
   it('writes updated sheet and per-file state in watch mode', async () => {
     exists.mockReturnValue(true)
-    read.mockReturnValue('{"theme":{"colors":{}}}')
+    read.mockImplementation((path: unknown) =>
+      String(path).endsWith('tw.css')
+        ? '@theme { --color-brand: #0af; }'
+        : '{"theme":{"colors":{}},"tailwind":{"css":"tw.css"}}',
+    )
     extract.mockReturnValue({
       code: 'compiled',
       map: '{}',
@@ -196,7 +200,11 @@ describe('local source extraction', () => {
     )
     expect(write).toHaveBeenCalledWith('sheetFile', 'state')
     expect(run.addDependency).toHaveBeenCalledWith('themeFile')
-    expect(wasm.registerTheme).toHaveBeenCalledWith({ colors: {} })
+    expect(run.addDependency).toHaveBeenCalledWith(resolve('tw.css'))
+    expect(wasm.registerTheme).toHaveBeenCalledWith({
+      colors: {},
+      tailwindCss: '@theme { --color-brand: #0af; }',
+    })
   })
   it('registers an empty theme when config has no theme', async () => {
     exists.mockReturnValue(true)
@@ -356,5 +364,29 @@ describe('coordinator source extraction', () => {
     fs.writeFileSync(join(dir, 'themeFile'), 'broken')
     await expect(run().result).rejects.toThrow(`${join(dir, 'themeFile')}:1:1:`)
     expect(payload).toBe('')
+  })
+  it('reports the unreachable endpoint and port file when the coordinator closes', async () => {
+    // Given a real endpoint whose owner has stopped listening.
+    const address = server.address()
+    if (!address || typeof address === 'string')
+      throw new Error('Expected TCP server')
+    await new Promise<void>((resolve) => server.close(() => resolve()))
+
+    // When the loader tries to reach that endpoint within its deadline.
+    const request = run({ requestTimeoutMs: 100 })
+
+    // Then the callback identifies the source, endpoint, owner and port file.
+    await expect(request.result).rejects.toThrow(`127.0.0.1:${address.port}`)
+    expect(request.callback).toHaveBeenCalledWith(
+      expect.objectContaining({
+        message: expect.stringContaining(`port file ${join(dir, 'endpoint')}`),
+      }),
+    )
+    expect(request.callback).toHaveBeenCalledWith(
+      expect.objectContaining({
+        message: expect.stringContaining(`pid ${process.pid}, project ${dir}`),
+      }),
+    )
+    expect(request.callback).toHaveBeenCalledTimes(1)
   })
 })

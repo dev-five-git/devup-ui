@@ -35,6 +35,7 @@ import {
   seedFileNumbers,
   SOURCE_FILE_RE,
   type StaticImportGraph,
+  withTailwindCss,
 } from '@devup-ui/plugin-utils'
 import {
   codeExtract,
@@ -96,11 +97,12 @@ async function writeDataFiles(
     DevupUIRsbuildPluginOptions,
     'extractCss' | 'debug' | 'include'
   >,
+  root: string,
 ) {
   const config = await loadDevupConfig(options.devupFile)
   const theme = config.theme ?? {}
 
-  registerTheme(theme)
+  registerTheme(withTailwindCss(theme, config, root))
   const interfaceCode = getThemeInterface(
     ...createThemeInterfaceArgs(options.package),
   )
@@ -182,13 +184,16 @@ export const DevupUI = ({
           'utf-8',
         )
 
-        await writeDataFiles({
-          package: libPackage,
-          cssDir,
-          devupFile: configFile,
-          distDir: outputDir,
-          singleCss,
-        })
+        await writeDataFiles(
+          {
+            package: libPackage,
+            cssDir,
+            devupFile: configFile,
+            distDir: outputDir,
+            singleCss,
+          },
+          root,
+        )
       } catch (cause) {
         endBuild()
         throw new Error(

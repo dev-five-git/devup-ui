@@ -1,0 +1,7 @@
+{
+  "changes": {
+    "bindings/devup-ui-wasm/package.json": "Patch"
+  },
+  "note": "Selectors: a nested rule without `&` in a styled or css template is scoped to the component instead of becoming a global rule (`.child {}` and `> p {}` select descendants, `:hover {}` and `::before {}` the component), and a rule nested in a selector list applies under each of its selectors; `content` keeps the quotes of its strings (`content: 'x'`, `content: \"\"`); `params` go on the pseudo-class that takes them, so `_groupNthChild` gives `:is(...):nth-child(2n) .a` also when nested; a bare `selectors` key is a pseudo-class name, an attribute of the element or a descendant selector (`'div p'`, `'> p'`), under a parent too, and keeps the case of class names; `::part()`, `::slotted()`, `::highlight()`, `::picker()` and the view-transition pseudo-elements get two colons. New build errors: a `_name` prop or selector key that names nothing (`_notASelector`, `selectors={{ div: ... }}`), and a string under a selector that is not CSS text (`_hover=\"external-class\"`)",
+  "date": "2026-09-30T00:00:00.000Z"
+}

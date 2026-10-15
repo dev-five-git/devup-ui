@@ -33,8 +33,11 @@ class TransportFailure extends Error {
   constructor(
     readonly cause: Error,
     readonly retryable: boolean,
+    endpoint: CoordinatorPortInfo,
   ) {
-    super(cause.message)
+    super(
+      `Coordinator unreachable at 127.0.0.1:${endpoint.port} (pid ${endpoint.pid}, project ${endpoint.project}): ${cause.message}`,
+    )
   }
 }
 
@@ -45,8 +48,14 @@ function exchange(options: {
   readonly body?: string
   readonly deadline: number
 }): Promise<string> {
+  const deadlineError = () =>
+    new TransportFailure(
+      new Error('Coordinator request deadline exceeded'),
+      false,
+      options.endpoint,
+    )
   if (performance.now() >= options.deadline)
-    return Promise.reject(new Error('Coordinator request deadline exceeded'))
+    return Promise.reject(deadlineError())
   return new Promise((resolve, reject) => {
     let settled = false
     let connected = false
@@ -88,6 +97,7 @@ function exchange(options: {
             new TransportFailure(
               error,
               options.method === 'GET' && isConnectionError(error),
+              options.endpoint,
             ),
           )
         res.on('error', lost)
@@ -108,7 +118,7 @@ function exchange(options: {
     )
     const timer = setTimeout(
       () => {
-        finish(new Error('Coordinator request deadline exceeded'))
+        finish(deadlineError())
         req.destroy()
       },
       Math.max(1, options.deadline - performance.now()),
@@ -123,6 +133,7 @@ function exchange(options: {
         new TransportFailure(
           error,
           isConnectionError(error) && (options.method === 'GET' || !connected),
+          options.endpoint,
         ),
       ),
     )

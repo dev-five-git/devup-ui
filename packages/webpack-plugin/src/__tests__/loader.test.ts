@@ -6,7 +6,6 @@ import * as nodePath from 'node:path'
 import { join } from 'node:path'
 import { pathToFileURL } from 'node:url'
 
-import { createModuleResolver } from '@devup-ui/plugin-utils'
 import * as wasm from '@devup-ui/wasm'
 import {
   afterEach,
@@ -24,6 +23,9 @@ import devupUILoader from '../loader'
 type CodeExtractResult = ReturnType<typeof wasm.codeExtract>
 type LoaderThis = ThisParameterType<typeof devupUILoader>
 type LoaderCallback = ReturnType<LoaderThis['async']>
+type TestLoaderOptions = Partial<DevupUILoaderOptions> & {
+  readonly theme?: { readonly colors: Readonly<Record<string, string>> }
+}
 interface TestLoaderContext extends Pick<
   LoaderThis,
   'async' | 'resourcePath' | 'addDependency' | 'addMissingDependency'
@@ -88,7 +90,7 @@ function createCodeExtractResult(
 }
 
 function createLoaderContext(
-  options: Partial<DevupUILoaderOptions>,
+  options: TestLoaderOptions,
   callback: LoaderCallback,
   resourcePath = 'index.tsx',
   overrides: Partial<TestLoaderContext> = {},
@@ -256,8 +258,8 @@ describe('devupUILoader', () => {
     const observed = [mock(), mock(), mock()]
     const missing = [mock(), mock(), mock()]
     const register = spyOn(wasm, 'setModuleResolver').mockImplementation(
-      (resolver: ReturnType<typeof createModuleResolver>) => {
-        selected.push(resolver('color', 'main.ts')?.code)
+      (resolver) => {
+        selected.push(resolver?.('color', 'main.ts')?.code)
       },
     )
     try {
@@ -318,8 +320,8 @@ describe('devupUILoader', () => {
     writeFileSync(target, 'export const value="blue"')
     const selected: unknown[] = []
     const register = spyOn(wasm, 'setModuleResolver').mockImplementation(
-      (resolver: ReturnType<typeof createModuleResolver>) => {
-        selected.push(resolver('provider', 'src/main.ts'))
+      (resolver) => {
+        selected.push(resolver?.('provider', 'src/main.ts'))
       },
     )
     try {
@@ -367,8 +369,8 @@ describe('devupUILoader', () => {
     }
     const selected: (string | undefined)[] = []
     const register = spyOn(wasm, 'setModuleResolver').mockImplementation(
-      (resolver: ReturnType<typeof createModuleResolver>) => {
-        selected.push(resolver('conditional', 'src/main.ts')?.code)
+      (resolver) => {
+        selected.push(resolver?.('conditional', 'src/main.ts')?.code)
       },
     )
     try {
@@ -440,10 +442,14 @@ describe('devupUILoader', () => {
     expect(callback.mock.calls[0][1]).toContain('devup-ui.css')
   })
 
-  it.each([
-    undefined,
-    { version: 3, sources: ['authored.mdx'], names: [], mappings: 'AAGE' },
-  ])(
+  const compilerMap: NonNullable<Parameters<typeof devupUILoader>[1]> = {
+    version: 3,
+    file: 'page.mdx',
+    sources: ['authored.mdx'],
+    names: [],
+    mappings: 'AAGE',
+  }
+  it.each([undefined, compilerMap])(
     'locates MDX errors with the supplied compiler map %j',
     async (inputMap) => {
       const callback = mock()
@@ -470,35 +476,40 @@ describe('devupUILoader', () => {
       wasm,
       'setModuleResolver',
     ).mockReturnValue(undefined)
-    codeExtractSpy.mockImplementation(() =>
-      createCodeExtractResult({ dependencies: ['src/tokens.ts'] }),
-    )
-    const callback = mock()
-    const t = createLoaderContext(
-      {
-        package: 'package',
-        cssDir: 'cssDir',
-        sheetFile: 'sheetFile',
-        classMapFile: 'classMapFile',
-        fileMapFile: 'fileMapFile',
-        watch: false,
-        singleCss: true,
-      },
-      callback,
-    )
-    devupUILoader.bind(t)(Buffer.from('code'), 'index.tsx')
-    await waitFor(() => expect(callback).toHaveBeenCalled())
-    expect(t.addDependency).toHaveBeenCalledWith(
-      nodePath.resolve('src/tokens.ts'),
-    )
-    const resolveModule = setModuleResolverSpy.mock.calls[0][0] as (
-      specifier: string,
-      importer: string,
-    ) => { path: string } | undefined
-    expect(resolveModule('./loader.test', import.meta.path)?.path).toBe(
-      nodePath.relative(process.cwd(), import.meta.path).replaceAll('\\', '/'),
-    )
-    setModuleResolverSpy.mockRestore()
+    try {
+      codeExtractSpy.mockImplementation(() =>
+        createCodeExtractResult({ dependencies: ['src/tokens.ts'] }),
+      )
+      const callback = mock()
+      const t = createLoaderContext(
+        {
+          package: 'package',
+          cssDir: 'cssDir',
+          sheetFile: 'sheetFile',
+          classMapFile: 'classMapFile',
+          fileMapFile: 'fileMapFile',
+          watch: false,
+          singleCss: true,
+        },
+        callback,
+      )
+      devupUILoader.bind(t)(Buffer.from('code'), 'index.tsx')
+      await waitFor(() => expect(callback).toHaveBeenCalled())
+      expect(t.addDependency).toHaveBeenCalledWith(
+        nodePath.resolve('src/tokens.ts'),
+      )
+      const resolveModule = setModuleResolverSpy.mock.calls[0][0] as (
+        specifier: string,
+        importer: string,
+      ) => { path: string } | undefined
+      expect(resolveModule('./loader.test', import.meta.path)?.path).toBe(
+        nodePath
+          .relative(process.cwd(), import.meta.path)
+          .replaceAll('\\', '/'),
+      )
+    } finally {
+      setModuleResolverSpy.mockRestore()
+    }
   })
   it.each(
     createTestMatrix({

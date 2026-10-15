@@ -140,3 +140,99 @@ fn generates_class_names_when_explicit_mode_keeps_custom_filename() -> Result<()
     assert!(classes.contains_key("card"));
     Ok(())
 }
+
+#[rstest::rstest]
+#[case("page.md")]
+#[case("page.mdx")]
+#[case("page.mdown")]
+#[case("page.ts")]
+#[serial]
+fn extracts_namespace_computation_when_compiled_jsx_precedes_use(
+    #[case] filename: &str,
+    #[values(true, false)] source_map: bool,
+) -> Result<(), Box<dyn Error>> {
+    // Given
+    css::class_map::reset_class_map();
+    css::file_map::reset_file_map();
+    let code = r#"import * as E from "@emotion/css";
+import {css as dc, Box} from "@devup-ui/react";
+export const preceding = <Box bg="tomato"/>;
+const key="css", n=2; export const cls=E[key]({margin:n*4,opacity:n/4});
+export const control = dc({p:3});"#;
+    let option = ExtractOption {
+        import_aliases: HashMap::from([("@emotion/css".into(), ImportAlias::NamedToNamed)]),
+        ..ExtractOption::default()
+    };
+    // When
+    let output = extract_with_source_type(
+        filename,
+        code,
+        option,
+        source_map,
+        None,
+        Some(ExtractSourceType::CompiledMdx),
+    )?;
+    // Then
+    for (property, value) in [
+        ("margin", "8px"),
+        ("padding", "12px"),
+        ("background", "tomato"),
+    ] {
+        assert!(output.styles.iter().any(|style| matches!(
+            style, ExtractStyleValue::Static(style) if style.property == property && style.value == value
+        )), "missing {property}:{value}");
+    }
+    assert!(
+        output.styles.iter().any(|style| matches!(
+            style, ExtractStyleValue::Static(style) if style.property == "opacity"
+                && style.value.parse::<f64>().is_ok_and(|value| (value - 0.5).abs() < f64::EPSILON)
+        )),
+        "missing opacity:0.5"
+    );
+    let runtime: String = output.code.split_whitespace().collect();
+    assert!(
+        !runtime.contains("E[") && !runtime.contains("E."),
+        "{}",
+        output.code
+    );
+    Ok(())
+}
+
+#[rstest::rstest]
+#[case("page.md")]
+#[case("page.mdx")]
+#[case("page.mdown")]
+#[case("page.ts")]
+#[serial]
+fn rejects_acquired_styling_when_compiled_jsx_precedes_use(
+    #[case] filename: &str,
+    #[values(true, false)] source_map: bool,
+) {
+    // Given
+    css::class_map::reset_class_map();
+    css::file_map::reset_file_map();
+    let code = concat!(
+        "const E = require(\"@emotion/css\");\nexport const preceding=<div/>;\nexport const a=E.css({",
+        "padding:8});",
+    );
+    let option = ExtractOption {
+        import_aliases: HashMap::from([("@emotion/css".into(), ImportAlias::NamedToNamed)]),
+        ..ExtractOption::default()
+    };
+    // When
+    let error = match extract_with_source_type(
+        filename,
+        code,
+        option,
+        source_map,
+        None,
+        Some(ExtractSourceType::CompiledMdx),
+    ) {
+        Ok(output) => panic!("acquired styling unexpectedly compiled: {output:?}"),
+        Err(error) => error.to_string(),
+    };
+    // Then
+    assert!(error.starts_with(&format!("{filename}:3:16:")), "{error}");
+    assert!(error.contains("cannot use `E.css`"), "{error}");
+    assert!(error.contains("styling APIs read through require(), import-equals or dynamic import cannot be compiled"), "{error}");
+}

@@ -19,6 +19,7 @@ import {
   resolveSourceDirs,
   seedFileNumbers,
   selectedSourceFilter,
+  withTailwindCss,
 } from '@devup-ui/plugin-utils'
 import {
   getCss,
@@ -67,9 +68,9 @@ export interface DevupUIBunPluginOptions {
 
 type Project = ReturnType<typeof resolveProjectPaths> & SourceProject
 
-async function writeDataFiles({ devupFile, distDir, cssDir }: Project) {
+async function writeDataFiles({ root, devupFile, distDir, cssDir }: Project) {
   const config = await loadDevupConfig(devupFile)
-  registerTheme(config.theme ?? {})
+  registerTheme(withTailwindCss(config.theme ?? {}, config, root))
 
   // Generate theme interface after registration (always write, even if empty)
   await writeFile(

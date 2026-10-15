@@ -111,17 +111,22 @@ describe('deadline coordinator transport', () => {
     'bounds %s hangs and reports the source location',
     async (phase) => {
       const options = { ...fixture(), timeoutMs: 35 }
+      let port: number | undefined
       if (phase === 'health') {
         const endpoint = await listen(() => {})
+        port = endpoint.port
         writeFileSync(options.portFile, descriptor(endpoint.port, options))
-      } else if (phase !== 'missing')
-        await healthy(options, (_req, res) => {
+      } else if (phase !== 'missing') {
+        const endpoint = await healthy(options, (_req, res) => {
           if (phase === 'stream') res.write('partial')
         })
+        port = endpoint.port
+      }
       const start = performance.now()
-      await expect(requestCoordinator(options)).rejects.toThrow(
-        `${options.resourcePath}:1:1:`,
-      )
+      const pending = requestCoordinator(options)
+      await expect(pending).rejects.toThrow(`${options.resourcePath}:1:1:`)
+      if (port !== undefined)
+        await expect(pending).rejects.toThrow(`127.0.0.1:${port}`)
       expect(performance.now() - start).toBeLessThan(1000)
     },
   )

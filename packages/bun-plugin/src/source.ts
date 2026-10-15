@@ -10,6 +10,11 @@ export const compiledPackages = [
   '@stylexjs/stylex',
   ...Object.keys(importAliases),
 ]
+const extractionPackages = [
+  ...compiledPackages,
+  '@vanilla-extract/recipes',
+  '@vanilla-extract/sprinkles',
+] as const
 const scanners = new Map<SourceLoader, Bun.Transpiler>()
 
 export function sourceLoader(filename: string): SourceLoader {
@@ -20,7 +25,7 @@ export function sourceLoader(filename: string): SourceLoader {
 }
 
 export function mentionsCompiledPackage(contents: string): boolean {
-  return compiledPackages.some((name) => contents.includes(name))
+  return extractionPackages.some((name) => contents.includes(name))
 }
 
 /** The scanner avoids extracting package names that only appear in comments. */
@@ -37,7 +42,7 @@ export function importsCompiledPackage(
     return scanner
       .scanImports(contents)
       .some(({ path }) =>
-        compiledPackages.some(
+        extractionPackages.some(
           (name) => path === name || path.startsWith(`${name}/`),
         ),
       )

@@ -30,7 +30,9 @@ import {
   seedFileNumbers,
   SOURCE_FILE_RE,
   type StaticImportGraph,
+  tailwindCssFiles,
   type WasmImportAliases,
+  withTailwindCss,
 } from '@devup-ui/plugin-utils'
 import {
   codeExtract,
@@ -154,9 +156,12 @@ export class DevupUIWebpackPlugin {
     this.fileMapFile = join(this.options.distDir, 'fileMap.json')
   }
 
-  writeDataFiles(options = this.options) {
+  tailwindFiles: string[] = []
+
+  writeDataFiles(options = this.options, root = process.cwd()) {
     const config = loadDevupConfigSync(options.devupFile)
-    const theme = config.theme ?? {}
+    const theme = withTailwindCss(config.theme ?? {}, config, root)
+    this.tailwindFiles = tailwindCssFiles(config, root)
 
     registerTheme(theme)
     const interfaceCode = getThemeInterface(
@@ -351,8 +356,10 @@ export class DevupUIWebpackPlugin {
     )
 
     let theme: ReturnType<typeof this.writeDataFiles>
+    let tailwindFiles: string[]
     try {
-      theme = this.writeDataFiles(options)
+      theme = this.writeDataFiles(options, cwd)
+      tailwindFiles = this.tailwindFiles
     } catch (cause) {
       endBuild()
       throw new Error(
@@ -469,25 +476,37 @@ export class DevupUIWebpackPlugin {
       }
     }
 
-    if (this.options.watch) {
-      let lastModifiedTime: number | null = null
+    if (options.watch) {
+      let lastModifiedTime: string | null = null
       compiler.hooks.watchRun.tapPromise('DevupUIWebpackPlugin', async () => {
-        if (existsDevup) {
-          const stats = await stat(this.options.devupFile)
-
-          const modifiedTime = stats.mtimeMs
+        const stamps: number[] = []
+        if (existsDevup) stamps.push((await stat(options.devupFile)).mtimeMs)
+        for (const file of tailwindFiles) {
+          stamps.push(
+            await stat(file).then(
+              (stats) => stats.mtimeMs,
+              () => 0,
+            ),
+          )
+        }
+        if (stamps.length > 0) {
+          const modifiedTime = stamps.join()
           if (lastModifiedTime && lastModifiedTime !== modifiedTime)
             scope.run(() => {
-              theme = this.writeDataFiles(options)
+              theme = this.writeDataFiles(options, cwd)
+              tailwindFiles = this.tailwindFiles
             })
 
           lastModifiedTime = modifiedTime
         }
       })
     }
-    if (existsDevup)
+    if (existsDevup || tailwindFiles.length > 0)
       compiler.hooks.afterCompile.tap('DevupUIWebpackPlugin', (compilation) => {
-        compilation.fileDependencies.add(resolve(options.devupFile))
+        if (existsDevup)
+          compilation.fileDependencies.add(resolve(options.devupFile))
+        for (const file of tailwindFiles)
+          compilation.fileDependencies.add(resolve(file))
       })
 
     const definePlugin = new compiler.webpack.DefinePlugin({

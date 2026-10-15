@@ -2,15 +2,14 @@ import { existsSync, mkdirSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 
 import {
-  collectDevupConfigFiles,
   createCompatTypes,
   createThemeInterfaceArgs,
-  loadDevupConfigSync,
   seedFileNumbers,
 } from '@devup-ui/plugin-utils'
 import type { NextConfig } from 'next'
 
 import { startCoordinator } from './coordinator'
+import { loadTheme, readConfigState } from './coordinator-config'
 import { stampFile } from './coordinator-ledger'
 import { persistInitialState, resumeEngine } from './dev-state'
 import { createEngineConfigurer } from './engine-config'
@@ -108,7 +107,7 @@ function buildSetup(
   mkdirSync(session.sessionDir, { recursive: true })
   pruneDeadSessions(context)
 
-  const theme = loadDevupConfigSync(context.devupFile).theme ?? {}
+  const theme = loadTheme(context.devupFile, context.root)
   const plan = planSources(context)
   const configure = createEngineConfigurer(context, { theme, plan })
   const { engine, revision } = resumeEngine({
@@ -187,7 +186,7 @@ export function setupTurbopack(
   config.turbopack ??= {}
   config.turbopack.rules ??= {}
   const context = createAppContext(config, options)
-  const configFiles = collectDevupConfigFiles(context.devupFile)
+  const configFiles = readConfigState(context.devupFile, context.root).files
   const key = digest({
     app: context.appKey,
     config: configFiles.map((file) => [file, stampFile(file)]),

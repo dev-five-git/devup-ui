@@ -7,6 +7,32 @@ import { expect, it } from 'bun:test'
 import * as wasm from '../../../../bindings/devup-ui-wasm/pkg'
 import { enumerateProductionSourceFiles } from '../production-source-files'
 
+it('exposes the existing physical and ID-policy boundaries without persisting numeric state', async () => {
+  // Given actual physical source and public additive consumer exports.
+  const root = realpathSync.native(
+    mkdtempSync(join(tmpdir(), 'devup-v1-public-')),
+  )
+  const path = join(root, 'plain.ts')
+  writeFileSync(path, 'export const value=1')
+  try {
+    const api = await import('../index')
+    // When consumers enumerate and apply the unchanged source-only difference policy.
+    const files = api.enumerateProductionSourceFiles({ roots: [root] })
+    const identity = api.normalizeNonphysicalModuleId(
+      { namespace: null, id: 'virtual:actual.js' },
+      { namespace: null, specifier: 'request' },
+      undefined,
+    )
+    const ids = api.nextNonphysicalIdList([identity.id, path], [path])
+    // Then provenance and native identity survive while only the scan miss remains.
+    expect(files).toEqual([{ path, realPath: path }])
+    expect(identity).toEqual({ namespace: null, id: 'virtual:actual.js' })
+    expect(ids).toEqual(['virtual:actual.js'])
+  } finally {
+    rmSync(root, { recursive: true, force: true })
+  }
+})
+
 it('round-trips dormant ID-only storage through the public entrypoint', async () => {
   // Given the public factory and a unique physical output root.
   const root = mkdtempSync(join(tmpdir(), 'devup-n1-public-'))
