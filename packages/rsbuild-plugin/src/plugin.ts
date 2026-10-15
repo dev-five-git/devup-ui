@@ -257,7 +257,6 @@ export const DevupUI = ({
       }
       api.onBeforeBuild(({ environments }) => {
         for (const { entry } of Object.values(environments)) {
-          reservation.addEntries(entry)
           for (const request of staticEntries(entry))
             entryFiles.add(resolve(api.context.rootPath, request))
         }
@@ -289,12 +288,12 @@ export const DevupUI = ({
       // once more: every module is extracted by then. The dev server rebuilds it
       // through the stylesheet files the transforms write instead.
       api.modifyRspackConfig((config, { environment }) => {
-        reservation.addEntries(config.entry, config.context)
         for (const request of staticEntries(environment.entry))
           entryFiles.add(resolve(api.context.rootPath, request))
         config.plugins ??= []
         config.plugins.push({
           apply(compiler: Rspack.Compiler) {
+            reservation.trackCompiler(environment.name, compiler)
             let passes = 0
             compiler.hooks.run.tap(PLUGIN_NAME, () => {
               passes = 0

@@ -11,8 +11,7 @@ it('collects only static entry requests without executing opaque functions', () 
   const opaque = mock(() => {
     throw new Error('must stay opaque')
   })
-  // When the adapter inspects them.
-  const result = [
+  const entries: Parameters<typeof staticEntries>[0][] = [
     undefined,
     opaque,
     './entry.js',
@@ -24,7 +23,10 @@ it('collects only static entry requests without executing opaque functions', () 
       d: { import: ['./d.js'] },
       e: { import: [] },
     },
-  ].map(staticEntries)
+    { f: { runtime: false as const } },
+  ]
+  // When the adapter inspects them.
+  const result = entries.map(staticEntries)
   // Then native function evaluation remains exclusively native.
   expect(result).toEqual([
     [],
@@ -32,6 +34,7 @@ it('collects only static entry requests without executing opaque functions', () 
     ['./entry.js'],
     ['./a.js'],
     ['./a.js', './b.js', './c.js', './d.js'],
+    [],
   ])
   expect(opaque).not.toHaveBeenCalled()
 })
@@ -95,8 +98,9 @@ it.each([false, true])(
         singleCss: true,
         importAliases: {},
       })
-      reservation.addEntries('./a.js', resolve('external'))
-      reservation.addEntries(undefined)
+      reservation.trackCompiler('web', {
+        options: { entry: './a.js', context: resolve('external') },
+      })
       // When native compilation commits the whole inventory.
       reservation.invalidate()
       reservation.reserve()
@@ -109,3 +113,59 @@ it.each([false, true])(
     }
   },
 )
+
+it('replaces compiler revisions while reading the current union of all owners', () => {
+  // Given two known environments and an obsolete compiler for one owner.
+  const reserve = mock<
+    (
+      discovery: utils.ReservationDiscoveryOptions,
+      batch: utils.ReservationBatchOptions,
+    ) => boolean
+  >(() => true)
+  const create = spyOn(utils, 'createSharedSlotReservation').mockReturnValue({
+    reserve,
+    invalidate: mock(),
+  })
+  try {
+    const reservation = createReservation({
+      root: resolve('project'),
+      atomMode: false,
+      package: '@devup-ui/react',
+      include: [],
+      cssDir: resolve('df'),
+      singleCss: true,
+      importAliases: {},
+    })
+    const web: { options: { entry: string; context?: string } } = {
+      options: { entry: './early.js' },
+    }
+    reservation.trackCompiler('web', web)
+    reservation.trackCompiler('node', {
+      options: { entry: { main: { import: ['./node.js'] } } },
+    })
+    reservation.reserve()
+    web.options = { entry: './final.js', context: resolve('external') }
+    // When a later compiler boundary reserves changed options without re-registering.
+    reservation.reserve()
+    // Then the current union replaces the obsolete snapshot, including its context.
+    expect(reserve.mock.calls[1]?.[0].entries).toEqual([
+      { request: './final.js', context: resolve('external') },
+      { request: './node.js', context: resolve('project') },
+    ])
+    reservation.trackCompiler('web', { options: { entry: './replacement.js' } })
+    reservation.reserve()
+    expect(reserve.mock.calls[2]?.[0].entries).toEqual([
+      { request: './replacement.js', context: resolve('project') },
+      { request: './node.js', context: resolve('project') },
+    ])
+    const opaque = mock(() => ({ main: ['./opaque.js'] }))
+    reservation.trackCompiler('web', { options: { entry: opaque } })
+    reservation.reserve()
+    expect(reserve.mock.calls[3]?.[0].entries).toEqual([
+      { request: './node.js', context: resolve('project') },
+    ])
+    expect(opaque).not.toHaveBeenCalled()
+  } finally {
+    create.mockRestore()
+  }
+})

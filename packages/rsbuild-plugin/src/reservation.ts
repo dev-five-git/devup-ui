@@ -9,13 +9,21 @@ import type { Rspack } from '@rsbuild/core'
 
 import type { DevupUIRsbuildPluginOptions } from './plugin'
 
-export function staticEntries(entry: Rspack.Configuration['entry']): string[] {
+type CompilerEntry =
+  Rspack.Configuration['entry'] | Rspack.Compiler['options']['entry']
+
+type EntryConfig = {
+  readonly entry?: CompilerEntry
+  readonly context?: string | undefined
+}
+
+export function staticEntries(entry: CompilerEntry): string[] {
   if (typeof entry === 'function' || entry === undefined) return []
   if (typeof entry === 'string') return [entry]
   if (Array.isArray(entry)) return entry
   return Object.values(entry).flatMap((value) =>
     typeof value === 'object' && !Array.isArray(value)
-      ? [value.import].flat()
+      ? [value.import ?? []].flat()
       : [value].flat(),
   )
 }
@@ -36,24 +44,22 @@ export function createReservation(
       ['src', 'app'].map((name) => resolve(root, name)),
     ),
   )
-  const entries: { readonly request: string; readonly context: string }[] = []
+  const compilers = new Map<string, { readonly options: EntryConfig }>()
   return {
-    addEntries(entry: Rspack.Configuration['entry'], context = options.root) {
-      for (const request of staticEntries(entry)) {
-        if (
-          !entries.some(
-            (known) => known.request === request && known.context === context,
-          )
-        )
-          entries.push({ request, context })
-      }
+    trackCompiler(owner: string, compiler: { readonly options: EntryConfig }) {
+      compilers.set(owner, compiler)
     },
     invalidate: slots.invalidate,
     reserve() {
       return slots.reserve(
         {
           roots: [...roots],
-          entries,
+          entries: [...compilers.values()].flatMap(({ options: config }) =>
+            staticEntries(config.entry).map((request) => ({
+              request,
+              context: config.context ?? options.root,
+            })),
+          ),
           include: options.include,
           cwd: process.cwd(),
           tsconfigPath: resolve(process.cwd(), 'tsconfig.json'),

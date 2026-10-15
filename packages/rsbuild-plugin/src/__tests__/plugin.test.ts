@@ -775,6 +775,7 @@ const App = () => <Box></Box>`,
           taps[hook] = fn
         }
       const compiler = {
+        options: {},
         watchMode: false,
         rspack: { Compilation: { PROCESS_ASSETS_STAGE_REPORT: 5000 } },
         hooks: {
