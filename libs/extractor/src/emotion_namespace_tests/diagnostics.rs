@@ -3,17 +3,15 @@ use rstest::rstest;
 
 #[test]
 #[serial]
-fn emotion_restoration_reports_malformed_source_when_normalization_rejects_a_read() {
-    // Given: normalization can reject a namespace read before the main parser runs.
+fn syntax_errors_are_reported_before_namespace_normalization() {
+    // Given: malformed source also contains an unsupported namespace read.
     let source = "import * as E from '@emotion/css';\nE.__emotion_user(); const broken;";
 
     // When
     let error = compile(source).unwrap_err();
 
     // Then
-    assert!(error.starts_with("namespace.tsx:2:1:"), "{error}");
-    assert!(error.contains("E.__emotion_user"), "{error}");
-    assert!(error.contains("Emotion diagnostic restoration failed:"), "{error}");
+    assert_eq!(error, "namespace.tsx:2:27: Missing initializer in const declaration");
 }
 
 #[test]
