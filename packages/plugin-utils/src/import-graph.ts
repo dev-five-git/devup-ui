@@ -832,22 +832,34 @@ function scanImports(source: string): ImportReference[] {
   // — which the bundler also erases — are dropped via
   // `isAllInlineTypeSpecifiers`. Mixed lists (`import { type A, b } from`)
   // keep importing the module for `b`, so they are kept.
-  const staticImportRegex =
-    /\bimport\s+(type\s+)?(?:([^'"`]*?)\s+from\s*)?(['"])([^'"]+)\3/gm
-  const exportFromRegex =
-    /\bexport\s+(type\s+)?(\*[^'"`]*?|\{[^}]*\})\s+from\s*(['"])([^'"]+)\3/gm
-  const dynamicImportRegex = /\bimport\s*\(\s*(['"])([^'"]+)\1\s*\)/gm
+  // Consume whole literals before looking for keywords inside their payloads.
+  // Real import/export matches start before their specifier's opening quote.
+  const quotedLiteral =
+    /"(?:\\[\s\S]|[^"\\])*"|'(?:\\[\s\S]|[^'\\])*'|`(?:\\[\s\S]|[^`\\])*`/
+      .source
+  const staticImportRegex = new RegExp(
+    `${quotedLiteral}|${/\bimport\s+(type\s+)?(?:([^'"`]*?)\s+from\s*)?(['"])([^'"]+)\3/.source}`,
+    'gm',
+  )
+  const exportFromRegex = new RegExp(
+    `${quotedLiteral}|${/\bexport\s+(type\s+)?(\*[^'"`]*?|\{[^}]*\})\s+from\s*(['"])([^'"]+)\3/.source}`,
+    'gm',
+  )
+  const dynamicImportRegex = new RegExp(
+    `${quotedLiteral}|${/\bimport\s*\(\s*(['"])([^'"]+)\1\s*\)/.source}`,
+    'gm',
+  )
 
   for (const match of code.matchAll(staticImportRegex)) {
-    if (match[1] || isAllInlineTypeSpecifiers(match[2])) continue
+    if (!match[4] || match[1] || isAllInlineTypeSpecifiers(match[2])) continue
     imports.push({ kind: 'static', specifier: match[4] })
   }
   for (const match of code.matchAll(exportFromRegex)) {
-    if (match[1] || isAllInlineTypeSpecifiers(match[2])) continue
+    if (!match[4] || match[1] || isAllInlineTypeSpecifiers(match[2])) continue
     imports.push({ kind: 'static', specifier: match[4] })
   }
   for (const match of code.matchAll(dynamicImportRegex)) {
-    imports.push({ kind: 'dynamic', specifier: match[2] })
+    if (match[2]) imports.push({ kind: 'dynamic', specifier: match[2] })
   }
 
   return imports
