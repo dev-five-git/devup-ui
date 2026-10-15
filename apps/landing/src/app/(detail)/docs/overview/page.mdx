@@ -31,7 +31,7 @@ Libraries like styled-components and Emotion offer great DX but execute JavaScri
 
 ### The Devup UI Solution
 
-Devup UI eliminates this trade-off entirely. Our Rust-powered preprocessor analyzes your code at build time and handles every CSS-in-JS pattern:
+Devup UI eliminates this trade-off entirely. Our Rust-powered preprocessor analyzes your code at build time; what it cannot know is a CSS variable or a located build error ([supported syntax & limitations](/docs/limitations)):
 
 - **Variables** — Dynamic values become CSS custom properties
 - **Conditionals** — Ternary expressions are statically analyzed

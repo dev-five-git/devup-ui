@@ -1,0 +1,7 @@
+{
+  "changes": {
+    "packages/react/package.json": "Patch"
+  },
+  "note": "The README no longer claims every CSS-in-JS pattern compiles: it describes what the build compiles and that anything it cannot know is a CSS variable or a located build error, and links the new Supported Syntax & Limitations page, which lists what compiles, the style override rules (where a later part wins and where the CSS cascade decides), Baseline 2024 browser support, that a component taking the css prop must pass className and style on, the runtime-only APIs and how each is handled, and the known limitations",
+  "date": "2026-10-01T00:00:00.000Z"
+}
