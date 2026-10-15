@@ -82,7 +82,7 @@ npm install @devup-ui/webpack-plugin
 <!-- benchmark:start -->
 [Latest CI benchmark](https://github.com/dev-five-git/devup-ui/actions/runs/37758611477) (commit `467a379a`, Devup UI 1.0.44) on `ubuntu-24.04` with Next.js 16.3.3. Every row is the median of 3 cold builds that ran in rotating order, shown with the range of the samples. All Next.js builds use the native TypeScript 7 CLI for type checking. The English and Korean tables are generated from the same checked result file, `benchmark-results.json`.
 
-Build Size is every byte of the build output directory (`.next`, or `dist` for vinext); CSS Size is the emitted `.css` files alone, measured separately.
+Build Size is every byte of the build output directory (`.next`, or `dist` for vinext), including caches and server output. The checked table retains its original historical CSS measurements, which recursively counted `.css` files throughout that output. New runs count only browser-shipped CSS: `.next/static/**/*.css` (Webpack `static/css` and Turbopack `static/chunks`) or vinext `dist/client/**/*.css`, excluding caches and server CSS. A missing browser-assets directory is an error; an existing directory with no CSS counts zero. For an approved per-file CSS measurement correction, `bun benchmark-check.js --write-css-baseline devup-ui` updates only that existing row's CSS bytes; unlike `--write-baseline`, it preserves sample count, build bytes, ratios, tolerances, all other rows and calibration history.
 
 Webpack:
 

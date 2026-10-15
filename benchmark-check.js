@@ -3,6 +3,7 @@
 //
 //   bun benchmark-check.js                  compare, exit 1 on a regression
 //   bun benchmark-check.js --write-baseline add this run to the calibration and rewrite benchmark-baseline.json
+//   bun benchmark-check.js --write-css-baseline devup-ui  replace only the existing per-file CSS baseline; keep all calibration, time and build-size fields
 //   bun benchmark-check.js --write-results  rewrite benchmark-results.json (the README tables) from this run
 //
 // A change that makes a build slower or larger on purpose runs the two writes
@@ -10,7 +11,12 @@
 // request.
 import { readFileSync, writeFileSync } from 'node:fs'
 
-import { evaluate, nextBaseline, report } from './benchmark-gate.js'
+import {
+  evaluate,
+  nextBaseline,
+  nextCssBaseline,
+  report,
+} from './benchmark-gate.js'
 
 const read = (file) => JSON.parse(readFileSync(file, 'utf8'))
 const write = (file, value) =>
@@ -19,7 +25,20 @@ const write = (file, value) =>
 const manifest = read('benchmark-manifest.json')
 const run = read('benchmark-run.json')
 
-if (process.argv.includes('--write-baseline')) {
+if (process.argv.includes('--write-css-baseline')) {
+  const target = process.argv[process.argv.indexOf('--write-css-baseline') + 1]
+  if (
+    target !== 'devup-ui' ||
+    process.argv.includes('--write-baseline') ||
+    process.argv.includes('--write-results')
+  )
+    throw new TypeError(
+      'Use --write-css-baseline devup-ui without other writer modes',
+    )
+  const previous = read('benchmark-baseline.json')
+  write('benchmark-baseline.json', nextCssBaseline(run, previous))
+  console.info('benchmark-baseline.json devup-ui CSS baseline rewritten')
+} else if (process.argv.includes('--write-baseline')) {
   let previous
   try {
     previous = read('benchmark-baseline.json')

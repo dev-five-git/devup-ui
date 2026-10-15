@@ -24,7 +24,7 @@ const TEXT = {
     intro: ({ run, samples }) =>
       `[Latest CI benchmark](${run.url}) (commit \`${run.commit}\`, Devup UI ${run.devupUi}) on \`${run.runner}\` with Next.js ${run.next}. Every row is the median of ${samples} cold builds that ran in rotating order, shown with the range of the samples. All Next.js builds use the native TypeScript 7 CLI for type checking. The English and Korean tables are generated from the same checked result file, \`benchmark-results.json\`.`,
     sizes:
-      'Build Size is every byte of the build output directory (`.next`, or `dist` for vinext); CSS Size is the emitted `.css` files alone, measured separately.',
+      "Build Size is every byte of the build output directory (`.next`, or `dist` for vinext), including caches and server output. The checked table retains its original historical CSS measurements, which recursively counted `.css` files throughout that output. New runs count only browser-shipped CSS: `.next/static/**/*.css` (Webpack `static/css` and Turbopack `static/chunks`) or vinext `dist/client/**/*.css`, excluding caches and server CSS. A missing browser-assets directory is an error; an existing directory with no CSS counts zero. For an approved per-file CSS measurement correction, `bun benchmark-check.js --write-css-baseline devup-ui` updates only that existing row's CSS bytes; unlike `--write-baseline`, it preserves sample count, build bytes, ratios, tolerances, all other rows and calibration history.",
     webpack: 'Webpack:',
     turbopack: 'Turbopack:',
     columns: {
@@ -49,7 +49,7 @@ const TEXT = {
     intro: ({ run, samples }) =>
       `[최신 CI 벤치마크](${run.url}) (커밋 \`${run.commit}\`, Devup UI ${run.devupUi})는 \`${run.runner}\`에서 Next.js ${run.next}로 실행했습니다. 모든 행은 순서를 돌려 가며 측정한 cold build ${samples}회의 중앙값이며 샘플의 범위를 함께 보여줍니다. 모든 Next.js 빌드는 네이티브 TypeScript 7 CLI로 타입 검사를 수행합니다. 영어와 한국어 표는 같은 결과 파일 \`benchmark-results.json\`에서 생성합니다.`,
     sizes:
-      '빌드 사이즈는 빌드 출력 디렉터리(`.next`, vinext는 `dist`)의 모든 바이트이고, CSS 사이즈는 출력된 `.css` 파일만 따로 잰 값입니다.',
+      '빌드 사이즈는 캐시와 서버 출력을 포함한 빌드 출력 디렉터리(`.next`, vinext는 `dist`)의 모든 바이트입니다. 체크인된 표는 출력 전체의 `.css` 파일을 재귀적으로 합산한 기존 CSS 측정값을 그대로 보존합니다. 새 실행은 브라우저에 제공되는 CSS만 측정합니다: `.next/static/**/*.css`(Webpack `static/css`, Turbopack `static/chunks`) 또는 vinext `dist/client/**/*.css`. 캐시와 서버 CSS는 제외합니다. 브라우저 에셋 디렉터리가 없으면 오류이며, 존재하지만 CSS가 없으면 0입니다. 승인된 per-file CSS 측정 보정에는 `bun benchmark-check.js --write-css-baseline devup-ui`를 사용합니다. `--write-baseline`과 달리 기존 해당 행의 CSS 바이트만 바꾸고 샘플 수, 빌드 바이트, 비율, 허용 오차, 다른 모든 행과 보정 이력을 보존합니다.',
     webpack: 'Webpack:',
     turbopack: 'Turbopack:',
     columns: {
