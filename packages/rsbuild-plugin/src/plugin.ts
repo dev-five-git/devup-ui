@@ -1,5 +1,5 @@
 import { existsSync, readFileSync, writeFileSync } from 'node:fs'
-import { mkdir, writeFile } from 'node:fs/promises'
+import { mkdir, stat, writeFile } from 'node:fs/promises'
 import { basename, dirname, join, relative, resolve } from 'node:path'
 
 import {
@@ -18,6 +18,7 @@ import {
   loadDevupConfig,
   mergeImportAliases,
   planAtomHoist,
+  tailwindCssFiles,
   withTailwindCss,
 } from '@devup-ui/plugin-utils'
 import {
@@ -79,12 +80,14 @@ async function writeDataFiles(
     DevupUIRsbuildPluginOptions,
     'extractCss' | 'debug' | 'include'
   >,
-) {
+): Promise<string[]> {
+  let tailwindFiles: string[] = []
   try {
     const config = await loadDevupConfig(options.devupFile)
     const theme = config.theme ?? {}
 
     registerTheme(withTailwindCss(theme, config))
+    tailwindFiles = tailwindCssFiles(config)
     const interfaceCode = getThemeInterface(
       ...createThemeInterfaceArgs(options.package),
     )
@@ -108,6 +111,7 @@ async function writeDataFiles(
       ? writeFile(join(options.cssDir, 'devup-ui.css'), getCss(null, false))
       : Promise.resolve(),
   ])
+  return tailwindFiles
 }
 
 /**
@@ -158,7 +162,7 @@ export const DevupUI = ({
         'utf-8',
       )
 
-      await writeDataFiles({
+      let tailwindFiles = await writeDataFiles({
         package: libPackage,
         cssDir,
         devupFile,
@@ -166,6 +170,48 @@ export const DevupUI = ({
         singleCss,
       })
       if (!extractCss) return
+
+      // The project's Tailwind CSS defines what a Tailwind class compiles to:
+      // read it again when it changes, and compile every module again
+      api.modifyRspackConfig((config) => {
+        config.plugins ??= []
+        config.plugins.push({
+          apply(compiler: {
+            hooks: {
+              watchRun: {
+                tapPromise: (name: string, fn: () => Promise<void>) => void
+              }
+            }
+          }) {
+            let stamp: string | undefined
+            compiler.hooks.watchRun.tapPromise(
+              'DevupUIRsbuildPlugin',
+              async () => {
+                const current = (
+                  await Promise.all(
+                    tailwindFiles.map((file) =>
+                      stat(file).then(
+                        (stats) => stats.mtimeMs,
+                        () => 0,
+                      ),
+                    ),
+                  )
+                ).join()
+                if (stamp !== undefined && stamp !== current) {
+                  tailwindFiles = await writeDataFiles({
+                    package: libPackage,
+                    cssDir,
+                    devupFile,
+                    distDir,
+                    singleCss,
+                  })
+                }
+                stamp = current
+              },
+            )
+          },
+        })
+      })
 
       // Atom-level hoisting (opt-in via `atomHoist`). Configured BEFORE any
       // transform so atoms receive global (shared) class names. Composes with
@@ -399,6 +445,7 @@ export const DevupUI = ({
         async ({ code, resourcePath, addDependency }) => {
           if (createNodeModulesExcludeRegex(include).test(resourcePath))
             return code
+          for (const file of tailwindFiles) addDependency(file)
           // The stylesheet import is emitted relative to the importing file, as
           // in the next/webpack/vite loaders. An absolute cssDir would bake this
           // checkout's path into the emitted module, so byte-identical sources
