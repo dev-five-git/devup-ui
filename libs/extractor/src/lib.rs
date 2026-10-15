@@ -14,6 +14,8 @@ mod imported_constants;
 mod module_loader;
 mod mutations;
 mod prop_modify_utils;
+#[cfg(test)]
+mod responsive_selector_tests;
 mod source_map;
 mod style_values;
 #[cfg(test)]
@@ -22,6 +24,7 @@ mod stylex;
 mod tailwind;
 mod tailwind_children;
 mod tailwind_color;
+mod tailwind_custom;
 mod tailwind_effects;
 mod tailwind_misc;
 mod tailwind_motion;
@@ -30,6 +33,24 @@ mod util_type;
 mod utils;
 mod vanilla_extract;
 mod visit;
+
+mod dead_properties;
+#[cfg(test)]
+mod dead_properties_call_boundary_tests;
+#[cfg(test)]
+mod dead_properties_declaration_boundary_tests;
+#[cfg(test)]
+mod dead_properties_origin_tests;
+#[cfg(test)]
+mod dead_properties_responsive_origin_tests;
+#[cfg(test)]
+mod dead_properties_stylex_tests;
+#[cfg(test)]
+mod dead_properties_test_utils;
+#[cfg(test)]
+mod dead_properties_tests;
+#[cfg(test)]
+mod dead_properties_text_tests;
 use crate::extract_style::extract_style_value::ExtractStyleValue;
 use crate::visit::DevupVisitor;
 use css::file_map::{canonical, get_file_num_by_filename, is_global};
@@ -371,7 +392,7 @@ fn extract_source(
     // otherwise the untouched `transformed_code` is parsed directly (no copy).
     let processed_code: Option<String> = if utils::is_vanilla_extract_file(filename) {
         // Use transformed code (with imports already pointing to @devup-ui/react)
-        match vanilla_extract::execute_stylesheet(&transformed_code, filename, &option, resolver) {
+        match vanilla_extract::execute_stylesheet(code, filename, &option, resolver) {
             Ok((collected, imports)) => {
                 dependencies = imports.dependencies;
                 // Keyframes names are generated, so extract the referenced ones
@@ -412,6 +433,11 @@ fn extract_source(
             // A stylesheet another one imports must give its own values, and an
             // import cycle read too early fails as it does in ES modules, so both
             // are reported rather than hidden behind plain extraction
+            Err(error) if error.starts_with(dead_properties::ERROR_CHANNEL) => {
+                return Err(error
+                    .trim_start_matches(dead_properties::ERROR_CHANNEL)
+                    .into());
+            }
             Err(error)
                 if module_loader::loading_for_stylesheet()
                     || error.contains(module_loader::IMPORT_CYCLE) =>
@@ -497,6 +523,10 @@ fn extract_source(
     // Run the code a value computes, or tell rules the module computes from a
     // class it composes
     if (!visitor.errors.is_empty() || visitor.composes_unknown)
+        && !visitor
+            .errors
+            .iter()
+            .any(|(_, error)| dead_properties::terminal_error(error))
         && evaluated.is_none()
         && !utils::is_vanilla_extract_file(filename)
         && let Some((computed, value_edits, read)) = build_time_values::evaluate(
@@ -542,7 +572,15 @@ fn extract_source(
             .collect();
     visitor.errors.append(&mut visitor.unknown_parts);
     if !visitor.errors.is_empty() {
-        let mut message = located_errors(filename, source, &edits, visitor.errors);
+        let mut errors = visitor.errors;
+        let error_edits = if evaluated.is_some() {
+            let calls = dead_properties::evaluated_calls(source, filename, &option);
+            dead_properties::map_evaluated(&mut errors, &edits, &calls)?;
+            &[][..]
+        } else {
+            edits.as_slice()
+        };
+        let mut message = located_errors(filename, source, error_edits, errors);
         message += &changed_notes(&message, filename, source, &edits, &inlined.changed);
         return Err(message.into());
     }
@@ -8069,7 +8107,7 @@ globalCss()
             )
             .unwrap_err()
             .to_string(),
-            "test.tsx:2:1: `globalCss()` cannot use `1` at build time: its values must be literals, theme tokens or constants, or be computed from them"
+            "test.tsx:2:11: `globalCss()` cannot use `1` at build time: its values must be literals, theme tokens or constants, or be computed from them"
         );
     }
 
@@ -9339,7 +9377,7 @@ export const B = styled.div`${SEL} & { color: ${C}; }`;",
             [
                 "src/App.tsx:6:56: `css()` cannot use `x` at build time: its values must be literals, theme tokens or constants, or be computed from them",
                 "src/App.tsx:7:27: `globalCss()` cannot use `y` at build time: its values must be literals, theme tokens or constants, or be computed from them",
-                "src/App.tsx:8:18: `keyframes()` cannot use `z` at build time: its values must be literals, theme tokens or constants, or be computed from them",
+                "src/App.tsx:8:34: `keyframes()` cannot use `z` at build time: its values must be literals, theme tokens or constants, or be computed from them",
                 "src/App.tsx:9:18: `css()` cannot use `x` at build time: its values must be literals, theme tokens or constants, or be computed from them",
             ]
         );
@@ -15180,6 +15218,45 @@ export const d = css(ordered, danger, called);",
 
     #[rstest]
     #[case(
+        "const button = cva('p-4 card', { variants: { size: { sm: 'text-sm', lg: ['text-lg', 'p-8'], none: null } }, compoundVariants: [{ size: 'sm', class: 'm-2' }, { size: 'lg', className: ['m-4'] }], defaultVariants: { size: 'sm' } });\n<Box className={button({ size })} />",
+        "import \"@devup-ui/core/devup-ui.css\";\nconst button = cva(\"a card\", {\n\tvariants: { size: {\n\t\tsm: \"b c\",\n\t\tlg: [\"d e\", \"f\"],\n\t\tnone: null\n\t} },\n\tcompoundVariants: [{\n\t\tsize: \"sm\",\n\t\tclass: \"g\"\n\t}, {\n\t\tsize: \"lg\",\n\t\tclassName: [\"h\"]\n\t}],\n\tdefaultVariants: { size: \"sm\" }\n});\n<div className={button({ size }) || \"\"} />;\n"
+    )]
+    #[case(
+        "const button = cva();\n<Box className={button()} />",
+        "const button = cva();\n<div className={button() || \"\"} />;\n"
+    )]
+    #[case(
+        "const button = cva(base, { variants: 1, compoundVariants: 2 });\n<Box />",
+        "const button = cva(base, {\n\tvariants: 1,\n\tcompoundVariants: 2\n});\n<div />;\n"
+    )]
+    #[case(
+        "const button = cva(['p-4'], { variants: { size: 1, tone: { a: 'm-2' } }, compoundVariants: [1, { tone: 'a', other: 'm-1' }, { ...x }] });\n<Box />",
+        "import \"@devup-ui/core/devup-ui.css\";\nconst button = cva([\"a\"], {\n\tvariants: {\n\t\tsize: 1,\n\t\ttone: { a: \"b\" }\n\t},\n\tcompoundVariants: [\n\t\t1,\n\t\t{\n\t\t\ttone: \"a\",\n\t\t\tother: \"m-1\"\n\t\t},\n\t\t{ ...x }\n\t]\n});\n<div />;\n"
+    )]
+    #[case(
+        "const button = cva(base, { ...shared, variants: { ...more, tone: { ...options, a: 'm-2' }, size: { sm: 'p-1' }, odd: 1 }, compoundVariants: [...list, { class: 'm-1' }] });\n<Box />",
+        "import \"@devup-ui/core/devup-ui.css\";\nconst button = cva(base, {\n\t...shared,\n\tvariants: {\n\t\t...more,\n\t\ttone: {\n\t\t\t...options,\n\t\t\ta: \"a\"\n\t\t},\n\t\tsize: { sm: \"b\" },\n\t\todd: 1\n\t},\n\tcompoundVariants: [...list, { class: \"c\" }]\n});\n<div />;\n"
+    )]
+    #[serial]
+    fn test_tailwind_cva(#[case] jsx: &str, #[case] expected: &str) {
+        reset_class_map();
+        reset_file_map();
+        let output = extract(
+            "test.tsx",
+            &format!("import {{Box}} from '@devup-ui/core'\n{jsx}\n"),
+            ExtractOption {
+                package: "@devup-ui/core".to_string(),
+                css_dir: "@devup-ui/core".to_string(),
+                single_css: true,
+                import_main_css: false,
+                import_aliases: HashMap::new(),
+            },
+        )
+        .unwrap();
+        assert_eq!(output.code, expected);
+    }
+    #[rstest]
+    #[case(
         "<Box className={clsx('p-4', on && 'm-2', 'keep')} />",
         r#"<div className={clsx("a", on && "b", "keep") || ""} />"#
     )]
@@ -15204,8 +15281,60 @@ export const d = css(ordered, danger, called);",
         "<div className={clsx({\n\t[key]: on,\n\t\"a\": on\n}) || \"\"} />"
     )]
     #[case(
-        "<Box className={cn('p-4', 'm-2')} />",
-        r#"-<div className={cn("p-4", "m-2") || ""} />"#
+        "const base = 'p-4 card';\n<Box className={base} />",
+        r#"const base = "p-4 card";
+<div className="a card" />"#
+    )]
+    #[case(
+        "const base = `p-4`;\nconst on = false;\n<Box className={clsx(base, on && 'm-2')} />",
+        r#"const base = `p-4`;
+const on = false;
+<div className={clsx("a", on && "b") || ""} />"#
+    )]
+    #[case(
+        "let base = 'p-4';\n<Box className={base} />",
+        r#"-let base = "p-4";
+<div className={base || ""} />"#
+    )]
+    #[case(
+        "const base = 'p-4'\nconst f = (base) => <Box className={base} />",
+        "-const base = \"p-4\";\nconst f = (base) => <div className={base || \"\"} />"
+    )]
+    #[case(
+        "const base = `p-4 ${x}`;\n<Box className={base} />",
+        r#"-const base = `p-4 ${x}`;
+<div className={base || ""} />"#
+    )]
+    #[case("<Box className={cn('p-4', 'm-2')} />", r#"<div className="a b" />"#)]
+    #[case(
+        "<Box className={cn('p-4 m-2 card', ['p-2'])} />",
+        r#"<div className="a card b" />"#
+    )]
+    #[case(
+        "<Box className={twMerge(`p-4`, 'p-2!', 'hover:p-4', 'hover:p-1')} />",
+        r#"<div className="a b c" />"#
+    )]
+    #[case("<Box className={cn(('p-4'), 'p-2')} />", r#"<div className="a" />"#)]
+    #[case(
+        "<Box className={cn('p-4', cond && 'p-2')} />",
+        r#"-<div className={cn("p-4", cond && "p-2") || ""} />"#
+    )]
+    #[case(
+        "<Box className={cn('card', 'hidden-x')} />",
+        r#"-<div className={cn("card", "hidden-x") || ""} />"#
+    )]
+    #[case(
+        "<Box className={cn('px-4', 'p-2', 'bg-red-500', 'bg-blue-500')} />",
+        r#"<div className="a b c" />"#
+    )]
+    #[case(
+        "<Box className={cn(...parts)} />",
+        r#"-<div className={cn(...parts) || ""} />"#
+    )]
+    #[case(
+        "const base = 'p-4';\n<Box className={cn(base, 'p-8')} />",
+        r#"const base = "p-4";
+<div className="a" />"#
     )]
     #[case(
         "<Box className={['p-4'].join(',')} />",
@@ -21643,10 +21772,10 @@ const e = <Box selectors={{ 'div p': { color: 'red' }, 'a > b, > i': { color: 'b
                 ),
                 text("23", "`<Box>`", "\"external-class\""),
                 text("43", "`<Box>`", "\"external-class\""),
-                name("11", "`css()`", "_nope"),
-                text("11", "`css()`", "\"red\""),
+                name("43", "`css()`", "_nope"),
+                text("25", "`css()`", "\"red\""),
                 name("37", "`styled()`", "nope"),
-                name("1", "`globalCss()`", "_nope"),
+                name("13", "`globalCss()`", "_nope"),
             ]
         );
     }
