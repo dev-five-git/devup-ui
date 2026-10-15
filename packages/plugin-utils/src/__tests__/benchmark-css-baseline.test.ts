@@ -14,6 +14,14 @@ const baseline = {
   rows: {
     ...storedBaseline.rows,
     'devup-ui': { ...storedBaseline.rows['devup-ui'], cssBytes: 562 },
+    'devup-ui-single': {
+      ...storedBaseline.rows['devup-ui-single'],
+      cssBytes: 790,
+    },
+    'vinext-devup-ui': {
+      ...storedBaseline.rows['vinext-devup-ui'],
+      cssBytes: 29746,
+    },
   },
 }
 
@@ -46,8 +54,78 @@ const expected = {
     'devup-ui': { ...baseline.rows['devup-ui'], cssBytes: 494 },
   },
 }
+const pairBaseline = expected
+const pairRun = {
+  ...run,
+  rows: {
+    ...run.rows,
+    'devup-ui': { ...run.rows['devup-ui'], cssBytes: 617 },
+    'devup-ui-single': { ...run.rows['devup-ui-single'], cssBytes: 395 },
+    'vinext-devup-ui': { ...run.rows['vinext-devup-ui'], cssBytes: 14873 },
+  },
+}
+const pairExpected = {
+  ...pairBaseline,
+  rows: {
+    ...pairBaseline.rows,
+    'devup-ui-single': {
+      ...pairBaseline.rows['devup-ui-single'],
+      cssBytes: 395,
+    },
+    'vinext-devup-ui': {
+      ...pairBaseline.rows['vinext-devup-ui'],
+      cssBytes: 14873,
+    },
+  },
+}
 
 describe('CSS-only benchmark baseline', () => {
+  it('changes only the two named CSS fields when every run field disagrees', () => {
+    const previous = structuredClone(pairBaseline)
+    const input = structuredClone(pairRun)
+
+    const result = nextCssBaseline(input, previous, [
+      'devup-ui-single',
+      'vinext-devup-ui',
+    ])
+
+    expect(result).toEqual(pairExpected)
+    expect(previous).toEqual(pairBaseline)
+    expect(input).toEqual(pairRun)
+  })
+
+  it.each([
+    { targets: [] },
+    { targets: ['devup-ui-turbo'] },
+    { targets: ['devup-ui-single', ''] },
+    { targets: ['unknown'] },
+  ])(
+    'rejects unsupported or missing named targets when given $targets',
+    ({ targets }) => {
+      expect(() => nextCssBaseline(pairRun, pairBaseline, targets)).toThrow(
+        TypeError,
+      )
+    },
+  )
+
+  it.each(['devup-ui-single', 'vinext-devup-ui'])(
+    'rejects missing selected rows when updating %s',
+    (target) => {
+      expect(() => nextCssBaseline(pairRun, { rows: {} }, [target])).toThrow(
+        TypeError,
+      )
+    },
+  )
+
+  it.each(['devup-ui-single', 'vinext-devup-ui'])(
+    'rejects missing selected measurements when updating %s',
+    (target) => {
+      expect(() =>
+        nextCssBaseline({ rows: {} }, pairBaseline, [target]),
+      ).toThrow(TypeError)
+    },
+  )
+
   it('preserves every other field when the run disagrees with the baseline', () => {
     const previous = structuredClone(baseline)
     const input = structuredClone(run)
@@ -89,7 +167,21 @@ describe('CSS-only benchmark baseline', () => {
 describe('CSS-only baseline CLI', () => {
   it.each([
     { args: ['--write-css-baseline', 'devup-ui'], success: true },
+    {
+      args: ['--write-css-baseline', 'devup-ui-single,vinext-devup-ui'],
+      success: true,
+    },
     { args: ['--write-css-baseline', 'devup-ui-turbo'], success: false },
+    {
+      args: ['--write-css-baseline', 'devup-ui-single,devup-ui-turbo'],
+      success: false,
+    },
+    { args: ['--write-css-baseline', ''], success: false },
+    { args: ['--write-css-baseline', 'devup-ui-single,'], success: false },
+    {
+      args: ['--write-css-baseline', 'devup-ui-single', 'vinext-devup-ui'],
+      success: false,
+    },
     { args: ['--write-css-baseline'], success: false },
     {
       args: ['--write-css-baseline', 'devup-ui', '--write-baseline'],
@@ -100,16 +192,18 @@ describe('CSS-only baseline CLI', () => {
       success: false,
     },
   ])(
-    'writes only per-file CSS when invoked with $args',
+    'writes only explicitly named CSS when invoked with $args',
     ({ args, success }) => {
       const directory = mkdtempSync(join(tmpdir(), 'devup-css-baseline-'))
-      const stored = JSON.stringify(baseline, null, 2) + '\n'
+      const paired = args[1] === 'devup-ui-single,vinext-devup-ui'
+      const stored =
+        JSON.stringify(paired ? pairBaseline : baseline, null, 2) + '\n'
       try {
         writeFileSync(join(directory, 'benchmark-baseline.json'), stored)
         writeFileSync(join(directory, 'benchmark-manifest.json'), '{}\n')
         writeFileSync(
           join(directory, 'benchmark-run.json'),
-          JSON.stringify(run),
+          JSON.stringify(paired ? pairRun : run),
         )
         writeFileSync(join(directory, 'benchmark-results.json'), '{}\n')
 
@@ -123,7 +217,11 @@ describe('CSS-only baseline CLI', () => {
         expect(result.status).toBe(success ? 0 : 1)
         expect(
           readFileSync(join(directory, 'benchmark-baseline.json'), 'utf8'),
-        ).toBe(success ? JSON.stringify(expected, null, 2) + '\n' : stored)
+        ).toBe(
+          success
+            ? JSON.stringify(paired ? pairExpected : expected, null, 2) + '\n'
+            : stored,
+        )
         expect(
           readFileSync(join(directory, 'benchmark-results.json'), 'utf8'),
         ).toBe('{}\n')

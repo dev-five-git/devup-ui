@@ -82,7 +82,7 @@ npm install @devup-ui/webpack-plugin
 <!-- benchmark:start -->
 [최신 CI 벤치마크](https://github.com/dev-five-git/devup-ui/actions/runs/37758611477) (커밋 `467a379a`, Devup UI 1.0.44)는 `ubuntu-24.04`에서 Next.js 16.3.3로 실행했습니다. 모든 행은 순서를 돌려 가며 측정한 cold build 3회의 중앙값이며 샘플의 범위를 함께 보여줍니다. 모든 Next.js 빌드는 네이티브 TypeScript 7 CLI로 타입 검사를 수행합니다. 영어와 한국어 표는 같은 결과 파일 `benchmark-results.json`에서 생성합니다.
 
-빌드 사이즈는 캐시와 서버 출력을 포함한 빌드 출력 디렉터리(`.next`, vinext는 `dist`)의 모든 바이트입니다. 체크인된 표는 출력 전체의 `.css` 파일을 재귀적으로 합산한 기존 CSS 측정값을 그대로 보존합니다. 새 실행은 브라우저에 제공되는 CSS만 측정합니다: `.next/static/**/*.css`(Webpack `static/css`, Turbopack `static/chunks`) 또는 vinext `dist/client/**/*.css`. 캐시와 서버 CSS는 제외합니다. 브라우저 에셋 디렉터리가 없으면 오류이며, 존재하지만 CSS가 없으면 0입니다. 승인된 per-file CSS 측정 보정에는 `bun benchmark-check.js --write-css-baseline devup-ui`를 사용합니다. `--write-baseline`과 달리 기존 해당 행의 CSS 바이트만 바꾸고 샘플 수, 빌드 바이트, 비율, 허용 오차, 다른 모든 행과 보정 이력을 보존합니다.
+빌드 사이즈는 캐시와 서버 출력을 포함한 빌드 출력 디렉터리(`.next`, vinext는 `dist`)의 모든 바이트입니다. 체크인된 표는 출력 전체의 `.css` 파일을 재귀적으로 합산한 기존 CSS 측정값을 그대로 보존합니다. 새 실행은 브라우저에 제공되는 CSS만 측정합니다: `.next/static/**/*.css`(Webpack `static/css`, Turbopack `static/chunks`) 또는 vinext `dist/client/**/*.css`. 캐시와 서버 CSS는 제외합니다. 브라우저 에셋 디렉터리가 없으면 오류이며, 존재하지만 CSS가 없으면 0입니다. 승인된 CSS 측정 보정은 명시적으로 지정한 `devup-ui`, `devup-ui-single`, `vinext-devup-ui` 행으로 제한됩니다. `bun benchmark-check.js --write-css-baseline devup-ui`는 기존 per-file 모드를 유지하며, `bun benchmark-check.js --write-css-baseline devup-ui-single,vinext-devup-ui`는 쉼표로 구분한 인자 하나로 나머지 두 행만 선택합니다. 선택한 기존 행의 CSS 바이트만 바꾸고, `--write-baseline`과 달리 샘플 수, 빌드 바이트, 비율, 허용 오차, 선택하지 않은 모든 행과 보정 이력을 보존합니다. 이름 누락, 지원하지 않는 이름, 다른 쓰기 모드와의 혼용은 오류입니다.
 
 Webpack:
 

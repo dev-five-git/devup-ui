@@ -138,3 +138,60 @@ describe('benchmark output measurement', () => {
     },
   )
 })
+
+describe('approved CSS baseline headroom', () => {
+  it.each([
+    {
+      target: 'devup-ui-single',
+      baselineCss: 395,
+      cssBytes: 427,
+      failed: false,
+    },
+    {
+      target: 'devup-ui-single',
+      baselineCss: 395,
+      cssBytes: 428,
+      failed: true,
+    },
+    {
+      target: 'vinext-devup-ui',
+      baselineCss: 14873,
+      cssBytes: 15616,
+      failed: false,
+    },
+    {
+      target: 'vinext-devup-ui',
+      baselineCss: 14873,
+      cssBytes: 15617,
+      failed: true,
+    },
+  ])(
+    'enforces the unchanged CSS gate for $target at $cssBytes bytes',
+    ({ target, baselineCss, cssBytes, failed }) => {
+      const baseline = {
+        samples: 3,
+        rows: {
+          [target]: {
+            control: 'tailwind',
+            ratio: 1,
+            timeTolerance: 0.1,
+            bytes: 1000,
+            cssBytes: baselineCss,
+          },
+        },
+      }
+      const run = {
+        samples: 3,
+        rows: {
+          tailwind: { median: 1 },
+          [target]: { median: 1, bytes: 1000, cssBytes },
+        },
+      }
+
+      const evaluation = evaluate(run, baseline)
+
+      expect(evaluation.failed).toBe(failed)
+      expect(evaluation.results[0]?.failures).toHaveLength(failed ? 1 : 0)
+    },
+  )
+})

@@ -32,7 +32,7 @@
       ],
       "timeTolerance": 0.12495002123706572,
       "bytes": 67436336,
-      "cssBytes": 790
+      "cssBytes": 395
     },
     "devup-ui-single-turbo": {
       "control": "tailwind-turbo",
@@ -87,7 +87,7 @@
       ],
       "timeTolerance": 0.2405708460754333,
       "bytes": 1198750,
-      "cssBytes": 29746
+      "cssBytes": 14873
     },
     "devup-ui-collapse": {
       "control": "tailwind-turbo",

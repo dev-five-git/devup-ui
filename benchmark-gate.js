@@ -118,18 +118,26 @@ export function nextBaseline(run, manifest, previous) {
   return { samples: run.samples, rows }
 }
 
-/** Replace only the existing per-file Devup UI CSS baseline; never recalibrate. */
-export function nextCssBaseline(run, previous) {
-  const expected = previous.rows['devup-ui']
-  if (!expected)
-    throw new TypeError('CSS-only baseline requires an existing devup-ui row')
-  return {
-    ...previous,
-    rows: {
-      ...previous.rows,
-      'devup-ui': { ...expected, cssBytes: run.rows['devup-ui'].cssBytes },
-    },
+/** Replace only named, approved CSS baselines; default to per-file, never recalibrate. */
+export function nextCssBaseline(run, previous, targets = ['devup-ui']) {
+  if (
+    targets.length === 0 ||
+    targets.some(
+      (target) =>
+        !['devup-ui', 'devup-ui-single', 'vinext-devup-ui'].includes(target),
+    )
+  )
+    throw new TypeError('CSS-only baseline requires approved named targets')
+  const rows = { ...previous.rows }
+  for (const target of targets) {
+    const expected = previous.rows[target]
+    if (!expected)
+      throw new TypeError(
+        `CSS-only baseline requires an existing ${target} row`,
+      )
+    rows[target] = { ...expected, cssBytes: run.rows[target].cssBytes }
   }
+  return { ...previous, rows }
 }
 
 /** One line per gated row for the job log */
