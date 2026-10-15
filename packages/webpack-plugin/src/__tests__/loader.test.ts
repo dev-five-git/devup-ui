@@ -130,35 +130,40 @@ describe('devupUILoader', () => {
       wasm,
       'setModuleResolver',
     ).mockReturnValue(undefined)
-    codeExtractSpy.mockReturnValue(
-      createCodeExtractResult({ dependencies: ['src/tokens.ts'] }),
-    )
-    const callback = mock()
-    const t = createLoaderContext(
-      {
-        package: 'package',
-        cssDir: 'cssDir',
-        sheetFile: 'sheetFile',
-        classMapFile: 'classMapFile',
-        fileMapFile: 'fileMapFile',
-        watch: false,
-        singleCss: true,
-      },
-      callback,
-    )
-    devupUILoader.bind(t)(Buffer.from('code'), 'index.tsx')
-    await waitFor(() => expect(callback).toHaveBeenCalled())
-    expect(t.addDependency).toHaveBeenCalledWith(
-      nodePath.resolve('src/tokens.ts'),
-    )
-    const resolveModule = setModuleResolverSpy.mock.calls[0][0] as (
-      specifier: string,
-      importer: string,
-    ) => { path: string } | undefined
-    expect(resolveModule('./loader.test', import.meta.path)?.path).toBe(
-      nodePath.relative(process.cwd(), import.meta.path).replaceAll('\\', '/'),
-    )
-    setModuleResolverSpy.mockRestore()
+    try {
+      codeExtractSpy.mockReturnValue(
+        createCodeExtractResult({ dependencies: ['src/tokens.ts'] }),
+      )
+      const callback = mock()
+      const t = createLoaderContext(
+        {
+          package: 'package',
+          cssDir: 'cssDir',
+          sheetFile: 'sheetFile',
+          classMapFile: 'classMapFile',
+          fileMapFile: 'fileMapFile',
+          watch: false,
+          singleCss: true,
+        },
+        callback,
+      )
+      devupUILoader.bind(t)(Buffer.from('code'), 'index.tsx')
+      await waitFor(() => expect(callback).toHaveBeenCalled())
+      expect(t.addDependency).toHaveBeenCalledWith(
+        nodePath.resolve('src/tokens.ts'),
+      )
+      const resolveModule = setModuleResolverSpy.mock.calls[0][0] as (
+        specifier: string,
+        importer: string,
+      ) => { path: string } | undefined
+      expect(resolveModule('./loader.test', import.meta.path)?.path).toBe(
+        nodePath
+          .relative(process.cwd(), import.meta.path)
+          .replaceAll('\\', '/'),
+      )
+    } finally {
+      setModuleResolverSpy.mockRestore()
+    }
   })
   it.each(
     createTestMatrix({
