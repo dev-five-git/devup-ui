@@ -17,6 +17,15 @@ pub struct CustomVariant {
     pub at_rule: Option<(AtRuleKind, String)>,
 }
 
+/// One line of the body of an `@utility`
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum UtilityItem {
+    /// `property: value`
+    Declaration(String, String),
+    /// `@apply a b c`: the utilities that are applied
+    Apply(Vec<String>),
+}
+
 #[derive(Debug, Default)]
 struct Definitions {
     theme: BTreeMap<String, String>,
@@ -24,7 +33,10 @@ struct Definitions {
     resets: BTreeSet<String>,
     /// `--*: initial` empties every namespace
     reset_all: bool,
-    utilities: BTreeMap<String, Vec<(String, String)>>,
+    utilities: BTreeMap<String, Vec<UtilityItem>>,
+    /// `@utility name-*`, by `name`: declarations that read `--value()` and
+    /// `--modifier()`
+    functional: BTreeMap<String, Vec<(String, String)>>,
     variants: BTreeMap<String, CustomVariant>,
     keyframes: BTreeMap<String, String>,
 }
@@ -137,6 +149,25 @@ fn compact(value: &str) -> String {
     out
 }
 
+/// The declarations and `@apply` lines of `body`, `None` when it holds anything
+/// else
+fn utility_items(body: &str) -> Option<Vec<UtilityItem>> {
+    parse_items(body)?
+        .into_iter()
+        .map(|item| match item {
+            Item::Statement(statement) => match statement.strip_prefix("@apply") {
+                Some(tokens) if tokens.starts_with(char::is_whitespace) => Some(
+                    UtilityItem::Apply(tokens.split_whitespace().map(str::to_string).collect()),
+                ),
+                Some(_) => None,
+                None => declaration(&statement)
+                    .map(|(property, value)| UtilityItem::Declaration(property, value)),
+            },
+            Item::Block(..) => None,
+        })
+        .collect()
+}
+
 /// `name: value` as the pair it declares
 fn declaration(statement: &str) -> Option<(String, String)> {
     let (name, value) = statement.split_once(':')?;
@@ -201,14 +232,24 @@ impl Definitions {
     }
 
     fn read_utility(&mut self, name: &str, body: &str) {
-        if name.is_empty() || name.contains('*') || name.contains(char::is_whitespace) {
+        if name.is_empty() || name.contains(char::is_whitespace) {
             return;
         }
-        if let Some(declarations) = declarations(body) {
-            self.utilities.insert(name.to_string(), declarations);
+        if let Some(root) = name.strip_suffix("-*") {
+            if let Some(declarations) =
+                declarations(body).filter(|_| !root.is_empty() && !root.contains('*'))
+            {
+                self.functional.insert(root.to_string(), declarations);
+            }
+            return;
+        }
+        if name.contains('*') {
+            return;
+        }
+        if let Some(items) = utility_items(body) {
+            self.utilities.insert(name.to_string(), items);
         }
     }
-
     fn read_custom_variant(&mut self, rest: &str, body: Option<&str>) {
         let rest = rest.trim();
         let (name, definition) = rest.split_once(char::is_whitespace).unwrap_or((rest, ""));
@@ -388,10 +429,16 @@ pub fn theme_keys(namespace: &str) -> Vec<String> {
     .unwrap_or_default()
 }
 
-/// The declarations of the `@utility` named `name`
+/// The body of the `@utility` named `name`
 #[must_use]
-pub fn custom_utility(name: &str) -> Option<Vec<(String, String)>> {
+pub fn custom_utility(name: &str) -> Option<Vec<UtilityItem>> {
     with(|definitions| definitions.utilities.get(name).cloned())
+}
+
+/// The declarations of the functional `@utility` named `<root>-*`
+#[must_use]
+pub fn functional_utility(root: &str) -> Option<Vec<(String, String)>> {
+    with(|definitions| definitions.functional.get(root).cloned())
 }
 
 /// The `@custom-variant` named `name`
@@ -475,19 +522,41 @@ mod tests {
     #[serial]
     fn utilities_are_static_declarations() {
         set_tailwind_css(
-            "@layer base { a { color: red } } @utility content-auto { content-visibility: auto; contain-intrinsic-size: 0 500px } @utility tab-* { tab-size: --value(integer); } @utility nested { &:hover { color: red } } @utility empty { } @utility two words { a: b }",
+            "@layer base { a { color: red } } @utility content-auto { content-visibility: auto; contain-intrinsic-size: 0 500px } @utility tab-* { tab-size: --value(integer); } @utility nested { &:hover { color: red } } @utility empty { } @utility two words { a: b } @utility btn { @apply px-4 py-2; color: red; } @utility bad-apply { @applyx a; } @utility any-* x { a: b } @utility -* { a: b } @utility a*b { a: b } @utility fn-* { a: b; &:hover { c: d } }",
         );
         assert_eq!(
             custom_utility("content-auto"),
             Some(vec![
-                ("content-visibility".to_string(), "auto".to_string()),
-                ("contain-intrinsic-size".to_string(), "0 500px".to_string()),
+                UtilityItem::Declaration("content-visibility".to_string(), "auto".to_string()),
+                UtilityItem::Declaration(
+                    "contain-intrinsic-size".to_string(),
+                    "0 500px".to_string()
+                ),
             ])
         );
         assert_eq!(custom_utility("tab-*"), None);
+        assert_eq!(
+            functional_utility("tab"),
+            Some(vec![(
+                "tab-size".to_string(),
+                "--value(integer)".to_string()
+            )])
+        );
         assert_eq!(custom_utility("nested"), None);
         assert_eq!(custom_utility("empty"), Some(vec![]));
         assert_eq!(custom_utility("two"), None);
+        assert_eq!(
+            custom_utility("btn"),
+            Some(vec![
+                UtilityItem::Apply(vec!["px-4".to_string(), "py-2".to_string()]),
+                UtilityItem::Declaration("color".to_string(), "red".to_string()),
+            ])
+        );
+        assert_eq!(custom_utility("bad-apply"), None);
+        assert_eq!(functional_utility("any"), None);
+        assert_eq!(functional_utility("fn"), None);
+        assert_eq!(functional_utility(""), None);
+        assert_eq!(custom_utility("a*b"), None);
         set_tailwind_css("");
     }
 
