@@ -3,7 +3,7 @@ use crate::extract_style::extract_css::ExtractCss;
 use crate::extract_style::style_property::StyleProperty;
 use crate::gen_class_name::gen_class_names;
 use crate::gen_style::gen_styles;
-use crate::tailwind::{PROPERTY_RULES_FILE, parse_class};
+use crate::tailwind::{PROPERTY_RULES_FILE, merge_classes, parse_class};
 use crate::utils::{get_str_by_property_key, merge_object_expressions};
 use crate::{ExtractStyleProp, ExtractStyleValue};
 use oxc_allocator::{CloneIn, FromIn, GetAllocator};
@@ -361,6 +361,87 @@ pub fn get_class_name_expression<'a>(
     (expression, tailwind.into_styles())
 }
 
+/// Compiles the Tailwind classes of a `cva(base, { variants, compoundVariants })`
+/// call, which joins the classes it is given as `clsx` does: the base, the
+/// classes of each variant option and of each compound variant. Returns the
+/// styles of the classes that compiled.
+pub fn compile_cva<'a>(
+    ast_builder: &AstBuilder<'a>,
+    call: &mut CallExpression<'a>,
+    filename: Option<&str>,
+) -> Vec<ExtractStyleValue> {
+    let mut tailwind = TailwindClassName {
+        style_order: None,
+        filename,
+        styles: Vec::new(),
+        rules: BTreeSet::new(),
+    };
+    let mut compile = |expression: &mut Expression<'a>| {
+        if let Some(compiled) = tailwind.compile_expression(ast_builder, expression) {
+            *expression = compiled;
+        }
+    };
+    if let Some(base) = call
+        .arguments
+        .get_mut(0)
+        .and_then(Argument::as_expression_mut)
+    {
+        compile(base);
+    }
+    if let Some(Expression::ObjectExpression(config)) = call
+        .arguments
+        .get_mut(1)
+        .and_then(Argument::as_expression_mut)
+    {
+        for property in &mut config.properties {
+            let ObjectPropertyKind::ObjectProperty(property) = property else {
+                continue;
+            };
+            match (
+                get_str_by_property_key(&property.key).as_deref(),
+                &mut property.value,
+            ) {
+                (Some("variants"), Expression::ObjectExpression(groups)) => {
+                    for group in &mut groups.properties {
+                        let ObjectPropertyKind::ObjectProperty(group) = group else {
+                            continue;
+                        };
+                        let Expression::ObjectExpression(options) = &mut group.value else {
+                            continue;
+                        };
+                        for option in &mut options.properties {
+                            if let ObjectPropertyKind::ObjectProperty(option) = option {
+                                compile(&mut option.value);
+                            }
+                        }
+                    }
+                }
+                (Some("compoundVariants"), Expression::ArrayExpression(variants)) => {
+                    for variant in &mut variants.elements {
+                        let Some(Expression::ObjectExpression(variant)) =
+                            variant.as_expression_mut()
+                        else {
+                            continue;
+                        };
+                        for property in &mut variant.properties {
+                            if let ObjectPropertyKind::ObjectProperty(property) = property
+                                && matches!(
+                                    get_str_by_property_key(&property.key).as_deref(),
+                                    Some("class" | "className")
+                                )
+                            {
+                                compile(&mut property.value);
+                            }
+                        }
+                    }
+                }
+                _ => {}
+            }
+        }
+    }
+    tailwind.into_styles()
+}
+
 /// Compiles the Tailwind classes of a className: each becomes the classes of
 /// its styles, and every other class stays as written
 struct TailwindClassName<'f> {
@@ -531,6 +612,20 @@ impl TailwindClassName<'_> {
         let mut compiled = call.clone_in(ast_builder.allocator());
         let mut changed = false;
         match &call.callee {
+            Expression::Identifier(callee) if matches!(callee.name.as_str(), "cn" | "twMerge") => {
+                let mut classes = String::new();
+                for argument in &call.arguments {
+                    classes.push_str(&static_classes(argument.as_expression()?)?);
+                    classes.push(' ');
+                }
+                let compiled = self.compile_text(&merge_classes(&classes), false, false)?;
+                return Some(Expression::new_string_literal(
+                    SPAN,
+                    Str::from_in(&compiled, ast_builder.allocator()),
+                    None,
+                    ast_builder,
+                ));
+            }
             Expression::Identifier(callee)
                 if matches!(callee.name.as_str(), "clsx" | "classnames" | "classNames") =>
             {
@@ -610,6 +705,33 @@ impl TailwindClassName<'_> {
             oxc_allocator::Vec::from_iter_in(expressions, ast_builder),
             ast_builder,
         ))
+    }
+}
+
+/// The classes a static argument of `cn()` holds: strings, templates without
+/// interpolation and arrays of them
+fn static_classes(expression: &Expression<'_>) -> Option<String> {
+    match expression {
+        Expression::StringLiteral(literal) => Some(literal.value.to_string()),
+        Expression::TemplateLiteral(template) if template.expressions.is_empty() => template
+            .quasis
+            .first()?
+            .value
+            .cooked
+            .as_ref()
+            .map(ToString::to_string),
+        Expression::ParenthesizedExpression(parenthesized) => {
+            static_classes(&parenthesized.expression)
+        }
+        Expression::ArrayExpression(array) => {
+            let mut classes = String::new();
+            for element in &array.elements {
+                classes.push_str(&static_classes(element.as_expression()?)?);
+                classes.push(' ');
+            }
+            Some(classes)
+        }
+        _ => None,
     }
 }
 
