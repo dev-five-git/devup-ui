@@ -257,7 +257,7 @@ export function computeFileRoutes(
   const leafRoutes = files
     .filter((file) => leafRouteFileRegex.test(toPosixRelative(srcDir, file)))
     .sort((a, b) =>
-      toPosixRelative(srcDir, a).localeCompare(toPosixRelative(srcDir, b)),
+      compareCodePoints(toPosixRelative(srcDir, a), toPosixRelative(srcDir, b)),
     )
   const routeShellFilesByDir = getRouteShellFilesByDir(files, srcDir)
 
@@ -336,6 +336,43 @@ export function computeCompiledFiles(
   return [...compiled].map((file) => toPosixRelative(cwd, file)).sort()
 }
 
+export interface ComputeReachableFilesOptions {
+  srcDir: string
+  tsconfigPath?: string
+  /** The bundler's entry modules, as absolute paths with or without extension. */
+  entries: string[]
+  /** pre-built graph from `buildStaticImportGraph` to skip the file scan. */
+  graph?: StaticImportGraph
+}
+
+/**
+ * The source files under `srcDir` a bundler compiles from `entries`: their
+ * closure over static and dynamic `import()` edges, as absolute paths in the
+ * graph's order. Extracting them before bundling fills the shared stylesheet
+ * without the styles of files no entry imports.
+ */
+export function computeReachableFiles(
+  opts: ComputeReachableFilesOptions,
+): string[] {
+  const { files, fileSet, staticImports, dynamicImports } =
+    opts.graph ?? buildStaticImportGraph(opts.srcDir, opts.tsconfigPath)
+  const queue = opts.entries
+    .map((entry) => resolveFile(resolve(entry)))
+    .filter(
+      (entry): entry is string => entry !== undefined && fileSet.has(entry),
+    )
+  const reached = new Set<string>()
+  for (let index = 0; index < queue.length; index += 1) {
+    const file = queue[index]
+    if (reached.has(file)) continue
+    reached.add(file)
+    for (const imports of [staticImports, dynamicImports]) {
+      for (const target of imports.get(file) ?? []) queue.push(target)
+    }
+  }
+  return files.filter((file) => reached.has(file))
+}
+
 export interface ComputeFileReachOptions {
   srcDir: string
   tsconfigPath?: string
@@ -389,7 +426,7 @@ export function computeFileReach(
     )
   }
   entries = [...new Set(entries)].sort((a, b) =>
-    toPosixRelative(srcDir, a).localeCompare(toPosixRelative(srcDir, b)),
+    compareCodePoints(toPosixRelative(srcDir, a), toPosixRelative(srcDir, b)),
   )
 
   const toKey = makeToKey(cwd, opts.keyBy ?? 'cwd-relative')
@@ -562,6 +599,11 @@ function getStaticClosure(
   return closure
 }
 
+/** Order that is the same on every machine, unlike localeCompare. */
+export function compareCodePoints(a: string, b: string): number {
+  return a < b ? -1 : a > b ? 1 : 0
+}
+
 /**
  * Enumerate every extractable source file under `srcDir`, sorted by POSIX path
  * (deterministic order). Skips `node_modules`, test/spec files, and non-JS/TS
@@ -575,7 +617,7 @@ export function listSourceFiles(srcDir: string): string[] {
   function visit(dir: string): void {
     if (!existsSync(dir)) return
     const entries = readdirSync(dir, { withFileTypes: true }).sort((a, b) =>
-      a.name.localeCompare(b.name),
+      compareCodePoints(a.name, b.name),
     )
     for (const entry of entries) {
       const entryPath = join(dir, entry.name)
@@ -593,7 +635,7 @@ export function listSourceFiles(srcDir: string): string[] {
 
   visit(srcDir)
   return files.sort((a, b) =>
-    toPosixRelative(srcDir, a).localeCompare(toPosixRelative(srcDir, b)),
+    compareCodePoints(toPosixRelative(srcDir, a), toPosixRelative(srcDir, b)),
   )
 }
 

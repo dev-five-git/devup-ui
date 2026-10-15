@@ -1,3 +1,4 @@
+use super::styled_jsx::StyledJsx;
 use rustc_hash::FxHashMap;
 
 use crate::{
@@ -8,6 +9,8 @@ use crate::{
     extractor::{
         ExtractResult,
         extract_style_from_expression::{LiteralHandling, extract_style_from_expression},
+        styled_record::prepare,
+        styled_record_evaluation::bind_render,
     },
     gen_class_name::{gen_class_names, merge_expression_for_class_name},
     gen_style::gen_styles,
@@ -42,6 +45,7 @@ const STYLED_FACTORY: &str =
 /// only the runtime gives the component
 struct Base<'a> {
     name: String,
+    target: Option<Expression<'a>>,
     styles: Option<Vec<ExtractStyleValue>>,
     bound: Option<Expression<'a>>,
 }
@@ -50,6 +54,7 @@ impl<'a> Base<'a> {
     const fn named(name: String) -> Self {
         Self {
             name,
+            target: None,
             styles: None,
             bound: None,
         }
@@ -111,10 +116,14 @@ fn tag_from_argument<'a>(
     }
     Some(jsx_name(argument).map_or_else(
         || Base {
+            target: Some(Expression::new_identifier(SPAN, STYLED_BASE, ast_builder)),
             bound: Some(argument.clone_in(ast_builder.allocator())),
             ..Base::named(STYLED_BASE.to_string())
         },
-        Base::named,
+        |name| Base {
+            target: Some(argument.clone_in(ast_builder.allocator())),
+            ..Base::named(name)
+        },
     ))
 }
 
@@ -183,7 +192,9 @@ pub fn extract_style_from_styled<'a>(
     split_filename: Option<&str>,
     imports: &FxHashMap<String, ExportVariableKind>,
     attrs: &[Expression<'a>],
+    helper: &mut Option<StyledJsx>,
 ) -> (ExtractResult<'a>, Expression<'a>, Vec<(u32, String)>) {
+    let original_scope = expression.clone_in(ast_builder.allocator());
     let mut composed_classes = Vec::new();
     let mut errors = Vec::new();
     if let Expression::CallExpression(call) = expression
@@ -216,6 +227,26 @@ pub fn extract_style_from_styled<'a>(
         // Check if tag is styled.div or styled(...)
         // Extract CSS from template literal
 
+        let mut invalid = Vec::new();
+        unreadable_styles(
+            &crate::dead_properties::template_errors(&tag.quasi),
+            true,
+            &mut invalid,
+        );
+        errors.extend(invalid.into_iter().map(|(offset, code, requirement)| {
+            (
+                offset,
+                build_time_error("styled", &code, requirement.unwrap_or(STYLE_OBJECT)),
+            )
+        }));
+        if !errors.is_empty() {
+            return (
+                ExtractResult::default(),
+                Expression::new_string_literal(SPAN, "", None, ast_builder),
+                errors,
+            );
+        }
+
         let TemplateStyles {
             styles,
             statements,
@@ -225,6 +256,13 @@ pub fn extract_style_from_styled<'a>(
             let expression = &tag.quasi.expressions[index];
             errors.push((expression.span().start, unplaced_error(expression)));
         }
+        errors.extend(
+            tag.quasi
+                .expressions
+                .iter()
+                .filter(|expression| crate::css_utils::reads_unmapped_theme(expression))
+                .map(|expression| crate::css_utils::unmapped_theme_error("styled", expression)),
+        );
         let mut props_styles: Vec<ExtractStyleProp<'_>> = styles
             .into_iter()
             .map(|ex| ExtractStyleProp::Static(ex.into()))
@@ -276,9 +314,13 @@ pub fn extract_style_from_styled<'a>(
         ));
         let component = create_styled_component(
             ast_builder,
-            &base.name,
-            &class_name,
-            &gen_styles(ast_builder, &props_styles, None),
+            &base,
+            StyledRender {
+                class_name: &class_name,
+                style_vars: &gen_styles(ast_builder, &props_styles, None),
+                bindings: Vec::new(),
+            },
+            helper,
         );
         let styled_component = base.render(ast_builder, apply_attrs(ast_builder, component, attrs));
 
@@ -298,6 +340,16 @@ pub fn extract_style_from_styled<'a>(
         // Case 2: styled.div({ bg: "red" }), styled("div")({ bg: "red" }),
         // or styled("div", { bg: "red" })
 
+        let prepared = call.arguments[style_index]
+            .as_expression()
+            .and_then(|rules| prepare(ast_builder, rules, &original_scope));
+        let bindings = match prepared {
+            Some(prepared) => {
+                call.arguments[style_index] = Argument::from(prepared.rules);
+                prepared.bindings
+            }
+            None => Vec::new(),
+        };
         // Extract styles from object expression
         let ExtractResult {
             mut styles,
@@ -319,11 +371,12 @@ pub fn extract_style_from_styled<'a>(
         );
         let mut unreadable = Vec::new();
         unreadable_styles(&styles, true, &mut unreadable);
-        errors.extend(
-            unreadable
-                .into_iter()
-                .map(|(offset, code)| (offset, build_time_error("styled", &code, STYLE_OBJECT))),
-        );
+        errors.extend(unreadable.into_iter().map(|(offset, code, requirement)| {
+            (
+                if offset == 0 { call.span.start } else { offset },
+                build_time_error("styled", &code, requirement.unwrap_or(STYLE_OBJECT)),
+            )
+        }));
         if let Some(default_class_name) = base.styles.take() {
             styles.extend(default_class_name.into_iter().map(ExtractStyleProp::Static));
         }
@@ -339,9 +392,13 @@ pub fn extract_style_from_styled<'a>(
         );
         let component = create_styled_component(
             ast_builder,
-            &base.name,
-            &class_name,
-            &gen_styles(ast_builder, &styles, None),
+            &base,
+            StyledRender {
+                class_name: &class_name,
+                style_vars: &gen_styles(ast_builder, &styles, None),
+                bindings,
+            },
+            helper,
         );
         let styled_component = base.render(ast_builder, apply_attrs(ast_builder, component, attrs));
 
@@ -540,12 +597,23 @@ fn props_arrow<'a>(ast_builder: &AstBuilder<'a>, body: Expression<'a>) -> Expres
     )
 }
 
+struct StyledRender<'b, 'a> {
+    class_name: &'b Option<Expression<'a>>,
+    style_vars: &'b Option<Expression<'a>>,
+    bindings: Vec<(String, Expression<'a>)>,
+}
+
 fn create_styled_component<'a>(
     ast_builder: &AstBuilder<'a>,
-    tag_name: &str,
-    class_name: &Option<Expression<'a>>,
-    style_vars: &Option<Expression<'a>>,
+    base: &Base<'a>,
+    render: StyledRender<'_, 'a>,
+    helper: &mut Option<StyledJsx>,
 ) -> Expression<'a> {
+    let StyledRender {
+        class_name,
+        style_vars,
+        bindings,
+    } = render;
     let params = FormalParameters::boxed(
         SPAN,
         FormalParameterKind::ArrowFormalParameters,
@@ -600,99 +668,100 @@ fn create_styled_component<'a>(
         None::<oxc_allocator::Box<oxc_ast::ast::FormalParameterRest<'a>>>,
         ast_builder,
     );
-    let body = Expression::new_jsx_element(
-        SPAN,
-        JSXOpeningElement::boxed(
-            SPAN,
-            JSXElementName::new_identifier(
-                SPAN,
-                Str::from_in(tag_name, ast_builder.allocator()),
+    let class_name = class_name.as_ref().map_or_else(
+        || Expression::new_identifier(SPAN, "className", ast_builder),
+        |name| {
+            wrap_array_filter(
                 ast_builder,
-            ),
-            None::<oxc_allocator::Box<oxc_ast::ast::TSTypeParameterInstantiation<'a>>>,
-            oxc_allocator::Vec::from_iter_in(
-                vec![
-                    JSXAttributeItem::new_spread_attribute(
-                        SPAN,
-                        Expression::new_identifier(SPAN, "rest", ast_builder),
-                        ast_builder,
-                    ),
-                    JSXAttributeItem::new_attribute(
-                        SPAN,
-                        JSXAttributeName::new_identifier(SPAN, "className", ast_builder),
-                        Some(JSXAttributeValue::new_expression_container(
-                            SPAN,
-                            class_name
-                                .as_ref()
-                                .map_or_else(
-                                    || Expression::new_identifier(SPAN, "className", ast_builder),
-                                    |name| {
-                                        wrap_array_filter(
-                                            ast_builder,
-                                            &[
-                                                name.clone_in(ast_builder.allocator()),
-                                                Expression::new_identifier(
-                                                    SPAN,
-                                                    "className",
-                                                    ast_builder,
-                                                ),
-                                            ],
-                                        )
-                                        .unwrap_or_else(|| name.clone_in(ast_builder.allocator()))
-                                    },
-                                )
-                                .into(),
-                            ast_builder,
-                        )),
-                        ast_builder,
-                    ),
-                    JSXAttributeItem::new_attribute(
-                        SPAN,
-                        JSXAttributeName::new_identifier(SPAN, "style", ast_builder),
-                        Some(JSXAttributeValue::new_expression_container(
-                            SPAN,
-                            style_vars
-                                .as_ref()
-                                .map_or_else(
-                                    || Expression::new_identifier(SPAN, "style", ast_builder),
-                                    |style_vars| {
-                                        merge_object_expressions(
-                                            ast_builder,
-                                            &[
-                                                style_vars.clone_in(ast_builder.allocator()),
-                                                Expression::new_identifier(
-                                                    SPAN,
-                                                    "style",
-                                                    ast_builder,
-                                                ),
-                                            ],
-                                        )
-                                        .unwrap_or_else(
-                                            || style_vars.clone_in(ast_builder.allocator()),
-                                        )
-                                    },
-                                )
-                                .into(),
-                            ast_builder,
-                        )),
-                        ast_builder,
-                    ),
+                &[
+                    name.clone_in(ast_builder.allocator()),
+                    Expression::new_identifier(SPAN, "className", ast_builder),
                 ],
+            )
+            .unwrap_or_else(|| name.clone_in(ast_builder.allocator()))
+        },
+    );
+    let style = style_vars.as_ref().map_or_else(
+        || Expression::new_identifier(SPAN, "style", ast_builder),
+        |style_vars| {
+            merge_object_expressions(
+                ast_builder,
+                &[
+                    style_vars.clone_in(ast_builder.allocator()),
+                    Expression::new_identifier(SPAN, "style", ast_builder),
+                ],
+            )
+            .unwrap_or_else(|| style_vars.clone_in(ast_builder.allocator()))
+        },
+    );
+    let body = if let Some(helper) = helper {
+        let target = base.target.as_ref().map_or_else(
+            || {
+                Expression::new_string_literal(
+                    SPAN,
+                    Str::from_in(&base.name, ast_builder.allocator()),
+                    None,
+                    ast_builder,
+                )
+            },
+            |target| target.clone_in(ast_builder.allocator()),
+        );
+        helper.render(ast_builder, target, (class_name, style))
+    } else {
+        Expression::new_jsx_element(
+            SPAN,
+            JSXOpeningElement::boxed(
+                SPAN,
+                JSXElementName::new_identifier(
+                    SPAN,
+                    Str::from_in(&base.name, ast_builder.allocator()),
+                    ast_builder,
+                ),
+                None::<oxc_allocator::Box<oxc_ast::ast::TSTypeParameterInstantiation<'a>>>,
+                oxc_allocator::Vec::from_iter_in(
+                    vec![
+                        JSXAttributeItem::new_spread_attribute(
+                            SPAN,
+                            Expression::new_identifier(SPAN, "rest", ast_builder),
+                            ast_builder,
+                        ),
+                        JSXAttributeItem::new_attribute(
+                            SPAN,
+                            JSXAttributeName::new_identifier(SPAN, "className", ast_builder),
+                            Some(JSXAttributeValue::new_expression_container(
+                                SPAN,
+                                class_name.into(),
+                                ast_builder,
+                            )),
+                            ast_builder,
+                        ),
+                        JSXAttributeItem::new_attribute(
+                            SPAN,
+                            JSXAttributeName::new_identifier(SPAN, "style", ast_builder),
+                            Some(JSXAttributeValue::new_expression_container(
+                                SPAN,
+                                style.into(),
+                                ast_builder,
+                            )),
+                            ast_builder,
+                        ),
+                    ],
+                    ast_builder,
+                ),
                 ast_builder,
             ),
+            oxc_allocator::Vec::new_in(ast_builder),
+            None::<oxc_allocator::Box<oxc_ast::ast::JSXClosingElement<'a>>>,
             ast_builder,
-        ),
-        oxc_allocator::Vec::new_in(ast_builder),
-        None::<oxc_allocator::Box<oxc_ast::ast::JSXClosingElement<'a>>>,
-        ast_builder,
-    );
+        )
+    };
     Expression::new_arrow_function_expression(
         SPAN,
         false,
         None::<oxc_allocator::Box<oxc_ast::ast::TSTypeParameterDeclaration<'a>>>,
         params,
         None::<oxc_allocator::Box<oxc_ast::ast::TSTypeAnnotation<'a>>>,
-        body.into(),
+        bind_render(ast_builder, bindings, body).into(),
         ast_builder,
     )
 }

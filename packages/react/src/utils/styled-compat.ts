@@ -35,6 +35,19 @@ export function StyleSheetManager({
   return children
 }
 
+/**
+ * Emotion's `CacheProvider`, kept as a no-op: the cache it configures holds
+ * styles Emotion would insert at runtime, and Devup UI writes them at build time
+ */
+export function CacheProvider({
+  children,
+}: {
+  value?: unknown
+  children?: ReactNode
+}): ReactNode {
+  return children
+}
+
 export function isStyledComponent(_target: unknown): boolean {
   return false
 }

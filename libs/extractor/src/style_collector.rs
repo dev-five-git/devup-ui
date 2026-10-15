@@ -20,7 +20,11 @@ pub struct StyleCollector {
 impl StyleCollector {
     pub fn insert(&mut self, mut style: ExtractStyleValue) {
         match &mut style {
-            ExtractStyleValue::Css(css) => css.order = self.next_order(),
+            ExtractStyleValue::Css(css) => {
+                if css.file != crate::tailwind::PROPERTY_RULES_FILE {
+                    css.order = self.next_order();
+                }
+            }
             ExtractStyleValue::Import(import) => import.order = self.next_order(),
             ExtractStyleValue::FontFace(font_face) => font_face.order = self.next_order(),
             ExtractStyleValue::Static(style) => {
@@ -194,5 +198,91 @@ mod tests {
         collector.insert(global("color", "red"));
         let styles = collector.into_styles("a.tsx");
         assert_eq!(styles.len(), 1);
+    }
+
+    #[test]
+    fn synthetic_registrations_deduplicate_without_consuming_authored_order() {
+        // Given identical compiler registrations between identical authored rules.
+        let mut collector = StyleCollector::default();
+        let authored = ExtractStyleValue::Css(ExtractCss {
+            file: "a.tsx".to_string(),
+            order: 0,
+            css: concat!("body{color:", "red}").to_string(),
+        });
+        let synthetic = ExtractStyleValue::Css(ExtractCss {
+            file: crate::tailwind::PROPERTY_RULES_FILE.to_string(),
+            order: 0,
+            css: "@property --tw-leading{syntax:\"*\";inherits:false}".to_string(),
+        });
+
+        // When the file writes both authored rules around repeated registrations.
+        collector.extend([authored.clone(), synthetic.clone(), synthetic, authored]);
+        let styles = collector.into_styles("a.tsx");
+
+        // Then only the authored rules have distinct written identities.
+        let mut raw: Vec<_> = styles
+            .iter()
+            .filter_map(|style| match style {
+                ExtractStyleValue::Css(css) => Some((css.order, css.css.as_str())),
+                _ => None,
+            })
+            .collect();
+        raw.sort_unstable();
+        assert_eq!(
+            raw,
+            vec![
+                (0, "@property --tw-leading{syntax:\"*\";inherits:false}"),
+                (1, concat!("body{color:", "red}")),
+                (2, concat!("body{color:", "red}")),
+            ]
+        );
+    }
+
+    #[test]
+    #[serial_test::serial]
+    fn synthetic_registrations_from_repeated_tailwind_utilities_match_main()
+    -> Result<(), Box<dyn std::error::Error>> {
+        // Given real utilities sharing two independent main registration literals.
+        css::class_map::reset_class_map();
+        css::file_map::reset_file_map();
+        let source = r#"import {Box, globalCss} from '@devup-ui/react';
+globalCss`body{color:red}`;
+const a = <Box className="text-sm leading-relaxed before:block" />;
+const b = <Box className="text-lg leading-tight after:block" />;
+globalCss`body{color:blue}`;"#;
+
+        // When extraction goes through the actual visitor and collector.
+        let output = crate::extract("synthetic.tsx", source, crate::ExtractOption::default())?;
+
+        // Then each synthetic property is unique/order0 and authored order is intact.
+        let mut raw: Vec<_> = output
+            .styles
+            .iter()
+            .filter_map(|style| match style {
+                ExtractStyleValue::Css(css) => {
+                    Some((css.order, css.file.as_str(), css.css.as_str()))
+                }
+                _ => None,
+            })
+            .collect();
+        raw.sort_unstable();
+        assert_eq!(
+            raw,
+            vec![
+                (
+                    0,
+                    "@devup-ui/tailwind",
+                    "@property --tw-content{syntax:\"*\";inherits:false;initial-value:\"\"}"
+                ),
+                (
+                    0,
+                    "@devup-ui/tailwind",
+                    "@property --tw-leading{syntax:\"*\";inherits:false}"
+                ),
+                (1, "synthetic.tsx", concat!("body{color:", "red}")),
+                (2, "synthetic.tsx", concat!("body{color:", "blue}")),
+            ]
+        );
+        Ok(())
     }
 }

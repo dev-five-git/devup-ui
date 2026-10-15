@@ -69,6 +69,8 @@ async function extractedCssDirIn(checkout: string) {
   await plugin.setup({
     transform,
     modifyRsbuildConfig: mock(),
+    modifyRspackConfig: mock(),
+    onBeforeBuild: mock(),
   } as unknown as RsbuildSetupContext)
 
   codeExtractSpy.mockClear()

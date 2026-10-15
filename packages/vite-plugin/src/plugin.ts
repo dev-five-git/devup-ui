@@ -3,31 +3,37 @@ import { mkdir, writeFile } from 'node:fs/promises'
 import { basename, dirname, join, relative, resolve } from 'node:path'
 
 import {
+  beginBuild,
   buildCanonicalMap,
+  collectNumberedFiles,
   computeFileReach,
   createCompatTypes,
   createModuleResolver,
   createNodeModulesExcludeRegex,
+  createStateWriter,
   createThemeInterfaceArgs,
   type CustomShorthands,
+  extractedNeedles,
   getFileNumByFilename,
   type ImportAliases,
-  listSourceFiles,
   loadDevupConfig,
   mergeImportAliases,
   planAtomHoist,
+  seedFileNumbers,
+  tailwindCssFiles,
+  withTailwindCss,
 } from '@devup-ui/plugin-utils'
 import {
   codeExtract,
-  exportFileMap,
   getCss,
   getDefaultTheme,
   getThemeInterface,
   importCanonicalMap,
-  importFileMap,
   importFileRoutes,
   registerShorthands,
   registerTheme,
+  resetBuildState,
+  seedFileMap,
   setAtomHoist,
   setDebug,
   setModuleResolver,
@@ -36,7 +42,9 @@ import {
 import type {
   EnvironmentModuleNode,
   ModuleNode,
+  Plugin,
   PluginOption,
+  ResolvedConfig,
   UserConfig,
 } from 'vite'
 
@@ -64,45 +72,6 @@ function resolveSourceDirs(root: string): string[] {
 }
 
 /**
- * Assigns each source file its devup file number up front, ordered by path.
- *
- * The engine otherwise hands numbers out on first sight, and the bundler
- * transforms in parallel, so two identical builds produce different per-file
- * class prefixes and therefore different CSS *and* JS asset hashes. Seeding
- * from a sorted scan makes the numbering a pure function of the file paths.
- * Every source file now holds a slot, where before only the ones that emitted
- * styles consumed a number. Prefix length is a step function of the highest
- * number handed out (1 char up to 26, 2 up to 1025, 3 beyond), so this is free
- * until a project passes 1026 files under the scanned roots, at which point
- * prefixes that used to be 2 chars become 3.
- *
- * Vite reports module ids as absolute POSIX-style paths even on Windows, so the
- * scanned paths are normalized to match the keys `codeExtract` will look up.
- *
- * `importFileMap` REPLACES the engine's map, and a framework plugin resolves the
- * config once per environment, so seeding unconditionally would wipe the numbers
- * already handed to files outside `sourceDirs`: a monorepo sibling, or anything
- * reached through `include`. The style sheet does not reset with the map, so the
- * next such file reuses a live number and its atoms overwrite the previous
- * owner's. Seeding only into an empty map keeps numbering deterministic on the
- * first pass and stable for every later one.
- */
-function seedFileMap(sourceDirs: string[]): void {
-  if (Object.keys(JSON.parse(exportFileMap())).length > 0) return
-  const sorted = [
-    ...new Set(
-      sourceDirs
-        .flatMap((dir) => listSourceFiles(dir))
-        .map((file) => file.replaceAll('\\', '/')),
-    ),
-  ].sort()
-  if (sorted.length === 0) return
-  const fileMap: Record<string, number> = {}
-  for (const [index, file] of sorted.entries()) fileMap[file] = index
-  importFileMap(fileMap)
-}
-
-/**
  * Names each devup CSS module after its own file, so every module is emitted
  * once and shared by all of its importers.
  */
@@ -122,9 +91,75 @@ interface ConfigHookMeta {
 }
 
 interface ViteOutputWithMetadata {
+  type?: string
+  fileName?: string
   viteMetadata?: {
     importedCss?: Set<string>
   }
+}
+
+type ForwardableBundle = Record<string, ViteOutputWithMetadata>
+
+/**
+ * Name a CSS file is parked under while @vitejs/plugin-rsc forwards it, chosen
+ * so that nothing treats it as a stylesheet and it cannot meet a real output.
+ */
+function getForwardStandInName(file: string): string {
+  return `${file}.devup-forwarded`
+}
+
+/**
+ * @vitejs/plugin-rsc copies every CSS file its server bundle references into
+ * the client output with `emitFile`. For a file the client already emitted that
+ * is a FILE_NAME_CONFLICT, and the copy replaces the client's own, dropping the
+ * names its build manifest is keyed by. The same plugin reads the server
+ * bundle's `importedCss` to learn which CSS each server page depends on, so
+ * that metadata has to stay whole.
+ *
+ * It takes what it forwards from `bundle[file]`. For each file the client
+ * already owns, the server bundle gets a stand-in copy under another name: the
+ * forward lands on a throwaway file and the real one is emitted once.
+ *
+ * Returns the undo that puts the originals back and drops the stand-ins.
+ */
+function parkForwardedCss(
+  clientBundle: ForwardableBundle,
+  serverBundle: ForwardableBundle,
+): (outputBundle: ForwardableBundle) => void {
+  const files = new Set<string>()
+  for (const output of Object.values(serverBundle)) {
+    for (const file of output.viteMetadata?.importedCss ?? []) {
+      if (file in clientBundle && serverBundle[file]?.type === 'asset') {
+        files.add(file)
+      }
+    }
+  }
+  for (const file of files) {
+    serverBundle[file].fileName = getForwardStandInName(file)
+  }
+  return (outputBundle) => {
+    for (const file of files) {
+      serverBundle[file].fileName = file
+      delete outputBundle[getForwardStandInName(file)]
+    }
+  }
+}
+
+interface RscPluginApi {
+  manager?: { bundles?: Record<string, ForwardableBundle> }
+}
+
+/**
+ * The server bundles @vitejs/plugin-rsc itself tracks (and later reads to
+ * forward CSS). Bundle objects handed to a plugin are per-plugin views, and
+ * only the ones plugin-rsc holds reflect an edit it will see.
+ */
+function getRscServerBundles(config: ResolvedConfig | undefined) {
+  const rsc = config?.plugins.find((plugin) => plugin.name === 'rsc:minimal')
+  const bundles = (rsc?.api as RscPluginApi | undefined)?.manager?.bundles
+  return Object.entries(bundles ?? {})
+    .filter(([name]) => name !== 'client')
+    .map(([, bundle]) => bundle)
 }
 
 /**
@@ -224,12 +259,14 @@ export interface DevupUIPluginOptions {
 
 async function writeDataFiles(
   options: Omit<DevupUIPluginOptions, 'extractCss' | 'debug' | 'include'>,
-) {
+): Promise<string[]> {
+  let tailwindFiles: string[] = []
   try {
     const config = await loadDevupConfig(options.devupFile)
     const theme = config.theme ?? {}
 
-    registerTheme(theme)
+    registerTheme(withTailwindCss(theme, config))
+    tailwindFiles = tailwindCssFiles(config)
     const interfaceCode = getThemeInterface(
       ...createThemeInterfaceArgs(options.package),
     )
@@ -253,6 +290,7 @@ async function writeDataFiles(
   if (!options.singleCss) {
     await writeFile(join(options.cssDir, 'devup-ui.css'), getCss(null, false))
   }
+  return tailwindFiles
 }
 
 export function DevupUI({
@@ -269,31 +307,48 @@ export function DevupUI({
   atomHoist,
   importAliases: userImportAliases,
 }: Partial<DevupUIPluginOptions> = {}): PluginOption {
+  // A build starts from its own options: whatever an earlier build in this
+  // process left in the engine (prefix, hoisting, routes, buckets, numbers,
+  // styles) is gone unless another build is still running.
+  const endBuild = beginBuild({ resetBuildState })
   registerShorthands(shorthands ?? {})
   setDebug(debug)
-  if (prefix) {
-    setPrefix(prefix)
-  }
+  setPrefix(prefix ?? null)
   const importAliases = mergeImportAliases(userImportAliases)
   const cssMap = new Map()
-  let serverBundleToForward: Record<string, ViteOutputWithMetadata> | undefined
+  let resolvedConfig: ResolvedConfig | undefined
+  // Set by the client `generateBundle`, run by the late hook of the sibling
+  // plugin once @vitejs/plugin-rsc has forwarded.
+  let restoreForwardedCss:
+    ((outputBundle: ForwardableBundle) => void) | undefined
   let isServe = false
   // The dev server watches cssDir, so every write is an update signal. A
   // module transformed again writes its sheet again, and the reload that
   // signal causes transforms it once more: signal only a changed sheet.
   const writtenCss = new Map<string, string>()
+  const stateWriter = createStateWriter((path, content, encoding) =>
+    encoding ? writeFile(path, content, encoding) : writeFile(path, content),
+  )
+  // The files the project's Tailwind CSS is read from, which change what a
+  // Tailwind class compiles to
+  let tailwindFiles: string[] = []
+  const isTailwindFile = (file: string) =>
+    tailwindFiles.some(
+      (tailwindFile) => resolve(tailwindFile) === resolve(file),
+    )
   function writeCssFile(fileName: string, css: string): Promise<void> {
     if (writtenCss.get(fileName) === css) return Promise.resolve()
     writtenCss.set(fileName, css)
-    return writeFile(join(cssDir, fileName), css, 'utf-8')
+    return stateWriter.write(join(cssDir, fileName), css, 'utf-8')
   }
-  return {
+  const plugin: Plugin = {
     name: 'devup-ui',
     // The WASM sheet and transform state are intentionally shared. Vite
     // otherwise recreates this plugin for every environment build, which makes
     // each environment independently emit the same CSS asset.
     sharedDuringBuild: true,
     async configResolved(config) {
+      resolvedConfig = config
       isServe = config?.command === 'serve'
       const projectRoot = config?.root ?? process.cwd()
       // Vite ids are POSIX absolute paths
@@ -304,11 +359,6 @@ export function DevupUI({
         }),
       )
       const sourceDirs = resolveSourceDirs(projectRoot)
-      try {
-        seedFileMap(sourceDirs)
-      } catch {
-        // Best-effort; on failure numbering falls back to arrival order.
-      }
       if (!existsSync(distDir)) await mkdir(distDir, { recursive: true })
       await writeFile(join(distDir, '.gitignore'), '*', 'utf-8')
       await writeFile(
@@ -316,7 +366,7 @@ export function DevupUI({
         createCompatTypes(importAliases),
         'utf-8',
       )
-      await writeDataFiles({
+      tailwindFiles = await writeDataFiles({
         package: libPackage,
         cssDir,
         devupFile,
@@ -382,6 +432,23 @@ export function DevupUI({
           // Best-effort; on failure atom hoisting stays off (identity).
         }
       }
+      try {
+        // Numbers come from the sorted paths of every file the build can
+        // extract (source and included packages), not from arrival order.
+        // Files numbered before keep their numbers, so a later pass in the
+        // dev server only numbers new files after the existing ones.
+        seedFileNumbers(
+          { seedFileMap },
+          collectNumberedFiles({
+            roots: sourceDirs,
+            include,
+            cwd: projectRoot,
+            needles: extractedNeedles(libPackage, importAliases),
+          }),
+        )
+      } catch {
+        // Best-effort; on failure numbering falls back to arrival order.
+      }
     },
     config(this: { meta?: ConfigHookMeta } | void, userConfig: UserConfig) {
       const theme = getDefaultTheme()
@@ -411,10 +478,16 @@ export function DevupUI({
     apply() {
       return true
     },
+    closeBundle() {
+      endBuild()
+    },
     async watchChange(id) {
-      if (resolve(id) === resolve(devupFile) && existsSync(devupFile)) {
+      if (
+        (resolve(id) === resolve(devupFile) && existsSync(devupFile)) ||
+        (isTailwindFile(id) && existsSync(id))
+      ) {
         try {
-          await writeDataFiles({
+          tailwindFiles = await writeDataFiles({
             package: libPackage,
             cssDir,
             devupFile,
@@ -441,11 +514,14 @@ export function DevupUI({
           ? []
           : undefined
       }
-      if (resolve(file) !== resolve(devupFile) || !existsSync(devupFile)) {
+      const isDevupFile =
+        resolve(file) === resolve(devupFile) && existsSync(devupFile)
+      const isTailwind = isTailwindFile(file) && existsSync(file)
+      if (!isDevupFile && !isTailwind) {
         return
       }
 
-      await writeDataFiles({
+      tailwindFiles = await writeDataFiles({
         package: libPackage,
         cssDir,
         devupFile,
@@ -454,7 +530,11 @@ export function DevupUI({
       })
 
       const invalidatedModules = new Set<EnvironmentModuleNode>()
-      for (const mod of modules) {
+      // A Tailwind class compiles from the definitions of the Tailwind CSS, so
+      // every module is compiled again
+      for (const mod of isTailwind
+        ? environment.moduleGraph.idToModuleMap.values()
+        : modules) {
         environment.moduleGraph.invalidateModule(
           mod,
           invalidatedModules,
@@ -467,11 +547,14 @@ export function DevupUI({
     },
     // Vite 5 fallback: Vite 6+ does not call this hook when `hotUpdate` exists.
     async handleHotUpdate({ file, server, modules, timestamp }) {
-      if (resolve(file) !== resolve(devupFile) || !existsSync(devupFile)) {
+      const isDevupFile =
+        resolve(file) === resolve(devupFile) && existsSync(devupFile)
+      const isTailwind = isTailwindFile(file) && existsSync(file)
+      if (!isDevupFile && !isTailwind) {
         return
       }
 
-      await writeDataFiles({
+      tailwindFiles = await writeDataFiles({
         package: libPackage,
         cssDir,
         devupFile,
@@ -480,7 +563,9 @@ export function DevupUI({
       })
 
       const invalidatedModules = new Set<ModuleNode>()
-      for (const mod of modules) {
+      for (const mod of isTailwind
+        ? server.moduleGraph.idToModuleMap.values()
+        : modules) {
         server.moduleGraph.invalidateModule(
           mod,
           invalidatedModules,
@@ -596,23 +681,30 @@ export function DevupUI({
 
       const environment = this.environment
       if (!environment || !writesOutput) return
-      if (environment.config.consumer === 'client' && serverBundleToForward) {
-        // @vitejs/plugin-rsc forwards every CSS file referenced by the RSC
-        // bundle into the client bundle. Files the client already emitted are
-        // registered twice and trigger FILE_NAME_CONFLICT. Keep both bundles'
-        // imports and client metadata intact, but remove overlaps from the RSC
-        // forwarding set before its later generateBundle hook reads it.
-        for (const output of Object.values(serverBundleToForward)) {
-          for (const file of cssFiles) {
-            output.viteMetadata?.importedCss?.delete(file)
-          }
+      if (environment.config.consumer === 'client') {
+        const undo = getRscServerBundles(resolvedConfig).map((serverBundle) =>
+          parkForwardedCss(
+            bundle as unknown as ForwardableBundle,
+            serverBundle,
+          ),
+        )
+        restoreForwardedCss = (outputBundle) => {
+          for (const restore of undo) restore(outputBundle)
         }
-      } else if (environment.config.consumer === 'server') {
-        serverBundleToForward = bundle as unknown as Record<
-          string,
-          ViteOutputWithMetadata
-        >
       }
     },
   }
+  const restorePlugin: Plugin = {
+    name: 'devup-ui:restore-forwarded-css',
+    sharedDuringBuild: true,
+    apply: 'build',
+    generateBundle: {
+      order: 'post',
+      handler(_options, bundle) {
+        restoreForwardedCss?.(bundle as unknown as ForwardableBundle)
+        restoreForwardedCss = undefined
+      },
+    },
+  }
+  return [plugin, restorePlugin]
 }

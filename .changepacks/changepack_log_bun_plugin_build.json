@@ -1,0 +1,7 @@
+{
+  "changes": {
+    "packages/bun-plugin/package.json": "Patch"
+  },
+  "note": "Bun plugin works with Bun.build: `DevupUI()` (from `@devup-ui/bun-plugin/register`) serves the generated stylesheet to the bundler's CSS loader once every other module is loaded, so the build emits a CSS output with the styles of the whole bundle instead of an empty module; class names are short there and readable under the runtime (`debug` option). Files importing the packages Devup UI takes the place of (`@emotion/react`, `@emotion/styled`, `styled-components`, `@vanilla-extract/css`), `@stylexjs/stylex`, or a subpath or re-export of these or `@devup-ui/react`, are compiled instead of skipped",
+  "date": "2026-09-30T00:00:00.000Z"
+}

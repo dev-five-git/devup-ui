@@ -4,19 +4,26 @@ import { createRequire } from 'node:module'
 import { dirname, join, relative, resolve } from 'node:path'
 
 import {
+  beginBuild,
   buildCanonicalMap,
+  collectNumberedFiles,
   computeFileReach,
+  computeReachableFiles,
   createCompatTypes,
   createModuleResolver,
   createNodeModulesExcludeRegex,
   createThemeInterfaceArgs,
   type CustomShorthands,
+  extractedNeedles,
+  getFileNumByFilename,
   type ImportAliases,
-  listSourceFiles,
   loadDevupConfigSync,
   mergeImportAliases,
   planAtomHoist,
+  seedFileNumbers,
+  tailwindCssFiles,
   type WasmImportAliases,
+  withTailwindCss,
 } from '@devup-ui/plugin-utils'
 import {
   codeExtract,
@@ -30,12 +37,16 @@ import {
   importSheet,
   registerShorthands,
   registerTheme,
+  resetBuildState,
+  seedFileMap,
   setAtomHoist,
   setDebug,
   setModuleResolver,
   setPrefix,
 } from '@devup-ui/wasm'
 import { type Compiler } from 'webpack'
+
+import { servedCss } from './served-css'
 
 export interface DevupUIWebpackPluginOptions {
   package: string
@@ -115,12 +126,16 @@ export class DevupUIWebpackPlugin {
     this.fileMapFile = join(this.options.distDir, 'fileMap.json')
   }
 
+  /** The files the project's Tailwind CSS is read from */
+  tailwindFiles: string[] = []
+
   writeDataFiles() {
     try {
       const config = loadDevupConfigSync(this.options.devupFile)
       const theme = config.theme ?? {}
 
-      registerTheme(theme)
+      registerTheme(withTailwindCss(theme, config))
+      this.tailwindFiles = tailwindCssFiles(config)
       const interfaceCode = getThemeInterface(
         ...createThemeInterfaceArgs(this.options.package),
       )
@@ -144,14 +159,16 @@ export class DevupUIWebpackPlugin {
   }
 
   /**
-   * Extract every source file under `src` into the shared WASM sheet so that a
-   * later `getCss(fileNum)` call returns the COMPLETE bucket (all collapsed
-   * members), not just the first member webpack happened to build. Mirrors the
-   * loader's `codeExtract` call (same filename keying + options) so re-extraction
-   * during compilation is idempotent. Best-effort: extraction errors are
-   * swallowed so a single bad file never breaks the build.
+   * Extract the source files under `src` that `entries` reach into the shared
+   * WASM sheet, in path order, so that a stylesheet built on its first import
+   * holds the styles of every one (all collapsed members of a bucket, and the
+   * shared base), not just those of the modules webpack happened to build
+   * first. Mirrors the loader's `codeExtract` call (same filename keying +
+   * options) so re-extraction during compilation is idempotent. Best-effort:
+   * extraction errors are swallowed so a single bad file never breaks the
+   * build, and a stylesheet still missing styles is rebuilt by another pass.
    */
-  private prewarmExtractor() {
+  private prewarmExtractor(entries: string[]) {
     try {
       const cwd = process.cwd()
       // The same resolver as the loader's, so imported constants and
@@ -161,8 +178,11 @@ export class DevupUIWebpackPlugin {
           toId: (path) => relative(cwd, path).replaceAll('\\', '/'),
         }),
       )
-      const srcDir = resolve(cwd, 'src')
-      for (const file of listSourceFiles(srcDir)) {
+      for (const file of computeReachableFiles({
+        srcDir: resolve(cwd, 'src'),
+        tsconfigPath: resolve(cwd, 'tsconfig.json'),
+        entries,
+      })) {
         const relativePath = relative(cwd, file).replaceAll('\\', '/')
         let relCssDir = relative(dirname(file), this.options.cssDir).replaceAll(
           '\\',
@@ -187,10 +207,12 @@ export class DevupUIWebpackPlugin {
   }
 
   apply(compiler: Compiler) {
+    // A build starts from its own options, not from what an earlier build in
+    // this process left in the engine
+    const endBuild = beginBuild({ resetBuildState })
+    compiler.hooks.shutdown?.tap('DevupUIWebpackPlugin', endBuild)
     setDebug(this.options.debug)
-    if (this.options.prefix) {
-      setPrefix(this.options.prefix)
-    }
+    setPrefix(this.options.prefix ?? null)
     const existsDevup = existsSync(this.options.devupFile)
     // read devup.json
     if (!existsSync(this.options.distDir))
@@ -234,12 +256,11 @@ export class DevupUIWebpackPlugin {
     // merge into that importer's bucket, deduplicating their identical atoms.
     // The canonical map is built + imported unconditionally; only atom HOISTING
     // composes on top when `atomHoist` is set. Mirrors next-plugin's pre-pass.
-    let canonicalMap: Record<string, string> = {}
     try {
       const srcDir = resolve(process.cwd(), 'src')
       const tsconfigPath = resolve(process.cwd(), 'tsconfig.json')
       const cwd = process.cwd()
-      canonicalMap = buildCanonicalMap({
+      const canonicalMap = buildCanonicalMap({
         srcDir,
         tsconfigPath,
         cwd,
@@ -269,28 +290,60 @@ export class DevupUIWebpackPlugin {
       // hoisting stays off.
     }
 
-    // Pre-warm the extractor so the css-loader serves COMPLETE bucket CSS.
+    // Number every file the build can extract in path order, so class
+    // prefixes do not depend on which file a worker reaches first. Numbers
+    // already handed out (a restored map in watch mode) stay.
+    try {
+      const cwd = process.cwd()
+      seedFileNumbers(
+        { seedFileMap },
+        collectNumberedFiles({
+          roots: [resolve(cwd, 'src')],
+          include: this.options.include,
+          cwd,
+          needles: extractedNeedles(this.options.package, this.importAliases),
+          toId: (path) => relative(cwd, path).replaceAll('\\', '/'),
+        }),
+      )
+    } catch {
+      // Best-effort; numbering falls back to arrival order.
+    }
+    // Pre-warm the extractor so the css-loader serves COMPLETE CSS.
     //
-    // Under collapse, several source files share ONE devup-ui-N.css (the
-    // importer's bucket). The css-loader serves `getCss(N, true)`, but webpack
-    // builds that shared .css module ONCE — at the FIRST import resolution,
-    // before the bucket's other members have been extracted — so their atoms
-    // would be dropped. Turbopack avoids this via its idle coordinator; webpack
-    // has no such re-serve, so we extract every source file up front (single
-    // shared WASM instance) to populate the bucket fully BEFORE any css-loader
-    // runs. Re-extraction by the per-file loader is then idempotent (set-based
-    // atom dedup). Only needed for one-shot builds when collapse is active.
-    if (!this.options.watch && Object.keys(canonicalMap).length > 0) {
-      this.prewarmExtractor()
+    // Webpack builds a stylesheet module ONCE, at its FIRST import: the shared
+    // base (global styles of every file) and, under collapse, a bucket's
+    // devup-ui-N.css shared by several source files. Files extracted after that
+    // would be missing, so the files the entries reach are extracted up front
+    // (single shared WASM instance). Re-extraction by the per-file loader is
+    // then idempotent (set-based atom dedup). Watch mode rebuilds stylesheets
+    // through the files the loaders write instead.
+    if (!this.options.watch) {
+      const { entry, context = process.cwd() } = compiler.options
+      this.prewarmExtractor(
+        typeof entry === 'function'
+          ? []
+          : Object.values(entry ?? {}).flatMap(({ import: requests = [] }) =>
+              requests.map((request) => resolve(context, request)),
+            ),
+      )
     }
 
     if (this.options.watch) {
-      let lastModifiedTime: number | null = null
+      let lastModifiedTime: string | null = null
       compiler.hooks.watchRun.tapPromise('DevupUIWebpackPlugin', async () => {
-        if (existsDevup) {
-          const stats = await stat(this.options.devupFile)
-
-          const modifiedTime = stats.mtimeMs
+        const stamps: number[] = []
+        if (existsDevup)
+          stamps.push((await stat(this.options.devupFile)).mtimeMs)
+        for (const file of this.tailwindFiles) {
+          stamps.push(
+            await stat(file).then(
+              (stats) => stats.mtimeMs,
+              () => 0,
+            ),
+          )
+        }
+        if (stamps.length > 0) {
+          const modifiedTime = stamps.join()
           if (lastModifiedTime && lastModifiedTime !== modifiedTime)
             this.writeDataFiles()
 
@@ -298,17 +351,79 @@ export class DevupUIWebpackPlugin {
         }
       })
     }
-    if (existsDevup)
+    if (existsDevup || this.tailwindFiles.length > 0)
       compiler.hooks.afterCompile.tap('DevupUIWebpackPlugin', (compilation) => {
-        compilation.fileDependencies.add(resolve(this.options.devupFile))
+        if (existsDevup)
+          compilation.fileDependencies.add(resolve(this.options.devupFile))
+        for (const file of this.tailwindFiles)
+          compilation.fileDependencies.add(resolve(file))
       })
-
     compiler.options.plugins.push(
       new compiler.webpack.DefinePlugin({
         'process.env.DEVUP_UI_DEFAULT_THEME': JSON.stringify(getDefaultTheme()),
       }),
     )
     if (!this.options.watch) {
+      // A stylesheet module is built on its first import, which can come before
+      // the modules whose styles it holds are extracted. When one was, compile
+      // once more: every module is extracted by then. Watch mode rebuilds it
+      // through the stylesheet files the loaders write instead.
+      let passes = 0
+      compiler.hooks.run.tap('DevupUIWebpackPlugin', () => {
+        passes = 0
+      })
+      compiler.hooks.thisCompilation.tap(
+        'DevupUIWebpackPlugin',
+        (compilation) => {
+          const basePath = join(this.options.cssDir, 'devup-ui.css')
+          const base = getCss(null, true)
+          // A file's stylesheet `@import`s the shared base, which the CSS
+          // loaders read from disk without passing through this plugin, so it
+          // must hold every style extracted so far
+          if (!existsSync(basePath) || readFileSync(basePath, 'utf-8') !== base)
+            writeFileSync(basePath, base, 'utf-8')
+          let stale: string[] = []
+          compilation.hooks.finishModules.tap('DevupUIWebpackPlugin', () => {
+            if (compiler.watchMode) return
+            const changed = new Set(
+              [...servedCss(compilation)]
+                .filter(
+                  ([path, css]) =>
+                    getCss(getFileNumByFilename(path), true) !== css,
+                )
+                .map(([path]) => path),
+            )
+            if (getCss(null, true) !== base) changed.add(basePath)
+            stale = [...changed]
+          })
+          // The next pass writes the build; this one writes none of its files
+          compilation.hooks.processAssets.tap(
+            {
+              name: 'DevupUIWebpackPlugin',
+              stage: compiler.webpack.Compilation.PROCESS_ASSETS_STAGE_REPORT,
+            },
+            () => {
+              if (stale.length === 0 || passes > 0) return
+              for (const name of Object.keys(compilation.assets))
+                compilation.deleteAsset(name)
+            },
+          )
+          compilation.hooks.needAdditionalPass.tap(
+            'DevupUIWebpackPlugin',
+            () => {
+              if (stale.length === 0 || passes > 0) return undefined
+              passes += 1
+              for (const path of stale)
+                writeFileSync(
+                  path,
+                  getCss(getFileNumByFilename(path), true),
+                  'utf-8',
+                )
+              return true
+            },
+          )
+        },
+      )
       compiler.hooks.done.tapPromise('DevupUIWebpackPlugin', async (stats) => {
         if (!stats.hasErrors()) {
           // write css file
