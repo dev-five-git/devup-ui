@@ -11,13 +11,13 @@
     "lint": "bun ../../node_modules/@typescript/native/bin/tsc && eslint"
   },
   "dependencies": {
-    "react": "^19.3",
-    "react-dom": "^19.3",
+    "react": "^19.3.0",
+    "react-dom": "^19.3.0",
     "@devup-ui/react": "workspace:^"
   },
   "devDependencies": {
-    "@rsbuild/core": "^2.2",
-    "@rsbuild/plugin-react": "^2.1",
+    "@rsbuild/core": "^2.2.12",
+    "@rsbuild/plugin-react": "^2.1.1",
     "@devup-ui/rsbuild-plugin": "workspace:^"
   }
 }
