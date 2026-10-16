@@ -74,11 +74,10 @@ export async function collectProductionFileManifest({
     const { includeMdx } = resolverOptions
     const cwd = resolve(resolverOptions.cwd ?? process.cwd())
     const resolver = createModulePathResolver(resolverOptions, excluded)
-    const inputs = createResolutionInputs()
     const inventories = new Map<string, readonly ProductionSourceFile[]>()
     const adjacency = new Map<string, readonly ProductionSourceFile[]>()
     const packageRoots = createProductionPackageRoots(include, excluded, {
-      inputs,
+      inputs: createResolutionInputs(),
       observer: resolverOptions.onResolutionInputs,
     })
     const markdown = new Set([
@@ -94,6 +93,7 @@ export async function collectProductionFileManifest({
     ): Promise<readonly ProductionSourceFile[]> {
       const cached = adjacency.get(path)
       if (cached) return cached
+      const inputs = createResolutionInputs()
       let prepared
       let source: string
       try {

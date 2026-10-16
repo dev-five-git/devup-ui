@@ -229,8 +229,16 @@ impl<'r> ModuleLoader<'r> {
         } else {
             module.code
         };
-        let script = crate::vanilla_extract::strip_typescript_with_type(
+        let source_type = crate::source_type::parser_type(&module.path, module.source_type)?;
+        let instrumented = crate::dead_properties::instrument(
             &code,
+            &module.path,
+            &self.option.package,
+            source_type,
+        )
+        .map_err(|error| format!("{}{error}", crate::dead_properties::ERROR_CHANNEL))?;
+        let script = crate::vanilla_extract::strip_typescript_with_type(
+            &instrumented.code,
             &module.path,
             module.source_type,
         )?;
@@ -337,7 +345,7 @@ pub(crate) fn module_script(
             }
             continue;
         }
-        let module = if source == package {
+        let module = if source == package || source == "@vanilla-extract/css" {
             PACKAGE_BINDING.to_string()
         } else {
             loader.load(source, filename, entry)?

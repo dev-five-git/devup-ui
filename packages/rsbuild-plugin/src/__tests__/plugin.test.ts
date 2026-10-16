@@ -91,7 +91,11 @@ function createSetupContext(
       callback(config, { environment: { name: 'web' } })
       config.plugins?.[0]?.apply({
         options: {},
-        hooks: { run: { tap: mock() }, thisCompilation: { tap: mock() } },
+        hooks: {
+          run: { tap: mock() },
+          watchRun: { tapPromise: mock() },
+          thisCompilation: { tap: mock() },
+        },
       })
     }),
     onBeforeBuild: mock(),
@@ -538,6 +542,74 @@ const App = () => <Box></Box>`,
       map: undefined,
     })
   })
+  it('reloads root-relative Tailwind CSS and watches every transformed module', async () => {
+    const root = resolve('tailwind-watch-project')
+    const configFile = resolve(root, 'config/devup.json')
+    const readFileSyncSpy = spyOn(fs, 'readFileSync').mockReturnValue(
+      '@theme { --color-brand: #0af; }',
+    )
+    const statSpy = spyOn(fsPromises, 'stat')
+    readFileSpy.mockResolvedValue(
+      JSON.stringify({ tailwind: { css: 'tailwind.css' } }),
+    )
+    existsSyncSpy.mockImplementation((path: string) => path === configFile)
+    const modifyRspackConfig = mock()
+    const transform = mock()
+    await DevupUI({
+      devupFile: 'config/devup.json',
+      distDir: 'generated',
+    }).setup(
+      createSetupContext({
+        modifyRspackConfig,
+        transform,
+        context: { ...createSetupContext().context, rootPath: root },
+      }),
+    )
+
+    const config: { plugins?: { apply: (compiler: unknown) => void }[] } = {}
+    modifyRspackConfig.mock.calls[0][0](config)
+    const tapPromise = mock()
+    config.plugins?.[0].apply({ hooks: { watchRun: { tapPromise } } })
+    const watchRun = tapPromise.mock.calls[0][1] as () => Promise<void>
+    registerThemeSpy.mockClear()
+
+    statSpy.mockResolvedValueOnce({ mtimeMs: 1 } as fs.Stats)
+    await watchRun()
+    expect(registerThemeSpy).not.toHaveBeenCalled()
+    statSpy.mockResolvedValueOnce({ mtimeMs: 1 } as fs.Stats)
+    await watchRun()
+    expect(registerThemeSpy).not.toHaveBeenCalled()
+    statSpy.mockResolvedValueOnce({ mtimeMs: 2 } as fs.Stats)
+    await watchRun()
+    expect(registerThemeSpy).toHaveBeenCalledWith({
+      tailwindCss: '@theme { --color-brand: #0af; }',
+    })
+    expect(readFileSpy).toHaveBeenLastCalledWith(configFile, 'utf-8')
+    expect(writeFileSpy).toHaveBeenCalledWith(
+      resolve(root, 'generated/theme.d.ts'),
+      '',
+      'utf-8',
+    )
+    statSpy.mockRejectedValueOnce(new Error('gone'))
+    registerThemeSpy.mockClear()
+    await watchRun()
+    expect(registerThemeSpy).toHaveBeenCalled()
+
+    codeExtractSpy.mockReturnValue(createCodeExtractResult())
+    const addDependency = mock()
+    await transform.mock.calls[1][1]({
+      code: "import { Box } from '@devup-ui/react'",
+      resourcePath: 'src/App.tsx',
+      addDependency,
+    })
+    expect(addDependency).toHaveBeenCalledWith(resolve(root, 'tailwind.css'))
+    readFileSpy.mockResolvedValue('{')
+    statSpy.mockResolvedValueOnce(fs.statSync(import.meta.filename))
+    await expect(watchRun()).rejects.toThrow(configFile)
+    statSpy.mockRestore()
+    readFileSyncSpy.mockRestore()
+    readFileSpy.mockResolvedValue('{}')
+  })
   it('registers the text of the Tailwind CSS with the theme', async () => {
     const root = resolve('tailwind-project')
     const configFile = resolve(root, 'config', 'devup.json')
@@ -977,7 +1049,7 @@ const App = () => <Box></Box>`,
         createSetupContext({ transform, onBeforeBuild, modifyRspackConfig }),
       )
       const config: { plugins?: { apply(compiler: unknown): void }[] } = {}
-      modifyRspackConfig.mock.calls[0][0](config, {
+      modifyRspackConfig.mock.calls[1][0](config, {
         environment: { name: 'web' },
       })
       const taps: Record<string, (...args: unknown[]) => unknown> = {}

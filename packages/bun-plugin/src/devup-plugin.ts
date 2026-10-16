@@ -19,6 +19,7 @@ import {
   resolveSourceDirs,
   seedFileNumbers,
   selectedSourceFilter,
+  tailwindCssFiles,
   withTailwindCss,
 } from '@devup-ui/plugin-utils'
 import {
@@ -44,6 +45,7 @@ import {
   runtimeSourceFilter,
 } from './source'
 import { loadSourceFile, type SourceProject } from './source-load'
+import { createTailwindWatcher } from './tailwind-watch'
 
 type PluginHooks = {
   readonly config?: PluginBuilder['config']
@@ -68,7 +70,8 @@ export interface DevupUIBunPluginOptions {
 
 type Project = ReturnType<typeof resolveProjectPaths> & SourceProject
 
-async function writeDataFiles({ root, devupFile, distDir, cssDir }: Project) {
+async function writeDataFiles(project: Project): Promise<string[]> {
+  const { root, devupFile, distDir, cssDir } = project
   const config = await loadDevupConfig(devupFile)
   registerTheme(withTailwindCss(config.theme ?? {}, config, root))
 
@@ -83,9 +86,14 @@ async function writeDataFiles({ root, devupFile, distDir, cssDir }: Project) {
     await mkdir(cssDir, { recursive: true })
   }
   await writeFile(join(cssDir, 'devup-ui.css'), getCss(null, false), 'utf-8')
+  return tailwindCssFiles(config, root)
 }
 
-async function initialize(project: Project, options: DevupUIBunPluginOptions) {
+async function initialize(
+  project: Project,
+  options: DevupUIBunPluginOptions,
+  watchTailwindCss: ReturnType<typeof createTailwindWatcher>,
+) {
   const { root, distDir } = project
   registerShorthands(options.shorthands ?? {})
   setPrefix(null)
@@ -120,7 +128,7 @@ async function initialize(project: Project, options: DevupUIBunPluginOptions) {
     createCompatTypes(importAliases),
     'utf-8',
   )
-  await writeDataFiles(project)
+  watchTailwindCss(await writeDataFiles(project))
 }
 
 /**
@@ -185,14 +193,18 @@ export function DevupUI(options: DevupUIBunPluginOptions = {}) {
           root,
         },
       )
-      build.onEnd?.((result) => {
+      const watchTailwindCss = createTailwindWatcher(() =>
+        writeDataFiles(project),
+      )
+      build.onEnd?.(async (result) => {
         try {
+          await watchTailwindCss.close()
           if (result.success) ownership.validate()
         } finally {
           endBuild()
         }
       })
-      await initialize(project, options)
+      await initialize(project, options, watchTailwindCss)
       setDebug(project.debug)
       let writtenCss = getCss(null, false)
       // Native token modules must keep Bun's filesystem watch/CJS loading path.

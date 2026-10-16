@@ -28,7 +28,7 @@ fn ignored_loader_when_imported_or_reexported_has_empty_namespace() -> Result<()
     )?;
     let value = boa_engine::Context::default()
         .eval(boa_engine::Source::from_bytes(&format!(
-            "{}{}",
+            "const __vanilla_extract__ = {{ __at: (_location, _api, thunk) => thunk() }};\n{}{}",
             loader.prelude(),
             script.body
         )))
