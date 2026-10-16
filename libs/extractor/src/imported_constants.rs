@@ -511,6 +511,7 @@ pub(crate) fn inline_constants<'a>(
             objects: false,
             styles: false,
             px: false,
+            position: InlinePosition::Rules,
             marks: px,
             class_names: Vec::new(),
         }
@@ -1797,6 +1798,12 @@ fn fold_binary(operator: BinaryOperator, left: &Constant, right: &Constant) -> O
     };
     number.is_finite().then_some(Constant::Number(number))
 }
+#[derive(Clone, Copy)]
+enum InlinePosition {
+    Rules,
+    Property,
+}
+
 /// Replaces reads of constants where styles read them: primitives in the
 /// arguments of style APIs and in style props, objects and arrays where they
 /// are read as style objects, as a copy elsewhere would change their identity.
@@ -1814,6 +1821,7 @@ struct Inline<'s, 'a> {
     styles: bool,
     /// Inside a `css` prop, whose numbers Emotion reads as `px` lengths
     px: bool,
+    position: InlinePosition,
     /// Where a constant stands as a value or rules of a library reading
     /// numbers as `px` lengths
     marks: &'s crate::import_alias_visit::PxMarks,
@@ -2001,6 +2009,17 @@ fn px_number<'a>(ast_builder: &AstBuilder<'a>, value: &mut Expression<'a>) {
 
 /// `property` holding a number as the `px` length Emotion reads it as
 fn px_value<'a>(ast_builder: &AstBuilder<'a>, property: &mut oxc_ast::ast::ObjectProperty<'a>) {
+    if let Some(key) = property.key.static_name()
+        && let Expression::ArrayExpression(array) = &property.value
+        && let Some(value) = crate::import_alias_visit::fallback_value(&key, array)
+    {
+        property.value = Expression::new_string_literal(
+            SPAN,
+            Str::from_in(value.as_str(), ast_builder.allocator()),
+            None,
+            ast_builder,
+        );
+    }
     if property
         .key
         .static_name()
@@ -2013,13 +2032,22 @@ fn px_value<'a>(ast_builder: &AstBuilder<'a>, property: &mut oxc_ast::ast::Objec
 /// The rules `rules` with their numbers as the `px` lengths Emotion reads them
 /// as, nested rules included
 fn px_rules<'a>(ast_builder: &AstBuilder<'a>, rules: &mut Expression<'a>) {
+    if let Expression::ArrayExpression(array) = rules {
+        for element in &mut array.elements {
+            if let Some(element) = element.as_expression_mut() {
+                px_rules(ast_builder, element);
+            }
+        }
+    }
     if let Expression::ObjectExpression(object) = rules {
         for property in &mut object.properties {
             if let ObjectPropertyKind::ObjectProperty(property) = property
                 && property.key.static_name().is_none_or(|key| key != "vars")
             {
                 px_value(ast_builder, property);
-                px_rules(ast_builder, &mut property.value);
+                if matches!(property.value, Expression::ObjectExpression(_)) {
+                    px_rules(ast_builder, &mut property.value);
+                }
             }
         }
     }
@@ -2092,7 +2120,10 @@ impl<'a> VisitMut<'a> for Inline<'_, 'a> {
                 if marked {
                     px_number(self.ast_builder, expression);
                 }
-                if self.px || marked {
+                if (self.px || marked)
+                    && (matches!(self.position, InlinePosition::Rules)
+                        || matches!(expression, Expression::ObjectExpression(_)))
+                {
                     px_rules(self.ast_builder, expression);
                 }
                 return;
@@ -2103,7 +2134,12 @@ impl<'a> VisitMut<'a> for Inline<'_, 'a> {
                 return;
             }
         }
+        let span = expression.span();
+        let marked = self.styles && self.marks.contains(&(span.start, span.end));
         walk_mut::walk_expression(self, expression);
+        if marked && matches!(expression, Expression::ObjectExpression(_)) {
+            px_rules(self.ast_builder, expression);
+        }
     }
 
     fn visit_tagged_template_expression(
@@ -2200,7 +2236,9 @@ impl<'a> VisitMut<'a> for Inline<'_, 'a> {
         let inlined_number = self.px
             && self.styles
             && matches!(self.constant(&property.value), Some(Constant::Number(_)));
+        let outer = std::mem::replace(&mut self.position, InlinePosition::Property);
         walk_mut::walk_object_property(self, property);
+        self.position = outer;
         if property.shorthand && !matches!(property.value, Expression::Identifier(_)) {
             property.shorthand = false;
         }

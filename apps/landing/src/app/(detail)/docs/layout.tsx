@@ -18,6 +18,7 @@ export default function DetailLayout({
       <Box
         className="markdown-body"
         flex={1}
+        minW={0}
         px={['20px', null, '60px']}
         py={['20px', null, '40px']}
         w="100%"
