@@ -12,6 +12,7 @@ pub mod optimize_multi_css_value;
 pub mod optimize_value;
 pub mod rm_css_comment;
 mod selector_separator;
+pub mod slot_reservation;
 pub mod style_selector;
 pub mod tailwind_definitions;
 pub mod theme_tokens;
@@ -418,6 +419,7 @@ fn class_num_for_key(filename_key: &str, build_key: impl FnOnce(&mut String)) ->
                 } else {
                     let len = file_entry.len();
                     file_entry.insert(key.clone(), len);
+                    slot_reservation::record_insert();
                     num_to_nm_base(len)
                 }
             } else {
@@ -429,6 +431,7 @@ fn class_num_for_key(filename_key: &str, build_key: impl FnOnce(&mut String)) ->
                 let mut inner = std::collections::HashMap::with_capacity(1);
                 inner.insert(key.clone(), 0);
                 map.insert(filename_key.to_string(), inner);
+                slot_reservation::record_insert();
                 num_to_nm_base(0)
             }
         })

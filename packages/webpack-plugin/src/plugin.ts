@@ -46,6 +46,7 @@ import {
 } from '@devup-ui/wasm'
 import { type Compiler } from 'webpack'
 
+import { createWebpackReservation } from './reservation'
 import { servedCss } from './served-css'
 
 export interface DevupUIWebpackPluginOptions {
@@ -293,21 +294,22 @@ export class DevupUIWebpackPlugin {
     // Number every file the build can extract in path order, so class
     // prefixes do not depend on which file a worker reaches first. Numbers
     // already handed out (a restored map in watch mode) stay.
-    try {
-      const cwd = process.cwd()
-      seedFileNumbers(
-        { seedFileMap },
-        collectNumberedFiles({
-          roots: [resolve(cwd, 'src')],
-          include: this.options.include,
-          cwd,
-          needles: extractedNeedles(this.options.package, this.importAliases),
-          toId: (path) => relative(cwd, path).replaceAll('\\', '/'),
-        }),
-      )
-    } catch {
-      // Best-effort; numbering falls back to arrival order.
-    }
+    if (this.options.debug)
+      try {
+        const cwd = process.cwd()
+        seedFileNumbers(
+          { seedFileMap },
+          collectNumberedFiles({
+            roots: [resolve(cwd, 'src')],
+            include: this.options.include,
+            cwd,
+            needles: extractedNeedles(this.options.package, this.importAliases),
+            toId: (path) => relative(cwd, path).replaceAll('\\', '/'),
+          }),
+        )
+      } catch {
+        // Best-effort; numbering falls back to arrival order.
+      }
     // Pre-warm the extractor so the css-loader serves COMPLETE CSS.
     //
     // Webpack builds a stylesheet module ONCE, at its FIRST import: the shared
@@ -317,7 +319,10 @@ export class DevupUIWebpackPlugin {
     // (single shared WASM instance). Re-extraction by the per-file loader is
     // then idempotent (set-based atom dedup). Watch mode rebuilds stylesheets
     // through the files the loaders write instead.
-    if (!this.options.watch) {
+    const reserve = createWebpackReservation(this.options, this.importAliases)
+    const reserveBeforeCompile = () => {
+      reserve(compiler.options)
+      if (this.options.watch) return
       const { entry, context = process.cwd() } = compiler.options
       this.prewarmExtractor(
         typeof entry === 'function'
@@ -327,6 +332,17 @@ export class DevupUIWebpackPlugin {
             ),
       )
     }
+    compiler.hooks.run.tap(
+      'DevupUIWebpackPluginReservation',
+      reserveBeforeCompile,
+    )
+    if (!this.options.watch)
+      compiler.hooks.watchRun.tapPromise(
+        'DevupUIWebpackPluginReservation',
+        async () => {
+          reserveBeforeCompile()
+        },
+      )
 
     if (this.options.watch) {
       let lastModifiedTime: string | null = null
@@ -349,6 +365,7 @@ export class DevupUIWebpackPlugin {
 
           lastModifiedTime = modifiedTime
         }
+        reserve(compiler.options)
       })
     }
     if (existsDevup || this.tailwindFiles.length > 0)

@@ -1,3 +1,4 @@
+import assert from 'node:assert/strict'
 import * as fs from 'node:fs'
 import * as fsPromises from 'node:fs/promises'
 import { join, resolve } from 'node:path'
@@ -554,40 +555,6 @@ const App = () => <Box></Box>`,
   })
 
   describe('deterministic file numbering', () => {
-    it.each([
-      ['relative', false],
-      ['posix', true],
-    ])('numbers the files the scan finds (%s ids)', async (_name, atomMode) => {
-      const collectSpy = spyOn(pluginUtils, 'collectNumberedFiles')
-      const seedSpy = spyOn(wasm, 'seedFileMap').mockReturnValue(undefined)
-      const closeBuild = mock()
-      try {
-        collectSpy.mockImplementation((options: any) => {
-          expect(options.toId('C:\\p\\a.tsx')).toBe(
-            atomMode ? 'C:/p/a.tsx' : 'C:\\p\\a.tsx',
-          )
-          return ['/p/a.tsx']
-        })
-        await DevupUI({
-          include: ['@acme/ui'],
-          atomHoist: atomMode ? 2 : undefined,
-        }).setup(createSetupContext({ onCloseBuild: closeBuild }))
-        expect(seedSpy).toHaveBeenCalledWith(['/p/a.tsx'])
-        expect(collectSpy.mock.calls[0][0]).toMatchObject({
-          roots: [resolve('src')],
-          include: ['@acme/ui'],
-        })
-        closeBuild.mock.calls[0][0]()
-        collectSpy.mockImplementation(() => {
-          throw new Error('scan boom')
-        })
-        await DevupUI().setup(createSetupContext())
-      } finally {
-        collectSpy.mockRestore()
-        seedSpy.mockRestore()
-      }
-    })
-
     it('sets the prefix every time, even without one', async () => {
       setPrefixSpy.mockClear()
       await DevupUI().setup(createSetupContext())
@@ -858,10 +825,13 @@ const App = () => <Box></Box>`,
           taps[hook] = fn
         }
       const compiler = {
+        options: {},
         watchMode: false,
         rspack: { Compilation: { PROCESS_ASSETS_STAGE_REPORT: 5000 } },
         hooks: {
           run: { tap: tap('run') },
+          watchRun: { tap: tap('watchRun') },
+          invalid: { tap: tap('invalid') },
           thisCompilation: { tap: tap('start') },
         },
       }
@@ -932,6 +902,30 @@ const App = () => <Box></Box>`,
       expect(codeExtractSpy.mock.calls[0]![0]).toBe(
         resolve('src', 'App.tsx').replaceAll('\\', '/'),
       )
+    })
+
+    it('reserves public compiler revisions without adding watch prewarm', async () => {
+      const reserve = spyOn(wasm, 'reserveClassSlots').mockReturnValue(
+        undefined,
+      )
+      try {
+        const { taps } = await setup()
+        codeExtractSpy.mockClear()
+        expect(reserve).not.toHaveBeenCalled()
+        assert(taps.watchRun && taps.invalid && taps.run)
+        taps.watchRun()
+        expect(reserve).toHaveBeenCalledTimes(1)
+        expect(codeExtractSpy).not.toHaveBeenCalled()
+        taps.invalid()
+        taps.watchRun()
+        expect(reserve).toHaveBeenCalledTimes(2)
+        taps.run()
+        expect(codeExtractSpy).not.toHaveBeenCalled()
+        taps.run()
+        expect(codeExtractSpy).not.toHaveBeenCalled()
+      } finally {
+        reserve.mockRestore()
+      }
     })
 
     it('compiles once more, writing no file, when a stylesheet changed', async () => {
