@@ -1,0 +1,7 @@
+{
+  "changes": {
+    "bindings/devup-ui-wasm/package.json": "Patch"
+  },
+  "note": "styled(Base) extending a styled component the file binds to a const renders Base's tag directly with Base's styles composed under its own, so the extension's declarations replace Base's for the same property, selector, breakpoint and layer instead of losing to them by stylesheet order; Base's attrs apply before the extension's. attrs merge as styled-components merges them: className is joined with the caller's, style is merged and other props replace earlier ones. On an element, a className or style spread after the explicit prop now wins, as React merges props in the order they are written",
+  "date": "2026-10-01T00:00:00.000Z"
+}
