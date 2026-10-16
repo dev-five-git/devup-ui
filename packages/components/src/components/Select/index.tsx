@@ -124,11 +124,6 @@ export function Select({
         ref={ref}
         display="inline-block"
         h="fit-content"
-        selectors={{
-          '&, & *': {
-            boxSizing: 'border-box',
-          },
-        }}
         styleOrder={1}
         styleVars={{
           primary: colors?.primary,
@@ -141,8 +136,13 @@ export function Select({
           inputDisabledBackground: colors?.inputDisabledBackground,
           inputDisabledText: colors?.inputDisabledText,
         }}
-        typography={typography}
         {...props}
+        selectors={{
+          '&, & *': {
+            boxSizing: 'border-box',
+          },
+        }}
+        typography={typography}
       >
         {options ? (
           <>
@@ -368,11 +368,6 @@ export function SelectOption({
 
   return (
     <Flex
-      _hover={
-        changesOnHover && {
-          bg: 'var(--primaryBg, light-dark(#F4F3FA, #F4F3FA0D))',
-        }
-      }
       alignItems="center"
       aria-label="Select option"
       borderRadius="6px"
@@ -386,6 +381,17 @@ export function SelectOption({
       cursor={changesOnHover ? 'pointer' : 'default'}
       data-value={value}
       fontWeight={isSelected ? '700' : '400'}
+      h="40px"
+      onClick={disabled ? undefined : (e) => handleClick(value, e)}
+      px="10px"
+      styleOrder={1}
+      transition="background-color 0.1s ease-in-out"
+      {...props}
+      _hover={
+        changesOnHover && {
+          bg: 'var(--primaryBg, light-dark(#F4F3FA, #F4F3FA0D))',
+        }
+      }
       gap={
         {
           checkbox: '10px',
@@ -393,12 +399,6 @@ export function SelectOption({
           default: '0',
         }[type]
       }
-      h="40px"
-      onClick={disabled ? undefined : (e) => handleClick(value, e)}
-      px="10px"
-      styleOrder={1}
-      transition="background-color 0.1s ease-in-out"
-      {...props}
     >
       {showCheck &&
         {
