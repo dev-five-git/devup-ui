@@ -9,6 +9,65 @@ use std::collections::HashMap;
 
 #[rstest]
 #[serial]
+fn leading_pragmas_survive_when_javascript_contains_jsx(
+    #[values("js", "mjs", "cjs")] extension: &str,
+    #[values(true, false)] source_map: bool,
+) {
+    // Given: leading pragmas attached to a Devup import in a physical JS file.
+    reset_class_map();
+    reset_file_map();
+    let filename = format!("pragma-jsx.{extension}");
+    let pragmas = [
+        "/** @jsx createElement */",
+        "/** @jsxFrag Fragment */",
+        "/** @jsxRuntime classic */",
+        "/** @jsxImportSource custom-jsx */",
+    ];
+    let source = format!(
+        "{}\nimport {{Box}} from '@devup-ui/react';\nexport const view=<Box w='403px'/>;\nexport const anchor=1;",
+        pragmas.join("\n")
+    );
+
+    // When: extraction parses JSX without changing the physical extension.
+    let output = if source_map {
+        extract(&filename, &source, ExtractOption::default())
+    } else {
+        extract_without_source_map(&filename, &source, ExtractOption::default())
+    }
+    .unwrap_or_else(|error| panic!("{error}"));
+
+    // Then: the consumed import's pragmas lead real, statically styled output.
+    let arena = Allocator::default();
+    let parsed = crate::parsing::parse(&arena, &filename, &output.code)
+        .unwrap_or_else(|error| panic!("{error}"));
+    let first_statement =
+        usize::try_from(parsed.body[0].span().start).unwrap_or_else(|error| panic!("{error}"));
+    for pragma in pragmas {
+        assert_eq!(output.code.matches(pragma).count(), 1, "{}", output.code);
+        assert!(
+            output.code[..first_statement].contains(pragma),
+            "{}",
+            output.code
+        );
+    }
+    assert!(output.code.contains("<div className="), "{}", output.code);
+    assert!(!output.code.contains("<Box"), "{}", output.code);
+    assert!(!output.code.contains("import {"), "{}", output.code);
+    assert_eq!(output.styles.len(), 1);
+    assert!(output.styles.iter().any(|style| matches!(
+        style,
+        crate::extract_style::extract_style_value::ExtractStyleValue::Static(style)
+            if style.property == "width" && style.value == "403px"
+    )));
+    if source_map {
+        crate::pragma_path_tests::assert_anchor_map(&source, &output);
+    } else {
+        assert_eq!(output.map, None);
+    }
+}
+
+#[rstest]
+#[serial]
 fn leading_jsx_pragmas_survive_removed_imports(
     #[values("js", "jsx", "ts", "tsx")] extension: &str,
     #[values(

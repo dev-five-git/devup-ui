@@ -14,6 +14,7 @@ mod jsx_import_source;
 mod jsx_pragmas;
 mod module_loader;
 mod mutations;
+mod parsing;
 #[cfg(test)]
 mod pragma_annotation_tests;
 #[cfg(test)]
@@ -66,6 +67,7 @@ use oxc_ast::ast::Expression;
 use oxc_ast_visit::VisitMut;
 use oxc_codegen::{Codegen, CodegenOptions};
 use oxc_parser::{Parser, ParserReturn};
+#[cfg(test)]
 use oxc_span::SourceType;
 use rustc_hash::FxHashMap;
 use rustc_hash::FxHashSet;
@@ -328,6 +330,16 @@ fn extract_with_source_map(
     source_map: bool,
     resolver: Option<&ModuleResolver>,
 ) -> Result<ExtractOutput, Box<dyn Error>> {
+    if code.contains(&option.package)
+        || code.contains(STYLEX_PACKAGE)
+        || option
+            .import_aliases
+            .keys()
+            .any(|alias| code.contains(alias))
+    {
+        let allocator = Allocator::default();
+        parsing::parse(&allocator, filename, code)?;
+    }
     extract_source(filename, code, None, option, source_map, resolver)
 }
 
@@ -494,7 +506,6 @@ fn extract_source(
 
     let code_to_parse = processed_code.as_deref().unwrap_or(&transformed_code);
 
-    let source_type = SourceType::from_path(filename)?;
     let (bucket, global, css_file) = resolve_css_target(filename, &option);
     let import_main = option.import_main_css && !global;
     // Presize to the exact final length (1 target + optional main-css entry) and
@@ -507,14 +518,7 @@ fn extract_source(
     css_files.push(css_file.clone());
     let allocator = Allocator::default();
 
-    let ParserReturn {
-        mut program, // AST
-        fatal_error, // Parser encountered an error it couldn't recover from
-        ..
-    } = Parser::new(&allocator, code_to_parse, source_type).parse();
-    if fatal_error {
-        return Err("Parser panicked".into());
-    }
+    let mut program = parsing::parse(&allocator, filename, code_to_parse)?;
     let header_pragmas = jsx_pragmas::HeaderPragmas::capture(&program);
     let inlined = if processed_code.is_none() {
         imported_constants::inline_constants(
@@ -694,7 +698,7 @@ fn located_errors(
                 source,
                 offset,
                 message,
-                SourceType::from_path(filename).unwrap_or_default(),
+                parsing::source_type(filename).unwrap_or_default(),
             );
             format!("{}: {message}", locate(filename, source, offset))
         })
@@ -777,7 +781,7 @@ fn extract_class_map_from_code(
     option: &ExtractOption,
     style_names: &FxHashSet<String>,
 ) -> Result<FxHashMap<String, String>, Box<dyn Error>> {
-    let source_type = SourceType::from_path(filename)?;
+    let source_type = parsing::source_type(filename)?;
     let (bucket, global, css_file) = resolve_css_target(filename, option);
     let css_files = vec![css_file];
     let allocator = Allocator::default();
@@ -843,7 +847,7 @@ pub fn has_devup_ui(filename: &str, code: &str, package: &str) -> bool {
         return false;
     }
 
-    let source_type = match SourceType::from_path(filename) {
+    let source_type = match parsing::source_type(filename) {
         Ok(st) => st,
         Err(_) => return false,
     };
@@ -1566,7 +1570,7 @@ mod tests {
             extract(
                 "test.tsx",
                 r"import {Box} from '@devup-ui/core'
-        <Box padding={1} margin={2} wrong={} wrong2=<></> />
+        <Box padding={1} margin={2} wrong={null} wrong2=<></> />
         ",
                 ExtractOption {
                     package: "@devup-ui/core".to_string(),
@@ -1815,7 +1819,7 @@ mod tests {
             extract(
                 "test.tsx",
                 r"import {Box as C} from '@devup-ui/core'
-        <C padding={1} margin={2} className={} />
+        <C padding={1} margin={2} />
         ",
                 ExtractOption {
                     package: "@devup-ui/core".to_string(),
@@ -4937,7 +4941,7 @@ import clsx from 'clsx'
             )
             .unwrap_err()
             .to_string(),
-            "Parser panicked"
+            "test.tsx:1:11: Expected `from` but found `string`"
         );
     }
 
@@ -7070,7 +7074,7 @@ export {
             extract(
                 "test.jsx",
                 r#"import {Box, css} from '@devup-ui/core'
-    <Box className={css({color:"white"})} styleOrder={} />
+    <Box className={css({color:"white"})} styleOrder={null} />
             "#,
                 ExtractOption {
                     package: "@devup-ui/core".to_string(),
@@ -7813,7 +7817,7 @@ export { c as Lib };"#,
             extract(
                 "test.jsx",
                 r"import {Box} from '@devup-ui/core'
-    <Box styleVars={} />
+    <Box styleVars />
             ",
                 ExtractOption {
                     package: "@devup-ui/core".to_string(),
@@ -9573,7 +9577,7 @@ keyframes({
             extract(
                 "test.tsx",
                 r"import {Box} from '@devup-ui/core'
-        <Box padding={1} margin={2} wrong={} wrong2=<></> />
+        <Box padding={1} margin={2} wrong={null} wrong2=<></> />
         ",
                 ExtractOption {
                     package: "@devup-ui/core".to_string(),
@@ -9606,7 +9610,7 @@ keyframes({
             extract(
                 "test1.tsx",
                 r"import {Box} from '@devup-ui/core'
-        <Box padding={1} margin={2} wrong={} wrong2=<></> />
+        <Box padding={1} margin={2} wrong={null} wrong2=<></> />
         ",
                 ExtractOption {
                     package: "@devup-ui/core".to_string(),

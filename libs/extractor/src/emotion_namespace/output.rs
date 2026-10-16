@@ -1,4 +1,4 @@
-use super::{Allocator, Edit, Parser, SourceType};
+use super::{Allocator, Edit, Parser};
 use crate::{ExtractOutput, source_map};
 use oxc_codegen::{Codegen, CodegenOptions};
 use rustc_hash::FxHashSet;
@@ -21,7 +21,7 @@ impl Rewritten<'_> {
         let mut program = Parser::new(
             &allocator,
             self.code,
-            SourceType::from_path(self.filename).unwrap_or_default(),
+            crate::parsing::source_type(self.filename).unwrap_or_default(),
         )
         .parse()
         .program;
