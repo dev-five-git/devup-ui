@@ -137,6 +137,10 @@ impl ExtractDynamicStyle {
         self.identifier.as_str()
     }
 
+    pub(crate) const fn identifier_mut(&mut self) -> &mut String {
+        &mut self.identifier
+    }
+
     pub const fn style_order(&self) -> Option<u8> {
         self.style_order
     }

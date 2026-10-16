@@ -57,14 +57,14 @@ pub(crate) fn has_build_time_values(
     option: &ExtractOption,
     resolver: Option<&ModuleResolver>,
 ) -> bool {
-    let (code, _) = crate::import_alias_visit::transform_import_aliases_with_edits(
+    let aliased = crate::import_alias_visit::transform_import_aliases_with_edits(
         code,
         filename,
         &option.package,
         &option.import_aliases,
     );
     let allocator = Allocator::default();
-    let Some(mut program) = parse(&allocator, filename, &code) else {
+    let Some(mut program) = parse(&allocator, filename, &aliased.code) else {
         return false;
     };
     let inlined = crate::imported_constants::inline_constants(
@@ -73,6 +73,7 @@ pub(crate) fn has_build_time_values(
         filename,
         option,
         resolver,
+        aliased.css_prop,
     );
     let changes = crate::imported_constants::ChangeCheck::new(&program, filename, option, resolver);
     !find(
@@ -344,7 +345,10 @@ impl<'s, 'a> Finder<'s, 'a> {
 
     fn is_css(&self, callee: &Expression<'_>) -> bool {
         if let Expression::StaticMemberExpression(member) = callee {
-            return member.property.name == "css";
+            return member.property.name == "css"
+                && self
+                    .symbol(&member.object)
+                    .is_some_and(|symbol| self.namespaces.contains(&symbol));
         }
         self.symbol(callee)
             .is_some_and(|symbol| self.css.contains(&symbol))
@@ -1092,3 +1096,6 @@ fn compute(
     }
     (!computed.is_empty()).then_some((computed, changes.dependencies()))
 }
+
+#[cfg(test)]
+mod scope_tests;
