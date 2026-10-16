@@ -18,6 +18,7 @@ export { createTheme } from '../utils/create-theme'
 export type { ClassNamesArg } from '../utils/emotion-classes'
 export { cx, merge } from '../utils/emotion-classes'
 export {
+  CacheProvider,
   isStyledComponent,
   ServerStyleSheet,
   StyleSheetManager,

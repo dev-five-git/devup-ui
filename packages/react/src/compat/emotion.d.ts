@@ -16,6 +16,7 @@ declare module '@emotion/react' {
   export { css, keyframes } from '@devup-ui/react'
   export type { StyledTheme as Theme } from '@devup-ui/react/compat'
   export {
+    CacheProvider,
     jsx as createElement,
     Global,
     jsx,
