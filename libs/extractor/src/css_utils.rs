@@ -10,7 +10,7 @@ use css::{
     at_rule::split_at_rule_key,
     optimize_multi_css_value::{check_multi_css_optimize, optimize_multi_css_value},
     rm_css_comment::rm_css_comment,
-    style_selector::StyleSelector,
+    style_selector::{StyleSelector, split_selector_list},
 };
 use oxc_allocator::Allocator;
 use oxc_span::{GetSpan, SPAN};
@@ -69,12 +69,17 @@ pub(crate) fn theme_var_reference(expr: &Expression<'_>) -> Option<String> {
         _ => return None,
     };
 
-    let mut path = Vec::new();
+    let mut path: Vec<Cow<'_, str>> = Vec::new();
     let mut cursor = arrow.body.as_expression()?;
     loop {
         match cursor {
             Expression::StaticMemberExpression(member) => {
-                path.push(member.property.name.as_str());
+                path.push(Cow::Borrowed(member.property.name.as_str()));
+                cursor = &member.object;
+            }
+            // `theme.space[2]` and `theme.colors['brand']` read a key the build knows
+            Expression::ComputedMemberExpression(member) => {
+                path.push(get_string_by_literal_expression(&member.expression)?);
                 cursor = &member.object;
             }
             Expression::Identifier(ident) => {
@@ -98,6 +103,82 @@ pub(crate) fn theme_var_reference(expr: &Expression<'_>) -> Option<String> {
     }
     path.reverse();
     Some(format!("var(--{})", path.join("-")))
+}
+
+/// Whether the style function `expr` reads the theme in a way
+/// [`theme_var_reference`] cannot turn into a CSS variable, such as
+/// `p => p.theme.brand()` or `({ theme }) => theme.space[i]`: no theme object
+/// exists at runtime, so it would read `undefined` or throw
+pub(crate) fn reads_unmapped_theme(expr: &Expression<'_>) -> bool {
+    use oxc_ast_visit::{Visit, walk};
+    struct ThemeReads<'n> {
+        props: Option<&'n str>,
+        found: bool,
+    }
+    impl<'a> Visit<'a> for ThemeReads<'_> {
+        fn visit_static_member_expression(
+            &mut self,
+            it: &oxc_ast::ast::StaticMemberExpression<'a>,
+        ) {
+            if it.property.name == "theme"
+                && matches!(&it.object, Expression::Identifier(object) if Some(object.name.as_str()) == self.props)
+            {
+                self.found = true;
+            }
+            walk::walk_static_member_expression(self, it);
+        }
+        fn visit_identifier_reference(&mut self, it: &oxc_ast::ast::IdentifierReference<'a>) {
+            if self.props.is_none() && it.name == "theme" {
+                self.found = true;
+            }
+        }
+    }
+    let Expression::ArrowFunctionExpression(arrow) = expr else {
+        return false;
+    };
+    let [param] = arrow.params.items.as_slice() else {
+        return false;
+    };
+    let props = match &param.pattern {
+        BindingPattern::BindingIdentifier(ident) => Some(ident.name.as_str()),
+        BindingPattern::ObjectPattern(pattern)
+            if pattern
+                .properties
+                .iter()
+                .any(|p| get_str_by_property_key(&p.key).is_some_and(|key| key == "theme")) =>
+        {
+            None
+        }
+        _ => return false,
+    };
+    if theme_var_reference(expr).is_some() {
+        return false;
+    }
+    let mut reads = ThemeReads {
+        props,
+        found: false,
+    };
+    match &arrow.body {
+        oxc_ast::ast::ArrowFunctionBody::FunctionBody(body) => reads.visit_function_body(body),
+        body => {
+            if let Some(expression) = body.as_expression() {
+                reads.visit_expression(expression);
+            }
+        }
+    }
+    reads.found
+}
+
+/// The build error for a theme read [`reads_unmapped_theme`] finds
+pub(crate) fn unmapped_theme_error(api: &str, expr: &Expression<'_>) -> (u32, String) {
+    (
+        expr.span().start,
+        crate::utils::build_time_error(
+            api,
+            &readable_code(expr),
+            "a theme read must be a path of names or literal keys, such as `p => p.theme.colors.brand` or `({ theme }) => theme.space[2]`, which reads the CSS variable `ThemeProvider` declares; compute other values outside the style",
+        ),
+    )
 }
 
 enum ThemeRoot<'a> {
@@ -579,9 +660,9 @@ fn collect_css_block(
 }
 
 /// The selector a nested block applies to: at-rule preludes wrap `parent`,
-/// `&`-selectors substitute it, and a bare selector under a selector nests as
-/// a descendant. `None` drops the block (an unknown at-rule, or conditions
-/// that can never match together).
+/// `&`-selectors substitute it, and a bare selector is made relative to it
+/// (the component's own class at the top). `None` drops the block (an unknown
+/// at-rule, or conditions that can never match together).
 fn nest_prelude(parent: Option<&StyleSelector>, prelude: &str) -> Option<StyleSelector> {
     if prelude.starts_with('@') {
         let (kind, query) = split_at_rule_key(prelude)?;
@@ -593,35 +674,25 @@ fn nest_prelude(parent: Option<&StyleSelector>, prelude: &str) -> Option<StyleSe
 /// Each selector of the list `selectors` written without `&` as a descendant
 /// of it, as stylis nests one
 pub(crate) fn descendants(selectors: &str) -> String {
-    let mut depth = 0usize;
-    let mut from = 0;
-    let mut parts = Vec::new();
-    for (index, c) in selectors.char_indices() {
-        match c {
-            '(' | '[' => depth += 1,
-            ')' | ']' => depth = depth.saturating_sub(1),
-            ',' if depth == 0 => {
-                parts.push(&selectors[from..index]);
-                from = index + 1;
-            }
-            _ => {}
-        }
-    }
-    parts.push(&selectors[from..]);
-    parts
-        .iter()
-        .map(|part| {
-            let part = part.trim();
-            if part.contains('&') {
-                part.to_string()
-            } else if part.starts_with(':') {
-                format!("&{part}")
-            } else {
-                format!("& {part}")
-            }
-        })
+    split_selector_list(selectors)
+        .into_iter()
+        .map(relative_selector)
         .collect::<Vec<_>>()
         .join(",")
+}
+
+/// A selector of a nested rule made relative to the rule it is in, as
+/// styled-components and Emotion read it: one with `&` says where that rule
+/// goes, a pseudo-class or pseudo-element applies to that rule's element, and
+/// any other selector to its descendants (`> p` to its children)
+fn relative_selector(part: &str) -> Cow<'_, str> {
+    if part.contains('&') {
+        Cow::Borrowed(part)
+    } else if part.starts_with(':') {
+        Cow::Owned(format!("&{part}"))
+    } else {
+        Cow::Owned(format!("& {part}"))
+    }
 }
 
 /// Optimize a declaration's value only when its property warrants multi-value

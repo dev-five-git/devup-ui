@@ -3,6 +3,8 @@ import { mkdir, writeFile } from 'node:fs/promises'
 import { dirname, join, relative, resolve } from 'node:path'
 
 import {
+  beginBuild,
+  collectNumberedFiles,
   createCompatTypes,
   createModuleResolver,
   createThemeInterfaceArgs,
@@ -10,6 +12,9 @@ import {
   loadDevupConfig,
   mergeImportAliases,
   readJsxImportSource,
+  seedFileNumbers,
+  tailwindCssFiles,
+  withTailwindCss,
 } from '@devup-ui/plugin-utils'
 import {
   codeExtract,
@@ -18,12 +23,16 @@ import {
   hasDevupUI,
   registerShorthands,
   registerTheme,
+  resetBuildState,
+  seedFileMap,
   setDebug,
   setModuleResolver,
+  setPrefix,
 } from '@devup-ui/wasm'
 import { type BunPlugin, plugin, type PluginBuilder } from 'bun'
 
 import { cssDirName, cssNamespace, resolveCssId } from './css-id'
+import { createTailwindWatcher } from './tailwind-watch'
 
 const libPackage = '@devup-ui/react'
 const devupFile = 'devup.json'
@@ -50,11 +59,13 @@ export interface DevupUIBunPluginOptions {
 
 type SourceLoader = 'tsx' | 'ts' | 'jsx' | 'js'
 
-async function writeDataFiles() {
+async function writeDataFiles(): Promise<string[]> {
   let theme = {}
+  let tailwindFiles: string[] = []
   try {
     const config = await loadDevupConfig(devupFile)
-    theme = config.theme ?? {}
+    theme = withTailwindCss(config.theme ?? {}, config)
+    tailwindFiles = tailwindCssFiles(config)
   } catch {
     // Error reading devup.json, use empty theme
   }
@@ -71,11 +82,29 @@ async function writeDataFiles() {
     await mkdir(cssDir, { recursive: true })
   }
   await writeFile(join(cssDir, 'devup-ui.css'), getCss(null, false), 'utf-8')
+  return tailwindFiles
 }
+
+const watchTailwindCss = createTailwindWatcher(writeDataFiles)
 
 async function initialize({ shorthands }: DevupUIBunPluginOptions = {}) {
   registerShorthands(shorthands ?? {})
+  setPrefix(null)
   setModuleResolver(createModuleResolver())
+  // Number every source file in path order, so class prefixes do not depend
+  // on the order Bun loads files in
+  try {
+    seedFileNumbers(
+      { seedFileMap },
+      collectNumberedFiles({
+        roots: [resolve('src')],
+        needles: compiledPackages,
+        toId: (path) => path,
+      }),
+    )
+  } catch {
+    // Best-effort; numbering falls back to arrival order.
+  }
   if (!existsSync(distDir)) await mkdir(distDir, { recursive: true })
   await writeFile(join(distDir, '.gitignore'), '*', 'utf-8')
   await writeFile(
@@ -83,7 +112,7 @@ async function initialize({ shorthands }: DevupUIBunPluginOptions = {}) {
     createCompatTypes(importAliases),
     'utf-8',
   )
-  await writeDataFiles()
+  watchTailwindCss(await writeDataFiles())
 }
 
 const scanners = new Map<SourceLoader, Bun.Transpiler>()
@@ -154,6 +183,10 @@ function DevupUI(options: DevupUIBunPluginOptions = {}) {
     async setup(build: PluginBuilder) {
       // `Bun.build` hands its config to plugins; the runtime has none
       const bundling = build.config !== undefined
+      // A build starts from its own options, not from what an earlier build in
+      // this process left in the engine
+      const endBuild = beginBuild({ resetBuildState })
+      build.onEnd?.(endBuild)
       await initialize(options)
       setDebug(options.debug ?? !bundling)
 
