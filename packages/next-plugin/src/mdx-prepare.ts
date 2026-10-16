@@ -24,6 +24,7 @@ import {
   type MdxPrewarmStep,
   recognizeMdxPrewarmStep,
 } from './mdx-prewarm-boundary'
+import { provenMdxTurboCompiler } from './mdx-turbo-context'
 
 export {
   createMdxOptionsInstance,
@@ -153,7 +154,11 @@ export async function compileMdx(
     if (step)
       devupMdxPrewarm.set(compilerIndex, {
         ...step,
-        compiler: context.compiler,
+        compiler:
+          context.compiler ??
+          (pipeline.bundler === 'turbo'
+            ? provenMdxTurboCompiler(context, root, step.module)
+            : undefined),
       })
     return await runMdxLoaders({
       root,

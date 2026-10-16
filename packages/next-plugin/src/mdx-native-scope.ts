@@ -8,7 +8,10 @@ import { isMdxRecord } from './mdx-pipeline'
 
 type Snapshot = ReturnType<typeof snapshotMdxBindingValue>
 type Scope = { readonly token: object; readonly cells: Map<string, Snapshot> }
-const modules = new WeakMap<object, WeakMap<object, Scope>>()
+const modules = new WeakMap<
+  object,
+  { readonly compilers: WeakMap<object, Scope>; marker?: Scope }
+>()
 
 function nativeOptionsHash(options: Readonly<Record<string, unknown>>) {
   const hash = createHash('sha256')
@@ -87,14 +90,14 @@ export function requireMdxSafeCompilerOptions(
 
 export function admitMdxNativeCell(
   module: object,
-  compiler: object | undefined,
+  compiler: object | null | undefined,
   effective: {
     readonly options: unknown
     readonly sourceMap: unknown
     readonly mode: unknown
   },
 ) {
-  if (!compiler)
+  if (compiler === undefined)
     throw new MdxNativeCellError(
       '_compiler',
       'native Compiler identity is unavailable; obtain the actual native context before preparation',
@@ -102,14 +105,14 @@ export function admitMdxNativeCell(
   requireMdxSafeCompilerOptions(effective.options)
   if (!isMdxRecord(effective.options))
     throw new MdxNativeCellError('options', 'MDX requires an options object')
-  let compilers = modules.get(module)
-  if (!compilers) modules.set(module, (compilers = new WeakMap()))
-  let scope = compilers.get(compiler)
-  if (!scope)
-    compilers.set(
-      compiler,
-      (scope = { token: Object.freeze(Object.create(null)), cells: new Map() }),
-    )
+  let scopes = modules.get(module)
+  if (!scopes) modules.set(module, (scopes = { compilers: new WeakMap() }))
+  let scope = compiler === null ? scopes.marker : scopes.compilers.get(compiler)
+  if (!scope) {
+    scope = { token: Object.freeze(Object.create(null)), cells: new Map() }
+    if (compiler === null) scopes.marker = scope
+    else scopes.compilers.set(compiler, scope)
+  }
   const options = effective.options
   const key = nativeOptionsHash(options)
   const snapshot = snapshotMdxBindingValue({

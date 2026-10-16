@@ -9,13 +9,14 @@ export type MdxPreparationContext = {
   readonly owner: object
   readonly generation: object
   readonly compiler?: object
+  readonly native?: object
   readonly mode?: 'development' | 'production' | 'none'
   readonly sourceMap?: boolean
 }
 export type MdxPrewarmStep = {
   readonly module: string
   readonly wrapper: string | undefined
-  readonly compiler: object | undefined
+  readonly compiler: object | null | undefined
 }
 
 const hashes = {
