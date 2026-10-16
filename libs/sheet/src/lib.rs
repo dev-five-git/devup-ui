@@ -304,7 +304,7 @@ impl StyleSheet {
 
         Export {
             sheet: self,
-            atom_naming_version: 1,
+            atom_naming_version: 2,
         }
     }
 
@@ -367,7 +367,7 @@ impl StyleSheet {
         mut prop: StyleSheetProperty,
     ) -> bool {
         freeze_atom_plan();
-        if self.atom_plan.is_none() {
+        if is_atom_hoist() && self.atom_plan.is_none() {
             self.atom_plan = atom_plan();
         }
         prop.hoisted =
@@ -550,16 +550,27 @@ impl StyleSheet {
         filename: &str,
         single_css: bool,
     ) -> (bool, bool) {
+        let _atom_mode = css::atom_hoist::AtomModeGuard::new(single_css);
+        self.update_styles_in_bucket(styles, filename, single_css)
+    }
+
+    /// Update placement under the caller's effective mode; global buckets are not single-CSS mode.
+    pub fn update_styles_in_bucket(
+        &mut self,
+        styles: &FxHashSet<ExtractStyleValue>,
+        filename: &str,
+        global_bucket: bool,
+    ) -> (bool, bool) {
         let mut collected = false;
         let mut updated_base_style = false;
         freeze_atom_plan();
-        if self.atom_plan.is_none() {
+        if is_atom_hoist() && self.atom_plan.is_none() {
             self.atom_plan = atom_plan();
         }
-        let name_scope = if single_css { None } else { Some(filename) };
-        let bucket_scope = if single_css { None } else { Some(filename) };
+        let name_scope = if global_bucket { None } else { Some(filename) };
+        let bucket_scope = if global_bucket { None } else { Some(filename) };
         let atom_mode = is_atom_hoist();
-        let shared_bucket = single_css || (atom_mode && is_hoisted_bucket(filename));
+        let shared_bucket = global_bucket || (atom_mode && is_hoisted_bucket(filename));
         let updates_shared = |order: Option<u8>| {
             order == Some(0)
                 || (atom_mode && (shared_bucket || order.is_some_and(|order| order != 255)))
@@ -719,7 +730,7 @@ impl StyleSheet {
                         bucket_scope,
                     ) {
                         collected = true;
-                        updated_base_style |= atom_mode && single_css;
+                        updated_base_style |= atom_mode && global_bucket;
                     }
                 }
                 ExtractStyleValue::Css(cs) => {

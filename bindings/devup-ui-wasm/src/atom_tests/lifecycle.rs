@@ -7,6 +7,7 @@ const RED: &str = "import {Box} from '@devup-ui/react'; export const x=<Box colo
 fn unknown_and_late_reach_stay_local_until_reset() {
     // Given
     setup();
+    reserve(&[("a.tsx", RED), ("private.tsx", RED)]);
     compile("a.tsx", RED);
     let mut routes = css::file_routes::get_file_routes();
     routes.insert("unknown.tsx".into(), HashSet::from([0, 1]));
@@ -44,11 +45,12 @@ fn imported_sheet_keeps_recorded_placement_after_configuration_reset() {
     let global = with_style_sheet(|sheet| sheet.create_css(None, false));
     let local = with_style_sheet(|sheet| sheet.create_css(Some("private.tsx"), false));
     let serialized = export_sheet_internal().unwrap_or_else(|error| panic!("{error}"));
+    let classes = export_class_map_internal().unwrap_or_else(|error| panic!("{error}"));
+    let files = export_file_map_internal().unwrap_or_else(|error| panic!("{error}"));
     reset_build_state_internal();
     let imported = serde_json::from_str(&serialized).unwrap_or_else(|error| panic!("{error}"));
     // When
     import_sheet_internal(imported);
-    seed_file_map(vec!["a.tsx".into(), "b.tsx".into(), "private.tsx".into()]);
     // Then
     assert_eq!(
         with_style_sheet(|sheet| sheet.create_css(None, false)),
@@ -60,6 +62,8 @@ fn imported_sheet_keeps_recorded_placement_after_configuration_reset() {
     );
     assert_references_resolve(&shared.code, &emitted("a.tsx"));
     assert_references_resolve(&private.code, &emitted("private.tsx"));
+    set_class_map(serde_json::from_str(&classes).unwrap_or_else(|error| panic!("{error}")));
+    set_file_map(serde_json::from_str(&files).unwrap_or_else(|error| panic!("{error}")));
     css::atom_hoist::set_atom_hoist(Some(2));
     css::file_routes::set_file_routes(HashMap::from([(
         "private.tsx".into(),
@@ -67,6 +71,12 @@ fn imported_sheet_keeps_recorded_placement_after_configuration_reset() {
     )]));
     let resumed = compile("private.tsx", RED);
     assert_eq!(private.code, resumed.code);
+    let changed = compile(
+        "private.tsx",
+        "import {Box} from '@devup-ui/react'; export const x=<Box color=\"blue\"/>;",
+    );
+    assert_ne!(private.code, changed.code);
+    assert_references_resolve(&changed.code, &emitted("private.tsx"));
     let shared_again = compile("b.tsx", RED);
     assert_references_resolve(&shared_again.code, &emitted("b.tsx"));
     assert!(
@@ -157,35 +167,57 @@ fn important_and_plain_dynamic_values_emit_distinct_rules_in_every_mode() {
 #[serial]
 fn keyframe_content_and_scope_resolve_when_using_single_css() {
     // Given
-    setup();
     let source = r"import {Box,keyframes} from '@devup-ui/react';
       const a=keyframes({from:{opacity:0,transform:'scale(0)'},to:{opacity:1}});
       const b=keyframes({from:{transform:'scale(0)',opacity:0},to:{opacity:1}});
       const c=keyframes({from:{opacity:0,transform:'scale(0)'},to:{opacity:0.5}});
       export const x=<><Box animation={`${a} 1s`}/><Box animation={`${b} 1s`}/><Box animation={`${c} 1s`}/></>;";
-    // When
-    let output = code_extract_internal(
-        "a.tsx",
-        source,
-        "@devup-ui/react",
-        "df".into(),
-        true,
-        false,
-        false,
-        HashMap::new(),
-    )
-    .unwrap_or_else(|error| panic!("{error}"));
-    // Then
-    let css = with_style_sheet(|sheet| sheet.create_css(None, false));
-    assert_references_resolve(&output.code, &css);
-    with_style_sheet(|sheet| {
-        assert_eq!(sheet.keyframes[""].len(), 2);
-        for name in sheet.keyframes[""].keys() {
-            assert!(output.code.contains(name));
-            assert!(css.contains(&format!("@keyframes {name}{{")));
-        }
-    });
+    let build = |atom: bool, debug| {
+        setup();
+        css::atom_hoist::set_atom_hoist(atom.then_some(2));
+        css::debug::set_debug(debug);
+        reserve_class_slots_internal(
+            &[ReservationInput {
+                filename: "a.tsx".into(),
+                code: source.into(),
+                css_dir: "df".into(),
+            }],
+            ExtractOption {
+                single_css: true,
+                ..ExtractOption::default()
+            },
+            None,
+        );
+        // When
+        let output = code_extract_internal(
+            "a.tsx",
+            source,
+            "@devup-ui/react",
+            "df".into(),
+            true,
+            false,
+            false,
+            HashMap::new(),
+        )
+        .unwrap_or_else(|error| panic!("{error}"));
+        // Then
+        let css = with_style_sheet(|sheet| sheet.create_css(None, false));
+        assert_references_resolve(&output.code, &css);
+        with_style_sheet(|sheet| {
+            assert_eq!(sheet.keyframes[""].len(), 2);
+            for name in sheet.keyframes[""].keys() {
+                assert!(output.code.contains(name));
+                assert!(css.contains(&format!("@keyframes {name}{{")));
+            }
+        });
+        assert_eq!(get_unreserved_class_slot_count(), 0);
+        (output.code, css)
+    };
+    for debug in [false, true] {
+        assert_eq!(build(false, debug), build(true, debug));
+    }
     reset_build_state_internal();
+    css::debug::set_debug(false);
 }
 
 #[test]

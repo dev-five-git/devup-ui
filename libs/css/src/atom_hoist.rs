@@ -1,4 +1,7 @@
+use std::cell::Cell;
 use std::collections::{BTreeSet, HashMap, HashSet};
+use std::marker::PhantomData;
+use std::rc::Rc;
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::{LazyLock, Mutex};
 
@@ -6,8 +9,38 @@ use crate::{file_map::canonical, file_routes::with_file_routes};
 
 static FROZEN_PLAN: LazyLock<Mutex<Option<BTreeSet<String>>>> = LazyLock::new(|| Mutex::new(None));
 
+thread_local! {
+    static SUPPRESSED: Cell<bool> = const { Cell::new(false) };
+}
+
+/// Suppress effective atom mode for actual single-CSS work without changing build configuration.
+#[must_use]
+pub struct AtomModeGuard {
+    previous: bool,
+    thread_bound: PhantomData<Rc<()>>,
+}
+
+impl AtomModeGuard {
+    pub fn new(single_css: bool) -> Self {
+        let previous = SUPPRESSED.with(|state| state.replace(state.get() || single_css));
+        Self {
+            previous,
+            thread_bound: PhantomData,
+        }
+    }
+}
+
+impl Drop for AtomModeGuard {
+    fn drop(&mut self) {
+        SUPPRESSED.with(|state| state.set(self.previous));
+    }
+}
+
 /// Freeze every eligible canonical bucket before any source is processed.
 pub fn freeze_atom_plan() {
+    if !is_atom_hoist() {
+        return;
+    }
     if let Some(threshold) = atom_hoist_threshold() {
         let mut plan = FROZEN_PLAN
             .lock()
@@ -47,6 +80,9 @@ pub fn restore_atom_plan(plan: Option<BTreeSet<String>>) {
 
 /// Whether this bucket was eligible at the build's extraction boundary.
 pub fn is_hoisted_bucket(filename: &str) -> bool {
+    if !is_atom_hoist() {
+        return false;
+    }
     freeze_atom_plan();
     FROZEN_PLAN
         .lock()
@@ -75,7 +111,7 @@ pub fn atom_hoist_threshold() -> Option<usize> {
 #[inline(always)]
 #[must_use]
 pub fn is_atom_hoist() -> bool {
-    ATOM_HOIST_THRESHOLD.load(Ordering::Relaxed) != 0
+    ATOM_HOIST_THRESHOLD.load(Ordering::Relaxed) != 0 && !SUPPRESSED.with(Cell::get)
 }
 
 #[cfg(test)]
@@ -94,5 +130,56 @@ mod tests {
         assert_eq!(atom_hoist_threshold(), Some(3));
         set_atom_hoist(None);
         assert!(!is_atom_hoist());
+    }
+
+    #[test]
+    #[serial]
+    fn suppression_restores_nested_mode_and_preserves_requested_plan() {
+        // Given
+        set_atom_hoist(Some(2));
+        restore_atom_plan(Some(BTreeSet::from(["shared".into()])));
+        let plan = atom_plan();
+        // When
+        {
+            let _outer = AtomModeGuard::new(true);
+            assert!(!is_atom_hoist());
+            let _inner = AtomModeGuard::new(false);
+            assert!(!is_atom_hoist());
+            assert!(!is_hoisted_bucket("shared"));
+            freeze_atom_plan();
+            assert_eq!(atom_hoist_threshold(), Some(2));
+        }
+        // Then
+        assert!(is_atom_hoist());
+        assert_eq!(atom_plan(), plan);
+        assert!(is_hoisted_bucket("shared"));
+        set_atom_hoist(None);
+        restore_atom_plan(None);
+    }
+
+    #[test]
+    #[serial]
+    fn suppression_restores_after_error_and_unwind_without_freezing() {
+        // Given
+        set_atom_hoist(Some(2));
+        restore_atom_plan(None);
+        let error = || -> Result<(), &'static str> {
+            let _guard = AtomModeGuard::new(true);
+            freeze_atom_plan();
+            Err("test boundary")
+        };
+        // When
+        assert_eq!(error(), Err("test boundary"));
+        assert!(is_atom_hoist());
+        let unwind = std::panic::catch_unwind(|| {
+            let _guard = AtomModeGuard::new(true);
+            freeze_atom_plan();
+            panic!("test unwind");
+        });
+        // Then
+        assert!(unwind.is_err());
+        assert!(is_atom_hoist());
+        assert_eq!(atom_plan(), None);
+        set_atom_hoist(None);
     }
 }

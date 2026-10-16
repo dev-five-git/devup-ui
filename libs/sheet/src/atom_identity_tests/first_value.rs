@@ -128,7 +128,7 @@ fn first_value_rebuild_references_the_new_default_instead_of_cached_literal() {
     // Given
     for atom in [false, true] {
         let mut old = token_sheet(atom);
-        let old_name = extract_first_value(&mut old);
+        extract_first_value(&mut old);
         let mut rebuilt = token_sheet(atom);
         rebuilt.set_theme(token_theme("8px"));
         // When
@@ -137,10 +137,36 @@ fn first_value_rebuild_references_the_new_default_instead_of_cached_literal() {
         let css = rebuilt.create_css(Some("test.tsx"), false);
         assert!(css.contains(&format!(".{new_name}{{width:8px}}")), "{css}");
         assert!(!css.contains("width:1px"), "{css}");
-        if atom {
-            assert_ne!(old_name, new_name);
-        }
     }
+    css::atom_hoist::set_atom_hoist(None);
+    css::atom_hoist::restore_atom_plan(None);
+    StyleSheet::default().set_theme(Theme::default());
+}
+
+#[test]
+#[serial]
+fn cached_first_value_maps_allocate_a_new_slot_for_a_changed_default() {
+    // Given
+    let mut old = token_sheet(true);
+    let old_name = extract_first_value(&mut old);
+    let classes = css::class_map::get_class_map();
+    let files = css::file_map::get_file_map();
+    let serialized =
+        serde_json::to_string(&old.export_snapshot()).unwrap_or_else(|error| panic!("{error}"));
+    token_sheet(true);
+    css::class_map::set_class_map(classes);
+    css::file_map::set_file_map(files);
+    let mut resumed: StyleSheet =
+        serde_json::from_str(&serialized).unwrap_or_else(|error| panic!("{error}"));
+    resumed.set_theme(token_theme("8px"));
+    // When
+    let new_name = extract_first_value(&mut resumed);
+    // Then
+    assert_ne!(old_name, new_name);
+    let css = resumed.create_css(Some("test.tsx"), false);
+    assert!(css.contains(&format!(".{old_name}{{width:1px}}")), "{css}");
+    assert!(css.contains(&format!(".{new_name}{{width:8px}}")), "{css}");
+    assert!(!css.contains(&format!(".{new_name}{{width:1px}}")), "{css}");
     css::atom_hoist::set_atom_hoist(None);
     css::atom_hoist::restore_atom_plan(None);
     StyleSheet::default().set_theme(Theme::default());

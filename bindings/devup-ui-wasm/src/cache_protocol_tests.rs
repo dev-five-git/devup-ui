@@ -30,7 +30,7 @@ fn legacy_import_changes_cache_generation_when_exported(
     assert_ne!(exported, legacy_json);
     let json: serde_json::Value =
         serde_json::from_str(&exported).unwrap_or_else(|error| panic!("{error}"));
-    assert_eq!(json["atomNamingVersion"], 1);
+    assert_eq!(json["atomNamingVersion"], 2);
     let restored: StyleSheet =
         serde_json::from_str(&exported).unwrap_or_else(|error| panic!("{error}"));
     assert_eq!(restored.atom_plan, None);

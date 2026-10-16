@@ -1,4 +1,6 @@
 pub mod at_rule;
+#[cfg(test)]
+mod atom_counter_tests;
 pub mod atom_hoist;
 pub mod atom_name;
 pub mod class_map;
@@ -446,7 +448,10 @@ pub fn keyframes_to_keyframes_name(keyframes: &str, filename: Option<&str>) -> S
             || "g".to_string(),
             |file| format!("l-{}", atom_name::hex(&file_map::canonical(file))),
         );
-        return with_prefix(|prefix| format!("{prefix}k1-{scope}-{}", atom_name::hex(keyframes)));
+        return atom_name::counter_name(
+            &format!("k1-{scope}-{}", atom_name::hex(keyframes)),
+            filename,
+        );
     }
     with_prefix(|prefix| {
         if is_debug() {
@@ -563,14 +568,16 @@ pub fn sheet_to_classname(
             None => "n".to_string(),
             Some(_) => format!("s-{}", atom_name::hex(&optimized)),
         };
-        return with_prefix(|prefix| {
-            format!(
-                "{prefix}a1-{scope}-{}-{level}-{value}-{}-{}",
-                atom_name::hex(property.trim()),
-                atom_name::hex(selector.unwrap_or_default()),
-                style_order.unwrap_or(255),
-            )
-        });
+        let identity = format!(
+            "a1-{scope}-{}-{level}-{value}-{}-{}",
+            atom_name::hex(property.trim()),
+            atom_name::hex(selector.unwrap_or_default()),
+            style_order.unwrap_or(255),
+        );
+        return atom_name::counter_name(
+            &identity,
+            filename.filter(|file| !atom_hoist::is_hoisted_bucket(file)),
+        );
     }
     if is_debug() {
         let selector = selector.unwrap_or_default().trim();
@@ -665,13 +672,12 @@ fn write_u8(s: &mut String, v: u8) {
 #[must_use]
 pub fn sheet_to_variable_name(property: &str, level: u8, selector: Option<&str>) -> String {
     if atom_hoist::is_atom_hoist() {
-        return with_prefix(|prefix| {
-            format!(
-                "--{prefix}v1-{}-{level}-{}",
-                atom_name::hex(property.trim()),
-                atom_name::hex(selector.unwrap_or_default())
-            )
-        });
+        let identity = format!(
+            "v1-{}-{level}-{}",
+            atom_name::hex(property.trim()),
+            atom_name::hex(selector.unwrap_or_default())
+        );
+        return format!("--{}", atom_name::counter_name(&identity, None));
     }
     if is_debug() {
         let selector = selector.unwrap_or_default().trim();

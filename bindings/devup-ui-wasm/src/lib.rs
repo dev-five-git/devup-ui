@@ -88,6 +88,7 @@ impl Output {
         // the extractor already baked into `code`. Identity when no map is loaded.
         // Global (shared-chunk) files are treated like single-css: emitted into the
         // global bucket (devup-ui.css) with prefix-less naming.
+        let _atom_mode = css::atom_hoist::AtomModeGuard::new(single_css);
         let canonical_filename = canonical(&filename);
         let global = single_css || is_global(&filename);
         with_style_sheet_mut(|sheet| {
@@ -97,7 +98,7 @@ impl Output {
             // globalCss. Atom property bucketing still uses canonical_filename.
             let default_collected = sheet.rm_global_css(&filename, global);
             let (collected, updated_base_style) =
-                sheet.update_styles(&styles, &canonical_filename, global);
+                sheet.update_styles_in_bucket(&styles, &canonical_filename, global);
             Self {
                 code,
                 map,

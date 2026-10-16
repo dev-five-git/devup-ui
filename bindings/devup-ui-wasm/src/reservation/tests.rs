@@ -113,9 +113,10 @@ fn build(order: [usize; 2], single: bool, hoist: bool) -> Result<Built, Box<dyn 
 #[serial]
 fn reserved_real_outputs_match_when_callbacks_reverse() -> TestResult {
     // Given / When / Then: same physical reservation, opposite real extraction order.
-    for (single, hoist) in [(true, false), (false, false), (false, true)] {
+    for (single, hoist) in [(true, false), (true, true), (false, false), (false, true)] {
         assert_eq!(build([0, 1], single, hoist)?, build([1, 0], single, hoist)?);
     }
+    assert_eq!(build([0, 1], true, false)?, build([0, 1], true, true)?);
     Ok(())
 }
 

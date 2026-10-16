@@ -3,6 +3,10 @@ use serial_test::serial;
 use std::collections::HashSet;
 
 mod lifecycle;
+mod references;
+mod resumption;
+mod single_css;
+use references::assert_references_resolve;
 
 fn setup() {
     reset_build_state_internal();
@@ -45,28 +49,26 @@ fn emitted(file: &str) -> String {
     })
 }
 
-fn assert_references_resolve(code: &str, css: &str) {
-    let mut classes = 0;
-    for token in code.split(|c: char| !(c.is_ascii_alphanumeric() || c == '-' || c == '_')) {
-        if token.starts_with("a1-") || token.starts_with("du-a1-") {
-            assert!(
-                css.contains(&format!(".{token}")),
-                "unemitted class {token}\n{css}"
-            );
-            classes += 1;
-        } else if token.starts_with("k1-") || token.starts_with("du-k1-") {
-            assert!(
-                css.contains(&format!("@keyframes {token}{{")),
-                "unemitted keyframes {token}"
-            );
-        } else if token.starts_with("--v1-") || token.starts_with("--du-v1-") {
-            assert!(
-                css.contains(&format!("var({token})")),
-                "unemitted variable {token}"
-            );
-        }
-    }
-    assert!(classes > 0, "fixture must generate classes: {code}");
+fn reserve(sources: &[(&str, &str)]) {
+    let inputs: Vec<_> = sources
+        .iter()
+        .map(|(file, source)| ReservationInput {
+            filename: (*file).into(),
+            code: (*source).into(),
+            css_dir: "df".into(),
+        })
+        .collect();
+    reserve_class_slots_internal(
+        &inputs,
+        ExtractOption {
+            import_aliases: HashMap::from([(
+                "@vanilla-extract/css".into(),
+                ImportAlias::NamedToNamed,
+            )]),
+            ..ExtractOption::default()
+        },
+        None,
+    );
 }
 
 const SOURCE_A: &str = r#"
@@ -94,7 +96,12 @@ fn atom_references_and_output_are_stable_when_extraction_order_changes() {
     // Given
     let build = |reverse: bool| {
         setup();
-        let mut sources = [("a.tsx", SOURCE_A), ("b.tsx", SOURCE_B)];
+        let mut sources = [
+            ("a.tsx", SOURCE_A),
+            ("b.tsx", SOURCE_B),
+            ("private.tsx", SOURCE_B),
+        ];
+        reserve(&sources);
         if reverse {
             sources.reverse();
         }
@@ -102,7 +109,9 @@ fn atom_references_and_output_are_stable_when_extraction_order_changes() {
         // When
         for (file, source) in sources {
             let result = compile(file, source);
-            assert!(result.updated_base_style);
+            if file != "private.tsx" {
+                assert!(result.updated_base_style);
+            }
             output.insert(file, result.code);
         }
         // Then
@@ -110,6 +119,7 @@ fn atom_references_and_output_are_stable_when_extraction_order_changes() {
             assert_references_resolve(code, &emitted(file));
         }
         let css = with_style_sheet(|sheet| sheet.create_css(None, false));
+        assert_eq!(get_unreserved_class_slot_count(), 0);
         assert!(css.contains("@layer o1,o2"), "{css}");
         assert!(css.contains("!important"));
         assert!(!css.contains("differentRuntimeCode"));
@@ -117,7 +127,13 @@ fn atom_references_and_output_are_stable_when_extraction_order_changes() {
             !with_style_sheet(|sheet| sheet.create_css(Some("a.tsx"), false))
                 .contains("background:red")
         );
-        (output, css, emitted("a.tsx"), emitted("b.tsx"))
+        (
+            output,
+            css,
+            emitted("a.tsx"),
+            emitted("b.tsx"),
+            emitted("private.tsx"),
+        )
     };
     assert_eq!(build(false), build(true));
     reset_build_state_internal();
@@ -131,11 +147,26 @@ fn atom_names_and_emission_are_stable_when_debug_changes_with_prefix() {
         setup();
         set_prefix(Some("du-".to_string()));
         css::debug::set_debug(debug);
+        reserve(&[("a.tsx", SOURCE_A)]);
+        let reserved = export_class_map_internal().unwrap_or_else(|error| panic!("{error}"));
+        reserve(&[("a.tsx", SOURCE_A)]);
+        assert_eq!(
+            export_class_map_internal().unwrap_or_else(|error| panic!("{error}")),
+            reserved
+        );
+        assert!(
+            css::class_map::get_class_map()
+                .values()
+                .map(HashMap::len)
+                .sum::<usize>()
+                > 0
+        );
         // When
         let output = compile("a.tsx", SOURCE_A);
         let css = emitted("a.tsx");
         // Then
         assert_references_resolve(&output.code, &css);
+        assert_eq!(get_unreserved_class_slot_count(), 0);
         (output.code, css)
     };
     assert_eq!(build(false), build(true));
@@ -151,14 +182,22 @@ fn same_atom_stays_local_when_a_private_bucket_also_uses_it() {
     let source = r#"import {Box} from '@devup-ui/react'; export const x=<Box color="red"/>;"#;
     // When
     let shared = compile("a.tsx", source);
+    let shared_peer = compile("b.tsx", source);
     let private = compile("private.tsx", source);
     // Then
     assert_references_resolve(&shared.code, &emitted("a.tsx"));
+    assert_references_resolve(&shared_peer.code, &emitted("b.tsx"));
     assert_references_resolve(&private.code, &emitted("private.tsx"));
     let global = with_style_sheet(|sheet| sheet.create_css(None, false));
     let local = with_style_sheet(|sheet| sheet.create_css(Some("private.tsx"), false));
     assert_eq!(global.matches("color:red").count(), 1);
     assert_eq!(local.matches("color:red").count(), 1);
+    assert!(shared.code.contains("className=\"a\""), "{}", shared.code);
+    assert!(
+        private.code.contains("className=\"c-a\""),
+        "{}",
+        private.code
+    );
     assert_ne!(shared.code, private.code);
     reset_build_state_internal();
 }

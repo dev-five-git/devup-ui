@@ -12,13 +12,27 @@ pub fn hex(value: &str) -> String {
     result
 }
 
-/// Names identify placement, never the order a source was encountered.
+/// Lossless placement identity, separate from the emitted counter namespace.
 pub fn scope(filename: Option<&str>) -> String {
     match filename {
         None => "g".to_string(),
         Some(file) if is_hoisted_bucket(file) => "h".to_string(),
         Some(file) => format!("l-{}", hex(&canonical(file))),
     }
+}
+
+pub(crate) fn counter_name(identity: &str, filename: Option<&str>) -> String {
+    let filename = filename.map(canonical);
+    let slot = crate::class_num_for_key(filename.as_deref().unwrap_or_default(), |key| {
+        key.push_str(identity);
+    });
+    crate::with_prefix(|prefix| match filename {
+        Some(file) => format!(
+            "{prefix}{}-{slot}",
+            crate::num_to_nm_base::num_to_nm_base(crate::file_map::get_file_num_by_filename(&file))
+        ),
+        None => format!("{prefix}{slot}"),
+    })
 }
 
 /// Structural selector identity excludes the source owner used only for cleanup.

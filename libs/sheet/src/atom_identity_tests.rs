@@ -5,6 +5,7 @@ use serial_test::serial;
 
 mod first_value;
 mod mixed_placement;
+mod single_css;
 
 #[test]
 #[serial]
@@ -12,6 +13,8 @@ fn nested_at_rule_pseudo_classes_reference_the_emitted_selector() {
     // Given
     css::atom_hoist::restore_atom_plan(None);
     css::atom_hoist::set_atom_hoist(Some(2));
+    css::class_map::reset_class_map();
+    css::file_map::reset_file_map();
     css::file_routes::reset_file_routes();
     css::file_map::reset_canonical_map();
     css::set_prefix(None);
@@ -58,6 +61,8 @@ fn content_identities_emit_distinct_rules_for_structural_boundaries() {
     // Given
     css::atom_hoist::restore_atom_plan(None);
     css::atom_hoist::set_atom_hoist(Some(2));
+    css::class_map::reset_class_map();
+    css::file_map::reset_file_map();
     css::file_routes::reset_file_routes();
     css::file_map::reset_canonical_map();
     css::set_prefix(None);

@@ -130,6 +130,16 @@ fn build(modules: &[Module], hoist: bool) -> Result<Snapshot, ExtractionError> {
     }));
     super::import_file_routes_internal(reach);
     set_atom_hoist(hoist.then_some(2));
+    let mut inventory: Vec<_> = modules
+        .iter()
+        .map(|module| super::ReservationInput {
+            filename: module.path.clone(),
+            code: module.source(),
+            css_dir: "df".into(),
+        })
+        .collect();
+    inventory.sort_by(|a, b| a.filename.cmp(&b.filename));
+    super::reserve_class_slots_internal(&inventory, extractor::ExtractOption::default(), None);
     let code = modules
         .iter()
         .map(|module| {
