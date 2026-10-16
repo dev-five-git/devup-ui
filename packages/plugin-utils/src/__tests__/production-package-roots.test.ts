@@ -154,6 +154,14 @@ it.each(['ENOTDIR', 'EACCES', 'non-error'])(
               : snapshot.fileDependencies,
           ),
         ).toContain(scope)
+        expect(inputs.snapshot()).toEqual({
+          fileDependencies: expect.arrayContaining(
+            observed.flatMap((snapshot) => snapshot.fileDependencies),
+          ),
+          missingDependencies: expect.arrayContaining(
+            observed.flatMap((snapshot) => snapshot.missingDependencies),
+          ),
+        })
       } finally {
         read.mockRestore()
       }

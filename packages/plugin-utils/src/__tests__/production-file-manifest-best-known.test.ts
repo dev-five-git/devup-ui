@@ -9,6 +9,45 @@ import { PreparedSourceTypeError } from '../prepared-source'
 import { collectProductionFileManifest } from '../production-file-manifest'
 import { enumerateProductionSourceFiles } from '../production-source-files'
 
+it.each([2, 8])(
+  'observes each of %s prepared real files once',
+  async (count) => {
+    // Given independent selected files with genuinely supplied empty JavaScript.
+    const paths = Array.from({ length: count }, (_, index) =>
+      join(root, `selected-${index}.js`),
+    )
+    for (const path of paths) await writeFile(path, 'export {}')
+    const observed: string[] = []
+    const selected = {
+      key: 'cohort',
+      files: enumerateProductionSourceFiles({ roots: [], sourceFiles: paths }),
+      resolverOptions: {
+        cwd: root,
+        onResolutionInputs: (inputs: {
+          readonly fileDependencies: readonly string[]
+        }) => observed.push(...inputs.fileDependencies),
+      },
+      prepareSource: () => '',
+      toId: (path: string) => path,
+    }
+    // When one context collects all selected sources.
+    const files = await collectProductionFileManifest({ contexts: [selected] })
+    // Then callback entries contain no prior-source history and membership stays exact.
+    const entries = observed.filter((path) => paths.includes(path))
+    expect(entries).toHaveLength(count)
+    for (const path of paths)
+      expect(entries.filter((entry) => entry === path)).toHaveLength(1)
+    expect(files).toEqual(
+      paths.sort().map((path) => ({
+        path,
+        realPath: path,
+        context: 'cohort',
+        id: path,
+      })),
+    )
+  },
+)
+
 it('rejects invalid prepared source types despite reserve-only opt-in', async () => {
   // Given a malformed boundary object, not missing compiler output.
   const prepared = Object.defineProperty({ code: 'export {}' }, 'sourceType', {
