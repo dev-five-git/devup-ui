@@ -1,6 +1,6 @@
 use crate::{
     ExtractOption,
-    import_alias_visit::{source_offset, transform_import_aliases_with_edits},
+    import_alias_visit::{Aliased, source_offset, transform_import_aliases_with_edits},
 };
 
 pub(crate) fn map_evaluated(
@@ -33,7 +33,11 @@ pub(crate) fn evaluated_calls(
     filename: &str,
     option: &ExtractOption,
 ) -> Vec<(usize, usize)> {
-    let (aliased, edits) = transform_import_aliases_with_edits(
+    let Aliased {
+        code: aliased,
+        edits,
+        ..
+    } = transform_import_aliases_with_edits(
         source,
         filename,
         &option.package,

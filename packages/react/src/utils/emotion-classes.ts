@@ -9,7 +9,7 @@ export type ClassNamesArg =
   | null
   | undefined
   | { [name: string]: unknown }
-  | ClassNamesArg[]
+  | readonly ClassNamesArg[]
 
 /**
  * Emotion compatible class composition. The call is compiled away at build
