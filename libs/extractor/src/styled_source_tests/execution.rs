@@ -3,6 +3,76 @@ use boa_engine::{Context, Source};
 use oxc_codegen::Codegen;
 
 #[rstest]
+#[case("Link")]
+#[case("motion.div")]
+#[serial]
+fn actual_target_and_captures_survive_when_typescript_retargets_then_extends(#[case] target: &str) {
+    // Given: a prepared base, retained attrs, a retarget and a further extension.
+    let source = format!(
+        "{IMPORT}const trace=[];const Link=props=>props;const Override=props=>props;const motion={{div:Link}};const on=true;const Base=styled.div.attrs({{id:'retargeted'}})({{color:'red',...((trace.push('base'),on)?{{color:'blue'}}:{{}})}});const Mid=Base.withComponent({target});const Card=styled(Mid)({{p:1}});"
+    );
+    let output = compile("test.ts", &source, true);
+    let arena = Allocator::default();
+    let mut program = parse(&arena, "test.ts", &output);
+    let calls = renders(&program);
+    assert_eq!(calls.len(), 3);
+    let helper = &calls[0].helper;
+    program
+        .body
+        .retain(|statement| !matches!(statement, Statement::ImportDeclaration(_)));
+    let code = Codegen::new().build(&program).code;
+    // When: the emitted extension renders its default and an actual component override.
+    let script = format!(
+        "const {helper}=(target,props)=>({{target,props}});{code}\nconst first=Card({{className:'caller',forwardedAs:'nav'}});const second=Card({{as:Override,forwardedAs:'aside'}});JSON.stringify([first.target===Link,second.target===Override,first.props.as,second.props.as,first.props.id,second.props.id,first.props.className.includes('caller'),trace]);"
+    );
+    let mut context = Context::default();
+    let result = context.eval(Source::from_bytes(&script));
+    assert!(result.is_ok(), "{result:?}");
+    // Then: identity, forwarded props, attrs and single ordered captures survive retargeting.
+    assert_eq!(
+        result.ok().and_then(|result| result
+            .as_string()
+            .map(|value| value.to_std_string_escaped())),
+        Some(
+            r#"[true,true,"nav","aside","retargeted","retargeted",true,["base","base"]]"#
+                .to_string()
+        )
+    );
+}
+
+#[rstest]
+#[case("styled(Component)({ color: 'red' })")]
+#[case("styled(motion.div)({ color: 'red' })")]
+#[case("styled(tag)({ color: 'red' })")]
+#[serial]
+fn inherited_target_is_preserved_when_typescript_component_renders(#[case] factory: &str) {
+    // Given: two extensions of a component, member or runtime-bound base in non-JSX TS.
+    let source = format!(
+        "{IMPORT}const Component = (props) => props; const motion = {{ div: Component }}; const tag = Component; const Base = {factory}; const Middle = styled(Base)({{ background: 'blue' }}); const Card = styled(Middle)`padding: 4px;`;"
+    );
+    let output = compile("test.ts", &source, true);
+    let arena = Allocator::default();
+    let mut program = parse(&arena, "test.ts", &output);
+    let calls = renders(&program);
+    assert_eq!(calls.len(), 3);
+    let helper = &calls[0].helper;
+    program
+        .body
+        .retain(|statement| !matches!(statement, Statement::ImportDeclaration(_)));
+    let code = Codegen::new().build(&program).code;
+    // When: the emitted extension renders through the actual factory.
+    let script = format!(
+        "const {helper} = (target, props) => ({{target, props}}); {code}\nCard({{children: 'child'}}).target === Component;"
+    );
+    let mut context = Context::default();
+    let result = context
+        .eval(Source::from_bytes(&script))
+        .unwrap_or_else(|error| panic!("inherited-target renderer evaluation failed: {error}"));
+    // Then: the extension renders the original component, never its string name.
+    assert_eq!(result.as_boolean(), Some(true));
+}
+
+#[rstest]
 #[case("styled(tag)({ color: 'red' })")]
 #[case("styled(targets[name])({ color: 'red' })")]
 #[case("styled(active ? Component : Other)({ color: 'red' })")]
@@ -67,7 +137,7 @@ fn caller_props_win_when_dynamic_styles_are_rendered(#[case] factory: &str) {
     let code = Codegen::new().build(&program).code;
     // When: the generated call renders with caller overrides.
     let script = format!(
-        "const {helper} = (target, props) => ({{target, props}}); function getColor() {{ return 'red'; }} {code}\nconst first = Card({{className: 'caller', children: 'child', onClick: 7, ref: 8, as: 'section'}}); const variable = Object.keys(first.props.style)[0]; const second = Card({{style: {{[variable]: 'blue'}}, role: 'link'}}); JSON.stringify([first.target, first.props.className.includes('caller'), first.props.style[variable], first.props.children, first.props.onClick, first.props.ref, first.props.as, second.props.style[variable]]);"
+        "const {helper} = (target, props) => ({{target, props}}); function getColor() {{ return 'red'; }} {code}\nconst first = Card({{className: 'caller', children: 'child', onClick: 7, ref: 8, as: 'section', forwardedAs: 'nav'}}); const variable = Object.keys(first.props.style)[0]; const second = Card({{style: {{[variable]: 'blue'}}, role: 'link'}}); JSON.stringify([first.target, first.props.className.includes('caller'), first.props.style[variable], first.props.children, first.props.onClick, first.props.ref, first.props.as, second.props.style[variable]]);"
     );
     let mut context = Context::default();
     let result = context
@@ -79,6 +149,6 @@ fn caller_props_win_when_dynamic_styles_are_rendered(#[case] factory: &str) {
             .as_string()
             .unwrap_or_else(|| panic!("caller-props renderer JSON result must be a string"))
             .to_std_string_escaped(),
-        r#"["article",true,"red","child",7,8,"section","blue"]"#,
+        r#"["section",true,"red","child",7,8,"nav","blue"]"#,
     );
 }
