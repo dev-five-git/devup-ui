@@ -8,7 +8,14 @@ declare module 'styled-components' {
   } from '@devup-ui/react'
   import type { StyledTheme } from '@devup-ui/react/compat'
   import type { Properties } from 'csstype-extra'
-  import type { ComponentType, Consumer, Context, ReactNode } from 'react'
+  import type {
+    ComponentType,
+    Context,
+    ForwardRefExoticComponent,
+    PropsWithoutRef,
+    ReactNode,
+    RefAttributes,
+  } from 'react'
 
   const ruleSet: unique symbol
   const keyframesName: unique symbol
@@ -48,21 +55,27 @@ declare module 'styled-components' {
   export function useTheme(): DefaultTheme
   export function withTheme<P extends { theme?: DefaultTheme }>(
     component: ComponentType<P>,
-  ): ComponentType<Omit<P, 'theme'>>
+  ): ForwardRefExoticComponent<
+    PropsWithoutRef<Omit<P, 'theme'> & { theme?: DefaultTheme }> &
+      RefAttributes<unknown>
+  >
   export function ThemeProvider(props: {
-    theme?: DefaultTheme
+    theme?: DefaultTheme | ((outer: DefaultTheme | undefined) => DefaultTheme)
     children?: ReactNode
+  }): ReactNode
+  export function ThemeConsumer(props: {
+    children: (theme: DefaultTheme) => ReactNode
   }): ReactNode
 
   /**
-   * Not compiled: the build keeps these imports on `styled-components`, which
+   * Not compiled: the build keeps this import on `styled-components`, which
    * must then be installed.
    */
-  export const ThemeConsumer: Consumer<DefaultTheme | undefined>
   export const ThemeContext: Context<DefaultTheme | undefined>
 
   export {
     createGlobalStyle,
+    createTheme,
     isStyledComponent,
     ServerStyleSheet,
     StyleSheetManager,

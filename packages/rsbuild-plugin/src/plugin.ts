@@ -1,16 +1,20 @@
 import { existsSync, readFileSync, writeFileSync } from 'node:fs'
-import { mkdir, writeFile } from 'node:fs/promises'
+import { mkdir, stat, writeFile } from 'node:fs/promises'
 import { basename, dirname, join, relative, resolve } from 'node:path'
 
 import {
+  beginBuild,
   buildCanonicalMap,
+  collectNumberedFiles,
   computeFileReach,
   computeReachableFiles,
   createCompatTypes,
   createModuleResolver,
   createNodeModulesExcludeRegex,
+  createStateWriter,
   createThemeInterfaceArgs,
   type CustomShorthands,
+  extractedNeedles,
   getFileNumByFilename,
   type ImportAliases,
   loadDevupConfig,
@@ -18,6 +22,9 @@ import {
   normalizeShorthands,
   planAtomHoist,
   readJsxImportSource,
+  seedFileNumbers,
+  tailwindCssFiles,
+  withTailwindCss,
 } from '@devup-ui/plugin-utils'
 import {
   codeExtract,
@@ -28,6 +35,8 @@ import {
   importFileRoutes,
   registerShorthands,
   registerTheme,
+  resetBuildState,
+  seedFileMap,
   setAtomHoist,
   setDebug,
   setModuleResolver,
@@ -75,12 +84,14 @@ async function writeDataFiles(
     DevupUIRsbuildPluginOptions,
     'extractCss' | 'debug' | 'include'
   >,
-) {
+): Promise<string[]> {
+  let tailwindFiles: string[] = []
   try {
     const config = await loadDevupConfig(options.devupFile)
     const theme = config.theme ?? {}
 
-    registerTheme(theme)
+    registerTheme(withTailwindCss(theme, config))
+    tailwindFiles = tailwindCssFiles(config)
     const interfaceCode = getThemeInterface(
       ...createThemeInterfaceArgs(options.package),
     )
@@ -104,6 +115,7 @@ async function writeDataFiles(
       ? writeFile(join(options.cssDir, 'devup-ui.css'), getCss(null, false))
       : Promise.resolve(),
   ])
+  return tailwindFiles
 }
 
 /**
@@ -135,14 +147,19 @@ export const DevupUI = ({
     userImportAliases,
     readJsxImportSource(),
   )
+  const stateWriter = createStateWriter((path, content, encoding) =>
+    encoding ? writeFile(path, content, encoding) : writeFile(path, content),
+  )
 
   return {
     name: PLUGIN_NAME,
     async setup(api) {
+      // A build starts from its own options, not from what an earlier build
+      // in this process left in the engine
+      const endBuild = beginBuild({ resetBuildState })
+      api.onCloseBuild?.(endBuild)
       setDebug(debug)
-      if (prefix) {
-        setPrefix(prefix)
-      }
+      setPrefix(prefix ?? null)
 
       if (!existsSync(distDir)) await mkdir(distDir, { recursive: true })
       await writeFile(join(distDir, '.gitignore'), '*', 'utf-8')
@@ -152,7 +169,7 @@ export const DevupUI = ({
         'utf-8',
       )
 
-      await writeDataFiles({
+      let tailwindFiles = await writeDataFiles({
         package: libPackage,
         cssDir,
         devupFile,
@@ -160,6 +177,48 @@ export const DevupUI = ({
         singleCss,
       })
       if (!extractCss) return
+
+      // The project's Tailwind CSS defines what a Tailwind class compiles to:
+      // read it again when it changes, and compile every module again
+      api.modifyRspackConfig((config) => {
+        config.plugins ??= []
+        config.plugins.push({
+          apply(compiler: {
+            hooks: {
+              watchRun: {
+                tapPromise: (name: string, fn: () => Promise<void>) => void
+              }
+            }
+          }) {
+            let stamp: string | undefined
+            compiler.hooks.watchRun.tapPromise(
+              'DevupUIRsbuildPlugin',
+              async () => {
+                const current = (
+                  await Promise.all(
+                    tailwindFiles.map((file) =>
+                      stat(file).then(
+                        (stats) => stats.mtimeMs,
+                        () => 0,
+                      ),
+                    ),
+                  )
+                ).join()
+                if (stamp !== undefined && stamp !== current) {
+                  tailwindFiles = await writeDataFiles({
+                    package: libPackage,
+                    cssDir,
+                    devupFile,
+                    distDir,
+                    singleCss,
+                  })
+                }
+                stamp = current
+              },
+            )
+          },
+        })
+      })
 
       // Atom-level hoisting (opt-in via `atomHoist`). Configured BEFORE any
       // transform so atoms receive global (shared) class names. Composes with
@@ -206,6 +265,21 @@ export const DevupUI = ({
         }
       }
 
+      try {
+        // Number every file the build can extract in path order, so class
+        // prefixes do not depend on the order modules reach the transform
+        seedFileNumbers(
+          { seedFileMap },
+          collectNumberedFiles({
+            roots: [resolve(process.cwd(), 'src')],
+            include,
+            needles: extractedNeedles(libPackage, importAliases),
+            toId: (path) => (atomMode ? path.replaceAll('\\', '/') : path),
+          }),
+        )
+      } catch {
+        // Best-effort; numbering falls back to arrival order.
+      }
       // Extract the source files under `src` that the entries reach, in path
       // order, the same way the transform does, so that a stylesheet built on
       // its first import already holds the styles of every one. Best-effort:
@@ -375,6 +449,7 @@ export const DevupUI = ({
         async ({ code, resourcePath, addDependency }) => {
           if (createNodeModulesExcludeRegex(include).test(resourcePath))
             return code
+          for (const file of tailwindFiles) addDependency(file)
           // The stylesheet import is emitted relative to the importing file, as
           // in the next/webpack/vite loaders. An absolute cssDir would bake this
           // checkout's path into the emitted module, so byte-identical sources
@@ -418,7 +493,7 @@ export const DevupUI = ({
           if (updatedBaseStyle) {
             // update base style
             promises.push(
-              writeFile(
+              stateWriter.write(
                 join(cssDir, 'devup-ui.css'),
                 getCss(null, false),
                 'utf-8',
@@ -428,7 +503,7 @@ export const DevupUI = ({
 
           if (cssFile) {
             promises.push(
-              writeFile(
+              stateWriter.write(
                 join(cssDir, basename(cssFile)),
                 `/* ${resourcePath} ${Date.now()} */`,
                 'utf-8',

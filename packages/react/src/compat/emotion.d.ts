@@ -6,6 +6,12 @@ declare module '@emotion/styled' {
   export default styled
 }
 
+declare module '@emotion/css' {
+  export { css, globalCss as injectGlobal, keyframes } from '@devup-ui/react'
+  export type { ClassNamesArg } from '@devup-ui/react/compat'
+  export { cx, merge } from '@devup-ui/react/compat'
+}
+
 declare module '@emotion/react' {
   import type {
     CssPart,
@@ -17,7 +23,13 @@ declare module '@emotion/react' {
     ClassNamesContent,
     StyledTheme,
   } from '@devup-ui/react/compat'
-  import type { ComponentType, ReactNode } from 'react'
+  import type {
+    ComponentType,
+    ForwardRefExoticComponent,
+    PropsWithoutRef,
+    ReactNode,
+    RefAttributes,
+  } from 'react'
 
   const serializedStyles: unique symbol
   const keyframesName: unique symbol
@@ -54,13 +66,17 @@ declare module '@emotion/react' {
   export function useTheme(): Theme
   export function withTheme<P extends { theme?: Theme }>(
     component: ComponentType<P>,
-  ): ComponentType<Omit<P, 'theme'>>
+  ): ForwardRefExoticComponent<
+    PropsWithoutRef<Omit<P, 'theme'> & { theme?: Theme }> &
+      RefAttributes<unknown>
+  >
   export function ThemeProvider(props: {
-    theme?: Theme
+    theme?: Theme | ((outer: Theme | undefined) => Theme)
     children?: ReactNode
   }): ReactNode
 
   export {
+    CacheProvider,
     ClassNames,
     jsx as createElement,
     Global,

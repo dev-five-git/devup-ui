@@ -211,7 +211,8 @@ export type StyleXContractChecks = [
   Assert<Equal<typeof direct.create, typeof namedCreate>>,
   Assert<Equal<keyof typeof reactProps, 'className' | 'style'>>,
   Assert<Equal<keyof typeof domAttrs, 'class' | 'style'>>,
-  Assert<Rejects<string, NonNullable<typeof domAttrs.style>>>,
+  Assert<Equal<typeof domAttrs.style, string | undefined>>,
+  Assert<Rejects<{ '--n': 1 }, NonNullable<typeof domAttrs.style>>>,
   Assert<
     Accepts<{ '--n': 1; '--empty': null }, NonNullable<typeof reactProps.style>>
   >,

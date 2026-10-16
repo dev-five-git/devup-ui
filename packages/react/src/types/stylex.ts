@@ -105,8 +105,8 @@ export type StyleXProps = {
   readonly style?: StyleXInlineStyle
 }
 
-/** This extractor returns an inline object, unlike upstream attrs(). */
+/** HTML attributes use style text; React props keep an inline style object. */
 export type StyleXAttrs = {
   readonly class: string
-  readonly style?: StyleXInlineStyle
+  readonly style?: string
 }

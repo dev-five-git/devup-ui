@@ -92,6 +92,7 @@ let startCoordinatorSpy: ReturnType<typeof spyOn>
 let readJsxImportSourceSpy: ReturnType<typeof spyOn>
 
 let originalEnv: NodeJS.ProcessEnv
+let originalEnvValues: NodeJS.ProcessEnv
 let originalFetch: typeof global.fetch
 let originalDebugPort: number
 
@@ -150,7 +151,8 @@ beforeEach(() => {
   setWasmForTesting(wasm)
   setWebpackPluginForTesting(webpackPluginModule)
 
-  originalEnv = { ...process.env }
+  originalEnv = process.env
+  originalEnvValues = { ...originalEnv }
   originalFetch = global.fetch
   originalDebugPort = process.debugPort
   global.fetch = mock(() => Promise.resolve({} as Response))
@@ -160,6 +162,10 @@ afterEach(() => {
   resetTurboSetupCacheForTesting()
   setWasmForTesting(undefined)
   setWebpackPluginForTesting(undefined)
+  for (const key of Object.keys(originalEnv)) {
+    if (!Object.hasOwn(originalEnvValues, key)) delete originalEnv[key]
+  }
+  Object.assign(originalEnv, originalEnvValues)
   process.env = originalEnv
   global.fetch = originalFetch
   process.debugPort = originalDebugPort
@@ -465,6 +471,7 @@ describe('DevupUINextPlugin', () => {
                     importAliases: {
                       '@emotion/react': null,
                       '@emotion/styled': 'styled',
+                      '@emotion/css': null,
                       '@vanilla-extract/css': null,
                       'styled-components': 'styled',
                     },
@@ -556,6 +563,7 @@ describe('DevupUINextPlugin', () => {
                     importAliases: {
                       '@emotion/react': null,
                       '@emotion/styled': 'styled',
+                      '@emotion/css': null,
                       '@vanilla-extract/css': null,
                       'styled-components': 'styled',
                     },
@@ -654,6 +662,7 @@ describe('DevupUINextPlugin', () => {
                     importAliases: {
                       '@emotion/react': null,
                       '@emotion/styled': 'styled',
+                      '@emotion/css': null,
                       '@vanilla-extract/css': null,
                       'styled-components': 'styled',
                     },
@@ -706,6 +715,7 @@ describe('DevupUINextPlugin', () => {
         importAliases: {
           '@emotion/react': null,
           '@emotion/styled': 'styled',
+          '@emotion/css': null,
           '@vanilla-extract/css': null,
           'styled-components': 'styled',
         },
@@ -850,6 +860,32 @@ export const box = style({ color: 'red' })`
       DevupUI({}, { prefix: 'my-prefix' })
       expect(setPrefixSpy).toHaveBeenCalledWith('my-prefix')
     })
+    it('numbers the files the scan finds, and survives a failing scan', () => {
+      process.env.TURBOPACK = '1'
+      const collectSpy = spyOn(importGraphModule, 'collectNumberedFiles')
+      const seedSpy = spyOn(wasm, 'seedFileMap').mockReturnValue(undefined)
+      try {
+        collectSpy.mockImplementation((options: any) => {
+          expect(options.roots).toEqual(
+            ['src', 'app', 'pages'].map((dir) => resolve(dir)),
+          )
+          expect(options.toId(resolve('src', 'a.tsx'))).toBe('src/a.tsx')
+          return ['src/a.tsx']
+        })
+        DevupUI({}, { include: ['@acme/ui'] })
+        expect(seedSpy).toHaveBeenCalledWith(['src/a.tsx'])
+        expect(collectSpy.mock.calls[0][0]).toMatchObject({
+          include: ['@acme/ui'],
+        })
+        collectSpy.mockImplementation(() => {
+          throw new Error('scan boom')
+        })
+        DevupUI({}, {})
+      } finally {
+        collectSpy.mockRestore()
+        seedSpy.mockRestore()
+      }
+    })
     it('should import previous session state on restart', () => {
       process.env.TURBOPACK = '1'
       existsSyncSpy
@@ -931,49 +967,52 @@ export const box = style({ color: 'red' })`
         },
       )
 
-      DevupUI({})
+      try {
+        DevupUI({})
 
-      // Verify coordinator was started with correct options
-      expect(startCoordinatorSpy).toHaveBeenCalledWith({
-        wasm,
-        package: '@devup-ui/react',
-        cssDir: resolve('df', 'devup-ui'),
-        singleCss: false,
-        sheetFile: join('df', 'sheet.json'),
-        classMapFile: join('df', 'classMap.json'),
-        fileMapFile: join('df', 'fileMap.json'),
-        importAliases: {
-          '@emotion/react': null,
-          '@emotion/styled': 'styled',
-          '@vanilla-extract/css': null,
-          'styled-components': 'styled',
-        },
-        coordinatorPortFile: join('df', 'coordinator.port'),
-        canonicalMap: expect.any(Object),
-        expectedBaseFiles: expect.any(Array),
-        prewarmedFiles: [],
-        prewarmedOutputs: expect.any(Map),
-        sourceMap: true,
-      })
-      expect(codeExtractSpy).not.toHaveBeenCalled()
-      expect(codeExtractWithoutSourceMapSpy).not.toHaveBeenCalled()
+        // Verify coordinator was started with correct options
+        expect(startCoordinatorSpy).toHaveBeenCalledWith({
+          wasm,
+          package: '@devup-ui/react',
+          cssDir: resolve('df', 'devup-ui'),
+          singleCss: false,
+          sheetFile: join('df', 'sheet.json'),
+          classMapFile: join('df', 'classMap.json'),
+          fileMapFile: join('df', 'fileMap.json'),
+          importAliases: {
+            '@emotion/react': null,
+            '@emotion/styled': 'styled',
+            '@emotion/css': null,
+            '@vanilla-extract/css': null,
+            'styled-components': 'styled',
+          },
+          coordinatorPortFile: join('df', 'coordinator.port'),
+          canonicalMap: expect.any(Object),
+          expectedBaseFiles: expect.any(Array),
+          prewarmedFiles: [],
+          prewarmedOutputs: expect.any(Map),
+          sourceMap: true,
+        })
+        expect(codeExtractSpy).not.toHaveBeenCalled()
+        expect(codeExtractWithoutSourceMapSpy).not.toHaveBeenCalled()
 
-      // Verify initial CSS file is written
-      expect(writeFileSyncSpy).toHaveBeenCalledWith(
-        join(resolve('df', 'devup-ui'), 'devup-ui.css'),
-        '',
-      )
+        // Verify initial CSS file is written
+        expect(writeFileSyncSpy).toHaveBeenCalledWith(
+          join(resolve('df', 'devup-ui'), 'devup-ui.css'),
+          '',
+        )
 
-      // Verify exit handler was registered and calls coordinator.close()
-      expect(exitHandlers.length).toBeGreaterThan(0)
-      exitHandlers[0]!()
-      expect(closeMock).toHaveBeenCalledTimes(1)
+        // Verify exit handler was registered and calls coordinator.close()
+        expect(exitHandlers.length).toBeGreaterThan(0)
+        exitHandlers[0]!()
+        expect(closeMock).toHaveBeenCalledTimes(1)
 
-      // Verify --inspect-brk env vars are NOT set
-      expect(process.env.TURBOPACK_DEBUG_JS).toBeUndefined()
-      expect(process.env.NODE_OPTIONS ?? '').not.toContain('--inspect-brk')
-
-      processOnSpy.mockRestore()
+        // Verify --inspect-brk env vars are NOT set
+        expect(process.env.TURBOPACK_DEBUG_JS).toBeUndefined()
+        expect(process.env.NODE_OPTIONS ?? '').not.toContain('--inspect-brk')
+      } finally {
+        processOnSpy.mockRestore()
+      }
     })
 
     it('hands the coordinator the full compiled-file set, not the static-only route map', () => {

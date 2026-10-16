@@ -80,7 +80,20 @@ const emotionFrames: EmotionKeyframes = emotionKeyframes({
 const rules: RuleSet = styledCss`color: red;`
 const frameName: Keyframes = styledKeyframes`from { opacity: 0; }`
 export const animation = emotionCss({ animationName: emotionFrames })
-export const composed = emotionCss(serialized, 'extra', [{ p: 1 }], null)
+export const composed = emotionCss(
+  serialized,
+  'extra',
+  [{ p: 1 }, { m: 1 }],
+  null,
+)
+export const singleElementEmotionArrayAccepted: [
+  SerializedStyles,
+  'extra',
+  [{ p: 1 }],
+  null,
+] extends Parameters<typeof emotionCss>
+  ? true
+  : false = true
 export const sc = styledCss(rules, { p: 1 })
 export const fromString: string = serialized
 export const named = [frameName, emotionFrames, rules]
@@ -121,11 +134,11 @@ export const managed = (
     <div />
   </StyleSheetManager>
 )
-const outerTheme = (theme: DefaultTheme) => theme
-const emotionOuterTheme = (theme: Theme) => theme
-// @ts-expect-error an outer-theme function cannot be compiled: the theme is published as CSS variables
+const outerTheme = (theme: DefaultTheme | undefined): DefaultTheme =>
+  theme ?? { colors: { primary: 'red' } }
+const emotionOuterTheme = (theme: Theme | undefined): Theme =>
+  theme ?? { spacing: { gap: 4 } }
 export const outer = <ThemeProvider theme={outerTheme} />
-// @ts-expect-error an outer-theme function cannot be compiled: the theme is published as CSS variables
 export const emotionOuter = <EmotionThemeProvider theme={emotionOuterTheme} />
 // @ts-expect-error a function giving the styles is read at runtime
 export const FunctionStyles = emotionStyled.div(() => ({ color: 'red' }))

@@ -1,3 +1,4 @@
+export { beginBuild, type ResettableEngine } from './build-session'
 export {
   type AtomHoistPlan,
   buildCanonicalMap,
@@ -21,6 +22,13 @@ export {
 export { readJsxImportSource } from './jsx-import-source'
 export { deepMerge, loadDevupConfig, loadDevupConfigSync } from './load-config'
 export {
+  collectNumberedFiles,
+  type CollectNumberedFilesOptions,
+  extractedNeedles,
+  type FileNumbering,
+  seedFileNumbers,
+} from './numbering'
+export {
   createNodeModulesExcludeRegex,
   createThemeInterfaceArgs,
   DEFAULT_THEME_INTERFACE_NAMES,
@@ -35,6 +43,18 @@ export {
   ShorthandConfigError,
   type ShorthandErrorLocation,
 } from './shorthands'
+export {
+  createStateWriter,
+  type StateWriter,
+  writeFileAtomically,
+} from './state-writer'
+export {
+  findTailwindCss,
+  TAILWIND_CSS_CANDIDATES,
+  tailwindCssFiles,
+  type TailwindCssSource,
+  withTailwindCss,
+} from './tailwind-css'
 export type {
   CustomShorthands,
   DevupConfig,
