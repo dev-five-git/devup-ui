@@ -1,5 +1,5 @@
 import { existsSync, readFileSync, writeFileSync } from 'node:fs'
-import { mkdir, writeFile } from 'node:fs/promises'
+import { mkdir, stat, writeFile } from 'node:fs/promises'
 import { basename, dirname, join, relative, resolve } from 'node:path'
 
 import {
@@ -35,6 +35,7 @@ import {
   seedFileNumbers,
   SOURCE_FILE_RE,
   type StaticImportGraph,
+  tailwindCssFiles,
   withTailwindCss,
 } from '@devup-ui/plugin-utils'
 import {
@@ -98,7 +99,7 @@ async function writeDataFiles(
     'extractCss' | 'debug' | 'include'
   >,
   root: string,
-) {
+): Promise<string[]> {
   const config = await loadDevupConfig(options.devupFile)
   const theme = config.theme ?? {}
 
@@ -112,6 +113,7 @@ async function writeDataFiles(
     await mkdir(options.cssDir, { recursive: true })
   if (!options.singleCss)
     await writeFile(join(options.cssDir, 'devup-ui.css'), getCss(null, false))
+  return tailwindCssFiles(config, root)
 }
 
 /**
@@ -175,6 +177,7 @@ export const DevupUI = ({
       setDebug(debug)
       setPrefix(prefix ?? null)
 
+      let tailwindFiles: string[]
       try {
         if (!existsSync(outputDir)) await mkdir(outputDir, { recursive: true })
         await writeFile(join(outputDir, '.gitignore'), '*', 'utf-8')
@@ -184,7 +187,7 @@ export const DevupUI = ({
           'utf-8',
         )
 
-        await writeDataFiles(
+        tailwindFiles = await writeDataFiles(
           {
             package: libPackage,
             cssDir,
@@ -202,6 +205,51 @@ export const DevupUI = ({
         )
       }
       if (!extractCss) return
+
+      // The project's Tailwind CSS defines what a Tailwind class compiles to:
+      // read it again when it changes, and compile every module again
+      api.modifyRspackConfig((config) => {
+        config.plugins ??= []
+        config.plugins.push({
+          apply(compiler: {
+            hooks: {
+              watchRun: {
+                tapPromise: (name: string, fn: () => Promise<void>) => void
+              }
+            }
+          }) {
+            let stamp: string | undefined
+            compiler.hooks.watchRun.tapPromise(
+              'DevupUIRsbuildPlugin',
+              async () => {
+                const current = (
+                  await Promise.all(
+                    tailwindFiles.map((file) =>
+                      stat(file).then(
+                        (stats) => stats.mtimeMs,
+                        () => 0,
+                      ),
+                    ),
+                  )
+                ).join()
+                if (stamp !== undefined && stamp !== current) {
+                  tailwindFiles = await writeDataFiles(
+                    {
+                      package: libPackage,
+                      cssDir,
+                      devupFile: configFile,
+                      distDir: outputDir,
+                      singleCss,
+                    },
+                    root,
+                  )
+                }
+                stamp = current
+              },
+            )
+          },
+        })
+      })
 
       // Atom-level hoisting (opt-in via `atomHoist`). Configured BEFORE any
       // transform so atoms receive global (shared) class names. Composes with
@@ -577,6 +625,7 @@ export const DevupUI = ({
         environment,
       }) => {
         if (excludeModules.test(resourcePath)) return code
+        for (const file of tailwindFiles) addDependency(file)
         const plan = plans.get(environment?.name)
         if (plan)
           setModuleResolver(

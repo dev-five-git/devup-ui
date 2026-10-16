@@ -41,6 +41,7 @@ function file(root: string, name: string, contents: string) {
 }
 const box = (color: string) =>
   `import { Box } from '@devup-ui/react'; export default <Box bg="${color}" />`
+type SetupContext = Parameters<ReturnType<typeof DevupUI>['setup']>[0]
 
 async function setup(
   root: string,
@@ -50,19 +51,37 @@ async function setup(
   const modify = mock()
   const configure = mock()
   const before = mock()
-  await DevupUI(options).setup({
-    context: { rootPath: root },
+  const context = {
+    context: {
+      rootPath: root,
+      version: '2.2.9',
+      configFileDependencies: [],
+      distPath: join(root, 'dist'),
+      cachePath: join(root, 'node_modules/.cache'),
+      bundlerType: 'rspack',
+      callerName: 'rsbuild',
+    },
     transform,
     modifyRspackConfig: modify,
     modifyRsbuildConfig: configure,
     onBeforeBuild: before,
     onCloseBuild: mock((close) => closes.push(close)),
-  })
+  } satisfies Pick<
+    SetupContext,
+    | 'context'
+    | 'transform'
+    | 'modifyRspackConfig'
+    | 'modifyRsbuildConfig'
+    | 'onBeforeBuild'
+    | 'onCloseBuild'
+  >
+  await DevupUI(options).setup(context as unknown as SetupContext)
   const config: { plugins?: { apply(compiler: unknown): void }[] } = {}
   const apply = (normalized: object) => {
-    modify.mock.calls[0][0](config, {
-      environment: { name: 'web', config: { output: { target: 'web' } } },
-    })
+    for (const [callback] of modify.mock.calls)
+      callback(config, {
+        environment: { name: 'web', config: { output: { target: 'web' } } },
+      })
     config.plugins?.at(-1)?.apply({
       options: normalized,
       hooks: { run: { tap: mock() }, thisCompilation: { tap: mock() } },
@@ -152,9 +171,9 @@ it('shares one conditional graph across canonical mapping, reach and reachable p
   })
   const built = graph.mock.results[0]?.value
   expect(graph).toHaveBeenCalledTimes(1)
-  expect(canonical.mock.calls[0]?.[0].graph).toBe(built)
-  expect(reach.mock.calls[0]?.[0].graph).toBe(built)
-  expect(reachable.mock.calls[0]?.[0].graph).toBe(built)
+  expect(built).toBe(canonical.mock.calls[0]?.[0].graph)
+  expect(built).toBe(reach.mock.calls[0]?.[0].graph)
+  expect(built).toBe(reachable.mock.calls[0]?.[0].graph)
   expect(extract.mock.calls.map((call) => call[0])).toContain(
     browser.replaceAll('\\', '/'),
   )
