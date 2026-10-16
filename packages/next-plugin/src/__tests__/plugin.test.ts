@@ -188,6 +188,29 @@ afterEach(() => {
 
 describe('DevupUINextPlugin', () => {
   describe('webpack', () => {
+    it.each([
+      ['omitted', {}],
+      ['undefined', { atomHoist: undefined }],
+      ['OFF', { atomHoist: 0 }],
+      ['ON', { atomHoist: 2 }],
+      ['custom', { atomHoist: 3 }],
+    ])(
+      'W66 default regressions: delegates %s atom policy to webpack',
+      (_label, options) => {
+        // Given: the webpack path, whose constructor owns the resolved default.
+        delete process.env.TURBOPACK
+        const ret = DevupUI({}, { ...options, singleCss: true })
+        // When: Next configures its webpack compilation.
+        ret.webpack?.(createWebpackConfig(), createWebpackContext())
+        // Then: explicit zero/thresholds and singleCss reach the real adapter seam.
+        expect(devupUIWebpackPluginSpy).toHaveBeenCalledWith({
+          ...options,
+          singleCss: true,
+          cssDir: resolve('.next/cache', 'devup-ui_tmpBuildId'),
+        })
+      },
+    )
+
     it('should apply webpack plugin', async () => {
       const ret = DevupUI({})
 
@@ -979,7 +1002,7 @@ export const box = style({ color: 'red' })`
         return { close: mock() as () => void }
       })
       try {
-        DevupUI({})
+        DevupUI({}, { atomHoist: 0 })
 
         expect(startCoordinatorSpy).toHaveBeenCalledWith(
           expect.objectContaining({
@@ -1151,7 +1174,7 @@ export const box = style({ color: 'red' })`
       }
     })
 
-    it('does not enable atom hoisting when atomHoist option is unset', () => {
+    it('does not enable atom hoisting when atomHoist is explicitly zero', () => {
       process.env.TURBOPACK = '1'
       const setAtomHoistSpy = spyOn(wasm, 'setAtomHoist').mockReturnValue(
         undefined,
@@ -1165,7 +1188,7 @@ export const box = style({ color: 'red' })`
         'importCanonicalMap',
       ).mockReturnValue(undefined)
       try {
-        DevupUI({})
+        DevupUI({}, { atomHoist: 0 })
         expect(setAtomHoistSpy).not.toHaveBeenCalled()
         expect(importFileRoutesSpy).not.toHaveBeenCalled()
         // single-importer collapse still runs (it is the always-on default)
@@ -1175,6 +1198,142 @@ export const box = style({ color: 'red' })`
         importFileRoutesSpy.mockRestore()
         importCanonicalMapSpy.mockRestore()
       }
+    })
+
+    describe('W66 default regressions', () => {
+      let canonicalSpy: ReturnType<typeof spyOn>
+      let routesSpy: ReturnType<typeof spyOn>
+      let compiledSpy: ReturnType<typeof spyOn>
+      let importRoutesSpy: ReturnType<typeof spyOn>
+      let thresholdSpy: ReturnType<typeof spyOn>
+
+      beforeEach(() => {
+        process.env.TURBOPACK = '1'
+        setNodeEnv('production')
+        canonicalSpy = spyOn(
+          importGraphModule,
+          'buildCanonicalMap',
+        ).mockReturnValue({})
+        routesSpy = spyOn(
+          importGraphModule,
+          'computeFileRoutes',
+        ).mockReturnValue({
+          'src/app/layout.tsx': [0, 1],
+          'src/app/a/page.tsx': [0],
+          'src/app/b/page.tsx': [1],
+        })
+        compiledSpy = spyOn(
+          importGraphModule,
+          'computeCompiledFiles',
+        ).mockReturnValue(['src/app/a/page.tsx', 'src/app/b/page.tsx'])
+        importRoutesSpy = spyOn(wasm, 'importFileRoutes').mockReturnValue(
+          undefined,
+        )
+        thresholdSpy = spyOn(wasm, 'setAtomHoist').mockReturnValue(undefined)
+      })
+
+      afterEach(() => {
+        canonicalSpy.mockRestore()
+        routesSpy.mockRestore()
+        compiledSpy.mockRestore()
+        importRoutesSpy.mockRestore()
+        thresholdSpy.mockRestore()
+      })
+
+      it.each([
+        ['omitted', {}],
+        ['undefined', { atomHoist: undefined }],
+      ])(
+        'matches explicit 2 on two routes when atomHoist is %s',
+        (_label, options) => {
+          // Given: the same two-route plan under explicit 2.
+          DevupUI({}, { atomHoist: 2 })
+          const explicitReach = [...importRoutesSpy.mock.calls]
+          expect(thresholdSpy).toHaveBeenCalledWith(2)
+          expect(explicitReach).toEqual([
+            [
+              {
+                'src/app/layout.tsx': [0, 1],
+                'src/app/a/page.tsx': [0],
+                'src/app/b/page.tsx': [1],
+              },
+            ],
+          ])
+          thresholdSpy.mockClear()
+          importRoutesSpy.mockClear()
+
+          // When: the public option uses its default.
+          DevupUI({}, options)
+
+          // Then: the same plan is installed with threshold 2.
+          expect(importRoutesSpy.mock.calls).toEqual(explicitReach)
+          expect(thresholdSpy.mock.calls).toEqual([[2]])
+        },
+      )
+
+      it.each([0, -1, NaN, Infinity, -Infinity])(
+        'keeps legacy OFF for atomHoist %s',
+        (atomHoist) => {
+          // Given: a valid multi-route fixture, so fallback cannot hide enabling.
+          // When: an explicitly disabled numeric option is supplied.
+          DevupUI({}, { atomHoist })
+          // Then: collapse remains active but atom reach is not consulted.
+          expect(canonicalSpy).toHaveBeenCalled()
+          expect(routesSpy).not.toHaveBeenCalled()
+          expect(importRoutesSpy).not.toHaveBeenCalled()
+          expect(thresholdSpy).not.toHaveBeenCalled()
+        },
+      )
+
+      it('preserves a custom threshold above the minimum', () => {
+        // Given: two routes; the threshold must not be replaced by the default.
+        // When: the caller requests three routes.
+        DevupUI({}, { atomHoist: 3 })
+        // Then: the numeric threshold is forwarded unchanged.
+        expect(thresholdSpy.mock.calls).toEqual([[3]])
+      })
+
+      it.each([
+        ['omitted', {}],
+        ['undefined', { atomHoist: undefined }],
+        ['enabled', { atomHoist: 2 }],
+      ])(
+        'ignores %s atomHoist before planning in actual singleCss mode',
+        (_label, options) => {
+          // Given: legacy whole-file hoisting and an explicit-OFF single sheet.
+          process.env.DEVUP_HOIST_V = '3'
+          const off = DevupUI({}, { singleCss: true, atomHoist: 0 })
+          const offExtractions = [...codeExtractWithoutSourceMapSpy.mock.calls]
+          expect(offExtractions).toHaveLength(2)
+          codeExtractWithoutSourceMapSpy.mockClear()
+          canonicalSpy.mockClear()
+
+          // When: only the atom option changes.
+          const on = DevupUI({}, { singleCss: true, ...options })
+
+          // Then: reach/threshold, legacy policy, IDs, imports and loader config agree.
+          expect(routesSpy).not.toHaveBeenCalled()
+          expect(importRoutesSpy).not.toHaveBeenCalled()
+          expect(thresholdSpy).not.toHaveBeenCalled()
+          expect(canonicalSpy).toHaveBeenCalledWith(
+            expect.objectContaining({ hoistV: 3 }),
+          )
+          expect(codeExtractWithoutSourceMapSpy.mock.calls).toEqual(
+            offExtractions,
+          )
+          expect(codeExtractWithoutSourceMapSpy).toHaveBeenCalledWith(
+            'src/app/a/page.tsx',
+            '{}',
+            '@devup-ui/react',
+            expect.any(String),
+            true,
+            false,
+            true,
+            expect.anything(),
+          )
+          expect(on.turbopack?.rules).toEqual(off.turbopack?.rules)
+        },
+      )
     })
 
     it('composes atom hoisting WITH single-importer collapse when atomHoist is set', () => {

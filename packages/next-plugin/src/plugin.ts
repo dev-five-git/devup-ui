@@ -44,8 +44,10 @@ import { loadWasm, loadWebpackPlugin } from './wasm'
 /** Options accepted by the Next.js integration. */
 export type DevupUINextPluginOptions = Partial<DevupUIBasePluginOptions> & {
   /**
-   * Share atoms of canonical buckets whose predeclared route reach is at least
-   * this many routes (clamped to >= 2). Other buckets keep per-file names.
+   * Atom-level route-aware hoisting threshold. Defaults to 2; 0 disables it.
+   * Positive thresholds are clamped to >= 2. Eligible canonical buckets use
+   * global short counter names in the shared devup-ui.css; other buckets keep
+   * per-file counter names. Ignored when singleCss is true.
    */
   atomHoist?: number
 }
@@ -151,10 +153,11 @@ export function DevupUI(
       include = [],
       prefix,
       shorthands,
-      atomHoist,
+      atomHoist = 2,
       importAliases: userImportAliases,
     } = options
 
+    const atomMode = !singleCss && Number.isFinite(atomHoist) && atomHoist > 0
     const importAliases = mergeImportAliases(userImportAliases)
     const watch = process.env.NODE_ENV === 'development'
     const sourceMap = watch || config.productionBrowserSourceMaps === true
@@ -171,7 +174,7 @@ export function DevupUI(
     // the coordinator. Calls from the same module instance never reuse it,
     // which avoids turning this into a general cross-build cache.
     const productionSetupKey = JSON.stringify({
-      atomHoist,
+      atomHoist: atomMode ? atomHoist : 0,
       cwd: process.cwd(),
       cssDir,
       devupFile,
@@ -277,9 +280,10 @@ export function DevupUI(
 
     // Pre-pass: single-importer collapse ALWAYS runs (files with exactly one
     // importer merge into that importer's bucket, so their identical atoms share
-    // one class). Atom-level hoisting COMPOSES on top: a canonical bucket whose
-    // predeclared route reach is >= atomHoist is eligible, and only its atoms
-    // get shared content names and land in the shared devup-ui.css.
+    // one class). Per-file atom hoisting defaults to 2 routes; 0 disables it.
+    // A canonical bucket whose predeclared route reach is >= atomHoist is
+    // eligible: its atoms get global short counter names in devup-ui.css.
+    // Actual singleCss mode ignores atomHoist, including legacy hoistV policy.
     //
     // The two compose because both are keyed by the canonical bucket: the engine
     // keys property buckets by canonical(filename), and the route-reach map below
@@ -288,8 +292,6 @@ export function DevupUI(
     // unmapped buckets keep per-file names, and reach seen later cannot promote
     // or rename them until resetBuildState. The coordinator shares this WASM
     // instance, so it applies to every /extract.
-    const atomMode =
-      atomHoist !== undefined && Number.isFinite(atomHoist) && atomHoist > 0
     const extract = sourceMap ? codeExtract : codeExtractWithoutSourceMap
     // Hoisted out of the try so the coordinator can receive it for per-bucket
     // completion. Stays `{}` if the best-effort pre-pass fails.
@@ -351,7 +353,7 @@ export function DevupUI(
           setAtomHoist(plan.threshold)
         } else {
           console.info(
-            '[devup-ui] atomHoist is set but fewer than 2 routes were detected; atom hoisting is a no-op.',
+            '[devup-ui] fewer than 2 routes were detected; atom hoisting is a no-op.',
           )
         }
       }

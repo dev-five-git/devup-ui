@@ -112,7 +112,7 @@ describe('DevupUIRsbuildPlugin', () => {
       'setModuleResolver',
     ).mockReturnValue(undefined)
     try {
-      const plugin = DevupUI()
+      const plugin = DevupUI({ atomHoist: 0 })
       const transform = mock()
       await plugin.setup(createSetupContext({ transform }))
       const resolveModule = setModuleResolverSpy.mock.calls.at(-1)?.[0] as (
@@ -251,7 +251,7 @@ describe('DevupUIRsbuildPlugin', () => {
     expect(plugin.name).toBe('devup-ui-rsbuild-plugin')
   })
   it('should transform css', async () => {
-    const plugin = DevupUI()
+    const plugin = DevupUI({ atomHoist: 0 })
     expect(plugin).toBeDefined()
     expect(plugin.setup).toBeDefined()
     const transform = mock()
@@ -486,7 +486,7 @@ const App = () => <Box></Box>`,
       if (path === join('df', 'fileMap.json')) return options.existsFileMapFile
       return false
     })
-    const plugin = DevupUI({ singleCss: options.singleCss })
+    const plugin = DevupUI({ singleCss: options.singleCss, atomHoist: 0 })
     await plugin.setup(createSetupContext())
     if (options.existsDevupFile) {
       expect(readFileSpy).toHaveBeenCalledWith('devup.json', 'utf-8')
@@ -596,14 +596,140 @@ const App = () => <Box></Box>`,
       getCssSpy?.mockRestore()
     })
 
-    it('does nothing when atomHoist is unset', async () => {
+    it('does nothing when atomHoist is explicitly zero', async () => {
       spies()
-      await DevupUI().setup(
+      await DevupUI({ atomHoist: 0 }).setup(
         createSetupContext({ transform: mock(), modifyRsbuildConfig: mock() }),
       )
       expect(buildCanonicalMapSpy).not.toHaveBeenCalled()
       expect(setAtomHoistSpy).not.toHaveBeenCalled()
       expect(importFileRoutesSpy).not.toHaveBeenCalled()
+    })
+
+    describe('W66 default regressions', () => {
+      it.each([
+        ['omitted', {}],
+        ['undefined', { atomHoist: undefined }],
+      ])(
+        'matches explicit 2 on two routes when atomHoist is %s',
+        async (_label, options) => {
+          // Given: explicit 2 installs the known two-route reach.
+          spies()
+          const reach = {
+            '/p/src/shared.tsx': [0, 1],
+            '/p/src/a.tsx': [0],
+            '/p/src/b.tsx': [1],
+          }
+          computeFileReachSpy.mockReturnValue(reach)
+          await DevupUI({ atomHoist: 2 }).setup(createSetupContext())
+          const explicitReach = [...importFileRoutesSpy.mock.calls]
+          expect(explicitReach).toEqual([[reach]])
+          expect(setAtomHoistSpy).toHaveBeenCalledWith(2)
+          importFileRoutesSpy.mockClear()
+          setAtomHoistSpy.mockClear()
+          // When: the option is defaulted.
+          await DevupUI(options).setup(createSetupContext())
+          // Then: the same plan is installed at threshold 2.
+          expect(importFileRoutesSpy.mock.calls).toEqual(explicitReach)
+          expect(setAtomHoistSpy.mock.calls).toEqual([[2]])
+        },
+      )
+
+      it.each([0, -1, NaN, Infinity, -Infinity])(
+        'keeps legacy OFF for atomHoist %s',
+        async (atomHoist) => {
+          // Given: a valid two-route fixture.
+          spies()
+          computeFileReachSpy.mockReturnValue({
+            '/p/a.tsx': [0],
+            '/p/b.tsx': [1],
+          })
+          // When: the caller explicitly disables atom mode.
+          await DevupUI({ atomHoist }).setup(createSetupContext())
+          // Then: the atom-only pre-pass has no side effects.
+          expect(buildCanonicalMapSpy).not.toHaveBeenCalled()
+          expect(computeFileReachSpy).not.toHaveBeenCalled()
+          expect(importFileRoutesSpy).not.toHaveBeenCalled()
+          expect(setAtomHoistSpy).not.toHaveBeenCalled()
+        },
+      )
+
+      it('preserves a custom threshold above the minimum', async () => {
+        // Given: two routes and a custom threshold.
+        spies()
+        computeFileReachSpy.mockReturnValue({
+          '/p/a.tsx': [0],
+          '/p/b.tsx': [1],
+        })
+        // When: setup requests threshold 3.
+        await DevupUI({ atomHoist: 3 }).setup(createSetupContext())
+        // Then: the threshold is not replaced by the default.
+        expect(setAtomHoistSpy.mock.calls).toEqual([[3]])
+      })
+
+      it.each([
+        ['omitted', {}],
+        ['undefined', { atomHoist: undefined }],
+        ['enabled', { atomHoist: 2 }],
+      ])(
+        'ignores %s atomHoist before IDs imports and splitChunks in actual singleCss mode',
+        async (_label, options) => {
+          // Given: real registered config/source/CSS hooks with a two-route fixture.
+          spies()
+          computeFileReachSpy.mockReturnValue({
+            '/p/a.tsx': [0],
+            '/p/b.tsx': [1],
+          })
+          codeExtractSpy.mockReturnValue(
+            createCodeExtractResult({ cssFile: '' }),
+          )
+          const resourcePath = resolve('src', 'a.tsx')
+          const run = async (policy: Parameters<typeof DevupUI>[0]) => {
+            const transform = mock()
+            const modifyRsbuildConfig = mock()
+            await DevupUI({ ...policy, singleCss: true }).setup(
+              createSetupContext({ transform, modifyRsbuildConfig }),
+            )
+            const config = { tools: { rspack: mock() } }
+            const userRspack = config.tools.rspack
+            modifyRsbuildConfig.mock.calls[0][0](config)
+            await transform.mock.calls[1][1]({
+              code: 'source',
+              resourcePath,
+              addDependency: mock(),
+            })
+            transform.mock.calls[0][1]({
+              resourcePath: resolve('df', 'devup-ui', 'devup-ui-3.css'),
+              environment: { name: 'web' },
+            })
+            expect(config.tools.rspack).toBe(userRspack)
+          }
+          codeExtractSpy.mockClear()
+          await run({ atomHoist: 0 })
+          const offExtractions = [...codeExtractSpy.mock.calls]
+          codeExtractSpy.mockClear()
+          // When: only the requested atom option changes from explicit OFF.
+          await run(options)
+          // Then: no planning, native IDs/import flags and legacy stylesheet policy remain.
+          expect(buildCanonicalMapSpy).not.toHaveBeenCalled()
+          expect(importCanonicalMapSpy).not.toHaveBeenCalled()
+          expect(computeFileReachSpy).not.toHaveBeenCalled()
+          expect(importFileRoutesSpy).not.toHaveBeenCalled()
+          expect(setAtomHoistSpy).not.toHaveBeenCalled()
+          expect(codeExtractSpy.mock.calls).toEqual(offExtractions)
+          expect(codeExtractSpy).toHaveBeenCalledWith(
+            resourcePath,
+            'source',
+            '@devup-ui/react',
+            expect.stringMatching(/^\.\//),
+            true,
+            false,
+            true,
+            expect.anything(),
+          )
+          expect(getCssSpy).toHaveBeenLastCalledWith(3, true)
+        },
+      )
     })
 
     it('composes collapse + hoist and folds reach onto the canonical bucket', async () => {
@@ -854,7 +980,7 @@ const App = () => <Box></Box>`,
     }
 
     it('extracts the files the entries reach before building', async () => {
-      const { onBeforeBuild } = await setup({ atomHoist: undefined })
+      const { onBeforeBuild } = await setup({ atomHoist: 0 })
       codeExtractSpy.mockClear()
       onBeforeBuild.mock.calls[0][0]({
         environments: {
