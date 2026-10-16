@@ -20,6 +20,7 @@ import {
   loadDevupConfig,
   mergeImportAliases,
   planAtomHoist,
+  readJsxImportSource,
   seedFileNumbers,
   tailwindCssFiles,
   withTailwindCss,
@@ -141,7 +142,10 @@ export const DevupUI = ({
   importAliases: userImportAliases,
 }: Partial<DevupUIRsbuildPluginOptions> = {}): RsbuildPlugin => {
   registerShorthands(shorthands ?? {})
-  const importAliases = mergeImportAliases(userImportAliases)
+  const importAliases = mergeImportAliases(
+    userImportAliases,
+    readJsxImportSource(),
+  )
   const stateWriter = createStateWriter((path, content, encoding) =>
     encoding ? writeFile(path, content, encoding) : writeFile(path, content),
   )
