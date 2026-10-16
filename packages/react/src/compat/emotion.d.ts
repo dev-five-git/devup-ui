@@ -76,6 +76,7 @@ declare module '@emotion/react' {
   }): ReactNode
 
   export {
+    CacheProvider,
     ClassNames,
     jsx as createElement,
     Global,
