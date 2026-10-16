@@ -648,7 +648,7 @@ export function DevupUI(
     const { DevupUIWebpackPlugin } = loadWebpackPlugin()
     options.cssDir ??= resolve(
       _options.dev ? (options.distDir ?? 'df') : '.next/cache',
-      `devup-ui_${_options.buildId}`,
+      _options.dev ? `devup-ui_${_options.buildId}` : 'devup-ui',
     )
     if (!_options.dev && productionPrewarmFiles === undefined) {
       const cwd = process.cwd()
