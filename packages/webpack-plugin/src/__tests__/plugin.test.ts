@@ -900,12 +900,14 @@ describe('devupUIWebpackPlugin', () => {
       return { compiler, plugin, compilation, taps, run, start }
     }
 
-    it('taps nothing in watch mode', () => {
+    it('uses same-compilation reconciliation instead of another pass in watch mode', () => {
       const { compiler } = compile(true)
       expect(compiler.hooks.run.tap.mock.calls.map(([name]) => name)).toEqual([
         'DevupUIWebpackPluginReservation',
       ])
-      expect(compiler.hooks.thisCompilation.tap).not.toHaveBeenCalled()
+      expect(
+        compiler.hooks.thisCompilation.tap.mock.calls.map(([name]) => name),
+      ).toEqual(['DevupUIWebpackPluginWatchCss'])
     })
 
     it('writes the shared base to disk when it does not hold it yet', () => {

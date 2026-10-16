@@ -48,6 +48,7 @@ import { type Compiler } from 'webpack'
 
 import { createWebpackReservation } from './reservation'
 import { servedCss } from './served-css'
+import { reconcileWatchCss } from './watch-css'
 
 export interface DevupUIWebpackPluginOptions {
   package: string
@@ -345,6 +346,10 @@ export class DevupUIWebpackPlugin {
       )
 
     if (this.options.watch) {
+      compiler.hooks.thisCompilation.tap(
+        'DevupUIWebpackPluginWatchCss',
+        reconcileWatchCss,
+      )
       let lastModifiedTime: string | null = null
       compiler.hooks.watchRun.tapPromise('DevupUIWebpackPlugin', async () => {
         const stamps: number[] = []
