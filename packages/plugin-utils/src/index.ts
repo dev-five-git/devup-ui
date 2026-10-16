@@ -15,6 +15,7 @@ export {
   createModuleResolver,
   type CreateModuleResolverOptions,
   listSourceFiles,
+  parseImports,
   planAtomHoist,
   type ResolvedModule,
   type StaticImportGraph,

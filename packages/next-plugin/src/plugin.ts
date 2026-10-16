@@ -619,16 +619,38 @@ export function DevupUI(
   }
 
   const { webpack } = config
+  let productionPrewarmFiles: readonly string[] | undefined
   config.webpack = (config, _options) => {
     const { DevupUIWebpackPlugin } = loadWebpackPlugin()
     options.cssDir ??= resolve(
       _options.dev ? (options.distDir ?? 'df') : '.next/cache',
-      `devup-ui_${_options.buildId}`,
+      _options.dev ? `devup-ui_${_options.buildId}` : 'devup-ui',
     )
+    if (!_options.dev && productionPrewarmFiles === undefined) {
+      const cwd = process.cwd()
+      const srcDir = resolve(cwd, 'src')
+      const tsconfigPath = resolve(cwd, 'tsconfig.json')
+      const graph = buildStaticImportGraph(srcDir, tsconfigPath)
+      productionPrewarmFiles = collectProductionPrewarmFiles({
+        cwd,
+        graph,
+        expectedBaseFiles: computeCompiledFiles({
+          cwd,
+          srcDir,
+          tsconfigPath,
+          graph,
+        }),
+        libPackage: options.package ?? '@devup-ui/react',
+        include: options.include ?? [],
+      })
+    }
     config.plugins.push(
       new DevupUIWebpackPlugin({
         ...options,
         watch: _options.dev,
+        productionPrewarmFiles: _options.dev
+          ? undefined
+          : productionPrewarmFiles,
       }),
     )
     if (typeof webpack === 'function') return webpack(config, _options)
