@@ -1,5 +1,5 @@
 import { readFileSync } from 'node:fs'
-import { dirname, isAbsolute, resolve } from 'node:path'
+import { dirname, extname, resolve } from 'node:path'
 
 import {
   buildCanonicalMap,
@@ -24,6 +24,7 @@ import {
 import type { ResolvedConfig } from 'vite'
 
 import type { DevupUIPluginOptions } from './plugin'
+import { productionEntryInputs } from './production-entry-inputs'
 
 export type ProductionOptions = Readonly<
   Pick<
@@ -50,7 +51,6 @@ export interface ProductionContext extends ProductionNumberingPlan {
   readonly threshold: number | undefined
 }
 
-type Environment = ResolvedConfig['environments'][string]
 export function createExtractionGate(
   options: Pick<
     ProductionOptions,
@@ -72,19 +72,6 @@ export function createExtractionGate(
   }
 }
 
-function inputFor(root: string, environment: Environment): readonly string[] {
-  const build = environment.build
-  const native = build.rolldownOptions?.input ?? build.rollupOptions?.input
-  const input = build.lib
-    ? (native ?? build.lib.entry)
-    : typeof build.ssr === 'string'
-      ? build.ssr
-      : (native ?? environment.input ?? resolve(root, 'index.html'))
-  const entries =
-    typeof input === 'string' ? [input] : Object.values(input ?? {})
-  return entries.filter((entry): entry is string => typeof entry === 'string')
-}
-
 export async function prepareProductionManifest(
   config: ResolvedConfig,
   options: ProductionOptions,
@@ -103,15 +90,8 @@ export async function prepareProductionManifest(
   const contexts: ProductionContext[] = []
   const gate = createExtractionGate(options)
   for (const [key, environment] of configured) {
-    const entries = inputFor(config.root, environment)
-    const physicalEntries = entries.filter(
-      (entry) =>
-        !/[\0?#]/.test(entry) &&
-        (isAbsolute(entry) || !/^[a-z][\w-]*:/i.test(entry)),
-    )
-    const nonphysical = entries
-      .filter((entry) => !physicalEntries.includes(entry))
-      .map((entry) => entry.replace(/\?.*$/s, ''))
+    const { physicalEntries, selectedEntries, nonphysical, entryClosure } =
+      productionEntryInputs(config.root, environment, options.mdxExtensions)
     const conditions = ['import', ...environment.resolve.conditions].map(
       (condition) =>
         condition === 'development|production'
@@ -120,9 +100,6 @@ export async function prepareProductionManifest(
             : 'development'
           : condition,
     )
-    const selectedEntries = physicalEntries
-      .filter((entry) => isSelectedSource(entry, options.mdxExtensions))
-      .map((entry) => resolve(config.root, entry))
     const graphRoots = [...new Set([...roots, ...selectedEntries.map(dirname)])]
     const exclude = [
       paths.distDir,
@@ -134,8 +111,10 @@ export async function prepareProductionManifest(
         {
           key,
           files: enumerateProductionSourceFiles({
-            roots,
-            entries: physicalEntries,
+            roots: entryClosure ? [] : roots,
+            ...(entryClosure
+              ? { sourceFiles: selectedEntries }
+              : { entries: physicalEntries }),
             cwd: config.root,
             includeMdx: options.mdxExtensions,
             exclude,
@@ -152,13 +131,19 @@ export async function prepareProductionManifest(
       ],
       include: options.include,
       exclude,
+      entryClosure,
     })
-    const files = discovered.filter(
-      (file) =>
-        gate.selected(file.path) &&
-        !/\.d\.[mc]?ts$/i.test(file.path) &&
-        gate.relevant(readFileSync(file.path, 'utf8')),
-    )
+    const files = discovered.filter((file) => {
+      if (!gate.selected(file.path) || /\.d\.[mc]?ts$/i.test(file.path))
+        return false
+      if (
+        entryClosure &&
+        options.mdxExtensions.includes(extname(file.path).toLowerCase())
+      )
+        return true
+      const code = readFileSync(file.path, 'utf8')
+      return gate.relevant(code)
+    })
     let canonical: Readonly<Record<string, string>> = {}
     let routes: Readonly<Record<string, readonly number[]>> = {}
     let threshold: number | undefined

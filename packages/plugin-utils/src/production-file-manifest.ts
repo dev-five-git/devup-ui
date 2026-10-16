@@ -30,6 +30,7 @@ export interface ProductionManifestContext {
 }
 export interface ProductionFileManifestOptions {
   readonly contexts: readonly ProductionManifestContext[]
+  readonly entryClosure?: boolean
   readonly include?: readonly string[]
   readonly exclude?: readonly string[]
 }
@@ -64,6 +65,7 @@ class ManifestSourceError extends Error {
 
 export async function collectProductionFileManifest({
   contexts,
+  entryClosure = false,
   include = [],
   exclude,
 }: ProductionFileManifestOptions): Promise<readonly ProductionManifestFile[]> {
@@ -186,7 +188,7 @@ export async function collectProductionFileManifest({
           case 'file': {
             for (const file of await targets(job.path))
               request({ ...file, kind: 'file' })
-            distributions(dirname(job.path), request)
+            if (!entryClosure) distributions(dirname(job.path), request)
             break
           }
           case 'package': {
@@ -211,7 +213,7 @@ export async function collectProductionFileManifest({
       compareCodePoints(a.path, b.path),
     ))
       worklist.seed({ ...file, kind: 'file' })
-    distributions(cwd, (job) => worklist.seed(job))
+    if (!entryClosure) distributions(cwd, (job) => worklist.seed(job))
     await worklist.run()
   }
   return Object.freeze(

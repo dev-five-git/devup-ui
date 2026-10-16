@@ -105,8 +105,8 @@ it.each([false, true])(
       expect(server?.scan).toContain(nodeFile)
       expect(server?.scan).not.toContain(browserFile)
       expect(browser?.threshold).toBe(2)
-      expect(browser?.scan).toContain('virtual:manifest.js')
-      expect(server?.scan).toContain('virtual:manifest.js')
+      expect(browser?.scan).not.toContain('virtual:manifest.js')
+      expect(server?.scan).not.toContain('virtual:manifest.js')
       expect(browser?.routes[shared]).toHaveLength(2)
     } finally {
       await fixture.close()
@@ -127,6 +127,7 @@ it('reserves all configured contexts while keeping scan authority separate from 
     '# Reserved documentation',
   )
   const accepted: string[] = []
+  const imports = ["import './imports.js';"]
   const rejected = [entry, plain, markdown]
   for (const name of ['included', 'excluded'])
     await fixture.file(
@@ -154,7 +155,9 @@ it('reserves all configured contexts while keeping scan authority separate from 
       `/* ${needle} */ export {};`,
     )
     ;(included ? accepted : rejected).push(path)
+    imports.push(`import '${name.startsWith('../') ? name : `./${name}`}';`)
   }
+  await fixture.file('app/src/main.js', imports.join('\n'))
   const options: ProductionOptions = {
     package: 'custom-target',
     devupFile: 'devup.json',
