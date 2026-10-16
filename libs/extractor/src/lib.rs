@@ -1,7 +1,9 @@
 mod as_visit;
 mod build_time_values;
+mod class_arguments;
 mod component;
 mod css_utils;
+mod emotion_namespace;
 pub mod extract_style;
 mod extractor;
 mod gen_class_name;
@@ -11,12 +13,17 @@ mod imported_constants;
 mod module_loader;
 mod mutations;
 mod prop_modify_utils;
+#[cfg(test)]
+mod responsive_selector_tests;
 mod source_map;
 mod style_values;
+#[cfg(test)]
+mod styled_source_tests;
 mod stylex;
 mod tailwind;
 mod tailwind_children;
 mod tailwind_color;
+mod tailwind_custom;
 mod tailwind_effects;
 mod tailwind_misc;
 mod tailwind_motion;
@@ -25,6 +32,24 @@ mod util_type;
 mod utils;
 mod vanilla_extract;
 mod visit;
+
+mod dead_properties;
+#[cfg(test)]
+mod dead_properties_call_boundary_tests;
+#[cfg(test)]
+mod dead_properties_declaration_boundary_tests;
+#[cfg(test)]
+mod dead_properties_origin_tests;
+#[cfg(test)]
+mod dead_properties_responsive_origin_tests;
+#[cfg(test)]
+mod dead_properties_stylex_tests;
+#[cfg(test)]
+mod dead_properties_test_utils;
+#[cfg(test)]
+mod dead_properties_tests;
+#[cfg(test)]
+mod dead_properties_text_tests;
 use crate::extract_style::extract_style_value::ExtractStyleValue;
 use crate::visit::DevupVisitor;
 use css::file_map::{canonical, get_file_num_by_filename, is_global};
@@ -314,12 +339,17 @@ fn extract_source(
             return Err(located_errors(filename, code, &[], errors).into());
         }
     }
+    let (namespace_code, namespace_edits) =
+        emotion_namespace::normalize(code, filename, &option.import_aliases).map_err(|errors| {
+            let (source, edits) = evaluated.unwrap_or((code, &[]));
+            located_errors(filename, source, edits, errors)
+        })?;
     // Step 1: Transform import aliases
     css::atom_hoist::freeze_atom_plan();
     // e.g., `import styled from '@emotion/styled'` → `import { styled } from '@devup-ui/react'`
     // e.g., `import { style } from '@vanilla-extract/css'` → `import { style } from '@devup-ui/react'`
     let (transformed_code, alias_edits) = import_alias_visit::transform_import_aliases_with_edits(
-        code,
+        &namespace_code,
         filename,
         &option.package,
         &option.import_aliases,
@@ -331,13 +361,28 @@ fn extract_source(
 
     if !has_relevant_import {
         // skip if not using package
-        return Ok(ExtractOutput {
-            styles: FxHashSet::default(),
-            code: code.to_string(),
-            map: None,
-            css_file: None,
-            dependencies: Vec::new(),
-        });
+        if namespace_edits.is_empty() {
+            return Ok(ExtractOutput {
+                styles: FxHashSet::default(),
+                code: namespace_code.into_owned(),
+                map: None,
+                css_file: None,
+                dependencies: Vec::new(),
+            });
+        }
+        let (source, earlier_edits) = evaluated.unwrap_or((code, &[]));
+        let edits: Vec<&[import_alias_visit::Edit]> = std::iter::once(namespace_edits.as_slice())
+            .chain(earlier_edits.iter().copied())
+            .collect();
+        let mut output = emotion_namespace::Rewritten {
+            filename,
+            code: &namespace_code,
+            source,
+            edits: &edits,
+        }
+        .output();
+        output.map = output.map.filter(|_| source_map);
+        return Ok(output);
     }
 
     let mut dependencies = std::collections::BTreeSet::new();
@@ -347,7 +392,7 @@ fn extract_source(
     // otherwise the untouched `transformed_code` is parsed directly (no copy).
     let processed_code: Option<String> = if utils::is_vanilla_extract_file(filename) {
         // Use transformed code (with imports already pointing to @devup-ui/react)
-        match vanilla_extract::execute_stylesheet(&transformed_code, filename, &option, resolver) {
+        match vanilla_extract::execute_stylesheet(code, filename, &option, resolver) {
             Ok((collected, imports)) => {
                 dependencies = imports.dependencies;
                 // Keyframes names are generated, so extract the referenced ones
@@ -388,6 +433,11 @@ fn extract_source(
             // A stylesheet another one imports must give its own values, and an
             // import cycle read too early fails as it does in ES modules, so both
             // are reported rather than hidden behind plain extraction
+            Err(error) if error.starts_with(dead_properties::ERROR_CHANNEL) => {
+                return Err(error
+                    .trim_start_matches(dead_properties::ERROR_CHANNEL)
+                    .into());
+            }
             Err(error)
                 if module_loader::loading_for_stylesheet()
                     || error.contains(module_loader::IMPORT_CYCLE) =>
@@ -450,6 +500,9 @@ fn extract_source(
         imported_constants::Inlined::default()
     };
     dependencies.extend(inlined.dependencies);
+    if !namespace_edits.is_empty() {
+        emotion_namespace::units::pixelify(&allocator, &mut program, &namespace_code);
+    }
     let mut visitor = DevupVisitor::new(
         &allocator,
         filename,
@@ -469,6 +522,10 @@ fn extract_source(
     // Run the code a value computes, or tell rules the module computes from a
     // class it composes
     if (!visitor.errors.is_empty() || visitor.composes_unknown)
+        && !visitor
+            .errors
+            .iter()
+            .any(|(_, error)| dead_properties::terminal_error(error))
         && evaluated.is_none()
         && !utils::is_vanilla_extract_file(filename)
         && let Some((computed, value_edits, read)) = build_time_values::evaluate(
@@ -479,10 +536,23 @@ fn extract_source(
             &inlined.unknown,
         )
     {
+        let (computed, number_edits) = if namespace_edits.is_empty() {
+            (std::borrow::Cow::Borrowed(computed.as_str()), Vec::new())
+        } else {
+            import_alias_visit::pixelify_emotion_values(&computed, filename, &namespace_code)
+        };
         let mut output = extract_source(
             filename,
             &computed,
-            Some((code, &[value_edits.as_slice(), alias_edits.as_slice()])),
+            Some((
+                code,
+                &[
+                    number_edits.as_slice(),
+                    value_edits.as_slice(),
+                    alias_edits.as_slice(),
+                    namespace_edits.as_slice(),
+                ],
+            )),
             option,
             source_map,
             resolver,
@@ -494,12 +564,22 @@ fn extract_source(
         return Ok(output);
     }
     let (source, earlier_edits) = evaluated.unwrap_or((code, &[]));
-    let edits: Vec<&[import_alias_visit::Edit]> = std::iter::once(alias_edits.as_slice())
-        .chain(earlier_edits.iter().copied())
-        .collect();
+    let edits: Vec<&[import_alias_visit::Edit]> =
+        [alias_edits.as_slice(), namespace_edits.as_slice()]
+            .into_iter()
+            .chain(earlier_edits.iter().copied())
+            .collect();
     visitor.errors.append(&mut visitor.unknown_parts);
     if !visitor.errors.is_empty() {
-        let mut message = located_errors(filename, source, &edits, visitor.errors);
+        let mut errors = visitor.errors;
+        let error_edits = if evaluated.is_some() {
+            let calls = dead_properties::evaluated_calls(source, filename, &option);
+            dead_properties::map_evaluated(&mut errors, &edits, &calls)?;
+            &[][..]
+        } else {
+            edits.as_slice()
+        };
+        let mut message = located_errors(filename, source, error_edits, errors);
         message += &changed_notes(&message, filename, source, &edits, &inlined.changed);
         return Err(message.into());
     }
@@ -581,6 +661,12 @@ fn located_errors(
             let offset = edits.iter().fold(offset as usize, |offset, edits| {
                 import_alias_visit::source_offset(edits, offset)
             });
+            let message = emotion_namespace::original_error_code(
+                source,
+                offset,
+                message,
+                SourceType::from_path(filename).unwrap_or_default(),
+            );
             format!("{}: {message}", locate(filename, source, offset))
         })
         .collect::<Vec<_>>()
@@ -758,6 +844,9 @@ pub fn has_devup_ui(filename: &str, code: &str, package: &str) -> bool {
 #[cfg(test)]
 #[allow(clippy::expect_used, clippy::unwrap_used)]
 mod tests {
+    mod emotion_namespace_tests {
+        include!("emotion_namespace_tests.rs");
+    }
     use std::collections::BTreeSet;
 
     use super::*;
@@ -8017,7 +8106,7 @@ globalCss()
             )
             .unwrap_err()
             .to_string(),
-            "test.tsx:2:1: `globalCss()` cannot use `1` at build time: its values must be literals, theme tokens or constants, or be computed from them"
+            "test.tsx:2:11: `globalCss()` cannot use `1` at build time: its values must be literals, theme tokens or constants, or be computed from them"
         );
     }
 
@@ -9287,7 +9376,7 @@ export const B = styled.div`${SEL} & { color: ${C}; }`;",
             [
                 "src/App.tsx:6:56: `css()` cannot use `x` at build time: its values must be literals, theme tokens or constants, or be computed from them",
                 "src/App.tsx:7:27: `globalCss()` cannot use `y` at build time: its values must be literals, theme tokens or constants, or be computed from them",
-                "src/App.tsx:8:18: `keyframes()` cannot use `z` at build time: its values must be literals, theme tokens or constants, or be computed from them",
+                "src/App.tsx:8:34: `keyframes()` cannot use `z` at build time: its values must be literals, theme tokens or constants, or be computed from them",
                 "src/App.tsx:9:18: `css()` cannot use `x` at build time: its values must be literals, theme tokens or constants, or be computed from them",
             ]
         );
@@ -14751,6 +14840,45 @@ const Button = styled.button({ bg: 'red' })
 
     #[rstest]
     #[case(
+        "const button = cva('p-4 card', { variants: { size: { sm: 'text-sm', lg: ['text-lg', 'p-8'], none: null } }, compoundVariants: [{ size: 'sm', class: 'm-2' }, { size: 'lg', className: ['m-4'] }], defaultVariants: { size: 'sm' } });\n<Box className={button({ size })} />",
+        "import \"@devup-ui/core/devup-ui.css\";\nconst button = cva(\"a card\", {\n\tvariants: { size: {\n\t\tsm: \"b c\",\n\t\tlg: [\"d e\", \"f\"],\n\t\tnone: null\n\t} },\n\tcompoundVariants: [{\n\t\tsize: \"sm\",\n\t\tclass: \"g\"\n\t}, {\n\t\tsize: \"lg\",\n\t\tclassName: [\"h\"]\n\t}],\n\tdefaultVariants: { size: \"sm\" }\n});\n<div className={button({ size }) || \"\"} />;\n"
+    )]
+    #[case(
+        "const button = cva();\n<Box className={button()} />",
+        "const button = cva();\n<div className={button() || \"\"} />;\n"
+    )]
+    #[case(
+        "const button = cva(base, { variants: 1, compoundVariants: 2 });\n<Box />",
+        "const button = cva(base, {\n\tvariants: 1,\n\tcompoundVariants: 2\n});\n<div />;\n"
+    )]
+    #[case(
+        "const button = cva(['p-4'], { variants: { size: 1, tone: { a: 'm-2' } }, compoundVariants: [1, { tone: 'a', other: 'm-1' }, { ...x }] });\n<Box />",
+        "import \"@devup-ui/core/devup-ui.css\";\nconst button = cva([\"a\"], {\n\tvariants: {\n\t\tsize: 1,\n\t\ttone: { a: \"b\" }\n\t},\n\tcompoundVariants: [\n\t\t1,\n\t\t{\n\t\t\ttone: \"a\",\n\t\t\tother: \"m-1\"\n\t\t},\n\t\t{ ...x }\n\t]\n});\n<div />;\n"
+    )]
+    #[case(
+        "const button = cva(base, { ...shared, variants: { ...more, tone: { ...options, a: 'm-2' }, size: { sm: 'p-1' }, odd: 1 }, compoundVariants: [...list, { class: 'm-1' }] });\n<Box />",
+        "import \"@devup-ui/core/devup-ui.css\";\nconst button = cva(base, {\n\t...shared,\n\tvariants: {\n\t\t...more,\n\t\ttone: {\n\t\t\t...options,\n\t\t\ta: \"a\"\n\t\t},\n\t\tsize: { sm: \"b\" },\n\t\todd: 1\n\t},\n\tcompoundVariants: [...list, { class: \"c\" }]\n});\n<div />;\n"
+    )]
+    #[serial]
+    fn test_tailwind_cva(#[case] jsx: &str, #[case] expected: &str) {
+        reset_class_map();
+        reset_file_map();
+        let output = extract(
+            "test.tsx",
+            &format!("import {{Box}} from '@devup-ui/core'\n{jsx}\n"),
+            ExtractOption {
+                package: "@devup-ui/core".to_string(),
+                css_dir: "@devup-ui/core".to_string(),
+                single_css: true,
+                import_main_css: false,
+                import_aliases: HashMap::new(),
+            },
+        )
+        .unwrap();
+        assert_eq!(output.code, expected);
+    }
+    #[rstest]
+    #[case(
         "<Box className={clsx('p-4', on && 'm-2', 'keep')} />",
         r#"<div className={clsx("a", on && "b", "keep") || ""} />"#
     )]
@@ -14775,8 +14903,60 @@ const Button = styled.button({ bg: 'red' })
         "<div className={clsx({\n\t[key]: on,\n\t\"a\": on\n}) || \"\"} />"
     )]
     #[case(
-        "<Box className={cn('p-4', 'm-2')} />",
-        r#"-<div className={cn("p-4", "m-2") || ""} />"#
+        "const base = 'p-4 card';\n<Box className={base} />",
+        r#"const base = "p-4 card";
+<div className="a card" />"#
+    )]
+    #[case(
+        "const base = `p-4`;\nconst on = false;\n<Box className={clsx(base, on && 'm-2')} />",
+        r#"const base = `p-4`;
+const on = false;
+<div className={clsx("a", on && "b") || ""} />"#
+    )]
+    #[case(
+        "let base = 'p-4';\n<Box className={base} />",
+        r#"-let base = "p-4";
+<div className={base || ""} />"#
+    )]
+    #[case(
+        "const base = 'p-4'\nconst f = (base) => <Box className={base} />",
+        "-const base = \"p-4\";\nconst f = (base) => <div className={base || \"\"} />"
+    )]
+    #[case(
+        "const base = `p-4 ${x}`;\n<Box className={base} />",
+        r#"-const base = `p-4 ${x}`;
+<div className={base || ""} />"#
+    )]
+    #[case("<Box className={cn('p-4', 'm-2')} />", r#"<div className="a b" />"#)]
+    #[case(
+        "<Box className={cn('p-4 m-2 card', ['p-2'])} />",
+        r#"<div className="a card b" />"#
+    )]
+    #[case(
+        "<Box className={twMerge(`p-4`, 'p-2!', 'hover:p-4', 'hover:p-1')} />",
+        r#"<div className="a b c" />"#
+    )]
+    #[case("<Box className={cn(('p-4'), 'p-2')} />", r#"<div className="a" />"#)]
+    #[case(
+        "<Box className={cn('p-4', cond && 'p-2')} />",
+        r#"-<div className={cn("p-4", cond && "p-2") || ""} />"#
+    )]
+    #[case(
+        "<Box className={cn('card', 'hidden-x')} />",
+        r#"-<div className={cn("card", "hidden-x") || ""} />"#
+    )]
+    #[case(
+        "<Box className={cn('px-4', 'p-2', 'bg-red-500', 'bg-blue-500')} />",
+        r#"<div className="a b c" />"#
+    )]
+    #[case(
+        "<Box className={cn(...parts)} />",
+        r#"-<div className={cn(...parts) || ""} />"#
+    )]
+    #[case(
+        "const base = 'p-4';\n<Box className={cn(base, 'p-8')} />",
+        r#"const base = "p-4";
+<div className="a" />"#
     )]
     #[case(
         "<Box className={['p-4'].join(',')} />",
@@ -21214,10 +21394,10 @@ const e = <Box selectors={{ 'div p': { color: 'red' }, 'a > b, > i': { color: 'b
                 ),
                 text("23", "`<Box>`", "\"external-class\""),
                 text("43", "`<Box>`", "\"external-class\""),
-                name("11", "`css()`", "_nope"),
-                text("11", "`css()`", "\"red\""),
+                name("43", "`css()`", "_nope"),
+                text("25", "`css()`", "\"red\""),
                 name("37", "`styled()`", "nope"),
-                name("1", "`globalCss()`", "_nope"),
+                name("13", "`globalCss()`", "_nope"),
             ]
         );
     }
@@ -21338,5 +21518,171 @@ export const App = () => <Global {...rest} styles={{ body: { margin: '0px' } }} 
             )
             .unwrap()
         ));
+    }
+
+    // `@emotion/css` compiles like Devup UI's own APIs, its numbers in px
+    #[test]
+    #[serial]
+    fn test_emotion_css_package() {
+        reset_class_map();
+        reset_file_map();
+        let output = extract(
+            "test.tsx",
+            "import { css, cx, keyframes, injectGlobal } from '@emotion/css';
+const red = css({ color: 'red', padding: 8 });
+const blue = css({ color: 'blue' });
+export const a = cx(red, blue);
+export const fade = keyframes({ from: { opacity: 0 } });
+injectGlobal`body { margin: 0; }`;",
+            ExtractOption {
+                package: "@devup-ui/react".to_string(),
+                css_dir: "@devup-ui/react".to_string(),
+                single_css: true,
+                import_main_css: false,
+                import_aliases: HashMap::from([(
+                    "@emotion/css".to_string(),
+                    ImportAlias::NamedToNamed,
+                )]),
+            },
+        )
+        .unwrap();
+        assert!(!output.code.contains("@emotion/css"), "{}", output.code);
+        assert!(!output.code.contains("cx("), "{}", output.code);
+        assert!(!output.code.contains("injectGlobal"), "{}", output.code);
+        let styles = format!("{:?}", output.styles);
+        assert!(styles.contains("\"8px\""), "{styles}");
+        assert!(styles.contains("body{margin:0}"), "{styles}");
+    }
+
+    fn emotion_class_call(code: &str) -> Result<String, String> {
+        reset_class_map();
+        reset_file_map();
+        extract(
+            "test.tsx",
+            &format!("import {{ css }} from '@devup-ui/react';\nimport {{ cx, merge }} from '@devup-ui/react/compat';\n{code}"),
+            ExtractOption::default(),
+        )
+        .map(|output| output.code)
+        .map_err(|error| error.to_string())
+    }
+
+    #[test]
+    #[serial]
+    fn test_emotion_cx_takes_class_names() {
+        assert_debug_snapshot!(emotion_class_call(
+            r"const red = css({ color: 'red' });
+export const a = cx('external');
+export const b = cx(red, 'external', { picked: true });
+export const c = cx(red, false && 'x');
+export const d = (on, k, cls, props) => cx(cls, { on, [k]: on, 'a b': props.x, off: false, 1: on, [`t`]: on }, [on && 'x', [cls]], on ? { y: 1 } : null, on || cls, cls ?? 'z', 0, 5, null, undefined, `t ${cls} u`, `glued${cls}`, props.make(), (on as boolean) && 'w', false || 'v');
+export const e = cx();
+export const f = cx([, 'a'], ['  b   c  ']);
+export const g = (on) => cx(on ? { a: on } : [on && 'b'], on ? (on ? 'c' : 'd') : 'e');
+export const h = (on) => cx({ [on.key]: on.value });
+export const i = () => cx(red, `${red} x`);
+export const j = cx({ a: null, b: 'x', c: '', d: 0, e: undefined, f: 2, g: false, h: true });"
+        ));
+    }
+
+    #[test]
+    #[serial]
+    fn test_emotion_merge_splits_what_it_can() {
+        assert_debug_snapshot!(emotion_class_call(
+            r"const red = css({ color: 'red' });
+export const a = (cls) => merge(cls);
+export const b = (cls) => merge(`${red}  external ${cls}`);
+export const c = merge('a  b');
+export const d = (on, cls) => merge(on ? 'a b' : cls);
+export const e = (cls) => merge(cls || 'x');
+export const f = (make) => merge(make());
+export const g = (cls) => merge(`glued${cls}`);
+export const h = (cls) => merge(cls.names);
+export const i = merge(red);
+export const j = (cls) => merge({ a: cls });
+export const k = (cls) => merge([cls]);"
+        ));
+    }
+
+    #[test]
+    #[serial]
+    fn test_emotion_cx_and_merge_report_what_they_cannot_compile() {
+        for (code, error) in [
+            (
+                "export const a = (list) => cx(...list);",
+                "test.tsx:3:31: `cx()` cannot use `...list` at build time",
+            ),
+            (
+                "export const a = (list) => cx([...list]);",
+                "`cx()` cannot use `...list` at build time",
+            ),
+            (
+                "export const a = (rest) => cx({ ...rest });",
+                "`cx()` cannot use `...rest` at build time",
+            ),
+            (
+                "export const a = () => cx({ get b() { return true; } });",
+                "`cx()` cannot use `get b()` at build time: a class map entry must be written `name: condition`",
+            ),
+            (
+                "export const a = () => cx({ b() { return true; } });",
+                "`cx()` cannot use `b()` at build time: a class map entry must be written `name: condition`",
+            ),
+            (
+                "export const a = () => cx({ set b(v) {} });",
+                "`cx()` cannot use `set b()` at build time",
+            ),
+            (
+                "export const a = () => cx`a b`;",
+                "`cx()` cannot use `cx`a b`` at build time: call it with class names",
+            ),
+            (
+                "export const a = () => merge`a b`;",
+                "`merge()` cannot use `merge`a b`` at build time: call it with class names",
+            ),
+            (
+                "export const a = () => merge();",
+                "`merge()` cannot use `` at build time: it takes one class string",
+            ),
+            (
+                "export const a = (x, y) => merge(x, y);",
+                "`merge()` cannot use `x, y` at build time: it takes one class string",
+            ),
+            (
+                "export const a = (list) => merge(...list);",
+                "`merge()` cannot use `...list` at build time",
+            ),
+        ] {
+            let message = emotion_class_call(code).err().unwrap_or_default();
+            assert!(message.contains(error), "{code}\n{message}");
+        }
+    }
+
+    #[test]
+    #[serial]
+    fn test_emotion_class_calls_follow_the_package_namespace_and_aliases() {
+        reset_class_map();
+        reset_file_map();
+        let output = extract(
+            "test.tsx",
+            "import * as compat from '@devup-ui/react/compat';
+import { cx as classNames, merge as joined } from '@emotion/css';
+export const a = compat.cx('a', { b: true });
+export const b = compat.merge('c  d');
+export const c = classNames('e');
+export const d = joined('f');
+export const e = classNames({ g: 1 }, { h: 8 });",
+            ExtractOption {
+                package: "@devup-ui/react".to_string(),
+                css_dir: "@devup-ui/react".to_string(),
+                single_css: true,
+                import_main_css: false,
+                import_aliases: HashMap::from([(
+                    "@emotion/css".to_string(),
+                    ImportAlias::NamedToNamed,
+                )]),
+            },
+        )
+        .unwrap();
+        assert_debug_snapshot!(output.code);
     }
 }

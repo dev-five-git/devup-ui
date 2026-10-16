@@ -12,7 +12,10 @@ export { ThemeProvider } from '../components/ThemeProvider'
 export { useStyledTheme as useTheme } from '../hooks/use-styled-theme'
 export { createGlobalStyle } from '../utils/create-global-style'
 export { createTheme } from '../utils/create-theme'
+export type { ClassNamesArg } from '../utils/emotion-classes'
+export { cx, merge } from '../utils/emotion-classes'
 export {
+  CacheProvider,
   isStyledComponent,
   ServerStyleSheet,
   StyleSheetManager,

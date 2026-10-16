@@ -24,6 +24,9 @@ pub enum StyleValue {
 pub struct StyleValues {
     scoping: Option<Scoping>,
     values: FxHashMap<SymbolId, StyleValue>,
+    /// The `const`s the file binds to a string, which a `className` reads as
+    /// the classes they hold
+    texts: FxHashMap<SymbolId, String>,
 }
 
 impl StyleValues {
@@ -31,6 +34,7 @@ impl StyleValues {
         Self {
             scoping: Some(scoping),
             values: FxHashMap::default(),
+            texts: FxHashMap::default(),
         }
     }
 
@@ -48,16 +52,40 @@ impl StyleValues {
         self.values.insert(symbol, value);
     }
 
+    pub fn insert_text(&mut self, symbol: SymbolId, text: String) {
+        self.texts.insert(symbol, text);
+    }
+
+    /// `expression`, a `className`, reading the strings the constants hold
+    pub fn read_in_class<'a>(&self, ast: &AstBuilder<'a>, expression: &mut Expression<'a>) {
+        if let Some(scoping) = self.scoping.as_ref().filter(|_| !self.texts.is_empty()) {
+            ClassReads {
+                ast,
+                scoping,
+                texts: &self.texts,
+            }
+            .visit_expression(expression);
+        }
+    }
+
     /// `expression` reading what the bindings recorded hold
     pub fn read_in<'a>(&self, ast: &AstBuilder<'a>, expression: &mut Expression<'a>) {
-        if let Some(mut reads) = self.reads(ast) {
+        if let Some(mut reads) = self.reads(ast, false) {
+            reads.visit_expression(expression);
+        }
+    }
+
+    /// `expression` as class names, which read a class in a template literal
+    /// too: there it is a string to join, not CSS text
+    pub fn read_in_class_names<'a>(&self, ast: &AstBuilder<'a>, expression: &mut Expression<'a>) {
+        if let Some(mut reads) = self.reads(ast, true) {
             reads.visit_expression(expression);
         }
     }
 
     /// The CSS text `template` reading what the bindings recorded hold
     pub fn read_in_text<'a>(&self, ast: &AstBuilder<'a>, template: &mut TemplateLiteral<'a>) {
-        if let Some(mut reads) = self.reads(ast) {
+        if let Some(mut reads) = self.reads(ast, false) {
             reads.visit_template_literal(template);
         }
     }
@@ -82,14 +110,14 @@ impl StyleValues {
         }
     }
 
-    fn reads<'s, 'a>(&'s self, ast: &'s AstBuilder<'a>) -> Option<Reads<'s, 'a>> {
+    fn reads<'s, 'a>(&'s self, ast: &'s AstBuilder<'a>, in_rules: bool) -> Option<Reads<'s, 'a>> {
         let scoping = self.scoping.as_ref()?;
         (!self.values.is_empty()).then_some(Reads {
             ast,
             scoping,
             values: &self.values,
             in_text: false,
-            in_rules: false,
+            in_rules,
         })
     }
 }
@@ -172,5 +200,32 @@ impl<'a> VisitMut<'a> for Reads<'_, 'a> {
         );
         walk_mut::walk_object_expression(self, it);
         (self.in_rules, self.in_text) = outer;
+    }
+}
+
+struct ClassReads<'s, 'a> {
+    ast: &'s AstBuilder<'a>,
+    scoping: &'s Scoping,
+    texts: &'s FxHashMap<SymbolId, String>,
+}
+
+impl<'a> VisitMut<'a> for ClassReads<'_, 'a> {
+    fn visit_expression(&mut self, it: &mut Expression<'a>) {
+        if let Expression::Identifier(identifier) = it
+            && let Some(text) = identifier
+                .reference_id
+                .get()
+                .and_then(|reference| self.scoping.get_reference(reference).symbol_id())
+                .and_then(|symbol| self.texts.get(&symbol))
+        {
+            *it = Expression::new_string_literal(
+                SPAN,
+                Str::from_in(text.as_str(), self.ast.allocator()),
+                None,
+                self.ast,
+            );
+            return;
+        }
+        walk_mut::walk_expression(self, it);
     }
 }
