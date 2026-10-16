@@ -87,5 +87,5 @@ ToBTreeSet {
             },
         ),
     },
-    code: "import \"@devup-ui/react/devup-ui-0.css\";\nclass A {\n\t#w = 1;\n\trender(f) {\n\t\treturn ((__devupSpread0) => <div {...this.#w} {...__devupSpread0} className={`a-a ${__devupSpread0?.className || \"\"} ${this.#w?.className || \"\"}`} style={{\n\t\t\t...{ \"--a\": this.#w },\n\t\t\t...__devupSpread0?.style,\n\t\t\t...this.#w?.style\n\t\t}} />)(f());\n\t}\n}\nexport const a = async (f, X, tag) => <div className=\"a-a a-b a-c a-d a-e a-f a-g a-h\" style={{\n\t\"--a\": await f(),\n\t\"--b\": (f(),2),\n\t\"--c\": new X,\n\t\"--d\": tag`x`,\n\t\"--e\": 10n,\n\t\"--f\": f.n++,\n\t\"--g\": f.v=3\n}} />;\n",
+    code: "import \"@devup-ui/react/devup-ui-0.css\";\nclass A {\n\t#w = 1;\n\trender(f) {\n\t\treturn ((__devupSpread0) => <div {...this.#w} {...__devupSpread0} className={`${(\"className\" in Object(__devupSpread0) ? __devupSpread0.className : this.#w?.className) || \"\"} a-a`} style={{\n\t\t\t...{ \"--a\": this.#w },\n\t\t\t...\"style\" in Object(__devupSpread0) ? __devupSpread0.style : this.#w?.style\n\t\t}} />)(f());\n\t}\n}\nexport const a = async (f, X, tag) => <div className=\"a-a a-b a-c a-d a-e a-f a-g a-h\" style={{\n\t\"--a\": await f(),\n\t\"--b\": (f(),2),\n\t\"--c\": new X,\n\t\"--d\": tag`x`,\n\t\"--e\": 10n,\n\t\"--f\": f.n++,\n\t\"--g\": f.v=3\n}} />;\n",
 }

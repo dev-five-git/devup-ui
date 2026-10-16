@@ -9,6 +9,8 @@ pub(super) mod extract_style_from_jsx;
 pub(super) mod extract_style_from_member_expression;
 pub(super) mod extract_style_from_styled;
 pub(super) mod extract_style_from_stylex;
+pub(super) mod styled_capability;
+pub(super) mod styled_css_slot;
 pub(super) mod styled_jsx;
 mod styled_record;
 mod styled_record_evaluation;

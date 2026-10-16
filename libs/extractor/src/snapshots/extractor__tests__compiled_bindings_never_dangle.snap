@@ -5,7 +5,7 @@ expression: outputs
 [
     (
         "import { css, styled, Box } from '@devup-ui/react';\nconst myCss = css;\nconst again = myCss;\nconst S = styled;\nconst B = Box;\nexport const a = again({ color: 'red' });\nexport const s = S.div({ color: 'blue' });\nexport const b = <B p={1} />;",
-        "export const a = \"a-a\";\nexport const s = ({ style, className, ...rest }) => <div {...rest} className={[\"a-b\", className].filter(Boolean).join(\" \")} style={style} />;\nexport const b = <div className=\"a-c\" />;",
+        "import { forwardRef as __devupForwardRef } from \"react\";\nexport const a = \"a-a\";\nexport const s = __devupForwardRef((__devupRefProps, __devupRef) => (({ style, className, as: DevupAs = \"div\", forwardedAs, ...rest }) => <DevupAs {...(({ \"theme\": __devupOmit0, ...__devupDom }) => __devupDom)(rest)} as={forwardedAs} className={[\"a--c a-b\", className].filter(Boolean).join(\" \")} style={style} />)({\n\t...__devupRefProps,\n\tref: __devupRef\n}));\nexport const b = <div className=\"a-c\" />;",
     ),
     (
         "import { css } from '@devup-ui/react';\nexport function f(css) { return css; }\nexport const a = css({ color: 'red' });",
