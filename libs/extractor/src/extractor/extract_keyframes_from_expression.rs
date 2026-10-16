@@ -7,28 +7,42 @@ use crate::{
             LiteralHandling, extract_style_from_expression, unreadable,
         },
     },
-    utils::{
-        fixed_value, get_string_by_property_key, readable_code, runtime_value,
-        unwrap_syntax_only_mut,
-    },
+    utils::{get_string_by_property_key, readable_code, runtime_value, unwrap_syntax_only_mut},
 };
 use oxc_ast::{
     ast::{Expression, ObjectPropertyKind},
     builder::AstBuilder,
 };
+use oxc_span::GetSpan;
 
-pub fn extract_keyframes_from_expression<'a>(
+pub(crate) fn extract_keyframes_with_location<'a>(
     ast_builder: &AstBuilder<'a>,
     expression: &mut Expression<'a>,
-) -> KeyframesExtractResult {
+) -> (KeyframesExtractResult, Option<u32>) {
     let mut keyframes = ExtractKeyframes::default();
+    let invalid = crate::dead_properties::expression_errors(expression);
+    if let Some((offset, value)) =
+        crate::dead_properties::located_value(&invalid, expression.span().start, true)
+    {
+        return (
+            KeyframesExtractResult {
+                keyframes,
+                runtime_value: Some(value),
+            },
+            Some(offset),
+        );
+    }
     let Expression::ObjectExpression(obj) = unwrap_syntax_only_mut(expression) else {
-        return KeyframesExtractResult {
-            keyframes,
-            runtime_value: runtime_value(&unreadable(expression).styles),
-        };
+        return (
+            KeyframesExtractResult {
+                keyframes,
+                runtime_value: runtime_value(&unreadable(expression).styles),
+            },
+            Some(expression.span().start),
+        );
     };
     let mut runtime = None;
+    let mut runtime_offset = None;
     for p in &mut obj.properties {
         let o = match p {
             ObjectPropertyKind::ObjectProperty(o) => o,
@@ -60,7 +74,13 @@ pub fn extract_keyframes_from_expression<'a>(
             &None,
             LiteralHandling::ExpandResponsiveThemeToken,
         );
-        runtime = runtime.or_else(|| fixed_value(&styles));
+        if runtime.is_none()
+            && let Some((offset, value)) =
+                crate::dead_properties::located_value(&styles, o.value.span().start, true)
+        {
+            runtime = Some(value);
+            runtime_offset = Some(offset);
+        }
 
         let mut styles = styles
             .into_iter()
@@ -75,8 +95,11 @@ pub fn extract_keyframes_from_expression<'a>(
             styles,
         );
     }
-    KeyframesExtractResult {
-        keyframes,
-        runtime_value: runtime,
-    }
+    (
+        KeyframesExtractResult {
+            keyframes,
+            runtime_value: runtime,
+        },
+        runtime_offset,
+    )
 }
