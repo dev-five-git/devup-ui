@@ -36,12 +36,22 @@ it.each(
 
 it('rejects a missing callable normal when an assigned loader export has no normal', () => {
   // Given
-  const context = {}
-  const slot = { normal: undefined }
+  const context = { loaderIndex: 0 }
+  const slot = { normal: undefined, pitch: undefined }
   installMdxNormalCapture(context, seam)
   Reflect.set(context, 'loaders', [slot])
   // When / Then
   expect(() => Reflect.set(slot, 'normal', undefined)).toThrow()
+})
+
+it('rejects a loader array without the already-created native runner index slot', () => {
+  // Given
+  const context = {}
+  installMdxNormalCapture(context, seam)
+  // When / Then
+  expect(() =>
+    Reflect.set(context, 'loaders', [{ normal: undefined, pitch: undefined }]),
+  ).toThrow('writable existing runner index')
 })
 
 it('locates deadline and callback errors even before a runner assigns loader objects', () => {

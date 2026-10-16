@@ -2,6 +2,8 @@ import { join } from 'node:path'
 
 import { expect, it } from 'bun:test'
 
+import { rememberMdxCacheAdmission } from '../mdx-live-admission'
+import { compileMdx, createMdxDeadline } from '../mdx-prepare'
 import {
   captureMdxCacheIdentity,
   compatibleMdxCache,
@@ -183,20 +185,20 @@ it('preserves structural identity while separating map delivery cache dimensions
   const selection = await f.binding.selectPipeline('module', f.signal)
   if (!selection) throw new TypeError('Missing selected pipeline')
   const captured = captureMdxCacheIdentity(selection)
+  const prepared = await compileMdx({
+    root: f.root,
+    filename: join(f.root, 'app/page.mdx'),
+    pipeline: selection.pipeline,
+    context: selection.context,
+    signal: f.signal,
+    deadline: createMdxDeadline(),
+  })
   const entry = {
     ...captured,
-    prepared: {
-      filename: 'module',
-      source: '',
-      map: undefined,
-      dependencies: [],
-      contextDependencies: [],
-      missingDependencies: [],
-      buildDependencies: [],
-      dependencyReports: [],
-    },
+    prepared,
     inputs: [],
   }
+  rememberMdxCacheAdmission(entry, prepared, selection)
   // When / Then
   expect(
     compatibleMdxCache(entry, {

@@ -120,7 +120,7 @@ it('refuses direct calls into the own normal when the runner has not reached its
       },
     }),
   ).rejects.toMatchObject({
-    cause: { fact: 'original runner normal position 0' },
+    cause: { property: 'loaders.normal', index: 1, phase: 'normal' },
   })
 })
 

@@ -10,6 +10,7 @@ import { type MdxPipeline } from '../mdx-pipeline'
 import { compileMdx, createMdxDeadline } from '../mdx-prepare'
 import { createWasm } from '../wasm'
 import { bindingOwner, bindingReceipt } from './mdx-binding-fixture'
+import { nativePreparationContext } from './mdx-safety-native'
 
 const root = resolve(import.meta.dir, '../../../../apps/landing')
 const installed = createRequire(join(root, 'package.json'))
@@ -68,6 +69,7 @@ async function css(
     pipeline,
     signal: new AbortController().signal,
     deadline: createMdxDeadline(),
+    context: nativePreparationContext(root),
   })
   const engine = createWasm(root)
   engine.seedFileMap([filename])

@@ -7,6 +7,7 @@ import {
   createMdxDeadline,
   createMdxOptionsInstance,
 } from '../mdx-prepare'
+import { nativePreparationContext } from './mdx-safety-native'
 import { sourceFixture, styledMdx } from './mdx-source-fixture'
 
 it('rejects reporting when the native raw loader never supplied a resource context', async () => {
@@ -21,6 +22,7 @@ it('rejects reporting when the native raw loader never supplied a resource conte
     pipeline,
     signal: f.signal,
     deadline: createMdxDeadline(),
+    context: nativePreparationContext(f.root),
   })
   // Then
   await expect(pending).rejects.toMatchObject({
@@ -66,6 +68,7 @@ it.each([false, true])(
       signal: left.signal,
       deadline,
       optionsInstance,
+      context: nativePreparationContext(left.root),
     })
     const [first, outcome] = await Promise.all([
       pending,
@@ -79,6 +82,7 @@ it.each([false, true])(
             signal: right.signal,
             deadline,
             optionsInstance,
+            context: nativePreparationContext(right.root),
           })
         } finally {
           release.resolve()

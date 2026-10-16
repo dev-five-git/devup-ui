@@ -3,7 +3,7 @@ import { existsSync, readFileSync } from 'node:fs'
 import { createRequire } from 'node:module'
 import { dirname, join } from 'node:path'
 
-import { isMdxRecord, type MdxPipeline } from './mdx-pipeline'
+import { isMdxRecord } from './mdx-pipeline'
 
 export type MdxPreparationContext = {
   readonly owner: object
@@ -15,7 +15,7 @@ export type MdxPreparationContext = {
 export type MdxPrewarmStep = {
   readonly module: string
   readonly wrapper: string | undefined
-  readonly compiler: object
+  readonly compiler: object | undefined
 }
 
 const hashes = {
@@ -56,31 +56,4 @@ export function recognizeMdxPrewarmStep(file: string) {
   )
     return
   return { module, wrapper }
-}
-
-// Each app/generation/pipeline/context gets an upstream compiler cache owner.
-// Pipeline identity retains live function options; no function serialization.
-const owners = new WeakMap<
-  object,
-  WeakMap<object, WeakMap<MdxPipeline, WeakMap<object, Map<string, object>>>>
->()
-export function mdxPrewarmCacheOwner(
-  context: MdxPreparationContext,
-  pipeline: MdxPipeline,
-  directory: string,
-): object {
-  let generations = owners.get(context.owner)
-  if (!generations) owners.set(context.owner, (generations = new WeakMap()))
-  let pipelines = generations.get(context.generation)
-  if (!pipelines)
-    generations.set(context.generation, (pipelines = new WeakMap()))
-  let compilers = pipelines.get(pipeline)
-  if (!compilers) pipelines.set(pipeline, (compilers = new WeakMap()))
-  const compiler = context.compiler ?? context.owner
-  let resources = compilers.get(compiler)
-  if (!resources) compilers.set(compiler, (resources = new Map()))
-  const key = JSON.stringify([directory, context.mode, context.sourceMap])
-  let owner = resources.get(key)
-  if (!owner) resources.set(key, (owner = {}))
-  return owner
 }

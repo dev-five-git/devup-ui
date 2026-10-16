@@ -49,8 +49,7 @@ export async function ownSlotParity(
       raw,
       `function observe(c, phase, source) {
       c.getOptions().observe({phase, buffer: Buffer.isBuffer(source), index: c.loaderIndex,
-        normal: c.loaders[c.loaderIndex].normal, pitchFunction: c.loaders[c.loaderIndex].pitch,
-        rootContext: c.rootContext, context: c.context, resourcePath: c.resourcePath, sourceMap: c.sourceMap, mode: c.mode, compiler: c._compiler,
+        rootContext: c.rootContext, context: c.context, resourcePath: c.resourcePath, sourceMap: c.sourceMap, mode: c.mode,
         request: c.request, current: c.currentRequest, previous: c.previousRequest, remaining: c.remainingRequest,
         resource: c.resource, query: c.query, data: c.data,
         loaders: c.loaders.map(x => ({path:x.path, query:x.query, fragment:x.fragment, options:x.options,

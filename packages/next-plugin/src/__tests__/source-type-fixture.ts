@@ -18,6 +18,7 @@ import { createMdxSourceManager } from '../mdx-source-generation'
 import type { MdxBuildBinding, MdxExtractionView } from '../mdx-source-types'
 import { createAppContext } from '../session'
 import { createWasm, withModuleResolver } from '../wasm'
+import { nativePreparationContext } from './mdx-safety-native'
 
 const workspace = resolve(import.meta.dir, '../../../..')
 const installedRoot = join(workspace, 'apps/landing')
@@ -99,6 +100,7 @@ export function sourceFixture(
     importAliases: {},
   }
   const owner = {}
+  const { compiler } = nativePreparationContext(root)
   function configure(
     engine: ReturnType<typeof createWasm>,
     view: MdxExtractionView,
@@ -115,7 +117,7 @@ export function sourceFixture(
     configFile: join(root, 'next.config.mjs'),
     selectPipeline: async () => ({
       pipeline,
-      context: { owner, generation: owner, sourceMap: true },
+      context: { owner, generation: owner, compiler, sourceMap: true },
       identity: pipeline.loaders,
     }),
     ordinaryEligibility: () => ({ kind: 'disk-first' }),

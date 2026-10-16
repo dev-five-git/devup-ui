@@ -16,6 +16,7 @@ import {
   requireMdxPipeline,
 } from '../mdx-pipeline'
 import { compileMdx, createMdxDeadline, MdxCompileError } from '../mdx-prepare'
+import { completeNativeAsync } from './mdx-native-async-control'
 
 const installedRoot = resolve(import.meta.dir, '../../../../apps/landing')
 const roots: string[] = []
@@ -150,6 +151,10 @@ it.each([
         deadline: createMdxDeadline(totalMs, individualMs),
       }),
     ).rejects.toBeInstanceOf(MdxCompileError)
+    const loader = request.pipeline.loaders[0]
+    if (!loader) throw new TypeError('missing owned compiler')
+    const native = await completeNativeAsync(request.filename, loader)
+    expect(native).toMatchObject({ result: [Buffer.from('# source')] })
   },
 )
 

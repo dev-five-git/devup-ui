@@ -46,25 +46,37 @@ class ReporterContextError extends Error {
 
 const reporters = new Map<string, SourceReporter>()
 
-export function sourceReporter(root: string): SourceReporter {
+export function sourceReporter(
+  root: string,
+  configured: ReporterOptions = {},
+): SourceReporter {
   const existing = reporters.get(root)
   if (existing) return existing
-  const contexts = new Map<string, ReporterContext>()
+  const reportedResources = new Set<string>()
   const counts = new Map<string, number>()
   const seen: unknown[] = []
   const setContext = (context: ReporterContext) => {
-    contexts.set(context.resourcePath, context)
+    const directory = dirname(context.resourcePath)
+    const data = configured.data || join(directory, 'data.json')
+    if (existsSync(data)) context.addDependency(data)
+    const reported = join(directory, 'reported')
+    if (existsSync(reported)) context.addContextDependency(reported)
+    const missing = join(directory, 'optional.json')
+    if (existsSync(missing)) context.addDependency(missing)
+    else context.addMissingDependency(missing)
+    const build = join(directory, 'build.json')
+    if (existsSync(build)) context.addBuildDependency(build)
+    reportedResources.add(context.resourcePath)
   }
   function remark(options: ReporterOptions) {
     return async (tree: ReporterTree, file: { readonly path: string }) => {
       counts.set(file.path, (counts.get(file.path) ?? 0) + 1)
-      const context = contexts.get(file.path)
-      if (!context) throw new ReporterContextError(file.path)
+      if (!reportedResources.has(file.path))
+        throw new ReporterContextError(file.path)
       await options.before?.(file.path)
       const directory = dirname(file.path)
       const data = options.data || join(directory, 'data.json')
       if (existsSync(data)) {
-        context.addDependency(data)
         const value: unknown = JSON.parse(readFileSync(data, 'utf8'))
         appendReportedStyle(
           tree,
@@ -75,17 +87,11 @@ export function sourceReporter(root: string): SourceReporter {
       }
       const reported = join(directory, 'reported')
       if (existsSync(reported)) {
-        context.addContextDependency(reported)
         tree.children.push({
           type: 'paragraph',
           children: [{ type: 'text', value: readdirSync(reported).join(',') }],
         })
       }
-      const missing = join(directory, 'optional.json')
-      if (existsSync(missing)) context.addDependency(missing)
-      else context.addMissingDependency(missing)
-      const build = join(directory, 'build.json')
-      if (existsSync(build)) context.addBuildDependency(build)
     }
   }
   function raw(this: ReporterContext, source: string | Buffer) {

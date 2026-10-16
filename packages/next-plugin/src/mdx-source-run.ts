@@ -6,6 +6,7 @@ import {
   createModuleResolver,
 } from '@devup-ui/plugin-utils'
 
+import { rememberMdxCacheAdmission } from './mdx-live-admission'
 import { requireMdxPipeline } from './mdx-pipeline'
 import {
   compileMdx,
@@ -162,26 +163,25 @@ export async function runMdxSourcePreparation(
           development: context.watch,
           accuracy,
         })
-        entries.set(
-          filename,
-          Object.freeze({
-            ...identity,
-            prepared: Object.freeze({
-              ...prepared,
-              map: immutableMdxMap(prepared.map),
-              dependencies: Object.freeze([...prepared.dependencies]),
-              contextDependencies: Object.freeze([
-                ...prepared.contextDependencies,
-              ]),
-              missingDependencies: Object.freeze([
-                ...prepared.missingDependencies,
-              ]),
-              buildDependencies: Object.freeze([...prepared.buildDependencies]),
-              dependencyReports: Object.freeze([...prepared.dependencyReports]),
-            }),
-            inputs,
+        const entry = Object.freeze({
+          ...identity,
+          prepared: Object.freeze({
+            ...prepared,
+            map: immutableMdxMap(prepared.map),
+            dependencies: Object.freeze([...prepared.dependencies]),
+            contextDependencies: Object.freeze([
+              ...prepared.contextDependencies,
+            ]),
+            missingDependencies: Object.freeze([
+              ...prepared.missingDependencies,
+            ]),
+            buildDependencies: Object.freeze([...prepared.buildDependencies]),
+            dependencyReports: Object.freeze([...prepared.dependencyReports]),
           }),
-        )
+          inputs,
+        })
+        rememberMdxCacheAdmission(entry, prepared, selection)
+        entries.set(filename, entry)
       }
       added = true
     }

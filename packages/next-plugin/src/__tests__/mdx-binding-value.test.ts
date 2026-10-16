@@ -1,6 +1,24 @@
 import { expect, it } from 'bun:test'
 
+import {
+  reusableMdxBindingValue,
+  snapshotMdxBindingValue,
+} from '../mdx-binding-value'
 import { bindingReceipt } from './mdx-binding-fixture'
+
+it('allows cyclic structural receipts but misses accessors without evaluating them', () => {
+  // Given
+  const cyclic: Record<string, unknown> = { value: null }
+  cyclic.self = cyclic
+  const accessor = Object.defineProperty({}, 'value', {
+    get() {
+      throw new Error('must not evaluate')
+    },
+  })
+  // When / Then
+  expect(reusableMdxBindingValue(snapshotMdxBindingValue(cyclic))).toBe(true)
+  expect(reusableMdxBindingValue(snapshotMdxBindingValue(accessor))).toBe(false)
+})
 
 it.each([
   [1, 2, 'loaders[0].options'],

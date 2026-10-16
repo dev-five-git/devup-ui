@@ -4,6 +4,7 @@ import {
   compareMdxBindingValues,
   snapshotMdxBindingValue,
 } from './mdx-binding-value'
+import { compatibleMdxLiveAdmission } from './mdx-live-admission'
 import { isMdxRecord } from './mdx-pipeline'
 import {
   readCompilerRestartReports,
@@ -86,6 +87,7 @@ export function compatibleMdxCache(
   selection: MdxPipelineSelection,
 ): boolean {
   return (
+    compatibleMdxLiveAdmission(entry, selection) &&
     entry.sourceMap === selection.context.sourceMap &&
     entry.mode === selection.context.mode &&
     compareMdxBindingValues(

@@ -63,7 +63,8 @@ export function sourceFixture(
   }
   write('package.json', '{}')
   for (const [file, source] of Object.entries(files)) write(file, source)
-  const reporter = sourceReporter(root)
+  const pluginOptions: ReporterOptions = {}
+  const reporter = sourceReporter(root, pluginOptions)
   const reporterFile = resolve(import.meta.dir, 'mdx-source-reporter.ts')
   const reporterRequest = `require(${JSON.stringify(reporterFile)}).sourceReporter(${JSON.stringify(root)})`
   const plugin = write(
@@ -74,7 +75,6 @@ export function sourceFixture(
     'reporting-raw.cjs',
     `module.exports = ${reporterRequest}.raw`,
   )
-  const pluginOptions: ReporterOptions = {}
   const compilerOptions = {
     jsx: true,
     format: 'mdx',

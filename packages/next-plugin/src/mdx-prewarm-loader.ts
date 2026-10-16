@@ -1,20 +1,18 @@
 import { pathToFileURL } from 'node:url'
 
+import type { MdxContextAdmission } from './mdx-context-admission'
+import type { MdxLoaderOccurrence } from './mdx-context-lifetime'
+import { admitMdxNativeCell } from './mdx-native-scope'
 import { isMdxRecord } from './mdx-pipeline'
 import { prepareMdxPlugins } from './mdx-prepare-plugins'
-import type { MdxPrewarmStep } from './mdx-prewarm-boundary'
+import {
+  type MdxPrewarmStep,
+  recognizeMdxPrewarmStep,
+} from './mdx-prewarm-boundary'
 
 type Callback = (error?: unknown, source?: unknown, map?: unknown) => void
-type Context = {
-  readonly loaderIndex: number
-  readonly context: string
-  readonly devupMdxPrewarm: ReadonlyMap<number, MdxPrewarmStep>
-  readonly getOptions: () => unknown
-  readonly async: () => Callback
-  readonly addDependency: (path: string) => void
-}
 type InstalledLoader = (
-  this: Context,
+  this: object,
   source: string,
   callback: Callback,
 ) => void
@@ -23,33 +21,60 @@ function isInstalledLoader(value: unknown): value is InstalledLoader {
 }
 
 // Preparation only. Native bundler rules never reference this entry.
-export default function mdxPrewarmLoader(this: Context, source: string) {
-  const callback = this.async()
+export default function mdxPrewarmLoader(
+  context: object,
+  control: {
+    readonly step: MdxPrewarmStep | undefined
+    readonly admission: MdxContextAdmission
+    readonly occurrence: MdxLoaderOccurrence
+  },
+  source: unknown,
+) {
+  const { step, admission, occurrence } = control
+  const raw = admission.view(context, occurrence)
+  const asyncMethod: unknown = Reflect.get(raw, 'async')
+  if (typeof asyncMethod !== 'function') throw new TypeError('missing async')
+  const callback: Callback = Reflect.apply(asyncMethod, raw, [])
   const run = async () => {
-    const step = this.devupMdxPrewarm.get(this.loaderIndex)
     if (!step) throw new TypeError('MDX preparation bridge step is unavailable')
-    let options = this.getOptions()
+    const getOptions: unknown = Reflect.get(raw, 'getOptions')
+    if (typeof getOptions !== 'function')
+      throw new TypeError('missing getOptions')
+    let options: unknown = Reflect.apply(getOptions, raw, [])
     if (step.wrapper) {
       if (!isMdxRecord(options))
         throw new TypeError('Next MDX options must be an object')
       const prepared = await prepareMdxPlugins(
         options,
-        this.context,
+        String(Reflect.get(raw, 'context')),
         step.wrapper,
       )
       options = prepared.options
-      for (const path of prepared.dependencies) this.addDependency(path)
+      const addDependency: unknown = Reflect.get(raw, 'addDependency')
+      if (typeof addDependency !== 'function')
+        throw new TypeError('missing dependency API')
+      for (const path of prepared.dependencies)
+        Reflect.apply(addDependency, context, [path])
     }
     const mod: unknown = await import(pathToFileURL(step.module).href)
     if (!isMdxRecord(mod) || !isInstalledLoader(mod.loader))
       throw new TypeError('installed MDX ESM loader is unavailable')
-    const proxy = new Proxy(this, {
-      get(target, property, receiver) {
-        if (property === 'getOptions') return () => options
-        if (property === '_compiler') return step.compiler
-        return Reflect.get(target, property, receiver)
-      },
+    const scope = admitMdxNativeCell(mod, step.compiler, {
+      options,
+      sourceMap: Reflect.get(raw, 'sourceMap'),
+      mode: Reflect.get(raw, 'mode'),
     })
+    admission.admit(
+      () =>
+        recognizeMdxPrewarmStep(occurrence.loader)?.module === step.module &&
+        scope.current(),
+    )
+    const proxy = admission.view(context, occurrence, {
+      compiler: scope.compiler,
+      options: () => options,
+    })
+    if (typeof source !== 'string')
+      throw new TypeError('MDX bridge needs string source')
     mod.loader.call(proxy, source, callback)
   }
   void run().catch(callback)

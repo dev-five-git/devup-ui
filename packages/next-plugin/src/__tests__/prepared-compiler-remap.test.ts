@@ -10,6 +10,7 @@ import { compileMdx, createMdxDeadline } from '../mdx-prepare'
 import { runPrewarm } from '../prewarm-run'
 import { createAppContext } from '../session'
 import { createWasm, withModuleResolver } from '../wasm'
+import { nativePreparationContext } from './mdx-safety-native'
 import { installProjectHooks, makeProject } from './project'
 
 installProjectHooks()
@@ -59,7 +60,7 @@ it.each([
       pipeline: requireMdxPipeline(resourcePath, composition.pipelines[0]),
       signal: new AbortController().signal,
       deadline: createMdxDeadline(),
-      context: { owner: {}, generation: {}, sourceMap: true },
+      context: { ...nativePreparationContext(root), sourceMap: true },
     })
     process.chdir(root)
     const context = { ...createAppContext({}, {}), sourceMap }

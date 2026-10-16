@@ -110,18 +110,44 @@ describe('selected native MDX input bytes', () => {
                 ? [
                     prepared.source,
                     (
-                      await compileMdx({
-                        root,
-                        filename,
-                        pipeline: selection.pipeline,
-                        context: {
-                          ...selection.context,
-                          sourceMap: !sourceMap,
+                      await withSelector(
+                        {
+                          context: root,
+                          devtool: sourceMap ? false : 'source-map',
+                          module: {
+                            rules: [
+                              {
+                                ...mdxRule(options),
+                                test: /\.(md|mdx|mdown)$/,
+                              },
+                            ],
+                          },
                         },
-                        signal,
-                        deadline: createMdxDeadline(),
-                        optionsInstance: createMdxOptionsInstance(),
-                      })
+                        async (alternateSelector) => {
+                          const alternate =
+                            await alternateSelector.selectPipeline(
+                              filename,
+                              signal,
+                            )
+                          if (!alternate)
+                            throw new TypeError(
+                              'missing alternate real selection',
+                            )
+                          expect(alternate.context.compiler).not.toBe(compiler)
+                          expect(alternate.context.sourceMap).toBe(!sourceMap)
+                          const output = await compileMdx({
+                            root,
+                            filename,
+                            pipeline: alternate.pipeline,
+                            context: alternate.context,
+                            signal,
+                            deadline: createMdxDeadline(),
+                            optionsInstance: createMdxOptionsInstance(),
+                          })
+                          expect(output.map !== undefined).toBe(!sourceMap)
+                          return output
+                        },
+                      )
                     ).source,
                   ]
                 : []

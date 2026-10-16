@@ -86,7 +86,7 @@ it('retains mode and original identity when real compiler output is restored fro
   // When
   const restored = await cached.prepare(f.signal)
   // Then
-  expect(f.counts()).toBe(1)
+  expect(f.counts()).toBe(2)
   expect(restored.cacheReader(join(f.root, 'app/value.mdown'))).toMatchObject({
     sourceType: 'compiled-mdx',
   })

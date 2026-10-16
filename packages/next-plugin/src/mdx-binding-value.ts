@@ -70,6 +70,77 @@ export function snapshotMdxBindingValue(input: unknown): Value {
   return snapshot(input)
 }
 
+export function reusableMdxBindingValue(
+  snapshot: Value,
+  webpackCompiler = false,
+): boolean {
+  type Coverage = 'none' | 'loader' | 'json'
+  const seen = {
+    none: new Set<Value>(),
+    loader: new Set<Value>(),
+    json: new Set<Value>(),
+  }
+  function reusable(value: Value, coverage: Coverage): boolean {
+    if (seen[coverage].has(value)) return true
+    seen[coverage].add(value)
+    switch (value.kind) {
+      case 'leaf':
+        // Native current H proves timestamps only on live serialized paths.
+        // Other opaque objects retain identity but do not prove compiled bytes.
+        return (
+          typeof value.value !== 'object' ||
+          value.value === null ||
+          (coverage === 'json' &&
+            value.value instanceof Date &&
+            Reflect.ownKeys(value.value).length === 0)
+        )
+      case 'shell':
+        return value.entries.every((entry) => {
+          switch (entry.kind) {
+            case 'data': {
+              let child: Coverage = 'none'
+              switch (coverage) {
+                case 'loader':
+                  // webpackCompiler copies shells, not their nested values.
+                  if (
+                    entry.key === 'options' &&
+                    entry.value.kind === 'shell' &&
+                    !entry.value.array
+                  )
+                    child = 'json'
+                  break
+                case 'json':
+                  // H uses enumerable string keys; JSON arrays use indices,
+                  // not extra fields (including numeric-looking nonindices).
+                  if (
+                    entry.enumerable &&
+                    typeof entry.key === 'string' &&
+                    (!value.array ||
+                      (/^(0|[1-9]\d*)$/.test(entry.key) &&
+                        Number(entry.key) < 4_294_967_295))
+                  )
+                    child = 'json'
+                  break
+                case 'none':
+                  break
+                default:
+                  coverage satisfies never
+              }
+              return reusable(entry.value, child)
+            }
+            case 'accessor':
+              return false
+            default:
+              return entry satisfies never
+          }
+        })
+      default:
+        return value satisfies never
+    }
+  }
+  return reusable(snapshot, webpackCompiler ? 'loader' : 'none')
+}
+
 function keyPath(path: string, key: string | symbol): string {
   if (typeof key === 'symbol') return `${path}[${String(key)}]`
   return /^\d+$/.test(key) ? `${path}[${key}]` : `${path}.${key}`

@@ -1,11 +1,14 @@
 import { readFile } from 'node:fs'
-import { parse } from 'node:querystring'
 
+import { createMdxContextAdmission } from './mdx-context-admission'
 import type { MdxInvocationLoader } from './mdx-invocation'
+import { rememberMdxPreparedScope } from './mdx-live-admission'
 import {
   installMdxNormalCapture,
   type MdxNormalSeam,
 } from './mdx-normal-capture'
+import { installedMdxJsonParser } from './mdx-options-parser'
+import { isMdxRecord } from './mdx-pipeline'
 import { recordMdxDependencies } from './mdx-prepare-dependencies'
 import { prepared, type PreparedMdx } from './mdx-prepare-result'
 import type {
@@ -49,21 +52,33 @@ export function runMdxLoaders(request: {
     steps,
     runLoaders,
   } = request
+  const admission = createMdxContextAdmission(() =>
+    installedMdxJsonParser(root),
+  )
   return new Promise<PreparedMdx>((resolveOutput, reject) => {
     let settled = false
+    let completing = false
     function finish(error: unknown, result?: unknown) {
       if (settled) return
+      const failure = admission.close() ?? error
       settled = true
       clearTimeout(timer)
       signal.removeEventListener('abort', abort)
-      if (error) {
-        reject(error)
+      if (failure) {
+        reject(failure)
         return
       }
       resolveOutput(
         Promise.resolve().then(() => {
+          admission.check()
           signal.throwIfAborted()
-          return prepared(filename, result, dependencies)
+          if (isMdxRecord(result) && result.cacheable === false)
+            throw new TypeError(
+              'MDX preparation cannot reuse cacheable(false) output; use native compilation',
+            )
+          const output = prepared(filename, result, dependencies)
+          rememberMdxPreparedScope(output, admission.scope())
+          return output
         }),
       )
     }
@@ -82,29 +97,26 @@ export function runMdxLoaders(request: {
       ...(context.compiler === undefined
         ? {}
         : { _compiler: context.compiler }),
-      devupMdxPrewarm: steps,
-      getOptions(this: { readonly query: unknown }) {
-        if (typeof this.query !== 'string') return this.query
-        const query = this.query.replace(/^\?/, '')
-        return query.startsWith('{') ? JSON.parse(query) : parse(query)
-      },
       emitError: (error: unknown) => finish(error),
     }
     const dependencies = recordMdxDependencies(filename, loaderContext)
     const capture = request.seam
-      ? installMdxNormalCapture(loaderContext, request.seam)
+      ? installMdxNormalCapture(loaderContext, request.seam, {
+          admission,
+          steps,
+        })
       : undefined
     const callback = (error: unknown, result: unknown) => {
-      if (settled) return
+      if (settled || completing) return
       if (!capture) {
         finish(error, result)
         return
       }
-      try {
-        finish(null, capture.accept(error, result))
-      } catch (cause) {
-        finish(cause)
-      }
+      completing = true
+      admission.close()
+      void Promise.resolve()
+        .then(() => capture.accept(error, result))
+        .then((accepted) => finish(null, accepted), finish)
     }
     async function start() {
       if (settled) return

@@ -1,5 +1,5 @@
 import { createRequire } from 'node:module'
-import { dirname, isAbsolute, join, resolve } from 'node:path'
+import { isAbsolute, join, resolve } from 'node:path'
 
 import {
   type MdxInvocation,
@@ -7,6 +7,7 @@ import {
   mdxLoaderPath,
   requireMdxInvocation,
 } from './mdx-invocation'
+import { requireMdxSafeCompilerOptions } from './mdx-native-scope'
 import {
   createMdxOptionsInstance,
   type MdxOptionsInstance,
@@ -20,7 +21,6 @@ import type { PreparedMdx } from './mdx-prepare-result'
 import { isRunLoaders, runMdxLoaders } from './mdx-prepare-runner'
 import {
   type MdxPreparationContext,
-  mdxPrewarmCacheOwner,
   type MdxPrewarmStep,
   recognizeMdxPrewarmStep,
 } from './mdx-prewarm-boundary'
@@ -115,6 +115,23 @@ export async function compileMdx(
     const invocation =
       request.invocation &&
       requireMdxInvocation(pipeline, request.invocation, filename)
+    const original =
+      invocation?.loaders[invocation.compilerIndex] ?? pipeline.loaders[0]
+    if (original && typeof original !== 'string') {
+      const originalPath = mdxLoaderPath(original)
+      const resolved = projectRequire.resolve(
+        isAbsolute(originalPath)
+          ? originalPath
+          : originalPath.startsWith('.')
+            ? resolve(root, originalPath)
+            : originalPath,
+      )
+      if (recognizeMdxPrewarmStep(resolved))
+        requireMdxSafeCompilerOptions(
+          original.options,
+          pipeline.bundler === 'turbo' ? 'wire' : 'hash',
+        )
+    }
     const loaders = invocation
       ? instance.invocationLoadersFor(pipeline, invocation)
       : instance.loadersFor(pipeline).map((loader) => {
@@ -136,7 +153,7 @@ export async function compileMdx(
     if (step)
       devupMdxPrewarm.set(compilerIndex, {
         ...step,
-        compiler: mdxPrewarmCacheOwner(context, pipeline, dirname(filename)),
+        compiler: context.compiler,
       })
     return await runMdxLoaders({
       root,

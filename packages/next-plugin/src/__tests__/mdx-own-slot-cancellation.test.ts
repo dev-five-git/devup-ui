@@ -1,6 +1,7 @@
 import { expect, it } from 'bun:test'
 
 import { compileMdx, createMdxDeadline, MdxCompileError } from '../mdx-prepare'
+import { completeNativeAsync } from './mdx-native-async-control'
 import { fullFixture } from './mdx-own-slot-fixture'
 
 it('publishes nothing when an async full invocation exceeds its bounded deadline', async () => {
@@ -10,6 +11,9 @@ it('publishes nothing when an async full invocation exceeds its bounded deadline
   await expect(
     compileMdx({ ...request, deadline: createMdxDeadline(30_000, 20) }),
   ).rejects.toMatchObject({ filename: request.filename })
+  const raw = request.invocation.loaders[2]
+  const native = await completeNativeAsync(request.filename, raw)
+  expect(native).toMatchObject({ result: [Buffer.from('# original')] })
 })
 
 it('ignores late full-invocation callbacks when caller cancellation wins', async () => {

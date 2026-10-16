@@ -7,6 +7,7 @@ import { afterEach, expect, it } from 'bun:test'
 
 import { composeMdxRules, requireMdxPipeline } from '../mdx-pipeline'
 import { compileMdx, createMdxDeadline } from '../mdx-prepare'
+import { nativePreparationContext } from './mdx-safety-native'
 
 const installedRoot = resolve(import.meta.dir, '../../../../apps/landing')
 const installed = createRequire(join(installedRoot, 'package.json'))
@@ -72,6 +73,7 @@ it.each([true, false])(
       pipeline: requireMdxPipeline(filename, result.pipelines[0]),
       signal: new AbortController().signal,
       deadline: createMdxDeadline(),
+      context: nativePreparationContext(root),
     })
     // Then
     expect(output.filename).toBe(filename)
@@ -126,6 +128,7 @@ it('runs only the pre-extraction segment when actual MDX has raw async loaders t
     pipeline: requireMdxPipeline(filename, result.pipelines[0]),
     signal: new AbortController().signal,
     deadline: createMdxDeadline(),
+    context: nativePreparationContext(root),
   })
   // Then
   expect(output.source).toContain('raw async')
@@ -174,6 +177,7 @@ it.each(['@next/mdx/mdx-js-loader', '@mdx-js/loader'])(
       pipeline: requireMdxPipeline(filename, composed.pipelines[0]),
       signal: new AbortController().signal,
       deadline: createMdxDeadline(),
+      context: nativePreparationContext(root),
     })
     // Then
     expect(observations).toEqual([configured, shared, shared, callback])
@@ -206,6 +210,7 @@ it('retains the real module and compiler location when installed MDX rejects syn
       pipeline: requireMdxPipeline(filename, result.pipelines[0]),
       signal: new AbortController().signal,
       deadline: createMdxDeadline(),
+      context: nativePreparationContext(root),
     }),
   ).rejects.toMatchObject({ filename, line: 3 })
 })

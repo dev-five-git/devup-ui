@@ -172,12 +172,12 @@ it('validates every reported input after a serialized private cache restart', as
   const saved = f.manager.restartCache(first)
   const restarted = createMdxSourceManager(f.binding, saved)
   await restarted.prepare(f.signal)
-  expect(f.counts()).toBe(1)
+  expect(f.counts()).toBe(2)
   f.write('app/build.json', '{"updated":true}')
   // When
   const next = await createMdxSourceManager(f.binding, saved).prepare(f.signal)
   // Then
-  expect(f.counts()).toBe(2)
+  expect(f.counts()).toBe(3)
   expect(f.css(next)).toContain('color:blue')
 })
 
@@ -197,13 +197,16 @@ it('invalidates function-bearing pipeline identity instead of serializing it acr
 it('does not replace a predecessor when cancellation retires an active compilation', async () => {
   // Given
   const f = sourceFixture({ 'app/page.mdx': styledMdx })
-  const first = await f.manager.prepare(f.signal)
   const started = Promise.withResolvers<void>()
   const release = Promise.withResolvers<void>()
+  let active = false
   f.pluginOptions.before = async () => {
+    if (!active) return
     started.resolve()
     await release.promise
   }
+  const first = await f.manager.prepare(f.signal)
+  active = true
   f.write('app/page.mdx', styledMdx.replace('red', 'green'))
   const abort = new AbortController()
   const pending = f.manager.refresh({ generation: first, signal: abort.signal })
