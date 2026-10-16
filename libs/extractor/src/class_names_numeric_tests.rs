@@ -157,6 +157,7 @@ fn class_names_numeric_arguments_keep_unknown_call_guards(#[case] expression: &s
 #[case("cx(-'2')")]
 #[case("cx(+true)")]
 #[case("cx(-false)")]
+#[case("cx(~1)")]
 #[case("cx(-on)")]
 #[case("cx(+on)")]
 #[case("cx(-getClass())")]
