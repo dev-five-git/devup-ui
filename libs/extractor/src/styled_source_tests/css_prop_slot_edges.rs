@@ -120,6 +120,40 @@ fn css_prop_slot_orders_selector_breakpoint_atoms_when_later_parts_overlap(#[cas
         "color:'green'",
         "color:['green','yellow'],_hover:{color:'orange'}",
     );
+    let app = element(filename, &css_props(filename, "responsive", ""));
+    let source = format!(
+        "{base}const responsive=css({{color:['blue','pink'],_hover:{{color:'purple'}}}});const App=()=>{app};"
+    );
+    // When: the compiled call renders its composed class list.
+    let result = execute(
+        filename,
+        &source,
+        "const raw=App();const final=render(raw);JSON.stringify([raw.target===Card,values(final,'color'),values(final,'color',1),values(final,'color',0,'&:hover'),slots(final),trace]);",
+    );
+    // Then: every key has exactly its later atom, never a losing own class.
+    assert_eq!(
+        result,
+        serde_json::json!([
+            true,
+            ["blue"],
+            ["pink"],
+            ["purple"],
+            [],
+            ["controller", "leaf"]
+        ])
+    );
+}
+
+#[rstest]
+#[case("test.tsx")]
+#[case("test.ts")]
+#[serial]
+fn css_prop_slot_retains_responsive_base_when_raw_arrays_are_fallbacks(#[case] filename: &str) {
+    // Given: raw Emotion fallback arrays overlap a captured responsive Devup base.
+    let base = CAPTURED.replace(
+        "color:'green'",
+        "color:['green','yellow'],_hover:{color:'orange'}",
+    );
     let app = element(
         filename,
         &css_props(
@@ -135,13 +169,13 @@ fn css_prop_slot_orders_selector_breakpoint_atoms_when_later_parts_overlap(#[cas
         &source,
         "const raw=App();const final=render(raw);JSON.stringify([raw.target===Card,values(final,'color'),values(final,'color',1),values(final,'color',0,'&:hover'),slots(final),trace]);",
     );
-    // Then: every key has exactly its later atom, never a losing own class.
+    // Then: fallback declarations replace level zero only, preserving captures and level one.
     assert_eq!(
         result,
         serde_json::json!([
             true,
-            ["blue"],
-            ["pink"],
+            ["blue;color:pink"],
+            ["yellow"],
             ["purple"],
             [],
             ["controller", "leaf"]
