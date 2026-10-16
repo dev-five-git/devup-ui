@@ -4,6 +4,8 @@ use css::class_map::reset_class_map;
 use css::file_map::reset_file_map;
 
 mod binding_edges;
+mod boundary_classes;
+mod boundary_selection;
 mod calls;
 mod capture_edges;
 mod capture_preservation;

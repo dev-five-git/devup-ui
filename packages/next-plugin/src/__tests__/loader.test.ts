@@ -156,8 +156,10 @@ describe('devupUILoader', () => {
   // Test WATCH mode init (lines 55-67) + CSS writing (lines 94-111)
   it('should initialize watch mode and write css files', async () => {
     existsSyncSpy.mockReturnValue(true)
-    readFileSyncSpy.mockReturnValue(
-      '{"theme": {"colors": {"primary": "#fff"}}}',
+    readFileSyncSpy.mockImplementation((path: unknown) =>
+      String(path).endsWith('tw.css')
+        ? '@theme { --color-brand: #0af; }'
+        : '{"theme": {"colors": {"primary": "#fff"}}, "tailwind": {"css": "tw.css"}}',
     )
     exportSheetSpy.mockReturnValue('sheet')
     exportClassMapSpy.mockReturnValue('classMap')
@@ -207,7 +209,9 @@ describe('devupUILoader', () => {
     expect(existsSyncSpy).toHaveBeenCalledWith('themeFile')
     expect(registerThemeSpy).toHaveBeenCalledWith({
       colors: { primary: '#fff' },
+      tailwindCss: '@theme { --color-brand: #0af; }',
     })
+    expect(t.addDependency).toHaveBeenCalledWith(resolve('tw.css'))
 
     // Verify updatedBaseStyle && watch branch (lines 94-99)
     expect(writeFileSpy).toHaveBeenCalledWith(
@@ -582,52 +586,57 @@ export const a = <div css={{ color: 'red' }} />`
         },
       )
 
-      const asyncCallback = mock()
-      const t = {
-        getOptions: () => ({
-          package: 'package',
-          cssDir: 'cssDir',
-          sheetFile: 'sheetFile',
-          classMapFile: 'classMapFile',
-          fileMapFile: 'fileMapFile',
-          themeFile: 'themeFile',
-          watch: true,
-          singleCss: true,
-          coordinatorPortFile: 'coordinator.port',
-        }),
-        async: mock().mockReturnValue(asyncCallback),
-        resourcePath: join(process.cwd(), 'src', 'App.tsx'),
-        addDependency: mock(),
-      }
+      try {
+        const asyncCallback = mock()
+        const t = {
+          getOptions: () => ({
+            package: 'package',
+            cssDir: 'cssDir',
+            sheetFile: 'sheetFile',
+            classMapFile: 'classMapFile',
+            fileMapFile: 'fileMapFile',
+            themeFile: 'themeFile',
+            watch: true,
+            singleCss: true,
+            coordinatorPortFile: 'coordinator.port',
+          }),
+          async: mock().mockReturnValue(asyncCallback),
+          resourcePath: join(process.cwd(), 'src', 'App.tsx'),
+          addDependency: mock(),
+        }
 
-      devupUILoader.bind(asLoaderContext(t))(
-        Buffer.from('source code'),
-        'src/App.tsx',
-      )
-
-      await waitFor(() => {
-        expect(asyncCallback).toHaveBeenCalledWith(
-          null,
-          'coordinator code',
-          '{"version":3}',
+        devupUILoader.bind(asLoaderContext(t))(
+          Buffer.from('source code'),
+          'src/App.tsx',
         )
-      })
 
-      expect(t.addDependency).toHaveBeenCalledWith(resolve('src/tokens.ts'))
-      expect(t.addDependency).not.toHaveBeenCalledWith(resolve('1'))
+        await waitFor(() => {
+          expect(asyncCallback).toHaveBeenCalledWith(
+            null,
+            'coordinator code',
+            '{"version":3}',
+          )
+        })
 
-      // Verify HTTP request was made
-      expect(requestSpy).toHaveBeenCalledTimes(1)
-      const reqOptions = requestSpy.mock.calls[0]![0] as Record<string, unknown>
-      expect(reqOptions.hostname).toBe('127.0.0.1')
-      expect(reqOptions.port).toBe(12345)
-      expect(reqOptions.path).toBe('/extract')
-      expect(reqOptions.method).toBe('POST')
+        expect(t.addDependency).toHaveBeenCalledWith(resolve('src/tokens.ts'))
+        expect(t.addDependency).not.toHaveBeenCalledWith(resolve('1'))
 
-      // Verify NO WASM functions were called
-      expect(codeExtractSpy).not.toHaveBeenCalled()
+        // Verify HTTP request was made
+        expect(requestSpy).toHaveBeenCalledTimes(1)
+        const reqOptions = requestSpy.mock.calls[0]![0] as Record<
+          string,
+          unknown
+        >
+        expect(reqOptions.hostname).toBe('127.0.0.1')
+        expect(reqOptions.port).toBe(12345)
+        expect(reqOptions.path).toBe('/extract')
+        expect(reqOptions.method).toBe('POST')
 
-      requestSpy.mockRestore()
+        // Verify NO WASM functions were called
+        expect(codeExtractSpy).not.toHaveBeenCalled()
+      } finally {
+        requestSpy.mockRestore()
+      }
     })
 
     it('should handle coordinator HTTP error', async () => {
@@ -641,6 +650,66 @@ export const a = <div css={{ color: 'red' }} />`
               if (event === 'error') {
                 // Trigger error asynchronously
                 setTimeout(() => handler(new Error('connection refused')), 0)
+              }
+              return fakeReq
+            }),
+            write: mock(),
+            end: mock(),
+          }
+          return asClientRequest(fakeReq)
+        },
+      )
+
+      try {
+        const asyncCallback = mock()
+        const t = {
+          getOptions: () => ({
+            package: 'package',
+            cssDir: 'cssDir',
+            sheetFile: 'sheetFile',
+            classMapFile: 'classMapFile',
+            fileMapFile: 'fileMapFile',
+            themeFile: 'themeFile',
+            watch: true,
+            singleCss: true,
+            coordinatorPortFile: 'coordinator.port',
+          }),
+          async: mock().mockReturnValue(asyncCallback),
+          resourcePath: join(process.cwd(), 'src', 'App.tsx'),
+          addDependency: mock(),
+        }
+
+        devupUILoader.bind(asLoaderContext(t))(
+          Buffer.from('source code'),
+          'src/App.tsx',
+        )
+
+        await waitFor(() => {
+          expect(asyncCallback).toHaveBeenCalledWith(expect.any(Error))
+        })
+      } finally {
+        requestSpy.mockRestore()
+      }
+    })
+
+    it('should report a coordinator that no longer answers', async () => {
+      existsSyncSpy.mockReturnValue(true)
+      readFileSyncSpy.mockReturnValue('12346')
+
+      const requestSpy = spyOn(http, 'request').mockImplementation(
+        (_options: any, _callback?: any) => {
+          const fakeReq = {
+            on: mock((event: string, handler: (...args: unknown[]) => void) => {
+              if (event === 'error') {
+                setTimeout(
+                  () =>
+                    handler(
+                      Object.assign(new Error('refused'), {
+                        code: 'ECONNREFUSED',
+                      }),
+                    ),
+                  0,
+                )
               }
               return fakeReq
             }),
@@ -675,12 +744,15 @@ export const a = <div css={{ color: 'red' }} />`
       )
 
       await waitFor(() => {
-        expect(asyncCallback).toHaveBeenCalledWith(expect.any(Error))
+        expect(asyncCallback).toHaveBeenCalledWith(
+          expect.objectContaining({
+            message: expect.stringContaining('coordinator.port'),
+          }),
+        )
       })
 
       requestSpy.mockRestore()
     })
-
     it('should handle coordinator non-200 response', async () => {
       existsSyncSpy.mockReturnValue(true)
       readFileSyncSpy.mockReturnValue('12345')
@@ -708,36 +780,38 @@ export const a = <div css={{ color: 'red' }} />`
         },
       )
 
-      const asyncCallback = mock()
-      const t = {
-        getOptions: () => ({
-          package: 'package',
-          cssDir: 'cssDir',
-          sheetFile: 'sheetFile',
-          classMapFile: 'classMapFile',
-          fileMapFile: 'fileMapFile',
-          themeFile: 'themeFile',
-          watch: true,
-          singleCss: true,
-          coordinatorPortFile: 'coordinator.port',
-        }),
-        async: mock().mockReturnValue(asyncCallback),
-        resourcePath: join(process.cwd(), 'src', 'App.tsx'),
-        addDependency: mock(),
-      }
+      try {
+        const asyncCallback = mock()
+        const t = {
+          getOptions: () => ({
+            package: 'package',
+            cssDir: 'cssDir',
+            sheetFile: 'sheetFile',
+            classMapFile: 'classMapFile',
+            fileMapFile: 'fileMapFile',
+            themeFile: 'themeFile',
+            watch: true,
+            singleCss: true,
+            coordinatorPortFile: 'coordinator.port',
+          }),
+          async: mock().mockReturnValue(asyncCallback),
+          resourcePath: join(process.cwd(), 'src', 'App.tsx'),
+          addDependency: mock(),
+        }
 
-      devupUILoader.bind(asLoaderContext(t))(
-        Buffer.from('source code'),
-        'src/App.tsx',
-      )
-
-      await waitFor(() => {
-        expect(asyncCallback).toHaveBeenCalledWith(
-          new Error('extraction failed on server'),
+        devupUILoader.bind(asLoaderContext(t))(
+          Buffer.from('source code'),
+          'src/App.tsx',
         )
-      })
 
-      requestSpy.mockRestore()
+        await waitFor(() => {
+          expect(asyncCallback).toHaveBeenCalledWith(
+            new Error('extraction failed on server'),
+          )
+        })
+      } finally {
+        requestSpy.mockRestore()
+      }
     })
 
     it('should handle non-object coordinator response', async () => {
@@ -763,36 +837,38 @@ export const a = <div css={{ color: 'red' }} />`
         },
       )
 
-      const asyncCallback = mock()
-      const t = {
-        getOptions: () => ({
-          package: 'package',
-          cssDir: 'cssDir',
-          sheetFile: 'sheetFile',
-          classMapFile: 'classMapFile',
-          fileMapFile: 'fileMapFile',
-          themeFile: 'themeFile',
-          watch: true,
-          singleCss: true,
-          coordinatorPortFile: 'coordinator.port',
-        }),
-        async: mock().mockReturnValue(asyncCallback),
-        resourcePath: join(process.cwd(), 'src', 'App.tsx'),
-        addDependency: mock(),
-      }
+      try {
+        const asyncCallback = mock()
+        const t = {
+          getOptions: () => ({
+            package: 'package',
+            cssDir: 'cssDir',
+            sheetFile: 'sheetFile',
+            classMapFile: 'classMapFile',
+            fileMapFile: 'fileMapFile',
+            themeFile: 'themeFile',
+            watch: true,
+            singleCss: true,
+            coordinatorPortFile: 'coordinator.port',
+          }),
+          async: mock().mockReturnValue(asyncCallback),
+          resourcePath: join(process.cwd(), 'src', 'App.tsx'),
+          addDependency: mock(),
+        }
 
-      devupUILoader.bind(asLoaderContext(t))(
-        Buffer.from('source code'),
-        'src/App.tsx',
-      )
-
-      await waitFor(() => {
-        expect(asyncCallback).toHaveBeenCalledWith(
-          new Error('Coordinator response missing code'),
+        devupUILoader.bind(asLoaderContext(t))(
+          Buffer.from('source code'),
+          'src/App.tsx',
         )
-      })
 
-      requestSpy.mockRestore()
+        await waitFor(() => {
+          expect(asyncCallback).toHaveBeenCalledWith(
+            new Error('Coordinator response missing code'),
+          )
+        })
+      } finally {
+        requestSpy.mockRestore()
+      }
     })
 
     it('should handle coordinator response without code', async () => {
@@ -819,36 +895,38 @@ export const a = <div css={{ color: 'red' }} />`
         },
       )
 
-      const asyncCallback = mock()
-      const t = {
-        getOptions: () => ({
-          package: 'package',
-          cssDir: 'cssDir',
-          sheetFile: 'sheetFile',
-          classMapFile: 'classMapFile',
-          fileMapFile: 'fileMapFile',
-          themeFile: 'themeFile',
-          watch: true,
-          singleCss: true,
-          coordinatorPortFile: 'coordinator.port',
-        }),
-        async: mock().mockReturnValue(asyncCallback),
-        resourcePath: join(process.cwd(), 'src', 'App.tsx'),
-        addDependency: mock(),
-      }
+      try {
+        const asyncCallback = mock()
+        const t = {
+          getOptions: () => ({
+            package: 'package',
+            cssDir: 'cssDir',
+            sheetFile: 'sheetFile',
+            classMapFile: 'classMapFile',
+            fileMapFile: 'fileMapFile',
+            themeFile: 'themeFile',
+            watch: true,
+            singleCss: true,
+            coordinatorPortFile: 'coordinator.port',
+          }),
+          async: mock().mockReturnValue(asyncCallback),
+          resourcePath: join(process.cwd(), 'src', 'App.tsx'),
+          addDependency: mock(),
+        }
 
-      devupUILoader.bind(asLoaderContext(t))(
-        Buffer.from('source code'),
-        'src/App.tsx',
-      )
-
-      await waitFor(() => {
-        expect(asyncCallback).toHaveBeenCalledWith(
-          new Error('Coordinator response missing code'),
+        devupUILoader.bind(asLoaderContext(t))(
+          Buffer.from('source code'),
+          'src/App.tsx',
         )
-      })
 
-      requestSpy.mockRestore()
+        await waitFor(() => {
+          expect(asyncCallback).toHaveBeenCalledWith(
+            new Error('Coordinator response missing code'),
+          )
+        })
+      } finally {
+        requestSpy.mockRestore()
+      }
     })
 
     it('should handle malformed coordinator response', async () => {
@@ -874,34 +952,36 @@ export const a = <div css={{ color: 'red' }} />`
         },
       )
 
-      const asyncCallback = mock()
-      const t = {
-        getOptions: () => ({
-          package: 'package',
-          cssDir: 'cssDir',
-          sheetFile: 'sheetFile',
-          classMapFile: 'classMapFile',
-          fileMapFile: 'fileMapFile',
-          themeFile: 'themeFile',
-          watch: true,
-          singleCss: true,
-          coordinatorPortFile: 'coordinator.port',
-        }),
-        async: mock().mockReturnValue(asyncCallback),
-        resourcePath: join(process.cwd(), 'src', 'App.tsx'),
-        addDependency: mock(),
+      try {
+        const asyncCallback = mock()
+        const t = {
+          getOptions: () => ({
+            package: 'package',
+            cssDir: 'cssDir',
+            sheetFile: 'sheetFile',
+            classMapFile: 'classMapFile',
+            fileMapFile: 'fileMapFile',
+            themeFile: 'themeFile',
+            watch: true,
+            singleCss: true,
+            coordinatorPortFile: 'coordinator.port',
+          }),
+          async: mock().mockReturnValue(asyncCallback),
+          resourcePath: join(process.cwd(), 'src', 'App.tsx'),
+          addDependency: mock(),
+        }
+
+        devupUILoader.bind(asLoaderContext(t))(
+          Buffer.from('source code'),
+          'src/App.tsx',
+        )
+
+        await waitFor(() => {
+          expect(asyncCallback).toHaveBeenCalledWith(expect.any(Error))
+        })
+      } finally {
+        requestSpy.mockRestore()
       }
-
-      devupUILoader.bind(asLoaderContext(t))(
-        Buffer.from('source code'),
-        'src/App.tsx',
-      )
-
-      await waitFor(() => {
-        expect(asyncCallback).toHaveBeenCalledWith(expect.any(Error))
-      })
-
-      requestSpy.mockRestore()
     })
 
     it('should retry and error when coordinatorPortFile never appears', async () => {
@@ -934,7 +1014,11 @@ export const a = <div css={{ color: 'red' }} />`
       // Retries 20 times × 50ms = 1s max, then calls back with error
       await waitFor(() => {
         expect(asyncCallback).toHaveBeenCalledWith(
-          new Error('Coordinator port file not found'),
+          expect.objectContaining({
+            message: expect.stringContaining(
+              'Coordinator port file not found: nonexistent.port',
+            ),
+          }),
         )
       }, 3000)
 
@@ -980,36 +1064,42 @@ export const a = <div css={{ color: 'red' }} />`
         },
       )
 
-      const asyncCallback = mock()
-      const t = {
-        getOptions: () => ({
-          package: 'package',
-          cssDir: 'cssDir',
-          watch: true,
-          singleCss: true,
-          coordinatorPortFile: 'coordinator.port',
-          sheetFile: 'sheetFile',
-          classMapFile: 'classMapFile',
-          fileMapFile: 'fileMapFile',
-          themeFile: 'themeFile',
-        }),
-        async: mock().mockReturnValue(asyncCallback),
-        resourcePath: join(process.cwd(), 'src', 'App.tsx'),
-        addDependency: mock(),
-      }
+      try {
+        const asyncCallback = mock()
+        const t = {
+          getOptions: () => ({
+            package: 'package',
+            cssDir: 'cssDir',
+            watch: true,
+            singleCss: true,
+            coordinatorPortFile: 'coordinator.port',
+            sheetFile: 'sheetFile',
+            classMapFile: 'classMapFile',
+            fileMapFile: 'fileMapFile',
+            themeFile: 'themeFile',
+          }),
+          async: mock().mockReturnValue(asyncCallback),
+          resourcePath: join(process.cwd(), 'src', 'App.tsx'),
+          addDependency: mock(),
+        }
 
-      devupUILoader.bind(asLoaderContext(t))(Buffer.from('code'), 'src/App.tsx')
-
-      await waitFor(() => {
-        expect(asyncCallback).toHaveBeenCalledWith(
-          null,
-          'coordinator code',
-          null,
+        devupUILoader.bind(asLoaderContext(t))(
+          Buffer.from('code'),
+          'src/App.tsx',
         )
-      })
 
-      expect(requestSpy).toHaveBeenCalledTimes(1)
-      requestSpy.mockRestore()
+        await waitFor(() => {
+          expect(asyncCallback).toHaveBeenCalledWith(
+            null,
+            'coordinator code',
+            null,
+          )
+        })
+
+        expect(requestSpy).toHaveBeenCalledTimes(1)
+      } finally {
+        requestSpy.mockRestore()
+      }
     })
 
     it('should handle error when reading coordinator port file fails', async () => {
@@ -1081,7 +1171,83 @@ export const a = <div css={{ color: 'red' }} />`
         },
       )
 
-      const makeContext = () => ({
+      try {
+        const makeContext = () => ({
+          getOptions: () => ({
+            package: 'package',
+            cssDir: 'cssDir',
+            sheetFile: 'sheetFile',
+            classMapFile: 'classMapFile',
+            fileMapFile: 'fileMapFile',
+            themeFile: 'themeFile',
+            watch: true,
+            singleCss: true,
+            coordinatorPortFile: 'coordinator.port',
+          }),
+          async: mock().mockReturnValue(mock()),
+          resourcePath: join(process.cwd(), 'src', 'test.tsx'),
+          addDependency: mock(),
+        })
+
+        // First call reads port from file
+        devupUILoader.bind(asLoaderContext(makeContext()))(
+          Buffer.from('code'),
+          'test.tsx',
+        )
+        await waitFor(() => {
+          expect(requestSpy).toHaveBeenCalledTimes(1)
+        })
+
+        // Second call should use cached port (readFileSync called only once for port)
+        devupUILoader.bind(asLoaderContext(makeContext()))(
+          Buffer.from('code'),
+          'test.tsx',
+        )
+        await waitFor(() => {
+          expect(requestSpy).toHaveBeenCalledTimes(2)
+        })
+
+        // readFileSync should only be called once for the port file
+        // (existsSync is called each time, but readFileSync for port file only once due to caching)
+        const portReads = readFileSyncSpy.mock.calls.filter(
+          (call: unknown[]) => call[0] === 'coordinator.port',
+        )
+        expect(portReads.length).toBe(1)
+      } finally {
+        requestSpy.mockRestore()
+      }
+    })
+  })
+})
+
+describe('devupUILoader connection diagnostics', () => {
+  it('reports the unreachable endpoint and port file on connection errors', async () => {
+    existsSyncSpy.mockReturnValue(true)
+    readFileSyncSpy.mockReturnValue('12346')
+
+    const requestSpy = spyOn(http, 'request').mockImplementation(() => {
+      const fakeReq = {
+        on: mock((event: string, handler: (...args: unknown[]) => void) => {
+          if (event === 'error') {
+            queueMicrotask(() =>
+              handler(
+                Object.assign(new Error('refused'), {
+                  code: 'ECONNREFUSED',
+                }),
+              ),
+            )
+          }
+          return fakeReq
+        }),
+        write: mock(),
+        end: mock(),
+      }
+      return asClientRequest(fakeReq)
+    })
+
+    try {
+      const asyncCallback = mock()
+      const t = {
         getOptions: () => ({
           package: 'package',
           cssDir: 'cssDir',
@@ -1093,37 +1259,27 @@ export const a = <div css={{ color: 'red' }} />`
           singleCss: true,
           coordinatorPortFile: 'coordinator.port',
         }),
-        async: mock().mockReturnValue(mock()),
-        resourcePath: join(process.cwd(), 'src', 'test.tsx'),
+        async: mock().mockReturnValue(asyncCallback),
+        resourcePath: join(process.cwd(), 'src', 'App.tsx'),
         addDependency: mock(),
-      })
+      }
 
-      // First call reads port from file
-      devupUILoader.bind(asLoaderContext(makeContext()))(
-        Buffer.from('code'),
-        'test.tsx',
+      devupUILoader.bind(asLoaderContext(t))(
+        Buffer.from('source code'),
+        'src/App.tsx',
       )
+
       await waitFor(() => {
-        expect(requestSpy).toHaveBeenCalledTimes(1)
+        expect(asyncCallback).toHaveBeenCalledWith(
+          expect.objectContaining({
+            message: expect.stringContaining(
+              'Coordinator unreachable at 127.0.0.1:12346 (unknown owner, port file coordinator.port): refused.',
+            ),
+          }),
+        )
       })
-
-      // Second call should use cached port (readFileSync called only once for port)
-      devupUILoader.bind(asLoaderContext(makeContext()))(
-        Buffer.from('code'),
-        'test.tsx',
-      )
-      await waitFor(() => {
-        expect(requestSpy).toHaveBeenCalledTimes(2)
-      })
-
-      // readFileSync should only be called once for the port file
-      // (existsSync is called each time, but readFileSync for port file only once due to caching)
-      const portReads = readFileSyncSpy.mock.calls.filter(
-        (call: unknown[]) => call[0] === 'coordinator.port',
-      )
-      expect(portReads.length).toBe(1)
-
+    } finally {
       requestSpy.mockRestore()
-    })
+    }
   })
 })

@@ -13,6 +13,7 @@ impl<'a> DevupVisitor<'a> {
         captured: &mut Vec<Captured<'a>>,
         style_order: Option<u8>,
     ) {
+        self.style_values.read_in_class(&self.ast, value);
         let (styles, replacement) = crate::prop_modify_utils::compile_tailwind_class_name(
             &self.ast,
             Some(value),

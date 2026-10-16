@@ -19,16 +19,6 @@ ToBTreeSet {
         Static(
             ExtractStaticStyle {
                 property: "opacity",
-                value: ".5",
-                level: 0,
-                selector: None,
-                style_order: None,
-                layer: None,
-            },
-        ),
-        Static(
-            ExtractStaticStyle {
-                property: "opacity",
                 value: "1",
                 level: 0,
                 selector: None,
@@ -37,5 +27,5 @@ ToBTreeSet {
             },
         ),
     },
-    code: "import \"@devup-ui/core/devup-ui.css\";\n((__devupChoice0) => <div className={`a ${{\n\t\"0\": \"b\",\n\t\"1\": \"c\"\n}[__devupChoice0?.[\"0\"]] || \"\"}`} />)([[\"0\"], [\"1\"]][0]);\n",
+    code: "import \"@devup-ui/core/devup-ui.css\";\n<div className=\"a b\" />;\n",
 }

@@ -1,6 +1,14 @@
-import { AST_NODE_TYPES, type TSESTree } from '@typescript-eslint/utils'
+import {
+  AST_NODE_TYPES,
+  type TSESLint,
+  type TSESTree,
+} from '@typescript-eslint/utils'
 
-import type { ImportStorage } from './import-storage'
+import {
+  type ImportStorage,
+  STYLE_COMPONENTS,
+  STYLE_FUNCTIONS,
+} from './import-storage'
 
 /** The HTML, SVG and React attributes a Devup UI component passes through instead of reading as styles, as `is_special_property` in `libs/css/src/is_special_property.rs` lists them */
 export const SPECIAL_PROPERTIES = new Set<string>([
@@ -375,19 +383,7 @@ const OWN_PROPS = new Set(['as', 'props', 'styleVars', 'styleOrder'])
 /** Keys of style objects holding data rather than style values */
 const DATA_KEYS = new Set(['imports', 'fontFaces', 'params'])
 
-const STYLE_FUNCTIONS = new Set(['css', 'globalCss', 'keyframes'])
-
-const STYLE_COMPONENTS = new Set([
-  'Box',
-  'Button',
-  'Center',
-  'Flex',
-  'Grid',
-  'Image',
-  'Input',
-  'Text',
-  'VStack',
-])
+type Variable = TSESLint.Scope.Variable
 
 /** Whether a Devup UI component passes the prop `name` through instead of reading it as a style */
 export function isPassThroughProp(name: string): boolean {
@@ -400,34 +396,101 @@ export function isPassThroughProp(name: string): boolean {
   )
 }
 
-function isStyleComponent(
-  name: TSESTree.JSXTagNameExpression,
+/** The Devup UI name `expression` reads: an import by name, or a member of the package imported whole */
+function devupName(
+  expression: TSESTree.Node,
   importStorage: ImportStorage,
-): boolean {
-  if (name.type === AST_NODE_TYPES.JSXIdentifier)
-    return STYLE_COMPONENTS.has(importStorage.importedName(name.name) ?? '')
-  return (
-    name.type === AST_NODE_TYPES.JSXMemberExpression &&
-    name.object.type === AST_NODE_TYPES.JSXIdentifier &&
-    importStorage.isImportObject(name.object.name) &&
-    STYLE_COMPONENTS.has(name.property.name)
+): string | undefined {
+  if (expression.type === AST_NODE_TYPES.Identifier)
+    return importStorage.importedName(expression.name)
+  if (
+    expression.type === AST_NODE_TYPES.MemberExpression &&
+    !expression.computed &&
+    expression.object.type === AST_NODE_TYPES.Identifier &&
+    expression.property.type === AST_NODE_TYPES.Identifier &&
+    importStorage.isImportObject(expression.object.name)
   )
+    return expression.property.name
+  return undefined
 }
 
-function isStyleFunction(
-  callee: TSESTree.Expression,
+/** The Devup UI component a JSX name reads, if it reads one */
+export function componentName(
+  name: TSESTree.JSXTagNameExpression,
+  importStorage: ImportStorage,
+): string | undefined {
+  if (name.type === AST_NODE_TYPES.JSXIdentifier)
+    return importStorage.importedName(name.name)
+  return name.type === AST_NODE_TYPES.JSXMemberExpression &&
+    name.object.type === AST_NODE_TYPES.JSXIdentifier &&
+    importStorage.isImportObject(name.object.name)
+    ? name.property.name
+    : undefined
+}
+
+/** Whether `node` is a JSX element the build reads styles from: a style component, or Emotion's `Global` with its `styles` */
+function isStyleElement(
+  node: TSESTree.JSXOpeningElement,
   importStorage: ImportStorage,
 ): boolean {
-  if (callee.type === AST_NODE_TYPES.Identifier)
-    return STYLE_FUNCTIONS.has(importStorage.importedName(callee.name) ?? '')
-  return (
-    callee.type === AST_NODE_TYPES.MemberExpression &&
-    !callee.computed &&
-    callee.object.type === AST_NODE_TYPES.Identifier &&
-    callee.property.type === AST_NODE_TYPES.Identifier &&
-    importStorage.isImportObject(callee.object.name) &&
-    STYLE_FUNCTIONS.has(callee.property.name)
-  )
+  const name = componentName(node.name, importStorage) ?? ''
+  return STYLE_COMPONENTS.has(name) || name === 'Global'
+}
+
+export function isStyledReference(
+  node: TSESTree.Node,
+  importStorage: ImportStorage,
+): boolean {
+  return devupName(node, importStorage) === 'styled'
+}
+
+/** Whether `node` still waits for rules: `styled.div`, `styled(tag)`, and what `.attrs()` and `.withConfig()` give */
+export function isStyledFactory(
+  node: TSESTree.Node,
+  importStorage: ImportStorage,
+): boolean {
+  if (node.type === AST_NODE_TYPES.MemberExpression)
+    return (
+      !node.computed &&
+      node.property.type === AST_NODE_TYPES.Identifier &&
+      isStyledReference(node.object, importStorage)
+    )
+  if (node.type !== AST_NODE_TYPES.CallExpression) return false
+  const callee = node.callee
+  if (callee.type === AST_NODE_TYPES.MemberExpression)
+    return (
+      !callee.computed &&
+      callee.property.type === AST_NODE_TYPES.Identifier &&
+      (callee.property.name === 'attrs' ||
+        callee.property.name === 'withConfig') &&
+      isStyledFactory(callee.object, importStorage)
+    )
+  return node.arguments.length === 1 && isStyledReference(callee, importStorage)
+}
+
+/** The rules `styled(tag, rules)` takes in its second argument, which must be an object literal for the build to read it */
+function styledRulesOf(
+  call: TSESTree.CallExpression,
+  importStorage: ImportStorage,
+): TSESTree.CallExpressionArgument[] {
+  const rules = call.arguments[1]
+  return call.arguments.length === 2 &&
+    isStyledReference(call.callee, importStorage) &&
+    rules.type === AST_NODE_TYPES.ObjectExpression
+    ? [rules]
+    : []
+}
+
+/** The arguments of `call` the build reads as styles: those of `css`, `globalCss`, `keyframes` and `createGlobalStyle`, of a styled component given its tag first (`styled.div({ ... })`), and the rules of `styled(tag, { ... })`. Null if it reads none */
+export function styleArguments(
+  call: TSESTree.CallExpression,
+  importStorage: ImportStorage,
+): TSESTree.CallExpressionArgument[] | null {
+  if (STYLE_FUNCTIONS.has(devupName(call.callee, importStorage) ?? ''))
+    return call.arguments
+  if (isStyledFactory(call.callee, importStorage)) return call.arguments
+  const rules = styledRulesOf(call, importStorage)
+  return rules.length > 0 ? rules : null
 }
 
 /** The Devup UI style component or style function closest above `node` */
@@ -435,15 +498,19 @@ export function styleRoot(
   node: TSESTree.Node,
   importStorage: ImportStorage,
 ): TSESTree.JSXOpeningElement | TSESTree.CallExpression | null {
-  for (let current = node.parent; current; current = current.parent) {
+  for (
+    let current: TSESTree.Node | undefined = node.parent;
+    current;
+    current = current.parent
+  ) {
     if (
       current.type === AST_NODE_TYPES.JSXOpeningElement &&
-      isStyleComponent(current.name, importStorage)
+      isStyleElement(current, importStorage)
     )
       return current
     if (
       current.type === AST_NODE_TYPES.CallExpression &&
-      isStyleFunction(current.callee, importStorage)
+      styleArguments(current, importStorage)
     )
       return current
   }
@@ -451,7 +518,11 @@ export function styleRoot(
 }
 
 /** Whether the build reads what `parent` holds in `child` as a style value: a style prop, a style object value, a responsive array, a branch of a condition or a spread */
-function holdsStyle(parent: TSESTree.Node, child: TSESTree.Node): boolean {
+function holdsStyle(
+  parent: TSESTree.Node,
+  child: TSESTree.Node,
+  importStorage: ImportStorage,
+): boolean {
   switch (parent.type) {
     case AST_NODE_TYPES.ObjectExpression:
     case AST_NODE_TYPES.ArrayExpression:
@@ -474,28 +545,91 @@ function holdsStyle(parent: TSESTree.Node, child: TSESTree.Node): boolean {
       )
     case AST_NODE_TYPES.ConditionalExpression:
       return parent.test !== child
-    case AST_NODE_TYPES.JSXAttribute:
-      return (
-        parent.name.type === AST_NODE_TYPES.JSXIdentifier &&
-        !isPassThroughProp(parent.name.name)
-      )
+    case AST_NODE_TYPES.JSXAttribute: {
+      if (parent.name.type !== AST_NODE_TYPES.JSXIdentifier) return false
+      return componentName(parent.parent.name, importStorage) === 'Global'
+        ? parent.name.name === 'styles'
+        : !isPassThroughProp(parent.name.name)
+    }
     default:
       return false
   }
 }
 
-/** Whether the build reads `node` as a style value of `root`, every node between them holding it as a style */
-export function isStylePosition(
-  node: TSESTree.Node,
-  root: TSESTree.Node,
+/** Where a style value the build reads sits: below `root`, from `start` down. `start` is `root`, or the value of a module-level `const` every use of which the build reads as a style */
+export interface StyleSite {
+  root: TSESTree.JSXOpeningElement | TSESTree.CallExpression
+  start: TSESTree.Node
+}
+
+/** The root the build reads `child` from when it is the direct style value of `root`: an attribute of the element, or an argument it reads */
+function readsDirectly(
+  child: TSESTree.Node,
+  root: TSESTree.JSXOpeningElement | TSESTree.CallExpression,
+  importStorage: ImportStorage,
 ): boolean {
+  return (
+    root.type !== AST_NODE_TYPES.CallExpression ||
+    (styleArguments(root, importStorage) ?? []).includes(
+      child as TSESTree.CallExpressionArgument,
+    )
+  )
+}
+
+/** Where the build reads `node` as a style value, every node between holding it as a style. Through a module-level `const` the build inlines, if it is not exported and nothing but styles reads it */
+export function styleValueSite(
+  node: TSESTree.Node,
+  importStorage: ImportStorage,
+  visiting: ReadonlySet<Variable> = new Set(),
+): StyleSite | null {
+  const root = styleRoot(node, importStorage)
   let child = node
   let parent = node.parent
-  while (parent && parent !== root && holdsStyle(parent, child)) {
+  while (
+    parent &&
+    parent !== root &&
+    holdsStyle(parent, child, importStorage)
+  ) {
     child = parent
     parent = parent.parent
   }
-  return parent === root
+  if (root && parent === root)
+    return readsDirectly(child, root, importStorage)
+      ? { root, start: root }
+      : null
+  return parent?.type === AST_NODE_TYPES.VariableDeclarator &&
+    parent.init === child
+    ? constSite(parent, child, importStorage, visiting)
+    : null
+}
+
+function constSite(
+  declarator: TSESTree.VariableDeclarator,
+  init: TSESTree.Node,
+  importStorage: ImportStorage,
+  visiting: ReadonlySet<Variable>,
+): StyleSite | null {
+  const declaration = declarator.parent
+  if (
+    declarator.id.type !== AST_NODE_TYPES.Identifier ||
+    declaration.kind !== 'const' ||
+    declaration.parent.type !== AST_NODE_TYPES.Program
+  )
+    return null
+  const [variable] = importStorage.declaredVariables(declarator)
+  if (!variable || visiting.has(variable)) return null
+  const reads = variable.references.filter((reference) => !reference.init)
+  if (reads.length === 0) return null
+  const inner = new Set(visiting).add(variable)
+  let site: StyleSite | null = null
+  for (const reference of reads) {
+    const read = reference.isWrite()
+      ? null
+      : styleValueSite(reference.identifier, importStorage, inner)
+    if (!read) return null
+    site ??= { root: read.root, start: init }
+  }
+  return site
 }
 
 /** The Devup UI style component or function reading `node` as a style value, if one does */
@@ -503,6 +637,5 @@ export function styleValueRoot(
   node: TSESTree.Node,
   importStorage: ImportStorage,
 ): TSESTree.JSXOpeningElement | TSESTree.CallExpression | null {
-  const root = styleRoot(node, importStorage)
-  return root && isStylePosition(node, root) ? root : null
+  return styleValueSite(node, importStorage)?.root ?? null
 }

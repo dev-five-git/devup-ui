@@ -6,11 +6,18 @@ declare module '@emotion/styled' {
   export default styled
 }
 
+declare module '@emotion/css' {
+  export { css, globalCss as injectGlobal, keyframes } from '@devup-ui/react'
+  export type { ClassNamesArg } from '@devup-ui/react/compat'
+  export { cx, merge } from '@devup-ui/react/compat'
+}
+
 declare module '@emotion/react' {
   export { css, keyframes } from '@devup-ui/react'
   export type { StyledTheme as Theme } from '@devup-ui/react/compat'
   export type { ClassNamesArg, ClassNamesContent } from '@devup-ui/react/compat'
   export {
+    CacheProvider,
     ClassNames,
     jsx as createElement,
     Global,
