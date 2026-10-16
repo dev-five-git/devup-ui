@@ -4,6 +4,29 @@ import { join } from 'node:path'
 
 import { expect, it } from 'bun:test'
 
+for (const singleCss of ['0', '1'])
+  it(`delivers actual HTML-linked CSS through cold/repeat/warm webpack builds (singleCss=${singleCss})`, () => {
+    // Given identical physical server, edge, client and accepted-package fixtures.
+    // When real production documents and their stylesheet URLs are requested.
+    const result = spawnSync(
+      'node',
+      [join(import.meta.dir, 'webpack-owned.cjs')],
+      {
+        encoding: 'utf8',
+        maxBuffer: 16 * 1024 * 1024,
+        env: { ...process.env, DEVUP_NEXT_SINGLE_CSS: singleCss },
+      },
+    )
+    // Then the driver verifies class-bound declarations and cache stability.
+    console.info(result.stdout + result.stderr)
+    expect(result.error).toBeUndefined()
+    expect(result.status).toBe(0)
+    expect(result.stdout).toContain('webpack production proof passed')
+    expect(result.stdout).toContain('"event":"tree_exit"')
+    expect(result.stdout).toContain('"active":[]')
+    expect(result.stdout).toContain('"removed":true')
+  }, 130000)
+
 for (const fault of [
   '',
   'build-timeout',

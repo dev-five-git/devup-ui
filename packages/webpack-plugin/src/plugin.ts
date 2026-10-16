@@ -84,6 +84,8 @@ export interface DevupUIWebpackPluginOptions {
    * Set to `false` to disable specific aliases
    */
   importAliases?: ImportAliases
+  /** Adapter-owned complete extraction set; undefined keeps generic entry reachability. */
+  readonly productionPrewarmFiles?: readonly string[]
 }
 
 export class DevupUIWebpackPlugin {
@@ -105,6 +107,7 @@ export class DevupUIWebpackPlugin {
     prefix,
     shorthands,
     atomHoist,
+    productionPrewarmFiles,
     importAliases: userImportAliases,
   }: Partial<DevupUIWebpackPluginOptions> = {}) {
     registerShorthands(shorthands ?? {})
@@ -120,7 +123,21 @@ export class DevupUIWebpackPlugin {
       include,
       singleCss,
       prefix,
+      shorthands,
       atomHoist,
+      productionPrewarmFiles:
+        productionPrewarmFiles === undefined
+          ? undefined
+          : [
+              ...new Set(
+                productionPrewarmFiles.map((file) =>
+                  relative(
+                    process.cwd(),
+                    resolve(process.cwd(), file.replaceAll('\\', '/')),
+                  ).replaceAll('\\', '/'),
+                ),
+              ),
+            ].sort(),
     }
 
     this.sheetFile = join(this.options.distDir, 'sheet.json')
@@ -166,9 +183,9 @@ export class DevupUIWebpackPlugin {
    * holds the styles of every one (all collapsed members of a bucket, and the
    * shared base), not just those of the modules webpack happened to build
    * first. Mirrors the loader's `codeExtract` call (same filename keying +
-   * options) so re-extraction during compilation is idempotent. Best-effort:
-   * extraction errors are swallowed so a single bad file never breaks the
-   * build, and a stylesheet still missing styles is rebuilt by another pass.
+   * options) so re-extraction during compilation is idempotent. Generic entry
+   * discovery remains best-effort; an adapter's complete set is authoritative
+   * and its read/extraction failures must fail the build.
    */
   private prewarmExtractor(entries: string[]) {
     try {
@@ -180,11 +197,21 @@ export class DevupUIWebpackPlugin {
           toId: (path) => relative(cwd, path).replaceAll('\\', '/'),
         }),
       )
-      for (const file of computeReachableFiles({
-        srcDir: resolve(cwd, 'src'),
-        tsconfigPath: resolve(cwd, 'tsconfig.json'),
-        entries,
-      })) {
+      const files =
+        this.options.productionPrewarmFiles?.map((file) =>
+          resolve(cwd, file),
+        ) ??
+        computeReachableFiles({
+          srcDir: resolve(cwd, 'src'),
+          tsconfigPath: resolve(cwd, 'tsconfig.json'),
+          entries,
+        })
+      if (this.options.productionPrewarmFiles !== undefined) {
+        seedFileNumbers({ seedFileMap }, [
+          ...this.options.productionPrewarmFiles,
+        ])
+      }
+      for (const file of files) {
         const relativePath = relative(cwd, file).replaceAll('\\', '/')
         let relCssDir = relative(dirname(file), this.options.cssDir).replaceAll(
           '\\',
@@ -202,7 +229,8 @@ export class DevupUIWebpackPlugin {
           this.importAliases,
         )
       }
-    } catch {
+    } catch (error) {
+      if (this.options.productionPrewarmFiles !== undefined) throw error
       // Best-effort warm-up; on failure the css-loader still serves whatever
       // atoms were extracted, matching pre-fix behavior.
     }
@@ -212,9 +240,20 @@ export class DevupUIWebpackPlugin {
     // A build starts from its own options, not from what an earlier build in
     // this process left in the engine
     const endBuild = beginBuild({ resetBuildState })
-    compiler.hooks.shutdown?.tap('DevupUIWebpackPlugin', endBuild)
+    try {
+      compiler.hooks.shutdown?.tap('DevupUIWebpackPlugin', endBuild)
+      this.initialize(compiler)
+    } catch (error) {
+      // Webpack cannot return the compiler when apply throws, so no caller can close it.
+      endBuild()
+      throw error
+    }
+  }
+
+  private initialize(compiler: Compiler) {
     setDebug(this.options.debug)
     setPrefix(this.options.prefix ?? null)
+    registerShorthands(this.options.shorthands ?? {})
     const existsDevup = existsSync(this.options.devupFile)
     // read devup.json
     if (!existsSync(this.options.distDir))
@@ -287,7 +326,12 @@ export class DevupUIWebpackPlugin {
           )
         }
       }
-    } catch {
+    } catch (error) {
+      if (
+        !this.options.watch &&
+        this.options.productionPrewarmFiles !== undefined
+      )
+        throw error
       // Best-effort; on failure canonical() is the identity (no merge) and atom
       // hoisting stays off.
     }
@@ -308,7 +352,12 @@ export class DevupUIWebpackPlugin {
             toId: (path) => relative(cwd, path).replaceAll('\\', '/'),
           }),
         )
-      } catch {
+      } catch (error) {
+        if (
+          !this.options.watch &&
+          this.options.productionPrewarmFiles !== undefined
+        )
+          throw error
         // Best-effort; numbering falls back to arrival order.
       }
     // Pre-warm the extractor so the css-loader serves COMPLETE CSS.

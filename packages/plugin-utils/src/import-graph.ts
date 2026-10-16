@@ -662,7 +662,10 @@ export function importedSpecifiers(
   return parseImports(filename, source).map(({ specifier }) => specifier)
 }
 
-function parseImports(filename: string, source: string): ImportReference[] {
+export function parseImports(
+  filename: string,
+  source: string,
+): ImportReference[] {
   const astImports = parseImportsWithOxc(filename, source)
   if (astImports) return astImports
   return scanImports(source)
