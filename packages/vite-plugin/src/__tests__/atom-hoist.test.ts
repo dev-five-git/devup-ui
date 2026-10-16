@@ -5,7 +5,7 @@ import {
   runAtomHoistIntegration,
 } from '../../../next-plugin/src/__tests__/atom-hoist-harness'
 
-it('emits real hoisted JSX atoms and private CSS in either transform order and fresh builds', () => {
+it('emits real per-file fallback JSX atoms and private CSS in either transform order and fresh builds', () => {
   // Given: two explicit entries reach a shared styled module.
   const setup = `
 const { DevupUI } = await import(${builtPluginEntry('vite-plugin')});
@@ -28,7 +28,10 @@ const finish = async () => {
 };
 `
   // When: real configResolved, transform, load, and generateBundle hooks run.
-  const [forward, backward, rebuilt] = runAtomHoistIntegration(setup)
+  const [forward, backward, rebuilt] = runAtomHoistIntegration(
+    setup,
+    'per-file',
+  )
   // Then: disk writes consume shared dirtiness and all loaded classes agree.
   expect(backward).toBe(forward)
   expect(rebuilt).toBe(forward)

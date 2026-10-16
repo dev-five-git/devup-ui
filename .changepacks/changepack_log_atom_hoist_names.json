@@ -6,6 +6,6 @@
     "packages/vite-plugin/package.json": "Patch",
     "packages/webpack-plugin/package.json": "Patch"
   },
-  "note": "Enable atomHoist by default at two routes, with numeric zero opting out and no effect in singleCss mode. Allocate shared and file-local short counter names through deterministic reserved slots instead of content names; preserve frozen route plans, dynamic !important, local keyframes, first-value responsive tokens, shared CSS updates and persisted placement. Bump the naming cache generation. No new build errors.",
+  "note": "Enable atomHoist by default at two routes in Webpack, Rsbuild and Next Webpack, with numeric zero opting out and no effect in singleCss mode. Keep Vite and Next Turbopack in per-file mode until their shared-slot reservation lands, warning once for explicit positive atomHoist requests. Allocate shared and file-local short counter names through deterministic reserved slots instead of content names; preserve frozen route plans, dynamic !important, local keyframes, first-value responsive tokens, shared CSS updates and persisted placement. Bump the naming cache generation. No new build errors.",
   "date": "2026-10-01T00:00:00.000Z"
 }

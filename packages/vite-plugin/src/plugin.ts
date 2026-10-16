@@ -4,9 +4,7 @@ import { basename, dirname, join, relative, resolve } from 'node:path'
 
 import {
   beginBuild,
-  buildCanonicalMap,
   collectNumberedFiles,
-  computeFileReach,
   createCompatTypes,
   createModuleResolver,
   createNodeModulesExcludeRegex,
@@ -18,7 +16,6 @@ import {
   type ImportAliases,
   loadDevupConfig,
   mergeImportAliases,
-  planAtomHoist,
   seedFileNumbers,
   tailwindCssFiles,
   withTailwindCss,
@@ -28,13 +25,10 @@ import {
   getCss,
   getDefaultTheme,
   getThemeInterface,
-  importCanonicalMap,
-  importFileRoutes,
   registerShorthands,
   registerTheme,
   resetBuildState,
   seedFileMap,
-  setAtomHoist,
   setDebug,
   setModuleResolver,
   setPrefix,
@@ -242,12 +236,9 @@ export interface DevupUIPluginOptions {
   prefix?: string
   shorthands?: CustomShorthands
   /**
-   * Atom-level route-aware hoisting threshold. Defaults to 2; 0 disables it.
-   * Positive thresholds are clamped to >= 2. Canonical buckets reached by at
-   * least this many routes use global short counter names in devup-ui.css;
-   * other buckets keep per-file counter names. Composes with single-importer
-   * collapse. Routes are inferred from entry points and dynamic-import targets.
-   * Ignored when singleCss is true; fewer than two routes yields no hoisted plan.
+   * Reserved for route-aware atom hoisting after PR B adds shared class-slot
+   * reservation. Until then, Vite keeps per-file names and warns
+   * once for explicit finite positive requests. Ignored in singleCss mode.
    */
   atomHoist?: number
   /**
@@ -305,13 +296,23 @@ export function DevupUI({
   singleCss = false,
   prefix,
   shorthands,
-  atomHoist = 2,
+  atomHoist,
   importAliases: userImportAliases,
 }: Partial<DevupUIPluginOptions> = {}): PluginOption {
   // A build starts from its own options: whatever an earlier build in this
   // process left in the engine (prefix, hoisting, routes, buckets, numbers,
   // styles) is gone unless another build is still running.
   const endBuild = beginBuild({ resetBuildState })
+  if (
+    !singleCss &&
+    atomHoist !== undefined &&
+    Number.isFinite(atomHoist) &&
+    atomHoist > 0
+  ) {
+    console.warn(
+      '[devup-ui] Vite atomHoist is unavailable until shared class-slot reservation lands in PR B; keeping per-file names, while existing shared slots remain arrival-ordered.',
+    )
+  }
   registerShorthands(shorthands ?? {})
   setDebug(debug)
   setPrefix(prefix ?? null)
@@ -375,65 +376,6 @@ export function DevupUI({
         singleCss,
       })
 
-      // Per-file atom hoisting defaults to 2; 0 disables it, singleCss ignores it.
-      // Before any transform, routes are imported, then the threshold is set;
-      // bucket eligibility freezes at the first extraction. Late reach cannot promote
-      // or rename a bucket until resetBuildState. Composes with
-      // single-importer collapse: both are keyed by the canonical bucket. Vite
-      // passes the ABSOLUTE module id to codeExtract, so the graph maps use
-      // absolute keys (keyBy: 'absolute') to match the engine's bucket keys.
-      const atomMode = !singleCss && Number.isFinite(atomHoist) && atomHoist > 0
-      if (atomMode) {
-        try {
-          const root = projectRoot
-          // App Router projects keep their sources in `app/`, so a hardcoded
-          // `src/` made the whole pre-pass a silent no-op for them.
-          const srcDir = sourceDirs[0] ?? resolve(root, 'src')
-          const tsconfigPath = resolve(root, 'tsconfig.json')
-          // C: prefer the bundler's real JS entries; fall back to the heuristic
-          // (files with no importer) when input is html-only / unavailable.
-          const input = config.build?.rollupOptions?.input
-          const rawEntries =
-            typeof input === 'string'
-              ? [input]
-              : Array.isArray(input)
-                ? input
-                : input && typeof input === 'object'
-                  ? Object.values(input)
-                  : []
-          const entries = rawEntries
-            .filter((e): e is string => typeof e === 'string')
-            .filter((e) => /\.(tsx|ts|jsx|js|mjs)$/i.test(e))
-            .map((e) => resolve(root, e))
-
-          const canonicalMap = buildCanonicalMap({
-            srcDir,
-            tsconfigPath,
-            cwd: root,
-            keyBy: 'absolute',
-          })
-          importCanonicalMap(canonicalMap)
-
-          const fileReach = computeFileReach({
-            srcDir,
-            tsconfigPath,
-            cwd: root,
-            keyBy: 'absolute',
-            entries: entries.length > 0 ? entries : undefined,
-          })
-          const plan = planAtomHoist(canonicalMap, fileReach, atomHoist)
-          if (plan) {
-            importFileRoutes(plan.reachByBucket)
-            setAtomHoist(plan.threshold)
-          } else {
-            console.info(
-              '[devup-ui] fewer than 2 routes were detected; atom hoisting is a no-op (single-entry/SPA).',
-            )
-          }
-        } catch {
-          // Best-effort; on failure atom hoisting stays off (identity).
-        }
-      }
       try {
         // Numbers come from the sorted paths of every file the build can
         // extract (source and included packages), not from arrival order.

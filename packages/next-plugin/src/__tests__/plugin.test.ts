@@ -269,62 +269,68 @@ describe('DevupUINextPlugin', () => {
     })
   })
   describe('turbo', () => {
-    it('reuses production setup across Next config module reloads', () => {
-      setNodeEnv('production')
-      process.env.TURBOPACK = '1'
-      process.env.DEVUP_UI_PROFILE = '1'
-      getDefaultThemeSpy.mockReturnValue('dark')
-      const filename = resolve('src/app/page.tsx')
-      const graphSpy = spyOn(
-        importGraphModule,
-        'buildStaticImportGraph',
-      ).mockReturnValue(createSingleFileGraph(filename))
-      const compiledSpy = spyOn(
-        importGraphModule,
-        'computeCompiledFiles',
-      ).mockReturnValue(['src/app/page.tsx'])
-      const profileSpy = spyOn(console, 'info').mockImplementation(() => {})
-      const handoffFile = join('df', 'setup.bin')
-      let handoff: Parameters<typeof fs.writeFileSync>[1] | undefined
-      writeFileSyncSpy.mockImplementation((path, data) => {
-        if (String(path) === handoffFile) handoff = data
-      })
-      readFileSyncSpy.mockImplementation((path) => {
-        if (String(path) === handoffFile && handoff !== undefined) {
-          return handoff as never
-        }
-        return '{}' as never
-      })
-      unlinkSyncSpy.mockImplementation((path) => {
-        if (String(path) === handoffFile) throw new Error('cleanup failed')
-      })
-
-      try {
-        const first = DevupUI({}, { singleCss: true })
-        reloadTurboSetupModuleForTesting()
-        const second = DevupUI(
-          { env: { EXISTING: 'value' } },
-          { singleCss: true },
-        )
-
-        expect(second.turbopack?.rules).toEqual(first.turbopack?.rules)
-        expect(second.env).toEqual({
-          DEVUP_UI_DEFAULT_THEME: 'dark',
-          EXISTING: 'value',
+    it.each([true, false])(
+      'W66 availability: reuses production setup and warns once across config reloads (singleCss %s)',
+      (singleCss) => {
+        setNodeEnv('production')
+        process.env.TURBOPACK = '1'
+        process.env.DEVUP_UI_PROFILE = '1'
+        getDefaultThemeSpy.mockReturnValue('dark')
+        const filename = resolve('src/app/page.tsx')
+        const graphSpy = spyOn(
+          importGraphModule,
+          'buildStaticImportGraph',
+        ).mockReturnValue(createSingleFileGraph(filename))
+        const compiledSpy = spyOn(
+          importGraphModule,
+          'computeCompiledFiles',
+        ).mockReturnValue(['src/app/page.tsx'])
+        const profileSpy = spyOn(console, 'info').mockImplementation(() => {})
+        const warningSpy = spyOn(console, 'warn').mockImplementation(() => {})
+        const handoffFile = join('df', 'setup.bin')
+        let handoff: Parameters<typeof fs.writeFileSync>[1] | undefined
+        writeFileSyncSpy.mockImplementation((path, data) => {
+          if (String(path) === handoffFile) handoff = data
         })
-        expect(graphSpy).toHaveBeenCalledTimes(1)
-        expect(codeExtractWithoutSourceMapSpy).toHaveBeenCalledTimes(1)
-        expect(startCoordinatorSpy).toHaveBeenCalledTimes(1)
-        expect(unlinkSyncSpy).toHaveBeenCalledWith(handoffFile)
-        expect(profileSpy).toHaveBeenCalledWith(
-          expect.stringContaining('"cacheHit":true'),
-        )
-      } finally {
-        profileSpy.mockRestore()
-        compiledSpy.mockRestore()
-        graphSpy.mockRestore()
-      }
-    })
+        readFileSyncSpy.mockImplementation((path) => {
+          if (String(path) === handoffFile && handoff !== undefined) {
+            return handoff as never
+          }
+          return '{}' as never
+        })
+        unlinkSyncSpy.mockImplementation((path) => {
+          if (String(path) === handoffFile) throw new Error('cleanup failed')
+        })
+
+        try {
+          const first = DevupUI({}, { singleCss, atomHoist: 2 })
+          reloadTurboSetupModuleForTesting()
+          const second = DevupUI(
+            { env: { EXISTING: 'value' } },
+            { singleCss, atomHoist: 2 },
+          )
+
+          expect(second.turbopack?.rules).toEqual(first.turbopack?.rules)
+          expect(second.env).toEqual({
+            DEVUP_UI_DEFAULT_THEME: 'dark',
+            EXISTING: 'value',
+          })
+          expect(graphSpy).toHaveBeenCalledTimes(1)
+          expect(codeExtractWithoutSourceMapSpy).toHaveBeenCalledTimes(1)
+          expect(startCoordinatorSpy).toHaveBeenCalledTimes(1)
+          expect(warningSpy).toHaveBeenCalledTimes(singleCss ? 0 : 1)
+          expect(unlinkSyncSpy).toHaveBeenCalledWith(handoffFile)
+          expect(profileSpy).toHaveBeenCalledWith(
+            expect.stringContaining('"cacheHit":true'),
+          )
+        } finally {
+          warningSpy.mockRestore()
+          profileSpy.mockRestore()
+          compiledSpy.mockRestore()
+          graphSpy.mockRestore()
+        }
+      },
+    )
 
     it('falls back when a production setup handoff is not reusable', () => {
       setNodeEnv('production')
@@ -1240,34 +1246,51 @@ export const box = style({ color: 'red' })`
         thresholdSpy.mockRestore()
       })
 
+      it.each([undefined, 0, -1, NaN, Infinity, -Infinity, 0.5, 1, 2, 3])(
+        'W66 availability: keeps per-file mode for request %s',
+        (atomHoist) => {
+          // Given: multi-route reach and legacy whole-file hoisting are available.
+          process.env.DEVUP_HOIST_V = '3'
+          const warningSpy = spyOn(console, 'warn').mockImplementation(() => {})
+          try {
+            // When: Turbopack receives the numeric request.
+            DevupUI({}, { atomHoist })
+            // Then: only explicit finite positive requests warn; none install atoms.
+            expect(routesSpy).not.toHaveBeenCalled()
+            expect(importRoutesSpy).not.toHaveBeenCalled()
+            expect(thresholdSpy).not.toHaveBeenCalled()
+            expect(canonicalSpy).toHaveBeenCalledWith(
+              expect.objectContaining({ hoistV: 3 }),
+            )
+            expect(warningSpy).toHaveBeenCalledTimes(
+              atomHoist !== undefined &&
+                Number.isFinite(atomHoist) &&
+                atomHoist > 0
+                ? 1
+                : 0,
+            )
+          } finally {
+            warningSpy.mockRestore()
+          }
+        },
+      )
+
       it.each([
         ['omitted', {}],
         ['undefined', { atomHoist: undefined }],
       ])(
-        'matches explicit 2 on two routes when atomHoist is %s',
+        'keeps omitted atomHoist %s silent without consulting route reach',
         (_label, options) => {
-          // Given: the same two-route plan under explicit 2.
-          DevupUI({}, { atomHoist: 2 })
-          const explicitReach = [...importRoutesSpy.mock.calls]
-          expect(thresholdSpy).toHaveBeenCalledWith(2)
-          expect(explicitReach).toEqual([
-            [
-              {
-                'src/app/layout.tsx': [0, 1],
-                'src/app/a/page.tsx': [0],
-                'src/app/b/page.tsx': [1],
-              },
-            ],
-          ])
-          thresholdSpy.mockClear()
-          importRoutesSpy.mockClear()
-
-          // When: the public option uses its default.
-          DevupUI({}, options)
-
-          // Then: the same plan is installed with threshold 2.
-          expect(importRoutesSpy.mock.calls).toEqual(explicitReach)
-          expect(thresholdSpy.mock.calls).toEqual([[2]])
+          const warningSpy = spyOn(console, 'warn').mockImplementation(() => {})
+          try {
+            DevupUI({}, options)
+            expect(routesSpy).not.toHaveBeenCalled()
+            expect(importRoutesSpy).not.toHaveBeenCalled()
+            expect(thresholdSpy).not.toHaveBeenCalled()
+            expect(warningSpy).not.toHaveBeenCalled()
+          } finally {
+            warningSpy.mockRestore()
+          }
         },
       )
 
@@ -1285,12 +1308,13 @@ export const box = style({ color: 'red' })`
         },
       )
 
-      it('preserves a custom threshold above the minimum', () => {
+      it('defers a custom threshold above the minimum until reservation lands', () => {
         // Given: two routes; the threshold must not be replaced by the default.
         // When: the caller requests three routes.
         DevupUI({}, { atomHoist: 3 })
-        // Then: the numeric threshold is forwarded unchanged.
-        expect(thresholdSpy.mock.calls).toEqual([[3]])
+        // Then: unavailable atom hoisting never installs a threshold.
+        expect(thresholdSpy).not.toHaveBeenCalled()
+        expect(routesSpy).not.toHaveBeenCalled()
       })
 
       it.each([
@@ -1336,7 +1360,7 @@ export const box = style({ color: 'red' })`
       )
     })
 
-    it('composes atom hoisting WITH single-importer collapse when atomHoist is set', () => {
+    it('preserves single-importer collapse but defers atom reach when atomHoist is set', () => {
       process.env.TURBOPACK = '1'
       // 4 distinct leaf routes (ids 0..3); layout shared by all four.
       const computeSpy = spyOn(
@@ -1356,23 +1380,16 @@ export const box = style({ color: 'red' })`
       const setAtomHoistSpy = spyOn(wasm, 'setAtomHoist').mockReturnValue(
         undefined,
       )
-      // Collapse and atom hoisting COMPOSE: importCanonicalMap must STILL run.
+      // Collapse must still run while atom hoisting is unavailable.
       const importCanonicalMapSpy = spyOn(
         wasm,
         'importCanonicalMap',
       ).mockReturnValue(undefined)
       try {
         DevupUI({}, { atomHoist: 2 })
-        // reach folded by bucket; mocked FS => empty canonical map => bucket==file
-        expect(importFileRoutesSpy).toHaveBeenCalledWith({
-          'src/app/layout.tsx': [0, 1, 2, 3],
-          'src/app/a/page.tsx': [0],
-          'src/app/b/page.tsx': [1],
-          'src/app/c/page.tsx': [2],
-          'src/app/d/page.tsx': [3],
-        })
-        // direct threshold, clamped to >= 2
-        expect(setAtomHoistSpy).toHaveBeenCalledWith(2)
+        expect(computeSpy).not.toHaveBeenCalled()
+        expect(importFileRoutesSpy).not.toHaveBeenCalled()
+        expect(setAtomHoistSpy).not.toHaveBeenCalled()
         // composition: collapse pre-pass also ran
         expect(importCanonicalMapSpy).toHaveBeenCalled()
       } finally {
@@ -1383,7 +1400,7 @@ export const box = style({ color: 'red' })`
       }
     })
 
-    it('clamps the atomHoist threshold to a minimum of 2', () => {
+    it('defers even the former minimum-clamped atomHoist request', () => {
       process.env.TURBOPACK = '1'
       const computeSpy = spyOn(
         importGraphModule,
@@ -1397,8 +1414,8 @@ export const box = style({ color: 'red' })`
       )
       try {
         DevupUI({}, { atomHoist: 1 })
-        // max(2, 1) === 2
-        expect(setAtomHoistSpy).toHaveBeenCalledWith(2)
+        expect(computeSpy).not.toHaveBeenCalled()
+        expect(setAtomHoistSpy).not.toHaveBeenCalled()
       } finally {
         computeSpy.mockRestore()
         setAtomHoistSpy.mockRestore()

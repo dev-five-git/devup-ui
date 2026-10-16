@@ -2,7 +2,7 @@ import { expect, it } from 'bun:test'
 
 import { builtPluginEntry, runAtomHoistIntegration } from './atom-hoist-harness'
 
-it('loads real hoisted JSX atoms and local CSS in either loader order and fresh builds', () => {
+it('loads real per-file fallback JSX atoms and local CSS in either loader order and fresh builds', () => {
   // Given: two App Router pages reach the same styled module.
   const setup = `
 process.env.TURBOPACK = '1';
@@ -32,7 +32,10 @@ const loadCss = name => invoke(cssLoader, cssOptions, { resourcePath: join(cssDi
 const finish = () => {};
 `
   // When: real plugin configuration and loaders run in isolated processes.
-  const [forward, backward, rebuilt] = runAtomHoistIntegration(setup)
+  const [forward, backward, rebuilt] = runAtomHoistIntegration(
+    setup,
+    'per-file',
+  )
   // Then: declarations match JSX; build ordering and fresh state change nothing.
   expect(backward).toBe(forward)
   expect(rebuilt).toBe(forward)

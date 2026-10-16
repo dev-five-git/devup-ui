@@ -13,7 +13,6 @@ import {
   buildStaticImportGraph,
   collectNumberedFiles,
   computeCompiledFiles,
-  computeFileRoutes,
   createCompatTypes,
   createNodeModulesExcludeRegex,
   createThemeInterfaceArgs,
@@ -21,7 +20,6 @@ import {
   extractedNeedles,
   loadDevupConfigSync,
   mergeImportAliases,
-  planAtomHoist,
   seedFileNumbers,
   type StaticImportGraph,
   withTailwindCss,
@@ -44,10 +42,9 @@ import { loadWasm, loadWebpackPlugin } from './wasm'
 /** Options accepted by the Next.js integration. */
 export type DevupUINextPluginOptions = Partial<DevupUIBasePluginOptions> & {
   /**
-   * Atom-level route-aware hoisting threshold. Defaults to 2; 0 disables it.
-   * Positive thresholds are clamped to >= 2. Eligible canonical buckets use
-   * global short counter names in the shared devup-ui.css; other buckets keep
-   * per-file counter names. Ignored when singleCss is true.
+   * Atom-level route-aware hoisting threshold for webpack (default 2; 0 disables).
+   * Turbopack keeps per-file names until shared class-slot reservation lands in
+   * #752; explicit finite positive requests warn once. Ignored in singleCss mode.
    */
   atomHoist?: number
 }
@@ -153,11 +150,15 @@ export function DevupUI(
       include = [],
       prefix,
       shorthands,
-      atomHoist = 2,
+      atomHoist,
       importAliases: userImportAliases,
     } = options
 
-    const atomMode = !singleCss && Number.isFinite(atomHoist) && atomHoist > 0
+    const requestedAtomHoist =
+      !singleCss &&
+      atomHoist !== undefined &&
+      Number.isFinite(atomHoist) &&
+      atomHoist > 0
     const importAliases = mergeImportAliases(userImportAliases)
     const watch = process.env.NODE_ENV === 'development'
     const sourceMap = watch || config.productionBrowserSourceMaps === true
@@ -174,7 +175,7 @@ export function DevupUI(
     // the coordinator. Calls from the same module instance never reuse it,
     // which avoids turning this into a general cross-build cache.
     const productionSetupKey = JSON.stringify({
-      atomHoist: atomMode ? atomHoist : 0,
+      atomHoist: requestedAtomHoist ? atomHoist : 0,
       cwd: process.cwd(),
       cssDir,
       devupFile,
@@ -210,6 +211,11 @@ export function DevupUI(
       })
       return config
     }
+    if (requestedAtomHoist) {
+      console.warn(
+        '[devup-ui] Turbopack atomHoist is unavailable until shared class-slot reservation lands in #752; keeping per-file names, while existing shared slots remain arrival-ordered.',
+      )
+    }
     if (!existsSync(distDir))
       mkdirSync(distDir, {
         recursive: true,
@@ -233,11 +239,9 @@ export function DevupUI(
       importCanonicalMap,
       importClassMap,
       importFileMap,
-      importFileRoutes,
       importSheet,
       registerShorthands,
       registerTheme,
-      setAtomHoist,
       setPrefix,
     } = wasm
 
@@ -278,20 +282,8 @@ export function DevupUI(
 
     const coordinatorPortFile = resolveCoordinatorPortFile(distDir)
 
-    // Pre-pass: single-importer collapse ALWAYS runs (files with exactly one
-    // importer merge into that importer's bucket, so their identical atoms share
-    // one class). Per-file atom hoisting defaults to 2 routes; 0 disables it.
-    // A canonical bucket whose predeclared route reach is >= atomHoist is
-    // eligible: its atoms get global short counter names in devup-ui.css.
-    // Actual singleCss mode ignores atomHoist, including legacy hoistV policy.
-    //
-    // The two compose because both are keyed by the canonical bucket: the engine
-    // keys property buckets by canonical(filename), and the route-reach map below
-    // is folded onto the SAME canonical bucket. Import routes, then set the
-    // threshold, BEFORE any extraction: eligibility freezes there. Private or
-    // unmapped buckets keep per-file names, and reach seen later cannot promote
-    // or rename them until resetBuildState. The coordinator shares this WASM
-    // instance, so it applies to every /extract.
+    // Collapse and legacy whole-file hoisting remain independent of the deferred
+    // Turbopack atom reservation. Never install atom reach/threshold without it.
     const extract = sourceMap ? codeExtract : codeExtractWithoutSourceMap
     // Hoisted out of the try so the coordinator can receive it for per-bucket
     // completion. Stays `{}` if the best-effort pre-pass fails.
@@ -309,13 +301,9 @@ export function DevupUI(
       // One scan+parse of the source tree, shared by all three consumers below.
       const graph = buildStaticImportGraph(srcDir, tsconfigPath)
       staticGraph = graph
-      // Atom hoisting owns the shared-chunk decision, so collapse runs WITHOUT
-      // the file-level @global hoist (DEVUP_HOIST_V) in atom mode.
-      const hoistV = atomMode
-        ? undefined
-        : process.env.DEVUP_HOIST_V
-          ? Number(process.env.DEVUP_HOIST_V)
-          : undefined
+      const hoistV = process.env.DEVUP_HOIST_V
+        ? Number(process.env.DEVUP_HOIST_V)
+        : undefined
       canonicalMap = buildCanonicalMap({
         srcDir,
         tsconfigPath,
@@ -338,25 +326,6 @@ export function DevupUI(
         graph,
       })
 
-      if (atomMode) {
-        const fileRoutes = computeFileRoutes({
-          srcDir,
-          tsconfigPath,
-          cwd,
-          graph,
-        })
-        // Fold per-file route reach onto the canonical bucket so the keys match
-        // the engine's property bucket keys (canonical(filename)).
-        const plan = planAtomHoist(canonicalMap, fileRoutes, atomHoist)
-        if (plan) {
-          importFileRoutes(plan.reachByBucket)
-          setAtomHoist(plan.threshold)
-        } else {
-          console.info(
-            '[devup-ui] fewer than 2 routes were detected; atom hoisting is a no-op.',
-          )
-        }
-      }
       reportProfile('next.graph', {
         durationMs: elapsedMs(graphStartedAt),
         files: staticGraph.files.length,

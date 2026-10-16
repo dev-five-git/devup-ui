@@ -14,7 +14,10 @@ export function builtPluginEntry(packageName: string, entry = 'index.mjs') {
 
 // A fresh process keeps bun:test's package mocks and WASM globals out of the
 // integration. The plugin, not the harness, configures route reach and hoisting.
-export function runAtomHoistIntegration(setup: string) {
+export function runAtomHoistIntegration(
+  setup: string,
+  placement: 'hoisted' | 'per-file' = 'hoisted',
+) {
   const root = mkdtempSync(join(tmpdir(), 'devup-atom-hoist-'))
   const run = (reverse: boolean) =>
     execFileSync(
@@ -49,7 +52,7 @@ ${setup}
   const outputs = {};
   for (const file of ${reverse} ? [...files].reverse() : files) {
     outputs[file] = await transform(file, sources[file]);
-    if (file === 'src/shared.tsx') {
+    if (file === 'src/shared.tsx' && ${JSON.stringify(placement)} === 'hoisted') {
       const writtenBase = readFileSync(join(cssDir, 'devup-ui.css'), 'utf8');
       assert.match(writtenBase, /color:red(?:;|})/, 'shared CSS dirty signal must reach disk');
       assert.match(writtenBase, /padding:16px(?:;|})/);
@@ -63,11 +66,15 @@ ${setup}
     .map(match => [match[1], match[2].replace(/;$/, '')]);
   const sharedClasses = classes(outputs['src/shared.tsx']);
   assert.equal(sharedClasses.length, 2, 'shared JSX must really be transformed');
-  for (const name of sharedClasses) {
-    assert.equal(declarations(base).filter(([key]) => key === name).length, 1,
-      'shared atom must be defined exactly once');
+  if (${JSON.stringify(placement)} === 'hoisted') {
+    for (const name of sharedClasses) {
+      assert.equal(declarations(base).filter(([key]) => key === name).length, 1,
+        'shared atom must be defined exactly once');
+    }
+    assert.deepEqual(declarations(base).map(([, value]) => value).sort(), ['color:red', 'padding:16px']);
+  } else {
+    assert.deepEqual(declarations(base), [], 'unavailable hoisting must leave base atoms empty');
   }
-  assert.deepEqual(declarations(base).map(([, value]) => value).sort(), ['color:red', 'padding:16px']);
   for (const file of files) {
     const code = outputs[file];
     const imports = [...code.matchAll(/["']([^"']*devup-ui(?:-\d+)?\.css(?:\?fileNum=\d+)?)["']/g)]
@@ -76,7 +83,7 @@ ${setup}
     const loaded = [];
     for (const name of imports) {
       sheets[name] = await loadCss(name);
-      if (name !== 'devup-ui.css') {
+      if (name !== 'devup-ui.css' && ${JSON.stringify(placement)} === 'hoisted') {
         assert.ok(declarations(sheets[name]).every(([, value]) =>
           value !== 'color:red' && value !== 'padding:16px'),
           'hoisted declarations must not be duplicated in local sheets');
@@ -94,9 +101,11 @@ ${setup}
       return [...new Set(matches.map(([, value]) => value))];
     });
     assert.deepEqual(values.sort(), expected.sort());
-    if (file !== 'src/shared.tsx') {
-      assert.ok(generated.every(name => !sharedClasses.includes(name)));
-      assert.ok(declarations(local).some(([, value]) => value === expected[0]), 'private styles stay local');
+    if (file !== 'src/shared.tsx' || ${JSON.stringify(placement)} === 'per-file') {
+      if (file !== 'src/shared.tsx') assert.ok(generated.every(name => !sharedClasses.includes(name)));
+      for (const value of expected) {
+        assert.ok(declarations(local).some(([, declaration]) => declaration === value), 'fallback/private styles stay local');
+      }
     }
   }
   const clean = css => css.replace(/\/\*[\s\S]*?\*\//g, '').trim();
