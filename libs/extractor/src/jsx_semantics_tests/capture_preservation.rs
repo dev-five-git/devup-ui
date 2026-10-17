@@ -5,7 +5,7 @@ use serial_test::serial;
 #[serial]
 fn class_templates_when_captured_keep_their_static_tailwind_rules() {
     let actual = output(&format!(
-        "{BOX}export const a=(get,rest)=><Box className={{`${{get()}} text-blue-500 p-4`}} {{...rest}}/>;"
+        "{BOX}export const a=(get,rest)=><Box className={{`${{get()}} text-[#3B82F6] p-4`}} {{...rest}}/>;"
     ));
     let styles = static_styles(&actual);
     assert!(
@@ -40,4 +40,26 @@ fn a_computed_literal_selector_when_an_unknown_key_can_replace_it_is_located() {
     ));
     assert!(message.contains("cannot use `_hover`"), "{message}");
     assert!(message.starts_with("a.tsx:3:"), "{message}");
+}
+
+#[test]
+#[serial]
+fn named_blue_500_when_captured_keeps_the_main_oklch_palette() {
+    let actual = output(&format!(
+        "{BOX}export const a=(get,rest)=><Box className={{`${{get()}} text-blue-500 p-4`}} {{...rest}}/>;"
+    ));
+    let styles = static_styles(&actual);
+    assert!(
+        styles.iter().any(|(property, value)| {
+            property == "color" && value == "oklch(62.3% .214 259.815)"
+        }),
+        "{styles:?}"
+    );
+    assert!(
+        styles
+            .iter()
+            .any(|(property, value)| property == "padding" && value == "1rem"),
+        "{styles:?}"
+    );
+    assert_eq!(actual.code.matches("get()").count(), 1);
 }

@@ -1,6 +1,7 @@
 import {
   cssUtilsLiteralOnly,
   noDuplicateValue,
+  noRuntimeRead,
   noTypographyTokenPrefix,
   noUselessResponsive,
   noUselessTailingNulls,
@@ -16,6 +17,7 @@ export default [
           'no-useless-tailing-nulls': noUselessTailingNulls,
           'css-utils-literal-only': cssUtilsLiteralOnly,
           'no-duplicate-value': noDuplicateValue,
+          'no-runtime-read': noRuntimeRead,
           'no-useless-responsive': noUselessResponsive,
           'style-order-range': styleOrderRange,
           'no-typography-token-prefix': noTypographyTokenPrefix,
@@ -27,6 +29,7 @@ export default [
       '@devup-ui/no-useless-tailing-nulls': 'error',
       '@devup-ui/css-utils-literal-only': 'error',
       '@devup-ui/no-duplicate-value': 'error',
+      '@devup-ui/no-runtime-read': 'error',
       '@devup-ui/no-useless-responsive': 'error',
       '@devup-ui/style-order-range': 'error',
       '@devup-ui/no-typography-token-prefix': 'error',

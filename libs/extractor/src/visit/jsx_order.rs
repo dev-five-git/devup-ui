@@ -162,10 +162,8 @@ impl<'a> DevupVisitor<'a> {
             Attribute(attribute) if matches!(&attribute.name,Identifier(name) if name.name=="styleOrder")=>attribute.value.as_ref().and_then(crate::utils::jsx_expression_to_number).map(|value|Some(value as u8)),
             _=>None,
         }).flatten();
-        let default_tag = self
-            .bindings
-            .element(&element.opening_element.name)
-            .map_or("div", |kind| kind.to_tag());
+        let kind = self.bindings.element(&element.opening_element.name);
+        let default_tag = kind.as_ref().map_or("div", |kind| kind.to_tag());
         let children_suspend = element.children.iter().any(child_suspends);
         let attributes = &mut element.opening_element.attributes;
         for attribute in attributes.iter_mut() {
@@ -177,6 +175,17 @@ impl<'a> DevupVisitor<'a> {
             {
                 self.style_values.read_in(&self.ast, value);
             }
+        }
+        // A lone primitive class call stays in one final `call() || ""` slot;
+        // there is no other attribute or child whose evaluation it can cross.
+        if kind.is_some()
+            && element.children.is_empty()
+            && let [Attribute(attribute)] = attributes.as_slice()
+            && matches!(&attribute.name, Identifier(name) if name.name == "className")
+            && let Some(value @ Expression::CallExpression(_)) = value_of(attribute)
+            && !suspends(value)
+        {
+            return order;
         }
         let items = self.attribute_items(attributes, kept);
         let Some(last) = last_captured(&items, children_suspend) else {

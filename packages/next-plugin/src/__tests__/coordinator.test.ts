@@ -323,26 +323,27 @@ describe('coordinator', () => {
 
   it('profiles both base CSS serialization paths separately from writes', async () => {
     const originalProfile = process.env.DEVUP_UI_PROFILE
-    process.env.DEVUP_UI_PROFILE = '1'
     const infoSpy = spyOn(console, 'info').mockImplementation(() => {})
-    codeExtractSpy.mockReturnValue({
-      code: 'transformed code',
-      map: undefined,
-      css: 'collected css',
-      cssFile: 'devup-ui-1.css',
-      updatedBaseStyle: false,
-      free: mock(),
-      [Symbol.dispose]: mock(),
-    })
-    getCssSpy.mockImplementation((fileNum: number | null) =>
-      fileNum === null ? 'base-css' : `file-css-${fileNum}`,
-    )
-    exportSheetSpy.mockReturnValue('sheet-json')
-    exportClassMapSpy.mockReturnValue('classmap-json')
-    exportFileMapSpy.mockReturnValue('filemap-json')
-
-    const coordinator = startCoordinator(makeOptions())
+    let coordinator: ReturnType<typeof startCoordinator> | undefined
     try {
+      process.env.DEVUP_UI_PROFILE = '1'
+      codeExtractSpy.mockReturnValue({
+        code: 'transformed code',
+        map: undefined,
+        css: 'collected css',
+        cssFile: 'devup-ui-1.css',
+        updatedBaseStyle: false,
+        free: mock(),
+        [Symbol.dispose]: mock(),
+      })
+      getCssSpy.mockImplementation((fileNum: number | null) =>
+        fileNum === null ? 'base-css' : `file-css-${fileNum}`,
+      )
+      exportSheetSpy.mockReturnValue('sheet-json')
+      exportClassMapSpy.mockReturnValue('classmap-json')
+      exportFileMapSpy.mockReturnValue('filemap-json')
+
+      coordinator = startCoordinator(makeOptions())
       await new Promise((resolve) => setTimeout(resolve, 100))
       const port = parseInt(
         (writeFileSyncSpy.mock.calls[0] as [string, string])[1],
@@ -433,13 +434,13 @@ describe('coordinator', () => {
       })
       expect(baseProfile.cssSnapshotMs).toBeTypeOf('number')
     } finally {
-      coordinator.close()
       infoSpy.mockRestore()
       if (originalProfile === undefined) {
         delete process.env.DEVUP_UI_PROFILE
       } else {
         process.env.DEVUP_UI_PROFILE = originalProfile
       }
+      coordinator?.close()
     }
   })
 
@@ -759,18 +760,20 @@ describe('coordinator', () => {
       return 61_000
     })
 
-    // Request CSS with waitForIdle=true but no extractions ever happen
-    // (totalExtractions === 0), so it should timeout and return CSS anyway
-    const res = await httpRequest(
-      port,
-      'GET',
-      '/css?importMainCss=false&waitForIdle=true',
-    )
+    try {
+      // Request CSS with waitForIdle=true but no extractions ever happen
+      // (totalExtractions === 0), so it should timeout and return CSS anyway
+      const res = await httpRequest(
+        port,
+        'GET',
+        '/css?importMainCss=false&waitForIdle=true',
+      )
 
-    expect(res.status).toBe(200)
-    expect(res.body).toBe('timeout-css')
-
-    dateNowSpy.mockRestore()
+      expect(res.status).toBe(200)
+      expect(res.body).toBe('timeout-css')
+    } finally {
+      dateNowSpy.mockRestore()
+    }
     coordinator.close()
   })
 
@@ -1383,31 +1386,34 @@ describe('coordinator per-bucket completion', () => {
     codeExtractSpy.mockReturnValue(extractResult('devup-ui-1.css'))
     getCssSpy.mockReturnValue('partial-css')
     const warnSpy = spyOn(console, 'warn').mockReturnValue(undefined)
-    // m1 is a member of the bucket but is never POSTed to /extract.
-    const canonicalMap = { 'src/m1.tsx': 'src/bucket.tsx' }
-    const { coordinator, port } = await startAndGetPort(
-      makeOptions({ canonicalMap, idleThresholdMs: 100, maxWaitMs: 150 }),
-    )
-    // Extract only the bucket root; src/m1.tsx stays missing forever.
-    await extract(port, 'src/bucket.tsx')
+    try {
+      // m1 is a member of the bucket but is never POSTed to /extract.
+      const canonicalMap = { 'src/m1.tsx': 'src/bucket.tsx' }
+      const { coordinator, port } = await startAndGetPort(
+        makeOptions({ canonicalMap, idleThresholdMs: 100, maxWaitMs: 150 }),
+      )
+      // Extract only the bucket root; src/m1.tsx stays missing forever.
+      await extract(port, 'src/bucket.tsx')
 
-    const t0 = Date.now()
-    const res = await httpRequest(
-      port,
-      'GET',
-      '/css?fileNum=1&importMainCss=true&waitForIdle=true',
-    )
-    const elapsed = Date.now() - t0
+      const t0 = Date.now()
+      const res = await httpRequest(
+        port,
+        'GET',
+        '/css?fileNum=1&importMainCss=true&waitForIdle=true',
+      )
+      const elapsed = Date.now() - t0
 
-    // Resolves via the hard timeout (fail open) rather than hanging.
-    expect(res.status).toBe(200)
-    expect(res.body).toBe('partial-css')
-    expect(elapsed).toBeGreaterThanOrEqual(150)
-    expect(warnSpy).toHaveBeenCalled()
-    expect(getCssSpy).toHaveBeenCalledWith(1, true)
+      // Resolves via the hard timeout (fail open) rather than hanging.
+      expect(res.status).toBe(200)
+      expect(res.body).toBe('partial-css')
+      expect(elapsed).toBeGreaterThanOrEqual(150)
+      expect(warnSpy).toHaveBeenCalled()
+      expect(getCssSpy).toHaveBeenCalledWith(1, true)
 
-    warnSpy.mockRestore()
-    coordinator.close()
+      coordinator.close()
+    } finally {
+      warnSpy.mockRestore()
+    }
   })
 
   // T4: base css resolves DETERMINISTICALLY once every route-reachable runtime
@@ -1548,31 +1554,37 @@ describe('coordinator per-bucket completion', () => {
     codeExtractSpy.mockReturnValue(extractResult('devup-ui-1.css'))
     getCssSpy.mockReturnValue('bucket-css')
     const infoSpy = spyOn(console, 'info').mockReturnValue(undefined)
-    const warnSpy = spyOn(console, 'warn').mockReturnValue(undefined)
-    const canonicalMap = { 'src/phantom.tsx': 'src/bucket.tsx' }
-    const { coordinator, port } = await startAndGetPort(
-      makeOptions({ canonicalMap, quietMs: 100, maxWaitMs: 10_000 }),
-    )
-    await extract(port, 'src/bucket.tsx')
+    try {
+      const warnSpy = spyOn(console, 'warn').mockReturnValue(undefined)
+      try {
+        const canonicalMap = { 'src/phantom.tsx': 'src/bucket.tsx' }
+        const { coordinator, port } = await startAndGetPort(
+          makeOptions({ canonicalMap, quietMs: 100, maxWaitMs: 10_000 }),
+        )
+        await extract(port, 'src/bucket.tsx')
 
-    const t0 = Date.now()
-    const res = await httpRequest(
-      port,
-      'GET',
-      '/css?fileNum=1&importMainCss=true&waitForIdle=true',
-    )
-    const elapsed = Date.now() - t0
+        const t0 = Date.now()
+        const res = await httpRequest(
+          port,
+          'GET',
+          '/css?fileNum=1&importMainCss=true&waitForIdle=true',
+        )
+        const elapsed = Date.now() - t0
 
-    expect(res.status).toBe(200)
-    expect(res.body).toBe('bucket-css')
-    // Resolved by the quiet exit (~100ms), NOT the 10s wall-clock backstop.
-    expect(elapsed).toBeLessThan(5000)
-    expect(infoSpy).toHaveBeenCalled()
-    expect(warnSpy).not.toHaveBeenCalled()
+        expect(res.status).toBe(200)
+        expect(res.body).toBe('bucket-css')
+        // Resolved by the quiet exit (~100ms), NOT the 10s wall-clock backstop.
+        expect(elapsed).toBeLessThan(5000)
+        expect(infoSpy).toHaveBeenCalled()
+        expect(warnSpy).not.toHaveBeenCalled()
 
-    infoSpy.mockRestore()
-    warnSpy.mockRestore()
-    coordinator.close()
+        coordinator.close()
+      } finally {
+        warnSpy.mockRestore()
+      }
+    } finally {
+      infoSpy.mockRestore()
+    }
   })
 
   // T8: the same legacy quiet fallback applies to an expected base file when

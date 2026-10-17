@@ -9,6 +9,63 @@ use oxc_ast_visit::VisitMut;
 use oxc_span::SPAN;
 use rustc_hash::FxHashMap;
 
+#[cfg(test)]
+#[path = "selected_capture_tests.rs"]
+mod tests;
+
+/// Only an own array position whose entire table has no observable evaluation
+/// can keep its literal key for the existing member extractor to prune.
+fn literal_own_selection(member: &oxc_ast::ast::ComputedMemberExpression<'_>) -> bool {
+    if member.optional {
+        return false;
+    }
+    let mut key = &member.expression;
+    while let Expression::ParenthesizedExpression(inner) = key {
+        key = &inner.expression;
+    }
+    let Expression::NumericLiteral(key) = key else {
+        return false;
+    };
+    if !key.value.is_finite() || key.value < 0.0 || key.value.fract() != 0.0 {
+        return false;
+    }
+    let mut table = &member.object;
+    loop {
+        table = match table {
+            Expression::ParenthesizedExpression(inner) => &inner.expression,
+            Expression::TSAsExpression(inner) => &inner.expression,
+            _ => break,
+        };
+    }
+    let Expression::ArrayExpression(array) = table else {
+        return false;
+    };
+    if !array.elements.iter().enumerate().any(|(index, _)| {
+        u32::try_from(index).is_ok_and(|index| f64::from(index).total_cmp(&key.value).is_eq())
+    }) {
+        return false;
+    }
+    let mut pending = vec![table];
+    while let Some(value) = pending.pop() {
+        match value {
+            Expression::ArrayExpression(array) => {
+                for element in &array.elements {
+                    let Some(value) = element.as_expression() else {
+                        return false;
+                    };
+                    pending.push(value);
+                }
+            }
+            Expression::StringLiteral(_)
+            | Expression::NumericLiteral(_)
+            | Expression::BooleanLiteral(_)
+            | Expression::NullLiteral(_) => {}
+            _ => return false,
+        }
+    }
+    true
+}
+
 impl<'a> DevupVisitor<'a> {
     fn selected_slot(&self, name: &str, index: usize) -> Expression<'a> {
         Expression::new_computed_member_expression(
@@ -62,6 +119,9 @@ impl<'a> DevupVisitor<'a> {
         member: &mut oxc_ast::ast::ComputedMemberExpression<'a>,
         captured: &mut Vec<Captured<'a>>,
     ) -> bool {
+        if literal_own_selection(member) {
+            return true;
+        }
         let name = self.names.fresh("__devupChoice");
         let mut table = crate::utils::unwrap_syntax_only(&member.object)
             .clone_in_with_semantic_ids(self.ast.allocator());
