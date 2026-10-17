@@ -14,6 +14,7 @@ import {
   loadDevupConfig,
   type NonphysicalIdStore,
   planAtomHoist,
+  type ProductionManifestFile,
   type ProductionNumberingPlan,
   type ResolutionInputObserver,
   resolveProjectPaths,
@@ -25,6 +26,8 @@ import type { ResolvedConfig } from 'vite'
 
 import type { DevupUIPluginOptions } from './plugin'
 import { productionEntryInputs } from './production-entry-inputs'
+import { productionRootClosure } from './production-root-closure'
+import { productionRootSources } from './production-root-sources'
 
 export type ProductionOptions = Readonly<
   Pick<
@@ -133,17 +136,54 @@ export async function prepareProductionManifest(
       exclude,
       entryClosure,
     })
-    const files = discovered.filter((file) => {
-      if (!gate.selected(file.path) || /\.d\.[mc]?ts$/i.test(file.path))
-        return false
-      if (
-        entryClosure &&
-        options.mdxExtensions.includes(extname(file.path).toLowerCase())
+    const rootFiles = entryClosure
+      ? productionRootClosure(
+          {
+            key,
+            files: productionRootSources(
+              {
+                roots,
+                cwd: config.root,
+                includeMdx: options.mdxExtensions,
+                exclude,
+              },
+              options.include,
+            ),
+            resolverOptions: {
+              cwd: config.root,
+              conditions,
+              includeMdx: options.mdxExtensions,
+              onResolutionInputs: observe,
+            },
+            toId: (path) => path.replaceAll('\\', '/'),
+          },
+          { include: options.include, exclude },
+          gate,
+        )
+      : []
+    const memberships = new Map<string, ProductionManifestFile>()
+    for (const file of [...discovered, ...rootFiles])
+      memberships.set(JSON.stringify([file.context, file.path, file.id]), file)
+    const compare = (a: string, b: string) => (a < b ? -1 : a > b ? 1 : 0)
+    const files = [...memberships.values()]
+      .sort(
+        (a, b) =>
+          compare(a.realPath, b.realPath) ||
+          compare(a.path, b.path) ||
+          compare(a.context, b.context) ||
+          compare(a.id, b.id),
       )
-        return true
-      const code = readFileSync(file.path, 'utf8')
-      return gate.relevant(code)
-    })
+      .filter((file) => {
+        if (!gate.selected(file.path) || /\.d\.[mc]?ts$/i.test(file.path))
+          return false
+        if (
+          entryClosure &&
+          options.mdxExtensions.includes(extname(file.path).toLowerCase())
+        )
+          return true
+        const code = readFileSync(file.path, 'utf8')
+        return gate.relevant(code)
+      })
     let canonical: Readonly<Record<string, string>> = {}
     let routes: Readonly<Record<string, readonly number[]>> = {}
     let threshold: number | undefined

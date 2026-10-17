@@ -1,4 +1,9 @@
-import { createNonphysicalIdStore } from '@devup-ui/plugin-utils'
+import { symlink } from 'node:fs/promises'
+
+import {
+  createNonphysicalIdStore,
+  resolveSourceDirs,
+} from '@devup-ui/plugin-utils'
 import { expect, it } from 'bun:test'
 import { resolveConfig, type UserConfig } from 'vite'
 
@@ -6,6 +11,7 @@ import {
   prepareProductionManifest,
   type ProductionOptions,
 } from '../production-manifest'
+import { productionRootSources } from '../production-root-sources'
 import { productionFixture } from './production-fixture'
 
 it.each([
@@ -20,7 +26,7 @@ it.each([
   'html',
   'html-mixed',
 ] as const)(
-  'reserves input closure while preserving legacy inventory when input=%s',
+  'reserves roots and input closure while preserving legacy inventory when input=%s',
   async (form) => {
     // Given exact inputs outside sourceDirs and an unrelated configured search file.
     const fixture = await productionFixture()
@@ -129,16 +135,17 @@ it.each([
         options,
         (inputs) => observed.push(...inputs.fileDependencies),
       )
-      // Then ordinary HTML retains 919 inventory, while scripts reserve only reached candidates.
+      // Then ordinary HTML retains 919 inventory, while scripts also reserve configured roots.
       const legacy = form === 'html' || form === 'html-mixed'
       const expected =
         form === 'virtual'
-          ? []
+          ? [unused]
           : [
               entry,
               view,
               ...(form === 'mdx' ? [mdx] : []),
-              ...(legacy ? [unused, tooling] : []),
+              unused,
+              ...(legacy ? [tooling] : []),
             ]
       const context = manifest.contexts.find(
         ({ context }) => context === 'client',
@@ -149,7 +156,7 @@ it.each([
         'virtual:learned.js',
       ])
       expect(context?.scan).not.toContain('virtual:learned.js')
-      if (!legacy) expect(context?.scan).not.toContain(unused)
+      expect(context?.scan).toContain(unused)
       if (form !== 'virtual')
         expect(observed).toContain(
           entry.replaceAll('/', process.platform === 'win32' ? '\\' : '/'),
@@ -159,3 +166,94 @@ it.each([
     }
   },
 )
+
+it('censuses explicit roots and includes without test, output or automatic package inventories', async () => {
+  // Given default roots, explicit overrides, linked siblings and an included package.
+  const fixture = await productionFixture()
+  const source = await fixture.file('app/src/view.js', 'export {};')
+  const app = await fixture.file('app/app/page.js', 'export {};')
+  const configured = await fixture.file('app/custom/view.js', 'export {};')
+  const included = await fixture.file(
+    'app/node_modules/included/src/view.js',
+    'export {};',
+  )
+  await fixture.file(
+    'app/node_modules/included/package.json',
+    '{"name":"included"}',
+  )
+  for (const name of '__tests__ tests test __fixtures__ fixtures dist build out coverage .next tooling scripts generated'.split(
+    ' ',
+  ))
+    await fixture.file(`app/src/${name}/view.js`, 'export {};')
+  for (const name of 'view.test.tsx view.spec.js types.d.ts types.d.mts types.d.cts'.split(
+    ' ',
+  ))
+    await fixture.file(`app/src/${name}`, 'export {};')
+  await fixture.file('app/node_modules/included/dist/unused.js', 'export {};')
+  await fixture.file(
+    'app/node_modules/included/fixtures/unused.js',
+    'export {};',
+  )
+  await fixture.file(
+    'app/node_modules/@devup-ui/tooling/package.json',
+    '{"main":"index.js"}',
+  )
+  await fixture.file(
+    'app/node_modules/@devup-ui/tooling/index.js',
+    'export {};',
+  )
+  const outside = await fixture.file('outside/view.js', 'export {};')
+  for (const name of ['first', 'second'])
+    await symlink(
+      `${fixture.directory}/outside`,
+      `${fixture.root}/src/${name}`,
+      'junction',
+    )
+  await symlink(
+    `${fixture.root}/src`,
+    `${fixture.directory}/outside/cycle`,
+    'junction',
+  )
+  await symlink(
+    `${fixture.root}/src/fixtures`,
+    `${fixture.root}/src/blocked`,
+    'junction',
+  )
+  try {
+    // When the same private census uses default roots or explicit sourceDirs.
+    const options = {
+      cwd: fixture.root,
+      exclude: [`${fixture.root}/src/generated`],
+      includeMdx: ['.mdx'],
+    }
+    const defaults = productionRootSources(
+      { ...options, roots: resolveSourceDirs(fixture.root) },
+      ['included'],
+    )
+    const override = productionRootSources(
+      { ...options, roots: resolveSourceDirs(fixture.root, ['custom']) },
+      [],
+    )
+    // Then lexical aliases survive cycles; excluded census sources never join either set.
+    const paths = defaults.map(({ path }) => path.replaceAll('\\', '/')).sort()
+    expect(paths).toEqual(
+      [
+        source,
+        app,
+        included,
+        `${fixture.root}/src/first/view.js`,
+        `${fixture.root}/src/second/view.js`,
+      ].sort(),
+    )
+    expect(
+      defaults.filter(
+        ({ realPath }) => realPath.replaceAll('\\', '/') === outside,
+      ),
+    ).toHaveLength(2)
+    expect(override.map(({ path }) => path.replaceAll('\\', '/'))).toEqual([
+      configured,
+    ])
+  } finally {
+    await fixture.close()
+  }
+})

@@ -58,10 +58,6 @@ it('subtracts a learned physical arrival when a fresh native generation promotes
     await fixture.run(false, [provider])
     expect(await fixture.learned()).toContain(physical)
     // When the same actual source joins the next native generation's scan roots.
-    await fixture.file(
-      'app/src/main.js',
-      "export {cls} from '../../outside/view.js';",
-    )
     await fixture.run(false, [], {
       plugins: [
         DevupUI({ sourceDirs: [`${fixture.directory}/outside`] }),

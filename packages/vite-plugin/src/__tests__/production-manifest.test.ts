@@ -126,9 +126,9 @@ it('reserves all configured contexts while keeping scan authority separate from 
     'app/src/docs.mdx',
     '# Reserved documentation',
   )
-  const accepted: string[] = []
-  const imports = ["import './imports.js';"]
-  const rejected = [entry, plain, markdown]
+  const accepted: string[] = [markdown]
+  const imports = ["import './imports.js'; import './docs.mdx';"]
+  const rejected = [entry, plain]
   for (const name of ['included', 'excluded'])
     await fixture.file(
       `app/node_modules/${name}/package.json`,

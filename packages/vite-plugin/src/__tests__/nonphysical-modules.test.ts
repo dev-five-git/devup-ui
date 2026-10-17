@@ -128,7 +128,7 @@ it('keeps existing direct and recursive extraction filenames consistent across q
     await realpath(await mkdtemp(join(tmpdir(), 'devup-v1-current-id-')))
   ).replaceAll('\\', '/')
   const entry = join(root, 'src/main.ts')
-  const style = `${root}/z-style.ts`
+  const style = `${root}/a-style.ts`
   const constant = `${root}/src/constant.ts`
   const direct: {
     readonly id: string
