@@ -3,6 +3,38 @@ use boa_engine::{Context, Source};
 use oxc_codegen::Codegen;
 
 #[rstest]
+#[case("styled(Component)({ color: 'red' })")]
+#[case("styled(motion.div)({ color: 'red' })")]
+#[case("styled(tag)({ color: 'red' })")]
+#[serial]
+fn inherited_target_is_preserved_when_typescript_component_renders(#[case] factory: &str) {
+    // Given: two extensions of a component, member or runtime-bound base in non-JSX TS.
+    let source = format!(
+        "{IMPORT}const Component = (props) => props; const motion = {{ div: Component }}; const tag = Component; const Base = {factory}; const Middle = styled(Base)({{ background: 'blue' }}); const Card = styled(Middle)`padding: 4px;`;"
+    );
+    let output = compile("test.ts", &source, true);
+    let arena = Allocator::default();
+    let mut program = parse(&arena, "test.ts", &output);
+    let calls = renders(&program);
+    assert_eq!(calls.len(), 3);
+    let helper = &calls[0].helper;
+    program
+        .body
+        .retain(|statement| !matches!(statement, Statement::ImportDeclaration(_)));
+    let code = Codegen::new().build(&program).code;
+    // When: the emitted extension renders through the actual factory.
+    let script = format!(
+        "const {helper} = (target, props) => ({{target, props}}); {code}\nCard({{children: 'child'}}).target === Component;"
+    );
+    let mut context = Context::default();
+    let result = context
+        .eval(Source::from_bytes(&script))
+        .unwrap_or_else(|error| panic!("inherited-target renderer evaluation failed: {error}"));
+    // Then: the extension renders the original component, never its string name.
+    assert_eq!(result.as_boolean(), Some(true));
+}
+
+#[rstest]
 #[case("styled(tag)({ color: 'red' })")]
 #[case("styled(targets[name])({ color: 'red' })")]
 #[case("styled(active ? Component : Other)({ color: 'red' })")]

@@ -23,13 +23,7 @@ impl<'b, 'a> Evaluations<'b, 'a> {
     }
 
     pub fn capture(&mut self, value: &Expression<'a>, guard: &Expression<'a>) -> Expression<'a> {
-        let name = loop {
-            let name = format!("__devupRecord{}", self.next);
-            self.next += 1;
-            if !self.source.contains(&name) {
-                break name;
-            }
-        };
+        let name = self.fresh_name();
         let value = self.choose(guard, value, &self.undefined());
         self.bindings.push((name.clone(), value));
         Expression::new_identifier(
@@ -37,6 +31,16 @@ impl<'b, 'a> Evaluations<'b, 'a> {
             oxc_ast::ast::Ident::from_in(name.as_str(), self.builder.allocator()),
             self.builder,
         )
+    }
+
+    pub fn fresh_name(&mut self) -> String {
+        loop {
+            let name = format!("__devupRecord{}", self.next);
+            self.next += 1;
+            if !self.source.contains(&name) {
+                return name;
+            }
+        }
     }
 
     pub fn boolean(&self, value: bool) -> Expression<'a> {
@@ -73,6 +77,76 @@ impl<'b, 'a> Evaluations<'b, 'a> {
     }
 }
 
+fn visit_style_value_expression<'a>(
+    builder: &AstBuilder<'a>,
+    style: &mut crate::ExtractStyleValue,
+    visit: &mut impl FnMut(&mut Expression<'a>),
+) {
+    use crate::ExtractStyleValue;
+    match style {
+        ExtractStyleValue::Dynamic(value) => {
+            let mut expression = Expression::new_identifier(
+                SPAN,
+                oxc_ast::ast::Ident::from_in(value.identifier(), builder.allocator()),
+                builder,
+            );
+            visit(&mut expression);
+            *value.identifier_mut() = crate::utils::readable_code(&expression);
+        }
+        ExtractStyleValue::Static(_)
+        | ExtractStyleValue::Typography(_)
+        | ExtractStyleValue::Css(_)
+        | ExtractStyleValue::Import(_)
+        | ExtractStyleValue::FontFace(_)
+        | ExtractStyleValue::Keyframes(_) => {}
+    }
+}
+
+pub(super) fn visit_style_expressions<'a>(
+    builder: &AstBuilder<'a>,
+    style: &mut crate::ExtractStyleProp<'a>,
+    visit: &mut impl FnMut(&mut Expression<'a>),
+) {
+    use crate::ExtractStyleProp;
+    match style {
+        ExtractStyleProp::Static(value) => visit_style_value_expression(builder, value, visit),
+        ExtractStyleProp::Unreadable { .. } => {}
+        ExtractStyleProp::StaticArray(styles) => {
+            for style in styles {
+                visit_style_expressions(builder, style, visit);
+            }
+        }
+        ExtractStyleProp::Conditional {
+            condition,
+            consequent,
+            alternate,
+        } => {
+            visit(condition);
+            for style in consequent.iter_mut().chain(alternate.iter_mut()) {
+                visit_style_expressions(builder, style, visit);
+            }
+        }
+        ExtractStyleProp::Enum { condition, map } => {
+            visit(condition);
+            for style in map.values_mut().flatten() {
+                visit_style_expressions(builder, style, visit);
+            }
+        }
+        ExtractStyleProp::Expression { expression, styles } => {
+            visit(expression);
+            for style in styles {
+                visit_style_value_expression(builder, style, visit);
+            }
+        }
+        ExtractStyleProp::MemberExpression { expression, map } => {
+            visit(expression);
+            for style in map.values_mut() {
+                visit_style_expressions(builder, style, visit);
+            }
+        }
+    }
+}
+
 pub(super) fn bind_render<'a>(
     builder: &AstBuilder<'a>,
     bindings: Vec<(String, Expression<'a>)>,
@@ -84,6 +158,10 @@ pub(super) fn bind_render<'a>(
     }
     body
 }
+
+#[cfg(test)]
+#[path = "styled_record_evaluation_visitor_tests.rs"]
+mod visitor_tests;
 
 #[cfg(test)]
 mod tests {

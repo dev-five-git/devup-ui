@@ -21,8 +21,13 @@ use oxc_syntax::operator::BinaryOperator;
 use oxc_syntax::symbol::SymbolId;
 use rustc_hash::{FxHashMap, FxHashSet};
 
+use crate::composition::{Composition, set_prop_order};
+use crate::extractor::ExtractResult;
+use crate::extractor::extract_style_from_expression::{
+    LiteralHandling, extract_style_from_expression,
+};
 use crate::stylex::StylexFunction;
-use crate::{ExtractOption, ModuleResolver};
+use crate::{ExtractOption, ExtractStyleValue, ModuleResolver};
 
 #[derive(Clone, Debug)]
 enum Constant {
@@ -44,8 +49,9 @@ enum Constant {
     /// The class a `StyleX` theme applies
     Theme(String),
     /// What another style API gives: a class, a component or a keyframes
-    /// name, never rules
-    Style,
+    /// name, never rules; for a `css()` class, the styles behind it when
+    /// they are known
+    Style(Option<Rc<Vec<ExtractStyleValue>>>),
     /// An object or array code changes, or a value read from one
     Changed(Rc<Change>),
 }
@@ -154,6 +160,8 @@ pub(crate) struct Inlined {
     pub dependencies: BTreeSet<String>,
     pub stylex_vars: FxHashMap<String, FxHashMap<String, String>>,
     pub stylex_themes: FxHashMap<String, String>,
+    /// The styles behind imported `css()` classes
+    pub css_styles: FxHashMap<String, Vec<ExtractStyleValue>>,
     pub unknown: Unknown,
     pub changed: Changed,
 }
@@ -470,6 +478,11 @@ pub(crate) fn inline_constants<'a>(
                 }
                 Constant::Theme(class) => {
                     inlined.stylex_themes.insert(name.clone(), class.clone());
+                }
+                Constant::Style(Some(styles)) => {
+                    inlined
+                        .css_styles
+                        .insert(name.clone(), styles.as_ref().clone());
                 }
                 _ => {}
             }
@@ -1032,6 +1045,55 @@ impl<'p, 'a> ModuleScope<'p, 'a> {
             })
     }
 
+    /// The styles behind `css(rules)`, the package's own `css` given one
+    /// rule object every value of which is known, as the module's class names
+    /// do not tell them
+    fn css_styles(
+        &mut self,
+        modules: &mut Modules<'_>,
+        call: &oxc_ast::ast::CallExpression<'_>,
+    ) -> Option<Rc<Vec<ExtractStyleValue>>> {
+        let Expression::Identifier(callee) = &call.callee else {
+            return None;
+        };
+        let (source, Imported::Named(export)) = self.imports.get(callee.name.as_str())? else {
+            return None;
+        };
+        if export != "css" || !source.starts_with(modules.option.package.as_str()) {
+            return None;
+        }
+        let [argument] = call.arguments.as_slice() else {
+            return None;
+        };
+        let rules = self.evaluate(modules, argument.as_expression()?)?;
+        let allocator = Allocator::default();
+        let builder = AstBuilder::new(&allocator);
+        let mut rules = match constant_literal(&builder, &rules, true)? {
+            rules @ Expression::ObjectExpression(_) => rules,
+            _ => return None,
+        };
+        let ExtractResult {
+            mut styles,
+            style_order,
+            ..
+        } = extract_style_from_expression(
+            &builder,
+            None,
+            &mut rules,
+            0,
+            &None,
+            LiteralHandling::ExpandResponsiveThemeToken,
+        );
+        if let Some(order) = style_order {
+            for prop in &mut styles {
+                set_prop_order(prop, order);
+            }
+        }
+        let mut composition = Composition::default();
+        composition.apply(&builder, styles);
+        composition.unconditional().map(Rc::new)
+    }
+
     fn is_style_import(&self, option: &ExtractOption, name: &str) -> bool {
         self.style_imports.contains(name)
             || self.style_names.contains(name)
@@ -1465,13 +1527,15 @@ impl<'p, 'a> ModuleScope<'p, 'a> {
                     }
                     fold_math(callee.property.name.as_str(), &arguments)
                 }
-                callee if self.is_style_api(modules, callee) => Some(Constant::Style),
+                callee if self.is_style_api(modules, callee) => {
+                    Some(Constant::Style(self.css_styles(modules, call)))
+                }
                 _ => self.evaluate_stylex(modules, call),
             },
             Expression::TaggedTemplateExpression(tagged)
                 if self.is_style_api(modules, &tagged.tag) =>
             {
-                Some(Constant::Style)
+                Some(Constant::Style(None))
             }
             Expression::TSAsExpression(inner) => self.evaluate(modules, &inner.expression),
             Expression::TSSatisfiesExpression(inner) => self.evaluate(modules, &inner.expression),
@@ -1837,55 +1901,7 @@ impl<'a> Inline<'_, 'a> {
     }
 
     fn literal(&self, constant: &Constant) -> Option<Expression<'a>> {
-        let builder = self.ast_builder;
-        match constant {
-            Constant::String(value) => Some(Expression::new_string_literal(
-                SPAN,
-                Str::from_in(value.as_str(), builder.allocator()),
-                None,
-                builder,
-            )),
-            Constant::Number(value) => Some(Expression::new_numeric_literal(
-                SPAN,
-                *value,
-                None,
-                NumberBase::Decimal,
-                builder,
-            )),
-            Constant::Null => Some(Expression::new_null_literal(SPAN, builder)),
-            Constant::Bool(value) => Some(Expression::new_boolean_literal(SPAN, *value, builder)),
-            Constant::Record(entries) if self.objects => {
-                let mut properties = oxc_allocator::Vec::with_capacity_in(entries.len(), builder);
-                for (key, value) in entries.iter() {
-                    properties.push(ObjectPropertyKind::new_object_property(
-                        SPAN,
-                        oxc_ast::ast::PropertyKind::Init,
-                        oxc_ast::ast::PropertyKey::StringLiteral(
-                            oxc_ast::ast::StringLiteral::boxed(
-                                SPAN,
-                                Str::from_in(key.as_str(), builder.allocator()),
-                                None,
-                                builder,
-                            ),
-                        ),
-                        self.literal(value)?,
-                        false,
-                        false,
-                        false,
-                        builder,
-                    ));
-                }
-                Some(Expression::new_object_expression(SPAN, properties, builder))
-            }
-            Constant::Array(values) if self.objects => {
-                let mut elements = oxc_allocator::Vec::with_capacity_in(values.len(), builder);
-                for value in values.iter() {
-                    elements.push(self.literal(value)?.into());
-                }
-                Some(Expression::new_array_expression(SPAN, elements, builder))
-            }
-            _ => None,
-        }
+        constant_literal(self.ast_builder, constant, self.objects)
     }
 
     fn reading_objects<T>(&mut self, objects: bool, visit: impl FnOnce(&mut Self) -> T) -> T {
@@ -1901,6 +1917,60 @@ impl<'a> Inline<'_, 'a> {
         let result = visit(self);
         self.styles = outer;
         result
+    }
+}
+
+/// `constant` written as a literal, objects and arrays too when `objects`
+fn constant_literal<'a>(
+    builder: &AstBuilder<'a>,
+    constant: &Constant,
+    objects: bool,
+) -> Option<Expression<'a>> {
+    match constant {
+        Constant::String(value) => Some(Expression::new_string_literal(
+            SPAN,
+            Str::from_in(value.as_str(), builder.allocator()),
+            None,
+            builder,
+        )),
+        Constant::Number(value) => Some(Expression::new_numeric_literal(
+            SPAN,
+            *value,
+            None,
+            NumberBase::Decimal,
+            builder,
+        )),
+        Constant::Null => Some(Expression::new_null_literal(SPAN, builder)),
+        Constant::Bool(value) => Some(Expression::new_boolean_literal(SPAN, *value, builder)),
+        Constant::Record(entries) if objects => {
+            let mut properties = oxc_allocator::Vec::with_capacity_in(entries.len(), builder);
+            for (key, value) in entries.iter() {
+                properties.push(ObjectPropertyKind::new_object_property(
+                    SPAN,
+                    oxc_ast::ast::PropertyKind::Init,
+                    oxc_ast::ast::PropertyKey::StringLiteral(oxc_ast::ast::StringLiteral::boxed(
+                        SPAN,
+                        Str::from_in(key.as_str(), builder.allocator()),
+                        None,
+                        builder,
+                    )),
+                    constant_literal(builder, value, objects)?,
+                    false,
+                    false,
+                    false,
+                    builder,
+                ));
+            }
+            Some(Expression::new_object_expression(SPAN, properties, builder))
+        }
+        Constant::Array(values) if objects => {
+            let mut elements = oxc_allocator::Vec::with_capacity_in(values.len(), builder);
+            for value in values.iter() {
+                elements.push(constant_literal(builder, value, objects)?.into());
+            }
+            Some(Expression::new_array_expression(SPAN, elements, builder))
+        }
+        _ => None,
     }
 }
 
