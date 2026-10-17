@@ -165,11 +165,7 @@ fn gen_class_name<'a>(
                 false,
                 ast_builder,
             ));
-            if let Expression::Identifier(_) = &expression {
-                Some(convert_class_name(ast_builder, &exp))
-            } else {
-                Some(exp)
-            }
+            Some(convert_class_name(ast_builder, &exp))
         }
     }
 }

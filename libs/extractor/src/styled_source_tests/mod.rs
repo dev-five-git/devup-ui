@@ -1,5 +1,13 @@
 mod compatibility;
+mod css_prop_captures;
+mod css_prop_execution;
+mod css_prop_markers;
+mod css_prop_slot_edges;
+mod css_prop_slot_members;
+mod css_prop_slot_wrapped_keys;
+mod css_prop_slots;
 mod execution;
+mod forward_ref_captures;
 mod lowering;
 
 use crate::{ExtractOption, extract, utils::readable_code};
@@ -72,7 +80,7 @@ struct Render {
 }
 
 #[derive(Default)]
-struct Renders(Vec<Render>);
+struct Renders(Vec<Render>, Vec<Target>);
 
 impl<'a> Visit<'a> for Renders {
     fn visit_arrow_function_expression(&mut self, arrow: &ArrowFunctionExpression<'a>) {
@@ -93,8 +101,24 @@ impl<'a> Visit<'a> for Renders {
                     keys.iter()
                         .map(std::convert::AsRef::as_ref)
                         .collect::<Vec<_>>(),
-                    ["style", "className"]
+                    ["style", "className", "as", "forwardedAs"]
                 );
+                let targets: Vec<_> = pattern
+                    .properties
+                    .iter()
+                    .filter_map(|property| match &property.value {
+                        BindingPattern::AssignmentPattern(value) => Some(&value.right),
+                        _ => None,
+                    })
+                    .collect();
+                assert_eq!(targets.len(), 1);
+                self.1.push(match targets[0] {
+                    Expression::StringLiteral(tag) => Target::Tag(tag.value.to_string()),
+                    Expression::Identifier(component) => {
+                        Target::Component(component.name.to_string())
+                    }
+                    expression => Target::Member(readable_code(expression)),
+                });
                 assert_eq!(
                     pattern
                         .rest
@@ -106,6 +130,9 @@ impl<'a> Visit<'a> for Renders {
             }
         }
         walk_arrow_function_expression(self, arrow);
+        if arrow.params.items.iter().any(|parameter| matches!(&parameter.pattern, BindingPattern::ObjectPattern(pattern) if pattern.properties.iter().any(|property| property.key.static_name().is_some_and(|name| name == "forwardedAs")))) {
+            self.1.pop();
+        }
     }
 
     fn visit_call_expression(&mut self, call: &CallExpression<'a>) {
@@ -134,23 +161,19 @@ impl<'a> Visit<'a> for Renders {
                 }
             })
             .collect();
-        if !props
-            .iter()
-            .any(|(key, value)| key == "..." && value == "rest")
+        if !props.iter().any(|(key, _)| key == "...")
             || !props.iter().any(|(key, _)| key == "className")
             || !props.iter().any(|(key, _)| key == "style")
         {
             return;
         }
-        let target = match target.as_expression() {
-            Some(Expression::StringLiteral(tag)) => Target::Tag(tag.value.to_string()),
-            Some(Expression::Identifier(component)) => {
-                Target::Component(component.name.to_string())
-            }
-            Some(expression @ Expression::StaticMemberExpression(_)) => {
-                Target::Member(readable_code(expression))
-            }
-            other => panic!("unexpected render target: {other:?}"),
+        assert!(
+            matches!(target.as_expression(), Some(Expression::Identifier(identifier)) if identifier.name == "DevupAs")
+        );
+        let target = match &self.1[self.1.len() - 1] {
+            Target::Tag(name) => Target::Tag(name.clone()),
+            Target::Component(name) => Target::Component(name.clone()),
+            Target::Member(name) => Target::Member(name.clone()),
         };
         let (helper, reference) = match &call.callee {
             Expression::Identifier(helper) => (helper.name.to_string(), helper.reference_id.get()),

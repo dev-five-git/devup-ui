@@ -1,0 +1,7 @@
+{
+  "changes": {
+    "bindings/devup-ui-wasm/package.json": "Patch"
+  },
+  "note": "Resolve compiled styling APIs and components by their lexical binding so shadowed local names, including minified library identifiers, remain ordinary JavaScript and JSX. No new build errors; existing diagnostics now apply only to the compiled binding they describe.",
+  "date": "2026-10-01T00:00:00.000Z"
+}

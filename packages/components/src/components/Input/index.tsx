@@ -101,25 +101,6 @@ export function Input({
         </Center>
       )}
       <DevupInput
-        _disabled={{
-          _placeholder: {
-            color: 'var(--inputDisabledText, light-dark(#D6D7DE, #373737))',
-          },
-          bg: 'var(--inputDisabledBg, light-dark(#F0F0F3, #414244))',
-          border: '1px solid var(--border, light-dark(#E4E4E4, #434343))',
-          color: 'var(--inputDisabledText, light-dark(#D6D7DE, #373737))',
-        }}
-        _focus={{
-          bg: 'var(--primaryBg, light-dark(#F4F3FA, #F4F3FA0D))',
-          border: '1px solid var(--primary, light-dark(#674DC7, #8163E1))',
-          outline: 'none',
-        }}
-        _hover={{
-          border: '1px solid var(--primary, light-dark(#674DC7, #8163E1))',
-        }}
-        _placeholder={{
-          color: 'var(--inputPlaceholder, light-dark(#A9A8AB, #CBCBCB))',
-        }}
         aria-label="input"
         bg="var(--inputBg, light-dark(#FFFFFF, #2E2E2E))"
         borderColor={
@@ -149,9 +130,28 @@ export function Input({
           negative20: colors?.negative20,
         }}
         transition="all 0.1s ease-in-out"
-        typography={typography}
         value={innerValue}
         {...props}
+        _disabled={{
+          _placeholder: {
+            color: 'var(--inputDisabledText, light-dark(#D6D7DE, #373737))',
+          },
+          bg: 'var(--inputDisabledBg, light-dark(#F0F0F3, #414244))',
+          border: '1px solid var(--border, light-dark(#E4E4E4, #434343))',
+          color: 'var(--inputDisabledText, light-dark(#D6D7DE, #373737))',
+        }}
+        _focus={{
+          bg: 'var(--primaryBg, light-dark(#F4F3FA, #F4F3FA0D))',
+          border: '1px solid var(--primary, light-dark(#674DC7, #8163E1))',
+          outline: 'none',
+        }}
+        _hover={{
+          border: '1px solid var(--primary, light-dark(#674DC7, #8163E1))',
+        }}
+        _placeholder={{
+          color: 'var(--inputPlaceholder, light-dark(#A9A8AB, #CBCBCB))',
+        }}
+        typography={typography}
       />
       {clearButtonVisible && <ClearButton onClick={handleClear} />}
       {error && errorMessage && (

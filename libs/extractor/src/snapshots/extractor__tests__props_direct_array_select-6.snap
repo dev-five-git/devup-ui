@@ -20,11 +20,11 @@ ToBTreeSet {
             ExtractDynamicStyle {
                 property: "opacity",
                 level: 0,
-                identifier: "[1,.5,...some][100]",
+                identifier: "__devupValue0",
                 selector: None,
                 style_order: None,
             },
         ),
     },
-    code: "import \"@devup-ui/core/devup-ui.css\";\n<div className=\"a b\" style={{ \"--c\": [1,.5,...some][100] }} />;\n",
+    code: "import \"@devup-ui/core/devup-ui.css\";\n((__devupValue0) => <div className=\"a b\" style={{ \"--c\": __devupValue0 }} />)([\n\t1,\n\t.5,\n\t...some\n][100]);\n",
 }
