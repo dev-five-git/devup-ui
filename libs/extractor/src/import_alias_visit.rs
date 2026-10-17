@@ -22,7 +22,9 @@ use oxc_ast_visit::{
     walk::{walk_call_expression, walk_jsx_opening_element},
 };
 use oxc_parser::Parser;
-use oxc_span::{GetSpan, SourceType};
+use oxc_span::GetSpan;
+#[cfg(test)]
+use oxc_span::SourceType;
 use std::borrow::Cow;
 use std::collections::HashMap;
 
@@ -108,6 +110,7 @@ impl LibraryNumbers<'_> {
             return;
         }
         match value {
+            Expression::ArrayExpression(array) => self.fallbacks(key, array),
             Expression::ObjectExpression(_) => {
                 if key != "vars" {
                     self.pixelify(value);
@@ -124,6 +127,63 @@ impl LibraryNumbers<'_> {
             _ => {}
         }
     }
+}
+
+impl LibraryNumbers<'_> {
+    /// `key: [a, b]` in these libraries declares `key` once per value, later
+    /// ones as fallbacks a browser keeps when it understands them, where Devup
+    /// UI reads an array as breakpoints. Literal values become one value
+    /// declaring each in order; others stay as written.
+    fn fallbacks(&mut self, key: &str, array: &oxc_ast::ast::ArrayExpression) {
+        let values: Option<Vec<String>> = array
+            .elements
+            .iter()
+            .map(|element| {
+                let element = element.as_expression()?;
+                if let Some(number) = js_number_literal(element) {
+                    return Some(if number == 0.0 || keeps_bare_number(key) {
+                        number.to_string()
+                    } else {
+                        format!("{number}px")
+                    });
+                }
+                match element {
+                    Expression::StringLiteral(literal) => Some(literal.value.to_string()),
+                    _ => None,
+                }
+            })
+            .collect();
+        let Some(values) = values.filter(|values| values.len() > 1) else {
+            return;
+        };
+        let property = kebab_property(key);
+        let joined = values.join(&format!(";{property}:"));
+        let span = array.span;
+        self.replacements.push((
+            span.start as usize,
+            span.end as usize,
+            format!("{joined:?}"),
+        ));
+    }
+}
+
+/// `backgroundColor` as the CSS property `background-color`, `WebkitBoxShadow`
+/// as `-webkit-box-shadow`
+fn kebab_property(key: &str) -> String {
+    let mut property = String::with_capacity(key.len() + 4);
+    for (index, c) in key.chars().enumerate() {
+        if c.is_ascii_uppercase() {
+            if index > 0
+                || matches!(key, k if k.starts_with("Webkit") || k.starts_with("Moz") || k.starts_with("Ms"))
+            {
+                property.push('-');
+            }
+            property.push(c.to_ascii_lowercase());
+        } else {
+            property.push(c);
+        }
+    }
+    property
 }
 
 impl<'a> Visit<'a> for LibraryNumbers<'_> {
@@ -220,6 +280,7 @@ fn devup_equivalent(source: &str, imported: &str) -> Option<DevupTarget<'static>
         (_, "isStyledComponent") => Some(DevupTarget::Compat("isStyledComponent")),
         (_, "withTheme") => Some(DevupTarget::Compat("withTheme")),
         (_, "useTheme") => Some(DevupTarget::Compat("useTheme")),
+        ("@emotion/react", "CacheProvider") => Some(DevupTarget::Compat("CacheProvider")),
         ("styled-components", "ThemeConsumer") => Some(DevupTarget::Compat("ThemeConsumer")),
         ("styled-components", "createTheme") => Some(DevupTarget::Compat("createTheme")),
         _ => None,
@@ -252,7 +313,7 @@ pub fn companion_errors(code: &str, filename: &str) -> Vec<(u32, String)> {
         return Vec::new();
     }
     let allocator = Allocator::default();
-    let source_type = SourceType::from_path(filename).unwrap_or_default();
+    let source_type = crate::parsing::source_type(filename).unwrap_or_default();
     let program = Parser::new(&allocator, code, source_type).parse().program;
     program
         .body
@@ -302,7 +363,7 @@ pub fn transform_import_aliases_with_edits<'a>(
     }
 
     let allocator = Allocator::default();
-    let source_type = SourceType::from_path(filename).unwrap_or_default();
+    let source_type = crate::parsing::source_type(filename).unwrap_or_default();
 
     // Parse the code
     let parser_ret = Parser::new(&allocator, code, source_type).parse();
@@ -312,6 +373,9 @@ pub fn transform_import_aliases_with_edits<'a>(
 
     // Collect import transformations
     let mut transformations: Vec<(usize, usize, String)> = Vec::new();
+    if import_aliases.contains_key("@emotion/react") {
+        transformations.extend(crate::jsx_import_source::emotion_replacements(&program));
+    }
     let mut numbers = LibraryNumbers::default();
 
     for stmt in &program.body {
@@ -401,7 +465,7 @@ pub(super) fn pixelify_emotion_values<'a>(
     original: &str,
 ) -> (Cow<'a, str>, Vec<Edit>) {
     let allocator = Allocator::default();
-    let source_type = SourceType::from_path(filename).unwrap_or_default();
+    let source_type = crate::parsing::source_type(filename).unwrap_or_default();
     let original_program = Parser::new(&allocator, original, source_type)
         .parse()
         .program;
@@ -861,6 +925,30 @@ mod tests {
         ));
     }
 
+    // A property's array of values declares fallbacks in these libraries
+    #[test]
+    fn test_property_arrays_become_fallback_declarations() {
+        let code = transform_import_aliases(
+            "import { css } from '@emotion/react'
+css({ background: ['red', 'linear-gradient(red, blue)'], WebkitBoxShadow: ['none', '0 0 1px red'], margin: [4, 0], zIndex: [1, 2], color: [x, 'red'], top: ['1px'] })",
+            "test.tsx",
+            "@devup-ui/react",
+            &HashMap::from([("@emotion/react".to_string(), ImportAlias::NamedToNamed)]),
+        );
+        for expected in [
+            r#"background: "red;background:linear-gradient(red, blue)""#,
+            r#"WebkitBoxShadow: "none;-webkit-box-shadow:0 0 1px red""#,
+            r#"margin: "4px;margin:0""#,
+            r#"zIndex: "1;z-index:2""#,
+            "color: [x, 'red']",
+            "top: ['1px']",
+        ] {
+            assert!(code.contains(expected), "{expected}\n{code}");
+        }
+        assert_eq!(kebab_property("MozAppearance"), "-moz-appearance");
+        assert_eq!(kebab_property("msFlex"), "ms-flex");
+    }
+
     // Types are erased, so a type-only import never becomes a runtime import
     #[test]
     fn test_type_only_imports_stay_type_only() {
@@ -919,6 +1007,21 @@ import { createSprinkles } from '@vanilla-extract/sprinkles'",
             companion_errors("import { style } from '@vanilla-extract/css'", "a.css.ts"),
             vec![]
         );
+    }
+
+    #[test]
+    fn test_emotion_cache_provider_redirects_to_compat() {
+        let code = transform_import_aliases(
+            "import { CacheProvider, Global } from '@emotion/react'",
+            "test.tsx",
+            "@devup-ui/react",
+            &HashMap::from([("@emotion/react".to_string(), ImportAlias::NamedToNamed)]),
+        );
+        assert!(
+            code.contains("import { CacheProvider, Global } from '@devup-ui/react/compat';"),
+            "{code}"
+        );
+        assert!(!code.contains("from '@emotion/react'"), "{code}");
     }
 
     #[test]

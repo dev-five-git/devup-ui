@@ -712,6 +712,94 @@ describe('devupUIWebpackPlugin', () => {
       }
     })
 
+    it('uses normalized complete files instead of Next loader requests, including external files', () => {
+      // Given an authoritative set with duplicate spellings and an external file.
+      const seed = spyOn(wasm, 'seedFileMap').mockReturnValue(undefined)
+      const shorthands = spyOn(wasm, 'registerShorthands').mockReturnValue(
+        undefined,
+      )
+      const plugin = new DevupUIWebpackPlugin({
+        productionPrewarmFiles: [
+          'src/z.tsx',
+          resolve('node_modules/ui/a.tsx'),
+          './src/z.tsx',
+          'src\\z.tsx',
+        ],
+        shorthands: { insetX: ['left', 'right'] },
+      })
+      const compiler = createCompiler()
+      compiler.options.entry = { main: { import: ['next-app-loader?query!'] } }
+      try {
+        // When the compiler applies after its ordinary configuration setup.
+        plugin.apply(asCompiler(compiler))
+        // Then all files are extracted exactly once, in deterministic loader-ID order.
+        expect(codeExtractSpy.mock.calls.map(([filename]) => filename)).toEqual(
+          ['node_modules/ui/a.tsx', 'src/z.tsx'],
+        )
+        expect(computeReachableFilesSpy).not.toHaveBeenCalled()
+        expect(seed).toHaveBeenCalledWith([
+          'node_modules/ui/a.tsx',
+          'src/z.tsx',
+        ])
+        expect(shorthands).toHaveBeenLastCalledWith({
+          insetX: ['left', 'right'],
+        })
+      } finally {
+        seed.mockRestore()
+        shorthands.mockRestore()
+      }
+    })
+
+    it.each([false, true])(
+      'does not prewarm when the complete set is empty or watch=%s',
+      (watch) => {
+        // Given a reachable generic entry which an explicit set supersedes.
+        computeReachableFilesSpy.mockReturnValue([resolve('src/parent.tsx')])
+        const plugin = new DevupUIWebpackPlugin({
+          watch,
+          productionPrewarmFiles: watch ? ['src/parent.tsx'] : [],
+        })
+        // When applying, then neither explicit watch files nor generic fallback are extracted.
+        plugin.apply(asCompiler(createCompiler()))
+        expect(codeExtractSpy).not.toHaveBeenCalled()
+        expect(computeReachableFilesSpy).not.toHaveBeenCalled()
+      },
+    )
+
+    it.each(['canonical', 'numbering', 'read', 'extract'])(
+      'propagates genuine %s errors for an explicit complete set',
+      (stage) => {
+        // Given a failing correctness-prewarm dependency.
+        const failure = new Error(stage)
+        const endBuild = mock()
+        const begin = spyOn(pluginUtils, 'beginBuild').mockReturnValue(endBuild)
+        const fail = () => {
+          throw failure
+        }
+        const numbering = spyOn(
+          pluginUtils,
+          'collectNumberedFiles',
+        ).mockReturnValue([])
+        if (stage === 'canonical') buildCanonicalMapSpy.mockImplementation(fail)
+        if (stage === 'numbering') numbering.mockImplementation(fail)
+        if (stage === 'read') readFileSyncSpy.mockImplementation(fail)
+        if (stage === 'extract') codeExtractSpy.mockImplementation(fail)
+        const plugin = new DevupUIWebpackPlugin({
+          productionPrewarmFiles: ['src/parent.tsx'],
+        })
+        try {
+          // When applying, then the original error reaches webpack instead of partial CSS.
+          expect(() => plugin.apply(asCompiler(createCompiler()))).toThrow(
+            failure,
+          )
+          expect(endBuild).toHaveBeenCalledTimes(1)
+        } finally {
+          begin.mockRestore()
+          numbering.mockRestore()
+        }
+      },
+    )
+
     it('pre-warms without collapse, from no entries when they are a function', () => {
       buildCanonicalMapSpy.mockReturnValue({})
       const compiler = createCompiler()
