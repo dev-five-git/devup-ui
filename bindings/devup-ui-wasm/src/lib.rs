@@ -1,3 +1,8 @@
+mod reservation;
+pub use reservation::{
+    ReservationInput, get_unreserved_class_slot_count, reserve_class_slots_internal,
+};
+
 use css::class_map::{set_class_map, with_class_map};
 use css::file_map::{
     canonical, is_global, set_canonical_map, set_file_map, with_canonical_map, with_file_map,
@@ -332,6 +337,7 @@ pub fn seed_file_map(files: Vec<String>) {
 /// and the module resolver, so the next build starts from its own options
 /// alone. Theme, shorthands and debug mode are set by every build, and stay.
 pub fn reset_build_state_internal() {
+    css::slot_reservation::reset();
     css::class_map::reset_class_map();
     css::file_map::reset_file_map();
     css::file_map::reset_canonical_map();

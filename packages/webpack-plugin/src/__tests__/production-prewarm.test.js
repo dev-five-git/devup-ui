@@ -5,7 +5,7 @@ import { expect, it } from 'bun:test'
 
 it('reconstructs complete production sheets across compiler resets without leaking to another build', () => {
   // Given an isolated real engine (other unit tests mock WASM exports).
-  // When applying and closing real webpack compilers sequentially.
+  // When applying real compilers, awaiting their own preparation tap, and closing them.
   const result = spawnSync(
     process.execPath,
     [join(import.meta.dir, 'production-prewarm.mjs')],
