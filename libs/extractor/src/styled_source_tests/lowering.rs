@@ -88,7 +88,10 @@ fn passthrough_props_remain_when_attrs_wrap_the_renderer(
             .collect::<Vec<_>>(),
         ["...", "className", "style", "as"]
     );
-    assert_eq!(calls[0].props[0].1, "rest");
+    assert_eq!(
+        calls[0].props[0].1,
+        "(({ \"theme\": __devupOmit0, ...__devupDom }) => __devupDom)(rest)"
+    );
     assert_eq!(calls[0].props[3].1, "forwardedAs");
     assert!(output.contains("as: \"section\""));
     assert!(output.contains("ref: callerRef"));

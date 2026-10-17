@@ -24,6 +24,7 @@ fn commonjs_binding_resolves_factory_when_renderer_is_used() {
             Expression::new_identifier(SPAN, "style", &ast),
             Expression::new_string_literal(SPAN, "nav", None, &ast),
         ),
+        Expression::new_identifier(SPAN, "rest", &ast),
     );
     // When: the real binding and renderer execute against a CommonJS factory export.
     program.body.push(

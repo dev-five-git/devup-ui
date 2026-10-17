@@ -578,6 +578,63 @@ fn evaluate_native_render(code: &str, observation: &str) -> String {
 
 #[rstest]
 #[serial_test::serial]
+fn captures_and_filter_survive_when_prepared_base_retargets_then_extends(
+    #[values("test.tsx", "test.ts")] filename: &str,
+    #[values(false, true)] on: bool,
+    #[values(false, true)] single_css: bool,
+) {
+    // Given: conditional captures, prop-reading attrs and an inherited filter.
+    reset_class_map();
+    reset_file_map();
+    let source = format!(
+        "import {{styled}} from '@devup-ui/react';const trace=[];const on={on};const Base=styled.div.attrs(p=>({{'data-tone':p.tone}})).withConfig({{shouldForwardProp:p=>p!=='tone'&&p!=='blocked'}})({{color:'red',...((trace.push('base'),on)?{{color:'blue'}}:{{}})}});const Mid=Base.withComponent('section');const Card=styled(Mid)({{p:1}});"
+    );
+    let output = match crate::extract(
+        filename,
+        &source,
+        crate::ExtractOption {
+            single_css,
+            ..crate::ExtractOption::default()
+        },
+    ) {
+        Ok(output) => output,
+        Err(error) => panic!("prepared filter extraction failed: {error}"),
+    };
+    let color_classes: Vec<_> = output
+        .styles
+        .iter()
+        .filter_map(|style| match style {
+            crate::ExtractStyleValue::Static(value)
+                if value.property() == "color"
+                    && value.value() == if on { "blue" } else { "red" } =>
+            {
+                match style.extract(if single_css { None } else { Some(filename) }) {
+                    Some(crate::extract_style::style_property::StyleProperty::ClassName(name)) => {
+                        Some(name)
+                    }
+                    _ => panic!("selected color must have a class"),
+                }
+            }
+            _ => None,
+        })
+        .collect();
+    assert_ne!(color_classes.len(), 0);
+    let winning = serde_json::to_string(&color_classes)
+        .unwrap_or_else(|error| panic!("class fixture serialization failed: {error}"));
+    // When: the emitted extension renders with distinct input, selected target and forwarded target.
+    let observation = format!(
+        "const __devupJsx0=(type,props)=>({{type,props}});const rendered=Card({{tone:'olive',blocked:9,id:'card',ref:7,children:'child',className:'caller',as:'article',forwardedAs:'nav'}});JSON.stringify([rendered.type,rendered.props.as,rendered.props.id,rendered.props.ref,rendered.props.children,rendered.props.className.includes('caller'),{winning}.some(c=>rendered.props.className.split(' ').includes(c)),rendered.props['data-tone'],'tone' in rendered.props,'blocked' in rendered.props,trace]);"
+    );
+    let result = evaluate_native_render(&output.code, &observation);
+    // Then: captures run once, attrs reads survive, filtered props disappear and identity/ordinary props remain.
+    assert_eq!(
+        result,
+        r#"["article","nav","card",7,"child",true,true,"olive",false,false,["base"]]"#
+    );
+}
+
+#[rstest]
+#[serial_test::serial]
 fn template_key_precedence_when_public_component_renders(
     #[values(false, true)] single_css: bool,
     #[values(false, true)] on: bool,

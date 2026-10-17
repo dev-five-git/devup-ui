@@ -153,9 +153,7 @@ impl<'a> Visit<'a> for Renders {
                 }
             })
             .collect();
-        if !props
-            .iter()
-            .any(|(key, value)| key == "..." && value == "rest")
+        if !props.iter().any(|(key, _)| key == "...")
             || !props.iter().any(|(key, _)| key == "className")
             || !props.iter().any(|(key, _)| key == "style")
         {

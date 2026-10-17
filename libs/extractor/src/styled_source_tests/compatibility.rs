@@ -1,6 +1,19 @@
 use super::*;
 use oxc_codegen::Codegen;
 
+#[test]
+#[serial]
+fn attrs_input_remains_when_filtered_prepared_component_retargets_then_extends() {
+    // Given: inherited captures and attrs needing a prop the render filter withholds.
+    let source = format!(
+        "{IMPORT}const Base=styled.div.attrs(p=>({{'data-tone':p.tone}})).withConfig({{shouldForwardProp:p=>p!=='tone'&&p!=='blocked'}})({{color:'red',...(on?{{color:'blue'}}:{{}})}});const Mid=Base.withComponent('section');const Card=styled(Mid)({{p:1}});const element=<Card tone='olive' blocked='drop' ref={{callerRef}} children='child' as='article' forwardedAs='nav' />;"
+    );
+    // When: JSX extraction filters explicit caller attributes.
+    let output = compile("test.tsx", &source, true);
+    // Then: the attrs input survives while the unread denied prop is removed, with React/target props intact.
+    assert!(output.contains("const element = <Card tone=\"olive\" ref={callerRef} children=\"child\" as=\"article\" forwardedAs=\"nav\" />;"), "{output}");
+}
+
 #[rstest]
 #[case("tsx")]
 #[case("jsx")]
@@ -13,9 +26,9 @@ fn output_is_byte_identical_when_source_accepts_jsx(
     let filename = format!("test.{extension}");
     let source = "import { styled } from '@devup-ui/react';\nexport const Card = styled('article', { p: 2, color: 'olive' });";
     let expected = if single_css {
-        "import \"@devup-ui/react/devup-ui.css\";\nexport const Card = ({ style, className, as: DevupAs = \"article\", forwardedAs, ...rest }) => <DevupAs {...rest} as={forwardedAs} className={[\"a b\", className].filter(Boolean).join(\" \")} style={style} />;\n"
+        "import \"@devup-ui/react/devup-ui.css\";\nexport const Card = ({ style, className, as: DevupAs = \"article\", forwardedAs, ...rest }) => <DevupAs {...(({ \"theme\": __devupOmit0, ...__devupDom }) => __devupDom)(rest)} as={forwardedAs} className={[\"a b\", className].filter(Boolean).join(\" \")} style={style} />;\n"
     } else {
-        "import \"@devup-ui/react/devup-ui-0.css\";\nexport const Card = ({ style, className, as: DevupAs = \"article\", forwardedAs, ...rest }) => <DevupAs {...rest} as={forwardedAs} className={[\"a-a a-b\", className].filter(Boolean).join(\" \")} style={style} />;\n"
+        "import \"@devup-ui/react/devup-ui-0.css\";\nexport const Card = ({ style, className, as: DevupAs = \"article\", forwardedAs, ...rest }) => <DevupAs {...(({ \"theme\": __devupOmit0, ...__devupDom }) => __devupDom)(rest)} as={forwardedAs} className={[\"a-a a-b\", className].filter(Boolean).join(\" \")} style={style} />;\n"
     };
     // When: the real extractor compiles the control.
     let output = compile(&filename, source, single_css);
