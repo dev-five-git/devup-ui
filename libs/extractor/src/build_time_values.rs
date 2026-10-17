@@ -57,14 +57,14 @@ pub(crate) fn has_build_time_values(
     option: &ExtractOption,
     resolver: Option<&ModuleResolver>,
 ) -> bool {
-    let (code, _) = crate::import_alias_visit::transform_import_aliases_with_edits(
+    let aliased = crate::import_alias_visit::transform_import_aliases_with_edits(
         code,
         filename,
         &option.package,
         &option.import_aliases,
     );
     let allocator = Allocator::default();
-    let Some(mut program) = parse(&allocator, filename, &code) else {
+    let Some(mut program) = parse(&allocator, filename, &aliased.code) else {
         return false;
     };
     let inlined = crate::imported_constants::inline_constants(
@@ -73,6 +73,7 @@ pub(crate) fn has_build_time_values(
         filename,
         option,
         resolver,
+        aliased.css_prop,
     );
     let changes = crate::imported_constants::ChangeCheck::new(&program, filename, option, resolver);
     !find(
