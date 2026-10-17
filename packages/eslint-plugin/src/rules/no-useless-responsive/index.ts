@@ -6,7 +6,7 @@ import {
 import type { RuleContext } from '@typescript-eslint/utils/ts-eslint'
 
 import { ImportStorage } from '../../utils/import-storage'
-import { styleValueSite } from '../../utils/style-position'
+import { responsiveValueSite } from '../../utils/responsive-position'
 
 const createRule = ESLintUtils.RuleCreator(
   (name) =>
@@ -32,6 +32,7 @@ function checkUselessResponsive<T extends RuleContext<string, []>>(
       case AST_NODE_TYPES.JSXOpeningElement:
       case AST_NODE_TYPES.CallExpression:
       case AST_NODE_TYPES.ObjectExpression:
+      case AST_NODE_TYPES.ArrayExpression:
       case AST_NODE_TYPES.JSXAttribute:
         break
       default:
@@ -69,7 +70,7 @@ export const noUselessResponsive = createRule({
         importStorage.addImportByDeclaration(node)
       },
       ArrayExpression(node) {
-        const site = styleValueSite(node, importStorage)
+        const site = responsiveValueSite(node, importStorage)
         if (site)
           checkUselessResponsive(
             node,

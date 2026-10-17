@@ -18,7 +18,9 @@ import {
   type ImportAliases,
   loadDevupConfig,
   mergeImportAliases,
+  normalizeShorthands,
   planAtomHoist,
+  readJsxImportSource,
   seedFileNumbers,
   tailwindCssFiles,
   withTailwindCss,
@@ -307,14 +309,18 @@ export function DevupUI({
   atomHoist,
   importAliases: userImportAliases,
 }: Partial<DevupUIPluginOptions> = {}): PluginOption {
+  const normalizedShorthands = normalizeShorthands(shorthands ?? {})
   // A build starts from its own options: whatever an earlier build in this
   // process left in the engine (prefix, hoisting, routes, buckets, numbers,
   // styles) is gone unless another build is still running.
   const endBuild = beginBuild({ resetBuildState })
-  registerShorthands(shorthands ?? {})
+  registerShorthands(normalizedShorthands)
   setDebug(debug)
   setPrefix(prefix ?? null)
-  const importAliases = mergeImportAliases(userImportAliases)
+  const importAliases = mergeImportAliases(
+    userImportAliases,
+    readJsxImportSource(),
+  )
   const cssMap = new Map()
   let resolvedConfig: ResolvedConfig | undefined
   // Set by the client `generateBundle`, run by the late hook of the sibling

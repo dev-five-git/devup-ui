@@ -215,17 +215,7 @@ pub(super) fn jsx_expression_to_style_order<'a>(
     expr: &JSXAttributeValue<'a>,
     allocator: &'a Allocator,
 ) -> ParsedStyleOrder<'a> {
-    match expr {
-        JSXAttributeValue::ExpressionContainer(ec) => ec
-            .expression
-            .as_expression()
-            .map_or(ParsedStyleOrder::None, |e| {
-                expression_to_style_order(e, allocator)
-            }),
-        _ => jsx_expression_to_number(expr).map_or(ParsedStyleOrder::None, |n| {
-            ParsedStyleOrder::Static(n as u8)
-        }),
-    }
+    crate::style_order::attribute_order(expr, allocator)
 }
 
 /// Parse styleOrder from an Expression (for call expression / object path), supporting conditionals
@@ -233,46 +223,7 @@ pub(super) fn expression_to_style_order<'a>(
     expr: &Expression<'a>,
     allocator: &'a Allocator,
 ) -> ParsedStyleOrder<'a> {
-    // Inspect `expr` ONCE. A numeric-literal probe (`get_number_by_literal_expression`)
-    // never matches a conditional/logical node, so folding it into the default arm is
-    // behavior-identical to the former "static probe first, then re-match" flow while
-    // avoiding the redundant second inspection of `expr`.
-    match expr {
-        // Conditional: `cond ? a : b` → Conditional with both branches probed.
-        Expression::ConditionalExpression(cond) => {
-            let consequent = get_number_by_literal_expression(&cond.consequent).map(|n| n as u8);
-            let alternate = get_number_by_literal_expression(&cond.alternate).map(|n| n as u8);
-            ParsedStyleOrder::Conditional {
-                condition: cond.test.clone_in(allocator),
-                consequent,
-                alternate,
-            }
-        }
-        // Logical &&: `a === 1 && 5` → truthy → right side (number), falsy → None.
-        Expression::LogicalExpression(logical) if logical.operator == LogicalOperator::And => {
-            let consequent = get_number_by_literal_expression(&logical.right).map(|n| n as u8);
-            ParsedStyleOrder::Conditional {
-                condition: logical.left.clone_in(allocator),
-                consequent,
-                alternate: None,
-            }
-        }
-        // Otherwise fall back to static numeric-literal resolution.
-        _ => get_number_by_literal_expression(expr).map_or(ParsedStyleOrder::None, |n| {
-            ParsedStyleOrder::Static(n as u8)
-        }),
-    }
-}
-
-pub(super) fn jsx_expression_to_number(expr: &JSXAttributeValue) -> Option<f64> {
-    match expr {
-        JSXAttributeValue::StringLiteral(sl) => sl.value.parse::<f64>().ok(),
-        JSXAttributeValue::ExpressionContainer(ec) => ec
-            .expression
-            .as_expression()
-            .and_then(get_number_by_literal_expression),
-        _ => None,
-    }
+    crate::style_order::expression_order(expr, allocator)
 }
 
 pub(super) fn get_number_by_literal_expression(expr: &Expression) -> Option<f64> {
@@ -974,6 +925,33 @@ pub(super) const CSS_TEXT: &str = "a selector takes styles, an object such as `{
 
 pub(super) fn element_error(component: &str, code: &str, requirement: &str) -> String {
     format!("`<{component}>` cannot use `{code}` at build time: {requirement}")
+}
+
+/// The `css` prop of `element` holds `code`, which the build cannot compile
+pub(super) fn css_prop_error(element: &str, code: &str, requirement: &str) -> String {
+    format!("`css` on `<{element}>` cannot use `{code}` at build time: {requirement}")
+}
+
+pub(super) const CSS_PROP_VALUE: &str = "it must be a style object, CSS text, a class `css()` gives, or a function of the theme giving one, or an array or condition of them";
+
+pub(super) const LOCAL_STYLES: &str = "a style object it composes must be written in it, or declared with `const` at the top level of the module, where the build reads it";
+
+pub(super) const CLASS_NAMES_CHILD: &str =
+    "it takes only a child function of `{ css, cx, theme }` giving what it renders at once";
+
+pub(super) const CLASS_NAMES_CALL: &str = "the `css` and `cx` its child function takes can only be called, as the build compiles each call";
+
+pub(super) const CLASS_NAMES_PART: &str = "`css` and `cx` compose only style objects, CSS text, classes, calls of them, or arrays or conditions of these";
+
+pub(super) const CLASS_NAMES_CLASS_MAP: &str =
+    "an object `cx` takes must give each class a condition, as `{ name: condition }`";
+
+/// The `css` prop of the styled component `element` sets what its own styles
+/// set, which the build cannot order there
+pub(super) fn css_prop_override_error(element: &str) -> String {
+    format!(
+        "`css` on `<{element}>` overrides styles `{element}` sets, which the build orders only for a styled component rendering a tag with no attrs or props read, given no spread, `as` or `forwardedAs`: move these styles into `styled({element})(...)`"
+    )
 }
 
 pub(super) fn spread_error(api: &str, spread: &oxc_ast::ast::SpreadElement<'_>) -> (u32, String) {
@@ -1692,7 +1670,7 @@ mod tests {
         let allocator = Allocator::default();
         let builder = oxc_ast::builder::AstBuilder::new(&allocator);
         assert_eq!(
-            jsx_expression_to_number(
+            jsx_expression_to_style_order(
                 JSXAttribute::new(
                     SPAN,
                     JSXAttributeName::new_identifier(SPAN, "styleOrder", &builder),
@@ -1703,13 +1681,16 @@ mod tests {
                 )
                 .value
                 .as_ref()
-                .unwrap()
-            ),
+                .unwrap(),
+                &allocator,
+            )
+            .as_static()
+            .map(f64::from),
             Some(1.0)
         );
 
         assert_eq!(
-            jsx_expression_to_number(
+            jsx_expression_to_style_order(
                 JSXAttribute::new(
                     SPAN,
                     JSXAttributeName::new_identifier(SPAN, "styleOrder", &builder),
@@ -1738,18 +1719,26 @@ mod tests {
                 )
                 .value
                 .as_ref()
-                .unwrap()
-            ),
+                .unwrap(),
+                &allocator,
+            )
+            .as_static()
+            .map(f64::from),
             None
         );
 
         assert_eq!(
-            jsx_expression_to_number(&JSXAttributeValue::new_expression_container(
-                SPAN,
-                Expression::new_numeric_literal(SPAN, 2.0, None, NumberBase::Decimal, &builder)
-                    .into(),
-                &builder,
-            )),
+            jsx_expression_to_style_order(
+                &JSXAttributeValue::new_expression_container(
+                    SPAN,
+                    Expression::new_numeric_literal(SPAN, 2.0, None, NumberBase::Decimal, &builder)
+                        .into(),
+                    &builder,
+                ),
+                &allocator,
+            )
+            .as_static()
+            .map(f64::from),
             Some(2.0)
         );
     }

@@ -10,8 +10,7 @@ use crate::{
         ExtractResult, extract_style_from_member_expression::extract_style_from_member_expression,
     },
     utils::{
-        CSS_TEXT, RESPONSIVE_ARRAY, SELECTOR_NAME, expression_to_code,
-        get_number_by_literal_expression, get_str_by_property_key,
+        CSS_TEXT, RESPONSIVE_ARRAY, SELECTOR_NAME, expression_to_code, get_str_by_property_key,
         get_string_by_literal_expression, get_string_by_property_key, is_same_expression,
         readable_code, unwrap_syntax_only, unwrap_syntax_only_mut,
     },
@@ -279,8 +278,7 @@ pub fn extract_style_from_expression<'a>(
                                 for disassembled in disassemble_property(&name) {
                                     let disassembled: &str = &disassembled;
                                     if name == "styleOrder" {
-                                        style_order = get_number_by_literal_expression(&prop.value)
-                                            .map(|v| v as u8);
+                                        style_order = crate::style_order::static_order(&prop.value);
                                     } else if name == "styleVars" {
                                         style_vars =
                                             Some(prop.value.clone_in(ast_builder.allocator()));
@@ -1341,9 +1339,10 @@ fn nest_underscore_name(parent: Option<&StyleSelector>, name: &str) -> Nested {
 }
 
 /// Emotion/styled-components style object keys that are nested selectors
-/// (`'&:hover'`, `':hover'`, `'.parent &'`) rather than CSS properties.
+/// (`'&:hover'`, `':hover'`, `'.parent &'`, `'.child'`, `'> li'`) rather
+/// than CSS properties.
 fn is_nested_selector_key(key: &str) -> bool {
-    key.starts_with(':') || key.contains('&')
+    key.starts_with([':', '.', '#', '[', '*', '>', '+', '~']) || key.contains('&')
 }
 
 /// A key without `&` is relative to the element: a pseudo-class, a

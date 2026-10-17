@@ -168,13 +168,16 @@ fn escaped_string_css_dead_names_fail_before_emission(
 #[test]
 #[serial]
 fn configured_shorthand_names_keep_their_valid_targets() -> Result<(), String> {
-    css::set_custom_shorthands(BTreeMap::from([(
-        "boxAlign".to_string(),
-        vec!["align-items".to_string()],
-    )]));
+    assert_eq!(
+        css::set_custom_shorthands(BTreeMap::from([(
+            "boxAlign".to_string(),
+            vec!["align-items".to_string()],
+        )])),
+        Ok(())
+    );
     let source = "import { Box } from '@devup-ui/react';\nconst e = <Box boxAlign='center' />;";
     let output = compile(source);
-    css::set_custom_shorthands(BTreeMap::new());
+    assert_eq!(css::set_custom_shorthands(BTreeMap::new()), Ok(()));
     let css = output?.css().ok_or("expected emitted CSS")?;
     assert!(css.contains("{align-items:center}"), "{css}");
     assert!(!css.contains("{box-align:"), "{css}");

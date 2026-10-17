@@ -19,7 +19,9 @@ import {
   type ImportAliases,
   loadDevupConfig,
   mergeImportAliases,
+  normalizeShorthands,
   planAtomHoist,
+  readJsxImportSource,
   seedFileNumbers,
   tailwindCssFiles,
   withTailwindCss,
@@ -140,8 +142,11 @@ export const DevupUI = ({
   atomHoist,
   importAliases: userImportAliases,
 }: Partial<DevupUIRsbuildPluginOptions> = {}): RsbuildPlugin => {
-  registerShorthands(shorthands ?? {})
-  const importAliases = mergeImportAliases(userImportAliases)
+  registerShorthands(normalizeShorthands(shorthands ?? {}))
+  const importAliases = mergeImportAliases(
+    userImportAliases,
+    readJsxImportSource(),
+  )
   const stateWriter = createStateWriter((path, content, encoding) =>
     encoding ? writeFile(path, content, encoding) : writeFile(path, content),
   )

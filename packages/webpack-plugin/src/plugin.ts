@@ -19,7 +19,9 @@ import {
   type ImportAliases,
   loadDevupConfigSync,
   mergeImportAliases,
+  normalizeShorthands,
   planAtomHoist,
+  readJsxImportSource,
   seedFileNumbers,
   tailwindCssFiles,
   type WasmImportAliases,
@@ -105,8 +107,11 @@ export class DevupUIWebpackPlugin {
     atomHoist,
     importAliases: userImportAliases,
   }: Partial<DevupUIWebpackPluginOptions> = {}) {
-    registerShorthands(shorthands ?? {})
-    this.importAliases = mergeImportAliases(userImportAliases)
+    registerShorthands(normalizeShorthands(shorthands ?? {}))
+    this.importAliases = mergeImportAliases(
+      userImportAliases,
+      readJsxImportSource(),
+    )
 
     this.options = {
       package: libPackage,

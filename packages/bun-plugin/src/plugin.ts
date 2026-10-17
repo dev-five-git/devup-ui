@@ -11,6 +11,8 @@ import {
   type CustomShorthands,
   loadDevupConfig,
   mergeImportAliases,
+  normalizeShorthands,
+  readJsxImportSource,
   seedFileNumbers,
   tailwindCssFiles,
   withTailwindCss,
@@ -37,7 +39,7 @@ const devupFile = 'devup.json'
 const distDir = 'df'
 const cssDir = resolve(distDir, cssDirName)
 const singleCss = true
-const importAliases = mergeImportAliases()
+const importAliases = mergeImportAliases(undefined, readJsxImportSource())
 // The packages whose imports the extractor compiles: Devup UI, the packages it
 // takes the place of, and StyleX
 const compiledPackages = [
@@ -85,8 +87,8 @@ async function writeDataFiles(): Promise<string[]> {
 
 const watchTailwindCss = createTailwindWatcher(writeDataFiles)
 
-async function initialize({ shorthands }: DevupUIBunPluginOptions = {}) {
-  registerShorthands(shorthands ?? {})
+async function initialize(shorthands: Record<string, readonly string[]>) {
+  registerShorthands(shorthands)
   setPrefix(null)
   setModuleResolver(createModuleResolver())
   // Number every source file in path order, so class prefixes do not depend
@@ -172,6 +174,7 @@ async function loadSourceFile(filePath: string, bundling: boolean) {
  * Bun runtime ({@link register}).
  */
 function DevupUI(options: DevupUIBunPluginOptions = {}) {
+  const shorthands = normalizeShorthands(options.shorthands ?? {})
   return {
     name: 'devup-ui',
 
@@ -182,7 +185,7 @@ function DevupUI(options: DevupUIBunPluginOptions = {}) {
       // this process left in the engine
       const endBuild = beginBuild({ resetBuildState })
       build.onEnd?.(endBuild)
-      await initialize(options)
+      await initialize(shorthands)
       setDebug(options.debug ?? !bundling)
 
       // Resolve devup-ui CSS files onto a path-free virtual id, so nothing

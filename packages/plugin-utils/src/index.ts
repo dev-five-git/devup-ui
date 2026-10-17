@@ -19,6 +19,7 @@ export {
   type ResolvedModule,
   type StaticImportGraph,
 } from './import-graph'
+export { readJsxImportSource } from './jsx-import-source'
 export { deepMerge, loadDevupConfig, loadDevupConfigSync } from './load-config'
 export {
   collectNumberedFiles,
@@ -35,6 +36,13 @@ export {
   type DevupUIBasePluginOptions,
   getFileNumByFilename,
 } from './shared'
+export {
+  type CustomShorthandTarget,
+  isCustomShorthandTarget,
+  normalizeShorthands,
+  ShorthandConfigError,
+  type ShorthandErrorLocation,
+} from './shorthands'
 export {
   createStateWriter,
   type StateWriter,

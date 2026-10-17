@@ -1,3 +1,4 @@
+use super::styled_css_slot::{StyledContext, StyledCssSlot};
 use super::styled_jsx::StyledJsx;
 use rustc_hash::FxHashMap;
 
@@ -66,7 +67,30 @@ pub struct StyledDefinition<'a> {
     reads: Reads,
     /// Its `shouldForwardProp`, as the build evaluates it
     forward: Option<Forward>,
+    /// The class other styles select it by, which a component extending it
+    /// gives too, as it renders this one
+    marker: Option<String>,
+    inherited_markers: Vec<String>,
     bindings: Vec<(String, Expression<'a>)>,
+    css_slot: Option<StyledCssSlot>,
+}
+
+/// `marker` as a class among those a component gives
+fn marker_class<'a>(ast_builder: &AstBuilder<'a>, marker: &str) -> Expression<'a> {
+    Expression::new_string_literal(
+        SPAN,
+        Str::from_in(marker, ast_builder.allocator()),
+        None,
+        ast_builder,
+    )
+}
+
+/// How the classes of a styled component are named: the file its atoms are
+/// split into, and the class other styles select it by
+#[derive(Clone, Copy, Default)]
+pub struct Naming<'s> {
+    pub split_filename: Option<&'s str>,
+    pub marker: Option<&'s str>,
 }
 
 /// Whether a styled component renders a tag, which takes only valid
@@ -144,6 +168,9 @@ impl<'a> StyledDefinition<'a> {
             attrs: clone_all(builder, &self.attrs).collect(),
             reads: self.reads.clone(),
             forward: self.forward.clone(),
+            marker: self.marker.clone(),
+            inherited_markers: self.inherited_markers.clone(),
+            css_slot: self.css_slot.clone(),
             bindings: self
                 .bindings
                 .iter()
@@ -226,6 +253,82 @@ impl StyledDefinition<'_> {
     }
 }
 
+impl<'a> StyledDefinition<'a> {
+    /// The tag an element using this component can render in its place, with
+    /// the styles the component gives it: a tag, with no attrs, no props read
+    /// and no value only the runtime gives
+    #[must_use]
+    pub fn inline(&self) -> Option<(&str, &[ExtractStyleProp<'a>])> {
+        (self.fixed_native() && self.bindings.is_empty())
+            .then_some((self.name.as_str(), self.styles.as_slice()))
+    }
+
+    fn fixed_native(&self) -> bool {
+        renders_tag(&self.name, self.bound.as_ref())
+            && self.attrs.is_empty()
+            && self.reads == Reads::default()
+            && self.classes.is_empty()
+            && self.styles.iter().all(fixed)
+    }
+
+    fn with_css_slot(mut self, slot: Option<&StyledCssSlot>) -> Self {
+        self.css_slot = slot
+            .filter(|_| self.fixed_native() && !self.bindings.is_empty())
+            .cloned();
+        self
+    }
+
+    pub(crate) const fn css_slot(&self) -> Option<&StyledCssSlot> {
+        self.css_slot.as_ref()
+    }
+
+    /// The class other styles select the component by
+    #[must_use]
+    pub fn marker(&self) -> Option<&str> {
+        self.marker.as_deref()
+    }
+
+    fn with_markers(mut self, marker: Option<&str>, inherited: Option<&Self>) -> Self {
+        self.marker = marker.map(str::to_string);
+        self.inherited_markers = inherited
+            .into_iter()
+            .flat_map(|definition| {
+                definition
+                    .marker()
+                    .into_iter()
+                    .chain(definition.inherited_markers.iter().map(String::as_str))
+            })
+            .map(str::to_string)
+            .collect();
+        self
+    }
+
+    pub(crate) fn marker_classes(&self, ast: &AstBuilder<'a>) -> Option<Expression<'a>> {
+        merge_expression_for_class_name(
+            ast,
+            self.marker()
+                .into_iter()
+                .chain(self.inherited_markers.iter().map(String::as_str))
+                .map(|marker| marker_class(ast, marker)),
+        )
+    }
+
+    /// The styles the component gives what it renders
+    #[must_use]
+    pub fn styles(&self) -> &[ExtractStyleProp<'a>] {
+        &self.styles
+    }
+}
+
+/// Whether `prop` holds only values the build knows
+fn fixed(prop: &ExtractStyleProp<'_>) -> bool {
+    match prop {
+        ExtractStyleProp::Static(value) => !matches!(value, ExtractStyleValue::Dynamic(_)),
+        ExtractStyleProp::StaticArray(props) => props.iter().all(fixed),
+        _ => false,
+    }
+}
+
 /// `Component.withComponent(target)`: the styles and attrs of `definition`
 /// rendering `target`, a tag name or a component JSX can name; `None` for any
 /// other target
@@ -233,8 +336,8 @@ pub fn with_component<'a>(
     ast_builder: &AstBuilder<'a>,
     definition: &StyledDefinition<'a>,
     target: &Expression<'a>,
-    split_filename: Option<&str>,
-    helper: &mut Option<StyledJsx>,
+    naming: Naming<'_>,
+    context: StyledContext<'_>,
 ) -> Option<(Expression<'a>, StyledDefinition<'a>)> {
     let name = match unwrap_syntax_only(target) {
         Expression::StringLiteral(literal) => literal.value.to_string(),
@@ -262,7 +365,7 @@ pub fn with_component<'a>(
             ast_builder,
             &mut styles,
             None,
-            split_filename,
+            naming.split_filename,
         )),
     );
     let withheld = withheld(
@@ -270,6 +373,17 @@ pub fn with_component<'a>(
         renders_tag(&base.name, None),
         definition.forward.as_ref(),
     );
+    let new_definition = base
+        .definition(
+            ast_builder,
+            classes,
+            &styles,
+            &definition.attrs,
+            (definition.reads.clone(), definition.forward.clone()),
+            &definition.bindings,
+        )
+        .with_css_slot(context.css_slot)
+        .with_markers(naming.marker, Some(&definition));
     let component = create_styled_component(
         ast_builder,
         &base,
@@ -282,16 +396,10 @@ pub fn with_component<'a>(
                 .map(|(name, value)| (name.clone(), value.clone_in(allocator)))
                 .collect(),
             withheld: &withheld,
+            css_slot: new_definition.css_slot(),
+            markers: new_definition.marker_classes(ast_builder),
         },
-        helper,
-    );
-    let new_definition = base.definition(
-        ast_builder,
-        classes,
-        &styles,
-        &definition.attrs,
-        (definition.reads.clone(), definition.forward.clone()),
-        &definition.bindings,
+        context.jsx,
     );
     Some((
         base.render(
@@ -346,11 +454,7 @@ fn inherited_parts<'a>(
         || (Vec::new(), Vec::new()),
         |inherited| {
             (
-                inherited
-                    .classes
-                    .iter()
-                    .map(|c| c.clone_in(allocator))
-                    .collect(),
+                clone_all(ast_builder, &inherited.classes).collect(),
                 inherited
                     .attrs
                     .iter()
@@ -414,6 +518,9 @@ impl<'a> Base<'a> {
             attrs: attrs.iter().map(|attr| attr.clone_in(allocator)).collect(),
             reads,
             forward,
+            marker: None,
+            inherited_markers: Vec::new(),
+            css_slot: None,
             bindings: bindings
                 .iter()
                 .map(|(name, value)| (name.clone(), value.clone_in(allocator)))
@@ -588,12 +695,16 @@ fn resolve_styled_call_target<'a>(
 pub fn extract_style_from_styled<'a>(
     ast_builder: &AstBuilder<'a>,
     expression: &mut Expression<'a>,
-    split_filename: Option<&str>,
+    naming: Naming<'_>,
     imports: &FxHashMap<String, ExportVariableKind>,
     modifiers: (&[Expression<'a>], Option<Forward>),
     inherited: Option<&StyledDefinition<'a>>,
-    helper: &mut Option<StyledJsx>,
+    context: StyledContext<'_>,
 ) -> StyledExtraction<'a> {
+    let Naming {
+        split_filename,
+        marker,
+    } = naming;
     let (attrs, forward) = modifiers;
     let mut original_scope = expression.clone_in(ast_builder.allocator());
     let inherited = inherited.map(|definition| definition.rebind(ast_builder, &mut original_scope));
@@ -730,14 +841,17 @@ pub fn extract_style_from_styled<'a>(
                 .collect()
         });
         let withheld = base.withheld(&reads, forward.as_ref());
-        let definition = base.definition(
-            ast_builder,
-            classes,
-            &props_styles,
-            &attrs,
-            (reads, forward),
-            &bindings,
-        );
+        let definition = base
+            .definition(
+                ast_builder,
+                classes,
+                &props_styles,
+                &attrs,
+                (reads, forward),
+                &bindings,
+            )
+            .with_css_slot(context.css_slot)
+            .with_markers(marker, inherited);
         let component = create_styled_component(
             ast_builder,
             &base,
@@ -746,8 +860,10 @@ pub fn extract_style_from_styled<'a>(
                 style_vars: &gen_styles(ast_builder, &props_styles, None),
                 bindings,
                 withheld: &withheld,
+                css_slot: definition.css_slot(),
+                markers: definition.marker_classes(ast_builder),
             },
-            helper,
+            context.jsx,
         );
         let styled_component =
             base.render(ast_builder, apply_attrs(ast_builder, component, &attrs));
@@ -840,14 +956,17 @@ pub fn extract_style_from_styled<'a>(
             )),
         );
         let withheld = base.withheld(&reads, forward.as_ref());
-        let definition = base.definition(
-            ast_builder,
-            classes,
-            &styles,
-            &attrs,
-            (reads, forward),
-            &bindings,
-        );
+        let definition = base
+            .definition(
+                ast_builder,
+                classes,
+                &styles,
+                &attrs,
+                (reads, forward),
+                &bindings,
+            )
+            .with_css_slot(context.css_slot)
+            .with_markers(marker, inherited);
         let component = create_styled_component(
             ast_builder,
             &base,
@@ -856,8 +975,10 @@ pub fn extract_style_from_styled<'a>(
                 style_vars: &gen_styles(ast_builder, &styles, None),
                 bindings,
                 withheld: &withheld,
+                css_slot: definition.css_slot(),
+                markers: definition.marker_classes(ast_builder),
             },
-            helper,
+            context.jsx,
         );
         let styled_component =
             base.render(ast_builder, apply_attrs(ast_builder, component, &attrs));
@@ -1430,6 +1551,8 @@ struct StyledRender<'b, 'a> {
     style_vars: &'b Option<Expression<'a>>,
     bindings: Vec<(String, Expression<'a>)>,
     withheld: &'b [String],
+    css_slot: Option<&'b StyledCssSlot>,
+    markers: Option<Expression<'a>>,
 }
 
 fn create_styled_component<'a>(
@@ -1443,6 +1566,8 @@ fn create_styled_component<'a>(
         style_vars,
         bindings,
         withheld,
+        css_slot,
+        markers,
     } = render;
     let params = FormalParameters::boxed(
         SPAN,
@@ -1541,7 +1666,17 @@ fn create_styled_component<'a>(
         None::<oxc_allocator::Box<oxc_ast::ast::FormalParameterRest<'a>>>,
         ast_builder,
     );
-    let class_name = class_name.as_ref().map_or_else(
+    let replacement = css_slot.map(|slot| slot.classes(ast_builder, class_name.as_ref()));
+    let own_classes = merge_expression_for_class_name(
+        ast_builder,
+        markers.into_iter().chain(
+            replacement
+                .as_ref()
+                .or(class_name.as_ref())
+                .map(|classes| classes.clone_in(ast_builder.allocator())),
+        ),
+    );
+    let class_name = own_classes.as_ref().map_or_else(
         || Expression::new_identifier(SPAN, "className", ast_builder),
         |name| {
             wrap_array_filter(
@@ -1567,6 +1702,12 @@ fn create_styled_component<'a>(
             .unwrap_or_else(|| style_vars.clone_in(ast_builder.allocator()))
         },
     );
+    let omissions = css_slot.map(|slot| {
+        let mut omissions = withheld.to_vec();
+        omissions.push(slot.name().to_string());
+        omissions
+    });
+    let withheld = omissions.as_deref().unwrap_or(withheld);
     let body = if let Some(helper) = helper {
         helper.render(
             ast_builder,
