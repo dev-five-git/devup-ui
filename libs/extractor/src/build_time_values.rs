@@ -22,7 +22,10 @@ use oxc_syntax::symbol::SymbolId;
 use rustc_hash::{FxHashMap, FxHashSet};
 
 use crate::stylex::StylexFunction;
-use crate::utils::{binding_root, get_string_by_literal_expression, unwrap_syntax_only};
+use crate::utils::{
+    binding_root, get_key_by_literal_expression, get_string_by_literal_expression,
+    unwrap_syntax_only,
+};
 use crate::{ExtractOption, ModuleResolver};
 
 /// What code reads outside itself
@@ -765,7 +768,7 @@ impl<'a> Visit<'a> for Reads<'_> {
         &mut self,
         member: &oxc_ast::ast::ComputedMemberExpression<'a>,
     ) {
-        if let Some(key) = get_string_by_literal_expression(&member.expression) {
+        if let Some(key) = get_key_by_literal_expression(&member.expression) {
             self.member(&member.object, &key);
             if self.is_global(&member.object, "Math") {
                 return;
@@ -778,7 +781,7 @@ impl<'a> Visit<'a> for Reads<'_> {
         match unwrap_syntax_only(&call.callee) {
             // A method chosen at runtime may be any
             Expression::ComputedMemberExpression(member) => {
-                self.impure |= get_string_by_literal_expression(&member.expression).is_none();
+                self.impure |= get_key_by_literal_expression(&member.expression).is_none();
             }
             // Exact only without a radix
             Expression::StaticMemberExpression(member) if member.property.name == "toString" => {

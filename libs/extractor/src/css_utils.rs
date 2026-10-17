@@ -3,8 +3,8 @@ use std::collections::BTreeMap;
 use std::fmt::Write as _;
 
 use crate::utils::{
-    get_str_by_property_key, get_string_by_literal_expression, readable_code, runtime_value_error,
-    wrap_direct_call,
+    get_key_by_literal_expression, get_str_by_property_key, get_string_by_literal_expression,
+    readable_code, runtime_value_error, wrap_direct_call,
 };
 use css::{
     at_rule::split_at_rule_key,
@@ -79,7 +79,7 @@ pub(crate) fn theme_var_reference(expr: &Expression<'_>) -> Option<String> {
             }
             // `theme.space[2]` and `theme.colors['brand']` read a key the build knows
             Expression::ComputedMemberExpression(member) => {
-                path.push(get_string_by_literal_expression(&member.expression)?);
+                path.push(get_key_by_literal_expression(&member.expression)?);
                 cursor = &member.object;
             }
             Expression::Identifier(ident) => {
