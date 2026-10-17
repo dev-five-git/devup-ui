@@ -1,0 +1,8 @@
+[test]
+root = "packages"
+preload = ["./bun.preload.ts", "./bun.setup.ts", "bun-test-env-dom"]
+coverage = true
+coverageReporter = ["lcov"]
+coverageThreshold = 0.0
+coverageSkipTestFiles = true
+coveragePathIgnorePatterns = ["**/pkg/**", "**/dist/**"]

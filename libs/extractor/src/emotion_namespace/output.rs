@@ -9,6 +9,7 @@ use std::path::PathBuf;
 /// back to `source`.
 pub(crate) struct Rewritten<'a> {
     pub filename: &'a str,
+    pub source_type: SourceType,
     pub code: &'a str,
     pub source: &'a str,
     pub edits: &'a [&'a [Edit]],
@@ -18,13 +19,9 @@ impl Rewritten<'_> {
     /// Generated from the rewritten module, so the map points at `source`.
     pub(crate) fn output(&self) -> ExtractOutput {
         let allocator = Allocator::default();
-        let program = Parser::new(
-            &allocator,
-            self.code,
-            SourceType::from_path(self.filename).unwrap_or_default(),
-        )
-        .parse()
-        .program;
+        let program = Parser::new(&allocator, self.code, self.source_type)
+            .parse()
+            .program;
         let result = Codegen::new()
             .with_options(CodegenOptions {
                 source_map_path: Some(PathBuf::from(self.filename)),

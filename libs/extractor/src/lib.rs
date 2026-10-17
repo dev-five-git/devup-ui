@@ -10,6 +10,8 @@ mod gen_class_name;
 mod gen_style;
 mod import_alias_visit;
 mod imported_constants;
+#[cfg(test)]
+mod jsx_dev_tests;
 mod module_loader;
 mod mutations;
 mod prop_modify_utils;
@@ -258,11 +260,27 @@ pub struct ExtractOutput {
 pub struct ResolvedModule {
     pub path: String,
     pub code: String,
+    pub source_type: Option<ExtractSourceType>,
 }
+
+/// A native file resolution or a successful alias ignore without source.
+pub enum ModuleResolution {
+    Resolved(ResolvedModule),
+    Ignored,
+}
+
+mod source_type;
+pub use source_type::{ExtractSourceType, parse_source_type};
+#[cfg(test)]
+mod ignored_module_tests;
+#[cfg(test)]
+mod source_type_dead_properties_tests;
+#[cfg(test)]
+mod source_type_tests;
 
 /// Resolves `(specifier, importer)` the way the bundler does; `None` when it
 /// cannot
-pub type ModuleResolver = dyn Fn(&str, &str) -> Option<ResolvedModule>;
+pub type ModuleResolver<'a> = dyn Fn(&str, &str) -> Option<ModuleResolution> + 'a;
 
 #[derive(Clone)]
 pub struct ExtractOption {
@@ -313,6 +331,26 @@ pub fn extract_with_modules(
     extract_with_source_map(filename, code, option, source_map, Some(resolver))
 }
 
+/// Compiled Markdown is JavaScript with optional JSX, never TypeScript.
+fn parser_source_type(filename: &str) -> Result<SourceType, String> {
+    if is_compiled_mdx(filename) {
+        return Ok(SourceType::jsx());
+    }
+    SourceType::from_path(filename).map_err(|error| {
+        format!("{filename}:1:1: source parser cannot use `{filename}` at build time: {error}")
+    })
+}
+
+/// Whether a compiler supplied JavaScript for a Markdown source filename.
+fn is_compiled_mdx(filename: &str) -> bool {
+    std::path::Path::new(filename)
+        .extension()
+        .and_then(|extension| extension.to_str())
+        .is_some_and(|extension| {
+            extension.eq_ignore_ascii_case("mdx") || extension.eq_ignore_ascii_case("md")
+        })
+}
+
 fn extract_with_source_map(
     filename: &str,
     code: &str,
@@ -320,7 +358,47 @@ fn extract_with_source_map(
     source_map: bool,
     resolver: Option<&ModuleResolver>,
 ) -> Result<ExtractOutput, Box<dyn Error>> {
-    extract_source(filename, code, None, option, source_map, resolver)
+    extract_with_source_type(filename, code, option, source_map, resolver, None)
+}
+
+/// Extract compiler output under its real filename with an explicit language.
+pub fn extract_with_source_type(
+    filename: &str,
+    code: &str,
+    option: ExtractOption,
+    source_map: bool,
+    resolver: Option<&ModuleResolver>,
+    source_type: Option<ExtractSourceType>,
+) -> Result<ExtractOutput, Box<dyn Error>> {
+    let fault = std::cell::RefCell::new(None);
+    let validated = |specifier: &str, importer: &str| {
+        if fault.borrow().is_some() {
+            return None;
+        }
+        let module = resolver?(specifier, importer)?;
+        let validation = match &module {
+            ModuleResolution::Resolved(module) => source_type::validate_module(module),
+            ModuleResolution::Ignored => Ok(()),
+        };
+        if let Err(error) = validation {
+            *fault.borrow_mut() = Some(error);
+            return None;
+        }
+        Some(module)
+    };
+    let output = extract_source(
+        filename,
+        code,
+        None,
+        option,
+        source_map,
+        resolver.map(|_| &validated as &ModuleResolver),
+        source_type,
+    );
+    match fault.into_inner() {
+        Some(error) => Err(error.into()),
+        None => output,
+    }
 }
 
 /// `evaluated` is the source `code` was computed from, with the layers of
@@ -332,18 +410,22 @@ fn extract_source(
     option: ExtractOption,
     source_map: bool,
     resolver: Option<&ModuleResolver>,
+    source_mode: Option<ExtractSourceType>,
 ) -> Result<ExtractOutput, Box<dyn Error>> {
+    let source_type = source_type::parser_type(filename, source_mode)?;
     if evaluated.is_none() && option.import_aliases.contains_key("@vanilla-extract/css") {
         let errors = import_alias_visit::companion_errors(code, filename);
         if !errors.is_empty() {
-            return Err(located_errors(filename, code, &[], errors).into());
+            return Err(located_errors(filename, code, &[], errors, source_type).into());
         }
     }
     let (namespace_code, namespace_edits) =
-        emotion_namespace::normalize(code, filename, &option.import_aliases).map_err(|errors| {
-            let (source, edits) = evaluated.unwrap_or((code, &[]));
-            located_errors(filename, source, edits, errors)
-        })?;
+        emotion_namespace::normalize(code, source_type, &option.import_aliases).map_err(
+            |errors| {
+                let (source, edits) = evaluated.unwrap_or((code, &[]));
+                located_errors(filename, source, edits, errors, source_type)
+            },
+        )?;
     // Step 1: Transform import aliases
     // e.g., `import styled from '@emotion/styled'` → `import { styled } from '@devup-ui/react'`
     // e.g., `import { style } from '@vanilla-extract/css'` → `import { style } from '@devup-ui/react'`
@@ -352,13 +434,39 @@ fn extract_source(
         filename,
         &option.package,
         &option.import_aliases,
+        source_type,
     );
 
     // Step 2: Check if code contains the target package (after transformation)
     let has_relevant_import = transformed_code.contains(option.package.as_str())
         || transformed_code.contains(STYLEX_PACKAGE);
+    let compiled_mdx = source_mode.is_some() || is_compiled_mdx(filename);
 
     if !has_relevant_import {
+        // Raw Markdown must not pass through merely because it has no styling import.
+        if compiled_mdx {
+            let allocator = Allocator::default();
+            let parsed = Parser::new(&allocator, code, source_type).parse();
+            if let Some(error) = parsed.diagnostics.errors().next() {
+                let offset = error
+                    .labels
+                    .first()
+                    .map_or(0, oxc_span::LabeledSpan::offset);
+                return Err(located_errors(
+                    filename,
+                    code,
+                    &[],
+                    vec![(
+                        offset,
+                        format!(
+                            "source parser cannot use raw or invalid MDX at build time: {error}"
+                        ),
+                    )],
+                    source_type,
+                )
+                .into());
+            }
+        }
         // skip if not using package
         if namespace_edits.is_empty() {
             return Ok(ExtractOutput {
@@ -375,6 +483,7 @@ fn extract_source(
             .collect();
         let mut output = emotion_namespace::Rewritten {
             filename,
+            source_type,
             code: &namespace_code,
             source,
             edits: &edits,
@@ -390,8 +499,14 @@ fn extract_source(
     // `processed_code` is Some only when vanilla-extract generation succeeded;
     // otherwise the untouched `transformed_code` is parsed directly (no copy).
     let processed_code: Option<String> = if utils::is_vanilla_extract_file(filename) {
-        // Use transformed code (with imports already pointing to @devup-ui/react)
-        match vanilla_extract::execute_stylesheet(code, filename, &option, resolver) {
+        // Instrument authored calls before aliases change their source locations.
+        match vanilla_extract::execute_stylesheet_with_type(
+            code,
+            filename,
+            &option,
+            resolver,
+            source_mode,
+        ) {
             Ok((collected, imports)) => {
                 dependencies = imports.dependencies;
                 // Keyframes names are generated, so extract the referenced ones
@@ -409,6 +524,7 @@ fn extract_source(
                         ),
                         &option,
                         &referenced,
+                        source_mode,
                     )?
                 };
                 let code = vanilla_extract::collected_styles_to_code_with_keyframes(
@@ -466,7 +582,6 @@ fn extract_source(
 
     let code_to_parse = processed_code.as_deref().unwrap_or(&transformed_code);
 
-    let source_type = SourceType::from_path(filename)?;
     let (bucket, global, css_file) = resolve_css_target(filename, &option);
     let import_main = option.import_main_css && !global;
     // Presize to the exact final length (1 target + optional main-css entry) and
@@ -482,8 +597,26 @@ fn extract_source(
     let ParserReturn {
         mut program, // AST
         fatal_error, // Parser encountered an error it couldn't recover from
+        diagnostics,
         ..
     } = Parser::new(&allocator, code_to_parse, source_type).parse();
+    if compiled_mdx && let Some(error) = diagnostics.errors().next() {
+        let offset = error
+            .labels
+            .first()
+            .map_or(0, oxc_span::LabeledSpan::offset);
+        return Err(located_errors(
+            filename,
+            code,
+            &[alias_edits.as_slice()],
+            vec![(
+                offset,
+                format!("source parser cannot use raw or invalid MDX at build time: {error}"),
+            )],
+            source_type,
+        )
+        .into());
+    }
     if fatal_error {
         return Err("Parser panicked".into());
     }
@@ -533,12 +666,13 @@ fn extract_source(
             &option,
             resolver,
             &inlined.unknown,
+            source_mode,
         )
     {
         let (computed, number_edits) = if namespace_edits.is_empty() {
             (std::borrow::Cow::Borrowed(computed.as_str()), Vec::new())
         } else {
-            import_alias_visit::pixelify_emotion_values(&computed, filename, &namespace_code)
+            import_alias_visit::pixelify_emotion_values(&computed, source_type, &namespace_code)
         };
         let mut output = extract_source(
             filename,
@@ -555,6 +689,7 @@ fn extract_source(
             option,
             source_map,
             resolver,
+            source_mode,
         )?;
         let mut files: std::collections::BTreeSet<String> =
             output.dependencies.into_iter().collect();
@@ -572,13 +707,13 @@ fn extract_source(
     if !visitor.errors.is_empty() {
         let mut errors = visitor.errors;
         let error_edits = if evaluated.is_some() {
-            let calls = dead_properties::evaluated_calls(source, filename, &option);
+            let calls = dead_properties::evaluated_calls(source, filename, &option, source_type);
             dead_properties::map_evaluated(&mut errors, &edits, &calls)?;
             &[][..]
         } else {
             edits.as_slice()
         };
-        let mut message = located_errors(filename, source, error_edits, errors);
+        let mut message = located_errors(filename, source, error_edits, errors, source_type);
         message += &changed_notes(&message, filename, source, &edits, &inlined.changed);
         return Err(message.into());
     }
@@ -651,6 +786,7 @@ fn located_errors(
     source: &str,
     edits: &[&[import_alias_visit::Edit]],
     mut errors: Vec<(u32, String)>,
+    source_type: SourceType,
 ) -> String {
     errors.sort_unstable();
     errors.dedup();
@@ -660,12 +796,8 @@ fn located_errors(
             let offset = edits.iter().fold(offset as usize, |offset, edits| {
                 import_alias_visit::source_offset(edits, offset)
             });
-            let message = emotion_namespace::original_error_code(
-                source,
-                offset,
-                message,
-                SourceType::from_path(filename).unwrap_or_default(),
-            );
+            let message =
+                emotion_namespace::original_error_code(source, offset, message, source_type);
             format!("{}: {message}", locate(filename, source, offset))
         })
         .collect::<Vec<_>>()
@@ -746,8 +878,9 @@ fn extract_class_map_from_code(
     partial_code: &str,
     option: &ExtractOption,
     style_names: &FxHashSet<String>,
+    source_mode: Option<ExtractSourceType>,
 ) -> Result<FxHashMap<String, String>, Box<dyn Error>> {
-    let source_type = SourceType::from_path(filename)?;
+    let source_type = source_type::parser_type(filename, source_mode)?;
     let (bucket, global, css_file) = resolve_css_target(filename, option);
     let css_files = vec![css_file];
     let allocator = Allocator::default();
@@ -813,7 +946,7 @@ pub fn has_devup_ui(filename: &str, code: &str, package: &str) -> bool {
         return false;
     }
 
-    let source_type = match SourceType::from_path(filename) {
+    let source_type = match parser_source_type(filename) {
         Ok(st) => st,
         Err(_) => return false,
     };
@@ -822,10 +955,11 @@ pub fn has_devup_ui(filename: &str, code: &str, package: &str) -> bool {
     let ParserReturn {
         program,
         fatal_error,
+        diagnostics,
         ..
     } = Parser::new(&allocator, code, source_type).parse();
 
-    if fatal_error {
+    if fatal_error || (is_compiled_mdx(filename) && diagnostics.has_errors()) {
         return false;
     }
 
@@ -857,6 +991,153 @@ mod tests {
     use oxc_span::SPAN;
     use rstest::rstest;
     use serial_test::serial;
+
+    #[rstest]
+    #[case("page.js")]
+    #[case("page.jsx")]
+    #[case("page.mjs")]
+    #[case("page.cjs")]
+    #[case("page.ts")]
+    #[case("page.tsx")]
+    #[case("page.mts")]
+    #[case("page.cts")]
+    fn mdx_source_type_keeps_other_extensions(#[case] filename: &str) {
+        assert_eq!(
+            parser_source_type(filename),
+            SourceType::from_path(filename).map_err(|error| error.to_string())
+        );
+    }
+
+    #[rstest]
+    #[case("page.mdx")]
+    #[case("page.md")]
+    #[serial]
+    fn mdx_compiler_jsx_calls_extract_with_real_filename(#[case] filename: &str) {
+        reset_class_map();
+        reset_file_map();
+        let source = "import {jsx as _jsx} from 'react/jsx-runtime';\nimport {Box} from '@devup-ui/react';\nfunction _createMdxContent(props) { return _jsx(Box, {bg: 'tomato', children: 'hello'}); }\nexport default function MDXContent(props = {}) { return _createMdxContent(props); }";
+        let output = extract(filename, source, ExtractOption::default()).unwrap();
+        assert_ne!(output.styles.len(), 0);
+        assert!(output.code.contains("className"));
+        assert!(!output.code.contains("_jsx(Box"));
+        let map: serde_json::Value = serde_json::from_str(&output.map.unwrap()).unwrap();
+        assert_eq!(map["sources"], serde_json::json!([filename]));
+    }
+
+    #[rstest]
+    #[case("page.mdx")]
+    #[case("page.md")]
+    #[serial]
+    fn mdx_compiler_preserved_jsx_extracts(#[case] filename: &str) {
+        reset_class_map();
+        reset_file_map();
+        let source = "/*@jsxRuntime automatic*/\n/*@jsxImportSource react*/\nimport {Box} from '@devup-ui/react';\nfunction _createMdxContent(props) { return <Box bg='tomato'>hello</Box>; }\nexport default function MDXContent(props = {}) { return _createMdxContent(props); }";
+        let output =
+            extract_without_source_map(filename, source, ExtractOption::default()).unwrap();
+        assert_ne!(output.styles.len(), 0);
+        assert!(output.code.contains("className"));
+        assert!(!output.code.contains("<Box"));
+        assert_eq!(output.map, None);
+    }
+
+    #[rstest]
+    #[case("page.mdx")]
+    #[case("page.md")]
+    #[serial]
+    fn mdx_aliases_compile_with_preserved_jsx(#[case] filename: &str) {
+        reset_class_map();
+        reset_file_map();
+        let source = "import {css} from '@emotion/react'; export const cls = css({color: 'red'}); export default () => <div className={cls} />;";
+        let mut option = ExtractOption::default();
+        option
+            .import_aliases
+            .insert("@emotion/react".to_string(), ImportAlias::NamedToNamed);
+        let output = extract(filename, source, option).unwrap();
+        assert_ne!(output.styles.len(), 0);
+        assert!(!output.code.contains("@emotion/react"));
+        assert!(!output.code.contains("css({"));
+    }
+
+    #[rstest]
+    #[case("page.mdx")]
+    #[case("page.md")]
+    #[serial]
+    fn mdx_static_calls_compile_from_constants(#[case] filename: &str) {
+        reset_class_map();
+        reset_file_map();
+        let source = "import {css} from '@devup-ui/react'; function double(value) { return value * 2; } export const cls = css({width: double(4)}); export default () => <div className={cls} />;";
+        let output = extract(filename, source, ExtractOption::default()).unwrap();
+        assert_ne!(output.styles.len(), 0);
+        assert!(!output.code.contains("css({"));
+    }
+
+    #[rstest]
+    #[case("page.mdx", "# Heading\n<Box bg='red' />")]
+    #[case("page.md", "import {Box} from '@devup-ui/react';\n# Heading")]
+    #[case(
+        "page.mdx",
+        "import {Box} from '@devup-ui/react';\nconst color: string = 'red';\nconst view = <Box bg={color} />;"
+    )]
+    #[serial]
+    fn mdx_raw_or_typescript_input_fails_with_location(
+        #[case] filename: &str,
+        #[case] source: &str,
+    ) {
+        reset_class_map();
+        reset_file_map();
+        let error = extract(filename, source, ExtractOption::default())
+            .err()
+            .unwrap()
+            .to_string();
+        assert!(error.starts_with(&format!("{filename}:")), "{error}");
+        assert!(error.contains("at build time"), "{error}");
+        assert!(!has_devup_ui(filename, source, "@devup-ui/react"));
+    }
+
+    #[test]
+    #[serial]
+    fn mdx_compiled_without_devup_keeps_source() {
+        let source = "export default function MDXContent() { return <h1>Hello</h1>; }";
+        let output = extract("page.mdx", source, ExtractOption::default()).unwrap();
+        assert_eq!(output.code, source);
+        assert_eq!(output.styles.len(), 0);
+        assert_eq!(output.css_file, None);
+    }
+
+    #[test]
+    #[serial]
+    fn mdx_relevant_import_gate_accepts_compiled_jsx() {
+        let source = "import {Box} from '@devup-ui/react'; export default () => <Box bg='red' />;";
+        assert!(has_devup_ui("page.mdx", source, "@devup-ui/react"));
+    }
+
+    #[test]
+    #[serial]
+    fn mdx_generated_class_map_uses_jsx_source_type() {
+        reset_class_map();
+        reset_file_map();
+        let names = FxHashSet::from_iter(["card".to_string()]);
+        let map = extract_class_map_from_code(
+            "page.mdx",
+            "import {css} from '@devup-ui/react'; export const card = css({bg: 'red'});",
+            &ExtractOption::default(),
+            &names,
+            None,
+        )
+        .unwrap();
+        assert!(map.contains_key("card"));
+    }
+
+    #[test]
+    #[serial]
+    fn mdx_unknown_extension_error_is_located() {
+        let source = "import {Box} from '@devup-ui/react'; const view = <Box bg='red' />;";
+        let error = extract("page.unknown", source, ExtractOption::default())
+            .err()
+            .unwrap()
+            .to_string();
+        assert!(error.starts_with("page.unknown:1:1:"), "{error}");
+    }
 
     #[derive(Debug)]
     #[allow(dead_code)]
@@ -4888,7 +5169,7 @@ import clsx from 'clsx'
             )
             .unwrap_err()
             .to_string()
-            .starts_with("Unknown file extension")
+            .starts_with("test.wrong:1:1: source parser cannot use `test.wrong` at build time: Unknown file extension")
         );
 
         reset_class_map();
@@ -14553,6 +14834,7 @@ export const card = style({
                 import_aliases: HashMap::new(),
             },
             &style_names,
+            None,
         )
         .unwrap();
 
@@ -18532,7 +18814,7 @@ export const d = style([cond && base]);",
 
     fn memory_resolver(
         files: &'static [(&'static str, &'static str)],
-    ) -> impl Fn(&str, &str) -> Option<ResolvedModule> {
+    ) -> impl Fn(&str, &str) -> Option<ModuleResolution> {
         move |specifier, importer| {
             let directory = importer
                 .rsplit_once('/')
@@ -18545,9 +18827,12 @@ export const d = style([cond && base]);",
                         .iter()
                         .any(|extension| format!("{path}{extension}") == *file)
                 })
-                .map(|(file, code)| ResolvedModule {
-                    path: (*file).to_string(),
-                    code: (*code).to_string(),
+                .map(|(file, code)| {
+                    ModuleResolution::Resolved(ResolvedModule {
+                        source_type: None,
+                        path: (*file).to_string(),
+                        code: (*code).to_string(),
+                    })
                 })
         }
     }

@@ -1,25 +1,92 @@
-import { existsSync, readFileSync, unlinkSync } from 'node:fs'
-import { join } from 'node:path'
+import { randomUUID } from 'node:crypto'
+import {
+  existsSync,
+  readFileSync,
+  renameSync,
+  unlinkSync,
+  writeFileSync,
+} from 'node:fs'
+import { isAbsolute, join, resolve } from 'node:path'
 
-/**
- * What a coordinator writes to its port file: the port on the first line (all
- * an older reader looks at, via `parseInt`) and the owning pid on the second.
- */
-export interface CoordinatorPortInfo {
-  port: number
-  /** Process that owns the coordinator, when the file says. */
-  pid?: number
+/** Logical build identity, shared by endpoint publication and HTTP requests. */
+export interface CoordinatorIdentity {
+  readonly project: string
+  readonly token: string
 }
 
-export function formatPortFile(port: number, pid = process.pid): string {
-  return `${port}\n${pid}`
+export interface CoordinatorPortInfo extends CoordinatorIdentity {
+  readonly version: 1
+  readonly port: number
+  readonly pid: number
+}
+
+export class InvalidCoordinatorPortError extends Error {
+  constructor() {
+    super(
+      'Invalid coordinator descriptor: needs version 1, a valid port/pid, canonical project and UUID token (at most 4096 bytes)',
+    )
+  }
+}
+
+export function formatPortFile(
+  port: number,
+  pid = process.pid,
+  identity: CoordinatorIdentity = {
+    project: resolve(process.cwd()),
+    token: randomUUID(),
+  },
+): string {
+  const text = JSON.stringify({ version: 1, port, pid, ...identity })
+  parsePortFile(text)
+  return text
 }
 
 export function parsePortFile(text: string): CoordinatorPortInfo {
-  const [portLine = '', pidLine = ''] = text.trim().split(/\r?\n/)
-  const port = Number.parseInt(portLine.trim(), 10)
-  const pid = Number.parseInt(pidLine.trim(), 10)
-  return { port, pid: Number.isInteger(pid) && pid > 0 ? pid : undefined }
+  if (Buffer.byteLength(text) > 4096) throw new InvalidCoordinatorPortError()
+  const data: unknown = JSON.parse(text)
+  if (
+    typeof data !== 'object' ||
+    data === null ||
+    !('version' in data) ||
+    data.version !== 1 ||
+    !('port' in data) ||
+    typeof data.port !== 'number' ||
+    !Number.isInteger(data.port) ||
+    data.port < 1 ||
+    data.port > 65535 ||
+    !('pid' in data) ||
+    typeof data.pid !== 'number' ||
+    !Number.isSafeInteger(data.pid) ||
+    data.pid <= 0 ||
+    !('project' in data) ||
+    typeof data.project !== 'string' ||
+    !isAbsolute(data.project) ||
+    resolve(data.project) !== data.project ||
+    !('token' in data) ||
+    typeof data.token !== 'string' ||
+    !/^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(
+      data.token,
+    )
+  )
+    throw new InvalidCoordinatorPortError()
+  return {
+    version: 1,
+    port: data.port,
+    pid: data.pid,
+    project: data.project,
+    token: data.token,
+  }
+}
+
+export function publishPortFile(path: string, info: CoordinatorPortInfo): void {
+  const text = formatPortFile(info.port, info.pid, info)
+  const temporary = `${path}.${randomUUID()}.tmp`
+  try {
+    writeFileSync(temporary, text, { encoding: 'utf-8', flag: 'wx' })
+    renameSync(temporary, path)
+  } finally {
+    if (existsSync(temporary)) unlinkSync(temporary)
+  }
 }
 
 /** Whether a process exists. EPERM means it exists but is not ours. */
@@ -28,11 +95,16 @@ export function isProcessAlive(pid: number): boolean {
     process.kill(pid, 0)
     return true
   } catch (error) {
-    return (error as NodeJS.ErrnoException).code === 'EPERM'
+    return (
+      typeof error === 'object' &&
+      error !== null &&
+      'code' in error &&
+      error.code === 'EPERM'
+    )
   }
 }
 
-function readOwner(portFile: string): CoordinatorPortInfo | undefined {
+export function readOwner(portFile: string): CoordinatorPortInfo | undefined {
   try {
     return parsePortFile(readFileSync(portFile, 'utf-8'))
   } catch {
@@ -76,9 +148,17 @@ export function removeStalePortFile(portFile: string): void {
 }
 
 /** Remove the file only if this process wrote it. */
-export function removeOwnPortFile(portFile: string): void {
+export function removeOwnPortFile(
+  portFile: string,
+  identity?: CoordinatorIdentity,
+): void {
   const owner = readOwner(portFile)
-  if (owner?.pid !== undefined && owner.pid !== process.pid) return
+  if (
+    owner?.pid !== process.pid ||
+    (identity &&
+      (owner.project !== identity.project || owner.token !== identity.token))
+  )
+    return
   try {
     unlinkSync(portFile)
   } catch {
@@ -95,10 +175,15 @@ const CONNECTION_CODES = new Set([
 ])
 
 export function isConnectionError(error: unknown): boolean {
-  const code = (error as NodeJS.ErrnoException | undefined)?.code
-  if (code !== undefined && CONNECTION_CODES.has(code)) return true
+  if (typeof error !== 'object' || error === null) return false
+  if (
+    'code' in error &&
+    typeof error.code === 'string' &&
+    CONNECTION_CODES.has(error.code)
+  )
+    return true
   // An AggregateError from `localhost` resolution carries its codes inside.
-  const inner = (error as { errors?: unknown[] } | undefined)?.errors
+  const inner = 'errors' in error ? error.errors : undefined
   return Array.isArray(inner) && inner.some(isConnectionError)
 }
 

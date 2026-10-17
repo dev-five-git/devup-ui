@@ -1,0 +1,13 @@
+{
+  "changes": {
+    "bindings/devup-ui-wasm/package.json": "Patch",
+    "packages/plugin-utils/package.json": "Patch",
+    "packages/vite-plugin/package.json": "Patch",
+    "packages/webpack-plugin/package.json": "Patch",
+    "packages/rsbuild-plugin/package.json": "Patch",
+    "packages/bun-plugin/package.json": "Patch",
+    "packages/next-plugin/package.json": "Patch"
+  },
+  "note": "Use bundler project roots and active export conditions for build-time module resolution, resolve inherited tsconfig paths and dotted module specifiers, transform modern modules and compiled MDX, match included packages literally, and refresh empty theme declarations. Skip unrequested source maps, surface resolver faults before stylesheet mutation, and report WASM panic locations. Malformed or cyclic configuration, resolver failures, requested graph/prewarm failures and disabled Rsbuild shared splitting now stop builds with context; optional numbering fallback warns about its deterministic impact. Bun defaults to compact names and retains imported build-time dependency watch edges.",
+  "date": "2026-10-01T00:00:00.000Z"
+}

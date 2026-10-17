@@ -22,7 +22,7 @@
   "version": "1.0.90",
   "scripts": {
     "lint": "eslint",
-    "build": "bun ../../node_modules/@typescript/native/bin/tsc && bun build --target node src/index.ts --production --env=disable --outfile dist/index.cjs --format cjs --packages external && bun build --target node src/index.ts --production --env=disable --outfile dist/index.mjs --format esm --packages external && bun build --target node src/loader.ts --production --env=disable --outfile dist/loader.cjs --format cjs --packages external && bun build --target node src/loader.ts --production --env=disable --outfile dist/loader.mjs --format esm --packages external && bun build --target node src/css-loader.ts --production --env=disable --outfile dist/css-loader.cjs --format cjs --packages external && bun build --target node src/css-loader.ts --production --env=disable --outfile dist/css-loader.mjs --format esm --packages external"
+    "build": "bun ../../node_modules/@typescript/native/bin/tsc && bun build --target node src/index.ts --production --env=disable --outfile dist/index.cjs --format cjs --packages external && bun build --target node src/index.ts --production --env=disable --outfile dist/index.mjs --format esm --packages external && bun build --target node src/loader.ts --production --env=disable --outfile dist/loader.cjs --format cjs --packages external && bun build --target node src/loader.ts --production --env=disable --outfile dist/loader.mjs --format esm --packages external && bun build --target node src/css-loader.ts --production --env=disable --outfile dist/css-loader.cjs --format cjs --packages external && bun build --target node src/css-loader.ts --production --env=disable --outfile dist/css-loader.mjs --format esm --packages external && bun build --target node src/final-config-adapter-entry.ts --production --env=disable --outfile dist/final-config-adapter-entry.cjs --format cjs --packages external && bun build --target node src/final-config-adapter-entry.ts --production --env=disable --outfile dist/final-config-adapter-entry.mjs --format esm --packages external && bun build --target node src/mdx-prewarm-loader.ts --production --env=disable --outfile dist/mdx-prewarm-loader.js --format esm --packages external"
   },
   "publishConfig": {
     "access": "public"
@@ -44,6 +44,15 @@
       "types": "./dist/loader.d.ts",
       "import": "./dist/loader.mjs",
       "require": "./dist/loader.cjs"
+    },
+    "./final-config-adapter-entry": {
+      "types": "./dist/final-config-adapter-entry.d.ts",
+      "import": "./dist/final-config-adapter-entry.mjs",
+      "require": "./dist/final-config-adapter-entry.cjs"
+    },
+    "./mdx-prewarm-loader": {
+      "types": "./dist/mdx-prewarm-loader.d.ts",
+      "import": "./dist/mdx-prewarm-loader.js"
     }
   },
   "files": [

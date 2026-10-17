@@ -38,7 +38,7 @@ test.describe('Landing Page - Zero Runtime Validation', () => {
 
   test('no runtime CSS-in-JS globals are present', async ({ page }) => {
     const runtimeGlobals = await page.evaluate(() => {
-      const win = window as Record<string, unknown>
+      const win = window
       return {
         // Common CSS-in-JS runtime indicators
         __devup__: '__devup__' in win,

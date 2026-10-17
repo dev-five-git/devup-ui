@@ -205,6 +205,55 @@ custom `distDir`) to `include`.
 <Box insetX={[0, null, 'auto']} _hover={{ insetX: 4 }} />
 ```
 
+## Turbopack: deterministic names and isolated sessions
+
+Before Turbopack can request a stylesheet, the plugin extracts the files the
+app's routes compile, in path order, in development and in production. Class
+names and file numbers therefore follow the paths, not the order Turbopack
+schedules its loaders in. In development, files that appear later are numbered
+after the existing ones, and the names of the last session are kept across
+restarts.
+
+### MDX Plugin Determinism
+
+MDX preparation executes the project's configured compiler chain one additional
+time per file before native compilation. Remark, rehype, and recma plugins must
+produce output from that file's input and options, not from invocation counts or
+other mutable state shared between files. Next.js also runs the chain for
+different compiler layers and development rebuilds, so those stateful plugins
+are not deterministic per file even without Devup UI.
+
+For example, this plugin changes its output each time it runs:
+
+```js
+let calls = 0
+
+function countSensitivePlugin() {
+  return (tree) => {
+    calls += 1
+    tree.children.push({
+      type: 'paragraph',
+      children: [{ type: 'text', value: `transform-${calls}` }],
+    })
+  }
+}
+```
+
+A cold native compilation emits `transform-1`, while native compilation after
+preparation emits `transform-2`. Native byte equivalence applies to pure plugins,
+not this pattern. Devup UI does not clone, reset, or serialize plugin state.
+
+Files nothing compiles are not extracted (they add no CSS and cannot fail the
+build). Set `prewarmAll: true` to extract the whole source tree instead, for
+sources the import graph cannot connect.
+
+Every `DevupUI()` call captures the project root and applies every option
+explicitly, so two apps in one process (or two concurrent `next dev` /
+`next build` runs) never share an engine, theme, endpoint or state. Each
+process owns `<distDir>/.devup/<app key>/sessions/<pid>-<token>/`; the
+development checkpoint `<distDir>/.devup/<app key>/snapshot.json` is replaced
+atomically.
+
 ## Turbopack build profiling
 
 Set `DEVUP_UI_PROFILE=1` for an opt-in, structured timing log during a

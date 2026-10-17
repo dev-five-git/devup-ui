@@ -32,8 +32,13 @@ fn ordinary_import_calls_keep_their_behavior_when_not_styling_apis(
     let source = format!("{import}\n{call};");
 
     // When: instrument actual parsed source, then execute its call with ordinary functions.
-    let instrumented = dead_properties::instrument(&source, "ordinary.ts", "@devup-ui/react")
-        .map_err(io::Error::other)?;
+    let instrumented = dead_properties::instrument(
+        &source,
+        "ordinary.ts",
+        "@devup-ui/react",
+        oxc_span::SourceType::ts(),
+    )
+    .map_err(io::Error::other)?;
     let (_, body) = instrumented
         .code
         .split_once('\n')
@@ -55,8 +60,13 @@ fn direct_eval_keeps_lexical_scope_when_nested_calls_are_instrumented() -> Resul
     let source = "function inspect() { eval(String('var local = 42')); return local; } inspect();";
 
     // When: execute the real instrumented program, including the nested String call.
-    let instrumented = dead_properties::instrument(source, "eval.ts", "@devup-ui/react")
-        .map_err(io::Error::other)?;
+    let instrumented = dead_properties::instrument(
+        source,
+        "eval.ts",
+        "@devup-ui/react",
+        oxc_span::SourceType::ts(),
+    )
+    .map_err(io::Error::other)?;
     let result = evaluate_instrumented(&instrumented.code)?;
 
     // Then: the declaration belongs to inspect, not an instrumentation thunk.
@@ -70,8 +80,13 @@ fn suspending_call_keeps_generator_resume_value() -> Result<(), Box<dyn Error>> 
     let source = "const echo = value => value; function* values() { return echo(yield echo(7)); } const iter = values(); iter.next(); iter.next(13).value;";
 
     // When: instrument and execute valid generator source.
-    let instrumented = dead_properties::instrument(source, "yield.ts", "@devup-ui/react")
-        .map_err(io::Error::other)?;
+    let instrumented = dead_properties::instrument(
+        source,
+        "yield.ts",
+        "@devup-ui/react",
+        oxc_span::SourceType::ts(),
+    )
+    .map_err(io::Error::other)?;
     let result = evaluate_instrumented(&instrumented.code)?;
 
     // Then: yield remains in the generator body and the resumed argument reaches echo.
@@ -95,7 +110,12 @@ fn evaluated_call_mapping_has_no_ranges_when_authored_declarations_are_rejected(
     };
 
     // When: request evaluated origins for a source that cannot be evaluated.
-    let calls = dead_properties::evaluated_calls(source, "rejected.tsx", &option);
+    let calls = dead_properties::evaluated_calls(
+        source,
+        "rejected.tsx",
+        &option,
+        oxc_span::SourceType::tsx(),
+    );
 
     // Then: there are no partial ranges to misattribute the authored diagnostic.
     assert_eq!(calls, vec![]);
