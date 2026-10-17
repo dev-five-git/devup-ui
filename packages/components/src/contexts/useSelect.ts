@@ -1,5 +1,5 @@
 'use client'
-import { createContext, use } from 'react'
+import { createContext, useContext } from 'react'
 
 type SelectType = 'default' | 'radio' | 'checkbox'
 type SelectValue<T extends SelectType> = T extends 'radio' ? string : string[]
@@ -14,7 +14,7 @@ export const SelectContext = createContext<{
 } | null>(null)
 
 export const useSelect = () => {
-  const context = use(SelectContext)
+  const context = useContext(SelectContext)
   if (!context) {
     throw new Error('useSelect must be used within a Select')
   }

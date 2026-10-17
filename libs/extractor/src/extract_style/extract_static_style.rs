@@ -41,6 +41,8 @@ pub struct ExtractStaticStyle {
     pub layer: Option<String>,
     /// How theme tokens should be resolved when converting to CSS.
     pub theme_token_resolution: ThemeTokenResolution,
+    /// Where a global declaration is written in its file; `0` for the others
+    pub order: u32,
 }
 
 impl Debug for ExtractStaticStyle {
@@ -106,6 +108,7 @@ impl ExtractStaticStyle {
             style_order: None,
             layer: None,
             theme_token_resolution: ThemeTokenResolution::CssVariable,
+            order: 0,
         }
     }
 
@@ -138,6 +141,7 @@ impl ExtractStaticStyle {
             style_order: Some(0),
             layer: None,
             theme_token_resolution: ThemeTokenResolution::CssVariable,
+            order: 0,
         }
     }
 
@@ -183,6 +187,11 @@ impl ExtractStaticStyle {
     #[must_use]
     pub const fn style_order(&self) -> Option<u8> {
         self.style_order
+    }
+
+    #[must_use]
+    pub const fn order(&self) -> u32 {
+        self.order
     }
 
     #[must_use]

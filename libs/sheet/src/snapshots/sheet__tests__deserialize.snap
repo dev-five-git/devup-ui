@@ -16,6 +16,7 @@ StyleSheet {
                         layer: None,
                         typography: false,
                         hoisted: false,
+                        order: 0,
                     },
                 },
             },
@@ -26,6 +27,7 @@ StyleSheet {
     global_css_files: {},
     imports: {},
     font_faces: {},
+    layer_orders: {},
     theme: Theme {
         colors: {},
         color_scheme: {},
