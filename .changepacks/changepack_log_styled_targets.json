@@ -1,0 +1,7 @@
+{
+  "changes": {
+    "bindings/devup-ui-wasm/package.json": "Patch"
+  },
+  "note": "Styled components render what their `as` prop names, defaulting to the tag or component they were defined with, and pass `forwardedAs` on as `as`, as styled-components and Emotion do; `as` used to reach the rendered tag as an attribute. `Component.withComponent(target)` on a styled component the file binds to a const builds a component rendering the same styles and attrs as `target` (a tag name or a component JSX can name), where it used to call a method the generated function does not have and throw",
+  "date": "2026-10-01T00:00:00.000Z"
+}
