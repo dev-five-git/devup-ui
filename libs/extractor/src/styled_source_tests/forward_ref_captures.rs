@@ -3,6 +3,86 @@ use boa_engine::{Context, Source};
 use oxc_codegen::Codegen;
 
 #[rstest]
+#[case::single(false, false)]
+#[case::inherited_selected(true, true)]
+#[case::inherited_unselected(true, false)]
+#[serial]
+fn ordered_reads_when_guarded_captures_have_distinct_keys(
+    #[case] inherited: bool,
+    #[case] base_enabled: bool,
+    #[values(false, true)] own_enabled: bool,
+) {
+    // Given: guarded properties without defaults or duplicate keys to trigger preparation.
+    let base = if inherited {
+        "const Base=styled.div({...((trace.push('base guard'),baseEnabled)?{borderColor:(trace.push('base value'),baseColor)}:{})});"
+    } else {
+        ""
+    };
+    let target = if inherited {
+        "styled(Base)"
+    } else {
+        "styled.div"
+    };
+    let source = format!(
+        "{IMPORT}const trace=[];const baseEnabled={base_enabled},ownEnabled={own_enabled};let baseColor='teal',ownColor='gold';const __devupRecord0='authored';{base}const Card={target}({{...((trace.push('own guard'),ownEnabled)?{{backgroundColor:(trace.push('own value'),ownColor)}}:{{}})}});"
+    );
+    let output = compile("captures.ts", &source, true);
+    let arena = Allocator::default();
+    let mut program = parse(&arena, "captures.ts", &output);
+    let calls = renders(&program);
+    assert_eq!(calls.len(), if inherited { 2 } else { 1 });
+    let helper = &calls[0].helper;
+    program
+        .body
+        .retain(|statement| !matches!(statement, Statement::ImportDeclaration(_)));
+    let code = Codegen::new().build(&program).code;
+
+    // When: the actual emitted callback renders twice after its source values change.
+    let script = format!(
+        "const __devupForwardRef=render=>({{render}});const {helper}=(target,props)=>({{target,props}});{code}\nconst before=trace.slice();const first=Card.render({{}},null);baseColor='navy';ownColor='pink';const second=Card.render({{}},null);JSON.stringify([before,Object.values(first.props.style||{{}}).filter(value=>value!=null).sort(),Object.values(second.props.style||{{}}).filter(value=>value!=null).sort(),trace,__devupRecord0]);"
+    );
+    let mut context = Context::default();
+    let result = context
+        .eval(Source::from_bytes(&script))
+        .unwrap_or_else(|error| panic!("distinct-key capture execution failed: {error}"));
+    let result = result
+        .as_string()
+        .unwrap_or_else(|| panic!("distinct-key capture observation must be JSON"))
+        .to_std_string_escaped();
+
+    // Then: only selected values are read, once each, with inherited reads before own reads.
+    let mut trace = Vec::new();
+    for _ in 0..2 {
+        if inherited {
+            trace.push("base guard");
+            if base_enabled {
+                trace.push("base value");
+            }
+        }
+        trace.push("own guard");
+        if own_enabled {
+            trace.push("own value");
+        }
+    }
+    let mut first = Vec::new();
+    let mut second = Vec::new();
+    if inherited && base_enabled {
+        first.push("teal");
+        second.push("navy");
+    }
+    if own_enabled {
+        first.push("gold");
+        second.push("pink");
+    }
+    first.sort_unstable();
+    second.sort_unstable();
+    assert_eq!(
+        result,
+        serde_json::json!([[], first, second, trace, "authored"]).to_string()
+    );
+}
+
+#[rstest]
 #[case("test.ts")]
 #[case("test.cts")]
 #[serial]
