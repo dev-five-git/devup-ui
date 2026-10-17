@@ -7,6 +7,10 @@ use super::{StyleCollector, StyleEntry, array_items, js_str};
 mod serialization;
 use serialization::Values;
 
+#[cfg(test)]
+#[path = "vanilla_extract_css_key_slots_tests.rs"]
+mod key_slots_tests;
+
 fn unsupported() -> boa_engine::JsError {
     JsNativeError::typ()
         .with_message("css() needs static plain rules, CSS text or registered classes")
@@ -32,6 +36,7 @@ pub(super) fn call(
         names: &names,
         collector,
         active: FxHashSet::default(),
+        key_slots: FxHashMap::default(),
         plan: crate::own_css_plan::Plan {
             origin: collector.borrow().origin.clone(),
             ..crate::own_css_plan::Plan::default()

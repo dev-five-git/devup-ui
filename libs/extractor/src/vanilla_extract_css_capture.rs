@@ -32,8 +32,15 @@ impl Values<'_> {
                         PropertyKey::Index(index) => index.get().to_string(),
                         PropertyKey::Symbol(_) => return Err(unsupported()),
                     };
-                    let slot = self.plan.slots.len();
-                    self.plan.slots.push(string_code(&name, self.names));
+                    let code = string_code(&name, self.names);
+                    let slot = if let Some(&slot) = self.key_slots.get(&code) {
+                        slot
+                    } else {
+                        let slot = self.plan.slots.len();
+                        self.plan.slots.push(code.clone());
+                        self.key_slots.insert(code, slot);
+                        slot
+                    };
                     let value = self.plan.nodes.len();
                     self.plan.nodes.push(Node::Array(Vec::new()));
                     let arrays = if data_slot(&name) {

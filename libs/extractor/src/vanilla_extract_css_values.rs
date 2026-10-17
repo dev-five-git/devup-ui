@@ -10,6 +10,7 @@ pub(super) struct Values<'a> {
     pub names: &'a FxHashMap<String, String>,
     pub collector: &'a StyleCollector,
     pub active: FxHashSet<JsObject>,
+    pub key_slots: FxHashMap<String, usize>,
     pub plan: Plan,
 }
 
