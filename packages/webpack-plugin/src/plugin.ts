@@ -20,6 +20,7 @@ import {
   loadDevupConfigSync,
   mergeImportAliases,
   planAtomHoist,
+  readJsxImportSource,
   seedFileNumbers,
   tailwindCssFiles,
   type WasmImportAliases,
@@ -106,7 +107,10 @@ export class DevupUIWebpackPlugin {
     importAliases: userImportAliases,
   }: Partial<DevupUIWebpackPluginOptions> = {}) {
     registerShorthands(shorthands ?? {})
-    this.importAliases = mergeImportAliases(userImportAliases)
+    this.importAliases = mergeImportAliases(
+      userImportAliases,
+      readJsxImportSource(),
+    )
 
     this.options = {
       package: libPackage,
