@@ -24,7 +24,7 @@ use crate::extractor::{
     extract_style_from_jsx::extract_style_from_jsx,
     extract_style_from_styled::{
         StyledDefinition, StyledExtraction, extended, extract_style_from_styled,
-        take_styled_modifiers,
+        take_styled_modifiers, with_component,
     },
     styled_jsx::StyledJsx,
 };
@@ -1795,6 +1795,33 @@ impl<'a> VisitMut<'a> for DevupVisitor<'a> {
                 self.pending_styled = definition.map(|definition| (start, definition));
                 *it = expression;
             }
+        }
+
+        // `Component.withComponent(target)` on a styled component the file
+        // defines renders its styles as `target`
+        if let Expression::CallExpression(call) = it
+            && let [
+                Argument::StringLiteral(_)
+                | Argument::Identifier(_)
+                | Argument::StaticMemberExpression(_),
+            ] = call.arguments.as_slice()
+            && let Expression::StaticMemberExpression(member) = &call.callee
+            && member.property.name == "withComponent"
+            && let Some(definition) = self
+                .style_values
+                .symbol(&member.object)
+                .and_then(|symbol| self.styled_definitions.get(&symbol))
+            && let Some((component, definition)) = with_component(
+                &self.ast,
+                definition,
+                call.arguments[0].to_expression(),
+                self.split_filename.as_deref(),
+                &mut self.styled_jsx,
+            )
+        {
+            let start = call.span.start;
+            *it = component;
+            self.pending_styled = Some((start, definition));
         }
 
         // Handle StyleX: stylex.create({...}) calls

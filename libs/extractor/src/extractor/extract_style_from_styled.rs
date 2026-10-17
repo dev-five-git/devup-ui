@@ -187,6 +187,72 @@ impl StyledDefinition<'_> {
     }
 }
 
+/// `Component.withComponent(target)`: the styles and attrs of `definition`
+/// rendering `target`, a tag name or a component JSX can name; `None` for any
+/// other target
+pub fn with_component<'a>(
+    ast_builder: &AstBuilder<'a>,
+    definition: &StyledDefinition<'a>,
+    target: &Expression<'a>,
+    split_filename: Option<&str>,
+    helper: &mut Option<StyledJsx>,
+) -> Option<(Expression<'a>, StyledDefinition<'a>)> {
+    let name = match unwrap_syntax_only(target) {
+        Expression::StringLiteral(literal) => literal.value.to_string(),
+        target => jsx_name(target)?,
+    };
+    let allocator = ast_builder.allocator();
+    let base = Base {
+        target: match unwrap_syntax_only(target) {
+            Expression::StringLiteral(_) => None,
+            _ => Some(target.clone_in(allocator)),
+        },
+        ..Base::named(name)
+    };
+    let mut scope = target.clone_in(allocator);
+    let definition = definition.rebind(ast_builder, &mut scope);
+    let mut styles: Vec<ExtractStyleProp<'a>> = definition
+        .styles
+        .iter()
+        .map(|style| style.clone_in(allocator))
+        .collect();
+    let classes: Vec<Expression<'a>> = clone_all(ast_builder, &definition.classes).collect();
+    let class_name = merge_expression_for_class_name(
+        ast_builder,
+        clone_all(ast_builder, &classes).chain(gen_class_names(
+            ast_builder,
+            &mut styles,
+            None,
+            split_filename,
+        )),
+    );
+    let component = create_styled_component(
+        ast_builder,
+        &base,
+        StyledRender {
+            class_name: &class_name,
+            style_vars: &gen_styles(ast_builder, &styles, None),
+            bindings: definition
+                .bindings
+                .iter()
+                .map(|(name, value)| (name.clone(), value.clone_in(allocator)))
+                .collect(),
+        },
+        helper,
+    );
+    let new_definition = base.definition(
+        ast_builder,
+        classes,
+        &styles,
+        &definition.attrs,
+        &definition.bindings,
+    );
+    Some((
+        apply_attrs(ast_builder, component, &definition.attrs),
+        new_definition,
+    ))
+}
+
 /// What extracting a styled component gives
 pub struct StyledExtraction<'a> {
     pub result: ExtractResult<'a>,
@@ -1088,6 +1154,10 @@ fn named_arrow<'a>(
     )
 }
 
+/// The binding a styled component renders through: what `as` names, or the
+/// tag or component it was defined with
+const RENDERED: &str = "DevupAs";
+
 struct StyledRender<'b, 'a> {
     class_name: &'b Option<Expression<'a>>,
     style_vars: &'b Option<Expression<'a>>,
@@ -1130,6 +1200,49 @@ fn create_styled_component<'a>(
                                 BindingPattern::new_binding_identifier(
                                     SPAN,
                                     "className",
+                                    ast_builder,
+                                ),
+                                true,
+                                false,
+                                ast_builder,
+                            ),
+                            BindingProperty::new(
+                                SPAN,
+                                PropertyKey::new_static_identifier(SPAN, "as", ast_builder),
+                                BindingPattern::new_assignment_pattern(
+                                    SPAN,
+                                    BindingPattern::new_binding_identifier(
+                                        SPAN,
+                                        RENDERED,
+                                        ast_builder,
+                                    ),
+                                    base.target.as_ref().map_or_else(
+                                        || {
+                                            Expression::new_string_literal(
+                                                SPAN,
+                                                Str::from_in(&base.name, ast_builder.allocator()),
+                                                None,
+                                                ast_builder,
+                                            )
+                                        },
+                                        |target| target.clone_in(ast_builder.allocator()),
+                                    ),
+                                    ast_builder,
+                                ),
+                                false,
+                                false,
+                                ast_builder,
+                            ),
+                            BindingProperty::new(
+                                SPAN,
+                                PropertyKey::new_static_identifier(
+                                    SPAN,
+                                    "forwardedAs",
+                                    ast_builder,
+                                ),
+                                BindingPattern::new_binding_identifier(
+                                    SPAN,
+                                    "forwardedAs",
                                     ast_builder,
                                 ),
                                 true,
@@ -1186,34 +1299,33 @@ fn create_styled_component<'a>(
         },
     );
     let body = if let Some(helper) = helper {
-        let target = base.target.as_ref().map_or_else(
-            || {
-                Expression::new_string_literal(
-                    SPAN,
-                    Str::from_in(&base.name, ast_builder.allocator()),
-                    None,
-                    ast_builder,
-                )
-            },
-            |target| target.clone_in(ast_builder.allocator()),
-        );
-        helper.render(ast_builder, target, (class_name, style))
+        helper.render(
+            ast_builder,
+            identifier(ast_builder, RENDERED),
+            (class_name, style, identifier(ast_builder, "forwardedAs")),
+        )
     } else {
         Expression::new_jsx_element(
             SPAN,
             JSXOpeningElement::boxed(
                 SPAN,
-                JSXElementName::new_identifier(
-                    SPAN,
-                    Str::from_in(&base.name, ast_builder.allocator()),
-                    ast_builder,
-                ),
+                JSXElementName::new_identifier(SPAN, RENDERED, ast_builder),
                 None::<oxc_allocator::Box<oxc_ast::ast::TSTypeParameterInstantiation<'a>>>,
                 oxc_allocator::Vec::from_iter_in(
                     vec![
                         JSXAttributeItem::new_spread_attribute(
                             SPAN,
                             Expression::new_identifier(SPAN, "rest", ast_builder),
+                            ast_builder,
+                        ),
+                        JSXAttributeItem::new_attribute(
+                            SPAN,
+                            JSXAttributeName::new_identifier(SPAN, "as", ast_builder),
+                            Some(JSXAttributeValue::new_expression_container(
+                                SPAN,
+                                identifier(ast_builder, "forwardedAs").into(),
+                                ast_builder,
+                            )),
                             ast_builder,
                         ),
                         JSXAttributeItem::new_attribute(

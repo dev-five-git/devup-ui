@@ -9,13 +9,13 @@ fn output_is_byte_identical_when_source_accepts_jsx(
     #[case] extension: &str,
     #[values(true, false)] single_css: bool,
 ) {
-    // Given: baseline bytes captured with the installed main WASM, not a new snapshot.
+    // Given: the JSX baseline with polymorphic rendering from #710.
     let filename = format!("test.{extension}");
     let source = "import { styled } from '@devup-ui/react';\nexport const Card = styled('article', { p: 2, color: 'olive' });";
     let expected = if single_css {
-        "import \"@devup-ui/react/devup-ui.css\";\nexport const Card = ({ style, className, ...rest }) => <article {...rest} className={[\"a b\", className].filter(Boolean).join(\" \")} style={style} />;\n"
+        "import \"@devup-ui/react/devup-ui.css\";\nexport const Card = ({ style, className, as: DevupAs = \"article\", forwardedAs, ...rest }) => <DevupAs {...rest} as={forwardedAs} className={[\"a b\", className].filter(Boolean).join(\" \")} style={style} />;\n"
     } else {
-        "import \"@devup-ui/react/devup-ui-0.css\";\nexport const Card = ({ style, className, ...rest }) => <article {...rest} className={[\"a-a a-b\", className].filter(Boolean).join(\" \")} style={style} />;\n"
+        "import \"@devup-ui/react/devup-ui-0.css\";\nexport const Card = ({ style, className, as: DevupAs = \"article\", forwardedAs, ...rest }) => <DevupAs {...rest} as={forwardedAs} className={[\"a-a a-b\", className].filter(Boolean).join(\" \")} style={style} />;\n"
     };
     // When: the real extractor compiles the control.
     let output = compile(&filename, source, single_css);

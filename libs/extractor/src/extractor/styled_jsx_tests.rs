@@ -22,6 +22,7 @@ fn commonjs_binding_resolves_factory_when_renderer_is_used() {
         (
             Expression::new_identifier(SPAN, "className", &ast),
             Expression::new_identifier(SPAN, "style", &ast),
+            Expression::new_string_literal(SPAN, "nav", None, &ast),
         ),
     );
     // When: the real binding and renderer execute against a CommonJS factory export.
@@ -46,7 +47,7 @@ fn commonjs_binding_resolves_factory_when_renderer_is_used() {
             .as_string()
             .unwrap_or_else(|| panic!("CommonJS renderer JSON result must be a string"))
             .to_std_string_escaped(),
-        r#"{"target":"article","props":{"children":"child","className":"caller","style":{"color":"olive"}}}"#,
+        r#"{"target":"article","props":{"children":"child","className":"caller","style":{"color":"olive"},"as":"nav"}}"#,
     );
 }
 

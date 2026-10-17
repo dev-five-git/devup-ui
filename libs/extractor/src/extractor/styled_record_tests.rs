@@ -17,6 +17,11 @@ use crate::utils::readable_code;
     "8px"
 )]
 #[case::tagged_extension("const Ext=styled(Base)`padding:4px`;", "", "4px")]
+#[case::retargeted_extension(
+    "const Mid=Base.withComponent('section');const Ext=styled(Mid)({'p':1});",
+    "",
+    "4px"
+)]
 #[case::capture_collisions(
     "const Mid=styled(Base)({backgroundColor:'white',...((trace.push('own'),own)?{backgroundColor:'black'}:{})});const Ext=styled(Mid)(__devupRecord0,{p:1,...((trace.push('authored'),__devupRecord1)?{p:2}:{})});",
     ",own,__devupRecord0,__devupRecord1",
@@ -75,9 +80,14 @@ fn inherited_captures_when_native_extension_renders(
     );
     // Then: only the selected declarations survive, with ordered single reads.
     let color = if on { "blue" } else { "red" };
+    let target = if extension.contains("withComponent") {
+        "section"
+    } else {
+        "div"
+    };
     let expected = if parameters.is_empty() {
         format!(
-            r#"["div","extension",[["color","{color}"],["padding","{padding}"]],["caller"],["base"]]"#
+            r#"["{target}","extension",[["color","{color}"],["padding","{padding}"]],["caller"],["base"]]"#
         )
     } else {
         let background = if on { "white" } else { "black" };
@@ -502,7 +512,7 @@ fn evaluate_native_render(code: &str, observation: &str) -> String {
                     "'div'"
                 }
                 JSXElementName::IdentifierReference(tag) => {
-                    assert_eq!(tag.name, "DevupStyled");
+                    assert!(["DevupStyled", "DevupAs"].contains(&tag.name.as_str()));
                     tag.name.as_str()
                 }
                 _ => panic!("fixture must render a native element"),

@@ -64,16 +64,16 @@ impl StyledJsx {
         &mut self,
         ast: &AstBuilder<'a>,
         target: Expression<'a>,
-        props: (Expression<'a>, Expression<'a>),
+        props: (Expression<'a>, Expression<'a>, Expression<'a>),
     ) -> Expression<'a> {
         self.used = true;
-        let mut properties = Vec::with_capacity_in(3, ast);
+        let mut properties = Vec::with_capacity_in(4, ast);
         properties.push(ObjectPropertyKind::new_spread_property(
             SPAN,
             Expression::new_identifier(SPAN, "rest", ast),
             ast,
         ));
-        for (key, value) in [("className", props.0), ("style", props.1)] {
+        for (key, value) in [("className", props.0), ("style", props.1), ("as", props.2)] {
             properties.push(ObjectPropertyKind::new_object_property(
                 SPAN,
                 PropertyKind::Init,
