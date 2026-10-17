@@ -1,10 +1,13 @@
 const assert = require('node:assert/strict')
 const { spawn } = require('node:child_process')
 const {
+  existsSync,
   mkdirSync,
   readFileSync,
   readdirSync,
   realpathSync,
+  rmSync,
+  statSync,
   symlinkSync,
   writeFileSync,
 } = require('node:fs')
@@ -48,41 +51,15 @@ function contents(directory, extension) {
     })
     .join('\n')
 }
-async function main() {
+async function run() {
   let server
   try {
-    // Fixture shape and dependency junctions credit W64c's physical Next evidence.
-    for (const name of ['next', 'react', 'react-dom'])
-      link(name, dirname(fromNext.resolve(`${name}/package.json`)))
-    for (const name of ['react', 'next-plugin'])
-      link(`@devup-ui/${name}`, join(repository, 'packages', name))
-    put(
-      'package.json',
-      JSON.stringify({ name: 'w65-next-webpack', private: true }),
-    )
-    put('devup.json', '{}')
-    put(
-      'next.config.js',
-      `const { DevupUI } = require('@devup-ui/next-plugin'); module.exports = DevupUI({ experimental: { cpus: 1 } });`,
-    )
     if (fault === 'build-timeout') {
       put(
         'next.config.js',
         `require('node:child_process').spawn(process.execPath, [${JSON.stringify(join(__dirname, 'webpack-lifecycle-child.cjs'))}], { stdio: 'inherit' }); module.exports = async () => new Promise(() => {});`,
       )
     }
-    put(
-      'src/app/layout.js',
-      'export default function Layout({ children }) { return <html><body>{children}</body></html>; }',
-    )
-    put(
-      'src/app/page.js',
-      `import { Box } from '@devup-ui/react'; export default function Page() { return <Box id="server-proof" bg="maroon" p="13px">server-proof</Box>; }`,
-    )
-    put(
-      'src/app/edge/route.js',
-      `import { css } from '@devup-ui/react'; export const runtime = 'edge'; const edge = css({ borderColor: 'goldenrod' }); export function GET() { return Response.json({ edge }); }`,
-    )
     const build = spawn(
       process.execPath,
       [fromPlugin.resolve('next/dist/bin/next'), 'build', '--webpack'],
@@ -179,7 +156,26 @@ async function main() {
         edge: edgeBody,
       }),
     )
-    console.info('webpack production proof passed')
+    const delivery = require('./webpack-delivery-http.cjs')
+    const parse = fromNext('postcss').parse
+    const documents = await delivery(base, parse)
+    const emitted = delivery.rules(
+      contents(join(root, '.next/static/css'), '.css'),
+      parse,
+    )
+    delivery.declarationProof(
+      emitted,
+      edgeBody.edge.split(/\s+/).map((name) => `.${name}`),
+      { 'border-color': 'goldenrod' },
+    )
+    console.info(
+      'W65-API-DISK ' +
+        JSON.stringify({
+          classes: edgeBody.edge,
+          scope: 'emitted CSS only; API has no HTML stylesheet contract',
+        }),
+    )
+    return documents
   } finally {
     if (
       server?.pid !== undefined &&
@@ -199,6 +195,55 @@ async function main() {
     server?.stderr.destroy()
     // Only the external owner may remove root, after its entire tree has exited.
   }
+}
+async function main() {
+  // Fixture shape and dependency junctions credit W64c's physical Next evidence.
+  for (const name of ['next', 'react', 'react-dom'])
+    link(name, dirname(fromNext.resolve(`${name}/package.json`)))
+  for (const name of ['react', 'next-plugin'])
+    link(`@devup-ui/${name}`, join(repository, 'packages', name))
+  put(
+    'package.json',
+    JSON.stringify({ name: 'w65-next-webpack', private: true }),
+  )
+  put(
+    'src/app/edge/route.js',
+    `import { css } from '@devup-ui/react'; export const runtime = 'edge'; const edge = css({ borderColor: 'goldenrod' }); export function GET() { return Response.json({ edge }); }`,
+  )
+  require('./webpack-delivery-fixture.cjs')(put)
+  let baseline
+  for (const cache of fault ? ['cold'] : ['cold', 'cold-repeat', 'warm']) {
+    if (cache === 'cold-repeat') {
+      rmSync(join(root, '.next'), { recursive: true, force: true })
+      rmSync(join(root, 'df'), { recursive: true, force: true })
+    }
+    console.info('W65-CACHE ' + cache)
+    if (cache === 'warm') {
+      const directory = join(root, '.next/cache/webpack')
+      const files = readdirSync(directory, { recursive: true })
+        .filter((name) => /\.pack(?:\.gz|\.br)?$/.test(name))
+        .map((name) => ({ name, bytes: statSync(join(directory, name)).size }))
+      assert.ok(
+        files.some(({ bytes }) => bytes > 0),
+        'warm run requires populated webpack cache',
+      )
+      console.info('W65-WARM-CACHE ' + JSON.stringify(files))
+    } else
+      assert.equal(
+        existsSync(join(root, '.next')),
+        false,
+        `${cache} must start without Next output/cache`,
+      )
+    const actual = await run()
+    if (baseline)
+      assert.deepEqual(
+        actual,
+        baseline,
+        `${cache}: HTTP CSS/class correspondence changed`,
+      )
+    else baseline = actual
+  }
+  console.info('webpack production proof passed')
 }
 main()
   .then(() => process.exit(0))
