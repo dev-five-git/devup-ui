@@ -93,12 +93,13 @@ fn visit_style_value_expression<'a>(
             visit(&mut expression);
             *value.identifier_mut() = crate::utils::readable_code(&expression);
         }
+        // Metadata values hold no expression to visit. LayerOrder is listed for exhaustiveness only:
+        // public styled records cannot reach it because final collection synthesizes layer order.
         ExtractStyleValue::Static(_)
         | ExtractStyleValue::Typography(_)
         | ExtractStyleValue::Css(_)
         | ExtractStyleValue::Import(_)
         | ExtractStyleValue::FontFace(_)
-        // Public styled records cannot reach this: final collection synthesizes layer order.
         | ExtractStyleValue::LayerOrder(_)
         | ExtractStyleValue::Keyframes(_) => {}
     }
