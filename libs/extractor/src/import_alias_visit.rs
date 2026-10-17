@@ -373,6 +373,9 @@ pub fn transform_import_aliases_with_edits<'a>(
 
     // Collect import transformations
     let mut transformations: Vec<(usize, usize, String)> = Vec::new();
+    if import_aliases.contains_key("@emotion/react") {
+        transformations.extend(crate::jsx_import_source::emotion_replacements(&program));
+    }
     let mut numbers = LibraryNumbers::default();
 
     for stmt in &program.body {
