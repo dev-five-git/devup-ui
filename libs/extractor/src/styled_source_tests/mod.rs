@@ -1,5 +1,9 @@
 mod compatibility;
 mod execution;
+mod finite_array_length;
+mod finite_literal_keys;
+mod finite_lookup;
+mod finite_selection;
 mod forward_ref_captures;
 mod lowering;
 
