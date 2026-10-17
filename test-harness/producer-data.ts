@@ -1,9 +1,5 @@
 import { CoverageError } from './lcov'
 
-const qualifiedRevisions: ReadonlyMap<string, string> = new Map([
-  ['1.4.0', '34cbb9a40b4bd1bd767d134a7065e66c2432a676'],
-  ['1.4.2', '744846f844374847c902b5e7fd59b4342a51ef99'],
-])
 const runtimeIdentity = Object.freeze({
   bun: Bun.version,
   revision: Bun.revision,
@@ -52,7 +48,6 @@ export function parseProducerIdentity(
   const bun = text(record['bun'])
   const revision = text(record['revision'])
   if (
-    qualifiedRevisions.get(bun) !== revision ||
     bun !== runtimeIdentity.bun ||
     revision !== runtimeIdentity.revision ||
     config !== expected.config ||
@@ -66,8 +61,26 @@ export function parseProducerIdentity(
     config,
     bun,
     revision,
-    profiles: parseProfiles(record['profiles']),
+    profiles: qualifyProducerProfiles(bun, record['profiles']),
   })
+}
+
+export function qualifyProducerProfiles(
+  bun: string,
+  value: unknown,
+): readonly ProfileScript[] {
+  const format = `Bun ${bun}; qualified anonymous precise profile format`
+  try {
+    return parseProfiles(value)
+  } catch (error) {
+    if (!(error instanceof CoverageError)) throw error
+    throw Object.assign(
+      new CoverageError(
+        `unsupported producer profile: ${format}: ${error.detail}`,
+      ),
+      { cause: error },
+    )
+  }
 }
 
 function isObject(value: unknown): value is Record<string, unknown> {

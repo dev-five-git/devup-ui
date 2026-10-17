@@ -20,13 +20,16 @@ export interface NativeView {
 export function reconstructNative(
   capture: ScriptCapture,
   source?: SourceCoverage,
+  reloads: readonly ScriptCapture[] = [],
 ): NativeView {
   if (!capture.profile) {
     if (!source)
       throw new CoverageError(
         'missing native observation for unframed public blocks',
       )
-    const candidates: NativeView[] = []
+    const candidates = reloadUnion(capture, reloads).filter((view) =>
+      matchesNative(view, source),
+    )
     for (let split = 1; split < capture.blocks.length; split++) {
       const functions = capture.blocks.slice(split)
       if (functions.some((fn) => fn.count !== Number(fn.hasExecuted))) continue
@@ -79,6 +82,42 @@ export function reconstructNative(
   )
     throw new CoverageError('contradictory public native function inventory')
   return projectNative(capture, functions, blocks)
+}
+
+function reloadUnion(
+  capture: ScriptCapture,
+  reloads: readonly ScriptCapture[],
+): NativeView[] {
+  if (reloads.length < 2) return []
+  for (const item of reloads) {
+    const tail = item.blocks.at(-1)
+    if (
+      item.profile ||
+      item.url !== capture.url ||
+      item.code !== capture.code ||
+      item.sourceMapURL !== capture.sourceMapURL ||
+      item.scriptType !== capture.scriptType ||
+      item.blocks.length !== capture.blocks.length ||
+      item.blocks.some(
+        (block, index) =>
+          block.startOffset !== capture.blocks[index]?.startOffset ||
+          block.endOffset !== capture.blocks[index]?.endOffset,
+      ) ||
+      !tail ||
+      tail.startOffset !== 0 ||
+      tail.endOffset !== capture.code.length - 1 ||
+      tail.count !== Number(tail.hasExecuted)
+    )
+      throw new CoverageError('incompatible unframed reload topology/inventory')
+  }
+  const blocks = capture.blocks.map((block, index) => {
+    const hasExecuted = reloads.some((item) => {
+      const observed = item.blocks[index]
+      return observed && (observed.hasExecuted || observed.count > 0)
+    })
+    return { ...block, hasExecuted, count: Number(hasExecuted) }
+  })
+  return [projectNative(capture, blocks.slice(-1), blocks.slice(0, -1))]
 }
 
 function projectNative(

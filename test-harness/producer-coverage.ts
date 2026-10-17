@@ -98,9 +98,15 @@ export class VerifiedSourceCoverage implements SourceCoverage {
         throw new CoverageError(
           `incompatible reloaded producer source: ${source.file}`,
         )
-      // Bun 1.4.2 registers coverage at SourceProvider creation; pinned WebKit assigns monotonically increasing SourceIDs.
-      const view = reconstructNative(capture, source)
-      validateNative(view, source)
+      let view: NativeView
+      try {
+        view = reconstructNative(capture, source, captures)
+        validateNative(view, source)
+      } catch (error) {
+        if (!(error instanceof CoverageError)) throw error
+        const text = `Bun ${result.value.bun}: ${source.file}: ${error.detail}`
+        throw Object.assign(new CoverageError(text), { cause: error })
+      }
       return new VerifiedSourceCoverage(issuance, {
         source,
         view,
