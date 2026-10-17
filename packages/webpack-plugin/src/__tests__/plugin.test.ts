@@ -39,6 +39,7 @@ interface MockCompiler {
     afterCompile: { tap: ReturnType<typeof mock> }
     run: { tap: ReturnType<typeof mock> }
     thisCompilation: { tap: ReturnType<typeof mock> }
+    shutdown: { tap: ReturnType<typeof mock> }
   }
 }
 
@@ -85,6 +86,7 @@ let mkdirSpy: ReturnType<typeof spyOn>
 let readFileSpy: ReturnType<typeof spyOn>
 let statSpy: ReturnType<typeof spyOn>
 let writeFileSpy: ReturnType<typeof spyOn>
+let consoleErrorSpy: ReturnType<typeof spyOn>
 
 beforeEach(() => {
   codeExtractSpy = spyOn(wasm, 'codeExtract').mockImplementation(
@@ -111,6 +113,7 @@ beforeEach(() => {
   readFileSpy = spyOn(fsPromises, 'readFile').mockResolvedValue('{}')
   statSpy = spyOn(fsPromises, 'stat').mockResolvedValue(createStats(0))
   writeFileSpy = spyOn(fsPromises, 'writeFile').mockResolvedValue(undefined)
+  consoleErrorSpy = spyOn(console, 'error').mockReturnValue(undefined)
 })
 
 afterEach(() => {
@@ -133,6 +136,7 @@ afterEach(() => {
   readFileSpy.mockRestore()
   statSpy.mockRestore()
   writeFileSpy.mockRestore()
+  consoleErrorSpy.mockRestore()
 })
 
 function createCompiler(): MockCompiler {
@@ -166,13 +170,46 @@ function createCompiler(): MockCompiler {
       thisCompilation: {
         tap: mock(),
       },
+      shutdown: {
+        tap: mock(),
+      },
     },
   }
 }
 
 describe('devupUIWebpackPlugin', () => {
-  console.error = mock()
-
+  describe('deterministic file numbering', () => {
+    it('numbers the files the scan finds and ends the build at shutdown', () => {
+      const collectSpy = spyOn(pluginUtils, 'collectNumberedFiles')
+      const seedSpy = spyOn(wasm, 'seedFileMap').mockReturnValue(undefined)
+      const resetSpy = spyOn(wasm, 'resetBuildState').mockReturnValue(undefined)
+      try {
+        collectSpy.mockImplementation((options: any) => {
+          expect(options.toId(resolve('src', 'a.tsx'))).toBe('src/a.tsx')
+          return ['src/a.tsx', 'src/b.tsx']
+        })
+        const compiler = createCompiler()
+        new DevupUIWebpackPlugin({ include: ['@acme/ui'] }).apply(
+          asCompiler(compiler),
+        )
+        expect(seedSpy).toHaveBeenCalledWith(['src/a.tsx', 'src/b.tsx'])
+        expect(collectSpy.mock.calls[0][0]).toMatchObject({
+          roots: [resolve('src')],
+          include: ['@acme/ui'],
+        })
+        compiler.hooks.shutdown.tap.mock.calls[0][1]()
+        compiler.hooks.shutdown.tap.mock.calls[0][1]()
+        collectSpy.mockImplementation(() => {
+          throw new Error('scan boom')
+        })
+        new DevupUIWebpackPlugin({}).apply(asCompiler(createCompiler()))
+      } finally {
+        collectSpy.mockRestore()
+        seedSpy.mockRestore()
+        resetSpy.mockRestore()
+      }
+    })
+  })
   it('should apply default options', () => {
     expect(new DevupUIWebpackPlugin({}).options).toEqual({
       include: [],
@@ -323,6 +360,79 @@ describe('devupUIWebpackPlugin', () => {
     expect(importFileMapSpy).toHaveBeenCalledWith({})
   })
 
+  describe('Tailwind CSS definitions', () => {
+    const tailwindFile = resolve('styles/tailwind.css')
+
+    function mockTailwindCss() {
+      existsSyncSpy.mockImplementation(
+        (path: string) => path === 'devup.json' || path === tailwindFile,
+      )
+      loadDevupConfigSyncSpy.mockReturnValue({
+        tailwind: { css: 'styles/tailwind.css' },
+      })
+      readFileSyncSpy.mockImplementation((path: string) =>
+        path === tailwindFile ? '@theme { --color-brand: #0af; }' : '{}',
+      )
+    }
+
+    it('registers the text of the Tailwind CSS and depends on its files', () => {
+      mockTailwindCss()
+      const plugin = new DevupUIWebpackPlugin({})
+      const compiler = createCompiler()
+
+      plugin.apply(asCompiler(compiler))
+
+      expect(registerThemeSpy).toHaveBeenCalledWith({
+        tailwindCss: '@theme { --color-brand: #0af; }',
+      })
+      const add = mock()
+      compiler.hooks.afterCompile.tap.mock.calls[0][1]({
+        fileDependencies: { add },
+      })
+      expect(add).toHaveBeenCalledWith(resolve('devup.json'))
+      expect(add).toHaveBeenCalledWith(tailwindFile)
+    })
+
+    it('reads it again when a file changes', async () => {
+      mockTailwindCss()
+      const plugin = new DevupUIWebpackPlugin({ watch: true })
+      const compiler = createCompiler()
+      statSpy.mockResolvedValueOnce(createStats(1))
+      statSpy.mockResolvedValueOnce(createStats(1))
+      statSpy.mockResolvedValueOnce(createStats(1))
+      statSpy.mockResolvedValueOnce(createStats(2))
+      plugin.apply(asCompiler(compiler))
+      registerThemeSpy.mockClear()
+
+      await compiler.hooks.watchRun.tapPromise.mock.calls[0][1]()
+      await compiler.hooks.watchRun.tapPromise.mock.calls[0][1]()
+
+      expect(registerThemeSpy).toHaveBeenCalledWith({
+        tailwindCss: '@theme { --color-brand: #0af; }',
+      })
+    })
+
+    it('takes a Tailwind CSS that is gone as unchanged', async () => {
+      existsSyncSpy.mockImplementation((path: string) => path === tailwindFile)
+      loadDevupConfigSyncSpy.mockReturnValue({
+        tailwind: { css: 'styles/tailwind.css' },
+      })
+      readFileSyncSpy.mockImplementation((path: string) =>
+        path === tailwindFile ? '@import "tailwindcss";' : '{}',
+      )
+      const plugin = new DevupUIWebpackPlugin({
+        watch: true,
+        devupFile: 'missing.json',
+      })
+      const compiler = createCompiler()
+      statSpy.mockRejectedValue(new Error('gone'))
+      plugin.apply(asCompiler(compiler))
+
+      await compiler.hooks.watchRun.tapPromise.mock.calls[0][1]()
+
+      expect(plugin.tailwindFiles).toEqual([tailwindFile])
+    })
+  })
   it.each(
     createTestMatrix({
       watch: [true, false],
@@ -544,60 +654,151 @@ describe('devupUIWebpackPlugin', () => {
         wasm,
         'setModuleResolver',
       ).mockReturnValue(undefined)
+      try {
+        const plugin = new DevupUIWebpackPlugin({
+          package: '@devup-ui/react',
+          singleCss: true,
+        })
+        const compiler = createCompiler()
+        compiler.options.entry = {
+          main: { import: ['./src/parent', './src/other'] },
+          worker: {},
+        }
+        compiler.options.context = '/project'
+        plugin.apply(asCompiler(compiler))
+        expect(computeReachableFilesSpy).toHaveBeenCalledWith({
+          srcDir: resolve(process.cwd(), 'src'),
+          tsconfigPath: resolve(process.cwd(), 'tsconfig.json'),
+          entries: [
+            resolve('/project', './src/parent'),
+            resolve('/project', './src/other'),
+          ],
+        })
+        // The loader's resolver is registered before the first extraction, so
+        // imported constants inline as they do in the loader
+        expect(setModuleResolverSpy.mock.invocationCallOrder[0]).toBeLessThan(
+          codeExtractSpy.mock.invocationCallOrder[0]!,
+        )
+        const resolveModule = setModuleResolverSpy.mock.calls[0]![0] as (
+          specifier: string,
+          importer: string,
+        ) => { path: string } | undefined
+        expect(resolveModule('./plugin.test', import.meta.path)?.path).toBe(
+          relative(process.cwd(), import.meta.path).replaceAll('\\', '/'),
+        )
+        expect(codeExtractSpy).toHaveBeenCalledTimes(2)
+        expect(codeExtractSpy).toHaveBeenCalledWith(
+          'src/parent.tsx',
+          'source',
+          '@devup-ui/react',
+          expect.any(String),
+          true,
+          false,
+          true,
+          expect.anything(),
+        )
+        expect(codeExtractSpy).toHaveBeenCalledWith(
+          'src/child.tsx',
+          'source',
+          '@devup-ui/react',
+          expect.any(String),
+          true,
+          false,
+          true,
+          expect.anything(),
+        )
+      } finally {
+        setModuleResolverSpy.mockRestore()
+      }
+    })
+
+    it('uses normalized complete files instead of Next loader requests, including external files', () => {
+      // Given an authoritative set with duplicate spellings and an external file.
+      const seed = spyOn(wasm, 'seedFileMap').mockReturnValue(undefined)
+      const shorthands = spyOn(wasm, 'registerShorthands').mockReturnValue(
+        undefined,
+      )
       const plugin = new DevupUIWebpackPlugin({
-        package: '@devup-ui/react',
-        singleCss: true,
+        productionPrewarmFiles: [
+          'src/z.tsx',
+          resolve('node_modules/ui/a.tsx'),
+          './src/z.tsx',
+          'src\\z.tsx',
+        ],
+        shorthands: { insetX: ['left', 'right'] },
       })
       const compiler = createCompiler()
-      compiler.options.entry = {
-        main: { import: ['./src/parent', './src/other'] },
-        worker: {},
+      compiler.options.entry = { main: { import: ['next-app-loader?query!'] } }
+      try {
+        // When the compiler applies after its ordinary configuration setup.
+        plugin.apply(asCompiler(compiler))
+        // Then all files are extracted exactly once, in deterministic loader-ID order.
+        expect(codeExtractSpy.mock.calls.map(([filename]) => filename)).toEqual(
+          ['node_modules/ui/a.tsx', 'src/z.tsx'],
+        )
+        expect(computeReachableFilesSpy).not.toHaveBeenCalled()
+        expect(seed).toHaveBeenCalledWith([
+          'node_modules/ui/a.tsx',
+          'src/z.tsx',
+        ])
+        expect(shorthands).toHaveBeenLastCalledWith({
+          insetX: ['left', 'right'],
+        })
+      } finally {
+        seed.mockRestore()
+        shorthands.mockRestore()
       }
-      compiler.options.context = '/project'
-      plugin.apply(asCompiler(compiler))
-      expect(computeReachableFilesSpy).toHaveBeenCalledWith({
-        srcDir: resolve(process.cwd(), 'src'),
-        tsconfigPath: resolve(process.cwd(), 'tsconfig.json'),
-        entries: [
-          resolve('/project', './src/parent'),
-          resolve('/project', './src/other'),
-        ],
-      })
-      // The loader's resolver is registered before the first extraction, so
-      // imported constants inline as they do in the loader
-      expect(setModuleResolverSpy.mock.invocationCallOrder[0]).toBeLessThan(
-        codeExtractSpy.mock.invocationCallOrder[0]!,
-      )
-      const resolveModule = setModuleResolverSpy.mock.calls[0]![0] as (
-        specifier: string,
-        importer: string,
-      ) => { path: string } | undefined
-      expect(resolveModule('./plugin.test', import.meta.path)?.path).toBe(
-        relative(process.cwd(), import.meta.path).replaceAll('\\', '/'),
-      )
-      setModuleResolverSpy.mockRestore()
-      expect(codeExtractSpy).toHaveBeenCalledTimes(2)
-      expect(codeExtractSpy).toHaveBeenCalledWith(
-        'src/parent.tsx',
-        'source',
-        '@devup-ui/react',
-        expect.any(String),
-        true,
-        false,
-        true,
-        expect.anything(),
-      )
-      expect(codeExtractSpy).toHaveBeenCalledWith(
-        'src/child.tsx',
-        'source',
-        '@devup-ui/react',
-        expect.any(String),
-        true,
-        false,
-        true,
-        expect.anything(),
-      )
     })
+
+    it.each([false, true])(
+      'does not prewarm when the complete set is empty or watch=%s',
+      (watch) => {
+        // Given a reachable generic entry which an explicit set supersedes.
+        computeReachableFilesSpy.mockReturnValue([resolve('src/parent.tsx')])
+        const plugin = new DevupUIWebpackPlugin({
+          watch,
+          productionPrewarmFiles: watch ? ['src/parent.tsx'] : [],
+        })
+        // When applying, then neither explicit watch files nor generic fallback are extracted.
+        plugin.apply(asCompiler(createCompiler()))
+        expect(codeExtractSpy).not.toHaveBeenCalled()
+        expect(computeReachableFilesSpy).not.toHaveBeenCalled()
+      },
+    )
+
+    it.each(['canonical', 'numbering', 'read', 'extract'])(
+      'propagates genuine %s errors for an explicit complete set',
+      (stage) => {
+        // Given a failing correctness-prewarm dependency.
+        const failure = new Error(stage)
+        const endBuild = mock()
+        const begin = spyOn(pluginUtils, 'beginBuild').mockReturnValue(endBuild)
+        const fail = () => {
+          throw failure
+        }
+        const numbering = spyOn(
+          pluginUtils,
+          'collectNumberedFiles',
+        ).mockReturnValue([])
+        if (stage === 'canonical') buildCanonicalMapSpy.mockImplementation(fail)
+        if (stage === 'numbering') numbering.mockImplementation(fail)
+        if (stage === 'read') readFileSyncSpy.mockImplementation(fail)
+        if (stage === 'extract') codeExtractSpy.mockImplementation(fail)
+        const plugin = new DevupUIWebpackPlugin({
+          productionPrewarmFiles: ['src/parent.tsx'],
+        })
+        try {
+          // When applying, then the original error reaches webpack instead of partial CSS.
+          expect(() => plugin.apply(asCompiler(createCompiler()))).toThrow(
+            failure,
+          )
+          expect(endBuild).toHaveBeenCalledTimes(1)
+        } finally {
+          begin.mockRestore()
+          numbering.mockRestore()
+        }
+      },
+    )
 
     it('pre-warms without collapse, from no entries when they are a function', () => {
       buildCanonicalMapSpy.mockReturnValue({})

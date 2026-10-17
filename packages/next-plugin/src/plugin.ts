@@ -11,16 +11,20 @@ import { deserialize, serialize } from 'node:v8'
 import {
   buildCanonicalMap,
   buildStaticImportGraph,
+  collectNumberedFiles,
   computeCompiledFiles,
   computeFileRoutes,
   createCompatTypes,
   createNodeModulesExcludeRegex,
   createThemeInterfaceArgs,
   type DevupUIBasePluginOptions,
+  extractedNeedles,
   loadDevupConfigSync,
   mergeImportAliases,
   planAtomHoist,
+  seedFileNumbers,
   type StaticImportGraph,
+  withTailwindCss,
 } from '@devup-ui/plugin-utils'
 import { type NextConfig } from 'next'
 
@@ -29,6 +33,10 @@ import {
   startCoordinator,
   takeExtractOutput,
 } from './coordinator'
+import {
+  removeStalePortFile,
+  resolveCoordinatorPortFile,
+} from './coordinator-port'
 import { collectProductionPrewarmFiles } from './prewarm'
 import { elapsedMs, profileStart, reportProfile } from './profile'
 import { loadWasm, loadWebpackPlugin } from './wasm'
@@ -229,9 +237,7 @@ export function DevupUI(
 
     registerShorthands(shorthands ?? {})
 
-    if (prefix) {
-      setPrefix(prefix)
-    }
+    setPrefix(prefix ?? null)
 
     writeFileSync(
       join(distDir, 'compat.d.ts'),
@@ -246,12 +252,12 @@ export function DevupUI(
       importClassMap(JSON.parse(readFileSync(classMapFile, 'utf-8')))
       importFileMap(JSON.parse(readFileSync(fileMapFile, 'utf-8')))
     } catch {
-      // No previous session state (first run) or corrupt files — start fresh
+      // No previous session state (first run) or corrupt files, start fresh
     }
 
     const devupConfig = loadDevupConfigSync(devupFile)
 
-    const theme: any = devupConfig.theme ?? {}
+    const theme: any = withTailwindCss(devupConfig.theme ?? {}, devupConfig)
     // Register current theme after importing previous state,
     // since importSheet replaces the entire sheet including its theme.
     registerTheme(theme)
@@ -264,7 +270,7 @@ export function DevupUI(
     // disable turbo parallel
     const excludeRegex = createNodeModulesExcludeRegex(include, '.mdx.[tj]sx?$')
 
-    const coordinatorPortFile = join(distDir, 'coordinator.port')
+    const coordinatorPortFile = resolveCoordinatorPortFile(distDir)
 
     // Pre-pass: single-importer collapse ALWAYS runs (files with exactly one
     // importer merge into that importer's bucket, so their identical atoms share
@@ -358,6 +364,24 @@ export function DevupUI(
       })
     }
 
+    // Number every file the build can extract in path order, so class prefixes
+    // do not depend on the order modules reach a loader. Numbers restored above
+    // stay; files that appear later get the numbers after them.
+    try {
+      const cwd = process.cwd()
+      seedFileNumbers(
+        { seedFileMap: wasm.seedFileMap },
+        collectNumberedFiles({
+          roots: ['src', 'app', 'pages'].map((dir) => resolve(cwd, dir)),
+          include,
+          cwd,
+          needles: extractedNeedles(libPackage, importAliases),
+          toId: (path) => relative(cwd, path).replaceAll('\\', '/'),
+        }),
+      )
+    } catch {
+      // Best-effort; numbering falls back to arrival order.
+    }
     // Turbopack can request a CSS module before it has scheduled every source
     // loader. Waiting for a quiet window is not a compilation-complete signal:
     // a CSS request can itself hold up the next extraction wave. In one-shot
@@ -462,11 +486,9 @@ export function DevupUI(
     // Delete stale port file from previous session so loaders don't connect
     // to a dead coordinator port. The new coordinator writes a fresh port file
     // once it starts listening.
-    try {
-      unlinkSync(coordinatorPortFile)
-    } catch {
-      // Port file doesn't exist (first run) — safe to ignore
-    }
+    // A live coordinator owned by another process is left alone (see
+    // resolveCoordinatorPortFile).
+    removeStalePortFile(coordinatorPortFile)
 
     const coordinator = startCoordinator({
       wasm,
@@ -621,16 +643,38 @@ export function DevupUI(
   }
 
   const { webpack } = config
+  let productionPrewarmFiles: readonly string[] | undefined
   config.webpack = (config, _options) => {
     const { DevupUIWebpackPlugin } = loadWebpackPlugin()
     options.cssDir ??= resolve(
       _options.dev ? (options.distDir ?? 'df') : '.next/cache',
-      `devup-ui_${_options.buildId}`,
+      _options.dev ? `devup-ui_${_options.buildId}` : 'devup-ui',
     )
+    if (!_options.dev && productionPrewarmFiles === undefined) {
+      const cwd = process.cwd()
+      const srcDir = resolve(cwd, 'src')
+      const tsconfigPath = resolve(cwd, 'tsconfig.json')
+      const graph = buildStaticImportGraph(srcDir, tsconfigPath)
+      productionPrewarmFiles = collectProductionPrewarmFiles({
+        cwd,
+        graph,
+        expectedBaseFiles: computeCompiledFiles({
+          cwd,
+          srcDir,
+          tsconfigPath,
+          graph,
+        }),
+        libPackage: options.package ?? '@devup-ui/react',
+        include: options.include ?? [],
+      })
+    }
     config.plugins.push(
       new DevupUIWebpackPlugin({
         ...options,
         watch: _options.dev,
+        productionPrewarmFiles: _options.dev
+          ? undefined
+          : productionPrewarmFiles,
       }),
     )
     if (typeof webpack === 'function') return webpack(config, _options)

@@ -76,6 +76,8 @@ struct Collector {
     file_num: usize,
     placeholders: usize,
     identifiers: usize,
+    origin: Option<(String, String)>,
+    declaration_errors: Vec<String>,
 }
 
 type StyleCollector = Rc<RefCell<Collector>>;
@@ -241,8 +243,17 @@ pub fn execute_stylesheet(
 ) -> Result<(CollectedStyles, StylesheetImports), String> {
     let _evaluating = Evaluating::enter(filename);
     let mut loader = ModuleLoader::new(resolver, option);
+    let instrumented = crate::dead_properties::instrument(code, filename, &option.package)
+        .map_err(|error| format!("{}{error}", crate::dead_properties::ERROR_CHANNEL))?;
+    let instrumented = crate::import_alias_visit::transform_import_aliases_with_edits(
+        &instrumented.code,
+        filename,
+        &option.package,
+        &option.import_aliases,
+    )
+    .0;
     let script = module_script(
-        &strip_typescript(code, filename),
+        &strip_typescript(&instrumented, filename),
         filename,
         &mut loader,
         true,
@@ -276,10 +287,21 @@ pub fn execute_stylesheet(
     context
         .eval(Source::from_bytes(crate::module_loader::CONSOLE))
         .map_err(|e| format!("JS execution error: {e}"))?;
+    context
+        .eval(Source::from_bytes(crate::module_loader::DETERMINISM))
+        .map_err(|e| format!("JS execution error: {e}"))?;
 
     context
         .eval(Source::from_bytes(run.as_bytes()))
         .map_err(|e| format!("JS execution error: {e}"))?;
+
+    if !collector.borrow().declaration_errors.is_empty() {
+        return Err(format!(
+            "{}{}",
+            crate::dead_properties::ERROR_CHANNEL,
+            collector.borrow().declaration_errors.join("\n")
+        ));
+    }
 
     let mut collected = std::mem::take(&mut collector.borrow_mut().styles);
     name_entries(
@@ -575,7 +597,7 @@ pub(crate) fn strip_typescript(code: &str, filename: &str) -> String {
 
 fn strip(code: &str, filename: &str) -> String {
     let allocator = Allocator::default();
-    let source_type = SourceType::from_path(filename).unwrap_or_else(|_| SourceType::ts());
+    let source_type = crate::parsing::source_type(filename).unwrap_or_else(|_| SourceType::ts());
     let mut program = Parser::new(&allocator, code, source_type).parse().program;
     let scoping = SemanticBuilder::new()
         .with_enum_eval(true)
@@ -589,6 +611,43 @@ fn strip(code: &str, filename: &str) -> String {
 }
 
 type Api = fn(&StyleCollector, &[JsValue], &mut Context) -> JsResult<JsValue>;
+
+fn authored_call(
+    collector: &StyleCollector,
+    args: &[JsValue],
+    context: &mut Context,
+) -> JsResult<JsValue> {
+    let location = to_text(args.get_or_undefined(0), context)?;
+    let api = to_text(args.get_or_undefined(1), context)?;
+    let previous = collector.borrow_mut().origin.replace((location, api));
+    let result = args
+        .get_or_undefined(2)
+        .as_callable()
+        .map_or(Ok(JsValue::undefined()), |thunk| {
+            thunk.call(&JsValue::undefined(), &[], context)
+        });
+    collector.borrow_mut().origin = previous;
+    result
+}
+
+fn check_declarations(
+    collector: &StyleCollector,
+    json: &str,
+    kind: crate::dead_properties::ObjectKind,
+) {
+    let errors = crate::dead_properties::evaluated_errors(json, kind);
+    let mut collector = collector.borrow_mut();
+    if let Some((location, api)) = collector.origin.clone() {
+        collector
+            .declaration_errors
+            .extend(errors.into_iter().map(|(path, requirement)| {
+                format!(
+                    "{location}: {}",
+                    crate::utils::build_time_error(&api, &path, requirement)
+                )
+            }));
+    }
+}
 
 fn api(collector: &StyleCollector, function: Api) -> NativeFunction {
     let collector = collector.clone();
@@ -607,6 +666,7 @@ fn register_vanilla_extract_apis(
     collector: &StyleCollector,
 ) -> Result<(), String> {
     let apis = [
+        ("__at", api(collector, authored_call), 3),
         ("style", api(collector, style), 1),
         ("globalStyle", api(collector, global_style), 2),
         ("styleVariants", api(collector, style_variants), 1),
@@ -678,6 +738,11 @@ fn register_style(
     let mut rules = Vec::new();
     compose(rule, &mut entry, &mut rules, context)?;
     entry.json = format!("{{{}}}", rules.join(","));
+    check_declarations(
+        collector,
+        &entry.json,
+        crate::dead_properties::ObjectKind::Styles,
+    );
     let mut collector = collector.borrow_mut();
     let id = collector.placeholder();
     collector.styles.styles.insert(id.clone(), entry);
@@ -725,6 +790,7 @@ fn global_style(
 ) -> JsResult<JsValue> {
     let selector = to_text(args.get_or_undefined(0), context)?;
     let json = style_to_json(args.get_or_undefined(1), context);
+    check_declarations(collector, &json, crate::dead_properties::ObjectKind::Styles);
     collector
         .borrow_mut()
         .styles
@@ -762,6 +828,11 @@ fn style_variants(
 
 fn keyframes(collector: &StyleCollector, args: &[JsValue], context: &mut Context) -> JsValue {
     let json = style_to_json(args.get_or_undefined(0), context);
+    check_declarations(
+        collector,
+        &json,
+        crate::dead_properties::ObjectKind::Records,
+    );
     let mut collector = collector.borrow_mut();
     let id = collector.placeholder();
     collector.styles.keyframes.insert(
@@ -780,6 +851,9 @@ fn font_face(collector: &StyleCollector, args: &[JsValue], context: &mut Context
         .borrow_mut()
         .identifier(js_str(args.get_or_undefined(1)), "font");
     let faces = font_face_rules(&family, args.get_or_undefined(0), context);
+    for face in &faces {
+        check_declarations(collector, face, crate::dead_properties::ObjectKind::Styles);
+    }
     collector.borrow_mut().styles.font_faces.extend(faces);
     js_string!(family).into()
 }
@@ -791,6 +865,9 @@ fn global_font_face(
 ) -> JsResult<JsValue> {
     let family = to_text(args.get_or_undefined(0), context)?;
     let faces = font_face_rules(&family, args.get_or_undefined(1), context);
+    for face in &faces {
+        check_declarations(collector, face, crate::dead_properties::ObjectKind::Styles);
+    }
     collector.borrow_mut().styles.font_faces.extend(faces);
     Ok(JsValue::undefined())
 }
@@ -1285,18 +1362,22 @@ fn inner_json(json: &str) -> &str {
         .trim()
 }
 
-/// Styles `entry` composes, transitively and in order, each once
+/// Styles `entry` composes, transitively and in order; a style composed again
+/// later is listed again, as its declarations then win. `composing` holds the
+/// styles being expanded, so a style composing itself stops.
 fn collect_bases<'a>(
     collected: &'a CollectedStyles,
     entry: &'a StyleEntry,
-    seen: &mut FxHashSet<&'a str>,
+    composing: &mut Vec<&'a str>,
     bases: &mut Vec<(&'a str, &'a StyleEntry)>,
 ) {
     for base in &entry.bases {
-        if seen.insert(base.as_str())
+        if !composing.contains(&base.as_str())
             && let Some(base_entry) = collected.styles.get(base)
         {
-            collect_bases(collected, base_entry, seen, bases);
+            composing.push(base);
+            collect_bases(collected, base_entry, composing, bases);
+            composing.pop();
             bases.push((base.as_str(), base_entry));
         }
     }
@@ -1311,34 +1392,39 @@ fn composed_css(
     name: &str,
     entry: &StyleEntry,
 ) -> String {
-    let mut seen = FxHashSet::default();
-    seen.insert(name);
+    let mut composing = vec![name];
     let mut bases = Vec::new();
-    collect_bases(collected, entry, &mut seen, &mut bases);
+    collect_bases(collected, entry, &mut composing, &mut bases);
 
+    // One argument per style: `css()` merges them, a later declaration
+    // replacing an earlier one, which one object holding both would not do
     let mut rules = Vec::with_capacity(bases.len() + 1);
-    let mut classes = Vec::new();
+    let mut all_classes: Vec<&str> = Vec::new();
     for (base_name, base) in &bases {
         let json = collected.resolve_json(&base.json, keyframes_names);
-        let inner = inner_json(&json);
-        if !inner.is_empty() {
-            rules.push(inner.to_string());
+        if !inner_json(&json).is_empty() {
+            rules.push(json);
         }
-        classes.extend(base.classes.iter().map(String::as_str));
-        classes.extend(referenced_classes.get(base_name).copied());
+        all_classes.extend(base.classes.iter().map(String::as_str));
+        all_classes.extend(referenced_classes.get(base_name).copied());
     }
-    classes.extend(entry.classes.iter().map(String::as_str));
-    classes.extend(referenced_classes.get(name).copied());
+    all_classes.extend(entry.classes.iter().map(String::as_str));
+    all_classes.extend(referenced_classes.get(name).copied());
+    let mut classes: Vec<&str> = Vec::with_capacity(all_classes.len());
+    for class in all_classes {
+        if !classes.contains(&class) {
+            classes.push(class);
+        }
+    }
 
     let own = collected.resolve_json(&entry.json, keyframes_names);
     let css = if bases.is_empty() {
         format!("css({own})")
     } else {
-        let inner = inner_json(&own);
-        if !inner.is_empty() {
-            rules.push(inner.to_string());
+        if !inner_json(&own).is_empty() {
+            rules.push(own);
         }
-        format!("css({{{}}})", rules.join(","))
+        format!("css({})", rules.join(", "))
     };
     if classes.is_empty() {
         css
@@ -1669,11 +1755,31 @@ globalStyle(`${tone.primary} > span`, { fontWeight: 700 })"
 const _ve0 = css({"color":"blue"})
 const _ve1 = css({"color":"red"}) + " f0__ve1"
 const _ve2 = css({"padding":"4px","content":"sm"})
-export const combined = css({"color":"red","margin":"1px"}) + " f0__ve1 external"
+export const combined = css({"color":"red"}, {"margin":"1px"}) + " f0__ve1 external"
 globalCss({ ".f0__ve1 > span": {"fontWeight":700} })
 export const tone = { "0": _ve0, "primary": _ve1 }
 export const space = { "sm": _ve2 }
 export const none = {}"#
+        );
+    }
+
+    // Each composed style is an argument of its own, so a later one's
+    // declaration replaces an earlier one's, a style composed again included
+    #[test]
+    #[serial]
+    fn test_composition_keeps_later_declarations() {
+        assert_eq!(
+            generate(
+                "const first = style({ color: 'red', margin: 1 })
+const second = style({ color: 'blue' })
+export const later = style([first, second])
+export const again = style([first, second, first])"
+            ),
+            r#"import { css } from '@devup-ui/react'
+export const again = css({"color":"red","margin":"1px"}, {"color":"blue"}, {"color":"red","margin":"1px"})
+const first = css({"color":"red","margin":"1px"})
+export const later = css({"color":"red","margin":"1px"}, {"color":"blue"})
+const second = css({"color":"blue"})"#
         );
     }
 
@@ -1694,8 +1800,8 @@ export const hover = style({ selectors: { [`${a}:hover &`]: { color: 'blue' } } 
             ),
             r#"import { css } from '@devup-ui/react'
 const a = css({"color":"red"}) + " f0_a"
-const b = css({"color":"red","margin":"2px"}) + " f0_a"
-export const c = css({"color":"red","margin":"2px","padding":"3px"}) + " f0_a"
+const b = css({"color":"red"}, {"margin":"2px"}) + " f0_a"
+export const c = css({"color":"red"}, {"margin":"2px"}, {"padding":"3px"}) + " f0_a"
 const e = css({})
 export const f = css({"color":"red"}) + " f0_a"
 export const g = css({})

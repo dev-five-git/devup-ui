@@ -1,5 +1,8 @@
 pub mod theme;
 
+#[cfg(test)]
+mod global_order_tests;
+
 use crate::theme::Theme;
 use css::{
     at_rule::{MediaCombination, combine_media_queries, query_order},
@@ -10,7 +13,8 @@ use css::{
     style_selector::{
         AtRule, AtRuleKind, StyleSelector, get_selector_order, global_selector_order, write_at_rule,
     },
-    theme_tokens::{set_theme_token_levels, set_typography_keys},
+    tailwind_definitions::set_tailwind_css,
+    theme_tokens::{set_color_tokens, set_theme_token_levels, set_typography_keys},
     utils::compile_regex,
     write_merge_selector,
 };
@@ -35,6 +39,8 @@ macro_rules! push_fmt {
 }
 
 const TYPOGRAPHY_LAYER: &str = "t";
+/// Shared owner from extractor's private `tailwind::PROPERTY_RULES_FILE`, not a source file.
+const TAILWIND_PROPERTY_RULES_FILE: &str = "@devup-ui/tailwind";
 
 /// Plain rules first, then pseudo selectors in `SELECTOR_ORDER`.
 fn selector_group(selector: Option<&str>) -> (u8, u8) {
@@ -78,7 +84,8 @@ fn global_selector_group(selector: &str) -> (bool, u8) {
     })
 }
 
-type GlobalProp<'a> = (u8, &'a str, &'a StyleSheetProperty);
+/// (level, selector, file the rule is written in, property)
+type GlobalProp<'a> = (u8, &'a str, &'a str, &'a StyleSheetProperty);
 
 #[derive(Debug, Hash, Eq, PartialEq, Deserialize, Serialize, Clone)]
 #[serde(rename_all = "camelCase")]
@@ -97,6 +104,13 @@ pub struct StyleSheetProperty {
     /// Declaration expanded from a conditional `typography` preset
     #[serde(rename = "t", default, skip_serializing_if = "std::ops::Not::not")]
     pub typography: bool,
+    /// Where a global declaration is written in its file
+    #[serde(rename = "o", default, skip_serializing_if = "is_zero")]
+    pub order: u32,
+}
+
+const fn is_zero(order: &u32) -> bool {
+    *order == 0
 }
 
 #[derive(Debug, Hash, Eq, PartialEq, Deserialize, Serialize)]
@@ -259,15 +273,18 @@ pub struct StyleSheet {
     #[serde(deserialize_with = "deserialize_btree_map_u8", default)]
     pub properties: BTreeMap<String, PropertyMap>,
     #[serde(default)]
-    pub css: BTreeMap<String, BTreeSet<StyleSheetCss>>,
+    pub css: BTreeMap<String, Vec<StyleSheetCss>>,
     #[serde(default)]
     pub keyframes: KeyframesMap,
     #[serde(default)]
     pub global_css_files: BTreeSet<String>,
     #[serde(default)]
-    pub imports: BTreeMap<String, BTreeSet<String>>,
+    pub imports: BTreeMap<String, Vec<String>>,
     #[serde(default)]
-    pub font_faces: BTreeMap<String, BTreeSet<BTreeMap<String, String>>>,
+    pub font_faces: BTreeMap<String, Vec<BTreeMap<String, String>>>,
+    /// The cascade layers of each file, in the order the file first uses them
+    #[serde(default)]
+    pub layer_orders: BTreeMap<String, Vec<String>>,
     #[serde(skip)]
     pub theme: Theme,
 }
@@ -319,6 +336,7 @@ impl StyleSheet {
                 selector: selector.cloned(),
                 layer: layer.map(ToString::to_string),
                 typography: false,
+                order: 0,
             },
         )
     }
@@ -371,7 +389,9 @@ impl StyleSheet {
             Some(bucket) => bucket,
             None => self.imports.entry(file.to_string()).or_default(),
         };
-        bucket.insert(import.to_string());
+        if !bucket.iter().any(|written| written == import) {
+            bucket.push(import.to_string());
+        }
     }
 
     pub fn add_font_face(&mut self, file: &str, properties: &BTreeMap<String, String>) {
@@ -384,7 +404,9 @@ impl StyleSheet {
             Some(bucket) => bucket,
             None => self.font_faces.entry(file.to_string()).or_default(),
         };
-        bucket.insert(properties.clone());
+        if !bucket.contains(properties) {
+            bucket.push(properties.clone());
+        }
     }
 
     pub fn add_css(&mut self, file: &str, css: &str) -> bool {
@@ -397,9 +419,16 @@ impl StyleSheet {
             Some(bucket) => bucket,
             None => self.css.entry(file.to_string()).or_default(),
         };
-        bucket.insert(StyleSheetCss {
+        if bucket.iter().any(|written| written.css == css) {
+            return false;
+        }
+        bucket.push(StyleSheetCss {
             css: css.to_string(),
-        })
+        });
+        if file == TAILWIND_PROPERTY_RULES_FILE {
+            bucket.sort_unstable();
+        }
+        true
     }
 
     pub fn add_keyframes(
@@ -439,6 +468,7 @@ impl StyleSheet {
         // like `css`/`font_faces`; clear them so an @import removed from source
         // does not linger across re-extraction (HMR).
         self.imports.remove(file);
+        self.layer_orders.remove(file);
         // `file` is the RAW source filename (globalCss is per-source-file). Atoms
         // were bucketed by canonical(file) in update_styles, so global-selector
         // atom removal must read from the canonical bucket while still matching
@@ -481,6 +511,8 @@ impl StyleSheet {
             theme.get_shadow_token_levels(),
         );
         set_typography_keys(theme.typography.keys().cloned().collect());
+        set_color_tokens(theme.get_color_token_names());
+        set_tailwind_css(&theme.tailwind_css);
         self.theme = theme;
     }
 
@@ -502,7 +534,14 @@ impl StyleSheet {
             Some(filename)
         };
         let bucket_scope = if single_css { None } else { Some(filename) };
-        for style in styles {
+        let mut rules: Vec<(&str, u32, &str)> = Vec::new();
+        let mut imports: Vec<(&str, u32, &str)> = Vec::new();
+        let mut font_faces: Vec<(&str, u32, &BTreeMap<String, String>)> = Vec::new();
+        // Names are handed out in the order styles are first seen, so the
+        // set is walked in a fixed order, not the hash order.
+        let mut ordered: Vec<&ExtractStyleValue> = styles.iter().collect();
+        ordered.sort_unstable();
+        for style in ordered {
             match style {
                 // A conditional `typography` preset: its class is the atom, and the
                 // preset's declarations are emitted under the atom's selector.
@@ -548,6 +587,7 @@ impl StyleSheet {
                                     |layer| format!("{layer}.{TYPOGRAPHY_LAYER}"),
                                 )),
                                 typography: true,
+                                order: 0,
                             },
                         ) {
                             collected = true;
@@ -596,15 +636,19 @@ impl StyleSheet {
                         }
                     };
 
-                    if self.add_property_with_layer(
-                        &class_name,
-                        st.property(),
+                    if self.insert_property(
                         st.level(),
-                        &resolved_value,
-                        st.selector(),
                         st.style_order(),
                         bucket_scope,
-                        st.layer(),
+                        StyleSheetProperty {
+                            class_name,
+                            property: st.property().to_string(),
+                            value: resolved_value.into_owned(),
+                            selector: st.selector().cloned(),
+                            layer: st.layer().map(ToString::to_string),
+                            typography: false,
+                            order: st.order(),
+                        },
                     ) {
                         collected = true;
                         if st.style_order() == Some(0) {
@@ -685,21 +729,61 @@ impl StyleSheet {
                     }
                 }
                 ExtractStyleValue::Css(cs) => {
-                    if self.add_css(&cs.file, &cs.css) {
-                        // update global css
-                        updated_base_style = true;
+                    if cs.file == TAILWIND_PROPERTY_RULES_FILE {
+                        updated_base_style |= self.add_css(&cs.file, &cs.css);
+                    } else {
+                        rules.push((&cs.file, cs.order, &cs.css));
                     }
                 }
                 ExtractStyleValue::Typography(_) => {}
-                ExtractStyleValue::Import(st) => {
-                    self.add_import(&st.file, &st.url);
-                }
+                ExtractStyleValue::Import(st) => imports.push((&st.file, st.order, &st.url)),
                 ExtractStyleValue::FontFace(font) => {
-                    self.add_font_face(&font.file, &font.properties);
+                    font_faces.push((&font.file, font.order, &font.properties));
+                }
+                ExtractStyleValue::LayerOrder(order) => {
+                    if self.layer_orders.get(&order.file) != Some(&order.layers) {
+                        self.global_css_files.insert(order.file.clone());
+                        self.layer_orders
+                            .insert(order.file.clone(), order.layers.clone());
+                        updated_base_style = true;
+                    }
                 }
             }
         }
-        (collected, updated_base_style)
+        // Each file's global rules, imports and font faces in the order it writes them
+        rules.sort_unstable();
+        imports.sort_unstable();
+        font_faces.sort_unstable();
+        let rules_changed = replace_by_file(
+            &mut self.css,
+            &mut self.global_css_files,
+            rules.into_iter().map(|(file, _, css)| {
+                (
+                    file,
+                    StyleSheetCss {
+                        css: css.to_string(),
+                    },
+                )
+            }),
+        );
+        let imports_changed = replace_by_file(
+            &mut self.imports,
+            &mut self.global_css_files,
+            imports
+                .into_iter()
+                .map(|(file, _, url)| (file, url.to_string())),
+        );
+        let font_faces_changed = replace_by_file(
+            &mut self.font_faces,
+            &mut self.global_css_files,
+            font_faces
+                .into_iter()
+                .map(|(file, _, properties)| (file, properties.clone())),
+        );
+        (
+            collected,
+            updated_base_style || rules_changed || imports_changed || font_faces_changed,
+        )
     }
 
     #[must_use]
@@ -871,7 +955,7 @@ impl StyleSheet {
         // Estimate ~64 bytes per property for pre-allocation
         let prop_count: usize = map.values().map(FxHashSet::len).sum();
         let mut current_css = String::with_capacity(prop_count * 64);
-        let mut class_rules: Vec<(RuleOrder<'_>, &StyleSheetProperty)> =
+        let mut class_rules: Vec<(RuleOrder<'_>, Wrapper<'_>, &StyleSheetProperty)> =
             Vec::with_capacity(prop_count);
         let mut at_rules: Vec<(AtRuleOrder<'_>, Wrapper<'_>, &StyleSheetProperty)> = Vec::new();
         let mut global_props: Vec<GlobalProp<'_>> = Vec::new();
@@ -882,23 +966,41 @@ impl StyleSheet {
                     continue;
                 }
                 match &prop.selector {
-                    Some(StyleSelector::Global(selector, _)) => {
-                        global_props.push((*level, selector.as_str(), prop));
+                    Some(StyleSelector::Global(selector, file)) => {
+                        global_props.push((*level, selector.as_str(), file.as_str(), prop));
                     }
                     Some(StyleSelector::At {
                         kind,
                         query,
                         selector,
                         outer,
-                        ..
+                        file,
                     }) => {
+                        let wrapper = Wrapper {
+                            level: *level,
+                            at_rule: Some((outer.as_slice(), *kind, query.as_str())),
+                        };
+                        let selector = selector.as_deref();
+                        if *level == 0
+                            && *kind == AtRuleKind::Media
+                            && query == "(hover:hover)"
+                            && outer.is_empty()
+                            && file.is_none()
+                            && selector.is_some()
+                        {
+                            class_rules.push((
+                                (selector_group(selector), *level, selector.unwrap_or("")),
+                                wrapper,
+                                prop,
+                            ));
+                            continue;
+                        }
                         let chain = outer
                             .iter()
                             .map(|rule| (rule.kind, rule.query.as_str()))
                             .chain(std::iter::once((*kind, query.as_str())))
                             .map(|(kind, query)| (kind as u8, query_order(kind, query), query))
                             .collect();
-                        let selector = selector.as_deref();
                         at_rules.push((
                             (
                                 chain,
@@ -906,18 +1008,26 @@ impl StyleSheet {
                                 *level,
                                 selector.unwrap_or(""),
                             ),
-                            Wrapper {
-                                level: *level,
-                                at_rule: Some((outer.as_slice(), *kind, query.as_str())),
-                            },
+                            wrapper,
                             prop,
                         ));
                     }
                     Some(StyleSelector::Selector(selector)) => class_rules.push((
                         (selector_group(Some(selector)), *level, selector.as_str()),
+                        Wrapper {
+                            level: *level,
+                            at_rule: None,
+                        },
                         prop,
                     )),
-                    None => class_rules.push(((selector_group(None), *level, ""), prop)),
+                    None => class_rules.push((
+                        (selector_group(None), *level, ""),
+                        Wrapper {
+                            level: *level,
+                            at_rule: None,
+                        },
+                        prop,
+                    )),
                 }
             }
         }
@@ -927,25 +1037,22 @@ impl StyleSheet {
 
         // Selector group (plain, then `SELECTOR_ORDER`) sorts before the breakpoint
         // level, so `:active` still follows a `:hover` set at a wider breakpoint while
-        // one selector's responsive values keep ascending. At-rules follow every plain
-        // rule so a condition beats the breakpoint values it overrides; among
-        // themselves they order by condition, then selector group, then level.
-        class_rules.sort_by(|a, b| a.0.cmp(&b.0).then_with(|| prop_cmp(a.1, b.1)));
+        // one selector's responsive values keep ascending. Standalone level-0 hover
+        // guards share that order without losing their media wrapper. Other at-rules,
+        // including responsive hover guards, follow these rules and keep ordering by
+        // condition, then selector group, then level.
+        class_rules.sort_by(|a, b| {
+            a.0.cmp(&b.0)
+                .then_with(|| prop_cmp(a.2, b.2))
+                .then_with(|| a.2.selector.cmp(&b.2.selector))
+        });
         at_rules.sort_by(|a, b| a.0.cmp(&b.0).then_with(|| prop_cmp(a.2, b.2)));
 
         let mut open: Option<(Wrapper<'_>, Option<usize>)> = None;
         let mut open_rule: Option<&StyleSheetProperty> = None;
         for (wrapper, prop) in class_rules
             .iter()
-            .map(|((_, level, _), prop)| {
-                (
-                    Wrapper {
-                        level: *level,
-                        at_rule: None,
-                    },
-                    *prop,
-                )
-            })
+            .map(|(_, wrapper, prop)| (*wrapper, *prop))
             .chain(at_rules.iter().map(|(_, wrapper, prop)| (*wrapper, *prop)))
         {
             if open.as_ref().is_none_or(|(current, _)| *current != wrapper) {
@@ -1031,19 +1138,23 @@ impl StyleSheet {
 
     fn write_global_props(&self, css: &mut String, mut global_props: Vec<GlobalProp<'_>>) {
         // Same order as class rules: selector group before breakpoint level, so a
-        // `:hover` set at a wider breakpoint still precedes `:active`.
+        // `:hover` set at a wider breakpoint still precedes `:active`. Within
+        // them each file keeps the order it writes its declarations in, as the
+        // later of two equally specific ones wins.
         global_props.sort_by(|a, b| {
             global_selector_group(a.1)
                 .cmp(&global_selector_group(b.1))
                 .then_with(|| a.0.cmp(&b.0))
+                .then_with(|| a.2.cmp(b.2))
+                .then_with(|| a.3.order.cmp(&b.3.order))
                 .then_with(|| a.1.cmp(b.1))
-                .then_with(|| a.2.property.cmp(&b.2.property))
-                .then_with(|| a.2.value.cmp(&b.2.value))
+                .then_with(|| a.3.property.cmp(&b.3.property))
+                .then_with(|| a.3.value.cmp(&b.3.value))
         });
 
         let mut open_level: Option<u8> = None;
         let mut open_selector: Option<&str> = None;
-        for (level, selector, prop) in global_props {
+        for (level, selector, _, prop) in global_props {
             if open_level != Some(level) {
                 if open_selector.take().is_some() {
                     css.push('}');
@@ -1117,7 +1228,12 @@ impl StyleSheet {
     pub fn create_css(&self, filename: Option<&str>, import_main_css: bool) -> String {
         let mut css = String::with_capacity(4096);
         css.push_str(Self::create_header());
-        for import in self.imports.values().flatten() {
+        // An import written again takes effect where it is written last
+        let imports: Vec<&String> = self.imports.values().flatten().collect();
+        for (index, import) in imports.iter().enumerate() {
+            if imports[index + 1..].contains(import) {
+                continue;
+            }
             if import.starts_with('"') {
                 push_fmt!(&mut css, "@import {import};");
             } else {
@@ -1196,24 +1312,24 @@ impl StyleSheet {
             }
             // One source file extracted under multiple passes (e.g. Next
             // server + client compilations) registers identical @font-face rules
-            // under multiple file keys; emit each distinct rule only once.
-            let mut seen_font_faces: BTreeSet<&BTreeMap<String, String>> = BTreeSet::new();
-            for font_faces in self.font_faces.values() {
-                for font_face in font_faces {
-                    if !seen_font_faces.insert(font_face) {
-                        continue;
-                    }
-                    css.push_str("@font-face{");
-                    let mut first = true;
-                    for (key, value) in font_face {
-                        if !first {
-                            css.push(';');
-                        }
-                        first = false;
-                        push_fmt!(&mut css, "{key}:{value}");
-                    }
-                    css.push('}');
+            // under multiple file keys; emit each distinct rule only once, where it
+            // is written last, as the last of equal rules is the one used.
+            let font_faces: Vec<&BTreeMap<String, String>> =
+                self.font_faces.values().flatten().collect();
+            for (index, font_face) in font_faces.iter().enumerate() {
+                if font_faces[index + 1..].contains(font_face) {
+                    continue;
                 }
+                css.push_str("@font-face{");
+                let mut first = true;
+                for (key, value) in *font_face {
+                    if !first {
+                        css.push(';');
+                    }
+                    first = false;
+                    push_fmt!(&mut css, "{key}:{value}");
+                }
+                css.push('}');
             }
 
             // global css
@@ -1230,23 +1346,25 @@ impl StyleSheet {
                 push_fmt!(&mut css, "@layer b{{{base_css}}}");
             }
 
-            // Generate @layer declarations and wrapped styles for custom layers
-            if !layered_styles.is_empty() {
-                // Add layer declarations
-                css.push_str("@layer ");
-                let mut first = true;
-                for name in layered_styles.keys() {
-                    if !first {
-                        css.push(',');
-                    }
-                    first = false;
-                    css.push_str(name);
+            // Declare the custom layers in the order files first use them, as the
+            // later layer wins, then any others; then their styles
+            let mut layer_names: Vec<&str> = Vec::new();
+            for name in self
+                .layer_orders
+                .values()
+                .flatten()
+                .map(String::as_str)
+                .chain(layered_styles.keys().map(String::as_str))
+            {
+                if !layer_names.contains(&name) {
+                    layer_names.push(name);
                 }
-                css.push(';');
-
-                for (layer_name, layer_css) in layered_styles {
-                    push_fmt!(&mut css, "@layer {layer_name}{{{layer_css}}}");
-                }
+            }
+            if !layer_names.is_empty() {
+                push_fmt!(&mut css, "@layer {};", layer_names.join(","));
+            }
+            for (layer_name, layer_css) in &layered_styles {
+                push_fmt!(&mut css, "@layer {layer_name}{{{layer_css}}}");
             }
             // Atom hoisting: emit shared (hoisted) order!=0 atoms into the global
             // stylesheet, aggregated across every file and deduplicated by atom
@@ -1366,6 +1484,28 @@ impl StyleSheet {
         }
         css
     }
+}
+
+/// Put the entries of each file written in `entries` in place of the ones it
+/// had, and tell whether any changed
+fn replace_by_file<'a, T: PartialEq>(
+    map: &mut BTreeMap<String, Vec<T>>,
+    global_css_files: &mut BTreeSet<String>,
+    entries: impl Iterator<Item = (&'a str, T)>,
+) -> bool {
+    let mut by_file: BTreeMap<&str, Vec<T>> = BTreeMap::new();
+    for (file, entry) in entries {
+        by_file.entry(file).or_default().push(entry);
+    }
+    let mut changed = false;
+    for (file, entries) in by_file {
+        global_css_files.insert(file.to_string());
+        if map.get(file) != Some(&entries) {
+            map.insert(file.to_string(), entries);
+            changed = true;
+        }
+    }
+    changed
 }
 
 #[cfg(test)]
@@ -2911,6 +3051,44 @@ mod tests {
 
     #[test]
     #[serial]
+    fn test_class_names_do_not_depend_on_the_order_styles_are_inserted() {
+        use extractor::extract_style::extract_static_style::ExtractStaticStyle;
+        use extractor::extract_style::extract_style_value::ExtractStyleValue;
+
+        let values: Vec<ExtractStyleValue> = (0..40)
+            .map(|index| {
+                ExtractStyleValue::Static(ExtractStaticStyle::new(
+                    ["color", "margin", "padding", "width"][index % 4],
+                    &format!("{index}px"),
+                    0,
+                    None,
+                ))
+            })
+            .collect();
+        let mut outputs = Vec::new();
+        for reverse in [false, true] {
+            css::class_map::reset_class_map();
+            let mut styles = FxHashSet::default();
+            if reverse {
+                values.iter().rev().for_each(|value| {
+                    styles.insert(value.clone());
+                });
+            } else {
+                values.iter().for_each(|value| {
+                    styles.insert(value.clone());
+                });
+            }
+            let mut sheet = StyleSheet::default();
+            sheet.update_styles(&styles, "index.tsx", true);
+            outputs.push((
+                sheet.create_css(None, true),
+                css::class_map::get_class_map(),
+            ));
+        }
+        assert_eq!(outputs[0], outputs[1]);
+    }
+    #[test]
+    #[serial]
     fn test_update_styles_with_typography() {
         use extractor::extract_style::extract_style_value::ExtractStyleValue;
 
@@ -3122,6 +3300,7 @@ mod tests {
             selector: None,
             layer: None,
             typography: false,
+            order: 0,
         };
         assert_eq!(make("color", "red").cmp(&make("color", "red")), Equal);
         assert!(make("color", "red") < make("color", "white"));
@@ -3140,6 +3319,7 @@ mod tests {
                 selector,
                 layer: None,
                 typography: false,
+                order: 0,
             };
         let hover = || Some(StyleSelector::Selector("&:hover".to_string()));
 
@@ -3182,6 +3362,9 @@ mod tests {
 
         assert!(sheet.add_css("test.tsx", "html { color:red }"));
         assert!(sheet.add_css("test.tsx", "body { color:blue }"));
+        assert!(!sheet.add_css("test.tsx", "html { color:red }"));
+        sheet.add_import("test.tsx", "base.css");
+        sheet.add_font_face("test.tsx", &first_font);
 
         assert_eq!(sheet.properties["test.tsx"].len(), 1);
         assert_eq!(sheet.imports["test.tsx"].len(), 2);
@@ -3333,6 +3516,10 @@ mod tests {
     }
 
     fn pipeline_css(theme: Theme, source: &str) -> String {
+        pipeline_css_in_mode(theme, source, true)
+    }
+
+    fn pipeline_css_in_mode(theme: Theme, source: &str, single_css: bool) -> String {
         css::debug::set_debug(false);
         css::set_prefix(None);
         css::atom_hoist::set_atom_hoist(None);
@@ -3346,19 +3533,28 @@ mod tests {
             ExtractOption {
                 package: "@devup-ui/core".to_string(),
                 css_dir: "@devup-ui/core".to_string(),
-                single_css: true,
+                single_css,
                 import_main_css: false,
                 import_aliases: std::collections::HashMap::new(),
             },
         )
         .unwrap();
-        sheet.update_styles(&output.styles, "test.tsx", true);
+        sheet.update_styles(&output.styles, "test.tsx", single_css);
+        let filename = if single_css { None } else { Some("test.tsx") };
+        let css = sheet.create_css(filename, false);
+        if !single_css {
+            assert_eq!(sheet.create_css(None, false), StyleSheet::create_header());
+            assert_eq!(
+                sheet.create_css(Some("other.tsx"), false),
+                StyleSheet::create_header()
+            );
+        }
         // Class names come from a process-wide counter; number them by first
         // appearance so the expected CSS only pins down structure and order.
         let mut names: Vec<String> = vec![];
         compile_regex(r"\.([A-Za-z_][\w-]*)")
             .replace_all(
-                sheet.create_css(None, false).split("*/").nth(1).unwrap(),
+                css.split("*/").nth(1).unwrap(),
                 |caps: &regex_lite::Captures| {
                     let index = names.iter().position(|n| *n == caps[1]).unwrap_or_else(|| {
                         names.push(caps[1].to_string());
@@ -3368,6 +3564,256 @@ mod tests {
                 },
             )
             .into_owned()
+    }
+
+    #[rstest]
+    #[case(
+        "hover:bg-red-500 active:bg-blue-500",
+        "@media(hover:hover){.c0:hover{background-color:oklch(63.7% .237 25.331)}}.c1:active{background-color:oklch(62.3% .214 259.815)}"
+    )]
+    #[case(
+        "md:hover:bg-red-500 active:bg-blue-500",
+        ".c0:active{background-color:oklch(62.3% .214 259.815)}@media(min-width:768px)and (hover:hover){.c1:hover{background-color:oklch(63.7% .237 25.331)}}"
+    )]
+    #[case(
+        "hover:bg-red-500 focus:bg-green-500 active:bg-blue-500",
+        "@media(hover:hover){.c0:hover{background-color:oklch(63.7% .237 25.331)}}.c1:focus{background-color:oklch(72.3% .219 149.579)}.c2:active{background-color:oklch(62.3% .214 259.815)}"
+    )]
+    #[case(
+        "hover:bg-red-500 disabled:bg-gray-500",
+        "@media(hover:hover){.c0:hover{background-color:oklch(63.7% .237 25.331)}}.c1:disabled{background-color:oklch(55.1% .027 264.364)}"
+    )]
+    #[case(
+        "dark:hover:bg-red-500 active:bg-blue-500",
+        "@media(hover:hover){:root[data-theme=dark] .c0:hover{background-color:oklch(63.7% .237 25.331)}}.c1:active{background-color:oklch(62.3% .214 259.815)}"
+    )]
+    #[serial]
+    fn tailwind_states_keep_css_order_when_hover_is_guarded(
+        #[case] classes: &str,
+        #[case] expected: &str,
+        #[values(true, false)] single_css: bool,
+    ) {
+        // Given the same utilities in either authored token order and CSS mode.
+        for tokens in [
+            classes.to_string(),
+            classes
+                .split_whitespace()
+                .rev()
+                .collect::<Vec<_>>()
+                .join(" "),
+        ] {
+            let source = format!("<Box className=\"{tokens}\" />");
+            // When extraction and sheet emission run together.
+            let css = pipeline_css_in_mode(Theme::default(), &source, single_css);
+            // Then the exact cascade order retains each original guard and selector.
+            assert_eq!(css, expected, "{source}, single_css={single_css}");
+        }
+    }
+
+    #[rstest]
+    #[case(
+        r"<Box _media={{ '(hover: hover)': { _hover: { bg: 'red' } } }} _active={{ bg: 'blue' }} />",
+        "@media(hover:hover){.c0:hover{background:red}}.c1:active{background:blue}"
+    )]
+    #[case(
+        r"<Box _hover={{ bg: 'red' }} _focus={{ bg: 'green' }} _active={{ bg: 'blue' }} _disabled={{ bg: 'gray' }} />",
+        ".c0:hover{background:red}.c1:focus{background:green}.c2:active{background:blue}.c3:disabled{background:gray}"
+    )]
+    #[case(
+        r"<Box bg={['white', 'black']} _hover={{ bg: ['red', null, 'orange'] }} _focus={{ bg: 'green' }} _active={{ bg: 'blue' }} _disabled={{ bg: 'gray' }} />",
+        ".c0{background:white}@media(min-width:480px){.c1{background:black}}.c2:hover{background:red}@media(min-width:768px){.c3:hover{background:orange}}.c4:focus{background:green}.c5:active{background:blue}.c6:disabled{background:gray}"
+    )]
+    #[case(
+        r"<Box _hover={{ bg: ['red', null, 'blue'] }} _active={{ bg: 'green' }} />",
+        ".c0:hover{background:red}@media(min-width:768px){.c1:hover{background:blue}}.c2:active{background:green}"
+    )]
+    #[serial]
+    #[allow(clippy::literal_string_with_formatting_args)]
+    fn devup_states_keep_css_order_when_guard_exception_is_applied(
+        #[case] source: &str,
+        #[case] expected: &str,
+        #[values(true, false)] single_css: bool,
+    ) {
+        // Given literal Devup state props, including the explicitly authored guard.
+        // When extraction emits the selected CSS mode.
+        let css = pipeline_css_in_mode(Theme::default(), source, single_css);
+        // Then only the standalone level-0 guard adopts ordinary state ordering.
+        assert_eq!(css, expected, "{source}, single_css={single_css}");
+    }
+
+    #[rstest]
+    #[case(
+        (2, StyleSelector::nest_at_rule(Some(&"hover".into()), AtRuleKind::Media, "(hover:hover)").unwrap()),
+        ".active:active{color:blue}@media(min-width:768px)and (hover:hover){.guard:hover{color:red}}"
+    )]
+    #[case(
+        (0, StyleSelector::nest_at_rule(Some(&"hover".into()), AtRuleKind::Media, "(hover:none)").unwrap()),
+        ".active:active{color:blue}@media(hover:none){.guard:hover{color:red}}"
+    )]
+    #[case(
+        (0, StyleSelector::nest_at_rule(Some(&"hover".into()), AtRuleKind::Media, "(prefers-reduced-motion:reduce)").unwrap()),
+        ".active:active{color:blue}@media(prefers-reduced-motion:reduce){.guard:hover{color:red}}"
+    )]
+    #[case(
+        (0, StyleSelector::nest_at_rule(Some(&"hover".into()), AtRuleKind::Media, "(hover:hover)and (min-width:900px)").unwrap()),
+        ".active:active{color:blue}@media(hover:hover)and (min-width:900px){.guard:hover{color:red}}"
+    )]
+    #[case(
+        (0, StyleSelector::nest_at_rule(Some(&"hover".into()), AtRuleKind::Supports, "(hover:hover)").unwrap()),
+        ".active:active{color:blue}@supports(hover:hover){.guard:hover{color:red}}"
+    )]
+    #[case(
+        (0, StyleSelector::nest_at_rule(Some(&"hover".into()), AtRuleKind::Container, "(hover:hover)").unwrap()),
+        ".active:active{color:blue}@container(hover:hover){.guard:hover{color:red}}"
+    )]
+    #[case(
+        (0, StyleSelector::At {
+            kind: AtRuleKind::Media,
+            query: "(hover:hover)".to_string(),
+            selector: Some("&:hover".to_string()),
+            outer: vec![AtRule { kind: AtRuleKind::Supports, query: "(display:grid)".to_string() }],
+            file: None,
+        }),
+        ".active:active{color:blue}@supports(display:grid){@media(hover:hover){.guard:hover{color:red}}}"
+    )]
+    #[case(
+        (0, StyleSelector::At {
+            kind: AtRuleKind::Media,
+            query: "(hover:hover)".to_string(),
+            selector: Some("body:hover".to_string()),
+            outer: vec![],
+            file: Some("global.tsx".to_string()),
+        }),
+        ".active:active{color:blue}@media(hover:hover){body:hover{color:red}}"
+    )]
+    #[case(
+        (0, StyleSelector::nest_at_rule(None, AtRuleKind::Media, "(hover:hover)").unwrap()),
+        ".active:active{color:blue}@media(hover:hover){.guard{color:red}}"
+    )]
+    #[serial]
+    #[allow(clippy::literal_string_with_formatting_args)]
+    fn conditions_keep_css_order_when_guard_has_other_constraints(
+        #[case] condition: (u8, StyleSelector),
+        #[case] expected: &str,
+        #[values(true, false)] single_css: bool,
+    ) {
+        // Given an ordinary active state and one excluded conditional shape.
+        let mut sheet = StyleSheet::default();
+        let filename = if single_css { None } else { Some("test.tsx") };
+        sheet.add_property(
+            "active",
+            "color",
+            0,
+            "blue",
+            Some(&"active".into()),
+            None,
+            filename,
+        );
+        sheet.add_property(
+            "guard",
+            "color",
+            condition.0,
+            "red",
+            Some(&condition.1),
+            None,
+            filename,
+        );
+        // When the sheet emits its original condition-ordered tail.
+        let css = sheet.create_css(filename, false);
+        // Then the exact wrapper and its position after active remain unchanged.
+        assert_eq!(css.split("*/").nth(1).unwrap(), expected);
+    }
+
+    #[rstest]
+    #[serial]
+    fn guarded_rules_merge_when_wrappers_and_selectors_match(
+        #[values(None, Some("ui"))] layer: Option<&str>,
+        #[values(true, false)] single_css: bool,
+    ) {
+        // Given multiple declarations, guarded classes, and wrapper transitions in o2.
+        let mut sheet = StyleSheet::default();
+        let filename = if single_css { None } else { Some("test.tsx") };
+        let guard =
+            StyleSelector::nest_at_rule(Some(&"hover".into()), AtRuleKind::Media, "(hover:hover)")
+                .unwrap();
+        let motion =
+            StyleSelector::nest_at_rule(None, AtRuleKind::Media, "(prefers-reduced-motion:reduce)")
+                .unwrap();
+        let focus = StyleSelector::from("focus");
+        let active = StyleSelector::from("active");
+        for (name, property, value, selector) in [
+            ("base", "color", "black", None),
+            ("guard", "background", "red", Some(&guard)),
+            ("guard", "color", "white", Some(&guard)),
+            ("other", "color", "yellow", Some(&guard)),
+            ("focus", "color", "green", Some(&focus)),
+            ("active", "color", "blue", Some(&active)),
+            ("motion", "color", "gray", Some(&motion)),
+        ] {
+            sheet.add_property_with_layer(
+                name,
+                property,
+                0,
+                value,
+                selector,
+                Some(2),
+                filename,
+                layer,
+            );
+        }
+        // When emission crosses base, guard, state, and conditional wrappers.
+        let css = sheet.create_css(filename, false);
+        // Then declarations merge only within a matching rule and layer.
+        #[allow(clippy::literal_string_with_formatting_args)]
+        let body = ".base{color:black}@media(hover:hover){.guard:hover{background:red;color:white}.other:hover{color:yellow}}.focus:focus{color:green}.active:active{color:blue}@media(prefers-reduced-motion:reduce){.motion{color:gray}}";
+        let expected = match layer {
+            Some(layer) => format!("@layer o2{{@layer {layer}{{{body}}}}}"),
+            None => format!("@layer o2{{{body}}}"),
+        };
+        let declaration = if single_css { "@layer o2;" } else { "" };
+        assert_eq!(
+            css.split("*/").nth(1).unwrap(),
+            format!("{declaration}{expected}")
+        );
+    }
+
+    #[rstest]
+    #[case(
+        "red",
+        ".same:hover{color:red}@media(hover:hover){.same:hover{color:red}}"
+    )]
+    #[case(
+        "blue",
+        "@media(hover:hover){.same:hover{color:blue}}.same:hover{color:red}"
+    )]
+    #[case(
+        "white",
+        ".same:hover{color:red}@media(hover:hover){.same:hover{color:white}}"
+    )]
+    #[serial]
+    #[allow(clippy::literal_string_with_formatting_args)]
+    fn guarded_and_ordinary_rules_stay_distinct_when_order_keys_tie(
+        #[case] guarded_value: &str,
+        #[case] expected: &str,
+        #[values(true, false)] reverse: bool,
+    ) {
+        // Given equal order keys, with either tied or distinct declaration values.
+        let mut sheet = StyleSheet::default();
+        let guard =
+            StyleSelector::nest_at_rule(Some(&"hover".into()), AtRuleKind::Media, "(hover:hover)")
+                .unwrap();
+        let ordinary = StyleSelector::from("hover");
+        let mut rules = [(&guard, guarded_value), (&ordinary, "red")];
+        if reverse {
+            rules.reverse();
+        }
+        for (selector, value) in rules {
+            sheet.add_property("same", "color", 0, value, Some(selector), None, None);
+        }
+        // When sorting must resolve an otherwise identical rule key.
+        let css = sheet.create_css(None, false);
+        // Then the selector tie is deterministic without dropping either wrapper.
+        assert_eq!(css.split("*/").nth(1).unwrap(), expected);
     }
 
     #[test]
@@ -3496,12 +3942,56 @@ mod tests {
             ),
             (
                 "<div className={css({ color: 'red', '@layer': { base: { color: 'blue', p: [1, null, 2], _hover: { color: 'green' }, '@layer': { inner: { m: 1 } } } } })} />",
-                ".c0{color:red}@layer base{.c1{color:blue}.c2{padding:4px}@media(min-width:768px){.c3{padding:8px}}.c4:hover{color:green}}@layer base.c5{.c6{margin:4px}}",
+                "@layer base,base.c0;.c1{color:red}@layer base{.c2{color:blue}.c3{padding:4px}@media(min-width:768px){.c4{padding:8px}}.c5:hover{color:green}}@layer base.c0{.c6{margin:4px}}",
+            ),
+            // Layers are declared in the order the file first uses them.
+            (
+                "<div className={css({ '@layer': { reset: { color: 'red' }, base: { color: 'blue' }, alpha: { m: 1 } } })} />",
+                "@layer reset,base,alpha;@layer alpha{.c0{margin:4px}}@layer base{.c1{color:blue}}@layer reset{.c2{color:red}}",
             ),
             // Layered and unlayered declarations keep apart, dynamic ones included.
             (
                 "const A = styled.div({ color: 'red', width: w, '@layer': { base: { color: 'red', width: v } } })",
-                ".c0{color:red}.c1{width:var(--c)}@layer base{.c2{color:red}.c3{width:var(--f)}}",
+                "@layer base;.c0{color:red}.c1{width:var(--c)}@layer base{.c2{color:red}.c3{width:var(--f)}}",
+            ),
+        ] {
+            assert_eq!(pipeline_css(Theme::default(), source), expected, "{source}");
+        }
+    }
+
+    #[test]
+    #[serial]
+    #[allow(clippy::literal_string_with_formatting_args)]
+    fn test_nested_selector_pipeline() {
+        for (source, expected) in [
+            // Without `&`, a nested rule selects descendants; a pseudo-class or
+            // pseudo-element selects the component itself.
+            (
+                "const X = styled.div`.child { color: red; } > p { color: blue; &:hover { color: green; } } :hover { color: black; } ::before { content: 'x'; } html.test & { display: none; } & + & { margin: 0; }`",
+                ".c0 + .c0{margin:0}.c1:hover{color:black}.c2 .c3{color:red}.c4 > p{color:blue}.c5 > p:hover{color:green}.c6::before{content:'x'}html.c7 .c8{display:none}",
+            ),
+            // Each selector of a list is relative on its own, and a rule nested
+            // in a list applies under every selector of it.
+            (
+                "const X = styled.div`h1, &:after { color: red; } h2, h3 { span { color: blue; } }`",
+                ".c0 h1,.c0:after{color:red}.c1 h2 span,.c1 h3 span{color:blue}",
+            ),
+            // `content` keeps its strings as written.
+            (
+                r#"const X = styled.div`&::before { content: 'hello world'; } &::after { content: "x"; } &.empty::after { content: ""; } &.escaped::after { content: "a\"b"; } &.attr::after { content: attr(data-x); }`"#,
+                r#".c0.c1::after{content:attr(data-x)}.c2.c3::after{content:""}.c4.c5::after{content:"a\"b"}.c6::after{content:"x"}.c7::before{content:'hello world'}"#,
+            ),
+            // `params` go on the pseudo-class that takes them, wherever nesting
+            // put it.
+            (
+                "<Box _groupNthChild={{ params: ['2n'], color: 'red' }} _hover={{ _groupNthChild: { params: ['3n'], color: 'blue' } }} _not={{ params: ['.x'], _nthChild: { params: ['2n'], color: 'green' } }} />",
+                ":is([role=group],[data-group]):nth-child(3n) .c0:hover{color:blue}.c1:not(.c2):nth-child(2n){color:green}:is([role=group],[data-group]):nth-child(2n) .c3{color:red}",
+            ),
+            // A bare `selectors` key is a pseudo-class name, an attribute of the
+            // element, or a selector of its descendants, under a parent too.
+            (
+                "<Box selectors={{ hover: { color: 'red' }, groupHover: { color: 'blue' }, '.child': { m: 1 }, '[aria-busy]': { p: 1 }, '> p': { m: 2 }, _focus: { selectors: { focusVisible: { color: 'green' }, '[data-x]': { color: 'black' }, 'b i': { color: 'white' } } } }} _hover=\"color: pink\" _active={false} _focusWithin={[false, null, true]} />",
+                ".c0:hover{color:pink}.c1:hover{color:red}:is([role=group],[data-group]):hover .c2{color:blue}.c3 .c4{margin:4px}.c5 > p{margin:8px}.c6:focus b i{color:white}.c7:focus:focus-visible{color:green}.c8:focus[data-x]{color:black}.c9[aria-busy]{padding:4px}",
             ),
         ] {
             assert_eq!(pipeline_css(Theme::default(), source), expected, "{source}");
@@ -3633,6 +4123,25 @@ mod tests {
 
     #[test]
     #[serial]
+    fn test_set_theme_reads_the_tailwind_css() {
+        let theme: Theme =
+            serde_json::from_str(r#"{"tailwindCss": "@theme { --color-brand: #0af; }"}"#).unwrap();
+        let mut sheet = StyleSheet::default();
+
+        sheet.set_theme(theme);
+        assert_eq!(
+            css::tailwind_definitions::theme_value("color", "brand").as_deref(),
+            Some("#0af")
+        );
+
+        sheet.set_theme(Theme::default());
+        assert_eq!(
+            css::tailwind_definitions::theme_value("color", "brand"),
+            None
+        );
+    }
+    #[test]
+    #[serial]
     fn test_global_css_reads_theme_tokens() {
         let mut sheet = StyleSheet::default();
         let output = extract(
@@ -3650,9 +4159,69 @@ mod tests {
         sheet.update_styles(&output.styles, "global.tsx", true);
         let css = sheet.create_css(None, false);
         assert!(
-            css.contains("body{border:1px solid var(--line-100);color:var(--text)}"),
+            css.contains("body{color:var(--text);border:1px solid var(--line-100)}"),
             "{css}"
         );
+    }
+
+    #[test]
+    #[serial]
+    fn test_global_rules_keep_written_order() {
+        for (source, expected) in [
+            (
+                "globalCss({ imports: ['z.css', 'a.css', 'z.css'] })\nglobalCss`body{color:red}`\nglobalCss`body{color:blue}`\nglobalCss`body{color:red}`\nglobalCss({ fontFaces: [{ fontFamily: 'B', src: 'b.woff2' }, { fontFamily: 'A', src: 'a.woff2' }, { fontFamily: 'B', src: 'b.woff2' }] })",
+                "@import \"a.c0\";@import \"z.c0\";@font-face{font-family:A;src:url(a.c1)}@font-face{font-family:B;src:url(b.c1)}body{color:red}body{color:blue}body{color:red}",
+            ),
+            (
+                "globalCss({ body: { color: 'red' } })\nglobalCss({ body: { color: 'blue' } })\nglobalCss({ '.z': { color: 'red' }, '.a': { color: 'blue' } })",
+                "@layer b;@layer b{body{color:red;color:blue}.c0{color:red}.c1{color:blue}}",
+            ),
+            (
+                "globalCss({ '@layer zz': { p: { m: 0 } }, '@layer aa': { p: { m: 1 } } })",
+                "@layer b;@layer zz,aa;@layer aa{p{margin:4px}}@layer zz{p{margin:0}}",
+            ),
+        ] {
+            assert_eq!(pipeline_css(Theme::default(), source), expected, "{source}");
+        }
+    }
+
+    #[test]
+    #[serial]
+    fn test_global_rules_and_layers_update_per_file() {
+        reset_class_map();
+        reset_file_map();
+        let option = ExtractOption {
+            package: "@devup-ui/core".to_string(),
+            css_dir: "@devup-ui/core".to_string(),
+            single_css: true,
+            import_main_css: false,
+            import_aliases: std::collections::HashMap::new(),
+        };
+        let mut sheet = StyleSheet::default();
+        let b = extract(
+            "b.tsx",
+            "import {globalCss} from '@devup-ui/core';globalCss({ '@layer base': { p: { m: 0 } } });globalCss`@import \"b.css\";`;globalCss({ imports: ['b.css'], fontFaces: [{ fontFamily: 'B', src: 'b.woff2' }] })",
+            option.clone(),
+        )
+        .unwrap();
+        let a = extract(
+            "a.tsx",
+            "import {globalCss} from '@devup-ui/core';globalCss({ '@layer reset': { p: { m: 0 } }, '@layer base': { p: { m: 1 } } })",
+            option,
+        )
+        .unwrap();
+        assert!(sheet.update_styles(&b.styles, "b.tsx", true).1);
+        assert!(sheet.update_styles(&a.styles, "a.tsx", true).1);
+        assert!(!sheet.update_styles(&b.styles, "b.tsx", true).1);
+        assert!(!sheet.update_styles(&a.styles, "a.tsx", true).1);
+        assert_eq!(sheet.layer_orders["a.tsx"], ["reset", "base"]);
+        let css = sheet.create_css(None, false);
+        assert!(css.contains("@layer reset,base;"), "{css}");
+
+        assert!(sheet.rm_global_css("a.tsx", true));
+        assert!(!sheet.layer_orders.contains_key("a.tsx"));
+        let css = sheet.create_css(None, false);
+        assert!(css.contains("@layer base;"), "{css}");
     }
 
     #[test]

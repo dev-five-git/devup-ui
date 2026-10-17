@@ -1,4 +1,5 @@
 import { Box, Input, Text } from '@devup-ui/react'
+import { forwardRef } from 'react'
 
 type RadioProps = Omit<React.InputHTMLAttributes<HTMLInputElement>, 'type'> & {
   checked?: boolean
@@ -38,20 +39,23 @@ type RadioProps = Omit<React.InputHTMLAttributes<HTMLInputElement>, 'type'> & {
       }
   )
 
-export function Radio({
-  className,
-  disabled,
-  children,
-  variant = 'default',
-  checked,
-  classNames,
-  styles,
-  style,
-  firstButton,
-  lastButton,
-  colors,
-  ...props
-}: RadioProps) {
+export const Radio = forwardRef<HTMLInputElement, RadioProps>(function Radio(
+  {
+    className,
+    disabled,
+    children,
+    variant = 'default',
+    checked,
+    classNames,
+    styles,
+    style,
+    firstButton,
+    lastButton,
+    colors,
+    ...props
+  },
+  ref,
+) {
   const isButton = variant === 'button'
   return (
     <Box
@@ -69,6 +73,7 @@ export function Radio({
     >
       {isButton ? (
         <Input
+          ref={ref}
           checked={checked}
           className={className}
           clipPath="inset(50%)"
@@ -86,6 +91,7 @@ export function Radio({
         />
       ) : (
         <Input
+          ref={ref}
           _focusVisible={{
             outline: '1px solid var(--border, var(--primary))',
           }}
@@ -235,4 +241,4 @@ export function Radio({
       )}
     </Box>
   )
-}
+})

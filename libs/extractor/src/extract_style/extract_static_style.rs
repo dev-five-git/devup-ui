@@ -11,7 +11,7 @@ use css::{
 use crate::{
     extract_style::{
         ExtractStyleProperty,
-        constant::{MAINTAIN_VALUE_PROPERTIES, TIME_PROPERTIES},
+        constant::{TIME_PROPERTIES, is_maintain_value_property, strip_vendor_prefix},
         style_property::StyleProperty,
     },
     utils::{convert_value, gcd},
@@ -40,6 +40,8 @@ pub struct ExtractStaticStyle {
     pub layer: Option<String>,
     /// How theme tokens should be resolved when converting to CSS.
     pub theme_token_resolution: ThemeTokenResolution,
+    /// Where a global declaration is written in its file; `0` for the others
+    pub order: u32,
 }
 
 impl Debug for ExtractStaticStyle {
@@ -68,7 +70,7 @@ impl ExtractStaticStyle {
         // own result). Only the aspect-ratio reduction and the `convert_value` branch
         // must own; both already produce owned `String`s. Byte-identical output.
         let normalized: Cow<str> =
-            if MAINTAIN_VALUE_PROPERTIES.contains(property) || property.starts_with("--") {
+            if is_maintain_value_property(property) || property.starts_with("--") {
                 if apply_aspect_ratio && property == "aspect-ratio" && value.contains('/') {
                     if let Some((a, b)) = value.split_once('/').and_then(|(a, b)| {
                         Some((a.trim().parse::<u32>().ok()?, b.trim().parse::<u32>().ok()?))
@@ -81,7 +83,7 @@ impl ExtractStaticStyle {
                 } else {
                     Cow::Borrowed(value)
                 }
-            } else if TIME_PROPERTIES.contains(property) {
+            } else if TIME_PROPERTIES.contains(strip_vendor_prefix(property)) {
                 // A time is written in `ms`, never on the spacing scale
                 value.parse::<f64>().map_or(Cow::Borrowed(value), |number| {
                     Cow::Owned(format!("{}ms", crate::utils::js_number_string(number)))
@@ -105,6 +107,7 @@ impl ExtractStaticStyle {
             style_order: None,
             layer: None,
             theme_token_resolution: ThemeTokenResolution::CssVariable,
+            order: 0,
         }
     }
 
@@ -137,6 +140,7 @@ impl ExtractStaticStyle {
             style_order: Some(0),
             layer: None,
             theme_token_resolution: ThemeTokenResolution::CssVariable,
+            order: 0,
         }
     }
 
@@ -185,6 +189,11 @@ impl ExtractStaticStyle {
     }
 
     #[must_use]
+    pub const fn order(&self) -> u32 {
+        self.order
+    }
+
+    #[must_use]
     pub const fn theme_token_resolution(&self) -> ThemeTokenResolution {
         self.theme_token_resolution
     }
@@ -211,6 +220,9 @@ impl ExtractStyleProperty for ExtractStaticStyle {
         ))
     }
 }
+
+#[cfg(test)]
+mod numeric_css_edge_tests;
 
 #[cfg(test)]
 mod tests {
