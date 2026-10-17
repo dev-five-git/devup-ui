@@ -11,12 +11,16 @@ use oxc_span::SPAN;
 use oxc_syntax::symbol::SymbolId;
 use rustc_hash::FxHashMap;
 
+use crate::ExtractStyleValue;
+
 /// The name a style API call gives
 #[derive(Clone)]
 pub enum StyleValue {
     /// A class `css()` gives: in CSS text it is a mixin, composed rather than
-    /// written as text, so it is read only outside CSS text
-    Class(String),
+    /// written as text, so it is read only outside CSS text. The styles behind
+    /// it, when the build knows them, let a later style composed with it
+    /// replace its declarations.
+    Class(String, Option<Vec<ExtractStyleValue>>),
     /// A name `keyframes()` gives
     Keyframes(String),
 }
@@ -25,6 +29,8 @@ pub enum StyleValue {
 pub struct StyleValues<'a> {
     scoping: Option<Scoping>,
     values: FxHashMap<SymbolId, StyleValue>,
+    /// The styles behind `css()` classes the file imports, by binding
+    imported: FxHashMap<String, Vec<ExtractStyleValue>>,
     /// The `const`s the file binds to a string, which a `className` reads as
     /// the classes they hold
     texts: FxHashMap<SymbolId, String>,
@@ -37,10 +43,15 @@ impl<'a> StyleValues<'a> {
         Self {
             scoping: Some(scoping),
             values: FxHashMap::default(),
+            imported: FxHashMap::default(),
             texts: FxHashMap::default(),
             rules: FxHashMap::default(),
             calls: FxHashMap::default(),
         }
+    }
+
+    pub fn import(&mut self, imported: FxHashMap<String, Vec<ExtractStyleValue>>) {
+        self.imported = imported;
     }
 
     /// The `const` `id` binds, whose value no code changes
@@ -55,6 +66,51 @@ impl<'a> StyleValues<'a> {
 
     pub fn insert(&mut self, symbol: SymbolId, value: StyleValue) {
         self.values.insert(symbol, value);
+    }
+
+    /// The binding `expression` reads, when it reads one
+    pub fn symbol(&self, expression: &Expression<'_>) -> Option<SymbolId> {
+        let Expression::Identifier(identifier) = expression else {
+            return None;
+        };
+        self.scoping
+            .as_ref()?
+            .get_reference(identifier.reference_id.get()?)
+            .symbol_id()
+    }
+
+    /// The binding the JSX element name `identifier` reads
+    pub fn reference_symbol(
+        &self,
+        identifier: &oxc_ast::ast::IdentifierReference<'_>,
+    ) -> Option<SymbolId> {
+        self.scoping
+            .as_ref()?
+            .get_reference(identifier.reference_id.get()?)
+            .symbol_id()
+    }
+
+    /// The styles behind the `css()` class `expression` reads
+    pub fn styles(&self, expression: &Expression<'_>) -> Option<&[ExtractStyleValue]> {
+        let Expression::Identifier(identifier) = expression else {
+            return None;
+        };
+        let symbol = self
+            .scoping
+            .as_ref()?
+            .get_reference(identifier.reference_id.get()?)
+            .symbol_id()?;
+        let scoping = self.scoping.as_ref()?;
+        match self.values.get(&symbol) {
+            Some(StyleValue::Class(_, Some(styles))) => Some(styles),
+            Some(_) => None,
+            None => scoping
+                .symbol_flags(symbol)
+                .is_import()
+                .then(|| self.imported.get(scoping.symbol_name(symbol)))
+                .flatten()
+                .map(Vec::as_slice),
+        }
     }
 
     pub fn insert_text(&mut self, symbol: SymbolId, text: String) {
@@ -273,8 +329,8 @@ impl<'a> VisitMut<'a> for Reads<'_, 'a> {
                 .and_then(|symbol| self.values.get(&symbol))
         {
             let value = match value {
-                StyleValue::Class(_) if self.context == ReadContext::CssText => return,
-                StyleValue::Class(value) | StyleValue::Keyframes(value) => value,
+                StyleValue::Class(..) if self.context == ReadContext::CssText => return,
+                StyleValue::Class(value, _) | StyleValue::Keyframes(value) => value,
             };
             *it = Expression::new_string_literal(
                 SPAN,
@@ -328,7 +384,7 @@ impl<'a> VisitMut<'a> for Reads<'_, 'a> {
                 .reference_id
                 .get()
                 .and_then(|reference| self.scoping.get_reference(reference).symbol_id())
-            && matches!(self.values.get(&symbol), Some(StyleValue::Class(_)))
+            && matches!(self.values.get(&symbol), Some(StyleValue::Class(..)))
             && !self.rules.contains_key(&symbol)
         {
             return;

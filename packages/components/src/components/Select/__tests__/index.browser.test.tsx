@@ -449,7 +449,8 @@ describe('Select', () => {
     // offsetWidth > 1024px
     Object.defineProperty(selectContainer, 'offsetWidth', { value: 1100 })
 
-    // rerender
+    // the container repositions when the window resizes
+    window.dispatchEvent(new Event('resize'))
     rerender(<Select>{children}</Select>)
 
     expect(container).toMatchSnapshot()

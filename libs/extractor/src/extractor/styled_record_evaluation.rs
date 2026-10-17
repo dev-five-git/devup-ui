@@ -2,7 +2,7 @@ use oxc_allocator::{CloneIn, FromIn, GetAllocator};
 use oxc_ast::{ast::Expression, builder::AstBuilder};
 use oxc_span::{GetSpan, SPAN};
 
-use crate::utils::{call_with_values, is_same_expression};
+use crate::utils::is_same_expression;
 
 /// Ordered reads shared by the class and variable expressions of one render.
 pub(super) struct Evaluations<'b, 'a> {
@@ -23,13 +23,7 @@ impl<'b, 'a> Evaluations<'b, 'a> {
     }
 
     pub fn capture(&mut self, value: &Expression<'a>, guard: &Expression<'a>) -> Expression<'a> {
-        let name = loop {
-            let name = format!("__devupRecord{}", self.next);
-            self.next += 1;
-            if !self.source.contains(&name) {
-                break name;
-            }
-        };
+        let name = self.fresh_name();
         let value = self.choose(guard, value, &self.undefined());
         self.bindings.push((name.clone(), value));
         Expression::new_identifier(
@@ -37,6 +31,16 @@ impl<'b, 'a> Evaluations<'b, 'a> {
             oxc_ast::ast::Ident::from_in(name.as_str(), self.builder.allocator()),
             self.builder,
         )
+    }
+
+    pub fn fresh_name(&mut self) -> String {
+        loop {
+            let name = format!("__devupRecord{}", self.next);
+            self.next += 1;
+            if !self.source.contains(&name) {
+                return name;
+            }
+        }
     }
 
     pub fn boolean(&self, value: bool) -> Expression<'a> {
@@ -73,76 +77,164 @@ impl<'b, 'a> Evaluations<'b, 'a> {
     }
 }
 
+fn visit_style_value_expression<'a>(
+    builder: &AstBuilder<'a>,
+    style: &mut crate::ExtractStyleValue,
+    visit: &mut impl FnMut(&mut Expression<'a>),
+) {
+    use crate::ExtractStyleValue;
+    match style {
+        ExtractStyleValue::Dynamic(value) => {
+            let mut expression = Expression::new_identifier(
+                SPAN,
+                oxc_ast::ast::Ident::from_in(value.identifier(), builder.allocator()),
+                builder,
+            );
+            visit(&mut expression);
+            *value.identifier_mut() = crate::utils::readable_code(&expression);
+        }
+        // Metadata values hold no expression to visit. LayerOrder is listed for exhaustiveness only:
+        // public styled records cannot reach it because final collection synthesizes layer order.
+        ExtractStyleValue::Static(_)
+        | ExtractStyleValue::Typography(_)
+        | ExtractStyleValue::Css(_)
+        | ExtractStyleValue::Import(_)
+        | ExtractStyleValue::FontFace(_)
+        | ExtractStyleValue::LayerOrder(_)
+        | ExtractStyleValue::Keyframes(_) => {}
+    }
+}
+
+pub(super) fn visit_style_expressions<'a>(
+    builder: &AstBuilder<'a>,
+    style: &mut crate::ExtractStyleProp<'a>,
+    visit: &mut impl FnMut(&mut Expression<'a>),
+) {
+    use crate::ExtractStyleProp;
+    match style {
+        ExtractStyleProp::Static(value) => visit_style_value_expression(builder, value, visit),
+        ExtractStyleProp::Unreadable { .. } => {}
+        ExtractStyleProp::StaticArray(styles) => {
+            for style in styles {
+                visit_style_expressions(builder, style, visit);
+            }
+        }
+        ExtractStyleProp::Conditional {
+            condition,
+            consequent,
+            alternate,
+        } => {
+            visit(condition);
+            for style in consequent.iter_mut().chain(alternate.iter_mut()) {
+                visit_style_expressions(builder, style, visit);
+            }
+        }
+        ExtractStyleProp::Enum { condition, map } => {
+            visit(condition);
+            for style in map.values_mut().flatten() {
+                visit_style_expressions(builder, style, visit);
+            }
+        }
+        ExtractStyleProp::Expression { expression, styles } => {
+            visit(expression);
+            for style in styles {
+                visit_style_value_expression(builder, style, visit);
+            }
+        }
+        ExtractStyleProp::MemberExpression { expression, map } => {
+            visit(expression);
+            for style in map.values_mut() {
+                visit_style_expressions(builder, style, visit);
+            }
+        }
+    }
+}
+
 pub(super) fn bind_render<'a>(
     builder: &AstBuilder<'a>,
     bindings: Vec<(String, Expression<'a>)>,
-    mut body: Expression<'a>,
+    body: Expression<'a>,
 ) -> Expression<'a> {
-    // Dependent arguments must be inside the scope of the preceding read.
-    for binding in bindings.into_iter().rev() {
-        body = call_with_values(builder, vec![binding], body);
+    use oxc_allocator::Vec as ArenaVec;
+    use oxc_ast::ast::{
+        ArrowFunctionBody, BindingPattern, FormalParameterKind, FormalParameters, Statement,
+        VariableDeclaration, VariableDeclarationKind, VariableDeclarator,
+    };
+    if bindings.is_empty() {
+        return body;
     }
-    body
+    // Sibling declarations preserve dependent read order without one scope per capture.
+    let mut statements = ArenaVec::with_capacity_in(bindings.len() + 1, builder);
+    for (name, value) in bindings {
+        let name = oxc_ast::ast::Ident::from_in(name.as_str(), builder.allocator());
+        // Sequence evaluation prevents declaration-name inference for anonymous definitions.
+        let value = Expression::new_sequence_expression(
+            SPAN,
+            ArenaVec::from_array_in(
+                [
+                    Expression::new_numeric_literal(
+                        SPAN,
+                        0.0,
+                        None,
+                        oxc_syntax::number::NumberBase::Decimal,
+                        builder,
+                    ),
+                    value,
+                ],
+                builder,
+            ),
+            builder,
+        );
+        let declaration = VariableDeclarator::new(
+            SPAN,
+            BindingPattern::new_binding_identifier(SPAN, name, builder),
+            None,
+            Some(value),
+            false,
+            builder,
+        );
+        statements.push(Statement::VariableDeclaration(VariableDeclaration::boxed(
+            SPAN,
+            VariableDeclarationKind::Const,
+            ArenaVec::from_array_in([declaration], builder),
+            false,
+            builder,
+        )));
+    }
+    statements.push(Statement::new_return_statement(SPAN, Some(body), builder));
+    let arrow = Expression::new_arrow_function_expression(
+        SPAN,
+        false,
+        None,
+        FormalParameters::boxed(
+            SPAN,
+            FormalParameterKind::ArrowFormalParameters,
+            ArenaVec::new_in(builder),
+            None,
+            builder,
+        ),
+        None,
+        ArrowFunctionBody::new_function_body(SPAN, ArenaVec::new_in(builder), statements, builder),
+        builder,
+    );
+    Expression::new_call_expression(
+        SPAN,
+        Expression::new_parenthesized_expression(SPAN, arrow, builder),
+        None,
+        ArenaVec::new_in(builder),
+        false,
+        builder,
+    )
 }
 
 #[cfg(test)]
-mod tests {
-    use boa_engine::{Context, Source};
-    use oxc_allocator::Allocator;
-    use oxc_ast::ast::Statement;
-    use oxc_parser::Parser;
-    use oxc_span::SourceType;
-    use rstest::rstest;
+#[path = "styled_record_evaluation_visitor_tests.rs"]
+mod visitor_tests;
 
-    use super::*;
-    use crate::utils::readable_code;
+#[cfg(test)]
+#[path = "styled_record_evaluation_depth_tests.rs"]
+mod depth_tests;
 
-    #[rstest]
-    #[case::equal_true(true, true)]
-    #[case::equal_false(false, false)]
-    #[case::different_true(true, false)]
-    #[case::different_false(false, true)]
-    fn boolean_choice_when_test_is_captured(
-        #[case] yes: bool,
-        #[case] no: bool,
-        #[values(false, true)] on: bool,
-    ) {
-        let allocator = Allocator::default();
-        let builder = AstBuilder::new(&allocator);
-        let source = "(trace.push('test'), on);";
-        let parsed = Parser::new(&allocator, source, SourceType::tsx()).parse();
-        assert_eq!(parsed.diagnostics.len(), 0);
-        let Statement::ExpressionStatement(statement) = &parsed.program.body[0] else {
-            panic!("test fixture must be an expression");
-        };
-        let mut reads = Evaluations::new(&builder, source.to_string());
-        let test = reads.capture(&statement.expression, &reads.boolean(true));
-        let choice = reads.choose(&test, &reads.boolean(yes), &reads.boolean(no));
-        match &choice {
-            Expression::BooleanLiteral(value) => {
-                assert_eq!(yes, no);
-                assert_eq!(value.value, yes);
-            }
-            Expression::ConditionalExpression(_) => assert_ne!(yes, no),
-            _ => panic!("Boolean choice must be constant or conditional"),
-        }
-        let render = bind_render(&builder, reads.bindings, choice);
-        let script = format!(
-            "const trace = []; const on = {on}; const result = {}; JSON.stringify([result, trace]);",
-            readable_code(&render)
-        );
-        let mut context = Context::default();
-        let result = match context.eval(Source::from_bytes(script.as_bytes())) {
-            Ok(result) => result,
-            Err(error) => panic!("Boolean choice evaluation failed: {error}"),
-        };
-        let result = match result.as_string() {
-            Some(result) => result.to_std_string_escaped(),
-            None => panic!("Boolean choice must return a JSON string"),
-        };
-        assert_eq!(
-            result,
-            format!(r#"[{},["test"]]"#, if on { yes } else { no })
-        );
-    }
-}
+#[cfg(test)]
+#[path = "styled_record_evaluation_tests.rs"]
+mod tests;

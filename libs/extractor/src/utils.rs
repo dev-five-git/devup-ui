@@ -281,50 +281,16 @@ pub(super) fn get_number_by_literal_expression(expr: &Expression) -> Option<f64>
             get_number_by_literal_expression(&parenthesized.expression)
         }
         Expression::StringLiteral(sl) => sl.value.parse::<f64>().ok(),
-        Expression::TemplateLiteral(tmp) => {
-            // `f64::from_str` succeeds only when every byte belongs to the
-            // float grammar: ASCII digits, sign/exponent punctuation, or the
-            // letters of the `inf`/`infinity`/`nan` keywords. An allocation-free
-            // scan that is STRICTLY more permissive than the parser lets us bail
-            // out (returning `None`) on the common non-numeric case — e.g. a
-            // `${x}px` template's quasis containing `p`/`x` — without collecting
-            // the quasis into a throwaway `String`. Whenever the parser would
-            // have returned `Some`, every byte passes this scan, so the result
-            // stays byte-identical.
-            let can_be_float = tmp.quasis.iter().all(|q| {
-                q.value.raw.bytes().all(|b| {
-                    b.is_ascii_digit()
-                        || matches!(
-                            b,
-                            b'.' | b'+'
-                                | b'-'
-                                | b'e'
-                                | b'E'
-                                | b'i'
-                                | b'I'
-                                | b'n'
-                                | b'N'
-                                | b'f'
-                                | b'F'
-                                | b'a'
-                                | b'A'
-                                | b't'
-                                | b'T'
-                                | b'y'
-                                | b'Y'
-                        )
-                })
-            });
-            if can_be_float {
-                tmp.quasis
-                    .iter()
-                    .map(|q| q.value.raw.as_str())
-                    .collect::<String>()
-                    .parse::<f64>()
-                    .ok()
-            } else {
-                None
+        Expression::TemplateLiteral(_) => {
+            let text = get_template_interpolation_string(expr)?;
+            let unsigned = text.strip_prefix(['+', '-']).unwrap_or(&text);
+            // Rust accepts infinity aliases that JavaScript Number rejects.
+            if unsigned.eq_ignore_ascii_case("inf")
+                || (unsigned.eq_ignore_ascii_case("infinity") && unsigned != "Infinity")
+            {
+                return None;
             }
+            text.parse().ok()
         }
         Expression::NumericLiteral(num) => Some(num.value),
         Expression::UnaryExpression(unary) => get_number_by_literal_expression(&unary.argument)
@@ -371,27 +337,41 @@ pub(crate) fn js_number_string(number: f64) -> String {
     }
 }
 
+/// Template substitutions preserve string spelling rather than CSS numeric normalization.
+fn get_template_interpolation_string<'a>(expr: &Expression<'a>) -> Option<Cow<'a, str>> {
+    match expr {
+        Expression::StringLiteral(value) => Some(Cow::Borrowed(value.value.as_str())),
+        Expression::ParenthesizedExpression(value) => {
+            get_template_interpolation_string(&value.expression)
+        }
+        Expression::TemplateLiteral(template) => {
+            let mut text = String::new();
+            for (index, quasi) in template.quasis.iter().enumerate() {
+                text.push_str(quasi.value.cooked.as_deref()?);
+                if let Some(expression) = template.expressions.get(index) {
+                    text.push_str(&get_template_interpolation_string(expression)?);
+                }
+            }
+            Some(Cow::Owned(text))
+        }
+        _ => get_string_by_literal_expression(expr),
+    }
+}
+
 pub(super) fn get_string_by_literal_expression<'a>(expr: &Expression<'a>) -> Option<Cow<'a, str>> {
+    match expr {
+        Expression::ParenthesizedExpression(value) => {
+            return get_string_by_literal_expression(&value.expression);
+        }
+        Expression::TemplateLiteral(_) => return get_template_interpolation_string(expr),
+        _ => {}
+    }
     get_number_by_literal_expression(expr)
         .map(|num| Cow::Owned(js_number_string(num)))
         .or_else(|| match expr {
-            Expression::ParenthesizedExpression(parenthesized) => {
-                get_string_by_literal_expression(&parenthesized.expression)
-            }
             Expression::StringLiteral(str) => Some(Cow::Borrowed(str.value.as_str())),
             Expression::BooleanLiteral(bool) => {
                 Some(Cow::Borrowed(if bool.value { "true" } else { "false" }))
-            }
-            Expression::TemplateLiteral(tmp) => {
-                let mut collect = String::new();
-                for (idx, q) in tmp.quasis.iter().enumerate() {
-                    collect.push_str(q.value.raw.as_str());
-                    if idx < tmp.expressions.len() {
-                        let value = get_string_by_literal_expression(&tmp.expressions[idx])?;
-                        collect.push_str(&value);
-                    }
-                }
-                Some(Cow::Owned(collect))
             }
             _ => None,
         })
@@ -823,7 +803,10 @@ fn branch<'b, 'a>(expression: &'b Expression<'a>) -> Option<Branch<'b, 'a>> {
 
 /// `value` as a class: itself when it is a string, nothing otherwise, as the
 /// libraries skip `true` and other non-class values
-fn string_class<'a>(ast_builder: &AstBuilder<'a>, value: &Expression<'a>) -> Expression<'a> {
+pub(super) fn string_class<'a>(
+    ast_builder: &AstBuilder<'a>,
+    value: &Expression<'a>,
+) -> Expression<'a> {
     if matches!(
         value,
         Expression::StringLiteral(_) | Expression::TemplateLiteral(_)
