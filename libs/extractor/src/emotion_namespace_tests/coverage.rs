@@ -9,7 +9,7 @@ fn aliases() -> HashMap<String, ImportAlias> {
 }
 
 fn normalized(code: &str) -> Result<String, String> {
-    emotion_namespace::normalize(code, "namespace.tsx", &aliases())
+    emotion_namespace::normalize(code, oxc_span::SourceType::tsx(), &aliases())
         .map(|(code, _)| code.into_owned())
         .map_err(|errors| format!("{errors:?}"))
 }

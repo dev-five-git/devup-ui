@@ -292,7 +292,14 @@ pub fn transform_import_aliases<'a>(
     package: &str,
     import_aliases: &HashMap<String, ImportAlias>,
 ) -> Cow<'a, str> {
-    transform_import_aliases_with_edits(code, filename, package, import_aliases).0
+    transform_import_aliases_with_edits(
+        code,
+        filename,
+        package,
+        import_aliases,
+        crate::parser_source_type(filename).unwrap_or_default(),
+    )
+    .0
 }
 
 /// Packages generating CSS on top of vanilla-extract's, which Devup UI does not
@@ -354,6 +361,7 @@ pub fn transform_import_aliases_with_edits<'a>(
     filename: &str,
     package: &str,
     import_aliases: &HashMap<String, ImportAlias>,
+    source_type: oxc_span::SourceType,
 ) -> (Cow<'a, str>, Vec<Edit>) {
     // Quick check: if no aliases match, return original code
     if import_aliases.is_empty() || !import_aliases.keys().any(|alias| code.contains(alias)) {
@@ -361,7 +369,6 @@ pub fn transform_import_aliases_with_edits<'a>(
     }
 
     let allocator = Allocator::default();
-    let source_type = SourceType::from_path(filename).unwrap_or_default();
 
     // Parse the code
     let parser_ret = Parser::new(&allocator, code, source_type).parse();
@@ -456,11 +463,10 @@ pub fn transform_import_aliases_with_edits<'a>(
 /// Reapply Emotion units to literals produced after the initial alias pass.
 pub(super) fn pixelify_emotion_values<'a>(
     code: &'a str,
-    filename: &str,
+    source_type: SourceType,
     original: &str,
 ) -> (Cow<'a, str>, Vec<Edit>) {
     let allocator = Allocator::default();
-    let source_type = SourceType::from_path(filename).unwrap_or_default();
     let original_program = Parser::new(&allocator, original, source_type)
         .parse()
         .program;
@@ -758,7 +764,7 @@ mod tests {
     use super::*;
     use insta::assert_snapshot;
     use oxc_ast::builder::AstBuilder;
-    use oxc_span::SPAN;
+    use oxc_span::{SPAN, SourceType};
 
     fn emotion_alias() -> HashMap<String, ImportAlias> {
         let mut aliases = HashMap::new();

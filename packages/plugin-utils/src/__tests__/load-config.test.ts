@@ -91,12 +91,11 @@ describe('loadDevupConfigSync', () => {
     })
   })
 
-  it('should return empty object for invalid JSON', () => {
+  it('throws a located error for invalid JSON', () => {
     const configPath = join(testDir, 'invalid.json')
     writeFileSync(configPath, 'not valid json {{{')
 
-    const result = loadDevupConfigSync(configPath)
-    expect(result).toEqual({})
+    expect(() => loadDevupConfigSync(configPath)).toThrow(configPath)
   })
 
   it('should resolve extends', () => {
