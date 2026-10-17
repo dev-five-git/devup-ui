@@ -196,7 +196,7 @@ describe('devupUILoader', () => {
       createCodeExtractResult({
         code: 'code',
         css: 'css',
-        map: '{}',
+        map: '{"version":3,"names":[],"sources":["index.tsx"],"mappings":"AAAA"}',
         cssFile: 'cssFile',
         updatedBaseStyle: options.updatedBaseStyle,
       }),
@@ -228,7 +228,12 @@ describe('devupUILoader', () => {
       )
     }
     await waitFor(() => {
-      expect(asyncCallback).toHaveBeenCalledWith(null, 'code', '{}')
+      expect(asyncCallback).toHaveBeenCalledWith(null, 'code', {
+        version: 3,
+        names: [],
+        sources: ['index.tsx'],
+        mappings: 'AAAA',
+      })
       expect(writeFileSpy).toHaveBeenCalledWith(
         join('cssFile', 'cssFile'),
         '/* index.tsx 0 */',
