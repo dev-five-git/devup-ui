@@ -3,7 +3,11 @@
 //! This module uses `boa_engine` to execute vanilla-extract style files
 //! and extract style definitions for processing by the existing extract logic.
 
-use crate::module_loader::{Evaluating, ModuleLoader, PACKAGE_BINDING, module_script};
+use crate::import_alias_visit::Edit;
+use crate::module_loader::{
+    Evaluating, ModuleLoader, PACKAGE_BINDING, SCRIPT_PATH, Script, Unit, module_script,
+};
+use crate::source_map;
 use crate::utils::keeps_bare_number;
 use boa_engine::{
     Context, JsArgs, JsObject, JsResult, JsString, JsValue, NativeFunction, Source, js_string,
@@ -12,7 +16,7 @@ use boa_engine::{
 };
 use css::file_map::get_file_num_by_filename;
 use oxc_allocator::Allocator;
-use oxc_codegen::Codegen;
+use oxc_codegen::{Codegen, CodegenOptions};
 use oxc_parser::Parser;
 use oxc_semantic::SemanticBuilder;
 use oxc_span::{GetSpan, SourceType};
@@ -21,12 +25,30 @@ use rustc_hash::{FxHashMap, FxHashSet};
 use smallvec::SmallVec;
 use std::cell::RefCell;
 use std::collections::BTreeSet;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use std::rc::Rc;
+
+#[path = "module_loader/serialization.rs"]
+mod serialization;
+use serialization::value_to_code;
+
+#[path = "vanilla_extract_css.rs"]
+mod own_css;
+
+#[cfg(test)]
+#[path = "vanilla_extract_tag_tests.rs"]
+mod css_tag_semantics_tests;
+#[cfg(test)]
+#[path = "vanilla_extract_gate_boundaries_tests.rs"]
+mod gate_boundaries_tag_tests;
 
 /// A `style()` or `keyframes()` call
 #[derive(Debug, Clone, Default)]
 pub struct StyleEntry {
+    /// Own Devup css source, retaining argument boundaries and known-class reads.
+    pub css: Option<String>,
+    /// Deep own rules lowered without depth-proportional generated syntax.
+    pub(crate) own_plan: Option<crate::own_css_plan::Plan>,
     /// The rule object JSON
     pub json: String,
     /// Whether the variable holding it is exported
@@ -163,20 +185,25 @@ pub(crate) fn json_string(text: &str) -> String {
 }
 
 /// `JSON.stringify(value, replacer)`, `None` when it produces no string
-fn stringify(value: &JsValue, replacer: JsValue, context: &mut Context) -> Option<String> {
+fn stringify(
+    value: &JsValue,
+    replacer: JsValue,
+    context: &mut Context,
+) -> JsResult<Option<String>> {
     let json = context.intrinsics().objects().json();
-    let stringify = json.get(js_string!("stringify"), context).ok()?;
-    stringify
-        .as_callable()?
-        .call(&JsValue::undefined(), &[value.clone(), replacer], context)
-        .ok()?
+    let stringify = json.get(js_string!("stringify"), context)?;
+    let callable = stringify.as_callable().ok_or_else(|| {
+        boa_engine::JsNativeError::typ().with_message("JSON.stringify is not callable")
+    })?;
+    Ok(callable
+        .call(&JsValue::undefined(), &[value.clone(), replacer], context)?
         .as_string()
-        .map(|s| s.to_std_string_escaped())
+        .map(|s| s.to_std_string_escaped()))
 }
 
 /// Serialize `value` as it is
-fn js_value_to_json(value: &JsValue, context: &mut Context) -> String {
-    stringify(value, JsValue::undefined(), context).unwrap_or_else(|| "{}".to_string())
+fn js_value_to_json(value: &JsValue, context: &mut Context) -> JsResult<String> {
+    Ok(stringify(value, JsValue::undefined(), context)?.unwrap_or_else(|| "{}".to_string()))
 }
 
 /// `JSON.stringify` replacer adding `px` to numbers the way vanilla-extract does,
@@ -204,11 +231,11 @@ fn pixelify(_this: &JsValue, args: &[JsValue], context: &mut Context) -> JsResul
 }
 
 /// Serialize a style rule object with vanilla-extract's number units.
-fn style_to_json(value: &JsValue, context: &mut Context) -> String {
+fn style_to_json(value: &JsValue, context: &mut Context) -> JsResult<String> {
     let realm = context.realm().clone();
     let replacer =
         FunctionObjectBuilder::new(&realm, NativeFunction::from_fn_ptr(pixelify)).build();
-    stringify(value, replacer.into(), context).unwrap_or_else(|| "{}".to_string())
+    Ok(stringify(value, replacer.into(), context)?.unwrap_or_else(|| "{}".to_string()))
 }
 
 /// What a stylesheet read besides its own source
@@ -233,42 +260,95 @@ fn execute_vanilla_extract(
     execute_stylesheet(code, filename, &option, None).map(|(collected, _)| collected)
 }
 
+/// A stylesheet to evaluate, and how its code came from what its author wrote
+#[derive(Clone, Copy)]
+pub(crate) struct Stylesheet<'a> {
+    pub filename: &'a str,
+    /// The code that is evaluated
+    pub code: &'a str,
+    /// The file as written
+    pub source: &'a str,
+    /// The layers of edits that made `code` of `source`, last made first
+    pub edits: &'a [&'a [Edit]],
+}
+
+pub(crate) struct Evaluation<'a> {
+    pub stylesheet: Stylesheet<'a>,
+    pub calls: Option<&'a [(usize, usize)]>,
+}
+
 /// Execute vanilla-extract style file and collect styles, loading what it
 /// imports through `resolver`
+#[cfg(test)]
 pub fn execute_stylesheet(
     code: &str,
     filename: &str,
     option: &crate::ExtractOption,
     resolver: Option<&crate::ModuleResolver>,
 ) -> Result<(CollectedStyles, StylesheetImports), String> {
+    let stylesheet = Stylesheet {
+        filename,
+        code,
+        source: code,
+        edits: &[],
+    };
+    execute_located(stylesheet, option, resolver)
+}
+
+/// [`execute_stylesheet`] that tells every error where the code as written is
+pub(crate) fn execute_located(
+    stylesheet: Stylesheet<'_>,
+    option: &crate::ExtractOption,
+    resolver: Option<&crate::ModuleResolver>,
+) -> Result<(CollectedStyles, StylesheetImports), String> {
+    execute_evaluated(
+        Evaluation {
+            stylesheet,
+            calls: None,
+        },
+        option,
+        resolver,
+    )
+}
+
+pub(crate) fn execute_evaluated(
+    evaluation: Evaluation<'_>,
+    option: &crate::ExtractOption,
+    resolver: Option<&crate::ModuleResolver>,
+) -> Result<(CollectedStyles, StylesheetImports), String> {
+    let Evaluation { stylesheet, calls } = evaluation;
+    let Stylesheet {
+        filename,
+        code,
+        source,
+        edits,
+    } = stylesheet;
     let _evaluating = Evaluating::enter(filename);
     let mut loader = ModuleLoader::new(resolver, option);
-    let instrumented = crate::dead_properties::instrument(code, filename, &option.package)
-        .map_err(|error| format!("{}{error}", crate::dead_properties::ERROR_CHANNEL))?;
-    let instrumented = crate::import_alias_visit::transform_import_aliases_with_edits(
-        &instrumented.code,
-        filename,
-        &option.package,
-        &option.import_aliases,
-    )
-    .0;
-    let script = module_script(
-        &strip_typescript(&instrumented, filename),
-        filename,
-        &mut loader,
-        true,
+    let unit = stylesheet_unit(
+        Stylesheet {
+            filename,
+            code,
+            source,
+            edits,
+        },
+        option,
+        calls,
     )?;
+    let entry = module_script(&unit, &mut loader, true)?;
     let file_num = get_file_num_by_filename(filename);
-    let run = format!("{}{}", loader.prelude(), script.body);
+    let run = loader.script(&entry);
     let imports = StylesheetImports {
-        dependencies: loader.dependencies,
-        kept_imports: loader.kept_imports,
+        dependencies: std::mem::take(&mut loader.dependencies),
+        kept_imports: std::mem::take(&mut loader.kept_imports),
     };
     let imported = crate::module_loader::evaluating_import();
     if imported
         && let Some(collected) = IMPORTED_RUNS.with_borrow(|runs| {
             runs.get(filename)
-                .filter(|(num, source, text, _)| *num == file_num && source == code && *text == run)
+                .filter(|(num, cached, text, _)| {
+                    *num == file_num && cached == code && *text == run.text
+                })
                 .map(|(.., collected)| collected.clone())
         })
     {
@@ -279,46 +359,154 @@ pub fn execute_stylesheet(
         ..Collector::default()
     }));
     let mut context = Context::default();
-    context
-        .runtime_limits_mut()
-        .set_loop_iteration_limit(crate::module_loader::LOOP_ITERATION_LIMIT);
-    register_vanilla_extract_apis(&mut context, &collector)?;
-    // A script of its own, so the stylesheet's lines keep their numbers
-    context
-        .eval(Source::from_bytes(crate::module_loader::CONSOLE))
-        .map_err(|e| format!("JS execution error: {e}"))?;
-    context
-        .eval(Source::from_bytes(crate::module_loader::DETERMINISM))
-        .map_err(|e| format!("JS execution error: {e}"))?;
-
-    context
-        .eval(Source::from_bytes(run.as_bytes()))
-        .map_err(|e| format!("JS execution error: {e}"))?;
+    let sandbox = crate::evaluation_sandbox::Sandbox::stylesheet(&mut context)
+        .map_err(|error| run.explain(&error.to_string(), filename))?;
+    loader
+        .prepare_css(&mut context)
+        .map_err(|error| run.explain(&error.to_string(), filename))?;
+    let operations = crate::module_loader::operations::Operations::new(&run.text);
+    operations
+        .prepare(&mut context)
+        .map_err(|error| run.explain(&error.to_string(), filename))?;
+    let instrumented =
+        crate::evaluation_sandbox::instrument_located(&operations.code, SCRIPT_PATH, &|offset| {
+            run.authored(operations.source_offset(offset))
+        });
+    sandbox
+        .prepare(&mut context, &instrumented)
+        .map_err(|error| run.explain(&instrumented.explain(&error.to_string()), filename))?;
+    register_vanilla_extract_apis(&mut context, &collector)
+        .map_err(|e| Script::default().explain(&e, filename))?;
+    sandbox
+        .run_source(
+            &mut context,
+            Source::from_bytes(instrumented.code.as_bytes()).with_path(Path::new(SCRIPT_PATH)),
+        )
+        .map_err(|failure| {
+            if !collector.borrow().declaration_errors.is_empty() {
+                return collector.borrow().declaration_errors.join("\n");
+            }
+            sandbox_error(
+                failure,
+                &run,
+                |error| operations.explain(&instrumented.explain(error), &context),
+                filename,
+            )
+        })?;
 
     if !collector.borrow().declaration_errors.is_empty() {
-        return Err(format!(
-            "{}{}",
-            crate::dead_properties::ERROR_CHANNEL,
-            collector.borrow().declaration_errors.join("\n")
-        ));
+        return Err(collector.borrow().declaration_errors.join("\n"));
     }
 
     let mut collected = std::mem::take(&mut collector.borrow_mut().styles);
-    name_entries(
+    let named = name_entries(
         &mut collected,
         &top_level_bindings(code),
         &mut context,
         file_num,
     );
+    sandbox
+        .check(&named.as_ref().err().into_iter().collect::<Vec<_>>())
+        .map_err(|failure| {
+            sandbox_error(
+                failure,
+                &run,
+                |error| operations.explain(&instrumented.explain(error), &context),
+                filename,
+            )
+        })?;
+    named.map_err(|error| {
+        run.explain(
+            &operations.explain(&instrumented.explain(&error.to_string()), &context),
+            filename,
+        )
+    })?;
     if imported {
         IMPORTED_RUNS.with_borrow_mut(|runs| {
             runs.insert(
                 filename.to_string(),
-                (file_num, code.to_string(), run, collected.clone()),
+                (file_num, code.to_string(), run.text, collected.clone()),
             );
         });
     }
     Ok((collected, imports))
+}
+
+pub(crate) fn stylesheet_unit(
+    stylesheet: Stylesheet<'_>,
+    option: &crate::ExtractOption,
+    calls: Option<&[(usize, usize)]>,
+) -> Result<Rc<Unit>, String> {
+    crate::module_loader::validate(stylesheet)?;
+    let instrumented =
+        crate::dead_properties::instrument_evaluated(stylesheet, &option.package, calls)?;
+    let aliased = crate::import_alias_visit::transform_import_aliases_with_edits(
+        &instrumented.code,
+        stylesheet.filename,
+        &option.package,
+        &option.import_aliases,
+    );
+    let layers: Vec<&[Edit]> = [aliased.edits.as_slice(), instrumented.edits.as_slice()]
+        .into_iter()
+        .chain(stylesheet.edits.iter().copied())
+        .collect();
+    Unit::instrumented(
+        Stylesheet {
+            filename: stylesheet.filename,
+            code: &aliased.code,
+            source: stylesheet.source,
+            edits: &layers,
+        },
+        |offset| {
+            instrumented.generated(crate::import_alias_visit::source_offset(
+                &aliased.edits,
+                offset,
+            ))
+        },
+    )
+}
+
+/// Formats sandbox failures through the same original-source trace as execution errors.
+fn sandbox_error(
+    failure: crate::evaluation_sandbox::Failure,
+    run: &Script,
+    rebase: impl Fn(&str) -> String,
+    filename: &str,
+) -> String {
+    match failure {
+        crate::evaluation_sandbox::Failure::Js(error) => {
+            run.explain(&rebase(&error.to_string()), filename)
+        }
+        crate::evaluation_sandbox::Failure::Forbidden(violations) => violations
+            .iter()
+            .map(|violation| {
+                if let Some(message) = violation.css_message() {
+                    return run.explain(&rebase(message), filename);
+                }
+                let recorded = rebase(&violation.error().to_string());
+                let frames = recorded.find("\n    at ").map_or("", |at| &recorded[at..]);
+                let name = if violation.name().starts_with("Date.") {
+                    "Date"
+                } else {
+                    violation.name()
+                };
+                let immutable = format!(
+                    "ReferenceError: `{}` cannot be read at build time: {}{frames}",
+                    name,
+                    violation.requirement()
+                );
+                let explained = run.explain(&immutable, filename);
+                let (cause, repair) = explained.split_once(". Fix: ").unwrap_or((&explained, ""));
+                let calls = repair.find("\n    at ").map_or("", |at| &repair[at..]);
+                format!(
+                    "{cause}. Fix: use a literal or a CSS variable for `{}`: {}{calls}",
+                    violation.name(),
+                    violation.requirement()
+                )
+            })
+            .collect::<Vec<_>>()
+            .join("\n"),
+    }
 }
 
 thread_local! {
@@ -328,7 +516,7 @@ thread_local! {
     static IMPORTED_RUNS: RefCell<FxHashMap<String, (usize, String, String, CollectedStyles)>> =
         RefCell::default();
     /// The TypeScript each file last had stripped, with its source
-    static STRIPPED: RefCell<FxHashMap<String, (String, String)>> = RefCell::default();
+    static STRIPPED: RefCell<FxHashMap<String, (String, Rc<Stripped>)>> = RefCell::default();
 }
 
 /// A name a top-level variable declaration of the stylesheet binds
@@ -354,6 +542,9 @@ fn top_level_bindings(code: &str) -> Vec<Binding> {
             oxc_ast::ast::Statement::VariableDeclaration(declaration) => (declaration, false),
             _ => continue,
         };
+        if declaration.declare {
+            continue;
+        }
         for declarator in &declaration.declarations {
             let init = declarator
                 .init
@@ -389,16 +580,15 @@ fn name_entries(
     bindings: &[Binding],
     context: &mut Context,
     file_num: usize,
-) {
+) -> JsResult<()> {
     let values: Vec<(&Binding, JsValue)> = bindings
         .iter()
-        .filter_map(|binding| {
+        .map(|binding| {
             context
                 .eval(Source::from_bytes(binding.name.as_bytes()))
-                .ok()
                 .map(|value| (binding, value))
         })
-        .collect();
+        .collect::<JsResult<_>>()?;
 
     let mut names: FxHashMap<String, String> = FxHashMap::default();
     for (binding, value) in &values {
@@ -438,7 +628,7 @@ fn name_entries(
         let names_entry = js_str(value).is_some_and(|id| names.get(&id) == Some(&binding.name));
         if binding.exported
             && !names_entry
-            && let Some(code) = value_to_code(value, context, &names, &mut Vec::new())
+            && let Some(code) = value_to_code(value, context, &names, &mut Vec::new())?
                 .or_else(|| binding.init.clone())
         {
             collected
@@ -447,8 +637,16 @@ fn name_entries(
         }
     }
 
-    for (id, name) in &names {
-        let reference = if let Some(mut entry) = collected.styles.remove(id) {
+    let mut styles = std::mem::take(&mut collected.styles);
+    let mut keyframes = std::mem::take(&mut collected.keyframes);
+    let mut ordered: Vec<_> = names.iter().collect();
+    ordered.sort_by_key(|(id, _)| placeholder_index(id));
+    for (id, name) in ordered {
+        let reference = if let Some(mut entry) = styles.remove(id) {
+            if let Some(code) = &mut entry.css {
+                *code = replace_placeholders(code, |token, _| names.get(token).cloned())
+                    .unwrap_or_else(|| code.clone());
+            }
             for base in &mut entry.bases {
                 if let Some(base_name) = names.get(base.as_str()) {
                     base_name.clone_into(base);
@@ -460,13 +658,14 @@ fn name_entries(
                 class_name: format!("f{file_num}_{name}"),
             }
         } else {
-            if let Some(entry) = collected.keyframes.remove(id) {
+            if let Some(entry) = keyframes.remove(id) {
                 collected.keyframes.insert(name.clone(), entry);
             }
             Reference::Keyframes(name.clone())
         };
         collected.references.insert(id.clone(), reference);
     }
+    Ok(())
 }
 
 fn is_plain_object(object: &JsObject, context: &Context) -> bool {
@@ -476,56 +675,6 @@ fn is_plain_object(object: &JsObject, context: &Context) -> bool {
             &context.intrinsics().constructors().object().prototype(),
         )
     })
-}
-
-/// JavaScript for a data `value`, placeholders turned into the names of their
-/// styles; `None` for functions, class instances, symbols and cycles
-fn value_to_code(
-    value: &JsValue,
-    context: &mut Context,
-    names: &FxHashMap<String, String>,
-    seen: &mut Vec<JsObject>,
-) -> Option<String> {
-    if let Some(text) = js_str(value) {
-        return Some(string_code(&text, names));
-    }
-    if value.is_null_or_undefined() || value.is_number() || value.as_boolean().is_some() {
-        return to_text(value, context).ok();
-    }
-    let object = value.as_object()?;
-    if object.is_callable()
-        || seen
-            .iter()
-            .any(|visited| JsObject::equals(visited, &object))
-    {
-        return None;
-    }
-    seen.push(object.clone());
-    let mut parts = Vec::new();
-    let code = if let Some(items) = array_items(value, context).ok()? {
-        for item in &items {
-            parts.push(value_to_code(item, context, names, seen)?);
-        }
-        format!("[{}]", parts.join(", "))
-    } else if is_plain_object(&object, context) {
-        for (key, name) in own_keys(&object, context).ok()? {
-            let item = object.get(key, context).ok()?;
-            parts.push(format!(
-                "{}: {}",
-                json_string(&name),
-                value_to_code(&item, context, names, seen)?
-            ));
-        }
-        if parts.is_empty() {
-            "{}".to_string()
-        } else {
-            format!("{{ {} }}", parts.join(", "))
-        }
-    } else {
-        return None;
-    };
-    seen.pop();
-    Some(code)
 }
 
 /// A string literal, or a template literal when it interpolates placeholders
@@ -576,10 +725,23 @@ fn replace_placeholders(
     })
 }
 
-/// Convert TypeScript to JavaScript using Oxc Transformer
-/// `code` without its TypeScript, stripped once for as long as the file holds
-/// it: the modules evaluations import are stripped once, not per evaluation
+/// TypeScript turned into JavaScript, and where each token of it came from
+pub(crate) struct Stripped {
+    pub code: String,
+    /// `(offset in code, offset in the TypeScript)` for every token
+    pub marks: Vec<(usize, usize)>,
+}
+
+/// `code` without its TypeScript
+#[cfg(test)]
 pub(crate) fn strip_typescript(code: &str, filename: &str) -> String {
+    strip_typescript_marked(code, filename).code.clone()
+}
+
+/// `code` without its TypeScript, with where its tokens came from, stripped
+/// once for as long as the file holds it: the modules evaluations import are
+/// stripped once, not per evaluation
+pub(crate) fn strip_typescript_marked(code: &str, filename: &str) -> Rc<Stripped> {
     if let Some(stripped) = STRIPPED.with_borrow(|stripped| {
         stripped
             .get(filename)
@@ -588,14 +750,15 @@ pub(crate) fn strip_typescript(code: &str, filename: &str) -> String {
     }) {
         return stripped;
     }
-    let stripped = strip(code, filename);
+    let stripped = Rc::new(strip(code, filename));
     STRIPPED.with_borrow_mut(|entries| {
         entries.insert(filename.to_string(), (code.to_string(), stripped.clone()));
     });
     stripped
 }
 
-fn strip(code: &str, filename: &str) -> String {
+/// Convert TypeScript to JavaScript using Oxc Transformer
+fn strip(code: &str, filename: &str) -> Stripped {
     let allocator = Allocator::default();
     let source_type = SourceType::from_path(filename).unwrap_or_else(|_| SourceType::ts());
     let mut program = Parser::new(&allocator, code, source_type).parse().program;
@@ -607,7 +770,21 @@ fn strip(code: &str, filename: &str) -> String {
     let options = TransformOptions::default();
     let path = Path::new("input.css.ts");
     let _ = Transformer::new(&allocator, path, &options).build_with_scoping(scoping, &mut program);
-    Codegen::new().build(&program).code
+    let generated = Codegen::new()
+        .with_options(CodegenOptions {
+            source_map_path: Some(PathBuf::from(filename)),
+            ..CodegenOptions::default()
+        })
+        .build(&program);
+    let mut marks = generated
+        .map
+        .map(|map| source_map::marks(&map, &generated.code, code))
+        .unwrap_or_default();
+    source_map::complete_marks(&program, &generated.code, &mut marks);
+    Stripped {
+        code: generated.code,
+        marks,
+    }
 }
 
 type Api = fn(&StyleCollector, &[JsValue], &mut Context) -> JsResult<JsValue>;
@@ -619,12 +796,13 @@ fn authored_call(
 ) -> JsResult<JsValue> {
     let location = to_text(args.get_or_undefined(0), context)?;
     let api = to_text(args.get_or_undefined(1), context)?;
+    let forwarded = array_items(args.get_or_undefined(4), context)?.unwrap_or_default();
     let previous = collector.borrow_mut().origin.replace((location, api));
     let result = args
         .get_or_undefined(2)
         .as_callable()
         .map_or(Ok(JsValue::undefined()), |thunk| {
-            thunk.call(&JsValue::undefined(), &[], context)
+            thunk.call(args.get_or_undefined(3), &forwarded, context)
         });
     collector.borrow_mut().origin = previous;
     result
@@ -667,23 +845,12 @@ fn register_vanilla_extract_apis(
 ) -> Result<(), String> {
     let apis = [
         ("__at", api(collector, authored_call), 3),
+        ("css", api(collector, own_css::call), 1),
         ("style", api(collector, style), 1),
         ("globalStyle", api(collector, global_style), 2),
         ("styleVariants", api(collector, style_variants), 1),
-        (
-            "keyframes",
-            api(collector, |collector, args, context| {
-                Ok(keyframes(collector, args, context))
-            }),
-            1,
-        ),
-        (
-            "fontFace",
-            api(collector, |collector, args, context| {
-                Ok(font_face(collector, args, context))
-            }),
-            1,
-        ),
+        ("keyframes", api(collector, keyframes), 1),
+        ("fontFace", api(collector, font_face), 1),
         ("globalFontFace", api(collector, global_font_face), 2),
         ("createVar", api(collector, create_var), 0),
         ("fallbackVar", NativeFunction::from_fn_ptr(fallback_var), 2),
@@ -774,7 +941,7 @@ fn compose(
             }
         }
     } else if value.is_object() {
-        let json = style_to_json(value, context);
+        let json = style_to_json(value, context)?;
         let inner = inner_json(&json);
         if !inner.is_empty() {
             rules.push(inner.to_string());
@@ -789,7 +956,7 @@ fn global_style(
     context: &mut Context,
 ) -> JsResult<JsValue> {
     let selector = to_text(args.get_or_undefined(0), context)?;
-    let json = style_to_json(args.get_or_undefined(1), context);
+    let json = style_to_json(args.get_or_undefined(1), context)?;
     check_declarations(collector, &json, crate::dead_properties::ObjectKind::Styles);
     collector
         .borrow_mut()
@@ -826,8 +993,12 @@ fn style_variants(
     Ok(variants.into())
 }
 
-fn keyframes(collector: &StyleCollector, args: &[JsValue], context: &mut Context) -> JsValue {
-    let json = style_to_json(args.get_or_undefined(0), context);
+fn keyframes(
+    collector: &StyleCollector,
+    args: &[JsValue],
+    context: &mut Context,
+) -> JsResult<JsValue> {
+    let json = style_to_json(args.get_or_undefined(0), context)?;
     check_declarations(
         collector,
         &json,
@@ -842,20 +1013,24 @@ fn keyframes(collector: &StyleCollector, args: &[JsValue], context: &mut Context
             ..StyleEntry::default()
         },
     );
-    js_string!(id).into()
+    Ok(js_string!(id).into())
 }
 
 /// `fontFace(rule, debugId?)`: a generated family for one rule or a list of them
-fn font_face(collector: &StyleCollector, args: &[JsValue], context: &mut Context) -> JsValue {
+fn font_face(
+    collector: &StyleCollector,
+    args: &[JsValue],
+    context: &mut Context,
+) -> JsResult<JsValue> {
     let family = collector
         .borrow_mut()
         .identifier(js_str(args.get_or_undefined(1)), "font");
-    let faces = font_face_rules(&family, args.get_or_undefined(0), context);
+    let faces = font_face_rules(&family, args.get_or_undefined(0), context)?;
     for face in &faces {
         check_declarations(collector, face, crate::dead_properties::ObjectKind::Styles);
     }
     collector.borrow_mut().styles.font_faces.extend(faces);
-    js_string!(family).into()
+    Ok(js_string!(family).into())
 }
 
 fn global_font_face(
@@ -864,7 +1039,7 @@ fn global_font_face(
     context: &mut Context,
 ) -> JsResult<JsValue> {
     let family = to_text(args.get_or_undefined(0), context)?;
-    let faces = font_face_rules(&family, args.get_or_undefined(1), context);
+    let faces = font_face_rules(&family, args.get_or_undefined(1), context)?;
     for face in &faces {
         check_declarations(collector, face, crate::dead_properties::ObjectKind::Styles);
     }
@@ -872,27 +1047,27 @@ fn global_font_face(
     Ok(JsValue::undefined())
 }
 
-fn font_face_rule(family_json: &str, rule: &JsValue, context: &mut Context) -> String {
-    let json = js_value_to_json(rule, context);
-    match inner_json(&json) {
+fn font_face_rule(family_json: &str, rule: &JsValue, context: &mut Context) -> JsResult<String> {
+    let json = js_value_to_json(rule, context)?;
+    Ok(match inner_json(&json) {
         "" => format!("{{\"fontFamily\":{family_json}}}"),
         inner => format!("{{{inner},\"fontFamily\":{family_json}}}"),
-    }
+    })
 }
 
 /// `@font-face` rule objects for `rule`, or each rule of a list, naming `family`
-fn font_face_rules(family: &str, rule: &JsValue, context: &mut Context) -> Vec<String> {
+fn font_face_rules(family: &str, rule: &JsValue, context: &mut Context) -> JsResult<Vec<String>> {
     let family_json = json_string(family);
-    match array_items(rule, context).ok().flatten() {
+    Ok(match array_items(rule, context)? {
         Some(rules) => {
             let mut faces = Vec::with_capacity(rules.len());
             for rule in &rules {
-                faces.push(font_face_rule(&family_json, rule, context));
+                faces.push(font_face_rule(&family_json, rule, context)?);
             }
             faces
         }
-        None => vec![font_face_rule(&family_json, rule, context)],
-    }
+        None => vec![font_face_rule(&family_json, rule, context)?],
+    })
 }
 
 /// `createVar(debugId?)` / `createVar(declaration, debugId?)`: a `var()` of a
@@ -1362,18 +1537,22 @@ fn inner_json(json: &str) -> &str {
         .trim()
 }
 
-/// Styles `entry` composes, transitively and in order, each once
+/// Styles `entry` composes, transitively and in order; a style composed again
+/// later is listed again, as its declarations then win. `composing` holds the
+/// styles being expanded, so a style composing itself stops.
 fn collect_bases<'a>(
     collected: &'a CollectedStyles,
     entry: &'a StyleEntry,
-    seen: &mut FxHashSet<&'a str>,
+    composing: &mut Vec<&'a str>,
     bases: &mut Vec<(&'a str, &'a StyleEntry)>,
 ) {
     for base in &entry.bases {
-        if seen.insert(base.as_str())
+        if !composing.contains(&base.as_str())
             && let Some(base_entry) = collected.styles.get(base)
         {
-            collect_bases(collected, base_entry, seen, bases);
+            composing.push(base);
+            collect_bases(collected, base_entry, composing, bases);
+            composing.pop();
             bases.push((base.as_str(), base_entry));
         }
     }
@@ -1388,34 +1567,44 @@ fn composed_css(
     name: &str,
     entry: &StyleEntry,
 ) -> String {
-    let mut seen = FxHashSet::default();
-    seen.insert(name);
+    if let Some(code) = &entry.css {
+        return code.clone();
+    }
+    let mut composing = vec![name];
     let mut bases = Vec::new();
-    collect_bases(collected, entry, &mut seen, &mut bases);
+    collect_bases(collected, entry, &mut composing, &mut bases);
 
+    // One argument per style: `css()` merges them, a later declaration
+    // replacing an earlier one, which one object holding both would not do
     let mut rules = Vec::with_capacity(bases.len() + 1);
-    let mut classes = Vec::new();
+    let mut all_classes: Vec<&str> = Vec::new();
     for (base_name, base) in &bases {
         let json = collected.resolve_json(&base.json, keyframes_names);
-        let inner = inner_json(&json);
-        if !inner.is_empty() {
-            rules.push(inner.to_string());
+        if base.css.is_some() {
+            rules.push((*base_name).to_string());
+        } else if !inner_json(&json).is_empty() {
+            rules.push(json);
         }
-        classes.extend(base.classes.iter().map(String::as_str));
-        classes.extend(referenced_classes.get(base_name).copied());
+        all_classes.extend(base.classes.iter().map(String::as_str));
+        all_classes.extend(referenced_classes.get(base_name).copied());
     }
-    classes.extend(entry.classes.iter().map(String::as_str));
-    classes.extend(referenced_classes.get(name).copied());
+    all_classes.extend(entry.classes.iter().map(String::as_str));
+    all_classes.extend(referenced_classes.get(name).copied());
+    let mut classes: Vec<&str> = Vec::with_capacity(all_classes.len());
+    for class in all_classes {
+        if !classes.contains(&class) {
+            classes.push(class);
+        }
+    }
 
     let own = collected.resolve_json(&entry.json, keyframes_names);
     let css = if bases.is_empty() {
         format!("css({own})")
     } else {
-        let inner = inner_json(&own);
-        if !inner.is_empty() {
-            rules.push(inner.to_string());
+        if !inner_json(&own).is_empty() {
+            rules.push(own);
         }
-        format!("css({{{}}})", rules.join(","))
+        format!("css({})", rules.join(", "))
     };
     if classes.is_empty() {
         css
@@ -1478,21 +1667,26 @@ pub fn collected_styles_to_code_with_keyframes(
         code.push(format!("globalCss`{rule}`"));
     }
 
-    for (name, entry) in sorted(&collected.keyframes) {
-        code.push(format!(
-            "{}const {name} = keyframes({})",
-            export_prefix(entry.exported),
-            collected.resolve_json(&entry.json, keyframes_names)
-        ));
-    }
-
     let referenced_classes = collected.referenced_classes();
-    for (name, entry) in sorted(&collected.styles) {
-        code.push(format!(
-            "{}const {name} = {}",
-            export_prefix(entry.exported),
-            composed_css(collected, keyframes_names, &referenced_classes, name, entry)
-        ));
+    if let Some(declarations) =
+        own_css::declarations(collected, keyframes_names, &referenced_classes)
+    {
+        code.extend(declarations);
+    } else {
+        for (name, entry) in sorted(&collected.keyframes) {
+            code.push(format!(
+                "{}const {name} = keyframes({})",
+                export_prefix(entry.exported),
+                collected.resolve_json(&entry.json, keyframes_names)
+            ));
+        }
+        for (name, entry) in sorted(&collected.styles) {
+            code.push(format!(
+                "{}const {name} = {}",
+                export_prefix(entry.exported),
+                composed_css(collected, keyframes_names, &referenced_classes, name, entry)
+            ));
+        }
     }
 
     for (selector, json) in &collected.global_styles {
@@ -1538,6 +1732,19 @@ mod tests {
         );
     }
 
+    #[test]
+    fn test_stripped_typescript_keeps_where_its_tokens_came_from() {
+        let code = "export const a: number = fail();\n";
+        let stripped = strip_typescript_marked(code, "strip-marks.ts");
+        assert_eq!(stripped.code, "export const a = fail();\n");
+        assert!(Rc::ptr_eq(
+            &stripped,
+            &strip_typescript_marked(code, "strip-marks.ts")
+        ));
+        assert!(stripped.marks.contains(&(17, 25)), "{:?}", stripped.marks);
+        assert_eq!(strip_typescript(code, "strip-marks.ts"), stripped.code);
+    }
+
     fn import_error(code: &str, files: &'static [(&'static str, &'static str)]) -> String {
         reset_file_map();
         let resolver = |specifier: &str, _: &str| {
@@ -1565,19 +1772,24 @@ mod tests {
     #[test]
     #[serial]
     fn test_stylesheet_import_errors() {
-        assert_eq!(
-            execute_stylesheet(
-                "import { b } from './b'\nexport const x = b",
-                "/a.css.ts",
-                &crate::ExtractOption::default(),
-                None
-            )
-            .err(),
-            Some("Cannot load './b' without a module resolver".to_string())
+        let without_resolver = execute_stylesheet(
+            "import { b } from './b'\nexport const x = b",
+            "/a.css.ts",
+            &crate::ExtractOption::default(),
+            None,
+        )
+        .err()
+        .unwrap_or_default();
+        assert!(
+            without_resolver
+                .starts_with("/a.css.ts:1:19: Cannot load './b' without a module resolver. Fix: "),
+            "{without_resolver}"
         );
-        assert_eq!(
-            import_error("import { b } from './missing'\nexport const x = b", &[]),
-            "Cannot resolve './missing' from '/a.css.ts'"
+        let unresolved = import_error("import { b } from './missing'\nexport const x = b", &[]);
+        assert!(
+            unresolved
+                .starts_with("/a.css.ts:1:19: Cannot resolve './missing' from '/a.css.ts'. Fix: "),
+            "{unresolved}"
         );
         let cycle_error = |code, files| {
             let error = import_error(code, files);
@@ -1703,7 +1915,6 @@ export const list = [box, 2]
 export const nested = { a: { b: [box] } }
 export const helper = (x) => x
 export const fns = [() => 1]
-export const date = new Date(0)
 export const cyclic = (() => { const o = {}; o.self = o; return o })()
 export const bare = Object.create(null)
 export const { destructured } = { destructured: () => 1 }
@@ -1724,7 +1935,6 @@ export const list = [box, 2]
 export const nested = { "a": { "b": [box] } }
 export const helper = (x) => x
 export const fns = [() => 1]
-export const date = new Date(0)
 export const cyclic = (() => { const o = {}; o.self = o; return o })()
 export const bare = {}
 export const symbol = Symbol('x')"#
@@ -1746,11 +1956,31 @@ globalStyle(`${tone.primary} > span`, { fontWeight: 700 })"
 const _ve0 = css({"color":"blue"})
 const _ve1 = css({"color":"red"}) + " f0__ve1"
 const _ve2 = css({"padding":"4px","content":"sm"})
-export const combined = css({"color":"red","margin":"1px"}) + " f0__ve1 external"
+export const combined = css({"color":"red"}, {"margin":"1px"}) + " f0__ve1 external"
 globalCss({ ".f0__ve1 > span": {"fontWeight":700} })
 export const tone = { "0": _ve0, "primary": _ve1 }
 export const space = { "sm": _ve2 }
 export const none = {}"#
+        );
+    }
+
+    // Each composed style is an argument of its own, so a later one's
+    // declaration replaces an earlier one's, a style composed again included
+    #[test]
+    #[serial]
+    fn test_composition_keeps_later_declarations() {
+        assert_eq!(
+            generate(
+                "const first = style({ color: 'red', margin: 1 })
+const second = style({ color: 'blue' })
+export const later = style([first, second])
+export const again = style([first, second, first])"
+            ),
+            r#"import { css } from '@devup-ui/react'
+export const again = css({"color":"red","margin":"1px"}, {"color":"blue"}, {"color":"red","margin":"1px"})
+const first = css({"color":"red","margin":"1px"})
+export const later = css({"color":"red","margin":"1px"}, {"color":"blue"})
+const second = css({"color":"blue"})"#
         );
     }
 
@@ -1765,18 +1995,15 @@ export const c = style([b, { padding: 3 }])
 const e = style({})
 export const f = style([e, a, '__style_99__'])
 export const g = style(5)
-const o = {}; o.self = o
-export const h = style(o)
 export const hover = style({ selectors: { [`${a}:hover &`]: { color: 'blue' } } })"
             ),
             r#"import { css } from '@devup-ui/react'
 const a = css({"color":"red"}) + " f0_a"
-const b = css({"color":"red","margin":"2px"}) + " f0_a"
-export const c = css({"color":"red","margin":"2px","padding":"3px"}) + " f0_a"
+const b = css({"color":"red"}, {"margin":"2px"}) + " f0_a"
+export const c = css({"color":"red"}, {"margin":"2px"}, {"padding":"3px"}) + " f0_a"
 const e = css({})
 export const f = css({"color":"red"}) + " f0_a"
 export const g = css({})
-export const h = css({})
 export const hover = css({"selectors":{".f0_a:hover &":{"color":"blue"}}})"#
         );
     }
@@ -1789,12 +2016,10 @@ export const hover = css({"selectors":{".f0_a:hover &":{"color":"blue"}}})"#
                 "export const body = fontFace({ src: 'local(a)' }, 'Body Font')
 export const icons = fontFace([{ src: 'local(b)' }, { src: 'local(c)', fontWeight: 700 }])
 fontFace({})
-const o = {}; o.self = o
-fontFace(o)
 globalFontFace('Inter', { src: 'local(Inter)' })"
             ),
             r#"import { globalCss } from '@devup-ui/react'
-globalCss({ fontFaces: [{"src":"local(a)","fontFamily":"Body_Font-0-0"}, {"src":"local(b)","fontFamily":"font-0-1"}, {"src":"local(c)","fontWeight":700,"fontFamily":"font-0-1"}, {"fontFamily":"font-0-2"}, {"fontFamily":"font-0-3"}, {"src":"local(Inter)","fontFamily":"Inter"}] })
+globalCss({ fontFaces: [{"src":"local(a)","fontFamily":"Body_Font-0-0"}, {"src":"local(b)","fontFamily":"font-0-1"}, {"src":"local(c)","fontWeight":700,"fontFamily":"font-0-1"}, {"fontFamily":"font-0-2"}, {"src":"local(Inter)","fontFamily":"Inter"}] })
 export const body = "Body_Font-0-0"
 export const icons = "font-0-1""#
         );
@@ -1936,10 +2161,13 @@ export const notObject = ["theme-0-9", {}]"#
             ))
             .unwrap();
         assert_eq!(
-            style_to_json(&rule, &mut context),
+            style_to_json(&rule, &mut context).unwrap(),
             r#"{"fontSize":"16px","top":0,"lineHeight":1.5,"--gap":4,"var(--x)":2,"fallback":[1,2],":hover":{"width":"3px"},"vars":{"--a":1,"--b":2}}"#
         );
-        assert_eq!(style_to_json(&JsValue::undefined(), &mut context), "{}");
+        assert_eq!(
+            style_to_json(&JsValue::undefined(), &mut context).unwrap(),
+            "{}"
+        );
     }
 
     #[test]
@@ -1970,3 +2198,6 @@ const fade = keyframes({"from":{"opacity":0}})"#
         assert_eq!(inner_json("[1]"), "");
     }
 }
+
+#[cfg(test)]
+mod coverage_tests;

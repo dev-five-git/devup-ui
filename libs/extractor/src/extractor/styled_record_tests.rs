@@ -9,6 +9,206 @@ use rstest::rstest;
 use super::{styled_record::prepare, styled_record_evaluation::bind_render};
 use crate::utils::readable_code;
 
+#[rstest]
+#[case::prepared_base("const Ext=styled(Base)({'p':1});", "", "4px")]
+#[case::two_levels(
+    "const Mid=styled(Base)({'p':1});const Ext=styled(Mid)({'p':2});",
+    "",
+    "8px"
+)]
+#[case::tagged_extension("const Ext=styled(Base)`padding:4px`;", "", "4px")]
+#[case::retargeted_extension(
+    "const Mid=Base.withComponent('section');const Ext=styled(Mid)({'p':1});",
+    "",
+    "4px"
+)]
+#[case::capture_collisions(
+    "const Mid=styled(Base)({backgroundColor:'white',...((trace.push('own'),own)?{backgroundColor:'black'}:{})});const Ext=styled(Mid)(__devupRecord0,{p:1,...((trace.push('authored'),__devupRecord1)?{p:2}:{})});",
+    ",own,__devupRecord0,__devupRecord1",
+    "8px"
+)]
+#[serial_test::serial]
+fn inherited_captures_when_native_extension_renders(
+    #[case] extension: &str,
+    #[case] parameters: &str,
+    #[case] padding: &str,
+    #[values(false, true)] on: bool,
+    #[values(false, true)] authored: bool,
+    #[values(false, true)] single_css: bool,
+) {
+    // Given: independent inherited, own and authored controllers.
+    reset_class_map();
+    reset_file_map();
+    let code = format!(
+        "import {{styled}} from '@devup-ui/react';const trace=[];function make(on{parameters}){{const Base=styled.div({{color:'red',...((trace.push('base'),on)?{{color:'blue'}}:{{}})}});{extension}return Ext.render({{id:'extension',className:'caller'}},null);}}const rendered=make({on},{},'authored',{authored});",
+        !on
+    );
+    let output = match crate::extract(
+        "test.tsx",
+        &code,
+        crate::ExtractOption {
+            single_css,
+            ..crate::ExtractOption::default()
+        },
+    ) {
+        Ok(output) => output,
+        Err(error) => panic!("extension fixture must extract: {error}"),
+    };
+    let mut declarations = Vec::new();
+    for style in &output.styles {
+        let crate::ExtractStyleValue::Static(value) = style else {
+            panic!("fixture declarations must be static");
+        };
+        let Some(crate::extract_style::style_property::StyleProperty::ClassName(name)) =
+            style.extract(if single_css { None } else { Some("test.tsx") })
+        else {
+            panic!("fixture declaration must have a class");
+        };
+        declarations.push(format!(
+            "['{name}','{}','{}']",
+            value.property(),
+            value.value()
+        ));
+    }
+    // When: execute the emitted native render, not a generated-name assertion.
+    let rendered = evaluate_native_render(
+        &output.code,
+        &format!(
+            "const names=rendered.props.className.split(' ');const styles=[{}].filter(([name])=>names.includes(name)).map(([,prop,value])=>[prop,value]).sort();JSON.stringify([rendered.type,rendered.props.id,styles,names.filter(name=>name==='authored'||name==='caller'),trace]);",
+            declarations.join(",")
+        ),
+    );
+    // Then: only the selected declarations survive, with ordered single reads.
+    let color = if on { "blue" } else { "red" };
+    let target = if extension.contains("withComponent") {
+        "section"
+    } else {
+        "div"
+    };
+    let expected = if parameters.is_empty() {
+        format!(
+            r#"["{target}","extension",[["color","{color}"],["padding","{padding}"]],["caller"],["base"]]"#
+        )
+    } else {
+        let background = if on { "white" } else { "black" };
+        let padding = if authored { padding } else { "4px" };
+        format!(
+            r#"["div","extension",[["background-color","{background}"],["color","{color}"],["padding","{padding}"]],["authored","caller"],["base","own","authored"]]"#
+        )
+    };
+    assert_eq!(rendered, expected);
+}
+
+#[rstest]
+#[serial_test::serial]
+fn inherited_captures_when_dynamic_native_base_renders(
+    #[values(false, true)] on: bool,
+    #[values(false, true)] single_css: bool,
+) {
+    // Given: a lowercase runtime target binding and an inherited captured guard.
+    reset_class_map();
+    reset_file_map();
+    let code = format!(
+        "import {{styled}} from '@devup-ui/react';const trace=[];function make(on,target){{const Base=styled(target)({{color:'red',...((trace.push('base'),on)?{{color:'blue'}}:{{}})}});const Ext=styled(Base)({{p:1}});return Ext.render({{id:'extension',className:'caller'}},null);}}const rendered=make({on},'div');"
+    );
+    let output = match crate::extract(
+        "test.tsx",
+        &code,
+        crate::ExtractOption {
+            single_css,
+            ..crate::ExtractOption::default()
+        },
+    ) {
+        Ok(output) => output,
+        Err(error) => panic!("dynamic base extension must extract: {error}"),
+    };
+    let mut declarations = Vec::new();
+    for style in &output.styles {
+        let crate::ExtractStyleValue::Static(value) = style else {
+            panic!("fixture declarations must be static");
+        };
+        let Some(crate::extract_style::style_property::StyleProperty::ClassName(name)) =
+            style.extract(if single_css { None } else { Some("test.tsx") })
+        else {
+            panic!("fixture declaration must have a class");
+        };
+        declarations.push(format!(
+            "['{name}','{}','{}']",
+            value.property(),
+            value.value()
+        ));
+    }
+    // When: execute the emitted extension with its actual runtime tag value.
+    let rendered = evaluate_native_render(
+        &output.code,
+        &format!(
+            "const names=rendered.props.className.split(' ');const styles=[{}].filter(([name])=>names.includes(name)).map(([,prop,value])=>[prop,value]).sort();JSON.stringify([rendered.type,rendered.props.id,styles,names.filter(name=>name==='caller'),trace]);",
+            declarations.join(",")
+        ),
+    );
+    // Then: the tag, selected color, extension padding and single read survive.
+    let color = if on { "blue" } else { "red" };
+    assert_eq!(
+        rendered,
+        format!(
+            r#"["div","extension",[["color","{color}"],["padding","4px"]],["caller"],["base"]]"#
+        )
+    );
+}
+
+#[rstest]
+#[serial_test::serial]
+fn inherited_dependent_reads_when_attrs_and_later_styles_compose(
+    #[values(false, true)] outer: bool,
+    #[values(false, true)] inner: bool,
+    #[values(false, true)] single_css: bool,
+) {
+    // Given: nested captured guards, a dynamic leaf and an authored attrs name.
+    reset_class_map();
+    reset_file_map();
+    let code = format!(
+        "import {{styled}} from '@devup-ui/react';const trace=[];function make(outer,inner,__devupRecord0){{const Base=styled.div.attrs({{title:__devupRecord0,id:'base'}})({{color:'red',backgroundColor:'white',...((trace.push('outer'),outer)?{{...((trace.push('inner'),inner)?{{backgroundColor:(trace.push('leaf'),'gold')}}:{{}})}}:{{}})}});const Ext=styled(Base).attrs({{id:'extension'}})({{color:'orange'}});return Ext.render({{}},null);}}const rendered=make({outer},{inner},'authored-title');"
+    );
+    let output = match crate::extract(
+        "test.tsx",
+        &code,
+        crate::ExtractOption {
+            single_css,
+            ..crate::ExtractOption::default()
+        },
+    ) {
+        Ok(output) => output,
+        Err(error) => panic!("dependent extension must extract: {error}"),
+    };
+    let mut colors = Vec::new();
+    for style in &output.styles {
+        if let crate::ExtractStyleValue::Static(value) = style
+            && value.property() == "color"
+            && let Some(crate::extract_style::style_property::StyleProperty::ClassName(name)) =
+                style.extract(if single_css { None } else { Some("test.tsx") })
+        {
+            colors.push(format!("['{name}','{}']", value.value()));
+        }
+    }
+    // When: render the flattened extension through the existing native harness.
+    let rendered = evaluate_native_render(
+        &output.code,
+        &format!(
+            "const names=rendered.props.className.split(' ');JSON.stringify([rendered.props.id,rendered.props.title,[{}].filter(([name])=>names.includes(name)).map(([,value])=>value),Object.values(rendered.props.style||{{}}).filter(value=>value!=null),trace]);",
+            colors.join(",")
+        ),
+    );
+    // Then: guarded reads stay single and ordered, attrs and later color win.
+    let expected = match (outer, inner) {
+        (true, true) => {
+            r#"["extension","authored-title",["orange"],["gold"],["outer","inner","leaf"]]"#
+        }
+        (true, false) => r#"["extension","authored-title",["orange"],[],["outer","inner"]]"#,
+        (false, _) => r#"["extension","authored-title",["orange"],[],["outer"]]"#,
+    };
+    assert_eq!(rendered, expected);
+}
+
 fn evaluate_record(rules: &str, setup: &str) -> String {
     let allocator = Allocator::default();
     let builder = AstBuilder::new(&allocator);
@@ -287,11 +487,11 @@ fn original_record_when_unaffected_or_unreadable(#[case] rules: &str) {
     assert_eq!(readable_code(&statement.expression), original);
 }
 
-/// Evaluate the emitted render scope, lowering only its empty native JSX element.
+/// Evaluate the emitted render scope, lowering its empty native or bound JSX element.
 fn evaluate_native_render(code: &str, observation: &str) -> String {
     use oxc_ast::ast::{
-        ImportDeclaration, JSXAttributeItem, JSXAttributeName, JSXAttributeValue, JSXElement,
-        JSXElementName,
+        ImportDeclaration, ImportDeclarationSpecifier, JSXAttributeItem, JSXAttributeName,
+        JSXAttributeValue, JSXElement, JSXElementName,
     };
     use oxc_ast_visit::Visit;
     use oxc_span::Span;
@@ -301,15 +501,36 @@ fn evaluate_native_render(code: &str, observation: &str) -> String {
 
     impl<'a> Visit<'a> for NativeElements {
         fn visit_import_declaration(&mut self, import: &ImportDeclaration<'a>) {
-            self.0.push((import.span, String::new()));
+            let replacement = import
+                .specifiers
+                .iter()
+                .flatten()
+                .filter_map(|specifier| match specifier {
+                    ImportDeclarationSpecifier::ImportSpecifier(named)
+                        if import.source.value == "react"
+                            && named.imported.to_string() == "forwardRef" =>
+                    {
+                        Some(format!("const {}=render=>({{render}});", named.local.name))
+                    }
+                    _ => None,
+                })
+                .collect::<String>();
+            self.0.push((import.span, replacement));
         }
 
         fn visit_jsx_element(&mut self, element: &JSXElement<'a>) {
             assert_eq!(element.children.len(), 0);
-            let JSXElementName::Identifier(tag) = &element.opening_element.name else {
-                panic!("fixture must render a native element");
+            let tag = match &element.opening_element.name {
+                JSXElementName::Identifier(tag) => {
+                    assert_eq!(tag.name, "div");
+                    "'div'"
+                }
+                JSXElementName::IdentifierReference(tag) => {
+                    assert!(["DevupStyled", "DevupAs"].contains(&tag.name.as_str()));
+                    tag.name.as_str()
+                }
+                _ => panic!("fixture must render a native element"),
             };
-            assert_eq!(tag.name, "div");
             let props: Vec<_> = element
                 .opening_element
                 .attributes
@@ -336,7 +557,7 @@ fn evaluate_native_render(code: &str, observation: &str) -> String {
                 .collect();
             self.0.push((
                 element.span,
-                format!("({{type:'div',props:{{{}}}}})", props.join(",")),
+                format!("({{type:{tag},props:{{{}}}}})", props.join(",")),
             ));
         }
     }
@@ -371,6 +592,63 @@ fn evaluate_native_render(code: &str, observation: &str) -> String {
 
 #[rstest]
 #[serial_test::serial]
+fn captures_and_filter_survive_when_prepared_base_retargets_then_extends(
+    #[values("test.tsx", "test.ts")] filename: &str,
+    #[values(false, true)] on: bool,
+    #[values(false, true)] single_css: bool,
+) {
+    // Given: conditional captures, prop-reading attrs and an inherited filter.
+    reset_class_map();
+    reset_file_map();
+    let source = format!(
+        "import {{styled}} from '@devup-ui/react';const trace=[];const on={on};const Base=styled.div.attrs(p=>({{'data-tone':p.tone}})).withConfig({{shouldForwardProp:p=>p!=='tone'&&p!=='blocked'}})({{color:'red',...((trace.push('base'),on)?{{color:'blue'}}:{{}})}});const Mid=Base.withComponent('section');const Card=styled(Mid)({{p:1}});"
+    );
+    let output = match crate::extract(
+        filename,
+        &source,
+        crate::ExtractOption {
+            single_css,
+            ..crate::ExtractOption::default()
+        },
+    ) {
+        Ok(output) => output,
+        Err(error) => panic!("prepared filter extraction failed: {error}"),
+    };
+    let color_classes: Vec<_> = output
+        .styles
+        .iter()
+        .filter_map(|style| match style {
+            crate::ExtractStyleValue::Static(value)
+                if value.property() == "color"
+                    && value.value() == if on { "blue" } else { "red" } =>
+            {
+                match style.extract(if single_css { None } else { Some(filename) }) {
+                    Some(crate::extract_style::style_property::StyleProperty::ClassName(name)) => {
+                        Some(name)
+                    }
+                    _ => panic!("selected color must have a class"),
+                }
+            }
+            _ => None,
+        })
+        .collect();
+    assert_ne!(color_classes.len(), 0);
+    let winning = serde_json::to_string(&color_classes)
+        .unwrap_or_else(|error| panic!("class fixture serialization failed: {error}"));
+    // When: the emitted extension renders with distinct input, selected target and forwarded target.
+    let observation = format!(
+        "const __devupJsx0=(type,props)=>({{type,props}});const rendered=Card.render({{tone:'olive',blocked:9,id:'card',ref:99,children:'child',className:'caller',as:'article',forwardedAs:'nav'}},7);JSON.stringify([rendered.type,rendered.props.as,rendered.props.id,rendered.props.ref,rendered.props.children,rendered.props.className.includes('caller'),{winning}.some(c=>rendered.props.className.split(' ').includes(c)),rendered.props['data-tone'],'tone' in rendered.props,'blocked' in rendered.props,trace]);"
+    );
+    let result = evaluate_native_render(&output.code, &observation);
+    // Then: captures run once, attrs reads survive, filtered props disappear and identity/ordinary props remain.
+    assert_eq!(
+        result,
+        r#"["article","nav","card",7,"child",true,true,"olive",false,false,["base"]]"#
+    );
+}
+
+#[rstest]
+#[serial_test::serial]
 fn template_key_precedence_when_public_component_renders(
     #[values(false, true)] single_css: bool,
     #[values(false, true)] on: bool,
@@ -378,7 +656,7 @@ fn template_key_precedence_when_public_component_renders(
     reset_class_map();
     reset_file_map();
     let code = format!(
-        "import {{styled}} from '@devup-ui/react'; const trace=[]; const on={on}; const Card=styled('div',{{...((trace.push('spread'),on)?{{[`color`]:(trace.push('leaf'),'red')}}:{{color:'purple'}}),[`color`]:'orange'}}); const rendered=Card({{id:'card'}});"
+        "import {{styled}} from '@devup-ui/react'; const trace=[]; const on={on}; const Card=styled('div',{{...((trace.push('spread'),on)?{{[`color`]:(trace.push('leaf'),'red')}}:{{color:'purple'}}),[`color`]:'orange'}}); const rendered=Card.render({{id:'card'}},null);"
     );
     let output = match crate::extract(
         "test.tsx",
@@ -465,7 +743,7 @@ fn authored_composed_class_when_public_component_renders(
     reset_class_map();
     reset_file_map();
     let code = format!(
-        "import {{styled}} from '@devup-ui/react'; function make(on,__devupRecord0){{const Card=styled.div(__devupRecord0,{{...(on?{{color:'red'}}:{{}}),color:'orange'}});return Card({{id:'card',className:'caller-class'}});}} const rendered=make({on},'authored-class');"
+        "import {{styled}} from '@devup-ui/react'; function make(on,__devupRecord0){{const Card=styled.div(__devupRecord0,{{...(on?{{color:'red'}}:{{}}),color:'orange'}});return Card.render({{id:'card',className:'caller-class'}},null);}} const rendered=make({on},'authored-class');"
     );
     let output = match crate::extract(
         "test.tsx",

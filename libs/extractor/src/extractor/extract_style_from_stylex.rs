@@ -3,8 +3,9 @@ use crate::extract_style::extract_dynamic_style::ExtractDynamicStyle;
 use crate::extract_style::extract_static_style::ExtractStaticStyle;
 use crate::extract_style::extract_style_value::ExtractStyleValue;
 use crate::stylex::{
-    DecomposedStyle, SelectorPart, StylexIncludeRef, decompose_value_conditions,
-    dynamic_number_suffix, is_include_call_static, normalize_stylex_property, stylex_value,
+    DecomposedStyle, SelectorPart, StylexIncludeRef, StylexResolver, decompose_value_conditions,
+    dynamic_number_suffix, is_first_that_works_call, is_include_call_static, is_types_call,
+    normalize_stylex_property, stylex_value,
 };
 use css::optimize_value::optimize_value;
 use css::sheet_to_variable_name;
@@ -45,6 +46,7 @@ pub fn extract_stylex_declarations(
     api: &str,
     object: &ObjectExpression<'_>,
     errors: &mut Vec<(u32, String)>,
+    resolver: StylexResolver<'_>,
 ) -> Vec<(String, String)> {
     let mut declarations = vec![];
     for property in &object.properties {
@@ -71,11 +73,31 @@ pub fn extract_stylex_declarations(
             Some(value) => declarations.push((name, optimize_value(&value).into_owned())),
             None => errors.push((
                 property.value.span().start,
-                runtime_value_error(api, &readable_code(&property.value)),
+                declaration_error(api, &property.value, resolver),
             )),
         }
     }
     declarations
+}
+
+/// Why `value` is no declaration value: a genuine `StyleX` helper is read only
+/// inside the API that takes it
+fn declaration_error(api: &str, value: &Expression<'_>, resolver: StylexResolver<'_>) -> String {
+    let code = readable_code(value);
+    match value {
+        Expression::CallExpression(call)
+            if is_first_that_works_call(&call.callee, resolver)
+                || is_include_call_static(&call.callee, resolver)
+                || is_types_call(&call.callee, resolver) =>
+        {
+            build_time_error(
+                api,
+                &code,
+                "its values must be literals; `firstThatWorks()`, `include()` and `types` are read only inside `stylex.create()` and `stylex.defineVars()`",
+            )
+        }
+        _ => runtime_value_error(api, &code),
+    }
 }
 
 /// Resolve a `vars.key` member access against the contracts `stylex.defineVars()`
@@ -134,6 +156,7 @@ pub fn extract_stylex_namespace_styles<'a>(
     keyframe_names: &FxHashMap<String, String>,
     var_refs: &FxHashMap<String, String>,
     errors: &mut Vec<(u32, String)>,
+    resolver: StylexResolver<'_>,
 ) -> Vec<(
     String,
     Vec<ExtractStyleProp<'a>>,
@@ -183,7 +206,8 @@ pub fn extract_stylex_namespace_styles<'a>(
                 result.push((ns_name, styles, Some(css_vars), vec![]));
             }
             Expression::ObjectExpression(ns_obj) => {
-                let (styles, include_refs) = extract_stylex_namespace(ns_obj, &leaf, errors);
+                let (styles, include_refs) =
+                    extract_stylex_namespace(ns_obj, &leaf, errors, resolver);
                 result.push((ns_name, styles, None, include_refs));
             }
             Expression::NullLiteral(_) => result.push((ns_name, vec![], None, vec![])),
@@ -205,6 +229,7 @@ fn extract_stylex_namespace<'a>(
     namespace: &ObjectExpression<'_>,
     leaf: &Leaf<'_>,
     errors: &mut Vec<(u32, String)>,
+    resolver: StylexResolver<'_>,
 ) -> (Vec<ExtractStyleProp<'a>>, Vec<StylexIncludeRef>) {
     let mut styles = vec![];
     let mut include_refs = vec![];
@@ -212,7 +237,7 @@ fn extract_stylex_namespace<'a>(
         let style_prop = match style_prop {
             ObjectPropertyKind::ObjectProperty(style_prop) => style_prop,
             ObjectPropertyKind::SpreadProperty(spread) => {
-                match include(spread) {
+                match include(spread, resolver) {
                     Some(Ok(include_ref)) => include_refs.push(include_ref),
                     Some(Err(error)) => errors.push(error),
                     None => errors.push(spread_error("stylex.create", spread)),
@@ -267,6 +292,7 @@ fn extract_stylex_namespace<'a>(
                         &parent_selectors,
                         leaf,
                         errors,
+                        resolver,
                     ),
                 );
             }
@@ -288,7 +314,14 @@ fn extract_stylex_namespace<'a>(
         }
         push_decomposed(
             &mut styles,
-            decompose_value_conditions(&css_property, &style_prop.value, &[], leaf, errors),
+            decompose_value_conditions(
+                &css_property,
+                &style_prop.value,
+                &[],
+                leaf,
+                errors,
+                resolver,
+            ),
         );
     }
     (styles, include_refs)
@@ -304,11 +337,14 @@ fn push_decomposed(styles: &mut Vec<ExtractStyleProp<'_>>, decomposed: Vec<Decom
 
 /// `...stylex.include(base.member)`: `None` when the spread is not an
 /// `include()` call
-fn include(spread: &SpreadElement<'_>) -> Option<Result<StylexIncludeRef, (u32, String)>> {
+fn include(
+    spread: &SpreadElement<'_>,
+    resolver: StylexResolver<'_>,
+) -> Option<Result<StylexIncludeRef, (u32, String)>> {
     let Expression::CallExpression(call) = &spread.argument else {
         return None;
     };
-    if !is_include_call_static(&call.callee) {
+    if !is_include_call_static(&call.callee, resolver) {
         return None;
     }
     if let Some(Expression::StaticMemberExpression(member)) =
