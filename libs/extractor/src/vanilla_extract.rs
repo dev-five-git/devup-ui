@@ -251,7 +251,7 @@ pub fn execute_stylesheet(
         &option.package,
         &option.import_aliases,
     )
-    .0;
+    .code;
     let script = module_script(
         &strip_typescript(&instrumented, filename),
         filename,

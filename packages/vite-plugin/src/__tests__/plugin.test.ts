@@ -1527,7 +1527,9 @@ describe('devupUIVitePlugin', () => {
   it('should print error when watch change error', async () => {
     writeFileSpy.mockResolvedValueOnce(undefined)
     getThemeInterfaceSpy.mockReturnValue('interface code')
-    existsSyncSpy.mockReturnValueOnce(true).mockReturnValueOnce(false)
+    existsSyncSpy.mockImplementation(
+      (path: fs.PathLike) => path === 'devup.json',
+    )
     mkdirSpy.mockImplementation(() => {
       throw new Error('error')
     })
