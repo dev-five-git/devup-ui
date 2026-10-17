@@ -68,13 +68,13 @@ fn passthrough_props_remain_when_attrs_wrap_the_renderer(
     #[case] attrs: &str,
     #[values(true, false)] single_css: bool,
 ) {
-    // Given: caller as/ref/children are ordinary props, not a request for new semantics.
+    // Given: attrs wrap a renderer with caller as/ref/children.
     let source = format!(
-        "{IMPORT}const Card = styled('article'){attrs}`color: red;`;\nconst element = Card({{ as: 'section', ref: callerRef, children: 'child' }});"
+        "{IMPORT}const Card = styled('article'){attrs}`color: red;`;\nconst element = Card.render({{ as: 'section', ref: callerRef, children: 'child' }}, callerRef);"
     );
     // When: extraction compiles the attrs-wrapped renderer.
     let output = compile("test.ts", &source, single_css);
-    // Then: the native target and rest spread remain; ref/as are not stripped or reinterpreted.
+    // Then: the actual default target and rest spread remain, with forwardedAs supplying output as.
     let arena = Allocator::default();
     let program = parse(&arena, "test.ts", &output);
     let calls = renders(&program);
@@ -86,9 +86,13 @@ fn passthrough_props_remain_when_attrs_wrap_the_renderer(
             .iter()
             .map(|(key, _)| key.as_str())
             .collect::<Vec<_>>(),
-        ["...", "className", "style"]
+        ["...", "className", "style", "as"]
     );
-    assert_eq!(calls[0].props[0].1, "rest");
+    assert_eq!(
+        calls[0].props[0].1,
+        "(({ \"theme\": __devupOmit0, ...__devupDom }) => __devupDom)(rest)"
+    );
+    assert_eq!(calls[0].props[3].1, "forwardedAs");
     assert!(output.contains("as: \"section\""));
     assert!(output.contains("ref: callerRef"));
     assert!(output.contains("children: \"child\""));
