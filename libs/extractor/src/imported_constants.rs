@@ -743,7 +743,7 @@ impl Modules<'_> {
 
     fn read(&mut self, path: &str, code: &str) -> FxHashMap<String, Constant> {
         let allocator = Allocator::default();
-        let source_type = SourceType::from_path(path).unwrap_or_else(|_| SourceType::ts());
+        let source_type = crate::parsing::source_type(path).unwrap_or_else(|_| SourceType::ts());
         let program = Parser::new(&allocator, code, source_type).parse().program;
         let mut scope = ModuleScope::new(path, &program, Some(code));
         let mut exports = FxHashMap::default();
