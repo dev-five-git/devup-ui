@@ -1,0 +1,7 @@
+{
+  "changes": {
+    "packages/next-plugin/package.json": "Patch"
+  },
+  "note": "Add a dormant lazy fixed-false MDX isolate owner, without activation wiring. Provisional outcomes bind only after original scope, byte-agreement and freshness checks. Ordinary parser recovery requires a source-recognized single compiler loader with no remark/rehype/recma user plugins or extra raw loaders; omitted/empty plugin arrays qualify. Other failed chains quarantine only their owning isolate/map domain, not independent main/true compilation; successful configured-plugin preparation/binding remains supported. Unused errors remain provisional. Actual later requests receive a located no-new-publication refusal naming the configured chain and cause, with recovery by a new build or dev-server restart. Preserve unchanged directory watches when preparation inputs are republished so pending atomic-replacement notifications are not lost. No activation or measured performance claim.",
+  "date": "2026-10-17T00:00:00.000Z"
+}

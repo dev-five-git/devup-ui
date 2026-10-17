@@ -2,6 +2,11 @@ import { readFile } from 'node:fs'
 
 import { createMdxContextAdmission } from './mdx-context-admission'
 import type { MdxInvocationLoader } from './mdx-invocation'
+import {
+  isolatePreparationSteps,
+  rememberMdxIsolateFailureScope,
+  rememberMdxIsolateScope,
+} from './mdx-isolate-authority'
 import { rememberMdxPreparedScope } from './mdx-live-admission'
 import {
   installMdxNormalCapture,
@@ -65,6 +70,12 @@ export function runMdxLoaders(request: {
       clearTimeout(timer)
       signal.removeEventListener('abort', abort)
       if (failure) {
+        rememberMdxIsolateFailureScope({
+          context,
+          failure,
+          compilerPath: request.seam?.compilerPath,
+          scope: admission.scope(),
+        })
         reject(failure)
         return
       }
@@ -78,6 +89,7 @@ export function runMdxLoaders(request: {
             )
           const output = prepared(filename, result, dependencies)
           rememberMdxPreparedScope(output, admission.scope())
+          rememberMdxIsolateScope(context, output, admission.scope())
           return output
         }),
       )
@@ -103,7 +115,7 @@ export function runMdxLoaders(request: {
     const capture = request.seam
       ? installMdxNormalCapture(loaderContext, request.seam, {
           admission,
-          steps,
+          steps: isolatePreparationSteps({ root, context, steps }),
         })
       : undefined
     const callback = (error: unknown, result: unknown) => {

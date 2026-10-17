@@ -22,7 +22,7 @@
   "version": "1.0.90",
   "scripts": {
     "lint": "eslint",
-    "build": "bun ../../node_modules/@typescript/native/bin/tsc && bun build --target node src/index.ts --production --env=disable --outfile dist/index.cjs --format cjs --packages external && bun build --target node src/index.ts --production --env=disable --outfile dist/index.mjs --format esm --packages external && bun build --target node src/loader.ts --production --env=disable --outfile dist/loader.cjs --format cjs --packages external && bun build --target node src/loader.ts --production --env=disable --outfile dist/loader.mjs --format esm --packages external && bun build --target node src/css-loader.ts --production --env=disable --outfile dist/css-loader.cjs --format cjs --packages external && bun build --target node src/css-loader.ts --production --env=disable --outfile dist/css-loader.mjs --format esm --packages external && bun build --target node src/final-config-adapter-entry.ts --production --env=disable --outfile dist/final-config-adapter-entry.cjs --format cjs --packages external && bun build --target node src/final-config-adapter-entry.ts --production --env=disable --outfile dist/final-config-adapter-entry.mjs --format esm --packages external && bun build --target node src/mdx-prewarm-loader.ts --production --env=disable --outfile dist/mdx-prewarm-loader.js --format esm --packages external"
+    "build": "bun ../../node_modules/@typescript/native/bin/tsc && bun build --target node src/index.ts --production --env=disable --outfile dist/index.cjs --format cjs --packages external && bun build --target node src/index.ts --production --env=disable --outfile dist/index.mjs --format esm --packages external && bun build --target node src/loader.ts --production --env=disable --outfile dist/loader.cjs --format cjs --packages external && bun build --target node src/loader.ts --production --env=disable --outfile dist/loader.mjs --format esm --packages external && bun build --target node src/css-loader.ts --production --env=disable --outfile dist/css-loader.cjs --format cjs --packages external && bun build --target node src/css-loader.ts --production --env=disable --outfile dist/css-loader.mjs --format esm --packages external && bun build --target node src/final-config-adapter-entry.ts --production --env=disable --outfile dist/final-config-adapter-entry.cjs --format cjs --packages external && bun build --target node src/final-config-adapter-entry.ts --production --env=disable --outfile dist/final-config-adapter-entry.mjs --format esm --packages external && bun build --target node src/mdx-prewarm-loader.ts --production --env=disable --outfile dist/mdx-prewarm-loader.js --format esm --packages external && bun build --target node src/mdx-isolate-owner.ts --production --env=disable --outfile dist/mdx-isolate-owner.cjs --format cjs --packages external && bun build --target node src/mdx-isolate-owner.ts --production --env=disable --outfile dist/mdx-isolate-owner.mjs --format esm --packages external && bun build --target node src/mdx-isolate-worker.ts --production --env=disable --outfile dist/mdx-isolate-worker.mjs --format esm --packages external"
   },
   "publishConfig": {
     "access": "public"
@@ -53,6 +53,16 @@
     "./mdx-prewarm-loader": {
       "types": "./dist/mdx-prewarm-loader.d.ts",
       "import": "./dist/mdx-prewarm-loader.js"
+    },
+    "./mdx-isolate-owner": {
+      "types": "./dist/mdx-isolate-owner.d.ts",
+      "import": "./dist/mdx-isolate-owner.mjs",
+      "require": "./dist/mdx-isolate-owner.cjs"
+    },
+    "./mdx-isolate-worker": {
+      "types": "./dist/mdx-isolate-worker.d.ts",
+      "import": "./dist/mdx-isolate-worker.mjs",
+      "require": "./dist/mdx-isolate-worker.mjs"
     }
   },
   "files": [

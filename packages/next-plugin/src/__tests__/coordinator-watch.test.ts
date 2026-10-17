@@ -10,6 +10,42 @@ import { createTestApp, eventually, removeTestApps } from './coordinator-app'
 afterEach(removeTestApps)
 
 describe('watchSources', () => {
+  it('observes an atomic manifest replacement when watch inputs are republished before delivery', async () => {
+    // Given
+    const app = createTestApp()
+    const manifest = app.write('node_modules/preset/package.json', 'red')
+    const replacement = app.write(
+      'node_modules/preset/package.next.json',
+      'blue',
+    )
+    const event = Promise.withResolvers<readonly string[] | undefined>()
+    const errors: Error[] = []
+    const watcher = watchSources({
+      roots: [join(app.root, 'app')],
+      debounceMs: 5,
+      onChange: (paths) => event.resolve(paths),
+      onError: (error) => errors.push(error),
+    })
+    watcher.replaceInputs?.([manifest])
+    const timer = setTimeout(
+      () => event.reject(new Error('Atomic manifest replacement was lost')),
+      1000,
+    )
+    try {
+      // When: publication races delivery of an already-issued filesystem edit.
+      fs.renameSync(replacement, manifest)
+      watcher.replaceInputs?.([manifest])
+      const paths = await event.promise
+      // Then
+      expect(paths).toContain(manifest)
+      expect(fs.readFileSync(manifest, 'utf-8')).toBe('blue')
+      expect(errors).toEqual([])
+    } finally {
+      clearTimeout(timer)
+      watcher.close()
+    }
+  })
+
   it('keeps an absent descendant watch usable when its prefix becomes a file', async () => {
     // Given
     const app = createTestApp()
@@ -53,6 +89,40 @@ describe('watchSources', () => {
       clearTimeout(timer)
       watcher.close()
       stat.mockRestore()
+    }
+  })
+
+  it('stops reporting retired context children while observing newly adopted inputs', async () => {
+    // Given
+    const app = createTestApp()
+    const retired = join(app.root, 'retired')
+    app.write('retired/data.json', 'before')
+    const added = app.write('added/data.json', 'before')
+    const event = Promise.withResolvers<readonly string[] | undefined>()
+    const watcher = watchSources({
+      roots: [],
+      debounceMs: 5,
+      onChange: (paths) => event.resolve(paths),
+      onError: (error) => event.reject(error),
+    })
+    watcher.replaceInputs?.([retired])
+    const timer = setTimeout(
+      () => event.reject(new Error('Newly adopted input was not observed')),
+      1000,
+    )
+    try {
+      // When
+      watcher.replaceInputs?.([added])
+      app.write('retired/data.json', 'after')
+      app.write('added/data.json', 'after')
+      const paths = await event.promise
+      // Then
+      expect(paths).toContain(added)
+      expect(paths).not.toContain(join(retired, 'data.json'))
+      expect(fs.readFileSync(added, 'utf-8')).toBe('after')
+    } finally {
+      clearTimeout(timer)
+      watcher.close()
     }
   })
 

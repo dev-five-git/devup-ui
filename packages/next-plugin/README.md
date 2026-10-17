@@ -254,6 +254,66 @@ process owns `<distDir>/.devup/<app key>/sessions/<pid>-<token>/`; the
 development checkpoint `<distDir>/.devup/<app key>/snapshot.json` is replaced
 atomically.
 
+## Dormant false-map MDX owner (not wired)
+
+The package contains an internal, **DORMANT** lazy fixed-false MDX isolate
+owner. The plugin does not create or call it: there is no activation, receiver,
+graph, HTTP, watch, publication, or lifecycle wiring in this unit. Construction
+alone starts no worker; explicit preparation demand creates one persistent
+isolate, and fatal failure quarantines it without respawn. Disposal awaits the
+owned worker's termination and exit event. Only structured-clone preparation data crosses the worker boundary;
+receiving receipts, Compiler identities and plugin functions do not.
+
+Results, errors, maps and dependency reports remain provisional. An explicit
+resource binding invokes the original worker-local native-scope closure on every
+live binding, then checks true/false JavaScript byte agreement, input freshness
+and physical compiler source recognition before returning anything to a caller
+that could publish. Neither the closure nor a portable scope receipt crosses
+the channel. Stock composed rule metadata retains RegExp source and flags;
+compiler options still follow the existing Turbo JSON policy and ordered keys.
+
+Cooperative fatal quarantine seals native compilation and checks each retained
+success separately at its last-native-use checkpoint. Only that resource's own
+successful terminal verdict can be used after awaited termination **and** exit,
+with fresh parent-side byte/input/source checks; another resource's error cannot
+substitute for its verdict. Known installed JSX, expression, ESM and mismatched-tag
+parser diagnostics are resource-local only for a source-recognized single compiler
+loader with no configured remark, rehype or recma user plugins and no extra raw
+loaders (omitted or empty plugin arrays qualify). The installed diagnostic type,
+structured parser origin and still-current original failure scope remain required;
+this path retains the same worker and native processor cache. Diagnostic metadata
+alone cannot establish parser origin in a configured plugin chain. Any failed
+preparation in another configured chain, including an ordinary MDX syntax error,
+quarantines only its owning isolate/map domain, never the independent main/true
+domain. Successful configured-plugin preparation and binding remain supported.
+Unused failures remain provisional; only an actual later request is refused with
+the filename, configured plugin/loader chain, original cause, no-new-publication
+notice and recovery by a **new build or dev-server restart**.
+Unknown plugin exceptions,
+context/source/native refusals, collisions and timeouts remain fatal, without
+respawn; callback delivery or diagnostic message text alone is not a safe-error
+classification.
+
+`retire(run)` synchronously closes new and concurrent bindings for that run,
+drains accepted work, and releases its data, jobs, option instances, pipeline
+interning and guard references on both sides. A minimal retired-run tombstone
+prevents revival; the same worker, physical evaluation and native cache history
+remain. Explicit `dispose()` likewise closes bindings synchronously, including
+in-flight checks; output already returned to a caller is not erased.
+
+An isolate crash or timeout without a resource's final verdict, or a resource
+never prepared before quarantine, cannot authorize a new publication. Only an
+actual later binding request gets a located refusal naming the isolate failure
+and recovery by a **new build or dev-server restart**. Retained output alone is
+not authority to bypass that boundary.
+
+Unused failures and byte-different results cannot change canonical state. These
+are dormant boundary tests, not HTTP or native-admission qualification. The
+later raw client-capable closure may over-approximate a getStaticProps-only MDX
+import, but this owner is not connected to that closure. Activation, native
+mixed-history parity and performance qualification remain separate work; no
+performance improvement is claimed here.
+
 ## Turbopack build profiling
 
 Set `DEVUP_UI_PROFILE=1` for an opt-in, structured timing log during a

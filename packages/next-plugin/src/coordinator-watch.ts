@@ -21,6 +21,7 @@ export function watchSources(options: {
   const originalRoots = options.roots.map((root) => resolve(root))
   let roots = [...new Set(originalRoots)]
   const changedPaths = new Set<string>()
+  const needed = new Set<string>()
   const watchers = new Map<
     string,
     {
@@ -68,6 +69,7 @@ export function watchSources(options: {
   }
   const attach = (path: string, recursive: boolean) => {
     const key = `${recursive}:${path}`
+    needed.add(key)
     const stat = directory(path)
     const identity = stat && `${stat.dev}:${stat.ino}:${stat.birthtimeMs}`
     const previous = watchers.get(key)
@@ -106,6 +108,7 @@ export function watchSources(options: {
     }
   }
   const refresh = () => {
+    needed.clear()
     const limits = boundaries()
     // Release the old subtree before attaching any replacement ancestor: some
     // watch backends share handles between overlapping directory watches.
@@ -130,6 +133,11 @@ export function watchSources(options: {
       for (const ancestor of ancestors.reverse()) attach(ancestor, false)
       attach(root, true)
     })
+    for (const [key, entry] of watchers) {
+      if (needed.has(key)) continue
+      entry.watcher.close()
+      watchers.delete(key)
+    }
   }
   refresh()
   return {
@@ -141,8 +149,6 @@ export function watchSources(options: {
           ...inputs.map((input) => resolve(input)),
         ]),
       ]
-      for (const { watcher } of watchers.values()) watcher.close()
-      watchers.clear()
       refresh()
     },
     close() {
