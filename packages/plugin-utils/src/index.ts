@@ -1,3 +1,4 @@
+export { beginBuild, type ResettableEngine } from './build-session'
 export {
   type AtomHoistPlan,
   buildCanonicalMap,
@@ -14,11 +15,19 @@ export {
   createModuleResolver,
   type CreateModuleResolverOptions,
   listSourceFiles,
+  parseImports,
   planAtomHoist,
   type ResolvedModule,
   type StaticImportGraph,
 } from './import-graph'
 export { deepMerge, loadDevupConfig, loadDevupConfigSync } from './load-config'
+export {
+  collectNumberedFiles,
+  type CollectNumberedFilesOptions,
+  extractedNeedles,
+  type FileNumbering,
+  seedFileNumbers,
+} from './numbering'
 export {
   createNodeModulesExcludeRegex,
   createThemeInterfaceArgs,
@@ -27,6 +36,18 @@ export {
   type DevupUIBasePluginOptions,
   getFileNumByFilename,
 } from './shared'
+export {
+  createStateWriter,
+  type StateWriter,
+  writeFileAtomically,
+} from './state-writer'
+export {
+  findTailwindCss,
+  TAILWIND_CSS_CANDIDATES,
+  tailwindCssFiles,
+  type TailwindCssSource,
+  withTailwindCss,
+} from './tailwind-css'
 export type {
   CustomShorthands,
   DevupConfig,
