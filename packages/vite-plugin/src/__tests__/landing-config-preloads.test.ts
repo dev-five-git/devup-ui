@@ -16,7 +16,7 @@ it.each([true, false])(
     // Given actual config plugins and typed entry/reference asset dependencies.
     const root = resolve(import.meta.dir, '../../../../apps/landing')
     const config = await resolveConfig(
-      { root, configLoader: 'native' },
+      { root, configLoader: 'bundle' },
       'build',
     )
     const apiPlugin = vitePluginRscMinimal()

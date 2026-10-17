@@ -227,7 +227,7 @@ it('prepares actual landing reservations within a bounded source-only deadline',
   // Given checkout sources/products, not a copied count oracle.
   const root = resolve(import.meta.dir, '../../../../apps/landing')
   const started = performance.now()
-  const config = await resolveConfig({ root, configLoader: 'native' }, 'build')
+  const config = await resolveConfig({ root, configLoader: 'bundle' }, 'build')
   const observed: string[] = []
   // When production prepares every actual context.
   const manifest = await prepareProductionManifest(
