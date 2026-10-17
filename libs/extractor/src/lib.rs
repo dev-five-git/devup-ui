@@ -12,6 +12,8 @@ mod import_alias_visit;
 mod imported_constants;
 mod module_loader;
 mod mutations;
+#[cfg(test)]
+mod numeric_template_tests;
 mod prop_modify_utils;
 #[cfg(test)]
 mod responsive_selector_tests;
