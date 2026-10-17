@@ -15,6 +15,8 @@ mod jsx_import_source;
 mod jsx_pragmas;
 mod module_loader;
 mod mutations;
+#[cfg(test)]
+mod numeric_template_tests;
 mod parsing;
 #[cfg(test)]
 mod pragma_annotation_tests;
