@@ -5,9 +5,11 @@ declare module 'styled-components' {
   export type { StyledTheme as DefaultTheme } from '@devup-ui/react/compat'
   export {
     createGlobalStyle,
+    createTheme,
     isStyledComponent,
     ServerStyleSheet,
     StyleSheetManager,
+    ThemeConsumer,
     ThemeProvider,
     useTheme,
     withTheme,
