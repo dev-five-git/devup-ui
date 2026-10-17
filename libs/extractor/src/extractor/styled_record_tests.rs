@@ -461,8 +461,6 @@ fn record_reads_when_relocated_or_overwritten(
 #[rstest]
 #[case::plain("{ color: 'red' }")]
 #[case::unconditional("{ ...{ color: 'red' }, color: 'orange' }")]
-#[case::distinct("{ ...(on ? { color: 'red' } : {}), p: 1 }")]
-#[case::computed_unaffected("{ ...(on ? { ['color']: 'red' } : {}), p: 1 }")]
 #[case::unknown_spread("{ color: 'orange', ...(on ? { color: 'red' } : {}), ...unknown }")]
 #[case::unknown_branch("{ color: 'orange', ...(on ? unknown : { color: 'red' }) }")]
 #[case::computed_key("{ color: 'orange', ...(on ? { [key]: 'red' } : {}) }")]
@@ -485,6 +483,42 @@ fn original_record_when_unaffected_or_unreadable(#[case] rules: &str) {
     let original = readable_code(&statement.expression);
     assert!(prepare(&builder, &statement.expression, &statement.expression).is_none());
     assert_eq!(readable_code(&statement.expression), original);
+}
+
+#[rstest]
+#[case::distinct("{ ...(on ? { color: 'red' } : {}), p: 1 }")]
+#[case::computed_unaffected("{ ...(on ? { ['color']: 'red' } : {}), p: 1 }")]
+fn retained_guard_when_record_has_distinct_keys(
+    #[case] rules: &str,
+    #[values(false, true)] enabled: bool,
+) {
+    // Given: the unchanged distinct-key inputs with a getter-backed guard.
+    let allocator = Allocator::default();
+    let builder = AstBuilder::new(&allocator);
+    let source = format!("({rules});");
+    let parsed = Parser::new(&allocator, &source, SourceType::tsx()).parse();
+    let Statement::ExpressionStatement(statement) = &parsed.program.body[0] else {
+        panic!("record fixture must be an expression");
+    };
+    let original = readable_code(&statement.expression);
+    let prepared = prepare(&builder, &statement.expression, &statement.expression)
+        .unwrap_or_else(|| panic!("distinct keys must retain guard captures"));
+    assert_eq!(prepared.bindings.len(), 1);
+    assert_eq!(readable_code(&statement.expression), original);
+    let setup = format!(
+        "Object.defineProperty(globalThis, 'on', {{ get() {{ trace.push('guard'); return {enabled}; }} }})"
+    );
+    // When: evaluate the prepared record with either guard outcome.
+    let result = evaluate_record(rules, &setup);
+    // Then: the guard is read once and retained union-key order/value is stable.
+    assert_eq!(
+        result,
+        if enabled {
+            r#"[["color","p"],{"color":"red","p":1},["guard"]]"#
+        } else {
+            r#"[["color","p"],{"p":1},["guard"]]"#
+        }
+    );
 }
 
 /// Evaluate the emitted render scope, lowering its empty native or bound JSX element.
