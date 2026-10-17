@@ -56,8 +56,9 @@ ToBTreeSet {
         ),
         Css(
             ExtractCss {
-                css: "@property --tw-leading{syntax:\"*\";inherits:false}",
                 file: "@devup-ui/tailwind",
+                order: 0,
+                css: "@property --tw-leading{syntax:\"*\";inherits:false}",
             },
         ),
     },

@@ -212,3 +212,90 @@ fn callback_contract_when_many_dependent_guarded_captures_render(
     ]);
     assert_eq!(result, expected.to_string());
 }
+
+#[test]
+#[serial]
+fn layers_preserve_authored_order_when_inherited_captures_render()
+-> Result<(), Box<dyn std::error::Error>> {
+    // Given: non-alphabetical nested layers and distinct inherited/own guarded reads.
+    let source = concat!(
+        "import { styled } from '@devup-ui/react';",
+        "const trace=[];let enabled=true;let baseColor='teal',ownColor='gold';",
+        "const __devupRecord0='authored';",
+        "const Base=styled.div({'@layer':{zeta:{color:'red','@layer':{inner:{m:1}}}},",
+        "...((trace.push('base guard'),enabled)?{borderColor:(trace.push('base value'),baseColor)}:{})});",
+        "const Card=styled(Base)({'@layer':{alpha:{color:'blue'}},",
+        "...((trace.push('own guard'),enabled)?{backgroundColor:(trace.push('own value'),ownColor)}:{})});",
+    );
+    reset_class_map();
+    reset_file_map();
+
+    // When: public extraction is followed by execution of the emitted inherited renderer.
+    let output = extract(
+        "layers.ts",
+        source,
+        ExtractOption {
+            single_css: true,
+            import_main_css: false,
+            ..ExtractOption::default()
+        },
+    )?;
+    let arena = Allocator::default();
+    let mut program = parse(&arena, "layers.ts", &output.code);
+    let calls = renders(&program);
+    assert_eq!(calls.len(), 2);
+    let helper = &calls[0].helper;
+    program
+        .body
+        .retain(|statement| !matches!(statement, Statement::ImportDeclaration(_)));
+    let code = Codegen::new().build(&program).code;
+    let script = format!(
+        "const __devupForwardRef=render=>({{render}});const {helper}=(target,props)=>({{target,props}});{code}\nconst before=trace.slice();const first=Card.render({{}},null);baseColor='navy';ownColor='pink';const second=Card.render({{}},null);JSON.stringify([before,Object.values(first.props.style).sort(),Object.values(second.props.style).sort(),trace,__devupRecord0]);"
+    );
+    let mut context = Context::default();
+    let result = context
+        .eval(Source::from_bytes(&script))
+        .unwrap_or_else(|error| panic!("layered inherited capture execution failed: {error}"));
+    let result = result
+        .as_string()
+        .unwrap_or_else(|| panic!("layered inherited capture observation must be JSON"))
+        .to_std_string_escaped();
+
+    // Then: finalized layer metadata coexists with once-only, correctly rebound captures.
+    let orders: Vec<_> = output
+        .styles
+        .iter()
+        .filter_map(|style| match style {
+            crate::ExtractStyleValue::LayerOrder(order) => Some((
+                order.file.as_str(),
+                order.layers.iter().map(String::as_str).collect::<Vec<_>>(),
+            )),
+            _ => None,
+        })
+        .collect();
+    assert_eq!(
+        orders,
+        vec![("layers.ts", vec!["zeta", "zeta.inner", "alpha"])]
+    );
+    assert_eq!(
+        result,
+        serde_json::json!([
+            [],
+            ["gold", "teal"],
+            ["navy", "pink"],
+            [
+                "base guard",
+                "base value",
+                "own guard",
+                "own value",
+                "base guard",
+                "base value",
+                "own guard",
+                "own value"
+            ],
+            "authored"
+        ])
+        .to_string()
+    );
+    Ok(())
+}

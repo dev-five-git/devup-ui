@@ -29,6 +29,7 @@ mod prop_valid;
 #[cfg(test)]
 mod responsive_selector_tests;
 mod source_map;
+mod style_collector;
 mod style_values;
 mod styled_reads;
 #[cfg(test)]
@@ -642,7 +643,7 @@ fn extract_source(
     });
 
     Ok(ExtractOutput {
-        styles: visitor.styles,
+        styles: visitor.styles.into_styles(filename),
         code: result.code,
         map,
         css_file: Some(css_file),
@@ -21447,6 +21448,7 @@ export const K = styled.div(base, cond && { color: 'blue' }, { margin: 1 });",
                 | ExtractStyleValue::Css(_)
                 | ExtractStyleValue::Import(_)
                 | ExtractStyleValue::FontFace(_)
+                | ExtractStyleValue::LayerOrder(_)
                 | ExtractStyleValue::Keyframes(_) => None,
             })
             .collect();

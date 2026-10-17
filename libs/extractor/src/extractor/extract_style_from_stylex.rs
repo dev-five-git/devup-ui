@@ -36,6 +36,7 @@ fn raw_static_style<'a>(
         style_order: None,
         layer: None,
         theme_token_resolution: Default::default(),
+        order: 0,
     }))
 }
 
