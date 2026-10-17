@@ -13,7 +13,7 @@ function fileIds(): string[] {
 }
 
 it.each([false, true])(
-  'reserves only extracted identities when native inputs reach dist and test modules with singleCss=%s',
+  'reserves root candidates and reached dist and test modules with singleCss=%s',
   async (singleCss) => {
     // Given an independently specified cohort and four unreachable counterexamples.
     const fixture = await productionFixture()
@@ -45,9 +45,27 @@ it.each([false, true])(
       'app/node_modules/@devup-ui/tooling/package.json',
       '{"name":"@devup-ui/tooling","type":"module","main":"index.js"}',
     )
+    const unused = await fixture.file(
+      'app/src/aaa-unused.js',
+      "import {css} from '@devup-ui/react'; import 'foreign-poison'; import '@devup-editor/root-only'; export const unused=css({zIndex:99});",
+    )
+    await fixture.file(
+      'app/node_modules/foreign-poison/package.json',
+      '{broken',
+    )
+    await fixture.file(
+      'app/node_modules/@devup-editor/root-only/package.json',
+      '{"name":"@devup-editor/root-only","exports":"./dist/style.js"}',
+    )
+    const rootOnly = await fixture.file(
+      'app/node_modules/@devup-editor/root-only/dist/style.js',
+      "import {css} from '@devup-ui/react'; export const rootOnly=css({zIndex:88});",
+    )
     const negatives = []
     for (const path of [
-      'app/src/aaa-unused.js',
+      'app/src/fixtures/unused.js',
+      'app/src/tooling/unused.js',
+      'app/src/dist/unused.js',
       'app/node_modules/@devup-ui/tooling/index.js',
       'app/node_modules/@devup-ui/fixture/dist/unused.js',
     ])
@@ -64,6 +82,7 @@ it.each([false, true])(
       ),
     )
     const expected = [main, tokens, rank, reached, dist, page].sort()
+    const reservedExpected = [...expected, unused, rootOnly].sort()
     const seeds: string[][] = []
     const completed: string[][] = []
     const original = NonphysicalModules.prototype.extract
@@ -120,6 +139,7 @@ it.each([false, true])(
         expect(js).toContain(rule?.[1] ?? 'missing-class')
       }
       expect(css).not.toContain('z-index:99')
+      expect(css).not.toContain('z-index:88')
       expect(js).not.toContain('@devup-ui/react')
       const roots = [...new Set(direct.mock.calls.map(([, id]) => id))].sort()
       const returns = recursive.mock.calls.flatMap(([, result]) => {
@@ -160,13 +180,13 @@ it.each([false, true])(
           stylingAndRecursion: 'passed',
         }),
       )
-      expect(reserved).toEqual(expected)
-      expect(seeds[0]).toEqual(expected)
+      expect(reserved).toEqual(reservedExpected)
+      expect(seeds[0]).toEqual(reservedExpected)
       const numbers: unknown = JSON.parse(wasm.exportFileMap())
       if (numbers === null || typeof numbers !== 'object')
         throw new TypeError('Expected real numbering object')
       expect(Object.getOwnPropertyDescriptor(numbers, page)?.value).toBe(
-        expected.filter((id) => id < page).length,
+        reservedExpected.filter((id) => id < page).length,
       )
       for (const id of negatives)
         expect(Object.getOwnPropertyDescriptor(numbers, id)).toBeUndefined()

@@ -148,13 +148,13 @@ test.describe('Landing Page - Zero Runtime Validation', () => {
 
     expect(headingClasses.length).toBeGreaterThan(1)
     const atomicClasses = headingClasses.filter((className) =>
-      /^(?:[a-z][a-z0-9_]{0,2}-)?[a-z0-9_]{1,3}$/i.test(className),
+      /^(?:[a-z]-)?[a-z0-9_]{1,3}$/i.test(className),
     )
     expect(atomicClasses.length).toBeGreaterThan(1)
     expect(
       headingClasses.every(
         (className) =>
-          /^(?:[a-z][a-z0-9_]{0,2}-)?[a-z0-9_]{1,3}$/i.test(className) ||
+          /^(?:[a-z]-)?[a-z0-9_]{1,3}$/i.test(className) ||
           /^typo-[a-z0-9]+$/i.test(className),
       ),
       `Expected compact base-37 classes, received: ${headingClasses.join(' ')}`,
