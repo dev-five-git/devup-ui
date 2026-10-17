@@ -70,7 +70,7 @@ fn passthrough_props_remain_when_attrs_wrap_the_renderer(
 ) {
     // Given: attrs wrap a renderer with caller as/ref/children.
     let source = format!(
-        "{IMPORT}const Card = styled('article'){attrs}`color: red;`;\nconst element = Card({{ as: 'section', ref: callerRef, children: 'child' }});"
+        "{IMPORT}const Card = styled('article'){attrs}`color: red;`;\nconst element = Card.render({{ as: 'section', ref: callerRef, children: 'child' }}, callerRef);"
     );
     // When: extraction compiles the attrs-wrapped renderer.
     let output = compile("test.ts", &source, single_css);

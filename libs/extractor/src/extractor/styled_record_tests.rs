@@ -40,7 +40,7 @@ fn inherited_captures_when_native_extension_renders(
     reset_class_map();
     reset_file_map();
     let code = format!(
-        "import {{styled}} from '@devup-ui/react';const trace=[];function make(on{parameters}){{const Base=styled.div({{color:'red',...((trace.push('base'),on)?{{color:'blue'}}:{{}})}});{extension}return Ext({{id:'extension',className:'caller'}});}}const rendered=make({on},{},'authored',{authored});",
+        "import {{styled}} from '@devup-ui/react';const trace=[];function make(on{parameters}){{const Base=styled.div({{color:'red',...((trace.push('base'),on)?{{color:'blue'}}:{{}})}});{extension}return Ext.render({{id:'extension',className:'caller'}},null);}}const rendered=make({on},{},'authored',{authored});",
         !on
     );
     let output = match crate::extract(
@@ -109,7 +109,7 @@ fn inherited_captures_when_dynamic_native_base_renders(
     reset_class_map();
     reset_file_map();
     let code = format!(
-        "import {{styled}} from '@devup-ui/react';const trace=[];function make(on,target){{const Base=styled(target)({{color:'red',...((trace.push('base'),on)?{{color:'blue'}}:{{}})}});const Ext=styled(Base)({{p:1}});return Ext({{id:'extension',className:'caller'}});}}const rendered=make({on},'div');"
+        "import {{styled}} from '@devup-ui/react';const trace=[];function make(on,target){{const Base=styled(target)({{color:'red',...((trace.push('base'),on)?{{color:'blue'}}:{{}})}});const Ext=styled(Base)({{p:1}});return Ext.render({{id:'extension',className:'caller'}},null);}}const rendered=make({on},'div');"
     );
     let output = match crate::extract(
         "test.tsx",
@@ -167,7 +167,7 @@ fn inherited_dependent_reads_when_attrs_and_later_styles_compose(
     reset_class_map();
     reset_file_map();
     let code = format!(
-        "import {{styled}} from '@devup-ui/react';const trace=[];function make(outer,inner,__devupRecord0){{const Base=styled.div.attrs({{title:__devupRecord0,id:'base'}})({{color:'red',backgroundColor:'white',...((trace.push('outer'),outer)?{{...((trace.push('inner'),inner)?{{backgroundColor:(trace.push('leaf'),'gold')}}:{{}})}}:{{}})}});const Ext=styled(Base).attrs({{id:'extension'}})({{color:'orange'}});return Ext({{}});}}const rendered=make({outer},{inner},'authored-title');"
+        "import {{styled}} from '@devup-ui/react';const trace=[];function make(outer,inner,__devupRecord0){{const Base=styled.div.attrs({{title:__devupRecord0,id:'base'}})({{color:'red',backgroundColor:'white',...((trace.push('outer'),outer)?{{...((trace.push('inner'),inner)?{{backgroundColor:(trace.push('leaf'),'gold')}}:{{}})}}:{{}})}});const Ext=styled(Base).attrs({{id:'extension'}})({{color:'orange'}});return Ext.render({{}},null);}}const rendered=make({outer},{inner},'authored-title');"
     );
     let output = match crate::extract(
         "test.tsx",
@@ -461,8 +461,6 @@ fn record_reads_when_relocated_or_overwritten(
 #[rstest]
 #[case::plain("{ color: 'red' }")]
 #[case::unconditional("{ ...{ color: 'red' }, color: 'orange' }")]
-#[case::distinct("{ ...(on ? { color: 'red' } : {}), p: 1 }")]
-#[case::computed_unaffected("{ ...(on ? { ['color']: 'red' } : {}), p: 1 }")]
 #[case::unknown_spread("{ color: 'orange', ...(on ? { color: 'red' } : {}), ...unknown }")]
 #[case::unknown_branch("{ color: 'orange', ...(on ? unknown : { color: 'red' }) }")]
 #[case::computed_key("{ color: 'orange', ...(on ? { [key]: 'red' } : {}) }")]
@@ -487,11 +485,47 @@ fn original_record_when_unaffected_or_unreadable(#[case] rules: &str) {
     assert_eq!(readable_code(&statement.expression), original);
 }
 
+#[rstest]
+#[case::distinct("{ ...(on ? { color: 'red' } : {}), p: 1 }")]
+#[case::computed_unaffected("{ ...(on ? { ['color']: 'red' } : {}), p: 1 }")]
+fn retained_guard_when_record_has_distinct_keys(
+    #[case] rules: &str,
+    #[values(false, true)] enabled: bool,
+) {
+    // Given: the unchanged distinct-key inputs with a getter-backed guard.
+    let allocator = Allocator::default();
+    let builder = AstBuilder::new(&allocator);
+    let source = format!("({rules});");
+    let parsed = Parser::new(&allocator, &source, SourceType::tsx()).parse();
+    let Statement::ExpressionStatement(statement) = &parsed.program.body[0] else {
+        panic!("record fixture must be an expression");
+    };
+    let original = readable_code(&statement.expression);
+    let prepared = prepare(&builder, &statement.expression, &statement.expression)
+        .unwrap_or_else(|| panic!("distinct keys must retain guard captures"));
+    assert_eq!(prepared.bindings.len(), 1);
+    assert_eq!(readable_code(&statement.expression), original);
+    let setup = format!(
+        "Object.defineProperty(globalThis, 'on', {{ get() {{ trace.push('guard'); return {enabled}; }} }})"
+    );
+    // When: evaluate the prepared record with either guard outcome.
+    let result = evaluate_record(rules, &setup);
+    // Then: the guard is read once and retained union-key order/value is stable.
+    assert_eq!(
+        result,
+        if enabled {
+            r#"[["color","p"],{"color":"red","p":1},["guard"]]"#
+        } else {
+            r#"[["color","p"],{"p":1},["guard"]]"#
+        }
+    );
+}
+
 /// Evaluate the emitted render scope, lowering its empty native or bound JSX element.
 fn evaluate_native_render(code: &str, observation: &str) -> String {
     use oxc_ast::ast::{
-        ImportDeclaration, JSXAttributeItem, JSXAttributeName, JSXAttributeValue, JSXElement,
-        JSXElementName,
+        ImportDeclaration, ImportDeclarationSpecifier, JSXAttributeItem, JSXAttributeName,
+        JSXAttributeValue, JSXElement, JSXElementName,
     };
     use oxc_ast_visit::Visit;
     use oxc_span::Span;
@@ -501,7 +535,21 @@ fn evaluate_native_render(code: &str, observation: &str) -> String {
 
     impl<'a> Visit<'a> for NativeElements {
         fn visit_import_declaration(&mut self, import: &ImportDeclaration<'a>) {
-            self.0.push((import.span, String::new()));
+            let replacement = import
+                .specifiers
+                .iter()
+                .flatten()
+                .filter_map(|specifier| match specifier {
+                    ImportDeclarationSpecifier::ImportSpecifier(named)
+                        if import.source.value == "react"
+                            && named.imported.to_string() == "forwardRef" =>
+                    {
+                        Some(format!("const {}=render=>({{render}});", named.local.name))
+                    }
+                    _ => None,
+                })
+                .collect::<String>();
+            self.0.push((import.span, replacement));
         }
 
         fn visit_jsx_element(&mut self, element: &JSXElement<'a>) {
@@ -623,7 +671,7 @@ fn captures_and_filter_survive_when_prepared_base_retargets_then_extends(
         .unwrap_or_else(|error| panic!("class fixture serialization failed: {error}"));
     // When: the emitted extension renders with distinct input, selected target and forwarded target.
     let observation = format!(
-        "const __devupJsx0=(type,props)=>({{type,props}});const rendered=Card({{tone:'olive',blocked:9,id:'card',ref:7,children:'child',className:'caller',as:'article',forwardedAs:'nav'}});JSON.stringify([rendered.type,rendered.props.as,rendered.props.id,rendered.props.ref,rendered.props.children,rendered.props.className.includes('caller'),{winning}.some(c=>rendered.props.className.split(' ').includes(c)),rendered.props['data-tone'],'tone' in rendered.props,'blocked' in rendered.props,trace]);"
+        "const __devupJsx0=(type,props)=>({{type,props}});const rendered=Card.render({{tone:'olive',blocked:9,id:'card',ref:99,children:'child',className:'caller',as:'article',forwardedAs:'nav'}},7);JSON.stringify([rendered.type,rendered.props.as,rendered.props.id,rendered.props.ref,rendered.props.children,rendered.props.className.includes('caller'),{winning}.some(c=>rendered.props.className.split(' ').includes(c)),rendered.props['data-tone'],'tone' in rendered.props,'blocked' in rendered.props,trace]);"
     );
     let result = evaluate_native_render(&output.code, &observation);
     // Then: captures run once, attrs reads survive, filtered props disappear and identity/ordinary props remain.
@@ -642,7 +690,7 @@ fn template_key_precedence_when_public_component_renders(
     reset_class_map();
     reset_file_map();
     let code = format!(
-        "import {{styled}} from '@devup-ui/react'; const trace=[]; const on={on}; const Card=styled('div',{{...((trace.push('spread'),on)?{{[`color`]:(trace.push('leaf'),'red')}}:{{color:'purple'}}),[`color`]:'orange'}}); const rendered=Card({{id:'card'}});"
+        "import {{styled}} from '@devup-ui/react'; const trace=[]; const on={on}; const Card=styled('div',{{...((trace.push('spread'),on)?{{[`color`]:(trace.push('leaf'),'red')}}:{{color:'purple'}}),[`color`]:'orange'}}); const rendered=Card.render({{id:'card'}},null);"
     );
     let output = match crate::extract(
         "test.tsx",
@@ -729,7 +777,7 @@ fn authored_composed_class_when_public_component_renders(
     reset_class_map();
     reset_file_map();
     let code = format!(
-        "import {{styled}} from '@devup-ui/react'; function make(on,__devupRecord0){{const Card=styled.div(__devupRecord0,{{...(on?{{color:'red'}}:{{}}),color:'orange'}});return Card({{id:'card',className:'caller-class'}});}} const rendered=make({on},'authored-class');"
+        "import {{styled}} from '@devup-ui/react'; function make(on,__devupRecord0){{const Card=styled.div(__devupRecord0,{{...(on?{{color:'red'}}:{{}}),color:'orange'}});return Card.render({{id:'card',className:'caller-class'}},null);}} const rendered=make({on},'authored-class');"
     );
     let output = match crate::extract(
         "test.tsx",
