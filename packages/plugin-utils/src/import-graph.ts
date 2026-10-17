@@ -639,7 +639,10 @@ export function listSourceFiles(srcDir: string): string[] {
   )
 }
 
-function parseImports(filename: string, source: string): ImportReference[] {
+export function parseImports(
+  filename: string,
+  source: string,
+): ImportReference[] {
   const astImports = parseImportsWithOxc(filename, source)
   if (astImports) return astImports
   return scanImports(source)

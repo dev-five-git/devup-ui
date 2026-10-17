@@ -11,13 +11,27 @@ mod gen_class_name;
 mod gen_style;
 mod import_alias_visit;
 mod imported_constants;
+mod jsx_import_source;
+mod jsx_pragmas;
 mod module_loader;
 mod mutations;
+#[cfg(test)]
+mod numeric_template_tests;
+mod parsing;
+#[cfg(test)]
+mod pragma_annotation_tests;
+#[cfg(test)]
+mod pragma_path_tests;
+#[cfg(test)]
+mod pragma_tests;
 mod prop_modify_utils;
+mod prop_valid;
 #[cfg(test)]
 mod responsive_selector_tests;
 mod source_map;
+mod style_collector;
 mod style_values;
+mod styled_reads;
 #[cfg(test)]
 mod styled_source_tests;
 mod stylex;
@@ -59,6 +73,7 @@ use oxc_ast::ast::Expression;
 use oxc_ast_visit::VisitMut;
 use oxc_codegen::{Codegen, CodegenOptions};
 use oxc_parser::{Parser, ParserReturn};
+#[cfg(test)]
 use oxc_span::SourceType;
 use rustc_hash::FxHashMap;
 use rustc_hash::FxHashSet;
@@ -321,6 +336,16 @@ fn extract_with_source_map(
     source_map: bool,
     resolver: Option<&ModuleResolver>,
 ) -> Result<ExtractOutput, Box<dyn Error>> {
+    if code.contains(&option.package)
+        || code.contains(STYLEX_PACKAGE)
+        || option
+            .import_aliases
+            .keys()
+            .any(|alias| code.contains(alias))
+    {
+        let allocator = Allocator::default();
+        parsing::parse(&allocator, filename, code)?;
+    }
     extract_source(filename, code, None, option, source_map, resolver)
 }
 
@@ -360,8 +385,11 @@ fn extract_source(
         || transformed_code.contains(STYLEX_PACKAGE);
 
     if !has_relevant_import {
+        let pragma_rewritten = alias_edits
+            .iter()
+            .any(|(start, end, _)| &namespace_code[*start..*end] == "@emotion/react");
         // skip if not using package
-        if namespace_edits.is_empty() {
+        if namespace_edits.is_empty() && !pragma_rewritten {
             return Ok(ExtractOutput {
                 styles: FxHashSet::default(),
                 code: namespace_code.into_owned(),
@@ -371,12 +399,24 @@ fn extract_source(
             });
         }
         let (source, earlier_edits) = evaluated.unwrap_or((code, &[]));
-        let edits: Vec<&[import_alias_visit::Edit]> = std::iter::once(namespace_edits.as_slice())
-            .chain(earlier_edits.iter().copied())
-            .collect();
+        let edits: Vec<&[import_alias_visit::Edit]> = [
+            if pragma_rewritten {
+                alias_edits.as_slice()
+            } else {
+                &[]
+            },
+            namespace_edits.as_slice(),
+        ]
+        .into_iter()
+        .chain(earlier_edits.iter().copied())
+        .collect();
         let mut output = emotion_namespace::Rewritten {
             filename,
-            code: &namespace_code,
+            code: if pragma_rewritten {
+                &transformed_code
+            } else {
+                &namespace_code
+            },
             source,
             edits: &edits,
         }
@@ -412,13 +452,13 @@ fn extract_source(
                         &referenced,
                     )?
                 };
-                let code = vanilla_extract::collected_styles_to_code_with_keyframes(
+                let generated = vanilla_extract::collected_styles_to_code_with_keyframes(
                     &collected,
                     &option.package,
                     &keyframes_names,
                 );
-                Some(if code.is_empty() {
-                    code
+                let generated = if generated.is_empty() {
+                    generated
                 } else {
                     imports
                         .kept_imports
@@ -426,9 +466,14 @@ fn extract_source(
                         .map(|specifier| {
                             format!("import {};\n", vanilla_extract::json_string(specifier))
                         })
-                        .chain([code])
+                        .chain([generated])
                         .collect()
-                })
+                };
+                Some(jsx_pragmas::stylesheet_source(
+                    &transformed_code,
+                    generated,
+                    filename,
+                ))
             }
             // A stylesheet another one imports must give its own values, and an
             // import cycle read too early fails as it does in ES modules, so both
@@ -467,7 +512,6 @@ fn extract_source(
 
     let code_to_parse = processed_code.as_deref().unwrap_or(&transformed_code);
 
-    let source_type = SourceType::from_path(filename)?;
     let (bucket, global, css_file) = resolve_css_target(filename, &option);
     let import_main = option.import_main_css && !global;
     // Presize to the exact final length (1 target + optional main-css entry) and
@@ -480,14 +524,8 @@ fn extract_source(
     css_files.push(css_file.clone());
     let allocator = Allocator::default();
 
-    let ParserReturn {
-        mut program, // AST
-        fatal_error, // Parser encountered an error it couldn't recover from
-        ..
-    } = Parser::new(&allocator, code_to_parse, source_type).parse();
-    if fatal_error {
-        return Err("Parser panicked".into());
-    }
+    let mut program = parsing::parse(&allocator, filename, code_to_parse)?;
+    let header_pragmas = jsx_pragmas::HeaderPragmas::capture(&program);
     let inlined = if processed_code.is_none() {
         imported_constants::inline_constants(
             &oxc_ast::builder::AstBuilder::new(&allocator),
@@ -598,6 +636,7 @@ fn extract_source(
     } else {
         CodegenOptions::default()
     };
+    header_pragmas.reanchor(&mut program);
     let result = Codegen::new().with_options(codegen_options).build(&program);
     // A stylesheet's output is generated, so its map stays on that code
     let map = result.map.map(|map| {
@@ -610,7 +649,7 @@ fn extract_source(
     });
 
     Ok(ExtractOutput {
-        styles: visitor.styles,
+        styles: visitor.styles.into_styles(filename),
         code: result.code,
         map,
         css_file: Some(css_file),
@@ -672,7 +711,7 @@ fn located_errors(
                 source,
                 offset,
                 message,
-                SourceType::from_path(filename).unwrap_or_default(),
+                parsing::source_type(filename).unwrap_or_default(),
             );
             format!("{}: {message}", locate(filename, source, offset))
         })
@@ -755,7 +794,7 @@ fn extract_class_map_from_code(
     option: &ExtractOption,
     style_names: &FxHashSet<String>,
 ) -> Result<FxHashMap<String, String>, Box<dyn Error>> {
-    let source_type = SourceType::from_path(filename)?;
+    let source_type = parsing::source_type(filename)?;
     let (bucket, global, css_file) = resolve_css_target(filename, option);
     let css_files = vec![css_file];
     let allocator = Allocator::default();
@@ -821,7 +860,7 @@ pub fn has_devup_ui(filename: &str, code: &str, package: &str) -> bool {
         return false;
     }
 
-    let source_type = match SourceType::from_path(filename) {
+    let source_type = match parsing::source_type(filename) {
         Ok(st) => st,
         Err(_) => return false,
     };
@@ -1544,7 +1583,7 @@ mod tests {
             extract(
                 "test.tsx",
                 r"import {Box} from '@devup-ui/core'
-        <Box padding={1} margin={2} wrong={} wrong2=<></> />
+        <Box padding={1} margin={2} wrong={null} wrong2=<></> />
         ",
                 ExtractOption {
                     package: "@devup-ui/core".to_string(),
@@ -1793,7 +1832,7 @@ mod tests {
             extract(
                 "test.tsx",
                 r"import {Box as C} from '@devup-ui/core'
-        <C padding={1} margin={2} className={} />
+        <C padding={1} margin={2} />
         ",
                 ExtractOption {
                     package: "@devup-ui/core".to_string(),
@@ -4915,7 +4954,7 @@ import clsx from 'clsx'
             )
             .unwrap_err()
             .to_string(),
-            "Parser panicked"
+            "test.tsx:1:11: Expected `from` but found `string`"
         );
     }
 
@@ -7048,7 +7087,7 @@ export {
             extract(
                 "test.jsx",
                 r#"import {Box, css} from '@devup-ui/core'
-    <Box className={css({color:"white"})} styleOrder={} />
+    <Box className={css({color:"white"})} styleOrder={null} />
             "#,
                 ExtractOption {
                     package: "@devup-ui/core".to_string(),
@@ -7791,7 +7830,7 @@ export { c as Lib };"#,
             extract(
                 "test.jsx",
                 r"import {Box} from '@devup-ui/core'
-    <Box styleVars={} />
+    <Box styleVars />
             ",
                 ExtractOption {
                     package: "@devup-ui/core".to_string(),
@@ -9551,7 +9590,7 @@ keyframes({
             extract(
                 "test.tsx",
                 r"import {Box} from '@devup-ui/core'
-        <Box padding={1} margin={2} wrong={} wrong2=<></> />
+        <Box padding={1} margin={2} wrong={null} wrong2=<></> />
         ",
                 ExtractOption {
                     package: "@devup-ui/core".to_string(),
@@ -9584,7 +9623,7 @@ keyframes({
             extract(
                 "test1.tsx",
                 r"import {Box} from '@devup-ui/core'
-        <Box padding={1} margin={2} wrong={} wrong2=<></> />
+        <Box padding={1} margin={2} wrong={null} wrong2=<></> />
         ",
                 ExtractOption {
                     package: "@devup-ui/core".to_string(),
@@ -14938,6 +14977,255 @@ export const result = {call}
             code.contains(&format!("export const result = {expected}")),
             "{code}"
         );
+    }
+
+    #[test]
+    #[serial]
+    fn test_styled_extension_composes_base() {
+        let code = readable_code(
+            "import {styled} from '@devup-ui/core'
+const Base = styled.button`color: red; background: white; &:hover { color: red; }`
+const Ext = styled(Base)`color: blue; &:hover { color: blue; }`
+const Obj = styled.div({ color: 'red', p: 2 })
+const ObjExt = styled(Obj)({ color: 'blue' })
+const Twice = styled(ObjExt, { m: 1 })
+const Runtime = styled(make())({ color: 'red' })
+const FromRuntime = styled(Runtime)({ color: 'blue' })
+let Changing = styled.div({ color: 'red' })
+const FromChanging = styled(Changing)({ color: 'blue' })
+const Ordered = styled.div({ color: 'red', styleOrder: 3 })",
+        );
+        for expected in [
+            "const Ext = __devupForwardRef((__devupRefProps, __devupRef) => (({ style, className, as: DevupAs = \"button\", forwardedAs, ...rest }) => <DevupAs {...(({ \"theme\": __devupOmit0, ...__devupDom }) => __devupDom)(rest)} as={forwardedAs} className={[\"color-0-blue-_a__c_hover-255 color-0-blue--255 background-0-white--255\", className]",
+            "const ObjExt = __devupForwardRef((__devupRefProps, __devupRef) => (({ style, className, as: DevupAs = \"div\", forwardedAs, ...rest }) => <DevupAs {...(({ \"theme\": __devupOmit0, ...__devupDom }) => __devupDom)(rest)} as={forwardedAs} className={[\"color-0-blue--255 padding-0-8px--255\", className]",
+            "const Twice = __devupForwardRef((__devupRefProps, __devupRef) => (({ style, className, as: DevupAs = \"div\", forwardedAs, ...rest }) => <DevupAs {...(({ \"theme\": __devupOmit0, ...__devupDom }) => __devupDom)(rest)} as={forwardedAs} className={[\"margin-0-4px--255 color-0-blue--255 padding-0-8px--255\", className]",
+            "const FromRuntime = __devupForwardRef((__devupRefProps, __devupRef) => (({ style, className, as: DevupAs = Runtime, forwardedAs, ...rest }) => <DevupAs {...rest}",
+            "const FromChanging = __devupForwardRef((__devupRefProps, __devupRef) => (({ style, className, as: DevupAs = Changing, forwardedAs, ...rest }) => <DevupAs {...rest}",
+            "const Ordered = __devupForwardRef((__devupRefProps, __devupRef) => (({ style, className, as: DevupAs = \"div\", forwardedAs, ...rest }) => <DevupAs {...(({ \"theme\": __devupOmit0, ...__devupDom }) => __devupDom)(rest)} as={forwardedAs} className={[\"color-0-red--3\", className]",
+        ] {
+            assert!(code.contains(expected), "{expected}\n{code}");
+        }
+    }
+
+    // `withComponent` renders the same styles as another tag or component, and
+    // `as` changes what a styled component renders while `forwardedAs` passes on
+    #[test]
+    #[serial]
+    fn test_styled_with_component_and_as() {
+        let code = readable_code(
+            "import {styled} from '@devup-ui/core'
+const Section = styled.section.attrs({ role: 'region' })({ color: 'red' })
+export const Aside = Section.withComponent('aside')
+export const Linked = Section.withComponent(Link)
+export const Nested = Section.withComponent(motion.div)
+export const Again = Aside.withComponent('nav')
+export const Kept = Section.withComponent(make())
+export const Other = other.withComponent('aside')
+export const a = <Section as=\"a\" forwardedAs=\"b\" />",
+        );
+        for expected in [
+            "export const Aside = __devupForwardRef((__devupRefProps, __devupRef) => ((__devupProps) => (({ style, className, as: DevupAs = \"aside\", forwardedAs, ...rest }) => <DevupAs {...(({ \"theme\": __devupOmit0, ...__devupDom }) => __devupDom)(rest)} as={forwardedAs} className={[\"color-0-red--255\", className]",
+            "as: DevupAs = Link,",
+            "as: DevupAs = motion.div,",
+            "export const Again = __devupForwardRef((__devupRefProps, __devupRef) => ((__devupProps) => (({ style, className, as: DevupAs = \"nav\",",
+            "export const Kept = Section.withComponent(make());",
+            "export const Other = other.withComponent(\"aside\");",
+            "...{ role: \"region\" }",
+            "<Section as=\"a\" forwardedAs=\"b\" />",
+        ] {
+            assert!(code.contains(expected), "{expected}\n{code}");
+        }
+    }
+
+    // A styled component keeps the props its styles read, `$` props and `theme`
+    // away from the tag, follows `shouldForwardProp` as the build evaluates it,
+    // and an element using it drops what it neither reads nor passes on
+    #[test]
+    #[serial]
+    fn test_styled_prop_forwarding() {
+        let code = readable_code(
+            "import {styled} from '@devup-ui/core'
+import isPropValid from '@emotion/is-prop-valid'
+const A = styled('h1', { shouldForwardProp: (prop) => prop !== 'tone' })({ color: 'red' })
+const B = styled.div`color: ${(p) => p.$c}; background: ${(p) => p.tone};`
+const C = styled.div.withConfig({ shouldForwardProp: (prop, valid) => valid(prop) && !['x', 'y'].includes(prop) })({ color: 'red' })
+const D = styled('p', { shouldForwardProp: (prop) => isPropValid(prop) || prop.startsWith('data-') })({ color: 'red' })
+const E = styled('p', { shouldForwardProp: () => true })({ color: 'red' })
+const F = styled(Link)`color: ${(p) => p.$c};`
+const G = styled('p', { shouldForwardProp: function (prop) { return prop === 'id' } })({ color: 'red' })
+const H = styled.div`color: ${function (p) { return p.c }};`
+const I = styled.div`color: ${({ tone, ...more }) => tone};`
+const J = styled.div`color: ${(p) => p[key]}; margin: ${([a]) => a}; padding: ${() => 1};`
+const K = styled(A, { shouldForwardProp: (prop) => 'id' === prop || prop === 'title' })({ color: 'blue' })
+const L = styled.div.withConfig(config)`color: ${(p) => { return p.level }}; margin: ${({ [k]: v }) => v};`
+const M = styled('p', { shouldForwardProp: (prop) => { return prop === 'id' } })({ color: 'red' })
+export const a = <A tone=\"loud\" invalidThing=\"x\" data-ok=\"yes\" />
+export const b = <B tone=\"x\" $c=\"red\" theme={{}} aria-label=\"ok\" junk=\"j\" {...rest} />
+export const j = <J junk=\"j\" />
+export const f = <F junk=\"j\" xlink:href=\"#a\" />
+export const k = <K title=\"t\" tone=\"x\" />",
+        );
+        for expected in [
+            "{...(({ \"tone\": __devupOmit0, ...__devupDom }) => __devupDom)(rest)}",
+            "{...(({ \"$c\": __devupOmit0, \"tone\": __devupOmit1, \"theme\": __devupOmit2, ...__devupDom }) => __devupDom)(rest)}",
+            "{...(({ \"x\": __devupOmit0, \"y\": __devupOmit1, \"theme\": __devupOmit2, ...__devupDom }) => __devupDom)(rest)}",
+            "{...(({ \"$c\": __devupOmit0, ...__devupDom }) => __devupDom)(rest)}",
+            "export const a = <A invalidThing=\"x\" data-ok=\"yes\" />",
+            "export const b = <B tone=\"x\" $c=\"red\" aria-label=\"ok\" {...rest} />",
+            "export const j = <J junk=\"j\" />",
+            "export const f = <F junk=\"j\" xlink:href=\"#a\" />",
+            "export const k = <K title=\"t\" />",
+            "{...(({ \"level\": __devupOmit0, \"theme\": __devupOmit1, ...__devupDom }) => __devupDom)(rest)}",
+        ] {
+            assert!(code.contains(expected), "{expected}\n{code}");
+        }
+        let error = readable_code(
+            "import {styled} from '@devup-ui/core'
+const A = styled('h1', { shouldForwardProp: (prop) => allowed.has(prop) })({ color: 'red' })
+const B = styled('h1', { shouldForwardProp: (prop) => prop === other })({ color: 'red' })
+const C = styled('h1', { shouldForwardProp: (prop) => prop > 'a' })({ color: 'red' })
+const D = styled('h1', { shouldForwardProp: (prop) => prop ?? 'a' })({ color: 'red' })
+const E = styled('h1', { shouldForwardProp: (prop) => { const x = 1; return x } })({ color: 'red' })
+const F = styled('h1', { shouldForwardProp: check })({ color: 'red' })
+const G = styled('h1', { shouldForwardProp: ({ a }) => a })({ color: 'red' })
+const H = styled('h1', { shouldForwardProp: (prop) => [x].includes(prop) })({ color: 'red' })
+const I = styled('h1', { shouldForwardProp: (prop) => list.includes(prop) })({ color: 'red' })
+const J = styled('h1', { shouldForwardProp: (prop) => prop.endsWith('a') })({ color: 'red' })
+const K = styled('h1', { [k]: 1, ...o, shouldForwardProp: (prop) => valid(prop, 1) })({ color: 'red' })
+const L = styled('h1', { shouldForwardProp: (prop) => prop === 'a' ?? prop === 'b' })({ color: 'red' })
+const M = styled('h1', { shouldForwardProp: (prop) => x === y })({ color: 'red' })
+const N = styled('h1', { shouldForwardProp: (prop) => { prop === 'a' } })({ color: 'red' })",
+        );
+        assert!(
+            error.contains("`shouldForwardProp` must be a function"),
+            "{error}"
+        );
+        assert!(error.contains("allowed.has(prop)"), "{error}");
+    }
+
+    #[test]
+    #[serial]
+    fn test_styled_attrs_merge_in_order() {
+        let code = readable_code(
+            "import {styled} from '@devup-ui/core'
+const Base = styled.input.attrs({ type: 'text', title: 'base' })({ color: 'red' })
+const Ext = styled(Base).attrs({ type: 'password' })({ color: 'blue' })
+const X = styled.div.attrs({ className: 'from-attrs', style: { color: 'green' } })({ color: 'red' })
+const F = styled.div.attrs((p) => ({ id: p.id }))({ color: 'red' })
+const V = styled.div.attrs(extra)({ color: 'red' })",
+        );
+        for expected in [
+            "...{\n\t\t...__devupProps,\n\t\t...{\n\t\t\ttype: \"text\",\n\t\t\ttitle: \"base\"\n\t\t}\n\t},\n\t...{ type: \"password\" }",
+            "className: [__devupContext.className, __devupAttrs.className].filter(Boolean).join(\" \") || undefined",
+            "className: [__devupContext.className, __devupProps.className].filter(Boolean).join(\" \") || undefined",
+            "...__devupContext.style,\n\t\t...__devupAttrs.style",
+            "((p) => ({ id: p.id }))(__devupContext)",
+            "typeof extra === \"function\" ? extra(__devupContext) : extra",
+        ] {
+            assert!(code.contains(expected), "{expected}\n{code}");
+        }
+    }
+
+    #[rstest]
+    #[case(
+        "<Box className=\"direct\" style={{ opacity: 1 }} {...{ className: 'spread', style: { opacity: 2 } }} />",
+        "className=\"spread\" style={{ opacity: 2 }}"
+    )]
+    #[case(
+        "<Box {...{ className: 'spread', style: { opacity: 2 } }} className=\"direct\" style={{ opacity: 1 }} />",
+        "className=\"direct\" style={{ opacity: 1 }}"
+    )]
+    #[case(
+        "<Box className=\"direct\" style={{ opacity: 1 }} {...rest} />",
+        "className={(\"className\" in Object(rest) ? rest.className : \"direct\") || \"\"} style={\"style\" in Object(rest) ? rest.style : { opacity: 1 }}"
+    )]
+    #[case(
+        "<Box className=\"direct\" {...{ title: 'x' }} {...{ ...rest, className: 'last' }} />",
+        "className=\"last\""
+    )]
+    #[case(
+        "<Box className=\"direct\" {...{ className: 'first', ...rest }} />",
+        "className={{\n\tclassName: \"first\",\n\t...rest\n}.className || \"\"}"
+    )]
+    #[case(
+        "<Box className=<i /> color=\"red\" />",
+        "<div className=\"color-0-red--255\" />"
+    )]
+    #[case(
+        "<Box {...rest} {...more} />",
+        "className={(\"className\" in Object(more) ? more.className : rest?.className) || \"\"}"
+    )]
+    #[serial]
+    fn test_jsx_props_written_later_win(#[case] element: &str, #[case] expected: &str) {
+        let code = readable_code(&format!(
+            "import {{Box}} from '@devup-ui/core'
+export const a = {element}"
+        ));
+        assert!(code.contains(expected), "{expected}\n{code}");
+    }
+
+    // StyleX merges namespaces key by key: a later key wins and `null` removes it
+    #[rstest]
+    #[case("stylex.props(s.red, s.blue)", "{ className: \"color-0-blue--255\" }")]
+    #[case("stylex.props(s.blue, s.red)", "{ className: \"color-0-red--255\" }")]
+    #[case("stylex.props(s.red, s.reset)", "{ className: \"\" }")]
+    #[case(
+        "stylex.attrs(s.both, s.blue)",
+        "{ class: \"opacity-0-_d_5--255 color-0-blue--255\" }"
+    )]
+    #[case(
+        "stylex.props([s.red, [s.blue]], false, null, undefined)",
+        "{ className: \"color-0-blue--255\" }"
+    )]
+    #[case(
+        "stylex.props(s.red, on && s.blue)",
+        "{ className: on ? \"color-0-blue--255\" : \"color-0-red--255\" }"
+    )]
+    #[case(
+        "stylex.props(s.red, on && s.reset)",
+        "{ className: on ? \"\" : \"color-0-red--255\" }"
+    )]
+    #[case(
+        "stylex.props(on ? s.red : s.blue)",
+        "{ className: on ? \"color-0-red--255\" : \"color-0-blue--255\" }"
+    )]
+    #[case(
+        "stylex.props(on && s.red, on && s.red)",
+        "{ className: on ? \"color-0-red--255\" : on ? \"color-0-red--255\" : \"\" }"
+    )]
+    #[case(
+        "stylex.props(s['blue'], s.hover)",
+        "{ className: \"color-0-blue--255 color-0-red-_a__c_hover-255\" }"
+    )]
+    #[case("stylex.props(s.red, other.x)", "other.x")]
+    #[case("stylex.props(s.red, s[key])", "s[key]")]
+    #[case(
+        "stylex.props(s.red, s.missing)",
+        "{ className: \"color-0-red--255\" }"
+    )]
+    #[case("stylex.props(s.red, (cond).x)", "[cond.x]")]
+    #[case("stylex.props(s.red, ...rest)", "rest")]
+    #[case("stylex.props(s.red, s.fn(1))", "--")]
+    #[case("stylex.props(s.red, s.inc)", "color-0-red--255")]
+    #[case("stylex.props(on && s.reset)", "{ className: \"\" }")]
+    #[case("stylex.props([s.red, rest])", "[rest].flat(Infinity)")]
+    #[serial]
+    fn test_stylex_props_merge_keys(#[case] call: &str, #[case] expected: &str) {
+        let code = readable_code(&format!(
+            "import stylex from '@stylexjs/stylex'
+const s0 = stylex.create({{ a: {{ margin: '1px' }} }})
+const s = stylex.create({{
+  red: {{ color: 'red' }},
+  blue: {{ color: 'blue' }},
+  reset: {{ color: null }},
+  both: {{ color: 'red', opacity: 0.5 }},
+  hover: {{ ':hover': {{ color: 'red' }} }},
+  fn: (h) => ({{ height: h }}),
+  inc: {{ ...stylex.include(s0.a), color: 'green' }},
+}})
+export const result = {call}"
+        ));
+        assert!(code.contains(expected), "{expected}\n{code}");
     }
 
     #[test]
@@ -21872,6 +22160,7 @@ export const K = styled.div(base, cond && { color: 'blue' }, { margin: 1 });",
                 | ExtractStyleValue::Css(_)
                 | ExtractStyleValue::Import(_)
                 | ExtractStyleValue::FontFace(_)
+                | ExtractStyleValue::LayerOrder(_)
                 | ExtractStyleValue::Keyframes(_) => None,
             })
             .collect();
