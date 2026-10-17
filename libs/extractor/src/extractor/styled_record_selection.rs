@@ -162,3 +162,7 @@ impl<'a> Preparation<'_, 'a> {
         Some(())
     }
 }
+
+#[cfg(test)]
+#[path = "styled_record_selection_tests.rs"]
+mod tests;
