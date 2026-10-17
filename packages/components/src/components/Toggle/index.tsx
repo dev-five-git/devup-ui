@@ -63,7 +63,7 @@ export function Toggle({
     <>
       <Box
         _focusVisible={{
-          outline: '2px solid var(--primary)',
+          outline: '2px solid $primary',
           outlineOffset: '2px',
         }}
         aria-checked={resultValue}
