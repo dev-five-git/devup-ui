@@ -26,6 +26,7 @@ mod pragma_path_tests;
 mod pragma_tests;
 mod prop_modify_utils;
 mod prop_valid;
+pub mod reservation_state;
 #[cfg(test)]
 mod responsive_selector_tests;
 mod source_map;
@@ -359,6 +360,7 @@ fn extract_source(
     source_map: bool,
     resolver: Option<&ModuleResolver>,
 ) -> Result<ExtractOutput, Box<dyn Error>> {
+    let _atom_mode = css::atom_hoist::AtomModeGuard::new(option.single_css);
     if evaluated.is_none() && option.import_aliases.contains_key("@vanilla-extract/css") {
         let errors = import_alias_visit::companion_errors(code, filename);
         if !errors.is_empty() {
@@ -371,6 +373,7 @@ fn extract_source(
             located_errors(filename, source, edits, errors)
         })?;
     // Step 1: Transform import aliases
+    css::atom_hoist::freeze_atom_plan();
     // e.g., `import styled from '@emotion/styled'` → `import { styled } from '@devup-ui/react'`
     // e.g., `import { style } from '@vanilla-extract/css'` → `import { style } from '@devup-ui/react'`
     let (transformed_code, alias_edits) = import_alias_visit::transform_import_aliases_with_edits(
