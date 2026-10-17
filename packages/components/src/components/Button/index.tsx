@@ -26,6 +26,10 @@ type ButtonProps = React.ButtonHTMLAttributes<HTMLButtonElement> & {
   ellipsis?: boolean
   loading?: boolean
   loadingSpinner?: 'whole' | 'partial'
+  /** Whether a loading button is disabled, so it cannot be activated twice. Defaults to true. */
+  disableWhileLoading?: boolean
+  /** What assistive technology announces while the button is loading */
+  loadingLabel?: string
 }
 
 export const Button = forwardRef<HTMLButtonElement, ButtonProps>(
@@ -44,10 +48,13 @@ export const Button = forwardRef<HTMLButtonElement, ButtonProps>(
       disabled,
       loading = false,
       loadingSpinner = 'whole',
+      disableWhileLoading = true,
+      loadingLabel = 'Loading',
       ...props
     },
     ref,
   ) {
+    const blocked = !!disabled || (loading && disableWhileLoading)
     return (
       <DevupButton
         ref={ref}
@@ -164,8 +171,8 @@ export const Button = forwardRef<HTMLButtonElement, ButtonProps>(
             default: 'var(--inputBackground, #2E2E2E)',
           }[variant],
         }}
-        aria-disabled={disabled}
-        aria-label="button"
+        aria-busy={loading || undefined}
+        aria-disabled={blocked || undefined}
         bg={
           {
             primary: 'var(--primary, #8163E1)',
@@ -196,7 +203,7 @@ export const Button = forwardRef<HTMLButtonElement, ButtonProps>(
           }[variant]
         }
         cursor="pointer"
-        disabled={disabled}
+        disabled={blocked}
         fontSize={
           {
             default: ['14px', null, null, null, '15px'],
@@ -267,6 +274,19 @@ export const Button = forwardRef<HTMLButtonElement, ButtonProps>(
           >
             {children}
           </Box>
+          {loading && (
+            <Box
+              as="span"
+              clipPath="inset(50%)"
+              h="1px"
+              overflow="hidden"
+              pos="absolute"
+              role="status"
+              w="1px"
+            >
+              {loadingLabel}
+            </Box>
+          )}
         </Box>
       </DevupButton>
     )
