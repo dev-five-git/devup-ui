@@ -9,22 +9,24 @@ use oxc_ast::ast::{Expression, ObjectPropertyKind, Program, VariableDeclarator};
 use oxc_ast_visit::Visit;
 use rustc_hash::FxHashMap;
 
+struct Calls {
+    named: FxHashMap<String, Plan>,
+    spans: FxHashMap<(u32, u32), Plan>,
+}
+
+impl<'a> Visit<'a> for Calls {
+    fn visit_variable_declarator(&mut self, it: &VariableDeclarator<'a>) {
+        if let Some(name) = it.id.get_binding_identifier()
+            && let Some(plan) = self.named.remove(name.name.as_str())
+            && let Some(Expression::CallExpression(call)) = &it.init
+        {
+            self.spans.insert((call.span.start, call.span.end), plan);
+        }
+    }
+}
+
 impl<'a> DevupVisitor<'a> {
     pub(crate) fn own_rules(&mut self, named: FxHashMap<String, Plan>, program: &Program<'a>) {
-        struct Calls {
-            named: FxHashMap<String, Plan>,
-            spans: FxHashMap<(u32, u32), Plan>,
-        }
-        impl<'a> Visit<'a> for Calls {
-            fn visit_variable_declarator(&mut self, it: &VariableDeclarator<'a>) {
-                if let Some(name) = it.id.get_binding_identifier()
-                    && let Some(plan) = self.named.remove(name.name.as_str())
-                    && let Some(Expression::CallExpression(call)) = &it.init
-                {
-                    self.spans.insert((call.span.start, call.span.end), plan);
-                }
-            }
-        }
         let mut calls = Calls {
             named,
             spans: FxHashMap::default(),
@@ -75,5 +77,41 @@ impl<'a> DevupVisitor<'a> {
             original,
             slots,
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn binding_visitor_only_associates_named_call_initializers() {
+        // Given
+        let allocator = oxc_allocator::Allocator::default();
+        let parsed = oxc_parser::Parser::new(
+            &allocator,
+            "const retained=css([]), ignored=0;const {destructured}=source;",
+            oxc_span::SourceType::mjs(),
+        )
+        .parse();
+        assert_eq!(parsed.diagnostics.len(), 0);
+        let mut calls = Calls {
+            named: ["retained", "ignored", "destructured"]
+                .into_iter()
+                .map(|name| (name.into(), Plan::default()))
+                .collect(),
+            spans: FxHashMap::default(),
+        };
+        // When
+        calls.visit_program(&parsed.program);
+        // Then
+        assert_eq!(
+            calls.spans.keys().copied().collect::<Vec<_>>(),
+            vec![(15, 22)]
+        );
+        assert_eq!(
+            calls.named.keys().map(String::as_str).collect::<Vec<_>>(),
+            vec!["destructured"]
+        );
     }
 }

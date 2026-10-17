@@ -4,6 +4,10 @@ use super::Values;
 use crate::own_css_plan::{Node, Plan, Property};
 use boa_engine::{Context, JsObject, JsResult, JsValue, property::PropertyKey};
 
+#[cfg(test)]
+#[path = "vanilla_extract_css_capture_tests.rs"]
+mod tests;
+
 #[derive(Clone, Copy)]
 enum Arrays {
     Data,

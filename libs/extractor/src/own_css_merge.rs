@@ -6,13 +6,13 @@ pub(crate) fn merge(plan: &mut Plan, roots: &[usize]) -> usize {
     for &source in roots {
         let mut pending = vec![(root, source)];
         while let Some((target, source)) = pending.pop() {
-            let Node::Object(added) = &plan.nodes[source] else {
+            let (Node::Object(added), Node::Object(properties)) =
+                (&plan.nodes[source], &plan.nodes[target])
+            else {
                 continue;
             };
             let added = added.clone();
-            let Node::Object(mut properties) = plan.nodes[target].clone() else {
-                continue;
-            };
+            let mut properties = properties.clone();
             for mut property in added {
                 if let Some(index) = properties.iter().position(|p| p.name == property.name) {
                     let previous = properties.remove(index);

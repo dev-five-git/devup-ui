@@ -22,38 +22,34 @@ struct RulePart {
 
 impl<'a> DevupVisitor<'a> {
     pub(super) fn compile_own_rules(&mut self, expression: &mut Expression<'a>) -> bool {
-        let Expression::CallExpression(call) = expression else {
-            return false;
-        };
-        let Some(plan) = self.own_rules.remove(&(call.span.start, call.span.end)) else {
-            return false;
-        };
-        let offset = call.span.start;
-        let Some(Expression::ArrayExpression(array)) =
-            call.arguments.first().and_then(Argument::as_expression)
-        else {
-            return false;
-        };
-        let origin = plan.origin.clone();
-        let mut rules = self.bind_own_rules(plan, array);
-        let start = self.errors.len();
-        *expression = if rules.plan.template.is_some() {
-            self.own_template(&mut rules, offset)
-        } else {
-            let part = RulePart {
-                roots: rules.plan.roots.clone(),
-                composing: rules.plan.composing,
+        if let Expression::CallExpression(call) = expression
+            && let Some(plan) = self.own_rules.remove(&(call.span.start, call.span.end))
+            && let Some(Expression::ArrayExpression(array)) =
+                call.arguments.first().and_then(Argument::as_expression)
+        {
+            let offset = call.span.start;
+            let origin = plan.origin.clone();
+            let mut rules = self.bind_own_rules(plan, array);
+            let start = self.errors.len();
+            *expression = if rules.plan.template.is_some() {
+                self.own_template(&mut rules, offset)
+            } else {
+                let part = RulePart {
+                    roots: rules.plan.roots.clone(),
+                    composing: rules.plan.composing,
+                };
+                self.own_class(&mut rules, part, offset)
             };
-            self.own_class(&mut rules, part, offset)
-        };
-        if let Some((location, api)) = origin {
-            self.own_failures
-                .extend(self.errors.drain(start..).map(|(_, message)| {
-                    let message = message.replacen("`css()`", &format!("`{api}()`"), 1);
-                    format!("{location}: {message}")
-                }));
+            if let Some((location, api)) = origin {
+                self.own_failures
+                    .extend(self.errors.drain(start..).map(|(_, message)| {
+                        let message = message.replacen("`css()`", &format!("`{api}()`"), 1);
+                        format!("{location}: {message}")
+                    }));
+            }
+            return true;
         }
-        true
+        false
     }
 
     fn own_errors(&mut self, offset: u32, styles: &[ExtractStyleProp<'a>]) {

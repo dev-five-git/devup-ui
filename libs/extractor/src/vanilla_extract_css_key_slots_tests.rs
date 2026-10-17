@@ -30,15 +30,16 @@ fn native_call(
 
 fn generated_cardinality(entry: &StyleEntry) -> Result<(usize, usize), String> {
     let allocator = Allocator::default();
-    let expression = Parser::new(
+    let Ok(expression) = Parser::new(
         &allocator,
         entry.css.as_deref().ok_or("missing generated call")?,
         SourceType::tsx(),
     )
-    .parse_expression()
-    .map_err(|error| format!("{error:?}"))?;
+    .parse_expression() else {
+        panic!("generated bounded call must parse");
+    };
     let Expression::CallExpression(call) = expression else {
-        return Err("expected generated call".into());
+        panic!("expected generated call");
     };
     let Some(Expression::ArrayExpression(array)) = call.arguments[0].as_expression() else {
         return Err("expected bounded-call array".into());

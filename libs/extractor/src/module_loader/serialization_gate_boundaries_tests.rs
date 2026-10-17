@@ -20,6 +20,7 @@ use rustc_hash::FxHashMap;
     "({get first(){reads++;return 1},get next(){reads++;return ()=>1},last:{value:1}})",
     2
 )]
+#[case("[()=>1,()=>2,new Map(),(()=>{const v={};v.self=v;return v})()]", 0)]
 fn gate_boundaries_export_fallback_preserves_getter_short_circuit(
     #[case] expression: &str,
     #[case] expected_reads: u32,

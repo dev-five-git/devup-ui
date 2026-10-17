@@ -5,6 +5,20 @@ use super::Unit;
 use crate::{ExtractOption, ExtractOutput};
 
 #[test]
+fn generated_only_script_errors_use_file_fallback() {
+    // Given
+    let mut script = super::Script::default();
+    script.generated("throw new Error('generated');");
+    // When
+    let error = script.explain("TypeError: generated", "generated.css.ts");
+    // Then
+    assert_eq!(
+        error,
+        "generated.css.ts:1:1: JS execution error: TypeError: generated. Fix: check that every value read, called or constructed here exists when the stylesheet is evaluated at build time"
+    );
+}
+
+#[test]
 fn retained_code_rejects_malformed_source_map_instead_of_inventing_a_trace() -> Result<(), String> {
     // Given
     let output = ExtractOutput {

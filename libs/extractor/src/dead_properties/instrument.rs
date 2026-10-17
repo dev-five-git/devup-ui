@@ -78,3 +78,28 @@ pub(crate) fn instrument_evaluated(
         edits,
     })
 }
+
+#[cfg(test)]
+mod tests {
+    #[test]
+    fn evaluated_instrumentation_prefers_the_authored_dead_key() -> Result<(), String> {
+        // Given: retained evaluation reports a different dead key than the authored call.
+        let source = "import{css}from'@devup-ui/react';\ncss({boxAlign:'start'});";
+        let code = "import{css}from'@devup-ui/react';css({boxPack:'end'});";
+        let input = super::Stylesheet {
+            source,
+            code,
+            filename: "original.css.ts",
+            edits: &[],
+        };
+        // When
+        let error = super::instrument_evaluated(input, "@devup-ui/react", Some(&[]))
+            .err()
+            .ok_or("authored dead key must reject")?;
+        // Then
+        assert!(error.starts_with("original.css.ts:2:6:"), "{error}");
+        assert!(error.contains("boxAlign"), "{error}");
+        assert_eq!(error.matches("boxPack").count(), 0, "{error}");
+        Ok(())
+    }
+}
