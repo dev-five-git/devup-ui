@@ -73,7 +73,7 @@ expression: outputs
     ),
     (
         "<Box as={['div', 'a'][i]} {...register('x')} p={1} />",
-        "((DevupAs0, __devupSpread0) => <DevupAs0 {...__devupSpread0} className={`a-a ${__devupSpread0?.className || \"\"}`} style={__devupSpread0?.style} />)([\"div\", \"a\"][i] || \"div\", register(\"x\"));",
+        "((DevupAs0, __devupSpread0) => <DevupAs0 {...__devupSpread0} className={`${__devupSpread0?.className || \"\"} a-a`} style={__devupSpread0?.style} />)([\"div\", \"a\"][i] || \"div\", register(\"x\"));",
     ),
     (
         "<Text as={b ? 'h1' : undefined} />",
