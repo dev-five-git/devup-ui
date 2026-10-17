@@ -11,9 +11,17 @@ mod gen_class_name;
 mod gen_style;
 mod import_alias_visit;
 mod imported_constants;
+mod jsx_import_source;
+mod jsx_pragmas;
 mod module_loader;
 mod mutations;
 mod parsing;
+#[cfg(test)]
+mod pragma_annotation_tests;
+#[cfg(test)]
+mod pragma_path_tests;
+#[cfg(test)]
+mod pragma_tests;
 mod prop_modify_utils;
 mod prop_valid;
 #[cfg(test)]
@@ -374,8 +382,11 @@ fn extract_source(
         || transformed_code.contains(STYLEX_PACKAGE);
 
     if !has_relevant_import {
+        let pragma_rewritten = alias_edits
+            .iter()
+            .any(|(start, end, _)| &namespace_code[*start..*end] == "@emotion/react");
         // skip if not using package
-        if namespace_edits.is_empty() {
+        if namespace_edits.is_empty() && !pragma_rewritten {
             return Ok(ExtractOutput {
                 styles: FxHashSet::default(),
                 code: namespace_code.into_owned(),
@@ -385,12 +396,24 @@ fn extract_source(
             });
         }
         let (source, earlier_edits) = evaluated.unwrap_or((code, &[]));
-        let edits: Vec<&[import_alias_visit::Edit]> = std::iter::once(namespace_edits.as_slice())
-            .chain(earlier_edits.iter().copied())
-            .collect();
+        let edits: Vec<&[import_alias_visit::Edit]> = [
+            if pragma_rewritten {
+                alias_edits.as_slice()
+            } else {
+                &[]
+            },
+            namespace_edits.as_slice(),
+        ]
+        .into_iter()
+        .chain(earlier_edits.iter().copied())
+        .collect();
         let mut output = emotion_namespace::Rewritten {
             filename,
-            code: &namespace_code,
+            code: if pragma_rewritten {
+                &transformed_code
+            } else {
+                &namespace_code
+            },
             source,
             edits: &edits,
         }
@@ -426,13 +449,13 @@ fn extract_source(
                         &referenced,
                     )?
                 };
-                let code = vanilla_extract::collected_styles_to_code_with_keyframes(
+                let generated = vanilla_extract::collected_styles_to_code_with_keyframes(
                     &collected,
                     &option.package,
                     &keyframes_names,
                 );
-                Some(if code.is_empty() {
-                    code
+                let generated = if generated.is_empty() {
+                    generated
                 } else {
                     imports
                         .kept_imports
@@ -440,9 +463,14 @@ fn extract_source(
                         .map(|specifier| {
                             format!("import {};\n", vanilla_extract::json_string(specifier))
                         })
-                        .chain([code])
+                        .chain([generated])
                         .collect()
-                })
+                };
+                Some(jsx_pragmas::stylesheet_source(
+                    &transformed_code,
+                    generated,
+                    filename,
+                ))
             }
             // A stylesheet another one imports must give its own values, and an
             // import cycle read too early fails as it does in ES modules, so both
@@ -494,6 +522,7 @@ fn extract_source(
     let allocator = Allocator::default();
 
     let mut program = parsing::parse(&allocator, filename, code_to_parse)?;
+    let header_pragmas = jsx_pragmas::HeaderPragmas::capture(&program);
     let inlined = if processed_code.is_none() {
         imported_constants::inline_constants(
             &oxc_ast::builder::AstBuilder::new(&allocator),
@@ -598,6 +627,7 @@ fn extract_source(
     } else {
         CodegenOptions::default()
     };
+    header_pragmas.reanchor(&mut program);
     let result = Codegen::new().with_options(codegen_options).build(&program);
     // A stylesheet's output is generated, so its map stays on that code
     let map = result.map.map(|map| {
