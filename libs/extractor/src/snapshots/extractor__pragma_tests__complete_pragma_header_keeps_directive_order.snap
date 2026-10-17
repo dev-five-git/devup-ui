@@ -1,0 +1,13 @@
+---
+source: libs/extractor/src/pragma_tests.rs
+expression: output.code
+---
+/*! License */
+/** @jsxRuntime classic */
+"use client";
+/** @jsx createElement */
+/** @jsxFrag Fragment */
+/** @jsxImportSource custom-jsx */
+import "@devup-ui/react/devup-ui.css";
+export const cls = "a";
+export const box = <div className="b" />;

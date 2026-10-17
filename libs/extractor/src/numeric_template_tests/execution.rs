@@ -61,6 +61,20 @@ fn effectful_template_executes_once_when_generated_element_renders(
                 }
             }
         }
+        if let Statement::ImportDeclaration(import) = statement
+            && import.source.value == "react"
+        {
+            for specifier in import.specifiers.iter().flatten() {
+                if let ImportDeclarationSpecifier::ImportSpecifier(named) = specifier
+                    && named.imported.name() == "forwardRef"
+                {
+                    factories.push(format!(
+                        "const {} = (render) => (props) => render(props, null);",
+                        named.local.name
+                    ));
+                }
+            }
+        }
     }
     program
         .body
