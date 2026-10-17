@@ -3,16 +3,15 @@
 
 use std::rc::Rc;
 
-use crate::import_alias_visit::Edit;
 use crate::source_map::{Lines, Trace};
 #[cfg(test)]
 use crate::vanilla_extract::strip_typescript;
-use crate::vanilla_extract::strip_typescript_marked;
 
 mod explain;
 mod retained;
 #[cfg(test)]
 mod tests;
+mod written;
 
 pub(crate) use explain::SCRIPT_PATH;
 
@@ -21,6 +20,7 @@ struct Written {
     source: String,
     trace: Trace,
     retained: Option<Vec<(usize, usize)>>,
+    instrumentation: Vec<(usize, bool)>,
 }
 
 /// A module turned into a script: its TypeScript stripped
@@ -32,32 +32,6 @@ pub(crate) struct Unit {
 }
 
 impl Unit {
-    /// The script of `code`, the `source` of `filename` after the layers of
-    /// `edits`, last made first
-    pub(crate) fn written(
-        filename: &str,
-        code: &str,
-        source: &str,
-        edits: &[&[Edit]],
-    ) -> Result<Rc<Self>, String> {
-        super::validate(crate::vanilla_extract::Stylesheet {
-            filename,
-            code,
-            source,
-            edits,
-        })?;
-        let stripped = strip_typescript_marked(code, filename);
-        Ok(Rc::new(Self {
-            filename: filename.to_string(),
-            script: stripped.code.clone(),
-            written: Some(Written {
-                source: source.to_string(),
-                trace: Trace::new(&stripped.marks, edits),
-                retained: None,
-            }),
-        }))
-    }
-
     #[cfg(test)]
     pub(crate) fn generated(filename: &str, code: &str) -> Rc<Self> {
         Rc::new(Self {
@@ -113,14 +87,35 @@ pub(crate) struct Origin {
 }
 
 impl Origin {
-    fn locate(&self, offset: usize) -> Option<String> {
+    fn script_offset(&self, offset: usize) -> usize {
         let piece = &self.pieces[self.pieces.partition_point(|piece| piece.start <= offset) - 1];
-        let script = if piece.copied {
+        if piece.copied {
             piece.script + offset - piece.start
         } else {
             piece.script
-        };
-        self.unit.locate(script)
+        }
+    }
+
+    fn locate(&self, offset: usize) -> Option<String> {
+        self.unit.locate(self.script_offset(offset))
+    }
+
+    fn frame(&self, offset: usize) -> explain::FrameOrigin {
+        let script = self.script_offset(offset);
+        if self.unit.written.as_ref().is_some_and(|written| {
+            let at = written
+                .instrumentation
+                .partition_point(|(start, _)| *start <= script);
+            at.checked_sub(1)
+                .is_some_and(|at| written.instrumentation[at].1)
+        }) {
+            explain::FrameOrigin::Instrumentation
+        } else {
+            self.locate(offset).map_or(
+                explain::FrameOrigin::Generated,
+                explain::FrameOrigin::Authored,
+            )
+        }
     }
 }
 
@@ -186,6 +181,16 @@ pub(crate) struct Script {
 }
 
 impl Script {
+    pub(crate) fn authored(&self, offset: usize) -> bool {
+        self.parts.iter().any(|(start, end, origin)| {
+            (*start..*end).contains(&offset)
+                && matches!(
+                    origin.frame(offset - start),
+                    explain::FrameOrigin::Authored(_)
+                )
+        })
+    }
+
     pub(crate) fn generated(&mut self, text: &str) {
         self.text.push_str(text);
     }
@@ -198,22 +203,28 @@ impl Script {
 
     /// `filename:line:column` of the script as written for a position the
     /// engine printed, `None` in code the build generated
-    fn locate(&self, lines: &Lines<'_>, line: u32, column: u32) -> Option<String> {
+    fn frame(&self, lines: &Lines<'_>, line: u32, column: u32) -> explain::FrameOrigin {
         let offset = lines.code_point_offset(line.saturating_sub(1), column.saturating_sub(1));
-        let (start, _, origin) = self
+        let Some((start, _, origin)) = self
             .parts
             .iter()
-            .find(|(start, end, _)| (*start..*end).contains(&offset))?;
-        origin.locate(offset - start)
+            .find(|(start, end, _)| (*start..*end).contains(&offset))
+        else {
+            return explain::FrameOrigin::Generated;
+        };
+        origin.frame(offset - start)
     }
 
     /// The error the engine gave for this script, its positions in the code as
     /// written; `fallback` names the file when no position is
     pub(crate) fn explain(&self, error: &str, fallback: &str) -> String {
         let lines = Lines::new(&self.text);
-        explain::describe(
+        if self.parts.is_empty() {
+            return explain::describe(error, |_, _| None, &format!("{fallback}:1:1"));
+        }
+        explain::describe_frames(
             error,
-            |line, column| self.locate(&lines, line, column),
+            |line, column| self.frame(&lines, line, column),
             &format!("{fallback}:1:1"),
         )
     }

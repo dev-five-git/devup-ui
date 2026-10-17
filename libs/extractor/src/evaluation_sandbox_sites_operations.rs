@@ -9,6 +9,48 @@ use oxc_syntax::operator::UnaryOperator;
 
 pub(super) struct Operations<'r, 's>(pub(super) &'r mut super::Reads<'s>);
 
+pub(crate) fn instrument(source: &str, path: &str) -> super::Instrumented {
+    super::instrument_located(source, path, &|_| true)
+}
+
+pub(super) fn locate_members(
+    program: &oxc_ast::ast::Program<'_>,
+    reads: &mut super::Reads<'_>,
+    authored: &dyn Fn(usize) -> bool,
+) {
+    struct Members<'r, 's, 'f>(&'r mut super::Reads<'s>, &'f dyn Fn(usize) -> bool);
+    impl Members<'_, '_, '_> {
+        fn locate(&mut self, from: u32, to: u32) {
+            if !(self.1)(from as usize) {
+                for (place, offset) in &mut self.0.sites {
+                    if *offset == from {
+                        *offset = to;
+                        *place = crate::locate(self.0.path, self.0.source, to as usize);
+                    }
+                }
+            }
+        }
+    }
+    impl<'a> Visit<'a> for Members<'_, '_, '_> {
+        fn visit_static_member_expression(
+            &mut self,
+            member: &oxc_ast::ast::StaticMemberExpression<'a>,
+        ) {
+            self.locate(member.span.start, member.property.span.start);
+            walk::walk_static_member_expression(self, member);
+        }
+
+        fn visit_computed_member_expression(
+            &mut self,
+            member: &oxc_ast::ast::ComputedMemberExpression<'a>,
+        ) {
+            self.locate(member.span.start, member.expression.span().start);
+            walk::walk_computed_member_expression(self, member);
+        }
+    }
+    Members(reads, authored).visit_program(program);
+}
+
 impl super::Reads<'_> {
     fn value_site(&mut self, value: Span, operation: Span) {
         let id = self.site(operation);

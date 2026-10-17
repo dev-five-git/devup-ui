@@ -60,7 +60,11 @@ use boa_engine::{
     object::FunctionObjectBuilder, property::PropertyDescriptor,
 };
 
-fn guard_method(context: &mut Context, holder: &JsObject, label: (&str, &str)) -> JsResult<()> {
+pub(super) fn guard_method(
+    context: &mut Context,
+    holder: &JsObject,
+    label: (&str, &str),
+) -> JsResult<()> {
     let (owner, method) = label;
     let guard = function(
         context,

@@ -26,6 +26,12 @@ struct Frame<'t> {
     place: Place,
 }
 
+pub(super) enum FrameOrigin {
+    Authored(String),
+    Instrumentation,
+    Generated,
+}
+
 /// What `inner` of `(inner)` says, `None` when it is not a place
 fn place(inner: &str) -> Option<Place> {
     if inner.starts_with(crate::evaluation_sandbox::INTERNAL_SOURCE) {
@@ -134,22 +140,67 @@ pub(super) fn describe(
     locate: impl Fn(u32, u32) -> Option<String>,
     fallback: &str,
 ) -> String {
+    let (_, frames, _) = parse(error);
+    let generated: Vec<_> = frames
+        .iter()
+        .filter_map(|frame| {
+            let helper = ["__devup_read_site_", "__devup_operation_site_"]
+                .iter()
+                .any(|prefix| {
+                    frame
+                        .function
+                        .strip_prefix(prefix)
+                        .and_then(|suffix| suffix.strip_suffix("__"))
+                        .is_some_and(|hash| {
+                            !hash.is_empty() && hash.bytes().all(|byte| byte.is_ascii_hexdigit())
+                        })
+                });
+            match (&frame.place, helper) {
+                (Place::Script(line, column), true) => Some((*line, *column)),
+                _ => None,
+            }
+        })
+        .collect();
+    describe_frames(
+        error,
+        |line, column| {
+            if generated.contains(&(line, column)) {
+                FrameOrigin::Instrumentation
+            } else {
+                locate(line, column).map_or(FrameOrigin::Generated, FrameOrigin::Authored)
+            }
+        },
+        fallback,
+    )
+}
+
+pub(super) fn describe_frames(
+    error: &str,
+    locate: impl Fn(u32, u32) -> FrameOrigin,
+    fallback: &str,
+) -> String {
     let (cause, frames, raised) = parse(error);
     let in_script = |place: &Place| match place {
-        Place::Script(line, column) => locate(*line, *column),
+        Place::Script(line, column) => match locate(*line, *column) {
+            FrameOrigin::Authored(location) => Some(location),
+            FrameOrigin::Instrumentation | FrameOrigin::Generated => None,
+        },
         Place::Native | Place::Foreign => None,
     };
     let mut at = raised
         .filter(|_| frames.is_empty())
         .and_then(|place| in_script(&place));
     let mut calls = Vec::new();
-    for frame in &frames {
-        if frame.function.starts_with("__devup_read_site_")
-            || frame.function.starts_with("__devup_operation_site_")
-        {
-            continue;
-        }
+    for (index, frame) in frames.iter().enumerate() {
         if matches!(frame.place, Place::Native) {
+            if frames.get(index + 1).is_some_and(|next| match next.place {
+                Place::Script(line, column) => {
+                    matches!(locate(line, column), FrameOrigin::Instrumentation)
+                }
+                Place::Native | Place::Foreign => false,
+            }) {
+                continue;
+            }
             calls.push(format!("{FRAME_SEPARATOR}{} (native)", frame.function));
         } else if let Some(located) = in_script(&frame.place) {
             calls.push(format!("{FRAME_SEPARATOR}{} ({located})", frame.function));

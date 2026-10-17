@@ -303,7 +303,22 @@ impl<'r> ModuleLoader<'r> {
             self.dependencies.extend(output.dependencies);
             unit
         } else {
-            Unit::written(&module.path, &module.code, &module.code, &[])?
+            let input = crate::vanilla_extract::Stylesheet {
+                filename: &module.path,
+                code: &module.code,
+                source: &module.code,
+                edits: &[],
+            };
+            let instrumented =
+                crate::dead_properties::instrument_located(input, &self.option.package)?;
+            Unit::instrumented(
+                crate::vanilla_extract::Stylesheet {
+                    code: &instrumented.code,
+                    edits: &[&instrumented.edits],
+                    ..input
+                },
+                |offset| instrumented.generated(offset),
+            )?
         };
         let module_script = module_script(&unit, self, false)?;
         // Live bindings: a read before the binding is initialized fails as it
@@ -446,7 +461,7 @@ pub(crate) fn module_script(
             }
             continue;
         }
-        let module = if source == package {
+        let module = if source == package || source == "@vanilla-extract/css" {
             PACKAGE_BINDING.to_string()
         } else {
             load_module(loader, source, import.source.span.start)?

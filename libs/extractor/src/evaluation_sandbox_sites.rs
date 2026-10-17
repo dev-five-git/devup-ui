@@ -9,6 +9,7 @@ use oxc_span::{GetSpan, SourceType, Span};
 
 #[path = "evaluation_sandbox_sites_operations.rs"]
 mod operations;
+pub(crate) use operations::instrument;
 
 /// Source edits and read coordinates, reusable before module mapper code generation.
 pub(crate) struct Instrumented {
@@ -181,7 +182,11 @@ impl<'a> Visit<'a> for Reads<'_> {
 
 /// Adds identity calls to member keys and thunk calls around unbound identifiers.
 /// Receivers, short-circuit optional chains and direct `eval` calls are unchanged.
-pub(crate) fn instrument(source: &str, path: &str) -> Instrumented {
+pub(crate) fn instrument_located(
+    source: &str,
+    path: &str,
+    authored: &dyn Fn(usize) -> bool,
+) -> Instrumented {
     let allocator = oxc_allocator::Allocator::default();
     let parsed = oxc_parser::Parser::new(&allocator, source, SourceType::default()).parse();
     let scoping = SemanticBuilder::new()
@@ -204,6 +209,7 @@ pub(crate) fn instrument(source: &str, path: &str) -> Instrumented {
     if parsed.diagnostics.is_empty() {
         reads.visit_program(&parsed.program);
         operations::Operations(&mut reads).visit_program(&parsed.program);
+        operations::locate_members(&parsed.program, &mut reads, authored);
     }
     reads
         .changes
@@ -234,6 +240,7 @@ impl Instrumented {
     pub(crate) fn explain(&self, error: &str) -> String {
         error
             .lines()
+            .filter(|line| *line != format!("    at {} (native)", self.helper))
             .map(|line| {
                 if line.contains("at <read> (") {
                     return line.to_string();

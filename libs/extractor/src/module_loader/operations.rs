@@ -67,6 +67,10 @@ pub(crate) struct Operations {
 }
 
 impl Operations {
+    pub(crate) fn source_offset(&self, offset: usize) -> usize {
+        crate::import_alias_visit::source_offset(&self.edits, offset)
+    }
+
     pub(crate) fn new(source: &str) -> Self {
         let mut hash = rustc_hash::FxHasher::default();
         source.hash(&mut hash);
@@ -151,6 +155,7 @@ impl Operations {
         let mut first_frame = None;
         let mut explained = error
             .lines()
+            .filter(|line| *line != format!("    at {} (native)", self.helper))
             .filter_map(|line| {
                 let line = if line.contains("at <read> (") {
                     line.strip_suffix(" (native)").unwrap_or(line)

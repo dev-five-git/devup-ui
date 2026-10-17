@@ -77,7 +77,7 @@ use reflection::guard_globals;
 
 #[path = "evaluation_sandbox_sites.rs"]
 mod sites;
-pub(crate) use sites::{Instrumented, instrument};
+pub(crate) use sites::{Instrumented, instrument, instrument_located};
 
 #[path = "evaluation_sandbox_css.rs"]
 mod css;
@@ -85,6 +85,10 @@ pub(crate) use css::css_object;
 
 #[path = "evaluation_sandbox_evidence.rs"]
 mod evidence;
+
+#[path = "evaluation_sandbox_date.rs"]
+mod date;
+pub(crate) use date::check_export;
 
 struct Recorded {
     name: String,
@@ -219,6 +223,10 @@ mod tests;
 #[path = "evaluation_sandbox_reflection_tests.rs"]
 mod reflection_tests;
 
+#[cfg(test)]
+#[path = "evaluation_sandbox_date_tests.rs"]
+mod date_tests;
+
 impl Sandbox {
     /// Installs the instrumented source's native identity/thunk helper.
     pub(crate) fn prepare(&self, context: &mut Context, source: &Instrumented) -> JsResult<()> {
@@ -262,6 +270,13 @@ impl Sandbox {
         guard_methods(context)?;
         guard_globals(context)?;
         Ok(Self { evidence })
+    }
+
+    /// Adds only the stylesheet's numeric Date construction and UTC reads.
+    pub(crate) fn stylesheet(context: &mut Context) -> JsResult<Self> {
+        let sandbox = Self::new(context)?;
+        date::install(context)?;
+        Ok(sandbox)
     }
 
     /// Runs `source`, failing if it or anything run before it read what the

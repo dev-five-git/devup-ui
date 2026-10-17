@@ -97,6 +97,7 @@ impl Unit {
                 source: source.to_string(),
                 trace: Trace::new(&mapped, &[]),
                 retained: Some(ranges),
+                instrumentation: Vec::new(),
             }),
         }))
     }

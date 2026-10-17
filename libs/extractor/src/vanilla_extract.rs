@@ -32,9 +32,23 @@ use std::rc::Rc;
 mod serialization;
 use serialization::value_to_code;
 
+#[path = "vanilla_extract_css.rs"]
+mod own_css;
+
+#[cfg(test)]
+#[path = "vanilla_extract_tag_tests.rs"]
+mod css_tag_semantics_tests;
+#[cfg(test)]
+#[path = "vanilla_extract_gate_boundaries_tests.rs"]
+mod gate_boundaries_tag_tests;
+
 /// A `style()` or `keyframes()` call
 #[derive(Debug, Clone, Default)]
 pub struct StyleEntry {
+    /// Own Devup css source, retaining argument boundaries and known-class reads.
+    pub css: Option<String>,
+    /// Deep own rules lowered without depth-proportional generated syntax.
+    pub(crate) own_plan: Option<crate::own_css_plan::Plan>,
     /// The rule object JSON
     pub json: String,
     /// Whether the variable holding it is exported
@@ -84,6 +98,8 @@ struct Collector {
     file_num: usize,
     placeholders: usize,
     identifiers: usize,
+    origin: Option<(String, String)>,
+    declaration_errors: Vec<String>,
 }
 
 type StyleCollector = Rc<RefCell<Collector>>;
@@ -256,6 +272,11 @@ pub(crate) struct Stylesheet<'a> {
     pub edits: &'a [&'a [Edit]],
 }
 
+pub(crate) struct Evaluation<'a> {
+    pub stylesheet: Stylesheet<'a>,
+    pub calls: Option<&'a [(usize, usize)]>,
+}
+
 /// Execute vanilla-extract style file and collect styles, loading what it
 /// imports through `resolver`
 #[cfg(test)]
@@ -280,6 +301,22 @@ pub(crate) fn execute_located(
     option: &crate::ExtractOption,
     resolver: Option<&crate::ModuleResolver>,
 ) -> Result<(CollectedStyles, StylesheetImports), String> {
+    execute_evaluated(
+        Evaluation {
+            stylesheet,
+            calls: None,
+        },
+        option,
+        resolver,
+    )
+}
+
+pub(crate) fn execute_evaluated(
+    evaluation: Evaluation<'_>,
+    option: &crate::ExtractOption,
+    resolver: Option<&crate::ModuleResolver>,
+) -> Result<(CollectedStyles, StylesheetImports), String> {
+    let Evaluation { stylesheet, calls } = evaluation;
     let Stylesheet {
         filename,
         code,
@@ -288,7 +325,16 @@ pub(crate) fn execute_located(
     } = stylesheet;
     let _evaluating = Evaluating::enter(filename);
     let mut loader = ModuleLoader::new(resolver, option);
-    let unit = Unit::written(filename, code, source, edits)?;
+    let unit = stylesheet_unit(
+        Stylesheet {
+            filename,
+            code,
+            source,
+            edits,
+        },
+        option,
+        calls,
+    )?;
     let entry = module_script(&unit, &mut loader, true)?;
     let file_num = get_file_num_by_filename(filename);
     let run = loader.script(&entry);
@@ -313,7 +359,7 @@ pub(crate) fn execute_located(
         ..Collector::default()
     }));
     let mut context = Context::default();
-    let sandbox = crate::evaluation_sandbox::Sandbox::new(&mut context)
+    let sandbox = crate::evaluation_sandbox::Sandbox::stylesheet(&mut context)
         .map_err(|error| run.explain(&error.to_string(), filename))?;
     loader
         .prepare_css(&mut context)
@@ -322,7 +368,10 @@ pub(crate) fn execute_located(
     operations
         .prepare(&mut context)
         .map_err(|error| run.explain(&error.to_string(), filename))?;
-    let instrumented = crate::evaluation_sandbox::instrument(&operations.code, SCRIPT_PATH);
+    let instrumented =
+        crate::evaluation_sandbox::instrument_located(&operations.code, SCRIPT_PATH, &|offset| {
+            run.authored(operations.source_offset(offset))
+        });
     sandbox
         .prepare(&mut context, &instrumented)
         .map_err(|error| run.explain(&instrumented.explain(&error.to_string()), filename))?;
@@ -334,6 +383,9 @@ pub(crate) fn execute_located(
             Source::from_bytes(instrumented.code.as_bytes()).with_path(Path::new(SCRIPT_PATH)),
         )
         .map_err(|failure| {
+            if !collector.borrow().declaration_errors.is_empty() {
+                return collector.borrow().declaration_errors.join("\n");
+            }
             sandbox_error(
                 failure,
                 &run,
@@ -341,6 +393,10 @@ pub(crate) fn execute_located(
                 filename,
             )
         })?;
+
+    if !collector.borrow().declaration_errors.is_empty() {
+        return Err(collector.borrow().declaration_errors.join("\n"));
+    }
 
     let mut collected = std::mem::take(&mut collector.borrow_mut().styles);
     let named = name_entries(
@@ -376,6 +432,40 @@ pub(crate) fn execute_located(
     Ok((collected, imports))
 }
 
+pub(crate) fn stylesheet_unit(
+    stylesheet: Stylesheet<'_>,
+    option: &crate::ExtractOption,
+    calls: Option<&[(usize, usize)]>,
+) -> Result<Rc<Unit>, String> {
+    crate::module_loader::validate(stylesheet)?;
+    let instrumented =
+        crate::dead_properties::instrument_evaluated(stylesheet, &option.package, calls)?;
+    let aliased = crate::import_alias_visit::transform_import_aliases_with_edits(
+        &instrumented.code,
+        stylesheet.filename,
+        &option.package,
+        &option.import_aliases,
+    );
+    let layers: Vec<&[Edit]> = [aliased.edits.as_slice(), instrumented.edits.as_slice()]
+        .into_iter()
+        .chain(stylesheet.edits.iter().copied())
+        .collect();
+    Unit::instrumented(
+        Stylesheet {
+            filename: stylesheet.filename,
+            code: &aliased.code,
+            source: stylesheet.source,
+            edits: &layers,
+        },
+        |offset| {
+            instrumented.generated(crate::import_alias_visit::source_offset(
+                &aliased.edits,
+                offset,
+            ))
+        },
+    )
+}
+
 /// Formats sandbox failures through the same original-source trace as execution errors.
 fn sandbox_error(
     failure: crate::evaluation_sandbox::Failure,
@@ -395,9 +485,14 @@ fn sandbox_error(
                 }
                 let recorded = rebase(&violation.error().to_string());
                 let frames = recorded.find("\n    at ").map_or("", |at| &recorded[at..]);
+                let name = if violation.name().starts_with("Date.") {
+                    "Date"
+                } else {
+                    violation.name()
+                };
                 let immutable = format!(
                     "ReferenceError: `{}` cannot be read at build time: {}{frames}",
-                    violation.name(),
+                    name,
                     violation.requirement()
                 );
                 let explained = run.explain(&immutable, filename);
@@ -548,6 +643,10 @@ fn name_entries(
     ordered.sort_by_key(|(id, _)| placeholder_index(id));
     for (id, name) in ordered {
         let reference = if let Some(mut entry) = styles.remove(id) {
+            if let Some(code) = &mut entry.css {
+                *code = replace_placeholders(code, |token, _| names.get(token).cloned())
+                    .unwrap_or_else(|| code.clone());
+            }
             for base in &mut entry.bases {
                 if let Some(base_name) = names.get(base.as_str()) {
                     base_name.clone_into(base);
@@ -690,6 +789,44 @@ fn strip(code: &str, filename: &str) -> Stripped {
 
 type Api = fn(&StyleCollector, &[JsValue], &mut Context) -> JsResult<JsValue>;
 
+fn authored_call(
+    collector: &StyleCollector,
+    args: &[JsValue],
+    context: &mut Context,
+) -> JsResult<JsValue> {
+    let location = to_text(args.get_or_undefined(0), context)?;
+    let api = to_text(args.get_or_undefined(1), context)?;
+    let forwarded = array_items(args.get_or_undefined(4), context)?.unwrap_or_default();
+    let previous = collector.borrow_mut().origin.replace((location, api));
+    let result = args
+        .get_or_undefined(2)
+        .as_callable()
+        .map_or(Ok(JsValue::undefined()), |thunk| {
+            thunk.call(args.get_or_undefined(3), &forwarded, context)
+        });
+    collector.borrow_mut().origin = previous;
+    result
+}
+
+fn check_declarations(
+    collector: &StyleCollector,
+    json: &str,
+    kind: crate::dead_properties::ObjectKind,
+) {
+    let errors = crate::dead_properties::evaluated_errors(json, kind);
+    let mut collector = collector.borrow_mut();
+    if let Some((location, api)) = collector.origin.clone() {
+        collector
+            .declaration_errors
+            .extend(errors.into_iter().map(|(path, requirement)| {
+                format!(
+                    "{location}: {}",
+                    crate::utils::build_time_error(&api, &path, requirement)
+                )
+            }));
+    }
+}
+
 fn api(collector: &StyleCollector, function: Api) -> NativeFunction {
     let collector = collector.clone();
     // SAFETY: the closure captures only an `Rc<RefCell<Collector>>`, which holds no
@@ -707,6 +844,8 @@ fn register_vanilla_extract_apis(
     collector: &StyleCollector,
 ) -> Result<(), String> {
     let apis = [
+        ("__at", api(collector, authored_call), 3),
+        ("css", api(collector, own_css::call), 1),
         ("style", api(collector, style), 1),
         ("globalStyle", api(collector, global_style), 2),
         ("styleVariants", api(collector, style_variants), 1),
@@ -766,6 +905,11 @@ fn register_style(
     let mut rules = Vec::new();
     compose(rule, &mut entry, &mut rules, context)?;
     entry.json = format!("{{{}}}", rules.join(","));
+    check_declarations(
+        collector,
+        &entry.json,
+        crate::dead_properties::ObjectKind::Styles,
+    );
     let mut collector = collector.borrow_mut();
     let id = collector.placeholder();
     collector.styles.styles.insert(id.clone(), entry);
@@ -813,6 +957,7 @@ fn global_style(
 ) -> JsResult<JsValue> {
     let selector = to_text(args.get_or_undefined(0), context)?;
     let json = style_to_json(args.get_or_undefined(1), context)?;
+    check_declarations(collector, &json, crate::dead_properties::ObjectKind::Styles);
     collector
         .borrow_mut()
         .styles
@@ -854,6 +999,11 @@ fn keyframes(
     context: &mut Context,
 ) -> JsResult<JsValue> {
     let json = style_to_json(args.get_or_undefined(0), context)?;
+    check_declarations(
+        collector,
+        &json,
+        crate::dead_properties::ObjectKind::Records,
+    );
     let mut collector = collector.borrow_mut();
     let id = collector.placeholder();
     collector.styles.keyframes.insert(
@@ -876,6 +1026,9 @@ fn font_face(
         .borrow_mut()
         .identifier(js_str(args.get_or_undefined(1)), "font");
     let faces = font_face_rules(&family, args.get_or_undefined(0), context)?;
+    for face in &faces {
+        check_declarations(collector, face, crate::dead_properties::ObjectKind::Styles);
+    }
     collector.borrow_mut().styles.font_faces.extend(faces);
     Ok(js_string!(family).into())
 }
@@ -887,6 +1040,9 @@ fn global_font_face(
 ) -> JsResult<JsValue> {
     let family = to_text(args.get_or_undefined(0), context)?;
     let faces = font_face_rules(&family, args.get_or_undefined(1), context)?;
+    for face in &faces {
+        check_declarations(collector, face, crate::dead_properties::ObjectKind::Styles);
+    }
     collector.borrow_mut().styles.font_faces.extend(faces);
     Ok(JsValue::undefined())
 }
@@ -1411,6 +1567,9 @@ fn composed_css(
     name: &str,
     entry: &StyleEntry,
 ) -> String {
+    if let Some(code) = &entry.css {
+        return code.clone();
+    }
     let mut composing = vec![name];
     let mut bases = Vec::new();
     collect_bases(collected, entry, &mut composing, &mut bases);
@@ -1421,7 +1580,9 @@ fn composed_css(
     let mut all_classes: Vec<&str> = Vec::new();
     for (base_name, base) in &bases {
         let json = collected.resolve_json(&base.json, keyframes_names);
-        if !inner_json(&json).is_empty() {
+        if base.css.is_some() {
+            rules.push((*base_name).to_string());
+        } else if !inner_json(&json).is_empty() {
             rules.push(json);
         }
         all_classes.extend(base.classes.iter().map(String::as_str));
@@ -1506,21 +1667,26 @@ pub fn collected_styles_to_code_with_keyframes(
         code.push(format!("globalCss`{rule}`"));
     }
 
-    for (name, entry) in sorted(&collected.keyframes) {
-        code.push(format!(
-            "{}const {name} = keyframes({})",
-            export_prefix(entry.exported),
-            collected.resolve_json(&entry.json, keyframes_names)
-        ));
-    }
-
     let referenced_classes = collected.referenced_classes();
-    for (name, entry) in sorted(&collected.styles) {
-        code.push(format!(
-            "{}const {name} = {}",
-            export_prefix(entry.exported),
-            composed_css(collected, keyframes_names, &referenced_classes, name, entry)
-        ));
+    if let Some(declarations) =
+        own_css::declarations(collected, keyframes_names, &referenced_classes)
+    {
+        code.extend(declarations);
+    } else {
+        for (name, entry) in sorted(&collected.keyframes) {
+            code.push(format!(
+                "{}const {name} = keyframes({})",
+                export_prefix(entry.exported),
+                collected.resolve_json(&entry.json, keyframes_names)
+            ));
+        }
+        for (name, entry) in sorted(&collected.styles) {
+            code.push(format!(
+                "{}const {name} = {}",
+                export_prefix(entry.exported),
+                composed_css(collected, keyframes_names, &referenced_classes, name, entry)
+            ));
+        }
     }
 
     for (selector, json) in &collected.global_styles {
