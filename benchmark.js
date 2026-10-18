@@ -9,19 +9,13 @@
 // The machine-readable run goes to benchmark-run.json: `benchmark-check.js`
 // compares it with the checked baseline, and the README tables are written from
 // the checked results (benchmark-results.json, render-benchmark-readme.js).
-import {
-  existsSync,
-  readdirSync,
-  readFileSync,
-  rmSync,
-  statSync,
-  writeFileSync,
-} from 'node:fs'
+import { existsSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 
 import { execSync } from 'child_process'
 
 import { median, roundOrder } from './benchmark-gate.js'
+import { measureOutput } from './benchmark-output.js'
 
 const manifest = JSON.parse(readFileSync('benchmark-manifest.json', 'utf8'))
 
@@ -31,31 +25,6 @@ function clearBuildFile(dir) {
     const target = join(base, output)
     if (existsSync(target)) rmSync(target, { recursive: true, force: true })
   }
-}
-
-function checkDirSize(path, filter) {
-  let totalSize = 0
-
-  function calculateSize(directory) {
-    const entries = readdirSync(directory)
-    for (const entry of entries) {
-      const entryPath = join(directory, entry)
-      if (statSync(entryPath).isDirectory()) {
-        calculateSize(entryPath)
-      } else if (!filter || filter(entryPath)) {
-        totalSize += statSync(entryPath).size
-      }
-    }
-  }
-
-  calculateSize(path)
-  return totalSize
-}
-
-// Sum only the size of emitted CSS files. Build-size totals are dominated by
-// JS/assets and hide CSS-only differences (e.g. single-importer collapse).
-function checkCssSize(path) {
-  return checkDirSize(path, (p) => p.endsWith('.css'))
 }
 
 let benchmarkRun = 0
@@ -77,18 +46,9 @@ function benchmark(target) {
   performance.measure(run, run + '-start', run + '-end')
 
   const benchmarkDir = join('./benchmark', dir)
-  // Resolve the real build-output dir. Next.js emits to `.next`; Vite emits to
-  // `dist`. vinext (Next-on-Vite) emits its real artifacts to `dist` but ALSO
-  // leaves a tiny vestigial `.next` stub (~988 B, no CSS) - so checking `.next`
-  // first measured the empty stub and reported "988 bytes (css 0 bytes)" even
-  // though dist held ~1.28 MB incl. the extracted CSS. Prefer `dist` when it
-  // exists; fall back to `.next` for pure Next.js apps (which never emit dist).
-  const distDir = join(benchmarkDir, 'dist')
-  const outputDir = existsSync(distDir) ? distDir : join(benchmarkDir, '.next')
   return {
     seconds: performance.getEntriesByName(run)[0].duration / 1000,
-    bytes: checkDirSize(outputDir),
-    cssBytes: checkCssSize(outputDir),
+    ...measureOutput(benchmarkDir),
   }
 }
 

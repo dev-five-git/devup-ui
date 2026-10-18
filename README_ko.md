@@ -7,7 +7,7 @@
 </h3>
 
 <p align="center">
-    <strong>Zero Config · Zero FOUC · Zero Runtime · 모든 CSS-in-JS 문법 완벽 지원</strong>
+    <strong>Zero Config · Zero FOUC · Zero Runtime · 빌드 타임 CSS-in-JS</strong>
 </p>
 
 ---
@@ -41,7 +41,7 @@
 
 기존 CSS-in-JS 솔루션들은 개발자 경험과 성능 사이에서 타협을 강요했습니다. Devup UI는 Rust 기반 전처리기를 통해 모든 스타일을 빌드 타임에 처리함으로써 이 트레이드오프를 완전히 제거합니다.
 
-- **완전한 문법 지원**: 변수, 조건문, 반응형 배열, 가상 선택자 등 모든 CSS-in-JS 패턴을 완벽하게 지원
+- **폭넓은 문법 지원**: 변수, 조건문, 반응형 배열, 가상 선택자, `styled()`, Emotion `css` prop 등을 빌드 타임에 컴파일합니다. 빌드가 알 수 없는 것은 조용히 빠지지 않고 [위치가 표시된 빌드 오류](https://devup-ui.com/docs/build-errors)가 됩니다 ([지원 문법과 한계](https://devup-ui.com/docs/limitations))
 - **익숙한 API**: styled-components, Emotion과 호환되는 `styled()` API 제공
 - **진정한 제로 런타임**: 런타임에서 스타일링을 위한 JavaScript 실행이 전혀 없습니다
 - **가장 작은 번들 크기**: 최적화된 클래스명(`a`, `b`, ... `aa`, `ab`)으로 CSS 출력 최소화
@@ -80,33 +80,33 @@ npm install @devup-ui/webpack-plugin
 ## 비교 벤치마크
 
 <!-- benchmark:start -->
-[최신 CI 벤치마크](https://github.com/dev-five-git/devup-ui/actions/runs/37127187436) (커밋 `49b33534`, Devup UI 1.0.44)는 `ubuntu-24.04`에서 Next.js 16.3.3로 실행했습니다. 모든 행은 순서를 돌려 가며 측정한 cold build 3회의 중앙값이며 샘플의 범위를 함께 보여줍니다. 모든 Next.js 빌드는 네이티브 TypeScript 7 CLI로 타입 검사를 수행합니다. 영어와 한국어 표는 같은 결과 파일 `benchmark-results.json`에서 생성합니다.
+[최신 CI 벤치마크](https://github.com/dev-five-git/devup-ui/actions/runs/37758611477) (커밋 `467a379a`, Devup UI 1.0.44)는 `ubuntu-24.04`에서 Next.js 16.3.3로 실행했습니다. 모든 행은 순서를 돌려 가며 측정한 cold build 3회의 중앙값이며 샘플의 범위를 함께 보여줍니다. 모든 Next.js 빌드는 네이티브 TypeScript 7 CLI로 타입 검사를 수행합니다. 영어와 한국어 표는 같은 결과 파일 `benchmark-results.json`에서 생성합니다.
 
-빌드 사이즈는 빌드 출력 디렉터리(`.next`, vinext는 `dist`)의 모든 바이트이고, CSS 사이즈는 출력된 `.css` 파일만 따로 잰 값입니다.
+빌드 사이즈는 캐시와 서버 출력을 포함한 빌드 출력 디렉터리(`.next`, vinext는 `dist`)의 모든 바이트입니다. 체크인된 표는 출력 전체의 `.css` 파일을 재귀적으로 합산한 기존 CSS 측정값을 그대로 보존합니다. 새 실행은 브라우저에 제공되는 CSS만 측정합니다: `.next/static/**/*.css`(Webpack `static/css`, Turbopack `static/chunks`) 또는 vinext `dist/client/**/*.css`. 캐시와 서버 CSS는 제외합니다. 브라우저 에셋 디렉터리가 없으면 오류이며, 존재하지만 CSS가 없으면 0입니다. 승인된 CSS 측정 보정은 명시적으로 지정한 `devup-ui`, `devup-ui-single`, `vinext-devup-ui` 행으로 제한됩니다. `bun benchmark-check.js --write-css-baseline devup-ui`는 기존 per-file 모드를 유지하며, `bun benchmark-check.js --write-css-baseline devup-ui-single,vinext-devup-ui`는 쉼표로 구분한 인자 하나로 나머지 두 행만 선택합니다. 선택한 기존 행의 CSS 바이트만 바꾸고, `--write-baseline`과 달리 샘플 수, 빌드 바이트, 비율, 허용 오차, 선택하지 않은 모든 행과 보정 이력을 보존합니다. 이름 누락, 지원하지 않는 이름, 다른 쓰기 모드와의 혼용은 오류입니다.
 
 Webpack:
 
 | 라이브러리                       | 버전     | 빌드 시간 중앙값  | 범위              | 빌드 사이즈            | CSS 사이즈      |
 | --------------------------- | ------ | ---------- | --------------- | ----------------- | ------------ |
-| tailwindcss                 | 4.3.3  | 12.57s     | 12.53s - 13.07s | 67,337,100 bytes  | 5,852 bytes  |
-| styleX                      | 0.19.0 | 28.43s     | 28.39s - 28.90s | 96,290,977 bytes  | 425 bytes    |
-| vanilla-extract             | 1.21.2 | 12.18s     | 12.10s - 12.49s | 68,577,913 bytes  | 294 bytes    |
-| kuma-ui                     | 1.6.4  | 13.50s     | 13.23s - 14.56s | 75,627,639 bytes  | 340 bytes    |
-| panda-css                   | 1.12.0 | 13.61s     | 13.44s - 14.35s | 71,844,396 bytes  | 15,615 bytes |
-| chakra-ui                   | 3.37.0 | 20.19s     | 20.16s - 20.75s | 207,420,203 bytes | 0 bytes      |
-| mui                         | 9.4.0  | 14.18s     | 14.03s - 14.44s | 101,478,873 bytes | 0 bytes      |
-| **devup-ui (per-file CSS)** | 1.0.44 | **10.97s** | 10.83s - 11.25s | 67,438,054 bytes  | 562 bytes    |
-| **devup-ui (single CSS)**   | 1.0.44 | **10.98s** | 10.90s - 11.03s | 67,415,063 bytes  | 790 bytes    |
+| tailwindcss                 | 4.3.3  | 13.02s     | 12.91s - 13.20s | 67,339,250 bytes  | 5,852 bytes  |
+| styleX                      | 0.19.0 | 29.01s     | 28.72s - 29.50s | 96,290,533 bytes  | 425 bytes    |
+| vanilla-extract             | 1.21.2 | 12.34s     | 12.22s - 12.35s | 68,565,511 bytes  | 294 bytes    |
+| kuma-ui                     | 1.6.4  | 13.55s     | 13.49s - 13.57s | 75,627,429 bytes  | 340 bytes    |
+| panda-css                   | 1.12.0 | 13.44s     | 13.29s - 13.58s | 71,849,243 bytes  | 15,615 bytes |
+| chakra-ui                   | 3.37.0 | 20.29s     | 19.95s - 21.06s | 207,425,028 bytes | 0 bytes      |
+| mui                         | 9.4.0  | 14.12s     | 13.78s - 14.26s | 101,476,098 bytes | 0 bytes      |
+| **devup-ui (per-file CSS)** | 1.0.44 | **10.95s** | 10.87s - 11.09s | 67,427,695 bytes  | 562 bytes    |
+| **devup-ui (single CSS)**   | 1.0.44 | **11.04s** | 10.88s - 11.40s | 67,436,336 bytes  | 790 bytes    |
 
 Turbopack:
 
 | 라이브러리                                  | 버전     | 빌드 시간 중앙값 | 범위            | 빌드 사이즈           | CSS 사이즈     |
 | -------------------------------------- | ------ | --------- | ------------- | ---------------- | ----------- |
-| tailwindcss                            | 4.3.3  | 5.83s     | 5.55s - 5.90s | 38,422,653 bytes | 6,197 bytes |
-| **devup-ui (direct APIs, single CSS)** | 1.0.44 | **5.66s** | 5.58s - 5.68s | 36,545,972 bytes | 327 bytes   |
-| **devup-ui (static `.css.ts`)**        | 1.0.44 | **5.52s** | 5.51s - 5.65s | 36,571,452 bytes | 268 bytes   |
+| tailwindcss                            | 4.3.3  | 5.68s     | 5.51s - 5.73s | 38,440,013 bytes | 6,197 bytes |
+| **devup-ui (direct APIs, single CSS)** | 1.0.44 | **5.79s** | 5.77s - 5.87s | 36,538,765 bytes | 327 bytes   |
+| **devup-ui (static `.css.ts`)**        | 1.0.44 | **5.71s** | 5.67s - 5.99s | 36,580,207 bytes | 268 bytes   |
 
-Turbopack 측정 범위는 서로 겹치므로 direct API 중앙값은 이 fixture에서 Tailwind보다 0.17s(2.9%) 빠르며 사실상 동률입니다. cold 샘플 3개는 Tailwind `5.90s, 5.55s, 5.83s`, direct Devup UI `5.66s, 5.58s, 5.68s`, static `.css.ts` `5.65s, 5.52s, 5.51s`입니다. fixture는 앱 구조만 비슷하고 스타일이 픽셀 단위로 같지는 않습니다. Tailwind는 첫 문단과 버튼에 더 많은 스타일을 주고, Devup UI는 타입이 있는 컴포넌트/스타일 props를 사용합니다. 규칙 단위 마이크로벤치마크가 아니라 빌드 파이프라인 결과로 보세요. 모든 `.css.ts`는 full Boa evaluator로 처리하며, 첫 모듈에 약 20ms, 이후 모듈마다 1ms 미만이 더 듭니다. CI는 Devup UI 행을 체크인된 기준값과 비교해 측정된 노이즈를 넘는 회귀에서 실패합니다(규칙은 `benchmark-gate.js`).
+Turbopack 측정 범위는 겹치지 않으므로 direct API 중앙값은 이 fixture에서 Tailwind보다 0.12s(2.1%) 느리며. cold 샘플 3개는 Tailwind `5.68s, 5.73s, 5.51s`, direct Devup UI `5.77s, 5.79s, 5.87s`, static `.css.ts` `5.71s, 5.99s, 5.67s`입니다. fixture는 앱 구조만 비슷하고 스타일이 픽셀 단위로 같지는 않습니다. Tailwind는 첫 문단과 버튼에 더 많은 스타일을 주고, Devup UI는 타입이 있는 컴포넌트/스타일 props를 사용합니다. 규칙 단위 마이크로벤치마크가 아니라 빌드 파이프라인 결과로 보세요. 모든 `.css.ts`는 full Boa evaluator로 처리하며, 첫 모듈에 약 20ms, 이후 모듈마다 1ms 미만이 더 듭니다. CI는 Devup UI 행을 체크인된 기준값과 비교해 측정된 노이즈를 넘는 회귀에서 실패합니다(규칙은 `benchmark-gate.js`).
 <!-- benchmark:end -->
 
 ## 작동 원리
@@ -115,47 +115,73 @@ Devup UI는 빌드 타임에 컴포넌트를 변환합니다. 클래스명은 CS
 
 **기본 변환:**
 
+생성된 클래스명과 CSS 변수명은 버전, 빌드 상태, 접두사 설정에 따라 달라질 수 있으므로 직접 재사용하지 마세요.
+
+개발자가 작성:
+
 ```tsx
-// 개발자가 작성:
+import { Box } from '@devup-ui/react'
+
 const example = <Box _hover={{ bg: 'blue' }} bg="red" p={4} />
+```
 
-// Devup UI가 생성:
-const generated = <div className="a b c" />
+Devup UI가 생성:
 
-// CSS:
-// .a { background-color: red; }
-// .b { padding: 1rem; }
-// .c:hover { background-color: blue; }
+```tsx
+import "@devup-ui/react/devup-ui.css";
+const example = <div className="a b c" />;
+```
+
+CSS:
+
+```css
+/*! devup-ui v1.0.82, | Apache License 2.0 | https://devup-ui.com */.b{background:red}.c{padding:16px}.a:hover{background:blue}
 ```
 
 **동적 값은 CSS 변수로 변환:**
 
+개발자가 작성:
+
 ```tsx
-// 개발자가 작성:
+import { Box } from '@devup-ui/react'
+
 const example = <Box bg={colorVariable} />
-
-// Devup UI가 생성:
-const generated = <div className="a" style={{ '--a': colorVariable }} />
-
-// CSS:
-// .a { background-color: var(--a); }
 ```
 
-**복잡한 표현식과 반응형 배열 — 완벽 지원:**
+Devup UI가 생성:
 
 ```tsx
-// 개발자가 작성:
+import "@devup-ui/react/devup-ui.css";
+const example = <div className="a" style={{ "--b": colorVariable }} />;
+```
+
+CSS:
+
+```css
+/*! devup-ui v1.0.82, | Apache License 2.0 | https://devup-ui.com */.a{background:var(--b)}
+```
+
+**복잡한 표현식과 반응형 배열:**
+
+개발자가 작성:
+
+```tsx
+import { Box } from '@devup-ui/react'
+
 const example = <Box bg={['red', 'blue', isActive ? 'green' : dynamicColor]} />
+```
 
-// Devup UI가 생성:
-const generated = (
-  <div
-    className={`a b ${isActive ? 'c' : 'd'}`}
-    style={{ '--d': dynamicColor }}
-  />
-)
+Devup UI가 생성:
 
-// 각 브레이크포인트에 대한 반응형 CSS 생성
+```tsx
+import "@devup-ui/react/devup-ui.css";
+const example = <div className={`a b ${isActive ? "c" : "d"}`} style={{ "--e": dynamicColor }} />;
+```
+
+각 브레이크포인트에 대한 반응형 CSS:
+
+```css
+/*! devup-ui v1.0.82, | Apache License 2.0 | https://devup-ui.com */.a{background:red}@media(min-width:480px){.b{background:blue}}@media(min-width:768px){.c{background:green}.d{background:var(--e)}}
 ```
 
 **타입 세이프 테마:**

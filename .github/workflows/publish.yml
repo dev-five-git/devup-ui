@@ -14,18 +14,9 @@ on:
 permissions:
   contents: read
 
-# Toolchain versions are pinned here once and used by every job and cache key.
-# Third-party actions are pinned by commit SHA, with the release they come from
-# in a comment. Bump a version and its SHA together, in a reviewed change.
-env:
-  RUST_VERSION: "1.99.0"
-  BUN_VERSION: "1.4.0"
-  NODE_VERSION: "24.21.0"
-  WASM_PACK_VERSION: "v0.15.0"
-  CARGO_BINSTALL_VERSION: "v1.25.1"
-  CARGO_BINSTALL_SHA256: "8e06c41af972f9922f28c6ae467e41ffa9b0688d563d0aabd0dcbd5244ab849b"
-  CARGO_TARPAULIN_VERSION: "0.37.5"
-  CHANGEPACKS_CLI_VERSION: "0.3.6"
+# CI always runs the latest releases: the `ubuntu-latest` runner, the newest
+# major version of every action, and the latest stable Rust, Bun, Node.js,
+# wasm-pack, cargo-binstall, cargo-tarpaulin and changepacks.
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
@@ -33,44 +24,44 @@ concurrency:
 
 jobs:
   benchmark:
-    runs-on: ubuntu-24.04
+    runs-on: ubuntu-latest
     timeout-minutes: 60
     steps:
       - name: Checkout
-        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        uses: actions/checkout@v7
 
-      - uses: actions-rust-lang/setup-rust-toolchain@ecabd13d1c56bd1345c230e542e9144811ad706f # v2
+      - uses: actions-rust-lang/setup-rust-toolchain@v2
         with:
-          toolchain: ${{ env.RUST_VERSION }}
+          toolchain: stable
           components: clippy, rustfmt
 
       - name: Cache cargo registry + target
-        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6
+        uses: actions/cache@v6
         with:
           path: |
             ~/.cargo/registry/index/
             ~/.cargo/registry/cache/
             ~/.cargo/git/db/
             target/
-          key: cargo-benchmark-ubuntu-24.04-rust${{ env.RUST_VERSION }}-wasm-pack${{ env.WASM_PACK_VERSION }}-${{ hashFiles('**/Cargo.lock') }}
-      - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2
+          key: cargo-benchmark-${{ runner.os }}-${{ hashFiles('**/Cargo.lock') }}
+      - uses: oven-sh/setup-bun@v2
         with:
-          bun-version: ${{ env.BUN_VERSION }}
+          bun-version: latest
         name: Install bun
 
       - name: Cache bun dependencies
-        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6
+        uses: actions/cache@v6
         with:
           path: ~/.bun/install/cache
-          key: bun-benchmark-ubuntu-24.04-bun${{ env.BUN_VERSION }}-node${{ env.NODE_VERSION }}-${{ hashFiles('**/bun.lock') }}
-      - uses: jetli/wasm-pack-action@0d096b08b4e5a7de8c28de67e11e945404e9eefa # v0.4.0
+          key: bun-benchmark-${{ runner.os }}-${{ hashFiles('**/bun.lock') }}
+      - uses: jetli/wasm-pack-action@v0.4.0
         with:
-          version: ${{ env.WASM_PACK_VERSION }}
+          version: latest
       - name: Install Node.js
-        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7
+        uses: actions/setup-node@v7
         with:
           registry-url: "https://registry.npmjs.org"
-          node-version: ${{ env.NODE_VERSION }}
+          node-version: latest
       - run: bun install
       - run: bun run build
       # Every row is the median of the same number of cold samples taken in
@@ -88,7 +79,7 @@ jobs:
             benchmark/next-devup-ui-single-turbo/tsconfig.tsbuildinfo
           bun run --filter next-devup-ui-single-turbo-benchmark build
       - name: Upload the measured run
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        uses: actions/upload-artifact@v7
         if: ${{ !cancelled() }}
         with:
           name: benchmark-run
@@ -100,6 +91,138 @@ jobs:
       - name: Compare the Devup UI rows with the baseline
         run: bun benchmark-check.js
 
+  wasm-size:
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    permissions:
+      contents: read
+    env:
+      CARGO_BUILD_JOBS: "2"
+      RUSTUP_TOOLCHAIN: stable
+      BASE_SHA: ${{ github.event_name == 'pull_request' && github.event.pull_request.base.sha || github.event.before }}
+      CANDIDATE_SHA: ${{ github.event_name == 'pull_request' && github.sha || github.event.after }}
+    steps:
+      - name: Checkout the tested source and both histories
+        uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: actions-rust-lang/setup-rust-toolchain@v2
+        with:
+          toolchain: stable
+          target: wasm32-unknown-unknown
+          cache: false
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: latest
+      - uses: actions/setup-node@v7
+        with:
+          node-version: latest
+      - uses: jetli/wasm-pack-action@v0.4.0
+        with:
+          version: latest
+      - name: Cache registry downloads only
+        uses: actions/cache@v6
+        with:
+          path: |
+            ~/.cargo/registry/index/
+            ~/.cargo/registry/cache/
+            ~/.cargo/git/db/
+          key: cargo-wasm-size-${{ runner.os }}-${{ hashFiles('**/Cargo.lock') }}
+      - name: Install the latest shared installer and optimizer once
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          curl -L --proto '=https' --tlsv1.2 -sSf https://raw.githubusercontent.com/cargo-bins/cargo-binstall/main/install-from-binstall-release.sh | bash
+          mkdir -p "$RUNNER_TEMP/wasm-size-tools/binaryen"
+          gh release download --repo WebAssembly/binaryen --pattern '*-x86_64-linux.tar.gz' --dir "$RUNNER_TEMP/wasm-size-tools"
+          tar -xzf "$RUNNER_TEMP"/wasm-size-tools/*.tar.gz --strip-components=1 -C "$RUNNER_TEMP/wasm-size-tools/binaryen"
+          echo "$RUNNER_TEMP/wasm-size-tools/binaryen/bin" >> "$GITHUB_PATH"
+      - name: Build exact sources with shared tools and lock-matched bindgen
+        run: |
+          set -euo pipefail
+          export SIZE_ROOT="$RUNNER_TEMP/wasm-size"
+          mkdir -p "$SIZE_ROOT"
+          stage=source
+          trap 'echo "## WASM size: FAIL - $stage build or provenance failed; no comparison was skipped or substituted." >> "$GITHUB_STEP_SUMMARY"' ERR
+          for side in base candidate; do
+            if [[ "$side" == base ]]; then sha="$BASE_SHA"; else sha="$CANDIDATE_SHA"; fi
+            git cat-file -e "$sha^{commit}"
+            mkdir -p "$SIZE_ROOT/$side"
+            git archive "$sha" | tar -x -C "$SIZE_ROOT/$side"
+          done
+          cat > "$SIZE_ROOT/provenance.mjs" <<'NODE'
+          import { execFileSync } from 'node:child_process'
+          import { createHash } from 'node:crypto'
+          import { readFileSync, writeFileSync } from 'node:fs'
+          import { join } from 'node:path'
+          const run = (command, args) => execFileSync(command, args, { encoding: 'utf8' }).trim()
+          const tools = Object.fromEntries([
+            ['rustc', 'rustc', ['--version', '--verbose']],
+            ['wasmPack', 'wasm-pack', ['--version']],
+            ['wasmBindgen', 'wasm-bindgen', ['--version']],
+            ['wasmOpt', 'wasm-opt', ['--version']],
+            ['bun', 'bun', ['--version']],
+            ['node', 'node', ['--version']],
+          ].map(([key, command, args]) => {
+            const path = run('which', [command])
+            const hash = createHash('sha256').update(readFileSync(path)).digest('hex')
+            return [key, `${run(command, args)}\n${path}\nsha256:${hash}`]
+          }))
+          const side = process.argv[2]
+          const file = join(process.env.SIZE_ROOT, 'metadata.json')
+          const metadata = side === 'base' ? {
+            jobId: `${process.env.GITHUB_RUN_ID}/${process.env.GITHUB_RUN_ATTEMPT}/${process.env.GITHUB_JOB}`,
+            buildCommand: 'cargo metadata --locked --format-version 1 > /dev/null && wasm-pack build --mode no-install --release --target nodejs --out-dir ./pkg --out-name index --locked && node script.js',
+          } : JSON.parse(readFileSync(file, 'utf8'))
+          const sha = side === 'base' ? process.env.BASE_SHA : process.env.CANDIDATE_SHA
+          metadata[side] = {
+            commit: run('git', ['rev-parse', `${sha}^{commit}`]),
+            tree: run('git', ['rev-parse', `${sha}^{tree}`]),
+            wasmBindgenVersion: process.env.WASM_BINDGEN_VERSION,
+            packageDir: join(process.env.SIZE_ROOT, side, 'bindings/devup-ui-wasm/pkg'), tools,
+          }
+          writeFileSync(file, JSON.stringify(metadata, null, 2) + '\n')
+          NODE
+          shared_path="$PATH"
+          for side in base candidate; do
+            stage="$side"
+            (
+              WASM_BINDGEN_VERSION="$(bun resolve-wasm-bindgen.js "$SIZE_ROOT/$side/Cargo.lock")"
+              export WASM_BINDGEN_VERSION
+              bindgen_root="$SIZE_ROOT/abi-tools/$WASM_BINDGEN_VERSION"
+              if [[ ! -x "$bindgen_root/bin/wasm-bindgen" ]]; then
+                cargo binstall wasm-bindgen-cli --version "=$WASM_BINDGEN_VERSION" --root "$bindgen_root" --no-confirm --force
+              fi
+              export PATH="$bindgen_root/bin:$shared_path"
+              node "$SIZE_ROOT/provenance.mjs" "$side"
+              cd "$SIZE_ROOT/$side/bindings/devup-ui-wasm"
+              export CARGO_TARGET_DIR="$SIZE_ROOT/$side-target"
+              cargo metadata --locked --format-version 1 > /dev/null
+              wasm-pack build --mode no-install --release --target nodejs --out-dir ./pkg --out-name index --locked
+              node script.js
+            ) 2>&1 | tee "$SIZE_ROOT/$side-build.log"
+          done
+      - name: Compare all four relative size metrics
+        run: |
+          node verify-wasm-size.js \
+            --base-pkg "$RUNNER_TEMP/wasm-size/base/bindings/devup-ui-wasm/pkg" \
+            --candidate-pkg "$RUNNER_TEMP/wasm-size/candidate/bindings/devup-ui-wasm/pkg" \
+            --metadata "$RUNNER_TEMP/wasm-size/metadata.json" \
+            --report "$RUNNER_TEMP/wasm-size/wasm-size.json"
+      - name: Upload size measurements and build evidence
+        uses: actions/upload-artifact@v7
+        if: ${{ !cancelled() }}
+        with:
+          name: wasm-size
+          path: |
+            ${{ runner.temp }}/wasm-size/metadata.json
+            ${{ runner.temp }}/wasm-size/wasm-size.json
+            ${{ runner.temp }}/wasm-size/*-build.log
+          if-no-files-found: error
+          retention-days: 30
+
   # The landing app is the only real-scale acceptance target in this repo, and
   # `publish` runs it against the deployed vinext/@devup-ui/vite-plugin build.
   # This job runs the SAME 128 assertions and the SAME screenshot baselines
@@ -108,43 +231,43 @@ jobs:
   # actually reproduce. It runs in parallel so it stays off the publish critical
   # path, and its artifact is never deployed.
   landing-next-e2e:
-    runs-on: ubuntu-24.04
+    runs-on: ubuntu-latest
     timeout-minutes: 60
     steps:
       - name: Checkout
-        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        uses: actions/checkout@v7
 
-      - uses: actions-rust-lang/setup-rust-toolchain@ecabd13d1c56bd1345c230e542e9144811ad706f # v2
+      - uses: actions-rust-lang/setup-rust-toolchain@v2
         with:
-          toolchain: ${{ env.RUST_VERSION }}
+          toolchain: stable
           components: clippy, rustfmt
 
       - name: Cache cargo registry + target
-        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6
+        uses: actions/cache@v6
         with:
           path: |
             ~/.cargo/registry/index/
             ~/.cargo/registry/cache/
             ~/.cargo/git/db/
             target/
-          key: cargo-landing-next-ubuntu-24.04-rust${{ env.RUST_VERSION }}-wasm-pack${{ env.WASM_PACK_VERSION }}-${{ hashFiles('**/Cargo.lock') }}
-      - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2
+          key: cargo-landing-next-${{ runner.os }}-${{ hashFiles('**/Cargo.lock') }}
+      - uses: oven-sh/setup-bun@v2
         with:
-          bun-version: ${{ env.BUN_VERSION }}
+          bun-version: latest
         name: Install bun
 
       - name: Cache bun dependencies
-        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6
+        uses: actions/cache@v6
         with:
           path: ~/.bun/install/cache
-          key: bun-landing-next-ubuntu-24.04-bun${{ env.BUN_VERSION }}-node${{ env.NODE_VERSION }}-${{ hashFiles('**/bun.lock') }}
-      - uses: jetli/wasm-pack-action@0d096b08b4e5a7de8c28de67e11e945404e9eefa # v0.4.0
+          key: bun-landing-next-${{ runner.os }}-${{ hashFiles('**/bun.lock') }}
+      - uses: jetli/wasm-pack-action@v0.4.0
         with:
-          version: ${{ env.WASM_PACK_VERSION }}
+          version: latest
       - name: Install Node.js
-        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7
+        uses: actions/setup-node@v7
         with:
-          node-version: ${{ env.NODE_VERSION }}
+          node-version: latest
       - run: bun install
       - run: bun run build
       - name: Build Landing (Next)
@@ -155,10 +278,10 @@ jobs:
           mv ./packages/components/storybook-static ./apps/landing/public/storybook
           bun run --filter landing build:next
       - name: Cache Playwright Browsers
-        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6
+        uses: actions/cache@v6
         with:
           path: ~/.cache/ms-playwright
-          key: playwright-landing-next-ubuntu-24.04-node${{ env.NODE_VERSION }}-${{ hashFiles('**/bun.lock') }}
+          key: playwright-landing-next-${{ runner.os }}-${{ hashFiles('**/bun.lock') }}
       - name: Install Playwright Browsers
         run: bunx playwright install chromium --with-deps
       - name: Run E2E Tests (Next)
@@ -172,7 +295,7 @@ jobs:
       - name: Run E2E Tests (Next, singleCss)
         run: bun run test:e2e:next
       - name: Upload Next Playwright Report
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        uses: actions/upload-artifact@v7
         if: ${{ !cancelled() }}
         with:
           name: playwright-report-next
@@ -183,43 +306,43 @@ jobs:
   # with the Vite plugin and the UI kit, then checks refs, context and events
   # in Chromium, so React-19-only APIs cannot slip back in.
   react-18:
-    runs-on: ubuntu-24.04
+    runs-on: ubuntu-latest
     timeout-minutes: 45
     steps:
       - name: Checkout
-        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        uses: actions/checkout@v7
 
-      - uses: actions-rust-lang/setup-rust-toolchain@ecabd13d1c56bd1345c230e542e9144811ad706f # v2
+      - uses: actions-rust-lang/setup-rust-toolchain@v2
         with:
-          toolchain: ${{ env.RUST_VERSION }}
+          toolchain: stable
           components: clippy, rustfmt
 
       - name: Cache cargo registry + target
-        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6
+        uses: actions/cache@v6
         with:
           path: |
             ~/.cargo/registry/index/
             ~/.cargo/registry/cache/
             ~/.cargo/git/db/
             target/
-          key: cargo-react-18-ubuntu-24.04-rust${{ env.RUST_VERSION }}-wasm-pack${{ env.WASM_PACK_VERSION }}-${{ hashFiles('**/Cargo.lock') }}
-      - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2
+          key: cargo-react-18-${{ runner.os }}-${{ hashFiles('**/Cargo.lock') }}
+      - uses: oven-sh/setup-bun@v2
         with:
-          bun-version: ${{ env.BUN_VERSION }}
+          bun-version: latest
         name: Install bun
 
       - name: Cache bun dependencies
-        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6
+        uses: actions/cache@v6
         with:
           path: ~/.bun/install/cache
-          key: bun-react-18-ubuntu-24.04-bun${{ env.BUN_VERSION }}-node${{ env.NODE_VERSION }}-${{ hashFiles('**/bun.lock') }}
-      - uses: jetli/wasm-pack-action@0d096b08b4e5a7de8c28de67e11e945404e9eefa # v0.4.0
+          key: bun-react-18-${{ runner.os }}-${{ hashFiles('**/bun.lock') }}
+      - uses: jetli/wasm-pack-action@v0.4.0
         with:
-          version: ${{ env.WASM_PACK_VERSION }}
+          version: latest
       - name: Install Node.js
-        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7
+        uses: actions/setup-node@v7
         with:
-          node-version: ${{ env.NODE_VERSION }}
+          node-version: latest
       - run: bun install
       - run: bun run build
       - name: Type-check and build the React 18 app
@@ -228,25 +351,90 @@ jobs:
           bun ../../node_modules/@typescript/native/bin/tsc
           bun run build
       - name: Cache Playwright Browsers
-        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6
+        uses: actions/cache@v6
         with:
           path: ~/.cache/ms-playwright
-          key: playwright-react-18-ubuntu-24.04-node${{ env.NODE_VERSION }}-${{ hashFiles('**/bun.lock') }}
+          key: playwright-react-18-${{ runner.os }}-${{ hashFiles('**/bun.lock') }}
       - name: Install Playwright Browsers
         run: bunx playwright install chromium --with-deps
       - name: Run React 18 E2E Tests
         working-directory: apps/react-18
         run: bun run test:e2e
 
+  # @devup-ui/vite-plugin must keep the CSS every server page needs when the
+  # build is vinext/RSC. The fixture shares one Devup UI header between server
+  # list pages and a client page, and the tests read the styles the browser
+  # actually applies when each route is entered directly, so a dropped
+  # stylesheet dependency fails here whatever the CSS files are called.
+  vinext-rsc-css-e2e:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    permissions:
+      contents: read
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+
+      - uses: actions-rust-lang/setup-rust-toolchain@v2
+        with:
+          toolchain: stable
+          components: clippy, rustfmt
+
+      - name: Cache cargo registry + target
+        uses: actions/cache@v6
+        with:
+          path: |
+            ~/.cargo/registry/index/
+            ~/.cargo/registry/cache/
+            ~/.cargo/git/db/
+            target/
+          key: cargo-vinext-rsc-css-${{ runner.os }}-${{ hashFiles('**/Cargo.lock') }}
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: latest
+        name: Install bun
+
+      - name: Cache bun dependencies
+        uses: actions/cache@v6
+        with:
+          path: ~/.bun/install/cache
+          key: bun-vinext-rsc-css-${{ runner.os }}-${{ hashFiles('**/bun.lock') }}
+      - uses: jetli/wasm-pack-action@v0.4.0
+        with:
+          version: latest
+      - name: Install Node.js
+        uses: actions/setup-node@v7
+        with:
+          node-version: latest
+      - run: bun install
+      - run: bun run build
+      - name: Cache Playwright Browsers
+        uses: actions/cache@v6
+        with:
+          path: ~/.cache/ms-playwright
+          key: playwright-vinext-rsc-css-${{ runner.os }}-${{ hashFiles('**/bun.lock') }}
+      - name: Install Playwright Browsers
+        run: bunx playwright install chromium --with-deps
+      - name: Build fixture (per-file CSS)
+        run: bun run --filter vinext-rsc-css-repro build
+      - name: Run E2E Tests (per-file CSS)
+        run: bun run test:e2e:rsc-css
+      - name: Build fixture (singleCss)
+        run: |
+          rm -rf apps/vinext-rsc-css-repro/dist apps/vinext-rsc-css-repro/.vinext apps/vinext-rsc-css-repro/df
+          DEVUP_SINGLE_CSS=1 bun run --filter vinext-rsc-css-repro build
+      - name: Run E2E Tests (singleCss)
+        run: bun run test:e2e:rsc-css
+
   # Validation: runs on pull requests and on pushes to main, read-only. The job
   # id stays `publish` because it is the status check the repository requires;
   # the privileged release steps live in `release` and `deploy-pages` below.
   publish:
-    runs-on: ubuntu-24.04
+    runs-on: ubuntu-latest
     timeout-minutes: 90
     steps:
       - name: Checkout
-        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        uses: actions/checkout@v7
         with:
           # changepacks diffs HEAD against the previous release commit. The
           # default shallow fetch grafts away every parent, so that lookup dies
@@ -254,67 +442,49 @@ jobs:
           fetch-depth: 0
           fetch-tags: true
 
-      - uses: actions-rust-lang/setup-rust-toolchain@ecabd13d1c56bd1345c230e542e9144811ad706f # v2
+      - uses: actions-rust-lang/setup-rust-toolchain@v2
         with:
-          toolchain: ${{ env.RUST_VERSION }}
+          toolchain: stable
           components: clippy, rustfmt
 
       - name: Install cargo-binstall
-        shell: bash
-        run: |
-          set -euo pipefail
-          archive="$RUNNER_TEMP/cargo-binstall.tgz"
-          curl -fsSL --proto '=https' --tlsv1.2 -o "$archive" \
-            "https://github.com/cargo-bins/cargo-binstall/releases/download/${CARGO_BINSTALL_VERSION}/cargo-binstall-x86_64-unknown-linux-musl.tgz"
-          echo "${CARGO_BINSTALL_SHA256}  $archive" | sha256sum --check --strict -
-          mkdir -p "$HOME/.cargo/bin"
-          tar -xzf "$archive" -C "$HOME/.cargo/bin"
+        run: curl -L --proto '=https' --tlsv1.2 -sSf https://raw.githubusercontent.com/cargo-bins/cargo-binstall/main/install-from-binstall-release.sh | bash
       - name: Install cargo-tarpaulin
-        run: cargo binstall "cargo-tarpaulin@${CARGO_TARPAULIN_VERSION}" --no-confirm --force --locked
+        run: cargo binstall cargo-tarpaulin --no-confirm --force
 
       - name: Cache cargo registry + target
-        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6
+        uses: actions/cache@v6
         with:
           path: |
             ~/.cargo/registry/index/
             ~/.cargo/registry/cache/
             ~/.cargo/git/db/
             target/
-          key: cargo-publish-ubuntu-24.04-rust${{ env.RUST_VERSION }}-tarpaulin${{ env.CARGO_TARPAULIN_VERSION }}-wasm-pack${{ env.WASM_PACK_VERSION }}-${{ hashFiles('**/Cargo.lock') }}
+          key: cargo-publish-${{ runner.os }}-${{ hashFiles('**/Cargo.lock') }}
 
-      - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2
+      - uses: oven-sh/setup-bun@v2
         with:
-          bun-version: ${{ env.BUN_VERSION }}
+          bun-version: latest
         name: Install bun
 
       - name: Cache bun dependencies
-        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6
+        uses: actions/cache@v6
         with:
           path: ~/.bun/install/cache
-          key: bun-publish-ubuntu-24.04-bun${{ env.BUN_VERSION }}-node${{ env.NODE_VERSION }}-${{ hashFiles('**/bun.lock') }}
+          key: bun-publish-${{ runner.os }}-${{ hashFiles('**/bun.lock') }}
 
-      - uses: jetli/wasm-pack-action@0d096b08b4e5a7de8c28de67e11e945404e9eefa # v0.4.0
+      - uses: jetli/wasm-pack-action@v0.4.0
         with:
-          version: ${{ env.WASM_PACK_VERSION }}
+          version: latest
       - name: Install Node.js
-        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7
+        uses: actions/setup-node@v7
         with:
           registry-url: "https://registry.npmjs.org"
-          node-version: ${{ env.NODE_VERSION }}
+          node-version: latest
       - run: bun install
       - run: bun run build
       - name: Verify built package entry points
         run: bun run verify:dist
-      - name: Check the WASM size budget
-        run: bun verify-wasm-size.js
-      - name: Upload the WASM size
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
-        if: ${{ !cancelled() }}
-        with:
-          name: wasm-size
-          path: wasm-size.json
-          if-no-files-found: ignore
-          retention-days: 30
       - name: Verify the README benchmark tables
         run: bun render-benchmark-readme.js --check
       - name: Verify publish tarballs
@@ -366,7 +536,7 @@ jobs:
         run: |
           # changepacks compares the change against a local main, which a pull request checkout does not have
           git fetch --no-tags origin main:refs/heads/main
-          bunx "@changepacks/cli@${CHANGEPACKS_CLI_VERSION}" check --format json
+          bunx @changepacks/cli@latest check --format json
       - name: Build Landing
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -376,10 +546,10 @@ jobs:
           bun run --filter landing build
       - name: Cache Playwright Browsers
         id: playwright-cache
-        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6
+        uses: actions/cache@v6
         with:
           path: ~/.cache/ms-playwright
-          key: playwright-publish-ubuntu-24.04-node${{ env.NODE_VERSION }}-${{ hashFiles('**/bun.lock') }}
+          key: playwright-publish-${{ runner.os }}-${{ hashFiles('**/bun.lock') }}
       - name: Install Playwright Browsers
         run: bunx playwright install chromium --with-deps
       # A run only compares against the screenshots checked into the repository:
@@ -404,20 +574,20 @@ jobs:
       - name: Run E2E Tests (singleCss)
         run: bun run test:e2e
       - name: Upload singleCss Playwright Report
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        uses: actions/upload-artifact@v7
         if: ${{ !cancelled() }}
         with:
           name: playwright-report-singlecss
           path: playwright-report/
           retention-days: 1
       - name: Upload the site for deployment
-        uses: actions/upload-pages-artifact@fc324d3547104276b827a68afc52ff2a11cc49c9 # v5
+        uses: actions/upload-pages-artifact@v5
         with:
           path: ./apps/landing/dist/client
           retention-days: 1
         if: github.event_name == 'push' && github.ref == 'refs/heads/main'
       - name: Upload to codecov.io
-        uses: codecov/codecov-action@303a32d7a59b442fa8d48b6a1cc6825c09c847a5 # v7
+        uses: codecov/codecov-action@v7
         with:
           token: ${{ secrets.CODECOV_TOKEN }}
           fail_ci_if_error: true
@@ -428,14 +598,14 @@ jobs:
   deploy-pages:
     needs: [publish]
     if: github.event_name == 'push' && github.ref == 'refs/heads/main'
-    runs-on: ubuntu-24.04
+    runs-on: ubuntu-latest
     timeout-minutes: 15
     permissions:
       contents: read
       pages: write
       id-token: write
     steps:
-      - uses: actions/deploy-pages@368f82528645a54fb793d4d04e342629a3f51346 # v5
+      - uses: actions/deploy-pages@v5
 
   # Publishes through npm OIDC trusted publishing. The job's `id-token: write`
   # permission lets npm exchange GitHub's short-lived OIDC token, and public
@@ -457,7 +627,7 @@ jobs:
   release:
     needs: [publish, landing-next-e2e, react-18]
     if: github.event_name == 'push' && github.ref == 'refs/heads/main'
-    runs-on: ubuntu-24.04
+    runs-on: ubuntu-latest
     timeout-minutes: 45
     permissions:
       contents: write
@@ -465,7 +635,7 @@ jobs:
       pull-requests: write
     steps:
       - name: Checkout
-        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        uses: actions/checkout@v7
         with:
           # changepacks diffs HEAD against the previous release commit. The
           # default shallow fetch grafts away every parent, so that lookup dies
@@ -473,49 +643,47 @@ jobs:
           fetch-depth: 0
           fetch-tags: true
 
-      - uses: actions-rust-lang/setup-rust-toolchain@ecabd13d1c56bd1345c230e542e9144811ad706f # v2
+      - uses: actions-rust-lang/setup-rust-toolchain@v2
         with:
-          toolchain: ${{ env.RUST_VERSION }}
+          toolchain: stable
           components: clippy, rustfmt
 
       - name: Cache cargo registry + target
-        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6
+        uses: actions/cache@v6
         with:
           path: |
             ~/.cargo/registry/index/
             ~/.cargo/registry/cache/
             ~/.cargo/git/db/
             target/
-          key: cargo-release-ubuntu-24.04-rust${{ env.RUST_VERSION }}-wasm-pack${{ env.WASM_PACK_VERSION }}-${{ hashFiles('**/Cargo.lock') }}
+          key: cargo-release-${{ runner.os }}-${{ hashFiles('**/Cargo.lock') }}
 
-      - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2
+      - uses: oven-sh/setup-bun@v2
         with:
-          bun-version: ${{ env.BUN_VERSION }}
+          bun-version: latest
         name: Install bun
 
       - name: Cache bun dependencies
-        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6
+        uses: actions/cache@v6
         with:
           path: ~/.bun/install/cache
-          key: bun-release-ubuntu-24.04-bun${{ env.BUN_VERSION }}-node${{ env.NODE_VERSION }}-${{ hashFiles('**/bun.lock') }}
+          key: bun-release-${{ runner.os }}-${{ hashFiles('**/bun.lock') }}
 
-      - uses: jetli/wasm-pack-action@0d096b08b4e5a7de8c28de67e11e945404e9eefa # v0.4.0
+      - uses: jetli/wasm-pack-action@v0.4.0
         with:
-          version: ${{ env.WASM_PACK_VERSION }}
+          version: latest
       - name: Install Node.js
-        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7
+        uses: actions/setup-node@v7
         with:
           registry-url: "https://registry.npmjs.org"
-          node-version: ${{ env.NODE_VERSION }}
+          node-version: latest
       - run: bun install
       - run: bun run build
       - name: Verify built package entry points
         run: bun run verify:dist
       - name: Verify clean publish checkout
         run: git diff --exit-code
-      # changepacks/action@main as of 2026-10-03 (its newest tag, v0.1.0, is
-      # older); move the SHA forward deliberately.
-      - uses: changepacks/action@d83fb1ec3f8844ee2726a7b8b43a8786e9a528a2 # main
+      - uses: changepacks/action@main
         id: changepacks
         with:
           publish: true

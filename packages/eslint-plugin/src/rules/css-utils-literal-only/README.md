@@ -4,7 +4,7 @@ Enforce that CSS utility functions only use values known at build time in devup-
 
 ## Rule Details
 
-This rule ensures that CSS utility functions (`css`, `globalCss`, `keyframes`, `createGlobalStyle`) from devup-ui, and the StyleX functions devup-ui compiles (`create`, `keyframes`, `defineVars`, `defineConsts`, `createTheme`, `createThemeContract`, `positionTry`, `viewTransitionClass`), only receive values the build knows. They have no element to set a CSS variable on, so a value known only at runtime is a build error.
+This rule ensures that CSS utility functions (`css`, `globalCss`, `keyframes`, `createGlobalStyle`) from devup-ui, and the StyleX functions devup-ui compiles (`create`, `keyframes`, `defineVars`, `defineConsts`, `createTheme`, `createThemeContract`, `positionTry`, `viewTransitionClass`), only receive values the build knows. They have no element to set a CSS variable on, so a value known only at runtime is a [build error](https://devup-ui.com/docs/build-errors).
 
 It checks the values of every rule object they take, in any argument, and the interpolations of CSS text, written as a template argument or a tagged template (`` css`color: ${color};` ``). A part `css()` composes as a class (`css(base, { m: 1 })`), and a condition choosing between parts, are read at runtime and not checked. `styled()` sets a CSS variable on the element it renders, so its values are not checked either.
 
@@ -166,3 +166,22 @@ The rule will not trigger for:
 ## Why This Rule Exists
 
 CSS utilities in devup-ui compile to static classes at build time, so every value they read must be known then. The rule catches a value the build cannot know before the build does, at the line that reads it.
+
+
+## Libraries the build reads as Devup UI
+
+The rule checks the same calls through the import aliases the build compiles by default: `css`, `keyframes` and `createGlobalStyle` from `@emotion/react` and `styled-components`, `style` and `globalStyle` from `@vanilla-extract/css` (outside stylesheets), and the `styles` of Emotion's `<Global>`. `styled()` is not checked, as it sets a CSS variable on the element.
+
+A vanilla-extract stylesheet (`.css.ts`, `.css.js`) is run as it is: any computation is fine, but a global that does not exist where the build evaluates it (`window`, `document`, `process`, `setTimeout`, `fetch`, `URL`, ...) fails the build, and the rule reports each read of one, unless a `typeof` guards it.
+
+```ts
+// styles.css.ts
+import { style } from '@vanilla-extract/css'
+
+// ? `window` does not exist where the build evaluates the stylesheet
+export const root = style({ color: window.name })
+
+// ? a `typeof` guard, and any computation over what exists
+export const ready = typeof window === 'undefined'
+export const wide = style({ width: [1, 2].map((n) => n * 4)[1] })
+```

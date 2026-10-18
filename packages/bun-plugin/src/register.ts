@@ -1,2 +1,2 @@
 export type { DevupUIBunPluginOptions } from './plugin'
-export { register } from './plugin'
+export { DevupUI, register } from './plugin'

@@ -3,26 +3,36 @@ import { mkdir, writeFile } from 'node:fs/promises'
 import { dirname, join, relative, resolve } from 'node:path'
 
 import {
+  beginBuild,
+  collectNumberedFiles,
   createCompatTypes,
   createModuleResolver,
+  createSharedSlotReservation,
   createThemeInterfaceArgs,
   type CustomShorthands,
   loadDevupConfig,
   mergeImportAliases,
+  seedFileNumbers,
+  tailwindCssFiles,
+  withTailwindCss,
 } from '@devup-ui/plugin-utils'
 import {
   codeExtract,
   getCss,
   getThemeInterface,
-  hasDevupUI,
   registerShorthands,
   registerTheme,
+  reserveClassSlots,
+  resetBuildState,
+  seedFileMap,
   setDebug,
   setModuleResolver,
+  setPrefix,
 } from '@devup-ui/wasm'
-import { plugin } from 'bun'
+import { type BunPlugin, plugin, type PluginBuilder } from 'bun'
 
 import { cssDirName, cssNamespace, resolveCssId } from './css-id'
+import { createTailwindWatcher } from './tailwind-watch'
 
 const libPackage = '@devup-ui/react'
 const devupFile = 'devup.json'
@@ -30,16 +40,32 @@ const distDir = 'df'
 const cssDir = resolve(distDir, cssDirName)
 const singleCss = true
 const importAliases = mergeImportAliases()
+// The packages whose imports the extractor compiles: Devup UI, the packages it
+// takes the place of, and StyleX
+const compiledPackages = [
+  libPackage,
+  '@stylexjs/stylex',
+  ...Object.keys(importAliases),
+]
 
 export interface DevupUIBunPluginOptions {
   shorthands?: CustomShorthands
+  /**
+   * Readable class names. Defaults to `true` under the Bun runtime (tests) and
+   * `false` in `Bun.build`.
+   */
+  debug?: boolean
 }
 
-async function writeDataFiles() {
+type SourceLoader = 'tsx' | 'ts' | 'jsx' | 'js'
+
+async function writeDataFiles(): Promise<string[]> {
   let theme = {}
+  let tailwindFiles: string[] = []
   try {
     const config = await loadDevupConfig(devupFile)
-    theme = config.theme ?? {}
+    theme = withTailwindCss(config.theme ?? {}, config)
+    tailwindFiles = tailwindCssFiles(config)
   } catch {
     // Error reading devup.json, use empty theme
   }
@@ -56,10 +82,14 @@ async function writeDataFiles() {
     await mkdir(cssDir, { recursive: true })
   }
   await writeFile(join(cssDir, 'devup-ui.css'), getCss(null, false), 'utf-8')
+  return tailwindFiles
 }
+
+const watchTailwindCss = createTailwindWatcher(writeDataFiles)
 
 async function initialize({ shorthands }: DevupUIBunPluginOptions = {}) {
   registerShorthands(shorthands ?? {})
+  setPrefix(null)
   setModuleResolver(createModuleResolver())
   if (!existsSync(distDir)) await mkdir(distDir, { recursive: true })
   await writeFile(join(distDir, '.gitignore'), '*', 'utf-8')
@@ -68,19 +98,34 @@ async function initialize({ shorthands }: DevupUIBunPluginOptions = {}) {
     createCompatTypes(importAliases),
     'utf-8',
   )
-  await writeDataFiles()
+  watchTailwindCss(await writeDataFiles())
 }
 
-// Devup UI is a preprocessor: the stylesheet is a build artifact consumed by a
-// bundler, and Bun's runtime has no CSS loader (`onLoad` only accepts the
-// script/data loaders). The injected import exists so bundlers pick the
-// stylesheet up, so under the Bun runtime it resolves to an empty module.
-function loadCssModule() {
-  return { contents: '', loader: 'js' as const }
+const scanners = new Map<SourceLoader, Bun.Transpiler>()
+
+/** Whether `contents` imports a package the extractor compiles */
+function importsCompiledPackage(contents: string, loader: SourceLoader) {
+  let scanner = scanners.get(loader)
+  if (!scanner) {
+    scanner = new Bun.Transpiler({ loader })
+    scanners.set(loader, scanner)
+  }
+  try {
+    return scanner
+      .scanImports(contents)
+      .some(({ path }) =>
+        compiledPackages.some(
+          (name) => path === name || path.startsWith(`${name}/`),
+        ),
+      )
+  } catch {
+    // Bun reports the syntax error when it loads the untouched source
+    return false
+  }
 }
 
-async function loadSourceFile(filePath: string) {
-  const loader: 'tsx' | 'ts' | 'jsx' | 'js' = filePath.endsWith('.tsx')
+async function loadSourceFile(filePath: string, bundling: boolean) {
+  const loader: SourceLoader = filePath.endsWith('.tsx')
     ? 'tsx'
     : filePath.endsWith('.ts')
       ? 'ts'
@@ -89,7 +134,7 @@ async function loadSourceFile(filePath: string) {
         : 'js'
   const contents = await Bun.file(filePath).text()
 
-  if (hasDevupUI(filePath, contents, libPackage)) {
+  if (importsCompiledPackage(contents, loader)) {
     const code = codeExtract(
       filePath,
       contents,
@@ -100,29 +145,80 @@ async function loadSourceFile(filePath: string) {
       false,
       importAliases,
     )
-    // singleCss stores every extracted style in the base sheet. Finish the
-    // write before returning the injected import; synchronous writes also keep
+    // Under the runtime the stylesheet is read from disk. singleCss stores
+    // every extracted style in the base sheet; synchronous writes keep
     // concurrent source loads from overwriting a newer sheet with an older one.
-    writeFileSync(join(cssDir, 'devup-ui.css'), getCss(null, false), 'utf-8')
+    if (!bundling)
+      writeFileSync(join(cssDir, 'devup-ui.css'), getCss(null, false), 'utf-8')
     return { contents: code.code, loader }
   }
   return { contents, loader }
 }
 
-// Registers the Bun plugin. Returns the promise produced by `plugin()` (its
-// `setup` is async), so callers MUST `await` it. Bun's preload mechanism waits
-// for an awaited module evaluation to settle; awaiting this guarantees the
-// `onLoad` hook is installed before any source file is loaded. Without the
-// await, preload-driven `bun test` users race the async setup and load sources
-// against the @devup-ui/react runtime stubs (throwing "Cannot run on the
-// runtime").
-function register(options: DevupUIBunPluginOptions = {}) {
-  return plugin({
+/**
+ * The Devup UI plugin, for `Bun.build` (`plugins: [DevupUI()]`) as well as the
+ * Bun runtime ({@link register}).
+ */
+function DevupUI(options: DevupUIBunPluginOptions = {}) {
+  return {
     name: 'devup-ui',
 
-    async setup(build) {
+    async setup(build: PluginBuilder) {
+      // `Bun.build` hands its config to plugins; the runtime has none
+      const bundling = build.config !== undefined
+      // A build starts from its own options, not from what an earlier build in
+      // this process left in the engine
+      const endBuild = beginBuild({ resetBuildState })
+      build.onEnd?.(endBuild)
       await initialize(options)
-      setDebug(true)
+      const debug = options.debug ?? !bundling
+      setDebug(debug)
+      const slots = createSharedSlotReservation({ reserveClassSlots })
+      let reservationPending = bundling
+      const reserveFiles = () => {
+        slots.invalidate()
+        slots.reserve(
+          {
+            roots: [resolve('src'), resolve('app')],
+            entries: bundling
+              ? build.config.entrypoints.map((entry) => ({
+                  request: resolve(entry),
+                  context: process.cwd(),
+                }))
+              : [],
+            cwd: process.cwd(),
+            package: libPackage,
+            importAliases,
+            toId: (path) => path,
+          },
+          {
+            singleCss,
+            importMainCssInCode: true,
+            importMainCssInCss: false,
+            cssDir: ({ physicalPath }) =>
+              relative(dirname(physicalPath), cssDir).replaceAll('\\', '/'),
+          },
+        )
+      }
+      if (bundling)
+        build.onStart(() => {
+          reservationPending = true
+        })
+      else if (!debug) reserveFiles()
+      else {
+        try {
+          seedFileNumbers(
+            { seedFileMap },
+            collectNumberedFiles({
+              roots: [resolve('src')],
+              needles: compiledPackages,
+              toId: (path) => path,
+            }),
+          )
+        } catch (error) {
+          if (!(error instanceof Error)) throw error
+        }
+      }
 
       // Resolve devup-ui CSS files onto a path-free virtual id, so nothing
       // derived from this checkout's cwd can be baked into Bun's shared,
@@ -132,9 +228,17 @@ function register(options: DevupUIBunPluginOptions = {}) {
         ({ path, importer }) => resolveCssId(path, importer, distDir),
       )
 
-      // Serve the virtual stylesheet resolved above
-      build.onLoad({ filter: /.*/, namespace: cssNamespace }, () =>
-        loadCssModule(),
+      // The bundler takes the stylesheet once every other module is loaded,
+      // so it holds the styles of all of them. The Bun runtime has no CSS
+      // loader (`onLoad` only accepts the script/data loaders), so there the
+      // injected import resolves to an empty module.
+      build.onLoad(
+        { filter: /.*/, namespace: cssNamespace },
+        async ({ defer }) => {
+          if (!bundling) return { contents: '', loader: 'js' }
+          await defer()
+          return { contents: getCss(null, false), loader: 'css' }
+        },
       )
 
       // Load source files from packages directory (file namespace)
@@ -142,10 +246,27 @@ function register(options: DevupUIBunPluginOptions = {}) {
         {
           filter: /\.(?:tsx?|jsx|mjs)$|[\\/]@devup-ui[\\/].*\.js$/,
         },
-        ({ path }) => loadSourceFile(path),
+        ({ path }) => {
+          if (reservationPending) {
+            reserveFiles()
+            reservationPending = false
+          }
+          return loadSourceFile(path, bundling)
+        },
       )
     },
-  })
+  } satisfies BunPlugin
 }
 
-export { plugin, register }
+// Registers the Bun runtime plugin. Returns the promise produced by `plugin()`
+// (its `setup` is async), so callers MUST `await` it. Bun's preload mechanism
+// waits for an awaited module evaluation to settle; awaiting this guarantees
+// the `onLoad` hook is installed before any source file is loaded. Without the
+// await, preload-driven `bun test` users race the async setup and load sources
+// against the @devup-ui/react runtime stubs (throwing "Cannot run on the
+// runtime").
+function register(options: DevupUIBunPluginOptions = {}) {
+  return plugin(DevupUI(options))
+}
+
+export { DevupUI, plugin, register }

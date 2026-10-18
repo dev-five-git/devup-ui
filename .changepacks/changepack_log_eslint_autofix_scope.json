@@ -1,0 +1,8 @@
+{
+  "changes": {
+    "packages/eslint-plugin/package.json": "Patch",
+    "bindings/devup-ui-wasm/package.json": "Patch"
+  },
+  "note": "style-order-range only checks styleOrder where the build reads it: a prop of a Devup UI component and a top-level key of a style object passed to css/globalCss/keyframes. A styleOrder key in nested data, in a prop value such as an element passed as a prop, or in a call of a function sharing a name with an Object.prototype member is no longer reported. The array, typography and media rules already skip non-style data, and css-utils-literal-only accepts a css()/keyframes() result held in a const inside a function. No new build errors.",
+  "date": "2026-10-01T00:00:00.000Z"
+}

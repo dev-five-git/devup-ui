@@ -47,7 +47,7 @@ export const preferMediaShorthand = createRule({
     },
   },
   create(context) {
-    const importStorage = new ImportStorage()
+    const importStorage = new ImportStorage(context)
 
     function checkMediaRecord(
       owner: TSESTree.Property | TSESTree.JSXAttribute,

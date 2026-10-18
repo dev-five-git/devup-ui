@@ -1,5 +1,8 @@
 pub mod at_rule;
+#[cfg(test)]
+mod atom_counter_tests;
 pub mod atom_hoist;
+pub mod atom_name;
 pub mod class_map;
 mod constant;
 pub mod debug;
@@ -11,7 +14,9 @@ pub mod optimize_multi_css_value;
 pub mod optimize_value;
 pub mod rm_css_comment;
 mod selector_separator;
+pub mod slot_reservation;
 pub mod style_selector;
+pub mod tailwind_definitions;
 pub mod theme_tokens;
 pub mod utils;
 
@@ -20,7 +25,7 @@ use std::collections::BTreeMap;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{LazyLock, RwLock};
 
-use crate::constant::{GLOBAL_ENUM_STYLE_PROPERTY, GLOBAL_STYLE_PROPERTY};
+use crate::constant::{FUNCTIONAL_PSEUDOS, GLOBAL_ENUM_STYLE_PROPERTY, GLOBAL_STYLE_PROPERTY};
 use crate::debug::is_debug;
 use crate::file_map::get_file_num_by_filename;
 use crate::num_to_nm_base::num_to_nm_base;
@@ -187,9 +192,9 @@ impl ExactSizeIterator for DisassembleProperty {}
 
 #[must_use]
 pub fn disassemble_property(property: &str) -> DisassembleProperty {
-    // Nested selector keys (`&:hover`, `:focus`, `.parent &`) are not properties;
-    // keep them verbatim so class names and case survive.
-    if property.starts_with(':') || property.contains('&') {
+    // Nested selector keys (`&:hover`, `:focus`, `.parent &`, `_hover`) are not
+    // properties; keep them verbatim so class names and case survive.
+    if property.starts_with([':', '_']) || property.contains('&') {
         return DisassembleProperty::Fallback(Some(property.to_string()));
     }
     if let Some(properties) = HAS_CUSTOM_SHORTHANDS
@@ -208,10 +213,9 @@ pub fn disassemble_property(property: &str) -> DisassembleProperty {
     GLOBAL_STYLE_PROPERTY.get(property).map_or_else(
         || {
             DisassembleProperty::Fallback(Some(
-                // Gate the three vendor-prefix `starts_with` scans behind a
-                // single first-byte check: only `W`/`M`/`m` can begin
-                // `Webkit`/`Moz`/`ms`, so every other property skips all three.
-                if matches!(property.as_bytes().first(), Some(b'W' | b'M' | b'm'))
+                // Gate vendor-prefix scans behind a single first-byte check:
+                // only `W`/`M`/`m`/`O` can begin `Webkit`/`Moz`/`ms`/`O`.
+                if matches!(property.as_bytes().first(), Some(b'W' | b'M' | b'm' | b'O'))
                     && ((property.starts_with("Webkit")
                         && property.len() > 6
                         && property.as_bytes()[6].is_ascii_uppercase())
@@ -220,7 +224,10 @@ pub fn disassemble_property(property: &str) -> DisassembleProperty {
                             && property.as_bytes()[3].is_ascii_uppercase())
                         || (property.starts_with("ms")
                             && property.len() > 2
-                            && property.as_bytes()[2].is_ascii_uppercase()))
+                            && property.as_bytes()[2].is_ascii_uppercase())
+                        || (property.starts_with('O')
+                            && property.len() > 1
+                            && property.as_bytes()[1].is_ascii_uppercase()))
                 {
                     // Build `-<kebab>` directly into ONE buffer instead of allocating
                     // a `to_kebab_case(property)` String and copying it into a second
@@ -228,8 +235,8 @@ pub fn disassemble_property(property: &str) -> DisassembleProperty {
                     // (ASCII-uppercase char → `-` before it when not first, then its
                     // lowercase; other chars copied verbatim) after the leading `-`.
                     // The `i != 0` guard matches `to_kebab_case`, so the vendor
-                    // prefix's uppercase first char (`W`/`M`/`m`→lowercase) gets no
-                    // extra `-`. Output byte-identical, one fewer allocation.
+                    // prefix's first char (`W`/`M`/`m`/`O`→lowercase) gets no
+                    // extra `-`, keeping the conversion in one allocation.
                     let mut s = String::with_capacity(property.len() + 5);
                     s.push('-');
                     for (i, c) in property.chars().enumerate() {
@@ -287,12 +294,49 @@ pub fn get_custom_shorthand_names() -> Vec<String> {
     )
 }
 
+/// `selector` with `params` on the last pseudo-class or pseudo-element that
+/// takes them and has none yet, wherever nesting put it: a group form reads
+/// `:is(...):nth-child(2n) &`, and a parent's selector may follow it
+fn with_params(selector: &str, params: &str) -> String {
+    let at = params_position(selector).unwrap_or(selector.len());
+    format!("{}({params}){}", &selector[..at], &selector[at..])
+}
+
+fn params_position(selector: &str) -> Option<usize> {
+    let bytes = selector.as_bytes();
+    let mut depth = 0usize;
+    let mut found = None;
+    let mut index = 0;
+    while let Some(&byte) = bytes.get(index) {
+        match byte {
+            b'(' | b'[' => depth += 1,
+            b')' | b']' => depth = depth.saturating_sub(1),
+            b':' if depth == 0 => {
+                let start = index + 1 + usize::from(bytes.get(index + 1) == Some(&b':'));
+                let end = selector[start..]
+                    .find(|c: char| !(c.is_ascii_alphanumeric() || c == '-'))
+                    .map_or(selector.len(), |length| start + length);
+                if FUNCTIONAL_PSEUDOS.contains(&selector[start..end])
+                    && bytes.get(end) != Some(&b'(')
+                {
+                    found = Some(end);
+                }
+                index = end;
+                continue;
+            }
+            _ => {}
+        }
+        index += 1;
+    }
+    found
+}
+
 #[must_use]
 pub fn add_selector_params(selector: StyleSelector, params: &str) -> StyleSelector {
     match selector {
-        StyleSelector::Selector(value) => StyleSelector::Selector(format!("{value}({params})")),
+        StyleSelector::Selector(value) => StyleSelector::Selector(with_params(&value, params)),
         StyleSelector::Global(value, file) => {
-            StyleSelector::Global(format!("{value}({params})"), file)
+            StyleSelector::Global(with_params(&value, params), file)
         }
         StyleSelector::At {
             kind,
@@ -303,7 +347,7 @@ pub fn add_selector_params(selector: StyleSelector, params: &str) -> StyleSelect
         } => StyleSelector::At {
             kind,
             query,
-            selector: selector.map(|s| format!("{s}({params})")),
+            selector: selector.map(|s| with_params(&s, params)),
             outer,
             file,
         },
@@ -377,6 +421,7 @@ fn class_num_for_key(filename_key: &str, build_key: impl FnOnce(&mut String)) ->
                 } else {
                     let len = file_entry.len();
                     file_entry.insert(key.clone(), len);
+                    slot_reservation::record_insert();
                     num_to_nm_base(len)
                 }
             } else {
@@ -388,6 +433,7 @@ fn class_num_for_key(filename_key: &str, build_key: impl FnOnce(&mut String)) ->
                 let mut inner = std::collections::HashMap::with_capacity(1);
                 inner.insert(key.clone(), 0);
                 map.insert(filename_key.to_string(), inner);
+                slot_reservation::record_insert();
                 num_to_nm_base(0)
             }
         })
@@ -396,6 +442,17 @@ fn class_num_for_key(filename_key: &str, build_key: impl FnOnce(&mut String)) ->
 
 #[must_use]
 pub fn keyframes_to_keyframes_name(keyframes: &str, filename: Option<&str>) -> String {
+    if atom_hoist::is_atom_hoist() {
+        // Keyframes remain in their file chunk, even when declarations are hoisted.
+        let scope = filename.map_or_else(
+            || "g".to_string(),
+            |file| format!("l-{}", atom_name::hex(&file_map::canonical(file))),
+        );
+        return atom_name::counter_name(
+            &format!("k1-{scope}-{}", atom_name::hex(keyframes)),
+            filename,
+        );
+    }
     with_prefix(|prefix| {
         if is_debug() {
             let mut result = String::with_capacity(prefix.len() + 2 + keyframes.len());
@@ -505,6 +562,23 @@ pub fn sheet_to_classname(
     // `$primary`) borrow straight from `value` with zero allocation, and the
     // key/result builders below only ever read `&optimized` as `&str`.
     let optimized = value.map_or(Cow::Borrowed(""), optimize_value);
+    if atom_hoist::is_atom_hoist() {
+        let scope = atom_name::scope(filename);
+        let value = match value {
+            None => "n".to_string(),
+            Some(_) => format!("s-{}", atom_name::hex(&optimized)),
+        };
+        let identity = format!(
+            "a1-{scope}-{}-{level}-{value}-{}-{}",
+            atom_name::hex(property.trim()),
+            atom_name::hex(selector.unwrap_or_default()),
+            style_order.unwrap_or(255),
+        );
+        return atom_name::counter_name(
+            &identity,
+            filename.filter(|file| !atom_hoist::is_hoisted_bucket(file)),
+        );
+    }
     if is_debug() {
         let selector = selector.unwrap_or_default().trim();
         let encoded = if selector.is_empty() {
@@ -597,6 +671,14 @@ fn write_u8(s: &mut String, v: u8) {
 
 #[must_use]
 pub fn sheet_to_variable_name(property: &str, level: u8, selector: Option<&str>) -> String {
+    if atom_hoist::is_atom_hoist() {
+        let identity = format!(
+            "v1-{}-{level}-{}",
+            atom_name::hex(property.trim()),
+            atom_name::hex(selector.unwrap_or_default())
+        );
+        return format!("--{}", atom_name::counter_name(&identity, None));
+    }
     if is_debug() {
         let selector = selector.unwrap_or_default().trim();
         let encoded = if selector.is_empty() {
@@ -1199,6 +1281,25 @@ mod tests {
             add_selector_params(StyleSelector::Selector("hover:is".to_string()), "test"),
             StyleSelector::Selector("hover:is(test)".to_string())
         );
+        for (selector, expected) in [
+            (
+                ":is([role=group],[data-group]):nth-child &",
+                ":is([role=group],[data-group]):nth-child(2n) &",
+            ),
+            (
+                ":is([role=group],[data-group]):nth-child &:hover",
+                ":is([role=group],[data-group]):nth-child(2n) &:hover",
+            ),
+            ("&:not(.x):nth-child", "&:not(.x):nth-child(2n)"),
+            ("&[title=\":not\"]::part", "&[title=\":not\"]::part(2n)"),
+            ("&:hover", "&:hover(2n)"),
+        ] {
+            assert_eq!(
+                add_selector_params(StyleSelector::Selector(selector.to_string()), "2n"),
+                StyleSelector::Selector(expected.to_string()),
+                "{selector}"
+            );
+        }
         assert_eq!(
             add_selector_params(
                 StyleSelector::Global("&:is".to_string(), "file.ts".to_string()),
@@ -1340,6 +1441,28 @@ mod tests {
         let class3 =
             sheet_to_classname("background", 0, Some("red"), None, None, Some("other.tsx"));
         assert_ne!(class1, class3);
+    }
+
+    #[rstest]
+    #[case("OAnimationDuration", "-o-animation-duration")]
+    #[case("OTransitionDelay", "-o-transition-delay")]
+    #[case("OTransform", "-o-transform")]
+    #[case("Order", "order")]
+    #[case("ObjectFit", "object-fit")]
+    #[case("O", "o")]
+    #[case("order", "order")]
+    #[case("objectFit", "object-fit")]
+    #[case("WebkitAnimationDuration", "-webkit-animation-duration")]
+    #[case("MozTransitionDelay", "-moz-transition-delay")]
+    #[case("msTransform", "-ms-transform")]
+    #[serial]
+    fn disassemble_property_when_vendor_or_ordinary_name(
+        #[case] property: &str,
+        #[case] expected: &str,
+    ) {
+        let properties = disassemble_property(property).collect::<Vec<_>>();
+
+        assert_eq!(properties, [expected]);
     }
 
     #[test]

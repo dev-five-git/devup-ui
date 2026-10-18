@@ -62,6 +62,7 @@ describe('@devup-ui/wasm exports', () => {
       'getDefaultTheme',
       'getPrefix',
       'getThemeInterface',
+      'getUnreservedClassSlotCount',
       'hasDevupUI',
       'importCanonicalMap',
       'importClassMap',
@@ -71,6 +72,9 @@ describe('@devup-ui/wasm exports', () => {
       'isDebug',
       'registerShorthands',
       'registerTheme',
+      'reserveClassSlots',
+      'resetBuildState',
+      'seedFileMap',
       'setAtomHoist',
       'setDebug',
       'setModuleResolver',
@@ -182,6 +186,43 @@ describe('@devup-ui/wasm theme', () => {
 })
 
 describe('@devup-ui/wasm state', () => {
+  it('seeds deterministic file numbers when paths are unsorted and duplicated', () => {
+    wasm.resetBuildState()
+
+    wasm.seedFileMap(['src/c.tsx', 'src/b.tsx', 'src/a.tsx', 'src/b.tsx'])
+
+    expect(wasm.exportFileMap()).toBe(
+      '{"src/a.tsx":0,"src/b.tsx":1,"src/c.tsx":2}',
+    )
+  })
+
+  it('clears maps, styles and prefix when resetting a populated build', () => {
+    wasm.resetBuildState()
+    const emptyCss = wasm.getCss(null, false)
+    const emptySheet = wasm.exportSheet()
+    wasm.setDebug(false)
+    wasm.setPrefix('du-')
+    wasm.seedFileMap(['abi.tsx'])
+    wasm.importCanonicalMap({ 'child.tsx': 'abi.tsx' })
+    const output = extract(
+      `import { Box } from '${PACKAGE}'\nexport const a = <Box p={4} bg="red" />`,
+    )
+    expect(output.code).toMatch(/className="du-/)
+    expect(wasm.exportClassMap()).not.toBe('{}')
+    expect(wasm.exportFileMap()).toBe('{"abi.tsx":0}')
+    expect(wasm.exportCanonicalMap()).toBe('{"child.tsx":"abi.tsx"}')
+    expect(wasm.getCss(null, false)).toContain('background:red')
+
+    wasm.resetBuildState()
+
+    expect(wasm.exportClassMap()).toBe('{}')
+    expect(wasm.exportFileMap()).toBe('{}')
+    expect(wasm.exportCanonicalMap()).toBe('{}')
+    expect(wasm.exportSheet()).toBe(emptySheet)
+    expect(wasm.getCss(null, false)).toBe(emptyCss)
+    expect(wasm.getPrefix()).toBeUndefined()
+  })
+
   it('puts the process back as a test found it', () => {
     const before = saveState()
     wasm.setDebug(!before.debug)
@@ -211,5 +252,109 @@ describe('@devup-ui/wasm state', () => {
     restoreState(carried)
 
     expect(wasm.getCss(null, false)).toBe(carried.css)
+  })
+})
+
+describe('@devup-ui/wasm reservation', () => {
+  beforeEach(() => {
+    wasm.resetBuildState()
+    wasm.setDebug(false)
+  })
+
+  afterEach(() => {
+    // Map/sheet imports do not restore reservation bookkeeping. Leave it reset;
+    // restore the public state here too, independently of outer hook ordering.
+    wasm.resetBuildState()
+    restoreState(saved)
+  })
+
+  it('reserves class and file slots without publishing scratch styles', () => {
+    wasm.seedFileMap(['abi.tsx'])
+    extract(`import { Box } from '${PACKAGE}'\nexport const a = <Box p={4} />`)
+    const before = saveState()
+    const source = `import { Box } from '${PACKAGE}'\nexport const a = <Box color="red" gap={value} />`
+
+    wasm.reserveClassSlots(
+      [['reserved.tsx', source, 'df']],
+      PACKAGE,
+      true,
+      false,
+      false,
+      {},
+    )
+
+    expect(JSON.parse(wasm.exportSheet())).toEqual(before.sheet)
+    expect(wasm.getCss(null, false)).toBe(before.css)
+    expect(JSON.parse(wasm.exportClassMap())).not.toEqual(before.classMap)
+    expect(JSON.parse(wasm.exportFileMap())).toEqual({
+      'abi.tsx': 0,
+      'reserved.tsx': 1,
+    })
+    expect(wasm.getUnreservedClassSlotCount()).toBe(0)
+    const slots = wasm.exportClassMap()
+    const output = extract(source, 'reserved.tsx')
+    expect(output.code).toContain('className=')
+    expect(output.css).toContain('color:red')
+    expect(output.css).toContain('gap:var(--')
+    expect(wasm.exportClassMap()).toBe(slots)
+    expect(wasm.getUnreservedClassSlotCount()).toBe(0)
+  })
+
+  it('does not count live allocations before the first reservation', () => {
+    expect(wasm.getUnreservedClassSlotCount()).toBe(0)
+
+    extract(
+      `import { Box } from '${PACKAGE}'\nexport const a = <Box color="red" />`,
+    )
+    const output = extract(
+      `import { createVar } from '${PACKAGE}'\nexport const variable = createVar()`,
+      'legacy.css.ts',
+    )
+
+    expect(output.code).toContain('var(--')
+    expect(output.code).not.toContain('createVar(')
+    expect(wasm.exportClassMap()).not.toBe('{}')
+    expect(wasm.exportFileMap()).not.toBe('{}')
+    expect(wasm.getUnreservedClassSlotCount()).toBe(0)
+  })
+
+  it('counts new live class and file slots once across later reservations', () => {
+    const red = `import { Box } from '${PACKAGE}'\nexport const a = <Box color="red" />`
+    const blue = `import { Box } from '${PACKAGE}'\nexport const a = <Box color="blue" />`
+    wasm.reserveClassSlots(
+      [['reserved.tsx', red, 'df']],
+      PACKAGE,
+      true,
+      false,
+      false,
+      {},
+    )
+    extract(red, 'reserved.tsx')
+    expect(wasm.getUnreservedClassSlotCount()).toBe(0)
+
+    const first = extract(blue, 'reserved.tsx')
+
+    expect(wasm.getUnreservedClassSlotCount()).toBe(1)
+    expect(extract(blue, 'reserved.tsx').code).toBe(first.code)
+    expect(wasm.getUnreservedClassSlotCount()).toBe(1)
+    const raw = `import { createVar } from '${PACKAGE}'\nexport const variable = createVar()`
+    const variable = extract(raw, 'virtual.css.ts')
+    expect(variable.code).toContain('var(--')
+    expect(variable.code).not.toContain('createVar(')
+    expect(wasm.getUnreservedClassSlotCount()).toBe(2)
+    expect(extract(raw, 'virtual.css.ts').code).toBe(variable.code)
+    expect(wasm.getUnreservedClassSlotCount()).toBe(2)
+    wasm.reserveClassSlots(
+      [['watch.tsx', red, 'df']],
+      PACKAGE,
+      true,
+      false,
+      false,
+      {},
+    )
+    extract(red, 'watch.tsx')
+    expect(wasm.getUnreservedClassSlotCount()).toBe(2)
+    wasm.resetBuildState()
+    expect(wasm.getUnreservedClassSlotCount()).toBe(0)
   })
 })
