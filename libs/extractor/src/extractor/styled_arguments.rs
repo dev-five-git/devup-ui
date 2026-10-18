@@ -1,0 +1,170 @@
+//! Admission precedes one authored-order schedule shared by callbacks and rule arrays.
+
+use oxc_allocator::{CloneIn, FromIn, GetAllocator};
+use oxc_ast::{
+    ast::{Argument, CallExpression, Expression},
+    builder::AstBuilder,
+};
+use oxc_span::SPAN;
+
+use super::props;
+use crate::{
+    extractor::{
+        rule_array_evaluation, styled_record_evaluation::Evaluations,
+        styled_rule_arrays::distribute_conditions,
+    },
+    styled_reads::Reads,
+    utils::{StyleArguments, readable_code, reads_directly, style_arguments, uncomposable_error},
+};
+
+pub(super) struct Context<'s, 'a> {
+    pub scope: &'s mut Expression<'a>,
+    pub reads: &'s mut Reads,
+    pub refused: &'s [u32],
+}
+
+pub(super) struct Prepared<'a> {
+    pub classes: Vec<Expression<'a>>,
+    pub bindings: Vec<(String, Expression<'a>)>,
+    pub errors: Vec<(u32, String)>,
+}
+
+pub(super) fn prepare<'a>(
+    builder: &AstBuilder<'a>,
+    call: &mut CallExpression<'a>,
+    context: Context<'_, 'a>,
+) -> Prepared<'a> {
+    let Context {
+        scope,
+        reads,
+        refused,
+    } = context;
+    let arguments = &mut call.arguments;
+    let mut result = Prepared {
+        classes: Vec::new(),
+        bindings: Vec::new(),
+        errors: Vec::new(),
+    };
+    let mut evaluations = Evaluations::new(builder, readable_code(scope));
+    let mut plans = Vec::with_capacity(arguments.len());
+    for argument in &mut *arguments {
+        let plan = if let Some(rules) = argument.as_expression_mut() {
+            reads.read_in(rules);
+            match props::lower(&mut evaluations, rules) {
+                Ok(plan) => plan,
+                Err(error) => {
+                    result.errors.push(error);
+                    *rules = Expression::new_object_expression(
+                        SPAN,
+                        oxc_allocator::Vec::new_in(builder),
+                        builder,
+                    );
+                    None
+                }
+            }
+        } else {
+            None
+        };
+        plans.push(plan);
+    }
+    let mut distributed = arguments.clone_in_with_semantic_ids(builder.allocator());
+    for argument in &mut distributed {
+        if let Some(part) = argument.as_expression_mut() {
+            distribute_conditions(builder, part, refused);
+        }
+    }
+    let admitted = reads_directly(&distributed) || style_arguments(builder, &distributed).is_some();
+    let callbacks = plans.iter().any(Option::is_some);
+    let capture = callbacks
+        || arguments.iter().any(|argument| {
+            argument
+                .as_expression()
+                .is_some_and(rule_array_evaluation::composes_array_under_condition)
+        });
+    if admitted && capture {
+        let prepared = if callbacks {
+            let mut prepared = arguments.clone_in_with_semantic_ids(builder.allocator());
+            for (argument, plan) in prepared.iter_mut().zip(plans) {
+                if let Some(plan) = plan {
+                    evaluations.bindings.push((plan.name, plan.value));
+                } else {
+                    let value = match argument {
+                        Argument::SpreadElement(spread) => &mut spread.argument,
+                        argument => argument.to_expression_mut(),
+                    };
+                    let start = evaluations.bindings.len();
+                    match rule_array_evaluation::prepare(&mut evaluations, value, |_| false) {
+                        Some(value_read) => *value = value_read,
+                        None => evaluations.bindings.truncate(start),
+                    }
+                }
+            }
+            Some(prepared)
+        } else {
+            let elements = arguments.iter().map(|argument| {
+                let value = match argument {
+                    Argument::SpreadElement(spread) => &spread.argument,
+                    argument => argument.to_expression(),
+                };
+                value.clone_in_with_semantic_ids(builder.allocator()).into()
+            });
+            let source = Expression::new_array_expression(
+                SPAN,
+                oxc_allocator::Vec::from_iter_in(elements, builder),
+                builder,
+            );
+            match rule_array_evaluation::prepare(&mut evaluations, &source, |_| false) {
+                Some(Expression::ArrayExpression(array)) => Some(oxc_allocator::Vec::from_iter_in(
+                    array.elements.iter().filter_map(|element| {
+                        element.as_expression().map(|value| {
+                            Argument::from(value.clone_in_with_semantic_ids(builder.allocator()))
+                        })
+                    }),
+                    builder,
+                )),
+                _ => None,
+            }
+        };
+        if let Some(prepared) = prepared {
+            *arguments = prepared;
+            let names = evaluations.bindings.iter().map(|(name, _)| {
+                Expression::new_identifier(
+                    SPAN,
+                    oxc_ast::ast::Ident::from_in(name.as_str(), builder.allocator()),
+                    builder,
+                )
+                .into()
+            });
+            let mut reserved = oxc_allocator::Vec::from_iter_in(names, builder);
+            reserved.push(scope.clone_in(builder.allocator()).into());
+            *scope = Expression::new_array_expression(SPAN, reserved, builder);
+            result.bindings = evaluations.bindings;
+        }
+    }
+    for argument in &mut *arguments {
+        if let Some(part) = argument.as_expression_mut() {
+            distribute_conditions(builder, part, refused);
+        }
+    }
+    match style_arguments(builder, arguments) {
+        Some(StyleArguments { classes, rules }) => {
+            *arguments = oxc_allocator::Vec::from_array_in([Argument::from(rules)], builder);
+            result.classes = classes;
+        }
+        None if !reads_directly(arguments) => {
+            result
+                .errors
+                .push((call.span.start, uncomposable_error(arguments)));
+            *arguments = oxc_allocator::Vec::from_array_in(
+                [Argument::from(Expression::new_object_expression(
+                    SPAN,
+                    oxc_allocator::Vec::new_in(builder),
+                    builder,
+                ))],
+                builder,
+            );
+        }
+        None => {}
+    }
+    result
+}

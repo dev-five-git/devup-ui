@@ -30,11 +30,21 @@ impl Reads {
     pub fn read_in(&mut self, expression: &Expression<'_>) {
         match unwrap_syntax_only(expression) {
             Expression::ArrowFunctionExpression(arrow) => self.function(&arrow.params, |v| {
+                v.visit_formal_parameters(&arrow.params);
                 v.visit_arrow_function_body(arrow);
             }),
-            Expression::FunctionExpression(function) => self.function(&function.params, |v| {
-                v.visit_function_body_of(function);
-            }),
+            Expression::FunctionExpression(function) => {
+                let mut arguments = ArgumentsUse(false);
+                arguments.visit_formal_parameters(&function.params);
+                if let Some(body) = &function.body {
+                    arguments.visit_function_body(body);
+                }
+                self.whole |= arguments.0;
+                self.function(&function.params, |v| {
+                    v.visit_formal_parameters(&function.params);
+                    v.visit_function_body_of(function);
+                });
+            }
             Expression::ObjectExpression(object) => {
                 for property in &object.properties {
                     match property {
@@ -60,6 +70,7 @@ impl Reads {
 
     fn function(&mut self, params: &FormalParameters<'_>, body: impl FnOnce(&mut PropsUse<'_>)) {
         let Some(first) = params.items.first() else {
+            self.whole |= params.rest.is_some();
             return;
         };
         match &first.pattern {
@@ -84,6 +95,16 @@ impl Reads {
             _ => self.whole = true,
         }
     }
+}
+
+struct ArgumentsUse(bool);
+
+impl<'a> Visit<'a> for ArgumentsUse {
+    fn visit_identifier_reference(&mut self, it: &IdentifierReference<'a>) {
+        self.0 |= it.name == "arguments";
+    }
+
+    fn visit_function(&mut self, _: &Function<'a>, _: oxc_syntax::scope::ScopeFlags) {}
 }
 
 struct PropsUse<'r> {

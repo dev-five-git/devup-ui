@@ -21,6 +21,11 @@ use oxc_ast::ast::Expression;
 use oxc_ast::ast::{TemplateElement, TemplateLiteral};
 use oxc_ast::builder::AstBuilder;
 
+#[path = "implicit_props_theme.rs"]
+mod implicit_props_theme;
+
+pub(crate) use implicit_props_theme::reads as reads_implicit_props_theme;
+
 use crate::extract_style::{
     extract_dynamic_style::ExtractDynamicStyle, extract_static_style::ExtractStaticStyle,
     extract_style_value::ExtractStyleValue,
@@ -53,6 +58,13 @@ pub fn rm_last_semi_colon(code: &str) -> &str {
 /// style static; left alone the arrow would be called with the element's props,
 /// which carry no `theme`, and silently evaluate to `undefined`.
 pub(crate) fn theme_var_reference(expr: &Expression<'_>) -> Option<String> {
+    use oxc_ast_visit::Visit;
+    struct Defaults(bool);
+    impl<'a> Visit<'a> for Defaults {
+        fn visit_assignment_pattern(&mut self, _: &oxc_ast::ast::AssignmentPattern<'a>) {
+            self.0 = true;
+        }
+    }
     let (params, body) = match expr {
         Expression::ArrowFunctionExpression(arrow) if !arrow.r#async => {
             (&arrow.params, arrow.body.as_expression()?)
@@ -66,7 +78,20 @@ pub(crate) fn theme_var_reference(expr: &Expression<'_>) -> Option<String> {
     let [param] = params.items.as_slice() else {
         return None;
     };
-    let root = theme_root(&param.pattern)?;
+    let mut defaults = Defaults(false);
+    defaults.visit_binding_pattern(&param.pattern);
+    if params.rest.is_some() || param.initializer.is_some() || defaults.0 {
+        return None;
+    }
+    theme_leaf_reference(params, body)
+}
+
+/// Map a leaf without erasing its enclosing callback's parameter evaluation.
+pub(crate) fn theme_leaf_reference(
+    params: &oxc_ast::ast::FormalParameters<'_>,
+    body: &Expression<'_>,
+) -> Option<String> {
+    let root = theme_root(&params.items.first()?.pattern)?;
 
     let mut path: Vec<Cow<'_, str>> = Vec::new();
     let mut cursor = body;
@@ -144,12 +169,15 @@ pub(crate) fn reads_unmapped_theme(expr: &Expression<'_>) -> bool {
             }
         }
     }
+    if reads_implicit_props_theme(expr) {
+        return true;
+    }
     let params = match expr {
         Expression::ArrowFunctionExpression(arrow) => &arrow.params,
         Expression::FunctionExpression(function) => &function.params,
         _ => return false,
     };
-    let [param] = params.items.as_slice() else {
+    let Some(param) = params.items.first() else {
         return false;
     };
     let Some(root) = theme_root(&param.pattern) else {
@@ -159,6 +187,7 @@ pub(crate) fn reads_unmapped_theme(expr: &Expression<'_>) -> bool {
         return false;
     }
     let mut reads = ThemeReads { root, found: false };
+    reads.visit_formal_parameters(params);
     match expr {
         Expression::ArrowFunctionExpression(arrow) => match &arrow.body {
             oxc_ast::ast::ArrowFunctionBody::FunctionBody(body) => reads.visit_function_body(body),
@@ -203,7 +232,11 @@ fn theme_root<'p>(pattern: &'p BindingPattern<'_>) -> Option<ThemeRoot<'p>> {
             Some(ThemeRoot::Props(identifier.name.as_str()))
         }
         BindingPattern::ObjectPattern(object) => object.properties.iter().find_map(|property| {
-            let BindingPattern::BindingIdentifier(identifier) = &property.value else {
+            let mut value = &property.value;
+            while let BindingPattern::AssignmentPattern(default) = value {
+                value = &default.left;
+            }
+            let BindingPattern::BindingIdentifier(identifier) = value else {
                 return None;
             };
             get_str_by_property_key(&property.key)

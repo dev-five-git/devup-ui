@@ -30,6 +30,10 @@ use crate::extractor::extract_style_from_expression::{
 use crate::stylex::StylexFunction;
 use crate::{ExtractOption, ExtractStyleValue, ModuleResolver};
 
+#[path = "consumed_references.rs"]
+mod consumed_references;
+use consumed_references::ConsumedReferences;
+
 #[derive(Clone, Debug)]
 enum Constant {
     String(String),
@@ -610,12 +614,12 @@ pub(crate) fn inline_constants<'a>(
             px: false,
             position: InlinePosition::Rules,
             marks: px,
-            replaced: FxHashMap::default(),
+            replaced: ConsumedReferences::new(&scoping),
             class_names: Vec::new(),
         };
         inline.visit_program(program);
         for (symbol, local) in declared {
-            let read = inline.replaced.get(&symbol).copied().unwrap_or(0);
+            let read = inline.replaced.count(symbol);
             if read > 0 && read < scoping.get_resolved_reference_ids(symbol).len() {
                 inlined
                     .errors
@@ -1931,9 +1935,8 @@ struct Inline<'s, 'a> {
     /// Where a constant stands as a value or rules of a library reading
     /// numbers as `px` lengths
     marks: &'s crate::import_alias_visit::PxMarks,
-    /// How often a style read each binding below the top level, by what it
-    /// held
-    replaced: FxHashMap<SymbolId, usize>,
+    /// Semantic references erased by style folding or constant selection.
+    replaced: ConsumedReferences<'s>,
     /// The names the `<ClassNames>` child functions around take `css` and
     /// `cx` by
     class_names: Vec<String>,
@@ -2033,15 +2036,20 @@ impl<'a> Inline<'_, 'a> {
 
     /// The side of a condition or of `&&`, `||` or `??` a constant or literal
     /// chooses, taken out of `expression`
-    fn chosen(&self, expression: &mut Expression<'a>) -> Option<Expression<'a>> {
+    fn chosen(&mut self, expression: &mut Expression<'a>) -> Option<Expression<'a>> {
         use oxc_allocator::TakeIn;
 
         let allocator = self.ast_builder;
         match expression {
             Expression::ConditionalExpression(conditional) => {
-                Some(if self.holds(&conditional.test)? {
+                let holds = self.holds(&conditional.test)?;
+                self.replaced.consume(&conditional.test);
+                // Only scan the erased side; the selected side is visited normally.
+                Some(if holds {
+                    self.replaced.consume(&conditional.alternate);
                     conditional.consequent.take_in(allocator)
                 } else {
+                    self.replaced.consume(&conditional.consequent);
                     conditional.alternate.take_in(allocator)
                 })
             }
@@ -2055,8 +2063,10 @@ impl<'a> Inline<'_, 'a> {
                     }
                 };
                 Some(if keep_left {
+                    self.replaced.consume(&logical.right);
                     logical.left.take_in(allocator)
                 } else {
+                    self.replaced.consume(&logical.left);
                     logical.right.take_in(allocator)
                 })
             }
@@ -2225,12 +2235,7 @@ impl<'a> VisitMut<'a> for Inline<'_, 'a> {
             {
                 let span = expression.span();
                 let marked = self.marks.contains(&(span.start, span.end));
-                if let Expression::Identifier(identifier) = &*expression
-                    && let Some(reference) = identifier.reference_id.get()
-                    && let Some(symbol) = self.scoping.get_reference(reference).symbol_id()
-                {
-                    *self.replaced.entry(symbol).or_default() += 1;
-                }
+                self.replaced.consume(expression);
                 *expression = literal;
                 if marked {
                     px_number(self.ast_builder, expression);

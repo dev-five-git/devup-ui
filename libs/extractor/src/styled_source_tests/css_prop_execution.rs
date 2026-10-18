@@ -193,3 +193,21 @@ fn conditional_rule_arrays_keep_one_getter_read_and_consistent_branches(
 
 #[path = "controller_evaluation.rs"]
 mod controller_evaluation;
+
+#[path = "props_function_evaluation.rs"]
+mod props_function_evaluation;
+
+#[path = "props_function_bindings.rs"]
+mod props_function_bindings;
+
+#[path = "props_function_order.rs"]
+mod props_function_order;
+
+#[path = "props_function_theme.rs"]
+mod props_function_theme;
+
+#[path = "implicit_theme_scope.rs"]
+mod implicit_theme_scope;
+
+#[path = "local_member_guard.rs"]
+mod local_member_guard;

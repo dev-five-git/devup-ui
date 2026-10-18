@@ -10,19 +10,16 @@ use crate::{
     extractor::{
         ExtractResult,
         extract_style_from_expression::{LiteralHandling, extract_style_from_expression},
-        rule_array_evaluation::{self, composes_array_under_condition},
         styled_record::prepare,
-        styled_record_evaluation::{Evaluations, bind_render, visit_style_expressions},
-        styled_rule_arrays::distribute_conditions,
+        styled_record_evaluation::{Evaluations, bind_render_body, visit_style_expressions},
     },
     gen_class_name::{gen_class_names, merge_expression_for_class_name},
     gen_style::gen_styles,
     styled_reads::{Forward, Reads, withheld},
     utils::{
-        STYLE_OBJECT, StyleArguments, build_time_error, call_with_values, merge_object_expressions,
-        readable_code, reads_directly, style_arguments, uncomposable_error, unplaced_error,
-        unreadable_styles, unwrap_syntax_only, unwrap_syntax_only_mut, wrap_array_filter,
-        wrap_direct_call,
+        STYLE_OBJECT, build_time_error, call_with_values, merge_object_expressions, readable_code,
+        unplaced_error, unreadable_styles, unwrap_syntax_only, unwrap_syntax_only_mut,
+        wrap_array_filter, wrap_direct_call,
     },
 };
 use oxc_allocator::{CloneIn, FromIn, GetAllocator};
@@ -38,203 +35,15 @@ use oxc_ast_visit::VisitMut;
 use oxc_span::{GetSpan, SPAN};
 use oxc_syntax::operator::{BinaryOperator, LogicalOperator, UnaryOperator};
 
-const PROPS_FUNCTION: &str = "a style function of the props must give one rule object at once, with every entry written out, as `(props) => ({ color: props.color })`";
+#[path = "styled_props.rs"]
+mod props;
 
-/// The rules `style`, an argument of a styled component, gives, with each
-/// value a function of the props written as the value of a CSS variable the
-/// component sets: a function giving rules becomes the rules with each value
-/// read from the props as such a function, so a condition chooses per value.
-/// `Err` holds the located error for rules the build cannot read so.
-fn rules_reading_props<'a>(
-    ast_builder: &AstBuilder<'a>,
-    style: &mut Expression<'a>,
-) -> Result<(), (u32, String)> {
-    use oxc_allocator::TakeIn;
+#[path = "styled_arguments.rs"]
+mod arguments;
 
-    if matches!(
-        unwrap_syntax_only(style),
-        Expression::ArrowFunctionExpression(_) | Expression::FunctionExpression(_)
-    ) {
-        let code = style.clone_in(ast_builder.allocator());
-        let invalid = || {
-            (
-                code.span().start,
-                build_time_error("styled", &readable_code(&code), PROPS_FUNCTION),
-            )
-        };
-        let (params, returned) = crate::css_prop::render_function(style).ok_or_else(invalid)?;
-        let params = params.clone_in_with_semantic_ids(ast_builder.allocator());
-        let Expression::ObjectExpression(object) = unwrap_syntax_only_mut(returned) else {
-            // Class callbacks retain style_arguments' original composition refusal.
-            return Ok(());
-        };
-        props_leaves(ast_builder, object, &params).map_err(|error| match error {
-            PropsRulesError::Rules => invalid(),
-            PropsRulesError::Theme(error) => error,
-        })?;
-        *style = returned.take_in(ast_builder);
-    }
-    if let Expression::ObjectExpression(object) = unwrap_syntax_only_mut(style) {
-        call_with_props(ast_builder, object)?;
-    }
-    Ok(())
-}
-
-/// Whether `value` is a literal, which reads the same given any props
-fn is_written_out(value: &Expression<'_>) -> bool {
-    let value = unwrap_syntax_only(value);
-    crate::utils::get_string_by_literal_expression(value).is_some()
-        || crate::utils::js_number_literal(value).is_some()
-        || matches!(
-            value,
-            Expression::BooleanLiteral(_) | Expression::NullLiteral(_)
-        )
-}
-
-/// Why a function's rule object cannot be lowered to props-reading leaves.
-enum PropsRulesError {
-    Rules,
-    Theme((u32, String)),
-}
-
-/// The values of `object` that read the props, each as a function taking the
-/// parameters `params` of the function that gave the rules
-fn props_leaves<'a>(
-    ast_builder: &AstBuilder<'a>,
-    object: &mut oxc_ast::ast::ObjectExpression<'a>,
-    params: &FormalParameters<'a>,
-) -> Result<(), PropsRulesError> {
-    use oxc_allocator::TakeIn;
-
-    for property in &mut object.properties {
-        let ObjectPropertyKind::ObjectProperty(property) = property else {
-            return Err(PropsRulesError::Rules);
-        };
-        if property.computed || property.method || property.kind != oxc_ast::ast::PropertyKind::Init
-        {
-            return Err(PropsRulesError::Rules);
-        }
-        let key =
-            crate::utils::get_str_by_property_key(&property.key).ok_or(PropsRulesError::Rules)?;
-        match unwrap_syntax_only_mut(&mut property.value) {
-            Expression::ObjectExpression(inner) => props_leaves(ast_builder, inner, params)?,
-            Expression::ArrowFunctionExpression(_) | Expression::FunctionExpression(_) => {}
-            value if is_written_out(value) => {}
-            _ => {
-                let leaf = property.value.take_in(ast_builder);
-                property.value = props_function(ast_builder, params, leaf, &key)
-                    .map_err(PropsRulesError::Theme)?;
-            }
-        }
-    }
-    Ok(())
-}
-
-/// `(params) => leaf`: a number is a `px` length, as Emotion reads it, unless
-/// the property takes numbers as they are or the function reads the theme
-fn props_function<'a>(
-    ast_builder: &AstBuilder<'a>,
-    params: &FormalParameters<'a>,
-    leaf: Expression<'a>,
-    key: &str,
-) -> Result<Expression<'a>, (u32, String)> {
-    let span = leaf.span();
-    let function = |body: Expression<'a>| {
-        Expression::new_arrow_function_expression(
-            span,
-            false,
-            None::<oxc_allocator::Box<oxc_ast::ast::TSTypeParameterDeclaration<'a>>>,
-            oxc_allocator::Box::new_in(
-                params.clone_in_with_semantic_ids(ast_builder.allocator()),
-                ast_builder,
-            ),
-            None::<oxc_allocator::Box<oxc_ast::ast::TSTypeAnnotation<'a>>>,
-            body.into(),
-            ast_builder,
-        )
-    };
-    let plain = function(leaf.clone_in_with_semantic_ids(ast_builder.allocator()));
-    if crate::css_utils::reads_unmapped_theme(&plain) {
-        return Err(crate::css_utils::unmapped_theme_error("styled", &plain));
-    }
-    if crate::utils::keeps_bare_number(key)
-        || crate::css_utils::theme_var_reference(&plain).is_some()
-    {
-        return Ok(plain);
-    }
-    let value = || identifier(ast_builder, "__devupValue");
-    let is_number = Expression::new_binary_expression(
-        SPAN,
-        Expression::new_unary_expression(SPAN, UnaryOperator::Typeof, value(), ast_builder),
-        BinaryOperator::StrictEquality,
-        Expression::new_string_literal(SPAN, "number", None, ast_builder),
-        ast_builder,
-    );
-    let length = Expression::new_binary_expression(
-        SPAN,
-        value(),
-        BinaryOperator::Addition,
-        Expression::new_string_literal(SPAN, "px", None, ast_builder),
-        ast_builder,
-    );
-    let length = Expression::new_conditional_expression(
-        SPAN,
-        Expression::new_logical_expression(
-            SPAN,
-            is_number,
-            LogicalOperator::And,
-            Expression::new_binary_expression(
-                SPAN,
-                value(),
-                BinaryOperator::StrictInequality,
-                Expression::new_numeric_literal(
-                    SPAN,
-                    0.0,
-                    None,
-                    oxc_syntax::number::NumberBase::Decimal,
-                    ast_builder,
-                ),
-                ast_builder,
-            ),
-            ast_builder,
-        ),
-        length,
-        value(),
-        ast_builder,
-    );
-    let length = named_arrow(ast_builder, "__devupValue", length);
-    Ok(function(wrap_direct_call(ast_builder, &length, &[leaf])))
-}
-
-/// The values of `object` that are functions of the props written as the
-/// result of calling them with the props the component renders, which the
-/// styles read as the values of CSS variables; a function reading the theme
-/// stays, as the styles read it as a variable of the theme
-fn call_with_props<'a>(
-    ast_builder: &AstBuilder<'a>,
-    object: &mut oxc_ast::ast::ObjectExpression<'a>,
-) -> Result<(), (u32, String)> {
-    for property in &mut object.properties {
-        let ObjectPropertyKind::ObjectProperty(property) = property else {
-            continue;
-        };
-        match unwrap_syntax_only_mut(&mut property.value) {
-            Expression::ObjectExpression(inner) => call_with_props(ast_builder, inner)?,
-            function @ (Expression::ArrowFunctionExpression(_)
-            | Expression::FunctionExpression(_))
-                if crate::css_utils::theme_var_reference(function).is_none() =>
-            {
-                if crate::css_utils::reads_unmapped_theme(function) {
-                    return Err(crate::css_utils::unmapped_theme_error("styled", function));
-                }
-                *function =
-                    wrap_direct_call(ast_builder, function, &[identifier(ast_builder, "rest")]);
-            }
-            _ => {}
-        }
-    }
-    Ok(())
-}
+#[cfg(test)]
+#[path = "styled_render_body_tests.rs"]
+mod render_body_tests;
 
 /// The binding a styled component reads the component it renders through, when
 /// only the runtime gives that component
@@ -923,108 +732,18 @@ pub fn extract_style_from_styled<'a>(
     if let Expression::CallExpression(call) = expression
         && extract_base_tag_and_class_name(ast_builder, &call.callee, imports).is_some()
     {
-        for argument in &mut call.arguments {
-            if let Some(rules) = argument.as_expression_mut()
-                && let Err(error) = rules_reading_props(ast_builder, rules)
-            {
-                errors.push(error);
-                *rules = Expression::new_object_expression(
-                    SPAN,
-                    oxc_allocator::Vec::new_in(ast_builder),
-                    ast_builder,
-                );
-            }
-        }
-        let mut distributed = call
-            .arguments
-            .clone_in_with_semantic_ids(ast_builder.allocator());
-        for argument in &mut distributed {
-            if let Some(part) = argument.as_expression_mut() {
-                distribute_conditions(ast_builder, part, refused_array_controllers);
-            }
-        }
-        if call.arguments.iter().any(|argument| {
-            argument
-                .as_expression()
-                .is_some_and(composes_array_under_condition)
-        }) && (reads_directly(&distributed)
-            || style_arguments(ast_builder, &distributed).is_some())
-        {
-            let source = Expression::new_array_expression(
-                SPAN,
-                oxc_allocator::Vec::from_iter_in(
-                    call.arguments.iter().map(|argument| {
-                        let value = match argument {
-                            Argument::SpreadElement(spread) => &spread.argument,
-                            argument => argument.to_expression(),
-                        };
-                        value
-                            .clone_in_with_semantic_ids(ast_builder.allocator())
-                            .into()
-                    }),
-                    ast_builder,
-                ),
-                ast_builder,
-            );
-            let mut evaluations = Evaluations::new(ast_builder, readable_code(&original_scope));
-            if let Some(prepared @ Expression::ArrayExpression(_)) =
-                rule_array_evaluation::prepare(&mut evaluations, &source, |_| false)
-            {
-                for argument in &call.arguments {
-                    if let Some(value) = argument.as_expression() {
-                        reads.read_in(value);
-                    }
-                }
-                original_scope = Expression::new_array_expression(
-                    SPAN,
-                    oxc_allocator::Vec::from_array_in(
-                        [
-                            original_scope.into(),
-                            prepared.clone_in(ast_builder.allocator()).into(),
-                        ],
-                        ast_builder,
-                    ),
-                    ast_builder,
-                );
-                if let Expression::ArrayExpression(array) = prepared {
-                    call.arguments = oxc_allocator::Vec::from_iter_in(
-                        array.elements.iter().filter_map(|element| {
-                            element.as_expression().map(|value| {
-                                Argument::from(
-                                    value.clone_in_with_semantic_ids(ast_builder.allocator()),
-                                )
-                            })
-                        }),
-                        ast_builder,
-                    );
-                }
-                captured_bindings = evaluations.bindings;
-            }
-        }
-        for argument in &mut call.arguments {
-            if let Some(part) = argument.as_expression_mut() {
-                distribute_conditions(ast_builder, part, refused_array_controllers);
-            }
-        }
-        match style_arguments(ast_builder, &call.arguments) {
-            Some(StyleArguments { classes, rules }) => {
-                call.arguments =
-                    oxc_allocator::Vec::from_array_in([Argument::from(rules)], ast_builder);
-                composed_classes = classes;
-            }
-            None if !reads_directly(&call.arguments) => {
-                errors.push((call.span.start, uncomposable_error(&call.arguments)));
-                call.arguments = oxc_allocator::Vec::from_array_in(
-                    [Argument::from(Expression::new_object_expression(
-                        SPAN,
-                        oxc_allocator::Vec::new_in(ast_builder),
-                        ast_builder,
-                    ))],
-                    ast_builder,
-                );
-            }
-            None => {}
-        }
+        let prepared = arguments::prepare(
+            ast_builder,
+            call,
+            arguments::Context {
+                scope: &mut original_scope,
+                reads: &mut reads,
+                refused: refused_array_controllers,
+            },
+        );
+        composed_classes = prepared.classes;
+        captured_bindings = prepared.bindings;
+        errors.extend(prepared.errors);
     }
     let (result, new_expr, definition) = if let Expression::TaggedTemplateExpression(tag) =
         expression
@@ -2063,7 +1782,7 @@ fn create_styled_component<'a>(
         None::<oxc_allocator::Box<oxc_ast::ast::TSTypeParameterDeclaration<'a>>>,
         params,
         None::<oxc_allocator::Box<oxc_ast::ast::TSTypeAnnotation<'a>>>,
-        bind_render(ast_builder, bindings, body).into(),
+        bind_render_body(ast_builder, bindings, body),
         ast_builder,
     )
 }
