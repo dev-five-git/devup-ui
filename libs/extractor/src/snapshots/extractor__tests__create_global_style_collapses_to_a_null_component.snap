@@ -33,8 +33,9 @@ ToBTreeSet {
         ),
         Css(
             ExtractCss {
-                css: "body{margin:0}",
                 file: "test.tsx",
+                order: 1,
+                css: "body{margin:0}",
             },
         ),
     },

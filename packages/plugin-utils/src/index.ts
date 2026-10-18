@@ -15,6 +15,7 @@ export {
   createModuleResolver,
   type CreateModuleResolverOptions,
   listSourceFiles,
+  parseImports,
   planAtomHoist,
   type ResolvedModule,
   type StaticImportGraph,
@@ -28,6 +29,14 @@ export {
   seedFileNumbers,
 } from './numbering'
 export {
+  collectReservationInputs,
+  PreparedInputConflictError,
+  type PreparedReservationInput,
+  type ReservationDiscoveryOptions,
+  type ReservationInput,
+  type ReservationInventory,
+} from './reservation-discovery'
+export {
   createNodeModulesExcludeRegex,
   createThemeInterfaceArgs,
   DEFAULT_THEME_INTERFACE_NAMES,
@@ -35,6 +44,13 @@ export {
   type DevupUIBasePluginOptions,
   getFileNumByFilename,
 } from './shared'
+export {
+  createSharedSlotReservation,
+  type ReservationBatchOptions,
+  type ReservationEngine,
+  type ReservationRow,
+  type SharedSlotReservation,
+} from './shared-slots'
 export {
   createStateWriter,
   type StateWriter,

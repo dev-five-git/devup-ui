@@ -6,6 +6,10 @@ mod css_prop_slot_members;
 mod css_prop_slot_wrapped_keys;
 mod css_prop_slots;
 mod execution;
+mod finite_array_length;
+mod finite_literal_keys;
+mod finite_lookup;
+mod finite_selection;
 mod forward_ref_captures;
 mod lowering;
 

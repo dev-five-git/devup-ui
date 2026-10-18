@@ -95,8 +95,18 @@ ToBTreeSet {
         ),
         Css(
             ExtractCss {
-                css: "@layer reset-0-0,components-0-1;",
                 file: "layers.css.ts",
+                order: 1,
+                css: "@layer reset-0-0,components-0-1;",
+            },
+        ),
+        LayerOrder(
+            ExtractLayerOrder {
+                file: "layers.css.ts",
+                layers: [
+                    "components-0-1",
+                    "reset-0-0",
+                ],
             },
         ),
     },

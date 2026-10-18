@@ -167,7 +167,7 @@ impl Context<'_, '_> {
                 }
                 AstKind::ComputedMemberExpression(member) if member.object.span() == span => {
                     path.push(
-                        crate::utils::get_string_by_literal_expression(&member.expression)
+                        crate::utils::get_key_by_literal_expression(&member.expression)
                             .map(std::borrow::Cow::into_owned),
                     );
                 }

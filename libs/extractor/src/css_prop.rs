@@ -18,7 +18,10 @@ use rustc_hash::FxHashSet;
 
 use crate::ImportAlias;
 use crate::css_utils::{Place, interpolation_place};
-use crate::utils::{binding_root, get_string_by_literal_expression, unwrap_syntax_only};
+use crate::utils::{
+    binding_root, get_key_by_literal_expression, get_string_by_literal_expression,
+    unwrap_syntax_only,
+};
 
 /// The package whose alias makes elements take the `css` prop
 pub(crate) const EMOTION_REACT: &str = "@emotion/react";
@@ -173,14 +176,16 @@ pub(crate) fn is_emotion(source: &str) -> bool {
 
 /// Where the JSX pragma in the comment text `comment` names `@emotion/react`
 /// as the module JSX is built with
-pub(crate) fn emotion_pragma(comment: &str) -> Option<usize> {
-    let at = comment.find("@jsxImportSource")? + "@jsxImportSource".len();
-    let value = comment[at..].trim_start();
-    let rest = value.strip_prefix(EMOTION_REACT)?;
-    rest.chars()
-        .next()
-        .is_none_or(|c| c.is_whitespace() || c == '*')
-        .then(|| comment.len() - value.len())
+#[cfg(test)]
+fn emotion_pragma(comment: &str) -> Option<usize> {
+    let closing = if comment.ends_with('*') { "/" } else { "*/" };
+    let source = format!("/*{comment}{closing}\nexport const anchor=1;");
+    let allocator = oxc_allocator::Allocator::default();
+    let parsed = oxc_parser::Parser::new(&allocator, &source, oxc_span::SourceType::tsx()).parse();
+    assert!(!parsed.diagnostics.has_errors());
+    crate::jsx_import_source::emotion_replacements(&parsed.program)
+        .first()
+        .map(|(start, _, _)| start - "/*".len())
 }
 
 /// The React module an Emotion JSX runtime stands in for
@@ -330,7 +335,7 @@ impl<'a> ThemeReads<'_, 'a> {
                     cursor = &member.object;
                 }
                 Expression::ComputedMemberExpression(member) => {
-                    match get_string_by_literal_expression(&member.expression) {
+                    match get_key_by_literal_expression(&member.expression) {
                         Some(key) => path.push(key.into_owned()),
                         None => exact = false,
                     }
