@@ -175,7 +175,7 @@ jobs:
           const file = join(process.env.SIZE_ROOT, 'metadata.json')
           const metadata = side === 'base' ? {
             jobId: `${process.env.GITHUB_RUN_ID}/${process.env.GITHUB_RUN_ATTEMPT}/${process.env.GITHUB_JOB}`,
-            buildCommand: 'wasm-pack build --mode no-install --release --target nodejs --out-dir ./pkg --out-name index --locked && node script.js',
+            buildCommand: 'cargo metadata --locked --format-version 1 > /dev/null && wasm-pack build --mode no-install --release --target nodejs --out-dir ./pkg --out-name index --locked && node script.js',
           } : JSON.parse(readFileSync(file, 'utf8'))
           const sha = side === 'base' ? process.env.BASE_SHA : process.env.CANDIDATE_SHA
           metadata[side] = {
@@ -191,6 +191,7 @@ jobs:
             (
               cd "$SIZE_ROOT/$side/bindings/devup-ui-wasm"
               export CARGO_TARGET_DIR="$SIZE_ROOT/$side-target"
+              cargo metadata --locked --format-version 1 > /dev/null
               wasm-pack build --mode no-install --release --target nodejs --out-dir ./pkg --out-name index --locked
               node script.js
             ) 2>&1 | tee "$SIZE_ROOT/$side-build.log"

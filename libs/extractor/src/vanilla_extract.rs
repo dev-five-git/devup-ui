@@ -321,11 +321,35 @@ pub fn execute_stylesheet(
     Ok((collected, imports))
 }
 
+type ImportedRuns = FxHashMap<String, (usize, String, String, CollectedStyles)>;
+
+#[derive(Debug)]
+pub(crate) struct CacheGuard {
+    imported: ImportedRuns,
+    stripped: FxHashMap<String, (String, String)>,
+}
+
+impl Default for CacheGuard {
+    fn default() -> Self {
+        Self {
+            imported: IMPORTED_RUNS.with_borrow_mut(std::mem::take),
+            stripped: STRIPPED.with_borrow_mut(std::mem::take),
+        }
+    }
+}
+
+impl Drop for CacheGuard {
+    fn drop(&mut self) {
+        IMPORTED_RUNS.with_borrow_mut(|runs| *runs = std::mem::take(&mut self.imported));
+        STRIPPED.with_borrow_mut(|stripped| *stripped = std::mem::take(&mut self.stripped));
+    }
+}
+
 thread_local! {
     /// What running each stylesheet other evaluations import last collected,
     /// with its file number, source and the script run: every module importing
     /// it reuses one run of the same script
-    static IMPORTED_RUNS: RefCell<FxHashMap<String, (usize, String, String, CollectedStyles)>> =
+    static IMPORTED_RUNS: RefCell<ImportedRuns> =
         RefCell::default();
     /// The TypeScript each file last had stripped, with its source
     static STRIPPED: RefCell<FxHashMap<String, (String, String)>> = RefCell::default();

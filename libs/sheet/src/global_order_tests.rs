@@ -105,6 +105,96 @@ fn shared_tailwind_registrations_survive_source_updates(
 }
 
 #[rstest]
+#[case(false)]
+#[case(true)]
+#[serial]
+fn global_file_order_survives_atom_emission_when_source_offsets_differ(
+    #[case] reverse: bool,
+) -> Result<(), Box<dyn std::error::Error>> {
+    // Given authored globals whose file order differs from their declaration offsets.
+    css::debug::set_debug(false);
+    css::set_prefix(None);
+    css::atom_hoist::set_atom_hoist(Some(2));
+    css::atom_hoist::restore_atom_plan(None);
+    css::file_routes::reset_file_routes();
+    css::file_map::reset_canonical_map();
+    reset_class_map();
+    reset_file_map();
+    let mut sheet = StyleSheet::default();
+    sheet.set_theme(Theme::default());
+    let mut sources = [
+        ("a.tsx", "globalCss({body:{margin:0,color:'red'}});"),
+        ("b.tsx", "globalCss({body:{color:'blue'}});"),
+    ];
+    if reverse {
+        sources.reverse();
+    }
+
+    // When extraction and atom-mode emission combine both owners.
+    for (file, declarations) in sources {
+        let output = extract(
+            file,
+            &format!("import {{globalCss}} from '@devup-ui/react';{declarations}"),
+            ExtractOption::default(),
+        )?;
+        sheet.update_styles(&output.styles, file, false);
+    }
+    let emitted = sheet.create_css(None, false);
+    css::atom_hoist::set_atom_hoist(None);
+    css::atom_hoist::restore_atom_plan(None);
+
+    // Then the later file still wins instead of an earlier file's later offset.
+    assert_eq!(
+        emitted.strip_prefix(StyleSheet::create_header()),
+        Some("@layer b;@layer b{body{margin:0;color:red;color:blue}}")
+    );
+    Ok(())
+}
+
+#[rstest]
+#[case(false)]
+#[case(true)]
+#[serial]
+fn global_atom_dedup_keeps_repeated_value_when_another_file_overrides_it(
+    #[case] reverse: bool,
+) -> Result<(), Box<dyn std::error::Error>> {
+    // Given three ordered owners whose final red overrides the intervening blue.
+    css::debug::set_debug(false);
+    css::set_prefix(None);
+    css::atom_hoist::set_atom_hoist(Some(2));
+    css::atom_hoist::restore_atom_plan(None);
+    css::file_routes::reset_file_routes();
+    css::file_map::reset_canonical_map();
+    reset_class_map();
+    reset_file_map();
+    let mut sheet = StyleSheet::default();
+    sheet.set_theme(Theme::default());
+    let mut sources = [("a.tsx", "red"), ("b.tsx", "blue"), ("c.tsx", "red")];
+    if reverse {
+        sources.reverse();
+    }
+
+    // When all three files pass through extraction and atom-plan emission.
+    for (file, color) in sources {
+        let source = format!(
+            "import {{globalCss}} from '@devup-ui/react';globalCss({{body:{{color:'{color}'}}}});"
+        );
+        let output = extract(file, &source, ExtractOption::default())?;
+        sheet.update_styles(&output.styles, file, false);
+    }
+    let emitted = sheet.create_css(None, false);
+    css::atom_hoist::set_atom_hoist(None);
+    css::atom_hoist::restore_atom_plan(None);
+
+    // Then dedup preserves the final winner in either extraction order.
+    assert_eq!(
+        emitted.strip_prefix(StyleSheet::create_header()),
+        Some("@layer b;@layer b{body{color:red;color:blue;color:red}}")
+    );
+    Ok(())
+}
+
+#[rstest]
 #[case(
     concat!("globalCss`body{color:", "red}`;globalCss`body{color:", "blue}`;"),
     concat!("body{color:", "red}body{color:", "blue}")

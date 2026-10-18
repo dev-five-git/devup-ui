@@ -7,8 +7,8 @@ use crate::{
         },
     },
     utils::{
-        get_number_by_literal_expression, get_str_by_property_key,
-        get_string_by_literal_expression, get_string_by_property_key, readable_code,
+        get_key_by_literal_expression, get_number_by_literal_expression, get_str_by_property_key,
+        get_string_by_property_key, readable_code,
     },
 };
 use css::style_selector::StyleSelector;
@@ -136,7 +136,7 @@ pub(super) fn extract_style_from_member_expression<'a>(
         && !obj.properties.is_empty()
     {
         let mut map = BTreeMap::new();
-        if let Some(k) = get_string_by_literal_expression(mem_expression) {
+        if let Some(k) = get_key_by_literal_expression(mem_expression) {
             // The last property written for the key gives it, unless a spread
             // after it may replace it
             let written = obj.properties.iter().rposition(|p| {

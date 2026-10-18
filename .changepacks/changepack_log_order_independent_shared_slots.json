@@ -1,0 +1,12 @@
+{
+  "changes": {
+    "bindings/devup-ui-wasm/package.json": "Patch",
+    "packages/plugin-utils/package.json": "Patch",
+    "packages/bun-plugin/package.json": "Patch",
+    "packages/webpack-plugin/package.json": "Patch",
+    "packages/rsbuild-plugin/package.json": "Patch",
+    "packages/next-plugin/package.json": "Patch"
+  },
+  "note": "Reserve existing short counter class, variable, keyframe and raw-file slots in physical input order before Bun, webpack, Rsbuild and Next webpack extraction. Watch revisions append sorted slots without renumbering. No new source build errors or styling runtime; unknown virtual, generated and opaque outside-inventory inputs retain observable residual allocation.",
+  "date": "2026-10-15T00:00:00.000Z"
+}
