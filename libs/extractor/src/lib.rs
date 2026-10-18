@@ -11417,6 +11417,227 @@ export const e = spin.toString()",
         assert!(extract("a.css.ts", code, option(false)).is_ok());
     }
 
+    #[rstest]
+    #[case::user_example(
+        "{ color: 'hotpink' }",
+        "'&:hover,&:focus': hotpink",
+        "'&:hover': { ...hotpinkRules }, '&:focus': { ...hotpinkRules }"
+    )]
+    #[case::inner_comma(
+        "{ color: 'hotpink' }",
+        "'&:is(a,b), &:not(.x,.y)': hotpink",
+        "'&:is(a,b)': { ...hotpinkRules }, '&:not(.x,.y)': { ...hotpinkRules }"
+    )]
+    #[case::three_selectors(
+        "{ color: 'hotpink' }",
+        "' &:hover, &:focus, &:active ': hotpink",
+        "'&:hover': { ...hotpinkRules }, '&:focus': { ...hotpinkRules }, '&:active': { ...hotpinkRules }"
+    )]
+    #[case::responsive(
+        "{ color: ['hotpink', null, 'blue'], p: [1, 2] }",
+        "'&:hover,&:focus': hotpink",
+        "'&:hover': { ...hotpinkRules }, '&:focus': { ...hotpinkRules }"
+    )]
+    #[case::nested_layer_order(
+        "{ '@layer': { base: { color: 'hotpink', _active: { color: ['red', 'blue'] } } } }",
+        "styleOrder: 3, '&:hover,&:focus': hotpink, '&:hover': { color: 'green' }",
+        "styleOrder: 3, '&:hover': { ...hotpinkRules }, '&:focus': { ...hotpinkRules }, '&:hover': { color: 'green' }"
+    )]
+    #[case::quoted_commas(
+        "{ color: 'hotpink' }",
+        r#"'&[data-x=a,b], &[title="a,]b"]': hotpink"#,
+        r#"'&[data-x=a,b]': { ...hotpinkRules }, '&[title="a,]b"]': { ...hotpinkRules }"#
+    )]
+    #[serial]
+    fn test_css_nested_static_result(
+        #[case] rules: &str,
+        #[case] nested: &str,
+        #[case] expanded: &str,
+        #[values("css(hotpinkRules)", "css({}, hotpinkRules)")] source: &str,
+    ) {
+        let compile = |body| {
+            reset_class_map();
+            reset_file_map();
+            extract(
+                "test.tsx",
+                &format!("import {{ css }} from '@devup-ui/react'; const hotpinkRules = {rules}; const hotpink = {source}; export const hover = css({{ {body} }});"),
+                ExtractOption::default(),
+            )
+            .unwrap()
+        };
+        let expected = compile(expanded);
+        let actual = compile(nested);
+        assert_eq!(actual.styles, expected.styles);
+        assert_eq!(actual.code, expected.code);
+    }
+
+    #[rstest]
+    #[case::unknown("")]
+    #[case::external_class("const hotpink = css('external', { color: 'red' });")]
+    #[serial]
+    fn test_css_nested_static_result_unknown_error(#[case] binding: &str) {
+        reset_class_map();
+        reset_file_map();
+        let error = extract(
+            "test.tsx",
+            &format!("import {{ css }} from '@devup-ui/react'\n{binding}\nexport const hover = css({{ '&:hover,&:focus': hotpink }})"),
+            ExtractOption {
+                package: "@devup-ui/react".to_string(),
+                css_dir: "@devup-ui/react".to_string(),
+                single_css: true,
+                import_main_css: false,
+                import_aliases: HashMap::new(),
+            },
+        )
+        .unwrap_err()
+        .to_string();
+        assert!(
+            error.starts_with("test.tsx:3:47: `css()` cannot use `hotpink` at build time:")
+                && error.contains("its values must be literals, theme tokens or constants"),
+            "{error}"
+        );
+    }
+
+    #[rstest]
+    #[case::composed(
+        "const hotpink = css(base, { p: 2 });",
+        "hotpink",
+        "{ color: 'hotpink', p: 2 }"
+    )]
+    #[case::chained(
+        "const hotpink = css({ _active: base });",
+        "hotpink",
+        "{ _active: { color: 'hotpink' } }"
+    )]
+    #[case::keyframes(
+        "const hotpink = css({ animationName: spin });",
+        "hotpink",
+        "{ animationName: spin }"
+    )]
+    #[case::alias("const hotpink = base;", "hotpink", "{ color: 'hotpink' }")]
+    #[case::inline("", "css({ color: 'hotpink' })", "{ color: 'hotpink' }")]
+    #[case::inline_known_composition(
+        "const hotpink = css(base, { color: 'blue', _active: base });",
+        "css(base, { color: 'blue', _active: base })",
+        "{ color: 'blue', _active: { color: 'hotpink' } }"
+    )]
+    #[case::composed_later_wins(
+        "const hotpink = css(base, { color: 'blue', p: 2 });",
+        "hotpink",
+        "{ color: 'blue', p: 2 }"
+    )]
+    #[case::alias_chain(
+        "const warm = base; const hotpink = warm;",
+        "hotpink",
+        "{ color: 'hotpink' }"
+    )]
+    #[case::selector_record(
+        "const hotpink = css({ selectors: { '&:active': base } });",
+        "hotpink",
+        "{ selectors: { '&:active': { color: 'hotpink' } } }"
+    )]
+    #[case::declaration_string(
+        "const hotpink = css({ content: base });",
+        "hotpink",
+        "{ content: `${base}` }"
+    )]
+    #[case::spread_composed(
+        "const hotpink = css(...[base, { p: 2 }]);",
+        "hotpink",
+        "{ color: 'hotpink', p: 2 }"
+    )]
+    #[case::adjacent_spreads(
+        "const hotpink = css(...[base], ...[{ color: 'blue', p: 2 }]);",
+        "hotpink",
+        "{ color: 'blue', p: 2 }"
+    )]
+    #[case::nested_array_spread(
+        "const hotpink = css(...[...[base], { p: 2 }]);",
+        "hotpink",
+        "{ color: 'hotpink', p: 2 }"
+    )]
+    #[case::direct_spread_source(
+        "const hotpink = css(...{ _active: base });",
+        "hotpink",
+        "{ _active: { color: 'hotpink' } }"
+    )]
+    #[case::spread_declaration_string(
+        "const hotpink = css(...[{ content: base }, { p: 2 }]);",
+        "hotpink",
+        "{ content: `${base}`, p: 2 }"
+    )]
+    #[case::layer_record(
+        "",
+        "{ '@layer': { colors: base } }",
+        "{ '@layer': { colors: { color: 'hotpink' } } }"
+    )]
+    #[case::media_record(
+        "",
+        "{ '@media': { print: base } }",
+        "{ '@media': { print: { color: 'hotpink' } } }"
+    )]
+    #[case::supports_record(
+        "",
+        "{ '@supports': { '(display: grid)': base } }",
+        "{ '@supports': { '(display: grid)': { color: 'hotpink' } } }"
+    )]
+    #[case::container_record(
+        "",
+        "{ '@container': { '(min-width: 10px)': base } }",
+        "{ '@container': { '(min-width: 10px)': { color: 'hotpink' } } }"
+    )]
+    #[case::underscore_media_record(
+        "",
+        "{ _media: { print: base } }",
+        "{ _media: { print: { color: 'hotpink' } } }"
+    )]
+    #[case::record_declaration_string(
+        "",
+        "{ '@layer': { colors: { content: base } } }",
+        "{ '@layer': { colors: { content: `${base}` } } }"
+    )]
+    #[serial]
+    fn test_css_nested_static_source_references(
+        #[case] binding: &str,
+        #[case] value: &str,
+        #[case] expanded: &str,
+    ) {
+        let compile = |nested: &str| {
+            reset_class_map();
+            reset_file_map();
+            extract(
+                "test.tsx",
+                &format!("import {{ css, keyframes }} from '@devup-ui/react'; const spin = keyframes({{ from: {{ opacity: 0 }}, to: {{ opacity: 1 }} }}); const base = css({{ color: 'hotpink' }}); {binding} export const hover = css({{ styleOrder: 3, '@layer': {{ base: {{ '&:hover,&:focus': {nested} }} }} }});"),
+                ExtractOption::default(),
+            ).unwrap()
+        };
+        let expected = compile(expanded);
+        let actual = compile(value);
+        assert_eq!(actual.styles, expected.styles);
+        assert_eq!(actual.code, expected.code);
+    }
+
+    #[test]
+    #[serial]
+    fn test_css_nested_inline_without_binding() {
+        let compile = |source| {
+            reset_class_map();
+            reset_file_map();
+            extract("test.tsx", source, ExtractOption::default()).unwrap()
+        };
+        let expected = compile(
+            "import { css } from '@devup-ui/react'; css({ color: 'hotpink' }); export const hover = css({ '&:hover': { color: 'hotpink' }, '&:focus': { color: 'hotpink' } });",
+        );
+        let actual = compile(
+            "import { css } from '@devup-ui/react'; export const hover = css({ '&:hover,&:focus': css({ color: 'hotpink' }) });",
+        );
+        assert_eq!(actual.styles, expected.styles);
+        assert_eq!(
+            actual.code.split("export const").last(),
+            expected.code.split("export const").last()
+        );
+    }
+
     #[test]
     #[serial]
     fn test_keyframes_no_args() {
@@ -15298,6 +15519,130 @@ export const d = css(ordered, danger, called);",
                 output.code
             );
         }
+    }
+
+    fn assert_composed_export_atoms(code: &str, export: &str, expected: &[&str]) {
+        let declaration = format!("export const {export} = \"");
+        let classes = code
+            .split_once(&declaration)
+            .expect("compiled export must be a static class string")
+            .1
+            .split_once('"')
+            .unwrap()
+            .0;
+        let mut actual: Vec<_> = classes
+            .split_whitespace()
+            .map(|class| class.trim_end_matches("-a"))
+            .collect();
+        actual.sort_unstable();
+        let mut expected = expected.to_vec();
+        expected.sort_unstable();
+        assert_eq!(actual, expected, "{code}");
+    }
+
+    #[rstest]
+    #[case(
+        "{ color: 'orange', p: 2 }",
+        "{ color: 'blue', margin: 3 }",
+        &["color-0-blue--255", "padding-0-8px--255", "margin-0-12px--255"]
+    )]
+    #[case(
+        "{ color: ['orange', 'red', 'purple'], p: 2, _hover: { color: ['orange', 'red', 'purple'] } }",
+        "{ color: ['blue', null, 'green', null, 'pink'], margin: 3, _hover: { color: ['blue', null, 'green'] } }",
+        &[
+            "color-0-blue--255", "color-1-red--255", "color-2-green--255",
+            "color-4-pink--255", "padding-0-8px--255", "margin-0-12px--255",
+            "color-0-blue-_a__c_hover-255", "color-1-red-_a__c_hover-255",
+            "color-2-green-_a__c_hover-255"
+        ]
+    )]
+    #[serial]
+    fn test_css_later_argument_wins_across_leaf(
+        #[case] earlier: &'static str,
+        #[case] later: &str,
+        #[case] expected: &[&str],
+        #[values(false, true)] imported: bool,
+        #[values(false, true)] single_css: bool,
+    ) {
+        reset_class_map();
+        reset_file_map();
+        let modules: &[(&str, &str)] = &[
+            (
+                "/src/child.ts",
+                "import { css } from '@devup-ui/react'; export const base = css({ color: 'orange', p: 2 });",
+            ),
+            (
+                "/src/responsive.ts",
+                "import { css } from '@devup-ui/react'; export const base = css({ color: ['orange', 'red', 'purple'], p: 2, _hover: { color: ['orange', 'red', 'purple'] } });",
+            ),
+        ];
+        let leaf = if earlier.contains("_hover") {
+            "responsive"
+        } else {
+            "child"
+        };
+        let binding = if imported {
+            format!("import {{ base as child }} from './{leaf}';")
+        } else {
+            format!("const child = css({earlier});")
+        };
+        let source = format!(
+            "import {{ css }} from '@devup-ui/react'; {binding} export const base = css(child, {later});"
+        );
+        let resolver = memory_resolver(modules);
+        css::debug::set_debug(true);
+        let output = extract_with_modules(
+            "/src/parent.ts",
+            &source,
+            ExtractOption {
+                single_css,
+                ..ExtractOption::default()
+            },
+            false,
+            &resolver,
+        );
+        css::debug::set_debug(false);
+        let output = output.unwrap();
+        assert_composed_export_atoms(&output.code, "base", expected);
+        if imported {
+            assert!(output.dependencies.contains(&format!("/src/{leaf}.ts")));
+        }
+    }
+
+    #[rstest]
+    #[serial]
+    fn test_css_later_argument_wins_across_three_levels(#[values(false, true)] single_css: bool) {
+        reset_class_map();
+        reset_file_map();
+        let resolver = memory_resolver(&[]);
+        css::debug::set_debug(true);
+        let output = extract_with_modules(
+            "/src/chain.ts",
+            "import { css } from '@devup-ui/react';
+const leaf = css({ color: ['orange', 'red', 'purple'], p: 2, _hover: { color: ['orange', 'red', 'purple'] }, styleOrder: 3 });
+const middle = css(leaf, { color: ['blue', null, 'green'], margin: 3, _hover: { color: ['blue', null, 'green'] } });
+export const base = css(middle, { color: ['cyan', null, null, null, 'pink'], _hover: { color: 'cyan' } });",
+            ExtractOption { single_css, ..ExtractOption::default() },
+            false,
+            &resolver,
+        );
+        css::debug::set_debug(false);
+        let output = output.unwrap();
+        assert_composed_export_atoms(
+            &output.code,
+            "base",
+            &[
+                "color-0-cyan--255",
+                "color-1-red--3",
+                "color-2-green--255",
+                "color-4-pink--255",
+                "padding-0-8px--3",
+                "margin-0-12px--255",
+                "color-0-cyan-_a__c_hover-255",
+                "color-1-red-_a__c_hover-3",
+                "color-2-green-_a__c_hover-255",
+            ],
+        );
     }
 
     // Each Tailwind class becomes the classes of its styles; every other class,
