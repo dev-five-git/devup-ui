@@ -75,7 +75,7 @@ describe('Select', () => {
         <Select id="select">{children}</Select>
       </div>,
     )
-    const selectToggle = container.querySelector('[aria-label="Select toggle"]')
+    const selectToggle = container.querySelector('[aria-haspopup="listbox"]')
     const containerElement = container.querySelector(
       '[data-testid="container"]',
     )
@@ -92,7 +92,7 @@ describe('Select', () => {
         {children}
       </Select>,
     )
-    const selectToggle = container.querySelector('[aria-label="Select toggle"]')
+    const selectToggle = container.querySelector('[aria-haspopup="listbox"]')
     fireEvent.click(selectToggle!)
     expect(onOpenChange).toHaveBeenCalledWith(true)
   })
@@ -104,7 +104,7 @@ describe('Select', () => {
         {children}
       </Select>,
     )
-    const selectToggle = container.querySelector('[aria-label="Select toggle"]')
+    const selectToggle = container.querySelector('[aria-haspopup="listbox"]')
     fireEvent.click(selectToggle!)
     const option2 = container.querySelector('[data-value="Option 2"]')
     expect(option2).toBeInTheDocument()
@@ -118,7 +118,7 @@ describe('Select', () => {
         {children}
       </Select>,
     )
-    const selectToggle = container.querySelector('[aria-label="Select toggle"]')
+    const selectToggle = container.querySelector('[aria-haspopup="listbox"]')
     fireEvent.click(selectToggle!)
     const option2 = container.querySelector('[data-value="Option 2"]')
     expect(option2).toBeInTheDocument()
@@ -134,7 +134,7 @@ describe('Select', () => {
         {children}
       </Select>,
     )
-    const selectToggle = container.querySelector('[aria-label="Select toggle"]')
+    const selectToggle = container.querySelector('[aria-haspopup="listbox"]')
     fireEvent.click(selectToggle!)
     const option2 = container.querySelector('[data-value="Option 2"]')
     expect(option2).toBeInTheDocument()
@@ -150,7 +150,7 @@ describe('Select', () => {
         {children}
       </Select>,
     )
-    const selectToggle = container.querySelector('[aria-label="Select toggle"]')
+    const selectToggle = container.querySelector('[aria-haspopup="listbox"]')
     fireEvent.click(selectToggle!)
     const option2 = container.querySelector('[data-value="Option 2"]')
     const option3 = container.querySelector('[data-value="Option 3"]')
@@ -168,7 +168,7 @@ describe('Select', () => {
         {children}
       </Select>,
     )
-    const selectToggle = container.querySelector('[aria-label="Select toggle"]')
+    const selectToggle = container.querySelector('[aria-haspopup="listbox"]')
     fireEvent.click(selectToggle!)
     const option2 = container.querySelector('[data-value="Option 2"]')
     expect(option2).toBeInTheDocument()
@@ -192,7 +192,7 @@ describe('Select', () => {
         </SelectContainer>
       </Select>,
     )
-    const selectToggle = container.querySelector('[aria-label="Select toggle"]')
+    const selectToggle = container.querySelector('[aria-haspopup="listbox"]')
     fireEvent.click(selectToggle!)
     const option2 = container.querySelector('[data-value="Option 2"]')
     expect(option2).toBeInTheDocument()
@@ -206,7 +206,7 @@ describe('Select', () => {
         {children}
       </Select>,
     )
-    const selectToggle = container.querySelector('[aria-label="Select toggle"]')
+    const selectToggle = container.querySelector('[aria-haspopup="listbox"]')
     fireEvent.click(selectToggle!)
     const option2 = container.querySelector('[data-value="Option 2"]')
     expect(option2).toBeInTheDocument()
@@ -219,11 +219,9 @@ describe('Select', () => {
         {children}
       </Select>,
     )
-    const selectToggle = container.querySelector('[aria-label="Select toggle"]')
+    const selectToggle = container.querySelector('[aria-haspopup="listbox"]')
     fireEvent.click(selectToggle!)
-    const selectContainer = container.querySelector(
-      '[aria-label="Select container"]',
-    )
+    const selectContainer = container.querySelector('[role="listbox"]')
     expect(selectContainer).toBeInTheDocument()
     expect(selectContainer?.querySelectorAll('svg')).toHaveLength(1)
   })
@@ -234,7 +232,7 @@ describe('Select', () => {
         {children}
       </Select>,
     )
-    const selectToggle = container.querySelector('[aria-label="Select toggle"]')
+    const selectToggle = container.querySelector('[aria-haspopup="listbox"]')
     fireEvent.click(selectToggle!)
     const option2 = container.querySelector('[data-value="Option 2"]')
     expect(option2).toHaveClass('gap-0-10px--1')
@@ -246,7 +244,7 @@ describe('Select', () => {
         {children}
       </Select>,
     )
-    const selectToggle = container.querySelector('[aria-label="Select toggle"]')
+    const selectToggle = container.querySelector('[aria-haspopup="listbox"]')
     fireEvent.click(selectToggle!)
     const option2 = container.querySelector('[data-value="Option 2"]')
     expect(option2).toHaveClass('gap-0-6px--1')
@@ -258,7 +256,7 @@ describe('Select', () => {
         {children}
       </Select>,
     )
-    const selectToggle = container.querySelector('[aria-label="Select toggle"]')
+    const selectToggle = container.querySelector('[aria-haspopup="listbox"]')
     fireEvent.click(selectToggle!)
     const option2 = container.querySelector('[data-value="Option 2"]')
     expect(option2).toHaveClass('gap-0-0--1')
@@ -270,7 +268,7 @@ describe('Select', () => {
       children,
     } as unknown as React.ComponentProps<typeof Select>
     const { container } = render(<Select id="select" {...invalidTypeProps} />)
-    const selectToggle = container.querySelector('[aria-label="Select toggle"]')
+    const selectToggle = container.querySelector('[aria-haspopup="listbox"]')
     fireEvent.click(selectToggle!)
     const option2 = container.querySelector('[data-value="Option 2"]')
     expect(option2).not.toHaveClass('gap-0-0--1')
@@ -313,7 +311,7 @@ describe('Select', () => {
         </SelectContainer>
       </Select>,
     )
-    const selectToggle = container.querySelector('[aria-label="Select toggle"]')
+    const selectToggle = container.querySelector('[aria-haspopup="listbox"]')
     fireEvent.click(selectToggle!)
     const option1 = container.querySelector('[data-value="Option 1"]')
     expect(option1?.querySelector('svg')).toHaveClass(
@@ -335,11 +333,9 @@ describe('Select', () => {
         </SelectContainer>
       </Select>,
     )
-    const selectToggle = container.querySelector('[aria-label="Select toggle"]')
+    const selectToggle = container.querySelector('[aria-haspopup="listbox"]')
     fireEvent.click(selectToggle!)
-    const confirmButton = container.querySelector(
-      '[aria-label="Select confirm button"]',
-    )
+    const confirmButton = container.querySelector('[role="listbox"] button')
     expect(confirmButton).toBeInTheDocument()
   })
 
@@ -353,11 +349,9 @@ describe('Select', () => {
         </SelectContainer>
       </Select>,
     )
-    const selectToggle = container.querySelector('[aria-label="Select toggle"]')
+    const selectToggle = container.querySelector('[aria-haspopup="listbox"]')
     fireEvent.click(selectToggle!)
-    const confirmButton = container.querySelector(
-      '[aria-label="Select confirm button"]',
-    )
+    const confirmButton = container.querySelector('[role="listbox"] button')
     fireEvent.click(confirmButton!)
     expect(selectToggle).toHaveAttribute('aria-expanded', 'false')
   })
@@ -376,11 +370,9 @@ describe('Select', () => {
         </SelectContainer>
       </Select>,
     )
-    const selectToggle = container.querySelector('[aria-label="Select toggle"]')
+    const selectToggle = container.querySelector('[aria-haspopup="listbox"]')
     fireEvent.click(selectToggle!)
-    const confirmButton = container.querySelector(
-      '[aria-label="Select confirm button"]',
-    )
+    const confirmButton = container.querySelector('[role="listbox"] button')
     expect(confirmButton).not.toBeInTheDocument()
   })
 
@@ -390,7 +382,7 @@ describe('Select', () => {
         {children}
       </Select>,
     )
-    const selectToggle = container.querySelector('[aria-label="Select toggle"]')
+    const selectToggle = container.querySelector('[aria-haspopup="listbox"]')
     fireEvent.click(selectToggle!)
     const option2 = container.querySelector('[data-value="Option 2"]')
     expect(option2?.querySelector('svg')).toBeInTheDocument()
@@ -426,7 +418,7 @@ describe('Select', () => {
         Select
       </Select>,
     )
-    const selectToggle = container.querySelector('[aria-label="Select toggle"]')
+    const selectToggle = container.querySelector('[aria-haspopup="listbox"]')
     fireEvent.click(selectToggle!)
     const option1 = container.querySelector('[data-value="Option 1"]')
     expect(option1).toBeInTheDocument()
@@ -446,7 +438,7 @@ describe('Select', () => {
         Select
       </Select>,
     )
-    const selectToggle = container.querySelector('[aria-label="Select toggle"]')
+    const selectToggle = container.querySelector('[aria-haspopup="listbox"]')
     fireEvent.click(selectToggle!)
     const option2 = container.querySelector('[data-value="Option 2"]')
     expect(option2).toBeInTheDocument()
@@ -473,11 +465,11 @@ describe('Select', () => {
     )
 
     // open selectContainer
-    const selectToggle = container.querySelector('[aria-label="Select toggle"]')
+    const selectToggle = container.querySelector('[aria-haspopup="listbox"]')
     fireEvent.click(selectToggle!)
 
     const selectContainer = container.querySelector(
-      '[aria-label="Select container"]',
+      '[role="listbox"]',
     )! as HTMLDivElement
 
     // happy-dom default viewport 1024x768
@@ -503,9 +495,9 @@ describe('Select', () => {
         </SelectContainer>
       </Select>,
     )
-    const selectToggle = container.querySelector('[aria-label="Select toggle"]')
+    const selectToggle = container.querySelector('[aria-haspopup="listbox"]')
     fireEvent.click(selectToggle!)
-    const option1 = container.querySelector('[aria-label="Select option"]')
+    const option1 = container.querySelector('[role="option"]')
     fireEvent.click(option1!)
     expect(onChange).not.toHaveBeenCalled()
     expect(container.querySelector('.test')).toHaveClass('test')

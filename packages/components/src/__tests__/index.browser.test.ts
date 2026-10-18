@@ -14,7 +14,7 @@ describe('export', () => {
       SelectContainer: expect.any(Function),
       SelectDivider: expect.any(Function),
       SelectOption: expect.any(Function),
-      SelectTrigger: expect.any(Function),
+      SelectTrigger: expect.any(Object),
       StepperContainer: expect.any(Function),
       StepperDecreaseButton: expect.any(Function),
       StepperIncreaseButton: expect.any(Function),
