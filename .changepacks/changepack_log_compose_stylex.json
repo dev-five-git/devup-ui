@@ -1,0 +1,7 @@
+{
+  "changes": {
+    "bindings/devup-ui-wasm/package.json": "Patch"
+  },
+  "note": "stylex.props() and stylex.attrs() merge namespaces this file creates key by key as StyleX does: a later namespace's key replaces an earlier one's, so props(red, blue) is blue and props(blue, red) is red, and a key set to null removes the earlier value; conditions (cond && styles.x, cond ? a : b) choose per key. Arguments the build cannot read key by key (namespaces from other modules, props, dynamic namespaces, include()) keep the previous joined behavior",
+  "date": "2026-10-01T00:00:00.000Z"
+}
