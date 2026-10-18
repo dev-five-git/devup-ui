@@ -9,6 +9,8 @@ import { join, resolve } from 'node:path'
 import { parseArgs } from 'node:util'
 import { gzipSync } from 'node:zlib'
 
+import { wasmBindgenVersionPattern } from './wasm-bindgen-version.js'
+
 const artifacts = { wasm: 'index_bg.wasm', glue: 'index.js' }
 const tools = ['rustc', 'wasmPack', 'wasmBindgen', 'wasmOpt', 'bun', 'node']
 const readJson = (file) => JSON.parse(readFileSync(file, 'utf8'))
@@ -48,7 +50,11 @@ export function validateMetadata(metadata, directories) {
   requireInput(provenance, 'missing job/build provenance')
   for (const side of ['base', 'candidate']) {
     const source = metadata[side]
-    keys(source, ['commit', 'tree', 'packageDir', 'tools'], `metadata.${side}`)
+    keys(
+      source,
+      ['commit', 'tree', 'packageDir', 'wasmBindgenVersion', 'tools'],
+      `metadata.${side}`,
+    )
     for (const id of ['commit', 'tree']) {
       const valid =
         typeof source[id] === 'string' && /^[a-f0-9]{40}$/.test(source[id])
@@ -61,9 +67,24 @@ export function validateMetadata(metadata, directories) {
     keys(source.tools, tools, `${side}.tools`)
     for (const tool of tools) {
       requireInput(text(source.tools[tool]), `missing ${side} tool ${tool}`)
+      if (
+        tool === 'wasmBindgen' &&
+        source.wasmBindgenVersion !== metadata.base.wasmBindgenVersion
+      )
+        continue
       const matches = source.tools[tool] === metadata.base.tools[tool]
       requireInput(matches, `tool mismatch: ${tool}`)
     }
+    const version = source.wasmBindgenVersion
+    requireInput(
+      typeof version === 'string' && wasmBindgenVersionPattern.test(version),
+      `invalid ${side}.wasmBindgenVersion`,
+    )
+    requireInput(
+      source.tools.wasmBindgen.split(/\r?\n/, 1)[0] ===
+        `wasm-bindgen ${version}`,
+      `tool mismatch: ${side} wasmBindgen does not match committed lock version`,
+    )
   }
   const distinct =
     realpathSync(directories.base) !== realpathSync(directories.candidate)

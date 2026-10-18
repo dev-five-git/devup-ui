@@ -1,12 +1,5 @@
 import { spawnSync } from 'node:child_process'
-import {
-  mkdirSync,
-  mkdtempSync,
-  readFileSync,
-  rmSync,
-  writeFileSync,
-} from 'node:fs'
-import { tmpdir } from 'node:os'
+import { readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { gzipSync } from 'node:zlib'
@@ -21,62 +14,14 @@ import {
   summary,
   validateMetadata,
 } from '../../../../wasm-size.js'
+import { sizeFixture } from './wasm-size-fixture'
 
 const roots: string[] = []
 const checker = fileURLToPath(
   new URL('../../../../verify-wasm-size.js', import.meta.url),
 )
 
-function fixture() {
-  const root = mkdtempSync(join(tmpdir(), 'wasm-size-'))
-  roots.push(root)
-  const base = join(root, 'base')
-  const candidate = join(root, 'candidate')
-  for (const directory of [base, candidate]) {
-    mkdirSync(directory)
-    writeFileSync(join(directory, 'index_bg.wasm'), 'abc')
-    writeFileSync(join(directory, 'index.js'), 'export const answer = 42\n')
-  }
-  const tools = {
-    rustc: 'rustc fixture',
-    wasmPack: 'wasm-pack fixture',
-    wasmBindgen: 'wasm-bindgen fixture',
-    wasmOpt: 'wasm-opt fixture',
-    bun: 'bun fixture',
-    node: 'node fixture',
-  }
-  const metadata = {
-    jobId: 'fixture-job',
-    buildCommand: 'fixture release build and postprocess',
-    base: {
-      commit: 'a'.repeat(40),
-      tree: 'b'.repeat(40),
-      packageDir: base,
-      tools: { ...tools },
-    },
-    candidate: {
-      commit: 'c'.repeat(40),
-      tree: 'd'.repeat(40),
-      packageDir: candidate,
-      tools: { ...tools },
-    },
-  }
-  const manifest = join(root, 'metadata.json')
-  writeFileSync(manifest, JSON.stringify(metadata))
-  const report = join(root, 'report.json')
-  const markdown = join(root, 'summary.md')
-  const args = [
-    '--base-pkg',
-    base,
-    '--candidate-pkg',
-    candidate,
-    '--metadata',
-    manifest,
-    '--report',
-    report,
-  ]
-  return { root, base, candidate, metadata, manifest, report, markdown, args }
-}
+const fixture = () => sizeFixture(roots)
 
 afterEach(() => {
   for (const root of roots.splice(0))

@@ -129,18 +129,17 @@ jobs:
             ~/.cargo/registry/cache/
             ~/.cargo/git/db/
           key: cargo-wasm-size-${{ runner.os }}-${{ hashFiles('**/Cargo.lock') }}
-      - name: Install the latest shared binding and optimizer tools once
+      - name: Install the latest shared installer and optimizer once
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
           set -euo pipefail
           curl -L --proto '=https' --tlsv1.2 -sSf https://raw.githubusercontent.com/cargo-bins/cargo-binstall/main/install-from-binstall-release.sh | bash
-          cargo binstall wasm-bindgen-cli --no-confirm --force
           mkdir -p "$RUNNER_TEMP/wasm-size-tools/binaryen"
           gh release download --repo WebAssembly/binaryen --pattern '*-x86_64-linux.tar.gz' --dir "$RUNNER_TEMP/wasm-size-tools"
           tar -xzf "$RUNNER_TEMP"/wasm-size-tools/*.tar.gz --strip-components=1 -C "$RUNNER_TEMP/wasm-size-tools/binaryen"
           echo "$RUNNER_TEMP/wasm-size-tools/binaryen/bin" >> "$GITHUB_PATH"
-      - name: Build the exact base and tested candidate with the same binaries
+      - name: Build exact sources with shared tools and lock-matched bindgen
         run: |
           set -euo pipefail
           export SIZE_ROOT="$RUNNER_TEMP/wasm-size"
@@ -181,14 +180,23 @@ jobs:
           metadata[side] = {
             commit: run('git', ['rev-parse', `${sha}^{commit}`]),
             tree: run('git', ['rev-parse', `${sha}^{tree}`]),
+            wasmBindgenVersion: process.env.WASM_BINDGEN_VERSION,
             packageDir: join(process.env.SIZE_ROOT, side, 'bindings/devup-ui-wasm/pkg'), tools,
           }
           writeFileSync(file, JSON.stringify(metadata, null, 2) + '\n')
           NODE
+          shared_path="$PATH"
           for side in base candidate; do
             stage="$side"
-            node "$SIZE_ROOT/provenance.mjs" "$side"
             (
+              WASM_BINDGEN_VERSION="$(bun resolve-wasm-bindgen.js "$SIZE_ROOT/$side/Cargo.lock")"
+              export WASM_BINDGEN_VERSION
+              bindgen_root="$SIZE_ROOT/abi-tools/$WASM_BINDGEN_VERSION"
+              if [[ ! -x "$bindgen_root/bin/wasm-bindgen" ]]; then
+                cargo binstall wasm-bindgen-cli --version "=$WASM_BINDGEN_VERSION" --root "$bindgen_root" --no-confirm --force
+              fi
+              export PATH="$bindgen_root/bin:$shared_path"
+              node "$SIZE_ROOT/provenance.mjs" "$side"
               cd "$SIZE_ROOT/$side/bindings/devup-ui-wasm"
               export CARGO_TARGET_DIR="$SIZE_ROOT/$side-target"
               cargo metadata --locked --format-version 1 > /dev/null
