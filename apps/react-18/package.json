@@ -1,0 +1,28 @@
+{
+  "name": "react-18-example",
+  "version": "0.1.0",
+  "type": "module",
+  "private": true,
+  "scripts": {
+    "dev": "vite dev",
+    "build": "vite build",
+    "preview": "vite preview --port 3098 --strictPort",
+    "test:e2e": "bunx playwright test -c playwright.config.ts",
+    "lint": "bun ../../node_modules/@typescript/native/bin/tsc && eslint"
+  },
+  "dependencies": {
+    "@devup-ui/components": "workspace:^",
+    "@devup-ui/react": "workspace:^",
+    "react": "18.3.1",
+    "react-dom": "18.3.1"
+  },
+  "devDependencies": {
+    "@devup-ui/vite-plugin": "workspace:^",
+    "@playwright/test": "^1.63.0",
+    "@types/react": "^18.3",
+    "@types/react-dom": "^18.3",
+    "@vitejs/plugin-react": "^6.1",
+    "typescript": "^7.0.2",
+    "vite": "^8.3"
+  }
+}

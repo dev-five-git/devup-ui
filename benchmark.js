@@ -1,4 +1,10 @@
-import { existsSync, readdirSync, rmSync, statSync } from 'node:fs'
+import {
+  existsSync,
+  readdirSync,
+  rmSync,
+  statSync,
+  writeFileSync,
+} from 'node:fs'
 import { join } from 'node:path'
 
 import { execSync } from 'child_process'
@@ -65,9 +71,13 @@ function benchmark(target) {
   const distDir = join(benchmarkDir, 'dist')
   const outputDir = existsSync(distDir) ? distDir : join(benchmarkDir, '.next')
   const duration = performance.getEntriesByName(run)[0].duration / 1000
+  const bytes = checkDirSize(outputDir)
+  const cssBytes = checkCssSize(outputDir)
   return {
     duration,
-    result: `${target} ${duration.toFixed(2)}s ${checkDirSize(outputDir).toLocaleString()} bytes (css ${checkCssSize(outputDir).toLocaleString()} bytes)`,
+    bytes,
+    cssBytes,
+    result: `${target} ${duration.toFixed(2)}s ${bytes.toLocaleString()} bytes (css ${cssBytes.toLocaleString()} bytes)`,
   }
 }
 
@@ -78,9 +88,17 @@ const turboSamples = new Map([
   ['vanilla-extract-devup-ui', []],
 ])
 
+const measured = []
+
 function record(target) {
   const sample = benchmark(target)
   result.push(sample.result)
+  measured.push({
+    target,
+    seconds: sample.duration,
+    bytes: sample.bytes,
+    cssBytes: sample.cssBytes,
+  })
 }
 
 record('tailwind')
@@ -137,3 +155,29 @@ for (const target of turboTargets) {
 }
 
 console.info(result.join('\n'))
+
+// The machine-readable run, the CI artifact the README tables are written from
+// (see benchmark-results.json and render-benchmark-readme.js)
+writeFileSync(
+  'benchmark-run.json',
+  JSON.stringify(
+    {
+      run: {
+        id: process.env.GITHUB_RUN_ID ?? null,
+        commit: process.env.GITHUB_SHA ?? null,
+      },
+      measured,
+      turbopack: Object.fromEntries(
+        turboTargets.map((target) => [
+          target,
+          {
+            samples: turboSamples.get(target),
+            median: median(turboSamples.get(target)),
+          },
+        ]),
+      ),
+    },
+    null,
+    2,
+  ),
+)

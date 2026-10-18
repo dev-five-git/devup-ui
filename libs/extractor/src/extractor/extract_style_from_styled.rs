@@ -294,7 +294,10 @@ pub fn with_component<'a>(
         &definition.bindings,
     );
     Some((
-        apply_attrs(ast_builder, component, &definition.attrs),
+        base.render(
+            ast_builder,
+            apply_attrs(ast_builder, component, &definition.attrs),
+        ),
         new_definition,
     ))
 }
@@ -435,6 +438,7 @@ impl<'a> Base<'a> {
     /// `component` with the base bound to the name it renders, when it is a
     /// runtime value
     fn render(self, ast_builder: &AstBuilder<'a>, component: Expression<'a>) -> Expression<'a> {
+        let component = forward_ref(ast_builder, component);
         match self.bound {
             Some(bound) => call_with_values(ast_builder, vec![(self.name, bound)], component),
             None => component,
@@ -1285,6 +1289,63 @@ fn named_arrow<'a>(
         None::<oxc_allocator::Box<oxc_ast::ast::TSTypeAnnotation<'a>>>,
         body.into(),
         ast_builder,
+    )
+}
+
+/// The binding the generated styled components forward refs through
+pub const FORWARD_REF: &str = "__devupForwardRef";
+
+/// `__devupForwardRef((p, ref) => component({ ...p, ref }))`: React 18 gives a
+/// function component no `ref` prop, so the component takes it as one and
+/// passes it to what it renders with the rest of its props
+pub fn forward_ref<'a>(ast_builder: &AstBuilder<'a>, component: Expression<'a>) -> Expression<'a> {
+    let parameter = |name: &'static str| {
+        FormalParameter::new(
+            SPAN,
+            oxc_allocator::Vec::new_in(ast_builder),
+            BindingPattern::new_binding_identifier(SPAN, name, ast_builder),
+            None::<oxc_allocator::Box<oxc_ast::ast::TSTypeAnnotation<'a>>>,
+            None::<oxc_allocator::Box<Expression<'a>>>,
+            false,
+            None,
+            false,
+            false,
+            ast_builder,
+        )
+    };
+    let props = with_property(
+        ast_builder,
+        identifier(ast_builder, "__devupRefProps"),
+        "ref",
+        identifier(ast_builder, "__devupRef"),
+    );
+    let body = wrap_direct_call(
+        ast_builder,
+        &Expression::new_parenthesized_expression(SPAN, component, ast_builder),
+        &[props],
+    );
+    let render = Expression::new_arrow_function_expression(
+        SPAN,
+        false,
+        None::<oxc_allocator::Box<oxc_ast::ast::TSTypeParameterDeclaration<'a>>>,
+        FormalParameters::boxed(
+            SPAN,
+            FormalParameterKind::ArrowFormalParameters,
+            oxc_allocator::Vec::from_iter_in(
+                [parameter("__devupRefProps"), parameter("__devupRef")],
+                ast_builder,
+            ),
+            None::<oxc_allocator::Box<oxc_ast::ast::FormalParameterRest<'a>>>,
+            ast_builder,
+        ),
+        None::<oxc_allocator::Box<oxc_ast::ast::TSTypeAnnotation<'a>>>,
+        body.into(),
+        ast_builder,
+    );
+    wrap_direct_call(
+        ast_builder,
+        &identifier(ast_builder, FORWARD_REF),
+        &[render],
     )
 }
 

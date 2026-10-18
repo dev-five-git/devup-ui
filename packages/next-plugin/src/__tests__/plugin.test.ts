@@ -194,7 +194,8 @@ describe('DevupUINextPlugin', () => {
       ret.webpack!(createWebpackConfig(), createWebpackContext())
 
       expect(devupUIWebpackPluginSpy).toHaveBeenCalledWith({
-        cssDir: resolve('.next/cache', 'devup-ui_tmpBuildId'),
+        cssDir: resolve('.next/cache', 'devup-ui'),
+        productionPrewarmFiles: [],
       })
     })
 
@@ -221,7 +222,8 @@ describe('DevupUINextPlugin', () => {
 
       expect(devupUIWebpackPluginSpy).toHaveBeenCalledWith({
         package: 'new-package',
-        cssDir: resolve('.next/cache', 'devup-ui_tmpBuildId'),
+        cssDir: resolve('.next/cache', 'devup-ui'),
+        productionPrewarmFiles: [],
       })
     })
 
@@ -240,7 +242,8 @@ describe('DevupUINextPlugin', () => {
 
       expect(devupUIWebpackPluginSpy).toHaveBeenCalledWith({
         package: 'new-package',
-        cssDir: resolve('.next/cache', 'devup-ui_tmpBuildId'),
+        cssDir: resolve('.next/cache', 'devup-ui'),
+        productionPrewarmFiles: [],
       })
       expect(webpack).toHaveBeenCalled()
     })

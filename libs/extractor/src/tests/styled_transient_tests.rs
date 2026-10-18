@@ -57,10 +57,14 @@ impl<'a> Visit<'a> for Renderer {
 }
 
 fn executable_component(code: String) -> String {
-    let mut code = code
+    let code = code
         .strip_prefix("import \"@devup-ui/core/devup-ui.css\";\n")
         .unwrap_or(&code)
         .to_owned();
+    let code = code
+        .strip_prefix("import { forwardRef as __devupForwardRef } from \"react\";\n")
+        .expect("generated styled component must import forwardRef");
+    let mut code = format!("const __devupForwardRef = render => ({{ render }});\n{code}");
     assert!(
         !code.contains("import "),
         "unexpected generated import: {code}"
@@ -125,7 +129,7 @@ fn filters_runtime_transients_when_forwarding_styled_rest(
             extra: {{ $fromAttrs: 'secret', title: 'attrs-title' }}
         }};
         const before = JSON.stringify(input);
-        const rendered = [Subject(input), Subject({{ ...input, as: 'override' }})];
+        const rendered = [Subject.render(input, undefined), Subject.render({{ ...input, as: 'override' }}, undefined)];
         JSON.stringify({{
             transients: rendered.map((r) => Object.keys(r.props).filter((k) => k.startsWith('$'))),
             styleValues: rendered.map((r) => Object.values(r.props.style)),
@@ -215,7 +219,7 @@ fn filters_runtime_transients_when_no_props_are_statically_withheld(#[case] fact
         {component}
         const input = {{ $runtimeOnly: 1, '$': 2, '$🦀': 3, id: 'kept', 'x$y': 4, '': 5 }};
         const before = JSON.stringify(input);
-        const props = Subject(input).props;
+        const props = Subject.render(input, undefined).props;
         JSON.stringify({{
             transients: Object.keys(props).filter((k) => k.startsWith('$')),
             kept: [props.id, props['x$y'], props['']],
