@@ -36,6 +36,15 @@ This rule enforces that the `styleOrder` prop must be a number greater than 0 an
 <div styleOrder="254" />
 ```
 
+## Where it applies
+
+The rule checks `styleOrder` where the build reads it: a prop of a Devup UI component and a top-level key of a style object passed to `css`, `globalCss` or `keyframes`. A `styleOrder` in nested data (`data-*` props, `props`, an element passed as a prop, nested style objects) is not checked.
+
 ## When Not To Use It
 
 If you don't use `styleOrder` props or want to allow any value range, you can disable this rule.
+
+
+## Where it applies
+
+`styleOrder` is read as a prop of a Devup UI component and as a top-level key of a style object passed to `css`, `globalCss`, `keyframes` or `createGlobalStyle`, through the same import aliases the build compiles by default (`@emotion/react`, `@emotion/styled`, `styled-components`, `@vanilla-extract/css`), and in the rules of `styled` (`styled.div({ styleOrder: 1 })`, `styled('div', { styleOrder: 1 })`). It is not read in `.attrs()` or in vanilla-extract stylesheets (`.css.ts`, `.css.js`).

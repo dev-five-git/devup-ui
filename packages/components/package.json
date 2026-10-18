@@ -44,7 +44,6 @@
   "types": "./dist/index.d.ts",
   "dependencies": {
     "@devup-ui/react": "workspace:^",
-    "react": "^19.3.0",
     "clsx": "^2.1.1"
   },
   "devDependencies": {
@@ -59,7 +58,8 @@
     "typescript": "^7.0.2",
     "@typescript/typescript6": "^6.0.2",
     "vite": "^8.3.3",
-    "vite-plugin-dts": "^5.1.2"
+    "vite-plugin-dts": "^5.1.2",
+    "react": "^19.3.0"
   },
   "peerDependencies": {
     "@devup-ui/react": "workspace:^",

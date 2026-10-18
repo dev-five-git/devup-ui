@@ -36,6 +36,7 @@ fn raw_static_style<'a>(
         style_order: None,
         layer: None,
         theme_token_resolution: Default::default(),
+        order: 0,
     }))
 }
 
@@ -60,6 +61,13 @@ pub fn extract_stylex_declarations(
             continue;
         };
         let name = normalize_stylex_property(name.as_ref());
+        if let Some(requirement) = crate::dead_properties::requirement(&name) {
+            errors.push((
+                property.key.span().start,
+                build_time_error(api, &name, requirement),
+            ));
+            continue;
+        }
         match stylex_value(&name, &property.value) {
             Some(value) => declarations.push((name, optimize_value(&value).into_owned())),
             None => errors.push((
@@ -119,7 +127,9 @@ type Leaf<'l> = dyn Fn(&str, &Expression<'_>) -> Option<String> + 'l;
 /// Handles static string/number values (Phase 1) and value-level conditions (Phase 2);
 /// what cannot be read at build time is reported in `errors`.
 ///
-/// Returns a Vec of `(namespace_name, style_props, css_vars, include_refs)` tuples. Each namespace
+/// Returns a Vec of `(namespace_name, style_props, css_vars, include_refs, key_groups)` tuples,
+/// `key_groups` giving each top-level key of a static namespace and how many of its
+/// styles it gives. Each namespace
 /// corresponds to a top-level key in the `stylex.create({...})` argument.
 #[allow(clippy::type_complexity)]
 pub fn extract_stylex_namespace_styles<'a>(
@@ -132,6 +142,7 @@ pub fn extract_stylex_namespace_styles<'a>(
     Vec<ExtractStyleProp<'a>>,
     Option<Vec<(usize, String, &'static str)>>,
     Vec<StylexIncludeRef>,
+    Vec<(String, usize)>,
 )> {
     // A keyframes name or a `defineVars` member reads as the value it stands for
     let leaf = |property: &str, value: &Expression<'_>| {
@@ -173,13 +184,14 @@ pub fn extract_stylex_namespace_styles<'a>(
                     ));
                     continue;
                 };
-                result.push((ns_name, styles, Some(css_vars), vec![]));
+                result.push((ns_name, styles, Some(css_vars), vec![], vec![]));
             }
             Expression::ObjectExpression(ns_obj) => {
-                let (styles, include_refs) = extract_stylex_namespace(ns_obj, &leaf, errors);
-                result.push((ns_name, styles, None, include_refs));
+                let (styles, include_refs, groups) =
+                    extract_stylex_namespace(ns_obj, &leaf, errors);
+                result.push((ns_name, styles, None, include_refs, groups));
             }
-            Expression::NullLiteral(_) => result.push((ns_name, vec![], None, vec![])),
+            Expression::NullLiteral(_) => result.push((ns_name, vec![], None, vec![], vec![])),
             value => errors.push((
                 value.span().start,
                 build_time_error(
@@ -193,14 +205,21 @@ pub fn extract_stylex_namespace_styles<'a>(
     result
 }
 
-/// The styles and `include()` references of one static namespace
+/// The styles and `include()` references of one static namespace, with each
+/// top-level key and how many of the styles it gives
+#[allow(clippy::type_complexity)]
 fn extract_stylex_namespace<'a>(
     namespace: &ObjectExpression<'_>,
     leaf: &Leaf<'_>,
     errors: &mut Vec<(u32, String)>,
-) -> (Vec<ExtractStyleProp<'a>>, Vec<StylexIncludeRef>) {
+) -> (
+    Vec<ExtractStyleProp<'a>>,
+    Vec<StylexIncludeRef>,
+    Vec<(String, usize)>,
+) {
     let mut styles = vec![];
     let mut include_refs = vec![];
+    let mut groups = vec![];
     for style_prop in &namespace.properties {
         let style_prop = match style_prop {
             ObjectPropertyKind::ObjectProperty(style_prop) => style_prop,
@@ -232,6 +251,7 @@ fn extract_stylex_namespace<'a>(
                 continue;
             };
             let parent_selectors = [SelectorPart::Pseudo(prop_name.to_string())];
+            let before = styles.len();
             for inner_prop in &inner_obj.properties {
                 let inner_prop = match inner_prop {
                     ObjectPropertyKind::ObjectProperty(inner_prop) => inner_prop,
@@ -244,10 +264,18 @@ fn extract_stylex_namespace<'a>(
                     errors.push(key_error("stylex.create", &inner_prop.key));
                     continue;
                 };
+                let property = normalize_stylex_property(inner_name.as_ref());
+                if let Some(requirement) = crate::dead_properties::requirement(&property) {
+                    errors.push((
+                        inner_prop.key.span().start,
+                        build_time_error("stylex.create", &property, requirement),
+                    ));
+                    continue;
+                }
                 push_decomposed(
                     &mut styles,
                     decompose_value_conditions(
-                        &normalize_stylex_property(inner_name.as_ref()),
+                        &property,
                         &inner_prop.value,
                         &parent_selectors,
                         leaf,
@@ -255,21 +283,31 @@ fn extract_stylex_namespace<'a>(
                     ),
                 );
             }
+            groups.push((prop_name.to_string(), styles.len() - before));
             continue;
         }
 
         let css_property = normalize_stylex_property(prop_name.as_ref());
+        if let Some(requirement) = crate::dead_properties::requirement(&css_property) {
+            errors.push((
+                style_prop.key.span().start,
+                build_time_error("stylex.create", &css_property, requirement),
+            ));
+            continue;
+        }
         if SHORTHAND_PROPERTIES.contains(css_property.as_str()) {
             eprintln!(
                 "[stylex] WARNING: Shorthand property '{css_property}' may cause unexpected specificity issues. Consider using longhand properties (e.g., 'marginTop', 'paddingLeft')."
             );
         }
+        let before = styles.len();
         push_decomposed(
             &mut styles,
             decompose_value_conditions(&css_property, &style_prop.value, &[], leaf, errors),
         );
+        groups.push((prop_name.to_string(), styles.len() - before));
     }
-    (styles, include_refs)
+    (styles, include_refs, groups)
 }
 
 fn push_decomposed(styles: &mut Vec<ExtractStyleProp<'_>>, decomposed: Vec<DecomposedStyle>) {
@@ -354,6 +392,13 @@ fn extract_stylex_dynamic_namespace<'a>(
             continue;
         };
         let css_property = normalize_stylex_property(&prop_name);
+        if let Some(requirement) = crate::dead_properties::requirement(&css_property) {
+            errors.push((
+                prop.key.span().start,
+                build_time_error("stylex.create", &css_property, requirement),
+            ));
+            continue;
+        }
 
         // Check if value references a parameter (dynamic)
         let is_dynamic = if prop.shorthand {

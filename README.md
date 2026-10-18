@@ -7,7 +7,7 @@
 </h3>
 
 <p align="center">
-    <strong>Zero Config · Zero FOUC · Zero Runtime · Complete CSS-in-JS Syntax Coverage</strong>
+    <strong>Zero Config · Zero FOUC · Zero Runtime · Build-Time CSS-in-JS</strong>
 </p>
 
 ---
@@ -41,7 +41,7 @@ English | [한국어](README_ko.md)
 
 Traditional CSS-in-JS solutions force you to choose between developer experience and performance. Devup UI eliminates this trade-off entirely by processing all styles at build time using a Rust-powered preprocessor.
 
-- **Complete Syntax Coverage**: Every CSS-in-JS pattern you know — variables, conditionals, responsive arrays, pseudo-selectors — all fully supported
+- **Broad Syntax Coverage**: Variables, conditionals, responsive arrays, pseudo-selectors, `styled()`, Emotion's `css` prop and more compile at build time; anything the build cannot know is a [located build error](https://devup-ui.com/docs/build-errors), never a silent miss ([supported syntax & limitations](https://devup-ui.com/docs/limitations))
 - **Familiar API**: `styled()` API compatible with styled-components and Emotion patterns
 - **True Zero Runtime**: No JavaScript execution for styling at runtime. Period.
 - **Smallest Bundle Size**: Optimized class names (`a`, `b`, ... `aa`, `ab`) minimize CSS output
@@ -79,31 +79,35 @@ npm install @devup-ui/webpack-plugin
 
 ## Comparison Benchmarks
 
-[Latest CI benchmark](https://github.com/dev-five-git/devup-ui/actions/runs/33254030962) on `ubuntu-latest` with Next.js 16.3.3. All Next.js builds use the native TypeScript 7 CLI for type checking.
+<!-- benchmark:start -->
+[Latest CI benchmark](https://github.com/dev-five-git/devup-ui/actions/runs/36702867475) (commit `8d6c2f62`, Devup UI 1.0.44) on `ubuntu-24.04` with Next.js 16.3.3. All Next.js builds use the native TypeScript 7 CLI for type checking. The English and Korean tables are generated from the same checked result file, `benchmark-results.json`.
+
+Build Size is every byte of the build output directory (`.next`, or `dist` for vinext); CSS Size is the emitted `.css` files alone, measured separately.
 
 Webpack values are one cold build:
 
-| Library                     | Version | Build Time | Build Size        |
-| --------------------------- | ------- | ---------- | ----------------- |
-| tailwindcss                 | 4.3.3   | 12.81s     | 66,453,190 bytes  |
-| styleX                      | 0.19.0  | 27.61s     | 95,413,403 bytes  |
-| vanilla-extract             | 1.21.2  | 11.96s     | 67,689,923 bytes  |
-| kuma-ui                     | 1.6.4   | 13.07s     | 74,747,637 bytes  |
-| panda-css                   | 1.12.0  | 13.20s     | 70,970,208 bytes  |
-| chakra-ui                   | 3.37.0  | 19.98s     | 206,589,898 bytes |
-| mui                         | 9.4.0   | 13.78s     | 100,603,186 bytes |
-| **devup-ui (per-file CSS)** | 1.0.40  | **10.73s** | 66,535,095 bytes  |
-| **devup-ui (single CSS)**   | 1.0.40  | **10.81s** | 66,535,321 bytes  |
+| Library                     | Version | Build Time | Build Size        | CSS Size     |
+| --------------------------- | ------- | ---------- | ----------------- | ------------ |
+| tailwindcss                 | 4.3.3   | 16.67s     | 67,332,642 bytes  | 5,852 bytes  |
+| styleX                      | 0.19.0  | 38.08s     | 96,291,287 bytes  | 425 bytes    |
+| vanilla-extract             | 1.21.2  | 16.09s     | 68,565,036 bytes  | 294 bytes    |
+| kuma-ui                     | 1.6.4   | 17.91s     | 75,627,783 bytes  | 340 bytes    |
+| panda-css                   | 1.12.0  | 18.16s     | 71,849,418 bytes  | 15,615 bytes |
+| chakra-ui                   | 3.37.0  | 27.22s     | 207,426,274 bytes | 0 bytes      |
+| mui                         | 9.4.0   | 18.78s     | 101,473,260 bytes | 0 bytes      |
+| **devup-ui (per-file CSS)** | 1.0.44  | **14.27s** | 67,424,897 bytes  | 562 bytes    |
+| **devup-ui (single CSS)**   | 1.0.44  | **14.17s** | 67,426,959 bytes  | 790 bytes    |
 
 Turbopack values are medians of six cold builds in alternating order:
 
-| Library                                | Version | Median Build Time | Build Size           |
-| -------------------------------------- | ------- | ----------------- | -------------------- |
-| tailwindcss                            | 4.3.3   | 5.52s             | 38,425,132 bytes     |
-| **devup-ui (direct APIs, single CSS)** | 1.0.40  | **5.46s**         | **36,507,782 bytes** |
-| **devup-ui (static `.css.ts`)**        | 1.0.40  | **5.41s**         | 36,586,883 bytes     |
+| Library                                | Version | Median Build Time | Build Size       | CSS Size    |
+| -------------------------------------- | ------- | ----------------- | ---------------- | ----------- |
+| tailwindcss                            | 4.3.3   | 6.98s             | 38,422,141 bytes | 6,197 bytes |
+| **devup-ui (direct APIs, single CSS)** | 1.0.44  | **6.93s**         | 36,518,952 bytes | 327 bytes   |
+| **devup-ui (static `.css.ts`)**        | 1.0.44  | **6.92s**         | 36,578,506 bytes | 268 bytes   |
 
-The Turbopack ranges overlap, so the direct-API median is 0.06s (1.1%) ahead but still effectively parity with Tailwind on this fixture. The six cold samples were Tailwind `5.42, 5.56, 5.70, 5.53, 5.41, 5.52s`, direct Devup UI `5.64, 5.40, 5.42, 5.46, 5.54, 5.46s`, and static `.css.ts` `5.42, 5.38, 5.42, 5.47, 5.40, 5.38s`. The fixtures have comparable app shapes, not pixel-identical styling: Tailwind styles the leading paragraph and button more heavily, while Devup UI exercises typed component/style props. Treat these as build-pipeline results rather than a per-rule microbenchmark. The static `.css.ts` row was measured with the former `lite` fast path for static modules; every `.css.ts` module now runs on the full Boa evaluator, which adds about 20 ms for the first module and under 1 ms for each further one.
+The Turbopack ranges overlap, so the direct-API median is 0.05s (0.7%) ahead of Tailwind on this fixture and the two are effectively at parity. The six cold samples were Tailwind `7.10s, 6.99s, 6.98s, 6.90s, 6.91s, 6.97s`, direct Devup UI `6.98s, 6.83s, 6.95s, 6.91s, 6.90s, 6.94s`, and static `.css.ts` `6.93s, 6.95s, 6.85s, 6.97s, 6.87s, 6.91s`. The fixtures have comparable app shapes, not pixel-identical styling: Tailwind styles the leading paragraph and button more heavily, while Devup UI exercises typed component/style props. Treat these as build-pipeline results rather than a per-rule microbenchmark. Every `.css.ts` module runs on the full Boa evaluator, which adds about 20 ms for the first module and under 1 ms for each further one.
+<!-- benchmark:end -->
 
 ## How it works
 
@@ -111,47 +115,73 @@ Devup UI transforms your components at build time. Class names are generated usi
 
 **Basic transformation:**
 
+Generated class and CSS variable names may change between versions, build state, and prefix settings; do not manually reuse them.
+
+You write:
+
 ```tsx
-// You write:
-const variable = <Box _hover={{ bg: 'blue' }} bg="red" p={4} />
+import { Box } from '@devup-ui/react'
 
-// Devup UI generates:
-const variable = <div className="a b c" />
+const example = <Box _hover={{ bg: 'blue' }} bg="red" p={4} />
+```
 
-// With CSS:
-// .a { background-color: red; }
-// .b { padding: 1rem; }
-// .c:hover { background-color: blue; }
+Devup UI generates:
+
+```tsx
+import "@devup-ui/react/devup-ui.css";
+const example = <div className="a b c" />;
+```
+
+With CSS:
+
+```css
+/*! devup-ui v1.0.82, | Apache License 2.0 | https://devup-ui.com */.b{background:red}.c{padding:16px}.a:hover{background:blue}
 ```
 
 **Dynamic values become CSS variables:**
 
+You write:
+
 ```tsx
-// You write:
+import { Box } from '@devup-ui/react'
+
 const example = <Box bg={colorVariable} />
-
-// Devup UI generates:
-const example = <div className="a" style={{ '--a': colorVariable }} />
-
-// With CSS:
-// .a { background-color: var(--a); }
 ```
 
-**Complex expressions and responsive arrays — fully supported:**
+Devup UI generates:
 
 ```tsx
-// You write:
+import "@devup-ui/react/devup-ui.css";
+const example = <div className="a" style={{ "--b": colorVariable }} />;
+```
+
+With CSS:
+
+```css
+/*! devup-ui v1.0.82, | Apache License 2.0 | https://devup-ui.com */.a{background:var(--b)}
+```
+
+**Complex expressions and responsive arrays:**
+
+You write:
+
+```tsx
+import { Box } from '@devup-ui/react'
+
 const example = <Box bg={['red', 'blue', isActive ? 'green' : dynamicColor]} />
+```
 
-// Devup UI generates:
-const example = (
-  <div
-    className={`a b ${isActive ? 'c' : 'd'}`}
-    style={{ '--d': dynamicColor }}
-  />
-)
+Devup UI generates:
 
-// With responsive CSS for each breakpoint
+```tsx
+import "@devup-ui/react/devup-ui.css";
+const example = <div className={`a b ${isActive ? "c" : "d"}`} style={{ "--e": dynamicColor }} />;
+```
+
+With responsive CSS for each breakpoint:
+
+```css
+/*! devup-ui v1.0.82, | Apache License 2.0 | https://devup-ui.com */.a{background:red}@media(min-width:480px){.b{background:blue}}@media(min-width:768px){.c{background:green}.d{background:var(--e)}}
 ```
 
 **Type-safe theming:**
