@@ -14,7 +14,7 @@ categories = ["development-tools", "wasm", "web-programming"]
 crate-type = ["cdylib"]
 
 [dependencies]
-wasm-bindgen = "0.2.128"
+wasm-bindgen = "0.2.129"
 extractor = { path = "../../libs/extractor" }
 sheet = { path = "../../libs/sheet" }
 css = { path = "../../libs/css" }
@@ -26,8 +26,8 @@ rustc-hash = "2"
 # code size when deploying.
 console_error_panic_hook = { version = "0.1.7", optional = true }
 bimap = { version = "0.6.3", features = ["serde"] }
-js-sys = "0.3.105"
-serde_json = "1.0.151"
+js-sys = "0.3.106"
+serde_json = "1.0.154"
 serde-wasm-bindgen = "0.6.5"
 # Not used directly. Declared only to enable the `wasm_js` feature on the
 # `getrandom` version that boa_engine pulls in (boa_engine -> rand 0.10 ->
@@ -42,9 +42,9 @@ getrandom = { version = "0.4", features = ["wasm_js"] }
 boa_engine = { version = "0.22", features = ["js"] }
 
 [dev-dependencies]
-wasm-bindgen-test = "0.3.78"
+wasm-bindgen-test = "0.3.79"
 serial_test = "4.0.1"
-insta = "1.48.0"
+insta = "1.49.0"
 rstest = "0.27.0"
 
 [lints]

@@ -11,15 +11,15 @@
     "lint": "next lint"
   },
   "dependencies": {
-    "react": "^19.3.0",
-    "react-dom": "^19.3.0",
-    "next": "^16.4.0"
+    "react": "^19.3.1",
+    "react-dom": "^19.3.1",
+    "next": "^16.4.2"
   },
   "devDependencies": {
-    "@pandacss/dev": "^2.1.2",
-    "@pandacss/preset-base": "^2.1.2",
-    "@pandacss/preset-panda": "^2.1.2",
-    "@types/node": "^26.6.4",
+    "@pandacss/dev": "^2.2.0",
+    "@pandacss/preset-base": "^2.2.0",
+    "@pandacss/preset-panda": "^2.2.0",
+    "@types/node": "^26.6.5",
     "@types/react": "^19.3.0",
     "@types/react-dom": "^19.3.0",
     "typescript": "^7.0.2"
