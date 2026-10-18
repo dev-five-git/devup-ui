@@ -7,8 +7,16 @@ on:
   pull_request:
     branches:
       - main
+
+# Pull requests and every job below run read-only. Only the `release` and
+# `deploy-pages` jobs get write permissions, and they run on pushes to main
+# alone, so no step a pull request controls can publish, tag, comment or deploy.
 permissions:
   contents: read
+
+# CI always runs the latest releases: the `ubuntu-latest` runner, the newest
+# major version of every action, and the latest stable Rust, Bun, Node.js,
+# wasm-pack, cargo-binstall, cargo-tarpaulin and changepacks.
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
@@ -17,11 +25,15 @@ concurrency:
 jobs:
   benchmark:
     runs-on: ubuntu-latest
+    timeout-minutes: 60
     steps:
       - name: Checkout
         uses: actions/checkout@v7
 
       - uses: actions-rust-lang/setup-rust-toolchain@v2
+        with:
+          toolchain: stable
+          components: clippy, rustfmt
 
       - name: Cache cargo registry + target
         uses: actions/cache@v6
@@ -34,7 +46,7 @@ jobs:
           key: cargo-benchmark-${{ runner.os }}-${{ hashFiles('**/Cargo.lock') }}
       - uses: oven-sh/setup-bun@v2
         with:
-          bun-version: "1.4.0"
+          bun-version: latest
         name: Install bun
 
       - name: Cache bun dependencies
@@ -44,16 +56,24 @@ jobs:
           key: bun-benchmark-${{ runner.os }}-${{ hashFiles('**/bun.lock') }}
       - uses: jetli/wasm-pack-action@v0.4.0
         with:
-          version: "latest"
+          version: latest
       - name: Install Node.js
         uses: actions/setup-node@v7
         with:
           registry-url: "https://registry.npmjs.org"
-          node-version: 24
+          node-version: latest
       - run: bun install
       - run: bun run build
       - name: Benchmark
         run: bun run benchmark
+      - name: Upload the measured run
+        uses: actions/upload-artifact@v7
+        if: ${{ !cancelled() }}
+        with:
+          name: benchmark-run
+          path: benchmark-run.json
+          if-no-files-found: ignore
+          retention-days: 30
       - name: Profile Devup UI Turbopack
         env:
           DEVUP_UI_PROFILE: "1"
@@ -67,16 +87,20 @@ jobs:
   # `publish` runs it against the deployed vinext/@devup-ui/vite-plugin build.
   # This job runs the SAME 128 assertions and the SAME screenshot baselines
   # against a Next 16 + Turbopack build, so @devup-ui/next-plugin's production
-  # CSS path stays gated at 64 routes — the scale where extraction-wave races
+  # CSS path stays gated at 64 routes - the scale where extraction-wave races
   # actually reproduce. It runs in parallel so it stays off the publish critical
   # path, and its artifact is never deployed.
   landing-next-e2e:
     runs-on: ubuntu-latest
+    timeout-minutes: 60
     steps:
       - name: Checkout
         uses: actions/checkout@v7
 
       - uses: actions-rust-lang/setup-rust-toolchain@v2
+        with:
+          toolchain: stable
+          components: clippy, rustfmt
 
       - name: Cache cargo registry + target
         uses: actions/cache@v6
@@ -89,7 +113,7 @@ jobs:
           key: cargo-landing-next-${{ runner.os }}-${{ hashFiles('**/Cargo.lock') }}
       - uses: oven-sh/setup-bun@v2
         with:
-          bun-version: "1.4.0"
+          bun-version: latest
         name: Install bun
 
       - name: Cache bun dependencies
@@ -99,11 +123,11 @@ jobs:
           key: bun-landing-next-${{ runner.os }}-${{ hashFiles('**/bun.lock') }}
       - uses: jetli/wasm-pack-action@v0.4.0
         with:
-          version: "latest"
+          version: latest
       - name: Install Node.js
         uses: actions/setup-node@v7
         with:
-          node-version: 24
+          node-version: latest
       - run: bun install
       - run: bun run build
       - name: Build Landing (Next)
@@ -143,11 +167,15 @@ jobs:
   # in Chromium, so React-19-only APIs cannot slip back in.
   react-18:
     runs-on: ubuntu-latest
+    timeout-minutes: 45
     steps:
       - name: Checkout
         uses: actions/checkout@v7
 
       - uses: actions-rust-lang/setup-rust-toolchain@v2
+        with:
+          toolchain: stable
+          components: clippy, rustfmt
 
       - name: Cache cargo registry + target
         uses: actions/cache@v6
@@ -160,7 +188,7 @@ jobs:
           key: cargo-react-18-${{ runner.os }}-${{ hashFiles('**/Cargo.lock') }}
       - uses: oven-sh/setup-bun@v2
         with:
-          bun-version: "1.4.0"
+          bun-version: latest
         name: Install bun
 
       - name: Cache bun dependencies
@@ -170,11 +198,11 @@ jobs:
           key: bun-react-18-${{ runner.os }}-${{ hashFiles('**/bun.lock') }}
       - uses: jetli/wasm-pack-action@v0.4.0
         with:
-          version: "latest"
+          version: latest
       - name: Install Node.js
         uses: actions/setup-node@v7
         with:
-          node-version: 24
+          node-version: latest
       - run: bun install
       - run: bun run build
       - name: Type-check and build the React 18 app
@@ -201,11 +229,16 @@ jobs:
   vinext-rsc-css-e2e:
     runs-on: ubuntu-latest
     timeout-minutes: 30
+    permissions:
+      contents: read
     steps:
       - name: Checkout
         uses: actions/checkout@v7
 
       - uses: actions-rust-lang/setup-rust-toolchain@v2
+        with:
+          toolchain: stable
+          components: clippy, rustfmt
 
       - name: Cache cargo registry + target
         uses: actions/cache@v6
@@ -218,7 +251,7 @@ jobs:
           key: cargo-vinext-rsc-css-${{ runner.os }}-${{ hashFiles('**/Cargo.lock') }}
       - uses: oven-sh/setup-bun@v2
         with:
-          bun-version: "1.4.0"
+          bun-version: latest
         name: Install bun
 
       - name: Cache bun dependencies
@@ -228,11 +261,11 @@ jobs:
           key: bun-vinext-rsc-css-${{ runner.os }}-${{ hashFiles('**/bun.lock') }}
       - uses: jetli/wasm-pack-action@v0.4.0
         with:
-          version: "latest"
+          version: latest
       - name: Install Node.js
         uses: actions/setup-node@v7
         with:
-          node-version: 24
+          node-version: latest
       - run: bun install
       - run: bun run build
       - name: Cache Playwright Browsers
@@ -252,24 +285,27 @@ jobs:
           DEVUP_SINGLE_CSS=1 bun run --filter vinext-rsc-css-repro build
       - name: Run E2E Tests (singleCss)
         run: bun run test:e2e:rsc-css
+
+  # Validation: runs on pull requests and on pushes to main, read-only. The job
+  # id stays `publish` because it is the status check the repository requires;
+  # the privileged release steps live in `release` and `deploy-pages` below.
   publish:
     runs-on: ubuntu-latest
-    permissions:
-      contents: write
-      id-token: write
-      pages: write
-      pull-requests: write
+    timeout-minutes: 90
     steps:
       - name: Checkout
         uses: actions/checkout@v7
         with:
           # changepacks diffs HEAD against the previous release commit. The
           # default shallow fetch grafts away every parent, so that lookup dies
-          # with "Could not find a merge-base" and the release never publishes.
+          # with "Could not find a merge-base".
           fetch-depth: 0
           fetch-tags: true
 
       - uses: actions-rust-lang/setup-rust-toolchain@v2
+        with:
+          toolchain: stable
+          components: clippy, rustfmt
 
       - name: Install cargo-binstall
         run: curl -L --proto '=https' --tlsv1.2 -sSf https://raw.githubusercontent.com/cargo-bins/cargo-binstall/main/install-from-binstall-release.sh | bash
@@ -288,7 +324,7 @@ jobs:
 
       - uses: oven-sh/setup-bun@v2
         with:
-          bun-version: "1.4.0"
+          bun-version: latest
         name: Install bun
 
       - name: Cache bun dependencies
@@ -299,16 +335,18 @@ jobs:
 
       - uses: jetli/wasm-pack-action@v0.4.0
         with:
-          version: "latest"
+          version: latest
       - name: Install Node.js
         uses: actions/setup-node@v7
         with:
           registry-url: "https://registry.npmjs.org"
-          node-version: 24
+          node-version: latest
       - run: bun install
       - run: bun run build
       - name: Verify built package entry points
         run: bun run verify:dist
+      - name: Verify the README benchmark tables
+        run: bun render-benchmark-readme.js --check
       - name: Verify publish tarballs
         shell: bash
         run: |
@@ -349,10 +387,16 @@ jobs:
           rm -rf .rustfmt.toml
           # Formatting with the temporary coverage config and then with the
           # default config is not a reversible round trip. Restore the exact
-          # checked-in sources so changepacks can safely switch commits.
+          # checked-in sources so the checkout is clean again.
           git restore --source=HEAD --staged --worktree -- .
           cargo fmt --all -- --check
           git diff --exit-code
+      - name: Check the changepacks of this change
+        if: github.event_name == 'pull_request'
+        run: |
+          # changepacks compares the change against a local main, which a pull request checkout does not have
+          git fetch --no-tags origin main:refs/heads/main
+          bunx @changepacks/cli@latest check --format json
       - name: Build Landing
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -368,21 +412,17 @@ jobs:
           key: playwright-publish-${{ runner.os }}-${{ hashFiles('**/bun.lock') }}
       - name: Install Playwright Browsers
         run: bunx playwright install chromium --with-deps
-      - name: Check for Existing E2E Snapshots
-        id: check-snapshots
+      # A run only compares against the screenshots checked into the repository:
+      # it never creates or commits them. A new visual test needs its baselines
+      # generated by a maintainer (`bun run test:e2e:update`) and committed.
+      - name: Require the E2E baselines
         run: |
-          SNAPSHOT_COUNT=$(find e2e -name '*.png' -path '*-snapshots/*' 2>/dev/null | wc -l)
-          echo "count=$SNAPSHOT_COUNT" >> $GITHUB_OUTPUT
-          echo "Found $SNAPSHOT_COUNT existing snapshot(s)"
-      - name: Generate E2E Snapshots
-        if: steps.check-snapshots.outputs.count == '0'
-        run: bunx playwright test --update-snapshots
-      - name: Commit E2E Snapshots
-        if: steps.check-snapshots.outputs.count == '0' && github.event_name == 'pull_request'
-        uses: stefanzweifel/git-auto-commit-action@v7
-        with:
-          commit_message: "chore: generate e2e visual snapshots from CI"
-          file_pattern: "e2e/**/*-snapshots/*.png"
+          SNAPSHOT_COUNT=$(find e2e -name '*-linux.png' -path '*-snapshots/*' 2>/dev/null | wc -l)
+          echo "Found $SNAPSHOT_COUNT linux baseline snapshot(s)"
+          if [ "$SNAPSHOT_COUNT" -eq 0 ]; then
+            echo "No checked-in baselines under e2e/**/*-snapshots; generate them with 'bun run test:e2e:update' and commit them." >&2
+            exit 1
+          fi
       - name: Run E2E Tests
         run: bun run test:e2e
       - name: Build Landing (singleCss)
@@ -400,13 +440,11 @@ jobs:
           name: playwright-report-singlecss
           path: playwright-report/
           retention-days: 1
-      - name: Upload artifact
+      - name: Upload the site for deployment
         uses: actions/upload-pages-artifact@v5
         with:
           path: ./apps/landing/dist/client
           retention-days: 1
-        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
-      - uses: actions/deploy-pages@v5
         if: github.event_name == 'push' && github.ref == 'refs/heads/main'
       - name: Upload to codecov.io
         uses: codecov/codecov-action@v7
@@ -415,19 +453,94 @@ jobs:
           fail_ci_if_error: true
           files: ./coverage/lcov.info
 
-      # Publishes through npm OIDC trusted publishing. The job's
-      # `id-token: write` permission lets npm exchange GitHub's short-lived OIDC
-      # token, and public packages receive provenance automatically.
-      #
-      # PREREQUISITE: every @devup-ui/* package must be registered as a Trusted
-      # Publisher on npmjs.com against repo dev-five-git/devup-ui and workflow
-      # file `publish.yml`. npm matches that filename exactly, so renaming or
-      # moving this file breaks publishing until the entries are updated.
-      #
-      # The publish command itself is selected in .changepacks/config.json.
-      # Bun packs each workspace so dependency ranges are materialized, then
-      # npm publishes that tarball with OIDC (Bun cannot do OIDC itself:
-      # oven-sh/bun#22423).
+  # Pages deployment: the only job with `pages` and `id-token` write, and it
+  # only runs for a push to main whose validation passed.
+  deploy-pages:
+    needs: [publish]
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    permissions:
+      contents: read
+      pages: write
+      id-token: write
+    steps:
+      - uses: actions/deploy-pages@v5
+
+  # Publishes through npm OIDC trusted publishing. The job's `id-token: write`
+  # permission lets npm exchange GitHub's short-lived OIDC token, and public
+  # packages receive provenance automatically.
+  #
+  # PREREQUISITE: every @devup-ui/* package must be registered as a Trusted
+  # Publisher on npmjs.com against repo dev-five-git/devup-ui and workflow
+  # file `publish.yml`. npm matches that filename exactly, so renaming or
+  # moving this file breaks publishing until the entries are updated.
+  #
+  # The publish command itself is selected in .changepacks/config.json.
+  # Bun packs each workspace so dependency ranges are materialized, then
+  # npm publishes that tarball with OIDC (Bun cannot do OIDC itself:
+  # oven-sh/bun#22423).
+  #
+  # It runs only for a push to main whose validation and end-to-end jobs
+  # passed, and is the only job that can write contents, open pull requests or
+  # mint an OIDC token for npm.
+  release:
+    needs: [publish, landing-next-e2e, react-18]
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    permissions:
+      contents: write
+      id-token: write
+      pull-requests: write
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+        with:
+          # changepacks diffs HEAD against the previous release commit. The
+          # default shallow fetch grafts away every parent, so that lookup dies
+          # with "Could not find a merge-base" and the release never publishes.
+          fetch-depth: 0
+          fetch-tags: true
+
+      - uses: actions-rust-lang/setup-rust-toolchain@v2
+        with:
+          toolchain: stable
+          components: clippy, rustfmt
+
+      - name: Cache cargo registry + target
+        uses: actions/cache@v6
+        with:
+          path: |
+            ~/.cargo/registry/index/
+            ~/.cargo/registry/cache/
+            ~/.cargo/git/db/
+            target/
+          key: cargo-release-${{ runner.os }}-${{ hashFiles('**/Cargo.lock') }}
+
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: latest
+        name: Install bun
+
+      - name: Cache bun dependencies
+        uses: actions/cache@v6
+        with:
+          path: ~/.bun/install/cache
+          key: bun-release-${{ runner.os }}-${{ hashFiles('**/bun.lock') }}
+
+      - uses: jetli/wasm-pack-action@v0.4.0
+        with:
+          version: latest
+      - name: Install Node.js
+        uses: actions/setup-node@v7
+        with:
+          registry-url: "https://registry.npmjs.org"
+          node-version: latest
+      - run: bun install
+      - run: bun run build
+      - name: Verify built package entry points
+        run: bun run verify:dist
       - name: Verify clean publish checkout
         run: git diff --exit-code
       - uses: changepacks/action@main
