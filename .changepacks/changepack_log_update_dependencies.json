@@ -9,6 +9,6 @@
     "packages/rsbuild-plugin/package.json": "Patch",
     "packages/webpack-plugin/package.json": "Patch"
   },
-  "note": "Refresh direct dependency ranges and regenerated lockfiles with the latest dependency-check-updates CLI, including current Next, React, Panda, Playwright, ESLint, Vinext and WASM dependencies. Preserve React 18 and 19 peer support and the React 18 fixture pins. No new Devup UI build-time errors or styling runtime.",
+  "note": "Refresh all dependency ranges and regenerated lockfiles with the latest dependency-check-updates CLI, including Oxc 0.154, sourcemap 9, Next, React, Panda, Playwright, ESLint, Vinext and WASM dependencies. Preserve the existing hybrid CommonJS bundler language through exact top-level declaration-goal classification without changing parser AST, diagnostics or source-type metadata; real invalid syntax, including nested ES declarations, still produces located parser errors. Keep React 18 and 19 peer support and the React 18 fixture pins. No new build errors for valid supported styling inputs or styling runtime.",
   "date": "2026-10-18T00:00:00.000Z"
 }
