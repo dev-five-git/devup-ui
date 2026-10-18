@@ -38,6 +38,21 @@ impl Hash for KeyframeIdentity<'_> {
 
 impl ExtractStyleProperty for ExtractKeyframes {
     fn extract(&self, filename: Option<&str>) -> StyleProperty {
+        if css::atom_hoist::is_atom_hoist() {
+            let mut content = String::new();
+            for (step, styles) in &self.keyframes {
+                content.push_str(&css::atom_name::hex(step));
+                content.push('{');
+                for style in styles {
+                    content.push_str(&css::atom_name::hex(style.property()));
+                    content.push(':');
+                    content.push_str(&css::atom_name::hex(style.value()));
+                    content.push(';');
+                }
+                content.push('}');
+            }
+            return StyleProperty::ClassName(keyframes_to_keyframes_name(&content, filename));
+        }
         let mut hasher = DefaultHasher::new();
         KeyframeIdentity(&self.keyframes).hash(&mut hasher);
         // Format the u64 hash into a stack buffer instead of a throwaway heap

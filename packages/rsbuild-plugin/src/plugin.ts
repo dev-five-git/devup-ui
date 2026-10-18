@@ -54,12 +54,14 @@ export interface DevupUIRsbuildPluginOptions {
   prefix?: string
   shorthands?: CustomShorthands
   /**
-   * Atom-level route-aware hoisting threshold (min routes sharing an atom for it
-   * to hoist into the shared devup-ui.css; clamped to >= 2; omit to disable).
-   * Opt-in: when set, single-importer collapse + atom hoisting are enabled and
-   * per-route CSS is served via getCss(fileNum). "Routes" are inferred from the
-   * import graph (entry points and dynamic-import targets). For a single-entry
-   * SPA (routeCount < 2) it is a no-op.
+   * Atom-level route-aware hoisting threshold. Defaults to 2; 0 disables it.
+   * Positive thresholds are clamped to >= 2. Canonical buckets reached by at
+   * least this many routes use global short counter names in devup-ui.css;
+   * other buckets keep per-file counter names. Composes with single-importer
+   * collapse and serves per-route CSS via getCss(fileNum). Routes are inferred
+   * from entry points and dynamic-import targets. Fewer than two routes yields
+   * no hoisted plan. Ignored when singleCss is true, including IDs/import flags
+   * and shared-chunk configuration.
    *
    * On MPA, the shared base devup-ui.css (hoisted atoms) is emitted as ONE
    * shared chunk via an injected rspack `splitChunks` cacheGroup
@@ -135,7 +137,7 @@ export const DevupUI = ({
   singleCss = false,
   prefix,
   shorthands,
-  atomHoist,
+  atomHoist = 2,
   importAliases: userImportAliases,
 }: Partial<DevupUIRsbuildPluginOptions> = {}): RsbuildPlugin => {
   registerShorthands(shorthands ?? {})
@@ -213,14 +215,15 @@ export const DevupUI = ({
         })
       })
 
-      // Atom-level hoisting (opt-in via `atomHoist`). Configured BEFORE any
-      // transform so atoms receive global (shared) class names. Composes with
+      // Per-file atom hoisting defaults to 2; 0 disables it, singleCss ignores it.
+      // Before any transform, routes are imported, then the threshold is set;
+      // bucket eligibility freezes at the first extraction. Late reach cannot promote
+      // or rename a bucket until resetBuildState. Composes with
       // single-importer collapse (both keyed by the canonical bucket). rsbuild
       // passes the ABSOLUTE resourcePath to codeExtract, so the graph maps use
       // absolute keys (keyBy: 'absolute') and the extraction filename is
       // POSIX-normalized to match.
-      const atomMode =
-        atomHoist !== undefined && Number.isFinite(atomHoist) && atomHoist > 0
+      const atomMode = !singleCss && Number.isFinite(atomHoist) && atomHoist > 0
       setModuleResolver(
         createModuleResolver({
           toId: (path) => (atomMode ? path.replaceAll('\\', '/') : path),
@@ -250,7 +253,7 @@ export const DevupUI = ({
             setAtomHoist(plan.threshold)
           } else {
             console.info(
-              '[devup-ui] atomHoist is set but fewer than 2 routes were detected; atom hoisting is a no-op (single-entry/SPA).',
+              '[devup-ui] fewer than 2 routes were detected; atom hoisting is a no-op (single-entry/SPA).',
             )
           }
         } catch {

@@ -113,9 +113,10 @@ fn build(order: [usize; 2], single: bool, hoist: bool) -> Result<Built, Box<dyn 
 #[serial]
 fn reserved_real_outputs_match_when_callbacks_reverse() -> TestResult {
     // Given / When / Then: same physical reservation, opposite real extraction order.
-    for (single, hoist) in [(true, false), (false, false), (false, true)] {
+    for (single, hoist) in [(true, false), (true, true), (false, false), (false, true)] {
         assert_eq!(build([0, 1], single, hoist)?, build([1, 0], single, hoist)?);
     }
+    assert_eq!(build([0, 1], true, false)?, build([0, 1], true, true)?);
     Ok(())
 }
 
@@ -356,7 +357,7 @@ fn nested_supplier_reservation_is_reused_by_two_roots() -> TestResult {
 
 #[test]
 #[serial]
-fn sheet_only_token_keys_are_reserved_before_real_output() -> TestResult {
+fn resolved_token_keys_are_reserved_before_real_output() -> TestResult {
     // Given
     let (_reset, option) = setup(true);
     register_theme_internal(serde_json::from_value(
@@ -366,11 +367,6 @@ fn sheet_only_token_keys_are_reserved_before_real_output() -> TestResult {
         "tokens.tsx",
         "import {Box} from '@devup-ui/react'; <Box w={['$size']} boxShadow={['$card']} />;",
     );
-    extract_without_source_map(&token.filename, &token.code, option.clone())?;
-    let extracted_slots: usize = css::class_map::get_class_map()
-        .values()
-        .map(HashMap::len)
-        .sum();
     // When
     reserve_class_slots_internal(&[token], option.clone(), None);
     // Then
@@ -378,7 +374,7 @@ fn sheet_only_token_keys_are_reserved_before_real_output() -> TestResult {
         .values()
         .map(HashMap::len)
         .sum();
-    assert!(reserved_slots > extracted_slots);
+    assert_eq!(reserved_slots, 2);
     let output = transform(
         &input(
             "tokens.tsx",
@@ -386,12 +382,11 @@ fn sheet_only_token_keys_are_reserved_before_real_output() -> TestResult {
         ),
         &option,
     )?;
-    assert!(
-        output
-            .css
-            .ok_or("expected token CSS")?
-            .contains("width:8px")
-    );
+    let css = output.css.ok_or("expected token CSS")?;
+    assert!(css.contains("width:8px"));
+    assert!(css.contains("box-shadow:0 0 1px red"));
+    assert!(!css.contains("$size"));
+    assert!(!css.contains("$card"));
     assert_eq!(get_unreserved_class_slot_count(), 0);
     Ok(())
 }
