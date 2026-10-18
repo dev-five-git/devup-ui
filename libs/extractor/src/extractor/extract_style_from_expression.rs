@@ -392,7 +392,7 @@ pub fn extract_style_from_expression<'a>(
                 ast_builder,
                 part,
                 offset,
-                expression,
+                &mut expression.clone_in(ast_builder.allocator()),
                 level,
                 selector,
                 literal_handling,
@@ -437,7 +437,7 @@ pub fn extract_style_from_expression<'a>(
                             ast_builder,
                             part,
                             offset,
-                            &mut o.value,
+                            &mut o.value.clone_in(ast_builder.allocator()),
                             level,
                             selector,
                             literal_handling,
@@ -1382,6 +1382,7 @@ fn typography_atom(name: &str, level: u8, selector: &Option<StyleSelector>) -> E
         style_order: None,
         layer: None,
         theme_token_resolution: ThemeTokenResolution::default(),
+        order: 0,
     }
 }
 

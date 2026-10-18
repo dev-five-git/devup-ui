@@ -11,13 +11,25 @@ mod gen_class_name;
 mod gen_style;
 mod import_alias_visit;
 mod imported_constants;
+mod jsx_import_source;
+mod jsx_pragmas;
 mod module_loader;
 mod mutations;
+#[cfg(test)]
+mod numeric_template_tests;
+mod parsing;
+#[cfg(test)]
+mod pragma_annotation_tests;
+#[cfg(test)]
+mod pragma_path_tests;
+#[cfg(test)]
+mod pragma_tests;
 mod prop_modify_utils;
 mod prop_valid;
 #[cfg(test)]
 mod responsive_selector_tests;
 mod source_map;
+mod style_collector;
 mod style_values;
 mod styled_reads;
 #[cfg(test)]
@@ -61,6 +73,7 @@ use oxc_ast::ast::Expression;
 use oxc_ast_visit::VisitMut;
 use oxc_codegen::{Codegen, CodegenOptions};
 use oxc_parser::{Parser, ParserReturn};
+#[cfg(test)]
 use oxc_span::SourceType;
 use rustc_hash::FxHashMap;
 use rustc_hash::FxHashSet;
@@ -323,6 +336,16 @@ fn extract_with_source_map(
     source_map: bool,
     resolver: Option<&ModuleResolver>,
 ) -> Result<ExtractOutput, Box<dyn Error>> {
+    if code.contains(&option.package)
+        || code.contains(STYLEX_PACKAGE)
+        || option
+            .import_aliases
+            .keys()
+            .any(|alias| code.contains(alias))
+    {
+        let allocator = Allocator::default();
+        parsing::parse(&allocator, filename, code)?;
+    }
     extract_source(filename, code, None, option, source_map, resolver)
 }
 
@@ -362,8 +385,11 @@ fn extract_source(
         || transformed_code.contains(STYLEX_PACKAGE);
 
     if !has_relevant_import {
+        let pragma_rewritten = alias_edits
+            .iter()
+            .any(|(start, end, _)| &namespace_code[*start..*end] == "@emotion/react");
         // skip if not using package
-        if namespace_edits.is_empty() {
+        if namespace_edits.is_empty() && !pragma_rewritten {
             return Ok(ExtractOutput {
                 styles: FxHashSet::default(),
                 code: namespace_code.into_owned(),
@@ -373,12 +399,24 @@ fn extract_source(
             });
         }
         let (source, earlier_edits) = evaluated.unwrap_or((code, &[]));
-        let edits: Vec<&[import_alias_visit::Edit]> = std::iter::once(namespace_edits.as_slice())
-            .chain(earlier_edits.iter().copied())
-            .collect();
+        let edits: Vec<&[import_alias_visit::Edit]> = [
+            if pragma_rewritten {
+                alias_edits.as_slice()
+            } else {
+                &[]
+            },
+            namespace_edits.as_slice(),
+        ]
+        .into_iter()
+        .chain(earlier_edits.iter().copied())
+        .collect();
         let mut output = emotion_namespace::Rewritten {
             filename,
-            code: &namespace_code,
+            code: if pragma_rewritten {
+                &transformed_code
+            } else {
+                &namespace_code
+            },
             source,
             edits: &edits,
         }
@@ -414,13 +452,13 @@ fn extract_source(
                         &referenced,
                     )?
                 };
-                let code = vanilla_extract::collected_styles_to_code_with_keyframes(
+                let generated = vanilla_extract::collected_styles_to_code_with_keyframes(
                     &collected,
                     &option.package,
                     &keyframes_names,
                 );
-                Some(if code.is_empty() {
-                    code
+                let generated = if generated.is_empty() {
+                    generated
                 } else {
                     imports
                         .kept_imports
@@ -428,9 +466,14 @@ fn extract_source(
                         .map(|specifier| {
                             format!("import {};\n", vanilla_extract::json_string(specifier))
                         })
-                        .chain([code])
+                        .chain([generated])
                         .collect()
-                })
+                };
+                Some(jsx_pragmas::stylesheet_source(
+                    &transformed_code,
+                    generated,
+                    filename,
+                ))
             }
             // A stylesheet another one imports must give its own values, and an
             // import cycle read too early fails as it does in ES modules, so both
@@ -469,7 +512,6 @@ fn extract_source(
 
     let code_to_parse = processed_code.as_deref().unwrap_or(&transformed_code);
 
-    let source_type = SourceType::from_path(filename)?;
     let (bucket, global, css_file) = resolve_css_target(filename, &option);
     let import_main = option.import_main_css && !global;
     // Presize to the exact final length (1 target + optional main-css entry) and
@@ -482,14 +524,8 @@ fn extract_source(
     css_files.push(css_file.clone());
     let allocator = Allocator::default();
 
-    let ParserReturn {
-        mut program, // AST
-        fatal_error, // Parser encountered an error it couldn't recover from
-        ..
-    } = Parser::new(&allocator, code_to_parse, source_type).parse();
-    if fatal_error {
-        return Err("Parser panicked".into());
-    }
+    let mut program = parsing::parse(&allocator, filename, code_to_parse)?;
+    let header_pragmas = jsx_pragmas::HeaderPragmas::capture(&program);
     let inlined = if processed_code.is_none() {
         imported_constants::inline_constants(
             &oxc_ast::builder::AstBuilder::new(&allocator),
@@ -594,6 +630,7 @@ fn extract_source(
     } else {
         CodegenOptions::default()
     };
+    header_pragmas.reanchor(&mut program);
     let result = Codegen::new().with_options(codegen_options).build(&program);
     // A stylesheet's output is generated, so its map stays on that code
     let map = result.map.map(|map| {
@@ -606,7 +643,7 @@ fn extract_source(
     });
 
     Ok(ExtractOutput {
-        styles: visitor.styles,
+        styles: visitor.styles.into_styles(filename),
         code: result.code,
         map,
         css_file: Some(css_file),
@@ -668,7 +705,7 @@ fn located_errors(
                 source,
                 offset,
                 message,
-                SourceType::from_path(filename).unwrap_or_default(),
+                parsing::source_type(filename).unwrap_or_default(),
             );
             format!("{}: {message}", locate(filename, source, offset))
         })
@@ -751,7 +788,7 @@ fn extract_class_map_from_code(
     option: &ExtractOption,
     style_names: &FxHashSet<String>,
 ) -> Result<FxHashMap<String, String>, Box<dyn Error>> {
-    let source_type = SourceType::from_path(filename)?;
+    let source_type = parsing::source_type(filename)?;
     let (bucket, global, css_file) = resolve_css_target(filename, option);
     let css_files = vec![css_file];
     let allocator = Allocator::default();
@@ -817,7 +854,7 @@ pub fn has_devup_ui(filename: &str, code: &str, package: &str) -> bool {
         return false;
     }
 
-    let source_type = match SourceType::from_path(filename) {
+    let source_type = match parsing::source_type(filename) {
         Ok(st) => st,
         Err(_) => return false,
     };
@@ -1540,7 +1577,7 @@ mod tests {
             extract(
                 "test.tsx",
                 r"import {Box} from '@devup-ui/core'
-        <Box padding={1} margin={2} wrong={} wrong2=<></> />
+        <Box padding={1} margin={2} wrong={null} wrong2=<></> />
         ",
                 ExtractOption {
                     package: "@devup-ui/core".to_string(),
@@ -1789,7 +1826,7 @@ mod tests {
             extract(
                 "test.tsx",
                 r"import {Box as C} from '@devup-ui/core'
-        <C padding={1} margin={2} className={} />
+        <C padding={1} margin={2} />
         ",
                 ExtractOption {
                     package: "@devup-ui/core".to_string(),
@@ -4911,7 +4948,7 @@ import clsx from 'clsx'
             )
             .unwrap_err()
             .to_string(),
-            "Parser panicked"
+            "test.tsx:1:11: Expected `from` but found `string`"
         );
     }
 
@@ -7044,7 +7081,7 @@ export {
             extract(
                 "test.jsx",
                 r#"import {Box, css} from '@devup-ui/core'
-    <Box className={css({color:"white"})} styleOrder={} />
+    <Box className={css({color:"white"})} styleOrder={null} />
             "#,
                 ExtractOption {
                     package: "@devup-ui/core".to_string(),
@@ -7787,7 +7824,7 @@ export { c as Lib };"#,
             extract(
                 "test.jsx",
                 r"import {Box} from '@devup-ui/core'
-    <Box styleVars={} />
+    <Box styleVars />
             ",
                 ExtractOption {
                     package: "@devup-ui/core".to_string(),
@@ -9547,7 +9584,7 @@ keyframes({
             extract(
                 "test.tsx",
                 r"import {Box} from '@devup-ui/core'
-        <Box padding={1} margin={2} wrong={} wrong2=<></> />
+        <Box padding={1} margin={2} wrong={null} wrong2=<></> />
         ",
                 ExtractOption {
                     package: "@devup-ui/core".to_string(),
@@ -9580,7 +9617,7 @@ keyframes({
             extract(
                 "test1.tsx",
                 r"import {Box} from '@devup-ui/core'
-        <Box padding={1} margin={2} wrong={} wrong2=<></> />
+        <Box padding={1} margin={2} wrong={null} wrong2=<></> />
         ",
                 ExtractOption {
                     package: "@devup-ui/core".to_string(),
@@ -11377,6 +11414,227 @@ export const e = spin.toString()",
             "{error}"
         );
         assert!(extract("a.css.ts", code, option(false)).is_ok());
+    }
+
+    #[rstest]
+    #[case::user_example(
+        "{ color: 'hotpink' }",
+        "'&:hover,&:focus': hotpink",
+        "'&:hover': { ...hotpinkRules }, '&:focus': { ...hotpinkRules }"
+    )]
+    #[case::inner_comma(
+        "{ color: 'hotpink' }",
+        "'&:is(a,b), &:not(.x,.y)': hotpink",
+        "'&:is(a,b)': { ...hotpinkRules }, '&:not(.x,.y)': { ...hotpinkRules }"
+    )]
+    #[case::three_selectors(
+        "{ color: 'hotpink' }",
+        "' &:hover, &:focus, &:active ': hotpink",
+        "'&:hover': { ...hotpinkRules }, '&:focus': { ...hotpinkRules }, '&:active': { ...hotpinkRules }"
+    )]
+    #[case::responsive(
+        "{ color: ['hotpink', null, 'blue'], p: [1, 2] }",
+        "'&:hover,&:focus': hotpink",
+        "'&:hover': { ...hotpinkRules }, '&:focus': { ...hotpinkRules }"
+    )]
+    #[case::nested_layer_order(
+        "{ '@layer': { base: { color: 'hotpink', _active: { color: ['red', 'blue'] } } } }",
+        "styleOrder: 3, '&:hover,&:focus': hotpink, '&:hover': { color: 'green' }",
+        "styleOrder: 3, '&:hover': { ...hotpinkRules }, '&:focus': { ...hotpinkRules }, '&:hover': { color: 'green' }"
+    )]
+    #[case::quoted_commas(
+        "{ color: 'hotpink' }",
+        r#"'&[data-x=a,b], &[title="a,]b"]': hotpink"#,
+        r#"'&[data-x=a,b]': { ...hotpinkRules }, '&[title="a,]b"]': { ...hotpinkRules }"#
+    )]
+    #[serial]
+    fn test_css_nested_static_result(
+        #[case] rules: &str,
+        #[case] nested: &str,
+        #[case] expanded: &str,
+        #[values("css(hotpinkRules)", "css({}, hotpinkRules)")] source: &str,
+    ) {
+        let compile = |body| {
+            reset_class_map();
+            reset_file_map();
+            extract(
+                "test.tsx",
+                &format!("import {{ css }} from '@devup-ui/react'; const hotpinkRules = {rules}; const hotpink = {source}; export const hover = css({{ {body} }});"),
+                ExtractOption::default(),
+            )
+            .unwrap()
+        };
+        let expected = compile(expanded);
+        let actual = compile(nested);
+        assert_eq!(actual.styles, expected.styles);
+        assert_eq!(actual.code, expected.code);
+    }
+
+    #[rstest]
+    #[case::unknown("")]
+    #[case::external_class("const hotpink = css('external', { color: 'red' });")]
+    #[serial]
+    fn test_css_nested_static_result_unknown_error(#[case] binding: &str) {
+        reset_class_map();
+        reset_file_map();
+        let error = extract(
+            "test.tsx",
+            &format!("import {{ css }} from '@devup-ui/react'\n{binding}\nexport const hover = css({{ '&:hover,&:focus': hotpink }})"),
+            ExtractOption {
+                package: "@devup-ui/react".to_string(),
+                css_dir: "@devup-ui/react".to_string(),
+                single_css: true,
+                import_main_css: false,
+                import_aliases: HashMap::new(),
+            },
+        )
+        .unwrap_err()
+        .to_string();
+        assert!(
+            error.starts_with("test.tsx:3:47: `css()` cannot use `hotpink` at build time:")
+                && error.contains("its values must be literals, theme tokens or constants"),
+            "{error}"
+        );
+    }
+
+    #[rstest]
+    #[case::composed(
+        "const hotpink = css(base, { p: 2 });",
+        "hotpink",
+        "{ color: 'hotpink', p: 2 }"
+    )]
+    #[case::chained(
+        "const hotpink = css({ _active: base });",
+        "hotpink",
+        "{ _active: { color: 'hotpink' } }"
+    )]
+    #[case::keyframes(
+        "const hotpink = css({ animationName: spin });",
+        "hotpink",
+        "{ animationName: spin }"
+    )]
+    #[case::alias("const hotpink = base;", "hotpink", "{ color: 'hotpink' }")]
+    #[case::inline("", "css({ color: 'hotpink' })", "{ color: 'hotpink' }")]
+    #[case::inline_known_composition(
+        "const hotpink = css(base, { color: 'blue', _active: base });",
+        "css(base, { color: 'blue', _active: base })",
+        "{ color: 'blue', _active: { color: 'hotpink' } }"
+    )]
+    #[case::composed_later_wins(
+        "const hotpink = css(base, { color: 'blue', p: 2 });",
+        "hotpink",
+        "{ color: 'blue', p: 2 }"
+    )]
+    #[case::alias_chain(
+        "const warm = base; const hotpink = warm;",
+        "hotpink",
+        "{ color: 'hotpink' }"
+    )]
+    #[case::selector_record(
+        "const hotpink = css({ selectors: { '&:active': base } });",
+        "hotpink",
+        "{ selectors: { '&:active': { color: 'hotpink' } } }"
+    )]
+    #[case::declaration_string(
+        "const hotpink = css({ content: base });",
+        "hotpink",
+        "{ content: `${base}` }"
+    )]
+    #[case::spread_composed(
+        "const hotpink = css(...[base, { p: 2 }]);",
+        "hotpink",
+        "{ color: 'hotpink', p: 2 }"
+    )]
+    #[case::adjacent_spreads(
+        "const hotpink = css(...[base], ...[{ color: 'blue', p: 2 }]);",
+        "hotpink",
+        "{ color: 'blue', p: 2 }"
+    )]
+    #[case::nested_array_spread(
+        "const hotpink = css(...[...[base], { p: 2 }]);",
+        "hotpink",
+        "{ color: 'hotpink', p: 2 }"
+    )]
+    #[case::direct_spread_source(
+        "const hotpink = css(...{ _active: base });",
+        "hotpink",
+        "{ _active: { color: 'hotpink' } }"
+    )]
+    #[case::spread_declaration_string(
+        "const hotpink = css(...[{ content: base }, { p: 2 }]);",
+        "hotpink",
+        "{ content: `${base}`, p: 2 }"
+    )]
+    #[case::layer_record(
+        "",
+        "{ '@layer': { colors: base } }",
+        "{ '@layer': { colors: { color: 'hotpink' } } }"
+    )]
+    #[case::media_record(
+        "",
+        "{ '@media': { print: base } }",
+        "{ '@media': { print: { color: 'hotpink' } } }"
+    )]
+    #[case::supports_record(
+        "",
+        "{ '@supports': { '(display: grid)': base } }",
+        "{ '@supports': { '(display: grid)': { color: 'hotpink' } } }"
+    )]
+    #[case::container_record(
+        "",
+        "{ '@container': { '(min-width: 10px)': base } }",
+        "{ '@container': { '(min-width: 10px)': { color: 'hotpink' } } }"
+    )]
+    #[case::underscore_media_record(
+        "",
+        "{ _media: { print: base } }",
+        "{ _media: { print: { color: 'hotpink' } } }"
+    )]
+    #[case::record_declaration_string(
+        "",
+        "{ '@layer': { colors: { content: base } } }",
+        "{ '@layer': { colors: { content: `${base}` } } }"
+    )]
+    #[serial]
+    fn test_css_nested_static_source_references(
+        #[case] binding: &str,
+        #[case] value: &str,
+        #[case] expanded: &str,
+    ) {
+        let compile = |nested: &str| {
+            reset_class_map();
+            reset_file_map();
+            extract(
+                "test.tsx",
+                &format!("import {{ css, keyframes }} from '@devup-ui/react'; const spin = keyframes({{ from: {{ opacity: 0 }}, to: {{ opacity: 1 }} }}); const base = css({{ color: 'hotpink' }}); {binding} export const hover = css({{ styleOrder: 3, '@layer': {{ base: {{ '&:hover,&:focus': {nested} }} }} }});"),
+                ExtractOption::default(),
+            ).unwrap()
+        };
+        let expected = compile(expanded);
+        let actual = compile(value);
+        assert_eq!(actual.styles, expected.styles);
+        assert_eq!(actual.code, expected.code);
+    }
+
+    #[test]
+    #[serial]
+    fn test_css_nested_inline_without_binding() {
+        let compile = |source| {
+            reset_class_map();
+            reset_file_map();
+            extract("test.tsx", source, ExtractOption::default()).unwrap()
+        };
+        let expected = compile(
+            "import { css } from '@devup-ui/react'; css({ color: 'hotpink' }); export const hover = css({ '&:hover': { color: 'hotpink' }, '&:focus': { color: 'hotpink' } });",
+        );
+        let actual = compile(
+            "import { css } from '@devup-ui/react'; export const hover = css({ '&:hover,&:focus': css({ color: 'hotpink' }) });",
+        );
+        assert_eq!(actual.styles, expected.styles);
+        assert_eq!(
+            actual.code.split("export const").last(),
+            expected.code.split("export const").last()
+        );
     }
 
     #[test]
@@ -15121,6 +15379,70 @@ export const a = {element}"
         assert!(code.contains(expected), "{expected}\n{code}");
     }
 
+    // StyleX merges namespaces key by key: a later key wins and `null` removes it
+    #[rstest]
+    #[case("stylex.props(s.red, s.blue)", "{ className: \"color-0-blue--255\" }")]
+    #[case("stylex.props(s.blue, s.red)", "{ className: \"color-0-red--255\" }")]
+    #[case("stylex.props(s.red, s.reset)", "{ className: \"\" }")]
+    #[case(
+        "stylex.attrs(s.both, s.blue)",
+        "{ class: \"opacity-0-_d_5--255 color-0-blue--255\" }"
+    )]
+    #[case(
+        "stylex.props([s.red, [s.blue]], false, null, undefined)",
+        "{ className: \"color-0-blue--255\" }"
+    )]
+    #[case(
+        "stylex.props(s.red, on && s.blue)",
+        "{ className: on ? \"color-0-blue--255\" : \"color-0-red--255\" }"
+    )]
+    #[case(
+        "stylex.props(s.red, on && s.reset)",
+        "{ className: on ? \"\" : \"color-0-red--255\" }"
+    )]
+    #[case(
+        "stylex.props(on ? s.red : s.blue)",
+        "{ className: on ? \"color-0-red--255\" : \"color-0-blue--255\" }"
+    )]
+    #[case(
+        "stylex.props(on && s.red, on && s.red)",
+        "{ className: on ? \"color-0-red--255\" : on ? \"color-0-red--255\" : \"\" }"
+    )]
+    #[case(
+        "stylex.props(s['blue'], s.hover)",
+        "{ className: \"color-0-blue--255 color-0-red-_a__c_hover-255\" }"
+    )]
+    #[case("stylex.props(s.red, other.x)", "other.x")]
+    #[case("stylex.props(s.red, s[key])", "s[key]")]
+    #[case(
+        "stylex.props(s.red, s.missing)",
+        "{ className: \"color-0-red--255\" }"
+    )]
+    #[case("stylex.props(s.red, (cond).x)", "[cond.x]")]
+    #[case("stylex.props(s.red, ...rest)", "rest")]
+    #[case("stylex.props(s.red, s.fn(1))", "--")]
+    #[case("stylex.props(s.red, s.inc)", "color-0-red--255")]
+    #[case("stylex.props(on && s.reset)", "{ className: \"\" }")]
+    #[case("stylex.props([s.red, rest])", "[rest].flat(Infinity)")]
+    #[serial]
+    fn test_stylex_props_merge_keys(#[case] call: &str, #[case] expected: &str) {
+        let code = readable_code(&format!(
+            "import stylex from '@stylexjs/stylex'
+const s0 = stylex.create({{ a: {{ margin: '1px' }} }})
+const s = stylex.create({{
+  red: {{ color: 'red' }},
+  blue: {{ color: 'blue' }},
+  reset: {{ color: null }},
+  both: {{ color: 'red', opacity: 0.5 }},
+  hover: {{ ':hover': {{ color: 'red' }} }},
+  fn: (h) => ({{ height: h }}),
+  inc: {{ ...stylex.include(s0.a), color: 'green' }},
+}})
+export const result = {call}"
+        ));
+        assert!(code.contains(expected), "{expected}\n{code}");
+    }
+
     #[test]
     #[serial]
     fn test_css_composing_reports_runtime_values() {
@@ -15196,6 +15518,130 @@ export const d = css(ordered, danger, called);",
                 output.code
             );
         }
+    }
+
+    fn assert_composed_export_atoms(code: &str, export: &str, expected: &[&str]) {
+        let declaration = format!("export const {export} = \"");
+        let classes = code
+            .split_once(&declaration)
+            .expect("compiled export must be a static class string")
+            .1
+            .split_once('"')
+            .unwrap()
+            .0;
+        let mut actual: Vec<_> = classes
+            .split_whitespace()
+            .map(|class| class.trim_end_matches("-a"))
+            .collect();
+        actual.sort_unstable();
+        let mut expected = expected.to_vec();
+        expected.sort_unstable();
+        assert_eq!(actual, expected, "{code}");
+    }
+
+    #[rstest]
+    #[case(
+        "{ color: 'orange', p: 2 }",
+        "{ color: 'blue', margin: 3 }",
+        &["color-0-blue--255", "padding-0-8px--255", "margin-0-12px--255"]
+    )]
+    #[case(
+        "{ color: ['orange', 'red', 'purple'], p: 2, _hover: { color: ['orange', 'red', 'purple'] } }",
+        "{ color: ['blue', null, 'green', null, 'pink'], margin: 3, _hover: { color: ['blue', null, 'green'] } }",
+        &[
+            "color-0-blue--255", "color-1-red--255", "color-2-green--255",
+            "color-4-pink--255", "padding-0-8px--255", "margin-0-12px--255",
+            "color-0-blue-_a__c_hover-255", "color-1-red-_a__c_hover-255",
+            "color-2-green-_a__c_hover-255"
+        ]
+    )]
+    #[serial]
+    fn test_css_later_argument_wins_across_leaf(
+        #[case] earlier: &'static str,
+        #[case] later: &str,
+        #[case] expected: &[&str],
+        #[values(false, true)] imported: bool,
+        #[values(false, true)] single_css: bool,
+    ) {
+        reset_class_map();
+        reset_file_map();
+        let modules: &[(&str, &str)] = &[
+            (
+                "/src/child.ts",
+                "import { css } from '@devup-ui/react'; export const base = css({ color: 'orange', p: 2 });",
+            ),
+            (
+                "/src/responsive.ts",
+                "import { css } from '@devup-ui/react'; export const base = css({ color: ['orange', 'red', 'purple'], p: 2, _hover: { color: ['orange', 'red', 'purple'] } });",
+            ),
+        ];
+        let leaf = if earlier.contains("_hover") {
+            "responsive"
+        } else {
+            "child"
+        };
+        let binding = if imported {
+            format!("import {{ base as child }} from './{leaf}';")
+        } else {
+            format!("const child = css({earlier});")
+        };
+        let source = format!(
+            "import {{ css }} from '@devup-ui/react'; {binding} export const base = css(child, {later});"
+        );
+        let resolver = memory_resolver(modules);
+        css::debug::set_debug(true);
+        let output = extract_with_modules(
+            "/src/parent.ts",
+            &source,
+            ExtractOption {
+                single_css,
+                ..ExtractOption::default()
+            },
+            false,
+            &resolver,
+        );
+        css::debug::set_debug(false);
+        let output = output.unwrap();
+        assert_composed_export_atoms(&output.code, "base", expected);
+        if imported {
+            assert!(output.dependencies.contains(&format!("/src/{leaf}.ts")));
+        }
+    }
+
+    #[rstest]
+    #[serial]
+    fn test_css_later_argument_wins_across_three_levels(#[values(false, true)] single_css: bool) {
+        reset_class_map();
+        reset_file_map();
+        let resolver = memory_resolver(&[]);
+        css::debug::set_debug(true);
+        let output = extract_with_modules(
+            "/src/chain.ts",
+            "import { css } from '@devup-ui/react';
+const leaf = css({ color: ['orange', 'red', 'purple'], p: 2, _hover: { color: ['orange', 'red', 'purple'] }, styleOrder: 3 });
+const middle = css(leaf, { color: ['blue', null, 'green'], margin: 3, _hover: { color: ['blue', null, 'green'] } });
+export const base = css(middle, { color: ['cyan', null, null, null, 'pink'], _hover: { color: 'cyan' } });",
+            ExtractOption { single_css, ..ExtractOption::default() },
+            false,
+            &resolver,
+        );
+        css::debug::set_debug(false);
+        let output = output.unwrap();
+        assert_composed_export_atoms(
+            &output.code,
+            "base",
+            &[
+                "color-0-cyan--255",
+                "color-1-red--3",
+                "color-2-green--255",
+                "color-4-pink--255",
+                "padding-0-8px--3",
+                "margin-0-12px--255",
+                "color-0-cyan-_a__c_hover-255",
+                "color-1-red-_a__c_hover-3",
+                "color-2-green-_a__c_hover-255",
+            ],
+        );
     }
 
     // Each Tailwind class becomes the classes of its styles; every other class,
@@ -21347,6 +21793,7 @@ export const K = styled.div(base, cond && { color: 'blue' }, { margin: 1 });",
                 | ExtractStyleValue::Css(_)
                 | ExtractStyleValue::Import(_)
                 | ExtractStyleValue::FontFace(_)
+                | ExtractStyleValue::LayerOrder(_)
                 | ExtractStyleValue::Keyframes(_) => None,
             })
             .collect();
