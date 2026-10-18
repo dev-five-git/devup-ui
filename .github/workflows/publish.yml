@@ -99,8 +99,6 @@ jobs:
     env:
       CARGO_BUILD_JOBS: "2"
       RUSTUP_TOOLCHAIN: stable
-      BASE_SHA: ${{ github.event_name == 'pull_request' && github.event.pull_request.base.sha || github.event.before }}
-      CANDIDATE_SHA: ${{ github.event_name == 'pull_request' && github.sha || github.event.after }}
     steps:
       - name: Checkout the tested source and both histories
         uses: actions/checkout@v7
@@ -118,6 +116,8 @@ jobs:
       - uses: actions/setup-node@v7
         with:
           node-version: latest
+      - name: Resolve and report exact WASM comparison sources
+        run: node resolve-wasm-size-sources.js
       - uses: jetli/wasm-pack-action@v0.4.0
         with:
           version: latest
