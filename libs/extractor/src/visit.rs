@@ -65,11 +65,12 @@ use strum::IntoEnumIterator;
 use crate::utils::{
     ParsedStyleOrder, RUNTIME_VALUE, STYLE_OBJECT, StyleArguments, Suspends, build_time_error,
     call_with_values, element_error, expression_to_style_order, fixed_value,
-    get_str_by_property_key, get_string_by_literal_expression, get_string_by_property_key, is_pure,
-    jsx_expression_to_style_order, key_error, readable_argument, readable_code, reads_directly,
-    reads_spreads_once, reads_unknown, runtime_classes, runtime_value, runtime_value_error,
-    spread_error, stays_attribute, string_class, style_arguments, uncomposable_error,
-    unplaced_error, unreadable_styles, unused_error, unwrap_syntax_only, unwrap_syntax_only_mut,
+    get_key_by_literal_expression, get_str_by_property_key, get_string_by_literal_expression,
+    get_string_by_property_key, is_pure, jsx_expression_to_style_order, key_error,
+    readable_argument, readable_code, reads_directly, reads_spreads_once, reads_unknown,
+    runtime_classes, runtime_value, runtime_value_error, spread_error, stays_attribute,
+    string_class, style_arguments, uncomposable_error, unplaced_error, unreadable_styles,
+    unused_error, unwrap_syntax_only, unwrap_syntax_only_mut,
 };
 use oxc_ast::builder::AstBuilder;
 use oxc_span::{GetSpan, SPAN};
@@ -1122,7 +1123,7 @@ impl<'a> DevupVisitor<'a> {
             }
             Expression::ComputedMemberExpression(member) => (
                 &member.object,
-                get_string_by_literal_expression(&member.expression)?.to_string(),
+                get_key_by_literal_expression(&member.expression)?.to_string(),
             ),
             _ => return None,
         };
@@ -1430,7 +1431,7 @@ impl<'a> DevupVisitor<'a> {
         };
         let ns_map = self.stylex_namespaces.get(obj.name.as_str())?;
 
-        if let Some(key) = get_string_by_literal_expression(&member.expression) {
+        if let Some(key) = get_key_by_literal_expression(&member.expression) {
             return match ns_map.get(key.as_ref()) {
                 Some(StylexNamespaceValue::Static(cn)) => self.stylex_class_literal(cn),
                 _ => None,

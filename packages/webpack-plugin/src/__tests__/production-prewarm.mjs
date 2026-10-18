@@ -40,6 +40,15 @@ function apply(options = {}, entry = 'next-app-loader?query!') {
   compilers.add(compiler)
   return compiler
 }
+async function prepare(compiler) {
+  // Unit boundary only: this synthetic Next request is not a runnable module graph.
+  // Invoke only our registered run preparation, which reserves scratch before extraction.
+  const taps = compiler.hooks.run.taps.filter(
+    ({ name }) => name === 'DevupUIWebpackPluginReservation',
+  )
+  assert.equal(taps.length, 1)
+  await taps[0].fn(compiler)
+}
 async function close(compiler) {
   try {
     await new Promise((resolve, reject) =>
@@ -130,6 +139,8 @@ try {
       'node_modules/design-system/child.tsx',
     ]
     let compiler = apply({ productionPrewarmFiles, singleCss })
+    assert.doesNotMatch(sheet(), /maroon|cyan|goldenrod/)
+    await prepare(compiler)
     const css = sheet()
     assert.match(css, /color:maroon/)
     assert.match(css, /color:cyan/)
@@ -146,6 +157,7 @@ try {
         'src\\page.tsx',
       ],
     })
+    await prepare(compiler)
     // Then both CSS bytes and transformed class correspondence are identical.
     assert.equal(sheet(), css)
     assert.deepEqual(
@@ -156,41 +168,49 @@ try {
   }
   // Given a generic webpack entry, unreachable source remains excluded.
   let compiler = apply({}, './src/page.tsx')
+  await prepare(compiler)
   assert.match(sheet(), /maroon/)
   assert.doesNotMatch(sheet(), /cyan|goldenrod/)
   await close(compiler)
   // When the complete set is explicitly empty, then even that entry is not prewarmed.
   compiler = apply({ productionPrewarmFiles: [] }, './src/page.tsx')
+  await prepare(compiler)
   assert.doesNotMatch(sheet(), /maroon|cyan|goldenrod/)
   await close(compiler)
   compiler = apply({ watch: true, productionPrewarmFiles: ['src/page.tsx'] })
+  await prepare(compiler)
   assert.doesNotMatch(sheet(), /maroon/)
   await close(compiler)
-  assert.throws(() => apply({ productionPrewarmFiles: ['missing.tsx'] }))
+  compiler = apply({ productionPrewarmFiles: ['missing.tsx'] })
+  await assert.rejects(prepare(compiler))
+  await close(compiler)
   write(
     'bad.tsx',
     'import { Box } from "@devup-ui/react"; export const c = <Box color={}/>',
   )
-  assert.throws(() => apply({ productionPrewarmFiles: ['bad.tsx'] }))
+  compiler = apply({ productionPrewarmFiles: ['bad.tsx'] })
+  await assert.rejects(prepare(compiler))
+  await close(compiler)
   for (const invalid of ['missing.tsx', 'bad.tsx']) {
     // Given a valid file sorted before the failing file, initialization partially extracts.
     write(
       'a-valid.tsx',
       'import { Box } from "@devup-ui/react"; export const c = <Box color="chartreuse" insetX="19px"/>',
     )
-    // When webpack itself throws, no compiler is returned for the caller to close.
-    assert.throws(() =>
-      apply({
-        prefix: 'failed',
-        shorthands: { insetX: ['left', 'right'] },
-        atomHoist: 2,
-        productionPrewarmFiles: ['a-valid.tsx', invalid],
-      }),
-    )
+    // When run preparation rejects, the returned compiler still needs awaited shutdown.
+    compiler = apply({
+      prefix: 'failed',
+      shorthands: { insetX: ['left', 'right'] },
+      atomHoist: 2,
+      productionPrewarmFiles: ['a-valid.tsx', invalid],
+    })
+    await assert.rejects(prepare(compiler))
     assert.match(sheet(), /chartreuse/)
     assert.match(sheet(), /left:19px/)
+    await close(compiler)
     // Then an unrelated generic build resets the partial styles and engine options.
     compiler = apply({}, './src/page.tsx')
+    await prepare(compiler)
     assert.match(sheet(), /maroon/)
     assert.doesNotMatch(sheet(), /chartreuse|failed|left:19px/)
     const cleanCode = codeExtract(
