@@ -202,7 +202,7 @@ pub struct DevupVisitor<'a> {
     /// name of their own
     runtime_types: usize,
     /// The classes and keyframes names the file binds to a `const`
-    style_values: crate::style_values::StyleValues,
+    style_values: crate::style_values::StyleValues<'a>,
     /// The styles of the last `css()` call giving a class, by where it starts,
     /// for the `const` it initializes
     css_styles: Option<(u32, Vec<ExtractStyleValue>)>,
@@ -601,7 +601,7 @@ impl<'a> DevupVisitor<'a> {
         }
         match expression {
             Expression::ObjectExpression(_) => Some(KnownSide::Styles(vec![KnownStyles::Rules(
-                expression.clone_in(self.ast.allocator()),
+                expression.clone_in_with_semantic_ids(self.ast.allocator()),
             )])),
             Expression::NullLiteral(_) | Expression::BooleanLiteral(_) => Some(KnownSide::Empty),
             Expression::Identifier(identifier) if identifier.name == "undefined" => {
@@ -2291,12 +2291,25 @@ impl<'a> VisitMut<'a> for DevupVisitor<'a> {
         if let Expression::CallExpression(call) = it
             && self
                 .util_type(&call.callee)
-                .is_some_and(|util| matches!(util.as_ref(), UtilType::Css))
-            && let Some(composed) = self.compose_known_styles(call)
+                .is_some_and(|util| util.is_css())
         {
+            self.style_values
+                .record_rules(&self.ast, call.span.start, &call.arguments);
+        }
+
+        if let Expression::CallExpression(call) = it
+            && self
+                .util_type(&call.callee)
+                .is_some_and(|util| matches!(util.as_ref(), UtilType::Css))
+            && let Some(mut composed) = self.compose_known_styles(call)
+        {
+            if let Expression::StringLiteral(text) = &mut composed {
+                text.span = call.span;
+            }
             *it = composed;
         } else if let Expression::CallExpression(call) = it {
             if let Some(util_type) = self.util_type(&call.callee) {
+                let source_span = call.span;
                 for argument in &mut call.arguments {
                     let expression = match argument {
                         Argument::SpreadElement(spread) => &mut spread.argument,
@@ -2550,6 +2563,11 @@ impl<'a> VisitMut<'a> for DevupVisitor<'a> {
                         Expression::new_string_literal(SPAN, "", None, &self.ast),
                     );
                     *it = flatten_classes(&self.ast, classes);
+                }
+                if util_type.is_css()
+                    && let Expression::StringLiteral(text) = it
+                {
+                    text.span = source_span;
                 }
             }
         } else if let Expression::TaggedTemplateExpression(tag) = it
@@ -2953,6 +2971,12 @@ impl<'a> VisitMut<'a> for DevupVisitor<'a> {
         .zip(self.style_values.constant(&it.id));
 
         walk_variable_declarator(self, it);
+
+        if let Some(symbol) = self.style_values.constant(&it.id)
+            && let Some(value) = &it.init
+        {
+            self.style_values.bind_rules(&self.ast, symbol, value);
+        }
 
         if let Some((at, definition)) = self.pending_styled.take()
             && Some(at) == start
