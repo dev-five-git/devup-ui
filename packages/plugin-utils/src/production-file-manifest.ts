@@ -10,6 +10,7 @@ import {
 } from './import-graph'
 import { scanImportRequests } from './import-scanner'
 import { remapMdxError } from './mdx-errors'
+import type { PreparationInputs } from './preparation-inputs'
 import { PreparedSourceTypeError, readPreparedSource } from './prepared-source'
 import type { ManifestJob } from './production-manifest-certificates'
 import { ManifestWorklist } from './production-manifest-worklist'
@@ -63,23 +64,31 @@ class ManifestSourceError extends Error {
   }
 }
 
-export async function collectProductionFileManifest({
-  contexts,
-  entryClosure = false,
-  include = [],
-  exclude,
-}: ProductionFileManifestOptions): Promise<readonly ProductionManifestFile[]> {
+export async function collectProductionFileManifest(
+  {
+    contexts,
+    entryClosure = false,
+    include = [],
+    exclude,
+  }: ProductionFileManifestOptions,
+  preparation?: PreparationInputs,
+): Promise<readonly ProductionManifestFile[]> {
+  const collect = preparation?.collect ?? createResolutionInputs
   const excluded = createDirectoryExclusion(exclude)
   const memberships = new Map<string, ProductionManifestFile>()
   for (const context of contexts) {
     const { resolverOptions, prepareSource } = context
     const { includeMdx } = resolverOptions
     const cwd = resolve(resolverOptions.cwd ?? process.cwd())
-    const resolver = createModulePathResolver(resolverOptions, excluded)
+    const resolver = createModulePathResolver(
+      resolverOptions,
+      excluded,
+      collect,
+    )
     const inventories = new Map<string, readonly ProductionSourceFile[]>()
     const adjacency = new Map<string, readonly ProductionSourceFile[]>()
     const packageRoots = createProductionPackageRoots(include, excluded, {
-      inputs: createResolutionInputs(),
+      inputs: collect(),
       observer: resolverOptions.onResolutionInputs,
     })
     const markdown = new Set([
@@ -95,7 +104,7 @@ export async function collectProductionFileManifest({
     ): Promise<readonly ProductionSourceFile[]> {
       const cached = adjacency.get(path)
       if (cached) return cached
-      const inputs = createResolutionInputs()
+      const inputs = collect()
       let prepared
       let source: string
       try {
@@ -136,7 +145,7 @@ export async function collectProductionFileManifest({
       }
       const compiled =
         typeof prepared === 'object' && prepared.sourceType === 'compiled-mdx'
-      const imports = scanImportRequests(
+      const imports = (preparation?.scan ?? scanImportRequests)(
         source,
         compiled ||
           /\.[jt]sx$/i.test(path) ||

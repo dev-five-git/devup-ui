@@ -1,9 +1,8 @@
-import { readFileSync } from 'node:fs'
 import { dirname, extname, resolve } from 'node:path'
 
 import {
   buildCanonicalMap,
-  buildStaticImportGraph,
+  buildPreparationImportGraph,
   collectProductionFileManifest,
   computeFileReach,
   createNodeModulesExcludeRegex,
@@ -14,6 +13,7 @@ import {
   loadDevupConfig,
   type NonphysicalIdStore,
   planAtomHoist,
+  PreparationInputs,
   type ProductionManifestFile,
   type ProductionNumberingPlan,
   type ResolutionInputObserver,
@@ -80,6 +80,25 @@ export async function prepareProductionManifest(
   options: ProductionOptions,
   observe: ResolutionInputObserver,
 ) {
+  const inputs = new PreparationInputs()
+  try {
+    return await prepareManifest(config, options, { observe, inputs })
+  } finally {
+    inputs.dispose()
+  }
+}
+
+async function prepareManifest(
+  config: ResolvedConfig,
+  options: ProductionOptions,
+  {
+    observe,
+    inputs,
+  }: {
+    readonly observe: ResolutionInputObserver
+    readonly inputs: PreparationInputs
+  },
+) {
   const paths = resolveProjectPaths(config.root, {
     devupFile: options.devupFile,
     distDir: options.distDir,
@@ -109,33 +128,36 @@ export async function prepareProductionManifest(
       paths.cssDir,
       resolve(config.root, environment.build.outDir),
     ]
-    const discovered = await collectProductionFileManifest({
-      contexts: [
-        {
-          key,
-          files: enumerateProductionSourceFiles({
-            roots: entryClosure ? [] : roots,
-            ...(entryClosure
-              ? { sourceFiles: selectedEntries }
-              : { entries: physicalEntries }),
-            cwd: config.root,
-            includeMdx: options.mdxExtensions,
-            exclude,
-          }),
-          resolverOptions: {
-            cwd: config.root,
-            conditions,
-            includeMdx: options.mdxExtensions,
-            onResolutionInputs: observe,
+    const discovered = await collectProductionFileManifest(
+      {
+        contexts: [
+          {
+            key,
+            files: enumerateProductionSourceFiles({
+              roots: entryClosure ? [] : roots,
+              ...(entryClosure
+                ? { sourceFiles: selectedEntries }
+                : { entries: physicalEntries }),
+              cwd: config.root,
+              includeMdx: options.mdxExtensions,
+              exclude,
+            }),
+            resolverOptions: {
+              cwd: config.root,
+              conditions,
+              includeMdx: options.mdxExtensions,
+              onResolutionInputs: observe,
+            },
+            toId: (path) => path.replaceAll('\\', '/'),
+            unpreparedMarkdown: 'reserve-only',
           },
-          toId: (path) => path.replaceAll('\\', '/'),
-          unpreparedMarkdown: 'reserve-only',
-        },
-      ],
-      include: options.include,
-      exclude,
-      entryClosure,
-    })
+        ],
+        include: options.include,
+        exclude,
+        entryClosure,
+      },
+      inputs,
+    )
     const rootFiles = entryClosure
       ? productionRootClosure(
           {
@@ -159,6 +181,7 @@ export async function prepareProductionManifest(
           },
           { include: options.include, exclude },
           gate,
+          inputs,
         )
       : []
     const memberships = new Map<string, ProductionManifestFile>()
@@ -181,7 +204,7 @@ export async function prepareProductionManifest(
           options.mdxExtensions.includes(extname(file.path).toLowerCase())
         )
           return true
-        const code = readFileSync(file.path, 'utf8')
+        const code = inputs.read(file.path)
         return gate.relevant(code)
       })
     let canonical: Readonly<Record<string, string>> = {}
@@ -192,15 +215,18 @@ export async function prepareProductionManifest(
       Number.isFinite(options.atomHoist) &&
       options.atomHoist > 0
     ) {
-      const graph = buildStaticImportGraph(
+      const graph = buildPreparationImportGraph(
         graphRoots,
         resolve(config.root, 'tsconfig.json'),
         {
-          cwd: config.root,
-          include: options.include,
-          includeMdx: options.mdxExtensions,
-          conditions,
-          onResolutionInputs: observe,
+          inputs,
+          options: {
+            cwd: config.root,
+            include: options.include,
+            includeMdx: options.mdxExtensions,
+            conditions,
+            onResolutionInputs: observe,
+          },
         },
       )
       canonical = buildCanonicalMap({

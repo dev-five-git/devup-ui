@@ -442,6 +442,12 @@ export function DevupUI({
       const preserveSymlinks =
         this.environment?.config.resolve.preserveSymlinks ??
         resolvedConfig?.resolve?.preserveSymlinks
+      const watch =
+        isServe ||
+        this.meta?.watchMode ||
+        !!(
+          this.environment?.config.build?.watch ?? resolvedConfig?.build?.watch
+        )
       missingInputWatch.start(fileName, environment)
       aggregateCss.observe(this.environment ?? plugin, id)
       if (
@@ -467,12 +473,14 @@ export function DevupUI({
         (inputs) => {
           for (const path of inputs.fileDependencies)
             this.addWatchFile(
-              resolutionWatchPath(path, preserveSymlinks).replaceAll('\\', '/'),
+              (watch
+                ? resolutionWatchPath(path, preserveSymlinks)
+                : path
+              ).replaceAll('\\', '/'),
             )
           for (const path of inputs.missingDependencies) {
-            const watched = resolutionWatchPath(
-              path,
-              preserveSymlinks,
+            const watched = (
+              watch ? resolutionWatchPath(path, preserveSymlinks) : path
             ).replaceAll('\\', '/')
             setupWatchFiles.add(path)
             missingInputWatch.observe(fileName, watched, environment)
@@ -808,15 +816,41 @@ export function DevupUI({
         production.start(this.environment?.name ?? production.context)
         tailwindFiles = production.tailwindFiles
       }
-      missingWatchContexts.set(this.environment ?? plugin, (path) =>
-        this.addWatchFile(path),
-      )
+      const watch =
+        isServe ||
+        this.meta?.watchMode ||
+        !!(
+          this.environment?.config.build?.watch ?? resolvedConfig?.build?.watch
+        )
+      const addWatchFile = (path: string) => {
+        this.addWatchFile(path)
+        if (isServe || !watch || existsSync(path) || !SOURCE_FILE_RE.test(path))
+          return
+        let ancestor = dirname(path)
+        while (!existsSync(ancestor) && dirname(ancestor) !== ancestor)
+          ancestor = dirname(ancestor)
+        const physical = resolve(resolutionWatchPath(ancestor, false))
+        if (
+          dirname(physical) !== physical &&
+          physical !== resolve(resolutionWatchPath(projectRoot, false)) &&
+          physical !==
+            resolve(
+              resolutionWatchPath(join(projectRoot, 'node_modules'), false),
+            ) &&
+          basename(physical) !== 'node_modules'
+        )
+          this.addWatchFile(physical.replaceAll('\\', '/'))
+      }
+      missingWatchContexts.set(this.environment ?? plugin, addWatchFile)
       for (const path of setupWatchFiles)
-        this.addWatchFile(
-          resolutionWatchPath(
-            path,
-            this.environment?.config.resolve.preserveSymlinks ??
-              resolvedConfig?.resolve?.preserveSymlinks,
+        addWatchFile(
+          (watch
+            ? resolutionWatchPath(
+                path,
+                this.environment?.config.resolve.preserveSymlinks ??
+                  resolvedConfig?.resolve?.preserveSymlinks,
+              )
+            : path
           ).replaceAll('\\', '/'),
         )
       for (const path of tailwindFiles)

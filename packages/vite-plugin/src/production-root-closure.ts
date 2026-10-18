@@ -4,6 +4,7 @@ import { extname, isAbsolute, relative, sep } from 'node:path'
 import {
   createModulePathResolver,
   createNodeModulesExcludeRegex,
+  type PreparationInputs,
   type ProductionFileManifestOptions,
   type ProductionManifestContext,
   type ProductionManifestFile,
@@ -39,6 +40,7 @@ export function productionRootClosure(
     readonly selected: (filename: string) => boolean
     readonly relevant: (code: string) => boolean
   },
+  preparation?: PreparationInputs,
 ): readonly ProductionManifestFile[] {
   const packageExclude = createNodeModulesExcludeRegex(policy.include ?? [])
   const excluded = (path: string) => {
@@ -58,7 +60,11 @@ export function productionRootClosure(
       !/[\\/]node_modules[\\/]@[^\\/]+$/.test(path) && packageExclude.test(path)
     )
   }
-  const resolver = createModulePathResolver(context.resolverOptions, excluded)
+  const resolver = createModulePathResolver(
+    context.resolverOptions,
+    excluded,
+    preparation?.collect,
+  )
   const files = new Map<string, ProductionSourceFile>()
   const codes = new Map<string, string>()
   const adjacency = new Map<string, readonly ProductionSourceFile[]>()
@@ -73,7 +79,9 @@ export function productionRootClosure(
     const cached = codes.get(path)
     if (cached !== undefined) return cached
     try {
-      const code = readFileSync(path, 'utf8')
+      const code = preparation
+        ? preparation.read(path)
+        : readFileSync(path, 'utf8')
       codes.set(path, code)
       return code
     } catch (cause) {
@@ -89,7 +97,7 @@ export function productionRootClosure(
     const cached = adjacency.get(path)
     if (cached) return cached
     const result: ProductionSourceFile[] = []
-    for (const reference of scanImports(
+    for (const reference of (preparation?.scan ?? scanImports)(
       read(path),
       /\.[jt]sx$/i.test(path),
       /\.[mc]?tsx?$/i.test(path),

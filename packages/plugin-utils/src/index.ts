@@ -23,6 +23,7 @@ export {
   type AtomHoistPlan,
   buildCanonicalMap,
   type BuildCanonicalMapOptions,
+  buildPreparationImportGraph,
   buildStaticImportGraph,
   computeCompiledFiles,
   type ComputeCompiledFilesOptions,
@@ -92,6 +93,7 @@ export {
   type FileNumbering,
   seedFileNumbers,
 } from './numbering'
+export { PreparationInputs } from './preparation-inputs'
 export type { ModuleResolver } from './prepared-resolver'
 export type { SourceType } from './prepared-source'
 export {

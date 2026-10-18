@@ -24,6 +24,7 @@ import { type AliasResolution, resolveModuleAlias } from './module-alias'
 import { resolveFile } from './owned-file-resolution'
 import { findPackage, resolvePackage } from './owned-module-resolution'
 import { isResolutionFile as isFile } from './packaged-config-inputs'
+import type { PreparationInputs } from './preparation-inputs'
 import { preparedDiagnostics } from './prepared-diagnostics'
 import {
   createPreparedResolver,
@@ -165,6 +166,25 @@ export type PreparedSource =
       readonly sourceType?: import('./prepared-source').SourceType
     }
   | undefined
+
+export function buildPreparationImportGraph(
+  srcDir: string | string[],
+  tsconfigPath: string | undefined,
+  context: {
+    readonly options: SyncGraphOptions
+    readonly inputs: PreparationInputs
+  },
+): ScannedStaticImportGraph {
+  const traversal = traverseGraph(
+    srcDir,
+    tsconfigPath,
+    context.options,
+    context.inputs,
+  )
+  let step = traversal.next()
+  while (!step.done) step = traversal.next(undefined)
+  return step.value
+}
 export type PrepareSource = (
   filename: string,
 ) => PreparedSource | Promise<PreparedSource>
@@ -226,6 +246,7 @@ function* traverseGraph(
   srcDir: string | string[],
   tsconfigPath: string | undefined,
   options: StaticImportGraphOptions,
+  preparation?: PreparationInputs,
 ): Generator<string, ScannedStaticImportGraph, PreparedSource> {
   const cwd = resolve(options.cwd ?? process.cwd())
   const roots = (typeof srcDir === 'string' ? [srcDir] : srcDir).map((dir) =>
@@ -247,8 +268,9 @@ function* traverseGraph(
       exclusionObservation.outcome = { kind: 'excluded', entry }
     return entry !== undefined
   }
-  let resolutionInputs = createResolutionInputs().snapshot()
-  const graphInputs = createResolutionInputs()
+  const collect = preparation?.collect ?? createResolutionInputs
+  let resolutionInputs = collect().snapshot()
+  const graphInputs = collect()
   const resolver = createModulePathResolver(
     {
       cwd,
@@ -262,6 +284,7 @@ function* traverseGraph(
       },
     },
     excludedDirectory,
+    collect,
   )
   const excluded = createNodeModulesExcludeRegex(options.include ?? [])
   const includedRoots = new Set<string>()
@@ -288,7 +311,11 @@ function* traverseGraph(
     const code = typeof prepared === 'string' ? prepared : prepared?.code
     const imports =
       code === undefined
-        ? parseImports(file, readFileSync(file, 'utf-8'))
+        ? parseImports(
+            file,
+            preparation ? preparation.read(file) : readFileSync(file, 'utf-8'),
+            preparation?.scan,
+          )
         : parsePreparedImports(
             file,
             code,
@@ -932,10 +959,11 @@ export function listSourceFiles(
 function parseImports(
   filename: string,
   source: string,
+  scan = scanImportRequests,
 ): ImportRequestReference[] {
   if (!SOURCE_FILE_RE.test(filename))
-    return scanImportRequests(mdxEsmSource(source), false, false)
-  return parseSourceImports(filename, source)
+    return scan(mdxEsmSource(source), false, false)
+  return parseSourceImports(filename, source, undefined, scan)
 }
 
 function parsePreparedImports(
@@ -954,6 +982,7 @@ function parseSourceImports(
     readonly map: unknown
     readonly sourceType?: import('./prepared-source').SourceType
   },
+  scan = scanImportRequests,
 ): ImportRequestReference[] {
   const parser = getOxcParser()
   try {
@@ -981,7 +1010,7 @@ function parseSourceImports(
       { cause },
     )
   }
-  return scanImportRequests(
+  return scan(
     source,
     prepared?.sourceType === 'compiled-mdx' ||
       /\.[jt]sx$/i.test(filename) ||
@@ -1151,8 +1180,9 @@ export function createModulePathResolver(
   excludedDirectory: (
     directory: string,
   ) => boolean = createDirectoryExclusion(),
+  collect: typeof createResolutionInputs = createResolutionInputs,
 ): ModulePathResolver {
-  const setupInputs = createResolutionInputs()
+  const setupInputs = collect()
   const config = (() => {
     try {
       return readPathAliases(tsconfigPath, setupInputs)
@@ -1164,7 +1194,7 @@ export function createModulePathResolver(
   const setup = setupInputs.snapshot()
   const extensions = sourceExtensions(includeMdx)
   return (specifier, importer) => {
-    const inputs = createResolutionInputs(setup)
+    const inputs = collect(setup)
     const fileResolver = (path: string) =>
       resolveFile(path, { extensions, excludedDirectory, inputs })
     const from = resolve(cwd, importer)

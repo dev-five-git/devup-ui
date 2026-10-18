@@ -8,10 +8,14 @@ export interface ResolutionInputs {
 
 export type ResolutionInputObserver = (inputs: ResolutionInputs) => void
 
-export function createResolutionInputs(initial?: ResolutionInputs) {
+export function createResolutionInputs(
+  initial?: ResolutionInputs,
+  read: (path: string) => string = (path) => readFileSync(path, 'utf-8'),
+) {
   const files = new Set(initial?.fileDependencies)
   const missing = new Set(initial?.missingDependencies)
   return {
+    read,
     file(path: string) {
       files.add(resolve(path))
     },
@@ -62,7 +66,7 @@ export function readResolutionFile(
   inputs?: ResolutionInputCollector,
 ): string {
   try {
-    const source = readFileSync(path, 'utf-8')
+    const source = inputs ? inputs.read(path) : readFileSync(path, 'utf-8')
     inputs?.file(path)
     return source
   } catch (error) {

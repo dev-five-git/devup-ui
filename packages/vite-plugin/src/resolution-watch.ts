@@ -1,5 +1,7 @@
-import { basename, dirname } from 'node:path'
+import { existsSync } from 'node:fs'
+import { basename, dirname, join, resolve } from 'node:path'
 
+import { resolutionWatchPath, SOURCE_FILE_RE } from '@devup-ui/plugin-utils'
 import type { ViteDevServer } from 'vite'
 
 export function createMissingInputWatch() {
@@ -37,12 +39,36 @@ export function createMissingInputWatch() {
       missingByEnvironment.set(environment, importers)
     },
     observe(importer: string, path: string, environment: object) {
-      missingByEnvironment.get(environment)?.get(importer)?.add(path)
-      // Scope manifests can be probed up to the drive root; never enroll that tree.
-      // Competing source candidates retain their established directory transport.
-      server?.watcher.add(
-        basename(path) === 'package.json' ? path : dirname(path),
+      const inputs = missingByEnvironment.get(environment)?.get(importer)
+      inputs?.add(path)
+      if (!server) return
+      if (!SOURCE_FILE_RE.test(path)) {
+        server.watcher.add(
+          basename(path) === 'package.json' ? path : dirname(path),
+        )
+        return
+      }
+      const physical = resolutionWatchPath(path, false).replaceAll('\\', '/')
+      inputs?.add(physical)
+      let directory = dirname(path)
+      while (!existsSync(directory) && dirname(directory) !== directory)
+        directory = dirname(directory)
+      const target = resolve(resolutionWatchPath(directory, false))
+      if (
+        dirname(target) === target ||
+        target === resolve(resolutionWatchPath(server.config.root, false)) ||
+        target ===
+          resolve(
+            resolutionWatchPath(
+              join(server.config.root, 'node_modules'),
+              false,
+            ),
+          ) ||
+        basename(target) === 'node_modules'
       )
+        return
+      server.watcher.add(directory)
+      if (target !== resolve(directory)) server.watcher.add(target)
     },
     close() {
       server?.watcher
