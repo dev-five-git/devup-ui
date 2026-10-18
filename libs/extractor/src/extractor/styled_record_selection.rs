@@ -1,6 +1,6 @@
 use super::Preparation;
 use crate::utils::{
-    get_str_by_property_key, get_string_by_literal_expression, js_number_string, unwrap_syntax_only,
+    get_key_by_literal_expression, get_str_by_property_key, js_number_string, unwrap_syntax_only,
 };
 use oxc_allocator::{CloneIn, FromIn, GetAllocator, Vec as ArenaVec};
 use oxc_ast::ast::{
@@ -35,7 +35,7 @@ pub(super) fn direct_lookup(object: &Expression<'_>, index: &Expression<'_>) -> 
     let Some(key) = literal_key(index) else {
         return false;
     };
-    if get_string_by_literal_expression(index).as_deref() != Some(key.as_str()) {
+    if get_key_by_literal_expression(index).as_deref() != Some(key.as_str()) {
         return false;
     }
     match object {

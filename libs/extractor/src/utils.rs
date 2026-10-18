@@ -280,9 +280,21 @@ pub(super) fn get_number_by_literal_expression(expr: &Expression) -> Option<f64>
         Expression::ParenthesizedExpression(parenthesized) => {
             get_number_by_literal_expression(&parenthesized.expression)
         }
-        Expression::StringLiteral(sl) => sl.value.parse::<f64>().ok(),
+        Expression::StringLiteral(sl) => {
+            let text = sl.value.as_str();
+            let unsigned = text.strip_prefix(['+', '-']).unwrap_or(text);
+            if unsigned == "Infinity"
+                || text
+                    .bytes()
+                    .all(|byte| matches!(byte, b'0'..=b'9' | b'+' | b'-' | b'.' | b'e' | b'E'))
+            {
+                text.parse::<f64>().ok()
+            } else {
+                None
+            }
+        }
         Expression::TemplateLiteral(_) => {
-            let text = get_template_interpolation_string(expr)?;
+            let text = get_key_by_literal_expression(expr)?;
             let unsigned = text.strip_prefix(['+', '-']).unwrap_or(&text);
             // Rust accepts infinity aliases that JavaScript Number rejects.
             if unsigned.eq_ignore_ascii_case("inf")
@@ -294,6 +306,18 @@ pub(super) fn get_number_by_literal_expression(expr: &Expression) -> Option<f64>
         }
         Expression::NumericLiteral(num) => Some(num.value),
         Expression::UnaryExpression(unary) => get_number_by_literal_expression(&unary.argument)
+            .or_else(|| {
+                let Expression::StringLiteral(value) = unwrap_syntax_only(&unary.argument) else {
+                    return None;
+                };
+                let text = value
+                    .value
+                    .trim_matches(|c: char| c.is_whitespace() || c == '\u{feff}');
+                let unsigned = text.strip_prefix(['+', '-']).unwrap_or(text);
+                (unsigned.eq_ignore_ascii_case("inf")
+                    || (unsigned.eq_ignore_ascii_case("infinity") && unsigned != "Infinity"))
+                    .then_some(f64::NAN)
+            })
             .and_then(|num| match unary.operator {
                 UnaryOperator::UnaryNegation => Some(-num),
                 UnaryOperator::UnaryPlus => Some(num),
@@ -337,19 +361,19 @@ pub(crate) fn js_number_string(number: f64) -> String {
     }
 }
 
-/// Template substitutions preserve string spelling rather than CSS numeric normalization.
-fn get_template_interpolation_string<'a>(expr: &Expression<'a>) -> Option<Cow<'a, str>> {
+/// Property keys and template substitutions preserve text rather than CSS numeric normalization.
+pub(super) fn get_key_by_literal_expression<'a>(expr: &Expression<'a>) -> Option<Cow<'a, str>> {
     match expr {
         Expression::StringLiteral(value) => Some(Cow::Borrowed(value.value.as_str())),
         Expression::ParenthesizedExpression(value) => {
-            get_template_interpolation_string(&value.expression)
+            get_key_by_literal_expression(&value.expression)
         }
         Expression::TemplateLiteral(template) => {
             let mut text = String::new();
             for (index, quasi) in template.quasis.iter().enumerate() {
                 text.push_str(quasi.value.cooked.as_deref()?);
                 if let Some(expression) = template.expressions.get(index) {
-                    text.push_str(&get_template_interpolation_string(expression)?);
+                    text.push_str(&get_key_by_literal_expression(expression)?);
                 }
             }
             Some(Cow::Owned(text))
@@ -363,7 +387,7 @@ pub(super) fn get_string_by_literal_expression<'a>(expr: &Expression<'a>) -> Opt
         Expression::ParenthesizedExpression(value) => {
             return get_string_by_literal_expression(&value.expression);
         }
-        Expression::TemplateLiteral(_) => return get_template_interpolation_string(expr),
+        Expression::TemplateLiteral(_) => return get_key_by_literal_expression(expr),
         _ => {}
     }
     get_number_by_literal_expression(expr)
@@ -1317,14 +1341,14 @@ fn merge_style_properties<'a>(
 ///
 /// For a `StaticIdentifier` key this returns `Cow::Borrowed`, avoiding the heap
 /// allocation the owned variant pays on every prop just to read its key name.
-/// The literal fallback now also borrows where possible: `get_string_by_literal_expression`
+/// The literal fallback also borrows where possible: `get_key_by_literal_expression`
 /// returns `Cow::Borrowed` for string/boolean-literal keys and only allocates
 /// (`Cow::Owned`) for numeric/template keys it must synthesize.
 pub(super) fn get_str_by_property_key<'k>(key: &PropertyKey<'k>) -> Option<Cow<'k, str>> {
     if let PropertyKey::StaticIdentifier(ident) = key {
         Some(Cow::Borrowed(ident.name.as_str()))
     } else if let Some(s) = key.as_expression() {
-        get_string_by_literal_expression(s)
+        get_key_by_literal_expression(s)
     } else {
         None
     }

@@ -887,6 +887,327 @@ pub fn has_devup_ui(filename: &str, code: &str, package: &str) -> bool {
 #[cfg(test)]
 #[allow(clippy::expect_used, clippy::unwrap_used)]
 mod tests {
+    mod exact_literal_coercion {
+        include!("stylex_exact_key_tests.rs");
+
+        use super::*;
+        use crate::extract_style::style_property::StyleProperty;
+        use boa_engine::{Context, Source};
+        use oxc_ast::ast::{ImportDeclarationSpecifier, Statement};
+        use oxc_codegen::Codegen;
+        use std::fmt::Write as _;
+
+        fn render_observation(
+            output: &ExtractOutput,
+            invocation: &str,
+            filename: Option<&str>,
+        ) -> String {
+            let arena = Allocator::default();
+            let parsed = Parser::new(&arena, &output.code, SourceType::mjs()).parse();
+            assert_eq!(parsed.diagnostics.len(), 0, "{}", output.code);
+            let mut program = parsed.program;
+            let mut factories = String::new();
+            for statement in &program.body {
+                if let Statement::ImportDeclaration(import) = statement
+                    && import.source.value == "react/jsx-runtime"
+                {
+                    for specifier in import.specifiers.iter().flatten() {
+                        let ImportDeclarationSpecifier::ImportSpecifier(named) = specifier else {
+                            panic!("unexpected JSX factory import: {specifier:?}");
+                        };
+                        assert_eq!(named.imported.to_string(), "jsx");
+                        write!(
+                            factories,
+                            "const {} = (target, props) => ({{target, props}});",
+                            named.local.name
+                        )
+                        .unwrap();
+                    }
+                }
+            }
+            program
+                .body
+                .retain(|statement| !matches!(statement, Statement::ImportDeclaration(_)));
+            let declarations = output
+                .styles
+                .iter()
+                .map(|style| match (style, style.extract(filename)) {
+                    (ExtractStyleValue::Static(style), Some(StyleProperty::ClassName(class))) => {
+                        format!("[{class:?}, () => {:?}]", style.value())
+                    }
+                    (
+                        ExtractStyleValue::Dynamic(_),
+                        Some(StyleProperty::Variable {
+                            class_name,
+                            variable_name,
+                            ..
+                        }),
+                    ) => {
+                        format!("[{class_name:?}, () => (props.style || {{}})[{variable_name:?}]]")
+                    }
+                    other => panic!("unexpected declaration: {:?}", other.0),
+                })
+                .collect::<Vec<_>>()
+                .join(",");
+            let script = format!(
+                "{factories}{}\nconst trace=[]; const props=({invocation}).props;\nconst active=new Set((props.className || '').split(/\\s+/));\nJSON.stringify([trace,[{declarations}].filter(([name])=>active.has(name)).map(([,value])=>value())]);",
+                Codegen::new().build(&program).code
+            );
+            Context::default()
+                .eval(Source::from_bytes(&script))
+                .unwrap_or_else(|error| panic!("generated renderer failed: {error}\n{script}"))
+                .as_string()
+                .expect("renderer returns JSON text")
+                .to_std_string_escaped()
+        }
+
+        #[rstest]
+        #[case::leading_zero(("{'05':'red','5':'blue'}['05']", "red"))]
+        #[case::decimal(("{'0.50':'red','0.5':'blue'}['0.50']", "red"))]
+        #[case::canonical_integer(("{'05':'red','5':'blue'}['5']", "blue"))]
+        #[case::canonical_decimal(("{'0.50':'red','0.5':'blue'}['0.5']", "blue"))]
+        #[case::computed_keys(("{['05']:'red',['5']:'blue'}['05']", "red"))]
+        #[case::template_key(("{'05':'red','5':'blue'}[`${'05'}`]", "red"))]
+        #[case::numeric_key(("{'05':'red',5:'blue'}[5]", "blue"))]
+        #[serial]
+        fn exact_literal_key_selects_authored_property(
+            #[case] sample: (&str, &str),
+            #[values(false, true)] single_css: bool,
+        ) {
+            // Given
+            reset_class_map();
+            reset_file_map();
+            let (expression, expected) = sample;
+            let source = format!(
+                "import {{Box}} from '@devup-ui/react'; import {{jsx}} from 'react/jsx-runtime'; function render() {{ return jsx(Box, {{color: ({expression})}}); }}"
+            );
+            // When
+            let output = extract(
+                "exact-key.js",
+                &source,
+                ExtractOption {
+                    single_css,
+                    ..ExtractOption::default()
+                },
+            )
+            .unwrap();
+            // Then: an unused red CSS rule alone is not evidence of correct selection.
+            assert_eq!(
+                render_observation(&output, "render()", (!single_css).then_some("exact-key.js")),
+                format!("[[],[{expected:?}]]")
+            );
+        }
+
+        #[rstest]
+        #[case::leading_zero(("{'05':'red','5':'blue'}", "05", "red"))]
+        #[case::canonical_integer(("{'05':'red','5':'blue'}", "5", "blue"))]
+        #[case::decimal(("{'0.50':'red','0.5':'blue'}", "0.50", "red"))]
+        #[case::canonical_decimal(("{'0.50':'red','0.5':'blue'}", "0.5", "blue"))]
+        #[case::computed_keys(("{['05']:'red',['5']:'blue'}", "05", "red"))]
+        #[case::computed_decimal(("{['0.50']:'red',['0.5']:'blue'}", "0.50", "red"))]
+        #[serial]
+        fn exact_literal_keys_survive_generated_finite_map(
+            #[case] sample: (&str, &str, &str),
+            #[values(false, true)] single_css: bool,
+        ) {
+            // Given: the key is unknown during extraction and read once during rendering.
+            reset_class_map();
+            reset_file_map();
+            let (object, key, expected) = sample;
+            let source = format!(
+                "import {{Box}} from '@devup-ui/react'; import {{jsx}} from 'react/jsx-runtime'; function render(key, trace) {{ return jsx(Box, {{color: ({object})[(trace.push('key'), key)]}}); }}"
+            );
+            // When
+            let output = extract(
+                "exact-map.js",
+                &source,
+                ExtractOption {
+                    single_css,
+                    ..ExtractOption::default()
+                },
+            )
+            .unwrap();
+            // Then: test the applied class, not merely both possible declarations.
+            assert_eq!(
+                render_observation(
+                    &output,
+                    &format!("render({key:?}, trace)"),
+                    (!single_css).then_some("exact-map.js")
+                ),
+                format!("[[\"key\"],[{expected:?}]]")
+            );
+        }
+
+        #[rstest]
+        #[case::inf(("+'inf'", "NaN", "[]"))]
+        #[case::negative_inf(("-'inf'", "NaN", "[]"))]
+        #[case::signed_inf(("+'+inf'", "NaN", "[]"))]
+        #[case::signed_negative_inf(("+'-inf'", "NaN", "[]"))]
+        #[case::upper_inf(("+'INF'", "NaN", "[]"))]
+        #[case::mixed_inf(("+'InF'", "NaN", "[]"))]
+        #[case::lower_infinity(("+'infinity'", "NaN", "[]"))]
+        #[case::upper_infinity(("+'INFINITY'", "NaN", "[]"))]
+        #[case::mixed_infinity(("+'iNfInItY'", "NaN", "[]"))]
+        #[case::signed_alias(("+'-infinity'", "NaN", "[]"))]
+        #[case::infinity(("+'Infinity'", "Infinity", "[]"))]
+        #[case::positive_infinity(("+'+Infinity'", "Infinity", "[]"))]
+        #[case::negative_infinity(("+'-Infinity'", "-Infinity", "[]"))]
+        #[case::negated_infinity(("-'Infinity'", "-Infinity", "[]"))]
+        #[case::empty(("+''", "0", "[]"))]
+        #[case::whitespace((r"+' \t\n'", "0", "[]"))]
+        #[case::trimmed_decimal(("+' 05 '", "5", "[]"))]
+        #[case::hex(("+'0x10'", "16", "[]"))]
+        #[case::signed_hex(("+'+0x10'", "NaN", "[]"))]
+        #[case::decimal(("+'1.50'", "1.5", "[]"))]
+        #[case::negative_zero(("-'-0'", "0", "[]"))]
+        #[case::effectful_alias(("+(trace.push('operand'), 'inf')", "NaN", r#"["operand"]"#))]
+        #[case::effectful_hex(("+(trace.push('operand'), '0x10')", "16", r#"["operand"]"#))]
+        #[case::coercion_hook(("+{toString(){trace.push('coerce');return 'inf'}}", "NaN", r#"["coerce"]"#))]
+        #[case::signed_upper_inf(("+'+INF'", "NaN", "[]"))]
+        #[case::signed_mixed_inf(("-'-InF'", "NaN", "[]"))]
+        #[case::signed_upper_infinity(("+'+INFINITY'", "NaN", "[]"))]
+        #[case::signed_mixed_infinity(("-'-iNfInItY'", "NaN", "[]"))]
+        #[case::spaced_alias(("+' +inf '", "NaN", "[]"))]
+        #[case::escaped_whitespace_alias((r"+'\t-infinity\n'", "NaN", "[]"))]
+        #[case::bom_alias((r"+'\uFEFF+InF\uFEFF'", "NaN", "[]"))]
+        #[case::parenthesized_alias(("+('-inf')", "NaN", "[]"))]
+        #[serial]
+        fn standalone_unary_string_coercion_preserves_quoted_content(
+            #[case] sample: (&str, &str, &str),
+            #[values(false, true)] single_css: bool,
+        ) {
+            // Given: the operand is a string, not the template-only #785 guarded path.
+            reset_class_map();
+            reset_file_map();
+            let (operand, expected, trace) = sample;
+            let source = format!(
+                "import {{Box}} from '@devup-ui/react'; import {{jsx}} from 'react/jsx-runtime'; function render(trace) {{ return jsx(Box, {{content: `\"value:${{{operand}}}\"`}}); }}"
+            );
+            // When
+            let output = extract(
+                "unary-string.js",
+                &source,
+                ExtractOption {
+                    single_css,
+                    ..ExtractOption::default()
+                },
+            )
+            .unwrap();
+            // Then: either exact static folding or the retained dynamic expression is valid.
+            assert_eq!(
+                render_observation(
+                    &output,
+                    "render(trace)",
+                    (!single_css).then_some("unary-string.js")
+                ),
+                format!("[{trace},[{:?}]]", format!("\"value:{expected}\""))
+            );
+        }
+
+        #[rstest]
+        #[case::signed_inf("'+inf'")]
+        #[case::signed_negative_inf("'-inf'")]
+        #[case::signed_infinity("'-infinity'")]
+        #[case::signed_cased("'+INFINITY'")]
+        #[case::whitespace(r"'\t-InF\n'")]
+        #[case::bom(r"'\uFEFF+inf\uFEFF'")]
+        #[serial]
+        fn lowered_const_bound_invalid_alias_preserves_dynamic_operand(
+            #[case] value: &str,
+            #[values(false, true)] single_css: bool,
+        ) {
+            // Given
+            reset_class_map();
+            reset_file_map();
+            let source = format!(
+                "import {{Box}} from '@devup-ui/react'; import {{jsx}} from 'react/jsx-runtime'; const alias={value}; function render() {{ return jsx(Box, {{content: `\"value:${{+alias}}\"`}}); }}"
+            );
+            // When
+            let output = extract(
+                "const-alias.js",
+                &source,
+                ExtractOption {
+                    single_css,
+                    ..ExtractOption::default()
+                },
+            )
+            .unwrap();
+            // Then: Boa miscoerces signed inf; native SSR covers execution of this operand.
+            assert_eq!(output.styles.len(), 1);
+            let Some(ExtractStyleValue::Dynamic(style)) = output.styles.iter().next() else {
+                panic!(
+                    "expected one dynamic content declaration: {:?}",
+                    output.styles
+                );
+            };
+            let operand = r#"`"value:${+alias}"`"#;
+            assert_eq!((style.property(), style.identifier()), ("content", operand));
+            assert_eq!(output.code.matches(operand).count(), 1);
+        }
+
+        #[rstest]
+        #[case::signed_inf("'+inf'")]
+        #[case::signed_negative_inf("'-inf'")]
+        #[case::signed_infinity("'-infinity'")]
+        #[case::signed_cased("'+INFINITY'")]
+        #[case::whitespace(r"'\t-InF\n'")]
+        #[case::bom(r"'\uFEFF+inf\uFEFF'")]
+        #[serial]
+        fn const_bound_invalid_alias_is_proven_before_unary_coercion(
+            #[case] value: &str,
+            #[values(false, true)] single_css: bool,
+        ) {
+            // Given
+            reset_class_map();
+            reset_file_map();
+            let source = format!(
+                "import {{Box}} from '@devup-ui/react'; const alias={value}; function render() {{ return <Box content={{`\"value:${{+alias}}\"`}} />; }}"
+            );
+            // When
+            let output = extract(
+                "const-alias.tsx",
+                &source,
+                ExtractOption {
+                    single_css,
+                    ..ExtractOption::default()
+                },
+            )
+            .unwrap();
+            // Then
+            assert_eq!(output.styles.len(), 1);
+            let Some(ExtractStyleValue::Static(style)) = output.styles.iter().next() else {
+                panic!(
+                    "expected one static content declaration: {:?}",
+                    output.styles
+                );
+            };
+            assert_eq!(
+                (style.property(), style.value()),
+                ("content", "\"value:NaN\"")
+            );
+        }
+
+        #[rstest]
+        #[case::plain("'inf'", "inf")]
+        #[case::signed("'+inf'", "+inf")]
+        #[case::cased("'-INFINITY'", "-INFINITY")]
+        #[case::decimal("'1.50'", "1.5")]
+        fn css_literal_text_does_not_inherit_unary_nan_proof(
+            #[case] source: &str,
+            #[case] expected: &str,
+        ) {
+            // Given
+            let arena = Allocator::default();
+            let expression = Parser::new(&arena, source, SourceType::mjs())
+                .parse_expression()
+                .unwrap();
+            // When
+            let text = crate::utils::get_string_by_literal_expression(&expression);
+            // Then
+            assert_eq!(text.as_deref(), Some(expected));
+        }
+    }
+
     mod emotion_namespace_tests {
         include!("emotion_namespace_tests.rs");
     }
