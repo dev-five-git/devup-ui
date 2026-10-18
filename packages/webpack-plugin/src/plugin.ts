@@ -62,20 +62,15 @@ export interface DevupUIWebpackPluginOptions {
   prefix?: string
   shorthands?: CustomShorthands
   /**
-   * Atom-level route-aware hoisting threshold.
-   *
-   * When set, a style atom whose content is reached by `>= atomHoist` distinct
-   * entries/routes is emitted once into the shared `devup-ui.css`; route-private
-   * atoms stay in their per-route chunk. Clamped to a minimum of 2 (an atom
-   * shared by `>= 2` routes is the smallest case worth hoisting). Omit to
-   * disable atom hoisting (identity behavior).
+   * Atom-level route-aware hoisting threshold. Defaults to 2; 0 disables it.
+   * Positive thresholds are clamped to >= 2. Canonical buckets reached by at
+   * least this many routes use global short counter names in devup-ui.css;
+   * other buckets keep per-file counter names in their per-route chunks.
+   * Fewer than two routes yields no hoisted plan. Ignored when singleCss is true.
    *
    * Composes with single-importer collapse: files used by exactly one importer
    * still merge into that importer's bucket (deduplicating their identical
    * atoms), and atom hoisting then shares atoms across the remaining buckets.
-   *
-   * Currently honored by the Next.js plugin; other bundlers wire it
-   * progressively. No effect where unsupported.
    */
   atomHoist?: number
   /**
@@ -106,7 +101,7 @@ export class DevupUIWebpackPlugin {
     singleCss = false,
     prefix,
     shorthands,
-    atomHoist,
+    atomHoist = 2,
     productionPrewarmFiles,
     importAliases: userImportAliases,
   }: Partial<DevupUIWebpackPluginOptions> = {}) {
@@ -283,20 +278,23 @@ export class DevupUIWebpackPlugin {
     }
     this.writeDataFiles()
 
-    // Atom-level hoisting (opt-in via `atomHoist`). Configured BEFORE any loader
-    // runs codeExtract (apply() body is synchronous, loaders run during
-    // compilation) so atoms receive global (shared) class names. The WASM
+    // Per-file atom hoisting defaults to 2; 0 disables it, singleCss ignores it.
+    // Configured before loaders run codeExtract (apply() is synchronous), so
+    // eligible atoms receive global short counter names. The WASM
     // instance is shared in-process with the loaders. Composes with
     // single-importer collapse: both keyed by the canonical bucket. The webpack
     // loader passes relative(process.cwd(), id) as the extraction filename, so
     // the graph maps use cwd-relative keys (keyBy: 'cwd-relative').
     const atomHoist = this.options.atomHoist
     const atomMode =
-      atomHoist !== undefined && Number.isFinite(atomHoist) && atomHoist > 0
+      !this.options.singleCss &&
+      atomHoist !== undefined &&
+      Number.isFinite(atomHoist) &&
+      atomHoist > 0
     // Single-importer collapse ALWAYS runs: files used by exactly one importer
     // merge into that importer's bucket, deduplicating their identical atoms.
     // The canonical map is built + imported unconditionally; only atom HOISTING
-    // composes on top when `atomHoist` is set. Mirrors next-plugin's pre-pass.
+    // composes on top in effective atom mode. Mirrors next-plugin's pre-pass.
     try {
       const srcDir = resolve(process.cwd(), 'src')
       const tsconfigPath = resolve(process.cwd(), 'tsconfig.json')
@@ -322,7 +320,7 @@ export class DevupUIWebpackPlugin {
           setAtomHoist(plan.threshold)
         } else {
           console.info(
-            '[devup-ui] atomHoist is set but fewer than 2 routes were detected; atom hoisting is a no-op (single-entry/SPA).',
+            '[devup-ui] fewer than 2 routes were detected; atom hoisting is a no-op (single-entry/SPA).',
           )
         }
       }

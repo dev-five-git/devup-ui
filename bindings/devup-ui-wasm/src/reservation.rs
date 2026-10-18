@@ -52,6 +52,7 @@ pub fn reserve_class_slots_internal(
     option: ExtractOption,
     resolver: Option<&ModuleResolver>,
 ) {
+    let _atom_mode = css::atom_hoist::AtomModeGuard::new(option.single_css);
     let slots = ScratchSlots::default();
     let files: Vec<String> = inputs.iter().map(|input| input.filename.clone()).collect();
     file_map::seed_file_numbers(&files);
@@ -76,7 +77,7 @@ pub fn reserve_class_slots_internal(
             let global = option.single_css || file_map::is_global(&input.filename);
             with_style_sheet_mut(|sheet| {
                 sheet.rm_global_css(&input.filename, global);
-                sheet.update_styles(&output.styles, &bucket, global);
+                sheet.update_styles_in_bucket(&output.styles, &bucket, global);
             });
         }
     }

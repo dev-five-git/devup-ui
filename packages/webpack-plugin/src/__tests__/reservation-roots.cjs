@@ -71,7 +71,7 @@ const compiler = webpack({
   },
   experiments: { css: true },
   module: { rules: [{ test: /\.css$/, type: 'css' }] },
-  plugins: [new DevupUIWebpackPlugin()],
+  plugins: [new DevupUIWebpackPlugin({ atomHoist: 0 })],
 })
 assert(compiler)
 compiler.hooks.thisCompilation.tap('root-custody', () => {
