@@ -9,6 +9,6 @@
     "packages/rsbuild-plugin/package.json": "Patch",
     "packages/webpack-plugin/package.json": "Patch"
   },
-  "note": "Refresh direct dependency ranges and regenerated lockfiles with the latest dependency-check-updates CLI, including current Next, React, Panda, Playwright, ESLint and WASM dependencies. Preserve React 18 and 19 peer support and the React 18 fixture pins; defer Oxc and Vinext/plugin-rsc declaration updates to their separate work. No new Devup UI build-time errors or styling runtime.",
+  "note": "Refresh direct dependency ranges and regenerated lockfiles with the latest dependency-check-updates CLI, including current Next, React, Panda, Playwright, ESLint, Vinext and WASM dependencies. Preserve React 18 and 19 peer support and the React 18 fixture pins. No new Devup UI build-time errors or styling runtime.",
   "date": "2026-10-18T00:00:00.000Z"
 }

@@ -27,7 +27,7 @@
     "react-markdown": "^10.1.0",
     "react-server-dom-webpack": "^19.3.1",
     "react-syntax-highlighter": "^16.1.2",
-    "vinext": "^1.0.0-beta.12"
+    "vinext": "^1.2.1"
   },
   "devDependencies": {
     "@devup-ui/next-plugin": "workspace:^",
@@ -40,7 +40,7 @@
     "@types/react-dom": "^19.3.0",
     "@types/react-syntax-highlighter": "^15.5.13",
     "@vitejs/plugin-react": "^6.1.2",
-    "@vitejs/plugin-rsc": "^0.5.35",
+    "@vitejs/plugin-rsc": "^0.5.38",
     "babel-plugin-react-compiler": "^1.0.0",
     "typescript": "^7.0.2",
     "vite": "^8.3.4"
