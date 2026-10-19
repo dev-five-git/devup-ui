@@ -1,0 +1,223 @@
+diff --git a/dist/build/prerender.js b/dist/build/prerender.js
+index 0e1a3d21988690c2c69603d03861bc57406c2eae..8dfc5f75b44fb7efb1e0e022118d99d5416d9e00 100644
+--- a/dist/build/prerender.js
++++ b/dist/build/prerender.js
+@@ -64,6 +64,45 @@ async function startOptionalPrerenderServerPool(outDir, poolSize, rscEntryPath,
+ }
+ var PrerenderUserFunctionError = class extends Error {};
+ var InvalidStaticParamsError = class extends Error {};
++/**
++* Errors thrown by `fetch()` for a request to a build-time prerender server.
++* Such a request failed before any response arrived, so it says nothing about
++* whether the route is dynamic.
++*/
++const failedPrerenderRequests = /* @__PURE__ */ new WeakSet();
++function fetchPrerenderServer(url, init) {
++	return fetch(url, init).catch((error) => {
++		if (typeof error === "object" && error !== null) failedPrerenderRequests.add(error);
++		throw error;
++	});
++}
++/**
++* Collects failed prerender requests during a static export. The export fails
++* once in-flight renders have settled, naming every route in a stable order and
++* keeping each original error.
++*/
++function createExportRequestFailures(mode) {
++	const failures = [];
++	return {
++		record(error, route, urlPath) {
++			if (mode !== "export" || !failedPrerenderRequests.has(error)) return false;
++			failures.push({
++				route: urlPath && urlPath !== route ? `${route} (${urlPath})` : route,
++				error
++			});
++			return true;
++		},
++		throwIfAny() {
++			if (failures.length === 0) return;
++			failures.sort((a, b) => a.route < b.route ? -1 : a.route > b.route ? 1 : 0);
++			const lines = failures.map(({ route, error }) => {
++				const code = error.cause?.code;
++				return `  ${route}: ${error.message}${typeof code === "string" ? ` (${code})` : ""}`;
++			});
++			throw new AggregateError(failures.map(({ error }) => error), `[vinext] Static export failed: ${failures.length} prerender request${failures.length === 1 ? "" : "s"} failed before a response was received.\n${lines.join("\n")}`, { cause: failures[0].error });
++		}
++	};
++}
+ function parsePrerenderEndpointError(text) {
+ 	try {
+ 		const parsed = JSON.parse(text);
+@@ -368,6 +407,7 @@ async function prerenderPages({ routes, apiRoutes, pagesDir, outDir, config, mod
+ 	const skipManifest = options.skipManifest ?? false;
+ 	const fileMatcher = createValidFileMatcher(config.pageExtensions);
+ 	const results = [];
++	const exportRequestFailures = createExportRequestFailures(mode);
+ 	if (!pagesBundlePath && !options._prodServer) throw new Error("[vinext] prerenderPages: either pagesBundlePath or _prodServer must be provided.");
+ 	fs.mkdirSync(outDir, { recursive: true });
+ 	for (const apiRoute of apiRoutes) results.push({
+@@ -405,7 +445,7 @@ async function prerenderPages({ routes, apiRoutes, pagesDir, outDir, config, mod
+ 			const port = renderPorts[renderRoundRobin++ % renderPorts.length];
+ 			const routeRequestPath = config.trailingSlash && !urlPath.endsWith("/") ? `${urlPath}/` : urlPath;
+ 			const requestPath = config.basePath && routeRequestPath === "/" && !config.trailingSlash ? config.basePath : `${config.basePath ?? ""}${routeRequestPath}`;
+-			return fetch(`http://127.0.0.1:${port}${requestPath}`, {
++			return fetchPrerenderServer(`http://127.0.0.1:${port}${requestPath}`, {
+ 				headers: secretHeaders,
+ 				redirect: "manual"
+ 			});
+@@ -419,7 +459,7 @@ async function prerenderPages({ routes, apiRoutes, pagesDir, outDir, config, mod
+ 				const search = new URLSearchParams({ pattern: r.pattern });
+ 				if (locales.length > 0) search.set("locales", JSON.stringify(locales));
+ 				if (defaultLocale) search.set("defaultLocale", defaultLocale);
+-				const res = await fetch(`${baseUrl}/__vinext/prerender/pages-static-paths?${search}`, { headers: secretHeaders });
++				const res = await fetchPrerenderServer(`${baseUrl}/__vinext/prerender/pages-static-paths?${search}`, { headers: secretHeaders });
+ 				const text = await res.text();
+ 				if (!res.ok) {
+ 					if (res.status === 500) throw new PrerenderUserFunctionError(parsePrerenderEndpointError(text));
+@@ -476,6 +516,7 @@ async function prerenderPages({ routes, apiRoutes, pagesDir, outDir, config, mod
+ 						defaultLocale: config.i18n?.defaultLocale ?? ""
+ 					});
+ 				} catch (e) {
++					exportRequestFailures.record(e, route.pattern);
+ 					results.push({
+ 						route: route.pattern,
+ 						status: "error",
+@@ -630,6 +671,7 @@ async function prerenderPages({ routes, apiRoutes, pagesDir, outDir, config, mod
+ 				};
+ 			} catch (e) {
+ 				renderPool?.recordRenderError(e);
++				exportRequestFailures.record(e, route.pattern, urlPath);
+ 				const err = e;
+ 				result = {
+ 					route: route.pattern,
+@@ -646,6 +688,7 @@ async function prerenderPages({ routes, apiRoutes, pagesDir, outDir, config, mod
+ 			return result;
+ 		});
+ 		results.push(...pageResults);
++		exportRequestFailures.throwIfAny();
+ 		renderPool?.assertHealthy();
+ 		const hasCustom404 = findFileWithExtensions(path.join(pagesDir, "404"), fileMatcher);
+ 		const hasErrorPage = findFileWithExtensions(path.join(pagesDir, "_error"), fileMatcher);
+@@ -683,8 +726,10 @@ async function prerenderPages({ routes, apiRoutes, pagesDir, outDir, config, mod
+ 				}
+ 			} catch (e) {
+ 				renderPool?.recordRenderError(e);
++				exportRequestFailures.record(e, "/404", localizePagesPath("/404", locale, config.i18n));
+ 			}
+ 		}
++		exportRequestFailures.throwIfAny();
+ 		renderPool?.assertHealthy();
+ 		if (!skipManifest) writePrerenderIndex(results, manifestDir, {
+ 			buildId: config.buildId,
+@@ -716,7 +761,8 @@ async function prerenderPages({ routes, apiRoutes, pagesDir, outDir, config, mod
+ * Speculative static rendering: routes classified as 'unknown' (no explicit
+ * config, non-dynamic URL) are attempted with an empty headers/cookies context.
+ * If they succeed, they are marked as rendered. If they throw a DynamicUsageError
+-* or fail, they are marked as skipped with reason 'dynamic'.
++* or fail, they are marked as skipped with reason 'dynamic'. In a static export,
++* a request that fails before any response arrives fails the export instead.
+ */
+ async function prerenderApp({ routes, metadataRoutes = [], outDir, config, mode, rscBundlePath, serverDir = path.dirname(rscBundlePath), buildOutDir = path.dirname(serverDir), ...options }) {
+ 	const manifestDir = options.manifestDir ?? outDir;
+@@ -724,6 +770,7 @@ async function prerenderApp({ routes, metadataRoutes = [], outDir, config, mode,
+ 	const onProgress = options.onProgress;
+ 	const skipManifest = options.skipManifest ?? false;
+ 	const results = [];
++	const exportRequestFailures = createExportRequestFailures(mode);
+ 	fs.mkdirSync(outDir, { recursive: true });
+ 	const previousHandler = getCacheHandler();
+ 	setCacheHandler(new NoOpCacheHandler());
+@@ -756,7 +803,7 @@ async function prerenderApp({ routes, metadataRoutes = [], outDir, config, mode,
+ 		rscHandler = (req) => {
+ 			const parsed = new URL(req.url);
+ 			const url = `http://127.0.0.1:${renderPorts[renderRoundRobin++ % renderPorts.length]}${parsed.pathname}${parsed.search}`;
+-			return fetch(url, {
++			return fetchPrerenderServer(url, {
+ 				method: req.method,
+ 				headers: {
+ 					...secretHeaders,
+@@ -777,7 +824,7 @@ async function prerenderApp({ routes, metadataRoutes = [], outDir, config, mode,
+ 						const search = new URLSearchParams({ pattern });
+ 						if (Object.keys(params).length > 0) search.set("parentParams", JSON.stringify(params));
+ 						if (mode === "export") search.set("rejectEmptyResults", "1");
+-						const res = await fetch(`${baseUrl}/__vinext/prerender/static-params?${search}`, { headers: secretHeaders });
++						const res = await fetchPrerenderServer(`${baseUrl}/__vinext/prerender/static-params?${search}`, { headers: secretHeaders });
+ 						const text = await res.text();
+ 						if (!res.ok) {
+ 							if (res.status === 500) throw new PrerenderUserFunctionError(parsePrerenderEndpointError(text));
+@@ -925,6 +972,7 @@ async function prerenderApp({ routes, metadataRoutes = [], outDir, config, mode,
+ 					}
+ 				}
+ 			} catch (e) {
++				exportRequestFailures.record(e, route.pattern);
+ 				const err = e;
+ 				const detail = config.enablePrerenderSourceMaps ? getErrorMessageWithStack(err) : err.message;
+ 				results.push({
+@@ -1153,6 +1201,11 @@ async function prerenderApp({ routes, metadataRoutes = [], outDir, config, mode,
+ 				};
+ 			} catch (e) {
+ 				renderPool?.recordRenderError(e);
++				if (exportRequestFailures.record(e, routePattern, urlPath)) return {
++					route: routePattern,
++					status: "error",
++					error: e.message
++				};
+ 				if (isSpeculative) return {
+ 					route: routePattern,
+ 					status: "skipped",
+@@ -1186,6 +1239,7 @@ async function prerenderApp({ routes, metadataRoutes = [], outDir, config, mode,
+ 			return result;
+ 		});
+ 		results.push(...appResults);
++		exportRequestFailures.throwIfAny();
+ 		renderPool?.assertHealthy();
+ 		const outputFiles = mode === "export" && metadataRoutes.length > 0 ? emitStaticMetadataFiles(metadataRoutes, outDir, config.basePath) : [];
+ 		try {
+@@ -1204,7 +1258,9 @@ async function prerenderApp({ routes, metadataRoutes = [], outDir, config, mode,
+ 			}
+ 		} catch (e) {
+ 			renderPool?.recordRenderError(e);
++			exportRequestFailures.record(e, "/404");
+ 		}
++		exportRequestFailures.throwIfAny();
+ 		renderPool?.assertHealthy();
+ 		if (!skipManifest) writePrerenderIndex(results, manifestDir, {
+ 			buildId: config.buildId,
+diff --git a/dist/server/prod-server.js b/dist/server/prod-server.js
+index 0220df4e8ed9df1a4f7d1a15b907d3153a0eccf4..e9887839e789518813a6b53f969051933b22bc47 100644
+--- a/dist/server/prod-server.js
++++ b/dist/server/prod-server.js
+@@ -387,6 +387,17 @@ function logProdServerStarted(host, port, purpose) {
+ 	console.log(`[vinext] Production server running at ${url}`);
+ }
+ /**
++* Build-time prerender servers serve one request per connection. The build's
++* fetch() pools idle keep-alive connections, and a render that blocks the event
++* loop past `keepAliveTimeout` lets Node close an idle socket the client has
++* already written its next request to, so that request fails with ECONNRESET.
++* With `maxRequestsPerSocket = 1` every response carries `Connection: close`,
++* so no idle connection is ever reused.
++*/
++function applyPrerenderConnectionPolicy(server, purpose) {
++	if (purpose === "prerender") server.maxRequestsPerSocket = 1;
++}
++/**
+ * Merge middleware/config headers and an optional status override into a new
+ * Web Response while preserving the original body stream when allowed.
+ *
+@@ -1282,6 +1293,7 @@ async function startAppRouterServer(options) {
+ 	const server = createServer((req, res) => {
+ 		runWithServerEntryRequire(rscEntryRequire, () => handleRequest(req, res));
+ 	});
++	applyPrerenderConnectionPolicy(server, purpose);
+ 	await new Promise((resolve) => {
+ 		server.listen(port, host, () => {
+ 			const addr = server.address();
+@@ -1323,6 +1335,7 @@ async function startPagesRouterServer(options) {
+ 	const { port, host, purpose, silent } = options;
+ 	const handler = await createPagesRouterRequestHandler(options);
+ 	const server = createServer(handler);
++	applyPrerenderConnectionPolicy(server, purpose);
+ 	await new Promise((resolve) => {
+ 		server.listen(port, host, () => {
+ 			const addr = server.address();

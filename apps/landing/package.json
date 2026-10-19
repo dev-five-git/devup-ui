@@ -6,7 +6,7 @@
   "scripts": {
     "dev": "node ./script.js && vinext dev",
     "search": "node ./script.js",
-    "build": "node ./script.js && vinext build",
+    "build": "node ./script.js && vinext build && bun ./check-prerender.ts",
     "build:next": "node ./script.js && LANDING_BUILD_MODE=next next build",
     "start": "npx serve ./dist/client",
     "lint": "eslint"
@@ -22,12 +22,12 @@
     "clsx": "^2.1",
     "lenis": "1.3",
     "next": "^16.3",
-    "react": "^19.3",
-    "react-dom": "^19.3",
+    "react": "^19.3.1",
+    "react-dom": "^19.3.1",
     "react-markdown": "^10.1",
-    "react-server-dom-webpack": "^19.3",
+    "react-server-dom-webpack": "^19.3.1",
     "react-syntax-highlighter": "^16.1",
-    "vinext": "^1.0.0-beta.12"
+    "vinext": "^1.2.1"
   },
   "devDependencies": {
     "@devup-ui/next-plugin": "workspace:^",
@@ -40,7 +40,7 @@
     "@types/react-dom": "^19",
     "@types/react-syntax-highlighter": "^15.5",
     "@vitejs/plugin-react": "^6.1",
-    "@vitejs/plugin-rsc": "^0.5.35",
+    "@vitejs/plugin-rsc": "^0.5.38",
     "babel-plugin-react-compiler": "^1.0",
     "typescript": "^7.0.2",
     "vite": "^8.3"

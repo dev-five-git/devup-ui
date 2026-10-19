@@ -44,5 +44,8 @@
     "apps/*",
     "bindings/*",
     "benchmark/*"
-  ]
+  ],
+  "patchedDependencies": {
+    "vinext@1.2.1": "patches/vinext@1.2.1.patch"
+  }
 }
