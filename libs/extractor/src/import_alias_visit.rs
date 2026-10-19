@@ -8,14 +8,17 @@
 //! - `import { style } from '@vanilla-extract/css'` → `import { style } from '@devup-ui/react'`
 
 use crate::ImportAlias;
+use crate::css_prop::{
+    CssProp, EMOTION_REACT, is_emotion, is_jsx_function, react_runtime, returned,
+};
 use crate::utils::{
     get_str_by_property_key, is_vanilla_extract_file, js_number_literal, keeps_bare_number,
 };
 use oxc_allocator::Allocator;
 use oxc_ast::ast::{
-    Argument, CallExpression, Expression, ImportDeclarationSpecifier, JSXAttributeItem,
-    JSXAttributeValue, JSXElementName, JSXOpeningElement, ModuleExportName, ObjectPropertyKind,
-    Statement,
+    Argument, ArrowFunctionBody, CallExpression, Expression, ImportDeclarationSpecifier,
+    JSXAttributeItem, JSXAttributeValue, JSXElementName, JSXOpeningElement, LogicalOperator,
+    ModuleExportName, ObjectPropertyKind, Statement,
 };
 use oxc_ast_visit::{
     Visit,
@@ -46,6 +49,12 @@ struct LibraryNumbers<'n> {
     styled: Vec<&'n str>,
     /// Local names of components taking rules in `styles` (Emotion's `Global`)
     components: Vec<&'n str>,
+    /// Which elements take the `css` prop, whose rules are Emotion's
+    css_prop: CssProp,
+    /// Local names of Devup UI's exports, which take the `css` prop as tags do
+    devup: Vec<&'n str>,
+    /// Local names of the functions building elements from a type and props
+    jsx: Vec<&'n str>,
     replacements: Vec<(usize, usize, String)>,
 }
 
@@ -94,6 +103,66 @@ impl LibraryNumbers<'_> {
             Expression::LogicalExpression(logical) => self.pixelify(&logical.right),
             Expression::ParenthesizedExpression(inner) => self.pixelify(&inner.expression),
             _ => {}
+        }
+    }
+
+    /// The rules a `css` prop composes: a function of the theme gives them
+    fn pixelify_css(&mut self, value: &Expression) {
+        match value {
+            Expression::ArrayExpression(array) => {
+                for element in &array.elements {
+                    if let Some(element) = element.as_expression() {
+                        self.pixelify_css(element);
+                    }
+                }
+            }
+            Expression::ConditionalExpression(conditional) => {
+                self.pixelify_css(&conditional.consequent);
+                self.pixelify_css(&conditional.alternate);
+            }
+            Expression::LogicalExpression(logical) => {
+                if logical.operator != LogicalOperator::And {
+                    self.pixelify_css(&logical.left);
+                }
+                self.pixelify_css(&logical.right);
+            }
+            Expression::ParenthesizedExpression(inner) => self.pixelify_css(&inner.expression),
+            Expression::ArrowFunctionExpression(arrow) => {
+                let rules = match &arrow.body {
+                    ArrowFunctionBody::FunctionBody(body) => returned(body),
+                    body => body.as_expression(),
+                };
+                if let Some(rules) = rules {
+                    self.pixelify_css(rules);
+                }
+            }
+            Expression::FunctionExpression(function) => {
+                if let Some(rules) = function.body.as_deref().and_then(returned) {
+                    self.pixelify_css(rules);
+                }
+            }
+            rules => self.pixelify(rules),
+        }
+    }
+
+    /// The value of the attribute `name` on `element`, pixelified as `css`
+    /// prop rules when `css`
+    fn pixelify_attribute(&mut self, element: &JSXOpeningElement, name: &str) {
+        for attribute in &element.attributes {
+            if let JSXAttributeItem::Attribute(attribute) = attribute
+                && attribute
+                    .name
+                    .as_identifier()
+                    .is_some_and(|attribute| attribute.name == name)
+                && let Some(JSXAttributeValue::ExpressionContainer(container)) = &attribute.value
+                && let Some(rules) = container.expression.as_expression()
+            {
+                if name == "css" {
+                    self.pixelify_css(rules);
+                } else {
+                    self.pixelify(rules);
+                }
+            }
         }
     }
 
@@ -215,6 +284,23 @@ impl<'a> Visit<'a> for LibraryNumbers<'_> {
         for rules in rules {
             self.pixelify(rules);
         }
+        if let Expression::Identifier(callee) = &call.callee
+            && self.jsx.contains(&callee.name.as_str())
+            && let [element, Argument::ObjectExpression(props), ..] = call.arguments.as_slice()
+            && let Some(element) = element.as_expression()
+            && self
+                .css_prop
+                .takes_type(element, |root| self.devup.contains(&root))
+        {
+            for property in &props.properties {
+                if let ObjectPropertyKind::ObjectProperty(property) = property
+                    && !property.computed
+                    && property.key.static_name().is_some_and(|key| key == "css")
+                {
+                    self.pixelify_css(&property.value);
+                }
+            }
+        }
         walk_call_expression(self, call);
     }
 
@@ -222,19 +308,13 @@ impl<'a> Visit<'a> for LibraryNumbers<'_> {
         if let JSXElementName::IdentifierReference(name) = &element.name
             && self.components.contains(&name.name.as_str())
         {
-            for attribute in &element.attributes {
-                if let JSXAttributeItem::Attribute(attribute) = attribute
-                    && attribute
-                        .name
-                        .as_identifier()
-                        .is_some_and(|name| name.name == "styles")
-                    && let Some(JSXAttributeValue::ExpressionContainer(container)) =
-                        &attribute.value
-                    && let Some(rules) = container.expression.as_expression()
-                {
-                    self.pixelify(rules);
-                }
-            }
+            self.pixelify_attribute(element, "styles");
+        }
+        if self
+            .css_prop
+            .takes(&element.name, |root| self.devup.contains(&root))
+        {
+            self.pixelify_attribute(element, "css");
         }
         walk_jsx_opening_element(self, element);
     }
@@ -272,6 +352,8 @@ fn devup_equivalent(source: &str, imported: &str) -> Option<DevupTarget<'static>
         }
         (_, "keyframes") => Some(DevupTarget::Main("keyframes")),
         (_, "styled") => Some(DevupTarget::Main("styled")),
+        // The `css` props it builds compile away, leaving React's own element
+        ("@emotion/react", "jsx" | "createElement") => Some(DevupTarget::Compat("jsx")),
         (_, "createGlobalStyle") => Some(DevupTarget::Compat("createGlobalStyle")),
         (_, "Global") => Some(DevupTarget::Compat("Global")),
         (_, "ThemeProvider") => Some(DevupTarget::Compat("ThemeProvider")),
@@ -294,7 +376,18 @@ pub fn transform_import_aliases<'a>(
     package: &str,
     import_aliases: &HashMap<String, ImportAlias>,
 ) -> Cow<'a, str> {
-    transform_import_aliases_with_edits(code, filename, package, import_aliases).0
+    transform_import_aliases_with_edits(code, filename, package, import_aliases).code
+}
+
+/// What rewriting aliased imports gives
+pub struct Aliased<'a> {
+    /// The code, or the original code when nothing was rewritten
+    pub code: Cow<'a, str>,
+    /// The replacements made in order, so a position in the code maps back to
+    /// the source
+    pub edits: Vec<Edit>,
+    /// Which elements take Emotion's `css` prop
+    pub css_prop: CssProp,
 }
 
 /// Packages generating CSS on top of vanilla-extract's, which Devup UI does not
@@ -349,17 +442,26 @@ pub type Edit = (usize, usize, usize);
 ///
 /// # Returns
 /// The transformed source code, or the original code if no transformations were
-/// needed, and the replacements made in order, so a position in the result maps
-/// back to the source
+/// needed, the replacements made in order, so a position in the result maps
+/// back to the source, and which elements take Emotion's `css` prop
 pub fn transform_import_aliases_with_edits<'a>(
     code: &'a str,
     filename: &str,
     package: &str,
     import_aliases: &HashMap<String, ImportAlias>,
-) -> (Cow<'a, str>, Vec<Edit>) {
-    // Quick check: if no aliases match, return original code
-    if import_aliases.is_empty() || !import_aliases.keys().any(|alias| code.contains(alias)) {
-        return (Cow::Borrowed(code), Vec::new());
+) -> Aliased<'a> {
+    let unchanged = |css_prop| Aliased {
+        code: Cow::Borrowed(code),
+        edits: Vec::new(),
+        css_prop,
+    };
+    let emotion_aliased = import_aliases.contains_key(EMOTION_REACT);
+    // Quick check: if no aliases match and no element takes a `css` prop,
+    // return original code
+    if CssProp::of(import_aliases, code, false) == CssProp::Off
+        && (import_aliases.is_empty() || !import_aliases.keys().any(|alias| code.contains(alias)))
+    {
+        return unchanged(CssProp::Off);
     }
 
     let allocator = Allocator::default();
@@ -377,10 +479,38 @@ pub fn transform_import_aliases_with_edits<'a>(
         transformations.extend(crate::jsx_import_source::emotion_replacements(&program));
     }
     let mut numbers = LibraryNumbers::default();
+    let mut uses_emotion = !transformations.is_empty();
+    let compat = format!("{package}/compat");
 
     for stmt in &program.body {
         if let Statement::ImportDeclaration(import_decl) = stmt {
             let source_value = import_decl.source.value.as_str();
+            uses_emotion |= is_emotion(source_value);
+            for specifier in import_decl.specifiers.iter().flatten() {
+                match specifier {
+                    ImportDeclarationSpecifier::ImportSpecifier(spec)
+                        if is_jsx_function(
+                            source_value,
+                            imported_name(&spec.imported),
+                            &compat,
+                        ) =>
+                    {
+                        numbers.jsx.push(spec.local.name.as_str());
+                    }
+                    specifier if source_value == package => {
+                        numbers.devup.push(specifier.local().name.as_str());
+                    }
+                    _ => {}
+                }
+            }
+            if emotion_aliased && let Some(runtime) = react_runtime(source_value) {
+                let span = import_decl.source.span;
+                transformations.push((
+                    span.start as usize,
+                    span.end as usize,
+                    format!("\"{runtime}\""),
+                ));
+            }
 
             if let Some(alias) = import_aliases.get(source_value)
                 && !import_decl.import_kind.is_type()
@@ -435,15 +565,18 @@ pub fn transform_import_aliases_with_edits<'a>(
             }
         }
     }
-    if !(numbers.calls.is_empty() && numbers.styled.is_empty() && numbers.components.is_empty()) {
+    numbers.css_prop = CssProp::of(import_aliases, code, uses_emotion);
+    if !(numbers.calls.is_empty() && numbers.styled.is_empty() && numbers.components.is_empty())
+        || numbers.css_prop != CssProp::Off
+    {
         numbers.visit_program(&program);
         transformations.append(&mut numbers.replacements);
-        transformations.sort_unstable_by_key(|(start, ..)| *start);
     }
+    transformations.sort_unstable_by_key(|(start, ..)| *start);
 
     // Apply transformations in reverse order to preserve positions
     if transformations.is_empty() {
-        return (Cow::Borrowed(code), Vec::new());
+        return unchanged(numbers.css_prop);
     }
 
     let edits = transformations
@@ -455,7 +588,11 @@ pub fn transform_import_aliases_with_edits<'a>(
         result.replace_range(start..end, &replacement);
     }
 
-    (Cow::Owned(result), edits)
+    Aliased {
+        code: Cow::Owned(result),
+        edits,
+        css_prop: numbers.css_prop,
+    }
 }
 
 /// Reapply Emotion units to literals produced after the initial alias pass.
@@ -1346,5 +1483,40 @@ const x = 1;",
                 expected
             );
         }
+    }
+
+    #[test]
+    fn test_css_prop_numbers_runtimes_and_pragmas() {
+        let mut aliases = emotion_alias();
+        aliases.insert(EMOTION_REACT.to_string(), ImportAlias::NamedToNamed);
+        let outputs: Vec<(String, CssProp)> = [
+            "export const a = <div css={{ padding: 8, lineHeight: 2, '&:hover': { margin: 4 } }} />;",
+            "export const a = <div css={[{ top: 1 }, c ? { left: 2 } : { right: 3 }, c && { bottom: 4 }, d || { width: 5 }, ({ height: 6 })]} />;",
+            "export const a = <div css={[t => ({ top: 1 }), t => { return { left: 2 }; }, t => { f(); return { right: 3 }; }, function (t) { return { bottom: 4 }; }, function (t) { f(); }]} />;",
+            "import { Box } from '@devup-ui/react';\nexport const a = <><Box p={2} css={{ padding: 2 }} /><Custom css={{ padding: 2 }} /></>;",
+            "import styled from '@emotion/styled';\nexport const a = <Custom css={{ padding: 2 }} />;",
+            "/** @jsxImportSource @emotion/react */\nexport const a = <Custom css={{ padding: 2 }} />;",
+            "import { jsx as _jsx } from '@emotion/react/jsx-runtime';\nimport { jsxDEV } from '@emotion/react/jsx-dev-runtime';\nexport const a = [_jsx('div', { css: { padding: 2 }, id: 1, ['css']: { top: 1 } }), jsxDEV(Custom, { css: { top: 3 } }), _jsx('div', props), f('div', { css: { top: 4 } })];",
+            "import { jsx, createElement } from '@emotion/react';\nexport const a = [jsx('div', { css: { padding: 2 } }), createElement('div', null)];",
+            "import { jsx as _jsx } from 'react/jsx-runtime';\nexport const a = [_jsx('div', { css: { padding: 2 } }), _jsx(Custom, { css: { padding: 2 } })];",
+            "export const a = { css: 1 };",
+        ]
+        .iter()
+        .map(|code| {
+            let aliased =
+                transform_import_aliases_with_edits(code, "test.tsx", "@devup-ui/react", &aliases);
+            (aliased.code.into_owned(), aliased.css_prop)
+        })
+        .collect();
+        insta::assert_debug_snapshot!(outputs);
+
+        let without_css_prop = transform_import_aliases_with_edits(
+            "export const a = <div css={{ padding: 8 }} />;",
+            "test.tsx",
+            "@devup-ui/react",
+            &emotion_alias(),
+        );
+        assert_eq!(without_css_prop.css_prop, CssProp::Off);
+        assert!(matches!(without_css_prop.code, Cow::Borrowed(_)));
     }
 }
