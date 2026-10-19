@@ -1,5 +1,10 @@
 export { beginBuild, type ResettableEngine } from './build-session'
 export {
+  htmlReservationEntries,
+  type HtmlReservationEntry,
+  type HtmlReservationOptions,
+} from './html-reservation'
+export {
   type AtomHoistPlan,
   buildCanonicalMap,
   type BuildCanonicalMapOptions,

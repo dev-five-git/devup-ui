@@ -252,6 +252,9 @@ describe('devupUIVitePlugin', () => {
       apply: expect.any(Function),
       generateBundle: expect.any(Function),
       configResolved: expect.any(Function),
+      buildApp: expect.any(Function),
+      configureServer: expect.any(Function),
+      buildStart: expect.any(Function),
       resolveId: expect.any(Function),
     })
     expect(plugin.apply()).toBe(true)

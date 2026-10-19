@@ -32,6 +32,7 @@ export type ReservationBatchOptions = {
 }
 
 export interface SharedSlotReservation {
+  readonly dependencies: readonly string[]
   invalidate(): void
   reserve(
     discovery: ReservationDiscoveryOptions,
@@ -106,6 +107,9 @@ export function createSharedSlotReservation(
   let committed: Committed | undefined
   let dirty = true
   return {
+    get dependencies() {
+      return committed?.inventory.dependencies ?? []
+    },
     invalidate() {
       dirty = true
     },

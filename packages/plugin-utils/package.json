@@ -36,6 +36,9 @@
   "files": [
     "dist"
   ],
+  "dependencies": {
+    "parse5": "^8.0.1"
+  },
   "devDependencies": {
     "typescript": "^7.0.2"
   }

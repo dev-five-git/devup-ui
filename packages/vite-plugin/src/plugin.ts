@@ -42,6 +42,10 @@ import type {
   UserConfig,
 } from 'vite'
 
+import { createCompiledDependencies } from './compiled-dependencies'
+import { createViteReservation } from './reservation'
+import { createServerWatch } from './server-watch'
+
 /**
  * CSS entry files emitted by devup-ui: `devup-ui.css`, `devup-ui-3.css`, ...
  *
@@ -317,7 +321,18 @@ export function DevupUI({
   setDebug(debug)
   setPrefix(prefix ?? null)
   const importAliases = mergeImportAliases(userImportAliases)
+  const reservation = createViteReservation({
+    package: libPackage,
+    include,
+    importAliases,
+    singleCss,
+    cssDir,
+    distDir,
+  })
   const cssMap = new Map()
+  const compiledDependencies = createCompiledDependencies()
+  let stopWatching: (() => void) | undefined
+  let watchConfigInputs: (() => void) | undefined
   let resolvedConfig: ResolvedConfig | undefined
   // Set by the client `generateBundle`, run by the late hook of the sibling
   // plugin once @vitejs/plugin-rsc has forwarded.
@@ -393,6 +408,45 @@ export function DevupUI({
       } catch {
         // Best-effort; on failure numbering falls back to arrival order.
       }
+      reservation.configure(config)
+    },
+    async buildApp(builder) {
+      for (const environment of Object.values(builder.environments)) {
+        reservation.configure({
+          ...builder.config,
+          environments: {
+            [environment.name]: environment.config,
+          },
+        })
+      }
+    },
+    configureServer(server) {
+      stopWatching?.()
+      for (const environment of Object.values(server.environments ?? {})) {
+        reservation.configure({
+          ...server.config,
+          environments: {
+            [environment.name]: environment.config,
+          },
+        })
+      }
+      const watching = createServerWatch(
+        server.watcher,
+        reservation,
+        compiledDependencies.remove,
+      )
+      watchConfigInputs = () => watching.add([devupFile, ...tailwindFiles])
+      watchConfigInputs()
+      stopWatching = () => {
+        watching.close()
+        watchConfigInputs = undefined
+      }
+    },
+    async buildStart() {
+      if (!extractCss) return
+      await reservation.reserve()
+      for (const dependency of reservation.dependencies)
+        this.addWatchFile(dependency)
     },
     config(this: { meta?: ConfigHookMeta } | void, userConfig: UserConfig) {
       const theme = getDefaultTheme()
@@ -401,11 +455,6 @@ export function DevupUI({
         define['process.env.DEVUP_UI_DEFAULT_THEME'] = JSON.stringify(theme)
       }
       const ret: Omit<UserConfig, 'plugins'> = {
-        server: {
-          watch: {
-            ignored: [`!${devupFile}`],
-          },
-        },
         define,
         optimizeDeps: {
           exclude: [...include, '@devup-ui/components', '@devup-editor/react'],
@@ -423,9 +472,11 @@ export function DevupUI({
       return true
     },
     closeBundle() {
+      stopWatching?.()
       endBuild()
     },
     async watchChange(id) {
+      reservation.invalidate(id)
       if (
         (resolve(id) === resolve(devupFile) && existsSync(devupFile)) ||
         (isTailwindFile(id) && existsSync(id))
@@ -438,6 +489,7 @@ export function DevupUI({
             distDir,
             singleCss,
           })
+          watchConfigInputs?.()
         } catch (error) {
           console.error(error)
         }
@@ -446,7 +498,18 @@ export function DevupUI({
     // Runs once per environment. Vite 6+ ignores `handleHotUpdate` on a plugin
     // that defines this hook, so the devup.json reload lives here as well.
     async hotUpdate({ file, modules, timestamp }) {
+      reservation.invalidate(file, timestamp)
       const { environment } = this
+      for (const id of compiledDependencies.consumers(environment.name, file)) {
+        const consumer = environment.moduleGraph.getModuleById(id)
+        if (consumer)
+          environment.moduleGraph.invalidateModule(
+            consumer,
+            new Set(),
+            timestamp,
+            true,
+          )
+      }
       if (environment.config.consumer === 'server') {
         // A module runner cannot apply CSS, so Vite answers a sheet change
         // with a full reload: the render restarts mid-request, and the modules
@@ -472,6 +535,7 @@ export function DevupUI({
         distDir,
         singleCss,
       })
+      watchConfigInputs?.()
 
       const invalidatedModules = new Set<EnvironmentModuleNode>()
       // A Tailwind class compiles from the definitions of the Tailwind CSS, so
@@ -491,6 +555,17 @@ export function DevupUI({
     },
     // Vite 5 fallback: Vite 6+ does not call this hook when `hotUpdate` exists.
     async handleHotUpdate({ file, server, modules, timestamp }) {
+      reservation.invalidate(file, timestamp)
+      for (const id of compiledDependencies.consumers('client', file)) {
+        const consumer = server.moduleGraph.getModuleById(id)
+        if (consumer)
+          server.moduleGraph.invalidateModule(
+            consumer,
+            new Set(),
+            timestamp,
+            true,
+          )
+      }
       const isDevupFile =
         resolve(file) === resolve(devupFile) && existsSync(devupFile)
       const isTailwind = isTailwindFile(file) && existsSync(file)
@@ -505,6 +580,7 @@ export function DevupUI({
         distDir,
         singleCss,
       })
+      watchConfigInputs?.()
 
       const invalidatedModules = new Set<ModuleNode>()
       for (const mod of isTailwind
@@ -559,6 +635,7 @@ export function DevupUI({
       if (createNodeModulesExcludeRegex(include).test(fileName)) {
         return
       }
+      await reservation.reserve()
 
       let rel = relative(dirname(id), cssDir).replaceAll('\\', '/')
       if (!rel.startsWith('./')) rel = `./${rel}`
@@ -580,6 +657,11 @@ export function DevupUI({
         true,
         false,
         importAliases,
+      )
+      compiledDependencies.update(
+        this.environment?.name ?? 'client',
+        id,
+        dependencies,
       )
       for (const dependency of dependencies) this.addWatchFile(dependency)
       const promises: Promise<void>[] = []
