@@ -1639,7 +1639,7 @@ fn create_styled_component<'a>(
             ast_builder,
             identifier(ast_builder, RENDERED),
             (class_name, style, identifier(ast_builder, "forwardedAs")),
-            without_props(ast_builder, withheld),
+            super::styled_transient::filter(ast_builder, without_props(ast_builder, withheld)),
         )
     } else {
         Expression::new_jsx_element(
@@ -1652,7 +1652,10 @@ fn create_styled_component<'a>(
                     vec![
                         JSXAttributeItem::new_spread_attribute(
                             SPAN,
-                            without_props(ast_builder, withheld),
+                            super::styled_transient::filter(
+                                ast_builder,
+                                without_props(ast_builder, withheld),
+                            ),
                             ast_builder,
                         ),
                         JSXAttributeItem::new_attribute(
