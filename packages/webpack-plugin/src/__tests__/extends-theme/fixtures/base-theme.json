@@ -1,0 +1,6 @@
+{
+  "theme": {
+    "colors": { "default": { "primary": "#17395b" } },
+    "length": { "default": { "gutter": "11px" } }
+  }
+}

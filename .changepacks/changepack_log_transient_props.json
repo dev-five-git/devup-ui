@@ -1,6 +1,5 @@
 {
   "changes": {
-    "apps/landing/package.json": "Patch",
     "bindings/devup-ui-wasm/package.json": "Patch",
     "packages/react/package.json": "Patch"
   },
