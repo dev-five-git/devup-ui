@@ -8,6 +8,26 @@ use oxc_semantic::SemanticBuilder;
 #[case("js")]
 #[case("mjs")]
 #[case("cjs")]
+fn output_checker_rejects_raw_jsx_when_original_suffix_excludes_it(#[case] extension: &str) {
+    // Given: output with an unlowered JSX node in the original non-JSX dialect.
+    let filename = format!("test.{extension}");
+    // When / Then: the actual output preflight rejects it without changing dialect flags.
+    assert!(
+        std::panic::catch_unwind(|| {
+            let arena = Allocator::default();
+            parse(&arena, &filename, "const view = <div />;");
+        })
+        .is_err()
+    );
+}
+
+#[rstest]
+#[case("ts")]
+#[case("mts")]
+#[case("cts")]
+#[case("js")]
+#[case("mjs")]
+#[case("cjs")]
 #[serial]
 fn output_parses_when_original_suffix_excludes_jsx(
     #[case] extension: &str,

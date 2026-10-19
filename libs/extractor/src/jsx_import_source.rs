@@ -84,7 +84,9 @@ mod tests {
             "{header}\nexport const anchor=1;\n/** @jsxImportSource @emotion/react */\nexport const later=2;"
         );
 
-        let (rewritten, _) = transform_import_aliases_with_edits(
+        let crate::import_alias_visit::Aliased {
+            code: rewritten, ..
+        } = transform_import_aliases_with_edits(
             &source,
             "pragma.tsx",
             "@devup-ui/react",
