@@ -69,6 +69,97 @@ await import(cssPath)
   },
 )
 
+const registerEntry = resolve(import.meta.dir, '..', 'dist', 'register.mjs')
+
+function run(cwd: string, script: string) {
+  writeFileSync(join(cwd, 'bunfig.toml'), '')
+  writeFileSync(join(cwd, 'check.ts'), script)
+  const result = Bun.spawnSync([process.execPath, 'run', 'check.ts'], {
+    cwd,
+    stdout: 'pipe',
+    stderr: 'pipe',
+    env: { ...process.env, BUN_RUNTIME_TRANSPILER_CACHE_PATH: '0' },
+  })
+  expect(
+    result.exitCode,
+    result.stdout.toString() + result.stderr.toString(),
+  ).toBe(0)
+}
+
+it('bundles the styles of every module into the Bun.build stylesheet', () => {
+  const cwd = mkdtempSync(join(tmpdir(), 'devup-css-emit-'))
+  try {
+    const widths = Array.from({ length: 8 }, (_, i) => 301 + i)
+    for (const width of widths) {
+      writeFileSync(
+        join(cwd, `fixture-${width}.ts`),
+        `import { css } from '@devup-ui/react'
+export const cls = css({ width: '${width}px' })
+`,
+      )
+    }
+    writeFileSync(
+      join(cwd, 'entry.ts'),
+      widths
+        .map((width) => `export { cls as c${width} } from './fixture-${width}'`)
+        .join('\n'),
+    )
+    run(
+      cwd,
+      `import { expect } from 'bun:test'
+import { DevupUI } from ${JSON.stringify(registerEntry.replaceAll('\\', '/'))}
+
+const result = await Bun.build({
+  entrypoints: ['./entry.ts'],
+  outdir: './out',
+  plugins: [DevupUI()],
+})
+expect(result.success).toBe(true)
+const stylesheets = result.outputs.filter((output) => output.path.endsWith('.css'))
+expect(stylesheets).toHaveLength(1)
+const css = (await stylesheets[0].text()).replace(/\\s+/g, '')
+for (const width of ${JSON.stringify(widths)}) expect(css).toContain('width:' + width + 'px')
+`,
+    )
+  } finally {
+    rmSync(cwd, { recursive: true, force: true })
+  }
+})
+
+it('compiles the packages Devup UI takes the place of, and StyleX', () => {
+  const cwd = mkdtempSync(join(tmpdir(), 'devup-css-emit-'))
+  try {
+    writeFileSync(
+      join(cwd, 'emotion.ts'),
+      `import { css } from '@emotion/react'
+export const cls = css({ width: '201px' })
+`,
+    )
+    writeFileSync(
+      join(cwd, 'stylex.ts'),
+      `import * as stylex from '@stylexjs/stylex'
+export const styles = stylex.create({ box: { width: '203px' } })
+`,
+    )
+    run(
+      cwd,
+      `import { readFileSync } from 'node:fs'
+import { expect } from 'bun:test'
+
+await import(${JSON.stringify(pluginEntry.replaceAll('\\', '/'))})
+const emotion = await import('./emotion.ts')
+const stylex = await import('./stylex.ts')
+expect(emotion.cls).toBeTruthy()
+expect(stylex.styles).toBeTruthy()
+const css = readFileSync('./df/devup-ui/devup-ui.css', 'utf-8')
+for (const width of [201, 203]) expect(css).toContain('width:' + width + 'px')
+`,
+    )
+  } finally {
+    rmSync(cwd, { recursive: true, force: true })
+  }
+})
+
 it('emits vanilla-extract styles through the WASM engine', () => {
   const cwd = mkdtempSync(join(tmpdir(), 'devup-css-emit-'))
   try {

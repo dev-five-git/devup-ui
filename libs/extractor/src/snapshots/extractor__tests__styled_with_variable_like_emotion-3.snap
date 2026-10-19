@@ -8,7 +8,7 @@ ToBTreeSet {
             ExtractDynamicStyle {
                 property: "background",
                 level: 0,
-                identifier: "primaryColor",
+                identifier: "__devupRecord0",
                 selector: None,
                 style_order: None,
             },
@@ -17,11 +17,11 @@ ToBTreeSet {
             ExtractDynamicStyle {
                 property: "padding",
                 level: 0,
-                identifier: "padding",
+                identifier: "__devupRecord1",
                 selector: None,
                 style_order: None,
             },
         ),
     },
-    code: "import \"@devup-ui/core/devup-ui-0.css\";\nimport { forwardRef as __devupForwardRef } from \"react\";\nlet primaryColor = \"blue\";\nlet padding = \"16px\";\nconst StyledDiv = __devupForwardRef((__devupRefProps, __devupRef) => (({ style, className, as: DevupAs = \"div\", forwardedAs, ...rest }) => <DevupAs {...(({ \"theme\": __devupOmit0, ...__devupDom }) => __devupDom)(rest)} as={forwardedAs} className={[\"a-a a-b\", className].filter(Boolean).join(\" \")} style={{\n\t...{\n\t\t\"--a\": primaryColor,\n\t\t\"--b\": padding\n\t},\n\t...style\n}} />)({\n\t...__devupRefProps,\n\tref: __devupRef\n}));\n",
+    code: "import \"@devup-ui/core/devup-ui-0.css\";\nimport { forwardRef as __devupForwardRef } from \"react\";\nlet primaryColor = \"blue\";\nlet padding = \"16px\";\nconst StyledDiv = __devupForwardRef((__devupRefProps, __devupRef) => (({ style, className, as: DevupAs = \"div\", forwardedAs, ...rest }) => (() => {\n\tconst __devupRecord0 = (0, primaryColor);\n\tconst __devupRecord1 = (0, padding);\n\treturn <DevupAs {...Object.fromEntries(Object.entries((({ \"theme\": __devupOmit0, ...__devupDom }) => __devupDom)(rest)).filter(([k]) => k[0] !== \"$\"))} as={forwardedAs} className={[\"a-a a-b\", className].filter(Boolean).join(\" \")} style={{\n\t\t...{\n\t\t\t\"--a\": __devupRecord0,\n\t\t\t\"--b\": __devupRecord1\n\t\t},\n\t\t...style\n\t}} />;\n})())({\n\t...__devupRefProps,\n\tref: __devupRef\n}));\n",
 }

@@ -48,10 +48,16 @@ in one global per process. Two consequences:
 - Tests that share a process share that state. The internal/testing-only
   `resetStateForTesting()` export (available in normal artifacts) clears the
   sheet, resolver, prefix/debug/hoist configuration, class/file/canonical/route
-  maps, shorthands, theme-token registry and imported stylesheet caches. Call
+  maps, reservation phase/miss count, frozen atom plan, shorthands, the complete
+  theme-token and Tailwind definition registries, and imported stylesheet caches. Call
   only at a quiescent test boundary, never in a resolver callback or between
   environments of a build that intentionally share state. Native caches reset
   on the calling thread.
+
+`resetBuildState()` remains the separate production build boundary. It clears
+allocator bookkeeping, maps/routes, atom threshold/plan, prefix, sheet and resolver,
+but leaves CSS theme-key configuration, shorthands and debug for the next build's
+configuration path to overwrite. It is not an alias for the full testing reset.
 
 Rust tests use hidden `css::test_state::TestStateGuard` and
 `extractor::test_state::TestStateGuard` support compiled into dependencies so

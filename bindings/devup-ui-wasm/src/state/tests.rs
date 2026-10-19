@@ -21,6 +21,7 @@ fn extract_fixture() -> Output {
 #[serial]
 fn reset_returns_fresh_extraction_when_engine_is_dirty() {
     let _state = TestStateGuard::new();
+    let empty_sheet = export_sheet_internal().unwrap();
     let baseline = extract_fixture().code();
     let baseline_css = get_css(None, false).unwrap();
     set_prefix(Some("dirty".into()));
@@ -48,7 +49,7 @@ fn reset_returns_fresh_extraction_when_engine_is_dirty() {
     reset_state_for_testing();
     assert_eq!(
         export_sheet_internal().unwrap(),
-        serde_json::to_string(&sheet::StyleSheet::default()).unwrap()
+        empty_sheet
     );
     assert_eq!(get_default_theme().unwrap(), None);
     assert!(MODULE_RESOLVER.with_borrow(Option::is_none));

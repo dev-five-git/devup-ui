@@ -138,6 +138,7 @@ globalCss({
     display: 'initial',
   },
   ':where([aria-hidden=false i][hidden]:not(:focus))': {
+    clip: 'rect(0,0,0,0)',
     pos: 'absolute',
   },
 })

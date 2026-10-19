@@ -9,7 +9,7 @@ pub fn reset_caches_for_testing() {
 /// Clean CSS state and extraction caches, restoring both on scope exit/unwind.
 #[must_use]
 pub struct TestStateGuard {
-    _caches: crate::vanilla_extract::test_state::CacheGuard,
+    _caches: crate::vanilla_extract::CacheGuard,
     _css: css::test_state::TestStateGuard,
 }
 
@@ -17,7 +17,7 @@ impl TestStateGuard {
     /// Own snapshots without holding locks across extraction.
     pub fn new() -> Self {
         Self {
-            _caches: crate::vanilla_extract::test_state::CacheGuard::new(),
+            _caches: crate::vanilla_extract::CacheGuard::default(),
             _css: css::test_state::TestStateGuard::new(),
         }
     }

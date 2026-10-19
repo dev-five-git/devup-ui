@@ -1,10 +1,9 @@
 import * as fs from 'node:fs'
-import * as fsPromises from 'node:fs/promises'
 import { tmpdir } from 'node:os'
+import * as nodePath from 'node:path'
 import { join } from 'node:path'
 
 import * as wasm from '@devup-ui/wasm'
-import type { BunPlugin, PluginBuilder } from 'bun'
 import {
   afterAll,
   afterEach,
@@ -16,62 +15,31 @@ import {
 } from 'bun:test'
 
 import { bunRegistration } from '../../../../bun.setup'
-import { register } from '../plugin'
+import { DevupUI, register } from '../plugin'
+import { captureBunHooks } from './captured-hooks.test-support'
 
-type LoadCallback = Parameters<PluginBuilder['onLoad']>[1]
-type ResolveCallback = Parameters<PluginBuilder['onResolve']>[1]
 const root = fs.mkdtempSync(join(tmpdir(), 'devup-ui-bun-hooks-'))
 const scopedRoot = join(root, '@devup-ui/fixture')
 fs.mkdirSync(scopedRoot, { recursive: true })
 const realPlugin = Bun.plugin
-const loads: {
-  options: Parameters<PluginBuilder['onLoad']>[0]
-  callback: LoadCallback
-}[] = []
-const resolves: ResolveCallback[] = []
-let exists: ReturnType<typeof spyOn<typeof fs, 'existsSync'>>
-let readConfig: ReturnType<typeof spyOn<typeof fsPromises, 'readFile'>>
-let write: ReturnType<typeof spyOn<typeof fsPromises, 'writeFile'>>
-let writeSync: ReturnType<typeof spyOn<typeof fs, 'writeFileSync'>>
-let mkdir: ReturnType<typeof spyOn<typeof fsPromises, 'mkdir'>>
+const realExists = fs.existsSync
+const realResolve = nodePath.resolve
+let hooks: ReturnType<typeof captureBunHooks>
+let loads: typeof hooks.loads
+let resolves: typeof hooks.resolves
+let exists: typeof hooks.exists
+let readConfig: typeof hooks.readConfig
+let write: typeof hooks.write
+let writeSync: typeof hooks.writeSync
+let mkdir: typeof hooks.mkdir
 
 beforeEach(() => {
-  loads.length = 0
-  resolves.length = 0
-  exists = spyOn(fs, 'existsSync').mockReturnValue(false)
-  readConfig = spyOn(fsPromises, 'readFile').mockResolvedValue('{}')
-  write = spyOn(fsPromises, 'writeFile').mockResolvedValue(undefined)
-  writeSync = spyOn(fs, 'writeFileSync').mockReturnValue(undefined)
-  mkdir = spyOn(fsPromises, 'mkdir').mockResolvedValue(undefined)
-  const capturePlugin = Object.assign(
-    <T extends BunPlugin>(config: T) =>
-      realPlugin({
-        ...config,
-        setup(builder) {
-          builder.onLoad = (options, callback) => {
-            loads.push({ options, callback })
-            return builder
-          }
-          builder.onResolve = (_options, callback) => {
-            resolves.push(callback)
-            return builder
-          }
-          return config.setup(builder)
-        },
-      }),
-    { clearAll: realPlugin.clearAll },
-  )
-  bunRegistration.mockImplementation(capturePlugin)
+  hooks = captureBunHooks()
+  ;({ loads, resolves, exists, readConfig, write, writeSync, mkdir } = hooks)
 })
 
-afterEach(() => {
-  bunRegistration.mockRestore()
-  bunRegistration.mockImplementation(realPlugin)
-  exists.mockRestore()
-  readConfig.mockRestore()
-  write.mockRestore()
-  writeSync.mockRestore()
-  mkdir.mockRestore()
+afterEach(async () => {
+  await hooks.cleanup()
 })
 afterAll(() => fs.rmSync(root, { recursive: true, force: true }))
 
@@ -90,6 +58,74 @@ async function load(path: string, namespace = 'file') {
 }
 
 describe('registered Bun hooks', () => {
+  it('seeds readable names from physical inputs before runtime source loads', async () => {
+    const file = join(root, 'numbered.tsx')
+    await Bun.write(
+      file,
+      "import {Box} from '@devup-ui/react'; export const view=<Box color='purple'/>",
+    )
+    exists.mockImplementation(realExists)
+    const resolve = spyOn(nodePath, 'resolve').mockImplementation((...paths) =>
+      paths.length === 1 && paths[0] === 'src' ? root : realResolve(...paths),
+    )
+    try {
+      await register()
+      expect(Object.keys(JSON.parse(wasm.exportFileMap()))).toContain(file)
+      expect(wasm.isDebug()).toBe(true)
+    } finally {
+      resolve.mockRestore()
+    }
+  })
+
+  it('retains native registration and clearAll identity', () => {
+    expect(Bun.plugin).toBe(realPlugin)
+    expect(bunRegistration.clearAll).toBe(realPlugin.clearAll)
+  })
+
+  it('reserves short runtime names during awaited setup', async () => {
+    await register({ debug: false })
+    expect(wasm.isDebug()).toBe(false)
+    expect(loads.length).toBe(2)
+  })
+
+  it('leaves invalid JavaScript to the native loader after scanning fails', async () => {
+    const path = join(root, 'malformed.ts')
+    const source = 'import {'
+    await Bun.write(path, source)
+    await register()
+    expect(await load(path)).toEqual({ contents: source, loader: 'ts' })
+    expect(writeSync).not.toHaveBeenCalled()
+  })
+
+  it('awaits real build setup and deferred CSS through two native build lifecycles', async () => {
+    const entry = join(root, 'bundle.tsx')
+    await Bun.write(
+      entry,
+      "import {Box} from '@devup-ui/react'; export const view=<Box color='tomato'/>;",
+    )
+    const outputs: string[][] = []
+    for (let round = 0; round < 2; round += 1) {
+      const result = await Bun.build({
+        entrypoints: [entry],
+        target: 'bun',
+        external: ['react/jsx-dev-runtime', 'react/jsx-runtime'],
+        outdir: join(root, 'out'),
+        plugins: [DevupUI()],
+      })
+      expect(result.success).toBe(true)
+      expect(result.logs).toEqual([])
+      const css = await Promise.all(
+        result.outputs
+          .filter((output) => output.path.endsWith('.css'))
+          .map((output) => output.text()),
+      )
+      expect(css.join('')).toMatch(/color:\s*tomato/)
+      outputs.push(css)
+    }
+    expect(outputs[1]).toEqual(outputs[0])
+    expect(writeSync).not.toHaveBeenCalled()
+  })
+
   it('creates cold directories before writing configuration and CSS', async () => {
     await register()
     expect(mkdir).toHaveBeenCalledWith('df', { recursive: true })

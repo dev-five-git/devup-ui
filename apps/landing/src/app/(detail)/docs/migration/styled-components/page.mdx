@@ -34,15 +34,17 @@ Any base renders: a tag, a component, a member such as `motion.div`, or any othe
 
 A `keyframes` or `css` result held in a `const` of the same file is a build-time value, so `` css`animation: ${fadeIn} 1s;` `` and `styled.div({ ['.' + card + ':hover &']: { margin: 0 } })` work. In CSS text a class standing where a declaration would is a mixin, composed with the component's class. One imported from another module is not: its name is only known once that file is built, so declare it where it is used.
 
-Object styles follow the libraries: several style arguments, or an array of them, merge into one rule set where a later declaration replaces an earlier one and nested rules merge; Emotion's options argument (`styled('div', { shouldForwardProp })(...)`) is accepted, and every prop is forwarded. Numbers mean pixels as they do in Emotion and styled-components — `padding: 8` is `8px`, unitless properties such as `lineHeight` stay as written — while Devup UI shorthands such as `p` keep the spacing scale.
+Object styles follow the libraries: several style arguments, or an array of them, merge into one rule set where a later declaration replaces an earlier one and nested rules merge; Emotion's options argument (`styled('div', { shouldForwardProp })(...)`) is accepted, and its `shouldForwardProp` is evaluated at build time. Numbers mean pixels as they do in Emotion and styled-components — `padding: 8` is `8px`, unitless properties such as `lineHeight` stay as written — while Devup UI shorthands such as `p` keep the spacing scale.
 
 A style argument can be conditional — `cond && { ... }`, `cond ? { ... } : { ... }`, `value || { ... }` or `value ?? { ... }`, in `styled` as in `css`. Each property it sets becomes a per-property ternary over what came before (`color: cond ? 'blue' : 'red'`), so the result does not depend on the order atomic classes land in the stylesheet; a conditional class joins as `cond ? cls : ''`, and the left side of `||` / `??` joins only when it is a string, as the libraries skip other values. Classes passed beside rule objects compose in `styled` as in `css`.
 
 A style argument that cannot be known at build time — a function call the build cannot run, a spread or a computed key it cannot compute — is a build error naming it, rather than a silently missing style; a spread, a selector value or a computed key the module computes (`styled.div({ ...cardStyles(), _hover: hoverStyles })`) is computed, while the other values stay CSS variables set at runtime. An object constant, declared in the file or imported, reads as if written in place: `styled.div(baseStyles)`, `styled.div({ ...baseStyles, color: 'red' })`. A single argument that is not a rule object composes as a class, as several do; one holding rules the module computes (`const base = makeStyles()`, `styled.div(base)`) applies those rules. In the object form a value may read the theme (`(p) => p.theme.brand`); any other function of the props is a build error — write it in a template (`${(p) => p.color}`), where it becomes a CSS variable.
 
+A styled callback cannot return a class name known only at runtime (`styled.div(p => { return p.cls; })`): the build reports a located `Cannot compose` error. A condition choosing between known classes or rule objects is supported.
+
 Inside a template, an interpolation standing where a declaration would is a mixin: `${mixin}` and `${(p) => p.active && mixin}` compose their class with the component's. A literal or constant is written into the CSS wherever it stands — a value, a CSS snippet, a selector. Any other interpolation in a selector or a property name is a build error, as are runtime values in `css`, `keyframes` and global styles, which have no element to set a CSS variable on.
 
-`.attrs()` and `.withConfig()` chain onto any factory. Attrs are merged over the props in order, as styled-components does — an object is spread, a function is called with the props; `.withConfig()` only tunes runtime behavior, so it is dropped:
+`.attrs()` and `.withConfig()` chain onto any factory. Attrs are merged over the props in order, as styled-components does — an object is spread, a function is called with the props. In `.withConfig()`, `shouldForwardProp` is evaluated at build time; `displayName`, `componentId` and the other options are ignored and add no runtime behavior:
 
 ```tsx
 const Button = styled.button
@@ -62,6 +64,23 @@ import * as Emotion from '@emotion/styled'
 // → import { styled as Emotion } from '@devup-ui/react'
 
 const Card = Emotion.div`color: red;`
+```
+
+## Transient props
+
+Props whose names start with `$` are transient, as in styled-components: style functions read them, but a styled component never passes them on to what it renders — a tag, a component or what `as` names. That includes `$` props a runtime spread brings and those attrs create, even when `shouldForwardProp` allows them:
+
+```tsx
+const Title = styled.h1`
+  color: ${(p) => p.$tone};
+`
+
+function Heading(props) {
+  return <Title {...props} />
+}
+
+// `$tone` sets the color; the <h1> gets `id` but neither `$tone` nor `$track`
+const heading = <Heading $tone="teal" $track="hero" id="intro" />
 ```
 
 ## Theme interpolation
@@ -121,6 +140,13 @@ Emotion's `<Global styles={...} />` behaves the same way: the `styles` prop is e
 | `ThemeProvider`, `useTheme`, `withTheme` | `@devup-ui/react/compat`, CSS-variable backed                                    |
 | `createGlobalStyle`, `Global`            | extracted, render nothing                                                        |
 | `ServerStyleSheet`, `StyleSheetManager`  | inert — Devup UI already emits a real stylesheet, so there is nothing to collect |
+| `CacheProvider`                          | renders its children; the cache it configures has nothing to hold                |
 | `isStyledComponent`                      | always `false`                                                                   |
-| `ClassNames`, `CacheProvider`            | no equivalent; stays on its own package with a build warning                     |
-| `.attrs()`, `.withConfig()`              | attrs merged over props; `withConfig` dropped                                    |
+| `css` prop, `jsx`, JSX runtime pragmas   | compiled to `className` and `style`                                              |
+| `ClassNames`                             | replaced by what its child renders, each `css` / `cx` call compiled to classes   |
+| Component selectors (`${Child}`)         | a marker class on the selected component                                         |
+| `.attrs()`, `.withConfig()`              | attrs merged over props; build-time `shouldForwardProp`, other options ignored   |
+
+## Limitations
+
+Composition only the runtime sees — a `className` from props, an external class, a `styled()` base the build cannot read — follows CSS specificity and stylesheet order rather than the order you wrote. Styled components and classes defined in another module are not read as build-time values, stylis plugins are not applied, and test utilities and React Native targets are not supported. A component of your own that takes the `css` prop must pass on both `className` and `style`. See [Supported Syntax & Limitations](/docs/limitations) for the full list.

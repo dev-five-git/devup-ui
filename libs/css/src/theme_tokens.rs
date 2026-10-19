@@ -1,11 +1,14 @@
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 use std::sync::{LazyLock, RwLock};
 
 #[derive(Default, Debug)]
 pub(crate) struct ThemeTokenRegistry {
     length: BTreeMap<String, Vec<u8>>,
     shadow: BTreeMap<String, Vec<u8>>,
+    first_length: BTreeMap<String, String>,
+    first_shadow: BTreeMap<String, String>,
     typography: Vec<String>,
+    colors: BTreeSet<String>,
 }
 
 static TOKEN_REGISTRY: LazyLock<RwLock<ThemeTokenRegistry>> =
@@ -34,13 +37,68 @@ pub fn set_theme_token_levels(
     if let Ok(mut registry) = TOKEN_REGISTRY.write() {
         registry.length = length;
         registry.shadow = shadow;
+        registry.first_length.clear();
+        registry.first_shadow.clear();
     }
+}
+
+/// Register effective default literals separately from responsive variable levels.
+pub fn set_theme_token_values(length: BTreeMap<String, String>, shadow: BTreeMap<String, String>) {
+    if let Ok(mut registry) = TOKEN_REGISTRY.write() {
+        let normalize = |values: BTreeMap<String, String>| {
+            values
+                .into_iter()
+                .map(|(token, value)| {
+                    (
+                        token,
+                        crate::optimize_value::optimize_value(&value).into_owned(),
+                    )
+                })
+                .collect()
+        };
+        registry.first_length = normalize(length);
+        registry.first_shadow = normalize(shadow);
+    }
+}
+
+/// Resolve the first default literal in the property's token namespace.
+pub fn get_first_theme_token_value(property: &str, value: &str) -> Option<String> {
+    let token = value.strip_prefix('$')?;
+    let registry = TOKEN_REGISTRY.read().ok()?;
+    let values = if property == "box-shadow" {
+        &registry.first_shadow
+    } else {
+        &registry.first_length
+    };
+    values.get(token).cloned()
 }
 
 pub fn set_typography_keys(keys: Vec<String>) {
     if let Ok(mut registry) = TOKEN_REGISTRY.write() {
         registry.typography = keys;
     }
+}
+
+/// Registers the names of the theme's colors, which Tailwind classes such as
+/// `bg-primary` can use
+pub fn set_color_tokens(names: BTreeSet<String>) {
+    if let Ok(mut registry) = TOKEN_REGISTRY.write() {
+        registry.colors = names;
+    }
+}
+
+/// Whether the theme defines the color `name`, a CSS variable of that name
+pub fn is_color_token(name: &str) -> bool {
+    TOKEN_REGISTRY
+        .read()
+        .is_ok_and(|registry| registry.colors.contains(name))
+}
+
+/// Whether the theme defines the shadow `name`, a CSS variable of that name
+pub fn is_shadow_token(name: &str) -> bool {
+    TOKEN_REGISTRY
+        .read()
+        .is_ok_and(|registry| registry.shadow.contains_key(name))
 }
 
 /// Typography names defined by the registered theme, so a dynamic
@@ -98,6 +156,67 @@ mod tests {
 
     #[test]
     #[serial]
+    fn theme_token_values_resolve_in_the_property_namespace() {
+        // Given
+        set_theme_token_values(
+            BTreeMap::from([("shared".into(), "8px".into())]),
+            BTreeMap::from([("shared".into(), "0 1px 2px black".into())]),
+        );
+        // When / Then
+        assert_eq!(
+            get_first_theme_token_value("width", "$shared"),
+            Some("8px".into())
+        );
+        assert_eq!(
+            get_first_theme_token_value("box-shadow", "$shared"),
+            Some("0 1px 2px black".into())
+        );
+        assert_eq!(get_first_theme_token_value("width", "$missing"), None);
+        assert_eq!(get_first_theme_token_value("width", "shared"), None);
+        set_theme_token_levels(BTreeMap::new(), BTreeMap::new());
+    }
+
+    #[test]
+    #[serial]
+    fn theme_token_values_normalize_zero_literals() {
+        // Given
+        let zero = BTreeMap::from([("zero".into(), "0px".into())]);
+        // When
+        set_theme_token_values(zero.clone(), zero);
+        // Then
+        assert_eq!(
+            get_first_theme_token_value("width", "$zero"),
+            Some("0".into())
+        );
+        assert_eq!(
+            get_first_theme_token_value("box-shadow", "$zero"),
+            Some("0".into())
+        );
+        set_theme_token_levels(BTreeMap::new(), BTreeMap::new());
+    }
+
+    #[test]
+    #[serial]
+    fn theme_token_values_reset_when_levels_are_replaced() {
+        // Given
+        set_theme_token_values(
+            BTreeMap::from([("shared".into(), "8px".into())]),
+            BTreeMap::from([("shared".into(), "0 1px 2px black".into())]),
+        );
+        // When
+        set_theme_token_levels(
+            BTreeMap::from([("shared".into(), vec![0, 2])]),
+            BTreeMap::from([("shared".into(), vec![0, 3])]),
+        );
+        // Then
+        assert_eq!(get_first_theme_token_value("width", "$shared"), None);
+        assert_eq!(get_first_theme_token_value("box-shadow", "$shared"), None);
+        assert_eq!(get_responsive_theme_token("$shared"), Some(vec![0, 2]));
+        set_theme_token_levels(BTreeMap::new(), BTreeMap::new());
+    }
+
+    #[test]
+    #[serial]
     fn test_get_responsive_theme_token() {
         let _state = crate::test_state::TestStateGuard::new();
         let mut length = BTreeMap::new();
@@ -139,6 +258,23 @@ mod tests {
         assert_eq!(get_typography_keys(), vec!["body", "title"]);
         set_typography_keys(vec![]);
         assert_eq!(get_typography_keys(), Vec::<String>::new());
+    }
+
+    #[test]
+    #[serial]
+    fn test_color_and_shadow_tokens() {
+        set_color_tokens(BTreeSet::from(["primary".to_string()]));
+        let mut shadow = BTreeMap::new();
+        shadow.insert("card".to_string(), vec![0]);
+        set_theme_token_levels(BTreeMap::new(), shadow);
+
+        assert!(is_color_token("primary"));
+        assert!(!is_color_token("card"));
+        assert!(is_shadow_token("card"));
+        assert!(!is_shadow_token("primary"));
+        set_color_tokens(BTreeSet::new());
+        set_theme_token_levels(BTreeMap::new(), BTreeMap::new());
+        assert!(!is_color_token("primary"));
     }
 
     #[test]

@@ -13,7 +13,7 @@ import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 
 import { prepareConsumer } from './consumer.mjs'
-import { runGuarded } from './guarded-process.mjs'
+import { CommandExitError, runGuarded } from './guarded-process.mjs'
 
 const repository = fileURLToPath(new URL('../../', import.meta.url))
 const root = await mkdtemp(
@@ -120,8 +120,9 @@ async function buildAndCheck(name, directory, singleCss) {
     try {
       await run(process.execPath, args, { cwd: directory, env })
     } catch (error) {
-      if (!(error instanceof Error)) throw error
+      if (!(error instanceof CommandExitError)) throw error
       const measurement = measurements.at(-1)
+      assert.equal(error.result.code, 1)
       assert.equal(measurement.code, 1)
       assert.match(
         measurement.output,

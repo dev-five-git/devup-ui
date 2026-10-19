@@ -1,159 +1,142 @@
-import { execFile, spawn } from 'node:child_process'
 import { once } from 'node:events'
-import { promisify } from 'node:util'
 
-import { readPrivateBytes } from './process-memory.mjs'
+import { processRuntime } from './process-inspection.mjs'
+import { ProcessOwnership } from './process-ownership.mjs'
 
-const execute = promisify(execFile)
-const memoryLimit = 6 * 1024 ** 3
-
-async function processSnapshot() {
-  if (process.platform === 'win32') {
-    const { stdout } = await execute('powershell.exe', [
-      '-NoProfile',
-      '-Command',
-      'Get-CimInstance Win32_Process | ForEach-Object { @{ pid = [int]$_.ProcessId; parent = [int]$_.ParentProcessId; bytes = [double]$_.PrivatePageCount; born = $_.CreationDate.ToString("o") } } | ConvertTo-Json -Compress',
-    ])
-    return JSON.parse(stdout)
+export class CommandExitError extends Error {
+  constructor(result) {
+    super(`${result.command} exited ${result.code ?? result.signal}`)
+    this.result = result
   }
-  const { stdout } = await execute('ps', ['-eo', 'pid=,ppid='])
-  return stdout
-    .trim()
-    .split('\n')
-    .map((line) => {
-      const [pid, parent] = line.trim().split(/\s+/).map(Number)
-      return { pid, parent }
-    })
 }
 
-async function privateBytes(row) {
-  if (process.platform === 'win32') return row.bytes
-  return readPrivateBytes(row.pid)
-}
-
-async function stopTree(pids) {
-  const current = await processSnapshot()
-  for (const [pid, born] of [...pids].reverse()) {
-    if (process.platform === 'win32') {
-      if (!born || current.find((row) => row.pid === pid)?.born !== born)
-        continue
-      try {
-        await execute('taskkill.exe', ['/PID', String(pid), '/T', '/F'])
-      } catch (error) {
-        if (
-          !(error instanceof Error) ||
-          !('code' in error) ||
-          ![128, 255].includes(error.code)
-        )
-          throw error
-      }
-    } else {
-      try {
-        process.kill(pid, 'SIGKILL')
-      } catch (error) {
-        if (
-          !(error instanceof Error) ||
-          !('code' in error) ||
-          error.code !== 'ESRCH'
-        )
-          throw error
-      }
-    }
-  }
+function bounded(operation, timeoutMs) {
+  let timer
+  return Promise.race([
+    Promise.resolve().then(operation),
+    new Promise((_, reject) => {
+      timer = setTimeout(
+        () => reject(new Error('Process inspection/cleanup timed out')),
+        timeoutMs,
+      )
+    }),
+  ]).finally(() => clearTimeout(timer))
 }
 
 export async function runGuarded(command, args, options = {}) {
-  const child = spawn(command, args, {
+  const io = options.runtime ?? processRuntime
+  const operationTimeoutMs = options.drainTimeoutMs ?? 5000
+  const runtime = Object.fromEntries(
+    ['inspect', 'snapshot', 'privateBytes', 'kill'].map((key) => [
+      key,
+      (...values) => bounded(() => io[key](...values), operationTimeoutMs),
+    ]),
+  )
+  const child = io.spawn(command, args, {
     cwd: options.cwd,
     env: { ...process.env, CARGO_BUILD_JOBS: '2', ...options.env },
     stdio: ['ignore', 'pipe', 'pipe'],
   })
-  const completion = once(child, 'close')
-  child.stdout.on('data', (data) => {
-    process.stdout.write(data)
-    options.onOutput?.(data.toString())
-  })
-  child.stderr.on('data', (data) => {
-    process.stderr.write(data)
-    options.onOutput?.(data.toString())
-  })
-  const owned = new Map([[child.pid, undefined]])
+  // Observe the error/close promise immediately, including spawn failures.
+  const completion = once(child, 'close').then(
+    ([code, signal]) => ({ code, signal }),
+    (error) => ({ error }),
+  )
+  for (const stream of [child.stdout, child.stderr]) {
+    stream.on('data', (data) => {
+      ;(stream === child.stdout ? process.stdout : process.stderr).write(data)
+      options.onOutput?.(data.toString())
+    })
+  }
+  const owned = new ProcessOwnership(runtime)
   const started = performance.now()
+  const errors = []
   let peakBytes = 0
   let stopReason
-  let polling = false
-  let watchdogError
+  let timer
+  let pendingPoll = Promise.resolve()
+  let outcome = {}
+  let stopped = false
+  let wake
+  const failure = new Promise((resolve) => {
+    wake = resolve
+  })
   const poll = async () => {
-    if (polling) return
-    polling = true
-    try {
-      const rows = await processSnapshot()
-      if (child.exitCode === null && child.signalCode === null) {
-        owned.set(child.pid, rows.find((row) => row.pid === child.pid)?.born)
-      }
-      let added
-      do {
-        added = false
-        for (const row of rows) {
-          const parentBorn = owned.get(row.parent)
-          const parentOwned =
-            owned.has(row.parent) &&
-            (process.platform !== 'win32' ||
-              (parentBorn !== undefined &&
-                rows.find((parent) => parent.pid === row.parent)?.born ===
-                  parentBorn))
-          if (parentOwned && !owned.has(row.pid)) {
-            owned.set(row.pid, row.born)
-            added = true
-          }
-        }
-      } while (added)
-      const bytes = (
-        await Promise.all(
-          rows.filter((row) => owned.has(row.pid)).map(privateBytes),
-        )
-      ).reduce((total, value) => total + value, 0)
-      peakBytes = Math.max(peakBytes, bytes)
-      if (bytes > (options.memoryLimit ?? memoryLimit))
-        stopReason = `private memory exceeded ${options.memoryLimit ?? memoryLimit} bytes`
-      if (performance.now() - started > (options.timeoutMs ?? 600_000))
-        stopReason = 'command timeout'
-      if (options.signal?.aborted) stopReason = 'command cancelled'
-      if (stopReason) await stopTree(owned)
-    } catch (error) {
-      watchdogError = error
-      await stopTree(owned)
-    } finally {
-      polling = false
-    }
+    const rows = await runtime.snapshot()
+    if (stopped) return
+    await owned.discover(rows)
+    const bytes = await owned.memory()
+    peakBytes = Math.max(peakBytes, bytes)
+    if (bytes > (options.memoryLimit ?? 6 * 1024 ** 3))
+      stopReason = `private memory exceeded ${options.memoryLimit ?? 6 * 1024 ** 3} bytes`
+    if (performance.now() - started > (options.timeoutMs ?? 600_000))
+      stopReason = 'command timeout'
+    if (options.signal?.aborted) stopReason = 'command cancelled'
+    if (stopReason) wake()
   }
-  let pendingPoll = poll()
-  const timer = setInterval(() => {
-    if (!polling) pendingPoll = poll()
-  }, 1000)
-  let code
-  let signal
+  const schedule = () => {
+    // This handler is attached in the SAME turn, never after child completion.
+    pendingPoll = poll().catch((error) => {
+      errors.push(error)
+      wake()
+    })
+    pendingPoll.then(() => {
+      if (!stopped && !errors.length && !stopReason)
+        timer = setTimeout(schedule, options.pollIntervalMs ?? 1000)
+    })
+  }
   try {
-    await pendingPoll
-    ;[code, signal] = await completion
+    // Establish exactly once, before the first fallible global snapshot.
+    if (child.pid !== undefined) await owned.establish(child.pid)
+    schedule()
+    const completed = await Promise.race([completion, failure])
+    if (completed) outcome = completed
+    if (outcome.error) errors.push(outcome.error)
+  } catch (error) {
+    errors.push(error)
   } finally {
-    clearInterval(timer)
-    await pendingPoll
-    await stopTree(owned)
+    stopped = true
+    owned.closed = true
+    clearTimeout(timer)
+    try {
+      await bounded(() => pendingPoll, operationTimeoutMs)
+    } catch (error) {
+      errors.push(error)
+    } finally {
+      // Known identities do not depend on another global snapshot succeeding.
+      errors.push(...(await owned.stop(operationTimeoutMs)))
+      try {
+        outcome = await bounded(() => completion, operationTimeoutMs)
+        if (outcome.error && !errors.includes(outcome.error))
+          errors.push(outcome.error)
+      } catch (error) {
+        errors.push(error)
+        child.stdout.destroy?.()
+        child.stderr.destroy?.()
+      }
+    }
   }
   const result = {
     command,
     args,
-    code,
-    signal,
+    code: outcome.code,
+    signal: outcome.signal,
     peakBytes,
     durationMs: performance.now() - started,
     stopReason,
+    errors: errors.map((error) =>
+      error instanceof Error ? error.message : String(error),
+    ),
   }
-  options.onResult?.(result)
-  if (watchdogError) throw watchdogError
+  try {
+    options.onResult?.(result)
+  } catch (error) {
+    errors.push(error)
+  }
+  if (errors.length)
+    throw new AggregateError(errors, `Supervisor failed: ${command}`)
   if (stopReason)
     throw new Error(`FINDING: watchdog stopped ${command}: ${stopReason}`)
-  if (code !== 0) throw new Error(`${command} exited ${code ?? signal}`)
+  if (result.code !== 0) throw new CommandExitError(result)
   return result
 }

@@ -139,6 +139,27 @@ mod tests {
 
     #[test]
     #[serial]
+    fn route_count_includes_remaining_sets_when_three_registered_files_overlap() {
+        // Given
+        set_file_routes(HashMap::from([
+            ("a.tsx".to_string(), HashSet::from([0, 1])),
+            ("b.tsx".to_string(), HashSet::from([1, 2])),
+            ("c.tsx".to_string(), HashSet::from([2, 3])),
+        ]));
+
+        // When / Then
+        for files in [
+            ["a.tsx", "b.tsx", "c.tsx", "unknown.tsx"],
+            ["unknown.tsx", "c.tsx", "b.tsx", "a.tsx"],
+        ] {
+            assert_eq!(route_count_for_files(files), 4);
+        }
+
+        reset_file_routes();
+    }
+
+    #[test]
+    #[serial]
     fn test_route_count_for_files_without_registered_routes() {
         let _state = crate::test_state::TestStateGuard::new();
         let mut m = HashMap::new();
