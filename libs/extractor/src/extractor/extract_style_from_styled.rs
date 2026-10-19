@@ -1,3 +1,4 @@
+use super::styled_css_slot::{StyledContext, StyledCssSlot};
 use super::styled_jsx::StyledJsx;
 use rustc_hash::FxHashMap;
 
@@ -67,6 +68,7 @@ pub struct StyledDefinition<'a> {
     /// Its `shouldForwardProp`, as the build evaluates it
     forward: Option<Forward>,
     bindings: Vec<(String, Expression<'a>)>,
+    css_slot: Option<StyledCssSlot>,
 }
 
 /// Whether a styled component renders a tag, which takes only valid
@@ -144,6 +146,7 @@ impl<'a> StyledDefinition<'a> {
             attrs: clone_all(builder, &self.attrs).collect(),
             reads: self.reads.clone(),
             forward: self.forward.clone(),
+            css_slot: self.css_slot.clone(),
             bindings: self
                 .bindings
                 .iter()
@@ -226,6 +229,51 @@ impl StyledDefinition<'_> {
     }
 }
 
+impl<'a> StyledDefinition<'a> {
+    /// The tag an element using this component can render in its place, with
+    /// the styles the component gives it: a tag, with no attrs, no props read
+    /// and no value only the runtime gives
+    #[must_use]
+    pub fn inline(&self) -> Option<(&str, &[ExtractStyleProp<'a>])> {
+        (self.fixed_native() && self.bindings.is_empty())
+            .then_some((self.name.as_str(), self.styles.as_slice()))
+    }
+
+    fn fixed_native(&self) -> bool {
+        renders_tag(&self.name, self.bound.as_ref())
+            && self.attrs.is_empty()
+            && self.reads == Reads::default()
+            && self.classes.is_empty()
+            && self.styles.iter().all(fixed)
+    }
+
+    fn with_css_slot(mut self, slot: Option<&StyledCssSlot>) -> Self {
+        self.css_slot = slot
+            .filter(|_| self.fixed_native() && !self.bindings.is_empty())
+            .cloned();
+        self
+    }
+
+    pub(crate) const fn css_slot(&self) -> Option<&StyledCssSlot> {
+        self.css_slot.as_ref()
+    }
+
+    /// The styles the component gives what it renders
+    #[must_use]
+    pub fn styles(&self) -> &[ExtractStyleProp<'a>] {
+        &self.styles
+    }
+}
+
+/// Whether `prop` holds only values the build knows
+fn fixed(prop: &ExtractStyleProp<'_>) -> bool {
+    match prop {
+        ExtractStyleProp::Static(value) => !matches!(value, ExtractStyleValue::Dynamic(_)),
+        ExtractStyleProp::StaticArray(props) => props.iter().all(fixed),
+        _ => false,
+    }
+}
+
 /// `Component.withComponent(target)`: the styles and attrs of `definition`
 /// rendering `target`, a tag name or a component JSX can name; `None` for any
 /// other target
@@ -234,7 +282,7 @@ pub fn with_component<'a>(
     definition: &StyledDefinition<'a>,
     target: &Expression<'a>,
     split_filename: Option<&str>,
-    helper: &mut Option<StyledJsx>,
+    context: StyledContext<'_>,
 ) -> Option<(Expression<'a>, StyledDefinition<'a>)> {
     let name = match unwrap_syntax_only(target) {
         Expression::StringLiteral(literal) => literal.value.to_string(),
@@ -270,6 +318,16 @@ pub fn with_component<'a>(
         renders_tag(&base.name, None),
         definition.forward.as_ref(),
     );
+    let new_definition = base
+        .definition(
+            ast_builder,
+            classes,
+            &styles,
+            &definition.attrs,
+            (definition.reads.clone(), definition.forward.clone()),
+            &definition.bindings,
+        )
+        .with_css_slot(context.css_slot);
     let component = create_styled_component(
         ast_builder,
         &base,
@@ -282,16 +340,9 @@ pub fn with_component<'a>(
                 .map(|(name, value)| (name.clone(), value.clone_in(allocator)))
                 .collect(),
             withheld: &withheld,
+            css_slot: new_definition.css_slot(),
         },
-        helper,
-    );
-    let new_definition = base.definition(
-        ast_builder,
-        classes,
-        &styles,
-        &definition.attrs,
-        (definition.reads.clone(), definition.forward.clone()),
-        &definition.bindings,
+        context.jsx,
     );
     Some((
         base.render(
@@ -414,6 +465,7 @@ impl<'a> Base<'a> {
             attrs: attrs.iter().map(|attr| attr.clone_in(allocator)).collect(),
             reads,
             forward,
+            css_slot: None,
             bindings: bindings
                 .iter()
                 .map(|(name, value)| (name.clone(), value.clone_in(allocator)))
@@ -592,7 +644,7 @@ pub fn extract_style_from_styled<'a>(
     imports: &FxHashMap<String, ExportVariableKind>,
     modifiers: (&[Expression<'a>], Option<Forward>),
     inherited: Option<&StyledDefinition<'a>>,
-    helper: &mut Option<StyledJsx>,
+    context: StyledContext<'_>,
 ) -> StyledExtraction<'a> {
     let (attrs, forward) = modifiers;
     let mut original_scope = expression.clone_in(ast_builder.allocator());
@@ -730,14 +782,16 @@ pub fn extract_style_from_styled<'a>(
                 .collect()
         });
         let withheld = base.withheld(&reads, forward.as_ref());
-        let definition = base.definition(
-            ast_builder,
-            classes,
-            &props_styles,
-            &attrs,
-            (reads, forward),
-            &bindings,
-        );
+        let definition = base
+            .definition(
+                ast_builder,
+                classes,
+                &props_styles,
+                &attrs,
+                (reads, forward),
+                &bindings,
+            )
+            .with_css_slot(context.css_slot);
         let component = create_styled_component(
             ast_builder,
             &base,
@@ -746,8 +800,9 @@ pub fn extract_style_from_styled<'a>(
                 style_vars: &gen_styles(ast_builder, &props_styles, None),
                 bindings,
                 withheld: &withheld,
+                css_slot: definition.css_slot(),
             },
-            helper,
+            context.jsx,
         );
         let styled_component =
             base.render(ast_builder, apply_attrs(ast_builder, component, &attrs));
@@ -840,14 +895,16 @@ pub fn extract_style_from_styled<'a>(
             )),
         );
         let withheld = base.withheld(&reads, forward.as_ref());
-        let definition = base.definition(
-            ast_builder,
-            classes,
-            &styles,
-            &attrs,
-            (reads, forward),
-            &bindings,
-        );
+        let definition = base
+            .definition(
+                ast_builder,
+                classes,
+                &styles,
+                &attrs,
+                (reads, forward),
+                &bindings,
+            )
+            .with_css_slot(context.css_slot);
         let component = create_styled_component(
             ast_builder,
             &base,
@@ -856,8 +913,9 @@ pub fn extract_style_from_styled<'a>(
                 style_vars: &gen_styles(ast_builder, &styles, None),
                 bindings,
                 withheld: &withheld,
+                css_slot: definition.css_slot(),
             },
-            helper,
+            context.jsx,
         );
         let styled_component =
             base.render(ast_builder, apply_attrs(ast_builder, component, &attrs));
@@ -1430,6 +1488,7 @@ struct StyledRender<'b, 'a> {
     style_vars: &'b Option<Expression<'a>>,
     bindings: Vec<(String, Expression<'a>)>,
     withheld: &'b [String],
+    css_slot: Option<&'b StyledCssSlot>,
 }
 
 fn create_styled_component<'a>(
@@ -1443,6 +1502,7 @@ fn create_styled_component<'a>(
         style_vars,
         bindings,
         withheld,
+        css_slot,
     } = render;
     let params = FormalParameters::boxed(
         SPAN,
@@ -1541,7 +1601,8 @@ fn create_styled_component<'a>(
         None::<oxc_allocator::Box<oxc_ast::ast::FormalParameterRest<'a>>>,
         ast_builder,
     );
-    let class_name = class_name.as_ref().map_or_else(
+    let replacement = css_slot.map(|slot| slot.classes(ast_builder, class_name.as_ref()));
+    let class_name = replacement.as_ref().or(class_name.as_ref()).map_or_else(
         || Expression::new_identifier(SPAN, "className", ast_builder),
         |name| {
             wrap_array_filter(
@@ -1567,12 +1628,18 @@ fn create_styled_component<'a>(
             .unwrap_or_else(|| style_vars.clone_in(ast_builder.allocator()))
         },
     );
+    let omissions = css_slot.map(|slot| {
+        let mut omissions = withheld.to_vec();
+        omissions.push(slot.name().to_string());
+        omissions
+    });
+    let withheld = omissions.as_deref().unwrap_or(withheld);
     let body = if let Some(helper) = helper {
         helper.render(
             ast_builder,
             identifier(ast_builder, RENDERED),
             (class_name, style, identifier(ast_builder, "forwardedAs")),
-            without_props(ast_builder, withheld),
+            super::styled_transient::filter(ast_builder, without_props(ast_builder, withheld)),
         )
     } else {
         Expression::new_jsx_element(
@@ -1585,7 +1652,10 @@ fn create_styled_component<'a>(
                     vec![
                         JSXAttributeItem::new_spread_attribute(
                             SPAN,
-                            without_props(ast_builder, withheld),
+                            super::styled_transient::filter(
+                                ast_builder,
+                                without_props(ast_builder, withheld),
+                            ),
                             ast_builder,
                         ),
                         JSXAttributeItem::new_attribute(
