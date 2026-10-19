@@ -1,18 +1,17 @@
+use super::style_inputs::StyleInputs;
 use crate::extractor::{
     ExtractResult,
     extract_style_from_expression::{LiteralHandling, extract_style_from_expression},
 };
 use oxc_allocator::{CloneIn, GetAllocator};
-use oxc_ast::{
-    ast::{Expression, JSXAttributeValue},
-    builder::AstBuilder,
-};
+use oxc_ast::ast::{Expression, JSXAttributeValue};
 
 pub fn extract_style_from_jsx<'a>(
-    ast_builder: &AstBuilder<'a>,
+    inputs: StyleInputs<'_, 'a>,
     name: &str,
     value: &mut JSXAttributeValue<'a>,
 ) -> ExtractResult<'a> {
+    let ast_builder = inputs.ast;
     let expression = match value {
         JSXAttributeValue::ExpressionContainer(expression) => expression
             .expression
@@ -27,7 +26,7 @@ pub fn extract_style_from_jsx<'a>(
     expression
         .map(|mut expression| {
             extract_style_from_expression(
-                ast_builder,
+                inputs,
                 Some(name),
                 &mut expression,
                 0,

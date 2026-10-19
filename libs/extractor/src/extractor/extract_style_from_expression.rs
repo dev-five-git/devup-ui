@@ -1,3 +1,4 @@
+use super::style_inputs::StyleInputs;
 use crate::{
     ExtractStyleProp,
     css_utils::{css_to_style, css_to_style_literal, theme_var_reference},
@@ -17,7 +18,6 @@ use crate::{
     },
 };
 use css::{
-    add_selector_params,
     at_rule::{media_shorthand_query, split_at_rule_key},
     disassemble_property, get_enum_property_map, get_enum_property_value, is_enum_property,
     is_special_property::is_special_property,
@@ -224,13 +224,14 @@ fn create_static_styles<'a>(
 }
 
 pub fn extract_style_from_expression<'a>(
-    ast_builder: &AstBuilder<'a>,
+    inputs: StyleInputs<'_, 'a>,
     name: Option<&str>,
     expression: &mut Expression<'a>,
     level: u8,
     selector: &Option<StyleSelector>,
     literal_handling: LiteralHandling,
 ) -> ExtractResult<'a> {
+    let ast_builder = inputs.ast;
     let mut typo = false;
     let expression = unwrap_syntax_only_mut(expression);
 
@@ -290,7 +291,7 @@ pub fn extract_style_from_expression<'a>(
                                         let ExtractResult {
                                             styles, tag: _tag, ..
                                         } = extract_style_from_expression(
-                                            ast_builder,
+                                            inputs,
                                             Some(disassembled),
                                             &mut prop.value,
                                             0,
@@ -310,7 +311,7 @@ pub fn extract_style_from_expression<'a>(
                             let ExtractResult {
                                 styles, tag: _tag, ..
                             } = extract_style_from_expression(
-                                ast_builder,
+                                inputs,
                                 None,
                                 &mut prop.argument,
                                 0,
@@ -339,7 +340,7 @@ pub fn extract_style_from_expression<'a>(
                     condition: conditional.test.clone_in(ast_builder.allocator()),
                     consequent: Some(Box::new(ExtractStyleProp::StaticArray(
                         extract_style_from_expression(
-                            ast_builder,
+                            inputs,
                             None,
                             &mut conditional.consequent,
                             level,
@@ -350,7 +351,7 @@ pub fn extract_style_from_expression<'a>(
                     ))),
                     alternate: Some(Box::new(ExtractStyleProp::StaticArray(
                         extract_style_from_expression(
-                            ast_builder,
+                            inputs,
                             None,
                             &mut conditional.alternate,
                             level,
@@ -389,7 +390,7 @@ pub fn extract_style_from_expression<'a>(
         let mut styles = vec![];
         for part in split_selector_list(name) {
             styles.extend(extract_under_key(
-                ast_builder,
+                inputs,
                 part,
                 offset,
                 &mut expression.clone_in(ast_builder.allocator()),
@@ -434,7 +435,7 @@ pub fn extract_style_from_expression<'a>(
                     let offset = o.key.span().start;
                     for part in split_selector_list(key_name.trim()) {
                         props.extend(extract_under_key(
-                            ast_builder,
+                            inputs,
                             part,
                             offset,
                             &mut o.value.clone_in(ast_builder.allocator()),
@@ -461,7 +462,7 @@ pub fn extract_style_from_expression<'a>(
                     && let Some(layer) = get_string_by_property_key(&o.key)
                 {
                     let mut styles = extract_style_from_expression(
-                        ast_builder,
+                        inputs,
                         None,
                         &mut o.value,
                         level,
@@ -491,7 +492,7 @@ pub fn extract_style_from_expression<'a>(
                 {
                     props.extend(
                         extract_style_from_expression(
-                            ast_builder,
+                            inputs,
                             None,
                             &mut o.value,
                             level,
@@ -512,7 +513,7 @@ pub fn extract_style_from_expression<'a>(
             let offset = expression.span().start;
             return ExtractResult {
                 styles: extract_under_key(
-                    ast_builder,
+                    inputs,
                     name,
                     offset,
                     expression,
@@ -638,7 +639,7 @@ pub fn extract_style_from_expression<'a>(
                 None => unreadable(expression),
             },
             Expression::ComputedMemberExpression(mem) => {
-                extract_style_from_member_expression(ast_builder, name, mem, level, selector)
+                extract_style_from_member_expression(inputs, name, mem, level, selector)
             }
             Expression::TemplateLiteral(_) => {
                 let Some(name) = name else {
@@ -789,7 +790,7 @@ pub fn extract_style_from_expression<'a>(
                     LogicalOperator::Coalesce => nullish,
                 };
                 extract_style_from_expression(
-                    ast_builder,
+                    inputs,
                     name,
                     if takes_right {
                         &mut logical.right
@@ -806,7 +807,7 @@ pub fn extract_style_from_expression<'a>(
             {
                 let consequent = literal_truthiness(&conditional.test) == Some(true);
                 extract_style_from_expression(
-                    ast_builder,
+                    inputs,
                     name,
                     if consequent {
                         &mut conditional.consequent
@@ -821,7 +822,7 @@ pub fn extract_style_from_expression<'a>(
             Expression::LogicalExpression(logical) => {
                 let res = Some(Box::new(ExtractStyleProp::StaticArray(
                     extract_style_from_expression(
-                        ast_builder,
+                        inputs,
                         name,
                         &mut logical.right,
                         level,
@@ -870,7 +871,7 @@ pub fn extract_style_from_expression<'a>(
                             ),
                             consequent: Some(Box::new(ExtractStyleProp::StaticArray(
                                 extract_style_from_expression(
-                                    ast_builder,
+                                    inputs,
                                     name,
                                     &mut logical.left,
                                     level,
@@ -902,7 +903,7 @@ pub fn extract_style_from_expression<'a>(
                     if let Some(element) = element.as_expression_mut() {
                         props.extend(
                             extract_style_from_expression(
-                                ast_builder,
+                                inputs,
                                 name,
                                 element,
                                 idx as u8,
@@ -924,7 +925,7 @@ pub fn extract_style_from_expression<'a>(
             Expression::ConditionalExpression(conditional) => {
                 if is_same_expression(&conditional.consequent, &conditional.alternate) {
                     extract_style_from_expression(
-                        ast_builder,
+                        inputs,
                         name,
                         &mut conditional.consequent,
                         level,
@@ -937,7 +938,7 @@ pub fn extract_style_from_expression<'a>(
                             condition: conditional.test.clone_in(ast_builder.allocator()),
                             consequent: Some(Box::new(ExtractStyleProp::StaticArray(
                                 extract_style_from_expression(
-                                    ast_builder,
+                                    inputs,
                                     name,
                                     &mut conditional.consequent,
                                     level,
@@ -948,7 +949,7 @@ pub fn extract_style_from_expression<'a>(
                             ))),
                             alternate: Some(Box::new(ExtractStyleProp::StaticArray(
                                 extract_style_from_expression(
-                                    ast_builder,
+                                    inputs,
                                     name,
                                     &mut conditional.alternate,
                                     level,
@@ -965,48 +966,15 @@ pub fn extract_style_from_expression<'a>(
             Expression::ObjectExpression(obj) => {
                 flatten_spreads(ast_builder, obj);
                 let mut props = vec![];
-                let params = obj.properties.iter().find_map(|p| {
-                    if let ObjectPropertyKind::ObjectProperty(o) = p
-                        && o.key.name().is_some_and(|name| name == "params")
-                        && selector.is_some()
-                        && let Expression::ArrayExpression(array) = &o.value
-                    {
-                        let arr = array.elements.iter();
-                        let arr = arr.filter_map(|e| {
-                            if let Some(e) = e.as_expression()
-                                && let Some(s) = get_string_by_literal_expression(e)
-                                && !s.is_empty()
-                            {
-                                Some(s)
-                            } else {
-                                None
-                            }
-                        });
-                        // Fold the filter-mapped literals directly into one
-                        // `String` (prefix `,` after the first) instead of
-                        // collecting into a throwaway `Vec<String>` and
-                        // `join`ing it — same bytes, one fewer heap Vec and no
-                        // per-element re-copy in `join`.
-                        let mut params = String::new();
-                        for s in arr {
-                            if !params.is_empty() {
-                                params.push(',');
-                            }
-                            params.push_str(&s);
-                        }
-                        Some(params)
-                    } else {
-                        None
+                let selector = match super::selector_params::resolve(inputs, obj, selector) {
+                    Ok(selector) => selector,
+                    Err(error) => {
+                        return ExtractResult {
+                            styles: vec![*error],
+                            ..ExtractResult::default()
+                        };
                     }
-                });
-
-                let selector = selector.clone().map(|s| {
-                    if let Some(params) = params {
-                        add_selector_params(s, &params)
-                    } else {
-                        s
-                    }
-                });
+                };
 
                 for p in &mut obj.properties {
                     let o = match p {
@@ -1014,7 +982,7 @@ pub fn extract_style_from_expression<'a>(
                         ObjectPropertyKind::SpreadProperty(spread) => {
                             props.extend(
                                 extract_style_from_expression(
-                                    ast_builder,
+                                    inputs,
                                     None,
                                     &mut spread.argument,
                                     level,
@@ -1044,7 +1012,7 @@ pub fn extract_style_from_expression<'a>(
                         let name: &str = &name;
                         props.extend(
                             extract_style_from_expression(
-                                ast_builder,
+                                inputs,
                                 Some(name),
                                 &mut o.value,
                                 level,
@@ -1298,7 +1266,7 @@ impl From<Option<StyleSelector>> for Nested {
 }
 
 fn extract_under_key<'a>(
-    ast_builder: &AstBuilder<'a>,
+    inputs: StyleInputs<'_, 'a>,
     key: &str,
     offset: u32,
     expression: &mut Expression<'a>,
@@ -1309,7 +1277,7 @@ fn extract_under_key<'a>(
     match nest_selectors_key(selector.as_ref(), key) {
         Nested::Under(nested) => {
             extract_style_from_expression(
-                ast_builder,
+                inputs,
                 None,
                 expression,
                 level,
@@ -1494,7 +1462,7 @@ mod tests {
         };
 
         let result = extract_style_from_expression(
-            &AstBuilder::new(&allocator),
+            (&AstBuilder::new(&allocator)).into(),
             Some("selectors"),
             &mut statement.expression,
             0,
@@ -1528,7 +1496,7 @@ mod tests {
         };
 
         let result = extract_style_from_expression(
-            &AstBuilder::new(&allocator),
+            (&AstBuilder::new(&allocator)).into(),
             None,
             &mut statement.expression,
             0,

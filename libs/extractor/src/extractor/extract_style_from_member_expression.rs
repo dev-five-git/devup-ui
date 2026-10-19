@@ -1,3 +1,4 @@
+use super::style_inputs::StyleInputs;
 use crate::{
     ExtractStyleProp,
     extractor::{
@@ -21,12 +22,13 @@ use oxc_span::SPAN;
 use std::collections::BTreeMap;
 
 pub(super) fn extract_style_from_member_expression<'a>(
-    ast_builder: &AstBuilder<'a>,
+    inputs: StyleInputs<'_, 'a>,
     name: Option<&str>,
     mem: &mut ComputedMemberExpression<'a>,
     level: u8,
     selector: &Option<StyleSelector>,
 ) -> ExtractResult<'a> {
+    let ast_builder = inputs.ast;
     let mem_expression = &mem.expression.clone_in(ast_builder.allocator());
     let mut ret: Vec<ExtractStyleProp> = vec![];
 
@@ -86,7 +88,7 @@ pub(super) fn extract_style_from_member_expression<'a>(
                     && let Some(p) = p.as_expression_mut()
                 {
                     return extract_style_from_expression(
-                        ast_builder,
+                        inputs,
                         name,
                         p,
                         level,
@@ -115,7 +117,7 @@ pub(super) fn extract_style_from_member_expression<'a>(
                     idx.to_string(),
                     Box::new(ExtractStyleProp::StaticArray(
                         extract_style_from_expression(
-                            ast_builder,
+                            inputs,
                             name,
                             p,
                             level,
@@ -158,7 +160,7 @@ pub(super) fn extract_style_from_member_expression<'a>(
                 {
                     return ExtractResult {
                         styles: extract_style_from_expression(
-                            ast_builder,
+                            inputs,
                             name,
                             &mut o.value,
                             level,
@@ -181,7 +183,7 @@ pub(super) fn extract_style_from_member_expression<'a>(
                     property_name,
                     Box::new(ExtractStyleProp::StaticArray(
                         extract_style_from_expression(
-                            ast_builder,
+                            inputs,
                             name,
                             &mut o.value,
                             level,

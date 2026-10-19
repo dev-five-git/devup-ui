@@ -2,6 +2,8 @@
 //! `const fadeIn = keyframes({ ... })`: the build gives it a name, so styles
 //! reading the binding read that name
 
+mod absence;
+
 use oxc_allocator::{CloneIn, FromIn, GetAllocator};
 use oxc_ast::ast::{Argument, BindingPattern, Expression, Str, TemplateLiteral};
 use oxc_ast::builder::AstBuilder;
@@ -9,7 +11,7 @@ use oxc_ast_visit::{VisitMut, walk_mut};
 use oxc_semantic::Scoping;
 use oxc_span::SPAN;
 use oxc_syntax::symbol::SymbolId;
-use rustc_hash::FxHashMap;
+use rustc_hash::{FxHashMap, FxHashSet};
 
 use crate::ExtractStyleValue;
 
@@ -36,6 +38,7 @@ pub struct StyleValues<'a> {
     texts: FxHashMap<SymbolId, String>,
     rules: FxHashMap<SymbolId, Expression<'a>>,
     calls: FxHashMap<u32, Expression<'a>>,
+    absent_references: FxHashSet<oxc_span::Span>,
 }
 
 impl<'a> StyleValues<'a> {
@@ -47,6 +50,7 @@ impl<'a> StyleValues<'a> {
             texts: FxHashMap::default(),
             rules: FxHashMap::default(),
             calls: FxHashMap::default(),
+            absent_references: FxHashSet::default(),
         }
     }
 
@@ -62,6 +66,14 @@ impl<'a> StyleValues<'a> {
             .symbol_flags(symbol)
             .is_const_variable()
             .then_some(symbol)
+    }
+
+    /// Whether `symbol` is declared below the top level of the module, where
+    /// the constants styles read are not
+    pub fn is_local(&self, symbol: SymbolId) -> bool {
+        self.scoping
+            .as_ref()
+            .is_some_and(|scoping| scoping.symbol_scope_id(symbol) != scoping.root_scope_id())
     }
 
     pub fn insert(&mut self, symbol: SymbolId, value: StyleValue) {
