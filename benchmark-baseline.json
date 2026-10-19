@@ -20,7 +20,7 @@
         0.8408134770157684
       ],
       "timeTolerance": 0.14132365183231688,
-      "bytes": 67427695,
+      "bytes": 71047404,
       "cssBytes": 494
     },
     "devup-ui-single": {
@@ -31,7 +31,7 @@
         0.848021750757629
       ],
       "timeTolerance": 0.12495002123706572,
-      "bytes": 67436336,
+      "bytes": 71033778,
       "cssBytes": 395
     },
     "devup-ui-single-turbo": {
@@ -86,7 +86,7 @@
         0.1880300744715731
       ],
       "timeTolerance": 0.2405708460754333,
-      "bytes": 1198750,
+      "bytes": 1248050,
       "cssBytes": 14873
     },
     "devup-ui-collapse": {
