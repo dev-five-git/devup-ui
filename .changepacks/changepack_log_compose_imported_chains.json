@@ -1,0 +1,7 @@
+{
+  "changes": {
+    "bindings/devup-ui-wasm/package.json": "Patch"
+  },
+  "note": "Resolve native css() definitions composed from known rule objects and css() results through imported module chains. Later declarations replace earlier declarations at the same property, selector, breakpoint and layer, while earlier-only declarations remain. Imported composition chains with cycles, dynamic parts or unresolved imports now produce located build errors instead of silently deferring precedence to stylesheet order.",
+  "date": "2026-10-09T00:00:00.000Z"
+}

@@ -1,29 +1,40 @@
 import { describe, expect, it, mock } from 'bun:test'
 import { act, render, userEvent } from 'bun-test-env-dom'
+import { createRef } from 'react'
 
 import { Checkbox } from '../index'
 
 describe('Checkbox', () => {
   it('should render basic checkbox', () => {
-    const { container } = render(<Checkbox>Test Checkbox</Checkbox>)
+    const { container } = render(
+      <Checkbox id="checkbox">Test Checkbox</Checkbox>,
+    )
     expect(container).toMatchSnapshot()
   })
 
   it('should render checked checkbox', () => {
-    const { container } = render(<Checkbox checked>Test Checkbox</Checkbox>)
+    const { container } = render(
+      <Checkbox checked id="checkbox">
+        Test Checkbox
+      </Checkbox>,
+    )
     expect(container).toMatchSnapshot()
     expect(container.querySelector('input')).toBeChecked()
   })
 
   it('should render disabled checkbox', () => {
-    const { container } = render(<Checkbox disabled>Test Checkbox</Checkbox>)
+    const { container } = render(
+      <Checkbox disabled id="checkbox">
+        Test Checkbox
+      </Checkbox>,
+    )
     expect(container).toMatchSnapshot()
     expect(container.querySelector('input')).toBeDisabled()
   })
 
   it('should render disabled and checked checkbox', () => {
     const { container } = render(
-      <Checkbox checked disabled>
+      <Checkbox checked disabled id="checkbox">
         Test Checkbox
       </Checkbox>,
     )
@@ -34,7 +45,7 @@ describe('Checkbox', () => {
 
   it('should render checkbox with custom child', () => {
     const { container } = render(
-      <Checkbox>
+      <Checkbox id="checkbox">
         <div>Custom Child</div>
       </Checkbox>,
     )
@@ -45,7 +56,7 @@ describe('Checkbox', () => {
   it('should call onChange with true when checkbox is clicked and unchecked', async () => {
     const onChange = mock()
     const { container } = render(
-      <Checkbox checked={false} onChange={onChange}>
+      <Checkbox checked={false} id="checkbox" onChange={onChange}>
         Test Checkbox
       </Checkbox>,
     )
@@ -64,7 +75,7 @@ describe('Checkbox', () => {
   it('should call onChange with false when checkbox is clicked and checked', async () => {
     const onChange = mock()
     const { container } = render(
-      <Checkbox checked={true} onChange={onChange}>
+      <Checkbox checked={true} id="checkbox" onChange={onChange}>
         Test Checkbox
       </Checkbox>,
     )
@@ -82,7 +93,7 @@ describe('Checkbox', () => {
   it('should not call onChange when disabled is true', async () => {
     const onChange = mock()
     const { container } = render(
-      <Checkbox disabled onChange={onChange}>
+      <Checkbox disabled id="checkbox" onChange={onChange}>
         Test Checkbox
       </Checkbox>,
     )
@@ -97,7 +108,9 @@ describe('Checkbox', () => {
   })
 
   it('should not call onChange when onChange prop is not provided', async () => {
-    const { container } = render(<Checkbox>Test Checkbox</Checkbox>)
+    const { container } = render(
+      <Checkbox id="checkbox">Test Checkbox</Checkbox>,
+    )
 
     const input = container.querySelector('input')
 
@@ -113,7 +126,7 @@ describe('Checkbox', () => {
   it('should not call onChange when both disabled and onChange are provided', async () => {
     const onChange = mock()
     const { container } = render(
-      <Checkbox checked={false} disabled onChange={onChange}>
+      <Checkbox checked={false} disabled id="checkbox" onChange={onChange}>
         Test Checkbox
       </Checkbox>,
     )
@@ -130,7 +143,7 @@ describe('Checkbox', () => {
   it('should handle label click and trigger onChange', async () => {
     const onChange = mock()
     const { container } = render(
-      <Checkbox checked={false} onChange={onChange}>
+      <Checkbox checked={false} id="checkbox" onChange={onChange}>
         Test Checkbox
       </Checkbox>,
     )
@@ -148,7 +161,7 @@ describe('Checkbox', () => {
   it('should not trigger onChange on label click when disabled', async () => {
     const onChange = mock()
     const { container } = render(
-      <Checkbox disabled onChange={onChange}>
+      <Checkbox disabled id="checkbox" onChange={onChange}>
         Test Checkbox
       </Checkbox>,
     )
@@ -165,7 +178,7 @@ describe('Checkbox', () => {
   it('should pass correct event target checked value to onChange', async () => {
     const onChange = mock()
     const { container } = render(
-      <Checkbox checked={false} onChange={onChange}>
+      <Checkbox checked={false} id="checkbox" onChange={onChange}>
         Test Checkbox
       </Checkbox>,
     )
@@ -181,7 +194,9 @@ describe('Checkbox', () => {
   })
 
   it('should have proper accessibility attributes', () => {
-    const { container } = render(<Checkbox>Test Checkbox</Checkbox>)
+    const { container } = render(
+      <Checkbox id="checkbox">Test Checkbox</Checkbox>,
+    )
 
     const input = container.querySelector('input')
 
@@ -189,7 +204,11 @@ describe('Checkbox', () => {
   })
 
   it('should display CheckIcon when checked', () => {
-    const { container } = render(<Checkbox checked>Test Checkbox</Checkbox>)
+    const { container } = render(
+      <Checkbox checked id="checkbox">
+        Test Checkbox
+      </Checkbox>,
+    )
 
     const checkIcon = container.querySelector('svg')
     expect(checkIcon).toBeInTheDocument()
@@ -197,7 +216,9 @@ describe('Checkbox', () => {
 
   it('should not display CheckIcon when unchecked', () => {
     const { container } = render(
-      <Checkbox checked={false}>Test Checkbox</Checkbox>,
+      <Checkbox checked={false} id="checkbox">
+        Test Checkbox
+      </Checkbox>,
     )
 
     const checkIcon = container.querySelector('svg')
@@ -208,6 +229,7 @@ describe('Checkbox', () => {
     const { container } = render(
       <Checkbox
         data-testid="custom-checkbox"
+        id="checkbox"
         name="test-name"
         value="test-value"
       >
@@ -231,7 +253,9 @@ describe('Checkbox', () => {
     }
 
     const { container } = render(
-      <Checkbox colors={customColors}>Test Checkbox</Checkbox>,
+      <Checkbox colors={customColors} id="checkbox">
+        Test Checkbox
+      </Checkbox>,
     )
 
     expect(container).toMatchSnapshot()
@@ -244,7 +268,9 @@ describe('Checkbox', () => {
     }
 
     const { container } = render(
-      <Checkbox colors={partialColors}>Test Checkbox</Checkbox>,
+      <Checkbox colors={partialColors} id="checkbox">
+        Test Checkbox
+      </Checkbox>,
     )
 
     expect(container).toMatchSnapshot()
@@ -260,7 +286,7 @@ describe('Checkbox', () => {
     }
 
     const { container } = render(
-      <Checkbox checked colors={customColors}>
+      <Checkbox checked colors={customColors} id="checkbox">
         Test Checkbox
       </Checkbox>,
     )
@@ -278,7 +304,7 @@ describe('Checkbox', () => {
     }
 
     const { container } = render(
-      <Checkbox colors={customColors} disabled>
+      <Checkbox colors={customColors} disabled id="checkbox">
         Test Checkbox
       </Checkbox>,
     )
@@ -292,7 +318,9 @@ describe('Checkbox', () => {
     }
 
     const { container } = render(
-      <Checkbox colors={customColors}>Test Checkbox</Checkbox>,
+      <Checkbox colors={customColors} id="checkbox">
+        Test Checkbox
+      </Checkbox>,
     )
 
     const input = container.querySelector('input')
@@ -307,7 +335,9 @@ describe('Checkbox', () => {
     }
 
     const { container } = render(
-      <Checkbox colors={customColors}>Test Checkbox</Checkbox>,
+      <Checkbox colors={customColors} id="checkbox">
+        Test Checkbox
+      </Checkbox>,
     )
 
     const input = container.querySelector('input')
@@ -322,7 +352,9 @@ describe('Checkbox', () => {
     }
 
     const { container } = render(
-      <Checkbox colors={customColors}>Test Checkbox</Checkbox>,
+      <Checkbox colors={customColors} id="checkbox">
+        Test Checkbox
+      </Checkbox>,
     )
 
     const input = container.querySelector('span')
@@ -337,7 +369,9 @@ describe('Checkbox', () => {
     }
 
     const { container } = render(
-      <Checkbox colors={customColors}>Test Checkbox</Checkbox>,
+      <Checkbox colors={customColors} id="checkbox">
+        Test Checkbox
+      </Checkbox>,
     )
 
     const input = container.querySelector('input')
@@ -352,7 +386,7 @@ describe('Checkbox', () => {
     }
 
     const { container } = render(
-      <Checkbox checked colors={customColors}>
+      <Checkbox checked colors={customColors} id="checkbox">
         Test Checkbox
       </Checkbox>,
     )
@@ -373,7 +407,9 @@ describe('Checkbox', () => {
     }
 
     const { container } = render(
-      <Checkbox colors={customColors}>Test Checkbox</Checkbox>,
+      <Checkbox colors={customColors} id="checkbox">
+        Test Checkbox
+      </Checkbox>,
     )
 
     const input = container.querySelector('input')
@@ -385,7 +421,9 @@ describe('Checkbox', () => {
   })
 
   it('should not apply CSS variables when colors prop is not provided', () => {
-    const { container } = render(<Checkbox>Test Checkbox</Checkbox>)
+    const { container } = render(
+      <Checkbox id="checkbox">Test Checkbox</Checkbox>,
+    )
 
     const input = container.querySelector('input')
     // CSS 변수가 undefined로 설정되지 않아야 함
@@ -407,7 +445,12 @@ describe('Checkbox', () => {
     }
 
     const { container } = render(
-      <Checkbox checked={false} colors={customColors} onChange={onChange}>
+      <Checkbox
+        checked={false}
+        colors={customColors}
+        id="checkbox"
+        onChange={onChange}
+      >
         Test Checkbox
       </Checkbox>,
     )
@@ -420,5 +463,11 @@ describe('Checkbox', () => {
 
     expect(onChange).toHaveBeenCalledWith(true)
     expect(onChange).toHaveBeenCalledTimes(1)
+  })
+
+  it('hands its ref to the checkbox input', () => {
+    const ref = createRef<HTMLInputElement>()
+    render(<Checkbox ref={ref}>Test Checkbox</Checkbox>)
+    expect(ref.current?.type).toBe('checkbox')
   })
 })

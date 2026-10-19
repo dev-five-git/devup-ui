@@ -119,4 +119,50 @@ describe('collectProductionPrewarmFiles', () => {
       }),
     ).toEqual(['src/app/page.tsx'])
   })
+
+  it('follows accepted barrels, relative cycles, lazy modules and importer-local accepted dependencies', () => {
+    // Given a package barrel with a nested dependency and a rejected sibling.
+    writePackage('design-system', './index.cjs', {
+      'index.cjs': '',
+      'index.mjs': 'export * from "./child.js"; import("./lazy.js")',
+      'child.js':
+        'export * from "./index.mjs"; import "@devup-ui/nested"; import "rejected"',
+      'lazy.js': 'export const lazy = 1',
+      'node_modules/@devup-ui/nested/package.json': '{"main":"index.js"}',
+      'node_modules/@devup-ui/nested/index.js': 'export const nested = 1',
+      'node_modules/rejected/package.json': '{"main":"index.js"}',
+      'node_modules/rejected/index.js': 'export const rejected = 1',
+    })
+    // When collecting the complete extraction set.
+    const files = collectProductionPrewarmFiles({
+      cwd,
+      graph: makeGraph([], ['design-system']),
+      expectedBaseFiles: [],
+      libPackage: '@devup-ui/react',
+      include: ['design-system'],
+    })
+    // Then the closure is complete, deduplicated and policy-filtered.
+    expect(files).toEqual([
+      'node_modules/design-system/child.js',
+      'node_modules/design-system/index.mjs',
+      'node_modules/design-system/lazy.js',
+      'node_modules/design-system/node_modules/@devup-ui/nested/index.js',
+    ])
+  })
+
+  it('propagates a genuine accepted-package collection error', () => {
+    // Given a malformed accepted package manifest.
+    writePackage('design-system', './index.js', { 'index.js': '' })
+    writeFileSync(join(cwd, 'node_modules/design-system/package.json'), '{')
+    // When collecting it, then the build cannot silently omit its styles.
+    expect(() =>
+      collectProductionPrewarmFiles({
+        cwd,
+        graph: makeGraph([], ['design-system']),
+        expectedBaseFiles: [],
+        libPackage: '@devup-ui/react',
+        include: ['design-system'],
+      }),
+    ).toThrow()
+  })
 })

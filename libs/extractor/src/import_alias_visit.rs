@@ -9,8 +9,8 @@
 
 use crate::ImportAlias;
 use crate::css_prop::{
-    CssProp, EMOTION_REACT, REACT_JSX_PRAGMA, builds_jsx_with_emotion, emotion_pragma, is_emotion,
-    is_jsx_file, is_jsx_function, react_runtime, returned,
+    CssProp, EMOTION_REACT, builds_jsx_with_emotion, is_emotion, is_jsx_file, is_jsx_function,
+    react_runtime, returned,
 };
 use crate::utils::{
     get_str_by_property_key, is_vanilla_extract_file, js_number_literal, keeps_bare_number,
@@ -26,7 +26,9 @@ use oxc_ast_visit::{
     walk::{walk_call_expression, walk_jsx_opening_element},
 };
 use oxc_parser::Parser;
-use oxc_span::{GetSpan, SourceType};
+use oxc_span::GetSpan;
+#[cfg(test)]
+use oxc_span::SourceType;
 use std::borrow::Cow;
 use std::collections::HashMap;
 
@@ -405,7 +407,7 @@ pub fn companion_errors(code: &str, filename: &str) -> Vec<(u32, String)> {
         return Vec::new();
     }
     let allocator = Allocator::default();
-    let source_type = SourceType::from_path(filename).unwrap_or_default();
+    let source_type = crate::parsing::source_type(filename).unwrap_or_default();
     let program = Parser::new(&allocator, code, source_type).parse().program;
     program
         .body
@@ -466,7 +468,7 @@ pub fn transform_import_aliases_with_edits<'a>(
     }
 
     let allocator = Allocator::default();
-    let source_type = SourceType::from_path(filename).unwrap_or_default();
+    let source_type = crate::parsing::source_type(filename).unwrap_or_default();
 
     // Parse the code
     let parser_ret = Parser::new(&allocator, code, source_type).parse();
@@ -476,29 +478,17 @@ pub fn transform_import_aliases_with_edits<'a>(
 
     // Collect import transformations
     let mut transformations: Vec<(usize, usize, String)> = Vec::new();
-    let mut numbers = LibraryNumbers::default();
-    let mut uses_emotion = emotion_jsx;
-    let mut jsx_pragma = false;
-    let compat = format!("{package}/compat");
-
-    // A pragma building JSX with Emotion builds it with React once the `css`
-    // props are compiled
-    for comment in &program.comments {
-        let span = comment.content_span();
-        let text = &code[span.start as usize..span.end as usize];
-        jsx_pragma |= text.contains("@jsx");
-        if let Some(at) = emotion_pragma(text) {
-            uses_emotion = true;
-            if emotion_aliased {
-                let start = span.start as usize + at;
-                transformations.push((start, start + EMOTION_REACT.len(), "react".to_string()));
-            }
-        }
+    if emotion_aliased {
+        transformations.extend(crate::jsx_import_source::emotion_replacements(&program));
     }
-    // So does a project building every file's JSX with Emotion, through a
-    // pragma, which a file's own one overrides
-    if emotion_jsx && is_jsx_file(filename) && !jsx_pragma {
-        transformations.push((0, 0, REACT_JSX_PRAGMA.to_string()));
+    let mut numbers = LibraryNumbers::default();
+    let mut uses_emotion = emotion_jsx || !transformations.is_empty();
+    let compat = format!("{package}/compat");
+    if emotion_jsx
+        && is_jsx_file(filename)
+        && let Some(replacement) = crate::jsx_import_source::project_replacement(&program)
+    {
+        transformations.push(replacement);
     }
 
     for stmt in &program.body {
@@ -620,7 +610,7 @@ pub(super) fn pixelify_emotion_values<'a>(
     original: &str,
 ) -> (Cow<'a, str>, Vec<Edit>) {
     let allocator = Allocator::default();
-    let source_type = SourceType::from_path(filename).unwrap_or_default();
+    let source_type = crate::parsing::source_type(filename).unwrap_or_default();
     let original_program = Parser::new(&allocator, original, source_type)
         .parse()
         .program;

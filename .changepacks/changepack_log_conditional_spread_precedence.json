@@ -1,7 +1,6 @@
 {
   "changes": {
-    "bindings/devup-ui-wasm/package.json": "Patch",
-    "apps/landing/package.json": "Patch"
+    "bindings/devup-ui-wasm/package.json": "Patch"
   },
   "note": "Respect source-order property replacement across conditional spreads in styled rule objects, and document that styled callbacks cannot return runtime class names. No new build errors; existing located Cannot compose errors remain unchanged.",
   "date": "2026-10-01T00:00:00.000Z"
