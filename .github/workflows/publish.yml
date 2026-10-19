@@ -293,10 +293,12 @@ jobs:
       contents: read
     env:
       CARGO_BUILD_JOBS: "2"
-      DEVUP_PLAYWRIGHT_ROOT: ${{ runner.temp }}/webpack-extends-playwright
-      PLAYWRIGHT_BROWSERS_PATH: ${{ runner.temp }}/webpack-extends-browsers
-      DEVUP_EXTENDS_RESULTS: ${{ runner.temp }}/webpack-extends-results
     steps:
+      - name: Configure isolated paths
+        run: |
+          printf 'DEVUP_PLAYWRIGHT_ROOT=%s/webpack-extends-playwright\n' "$RUNNER_TEMP" >> "$GITHUB_ENV"
+          printf 'PLAYWRIGHT_BROWSERS_PATH=%s/webpack-extends-browsers\n' "$RUNNER_TEMP" >> "$GITHUB_ENV"
+          printf 'DEVUP_EXTENDS_RESULTS=%s/webpack-extends-results\n' "$RUNNER_TEMP" >> "$GITHUB_ENV"
       - name: Checkout
         uses: actions/checkout@v7
       - uses: actions-rust-lang/setup-rust-toolchain@v2
