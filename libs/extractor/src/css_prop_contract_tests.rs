@@ -4,6 +4,57 @@ use rstest::rstest;
 use serial_test::serial;
 use std::collections::HashMap;
 
+#[test]
+fn expression_layers_keep_authored_first_use_before_styles_are_inserted() {
+    use crate::{
+        ExtractStyleProp,
+        extract_style::{
+            extract_dynamic_style::ExtractDynamicStyle, extract_layer_order::ExtractLayerOrder,
+            extract_static_style::ExtractStaticStyle,
+        },
+        style_collector::StyleCollector,
+    };
+    use oxc_allocator::Allocator;
+    use oxc_ast::{ast::Expression, builder::AstBuilder};
+    use oxc_span::SPAN;
+
+    // Given: an expression payload repeats a nested layer around a dynamic layer.
+    let allocator = Allocator::default();
+    let ast = AstBuilder::new(&allocator);
+    let first = ExtractStyleValue::Static(ExtractStaticStyle::new_with_layer(
+        "color",
+        "red",
+        0,
+        None,
+        Some("zz.inner".to_string()),
+    ));
+    let mut dynamic = ExtractDynamicStyle::new("color", 0, "--tone", None);
+    dynamic.layer = Some("aa".to_string());
+    let props = [
+        ExtractStyleProp::Expression {
+            expression: Expression::new_identifier(SPAN, "classes", &ast),
+            styles: vec![first.clone(), ExtractStyleValue::Dynamic(dynamic), first],
+        },
+        ExtractStyleProp::Static(ExtractStyleValue::Static(
+            ExtractStaticStyle::new_with_layer("color", "blue", 0, None, Some("bb".to_string())),
+        )),
+    ];
+    let mut collector = StyleCollector::default();
+
+    // When: authored layer names are registered before composition inserts atoms.
+    collector.use_layers(&props);
+
+    // Then: expression payloads contribute first-use metadata, not emitted atoms.
+    assert_eq!(
+        collector.into_styles("test.tsx"),
+        std::iter::once(ExtractStyleValue::LayerOrder(ExtractLayerOrder {
+            file: "test.tsx".to_string(),
+            layers: vec!["zz".into(), "zz.inner".into(), "aa".into(), "bb".into()],
+        }))
+        .collect()
+    );
+}
+
 fn options() -> ExtractOption {
     ExtractOption {
         single_css: true,
