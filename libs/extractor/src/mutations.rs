@@ -2,6 +2,7 @@
 //! or hands them to code that may change them, so the build does not read
 //! them as the constants they are declared as.
 
+use oxc_allocator::CloneIn;
 use oxc_ast::AstKind;
 use oxc_ast::ast::{
     Expression, JSXAttributeName, JSXElementName, ObjectPropertyKind, Program,
@@ -110,6 +111,13 @@ pub(crate) fn uses(
     style: &dyn Fn(&str) -> bool,
     css: Option<&crate::css_prop::CssTakers<'_>>,
 ) -> FxHashMap<String, Vec<Use>> {
+    let allocator = oxc_allocator::Allocator::default();
+    // ClassNames callers retain semantic IDs for inlining and compilation.
+    // Analyze a separate tree so building mutation nodes cannot reset those IDs.
+    let isolated = css
+        .filter(|css| css.has_class_names())
+        .map(|_| program.clone_in(&allocator));
+    let program = isolated.as_ref().unwrap_or(program);
     let semantic = SemanticBuilder::new()
         .with_build_nodes(true)
         .build(program)
@@ -125,6 +133,7 @@ pub(crate) fn uses(
         };
         let context = Context {
             nodes,
+            scoping,
             style,
             css,
             is_global: &is_global,
@@ -146,6 +155,7 @@ pub(crate) fn uses(
 
 struct Context<'s, 'a> {
     nodes: &'s AstNodes<'a>,
+    scoping: &'s oxc_semantic::Scoping,
     style: &'s dyn Fn(&str) -> bool,
     css: Option<&'s crate::css_prop::CssTakers<'s>>,
     is_global: &'s dyn Fn(&str) -> bool,
@@ -167,7 +177,7 @@ impl Context<'_, '_> {
                 }
                 AstKind::ComputedMemberExpression(member) if member.object.span() == span => {
                     path.push(
-                        crate::utils::get_string_by_literal_expression(&member.expression)
+                        crate::utils::get_key_by_literal_expression(&member.expression)
                             .map(std::borrow::Cow::into_owned),
                     );
                 }
@@ -409,9 +419,12 @@ impl Context<'_, '_> {
         let (Some(css), Expression::Identifier(callee)) = (self.css, callee) else {
             return false;
         };
+        let Some(symbol) = crate::css_prop::binding_of(self.scoping, callee) else {
+            return false;
+        };
         self.nodes.ancestor_ids(id).any(|ancestor| {
             matches!(self.nodes.kind(ancestor), AstKind::JSXElement(element)
-                if css.class_names_calls(element).iter().any(|name| name == callee.name.as_str()))
+                if css.class_names_calls(element, self.scoping).contains(&symbol))
         })
     }
 
@@ -527,7 +540,18 @@ impl Context<'_, '_> {
         let mut expression = callee;
         loop {
             match crate::utils::unwrap_syntax_only(expression) {
-                Expression::Identifier(identifier) => return (self.style)(&identifier.name),
+                Expression::Identifier(identifier) => {
+                    return (self.style)(&identifier.name)
+                        && self.css.is_none_or(|css| {
+                            !css.has_class_names()
+                                || crate::css_prop::binding_of(self.scoping, identifier)
+                                    .is_some_and(|symbol| {
+                                        self.scoping
+                                            .get_root_binding(identifier.name.as_str().into())
+                                            == Some(symbol)
+                                    })
+                        });
+                }
                 Expression::StaticMemberExpression(member) => expression = &member.object,
                 Expression::CallExpression(call) => expression = &call.callee,
                 _ => return false,
@@ -536,6 +560,18 @@ impl Context<'_, '_> {
     }
 
     fn is_style_element(&self, name: &JSXElementName<'_>) -> bool {
+        if self
+            .css
+            .is_some_and(crate::css_prop::CssTakers::has_class_names)
+            && let JSXElementName::IdentifierReference(identifier) = name
+            && !crate::css_prop::binding_of(self.scoping, identifier).is_some_and(|symbol| {
+                self.scoping
+                    .get_root_binding(identifier.name.as_str().into())
+                    == Some(symbol)
+            })
+        {
+            return false;
+        }
         crate::imported_constants::jsx_root(name).is_some_and(|root| (self.style)(root))
     }
 }

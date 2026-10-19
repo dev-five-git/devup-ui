@@ -1,6 +1,6 @@
 ---
 source: libs/extractor/src/lib.rs
-expression: "ToBTreeSet::from(extract(\"test.tsx\",\nr#\"import {globalCss} from '@devup-ui/core'\nglobalCss({\n    \"*\": {\n        \"@layer\": \"reset\",\n        margin: 0,\n        padding: 0\n    }\n})\n\"#,\nExtractOption\n{\n    package: \"@devup-ui/core\".to_string(), css_dir:\n    \"@devup-ui/core\".to_string(), single_css: false, import_main_css: false\n}).unwrap())"
+expression: "ToBTreeSet::from(extract(\"test.tsx\",\nr#\"import {globalCss} from '@devup-ui/core'\nglobalCss({\n    \"*\": {\n        \"@layer\": \"reset\",\n        margin: 0,\n        padding: 0\n    }\n})\n\"#,\nExtractOption\n{\n    package: \"@devup-ui/core\".to_string(), css_dir:\n    \"@devup-ui/core\".to_string(), single_css: false, import_main_css: false,\n    import_aliases: HashMap::new()\n}).unwrap())"
 ---
 ToBTreeSet {
     styles: {
@@ -40,6 +40,14 @@ ToBTreeSet {
                 layer: Some(
                     "reset",
                 ),
+            },
+        ),
+        LayerOrder(
+            ExtractLayerOrder {
+                file: "test.tsx",
+                layers: [
+                    "reset",
+                ],
             },
         ),
     },

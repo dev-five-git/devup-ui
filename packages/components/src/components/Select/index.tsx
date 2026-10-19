@@ -10,14 +10,17 @@ import {
 import clsx from 'clsx'
 import {
   ComponentProps,
+  forwardRef,
   isValidElement,
   useEffect,
+  useId,
   useRef,
   useState,
 } from 'react'
 
 import { SelectContext, useSelect } from '../../contexts/useSelect'
 import { SelectType, SelectValue } from '../../types/select'
+import { elementRef, mergeRefs } from '../../utils/dom'
 import { Button } from '../Button'
 import { IconCheck } from './IconCheck'
 
@@ -75,23 +78,30 @@ export function Select({
   ...props
 }: SelectProps) {
   const ref = useRef<HTMLDivElement>(null)
+  const generatedId = useId()
+  const listboxId = `${props.id ?? generatedId}-listbox`
+  const [triggerId, setTriggerId] = useState(`-trigger`)
   const [open, setOpen] = useState(defaultOpen ?? false)
+  const isOpen = openProp ?? open
   const [value, setValue] = useState<SelectValue<typeof type>>(
     defaultValue ?? (type === 'checkbox' ? [] : ''),
   )
 
+  // A controlled select only tells its owner, which decides whether it closes
   useEffect(() => {
+    if (!isOpen) return
     const handleOutsideClick = (e: MouseEvent) => {
       if (ref.current && ref.current.contains(e.target as Node)) return
-      setOpen(false)
+      onOpenChange?.(false)
+      if (openProp === undefined) setOpen(false)
     }
     document.addEventListener('click', handleOutsideClick)
     return () => document.removeEventListener('click', handleOutsideClick)
-  }, [open, setOpen])
+  }, [isOpen, openProp, onOpenChange])
 
-  const handleOpenChange = (open: boolean) => {
-    onOpenChange?.(open)
-    setOpen(open)
+  const handleOpenChange = (next: boolean) => {
+    onOpenChange?.(next)
+    if (openProp === undefined) setOpen(next)
   }
 
   const handleValueChange = (nextValue: string) => {
@@ -110,10 +120,13 @@ export function Select({
   }
 
   return (
-    <SelectContext
+    <SelectContext.Provider
       value={{
-        open: openProp ?? open,
+        open: isOpen,
         setOpen: handleOpenChange,
+        listboxId,
+        triggerId,
+        setTriggerId,
         value: valueProp ?? value,
         setValue: handleValueChange,
         type,
@@ -163,58 +176,114 @@ export function Select({
           children
         )}
       </Box>
-    </SelectContext>
+    </SelectContext.Provider>
   )
 }
 
 interface SelectTriggerProps extends ComponentProps<typeof Button> {
   asChild?: boolean
 }
-export function SelectTrigger({
-  className,
-  children,
-  asChild,
-  ...props
-}: SelectTriggerProps) {
-  const { open, setOpen } = useSelect()
-  const handleClick = () => {
-    setOpen(!open)
-  }
 
-  if (asChild) {
-    if (!isValidElement<Record<string, unknown>>(children)) {
-      throw new Error('SelectTrigger with asChild requires a single element')
+type TriggerHandler = (e: React.SyntheticEvent<HTMLElement>) => void
+
+/** Runs the handlers in order, stopping once one prevents the event */
+function composeHandlers(...handlers: (TriggerHandler | undefined)[]) {
+  return (e: React.SyntheticEvent<HTMLElement>) => {
+    for (const handler of handlers) {
+      if (e.defaultPrevented) return
+      handler?.(e)
     }
-
-    const Comp = children.type
-    const childProps = {
-      'aria-expanded': open,
-      'aria-label': 'Select toggle',
-      onClick: children.props.onClick ?? handleClick,
-      ...children.props,
-    }
-    return <Comp {...childProps} />
   }
-
-  return (
-    <Button
-      aria-expanded={open}
-      aria-label="Select toggle"
-      className={clsx(
-        css({
-          borderRadius: '8px',
-          styleOrder: 2,
-        }),
-        className,
-      )}
-      onClick={handleClick}
-      {...props}
-    >
-      {children}
-    </Button>
-  )
 }
 
+export const SelectTrigger = forwardRef<HTMLElement, SelectTriggerProps>(
+  function SelectTrigger(
+    { className, children, asChild, onClick, onKeyDown, ...props },
+    ref,
+  ) {
+    const { open, setOpen, listboxId, triggerId, setTriggerId } = useSelect()
+    const asChildId = isValidElement<{ id?: string }>(children)
+      ? children.props.id
+      : undefined
+    const id = props.id ?? (asChild ? asChildId : undefined) ?? triggerId
+    // The listbox is named by the trigger, whatever id the caller gave it
+    useEffect(() => {
+      if (id !== triggerId) setTriggerId(id)
+    }, [id, triggerId, setTriggerId])
+    const handleClick = () => {
+      setOpen(!open)
+    }
+    const handleKeyDown = (e: React.KeyboardEvent<HTMLElement>) => {
+      if (open || (e.key !== 'ArrowDown' && e.key !== 'ArrowUp')) return
+      e.preventDefault()
+      setOpen(true)
+    }
+
+    if (asChild) {
+      if (!isValidElement<Record<string, unknown>>(children)) {
+        throw new Error('SelectTrigger with asChild requires a single element')
+      }
+
+      const Comp = children.type
+      const childRef = elementRef(children)
+      const childProps = children.props as {
+        className?: string
+        onClick?: TriggerHandler
+        onKeyDown?: TriggerHandler
+      }
+      return (
+        <Comp
+          id={id}
+          {...props}
+          {...childProps}
+          ref={mergeRefs(ref, childRef)}
+          aria-controls={listboxId}
+          aria-expanded={open}
+          aria-haspopup="listbox"
+          className={clsx(className, childProps.className) || undefined}
+          onClick={composeHandlers(
+            childProps.onClick,
+            onClick as TriggerHandler | undefined,
+            handleClick,
+          )}
+          onKeyDown={composeHandlers(
+            childProps.onKeyDown,
+            onKeyDown as TriggerHandler | undefined,
+            handleKeyDown as TriggerHandler,
+          )}
+        />
+      )
+    }
+
+    return (
+      <Button
+        ref={ref as React.Ref<HTMLButtonElement>}
+        aria-controls={listboxId}
+        aria-expanded={open}
+        aria-haspopup="listbox"
+        className={clsx(
+          css({
+            borderRadius: '8px',
+            styleOrder: 2,
+          }),
+          className,
+        )}
+        id={id}
+        onClick={composeHandlers(
+          onClick as TriggerHandler | undefined,
+          handleClick,
+        )}
+        onKeyDown={composeHandlers(
+          onKeyDown as TriggerHandler | undefined,
+          handleKeyDown as TriggerHandler,
+        )}
+        {...props}
+      >
+        {children}
+      </Button>
+    )
+  },
+)
 interface SelectContainerProps extends ComponentProps<'div'> {
   showConfirmButton?: boolean
   confirmButtonText?: string
@@ -229,66 +298,121 @@ export function SelectContainer({
   y = 0,
   ...props
 }: SelectContainerProps) {
-  const { open, setOpen, type, ref } = useSelect()
+  const { open, setOpen, type, ref, listboxId, triggerId } = useSelect()
+  const containerRef = useRef<HTMLDivElement>(null)
+  // An effect rather than a callback ref returning cleanup, which React 18 ignores
+  useEffect(() => {
+    const el = containerRef.current
+    if (!open || !ref.current || !el) return
+    const combobox = ref.current
+
+    // 요소가 움직일 때마다(스크롤, 리사이즈 등) 위치를 갱신하도록 이벤트를 등록합니다.
+    const updatePosition = () => {
+      const {
+        height,
+        x: comboboxX,
+        y: comboboxY,
+        top,
+        left,
+      } = combobox.getBoundingClientRect()
+
+      // The container is fixed to the viewport, so it collides with the viewport
+      const isOverflowBottom =
+        top + height + 10 + y + el.offsetHeight > window.innerHeight
+
+      const isOverflowRight = left + x + el.offsetWidth > window.innerWidth
+
+      // One inset at a time: the other would keep a position from before
+      if (isOverflowBottom) {
+        el.style.top = ''
+        el.style.bottom = `${window.innerHeight - comboboxY + 10}px`
+      } else {
+        el.style.bottom = ''
+        el.style.top = `${comboboxY + height + 10 + y}px`
+      }
+
+      if (isOverflowRight)
+        el.style.left = `${Math.max(comboboxX - el.offsetWidth + combobox.offsetWidth, 0) + x}px`
+      else el.style.left = `${comboboxX + x}px`
+    }
+
+    // 최초 위치 설정
+    updatePosition()
+
+    // 스크롤, 리사이즈, DOM 변경 등 요소 위치가 변할 수 있는 이벤트에 리스너 등록
+    window.addEventListener('scroll', updatePosition, true)
+    window.addEventListener('resize', updatePosition)
+
+    // 컴포넌트 언마운트 시 이벤트 해제
+    return () => {
+      window.removeEventListener('scroll', updatePosition, true)
+      window.removeEventListener('resize', updatePosition)
+    }
+  }, [open, ref, x, y])
+
+  // Opening moves focus to the selected option, or the first one
+  useEffect(() => {
+    if (!open) return
+    const listbox = document.getElementById(listboxId)
+    const option =
+      listbox?.querySelector<HTMLElement>(
+        '[role=option][aria-selected=true]:not([aria-disabled=true])',
+      ) ??
+      listbox?.querySelector<HTMLElement>(
+        '[role=option]:not([aria-disabled=true])',
+      )
+    option?.focus()
+  }, [open, listboxId])
+
+  const handleKeyDown = (e: React.KeyboardEvent<HTMLDivElement>) => {
+    const options = Array.from(
+      e.currentTarget.querySelectorAll<HTMLElement>(
+        '[role=option]:not([aria-disabled=true])',
+      ),
+    )
+    const index = options.findIndex(
+      (option) => option === document.activeElement,
+    )
+    const moves: Partial<Record<string, number>> = {
+      ArrowDown: index + 1,
+      ArrowUp: index - 1,
+      Home: 0,
+      End: options.length - 1,
+    }
+    const next = moves[e.key]
+    if (next !== undefined) {
+      e.preventDefault()
+      options[(next + options.length) % options.length]?.focus()
+      return
+    }
+    if (e.key === 'Escape') {
+      e.preventDefault()
+      setOpen(false)
+      ref.current
+        ?.querySelector<HTMLElement>('[aria-haspopup=listbox]')
+        ?.focus()
+    }
+  }
 
   if (!open) return null
   return (
     <VStack
-      ref={(el) => {
-        if (!ref.current || !el) return
-        const combobox = ref.current
-
-        // 요소가 움직일 때마다(스크롤, 리사이즈 등) 위치를 갱신하도록 이벤트를 등록합니다.
-        const updatePosition = () => {
-          const {
-            height,
-            x: comboboxX,
-            y: comboboxY,
-            top,
-            left,
-          } = combobox.getBoundingClientRect()
-
-          const isOverflowBottom =
-            el.offsetHeight + top + window.scrollY + height + y >
-            document.documentElement.scrollHeight
-
-          const isOverflowRight =
-            el.offsetWidth + left + window.scrollX + x >
-            document.documentElement.scrollWidth
-
-          if (isOverflowBottom)
-            el.style.bottom = `${window.innerHeight - comboboxY + 10}px`
-          else el.style.top = `${comboboxY + height + 10 + y}px`
-
-          if (isOverflowRight)
-            el.style.left = `${Math.max(comboboxX - el.offsetWidth + combobox.offsetWidth, 0) + x}px`
-          else el.style.left = `${comboboxX + x}px`
-        }
-
-        // 최초 위치 설정
-        updatePosition()
-
-        // 스크롤, 리사이즈, DOM 변경 등 요소 위치가 변할 수 있는 이벤트에 리스너 등록
-        window.addEventListener('scroll', updatePosition, true)
-        window.addEventListener('resize', updatePosition)
-
-        // 컴포넌트 언마운트 시 이벤트 해제
-        return () => {
-          window.removeEventListener('scroll', updatePosition, true)
-          window.removeEventListener('resize', updatePosition)
-        }
-      }}
-      aria-label="Select container"
-      bg="var(--inputBg, light-dark(#FFF,#2E2E2E))"
+      ref={containerRef}
+      aria-labelledby={props['aria-label'] ? undefined : triggerId}
+      aria-multiselectable={type === 'checkbox' || undefined}
+      bg="var(--inputBackground, light-dark(#FFF,#2E2E2E))"
       border="1px solid var(--border, light-dark(#E4E4E4,#434343))"
       borderRadius="8px"
       bottom="-4px"
       boxShadow="0 2px 2px 0 var(--base10, light-dark(#0000001A,#FFFFFF1A))"
       boxSize="fit-content"
       gap="6px"
+      id={listboxId}
       minW="232px"
+      onKeyDown={handleKeyDown}
       p="10px"
       pos="fixed"
+      role="listbox"
       styleOrder={1}
       userSelect="none"
       zIndex={1}
@@ -298,7 +422,6 @@ export function SelectContainer({
       {showConfirmButton && type === 'checkbox' && (
         <Flex justifyContent="end" w="100%">
           <Button
-            aria-label="Select confirm button"
             className={css({
               textAlign: 'end',
               bg: 'var(--primary, light-dark(#674DC7, #8163E1))',
@@ -338,17 +461,15 @@ export function SelectOption({
   showCheck = true,
   ...props
 }: SelectOptionProps) {
-  const { setOpen, setValue, value: selectedValue, type } = useSelect()
+  const { setOpen, setValue, value: selectedValue, type, ref } = useSelect()
 
   const handleClose = () => {
     if (type === 'checkbox') return
     setOpen(false)
+    ref.current?.querySelector<HTMLElement>('[aria-haspopup=listbox]')?.focus()
   }
 
-  const handleClick = (
-    value: string | undefined,
-    e: React.MouseEvent<HTMLDivElement>,
-  ) => {
+  const handleClick = (e?: React.MouseEvent<HTMLDivElement>) => {
     if (onClick) {
       onClick(value, e)
       return
@@ -374,7 +495,8 @@ export function SelectOption({
         }
       }
       alignItems="center"
-      aria-label="Select option"
+      aria-disabled={disabled}
+      aria-selected={!!isSelected}
       borderRadius="6px"
       color={
         disabled
@@ -394,9 +516,16 @@ export function SelectOption({
         }[type]
       }
       h="40px"
-      onClick={disabled ? undefined : (e) => handleClick(value, e)}
+      onClick={disabled ? undefined : (e) => handleClick(e)}
+      onKeyDown={(e) => {
+        if (disabled || (e.key !== 'Enter' && e.key !== ' ')) return
+        e.preventDefault()
+        handleClick()
+      }}
       px="10px"
+      role="option"
       styleOrder={1}
+      tabIndex={disabled ? undefined : -1}
       transition="background-color 0.1s ease-in-out"
       {...props}
     >

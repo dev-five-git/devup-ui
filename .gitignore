@@ -24,3 +24,5 @@ playwright-report
 .playwright-mcp
 .omo
 /.changepacks/publish.tgz
+benchmark-run.json
+wasm-size.json

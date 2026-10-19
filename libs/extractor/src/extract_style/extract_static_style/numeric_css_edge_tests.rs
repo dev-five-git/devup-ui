@@ -205,6 +205,7 @@ fn numeric_css_08_library_callers_emit_bare_vendor_numbers(
             | ExtractStyleValue::Css(_)
             | ExtractStyleValue::Import(_)
             | ExtractStyleValue::FontFace(_)
+            | ExtractStyleValue::LayerOrder(_)
             | ExtractStyleValue::Keyframes(_) => panic!("expected static vendor declarations"),
         })
         .collect();
