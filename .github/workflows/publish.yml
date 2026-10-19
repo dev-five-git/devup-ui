@@ -286,6 +286,78 @@ jobs:
       - name: Run E2E Tests (singleCss)
         run: bun run test:e2e:rsc-css
 
+  webpack-extends-theme:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    permissions:
+      contents: read
+    env:
+      CARGO_BUILD_JOBS: "2"
+    steps:
+      - name: Configure isolated paths
+        run: |
+          printf 'DEVUP_PLAYWRIGHT_ROOT=%s/webpack-extends-playwright\n' "$RUNNER_TEMP" >> "$GITHUB_ENV"
+          printf 'PLAYWRIGHT_BROWSERS_PATH=%s/webpack-extends-browsers\n' "$RUNNER_TEMP" >> "$GITHUB_ENV"
+          printf 'DEVUP_EXTENDS_RESULTS=%s/webpack-extends-results\n' "$RUNNER_TEMP" >> "$GITHUB_ENV"
+      - name: Checkout
+        uses: actions/checkout@v7
+      - uses: actions-rust-lang/setup-rust-toolchain@v2
+        with:
+          toolchain: stable
+          components: clippy, rustfmt
+      - name: Cache cargo registry + target
+        uses: actions/cache@v6
+        with:
+          path: |
+            ~/.cargo/registry/index/
+            ~/.cargo/registry/cache/
+            ~/.cargo/git/db/
+            target/
+          key: cargo-webpack-extends-${{ runner.os }}-${{ hashFiles('**/Cargo.lock') }}
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: latest
+      - name: Cache bun dependencies
+        uses: actions/cache@v6
+        with:
+          path: ~/.bun/install/cache
+          key: bun-webpack-extends-${{ runner.os }}-${{ hashFiles('**/bun.lock') }}
+      - uses: jetli/wasm-pack-action@v0.4.0
+        with:
+          version: latest
+      - name: Install Node.js
+        uses: actions/setup-node@v7
+        with:
+          node-version: latest
+      - run: bun install
+      - name: Build fresh WASM
+        working-directory: bindings/devup-ui-wasm
+        run: bun run build
+      - run: bun run build
+      - name: Install latest private Playwright and Chromium
+        run: |
+          mkdir -p "$DEVUP_PLAYWRIGHT_ROOT" "$DEVUP_EXTENDS_RESULTS"
+          printf '{"private":true,"type":"module"}\n' > "$DEVUP_PLAYWRIGHT_ROOT/package.json"
+          bun add --cwd "$DEVUP_PLAYWRIGHT_ROOT" @playwright/test@latest
+          node "$DEVUP_PLAYWRIGHT_ROOT/node_modules/@playwright/test/cli.js" install chromium --with-deps
+      - name: Installed formats and production theme delivery regressions
+        run: |
+          set -euo pipefail
+          env -u CI node --test packages/webpack-plugin/src/__tests__/extends-theme/extends-theme-regression.mjs 2>&1 | tee "$DEVUP_EXTENDS_RESULTS/matrix.log"
+      - name: Upload packed-consumer matrix evidence
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: webpack-extends-theme-evidence
+          path: |
+            ${{ runner.temp }}/webpack-extends-results/matrix.log
+            ${{ runner.temp }}/webpack-extends-results/extends-theme-*/*.json
+            ${{ runner.temp }}/webpack-extends-results/extends-theme-*/*/identity-*.json
+            ${{ runner.temp }}/webpack-extends-results/extends-theme-*/*/bun.lock
+            ${{ runner.temp }}/webpack-extends-results/extends-theme-*/packs/*/*.tgz
+          if-no-files-found: error
+          retention-days: 7
+
   # Validation: runs on pull requests and on pushes to main, read-only. The job
   # id stays `publish` because it is the status check the repository requires;
   # the privileged release steps live in `release` and `deploy-pages` below.
