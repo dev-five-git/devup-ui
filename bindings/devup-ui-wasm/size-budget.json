@@ -1,0 +1,22 @@
+{
+  "wasm": {
+    "raw": {
+      "growth": 0.01,
+      "roundBytes": 1024
+    },
+    "gzip": {
+      "growth": 0.01,
+      "roundBytes": 1024
+    }
+  },
+  "glue": {
+    "raw": {
+      "growth": 0.01,
+      "roundBytes": 1024
+    },
+    "gzip": {
+      "growth": 0.01,
+      "roundBytes": 1024
+    }
+  }
+}
