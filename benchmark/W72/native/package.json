@@ -1,0 +1,7 @@
+{
+  "name": "@devup-ui/w72-native-experiment",
+  "version": "0.0.0",
+  "private": true,
+  "main": "index.cjs",
+  "exports": "./index.cjs"
+}

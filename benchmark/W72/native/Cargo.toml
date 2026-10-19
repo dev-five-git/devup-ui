@@ -1,0 +1,46 @@
+[package]
+name = "devup-ui-w72-native"
+version = "0.0.0"
+edition = "2024"
+rust-version = "1.85"
+publish = false
+license = "Apache-2.0"
+description = "Isolated synchronous N-API experiment for the Devup UI benchmark"
+
+[workspace]
+resolver = "3"
+
+[lib]
+crate-type = ["cdylib"]
+
+[dependencies]
+napi = { version = "3.14.2", default-features = false, features = ["napi8", "serde-json"] }
+napi-derive = "3.6.12"
+extractor = { path = "../../../libs/extractor" }
+css = { path = "../../../libs/css" }
+sheet = { path = "../../../libs/sheet" }
+bimap = { version = "0.6.3", features = ["serde"] }
+serde_json = "1.0.151"
+
+[build-dependencies]
+napi-build = "2.6.0"
+
+[lints.rust]
+unsafe_code = "warn"
+
+[lints.clippy]
+all = { level = "warn", priority = -1 }
+pedantic = { level = "warn", priority = -1 }
+unwrap_used = "deny"
+expect_used = "deny"
+
+[profile.release]
+opt-level = 3
+lto = true
+codegen-units = 1
+strip = true
+panic = "abort"
+
+[profile.optz]
+inherits = "release"
+opt-level = "z"
