@@ -683,6 +683,56 @@ fn captures_and_filter_survive_when_prepared_base_retargets_then_extends(
 
 #[rstest]
 #[serial_test::serial]
+fn transient_inputs_survive_when_prepared_typescript_renderer_forwards_rest(
+    #[values(false, true)] single_css: bool,
+) {
+    // Given: inherited captures, attrs producing unknown transient keys and a transient style input.
+    reset_class_map();
+    reset_file_map();
+    let source = "import {styled} from '@devup-ui/react';const trace=[];const Base=styled.div.attrs(p=>({...p.extra,'data-tone':p.$tone})).withConfig({shouldForwardProp:p=>p!=='blocked'})({color:'red',...((trace.push('base'),true)?{color:'blue'}:{})});const Mid=Base.withComponent('section');const Card=styled(Mid)`background: ${p=>p.$tone};`;";
+    let output = crate::extract(
+        "test.ts",
+        source,
+        crate::ExtractOption {
+            single_css,
+            ..crate::ExtractOption::default()
+        },
+    )
+    .unwrap_or_else(|error| panic!("transient TS extraction failed: {error}"));
+    let winning: Vec<_> = output
+        .styles
+        .iter()
+        .filter_map(|style| match style {
+            crate::ExtractStyleValue::Static(value)
+                if value.property() == "color" && value.value() == "blue" =>
+            {
+                match style.extract(if single_css { None } else { Some("test.ts") }) {
+                    Some(crate::extract_style::style_property::StyleProperty::ClassName(name)) => {
+                        Some(name)
+                    }
+                    _ => panic!("selected color must have a class"),
+                }
+            }
+            _ => None,
+        })
+        .collect();
+    assert_ne!(winning.len(), 0);
+    let winning = serde_json::to_string(&winning)
+        .unwrap_or_else(|error| panic!("class fixture serialization failed: {error}"));
+    // When: the emitted non-JSX renderer receives keys absent from the source and renders once.
+    let observation = format!(
+        "const __devupJsx0=(type,props)=>({{type,props}});const input={{$runtimeOnly:'secret',$tone:'orchid',extra:{{$fromAttrs:'secret',title:'attrs-title'}},blocked:9,id:'card',ref:7,children:'child',className:'caller',style:{{opacity:.25}},as:'article',forwardedAs:'nav'}};const before=JSON.stringify(input);const rendered=Card.render(input,input.ref);JSON.stringify([Object.keys(rendered.props).filter(k=>k.startsWith('$')),Object.values(rendered.props.style).includes('orchid'),rendered.type,rendered.props.as,rendered.props.id,rendered.props.ref,rendered.props.children,rendered.props.className.includes('caller'),{winning}.some(c=>rendered.props.className.split(' ').includes(c)),rendered.props['data-tone'],rendered.props.title,rendered.props.style.opacity,'blocked' in rendered.props,before===JSON.stringify(input),trace]);"
+    );
+    let result = evaluate_native_render(&output.code, &observation);
+    // Then: forwarding alone is filtered; original reads, classes, captures and caller props survive.
+    assert_eq!(
+        result,
+        r#"[[],true,"article","nav","card",7,"child",true,true,"orchid","attrs-title",0.25,false,true,["base"]]"#
+    );
+}
+
+#[rstest]
+#[serial_test::serial]
 fn template_key_precedence_when_public_component_renders(
     #[values(false, true)] single_css: bool,
     #[values(false, true)] on: bool,
