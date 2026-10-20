@@ -140,7 +140,7 @@ async function loadSourceFile(filePath: string, bundling: boolean) {
   if (
     isProjectJsx(filePath, importAliases) ||
     importsCompiledPackage(contents, loader) ||
-    hasDevupUI(filePath, contents, libPackage)
+    hasDevupUI(filePath, contents, libPackage, importAliases)
   ) {
     const code = codeExtract(
       filePath,
