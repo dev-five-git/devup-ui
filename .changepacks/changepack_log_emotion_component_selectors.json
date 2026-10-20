@@ -1,0 +1,7 @@
+{
+  "changes": {
+    "bindings/devup-ui-wasm/package.json": "Patch"
+  },
+  "note": "Emotion and styled-components component selectors now compile at build time: a styled component the file defines that another style selects (${Child} { ... } in CSS text, [Child] or [`&:hover ${Child}`] as a rule key) gets a short marker class, which only such components get, and the selector reads it as .marker; a component extending it, or an element inlining it for its css prop, keeps the marker. Selectors written without & now nest under the component as stylis nests them (ul { ... } is & ul, a selector list nests each selector, :hover applies to the component itself) instead of becoming global rules, and rule-object keys starting with ., #, [, *, >, + or ~ are read as nested selectors instead of properties",
+  "date": "2026-10-01T00:00:00.000Z"
+}

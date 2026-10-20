@@ -67,8 +67,30 @@ pub struct StyledDefinition<'a> {
     reads: Reads,
     /// Its `shouldForwardProp`, as the build evaluates it
     forward: Option<Forward>,
+    /// The class other styles select it by, which a component extending it
+    /// gives too, as it renders this one
+    marker: Option<String>,
+    inherited_markers: Vec<String>,
     bindings: Vec<(String, Expression<'a>)>,
     css_slot: Option<StyledCssSlot>,
+}
+
+/// `marker` as a class among those a component gives
+fn marker_class<'a>(ast_builder: &AstBuilder<'a>, marker: &str) -> Expression<'a> {
+    Expression::new_string_literal(
+        SPAN,
+        Str::from_in(marker, ast_builder.allocator()),
+        None,
+        ast_builder,
+    )
+}
+
+/// How the classes of a styled component are named: the file its atoms are
+/// split into, and the class other styles select it by
+#[derive(Clone, Copy, Default)]
+pub struct Naming<'s> {
+    pub split_filename: Option<&'s str>,
+    pub marker: Option<&'s str>,
 }
 
 /// Whether a styled component renders a tag, which takes only valid
@@ -146,6 +168,8 @@ impl<'a> StyledDefinition<'a> {
             attrs: clone_all(builder, &self.attrs).collect(),
             reads: self.reads.clone(),
             forward: self.forward.clone(),
+            marker: self.marker.clone(),
+            inherited_markers: self.inherited_markers.clone(),
             css_slot: self.css_slot.clone(),
             bindings: self
                 .bindings
@@ -258,6 +282,37 @@ impl<'a> StyledDefinition<'a> {
         self.css_slot.as_ref()
     }
 
+    /// The class other styles select the component by
+    #[must_use]
+    pub fn marker(&self) -> Option<&str> {
+        self.marker.as_deref()
+    }
+
+    fn with_markers(mut self, marker: Option<&str>, inherited: Option<&Self>) -> Self {
+        self.marker = marker.map(str::to_string);
+        self.inherited_markers = inherited
+            .into_iter()
+            .flat_map(|definition| {
+                definition
+                    .marker()
+                    .into_iter()
+                    .chain(definition.inherited_markers.iter().map(String::as_str))
+            })
+            .map(str::to_string)
+            .collect();
+        self
+    }
+
+    pub(crate) fn marker_classes(&self, ast: &AstBuilder<'a>) -> Option<Expression<'a>> {
+        merge_expression_for_class_name(
+            ast,
+            self.marker()
+                .into_iter()
+                .chain(self.inherited_markers.iter().map(String::as_str))
+                .map(|marker| marker_class(ast, marker)),
+        )
+    }
+
     /// The styles the component gives what it renders
     #[must_use]
     pub fn styles(&self) -> &[ExtractStyleProp<'a>] {
@@ -281,7 +336,7 @@ pub fn with_component<'a>(
     ast_builder: &AstBuilder<'a>,
     definition: &StyledDefinition<'a>,
     target: &Expression<'a>,
-    split_filename: Option<&str>,
+    naming: Naming<'_>,
     context: StyledContext<'_>,
 ) -> Option<(Expression<'a>, StyledDefinition<'a>)> {
     let name = match unwrap_syntax_only(target) {
@@ -310,7 +365,7 @@ pub fn with_component<'a>(
             ast_builder,
             &mut styles,
             None,
-            split_filename,
+            naming.split_filename,
         )),
     );
     let withheld = withheld(
@@ -327,7 +382,8 @@ pub fn with_component<'a>(
             (definition.reads.clone(), definition.forward.clone()),
             &definition.bindings,
         )
-        .with_css_slot(context.css_slot);
+        .with_css_slot(context.css_slot)
+        .with_markers(naming.marker, Some(&definition));
     let component = create_styled_component(
         ast_builder,
         &base,
@@ -341,6 +397,7 @@ pub fn with_component<'a>(
                 .collect(),
             withheld: &withheld,
             css_slot: new_definition.css_slot(),
+            markers: new_definition.marker_classes(ast_builder),
         },
         context.jsx,
     );
@@ -397,11 +454,7 @@ fn inherited_parts<'a>(
         || (Vec::new(), Vec::new()),
         |inherited| {
             (
-                inherited
-                    .classes
-                    .iter()
-                    .map(|c| c.clone_in(allocator))
-                    .collect(),
+                clone_all(ast_builder, &inherited.classes).collect(),
                 inherited
                     .attrs
                     .iter()
@@ -465,6 +518,8 @@ impl<'a> Base<'a> {
             attrs: attrs.iter().map(|attr| attr.clone_in(allocator)).collect(),
             reads,
             forward,
+            marker: None,
+            inherited_markers: Vec::new(),
             css_slot: None,
             bindings: bindings
                 .iter()
@@ -640,12 +695,16 @@ fn resolve_styled_call_target<'a>(
 pub fn extract_style_from_styled<'a>(
     ast_builder: &AstBuilder<'a>,
     expression: &mut Expression<'a>,
-    split_filename: Option<&str>,
+    naming: Naming<'_>,
     imports: &FxHashMap<String, ExportVariableKind>,
     modifiers: (&[Expression<'a>], Option<Forward>),
     inherited: Option<&StyledDefinition<'a>>,
     context: StyledContext<'_>,
 ) -> StyledExtraction<'a> {
+    let Naming {
+        split_filename,
+        marker,
+    } = naming;
     let (attrs, forward) = modifiers;
     let mut original_scope = expression.clone_in(ast_builder.allocator());
     let inherited = inherited.map(|definition| definition.rebind(ast_builder, &mut original_scope));
@@ -791,7 +850,8 @@ pub fn extract_style_from_styled<'a>(
                 (reads, forward),
                 &bindings,
             )
-            .with_css_slot(context.css_slot);
+            .with_css_slot(context.css_slot)
+            .with_markers(marker, inherited);
         let component = create_styled_component(
             ast_builder,
             &base,
@@ -801,6 +861,7 @@ pub fn extract_style_from_styled<'a>(
                 bindings,
                 withheld: &withheld,
                 css_slot: definition.css_slot(),
+                markers: definition.marker_classes(ast_builder),
             },
             context.jsx,
         );
@@ -904,7 +965,8 @@ pub fn extract_style_from_styled<'a>(
                 (reads, forward),
                 &bindings,
             )
-            .with_css_slot(context.css_slot);
+            .with_css_slot(context.css_slot)
+            .with_markers(marker, inherited);
         let component = create_styled_component(
             ast_builder,
             &base,
@@ -914,6 +976,7 @@ pub fn extract_style_from_styled<'a>(
                 bindings,
                 withheld: &withheld,
                 css_slot: definition.css_slot(),
+                markers: definition.marker_classes(ast_builder),
             },
             context.jsx,
         );
@@ -1489,6 +1552,7 @@ struct StyledRender<'b, 'a> {
     bindings: Vec<(String, Expression<'a>)>,
     withheld: &'b [String],
     css_slot: Option<&'b StyledCssSlot>,
+    markers: Option<Expression<'a>>,
 }
 
 fn create_styled_component<'a>(
@@ -1503,6 +1567,7 @@ fn create_styled_component<'a>(
         bindings,
         withheld,
         css_slot,
+        markers,
     } = render;
     let params = FormalParameters::boxed(
         SPAN,
@@ -1602,7 +1667,16 @@ fn create_styled_component<'a>(
         ast_builder,
     );
     let replacement = css_slot.map(|slot| slot.classes(ast_builder, class_name.as_ref()));
-    let class_name = replacement.as_ref().or(class_name.as_ref()).map_or_else(
+    let own_classes = merge_expression_for_class_name(
+        ast_builder,
+        markers.into_iter().chain(
+            replacement
+                .as_ref()
+                .or(class_name.as_ref())
+                .map(|classes| classes.clone_in(ast_builder.allocator())),
+        ),
+    );
+    let class_name = own_classes.as_ref().map_or_else(
         || Expression::new_identifier(SPAN, "className", ast_builder),
         |name| {
             wrap_array_filter(

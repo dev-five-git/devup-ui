@@ -1,6 +1,7 @@
 mod compatibility;
 mod css_prop_captures;
 mod css_prop_execution;
+mod css_prop_markers;
 mod css_prop_slot_edges;
 mod css_prop_slot_members;
 mod css_prop_slot_wrapped_keys;
