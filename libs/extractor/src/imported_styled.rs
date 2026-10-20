@@ -225,6 +225,7 @@ impl<'a> Reader<'_, 'a> {
         let Aliased {
             code: transformed,
             css_prop,
+            px,
             ..
         } = transform_import_aliases_with_edits(
             code,
@@ -251,6 +252,7 @@ impl<'a> Reader<'_, 'a> {
             self.option,
             Some(self.resolver),
             css_prop,
+            &px,
         );
         self.dependencies.extend(inlined.dependencies);
         let imports = self.imports(&program, path, css_prop, &sub);
