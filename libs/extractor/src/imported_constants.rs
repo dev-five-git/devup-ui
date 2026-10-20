@@ -16,7 +16,7 @@ use oxc_ast::builder::AstBuilder;
 use oxc_ast_visit::{Visit, VisitMut, walk, walk_mut};
 use oxc_parser::Parser;
 use oxc_semantic::{Scoping, SemanticBuilder};
-use oxc_span::{SPAN, SourceType};
+use oxc_span::{GetSpan, SPAN, SourceType};
 use oxc_syntax::number::NumberBase;
 use oxc_syntax::operator::BinaryOperator;
 use oxc_syntax::symbol::SymbolId;
@@ -54,11 +54,59 @@ enum Constant {
     /// name, never rules; for a `css()` class, the styles behind it when
     /// they are known
     Style(Option<Rc<Vec<ExtractStyleValue>>>),
+    /// A native chain's defining argument and located refusal.
+    Failed(String),
+    /// A lookup failure retained only while resolving native rule metadata.
+    Unavailable(ChainReason),
     /// An object or array code changes, or a value read from one
     Changed(Rc<Change>),
 }
 
+#[derive(Clone, Debug)]
+enum ChainReason {
+    Cycle,
+    Module(String),
+    Export(String),
+    Constant,
+    Static,
+}
+
+impl ChainReason {
+    fn requirement(&self) -> String {
+        match self {
+            Self::Cycle => "native css chain must not be cyclic".to_string(),
+            Self::Module(source) => format!("native css chain needs module `{source}`"),
+            Self::Export(name) => format!("native css chain needs export `{name}`"),
+            Self::Constant => "native css rules must be constant at build time".to_string(),
+            Self::Static => "native css chain needs complete static rule metadata".to_string(),
+        }
+    }
+}
+
 impl Constant {
+    /// Retain a failed upstream edge, including one inside a rule object.
+    fn failure(&self) -> Option<Self> {
+        match self {
+            Self::Failed(_) | Self::Unavailable(_) => Some(self.clone()),
+            Self::Object(object) => object
+                .iter()
+                .filter_map(|(key, value)| value.failure().map(|failure| (key, failure)))
+                .min_by(|left, right| left.0.cmp(right.0))
+                .map(|(_, failure)| failure),
+            Self::Record(entries) => entries.iter().find_map(|(_, value)| value.failure()),
+            Self::Array(values) => values.iter().find_map(Self::failure),
+            Self::String(_)
+            | Self::Number(_)
+            | Self::Null
+            | Self::Bool(_)
+            | Self::Undefined
+            | Self::Function
+            | Self::Vars(_)
+            | Self::Theme(_)
+            | Self::Style(_)
+            | Self::Changed(_) => None,
+        }
+    }
     /// Whether code can change what it holds
     const fn is_mutable(&self) -> bool {
         matches!(self, Self::Object(_) | Self::Record(_) | Self::Array(_))
@@ -164,6 +212,7 @@ pub(crate) struct Inlined {
     pub stylex_themes: FxHashMap<String, String>,
     /// The styles behind imported `css()` classes
     pub css_styles: FxHashMap<String, Vec<ExtractStyleValue>>,
+    pub css_failures: Vec<String>,
     pub unknown: Unknown,
     pub changed: Changed,
     /// The semantic analysis of the program as parsed, so the visitor reuses
@@ -405,6 +454,11 @@ fn inline_in<'a>(
         {
             let stylex = import.source.value == crate::STYLEX_PACKAGE;
             for specifier in import.specifiers.iter().flatten() {
+                if matches!(specifier, ImportDeclarationSpecifier::ImportSpecifier(specifier)
+                    if specifier.imported.name() == "ClassNames" && import.source.value == compat.as_str())
+                {
+                    continue;
+                }
                 if let Some(local) = specifier.local().symbol_id.get() {
                     style.roots.insert(local);
                     match specifier {
@@ -432,6 +486,7 @@ fn inline_in<'a>(
     if read.names.is_empty() {
         return Inlined::default();
     }
+    let names = read.names;
     let mut modules = Modules {
         resolver,
         option,
@@ -510,11 +565,11 @@ fn inline_in<'a>(
         }
         // Constants are only worth reading when a style reads a name that may
         // hold one
-        let reads_math = read.names.contains("Math") && !scope.binds("Math");
-        if !reads_math && !read.names.iter().any(|name| scope.binds(name)) {
+        let reads_math = names.contains("Math") && !scope.binds("Math");
+        if !reads_math && !names.iter().any(|name| scope.binds(name)) {
             return Inlined::default();
         }
-        for name in &read.names {
+        for name in &names {
             let bound = scope.binds(name);
             let constant = scope.lookup(&mut modules, name);
             match &constant {
@@ -531,7 +586,7 @@ fn inline_in<'a>(
                 _ => {}
             }
             match &constant {
-                None if bound => {
+                None | Some(Constant::Unavailable(_)) if bound => {
                     inlined.unknown.names.insert(name.clone());
                 }
                 Some(object)
@@ -575,6 +630,7 @@ fn inline_in<'a>(
             symbols: &symbols,
             style: &style,
             css_props: &css_props,
+            css_failures: &mut inlined.css_failures,
             objects: false,
             styles: false,
             px: false,
@@ -879,23 +935,34 @@ impl Modules<'_> {
         specifier: &str,
         importer: &str,
     ) -> Option<Rc<FxHashMap<String, Constant>>> {
-        let module = (self.resolver?)(specifier, importer)?;
+        self.resolve_exports(specifier, importer).ok()
+    }
+
+    fn resolve_exports(
+        &mut self,
+        specifier: &str,
+        importer: &str,
+    ) -> Result<Rc<FxHashMap<String, Constant>>, ChainReason> {
+        let module = self
+            .resolver
+            .and_then(|resolver| resolver(specifier, importer))
+            .ok_or_else(|| ChainReason::Module(specifier.to_string()))?;
         if let Some(exports) = self.exports.get(&module.path) {
-            return Some(exports.clone());
+            return Ok(exports.clone());
         }
         if self.loading.contains(&module.path) {
-            return None;
+            return Err(ChainReason::Cycle);
         }
         self.loading.push(module.path.clone());
         let exports = Rc::new(self.read(&module.path, &module.code));
         self.loading.pop();
         self.exports.insert(module.path, exports.clone());
-        Some(exports)
+        Ok(exports)
     }
 
     fn read(&mut self, path: &str, code: &str) -> FxHashMap<String, Constant> {
         let allocator = Allocator::default();
-        let source_type = SourceType::from_path(path).unwrap_or_else(|_| SourceType::ts());
+        let source_type = crate::parsing::source_type(path).unwrap_or_else(|_| SourceType::ts());
         let program = Parser::new(&allocator, code, source_type).parse().program;
         let mut scope = ModuleScope::new(path, &program, Some(code));
         let mut exports = FxHashMap::default();
@@ -935,15 +1002,16 @@ impl Modules<'_> {
                     }
                 }
                 Statement::ExportFromDeclaration(export) => {
-                    if let Some(from) = self.exports(&export.source.value, path) {
-                        for specifier in &export.specifiers {
-                            if let Some(constant) = from.get(specifier.local.name().as_str()) {
-                                exports.insert(
-                                    specifier.exported.name().to_string(),
-                                    constant.clone(),
-                                );
-                            }
-                        }
+                    let from = self.resolve_exports(&export.source.value, path);
+                    for specifier in &export.specifiers {
+                        let name = specifier.local.name();
+                        let constant = match &from {
+                            Ok(from) => from.get(name.as_str()).cloned().unwrap_or_else(|| {
+                                Constant::Unavailable(ChainReason::Export(name.to_string()))
+                            }),
+                            Err(reason) => Constant::Unavailable(reason.clone()),
+                        };
+                        exports.insert(specifier.exported.name().to_string(), constant);
                     }
                 }
                 Statement::ExportAllDeclaration(export) => {
@@ -1142,6 +1210,8 @@ struct ModuleScope<'p, 'a> {
     source: Option<&'p str>,
     locals: FxHashMap<String, Constant>,
     declarations: FxHashMap<String, &'p Expression<'a>>,
+    active: FxHashSet<String>,
+    resolving_css: bool,
     imports: FxHashMap<String, (String, Imported)>,
     style_imports: FxHashSet<String>,
     /// Style APIs besides the imports, which never run what they are given
@@ -1167,6 +1237,8 @@ impl<'p, 'a> ModuleScope<'p, 'a> {
             source,
             locals: FxHashMap::default(),
             declarations: FxHashMap::default(),
+            active: FxHashSet::default(),
+            resolving_css: false,
             imports: FxHashMap::default(),
             style_imports: FxHashSet::default(),
             style_names: FxHashSet::default(),
@@ -1196,14 +1268,12 @@ impl<'p, 'a> ModuleScope<'p, 'a> {
             })
     }
 
-    /// The styles behind `css(rules)`, the package's own `css` given one
-    /// rule object every value of which is known, as the module's class names
-    /// do not tell them
+    /// Native named css definitions merge known parts in argument order.
     fn css_styles(
         &mut self,
         modules: &mut Modules<'_>,
         call: &oxc_ast::ast::CallExpression<'_>,
-    ) -> Option<Rc<Vec<ExtractStyleValue>>> {
+    ) -> Option<Constant> {
         let Expression::Identifier(callee) = &call.callee else {
             return None;
         };
@@ -1213,36 +1283,79 @@ impl<'p, 'a> ModuleScope<'p, 'a> {
         if export != "css" || !source.starts_with(modules.option.package.as_str()) {
             return None;
         }
-        let [argument] = call.arguments.as_slice() else {
+        let code = self.source?;
+        if matches!(call.arguments.as_slice(), [Argument::ArrayExpression(_)]) {
             return None;
-        };
-        let rules = self.evaluate(modules, argument.as_expression()?)?;
+        }
         let allocator = Allocator::default();
         let builder = AstBuilder::new(&allocator);
-        let mut rules = match constant_literal(&builder, &rules, true)? {
-            rules @ Expression::ObjectExpression(_) => rules,
-            _ => return None,
-        };
-        let ExtractResult {
-            mut styles,
-            style_order,
-            ..
-        } = extract_style_from_expression(
-            &builder,
-            None,
-            &mut rules,
-            0,
-            &None,
-            LiteralHandling::ExpandResponsiveThemeToken,
-        );
-        if let Some(order) = style_order {
-            for prop in &mut styles {
-                set_prop_order(prop, order);
-            }
-        }
         let mut composition = Composition::default();
-        composition.apply(&builder, styles);
-        composition.unconditional().map(Rc::new)
+        for argument in &call.arguments {
+            let previous = self.resolving_css;
+            self.resolving_css = true;
+            let value = argument
+                .as_expression()
+                .and_then(|expression| self.evaluate(modules, expression));
+            self.resolving_css = previous;
+            let failure = value.as_ref().and_then(Constant::failure);
+            let reason = match failure {
+                Some(Constant::Failed(message)) => return Some(Constant::Failed(message)),
+                Some(Constant::Unavailable(reason)) => reason,
+                _ => match value {
+                    Some(Constant::Null | Constant::Undefined | Constant::Bool(false)) => continue,
+                    Some(Constant::Style(Some(styles))) => {
+                        composition.apply(
+                            &builder,
+                            styles
+                                .iter()
+                                .cloned()
+                                .map(crate::ExtractStyleProp::Static)
+                                .collect(),
+                        );
+                        continue;
+                    }
+                    Some(ref value @ Constant::Record(_)) => {
+                        if let Some(mut rules @ Expression::ObjectExpression(_)) =
+                            constant_literal(&builder, value, true)
+                        {
+                            let ExtractResult {
+                                mut styles,
+                                style_order,
+                                ..
+                            } = extract_style_from_expression(
+                                &builder,
+                                None,
+                                &mut rules,
+                                0,
+                                &None,
+                                LiteralHandling::ExpandResponsiveThemeToken,
+                            );
+                            if let Some(order) = style_order {
+                                for prop in &mut styles {
+                                    set_prop_order(prop, order);
+                                }
+                            }
+                            composition.apply(&builder, styles);
+                            continue;
+                        }
+                        ChainReason::Constant
+                    }
+                    Some(Constant::Object(_)) | None => ChainReason::Constant,
+                    Some(Constant::Array(_)) if call.arguments.len() == 1 => return None,
+                    Some(_) => ChainReason::Static,
+                },
+            };
+            let span = argument.span();
+            let expression = &code[span.start as usize..span.end as usize];
+            return Some(Constant::Failed(format!(
+                "{}: {}",
+                crate::locate(self.path, code, span.start as usize),
+                crate::utils::build_time_error("css", expression, &reason.requirement())
+            )));
+        }
+        composition
+            .unconditional()
+            .map(|styles| Constant::Style(Some(Rc::new(styles))))
     }
 
     fn is_style_import(&self, option: &ExtractOption, name: &str) -> bool {
@@ -1456,17 +1569,30 @@ impl<'p, 'a> ModuleScope<'p, 'a> {
         if let Some(constant) = self.locals.get(name) {
             return Some(constant.clone());
         }
-        // Taken out while it is evaluated, so a constant reading itself stops
-        if let Some(init) = self.declarations.remove(name)
-            && let Some(constant) = self.evaluate(modules, init)
-        {
-            self.locals.insert(name.to_string(), constant.clone());
-            return Some(constant);
+        if self.active.contains(name) {
+            return self
+                .resolving_css
+                .then_some(Constant::Unavailable(ChainReason::Cycle));
+        }
+        if let Some(init) = self.declarations.remove(name) {
+            self.active.insert(name.to_string());
+            let constant = self.evaluate(modules, init);
+            self.active.remove(name);
+            if let Some(constant) = constant {
+                self.locals.insert(name.to_string(), constant.clone());
+                return Some(constant);
+            }
         }
         let (source, imported) = self.imports.get(name)?;
-        let exports = modules.exports(source, self.path)?;
+        let exports = match modules.resolve_exports(source, self.path) {
+            Ok(exports) => exports,
+            Err(reason) => return self.resolving_css.then_some(Constant::Unavailable(reason)),
+        };
         match imported {
-            Imported::Named(export) => exports.get(export).cloned(),
+            Imported::Named(export) => exports.get(export).cloned().or_else(|| {
+                self.resolving_css
+                    .then(|| Constant::Unavailable(ChainReason::Export(export.clone())))
+            }),
             Imported::Namespace => Some(Constant::Object(exports)),
         }
     }
@@ -1696,9 +1822,10 @@ impl<'p, 'a> ModuleScope<'p, 'a> {
                     }
                     fold_math(callee.property.name.as_str(), &arguments)
                 }
-                callee if self.is_style_api(modules, callee) => {
-                    Some(Constant::Style(self.css_styles(modules, call)))
-                }
+                callee if self.is_style_api(modules, callee) => Some(
+                    self.css_styles(modules, call)
+                        .unwrap_or(Constant::Style(None)),
+                ),
                 _ => self.evaluate_stylex(modules, call),
             },
             Expression::TaggedTemplateExpression(tagged)
@@ -1928,6 +2055,7 @@ struct Inline<'s, 'a> {
     symbols: &'s FxHashMap<SymbolId, Constant>,
     style: &'s StyleSymbols<'s>,
     css_props: &'s CssTakers<'s>,
+    css_failures: &'s mut Vec<String>,
     /// Inside what the build reads as style objects
     objects: bool,
     /// Inside the arguments of a style API or a style prop
@@ -2123,12 +2251,26 @@ fn px_value<'a>(ast_builder: &AstBuilder<'a>, property: &mut oxc_ast::ast::Objec
 /// The rules `rules` with their numbers as the `px` lengths Emotion reads them
 /// as, nested rules included
 fn px_rules<'a>(ast_builder: &AstBuilder<'a>, rules: &mut Expression<'a>) {
-    if let Expression::ObjectExpression(object) = rules {
-        for property in &mut object.properties {
-            if let ObjectPropertyKind::ObjectProperty(property) = property {
-                px_value(ast_builder, property);
-                px_rules(ast_builder, &mut property.value);
+    let mut pending = vec![rules];
+    while let Some(rules) = pending.pop() {
+        match rules {
+            Expression::ObjectExpression(object) => {
+                for property in &mut object.properties {
+                    if let ObjectPropertyKind::ObjectProperty(property) = property {
+                        px_value(ast_builder, property);
+                        pending.push(&mut property.value);
+                    }
+                }
             }
+            Expression::ArrayExpression(array) => {
+                pending.extend(
+                    array
+                        .elements
+                        .iter_mut()
+                        .filter_map(|element| element.as_expression_mut()),
+                );
+            }
+            _ => {}
         }
     }
 }
@@ -2190,15 +2332,18 @@ fn constant_literal<'a>(
 impl<'a> VisitMut<'a> for Inline<'_, 'a> {
     fn visit_expression(&mut self, expression: &mut Expression<'a>) {
         if self.styles {
-            if let Some(literal) = self
-                .constant(expression)
-                .and_then(|constant| self.literal(&constant))
-            {
-                *expression = literal;
-                if self.px {
-                    px_rules(self.ast_builder, expression);
+            if let Some(constant) = self.constant(expression) {
+                if let Constant::Failed(message) = constant {
+                    self.css_failures.push(message);
+                    return;
                 }
-                return;
+                if let Some(literal) = self.literal(&constant) {
+                    *expression = literal;
+                    if self.px {
+                        px_rules(self.ast_builder, expression);
+                    }
+                    return;
+                }
             }
             if let Some(chosen) = self.chosen(expression) {
                 *expression = chosen;

@@ -2,6 +2,7 @@
 //! or hands them to code that may change them, so the build does not read
 //! them as the constants they are declared as.
 
+use oxc_allocator::CloneIn;
 use oxc_ast::AstKind;
 use oxc_ast::ast::{
     Expression, IdentifierReference, JSXAttributeName, JSXElementName, ObjectPropertyKind, Program,
@@ -115,6 +116,11 @@ pub(crate) fn uses(
     style: &dyn Fn(&str) -> bool,
     css: Option<(CssProp, &str)>,
 ) -> FxHashMap<String, Vec<Use>> {
+    let allocator = oxc_allocator::Allocator::default();
+    // Callers retain semantic IDs for inlining and compilation. Analyze a
+    // separate tree so building mutation nodes cannot reset those IDs.
+    let isolated = program.clone_in(&allocator);
+    let program = &isolated;
     let semantic = SemanticBuilder::new()
         .with_build_nodes(true)
         .build(program)
@@ -172,7 +178,7 @@ impl Context<'_, '_> {
                 }
                 AstKind::ComputedMemberExpression(member) if member.object.span() == span => {
                     path.push(
-                        crate::utils::get_string_by_literal_expression(&member.expression)
+                        crate::utils::get_key_by_literal_expression(&member.expression)
                             .map(std::borrow::Cow::into_owned),
                     );
                 }

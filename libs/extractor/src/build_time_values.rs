@@ -15,14 +15,17 @@ use oxc_ast::ast::{
 use oxc_ast_visit::{Visit, walk};
 use oxc_parser::Parser;
 use oxc_semantic::{Scoping, SemanticBuilder};
-use oxc_span::{GetSpan, SourceType, Span};
+use oxc_span::{GetSpan, Span};
 use oxc_syntax::operator::LogicalOperator;
 use oxc_syntax::reference::ReferenceId;
 use oxc_syntax::symbol::SymbolId;
 use rustc_hash::{FxHashMap, FxHashSet};
 
 use crate::stylex::StylexFunction;
-use crate::utils::{binding_root, get_string_by_literal_expression, unwrap_syntax_only};
+use crate::utils::{
+    binding_root, get_key_by_literal_expression, get_string_by_literal_expression,
+    unwrap_syntax_only,
+};
 use crate::{ExtractOption, ModuleResolver};
 
 /// What code reads outside itself
@@ -132,7 +135,7 @@ const UNCERTAIN_MEMBERS: [&str; 9] = [
 ];
 
 fn parse<'a>(allocator: &'a Allocator, filename: &str, code: &'a str) -> Option<Program<'a>> {
-    let source_type = SourceType::from_path(filename).ok()?;
+    let source_type = crate::parsing::source_type(filename).ok()?;
     let parsed = Parser::new(allocator, code, source_type).parse();
     (!parsed.fatal_error).then_some(parsed.program)
 }
@@ -769,7 +772,7 @@ impl<'a> Visit<'a> for Reads<'_> {
         &mut self,
         member: &oxc_ast::ast::ComputedMemberExpression<'a>,
     ) {
-        if let Some(key) = get_string_by_literal_expression(&member.expression) {
+        if let Some(key) = get_key_by_literal_expression(&member.expression) {
             self.member(&member.object, &key);
             if self.is_global(&member.object, "Math") {
                 return;
@@ -782,7 +785,7 @@ impl<'a> Visit<'a> for Reads<'_> {
         match unwrap_syntax_only(&call.callee) {
             // A method chosen at runtime may be any
             Expression::ComputedMemberExpression(member) => {
-                self.impure |= get_string_by_literal_expression(&member.expression).is_none();
+                self.impure |= get_key_by_literal_expression(&member.expression).is_none();
             }
             // Exact only without a radix
             Expression::StaticMemberExpression(member) if member.property.name == "toString" => {

@@ -44,7 +44,7 @@ fn visit_with(code: &str, setup: impl FnOnce(&mut DevupVisitor<'_>)) -> Visited 
             .iter()
             .map(|(_, message)| message.clone())
             .collect(),
-        styles: visitor.styles.len(),
+        styles: visitor.styles.into_styles("test.tsx").len(),
     }
 }
 

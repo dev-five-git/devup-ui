@@ -9,17 +9,16 @@
 
 use crate::ImportAlias;
 use crate::css_prop::{
-    CssProp, EMOTION_REACT, REACT_JSX_PRAGMA, builds_jsx_with_emotion, class_names_child,
-    emotion_pragma, is_emotion, is_jsx_file, is_jsx_function, react_runtime, returned,
-    root_reference,
+    CssProp, EMOTION_REACT, builds_jsx_with_emotion, class_names_child, is_emotion, is_jsx_file,
+    is_jsx_function, react_runtime, returned, root_reference,
 };
 use crate::utils::{
     get_str_by_property_key, is_vanilla_extract_file, js_number_literal, keeps_bare_number,
 };
 use oxc_allocator::Allocator;
 use oxc_ast::ast::{
-    Argument, ArrowFunctionBody, BindingIdentifier, BindingPattern, CallExpression, Expression,
-    IdentifierReference, ImportDeclarationSpecifier, JSXAttributeItem, JSXAttributeValue, JSXChild,
+    Argument, ArrowFunctionBody, BindingIdentifier, CallExpression, Expression,
+    IdentifierReference, ImportDeclarationSpecifier, JSXAttributeItem, JSXAttributeValue,
     JSXElement, JSXElementName, JSXOpeningElement, LogicalOperator, ModuleExportName,
     ObjectPropertyKind, Statement,
 };
@@ -29,7 +28,9 @@ use oxc_ast_visit::{
 };
 use oxc_parser::Parser;
 use oxc_semantic::{Scoping, SemanticBuilder};
-use oxc_span::{GetSpan, SourceType};
+use oxc_span::GetSpan;
+#[cfg(test)]
+use oxc_span::SourceType;
 use oxc_syntax::symbol::SymbolId;
 use std::borrow::Cow;
 use std::collections::HashMap;
@@ -61,6 +62,7 @@ struct LibraryNumbers {
     /// Import bindings of Emotion's `ClassNames`, whose child function takes a
     /// `css` taking rules
     class_names: Vec<SymbolId>,
+    class_names_calls: Vec<SymbolId>,
     scoping: Scoping,
     replacements: Vec<(usize, usize, String)>,
 }
@@ -277,26 +279,30 @@ impl<'a> Visit<'a> for LibraryNumbers {
     fn visit_jsx_element(&mut self, element: &JSXElement<'a>) {
         let css = match &element.opening_element.name {
             JSXElementName::IdentifierReference(name) if self.contains(&self.class_names, name) => {
-                class_names_css_symbol(element)
+                class_names_child(element).and_then(|names| names.css)
             }
             _ => None,
         };
         if let Some(css) = css {
-            self.calls.push((css, RulesAt::EveryArgument));
+            self.class_names_calls.push(css);
         }
         walk_jsx_element(self, element);
         if css.is_some() {
-            self.calls.pop();
+            self.class_names_calls.pop();
         }
     }
 
     fn visit_call_expression(&mut self, call: &CallExpression<'a>) {
         let rules_at = match &call.callee {
             Expression::Identifier(callee) => self.symbol(callee).and_then(|symbol| {
-                self.calls
-                    .iter()
-                    .find(|(binding, _)| *binding == symbol)
-                    .map(|(_, rules_at)| *rules_at)
+                if self.class_names_calls.contains(&symbol) {
+                    Some(RulesAt::EveryArgument)
+                } else {
+                    self.calls
+                        .iter()
+                        .find(|(binding, _)| *binding == symbol)
+                        .map(|(_, rules_at)| *rules_at)
+                }
             }),
             callee => self
                 .is_styled_factory(callee)
@@ -354,30 +360,6 @@ impl<'a> Visit<'a> for LibraryNumbers {
         }
         walk_jsx_opening_element(self, element);
     }
-}
-
-/// The binding of the child callback's `css`, not another callback's same name.
-fn class_names_css_symbol(element: &JSXElement<'_>) -> Option<SymbolId> {
-    let container = element.children.iter().find_map(|child| match child {
-        JSXChild::ExpressionContainer(container) => Some(container),
-        _ => None,
-    })?;
-    let params = match container.expression.as_expression()? {
-        Expression::ArrowFunctionExpression(arrow) => &arrow.params,
-        Expression::FunctionExpression(function) => &function.params,
-        _ => return None,
-    };
-    let BindingPattern::ObjectPattern(object) = &params.items.first()?.pattern else {
-        return None;
-    };
-    let css = class_names_child(element)?.css?;
-    object
-        .properties
-        .iter()
-        .find_map(|property| match &property.value {
-            BindingPattern::BindingIdentifier(local) if local.name == css => local.symbol_id.get(),
-            _ => None,
-        })
 }
 
 /// Map an aliased package's export onto the `@devup-ui/react` export that implements the
@@ -467,7 +449,7 @@ pub fn companion_errors(code: &str, filename: &str) -> Vec<(u32, String)> {
         return Vec::new();
     }
     let allocator = Allocator::default();
-    let source_type = SourceType::from_path(filename).unwrap_or_default();
+    let source_type = crate::parsing::source_type(filename).unwrap_or_default();
     let program = Parser::new(&allocator, code, source_type).parse().program;
     program
         .body
@@ -528,7 +510,7 @@ pub fn transform_import_aliases_with_edits<'a>(
     }
 
     let allocator = Allocator::default();
-    let source_type = SourceType::from_path(filename).unwrap_or_default();
+    let source_type = crate::parsing::source_type(filename).unwrap_or_default();
 
     // Parse the code
     let parser_ret = Parser::new(&allocator, code, source_type).parse();
@@ -538,10 +520,6 @@ pub fn transform_import_aliases_with_edits<'a>(
 
     // Collect import transformations
     let mut transformations: Vec<(usize, usize, String)> = Vec::new();
-    let mut numbers = LibraryNumbers::default();
-    let mut uses_emotion = emotion_jsx;
-    let mut jsx_pragma = false;
-    let compat = format!("{package}/compat");
     let mut scoping = None;
     let may_have_literals = code
         .bytes()
@@ -560,24 +538,17 @@ pub fn transform_import_aliases_with_edits<'a>(
         local.symbol_id.get()
     };
 
-    // A pragma building JSX with Emotion builds it with React once the `css`
-    // props are compiled
-    for comment in &program.comments {
-        let span = comment.content_span();
-        let text = &code[span.start as usize..span.end as usize];
-        jsx_pragma |= text.contains("@jsx");
-        if let Some(at) = emotion_pragma(text) {
-            uses_emotion = true;
-            if emotion_aliased {
-                let start = span.start as usize + at;
-                transformations.push((start, start + EMOTION_REACT.len(), "react".to_string()));
-            }
-        }
+    if emotion_aliased {
+        transformations.extend(crate::jsx_import_source::emotion_replacements(&program));
     }
-    // So does a project building every file's JSX with Emotion, through a
-    // pragma, which a file's own one overrides
-    if emotion_jsx && is_jsx_file(filename) && !jsx_pragma {
-        transformations.push((0, 0, REACT_JSX_PRAGMA.to_string()));
+    let mut numbers = LibraryNumbers::default();
+    let mut uses_emotion = emotion_jsx || !transformations.is_empty();
+    let compat = format!("{package}/compat");
+    if emotion_jsx
+        && is_jsx_file(filename)
+        && let Some(replacement) = crate::jsx_import_source::project_replacement(&program)
+    {
+        transformations.push(replacement);
     }
 
     for stmt in &program.body {
@@ -733,7 +704,7 @@ pub(super) fn pixelify_emotion_values<'a>(
     original: &str,
 ) -> (Cow<'a, str>, Vec<Edit>) {
     let allocator = Allocator::default();
-    let source_type = SourceType::from_path(filename).unwrap_or_default();
+    let source_type = crate::parsing::source_type(filename).unwrap_or_default();
     let original_program = Parser::new(&allocator, original, source_type)
         .parse()
         .program;
