@@ -93,6 +93,7 @@ let codeExtractSpy: ReturnType<typeof spyOn>
 let codeExtractWithoutSourceMapSpy: ReturnType<typeof spyOn>
 let devupUIWebpackPluginSpy: ReturnType<typeof spyOn>
 let startCoordinatorSpy: ReturnType<typeof spyOn>
+let readJsxImportSourceSpy: ReturnType<typeof spyOn>
 
 let originalEnv: NodeJS.ProcessEnv
 let originalEnvValues: NodeJS.ProcessEnv
@@ -147,6 +148,10 @@ beforeEach(() => {
     coordinatorModule,
     'startCoordinator',
   ).mockReturnValue({ close: mock() as () => void })
+  readJsxImportSourceSpy = spyOn(
+    importGraphModule,
+    'readJsxImportSource',
+  ).mockReturnValue(undefined)
   setWasmForTesting(wasm)
   setWebpackPluginForTesting(webpackPluginModule)
 
@@ -168,6 +173,7 @@ afterEach(() => {
   process.env = originalEnv
   global.fetch = originalFetch
   process.debugPort = originalDebugPort
+  readJsxImportSourceSpy.mockRestore()
   existsSyncSpy.mockRestore()
   mkdirSyncSpy.mockRestore()
   readFileSyncSpy.mockRestore()

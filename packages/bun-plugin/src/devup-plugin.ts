@@ -207,6 +207,7 @@ export function DevupUI(options: DevupUIBunPluginOptions = {}) {
               cwd: root,
               include: options.include,
               needles: compiledPackages,
+              importAliases,
               toId: (path) => path,
             }),
           )
@@ -290,6 +291,7 @@ export function DevupUI(options: DevupUIBunPluginOptions = {}) {
                   cwd: root,
                   include: ['@devup-ui/components', ...(options.include ?? [])],
                   needles: compiledPackages,
+                  importAliases,
                   toId: (path) => path,
                 }),
               ]).source

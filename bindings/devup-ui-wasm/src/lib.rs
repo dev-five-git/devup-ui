@@ -24,6 +24,10 @@ use wasm_bindgen::prelude::*;
 #[cfg(test)]
 mod source_type_tests;
 
+mod state;
+#[cfg(test)]
+use state::TestStateGuard;
+pub use state::{reset_state_for_testing, reset_state_internal};
 #[cfg(test)]
 mod css_output_edge_tests;
 
@@ -881,6 +885,10 @@ mod tests {
     use serial_test::serial;
     use sheet::theme::{ColorTheme, Theme, Typography};
 
+    mod state_tests {
+        include!("state/tests.rs");
+    }
+
     fn make_named_color_theme(name: &str, value: &str) -> ColorTheme {
         let mut ct = ColorTheme::default();
         ct.add_color(name, value);
@@ -942,6 +950,7 @@ mod tests {
         use css::file_map::reset_file_map;
         use css::file_routes::{reset_file_routes, set_file_routes};
         use std::collections::{HashMap, HashSet};
+        let _state = TestStateGuard::new();
 
         {
             let mut s = GLOBAL_STYLE_SHEET.lock().unwrap();
@@ -1041,6 +1050,7 @@ mod tests {
     #[test]
     #[serial]
     fn emit_split_measurement_artifacts() {
+        let _state = TestStateGuard::new();
         if std::env::var_os("DEVUP_EMIT_MEASURE").is_some() {
             let artifacts =
                 super::atom_hoist_measurement::build_predeclared_measurement_artifacts()
@@ -1054,6 +1064,7 @@ mod tests {
     #[test]
     #[serial]
     fn atom_b_beats_per_file_on_session_and_invalidation() {
+        let _state = TestStateGuard::new();
         super::atom_hoist_measurement::assert_predeclared_shared_savings().unwrap();
     }
 
@@ -1063,6 +1074,7 @@ mod tests {
         use css::atom_hoist::atom_hoist_threshold;
         use css::file_routes::{get_file_routes, reset_file_routes};
         use std::collections::{HashMap, HashSet};
+        let _state = TestStateGuard::new();
 
         // setAtomHoist binding controls the global threshold.
         set_atom_hoist(None);
@@ -1086,6 +1098,7 @@ mod tests {
     #[serial]
     fn test_canonical_map_import_export_roundtrip() {
         use css::file_map::{get_canonical_map, reset_canonical_map};
+        let _state = TestStateGuard::new();
         reset_canonical_map();
         let mut m = HashMap::new();
         m.insert("src/child.tsx".to_string(), "src/parent.tsx".to_string());
@@ -1103,6 +1116,7 @@ mod tests {
     #[test]
     #[serial]
     fn test_code_extract() {
+        let _state = TestStateGuard::new();
         {
             let mut sheet = GLOBAL_STYLE_SHEET.lock().unwrap();
             *sheet = StyleSheet::default();
@@ -1131,6 +1145,7 @@ mod tests {
     #[test]
     #[serial]
     fn test_code_extract_with_modules() {
+        let _state = TestStateGuard::new();
         {
             let mut sheet = GLOBAL_STYLE_SHEET.lock().unwrap();
             *sheet = StyleSheet::default();
@@ -1166,6 +1181,7 @@ mod tests {
     #[test]
     #[serial]
     fn deserialize_theme() {
+        let _state = TestStateGuard::new();
         {
             let theme: Theme = serde_json::from_str(
                 r##"{
@@ -1248,6 +1264,7 @@ mod tests {
     #[test]
     #[serial]
     fn to_css_from_theme() {
+        let _state = TestStateGuard::new();
         let mut theme = Theme::default();
         let mut color_theme = ColorTheme::default();
         color_theme.add_color("primary", "#000");
@@ -1358,6 +1375,7 @@ mod tests {
     #[test]
     #[serial]
     fn test_get_theme_interface() {
+        let _state = TestStateGuard::new();
         register_shorthands_internal(BTreeMap::new());
         let sheet = StyleSheet::default();
         assert_eq!(
@@ -1428,6 +1446,7 @@ mod tests {
     #[test]
     #[serial]
     fn test_debug() {
+        let _state = TestStateGuard::new();
         assert!(!is_debug());
         set_debug(true);
         assert!(is_debug());
@@ -1438,6 +1457,7 @@ mod tests {
     #[test]
     #[serial]
     fn test_prefix() {
+        let _state = TestStateGuard::new();
         assert_eq!(get_prefix(), None);
         set_prefix(Some("du-".to_string()));
         assert_eq!(get_prefix(), Some("du-".to_string()));
@@ -1448,6 +1468,7 @@ mod tests {
     #[test]
     #[serial]
     fn test_default_theme() {
+        let _state = TestStateGuard::new();
         let mut theme = Theme::default();
         theme.add_color_theme("light", ColorTheme::default());
         theme.add_color_theme("dark", ColorTheme::default());
@@ -1477,6 +1498,7 @@ mod tests {
     #[test]
     #[serial]
     fn test_output_new_and_getters() {
+        let _state = TestStateGuard::new();
         // Reset global state
         *GLOBAL_STYLE_SHEET.lock().unwrap() = StyleSheet::default();
         css::class_map::reset_class_map();
@@ -1517,6 +1539,7 @@ mod tests {
     #[test]
     #[serial]
     fn test_output_updated_base_style() {
+        let _state = TestStateGuard::new();
         // Reset global state
         *GLOBAL_STYLE_SHEET.lock().unwrap() = StyleSheet::default();
         css::class_map::reset_class_map();
@@ -1542,6 +1565,7 @@ mod tests {
     #[test]
     #[serial]
     fn test_has_devup_ui_wasm_function() {
+        let _state = TestStateGuard::new();
         // Test positive case
         assert!(has_devup_ui_wasm(
             "test.tsx",
@@ -1567,6 +1591,7 @@ mod tests {
     #[test]
     #[serial]
     fn test_output_single_css_mode() {
+        let _state = TestStateGuard::new();
         // Reset global state
         *GLOBAL_STYLE_SHEET.lock().unwrap() = StyleSheet::default();
         css::class_map::reset_class_map();
@@ -1603,6 +1628,7 @@ mod tests {
     #[test]
     #[serial]
     fn test_output_with_global_css_removal() {
+        let _state = TestStateGuard::new();
         // Reset global state
         let mut sheet = StyleSheet::default();
 
@@ -1644,16 +1670,7 @@ mod tests {
     // globalCss (@font-face / global selectors). When child.tsx collapses into
     // parent.tsx, extracting child must not delete parent's globalCss.
     fn collapse_setup() {
-        use css::class_map::reset_class_map;
-        use css::file_map::{reset_canonical_map, reset_file_map};
-        {
-            let mut s = GLOBAL_STYLE_SHEET.lock().unwrap();
-            *s = StyleSheet::default();
-        }
-        reset_class_map();
-        reset_file_map();
-        reset_canonical_map();
-        register_theme_internal(sheet::theme::Theme::default());
+        reset_state_internal();
     }
 
     fn extract_for_collapse(filename: &str, code: &str) {
@@ -1678,6 +1695,7 @@ mod tests {
     #[test]
     #[serial]
     fn collapse_member_after_root_keeps_global_css() {
+        let _state = TestStateGuard::new();
         collapse_setup();
         let mut m = HashMap::new();
         m.insert("footer.tsx".to_string(), "layout.tsx".to_string());
@@ -1707,6 +1725,7 @@ mod tests {
     #[test]
     #[serial]
     fn collapse_member_before_root_keeps_global_css() {
+        let _state = TestStateGuard::new();
         collapse_setup();
         let mut m = HashMap::new();
         m.insert("footer.tsx".to_string(), "layout.tsx".to_string());
@@ -1731,6 +1750,7 @@ mod tests {
     #[test]
     #[serial]
     fn collapse_member_with_own_global_css_preserves_both() {
+        let _state = TestStateGuard::new();
         collapse_setup();
         let mut m = HashMap::new();
         m.insert("footer.tsx".to_string(), "layout.tsx".to_string());
@@ -1758,6 +1778,7 @@ mod tests {
     #[test]
     #[serial]
     fn collapse_multiple_members_keep_root_global_css() {
+        let _state = TestStateGuard::new();
         collapse_setup();
         let mut m = HashMap::new();
         m.insert("footer.tsx".to_string(), "layout.tsx".to_string());
@@ -1780,6 +1801,7 @@ mod tests {
     #[test]
     #[serial]
     fn collapse_member_reextract_clears_only_its_own_global_css() {
+        let _state = TestStateGuard::new();
         collapse_setup();
         let mut m = HashMap::new();
         m.insert("footer.tsx".to_string(), "layout.tsx".to_string());
@@ -1822,6 +1844,7 @@ mod tests {
     #[test]
     #[serial]
     fn test_import_sheet_internal() {
+        let _state = TestStateGuard::new();
         // Reset global state
         *GLOBAL_STYLE_SHEET.lock().unwrap() = StyleSheet::default();
         css::class_map::reset_class_map();
@@ -1844,6 +1867,7 @@ mod tests {
     #[test]
     #[serial]
     fn test_export_sheet_internal() {
+        let _state = TestStateGuard::new();
         // Reset global state
         *GLOBAL_STYLE_SHEET.lock().unwrap() = StyleSheet::default();
 
@@ -1860,6 +1884,7 @@ mod tests {
     #[test]
     #[serial]
     fn test_export_class_map_internal() {
+        let _state = TestStateGuard::new();
         // Reset class map
         css::class_map::reset_class_map();
 
@@ -1875,6 +1900,7 @@ mod tests {
     #[test]
     #[serial]
     fn test_export_file_map_internal() {
+        let _state = TestStateGuard::new();
         // Reset file map
         css::file_map::reset_file_map();
 
@@ -1944,6 +1970,7 @@ mod tests {
     #[test]
     #[serial]
     fn test_code_extract_internal_success() {
+        let _state = TestStateGuard::new();
         // Reset global state
         *GLOBAL_STYLE_SHEET.lock().unwrap() = StyleSheet::default();
         css::class_map::reset_class_map();
@@ -1971,6 +1998,7 @@ mod tests {
     #[test]
     #[serial]
     fn test_code_extract_without_source_map_internal() {
+        let _state = TestStateGuard::new();
         *GLOBAL_STYLE_SHEET.lock().unwrap() = StyleSheet::default();
         css::class_map::reset_class_map();
 
@@ -1996,6 +2024,7 @@ mod tests {
     #[test]
     #[serial]
     fn test_code_extract_internal_error() {
+        let _state = TestStateGuard::new();
         // Reset global state
         *GLOBAL_STYLE_SHEET.lock().unwrap() = StyleSheet::default();
         css::class_map::reset_class_map();
@@ -2022,6 +2051,7 @@ mod tests {
     #[test]
     #[serial]
     fn test_register_theme_internal() {
+        let _state = TestStateGuard::new();
         // Reset global state
         *GLOBAL_STYLE_SHEET.lock().unwrap() = StyleSheet::default();
 

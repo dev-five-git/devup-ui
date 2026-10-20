@@ -64,16 +64,12 @@ jobs:
           node-version: latest
       - run: bun install
       - run: bun run build
+      # Every row is the median of the same number of cold samples taken in
+      # rotating order (benchmark-manifest.json). The run goes to an artifact and
+      # the Devup UI rows are compared with the checked baseline at the end of the
+      # job, so the profile and the Rust measurement still run when it fails.
       - name: Benchmark
         run: bun run benchmark
-      - name: Upload the measured run
-        uses: actions/upload-artifact@v7
-        if: ${{ !cancelled() }}
-        with:
-          name: benchmark-run
-          path: benchmark-run.json
-          if-no-files-found: ignore
-          retention-days: 30
       - name: Profile Devup UI Turbopack
         env:
           DEVUP_UI_PROFILE: "1"
@@ -82,6 +78,150 @@ jobs:
             benchmark/next-devup-ui-single-turbo/df \
             benchmark/next-devup-ui-single-turbo/tsconfig.tsbuildinfo
           bun run --filter next-devup-ui-single-turbo-benchmark build
+      - name: Upload the measured run
+        uses: actions/upload-artifact@v7
+        if: ${{ !cancelled() }}
+        with:
+          name: benchmark-run
+          path: benchmark-run.json
+          if-no-files-found: ignore
+          retention-days: 30
+      - name: Measure the SemanticBuilder passes of the extractor
+        run: cargo bench -p extractor --bench semantic_pass_benchmark -- --quick
+      - name: Compare the Devup UI rows with the baseline
+        run: bun benchmark-check.js
+
+  wasm-size:
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    permissions:
+      contents: read
+    env:
+      CARGO_BUILD_JOBS: "2"
+      RUSTUP_TOOLCHAIN: stable
+    steps:
+      - name: Checkout the tested source and both histories
+        uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: actions-rust-lang/setup-rust-toolchain@v2
+        with:
+          toolchain: stable
+          target: wasm32-unknown-unknown
+          cache: false
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: latest
+      - uses: actions/setup-node@v7
+        with:
+          node-version: latest
+      - name: Resolve and report exact WASM comparison sources
+        run: node resolve-wasm-size-sources.js
+      - uses: jetli/wasm-pack-action@v0.4.0
+        with:
+          version: latest
+      - name: Cache registry downloads only
+        uses: actions/cache@v6
+        with:
+          path: |
+            ~/.cargo/registry/index/
+            ~/.cargo/registry/cache/
+            ~/.cargo/git/db/
+          key: cargo-wasm-size-${{ runner.os }}-${{ hashFiles('**/Cargo.lock') }}
+      - name: Install the latest shared installer and optimizer once
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          curl -L --proto '=https' --tlsv1.2 -sSf https://raw.githubusercontent.com/cargo-bins/cargo-binstall/main/install-from-binstall-release.sh | bash
+          mkdir -p "$RUNNER_TEMP/wasm-size-tools/binaryen"
+          gh release download --repo WebAssembly/binaryen --pattern '*-x86_64-linux.tar.gz' --dir "$RUNNER_TEMP/wasm-size-tools"
+          tar -xzf "$RUNNER_TEMP"/wasm-size-tools/*.tar.gz --strip-components=1 -C "$RUNNER_TEMP/wasm-size-tools/binaryen"
+          echo "$RUNNER_TEMP/wasm-size-tools/binaryen/bin" >> "$GITHUB_PATH"
+      - name: Build exact sources with shared tools and lock-matched bindgen
+        run: |
+          set -euo pipefail
+          export SIZE_ROOT="$RUNNER_TEMP/wasm-size"
+          mkdir -p "$SIZE_ROOT"
+          stage=source
+          trap 'echo "## WASM size: FAIL - $stage build or provenance failed; no comparison was skipped or substituted." >> "$GITHUB_STEP_SUMMARY"' ERR
+          for side in base candidate; do
+            if [[ "$side" == base ]]; then sha="$BASE_SHA"; else sha="$CANDIDATE_SHA"; fi
+            git cat-file -e "$sha^{commit}"
+            mkdir -p "$SIZE_ROOT/$side"
+            git archive "$sha" | tar -x -C "$SIZE_ROOT/$side"
+          done
+          cat > "$SIZE_ROOT/provenance.mjs" <<'NODE'
+          import { execFileSync } from 'node:child_process'
+          import { createHash } from 'node:crypto'
+          import { readFileSync, writeFileSync } from 'node:fs'
+          import { join } from 'node:path'
+          const run = (command, args) => execFileSync(command, args, { encoding: 'utf8' }).trim()
+          const tools = Object.fromEntries([
+            ['rustc', 'rustc', ['--version', '--verbose']],
+            ['wasmPack', 'wasm-pack', ['--version']],
+            ['wasmBindgen', 'wasm-bindgen', ['--version']],
+            ['wasmOpt', 'wasm-opt', ['--version']],
+            ['bun', 'bun', ['--version']],
+            ['node', 'node', ['--version']],
+          ].map(([key, command, args]) => {
+            const path = run('which', [command])
+            const hash = createHash('sha256').update(readFileSync(path)).digest('hex')
+            return [key, `${run(command, args)}\n${path}\nsha256:${hash}`]
+          }))
+          const side = process.argv[2]
+          const file = join(process.env.SIZE_ROOT, 'metadata.json')
+          const metadata = side === 'base' ? {
+            jobId: `${process.env.GITHUB_RUN_ID}/${process.env.GITHUB_RUN_ATTEMPT}/${process.env.GITHUB_JOB}`,
+            buildCommand: 'cargo metadata --locked --format-version 1 > /dev/null && wasm-pack build --mode no-install --release --target nodejs --out-dir ./pkg --out-name index --locked && node script.js',
+          } : JSON.parse(readFileSync(file, 'utf8'))
+          const sha = side === 'base' ? process.env.BASE_SHA : process.env.CANDIDATE_SHA
+          metadata[side] = {
+            commit: run('git', ['rev-parse', `${sha}^{commit}`]),
+            tree: run('git', ['rev-parse', `${sha}^{tree}`]),
+            wasmBindgenVersion: process.env.WASM_BINDGEN_VERSION,
+            packageDir: join(process.env.SIZE_ROOT, side, 'bindings/devup-ui-wasm/pkg'), tools,
+          }
+          writeFileSync(file, JSON.stringify(metadata, null, 2) + '\n')
+          NODE
+          shared_path="$PATH"
+          for side in base candidate; do
+            stage="$side"
+            (
+              WASM_BINDGEN_VERSION="$(bun resolve-wasm-bindgen.js "$SIZE_ROOT/$side/Cargo.lock")"
+              export WASM_BINDGEN_VERSION
+              bindgen_root="$SIZE_ROOT/abi-tools/$WASM_BINDGEN_VERSION"
+              if [[ ! -x "$bindgen_root/bin/wasm-bindgen" ]]; then
+                cargo binstall wasm-bindgen-cli --version "=$WASM_BINDGEN_VERSION" --root "$bindgen_root" --no-confirm --force
+              fi
+              export PATH="$bindgen_root/bin:$shared_path"
+              node "$SIZE_ROOT/provenance.mjs" "$side"
+              cd "$SIZE_ROOT/$side/bindings/devup-ui-wasm"
+              export CARGO_TARGET_DIR="$SIZE_ROOT/$side-target"
+              cargo metadata --locked --format-version 1 > /dev/null
+              wasm-pack build --mode no-install --release --target nodejs --out-dir ./pkg --out-name index --locked
+              node script.js
+            ) 2>&1 | tee "$SIZE_ROOT/$side-build.log"
+          done
+      - name: Compare all four relative size metrics
+        run: |
+          node verify-wasm-size.js \
+            --base-pkg "$RUNNER_TEMP/wasm-size/base/bindings/devup-ui-wasm/pkg" \
+            --candidate-pkg "$RUNNER_TEMP/wasm-size/candidate/bindings/devup-ui-wasm/pkg" \
+            --metadata "$RUNNER_TEMP/wasm-size/metadata.json" \
+            --report "$RUNNER_TEMP/wasm-size/wasm-size.json"
+      - name: Upload size measurements and build evidence
+        uses: actions/upload-artifact@v7
+        if: ${{ !cancelled() }}
+        with:
+          name: wasm-size
+          path: |
+            ${{ runner.temp }}/wasm-size/metadata.json
+            ${{ runner.temp }}/wasm-size/wasm-size.json
+            ${{ runner.temp }}/wasm-size/*-build.log
+          if-no-files-found: error
+          retention-days: 30
 
   # The landing app is the only real-scale acceptance target in this repo, and
   # `publish` runs it against the deployed vinext/@devup-ui/vite-plugin build.
@@ -286,6 +426,138 @@ jobs:
       - name: Run E2E Tests (singleCss)
         run: bun run test:e2e:rsc-css
 
+  release-compat:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    env:
+      CARGO_BUILD_JOBS: "2"
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+      - uses: actions-rust-lang/setup-rust-toolchain@v2
+        with:
+          toolchain: stable
+          components: clippy, rustfmt
+      - name: Cache cargo registry + target
+        uses: actions/cache@v6
+        with:
+          path: |
+            ~/.cargo/registry/index/
+            ~/.cargo/registry/cache/
+            ~/.cargo/git/db/
+            target/
+          key: cargo-release-compat-${{ runner.os }}-${{ hashFiles('**/Cargo.lock') }}
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: latest
+      - name: Cache bun dependencies
+        uses: actions/cache@v6
+        with:
+          path: ~/.bun/install/cache
+          key: bun-release-compat-${{ runner.os }}-${{ hashFiles('**/bun.lock') }}
+      - uses: jetli/wasm-pack-action@v0.4.0
+        with:
+          version: latest
+      - uses: actions/setup-node@v7
+        with:
+          node-version: latest
+      - run: bun install
+      - name: Test exited-process memory sampling
+        run: node --test e2e/release/process-memory.test.mjs
+      - name: Build packages under the memory watchdog
+        run: node e2e/release/build-packages.mjs
+      - name: Cache Playwright browsers
+        uses: actions/cache@v6
+        with:
+          path: ~/.cache/ms-playwright
+          key: playwright-release-compat-${{ runner.os }}-${{ hashFiles('**/bun.lock') }}
+      - name: Install Playwright browsers
+        run: bunx playwright install chromium firefox webkit --with-deps
+      - name: Build packed consumers and check production computed styles
+        run: bun run test:release
+      - name: Upload release compatibility evidence
+        if: ${{ !cancelled() }}
+        uses: actions/upload-artifact@v7
+        with:
+          name: release-compat-results
+          path: |
+            release-package-build.json
+            release-results.json
+          if-no-files-found: error
+          retention-days: 30
+
+  webpack-extends-theme:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    permissions:
+      contents: read
+    env:
+      CARGO_BUILD_JOBS: "2"
+    steps:
+      - name: Configure isolated paths
+        run: |
+          printf 'DEVUP_PLAYWRIGHT_ROOT=%s/webpack-extends-playwright\n' "$RUNNER_TEMP" >> "$GITHUB_ENV"
+          printf 'PLAYWRIGHT_BROWSERS_PATH=%s/webpack-extends-browsers\n' "$RUNNER_TEMP" >> "$GITHUB_ENV"
+          printf 'DEVUP_EXTENDS_RESULTS=%s/webpack-extends-results\n' "$RUNNER_TEMP" >> "$GITHUB_ENV"
+      - name: Checkout
+        uses: actions/checkout@v7
+      - uses: actions-rust-lang/setup-rust-toolchain@v2
+        with:
+          toolchain: stable
+          components: clippy, rustfmt
+      - name: Cache cargo registry + target
+        uses: actions/cache@v6
+        with:
+          path: |
+            ~/.cargo/registry/index/
+            ~/.cargo/registry/cache/
+            ~/.cargo/git/db/
+            target/
+          key: cargo-webpack-extends-${{ runner.os }}-${{ hashFiles('**/Cargo.lock') }}
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: latest
+      - name: Cache bun dependencies
+        uses: actions/cache@v6
+        with:
+          path: ~/.bun/install/cache
+          key: bun-webpack-extends-${{ runner.os }}-${{ hashFiles('**/bun.lock') }}
+      - uses: jetli/wasm-pack-action@v0.4.0
+        with:
+          version: latest
+      - name: Install Node.js
+        uses: actions/setup-node@v7
+        with:
+          node-version: latest
+      - run: bun install
+      - name: Build fresh WASM
+        working-directory: bindings/devup-ui-wasm
+        run: bun run build
+      - run: bun run build
+      - name: Install latest private Playwright and Chromium
+        run: |
+          mkdir -p "$DEVUP_PLAYWRIGHT_ROOT" "$DEVUP_EXTENDS_RESULTS"
+          printf '{"private":true,"type":"module"}\n' > "$DEVUP_PLAYWRIGHT_ROOT/package.json"
+          bun add --cwd "$DEVUP_PLAYWRIGHT_ROOT" @playwright/test@latest
+          node "$DEVUP_PLAYWRIGHT_ROOT/node_modules/@playwright/test/cli.js" install chromium --with-deps
+      - name: Installed formats and production theme delivery regressions
+        run: |
+          set -euo pipefail
+          env -u CI node --test packages/webpack-plugin/src/__tests__/extends-theme/extends-theme-regression.mjs 2>&1 | tee "$DEVUP_EXTENDS_RESULTS/matrix.log"
+      - name: Upload packed-consumer matrix evidence
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: webpack-extends-theme-evidence
+          path: |
+            ${{ runner.temp }}/webpack-extends-results/matrix.log
+            ${{ runner.temp }}/webpack-extends-results/extends-theme-*/*.json
+            ${{ runner.temp }}/webpack-extends-results/extends-theme-*/*/identity-*.json
+            ${{ runner.temp }}/webpack-extends-results/extends-theme-*/*/bun.lock
+            ${{ runner.temp }}/webpack-extends-results/extends-theme-*/packs/*/*.tgz
+          if-no-files-found: error
+          retention-days: 7
+
   # Validation: runs on pull requests and on pushes to main, read-only. The job
   # id stays `publish` because it is the status check the repository requires;
   # the privileged release steps live in `release` and `deploy-pages` below.
@@ -485,7 +757,7 @@ jobs:
   # passed, and is the only job that can write contents, open pull requests or
   # mint an OIDC token for npm.
   release:
-    needs: [publish, landing-next-e2e, react-18]
+    needs: [publish, landing-next-e2e, react-18, release-compat]
     if: github.event_name == 'push' && github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
     timeout-minutes: 45

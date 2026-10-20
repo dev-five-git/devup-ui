@@ -5,6 +5,11 @@ use oxc_span::{SourceType, UnknownExtension};
 #[cfg(test)]
 use std::error::Error;
 
+pub(super) mod goal_policy;
+
+#[cfg(test)]
+mod hybrid_tests;
+
 /// Accept JavaScript JSX without changing the path's TypeScript or module dialect.
 pub(super) fn source_type(filename: &str) -> Result<SourceType, UnknownExtension> {
     SourceType::from_path(filename).map(|source_type| {
@@ -41,20 +46,24 @@ pub(super) fn parse_source<'a>(
     source_type: SourceType,
 ) -> Result<Program<'a>, Vec<(u32, String)>> {
     let parsed = Parser::new(allocator, code, source_type).parse();
-    if parsed.diagnostics.has_errors() {
-        let mut errors: Vec<_> = parsed
-            .diagnostics
-            .errors()
-            .map(|error| {
-                let offset = error
-                    .labels
-                    .iter()
-                    .find(|label| label.primary())
-                    .or_else(|| error.labels.first())
-                    .map_or(0, oxc_span::LabeledSpan::offset);
-                (offset, error.to_string())
-            })
-            .collect();
+    let mut errors: Vec<_> = parsed
+        .diagnostics
+        .errors()
+        .filter_map(|error| {
+            let message = error.to_string();
+            if goal_policy::accepts_declaration_goal(&parsed, &message, &error.labels) {
+                return None;
+            }
+            let offset = error
+                .labels
+                .iter()
+                .find(|label| label.primary())
+                .or_else(|| error.labels.first())
+                .map_or(0, oxc_span::LabeledSpan::offset);
+            Some((offset, message))
+        })
+        .collect();
+    if !errors.is_empty() {
         errors.sort_unstable();
         errors.dedup();
         return Err(errors);

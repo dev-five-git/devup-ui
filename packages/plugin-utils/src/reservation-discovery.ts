@@ -7,7 +7,7 @@ import {
   isSourceFile,
   listSourceFiles,
 } from './import-graph'
-import { extractedNeedles, findPackageDir } from './numbering'
+import { extractedNeedles, findPackageDir, isProjectJsx } from './numbering'
 import {
   isReservationReadFailure,
   reservationSource,
@@ -145,16 +145,21 @@ export function collectReservationInputs(
       sources.get(key) ??
       reservationSource(() => readFileSync(physicalPath, 'utf-8'))
     if (code === undefined) continue
+    const filename = overlay?.filename ?? toId(physicalPath)
     sources.set(key, code)
     records.set(key, {
       physicalPath,
-      filename: overlay?.filename ?? toId(physicalPath),
+      filename,
       code,
       ...(overlay?.sourceType === undefined
         ? {}
         : { sourceType: overlay.sourceType }),
     })
-    if (needles.some((needle) => code.includes(needle))) seeds.add(key)
+    if (
+      isProjectJsx(filename, options.importAliases) ||
+      needles.some((needle) => code.includes(needle))
+    )
+      seeds.add(key)
     const targets = new Set<string>()
     const resolutions = new Map<string, string>()
     imports.set(key, resolutions)

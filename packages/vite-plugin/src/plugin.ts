@@ -18,6 +18,7 @@ import {
   loadDevupConfig,
   mergeImportAliases,
   normalizeMdxExtensions,
+  readJsxImportSource,
   remapMdxError,
   type ResolutionInputObserver,
   resolutionWatchPath,
@@ -319,7 +320,10 @@ export function DevupUI({
       '[devup-ui] Vite atomHoist is unavailable until shared class-slot reservation lands in PR B; keeping per-file names, while existing shared slots remain arrival-ordered.',
     )
   }
-  const importAliases = mergeImportAliases(userImportAliases)
+  const importAliases = mergeImportAliases(
+    userImportAliases,
+    readJsxImportSource(),
+  )
   const production = new ProductionActivation(
     {
       package: libPackage,
@@ -683,6 +687,7 @@ export function DevupUI({
               include,
               cwd: projectRoot,
               needles: extractedNeedles(libPackage, importAliases),
+              importAliases,
             }),
           )
         } catch (cause) {

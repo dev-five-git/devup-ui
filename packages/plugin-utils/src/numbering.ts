@@ -18,6 +18,8 @@ export interface CollectNumberedFilesOptions {
    * build never extracts do not take numbers (and lengthen class prefixes)
    */
   needles?: string[]
+  /** Alias keys enabling importless project JSX, matched against the engine ID. */
+  readonly importAliases?: object
   /** The name the plugin extracts a file under, given its absolute path */
   toId?: (path: string) => string
 }
@@ -26,6 +28,15 @@ export interface CollectNumberedFilesOptions {
 function usesAny(file: string, needles: string[]): boolean {
   const text = readFileSync(file, 'utf-8')
   return needles.some((needle) => text.includes(needle))
+}
+
+/** Match the extractor's project-wide Emotion JSX policy, including null alias values. */
+export function isProjectJsx(filename: string, importAliases: object): boolean {
+  return (
+    (filename.endsWith('.tsx') || filename.endsWith('.jsx')) &&
+    Object.hasOwn(importAliases, '@emotion/react') &&
+    Object.hasOwn(importAliases, '@emotion/react/jsx-runtime')
+  )
 }
 
 /** Where an included package lives, found the way the bundler finds it. */
@@ -54,6 +65,7 @@ export function collectNumberedFiles({
   exclude,
   cwd = process.cwd(),
   needles,
+  importAliases = {},
   toId = (path) => path.replaceAll('\\', '/'),
 }: CollectNumberedFilesOptions): string[] {
   const directories = [
@@ -62,15 +74,19 @@ export function collectNumberedFiles({
       .map((name) => findPackageDir(cwd, name))
       .filter((dir): dir is string => dir !== undefined),
   ]
-  return [
-    ...new Set(
-      directories.flatMap((dir) =>
-        listSourceFiles(dir, exclude, { includeMdx })
-          .filter((file) => !needles || usesAny(file, needles))
-          .map(toId),
-      ),
-    ),
-  ].sort()
+  const files = new Set<string>()
+  for (const directory of directories) {
+    for (const file of listSourceFiles(directory, exclude, { includeMdx })) {
+      const filename = toId(file)
+      if (
+        !needles ||
+        isProjectJsx(filename, importAliases) ||
+        usesAny(file, needles)
+      )
+        files.add(filename)
+    }
+  }
+  return [...files].sort()
 }
 
 export interface FileNumbering {

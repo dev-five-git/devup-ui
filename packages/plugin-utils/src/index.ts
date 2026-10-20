@@ -59,6 +59,7 @@ export {
   type ImportRequestOutcome,
 } from './import-requests'
 export { type ImportReference, scanImports } from './import-scanner'
+export { readJsxImportSource } from './jsx-import-source'
 export {
   ConfigLoadError,
   deepMerge,
@@ -92,6 +93,7 @@ export {
   type CollectNumberedFilesOptions,
   extractedNeedles,
   type FileNumbering,
+  isProjectJsx,
   seedFileNumbers,
 } from './numbering'
 export { PreparationInputs } from './preparation-inputs'

@@ -11,22 +11,15 @@ use serial_test::serial;
 
 pub(super) type TestResult = Result<(), Box<dyn Error>>;
 
-pub(super) struct Reset;
-impl Drop for Reset {
-    fn drop(&mut self) {
-        reset_build_state_internal();
-        register_theme_internal(sheet::theme::Theme::default());
-        css::set_custom_shorthands(BTreeMap::new());
-        css::debug::set_debug(false);
-    }
-}
+pub(super) type Reset = crate::state::TestStateGuard;
 
 pub(super) fn setup(single_css: bool) -> (Reset, ExtractOption) {
+    let state = Reset::new();
     reset_build_state_internal();
     css::debug::set_debug(false);
     register_theme_internal(sheet::theme::Theme::default());
     (
-        Reset,
+        state,
         ExtractOption {
             single_css,
             ..ExtractOption::default()

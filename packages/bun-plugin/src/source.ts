@@ -1,9 +1,12 @@
 import { dirname, relative } from 'node:path'
 
-import { mergeImportAliases } from '@devup-ui/plugin-utils'
+import { mergeImportAliases, readJsxImportSource } from '@devup-ui/plugin-utils'
 
 export type SourceLoader = 'tsx' | 'ts' | 'jsx' | 'js'
-export const importAliases = mergeImportAliases()
+export const importAliases = mergeImportAliases(
+  undefined,
+  readJsxImportSource(),
+)
 export const libPackage = '@devup-ui/react'
 export const compiledPackages = [
   libPackage,

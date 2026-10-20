@@ -23,6 +23,7 @@ import {
   mergeImportAliases,
   normalizeMdxExtensions,
   planAtomHoist,
+  readJsxImportSource,
   type ResolutionInputObserver,
   resolutionWatchPath,
   resolveProjectPaths,
@@ -132,7 +133,10 @@ export class DevupUIWebpackPlugin {
     private readonly generationBinding?: WebpackGenerationBinding,
   ) {
     this.mdxExtensions = normalizeMdxExtensions(mdxExtensions)
-    this.importAliases = mergeImportAliases(userImportAliases)
+    this.importAliases = mergeImportAliases(
+      userImportAliases,
+      readJsxImportSource(),
+    )
     this.excludeModules = createNodeModulesExcludeRegex(include)
     this.pathOptions = { devupFile, distDir, cssDir }
 
@@ -496,6 +500,7 @@ export class DevupUIWebpackPlugin {
           include: this.options.include,
           cwd,
           needles: extractedNeedles(this.options.package, this.importAliases),
+          importAliases: this.importAliases,
           toId: (path) => relative(cwd, path).replaceAll('\\', '/'),
         }),
       )

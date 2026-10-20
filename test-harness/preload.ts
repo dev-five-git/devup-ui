@@ -16,6 +16,7 @@ export async function prepareTests(
         return 1
       }
     case 'runtime': {
+      await import('../bun.setup')
       const { register } = await import('../packages/bun-plugin/src/register')
       await register({ debug: true })
       return undefined

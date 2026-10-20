@@ -27,6 +27,7 @@ import {
   mergeImportAliases,
   normalizeMdxExtensions,
   planAtomHoist,
+  readJsxImportSource,
   remapMdxError,
   type ResolutionInputObserver,
   resolutionWatchPath,
@@ -146,7 +147,10 @@ export const DevupUI = ({
   importAliases: userImportAliases,
   mdxExtensions: configuredMdxExtensions,
 }: Partial<DevupUIRsbuildPluginOptions> = {}): RsbuildPlugin => {
-  const importAliases = mergeImportAliases(userImportAliases)
+  const importAliases = mergeImportAliases(
+    userImportAliases,
+    readJsxImportSource(),
+  )
   const mdxExtensions = normalizeMdxExtensions(configuredMdxExtensions)
   const excludeModules = createNodeModulesExcludeRegex(include)
   let seedWarningEmitted = false
@@ -507,6 +511,7 @@ export const DevupUI = ({
                   include,
                   cwd: root,
                   needles: extractedNeedles(libPackage, importAliases),
+                  importAliases,
                   toId,
                 }),
               )

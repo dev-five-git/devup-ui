@@ -21,7 +21,7 @@ enum Phase {
 }
 
 #[derive(Clone, Copy, Default, Deserialize, Serialize)]
-struct State {
+pub(crate) struct State {
     phase: Phase,
     misses: usize,
     suppressed: usize,
@@ -79,6 +79,10 @@ pub fn record_suppressed_row() {
 /// Clear reservation bookkeeping at the existing build-reset boundary.
 pub fn reset() {
     with_state(|state| *state = State::default());
+}
+
+pub(crate) fn replace_state(replacement: State) -> State {
+    with_state(|state| std::mem::replace(state, replacement))
 }
 
 pub(crate) struct FileSeedGuard(Phase);
@@ -155,6 +159,38 @@ impl Drop for ScratchSlots {
 mod tests {
     use super::*;
     use serial_test::serial;
+
+    #[test]
+    #[serial]
+    fn complete_phase_and_count_restore_when_nested_or_unwinding() {
+        let _state = crate::test_state::TestStateGuard::new();
+        for phase in [Phase::Legacy, Phase::Scratch, Phase::Live] {
+            replace_state(State {
+                phase,
+                misses: 7,
+                suppressed: 0,
+            });
+            {
+                let _inner = crate::test_state::TestStateGuard::new();
+                record_insert();
+                assert_eq!(unreserved_slot_count(), 0);
+            }
+            assert_eq!(unreserved_slot_count(), 7);
+            let result = std::panic::catch_unwind(|| {
+                let _inner = crate::test_state::TestStateGuard::new();
+                ScratchSlots::default().commit();
+                record_insert();
+                panic!("restore reservation");
+            });
+            assert!(result.is_err());
+            record_insert();
+            let expected = match phase {
+                Phase::Legacy | Phase::Scratch => 7,
+                Phase::Live => 8,
+            };
+            assert_eq!(unreserved_slot_count(), expected);
+        }
+    }
 
     #[cfg(not(target_arch = "wasm32"))]
     #[test]

@@ -3,6 +3,7 @@ import { dirname, relative } from 'node:path'
 import {
   type createModuleResolver,
   isMdxSource,
+  isProjectJsx,
   type PreparedSource,
   remapMdxError,
 } from '@devup-ui/plugin-utils'
@@ -49,7 +50,10 @@ export async function loadSourceFile(filePath: string, project: SourceProject) {
     contents,
     !mdx && ['ts', 'tsx'].includes(loader),
   )
-  if (importsCompiledPackage(contents, loader)) {
+  if (
+    isProjectJsx(filePath, importAliases) ||
+    importsCompiledPackage(contents, loader)
+  ) {
     setDebug(project.debug)
     setModuleResolver(project.resolver)
     project.reserve?.(selectedMdx)

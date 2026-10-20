@@ -44,6 +44,7 @@ fn build(atom: bool, debug: bool) -> (String, String, String) {
 #[test]
 #[serial]
 fn w66_single_css_output_is_exactly_invariant_to_requested_atom_mode() {
+    let _scope = TestStateGuard::new();
     // Given / When / Then
     for debug in [false, true] {
         assert_eq!(build(false, debug), build(true, debug));
@@ -56,6 +57,7 @@ fn w66_single_css_output_is_exactly_invariant_to_requested_atom_mode() {
 #[test]
 #[serial]
 fn w66_single_css_does_not_freeze_empty_reach_before_per_file_reservation() {
+    let _scope = TestStateGuard::new();
     // Given
     setup();
     css::file_routes::reset_file_routes();
@@ -91,6 +93,7 @@ fn w66_single_css_does_not_freeze_empty_reach_before_per_file_reservation() {
 #[test]
 #[serial]
 fn single_css_error_and_resolver_unwind_restore_effective_atom_mode() {
+    let _scope = TestStateGuard::new();
     // Given
     setup();
     let option = ExtractOption {
@@ -129,6 +132,7 @@ fn single_css_error_and_resolver_unwind_restore_effective_atom_mode() {
 #[test]
 #[serial]
 fn canonical_global_placement_keeps_atom_mode_in_a_per_file_build() {
+    let _scope = TestStateGuard::new();
     // Given
     setup();
     import_canonical_map_internal(HashMap::from([("global.tsx".into(), "@global".into())]));

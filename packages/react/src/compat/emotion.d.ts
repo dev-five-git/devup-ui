@@ -1,3 +1,5 @@
+/// <reference types="@devup-ui/react/compat/css-prop" />
+
 declare module '@emotion/styled' {
   import { styled } from '@devup-ui/react'
 
@@ -13,9 +15,13 @@ declare module '@emotion/css' {
 declare module '@emotion/react' {
   export { css, keyframes } from '@devup-ui/react'
   export type { StyledTheme as Theme } from '@devup-ui/react/compat'
+  export type { ClassNamesArg, ClassNamesContent } from '@devup-ui/react/compat'
   export {
     CacheProvider,
+    ClassNames,
+    jsx as createElement,
     Global,
+    jsx,
     ThemeProvider,
     useTheme,
     withTheme,

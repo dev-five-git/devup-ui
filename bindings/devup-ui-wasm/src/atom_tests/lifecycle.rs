@@ -5,6 +5,7 @@ const RED: &str = "import {Box} from '@devup-ui/react'; export const x=<Box colo
 #[test]
 #[serial]
 fn unknown_and_late_reach_stay_local_until_reset() {
+    let _scope = TestStateGuard::new();
     // Given
     setup();
     reserve(&[("a.tsx", RED), ("private.tsx", RED)]);
@@ -38,6 +39,7 @@ fn unknown_and_late_reach_stay_local_until_reset() {
 #[test]
 #[serial]
 fn imported_sheet_keeps_recorded_placement_after_configuration_reset() {
+    let _scope = TestStateGuard::new();
     // Given
     setup();
     let shared = compile("a.tsx", RED);
@@ -88,6 +90,7 @@ fn imported_sheet_keeps_recorded_placement_after_configuration_reset() {
 #[test]
 #[serial]
 fn canonical_bucket_reach_is_frozen_before_imported_styles_are_processed() {
+    let _scope = TestStateGuard::new();
     // Given
     setup();
     import_canonical_map_internal(HashMap::from([
@@ -134,6 +137,7 @@ fn canonical_bucket_reach_is_frozen_before_imported_styles_are_processed() {
 #[test]
 #[serial]
 fn important_and_plain_dynamic_values_emit_distinct_rules_in_every_mode() {
+    let _scope = TestStateGuard::new();
     // Given
     let source = r"import {Box} from '@devup-ui/react';
       export const x=<><Box color={tone}/><Box color={differentCode}/><Box color={`${tone} !important`}/></>;";
@@ -170,6 +174,7 @@ fn important_and_plain_dynamic_values_emit_distinct_rules_in_every_mode() {
 #[test]
 #[serial]
 fn keyframe_content_and_scope_resolve_when_using_single_css() {
+    let _scope = TestStateGuard::new();
     // Given
     let source = r"import {Box,keyframes} from '@devup-ui/react';
       const a=keyframes({from:{opacity:0,transform:'scale(0)'},to:{opacity:1}});
@@ -229,6 +234,7 @@ fn keyframe_content_and_scope_resolve_when_using_single_css() {
 #[test]
 #[serial]
 fn global_css_keyframes_use_the_same_scope_as_their_declaration() {
+    let _scope = TestStateGuard::new();
     // Given
     setup();
     let source = r"import {Box,keyframes,globalCss} from '@devup-ui/react';
