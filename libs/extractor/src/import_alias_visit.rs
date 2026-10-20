@@ -9,8 +9,8 @@
 
 use crate::ImportAlias;
 use crate::css_prop::{
-    CssProp, EMOTION_REACT, builds_jsx_with_emotion, is_emotion, is_jsx_file, is_jsx_function,
-    react_runtime, returned,
+    CssProp, EMOTION_REACT, builds_jsx_with_emotion, class_names_child, is_emotion, is_jsx_file,
+    is_jsx_function, react_runtime, returned,
 };
 use crate::utils::{
     get_str_by_property_key, is_vanilla_extract_file, js_number_literal, keeps_bare_number,
@@ -18,12 +18,12 @@ use crate::utils::{
 use oxc_allocator::Allocator;
 use oxc_ast::ast::{
     Argument, ArrowFunctionBody, CallExpression, Expression, ImportDeclarationSpecifier,
-    JSXAttributeItem, JSXAttributeValue, JSXElementName, JSXOpeningElement, LogicalOperator,
-    ModuleExportName, ObjectPropertyKind, Statement,
+    JSXAttributeItem, JSXAttributeValue, JSXElement, JSXElementName, JSXOpeningElement,
+    LogicalOperator, ModuleExportName, ObjectPropertyKind, Statement,
 };
 use oxc_ast_visit::{
     Visit,
-    walk::{walk_call_expression, walk_jsx_opening_element},
+    walk::{walk_call_expression, walk_jsx_element, walk_jsx_opening_element},
 };
 use oxc_parser::Parser;
 use oxc_span::GetSpan;
@@ -56,6 +56,11 @@ struct LibraryNumbers<'n> {
     devup: Vec<&'n str>,
     /// Local names of the functions building elements from a type and props
     jsx: Vec<&'n str>,
+    /// Local names of Emotion's `ClassNames`, whose child function takes a
+    /// `css` taking rules
+    class_names: Vec<&'n str>,
+    class_names_calls: Vec<oxc_syntax::symbol::SymbolId>,
+    scoping: Option<oxc_semantic::Scoping>,
     replacements: Vec<(usize, usize, String)>,
 }
 
@@ -256,14 +261,53 @@ fn kebab_property(key: &str) -> String {
     property
 }
 
-impl<'a> Visit<'a> for LibraryNumbers<'_> {
+impl<'a> Visit<'a> for LibraryNumbers<'a> {
+    fn visit_jsx_element(&mut self, element: &JSXElement<'a>) {
+        let css = match &element.opening_element.name {
+            JSXElementName::IdentifierReference(name)
+                if self.class_names.contains(&name.name.as_str())
+                    && self.scoping.as_ref().is_some_and(|scoping| {
+                        crate::css_prop::binding_of(scoping, name).is_some_and(|symbol| {
+                            scoping.get_root_binding(name.name.as_str().into()) == Some(symbol)
+                        })
+                    }) =>
+            {
+                class_names_child(element).and_then(|names| names.css)
+            }
+            _ => None,
+        };
+        if let Some(css) = css {
+            self.class_names_calls.push(css);
+        }
+        walk_jsx_element(self, element);
+        if css.is_some() {
+            self.class_names_calls.pop();
+        }
+    }
+
     fn visit_call_expression(&mut self, call: &CallExpression<'a>) {
         let rules_at = match &call.callee {
-            Expression::Identifier(callee) => self
-                .calls
-                .iter()
-                .find(|(name, _)| *name == callee.name.as_str())
-                .map(|(_, rules_at)| *rules_at),
+            Expression::Identifier(callee) => {
+                let symbol = self
+                    .scoping
+                    .as_ref()
+                    .and_then(|scoping| crate::css_prop::binding_of(scoping, callee));
+                if symbol.is_some_and(|symbol| self.class_names_calls.contains(&symbol)) {
+                    Some(RulesAt::EveryArgument)
+                } else {
+                    self.calls
+                        .iter()
+                        .find(|(name, _)| {
+                            *name == callee.name.as_str()
+                                && self.scoping.as_ref().is_none_or(|scoping| {
+                                    symbol.is_some()
+                                        && scoping.get_root_binding(callee.name.as_str().into())
+                                            == symbol
+                                })
+                        })
+                        .map(|(_, rules_at)| *rules_at)
+                }
+            }
             callee => self
                 .is_styled_factory(callee)
                 .then_some(RulesAt::EveryArgument),
@@ -355,6 +399,7 @@ fn devup_equivalent(source: &str, imported: &str) -> Option<DevupTarget<'static>
         (_, "styled") => Some(DevupTarget::Main("styled")),
         // The `css` props it builds compile away, leaving React's own element
         ("@emotion/react", "jsx" | "createElement") => Some(DevupTarget::Compat("jsx")),
+        ("@emotion/react", "ClassNames") => Some(DevupTarget::Compat("ClassNames")),
         (_, "createGlobalStyle") => Some(DevupTarget::Compat("createGlobalStyle")),
         (_, "Global") => Some(DevupTarget::Compat("Global")),
         (_, "ThemeProvider") => Some(DevupTarget::Compat("ThemeProvider")),
@@ -546,6 +591,9 @@ pub fn transform_import_aliases_with_edits<'a>(
                                         numbers.calls.push((local, RulesAt::EveryArgument));
                                     }
                                     ("@emotion/react", "Global") => numbers.components.push(local),
+                                    ("@emotion/react", "ClassNames") => {
+                                        numbers.class_names.push(local);
+                                    }
                                     _ => {}
                                 }
                             }
@@ -573,7 +621,20 @@ pub fn transform_import_aliases_with_edits<'a>(
         }
     }
     numbers.css_prop = CssProp::of(import_aliases, code, uses_emotion);
-    if !(numbers.calls.is_empty() && numbers.styled.is_empty() && numbers.components.is_empty())
+    if !numbers.class_names.is_empty()
+        && (code.bytes().any(|byte| byte.is_ascii_digit()) || code.contains('['))
+    {
+        numbers.scoping = Some(
+            oxc_semantic::SemanticBuilder::new()
+                .build(&program)
+                .semantic
+                .into_scoping(),
+        );
+    }
+    if !(numbers.calls.is_empty()
+        && numbers.styled.is_empty()
+        && numbers.components.is_empty()
+        && numbers.class_names.is_empty())
         || numbers.css_prop != CssProp::Off
     {
         numbers.visit_program(&program);
