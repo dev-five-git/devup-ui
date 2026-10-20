@@ -25,5 +25,5 @@ ToBTreeSet {
             },
         ),
     },
-    code: "import \"@devup-ui/react/devup-ui.css\";\n/** @jsxImportSource react */\nconst Custom = ({ className }) => <div className={className} />;\nexport const App = () => <Custom className=\"a b\" />;\n",
+    code: "/** @jsxImportSource react */\nimport \"@devup-ui/react/devup-ui.css\";\nconst Custom = ({ className }) => <div className={className} />;\nexport const App = () => <Custom className=\"a b\" />;\n",
 }

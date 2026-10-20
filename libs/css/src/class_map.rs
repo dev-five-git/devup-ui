@@ -78,6 +78,7 @@ mod tests {
     #[test]
     #[serial]
     fn test_set_and_get_class_map() {
+        let _state = crate::test_state::TestStateGuard::new();
         let mut test_map = HashMap::new();
         test_map.insert(String::new(), HashMap::new());
         set_class_map(test_map.clone());
@@ -88,6 +89,7 @@ mod tests {
     #[test]
     #[serial]
     fn test_reset_class_map() {
+        let _state = crate::test_state::TestStateGuard::new();
         let mut test_map = HashMap::new();
         test_map.insert(String::new(), HashMap::new());
         set_class_map(test_map);

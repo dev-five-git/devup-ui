@@ -1,5 +1,8 @@
 pub mod at_rule;
+#[cfg(test)]
+mod atom_counter_tests;
 pub mod atom_hoist;
+pub mod atom_name;
 pub mod class_map;
 mod constant;
 pub mod debug;
@@ -11,8 +14,11 @@ pub mod optimize_multi_css_value;
 pub mod optimize_value;
 pub mod rm_css_comment;
 mod selector_separator;
+pub mod slot_reservation;
 pub mod style_selector;
 pub mod tailwind_definitions;
+#[doc(hidden)]
+pub mod test_state;
 pub mod theme_tokens;
 pub mod utils;
 
@@ -259,6 +265,11 @@ static CUSTOM_SHORTHANDS: LazyLock<RwLock<BTreeMap<String, Vec<String>>>> =
     LazyLock::new(|| RwLock::new(BTreeMap::new()));
 static HAS_CUSTOM_SHORTHANDS: AtomicBool = AtomicBool::new(false);
 
+/// Clear custom aliases at a quiescent test boundary, including the fast-path flag.
+pub fn reset_custom_shorthands() {
+    test_state::replace_shorthands((BTreeMap::new(), false));
+}
+
 /// Replace the custom shorthand registry used by style extraction.
 pub fn set_custom_shorthands(shorthands: BTreeMap<String, Vec<String>>) {
     if let Ok(mut registry) = CUSTOM_SHORTHANDS.write() {
@@ -417,6 +428,7 @@ fn class_num_for_key(filename_key: &str, build_key: impl FnOnce(&mut String)) ->
                 } else {
                     let len = file_entry.len();
                     file_entry.insert(key.clone(), len);
+                    slot_reservation::record_insert();
                     num_to_nm_base(len)
                 }
             } else {
@@ -428,6 +440,7 @@ fn class_num_for_key(filename_key: &str, build_key: impl FnOnce(&mut String)) ->
                 let mut inner = std::collections::HashMap::with_capacity(1);
                 inner.insert(key.clone(), 0);
                 map.insert(filename_key.to_string(), inner);
+                slot_reservation::record_insert();
                 num_to_nm_base(0)
             }
         })
@@ -436,6 +449,17 @@ fn class_num_for_key(filename_key: &str, build_key: impl FnOnce(&mut String)) ->
 
 #[must_use]
 pub fn keyframes_to_keyframes_name(keyframes: &str, filename: Option<&str>) -> String {
+    if atom_hoist::is_atom_hoist() {
+        // Keyframes remain in their file chunk, even when declarations are hoisted.
+        let scope = filename.map_or_else(
+            || "g".to_string(),
+            |file| format!("l-{}", atom_name::hex(&file_map::canonical(file))),
+        );
+        return atom_name::counter_name(
+            &format!("k1-{scope}-{}", atom_name::hex(keyframes)),
+            filename,
+        );
+    }
     with_prefix(|prefix| {
         if is_debug() {
             let mut result = String::with_capacity(prefix.len() + 2 + keyframes.len());
@@ -564,6 +588,23 @@ pub fn sheet_to_classname(
     // `$primary`) borrow straight from `value` with zero allocation, and the
     // key/result builders below only ever read `&optimized` as `&str`.
     let optimized = value.map_or(Cow::Borrowed(""), optimize_value);
+    if atom_hoist::is_atom_hoist() {
+        let scope = atom_name::scope(filename);
+        let value = match value {
+            None => "n".to_string(),
+            Some(_) => format!("s-{}", atom_name::hex(&optimized)),
+        };
+        let identity = format!(
+            "a1-{scope}-{}-{level}-{value}-{}-{}",
+            atom_name::hex(property.trim()),
+            atom_name::hex(selector.unwrap_or_default()),
+            style_order.unwrap_or(255),
+        );
+        return atom_name::counter_name(
+            &identity,
+            filename.filter(|file| !atom_hoist::is_hoisted_bucket(file)),
+        );
+    }
     if is_debug() {
         let selector = selector.unwrap_or_default().trim();
         let encoded = if selector.is_empty() {
@@ -656,6 +697,14 @@ fn write_u8(s: &mut String, v: u8) {
 
 #[must_use]
 pub fn sheet_to_variable_name(property: &str, level: u8, selector: Option<&str>) -> String {
+    if atom_hoist::is_atom_hoist() {
+        let identity = format!(
+            "v1-{}-{level}-{}",
+            atom_name::hex(property.trim()),
+            atom_name::hex(selector.unwrap_or_default())
+        );
+        return format!("--{}", atom_name::counter_name(&identity, None));
+    }
     if is_debug() {
         let selector = selector.unwrap_or_default().trim();
         let encoded = if selector.is_empty() {
@@ -713,6 +762,7 @@ mod tests {
     #[test]
     #[serial]
     fn test_with_prefix_borrows_host_prefix() {
+        let _state = test_state::TestStateGuard::new();
         set_prefix(Some("host-".to_string()));
 
         let prefix = with_prefix(str::to_string);
@@ -776,6 +826,7 @@ mod tests {
     #[test]
     #[serial]
     fn test_sheet_to_variable_name() {
+        let _state = test_state::TestStateGuard::new();
         reset_class_map();
         set_debug(false);
         assert_eq!(sheet_to_variable_name("background", 0, None), "--a");
@@ -793,6 +844,7 @@ mod tests {
     #[test]
     #[serial]
     fn test_debug_sheet_to_variable_name() {
+        let _state = test_state::TestStateGuard::new();
         set_debug(true);
         assert_eq!(
             sheet_to_variable_name("background", 0, None),
@@ -834,6 +886,7 @@ mod tests {
     #[test]
     #[serial]
     fn test_sheet_to_classname() {
+        let _state = test_state::TestStateGuard::new();
         set_debug(false);
         reset_class_map();
         assert_eq!(
@@ -1109,6 +1162,7 @@ mod tests {
     #[test]
     #[serial]
     fn test_debug_sheet_to_classname() {
+        let _state = test_state::TestStateGuard::new();
         set_debug(true);
         assert_eq!(
             sheet_to_classname("background", 0, None, None, None, None),
@@ -1131,6 +1185,7 @@ mod tests {
     #[test]
     #[serial]
     fn test_debug_sheet_to_classname_encodes_value() {
+        let _state = test_state::TestStateGuard::new();
         set_debug(true);
         for (property, value, expected) in [
             ("scale", "0.8", "scale-0-_d_8--255"),
@@ -1154,6 +1209,7 @@ mod tests {
     #[test]
     #[serial]
     fn test_debug_sheet_to_classname_with_filename() {
+        let _state = test_state::TestStateGuard::new();
         reset_class_map();
         set_debug(true);
         // Debug mode + filename triggers the file_suffix branch (lines 234-235)
@@ -1245,6 +1301,7 @@ mod tests {
     #[test]
     #[serial]
     fn test_set_class_map() {
+        let _state = test_state::TestStateGuard::new();
         let mut map = HashMap::new();
         map.insert(String::new(), HashMap::new());
         map.entry(String::new())
@@ -1257,6 +1314,7 @@ mod tests {
     #[test]
     #[serial]
     fn test_keyframes_to_keyframes_name() {
+        let _state = test_state::TestStateGuard::new();
         reset_class_map();
         set_debug(false);
         assert_eq!(keyframes_to_keyframes_name("spin", None), num_to_nm_base(0));
@@ -1327,6 +1385,7 @@ mod tests {
     #[test]
     #[serial]
     fn test_sheet_to_classname_with_prefix() {
+        let _state = test_state::TestStateGuard::new();
         set_debug(false);
         reset_class_map();
         set_prefix(Some("app-".to_string()));
@@ -1345,6 +1404,7 @@ mod tests {
     #[test]
     #[serial]
     fn test_debug_sheet_to_classname_with_prefix() {
+        let _state = test_state::TestStateGuard::new();
         set_debug(true);
         set_prefix(Some("my-".to_string()));
 
@@ -1361,6 +1421,7 @@ mod tests {
     #[test]
     #[serial]
     fn test_sheet_to_variable_name_with_prefix() {
+        let _state = test_state::TestStateGuard::new();
         set_debug(false);
         reset_class_map();
         set_prefix(Some("app-".to_string()));
@@ -1374,6 +1435,7 @@ mod tests {
     #[test]
     #[serial]
     fn test_keyframes_with_prefix() {
+        let _state = test_state::TestStateGuard::new();
         reset_class_map();
         set_debug(false);
         set_prefix(Some("app-".to_string()));
@@ -1387,6 +1449,7 @@ mod tests {
     #[test]
     #[serial]
     fn test_empty_prefix_is_same_as_none() {
+        let _state = test_state::TestStateGuard::new();
         set_debug(false);
         reset_class_map();
 
@@ -1403,6 +1466,7 @@ mod tests {
     #[test]
     #[serial]
     fn test_keyframes_to_keyframes_name_with_filename() {
+        let _state = test_state::TestStateGuard::new();
         reset_class_map();
         set_debug(false);
         // Test with filename to cover lines 148-151
@@ -1422,6 +1486,7 @@ mod tests {
     #[test]
     #[serial]
     fn test_sheet_to_classname_with_filename() {
+        let _state = test_state::TestStateGuard::new();
         reset_class_map();
         set_debug(false);
         // Test with filename to cover the filename branch
@@ -1464,6 +1529,7 @@ mod tests {
     #[test]
     #[serial]
     fn test_disassemble_property_size_hint() {
+        let _state = test_state::TestStateGuard::new();
         // Mapped arm: the hint comes straight from the borrowed slice iterator.
         let mapped = disassemble_property("bg");
         assert_eq!(mapped.size_hint(), (1, Some(1)));
@@ -1479,6 +1545,7 @@ mod tests {
     #[test]
     #[serial]
     fn test_custom_shorthand() {
+        let _state = test_state::TestStateGuard::new();
         set_custom_shorthands(BTreeMap::from([(
             "insetX".to_string(),
             vec![

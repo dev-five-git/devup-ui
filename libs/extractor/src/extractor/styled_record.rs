@@ -4,12 +4,13 @@ use oxc_ast::{
     builder::AstBuilder,
 };
 use oxc_span::GetSpan;
-use oxc_syntax::operator::{BinaryOperator, LogicalOperator};
+use oxc_syntax::operator::LogicalOperator;
 
 use super::styled_record_evaluation::Evaluations;
-use crate::utils::{
-    get_str_by_property_key, get_string_by_literal_expression, readable_code, unwrap_syntax_only,
-};
+use crate::utils::{get_str_by_property_key, readable_code, unwrap_syntax_only};
+
+#[path = "styled_record_value.rs"]
+mod value;
 
 struct Entry<'a> {
     key: String,
@@ -39,7 +40,7 @@ pub(super) fn prepare<'a>(
         affected: false,
     };
     let entries = preparation.record(rules, &preparation.reads.boolean(true))?;
-    if !preparation.affected {
+    if !preparation.affected && preparation.reads.bindings.is_empty() {
         return None;
     }
     Some(PreparedRecord {
@@ -192,90 +193,5 @@ impl<'a> Preparation<'_, 'a> {
             oxc_allocator::Vec::from_iter_in(properties, self.reads.builder),
             self.reads.builder,
         )
-    }
-
-    fn value(&mut self, source: &Expression<'a>, guard: &Expression<'a>) -> Option<Expression<'a>> {
-        let source = unwrap_syntax_only(source);
-        let builder = self.reads.builder;
-        if get_string_by_literal_expression(source).is_some() {
-            return Some(source.clone_in(builder.allocator()));
-        }
-        match source {
-            Expression::ObjectExpression(_) => {
-                let entries = self.record(source, guard)?;
-                Some(self.materialize(source.span(), entries))
-            }
-            Expression::ConditionalExpression(choice) => {
-                let test = self.reads.capture(&choice.test, guard);
-                let yes_guard = self.reads.choose(guard, &test, &self.reads.boolean(false));
-                let no_guard = self.reads.choose(
-                    guard,
-                    &self.reads.choose(
-                        &test,
-                        &self.reads.boolean(false),
-                        &self.reads.boolean(true),
-                    ),
-                    &self.reads.boolean(false),
-                );
-                let yes = self.value(&choice.consequent, &yes_guard)?;
-                let no = self.value(&choice.alternate, &no_guard)?;
-                Some(self.reads.choose(&test, &yes, &no))
-            }
-            Expression::LogicalExpression(logical) => {
-                let left = self.reads.capture(&logical.left, guard);
-                let takes_right = match logical.operator {
-                    LogicalOperator::And => left.clone_in(builder.allocator()),
-                    LogicalOperator::Or => self.reads.choose(
-                        &left,
-                        &self.reads.boolean(false),
-                        &self.reads.boolean(true),
-                    ),
-                    LogicalOperator::Coalesce => Expression::new_binary_expression(
-                        source.span(),
-                        left.clone_in(builder.allocator()),
-                        BinaryOperator::Equality,
-                        Expression::new_null_literal(source.span(), builder),
-                        builder,
-                    ),
-                };
-                let right_guard =
-                    self.reads
-                        .choose(guard, &takes_right, &self.reads.boolean(false));
-                let right = self.value(&logical.right, &right_guard)?;
-                Some(Expression::new_logical_expression(
-                    source.span(),
-                    left,
-                    logical.operator,
-                    right,
-                    builder,
-                ))
-            }
-            Expression::ArrayExpression(array) => {
-                let mut array = array.clone_in(builder.allocator());
-                for element in &mut array.elements {
-                    if let Some(value) = element.as_expression_mut() {
-                        *value = self.value(value, guard)?;
-                    } else if matches!(
-                        element,
-                        oxc_ast::ast::ArrayExpressionElement::SpreadElement(_)
-                    ) {
-                        return None;
-                    }
-                }
-                Some(Expression::ArrayExpression(array))
-            }
-            Expression::NullLiteral(_)
-            | Expression::BigIntLiteral(_)
-            | Expression::RegExpLiteral(_)
-            | Expression::FunctionExpression(_)
-            | Expression::ArrowFunctionExpression(_)
-            | Expression::ClassExpression(_) => Some(source.clone_in(builder.allocator())),
-            Expression::Identifier(identifier)
-                if matches!(identifier.name.as_str(), "undefined" | "NaN" | "Infinity") =>
-            {
-                Some(source.clone_in(builder.allocator()))
-            }
-            _ => Some(self.reads.capture(source, guard)),
-        }
     }
 }

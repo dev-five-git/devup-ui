@@ -26,6 +26,7 @@ fn extract_stylesheet(code: &str) -> String {
 #[test]
 #[serial]
 fn font_faces_extract_through_the_library() {
+    let _state = extractor::test_state::TestStateGuard::new();
     let output = extract_stylesheet(
         r"const body = fontFace({ src: 'local(a)' }, 'Body')
 const icons = fontFace([{ src: 'local(b)' }, {}])
@@ -42,6 +43,7 @@ export const text = style({ fontFamily: body, content: icons })",
 #[test]
 #[serial]
 fn an_unreadable_var_declaration_is_reported() {
+    let _state = extractor::test_state::TestStateGuard::new();
     let code = "import { createVar } from '@devup-ui/react'\nexport const v = createVar({ syntax: Symbol() })";
     let error = extract(
         "broken.css.ts",
@@ -63,6 +65,7 @@ fn an_unreadable_var_declaration_is_reported() {
 #[test]
 #[serial]
 fn vars_themes_and_layers_extract_through_the_library() {
+    let _state = extractor::test_state::TestStateGuard::new();
     let output = extract_stylesheet(
         r"const plain = createVar()
 const typed = createVar({ syntax: ['<length>', '<percentage>'], inherits: false, initialValue: '0px' }, 'size')

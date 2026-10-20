@@ -321,15 +321,43 @@ pub fn execute_stylesheet(
     Ok((collected, imports))
 }
 
+type ImportedRuns = FxHashMap<String, (usize, String, String, CollectedStyles)>;
+
+#[derive(Debug)]
+pub(crate) struct CacheGuard {
+    imported: ImportedRuns,
+    stripped: FxHashMap<String, (String, String)>,
+    same_thread: std::marker::PhantomData<Rc<()>>,
+}
+
+impl Default for CacheGuard {
+    fn default() -> Self {
+        Self {
+            imported: IMPORTED_RUNS.with_borrow_mut(std::mem::take),
+            stripped: STRIPPED.with_borrow_mut(std::mem::take),
+            same_thread: std::marker::PhantomData,
+        }
+    }
+}
+
+impl Drop for CacheGuard {
+    fn drop(&mut self) {
+        IMPORTED_RUNS.with_borrow_mut(|runs| *runs = std::mem::take(&mut self.imported));
+        STRIPPED.with_borrow_mut(|stripped| *stripped = std::mem::take(&mut self.stripped));
+    }
+}
+
 thread_local! {
     /// What running each stylesheet other evaluations import last collected,
     /// with its file number, source and the script run: every module importing
     /// it reuses one run of the same script
-    static IMPORTED_RUNS: RefCell<FxHashMap<String, (usize, String, String, CollectedStyles)>> =
+    static IMPORTED_RUNS: RefCell<ImportedRuns> =
         RefCell::default();
     /// The TypeScript each file last had stripped, with its source
     static STRIPPED: RefCell<FxHashMap<String, (String, String)>> = RefCell::default();
 }
+
+pub(crate) mod test_state;
 
 /// A name a top-level variable declaration of the stylesheet binds
 struct Binding {
@@ -597,7 +625,7 @@ pub(crate) fn strip_typescript(code: &str, filename: &str) -> String {
 
 fn strip(code: &str, filename: &str) -> String {
     let allocator = Allocator::default();
-    let source_type = SourceType::from_path(filename).unwrap_or_else(|_| SourceType::ts());
+    let source_type = crate::parsing::source_type(filename).unwrap_or_else(|_| SourceType::ts());
     let mut program = Parser::new(&allocator, code, source_type).parse().program;
     let scoping = SemanticBuilder::new()
         .with_enum_eval(true)
@@ -1536,6 +1564,7 @@ mod tests {
 
     #[test]
     fn test_strip_typescript_once_per_source() {
+        let _state = CacheGuard::default();
         let stripped = strip_typescript("export const a: number = 1;", "strip-cache.ts");
         assert_eq!(
             strip_typescript("export const a: number = 1;", "strip-cache.ts"),
@@ -1574,6 +1603,7 @@ mod tests {
     #[test]
     #[serial]
     fn test_stylesheet_import_errors() {
+        let _state = crate::test_state::TestStateGuard::new();
         assert_eq!(
             execute_stylesheet(
                 "import { b } from './b'\nexport const x = b",
@@ -1664,6 +1694,7 @@ mod tests {
     #[test]
     #[serial]
     fn test_names_follow_the_values_variables_hold() {
+        let _state = crate::test_state::TestStateGuard::new();
         assert_eq!(
             generate_with(
                 "export const sizes = { sm: style({ padding: 1 }), lg: style({ padding: 2 }) }
@@ -1699,6 +1730,7 @@ export const animated = css({"animationName":"__style_0__"})"#
     #[test]
     #[serial]
     fn test_exported_values_become_code() {
+        let _state = crate::test_state::TestStateGuard::new();
         assert_eq!(
             generate(
                 "const box = style({ color: 'red' })
@@ -1743,6 +1775,7 @@ export const symbol = Symbol('x')"#
     #[test]
     #[serial]
     fn test_style_variants_are_styles() {
+        let _state = crate::test_state::TestStateGuard::new();
         assert_eq!(
             generate(
                 "export const tone = styleVariants({ primary: { color: 'red' }, 0: { color: 'blue' }, [Symbol('s')]: { color: 'green' } })
@@ -1768,6 +1801,7 @@ export const none = {}"#
     #[test]
     #[serial]
     fn test_composition_keeps_later_declarations() {
+        let _state = crate::test_state::TestStateGuard::new();
         assert_eq!(
             generate(
                 "const first = style({ color: 'red', margin: 1 })
@@ -1786,6 +1820,7 @@ const second = css({"color":"blue"})"#
     #[test]
     #[serial]
     fn test_composition_is_transitive() {
+        let _state = crate::test_state::TestStateGuard::new();
         assert_eq!(
             generate(
                 "const a = style({ color: 'red' })
@@ -1813,6 +1848,7 @@ export const hover = css({"selectors":{".f0_a:hover &":{"color":"blue"}}})"#
     #[test]
     #[serial]
     fn test_font_faces() {
+        let _state = crate::test_state::TestStateGuard::new();
         assert_eq!(
             generate(
                 "export const body = fontFace({ src: 'local(a)' }, 'Body Font')
@@ -1832,6 +1868,7 @@ export const icons = "font-0-1""#
     #[test]
     #[serial]
     fn test_vars_follow_vanilla_extract() {
+        let _state = crate::test_state::TestStateGuard::new();
         assert_eq!(
             generate(
                 "export const plain = createVar()
@@ -1862,6 +1899,7 @@ export const none = """#
     #[test]
     #[serial]
     fn test_layers_and_containers() {
+        let _state = crate::test_state::TestStateGuard::new();
         assert_eq!(
             generate(
                 "export const reset = layer()
@@ -1891,6 +1929,7 @@ export const anonymous = "container-0-5""#
     #[test]
     #[serial]
     fn test_themes_and_contracts() {
+        let _state = crate::test_state::TestStateGuard::new();
         assert_eq!(
             generate(
                 "const contract = createThemeContract({ color: { brand: null, text: null }, list: [1], flag: true })
@@ -1931,6 +1970,7 @@ export const notObject = ["theme-0-9", {}]"#
     #[test]
     #[serial]
     fn test_nothing_collected() {
+        let _state = crate::test_state::TestStateGuard::new();
         assert_eq!(generate("const x = 1"), "");
         reset_file_map();
         assert!(execute_vanilla_extract("throw new Error('x')", PACKAGE, "test.css.ts").is_err());
@@ -1974,6 +2014,7 @@ export const notObject = ["theme-0-9", {}]"#
     #[test]
     #[serial]
     fn test_referenced_keyframes() {
+        let _state = crate::test_state::TestStateGuard::new();
         reset_file_map();
         let collected = execute_vanilla_extract(
             "import { style, keyframes } from '@devup-ui/react'
