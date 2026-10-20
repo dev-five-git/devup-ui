@@ -2,6 +2,27 @@ use super::*;
 use serial_test::serial;
 use std::collections::{HashMap, HashSet};
 
+#[rstest::rstest]
+#[case(None, ["du-a", "du-b", "du-a"])]
+#[case(Some("motion.tsx"), ["du-a-a", "du-a-b", "du-a-a"])]
+#[serial]
+fn ordinary_debug_keyframes_use_the_same_short_counters(
+    #[case] filename: Option<&str>,
+    #[case] expected: [&str; 3],
+) {
+    for debug in [false, true] {
+        // Given
+        let _state = test_state::TestStateGuard::new();
+        set_prefix(Some("du-".into()));
+        debug::set_debug(debug);
+        // When
+        let names =
+            ["frames", "other", "frames"].map(|key| keyframes_to_keyframes_name(key, filename));
+        // Then
+        assert_eq!(names, expected);
+    }
+}
+
 fn setup() {
     class_map::reset_class_map();
     file_map::reset_file_map();

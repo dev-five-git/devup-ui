@@ -1,0 +1,8 @@
+{
+  "changes": {
+    "bindings/devup-ui-wasm/package.json": "Patch",
+    "packages/components/package.json": "Patch"
+  },
+  "note": "Canonicalize complete exported property records, use portable content keyframe identities and short debug keyframe counters, and advance atomNamingVersion to 3. No new build errors.",
+  "date": "2026-10-20T00:00:00.000Z"
+}

@@ -390,7 +390,6 @@ fn debug_configuration_stays_unchanged_when_reserving() -> TestResult {
     // Given
     let (_reset, option) = setup(true);
     css::debug::set_debug(true);
-    let before = css::class_map::get_class_map();
     // When
     reserve_class_slots_internal(
         &[input("z.tsx", B), input("a.tsx", A)],
@@ -399,13 +398,16 @@ fn debug_configuration_stays_unchanged_when_reserving() -> TestResult {
     );
     // Then
     assert!(css::debug::is_debug());
-    assert_eq!(css::class_map::get_class_map(), before);
+    let reserved = css::class_map::get_class_map();
+    assert_eq!(reserved[""].len(), 2);
     assert_eq!(get_unreserved_class_slot_count(), 0);
     assert!(
         transform(&input("a.tsx", A), &option)?
             .code
             .contains("color-0-red")
     );
+    assert_eq!(css::class_map::get_class_map(), reserved);
+    assert_eq!(get_unreserved_class_slot_count(), 0);
     Ok(())
 }
 
