@@ -101,10 +101,23 @@ try {
     ['node', [process.execPath, '--version']],
     ['bun', ['bun', '--version']],
   ]) {
-    assert.equal(run(name, command).status, 0, `${name}: version check failed`)
+    const version = run(name, command)
+    assert.equal(version.status, 0, `${name}: version check failed`)
+    if (name === 'bun') evidence.bun = version.stdout.trim()
   }
-  const bun = run('bun-path', ['bun', '-p', 'process.execPath'])
+  const bun = run('bun-path', [
+    'bun',
+    '-p',
+    'JSON.stringify({execPath:process.execPath,version:process.versions.bun})',
+  ])
   assert.equal(bun.status, 0)
+  const bunRuntime = JSON.parse(bun.stdout)
+  assert.equal(
+    bunRuntime.version,
+    evidence.bun,
+    'Bun runtime identity mismatch',
+  )
+  assert.ok(isAbsolute(bunRuntime.execPath), 'Absolute Bun executable required')
   const target = join(output, 'build-target')
   const build = run(
     'build',
@@ -139,7 +152,7 @@ try {
   }
   assert.equal(evidence.image.sha256, evidence.image.builtSha256)
   let denominator
-  for (const name of ['negative', 'positive', 'bun-positive']) {
+  for (const name of ['negative', 'positive']) {
     const negative = name === 'negative'
     const controlTarget = join(output, `${name}-target`)
     const reports = join(output, name)
@@ -165,8 +178,7 @@ try {
         ...env,
         W74A_ADDON: image,
         W74A_CONTROL: negative ? 'negative' : 'positive',
-        W74A_HOST:
-          name === 'bun-positive' ? bun.stdout.trim() : process.execPath,
+        W74A_HOST: process.execPath,
       },
     )
     const profileRoot = join(controlTarget, 'tarpaulin', 'profraws')
@@ -203,6 +215,41 @@ try {
     assert.equal(hash(image), evidence.image.sha256)
     save(`${name}.inventory.json`, entry)
   }
+  assert.deepEqual(hashes(), original, 'Inputs changed before Bun execution')
+  assert.equal(hash(image), evidence.image.sha256)
+  const bunResult = run(
+    'bun-positive',
+    [bunRuntime.execPath, join(scratch, 'host.cjs')],
+    {
+      ...env,
+      W74A_CONTROL: 'positive',
+      W74A_ADDON: image,
+      LLVM_PROFILE_FILE: join(output, 'bun-execution_%m_%p.profraw'),
+    },
+  )
+  assert.equal(
+    bunResult.status,
+    0,
+    'Bun: positive host must exit naturally with 0',
+  )
+  const bunHost = JSON.parse(
+    bunResult.stdout.match(/\{"event":"W74a.host"[^\n]*\}/)?.[0] ?? 'null',
+  )
+  assert.equal(bunHost.requestedAddon, image)
+  assert.equal(bunHost.loadedAddon, image)
+  assert.equal(bunHost.control, 'positive')
+  evidence.bunExecution = {
+    kind: 'real-addon execution only; not Rust coverage',
+    runtime: bunRuntime,
+    status: bunResult.status,
+    host: bunHost,
+    sourceHashes: hashes(),
+    imageSha256: hash(image),
+    builtSha256: hash(built),
+  }
+  assert.deepEqual(evidence.bunExecution.sourceHashes, original)
+  assert.equal(evidence.bunExecution.imageSha256, evidence.image.sha256)
+  assert.equal(evidence.bunExecution.builtSha256, evidence.image.builtSha256)
   evidence.verdict = 'SCRATCH CONTROLS PASS; production coverage unproved'
 } finally {
   save('evidence.json', evidence)

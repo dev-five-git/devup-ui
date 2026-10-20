@@ -78,7 +78,7 @@ jobs:
         run: |
           cargo +stable fmt --all -- --check 2>&1 | tee "$W74A_EVIDENCE/fmt.log"
           cargo +stable clippy --locked --workspace --all-targets --all-features --target-dir "$RUNNER_TEMP/W74a-clippy-target" --jobs 2 -- -D warnings 2>&1 | tee "$W74A_EVIDENCE/clippy.log"
-      - name: Serial negative and live Node/Bun positive controls
+      - name: Serial Node coverage controls and direct Bun addon execution
         run: node run.mjs "$W74A_EVIDENCE" 2>&1 | tee "$W74A_EVIDENCE/runner.log"
       - name: Preserve raw SPIKE evidence even on failure
         if: always()
