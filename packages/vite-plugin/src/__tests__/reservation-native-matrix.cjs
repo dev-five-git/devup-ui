@@ -5,6 +5,7 @@ const { observe } = require('./reservation-native-observer.cjs')
 const { fixture } = require('./reservation-native-fixture.cjs')
 const { runServer } = require('./reservation-native-server.cjs')
 const { text } = require('./reservation-native-receipt.cjs')
+const { checkHoist } = require('./reservation-native-hoist-checks.cjs')
 
 const args = process.argv.slice(2)
 const root = text(args[0]),
@@ -16,7 +17,7 @@ const root = text(args[0]),
 process.chdir(root)
 const project = fixture(root, scenario, mode)
 const telemetry = observe()
-/** @type {{DevupUI:(options:{distDir:string,cssDir:string,devupFile:string,singleCss:boolean,include:string[]})=>import('vite').PluginOption}} */
+/** @type {{DevupUI:(options:{distDir:string,cssDir:string,devupFile:string,singleCss:boolean,include:string[],atomHoist?:number})=>import('vite').PluginOption}} */
 const { DevupUI } = require('../../dist/' + 'index.cjs')
 const gate = Promise.withResolvers()
 telemetry.onExtract((id) => {
@@ -111,6 +112,7 @@ async function main() {
         devupFile: resolve(root, 'devup.json'),
         singleCss: single === 'single',
         include: ['accepted'],
+        ...(scenario === 'hoist-lazy' ? { atomHoist: 3 } : {}),
       }),
     ],
     build: {
@@ -213,6 +215,9 @@ async function main() {
   )
   assert(extractions.some((row) => row.updatedBaseStyle || row.cssFile))
   assert.equal(telemetry.events[0], 'reserve')
+  if (scenario === 'hoist') checkHoist({ root, mode, single, http, telemetry })
+  if (scenario === 'hoist-lazy')
+    checkHoist({ root, mode, single, http, telemetry, lazy: true })
   if (scenario === 'environments' || scenario === 'serve-ssr') {
     const rows = reservations[0]?.rows.map((row) => row[0])
     assert(rows)

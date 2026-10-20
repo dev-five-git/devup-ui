@@ -240,9 +240,8 @@ export interface DevupUIPluginOptions {
   prefix?: string
   shorthands?: CustomShorthands
   /**
-   * Reserved for route-aware atom hoisting after PR B adds shared class-slot
-   * reservation. Until then, Vite keeps per-file names and warns
-   * once for explicit finite positive requests. Ignored in singleCss mode.
+   * Hoist canonical buckets reached by at least this many module boundaries.
+   * Defaults to 2; 0 disables. Frozen for this build; ignored in singleCss mode.
    */
   atomHoist?: number
   /**
@@ -300,23 +299,13 @@ export function DevupUI({
   singleCss = false,
   prefix,
   shorthands,
-  atomHoist,
+  atomHoist = 2,
   importAliases: userImportAliases,
 }: Partial<DevupUIPluginOptions> = {}): PluginOption {
   // A build starts from its own options: whatever an earlier build in this
   // process left in the engine (prefix, hoisting, routes, buckets, numbers,
   // styles) is gone unless another build is still running.
   const endBuild = beginBuild({ resetBuildState })
-  if (
-    !singleCss &&
-    atomHoist !== undefined &&
-    Number.isFinite(atomHoist) &&
-    atomHoist > 0
-  ) {
-    console.warn(
-      '[devup-ui] Vite atomHoist is unavailable until shared class-slot reservation lands in PR B; keeping per-file names, while existing shared slots remain arrival-ordered.',
-    )
-  }
   registerShorthands(shorthands ?? {})
   setDebug(debug)
   setPrefix(prefix ?? null)
@@ -326,6 +315,7 @@ export function DevupUI({
     include,
     importAliases,
     singleCss,
+    atomHoist,
     cssDir,
     distDir,
   })

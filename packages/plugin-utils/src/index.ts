@@ -41,6 +41,7 @@ export {
   type ReservationInput,
   type ReservationInventory,
 } from './reservation-discovery'
+export { reservationGraph } from './reservation-graph'
 export {
   createNodeModulesExcludeRegex,
   createThemeInterfaceArgs,

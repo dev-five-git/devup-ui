@@ -105,6 +105,8 @@ function run(
 
 for (const scenario of [
   'default',
+  'hoist',
+  'hoist-lazy',
   'percent',
   'devfalse',
   'base',

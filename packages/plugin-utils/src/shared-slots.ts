@@ -25,6 +25,8 @@ export interface ReservationEngine {
 }
 
 export type ReservationBatchOptions = {
+  /** Synchronous metadata installation after memoization, before scratch extraction. */
+  readonly beforeReserve?: (inventory: ReservationInventory) => void
   readonly singleCss: boolean
   readonly importMainCssInCode: boolean
   readonly importMainCssInCss: boolean
@@ -134,6 +136,7 @@ export function createSharedSlotReservation(
         sameRows(rows, committed.rows)
       )
         return false
+      options.beforeReserve?.(inventory)
       engine.reserveClassSlots(
         rows,
         discovery.package,

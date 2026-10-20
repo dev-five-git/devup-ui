@@ -2,11 +2,21 @@ import { existsSync } from 'node:fs'
 import { dirname, relative, resolve } from 'node:path'
 
 import {
+  buildCanonicalMap,
+  computeFileReach,
+  computeReachableFiles,
   createSharedSlotReservation,
   type HtmlReservationEntry,
+  planAtomHoist,
+  reservationGraph,
   type WasmImportAliases,
 } from '@devup-ui/plugin-utils'
-import { reserveClassSlots } from '@devup-ui/wasm'
+import {
+  importCanonicalMap,
+  importFileRoutes,
+  reserveClassSlots,
+  setAtomHoist,
+} from '@devup-ui/wasm'
 
 import {
   physicalEnvironmentEntries,
@@ -19,6 +29,7 @@ export function createViteReservation(options: {
   readonly include: readonly string[]
   readonly importAliases: WasmImportAliases
   readonly singleCss: boolean
+  readonly atomHoist?: number
   readonly cssDir: string
   readonly distDir: string
 }) {
@@ -33,6 +44,7 @@ export function createViteReservation(options: {
   let pending: Promise<void> | undefined
   let dependencies: readonly string[] = []
   let watch: ((paths: readonly string[]) => void) | undefined
+  let installed = false
   function invalidate(file?: string, timestamp?: number) {
     if (file) {
       const path = resolve(file.split('?')[0] ?? file)
@@ -90,6 +102,47 @@ export function createViteReservation(options: {
           toId: (path) => path.replaceAll('\\', '/'),
         },
         {
+          beforeReserve(inventory) {
+            if (installed) return
+            const threshold = options.atomHoist ?? 2
+            if (
+              !options.singleCss &&
+              Number.isFinite(threshold) &&
+              threshold > 0
+            ) {
+              const graph = reservationGraph(inventory)
+              const root = cwd ?? process.cwd()
+              const graphOptions = {
+                graph,
+                cwd: root,
+                srcDir: root,
+                keyBy: 'absolute' as const,
+              }
+              const canonical = buildCanonicalMap(graphOptions)
+              const entries = inventory.resolutions.entries.map((entry) =>
+                resolve(entry),
+              )
+              if (entries.length) {
+                const reachable = computeReachableFiles({
+                  graph,
+                  srcDir: root,
+                  entries,
+                })
+                entries.push(
+                  ...reachable.filter((file) => graph.dynamicTargets.has(file)),
+                )
+              }
+              const reach = computeFileReach({ ...graphOptions, entries })
+              const plan = planAtomHoist(canonical, reach, threshold)
+              importCanonicalMap(canonical)
+              if (plan) {
+                importFileRoutes(plan.reachByBucket)
+                setAtomHoist(plan.threshold)
+              }
+            }
+            // Scratch may freeze even when the engine later throws. Never reinstall.
+            installed = true
+          },
           singleCss: options.singleCss,
           importMainCssInCode: true,
           importMainCssInCss: false,

@@ -1,4 +1,10 @@
-const { mkdirSync, writeFileSync, rmSync, symlinkSync } = require('node:fs')
+const {
+  existsSync,
+  mkdirSync,
+  writeFileSync,
+  rmSync,
+  symlinkSync,
+} = require('node:fs')
 const { dirname, join } = require('node:path')
 
 /** @param {string} root @param {string} path @param {string} code */
@@ -68,6 +74,37 @@ function fixture(root, scenario, mode) {
   let base = '/'
   let paths = ['/physical/A.tsx', '/physical/B.tsx']
   switch (scenario) {
+    case 'hoist-lazy':
+      paths = require('./reservation-native-lazy-fixture.cjs').lazyFixture(
+        root,
+        write,
+      )
+      break
+    case 'hoist':
+      if (!existsSync(join(root, 'node_modules/react')))
+        symlinkSync(
+          dirname(
+            require.resolve('react/package.json', {
+              paths: [join(__dirname, '../../../react')],
+            }),
+          ),
+          join(root, 'node_modules/react'),
+          'junction',
+        )
+      write(
+        'shared/S.tsx',
+        "import {styled} from '@devup-ui/react'; export const Shared=styled('div',{color:'orchid',p:7})",
+      )
+      for (const [name, opacity] of [
+        ['A', '.25'],
+        ['B', '.75'],
+      ])
+        write(
+          `physical/${name}.tsx`,
+          `import {Box} from '@devup-ui/react'; import {Shared} from '../shared/S'; export const ${name}=(value:string)=><><Shared/><Box opacity={${opacity}} w={value}/></>; console.log(${name})`,
+        )
+      paths.push('/shared/S.tsx')
+      break
     case 'percent':
     case 'devfalse':
       write('physical/© A.tsx', style('A', 'red'))
