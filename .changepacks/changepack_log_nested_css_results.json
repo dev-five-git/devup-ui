@@ -1,0 +1,7 @@
+{
+  "changes": {
+    "bindings/devup-ui-wasm/package.json": "Patch"
+  },
+  "note": "Statically known css() results used as nested rule values expand into their source rules under each top-level comma-separated selector, preserving responsive values, nested selectors, layers and style order without runtime styling. Unknown rule sources retain a located build error naming the value and its static-value requirement.",
+  "date": "2026-10-01T00:00:00.000Z"
+}

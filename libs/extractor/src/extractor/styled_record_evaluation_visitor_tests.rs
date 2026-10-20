@@ -9,7 +9,8 @@ use super::visit_style_expressions;
 use crate::{
     ExtractStyleProp, ExtractStyleValue,
     extract_style::{
-        extract_dynamic_style::ExtractDynamicStyle, extract_static_style::ExtractStaticStyle,
+        extract_dynamic_style::ExtractDynamicStyle, extract_layer_order::ExtractLayerOrder,
+        extract_static_style::ExtractStaticStyle,
     },
     utils::readable_code,
 };
@@ -231,17 +232,23 @@ fn payloads_are_rewritten_when_style_expressions_are_visited(#[case] container: 
     }
 }
 
-#[test]
-fn metadata_is_unchanged_when_style_expressions_are_visited() {
-    // Given: static declarations and unreadable diagnostics are not expressions.
+#[rstest]
+#[case::static_declaration(ExtractStyleValue::Static(ExtractStaticStyle::new(
+    "--authored",
+    "__devupRecord0",
+    3,
+    None,
+)))]
+#[case::layer_order(ExtractStyleValue::LayerOrder(ExtractLayerOrder {
+    file: "__devupRecord0.tsx".to_string(),
+    layers: vec!["__devupRecord0.zeta".to_string(), "__devupRecord0.alpha".to_string()],
+}))]
+fn metadata_is_unchanged_when_style_expressions_are_visited(
+    #[case] static_value: ExtractStyleValue,
+) {
+    // Given: metadata and unreadable diagnostics are not expressions, even with capture-like text.
     let allocator = Allocator::default();
     let builder = AstBuilder::new(&allocator);
-    let static_value = ExtractStyleValue::Static(ExtractStaticStyle::new(
-        "--authored",
-        "__devupRecord0",
-        3,
-        None,
-    ));
     let mut style = ExtractStyleProp::StaticArray(vec![
         ExtractStyleProp::Static(static_value.clone()),
         ExtractStyleProp::Unreadable {

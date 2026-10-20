@@ -7,6 +7,10 @@ mod css_prop_slot_members;
 mod css_prop_slot_wrapped_keys;
 mod css_prop_slots;
 mod execution;
+mod finite_array_length;
+mod finite_literal_keys;
+mod finite_lookup;
+mod finite_selection;
 mod forward_ref_captures;
 mod lowering;
 
@@ -35,9 +39,8 @@ fn parse<'a>(arena: &'a Allocator, filename: &str, code: &'a str) -> Program<'a>
         Err(error) => panic!("{filename}: {error}"),
     };
     let parsed = Parser::new(arena, code, source_type).parse();
-    assert_eq!(
-        parsed.diagnostics.len(),
-        0,
+    assert!(
+        !crate::parsing::goal_policy::has_diagnostics(&parsed),
         "{filename}\n{code}\n{:?}",
         parsed.diagnostics
     );
