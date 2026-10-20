@@ -8,12 +8,14 @@ use rstest::rstest;
 use super::*;
 
 fn expression<'a>(builder: &AstBuilder<'a>, source: &str) -> Expression<'a> {
-    let parsed = Parser::new(builder.allocator(), source, SourceType::mjs()).parse();
-    assert_eq!(parsed.diagnostics.len(), 0);
-    let Statement::ExpressionStatement(statement) = &parsed.program.body[0] else {
-        panic!("render fixture must be an expression");
-    };
-    unwrap_syntax_only(&statement.expression).clone_in(builder.allocator())
+    let expression = Parser::new(
+        builder.allocator(),
+        source.trim_end_matches(';'),
+        SourceType::mjs(),
+    )
+    .parse_expression()
+    .unwrap_or_else(|error| panic!("invalid render fixture: {error:?}"));
+    unwrap_syntax_only(&expression).clone_in(builder.allocator())
 }
 
 fn component<'a>(

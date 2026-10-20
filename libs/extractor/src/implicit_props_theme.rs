@@ -13,6 +13,7 @@ use crate::utils::{get_string_by_literal_expression, unwrap_syntax_only};
 
 #[path = "implicit_props_theme_scope.rs"]
 mod scope;
+use super::theme_callback::{Body, Callback};
 use scope::Bindings;
 
 #[cfg(test)]
@@ -21,11 +22,10 @@ mod tests;
 
 /// These roots deliberately do not participate in static theme-path mapping.
 pub(crate) fn reads(expr: &Expression<'_>) -> bool {
-    let (params, arguments) = match unwrap_syntax_only(expr) {
-        Expression::FunctionExpression(function) => (&function.params, true),
-        Expression::ArrowFunctionExpression(arrow) => (&arrow.params, false),
-        _ => return false,
+    let Some(Callback { params, body }) = Callback::read(unwrap_syntax_only(expr)) else {
+        return false;
     };
+    let arguments = matches!(body, Body::Function(_));
     let rest = if params.items.is_empty() {
         params
             .rest
@@ -46,17 +46,16 @@ pub(crate) fn reads(expr: &Expression<'_>) -> bool {
     bindings.visit_formal_parameters(params);
     reads.roots.arguments &= !bindings.arguments;
     reads.visit_formal_parameters(params);
-    match unwrap_syntax_only(expr) {
-        Expression::FunctionExpression(function) => {
-            if let Some(body) = &function.body {
+    match body {
+        Body::Function(body) => {
+            if let Some(body) = body {
                 reads.visit_root_body(body);
             }
         }
-        Expression::ArrowFunctionExpression(arrow) => match &arrow.body {
+        Body::Arrow(body) => match body {
             ArrowFunctionBody::FunctionBody(body) => reads.visit_root_body(body),
             body => reads.visit_arrow_function_body(body),
         },
-        _ => {}
     }
     reads.found
 }

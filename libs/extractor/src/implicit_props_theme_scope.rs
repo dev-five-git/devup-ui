@@ -1,8 +1,8 @@
 //! Binding ownership for the implicit callback-props detector.
 
 use oxc_ast::ast::{
-    ArrowFunctionExpression, BindingIdentifier, Class, Expression, Function, Statement,
-    VariableDeclaration, VariableDeclarationKind,
+    BindingIdentifier, Class, Expression, Function, Statement, VariableDeclaration,
+    VariableDeclarationKind,
 };
 use oxc_ast_visit::Visit;
 use oxc_syntax::scope::ScopeFlags;
@@ -89,6 +89,5 @@ impl<'a> Visit<'a> for FunctionVars<'_> {
 
     fn visit_expression(&mut self, _: &Expression<'a>) {}
     fn visit_function(&mut self, _: &Function<'a>, _: ScopeFlags) {}
-    fn visit_arrow_function_expression(&mut self, _: &ArrowFunctionExpression<'a>) {}
     fn visit_class(&mut self, _: &Class<'a>) {}
 }

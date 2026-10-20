@@ -14,7 +14,8 @@ pub(super) fn error(style: &Expression<'_>) -> Option<(u32, String)> {
     let Expression::FunctionExpression(function) = unwrap_syntax_only(style) else {
         return None;
     };
-    let name = function.id.as_ref()?.name.as_str();
+    let binding = function.id.as_ref()?;
+    let name = binding.name.as_str();
     // A fresh clone keeps semantic analysis from replacing the enclosing module's IDs.
     let allocator = Allocator::default();
     let builder = AstBuilder::new(&allocator);
@@ -37,14 +38,10 @@ pub(super) fn error(style: &Expression<'_>) -> Option<(u32, String)> {
         &builder,
     );
     let semantic = SemanticBuilder::new().build(&program).semantic;
-    let Statement::ExpressionStatement(statement) = program.body.first()? else {
-        return None;
-    };
-    let Expression::FunctionExpression(function) = unwrap_syntax_only(&statement.expression) else {
-        return None;
-    };
-    let symbol = function.id.as_ref()?.symbol_id.get()?;
     let scoping = semantic.scoping();
+    let symbol = scoping.symbol_ids().find(|symbol| {
+        scoping.symbol_span(*symbol) == binding.span && scoping.symbol_name(*symbol) == name
+    })?;
     scoping
         .get_resolved_reference_ids(symbol)
         .iter()

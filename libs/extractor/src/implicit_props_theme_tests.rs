@@ -6,6 +6,10 @@ use rstest::rstest;
 
 #[rstest]
 #[case::catch_outside("(...all)=>{try{}catch(all){}return all[0].theme;}", true)]
+#[case::rest_array("(...[props])=>props.theme", false)]
+#[case::rest_object("(...{first})=>first.theme", false)]
+#[case::other_argument("function(){return arguments[1].theme;}", false)]
+#[case::dynamic_argument("(...all)=>all[index].theme", false)]
 #[case::catch_inside("(...all)=>{try{}catch(all){return all[0].theme;}}", false)]
 #[case::catch_pattern("(...all)=>{try{}catch({all}){return all[0].theme;}}", false)]
 #[case::catch_default_outer("(...all)=>{try{}catch({x=all[0].theme}){}}", true)]

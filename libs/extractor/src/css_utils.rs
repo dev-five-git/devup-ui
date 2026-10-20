@@ -28,6 +28,9 @@ use oxc_ast::builder::AstBuilder;
 #[path = "implicit_props_theme.rs"]
 mod implicit_props_theme;
 
+#[path = "theme_callback.rs"]
+mod theme_callback;
+
 pub(crate) use implicit_props_theme::reads as reads_implicit_props_theme;
 
 use crate::extract_style::{
@@ -176,10 +179,9 @@ pub(crate) fn reads_unmapped_theme(expr: &Expression<'_>) -> bool {
     if reads_implicit_props_theme(expr) {
         return true;
     }
-    let params = match expr {
-        Expression::ArrowFunctionExpression(arrow) => &arrow.params,
-        Expression::FunctionExpression(function) => &function.params,
-        _ => return false,
+    let Some(theme_callback::Callback { params, body }) = theme_callback::Callback::read(expr)
+    else {
+        return false;
     };
     let Some(param) = params.items.first() else {
         return false;
@@ -192,8 +194,8 @@ pub(crate) fn reads_unmapped_theme(expr: &Expression<'_>) -> bool {
     }
     let mut reads = ThemeReads { root, found: false };
     reads.visit_formal_parameters(params);
-    match expr {
-        Expression::ArrowFunctionExpression(arrow) => match &arrow.body {
+    match body {
+        theme_callback::Body::Arrow(body) => match body {
             oxc_ast::ast::ArrowFunctionBody::FunctionBody(body) => reads.visit_function_body(body),
             body => {
                 if let Some(expression) = body.as_expression() {
@@ -201,12 +203,11 @@ pub(crate) fn reads_unmapped_theme(expr: &Expression<'_>) -> bool {
                 }
             }
         },
-        Expression::FunctionExpression(function) => {
-            if let Some(body) = &function.body {
+        theme_callback::Body::Function(body) => {
+            if let Some(body) = body {
                 reads.visit_function_body(body);
             }
         }
-        _ => {}
     }
     reads.found
 }

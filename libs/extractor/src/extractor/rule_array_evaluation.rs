@@ -34,6 +34,10 @@ pub(crate) fn composes_array_under_condition(expression: &Expression<'_>) -> boo
     }
 }
 
+#[cfg(test)]
+#[path = "rule_array_evaluation_tests.rs"]
+mod tests;
+
 /// The caller first checks the original composition, so captures cannot turn a
 /// refused call, spread or controller into an accepted identifier.
 pub(crate) fn prepare<'a>(

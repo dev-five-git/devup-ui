@@ -82,50 +82,35 @@ pub(super) fn prepare<'a>(
                 .is_some_and(rule_array_evaluation::composes_array_under_condition)
         });
     if admitted && capture {
-        let prepared = if callbacks {
-            let mut prepared = arguments.clone_in_with_semantic_ids(builder.allocator());
-            for (argument, plan) in prepared.iter_mut().zip(plans) {
-                if let Some(plan) = plan {
-                    evaluations.bindings.push((plan.name, plan.value));
-                } else {
-                    let value = match argument {
-                        Argument::SpreadElement(spread) => &mut spread.argument,
-                        argument => argument.to_expression_mut(),
-                    };
-                    let start = evaluations.bindings.len();
-                    match rule_array_evaluation::prepare(&mut evaluations, value, |_| false) {
-                        Some(value_read) => *value = value_read,
-                        None => evaluations.bindings.truncate(start),
-                    }
-                }
-            }
-            Some(prepared)
-        } else {
-            let elements = arguments.iter().map(|argument| {
-                let value = match argument {
+        let mut prepared = arguments.clone_in_with_semantic_ids(builder.allocator());
+        let mut complete = true;
+        for (argument, plan) in prepared.iter_mut().zip(plans) {
+            if let Some(plan) = plan {
+                evaluations.bindings.push((plan.name, plan.value));
+            } else {
+                let value = match &*argument {
                     Argument::SpreadElement(spread) => &spread.argument,
                     argument => argument.to_expression(),
                 };
-                value.clone_in_with_semantic_ids(builder.allocator()).into()
-            });
-            let source = Expression::new_array_expression(
-                SPAN,
-                oxc_allocator::Vec::from_iter_in(elements, builder),
-                builder,
-            );
-            match rule_array_evaluation::prepare(&mut evaluations, &source, |_| false) {
-                Some(Expression::ArrayExpression(array)) => Some(oxc_allocator::Vec::from_iter_in(
-                    array.elements.iter().filter_map(|element| {
-                        element.as_expression().map(|value| {
-                            Argument::from(value.clone_in_with_semantic_ids(builder.allocator()))
-                        })
-                    }),
-                    builder,
-                )),
-                _ => None,
+                let start = evaluations.bindings.len();
+                if let Some(value_read) =
+                    rule_array_evaluation::prepare(&mut evaluations, value, |_| false)
+                {
+                    if callbacks && let Argument::SpreadElement(spread) = argument {
+                        spread.argument = value_read;
+                    } else {
+                        *argument = Argument::from(value_read);
+                    }
+                } else {
+                    evaluations.bindings.truncate(start);
+                    if !callbacks {
+                        complete = false;
+                        break;
+                    }
+                }
             }
-        };
-        if let Some(prepared) = prepared {
+        }
+        if complete {
             *arguments = prepared;
             let names = evaluations.bindings.iter().map(|(name, _)| {
                 Expression::new_identifier(
@@ -168,3 +153,7 @@ pub(super) fn prepare<'a>(
     }
     result
 }
+
+#[cfg(test)]
+#[path = "styled_arguments_tests.rs"]
+mod tests;
