@@ -5,7 +5,6 @@ import { basename, dirname, join, relative, resolve } from 'node:path'
 import {
   beginBuild,
   buildCanonicalMap,
-  collectNumberedFiles,
   computeFileReach,
   computeReachableFiles,
   createCompatTypes,
@@ -14,14 +13,12 @@ import {
   createStateWriter,
   createThemeInterfaceArgs,
   type CustomShorthands,
-  extractedNeedles,
   getFileNumByFilename,
   type ImportAliases,
   loadDevupConfig,
   mergeImportAliases,
   planAtomHoist,
   readJsxImportSource,
-  seedFileNumbers,
   tailwindCssFiles,
   withTailwindCss,
 } from '@devup-ui/plugin-utils'
@@ -35,13 +32,14 @@ import {
   registerShorthands,
   registerTheme,
   resetBuildState,
-  seedFileMap,
   setAtomHoist,
   setDebug,
   setModuleResolver,
   setPrefix,
 } from '@devup-ui/wasm'
 import type { RsbuildPlugin, Rspack } from '@rsbuild/core'
+
+import { createReservation, staticEntries } from './reservation'
 
 const PLUGIN_NAME = 'devup-ui-rsbuild-plugin'
 
@@ -57,12 +55,14 @@ export interface DevupUIRsbuildPluginOptions {
   prefix?: string
   shorthands?: CustomShorthands
   /**
-   * Atom-level route-aware hoisting threshold (min routes sharing an atom for it
-   * to hoist into the shared devup-ui.css; clamped to >= 2; omit to disable).
-   * Opt-in: when set, single-importer collapse + atom hoisting are enabled and
-   * per-route CSS is served via getCss(fileNum). "Routes" are inferred from the
-   * import graph (entry points and dynamic-import targets). For a single-entry
-   * SPA (routeCount < 2) it is a no-op.
+   * Atom-level route-aware hoisting threshold. Defaults to 2; 0 disables it.
+   * Positive thresholds are clamped to >= 2. Canonical buckets reached by at
+   * least this many routes use global short counter names in devup-ui.css;
+   * other buckets keep per-file counter names. Composes with single-importer
+   * collapse and serves per-route CSS via getCss(fileNum). Routes are inferred
+   * from entry points and dynamic-import targets. Fewer than two routes yields
+   * no hoisted plan. Ignored when singleCss is true, including IDs/import flags
+   * and shared-chunk configuration.
    *
    * On MPA, the shared base devup-ui.css (hoisted atoms) is emitted as ONE
    * shared chunk via an injected rspack `splitChunks` cacheGroup
@@ -138,7 +138,7 @@ export const DevupUI = ({
   singleCss = false,
   prefix,
   shorthands,
-  atomHoist,
+  atomHoist = 2,
   importAliases: userImportAliases,
 }: Partial<DevupUIRsbuildPluginOptions> = {}): RsbuildPlugin => {
   registerShorthands(shorthands ?? {})
@@ -219,14 +219,15 @@ export const DevupUI = ({
         })
       })
 
-      // Atom-level hoisting (opt-in via `atomHoist`). Configured BEFORE any
-      // transform so atoms receive global (shared) class names. Composes with
+      // Per-file atom hoisting defaults to 2; 0 disables it, singleCss ignores it.
+      // Before any transform, routes are imported, then the threshold is set;
+      // bucket eligibility freezes at the first extraction. Late reach cannot promote
+      // or rename a bucket until resetBuildState. Composes with
       // single-importer collapse (both keyed by the canonical bucket). rsbuild
       // passes the ABSOLUTE resourcePath to codeExtract, so the graph maps use
       // absolute keys (keyBy: 'absolute') and the extraction filename is
       // POSIX-normalized to match.
-      const atomMode =
-        atomHoist !== undefined && Number.isFinite(atomHoist) && atomHoist > 0
+      const atomMode = !singleCss && Number.isFinite(atomHoist) && atomHoist > 0
       setModuleResolver(
         createModuleResolver({
           toId: (path) => (atomMode ? path.replaceAll('\\', '/') : path),
@@ -256,7 +257,7 @@ export const DevupUI = ({
             setAtomHoist(plan.threshold)
           } else {
             console.info(
-              '[devup-ui] atomHoist is set but fewer than 2 routes were detected; atom hoisting is a no-op (single-entry/SPA).',
+              '[devup-ui] fewer than 2 routes were detected; atom hoisting is a no-op (single-entry/SPA).',
             )
           }
         } catch {
@@ -264,40 +265,27 @@ export const DevupUI = ({
         }
       }
 
-      try {
-        // Number every file the build can extract in path order, so class
-        // prefixes do not depend on the order modules reach the transform
-        seedFileNumbers(
-          { seedFileMap },
-          collectNumberedFiles({
-            roots: [resolve(process.cwd(), 'src')],
-            include,
-            needles: extractedNeedles(libPackage, importAliases),
-            toId: (path) => (atomMode ? path.replaceAll('\\', '/') : path),
-          }),
-        )
-      } catch {
-        // Best-effort; numbering falls back to arrival order.
-      }
+      const reservation = createReservation({
+        root: api.context.rootPath,
+        package: libPackage,
+        include,
+        cssDir,
+        singleCss,
+        atomMode,
+        importAliases,
+      })
+      const entryFiles = new Set<string>()
       // Extract the source files under `src` that the entries reach, in path
       // order, the same way the transform does, so that a stylesheet built on
       // its first import already holds the styles of every one. Best-effort:
       // a stylesheet still missing styles is rebuilt by another pass.
-      api.onBeforeBuild(({ environments }) => {
+      const prewarm = () => {
         try {
           const root = api.context.rootPath
-          const entries = Object.values(environments).flatMap(({ entry }) =>
-            Object.values(entry).flatMap((value) =>
-              (typeof value === 'object' && !Array.isArray(value)
-                ? [value.import].flat()
-                : [value].flat()
-              ).map((request) => resolve(root, request)),
-            ),
-          )
           for (const file of computeReachableFiles({
             srcDir: resolve(root, 'src'),
             tsconfigPath: resolve(root, 'tsconfig.json'),
-            entries,
+            entries: [...entryFiles],
           })) {
             let extractCssDir = relative(dirname(file), cssDir).replaceAll(
               '\\',
@@ -319,6 +307,14 @@ export const DevupUI = ({
         } catch {
           // The transform reports the error of the file it cannot extract
         }
+      }
+      api.onBeforeBuild(({ environments }) => {
+        for (const { entry } of Object.values(environments)) {
+          for (const request of staticEntries(entry))
+            entryFiles.add(resolve(api.context.rootPath, request))
+        }
+        reservation.reserve()
+        prewarm()
       })
 
       const servedCss = new Map<string, Map<string, string>>()
@@ -345,12 +341,20 @@ export const DevupUI = ({
       // once more: every module is extracted by then. The dev server rebuilds it
       // through the stylesheet files the transforms write instead.
       api.modifyRspackConfig((config, { environment }) => {
+        for (const request of staticEntries(environment.entry))
+          entryFiles.add(resolve(api.context.rootPath, request))
         config.plugins ??= []
         config.plugins.push({
           apply(compiler: Rspack.Compiler) {
+            reservation.trackCompiler(environment.name, compiler)
             let passes = 0
             compiler.hooks.run.tap(PLUGIN_NAME, () => {
               passes = 0
+              reservation.reserve()
+            })
+            compiler.hooks.invalid.tap(PLUGIN_NAME, reservation.invalidate)
+            compiler.hooks.watchRun.tap(PLUGIN_NAME, () => {
+              reservation.reserve()
             })
             compiler.hooks.thisCompilation.tap(PLUGIN_NAME, (compilation) => {
               const served = new Map<string, string>()

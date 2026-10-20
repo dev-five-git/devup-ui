@@ -1,4 +1,5 @@
 import {
+  type Dirent,
   existsSync,
   readdirSync,
   readFileSync,
@@ -15,6 +16,9 @@ import {
   relative,
   resolve,
 } from 'node:path'
+
+import { PackageManifestShapeError } from './package-manifest'
+import { decodeStringLiteral } from './string-literal'
 
 /**
  * How map keys (and bucket-root values) are stringified.
@@ -611,14 +615,23 @@ export function compareCodePoints(a: string, b: string): number {
  * pre-warm the extractor over exactly the file set the canonical map was built
  * from. Returns absolute paths.
  */
-export function listSourceFiles(srcDir: string): string[] {
+export function listSourceFiles(
+  srcDir: string,
+  onReadError?: (error: unknown) => boolean,
+): string[] {
   const files: string[] = []
 
   function visit(dir: string): void {
     if (!existsSync(dir)) return
-    const entries = readdirSync(dir, { withFileTypes: true }).sort((a, b) =>
-      compareCodePoints(a.name, b.name),
-    )
+    let entries: readonly Dirent[]
+    try {
+      entries = readdirSync(dir, { withFileTypes: true }).sort((a, b) =>
+        compareCodePoints(a.name, b.name),
+      )
+    } catch (error) {
+      if (onReadError?.(error)) return
+      throw error
+    }
     for (const entry of entries) {
       const entryPath = join(dir, entry.name)
       if (entry.isDirectory()) {
@@ -627,8 +640,7 @@ export function listSourceFiles(srcDir: string): string[] {
         continue
       }
       if (!entry.isFile()) continue
-      if (!jsFileRegex.test(entry.name)) continue
-      if (testFileRegex.test(entry.name)) continue
+      if (!isSourceFile(entry.name)) continue
       files.push(resolve(entryPath))
     }
   }
@@ -639,7 +651,21 @@ export function listSourceFiles(srcDir: string): string[] {
   )
 }
 
-function parseImports(filename: string, source: string): ImportReference[] {
+export function isSourceFile(filename: string): boolean {
+  return jsFileRegex.test(filename) && !testFileRegex.test(filename)
+}
+
+export function importedSpecifiers(
+  filename: string,
+  source: string,
+): readonly string[] {
+  return parseImports(filename, source).map(({ specifier }) => specifier)
+}
+
+export function parseImports(
+  filename: string,
+  source: string,
+): ImportReference[] {
   const astImports = parseImportsWithOxc(filename, source)
   if (astImports) return astImports
   return scanImports(source)
@@ -726,6 +752,22 @@ function collectAstImports(
       ? node.arguments[0]
       : undefined
     addAstImport(imports, 'dynamic', firstArgument)
+  } else if (
+    type === 'CallExpression' &&
+    node.optional !== true &&
+    isRecord(node.callee) &&
+    node.callee.type === 'Identifier' &&
+    node.callee.name === 'require' &&
+    Array.isArray(node.arguments) &&
+    node.arguments.length === 1
+  ) {
+    const argument: unknown = node.arguments[0]
+    if (
+      isRecord(argument) &&
+      (argument.type === 'Literal' || argument.type === 'StringLiteral') &&
+      typeof argument.value === 'string'
+    )
+      addAstImport(imports, 'static', argument)
   }
 
   for (const value of Object.values(node)) {
@@ -810,22 +852,42 @@ function scanImports(source: string): ImportReference[] {
   // — which the bundler also erases — are dropped via
   // `isAllInlineTypeSpecifiers`. Mixed lists (`import { type A, b } from`)
   // keep importing the module for `b`, so they are kept.
-  const staticImportRegex =
-    /\bimport\s+(type\s+)?(?:([^'"`]*?)\s+from\s*)?(['"])([^'"]+)\3/gm
-  const exportFromRegex =
-    /\bexport\s+(type\s+)?(\*[^'"`]*?|\{[^}]*\})\s+from\s*(['"])([^'"]+)\3/gm
-  const dynamicImportRegex = /\bimport\s*\(\s*(['"])([^'"]+)\1\s*\)/gm
+  // Consume whole literals before looking for keywords inside their payloads.
+  // Real import/export matches start before their specifier's opening quote.
+  const quotedLiteral =
+    /"(?:\\[\s\S]|[^"\\])*"|'(?:\\[\s\S]|[^'\\])*'|`(?:\\[\s\S]|[^`\\])*`/
+      .source
+  const staticImportRegex = new RegExp(
+    `${quotedLiteral}|${/\bimport\s+(type\s+)?(?:([^'"`]*?)\s+from\s*)?(['"])([^'"]+)\3/.source}`,
+    'gm',
+  )
+  const exportFromRegex = new RegExp(
+    `${quotedLiteral}|${/\bexport\s+(type\s+)?(\*[^'"`]*?|\{[^}]*\})\s+from\s*(['"])([^'"]+)\3/.source}`,
+    'gm',
+  )
+  const dynamicImportRegex = new RegExp(
+    `${quotedLiteral}|${/\bimport\s*\(\s*(['"])([^'"]+)\1\s*\)/.source}`,
+    'gm',
+  )
+  const requireRegex = new RegExp(
+    `${quotedLiteral}|${/(?<![\w$.]|\.\s*|\bnew\s+)\brequire\s*\(\s*("(?:\\(?:\r\n|[\s\S])|[^"\\\r\n])*"|'(?:\\(?:\r\n|[\s\S])|[^'\\\r\n])*')\s*\)/.source}`,
+    'gm',
+  )
 
   for (const match of code.matchAll(staticImportRegex)) {
-    if (match[1] || isAllInlineTypeSpecifiers(match[2])) continue
+    if (!match[4] || match[1] || isAllInlineTypeSpecifiers(match[2])) continue
     imports.push({ kind: 'static', specifier: match[4] })
   }
   for (const match of code.matchAll(exportFromRegex)) {
-    if (match[1] || isAllInlineTypeSpecifiers(match[2])) continue
+    if (!match[4] || match[1] || isAllInlineTypeSpecifiers(match[2])) continue
     imports.push({ kind: 'static', specifier: match[4] })
   }
   for (const match of code.matchAll(dynamicImportRegex)) {
-    imports.push({ kind: 'dynamic', specifier: match[2] })
+    if (match[2]) imports.push({ kind: 'dynamic', specifier: match[2] })
+  }
+  for (const match of code.matchAll(requireRegex)) {
+    const specifier = match[1] ? decodeStringLiteral(match[1]) : undefined
+    if (specifier) imports.push({ kind: 'static', specifier })
   }
 
   return imports
@@ -998,6 +1060,7 @@ export interface CreateModuleResolverOptions {
    * bundler later extracts the same file under.
    */
   toId?: (path: string) => string
+  readonly allowPackage?: (specifier: string) => boolean
 }
 
 /**
@@ -1009,6 +1072,7 @@ export function createModuleResolver({
   cwd = process.cwd(),
   tsconfigPath = join(cwd, 'tsconfig.json'),
   toId = (path) => path,
+  allowPackage,
 }: CreateModuleResolverOptions = {}): (
   specifier: string,
   importer: string,
@@ -1025,7 +1089,10 @@ export function createModuleResolver({
             aliasBaseDir: baseDir,
           })
             .map(resolveSourceFile)
-            .find(Boolean) ?? resolvePackage(specifier, from))
+            .find(Boolean) ??
+          ((allowPackage?.(specifier) ?? true)
+            ? resolvePackage(specifier, from)
+            : undefined))
     return path
       ? { path: toId(path), code: readFileSync(path, 'utf-8') }
       : undefined
@@ -1058,11 +1125,14 @@ function resolvePackage(
   const name = parts.slice(0, nameLength).join('/')
   const packageDir = findPackage(dirname(importer), name)
   if (!packageDir) return undefined
+  const manifestPath = join(packageDir, 'package.json')
+  const manifest: unknown = JSON.parse(readFileSync(manifestPath, 'utf-8'))
+  if (!isRecord(manifest) || Array.isArray(manifest)) {
+    throw new PackageManifestShapeError(manifestPath)
+  }
   const found = resolvePackageEntry(
     packageDir,
-    JSON.parse(
-      readFileSync(join(packageDir, 'package.json'), 'utf-8'),
-    ) as Record<string, unknown>,
+    manifest,
     ['.', ...parts.slice(nameLength)].join('/'),
   )
   return found && realpathSync(found)

@@ -1,4 +1,4 @@
-use super::{Allocator, Edit, Parser, SourceType};
+use super::{Allocator, Edit, Parser};
 use crate::{ExtractOutput, source_map};
 use oxc_codegen::{Codegen, CodegenOptions};
 use rustc_hash::FxHashSet;
@@ -18,13 +18,14 @@ impl Rewritten<'_> {
     /// Generated from the rewritten module, so the map points at `source`.
     pub(crate) fn output(&self) -> ExtractOutput {
         let allocator = Allocator::default();
-        let program = Parser::new(
+        let mut program = Parser::new(
             &allocator,
             self.code,
-            SourceType::from_path(self.filename).unwrap_or_default(),
+            crate::parsing::source_type(self.filename).unwrap_or_default(),
         )
         .parse()
         .program;
+        crate::jsx_pragmas::HeaderPragmas::capture(&program).reanchor(&mut program);
         let result = Codegen::new()
             .with_options(CodegenOptions {
                 source_map_path: Some(PathBuf::from(self.filename)),

@@ -5,9 +5,9 @@ use css::utils::to_kebab_case;
 use oxc_allocator::{Allocator, CloneIn, GetAllocator};
 use oxc_ast::{
     ast::{
-        Argument, CallExpression, Expression, ExpressionStatement, IdentifierName,
-        JSXAttributeValue, ObjectExpression, ObjectProperty, ObjectPropertyKind, Program,
-        PropertyKey, Statement, StaticMemberExpression,
+        Argument, ArrayExpressionElement, CallExpression, Expression, ExpressionStatement,
+        IdentifierName, JSXAttributeValue, ObjectExpression, ObjectProperty, ObjectPropertyKind,
+        Program, PropertyKey, Statement, StaticMemberExpression,
     },
     builder::AstBuilder,
 };
@@ -280,54 +280,44 @@ pub(super) fn get_number_by_literal_expression(expr: &Expression) -> Option<f64>
         Expression::ParenthesizedExpression(parenthesized) => {
             get_number_by_literal_expression(&parenthesized.expression)
         }
-        Expression::StringLiteral(sl) => sl.value.parse::<f64>().ok(),
-        Expression::TemplateLiteral(tmp) => {
-            // `f64::from_str` succeeds only when every byte belongs to the
-            // float grammar: ASCII digits, sign/exponent punctuation, or the
-            // letters of the `inf`/`infinity`/`nan` keywords. An allocation-free
-            // scan that is STRICTLY more permissive than the parser lets us bail
-            // out (returning `None`) on the common non-numeric case — e.g. a
-            // `${x}px` template's quasis containing `p`/`x` — without collecting
-            // the quasis into a throwaway `String`. Whenever the parser would
-            // have returned `Some`, every byte passes this scan, so the result
-            // stays byte-identical.
-            let can_be_float = tmp.quasis.iter().all(|q| {
-                q.value.raw.bytes().all(|b| {
-                    b.is_ascii_digit()
-                        || matches!(
-                            b,
-                            b'.' | b'+'
-                                | b'-'
-                                | b'e'
-                                | b'E'
-                                | b'i'
-                                | b'I'
-                                | b'n'
-                                | b'N'
-                                | b'f'
-                                | b'F'
-                                | b'a'
-                                | b'A'
-                                | b't'
-                                | b'T'
-                                | b'y'
-                                | b'Y'
-                        )
-                })
-            });
-            if can_be_float {
-                tmp.quasis
-                    .iter()
-                    .map(|q| q.value.raw.as_str())
-                    .collect::<String>()
-                    .parse::<f64>()
-                    .ok()
+        Expression::StringLiteral(sl) => {
+            let text = sl.value.as_str();
+            let unsigned = text.strip_prefix(['+', '-']).unwrap_or(text);
+            if unsigned == "Infinity"
+                || text
+                    .bytes()
+                    .all(|byte| matches!(byte, b'0'..=b'9' | b'+' | b'-' | b'.' | b'e' | b'E'))
+            {
+                text.parse::<f64>().ok()
             } else {
                 None
             }
         }
+        Expression::TemplateLiteral(_) => {
+            let text = get_key_by_literal_expression(expr)?;
+            let unsigned = text.strip_prefix(['+', '-']).unwrap_or(&text);
+            // Rust accepts infinity aliases that JavaScript Number rejects.
+            if unsigned.eq_ignore_ascii_case("inf")
+                || (unsigned.eq_ignore_ascii_case("infinity") && unsigned != "Infinity")
+            {
+                return None;
+            }
+            text.parse().ok()
+        }
         Expression::NumericLiteral(num) => Some(num.value),
         Expression::UnaryExpression(unary) => get_number_by_literal_expression(&unary.argument)
+            .or_else(|| {
+                let Expression::StringLiteral(value) = unwrap_syntax_only(&unary.argument) else {
+                    return None;
+                };
+                let text = value
+                    .value
+                    .trim_matches(|c: char| c.is_whitespace() || c == '\u{feff}');
+                let unsigned = text.strip_prefix(['+', '-']).unwrap_or(text);
+                (unsigned.eq_ignore_ascii_case("inf")
+                    || (unsigned.eq_ignore_ascii_case("infinity") && unsigned != "Infinity"))
+                    .then_some(f64::NAN)
+            })
             .and_then(|num| match unary.operator {
                 UnaryOperator::UnaryNegation => Some(-num),
                 UnaryOperator::UnaryPlus => Some(num),
@@ -371,27 +361,41 @@ pub(crate) fn js_number_string(number: f64) -> String {
     }
 }
 
+/// Property keys and template substitutions preserve text rather than CSS numeric normalization.
+pub(super) fn get_key_by_literal_expression<'a>(expr: &Expression<'a>) -> Option<Cow<'a, str>> {
+    match expr {
+        Expression::StringLiteral(value) => Some(Cow::Borrowed(value.value.as_str())),
+        Expression::ParenthesizedExpression(value) => {
+            get_key_by_literal_expression(&value.expression)
+        }
+        Expression::TemplateLiteral(template) => {
+            let mut text = String::new();
+            for (index, quasi) in template.quasis.iter().enumerate() {
+                text.push_str(quasi.value.cooked.as_deref()?);
+                if let Some(expression) = template.expressions.get(index) {
+                    text.push_str(&get_key_by_literal_expression(expression)?);
+                }
+            }
+            Some(Cow::Owned(text))
+        }
+        _ => get_string_by_literal_expression(expr),
+    }
+}
+
 pub(super) fn get_string_by_literal_expression<'a>(expr: &Expression<'a>) -> Option<Cow<'a, str>> {
+    match expr {
+        Expression::ParenthesizedExpression(value) => {
+            return get_string_by_literal_expression(&value.expression);
+        }
+        Expression::TemplateLiteral(_) => return get_key_by_literal_expression(expr),
+        _ => {}
+    }
     get_number_by_literal_expression(expr)
         .map(|num| Cow::Owned(js_number_string(num)))
         .or_else(|| match expr {
-            Expression::ParenthesizedExpression(parenthesized) => {
-                get_string_by_literal_expression(&parenthesized.expression)
-            }
             Expression::StringLiteral(str) => Some(Cow::Borrowed(str.value.as_str())),
             Expression::BooleanLiteral(bool) => {
                 Some(Cow::Borrowed(if bool.value { "true" } else { "false" }))
-            }
-            Expression::TemplateLiteral(tmp) => {
-                let mut collect = String::new();
-                for (idx, q) in tmp.quasis.iter().enumerate() {
-                    collect.push_str(q.value.raw.as_str());
-                    if idx < tmp.expressions.len() {
-                        let value = get_string_by_literal_expression(&tmp.expressions[idx])?;
-                        collect.push_str(&value);
-                    }
-                }
-                Some(Cow::Owned(collect))
             }
             _ => None,
         })
@@ -1109,7 +1113,16 @@ fn collect_style_parts<'b, 'a>(
         match unwrap_syntax_only(expression) {
             Expression::ArrayExpression(array) => {
                 for element in &array.elements {
-                    collect_style_parts(ast_builder, element.as_expression()?, parts, classes)?;
+                    let expression = match element {
+                        ArrayExpressionElement::SpreadElement(spread) => {
+                            match unwrap_syntax_only(&spread.argument) {
+                                array @ Expression::ArrayExpression(_) => array,
+                                _ => return None,
+                            }
+                        }
+                        element => element.as_expression()?,
+                    };
+                    collect_style_parts(ast_builder, expression, parts, classes)?;
                 }
                 return Some(());
             }
@@ -1355,14 +1368,14 @@ fn merge_style_properties<'a>(
 ///
 /// For a `StaticIdentifier` key this returns `Cow::Borrowed`, avoiding the heap
 /// allocation the owned variant pays on every prop just to read its key name.
-/// The literal fallback now also borrows where possible: `get_string_by_literal_expression`
+/// The literal fallback also borrows where possible: `get_key_by_literal_expression`
 /// returns `Cow::Borrowed` for string/boolean-literal keys and only allocates
 /// (`Cow::Owned`) for numeric/template keys it must synthesize.
 pub(super) fn get_str_by_property_key<'k>(key: &PropertyKey<'k>) -> Option<Cow<'k, str>> {
     if let PropertyKey::StaticIdentifier(ident) = key {
         Some(Cow::Borrowed(ident.name.as_str()))
     } else if let Some(s) = key.as_expression() {
-        get_string_by_literal_expression(s)
+        get_key_by_literal_expression(s)
     } else {
         None
     }

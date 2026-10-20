@@ -10,7 +10,7 @@ import {
   getCss,
   setModuleResolver,
 } from '@devup-ui/wasm'
-import type { RawLoaderDefinitionFunction } from 'webpack'
+import type { LoaderContext, RawLoaderDefinitionFunction } from 'webpack'
 
 export interface DevupUILoaderOptions {
   package: string
@@ -27,11 +27,15 @@ function toLoaderError(error: unknown): Error {
   return error instanceof Error ? error : new Error(String(error))
 }
 
-function parseSourceMap(sourceMap: string | undefined): string | null {
+type LoaderSourceMap = Exclude<
+  Parameters<LoaderContext<DevupUILoaderOptions>['callback']>[2],
+  string | undefined
+>
+
+function parseSourceMap(sourceMap: string | undefined): LoaderSourceMap {
   if (!sourceMap) return null
 
-  JSON.parse(sourceMap)
-  return sourceMap
+  return JSON.parse(sourceMap)
 }
 
 const stateWriter = createStateWriter((path, content, encoding) =>
@@ -129,7 +133,7 @@ const devupUILoader: RawLoaderDefinitionFunction<DevupUILoaderOptions> =
         }
       }
       Promise.all(promises).then(
-        () => callback(null, code, sourceMap as Parameters<typeof callback>[2]),
+        () => callback(null, code, sourceMap),
         (error) => callback(toLoaderError(error)),
       )
     } catch (error) {
