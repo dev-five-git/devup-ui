@@ -342,6 +342,8 @@ fn extract_with_source_map(
 ) -> Result<ExtractOutput, Box<dyn Error>> {
     if code.contains(&option.package)
         || code.contains(STYLEX_PACKAGE)
+        || (css_prop::builds_jsx_with_emotion(&option.import_aliases)
+            && css_prop::is_jsx_file(filename))
         || option
             .import_aliases
             .keys()
@@ -23518,6 +23520,50 @@ export const App = () => <Global {...rest} styles={{ body: { margin: '0px' } }} 
                 "import styled from '@emotion/styled';\nimport { Box } from '@devup-ui/react';\nimport { jsx as _jsx } from '@emotion/react/jsx-runtime';\nconst Button = styled.button({ color: 'blue' });\nexport const App = (props) => [_jsx(Custom, { className: 'x', css: { color: 'red' } }), _jsx(Box, { p: 1, css: { padding: 4 } }), _jsx(Button, { css: { color: 'red' } }), _jsx(Button, { ...props, css: { margin: 1 } }), _jsx(Button, { as: 'a', css: { margin: 2 } }), _jsx(Button, { [k]: 1, css: { padding: 3 } }), _jsx('div', props), _jsx('div', { ['css']: { color: 'red' }, id: 'x' })];"
             ),
         ]));
+    }
+
+    #[test]
+    #[serial]
+    fn test_emotion_css_prop_where_the_project_builds_jsx_with_emotion() {
+        let mut option = emotion_option();
+        option.import_aliases.insert(
+            "@emotion/react/jsx-runtime".to_string(),
+            ImportAlias::NamedToNamed,
+        );
+        reset_class_map();
+        reset_file_map();
+        let output = extract(
+            "test.tsx",
+            "const Custom = ({ className }) => <div className={className} />;\nexport const App = () => <Custom css={{ color: 'red', padding: 2 }} />;",
+            option.clone(),
+        )
+        .unwrap();
+        assert_debug_snapshot!(ToBTreeSet::from(output));
+
+        reset_class_map();
+        reset_file_map();
+        let plain = extract(
+            "test.tsx",
+            "export const App = () => <div />;",
+            option.clone(),
+        )
+        .unwrap();
+        assert_eq!(
+            plain.code,
+            "/** @jsxImportSource react */\nexport const App = () => <div />;\n"
+        );
+
+        reset_class_map();
+        reset_file_map();
+        let error = extract(
+            "test.tsx",
+            "import { css } from '@emotion/react';\nexport const App = () => <div css={getStyles()} />;",
+            option,
+        )
+        .err()
+        .map(|error| error.to_string())
+        .unwrap_or_default();
+        assert!(error.starts_with("test.tsx:2:36: "), "{error}");
     }
 
     #[test]

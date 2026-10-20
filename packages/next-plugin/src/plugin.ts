@@ -20,6 +20,7 @@ import {
   extractedNeedles,
   loadDevupConfigSync,
   mergeImportAliases,
+  readJsxImportSource,
   seedFileNumbers,
   type StaticImportGraph,
   withTailwindCss,
@@ -159,7 +160,10 @@ export function DevupUI(
       atomHoist !== undefined &&
       Number.isFinite(atomHoist) &&
       atomHoist > 0
-    const importAliases = mergeImportAliases(userImportAliases)
+    const importAliases = mergeImportAliases(
+      userImportAliases,
+      readJsxImportSource(),
+    )
     const watch = process.env.NODE_ENV === 'development'
     const sourceMap = watch || config.productionBrowserSourceMaps === true
     const sheetFile = join(distDir, 'sheet.json')
@@ -352,6 +356,7 @@ export function DevupUI(
           include,
           cwd,
           needles: extractedNeedles(libPackage, importAliases),
+          importAliases,
           toId: (path) => relative(cwd, path).replaceAll('\\', '/'),
         }),
       )

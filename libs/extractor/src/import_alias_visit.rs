@@ -9,7 +9,8 @@
 
 use crate::ImportAlias;
 use crate::css_prop::{
-    CssProp, EMOTION_REACT, is_emotion, is_jsx_function, react_runtime, returned,
+    CssProp, EMOTION_REACT, builds_jsx_with_emotion, is_emotion, is_jsx_file, is_jsx_function,
+    react_runtime, returned,
 };
 use crate::utils::{
     get_str_by_property_key, is_vanilla_extract_file, js_number_literal, keeps_bare_number,
@@ -456,9 +457,11 @@ pub fn transform_import_aliases_with_edits<'a>(
         css_prop,
     };
     let emotion_aliased = import_aliases.contains_key(EMOTION_REACT);
-    // Quick check: if no aliases match and no element takes a `css` prop,
-    // return original code
-    if CssProp::of(import_aliases, code, false) == CssProp::Off
+    let emotion_jsx = builds_jsx_with_emotion(import_aliases);
+    // Quick check: if no aliases match, no element takes a `css` prop and the
+    // project builds no JSX with Emotion, return original code
+    if !(emotion_jsx && is_jsx_file(filename))
+        && CssProp::of(import_aliases, code, false) == CssProp::Off
         && (import_aliases.is_empty() || !import_aliases.keys().any(|alias| code.contains(alias)))
     {
         return unchanged(CssProp::Off);
@@ -475,12 +478,18 @@ pub fn transform_import_aliases_with_edits<'a>(
 
     // Collect import transformations
     let mut transformations: Vec<(usize, usize, String)> = Vec::new();
-    if import_aliases.contains_key("@emotion/react") {
+    if emotion_aliased {
         transformations.extend(crate::jsx_import_source::emotion_replacements(&program));
     }
     let mut numbers = LibraryNumbers::default();
-    let mut uses_emotion = !transformations.is_empty();
+    let mut uses_emotion = emotion_jsx || !transformations.is_empty();
     let compat = format!("{package}/compat");
+    if emotion_jsx
+        && is_jsx_file(filename)
+        && let Some(replacement) = crate::jsx_import_source::project_replacement(&program)
+    {
+        transformations.push(replacement);
+    }
 
     for stmt in &program.body {
         if let Statement::ImportDeclaration(import_decl) = stmt {
@@ -510,9 +519,7 @@ pub fn transform_import_aliases_with_edits<'a>(
                     span.end as usize,
                     format!("\"{runtime}\""),
                 ));
-            }
-
-            if let Some(alias) = import_aliases.get(source_value)
+            } else if let Some(alias) = import_aliases.get(source_value)
                 && !import_decl.import_kind.is_type()
             {
                 let span = import_decl.span;
@@ -572,7 +579,8 @@ pub fn transform_import_aliases_with_edits<'a>(
         numbers.visit_program(&program);
         transformations.append(&mut numbers.replacements);
     }
-    transformations.sort_unstable_by_key(|(start, ..)| *start);
+    // An insertion comes before a replacement starting where it does
+    transformations.sort_unstable_by_key(|(start, end, _)| (*start, *end));
 
     // Apply transformations in reverse order to preserve positions
     if transformations.is_empty() {
@@ -1518,5 +1526,52 @@ const x = 1;",
         );
         assert_eq!(without_css_prop.css_prop, CssProp::Off);
         assert!(matches!(without_css_prop.code, Cow::Borrowed(_)));
+    }
+
+    #[test]
+    fn test_project_building_jsx_with_emotion() {
+        let mut aliases = emotion_alias();
+        aliases.insert(EMOTION_REACT.to_string(), ImportAlias::NamedToNamed);
+        aliases.insert(
+            crate::css_prop::EMOTION_JSX_RUNTIME.to_string(),
+            ImportAlias::NamedToNamed,
+        );
+        let outputs: Vec<(String, CssProp, Vec<Edit>)> = [
+            ("test.tsx", "export const a = <Custom css={{ padding: 2 }} />;"),
+            (
+                "test.jsx",
+                "import styled from '@emotion/styled';\nexport const a = <div />;",
+            ),
+            (
+                "test.tsx",
+                "/** @jsxImportSource @emotion/react */\nexport const a = <div />;",
+            ),
+            ("test.tsx", "/** @jsx h */\nexport const a = <div />;"),
+            ("test.ts", "export const a = 1;"),
+            (
+                "test.ts",
+                "import { jsx as _jsx } from '@emotion/react/jsx-runtime';\nexport const a = _jsx(Custom, { css: { top: 1 } });",
+            ),
+        ]
+        .iter()
+        .map(|(filename, code)| {
+            let aliased =
+                transform_import_aliases_with_edits(code, filename, "@devup-ui/react", &aliases);
+            (aliased.code.into_owned(), aliased.css_prop, aliased.edits)
+        })
+        .collect();
+        insta::assert_debug_snapshot!(outputs);
+
+        let runtime_alone = transform_import_aliases_with_edits(
+            "export const a = <div />;",
+            "test.tsx",
+            "@devup-ui/react",
+            &HashMap::from([(
+                crate::css_prop::EMOTION_JSX_RUNTIME.to_string(),
+                ImportAlias::NamedToNamed,
+            )]),
+        );
+        assert_eq!(runtime_alone.css_prop, CssProp::Off);
+        assert!(matches!(runtime_alone.code, Cow::Borrowed(_)));
     }
 }
