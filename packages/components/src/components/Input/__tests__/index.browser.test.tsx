@@ -20,7 +20,7 @@ describe('Input', () => {
   it('should render with allowClear prop', () => {
     const { container } = render(<Input allowClear />)
     expect(container).toMatchSnapshot()
-    expect(container.querySelector('[aria-label="input"]')).toHaveClass(
+    expect(container.querySelector('input')).toHaveClass(
       'padding-right-0-36px--1',
     )
   })
@@ -28,7 +28,7 @@ describe('Input', () => {
   it('should not have padding right when allowClear is false', () => {
     const { container } = render(<Input allowClear={false} />)
     expect(container).toMatchSnapshot()
-    expect(container.querySelector('[aria-label="input"]')).not.toHaveClass(
+    expect(container.querySelector('input')).not.toHaveClass(
       'padding-right-0-36px--1',
     )
   })
@@ -60,16 +60,16 @@ describe('Input', () => {
   it('should render error style when error is true', () => {
     const { container } = render(<Input error />)
     expect(container).toMatchSnapshot()
-    expect(container.querySelector('[aria-label="input"]')).toHaveClass(
+    expect(container.querySelector('input')).toHaveClass(
       'border-color-0-var_lp_--error_cm_light-dark_lp__h_D52B2E_cm__h_FF5B5E_rp__rp_--1',
     )
   })
 
   it('should be able to render with error message', () => {
-    const { container } = render(<Input error errorMessage="Error message" />)
-    expect(
-      container.querySelector('[aria-label="error-message"]'),
-    ).toBeInTheDocument()
+    const { container } = render(
+      <Input error errorMessage="Error message" id="field" />,
+    )
+    expect(container.querySelector('[role="alert"]')).toBeInTheDocument()
   })
 
   it('should pass colors prop', () => {
@@ -80,14 +80,23 @@ describe('Input', () => {
           error: 'blue',
           text: 'green',
         }}
+        error
+        errorMessage="wrong"
+        icon={<svg />}
       />,
     )
-    const input = container.querySelector('[aria-label="input"]')
-    expect(input).toHaveStyle({
+    // On the container, so the icon, the clear button and the message see them too
+    const root = container.firstElementChild
+    expect(root).toHaveStyle({
       '--primary': 'red',
       '--error': 'blue',
       '--text': 'green',
     })
+    for (const part of [
+      container.querySelector('input'),
+      container.querySelector('[role="alert"]'),
+    ])
+      expect(part?.closest('[style*="--error"]')).toBe(root)
   })
 
   it('should have typography when typography is provided', () => {
@@ -106,10 +115,11 @@ describe('Input', () => {
         }}
         error
         errorMessage="Error message"
+        id="field"
       />,
     )
     expect(container).toMatchSnapshot()
-    expect(container.querySelector('[aria-label="error-message"]')).toHaveClass(
+    expect(container.querySelector('[role="alert"]')).toHaveClass(
       'error-message',
     )
   })
@@ -124,7 +134,7 @@ describe('Input', () => {
       />,
     )
     expect(container).toMatchSnapshot()
-    expect(container.querySelector('[aria-label="icon"]')).toHaveClass('icon')
+    expect(container.querySelector('[aria-hidden="true"]')).toHaveClass('icon')
   })
 
   it('should pass props to ClearButton component', async () => {
@@ -137,7 +147,7 @@ describe('Input', () => {
   it('should render disabled icon style when disabled is true', () => {
     const { container } = render(<Input disabled icon={<GlassIcon />} />)
     expect(container).toMatchSnapshot()
-    expect(container.querySelector('[aria-label="icon"]')).toHaveClass(
+    expect(container.querySelector('[aria-hidden="true"]')).toHaveClass(
       'color-0-var_lp_--inputDisabledText_cm_light-dark_lp__h_D6D7DE_cm__h_373737_rp__rp_--1',
     )
   })

@@ -1899,7 +1899,8 @@ fn create_styled_component<'a>(
         omissions
     });
     let withheld = omissions.as_deref().unwrap_or(withheld);
-    let ordinary = without_props(ast_builder, withheld);
+    let ordinary =
+        super::styled_transient::filter(ast_builder, without_props(ast_builder, withheld));
     let forwarded = capability.map_or_else(
         || ordinary.clone_in(ast_builder.allocator()),
         |slot| slot.forwarded(ast_builder, &ordinary),

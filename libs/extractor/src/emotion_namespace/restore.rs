@@ -13,7 +13,7 @@ pub(crate) fn original_error_code(
     }
     let allocator = Allocator::default();
     let parsed = Parser::new(&allocator, source, source_type).parse();
-    if !parsed.diagnostics.is_empty() {
+    if crate::parsing::goal_policy::has_diagnostics(&parsed) {
         return format!(
             "{message}\nEmotion diagnostic restoration failed: {:?}",
             parsed.diagnostics

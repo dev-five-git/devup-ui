@@ -16,6 +16,7 @@ mod styled_record;
 mod styled_record_evaluation;
 #[cfg(test)]
 mod styled_record_tests;
+mod styled_transient;
 
 /**
  * type
