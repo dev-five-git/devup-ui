@@ -8,7 +8,7 @@ ToBTreeSet {
             ExtractDynamicStyle {
                 property: "background",
                 level: 0,
-                identifier: "obj.bg",
+                identifier: "__devupRecord0",
                 selector: None,
                 style_order: None,
             },
@@ -17,7 +17,7 @@ ToBTreeSet {
             ExtractDynamicStyle {
                 property: "color",
                 level: 0,
-                identifier: "obj.color()",
+                identifier: "__devupRecord2",
                 selector: None,
                 style_order: None,
             },
@@ -26,11 +26,11 @@ ToBTreeSet {
             ExtractDynamicStyle {
                 property: "padding",
                 level: 0,
-                identifier: "func()",
+                identifier: "__devupRecord1",
                 selector: None,
                 style_order: None,
             },
         ),
     },
-    code: "import \"@devup-ui/core/devup-ui-0.css\";\nimport { forwardRef as __devupForwardRef } from \"react\";\nconst StyledDiv = __devupForwardRef((__devupRefProps, __devupRef) => (({ style, className, as: DevupAs = \"div\", forwardedAs, ...rest }) => <DevupAs {...(({ \"theme\": __devupOmit0, ...__devupDom }) => __devupDom)(rest)} as={forwardedAs} className={[\"a-a a-b a-c\", className].filter(Boolean).join(\" \")} style={{\n\t...{\n\t\t\"--a\": obj.bg,\n\t\t\"--b\": func(),\n\t\t\"--c\": obj.color()\n\t},\n\t...style\n}} />)({\n\t...__devupRefProps,\n\tref: __devupRef\n}));\n",
+    code: "import \"@devup-ui/core/devup-ui-0.css\";\nimport { forwardRef as __devupForwardRef } from \"react\";\nconst StyledDiv = __devupForwardRef((__devupRefProps, __devupRef) => (({ style, className, as: DevupAs = \"div\", forwardedAs, ...rest }) => (() => {\n\tconst __devupRecord0 = (0, obj.bg);\n\tconst __devupRecord1 = (0, func());\n\tconst __devupRecord2 = (0, obj.color());\n\treturn <DevupAs {...Object.fromEntries(Object.entries((({ \"theme\": __devupOmit0, ...__devupDom }) => __devupDom)(rest)).filter(([k]) => k[0] !== \"$\"))} as={forwardedAs} className={[\"a-a a-b a-c\", className].filter(Boolean).join(\" \")} style={{\n\t\t...{\n\t\t\t\"--a\": __devupRecord0,\n\t\t\t\"--b\": __devupRecord1,\n\t\t\t\"--c\": __devupRecord2\n\t\t},\n\t\t...style\n\t}} />;\n})())({\n\t...__devupRefProps,\n\tref: __devupRef\n}));\n",
 }
