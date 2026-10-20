@@ -2204,28 +2204,24 @@ fn px_value<'a>(ast_builder: &AstBuilder<'a>, property: &mut oxc_ast::ast::Objec
 fn px_rules<'a>(ast_builder: &AstBuilder<'a>, rules: &mut Expression<'a>) {
     let mut pending = vec![rules];
     while let Some(rules) = pending.pop() {
-        match rules {
-            Expression::ObjectExpression(object) => {
-                for property in &mut object.properties {
-                    if let ObjectPropertyKind::ObjectProperty(property) = property
-                        && property.key.static_name().is_none_or(|key| key != "vars")
-                    {
-                        px_value(ast_builder, property);
-                        if matches!(property.value, Expression::ObjectExpression(_)) {
-                            pending.push(&mut property.value);
-                        }
+        if let Expression::ArrayExpression(array) = rules {
+            pending.extend(
+                array
+                    .elements
+                    .iter_mut()
+                    .filter_map(|element| element.as_expression_mut()),
+            );
+        } else if let Expression::ObjectExpression(object) = rules {
+            for property in &mut object.properties {
+                if let ObjectPropertyKind::ObjectProperty(property) = property
+                    && property.key.static_name().is_none_or(|key| key != "vars")
+                {
+                    px_value(ast_builder, property);
+                    if matches!(property.value, Expression::ObjectExpression(_)) {
+                        pending.push(&mut property.value);
                     }
                 }
             }
-            Expression::ArrayExpression(array) => {
-                pending.extend(
-                    array
-                        .elements
-                        .iter_mut()
-                        .filter_map(|element| element.as_expression_mut()),
-                );
-            }
-            _ => {}
         }
     }
 }
