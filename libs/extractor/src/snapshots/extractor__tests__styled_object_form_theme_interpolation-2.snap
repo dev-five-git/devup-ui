@@ -8,11 +8,11 @@ ToBTreeSet {
             ExtractDynamicStyle {
                 property: "color",
                 level: 0,
-                identifier: "(p=>p.color)(rest)",
+                identifier: "__devupRecord0",
                 selector: None,
                 style_order: None,
             },
         ),
     },
-    code: "import \"@devup-ui/react/devup-ui-0.css\";\nimport { forwardRef as __devupForwardRef } from \"react\";\nconst Plain = __devupForwardRef((__devupRefProps, __devupRef) => (({ style, className, as: DevupAs = \"span\", forwardedAs, ...rest }) => <DevupAs {...(({ \"theme\": __devupOmit0, ...__devupDom }) => __devupDom)(rest)} as={forwardedAs} className={[\"a-a\", className].filter(Boolean).join(\" \")} style={{\n\t...{ \"--a\": (p=>p.color)(rest) },\n\t...style\n}} />)({\n\t...__devupRefProps,\n\tref: __devupRef\n}));\n",
+    code: "import \"@devup-ui/react/devup-ui-0.css\";\nimport { forwardRef as __devupForwardRef } from \"react\";\nconst Plain = __devupForwardRef((__devupRefProps, __devupRef) => (({ style, className, as: DevupAs = \"span\", forwardedAs, ...rest }) => {\n\tconst __devupRecord0 = (0, ((p) => p.color)(rest));\n\treturn <DevupAs {...Object.fromEntries(Object.entries((({ \"theme\": __devupOmit0, ...__devupDom }) => __devupDom)(rest)).filter(([k]) => k[0] !== \"$\"))} as={forwardedAs} className={[\"a-a\", className].filter(Boolean).join(\" \")} style={{\n\t\t...{ \"--a\": __devupRecord0 },\n\t\t...style\n\t}} />;\n})({\n\t...__devupRefProps,\n\tref: __devupRef\n}));\n",
 }

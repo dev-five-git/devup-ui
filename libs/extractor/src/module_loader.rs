@@ -53,6 +53,22 @@ thread_local! {
     static EVALUATING: RefCell<Vec<String>> = const { RefCell::new(Vec::new()) };
 }
 
+/// Moves the outer evaluation stack aside until scratch extraction ends.
+#[derive(Debug)]
+pub(crate) struct EvaluationGuard(Vec<String>);
+
+impl Default for EvaluationGuard {
+    fn default() -> Self {
+        Self(EVALUATING.with_borrow_mut(std::mem::take))
+    }
+}
+
+impl Drop for EvaluationGuard {
+    fn drop(&mut self) {
+        EVALUATING.with_borrow_mut(|stack| *stack = std::mem::take(&mut self.0));
+    }
+}
+
 /// Marks `filename` as being evaluated until dropped
 pub(crate) struct Evaluating;
 
@@ -469,7 +485,7 @@ fn export_name(name: &ModuleExportName<'_>) -> String {
     name.name().to_string()
 }
 
-fn declared_names(declaration: &Declaration<'_>) -> Vec<String> {
+pub(crate) fn declared_names(declaration: &Declaration<'_>) -> Vec<String> {
     match declaration {
         Declaration::VariableDeclaration(declaration) => declaration
             .declarations

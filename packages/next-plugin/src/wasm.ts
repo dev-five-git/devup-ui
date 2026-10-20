@@ -13,20 +13,20 @@ let loadedWasm: DevupWasm | undefined
 let webpackPlugin: DevupWebpackPlugin | undefined
 
 /** @internal Resolve dependencies from the plugin's physical install location. */
-export function requireFromPlugin<T>(specifier: string): T {
+export function requireFromPlugin<T>(
+  specifier: string,
+  root = process.cwd(),
+): T {
   const installedPackage = join(
-    process.cwd(),
+    root,
     'node_modules/@devup-ui/next-plugin/package.json',
   )
-  const workspacePackage = join(
-    process.cwd(),
-    'packages/next-plugin/package.json',
-  )
+  const workspacePackage = join(root, 'packages/next-plugin/package.json')
   const requireBase = existsSync(installedPackage)
     ? installedPackage
     : existsSync(workspacePackage)
       ? workspacePackage
-      : join(process.cwd(), 'package.json')
+      : join(root, 'package.json')
   return createRequire(realpathSync(requireBase))(specifier) as T
 }
 
@@ -71,4 +71,12 @@ export function setWebpackPluginForTesting(
   value: DevupWebpackPlugin | undefined,
 ): void {
   webpackPluginForTesting = value
+}
+
+/** @internal Clear overrides and cached namespaces between tests. */
+export function resetWasmForTesting(): void {
+  wasmForTesting = undefined
+  webpackPluginForTesting = undefined
+  loadedWasm = undefined
+  webpackPlugin = undefined
 }

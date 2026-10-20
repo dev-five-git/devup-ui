@@ -26,14 +26,16 @@ ToBTreeSet {
         ),
         Css(
             ExtractCss {
-                css: ".f{--b:purple;--c:red;}@media(prefers-color-scheme:dark){.f{--b:pink;}}",
                 file: "test.tsx",
+                order: 1,
+                css: ":root{--a:white;--b:black;--c:blue;--e:4px;}@media(prefers-color-scheme:dark){:root{--a:teal;--b:white;--c:lightblue;--d:gray;}}@supports(color:oklch(0 0 0)){:root{--c:oklch(0.6 0.2 250);}}@supports(display:grid){@media(prefers-color-scheme:dark){:root{--a:navy;}}}@supports(color:oklch(0 0 0)){@media(prefers-color-scheme:dark){:root{--c:oklch(0.8 0.1 250);}}}",
             },
         ),
         Css(
             ExtractCss {
-                css: ":root{--a:white;--b:black;--c:blue;--e:4px;}@media(prefers-color-scheme:dark){:root{--a:teal;--b:white;--c:lightblue;--d:gray;}}@supports(color:oklch(0 0 0)){:root{--c:oklch(0.6 0.2 250);}}@supports(display:grid){@media(prefers-color-scheme:dark){:root{--a:navy;}}}@supports(color:oklch(0 0 0)){@media(prefers-color-scheme:dark){:root{--c:oklch(0.8 0.1 250);}}}",
                 file: "test.tsx",
+                order: 2,
+                css: ".f{--b:purple;--c:red;}@media(prefers-color-scheme:dark){.f{--b:pink;}}",
             },
         ),
     },

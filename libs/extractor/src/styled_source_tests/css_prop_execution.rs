@@ -29,6 +29,7 @@ pub(super) fn execute(filename: &str, source: &str, observation: &str) -> Value 
 }
 
 fn execute_in_mode(filename: &str, source: &str, observation: &str, single_css: bool) -> Value {
+    let _state = crate::test_state::TestStateGuard::new();
     reset_class_map();
     reset_file_map();
     let option = ExtractOption {

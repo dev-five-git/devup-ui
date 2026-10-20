@@ -1,6 +1,6 @@
 use super::{
     Allocator, BTreeMap, Binding, Cow, Errors, GetSpan, HashMap, HashSet, ImportAlias, Normalized,
-    Normalizer, Parser, Root, SemanticBuilder, SourceType, Span, identifier_names, macro_name,
+    Normalizer, Parser, Root, SemanticBuilder, Span, identifier_names, macro_name,
 };
 use oxc_ast::ast::{
     Declaration, ImportDeclaration, ImportDeclarationSpecifier, Statement,
@@ -117,7 +117,7 @@ pub(crate) fn normalize<'a>(
     let parsed = Parser::new(
         &allocator,
         code,
-        SourceType::from_path(filename).unwrap_or_default(),
+        crate::parsing::source_type(filename).unwrap_or_default(),
     )
     .parse();
     let semantic = SemanticBuilder::new()
