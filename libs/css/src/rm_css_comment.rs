@@ -1,6 +1,6 @@
 use std::borrow::Cow;
 
-use crate::{constant::CSS_COMMENT_RE, utils::collapse_whitespace};
+use crate::{constant::CSS_COMMENT_RE, quoted::string_end, utils::collapse_whitespace};
 
 #[must_use]
 pub fn rm_css_comment(value: &str) -> Cow<'_, str> {
@@ -13,6 +13,9 @@ pub fn rm_css_comment(value: &str) -> Cow<'_, str> {
     // the former whole-block `into_owned()` copy.
     if !value.contains("/*") {
         return collapse_whitespace(value);
+    }
+    if value.bytes().any(|b| matches!(b, b'\'' | b'"')) {
+        return rm_comments_outside_strings(value);
     }
     // On the no-comment path `replace_all` returns `Cow::Borrowed` (an alias of
     // `value`), so collapse whitespace on the original slice and skip
@@ -29,6 +32,34 @@ pub fn rm_css_comment(value: &str) -> Cow<'_, str> {
             Cow::Owned(collapsed) => Cow::Owned(collapsed),
         },
     }
+}
+
+/// `rm_css_comment` for a value with quoted strings: a `/*` inside one is text, and a
+/// quote inside a comment does not open a string
+fn rm_comments_outside_strings(value: &str) -> Cow<'_, str> {
+    let bytes = value.as_bytes();
+    let mut stripped = String::new();
+    let mut copied = 0;
+    let mut index = 0;
+    while index < bytes.len() {
+        match bytes[index] {
+            quote @ (b'\'' | b'"') => index = string_end(bytes, index, quote),
+            b'/' if bytes.get(index + 1) == Some(&b'*') => {
+                let Some(length) = value[index + 2..].find("*/") else {
+                    break;
+                };
+                stripped.push_str(&value[copied..index]);
+                index += length + 4;
+                copied = index;
+            }
+            _ => index += 1,
+        }
+    }
+    if copied == 0 {
+        return collapse_whitespace(value);
+    }
+    stripped.push_str(&value[copied..]);
+    Cow::Owned(collapse_whitespace(&stripped).into_owned())
 }
 
 #[cfg(test)]
@@ -55,6 +86,20 @@ mod tests {
         "div div div div"
     )]
     fn test_rm_css_comment(#[case] input: &str, #[case] expected: &str) {
+        assert_eq!(rm_css_comment(input), expected);
+    }
+
+    #[rstest]
+    #[case("content: '/* x */'", "content: '/* x */'")]
+    #[case(
+        "content: '/* x */' /* y */ color: red",
+        "content: '/* x */' color: red"
+    )]
+    #[case("/* it's */ content: 'a  b'", "content: 'a  b'")]
+    #[case("a /* b */ \"c /* d */ e\" /* f */", "a \"c /* d */ e\"")]
+    #[case("content: '/* x", "content: '/* x")]
+    #[case("'a' /* open", "'a' /* open")]
+    fn test_rm_css_comment_keeps_quoted_strings(#[case] input: &str, #[case] expected: &str) {
         assert_eq!(rm_css_comment(input), expected);
     }
 }

@@ -12,6 +12,7 @@ pub mod is_special_property;
 mod num_to_nm_base;
 pub mod optimize_multi_css_value;
 pub mod optimize_value;
+pub mod quoted;
 pub mod rm_css_comment;
 mod selector_separator;
 pub mod slot_reservation;
@@ -866,6 +867,22 @@ mod tests {
             sheet_to_variable_name("background", 1, Some("hover")),
             "--background-1-hover"
         );
+    }
+
+    #[test]
+    #[serial]
+    fn quoted_strings_keep_their_own_class() {
+        let _state = test_state::TestStateGuard::new();
+        set_debug(false);
+        reset_class_map();
+        let class = |value: &str| sheet_to_classname("content", 0, Some(value), None, None, None);
+        let exact = class("'0.5'");
+        assert_ne!(exact, class("'.5'"));
+        assert_ne!(class("'#ff0000'"), class("'#F00'"));
+        assert_ne!(class("'a, b'"), class("'a,b'"));
+        assert_ne!(class("'a;'"), class("'a'"));
+        assert_eq!(exact, class("  '0.5'  "));
+        assert_eq!(class("0.5"), class(".5"));
     }
 
     #[test]

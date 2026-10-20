@@ -37,6 +37,8 @@ mod pragma_path_tests;
 mod pragma_tests;
 mod prop_modify_utils;
 mod prop_valid;
+#[cfg(test)]
+mod quoted_strings_tests;
 pub mod reservation_state;
 #[cfg(test)]
 mod responsive_selector_tests;
