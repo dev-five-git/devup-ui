@@ -113,6 +113,7 @@ struct Measurement {
 }
 
 fn build(modules: &[Module], hoist: bool) -> Result<Snapshot, ExtractionError> {
+    let _scope = super::TestStateGuard::new();
     reset_build_state_internal();
     let _state = BuildState;
     register_theme_internal(sheet::theme::Theme::default());

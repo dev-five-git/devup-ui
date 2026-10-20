@@ -9,7 +9,7 @@ import {
   registerTheme,
   setModuleResolver,
 } from '@devup-ui/wasm'
-import { afterAll, beforeAll, describe, expect, it } from 'bun:test'
+import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'bun:test'
 
 const files: Record<string, string> = {
   'tsconfig.json': JSON.stringify({
@@ -61,6 +61,11 @@ beforeAll(() => {
     mkdirSync(dirname(file), { recursive: true })
     writeFileSync(file, code)
   }
+})
+
+// The shared test setup resets the engine around every test, so each test sets its own
+// theme and resolver
+beforeEach(() => {
   registerTheme({})
   setModuleResolver(
     createModuleResolver({

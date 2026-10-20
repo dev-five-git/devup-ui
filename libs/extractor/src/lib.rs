@@ -54,6 +54,8 @@ mod tailwind_effects;
 mod tailwind_misc;
 mod tailwind_motion;
 mod tailwind_theme;
+#[doc(hidden)]
+pub mod test_state;
 mod util_type;
 mod utils;
 mod vanilla_extract;
@@ -1460,6 +1462,7 @@ mod tests {
     #[serial]
     fn extract_canonical_bucket_merge() {
         use css::file_map::{reset_canonical_map, set_canonical_map};
+        let _state = test_state::TestStateGuard::default();
         reset_class_map();
         reset_file_map();
         reset_canonical_map();
@@ -1493,6 +1496,7 @@ mod tests {
     #[serial]
     fn extract_global_hoist() {
         use css::file_map::{GLOBAL_BUCKET, reset_canonical_map, set_canonical_map};
+        let _state = test_state::TestStateGuard::new();
         reset_class_map();
         reset_file_map();
         reset_canonical_map();
@@ -12777,6 +12781,7 @@ globalCss({
     #[test]
     #[serial]
     fn test_vanilla_extract_style_css_ts() {
+        let _state = test_state::TestStateGuard::new();
         reset_class_map();
         reset_file_map();
         // .css.ts file with style function (vanilla-extract API)
@@ -12801,6 +12806,7 @@ export const container: string = style({ background: "red", padding: 16 })
     #[test]
     #[serial]
     fn test_vanilla_extract_style_css_js() {
+        let _state = test_state::TestStateGuard::new();
         reset_class_map();
         reset_file_map();
         // .css.js file with style function
@@ -12846,6 +12852,7 @@ export const link = style({ color: "blue", textDecoration: "underline" })
     #[test]
     #[serial]
     fn test_vanilla_extract_css_ts_with_vanilla_extract_import() {
+        let _state = test_state::TestStateGuard::new();
         reset_class_map();
         reset_file_map();
         // .css.ts file with import from @vanilla-extract/css (not @devup-ui/react)
@@ -12884,6 +12891,7 @@ export const text = style({
     #[test]
     #[serial]
     fn test_vanilla_extract_with_variable() {
+        let _state = test_state::TestStateGuard::new();
         reset_class_map();
         reset_file_map();
         // Variables should be evaluated at execution time
@@ -12910,6 +12918,7 @@ export const button = style({ background: primaryColor, padding: spacing })
     #[test]
     #[serial]
     fn test_vanilla_extract_with_computed() {
+        let _state = test_state::TestStateGuard::new();
         reset_class_map();
         reset_file_map();
         // Computed values should be evaluated
@@ -12935,6 +12944,7 @@ export const box = style({ padding: base * 2, margin: base / 2 })
     #[test]
     #[serial]
     fn test_vanilla_extract_with_spread() {
+        let _state = test_state::TestStateGuard::new();
         reset_class_map();
         reset_file_map();
         // Spread operator should work
@@ -12960,6 +12970,7 @@ export const extended = style({ ...baseStyle, background: "red" })
     #[test]
     #[serial]
     fn test_vanilla_extract_with_pseudo_selector() {
+        let _state = test_state::TestStateGuard::new();
         reset_class_map();
         reset_file_map();
         // devup-ui extension: _hover pseudo selector
@@ -12984,6 +12995,7 @@ export const hoverButton = style({ background: "gray", _hover: { background: "bl
     #[test]
     #[serial]
     fn test_vanilla_extract_with_responsive_array() {
+        let _state = test_state::TestStateGuard::new();
         reset_class_map();
         reset_file_map();
         // devup-ui extension: responsive arrays
@@ -13008,6 +13020,7 @@ export const responsiveBox = style({ padding: [8, 16, 32] })
     #[test]
     #[serial]
     fn test_vanilla_extract_with_keyframes_and_global() {
+        let _state = test_state::TestStateGuard::new();
         reset_class_map();
         reset_file_map();
         // .css.ts file with keyframes (vanilla-extract API)
@@ -13053,6 +13066,7 @@ globalStyle("body", { margin: 0, padding: 0 })
     #[test]
     #[serial]
     fn test_vanilla_extract_create_var() {
+        let _state = test_state::TestStateGuard::new();
         reset_class_map();
         reset_file_map();
         // createVar - CSS variable creation
@@ -13106,6 +13120,7 @@ export const box = style({
     #[test]
     #[serial]
     fn test_vanilla_extract_style_variants() {
+        let _state = test_state::TestStateGuard::new();
         reset_class_map();
         reset_file_map();
         // styleVariants - create multiple style variants
@@ -13158,6 +13173,7 @@ export const button = styleVariants({
     #[test]
     #[serial]
     fn test_vanilla_extract_font_face() {
+        let _state = test_state::TestStateGuard::new();
         reset_class_map();
         reset_file_map();
         reset_file_map();
@@ -13215,6 +13231,7 @@ export const body = style({
     #[test]
     #[serial]
     fn test_vanilla_extract_theme() {
+        let _state = test_state::TestStateGuard::new();
         reset_class_map();
         reset_file_map();
         reset_file_map();
@@ -13292,6 +13309,7 @@ export const darkTheme = createTheme(vars, {
     #[test]
     #[serial]
     fn test_layer_record_places_every_declaration() {
+        let _state = test_state::TestStateGuard::new();
         reset_class_map();
         reset_file_map();
         assert_debug_snapshot!(ToBTreeSet::from(
@@ -13323,6 +13341,7 @@ const A = styled.div({ '@layer': { base: {
     #[test]
     #[serial]
     fn test_vanilla_extract_layer_records() {
+        let _state = test_state::TestStateGuard::new();
         reset_class_map();
         reset_file_map();
         assert_debug_snapshot!(ToBTreeSet::from(
@@ -13352,6 +13371,7 @@ export const button = style({ color: 'red', '@layer': { [components]: { color: '
     #[test]
     #[serial]
     fn test_vanilla_extract_layer() {
+        let _state = test_state::TestStateGuard::new();
         reset_class_map();
         reset_file_map();
         reset_file_map();
@@ -13384,6 +13404,7 @@ globalStyle('*', {
     #[test]
     #[serial]
     fn test_vanilla_extract_container() {
+        let _state = test_state::TestStateGuard::new();
         reset_class_map();
         reset_file_map();
         // createContainer - container queries
@@ -13419,6 +13440,7 @@ export const responsive = style({
     #[test]
     #[serial]
     fn test_vanilla_extract_global_theme() {
+        let _state = test_state::TestStateGuard::new();
         reset_class_map();
         reset_file_map();
         // createGlobalTheme - global theme variables on :root
@@ -13452,6 +13474,7 @@ export const vars = createGlobalTheme(':root', {
     #[test]
     #[serial]
     fn test_vanilla_extract_composition() {
+        let _state = test_state::TestStateGuard::new();
         reset_class_map();
         reset_file_map();
         // style composition - array of styles
@@ -13487,6 +13510,7 @@ export const button = style([base, interactive, {
     #[test]
     #[serial]
     fn test_vanilla_extract_selectors() {
+        let _state = test_state::TestStateGuard::new();
         reset_class_map();
         reset_file_map();
         // complex selectors
@@ -13560,6 +13584,7 @@ export const child = style({
     #[test]
     #[serial]
     fn test_vanilla_extract_media_queries() {
+        let _state = test_state::TestStateGuard::new();
         reset_class_map();
         reset_file_map();
         // @media queries
@@ -13598,6 +13623,7 @@ export const responsive = style({
     #[test]
     #[serial]
     fn test_vanilla_extract_supports() {
+        let _state = test_state::TestStateGuard::new();
         reset_class_map();
         reset_file_map();
         // @supports queries
@@ -13792,6 +13818,7 @@ export const grid = style({
     #[test]
     #[serial]
     fn test_vanilla_extract_invalid_js_execution() {
+        let _state = test_state::TestStateGuard::new();
         // Test vanilla-extract file with invalid JS (covers line 107 fallback)
         reset_class_map();
         reset_file_map();
@@ -13818,6 +13845,7 @@ export const broken = style((() => { throw new Error("fail"); })())
     #[test]
     #[serial]
     fn test_vanilla_extract_empty_styles() {
+        let _state = test_state::TestStateGuard::new();
         // Test vanilla-extract file that produces empty styles (covers line 116)
         reset_class_map();
         reset_file_map();
@@ -13843,6 +13871,7 @@ const unused = 1;
     #[test]
     #[serial]
     fn test_vanilla_extract_constant_exports() {
+        let _state = test_state::TestStateGuard::new();
         // Test vanilla-extract file with constant exports (covers lines 576-577)
         reset_class_map();
         reset_file_map();
@@ -13870,6 +13899,7 @@ export const box = style({ padding: SPACING })
     #[test]
     #[serial]
     fn test_vanilla_extract_theme_with_vars() {
+        let _state = test_state::TestStateGuard::new();
         // Test createTheme with array destructuring [themeClass, vars] (covers lines 406-430)
         reset_class_map();
         reset_file_map();
@@ -13904,6 +13934,7 @@ export const [lightTheme, vars] = createTheme({
     #[test]
     #[serial]
     fn test_vanilla_extract_non_exported_theme() {
+        let _state = test_state::TestStateGuard::new();
         // Test non-exported createTheme (covers theme branches without export)
         reset_class_map();
         reset_file_map();
@@ -13937,6 +13968,7 @@ export const themed = style({
     #[test]
     #[serial]
     fn test_vanilla_extract_style_composition_empty() {
+        let _state = test_state::TestStateGuard::new();
         // Test style with empty composition array
         reset_class_map();
         reset_file_map();
@@ -13963,6 +13995,7 @@ export const withEmpty = style([{}])
     #[test]
     #[serial]
     fn test_vanilla_extract_style_variants_with_base() {
+        let _state = test_state::TestStateGuard::new();
         // Test styleVariants with base composition (covers lines 1165-1177)
         reset_class_map();
         reset_file_map();
@@ -13996,6 +14029,7 @@ export const sizes = styleVariants({
     #[test]
     #[serial]
     fn test_vanilla_extract_layer_and_container() {
+        let _state = test_state::TestStateGuard::new();
         // Test layer() and createContainer() together (covers lines 1207-1216)
         reset_class_map();
         reset_file_map();
@@ -14027,6 +14061,7 @@ export const containerStyle = style({
     #[test]
     #[serial]
     fn test_vanilla_extract_all_imports() {
+        let _state = test_state::TestStateGuard::new();
         // Test file that uses css, globalCss, and keyframes together (covers lines 1049, 1052)
         reset_class_map();
         reset_file_map();
@@ -14064,6 +14099,7 @@ export const box = style({
     #[test]
     #[serial]
     fn test_vanilla_extract_theme_without_vars_name() {
+        let _state = test_state::TestStateGuard::new();
         // Test createTheme two-arg form (covers lines 1108, 1111)
         reset_class_map();
         reset_file_map();
@@ -14100,6 +14136,7 @@ export const darkTheme = createTheme(contract, {
     #[test]
     #[serial]
     fn test_vanilla_extract_font_face_with_style() {
+        let _state = test_state::TestStateGuard::new();
         // Test fontFace used in style (covers fontFace placeholder replacement)
         reset_class_map();
         reset_file_map();
@@ -14131,6 +14168,7 @@ export const text = style({
     #[test]
     #[serial]
     fn test_vanilla_extract_vars_only() {
+        let _state = test_state::TestStateGuard::new();
         // Test createVar exports (covers lines 1191-1192)
         reset_class_map();
         reset_file_map();
@@ -14161,6 +14199,7 @@ export const box = style({
     #[test]
     #[serial]
     fn test_vanilla_extract_global_theme_empty_vars() {
+        let _state = test_state::TestStateGuard::new();
         // Test createGlobalTheme with empty vars (covers line 1142 branch)
         reset_class_map();
         reset_file_map();
@@ -14187,6 +14226,7 @@ export const box = style({ padding: 8 })
     #[test]
     #[serial]
     fn test_vanilla_extract_non_exported_styles() {
+        let _state = test_state::TestStateGuard::new();
         // Test non-exported styles mixed with exported (covers export flag branches)
         reset_class_map();
         reset_file_map();
@@ -14211,6 +14251,7 @@ export const publicStyle = style({ margin: 8 })
     #[test]
     #[serial]
     fn test_vanilla_extract_selector_references() {
+        let _state = test_state::TestStateGuard::new();
         // Test styles referencing each other in selectors (covers find_selector_references)
         reset_class_map();
         reset_file_map();
@@ -14468,6 +14509,7 @@ globalCss({
     #[test]
     #[serial]
     fn test_stylesheet_evaluation_errors() {
+        let _state = test_state::TestStateGuard::new();
         reset_class_map();
         reset_file_map();
         let error = extract(
@@ -14522,6 +14564,7 @@ globalCss({
     #[test]
     #[serial]
     fn test_vanilla_extract_execution_fallback() {
+        let _state = test_state::TestStateGuard::new();
         // Test vanilla-extract file with execution error (covers line 116 fallback)
         reset_class_map();
         reset_file_map();
@@ -14547,6 +14590,7 @@ const x = style({ padding: [[[}}} // invalid syntax
     #[test]
     #[serial]
     fn test_import_alias_vanilla_extract_named() {
+        let _state = test_state::TestStateGuard::new();
         // Test @vanilla-extract/css named exports in regular .tsx files (NOT .css.ts)
         // Note: .css.ts files use vanilla-extract's own processing which doesn't go through import aliases
         reset_class_map();
@@ -14579,6 +14623,7 @@ const buttonStyle = css({ bg: 'red', p: 4 })
     #[test]
     #[serial]
     fn test_vanilla_extract_keyframes_export() {
+        let _state = test_state::TestStateGuard::new();
         // Test exported keyframes (covers lines 1052, 1152-1153)
         reset_class_map();
         reset_file_map();
@@ -14612,6 +14657,7 @@ export const spinner = style({ animation: spin })
     #[test]
     #[serial]
     fn test_vanilla_extract_theme_vars_name_only() {
+        let _state = test_state::TestStateGuard::new();
         // Test createTheme with vars_name but no vars_object_json (covers line 1301)
         reset_class_map();
         reset_file_map();
@@ -14639,6 +14685,7 @@ export const myTheme = createTheme({
     #[test]
     #[serial]
     fn test_vanilla_extract_style_variants_mixed() {
+        let _state = test_state::TestStateGuard::new();
         // Test styleVariants with mixed base and no-base (covers lines 1161-1184)
         reset_class_map();
         reset_file_map();
@@ -14669,6 +14716,7 @@ export const buttons = styleVariants({
     #[test]
     #[serial]
     fn test_vanilla_extract_global_theme_with_vars() {
+        let _state = test_state::TestStateGuard::new();
         // Test createGlobalTheme with CSS vars (covers lines 1142-1144)
         reset_class_map();
         reset_file_map();
@@ -14704,6 +14752,7 @@ export const box = style({ padding: 8 })
     #[test]
     #[serial]
     fn test_vanilla_extract_font_face_empty_props() {
+        let _state = test_state::TestStateGuard::new();
         // Test fontFace with minimal properties (covers line 1132-1135 empty props branch)
         reset_class_map();
         reset_file_map();
@@ -14730,6 +14779,7 @@ export const text = style({ fontFamily: minimalFont })
     #[test]
     #[serial]
     fn test_vanilla_extract_imports_combination() {
+        let _state = test_state::TestStateGuard::new();
         // Test file with multiple import types (covers lines 1049, 1052 import generation)
         reset_class_map();
         reset_file_map();
@@ -14758,6 +14808,7 @@ export const animated = style({ animation: fadeIn })
     #[test]
     #[serial]
     fn test_vanilla_extract_theme_export_variations() {
+        let _state = test_state::TestStateGuard::new();
         // Test createTheme with different export patterns (covers lines 1103-1111)
         reset_class_map();
         reset_file_map();
@@ -14792,6 +14843,7 @@ export const box = style({ padding: 8 })
     #[test]
     #[serial]
     fn test_vanilla_extract_style_composition_multiple() {
+        let _state = test_state::TestStateGuard::new();
         // Test style with multiple style objects in composition array (covers lines 728-729)
         reset_class_map();
         reset_file_map();
@@ -14818,6 +14870,7 @@ export const complex = style([base, { margin: 4 }, { color: 'blue' }])
     #[test]
     #[serial]
     fn test_vanilla_extract_selector_class_replacement() {
+        let _state = test_state::TestStateGuard::new();
         // Test selector references that need class name replacement (covers collected_styles_to_code_with_classes)
         reset_class_map();
         reset_file_map();
@@ -14848,6 +14901,7 @@ export const child = style({
     #[test]
     #[serial]
     fn test_vanilla_extract_all_exports_combined() {
+        let _state = test_state::TestStateGuard::new();
         // Test file with styles, keyframes, globalStyles, themes, vars, containers, layers, fontFaces combined
         // Covers multiple import generation paths and code generation
         reset_class_map();
@@ -14880,6 +14934,7 @@ export const box = style({ fontFamily: myFont })
     #[test]
     #[serial]
     fn test_vanilla_extract_theme_array_destructure() {
+        let _state = test_state::TestStateGuard::new();
         // Test createTheme with array destructuring [themeClass, vars] (covers lines 384, 386-387)
         reset_class_map();
         reset_file_map();
@@ -14909,6 +14964,7 @@ export const themed = style({ color: themeVars.colors.primary })
     #[test]
     #[serial]
     fn test_vanilla_extract_font_face_placeholder() {
+        let _state = test_state::TestStateGuard::new();
         // Test fontFace placeholder remapping (covers lines 503-505)
         reset_class_map();
         reset_file_map();
@@ -14943,6 +14999,7 @@ export const heading = style({ fontFamily: secondFont })
     #[test]
     #[serial]
     fn test_vanilla_extract_global_theme_placeholder() {
+        let _state = test_state::TestStateGuard::new();
         // Test createGlobalTheme placeholder remapping (covers global theme paths)
         reset_class_map();
         reset_file_map();
@@ -15067,6 +15124,7 @@ globalCss({
     #[test]
     #[serial]
     fn test_vanilla_extract_selector_refs_triggers_with_classes() {
+        let _state = test_state::TestStateGuard::new();
         // Test that triggers collected_styles_to_code_with_classes path (selector references)
         reset_class_map();
         reset_file_map();
@@ -15097,6 +15155,7 @@ globalStyle('body', { margin: 0 })
     #[test]
     #[serial]
     fn test_vanilla_extract_theme_without_vars_json() {
+        let _state = test_state::TestStateGuard::new();
         // Test createTheme that has vars_name but might not have vars_object_json (covers line 1111)
         reset_class_map();
         reset_file_map();
@@ -15161,6 +15220,7 @@ globalCss({
     #[test]
     #[serial]
     fn test_selector_refs_with_global_theme() {
+        let _state = test_state::TestStateGuard::new();
         // Test that triggers append_non_style_code with global themes (covers lines 1142-1144, 1221-1222)
         // Need selector references + createGlobalTheme
         reset_class_map();
@@ -15195,6 +15255,7 @@ export const child = style({
     #[test]
     #[serial]
     fn test_vanilla_extract_with_at_container_selector() {
+        let _state = test_state::TestStateGuard::new();
         // Test @container with selector context (covers line 134 in extract_style_from_expression.rs)
         reset_class_map();
         reset_file_map();
@@ -15443,6 +15504,7 @@ const Button = styled.button({ bg: 'red' })
 
     /// `code` extracted with readable class names
     fn readable_code(code: &str) -> String {
+        let _state = test_state::TestStateGuard::new();
         reset_class_map();
         reset_file_map();
         css::debug::set_debug(true);
@@ -15457,7 +15519,6 @@ const Button = styled.button({ bg: 'red' })
                 import_aliases: HashMap::new(),
             },
         );
-        css::debug::set_debug(false);
         match output {
             Ok(output) => output.code,
             Err(error) => error.to_string(),
@@ -15894,6 +15955,7 @@ export const d = css(base, { positioning: side, styleOrder: 2 })",
     #[test]
     #[serial]
     fn test_css_composes_imported_classes() {
+        let _state = test_state::TestStateGuard::new();
         reset_class_map();
         reset_file_map();
         let modules: &[(&str, &str)] = &[(
@@ -17660,6 +17722,7 @@ const styles = stylex.create({
     #[test]
     #[serial]
     fn test_vanilla_extract_numbers_follow_vanilla_extract_units() {
+        let _state = test_state::TestStateGuard::new();
         reset_class_map();
         reset_file_map();
         let output = extract(
@@ -19480,6 +19543,7 @@ const composed = stylex.create({ combined: { ...stylex.include(base.root) } });"
     #[test]
     #[serial]
     fn test_length_token_extraction() {
+        let _state = test_state::TestStateGuard::new();
         // Test $token on gap prop
         reset_class_map();
         reset_file_map();
@@ -19544,6 +19608,7 @@ const composed = stylex.create({ combined: { ...stylex.include(base.root) } });"
     #[test]
     #[serial]
     fn test_shadow_token_extraction() {
+        let _state = test_state::TestStateGuard::new();
         // Test $token on boxShadow prop
         reset_class_map();
         reset_file_map();
@@ -19589,6 +19654,7 @@ const composed = stylex.create({ combined: { ...stylex.include(base.root) } });"
     #[serial]
     fn test_responsive_length_token_literal_vs_array() {
         use css::theme_tokens::set_theme_token_levels;
+        let _state = test_state::TestStateGuard::new();
 
         let mut length = BTreeMap::new();
         length.insert("containerX".to_string(), vec![0, 2]);
@@ -19679,6 +19745,7 @@ const composed = stylex.create({ combined: { ...stylex.include(base.root) } });"
     #[serial]
     fn test_responsive_shadow_token_literal_vs_array() {
         use css::theme_tokens::set_theme_token_levels;
+        let _state = test_state::TestStateGuard::new();
 
         let mut shadow = BTreeMap::new();
         shadow.insert("card".to_string(), vec![0, 3]);
@@ -23443,6 +23510,7 @@ export const App = () => <Global {...rest} styles={{ body: { margin: '0px' } }} 
         files
             .iter()
             .map(|(filename, code)| {
+                let _state = test_state::TestStateGuard::new();
                 reset_class_map();
                 reset_file_map();
                 (
@@ -23655,6 +23723,7 @@ export const App = () => <Global {...rest} styles={{ body: { margin: '0px' } }} 
         ]
         .iter()
         .map(|code| {
+            let _state = test_state::TestStateGuard::new();
             reset_class_map();
             reset_file_map();
             extract("test.tsx", code, emotion_option())

@@ -12,6 +12,7 @@ fn legacy_import_changes_cache_generation_when_exported(
     #[case] with_styles: bool,
     #[case] atom_mode: bool,
 ) {
+    let _scope = TestStateGuard::new();
     // Given
     reset_build_state_internal();
     let mut legacy = StyleSheet::default();
@@ -47,6 +48,7 @@ fn legacy_import_changes_cache_generation_when_exported(
 #[test]
 #[serial]
 fn exported_generation_roundtrips_frozen_atom_placement() {
+    let _scope = TestStateGuard::new();
     // Given
     reset_build_state_internal();
     css::atom_hoist::set_atom_hoist(Some(2));

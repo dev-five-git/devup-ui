@@ -125,6 +125,7 @@ fn original_dialects_remain_accepted_when_they_are_not_javascript_commonjs(
 fn hybrid_dependency_is_read_when_commonjs_contains_es_exports(
     #[values(true, false)] single_css: bool,
 ) {
+    let _state = crate::test_state::TestStateGuard::new();
     // Given
     reset_class_map();
     reset_file_map();
@@ -146,6 +147,7 @@ fn hybrid_dependency_is_read_when_commonjs_contains_es_exports(
 fn emotion_error_restores_written_callee_when_source_is_hybrid_commonjs(
     #[values(true, false)] single_css: bool,
 ) {
+    let _state = crate::test_state::TestStateGuard::new();
     // Given
     let source = "import * as E from '@emotion/css';\nexport const result=E.cx`a b`;";
     // When
