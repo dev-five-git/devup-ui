@@ -48,7 +48,9 @@ import {
 } from '@devup-ui/wasm'
 import { type Compiler } from 'webpack'
 
+import { createWebpackReservation } from './reservation'
 import { servedCss } from './served-css'
+import { reconcileWatchCss } from './watch-css'
 
 export interface DevupUIWebpackPluginOptions {
   package: string
@@ -62,20 +64,15 @@ export interface DevupUIWebpackPluginOptions {
   prefix?: string
   shorthands?: CustomShorthands
   /**
-   * Atom-level route-aware hoisting threshold.
-   *
-   * When set, a style atom whose content is reached by `>= atomHoist` distinct
-   * entries/routes is emitted once into the shared `devup-ui.css`; route-private
-   * atoms stay in their per-route chunk. Clamped to a minimum of 2 (an atom
-   * shared by `>= 2` routes is the smallest case worth hoisting). Omit to
-   * disable atom hoisting (identity behavior).
+   * Atom-level route-aware hoisting threshold. Defaults to 2; 0 disables it.
+   * Positive thresholds are clamped to >= 2. Canonical buckets reached by at
+   * least this many routes use global short counter names in devup-ui.css;
+   * other buckets keep per-file counter names in their per-route chunks.
+   * Fewer than two routes yields no hoisted plan. Ignored when singleCss is true.
    *
    * Composes with single-importer collapse: files used by exactly one importer
    * still merge into that importer's bucket (deduplicating their identical
    * atoms), and atom hoisting then shares atoms across the remaining buckets.
-   *
-   * Currently honored by the Next.js plugin; other bundlers wire it
-   * progressively. No effect where unsupported.
    */
   atomHoist?: number
   /**
@@ -84,6 +81,8 @@ export interface DevupUIWebpackPluginOptions {
    * Set to `false` to disable specific aliases
    */
   importAliases?: ImportAliases
+  /** Adapter-owned complete extraction set; undefined keeps generic entry reachability. */
+  readonly productionPrewarmFiles?: readonly string[]
 }
 
 export class DevupUIWebpackPlugin {
@@ -92,6 +91,7 @@ export class DevupUIWebpackPlugin {
   classMapFile: string
   fileMapFile: string
   private importAliases: WasmImportAliases
+  private readonly normalizedShorthands: Record<string, readonly string[]>
 
   constructor({
     package: libPackage = '@devup-ui/react',
@@ -104,10 +104,12 @@ export class DevupUIWebpackPlugin {
     singleCss = false,
     prefix,
     shorthands,
-    atomHoist,
+    atomHoist = 2,
+    productionPrewarmFiles,
     importAliases: userImportAliases,
   }: Partial<DevupUIWebpackPluginOptions> = {}) {
-    registerShorthands(normalizeShorthands(shorthands ?? {}))
+    this.normalizedShorthands = normalizeShorthands(shorthands ?? {})
+    registerShorthands(this.normalizedShorthands)
     this.importAliases = mergeImportAliases(
       userImportAliases,
       readJsxImportSource(),
@@ -123,7 +125,21 @@ export class DevupUIWebpackPlugin {
       include,
       singleCss,
       prefix,
+      shorthands,
       atomHoist,
+      productionPrewarmFiles:
+        productionPrewarmFiles === undefined
+          ? undefined
+          : [
+              ...new Set(
+                productionPrewarmFiles.map((file) =>
+                  relative(
+                    process.cwd(),
+                    resolve(process.cwd(), file.replaceAll('\\', '/')),
+                  ).replaceAll('\\', '/'),
+                ),
+              ),
+            ].sort(),
     }
 
     this.sheetFile = join(this.options.distDir, 'sheet.json')
@@ -169,9 +185,9 @@ export class DevupUIWebpackPlugin {
    * holds the styles of every one (all collapsed members of a bucket, and the
    * shared base), not just those of the modules webpack happened to build
    * first. Mirrors the loader's `codeExtract` call (same filename keying +
-   * options) so re-extraction during compilation is idempotent. Best-effort:
-   * extraction errors are swallowed so a single bad file never breaks the
-   * build, and a stylesheet still missing styles is rebuilt by another pass.
+   * options) so re-extraction during compilation is idempotent. Generic entry
+   * discovery remains best-effort; an adapter's complete set is authoritative
+   * and its read/extraction failures must fail the build.
    */
   private prewarmExtractor(entries: string[]) {
     try {
@@ -183,11 +199,21 @@ export class DevupUIWebpackPlugin {
           toId: (path) => relative(cwd, path).replaceAll('\\', '/'),
         }),
       )
-      for (const file of computeReachableFiles({
-        srcDir: resolve(cwd, 'src'),
-        tsconfigPath: resolve(cwd, 'tsconfig.json'),
-        entries,
-      })) {
+      const files =
+        this.options.productionPrewarmFiles?.map((file) =>
+          resolve(cwd, file),
+        ) ??
+        computeReachableFiles({
+          srcDir: resolve(cwd, 'src'),
+          tsconfigPath: resolve(cwd, 'tsconfig.json'),
+          entries,
+        })
+      if (this.options.productionPrewarmFiles !== undefined) {
+        seedFileNumbers({ seedFileMap }, [
+          ...this.options.productionPrewarmFiles,
+        ])
+      }
+      for (const file of files) {
         const relativePath = relative(cwd, file).replaceAll('\\', '/')
         let relCssDir = relative(dirname(file), this.options.cssDir).replaceAll(
           '\\',
@@ -205,7 +231,8 @@ export class DevupUIWebpackPlugin {
           this.importAliases,
         )
       }
-    } catch {
+    } catch (error) {
+      if (this.options.productionPrewarmFiles !== undefined) throw error
       // Best-effort warm-up; on failure the css-loader still serves whatever
       // atoms were extracted, matching pre-fix behavior.
     }
@@ -215,9 +242,20 @@ export class DevupUIWebpackPlugin {
     // A build starts from its own options, not from what an earlier build in
     // this process left in the engine
     const endBuild = beginBuild({ resetBuildState })
-    compiler.hooks.shutdown?.tap('DevupUIWebpackPlugin', endBuild)
+    try {
+      compiler.hooks.shutdown?.tap('DevupUIWebpackPlugin', endBuild)
+      this.initialize(compiler)
+    } catch (error) {
+      // Webpack cannot return the compiler when apply throws, so no caller can close it.
+      endBuild()
+      throw error
+    }
+  }
+
+  private initialize(compiler: Compiler) {
     setDebug(this.options.debug)
     setPrefix(this.options.prefix ?? null)
+    registerShorthands(this.normalizedShorthands)
     const existsDevup = existsSync(this.options.devupFile)
     // read devup.json
     if (!existsSync(this.options.distDir))
@@ -247,20 +285,23 @@ export class DevupUIWebpackPlugin {
     }
     this.writeDataFiles()
 
-    // Atom-level hoisting (opt-in via `atomHoist`). Configured BEFORE any loader
-    // runs codeExtract (apply() body is synchronous, loaders run during
-    // compilation) so atoms receive global (shared) class names. The WASM
+    // Per-file atom hoisting defaults to 2; 0 disables it, singleCss ignores it.
+    // Configured before loaders run codeExtract (apply() is synchronous), so
+    // eligible atoms receive global short counter names. The WASM
     // instance is shared in-process with the loaders. Composes with
     // single-importer collapse: both keyed by the canonical bucket. The webpack
     // loader passes relative(process.cwd(), id) as the extraction filename, so
     // the graph maps use cwd-relative keys (keyBy: 'cwd-relative').
     const atomHoist = this.options.atomHoist
     const atomMode =
-      atomHoist !== undefined && Number.isFinite(atomHoist) && atomHoist > 0
+      !this.options.singleCss &&
+      atomHoist !== undefined &&
+      Number.isFinite(atomHoist) &&
+      atomHoist > 0
     // Single-importer collapse ALWAYS runs: files used by exactly one importer
     // merge into that importer's bucket, deduplicating their identical atoms.
     // The canonical map is built + imported unconditionally; only atom HOISTING
-    // composes on top when `atomHoist` is set. Mirrors next-plugin's pre-pass.
+    // composes on top in effective atom mode. Mirrors next-plugin's pre-pass.
     try {
       const srcDir = resolve(process.cwd(), 'src')
       const tsconfigPath = resolve(process.cwd(), 'tsconfig.json')
@@ -286,11 +327,16 @@ export class DevupUIWebpackPlugin {
           setAtomHoist(plan.threshold)
         } else {
           console.info(
-            '[devup-ui] atomHoist is set but fewer than 2 routes were detected; atom hoisting is a no-op (single-entry/SPA).',
+            '[devup-ui] fewer than 2 routes were detected; atom hoisting is a no-op (single-entry/SPA).',
           )
         }
       }
-    } catch {
+    } catch (error) {
+      if (
+        !this.options.watch &&
+        this.options.productionPrewarmFiles !== undefined
+      )
+        throw error
       // Best-effort; on failure canonical() is the identity (no merge) and atom
       // hoisting stays off.
     }
@@ -298,21 +344,28 @@ export class DevupUIWebpackPlugin {
     // Number every file the build can extract in path order, so class
     // prefixes do not depend on which file a worker reaches first. Numbers
     // already handed out (a restored map in watch mode) stay.
-    try {
-      const cwd = process.cwd()
-      seedFileNumbers(
-        { seedFileMap },
-        collectNumberedFiles({
-          roots: [resolve(cwd, 'src')],
-          include: this.options.include,
-          cwd,
-          needles: extractedNeedles(this.options.package, this.importAliases),
-          toId: (path) => relative(cwd, path).replaceAll('\\', '/'),
-        }),
-      )
-    } catch {
-      // Best-effort; numbering falls back to arrival order.
-    }
+    if (this.options.debug)
+      try {
+        const cwd = process.cwd()
+        seedFileNumbers(
+          { seedFileMap },
+          collectNumberedFiles({
+            roots: [resolve(cwd, 'src')],
+            include: this.options.include,
+            cwd,
+            needles: extractedNeedles(this.options.package, this.importAliases),
+            importAliases: this.importAliases,
+            toId: (path) => relative(cwd, path).replaceAll('\\', '/'),
+          }),
+        )
+      } catch (error) {
+        if (
+          !this.options.watch &&
+          this.options.productionPrewarmFiles !== undefined
+        )
+          throw error
+        // Best-effort; numbering falls back to arrival order.
+      }
     // Pre-warm the extractor so the css-loader serves COMPLETE CSS.
     //
     // Webpack builds a stylesheet module ONCE, at its FIRST import: the shared
@@ -322,7 +375,10 @@ export class DevupUIWebpackPlugin {
     // (single shared WASM instance). Re-extraction by the per-file loader is
     // then idempotent (set-based atom dedup). Watch mode rebuilds stylesheets
     // through the files the loaders write instead.
-    if (!this.options.watch) {
+    const reserve = createWebpackReservation(this.options, this.importAliases)
+    const reserveBeforeCompile = () => {
+      reserve(compiler.options)
+      if (this.options.watch) return
       const { entry, context = process.cwd() } = compiler.options
       this.prewarmExtractor(
         typeof entry === 'function'
@@ -332,8 +388,23 @@ export class DevupUIWebpackPlugin {
             ),
       )
     }
+    compiler.hooks.run.tap(
+      'DevupUIWebpackPluginReservation',
+      reserveBeforeCompile,
+    )
+    if (!this.options.watch)
+      compiler.hooks.watchRun.tapPromise(
+        'DevupUIWebpackPluginReservation',
+        async () => {
+          reserveBeforeCompile()
+        },
+      )
 
     if (this.options.watch) {
+      compiler.hooks.thisCompilation.tap(
+        'DevupUIWebpackPluginWatchCss',
+        reconcileWatchCss,
+      )
       let lastModifiedTime: string | null = null
       compiler.hooks.watchRun.tapPromise('DevupUIWebpackPlugin', async () => {
         const stamps: number[] = []
@@ -354,6 +425,7 @@ export class DevupUIWebpackPlugin {
 
           lastModifiedTime = modifiedTime
         }
+        reserve(compiler.options)
       })
     }
     if (existsDevup || this.tailwindFiles.length > 0)

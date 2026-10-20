@@ -9,8 +9,8 @@
 
 use crate::ImportAlias;
 use crate::css_prop::{
-    CssProp, EMOTION_REACT, REACT_JSX_PRAGMA, builds_jsx_with_emotion, class_names_child,
-    emotion_pragma, is_emotion, is_jsx_file, is_jsx_function, react_runtime, returned,
+    CssProp, EMOTION_REACT, builds_jsx_with_emotion, class_names_child, is_emotion, is_jsx_file,
+    is_jsx_function, react_runtime, returned,
 };
 use crate::utils::{
     get_str_by_property_key, is_vanilla_extract_file, js_number_literal, keeps_bare_number,
@@ -26,7 +26,9 @@ use oxc_ast_visit::{
     walk::{walk_call_expression, walk_jsx_element, walk_jsx_opening_element},
 };
 use oxc_parser::Parser;
-use oxc_span::{GetSpan, SourceType};
+use oxc_span::GetSpan;
+#[cfg(test)]
+use oxc_span::SourceType;
 use std::borrow::Cow;
 use std::collections::HashMap;
 
@@ -57,10 +59,20 @@ struct LibraryNumbers<'n> {
     /// Local names of Emotion's `ClassNames`, whose child function takes a
     /// `css` taking rules
     class_names: Vec<&'n str>,
+    class_names_calls: Vec<oxc_syntax::symbol::SymbolId>,
+    scoping: Option<oxc_semantic::Scoping>,
     replacements: Vec<(usize, usize, String)>,
+    /// Where a constant inlined later is a number or rules of the library, as
+    /// the source reads them
+    marks: Vec<(usize, usize)>,
 }
 
 impl LibraryNumbers<'_> {
+    fn mark(expression: &Expression) -> (usize, usize) {
+        let span = expression.span();
+        (span.start as usize, span.end as usize)
+    }
+
     /// `styled.div`, `styled(tag)`, `styled(tag, options)` and their
     /// `.attrs()` / `.withConfig()`: whatever a call of it passes are rules
     fn is_styled_factory(&self, callee: &Expression) -> bool {
@@ -90,11 +102,17 @@ impl LibraryNumbers<'_> {
                 }
             }
             Expression::ObjectExpression(object) => {
+                self.marks.push(Self::mark(rules));
                 for property in &object.properties {
-                    if let ObjectPropertyKind::ObjectProperty(property) = property
-                        && let Some(key) = get_str_by_property_key(&property.key)
-                    {
-                        self.pixelify_value(&key, &property.value);
+                    match property {
+                        ObjectPropertyKind::ObjectProperty(property) => {
+                            if let Some(key) = get_str_by_property_key(&property.key) {
+                                self.pixelify_value(&key, &property.value);
+                            }
+                        }
+                        ObjectPropertyKind::SpreadProperty(spread) => {
+                            self.marks.push(Self::mark(&spread.argument));
+                        }
                     }
                 }
             }
@@ -104,7 +122,7 @@ impl LibraryNumbers<'_> {
             }
             Expression::LogicalExpression(logical) => self.pixelify(&logical.right),
             Expression::ParenthesizedExpression(inner) => self.pixelify(&inner.expression),
-            _ => {}
+            rules => self.marks.push(Self::mark(rules)),
         }
     }
 
@@ -183,6 +201,9 @@ impl LibraryNumbers<'_> {
             }
             return;
         }
+        if !matches!(value, Expression::ObjectExpression(_)) && !keeps_bare_number(key) {
+            self.marks.push(Self::mark(value));
+        }
         match value {
             Expression::ArrayExpression(array) => self.fallbacks(key, array),
             Expression::ObjectExpression(_) => {
@@ -194,7 +215,12 @@ impl LibraryNumbers<'_> {
                 self.pixelify_value(key, &conditional.consequent);
                 self.pixelify_value(key, &conditional.alternate);
             }
-            Expression::LogicalExpression(logical) => self.pixelify_value(key, &logical.right),
+            Expression::LogicalExpression(logical) => {
+                if logical.operator != LogicalOperator::And {
+                    self.pixelify_value(key, &logical.left);
+                }
+                self.pixelify_value(key, &logical.right);
+            }
             Expression::ParenthesizedExpression(inner) => {
                 self.pixelify_value(key, &inner.expression);
             }
@@ -209,29 +235,9 @@ impl LibraryNumbers<'_> {
     /// UI reads an array as breakpoints. Literal values become one value
     /// declaring each in order; others stay as written.
     fn fallbacks(&mut self, key: &str, array: &oxc_ast::ast::ArrayExpression) {
-        let values: Option<Vec<String>> = array
-            .elements
-            .iter()
-            .map(|element| {
-                let element = element.as_expression()?;
-                if let Some(number) = js_number_literal(element) {
-                    return Some(if number == 0.0 || keeps_bare_number(key) {
-                        number.to_string()
-                    } else {
-                        format!("{number}px")
-                    });
-                }
-                match element {
-                    Expression::StringLiteral(literal) => Some(literal.value.to_string()),
-                    _ => None,
-                }
-            })
-            .collect();
-        let Some(values) = values.filter(|values| values.len() > 1) else {
+        let Some(joined) = fallback_value(key, array) else {
             return;
         };
-        let property = kebab_property(key);
-        let joined = values.join(&format!(";{property}:"));
         let span = array.span;
         self.replacements.push((
             span.start as usize,
@@ -239,6 +245,30 @@ impl LibraryNumbers<'_> {
             format!("{joined:?}"),
         ));
     }
+}
+
+pub(crate) fn fallback_value(key: &str, array: &oxc_ast::ast::ArrayExpression) -> Option<String> {
+    let values: Option<Vec<String>> = array
+        .elements
+        .iter()
+        .map(|element| {
+            let element = element.as_expression()?;
+            if let Some(number) = js_number_literal(element) {
+                return Some(if number == 0.0 || keeps_bare_number(key) {
+                    number.to_string()
+                } else {
+                    format!("{number}px")
+                });
+            }
+            match element {
+                Expression::StringLiteral(literal) => Some(literal.value.to_string()),
+                _ => None,
+            }
+        })
+        .collect();
+    let values = values.filter(|values| values.len() > 1)?;
+    let property = kebab_property(key);
+    Some(values.join(&format!(";{property}:")))
 }
 
 /// `backgroundColor` as the CSS property `background-color`, `WebkitBoxShadow`
@@ -264,28 +294,49 @@ impl<'a> Visit<'a> for LibraryNumbers<'a> {
     fn visit_jsx_element(&mut self, element: &JSXElement<'a>) {
         let css = match &element.opening_element.name {
             JSXElementName::IdentifierReference(name)
-                if self.class_names.contains(&name.name.as_str()) =>
+                if self.class_names.contains(&name.name.as_str())
+                    && self.scoping.as_ref().is_some_and(|scoping| {
+                        crate::css_prop::binding_of(scoping, name).is_some_and(|symbol| {
+                            scoping.get_root_binding(name.name.as_str().into()) == Some(symbol)
+                        })
+                    }) =>
             {
                 class_names_child(element).and_then(|names| names.css)
             }
             _ => None,
         };
         if let Some(css) = css {
-            self.calls.push((css, RulesAt::EveryArgument));
+            self.class_names_calls.push(css);
         }
         walk_jsx_element(self, element);
         if css.is_some() {
-            self.calls.pop();
+            self.class_names_calls.pop();
         }
     }
 
     fn visit_call_expression(&mut self, call: &CallExpression<'a>) {
         let rules_at = match &call.callee {
-            Expression::Identifier(callee) => self
-                .calls
-                .iter()
-                .find(|(name, _)| *name == callee.name.as_str())
-                .map(|(_, rules_at)| *rules_at),
+            Expression::Identifier(callee) => {
+                let symbol = self
+                    .scoping
+                    .as_ref()
+                    .and_then(|scoping| crate::css_prop::binding_of(scoping, callee));
+                if symbol.is_some_and(|symbol| self.class_names_calls.contains(&symbol)) {
+                    Some(RulesAt::EveryArgument)
+                } else {
+                    self.calls
+                        .iter()
+                        .find(|(name, _)| {
+                            *name == callee.name.as_str()
+                                && self.scoping.as_ref().is_none_or(|scoping| {
+                                    symbol.is_some()
+                                        && scoping.get_root_binding(callee.name.as_str().into())
+                                            == symbol
+                                })
+                        })
+                        .map(|(_, rules_at)| *rules_at)
+                }
+            }
             callee => self
                 .is_styled_factory(callee)
                 .then_some(RulesAt::EveryArgument),
@@ -412,7 +463,15 @@ pub struct Aliased<'a> {
     pub edits: Vec<Edit>,
     /// Which elements take Emotion's `css` prop
     pub css_prop: CssProp,
+    /// Where, in `code`, a constant read is a number or rules the library
+    /// reads as `px` lengths
+    pub px: PxMarks,
 }
+
+/// The spans of the style values and rules written as an expression a
+/// constant can stand in, which Emotion, styled-components and vanilla-extract
+/// read numbers in as `px` lengths
+pub type PxMarks = rustc_hash::FxHashSet<(u32, u32)>;
 
 /// Packages generating CSS on top of vanilla-extract's, which Devup UI does not
 /// compile
@@ -430,7 +489,7 @@ pub fn companion_errors(code: &str, filename: &str) -> Vec<(u32, String)> {
         return Vec::new();
     }
     let allocator = Allocator::default();
-    let source_type = SourceType::from_path(filename).unwrap_or_default();
+    let source_type = crate::parsing::source_type(filename).unwrap_or_default();
     let program = Parser::new(&allocator, code, source_type).parse().program;
     program
         .body
@@ -474,10 +533,11 @@ pub fn transform_import_aliases_with_edits<'a>(
     package: &str,
     import_aliases: &HashMap<String, ImportAlias>,
 ) -> Aliased<'a> {
-    let unchanged = |css_prop| Aliased {
+    let unchanged = |css_prop, px| Aliased {
         code: Cow::Borrowed(code),
         edits: Vec::new(),
         css_prop,
+        px,
     };
     let emotion_aliased = import_aliases.contains_key(EMOTION_REACT);
     let emotion_jsx = builds_jsx_with_emotion(import_aliases);
@@ -487,11 +547,11 @@ pub fn transform_import_aliases_with_edits<'a>(
         && CssProp::of(import_aliases, code, false) == CssProp::Off
         && (import_aliases.is_empty() || !import_aliases.keys().any(|alias| code.contains(alias)))
     {
-        return unchanged(CssProp::Off);
+        return unchanged(CssProp::Off, PxMarks::default());
     }
 
     let allocator = Allocator::default();
-    let source_type = SourceType::from_path(filename).unwrap_or_default();
+    let source_type = crate::parsing::source_type(filename).unwrap_or_default();
 
     // Parse the code
     let parser_ret = Parser::new(&allocator, code, source_type).parse();
@@ -501,29 +561,17 @@ pub fn transform_import_aliases_with_edits<'a>(
 
     // Collect import transformations
     let mut transformations: Vec<(usize, usize, String)> = Vec::new();
-    let mut numbers = LibraryNumbers::default();
-    let mut uses_emotion = emotion_jsx;
-    let mut jsx_pragma = false;
-    let compat = format!("{package}/compat");
-
-    // A pragma building JSX with Emotion builds it with React once the `css`
-    // props are compiled
-    for comment in &program.comments {
-        let span = comment.content_span();
-        let text = &code[span.start as usize..span.end as usize];
-        jsx_pragma |= text.contains("@jsx");
-        if let Some(at) = emotion_pragma(text) {
-            uses_emotion = true;
-            if emotion_aliased {
-                let start = span.start as usize + at;
-                transformations.push((start, start + EMOTION_REACT.len(), "react".to_string()));
-            }
-        }
+    if emotion_aliased {
+        transformations.extend(crate::jsx_import_source::emotion_replacements(&program));
     }
-    // So does a project building every file's JSX with Emotion, through a
-    // pragma, which a file's own one overrides
-    if emotion_jsx && is_jsx_file(filename) && !jsx_pragma {
-        transformations.push((0, 0, REACT_JSX_PRAGMA.to_string()));
+    let mut numbers = LibraryNumbers::default();
+    let mut uses_emotion = emotion_jsx || !transformations.is_empty();
+    let compat = format!("{package}/compat");
+    if emotion_jsx
+        && is_jsx_file(filename)
+        && let Some(replacement) = crate::jsx_import_source::project_replacement(&program)
+    {
+        transformations.push(replacement);
     }
 
     for stmt in &program.body {
@@ -611,6 +659,16 @@ pub fn transform_import_aliases_with_edits<'a>(
         }
     }
     numbers.css_prop = CssProp::of(import_aliases, code, uses_emotion);
+    if !numbers.class_names.is_empty()
+        && (code.bytes().any(|byte| byte.is_ascii_digit()) || code.contains('['))
+    {
+        numbers.scoping = Some(
+            oxc_semantic::SemanticBuilder::new()
+                .build(&program)
+                .semantic
+                .into_scoping(),
+        );
+    }
     if !(numbers.calls.is_empty()
         && numbers.styled.is_empty()
         && numbers.components.is_empty()
@@ -625,12 +683,31 @@ pub fn transform_import_aliases_with_edits<'a>(
 
     // Apply transformations in reverse order to preserve positions
     if transformations.is_empty() {
-        return unchanged(numbers.css_prop);
+        let px = numbers
+            .marks
+            .iter()
+            .map(|&(start, end)| (start as u32, end as u32))
+            .collect();
+        return unchanged(numbers.css_prop, px);
     }
 
     let edits = transformations
         .iter()
         .map(|(start, end, replacement)| (*start, *end, replacement.len()))
+        .collect();
+    let shifted = |offset: usize| {
+        let before = transformations
+            .iter()
+            .take_while(|(_, end, _)| *end <= offset);
+        let (added, removed) = before.fold((0, 0), |(added, removed), (start, end, text)| {
+            (added + text.len(), removed + end - start)
+        });
+        (offset + added - removed) as u32
+    };
+    let px = numbers
+        .marks
+        .iter()
+        .map(|&(start, end)| (shifted(start), shifted(end)))
         .collect();
     let mut result = code.to_string();
     for (start, end, replacement) in transformations.into_iter().rev() {
@@ -641,6 +718,7 @@ pub fn transform_import_aliases_with_edits<'a>(
         code: Cow::Owned(result),
         edits,
         css_prop: numbers.css_prop,
+        px,
     }
 }
 
@@ -651,7 +729,7 @@ pub(super) fn pixelify_emotion_values<'a>(
     original: &str,
 ) -> (Cow<'a, str>, Vec<Edit>) {
     let allocator = Allocator::default();
-    let source_type = SourceType::from_path(filename).unwrap_or_default();
+    let source_type = crate::parsing::source_type(filename).unwrap_or_default();
     let original_program = Parser::new(&allocator, original, source_type)
         .parse()
         .program;

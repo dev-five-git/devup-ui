@@ -7,8 +7,10 @@ import {
   collectNumberedFiles,
   createCompatTypes,
   createModuleResolver,
+  createSharedSlotReservation,
   createThemeInterfaceArgs,
   type CustomShorthands,
+  isProjectJsx,
   loadDevupConfig,
   mergeImportAliases,
   normalizeShorthands,
@@ -21,8 +23,10 @@ import {
   codeExtract,
   getCss,
   getThemeInterface,
+  hasDevupUI,
   registerShorthands,
   registerTheme,
+  reserveClassSlots,
   resetBuildState,
   seedFileMap,
   setDebug,
@@ -91,20 +95,6 @@ async function initialize(shorthands: Record<string, readonly string[]>) {
   registerShorthands(shorthands)
   setPrefix(null)
   setModuleResolver(createModuleResolver())
-  // Number every source file in path order, so class prefixes do not depend
-  // on the order Bun loads files in
-  try {
-    seedFileNumbers(
-      { seedFileMap },
-      collectNumberedFiles({
-        roots: [resolve('src')],
-        needles: compiledPackages,
-        toId: (path) => path,
-      }),
-    )
-  } catch {
-    // Best-effort; numbering falls back to arrival order.
-  }
   if (!existsSync(distDir)) await mkdir(distDir, { recursive: true })
   await writeFile(join(distDir, '.gitignore'), '*', 'utf-8')
   await writeFile(
@@ -148,7 +138,11 @@ async function loadSourceFile(filePath: string, bundling: boolean) {
         : 'js'
   const contents = await Bun.file(filePath).text()
 
-  if (importsCompiledPackage(contents, loader)) {
+  if (
+    isProjectJsx(filePath, importAliases) ||
+    importsCompiledPackage(contents, loader) ||
+    hasDevupUI(filePath, contents, libPackage, importAliases)
+  ) {
     const code = codeExtract(
       filePath,
       contents,
@@ -186,7 +180,55 @@ function DevupUI(options: DevupUIBunPluginOptions = {}) {
       const endBuild = beginBuild({ resetBuildState })
       build.onEnd?.(endBuild)
       await initialize(shorthands)
-      setDebug(options.debug ?? !bundling)
+      const debug = options.debug ?? !bundling
+      setDebug(debug)
+      const slots = createSharedSlotReservation({ reserveClassSlots })
+      let reservationPending = bundling
+      const reserveFiles = () => {
+        slots.invalidate()
+        slots.reserve(
+          {
+            roots: [resolve('src'), resolve('app')],
+            entries: bundling
+              ? build.config.entrypoints.map((entry) => ({
+                  request: resolve(entry),
+                  context: process.cwd(),
+                }))
+              : [],
+            cwd: process.cwd(),
+            package: libPackage,
+            importAliases,
+            toId: (path) => path,
+          },
+          {
+            singleCss,
+            importMainCssInCode: true,
+            importMainCssInCss: false,
+            cssDir: ({ physicalPath }) =>
+              relative(dirname(physicalPath), cssDir).replaceAll('\\', '/'),
+          },
+        )
+      }
+      if (bundling)
+        build.onStart(() => {
+          reservationPending = true
+        })
+      else if (!debug) reserveFiles()
+      else {
+        try {
+          seedFileNumbers(
+            { seedFileMap },
+            collectNumberedFiles({
+              roots: [resolve('src')],
+              needles: compiledPackages,
+              importAliases,
+              toId: (path) => path,
+            }),
+          )
+        } catch (error) {
+          if (!(error instanceof Error)) throw error
+        }
+      }
 
       // Resolve devup-ui CSS files onto a path-free virtual id, so nothing
       // derived from this checkout's cwd can be baked into Bun's shared,
@@ -214,7 +256,13 @@ function DevupUI(options: DevupUIBunPluginOptions = {}) {
         {
           filter: /\.(?:tsx?|jsx|mjs)$|[\\/]@devup-ui[\\/].*\.js$/,
         },
-        ({ path }) => loadSourceFile(path, bundling),
+        ({ path }) => {
+          if (reservationPending) {
+            reserveFiles()
+            reservationPending = false
+          }
+          return loadSourceFile(path, bundling)
+        },
       )
     },
   } satisfies BunPlugin

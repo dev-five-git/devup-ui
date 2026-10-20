@@ -1,5 +1,8 @@
 pub mod at_rule;
+#[cfg(test)]
+mod atom_counter_tests;
 pub mod atom_hoist;
+pub mod atom_name;
 pub mod class_map;
 mod constant;
 pub mod debug;
@@ -10,11 +13,15 @@ mod num_to_nm_base;
 pub mod optimize_multi_css_value;
 pub mod optimize_value;
 mod property_names;
+pub mod quoted;
 pub mod rm_css_comment;
 mod selector_separator;
 pub mod shorthand;
+pub mod slot_reservation;
 pub mod style_selector;
 pub mod tailwind_definitions;
+#[doc(hidden)]
+pub mod test_state;
 pub mod theme_tokens;
 pub mod utils;
 
@@ -79,13 +86,9 @@ mod prefix_state {
 use prefix_state::with_prefix;
 pub use prefix_state::{get_prefix, set_prefix};
 
-/// Write `value` into `out`, replacing every `&` with `".<class_name>"` in place.
-///
-/// Equivalent to `out.push_str(&value.replace('&', &format!(".{class_name}")))`
-/// but avoids both the throwaway `".<class>"` String and the intermediate
-/// `str::replace` result String.
+/// Expand nesting tokens without copying or modifying quoted/escaped text.
 fn write_ampersand_expansion(out: &mut String, value: &str, class_name: &str) {
-    for (i, seg) in value.split('&').enumerate() {
+    for (i, seg) in quoted::split_unquoted(value, b'&').enumerate() {
         if i > 0 {
             out.push('.');
             out.push_str(class_name);
@@ -261,6 +264,11 @@ static CUSTOM_SHORTHANDS: LazyLock<RwLock<BTreeMap<String, Vec<String>>>> =
     LazyLock::new(|| RwLock::new(BTreeMap::new()));
 static HAS_CUSTOM_SHORTHANDS: AtomicBool = AtomicBool::new(false);
 
+/// Clear custom aliases at a quiescent test boundary, including the fast-path flag.
+pub fn reset_custom_shorthands() {
+    test_state::replace_shorthands((BTreeMap::new(), false));
+}
+
 /// Replace the custom shorthand registry used by style extraction.
 pub fn set_custom_shorthands(
     shorthands: BTreeMap<String, Vec<String>>,
@@ -297,7 +305,12 @@ fn params_position(selector: &str) -> Option<usize> {
     let mut depth = 0usize;
     let mut found = None;
     let mut index = 0;
+    let mut quotes = quoted::QuoteState::default();
     while let Some(&byte) = bytes.get(index) {
+        if !quotes.is_syntax(byte) {
+            index += 1;
+            continue;
+        }
         match byte {
             b'(' | b'[' => depth += 1,
             b')' | b']' => depth = depth.saturating_sub(1),
@@ -411,6 +424,7 @@ fn class_num_for_key(filename_key: &str, build_key: impl FnOnce(&mut String)) ->
                 } else {
                     let len = file_entry.len();
                     file_entry.insert(key.clone(), len);
+                    slot_reservation::record_insert();
                     num_to_nm_base(len)
                 }
             } else {
@@ -422,6 +436,7 @@ fn class_num_for_key(filename_key: &str, build_key: impl FnOnce(&mut String)) ->
                 let mut inner = std::collections::HashMap::with_capacity(1);
                 inner.insert(key.clone(), 0);
                 map.insert(filename_key.to_string(), inner);
+                slot_reservation::record_insert();
                 num_to_nm_base(0)
             }
         })
@@ -430,6 +445,17 @@ fn class_num_for_key(filename_key: &str, build_key: impl FnOnce(&mut String)) ->
 
 #[must_use]
 pub fn keyframes_to_keyframes_name(keyframes: &str, filename: Option<&str>) -> String {
+    if atom_hoist::is_atom_hoist() {
+        // Keyframes remain in their file chunk, even when declarations are hoisted.
+        let scope = filename.map_or_else(
+            || "g".to_string(),
+            |file| format!("l-{}", atom_name::hex(&file_map::canonical(file))),
+        );
+        return atom_name::counter_name(
+            &format!("k1-{scope}-{}", atom_name::hex(keyframes)),
+            filename,
+        );
+    }
     with_prefix(|prefix| {
         if is_debug() {
             let mut result = String::with_capacity(prefix.len() + 2 + keyframes.len());
@@ -463,21 +489,25 @@ pub fn keyframes_to_keyframes_name(keyframes: &str, filename: Option<&str>) -> S
     })
 }
 
-/// The class marking the component `name` defined in `filename`, which other
-/// styles select it by
+/// The class marking the component `name` that `filename` defines.
+///
+/// Other styles, in this file or another, select the component by it. It is
+/// `index` among the components of the file, so it comes from the file and the
+/// component alone: every file that selects the component computes the same
+/// class, in any process. Two dashes keep it apart from every class styles are
+/// named by.
 #[must_use]
-pub fn component_marker(name: &str, filename: &str) -> String {
+pub fn component_marker(name: &str, index: usize, filename: &str) -> String {
     with_prefix(|prefix| {
+        let file = get_file_num_by_filename(filename);
         if is_debug() {
-            format!("{prefix}c-{name}")
+            format!("{prefix}c-{file}-{name}")
         } else {
-            let class_num = class_num_for_key("", |key| {
-                key.push_str("c-");
-                key.push_str(filename);
-                key.push('-');
-                key.push_str(name);
-            });
-            format!("{prefix}{class_num}")
+            format!(
+                "{prefix}{}--{}",
+                num_to_nm_base(file),
+                num_to_nm_base(index)
+            )
         }
     })
 }
@@ -558,8 +588,25 @@ pub fn sheet_to_classname(
     // `$primary`) borrow straight from `value` with zero allocation, and the
     // key/result builders below only ever read `&optimized` as `&str`.
     let optimized = value.map_or(Cow::Borrowed(""), optimize_value);
+    if atom_hoist::is_atom_hoist() {
+        let scope = atom_name::scope(filename);
+        let value = match value {
+            None => "n".to_string(),
+            Some(_) => format!("s-{}", atom_name::hex(&optimized)),
+        };
+        let identity = format!(
+            "a1-{scope}-{}-{level}-{value}-{}-{}",
+            atom_name::hex(property.trim()),
+            atom_name::hex(selector.unwrap_or_default()),
+            style_order.unwrap_or(255),
+        );
+        return atom_name::counter_name(
+            &identity,
+            filename.filter(|file| !atom_hoist::is_hoisted_bucket(file)),
+        );
+    }
     if is_debug() {
-        let selector = selector.unwrap_or_default().trim();
+        let selector = quoted::trim_css(selector.unwrap_or_default());
         let encoded = if selector.is_empty() {
             String::new()
         } else {
@@ -592,7 +639,7 @@ pub fn sheet_to_classname(
             result
         })
     } else {
-        let trimmed_selector = selector.unwrap_or_default().trim();
+        let trimmed_selector = quoted::trim_css(selector.unwrap_or_default());
         let order = style_order.unwrap_or(255);
         let file_num_str = filename.map(|f| num_to_nm_base(get_file_num_by_filename(f)));
         let trimmed_prop = property.trim();
@@ -650,8 +697,16 @@ fn write_u8(s: &mut String, v: u8) {
 
 #[must_use]
 pub fn sheet_to_variable_name(property: &str, level: u8, selector: Option<&str>) -> String {
+    if atom_hoist::is_atom_hoist() {
+        let identity = format!(
+            "v1-{}-{level}-{}",
+            atom_name::hex(property.trim()),
+            atom_name::hex(selector.unwrap_or_default())
+        );
+        return format!("--{}", atom_name::counter_name(&identity, None));
+    }
     if is_debug() {
-        let selector = selector.unwrap_or_default().trim();
+        let selector = quoted::trim_css(selector.unwrap_or_default());
         let encoded = if selector.is_empty() {
             String::new()
         } else {
@@ -670,7 +725,7 @@ pub fn sheet_to_variable_name(property: &str, level: u8, selector: Option<&str>)
             result
         })
     } else {
-        let trimmed_selector = selector.unwrap_or_default().trim();
+        let trimmed_selector = quoted::trim_css(selector.unwrap_or_default());
         let base_name = class_num_for_key("", |key| {
             key.reserve(property.len() + 4 + trimmed_selector.len());
             key.push_str(property);
@@ -707,6 +762,7 @@ mod tests {
     #[test]
     #[serial]
     fn test_with_prefix_borrows_host_prefix() {
+        let _state = test_state::TestStateGuard::new();
         set_prefix(Some("host-".to_string()));
 
         let prefix = with_prefix(str::to_string);
@@ -770,6 +826,7 @@ mod tests {
     #[test]
     #[serial]
     fn test_sheet_to_variable_name() {
+        let _state = test_state::TestStateGuard::new();
         reset_class_map();
         set_debug(false);
         assert_eq!(sheet_to_variable_name("background", 0, None), "--a");
@@ -787,6 +844,7 @@ mod tests {
     #[test]
     #[serial]
     fn test_debug_sheet_to_variable_name() {
+        let _state = test_state::TestStateGuard::new();
         set_debug(true);
         assert_eq!(
             sheet_to_variable_name("background", 0, None),
@@ -808,26 +866,44 @@ mod tests {
 
     #[test]
     #[serial]
+    fn quoted_strings_keep_their_own_class() {
+        let _state = test_state::TestStateGuard::new();
+        set_debug(false);
+        reset_class_map();
+        let class = |value: &str| sheet_to_classname("content", 0, Some(value), None, None, None);
+        let exact = class("'0.5'");
+        assert_ne!(exact, class("'.5'"));
+        assert_ne!(class("'#ff0000'"), class("'#F00'"));
+        assert_ne!(class("'a, b'"), class("'a,b'"));
+        assert_ne!(class("'a;'"), class("'a'"));
+        assert_eq!(exact, class("  '0.5'  "));
+        assert_eq!(class("0.5"), class(".5"));
+    }
+
+    #[test]
+    #[serial]
     fn test_component_marker() {
         set_debug(false);
         reset_class_map();
-        let child = component_marker("Child", "a.tsx");
-        assert_eq!(child, "a");
-        assert_eq!(component_marker("Child", "a.tsx"), child);
-        assert_eq!(component_marker("Child", "b.tsx"), "b");
-        assert_eq!(component_marker("Other", "a.tsx"), "c");
+        crate::file_map::reset_file_map();
+        let child = component_marker("Child", 0, "a.tsx");
+        assert_eq!(child, "a--a");
+        assert_eq!(component_marker("Child", 0, "a.tsx"), child);
+        assert_eq!(component_marker("Child", 0, "b.tsx"), "b--a");
+        assert_eq!(component_marker("Other", 2, "a.tsx"), "a--c");
         assert_eq!(
             sheet_to_classname("color", 0, Some("red"), None, None, None),
-            "d"
+            "a"
         );
         set_debug(true);
-        assert_eq!(component_marker("Child", "a.tsx"), "c-Child");
+        assert_eq!(component_marker("Child", 0, "a.tsx"), "c-0-Child");
         set_debug(false);
     }
 
     #[test]
     #[serial]
     fn test_sheet_to_classname() {
+        let _state = test_state::TestStateGuard::new();
         set_debug(false);
         reset_class_map();
         assert_eq!(
@@ -1103,6 +1179,7 @@ mod tests {
     #[test]
     #[serial]
     fn test_debug_sheet_to_classname() {
+        let _state = test_state::TestStateGuard::new();
         set_debug(true);
         assert_eq!(
             sheet_to_classname("background", 0, None, None, None, None),
@@ -1125,6 +1202,7 @@ mod tests {
     #[test]
     #[serial]
     fn test_debug_sheet_to_classname_encodes_value() {
+        let _state = test_state::TestStateGuard::new();
         set_debug(true);
         for (property, value, expected) in [
             ("scale", "0.8", "scale-0-_d_8--255"),
@@ -1148,6 +1226,7 @@ mod tests {
     #[test]
     #[serial]
     fn test_debug_sheet_to_classname_with_filename() {
+        let _state = test_state::TestStateGuard::new();
         reset_class_map();
         set_debug(true);
         // Debug mode + filename triggers the file_suffix branch (lines 234-235)
@@ -1239,6 +1318,7 @@ mod tests {
     #[test]
     #[serial]
     fn test_set_class_map() {
+        let _state = test_state::TestStateGuard::new();
         let mut map = HashMap::new();
         map.insert(String::new(), HashMap::new());
         map.entry(String::new())
@@ -1251,6 +1331,7 @@ mod tests {
     #[test]
     #[serial]
     fn test_keyframes_to_keyframes_name() {
+        let _state = test_state::TestStateGuard::new();
         reset_class_map();
         set_debug(false);
         assert_eq!(keyframes_to_keyframes_name("spin", None), num_to_nm_base(0));
@@ -1321,6 +1402,7 @@ mod tests {
     #[test]
     #[serial]
     fn test_sheet_to_classname_with_prefix() {
+        let _state = test_state::TestStateGuard::new();
         set_debug(false);
         reset_class_map();
         set_prefix(Some("app-".to_string()));
@@ -1339,6 +1421,7 @@ mod tests {
     #[test]
     #[serial]
     fn test_debug_sheet_to_classname_with_prefix() {
+        let _state = test_state::TestStateGuard::new();
         set_debug(true);
         set_prefix(Some("my-".to_string()));
 
@@ -1355,6 +1438,7 @@ mod tests {
     #[test]
     #[serial]
     fn test_sheet_to_variable_name_with_prefix() {
+        let _state = test_state::TestStateGuard::new();
         set_debug(false);
         reset_class_map();
         set_prefix(Some("app-".to_string()));
@@ -1368,6 +1452,7 @@ mod tests {
     #[test]
     #[serial]
     fn test_keyframes_with_prefix() {
+        let _state = test_state::TestStateGuard::new();
         reset_class_map();
         set_debug(false);
         set_prefix(Some("app-".to_string()));
@@ -1381,6 +1466,7 @@ mod tests {
     #[test]
     #[serial]
     fn test_empty_prefix_is_same_as_none() {
+        let _state = test_state::TestStateGuard::new();
         set_debug(false);
         reset_class_map();
 
@@ -1397,6 +1483,7 @@ mod tests {
     #[test]
     #[serial]
     fn test_keyframes_to_keyframes_name_with_filename() {
+        let _state = test_state::TestStateGuard::new();
         reset_class_map();
         set_debug(false);
         // Test with filename to cover lines 148-151
@@ -1416,6 +1503,7 @@ mod tests {
     #[test]
     #[serial]
     fn test_sheet_to_classname_with_filename() {
+        let _state = test_state::TestStateGuard::new();
         reset_class_map();
         set_debug(false);
         // Test with filename to cover the filename branch
@@ -1458,6 +1546,7 @@ mod tests {
     #[test]
     #[serial]
     fn test_disassemble_property_size_hint() {
+        let _state = test_state::TestStateGuard::new();
         // Mapped arm: the hint comes straight from the borrowed slice iterator.
         let mapped = disassemble_property("bg");
         assert_eq!(mapped.size_hint(), (1, Some(1)));
@@ -1473,6 +1562,7 @@ mod tests {
     #[test]
     #[serial]
     fn test_custom_shorthand() -> Result<(), shorthand::InvalidShorthandTarget> {
+        let _state = test_state::TestStateGuard::new();
         set_custom_shorthands(BTreeMap::from([(
             "insetX".to_string(),
             vec![

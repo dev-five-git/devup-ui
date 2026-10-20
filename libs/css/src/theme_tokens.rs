@@ -2,15 +2,33 @@ use std::collections::{BTreeMap, BTreeSet};
 use std::sync::{LazyLock, RwLock};
 
 #[derive(Default, Debug)]
-struct ThemeTokenRegistry {
+pub(crate) struct ThemeTokenRegistry {
     length: BTreeMap<String, Vec<u8>>,
     shadow: BTreeMap<String, Vec<u8>>,
+    first_length: BTreeMap<String, String>,
+    first_shadow: BTreeMap<String, String>,
     typography: Vec<String>,
     colors: BTreeSet<String>,
 }
 
 static TOKEN_REGISTRY: LazyLock<RwLock<ThemeTokenRegistry>> =
     LazyLock::new(|| RwLock::new(ThemeTokenRegistry::default()));
+
+pub(crate) fn replace_registry(registry: ThemeTokenRegistry) -> ThemeTokenRegistry {
+    let previous = std::mem::replace(
+        &mut *TOKEN_REGISTRY
+            .write()
+            .unwrap_or_else(std::sync::PoisonError::into_inner),
+        registry,
+    );
+    TOKEN_REGISTRY.clear_poison();
+    previous
+}
+
+/// Clear all responsive tokens and typography names at a quiescent test boundary.
+pub fn reset_theme_tokens() {
+    replace_registry(ThemeTokenRegistry::default());
+}
 
 pub fn set_theme_token_levels(
     length: BTreeMap<String, Vec<u8>>,
@@ -19,7 +37,40 @@ pub fn set_theme_token_levels(
     if let Ok(mut registry) = TOKEN_REGISTRY.write() {
         registry.length = length;
         registry.shadow = shadow;
+        registry.first_length.clear();
+        registry.first_shadow.clear();
     }
+}
+
+/// Register effective default literals separately from responsive variable levels.
+pub fn set_theme_token_values(length: BTreeMap<String, String>, shadow: BTreeMap<String, String>) {
+    if let Ok(mut registry) = TOKEN_REGISTRY.write() {
+        let normalize = |values: BTreeMap<String, String>| {
+            values
+                .into_iter()
+                .map(|(token, value)| {
+                    (
+                        token,
+                        crate::optimize_value::optimize_value(&value).into_owned(),
+                    )
+                })
+                .collect()
+        };
+        registry.first_length = normalize(length);
+        registry.first_shadow = normalize(shadow);
+    }
+}
+
+/// Resolve the first default literal in the property's token namespace.
+pub fn get_first_theme_token_value(property: &str, value: &str) -> Option<String> {
+    let token = value.strip_prefix('$')?;
+    let registry = TOKEN_REGISTRY.read().ok()?;
+    let values = if property == "box-shadow" {
+        &registry.first_shadow
+    } else {
+        &registry.first_length
+    };
+    values.get(token).cloned()
 }
 
 pub fn set_typography_keys(keys: Vec<String>) {
@@ -105,7 +156,69 @@ mod tests {
 
     #[test]
     #[serial]
+    fn theme_token_values_resolve_in_the_property_namespace() {
+        // Given
+        set_theme_token_values(
+            BTreeMap::from([("shared".into(), "8px".into())]),
+            BTreeMap::from([("shared".into(), "0 1px 2px black".into())]),
+        );
+        // When / Then
+        assert_eq!(
+            get_first_theme_token_value("width", "$shared"),
+            Some("8px".into())
+        );
+        assert_eq!(
+            get_first_theme_token_value("box-shadow", "$shared"),
+            Some("0 1px 2px black".into())
+        );
+        assert_eq!(get_first_theme_token_value("width", "$missing"), None);
+        assert_eq!(get_first_theme_token_value("width", "shared"), None);
+        set_theme_token_levels(BTreeMap::new(), BTreeMap::new());
+    }
+
+    #[test]
+    #[serial]
+    fn theme_token_values_normalize_zero_literals() {
+        // Given
+        let zero = BTreeMap::from([("zero".into(), "0px".into())]);
+        // When
+        set_theme_token_values(zero.clone(), zero);
+        // Then
+        assert_eq!(
+            get_first_theme_token_value("width", "$zero"),
+            Some("0".into())
+        );
+        assert_eq!(
+            get_first_theme_token_value("box-shadow", "$zero"),
+            Some("0".into())
+        );
+        set_theme_token_levels(BTreeMap::new(), BTreeMap::new());
+    }
+
+    #[test]
+    #[serial]
+    fn theme_token_values_reset_when_levels_are_replaced() {
+        // Given
+        set_theme_token_values(
+            BTreeMap::from([("shared".into(), "8px".into())]),
+            BTreeMap::from([("shared".into(), "0 1px 2px black".into())]),
+        );
+        // When
+        set_theme_token_levels(
+            BTreeMap::from([("shared".into(), vec![0, 2])]),
+            BTreeMap::from([("shared".into(), vec![0, 3])]),
+        );
+        // Then
+        assert_eq!(get_first_theme_token_value("width", "$shared"), None);
+        assert_eq!(get_first_theme_token_value("box-shadow", "$shared"), None);
+        assert_eq!(get_responsive_theme_token("$shared"), Some(vec![0, 2]));
+        set_theme_token_levels(BTreeMap::new(), BTreeMap::new());
+    }
+
+    #[test]
+    #[serial]
     fn test_get_responsive_theme_token() {
+        let _state = crate::test_state::TestStateGuard::new();
         let mut length = BTreeMap::new();
         length.insert("containerX".to_string(), vec![0, 2]);
         let mut shadow = BTreeMap::new();
@@ -121,6 +234,7 @@ mod tests {
     #[test]
     #[serial]
     fn test_is_responsive_theme_token() {
+        let _state = crate::test_state::TestStateGuard::new();
         let mut length = BTreeMap::new();
         length.insert("containerX".to_string(), vec![0, 2]);
         length.insert("single".to_string(), vec![0]);
@@ -139,6 +253,7 @@ mod tests {
     #[test]
     #[serial]
     fn test_typography_keys() {
+        let _state = crate::test_state::TestStateGuard::new();
         set_typography_keys(vec!["body".to_string(), "title".to_string()]);
         assert_eq!(get_typography_keys(), vec!["body", "title"]);
         set_typography_keys(vec![]);
@@ -167,5 +282,43 @@ mod tests {
         let value = std::hint::black_box("noprefix");
 
         assert!(!is_responsive_theme_token(value));
+    }
+
+    #[test]
+    #[serial]
+    fn scope_restores_registries_when_private_locks_are_poisoned() {
+        let _state = crate::test_state::TestStateGuard::new();
+        set_typography_keys(vec!["outer".into()]);
+        assert_eq!(
+            crate::set_custom_shorthands(BTreeMap::from([("alias".into(), vec!["left".into()])])),
+            Ok(())
+        );
+        let nested = crate::test_state::TestStateGuard::new();
+        for poison_tokens in [false, true] {
+            let result = std::panic::catch_unwind(|| {
+                if poison_tokens {
+                    let _lock = TOKEN_REGISTRY
+                        .write()
+                        .unwrap_or_else(std::sync::PoisonError::into_inner);
+                    panic!("poison tokens");
+                }
+                let _lock = crate::CUSTOM_SHORTHANDS
+                    .write()
+                    .unwrap_or_else(std::sync::PoisonError::into_inner);
+                panic!("poison shorthands");
+            });
+            assert!(result.is_err());
+        }
+        crate::test_state::reset_state_for_testing();
+        assert!(!crate::CUSTOM_SHORTHANDS.is_poisoned());
+        assert!(!TOKEN_REGISTRY.is_poisoned());
+        assert_eq!(crate::get_custom_shorthand_names(), Vec::<String>::new());
+        assert_eq!(get_typography_keys(), Vec::<String>::new());
+        drop(nested);
+        assert_eq!(get_typography_keys(), vec!["outer"]);
+        assert_eq!(
+            crate::disassemble_property("alias").collect::<Vec<_>>(),
+            vec!["left"]
+        );
     }
 }

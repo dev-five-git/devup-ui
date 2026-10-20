@@ -62,6 +62,7 @@ fn numeric_edges_emit_css(
     #[case] property: &str,
     #[case] value: &str,
 ) -> Result<(), String> {
+    let _scope = super::TestStateGuard::new();
     let source =
         format!("import {{ Box }} from '@devup-ui/react';\nconst e = <Box {key}={{3}} />;");
     let output = compile(&source)?;
@@ -73,6 +74,7 @@ fn numeric_edges_emit_css(
 #[test]
 #[serial]
 fn flat_responsive_values_emit_css_after_base() -> Result<(), String> {
+    let _scope = super::TestStateGuard::new();
     let source = "import { Box } from '@devup-ui/react';\nconst e = <Box p={[1, null, 2]} />;";
     let output = compile(source)?;
     let css = output.css().ok_or("expected emitted CSS")?;
@@ -88,6 +90,7 @@ fn flat_responsive_values_emit_css_after_base() -> Result<(), String> {
 #[test]
 #[serial]
 fn selector_escape_hatches_emit_scoped_css() -> Result<(), String> {
+    let _scope = super::TestStateGuard::new();
     let source = "import { Box } from '@devup-ui/react';\nconst e = <Box selectors={{ ':hover': { color: 'red' }, '& > p': { color: 'blue' } }} />;";
     let output = compile(source)?;
     let css = output.css().ok_or("expected emitted CSS")?;
@@ -102,6 +105,7 @@ fn selector_escape_hatches_emit_scoped_css() -> Result<(), String> {
 #[test]
 #[serial]
 fn supported_experimental_and_unknown_properties_still_emit_css() -> Result<(), String> {
+    let _scope = super::TestStateGuard::new();
     let source = "import { Box } from '@devup-ui/react';\nconst e = <Box strokeColor='red' imeMode='active' futureProperty='custom' WebkitBoxOrient='vertical' p={2} />;";
     let output = compile(source)?;
     let css = output.css().ok_or("expected emitted CSS")?;
@@ -129,6 +133,7 @@ fn supported_experimental_and_unknown_properties_still_emit_css() -> Result<(), 
 )]
 #[serial]
 fn dead_properties_fail_before_css_emission(#[case] source: &str) -> Result<(), String> {
+    let _scope = super::TestStateGuard::new();
     let error = compile(source)
         .err()
         .ok_or("expected a declaration error")?;
@@ -140,6 +145,7 @@ fn dead_properties_fail_before_css_emission(#[case] source: &str) -> Result<(), 
 #[test]
 #[serial]
 fn nested_responsive_arrays_fail_before_css_emission() -> Result<(), String> {
+    let _scope = super::TestStateGuard::new();
     let source = "import { Box } from '@devup-ui/react';\nconst e = <Box color={[[\"red\", \"blue\"], \"green\"]} />;";
     let error = compile(source)
         .err()
@@ -156,6 +162,7 @@ fn nested_responsive_arrays_fail_before_css_emission() -> Result<(), String> {
 fn escaped_string_css_dead_names_fail_before_emission(
     #[case] statement: &str,
 ) -> Result<(), String> {
+    let _scope = super::TestStateGuard::new();
     let source = format!("import {{ css }} from '@devup-ui/react';\n{statement}");
     let error = compile(&source)
         .err()
@@ -168,6 +175,7 @@ fn escaped_string_css_dead_names_fail_before_emission(
 #[test]
 #[serial]
 fn configured_shorthand_names_keep_their_valid_targets() -> Result<(), String> {
+    let _scope = super::TestStateGuard::new();
     assert_eq!(
         css::set_custom_shorthands(BTreeMap::from([(
             "boxAlign".to_string(),
@@ -202,6 +210,7 @@ fn evaluated_declarations_report_authored_calls(
     #[case] source: &str,
     #[case] line: usize,
 ) -> Result<(), String> {
+    let _scope = super::TestStateGuard::new();
     let error = compile_file("css-edges.css.ts", source)
         .err()
         .ok_or("expected a declaration error")?;
@@ -230,6 +239,7 @@ fn same_line_import_aliases_keep_authored_columns(
     #[case] source: &str,
     #[case] token: &str,
 ) -> Result<(), String> {
+    let _scope = super::TestStateGuard::new();
     let column = source.find(token).ok_or("fixture has no expected token")? + 1;
     let error = compile_file("css-edges.css.ts", source)
         .err()
@@ -244,6 +254,7 @@ fn same_line_import_aliases_keep_authored_columns(
 #[test]
 #[serial]
 fn computed_css_text_reports_its_authored_call() -> Result<(), String> {
+    let _scope = super::TestStateGuard::new();
     let source = "import { css } from '@devup-ui/react';\nconst c = css('box-' + 'align:center');";
     let error = compile(source)
         .err()
@@ -256,6 +267,7 @@ fn computed_css_text_reports_its_authored_call() -> Result<(), String> {
 #[test]
 #[serial]
 fn stylex_dead_declarations_fail_before_css_emission() -> Result<(), String> {
+    let _scope = super::TestStateGuard::new();
     let statement = "export const c = stylex.create({ x: { boxAlign: 'center' } });";
     let source = format!("import * as stylex from '@stylexjs/stylex';\n{statement}");
     let column = statement.find("boxAlign").ok_or("fixture lacks property")? + 1;
@@ -284,6 +296,7 @@ fn stylesheet_nested_arrays_report_authored_locations(
     #[case] source: &str,
     #[case] location: &str,
 ) -> Result<(), String> {
+    let _scope = super::TestStateGuard::new();
     let error = compile_file("css-edges.css.ts", source)
         .err()
         .ok_or("expected a responsive array error")?;

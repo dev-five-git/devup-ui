@@ -4,9 +4,7 @@ import { basename, dirname, join, relative, resolve } from 'node:path'
 
 import {
   beginBuild,
-  buildCanonicalMap,
   collectNumberedFiles,
-  computeFileReach,
   createCompatTypes,
   createModuleResolver,
   createNodeModulesExcludeRegex,
@@ -19,7 +17,6 @@ import {
   loadDevupConfig,
   mergeImportAliases,
   normalizeShorthands,
-  planAtomHoist,
   readJsxImportSource,
   seedFileNumbers,
   tailwindCssFiles,
@@ -30,13 +27,10 @@ import {
   getCss,
   getDefaultTheme,
   getThemeInterface,
-  importCanonicalMap,
-  importFileRoutes,
   registerShorthands,
   registerTheme,
   resetBuildState,
   seedFileMap,
-  setAtomHoist,
   setDebug,
   setModuleResolver,
   setPrefix,
@@ -244,11 +238,9 @@ export interface DevupUIPluginOptions {
   prefix?: string
   shorthands?: CustomShorthands
   /**
-   * Atom-level route-aware hoisting threshold (min routes sharing an atom for
-   * it to hoist into the shared devup-ui.css; clamped to >= 2; omit to disable).
-   * Opt-in: when set, single-importer collapse + atom hoisting are enabled for
-   * this build. "Routes" are inferred from the import graph (entry points and
-   * dynamic-import targets).
+   * Reserved for route-aware atom hoisting after PR B adds shared class-slot
+   * reservation. Until then, Vite keeps per-file names and warns
+   * once for explicit finite positive requests. Ignored in singleCss mode.
    */
   atomHoist?: number
   /**
@@ -314,6 +306,16 @@ export function DevupUI({
   // process left in the engine (prefix, hoisting, routes, buckets, numbers,
   // styles) is gone unless another build is still running.
   const endBuild = beginBuild({ resetBuildState })
+  if (
+    !singleCss &&
+    atomHoist !== undefined &&
+    Number.isFinite(atomHoist) &&
+    atomHoist > 0
+  ) {
+    console.warn(
+      '[devup-ui] Vite atomHoist is unavailable until shared class-slot reservation lands in PR B; keeping per-file names, while existing shared slots remain arrival-ordered.',
+    )
+  }
   registerShorthands(normalizedShorthands)
   setDebug(debug)
   setPrefix(prefix ?? null)
@@ -380,64 +382,6 @@ export function DevupUI({
         singleCss,
       })
 
-      // Atom-level hoisting (opt-in via `atomHoist`). Configured BEFORE any
-      // transform so atoms receive global (shared) class names. Composes with
-      // single-importer collapse: both are keyed by the canonical bucket. Vite
-      // passes the ABSOLUTE module id to codeExtract, so the graph maps use
-      // absolute keys (keyBy: 'absolute') to match the engine's bucket keys.
-      const atomMode =
-        atomHoist !== undefined && Number.isFinite(atomHoist) && atomHoist > 0
-      if (atomMode) {
-        try {
-          const root = projectRoot
-          // App Router projects keep their sources in `app/`, so a hardcoded
-          // `src/` made the whole pre-pass a silent no-op for them.
-          const srcDir = sourceDirs[0] ?? resolve(root, 'src')
-          const tsconfigPath = resolve(root, 'tsconfig.json')
-          // C: prefer the bundler's real JS entries; fall back to the heuristic
-          // (files with no importer) when input is html-only / unavailable.
-          const input = config.build?.rollupOptions?.input
-          const rawEntries =
-            typeof input === 'string'
-              ? [input]
-              : Array.isArray(input)
-                ? input
-                : input && typeof input === 'object'
-                  ? Object.values(input)
-                  : []
-          const entries = rawEntries
-            .filter((e): e is string => typeof e === 'string')
-            .filter((e) => /\.(tsx|ts|jsx|js|mjs)$/i.test(e))
-            .map((e) => resolve(root, e))
-
-          const canonicalMap = buildCanonicalMap({
-            srcDir,
-            tsconfigPath,
-            cwd: root,
-            keyBy: 'absolute',
-          })
-          importCanonicalMap(canonicalMap)
-
-          const fileReach = computeFileReach({
-            srcDir,
-            tsconfigPath,
-            cwd: root,
-            keyBy: 'absolute',
-            entries: entries.length > 0 ? entries : undefined,
-          })
-          const plan = planAtomHoist(canonicalMap, fileReach, atomHoist)
-          if (plan) {
-            importFileRoutes(plan.reachByBucket)
-            setAtomHoist(plan.threshold)
-          } else {
-            console.info(
-              '[devup-ui] atomHoist is set but fewer than 2 routes were detected; atom hoisting is a no-op (single-entry/SPA).',
-            )
-          }
-        } catch {
-          // Best-effort; on failure atom hoisting stays off (identity).
-        }
-      }
       try {
         // Numbers come from the sorted paths of every file the build can
         // extract (source and included packages), not from arrival order.
@@ -450,6 +394,7 @@ export function DevupUI({
             include,
             cwd: projectRoot,
             needles: extractedNeedles(libPackage, importAliases),
+            importAliases,
           }),
         )
       } catch {

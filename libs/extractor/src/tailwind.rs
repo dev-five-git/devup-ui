@@ -870,10 +870,9 @@ pub fn parse_class(class: &str) -> Option<TailwindClass> {
             selectors = selectors
                 .iter()
                 .flat_map(|outer| {
-                    variant
-                        .selectors
-                        .iter()
-                        .map(move |selector| selector.replace('&', outer))
+                    variant.selectors.iter().map(move |selector| {
+                        css::quoted::replace_unquoted(selector, b'&', outer).into_owned()
+                    })
                 })
                 .collect();
         }
@@ -883,7 +882,9 @@ pub fn parse_class(class: &str) -> Option<TailwindClass> {
     if utility_selector != "&" {
         selectors = selectors
             .iter()
-            .map(|selector| utility_selector.replace('&', selector))
+            .map(|selector| {
+                css::quoted::replace_unquoted(utility_selector, b'&', selector).into_owned()
+            })
             .collect();
     }
     if content

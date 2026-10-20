@@ -9,12 +9,12 @@ use crate::style_order::{invalid_order, static_order, string_order};
 use crate::style_values::StyleValues;
 use crate::utils::{get_str_by_property_key, is_pure, readable_code, unwrap_syntax_only};
 
-struct Validation<'s> {
-    bindings: &'s StyleValues,
+struct Validation<'s, 'a> {
+    bindings: &'s StyleValues<'a>,
     errors: &'s mut Vec<(u32, String)>,
 }
 
-impl Validation<'_> {
+impl Validation<'_, '_> {
     fn value(&mut self, value: &Expression<'_>) {
         let value = unwrap_syntax_only(value);
         if static_order(value).is_some() {

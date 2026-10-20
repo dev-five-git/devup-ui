@@ -1,0 +1,161 @@
+{
+  "run": {
+    "id": "37758611477",
+    "url": "https://github.com/dev-five-git/devup-ui/actions/runs/37758611477",
+    "commit": "467a379a",
+    "runner": "ubuntu-24.04",
+    "next": "16.3.3",
+    "devupUi": "1.0.44"
+  },
+  "samples": 3,
+  "rows": [
+    {
+      "table": "webpack",
+      "target": "tailwind",
+      "label": "tailwindcss",
+      "version": "4.3.3",
+      "samples": [13.19597508, 13.021540712999995, 12.911684594999999],
+      "median": 13.021540712999995,
+      "min": 12.911684594999999,
+      "max": 13.19597508,
+      "bytes": 67339250,
+      "cssBytes": 5852
+    },
+    {
+      "table": "webpack",
+      "target": "stylex",
+      "label": "styleX",
+      "version": "0.19.0",
+      "samples": [29.49553623, 28.717898384, 29.01065776699997],
+      "median": 29.01065776699997,
+      "min": 28.717898384,
+      "max": 29.49553623,
+      "bytes": 96290533,
+      "cssBytes": 425
+    },
+    {
+      "table": "webpack",
+      "target": "vanilla-extract",
+      "label": "vanilla-extract",
+      "version": "1.21.2",
+      "samples": [12.34335704699999, 12.346740351999994, 12.215919330999954],
+      "median": 12.34335704699999,
+      "min": 12.215919330999954,
+      "max": 12.346740351999994,
+      "bytes": 68565511,
+      "cssBytes": 294
+    },
+    {
+      "table": "webpack",
+      "target": "kuma-ui",
+      "label": "kuma-ui",
+      "version": "1.6.4",
+      "samples": [13.566745991999996, 13.491478220999998, 13.550664844000014],
+      "median": 13.550664844000014,
+      "min": 13.491478220999998,
+      "max": 13.566745991999996,
+      "bytes": 75627429,
+      "cssBytes": 340
+    },
+    {
+      "table": "webpack",
+      "target": "panda-css",
+      "label": "panda-css",
+      "version": "1.12.0",
+      "samples": [13.581986012000009, 13.292706686999997, 13.438533212000038],
+      "median": 13.438533212000038,
+      "min": 13.292706686999997,
+      "max": 13.581986012000009,
+      "bytes": 71849243,
+      "cssBytes": 15615
+    },
+    {
+      "table": "webpack",
+      "target": "chakra-ui",
+      "label": "chakra-ui",
+      "version": "3.37.0",
+      "samples": [21.061893298000008, 19.949156122000016, 20.292663101000013],
+      "median": 20.292663101000013,
+      "min": 19.949156122000016,
+      "max": 21.061893298000008,
+      "bytes": 207425028,
+      "cssBytes": 0
+    },
+    {
+      "table": "webpack",
+      "target": "mui",
+      "label": "mui",
+      "version": "9.4.0",
+      "samples": [14.264408890999999, 13.777297842, 14.11791713899991],
+      "median": 14.11791713899991,
+      "min": 13.777297842,
+      "max": 14.264408890999999,
+      "bytes": 101476098,
+      "cssBytes": 0
+    },
+    {
+      "table": "webpack",
+      "target": "devup-ui",
+      "label": "devup-ui (per-file CSS)",
+      "version": "1.0.44",
+      "devup": true,
+      "samples": [11.089230005999998, 10.872500918999984, 10.948686922999913],
+      "median": 10.948686922999913,
+      "min": 10.872500918999984,
+      "max": 11.089230005999998,
+      "bytes": 67427695,
+      "cssBytes": 562
+    },
+    {
+      "table": "webpack",
+      "target": "devup-ui-single",
+      "label": "devup-ui (single CSS)",
+      "version": "1.0.44",
+      "devup": true,
+      "samples": [11.042549753, 11.396381741000019, 10.884128520000028],
+      "median": 11.042549753,
+      "min": 10.884128520000028,
+      "max": 11.396381741000019,
+      "bytes": 67436336,
+      "cssBytes": 790
+    },
+    {
+      "table": "turbopack",
+      "target": "tailwind-turbo",
+      "label": "tailwindcss",
+      "version": "4.3.3",
+      "samples": [5.6750599369999835, 5.72619077299998, 5.509298593999935],
+      "median": 5.6750599369999835,
+      "min": 5.509298593999935,
+      "max": 5.72619077299998,
+      "bytes": 38440013,
+      "cssBytes": 6197
+    },
+    {
+      "table": "turbopack",
+      "target": "devup-ui-single-turbo",
+      "label": "devup-ui (direct APIs, single CSS)",
+      "version": "1.0.44",
+      "devup": true,
+      "samples": [5.765447661000013, 5.794053518000001, 5.874383794999972],
+      "median": 5.794053518000001,
+      "min": 5.765447661000013,
+      "max": 5.874383794999972,
+      "bytes": 36538765,
+      "cssBytes": 327
+    },
+    {
+      "table": "turbopack",
+      "target": "vanilla-extract-devup-ui",
+      "label": "devup-ui (static `.css.ts`)",
+      "version": "1.0.44",
+      "devup": true,
+      "samples": [5.713730899999995, 5.988215032999986, 5.674502772999985],
+      "median": 5.713730899999995,
+      "min": 5.674502772999985,
+      "max": 5.988215032999986,
+      "bytes": 36580207,
+      "cssBytes": 268
+    }
+  ]
+}
