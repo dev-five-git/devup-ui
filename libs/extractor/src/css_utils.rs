@@ -669,12 +669,17 @@ fn nest_prelude(parent: Option<&StyleSelector>, prelude: &str) -> Option<StyleSe
         let (kind, query) = split_at_rule_key(prelude)?;
         return StyleSelector::nest_at_rule(parent, kind, query);
     }
-    let template = split_selector_list(prelude)
+    Some(StyleSelector::nest_selector(parent, &descendants(prelude)))
+}
+
+/// Each selector of the list `selectors` written without `&` as a descendant
+/// of it, as stylis nests one
+pub(crate) fn descendants(selectors: &str) -> String {
+    split_selector_list(selectors)
         .into_iter()
         .map(relative_selector)
         .collect::<Vec<_>>()
-        .join(",");
-    Some(StyleSelector::nest_selector(parent, &template))
+        .join(",")
 }
 
 /// A selector of a nested rule made relative to the rule it is in, as
@@ -1714,6 +1719,15 @@ mod tests {
         vec![
             ("color", "red", Some(StyleSelector::Selector("& div".to_string()))),
             ("background", "blue", Some(StyleSelector::Selector("& div".to_string()))),
+        ]
+    )]
+    // A selector written without `&` selects within the element, each one of
+    // a list on its own, and a pseudo-class applies to the element itself
+    #[case(
+        "a, :is(b, c) d { color: red; } :hover { color: blue; }",
+        vec![
+            ("color", "red", Some(StyleSelector::Selector("& a,&:is(b,c) d".to_string()))),
+            ("color", "blue", Some(StyleSelector::Selector("&:hover".to_string()))),
         ]
     )]
     // As in CSS nesting, only the text after the last `;` is the nested rule's

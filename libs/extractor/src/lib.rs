@@ -18,6 +18,7 @@ mod gen_class_name;
 mod gen_style;
 mod import_alias_visit;
 mod imported_constants;
+mod imported_styled;
 mod jsx_import_source;
 mod jsx_pragmas;
 mod module_loader;
@@ -138,8 +139,8 @@ pub enum ExtractStyleProp<'a> {
     },
 }
 
-impl<'a> ExtractStyleProp<'a> {
-    pub fn clone_in(&self, alloc: &'a Allocator) -> Self {
+impl ExtractStyleProp<'_> {
+    pub fn clone_in<'b>(&self, alloc: &'b Allocator) -> ExtractStyleProp<'b> {
         match self {
             ExtractStyleProp::Static(v) => ExtractStyleProp::Static(v.clone()),
             ExtractStyleProp::StaticArray(arr) => {
@@ -557,6 +558,7 @@ fn extract_source(
 
     let mut program = parsing::parse(&allocator, filename, code_to_parse)?;
     let header_pragmas = jsx_pragmas::HeaderPragmas::capture(&program);
+    let styled_capability = extractor::styled_capability::StyledCapability::reserve(&program);
     let inlined = if processed_code.is_none() {
         imported_constants::inline_constants(
             &oxc_ast::builder::AstBuilder::new(&allocator),
@@ -576,6 +578,19 @@ fn extract_source(
         failures.dedup();
         return Err(failures.join("\n").into());
     }
+    let imported = if processed_code.is_none() {
+        imported_styled::read(
+            &oxc_ast::builder::AstBuilder::new(&allocator),
+            &program,
+            filename,
+            &option,
+            resolver,
+            css_prop,
+        )
+    } else {
+        imported_styled::Reading::default()
+    };
+    dependencies.extend(imported.dependencies);
     if !namespace_edits.is_empty() {
         emotion_namespace::units::pixelify(&allocator, &mut program, &namespace_code);
     }
@@ -594,6 +609,8 @@ fn extract_source(
     visitor.unknown_bindings(&inlined.unknown);
     visitor.changed_bindings(inlined.changed.clone());
     visitor.takes_css_prop(css_prop);
+    visitor.import_styled(imported.components);
+    visitor.reserve_styled(styled_capability);
     visitor.visit_program(&mut program);
     if !has_relevant_import
         && alias_edits.is_empty()
@@ -15671,7 +15688,7 @@ export const Other = other.withComponent('aside')
 export const a = <Section as=\"a\" forwardedAs=\"b\" />",
         );
         for expected in [
-            "export const Aside = __devupForwardRef((__devupRefProps, __devupRef) => ((__devupProps) => (({ style, className, as: DevupAs = \"aside\", forwardedAs, ...rest }) => <DevupAs {...Object.fromEntries(Object.entries((({ \"theme\": __devupOmit0, ...__devupDom }) => __devupDom)(rest)).filter(([k]) => k[0] !== \"$\"))} as={forwardedAs} className={[\"color-0-red--255\", className]",
+            "export const Aside = __devupForwardRef((__devupRefProps, __devupRef) => ((__devupProps) => (({ style, className, as: DevupAs = \"aside\", forwardedAs, ...rest }) => <DevupAs {...Object.fromEntries(Object.entries((({ \"theme\": __devupOmit0, ...__devupDom }) => __devupDom)(rest)).filter(([k]) => k[0] !== \"$\"))} as={forwardedAs} className={[\"c-0-Aside color-0-red--255\", className]",
             "as: DevupAs = Link,",
             "as: DevupAs = motion.div,",
             "export const Again = __devupForwardRef((__devupRefProps, __devupRef) => ((__devupProps) => (({ style, className, as: DevupAs = \"nav\",",
@@ -23748,6 +23765,32 @@ injectGlobal`body { margin: 0; }`;",
         )
         .map(|output| output.code)
         .map_err(|error| error.to_string())
+    }
+
+    #[test]
+    #[serial]
+    fn test_emotion_component_selectors() {
+        let import = "import styled from '@emotion/styled';\n";
+        let codes = [
+            "const Child = styled.div`color: red;`;\nexport const Parent = styled.div`${Child} { color: green; } &:hover ${Child}, ${Child} + a { color: blue; }`;\nexport const App = () => <Child />;",
+            "const Child = styled.div({ color: 'red' });\nexport const Parent = styled.div({ [Child]: { color: 'green' }, [`&:hover ${Child}`]: { color: 'blue' } });",
+            "const Child = styled.div({ color: 'red' });\nconst Wide = styled(Child)({ width: 1 });\nexport const Parent = styled.div`${Child} { color: green; }`;\nexport const App = () => <><Child /><Wide /></>;",
+            "const Child = styled.div`color: red;`;\nexport const Parent = styled.div`${Child} { color: green; }`;\nexport const C = () => <Child css={{ color: 'blue' }} />;",
+            "const notStyled = 'x';\nexport const Parent = styled.div`${notStyled} { color: green; }`;",
+            "export const Parent = styled.div`a, :is(b, c) d { color: green; }`;",
+        ];
+        let outputs: Vec<String> = codes
+            .iter()
+            .map(|code| {
+                reset_class_map();
+                reset_file_map();
+                match extract("test.tsx", &format!("{import}{code}"), emotion_option()) {
+                    Ok(output) => format!("{}\n{:?}", output.code, output.styles),
+                    Err(error) => error.to_string(),
+                }
+            })
+            .collect();
+        assert_debug_snapshot!(outputs);
     }
 
     #[test]
