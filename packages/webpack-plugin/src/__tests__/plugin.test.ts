@@ -1,3 +1,4 @@
+import assert from 'node:assert/strict'
 import type { Stats } from 'node:fs'
 import * as fs from 'node:fs'
 import * as fsPromises from 'node:fs/promises'
@@ -95,9 +96,17 @@ let writeFileSpy: ReturnType<typeof spyOn>
 let graphSpy: ReturnType<typeof spyOn>
 let consoleErrorSpy: ReturnType<typeof spyOn>
 const closeBuilds = new Set<() => void>()
+let reservationSpy: ReturnType<typeof spyOn>
 
 beforeEach(() => {
   consoleErrorSpy = spyOn(console, 'error').mockReturnValue(undefined)
+  reservationSpy = spyOn(
+    pluginUtils,
+    'createSharedSlotReservation',
+  ).mockReturnValue({
+    invalidate: mock(),
+    reserve: mock().mockReturnValue(true),
+  })
   codeExtractSpy = spyOn(wasm, 'codeExtract').mockImplementation(
     (_path: string, contents: string) => createCodeExtractResult(contents),
   )
@@ -136,6 +145,7 @@ beforeEach(() => {
 afterEach(() => {
   for (const closeBuild of closeBuilds) closeBuild()
   closeBuilds.clear()
+  reservationSpy.mockRestore()
   codeExtractSpy.mockRestore()
   getCssSpy.mockRestore()
   getDefaultThemeSpy.mockRestore()
@@ -211,7 +221,7 @@ describe('devupUIWebpackPlugin', () => {
           return ['src/a.tsx', 'src/b.tsx']
         })
         const compiler = createCompiler()
-        new DevupUIWebpackPlugin({ include: ['@acme/ui'] }).apply(
+        new DevupUIWebpackPlugin({ include: ['@acme/ui'], debug: true }).apply(
           asCompiler(compiler),
         )
         expect(seedSpy).toHaveBeenCalledWith(['src/a.tsx', 'src/b.tsx'])
@@ -224,7 +234,9 @@ describe('devupUIWebpackPlugin', () => {
         collectSpy.mockImplementation(() => {
           throw new Error('scan boom')
         })
-        new DevupUIWebpackPlugin({}).apply(asCompiler(createCompiler()))
+        new DevupUIWebpackPlugin({ debug: true }).apply(
+          asCompiler(createCompiler()),
+        )
       } finally {
         collectSpy.mockRestore()
         seedSpy.mockRestore()
@@ -232,7 +244,7 @@ describe('devupUIWebpackPlugin', () => {
       }
     })
   })
-  it('should apply default options', () => {
+  it('W66 default regressions: should apply default options', () => {
     expect(new DevupUIWebpackPlugin({}).options).toEqual({
       include: [],
       package: '@devup-ui/react',
@@ -242,7 +254,24 @@ describe('devupUIWebpackPlugin', () => {
       watch: false,
       debug: false,
       singleCss: false,
+      atomHoist: 2,
     })
+  })
+
+  it('also reserves at native watchRun when watch persistence is disabled', async () => {
+    const manager = {
+      invalidate: mock(),
+      reserve: mock().mockReturnValue(true),
+    }
+    reservationSpy.mockReturnValue(manager)
+    const compiler = createCompiler()
+    new DevupUIWebpackPlugin({}).apply(asCompiler(compiler))
+    const reserve = compiler.hooks.watchRun.tapPromise.mock.calls.find(
+      ([name]) => name === 'DevupUIWebpackPluginReservation',
+    )
+    assert(reserve)
+    await reserve[1]()
+    expect(manager.reserve).toHaveBeenCalledTimes(1)
   })
 
   describe.each(
@@ -258,7 +287,10 @@ describe('devupUIWebpackPlugin', () => {
     }),
   )('options', (options) => {
     it('should apply options', () => {
-      expect(new DevupUIWebpackPlugin(options).options).toEqual(options)
+      expect(new DevupUIWebpackPlugin(options).options).toEqual({
+        ...options,
+        atomHoist: 2,
+      })
     })
 
     it.each(
@@ -342,7 +374,13 @@ describe('devupUIWebpackPlugin', () => {
     await plugin.apply(asCompiler(compiler))
     expect(compiler.options.module.rules.length).toBe(3)
 
-    expect(compiler.options.module.rules[0].exclude).toEqual(
+    const sourceRule = compiler.options.module.rules[0]
+    assert(
+      typeof sourceRule === 'object' &&
+        sourceRule !== null &&
+        'exclude' in sourceRule,
+    )
+    expect(sourceRule.exclude).toEqual(
       pluginUtils.createNodeModulesExcludeRegex(options.include.input),
     )
   })
@@ -581,7 +619,7 @@ describe('devupUIWebpackPlugin', () => {
     } else
       expect(
         compiler.hooks.watchRun.tapPromise.mock.calls.map(([name]) => name),
-      ).toEqual(['DevupUIBuildGeneration'])
+      ).toEqual(['DevupUIBuildGeneration', 'DevupUIWebpackPluginReservation'])
     const resolutionTap = compiler.hooks.afterCompile.tap.mock.calls.find(
       ([name]) => name === 'DevupUIResolutionInputs',
     )
@@ -691,22 +729,146 @@ describe('devupUIWebpackPlugin', () => {
       computeReachableFilesSpy.mockRestore()
     })
 
-    it('runs single-importer collapse even when atomHoist is unset (always-on), without hoisting', () => {
+    it('runs single-importer collapse when atomHoist is explicitly zero, without hoisting', () => {
       // Constraint: single-importer collapse must ALWAYS be on. The canonical
       // map is built + imported unconditionally; only atom HOISTING is gated.
       buildCanonicalMapSpy.mockReturnValue({
         'src/child.tsx': 'src/parent.tsx',
       })
-      const plugin = new DevupUIWebpackPlugin({})
+      const plugin = new DevupUIWebpackPlugin({ atomHoist: 0 })
       plugin.apply(asCompiler(createCompiler()))
       expect(buildCanonicalMapSpy).toHaveBeenCalledWith(
         expect.objectContaining({ keyBy: 'cwd-relative' }),
       )
       expect(importCanonicalMapSpy).toHaveBeenCalled()
-      // atom hoisting stays off without atomHoist
+      // Explicit zero disables atoms, not always-on collapse.
       expect(computeFileReachSpy).not.toHaveBeenCalled()
       expect(setAtomHoistSpy).not.toHaveBeenCalled()
       expect(importFileRoutesSpy).not.toHaveBeenCalled()
+    })
+
+    describe('W66 default regressions', () => {
+      beforeEach(() => {
+        computeFileReachSpy.mockReturnValue({
+          'src/shared.tsx': [0, 1],
+          'src/a.tsx': [0],
+          'src/b.tsx': [1],
+        })
+      })
+
+      it.each([
+        ['omitted', {}],
+        ['undefined', { atomHoist: undefined }],
+      ])(
+        'matches explicit 2 on two routes when atomHoist is %s',
+        (_label, options) => {
+          // Given: explicit 2 installs a known two-route plan.
+          new DevupUIWebpackPlugin({ atomHoist: 2 }).apply(
+            asCompiler(createCompiler()),
+          )
+          const explicitReach = [...importFileRoutesSpy.mock.calls]
+          expect(explicitReach).toEqual([
+            [
+              {
+                'src/shared.tsx': [0, 1],
+                'src/a.tsx': [0],
+                'src/b.tsx': [1],
+              },
+            ],
+          ])
+          expect(setAtomHoistSpy).toHaveBeenCalledWith(2)
+          importFileRoutesSpy.mockClear()
+          setAtomHoistSpy.mockClear()
+          // When: the public option is defaulted.
+          new DevupUIWebpackPlugin(options).apply(asCompiler(createCompiler()))
+          // Then: the same plan and threshold are installed.
+          expect(importFileRoutesSpy.mock.calls).toEqual(explicitReach)
+          expect(setAtomHoistSpy.mock.calls).toEqual([[2]])
+        },
+      )
+
+      it.each([0, -1, NaN, Infinity, -Infinity])(
+        'keeps legacy OFF for atomHoist %s',
+        (atomHoist) => {
+          // Given: two routes, not the single-route fallback.
+          // When: a disabled numeric option is supplied.
+          new DevupUIWebpackPlugin({ atomHoist }).apply(
+            asCompiler(createCompiler()),
+          )
+          // Then: collapse still runs but reach and threshold are untouched.
+          expect(buildCanonicalMapSpy).toHaveBeenCalled()
+          expect(computeFileReachSpy).not.toHaveBeenCalled()
+          expect(importFileRoutesSpy).not.toHaveBeenCalled()
+          expect(setAtomHoistSpy).not.toHaveBeenCalled()
+        },
+      )
+
+      it('preserves a custom threshold above the minimum', () => {
+        // Given: two routes and a custom threshold.
+        // When: the plugin applies.
+        new DevupUIWebpackPlugin({ atomHoist: 3 }).apply(
+          asCompiler(createCompiler()),
+        )
+        // Then: the threshold is not replaced by 2.
+        expect(setAtomHoistSpy.mock.calls).toEqual([[3]])
+      })
+
+      it.each([
+        ['omitted', {}],
+        ['undefined', { atomHoist: undefined }],
+        ['enabled', { atomHoist: 2 }],
+      ])(
+        'ignores %s atomHoist before planning in actual singleCss mode',
+        (_label, options) => {
+          // Given: a two-entry compiler and prewarm inventory under explicit OFF.
+          computeReachableFilesSpy.mockReturnValue([
+            resolve('src/a.tsx'),
+            resolve('src/b.tsx'),
+          ])
+          const run = (
+            policy: ConstructorParameters<typeof DevupUIWebpackPlugin>[0],
+          ) => {
+            const compiler = createCompiler()
+            compiler.options.entry = {
+              a: { import: ['./src/a.tsx'] },
+              b: { import: ['./src/b.tsx'] },
+            }
+            new DevupUIWebpackPlugin({ ...policy, singleCss: true }).apply(
+              asCompiler(compiler),
+            )
+            compiler.hooks.run.tap.mock.calls[0][1]()
+            return compiler.options.module.rules
+          }
+          const offRules = run({ atomHoist: 0 })
+          const offExtractions = [...codeExtractSpy.mock.calls]
+          expect(offExtractions).toHaveLength(2)
+          const offRoutes = [...importFileRoutesSpy.mock.calls]
+          const offThresholds = [...setAtomHoistSpy.mock.calls]
+          expect(offRoutes).toEqual([[{}]])
+          expect(offThresholds).toEqual([[undefined]])
+          codeExtractSpy.mockClear()
+          importFileRoutesSpy.mockClear()
+          setAtomHoistSpy.mockClear()
+          // When: only the requested atom option changes.
+          const onRules = run(options)
+          // Then: owner replay keeps hoisting disabled; loader/prewarm agree.
+          expect(computeFileReachSpy).not.toHaveBeenCalled()
+          expect(importFileRoutesSpy.mock.calls).toEqual(offRoutes)
+          expect(setAtomHoistSpy.mock.calls).toEqual(offThresholds)
+          expect(codeExtractSpy.mock.calls).toEqual(offExtractions)
+          expect(codeExtractSpy).toHaveBeenCalledWith(
+            'src/a.tsx',
+            '{}',
+            '@devup-ui/react',
+            expect.any(String),
+            true,
+            false,
+            true,
+            expect.anything(),
+          )
+          expect(onRules).toEqual(offRules)
+        },
+      )
     })
 
     it('pre-warms the extractor over the files the entries reach in build mode', () => {
@@ -757,6 +919,8 @@ describe('devupUIWebpackPlugin', () => {
         }
         compiler.options.context = '/project'
         plugin.apply(asCompiler(compiler))
+        expect(codeExtractSpy).not.toHaveBeenCalled()
+        compiler.hooks.run.tap.mock.calls[0][1]()
         expect(computeReachableFilesSpy).toHaveBeenCalledWith(
           expect.objectContaining({
             srcDir: [],
@@ -769,16 +933,27 @@ describe('devupUIWebpackPlugin', () => {
         )
         // The loader's resolver is registered before the first extraction, so
         // imported constants inline as they do in the loader
-        expect(setModuleResolverSpy.mock.invocationCallOrder[0]).toBeLessThan(
-          codeExtractSpy.mock.invocationCallOrder[0]!,
-        )
-        const resolveModule = setModuleResolverSpy.mock.calls[0]![0] as (
-          specifier: string,
-          importer: string,
-        ) => { path: string } | undefined
-        expect(resolveModule('./plugin.test', import.meta.path)?.path).toBe(
-          relative('/project', import.meta.path).replaceAll('\\', '/'),
-        )
+        const firstExtraction = codeExtractSpy.mock.invocationCallOrder[0]
+        assert(firstExtraction !== undefined)
+        expect(
+          setModuleResolverSpy.mock.invocationCallOrder.some(
+            (order) => order < firstExtraction,
+          ),
+        ).toBe(true)
+        const resolvedModules: unknown[] = []
+        for (const call of setModuleResolverSpy.mock.calls) {
+          const resolveModule: unknown = call[0]
+          assert(typeof resolveModule === 'function')
+          const resolved: unknown = resolveModule(
+            './plugin.test',
+            import.meta.path,
+          )
+          expect(resolved).toMatchObject({
+            path: relative('/project', import.meta.path).replaceAll('\\', '/'),
+          })
+          resolvedModules.push(resolved)
+        }
+        expect(resolvedModules[1]).toEqual(resolvedModules[0])
         expect(codeExtractSpy).toHaveBeenCalledTimes(2)
         expect(discarded).toHaveLength(2)
         for (const output of discarded)
@@ -808,11 +983,128 @@ describe('devupUIWebpackPlugin', () => {
       }
     })
 
+    it('uses normalized complete files instead of Next loader requests, including external files', () => {
+      // Given an authoritative set with duplicate spellings and an external file.
+      const seed = spyOn(wasm, 'seedFileMap').mockReturnValue(undefined)
+      const shorthands = spyOn(wasm, 'registerShorthands').mockReturnValue(
+        undefined,
+      )
+      const plugin = new DevupUIWebpackPlugin({
+        productionPrewarmFiles: [
+          'src/z.tsx',
+          resolve('node_modules/ui/a.tsx'),
+          './src/z.tsx',
+          'src\\z.tsx',
+        ],
+        shorthands: { insetX: ['left', 'right'] },
+      })
+      const compiler = createCompiler()
+      compiler.options.entry = { main: { import: ['next-app-loader?query!'] } }
+      try {
+        // When the compiler applies and its registered preparation runs.
+        plugin.apply(asCompiler(compiler))
+        expect(codeExtractSpy).not.toHaveBeenCalled()
+        compiler.hooks.run.tap.mock.calls[0][1]()
+        // Then all files are extracted exactly once, in deterministic loader-ID order.
+        expect(codeExtractSpy.mock.calls.map(([filename]) => filename)).toEqual(
+          ['node_modules/ui/a.tsx', 'src/z.tsx'],
+        )
+        expect(computeReachableFilesSpy).not.toHaveBeenCalled()
+        expect(seed).toHaveBeenCalledWith([
+          'node_modules/ui/a.tsx',
+          'src/z.tsx',
+        ])
+        expect(shorthands).toHaveBeenLastCalledWith({
+          insetX: ['left', 'right'],
+        })
+      } finally {
+        seed.mockRestore()
+        shorthands.mockRestore()
+      }
+    })
+
+    it.each([false, true])(
+      'does not prewarm when the complete set is empty or watch=%s',
+      (watch) => {
+        // Given a reachable generic entry which an explicit set supersedes.
+        computeReachableFilesSpy.mockReturnValue([resolve('src/parent.tsx')])
+        const plugin = new DevupUIWebpackPlugin({
+          watch,
+          productionPrewarmFiles: watch ? ['src/parent.tsx'] : [],
+        })
+        // When preparation runs, neither watch files nor generic fallback are extracted.
+        const compiler = createCompiler()
+        plugin.apply(asCompiler(compiler))
+        compiler.hooks.run.tap.mock.calls[0][1]()
+        expect(codeExtractSpy).not.toHaveBeenCalled()
+        expect(computeReachableFilesSpy).not.toHaveBeenCalled()
+      },
+    )
+
+    it.each([
+      ['canonical', true],
+      ['numbering', true],
+      ['read', false],
+      ['extract', false],
+    ] as const)(
+      'propagates genuine %s errors for an explicit complete set',
+      (stage, failsAtApply) => {
+        // Given a failing correctness-prewarm dependency.
+        const failure = new Error(stage)
+        const fail = () => {
+          throw failure
+        }
+        const numbering = spyOn(
+          pluginUtils,
+          'collectNumberedFiles',
+        ).mockReturnValue([])
+        if (stage === 'canonical') buildCanonicalMapSpy.mockImplementation(fail)
+        if (stage === 'numbering') numbering.mockImplementation(fail)
+        if (stage === 'read') readFileSyncSpy.mockImplementation(fail)
+        if (stage === 'extract') codeExtractSpy.mockImplementation(fail)
+        const plugin = new DevupUIWebpackPlugin({
+          debug: stage === 'numbering',
+          productionPrewarmFiles: ['src/parent.tsx'],
+        })
+        const compiler = createCompiler()
+        const cwd = process.cwd()
+        const prewarmContext = `[devup-ui] prewarm failed at ${resolve(cwd, 'src/parent.tsx')} (root ${cwd})`
+        const expectedMessage = {
+          canonical: `[devup-ui] graph setup failed at ${cwd}: canonical`,
+          numbering: undefined,
+          read: `${prewarmContext}: read`,
+          extract: `${prewarmContext}: extract`,
+        }[stage]
+        try {
+          // When: apply succeeds before read/extract fail in the run hook.
+          if (!failsAtApply) plugin.apply(asCompiler(compiler))
+          const invoke = failsAtApply
+            ? () => plugin.apply(asCompiler(compiler))
+            : () => compiler.hooks.run.tap.mock.calls[0][1]()
+          // Then: contextual errors retain the exact cause; numbering stays raw.
+          assert.throws(invoke, (error: unknown) => {
+            assert(error instanceof Error)
+            if (expectedMessage === undefined) expect(error).toBe(failure)
+            else {
+              expect(error.message).toBe(expectedMessage)
+              expect(error.cause).toBe(failure)
+            }
+            return true
+          })
+        } finally {
+          for (const [, close] of compiler.hooks.shutdown.tap.mock.calls)
+            close()
+          numbering.mockRestore()
+        }
+      },
+    )
+
     it('pre-warms without collapse, from no entries when they are a function', () => {
       buildCanonicalMapSpy.mockReturnValue({})
       const compiler = createCompiler()
       compiler.options.entry = () => ({})
       new DevupUIWebpackPlugin({}).apply(asCompiler(compiler))
+      compiler.hooks.run.tap.mock.calls[0][1]()
       expect(computeReachableFilesSpy).toHaveBeenCalledWith(
         expect.objectContaining({ entries: [] }),
       )
@@ -843,7 +1135,9 @@ describe('devupUIWebpackPlugin', () => {
         throw new Error('extract boom')
       })
       const plugin = new DevupUIWebpackPlugin({})
-      expect(() => plugin.apply(asCompiler(createCompiler()))).toThrow(
+      const compiler = createCompiler()
+      plugin.apply(asCompiler(compiler))
+      expect(() => compiler.hooks.run.tap.mock.calls[0][1]()).toThrow(
         /prewarm failed.*parent.tsx.*extract boom/,
       )
       expect(codeExtractSpy).toHaveBeenCalled()
@@ -941,7 +1235,9 @@ describe('devupUIWebpackPlugin', () => {
           needAdditionalPass: { tap: tap('needAdditionalPass') },
         },
       }
-      const run = compiler.hooks.run.tap.mock.calls[0]?.[1] as () => void
+      const run = compiler.hooks.run.tap.mock.calls.find(
+        ([name]) => name === 'DevupUIWebpackPlugin',
+      )?.[1] as () => void
       const start = () => {
         ;(
           compiler.hooks.thisCompilation.tap.mock.calls[0]![1] as (
@@ -952,9 +1248,14 @@ describe('devupUIWebpackPlugin', () => {
       return { compiler, plugin, compilation, taps, run, start }
     }
 
-    it('does not request another CSS pass in watch mode', () => {
+    it('uses same-compilation reconciliation instead of another pass in watch mode', () => {
       const { compiler } = compile(true)
-      expect(compiler.hooks.run.tap).not.toHaveBeenCalled()
+      expect(compiler.hooks.run.tap.mock.calls.map(([name]) => name)).toEqual([
+        'DevupUIWebpackPluginReservation',
+      ])
+      expect(
+        compiler.hooks.thisCompilation.tap.mock.calls.map(([name]) => name),
+      ).toContain('DevupUIWebpackPluginWatchCss')
       expect(
         compiler.hooks.thisCompilation.tap.mock.calls.map(([name]) => name),
       ).not.toContain('DevupUIWebpackPlugin')

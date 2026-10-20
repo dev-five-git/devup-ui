@@ -1,8 +1,11 @@
-import { existsSync } from 'node:fs'
-import { createRequire } from 'node:module'
-import { extname, join, relative, resolve } from 'node:path'
+import { existsSync, readFileSync } from 'node:fs'
+import { extname, isAbsolute, relative, resolve } from 'node:path'
 
-import type { StaticImportGraph } from '@devup-ui/plugin-utils'
+import {
+  createModuleResolver,
+  parseImports,
+  type StaticImportGraph,
+} from '@devup-ui/plugin-utils'
 
 const EXTRACTABLE_EXTENSION = /\.(?:tsx?|jsx?|mjs)$/
 
@@ -52,13 +55,13 @@ export interface CollectProductionPrewarmFilesOptions {
 }
 
 /**
- * Build the deterministic production extraction set used before Turbopack can
- * request its first CSS module.
+ * Build the complete deterministic production extraction set before a bundler
+ * requests its first CSS module.
  *
  * `computeCompiledFiles` is intentionally route-aware, but a bundler can also
  * compile files hidden behind template imports / MDX and package entries that
  * live outside `srcDir`. Prewarming every extractable source file plus the
- * external package entries accepted by the loader makes the first snapshot
+ * external package closures accepted by the loader makes the first snapshot
  * independent of Turbopack scheduling. Per-file mode still only imports chunks
  * that the bundler reaches; single-CSS mode intentionally contains the whole
  * application stylesheet.
@@ -79,25 +82,29 @@ export function collectProductionPrewarmFiles({
     files.add(toKey(resolvedCwd, filename))
   }
 
-  const externalSpecifiers = new Set<string>()
-  for (const specifiers of graph.externalImports?.values() ?? []) {
-    for (const specifier of specifiers) externalSpecifiers.add(specifier)
-  }
-
-  const requireFromProject = createRequire(join(resolvedCwd, 'package.json'))
-  for (const specifier of [...externalSpecifiers].sort()) {
-    const packageName = packageNameFromSpecifier(specifier)
-    if (!packageName || !isPrewarmPackage(packageName, libPackage, include)) {
-      continue
+  const resolveModule = createModuleResolver({ cwd: resolvedCwd })
+  const visited = new Set<string>()
+  const queue = [...(graph.externalImports ?? [])].flatMap(
+    ([importer, specifiers]) =>
+      [...specifiers].sort().map((specifier) => ({ importer, specifier })),
+  )
+  for (const { importer, specifier } of queue) {
+    const local = specifier.startsWith('.') || isAbsolute(specifier)
+    if (!local) {
+      const packageName = packageNameFromSpecifier(specifier)
+      if (!packageName || !isPrewarmPackage(packageName, libPackage, include))
+        continue
     }
-
-    try {
-      const filename = preferEsmFile(requireFromProject.resolve(specifier))
-      if (!EXTRACTABLE_EXTENSION.test(filename)) continue
-      files.add(toKey(resolvedCwd, filename))
-    } catch {
-      // Resolution is best-effort, matching the static graph pre-pass. The
-      // loader remains the fallback for packages resolved only by Turbopack.
+    const module = resolveModule(specifier, importer)
+    if (!module || module.ignored === true) continue
+    const filename = preferEsmFile(module.path)
+    if (!EXTRACTABLE_EXTENSION.test(filename) || visited.has(filename)) continue
+    visited.add(filename)
+    files.add(toKey(resolvedCwd, filename))
+    const source =
+      filename === module.path ? module.code : readFileSync(filename, 'utf-8')
+    for (const imported of parseImports(filename, source)) {
+      queue.push({ importer: filename, specifier: imported.specifier })
     }
   }
 

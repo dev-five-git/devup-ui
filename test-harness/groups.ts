@@ -15,9 +15,10 @@ export const groupRules: readonly GroupRule[] = [
   { directory: 'packages/next-plugin/', group: 'isolated' },
   { directory: 'packages/plugin-utils/', group: 'isolated' },
   { directory: 'packages/reset-css/', group: 'isolated' },
-  { directory: 'packages/rsbuild-plugin/', group: 'runtime' },
+  { directory: 'packages/rsbuild-plugin/', group: 'isolated' },
   { directory: 'packages/vite-plugin/', group: 'isolated' },
   { directory: 'packages/webpack-plugin/', group: 'isolated' },
+  { directory: 'packages/__tests__/', group: 'isolated' },
 ]
 
 export class TestGroupingError extends Error {

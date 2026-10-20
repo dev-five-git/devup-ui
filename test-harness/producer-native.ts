@@ -63,7 +63,6 @@ export function reconstructNative(
   )
     throw new CoverageError('unsupported precise whole-script profile')
   const functions = capture.blocks.slice(-profiles.length)
-  const blocks = capture.blocks.slice(0, -profiles.length)
   if (whole.endOffset !== capture.code.length)
     throw new CoverageError('contradictory executed source length')
   const identities = profiles
@@ -81,7 +80,40 @@ export function reconstructNative(
     functions.some((fn) => fn.count !== Number(fn.hasExecuted))
   )
     throw new CoverageError('contradictory public native function inventory')
-  return projectNative(capture, functions, blocks)
+  const merged = framedReloads(capture, reloads)
+  return projectNative(
+    capture,
+    merged.slice(-profiles.length),
+    merged.slice(0, -profiles.length),
+  )
+}
+
+/** Bun reports one row per line for every evaluation of a script, so a block counts when any evaluation ran it. */
+function framedReloads(
+  capture: ScriptCapture,
+  reloads: readonly ScriptCapture[],
+): readonly BasicBlock[] {
+  const evaluations = reloads.length === 0 ? [capture] : reloads
+  for (const item of evaluations) {
+    if (
+      item.url !== capture.url ||
+      item.code !== capture.code ||
+      item.sourceMapURL !== capture.sourceMapURL ||
+      item.scriptType !== capture.scriptType
+    )
+      throw new CoverageError('incompatible framed reload source')
+  }
+  return capture.blocks.map((block) => {
+    const hasExecuted = evaluations.some((item) =>
+      item.blocks.some(
+        (observed) =>
+          observed.startOffset === block.startOffset &&
+          observed.endOffset === block.endOffset &&
+          (observed.hasExecuted || observed.count > 0),
+      ),
+    )
+    return { ...block, hasExecuted, count: Number(hasExecuted) }
+  })
 }
 
 function reloadUnion(

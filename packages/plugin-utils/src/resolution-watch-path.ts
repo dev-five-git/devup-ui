@@ -16,9 +16,16 @@ function canonicalWatchPath(path: string, parent: string): string {
   }
 }
 
+/** A caller-owned memo for one observer lifetime: each resolution re-reports the same inputs thousands of times. */
 export function resolutionWatchPath(
   path: string,
   preserveSymlinks = false,
+  cache?: Map<string, string>,
 ): string {
-  return preserveSymlinks ? path : canonicalWatchPath(path, path)
+  if (preserveSymlinks) return path
+  const known = cache?.get(path)
+  if (known !== undefined) return known
+  const canonical = canonicalWatchPath(path, path)
+  cache?.set(path, canonical)
+  return canonical
 }

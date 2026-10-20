@@ -57,7 +57,9 @@ import {
   type WebpackGenerationBinding,
 } from './build-scope'
 import { registerCompiledGuard } from './compiled-guard'
+import { createWebpackReservation } from './reservation'
 import { servedCss } from './served-css'
+import { reconcileWatchCss } from './watch-css'
 
 export interface DevupUIWebpackPluginOptions {
   package: string
@@ -73,20 +75,15 @@ export interface DevupUIWebpackPluginOptions {
   sourceDirs?: string | string[]
   mdxExtensions?: readonly string[]
   /**
-   * Atom-level route-aware hoisting threshold.
-   *
-   * When set, a style atom whose content is reached by `>= atomHoist` distinct
-   * entries/routes is emitted once into the shared `devup-ui.css`; route-private
-   * atoms stay in their per-route chunk. Clamped to a minimum of 2 (an atom
-   * shared by `>= 2` routes is the smallest case worth hoisting). Omit to
-   * disable atom hoisting (identity behavior).
+   * Atom-level route-aware hoisting threshold. Defaults to 2; 0 disables it.
+   * Positive thresholds are clamped to >= 2. Canonical buckets reached by at
+   * least this many routes use global short counter names in devup-ui.css;
+   * other buckets keep per-file counter names in their per-route chunks.
+   * Fewer than two routes yields no hoisted plan. Ignored when singleCss is true.
    *
    * Composes with single-importer collapse: files used by exactly one importer
    * still merge into that importer's bucket (deduplicating their identical
    * atoms), and atom hoisting then shares atoms across the remaining buckets.
-   *
-   * Currently honored by the Next.js plugin; other bundlers wire it
-   * progressively. No effect where unsupported.
    */
   atomHoist?: number
   /**
@@ -95,6 +92,8 @@ export interface DevupUIWebpackPluginOptions {
    * Set to `false` to disable specific aliases
    */
   importAliases?: ImportAliases
+  /** Adapter-owned complete extraction set; undefined keeps generic entry reachability. */
+  readonly productionPrewarmFiles?: readonly string[]
 }
 
 export class DevupUIWebpackPlugin {
@@ -125,7 +124,8 @@ export class DevupUIWebpackPlugin {
       prefix,
       shorthands,
       sourceDirs,
-      atomHoist,
+      atomHoist = 2,
+      productionPrewarmFiles,
       importAliases: userImportAliases,
       mdxExtensions,
     }: Partial<DevupUIWebpackPluginOptions> = {},
@@ -149,6 +149,16 @@ export class DevupUIWebpackPlugin {
       shorthands,
       atomHoist,
       sourceDirs,
+      productionPrewarmFiles:
+        productionPrewarmFiles === undefined
+          ? undefined
+          : [
+              ...new Set(
+                productionPrewarmFiles.map((file) =>
+                  file.replaceAll('\\', '/'),
+                ),
+              ),
+            ].sort(),
     }
 
     this.sheetFile = join(this.options.distDir, 'sheet.json')
@@ -184,12 +194,15 @@ export class DevupUIWebpackPlugin {
     cwd: string
   }) {
     const { graph, entries, cwd } = options
-    for (const file of computeReachableFiles({
-      srcDir: graph.files,
-      tsconfigPath: resolve(cwd, 'tsconfig.json'),
-      entries,
-      graph,
-    })) {
+    const files =
+      this.options.productionPrewarmFiles?.map((file) => resolve(cwd, file)) ??
+      computeReachableFiles({
+        srcDir: graph.files,
+        tsconfigPath: resolve(cwd, 'tsconfig.json'),
+        entries,
+        graph,
+      })
+    for (const file of files) {
       if (!SOURCE_FILE_RE.test(file)) continue
       try {
         const relativePath = relative(cwd, file).replaceAll('\\', '/')
@@ -257,6 +270,17 @@ export class DevupUIWebpackPlugin {
     const cwd = compiler.context ?? compiler.options.context ?? process.cwd()
     const paths = resolveProjectPaths(cwd, this.pathOptions)
     this.options = { ...this.options, ...paths }
+    if (this.options.productionPrewarmFiles !== undefined)
+      this.options = {
+        ...this.options,
+        productionPrewarmFiles: [
+          ...new Set(
+            this.options.productionPrewarmFiles.map((file) =>
+              relative(cwd, resolve(cwd, file)).replaceAll('\\', '/'),
+            ),
+          ),
+        ].sort(),
+      }
     const options = this.options
     this.sheetFile = join(paths.distDir, 'sheet.json')
     this.classMapFile = join(paths.distDir, 'classMap.json')
@@ -265,14 +289,23 @@ export class DevupUIWebpackPlugin {
     const resolveOptions = compiler.options.resolve
     const inputFiles = new Set<string>()
     const missingInputs = new Set<string>()
+    const watchPaths = new Map<string, string>()
     const onResolutionInputs: ResolutionInputObserver = (inputs) => {
       for (const path of inputs.fileDependencies)
         inputFiles.add(
-          resolutionWatchPath(path, resolveOptions?.symlinks === false),
+          resolutionWatchPath(
+            path,
+            resolveOptions?.symlinks === false,
+            watchPaths,
+          ),
         )
       for (const path of inputs.missingDependencies)
         missingInputs.add(
-          resolutionWatchPath(path, resolveOptions?.symlinks === false),
+          resolutionWatchPath(
+            path,
+            resolveOptions?.symlinks === false,
+            watchPaths,
+          ),
         )
     }
     compiler.hooks.afterCompile.tap(
@@ -281,6 +314,7 @@ export class DevupUIWebpackPlugin {
         for (const path of inputFiles) compilation.fileDependencies.add(path)
         for (const path of missingInputs)
           compilation.missingDependencies.add(path)
+        watchPaths.clear()
       },
     )
     const baseConditions = resolveOptions?.conditionNames ?? [
@@ -297,8 +331,7 @@ export class DevupUIWebpackPlugin {
     ).flatMap((condition) =>
       condition === '...' ? baseConditions : [condition],
     )
-    const entry = compiler.options.entry
-    const entries =
+    const entryFiles = (entry: Compiler['options']['entry']) =>
       typeof entry === 'function'
         ? []
         : Object.values(entry ?? {}).flatMap(({ import: requests = [] }) =>
@@ -319,8 +352,19 @@ export class DevupUIWebpackPlugin {
                 : []
             }),
           )
+    const entries = entryFiles(compiler.options.entry)
     const roots = [
-      ...new Set([...sourceDirs, ...entries.map((file) => dirname(file))]),
+      ...new Set([
+        ...sourceDirs,
+        ...entries
+          .map((file) => dirname(file))
+          .filter((directory) => directory !== resolve(cwd)),
+      ]),
+    ]
+    const generated = [
+      paths.distDir,
+      paths.cssDir,
+      resolve(cwd, compiler.options.output?.path ?? 'dist'),
     ]
     const endBuild = () => scope.abort()
     let moduleResolver: ReturnType<typeof createModuleResolver>
@@ -368,20 +412,23 @@ export class DevupUIWebpackPlugin {
       )
     }
 
-    // Atom-level hoisting (opt-in via `atomHoist`). Configured BEFORE any loader
-    // runs codeExtract (apply() body is synchronous, loaders run during
-    // compilation) so atoms receive global (shared) class names. The WASM
+    // Per-file atom hoisting defaults to 2; 0 disables it, singleCss ignores it.
+    // Configured before loaders run codeExtract (apply() is synchronous), so
+    // eligible atoms receive global short counter names. The WASM
     // instance is shared in-process with the loaders. Composes with
     // single-importer collapse: both keyed by the canonical bucket. The webpack
     // loader passes relative(process.cwd(), id) as the extraction filename, so
     // the graph maps use cwd-relative keys (keyBy: 'cwd-relative').
     const atomHoist = this.options.atomHoist
     const atomMode =
-      atomHoist !== undefined && Number.isFinite(atomHoist) && atomHoist > 0
+      !this.options.singleCss &&
+      atomHoist !== undefined &&
+      Number.isFinite(atomHoist) &&
+      atomHoist > 0
     // Single-importer collapse ALWAYS runs: files used by exactly one importer
     // merge into that importer's bucket, deduplicating their identical atoms.
     // The canonical map is built + imported unconditionally; only atom HOISTING
-    // composes on top when `atomHoist` is set. Mirrors next-plugin's pre-pass.
+    // composes on top in effective atom mode. Mirrors next-plugin's pre-pass.
     let graph: StaticImportGraph
     let routes: Record<string, number[]> = {}
     let threshold: number | undefined
@@ -391,9 +438,11 @@ export class DevupUIWebpackPlugin {
       graph = buildStaticImportGraph(roots, tsconfigPath, {
         includeMdx: this.mdxExtensions,
         cwd,
+        exclude: generated,
         include: this.options.include,
         conditions,
         alias: resolveOptions?.alias,
+        entries: entries.length ? entries : undefined,
         onResolutionInputs,
       })
       const canonicalMap = buildCanonicalMap({
@@ -422,7 +471,7 @@ export class DevupUIWebpackPlugin {
           setAtomHoist(plan.threshold)
         } else {
           console.info(
-            '[devup-ui] atomHoist is set but fewer than 2 routes were detected; atom hoisting is a no-op (single-entry/SPA).',
+            '[devup-ui] fewer than 2 routes were detected; atom hoisting is a no-op (single-entry/SPA).',
           )
         }
       }
@@ -443,6 +492,7 @@ export class DevupUIWebpackPlugin {
         collectNumberedFiles({
           roots,
           includeMdx: this.mdxExtensions,
+          exclude: generated,
           include: this.options.include,
           cwd,
           needles: extractedNeedles(this.options.package, this.importAliases),
@@ -450,6 +500,7 @@ export class DevupUIWebpackPlugin {
         }),
       )
     } catch (cause) {
+      if (options.productionPrewarmFiles !== undefined) throw cause
       if (!this.seedWarningEmitted) {
         this.seedWarningEmitted = true
         console.warn(
@@ -467,16 +518,45 @@ export class DevupUIWebpackPlugin {
     // (single shared WASM instance). Re-extraction by the per-file loader is
     // then idempotent (set-based atom dedup). Watch mode rebuilds stylesheets
     // through the files the loaders write instead.
-    if (!this.options.watch) {
-      try {
-        this.prewarmExtractor({ graph, entries, cwd })
-      } catch (cause) {
-        endBuild()
-        throw cause
-      }
+    if (options.productionPrewarmFiles !== undefined)
+      seedFileNumbers(
+        { seedFileMap },
+        options.productionPrewarmFiles.map((file) =>
+          relative(cwd, resolve(cwd, file)).replaceAll('\\', '/'),
+        ),
+      )
+    const reserve = createWebpackReservation(options, this.importAliases)
+    const reserveBeforeCompile = () => {
+      scope.run(() => {
+        setModuleResolver(moduleResolver)
+        reserve({
+          ...compiler.options,
+          context: compiler.context ?? compiler.options.context ?? cwd,
+        })
+        if (!options.watch) {
+          const currentEntries = entryFiles(compiler.options.entry)
+          this.prewarmExtractor({ graph, entries: currentEntries, cwd })
+        }
+      })
     }
+    compiler.hooks.run.tap(
+      'DevupUIWebpackPluginReservation',
+      reserveBeforeCompile,
+    )
+    if (!this.options.watch)
+      compiler.hooks.watchRun.tapPromise(
+        'DevupUIWebpackPluginReservation',
+        async () => {
+          reserveBeforeCompile()
+        },
+      )
 
     if (options.watch) {
+      compiler.hooks.thisCompilation.tap(
+        'DevupUIWebpackPluginWatchCss',
+        (compilation) =>
+          reconcileWatchCss(compilation, (callback) => scope.run(callback)),
+      )
       let lastModifiedTime: string | null = null
       compiler.hooks.watchRun.tapPromise('DevupUIWebpackPlugin', async () => {
         const stamps: number[] = []
@@ -495,10 +575,18 @@ export class DevupUIWebpackPlugin {
             scope.run(() => {
               theme = this.writeDataFiles(options, cwd)
               tailwindFiles = this.tailwindFiles
+              sourceLoader.options.configurationFiles = configurationFiles()
             })
 
           lastModifiedTime = modifiedTime
         }
+        scope.run(() => {
+          setModuleResolver(moduleResolver)
+          reserve({
+            ...compiler.options,
+            context: compiler.context ?? compiler.options.context ?? cwd,
+          })
+        })
       })
     }
     if (existsDevup || tailwindFiles.length > 0)
@@ -597,6 +685,10 @@ export class DevupUIWebpackPlugin {
       typeof require === 'function'
         ? require.resolve
         : createRequire(import.meta.url).resolve
+    const configurationFiles = () => [
+      ...(existsDevup ? [resolve(options.devupFile)] : []),
+      ...tailwindFiles.map((file) => resolve(file)),
+    ]
     const sourceLoader = {
       loader: resolveLoader('@devup-ui/webpack-plugin/loader'),
       options: {
@@ -613,6 +705,7 @@ export class DevupUIWebpackPlugin {
         alias: resolveOptions?.alias,
         mdxExtensions: this.mdxExtensions,
         symlinks: resolveOptions?.symlinks,
+        configurationFiles: configurationFiles(),
       },
     }
     compiler.options.module.rules.push(

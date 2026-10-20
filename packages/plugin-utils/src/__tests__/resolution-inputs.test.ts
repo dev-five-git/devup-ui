@@ -201,6 +201,21 @@ it('canonicalizes only transport identity when watching a missing descendant bel
   expect(resolutionWatchPath(lexical, true)).toBe(lexical)
 })
 
+it('canonicalizes each repeated resolution input once per caller-owned memo', () => {
+  // Given a symlinked input and an empty memo.
+  const physical = file('memo/existing.ts')
+  fs.symlinkSync(dirname(physical), join(root, 'memo-link'), 'junction')
+  const lexical = join(root, 'memo-link/existing.ts')
+  const cache = new Map<string, string>()
+  // When the same input is reported twice, the second time after the memo was marked.
+  const first = resolutionWatchPath(lexical, false, cache)
+  cache.set(lexical, 'memoized')
+  // Then the memo answers without a second filesystem walk, and preserved identity bypasses it.
+  expect(first).toBe(physical)
+  expect(resolutionWatchPath(lexical, false, cache)).toBe('memoized')
+  expect(resolutionWatchPath(lexical, true, cache)).toBe(lexical)
+})
+
 it('preserves IO failure identity and records attempted repair inputs', () => {
   // Given a permission failure at the narrow existing read seam.
   const target = file('blocked.json')

@@ -24,8 +24,9 @@ export interface SourceProject {
   readonly debug: boolean
   readonly resolver: ReturnType<typeof createModuleResolver>
   readonly mdxExtensions: readonly string[]
-  readonly prepared: Map<string, PreparedSource>
+  readonly prepared: Map<string, Exclude<PreparedSource, undefined>>
   readonly ownership: ReturnType<typeof createMdxOwnership>
+  readonly reserve?: (preparedChanged: boolean) => void
 }
 
 export async function loadSourceFile(filePath: string, project: SourceProject) {
@@ -51,6 +52,7 @@ export async function loadSourceFile(filePath: string, project: SourceProject) {
   if (importsCompiledPackage(contents, loader)) {
     setDebug(project.debug)
     setModuleResolver(project.resolver)
+    project.reserve?.(selectedMdx)
     try {
       const output = codeExtract(
         filePath,

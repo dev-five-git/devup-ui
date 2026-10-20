@@ -1,0 +1,7 @@
+{
+  "changes": {
+    "bindings/devup-ui-wasm/package.json": "Patch"
+  },
+  "note": "Styled components no longer pass every prop to the tag they render: `$` props, `theme` and the props their style functions or attrs read are kept away from a tag unless it takes them as attributes, and `shouldForwardProp` (Emotion options or styled-components withConfig) is evaluated at build time. A `shouldForwardProp` the build cannot evaluate is a build error naming the file, line and code, with the forms it accepts. An element using a styled component the file defines drops props the component neither reads nor passes on; spread props are passed as written",
+  "date": "2026-10-01T00:00:00.000Z"
+}

@@ -4,10 +4,7 @@ import { basename, dirname, join, relative, resolve } from 'node:path'
 
 import {
   beginBuild,
-  buildCanonicalMap,
-  buildStaticImportGraph,
   collectNumberedFiles,
-  computeFileReach,
   createCompatTypes,
   createModuleResolver,
   createStateWriter,
@@ -21,7 +18,6 @@ import {
   loadDevupConfig,
   mergeImportAliases,
   normalizeMdxExtensions,
-  planAtomHoist,
   remapMdxError,
   type ResolutionInputObserver,
   resolutionWatchPath,
@@ -37,13 +33,10 @@ import {
   getCss as getEngineCss,
   getDefaultTheme,
   getThemeInterface,
-  importCanonicalMap,
-  importFileRoutes,
   registerShorthands,
   registerTheme,
   resetBuildState,
   seedFileMap,
-  setAtomHoist,
   setDebug,
   setModuleResolver,
   setPrefix,
@@ -245,11 +238,9 @@ export interface DevupUIPluginOptions {
   sourceDirs?: string | string[]
   mdxExtensions?: readonly string[]
   /**
-   * Atom-level route-aware hoisting threshold (min routes sharing an atom for
-   * it to hoist into the shared devup-ui.css; clamped to >= 2; omit to disable).
-   * Opt-in: when set, single-importer collapse + atom hoisting are enabled for
-   * this build. "Routes" are inferred from the import graph (entry points and
-   * dynamic-import targets).
+   * Reserved for route-aware atom hoisting after PR B adds shared class-slot
+   * reservation. Until then, Vite keeps per-file names and warns
+   * once for explicit finite positive requests. Ignored in singleCss mode.
    */
   atomHoist?: number
   /**
@@ -317,6 +308,16 @@ export function DevupUI({
   const endBuild = () => {
     releaseLegacy?.()
     releaseLegacy = undefined
+  }
+  if (
+    !singleCss &&
+    atomHoist !== undefined &&
+    Number.isFinite(atomHoist) &&
+    atomHoist > 0
+  ) {
+    console.warn(
+      '[devup-ui] Vite atomHoist is unavailable until shared class-slot reservation lands in PR B; keeping per-file names, while existing shared slots remain arrival-ordered.',
+    )
   }
   const importAliases = mergeImportAliases(userImportAliases)
   const production = new ProductionActivation(
@@ -669,61 +670,6 @@ export function DevupUI({
           projectRoot,
         )
 
-        // Atom-level hoisting (opt-in via `atomHoist`). Configured BEFORE any
-        // transform so atoms receive global (shared) class names. Composes with
-        // single-importer collapse: both are keyed by the canonical bucket. Vite
-        // passes the ABSOLUTE module id to codeExtract, so the graph maps use
-        // absolute keys (keyBy: 'absolute') to match the engine's bucket keys.
-        const atomMode =
-          atomHoist !== undefined && Number.isFinite(atomHoist) && atomHoist > 0
-        if (atomMode) {
-          try {
-            const root = projectRoot
-            // App Router projects keep their sources in `app/`, so a hardcoded
-            // `src/` made the whole pre-pass a silent no-op for them.
-            const srcDir = roots
-            const tsconfigPath = resolve(root, 'tsconfig.json')
-            const graph = buildStaticImportGraph(roots, tsconfigPath, {
-              includeMdx: mdxExtensions,
-              cwd: root,
-              include,
-              conditions,
-              onResolutionInputs: observeSetup,
-            })
-
-            const canonicalMap = buildCanonicalMap({
-              srcDir,
-              tsconfigPath,
-              cwd: root,
-              keyBy: 'absolute',
-              graph,
-            })
-            importCanonicalMap(canonicalMap)
-
-            const fileReach = computeFileReach({
-              srcDir,
-              tsconfigPath,
-              cwd: root,
-              keyBy: 'absolute',
-              graph,
-              entries: entries.length > 0 ? entries : undefined,
-            })
-            const plan = planAtomHoist(canonicalMap, fileReach, atomHoist)
-            if (plan) {
-              importFileRoutes(plan.reachByBucket)
-              setAtomHoist(plan.threshold)
-            } else {
-              console.info(
-                '[devup-ui] atomHoist is set but fewer than 2 routes were detected; atom hoisting is a no-op (single-entry/SPA).',
-              )
-            }
-          } catch (cause) {
-            throw new Error(
-              `[devup-ui] atom graph setup failed at ${projectRoot}: ${cause instanceof Error ? cause.message : String(cause)}`,
-              { cause },
-            )
-          }
-        }
         try {
           // Numbers come from the sorted paths of every file the build can
           // extract (source and included packages), not from arrival order.

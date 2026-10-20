@@ -42,6 +42,7 @@ export {
   type ModulePathResolver,
   type ModulePathResolverOptions,
   type ModuleResolution,
+  parseImports,
   planAtomHoist,
   type PreparedGraphOptions,
   type PreparedSource,
@@ -115,6 +116,14 @@ export {
   type ProductionSourceFilesOptions,
 } from './production-source-files'
 export {
+  collectReservationInputs,
+  PreparedInputConflictError,
+  type PreparedReservationInput,
+  type ReservationDiscoveryOptions,
+  type ReservationInput,
+  type ReservationInventory,
+} from './reservation-discovery'
+export {
   type ResolutionInputObserver,
   type ResolutionInputs,
 } from './resolution-inputs'
@@ -134,6 +143,13 @@ export {
   SOURCE_EXTENSIONS,
   SOURCE_FILE_RE,
 } from './shared'
+export {
+  createSharedSlotReservation,
+  type ReservationBatchOptions,
+  type ReservationEngine,
+  type ReservationRow,
+  type SharedSlotReservation,
+} from './shared-slots'
 export {
   isSelectedSource,
   type MdxSelection,

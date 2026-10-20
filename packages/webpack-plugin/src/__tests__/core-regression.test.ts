@@ -22,6 +22,11 @@ function webpack(config: Configuration) {
   })
 }
 
+async function startBuild(started: Compiler) {
+  await started.hooks.beforeRun.promise(started)
+  await started.hooks.run.promise(started)
+}
+
 let root: string
 let compiler: Compiler | undefined
 
@@ -59,6 +64,7 @@ it.each(['ts', 'tsx', 'mts', 'cts', 'js', 'jsx', 'mjs', 'cjs'])(
     })
 
     expect(plugin.options.distDir).toBe(join(root, 'df'))
+    await startBuild(compiler)
     expect(wasm.getCss(null, false)).toContain('red')
     const rules = compiler.options.module.rules
     expect(rules).toContainEqual(
@@ -157,6 +163,8 @@ it.each(['web', 'node'])(
         ],
       })
 
+      await startBuild(compiler)
+
       expect(graph).toHaveBeenCalledTimes(1)
       const shared = captured.graph
       expect(shared?.files).toContain(
@@ -166,7 +174,7 @@ it.each(['web', 'node'])(
         join(library, target === 'web' ? 'node.mjs' : 'nested/colors.mts'),
       )
       expect(canonical.mock.calls[0]?.[0].graph).toBe(shared)
-      expect(reach.mock.calls[0]?.[0].graph).toBe(shared)
+      expect(reach).not.toHaveBeenCalled()
       expect(prewarm.mock.calls[0]?.[0].graph).toBe(shared)
       expect(wasm.getCss(null, false)).toContain(
         target === 'web' ? 'red' : 'blue',
@@ -221,6 +229,7 @@ it.each([
       entry,
       plugins: [new DevupUIWebpackPlugin()],
     })
+    await startBuild(compiler)
     expect(reachable.mock.calls[0]?.[0].entries).toEqual([])
   } finally {
     reachable.mockRestore()
@@ -246,16 +255,17 @@ it.each([
     entry,
     plugins: [new DevupUIWebpackPlugin({ singleCss: true })],
   })
+  await startBuild(compiler)
   expect(wasm.getCss(null, false)).toContain('red')
   expect(wasm.getCss(null, false)).not.toContain('blue')
 })
 
-it('propagates invalid real entry resource I/O instead of skipping it', () => {
-  expect(() =>
-    webpack({
-      context: root,
-      entry: 'loader!./src/\0.ts?resource=true',
-      plugins: [new DevupUIWebpackPlugin()],
-    }),
-  ).toThrow()
+it('propagates invalid real entry resource I/O instead of skipping it', async () => {
+  compiler = webpack({
+    context: root,
+    entry: 'loader!./src/\0.ts?resource=true',
+    plugins: [new DevupUIWebpackPlugin()],
+  })
+
+  await expect(startBuild(compiler)).rejects.toThrow()
 })

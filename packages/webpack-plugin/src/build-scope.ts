@@ -8,10 +8,12 @@ import {
   exportCanonicalMap,
   exportClassMap,
   exportFileMap,
+  exportReservationState,
   exportSheet,
   importCanonicalMap,
   importClassMap,
   importFileMap,
+  importReservationState,
   importSheet,
   resetBuildState,
 } from '@devup-ui/wasm'
@@ -22,6 +24,7 @@ interface SerializedBuildState {
   readonly classes: string
   readonly files: string
   readonly canonical: string
+  readonly reservation: string
 }
 
 /** @internal No owner is accepted through user-facing plugin options. */
@@ -37,10 +40,12 @@ const engine = {
     const classes: unknown = JSON.parse(state.classes)
     const files: unknown = JSON.parse(state.files)
     const canonical: unknown = JSON.parse(state.canonical)
+    const reservation: unknown = JSON.parse(state.reservation)
     importSheet(sheet)
     importClassMap(classes)
     importFileMap(files)
     importCanonicalMap(canonical)
+    importReservationState(reservation)
   },
   capture(): SerializedBuildState {
     return {
@@ -48,6 +53,7 @@ const engine = {
       classes: exportClassMap(),
       files: exportFileMap(),
       canonical: exportCanonicalMap(),
+      reservation: exportReservationState(),
     }
   },
 }

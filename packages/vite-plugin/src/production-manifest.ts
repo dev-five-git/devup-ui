@@ -1,10 +1,7 @@
-import { dirname, extname, resolve } from 'node:path'
+import { extname, resolve } from 'node:path'
 
 import {
-  buildCanonicalMap,
-  buildPreparationImportGraph,
   collectProductionFileManifest,
-  computeFileReach,
   createNodeModulesExcludeRegex,
   createNonphysicalIdStore,
   enumerateProductionSourceFiles,
@@ -12,7 +9,6 @@ import {
   isSelectedSource,
   loadDevupConfig,
   type NonphysicalIdStore,
-  planAtomHoist,
   PreparationInputs,
   type ProductionManifestFile,
   type ProductionNumberingPlan,
@@ -122,7 +118,6 @@ async function prepareManifest(
             : 'development'
           : condition,
     )
-    const graphRoots = [...new Set([...roots, ...selectedEntries.map(dirname)])]
     const exclude = [
       paths.distDir,
       paths.cssDir,
@@ -207,47 +202,9 @@ async function prepareManifest(
         const code = inputs.read(file.path)
         return gate.relevant(code)
       })
-    let canonical: Readonly<Record<string, string>> = {}
-    let routes: Readonly<Record<string, readonly number[]>> = {}
-    let threshold: number | undefined
-    if (
-      options.atomHoist !== undefined &&
-      Number.isFinite(options.atomHoist) &&
-      options.atomHoist > 0
-    ) {
-      const graph = buildPreparationImportGraph(
-        graphRoots,
-        resolve(config.root, 'tsconfig.json'),
-        {
-          inputs,
-          options: {
-            cwd: config.root,
-            include: options.include,
-            includeMdx: options.mdxExtensions,
-            conditions,
-            onResolutionInputs: observe,
-          },
-        },
-      )
-      canonical = buildCanonicalMap({
-        srcDir: graphRoots,
-        cwd: config.root,
-        keyBy: 'absolute',
-        graph,
-      })
-      const reach = computeFileReach({
-        srcDir: graphRoots,
-        cwd: config.root,
-        keyBy: 'absolute',
-        graph,
-        ...(selectedEntries.length ? { entries: selectedEntries } : {}),
-      })
-      const hoist = planAtomHoist(canonical, reach, options.atomHoist)
-      if (hoist) {
-        routes = hoist.reachByBucket
-        threshold = hoist.threshold
-      }
-    }
+    const canonical: Readonly<Record<string, string>> = {}
+    const routes: Readonly<Record<string, readonly number[]>> = {}
+    const threshold: number | undefined = undefined
     const store = createNonphysicalIdStore({
       integration: 'Vite',
       resolvedRoot: config.root,

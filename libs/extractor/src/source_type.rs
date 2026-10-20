@@ -35,20 +35,12 @@ pub(crate) fn validate_module(module: &crate::ResolvedModule) -> Result<(), Stri
     let source_type = parser_type(&module.path, module.source_type)?;
     if module.source_type.is_some() || crate::is_compiled_mdx(&module.path) {
         let allocator = oxc_allocator::Allocator::default();
-        let parsed = oxc_parser::Parser::new(&allocator, &module.code, source_type).parse();
-        if let Some(error) = parsed.diagnostics.errors().next() {
-            let offset = error
-                .labels
-                .first()
-                .map_or(0, oxc_span::LabeledSpan::offset);
+        if let Err(errors) = crate::parsing::parse_source(&allocator, &module.code, source_type) {
             return Err(crate::located_errors(
                 &module.path,
                 &module.code,
                 &[],
-                vec![(
-                    offset,
-                    format!("source parser cannot use raw or invalid MDX at build time: {error}"),
-                )],
+                crate::parsing::syntax_errors(errors, true),
                 source_type,
             ));
         }
@@ -129,5 +121,33 @@ mod tests {
         assert!(validate_module(&module).is_err_and(
             |error| error.starts_with("page.mdown:1:") && error.contains("raw or invalid MDX")
         ));
+    }
+
+    #[test]
+    fn reports_all_recoverable_errors_when_compiler_output_has_no_styling_import() {
+        // Given: multiple recoverable declarations in explicitly compiled output.
+        let source = "const first;\nconst second;";
+        // When: the public entry validates a custom filename before preprocessing.
+        let error = crate::extract_with_source_type(
+            "page.mdown",
+            source,
+            crate::ExtractOption::default(),
+            false,
+            None,
+            Some(ExtractSourceType::CompiledMdx),
+        )
+        .err()
+        .unwrap_or_else(|| panic!("invalid compiled output was accepted"))
+        .to_string();
+        // Then: every diagnostic keeps its original source line and MDX context.
+        let errors: Vec<_> = error.lines().collect();
+        assert_eq!(errors.len(), 2, "{error}");
+        assert!(errors[0].starts_with("page.mdown:1:"), "{error}");
+        assert!(errors[1].starts_with("page.mdown:2:"), "{error}");
+        assert!(
+            errors
+                .iter()
+                .all(|error| error.contains("raw or invalid MDX"))
+        );
     }
 }

@@ -310,7 +310,7 @@ const VANILLA_EXTRACT_COMPANIONS: [&str; 2] =
 /// The value imports of vanilla-extract's companion packages, as errors at
 /// their offsets: while `@vanilla-extract/css` compiles to Devup UI, the
 /// rules they generate would never reach the stylesheet
-pub fn companion_errors(code: &str, filename: &str) -> Vec<(u32, String)> {
+pub fn companion_errors(code: &str, source_type: SourceType) -> Vec<(u32, String)> {
     if !VANILLA_EXTRACT_COMPANIONS
         .iter()
         .any(|package| code.contains(package))
@@ -318,7 +318,6 @@ pub fn companion_errors(code: &str, filename: &str) -> Vec<(u32, String)> {
         return Vec::new();
     }
     let allocator = Allocator::default();
-    let source_type = SourceType::from_path(filename).unwrap_or_default();
     let program = Parser::new(&allocator, code, source_type).parse().program;
     program
         .body
@@ -378,6 +377,9 @@ pub fn transform_import_aliases_with_edits<'a>(
 
     // Collect import transformations
     let mut transformations: Vec<(usize, usize, String)> = Vec::new();
+    if import_aliases.contains_key("@emotion/react") {
+        transformations.extend(crate::jsx_import_source::emotion_replacements(&program));
+    }
     let mut numbers = LibraryNumbers::default();
 
     for stmt in &program.body {
@@ -991,7 +993,7 @@ css({ background: ['red', 'linear-gradient(red, blue)'], WebkitBoxShadow: ['none
 import { recipe } from '@vanilla-extract/recipes'
 import { style } from '@vanilla-extract/css'
 import { createSprinkles } from '@vanilla-extract/sprinkles'",
-            "a.css.ts",
+            SourceType::ts(),
         );
         assert_eq!(errors.len(), 2, "{errors:?}");
         assert!(
@@ -1005,8 +1007,27 @@ import { createSprinkles } from '@vanilla-extract/sprinkles'",
                 .starts_with("`@vanilla-extract/sprinkles` generates CSS")
         );
         assert_eq!(
-            companion_errors("import { style } from '@vanilla-extract/css'", "a.css.ts"),
+            companion_errors(
+                "import { style } from '@vanilla-extract/css'",
+                SourceType::ts()
+            ),
             vec![]
+        );
+    }
+
+    #[test]
+    fn companions_after_jsx_are_reported_when_the_effective_grammar_is_compiled_output() {
+        // Given: compiler output whose JSX precedes a companion import.
+        let source = "export const view=<div/>;\nimport {recipe} from '@vanilla-extract/recipes';";
+        // When: companion detection receives the selected JSX grammar.
+        let errors = companion_errors(source, SourceType::jsx());
+        // Then: the diagnostic points to the authored import rather than skipping it.
+        assert_eq!(errors.len(), 1);
+        assert_eq!(
+            usize::try_from(errors[0].0).unwrap_or_else(|error| panic!("{error}")),
+            source
+                .find("import ")
+                .unwrap_or_else(|| panic!("missing companion import")),
         );
     }
 

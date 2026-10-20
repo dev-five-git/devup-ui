@@ -38,7 +38,7 @@ where
 }
 
 #[inline]
-fn with_file_map_mut<F, R>(f: F) -> R
+pub(crate) fn with_file_map_mut<F, R>(f: F) -> R
 where
     F: FnOnce(&mut BiHashMap<String, usize>) -> R,
 {
@@ -88,6 +88,8 @@ pub fn get_file_num_by_filename(filename: &str) -> usize {
         } else {
             let file_num = map.len();
             map.insert(filename.to_string(), file_num);
+            crate::slot_reservation::record_file(filename);
+            crate::slot_reservation::record_insert();
             file_num
         }
     })
@@ -99,6 +101,7 @@ pub fn get_file_num_by_filename(filename: &str) -> usize {
 /// not on which file a worker reaches first; files that appear later (in
 /// development) are numbered after the existing ones.
 pub fn seed_file_numbers(files: &[String]) {
+    let _reservation = crate::slot_reservation::FileSeedGuard::default();
     let mut sorted: Vec<String> = files.iter().map(|file| canonical(file)).collect();
     sorted.sort_unstable();
     sorted.dedup();

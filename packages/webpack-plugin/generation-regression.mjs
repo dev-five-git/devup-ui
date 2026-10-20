@@ -99,7 +99,7 @@ async function main(){
  const consumer=await build(new DevupUIWebpackPlugin(options,{owner,complete:true}),cssEntry);
  assert.equal(consumer.sameFs,true);assert.ok(consumer.css.includes('.a{background:red}'));assert.equal(owner.disposed,true);
  const independent=await build(new DevupUIWebpackPlugin(options),cssEntry);
- assert.equal(independent.sameFs,true);assert.ok(!independent.css.includes('background:red'));assert.ok(!independent.css.includes('background:blue'));assert.deepEqual(independent.classes,{});assert.deepEqual(independent.files,{'src/unreachable.mjs':0});assert.deepEqual([...new Set(Object.values(independent.canonical))],['src/unreachable.mjs']);
+ assert.equal(independent.sameFs,true);assert.ok(!independent.css.includes('background:red'));assert.ok(!independent.css.includes('background:blue'));assert.deepEqual(independent.classes,{'':{'background-0-blue--255':0}});assert.equal(independent.files['src/unreachable.mjs'],0);assert.deepEqual(Object.keys(independent.files).filter(file=>!file.includes('/packages/react/dist/')),['src/unreachable.mjs']);assert.deepEqual([...new Set(Object.values(independent.canonical))],['src/unreachable.mjs']);
  fs.writeFileSync(join(root,'src/entry.mjs'),source('blue'));
  const changedOptions=await build(new DevupUIWebpackPlugin({singleCss:true,prefix:'fresh-'}),'./src/entry.mjs');
  assert.ok(changedOptions.css.includes('.fresh-a{background:blue}'));assert.ok(!changedOptions.css.includes('background:red'));
@@ -127,7 +127,7 @@ async function main(){
   try{if(watching)await new Promise((done,reject)=>watching.close(error=>error?reject(error):done()))}finally{await close(compiler)}
  }
  const afterWatch=await build(new DevupUIWebpackPlugin(options),cssEntry);
- assert.ok(!afterWatch.css.includes('background:red'));assert.ok(!afterWatch.css.includes('background:blue'));assert.deepEqual(afterWatch.classes,{});
+ assert.ok(!afterWatch.css.includes('background:red'));assert.ok(!afterWatch.css.includes('background:blue'));assert.deepEqual(afterWatch.classes,{'':{'background-0-blue--255':0}});
  console.info(JSON.stringify({root,rows,watchCss}));
 }
 main().catch(error=>{console.error(error);process.exitCode=1});

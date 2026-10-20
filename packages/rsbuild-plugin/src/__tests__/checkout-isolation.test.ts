@@ -82,6 +82,7 @@ async function extractedCssDirIn(checkout: string) {
     modifyRsbuildConfig: mock(),
     modifyRspackConfig: mock(),
     onBeforeBuild: mock(),
+    context: { rootPath: checkout },
   } as unknown as RsbuildSetupContext)
 
   codeExtractSpy.mockClear()

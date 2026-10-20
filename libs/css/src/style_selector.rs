@@ -110,8 +110,25 @@ pub fn split_selector_list(selector: &str) -> Vec<&str> {
     let mut parts = vec![];
     let mut depth = 0usize;
     let mut start = 0;
+    let mut quote = None;
+    let mut escaped = false;
     for (index, c) in selector.char_indices() {
+        if escaped {
+            escaped = false;
+            continue;
+        }
+        if c == '\\' {
+            escaped = true;
+            continue;
+        }
+        if let Some(delimiter) = quote {
+            if c == delimiter {
+                quote = None;
+            }
+            continue;
+        }
         match c {
+            '\'' | '"' => quote = Some(c),
             '(' | '[' => depth += 1,
             ')' | ']' => depth = depth.saturating_sub(1),
             ',' if depth == 0 => {
@@ -789,6 +806,10 @@ mod tests {
     #[case("&:hover", vec!["&:hover"])]
     #[case(" a > b , i ", vec!["a > b", "i"])]
     #[case(":is(a, b), [title=\"a,b\"]", vec![":is(a, b)", "[title=\"a,b\"]"])]
+    #[case(r#"&[title="a,]b"], &:focus"#, vec![r#"&[title="a,]b"]"#, "&:focus"])]
+    #[case(r"&.a\,b, &:focus", vec![r"&.a\,b", "&:focus"])]
+    #[case(r"&.a\(, &:focus", vec![r"&.a\(", "&:focus"])]
+    #[case(r#"&[title="a\",]b"], &:focus"#, vec![r#"&[title="a\",]b"]"#, "&:focus"])]
     fn test_split_selector_list(#[case] selector: &str, #[case] expected: Vec<&str>) {
         assert_eq!(split_selector_list(selector), expected);
     }

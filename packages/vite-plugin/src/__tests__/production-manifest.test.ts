@@ -10,7 +10,7 @@ import {
 import { productionFixture } from './production-fixture'
 
 it.each([false, true])(
-  'unions real condition branches and positive hoist routes for native entry records=%s',
+  'unions real condition branches and keeps the deferred hoist plan off for native entry records=%s',
   async (record) => {
     // Given two actual routes and different physical package condition targets.
     const fixture = await productionFixture()
@@ -93,7 +93,7 @@ it.each([false, true])(
         options,
         () => {},
       )
-      // Then entry forms select distinct physical branches and retain a two-route hoist plan.
+      // Then entry forms select distinct physical branches while the atom hoist plan stays off until PR B.
       const browser = manifest.contexts.find(
         (context) => context.context === 'browser',
       )
@@ -104,10 +104,12 @@ it.each([false, true])(
       expect(browser?.scan).not.toContain(nodeFile)
       expect(server?.scan).toContain(nodeFile)
       expect(server?.scan).not.toContain(browserFile)
-      expect(browser?.threshold).toBe(2)
+      expect(browser?.threshold).toBeUndefined()
       expect(browser?.scan).not.toContain('virtual:manifest.js')
       expect(server?.scan).not.toContain('virtual:manifest.js')
-      expect(browser?.routes[shared]).toHaveLength(2)
+      expect(browser?.canonical).toEqual({})
+      expect(browser?.routes).toEqual({})
+      expect(browser?.routes[shared]).toBeUndefined()
     } finally {
       await fixture.close()
     }

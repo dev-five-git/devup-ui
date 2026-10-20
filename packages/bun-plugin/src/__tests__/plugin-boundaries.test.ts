@@ -20,6 +20,7 @@ it('warns once and still extracts real files when optional numbering fails', asy
   const warning = spyOn(console, 'warn').mockImplementation(() => {})
   try {
     await f.setup({}, { entrypoints: [path], plugins: [] })
+    const loaded = await f.load(path)
     expect(warning).toHaveBeenCalledTimes(1)
     expect(warning.mock.calls[0]?.[1]).toEqual({
       root: f.root,
@@ -27,7 +28,7 @@ it('warns once and still extracts real files when optional numbering fails', asy
       impact: 'arrival-order file IDs',
       cause,
     })
-    expect(sourceContents(await f.load(path))).not.toContain('@devup-ui/react')
+    expect(sourceContents(loaded)).not.toContain('@devup-ui/react')
     expect(wasm.getCss(null, false)).toContain('751px')
   } finally {
     seed.mockRestore()

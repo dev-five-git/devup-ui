@@ -1,9 +1,8 @@
-import { writeFile } from 'node:fs/promises'
 import { basename, dirname, join, relative, resolve } from 'node:path'
 
 import {
   createModuleResolver,
-  createStateWriter,
+  getFileNumByFilename,
   isMdxSource,
   type ModuleAliasOptions,
   remapMdxError,
@@ -18,9 +17,10 @@ import {
   getCss,
   setModuleResolver,
 } from '@devup-ui/wasm'
-import type { RawLoaderDefinitionFunction } from 'webpack'
+import type { LoaderContext, RawLoaderDefinitionFunction } from 'webpack'
 
 import { withCompilerScope } from './build-scope'
+import { createGeneratedOutputWriter, normalizeSheet } from './generated-output'
 
 export interface DevupUILoaderOptions {
   package: string
@@ -36,22 +36,25 @@ export interface DevupUILoaderOptions {
   mdxExtensions?: readonly string[]
   alias?: ModuleAliasOptions
   symlinks?: boolean
+  configurationFiles?: readonly string[]
 }
 
 function toLoaderError(error: unknown): Error {
   return error instanceof Error ? error : new Error(String(error))
 }
 
-function parseSourceMap(sourceMap: string | undefined): string | null {
+type LoaderSourceMap = Exclude<
+  Parameters<LoaderContext<DevupUILoaderOptions>['callback']>[2],
+  string | undefined
+>
+
+function parseSourceMap(sourceMap: string | undefined): LoaderSourceMap {
   if (!sourceMap) return null
 
-  JSON.parse(sourceMap)
-  return sourceMap
+  return JSON.parse(sourceMap)
 }
 
-const stateWriter = createStateWriter((path, content, encoding) =>
-  encoding ? writeFile(path, content, encoding) : writeFile(path, content),
-)
+const stateWriter = createGeneratedOutputWriter()
 /** Resolve imports to the cwd-relative ids this loader extracts files under */
 function setCwdModuleResolver(options: {
   readonly rootDir: string
@@ -89,6 +92,7 @@ const devupUILoader: RawLoaderDefinitionFunction<DevupUILoaderOptions> =
       mdxExtensions = ['.mdx'],
       alias,
       symlinks = true,
+      configurationFiles = [],
     } = this.getOptions()
     const callback = this.async()
     const id = this.resourcePath
@@ -97,6 +101,7 @@ const devupUILoader: RawLoaderDefinitionFunction<DevupUILoaderOptions> =
       this.addDependency(sheetFile)
       this.addDependency(classMapFile)
       this.addDependency(fileMapFile)
+      for (const file of configurationFiles) this.addDependency(file)
     }
 
     try {
@@ -172,25 +177,23 @@ const devupUILoader: RawLoaderDefinitionFunction<DevupUILoaderOptions> =
           )
         }
         if (cssFile) {
-          const content = `${this.resourcePath} ${Date.now()}`
-          // should be reset css
+          const targetPath = join(cssDir, basename(cssFile))
           promises.push(
             stateWriter.write(
-              join(cssDir, basename(cssFile)),
-              watch ? `/* ${content} */` : css,
+              targetPath,
+              watch ? getCss(getFileNumByFilename(targetPath), true) : css,
             ),
           )
           if (watch) {
             promises.push(
-              stateWriter.write(sheetFile, exportSheet()),
+              stateWriter.write(sheetFile, normalizeSheet(exportSheet())),
               stateWriter.write(classMapFile, exportClassMap()),
               stateWriter.write(fileMapFile, exportFileMap()),
             )
           }
         }
         Promise.all(promises).then(
-          () =>
-            callback(null, code, sourceMap as Parameters<typeof callback>[2]),
+          () => callback(null, code, sourceMap),
           (error) => callback(toLoaderError(error)),
         )
       })

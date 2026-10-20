@@ -56,6 +56,8 @@ import {
 } from '@devup-ui/wasm'
 import type { RsbuildPlugin, Rspack } from '@rsbuild/core'
 
+import { createReservation } from './reservation'
+
 const PLUGIN_NAME = 'devup-ui-rsbuild-plugin'
 
 export interface DevupUIRsbuildPluginOptions {
@@ -72,12 +74,14 @@ export interface DevupUIRsbuildPluginOptions {
   sourceDirs?: string | string[]
   mdxExtensions?: readonly string[]
   /**
-   * Atom-level route-aware hoisting threshold (min routes sharing an atom for it
-   * to hoist into the shared devup-ui.css; clamped to >= 2; omit to disable).
-   * Opt-in: when set, single-importer collapse + atom hoisting are enabled and
-   * per-route CSS is served via getCss(fileNum). "Routes" are inferred from the
-   * import graph (entry points and dynamic-import targets). For a single-entry
-   * SPA (routeCount < 2) it is a no-op.
+   * Atom-level route-aware hoisting threshold. Defaults to 2; 0 disables it.
+   * Positive thresholds are clamped to >= 2. Canonical buckets reached by at
+   * least this many routes use global short counter names in devup-ui.css;
+   * other buckets keep per-file counter names. Composes with single-importer
+   * collapse and serves per-route CSS via getCss(fileNum). Routes are inferred
+   * from entry points and dynamic-import targets. Fewer than two routes yields
+   * no hoisted plan. Ignored when singleCss is true, including IDs/import flags
+   * and shared-chunk configuration.
    *
    * On MPA, the shared base devup-ui.css (hoisted atoms) is emitted as ONE
    * shared chunk via an injected rspack `splitChunks` cacheGroup
@@ -138,7 +142,7 @@ export const DevupUI = ({
   prefix,
   shorthands,
   sourceDirs: configuredSourceDirs,
-  atomHoist,
+  atomHoist = 2,
   importAliases: userImportAliases,
   mdxExtensions: configuredMdxExtensions,
 }: Partial<DevupUIRsbuildPluginOptions> = {}): RsbuildPlugin => {
@@ -174,6 +178,10 @@ export const DevupUI = ({
       )
       registerShorthands(shorthands ?? {})
       api.onCloseBuild?.(endBuild)
+      // Rsbuild rejects a failed build without running onCloseBuild
+      api.onAfterBuild?.(({ stats }) => {
+        if (stats?.hasErrors()) endBuild()
+      })
       setDebug(debug)
       setPrefix(prefix ?? null)
 
@@ -251,14 +259,15 @@ export const DevupUI = ({
         })
       })
 
-      // Atom-level hoisting (opt-in via `atomHoist`). Configured BEFORE any
-      // transform so atoms receive global (shared) class names. Composes with
+      // Per-file atom hoisting defaults to 2; 0 disables it, singleCss ignores it.
+      // Before any transform, routes are imported, then the threshold is set;
+      // bucket eligibility freezes at the first extraction. Late reach cannot promote
+      // or rename a bucket until resetBuildState. Composes with
       // single-importer collapse (both keyed by the canonical bucket). rsbuild
       // passes the ABSOLUTE resourcePath to codeExtract, so the graph maps use
       // absolute keys (keyBy: 'absolute') and the extraction filename is
       // POSIX-normalized to match.
-      const atomMode =
-        atomHoist !== undefined && Number.isFinite(atomHoist) && atomHoist > 0
+      const atomMode = !singleCss && Number.isFinite(atomHoist) && atomHoist > 0
       const toId = (path: string) =>
         atomMode ? path.replaceAll('\\', '/') : path
       const sourceDirs = [
@@ -276,10 +285,12 @@ export const DevupUI = ({
           resolver: ReturnType<typeof createModuleResolver>
           resolverOptions: CreateModuleResolverOptions
           preserveSymlinks: boolean
+          watchPaths: Map<string, string>
           inputFiles: Set<string>
           missingInputs: Set<string>
         }
       >()
+      const refreshPlans = new Map<string, () => void>()
       const prewarm = (plan: NonNullable<ReturnType<typeof plans.get>>) => {
         plan.resolver = createModuleResolver(plan.resolverOptions)
         setModuleResolver(plan.resolver)
@@ -315,8 +326,23 @@ export const DevupUI = ({
           }
         }
       }
+      const reservation = createReservation({
+        root,
+        package: libPackage,
+        include,
+        cssDir,
+        singleCss,
+        atomMode,
+        importAliases,
+        sourceDirs,
+      })
       api.onBeforeBuild(() => {
-        for (const plan of plans.values()) prewarm(plan)
+        for (const refresh of refreshPlans.values()) refresh()
+        for (const plan of plans.values()) {
+          setModuleResolver(plan.resolver)
+          reservation.reserve()
+          prewarm(plan)
+        }
       })
 
       const servedCss = new Map<string, Map<string, string>>()
@@ -386,18 +412,30 @@ export const DevupUI = ({
           const roots = [
             ...new Set([
               ...sourceDirs,
-              ...entries.map((file) => dirname(file)),
+              ...entries
+                .map((file) => dirname(file))
+                .filter((directory) => directory !== resolve(root)),
             ]),
+          ]
+          const generated = [
+            basename(outputDir),
+            basename(cssDir),
+            resolve(root, normalized.output?.path ?? 'dist'),
           ]
           const tsconfigPath = resolve(root, 'tsconfig.json')
           const inputFiles = new Set<string>()
           const missingInputs = new Set<string>()
           const preserveSymlinks = normalized.resolve?.symlinks === false
+          const watchPaths = new Map<string, string>()
           const onResolutionInputs: ResolutionInputObserver = (inputs) => {
             for (const path of inputs.fileDependencies)
-              inputFiles.add(resolutionWatchPath(path, preserveSymlinks))
+              inputFiles.add(
+                resolutionWatchPath(path, preserveSymlinks, watchPaths),
+              )
             for (const path of inputs.missingDependencies)
-              missingInputs.add(resolutionWatchPath(path, preserveSymlinks))
+              missingInputs.add(
+                resolutionWatchPath(path, preserveSymlinks, watchPaths),
+              )
           }
           try {
             const resolverOptions = {
@@ -416,7 +454,8 @@ export const DevupUI = ({
               include,
               conditions,
               alias: normalized.resolve?.alias,
-              exclude: [basename(outputDir), basename(cssDir)],
+              exclude: generated,
+              entries: entries.length ? entries : undefined,
               onResolutionInputs,
             })
             const plan = {
@@ -426,6 +465,7 @@ export const DevupUI = ({
               resolver,
               resolverOptions,
               preserveSymlinks,
+              watchPaths,
               inputFiles,
               missingInputs,
             }
@@ -463,6 +503,7 @@ export const DevupUI = ({
                 collectNumberedFiles({
                   roots,
                   includeMdx: mdxExtensions,
+                  exclude: generated,
                   include,
                   cwd: root,
                   needles: extractedNeedles(libPackage, importAliases),
@@ -478,7 +519,6 @@ export const DevupUI = ({
                 )
               }
             }
-            prewarm(plan)
           } catch (cause) {
             endBuild()
             throw new Error(
@@ -491,9 +531,25 @@ export const DevupUI = ({
         config.plugins.push({
           apply(compiler: Rspack.Compiler) {
             initialize(compiler.options)
+            reservation.trackCompiler(environment.name, compiler)
+            refreshPlans.set(environment.name, () =>
+              initialize(compiler.options),
+            )
+            const prepare = () => {
+              initialize(compiler.options)
+              reservation.reserve()
+              const plan = plans.get(environment.name)
+              if (plan && !compiler.watchMode) prewarm(plan)
+            }
             let passes = 0
             compiler.hooks.run.tap(PLUGIN_NAME, () => {
               passes = 0
+              prepare()
+            })
+            compiler.hooks.invalid.tap(PLUGIN_NAME, reservation.invalidate)
+            compiler.hooks.watchRun.tap(PLUGIN_NAME, () => {
+              initialize(compiler.options)
+              reservation.reserve()
             })
             compiler.hooks.thisCompilation.tap(PLUGIN_NAME, (compilation) => {
               const plan = plans.get(environment.name)
@@ -634,11 +690,19 @@ export const DevupUI = ({
               onResolutionInputs: (inputs) => {
                 for (const path of inputs.fileDependencies)
                   addDependency(
-                    resolutionWatchPath(path, plan.preserveSymlinks),
+                    resolutionWatchPath(
+                      path,
+                      plan.preserveSymlinks,
+                      plan.watchPaths,
+                    ),
                   )
                 for (const path of inputs.missingDependencies)
                   addMissingDependency(
-                    resolutionWatchPath(path, plan.preserveSymlinks),
+                    resolutionWatchPath(
+                      path,
+                      plan.preserveSymlinks,
+                      plan.watchPaths,
+                    ),
                   )
               },
             }),

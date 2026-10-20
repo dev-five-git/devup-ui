@@ -2169,8 +2169,13 @@ describe('devupUIVitePlugin atom hoisting', () => {
   let importCanonicalMapSpy: ReturnType<typeof spyOn>
   let importFileRoutesSpy: ReturnType<typeof spyOn>
   let setAtomHoistSpy: ReturnType<typeof spyOn>
+  let collectNumberedFilesSpy: ReturnType<typeof spyOn>
 
   beforeEach(() => {
+    collectNumberedFilesSpy = spyOn(
+      pluginUtils,
+      'collectNumberedFiles',
+    ).mockReturnValue([])
     buildCanonicalMapSpy = spyOn(
       pluginUtils,
       'buildCanonicalMap',
@@ -2189,6 +2194,7 @@ describe('devupUIVitePlugin atom hoisting', () => {
   })
 
   afterEach(() => {
+    collectNumberedFilesSpy.mockRestore()
     buildCanonicalMapSpy.mockRestore()
     computeFileReachSpy.mockRestore()
     importCanonicalMapSpy.mockRestore()
@@ -2196,13 +2202,159 @@ describe('devupUIVitePlugin atom hoisting', () => {
     setAtomHoistSpy.mockRestore()
   })
 
-  it('does nothing when atomHoist is unset', async () => {
-    await runConfigResolved({}, { root: '/p' })
+  it('does nothing when atomHoist is explicitly zero', async () => {
+    await runConfigResolved({ atomHoist: 0 }, { root: '/p' })
     expect(buildCanonicalMapSpy).not.toHaveBeenCalled()
     expect(setAtomHoistSpy).not.toHaveBeenCalled()
   })
 
-  it('composes collapse + hoist and folds reach onto the canonical bucket', async () => {
+  describe('W66 default regressions', () => {
+    beforeEach(() => {
+      computeFileReachSpy.mockReturnValue({
+        '/p/src/shared.tsx': [0, 1],
+        '/p/src/a.tsx': [0],
+        '/p/src/b.tsx': [1],
+      })
+    })
+
+    it.each([undefined, 0, -1, NaN, Infinity, -Infinity, 0.5, 1, 2, 3])(
+      'W66 availability: keeps per-file mode across environments for request %s',
+      async (atomHoist) => {
+        // Given: the same plugin is shared by Vite environment builds.
+        const warningSpy = spyOn(console, 'warn').mockImplementation(() => {})
+        const plugin = createPlugin({ atomHoist })
+        const environment = {
+          resolve: { conditions: [], preserveSymlinks: false },
+          build: { outDir: 'dist', rollupOptions: { input: [] } },
+        }
+        try {
+          // When: configuration and both environment transforms run.
+          await plugin.configResolved({
+            root: '/p',
+            command: 'build',
+            environments: { client: environment, ssr: environment },
+          })
+          for (const consumer of ['client', 'server'] as const) {
+            await plugin.transform.call(
+              {
+                environment: {
+                  name: consumer,
+                  config: { ...environment, consumer },
+                },
+              },
+              'code',
+              '/p/src/a.tsx',
+            )
+          }
+          // Then: no atom-only pre-pass runs; production replays the explicit OFF plan once.
+          expect(buildCanonicalMapSpy).not.toHaveBeenCalled()
+          expect(computeFileReachSpy).not.toHaveBeenCalled()
+          expect(importCanonicalMapSpy.mock.calls).toEqual([[{}]])
+          expect(importFileRoutesSpy.mock.calls).toEqual([[{}]])
+          expect(setAtomHoistSpy.mock.calls).toEqual([[null]])
+          expect(warningSpy).toHaveBeenCalledTimes(
+            atomHoist !== undefined &&
+              Number.isFinite(atomHoist) &&
+              atomHoist > 0
+              ? 1
+              : 0,
+          )
+        } finally {
+          plugin.closeBundle()
+          warningSpy.mockRestore()
+        }
+      },
+    )
+
+    it.each([
+      ['omitted', {}],
+      ['undefined', { atomHoist: undefined }],
+    ])(
+      'keeps omitted atomHoist %s silent without consulting route reach',
+      async (_label, options) => {
+        const warningSpy = spyOn(console, 'warn').mockImplementation(() => {})
+        try {
+          await runConfigResolved(options, { root: '/p' })
+          expect(computeFileReachSpy).not.toHaveBeenCalled()
+          expect(importFileRoutesSpy).not.toHaveBeenCalled()
+          expect(setAtomHoistSpy).not.toHaveBeenCalled()
+          expect(warningSpy).not.toHaveBeenCalled()
+        } finally {
+          warningSpy.mockRestore()
+        }
+      },
+    )
+
+    it.each([0, -1, NaN, Infinity, -Infinity])(
+      'keeps legacy OFF for atomHoist %s',
+      async (atomHoist) => {
+        // Given: two routes, not a single-entry fallback.
+        // When: an explicitly disabled numeric option is supplied.
+        await runConfigResolved({ atomHoist }, { root: '/p' })
+        // Then: the atom-only pre-pass has no effects.
+        expect(buildCanonicalMapSpy).not.toHaveBeenCalled()
+        expect(computeFileReachSpy).not.toHaveBeenCalled()
+        expect(importFileRoutesSpy).not.toHaveBeenCalled()
+        expect(setAtomHoistSpy).not.toHaveBeenCalled()
+      },
+    )
+
+    it('defers a custom threshold above the minimum until reservation lands', async () => {
+      // Given: two routes and a custom threshold.
+      // When: config resolves.
+      await runConfigResolved({ atomHoist: 3 }, { root: '/p' })
+      // Then: unavailable atom hoisting never installs a threshold.
+      expect(setAtomHoistSpy).not.toHaveBeenCalled()
+      expect(computeFileReachSpy).not.toHaveBeenCalled()
+    })
+
+    it.each([
+      ['omitted', {}],
+      ['undefined', { atomHoist: undefined }],
+      ['enabled', { atomHoist: 2 }],
+    ])(
+      'ignores %s atomHoist before planning in actual singleCss mode',
+      async (_label, options) => {
+        // Given: the real config/transform hooks under explicit OFF.
+        const off = createPlugin({ singleCss: true, atomHoist: 0 })
+        await off.configResolved({ root: '/p' })
+        const offConfig = callConfig(off, ROLLUP_META)
+        await off.transform('code', '/p/src/a.tsx')
+        const offExtractions = [...codeExtractSpy.mock.calls]
+        codeExtractSpy.mockClear()
+        // When: only the requested atom policy changes.
+        const on = createPlugin({ singleCss: true, ...options })
+        await on.configResolved({ root: '/p' })
+        await on.transform('code', '/p/src/a.tsx')
+        const onConfig = callConfig(on, ROLLUP_META)
+        // Then: no canonical/reach mutation and identical extraction IDs/import flags.
+        expect(buildCanonicalMapSpy).not.toHaveBeenCalled()
+        expect(importCanonicalMapSpy).not.toHaveBeenCalled()
+        expect(computeFileReachSpy).not.toHaveBeenCalled()
+        expect(importFileRoutesSpy).not.toHaveBeenCalled()
+        expect(setAtomHoistSpy).not.toHaveBeenCalled()
+        expect(codeExtractSpy.mock.calls).toEqual(offExtractions)
+        expect(codeExtractSpy).toHaveBeenCalledWith(
+          '/p/src/a.tsx',
+          'code',
+          '@devup-ui/react',
+          expect.any(String),
+          true,
+          true,
+          false,
+          expect.anything(),
+        )
+        const cssId = resolve('df', 'devup-ui', 'devup-ui.css')
+        expect(
+          onConfig.build?.rollupOptions?.output?.manualChunks?.(cssId, ''),
+        ).toBe(
+          offConfig.build?.rollupOptions?.output?.manualChunks?.(cssId, ''),
+        )
+      },
+    )
+  })
+
+  it('defers atom-only collapse and bucket folding until reservation lands', async () => {
     buildCanonicalMapSpy.mockReturnValue({
       '/p/src/child.tsx': '/p/src/parent.tsx',
       '/p/src/glob.tsx': '@global',
@@ -2217,23 +2369,17 @@ describe('devupUIVitePlugin atom hoisting', () => {
       { atomHoist: 2 },
       { root: '/p', build: { rollupOptions: { input: { a: 'src/a.tsx' } } } },
     )
-    // collapse runs (composition) with absolute keys
-    expect(buildCanonicalMapSpy).toHaveBeenCalledWith(
-      expect.objectContaining({ keyBy: 'absolute' }),
-    )
-    expect(importCanonicalMapSpy).toHaveBeenCalled()
-    // reach folded by bucket: child -> parent, @global skipped
-    expect(importFileRoutesSpy).toHaveBeenCalledWith({
-      '/p/src/parent.tsx': [0, 1],
-      '/p/src/r1.tsx': [1],
-    })
-    expect(setAtomHoistSpy).toHaveBeenCalledWith(2)
+    expect(buildCanonicalMapSpy).not.toHaveBeenCalled()
+    expect(importCanonicalMapSpy).not.toHaveBeenCalled()
+    expect(computeFileReachSpy).not.toHaveBeenCalled()
+    expect(importFileRoutesSpy).not.toHaveBeenCalled()
+    expect(setAtomHoistSpy).not.toHaveBeenCalled()
   })
 
   it.each([
     ['app', 'app'],
     ['src', 'src'],
-  ])('scans %s/ when that is where the sources live', async (_name, dir) => {
+  ])('defers atom reach in %s/ layouts', async (_name, dir) => {
     existsSyncSpy.mockImplementation(
       (path: string) => path === resolve('/p', dir),
     )
@@ -2244,12 +2390,13 @@ describe('devupUIVitePlugin atom hoisting', () => {
 
     await runConfigResolved({ atomHoist: 2 }, { root: '/p' })
 
-    expect(computeFileReachSpy).toHaveBeenCalledWith(
-      expect.objectContaining({ srcDir: [resolve('/p', dir)] }),
+    expect(computeFileReachSpy).not.toHaveBeenCalled()
+    expect(collectNumberedFilesSpy).toHaveBeenCalledWith(
+      expect.objectContaining({ roots: [resolve('/p', dir)] }),
     )
   })
 
-  it('falls back to src/ when neither conventional dir exists', async () => {
+  it('does not infer atom reach when neither conventional dir exists', async () => {
     existsSyncSpy.mockReturnValue(false)
     computeFileReachSpy.mockReturnValue({
       '/p/a.tsx': [0],
@@ -2258,18 +2405,20 @@ describe('devupUIVitePlugin atom hoisting', () => {
 
     await runConfigResolved({ atomHoist: 2 }, { root: '/p' })
 
-    expect(computeFileReachSpy).toHaveBeenCalledWith(
-      expect.objectContaining({ srcDir: [] }),
+    expect(computeFileReachSpy).not.toHaveBeenCalled()
+    expect(collectNumberedFilesSpy).toHaveBeenCalledWith(
+      expect.objectContaining({ roots: [] }),
     )
   })
 
-  it('clamps the threshold to a minimum of 2', async () => {
+  it('defers even the former minimum-clamped threshold', async () => {
     computeFileReachSpy.mockReturnValue({
       '/p/src/a.tsx': [0],
       '/p/src/b.tsx': [1],
     })
     await runConfigResolved({ atomHoist: 1 }, { root: '/p' })
-    expect(setAtomHoistSpy).toHaveBeenCalledWith(2)
+    expect(setAtomHoistSpy).not.toHaveBeenCalled()
+    expect(computeFileReachSpy).not.toHaveBeenCalled()
   })
 
   it('stays off when fewer than two routes are reachable', async () => {
@@ -2278,7 +2427,7 @@ describe('devupUIVitePlugin atom hoisting', () => {
     expect(setAtomHoistSpy).not.toHaveBeenCalled()
   })
 
-  it('falls back to the heuristic when input has no JS entries', async () => {
+  it('does not infer atom reach from HTML entries before PR B', async () => {
     computeFileReachSpy.mockReturnValue({
       '/p/src/a.tsx': [0],
       '/p/src/b.tsx': [1],
@@ -2287,15 +2436,11 @@ describe('devupUIVitePlugin atom hoisting', () => {
       { atomHoist: 2 },
       { root: '/p', build: { rollupOptions: { input: 'index.html' } } },
     )
-    // html-only input => entries override omitted => computeFileReach called
-    // without an explicit entries list
-    expect(computeFileReachSpy).toHaveBeenCalledWith(
-      expect.objectContaining({ entries: undefined }),
-    )
-    expect(setAtomHoistSpy).toHaveBeenCalledWith(2)
+    expect(computeFileReachSpy).not.toHaveBeenCalled()
+    expect(setAtomHoistSpy).not.toHaveBeenCalled()
   })
 
-  it('accepts array and string JS entries', async () => {
+  it('keeps atom reach deferred for array and string JS entries', async () => {
     computeFileReachSpy.mockReturnValue({
       '/p/src/a.tsx': [0],
       '/p/src/b.tsx': [1],
@@ -2308,26 +2453,27 @@ describe('devupUIVitePlugin atom hoisting', () => {
       { atomHoist: 2 },
       { root: '/p', build: { rollupOptions: { input: 'src/a.tsx' } } },
     )
-    expect(setAtomHoistSpy).toHaveBeenCalledWith(2)
-  })
-
-  it('fails requested atom setup with root and cause', async () => {
-    buildCanonicalMapSpy.mockImplementation(() => {
-      throw new Error('boom')
-    })
-    await expect(
-      runConfigResolved({ atomHoist: 2 }, { root: '/p' }),
-    ).rejects.toThrow(/atom graph setup failed.*boom/)
+    expect(computeFileReachSpy).not.toHaveBeenCalled()
     expect(setAtomHoistSpy).not.toHaveBeenCalled()
   })
 
-  it('uses process.cwd() when config.root is absent', async () => {
+  it('never reaches the unavailable atom pre-pass even if it would fail', async () => {
+    buildCanonicalMapSpy.mockImplementation(() => {
+      throw new Error('boom')
+    })
+    await runConfigResolved({ atomHoist: 2 }, { root: '/p' })
+    expect(buildCanonicalMapSpy).not.toHaveBeenCalled()
+    expect(setAtomHoistSpy).not.toHaveBeenCalled()
+  })
+
+  it('keeps atom reach deferred when config.root is absent', async () => {
     computeFileReachSpy.mockReturnValue({
       '/p/src/a.tsx': [0],
       '/p/src/b.tsx': [1],
     })
     await runConfigResolved({ atomHoist: 2 }, {})
-    expect(setAtomHoistSpy).toHaveBeenCalledWith(2)
+    expect(computeFileReachSpy).not.toHaveBeenCalled()
+    expect(setAtomHoistSpy).not.toHaveBeenCalled()
   })
 })
 

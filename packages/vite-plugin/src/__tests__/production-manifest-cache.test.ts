@@ -60,7 +60,7 @@ const options: ProductionOptions = {
   importAliases: {},
 }
 
-it('reads each successful lexical input once across environments, closures, relevance and hoist, then expires', async () => {
+it('reads each successful lexical input once across environments, closures and relevance while atom hoisting is deferred, then expires', async () => {
   // Given two routes, dormant roots, inherited config and two real export branches.
   const fixture = await productionFixture()
   const shared = await fixture.file(
@@ -152,7 +152,7 @@ it('reads each successful lexical input once across environments, closures, rele
   try {
     // When the real preparation visits all policies and environments.
     const manifest = await prepareProductionManifest(config, options, () => {})
-    // Then membership and hoist routes remain context-local, while only byte reads are shared.
+    // Then membership stays context-local, atom activation stays deferred and only byte reads are shared.
     for (const [key, branch] of [
       ['browser', browser],
       ['server', server],
@@ -178,7 +178,9 @@ it('reads each successful lexical input once across environments, closures, rele
         'import',
         key === 'browser' ? 'browser' : 'node',
       ])
-      expect(context?.routes[shared]).toHaveLength(2)
+      expect(context?.routes).toEqual({})
+      expect(context?.canonical).toEqual({})
+      expect(context?.threshold).toBeUndefined()
     }
     expect(Object.fromEntries(counts)).toEqual(
       Object.fromEntries(tracked.map((path) => [path, 1])),

@@ -106,7 +106,7 @@ it.each([false, true])(
         build: {
           write: false,
           lib: { entry: main, formats: ['es'] },
-          rollupOptions: { external: ['react/jsx-runtime'] },
+          rollupOptions: { external: ['react', 'react/jsx-runtime'] },
         },
         plugins: [
           DevupUI({

@@ -113,6 +113,65 @@ it('replays compiler options when live siblings interleave operations', () => {
   expect(wasm.getPrefix()).toBe('first-')
 })
 
+for (const singleCss of [false, true]) {
+  it(`retains reservation misses across sibling owners and shared compiler handoffs (${singleCss})`, () => {
+    // Given
+    const owner = createWebpackGeneration()
+    const server = bindCompilerScope({}, { owner, complete: false })
+    const client = bindCompilerScope({}, { owner, complete: true })
+    const sibling = bindCompilerScope({})
+    const source = (color: string) =>
+      `import {Box} from '@devup-ui/react';export const x=<Box color='${color}'/>`
+    const extract = (color: string) =>
+      wasm
+        .codeExtract(
+          'reserved.tsx',
+          source(color),
+          '@devup-ui/react',
+          'df',
+          singleCss,
+          false,
+          false,
+          {},
+        )
+        .free()
+    server.start()
+    client.start()
+    sibling.start()
+    try {
+      server.run(() => {
+        wasm.reserveClassSlots(
+          [['reserved.tsx', source('red'), 'df']],
+          '@devup-ui/react',
+          singleCss,
+          false,
+          false,
+          {},
+        )
+        extract('blue')
+        expect(wasm.getUnreservedClassSlotCount()).toBe(1)
+      })
+      sibling.run(() => expect(wasm.getUnreservedClassSlotCount()).toBe(0))
+      // When
+      const misses = client.run(() => {
+        expect(wasm.getUnreservedClassSlotCount()).toBe(1)
+        extract('yellow')
+        return wasm.getUnreservedClassSlotCount()
+      })
+      // Then
+      expect(misses).toBe(2)
+      server.run(() => {
+        extract('yellow')
+        expect(wasm.getUnreservedClassSlotCount()).toBe(2)
+      })
+    } finally {
+      server.close()
+      client.close()
+      sibling.close()
+    }
+  })
+}
+
 it('does not count repeated watch starts when a participant closes', () => {
   // Given
   const owner = createWebpackGeneration()

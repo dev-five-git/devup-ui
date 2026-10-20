@@ -1,12 +1,13 @@
 import { existsSync, readFileSync, writeFileSync } from 'node:fs'
 import { mkdir, writeFile } from 'node:fs/promises'
-import { basename, join, resolve } from 'node:path'
+import { basename, dirname, join, relative, resolve } from 'node:path'
 
 import {
   beginBuild,
   collectNumberedFiles,
   createCompatTypes,
   createModuleResolver,
+  createSharedSlotReservation,
   createThemeInterfaceArgs,
   type CustomShorthands,
   isMdxSource,
@@ -27,6 +28,7 @@ import {
   getThemeInterface,
   registerShorthands,
   registerTheme,
+  reserveClassSlots,
   resetBuildState,
   seedFileMap,
   setDebug,
@@ -49,6 +51,7 @@ import { createTailwindWatcher } from './tailwind-watch'
 
 type PluginHooks = {
   readonly config?: PluginBuilder['config']
+  readonly onStart?: (...args: Parameters<PluginBuilder['onStart']>) => void
   readonly onEnd?: (...args: Parameters<PluginBuilder['onEnd']>) => void
   readonly onLoad: (...args: Parameters<PluginBuilder['onLoad']>) => void
   readonly onResolve: (...args: Parameters<PluginBuilder['onResolve']>) => void
@@ -94,33 +97,10 @@ async function initialize(
   options: DevupUIBunPluginOptions,
   watchTailwindCss: ReturnType<typeof createTailwindWatcher>,
 ) {
-  const { root, distDir } = project
+  const { distDir } = project
   registerShorthands(options.shorthands ?? {})
   setPrefix(null)
   setModuleResolver(project.resolver)
-  // Number every source file in path order, so class prefixes do not depend
-  // on the order Bun loads files in
-  try {
-    seedFileNumbers(
-      { seedFileMap },
-      collectNumberedFiles({
-        roots: resolveSourceDirs(root, options.sourceDirs),
-        includeMdx: project.mdxExtensions,
-        cwd: root,
-        include: options.include,
-        needles: compiledPackages,
-        toId: (path) => path,
-      }),
-    )
-  } catch (cause) {
-    if (!(cause instanceof Error)) throw cause
-    console.warn('[devup-ui] File numbering fallback', {
-      root,
-      phase: 'seed',
-      impact: 'arrival-order file IDs',
-      cause,
-    })
-  }
   if (!existsSync(distDir)) await mkdir(distDir, { recursive: true })
   await writeFile(join(distDir, '.gitignore'), '*', 'utf-8')
   await writeFile(
@@ -161,7 +141,7 @@ export function DevupUI(options: DevupUIBunPluginOptions = {}) {
         ...(bundling ? ['module'] : []),
         ...customConditions,
       ]
-      const prepared = new Map<string, PreparedSource>()
+      const prepared = new Map<string, Exclude<PreparedSource, undefined>>()
       const ownership = createMdxOwnership({
         root,
         extensions: mdxExtensions,
@@ -175,6 +155,15 @@ export function DevupUI(options: DevupUIBunPluginOptions = {}) {
         mdxExtensions,
         prepared,
         ownership,
+        reserve: (preparedChanged) => {
+          if (
+            (bundling || !project.debug) &&
+            (reservationPending || preparedChanged)
+          ) {
+            reserveFiles()
+            reservationPending = false
+          }
+        },
         resolver: createModuleResolver({
           cwd: root,
           // Extracted ESM imports stay import requests even in the vanilla
@@ -206,6 +195,73 @@ export function DevupUI(options: DevupUIBunPluginOptions = {}) {
       })
       await initialize(project, options, watchTailwindCss)
       setDebug(project.debug)
+      const slots = createSharedSlotReservation({ reserveClassSlots })
+      let reservationPending = bundling
+      const seedFiles = () => {
+        try {
+          seedFileNumbers(
+            { seedFileMap },
+            collectNumberedFiles({
+              roots: resolveSourceDirs(root, options.sourceDirs),
+              includeMdx: mdxExtensions,
+              cwd: root,
+              include: options.include,
+              needles: compiledPackages,
+              toId: (path) => path,
+            }),
+          )
+        } catch (cause) {
+          if (!(cause instanceof Error)) throw cause
+          console.warn('[devup-ui] File numbering fallback', {
+            root,
+            phase: 'seed',
+            impact: 'arrival-order file IDs',
+            cause,
+          })
+        }
+      }
+      const reserveFiles = () => {
+        seedFiles()
+        slots.invalidate()
+        slots.reserve(
+          {
+            roots: resolveSourceDirs(root, options.sourceDirs),
+            entries: (build.config?.entrypoints ?? []).map((request) => ({
+              request,
+              context: root,
+            })),
+            cwd: root,
+            include: ['@devup-ui/components', ...(options.include ?? [])],
+            package: libPackage,
+            importAliases,
+            toId: (path) => path,
+            prepared: [...prepared].map(([physicalPath, source]) => ({
+              physicalPath,
+              filename: physicalPath,
+              code: typeof source === 'string' ? source : source.code,
+              ...(typeof source === 'string' || source.sourceType === undefined
+                ? {}
+                : { sourceType: source.sourceType }),
+            })),
+          },
+          {
+            singleCss: true,
+            importMainCssInCode: true,
+            importMainCssInCss: false,
+            cssDir: ({ physicalPath }) =>
+              relative(dirname(physicalPath), project.cssDir).replaceAll(
+                '\\',
+                '/',
+              ),
+          },
+        )
+      }
+      if (bundling)
+        build.onStart?.(() => {
+          reservationPending = true
+        })
+      else if (!project.debug) reserveFiles()
+      else seedFiles()
       let writtenCss = getCss(null, false)
       // Native token modules must keep Bun's filesystem watch/CJS loading path.
       const sourceFilter = bundling

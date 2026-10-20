@@ -29,7 +29,7 @@ function usesAny(file: string, needles: string[]): boolean {
 }
 
 /** Where an included package lives, found the way the bundler finds it. */
-function findPackageDir(cwd: string, name: string): string | undefined {
+export function findPackageDir(cwd: string, name: string): string | undefined {
   let dir = resolve(cwd)
   for (;;) {
     const candidate = join(dir, 'node_modules', name)

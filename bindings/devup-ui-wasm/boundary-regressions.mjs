@@ -2,6 +2,8 @@ import assert from 'node:assert/strict'
 import { createRequire } from 'node:module'
 import { fileURLToPath, pathToFileURL } from 'node:url'
 
+import { assertScratchResolverFaults } from './scratch-reservation-regressions.mjs'
+
 const require = createRequire(import.meta.url)
 const wasm = require('./pkg/index.js')
 const filename = '/src/boundary.tsx'
@@ -217,6 +219,8 @@ for (const method of ['codeExtract', 'codeExtractWithoutSourceMap']) {
     )
     assert.equal(wasm.exportSheet(), before)
   }
+
+  assertScratchResolverFaults(wasm, method)
 }
 wasm.resetBuildState()
 console.info(

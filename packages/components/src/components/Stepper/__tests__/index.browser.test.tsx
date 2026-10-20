@@ -63,8 +63,11 @@ describe('Stepper', () => {
       </Stepper>,
     )
     const input = container.querySelector('[aria-label="Stepper value"]')
-    expect(input?.nodeName).toBe('DIV')
+    expect(input?.nodeName).toBe('OUTPUT')
     expect(input).toHaveAttribute('data-value', '0')
+    expect(input).not.toHaveAttribute('type')
+    expect(input).not.toHaveAttribute('readonly')
+    expect(input).not.toHaveAttribute('value')
   })
 
   it('should have disabled decrease button when value is at min', () => {

@@ -2,6 +2,7 @@ import { statSync } from 'node:fs'
 
 import { isRecord, parseJsonc } from './jsonc'
 import { ConfigLoadError } from './load-config'
+import { PackageManifestShapeError } from './package-manifest'
 import {
   readResolutionFile,
   recordResolutionFailure,
@@ -39,8 +40,7 @@ export function readPackageManifest(
     case 'module':
       try {
         const manifest: unknown = JSON.parse(readResolutionFile(file, inputs))
-        if (!isRecord(manifest))
-          throw new TypeError('Expected a package manifest object')
+        if (!isRecord(manifest)) throw new PackageManifestShapeError(file)
         return manifest
       } catch (cause) {
         throw new ConfigLoadError(file, cause)

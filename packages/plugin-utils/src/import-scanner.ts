@@ -1,4 +1,5 @@
 import { maskImportText } from './import-mask'
+import { decodeStringLiteral } from './string-literal'
 
 export interface ImportReference {
   readonly kind: 'static' | 'dynamic'
@@ -14,34 +15,6 @@ export interface ImportRequestReference extends ImportReference {
     readonly line: number
     readonly column: number
   }
-}
-
-function literalValue(raw: string): string {
-  return raw
-    .slice(1, -1)
-    .replace(
-      /\\(?:u\{([\da-f]+)\}|u([\da-f]{4})|x([\da-f]{2})|\r\n|[\s\S])/gi,
-      (
-        escape: string,
-        point: string | undefined,
-        unicode: string | undefined,
-        hex: string | undefined,
-      ) => {
-        const digits = point ?? unicode ?? hex
-        if (digits) return String.fromCodePoint(Number.parseInt(digits, 16))
-        const char = escape.slice(1)
-        const escaped: Readonly<Record<string, string>> = {
-          n: '\n',
-          r: '\r',
-          t: '\t',
-          b: '\b',
-          f: '\f',
-          v: '\v',
-          '0': '\0',
-        }
-        return /[\r\n]/.test(char) ? '' : (escaped[char] ?? char)
-      },
-    )
 }
 
 function allInlineTypes(clause: readonly string[]): boolean {
@@ -94,7 +67,9 @@ export function scanImportRequests(
     value: match[0],
     offset: match.index,
     literal: match[1]
-      ? literalValue(source.slice(match.index, match.index + match[0].length))
+      ? decodeStringLiteral(
+          source.slice(match.index, match.index + match[0].length),
+        )
       : undefined,
   }))
   const imports: ImportRequestReference[] = []
@@ -127,9 +102,11 @@ export function scanImportRequests(
   }
   for (let index = 0; index < tokens.length; index += 1) {
     const word = tokens[index].value
+    const previous = tokens[index - 1]?.value
     if (
       !['import', 'export', 'require'].includes(word) ||
-      tokens[index - 1]?.value === '.'
+      previous === '.' ||
+      (word === 'require' && previous === 'new')
     )
       continue
     const next = tokens[index + 1]

@@ -1,4 +1,5 @@
 import {
+  type Dirent,
   existsSync,
   readdirSync,
   readFileSync,
@@ -31,6 +32,7 @@ import {
   type ModuleResolver,
 } from './prepared-resolver'
 import { PreparedSourceTypeError, readPreparedSource } from './prepared-source'
+import { isManifestShapeFailure } from './reservation-source'
 import {
   createResolutionInputs,
   type ResolutionInputObserver,
@@ -295,6 +297,7 @@ function* traverseGraph(
   const dynamicTargets = new Set<string>()
   const externalImports = new Map<string, Set<string>>()
   const requests: ImportGraphRequest[] = []
+  const deferred: { file: string; error: unknown }[] = []
 
   for (const file of files) {
     staticImporters.set(file, new Set())
@@ -440,13 +443,21 @@ function* traverseGraph(
           ...request,
           outcome: { kind: 'error', error },
         })
-        throw error
+        if (options.entries === undefined || !isManifestShapeFailure(error))
+          throw error
+        deferred.push({ file, error })
       } finally {
         options.onResolutionInputs?.(graphInputs.snapshot())
       }
     }
   }
 
+  throwReachableFailure(
+    deferred,
+    options.entries,
+    staticImports,
+    dynamicImports,
+  )
   return {
     requests: freezeImportRequests(requests),
     files: files.sort(compareCodePoints),
@@ -469,6 +480,29 @@ export interface StaticImportGraphOptions {
   readonly conditions?: readonly string[]
   /** Bare directory names at any depth, or absolute directories and descendants. */
   readonly exclude?: readonly string[]
+  /**
+   * Entry files that decide which failures are fatal: a package manifest that
+   * cannot be read stops the build only when the entries reach the importing
+   * file. Without entries every failure stops it.
+   */
+  readonly entries?: readonly string[]
+}
+
+function throwReachableFailure(
+  deferred: readonly { file: string; error: unknown }[],
+  entries: readonly string[] = [],
+  ...edges: ReadonlyMap<string, ReadonlySet<string>>[]
+): void {
+  if (deferred.length === 0) return
+  const reached = new Set<string>()
+  const pending = [...entries]
+  for (let file = pending.pop(); file !== undefined; file = pending.pop()) {
+    if (reached.has(file)) continue
+    reached.add(file)
+    for (const edge of edges) pending.push(...(edge.get(file) ?? []))
+  }
+  const fatal = deferred.find(({ file }) => reached.has(file))
+  if (fatal) throw fatal.error
 }
 
 function graphRoot(srcDir: string | string[], cwd: string): string {
@@ -926,6 +960,7 @@ export function listSourceFiles(
   srcDir: string,
   exclude: readonly string[] = [],
   options: SourceSelectionOptions = {},
+  onReadError?: (error: unknown) => boolean,
 ): string[] {
   const files: string[] = []
   const excludedDirectory = createDirectoryExclusion(exclude)
@@ -933,9 +968,15 @@ export function listSourceFiles(
   function visit(dir: string): void {
     if (excludedDirectory(resolve(dir))) return
     if (!existsSync(dir)) return
-    const entries = readdirSync(dir, { withFileTypes: true }).sort((a, b) =>
-      compareCodePoints(a.name, b.name),
-    )
+    let entries: readonly Dirent[]
+    try {
+      entries = readdirSync(dir, { withFileTypes: true }).sort((a, b) =>
+        compareCodePoints(a.name, b.name),
+      )
+    } catch (error) {
+      if (onReadError?.(error)) return
+      throw error
+    }
     for (const entry of entries) {
       const entryPath = join(dir, entry.name)
       if (entry.isDirectory()) {
@@ -956,7 +997,23 @@ export function listSourceFiles(
   )
 }
 
-function parseImports(
+export function isSourceFile(filename: string): boolean {
+  return SOURCE_FILE_RE.test(filename) && !testFileRegex.test(filename)
+}
+
+export function importedSpecifiers(
+  filename: string,
+  source: string,
+  sourceType?: import('./prepared-source').SourceType,
+): readonly string[] {
+  const imports =
+    sourceType === undefined
+      ? parseImports(filename, source)
+      : parseSourceImports(filename, source, { map: undefined, sourceType })
+  return imports.map(({ specifier }) => specifier)
+}
+
+export function parseImports(
   filename: string,
   source: string,
   scan = scanImportRequests,
@@ -1120,6 +1177,7 @@ export interface CreateModuleResolverOptions {
    * bundler later extracts the same file under.
    */
   toId?: (path: string) => string
+  readonly allowPackage?: (specifier: string) => boolean
 }
 
 /**
@@ -1160,6 +1218,7 @@ export type ModulePathResolverOptions = Pick<
   | 'alias'
   | 'includeMdx'
   | 'onResolutionInputs'
+  | 'allowPackage'
 >
 export type ModulePathResolution =
   AliasResolution | IgnoredModule | false | undefined
@@ -1176,6 +1235,7 @@ export function createModulePathResolver(
     alias = {},
     includeMdx,
     onResolutionInputs,
+    allowPackage,
   }: ModulePathResolverOptions = {},
   excludedDirectory: (
     directory: string,
@@ -1216,13 +1276,15 @@ export function createModulePathResolver(
                 (baseUrl
                   ? fileResolver(resolve(baseUrl, request))
                   : undefined) ??
-                resolvePackage(request, from, {
-                  conditions,
-                  fileResolver,
-                  excludedDirectory,
-                  aliased,
-                  inputs,
-                })),
+                ((allowPackage?.(request) ?? true)
+                  ? resolvePackage(request, from, {
+                      conditions,
+                      fileResolver,
+                      excludedDirectory,
+                      aliased,
+                      inputs,
+                    })
+                  : undefined)),
       })
     } finally {
       onResolutionInputs?.(inputs.snapshot())

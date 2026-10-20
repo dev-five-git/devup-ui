@@ -1,11 +1,12 @@
 use super::{
     Allocator, BTreeMap, Binding, Cow, Errors, GetSpan, HashMap, HashSet, ImportAlias, Normalized,
-    Normalizer, Parser, Root, SemanticBuilder, SourceType, Span, identifier_names, macro_name,
+    Normalizer, Parser, Root, SemanticBuilder, Span, identifier_names, macro_name,
 };
 use oxc_ast::ast::{
     Declaration, ImportDeclaration, ImportDeclarationSpecifier, Statement,
     TSImportEqualsDeclaration, TSModuleReference,
 };
+use oxc_span::SourceType;
 
 fn is_emotion_require(declaration: &TSImportEqualsDeclaration<'_>) -> bool {
     !declaration.import_kind.is_type()

@@ -84,10 +84,16 @@ async function setup(
       })
     config.plugins?.at(-1)?.apply({
       options: normalized,
-      hooks: { run: { tap: mock() }, thisCompilation: { tap: mock() } },
+      hooks: {
+        run: { tap: mock() },
+        watchRun: { tap: mock() },
+        invalid: { tap: mock() },
+        thisCompilation: { tap: mock() },
+      },
     })
   }
-  return { transform, configure, before, apply }
+  const prepare = () => before.mock.calls[0]?.[0]()
+  return { transform, configure, before, apply, prepare }
 }
 
 it('writes only beneath the Rsbuild root and clears declarations when the theme is removed', async () => {
@@ -169,10 +175,12 @@ it('shares one conditional graph across canonical mapping, reach and reachable p
       byDependency: { esm: { conditionNames: ['import', '...'] } },
     },
   })
-  const built = graph.mock.results[0]?.value
-  expect(graph).toHaveBeenCalledTimes(1)
-  expect(built).toBe(canonical.mock.calls[0]?.[0].graph)
-  expect(built).toBe(reach.mock.calls[0]?.[0].graph)
+  expect(extract).not.toHaveBeenCalled()
+  api.prepare()
+  const built = graph.mock.results.at(-1)?.value
+  expect(graph).toHaveBeenCalledTimes(2)
+  expect(built).toBe(canonical.mock.calls.at(-1)?.[0].graph)
+  expect(built).toBe(reach.mock.calls.at(-1)?.[0].graph)
   expect(built).toBe(reachable.mock.calls[0]?.[0].graph)
   expect(extract.mock.calls.map((call) => call[0])).toContain(
     browser.replaceAll('\\', '/'),
@@ -197,6 +205,7 @@ it.each(['mts', 'cts', 'cjs', 'mjs'])(
       entry: { main: { import: [path] } },
       resolve: { conditionNames: ['browser'] },
     })
+    api.prepare()
     const result = await api.transform.mock.calls[1][1]({
       code: readFileSync(path, 'utf-8'),
       resourcePath: path,
@@ -205,7 +214,7 @@ it.each(['mts', 'cts', 'cjs', 'mjs'])(
       environment: { name: 'web' },
     })
     expect(result.code).not.toContain('css(')
-    const sheet = result.code.match(/devup-ui(?:-\d+)?\.css/)?.[0]
+    const sheet = result.code.match(/devup-ui-\d+\.css/)?.[0]
     expect(
       wasm.getCss(utils.getFileNumByFilename(sheet ?? ''), true),
     ).toContain('red')
@@ -224,6 +233,7 @@ it('extracts compiled MDX in the post-loader without prewarming raw markdown', a
     entry: { main: { import: [path] } },
     resolve: { conditionNames: ['browser'] },
   })
+  api.prepare()
   expect(wasm.getCss(null, false)).not.toContain('red')
   expect(api.transform.mock.calls[2][0]).toMatchObject({ order: 'post' })
   const result = await api.transform.mock.calls[2][1]({
@@ -234,7 +244,7 @@ it('extracts compiled MDX in the post-loader without prewarming raw markdown', a
     environment: { name: 'web' },
   })
   expect(result.code).not.toContain('<Box')
-  const sheet = result.code.match(/devup-ui(?:-\d+)?\.css/)?.[0]
+  const sheet = result.code.match(/devup-ui-\d+\.css/)?.[0]
   expect(wasm.getCss(utils.getFileNumByFilename(sheet ?? ''), true)).toContain(
     'red',
   )
@@ -270,9 +280,8 @@ it('fails prewarm with its real source filename and root', async () => {
     `import { css } from '@devup-ui/react'; export const style = css({ color: Math.random() })`,
   )
   const api = await setup(root)
-  expect(() => api.apply({ entry: { main: { import: [path] } } })).toThrow(
-    `prewarm failed at ${path}`,
-  )
+  api.apply({ entry: { main: { import: [path] } } })
+  expect(() => api.prepare()).toThrow(`prewarm failed at ${path}`)
 })
 
 it('warns once for optional seed failure while preserving requested graph guarantees', async () => {

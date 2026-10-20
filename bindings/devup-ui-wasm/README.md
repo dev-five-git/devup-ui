@@ -95,6 +95,74 @@ and stripping caches; it never inherits the importing file's override. This
 includes an ordinary TSX file importing a constant after JSX in compiled `.md`
 or `.mdown`. Parser/source-type failures preserve the previous stylesheet.
 Existing imported-value coordinate limitations remain owned by #757.
+It is built from the Rust crates in `libs/` (`extractor`, `sheet`, `css`) with
+`wasm-pack build --target nodejs`, so it loads with `require`/`import` in Node
+and Bun, not in a browser.
+
+## Build
+
+```sh
+cd bindings/devup-ui-wasm
+bun run build   # removes pkg/, runs wasm-pack, writes pkg/package.json
+```
+
+`pkg/` is generated and ignored by git. The build starts from an empty `pkg/`,
+so files of a removed export cannot linger there; `bun run verify:dist` in the
+repository root fails if one does.
+
+## API
+
+Everything is exported from `pkg/index.js` (types in `pkg/index.d.ts`).
+
+| Function                                                                                                          | Does                                                                                                                                                                                   |
+| ----------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `codeExtract(filename, code, package, cssDir, singleCss, importMainCssInCode, importMainCssInCss, importAliases)` | Compiles one source file and returns an `Output`: the rewritten `code`, its `css`, `cssFile`, source `map`, the `dependencies` it read and `updatedBaseStyle`. Throws on a build error. |
+| `codeExtractWithoutSourceMap(...)`                                                                                | The same without the source map.                                                                                                                                                       |
+| `hasDevupUI(filename, code, package)`                                                                             | Whether the file imports Devup UI, so a plugin can skip the rest.                                                                                                                      |
+| `getCss(fileNum, importMainCss)`                                                                                  | The stylesheet collected so far: the whole sheet for `null`, one file's for its number.                                                                                                |
+| `registerTheme(theme)`, `registerShorthands(shorthands)`                                                          | Registers the `devup.json` theme and the custom shorthand props before extracting.                                                                                                     |
+| `getThemeInterface(package, color, typography, length, shadows, theme)`                                           | The `.d.ts` text that types the registered theme.                                                                                                                                      |
+| `getDefaultTheme()`                                                                                               | The theme variant that applies without `data-theme`.                                                                                                                                   |
+| `setPrefix(prefix)`, `getPrefix()`                                                                                | Class name prefix.                                                                                                                                                                     |
+| `setDebug(debug)`, `isDebug()`                                                                                    | Readable class names instead of base-37 ones, with repeated declarations kept (the tests run this way).                                                                                |
+| `setModuleResolver(resolver)`                                                                                     | `(specifier, importer) => ({ path, code })`: how imports are resolved, so imported stylesheets are evaluated and imported constants inlined.                                           |
+| `setAtomHoist(threshold)`, `importFileRoutes(routes)`                                                             | Moves atoms used by `threshold` routes or more into the shared sheet. Call before `codeExtract`.                                                                                       |
+| `exportSheet`, `exportClassMap`, `exportFileMap`, `exportCanonicalMap`, `exportReservationState` and the matching `import*` functions | Save an owner's collected state, including the reservation phase and miss count, across synchronous engine resets. |
+| `reserveClassSlots(rows, package, singleCss, importMainCssInCode, importMainCssInCss, importAliases)` | Reserve class/file counter slots without publishing CSS. Rows are `[filename, code, cssDir]` or `[filename, code, cssDir, 'compiled-mdx']`; compiled sources keep their real filenames. |
+| `getUnreservedClassSlotCount()` | Count new live allocator keys after reservation, excluding repeated keys. |
+| `getSuppressedReservationRowCount()` | Count failed rows suppressed by the latest reservation batch, independently of live misses. An empty or successful retry batch reports zero. |
+| `resetBuildState()` | Reset build-scoped engine state before a fresh build or owner restore. |
+
+## State
+
+The module keeps its state, sheet, class maps, theme, prefix and debug flag,
+in process-local engine state. Integrations reset and restore their owned
+snapshots at synchronous operation boundaries:
+
+- Register the theme, shorthands, prefix and resolver before the first
+  `codeExtract`, and extract the files of one build in one process.
+- Tests that share a process share that state. Set what a test depends on
+  (`registerTheme`, `setPrefix`, `setDebug`, `importSheet`) at its start, and
+  run files that need an empty sheet in their own process. Opaque reservation
+  snapshots must be restored with the matching sheet and allocator maps, not
+  imported into another owner's maps.
+
+Scratch reservation failures are row-local: new class, variable, keyframe and
+other shared allocator keys, and extraction-time file inserts, are rolled back
+before the next row. The deterministic FILE inventory preseeded for the batch
+is retained, including failed rows. A later successful retry appends slots without
+renumbering existing keys. Suppression is captured in the opaque reservation
+snapshot and cleared by `resetBuildState`; it never changes the live-miss query.
+This rollback applies to scratch reservation only, not failed real transforms.
+
+## Errors
+
+A source the build cannot compile makes `codeExtract` throw an `Error`. Its
+message names the call and says what the build needs, for example
+``path/to/file.tsx:12:5: `css()` cannot use `window.name` at build time: its
+values must be literals, theme tokens or constants`` (the location is included
+whenever the problem has one). A `.css.ts` stylesheet that throws while it runs
+reports that exception.
 
 After rebuilding the bindings, run the real project-compiler/WASM matrix:
 
@@ -115,3 +183,5 @@ Focused native MDX verification:
 ```sh
 cargo test -p extractor mdx_ -- --nocapture
 ```
+
+Apache-2.0

@@ -119,7 +119,7 @@ let registerThemeSpy: ReturnType<typeof spyOn>
 let setDebugSpy: ReturnType<typeof spyOn>
 let setPrefixSpy: ReturnType<typeof spyOn>
 let writeFileSpy: ReturnType<typeof spyOn>
-let dateNowSpy: ReturnType<typeof spyOn>
+const emptySheet = '{"properties":{}}'
 
 beforeEach(() => {
   codeExtractSpy = spyOn(wasm, 'codeExtract').mockImplementation(() =>
@@ -127,7 +127,7 @@ beforeEach(() => {
   )
   exportClassMapSpy = spyOn(wasm, 'exportClassMap').mockReturnValue('{}')
   exportFileMapSpy = spyOn(wasm, 'exportFileMap').mockReturnValue('{}')
-  exportSheetSpy = spyOn(wasm, 'exportSheet').mockReturnValue('{}')
+  exportSheetSpy = spyOn(wasm, 'exportSheet').mockReturnValue(emptySheet)
   getCssSpy = spyOn(wasm, 'getCss').mockReturnValue('')
   getDefaultThemeSpy = spyOn(wasm, 'getDefaultTheme').mockReturnValue(undefined)
   getThemeInterfaceSpy = spyOn(wasm, 'getThemeInterface').mockReturnValue('')
@@ -138,7 +138,6 @@ beforeEach(() => {
   setDebugSpy = spyOn(wasm, 'setDebug').mockReturnValue(undefined)
   setPrefixSpy = spyOn(wasm, 'setPrefix').mockReturnValue(undefined)
   writeFileSpy = spyOn(fsPromises, 'writeFile').mockResolvedValue(undefined)
-  dateNowSpy = spyOn(Date, 'now').mockReturnValue(0)
 })
 
 afterEach(() => {
@@ -156,7 +155,6 @@ afterEach(() => {
   setDebugSpy.mockRestore()
   setPrefixSpy.mockRestore()
   writeFileSpy.mockRestore()
-  dateNowSpy.mockRestore()
 })
 
 const waitFor = async (fn: () => void, timeout = 1000) => {
@@ -534,7 +532,7 @@ describe('devupUILoader', () => {
       'index.tsx',
       { _compiler },
     )
-    exportSheetSpy.mockReturnValue('sheet')
+    exportSheetSpy.mockReturnValue(emptySheet)
     exportClassMapSpy.mockReturnValue('classMap')
     exportFileMapSpy.mockReturnValue('fileMap')
     getCssSpy.mockReturnValue('css')
@@ -542,13 +540,14 @@ describe('devupUILoader', () => {
       createCodeExtractResult({
         code: 'code',
         css: 'css',
-        map: '{}',
+        map: '{"version":3,"names":[],"sources":["index.tsx"],"mappings":"AAAA"}',
         cssFile: 'cssFile',
         updatedBaseStyle: options.updatedBaseStyle,
       }),
     )
     devupUILoader.bind(t)(Buffer.from('code'), 'index.tsx')
 
+    await waitFor(() => expect(asyncCallback).toHaveBeenCalled())
     expect(t.async).toHaveBeenCalled()
     expect(codeExtractSpy).toHaveBeenCalledWith(
       'index.tsx',
@@ -574,12 +573,17 @@ describe('devupUILoader', () => {
       )
     }
     await waitFor(() => {
-      expect(asyncCallback).toHaveBeenCalledWith(null, 'code', '{}')
+      expect(asyncCallback).toHaveBeenCalledWith(null, 'code', {
+        version: 3,
+        names: [],
+        sources: ['index.tsx'],
+        mappings: 'AAAA',
+      })
       expect(writeFileSpy).toHaveBeenCalledWith(
         join('cssFile', 'cssFile'),
-        '/* index.tsx 0 */',
+        'css',
       )
-      expect(writeFileSpy).toHaveBeenCalledWith('sheetFile', 'sheet')
+      expect(writeFileSpy).toHaveBeenCalledWith('sheetFile', emptySheet)
       expect(writeFileSpy).toHaveBeenCalledWith('classMapFile', 'classMap')
       expect(writeFileSpy).toHaveBeenCalledWith('fileMapFile', 'fileMap')
     })
@@ -680,7 +684,7 @@ describe('devupUILoader', () => {
     expect(asyncCallback).not.toHaveBeenCalledWith(null, 'code', {})
   })
 
-  it('should load with date now on watch', async () => {
+  it('should load current CSS on watch', async () => {
     const asyncCallback = mock()
     const t = createLoaderContext(
       {
