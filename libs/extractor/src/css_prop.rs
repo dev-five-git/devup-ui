@@ -983,6 +983,7 @@ mod tests {
     #[case("`content: '{'; ${base}; color:red;`")]
     #[case("`content: '${label}{'; ${base}; color:red;`")]
     #[case("`content: '${first}${last}{'; ${base}; color:red;`")]
+    #[case("`&:hover {content:'{';} ${base}; color:red;`")]
     fn quoted_boundaries_keep_mixins_top_level(#[case] code: &str) {
         // Given quoted braces, including a string split across quasis.
         let allocator = Allocator::default();

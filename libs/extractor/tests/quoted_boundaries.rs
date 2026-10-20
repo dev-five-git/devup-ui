@@ -95,3 +95,20 @@ fn tailwind_composition_keeps_ampersands_when_they_are_quoted(
     )), "{:?}", output.styles);
     Ok(())
 }
+
+#[test]
+#[serial]
+fn global_pseudo_nesting_preserves_quoted_ampersands() -> Result<(), Box<dyn Error>> {
+    let _state = extractor::test_state::TestStateGuard::new();
+    let source = concat!(
+        "import{globalCss}from'@devup-ui/react';globalCss(",
+        "{_hover:{selectors:{",
+        r#""&[title='&']": {color:'red'}"#,
+        "}}});"
+    );
+    let output = extract("quoted-global.tsx", source, options())?;
+    assert!(output.styles.iter().any(|style| matches!(style,
+        ExtractStyleValue::Static(style) if style.selector.as_ref().is_some_and(|selector| selector.to_string() == "*:hover[title='&']")
+    )), "{:?}", output.styles);
+    Ok(())
+}
