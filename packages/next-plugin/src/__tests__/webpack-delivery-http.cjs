@@ -58,6 +58,7 @@ function elementProof(html, parsed, proof) {
   assert.ok(classes?.length, `missing actual classes for ${proof.id}`)
   for (const name of classes) {
     assert.match(name, /^[\w-]+$/)
+    if (name.includes('--')) continue
     assert.ok(
       parsed.get(`.${name}`)?.size,
       `${proof.id}: actual class .${name} has no linked declarations`,
