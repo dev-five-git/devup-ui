@@ -180,6 +180,47 @@ mod stylex_exact_keys {
         );
     }
 
+    #[rstest]
+    #[case::inherited(("s.base,", "[\"red\",\"white\"]", "[\"black\",\"blue\"]"))]
+    #[case::absent(("", "[\"red\"]", "[\"blue\"]"))]
+    #[serial]
+    fn alternate_only_key_preserves_winners_when_conditional_namespaces_are_disjoint(
+        #[case] sample: (&str, &str, &str),
+        #[values("props", "attrs")] api: &str,
+        #[values(false, true)] on: bool,
+    ) {
+        // Given: each branch replaces a different key, with or without earlier defaults.
+        reset_class_map();
+        reset_file_map();
+        let attribute = if api == "props" { "className" } else { "class" };
+        let source = format!(
+            "import * as sx from '@stylexjs/stylex'; import {{jsx}} from 'react/jsx-runtime'; const s=sx.create({{base:{{color:'black',backgroundColor:'white'}},left:{{color:'red'}},right:{{backgroundColor:'blue'}}}}); function tick(label,value){{trace.push(label);return value;}} function render(on){{const out=sx.{api}({}tick('branch',on)?s.left:s.right);return jsx('div',{{className:out.{attribute}}});}}",
+            sample.0
+        );
+
+        // When: the public extractor's output executes the selected branch in Boa.
+        let output = extract("stylex-disjoint.js", &source, ExtractOption::default()).unwrap();
+        let observation = render_observation(
+            &output,
+            &format!("render({on})"),
+            Some("stylex-disjoint.js"),
+        );
+        let (trace, mut values): (Vec<String>, Vec<String>) =
+            serde_json::from_str(&observation).unwrap();
+        values.sort();
+
+        // Then: the missing side inherits only its prior key; the branch test runs once.
+        let expected = if on { sample.1 } else { sample.2 };
+        assert_eq!(trace, ["branch"], "{}", output.code);
+        assert_eq!(
+            values,
+            serde_json::from_str::<Vec<String>>(expected).unwrap(),
+            "{}",
+            output.code
+        );
+        assert_eq!(callable_count(&output.code), callable_count(&source));
+    }
+
     #[test]
     #[serial]
     fn throwing_condition_still_throws_when_all_its_keys_are_overridden() {

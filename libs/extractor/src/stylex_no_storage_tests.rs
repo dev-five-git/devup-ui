@@ -179,3 +179,12 @@ fn stylex_no_storage_stays_bounded_and_deterministic_when_many_choices_are_disca
     }
     eprintln!("NO STORAGE GROWTH {frame} {api} {sizes:?}");
 }
+
+#[test]
+#[should_panic(expected = "unknown fixture frame: invalid")]
+fn no_storage_source_rejects_unknown_fixture_frame() {
+    // Given: the frame is not one of the fixture helper's supported execution contexts.
+    // When: constructing that fixture must fail rather than silently use a different frame.
+    // Then: the helper reports the unsupported frame in its existing panic.
+    no_storage_source("", "invalid", "props");
+}

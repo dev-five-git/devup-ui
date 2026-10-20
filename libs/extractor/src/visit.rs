@@ -2227,29 +2227,35 @@ impl<'a> DevupVisitor<'a> {
                 } => {
                     let index = tests.len();
                     tests.push(test);
-                    let mut keys: Vec<&String> = Vec::new();
-                    for (key, _) in consequent.iter().chain(&alternate) {
-                        if !keys.contains(&key) {
-                            keys.push(key);
+                    let mut keys: Vec<(&String, &String, bool)> = Vec::new();
+                    for (side, is_consequent) in [(&consequent, true), (&alternate, false)] {
+                        for (key, class) in side {
+                            if !keys.iter().any(|(existing, _, _)| *existing == key) {
+                                keys.push((key, class, is_consequent));
+                            }
                         }
                     }
-                    for key in keys {
+                    for (key, class, is_consequent) in keys {
                         let previous = entries
                             .iter()
                             .position(|(existing, _)| existing == key)
                             .map_or(StylexChoice::Class(String::new()), |index| {
                                 entries.remove(index).1
                             });
-                        let pick = |side: &[(String, String)]| {
-                            side.iter()
-                                .find(|(existing, _)| existing == key)
-                                .map(|(_, class)| StylexChoice::Class(class.clone()))
+                        let opposite = if is_consequent {
+                            &alternate
+                        } else {
+                            &consequent
                         };
-                        let (consequent, alternate) = match (pick(&consequent), pick(&alternate)) {
-                            (Some(a), Some(b)) => (a, b),
-                            (Some(a), None) => (a, previous),
-                            (None, Some(b)) => (previous, b),
-                            (None, None) => continue,
+                        let opposite = opposite
+                            .iter()
+                            .find(|(existing, _)| existing == key)
+                            .map_or(previous, |(_, class)| StylexChoice::Class(class.clone()));
+                        let origin = StylexChoice::Class(class.clone());
+                        let (consequent, alternate) = if is_consequent {
+                            (origin, opposite)
+                        } else {
+                            (opposite, origin)
                         };
                         if consequent == alternate {
                             entries.push((key.clone(), consequent));
@@ -2278,22 +2284,24 @@ impl<'a> DevupVisitor<'a> {
         let tests: Vec<_> = tests
             .into_iter()
             .enumerate()
-            .map(|(index, test)| match uses[index] {
-                0 => {
+            .map(|(index, test)| {
+                if uses[index] == 0 {
                     evaluations.push(test);
-                    Expression::new_boolean_literal(SPAN, false, &self.ast)
+                    return Expression::new_boolean_literal(SPAN, false, &self.ast);
                 }
-                1 if Some(index) == last => test,
-                _ => match self.stylex_captures.capture(&self.ast, test) {
-                    Ok((reference, assignment)) => {
-                        evaluations.push(assignment);
-                        reference
-                    }
-                    Err(error) => {
-                        self.errors.push(error);
-                        Expression::new_boolean_literal(SPAN, false, &self.ast)
-                    }
-                },
+                match uses[index] {
+                    1 if Some(index) == last => test,
+                    _ => match self.stylex_captures.capture(&self.ast, test) {
+                        Ok((reference, assignment)) => {
+                            evaluations.push(assignment);
+                            reference
+                        }
+                        Err(error) => {
+                            self.errors.push(error);
+                            Expression::new_boolean_literal(SPAN, false, &self.ast)
+                        }
+                    },
+                }
             })
             .collect();
         Some((
