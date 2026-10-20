@@ -86,7 +86,7 @@ impl Flags {
 }
 
 pub fn optimize_value(value: &str) -> Cow<'_, str> {
-    let trimmed = value.trim();
+    let trimmed = quoted::trim_css(value);
     let flags = Flags::scan(trimmed);
 
     // FAST PATH: no flag set ⇒ no pass can modify `trimmed`, so hand the caller a
@@ -658,7 +658,11 @@ mod tests {
     #[case(r"'\")]
     fn test_quoted_strings_are_kept(#[case] input: &str) {
         assert_eq!(optimize_value(input), input);
-        assert_eq!(optimize_value(&format!("  {input}\t")), input);
+        let expected = match input {
+            r"'0.5" | r#""a, b"# | r"'\" => format!("{input}\t"),
+            _ => input.to_string(),
+        };
+        assert_eq!(optimize_value(&format!("  {input}\t")), expected);
     }
 
     #[rstest]

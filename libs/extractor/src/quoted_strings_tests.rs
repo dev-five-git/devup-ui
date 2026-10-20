@@ -9,6 +9,27 @@ use css::{class_map::reset_class_map, file_map::reset_file_map};
 use rstest::rstest;
 use serial_test::serial;
 
+#[test]
+fn quoted_boundaries_select_only_selector_interpolations() {
+    // Given quoted value punctuation and selector strings spanning quasis.
+    let allocator = oxc_allocator::Allocator::default();
+    let source = concat!(
+        "css`content:'a;${",
+        "value}${",
+        "other}{'; &[title='${",
+        "selector}'] {",
+        "color:red}`"
+    );
+    let parsed = oxc_parser::Parser::new(&allocator, source, oxc_span::SourceType::tsx()).parse();
+    let mut selected = Vec::new();
+    // When selector dependencies are visited before extraction.
+    crate::style_values::selectors(&parsed.program, &mut |expression| {
+        selected.push(crate::utils::readable_code(expression));
+    });
+    // Then value expressions are not mistaken for selector dependencies.
+    assert_eq!(selected, vec!["selector"]);
+}
+
 fn static_values(source: &str) -> Result<BTreeSet<(String, String)>, Box<dyn std::error::Error>> {
     reset_class_map();
     reset_file_map();

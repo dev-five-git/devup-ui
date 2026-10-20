@@ -43,6 +43,7 @@ fn rm_comments_outside_strings(value: &str) -> Cow<'_, str> {
     let mut index = 0;
     while index < bytes.len() {
         match bytes[index] {
+            b'\\' => index = (index + 2).min(bytes.len()),
             quote @ (b'\'' | b'"') => index = string_end(bytes, index, quote),
             b'/' if bytes.get(index + 1) == Some(&b'*') => {
                 let Some(length) = value[index + 2..].find("*/") else {

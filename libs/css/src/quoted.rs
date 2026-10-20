@@ -2,29 +2,115 @@
 /// they look for ASCII digits, white space, parentheses, `,`, `#`, `;` and `.`
 pub(crate) const PROTECTED: char = '\u{E000}';
 
-/// Where the quoted string that opens at `start` ends. A backslash escapes the
-/// byte after it, and a string the text ends inside of runs to the end
+/// End of a string span, including its closing quote or raw bad-string newline.
+/// Escaped newlines stay inside the span; EOF string payload is never discarded.
 #[must_use]
 pub fn string_end(bytes: &[u8], start: usize, quote: u8) -> usize {
+    let mut state = QuoteState {
+        quote: Some(quote),
+        ..QuoteState::default()
+    };
     let mut index = start + 1;
     while let Some(&byte) = bytes.get(index) {
-        if byte == b'\\' {
-            index += 2;
-        } else {
-            index += 1;
-            if byte == quote {
-                return index;
+        state.is_syntax(byte);
+        index += 1;
+        if state.quote.is_none() {
+            if byte == b'\r' && bytes.get(index) == Some(&b'\n') {
+                index += 1;
             }
+            return index;
         }
     }
     bytes.len()
 }
 
-/// The bytes of `text` outside quoted strings, with their positions: a string
-/// is skipped whole, quotes included
+/// Quote and escape state retained across adjacent CSS text fragments.
+#[derive(Default)]
+pub struct QuoteState {
+    quote: Option<u8>,
+    escaped: bool,
+    skip_lf: bool,
+    hex_digits: u8,
+}
+
+impl QuoteState {
+    /// Consume a byte, returning whether it is unquoted, unescaped syntax.
+    #[inline]
+    pub fn is_syntax(&mut self, byte: u8) -> bool {
+        if self.skip_lf {
+            self.skip_lf = false;
+            if byte == b'\n' {
+                return false;
+            }
+        }
+        if self.hex_digits > 0 {
+            if byte.is_ascii_hexdigit() && self.hex_digits < 6 {
+                self.hex_digits += 1;
+                return false;
+            }
+            self.hex_digits = 0;
+            if matches!(byte, b' ' | b'\t' | b'\n' | b'\r' | b'\x0c') {
+                self.skip_lf = byte == b'\r';
+                return false;
+            }
+        }
+        if self.escaped {
+            self.escaped = false;
+            self.skip_lf = byte == b'\r' && self.quote.is_some();
+            self.hex_digits = u8::from(byte.is_ascii_hexdigit());
+            return false;
+        }
+        if byte == b'\\' {
+            self.escaped = true;
+            return false;
+        }
+        match self.quote {
+            Some(quote) => {
+                if byte == quote || matches!(byte, b'\n' | b'\r' | b'\x0c') {
+                    self.quote = None;
+                }
+                self.skip_lf = byte == b'\r';
+                false
+            }
+            None => {
+                if matches!(byte, b'\'' | b'"') {
+                    self.quote = Some(byte);
+                    false
+                } else {
+                    true
+                }
+            }
+        }
+    }
+}
+
+/// Trim outside whitespace without discarding EOF payload or bad-string newlines.
+#[must_use]
+pub fn trim_css(value: &str) -> &str {
+    let value = value.trim_start();
+    let trimmed = value.trim_end();
+    if value.len() == trimmed.len()
+        || !value
+            .bytes()
+            .any(|byte| matches!(byte, b'\'' | b'"' | b'\\'))
+    {
+        return trimmed;
+    }
+    let mut state = QuoteState::default();
+    let mut end = trimmed.len();
+    for (index, c) in value.char_indices() {
+        if !state.is_syntax(value.as_bytes()[index]) {
+            end = end.max(index + c.len_utf8());
+        }
+    }
+    &value[..end]
+}
+
+/// The bytes outside quoted strings and escapes, with their positions.
 struct Unquoted<'a> {
     bytes: &'a [u8],
     index: usize,
+    state: QuoteState,
 }
 
 impl Iterator for Unquoted<'_> {
@@ -33,22 +119,45 @@ impl Iterator for Unquoted<'_> {
     fn next(&mut self) -> Option<Self::Item> {
         loop {
             let &byte = self.bytes.get(self.index)?;
-            if matches!(byte, b'\'' | b'"') {
-                self.index = string_end(self.bytes, self.index, byte);
-            } else {
-                self.index += 1;
+            self.index += 1;
+            if self.state.is_syntax(byte) {
                 return Some((self.index - 1, byte));
             }
         }
     }
 }
 
-/// The bytes of `text` outside quoted strings, with their positions
+/// The bytes of `text` outside quoted strings and escapes, with their positions.
 pub fn unquoted_bytes(text: &str) -> impl Iterator<Item = (usize, u8)> + '_ {
     Unquoted {
         bytes: text.as_bytes(),
         index: 0,
+        state: QuoteState::default(),
     }
+}
+
+/// Replace an ASCII delimiter outside strings and escapes, borrowing if absent.
+#[must_use]
+pub fn replace_unquoted<'a>(
+    text: &'a str,
+    delimiter: u8,
+    replacement: &str,
+) -> std::borrow::Cow<'a, str> {
+    let mut positions = unquoted_bytes(text).filter(|&(_, byte)| byte == delimiter);
+    let Some((first, _)) = positions.next() else {
+        return std::borrow::Cow::Borrowed(text);
+    };
+    let mut out = String::with_capacity(text.len() + replacement.len());
+    out.push_str(&text[..first]);
+    out.push_str(replacement);
+    let mut start = first + 1;
+    for (index, _) in positions {
+        out.push_str(&text[start..index]);
+        out.push_str(replacement);
+        start = index + 1;
+    }
+    out.push_str(&text[start..]);
+    std::borrow::Cow::Owned(out)
 }
 
 /// Where `needle` first stands in `text` outside quoted strings
@@ -86,8 +195,7 @@ pub fn split_unquoted(text: &str, delimiter: u8) -> impl Iterator<Item = &str> {
     })
 }
 
-/// `value` with each quoted string, and each [`PROTECTED`] already in it, replaced
-/// by one [`PROTECTED`], and the replaced spans in the order they stood
+/// Mask strings, ASCII escapes and literal markers, retaining their original spans.
 pub(crate) fn mask(value: &str) -> (String, Vec<&str>) {
     let bytes = value.as_bytes();
     let mut masked = String::with_capacity(value.len());
@@ -96,6 +204,7 @@ pub(crate) fn mask(value: &str) -> (String, Vec<&str>) {
     let mut index = 0;
     while index < bytes.len() {
         let end = match bytes[index] {
+            b'\\' if bytes.get(index + 1).is_some_and(u8::is_ascii) => index + 2,
             quote @ (b'\'' | b'"') => string_end(bytes, index, quote),
             0xEE if value[index..].starts_with(PROTECTED) => index + PROTECTED.len_utf8(),
             _ => {
