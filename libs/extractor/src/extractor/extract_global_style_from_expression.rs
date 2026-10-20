@@ -308,9 +308,12 @@ fn collect_global_styles<'a>(
                                         ));
                                         continue;
                                     }
-                                    StyleSelector::from(pseudo.as_ref())
-                                        .to_string()
-                                        .replace('&', "*")
+                                    css::quoted::replace_unquoted(
+                                        &StyleSelector::from(pseudo.as_ref()).to_string(),
+                                        b'&',
+                                        "*",
+                                    )
+                                    .into_owned()
                                 } else {
                                     name
                                 },

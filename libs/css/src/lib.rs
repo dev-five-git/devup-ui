@@ -84,13 +84,9 @@ mod prefix_state {
 use prefix_state::with_prefix;
 pub use prefix_state::{get_prefix, set_prefix};
 
-/// Write `value` into `out`, replacing every `&` with `".<class_name>"` in place.
-///
-/// Equivalent to `out.push_str(&value.replace('&', &format!(".{class_name}")))`
-/// but avoids both the throwaway `".<class>"` String and the intermediate
-/// `str::replace` result String.
+/// Expand nesting tokens without copying or modifying quoted/escaped text.
 fn write_ampersand_expansion(out: &mut String, value: &str, class_name: &str) {
-    for (i, seg) in value.split('&').enumerate() {
+    for (i, seg) in quoted::split_unquoted(value, b'&').enumerate() {
         if i > 0 {
             out.push('.');
             out.push_str(class_name);
@@ -315,7 +311,12 @@ fn params_position(selector: &str) -> Option<usize> {
     let mut depth = 0usize;
     let mut found = None;
     let mut index = 0;
+    let mut quotes = quoted::QuoteState::default();
     while let Some(&byte) = bytes.get(index) {
+        if !quotes.is_syntax(byte) {
+            index += 1;
+            continue;
+        }
         match byte {
             b'(' | b'[' => depth += 1,
             b')' | b']' => depth = depth.saturating_sub(1),
@@ -611,7 +612,7 @@ pub fn sheet_to_classname(
         );
     }
     if is_debug() {
-        let selector = selector.unwrap_or_default().trim();
+        let selector = quoted::trim_css(selector.unwrap_or_default());
         let encoded = if selector.is_empty() {
             String::new()
         } else {
@@ -644,7 +645,7 @@ pub fn sheet_to_classname(
             result
         })
     } else {
-        let trimmed_selector = selector.unwrap_or_default().trim();
+        let trimmed_selector = quoted::trim_css(selector.unwrap_or_default());
         let order = style_order.unwrap_or(255);
         let file_num_str = filename.map(|f| num_to_nm_base(get_file_num_by_filename(f)));
         let trimmed_prop = property.trim();
@@ -711,7 +712,7 @@ pub fn sheet_to_variable_name(property: &str, level: u8, selector: Option<&str>)
         return format!("--{}", atom_name::counter_name(&identity, None));
     }
     if is_debug() {
-        let selector = selector.unwrap_or_default().trim();
+        let selector = quoted::trim_css(selector.unwrap_or_default());
         let encoded = if selector.is_empty() {
             String::new()
         } else {
@@ -730,7 +731,7 @@ pub fn sheet_to_variable_name(property: &str, level: u8, selector: Option<&str>)
             result
         })
     } else {
-        let trimmed_selector = selector.unwrap_or_default().trim();
+        let trimmed_selector = quoted::trim_css(selector.unwrap_or_default());
         let base_name = class_num_for_key("", |key| {
             key.reserve(property.len() + 4 + trimmed_selector.len());
             key.push_str(property);

@@ -670,11 +670,18 @@ pub(crate) fn template_parts<'a>(
     let mut parts = Vec::new();
     let mut text = String::new();
     let mut depth = 0usize;
+    let mut quotes = css::quoted::QuoteState::default();
     let mut from = 0;
     for (index, expression) in template.expressions.iter().enumerate() {
         let quasi = template.quasis[index].value.raw.as_str();
         text.push_str(quasi);
-        depth = (depth + quasi.matches('{').count()).saturating_sub(quasi.matches('}').count());
+        for byte in quasi.bytes().filter(|&byte| quotes.is_syntax(byte)) {
+            match byte {
+                b'{' => depth += 1,
+                b'}' => depth = depth.saturating_sub(1),
+                _ => {}
+            }
+        }
         let place = interpolation_place(&text, &template.quasis[index + 1..]);
         if matches!(place, Place::Value) || get_string_by_literal_expression(expression).is_some() {
             continue;
@@ -970,5 +977,26 @@ mod tests {
         let (code, requirement) = parts("`${selector} { color: red; }`", true).unwrap_err();
         assert_eq!(requirement, UNPLACED);
         assert_eq!(expression_to_code(&code), "selector;");
+    }
+
+    #[rstest::rstest]
+    #[case("`content: '{'; ${base}; color:red;`")]
+    #[case("`content: '${label}{'; ${base}; color:red;`")]
+    #[case("`content: '${first}${last}{'; ${base}; color:red;`")]
+    #[case("`&:hover {content:'{';} ${base}; color:red;`")]
+    fn quoted_boundaries_keep_mixins_top_level(#[case] code: &str) {
+        // Given quoted braces, including a string split across quasis.
+        let allocator = Allocator::default();
+        let ast = AstBuilder::new(&allocator);
+        let Expression::TemplateLiteral(template) = parsed(&allocator, code) else {
+            panic!("expected template literal");
+        };
+        // When the css prop is split around its top-level mixin.
+        let parts = template_parts(&ast, &template, true).unwrap();
+        // Then the mixin remains its own expression between two text segments.
+        assert_eq!(
+            parts.get(1).map(expression_to_code),
+            Some("base;".to_string())
+        );
     }
 }

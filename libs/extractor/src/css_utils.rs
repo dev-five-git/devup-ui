@@ -9,7 +9,10 @@ use crate::utils::{
 use css::{
     at_rule::split_at_rule_key,
     optimize_multi_css_value::{check_multi_css_optimize, optimize_multi_css_value},
-    quoted::{find_unquoted, rfind_unquoted, split_unquoted, string_end, unquoted_bytes},
+    quoted::{
+        QuoteState, find_unquoted, rfind_unquoted, split_unquoted, string_end, trim_css,
+        unquoted_bytes,
+    },
     rm_css_comment::rm_css_comment,
     style_selector::{StyleSelector, split_selector_list},
 };
@@ -236,18 +239,35 @@ pub(crate) enum Place {
 
 /// Where an interpolation stands, from the CSS written before and after it
 pub(crate) fn interpolation_place(before: &str, after: &[TemplateElement<'_>]) -> Place {
-    let head = &before[before.rfind([';', '{', '}']).map_or(0, |index| index + 1)..];
-    let rest: String = after.iter().map(|quasi| quasi.value.raw.as_str()).collect();
-    let end = rest.find([';', '{', '}']);
-    if end.is_some_and(|end| rest.as_bytes()[end] == b'{') {
+    let mut quotes = QuoteState::default();
+    let mut head_start = 0;
+    let mut has_colon = false;
+    for (index, byte) in before.bytes().enumerate() {
+        if !quotes.is_syntax(byte) {
+            continue;
+        }
+        match byte {
+            b';' | b'{' | b'}' => {
+                head_start = index + 1;
+                has_colon = false;
+            }
+            b':' => has_colon = true,
+            _ => {}
+        }
+    }
+    let end = after
+        .iter()
+        .flat_map(|quasi| quasi.value.raw.bytes())
+        .find(|&byte| quotes.is_syntax(byte) && matches!(byte, b';' | b'{' | b'}'));
+    if end == Some(b'{') {
         return Place::Other;
     }
-    if head.contains(':') {
+    if has_colon {
         Place::Value
-    } else if head.trim().is_empty()
-        && rest
-            .chars()
-            .next()
+    } else if before[head_start..].trim().is_empty()
+        && after
+            .iter()
+            .find_map(|quasi| quasi.value.raw.chars().next())
             .is_none_or(|c| c.is_whitespace() || c == ';')
     {
         Place::Statement
@@ -649,7 +669,7 @@ fn collect_css_block(
             })
             .unwrap_or(rest.len());
         let body = &rest[body_start..body_end];
-        let prelude = prelude.trim();
+        let prelude = trim_css(prelude);
         if prelude.is_empty() || prelude == "&" {
             collect_css_block(body, level, selector, styles);
         } else if let Some(nested) = nest_prelude(selector.as_ref(), prelude) {
@@ -687,7 +707,7 @@ pub(crate) fn descendants(selectors: &str) -> String {
 /// goes, a pseudo-class or pseudo-element applies to that rule's element, and
 /// any other selector to its descendants (`> p` to its children)
 fn relative_selector(part: &str) -> Cow<'_, str> {
-    if part.contains('&') {
+    if find_unquoted(part, b'&').is_some() {
         Cow::Borrowed(part)
     } else if part.starts_with(':') {
         Cow::Owned(format!("&{part}"))
@@ -723,15 +743,16 @@ fn css_to_style_block(
     let cap = cleaned.bytes().filter(|&b| b == b';').count() + 1;
     let mut styles = Vec::with_capacity(cap);
     for s in split_unquoted(&cleaned, b';') {
-        let s = s.trim();
+        let s = trim_css(s);
         if s.is_empty() {
             continue;
         }
-        let Some((property, value)) = s.split_once(':') else {
+        let Some(colon) = find_unquoted(s, b':') else {
             continue;
         };
+        let (property, value) = (&s[..colon], &s[colon + 1..]);
         let property = property.trim();
-        let value = value.trim();
+        let value = trim_css(value);
         let value: Cow<str> = optimize_decl_value(property, value);
         styles.push(ExtractStaticStyle::new(
             property,
@@ -748,7 +769,7 @@ pub fn keyframes_to_keyframes_style(keyframes: &str) -> BTreeMap<String, Vec<Ext
     let mut input = keyframes;
 
     while let Some(start) = find_unquoted(input, b'{') {
-        let key = input[..start].trim().to_string();
+        let key = trim_css(&input[..start]).to_string();
         let rest = &input[start + 1..];
         if let Some(end) = find_unquoted(rest, b'}') {
             let block = &rest[..end];
@@ -787,12 +808,12 @@ pub fn optimize_css_block(css: &str) -> String {
         let mut segment_start = 0;
         for (idx, b) in unquoted_bytes(cleaned) {
             if b == b'{' || b == b'}' {
-                buf.push_str(cleaned[segment_start..idx].trim());
+                buf.push_str(trim_css(&cleaned[segment_start..idx]));
                 buf.push(b as char);
                 segment_start = idx + 1;
             }
         }
-        buf.push_str(cleaned[segment_start..].trim());
+        buf.push_str(trim_css(&cleaned[segment_start..]));
         Cow::Owned(buf)
     } else {
         Cow::Borrowed(cleaned)
@@ -807,14 +828,15 @@ pub fn optimize_css_block(css: &str) -> String {
 
         let last_part = if let Some(brace) = rfind_unquoted(s, b'{') {
             append_brace_prefix(&mut result, &s[..brace]);
-            s[brace + 1..].trim()
+            trim_css(&s[brace + 1..])
         } else {
-            s.trim()
+            trim_css(s)
         };
 
-        if let Some((property, value)) = last_part.split_once(':') {
+        if let Some(colon) = find_unquoted(last_part, b':') {
+            let (property, value) = (&last_part[..colon], &last_part[colon + 1..]);
             let property = property.trim();
-            let value = value.trim();
+            let value = trim_css(value);
 
             let property_name = property
                 .rsplit_once('{')
@@ -841,18 +863,18 @@ fn append_brace_prefix(result: &mut String, prefix: &str) {
         if idx > 0 {
             result.push('{');
         }
-        result.push_str(part.trim());
+        result.push_str(trim_css(part));
     }
     result.push('{');
 }
 
 fn trim_string_in_place(value: &mut String) {
+    let trimmed_len = trim_css(value).len();
     let trimmed_start = value.len() - value.trim_start().len();
     if trimmed_start > 0 {
         value.drain(..trimmed_start);
     }
 
-    let trimmed_len = value.trim_end().len();
     value.truncate(trimmed_len);
 }
 
