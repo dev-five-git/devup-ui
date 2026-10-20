@@ -3,6 +3,7 @@ use super::*;
 #[test]
 #[serial]
 fn full_state_restore_preserves_all_symbol_slots_and_appends_new_identities() {
+    let _scope = TestStateGuard::new();
     // Given
     setup();
     reserve(&[("a.tsx", SOURCE_A)]);

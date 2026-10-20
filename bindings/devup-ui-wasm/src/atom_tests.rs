@@ -93,6 +93,7 @@ export const view = <Box className={cls} styleOrder={2} bg="blue"
 #[test]
 #[serial]
 fn atom_references_and_output_are_stable_when_extraction_order_changes() {
+    let _scope = TestStateGuard::new();
     // Given
     let build = |reverse: bool| {
         setup();
@@ -142,6 +143,7 @@ fn atom_references_and_output_are_stable_when_extraction_order_changes() {
 #[test]
 #[serial]
 fn atom_names_and_emission_are_stable_when_debug_changes_with_prefix() {
+    let _scope = TestStateGuard::new();
     // Given
     let build = |debug| {
         setup();
@@ -177,6 +179,7 @@ fn atom_names_and_emission_are_stable_when_debug_changes_with_prefix() {
 #[test]
 #[serial]
 fn same_atom_stays_local_when_a_private_bucket_also_uses_it() {
+    let _scope = TestStateGuard::new();
     // Given
     setup();
     let source = r#"import {Box} from '@devup-ui/react'; export const x=<Box color="red"/>;"#;
@@ -205,6 +208,7 @@ fn same_atom_stays_local_when_a_private_bucket_also_uses_it() {
 #[test]
 #[serial]
 fn compat_apis_reference_emitted_atoms_when_bucket_is_predeclared() {
+    let _scope = TestStateGuard::new();
     // Given
     setup();
     let sources = [
@@ -234,6 +238,7 @@ fn compat_apis_reference_emitted_atoms_when_bucket_is_predeclared() {
 #[test]
 #[serial]
 fn local_ordered_styles_signal_shared_layer_order_changes() {
+    let _scope = TestStateGuard::new();
     // Given
     setup();
     let plain = compile(

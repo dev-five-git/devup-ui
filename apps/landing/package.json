@@ -6,7 +6,7 @@
   "scripts": {
     "dev": "node ./script.js && vinext dev",
     "search": "node ./script.js",
-    "build": "node ./script.js && vinext build",
+    "build": "node ./script.js && vinext build && bun ./check-prerender.ts",
     "build:next": "node ./script.js && LANDING_BUILD_MODE=next next build",
     "start": "npx serve ./dist/client",
     "lint": "eslint"
