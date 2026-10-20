@@ -26,8 +26,8 @@ pub enum UtilityItem {
     Apply(Vec<String>),
 }
 
-#[derive(Debug, Default)]
-struct Definitions {
+#[derive(Debug, Default, PartialEq, Eq)]
+pub(crate) struct Definitions {
     theme: BTreeMap<String, String>,
     /// Namespaces `--ns-*: initial` empties, such as `--color-`
     resets: BTreeSet<String>,
@@ -43,6 +43,20 @@ struct Definitions {
 
 static DEFINITIONS: LazyLock<RwLock<Definitions>> =
     LazyLock::new(|| RwLock::new(Definitions::default()));
+
+#[cfg(test)]
+mod restoration_tests;
+
+pub(crate) fn replace_definitions(definitions: Definitions) -> Definitions {
+    let previous = std::mem::replace(
+        &mut *DEFINITIONS
+            .write()
+            .unwrap_or_else(std::sync::PoisonError::into_inner),
+        definitions,
+    );
+    DEFINITIONS.clear_poison();
+    previous
+}
 
 /// One statement of a stylesheet
 #[derive(Debug, PartialEq, Eq)]

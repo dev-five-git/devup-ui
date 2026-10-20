@@ -67,6 +67,7 @@ fn options() -> ExtractOption {
 #[test]
 #[serial]
 fn empty_css_expression_is_rejected_when_mixed_with_valid_forms() {
+    let _state = crate::test_state::TestStateGuard::new();
     // Given: the original mixed fixture, including its invalid final attribute.
     reset_class_map();
     reset_file_map();
@@ -103,6 +104,7 @@ fn repeated_layers_keep_first_use_when_later_atoms_replace_earlier_ones(
     #[case] rules: &str,
     #[case] expected: Vec<&str>,
 ) {
+    let _state = crate::test_state::TestStateGuard::new();
     // Given: the first layer's first atom will lose D1 composition.
     reset_class_map();
     reset_file_map();
@@ -154,6 +156,7 @@ fn custom_css_is_consumed_only_when_emotion_is_enabled(
     #[case] later: &str,
     #[case] enabled: bool,
 ) {
+    let _state = crate::test_state::TestStateGuard::new();
     // Given: a custom component owns css unless an actual Emotion signal opts it in.
     reset_class_map();
     reset_file_map();
@@ -170,6 +173,7 @@ fn custom_css_is_consumed_only_when_emotion_is_enabled(
 #[test]
 #[serial]
 fn layers_follow_authored_order_when_css_array_classes_are_generated() {
+    let _state = crate::test_state::TestStateGuard::new();
     // Given: layers whose first-use order differs from alphabetical order, plus a D1 override.
     reset_class_map();
     reset_file_map();
@@ -210,6 +214,7 @@ fn layers_follow_authored_order_when_css_array_classes_are_generated() {
 #[case::template("t.colors[`01`]", "var(--colors-01)")]
 #[serial]
 fn theme_keys_preserve_exact_text_when_computed(#[case] read: &str, #[case] expected: &str) {
+    let _state = crate::test_state::TestStateGuard::new();
     // Given: a theme key whose spelling is part of the provider's CSS variable name.
     reset_class_map();
     reset_file_map();
@@ -250,6 +255,7 @@ fn emotion_numbers_stay_pixels_when_rule_arrays_are_inlined(
     #[case] declaration: &str,
     #[case] rules: &str,
 ) {
+    let _state = crate::test_state::TestStateGuard::new();
     // Given: equivalent inline and constant arrays, including nested rules and unitless values.
     reset_class_map();
     reset_file_map();

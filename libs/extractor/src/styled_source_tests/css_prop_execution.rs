@@ -25,6 +25,7 @@ pub(super) fn css_props(filename: &str, css: &str, extra: &str) -> String {
 }
 
 pub(super) fn execute(filename: &str, source: &str, observation: &str) -> Value {
+    let _state = crate::test_state::TestStateGuard::new();
     reset_class_map();
     reset_file_map();
     let output = extract(
