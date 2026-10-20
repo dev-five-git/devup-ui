@@ -12,6 +12,7 @@ pub(super) mod extract_style_from_stylex;
 pub(crate) mod global_inputs;
 pub(crate) mod selector_params;
 pub(crate) mod style_inputs;
+pub(super) mod styled_capability;
 pub(super) mod styled_css_slot;
 pub(super) mod styled_jsx;
 mod styled_record;
