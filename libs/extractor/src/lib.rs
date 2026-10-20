@@ -1,4 +1,7 @@
 mod as_visit;
+mod barrel;
+#[cfg(test)]
+mod barrel_pipeline_tests;
 mod build_time_values;
 mod class_arguments;
 #[cfg(test)]
@@ -359,15 +362,17 @@ fn extract_with_source_map(
         let allocator = Allocator::default();
         parsing::parse(&allocator, filename, code)?;
     }
-    extract_source(filename, code, None, option, source_map, resolver)
+    extract_source(filename, code, None, None, option, source_map, resolver)
 }
 
 /// `evaluated` is the source `code` was computed from, with the layers of
-/// edits, last made first, that map `code` back to it
+/// edits, last made first, that map `code` back to it; `values_run` holds the
+/// authored styling-call ranges only after build-time value evaluation
 fn extract_source(
     filename: &str,
     code: &str,
     evaluated: Option<(&str, &[&[import_alias_visit::Edit]])>,
+    values_run: Option<&[(usize, usize)]>,
     option: ExtractOption,
     source_map: bool,
     resolver: Option<&ModuleResolver>,
@@ -377,6 +382,30 @@ fn extract_source(
         let errors = import_alias_visit::companion_errors(code, filename);
         if !errors.is_empty() {
             return Err(located_errors(filename, code, &[], errors).into());
+        }
+    }
+    if evaluated.is_none() {
+        match barrel::rewrite(code, filename, &option.package, resolver) {
+            barrel::Barreled::Unchanged => {}
+            barrel::Barreled::Failed(errors) => {
+                return Err(located_errors(filename, code, &[], errors).into());
+            }
+            barrel::Barreled::Rewritten(barreled) => {
+                let mut output = extract_source(
+                    filename,
+                    &barreled.code,
+                    Some((code, &[barreled.edits.as_slice()])),
+                    None,
+                    option,
+                    source_map,
+                    resolver,
+                )?;
+                let mut files: std::collections::BTreeSet<String> =
+                    output.dependencies.into_iter().collect();
+                files.extend(barreled.dependencies);
+                output.dependencies = files.into_iter().collect();
+                return Ok(output);
+            }
         }
     }
     let (namespace_code, namespace_edits) =
@@ -630,7 +659,7 @@ fn extract_source(
             .errors
             .iter()
             .any(|(_, error)| dead_properties::terminal_error(error))
-        && evaluated.is_none()
+        && values_run.is_none()
         && !utils::is_vanilla_extract_file(filename)
         && let Some((computed, value_edits, read)) = build_time_values::evaluate(
             &transformed_code,
@@ -645,18 +674,32 @@ fn extract_source(
         } else {
             import_alias_visit::pixelify_emotion_values(&computed, filename, &namespace_code)
         };
+        let (source, earlier_edits) = evaluated.unwrap_or((code, &[]));
+        let calls: Vec<_> = dead_properties::evaluated_calls(code, filename, &option)
+            .into_iter()
+            .map(|(start, end)| {
+                let authored = |offset| {
+                    earlier_edits.iter().fold(offset, |offset, edits| {
+                        import_alias_visit::source_offset(edits, offset)
+                    })
+                };
+                (authored(start), authored(end))
+            })
+            .collect();
+        let layers: Vec<&[import_alias_visit::Edit]> = [
+            number_edits.as_slice(),
+            value_edits.as_slice(),
+            alias_edits.as_slice(),
+            namespace_edits.as_slice(),
+        ]
+        .into_iter()
+        .chain(earlier_edits.iter().copied())
+        .collect();
         let mut output = extract_source(
             filename,
             &computed,
-            Some((
-                code,
-                &[
-                    number_edits.as_slice(),
-                    value_edits.as_slice(),
-                    alias_edits.as_slice(),
-                    namespace_edits.as_slice(),
-                ],
-            )),
+            Some((source, &layers)),
+            Some(&calls),
             option,
             source_map,
             resolver,
@@ -676,9 +719,8 @@ fn extract_source(
     visitor.errors.append(&mut visitor.unknown_parts);
     if !visitor.errors.is_empty() {
         let mut errors = visitor.errors;
-        let error_edits = if evaluated.is_some() {
-            let calls = dead_properties::evaluated_calls(source, filename, &option);
-            dead_properties::map_evaluated(&mut errors, &edits, &calls)?;
+        let error_edits = if let Some(calls) = values_run {
+            dead_properties::map_evaluated(&mut errors, &edits, calls)?;
             &[][..]
         } else {
             edits.as_slice()
@@ -944,6 +986,23 @@ pub fn has_devup_ui(filename: &str, code: &str, package: &str) -> bool {
     }
 
     false
+}
+
+/// [`has_devup_ui`], also true for a file importing the package through a
+/// project module that re-exports it, or reading members of a namespace import
+#[must_use]
+pub fn has_devup_ui_through(
+    filename: &str,
+    code: &str,
+    package: &str,
+    resolver: &ModuleResolver,
+) -> bool {
+    parsing::source_type(filename).is_ok()
+        && (has_devup_ui(filename, code, package)
+            || !matches!(
+                barrel::rewrite(code, filename, package, Some(resolver)),
+                barrel::Barreled::Unchanged
+            ))
 }
 
 #[cfg(test)]
