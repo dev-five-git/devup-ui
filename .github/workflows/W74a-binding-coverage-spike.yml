@@ -1,0 +1,87 @@
+name: W74a native coverage SPIKE
+
+# Replace/remove this SPIKE workflow before the binding PR leaves Draft.
+on:
+  push:
+    branches: [feat/napi-binding]
+    paths:
+      - 'e2e/binding/coverage-spike/**'
+      - '.github/workflows/W74a-binding-coverage-spike.yml'
+  pull_request:
+    branches: [fix/portable-binding-state]
+    paths:
+      - 'e2e/binding/coverage-spike/**'
+      - '.github/workflows/W74a-binding-coverage-spike.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  scratch-controls:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    env:
+      CARGO_BUILD_JOBS: '2'
+      CARGO_TERM_COLOR: never
+      W74A_EVIDENCE: ${{ runner.temp }}/W74a-evidence
+    defaults:
+      run:
+        shell: bash
+        working-directory: e2e/binding/coverage-spike
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v7
+        with:
+          node-version: latest
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: latest
+      - uses: actions-rust-lang/setup-rust-toolchain@v2
+        with:
+          toolchain: stable
+          components: rustfmt, clippy
+          cache: false
+          rustflags: ''
+      - name: Resolve latest official GNU x64 tarpaulin release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          mkdir -p "$W74A_EVIDENCE" "$RUNNER_TEMP/W74a-tools"
+          gh api repos/xd009642/tarpaulin/releases/latest > "$W74A_EVIDENCE/tarpaulin-release.json"
+          tag=$(node -p "JSON.parse(require('node:fs').readFileSync(process.env.W74A_EVIDENCE + '/tarpaulin-release.json')).tag_name")
+          asset=cargo-tarpaulin-x86_64-unknown-linux-gnu.tar.gz
+          gh release download "$tag" --repo xd009642/tarpaulin --pattern "$asset" --dir "$W74A_EVIDENCE"
+          node --input-type=module <<'NODE'
+          import assert from 'node:assert/strict'
+          import { createHash } from 'node:crypto'
+          import { readFileSync, writeFileSync } from 'node:fs'
+          const root = process.env.W74A_EVIDENCE
+          const release = JSON.parse(readFileSync(`${root}/tarpaulin-release.json`))
+          const asset = release.assets.find(({ name }) => name === 'cargo-tarpaulin-x86_64-unknown-linux-gnu.tar.gz')
+          assert.ok(asset)
+          const digest = 'sha256:' + createHash('sha256').update(readFileSync(`${root}/${asset.name}`)).digest('hex')
+          assert.equal(digest, asset.digest, 'Official asset digest mismatch')
+          writeFileSync(`${root}/tarpaulin-asset.json`, JSON.stringify({ tag: release.tag_name, name: asset.name, digest }, null, 2))
+          NODE
+          tar -xzf "$W74A_EVIDENCE/$asset" -C "$RUNNER_TEMP/W74a-tools"
+          echo "$RUNNER_TEMP/W74a-tools" >> "$GITHUB_PATH"
+      - name: Record resolved tools and runner
+        run: |
+          printf '%s\n' "$GITHUB_SHA" "$GITHUB_REF" "$GITHUB_RUN_ID" "$GITHUB_RUN_ATTEMPT" > "$W74A_EVIDENCE/source-run.txt"
+          { uname -a; printf '%s\n' "$ImageOS" "$ImageVersion"; rustc +stable -Vv; cargo +stable -V; cargo +stable tarpaulin --version; node --version; bun --version; } 2>&1 | tee "$W74A_EVIDENCE/versions.log"
+      - name: Scratch source formatting and strict clippy
+        run: |
+          cargo +stable fmt --all -- --check 2>&1 | tee "$W74A_EVIDENCE/fmt.log"
+          cargo +stable clippy --locked --workspace --all-targets --all-features --target-dir "$RUNNER_TEMP/W74a-clippy-target" --jobs 2 -- -D warnings 2>&1 | tee "$W74A_EVIDENCE/clippy.log"
+      - name: Serial negative and live Node/Bun positive controls
+        run: node run.mjs "$W74A_EVIDENCE" 2>&1 | tee "$W74A_EVIDENCE/runner.log"
+      - name: Preserve raw SPIKE evidence even on failure
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: W74a-native-coverage-SPIKE-${{ github.run_id }}-${{ github.run_attempt }}
+          path: ${{ env.W74A_EVIDENCE }}
+          retention-days: 30
+          if-no-files-found: warn

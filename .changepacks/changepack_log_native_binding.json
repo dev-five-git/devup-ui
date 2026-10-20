@@ -1,0 +1,7 @@
+{
+  "changes": {
+    "bindings/devup-ui-wasm/package.json": "Patch"
+  },
+  "note": "Add a genuine native-addon coverage feasibility checkpoint for the forthcoming optional compiler binding. No compiler behavior or new build errors.",
+  "date": "2026-10-20T00:00:00.000Z"
+}

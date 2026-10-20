@@ -1,0 +1,21 @@
+[package]
+name = "w74a-addon"
+version = "0.0.0"
+edition.workspace = true
+rust-version.workspace = true
+publish.workspace = true
+
+[lib]
+path = "lib.rs"
+crate-type = ["cdylib"]
+
+[dependencies]
+w74a-core = { path = ".." }
+napi = "^3.14.2"
+napi-derive = "^3.6.12"
+
+[build-dependencies]
+napi-build = "^2.6.0"
+
+[lints]
+workspace = true
