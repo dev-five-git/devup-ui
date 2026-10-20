@@ -16,6 +16,7 @@ import {
   type ImportAliases,
   loadDevupConfig,
   mergeImportAliases,
+  readJsxImportSource,
   seedFileNumbers,
   tailwindCssFiles,
   withTailwindCss,
@@ -316,7 +317,10 @@ export function DevupUI({
   registerShorthands(shorthands ?? {})
   setDebug(debug)
   setPrefix(prefix ?? null)
-  const importAliases = mergeImportAliases(userImportAliases)
+  const importAliases = mergeImportAliases(
+    userImportAliases,
+    readJsxImportSource(),
+  )
   const cssMap = new Map()
   let resolvedConfig: ResolvedConfig | undefined
   // Set by the client `generateBundle`, run by the late hook of the sibling
@@ -388,6 +392,7 @@ export function DevupUI({
             include,
             cwd: projectRoot,
             needles: extractedNeedles(libPackage, importAliases),
+            importAliases,
           }),
         )
       } catch {

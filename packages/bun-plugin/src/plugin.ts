@@ -10,8 +10,10 @@ import {
   createSharedSlotReservation,
   createThemeInterfaceArgs,
   type CustomShorthands,
+  isProjectJsx,
   loadDevupConfig,
   mergeImportAliases,
+  readJsxImportSource,
   seedFileNumbers,
   tailwindCssFiles,
   withTailwindCss,
@@ -39,7 +41,7 @@ const devupFile = 'devup.json'
 const distDir = 'df'
 const cssDir = resolve(distDir, cssDirName)
 const singleCss = true
-const importAliases = mergeImportAliases()
+const importAliases = mergeImportAliases(undefined, readJsxImportSource())
 // The packages whose imports the extractor compiles: Devup UI, the packages it
 // takes the place of, and StyleX
 const compiledPackages = [
@@ -134,7 +136,10 @@ async function loadSourceFile(filePath: string, bundling: boolean) {
         : 'js'
   const contents = await Bun.file(filePath).text()
 
-  if (importsCompiledPackage(contents, loader)) {
+  if (
+    isProjectJsx(filePath, importAliases) ||
+    importsCompiledPackage(contents, loader)
+  ) {
     const code = codeExtract(
       filePath,
       contents,
@@ -212,6 +217,7 @@ function DevupUI(options: DevupUIBunPluginOptions = {}) {
             collectNumberedFiles({
               roots: [resolve('src')],
               needles: compiledPackages,
+              importAliases,
               toId: (path) => path,
             }),
           )

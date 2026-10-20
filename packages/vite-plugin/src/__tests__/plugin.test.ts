@@ -494,6 +494,13 @@ describe('devupUIVitePlugin', () => {
         roots: [resolve('/p', 'src'), resolve('/p', 'app')],
         include: ['@acme/ui'],
         cwd: '/p',
+        importAliases: {
+          '@emotion/react': null,
+          '@emotion/styled': 'styled',
+          '@emotion/css': null,
+          'styled-components': 'styled',
+          '@vanilla-extract/css': null,
+        },
         needles: expect.arrayContaining([
           '@devup-ui/react',
           '@stylexjs/stylex',
@@ -1527,7 +1534,9 @@ describe('devupUIVitePlugin', () => {
   it('should print error when watch change error', async () => {
     writeFileSpy.mockResolvedValueOnce(undefined)
     getThemeInterfaceSpy.mockReturnValue('interface code')
-    existsSyncSpy.mockReturnValueOnce(true).mockReturnValueOnce(false)
+    existsSyncSpy.mockImplementation(
+      (path: fs.PathLike) => path === 'devup.json',
+    )
     mkdirSpy.mockImplementation(() => {
       throw new Error('error')
     })

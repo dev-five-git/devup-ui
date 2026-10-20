@@ -7,13 +7,15 @@ use std::collections::HashMap;
 use oxc_allocator::{CloneIn, FromIn, GetAllocator};
 use oxc_ast::ast::{
     Argument, ArrowFunctionBody, BinaryOperator, BindingPattern, CallExpression, Expression,
-    FormalParameters, FunctionBody, ImportDeclarationSpecifier, JSXAttributeItem, JSXElementName,
-    ObjectPropertyKind, Program, Statement, Str, TemplateElement, TemplateElementValue,
-    TemplateLiteral,
+    FormalParameters, FunctionBody, ImportDeclarationSpecifier, JSXAttributeItem, JSXChild,
+    JSXElement, JSXElementName, ObjectPropertyKind, Program, Statement, Str, TemplateElement,
+    TemplateElementValue, TemplateLiteral,
 };
 use oxc_ast::builder::AstBuilder;
 use oxc_ast_visit::{VisitMut, walk_mut};
+use oxc_semantic::Scoping;
 use oxc_span::SPAN;
+use oxc_syntax::symbol::SymbolId;
 use rustc_hash::FxHashSet;
 
 use crate::ImportAlias;
@@ -23,8 +25,30 @@ use crate::utils::{
     unwrap_syntax_only,
 };
 
+type Resolve<'r> = &'r dyn Fn(&oxc_ast::ast::IdentifierReference<'_>) -> Option<SymbolId>;
+
 /// The package whose alias makes elements take the `css` prop
 pub(crate) const EMOTION_REACT: &str = "@emotion/react";
+
+/// Emotion's JSX runtime, whose alias tells that the project builds JSX with
+/// it, as a `jsxImportSource` of `@emotion/react` in tsconfig does
+pub(crate) const EMOTION_JSX_RUNTIME: &str = "@emotion/react/jsx-runtime";
+
+/// The pragma building a file's JSX with React, as its `css` props compile
+pub(crate) const REACT_JSX_PRAGMA: &str = "/** @jsxImportSource react */\n";
+
+/// Whether the project builds JSX with Emotion's runtime, which then builds it
+/// with React's as every `css` prop compiles
+pub(crate) fn builds_jsx_with_emotion(import_aliases: &HashMap<String, ImportAlias>) -> bool {
+    import_aliases.contains_key(EMOTION_REACT) && import_aliases.contains_key(EMOTION_JSX_RUNTIME)
+}
+
+/// Whether `filename` is written in JSX, which the project's JSX settings build
+pub(crate) fn is_jsx_file(filename: &str) -> bool {
+    filename
+        .rsplit_once('.')
+        .is_some_and(|(_, extension)| matches!(extension, "tsx" | "jsx"))
+}
 
 /// Which elements of a file take Emotion's `css` prop
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
@@ -87,6 +111,8 @@ pub(crate) struct CssTakers<'s> {
     pub css_prop: CssProp,
     /// Local names of the functions building elements from a type and props
     jsx: FxHashSet<&'s str>,
+    /// Local names of Emotion's `ClassNames`
+    class_names: FxHashSet<&'s str>,
 }
 
 impl<'s> CssTakers<'s> {
@@ -94,18 +120,53 @@ impl<'s> CssTakers<'s> {
     /// `compat` is the entry absorbing Emotion's own `jsx`
     pub(crate) fn new(program: &Program<'s>, css_prop: CssProp, compat: &str) -> Self {
         let mut jsx = FxHashSet::default();
+        let mut class_names = FxHashSet::default();
         for statement in &program.body {
             if let Statement::ImportDeclaration(import) = statement {
+                let source = import.source.value.as_str();
                 for specifier in import.specifiers.iter().flatten() {
-                    if let ImportDeclarationSpecifier::ImportSpecifier(specifier) = specifier
-                        && is_jsx_function(&import.source.value, &specifier.imported.name(), compat)
-                    {
+                    let ImportDeclarationSpecifier::ImportSpecifier(specifier) = specifier else {
+                        continue;
+                    };
+                    let imported = specifier.imported.name();
+                    if is_jsx_function(source, &imported, compat) {
                         jsx.insert(specifier.local.name.as_str());
+                    } else if imported == "ClassNames"
+                        && (source == compat || source == EMOTION_REACT)
+                    {
+                        class_names.insert(specifier.local.name.as_str());
                     }
                 }
             }
         }
-        Self { css_prop, jsx }
+        Self {
+            css_prop,
+            jsx,
+            class_names,
+        }
+    }
+
+    pub(crate) fn has_class_names(&self) -> bool {
+        !self.class_names.is_empty()
+    }
+
+    /// The child callback's API bindings, only when the element reads the import.
+    pub(crate) fn class_names_calls(
+        &self,
+        element: &JSXElement<'_>,
+        scoping: &Scoping,
+    ) -> Vec<SymbolId> {
+        match &element.opening_element.name {
+            JSXElementName::IdentifierReference(name)
+                if self.class_names.contains(name.name.as_str())
+                    && binding_of(scoping, name).is_some_and(|symbol| {
+                        scoping.get_root_binding(name.name.as_str().into()) == Some(symbol)
+                    }) =>
+            {
+                class_names_calls(element)
+            }
+            _ => Vec::new(),
+        }
     }
 
     /// Whether `attribute` of the element `name` is a `css` prop it takes;
@@ -256,6 +317,7 @@ pub(crate) fn theme_rules<'a>(
     let mut reads = ThemeReads {
         ast,
         roots: &roots,
+        binding: None,
         unread: None,
     };
     reads.visit(&mut rules, false);
@@ -271,6 +333,144 @@ pub(crate) fn returned<'b, 'a>(body: &'b FunctionBody<'a>) -> Option<&'b Express
         [Statement::ReturnStatement(statement)] => statement.argument.as_ref(),
         _ => None,
     }
+}
+
+fn returned_mut<'b, 'a>(body: &'b mut FunctionBody<'a>) -> Option<&'b mut Expression<'a>> {
+    match body.statements.as_mut_slice() {
+        [Statement::ReturnStatement(statement)] => statement.argument.as_mut(),
+        _ => None,
+    }
+}
+
+/// The parameters of `function` and what it gives at once, when it is a
+/// plain function giving one value
+pub(crate) fn render_function<'b, 'a>(
+    function: &'b mut Expression<'a>,
+) -> Option<(&'b FormalParameters<'a>, &'b mut Expression<'a>)> {
+    match function {
+        Expression::ArrowFunctionExpression(arrow) if !arrow.r#async => {
+            let arrow = &mut **arrow;
+            let body = match &mut arrow.body {
+                ArrowFunctionBody::FunctionBody(body) => returned_mut(body)?,
+                body => body.as_expression_mut()?,
+            };
+            Some((&arrow.params, body))
+        }
+        Expression::FunctionExpression(function) if !function.r#async && !function.generator => {
+            let function = &mut **function;
+            Some((
+                &function.params,
+                returned_mut(function.body.as_deref_mut()?)?,
+            ))
+        }
+        _ => None,
+    }
+}
+
+/// The lexical bindings of a `<ClassNames>` child function's APIs and theme.
+#[derive(Default, Clone, Copy)]
+pub(crate) struct ClassNamesParams {
+    pub css: Option<SymbolId>,
+    pub cx: Option<SymbolId>,
+    pub theme: Option<SymbolId>,
+}
+
+impl ClassNamesParams {
+    pub(crate) fn is(slot: Option<SymbolId>, symbol: Option<SymbolId>) -> bool {
+        slot.is_some() && slot == symbol
+    }
+}
+
+pub(crate) fn binding_of(
+    scoping: &Scoping,
+    identifier: &oxc_ast::ast::IdentifierReference<'_>,
+) -> Option<SymbolId> {
+    scoping
+        .get_reference(identifier.reference_id.get()?)
+        .symbol_id()
+}
+
+/// What `params` take of `{ css, cx, theme }`; `None` when they take it in a
+/// way the build cannot follow
+pub(crate) fn class_names_params(params: &FormalParameters<'_>) -> Option<ClassNamesParams> {
+    let mut names = ClassNamesParams::default();
+    if params.rest.is_some() {
+        return None;
+    }
+    match params.items.as_slice() {
+        [] => {}
+        [param] if param.initializer.is_none() => {
+            let BindingPattern::ObjectPattern(object) = &param.pattern else {
+                return None;
+            };
+            if object.rest.is_some() {
+                return None;
+            }
+            for property in &object.properties {
+                let (BindingPattern::BindingIdentifier(local), Some(key), false) = (
+                    &property.value,
+                    property.key.static_name(),
+                    property.computed,
+                ) else {
+                    return None;
+                };
+                let slot = match key.as_ref() {
+                    "css" => &mut names.css,
+                    "cx" => &mut names.cx,
+                    "theme" => &mut names.theme,
+                    _ => return None,
+                };
+                *slot = local.symbol_id.get();
+            }
+        }
+        _ => return None,
+    }
+    Some(names)
+}
+
+/// What the child function of the `<ClassNames>` element `element` takes
+pub(crate) fn class_names_child(element: &JSXElement<'_>) -> Option<ClassNamesParams> {
+    let mut children = element
+        .children
+        .iter()
+        .filter(|child| !matches!(child, JSXChild::Text(text) if text.value.trim().is_empty()));
+    let (Some(JSXChild::ExpressionContainer(container)), None) = (children.next(), children.next())
+    else {
+        return None;
+    };
+    let params = match container.expression.as_expression()? {
+        Expression::ArrowFunctionExpression(arrow) => &arrow.params,
+        Expression::FunctionExpression(function) => &function.params,
+        _ => return None,
+    };
+    class_names_params(params)
+}
+
+/// The child function's `css` and `cx` bindings, which read styles.
+pub(crate) fn class_names_calls(element: &JSXElement<'_>) -> Vec<SymbolId> {
+    class_names_child(element)
+        .map(|names| [names.css, names.cx].into_iter().flatten().collect())
+        .unwrap_or_default()
+}
+
+/// Write the reads of the active themes in `expression`, a CSS value
+/// when `value`, as the CSS variables the `ThemeProvider` sets; `Err` holds
+/// the first read the build cannot write so
+pub(crate) fn read_theme<'a>(
+    ast: &AstBuilder<'a>,
+    expression: &mut Expression<'a>,
+    names: &[ClassNamesParams],
+    value: bool,
+    resolve: Resolve<'_>,
+) -> Result<(), Expression<'a>> {
+    let mut reads = ThemeReads {
+        ast,
+        roots: &[],
+        binding: Some((names, resolve)),
+        unread: None,
+    };
+    reads.visit(expression, value);
+    reads.unread.map_or(Ok(()), Err)
 }
 
 /// The names a function of the theme reads it by, each with the key of the
@@ -311,6 +511,7 @@ fn theme_roots<'a>(params: &FormalParameters<'a>) -> Option<Vec<(&'a str, Option
 struct ThemeReads<'r, 'a> {
     ast: &'r AstBuilder<'a>,
     roots: &'r [(&'a str, Option<String>)],
+    binding: Option<(&'r [ClassNamesParams], Resolve<'r>)>,
     unread: Option<Expression<'a>>,
 }
 
@@ -347,11 +548,21 @@ impl<'a> ThemeReads<'_, 'a> {
                 }
                 Expression::ParenthesizedExpression(inner) => cursor = &inner.expression,
                 Expression::Identifier(identifier) => {
-                    let (_, key) = self
-                        .roots
-                        .iter()
-                        .find(|(local, _)| *local == identifier.name.as_str())?;
-                    path.extend(key.clone());
+                    if let Some((names, resolve)) = self.binding {
+                        let symbol = resolve(identifier);
+                        if !names
+                            .iter()
+                            .any(|names| ClassNamesParams::is(names.theme, symbol))
+                        {
+                            return None;
+                        }
+                    } else {
+                        let (_, key) = self
+                            .roots
+                            .iter()
+                            .find(|(local, _)| *local == identifier.name.as_str())?;
+                        path.extend(key.clone());
+                    }
                     path.reverse();
                     return Some(if exact && !path.is_empty() {
                         ThemeRead::Path(path)
@@ -609,6 +820,17 @@ mod tests {
             Some("react/jsx-dev-runtime")
         );
         assert_eq!(react_runtime("@emotion/react"), None);
+
+        assert!(is_jsx_file("src/App.tsx"));
+        assert!(is_jsx_file("App.jsx"));
+        assert!(!is_jsx_file("App.ts"));
+        assert!(!is_jsx_file("Makefile"));
+
+        let mut aliases =
+            HashMap::from([(EMOTION_JSX_RUNTIME.to_string(), ImportAlias::NamedToNamed)]);
+        assert!(!builds_jsx_with_emotion(&aliases));
+        aliases.insert(EMOTION_REACT.to_string(), ImportAlias::NamedToNamed);
+        assert!(builds_jsx_with_emotion(&aliases));
 
         let compat = "@devup-ui/react/compat";
         assert!(is_jsx_function("react/jsx-runtime", "jsxs", compat));

@@ -30,7 +30,7 @@ impl StyleValues<'_> {
             return;
         }
         let temporary;
-        let scoping = if let Some(scoping) = &self.scoping {
+        let scoping: &Scoping = if let Some(scoping) = &self.scoping {
             scoping
         } else {
             temporary = SemanticBuilder::new()
@@ -86,7 +86,7 @@ mod tests {
             .build(&parsed.program)
             .semantic
             .into_scoping();
-        let values = StyleValues::new(scoping);
+        let values = StyleValues::new(std::rc::Rc::new(scoping));
         let Some(Statement::ExpressionStatement(statement)) = parsed.program.body.last() else {
             panic!("expected expression");
         };
@@ -101,12 +101,12 @@ mod tests {
         let arena = Allocator::default();
         let parsed = Parser::new(&arena, "undefined;", SourceType::tsx()).parse();
         let values = if with_scoping {
-            StyleValues::new(
+            StyleValues::new(std::rc::Rc::new(
                 SemanticBuilder::new()
                     .build(&parsed.program)
                     .semantic
                     .into_scoping(),
-            )
+            ))
         } else {
             StyleValues::default()
         };
