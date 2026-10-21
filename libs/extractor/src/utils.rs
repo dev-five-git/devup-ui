@@ -615,7 +615,7 @@ pub(super) fn merge_object_expressions<'a>(
         return None;
     }
     if expressions.len() == 1 {
-        return Some(expressions[0].clone_in(ast_builder.allocator()));
+        return Some(expressions[0].clone_in_with_semantic_ids(ast_builder.allocator()));
     }
     // Built before the call for the same reason as `wrap_direct_call`: an inline
     // block argument blocks rustfmt from collapsing the call, and coverage cannot
@@ -624,7 +624,7 @@ pub(super) fn merge_object_expressions<'a>(
     for ex in expressions {
         props.push(ObjectPropertyKind::new_spread_property(
             SPAN,
-            ex.clone_in(ast_builder.allocator()),
+            ex.clone_in_with_semantic_ids(ast_builder.allocator()),
             ast_builder,
         ));
     }
@@ -693,22 +693,24 @@ pub(super) fn style_arguments<'a>(
 pub(super) fn reads_unknown(
     expression: &Expression<'_>,
     unknown: &crate::imported_constants::Unknown,
+    reads: &dyn Fn(&oxc_ast::ast::IdentifierReference<'_>) -> bool,
 ) -> bool {
     match unwrap_syntax_only(expression) {
         Expression::ArrayExpression(array) => array.elements.iter().any(|element| {
             element
                 .as_expression()
-                .is_some_and(|element| reads_unknown(element, unknown))
+                .is_some_and(|element| reads_unknown(element, unknown, reads))
         }),
         Expression::LogicalExpression(logical) => {
-            (logical.operator != LogicalOperator::And && reads_unknown(&logical.left, unknown))
-                || reads_unknown(&logical.right, unknown)
+            (logical.operator != LogicalOperator::And
+                && reads_unknown(&logical.left, unknown, reads))
+                || reads_unknown(&logical.right, unknown, reads)
         }
         Expression::ConditionalExpression(conditional) => {
-            reads_unknown(&conditional.consequent, unknown)
-                || reads_unknown(&conditional.alternate, unknown)
+            reads_unknown(&conditional.consequent, unknown, reads)
+                || reads_unknown(&conditional.alternate, unknown, reads)
         }
-        expression => unknown.read_by(expression),
+        expression => unknown.read_by_in(expression, reads),
     }
 }
 

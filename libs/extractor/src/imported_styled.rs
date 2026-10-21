@@ -5,7 +5,7 @@
 use std::collections::BTreeSet;
 use std::rc::Rc;
 
-use oxc_allocator::{Allocator, GetAllocator};
+use oxc_allocator::{Allocator, CloneIn, GetAllocator};
 use oxc_ast::ast::{
     CallExpression, Declaration, Expression, ImportDeclarationSpecifier, JSXAttributeItem,
     JSXAttributeName, JSXElementName, JSXOpeningElement, Program, Statement,
@@ -272,6 +272,7 @@ impl<'a> Reader<'_, 'a> {
         visitor.takes_css_prop(css_prop);
         visitor.import_styled(imports);
         visitor.reserve_styled(styled_capability);
+        visitor.reuse_scoping(inlined.scoping);
         visitor.visit_program(&mut program);
         let readable = visitor.errors.is_empty()
             && visitor.unknown_parts.is_empty()
@@ -328,12 +329,20 @@ impl<'a> Reader<'_, 'a> {
         css_prop: CssProp,
         allocator: &'b Allocator,
     ) -> Components<'b> {
+        let arena = Allocator::default();
+        let isolated = program.clone_in(&arena);
+        let program = &isolated;
+        let scoping = oxc_semantic::SemanticBuilder::new()
+            .build(program)
+            .semantic
+            .into_scoping();
         let imported = imported_bindings(program, &self.option.package);
         let mut used = Used {
             styled: imported.styled,
             css_prop: css_prop != CssProp::Off,
             css: CssTakers::new(
                 program,
+                &scoping,
                 css_prop,
                 &format!("{}/compat", self.option.package),
             ),
