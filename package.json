@@ -7,7 +7,7 @@
   "scripts": {
     "lint": "cargo fmt --all -- --check && cargo clippy --all-targets --all-features -- -D warnings && node --require ./eslint-typescript6.cjs ./node_modules/eslint/bin/eslint.js",
     "lint:fix": "node --require ./eslint-typescript6.cjs ./node_modules/eslint/bin/eslint.js --fix && cargo fmt",
-    "test": "cargo tarpaulin --out xml --out stdout --all-targets --engine llvm $(node -p \"process.env.CI ? '--fail-under 100' : ''\") && bun test",
+    "test": "cargo tarpaulin --out xml --out stdout --all-targets --engine llvm $(node -p \"process.env.CI ? '--fail-under 100' : ''\") && bun test --coverage",
     "test:e2e": "bunx playwright test",
     "test:e2e:next": "LANDING_BUILD_MODE=next bunx playwright test",
     "test:e2e:rsc-css": "bunx playwright test -c playwright.rsc-css.config.ts",
