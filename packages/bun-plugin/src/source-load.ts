@@ -7,9 +7,14 @@ import {
   type PreparedSource,
   remapMdxError,
 } from '@devup-ui/plugin-utils'
-import { codeExtract, setDebug, setModuleResolver } from '@devup-ui/wasm'
+import {
+  codeExtract,
+  hasDevupUI,
+  setDebug,
+  setModuleResolver,
+} from '@devup-ui/wasm'
 
-import { compileMdx, MdxCompilerError } from './mdx'
+import type { createMdxPreparation } from './mdx'
 import type { createMdxOwnership } from './mdx-ownership'
 import {
   importAliases,
@@ -27,6 +32,7 @@ export interface SourceProject {
   readonly mdxExtensions: readonly string[]
   readonly prepared: Map<string, Exclude<PreparedSource, undefined>>
   readonly ownership: ReturnType<typeof createMdxOwnership>
+  readonly mdx: ReturnType<typeof createMdxPreparation>
   readonly reserve?: (preparedChanged: boolean) => void
 }
 
@@ -34,30 +40,29 @@ export async function loadSourceFile(filePath: string, project: SourceProject) {
   const original = await Bun.file(filePath).text()
   const selectedMdx = isMdxSource(filePath, project.mdxExtensions)
   const mdx = selectedMdx
-    ? await compileMdx(project.root, filePath, original)
+    ? await project.mdx.prepare(filePath, original)
     : undefined
-  if (selectedMdx && !mdx) throw new MdxCompilerError(filePath, undefined)
   const loader = mdx ? 'jsx' : sourceLoader(filePath)
   const contents = mdx?.value ?? original
-  if (mdx)
-    project.prepared.set(filePath, {
-      code: contents,
-      map: mdx.map,
-      sourceType: 'compiled-mdx',
-    })
   project.ownership.observe(
     filePath,
     contents,
     !mdx && ['ts', 'tsx'].includes(loader),
   )
-  if (
-    isProjectJsx(filePath, importAliases) ||
-    importsCompiledPackage(contents, loader)
-  ) {
-    setDebug(project.debug)
+  const admitted = await project.mdx.run(() => {
     setModuleResolver(project.resolver)
-    project.reserve?.(selectedMdx)
-    try {
+    return (
+      selectedMdx ||
+      isProjectJsx(filePath, importAliases) ||
+      importsCompiledPackage(contents, loader) ||
+      hasDevupUI(filePath, contents, libPackage, importAliases)
+    )
+  })
+  if (admitted === undefined) return { contents: original, loader }
+  if (admitted) {
+    const extract = () => {
+      setDebug(project.debug)
+      setModuleResolver(project.resolver)
       const output = codeExtract(
         filePath,
         contents,
@@ -80,6 +85,13 @@ export async function loadSourceFile(filePath: string, project: SourceProject) {
         contents: preserveDependencies(code, filePath, dependencies),
         loader,
       }
+    }
+    try {
+      return (
+        (await project.mdx.run(extract, () =>
+          project.reserve?.(selectedMdx),
+        )) ?? { contents: original, loader }
+      )
     } catch (cause) {
       const error = project.resolver.remapError(cause)
       if (mdx) throw remapMdxError(error, filePath, mdx.map)

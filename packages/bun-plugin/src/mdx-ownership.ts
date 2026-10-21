@@ -44,11 +44,17 @@ export function createMdxOwnership(options: {
     if (isMdxSource(target, options.extensions) && !reached.has(key(target)))
       reached.set(key(target), { target, importer })
   }
-  for (const entry of options.entries) {
-    const target = resolve(options.root, entry)
-    reach(target, target)
+  function reset() {
+    reached.clear()
+    successful.clear()
+    for (const entry of options.entries) {
+      const target = resolve(options.root, entry)
+      reach(target, target)
+    }
   }
+  reset()
   return {
+    reset,
     observe(filename: string, contents: string, typescript: boolean) {
       for (const reference of scanImports(contents, true, typescript)) {
         const target = resolver(reference.specifier, filename)

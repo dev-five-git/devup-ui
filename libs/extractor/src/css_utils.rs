@@ -9,6 +9,10 @@ use crate::utils::{
 use css::{
     at_rule::split_at_rule_key,
     optimize_multi_css_value::{check_multi_css_optimize, optimize_multi_css_value},
+    quoted::{
+        QuoteState, find_unquoted, rfind_unquoted, split_unquoted, string_end, trim_css,
+        unquoted_bytes,
+    },
     rm_css_comment::rm_css_comment,
     style_selector::{StyleSelector, split_selector_list},
 };
@@ -235,18 +239,35 @@ pub(crate) enum Place {
 
 /// Where an interpolation stands, from the CSS written before and after it
 pub(crate) fn interpolation_place(before: &str, after: &[TemplateElement<'_>]) -> Place {
-    let head = &before[before.rfind([';', '{', '}']).map_or(0, |index| index + 1)..];
-    let rest: String = after.iter().map(|quasi| quasi.value.raw.as_str()).collect();
-    let end = rest.find([';', '{', '}']);
-    if end.is_some_and(|end| rest.as_bytes()[end] == b'{') {
+    let mut quotes = QuoteState::default();
+    let mut head_start = 0;
+    let mut has_colon = false;
+    for (index, byte) in before.bytes().enumerate() {
+        if !quotes.is_syntax(byte) {
+            continue;
+        }
+        match byte {
+            b';' | b'{' | b'}' => {
+                head_start = index + 1;
+                has_colon = false;
+            }
+            b':' => has_colon = true,
+            _ => {}
+        }
+    }
+    let end = after
+        .iter()
+        .flat_map(|quasi| quasi.value.raw.bytes())
+        .find(|&byte| quotes.is_syntax(byte) && matches!(byte, b';' | b'{' | b'}'));
+    if end == Some(b'{') {
         return Place::Other;
     }
-    if head.contains(':') {
+    if has_colon {
         Place::Value
-    } else if head.trim().is_empty()
-        && rest
-            .chars()
-            .next()
+    } else if before[head_start..].trim().is_empty()
+        && after
+            .iter()
+            .find_map(|quasi| quasi.value.raw.chars().next())
             .is_none_or(|c| c.is_whitespace() || c == ';')
     {
         Place::Statement
@@ -629,26 +650,26 @@ fn collect_css_block(
     styles: &mut Vec<ExtractStaticStyle>,
 ) {
     let mut rest = css;
-    while let Some(open) = rest.find('{') {
+    while let Some(open) = find_unquoted(rest, b'{') {
         let head = &rest[..open];
-        let (declarations, prelude) = head.rsplit_once(';').unwrap_or(("", head));
+        let (declarations, prelude) = rfind_unquoted(head, b';')
+            .map_or(("", head), |index| (&head[..index], &head[index + 1..]));
         styles.extend(css_to_style_block(declarations, level, selector));
 
         let body_start = open + 1;
         let mut depth = 1usize;
-        let body_end = rest[body_start..]
-            .char_indices()
-            .find_map(|(index, c)| {
-                match c {
-                    '{' => depth += 1,
-                    '}' => depth -= 1,
+        let body_end = unquoted_bytes(&rest[body_start..])
+            .find_map(|(index, byte)| {
+                match byte {
+                    b'{' => depth += 1,
+                    b'}' => depth -= 1,
                     _ => {}
                 }
                 (depth == 0).then_some(body_start + index)
             })
             .unwrap_or(rest.len());
         let body = &rest[body_start..body_end];
-        let prelude = prelude.trim();
+        let prelude = trim_css(prelude);
         if prelude.is_empty() || prelude == "&" {
             collect_css_block(body, level, selector, styles);
         } else if let Some(nested) = nest_prelude(selector.as_ref(), prelude) {
@@ -686,7 +707,7 @@ pub(crate) fn descendants(selectors: &str) -> String {
 /// goes, a pseudo-class or pseudo-element applies to that rule's element, and
 /// any other selector to its descendants (`> p` to its children)
 fn relative_selector(part: &str) -> Cow<'_, str> {
-    if part.contains('&') {
+    if find_unquoted(part, b'&').is_some() {
         Cow::Borrowed(part)
     } else if part.starts_with(':') {
         Cow::Owned(format!("&{part}"))
@@ -721,16 +742,17 @@ fn css_to_style_block(
     // present.
     let cap = cleaned.bytes().filter(|&b| b == b';').count() + 1;
     let mut styles = Vec::with_capacity(cap);
-    for s in cleaned.split(';') {
-        let s = s.trim();
+    for s in split_unquoted(&cleaned, b';') {
+        let s = trim_css(s);
         if s.is_empty() {
             continue;
         }
-        let Some((property, value)) = s.split_once(':') else {
+        let Some(colon) = find_unquoted(s, b':') else {
             continue;
         };
+        let (property, value) = (&s[..colon], &s[colon + 1..]);
         let property = property.trim();
-        let value = value.trim();
+        let value = trim_css(value);
         let value: Cow<str> = optimize_decl_value(property, value);
         styles.push(ExtractStaticStyle::new(
             property,
@@ -746,10 +768,10 @@ pub fn keyframes_to_keyframes_style(keyframes: &str) -> BTreeMap<String, Vec<Ext
     let mut map = BTreeMap::new();
     let mut input = keyframes;
 
-    while let Some(start) = input.find('{') {
-        let key = input[..start].trim().to_string();
+    while let Some(start) = find_unquoted(input, b'{') {
+        let key = trim_css(&input[..start]).to_string();
         let rest = &input[start + 1..];
-        if let Some(end) = rest.find('}') {
+        if let Some(end) = find_unquoted(rest, b'}') {
             let block = &rest[..end];
             // css_to_style already returns styles sorted by property.
             map.insert(key, css_to_style(block, 0, &None));
@@ -781,40 +803,40 @@ pub fn optimize_css_block(css: &str) -> String {
     // brace-boundary rewrite would produce a string byte-identical to `cleaned`. In
     // that case borrow `cleaned` directly (`Cow::Borrowed`) instead of allocating and
     // filling a second whole-string buffer.
-    let bytes = cleaned.as_bytes();
-    let trimmed: Cow<str> = if bytes.iter().any(|&b| b == b'{' || b == b'}') {
+    let trimmed: Cow<str> = if unquoted_bytes(cleaned).any(|(_, b)| b == b'{' || b == b'}') {
         let mut buf = String::with_capacity(cleaned.len());
         let mut segment_start = 0;
-        for (idx, &b) in bytes.iter().enumerate() {
+        for (idx, b) in unquoted_bytes(cleaned) {
             if b == b'{' || b == b'}' {
-                buf.push_str(cleaned[segment_start..idx].trim());
+                buf.push_str(trim_css(&cleaned[segment_start..idx]));
                 buf.push(b as char);
                 segment_start = idx + 1;
             }
         }
-        buf.push_str(cleaned[segment_start..].trim());
+        buf.push_str(trim_css(&cleaned[segment_start..]));
         Cow::Owned(buf)
     } else {
         Cow::Borrowed(cleaned)
     };
 
     let mut first_segment = true;
-    for s in trimmed.split(';') {
+    for s in split_unquoted(&trimmed, b';') {
         if !first_segment {
             result.push(';');
         }
         first_segment = false;
 
-        let last_part = if let Some((prefix, last_part)) = s.rsplit_once('{') {
-            append_brace_prefix(&mut result, prefix);
-            last_part.trim()
+        let last_part = if let Some(brace) = rfind_unquoted(s, b'{') {
+            append_brace_prefix(&mut result, &s[..brace]);
+            trim_css(&s[brace + 1..])
         } else {
-            s.trim()
+            trim_css(s)
         };
 
-        if let Some((property, value)) = last_part.split_once(':') {
+        if let Some(colon) = find_unquoted(last_part, b':') {
+            let (property, value) = (&last_part[..colon], &last_part[colon + 1..]);
             let property = property.trim();
-            let value = value.trim();
+            let value = trim_css(value);
 
             let property_name = property
                 .rsplit_once('{')
@@ -837,22 +859,22 @@ pub fn optimize_css_block(css: &str) -> String {
 }
 
 fn append_brace_prefix(result: &mut String, prefix: &str) {
-    for (idx, part) in prefix.split('{').enumerate() {
+    for (idx, part) in split_unquoted(prefix, b'{').enumerate() {
         if idx > 0 {
             result.push('{');
         }
-        result.push_str(part.trim());
+        result.push_str(trim_css(part));
     }
     result.push('{');
 }
 
 fn trim_string_in_place(value: &mut String) {
+    let trimmed_len = trim_css(value).len();
     let trimmed_start = value.len() - value.trim_start().len();
     if trimmed_start > 0 {
         value.drain(..trimmed_start);
     }
 
-    let trimmed_len = value.trim_end().len();
     value.truncate(trimmed_len);
 }
 
@@ -875,6 +897,14 @@ fn remove_semicolon_before_closing_brace(value: &mut String) {
     let mut read = 0usize;
     let len = bytes.len();
     while read < len {
+        if matches!(bytes[read], b'\'' | b'"') {
+            // A quoted string is data: carry it over whole.
+            let end = string_end(bytes, read, bytes[read]);
+            bytes.copy_within(read..end, write);
+            write += end - read;
+            read = end;
+            continue;
+        }
         if bytes[read] == b';' {
             // Peek past the run of ';' to see what follows it.
             let mut peek = read;

@@ -69,6 +69,7 @@ export const view = <Box bg='red' color={PRIMARY} />;`
     assert.deepEqual(calls, [
       ['./scratchA', '/src/scratch.mdown'],
       ['./ready', '/src/suffix.mdown'],
+      ['./ready', '/src/suffix.mdown'],
     ])
     assert.equal(wasm.exportSheet(), before)
     assert.throws(

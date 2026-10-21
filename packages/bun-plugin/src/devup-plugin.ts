@@ -26,6 +26,7 @@ import {
 import {
   getCss,
   getThemeInterface,
+  hasDevupUI,
   registerShorthands,
   registerTheme,
   reserveClassSlots,
@@ -38,6 +39,7 @@ import {
 import { type BunPlugin, type PluginBuilder } from 'bun'
 
 import { cssNamespace, resolveCssId } from './css-id'
+import { createMdxPreparation } from './mdx'
 import { createMdxOwnership } from './mdx-ownership'
 import {
   compiledPackages,
@@ -142,6 +144,13 @@ export function DevupUI(options: DevupUIBunPluginOptions = {}) {
         ...customConditions,
       ]
       const prepared = new Map<string, Exclude<PreparedSource, undefined>>()
+      const mdx = createMdxPreparation({
+        root,
+        extensions: mdxExtensions,
+        prepared,
+        bundling,
+      })
+      let reservedRevision = -1
       const ownership = createMdxOwnership({
         root,
         extensions: mdxExtensions,
@@ -155,10 +164,13 @@ export function DevupUI(options: DevupUIBunPluginOptions = {}) {
         mdxExtensions,
         prepared,
         ownership,
+        mdx,
         reserve: (preparedChanged) => {
           if (
             (bundling || !project.debug) &&
-            (reservationPending || preparedChanged)
+            (reservationPending ||
+              preparedChanged ||
+              reservedRevision !== mdx.revision)
           ) {
             reserveFiles()
             reservationPending = false
@@ -170,7 +182,7 @@ export function DevupUI(options: DevupUIBunPluginOptions = {}) {
           // CommonJS evaluator. The callback does not expose a request kind.
           conditions,
           includeMdx: mdxExtensions,
-          prepareSource: (filename) => prepared.get(filename),
+          prepareSource: (filename) => mdx.read(filename),
         }),
       }
       // A build starts from its own options, not from what an earlier build in
@@ -188,7 +200,10 @@ export function DevupUI(options: DevupUIBunPluginOptions = {}) {
       build.onEnd?.(async (result) => {
         try {
           await watchTailwindCss.close()
-          if (result.success) ownership.validate()
+          if (result.success) {
+            ownership.validate()
+            mdx.validate()
+          }
         } finally {
           endBuild()
         }
@@ -256,10 +271,14 @@ export function DevupUI(options: DevupUIBunPluginOptions = {}) {
               ),
           },
         )
+        reservedRevision = mdx.revision
       }
       if (bundling)
         build.onStart?.(() => {
           reservationPending = true
+          mdx.reset()
+          ownership.reset()
+          reservedRevision = -1
         })
       else if (!project.debug) reserveFiles()
       else seedFiles()
@@ -280,11 +299,14 @@ export function DevupUI(options: DevupUIBunPluginOptions = {}) {
                     'coverage',
                   ],
                   { includeMdx: mdxExtensions },
-                ).filter(
-                  (file) =>
-                    isMdxSource(file, mdxExtensions) ||
-                    mentionsCompiledPackage(readFileSync(file, 'utf-8')),
-                ),
+                ).filter((file) => {
+                  if (isMdxSource(file, mdxExtensions)) return true
+                  const contents = readFileSync(file, 'utf-8')
+                  return (
+                    mentionsCompiledPackage(contents) ||
+                    hasDevupUI(file, contents, libPackage, importAliases)
+                  )
+                }),
                 ...collectNumberedFiles({
                   roots: resolveSourceDirs(root, options.sourceDirs),
                   includeMdx: mdxExtensions,
@@ -318,6 +340,7 @@ export function DevupUI(options: DevupUIBunPluginOptions = {}) {
           if (!bundling) return { contents: '', loader: 'js' }
           await defer()
           ownership.validate()
+          mdx.validate()
           return { contents: getCss(null, false), loader: 'css' }
         },
       )

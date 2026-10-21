@@ -246,6 +246,7 @@ mod tests {
                 vec![
                     ("./a".into(), "scratch.tsx".into()),
                     ("./ready".into(), "suffix.mdown".into()),
+                    ("./ready".into(), "suffix.mdown".into()),
                 ]
             );
             assert_eq!(crate::export_sheet_internal()?, before);

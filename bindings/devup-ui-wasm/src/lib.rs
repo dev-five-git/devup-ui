@@ -12,7 +12,7 @@ use css::file_map::{
 use extractor::extract;
 use extractor::extract_style::extract_style_value::ExtractStyleValue;
 use extractor::{
-    ExtractOption, ImportAlias, ModuleResolution, ModuleResolver, ResolvedModule, has_devup_ui,
+    ExtractOption, ImportAlias, ModuleResolution, ModuleResolver, ResolvedModule, has_devup_ui_with,
 };
 use rustc_hash::FxHashSet;
 use sheet::StyleSheet;
@@ -641,6 +641,27 @@ fn call_module_resolver(
     })))
 }
 
+/// The resolver set by `setModuleResolver`, if any
+#[cfg(not(tarpaulin_include))]
+fn resolver_from_js(fault: &RefCell<Option<String>>) -> Option<Box<ModuleResolver<'_>>> {
+    let resolver = MODULE_RESOLVER.with_borrow(Clone::clone)?;
+    Some(Box::new(move |specifier: &str, importer: &str| {
+        if fault.borrow().is_some() {
+            return None;
+        }
+        match call_module_resolver(&resolver, specifier, importer) {
+            Ok(module) => module,
+            Err(cause) => {
+                // ModuleResolver carries no source span, including for transitive imports.
+                *fault.borrow_mut() = Some(format!(
+                    "{importer}:1:1: module resolver cannot use `{specifier}` at build time: {cause}"
+                ));
+                None
+            }
+        }
+    }))
+}
+
 /// Extract with the resolver set by `setModuleResolver`, if any
 #[cfg(not(tarpaulin_include))]
 #[allow(clippy::too_many_arguments)]
@@ -659,25 +680,8 @@ fn code_extract_js(
     let source_type = source_type_from_js(source_type)
         .map_err(|error| js_error(format!("{filename}:1:1: {error}")))?;
     let import_aliases = import_aliases_from_js(import_aliases)?;
-    let fault = std::rc::Rc::new(RefCell::new(None));
-    let resolver_fault = std::rc::Rc::clone(&fault);
-    let resolver = MODULE_RESOLVER.with_borrow(Clone::clone).map(|resolver| {
-        move |specifier: &str, importer: &str| {
-            if resolver_fault.borrow().is_some() {
-                return None;
-            }
-            match call_module_resolver(&resolver, specifier, importer) {
-                Ok(module) => module,
-                Err(cause) => {
-                    // ModuleResolver carries no source span, including for transitive imports.
-                    *resolver_fault.borrow_mut() = Some(format!(
-                        "{importer}:1:1: module resolver cannot use `{specifier}` at build time: {cause}"
-                    ));
-                    None
-                }
-            }
-        }
-    });
+    let fault = RefCell::new(None);
+    let resolver = resolver_from_js(&fault);
     code_extract_internal_impl(
         filename,
         code,
@@ -688,9 +692,7 @@ fn code_extract_js(
         import_main_css_in_css,
         import_aliases,
         source_map,
-        resolver
-            .as_ref()
-            .map(|resolver| resolver as &ModuleResolver),
+        resolver.as_deref(),
         Some(&fault),
         source_type,
     )
@@ -863,8 +865,22 @@ pub fn get_theme_interface(
 #[wasm_bindgen(js_name = "hasDevupUI")]
 #[cfg(not(tarpaulin_include))]
 #[must_use]
-pub fn has_devup_ui_wasm(filename: &str, code: &str, package: &str) -> bool {
-    has_devup_ui(filename, code, package)
+pub fn has_devup_ui_wasm(
+    filename: &str,
+    code: &str,
+    package: &str,
+    import_aliases: JsValue,
+) -> bool {
+    let aliases = import_aliases_from_js(import_aliases).unwrap_or_default();
+    let fault = RefCell::new(None);
+    let relevant = has_devup_ui_with(
+        filename,
+        code,
+        package,
+        &aliases,
+        resolver_from_js(&fault).as_deref(),
+    );
+    relevant || fault.into_inner().is_some()
 }
 
 #[cfg(test)]
@@ -1563,31 +1579,43 @@ mod tests {
     }
 
     #[test]
-    #[serial]
-    fn test_has_devup_ui_wasm_function() {
-        let _state = TestStateGuard::new();
-        // Test positive case
-        assert!(has_devup_ui_wasm(
-            "test.tsx",
+    fn has_devup_ui_covers_what_extraction_changes() {
+        let resolver = |specifier: &str, _: &str| {
+            (specifier == "./ui").then(|| {
+                ModuleResolution::Resolved(ResolvedModule {
+                    path: "/src/ui.ts".to_string(),
+                    code: "export { Box } from '@devup-ui/react'".to_string(),
+                    source_type: None,
+                })
+            })
+        };
+        let aliases = HashMap::from([("@emotion/styled".to_string(), ImportAlias::NamedToNamed)]);
+        let check = |filename: &str, code: &str, resolver: Option<&ModuleResolver>| {
+            has_devup_ui_with(filename, code, "@devup-ui/react", &aliases, resolver)
+        };
+        assert!(check(
+            "a.tsx",
             "import { Box } from '@devup-ui/react';",
-            "@devup-ui/react"
+            None
         ));
-
-        // Test negative case
-        assert!(!has_devup_ui_wasm(
-            "test.tsx",
-            "const x = 1;",
-            "@devup-ui/react"
-        ));
-
-        // Test invalid extension
-        assert!(!has_devup_ui_wasm(
-            "test.invalid",
+        assert!(!check("a.tsx", "const x = 1;", None));
+        assert!(!check(
+            "a.invalid",
             "import { Box } from '@devup-ui/react';",
-            "@devup-ui/react"
+            None
+        ));
+        assert!(check(
+            "a.tsx",
+            "import { Box } from './ui';",
+            Some(&resolver)
+        ));
+        assert!(!check("a.tsx", "import { Box } from './ui';", None));
+        assert!(check(
+            "a.tsx",
+            "import styled from '@emotion/styled';",
+            None
         ));
     }
-
     #[test]
     #[serial]
     fn test_output_single_css_mode() {

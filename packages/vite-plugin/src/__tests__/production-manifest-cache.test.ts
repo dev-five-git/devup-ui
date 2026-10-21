@@ -1,5 +1,7 @@
 import * as fs from 'node:fs'
-import { resolve } from 'node:path'
+import { mkdir, mkdtemp, realpath, rm, writeFile } from 'node:fs/promises'
+import { tmpdir } from 'node:os'
+import { dirname, join, resolve } from 'node:path'
 
 import { expect, it, mock, spyOn } from 'bun:test'
 import { resolveConfig } from 'vite'
@@ -14,12 +16,40 @@ if (sourceChild)
     () => import('../../../plugin-utils/src/index'),
   )
 const { prepareProductionManifest } = await import('../production-manifest')
-const { productionFixture } = await import('./production-fixture')
+
+async function productionFixture() {
+  const directory = (
+    await realpath(await mkdtemp(join(tmpdir(), 'devup-v1-native-')))
+  ).replaceAll('\\', '/')
+  const root = `${directory}/app`
+  async function file(path: string, code: string) {
+    const target = join(directory, path)
+    await mkdir(dirname(target), { recursive: true })
+    await writeFile(target, code)
+    return target.replaceAll('\\', '/')
+  }
+  await file('app/package.json', '{"name":"v1-native","type":"module"}')
+  await file('app/tsconfig.json', '{}')
+  return {
+    root,
+    file,
+    close: () => rm(directory, { recursive: true, force: true }),
+  }
+}
 
 if (!sourceChild)
   it('counts real source execution in a disposable preparation process', async () => {
+    const directory = await mkdtemp(join(tmpdir(), 'devup-manifest-child-'))
+    const config = join(directory, 'bunfig.toml')
+    await writeFile(config, '[test]\npreload = []\n')
     const child = Bun.spawn(
-      [process.execPath, 'test', import.meta.path, '--no-coverage'],
+      [
+        process.execPath,
+        `--config=${config}`,
+        'test',
+        import.meta.path,
+        '--no-coverage',
+      ],
       {
         env: { ...process.env, DEVUP_MANIFEST_SOURCE: import.meta.path },
         stdout: 'pipe',
@@ -40,6 +70,7 @@ if (!sourceChild)
     } finally {
       child.kill('SIGKILL')
       await Promise.allSettled(output)
+      await rm(directory, { recursive: true, force: true })
     }
   })
 

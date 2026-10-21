@@ -60,9 +60,17 @@ struct LibraryNumbers<'n> {
     class_names_calls: Vec<oxc_syntax::symbol::SymbolId>,
     scoping: Option<oxc_semantic::Scoping>,
     replacements: Vec<(usize, usize, String)>,
+    /// Where a constant inlined later is a number or rules of the library, as
+    /// the source reads them
+    marks: Vec<(usize, usize)>,
 }
 
 impl LibraryNumbers<'_> {
+    fn mark(expression: &Expression) -> (usize, usize) {
+        let span = expression.span();
+        (span.start as usize, span.end as usize)
+    }
+
     /// `styled.div`, `styled(tag)`, `styled(tag, options)` and their
     /// `.attrs()` / `.withConfig()`: whatever a call of it passes are rules
     fn is_styled_factory(&self, callee: &Expression) -> bool {
@@ -92,11 +100,17 @@ impl LibraryNumbers<'_> {
                 }
             }
             Expression::ObjectExpression(object) => {
+                self.marks.push(Self::mark(rules));
                 for property in &object.properties {
-                    if let ObjectPropertyKind::ObjectProperty(property) = property
-                        && let Some(key) = get_str_by_property_key(&property.key)
-                    {
-                        self.pixelify_value(&key, &property.value);
+                    match property {
+                        ObjectPropertyKind::ObjectProperty(property) => {
+                            if let Some(key) = get_str_by_property_key(&property.key) {
+                                self.pixelify_value(&key, &property.value);
+                            }
+                        }
+                        ObjectPropertyKind::SpreadProperty(spread) => {
+                            self.marks.push(Self::mark(&spread.argument));
+                        }
                     }
                 }
             }
@@ -106,7 +120,7 @@ impl LibraryNumbers<'_> {
             }
             Expression::LogicalExpression(logical) => self.pixelify(&logical.right),
             Expression::ParenthesizedExpression(inner) => self.pixelify(&inner.expression),
-            _ => {}
+            rules => self.marks.push(Self::mark(rules)),
         }
     }
 
@@ -182,6 +196,9 @@ impl LibraryNumbers<'_> {
             }
             return;
         }
+        if !matches!(value, Expression::ObjectExpression(_)) && !keeps_bare_number(key) {
+            self.marks.push(Self::mark(value));
+        }
         match value {
             Expression::ArrayExpression(array) => self.fallbacks(key, array),
             Expression::ObjectExpression(_) => {
@@ -193,7 +210,12 @@ impl LibraryNumbers<'_> {
                 self.pixelify_value(key, &conditional.consequent);
                 self.pixelify_value(key, &conditional.alternate);
             }
-            Expression::LogicalExpression(logical) => self.pixelify_value(key, &logical.right),
+            Expression::LogicalExpression(logical) => {
+                if logical.operator != LogicalOperator::And {
+                    self.pixelify_value(key, &logical.left);
+                }
+                self.pixelify_value(key, &logical.right);
+            }
             Expression::ParenthesizedExpression(inner) => {
                 self.pixelify_value(key, &inner.expression);
             }
@@ -208,29 +230,9 @@ impl LibraryNumbers<'_> {
     /// UI reads an array as breakpoints. Literal values become one value
     /// declaring each in order; others stay as written.
     fn fallbacks(&mut self, key: &str, array: &oxc_ast::ast::ArrayExpression) {
-        let values: Option<Vec<String>> = array
-            .elements
-            .iter()
-            .map(|element| {
-                let element = element.as_expression()?;
-                if let Some(number) = js_number_literal(element) {
-                    return Some(if number == 0.0 || keeps_bare_number(key) {
-                        number.to_string()
-                    } else {
-                        format!("{number}px")
-                    });
-                }
-                match element {
-                    Expression::StringLiteral(literal) => Some(literal.value.to_string()),
-                    _ => None,
-                }
-            })
-            .collect();
-        let Some(values) = values.filter(|values| values.len() > 1) else {
+        let Some(joined) = fallback_value(key, array) else {
             return;
         };
-        let property = kebab_property(key);
-        let joined = values.join(&format!(";{property}:"));
         let span = array.span;
         self.replacements.push((
             span.start as usize,
@@ -238,6 +240,30 @@ impl LibraryNumbers<'_> {
             format!("{joined:?}"),
         ));
     }
+}
+
+pub(crate) fn fallback_value(key: &str, array: &oxc_ast::ast::ArrayExpression) -> Option<String> {
+    let values: Option<Vec<String>> = array
+        .elements
+        .iter()
+        .map(|element| {
+            let element = element.as_expression()?;
+            if let Some(number) = js_number_literal(element) {
+                return Some(if number == 0.0 || keeps_bare_number(key) {
+                    number.to_string()
+                } else {
+                    format!("{number}px")
+                });
+            }
+            match element {
+                Expression::StringLiteral(literal) => Some(literal.value.to_string()),
+                _ => None,
+            }
+        })
+        .collect();
+    let values = values.filter(|values| values.len() > 1)?;
+    let property = kebab_property(key);
+    Some(values.join(&format!(";{property}:")))
 }
 
 /// `backgroundColor` as the CSS property `background-color`, `WebkitBoxShadow`
@@ -439,7 +465,15 @@ pub struct Aliased<'a> {
     pub edits: Vec<Edit>,
     /// Which elements take Emotion's `css` prop
     pub css_prop: CssProp,
+    /// Where, in `code`, a constant read is a number or rules the library
+    /// reads as `px` lengths
+    pub px: PxMarks,
 }
+
+/// The spans of the style values and rules written as an expression a
+/// constant can stand in, which Emotion, styled-components and vanilla-extract
+/// read numbers in as `px` lengths
+pub type PxMarks = rustc_hash::FxHashSet<(u32, u32)>;
 
 /// Packages generating CSS on top of vanilla-extract's, which Devup UI does not
 /// compile
@@ -501,10 +535,11 @@ pub fn transform_import_aliases_with_edits<'a>(
     import_aliases: &HashMap<String, ImportAlias>,
     source_type: oxc_span::SourceType,
 ) -> Aliased<'a> {
-    let unchanged = |css_prop| Aliased {
+    let unchanged = |css_prop, px| Aliased {
         code: Cow::Borrowed(code),
         edits: Vec::new(),
         css_prop,
+        px,
     };
     let emotion_aliased = import_aliases.contains_key(EMOTION_REACT);
     let emotion_jsx = builds_jsx_with_emotion(import_aliases);
@@ -514,7 +549,7 @@ pub fn transform_import_aliases_with_edits<'a>(
         && CssProp::of(import_aliases, code, false) == CssProp::Off
         && (import_aliases.is_empty() || !import_aliases.keys().any(|alias| code.contains(alias)))
     {
-        return unchanged(CssProp::Off);
+        return unchanged(CssProp::Off, PxMarks::default());
     }
 
     let allocator = Allocator::default();
@@ -649,12 +684,31 @@ pub fn transform_import_aliases_with_edits<'a>(
 
     // Apply transformations in reverse order to preserve positions
     if transformations.is_empty() {
-        return unchanged(numbers.css_prop);
+        let px = numbers
+            .marks
+            .iter()
+            .map(|&(start, end)| (start as u32, end as u32))
+            .collect();
+        return unchanged(numbers.css_prop, px);
     }
 
     let edits = transformations
         .iter()
         .map(|(start, end, replacement)| (*start, *end, replacement.len()))
+        .collect();
+    let shifted = |offset: usize| {
+        let before = transformations
+            .iter()
+            .take_while(|(_, end, _)| *end <= offset);
+        let (added, removed) = before.fold((0, 0), |(added, removed), (start, end, text)| {
+            (added + text.len(), removed + end - start)
+        });
+        (offset + added - removed) as u32
+    };
+    let px = numbers
+        .marks
+        .iter()
+        .map(|&(start, end)| (shifted(start), shifted(end)))
         .collect();
     let mut result = code.to_string();
     for (start, end, replacement) in transformations.into_iter().rev() {
@@ -665,6 +719,7 @@ pub fn transform_import_aliases_with_edits<'a>(
         code: Cow::Owned(result),
         edits,
         css_prop: numbers.css_prop,
+        px,
     }
 }
 
