@@ -23,7 +23,7 @@ use crate::extractor::{
     ExtractResult, GlobalExtractResult,
     extract_global_style_from_expression::extract_global_style_from_expression,
     extract_style_from_expression::{
-        LiteralHandling, extract_style_from_expression, flatten_spreads,
+        LiteralHandling, extract_style_from_expression, extract_with_policy, flatten_spreads,
     },
     extract_style_from_jsx::extract_style_from_jsx,
     extract_style_from_styled::{
@@ -504,7 +504,7 @@ impl<'a> DevupVisitor<'a> {
         }
         self.unknown_arguments("css", &call.arguments);
         self.changed_arguments("css", &call.arguments);
-        let (result, known) = self.composed_class(call.span.start, parts);
+        let (result, known) = self.composed_class::<false>(call.span.start, parts);
         if let Some(known) = known {
             self.css_styles = Some((call.span.start, known));
         }
@@ -586,12 +586,37 @@ impl<'a> DevupVisitor<'a> {
         tag: &oxc_ast::ast::TaggedTemplateExpression<'a>,
         flattened: bool,
     ) -> Option<Expression<'a>> {
+        if !flattened
+            && !tag.quasi.expressions.iter().any(|expression| {
+                matches!(
+                    unwrap_syntax_only(expression),
+                    Expression::ObjectExpression(_)
+                ) || self.reads_known_styles(expression)
+                    || (!self.unknown_bindings.is_empty()
+                        && reads_unknown(expression, &self.unknown_bindings))
+                    || (!self.changed_bindings.is_empty()
+                        && reads_binding(expression, &self.changed_bindings))
+            })
+        {
+            return None;
+        }
         let texts = template_parts(&self.ast, &tag.quasi, true).ok()?;
         let is_mixin = |text: &Expression<'a>| !matches!(text, Expression::TemplateLiteral(_));
-        if !texts
-            .iter()
-            .any(|text| is_mixin(text) && (flattened || self.reads_known_styles(text)))
-        {
+        if !self.unknown_bindings.is_empty() || !self.changed_bindings.is_empty() {
+            let arguments: Vec<Argument<'a>> = texts
+                .iter()
+                .filter(|text| is_mixin(text))
+                .map(|text| text.clone_in_with_semantic_ids(self.ast.allocator()).into())
+                .collect();
+            self.unknown_arguments("css", &arguments);
+            self.changed_arguments("css", &arguments);
+        }
+        if !texts.iter().any(|text| {
+            is_mixin(text)
+                && (flattened
+                    || self.reads_known_styles(text)
+                    || matches!(unwrap_syntax_only(text), Expression::ObjectExpression(_)))
+        }) {
             return None;
         }
         let mut parts = Vec::new();
@@ -604,7 +629,13 @@ impl<'a> DevupVisitor<'a> {
             self.known_parts(text, &mut parts, kind)?;
         }
         let offset = tag.span.start;
-        let (result, known) = self.composed_class(offset, parts);
+        let arguments: Vec<Argument<'a>> = texts.into_iter().map(Into::into).collect();
+        self.style_values
+            .record_rules(&self.ast, offset, &arguments);
+        let (mut result, known) = self.composed_class::<true>(offset, parts);
+        if let Expression::StringLiteral(literal) = &mut result {
+            literal.span = tag.span;
+        }
         if let Some(known) = known {
             self.css_styles = Some((offset, known));
         }
@@ -613,7 +644,7 @@ impl<'a> DevupVisitor<'a> {
 
     /// The classes `parts`, composed at `offset`, give, with the styles they
     /// always set when no class the build does not know joins them
-    fn composed_class(
+    fn composed_class<const LOCATE: bool>(
         &mut self,
         offset: u32,
         parts: Vec<KnownPart<'a>>,
@@ -623,7 +654,7 @@ impl<'a> DevupVisitor<'a> {
         for part in parts {
             match part {
                 KnownPart::Styles(side) => {
-                    let props = self.part_props(offset, side, None);
+                    let props = self.part_props::<LOCATE>(offset, side, None);
                     composition.apply(&self.ast, props);
                 }
                 KnownPart::Conditional {
@@ -631,8 +662,8 @@ impl<'a> DevupVisitor<'a> {
                     consequent,
                     alternate,
                 } => {
-                    let consequent = self.part_props(offset, consequent, None);
-                    let alternate = self.part_props(offset, alternate, None);
+                    let consequent = self.part_props::<LOCATE>(offset, consequent, None);
+                    let alternate = self.part_props::<LOCATE>(offset, alternate, None);
                     composition.apply_conditional(&self.ast, &test, consequent, alternate);
                 }
                 KnownPart::Class(mut class) => {
@@ -865,7 +896,7 @@ impl<'a> DevupVisitor<'a> {
     /// The styles of a part, each at the order the part gives it; `element`
     /// names the element taking them as its `css` prop, which sets a value
     /// only the runtime gives as a CSS variable
-    fn part_props(
+    fn part_props<const LOCATE: bool>(
         &mut self,
         offset: u32,
         styles: Vec<KnownStyles<'a>>,
@@ -883,7 +914,7 @@ impl<'a> DevupVisitor<'a> {
                         mut styles,
                         style_order,
                         ..
-                    } = extract_style_from_expression(
+                    } = extract_with_policy::<LOCATE>(
                         StyleInputs::with_values(&self.ast, &self.style_values),
                         None,
                         &mut rules,
@@ -1107,12 +1138,8 @@ impl<'a> DevupVisitor<'a> {
     fn util_type(&self, callee: &Expression<'a>) -> Option<Rc<UtilType>> {
         match callee {
             Expression::Identifier(ident) => {
-                if !self.class_names_components.is_empty()
-                    && !self.style_values.reads_root_binding(ident)
-                {
-                    return None;
-                }
-                self.util_imports.get(ident.name.as_str())
+                let util = self.util_imports.get(ident.name.as_str())?;
+                self.style_values.reads_root_binding(ident).then_some(util)
             }
             Expression::StaticMemberExpression(member) if !self.util_imports.is_empty() => {
                 let Expression::Identifier(ident) = &member.object else {
@@ -1124,7 +1151,8 @@ impl<'a> DevupVisitor<'a> {
                 key.push_str(obj);
                 key.push('.');
                 key.push_str(prop);
-                self.util_imports.get(key.as_str())
+                let util = self.util_imports.get(key.as_str())?;
+                self.style_values.reads_root_binding(ident).then_some(util)
             }
             _ => None,
         }
@@ -1536,7 +1564,7 @@ impl<'a> DevupVisitor<'a> {
         for part in parts {
             match part {
                 KnownPart::Styles(side) => {
-                    let props = self.part_props(offset, side, Some(element));
+                    let props = self.part_props::<false>(offset, side, Some(element));
                     composition.apply(&self.ast, props);
                 }
                 KnownPart::Conditional {
@@ -1544,8 +1572,8 @@ impl<'a> DevupVisitor<'a> {
                     consequent,
                     alternate,
                 } => {
-                    let consequent = self.part_props(offset, consequent, Some(element));
-                    let alternate = self.part_props(offset, alternate, Some(element));
+                    let consequent = self.part_props::<false>(offset, consequent, Some(element));
+                    let alternate = self.part_props::<false>(offset, alternate, Some(element));
                     composition.apply_conditional(&self.ast, &test, consequent, alternate);
                 }
                 KnownPart::Class(mut class) => {
@@ -1921,7 +1949,7 @@ impl<'a> DevupVisitor<'a> {
         self.changed_arguments("css", &call.arguments);
         let mut parts = Vec::new();
         *it = if self.known_parts(it, &mut parts, Text::Classes).is_some() {
-            self.composed_class(offset, parts).0
+            self.composed_class::<false>(offset, parts).0
         } else {
             self.errors.push((
                 offset,
@@ -4316,7 +4344,7 @@ impl<'a> VisitMut<'a> for DevupVisitor<'a> {
                 it.arguments[0] = Argument::from(tag);
                 if !read_once.is_empty() {
                     let call = Expression::CallExpression(oxc_allocator::Box::new_in(
-                        it.clone_in(self.ast.allocator()),
+                        it.clone_in_with_semantic_ids(self.ast.allocator()),
                         &self.ast,
                     ));
                     if let Expression::CallExpression(reading_once) =

@@ -71,7 +71,7 @@ fn resolve_class_name_expression<'a>(
             get_class_name_expression(ast_builder, class_name_prop, styles, style_order, filename);
         let alt_class_name_prop = class_name_prop
             .as_ref()
-            .map(|c| c.clone_in(ast_builder.allocator()));
+            .map(|c| c.clone_in_with_semantic_ids(ast_builder.allocator()));
         let (alt_expr, alt_tailwind) = get_class_name_expression(
             ast_builder,
             &alt_class_name_prop,
@@ -117,7 +117,10 @@ pub fn modify_prop_object<'a>(
                     Some("className" | "style")
                 ) =>
             {
-                let value = Written::Prop(attr.value.clone_in(ast_builder.allocator()));
+                let value = Written::Prop(
+                    attr.value
+                        .clone_in_with_semantic_ids(ast_builder.allocator()),
+                );
                 if get_str_by_property_key(&attr.key).as_deref() == Some("className") {
                     class_names.push(value);
                 } else {
@@ -176,7 +179,7 @@ pub fn modify_prop_object<'a>(
     if let Some(ex) = props_prop {
         props.push(ObjectPropertyKind::new_spread_property(
             SPAN,
-            ex.clone_in(ast_builder.allocator()),
+            ex.clone_in_with_semantic_ids(ast_builder.allocator()),
             ast_builder,
         ));
     }
@@ -446,7 +449,10 @@ pub(crate) fn add_class_and_style_to_object<'a>(
             ObjectPropertyKind::ObjectProperty(attr)
                 if get_str_by_property_key(&attr.key).is_some_and(|key| adds(&key)) =>
             {
-                let value = Written::Prop(attr.value.clone_in(ast_builder.allocator()));
+                let value = Written::Prop(
+                    attr.value
+                        .clone_in_with_semantic_ids(ast_builder.allocator()),
+                );
                 if get_str_by_property_key(&attr.key).as_deref() == Some("className") {
                     class_names.push(value);
                 } else {
@@ -713,7 +719,9 @@ impl TailwindClassName<'_> {
                 }
                 Some(Expression::new_conditional_expression(
                     conditional.span,
-                    conditional.test.clone_in(ast_builder.allocator()),
+                    conditional
+                        .test
+                        .clone_in_with_semantic_ids(ast_builder.allocator()),
                     compiled_or(ast_builder, consequent, &conditional.consequent),
                     compiled_or(ast_builder, alternate, &conditional.alternate),
                     ast_builder,
@@ -743,7 +751,7 @@ impl TailwindClassName<'_> {
             }
             Expression::CallExpression(call) => self.compile_call(ast_builder, call),
             Expression::ArrayExpression(array) => {
-                let mut compiled = array.clone_in(ast_builder.allocator());
+                let mut compiled = array.clone_in_with_semantic_ids(ast_builder.allocator());
                 let mut changed = false;
                 for element in &mut compiled.elements {
                     if let Some(expression) = element
@@ -757,7 +765,7 @@ impl TailwindClassName<'_> {
                 changed.then_some(Expression::ArrayExpression(compiled))
             }
             Expression::ObjectExpression(object) => {
-                let mut compiled = object.clone_in(ast_builder.allocator());
+                let mut compiled = object.clone_in_with_semantic_ids(ast_builder.allocator());
                 let mut changed = false;
                 for property in &mut compiled.properties {
                     let ObjectPropertyKind::ObjectProperty(property) = property else {
@@ -794,7 +802,7 @@ impl TailwindClassName<'_> {
         ast_builder: &AstBuilder<'a>,
         call: &CallExpression<'a>,
     ) -> Option<Expression<'a>> {
-        let mut compiled = call.clone_in(ast_builder.allocator());
+        let mut compiled = call.clone_in_with_semantic_ids(ast_builder.allocator());
         let mut changed = false;
         match &call.callee {
             Expression::Identifier(callee) if matches!(callee.name.as_str(), "cn" | "twMerge") => {
@@ -926,7 +934,7 @@ fn compiled_or<'a>(
     compiled: Option<Expression<'a>>,
     original: &Expression<'a>,
 ) -> Expression<'a> {
-    compiled.unwrap_or_else(|| original.clone_in(ast_builder.allocator()))
+    compiled.unwrap_or_else(|| original.clone_in_with_semantic_ids(ast_builder.allocator()))
 }
 
 /// The raw text of a template literal part whose value is `cooked`
@@ -1079,7 +1087,7 @@ pub fn get_style_expression<'a>(
     {
         style_expressions.push(style_vars);
     }
-    if let Some(style_prop) = style_prop.clone_in(ast_builder.allocator()) {
+    if let Some(style_prop) = style_prop.clone_in_with_semantic_ids(ast_builder.allocator()) {
         style_expressions.push(style_prop);
     }
     merge_object_expressions(ast_builder, &style_expressions)
@@ -1098,7 +1106,7 @@ fn merge_string_expressions<'a>(
             Expression::StringLiteral(_) | Expression::TemplateLiteral(_)
         )
     {
-        return Some(expression.clone_in(ast_builder.allocator()));
+        return Some(expression.clone_in_with_semantic_ids(ast_builder.allocator()));
     }
 
     let mut list = ClassList {
@@ -1141,14 +1149,15 @@ fn merge_string_expressions<'a>(
                             list.text().push(' ');
                         }
                         list.interpolate(
-                            template.expressions[index].clone_in(ast_builder.allocator()),
+                            template.expressions[index]
+                                .clone_in_with_semantic_ids(ast_builder.allocator()),
                         );
                     }
                 }
             }
             _ => {
                 list.separate();
-                list.interpolate(expression.clone_in(ast_builder.allocator()));
+                list.interpolate(expression.clone_in_with_semantic_ids(ast_builder.allocator()));
             }
         }
     }
@@ -1222,7 +1231,7 @@ pub fn convert_class_name<'a>(
             | Expression::TemplateLiteral(_)
             | Expression::NumericLiteral(_)
     ) {
-        return class_name.clone_in(ast_builder.allocator());
+        return class_name.clone_in_with_semantic_ids(ast_builder.allocator());
     }
 
     // wrap ( and ?? ''
@@ -1230,7 +1239,7 @@ pub fn convert_class_name<'a>(
         SPAN,
         Expression::new_parenthesized_expression(
             SPAN,
-            class_name.clone_in(ast_builder.allocator()),
+            class_name.clone_in_with_semantic_ids(ast_builder.allocator()),
             ast_builder,
         ),
         LogicalOperator::Or,
@@ -1243,7 +1252,7 @@ pub fn convert_style_vars<'a>(
     ast_builder: &AstBuilder<'a>,
     style_vars: &Expression<'a>,
 ) -> Expression<'a> {
-    let mut style_vars = style_vars.clone_in(ast_builder.allocator());
+    let mut style_vars = style_vars.clone_in_with_semantic_ids(ast_builder.allocator());
     if let Expression::ObjectExpression(obj) = &mut style_vars {
         for idx in (0..obj.properties.len()).rev() {
             let mut prop = obj.properties.remove(idx);
@@ -1283,12 +1292,14 @@ pub fn convert_style_vars<'a>(
                                     ast_builder,
                                 ),
                                 oxc_allocator::Vec::from_array_in(
-                                    [p.key.to_expression().clone_in(ast_builder.allocator())],
+                                    [p.key
+                                        .to_expression()
+                                        .clone_in_with_semantic_ids(ast_builder.allocator())],
                                     ast_builder,
                                 ),
                                 ast_builder,
                             )),
-                            p.value.clone_in(ast_builder.allocator()),
+                            p.value.clone_in_with_semantic_ids(ast_builder.allocator()),
                             false,
                             false,
                             true,
