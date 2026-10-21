@@ -19,10 +19,14 @@ pub(super) fn error(style: &Expression<'_>) -> Option<(u32, String)> {
     // A fresh clone keeps semantic analysis from replacing the enclosing module's IDs.
     let allocator = Allocator::default();
     let builder = AstBuilder::new(&allocator);
+    let mut value = function.clone_in(&allocator);
+    // Oxc binds a same-named type parameter over the function's value binding.
+    // Erase only this type-only list in the analysis clone, never the emitted callback.
+    value.type_parameters = None;
     let body = oxc_allocator::Vec::from_array_in(
         [Statement::ExpressionStatement(ExpressionStatement::boxed(
             SPAN,
-            style.clone_in(&allocator),
+            Expression::FunctionExpression(value),
             &builder,
         ))],
         &builder,
@@ -39,9 +43,8 @@ pub(super) fn error(style: &Expression<'_>) -> Option<(u32, String)> {
     );
     let semantic = SemanticBuilder::new().build(&program).semantic;
     let scoping = semantic.scoping();
-    let symbol = scoping.symbol_ids().find(|symbol| {
-        scoping.symbol_span(*symbol) == binding.span && scoping.symbol_name(*symbol) == name
-    })?;
+    // This isolated function binds its own name before any parameters or body bindings.
+    let symbol = scoping.symbol_ids().next()?;
     scoping
         .get_resolved_reference_ids(symbol)
         .iter()
@@ -57,3 +60,7 @@ pub(super) fn error(style: &Expression<'_>) -> Option<(u32, String)> {
             )
         })
 }
+
+#[cfg(test)]
+#[path = "styled_props_self_reference_tests.rs"]
+mod tests;

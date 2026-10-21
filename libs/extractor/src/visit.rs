@@ -1558,20 +1558,18 @@ impl<'a> DevupVisitor<'a> {
         if self.local_objects.is_empty() {
             return;
         }
-        let mut errors = Vec::new();
         for argument in arguments {
             let expression = match argument {
                 Argument::SpreadElement(spread) => &spread.argument,
                 argument => argument.to_expression(),
             };
             if let Some(part) = self.css_part(expression, &Self::reads_local_objects) {
-                errors.push((
+                self.errors.push((
                     part.span().start,
                     build_time_error(api, &readable_code(part), LOCAL_STYLES),
                 ));
             }
         }
-        self.errors.extend(errors);
     }
 
     /// Whether `part` reads a binding `local_styles` holds

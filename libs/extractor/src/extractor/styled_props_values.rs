@@ -31,11 +31,7 @@ pub(super) fn analysis<'a>(
 pub(super) fn is_written_out(value: &Expression<'_>) -> bool {
     let value = crate::utils::unwrap_syntax_only(value);
     crate::utils::get_string_by_literal_expression(value).is_some()
-        || crate::utils::js_number_literal(value).is_some()
-        || matches!(
-            value,
-            Expression::BooleanLiteral(_) | Expression::NullLiteral(_)
-        )
+        || matches!(value, Expression::NullLiteral(_))
 }
 
 pub(super) fn zero<'a>(builder: &AstBuilder<'a>) -> Expression<'a> {

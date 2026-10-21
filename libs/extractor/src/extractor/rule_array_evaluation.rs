@@ -12,26 +12,22 @@ use crate::utils::{
 
 /// Arrays here compose rules, rather than selecting responsive property values.
 pub(crate) fn composes_array_under_condition(expression: &Expression<'_>) -> bool {
-    match unwrap_syntax_only(expression) {
-        Expression::ArrayExpression(array) => array.elements.iter().any(|element| {
-            element
-                .as_expression()
-                .is_some_and(composes_array_under_condition)
-        }),
-        Expression::ConditionalExpression(choice) => [&choice.consequent, &choice.alternate]
-            .into_iter()
-            .any(|side| {
-                matches!(unwrap_syntax_only(side), Expression::ArrayExpression(_))
-                    || composes_array_under_condition(side)
-            }),
-        Expression::LogicalExpression(logical) => {
-            [&logical.left, &logical.right].into_iter().any(|side| {
-                matches!(unwrap_syntax_only(side), Expression::ArrayExpression(_))
-                    || composes_array_under_condition(side)
-            })
+    let sides = match unwrap_syntax_only(expression) {
+        Expression::ArrayExpression(array) => {
+            return array.elements.iter().any(|element| {
+                element
+                    .as_expression()
+                    .is_some_and(composes_array_under_condition)
+            });
         }
-        _ => false,
-    }
+        Expression::ConditionalExpression(choice) => [&choice.consequent, &choice.alternate],
+        Expression::LogicalExpression(logical) => [&logical.left, &logical.right],
+        _ => return false,
+    };
+    sides.into_iter().any(|side| {
+        matches!(unwrap_syntax_only(side), Expression::ArrayExpression(_))
+            || composes_array_under_condition(side)
+    })
 }
 
 #[cfg(test)]
@@ -108,9 +104,7 @@ impl<'a, K: Fn(&Expression<'a>) -> bool> Preparation<'_, '_, 'a, K> {
                     self.value(&mut logical.left, guard)?;
                     self.reads.boolean(logical.operator == LogicalOperator::And)
                 } else {
-                    if !(self.known)(unwrap_syntax_only(&logical.left)) {
-                        self.capture(&mut logical.left, guard);
-                    }
+                    self.capture(&mut logical.left, guard);
                     match logical.operator {
                         LogicalOperator::And => logical.left.clone_in(builder.allocator()),
                         LogicalOperator::Or => self.reads.choose(
@@ -181,7 +175,7 @@ impl<'a, K: Fn(&Expression<'a>) -> bool> Preparation<'_, '_, 'a, K> {
             | Expression::ClassExpression(_) => {}
             Expression::Identifier(identifier)
                 if matches!(identifier.name.as_str(), "undefined" | "NaN" | "Infinity") => {}
-            _ => self.capture(value, guard),
+            _ => *value = self.reads.capture(value, guard),
         }
         Some(())
     }

@@ -74,14 +74,16 @@ impl<'a> Leaves<'_, '_, 'a> {
             self.params,
             value.clone_in_with_semantic_ids(builder.allocator()),
         );
-        if reads_unmapped_theme(&plain) {
+        let unmapped = if reads_unmapped_theme(&plain) {
+            Some(&plain)
+        } else if function && reads_unmapped_theme(unwrap_syntax_only(value)) {
+            Some(&*value)
+        } else {
+            None
+        };
+        if let Some(unmapped) = unmapped {
             return Err(PropsRulesError::Theme(unmapped_theme_error(
-                "styled", &plain,
-            )));
-        }
-        if function && reads_unmapped_theme(unwrap_syntax_only(value)) {
-            return Err(PropsRulesError::Theme(unmapped_theme_error(
-                "styled", value,
+                "styled", unmapped,
             )));
         }
         let index = self.values.len().to_string();

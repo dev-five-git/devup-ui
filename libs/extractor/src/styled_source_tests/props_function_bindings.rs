@@ -5,6 +5,9 @@ use serial_test::serial;
 #[path = "props_function_self_reference.rs"]
 mod self_reference;
 
+#[path = "props_function_generic_self_reference.rs"]
+mod generic_self_reference;
+
 #[rstest]
 #[serial]
 fn parameter_defaults_and_rest_run_once_when_rules_have_multiple_leaves(

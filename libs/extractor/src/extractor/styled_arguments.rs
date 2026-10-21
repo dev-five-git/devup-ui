@@ -29,6 +29,18 @@ pub(super) struct Prepared<'a> {
     pub errors: Vec<(u32, String)>,
 }
 
+fn distribute_arguments<'a>(
+    builder: &AstBuilder<'a>,
+    arguments: &mut [Argument<'a>],
+    refused: &[u32],
+) {
+    for argument in arguments {
+        if let Some(part) = argument.as_expression_mut() {
+            distribute_conditions(builder, part, refused);
+        }
+    }
+}
+
 pub(super) fn prepare<'a>(
     builder: &AstBuilder<'a>,
     call: &mut CallExpression<'a>,
@@ -68,11 +80,7 @@ pub(super) fn prepare<'a>(
         plans.push(plan);
     }
     let mut distributed = arguments.clone_in_with_semantic_ids(builder.allocator());
-    for argument in &mut distributed {
-        if let Some(part) = argument.as_expression_mut() {
-            distribute_conditions(builder, part, refused);
-        }
-    }
+    distribute_arguments(builder, &mut distributed, refused);
     let admitted = reads_directly(&distributed) || style_arguments(builder, &distributed).is_some();
     let callbacks = plans.iter().any(Option::is_some);
     let capture = callbacks
@@ -126,11 +134,7 @@ pub(super) fn prepare<'a>(
             result.bindings = evaluations.bindings;
         }
     }
-    for argument in &mut *arguments {
-        if let Some(part) = argument.as_expression_mut() {
-            distribute_conditions(builder, part, refused);
-        }
-    }
+    distribute_arguments(builder, arguments, refused);
     match style_arguments(builder, arguments) {
         Some(StyleArguments { classes, rules }) => {
             *arguments = oxc_allocator::Vec::from_array_in([Argument::from(rules)], builder);
