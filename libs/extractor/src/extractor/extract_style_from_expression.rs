@@ -301,9 +301,14 @@ pub(crate) fn extract_with_policy<'a, const LOCATE: bool>(
                                             .map(|v| v as u8);
                                     } else if name == "styleVars" {
                                         style_vars =
-                                            Some(prop.value.clone_in(ast_builder.allocator()));
+                                            Some(prop.value.clone_in_with_semantic_ids(
+                                                ast_builder.allocator(),
+                                            ));
                                     } else if name == "props" {
-                                        props = Some(prop.value.clone_in(ast_builder.allocator()));
+                                        props =
+                                            Some(prop.value.clone_in_with_semantic_ids(
+                                                ast_builder.allocator(),
+                                            ));
                                     } else {
                                         let ExtractResult {
                                             styles, tag: _tag, ..

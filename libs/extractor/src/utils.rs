@@ -664,7 +664,7 @@ pub(super) fn merge_object_expressions<'a>(
         return None;
     }
     if expressions.len() == 1 {
-        return Some(expressions[0].clone_in(ast_builder.allocator()));
+        return Some(expressions[0].clone_in_with_semantic_ids(ast_builder.allocator()));
     }
     // Built before the call for the same reason as `wrap_direct_call`: an inline
     // block argument blocks rustfmt from collapsing the call, and coverage cannot
@@ -673,7 +673,7 @@ pub(super) fn merge_object_expressions<'a>(
     for ex in expressions {
         props.push(ObjectPropertyKind::new_spread_property(
             SPAN,
-            ex.clone_in(ast_builder.allocator()),
+            ex.clone_in_with_semantic_ids(ast_builder.allocator()),
             ast_builder,
         ));
     }

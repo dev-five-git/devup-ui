@@ -4318,7 +4318,7 @@ impl<'a> VisitMut<'a> for DevupVisitor<'a> {
                 it.arguments[0] = Argument::from(tag);
                 if !read_once.is_empty() {
                     let call = Expression::CallExpression(oxc_allocator::Box::new_in(
-                        it.clone_in(self.ast.allocator()),
+                        it.clone_in_with_semantic_ids(self.ast.allocator()),
                         &self.ast,
                     ));
                     if let Expression::CallExpression(reading_once) =

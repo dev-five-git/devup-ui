@@ -1041,6 +1041,9 @@ mod tests {
             include!("const_object_css_tag_policy_tests.rs");
         }
         include!("stylex_exact_key_tests.rs");
+        mod ci_factory_alias {
+            include!("ci_factory_alias_tests.rs");
+        }
 
         use super::*;
         use crate::extract_style::style_property::StyleProperty;
