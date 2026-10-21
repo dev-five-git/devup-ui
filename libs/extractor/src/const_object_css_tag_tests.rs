@@ -12,6 +12,8 @@ const MODULES: &[(&str, &str)] = &[(
 #[case::direct(("", "css`${{ selectors: { '&:hover': { color: 'blue' } } }}`", &[HOVER][..]))]
 #[case::alias(("const rules = { selectors: { '&:hover': { color: 'blue' } } }; const alias = rules;", "css`${alias}`", &[HOVER][..]))]
 #[case::imported(("import { rules as alias } from './rules';", "css`${alias}`", &[HOVER][..]))]
+#[case::namespace_local_record(("import * as Devup from '@devup-ui/react'; const local = { selectors: { '&:hover': { color: 'teal' } } };", "Devup.css`${local}`", &["color-0-teal-_a__c_hover-255"][..]))]
+#[case::namespace_imported_record(("import * as Devup from '@devup-ui/react'; import { rules as alias } from './rules';", "Devup.css`${alias}`", &[HOVER][..]))]
 #[case::normal_call((RULES, "css(rules)", &[HOVER][..]))]
 #[case::compiled_class(("const base = css({ color: 'red' });", "css`${base};`", &["color-0-red--255"][..]))]
 #[case::mixed_scalar(("const rules = { selectors: { '&:hover': { color: 'blue' } } }; const tone = 'red';", "css`${rules}; color: ${tone}; margin: 0;`", &[HOVER, "color-0-red--255", "margin-0-0--255"][..]))]
@@ -68,7 +70,7 @@ fn card_selects_linked_atoms_when_tag_statements_are_composed(
             matches!(style.extract((!single_css).then_some(filename)), Some(StyleProperty::ClassName(name)) if name == class)
         }), "selected class {class} has no emitted style: {output:?}");
     }
-    if binding.starts_with("import ") {
+    if binding.contains("from './rules';") {
         assert!(
             output
                 .dependencies
