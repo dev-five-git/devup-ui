@@ -41,7 +41,7 @@
         "react-markdown": "^10.1.0",
         "react-server-dom-webpack": "^19.3.1",
         "react-syntax-highlighter": "^16.1.2",
-        "vinext": "^1.2.1",
+        "vinext": "^1.3.0",
       },
       "devDependencies": {
         "@devup-ui/next-plugin": "workspace:^",
@@ -119,7 +119,7 @@
         "react": "^19.3.1",
         "react-dom": "^19.3.1",
         "react-server-dom-webpack": "^19.3.1",
-        "vinext": "1.2.1",
+        "vinext": "1.3.0",
       },
       "devDependencies": {
         "@devup-ui/vite-plugin": "workspace:^",
@@ -495,7 +495,7 @@
         "@devup-ui/react": "workspace:^",
         "react": "^19.3.1",
         "react-dom": "^19.3.1",
-        "vinext": "^1.2.1",
+        "vinext": "^1.3.0",
       },
       "devDependencies": {
         "@devup-ui/vite-plugin": "workspace:^",
@@ -3106,7 +3106,7 @@
 
     "vfile-statistics": ["vfile-statistics@3.0.0", "", { "dependencies": { "vfile": "^6.0.0", "vfile-message": "^4.0.0" } }, "sha512-/qlwqwWBWFOmpXujL/20P+Iuydil0rZZNglR+VNm6J0gpLHwuVM5s7g2TfVoswbXjZ4HuIhLMySEyIw5i7/D8w=="],
 
-    "vinext": ["vinext@1.2.1", "", { "dependencies": { "@unpic/react": "^1.0.2", "@vercel/og": "1.0.3", "@vinext/types": "^1.0.1", "ipaddr.js": "^2.1.0", "magic-string": "^0.30.21", "vite-plugin-commonjs": "^0.10.4", "web-vitals": "^4.2.4" }, "peerDependencies": { "@mdx-js/rollup": "^3.0.0", "@vitejs/plugin-react": "^5.1.4 || ^6.0.0", "@vitejs/plugin-rsc": "^0.5.37", "react": "^19.3.1", "react-dom": "^19.3.1", "react-server-dom-webpack": "^19.3.1", "vite": "^8.0.0" }, "optionalPeers": ["@mdx-js/rollup", "@vitejs/plugin-rsc", "react-server-dom-webpack"], "bin": { "vinext": "dist/cli.js" } }, "sha512-cB8ViQ4JuxoM2jcsvEB2kdVNSm4zWfNgpYU8Bx6781mRuArlgDsI0Y4w5EqQwkK8e3BzMMHeOreiUbMc8xLLiA=="],
+    "vinext": ["vinext@1.3.0", "", { "dependencies": { "@unpic/react": "^1.0.2", "@vercel/og": "1.0.3", "@vinext/types": "^1.0.1", "ipaddr.js": "^2.1.0", "magic-string": "^0.30.21", "vite-plugin-commonjs": "^0.10.4", "web-vitals": "^4.2.4" }, "peerDependencies": { "@mdx-js/rollup": "^3.0.0", "@vitejs/plugin-react": "^5.1.4 || ^6.0.0", "@vitejs/plugin-rsc": "^0.5.37", "react": "^19.3.1", "react-dom": "^19.3.1", "react-server-dom-webpack": "^19.3.1", "vite": "^8.0.0" }, "optionalPeers": ["@mdx-js/rollup", "@vitejs/plugin-rsc", "react-server-dom-webpack"], "bin": { "vinext": "dist/cli.js" } }, "sha512-VIZ2hCdOu3gpxN2qRGEzHmY+srewGqkQuLIjsgNLua2lDkXETcr6ShHqFNOyrS4TMtzqiq8KZ7Sl3HefdkDFGg=="],
 
     "vinext-devup-ui-benchmark": ["vinext-devup-ui-benchmark@workspace:benchmark/vinext-devup-ui"],
 

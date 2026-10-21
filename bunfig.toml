@@ -1,12 +1,12 @@
 [test]
 root = "packages"
 pathIgnorePatterns = ["**/vite-plugin/**"]
-preload = ["./packages/bun-plugin/src/index.ts", "./bun.setup.ts", "bun-test-env-dom"]
+preload = ["./bun.setup.ts", "./packages/bun-plugin/src/index.ts", "bun-test-env-dom"]
+# `bun run test` passes `--coverage`; enabling it here would hold focused `bun test <file>` runs to the full-suite threshold.
 coverageReporter  = ["text", "lcov"] 
+# Bun ignores unknown keys without a warning; packages/__tests__/coverage-threshold.test.ts checks this gate.
 coverageThreshold = { lines = 1.0, functions = 1.0, statements = 1.0 }
 coverageDir = "coverage/root"
 coverageSkipTestFiles = true
-# pkg/dist are generated artifacts. bun-plugin/src/plugin.ts registers a Bun
-# plugin at import time; testing its private hooks would require exporting
-# internals that are not part of the public API.
-coveragePathIgnorePatterns = ["**/pkg/**", "**/dist/**", "**/bun-plugin/src/plugin.ts"]
+# Generated artifacts are tested separately by the packed-consumer release gate.
+coveragePathIgnorePatterns = ["**/pkg/**", "**/dist/**"]

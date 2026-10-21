@@ -1,6 +1,13 @@
 mod as_visit;
+mod barrel;
+#[cfg(test)]
+mod barrel_pipeline_tests;
 mod build_time_values;
 mod class_arguments;
+#[cfg(test)]
+mod class_names_binding_tests;
+#[cfg(test)]
+mod class_names_numeric_tests;
 mod component;
 mod composition;
 mod css_prop;
@@ -14,6 +21,7 @@ mod gen_class_name;
 mod gen_style;
 mod import_alias_visit;
 mod imported_constants;
+mod imported_styled;
 mod jsx_import_source;
 mod jsx_pragmas;
 mod module_loader;
@@ -29,6 +37,10 @@ mod pragma_path_tests;
 mod pragma_tests;
 mod prop_modify_utils;
 mod prop_valid;
+#[cfg(test)]
+mod quoted_recovery_tests;
+#[cfg(test)]
+mod quoted_strings_tests;
 pub mod reservation_state;
 #[cfg(test)]
 mod responsive_selector_tests;
@@ -47,6 +59,8 @@ mod tailwind_effects;
 mod tailwind_misc;
 mod tailwind_motion;
 mod tailwind_theme;
+#[doc(hidden)]
+pub mod test_state;
 mod util_type;
 mod utils;
 mod vanilla_extract;
@@ -130,8 +144,8 @@ pub enum ExtractStyleProp<'a> {
     },
 }
 
-impl<'a> ExtractStyleProp<'a> {
-    pub fn clone_in(&self, alloc: &'a Allocator) -> Self {
+impl ExtractStyleProp<'_> {
+    pub fn clone_in<'b>(&self, alloc: &'b Allocator) -> ExtractStyleProp<'b> {
         match self {
             ExtractStyleProp::Static(v) => ExtractStyleProp::Static(v.clone()),
             ExtractStyleProp::StaticArray(arr) => {
@@ -342,6 +356,8 @@ fn extract_with_source_map(
 ) -> Result<ExtractOutput, Box<dyn Error>> {
     if code.contains(&option.package)
         || code.contains(STYLEX_PACKAGE)
+        || (css_prop::builds_jsx_with_emotion(&option.import_aliases)
+            && css_prop::is_jsx_file(filename))
         || option
             .import_aliases
             .keys()
@@ -350,15 +366,17 @@ fn extract_with_source_map(
         let allocator = Allocator::default();
         parsing::parse(&allocator, filename, code)?;
     }
-    extract_source(filename, code, None, option, source_map, resolver)
+    extract_source(filename, code, None, None, option, source_map, resolver)
 }
 
 /// `evaluated` is the source `code` was computed from, with the layers of
-/// edits, last made first, that map `code` back to it
+/// edits, last made first, that map `code` back to it; `values_run` holds the
+/// authored styling-call ranges only after build-time value evaluation
 fn extract_source(
     filename: &str,
     code: &str,
     evaluated: Option<(&str, &[&[import_alias_visit::Edit]])>,
+    values_run: Option<&[(usize, usize)]>,
     option: ExtractOption,
     source_map: bool,
     resolver: Option<&ModuleResolver>,
@@ -368,6 +386,30 @@ fn extract_source(
         let errors = import_alias_visit::companion_errors(code, filename);
         if !errors.is_empty() {
             return Err(located_errors(filename, code, &[], errors).into());
+        }
+    }
+    if evaluated.is_none() {
+        match barrel::rewrite(code, filename, &option.package, resolver) {
+            barrel::Barreled::Unchanged => {}
+            barrel::Barreled::Failed(errors) => {
+                return Err(located_errors(filename, code, &[], errors).into());
+            }
+            barrel::Barreled::Rewritten(barreled) => {
+                let mut output = extract_source(
+                    filename,
+                    &barreled.code,
+                    Some((code, &[barreled.edits.as_slice()])),
+                    None,
+                    option,
+                    source_map,
+                    resolver,
+                )?;
+                let mut files: std::collections::BTreeSet<String> =
+                    output.dependencies.into_iter().collect();
+                files.extend(barreled.dependencies);
+                output.dependencies = files.into_iter().collect();
+                return Ok(output);
+            }
         }
     }
     let (namespace_code, namespace_edits) =
@@ -383,6 +425,7 @@ fn extract_source(
         code: transformed_code,
         edits: alias_edits,
         css_prop,
+        px,
     } = import_alias_visit::transform_import_aliases_with_edits(
         &namespace_code,
         filename,
@@ -547,6 +590,7 @@ fn extract_source(
 
     let mut program = parsing::parse(&allocator, filename, code_to_parse)?;
     let header_pragmas = jsx_pragmas::HeaderPragmas::capture(&program);
+    let styled_capability = extractor::styled_capability::StyledCapability::reserve(&program);
     let inlined = if processed_code.is_none() {
         imported_constants::inline_constants(
             &oxc_ast::builder::AstBuilder::new(&allocator),
@@ -555,6 +599,7 @@ fn extract_source(
             &option,
             resolver,
             css_prop,
+            &px,
         )
     } else {
         imported_constants::Inlined::default()
@@ -566,6 +611,19 @@ fn extract_source(
         failures.dedup();
         return Err(failures.join("\n").into());
     }
+    let imported = if processed_code.is_none() {
+        imported_styled::read(
+            &oxc_ast::builder::AstBuilder::new(&allocator),
+            &program,
+            filename,
+            &option,
+            resolver,
+            css_prop,
+        )
+    } else {
+        imported_styled::Reading::default()
+    };
+    dependencies.extend(imported.dependencies);
     if !namespace_edits.is_empty() {
         emotion_namespace::units::pixelify(&allocator, &mut program, &namespace_code);
     }
@@ -578,9 +636,14 @@ fn extract_source(
     );
     visitor.import_stylex(inlined.stylex_vars, inlined.stylex_themes);
     visitor.import_css(inlined.css_styles);
+    if let Some(scoping) = inlined.scoping {
+        visitor.reuse_scoping(scoping);
+    }
     visitor.unknown_bindings(&inlined.unknown);
     visitor.changed_bindings(inlined.changed.clone());
     visitor.takes_css_prop(css_prop);
+    visitor.import_styled(imported.components);
+    visitor.reserve_styled(styled_capability);
     visitor.visit_program(&mut program);
     if !has_relevant_import
         && alias_edits.is_empty()
@@ -602,7 +665,7 @@ fn extract_source(
             .errors
             .iter()
             .any(|(_, error)| dead_properties::terminal_error(error))
-        && evaluated.is_none()
+        && values_run.is_none()
         && !utils::is_vanilla_extract_file(filename)
         && let Some((computed, value_edits, read)) = build_time_values::evaluate(
             &transformed_code,
@@ -617,18 +680,32 @@ fn extract_source(
         } else {
             import_alias_visit::pixelify_emotion_values(&computed, filename, &namespace_code)
         };
+        let (source, earlier_edits) = evaluated.unwrap_or((code, &[]));
+        let calls: Vec<_> = dead_properties::evaluated_calls(code, filename, &option)
+            .into_iter()
+            .map(|(start, end)| {
+                let authored = |offset| {
+                    earlier_edits.iter().fold(offset, |offset, edits| {
+                        import_alias_visit::source_offset(edits, offset)
+                    })
+                };
+                (authored(start), authored(end))
+            })
+            .collect();
+        let layers: Vec<&[import_alias_visit::Edit]> = [
+            number_edits.as_slice(),
+            value_edits.as_slice(),
+            alias_edits.as_slice(),
+            namespace_edits.as_slice(),
+        ]
+        .into_iter()
+        .chain(earlier_edits.iter().copied())
+        .collect();
         let mut output = extract_source(
             filename,
             &computed,
-            Some((
-                code,
-                &[
-                    number_edits.as_slice(),
-                    value_edits.as_slice(),
-                    alias_edits.as_slice(),
-                    namespace_edits.as_slice(),
-                ],
-            )),
+            Some((source, &layers)),
+            Some(&calls),
             option,
             source_map,
             resolver,
@@ -648,9 +725,8 @@ fn extract_source(
     visitor.errors.append(&mut visitor.unknown_parts);
     if !visitor.errors.is_empty() {
         let mut errors = visitor.errors;
-        let error_edits = if evaluated.is_some() {
-            let calls = dead_properties::evaluated_calls(source, filename, &option);
-            dead_properties::map_evaluated(&mut errors, &edits, &calls)?;
+        let error_edits = if let Some(calls) = values_run {
+            dead_properties::map_evaluated(&mut errors, &edits, calls)?;
             &[][..]
         } else {
             edits.as_slice()
@@ -918,13 +994,56 @@ pub fn has_devup_ui(filename: &str, code: &str, package: &str) -> bool {
     false
 }
 
+/// Whether extraction does something to a file.
+///
+/// It imports the package (also through a project module that re-exports it,
+/// or as a namespace), imports a package `import_aliases` redirects, or gives
+/// an element a `css` prop that the aliases compile.
+#[must_use]
+pub fn has_devup_ui_with(
+    filename: &str,
+    code: &str,
+    package: &str,
+    import_aliases: &HashMap<String, ImportAlias>,
+    resolver: Option<&ModuleResolver>,
+) -> bool {
+    parsing::source_type(filename).is_ok()
+        && (has_devup_ui(filename, code, package)
+            || resolver.is_some_and(|resolver| {
+                !matches!(
+                    barrel::rewrite(code, filename, package, Some(resolver)),
+                    barrel::Barreled::Unchanged
+                )
+            })
+            || {
+                let aliased = import_alias_visit::transform_import_aliases_with_edits(
+                    code,
+                    filename,
+                    package,
+                    import_aliases,
+                );
+                !aliased.edits.is_empty() || aliased.css_prop != css_prop::CssProp::Off
+            })
+}
 #[cfg(test)]
 #[allow(clippy::expect_used, clippy::unwrap_used)]
 mod tests {
     mod styled_transient_tests;
 
     mod exact_literal_coercion {
+        mod const_object_css_tag {
+            include!("const_object_css_tag_tests.rs");
+        }
+        mod const_object_css_tag_controls {
+            include!("const_object_css_tag_controls_tests.rs");
+        }
+        mod const_object_css_tag_policy {
+            include!("const_object_css_tag_policy_tests.rs");
+        }
         include!("stylex_exact_key_tests.rs");
+        mod ci_factory_alias {
+            include!("ci_factory_alias_tests.rs");
+        }
 
         use super::*;
         use crate::extract_style::style_property::StyleProperty;
@@ -1392,6 +1511,7 @@ mod tests {
     #[serial]
     fn extract_canonical_bucket_merge() {
         use css::file_map::{reset_canonical_map, set_canonical_map};
+        let _state = test_state::TestStateGuard::default();
         reset_class_map();
         reset_file_map();
         reset_canonical_map();
@@ -1425,6 +1545,7 @@ mod tests {
     #[serial]
     fn extract_global_hoist() {
         use css::file_map::{GLOBAL_BUCKET, reset_canonical_map, set_canonical_map};
+        let _state = test_state::TestStateGuard::new();
         reset_class_map();
         reset_file_map();
         reset_canonical_map();
@@ -12709,6 +12830,7 @@ globalCss({
     #[test]
     #[serial]
     fn test_vanilla_extract_style_css_ts() {
+        let _state = test_state::TestStateGuard::new();
         reset_class_map();
         reset_file_map();
         // .css.ts file with style function (vanilla-extract API)
@@ -12733,6 +12855,7 @@ export const container: string = style({ background: "red", padding: 16 })
     #[test]
     #[serial]
     fn test_vanilla_extract_style_css_js() {
+        let _state = test_state::TestStateGuard::new();
         reset_class_map();
         reset_file_map();
         // .css.js file with style function
@@ -12778,6 +12901,7 @@ export const link = style({ color: "blue", textDecoration: "underline" })
     #[test]
     #[serial]
     fn test_vanilla_extract_css_ts_with_vanilla_extract_import() {
+        let _state = test_state::TestStateGuard::new();
         reset_class_map();
         reset_file_map();
         // .css.ts file with import from @vanilla-extract/css (not @devup-ui/react)
@@ -12816,6 +12940,7 @@ export const text = style({
     #[test]
     #[serial]
     fn test_vanilla_extract_with_variable() {
+        let _state = test_state::TestStateGuard::new();
         reset_class_map();
         reset_file_map();
         // Variables should be evaluated at execution time
@@ -12842,6 +12967,7 @@ export const button = style({ background: primaryColor, padding: spacing })
     #[test]
     #[serial]
     fn test_vanilla_extract_with_computed() {
+        let _state = test_state::TestStateGuard::new();
         reset_class_map();
         reset_file_map();
         // Computed values should be evaluated
@@ -12867,6 +12993,7 @@ export const box = style({ padding: base * 2, margin: base / 2 })
     #[test]
     #[serial]
     fn test_vanilla_extract_with_spread() {
+        let _state = test_state::TestStateGuard::new();
         reset_class_map();
         reset_file_map();
         // Spread operator should work
@@ -12892,6 +13019,7 @@ export const extended = style({ ...baseStyle, background: "red" })
     #[test]
     #[serial]
     fn test_vanilla_extract_with_pseudo_selector() {
+        let _state = test_state::TestStateGuard::new();
         reset_class_map();
         reset_file_map();
         // devup-ui extension: _hover pseudo selector
@@ -12916,6 +13044,7 @@ export const hoverButton = style({ background: "gray", _hover: { background: "bl
     #[test]
     #[serial]
     fn test_vanilla_extract_with_responsive_array() {
+        let _state = test_state::TestStateGuard::new();
         reset_class_map();
         reset_file_map();
         // devup-ui extension: responsive arrays
@@ -12940,6 +13069,7 @@ export const responsiveBox = style({ padding: [8, 16, 32] })
     #[test]
     #[serial]
     fn test_vanilla_extract_with_keyframes_and_global() {
+        let _state = test_state::TestStateGuard::new();
         reset_class_map();
         reset_file_map();
         // .css.ts file with keyframes (vanilla-extract API)
@@ -12985,6 +13115,7 @@ globalStyle("body", { margin: 0, padding: 0 })
     #[test]
     #[serial]
     fn test_vanilla_extract_create_var() {
+        let _state = test_state::TestStateGuard::new();
         reset_class_map();
         reset_file_map();
         // createVar - CSS variable creation
@@ -13038,6 +13169,7 @@ export const box = style({
     #[test]
     #[serial]
     fn test_vanilla_extract_style_variants() {
+        let _state = test_state::TestStateGuard::new();
         reset_class_map();
         reset_file_map();
         // styleVariants - create multiple style variants
@@ -13090,6 +13222,7 @@ export const button = styleVariants({
     #[test]
     #[serial]
     fn test_vanilla_extract_font_face() {
+        let _state = test_state::TestStateGuard::new();
         reset_class_map();
         reset_file_map();
         reset_file_map();
@@ -13147,6 +13280,7 @@ export const body = style({
     #[test]
     #[serial]
     fn test_vanilla_extract_theme() {
+        let _state = test_state::TestStateGuard::new();
         reset_class_map();
         reset_file_map();
         reset_file_map();
@@ -13224,6 +13358,7 @@ export const darkTheme = createTheme(vars, {
     #[test]
     #[serial]
     fn test_layer_record_places_every_declaration() {
+        let _state = test_state::TestStateGuard::new();
         reset_class_map();
         reset_file_map();
         assert_debug_snapshot!(ToBTreeSet::from(
@@ -13255,6 +13390,7 @@ const A = styled.div({ '@layer': { base: {
     #[test]
     #[serial]
     fn test_vanilla_extract_layer_records() {
+        let _state = test_state::TestStateGuard::new();
         reset_class_map();
         reset_file_map();
         assert_debug_snapshot!(ToBTreeSet::from(
@@ -13284,6 +13420,7 @@ export const button = style({ color: 'red', '@layer': { [components]: { color: '
     #[test]
     #[serial]
     fn test_vanilla_extract_layer() {
+        let _state = test_state::TestStateGuard::new();
         reset_class_map();
         reset_file_map();
         reset_file_map();
@@ -13316,6 +13453,7 @@ globalStyle('*', {
     #[test]
     #[serial]
     fn test_vanilla_extract_container() {
+        let _state = test_state::TestStateGuard::new();
         reset_class_map();
         reset_file_map();
         // createContainer - container queries
@@ -13351,6 +13489,7 @@ export const responsive = style({
     #[test]
     #[serial]
     fn test_vanilla_extract_global_theme() {
+        let _state = test_state::TestStateGuard::new();
         reset_class_map();
         reset_file_map();
         // createGlobalTheme - global theme variables on :root
@@ -13384,6 +13523,7 @@ export const vars = createGlobalTheme(':root', {
     #[test]
     #[serial]
     fn test_vanilla_extract_composition() {
+        let _state = test_state::TestStateGuard::new();
         reset_class_map();
         reset_file_map();
         // style composition - array of styles
@@ -13419,6 +13559,7 @@ export const button = style([base, interactive, {
     #[test]
     #[serial]
     fn test_vanilla_extract_selectors() {
+        let _state = test_state::TestStateGuard::new();
         reset_class_map();
         reset_file_map();
         // complex selectors
@@ -13492,6 +13633,7 @@ export const child = style({
     #[test]
     #[serial]
     fn test_vanilla_extract_media_queries() {
+        let _state = test_state::TestStateGuard::new();
         reset_class_map();
         reset_file_map();
         // @media queries
@@ -13530,6 +13672,7 @@ export const responsive = style({
     #[test]
     #[serial]
     fn test_vanilla_extract_supports() {
+        let _state = test_state::TestStateGuard::new();
         reset_class_map();
         reset_file_map();
         // @supports queries
@@ -13724,6 +13867,7 @@ export const grid = style({
     #[test]
     #[serial]
     fn test_vanilla_extract_invalid_js_execution() {
+        let _state = test_state::TestStateGuard::new();
         // Test vanilla-extract file with invalid JS (covers line 107 fallback)
         reset_class_map();
         reset_file_map();
@@ -13750,6 +13894,7 @@ export const broken = style((() => { throw new Error("fail"); })())
     #[test]
     #[serial]
     fn test_vanilla_extract_empty_styles() {
+        let _state = test_state::TestStateGuard::new();
         // Test vanilla-extract file that produces empty styles (covers line 116)
         reset_class_map();
         reset_file_map();
@@ -13775,6 +13920,7 @@ const unused = 1;
     #[test]
     #[serial]
     fn test_vanilla_extract_constant_exports() {
+        let _state = test_state::TestStateGuard::new();
         // Test vanilla-extract file with constant exports (covers lines 576-577)
         reset_class_map();
         reset_file_map();
@@ -13802,6 +13948,7 @@ export const box = style({ padding: SPACING })
     #[test]
     #[serial]
     fn test_vanilla_extract_theme_with_vars() {
+        let _state = test_state::TestStateGuard::new();
         // Test createTheme with array destructuring [themeClass, vars] (covers lines 406-430)
         reset_class_map();
         reset_file_map();
@@ -13836,6 +13983,7 @@ export const [lightTheme, vars] = createTheme({
     #[test]
     #[serial]
     fn test_vanilla_extract_non_exported_theme() {
+        let _state = test_state::TestStateGuard::new();
         // Test non-exported createTheme (covers theme branches without export)
         reset_class_map();
         reset_file_map();
@@ -13869,6 +14017,7 @@ export const themed = style({
     #[test]
     #[serial]
     fn test_vanilla_extract_style_composition_empty() {
+        let _state = test_state::TestStateGuard::new();
         // Test style with empty composition array
         reset_class_map();
         reset_file_map();
@@ -13895,6 +14044,7 @@ export const withEmpty = style([{}])
     #[test]
     #[serial]
     fn test_vanilla_extract_style_variants_with_base() {
+        let _state = test_state::TestStateGuard::new();
         // Test styleVariants with base composition (covers lines 1165-1177)
         reset_class_map();
         reset_file_map();
@@ -13928,6 +14078,7 @@ export const sizes = styleVariants({
     #[test]
     #[serial]
     fn test_vanilla_extract_layer_and_container() {
+        let _state = test_state::TestStateGuard::new();
         // Test layer() and createContainer() together (covers lines 1207-1216)
         reset_class_map();
         reset_file_map();
@@ -13959,6 +14110,7 @@ export const containerStyle = style({
     #[test]
     #[serial]
     fn test_vanilla_extract_all_imports() {
+        let _state = test_state::TestStateGuard::new();
         // Test file that uses css, globalCss, and keyframes together (covers lines 1049, 1052)
         reset_class_map();
         reset_file_map();
@@ -13996,6 +14148,7 @@ export const box = style({
     #[test]
     #[serial]
     fn test_vanilla_extract_theme_without_vars_name() {
+        let _state = test_state::TestStateGuard::new();
         // Test createTheme two-arg form (covers lines 1108, 1111)
         reset_class_map();
         reset_file_map();
@@ -14032,6 +14185,7 @@ export const darkTheme = createTheme(contract, {
     #[test]
     #[serial]
     fn test_vanilla_extract_font_face_with_style() {
+        let _state = test_state::TestStateGuard::new();
         // Test fontFace used in style (covers fontFace placeholder replacement)
         reset_class_map();
         reset_file_map();
@@ -14063,6 +14217,7 @@ export const text = style({
     #[test]
     #[serial]
     fn test_vanilla_extract_vars_only() {
+        let _state = test_state::TestStateGuard::new();
         // Test createVar exports (covers lines 1191-1192)
         reset_class_map();
         reset_file_map();
@@ -14093,6 +14248,7 @@ export const box = style({
     #[test]
     #[serial]
     fn test_vanilla_extract_global_theme_empty_vars() {
+        let _state = test_state::TestStateGuard::new();
         // Test createGlobalTheme with empty vars (covers line 1142 branch)
         reset_class_map();
         reset_file_map();
@@ -14119,6 +14275,7 @@ export const box = style({ padding: 8 })
     #[test]
     #[serial]
     fn test_vanilla_extract_non_exported_styles() {
+        let _state = test_state::TestStateGuard::new();
         // Test non-exported styles mixed with exported (covers export flag branches)
         reset_class_map();
         reset_file_map();
@@ -14143,6 +14300,7 @@ export const publicStyle = style({ margin: 8 })
     #[test]
     #[serial]
     fn test_vanilla_extract_selector_references() {
+        let _state = test_state::TestStateGuard::new();
         // Test styles referencing each other in selectors (covers find_selector_references)
         reset_class_map();
         reset_file_map();
@@ -14400,6 +14558,7 @@ globalCss({
     #[test]
     #[serial]
     fn test_stylesheet_evaluation_errors() {
+        let _state = test_state::TestStateGuard::new();
         reset_class_map();
         reset_file_map();
         let error = extract(
@@ -14454,6 +14613,7 @@ globalCss({
     #[test]
     #[serial]
     fn test_vanilla_extract_execution_fallback() {
+        let _state = test_state::TestStateGuard::new();
         // Test vanilla-extract file with execution error (covers line 116 fallback)
         reset_class_map();
         reset_file_map();
@@ -14479,6 +14639,7 @@ const x = style({ padding: [[[}}} // invalid syntax
     #[test]
     #[serial]
     fn test_import_alias_vanilla_extract_named() {
+        let _state = test_state::TestStateGuard::new();
         // Test @vanilla-extract/css named exports in regular .tsx files (NOT .css.ts)
         // Note: .css.ts files use vanilla-extract's own processing which doesn't go through import aliases
         reset_class_map();
@@ -14511,6 +14672,7 @@ const buttonStyle = css({ bg: 'red', p: 4 })
     #[test]
     #[serial]
     fn test_vanilla_extract_keyframes_export() {
+        let _state = test_state::TestStateGuard::new();
         // Test exported keyframes (covers lines 1052, 1152-1153)
         reset_class_map();
         reset_file_map();
@@ -14544,6 +14706,7 @@ export const spinner = style({ animation: spin })
     #[test]
     #[serial]
     fn test_vanilla_extract_theme_vars_name_only() {
+        let _state = test_state::TestStateGuard::new();
         // Test createTheme with vars_name but no vars_object_json (covers line 1301)
         reset_class_map();
         reset_file_map();
@@ -14571,6 +14734,7 @@ export const myTheme = createTheme({
     #[test]
     #[serial]
     fn test_vanilla_extract_style_variants_mixed() {
+        let _state = test_state::TestStateGuard::new();
         // Test styleVariants with mixed base and no-base (covers lines 1161-1184)
         reset_class_map();
         reset_file_map();
@@ -14601,6 +14765,7 @@ export const buttons = styleVariants({
     #[test]
     #[serial]
     fn test_vanilla_extract_global_theme_with_vars() {
+        let _state = test_state::TestStateGuard::new();
         // Test createGlobalTheme with CSS vars (covers lines 1142-1144)
         reset_class_map();
         reset_file_map();
@@ -14636,6 +14801,7 @@ export const box = style({ padding: 8 })
     #[test]
     #[serial]
     fn test_vanilla_extract_font_face_empty_props() {
+        let _state = test_state::TestStateGuard::new();
         // Test fontFace with minimal properties (covers line 1132-1135 empty props branch)
         reset_class_map();
         reset_file_map();
@@ -14662,6 +14828,7 @@ export const text = style({ fontFamily: minimalFont })
     #[test]
     #[serial]
     fn test_vanilla_extract_imports_combination() {
+        let _state = test_state::TestStateGuard::new();
         // Test file with multiple import types (covers lines 1049, 1052 import generation)
         reset_class_map();
         reset_file_map();
@@ -14690,6 +14857,7 @@ export const animated = style({ animation: fadeIn })
     #[test]
     #[serial]
     fn test_vanilla_extract_theme_export_variations() {
+        let _state = test_state::TestStateGuard::new();
         // Test createTheme with different export patterns (covers lines 1103-1111)
         reset_class_map();
         reset_file_map();
@@ -14724,6 +14892,7 @@ export const box = style({ padding: 8 })
     #[test]
     #[serial]
     fn test_vanilla_extract_style_composition_multiple() {
+        let _state = test_state::TestStateGuard::new();
         // Test style with multiple style objects in composition array (covers lines 728-729)
         reset_class_map();
         reset_file_map();
@@ -14750,6 +14919,7 @@ export const complex = style([base, { margin: 4 }, { color: 'blue' }])
     #[test]
     #[serial]
     fn test_vanilla_extract_selector_class_replacement() {
+        let _state = test_state::TestStateGuard::new();
         // Test selector references that need class name replacement (covers collected_styles_to_code_with_classes)
         reset_class_map();
         reset_file_map();
@@ -14780,6 +14950,7 @@ export const child = style({
     #[test]
     #[serial]
     fn test_vanilla_extract_all_exports_combined() {
+        let _state = test_state::TestStateGuard::new();
         // Test file with styles, keyframes, globalStyles, themes, vars, containers, layers, fontFaces combined
         // Covers multiple import generation paths and code generation
         reset_class_map();
@@ -14812,6 +14983,7 @@ export const box = style({ fontFamily: myFont })
     #[test]
     #[serial]
     fn test_vanilla_extract_theme_array_destructure() {
+        let _state = test_state::TestStateGuard::new();
         // Test createTheme with array destructuring [themeClass, vars] (covers lines 384, 386-387)
         reset_class_map();
         reset_file_map();
@@ -14841,6 +15013,7 @@ export const themed = style({ color: themeVars.colors.primary })
     #[test]
     #[serial]
     fn test_vanilla_extract_font_face_placeholder() {
+        let _state = test_state::TestStateGuard::new();
         // Test fontFace placeholder remapping (covers lines 503-505)
         reset_class_map();
         reset_file_map();
@@ -14875,6 +15048,7 @@ export const heading = style({ fontFamily: secondFont })
     #[test]
     #[serial]
     fn test_vanilla_extract_global_theme_placeholder() {
+        let _state = test_state::TestStateGuard::new();
         // Test createGlobalTheme placeholder remapping (covers global theme paths)
         reset_class_map();
         reset_file_map();
@@ -14999,6 +15173,7 @@ globalCss({
     #[test]
     #[serial]
     fn test_vanilla_extract_selector_refs_triggers_with_classes() {
+        let _state = test_state::TestStateGuard::new();
         // Test that triggers collected_styles_to_code_with_classes path (selector references)
         reset_class_map();
         reset_file_map();
@@ -15029,6 +15204,7 @@ globalStyle('body', { margin: 0 })
     #[test]
     #[serial]
     fn test_vanilla_extract_theme_without_vars_json() {
+        let _state = test_state::TestStateGuard::new();
         // Test createTheme that has vars_name but might not have vars_object_json (covers line 1111)
         reset_class_map();
         reset_file_map();
@@ -15093,6 +15269,7 @@ globalCss({
     #[test]
     #[serial]
     fn test_selector_refs_with_global_theme() {
+        let _state = test_state::TestStateGuard::new();
         // Test that triggers append_non_style_code with global themes (covers lines 1142-1144, 1221-1222)
         // Need selector references + createGlobalTheme
         reset_class_map();
@@ -15127,6 +15304,7 @@ export const child = style({
     #[test]
     #[serial]
     fn test_vanilla_extract_with_at_container_selector() {
+        let _state = test_state::TestStateGuard::new();
         // Test @container with selector context (covers line 134 in extract_style_from_expression.rs)
         reset_class_map();
         reset_file_map();
@@ -15375,6 +15553,7 @@ const Button = styled.button({ bg: 'red' })
 
     /// `code` extracted with readable class names
     fn readable_code(code: &str) -> String {
+        let _state = test_state::TestStateGuard::new();
         reset_class_map();
         reset_file_map();
         css::debug::set_debug(true);
@@ -15389,7 +15568,6 @@ const Button = styled.button({ bg: 'red' })
                 import_aliases: HashMap::new(),
             },
         );
-        css::debug::set_debug(false);
         match output {
             Ok(output) => output.code,
             Err(error) => error.to_string(),
@@ -15599,7 +15777,7 @@ export const Other = other.withComponent('aside')
 export const a = <Section as=\"a\" forwardedAs=\"b\" />",
         );
         for expected in [
-            "export const Aside = __devupForwardRef((__devupRefProps, __devupRef) => ((__devupProps) => (({ style, className, as: DevupAs = \"aside\", forwardedAs, ...rest }) => <DevupAs {...Object.fromEntries(Object.entries((({ \"theme\": __devupOmit0, ...__devupDom }) => __devupDom)(rest)).filter(([k]) => k[0] !== \"$\"))} as={forwardedAs} className={[\"color-0-red--255\", className]",
+            "export const Aside = __devupForwardRef((__devupRefProps, __devupRef) => ((__devupProps) => (({ style, className, as: DevupAs = \"aside\", forwardedAs, ...rest }) => <DevupAs {...Object.fromEntries(Object.entries((({ \"theme\": __devupOmit0, ...__devupDom }) => __devupDom)(rest)).filter(([k]) => k[0] !== \"$\"))} as={forwardedAs} className={[\"c-0-Aside color-0-red--255\", className]",
             "as: DevupAs = Link,",
             "as: DevupAs = motion.div,",
             "export const Again = __devupForwardRef((__devupRefProps, __devupRef) => ((__devupProps) => (({ style, className, as: DevupAs = \"nav\",",
@@ -15826,6 +16004,7 @@ export const d = css(base, { positioning: side, styleOrder: 2 })",
     #[test]
     #[serial]
     fn test_css_composes_imported_classes() {
+        let _state = test_state::TestStateGuard::new();
         reset_class_map();
         reset_file_map();
         let modules: &[(&str, &str)] = &[(
@@ -17592,6 +17771,7 @@ const styles = stylex.create({
     #[test]
     #[serial]
     fn test_vanilla_extract_numbers_follow_vanilla_extract_units() {
+        let _state = test_state::TestStateGuard::new();
         reset_class_map();
         reset_file_map();
         let output = extract(
@@ -19412,6 +19592,7 @@ const composed = stylex.create({ combined: { ...stylex.include(base.root) } });"
     #[test]
     #[serial]
     fn test_length_token_extraction() {
+        let _state = test_state::TestStateGuard::new();
         // Test $token on gap prop
         reset_class_map();
         reset_file_map();
@@ -19476,6 +19657,7 @@ const composed = stylex.create({ combined: { ...stylex.include(base.root) } });"
     #[test]
     #[serial]
     fn test_shadow_token_extraction() {
+        let _state = test_state::TestStateGuard::new();
         // Test $token on boxShadow prop
         reset_class_map();
         reset_file_map();
@@ -19521,6 +19703,7 @@ const composed = stylex.create({ combined: { ...stylex.include(base.root) } });"
     #[serial]
     fn test_responsive_length_token_literal_vs_array() {
         use css::theme_tokens::set_theme_token_levels;
+        let _state = test_state::TestStateGuard::new();
 
         let mut length = BTreeMap::new();
         length.insert("containerX".to_string(), vec![0, 2]);
@@ -19611,6 +19794,7 @@ const composed = stylex.create({ combined: { ...stylex.include(base.root) } });"
     #[serial]
     fn test_responsive_shadow_token_literal_vs_array() {
         use css::theme_tokens::set_theme_token_levels;
+        let _state = test_state::TestStateGuard::new();
 
         let mut shadow = BTreeMap::new();
         shadow.insert("card".to_string(), vec![0, 3]);
@@ -20293,24 +20477,8 @@ export const J = other(Base).attrs({ id: 'j' })({ margin: 4 });",
 
         for (code, name) in [
             (
-                "import { css } from '@devup-ui/react';\nexport const myCss = css;",
-                "css",
-            ),
-            (
-                "import { Box } from '@devup-ui/react';\nexport const C = Box;\nexport const d = <C p={1} />;",
-                "Box",
-            ),
-            (
                 "import { Box } from '@devup-ui/react';\nexport const list = [Box].map((B) => <B p={1} />);",
                 "Box",
-            ),
-            (
-                "import { css } from '@devup-ui/react';\nexport function f() { const inner = css; return inner({ color: 'red' }); }",
-                "css",
-            ),
-            (
-                "import { css } from '@devup-ui/react';\nconst myCss = css;\nexport const v = myCss;",
-                "myCss",
             ),
             (
                 "import { css } from '@devup-ui/react';\nlet myCss = css;\nmyCss = null;",
@@ -23375,6 +23543,7 @@ export const App = () => <Global {...rest} styles={{ body: { margin: '0px' } }} 
         files
             .iter()
             .map(|(filename, code)| {
+                let _state = test_state::TestStateGuard::new();
                 reset_class_map();
                 reset_file_map();
                 (
@@ -23522,6 +23691,50 @@ export const App = () => <Global {...rest} styles={{ body: { margin: '0px' } }} 
 
     #[test]
     #[serial]
+    fn test_emotion_css_prop_where_the_project_builds_jsx_with_emotion() {
+        let mut option = emotion_option();
+        option.import_aliases.insert(
+            "@emotion/react/jsx-runtime".to_string(),
+            ImportAlias::NamedToNamed,
+        );
+        reset_class_map();
+        reset_file_map();
+        let output = extract(
+            "test.tsx",
+            "const Custom = ({ className }) => <div className={className} />;\nexport const App = () => <Custom css={{ color: 'red', padding: 2 }} />;",
+            option.clone(),
+        )
+        .unwrap();
+        assert_debug_snapshot!(ToBTreeSet::from(output));
+
+        reset_class_map();
+        reset_file_map();
+        let plain = extract(
+            "test.tsx",
+            "export const App = () => <div />;",
+            option.clone(),
+        )
+        .unwrap();
+        assert_eq!(
+            plain.code,
+            "/** @jsxImportSource react */\nexport const App = () => <div />;\n"
+        );
+
+        reset_class_map();
+        reset_file_map();
+        let error = extract(
+            "test.tsx",
+            "import { css } from '@emotion/react';\nexport const App = () => <div css={getStyles()} />;",
+            option,
+        )
+        .err()
+        .map(|error| error.to_string())
+        .unwrap_or_default();
+        assert!(error.starts_with("test.tsx:2:36: "), "{error}");
+    }
+
+    #[test]
+    #[serial]
     fn test_emotion_css_prop_reports_what_it_cannot_compile() {
         let errors: Vec<String> = [
             "export const App = () => { const s = { color: 'red' }; return <div css={[s.a]} />; };",
@@ -23543,6 +23756,7 @@ export const App = () => <Global {...rest} styles={{ body: { margin: '0px' } }} 
         ]
         .iter()
         .map(|code| {
+            let _state = test_state::TestStateGuard::new();
             reset_class_map();
             reset_file_map();
             extract("test.tsx", code, emotion_option())
@@ -23552,6 +23766,32 @@ export const App = () => <Global {...rest} styles={{ body: { margin: '0px' } }} 
         })
         .collect();
         assert_debug_snapshot!(errors);
+    }
+
+    #[test]
+    #[serial]
+    fn test_emotion_class_names_in_every_form() {
+        let import = "import { ClassNames } from '@emotion/react';\n";
+        let codes = [
+            "export const App = () => <ClassNames>{({ css, cx, theme }) => <div className={cx(css({ color: theme.color, padding: 8 }), 'external')} />}</ClassNames>;",
+            "export const App = ({ on }) => <ClassNames>{({ css, cx }) => <div className={cx(css({ color: 'red' }), on && css`color: blue;`, { picked: on, [on]: true }, [null, 'b'])} />}</ClassNames>;",
+            "export const App = ({ on }) => <ClassNames>{function ({ css: c }) { return <a className={c('color: red;', on ? { color: 'blue' } : c({ color: 'green' }))} />; }}</ClassNames>;",
+            "const mixin = { margin: 4 };\nexport const App = () => <section><ClassNames>{({ css }) => <p className={css`${mixin}; color: red;`} />}</ClassNames></section>;",
+            "export const App = () => <ClassNames>{() => <hr />}</ClassNames>;",
+            "export const App = (p) => <ClassNames>{({ cx }) => <b onClick={() => p.on()} title={String.raw`t`} id={String(1)} className={cx(p.className, cx('a'), p.on ? { x: p.on } : 'y', p.a || { z: p.b }, p.c ? cx('k') : null, p.d && cx())} />}</ClassNames>;",
+            "const tone = 'red';\nconst gap = 3;\nexport const App = () => <ClassNames>{({ css }) => <i className={css({ color: tone, padding: gap, margin: 2 })} />}</ClassNames>;",
+        ];
+        let outputs: Vec<String> = codes
+            .iter()
+            .map(|code| {
+                reset_class_map();
+                reset_file_map();
+                let output =
+                    extract("test.tsx", &format!("{import}{code}"), emotion_option()).unwrap();
+                format!("{}\n{:?}", output.code, output.styles)
+            })
+            .collect();
+        assert_debug_snapshot!(outputs);
     }
 
     // `@emotion/css` compiles like Devup UI's own APIs, its numbers in px
@@ -23602,6 +23842,238 @@ injectGlobal`body { margin: 0; }`;",
 
     #[test]
     #[serial]
+    fn test_emotion_component_selectors() {
+        let import = "import styled from '@emotion/styled';\n";
+        let codes = [
+            "const Child = styled.div`color: red;`;\nexport const Parent = styled.div`${Child} { color: green; } &:hover ${Child}, ${Child} + a { color: blue; }`;\nexport const App = () => <Child />;",
+            "const Child = styled.div({ color: 'red' });\nexport const Parent = styled.div({ [Child]: { color: 'green' }, [`&:hover ${Child}`]: { color: 'blue' } });",
+            "const Child = styled.div({ color: 'red' });\nconst Wide = styled(Child)({ width: 1 });\nexport const Parent = styled.div`${Child} { color: green; }`;\nexport const App = () => <><Child /><Wide /></>;",
+            "const Child = styled.div`color: red;`;\nexport const Parent = styled.div`${Child} { color: green; }`;\nexport const C = () => <Child css={{ color: 'blue' }} />;",
+            "const notStyled = 'x';\nexport const Parent = styled.div`${notStyled} { color: green; }`;",
+            "export const Parent = styled.div`a, :is(b, c) d { color: green; }`;",
+        ];
+        let outputs: Vec<String> = codes
+            .iter()
+            .map(|code| {
+                reset_class_map();
+                reset_file_map();
+                match extract("test.tsx", &format!("{import}{code}"), emotion_option()) {
+                    Ok(output) => format!("{}\n{:?}", output.code, output.styles),
+                    Err(error) => error.to_string(),
+                }
+            })
+            .collect();
+        assert_debug_snapshot!(outputs);
+    }
+
+    #[test]
+    #[serial]
+    fn test_emotion_class_names_reports_what_it_cannot_compile() {
+        let import = "import { ClassNames } from '@emotion/react';\n";
+        let errors: Vec<String> = [
+            "export const App = () => <ClassNames>{render}</ClassNames>;",
+            "export const App = () => <ClassNames>{() => <a />}{() => <b />}</ClassNames>;",
+            "export const App = () => <ClassNames />;",
+            "export const App = () => <ClassNames>{}</ClassNames>;",
+            "export const App = () => <ClassNames>text</ClassNames>;",
+            "export const App = () => <ClassNames key=\"a\">{() => <a />}</ClassNames>;",
+            "export const App = () => <ClassNames>{(content) => <a />}</ClassNames>;",
+            "export const App = () => <ClassNames>{({ css, ...rest }) => <a />}</ClassNames>;",
+            "export const App = () => <ClassNames>{({ css = f }) => <a />}</ClassNames>;",
+            "export const App = () => <ClassNames>{({ other }) => <a />}</ClassNames>;",
+            "export const App = () => <ClassNames>{({ [k]: css }) => <a />}</ClassNames>;",
+            "export const App = () => <ClassNames>{({ css }, more) => <a />}</ClassNames>;",
+            "export const App = () => <ClassNames>{(...content) => <a />}</ClassNames>;",
+            "export const App = () => <ClassNames>{({ css: { a } }) => <a />}</ClassNames>;",
+            "export const App = () => <ClassNames>{async ({ css }) => <a />}</ClassNames>;",
+            "export const App = () => <ClassNames>{function* ({ css }) { yield <a />; }}</ClassNames>;",
+            "export const App = () => <ClassNames>{({ css }) => { const a = 1; return <a />; }}</ClassNames>;",
+            "export const App = () => <ClassNames>{({ theme }) => <a title={theme.name} />}</ClassNames>;",
+            "export const App = () => <ClassNames>{({ css, theme }) => <a className={css({ margin: theme.space(2) })} />}</ClassNames>;",
+            "export const App = () => <ClassNames>{({ css }) => <a ref={css} />}</ClassNames>;",
+            "export const App = () => <ClassNames>{({ cx }) => <a className={cx(getClass())} />}</ClassNames>;",
+            "export const App = ({ s }) => <ClassNames>{({ cx }) => <a className={cx({ ...s })} />}</ClassNames>;",
+            "export const App = () => <ClassNames>{({ cx }) => <a className={cx({ get a() { return true; } })} />}</ClassNames>;",
+            "export const App = ({ s }) => <ClassNames>{({ css }) => <a className={css(...s)} />}</ClassNames>;",
+            "export const App = ({ v }) => <ClassNames>{({ css }) => <a className={css`&:hover { ${v}; }`} />}</ClassNames>;",
+            "export const App = ({ v }) => <ClassNames>{({ css }) => <a className={css({ color: v })} />}</ClassNames>;",
+            "export const App = ({ on }) => <ClassNames>{({ css, cx }) => <a className={cx(on && cx(css({ color: 'red' }), 'x'))} />}</ClassNames>;",
+            "export const App = ({ on, off }) => <ClassNames>{({ css, cx }) => <a className={cx(on && cx(off ? css({ color: 'red' }) : null))} />}</ClassNames>;",
+        ]
+        .iter()
+        .map(|code| {
+            reset_class_map();
+            reset_file_map();
+            extract("test.tsx", &format!("{import}{code}"), emotion_option())
+                .err()
+                .map(|error| error.to_string())
+                .unwrap_or_default()
+        })
+        .collect();
+        assert_debug_snapshot!(errors);
+    }
+
+    fn library_option() -> ExtractOption {
+        let mut option = emotion_option();
+        option.import_aliases.insert(
+            "styled-components".to_string(),
+            ImportAlias::DefaultToNamed("styled".to_string()),
+        );
+        option.import_aliases.insert(
+            "@vanilla-extract/css".to_string(),
+            ImportAlias::NamedToNamed,
+        );
+        option
+    }
+
+    const SIZE_MODULES: &[(&str, &str)] = &[
+        (
+            "/src/sizes.ts",
+            "export const SIZE = 12;\nexport const ZERO = 0;\nexport const LINE = 2;\nexport const RULES = { padding: 5, lineHeight: 2, vars: { gap: 3 } };\nexport const NAME = 'big';",
+        ),
+        ("/src/App.tsx", ""),
+    ];
+
+    fn library_outputs(
+        cases: &[&str],
+        modules: &'static [(&'static str, &'static str)],
+    ) -> Vec<(String, String)> {
+        cases
+            .iter()
+            .map(|code| {
+                reset_class_map();
+                reset_file_map();
+                let output = match extract_with_modules(
+                    "/src/App.tsx",
+                    code,
+                    library_option(),
+                    false,
+                    &memory_resolver(modules),
+                ) {
+                    Ok(output) => format!("{:?}", ToBTreeSet::from(output)),
+                    Err(error) => format!("Error: {error}"),
+                };
+                ((*code).to_string(), output)
+            })
+            .collect()
+    }
+
+    #[rstest]
+    #[case::literal("css({ padding: [1, 2] })", &[("padding", "1px;padding:2px", 0)])]
+    #[case::local_items("css({ padding: [A, B] })", &[("padding", "1px;padding:2px", 0)])]
+    #[case::local_array("css({ padding: values })", &[("padding", "1px;padding:2px", 0)])]
+    #[case::imported_array("css({ padding: VALUES })", &[("padding", "1px;padding:2px", 0)])]
+    #[case::imported_record("css(RULES)", &[("padding", "1px;padding:2px", 0)])]
+    #[case::spread("css({ ...RULES })", &[("padding", "1px;padding:2px", 0)])]
+    #[case::nested("css({ '&:hover': RULES })", &[("padding", "1px;padding:2px", 0)])]
+    #[case::nested_items("css({ '&:hover': { padding: [A, B] } })", &[("padding", "1px;padding:2px", 0)])]
+    #[case::unitless("css({ opacity: [QUARTER, HALF] })", &[("opacity", ".25;opacity:.5", 0)])]
+    #[case::mixed_zero("css({ padding: [ZERO, A, '3em'] })", &[("padding", "0;padding:1px;padding:3em", 0)])]
+    #[case::strings("css({ display: [OLD, 'flex'] })", &[("display", "-webkit-box;display:flex", 0)])]
+    #[case::vendor("css({ WebkitBoxShadow: [NONE, '0 0 1px red'] })", &[("-webkit-box-shadow", "none;-webkit-box-shadow:0 0 1px red", 0)])]
+    #[case::single("css({ padding: [A] })", &[("padding", "4px", 0)])]
+    #[case::null("css({ padding: [A, null, B] })", &[("padding", "4px", 0), ("padding", "8px", 2)])]
+    #[case::bool("css({ padding: [A, false, B] })", &[("padding", "4px", 0), ("padding", "8px", 2), ("padding", "false", 1)])]
+    #[case::imported_rules_array("css(LIST)", &[("padding", "1px;padding:2px", 0)])]
+    #[case::native("nativeCss({ padding: [A, B] })", &[("padding", "4px", 0), ("padding", "8px", 1)])]
+    #[case::native_box("<Box padding={[A, B]} />", &[("padding", "4px", 0), ("padding", "8px", 1)])]
+    #[case::vars("css({ vars: { padding: [A, B] } })", &[("padding", "4px", 0), ("padding", "8px", 1)])]
+    #[case::empty("css({ padding: [] })", &[])]
+    #[case::hole("css({ padding: [A, , B] })", &[("padding", "4px", 0), ("padding", "8px", 2)])]
+    #[case::selector_array("css({ _hover: [{ padding: A }] })", &[("padding", "4px", 0)])]
+    #[case::selector_constant_array("css({ _hover: selectorValues })", &[("padding", "4px", 0)])]
+    #[serial]
+    fn test_library_constant_fallback_arrays(
+        #[case] expression: &str,
+        #[case] expected: &[(&str, &str, u8)],
+    ) {
+        // Given: the same static leaves reached through local and imported constants.
+        const MODULES: &[(&str, &str)] = &[
+            (
+                "/src/fallbacks.ts",
+                "export const VALUES = [1, 2]; export const RULES = { padding: [1, 2] }; export const LIST = [RULES];",
+            ),
+            ("/src/App.tsx", ""),
+        ];
+        reset_class_map();
+        reset_file_map();
+        let code = format!(
+            "import {{ css }} from '@emotion/react';\nimport {{ css as nativeCss, Box }} from '@devup-ui/react';\nimport {{ VALUES, RULES, LIST }} from './fallbacks';\nconst A=1, B=2, ZERO=0, QUARTER=0.25, HALF=0.5, OLD='-webkit-box', NONE='none';\nconst values=[A,B], selectorValues=[{{padding:A}}];\nexport const a = {expression};"
+        );
+        // When: extract through the real alias/inlining/visitor pipeline.
+        let output = extract_with_modules(
+            "/src/App.tsx",
+            &code,
+            library_option(),
+            false,
+            &memory_resolver(MODULES),
+        )
+        .unwrap_or_else(|error| panic!("{expression}\n{error}"));
+        let mut styles: Vec<_> = output
+            .styles
+            .iter()
+            .map(|style| match style {
+                ExtractStyleValue::Static(style) => {
+                    (style.property.as_str(), style.value.as_str(), style.level)
+                }
+                other => panic!("unexpected style: {other:?}"),
+            })
+            .collect();
+        styles.sort_unstable();
+        // Then: library fallbacks repeat at level zero; native and nonfallback arrays keep their levels.
+        assert_eq!(styles, expected, "{expression}");
+    }
+
+    #[rstest]
+    #[case("[A, value]", "value")]
+    #[case("[A, unknown()]", "unknown()")]
+    #[case("values", "values")]
+    #[serial]
+    fn test_library_constant_fallback_arrays_keep_unknown_guards(
+        #[case] value: &str,
+        #[case] rejected: &str,
+    ) {
+        // Given: one known number cannot make an unknown array or leaf static.
+        reset_class_map();
+        reset_file_map();
+        let code = format!(
+            "import {{ css }} from '@emotion/react';\nconst A=1;\nexport const a = (value, values) => css({{ padding: {value} }});"
+        );
+        // When: extract the unknown value through the same library API.
+        let error = extract("/src/App.tsx", &code, library_option())
+            .err()
+            .unwrap_or_else(|| panic!("expected rejection for {value}"))
+            .to_string();
+        // Then: the located build-time refusal still names the unknown input.
+        assert!(error.starts_with("/src/App.tsx:3:"), "{error}");
+        assert!(error.contains("at build time"), "{error}");
+        assert!(error.contains(rejected), "{error}");
+    }
+
+    #[test]
+    #[serial]
+    fn test_emotion_rules_read_local_constants_as_pixels() {
+        assert_debug_snapshot!(library_outputs(
+            &[
+                "import { css } from '@emotion/react';\nconst gap = 8;\nconst ZERO = 0;\nconst LINE = 2;\nexport const a = css({ padding: gap, margin: ZERO, lineHeight: LINE, opacity: LINE, p: gap, mx: gap });",
+                "import { css } from '@emotion/react';\nconst gap = 8;\nexport const a = css({ '&:hover': { top: -gap, left: gap * 2 }, width: gap > 4 ? gap : 1, height: gap || 3, minWidth: (gap) });",
+                "import { css } from '@emotion/react';\nconst gap = 8;\nconst rules = { padding: gap, lineHeight: 2, vars: { margin: 3 } };\nconst nested = { '&:hover': rules };\nexport const a = css(rules);\nexport const b = css({ ...rules, margin: 1 });\nexport const c = css({ '&:focus': rules });\nexport const d = css(nested);",
+                "import { css } from '@emotion/react';\nconst gap = 8;\nconst label = 'a';\nexport const a = css({ padding: gap, content: label, margin: label });",
+                "import styled from '@emotion/styled';\nconst gap = 8;\nexport const A = styled.div({ margin: gap, flex: gap, zIndex: gap });\nexport const B = styled('div')({ margin: gap });",
+                "import styled, { css } from 'styled-components';\nconst gap = 8;\nexport const A = styled.div({ margin: gap });\nexport const B = css({ margin: gap });",
+                "import { Global } from '@emotion/react';\nconst gap = 8;\nexport const App = () => <Global styles={{ body: { margin: gap, lineHeight: 2 } }} />;",
+                "import { ClassNames } from '@emotion/react';\nconst gap = 8;\nexport const App = () => <ClassNames>{({ css }) => <a className={css({ margin: gap })} />}</ClassNames>;",
+                "import { style } from '@vanilla-extract/css';\nconst gap = 8;\nexport const a = style({ margin: gap, lineHeight: gap, vars: { x: gap } });",
+                "import { css } from '@emotion/react';\nconst gap = 8;\nexport const App = () => <div css={{ margin: gap }} />;",
+                "import { css } from '@devup-ui/react';\nconst gap = 8;\nexport const a = css({ padding: gap, margin: 8 });",
+                "import { css } from '@emotion/react';\nexport const a = css({ padding: unknown, margin: 8 });",
+            ],
+            SIZE_MODULES
+        ));
+    }
+
+    #[test]
+    #[serial]
     fn test_emotion_cx_takes_class_names() {
         assert_debug_snapshot!(emotion_class_call(
             r"const red = css({ color: 'red' });
@@ -23615,6 +24087,21 @@ export const g = (on) => cx(on ? { a: on } : [on && 'b'], on ? (on ? 'c' : 'd') 
 export const h = (on) => cx({ [on.key]: on.value });
 export const i = () => cx(red, `${red} x`);
 export const j = cx({ a: null, b: 'x', c: '', d: 0, e: undefined, f: 2, g: false, h: true });"
+        ));
+    }
+
+    #[test]
+    #[serial]
+    fn test_emotion_rules_read_imported_constants_as_pixels() {
+        assert_debug_snapshot!(library_outputs(
+            &[
+                "import { css } from '@emotion/react';\nimport { SIZE, ZERO, LINE, RULES, NAME } from './sizes';\nexport const a = css({ padding: SIZE, margin: ZERO, lineHeight: LINE, p: SIZE, content: NAME });\nexport const b = css(RULES);\nexport const c = css({ ...RULES, margin: SIZE });",
+                "import styled from '@emotion/styled';\nimport { SIZE } from './sizes';\nexport const A = styled.div({ margin: SIZE });",
+                "import { Global } from '@emotion/react';\nimport { SIZE } from './sizes';\nexport const App = () => <Global styles={{ body: { margin: SIZE } }} />;",
+                "import { style } from '@vanilla-extract/css';\nimport { SIZE } from './sizes';\nexport const a = style({ margin: SIZE });",
+                "import { css } from '@devup-ui/react';\nimport { SIZE } from './sizes';\nexport const a = css({ padding: SIZE });",
+            ],
+            SIZE_MODULES
         ));
     }
 
@@ -23634,6 +24121,25 @@ export const h = (cls) => merge(cls.names);
 export const i = merge(red);
 export const j = (cls) => merge({ a: cls });
 export const k = (cls) => merge([cls]);"
+        ));
+    }
+
+    #[test]
+    #[serial]
+    fn test_emotion_css_text_composes_mixins_by_styles() {
+        assert_debug_snapshot!(library_outputs(
+            &[
+                "import { css } from '@emotion/react';\nconst mixin = css`color: red; margin: 1px;`;\nexport const a = css`${mixin}; color: blue;`;",
+                "import { css } from '@emotion/react';\nconst mixin = css({ color: 'red', margin: 1 });\nexport const a = css`color: green; ${mixin}; padding: 2px;`;",
+                "import { css } from '@emotion/react';\nconst mixin = css`color: red;`;\nconst more = css`${mixin}; margin: 2px;`;\nexport const a = css`${more}; color: blue;`;\nexport const b = css(more, { color: 'green' });",
+                "import { css } from '@emotion/react';\nexport const a = ({ mixin }) => css`${mixin}; color: blue;`;",
+                "import { css } from '@emotion/react';\nconst mixin = css`color: red;`;\nexport const a = ({ other }) => css`${mixin}; ${other}; color: blue;`;",
+                "import { css } from '@emotion/react';\nexport const a = css`${css({ color: 'red' })}; color: blue;`;",
+                "import { css } from '@emotion/react';\nexport const a = ({ on }) => css`${on && css({ color: 'red', margin: 1 })}; color: blue;`;",
+                "import { css } from '@emotion/react';\nexport const a = css`${css`color: red;`}; color: blue;`;",
+                "import { css } from '@emotion/react';\nexport const a = ({ on }) => css`${on ? css`color: red;` : css({ margin: 1 })}; color: blue;`;",
+            ],
+            SIZE_MODULES
         ));
     }
 
@@ -23689,6 +24195,27 @@ export const k = (cls) => merge([cls]);"
             let message = emotion_class_call(code).err().unwrap_or_default();
             assert!(message.contains(error), "{code}\n{message}");
         }
+    }
+
+    #[test]
+    #[serial]
+    fn test_emotion_css_flattens_inline_css_calls() {
+        assert_debug_snapshot!(library_outputs(
+            &[
+                "import { css } from '@emotion/react';\nexport const a = css(css({ color: 'red' }), { color: 'blue' });",
+                "import { css } from '@emotion/react';\nconst base = css({ color: 'green', margin: 4 });\nexport const a = (cond) => css(cond && css({ color: 'red' }), base);",
+                "import { css } from '@emotion/react';\nexport const a = (cond) => css(cond ? css({ color: 'red' }) : null, { color: 'blue' });",
+                "import { css } from '@emotion/react';\nexport const a = (cond) => css(cond || css({ color: 'red' }), { margin: 1 });",
+                "import { css } from '@emotion/react';\nexport const a = css([css({ color: 'red' }), [css({ margin: 1 }), { color: 'blue' }]]);",
+                "import { css } from '@emotion/react';\nexport const a = css(css(css({ color: 'red' }), { margin: 1 }), { color: 'blue' });",
+                "import { css } from '@emotion/react';\nexport const a = (cond) => css(cond && [css({ color: 'red' }), { margin: 1 }], { color: 'blue' });",
+                "import { css } from '@emotion/react';\nexport const a = (rest) => css(css(...rest), { color: 'blue' });",
+                "import { css } from '@emotion/react';\nexport const a = (cond, cls) => css(css({ color: 'red' }), cls, cond && css({ color: 'blue' }));",
+                "import { css } from '@emotion/react';\nexport const a = css(css({ color: 'red' }));",
+                "import { css } from '@devup-ui/react';\nexport const a = css(css({ color: 'red' }), { color: 'blue' });",
+            ],
+            SIZE_MODULES
+        ));
     }
 
     #[test]

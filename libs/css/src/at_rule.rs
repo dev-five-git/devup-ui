@@ -1,6 +1,7 @@
 //! At-rule preludes: media shorthands, query normalization, media query
 //! combination, and the deterministic order at-rule blocks are emitted in.
 
+use crate::quoted::{string_end, trim_css, unquoted_bytes};
 use crate::style_selector::AtRuleKind;
 use crate::utils::to_kebab_case;
 
@@ -33,7 +34,7 @@ pub fn media_shorthand_query(name: &str) -> Option<&'static str> {
 /// Split an at-rule key such as `@media print` into its kind and prelude.
 #[must_use]
 pub fn split_at_rule_key(key: &str) -> Option<(AtRuleKind, &str)> {
-    let rest = key.trim().strip_prefix('@')?;
+    let rest = trim_css(key).strip_prefix('@')?;
     [
         ("media", AtRuleKind::Media),
         ("supports", AtRuleKind::Supports),
@@ -42,7 +43,8 @@ pub fn split_at_rule_key(key: &str) -> Option<(AtRuleKind, &str)> {
     .into_iter()
     .find_map(|(name, kind)| {
         let query = rest.strip_prefix(name)?;
-        (query.starts_with([' ', '(']) && !query.trim().is_empty()).then_some((kind, query.trim()))
+        (query.starts_with([' ', '(']) && !trim_css(query).is_empty())
+            .then_some((kind, trim_css(query)))
     })
 }
 
@@ -109,8 +111,8 @@ pub fn normalize_query(query: &str) -> String {
     // arguments can contain significant whitespace.
     let mut parens: Vec<bool> = Vec::new();
     let mut pending_space = false;
-    let mut chars = query.chars();
-    while let Some(c) = chars.next() {
+    let mut chars = query.char_indices().peekable();
+    while let Some((index, c)) = chars.next() {
         if c.is_whitespace() {
             pending_space = true;
             continue;
@@ -129,21 +131,20 @@ pub fn normalize_query(query: &str) -> String {
         pending_space = false;
         out.push(c);
         match c {
+            '\\' => {
+                if let Some((_, escaped)) = chars.next() {
+                    out.push(escaped);
+                }
+            }
             '(' => parens.push(function_paren),
             ')' => {
                 parens.pop();
             }
             '"' | '\'' => {
-                let mut escaped = false;
-                for inner in chars.by_ref() {
-                    out.push(inner);
-                    if escaped {
-                        escaped = false;
-                    } else if inner == '\\' {
-                        escaped = true;
-                    } else if inner == c {
-                        break;
-                    }
+                let end = string_end(query.as_bytes(), index, query.as_bytes()[index]);
+                out.push_str(&query[index + 1..end]);
+                while chars.peek().is_some_and(|&(index, _)| index < end) {
+                    chars.next();
                 }
             }
             _ => {}
@@ -174,18 +175,18 @@ fn split_list(query: &str) -> Vec<&str> {
     let mut parts = Vec::new();
     let mut depth = 0usize;
     let mut start = 0;
-    for (index, c) in query.char_indices() {
+    for (index, c) in unquoted_bytes(query) {
         match c {
-            '(' => depth += 1,
-            ')' => depth = depth.saturating_sub(1),
-            ',' if depth == 0 => {
-                parts.push(query[start..index].trim());
+            b'(' => depth += 1,
+            b')' => depth = depth.saturating_sub(1),
+            b',' if depth == 0 => {
+                parts.push(trim_css(&query[start..index]));
                 start = index + 1;
             }
             _ => {}
         }
     }
-    parts.push(query[start..].trim());
+    parts.push(trim_css(&query[start..]));
     parts
 }
 
@@ -261,11 +262,13 @@ const fn resolve_negation(query: MediaQuery<'_>) -> Result<MediaQuery<'_>, Media
 fn has_top_level_or(condition: &str) -> bool {
     let mut depth = 0usize;
     let mut previous = ' ';
-    for (index, c) in condition.char_indices() {
+    for (index, byte) in unquoted_bytes(condition) {
+        let c = char::from(byte);
         match c {
             '(' => depth += 1,
             ')' => depth = depth.saturating_sub(1),
             _ if depth == 0
+                && matches!(byte, b'o' | b'O')
                 && !is_word_char(previous)
                 && leading_word(&condition[index..]).eq_ignore_ascii_case("or") =>
             {

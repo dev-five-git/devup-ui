@@ -10,6 +10,7 @@ fn authored_captures_survive_when_css_prop_renders_fixed_prepared_styled(
     #[case] css_prop: bool,
     #[values(false, true)] selected: bool,
 ) {
+    let _state = crate::test_state::TestStateGuard::new();
     // Given: retained controller/leaf effects whose style is overwritten by a literal.
     let css = if css_prop { "css:{padding:4}," } else { "" };
     let source = format!(
@@ -60,4 +61,121 @@ fn authored_captures_survive_when_css_prop_renders_fixed_prepared_styled(
     };
     let expected = serde_json::json!([[], "article", "article", 7, 8, "child", "child", trace]);
     assert_eq!(result, expected.to_string(), "css_prop={css_prop}\n{code}");
+}
+
+#[rstest]
+#[case("test.jsx")]
+#[case("test.ts")]
+#[serial]
+fn selected_component_keeps_identity_when_css_prop_composes(
+    #[case] filename: &str,
+    #[values(false, true)] captured: bool,
+    #[values(false, true)] selected: bool,
+) {
+    use super::css_prop_execution::{CAPTURED, css_props, element, execute};
+
+    // Given: selected Card with fixed styles, plus captured and capture-free controls.
+    let card = if captured {
+        CAPTURED
+    } else {
+        "const trace=[];let selected=true;const Card=styled.article({color:'green'});"
+    };
+    let extra = if filename.ends_with('x') {
+        "ref={ref} children='child' className='external'"
+    } else {
+        "ref,children:'child',className:'external'"
+    };
+    let plain = element(filename, extra);
+    let composed = element(
+        filename,
+        &css_props(filename, "{color:'blue',padding:'4px'}", extra),
+    );
+    let source = format!(
+        "{card}selected={selected};const Parent=styled.section({{[Card]:{{outlineColor:'orange'}}}});const Plain=(trace,selected,ref)=>{plain};const App=(trace,selected,ref)=>{composed};"
+    );
+
+    // When: mixed callers render through emitted code, with caller-scope shadowing.
+    let result = execute(
+        filename,
+        &source,
+        "const selector=Object.values(rules).find(rule=>rule[0]==='outline-color'&&rule[1]==='orange')[3];const marker=selector.slice(selector.lastIndexOf('.')+1);const before=trace.slice();const first=render(Plain([],false,7));const raw=App([],false,8);const second=render(raw);selected=!selected;const third=render(Plain([],false,9));JSON.stringify([before,raw.target===Card,slots(raw).length,[first,second,third].map(e=>[e.target,e.props.ref,e.props.children,slots(e),e.props.className.split(/\\s+/).includes(marker),e.props.className.includes('external')]),values(first,'color'),values(second,'color'),values(second,'padding'),values(third,'color'),trace]);",
+    );
+
+    // Then: selected identity survives both Inline and Slot, without losing later-wins or effects.
+    let mut trace = Vec::new();
+    if captured {
+        for active in [selected, selected, !selected] {
+            trace.push("controller");
+            if active {
+                trace.push("leaf");
+            }
+        }
+    }
+    assert_eq!(
+        result,
+        serde_json::json!([
+            [],
+            captured,
+            usize::from(captured),
+            [
+                ["article", 7, "child", [], true, true],
+                ["article", 8, "child", [], true, true],
+                ["article", 9, "child", [], true, true]
+            ],
+            ["green"],
+            ["blue"],
+            ["4px"],
+            ["green"],
+            trace
+        ])
+    );
+}
+
+#[rstest]
+#[case("test.jsx")]
+#[case("test.ts")]
+#[serial]
+fn css_prop_composes_extension_when_base_is_selected(
+    #[case] filename: &str,
+    #[values(false, true)] selected_base: bool,
+) {
+    use super::css_prop_execution::{CAPTURED, css_props, element, execute};
+
+    // Given: selecting a base must not change an extension's fixed native styles or captures.
+    let base = CAPTURED.replace("Card", "Base");
+    let selector = if selected_base {
+        "const Parent=styled.section({[Base]:{outlineColor:'orange'}});"
+    } else {
+        "const Parent=styled.section({outlineColor:'orange'});"
+    };
+    let extra = if filename.ends_with('x') {
+        "ref={7} children='child'"
+    } else {
+        "ref:7,children:'child'"
+    };
+    let app = element(filename, &css_props(filename, "{color:'blue'}", extra));
+    let source =
+        format!("{base}const Card=styled(Base)({{padding:'2px'}});{selector}const App=()=>{app};");
+
+    // When: the extension composes an overlapping CSS prop through its original renderer.
+    let result = execute(
+        filename,
+        &source,
+        "const raw=App();const final=render(raw);JSON.stringify([raw.target===Card,final.target,final.props.ref,final.props.children,values(final,'color'),values(final,'padding'),slots(final),trace]);",
+    );
+
+    // Then: adding selector identity preserves parent composition capability and authored effects.
+    assert_eq!(
+        result,
+        serde_json::json!([
+            true,
+            "article",
+            7,
+            "child",
+            ["blue"],
+            ["2px"],
+            [],
+            ["controller", "leaf"]
+        ])
+    );
 }

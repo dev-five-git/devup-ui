@@ -17,6 +17,7 @@ import {
   type ImportAliases,
   loadDevupConfig,
   mergeImportAliases,
+  readJsxImportSource,
   seedFileNumbers,
   tailwindCssFiles,
   withTailwindCss,
@@ -366,7 +367,10 @@ export function DevupUI({
     setPrefix(prefix ?? null)
   }
   if (ownsEngine) configureEngine()
-  const importAliases = mergeImportAliases(userImportAliases)
+  const importAliases = mergeImportAliases(
+    userImportAliases,
+    readJsxImportSource(),
+  )
   const reservation = createViteReservation({
     package: libPackage,
     include,
@@ -518,6 +522,7 @@ export function DevupUI({
             include,
             cwd: projectRoot,
             needles: extractedNeedles(libPackage, importAliases),
+            importAliases,
           }),
         )
       } catch {

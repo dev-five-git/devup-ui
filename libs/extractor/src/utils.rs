@@ -664,7 +664,7 @@ pub(super) fn merge_object_expressions<'a>(
         return None;
     }
     if expressions.len() == 1 {
-        return Some(expressions[0].clone_in(ast_builder.allocator()));
+        return Some(expressions[0].clone_in_with_semantic_ids(ast_builder.allocator()));
     }
     // Built before the call for the same reason as `wrap_direct_call`: an inline
     // block argument blocks rustfmt from collapsing the call, and coverage cannot
@@ -673,7 +673,7 @@ pub(super) fn merge_object_expressions<'a>(
     for ex in expressions {
         props.push(ObjectPropertyKind::new_spread_property(
             SPAN,
-            ex.clone_in(ast_builder.allocator()),
+            ex.clone_in_with_semantic_ids(ast_builder.allocator()),
             ast_builder,
         ));
     }
@@ -988,6 +988,16 @@ pub(super) fn css_prop_error(element: &str, code: &str, requirement: &str) -> St
 pub(super) const CSS_PROP_VALUE: &str = "it must be a style object, CSS text, a class `css()` gives, or a function of the theme giving one, or an array or condition of them";
 
 pub(super) const LOCAL_STYLES: &str = "a style object it composes must be written in it, or declared with `const` at the top level of the module, where the build reads it";
+
+pub(super) const CLASS_NAMES_CHILD: &str =
+    "it takes only a child function of `{ css, cx, theme }` giving what it renders at once";
+
+pub(super) const CLASS_NAMES_CALL: &str = "the `css` and `cx` its child function takes can only be called, as the build compiles each call";
+
+pub(super) const CLASS_NAMES_PART: &str = "`css` and `cx` compose only style objects, CSS text, classes, calls of them, or arrays or conditions of these";
+
+pub(super) const CLASS_NAMES_CLASS_MAP: &str =
+    "an object `cx` takes must give each class a condition, as `{ name: condition }`";
 
 /// The `css` prop of the styled component `element` sets what its own styles
 /// set, which the build cannot order there

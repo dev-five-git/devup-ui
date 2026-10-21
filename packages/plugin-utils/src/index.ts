@@ -29,12 +29,14 @@ export {
   type ResolvedModule,
   type StaticImportGraph,
 } from './import-graph'
+export { readJsxImportSource } from './jsx-import-source'
 export { deepMerge, loadDevupConfig, loadDevupConfigSync } from './load-config'
 export {
   collectNumberedFiles,
   type CollectNumberedFilesOptions,
   extractedNeedles,
   type FileNumbering,
+  isProjectJsx,
   seedFileNumbers,
 } from './numbering'
 export {
