@@ -95,7 +95,11 @@ it.each([
       () => {},
     )
     const slots = reservation(project.root, 'root')
-    slots.configure({ root: project.root, input: 'df/Entry.js' })
+    slots.configure({
+      root: project.root,
+      input: 'df/Entry.js',
+      configFileDependencies: [path],
+    })
     await slots.reserve()
     // When
     slots.invalidate(join(project.root, path), 3)

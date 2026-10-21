@@ -18,6 +18,12 @@ export function createCompiledDependencies() {
         ([id, dependencies]) => (dependencies.has(path) ? [id] : []),
       )
     },
+    hasSupplier(file: string): boolean {
+      const path = resolve(file)
+      return [...environments.values()].some((consumers) =>
+        [...consumers.values()].some((dependencies) => dependencies.has(path)),
+      )
+    },
     remove(file: string) {
       for (const consumers of environments.values())
         for (const id of consumers.keys())

@@ -663,7 +663,7 @@ jobs:
         with:
           token: ${{ secrets.CODECOV_TOKEN }}
           fail_ci_if_error: true
-          files: ./coverage/lcov.info
+          files: ./coverage/root/lcov.info,./coverage/vite/lcov.info
 
   # Pages deployment: the only job with `pages` and `id-token` write, and it
   # only runs for a push to main whose validation passed.

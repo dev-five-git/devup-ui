@@ -14,6 +14,7 @@ import {
   mock,
   spyOn,
 } from 'bun:test'
+import type { Plugin } from 'vite'
 
 import { DevupUI } from '../plugin'
 
@@ -61,6 +62,9 @@ interface ViteTestPlugin {
   enforce: 'pre'
   apply: () => boolean
   closeBundle: () => void
+  buildApp: NonNullable<Plugin['buildApp']>
+  buildStart: NonNullable<Plugin['buildStart']>
+  configureServer: NonNullable<Plugin['configureServer']>
   config: (
     this: { meta?: ConfigHookMeta } | void,
     userConfig?: ViteConfig,
@@ -80,6 +84,7 @@ interface ViteTestPlugin {
     server: {
       moduleGraph: {
         invalidateModule: (...args: unknown[]) => void
+        idToModuleMap?: ReadonlyMap<string, object>
       }
       ws: { send: (...args: unknown[]) => void }
     }
@@ -148,10 +153,17 @@ function createCodeExtractResult(
   } as unknown as CodeExtractResult
 }
 
+const activePlugins: ViteTestPlugin[] = []
+
 function createPlugins(
   options?: Parameters<typeof DevupUI>[0],
 ): [ViteTestPlugin, ViteTestRestorePlugin] {
-  return DevupUI(options) as unknown as [ViteTestPlugin, ViteTestRestorePlugin]
+  const plugins = DevupUI(options) as unknown as [
+    ViteTestPlugin,
+    ViteTestRestorePlugin,
+  ]
+  activePlugins.push(plugins[0])
+  return plugins
 }
 
 function createPlugin(options?: Parameters<typeof DevupUI>[0]): ViteTestPlugin {
@@ -220,6 +232,7 @@ beforeEach(() => {
 })
 
 afterEach(() => {
+  for (const plugin of activePlugins.splice(0)) plugin.closeBundle()
   existsSyncSpy.mockRestore()
   mkdirSpy.mockRestore()
   readFileSpy.mockRestore()
@@ -267,6 +280,7 @@ describe('devupUIVitePlugin', () => {
     }),
   )('should apply options', async (options) => {
     const plugin = createPlugin(options)
+    await plugin.configResolved()
     expect(setDebugSpy).toHaveBeenCalledWith(options.debug)
     if (options.extractCss) {
       expect(
@@ -1132,16 +1146,171 @@ describe('devupUIVitePlugin', () => {
       expect(first).not.toContain('?t=')
     })
 
+    describe('serve sheet module identity', () => {
+      const sheets = ['devup-ui.css', 'devup-ui-3.css'] as const
+      const initialCss = '.a{color:red}'
+      let nowSpy: ReturnType<typeof spyOn<typeof Date, 'now'>>
+
+      beforeEach(() => {
+        nowSpy = spyOn(Date, 'now').mockReturnValue(1_730_000_000_000)
+      })
+
+      afterEach(() => {
+        nowSpy.mockRestore()
+      })
+
+      function resolveSheet(plugin: ViteTestPlugin, fileName: string) {
+        const id = plugin.resolveId(fileName, join('df', 'devup-ui', fileName))
+        if (typeof id !== 'string') throw new TypeError('Sheet did not resolve')
+        return id
+      }
+
+      async function writeSheet(
+        plugin: ViteTestPlugin,
+        fileName: string,
+        css: string,
+      ) {
+        getCssSpy.mockReturnValue(css)
+        codeExtractSpy.mockReturnValue(
+          createCodeExtractResult({
+            css,
+            cssFile: fileName,
+            updatedBaseStyle: fileName === 'devup-ui.css',
+          }),
+        )
+        await plugin.transform(
+          `const sheet = ${JSON.stringify([fileName, css])}`,
+          'sheet-owner.tsx',
+        )
+      }
+
+      it.each(sheets)(
+        'keeps %s identity when only the clock advances before any write',
+        async (fileName) => {
+          // Given
+          const plugin = createPlugin({})
+          await plugin.configResolved({ command: 'serve' })
+          const first = resolveSheet(plugin, fileName)
+
+          // When
+          nowSpy.mockReturnValue(1_730_000_000_001)
+          const second = resolveSheet(plugin, fileName)
+
+          // Then
+          expect(second).toBe(first)
+        },
+      )
+
+      it.each(sheets)(
+        'keeps %s identity when the same text is transformed again',
+        async (fileName) => {
+          // Given
+          const plugin = createPlugin({})
+          await plugin.configResolved({ command: 'serve' })
+          await writeSheet(plugin, fileName, initialCss)
+          const first = resolveSheet(plugin, fileName)
+          writeFileSpy.mockClear()
+
+          // When
+          nowSpy.mockReturnValue(1_730_000_000_001)
+          await writeSheet(plugin, fileName, initialCss)
+          const second = resolveSheet(plugin, fileName)
+
+          // Then
+          expect(writeFileSpy).not.toHaveBeenCalled()
+          expect(second).toBe(first)
+        },
+      )
+
+      it.each(
+        sheets.flatMap((fileName) =>
+          [
+            { change: 'longer', css: '.a{color:blue}' },
+            { change: 'shorter', css: '.a{top:0}' },
+            { change: 'same-length', css: '.a{color:sky}' },
+          ].map((change) => ({ fileName, ...change })),
+        ),
+      )(
+        'changes $fileName identity when $change text is written at the same clock time',
+        async ({ fileName, css }) => {
+          // Given: prime the load cache too, so length-based identity is exercised.
+          const plugin = createPlugin({})
+          await plugin.configResolved({ command: 'serve' })
+          await writeSheet(plugin, fileName, initialCss)
+          plugin.load(fileName)
+          const first = resolveSheet(plugin, fileName)
+          writeFileSpy.mockClear()
+
+          // When
+          await writeSheet(plugin, fileName, css)
+          const second = resolveSheet(plugin, fileName)
+
+          // Then
+          expect(writeFileSpy.mock.calls).toEqual([
+            [join(resolve('df', 'devup-ui'), fileName), css, 'utf-8'],
+          ])
+          expect(second).not.toBe(first)
+        },
+      )
+
+      it.each(sheets)(
+        'keeps other sheets independent when %s changes',
+        async (changedSheet) => {
+          // Given
+          const plugin = createPlugin({})
+          await plugin.configResolved({ command: 'serve' })
+          for (const sheet of sheets)
+            await writeSheet(plugin, sheet, initialCss)
+          const otherSheet =
+            changedSheet === 'devup-ui.css' ? 'devup-ui-3.css' : 'devup-ui.css'
+          const otherId = resolveSheet(plugin, otherSheet)
+
+          // When
+          nowSpy.mockReturnValue(1_730_000_000_001)
+          await writeSheet(plugin, changedSheet, '.a{color:sky}')
+
+          // Then
+          expect(resolveSheet(plugin, otherSheet)).toBe(otherId)
+        },
+      )
+
+      it.each(sheets)(
+        'keeps the build path for %s when text changes and time advances',
+        async (fileName) => {
+          // Given
+          const plugin = createPlugin({})
+          await plugin.configResolved({ command: 'build' })
+          await writeSheet(plugin, fileName, initialCss)
+          const first = resolveSheet(plugin, fileName)
+
+          // When
+          nowSpy.mockReturnValue(1_730_000_000_001)
+          await writeSheet(plugin, fileName, '.a{color:sky}')
+
+          // Then
+          expect(first).toBe(join(resolve('df', 'devup-ui'), fileName))
+          expect(resolveSheet(plugin, fileName)).toBe(first)
+        },
+      )
+    })
+
     it('cache-busts the id during dev so a growing sheet invalidates', async () => {
       const plugin = createPlugin({})
       await plugin.configResolved({ command: 'serve' })
+      codeExtractSpy.mockReturnValue(
+        createCodeExtractResult({ cssFile: '', updatedBaseStyle: true }),
+      )
+      await plugin.transform('code', 'layout.tsx')
+      const importer = join('df', 'devup-ui', 'devup-ui.css')
+      const first = plugin.resolveId('devup-ui.css', importer)
 
-      expect(
-        plugin.resolveId(
-          'devup-ui.css',
-          join('df', 'devup-ui', 'devup-ui.css'),
-        ),
-      ).toContain('?t=')
+      getCssSpy.mockReturnValue('css code with added styles')
+      await plugin.transform('const addedStyles = true', 'layout.tsx')
+      const second = plugin.resolveId('devup-ui.css', importer)
+
+      expect(first).toMatch(/\?v=\d+$/)
+      expect(second).toMatch(/\?v=\d+$/)
+      expect(second).not.toBe(first)
     })
   })
 
@@ -1811,8 +1980,9 @@ describe('devupUIVitePlugin', () => {
     expect(bundle).toEqual({})
   })
 
-  it('should call setPrefix when prefix option is provided', () => {
-    DevupUI({ prefix: 'my-prefix' })
+  it('should call setPrefix when prefix option is configured', async () => {
+    const plugin = createPlugin({ prefix: 'my-prefix' })
+    await plugin.configResolved()
     expect(setPrefixSpy).toHaveBeenCalledWith('my-prefix')
   })
 })

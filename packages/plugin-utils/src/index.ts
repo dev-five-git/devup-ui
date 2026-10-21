@@ -1,4 +1,8 @@
-export { beginBuild, type ResettableEngine } from './build-session'
+export {
+  beginBuild,
+  getBuildOwnership,
+  type ResettableEngine,
+} from './build-session'
 export {
   htmlReservationEntries,
   type HtmlReservationEntry,

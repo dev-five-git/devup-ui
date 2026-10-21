@@ -41,6 +41,7 @@ export type ReservationDiscoveryOptions = {
 export type ReservationInventory = {
   readonly inputs: readonly ReservationInput[]
   readonly dependencies: readonly string[]
+  readonly packageManifests: readonly string[]
   readonly sources: ReadonlyMap<string, string>
   readonly resolutions: ReservationResolutions
 }
@@ -101,9 +102,12 @@ export function collectReservationInputs(
   const initial = roots.flatMap((root) =>
     listSourceFiles(root, isReservationReadFailure),
   )
+  const packageManifests = new Set<string>()
   const resolverOptions = {
     cwd,
     toId: (path: string) => path,
+    onPackageManifest: (path: string) =>
+      packageManifests.add(physicalKey(path)),
     ...(options.tsconfigPath === undefined
       ? {}
       : { tsconfigPath: resolve(cwd, options.tsconfigPath) }),
@@ -186,6 +190,7 @@ export function collectReservationInputs(
   return {
     inputs,
     dependencies,
+    packageManifests: [...packageManifests].sort(),
     sources,
     resolutions: { entries: [...entryTargets].sort(), imports },
   }

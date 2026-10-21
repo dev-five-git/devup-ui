@@ -12,6 +12,7 @@ import {
   createThemeInterfaceArgs,
   type CustomShorthands,
   extractedNeedles,
+  getBuildOwnership,
   getFileNumByFilename,
   type ImportAliases,
   loadDevupConfig,
@@ -56,6 +57,29 @@ import { createServerWatch } from './server-watch'
 const DEVUP_CSS_FILE_RE = /^devup-ui(-\d+)?\.css$/
 
 const SOURCE_DIR_CANDIDATES = ['src', 'app']
+
+type SourceInput = { readonly code: string }
+type ExtractionCapture = {
+  readonly session: ExtractionSession
+  readonly file: string
+  readonly input: SourceInput
+  readonly ownership: number
+  readonly reservation: number
+  readonly config: number
+}
+type ExtractionFlight = {
+  readonly capture: ExtractionCapture
+  readonly result: { readonly code: string; readonly map: string | undefined }
+  readonly dependencies: readonly string[]
+  readonly ready: Promise<void>
+}
+type ExtractionSession = {
+  ready: boolean
+  readonly flights: Map<string, ExtractionFlight>
+}
+function createExtractionSession(): ExtractionSession {
+  return { ready: false, flights: new Map() }
+}
 
 /**
  * Source roots to scan, or an empty list when none of the conventional layouts
@@ -254,14 +278,15 @@ export interface DevupUIPluginOptions {
 
 async function writeDataFiles(
   options: Omit<DevupUIPluginOptions, 'extractCss' | 'debug' | 'include'>,
-): Promise<string[]> {
-  let tailwindFiles: string[] = []
+  inputs: Set<string>,
+  publishTailwind: (files: string[]) => void,
+): Promise<void> {
   try {
-    const config = await loadDevupConfig(options.devupFile)
+    const config = await loadDevupConfig(options.devupFile, inputs)
     const theme = config.theme ?? {}
 
     registerTheme(withTailwindCss(theme, config))
-    tailwindFiles = tailwindCssFiles(config)
+    publishTailwind(tailwindCssFiles(config))
     const interfaceCode = getThemeInterface(
       ...createThemeInterfaceArgs(options.package),
     )
@@ -285,7 +310,6 @@ async function writeDataFiles(
   if (!options.singleCss) {
     await writeFile(join(options.cssDir, 'devup-ui.css'), getCss(null, false))
   }
-  return tailwindFiles
 }
 
 export function DevupUI({
@@ -305,10 +329,43 @@ export function DevupUI({
   // A build starts from its own options: whatever an earlier build in this
   // process left in the engine (prefix, hoisting, routes, buckets, numbers,
   // styles) is gone unless another build is still running.
-  const endBuild = beginBuild({ resetBuildState })
-  registerShorthands(shorthands ?? {})
-  setDebug(debug)
-  setPrefix(prefix ?? null)
+  const ownsEngine = getBuildOwnership().running === 0
+  let endBuild: (() => void) | undefined = beginBuild({ resetBuildState })
+  let closing = false
+  let ownedWork = 0
+  let drained: PromiseWithResolvers<void> | undefined
+  function releaseBuild() {
+    endBuild?.()
+    endBuild = undefined
+  }
+  function own<This, Args extends unknown[], T>(
+    work: (this: This, ...args: Args) => Promise<T>,
+  ) {
+    return async function (this: This, ...args: Args): Promise<T | undefined> {
+      if (closing && isServe) return
+      if (!endBuild) {
+        endBuild = beginBuild({})
+        closing = false
+        drained = undefined
+      }
+      ownedWork++
+      try {
+        return await work.apply(this, args)
+      } finally {
+        ownedWork--
+        if (closing && ownedWork === 0) {
+          releaseBuild()
+          drained?.resolve()
+        }
+      }
+    }
+  }
+  function configureEngine() {
+    registerShorthands(shorthands ?? {})
+    setDebug(debug)
+    setPrefix(prefix ?? null)
+  }
+  if (ownsEngine) configureEngine()
   const importAliases = mergeImportAliases(userImportAliases)
   const reservation = createViteReservation({
     package: libPackage,
@@ -318,10 +375,15 @@ export function DevupUI({
     atomHoist,
     cssDir,
     distDir,
+    relevant: (file) =>
+      isConfigFile(file) ||
+      isTailwindFile(file) ||
+      compiledDependencies.hasSupplier(file),
   })
   const cssMap = new Map()
   const compiledDependencies = createCompiledDependencies()
   let stopWatching: (() => void) | undefined
+  let watcherSession: ExtractionSession | undefined
   let watchConfigInputs: (() => void) | undefined
   let resolvedConfig: ResolvedConfig | undefined
   // Set by the client `generateBundle`, run by the late hook of the sibling
@@ -333,28 +395,97 @@ export function DevupUI({
   // module transformed again writes its sheet again, and the reload that
   // signal causes transforms it once more: signal only a changed sheet.
   const writtenCss = new Map<string, string>()
+  const sheetRevisions = new Map<string, number>()
   const stateWriter = createStateWriter((path, content, encoding) =>
     encoding ? writeFile(path, content, encoding) : writeFile(path, content),
   )
   // The files the project's Tailwind CSS is read from, which change what a
   // Tailwind class compiles to
   let tailwindFiles: string[] = []
+  let configFiles = new Set([resolve(devupFile)])
+  let activeConfigFiles = configFiles
+  let activeTailwindFiles: string[] = []
+  const configState = { generation: 0, refreshing: 0 }
+  let extractionSession = createExtractionSession()
+  const latestInputs = new Map<string, SourceInput>()
+  function rotateExtractionSession() {
+    latestInputs.clear()
+    return (extractionSession = createExtractionSession())
+  }
+  function currentCapture(capture: ExtractionCapture) {
+    const ownership = getBuildOwnership()
+    return (
+      isServe &&
+      !!endBuild &&
+      !closing &&
+      capture.session === extractionSession &&
+      extractionSession.ready &&
+      latestInputs.get(capture.file) === capture.input &&
+      ownership.running === 1 &&
+      ownership.generation === capture.ownership &&
+      configState.refreshing === 0 &&
+      configState.generation === capture.config &&
+      reservation.revision === capture.reservation &&
+      reservation.prepared === capture.reservation
+    )
+  }
+  let refreshTail = Promise.resolve()
+  const isConfigFile = (file: string) =>
+    configFiles.has(resolve(file)) || activeConfigFiles.has(resolve(file))
+  async function refreshConfig() {
+    configState.generation++
+    configState.refreshing++
+    const previous = refreshTail
+    const completed = Promise.withResolvers<void>()
+    refreshTail = completed.promise
+    const inputs = new Set([resolve(devupFile)])
+    try {
+      await previous
+      activeConfigFiles = inputs
+      await writeDataFiles(
+        {
+          package: libPackage,
+          cssDir,
+          devupFile,
+          distDir,
+          singleCss,
+        },
+        inputs,
+        (files) => {
+          activeTailwindFiles = files
+          watchConfigInputs?.()
+        },
+      )
+    } finally {
+      configFiles = inputs
+      tailwindFiles = activeTailwindFiles
+      activeTailwindFiles = []
+      configState.refreshing--
+      configState.generation++
+      reservation.invalidate()
+      completed.resolve()
+      watchConfigInputs?.()
+    }
+  }
   const isTailwindFile = (file: string) =>
-    tailwindFiles.some(
+    [...tailwindFiles, ...activeTailwindFiles].some(
       (tailwindFile) => resolve(tailwindFile) === resolve(file),
     )
   function writeCssFile(fileName: string, css: string): Promise<void> {
     if (writtenCss.get(fileName) === css) return Promise.resolve()
     writtenCss.set(fileName, css)
+    sheetRevisions.set(fileName, (sheetRevisions.get(fileName) ?? 0) + 1)
     return stateWriter.write(join(cssDir, fileName), css, 'utf-8')
   }
-  const plugin: Plugin = {
+  const plugin = {
     name: 'devup-ui',
     // The WASM sheet and transform state are intentionally shared. Vite
     // otherwise recreates this plugin for every environment build, which makes
     // each environment independently emit the same CSS asset.
     sharedDuringBuild: true,
     async configResolved(config) {
+      const session = rotateExtractionSession()
+      if (!ownsEngine) configureEngine()
       resolvedConfig = config
       isServe = config?.command === 'serve'
       const projectRoot = config?.root ?? process.cwd()
@@ -373,13 +504,7 @@ export function DevupUI({
         createCompatTypes(importAliases),
         'utf-8',
       )
-      tailwindFiles = await writeDataFiles({
-        package: libPackage,
-        cssDir,
-        devupFile,
-        distDir,
-        singleCss,
-      })
+      await refreshConfig()
 
       try {
         // Numbers come from the sorted paths of every file the build can
@@ -399,6 +524,7 @@ export function DevupUI({
         // Best-effort; on failure numbering falls back to arrival order.
       }
       reservation.configure(config)
+      if (extractionSession === session) session.ready = true
     },
     async buildApp(builder) {
       for (const environment of Object.values(builder.environments)) {
@@ -411,7 +537,9 @@ export function DevupUI({
       }
     },
     configureServer(server) {
+      if (watcherSession === extractionSession) rotateExtractionSession()
       stopWatching?.()
+      watcherSession = extractionSession
       for (const environment of Object.values(server.environments ?? {})) {
         reservation.configure({
           ...server.config,
@@ -425,7 +553,13 @@ export function DevupUI({
         reservation,
         compiledDependencies.remove,
       )
-      watchConfigInputs = () => watching.add([devupFile, ...tailwindFiles])
+      watchConfigInputs = () =>
+        watching.add([
+          ...configFiles,
+          ...activeConfigFiles,
+          ...tailwindFiles,
+          ...activeTailwindFiles,
+        ])
       watchConfigInputs()
       stopWatching = () => {
         watching.close()
@@ -462,24 +596,18 @@ export function DevupUI({
       return true
     },
     closeBundle() {
+      rotateExtractionSession()
+      closing = true
       stopWatching?.()
-      endBuild()
+      if (ownedWork === 0) return releaseBuild()
+      drained ??= Promise.withResolvers<void>()
+      return drained.promise
     },
     async watchChange(id) {
       reservation.invalidate(id)
-      if (
-        (resolve(id) === resolve(devupFile) && existsSync(devupFile)) ||
-        (isTailwindFile(id) && existsSync(id))
-      ) {
+      if (isConfigFile(id) || (isTailwindFile(id) && existsSync(id))) {
         try {
-          tailwindFiles = await writeDataFiles({
-            package: libPackage,
-            cssDir,
-            devupFile,
-            distDir,
-            singleCss,
-          })
-          watchConfigInputs?.()
+          await own(refreshConfig)()
         } catch (error) {
           console.error(error)
         }
@@ -511,21 +639,13 @@ export function DevupUI({
           ? []
           : undefined
       }
-      const isDevupFile =
-        resolve(file) === resolve(devupFile) && existsSync(devupFile)
+      const isDevupFile = isConfigFile(file)
       const isTailwind = isTailwindFile(file) && existsSync(file)
       if (!isDevupFile && !isTailwind) {
         return
       }
 
-      tailwindFiles = await writeDataFiles({
-        package: libPackage,
-        cssDir,
-        devupFile,
-        distDir,
-        singleCss,
-      })
-      watchConfigInputs?.()
+      await own(refreshConfig)()
 
       const invalidatedModules = new Set<EnvironmentModuleNode>()
       // A Tailwind class compiles from the definitions of the Tailwind CSS, so
@@ -556,21 +676,13 @@ export function DevupUI({
             true,
           )
       }
-      const isDevupFile =
-        resolve(file) === resolve(devupFile) && existsSync(devupFile)
+      const isDevupFile = isConfigFile(file)
       const isTailwind = isTailwindFile(file) && existsSync(file)
       if (!isDevupFile && !isTailwind) {
         return
       }
 
-      tailwindFiles = await writeDataFiles({
-        package: libPackage,
-        cssDir,
-        devupFile,
-        distDir,
-        singleCss,
-      })
-      watchConfigInputs?.()
+      await own(refreshConfig)()
 
       const invalidatedModules = new Set<ModuleNode>()
       for (const mod of isTailwind
@@ -593,17 +705,11 @@ export function DevupUI({
         resolve(importer ? join(dirname(importer), id) : id) ===
           resolve(join(cssDir, fileName))
       ) {
-        // Dev re-resolves through a changing id so a growing sheet invalidates
-        // the module. A build must not: a per-resolution id forks one file into
-        // several modules and makes output hashes differ between identical
-        // builds.
         if (!isServe) return join(cssDir, fileName)
+        // Only changed writes mint a module; `v` survives Vite's timestamp stripping.
         return join(
           cssDir,
-          `${fileName}?t=${
-            Date.now().toString() +
-            (cssMap.get(getFileNumByFilename(fileName))?.length ?? 0)
-          }`,
+          `${fileName}?v=${sheetRevisions.get(fileName) ?? 0}`,
         )
       }
     },
@@ -618,6 +724,7 @@ export function DevupUI({
     },
     enforce: 'pre',
     async transform(code, id) {
+      const session = extractionSession
       if (!extractCss) return
 
       const fileName = id.split('?')[0]
@@ -626,6 +733,34 @@ export function DevupUI({
         return
       }
       await reservation.reserve()
+
+      const file = resolve(fileName)
+      let input = latestInputs.get(file)
+      if (isServe && input?.code !== code) {
+        input = { code }
+        latestInputs.set(file, input)
+      }
+      const capture = input && {
+        session,
+        file,
+        input,
+        ownership: getBuildOwnership().generation,
+        reservation: reservation.revision,
+        config: configState.generation,
+      }
+      const eligible = capture && currentCapture(capture)
+      const cached = eligible ? session.flights.get(id) : undefined
+      if (cached && currentCapture(cached.capture)) {
+        compiledDependencies.update(
+          this.environment?.name ?? 'client',
+          id,
+          cached.dependencies,
+        )
+        for (const dependency of cached.dependencies)
+          this.addWatchFile(dependency)
+        await cached.ready
+        return cached.result
+      }
 
       let rel = relative(dirname(id), cssDir).replaceAll('\\', '/')
       if (!rel.startsWith('./')) rel = `./${rel}`
@@ -668,11 +803,29 @@ export function DevupUI({
         // `css` is only set when this transform added styles to the sheet.
         if (css) promises.push(writeCssFile(basename(cssFile), css))
       }
-      await Promise.all(promises)
-      return {
-        code: extractedCode,
-        map,
+      const result = { code: extractedCode, map }
+      if (!eligible) {
+        await Promise.all(promises)
+        return result
       }
+      const flight: ExtractionFlight = {
+        capture,
+        result,
+        dependencies: [...dependencies],
+        ready: Promise.all(promises).then(
+          () => {
+            if (session.flights.get(id) === flight && !currentCapture(capture))
+              session.flights.delete(id)
+          },
+          (error: unknown) => {
+            if (session.flights.get(id) === flight) session.flights.delete(id)
+            throw error
+          },
+        ),
+      }
+      session.flights.set(id, flight)
+      await flight.ready
+      return result
     },
     async generateBundle(_options, bundle) {
       if (!extractCss) return
@@ -709,7 +862,7 @@ export function DevupUI({
         }
       }
     },
-  }
+  } satisfies Plugin
   const restorePlugin: Plugin = {
     name: 'devup-ui:restore-forwarded-css',
     sharedDuringBuild: true,
@@ -722,5 +875,13 @@ export function DevupUI({
       },
     },
   }
-  return [plugin, restorePlugin]
+  return [
+    {
+      ...plugin,
+      configResolved: own(plugin.configResolved),
+      buildStart: own(plugin.buildStart),
+      transform: own(plugin.transform),
+    },
+    restorePlugin,
+  ]
 }

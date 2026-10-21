@@ -5,6 +5,7 @@ import {
   buildCanonicalMap,
   computeFileReach,
   computeReachableFiles,
+  createModuleResolver,
   createSharedSlotReservation,
   type HtmlReservationEntry,
   planAtomHoist,
@@ -16,9 +17,12 @@ import {
   importFileRoutes,
   reserveClassSlots,
   setAtomHoist,
+  setModuleResolver,
 } from '@devup-ui/wasm'
 
+import { packageBoundary } from './package-boundary'
 import {
+  environmentInputs,
   physicalEnvironmentEntries,
   type ReservationConfig,
   type ReservationEnvironment,
@@ -32,6 +36,7 @@ export function createViteReservation(options: {
   readonly atomHoist?: number
   readonly cssDir: string
   readonly distDir: string
+  readonly relevant?: (file: string) => boolean
 }) {
   const slots = createSharedSlotReservation({ reserveClassSlots })
   const environments = new Map<
@@ -43,6 +48,7 @@ export function createViteReservation(options: {
   let prepared = -1
   let pending: Promise<void> | undefined
   let dependencies: readonly string[] = []
+  const explicitInputs = new Set<string>()
   let watch: ((paths: readonly string[]) => void) | undefined
   let installed = false
   function invalidate(file?: string, timestamp?: number) {
@@ -53,6 +59,13 @@ export function createViteReservation(options: {
       if (
         ['compat.d.ts', 'theme.d.ts', '.gitignore'].includes(generated) ||
         /^devup-ui(?:-\d+)?\.css$/.test(css)
+      )
+        return
+      if (
+        !/\.(tsx|ts|js|mjs|jsx)$/i.test(path) &&
+        !explicitInputs.has(path) &&
+        !dependencies.some((dependency) => resolve(dependency) === path) &&
+        !options.relevant?.(path)
       )
         return
       if (timestamp !== undefined) {
@@ -91,6 +104,12 @@ export function createViteReservation(options: {
       }
       // An event during the parser await supersedes this entire candidate batch.
       if (current !== revision) continue
+      setModuleResolver(
+        createModuleResolver({
+          cwd: cwd ?? process.cwd(),
+          toId: (path) => path.replaceAll('\\', '/'),
+        }),
+      )
       slots.reserve(
         {
           roots: [...roots],
@@ -155,12 +174,15 @@ export function createViteReservation(options: {
           },
         },
       )
+      for (const path of slots.packageManifests) watched.add(path)
+      const isBoundary = packageBoundary()
       for (const path of slots.dependencies) {
         watched.add(path)
         watched.add(dirname(path))
         let directory = dirname(path)
         while (directory !== dirname(directory)) {
           watched.add(resolve(directory, 'package.json'))
+          if (isBoundary(directory)) break
           directory = dirname(directory)
         }
       }
@@ -181,9 +203,27 @@ export function createViteReservation(options: {
           environment,
         })
       }
+      explicitInputs.clear()
+      for (const { config, environment } of environments.values()) {
+        const root = config.root ?? process.cwd()
+        for (const file of [
+          ...environmentInputs(environment),
+          ...(config.configFileDependencies ?? []),
+          'tsconfig.json',
+          'package.json',
+          'bun.lock',
+        ])
+          explicitInputs.add(resolve(root, file))
+      }
       invalidate()
     },
     invalidate,
+    get revision() {
+      return revision
+    },
+    get prepared() {
+      return prepared
+    },
     watch(callback: (paths: readonly string[]) => void) {
       watch = callback
       watch(dependencies)

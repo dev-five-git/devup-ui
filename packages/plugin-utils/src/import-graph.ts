@@ -1061,6 +1061,7 @@ export interface CreateModuleResolverOptions {
    */
   toId?: (path: string) => string
   readonly allowPackage?: (specifier: string) => boolean
+  readonly onPackageManifest?: (path: string) => void
 }
 
 /**
@@ -1073,6 +1074,7 @@ export function createModuleResolver({
   tsconfigPath = join(cwd, 'tsconfig.json'),
   toId = (path) => path,
   allowPackage,
+  onPackageManifest,
 }: CreateModuleResolverOptions = {}): (
   specifier: string,
   importer: string,
@@ -1091,7 +1093,7 @@ export function createModuleResolver({
             .map(resolveSourceFile)
             .find(Boolean) ??
           ((allowPackage?.(specifier) ?? true)
-            ? resolvePackage(specifier, from)
+            ? resolvePackage(specifier, from, onPackageManifest)
             : undefined))
     return path
       ? { path: toId(path), code: readFileSync(path, 'utf-8') }
@@ -1119,6 +1121,7 @@ const packageConditions = ['import', 'module', 'default', 'require', 'node']
 function resolvePackage(
   specifier: string,
   importer: string,
+  onPackageManifest?: (path: string) => void,
 ): string | undefined {
   const parts = specifier.split('/')
   const nameLength = specifier.startsWith('@') ? 2 : 1
@@ -1126,6 +1129,7 @@ function resolvePackage(
   const packageDir = findPackage(dirname(importer), name)
   if (!packageDir) return undefined
   const manifestPath = join(packageDir, 'package.json')
+  onPackageManifest?.(realpathSync(manifestPath))
   const manifest: unknown = JSON.parse(readFileSync(manifestPath, 'utf-8'))
   if (!isRecord(manifest) || Array.isArray(manifest)) {
     throw new PackageManifestShapeError(manifestPath)

@@ -22,7 +22,9 @@ export function createServerWatch(
     for (const path of added) registered.add(path)
   }
   const changed = (event: string, file: string) => {
-    reservation.invalidate(file)
+    reservation.invalidate(
+      event === 'addDir' || event === 'unlinkDir' ? undefined : file,
+    )
     if (event === 'unlink') unlink(file)
   }
   reservation.watch(add)

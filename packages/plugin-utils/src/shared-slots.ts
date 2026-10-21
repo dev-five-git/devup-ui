@@ -35,6 +35,7 @@ export type ReservationBatchOptions = {
 
 export interface SharedSlotReservation {
   readonly dependencies: readonly string[]
+  readonly packageManifests: readonly string[]
   invalidate(): void
   reserve(
     discovery: ReservationDiscoveryOptions,
@@ -112,11 +113,15 @@ export function createSharedSlotReservation(
     get dependencies() {
       return committed?.inventory.dependencies ?? []
     },
+    get packageManifests() {
+      return committed?.inventory.packageManifests ?? []
+    },
     invalidate() {
       dirty = true
     },
     reserve(discovery, options) {
       const inventory = collectReservationInputs(discovery)
+      const manifests = committed?.inventory.packageManifests ?? []
       const rows: readonly ReservationRow[] = inventory.inputs.map(
         (input) => [input.filename, input.code, options.cssDir(input)] as const,
       )
@@ -128,6 +133,10 @@ export function createSharedSlotReservation(
         committed.importMainCssInCode === options.importMainCssInCode &&
         committed.importMainCssInCss === options.importMainCssInCss &&
         sameAliases(discovery.importAliases, committed.aliases) &&
+        inventory.packageManifests.length === manifests.length &&
+        inventory.packageManifests.every(
+          (path, index) => path === manifests[index],
+        ) &&
         sameResolutions(
           inventory.resolutions,
           committed.inventory.resolutions,
