@@ -123,3 +123,58 @@ fn optional_params_on_simple_selectors_remain_optional(#[values(false, true)] si
         ]
     );
 }
+
+#[rstest]
+#[serial]
+fn quoted_punctuation_preserves_the_real_params_target(#[values(false, true)] single_css: bool) {
+    // Given: quoted text resembles closing syntax and another functional selector.
+    let source = r#"import {css} from '@devup-ui/react';
+export const cls=css({selectors:{'&:nth-child[title="]:not"]':{params:['2n'],color:'red'}}});"#;
+    // When: strict params resolution uses the quote-aware selector scanner.
+    let output =
+        super::extract_fixture(source, single_css).unwrap_or_else(|error| panic!("{error}"));
+    // Then: only the real pseudo receives parameters; literal selector bytes survive.
+    let styles: Vec<_> = output
+        .styles
+        .iter()
+        .map(|style| match style {
+            crate::ExtractStyleValue::Static(style) => (
+                style.property.as_str(),
+                style.value.as_str(),
+                style
+                    .selector
+                    .as_ref()
+                    .unwrap_or_else(|| panic!("missing selector"))
+                    .to_string(),
+            ),
+            other => panic!("expected selector style, got {other:?}"),
+        })
+        .collect();
+    assert_eq!(
+        styles,
+        vec![(
+            "color",
+            "red",
+            r#"&:nth-child(2n)[title="]:not"]"#.to_string()
+        )]
+    );
+}
+
+#[rstest]
+#[case("['2n',unknownParam]", "unknownParam")]
+#[case("[]", "[]")]
+#[serial]
+fn quoted_punctuation_cannot_hide_invalid_required_params(
+    #[case] params: &str,
+    #[case] marker: &str,
+    #[values(false, true)] single_css: bool,
+) {
+    // Given: a real required pseudo precedes fake quoted selector punctuation.
+    let source = format!(
+        r#"import {{css}} from '@devup-ui/react';
+export const cls=css({{selectors:{{'&:nth-child[title="]:not"]':{{params:{params},color:'red'}}}}}});"#
+    );
+    // When: the invalid params list reaches strict extraction.
+    // Then: its authored leaf/list, not quoted text or the outer call, is refused.
+    rejects_at(&source, marker, single_css);
+}

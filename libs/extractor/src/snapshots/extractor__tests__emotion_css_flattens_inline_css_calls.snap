@@ -1,0 +1,50 @@
+---
+source: libs/extractor/src/lib.rs
+expression: "library_outputs(&[\"import { css } from '@emotion/react';\\nexport const a = css(css({ color: 'red' }), { color: 'blue' });\",\n\"import { css } from '@emotion/react';\\nconst base = css({ color: 'green', margin: 4 });\\nexport const a = (cond) => css(cond && css({ color: 'red' }), base);\",\n\"import { css } from '@emotion/react';\\nexport const a = (cond) => css(cond ? css({ color: 'red' }) : null, { color: 'blue' });\",\n\"import { css } from '@emotion/react';\\nexport const a = (cond) => css(cond || css({ color: 'red' }), { margin: 1 });\",\n\"import { css } from '@emotion/react';\\nexport const a = css([css({ color: 'red' }), [css({ margin: 1 }), { color: 'blue' }]]);\",\n\"import { css } from '@emotion/react';\\nexport const a = css(css(css({ color: 'red' }), { margin: 1 }), { color: 'blue' });\",\n\"import { css } from '@emotion/react';\\nexport const a = (cond) => css(cond && [css({ color: 'red' }), { margin: 1 }], { color: 'blue' });\",\n\"import { css } from '@emotion/react';\\nexport const a = (rest) => css(css(...rest), { color: 'blue' });\",\n\"import { css } from '@emotion/react';\\nexport const a = (cond, cls) => css(css({ color: 'red' }), cls, cond && css({ color: 'blue' }));\",\n\"import { css } from '@emotion/react';\\nexport const a = css(css({ color: 'red' }));\",\n\"import { css } from '@devup-ui/react';\\nexport const a = css(css({ color: 'red' }), { color: 'blue' });\",],\nSIZE_MODULES)"
+---
+[
+    (
+        "import { css } from '@emotion/react';\nexport const a = css(css({ color: 'red' }), { color: 'blue' });",
+        "ToBTreeSet { styles: {Static(ExtractStaticStyle { property: \"color\", value: \"blue\", level: 0, selector: None, style_order: None, layer: None })}, code: \"import \\\"@devup-ui/react/devup-ui.css\\\";\\nexport const a = \\\"a\\\";\\n\" }",
+    ),
+    (
+        "import { css } from '@emotion/react';\nconst base = css({ color: 'green', margin: 4 });\nexport const a = (cond) => css(cond && css({ color: 'red' }), base);",
+        "ToBTreeSet { styles: {Static(ExtractStaticStyle { property: \"color\", value: \"green\", level: 0, selector: None, style_order: None, layer: None }), Static(ExtractStaticStyle { property: \"margin\", value: \"4px\", level: 0, selector: None, style_order: None, layer: None })}, code: \"import \\\"@devup-ui/react/devup-ui.css\\\";\\nconst base = \\\"a b\\\";\\nexport const a = (cond) => \\\"b a\\\";\\n\" }",
+    ),
+    (
+        "import { css } from '@emotion/react';\nexport const a = (cond) => css(cond ? css({ color: 'red' }) : null, { color: 'blue' });",
+        "ToBTreeSet { styles: {Static(ExtractStaticStyle { property: \"color\", value: \"blue\", level: 0, selector: None, style_order: None, layer: None })}, code: \"import \\\"@devup-ui/react/devup-ui.css\\\";\\nexport const a = (cond) => \\\"a\\\";\\n\" }",
+    ),
+    (
+        "import { css } from '@emotion/react';\nexport const a = (cond) => css(cond || css({ color: 'red' }), { margin: 1 });",
+        "ToBTreeSet { styles: {Static(ExtractStaticStyle { property: \"color\", value: \"red\", level: 0, selector: None, style_order: None, layer: None }), Static(ExtractStaticStyle { property: \"margin\", value: \"1px\", level: 0, selector: None, style_order: None, layer: None })}, code: \"import \\\"@devup-ui/react/devup-ui.css\\\";\\nexport const a = (cond) => `${cond ? typeof cond === \\\"string\\\" ? cond : \\\"\\\" : \\\"\\\"} ${`b ${cond ? \\\"\\\" : \\\"a\\\"}`}`;\\n\" }",
+    ),
+    (
+        "import { css } from '@emotion/react';\nexport const a = css([css({ color: 'red' }), [css({ margin: 1 }), { color: 'blue' }]]);",
+        "ToBTreeSet { styles: {Static(ExtractStaticStyle { property: \"color\", value: \"blue\", level: 0, selector: None, style_order: None, layer: None }), Static(ExtractStaticStyle { property: \"margin\", value: \"1px\", level: 0, selector: None, style_order: None, layer: None })}, code: \"import \\\"@devup-ui/react/devup-ui.css\\\";\\nexport const a = \\\"a b\\\";\\n\" }",
+    ),
+    (
+        "import { css } from '@emotion/react';\nexport const a = css(css(css({ color: 'red' }), { margin: 1 }), { color: 'blue' });",
+        "ToBTreeSet { styles: {Static(ExtractStaticStyle { property: \"color\", value: \"blue\", level: 0, selector: None, style_order: None, layer: None }), Static(ExtractStaticStyle { property: \"margin\", value: \"1px\", level: 0, selector: None, style_order: None, layer: None })}, code: \"import \\\"@devup-ui/react/devup-ui.css\\\";\\nexport const a = \\\"a b\\\";\\n\" }",
+    ),
+    (
+        "import { css } from '@emotion/react';\nexport const a = (cond) => css(cond && [css({ color: 'red' }), { margin: 1 }], { color: 'blue' });",
+        "ToBTreeSet { styles: {Static(ExtractStaticStyle { property: \"color\", value: \"blue\", level: 0, selector: None, style_order: None, layer: None }), Static(ExtractStaticStyle { property: \"margin\", value: \"1px\", level: 0, selector: None, style_order: None, layer: None })}, code: \"import \\\"@devup-ui/react/devup-ui.css\\\";\\nexport const a = (cond) => `b ${cond ? \\\"a\\\" : \\\"\\\"}`;\\n\" }",
+    ),
+    (
+        "import { css } from '@emotion/react';\nexport const a = (rest) => css(css(...rest), { color: 'blue' });",
+        "Error: /src/App.tsx:2:32: Cannot compose `...rest` at build time: each style must be a rule object, a class, or a condition choosing between them",
+    ),
+    (
+        "import { css } from '@emotion/react';\nexport const a = (cond, cls) => css(css({ color: 'red' }), cls, cond && css({ color: 'blue' }));",
+        "ToBTreeSet { styles: {Static(ExtractStaticStyle { property: \"color\", value: \"blue\", level: 0, selector: None, style_order: None, layer: None }), Static(ExtractStaticStyle { property: \"color\", value: \"red\", level: 0, selector: None, style_order: None, layer: None })}, code: \"import \\\"@devup-ui/react/devup-ui.css\\\";\\nexport const a = (cond, cls) => `${cls} ${cond ? \\\"a\\\" : \\\"b\\\"}`;\\n\" }",
+    ),
+    (
+        "import { css } from '@emotion/react';\nexport const a = css(css({ color: 'red' }));",
+        "ToBTreeSet { styles: {Static(ExtractStaticStyle { property: \"color\", value: \"red\", level: 0, selector: None, style_order: None, layer: None })}, code: \"import \\\"@devup-ui/react/devup-ui.css\\\";\\nexport const a = \\\"a\\\";\\n\" }",
+    ),
+    (
+        "import { css } from '@devup-ui/react';\nexport const a = css(css({ color: 'red' }), { color: 'blue' });",
+        "ToBTreeSet { styles: {Static(ExtractStaticStyle { property: \"color\", value: \"blue\", level: 0, selector: None, style_order: None, layer: None })}, code: \"import \\\"@devup-ui/react/devup-ui.css\\\";\\nexport const a = \\\"a\\\";\\n\" }",
+    ),
+]

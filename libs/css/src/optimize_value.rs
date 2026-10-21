@@ -4,84 +4,123 @@ use crate::constant::{
     COLOR_HASH, DOT_ZERO_RE, F_DOT_RE, F_RGB_RE, F_RGBA_RE, F_SPACE_RE, INNER_TRIM_RE, NUM_TRIM_RE,
     RM_MINUS_ZERO_RE, ZERO_PERCENT_FUNCTION, ZERO_RE,
 };
+use crate::quoted;
 
 /// (symbol, ";{symbol}", ";{symbol})") — compile-time constants, zero probe allocation
-const SEMI_SUFFIXES: [(&str, &str, &str); 4] = [
-    ("", ";", ";)"),
-    ("`", ";`", ";`)"),
-    ("\"", ";\"", ";\")"),
-    ("'", ";'", ";')"),
-];
+const SEMI_SUFFIXES: [(&str, &str, &str); 2] = [("", ";", ";)"), ("`", ";`", ";`)")];
+
+// What one scan of a value finds. Every mutating pass of `rewrite` syntactically
+// REQUIRES at least one of these bytes to fire:
+//   - var() wrap: leading `--` (⇒ `DOUBLE_DASH`)
+//   - INNER_TRIM_RE `\(\s*([^)]*?)\s*\)`: a `(`
+//   - RM_MINUS_ZERO_RE `-0(px|…|\)|,)`: a `0`
+//   - NUM_TRIM_RE `(\d(unit)?)\s+(\d)`: ASCII whitespace
+//   - F_SPACE_RE `\s*,\s*` (gated on `contains(',')`): a `,`
+//   - F_RGBA_RE / F_RGB_RE (gated on `contains("rgba(")`/`contains("rgb(")`): a `(`
+//   - COLOR_HASH `#([0-9a-zA-Z]+)`: a `#`
+//   - DOT_ZERO_RE / F_DOT_RE / ZERO_RE / ZERO_PERCENT (all inside `has_zero`): a `0`
+//   - SEMI_SUFFIXES strip: a `;`
+//   - unbalanced-paren fixup: a `(` or `)`
+// so a value with NONE of them set is provably returned byte-for-byte unchanged
+// and can be borrowed instead of copied into a fresh `String`.
+// `SPACE` (a literal `' '`) is tracked separately from `WS` (any ASCII whitespace)
+// because the var()-wrap condition only rejects `' '`/`,`. `QUOTE` (a `'` or `"`)
+// routes the value through `optimize_quoted`.
+#[derive(Clone, Copy)]
+struct Flags(u16);
+
+impl Flags {
+    const SPACE: u16 = 1;
+    const WS: u16 = 1 << 1;
+    const COMMA: u16 = 1 << 2;
+    const OPEN_PAREN: u16 = 1 << 3;
+    const CLOSE_PAREN: u16 = 1 << 4;
+    const DOUBLE_DASH: u16 = 1 << 5;
+    const SEMI: u16 = 1 << 6;
+    const HASH: u16 = 1 << 7;
+    const ZERO: u16 = 1 << 8;
+    const QUOTE: u16 = 1 << 9;
+    /// Every flag a pass keys off; the others only route (`SPACE`, `QUOTE`)
+    const MUTATING: u16 = Self::WS
+        | Self::COMMA
+        | Self::OPEN_PAREN
+        | Self::CLOSE_PAREN
+        | Self::DOUBLE_DASH
+        | Self::SEMI
+        | Self::HASH
+        | Self::ZERO;
+
+    /// ONE pre-scan of `trimmed` for every byte flag the passes key off
+    fn scan(trimmed: &str) -> Self {
+        let mut flags = 0;
+        let mut prev_dash = false;
+        for b in trimmed.bytes() {
+            flags |= match b {
+                b' ' => Self::SPACE | Self::WS,
+                b'\t' | b'\n' | b'\x0C' | b'\r' => Self::WS,
+                b',' => Self::COMMA,
+                b'(' => Self::OPEN_PAREN,
+                b')' => Self::CLOSE_PAREN,
+                b';' => Self::SEMI,
+                b'#' => Self::HASH,
+                b'0' => Self::ZERO,
+                b'\'' | b'"' => Self::QUOTE,
+                b'-' if prev_dash => Self::DOUBLE_DASH,
+                _ => 0,
+            };
+            prev_dash = b == b'-';
+        }
+        Self(flags)
+    }
+
+    const fn has(self, flag: u16) -> bool {
+        self.0 & flag != 0
+    }
+
+    /// No pass can modify the value, so the caller may borrow it. A leading `--`
+    /// raises `DOUBLE_DASH` (two consecutive dashes), so the var()-wrap path can
+    /// never be skipped by this early return.
+    const fn is_inert(self) -> bool {
+        !self.has(Self::MUTATING)
+    }
+}
 
 pub fn optimize_value(value: &str) -> Cow<'_, str> {
-    let trimmed = value.trim();
+    let trimmed = quoted::trim_css(value);
+    let flags = Flags::scan(trimmed);
 
-    // ONE pre-scan of `trimmed` for every byte flag the passes below key off.
-    // This subsumes the two former folds (the `--`-wrap space/comma probe and the
-    // post-wrap `(has_open_paren, saw_close_paren, has_double_dash, _, saw_semi)`
-    // fold) AND feeds a borrow fast path: every mutating pass in this function
-    // syntactically REQUIRES at least one of these bytes to fire —
-    //   - var() wrap: leading `--` (⇒ `has_double_dash`)
-    //   - INNER_TRIM_RE `\(\s*([^)]*?)\s*\)`: a `(`
-    //   - RM_MINUS_ZERO_RE `-0(px|…|\)|,)`: a `0`
-    //   - NUM_TRIM_RE `(\d(unit)?)\s+(\d)`: ASCII whitespace
-    //   - F_SPACE_RE `\s*,\s*` (gated on `contains(',')`): a `,`
-    //   - F_RGBA_RE / F_RGB_RE (gated on `contains("rgba(")`/`contains("rgb(")`): a `(`
-    //   - COLOR_HASH `#([0-9a-zA-Z]+)`: a `#`
-    //   - DOT_ZERO_RE / F_DOT_RE / ZERO_RE / ZERO_PERCENT (all inside `has_zero`): a `0`
-    //   - SEMI_SUFFIXES strip: a `;`
-    //   - unbalanced-paren fixup: a `(` or `)`
-    // so a value with NONE of them set is provably returned byte-for-byte
-    // unchanged and can be borrowed instead of copied into a fresh `String`.
-    // `has_space` (a literal `' '`) is tracked separately from `has_ws` (any
-    // ASCII whitespace) because the var()-wrap condition only rejects `' '`/`,`,
-    // exactly like the fold it replaces.
-    let mut has_space = false;
-    let mut has_ws = false;
-    let mut has_comma = false;
-    let mut pre_open_paren = false;
-    let mut pre_close_paren = false;
-    let mut has_double_dash = false;
-    let mut saw_semi = false;
-    let mut has_hash = false;
-    let mut has_zero = false;
-    let mut prev_dash = false;
-    for b in trimmed.bytes() {
-        match b {
-            b' ' => {
-                has_space = true;
-                has_ws = true;
-            }
-            b'\t' | b'\n' | b'\x0C' | b'\r' => has_ws = true,
-            b',' => has_comma = true,
-            b'(' => pre_open_paren = true,
-            b')' => pre_close_paren = true,
-            b';' => saw_semi = true,
-            b'#' => has_hash = true,
-            b'0' => has_zero = true,
-            b'-' if prev_dash => has_double_dash = true,
-            _ => {}
-        }
-        prev_dash = b == b'-';
-    }
-
-    // FAST PATH: no flag set ⇒ no pass can modify `trimmed` (see table above),
-    // so hand the caller a borrow of the trimmed input. This covers the dominant
-    // plain values (`red`, `14px`, `$primary`, `1.3s`) with zero allocation.
-    // A leading `--` raises `has_double_dash` (two consecutive dashes), so the
-    // var()-wrap path can never be skipped by this early return.
-    if !has_ws
-        && !has_comma
-        && !pre_open_paren
-        && !pre_close_paren
-        && !has_double_dash
-        && !saw_semi
-        && !has_hash
-        && !has_zero
-    {
+    // FAST PATH: no flag set ⇒ no pass can modify `trimmed`, so hand the caller a
+    // borrow of the trimmed input. This covers the dominant plain values (`red`,
+    // `14px`, `$primary`, `1.3s`) with zero allocation.
+    if flags.is_inert() {
         return Cow::Borrowed(trimmed);
     }
+    if flags.has(Flags::QUOTE) {
+        return optimize_quoted(trimmed);
+    }
+    Cow::Owned(rewrite(trimmed, flags))
+}
 
+/// Optimize the text around the quoted strings of `trimmed`, which are data and
+/// stay byte-for-byte as written: each stands for one inert character while the
+/// passes run, so the text beside it is optimized as if the string were one word
+fn optimize_quoted(trimmed: &str) -> Cow<'_, str> {
+    let (masked, spans) = quoted::mask(trimmed);
+    let flags = Flags::scan(&masked);
+    if flags.is_inert() {
+        return Cow::Borrowed(trimmed);
+    }
+    Cow::Owned(quoted::unmask(&rewrite(&masked, flags), &spans))
+}
+
+/// Run every optimization pass over `trimmed`, which holds no quoted string
+fn rewrite(trimmed: &str, flags: Flags) -> String {
+    let has_space = flags.has(Flags::SPACE);
+    let has_comma = flags.has(Flags::COMMA);
+    let pre_open_paren = flags.has(Flags::OPEN_PAREN);
+    let pre_close_paren = flags.has(Flags::CLOSE_PAREN);
+    let has_double_dash = flags.has(Flags::DOUBLE_DASH);
+    let saw_semi = flags.has(Flags::SEMI);
     let mut ret = String::with_capacity(trimmed.len() + 8);
 
     // Wrap CSS custom property names in var() when used as values
@@ -301,16 +340,17 @@ pub fn optimize_value(value: &str) -> Cow<'_, str> {
     // `saw_semi` was folded from the SAME post-wrap byte scan above (no later pass can
     // add a `;`), so this reuses that result instead of a fresh `contains(';')` scan.
     //
-    // Do NOT `break` after a match. `expression_to_code` serializes the value inside
-    // an `ExpressionStatement`, so a quoted dynamic value can arrive carrying BOTH an
-    // inner `;` before its closing symbol AND the appended statement terminator — e.g.
-    // ``expression_to_code(`${color};`)`` yields ``` `${color};`; ```. Entry 0 (`;`)
-    // strips the bare terminator, leaving `` `${color};` `` whose inner `;` only the
-    // backtick entry can strip. The suffixes are therefore NOT mutually exclusive at
-    // the end of such a value, so every entry must get a turn (this mirrors the
-    // original pre-`SEMI_SUFFIXES` loop; a premature `break` regressed the
+    // Do NOT `break` after a match. A template value can arrive carrying BOTH an
+    // inner `;` before its closing backtick AND the appended statement terminator —
+    // e.g. ``` `${color};`; ```. Entry 0 (`;`) strips the bare terminator, leaving
+    // `` `${color};` `` whose inner `;` only the backtick entry can strip. The
+    // suffixes are therefore NOT mutually exclusive at the end of such a value, so
+    // every entry must get a turn (a premature `break` regressed the
     // `remove_semicolon` case). At most one strip fires per entry, and any strip
-    // leaves `ret` ending in `str_symbol`/`)`, so the pass still terminates in ≤4 steps.
+    // leaves `ret` ending in `str_symbol`/`)`, so the pass still terminates.
+    //
+    // A `'` or `"` string never reaches this pass: it is masked, so a `;` inside one
+    // is data and only the `;` after it is a terminator.
     if saw_semi {
         for (str_symbol, suffix_without_paren, suffix_with_paren) in SEMI_SUFFIXES {
             if let Some(stripped) = ret.strip_suffix(suffix_without_paren) {
@@ -364,7 +404,7 @@ pub fn optimize_value(value: &str) -> Cow<'_, str> {
             }
         }
     }
-    Cow::Owned(ret)
+    ret
 }
 
 fn optimize_color(value: &str) -> String {
@@ -507,22 +547,21 @@ mod tests {
     #[case("\"red\"", "\"red\"")]
     #[case("'red'", "'red'")]
     #[case("`red`", "`red`")]
-    #[case("\"red;\"", "\"red\"")]
-    #[case("'red;'", "'red'")]
+    #[case("\"red;\"", "\"red;\"")]
+    #[case("'red;'", "'red;'")]
     #[case("`red;`", "`red`")]
-    // `expression_to_code` serializes the value inside an `ExpressionStatement`,
-    // appending a statement `;`. A quoted value that already ends in an inner `;`
-    // therefore arrives with TWO trailing semicolons; BOTH must be stripped.
-    // Regression guard for `remove_semicolon` (a premature `break` used to keep the
-    // inner one, e.g. `` `${color};` ``).
+    // A template value that already ends in an inner `;` arrives with TWO trailing
+    // semicolons; BOTH must be stripped. Regression guard for `remove_semicolon` (a
+    // premature `break` used to keep the inner one, e.g. `` `${color};` ``). The `;`
+    // inside a `'` or `"` string is data and stays.
     #[case("`red;`;", "`red`")]
-    #[case("\"red;\";", "\"red\"")]
-    #[case("'red;';", "'red'")]
+    #[case("\"red;\";", "\"red;\"")]
+    #[case("'red;';", "'red;'")]
     #[case("`${color};`;", "`${color}`")]
-    #[case("(\"red;\")", "(\"red\")")]
+    #[case("(\"red;\")", "(\"red;\")")]
     #[case("(`red;`)", "(`red`)")]
-    #[case("('red;')", "('red')")]
-    #[case("('red') + 'blue;'", "('red') + 'blue'")]
+    #[case("('red;')", "('red;')")]
+    #[case("('red') + 'blue;'", "('red') + 'blue;'")]
     #[case("translateX(0px) translateY(0px)", "translateX(0) translateY(0)")]
     // recovery case
     #[case("max(10px, 0", "max(10px,0%)")]
@@ -575,5 +614,82 @@ mod tests {
     #[case("--a, --b", "--a,--b")] // Contains comma, don't wrap (spaces after commas are removed)
     fn test_css_custom_property_wrapping(#[case] input: &str, #[case] expected: &str) {
         assert_eq!(optimize_value(input), expected);
+    }
+
+    #[rstest]
+    #[case(r"'0.5'")]
+    #[case(r#""0.5""#)]
+    #[case(r"'-0.12px'")]
+    #[case(r"'0.0px'")]
+    #[case(r"'0px'")]
+    #[case(r"'-0px'")]
+    #[case(r"'#ff0000'")]
+    #[case(r##""#ff0000ff""##)]
+    #[case(r"'rgba(255,0,0,0.5)'")]
+    #[case(r#""rgb(255, 0, 0)""#)]
+    #[case(r"'a, b'")]
+    #[case(r#""a ,b""#)]
+    #[case(r"'1   2'")]
+    #[case(r#""1px   2px""#)]
+    #[case(r"'( x )'")]
+    #[case(r#""(""#)]
+    #[case(r"')'")]
+    #[case(r"'(('")]
+    #[case(r"'red;'")]
+    #[case(r#""a;b""#)]
+    #[case(r"'translate(0px, 0px)'")]
+    #[case(r"'clamp(0, 10px)'")]
+    #[case(r#""max(0, 1px)""#)]
+    #[case(r"'--x'")]
+    #[case(r"'it\'s 0.5'")]
+    #[case(r#""say \"0.5\" , x""#)]
+    #[case(r"'\\'")]
+    #[case(r#""\\\"0.5""#)]
+    #[case(r#""it's 0.5""#)]
+    #[case(r#"'say "0.5"'"#)]
+    #[case("'한글 0.5, #ff0000'")]
+    #[case(r"'0.5''0.5'")]
+    #[case(r#""a""b""#)]
+    #[case(r#"("(")"#)]
+    #[case(r#"(")")"#)]
+    // a string the input ends inside runs to the end
+    #[case(r"'0.5")]
+    #[case(r#""a, b"#)]
+    #[case(r"'\")]
+    fn test_quoted_strings_are_kept(#[case] input: &str) {
+        assert_eq!(optimize_value(input), input);
+        let expected = match input {
+            r"'0.5" | r#""a, b"# | r"'\" => format!("{input}\t"),
+            _ => input.to_string(),
+        };
+        assert_eq!(optimize_value(&format!("  {input}\t")), expected);
+    }
+
+    #[rstest]
+    #[case(r#""0.5" 0.5px"#, r#""0.5" .5px"#)]
+    #[case(r"0.5px '0.5' 0.5px", r".5px '0.5' .5px")]
+    #[case(r"url('a-0.5.png') 0.5", r"url('a-0.5.png') .5")]
+    #[case(r"'a' , 'b'", r"'a','b'")]
+    #[case(r"fn( 'x' )", r"fn('x')")]
+    #[case(r#"url( "a b" )"#, r#"url("a b")"#)]
+    #[case(r#"0px "0px" 0px"#, r#"0 "0px" 0"#)]
+    #[case(r"-0px '-0px'", r"0 '-0px'")]
+    #[case(r"#ff0000 '#ff0000'", r"#F00 '#ff0000'")]
+    #[case(
+        r"rgba(255,0,0,0.5) 'rgba(255,0,0,0.5)'",
+        r"#FF000080 'rgba(255,0,0,0.5)'"
+    )]
+    #[case(r#"fn("(", ")")"#, r#"fn("(",")")"#)]
+    #[case(r"'x' 1px   2px", r"'x' 1px 2px")]
+    #[case(r"'a b' , 'c d' , 0.5", r"'a b','c d',.5")]
+    #[case("'x';", "'x'")]
+    #[case(r#""red;";"#, r#""red;""#)]
+    #[case(r"'red;';", "'red;'")]
+    #[case("'한글' 0.5", "'한글' .5")]
+    #[case(r"'a\'b' 0.50", r"'a\'b' .50")]
+    #[case(r#"("(" 0px"#, r#"("(" 0)"#)]
+    fn test_text_around_quoted_strings_is_optimized(#[case] input: &str, #[case] expected: &str) {
+        assert_eq!(optimize_value(input), expected);
+        assert_eq!(optimize_value(expected), expected);
     }
 }

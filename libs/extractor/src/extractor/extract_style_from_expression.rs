@@ -1312,7 +1312,8 @@ fn nest_underscore_name(parent: Option<&StyleSelector>, name: &str) -> Nested {
 /// (`'&:hover'`, `':hover'`, `'.parent &'`, `'.child'`, `'> li'`) rather
 /// than CSS properties.
 pub(crate) fn is_nested_selector_key(key: &str) -> bool {
-    key.starts_with([':', '.', '#', '[', '*', '>', '+', '~']) || key.contains('&')
+    key.starts_with([':', '.', '#', '[', '*', '>', '+', '~'])
+        || css::quoted::find_unquoted(key, b'&').is_some()
 }
 
 /// A key without `&` is relative to the element: a pseudo-class, a
@@ -1324,7 +1325,7 @@ fn nest_selectors_key(parent: Option<&StyleSelector>, key: &str) -> Nested {
         StyleSelector::nest_at_rule(parent, kind, query).into()
     } else if let Some(name) = key.strip_prefix('_') {
         nest_underscore_name(parent, name)
-    } else if key.contains('&') {
+    } else if css::quoted::find_unquoted(key, b'&').is_some() {
         Nested::Under(StyleSelector::nest_selector(parent, key))
     } else if key.starts_with([':', '[']) {
         Nested::Under(StyleSelector::nest_selector(parent, &format!("&{key}")))
