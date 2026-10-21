@@ -1,0 +1,30 @@
+[package]
+name = "devup-ui-binding"
+version = "0.1.0"
+edition = "2024"
+rust-version = "1.88"
+description = "Synchronous native build-host adapter for Devup UI"
+license = "Apache-2.0"
+repository = "https://github.com/dev-five-git/devup-ui"
+keywords = ["css", "react", "devup-ui", "napi"]
+categories = ["development-tools", "web-programming"]
+
+[lib]
+crate-type = ["cdylib"]
+test = false
+doctest = false
+
+[lints]
+workspace = true
+
+[dependencies]
+devup-ui-binding-core = { path = "../../libs/binding" }
+extractor = { path = "../../libs/extractor" }
+sheet = { path = "../../libs/sheet" }
+napi = { version = "3.14.2", features = ["napi6"] }
+napi-derive = "3.6.12"
+serde = { version = "1.0.229", features = ["derive"] }
+bimap = { version = "0.6.3", features = ["serde"] }
+
+[build-dependencies]
+napi-build = "2.6.0"

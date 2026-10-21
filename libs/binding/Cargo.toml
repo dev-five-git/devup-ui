@@ -1,0 +1,20 @@
+[package]
+name = "devup-ui-binding-core"
+version = "0.1.0"
+edition = "2024"
+rust-version = "1.88"
+description = "Host-neutral extraction and state orchestration for Devup UI bindings"
+license = "Apache-2.0"
+repository = "https://github.com/dev-five-git/devup-ui"
+keywords = ["css", "react", "devup-ui", "bindings"]
+categories = ["development-tools", "web-programming"]
+
+[lints]
+workspace = true
+
+[dependencies]
+extractor = { path = "../extractor" }
+sheet = { path = "../sheet" }
+css = { path = "../css" }
+serde_json = "1.0.154"
+bimap = { version = "0.6.3", features = ["serde"] }
