@@ -1,0 +1,33 @@
+[workspace]
+members = ["addon"]
+resolver = "3"
+
+[workspace.package]
+edition = "2024"
+rust-version = "1.88"
+publish = false
+
+[workspace.lints.rust]
+unsafe_code = "warn"
+unused_must_use = "deny"
+
+[workspace.lints.clippy]
+all = "warn"
+pedantic = "warn"
+
+[package]
+name = "w74a-core"
+version = "0.0.0"
+edition.workspace = true
+rust-version.workspace = true
+publish.workspace = true
+
+[lib]
+path = "core.rs"
+
+[[test]]
+name = "W74a_native_host"
+path = "native_host.rs"
+
+[lints]
+workspace = true
