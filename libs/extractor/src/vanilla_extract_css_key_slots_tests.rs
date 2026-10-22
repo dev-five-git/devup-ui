@@ -58,6 +58,43 @@ fn generated_cardinality(entry: &StyleEntry) -> Result<(usize, usize), String> {
     Ok((array.elements.len(), wrappers))
 }
 
+#[test]
+#[should_panic(expected = "generated bounded call must parse")]
+fn key_slots_checker_rejects_malformed_generated_syntax() {
+    // Given
+    let entry = StyleEntry {
+        css: Some("css([".into()),
+        ..StyleEntry::default()
+    };
+    // When / Then: the checker must reject unparseable generated syntax.
+    assert!(generated_cardinality(&entry).is_ok());
+}
+
+#[test]
+#[should_panic(expected = "expected generated call")]
+fn key_slots_checker_rejects_non_call_expression() {
+    // Given
+    let entry = StyleEntry {
+        css: Some("[]".into()),
+        ..StyleEntry::default()
+    };
+    // When / Then: a parseable expression is not sufficient to be a bounded call.
+    assert!(generated_cardinality(&entry).is_ok());
+}
+
+#[test]
+fn key_slots_checker_rejects_non_array_argument() {
+    // Given
+    let entry = StyleEntry {
+        css: Some(concat!("css({", "p:2})").into()),
+        ..StyleEntry::default()
+    };
+    // When
+    let result = generated_cardinality(&entry);
+    // Then
+    assert_eq!(result, Err("expected bounded-call array".into()));
+}
+
 #[rstest::rstest]
 #[case(16)]
 #[case(256)]

@@ -58,3 +58,34 @@ fn capture_rejects_nested_responsive_arrays_before_lowering() -> Result<(), Stri
     assert!(error.to_string().contains(crate::utils::RESPONSIVE_ARRAY));
     Ok(())
 }
+
+#[rstest::rstest]
+#[case("({_hover:[{p:[1,2]}]})", "_hover -> 0 -> p")]
+#[case(concat!("({_hover:[{_hover:[{", "p:2}]}]})"), "_hover -> 0 -> _hover")]
+fn capture_validation_rejects_responsive_arrays_across_entry_objects(
+    #[case] source: &str,
+    #[case] path: &str,
+) -> Result<(), String> {
+    // Given: real capture resets array context at each property of an entry object.
+    let names = FxHashMap::default();
+    let collector = Rc::new(RefCell::new(Collector::default()));
+    let mut values = Values {
+        names: &names,
+        collector: &collector,
+        active: FxHashSet::default(),
+        key_slots: FxHashMap::default(),
+        plan: Plan::default(),
+    };
+    let mut context = Context::default();
+    let value = context
+        .eval(Source::from_bytes(source))
+        .map_err(|error| error.to_string())?;
+    let root = values
+        .capture(&value, &mut context)
+        .map_err(|error| error.to_string())?;
+    // When
+    let errors = validate(&values.plan, root);
+    // Then
+    assert_eq!(errors, vec![(path.into(), crate::utils::RESPONSIVE_ARRAY)]);
+    Ok(())
+}

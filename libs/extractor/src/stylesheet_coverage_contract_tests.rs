@@ -136,3 +136,77 @@ fn coverage_contract_bridge_rejects_responsive_arrays_in_data_slots() -> Result<
     assert!(error.contains(crate::utils::RESPONSIVE_ARRAY), "{error}");
     Ok(())
 }
+
+#[test]
+#[serial]
+fn coverage_contract_namespace_tag_composes_constant_rules() -> Result<(), String> {
+    // Given: an ordinary call independently defines the expected declarations.
+    let expected = compile("export const card=css({p:2,color:'tomato'});")?;
+    let source = "import * as UI from '@devup-ui/react';const rules={p:2,color:'tomato'};export const card=UI.css`${rules}`;";
+    css::class_map::reset_class_map();
+    css::file_map::reset_file_map();
+    // When
+    let output = extract_without_source_map(
+        "/coverage-contract.css.ts",
+        source,
+        ExtractOption::default(),
+    )
+    .map_err(|error| error.to_string())?;
+    // Then
+    let card = output
+        .code
+        .lines()
+        .find(|line| line.starts_with("export const card = "))
+        .ok_or("missing namespace card export")?;
+    let expected_card = expected
+        .code
+        .lines()
+        .find(|line| line.starts_with("export const card = "))
+        .ok_or("missing ordinary card export")?;
+    assert_eq!(card, expected_card);
+    assert_eq!(output.styles, expected.styles);
+    Ok(())
+}
+
+#[test]
+#[serial]
+fn coverage_contract_bridge_template_keeps_registered_scalar_on_card() -> Result<(), String> {
+    // Given: a fresh ordinary call supplies the base class independently of the template.
+    let base = compile(concat!("export const card=css({", "p:1});"))?;
+    let base = base
+        .code
+        .split_once("export const card = \"")
+        .and_then(|(_, tail)| tail.split_once('"'))
+        .ok_or("missing ordinary base class")?
+        .0;
+    let source = concat!(
+        "const base=css({p:1});let data=0;for(let i=0;i<128;i++)data={",
+        "payload:data};export const card=css`color:blue; ${base} ${{props:data,p:2}}`;"
+    );
+    // When
+    let output = compile(source)?;
+    // Then: the base must be selected by card, not merely present in the stylesheet.
+    let card = output
+        .code
+        .split_once("export const card = \"")
+        .and_then(|(_, tail)| tail.split_once('"'))
+        .ok_or("missing compiled card classes")?
+        .0;
+    assert!(
+        card.split_whitespace().any(|class| class == base),
+        "{output:?}"
+    );
+    for (property, value) in [("color", "blue"), ("padding", "8px")] {
+        assert!(
+            output.styles.iter().any(|style| {
+                matches!(style, ExtractStyleValue::Static(style)
+                if style.property() == property && style.value() == value)
+                    && matches!(style.extract(Some("/coverage-contract.css.ts")),
+                    Some(crate::extract_style::style_property::StyleProperty::ClassName(name))
+                    if card.split_whitespace().any(|class| class == name))
+            }),
+            "missing selected {property}:{value}: {output:?}"
+        );
+    }
+    Ok(())
+}

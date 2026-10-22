@@ -129,7 +129,11 @@ fn data_slot(name: &str) -> bool {
 }
 
 pub(super) fn validate(plan: &Plan, root: usize) -> Vec<(String, &'static str)> {
-    use crate::dead_properties::ObjectKind;
+    #[derive(Clone, Copy)]
+    enum ObjectKind {
+        Styles,
+        Selectors,
+    }
     enum Step<'a> {
         Value(usize, ObjectKind, bool),
         Key(&'a Property, ObjectKind, bool),
@@ -173,10 +177,9 @@ pub(super) fn validate(plan: &Plan, root: usize) -> Vec<(String, &'static str)> 
                             pending.push(Step::Value(property.value, kind, entry));
                         }
                     }
-                    ObjectKind::Selectors | ObjectKind::Records => {
+                    ObjectKind::Selectors => {
                         pending.push(Step::Value(property.value, ObjectKind::Styles, entry));
                     }
-                    ObjectKind::Globals => {}
                 }
             }
             Step::Value(id, kind, entry) => match &plan.nodes[id] {
